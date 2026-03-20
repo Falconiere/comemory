@@ -22,3 +22,31 @@ The goal is to make it easy for support, ops, sales, and product teams to **find
 - Keep documents aligned: update the MVP spec and risk docs when you introduce new architecture components or change scope.
 - When the first implementation starts, add links from this repo to the relevant GitHub code repositories (mobile, backend, web, internal tools) and ensure feature knowledge docs in those repos follow the patterns described here.
 
+## Quick Start
+
+### Installation
+Install the qwick-rag CLI:
+```bash
+pip install qwick-rag
+```
+
+Or install from source in development mode:
+```bash
+uv pip install -e ".[dev]"
+```
+
+### Basic Commands
+- `qwick-rag save <title> <content>` — save knowledge to memory
+- `qwick-rag search <query>` — search stored knowledge
+- `qwick-rag list` — list all stored knowledge
+- `qwick-rag index` — rebuild the knowledge index
+- `qwick-rag doctor` — run diagnostics and health checks
+
+### Claude Code Integration
+Install the qwick-rag plugin for Claude Code:
+```
+/plugin marketplace add qwick-rag
+```
+
+This enables Claude Code to search and reference your knowledge base while coding.
+

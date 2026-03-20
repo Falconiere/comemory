@@ -1,22 +1,27 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- All content currently lives under `docs/`. Key documents are:
+- Documentation lives under `docs/`. Key documents are:
   - `docs/central-knowledge-rag.md` – generic architecture.
   - `docs/qwick-rag-business-case.md` – business value for Qwick.
   - `docs/qwick-rag-risk-compliance-cost.md` – risk and alternatives analysis.
   - `docs/qwick-rag-exec-brief.md` – leadership decision brief.
   - `docs/qwick-rag-mvp-spec.md` – MVP spec and architecture add-ons.
+- Python source code lives under `src/qwick_rag/`. Tests live under `tests/`.
 - Add new documents under `docs/` grouped by concern, for example `docs/ingestion/`, `docs/retrieval/`, `docs/orchestration/`, and `docs/interfaces/`.
 - When introducing code or configs, mirror the architecture described in the docs (ingestion, indexing, query engine, orchestration, interfaces, observability) and align with the Qwick MVP and risk guidance.
 
 ## Build, Test, and Development Commands
-- This repository is currently documentation-only; open Markdown files directly in your editor or viewer, e.g. `code docs/central-knowledge-rag.md`.
-- If you add tooling, expose common operations via a `Makefile` or `package.json`:
-  - `make lint` / `npm run lint` – validate Markdown, links, and configuration.
-  - `make test` / `npm test` – run automated tests.
-  - `make dev` / `npm run dev` – run any local demo or playground.
-- Update this section whenever new commands or tools are introduced.
+- `uv pip install -e ".[dev]"` — install in dev mode with test dependencies
+- `pytest` — run all tests
+- `pytest tests/test_memory.py -v` — run a specific test file
+- `pytest -k test_name` — run a specific test
+- `ruff check src/ tests/` — lint
+- `ruff format src/ tests/` — format (2-space indent)
+- `ruff format --check src/ tests/` — verify formatting
+- `pyright src/` — type checking
+- `qwick-rag --help` — show CLI help
+- `qwick-rag doctor` — run diagnostics
 
 ## Coding Style & Naming Conventions
 - Prefer clear, architectural prose over marketing language; keep paragraphs short and focused.
