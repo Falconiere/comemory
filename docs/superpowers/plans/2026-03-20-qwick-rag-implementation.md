@@ -81,6 +81,8 @@ qwick-rag = "qwick_rag.cli:app"
 dev = [
     "pytest>=8",
     "pytest-asyncio>=0.24",
+    "ruff>=0.9",
+    "pyright>=1.1",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -89,6 +91,36 @@ packages = ["src/qwick_rag"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+[tool.ruff]
+indent-width = 2
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+    "TCH",  # flake8-type-checking
+    "RUF",  # ruff-specific rules
+]
+
+[tool.ruff.format]
+indent-style = "space"
+quote-style = "double"
+
+[tool.pyright]
+pythonVersion = "3.10"
+pythonPlatform = "All"
+typeCheckingMode = "standard"
+venvPath = "."
+venv = ".venv"
 ```
 
 - [ ] **Step 2: Create package init**
@@ -134,16 +166,25 @@ mkdir -p src/qwick_rag tests memories
 cd /Users/falconiere/Projects/qwick-rag
 uv venv && source .venv/bin/activate.fish
 uv pip install -e ".[dev]"
-qwick-rag --help
 ```
 
-Expected: Typer shows help (will fail until cli.py exists — that's OK, just verify the install worked with `python -c "import qwick_rag; print(qwick_rag.__version__)"`)
+Verify: `python -c "import qwick_rag; print(qwick_rag.__version__)"` → `0.1.0`
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 7: Verify quality tools work**
+
+```bash
+ruff check src/ tests/
+ruff format --check src/ tests/
+pyright src/
+```
+
+Expected: All pass (no files to check yet, but tools should run without error).
+
+- [ ] **Step 8: Commit**
 
 ```bash
 git add pyproject.toml src/ .gitignore
-git commit -m "feat: scaffold Python package with dependencies"
+git commit -m "feat: scaffold Python package with dependencies and quality tools"
 ```
 
 ---
@@ -2116,6 +2157,10 @@ Replace the "Build, Test, and Development Commands" section with actual commands
 - `pytest` — run all tests
 - `pytest tests/test_memory.py -v` — run a specific test file
 - `pytest -k test_name` — run a specific test
+- `ruff check src/ tests/` — lint
+- `ruff format src/ tests/` — format (2-space indent)
+- `ruff format --check src/ tests/` — verify formatting
+- `pyright src/` — type checking
 - `qwick-rag --help` — show CLI help
 - `qwick-rag doctor` — run diagnostics
 ```
@@ -2137,7 +2182,72 @@ git commit -m "docs: update project files with build commands and usage"
 
 ---
 
-### Task 11: End-to-End Integration Test
+### Task 11: Quality Gate (Lint, Format, Type Check)
+
+**Files:**
+- All `src/` and `tests/` files
+
+This task formats ALL code to 2-space indentation, fixes lint issues, and verifies types. Run after all implementation is complete.
+
+- [ ] **Step 1: Format all code with ruff (2-space indent)**
+
+```bash
+ruff format src/ tests/
+```
+
+- [ ] **Step 2: Fix lint issues**
+
+```bash
+ruff check --fix src/ tests/
+```
+
+Review any remaining issues that can't be auto-fixed and fix manually.
+
+- [ ] **Step 3: Run ruff check (no auto-fix) to verify clean**
+
+```bash
+ruff check src/ tests/
+```
+
+Expected: No errors
+
+- [ ] **Step 4: Run pyright type checking**
+
+```bash
+pyright src/
+```
+
+Fix any type errors. Common fixes:
+- Add type annotations to function signatures
+- Use `from __future__ import annotations` if needed for `X | None` syntax on Python 3.10
+- Add `# type: ignore` only as last resort with comment explaining why
+
+- [ ] **Step 5: Run tests to make sure formatting didn't break anything**
+
+```bash
+pytest -v
+```
+
+Expected: All tests pass
+
+- [ ] **Step 6: Build package to verify it's installable**
+
+```bash
+uv build
+```
+
+Expected: Creates `dist/qwick_rag-0.1.0-py3-none-any.whl` and `.tar.gz`
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add src/ tests/
+git commit -m "style: format all code with ruff (2-space indent) and fix type issues"
+```
+
+---
+
+### Task 12: End-to-End Integration Test
 
 **Files:**
 - Create: `tests/test_integration.py`
@@ -2231,7 +2341,16 @@ git commit -m "test: add end-to-end integration test"
 Task 1 (scaffold) → Task 2 (errors) → Task 3 (git utils) → Task 3b (config)
   → Task 4 (memory model) → Task 5 (indexing) → Task 6 (search)
   → Task 7 (CLI) → Task 8 (MCP server) → Task 9 (plugin files)
-  → Task 10 (update docs) → Task 11 (integration test)
+  → Task 10 (update docs) → Task 11 (quality gate) → Task 12 (integration test)
 ```
 
 Each task builds on the previous. All tasks produce working, testable code independently.
+
+## Code Quality Rules
+
+**IMPORTANT — applies to ALL code written in every task:**
+
+- **2-space indentation** (configured via `ruff.indent-width = 2` in pyproject.toml). All Python code in this project uses 2 spaces, not 4.
+- After writing code in any task, run `ruff format src/ tests/` before committing.
+- After implementing, run `ruff check src/ tests/` and fix any lint issues before committing.
+- Task 11 is the final quality gate that ensures everything passes lint, format, type check, and build.
