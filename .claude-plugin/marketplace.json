@@ -1,0 +1,10 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "qwick-rag",
+  "description": "Centralized RAG memory for multiple repositories",
+  "plugins": [
+    {
+      "source": "."
+    }
+  ]
+}
