@@ -1,0 +1,253 @@
+"""MCP server for qwick-rag: exposes RAG tools for Claude Code integration."""
+
+from __future__ import annotations
+
+import logging
+import sys
+from datetime import datetime
+
+from mcp.server.fastmcp import FastMCP
+
+from qwick_rag.config import get_author, get_index, get_memories_dir, get_repo
+from qwick_rag.memory import (
+  MEMORY_TYPES,
+  Memory,
+  generate_id,
+  parse_memory,
+  scan_memories,
+  write_memory,
+)
+from qwick_rag.search import search_memories
+
+logging.basicConfig(stream=sys.stderr, level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+mcp = FastMCP("qwick-rag")
+
+
+@mcp.tool()
+async def rag_save(content: str, type: str = "note", tags: str = "") -> str:
+  """Save a new memory to the RAG knowledge base.
+
+  Args:
+    content: The memory content to save.
+    type: Memory type (decision, bug, convention, discovery, pattern, preference, note).
+    tags: Comma-separated tags.
+
+  Returns:
+    Status string confirming the save.
+  """
+  if type not in MEMORY_TYPES:
+    return f"Error: Invalid type '{type}'. Must be one of: {', '.join(MEMORY_TYPES)}"
+
+  memory_id = generate_id(content)
+  tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+  repo = get_repo()
+  author = get_author()
+
+  memories_dir = get_memories_dir()
+  memories_dir.mkdir(parents=True, exist_ok=True)
+
+  final_path = memories_dir / f"{memory_id}.md"
+
+  if final_path.exists():
+    return f"Memory already exists: {memory_id}"
+
+  memory = Memory(
+    id=memory_id,
+    repo=repo,
+    type=type,
+    tags=tag_list,
+    author=author,
+    created=datetime.now(),
+    content=content,
+  )
+
+  tmp_path = memories_dir / f".{memory_id}.tmp"
+  try:
+    write_memory(memory, tmp_path)
+    idx = get_index()
+    idx.upsert(memory)
+    tmp_path.rename(final_path)
+  except Exception as exc:
+    tmp_path.unlink(missing_ok=True)
+    return f"Error saving memory: {exc}"
+
+  return f"Saved memory {memory_id}"
+
+
+@mcp.tool()
+async def rag_search(
+  query: str,
+  repo: str | None = None,
+  type: str | None = None,
+  tag: str | None = None,
+  limit: int = 10,
+) -> str:
+  """Search memories by semantic similarity.
+
+  Args:
+    query: Search query text.
+    repo: Filter by repository name.
+    type: Filter by memory type.
+    tag: Filter by tag.
+    limit: Maximum number of results.
+
+  Returns:
+    Formatted text with search results.
+  """
+  idx = get_index()
+  results = search_memories(idx, query, repo=repo, type_filter=type, tag=tag, limit=limit)
+
+  if not results:
+    return "No results found."
+
+  lines = []
+  for r in results:
+    preview = r.content[:80] + "..." if len(r.content) > 80 else r.content
+    lines.append(f"[{r.score:.3f}] {r.repo} ({r.type}) {preview} — {r.id}")
+  return "\n".join(lines)
+
+
+@mcp.tool()
+async def rag_list(repo: str | None = None, type: str | None = None) -> str:
+  """List memories from disk.
+
+  Args:
+    repo: Filter by repository name.
+    type: Filter by memory type.
+
+  Returns:
+    Formatted text list of memories.
+  """
+  memories_dir = get_memories_dir()
+  if not memories_dir.exists():
+    return "No memories directory found."
+
+  md_files = scan_memories(memories_dir)
+  if not md_files:
+    return "No memories found."
+
+  lines = []
+  for fp in md_files:
+    try:
+      mem = parse_memory(fp)
+    except Exception:
+      continue
+
+    if repo and mem.repo != repo:
+      continue
+    if type and mem.type != type:
+      continue
+
+    preview = mem.content[:60] + "..." if len(mem.content) > 60 else mem.content
+    tag_str = ", ".join(mem.tags) if mem.tags else ""
+    lines.append(f"{mem.id} | {mem.repo} | {mem.type} | [{tag_str}] | {preview}")
+
+  if not lines:
+    return "No memories match the filters."
+  return f"{len(lines)} memories:\n" + "\n".join(lines)
+
+
+@mcp.tool()
+async def rag_delete(memory_id: str) -> str:
+  """Delete a memory by ID.
+
+  Args:
+    memory_id: The ID of the memory to delete.
+
+  Returns:
+    Status string confirming the deletion.
+  """
+  memories_dir = get_memories_dir()
+  if not memories_dir.exists():
+    return "Error: Memories directory not found."
+
+  matches = list(memories_dir.rglob(f"{memory_id}.md"))
+  if not matches:
+    return f"Error: Memory file not found: {memory_id}"
+
+  filepath = matches[0]
+  filepath.unlink()
+
+  try:
+    idx = get_index()
+    idx.delete(memory_id)
+  except Exception:
+    logger.warning("Could not remove %s from index.", memory_id)
+
+  return f"Deleted memory {memory_id}"
+
+
+@mcp.tool()
+async def rag_index(force: bool = False) -> str:
+  """Build or rebuild the vector index.
+
+  Args:
+    force: Force full rebuild of the index.
+
+  Returns:
+    Status string with indexing statistics.
+  """
+  memories_dir = get_memories_dir()
+  memories_dir.mkdir(parents=True, exist_ok=True)
+
+  idx = get_index()
+  stats = idx.build(memories_dir, force=force)
+
+  return (
+    f"Indexed: {stats['new']} new, {stats['updated']} updated, "
+    f"{stats['deleted']} deleted. Total: {idx.count()}"
+  )
+
+
+@mcp.tool()
+async def rag_context(repo: str | None = None, limit: int = 20) -> str:
+  """Get recent memories for the current repo, sorted by creation date descending.
+
+  Args:
+    repo: Repository name (defaults to auto-detected repo).
+    limit: Maximum number of memories to return.
+
+  Returns:
+    Formatted text with recent memories.
+  """
+  target_repo = repo or get_repo()
+  memories_dir = get_memories_dir()
+  if not memories_dir.exists():
+    return "No memories directory found."
+
+  md_files = scan_memories(memories_dir)
+  if not md_files:
+    return "No memories found."
+
+  memories = []
+  for fp in md_files:
+    try:
+      mem = parse_memory(fp)
+    except Exception:
+      continue
+    if mem.repo == target_repo:
+      memories.append(mem)
+
+  if not memories:
+    return f"No memories found for repo: {target_repo}"
+
+  # Sort by created date descending
+  memories.sort(key=lambda m: m.created, reverse=True)
+  memories = memories[:limit]
+
+  lines = []
+  for mem in memories:
+    preview = mem.content[:80] + "..." if len(mem.content) > 80 else mem.content
+    lines.append(f"[{mem.created.isoformat()}] ({mem.type}) {preview}")
+  return f"{len(lines)} memories for {target_repo}:\n" + "\n".join(lines)
+
+
+def main() -> None:
+  """Run the MCP server with stdio transport."""
+  mcp.run(transport="stdio")
+
+
+if __name__ == "__main__":
+  main()
