@@ -95,16 +95,22 @@ def parse_memory(filepath: Path) -> Memory:
     )
 
   try:
-    created = post.metadata["created"]
-    if isinstance(created, str):
-      created = datetime.fromisoformat(created)
+    created_raw = post.metadata["created"]
+    if isinstance(created_raw, str):
+      created = datetime.fromisoformat(created_raw)
+    elif isinstance(created_raw, datetime):
+      created = created_raw
+    else:
+      msg = f"created must be a datetime or ISO string, got {type(created_raw)}"
+      raise TypeError(msg)
 
+    mem_type: MemoryType = str(post.metadata["type"])  # type: ignore[assignment]  # validated by MEMORY_TYPES check downstream
     return Memory(
-      id=post.metadata["id"],
-      repo=post.metadata["repo"],
-      type=post.metadata["type"],
-      tags=list(post.metadata["tags"]),
-      author=post.metadata["author"],
+      id=str(post.metadata["id"]),
+      repo=str(post.metadata["repo"]),
+      type=mem_type,
+      tags=[str(t) for t in list(post.metadata["tags"])],  # type: ignore[arg-type]  # metadata values typed as object; runtime guarantees list
+      author=str(post.metadata["author"]),
       created=created,
       content=post.content,
     )

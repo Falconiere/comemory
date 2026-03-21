@@ -57,7 +57,8 @@ class MemoryIndex:
     """Check whether the memories table already exists."""
     result = self._db.list_tables()
     # lancedb 0.30 returns a ListTablesResponse object with a .tables attr
-    tables: list[str] = result.tables if hasattr(result, "tables") else list(result)
+    raw = result.tables if hasattr(result, "tables") else list(result)
+    tables: list[str] = [str(t) for t in raw]
     return TABLE_NAME in tables
 
   def _get_table(self) -> Any | None:
