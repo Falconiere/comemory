@@ -26,7 +26,7 @@ mcp = FastMCP("qwick-rag")
 
 
 @mcp.tool()
-async def rag_save(content: str, type: str = "note", tags: str = "") -> str:
+async def qwick_memory_save(content: str, type: str = "note", tags: str = "") -> str:
   """Save a new memory to the RAG knowledge base.
 
   Args:
@@ -84,7 +84,7 @@ async def rag_save(content: str, type: str = "note", tags: str = "") -> str:
 
 
 @mcp.tool()
-async def rag_search(
+async def qwick_memory_search(
   query: str,
   repo: str | None = None,
   type: str | None = None,
@@ -117,7 +117,7 @@ async def rag_search(
 
 
 @mcp.tool()
-async def rag_list(repo: str | None = None, type: str | None = None) -> str:
+async def qwick_memory_list(repo: str | None = None, type: str | None = None) -> str:
   """List memories from disk.
 
   Args:
@@ -157,7 +157,7 @@ async def rag_list(repo: str | None = None, type: str | None = None) -> str:
 
 
 @mcp.tool()
-async def rag_delete(memory_id: str) -> str:
+async def qwick_memory_delete(memory_id: str) -> str:
   """Delete a memory by ID.
 
   Args:
@@ -187,7 +187,7 @@ async def rag_delete(memory_id: str) -> str:
 
 
 @mcp.tool()
-async def rag_index(force: bool = False) -> str:
+async def qwick_memory_index(force: bool = False) -> str:
   """Build or rebuild the vector index.
 
   Args:
@@ -209,7 +209,7 @@ async def rag_index(force: bool = False) -> str:
 
 
 @mcp.tool()
-async def rag_context(repo: str | None = None, limit: int = 20) -> str:
+async def qwick_memory_context(repo: str | None = None, limit: int = 20) -> str:
   """Get recent memories for the current repo, sorted by creation date descending.
 
   Args:

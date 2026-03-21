@@ -22,28 +22,28 @@ def rag_env():
 
 
 @pytest.mark.asyncio
-async def test_rag_save(rag_env: str) -> None:
-  """rag_save creates a memory and returns 'Saved' in result."""
-  from qwick_rag.server import rag_save
+async def test_qwick_memory_save(rag_env: str) -> None:
+  """qwick_memory_save creates a memory and returns 'Saved' in result."""
+  from qwick_rag.server import qwick_memory_save
 
-  result = await rag_save("MCP server test memory")
+  result = await qwick_memory_save("MCP server test memory")
   assert "Saved" in result
 
 
 @pytest.mark.asyncio
-async def test_rag_search(rag_env: str) -> None:
-  """rag_save then rag_search finds the saved content."""
-  from qwick_rag.server import rag_save, rag_search
+async def test_qwick_memory_search(rag_env: str) -> None:
+  """qwick_memory_save then qwick_memory_search finds the saved content."""
+  from qwick_rag.server import qwick_memory_save, qwick_memory_search
 
-  await rag_save("PostgreSQL is great for JSONB queries")
-  result = await rag_search("PostgreSQL")
+  await qwick_memory_save("PostgreSQL is great for JSONB queries")
+  result = await qwick_memory_search("PostgreSQL")
   assert "PostgreSQL" in result
 
 
 @pytest.mark.asyncio
-async def test_rag_index(rag_env: str) -> None:
-  """rag_index on empty dir returns 'Indexed' in result."""
-  from qwick_rag.server import rag_index
+async def test_qwick_memory_index(rag_env: str) -> None:
+  """qwick_memory_index on empty dir returns 'Indexed' in result."""
+  from qwick_rag.server import qwick_memory_index
 
-  result = await rag_index()
+  result = await qwick_memory_index()
   assert "Indexed" in result
