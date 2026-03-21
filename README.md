@@ -1,52 +1,101 @@
-# Qwick Central Knowledge Platform (RAG)
+# qwick-rag
 
-This repository contains the **design and decision docs** for a Retrieval-Augmented Generation (RAG)–based knowledge platform to centralize Qwick’s operational knowledge (policies, playbooks, product docs, support macros, legal/compliance guidance).
+Centralized RAG memory for multiple repositories. A Python CLI and Claude Code plugin that stores decisions, bugs, conventions, and discoveries as searchable, vector-embedded memories shared across your team via git.
 
-The goal is to make it easy for support, ops, sales, and product teams to **find accurate answers quickly**, and for engineering to build a **safe, efficient MVP** with clear guardrails around compliance, hallucinations, and cost.
-
-## Repository Layout
-- `AGENTS.md` – contributor guidelines for this repository.
-- `docs/central-knowledge-rag.md` – generic central-knowledge RAG architecture and concepts.
-- `docs/qwick-rag-business-case.md` – business value, automation opportunities, and cost framing for Qwick.
-- `docs/qwick-rag-risk-compliance-cost.md` – analysis of compliance, hallucination, and cost risks plus alternatives.
-- `docs/qwick-rag-exec-brief.md` – 1–2 page decision brief for leadership.
-- `docs/qwick-rag-mvp-spec.md` – product & engineering spec for a Qwick support-policy RAG MVP, including performance and lifecycle alignment.
-
-## How to Use This Repo
-- **Leadership / stakeholders:** start with `docs/qwick-rag-exec-brief.md` and `docs/qwick-rag-business-case.md` to decide whether to run the MVP.
-- **Product & engineering:** use `docs/qwick-rag-mvp-spec.md` and `docs/central-knowledge-rag.md` as the basis for technical discovery, estimation, and implementation.
-- **Risk, legal, and security:** review `docs/qwick-rag-risk-compliance-cost.md` to assess guardrails and decide acceptable scope.
-
-## Contributing
-- Follow `AGENTS.md` for structure and style when adding or changing docs.
-- Keep documents aligned: update the MVP spec and risk docs when you introduce new architecture components or change scope.
-- When the first implementation starts, add links from this repo to the relevant GitHub code repositories (mobile, backend, web, internal tools) and ensure feature knowledge docs in those repos follow the patterns described here.
+Memories are plain markdown files with YAML frontmatter — git handles sharing and merging. The vector index is a local cache rebuilt from those files using LanceDB and local embeddings (fastembed).
 
 ## Quick Start
 
-### Installation
-Install the qwick-rag CLI:
 ```bash
-pip install qwick-rag
-```
-
-Or install from source in development mode:
-```bash
+# Install from source
 uv pip install -e ".[dev]"
+
+# Save a memory (auto-detects repo and author from git)
+qwick-rag save "We use PostgreSQL for transactional services" --type decision --tags db,postgres
+
+# Search across all memories
+qwick-rag search "what database do we use"
+
+# List all memories
+qwick-rag list
+
+# Rebuild vector index (after git pull)
+qwick-rag index
+
+# Check system health
+qwick-rag doctor
 ```
 
-### Basic Commands
-- `qwick-rag save <title> <content>` — save knowledge to memory
-- `qwick-rag search <query>` — search stored knowledge
-- `qwick-rag list` — list all stored knowledge
-- `qwick-rag index` — rebuild the knowledge index
-- `qwick-rag doctor` — run diagnostics and health checks
+## How It Works
 
-### Claude Code Integration
-Install the qwick-rag plugin for Claude Code:
 ```
-/plugin marketplace add qwick-rag
+Developer saves a memory
+  -> Markdown file written to memories/{repo}/{id}.md
+  -> Embedded locally via fastembed (all-MiniLM-L6-v2)
+  -> Indexed in local LanceDB (.vectordb/, gitignored)
+
+Team shares via git
+  -> git push/pull shares markdown files
+  -> Each developer runs `qwick-rag index` to rebuild local vector index
+  -> No remote database needed
 ```
 
-This enables Claude Code to search and reference your knowledge base while coding.
+## Claude Code Plugin
 
+Install as a Claude Code plugin for LLM-powered memory:
+
+```
+/plugin marketplace add SidegigLLC/qwick-rag
+/plugin install qwick-rag@qwick-rag
+```
+
+This gives Claude Code 6 MCP tools: `rag_save`, `rag_search`, `rag_list`, `rag_delete`, `rag_index`, `rag_context`.
+
+## Memory Types
+
+| Type | Use for |
+|------|---------|
+| `decision` | Architecture, tool, or workflow choices |
+| `bug` | Bug root causes and fixes |
+| `convention` | Coding standards, naming patterns |
+| `discovery` | Non-obvious findings, gotchas |
+| `pattern` | Established approaches |
+| `preference` | User or team preferences |
+| `note` | General knowledge |
+
+## Project Structure
+
+```
+qwick-rag/
+├── memories/              # Git-tracked markdown memories (shared)
+│   └── {repo}/
+│       └── {id}.md
+├── .vectordb/             # Local LanceDB index (gitignored)
+├── src/qwick_rag/         # Python package
+│   ├── cli.py             # Typer CLI
+│   ├── server.py          # MCP server (FastMCP)
+│   ├── memory.py          # Memory model + frontmatter I/O
+│   ├── index.py           # LanceDB indexing
+│   ├── search.py          # Hybrid search pipeline
+│   ├── config.py          # Shared path/context helpers
+│   ├── git_utils.py       # Git auto-detection
+│   └── errors.py          # Error types
+├── tests/                 # Test suite (35 tests)
+├── .claude-plugin/        # Claude Code plugin manifest
+├── skills/memory/         # Memory protocol for Claude
+└── docs/superpowers/      # Design spec and implementation plan
+```
+
+## Development
+
+```bash
+uv pip install -e ".[dev]"    # Install with dev deps
+pytest                         # Run tests
+ruff check src/ tests/         # Lint
+ruff format src/ tests/        # Format (2-space indent)
+pyright src/                   # Type check
+```
+
+## Design
+
+See [docs/superpowers/specs/2026-03-20-qwick-rag-design.md](docs/superpowers/specs/2026-03-20-qwick-rag-design.md) for the full architecture and design decisions.
