@@ -2,9 +2,18 @@
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "qwick-rag",
   "description": "Centralized RAG memory for multiple repositories",
+  "owner": {
+    "name": "SidegigLLC"
+  },
   "plugins": [
     {
-      "source": "."
+      "name": "qwick-rag",
+      "description": "Centralized RAG memory for multiple repositories — save, search, and share developer knowledge across repos",
+      "version": "0.1.0",
+      "source": "./",
+      "author": {
+        "name": "SidegigLLC"
+      }
     }
   ]
 }

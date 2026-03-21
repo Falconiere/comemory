@@ -44,9 +44,12 @@ Team shares via git
 
 Install as a Claude Code plugin for LLM-powered memory:
 
-```
-/plugin marketplace add SidegigLLC/qwick-rag
-/plugin install qwick-rag@qwick-rag
+```bash
+# Add the marketplace
+claude plugin add --marketplace SidegigLLC/qwick-rag
+
+# Or install directly from the repo
+claude mcp add qwick-rag -- uv run --directory /path/to/qwick-rag python -m qwick_rag.server
 ```
 
 This gives Claude Code 6 MCP tools: `rag_save`, `rag_search`, `rag_list`, `rag_delete`, `rag_index`, `rag_context`.
@@ -90,7 +93,9 @@ qwick-rag/
 
 ```bash
 uv pip install -e ".[dev]"    # Install with dev deps
-pytest                         # Run tests
+pytest                         # Unit + integration tests
+./scripts/e2e-test.sh          # Real CLI end-to-end test (26 checks)
+./scripts/e2e-test.sh --build  # Install from source + run e2e
 ruff check src/ tests/         # Lint
 ruff format src/ tests/        # Format (2-space indent)
 pyright src/                   # Type check

@@ -17,7 +17,9 @@ qwick-rag is a centralized RAG memory system for multiple repositories. It's a P
 
 ```bash
 uv pip install -e ".[dev]"    # Install
-pytest                         # Test (35 tests)
+pytest                         # Unit + integration tests (35 tests)
+./scripts/e2e-test.sh          # Real CLI end-to-end test (26 checks)
+./scripts/e2e-test.sh --build  # Install from source + run e2e
 ruff format src/ tests/        # Format (2-space indent!)
 ruff check src/ tests/         # Lint
 pyright src/                   # Type check
@@ -83,6 +85,17 @@ The actual memory content goes here as markdown body.
 - CLI tests use `typer.testing.CliRunner` with `monkeypatch.setenv`
 - MCP server tests call async tool functions directly (not the protocol layer)
 - First test run downloads the embedding model (~30MB, cached at `~/.cache/fastembed/`)
+- `scripts/e2e-test.sh` runs the real CLI binary end-to-end in an isolated temp directory (save, list, search, duplicate detection, delete, index rebuild, doctor)
+
+## Claude Code Plugin
+
+The `.claude-plugin/` directory contains the marketplace manifest and plugin config. To install as a Claude Code plugin:
+
+```
+claude plugin add --marketplace SidegigLLC/qwick-rag
+```
+
+The `marketplace.json` requires `owner` (object with `name`), and each plugin entry requires `name`, `description`, and `source`. See `.claude-plugin/marketplace.json` for the current schema.
 
 ## Design Spec
 
