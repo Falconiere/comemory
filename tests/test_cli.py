@@ -14,7 +14,7 @@ runner = CliRunner()
 def _cli_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
   """Set environment variables so CLI uses temp directories."""
   monkeypatch.setenv("QWICK_RAG_DIR", str(tmp_path))
-  monkeypatch.setenv("QWICK_RAG_REPO", "test/repo")
+  monkeypatch.setenv("QWICK_RAG_REPO", "test-repo")
   monkeypatch.setenv("QWICK_RAG_AUTHOR", "tester")
   # Create memories directory
   (tmp_path / "memories").mkdir()
@@ -24,7 +24,7 @@ def test_save_creates_memory_file(tmp_path: Path) -> None:
   """save creates a .md file in the memories directory."""
   result = runner.invoke(app, ["save", "Remember to test the CLI"])
   assert result.exit_code == 0, result.output
-  md_files = list((tmp_path / "memories").glob("*.md"))
+  md_files = list((tmp_path / "memories").rglob("*.md"))
   assert len(md_files) == 1
 
 
@@ -53,7 +53,7 @@ def test_delete_removes_memory(tmp_path: Path) -> None:
   result = runner.invoke(app, ["save", "Delete me later"])
   assert result.exit_code == 0, result.output
 
-  md_files = list((tmp_path / "memories").glob("*.md"))
+  md_files = list((tmp_path / "memories").rglob("*.md"))
   assert len(md_files) == 1
 
   # Extract memory ID from filename
@@ -61,7 +61,7 @@ def test_delete_removes_memory(tmp_path: Path) -> None:
   result = runner.invoke(app, ["delete", memory_id])
   assert result.exit_code == 0, result.output
 
-  md_files = list((tmp_path / "memories").glob("*.md"))
+  md_files = list((tmp_path / "memories").rglob("*.md"))
   assert len(md_files) == 0
 
 

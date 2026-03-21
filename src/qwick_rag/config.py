@@ -1,4 +1,3 @@
-# src/qwick_rag/config.py
 """Shared helpers: resolve paths, get repo/author/index. Used by CLI + MCP server."""
 
 import os

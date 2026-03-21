@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 
 from mcp.server.fastmcp import FastMCP
 
@@ -37,6 +37,11 @@ async def rag_save(content: str, type: str = "note", tags: str = "") -> str:
   Returns:
     Status string confirming the save.
   """
+  if not content or not content.strip():
+    return "Error: content cannot be empty."
+
+  content = content.strip()
+
   if type not in MEMORY_TYPES:
     return f"Error: Invalid type '{type}'. Must be one of: {', '.join(MEMORY_TYPES)}"
 
@@ -46,9 +51,10 @@ async def rag_save(content: str, type: str = "note", tags: str = "") -> str:
   author = get_author()
 
   memories_dir = get_memories_dir()
-  memories_dir.mkdir(parents=True, exist_ok=True)
+  repo_dir = memories_dir / repo
+  repo_dir.mkdir(parents=True, exist_ok=True)
 
-  final_path = memories_dir / f"{memory_id}.md"
+  final_path = repo_dir / f"{memory_id}.md"
 
   if final_path.exists():
     return f"Memory already exists: {memory_id}"
@@ -59,11 +65,11 @@ async def rag_save(content: str, type: str = "note", tags: str = "") -> str:
     type=type,
     tags=tag_list,
     author=author,
-    created=datetime.now(),
+    created=datetime.now(timezone.utc),
     content=content,
   )
 
-  tmp_path = memories_dir / f".{memory_id}.tmp"
+  tmp_path = repo_dir / f".{memory_id}.tmp"
   try:
     write_memory(memory, tmp_path)
     idx = get_index()
@@ -71,6 +77,7 @@ async def rag_save(content: str, type: str = "note", tags: str = "") -> str:
     tmp_path.rename(final_path)
   except Exception as exc:
     tmp_path.unlink(missing_ok=True)
+    logger.exception("Failed to save memory %s", memory_id)
     return f"Error saving memory: {exc}"
 
   return f"Saved memory {memory_id}"

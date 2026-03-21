@@ -45,14 +45,17 @@ def search_memories(
 
   query_vector = index._embed([query])[0]
 
-  # Build metadata filter clauses
+  # Build metadata filter clauses (sanitize inputs to prevent injection)
   where_clauses: list[str] = []
   if repo is not None:
-    where_clauses.append(f'repo = "{repo}"')
+    safe_repo = repo.replace('"', '\\"')
+    where_clauses.append(f'repo = "{safe_repo}"')
   if type_filter is not None:
-    where_clauses.append(f'type = "{type_filter}"')
+    safe_type = type_filter.replace('"', '\\"')
+    where_clauses.append(f'type = "{safe_type}"')
   if tag is not None:
-    where_clauses.append(f'tags LIKE "%{tag}%"')
+    safe_tag = tag.replace('"', '\\"').replace("%", "")
+    where_clauses.append(f'tags LIKE "%{safe_tag}%"')
 
   where_expr = " AND ".join(where_clauses) if where_clauses else None
 

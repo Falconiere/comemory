@@ -6,7 +6,7 @@ import json
 import os
 import subprocess
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import typer
@@ -86,9 +86,10 @@ def save(
   author = get_author()
 
   memories_dir = get_memories_dir()
-  memories_dir.mkdir(parents=True, exist_ok=True)
+  repo_dir = memories_dir / repo
+  repo_dir.mkdir(parents=True, exist_ok=True)
 
-  final_path = memories_dir / f"{memory_id}.md"
+  final_path = repo_dir / f"{memory_id}.md"
 
   # Skip if file already exists (duplicate content)
   if final_path.exists():
@@ -101,12 +102,12 @@ def save(
     type=type,
     tags=tag_list,
     author=author,
-    created=datetime.now(),
+    created=datetime.now(timezone.utc),
     content=content,
   )
 
   # Atomic write: temp file -> embed -> upsert -> rename
-  tmp_path = memories_dir / f".{memory_id}.tmp"
+  tmp_path = repo_dir / f".{memory_id}.tmp"
   try:
     write_memory(memory, tmp_path)
     idx = get_index()
