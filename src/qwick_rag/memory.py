@@ -19,6 +19,7 @@ MEMORY_TYPES = (
   "pattern",
   "preference",
   "note",
+  "session-summary",
 )
 
 MemoryType = Literal[
@@ -29,6 +30,7 @@ MemoryType = Literal[
   "pattern",
   "preference",
   "note",
+  "session-summary",
 ]
 
 

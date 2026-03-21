@@ -110,3 +110,10 @@ def test_write_memory_creates_frontmatter(tmp_path: Path):
   assert "author:" in raw
   assert "created:" in raw
   assert "content_hash:" in raw
+
+
+def test_session_summary_type_is_valid() -> None:
+  """session-summary is a recognized memory type."""
+  from qwick_rag.memory import MEMORY_TYPES
+
+  assert "session-summary" in MEMORY_TYPES
