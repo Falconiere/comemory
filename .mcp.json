@@ -2,7 +2,7 @@
   "mcpServers": {
     "qwick-rag": {
       "command": "uv",
-      "args": ["run", "--directory", "${CLAUDE_PLUGIN_ROOT}", "python", "-m", "qwick_rag.server"]
+      "args": ["run", "python", "-m", "qwick_rag.server"]
     }
   }
 }
