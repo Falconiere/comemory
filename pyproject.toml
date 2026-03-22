@@ -20,6 +20,7 @@ dependencies = [
 
 [project.scripts]
 qwick-memory = "qwick_memory.cli:app"
+qwick-memory-server = "qwick_memory.server:main"
 
 [project.optional-dependencies]
 dev = [

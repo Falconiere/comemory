@@ -1,8 +1,7 @@
 {
   "mcpServers": {
     "qwick-memory": {
-      "command": "bash",
-      "args": ["-c", "cd \"${CLAUDE_PLUGIN_ROOT:-.}\" && exec uv run python -m qwick_memory.server"]
+      "command": "${CLAUDE_PLUGIN_ROOT:-.}/scripts/mcp-server.sh"
     }
   }
 }
