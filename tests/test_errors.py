@@ -1,4 +1,4 @@
-from qwick_rag.errors import (
+from qwick_memory.errors import (
   ConfigError,
   GitError,
   MemoryParseError,

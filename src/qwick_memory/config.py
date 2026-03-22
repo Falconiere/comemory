@@ -3,7 +3,7 @@
 import os
 from pathlib import Path
 
-from qwick_rag.git_utils import detect_author, detect_repo_name
+from qwick_memory.git_utils import detect_author, detect_repo_name
 
 
 def get_rag_dir() -> Path:
@@ -41,6 +41,6 @@ def get_author() -> str:
 
 def get_index():
   """Lazy import to avoid circular dependency."""
-  from qwick_rag.index import MemoryIndex
+  from qwick_memory.index import MemoryIndex
 
   return MemoryIndex(vectordb_dir=get_vectordb_dir())

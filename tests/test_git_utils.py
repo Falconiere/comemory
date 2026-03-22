@@ -1,7 +1,7 @@
 import subprocess
 from pathlib import Path
 
-from qwick_rag.git_utils import detect_author, detect_repo_name, git_sync
+from qwick_memory.git_utils import detect_author, detect_repo_name, git_sync
 
 
 def test_detect_repo_name_from_remote(tmp_path: Path):

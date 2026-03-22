@@ -17,16 +17,16 @@
 | File | Responsibility |
 |------|---------------|
 | `pyproject.toml` | Package config, dependencies, CLI entry point |
-| `src/qwick_rag/__init__.py` | Package init, version |
-| `src/qwick_rag/__main__.py` | `python -m qwick_rag` entry point |
-| `src/qwick_rag/errors.py` | Structured error types (QwickRagError hierarchy) |
-| `src/qwick_rag/config.py` | Shared helpers: resolve paths, get repo/author/index (used by CLI + MCP) |
-| `src/qwick_rag/git_utils.py` | Auto-detect repo name and author from git context |
-| `src/qwick_rag/memory.py` | Memory dataclass, parse/write markdown with frontmatter, ID generation |
-| `src/qwick_rag/index.py` | LanceDB connection, embed, upsert, delete, rebuild, FTS index, optimize |
-| `src/qwick_rag/search.py` | Hybrid search (vector + BM25 + RRF), metadata filtering, result formatting |
-| `src/qwick_rag/cli.py` | Typer CLI commands (save, search, list, delete, index, doctor) |
-| `src/qwick_rag/server.py` | MCP server (FastMCP) exposing rag_save, rag_search, rag_list, rag_delete, rag_index, rag_context |
+| `src/qwick_memory/__init__.py` | Package init, version |
+| `src/qwick_memory/__main__.py` | `python -m qwick_memory` entry point |
+| `src/qwick_memory/errors.py` | Structured error types (QwickRagError hierarchy) |
+| `src/qwick_memory/config.py` | Shared helpers: resolve paths, get repo/author/index (used by CLI + MCP) |
+| `src/qwick_memory/git_utils.py` | Auto-detect repo name and author from git context |
+| `src/qwick_memory/memory.py` | Memory dataclass, parse/write markdown with frontmatter, ID generation |
+| `src/qwick_memory/index.py` | LanceDB connection, embed, upsert, delete, rebuild, FTS index, optimize |
+| `src/qwick_memory/search.py` | Hybrid search (vector + BM25 + RRF), metadata filtering, result formatting |
+| `src/qwick_memory/cli.py` | Typer CLI commands (save, search, list, delete, index, doctor) |
+| `src/qwick_memory/server.py` | MCP server (FastMCP) exposing rag_save, rag_search, rag_list, rag_delete, rag_index, rag_context |
 | `tests/conftest.py` | Shared fixtures (tmp memories dir, tmp vectordb, sample memories) |
 | `tests/test_git_utils.py` | Tests for repo/author detection |
 | `tests/test_memory.py` | Tests for memory model, frontmatter parsing, ID generation |
@@ -47,8 +47,8 @@
 
 **Files:**
 - Create: `pyproject.toml`
-- Create: `src/qwick_rag/__init__.py`
-- Create: `src/qwick_rag/__main__.py`
+- Create: `src/qwick_memory/__init__.py`
+- Create: `src/qwick_memory/__main__.py`
 - Modify: `.gitignore`
 
 - [ ] **Step 1: Create pyproject.toml**
@@ -75,7 +75,7 @@ dependencies = [
 ]
 
 [project.scripts]
-qwick-memory = "qwick_rag.cli:app"
+qwick-memory = "qwick_memory.cli:app"
 
 [project.optional-dependencies]
 dev = [
@@ -86,7 +86,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/qwick_rag"]
+packages = ["src/qwick_memory"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -126,7 +126,7 @@ venv = ".venv"
 - [ ] **Step 2: Create package init**
 
 ```python
-# src/qwick_rag/__init__.py
+# src/qwick_memory/__init__.py
 """qwick-memory: Centralized RAG memory for multiple repositories."""
 
 __version__ = "0.1.0"
@@ -135,10 +135,10 @@ __version__ = "0.1.0"
 - [ ] **Step 3: Create __main__.py**
 
 ```python
-# src/qwick_rag/__main__.py
-"""Allow running as python -m qwick_rag."""
+# src/qwick_memory/__main__.py
+"""Allow running as python -m qwick_memory."""
 
-from qwick_rag.cli import app
+from qwick_memory.cli import app
 
 app()
 ```
@@ -157,7 +157,7 @@ Note: `memories/` is NOT gitignored — it's the shared source of truth.
 - [ ] **Step 5: Create directories**
 
 ```bash
-mkdir -p src/qwick_rag tests memories
+mkdir -p src/qwick_memory tests memories
 ```
 
 - [ ] **Step 6: Install in dev mode and verify**
@@ -168,7 +168,7 @@ uv venv && source .venv/bin/activate.fish
 uv pip install -e ".[dev]"
 ```
 
-Verify: `python -c "import qwick_rag; print(qwick_rag.__version__)"` → `0.1.0`
+Verify: `python -c "import qwick_memory; print(qwick_memory.__version__)"` → `0.1.0`
 
 - [ ] **Step 7: Verify quality tools work**
 
@@ -192,14 +192,14 @@ git commit -m "feat: scaffold Python package with dependencies and quality tools
 ### Task 2: Error Types
 
 **Files:**
-- Create: `src/qwick_rag/errors.py`
+- Create: `src/qwick_memory/errors.py`
 - Create: `tests/test_errors.py`
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
 # tests/test_errors.py
-from qwick_rag.errors import (
+from qwick_memory.errors import (
     QwickRagError,
     StorageError,
     VectorIndexError,
@@ -233,12 +233,12 @@ def test_error_carries_context():
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_errors.py -v`
-Expected: FAIL — `ModuleNotFoundError: No module named 'qwick_rag.errors'`
+Expected: FAIL — `ModuleNotFoundError: No module named 'qwick_memory.errors'`
 
 - [ ] **Step 3: Implement errors.py**
 
 ```python
-# src/qwick_rag/errors.py
+# src/qwick_memory/errors.py
 """Structured error types for qwick-memory."""
 
 from typing import Any
@@ -286,7 +286,7 @@ Expected: 2 passed
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/qwick_rag/errors.py tests/test_errors.py
+git add src/qwick_memory/errors.py tests/test_errors.py
 git commit -m "feat: add structured error types"
 ```
 
@@ -295,7 +295,7 @@ git commit -m "feat: add structured error types"
 ### Task 3: Git Utilities
 
 **Files:**
-- Create: `src/qwick_rag/git_utils.py`
+- Create: `src/qwick_memory/git_utils.py`
 - Create: `tests/test_git_utils.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -305,7 +305,7 @@ git commit -m "feat: add structured error types"
 import subprocess
 from pathlib import Path
 
-from qwick_rag.git_utils import detect_repo_name, detect_author
+from qwick_memory.git_utils import detect_repo_name, detect_author
 
 
 def test_detect_repo_name_from_remote(tmp_path: Path):
@@ -376,7 +376,7 @@ Expected: FAIL — `ModuleNotFoundError`
 - [ ] **Step 3: Implement git_utils.py**
 
 ```python
-# src/qwick_rag/git_utils.py
+# src/qwick_memory/git_utils.py
 """Auto-detect repo name and author from git context."""
 
 import logging
@@ -441,7 +441,7 @@ Expected: 6 passed
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/qwick_rag/git_utils.py tests/test_git_utils.py
+git add src/qwick_memory/git_utils.py tests/test_git_utils.py
 git commit -m "feat: add git repo and author auto-detection"
 ```
 
@@ -450,18 +450,18 @@ git commit -m "feat: add git repo and author auto-detection"
 ### Task 3b: Shared Config Module
 
 **Files:**
-- Create: `src/qwick_rag/config.py`
+- Create: `src/qwick_memory/config.py`
 
 - [ ] **Step 1: Create config.py**
 
 ```python
-# src/qwick_rag/config.py
+# src/qwick_memory/config.py
 """Shared helpers: resolve paths, get repo/author/index. Used by CLI + MCP server."""
 
 import os
 from pathlib import Path
 
-from qwick_rag.git_utils import detect_author, detect_repo_name
+from qwick_memory.git_utils import detect_author, detect_repo_name
 
 
 def get_rag_dir() -> Path:
@@ -496,14 +496,14 @@ def get_author() -> str:
 
 def get_index():
     """Lazy import to avoid circular dependency."""
-    from qwick_rag.index import MemoryIndex
+    from qwick_memory.index import MemoryIndex
     return MemoryIndex(vectordb_dir=get_vectordb_dir())
 ```
 
 - [ ] **Step 2: Commit**
 
 ```bash
-git add src/qwick_rag/config.py
+git add src/qwick_memory/config.py
 git commit -m "feat: add shared config module for path and context helpers"
 ```
 
@@ -512,7 +512,7 @@ git commit -m "feat: add shared config module for path and context helpers"
 ### Task 4: Memory Model
 
 **Files:**
-- Create: `src/qwick_rag/memory.py`
+- Create: `src/qwick_memory/memory.py`
 - Create: `tests/test_memory.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -522,7 +522,7 @@ git commit -m "feat: add shared config module for path and context helpers"
 from datetime import datetime, timezone
 from pathlib import Path
 
-from qwick_rag.memory import Memory, generate_id, parse_memory, write_memory
+from qwick_memory.memory import Memory, generate_id, parse_memory, write_memory
 
 SAMPLE_CONTENT = "We chose PostgreSQL over MongoDB for strong transactional guarantees."
 
@@ -593,7 +593,7 @@ def test_parse_memory_invalid_yaml(tmp_path: Path):
     filepath = tmp_path / "bad.md"
     filepath.write_text("---\ninvalid: [\n---\ncontent")
 
-    from qwick_rag.errors import MemoryParseError
+    from qwick_memory.errors import MemoryParseError
     import pytest
     with pytest.raises(MemoryParseError):
         parse_memory(filepath)
@@ -626,7 +626,7 @@ Expected: FAIL — `ModuleNotFoundError`
 - [ ] **Step 3: Implement memory.py**
 
 ```python
-# src/qwick_rag/memory.py
+# src/qwick_memory/memory.py
 """Memory model: dataclass, parse/write markdown with YAML frontmatter, ID generation."""
 
 import hashlib
@@ -638,7 +638,7 @@ from typing import Literal
 
 import frontmatter
 
-from qwick_rag.errors import MemoryParseError
+from qwick_memory.errors import MemoryParseError
 
 logger = logging.getLogger(__name__)
 
@@ -737,7 +737,7 @@ Expected: 7 passed
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/qwick_rag/memory.py tests/test_memory.py
+git add src/qwick_memory/memory.py tests/test_memory.py
 git commit -m "feat: add memory model with frontmatter parsing and ID generation"
 ```
 
@@ -746,7 +746,7 @@ git commit -m "feat: add memory model with frontmatter parsing and ID generation
 ### Task 5: LanceDB Indexing
 
 **Files:**
-- Create: `src/qwick_rag/index.py`
+- Create: `src/qwick_memory/index.py`
 - Create: `tests/test_index.py`
 - Create: `tests/conftest.py`
 
@@ -758,7 +758,7 @@ import pytest
 from datetime import datetime, timezone
 from pathlib import Path
 
-from qwick_rag.memory import Memory, write_memory
+from qwick_memory.memory import Memory, write_memory
 
 
 @pytest.fixture
@@ -822,8 +822,8 @@ def sample_memories(memories_dir: Path) -> list[Memory]:
 # tests/test_index.py
 from pathlib import Path
 
-from qwick_rag.index import MemoryIndex
-from qwick_rag.memory import Memory, write_memory
+from qwick_memory.index import MemoryIndex
+from qwick_memory.memory import Memory, write_memory
 from datetime import datetime, timezone
 
 
@@ -898,7 +898,7 @@ Expected: FAIL — `ModuleNotFoundError`
 - [ ] **Step 4: Implement index.py**
 
 ```python
-# src/qwick_rag/index.py
+# src/qwick_memory/index.py
 """LanceDB indexing: embed, upsert, delete, rebuild, optimize."""
 
 import json
@@ -908,8 +908,8 @@ from pathlib import Path
 import lancedb
 from fastembed import TextEmbedding
 
-from qwick_rag.errors import MemoryParseError, VectorIndexError
-from qwick_rag.memory import Memory, parse_memory, scan_memories
+from qwick_memory.errors import MemoryParseError, VectorIndexError
+from qwick_memory.memory import Memory, parse_memory, scan_memories
 
 logger = logging.getLogger(__name__)
 
@@ -1118,7 +1118,7 @@ Note: First run will download the embedding model (~30MB). Subsequent runs use c
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/qwick_rag/index.py tests/test_index.py tests/conftest.py
+git add src/qwick_memory/index.py tests/test_index.py tests/conftest.py
 git commit -m "feat: add LanceDB indexing with incremental rebuild"
 ```
 
@@ -1127,7 +1127,7 @@ git commit -m "feat: add LanceDB indexing with incremental rebuild"
 ### Task 6: Search Pipeline
 
 **Files:**
-- Create: `src/qwick_rag/search.py`
+- Create: `src/qwick_memory/search.py`
 - Create: `tests/test_search.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -1136,8 +1136,8 @@ git commit -m "feat: add LanceDB indexing with incremental rebuild"
 # tests/test_search.py
 from pathlib import Path
 
-from qwick_rag.index import MemoryIndex
-from qwick_rag.search import search_memories, SearchResult
+from qwick_memory.index import MemoryIndex
+from qwick_memory.search import search_memories, SearchResult
 
 
 def test_search_returns_results(memories_dir: Path, vectordb_dir: Path, sample_memories):
@@ -1196,13 +1196,13 @@ Expected: FAIL — `ModuleNotFoundError`
 - [ ] **Step 3: Implement search.py**
 
 ```python
-# src/qwick_rag/search.py
+# src/qwick_memory/search.py
 """Query pipeline: hybrid search (vector + BM25), metadata filtering, results."""
 
 import logging
 from dataclasses import dataclass
 
-from qwick_rag.index import MemoryIndex
+from qwick_memory.index import MemoryIndex
 
 logger = logging.getLogger(__name__)
 
@@ -1290,7 +1290,7 @@ Expected: 5 passed
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/qwick_rag/search.py tests/test_search.py
+git add src/qwick_memory/search.py tests/test_search.py
 git commit -m "feat: add vector search with metadata filtering"
 ```
 
@@ -1299,7 +1299,7 @@ git commit -m "feat: add vector search with metadata filtering"
 ### Task 7: CLI Commands
 
 **Files:**
-- Create: `src/qwick_rag/cli.py`
+- Create: `src/qwick_memory/cli.py`
 - Create: `tests/test_cli.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -1311,7 +1311,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from qwick_rag.cli import app
+from qwick_memory.cli import app
 
 runner = CliRunner()
 
@@ -1403,7 +1403,7 @@ Expected: FAIL — `ModuleNotFoundError`
 - [ ] **Step 3: Implement cli.py**
 
 ```python
-# src/qwick_rag/cli.py
+# src/qwick_memory/cli.py
 """Typer CLI commands: save, search, list, delete, index, doctor."""
 
 import logging
@@ -1417,10 +1417,10 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from qwick_rag.config import get_rag_dir, get_memories_dir, get_vectordb_dir, get_repo, get_author, get_index
-from qwick_rag.errors import QwickRagError, StorageError
-from qwick_rag.index import MemoryIndex
-from qwick_rag.memory import (
+from qwick_memory.config import get_rag_dir, get_memories_dir, get_vectordb_dir, get_repo, get_author, get_index
+from qwick_memory.errors import QwickRagError, StorageError
+from qwick_memory.index import MemoryIndex
+from qwick_memory.memory import (
     Memory,
     generate_id,
     parse_memory,
@@ -1428,7 +1428,7 @@ from qwick_rag.memory import (
     write_memory,
     MEMORY_TYPES,
 )
-from qwick_rag.search import search_memories
+from qwick_memory.search import search_memories
 
 logger = logging.getLogger(__name__)
 console = Console(stderr=True)
@@ -1668,7 +1668,7 @@ def doctor():
     if meta_path.exists():
         import json
         meta = json.loads(meta_path.read_text())
-        from qwick_rag.index import MODEL_NAME
+        from qwick_memory.index import MODEL_NAME
         if meta.get("model") == MODEL_NAME:
             out.print(f"[green]✓[/green] Embedding model consistent: {MODEL_NAME}")
             checks_passed += 1
@@ -1705,7 +1705,7 @@ qwick-memory doctor
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/qwick_rag/cli.py tests/test_cli.py
+git add src/qwick_memory/cli.py tests/test_cli.py
 git commit -m "feat: add CLI commands (save, search, list, delete, index, doctor)"
 ```
 
@@ -1714,7 +1714,7 @@ git commit -m "feat: add CLI commands (save, search, list, delete, index, doctor
 ### Task 8: MCP Server
 
 **Files:**
-- Create: `src/qwick_rag/server.py`
+- Create: `src/qwick_memory/server.py`
 - Create: `tests/test_server.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -1726,7 +1726,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import patch
 
-from qwick_rag.server import rag_save, rag_search, rag_index
+from qwick_memory.server import rag_save, rag_search, rag_index
 
 
 @pytest.mark.asyncio
@@ -1786,7 +1786,7 @@ Expected: FAIL — `ModuleNotFoundError`
 - [ ] **Step 3: Implement server.py**
 
 ```python
-# src/qwick_rag/server.py
+# src/qwick_memory/server.py
 """MCP server exposing qwick-memory tools for Claude Code."""
 
 import logging
@@ -1798,10 +1798,10 @@ from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
 
-from qwick_rag.config import get_memories_dir, get_repo, get_author, get_index
-from qwick_rag.errors import QwickRagError
-from qwick_rag.memory import Memory, generate_id, parse_memory, scan_memories, write_memory
-from qwick_rag.search import search_memories as _search
+from qwick_memory.config import get_memories_dir, get_repo, get_author, get_index
+from qwick_memory.errors import QwickRagError
+from qwick_memory.memory import Memory, generate_id, parse_memory, scan_memories, write_memory
+from qwick_memory.search import search_memories as _search
 
 # Configure logging to stderr (required by MCP protocol)
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
@@ -2001,7 +2001,7 @@ Expected: 3 passed
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/qwick_rag/server.py tests/test_server.py
+git add src/qwick_memory/server.py tests/test_server.py
 git commit -m "feat: add MCP server with rag tools for Claude Code"
 ```
 
@@ -2052,7 +2052,7 @@ git commit -m "feat: add MCP server with rag tools for Claude Code"
   "mcpServers": {
     "qwick-memory": {
       "command": "uv",
-      "args": ["run", "--directory", "${CLAUDE_PLUGIN_ROOT}", "python", "-m", "qwick_rag.server"]
+      "args": ["run", "--directory", "${CLAUDE_PLUGIN_ROOT}", "python", "-m", "qwick_memory.server"]
     }
   }
 }
@@ -2088,7 +2088,7 @@ cd "$PLUGIN_ROOT"
 
 # Rebuild index if memories exist
 if [ -d "memories" ]; then
-  uv run python -m qwick_rag index 2>/dev/null || true
+  uv run python -m qwick_memory index 2>/dev/null || true
 fi
 ```
 
@@ -2236,7 +2236,7 @@ Expected: All tests pass
 uv build
 ```
 
-Expected: Creates `dist/qwick_rag-0.1.0-py3-none-any.whl` and `.tar.gz`
+Expected: Creates `dist/qwick_memory-0.1.0-py3-none-any.whl` and `.tar.gz`
 
 - [ ] **Step 7: Commit**
 
@@ -2263,7 +2263,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from qwick_rag.cli import app
+from qwick_memory.cli import app
 
 runner = CliRunner()
 

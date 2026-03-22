@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 import lancedb
 from fastembed import TextEmbedding
 
-from qwick_rag.memory import Memory, parse_memory, scan_memories
+from qwick_memory.memory import Memory, parse_memory, scan_memories
 
 if TYPE_CHECKING:
   from pathlib import Path

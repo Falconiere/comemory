@@ -13,7 +13,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from qwick_rag.config import (
+from qwick_memory.config import (
   get_author,
   get_index,
   get_memories_dir,
@@ -21,8 +21,8 @@ from qwick_rag.config import (
   get_repo,
   get_vectordb_dir,
 )
-from qwick_rag.git_utils import git_sync
-from qwick_rag.memory import (
+from qwick_memory.git_utils import git_sync
+from qwick_memory.memory import (
   MEMORY_TYPES,
   Memory,
   generate_id,
@@ -30,7 +30,7 @@ from qwick_rag.memory import (
   scan_memories,
   write_memory,
 )
-from qwick_rag.search import search_memories
+from qwick_memory.search import search_memories
 
 app = typer.Typer(help="qwick-memory: Centralized RAG memory for multiple repositories.")
 console = Console(stderr=True)
@@ -322,8 +322,8 @@ def context(
 @app.command()
 def doctor() -> None:
   """Check system health: files, index, git context."""
-  from qwick_rag.git_utils import detect_author, detect_repo_name
-  from qwick_rag.index import MODEL_NAME, MemoryIndex
+  from qwick_memory.git_utils import detect_author, detect_repo_name
+  from qwick_memory.index import MODEL_NAME, MemoryIndex
 
   ok = True
   memories_dir = get_memories_dir()

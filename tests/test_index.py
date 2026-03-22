@@ -1,12 +1,12 @@
-"""Tests for qwick_rag.index — LanceDB indexing with incremental rebuild."""
+"""Tests for qwick_memory.index — LanceDB indexing with incremental rebuild."""
 
 from datetime import datetime
 from pathlib import Path
 
 import pytest
 
-from qwick_rag.index import MemoryIndex
-from qwick_rag.memory import Memory, write_memory
+from qwick_memory.index import MemoryIndex
+from qwick_memory.memory import Memory, write_memory
 
 
 @pytest.fixture()

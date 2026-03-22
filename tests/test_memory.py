@@ -1,12 +1,12 @@
-"""Tests for qwick_rag.memory module."""
+"""Tests for qwick_memory.memory module."""
 
 from datetime import datetime
 from pathlib import Path
 
 import pytest
 
-from qwick_rag.errors import MemoryParseError
-from qwick_rag.memory import Memory, generate_id, parse_memory, write_memory
+from qwick_memory.errors import MemoryParseError
+from qwick_memory.memory import Memory, generate_id, parse_memory, write_memory
 
 
 def test_generate_id_is_deterministic():
@@ -114,6 +114,6 @@ def test_write_memory_creates_frontmatter(tmp_path: Path):
 
 def test_session_summary_type_is_valid() -> None:
   """session-summary is a recognized memory type."""
-  from qwick_rag.memory import MEMORY_TYPES
+  from qwick_memory.memory import MEMORY_TYPES
 
   assert "session-summary" in MEMORY_TYPES

@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-import qwick_rag.git_utils as _git_mod
-from qwick_rag.memory import Memory, write_memory
+import qwick_memory.git_utils as _git_mod
+from qwick_memory.memory import Memory, write_memory
 
 
 @pytest.fixture(autouse=True)

@@ -47,7 +47,7 @@ def _find_source_repo() -> Path | None:
   """Find the qwick-memory source repository by walking up from the package location.
 
   Works for:
-  - Dev installs: __file__ is in src/qwick_rag/ inside the repo.
+  - Dev installs: __file__ is in src/qwick_memory/ inside the repo.
   - Plugin installs: .venv/ is inside the clone, so ancestors reach .git.
   """
   pkg_file = Path(__file__).resolve()

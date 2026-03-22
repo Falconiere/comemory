@@ -1,11 +1,11 @@
-"""Tests for qwick_rag.search — vector search with metadata filtering."""
+"""Tests for qwick_memory.search — vector search with metadata filtering."""
 
 from pathlib import Path
 
 import pytest
 
-from qwick_rag.index import MemoryIndex
-from qwick_rag.search import SearchResult, search_memories
+from qwick_memory.index import MemoryIndex
+from qwick_memory.search import SearchResult, search_memories
 
 
 @pytest.fixture()

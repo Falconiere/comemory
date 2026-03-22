@@ -7,10 +7,10 @@ cd "$PLUGIN_ROOT"
 
 # Auto-index
 if [ -d "memories" ]; then
-  uv run python -m qwick_rag index 2>/dev/null || true
+  uv run python -m qwick_memory index 2>/dev/null || true
 fi
 
 # Output context for Claude
 echo "## Qwick Memory — Session Context"
 echo ""
-uv run python -m qwick_rag context 2>/dev/null || echo "No prior context found."
+uv run python -m qwick_memory context 2>/dev/null || echo "No prior context found."

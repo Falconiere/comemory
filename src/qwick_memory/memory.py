@@ -9,7 +9,7 @@ from typing import Literal
 import frontmatter
 import yaml
 
-from qwick_rag.errors import MemoryParseError
+from qwick_memory.errors import MemoryParseError
 
 MEMORY_TYPES = (
   "decision",

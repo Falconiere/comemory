@@ -1,11 +1,11 @@
-"""Tests for qwick_rag.cli — Typer CLI commands."""
+"""Tests for qwick_memory.cli — Typer CLI commands."""
 
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
-from qwick_rag.cli import app
+from qwick_memory.cli import app
 
 runner = CliRunner()
 

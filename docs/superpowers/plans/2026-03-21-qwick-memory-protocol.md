@@ -16,9 +16,9 @@
 
 | File | Action | Responsibility |
 |------|--------|---------------|
-| `src/qwick_rag/memory.py` | Modify | Add `"session-summary"` to `MEMORY_TYPES` and `MemoryType` |
-| `src/qwick_rag/server.py` | Modify | Rename tools, add instructions, add `qwick_memory_session_summary`, enhance `qwick_memory_context` |
-| `src/qwick_rag/cli.py` | Modify | Add `context` subcommand |
+| `src/qwick_memory/memory.py` | Modify | Add `"session-summary"` to `MEMORY_TYPES` and `MemoryType` |
+| `src/qwick_memory/server.py` | Modify | Rename tools, add instructions, add `qwick_memory_session_summary`, enhance `qwick_memory_context` |
+| `src/qwick_memory/cli.py` | Modify | Add `context` subcommand |
 | `hooks/hooks.json` | Modify | Add `PreCompact` and `PostCompact` hook entries |
 | `scripts/session-start.sh` | Modify | Add context output after indexing |
 | `scripts/pre-compact.sh` | Create | Best-effort reminder + context snapshot before compaction |
@@ -36,7 +36,7 @@
 ### Task 1: Add `session-summary` Memory Type
 
 **Files:**
-- Modify: `src/qwick_rag/memory.py:14-32`
+- Modify: `src/qwick_memory/memory.py:14-32`
 - Test: `tests/test_memory.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -46,7 +46,7 @@ In `tests/test_memory.py`, add:
 ```python
 def test_session_summary_type_is_valid() -> None:
   """session-summary is a recognized memory type."""
-  from qwick_rag.memory import MEMORY_TYPES
+  from qwick_memory.memory import MEMORY_TYPES
 
   assert "session-summary" in MEMORY_TYPES
 ```
@@ -58,7 +58,7 @@ Expected: FAIL with `AssertionError`
 
 - [ ] **Step 3: Add session-summary to MEMORY_TYPES and MemoryType**
 
-In `src/qwick_rag/memory.py`, update the `MEMORY_TYPES` tuple (line 14) and `MemoryType` literal (line 24):
+In `src/qwick_memory/memory.py`, update the `MEMORY_TYPES` tuple (line 14) and `MemoryType` literal (line 24):
 
 ```python
 MEMORY_TYPES = (
@@ -97,7 +97,7 @@ Expected: All tests pass
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /Users/falconiere/Projects/qwick-memory && git add src/qwick_rag/memory.py tests/test_memory.py && git commit -m "feat: add session-summary memory type"
+cd /Users/falconiere/Projects/qwick-memory && git add src/qwick_memory/memory.py tests/test_memory.py && git commit -m "feat: add session-summary memory type"
 ```
 
 ---
@@ -105,7 +105,7 @@ cd /Users/falconiere/Projects/qwick-memory && git add src/qwick_rag/memory.py te
 ### Task 2: Rename MCP Tools from `rag_*` to `qwick_memory_*`
 
 **Files:**
-- Modify: `src/qwick_rag/server.py:28-261`
+- Modify: `src/qwick_memory/server.py:28-261`
 - Modify: `tests/test_server.py`
 
 - [ ] **Step 1: Update test imports and function names**
@@ -116,7 +116,7 @@ In `tests/test_server.py`, rename all references. Replace the 3 test functions:
 @pytest.mark.asyncio
 async def test_qwick_memory_save(rag_env: str) -> None:
   """qwick_memory_save creates a memory and returns 'Saved' in result."""
-  from qwick_rag.server import qwick_memory_save
+  from qwick_memory.server import qwick_memory_save
 
   result = await qwick_memory_save("MCP server test memory")
   assert "Saved" in result
@@ -125,7 +125,7 @@ async def test_qwick_memory_save(rag_env: str) -> None:
 @pytest.mark.asyncio
 async def test_qwick_memory_search(rag_env: str) -> None:
   """qwick_memory_save then qwick_memory_search finds the saved content."""
-  from qwick_rag.server import qwick_memory_save, qwick_memory_search
+  from qwick_memory.server import qwick_memory_save, qwick_memory_search
 
   await qwick_memory_save("PostgreSQL is great for JSONB queries")
   result = await qwick_memory_search("PostgreSQL")
@@ -135,7 +135,7 @@ async def test_qwick_memory_search(rag_env: str) -> None:
 @pytest.mark.asyncio
 async def test_qwick_memory_index(rag_env: str) -> None:
   """qwick_memory_index on empty dir returns 'Indexed' in result."""
-  from qwick_rag.server import qwick_memory_index
+  from qwick_memory.server import qwick_memory_index
 
   result = await qwick_memory_index()
   assert "Indexed" in result
@@ -148,7 +148,7 @@ Expected: FAIL with `ImportError` (old function names don't exist yet in new for
 
 - [ ] **Step 3: Rename all 6 tool functions in server.py**
 
-In `src/qwick_rag/server.py`, rename:
+In `src/qwick_memory/server.py`, rename:
 - `rag_save` → `qwick_memory_save`
 - `rag_search` → `qwick_memory_search`
 - `rag_list` → `qwick_memory_list`
@@ -171,7 +171,7 @@ Expected: All tests pass
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /Users/falconiere/Projects/qwick-memory && git add src/qwick_rag/server.py tests/test_server.py && git commit -m "refactor: rename MCP tools from rag_* to qwick_memory_*"
+cd /Users/falconiere/Projects/qwick-memory && git add src/qwick_memory/server.py tests/test_server.py && git commit -m "refactor: rename MCP tools from rag_* to qwick_memory_*"
 ```
 
 ---
@@ -179,11 +179,11 @@ cd /Users/falconiere/Projects/qwick-memory && git add src/qwick_rag/server.py te
 ### Task 3: Add MCP Server Protocol Instructions
 
 **Files:**
-- Modify: `src/qwick_rag/server.py:25`
+- Modify: `src/qwick_memory/server.py:25`
 
 - [ ] **Step 1: Add instructions constant and pass to FastMCP**
 
-In `src/qwick_rag/server.py`, add the protocol text as a constant before the `mcp = FastMCP(...)` line, then pass it:
+In `src/qwick_memory/server.py`, add the protocol text as a constant before the `mcp = FastMCP(...)` line, then pass it:
 
 ```python
 PROTOCOL = """\
@@ -243,7 +243,7 @@ Expected: All tests pass (instructions don't affect tool behavior)
 - [ ] **Step 3: Commit**
 
 ```bash
-cd /Users/falconiere/Projects/qwick-memory && git add src/qwick_rag/server.py && git commit -m "feat: add qwick memory protocol instructions to MCP server"
+cd /Users/falconiere/Projects/qwick-memory && git add src/qwick_memory/server.py && git commit -m "feat: add qwick memory protocol instructions to MCP server"
 ```
 
 ---
@@ -251,7 +251,7 @@ cd /Users/falconiere/Projects/qwick-memory && git add src/qwick_rag/server.py &&
 ### Task 4: Add `qwick_memory_session_summary` MCP Tool
 
 **Files:**
-- Modify: `src/qwick_rag/server.py`
+- Modify: `src/qwick_memory/server.py`
 - Test: `tests/test_server.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -262,7 +262,7 @@ Add to `tests/test_server.py`:
 @pytest.mark.asyncio
 async def test_qwick_memory_session_summary(rag_env: str) -> None:
   """qwick_memory_session_summary saves a structured summary."""
-  from qwick_rag.server import qwick_memory_session_summary
+  from qwick_memory.server import qwick_memory_session_summary
 
   result = await qwick_memory_session_summary(
     goal="Implement memory protocol",
@@ -277,7 +277,7 @@ async def test_qwick_memory_session_summary(rag_env: str) -> None:
 @pytest.mark.asyncio
 async def test_qwick_memory_session_summary_empty_goal(rag_env: str) -> None:
   """qwick_memory_session_summary rejects empty goal."""
-  from qwick_rag.server import qwick_memory_session_summary
+  from qwick_memory.server import qwick_memory_session_summary
 
   result = await qwick_memory_session_summary(
     goal="",
@@ -292,7 +292,7 @@ async def test_qwick_memory_session_summary_empty_goal(rag_env: str) -> None:
 @pytest.mark.asyncio
 async def test_qwick_memory_session_summary_rotation(rag_env: str) -> None:
   """qwick_memory_session_summary keeps only 3 most recent summaries."""
-  from qwick_rag.server import qwick_memory_session_summary
+  from qwick_memory.server import qwick_memory_session_summary
 
   import time
 
@@ -315,7 +315,7 @@ async def test_qwick_memory_session_summary_rotation(rag_env: str) -> None:
   memories_dir = Path(rag_env) / "memories"
   all_files = list(memories_dir.rglob("*.md"))
   # Parse and count session-summary type
-  from qwick_rag.memory import parse_memory
+  from qwick_memory.memory import parse_memory
 
   summaries = [f for f in all_files if parse_memory(f).type == "session-summary"]
   assert len(summaries) == 3
@@ -328,7 +328,7 @@ Expected: FAIL with `ImportError`
 
 - [ ] **Step 3: Implement the tool**
 
-Add to `src/qwick_rag/server.py`, before the `main()` function:
+Add to `src/qwick_memory/server.py`, before the `main()` function:
 
 ```python
 @mcp.tool()
@@ -452,7 +452,7 @@ Expected: All tests pass
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /Users/falconiere/Projects/qwick-memory && git add src/qwick_rag/server.py tests/test_server.py && git commit -m "feat: add qwick_memory_session_summary tool with rotation"
+cd /Users/falconiere/Projects/qwick-memory && git add src/qwick_memory/server.py tests/test_server.py && git commit -m "feat: add qwick_memory_session_summary tool with rotation"
 ```
 
 ---
@@ -460,7 +460,7 @@ cd /Users/falconiere/Projects/qwick-memory && git add src/qwick_rag/server.py te
 ### Task 5: Enhance `qwick_memory_context` with Structured Output
 
 **Files:**
-- Modify: `src/qwick_rag/server.py` (the `qwick_memory_context` function)
+- Modify: `src/qwick_memory/server.py` (the `qwick_memory_context` function)
 - Test: `tests/test_server.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -471,7 +471,7 @@ Add to `tests/test_server.py`:
 @pytest.mark.asyncio
 async def test_qwick_memory_context_shows_summary_first(rag_env: str) -> None:
   """qwick_memory_context shows latest session summary before other memories."""
-  from qwick_rag.server import qwick_memory_context, qwick_memory_save, qwick_memory_session_summary
+  from qwick_memory.server import qwick_memory_context, qwick_memory_save, qwick_memory_session_summary
 
   await qwick_memory_save("Regular memory about PostgreSQL", type="decision", tags="db")
   await qwick_memory_session_summary(
@@ -494,7 +494,7 @@ async def test_qwick_memory_context_shows_summary_first(rag_env: str) -> None:
 @pytest.mark.asyncio
 async def test_qwick_memory_context_empty(rag_env: str) -> None:
   """qwick_memory_context on empty repo returns 'No memories found'."""
-  from qwick_rag.server import qwick_memory_context
+  from qwick_memory.server import qwick_memory_context
 
   result = await qwick_memory_context()
   assert "No memories found" in result
@@ -507,7 +507,7 @@ Expected: FAIL (current implementation doesn't have "Last Session" / "Recent Mem
 
 - [ ] **Step 3: Rewrite `qwick_memory_context` with structured output**
 
-Replace the `qwick_memory_context` function in `src/qwick_rag/server.py`:
+Replace the `qwick_memory_context` function in `src/qwick_memory/server.py`:
 
 ```python
 @mcp.tool()
@@ -582,7 +582,7 @@ Expected: All tests pass
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /Users/falconiere/Projects/qwick-memory && git add src/qwick_rag/server.py tests/test_server.py && git commit -m "feat: enhance qwick_memory_context with structured summary-first output"
+cd /Users/falconiere/Projects/qwick-memory && git add src/qwick_memory/server.py tests/test_server.py && git commit -m "feat: enhance qwick_memory_context with structured summary-first output"
 ```
 
 ---
@@ -590,7 +590,7 @@ cd /Users/falconiere/Projects/qwick-memory && git add src/qwick_rag/server.py te
 ### Task 6: Add CLI `context` Command
 
 **Files:**
-- Modify: `src/qwick_rag/cli.py`
+- Modify: `src/qwick_memory/cli.py`
 - Test: `tests/test_cli.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -634,7 +634,7 @@ Expected: FAIL (no `context` command yet)
 
 - [ ] **Step 3: Implement the `context` command**
 
-Add to `src/qwick_rag/cli.py`, after the `index` command and before `doctor`:
+Add to `src/qwick_memory/cli.py`, after the `index` command and before `doctor`:
 
 ```python
 @app.command()
@@ -704,7 +704,7 @@ Expected: All tests pass
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /Users/falconiere/Projects/qwick-memory && git add src/qwick_rag/cli.py tests/test_cli.py && git commit -m "feat: add CLI context command for memory context restoration"
+cd /Users/falconiere/Projects/qwick-memory && git add src/qwick_memory/cli.py tests/test_cli.py && git commit -m "feat: add CLI context command for memory context restoration"
 ```
 
 ---
@@ -769,13 +769,13 @@ cd "$PLUGIN_ROOT"
 
 # Auto-index
 if [ -d "memories" ]; then
-  uv run python -m qwick_rag index 2>/dev/null || true
+  uv run python -m qwick_memory index 2>/dev/null || true
 fi
 
 # Output context for Claude
 echo "## Qwick Memory — Session Context"
 echo ""
-uv run python -m qwick_rag context 2>/dev/null || echo "No prior context found."
+uv run python -m qwick_memory context 2>/dev/null || echo "No prior context found."
 ```
 
 - [ ] **Step 3: Create `scripts/pre-compact.sh`**
@@ -794,7 +794,7 @@ echo "Context compaction is about to happen."
 echo "If you haven't already, call qwick_memory_session_summary now."
 echo ""
 echo "Current memory state:"
-uv run python -m qwick_rag context --limit 5 2>/dev/null || echo "No context available."
+uv run python -m qwick_memory context --limit 5 2>/dev/null || echo "No context available."
 ```
 
 - [ ] **Step 4: Create `scripts/post-compact.sh`**
@@ -811,7 +811,7 @@ echo "## Qwick Memory — Context Restored After Compaction"
 echo ""
 echo "Context was just compacted. Here are your recent memories:"
 echo ""
-uv run python -m qwick_rag context 2>/dev/null || echo "No prior context found."
+uv run python -m qwick_memory context 2>/dev/null || echo "No prior context found."
 ```
 
 - [ ] **Step 5: Make new scripts executable**
@@ -995,5 +995,5 @@ Expected: All scripts have `+x` permission
 
 - [ ] **Step 6: Manual smoke test — start MCP server**
 
-Run: `cd /Users/falconiere/Projects/qwick-memory && echo '{}' | uv run python -m qwick_rag.server 2>&1 | head -5`
+Run: `cd /Users/falconiere/Projects/qwick-memory && echo '{}' | uv run python -m qwick_memory.server 2>&1 | head -5`
 Expected: Server starts without errors (may output JSON-RPC initialization)

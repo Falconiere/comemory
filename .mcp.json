@@ -2,7 +2,7 @@
   "mcpServers": {
     "qwick-memory": {
       "command": "uv",
-      "args": ["run", "python", "-m", "qwick_rag.server"]
+      "args": ["run", "python", "-m", "qwick_memory.server"]
     }
   }
 }

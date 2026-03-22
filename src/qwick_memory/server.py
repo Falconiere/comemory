@@ -9,9 +9,9 @@ from pathlib import Path  # noqa: TC003 — used at runtime in _rotate_session_s
 
 from mcp.server.fastmcp import FastMCP
 
-from qwick_rag.config import get_author, get_index, get_memories_dir, get_rag_dir, get_repo
-from qwick_rag.git_utils import git_sync
-from qwick_rag.memory import (
+from qwick_memory.config import get_author, get_index, get_memories_dir, get_rag_dir, get_repo
+from qwick_memory.git_utils import git_sync
+from qwick_memory.memory import (
   MEMORY_TYPES,
   Memory,
   generate_id,
@@ -19,7 +19,7 @@ from qwick_rag.memory import (
   scan_memories,
   write_memory,
 )
-from qwick_rag.search import search_memories
+from qwick_memory.search import search_memories
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 logger = logging.getLogger(__name__)

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from qwick_rag.cli import app
+from qwick_memory.cli import app
 
 runner = CliRunner()
 

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-  from qwick_rag.index import MemoryIndex
+  from qwick_memory.index import MemoryIndex
 
 logger = logging.getLogger(__name__)
 

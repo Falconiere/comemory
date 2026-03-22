@@ -50,7 +50,7 @@ Install as a Claude Code plugin for LLM-powered memory:
 claude plugin add --marketplace SidegigLLC/qwick-memory
 
 # Or install directly from the repo
-claude mcp add qwick-memory -- uv run --directory /path/to/qwick-memory python -m qwick_rag.server
+claude mcp add qwick-memory -- uv run --directory /path/to/qwick-memory python -m qwick_memory.server
 ```
 
 This gives Claude Code 7 MCP tools: `qwick_memory_save`, `qwick_memory_search`, `qwick_memory_list`, `qwick_memory_delete`, `qwick_memory_index`, `qwick_memory_context`, `qwick_memory_session_summary`.
@@ -72,7 +72,7 @@ This gives Claude Code 7 MCP tools: `qwick_memory_save`, `qwick_memory_search`, 
 ```
 qwick-memory/
 ├── .vectordb/             # Local LanceDB index (gitignored)
-├── src/qwick_rag/         # Python package
+├── src/qwick_memory/         # Python package
 │   ├── cli.py             # Typer CLI
 │   ├── server.py          # MCP server (FastMCP)
 │   ├── memory.py          # Memory model + frontmatter I/O

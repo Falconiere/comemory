@@ -196,13 +196,13 @@ cd "$PLUGIN_ROOT"
 
 # Auto-index
 if [ -d "memories" ]; then
-  uv run python -m qwick_rag index 2>/dev/null || true
+  uv run python -m qwick_memory index 2>/dev/null || true
 fi
 
 # Output context for Claude
 echo "## Qwick Memory — Session Context"
 echo ""
-uv run python -m qwick_rag context 2>/dev/null || echo "No prior context found."
+uv run python -m qwick_memory context 2>/dev/null || echo "No prior context found."
 ```
 
 ### scripts/pre-compact.sh (new)
@@ -223,7 +223,7 @@ echo "Context compaction is about to happen."
 echo "If you haven't already, call qwick_memory_session_summary now."
 echo ""
 echo "Current memory state:"
-uv run python -m qwick_rag context --limit 5 2>/dev/null || echo "No context available."
+uv run python -m qwick_memory context --limit 5 2>/dev/null || echo "No context available."
 ```
 
 ### scripts/post-compact.sh (new)
@@ -241,7 +241,7 @@ echo "## Qwick Memory — Context Restored After Compaction"
 echo ""
 echo "Context was just compacted. Here are your recent memories:"
 echo ""
-uv run python -m qwick_rag context 2>/dev/null || echo "No prior context found."
+uv run python -m qwick_memory context 2>/dev/null || echo "No prior context found."
 ```
 
 ## CLI Enhancement: `context` command

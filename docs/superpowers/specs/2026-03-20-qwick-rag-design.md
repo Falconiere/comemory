@@ -166,7 +166,7 @@ qwick-memory/
 │   └── {repo}/
 │       └── {id}.md
 ├── src/
-│   └── qwick_rag/
+│   └── qwick_memory/
 │       ├── __init__.py
 │       ├── __main__.py          # CLI entry point (typer)
 │       ├── server.py            # MCP server (FastMCP)
@@ -203,7 +203,7 @@ qwick-memory/
   "mcpServers": {
     "qwick-memory": {
       "command": "uv",
-      "args": ["run", "--directory", "${CLAUDE_PLUGIN_ROOT}", "python", "-m", "qwick_rag.server"]
+      "args": ["run", "--directory", "${CLAUDE_PLUGIN_ROOT}", "python", "-m", "qwick_memory.server"]
     }
   }
 }
