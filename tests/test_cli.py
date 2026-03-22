@@ -101,3 +101,5 @@ def test_context_limit(tmp_path: Path) -> None:
 
   result = runner.invoke(app, ["context", "--limit", "2"])
   assert result.exit_code == 0, result.output
+  memory_lines = [ln for ln in result.output.splitlines() if ln.startswith("- [")]
+  assert len(memory_lines) == 2, f"Expected 2 memories, got {len(memory_lines)}"

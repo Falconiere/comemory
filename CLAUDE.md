@@ -37,7 +37,7 @@ qwick-rag doctor               # Health check
 
 | Module | Responsibility |
 |--------|---------------|
-| `cli.py` | Typer CLI commands (save, search, list, delete, index, doctor) |
+| `cli.py` | Typer CLI commands (save, search, list, delete, index, context, doctor) |
 | `server.py` | MCP server with 7 tools for Claude Code + memory protocol |
 | `memory.py` | Memory dataclass, markdown I/O, ID generation (SHA-256) |
 | `index.py` | LanceDB: embed, upsert, delete, incremental rebuild, FTS index |
@@ -60,7 +60,7 @@ qwick-rag doctor               # Health check
 ---
 id: a1b2c3d4e5f6       # SHA-256 of content, 12 hex chars
 repo: qwick-backend     # Auto-detected from git remote
-type: decision          # decision|bug|convention|discovery|pattern|preference|note
+type: decision          # decision|bug|convention|discovery|pattern|preference|note|session-summary
 tags: [database, postgres]
 author: falconiere      # Auto-detected from git config
 created: 2026-03-20T14:30:00+00:00
