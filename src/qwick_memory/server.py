@@ -351,13 +351,13 @@ async def qwick_memory_context(repo: str | None = None, limit: int = 20) -> str:
   return "\n".join(lines)
 
 
-def _rotate_session_summaries(repo_dir: Path, max_keep: int = 3) -> None:
-  """Delete old session summaries, keeping only the most recent `max_keep`."""
+def _rotate_session_summaries(memories_dir: Path, repo: str, max_keep: int = 3) -> None:
+  """Delete old session summaries for a repo, keeping only the most recent `max_keep`."""
   summaries: list[tuple[datetime, Path]] = []
-  for fp in repo_dir.glob("*.md"):
+  for fp in memories_dir.glob("*.md"):
     try:
       mem = parse_memory(fp)
-      if mem.type == "session-summary":
+      if mem.type == "session-summary" and mem.repo == repo:
         summaries.append((mem.created, fp))
     except Exception:
       continue
@@ -420,10 +420,9 @@ async def qwick_memory_session_summary(
   author = get_author()
 
   memories_dir = get_memories_dir()
-  repo_dir = memories_dir / repo
-  repo_dir.mkdir(parents=True, exist_ok=True)
+  memories_dir.mkdir(parents=True, exist_ok=True)
 
-  final_path = repo_dir / f"{memory_id}.md"
+  final_path = memories_dir / f"{memory_id}.md"
 
   if final_path.exists():
     return (
@@ -441,7 +440,7 @@ async def qwick_memory_session_summary(
     content=content,
   )
 
-  tmp_path = repo_dir / f".{memory_id}.tmp"
+  tmp_path = memories_dir / f".{memory_id}.tmp"
   try:
     write_memory(memory, tmp_path)
     idx = get_index()
@@ -454,7 +453,7 @@ async def qwick_memory_session_summary(
 
   # Rotation: keep only 3 most recent session summaries
   try:
-    _rotate_session_summaries(repo_dir, max_keep=3)
+    _rotate_session_summaries(memories_dir, repo, max_keep=3)
   except Exception:
     logger.warning("Session summary rotation failed.")
 

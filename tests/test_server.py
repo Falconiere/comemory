@@ -125,6 +125,27 @@ async def test_qwick_memory_session_summary_rotation(rag_env: str) -> None:
 
 
 @pytest.mark.asyncio
+async def test_session_summary_creates_flat_file(rag_env: str) -> None:
+  """qwick_memory_session_summary creates file directly in memories/."""
+  from pathlib import Path
+
+  from qwick_memory.server import qwick_memory_session_summary
+
+  await qwick_memory_session_summary(
+    goal="Flat test",
+    discoveries="None",
+    accomplished="Testing",
+    next_steps="Verify",
+    relevant_files="test.py",
+  )
+  memories_dir = Path(rag_env) / "memories"
+  md_files = list(memories_dir.glob("*.md"))
+  assert len(md_files) == 1, f"Expected 1 file in memories/, got {md_files}"
+  subdirs = [p for p in memories_dir.iterdir() if p.is_dir()]
+  assert subdirs == [], f"Unexpected subdirectories: {subdirs}"
+
+
+@pytest.mark.asyncio
 async def test_qwick_memory_context_shows_summary_first(rag_env: str) -> None:
   """qwick_memory_context shows latest session summary before other memories."""
   from qwick_memory.server import (
