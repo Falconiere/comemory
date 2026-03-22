@@ -100,6 +100,22 @@ claude plugin install qwick-memory
 
 The `marketplace.json` requires `owner` (object with `name`), and each plugin entry requires `name`, `description`, and `source`. See `.claude-plugin/marketplace.json` for the current schema.
 
+## Scripts
+
+All scripts in `scripts/` are **self-locating** — they resolve the project root from their own physical location via `dirname`, then use `uv run --directory` to find the package. This means they work from any working directory (critical for the plugin system, which may launch from a different project).
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/mcp-server.sh` | MCP server launcher (used by `.mcp.json`) |
+| `scripts/session-start.sh` | Auto-index + load context (SessionStart hook) |
+| `scripts/pre-compact.sh` | Reminder to save session summary (PreCompact hook) |
+| `scripts/post-compact.sh` | Restore context after compaction (PostCompact hook) |
+| `scripts/e2e-test.sh` | Real CLI end-to-end test (28 checks) |
+
+Entry points in `pyproject.toml`:
+- `qwick-memory` — CLI (`qwick_memory.cli:app`)
+- `qwick-memory-server` — MCP server (`qwick_memory.server:main`)
+
 ## Memory Protocol
 
 qwick-memory includes an automatic memory protocol injected via MCP server instructions. When active, Claude proactively saves decisions, bugs, conventions, discoveries, and session summaries. The protocol is defined in `server.py` as the `PROTOCOL` constant.

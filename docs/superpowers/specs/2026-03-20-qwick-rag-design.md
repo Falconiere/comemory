@@ -16,7 +16,7 @@ Memories are plain markdown files committed to git (the source of truth). The ve
 │              qwick-memory (CLI + MCP)               │
 │  (Claude Code plugin + pip-installable CLI)      │
 ├─────────────────────────────────────────────────┤
-│  MCP Tools: rag_save, rag_search, rag_list, ... │
+│  MCP Tools: qwick_memory_save, _search, _list, ...│
 │  CLI: qwick-memory save, search, list, index, ...  │
 ├──────────┬──────────────────┬───────────────────┤
 │ Embedding│   Memory Manager │   Git Utils       │
@@ -140,12 +140,13 @@ qwick-memory doctor
 
 | Tool | Description |
 |------|-------------|
-| `rag_save` | Save a memory (content, type, tags). Auto-detects repo + author. |
-| `rag_search` | Semantic + keyword hybrid search with optional repo/type/tag filters. |
-| `rag_list` | List memories with filters. |
-| `rag_delete` | Delete a memory by ID. |
-| `rag_index` | Rebuild vector index from markdown files. |
-| `rag_context` | Get recent/relevant memories for the current repo (top 20 by recency, with semantic boost). Useful for session start context loading. |
+| `qwick_memory_save` | Save a memory (content, type, tags). Auto-detects repo + author. |
+| `qwick_memory_search` | Semantic + keyword hybrid search with optional repo/type/tag filters. |
+| `qwick_memory_list` | List memories with filters. |
+| `qwick_memory_delete` | Delete a memory by ID. |
+| `qwick_memory_index` | Rebuild vector index from markdown files. |
+| `qwick_memory_context` | Get recent memories for the current repo (summary first, then recent). |
+| `qwick_memory_session_summary` | Save structured session summary (with rotation, keeps 3). |
 
 ### Plugin Structure
 
@@ -158,7 +159,10 @@ qwick-memory/
 ├── hooks/
 │   └── hooks.json               # SessionStart lifecycle hook
 ├── scripts/
-│   └── session-start.sh         # Auto-index on session start
+│   ├── mcp-server.sh            # Self-locating MCP server launcher
+│   ├── session-start.sh         # Auto-index + context on session start
+│   ├── pre-compact.sh           # Reminder before context compaction
+│   └── post-compact.sh          # Restore context after compaction
 ├── skills/
 │   └── memory/
 │       └── SKILL.md             # Memory protocol for Claude
@@ -202,18 +206,19 @@ qwick-memory/
 {
   "mcpServers": {
     "qwick-memory": {
-      "command": "uv",
-      "args": ["run", "--directory", "${CLAUDE_PLUGIN_ROOT}", "python", "-m", "qwick_memory.server"]
+      "command": "${CLAUDE_PLUGIN_ROOT:-.}/scripts/mcp-server.sh"
     }
   }
 }
 ```
 
+The `mcp-server.sh` script is self-locating — it resolves the project root from its own filesystem location via `dirname`, then uses `uv run --directory` to run the server. This works regardless of the caller's working directory.
+
 ### Distribution
 
 ```bash
-/plugin marketplace add SidegigLLC/qwick-memory
-/plugin install qwick-memory@qwick-memory
+claude plugin marketplace add SidegigLLC/qwick-memory
+claude plugin install qwick-memory
 ```
 
 ## Indexing & Search Pipeline
@@ -281,7 +286,7 @@ Each error carries: error code, human-readable message, suggested fix, and conte
 
 ### Atomic Save Guarantee
 
-`rag_save` is all-or-nothing:
+`qwick_memory_save` is all-or-nothing:
 
 1. Write markdown to temp file (`memories/{repo}/.tmp_{id}.md`)
 2. Embed content
@@ -327,12 +332,11 @@ If the process crashes between step 3 and 4, `qwick-memory index` detects the or
 ```
 Developer A (in qwick-backend repo):
   qwick-memory save --type decision "We use Redis for session caching"
-  cd ~/Projects/qwick-memory && git add . && git commit -m "Add Redis caching decision" && git push
+  # Auto-syncs: git add + commit + push to origin/memories (best-effort)
 
 Developer B:
-  cd ~/Projects/qwick-memory && git pull
-  qwick-memory index   # rebuilds vector index with new memories
+  # Next session-start hook auto-pulls and re-indexes
   qwick-memory search "session caching"   # finds Developer A's memory
 ```
 
-Git handles all sharing and merging. Each memory is its own file, so conflicts are near-impossible with append-only usage. The vector index is gitignored and rebuilt locally.
+Git handles all sharing and merging. Memories auto-sync to an orphan `memories` branch on the same remote. Each memory is its own file, so conflicts are near-impossible with append-only usage. The vector index is gitignored and rebuilt locally.

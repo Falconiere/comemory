@@ -46,11 +46,12 @@ Team shares via git
 Install as a Claude Code plugin for LLM-powered memory:
 
 ```bash
-# Add the marketplace
-claude plugin add --marketplace SidegigLLC/qwick-memory
+# Via marketplace
+claude plugin marketplace add SidegigLLC/qwick-memory
+claude plugin install qwick-memory
 
-# Or install directly from the repo
-claude mcp add qwick-memory -- uv run --directory /path/to/qwick-memory python -m qwick_memory.server
+# Or install manually (add the MCP server directly)
+claude mcp add qwick-memory -- /path/to/qwick-memory/scripts/mcp-server.sh
 ```
 
 This gives Claude Code 7 MCP tools: `qwick_memory_save`, `qwick_memory_search`, `qwick_memory_list`, `qwick_memory_delete`, `qwick_memory_index`, `qwick_memory_context`, `qwick_memory_session_summary`.
@@ -71,8 +72,7 @@ This gives Claude Code 7 MCP tools: `qwick_memory_save`, `qwick_memory_search`, 
 
 ```
 qwick-memory/
-├── .vectordb/             # Local LanceDB index (gitignored)
-├── src/qwick_memory/         # Python package
+├── src/qwick_memory/      # Python package
 │   ├── cli.py             # Typer CLI
 │   ├── server.py          # MCP server (FastMCP)
 │   ├── memory.py          # Memory model + frontmatter I/O
@@ -81,9 +81,16 @@ qwick-memory/
 │   ├── config.py          # Shared path/context helpers
 │   ├── git_utils.py       # Git auto-detection + sync
 │   └── errors.py          # Error types
+├── scripts/               # Shell scripts (self-locating, work from any CWD)
+│   ├── mcp-server.sh      # MCP server launcher
+│   ├── session-start.sh   # Auto-index + context on session start
+│   ├── pre-compact.sh     # Reminder before context compaction
+│   ├── post-compact.sh    # Restore context after compaction
+│   └── e2e-test.sh        # End-to-end CLI test (28 checks)
+├── hooks/hooks.json       # Claude Code lifecycle hooks
 ├── tests/                 # Test suite (49 tests)
 ├── .claude-plugin/        # Claude Code plugin manifest
-├── skills/memory/         # Memory protocol for Claude
+├── skills/memory/         # Memory protocol skill for Claude
 └── docs/superpowers/      # Design spec and implementation plan
 ```
 

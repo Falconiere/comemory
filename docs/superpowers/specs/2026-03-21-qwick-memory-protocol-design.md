@@ -150,35 +150,41 @@ This ensures context restoration after compaction includes both session state an
 
 ```json
 {
-  "hooks": [
-    {
-      "event": "SessionStart",
-      "commands": [
-        {
-          "command": "${CLAUDE_PLUGIN_ROOT}/scripts/session-start.sh",
-          "timeout": 30000
-        }
-      ]
-    },
-    {
-      "event": "PreCompact",
-      "commands": [
-        {
-          "command": "${CLAUDE_PLUGIN_ROOT}/scripts/pre-compact.sh",
-          "timeout": 60000
-        }
-      ]
-    },
-    {
-      "event": "PostCompact",
-      "commands": [
-        {
-          "command": "${CLAUDE_PLUGIN_ROOT}/scripts/post-compact.sh",
-          "timeout": 30000
-        }
-      ]
-    }
-  ]
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/session-start.sh\"",
+            "async": false
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/pre-compact.sh\"",
+            "async": false
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/post-compact.sh\"",
+            "async": false
+          }
+        ]
+      }
+    ]
+  }
 }
 ```
 
@@ -187,22 +193,25 @@ This ensures context restoration after compaction includes both session state an
 1. Auto-index (existing behavior)
 2. Output recent context via `qwick-memory context` CLI — this text appears in Claude's context as the hook result
 
+All scripts are **self-locating** — they resolve the project root from their own physical location via `dirname`, then use `uv run --directory` to find the package. This works from any working directory.
+
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
 
-PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
-cd "$PLUGIN_ROOT"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+UV="uv run --directory $PROJECT_ROOT"
 
 # Auto-index
-if [ -d "memories" ]; then
-  uv run python -m qwick_memory index 2>/dev/null || true
+if [ -d "$PROJECT_ROOT/memories" ]; then
+  $UV python -m qwick_memory index 2>/dev/null || true
 fi
 
 # Output context for Claude
 echo "## Qwick Memory — Session Context"
 echo ""
-uv run python -m qwick_memory context 2>/dev/null || echo "No prior context found."
+$UV python -m qwick_memory context 2>/dev/null || echo "No prior context found."
 ```
 
 ### scripts/pre-compact.sh (new)
@@ -213,17 +222,17 @@ A best-effort reminder before compaction. The shell hook outputs a message that 
 #!/usr/bin/env bash
 set -euo pipefail
 
-PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
-cd "$PLUGIN_ROOT"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+UV="uv run --directory $PROJECT_ROOT"
 
-# Save current context snapshot as a lightweight backup
 echo "## Qwick Memory — Pre-Compaction Notice"
 echo ""
 echo "Context compaction is about to happen."
 echo "If you haven't already, call qwick_memory_session_summary now."
 echo ""
 echo "Current memory state:"
-uv run python -m qwick_memory context --limit 5 2>/dev/null || echo "No context available."
+$UV python -m qwick_memory context --limit 5 2>/dev/null || echo "No context available."
 ```
 
 ### scripts/post-compact.sh (new)
@@ -234,14 +243,15 @@ Restores context after compaction by outputting recent memories.
 #!/usr/bin/env bash
 set -euo pipefail
 
-PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
-cd "$PLUGIN_ROOT"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+UV="uv run --directory $PROJECT_ROOT"
 
 echo "## Qwick Memory — Context Restored After Compaction"
 echo ""
 echo "Context was just compacted. Here are your recent memories:"
 echo ""
-uv run python -m qwick_memory context 2>/dev/null || echo "No prior context found."
+$UV python -m qwick_memory context 2>/dev/null || echo "No prior context found."
 ```
 
 ## CLI Enhancement: `context` command
