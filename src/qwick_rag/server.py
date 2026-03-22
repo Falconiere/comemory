@@ -260,14 +260,14 @@ async def qwick_memory_index(force: bool = False) -> str:
 
 @mcp.tool()
 async def qwick_memory_context(repo: str | None = None, limit: int = 20) -> str:
-  """Get recent memories for the current repo, sorted by creation date descending.
+  """Get recent memories for the current repo, with latest session summary first.
 
   Args:
     repo: Repository name (defaults to auto-detected repo).
-    limit: Maximum number of memories to return.
+    limit: Maximum number of non-summary memories to return.
 
   Returns:
-    Formatted text with recent memories.
+    Formatted text with session summary (if any) followed by recent memories.
   """
   target_repo = repo or get_repo()
   memories_dir = get_memories_dir()
@@ -278,27 +278,49 @@ async def qwick_memory_context(repo: str | None = None, limit: int = 20) -> str:
   if not md_files:
     return "No memories found."
 
-  memories = []
+  summaries: list[Memory] = []
+  regular: list[Memory] = []
   for fp in md_files:
     try:
       mem = parse_memory(fp)
     except Exception:
       continue
-    if mem.repo == target_repo:
-      memories.append(mem)
+    if mem.repo != target_repo:
+      continue
+    if mem.type == "session-summary":
+      summaries.append(mem)
+    else:
+      regular.append(mem)
 
-  if not memories:
+  if not summaries and not regular:
     return f"No memories found for repo: {target_repo}"
 
-  # Sort by created date descending
-  memories.sort(key=lambda m: m.created, reverse=True)
-  memories = memories[:limit]
+  lines: list[str] = []
 
-  lines = []
-  for mem in memories:
-    preview = mem.content[:80] + "..." if len(mem.content) > 80 else mem.content
-    lines.append(f"[{mem.created.isoformat()}] ({mem.type}) {preview}")
-  return f"{len(lines)} memories for {target_repo}:\n" + "\n".join(lines)
+  # Section 1: Latest session summary
+  if summaries:
+    summaries.sort(key=lambda m: m.created, reverse=True)
+    latest = summaries[0]
+    lines.append("### Last Session")
+    lines.append(latest.content)
+    lines.append("")
+
+  # Section 2: Recent non-summary memories
+  if regular:
+    regular.sort(key=lambda m: m.created, reverse=True)
+    regular = regular[:limit]
+    lines.append("### Recent Memories")
+    for mem in regular:
+      preview = (
+        mem.content[:120] + "..."
+        if len(mem.content) > 120
+        else mem.content
+      )
+      lines.append(
+        f"- [{mem.created.isoformat()}] ({mem.type}) {preview}"
+      )
+
+  return "\n".join(lines)
 
 
 def _rotate_session_summaries(

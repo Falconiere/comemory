@@ -107,3 +107,35 @@ async def test_qwick_memory_session_summary_rotation(rag_env: str) -> None:
 
   summaries = [f for f in all_files if parse_memory(f).type == "session-summary"]
   assert len(summaries) == 3
+
+
+@pytest.mark.asyncio
+async def test_qwick_memory_context_shows_summary_first(rag_env: str) -> None:
+  """qwick_memory_context shows latest session summary before other memories."""
+  from qwick_rag.server import qwick_memory_context, qwick_memory_save, qwick_memory_session_summary
+
+  await qwick_memory_save("Regular memory about PostgreSQL", type="decision", tags="db")
+  await qwick_memory_session_summary(
+    goal="Test context ordering",
+    discoveries="None",
+    accomplished="Saved a memory",
+    next_steps="Verify ordering",
+    relevant_files="test_server.py",
+  )
+
+  result = await qwick_memory_context()
+  # Session summary should appear before regular memories
+  summary_pos = result.find("Last Session")
+  memories_pos = result.find("Recent Memories")
+  assert summary_pos != -1, "Should contain 'Last Session' section"
+  assert memories_pos != -1, "Should contain 'Recent Memories' section"
+  assert summary_pos < memories_pos, "Summary should come before regular memories"
+
+
+@pytest.mark.asyncio
+async def test_qwick_memory_context_empty(rag_env: str) -> None:
+  """qwick_memory_context on empty repo returns 'No memories found'."""
+  from qwick_rag.server import qwick_memory_context
+
+  result = await qwick_memory_context()
+  assert "No memories found" in result
