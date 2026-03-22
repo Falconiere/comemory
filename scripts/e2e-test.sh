@@ -172,7 +172,7 @@ echo ""
 echo -e "${BOLD}5. Deleting a memory${RESET}"
 
 # Grab the ID of the first file
-FIRST_FILE=$(ls "$TEST_DIR/memories/e2e-test-repo/"*.md | head -1)
+FIRST_FILE=$(ls "$TEST_DIR/memories/"*.md | head -1)
 FIRST_ID=$(basename "$FIRST_FILE" .md)
 
 OUT=$($QR delete "$FIRST_ID" 2>&1) || true
