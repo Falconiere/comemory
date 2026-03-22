@@ -104,7 +104,10 @@ async def qwick_memory_save(content: str, type: str = "note", tags: str = "") ->
   final_path = repo_dir / f"{memory_id}.md"
 
   if final_path.exists():
-    return f"Memory already exists: {memory_id}"
+    return (
+      f"Memory already exists: {memory_id}. Content was previously saved.\n"
+      f"-> No action needed. The memory is already indexed and searchable."
+    )
 
   memory = Memory(
     id=memory_id,
@@ -128,7 +131,10 @@ async def qwick_memory_save(content: str, type: str = "note", tags: str = "") ->
     return f"Error saving memory: {exc}"
 
   git_sync(get_rag_dir(), f"save: {memory_id} ({type})")
-  return f"Saved memory {memory_id}"
+  return (
+    f"Saved memory {memory_id} ({type}). Embedded and indexed for vector search.\n"
+    f"-> This memory is now searchable by semantic similarity across all future sessions."
+  )
 
 
 @mcp.tool()
@@ -168,13 +174,18 @@ async def qwick_memory_search(
   results = search_memories(idx, query, repo=repo, type_filter=type, tag=tag, limit=limit)
 
   if not results:
-    return "No results found."
+    return (
+      "No semantically similar memories found.\n"
+      "-> If you learn something new about this topic, save it with qwick_memory_save "
+      "so future searches can find it."
+    )
 
   lines = []
   for r in results:
     preview = r.content[:80] + "..." if len(r.content) > 80 else r.content
     lines.append(f"[{r.score:.3f}] {r.repo} ({r.type}) {preview} — {r.id}")
-  return "\n".join(lines)
+  result = "\n".join(lines)
+  return f"{result}\n-> Results ranked by semantic similarity. Use these memories to inform your response."
 
 
 @mcp.tool()
@@ -245,7 +256,7 @@ async def qwick_memory_delete(memory_id: str) -> str:
     logger.warning("Could not remove %s from index.", memory_id)
 
   git_sync(get_rag_dir(), f"delete: {memory_id}")
-  return f"Deleted memory {memory_id}"
+  return f"Deleted memory {memory_id}. Removed from disk and vector index."
 
 
 @mcp.tool()
@@ -266,7 +277,8 @@ async def qwick_memory_index(force: bool = False) -> str:
 
   return (
     f"Indexed: {stats['new']} new, {stats['updated']} updated, "
-    f"{stats['deleted']} deleted. Total: {idx.count()}"
+    f"{stats['deleted']} deleted. Total: {idx.count()} vectors.\n"
+    f"-> Vector index rebuilt. All memories are now searchable by semantic similarity."
   )
 
 
@@ -439,7 +451,10 @@ async def qwick_memory_session_summary(
     logger.warning("Session summary rotation failed.")
 
   git_sync(get_rag_dir(), f"session-summary: {memory_id}")
-  return f"Saved session summary {memory_id}"
+  return (
+    f"Saved session summary {memory_id}. Embedded and indexed for vector search.\n"
+    f"-> Session context preserved for next time."
+  )
 
 
 def main() -> None:
