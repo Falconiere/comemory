@@ -27,50 +27,35 @@ logger = logging.getLogger(__name__)
 PROTOCOL = """\
 ## Qwick Memory — ACTIVE PROTOCOL
 
-You have qwick-memory tools (qwick_memory_save, qwick_memory_search,
-qwick_memory_context, qwick_memory_session_summary).
-This protocol is MANDATORY and ALWAYS ACTIVE.
+You have qwick-memory tools. This protocol is MANDATORY.
 
-### PROACTIVE SAVE — do NOT wait for user to ask
-Call `qwick_memory_save` IMMEDIATELY after ANY of these:
-- Decision made (architecture, convention, workflow, tool choice)
-- Bug fixed (include root cause)
-- Convention or workflow documented/updated
-- Non-obvious discovery, gotcha, or edge case found
-- Pattern established (naming, structure, approach)
-- User preference or constraint learned
-- Feature implemented with non-obvious approach
-- Artifact created or updated with significant content (Notion, Jira, GitHub, etc.)
+### DECISION TREE — follow on EVERY user message:
 
-**Self-check after EVERY task**: "Did I just make a decision, fix a bug,
-learn something, or establish a convention? If yes → qwick_memory_save NOW."
+**Step 1: Should I SEARCH first?**
+User message contains ANY of these → call `qwick_memory_search` BEFORE responding:
+- Questions: "what", "why", "how", "remember", "recall", "what did we"
+- References: PR, issue, bug, feature, decision, architecture
+- Implicit: user assumes you have context you don't have
+- First message: always search with project/topic keywords
+→ If unsure, SEARCH. Cost of an unnecessary search is near zero.
+  Cost of missing context is a wrong answer.
+→ For "where were we?" or status requests, prefer `qwick_memory_context`.
 
-When saving, choose the right type:
-- `decision` — architecture, convention, workflow, tool choice
-- `bug` — bug fixed, include root cause and fix
-- `convention` — coding standard, workflow rule, naming pattern
-- `discovery` — non-obvious finding, gotcha, edge case
-- `pattern` — recurring approach, structure, design pattern
-- `preference` — user preference, constraint, working style
-- `note` — anything else worth remembering
-- `session-summary` — (used automatically by qwick_memory_session_summary, do not use directly)
+**Step 2: Should I SAVE after?**
+You just did ANY of these → call `qwick_memory_save` IMMEDIATELY:
+- Made a decision (architecture, convention, workflow, tool choice)
+- Fixed a bug (save root cause + fix)
+- Discovered something non-obvious (gotcha, edge case, quirk)
+- Established a pattern or convention
+- Learned a user preference or constraint
+- Created/updated an artifact (PR, doc, config, Jira, Notion)
+→ If unsure, SAVE. A redundant memory is better than a lost insight.
 
-Use descriptive, comma-separated tags for discoverability.
-
-### SEARCH MEMORY when:
-- User asks to recall anything ("remember", "what did we do", "acordate", "que hicimos")
-- Starting work on something that might have been done before
-- User mentions a topic you have no context on
-- User's FIRST message references the project, a feature, or a problem
-  — call `qwick_memory_search` with keywords to check for prior work
-
-### SESSION CLOSE — before saying "done"/"listo":
-Call `qwick_memory_session_summary` with a structured summary:
-- Goal: what the user wanted to accomplish
-- Discoveries: non-obvious things learned
-- Accomplished: what was done
-- Next steps: what remains
-- Relevant files: key files touched or referenced
+**Step 3: Is this session ending?**
+User signals completion → call `qwick_memory_session_summary`:
+- "done", "listo", "thanks", "that's it", "bye"
+- Context compaction imminent
+- Major milestone completed
 """
 
 mcp = FastMCP("qwick-memory", instructions=PROTOCOL)
