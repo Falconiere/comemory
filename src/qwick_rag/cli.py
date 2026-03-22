@@ -311,14 +311,8 @@ def context(
     regular = regular[:limit]
     out.print("### Recent Memories")
     for mem in regular:
-      preview = (
-        mem.content[:120] + "..."
-        if len(mem.content) > 120
-        else mem.content
-      )
-      out.print(
-        f"- [{mem.created.isoformat()}] ({mem.type}) {preview}"
-      )
+      preview = mem.content[:120] + "..." if len(mem.content) > 120 else mem.content
+      out.print(f"- [{mem.created.isoformat()}] ({mem.type}) {preview}")
 
 
 @app.command()

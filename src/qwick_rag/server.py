@@ -311,21 +311,13 @@ async def qwick_memory_context(repo: str | None = None, limit: int = 20) -> str:
     regular = regular[:limit]
     lines.append("### Recent Memories")
     for mem in regular:
-      preview = (
-        mem.content[:120] + "..."
-        if len(mem.content) > 120
-        else mem.content
-      )
-      lines.append(
-        f"- [{mem.created.isoformat()}] ({mem.type}) {preview}"
-      )
+      preview = mem.content[:120] + "..." if len(mem.content) > 120 else mem.content
+      lines.append(f"- [{mem.created.isoformat()}] ({mem.type}) {preview}")
 
   return "\n".join(lines)
 
 
-def _rotate_session_summaries(
-  repo_dir: Path, max_keep: int = 3
-) -> None:
+def _rotate_session_summaries(repo_dir: Path, max_keep: int = 3) -> None:
   """Delete old session summaries, keeping only the most recent `max_keep`."""
   summaries: list[tuple[datetime, Path]] = []
   for fp in repo_dir.glob("*.md"):
