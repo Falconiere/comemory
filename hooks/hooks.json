@@ -8,6 +8,24 @@
           "timeout": 30000
         }
       ]
+    },
+    {
+      "event": "PreCompact",
+      "commands": [
+        {
+          "command": "${CLAUDE_PLUGIN_ROOT}/scripts/pre-compact.sh",
+          "timeout": 60000
+        }
+      ]
+    },
+    {
+      "event": "PostCompact",
+      "commands": [
+        {
+          "command": "${CLAUDE_PLUGIN_ROOT}/scripts/post-compact.sh",
+          "timeout": 30000
+        }
+      ]
     }
   ]
 }
