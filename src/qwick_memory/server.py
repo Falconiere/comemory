@@ -259,7 +259,10 @@ async def qwick_memory_delete(memory_id: str) -> str:
     logger.warning("Could not remove %s from index.", memory_id)
 
   git_sync(get_rag_dir(), f"delete: {memory_id}")
-  return f"Deleted memory {memory_id}. Removed from disk and vector index."
+  return (
+    f"Deleted memory {memory_id}. Removed from disk and vector index.\n"
+    f"-> Memory is no longer searchable."
+  )
 
 
 @mcp.tool()
@@ -424,7 +427,10 @@ async def qwick_memory_session_summary(
   final_path = repo_dir / f"{memory_id}.md"
 
   if final_path.exists():
-    return f"Session summary already exists: {memory_id}"
+    return (
+      f"Session summary already exists: {memory_id}.\n"
+      f"-> No action needed. The summary is already indexed and searchable."
+    )
 
   memory = Memory(
     id=memory_id,
