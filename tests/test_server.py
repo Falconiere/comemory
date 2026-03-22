@@ -47,3 +47,63 @@ async def test_qwick_memory_index(rag_env: str) -> None:
 
   result = await qwick_memory_index()
   assert "Indexed" in result
+
+
+@pytest.mark.asyncio
+async def test_qwick_memory_session_summary(rag_env: str) -> None:
+  """qwick_memory_session_summary saves a structured summary."""
+  from qwick_rag.server import qwick_memory_session_summary
+
+  result = await qwick_memory_session_summary(
+    goal="Implement memory protocol",
+    discoveries="FastMCP supports instructions param",
+    accomplished="Renamed all tools",
+    next_steps="Add hooks",
+    relevant_files="server.py, hooks.json",
+  )
+  assert "Saved" in result
+
+
+@pytest.mark.asyncio
+async def test_qwick_memory_session_summary_empty_goal(rag_env: str) -> None:
+  """qwick_memory_session_summary rejects empty goal."""
+  from qwick_rag.server import qwick_memory_session_summary
+
+  result = await qwick_memory_session_summary(
+    goal="",
+    discoveries="something",
+    accomplished="something",
+    next_steps="something",
+    relevant_files="something",
+  )
+  assert "Error" in result
+
+
+@pytest.mark.asyncio
+async def test_qwick_memory_session_summary_rotation(rag_env: str) -> None:
+  """qwick_memory_session_summary keeps only 3 most recent summaries."""
+  import time
+  from pathlib import Path
+
+  from qwick_rag.server import qwick_memory_session_summary
+
+  # Save 4 summaries with different content (small delay for distinct timestamps)
+  for i in range(4):
+    result = await qwick_memory_session_summary(
+      goal=f"Goal number {i}",
+      discoveries=f"Discovery {i}",
+      accomplished=f"Accomplished {i}",
+      next_steps=f"Next {i}",
+      relevant_files=f"file{i}.py",
+    )
+    assert "Saved" in result
+    time.sleep(0.01)
+
+  # Check that only 3 remain on disk
+  memories_dir = Path(rag_env) / "memories"
+  all_files = list(memories_dir.rglob("*.md"))
+  # Parse and count session-summary type
+  from qwick_rag.memory import parse_memory
+
+  summaries = [f for f in all_files if parse_memory(f).type == "session-summary"]
+  assert len(summaries) == 3

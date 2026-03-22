@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
@@ -295,6 +296,112 @@ async def qwick_memory_context(repo: str | None = None, limit: int = 20) -> str:
     preview = mem.content[:80] + "..." if len(mem.content) > 80 else mem.content
     lines.append(f"[{mem.created.isoformat()}] ({mem.type}) {preview}")
   return f"{len(lines)} memories for {target_repo}:\n" + "\n".join(lines)
+
+
+def _rotate_session_summaries(
+  repo_dir: Path, max_keep: int = 3
+) -> None:
+  """Delete old session summaries, keeping only the most recent `max_keep`."""
+  summaries: list[tuple[datetime, Path]] = []
+  for fp in repo_dir.glob("*.md"):
+    try:
+      mem = parse_memory(fp)
+      if mem.type == "session-summary":
+        summaries.append((mem.created, fp))
+    except Exception:
+      continue
+
+  if len(summaries) <= max_keep:
+    return
+
+  # Sort oldest first, delete extras
+  summaries.sort(key=lambda x: x[0])
+  to_delete = summaries[: len(summaries) - max_keep]
+  idx = get_index()
+  for _, fp in to_delete:
+    memory_id = fp.stem
+    fp.unlink(missing_ok=True)
+    try:
+      idx.delete(memory_id)
+    except Exception:
+      logger.warning("Could not remove %s from index during rotation.", memory_id)
+
+
+@mcp.tool()
+async def qwick_memory_session_summary(
+  goal: str,
+  discoveries: str,
+  accomplished: str,
+  next_steps: str,
+  relevant_files: str,
+) -> str:
+  """Save a structured session summary to memory.
+
+  Call this before ending a session or when context compaction is imminent.
+
+  Args:
+    goal: What the user wanted to accomplish.
+    discoveries: Non-obvious things learned.
+    accomplished: What was done.
+    next_steps: What remains to be done.
+    relevant_files: Key files touched or referenced.
+
+  Returns:
+    Status string confirming the save.
+  """
+  if not goal or not goal.strip():
+    return "Error: goal cannot be empty."
+
+  content = (
+    f"## Session Summary\n\n"
+    f"**Goal:** {goal.strip()}\n\n"
+    f"**Discoveries:**\n{discoveries.strip()}\n\n"
+    f"**Accomplished:**\n{accomplished.strip()}\n\n"
+    f"**Next Steps:**\n{next_steps.strip()}\n\n"
+    f"**Relevant Files:**\n{relevant_files.strip()}"
+  )
+
+  memory_id = generate_id(content)
+  repo = get_repo()
+  author = get_author()
+
+  memories_dir = get_memories_dir()
+  repo_dir = memories_dir / repo
+  repo_dir.mkdir(parents=True, exist_ok=True)
+
+  final_path = repo_dir / f"{memory_id}.md"
+
+  if final_path.exists():
+    return f"Session summary already exists: {memory_id}"
+
+  memory = Memory(
+    id=memory_id,
+    repo=repo,
+    type="session-summary",
+    tags=["session-summary"],
+    author=author,
+    created=datetime.now(timezone.utc),
+    content=content,
+  )
+
+  tmp_path = repo_dir / f".{memory_id}.tmp"
+  try:
+    write_memory(memory, tmp_path)
+    idx = get_index()
+    idx.upsert(memory)
+    tmp_path.rename(final_path)
+  except Exception as exc:
+    tmp_path.unlink(missing_ok=True)
+    logger.exception("Failed to save session summary %s", memory_id)
+    return f"Error saving session summary: {exc}"
+
+  # Rotation: keep only 3 most recent session summaries
+  try:
+    _rotate_session_summaries(repo_dir, max_keep=3)
+  except Exception:
+    logger.warning("Session summary rotation failed.")
+
+  return f"Saved session summary {memory_id}"
 
 
 def main() -> None:
