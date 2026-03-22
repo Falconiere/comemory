@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Session start: auto-index + output context for Claude
+# Session start: auto-index + output context + protocol reminder for Claude
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -15,3 +15,11 @@ fi
 echo "## Qwick Memory — Session Context"
 echo ""
 $UV python -m qwick_memory context 2>/dev/null || echo "No prior context found."
+
+# Decision guide footer (high-attention position at end of session start)
+echo ""
+echo "---"
+echo "Memory Protocol Active:"
+echo "-> SEARCH before answering questions about prior work, PRs, decisions, or history"
+echo "-> SAVE after decisions, bug fixes, discoveries, conventions, preferences"
+echo "-> SUMMARIZE before ending session"
