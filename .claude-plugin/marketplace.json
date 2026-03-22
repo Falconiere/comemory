@@ -6,7 +6,7 @@
   "plugins": [
     {
       "name": "qwick-memory",
-      "description": "Centralized RAG memory for multiple repositories — save, search, and share developer knowledge across repos",
+      "description": "Persistent developer memory across repos — automatically saves decisions, bugs, conventions, and discoveries. Semantic vector search recalls prior work so Claude never forgets what you've built.",
       "version": "0.1.0",
       "source": "./",
       "author": {

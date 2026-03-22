@@ -1,6 +1,6 @@
 {
   "name": "qwick-memory",
-  "description": "Centralized RAG memory for multiple repositories",
+  "description": "Persistent developer memory with semantic vector search — Claude automatically saves and recalls decisions, bugs, conventions, and discoveries across repositories.",
   "version": "0.1.0",
   "author": { "name": "SidegigLLC" },
   "repository": "https://github.com/SidegigLLC/qwick-memory",
