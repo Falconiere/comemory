@@ -125,5 +125,5 @@ def parse_memory(filepath: Path) -> Memory:
 
 
 def scan_memories(memories_dir: Path) -> list[Path]:
-  """Return all markdown files found recursively under memories_dir."""
-  return list(memories_dir.rglob("*.md"))
+  """Return all markdown files under memories_dir."""
+  return list(memories_dir.glob("*.md"))
