@@ -64,7 +64,7 @@ def test_detect_author_falls_back_to_unknown(tmp_path: Path, monkeypatch):
 
 def test_git_sync_creates_orphan_branch_and_commits(tmp_path: Path):
   """git_sync initialises an orphan 'memories' branch and commits files."""
-  memories = tmp_path / "memories" / "test-repo"
+  memories = tmp_path / "memories"
   memories.mkdir(parents=True)
   (memories / "abc123.md").write_text("test content")
 
@@ -92,7 +92,7 @@ def test_git_sync_creates_orphan_branch_and_commits(tmp_path: Path):
 
 def test_git_sync_creates_gitignore(tmp_path: Path):
   """git_sync creates a .gitignore that excludes .vectordb/."""
-  memories = tmp_path / "memories" / "test-repo"
+  memories = tmp_path / "memories"
   memories.mkdir(parents=True)
   (memories / "abc123.md").write_text("test content")
 
@@ -129,7 +129,7 @@ def test_git_sync_never_raises(tmp_path: Path):
 
 def test_git_sync_skips_setup_when_already_ready(tmp_path: Path):
   """git_sync skips _ensure_rag_repo on subsequent calls (cached)."""
-  memories = tmp_path / "memories" / "test-repo"
+  memories = tmp_path / "memories"
   memories.mkdir(parents=True)
   (memories / "first.md").write_text("first")
 
