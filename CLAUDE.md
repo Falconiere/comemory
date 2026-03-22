@@ -16,7 +16,7 @@ qwick-memory is a centralized RAG memory system for multiple repositories. It's 
 ## Key Commands
 
 ```bash
-uv pip install -e ".[dev]"    # Install
+uv tool install -e ".[dev]"   # Install globally (puts qwick-memory + qwick-memory-server on PATH)
 pytest                         # Unit + integration tests (49 tests)
 ./scripts/e2e-test.sh          # Real CLI end-to-end test (28 checks)
 ./scripts/e2e-test.sh --build  # Install from source + run e2e

@@ -206,13 +206,13 @@ qwick-memory/
 {
   "mcpServers": {
     "qwick-memory": {
-      "command": "${CLAUDE_PLUGIN_ROOT:-.}/scripts/mcp-server.sh"
+      "command": "qwick-memory-server"
     }
   }
 }
 ```
 
-The `mcp-server.sh` script is self-locating — it resolves the project root from its own filesystem location via `dirname`, then uses `uv run --directory` to run the server. This works regardless of the caller's working directory.
+The `qwick-memory-server` entry point is installed globally via `uv tool install -e .` (development) or `uv tool install qwick-memory` (production). This works from any working directory, matching how other plugins (e.g., engram) expose their MCP servers.
 
 ### Distribution
 

@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "qwick-memory": {
-      "command": "${CLAUDE_PLUGIN_ROOT:-.}/scripts/mcp-server.sh"
+      "command": "qwick-memory-server"
     }
   }
 }

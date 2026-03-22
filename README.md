@@ -7,8 +7,8 @@ Memories are plain markdown files with YAML frontmatter — git handles sharing 
 ## Quick Start
 
 ```bash
-# Install from source
-uv pip install -e ".[dev]"
+# Install as global tool (makes qwick-memory and qwick-memory-server available everywhere)
+uv tool install -e ".[dev]"
 
 # Save a memory (auto-detects repo and author from git)
 qwick-memory save "We use PostgreSQL for transactional services" --type decision --tags db,postgres
@@ -46,12 +46,15 @@ Team shares via git
 Install as a Claude Code plugin for LLM-powered memory:
 
 ```bash
+# Prerequisite: install globally so the server is on PATH
+uv tool install -e /path/to/qwick-memory
+
 # Via marketplace
 claude plugin marketplace add SidegigLLC/qwick-memory
 claude plugin install qwick-memory
 
 # Or install manually (add the MCP server directly)
-claude mcp add qwick-memory -- /path/to/qwick-memory/scripts/mcp-server.sh
+claude mcp add qwick-memory -- qwick-memory-server
 ```
 
 This gives Claude Code 7 MCP tools: `qwick_memory_save`, `qwick_memory_search`, `qwick_memory_list`, `qwick_memory_delete`, `qwick_memory_index`, `qwick_memory_context`, `qwick_memory_session_summary`.
@@ -97,7 +100,7 @@ qwick-memory/
 ## Development
 
 ```bash
-uv pip install -e ".[dev]"    # Install with dev deps
+uv tool install -e ".[dev]"   # Install globally with dev deps
 pytest                         # Unit + integration tests
 ./scripts/e2e-test.sh          # Real CLI end-to-end test (28 checks)
 ./scripts/e2e-test.sh --build  # Install from source + run e2e
