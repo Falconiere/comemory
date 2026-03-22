@@ -28,3 +28,4 @@ yarn-error.log*
 
 # qwick-rag
 .vectordb/
+memories/

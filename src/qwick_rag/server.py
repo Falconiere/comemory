@@ -9,7 +9,8 @@ from pathlib import Path  # noqa: TC003 — used at runtime in _rotate_session_s
 
 from mcp.server.fastmcp import FastMCP
 
-from qwick_rag.config import get_author, get_index, get_memories_dir, get_repo
+from qwick_rag.config import get_author, get_index, get_memories_dir, get_rag_dir, get_repo
+from qwick_rag.git_utils import git_sync
 from qwick_rag.memory import (
   MEMORY_TYPES,
   Memory,
@@ -130,6 +131,7 @@ async def qwick_memory_save(content: str, type: str = "note", tags: str = "") ->
     logger.exception("Failed to save memory %s", memory_id)
     return f"Error saving memory: {exc}"
 
+  git_sync(get_rag_dir(), f"save: {memory_id} ({type})")
   return f"Saved memory {memory_id}"
 
 
@@ -233,6 +235,7 @@ async def qwick_memory_delete(memory_id: str) -> str:
   except Exception:
     logger.warning("Could not remove %s from index.", memory_id)
 
+  git_sync(get_rag_dir(), f"delete: {memory_id}")
   return f"Deleted memory {memory_id}"
 
 
@@ -418,6 +421,7 @@ async def qwick_memory_session_summary(
   except Exception:
     logger.warning("Session summary rotation failed.")
 
+  git_sync(get_rag_dir(), f"session-summary: {memory_id}")
   return f"Saved session summary {memory_id}"
 
 

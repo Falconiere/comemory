@@ -7,11 +7,14 @@ from qwick_rag.git_utils import detect_author, detect_repo_name
 
 
 def get_rag_dir() -> Path:
-  """Resolve the qwick-rag root directory."""
+  """Resolve the qwick-rag root directory.
+
+  Priority: QWICK_RAG_DIR env var > ~/.qwick-rag/ (global default).
+  """
   env = os.environ.get("QWICK_RAG_DIR")
   if env:
     return Path(env)
-  return Path.cwd()
+  return Path.home() / ".qwick-rag"
 
 
 def get_memories_dir() -> Path:

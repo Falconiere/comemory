@@ -17,9 +17,11 @@ from qwick_rag.config import (
   get_author,
   get_index,
   get_memories_dir,
+  get_rag_dir,
   get_repo,
   get_vectordb_dir,
 )
+from qwick_rag.git_utils import git_sync
 from qwick_rag.memory import (
   MEMORY_TYPES,
   Memory,
@@ -118,6 +120,7 @@ def save(
     console.print(f"[red]Failed to save memory: {exc}[/red]")
     raise typer.Exit(1) from exc
 
+  git_sync(get_rag_dir(), f"save: {memory_id} ({type})")
   out.print(f"Saved memory [bold]{memory_id}[/bold]")
 
 
@@ -239,6 +242,7 @@ def delete(
   except Exception:
     console.print("[yellow]Warning: could not remove from index.[/yellow]")
 
+  git_sync(get_rag_dir(), f"delete: {memory_id}")
   out.print(f"Deleted memory [bold]{memory_id}[/bold]")
 
 

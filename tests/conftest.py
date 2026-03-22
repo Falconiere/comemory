@@ -5,7 +5,15 @@ from pathlib import Path
 
 import pytest
 
+import qwick_rag.git_utils as _git_mod
 from qwick_rag.memory import Memory, write_memory
+
+
+@pytest.fixture(autouse=True)
+def _reset_git_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+  """Reset git_sync cache and prevent tests from discovering the real remote."""
+  _git_mod._rag_repo_ready = None
+  monkeypatch.setattr(_git_mod, "_find_source_repo", lambda: None)
 
 
 @pytest.fixture()

@@ -17,8 +17,8 @@ qwick-rag is a centralized RAG memory system for multiple repositories. It's a P
 
 ```bash
 uv pip install -e ".[dev]"    # Install
-pytest                         # Unit + integration tests (35 tests)
-./scripts/e2e-test.sh          # Real CLI end-to-end test (26 checks)
+pytest                         # Unit + integration tests (49 tests)
+./scripts/e2e-test.sh          # Real CLI end-to-end test (28 checks)
 ./scripts/e2e-test.sh --build  # Install from source + run e2e
 ruff format src/ tests/        # Format (2-space indent!)
 ruff check src/ tests/         # Lint
@@ -43,16 +43,17 @@ qwick-rag doctor               # Health check
 | `index.py` | LanceDB: embed, upsert, delete, incremental rebuild, FTS index |
 | `search.py` | Hybrid search with metadata filtering |
 | `config.py` | Shared helpers (paths, repo/author detection from env or git) |
-| `git_utils.py` | Auto-detect repo name and author from git remote/config |
+| `git_utils.py` | Auto-detect repo name/author from git, auto-sync (commit+push) |
 | `errors.py` | QwickRagError hierarchy (5 error types) |
 
 ## Environment Variables
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `QWICK_RAG_DIR` | Root directory of qwick-rag repo | `cwd()` |
+| `QWICK_RAG_DIR` | Root directory for memories and vectordb | `~/.qwick-rag/` |
 | `QWICK_RAG_REPO` | Override repo name | Auto-detected from git remote |
 | `QWICK_RAG_AUTHOR` | Override author name | Auto-detected from git config |
+| `QWICK_RAG_REMOTE` | Override git remote URL (`""` to disable) | Auto-detected from source repo |
 
 ## Memory Data Model
 
@@ -77,11 +78,12 @@ The actual memory content goes here as markdown body.
 3. Embed content via fastembed
 4. Upsert into LanceDB
 5. Atomic rename temp → final `memories/{repo}/{id}.md`
-6. On failure: delete temp file, report error
+6. `git_sync`: add + commit + push (best-effort, never fails the save)
+7. On failure (steps 2-5): delete temp file, report error
 
 ## Testing
 
-- `conftest.py` has shared fixtures: `memories_dir`, `vectordb_dir`, `sample_memories`
+- `conftest.py` has shared fixtures: `_reset_git_cache`, `sample_memories`, `memories_dir`
 - CLI tests use `typer.testing.CliRunner` with `monkeypatch.setenv`
 - MCP server tests call async tool functions directly (not the protocol layer)
 - First test run downloads the embedding model (~30MB, cached at `~/.cache/fastembed/`)
