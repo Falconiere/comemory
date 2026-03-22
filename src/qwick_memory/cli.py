@@ -88,10 +88,9 @@ def save(
   author = get_author()
 
   memories_dir = get_memories_dir()
-  repo_dir = memories_dir / repo
-  repo_dir.mkdir(parents=True, exist_ok=True)
+  memories_dir.mkdir(parents=True, exist_ok=True)
 
-  final_path = repo_dir / f"{memory_id}.md"
+  final_path = memories_dir / f"{memory_id}.md"
 
   # Skip if file already exists (duplicate content)
   if final_path.exists():
@@ -109,7 +108,7 @@ def save(
   )
 
   # Atomic write: temp file -> embed -> upsert -> rename
-  tmp_path = repo_dir / f".{memory_id}.tmp"
+  tmp_path = memories_dir / f".{memory_id}.tmp"
   try:
     write_memory(memory, tmp_path)
     idx = get_index()

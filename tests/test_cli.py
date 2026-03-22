@@ -28,6 +28,17 @@ def test_save_creates_memory_file(tmp_path: Path) -> None:
   assert len(md_files) == 1
 
 
+def test_save_creates_flat_file(tmp_path: Path) -> None:
+  """save creates .md file directly in memories/, not in a repo subdirectory."""
+  result = runner.invoke(app, ["save", "Flat layout test memory"])
+  assert result.exit_code == 0, result.output
+  md_files = list((tmp_path / "memories").glob("*.md"))
+  assert len(md_files) == 1, f"Expected 1 file in memories/, got {md_files}"
+  # No subdirectories should exist
+  subdirs = [p for p in (tmp_path / "memories").iterdir() if p.is_dir()]
+  assert subdirs == [], f"Unexpected subdirectories: {subdirs}"
+
+
 def test_search_returns_results(tmp_path: Path) -> None:
   """save then search finds the saved memory."""
   result = runner.invoke(app, ["save", "PostgreSQL is great for JSONB"])
