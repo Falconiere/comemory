@@ -116,7 +116,7 @@ async def test_qwick_memory_session_summary_rotation(rag_env: str) -> None:
 
   # Check that only 3 remain on disk
   memories_dir = Path(rag_env) / "memories"
-  all_files = list(memories_dir.rglob("*.md"))
+  all_files = list(memories_dir.glob("*.md"))
   # Parse and count session-summary type
   from qwick_memory.memory import parse_memory
 

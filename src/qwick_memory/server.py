@@ -244,7 +244,7 @@ async def qwick_memory_delete(memory_id: str) -> str:
   if not memories_dir.exists():
     return "Error: Memories directory not found."
 
-  matches = list(memories_dir.rglob(f"{memory_id}.md"))
+  matches = list(memories_dir.glob(f"{memory_id}.md"))
   if not matches:
     return f"Error: Memory file not found: {memory_id}"
 

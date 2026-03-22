@@ -224,8 +224,8 @@ def delete(
     console.print("[red]Memories directory not found.[/red]")
     raise typer.Exit(1)
 
-  # Find the file via rglob
-  matches = list(memories_dir.rglob(f"{memory_id}.md"))
+  # Find the file via glob
+  matches = list(memories_dir.glob(f"{memory_id}.md"))
   if not matches:
     console.print(f"[red]Memory file not found: {memory_id}[/red]")
     raise typer.Exit(1)
