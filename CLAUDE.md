@@ -38,7 +38,7 @@ qwick-rag doctor               # Health check
 | Module | Responsibility |
 |--------|---------------|
 | `cli.py` | Typer CLI commands (save, search, list, delete, index, doctor) |
-| `server.py` | MCP server with 6 tools for Claude Code |
+| `server.py` | MCP server with 7 tools for Claude Code + memory protocol |
 | `memory.py` | Memory dataclass, markdown I/O, ID generation (SHA-256) |
 | `index.py` | LanceDB: embed, upsert, delete, incremental rebuild, FTS index |
 | `search.py` | Hybrid search with metadata filtering |
@@ -96,6 +96,23 @@ claude plugin add --marketplace SidegigLLC/qwick-rag
 ```
 
 The `marketplace.json` requires `owner` (object with `name`), and each plugin entry requires `name`, `description`, and `source`. See `.claude-plugin/marketplace.json` for the current schema.
+
+## Memory Protocol
+
+qwick-rag includes an automatic memory protocol injected via MCP server instructions. When active, Claude proactively saves decisions, bugs, conventions, discoveries, and session summaries. The protocol is defined in `server.py` as the `PROTOCOL` constant.
+
+**Hooks:**
+- `SessionStart` — Auto-index + load context
+- `PreCompact` — Reminder to save session summary
+- `PostCompact` — Restore context after compaction
+
+**Key tools:**
+- `qwick_memory_save` — Save a memory (all types)
+- `qwick_memory_search` — Semantic search
+- `qwick_memory_context` — Load recent context (summary first)
+- `qwick_memory_session_summary` — Save structured session summary (with rotation, keeps 3)
+
+This replaces engram. Disable engram when qwick-memory is active.
 
 ## Design Spec
 

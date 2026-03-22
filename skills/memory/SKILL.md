@@ -3,17 +3,19 @@ name: memory
 description: ALWAYS ACTIVE — Centralized memory protocol for cross-repository knowledge. Save decisions, bugs, conventions, and discoveries proactively.
 ---
 
-## qwick-rag Memory Protocol
+## Qwick Memory Protocol
 
-You have qwick-rag memory tools (rag_save, rag_search, rag_list, rag_delete, rag_index, rag_context).
+You have qwick-memory tools (qwick_memory_save, qwick_memory_search, qwick_memory_list, qwick_memory_delete, qwick_memory_index, qwick_memory_context, qwick_memory_session_summary).
 
 ### PROACTIVE SAVE — do NOT wait for user to ask
-Call `rag_save` IMMEDIATELY after ANY of these:
+Call `qwick_memory_save` IMMEDIATELY after ANY of these:
 - Decision made (architecture, convention, workflow, tool choice)
 - Bug fixed (include root cause)
 - Convention or workflow established
 - Non-obvious discovery or edge case found
 - Pattern established (naming, structure, approach)
+- User preference or constraint learned
+- Feature implemented with non-obvious approach
 
 ### SEARCH MEMORY when:
 - Starting work on something that might have been done before
@@ -29,3 +31,7 @@ Call `rag_save` IMMEDIATELY after ANY of these:
 - `pattern` — Established approaches
 - `preference` — User or team preferences
 - `note` — General knowledge that doesn't fit other types
+- `session-summary` — (used automatically by qwick_memory_session_summary)
+
+### SESSION CLOSE — before saying "done"/"listo":
+Call `qwick_memory_session_summary` with: goal, discoveries, accomplished, next_steps, relevant_files.

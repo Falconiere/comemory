@@ -52,7 +52,7 @@ claude plugin add --marketplace SidegigLLC/qwick-rag
 claude mcp add qwick-rag -- uv run --directory /path/to/qwick-rag python -m qwick_rag.server
 ```
 
-This gives Claude Code 6 MCP tools: `rag_save`, `rag_search`, `rag_list`, `rag_delete`, `rag_index`, `rag_context`.
+This gives Claude Code 7 MCP tools: `qwick_memory_save`, `qwick_memory_search`, `qwick_memory_list`, `qwick_memory_delete`, `qwick_memory_index`, `qwick_memory_context`, `qwick_memory_session_summary`.
 
 ## Memory Types
 
