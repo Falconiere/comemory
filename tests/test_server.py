@@ -143,3 +143,80 @@ async def test_qwick_memory_context_empty(rag_env: str) -> None:
 
   result = await qwick_memory_context()
   assert "No memories found" in result
+
+
+@pytest.mark.asyncio
+async def test_save_response_includes_vector_hint(rag_env: str) -> None:
+  """qwick_memory_save response mentions vector search indexing."""
+  from qwick_memory.server import qwick_memory_save
+
+  result = await qwick_memory_save("Test memory for hint check", type="decision")
+  assert "Embedded and indexed for vector search" in result
+  assert "(decision)" in result
+
+
+@pytest.mark.asyncio
+async def test_save_duplicate_response_hint(rag_env: str) -> None:
+  """qwick_memory_save duplicate response includes 'no action needed' hint."""
+  from qwick_memory.server import qwick_memory_save
+
+  await qwick_memory_save("Duplicate hint test content")
+  result = await qwick_memory_save("Duplicate hint test content")
+  assert "already exists" in result
+  assert "No action needed" in result
+
+
+@pytest.mark.asyncio
+async def test_search_results_include_similarity_hint(rag_env: str) -> None:
+  """qwick_memory_search results include semantic similarity hint."""
+  from qwick_memory.server import qwick_memory_save, qwick_memory_search
+
+  await qwick_memory_save("Redis is used for caching")
+  result = await qwick_memory_search("Redis caching")
+  assert "Results ranked by semantic similarity" in result
+
+
+@pytest.mark.asyncio
+async def test_search_no_results_includes_save_hint(rag_env: str) -> None:
+  """qwick_memory_search with no results hints to save later."""
+  from qwick_memory.server import qwick_memory_search
+
+  result = await qwick_memory_search("completely nonexistent topic xyz123")
+  assert "save it with qwick_memory_save" in result
+
+
+@pytest.mark.asyncio
+async def test_index_response_includes_vector_hint(rag_env: str) -> None:
+  """qwick_memory_index response mentions vector search."""
+  from qwick_memory.server import qwick_memory_index
+
+  result = await qwick_memory_index()
+  assert "searchable by semantic similarity" in result
+
+
+@pytest.mark.asyncio
+async def test_delete_response_confirms_both_layers(rag_env: str) -> None:
+  """qwick_memory_delete response confirms disk and vector index removal."""
+  from qwick_memory.server import qwick_memory_delete, qwick_memory_save
+
+  result = await qwick_memory_save("Memory to delete for hint test")
+  # Format: "Saved memory {id} ..." — ID is the third word
+  memory_id = result.split()[2]
+
+  result = await qwick_memory_delete(memory_id)
+  assert "Removed from disk and vector index" in result
+
+
+@pytest.mark.asyncio
+async def test_session_summary_response_includes_vector_hint(rag_env: str) -> None:
+  """qwick_memory_session_summary response mentions vector search."""
+  from qwick_memory.server import qwick_memory_session_summary
+
+  result = await qwick_memory_session_summary(
+    goal="Test hint in session summary",
+    discoveries="None",
+    accomplished="Testing",
+    next_steps="Verify",
+    relevant_files="test_server.py",
+  )
+  assert "Embedded and indexed for vector search" in result
