@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import sys
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path  # noqa: TC003 — used at runtime in _rotate_session_summaries
 
 from mcp.server.fastmcp import FastMCP
 
@@ -26,7 +26,8 @@ logger = logging.getLogger(__name__)
 PROTOCOL = """\
 ## Qwick Memory — ACTIVE PROTOCOL
 
-You have qwick-memory tools (qwick_memory_save, qwick_memory_search, qwick_memory_context, qwick_memory_session_summary).
+You have qwick-memory tools (qwick_memory_save, qwick_memory_search,
+qwick_memory_context, qwick_memory_session_summary).
 This protocol is MANDATORY and ALWAYS ACTIVE.
 
 ### PROACTIVE SAVE — do NOT wait for user to ask
@@ -40,7 +41,8 @@ Call `qwick_memory_save` IMMEDIATELY after ANY of these:
 - Feature implemented with non-obvious approach
 - Artifact created or updated with significant content (Notion, Jira, GitHub, etc.)
 
-**Self-check after EVERY task**: "Did I just make a decision, fix a bug, learn something, or establish a convention? If yes → qwick_memory_save NOW."
+**Self-check after EVERY task**: "Did I just make a decision, fix a bug,
+learn something, or establish a convention? If yes → qwick_memory_save NOW."
 
 When saving, choose the right type:
 - `decision` — architecture, convention, workflow, tool choice
@@ -58,7 +60,8 @@ Use descriptive, comma-separated tags for discoverability.
 - User asks to recall anything ("remember", "what did we do", "acordate", "que hicimos")
 - Starting work on something that might have been done before
 - User mentions a topic you have no context on
-- User's FIRST message references the project, a feature, or a problem — call `qwick_memory_search` with keywords to check for prior work before responding
+- User's FIRST message references the project, a feature, or a problem
+  — call `qwick_memory_search` with keywords to check for prior work
 
 ### SESSION CLOSE — before saying "done"/"listo":
 Call `qwick_memory_session_summary` with a structured summary:
