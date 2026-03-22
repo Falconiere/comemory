@@ -31,6 +31,21 @@ async def test_qwick_memory_save(rag_env: str) -> None:
 
 
 @pytest.mark.asyncio
+async def test_save_creates_flat_file(rag_env: str) -> None:
+  """qwick_memory_save creates file directly in memories/, not a repo subdirectory."""
+  from pathlib import Path
+
+  from qwick_memory.server import qwick_memory_save
+
+  await qwick_memory_save("Flat layout server test")
+  memories_dir = Path(rag_env) / "memories"
+  md_files = list(memories_dir.glob("*.md"))
+  assert len(md_files) == 1, f"Expected 1 file in memories/, got {md_files}"
+  subdirs = [p for p in memories_dir.iterdir() if p.is_dir()]
+  assert subdirs == [], f"Unexpected subdirectories: {subdirs}"
+
+
+@pytest.mark.asyncio
 async def test_qwick_memory_search(rag_env: str) -> None:
   """qwick_memory_save then qwick_memory_search finds the saved content."""
   from qwick_memory.server import qwick_memory_save, qwick_memory_search
