@@ -93,8 +93,9 @@ The actual memory content goes here as markdown body.
 
 The `.claude-plugin/` directory contains the marketplace manifest and plugin config. To install as a Claude Code plugin:
 
-```
-claude plugin add --marketplace SidegigLLC/qwick-memory
+```bash
+claude plugin marketplace add SidegigLLC/qwick-memory
+claude plugin install qwick-memory
 ```
 
 The `marketplace.json` requires `owner` (object with `name`), and each plugin entry requires `name`, `description`, and `source`. See `.claude-plugin/marketplace.json` for the current schema.
