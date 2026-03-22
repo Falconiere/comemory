@@ -1,4 +1,4 @@
-# qwick-rag Implementation Plan
+# qwick-memory Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.10+, LanceDB, fastembed, python-frontmatter, Typer, Rich, MCP Python SDK (FastMCP)
 
-**Spec:** `docs/superpowers/specs/2026-03-20-qwick-rag-design.md`
+**Spec:** `docs/superpowers/specs/2026-03-20-qwick-memory-design.md`
 
 ---
 
@@ -59,7 +59,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "qwick-rag"
+name = "qwick-memory"
 version = "0.1.0"
 description = "Centralized RAG memory for multiple repositories"
 readme = "README.md"
@@ -75,7 +75,7 @@ dependencies = [
 ]
 
 [project.scripts]
-qwick-rag = "qwick_rag.cli:app"
+qwick-memory = "qwick_rag.cli:app"
 
 [project.optional-dependencies]
 dev = [
@@ -127,7 +127,7 @@ venv = ".venv"
 
 ```python
 # src/qwick_rag/__init__.py
-"""qwick-rag: Centralized RAG memory for multiple repositories."""
+"""qwick-memory: Centralized RAG memory for multiple repositories."""
 
 __version__ = "0.1.0"
 ```
@@ -148,7 +148,7 @@ app()
 Append to existing `.gitignore`:
 
 ```
-# qwick-rag
+# qwick-memory
 .vectordb/
 ```
 
@@ -163,7 +163,7 @@ mkdir -p src/qwick_rag tests memories
 - [ ] **Step 6: Install in dev mode and verify**
 
 ```bash
-cd /Users/falconiere/Projects/qwick-rag
+cd /Users/falconiere/Projects/qwick-memory
 uv venv && source .venv/bin/activate.fish
 uv pip install -e ".[dev]"
 ```
@@ -239,13 +239,13 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'qwick_rag.errors'`
 
 ```python
 # src/qwick_rag/errors.py
-"""Structured error types for qwick-rag."""
+"""Structured error types for qwick-memory."""
 
 from typing import Any
 
 
 class QwickRagError(Exception):
-    """Base error for all qwick-rag errors."""
+    """Base error for all qwick-memory errors."""
 
     def __init__(
         self,
@@ -465,7 +465,7 @@ from qwick_rag.git_utils import detect_author, detect_repo_name
 
 
 def get_rag_dir() -> Path:
-    """Resolve the qwick-rag root directory."""
+    """Resolve the qwick-memory root directory."""
     env = os.environ.get("QWICK_RAG_DIR")
     if env:
         return Path(env)
@@ -1435,7 +1435,7 @@ console = Console(stderr=True)
 out = Console()
 
 app = typer.Typer(
-    name="qwick-rag",
+    name="qwick-memory",
     help="Centralized RAG memory for multiple repositories.",
     no_args_is_help=True,
 )
@@ -1612,7 +1612,7 @@ def index(
 
 @app.command()
 def doctor():
-    """Run diagnostics on qwick-rag setup."""
+    """Run diagnostics on qwick-memory setup."""
     rag_dir = get_rag_dir()
     memories_dir = get_memories_dir()
     vectordb_dir = get_vectordb_dir()
@@ -1660,7 +1660,7 @@ def doctor():
             out.print(f"[green]✓[/green] Index consistent ({count} entries = {file_count} files)")
             checks_passed += 1
         else:
-            out.print(f"[yellow]![/yellow] Index inconsistent: {count} entries vs {file_count} files. Run 'qwick-rag index'")
+            out.print(f"[yellow]![/yellow] Index inconsistent: {count} entries vs {file_count} files. Run 'qwick-memory index'")
             checks_failed += 1
 
     # Check model meta
@@ -1673,7 +1673,7 @@ def doctor():
             out.print(f"[green]✓[/green] Embedding model consistent: {MODEL_NAME}")
             checks_passed += 1
         else:
-            out.print(f"[red]✗[/red] Model mismatch: index used {meta.get('model')}, current is {MODEL_NAME}. Run 'qwick-rag index --force'")
+            out.print(f"[red]✗[/red] Model mismatch: index used {meta.get('model')}, current is {MODEL_NAME}. Run 'qwick-memory index --force'")
             checks_failed += 1
     else:
         out.print("[yellow]![/yellow] No model metadata found (not yet indexed?)")
@@ -1695,11 +1695,11 @@ Expected: 5 passed
 - [ ] **Step 5: Verify CLI works end-to-end**
 
 ```bash
-export QWICK_RAG_DIR=/Users/falconiere/Projects/qwick-rag
-qwick-rag save "Test memory from CLI" --type note
-qwick-rag search "test"
-qwick-rag list
-qwick-rag doctor
+export QWICK_RAG_DIR=/Users/falconiere/Projects/qwick-memory
+qwick-memory save "Test memory from CLI" --type note
+qwick-memory search "test"
+qwick-memory list
+qwick-memory doctor
 ```
 
 - [ ] **Step 6: Commit**
@@ -1787,7 +1787,7 @@ Expected: FAIL — `ModuleNotFoundError`
 
 ```python
 # src/qwick_rag/server.py
-"""MCP server exposing qwick-rag tools for Claude Code."""
+"""MCP server exposing qwick-memory tools for Claude Code."""
 
 import logging
 import os
@@ -1807,7 +1807,7 @@ from qwick_rag.search import search_memories as _search
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-mcp = FastMCP("qwick-rag")
+mcp = FastMCP("qwick-memory")
 
 
 @mcp.tool()
@@ -2021,11 +2021,11 @@ git commit -m "feat: add MCP server with rag tools for Claude Code"
 
 ```json
 {
-  "name": "qwick-rag",
+  "name": "qwick-memory",
   "description": "Centralized RAG memory for multiple repositories",
   "version": "0.1.0",
   "author": { "name": "SidegigLLC" },
-  "repository": "https://github.com/SidegigLLC/qwick-rag",
+  "repository": "https://github.com/SidegigLLC/qwick-memory",
   "license": "MIT"
 }
 ```
@@ -2035,7 +2035,7 @@ git commit -m "feat: add MCP server with rag tools for Claude Code"
 ```json
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "qwick-rag",
+  "name": "qwick-memory",
   "description": "Centralized RAG memory for multiple repositories",
   "plugins": [
     {
@@ -2050,7 +2050,7 @@ git commit -m "feat: add MCP server with rag tools for Claude Code"
 ```json
 {
   "mcpServers": {
-    "qwick-rag": {
+    "qwick-memory": {
       "command": "uv",
       "args": ["run", "--directory", "${CLAUDE_PLUGIN_ROOT}", "python", "-m", "qwick_rag.server"]
     }
@@ -2103,9 +2103,9 @@ name: memory
 description: ALWAYS ACTIVE — Centralized memory protocol for cross-repository knowledge. Save decisions, bugs, conventions, and discoveries proactively.
 ---
 
-## qwick-rag Memory Protocol
+## qwick-memory Memory Protocol
 
-You have qwick-rag memory tools (rag_save, rag_search, rag_list, rag_delete, rag_index, rag_context).
+You have qwick-memory memory tools (rag_save, rag_search, rag_list, rag_delete, rag_index, rag_context).
 
 ### PROACTIVE SAVE — do NOT wait for user to ask
 Call `rag_save` IMMEDIATELY after ANY of these:
@@ -2161,8 +2161,8 @@ Replace the "Build, Test, and Development Commands" section with actual commands
 - `ruff format src/ tests/` — format (2-space indent)
 - `ruff format --check src/ tests/` — verify formatting
 - `pyright src/` — type checking
-- `qwick-rag --help` — show CLI help
-- `qwick-rag doctor` — run diagnostics
+- `qwick-memory --help` — show CLI help
+- `qwick-memory doctor` — run diagnostics
 ```
 
 - [ ] **Step 2: Update README.md with installation and usage**

@@ -1,4 +1,4 @@
-"""Memory model for qwick-rag: core data structure for stored memories."""
+"""Memory model for qwick-memory: core data structure for stored memories."""
 
 import hashlib
 from dataclasses import dataclass, field
@@ -41,7 +41,7 @@ def generate_id(content: str) -> str:
 
 @dataclass
 class Memory:
-  """A single unit of knowledge stored in qwick-rag."""
+  """A single unit of knowledge stored in qwick-memory."""
 
   id: str
   repo: str

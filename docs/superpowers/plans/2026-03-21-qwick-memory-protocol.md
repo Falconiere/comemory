@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add an aggressive, always-on memory protocol to qwick-rag that automatically saves decisions, bugs, conventions, and session context — replicating engram's behavior with qwick-rag's markdown + vector search infrastructure.
+**Goal:** Add an aggressive, always-on memory protocol to qwick-memory that automatically saves decisions, bugs, conventions, and session context — replicating engram's behavior with qwick-memory's markdown + vector search infrastructure.
 
 **Architecture:** Protocol instructions injected via FastMCP `instructions` param tell Claude to proactively save/search. Lifecycle hooks handle session start (context loading), pre-compaction (reminder), and post-compaction (context restoration). A new `qwick_memory_session_summary` tool saves structured session summaries with rotation.
 
@@ -53,7 +53,7 @@ def test_session_summary_type_is_valid() -> None:
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/falconiere/Projects/qwick-rag && uv run pytest tests/test_memory.py::test_session_summary_type_is_valid -v`
+Run: `cd /Users/falconiere/Projects/qwick-memory && uv run pytest tests/test_memory.py::test_session_summary_type_is_valid -v`
 Expected: FAIL with `AssertionError`
 
 - [ ] **Step 3: Add session-summary to MEMORY_TYPES and MemoryType**
@@ -86,18 +86,18 @@ MemoryType = Literal[
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd /Users/falconiere/Projects/qwick-rag && uv run pytest tests/test_memory.py::test_session_summary_type_is_valid -v`
+Run: `cd /Users/falconiere/Projects/qwick-memory && uv run pytest tests/test_memory.py::test_session_summary_type_is_valid -v`
 Expected: PASS
 
 - [ ] **Step 5: Run full test suite to verify no regressions**
 
-Run: `cd /Users/falconiere/Projects/qwick-rag && uv run pytest -v`
+Run: `cd /Users/falconiere/Projects/qwick-memory && uv run pytest -v`
 Expected: All tests pass
 
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /Users/falconiere/Projects/qwick-rag && git add src/qwick_rag/memory.py tests/test_memory.py && git commit -m "feat: add session-summary memory type"
+cd /Users/falconiere/Projects/qwick-memory && git add src/qwick_rag/memory.py tests/test_memory.py && git commit -m "feat: add session-summary memory type"
 ```
 
 ---
@@ -143,7 +143,7 @@ async def test_qwick_memory_index(rag_env: str) -> None:
 
 - [ ] **Step 2: Run tests to verify they fail (old names gone)**
 
-Run: `cd /Users/falconiere/Projects/qwick-rag && uv run pytest tests/test_server.py -v`
+Run: `cd /Users/falconiere/Projects/qwick-memory && uv run pytest tests/test_server.py -v`
 Expected: FAIL with `ImportError` (old function names don't exist yet in new form)
 
 - [ ] **Step 3: Rename all 6 tool functions in server.py**
@@ -160,18 +160,18 @@ This is a straightforward find-and-replace of function names. The `@mcp.tool()` 
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd /Users/falconiere/Projects/qwick-rag && uv run pytest tests/test_server.py -v`
+Run: `cd /Users/falconiere/Projects/qwick-memory && uv run pytest tests/test_server.py -v`
 Expected: All 3 tests pass
 
 - [ ] **Step 5: Run full test suite**
 
-Run: `cd /Users/falconiere/Projects/qwick-rag && uv run pytest -v`
+Run: `cd /Users/falconiere/Projects/qwick-memory && uv run pytest -v`
 Expected: All tests pass
 
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /Users/falconiere/Projects/qwick-rag && git add src/qwick_rag/server.py tests/test_server.py && git commit -m "refactor: rename MCP tools from rag_* to qwick_memory_*"
+cd /Users/falconiere/Projects/qwick-memory && git add src/qwick_rag/server.py tests/test_server.py && git commit -m "refactor: rename MCP tools from rag_* to qwick_memory_*"
 ```
 
 ---
@@ -232,18 +232,18 @@ Call `qwick_memory_session_summary` with a structured summary:
 - Relevant files: key files touched or referenced
 """
 
-mcp = FastMCP("qwick-rag", instructions=PROTOCOL)
+mcp = FastMCP("qwick-memory", instructions=PROTOCOL)
 ```
 
 - [ ] **Step 2: Run full test suite to verify no regressions**
 
-Run: `cd /Users/falconiere/Projects/qwick-rag && uv run pytest -v`
+Run: `cd /Users/falconiere/Projects/qwick-memory && uv run pytest -v`
 Expected: All tests pass (instructions don't affect tool behavior)
 
 - [ ] **Step 3: Commit**
 
 ```bash
-cd /Users/falconiere/Projects/qwick-rag && git add src/qwick_rag/server.py && git commit -m "feat: add qwick memory protocol instructions to MCP server"
+cd /Users/falconiere/Projects/qwick-memory && git add src/qwick_rag/server.py && git commit -m "feat: add qwick memory protocol instructions to MCP server"
 ```
 
 ---
@@ -323,7 +323,7 @@ async def test_qwick_memory_session_summary_rotation(rag_env: str) -> None:
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd /Users/falconiere/Projects/qwick-rag && uv run pytest tests/test_server.py::test_qwick_memory_session_summary -v`
+Run: `cd /Users/falconiere/Projects/qwick-memory && uv run pytest tests/test_server.py::test_qwick_memory_session_summary -v`
 Expected: FAIL with `ImportError`
 
 - [ ] **Step 3: Implement the tool**
@@ -441,18 +441,18 @@ def _rotate_session_summaries(
 
 - [ ] **Step 4: Run all 3 new tests to verify they pass**
 
-Run: `cd /Users/falconiere/Projects/qwick-rag && uv run pytest tests/test_server.py -k "session_summary" -v`
+Run: `cd /Users/falconiere/Projects/qwick-memory && uv run pytest tests/test_server.py -k "session_summary" -v`
 Expected: All 3 pass
 
 - [ ] **Step 5: Run full test suite**
 
-Run: `cd /Users/falconiere/Projects/qwick-rag && uv run pytest -v`
+Run: `cd /Users/falconiere/Projects/qwick-memory && uv run pytest -v`
 Expected: All tests pass
 
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /Users/falconiere/Projects/qwick-rag && git add src/qwick_rag/server.py tests/test_server.py && git commit -m "feat: add qwick_memory_session_summary tool with rotation"
+cd /Users/falconiere/Projects/qwick-memory && git add src/qwick_rag/server.py tests/test_server.py && git commit -m "feat: add qwick_memory_session_summary tool with rotation"
 ```
 
 ---
@@ -502,7 +502,7 @@ async def test_qwick_memory_context_empty(rag_env: str) -> None:
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd /Users/falconiere/Projects/qwick-rag && uv run pytest tests/test_server.py::test_qwick_memory_context_shows_summary_first tests/test_server.py::test_qwick_memory_context_empty -v`
+Run: `cd /Users/falconiere/Projects/qwick-memory && uv run pytest tests/test_server.py::test_qwick_memory_context_shows_summary_first tests/test_server.py::test_qwick_memory_context_empty -v`
 Expected: FAIL (current implementation doesn't have "Last Session" / "Recent Memories" sections)
 
 - [ ] **Step 3: Rewrite `qwick_memory_context` with structured output**
@@ -571,18 +571,18 @@ async def qwick_memory_context(repo: str | None = None, limit: int = 20) -> str:
 
 - [ ] **Step 4: Run the new tests**
 
-Run: `cd /Users/falconiere/Projects/qwick-rag && uv run pytest tests/test_server.py -k "context" -v`
+Run: `cd /Users/falconiere/Projects/qwick-memory && uv run pytest tests/test_server.py -k "context" -v`
 Expected: Both pass
 
 - [ ] **Step 5: Run full test suite**
 
-Run: `cd /Users/falconiere/Projects/qwick-rag && uv run pytest -v`
+Run: `cd /Users/falconiere/Projects/qwick-memory && uv run pytest -v`
 Expected: All tests pass
 
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /Users/falconiere/Projects/qwick-rag && git add src/qwick_rag/server.py tests/test_server.py && git commit -m "feat: enhance qwick_memory_context with structured summary-first output"
+cd /Users/falconiere/Projects/qwick-memory && git add src/qwick_rag/server.py tests/test_server.py && git commit -m "feat: enhance qwick_memory_context with structured summary-first output"
 ```
 
 ---
@@ -629,7 +629,7 @@ def test_context_limit(tmp_path: Path) -> None:
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd /Users/falconiere/Projects/qwick-rag && uv run pytest tests/test_cli.py::test_context_shows_memories -v`
+Run: `cd /Users/falconiere/Projects/qwick-memory && uv run pytest tests/test_cli.py::test_context_shows_memories -v`
 Expected: FAIL (no `context` command yet)
 
 - [ ] **Step 3: Implement the `context` command**
@@ -693,18 +693,18 @@ def context(
 
 - [ ] **Step 4: Run the new tests**
 
-Run: `cd /Users/falconiere/Projects/qwick-rag && uv run pytest tests/test_cli.py -k "context" -v`
+Run: `cd /Users/falconiere/Projects/qwick-memory && uv run pytest tests/test_cli.py -k "context" -v`
 Expected: All 3 pass
 
 - [ ] **Step 5: Run full test suite**
 
-Run: `cd /Users/falconiere/Projects/qwick-rag && uv run pytest -v`
+Run: `cd /Users/falconiere/Projects/qwick-memory && uv run pytest -v`
 Expected: All tests pass
 
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /Users/falconiere/Projects/qwick-rag && git add src/qwick_rag/cli.py tests/test_cli.py && git commit -m "feat: add CLI context command for memory context restoration"
+cd /Users/falconiere/Projects/qwick-memory && git add src/qwick_rag/cli.py tests/test_cli.py && git commit -m "feat: add CLI context command for memory context restoration"
 ```
 
 ---
@@ -816,17 +816,17 @@ uv run python -m qwick_rag context 2>/dev/null || echo "No prior context found."
 
 - [ ] **Step 5: Make new scripts executable**
 
-Run: `chmod +x /Users/falconiere/Projects/qwick-rag/scripts/pre-compact.sh /Users/falconiere/Projects/qwick-rag/scripts/post-compact.sh`
+Run: `chmod +x /Users/falconiere/Projects/qwick-memory/scripts/pre-compact.sh /Users/falconiere/Projects/qwick-memory/scripts/post-compact.sh`
 
 - [ ] **Step 6: Verify all scripts are executable**
 
-Run: `ls -la /Users/falconiere/Projects/qwick-rag/scripts/*.sh`
+Run: `ls -la /Users/falconiere/Projects/qwick-memory/scripts/*.sh`
 Expected: All 3 scripts have execute permission
 
 - [ ] **Step 7: Commit**
 
 ```bash
-cd /Users/falconiere/Projects/qwick-rag && git add hooks/hooks.json scripts/session-start.sh scripts/pre-compact.sh scripts/post-compact.sh && git commit -m "feat: add PreCompact and PostCompact hooks, enhance SessionStart"
+cd /Users/falconiere/Projects/qwick-memory && git add hooks/hooks.json scripts/session-start.sh scripts/pre-compact.sh scripts/post-compact.sh && git commit -m "feat: add PreCompact and PostCompact hooks, enhance SessionStart"
 ```
 
 ---
@@ -859,13 +859,13 @@ Rename old section 8 (Doctor) to section 9. The results line computes the total 
 
 - [ ] **Step 2: Verify the e2e test runs**
 
-Run: `cd /Users/falconiere/Projects/qwick-rag && ./scripts/e2e-test.sh`
+Run: `cd /Users/falconiere/Projects/qwick-memory && ./scripts/e2e-test.sh`
 Expected: All 28 checks pass
 
 - [ ] **Step 3: Commit**
 
 ```bash
-cd /Users/falconiere/Projects/qwick-rag && git add scripts/e2e-test.sh && git commit -m "test: add context command to e2e test"
+cd /Users/falconiere/Projects/qwick-memory && git add scripts/e2e-test.sh && git commit -m "test: add context command to e2e test"
 ```
 
 ---
@@ -890,7 +890,7 @@ Add a new section after "Claude Code Plugin" in `CLAUDE.md`:
 ```markdown
 ## Memory Protocol
 
-qwick-rag includes an automatic memory protocol injected via MCP server instructions. When active, Claude proactively saves decisions, bugs, conventions, discoveries, and session summaries. The protocol is defined in `server.py` as the `PROTOCOL` constant.
+qwick-memory includes an automatic memory protocol injected via MCP server instructions. When active, Claude proactively saves decisions, bugs, conventions, discoveries, and session summaries. The protocol is defined in `server.py` as the `PROTOCOL` constant.
 
 **Hooks:**
 - `SessionStart` — Auto-index + load context
@@ -961,7 +961,7 @@ Call `qwick_memory_session_summary` with: goal, discoveries, accomplished, next_
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /Users/falconiere/Projects/qwick-rag && git add CLAUDE.md README.md skills/memory/SKILL.md && git commit -m "docs: update CLAUDE.md, README, and SKILL.md with new tool names and protocol"
+cd /Users/falconiere/Projects/qwick-memory && git add CLAUDE.md README.md skills/memory/SKILL.md && git commit -m "docs: update CLAUDE.md, README, and SKILL.md with new tool names and protocol"
 ```
 
 ---
@@ -970,30 +970,30 @@ cd /Users/falconiere/Projects/qwick-rag && git add CLAUDE.md README.md skills/me
 
 - [ ] **Step 1: Run full test suite**
 
-Run: `cd /Users/falconiere/Projects/qwick-rag && uv run pytest -v`
+Run: `cd /Users/falconiere/Projects/qwick-memory && uv run pytest -v`
 Expected: All tests pass
 
 - [ ] **Step 2: Run linter and formatter**
 
-Run: `cd /Users/falconiere/Projects/qwick-rag && uv run ruff format src/ tests/ && uv run ruff check src/ tests/`
+Run: `cd /Users/falconiere/Projects/qwick-memory && uv run ruff format src/ tests/ && uv run ruff check src/ tests/`
 Expected: No errors
 
 - [ ] **Step 3: Run type checker**
 
-Run: `cd /Users/falconiere/Projects/qwick-rag && uv run pyright src/`
+Run: `cd /Users/falconiere/Projects/qwick-memory && uv run pyright src/`
 Expected: No errors (or only pre-existing ones)
 
 - [ ] **Step 4: Run e2e test**
 
-Run: `cd /Users/falconiere/Projects/qwick-rag && ./scripts/e2e-test.sh`
+Run: `cd /Users/falconiere/Projects/qwick-memory && ./scripts/e2e-test.sh`
 Expected: All checks pass
 
 - [ ] **Step 5: Verify hook scripts are executable**
 
-Run: `ls -la /Users/falconiere/Projects/qwick-rag/scripts/*.sh`
+Run: `ls -la /Users/falconiere/Projects/qwick-memory/scripts/*.sh`
 Expected: All scripts have `+x` permission
 
 - [ ] **Step 6: Manual smoke test — start MCP server**
 
-Run: `cd /Users/falconiere/Projects/qwick-rag && echo '{}' | uv run python -m qwick_rag.server 2>&1 | head -5`
+Run: `cd /Users/falconiere/Projects/qwick-memory && echo '{}' | uv run python -m qwick_rag.server 2>&1 | head -5`
 Expected: Server starts without errors (may output JSON-RPC initialization)

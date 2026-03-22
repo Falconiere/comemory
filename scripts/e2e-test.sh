@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# End-to-end test for qwick-rag CLI.
+# End-to-end test for qwick-memory CLI.
 # Saves real memories, searches, lists, deletes, rebuilds index, runs doctor.
 # Uses a temp directory so it never touches your real data.
 #
 # Usage:
-#   ./scripts/e2e-test.sh          # run against installed qwick-rag
+#   ./scripts/e2e-test.sh          # run against installed qwick-memory
 #   ./scripts/e2e-test.sh --build  # install from source first, then test
 
 set -euo pipefail
@@ -63,17 +63,17 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT"
 
 if [[ "${1:-}" == "--build" ]]; then
-  echo -e "${BOLD}Building qwick-rag from source...${RESET}"
+  echo -e "${BOLD}Building qwick-memory from source...${RESET}"
   uv pip install -e ".[dev]"
   echo ""
 fi
 
 # Use uv run to invoke the CLI (handles venv automatically)
-QR="uv run qwick-rag"
+QR="uv run qwick-memory"
 
 # Verify the CLI is available
 if ! $QR --help &>/dev/null; then
-  echo -e "${RED}qwick-rag not available via 'uv run'. Run with --build or install first.${RESET}"
+  echo -e "${RED}qwick-memory not available via 'uv run'. Run with --build or install first.${RESET}"
   exit 1
 fi
 
@@ -88,7 +88,7 @@ export QWICK_RAG_REMOTE=""  # disable git remote in e2e tests
 
 mkdir -p "$TEST_DIR/memories"
 
-echo -e "${BOLD}qwick-rag end-to-end test${RESET}"
+echo -e "${BOLD}qwick-memory end-to-end test${RESET}"
 echo -e "  test dir: $TEST_DIR"
 echo ""
 

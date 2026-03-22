@@ -1,4 +1,4 @@
-"""Shared test fixtures for qwick-rag tests."""
+"""Shared test fixtures for qwick-memory tests."""
 
 from datetime import datetime
 from pathlib import Path

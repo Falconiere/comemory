@@ -1,4 +1,4 @@
-"""MCP server for qwick-rag: exposes RAG tools for Claude Code integration."""
+"""MCP server for qwick-memory: exposes RAG tools for Claude Code integration."""
 
 from __future__ import annotations
 
@@ -73,7 +73,7 @@ Call `qwick_memory_session_summary` with a structured summary:
 - Relevant files: key files touched or referenced
 """
 
-mcp = FastMCP("qwick-rag", instructions=PROTOCOL)
+mcp = FastMCP("qwick-memory", instructions=PROTOCOL)
 
 
 @mcp.tool()

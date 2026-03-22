@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "qwick-rag": {
+    "qwick-memory": {
       "command": "uv",
       "args": ["run", "python", "-m", "qwick_rag.server"]
     }

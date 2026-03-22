@@ -1636,7 +1636,7 @@ wheels = [
 ]
 
 [[package]]
-name = "qwick-rag"
+name = "qwick-memory"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

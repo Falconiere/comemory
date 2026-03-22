@@ -44,7 +44,7 @@ def _has_remote(cwd: Path) -> bool:
 
 
 def _find_source_repo() -> Path | None:
-  """Find the qwick-rag source repository by walking up from the package location.
+  """Find the qwick-memory source repository by walking up from the package location.
 
   Works for:
   - Dev installs: __file__ is in src/qwick_rag/ inside the repo.

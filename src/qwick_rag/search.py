@@ -1,4 +1,4 @@
-"""Search pipeline for qwick-rag: vector + metadata filtering."""
+"""Search pipeline for qwick-memory: vector + metadata filtering."""
 
 from __future__ import annotations
 

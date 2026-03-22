@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-qwick-rag is a centralized RAG memory system for multiple repositories. It's a Python CLI tool and Claude Code MCP plugin that stores developer knowledge (decisions, bugs, conventions, discoveries) as markdown files with vector search.
+qwick-memory is a centralized RAG memory system for multiple repositories. It's a Python CLI tool and Claude Code MCP plugin that stores developer knowledge (decisions, bugs, conventions, discoveries) as markdown files with vector search.
 
 ## Architecture
 
@@ -10,7 +10,7 @@ qwick-rag is a centralized RAG memory system for multiple repositories. It's a P
 - **Vector index:** LanceDB embedded (local, file-based, gitignored at `.vectordb/`)
 - **Embeddings:** fastembed with `all-MiniLM-L6-v2` (ONNX, local, ~30MB model)
 - **Search:** Vector similarity with BM25 fallback, metadata filtering
-- **Interfaces:** Typer CLI (`qwick-rag`) + MCP server (FastMCP) for Claude Code
+- **Interfaces:** Typer CLI (`qwick-memory`) + MCP server (FastMCP) for Claude Code
 - **Sharing:** Git push/pull for markdown files, each dev rebuilds local index
 
 ## Key Commands
@@ -23,7 +23,7 @@ pytest                         # Unit + integration tests (49 tests)
 ruff format src/ tests/        # Format (2-space indent!)
 ruff check src/ tests/         # Lint
 pyright src/                   # Type check
-qwick-rag doctor               # Health check
+qwick-memory doctor            # Health check
 ```
 
 ## Code Style
@@ -50,7 +50,7 @@ qwick-rag doctor               # Health check
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `QWICK_RAG_DIR` | Root directory for memories and vectordb | `~/.qwick-rag/` |
+| `QWICK_RAG_DIR` | Root directory for memories and vectordb | `~/.qwick-memory/` |
 | `QWICK_RAG_REPO` | Override repo name | Auto-detected from git remote |
 | `QWICK_RAG_AUTHOR` | Override author name | Auto-detected from git config |
 | `QWICK_RAG_REMOTE` | Override git remote URL (`""` to disable) | Auto-detected from source repo |
@@ -94,14 +94,14 @@ The actual memory content goes here as markdown body.
 The `.claude-plugin/` directory contains the marketplace manifest and plugin config. To install as a Claude Code plugin:
 
 ```
-claude plugin add --marketplace SidegigLLC/qwick-rag
+claude plugin add --marketplace SidegigLLC/qwick-memory
 ```
 
 The `marketplace.json` requires `owner` (object with `name`), and each plugin entry requires `name`, `description`, and `source`. See `.claude-plugin/marketplace.json` for the current schema.
 
 ## Memory Protocol
 
-qwick-rag includes an automatic memory protocol injected via MCP server instructions. When active, Claude proactively saves decisions, bugs, conventions, discoveries, and session summaries. The protocol is defined in `server.py` as the `PROTOCOL` constant.
+qwick-memory includes an automatic memory protocol injected via MCP server instructions. When active, Claude proactively saves decisions, bugs, conventions, discoveries, and session summaries. The protocol is defined in `server.py` as the `PROTOCOL` constant.
 
 **Hooks:**
 - `SessionStart` — Auto-index + load context

@@ -1,4 +1,4 @@
-# qwick-rag
+# qwick-memory
 
 Centralized RAG memory for multiple repositories. A Python CLI and Claude Code plugin that stores decisions, bugs, conventions, and discoveries as searchable, vector-embedded memories shared across your team via git.
 
@@ -11,32 +11,33 @@ Memories are plain markdown files with YAML frontmatter — git handles sharing 
 uv pip install -e ".[dev]"
 
 # Save a memory (auto-detects repo and author from git)
-qwick-rag save "We use PostgreSQL for transactional services" --type decision --tags db,postgres
+qwick-memory save "We use PostgreSQL for transactional services" --type decision --tags db,postgres
 
 # Search across all memories
-qwick-rag search "what database do we use"
+qwick-memory search "what database do we use"
 
 # List all memories
-qwick-rag list
+qwick-memory list
 
 # Rebuild vector index (after git pull)
-qwick-rag index
+qwick-memory index
 
 # Check system health
-qwick-rag doctor
+qwick-memory doctor
 ```
 
 ## How It Works
 
 ```
 Developer saves a memory
-  -> Markdown file written to memories/{repo}/{id}.md
+  -> Markdown file written to ~/.qwick-memory/memories/{repo}/{id}.md
   -> Embedded locally via fastembed (all-MiniLM-L6-v2)
   -> Indexed in local LanceDB (.vectordb/, gitignored)
+  -> Auto-committed and pushed to origin/memories branch
 
 Team shares via git
-  -> git push/pull shares markdown files
-  -> Each developer runs `qwick-rag index` to rebuild local vector index
+  -> Memories auto-sync to an orphan "memories" branch on the same remote
+  -> Each developer's index rebuilds automatically
   -> No remote database needed
 ```
 
@@ -46,10 +47,10 @@ Install as a Claude Code plugin for LLM-powered memory:
 
 ```bash
 # Add the marketplace
-claude plugin add --marketplace SidegigLLC/qwick-rag
+claude plugin add --marketplace SidegigLLC/qwick-memory
 
 # Or install directly from the repo
-claude mcp add qwick-rag -- uv run --directory /path/to/qwick-rag python -m qwick_rag.server
+claude mcp add qwick-memory -- uv run --directory /path/to/qwick-memory python -m qwick_rag.server
 ```
 
 This gives Claude Code 7 MCP tools: `qwick_memory_save`, `qwick_memory_search`, `qwick_memory_list`, `qwick_memory_delete`, `qwick_memory_index`, `qwick_memory_context`, `qwick_memory_session_summary`.
@@ -69,10 +70,7 @@ This gives Claude Code 7 MCP tools: `qwick_memory_save`, `qwick_memory_search`, 
 ## Project Structure
 
 ```
-qwick-rag/
-├── memories/              # Git-tracked markdown memories (shared)
-│   └── {repo}/
-│       └── {id}.md
+qwick-memory/
 ├── .vectordb/             # Local LanceDB index (gitignored)
 ├── src/qwick_rag/         # Python package
 │   ├── cli.py             # Typer CLI
@@ -81,9 +79,9 @@ qwick-rag/
 │   ├── index.py           # LanceDB indexing
 │   ├── search.py          # Hybrid search pipeline
 │   ├── config.py          # Shared path/context helpers
-│   ├── git_utils.py       # Git auto-detection
+│   ├── git_utils.py       # Git auto-detection + sync
 │   └── errors.py          # Error types
-├── tests/                 # Test suite (35 tests)
+├── tests/                 # Test suite (49 tests)
 ├── .claude-plugin/        # Claude Code plugin manifest
 ├── skills/memory/         # Memory protocol for Claude
 └── docs/superpowers/      # Design spec and implementation plan
@@ -94,7 +92,7 @@ qwick-rag/
 ```bash
 uv pip install -e ".[dev]"    # Install with dev deps
 pytest                         # Unit + integration tests
-./scripts/e2e-test.sh          # Real CLI end-to-end test (26 checks)
+./scripts/e2e-test.sh          # Real CLI end-to-end test (28 checks)
 ./scripts/e2e-test.sh --build  # Install from source + run e2e
 ruff check src/ tests/         # Lint
 ruff format src/ tests/        # Format (2-space indent)

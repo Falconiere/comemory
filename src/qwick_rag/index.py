@@ -1,4 +1,4 @@
-"""LanceDB-backed vector index for qwick-rag memories."""
+"""LanceDB-backed vector index for qwick-memory memories."""
 
 from __future__ import annotations
 

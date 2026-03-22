@@ -1,4 +1,4 @@
-"""Typer CLI for qwick-rag: save, search, list, delete, index, doctor."""
+"""Typer CLI for qwick-memory: save, search, list, delete, index, doctor."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ from qwick_rag.memory import (
 )
 from qwick_rag.search import search_memories
 
-app = typer.Typer(help="qwick-rag: Centralized RAG memory for multiple repositories.")
+app = typer.Typer(help="qwick-memory: Centralized RAG memory for multiple repositories.")
 console = Console(stderr=True)
 out = Console()
 
@@ -367,7 +367,7 @@ def doctor() -> None:
       console.print(f"  [red]Index error: {exc}[/red]")
       ok = False
   else:
-    console.print("  [yellow].vectordb/ not found (run 'qwick-rag index' to create)[/yellow]")
+    console.print("  [yellow].vectordb/ not found (run 'qwick-memory index' to create)[/yellow]")
 
   # 4. Index consistency
   out.print("[bold]Checking index consistency...[/bold]")
@@ -382,7 +382,7 @@ def doctor() -> None:
       else:
         console.print(
           f"  [yellow]Mismatch: {disk_count} files on disk, "
-          f"{index_count} in index. Run 'qwick-rag index' to sync.[/yellow]"
+          f"{index_count} in index. Run 'qwick-memory index' to sync.[/yellow]"
         )
     except Exception:
       out.print("  Skipped (index not available)")
@@ -401,7 +401,7 @@ def doctor() -> None:
       else:
         console.print(
           f"  [yellow]Model mismatch: meta.json has '{model}', "
-          f"expected '{MODEL_NAME}'. Run 'qwick-rag index --force'.[/yellow]"
+          f"expected '{MODEL_NAME}'. Run 'qwick-memory index --force'.[/yellow]"
         )
     except Exception as exc:
       console.print(f"  [red]Cannot read meta.json: {exc}[/red]")

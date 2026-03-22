@@ -1,11 +1,11 @@
-# qwick-memory: Automatic Memory Protocol for qwick-rag
+# qwick-memory: Automatic Memory Protocol for qwick-memory
 
 **Date:** 2026-03-21
 **Status:** Draft
 
 ## Goal
 
-Add an aggressive, always-on memory protocol to qwick-rag that automatically captures decisions, bugs, conventions, discoveries, and session context — replicating engram's behavior using qwick-rag's infrastructure (markdown files, vector search, git-shareable).
+Add an aggressive, always-on memory protocol to qwick-memory that automatically captures decisions, bugs, conventions, discoveries, and session context — replicating engram's behavior using qwick-memory's infrastructure (markdown files, vector search, git-shareable).
 
 Once active, qwick-memory replaces engram. Disable the engram plugin when qwick-memory is enabled to avoid conflicting protocols.
 
@@ -30,7 +30,7 @@ All existing MCP tools are renamed from `rag_*` to `qwick_memory_*`:
 | `rag_context` | `qwick_memory_context` |
 | *(new)* | `qwick_memory_session_summary` |
 
-The CLI commands (`qwick-rag save`, `qwick-rag search`, etc.) remain unchanged — only MCP tool names change.
+The CLI commands (`qwick-memory save`, `qwick-memory search`, etc.) remain unchanged — only MCP tool names change.
 
 ## Memory Type Addition
 
@@ -185,7 +185,7 @@ This ensures context restoration after compaction includes both session state an
 ### scripts/session-start.sh (enhanced)
 
 1. Auto-index (existing behavior)
-2. Output recent context via `qwick-rag context` CLI — this text appears in Claude's context as the hook result
+2. Output recent context via `qwick-memory context` CLI — this text appears in Claude's context as the hook result
 
 ```bash
 #!/usr/bin/env bash

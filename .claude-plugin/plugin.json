@@ -1,8 +1,8 @@
 {
-  "name": "qwick-rag",
+  "name": "qwick-memory",
   "description": "Centralized RAG memory for multiple repositories",
   "version": "0.1.0",
   "author": { "name": "SidegigLLC" },
-  "repository": "https://github.com/SidegigLLC/qwick-rag",
+  "repository": "https://github.com/SidegigLLC/qwick-memory",
   "license": "MIT"
 }

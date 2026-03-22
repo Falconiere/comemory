@@ -1,10 +1,10 @@
-"""Structured error types for qwick-rag."""
+"""Structured error types for qwick-memory."""
 
 from typing import Any
 
 
 class QwickRagError(Exception):
-  """Base error for all qwick-rag errors."""
+  """Base error for all qwick-memory errors."""
 
   def __init__(
     self,

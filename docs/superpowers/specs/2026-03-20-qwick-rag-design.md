@@ -1,11 +1,11 @@
-# qwick-rag: Centralized RAG Memory for Multiple Repositories
+# qwick-memory: Centralized RAG Memory for Multiple Repositories
 
 **Date:** 2026-03-20
 **Status:** Approved
 
 ## Overview
 
-qwick-rag is a Python CLI tool and Claude Code plugin that provides centralized, persistent memory for multiple repositories. It stores decisions, bugs, conventions, patterns, and discoveries as vector-embedded observations, enabling semantic search across all project knowledge.
+qwick-memory is a Python CLI tool and Claude Code plugin that provides centralized, persistent memory for multiple repositories. It stores decisions, bugs, conventions, patterns, and discoveries as vector-embedded observations, enabling semantic search across all project knowledge.
 
 Memories are plain markdown files committed to git (the source of truth). The vector index is a local cache rebuilt from those files. Git handles sharing and merging across the team.
 
@@ -13,11 +13,11 @@ Memories are plain markdown files committed to git (the source of truth). The ve
 
 ```
 ┌─────────────────────────────────────────────────┐
-│              qwick-rag (CLI + MCP)               │
+│              qwick-memory (CLI + MCP)               │
 │  (Claude Code plugin + pip-installable CLI)      │
 ├─────────────────────────────────────────────────┤
 │  MCP Tools: rag_save, rag_search, rag_list, ... │
-│  CLI: qwick-rag save, search, list, index, ...  │
+│  CLI: qwick-memory save, search, list, index, ...  │
 ├──────────┬──────────────────┬───────────────────┤
 │ Embedding│   Memory Manager │   Git Utils       │
 │ (sentence│  (CRUD + markdown│  (repo detection, │
@@ -94,35 +94,35 @@ Memories are append-only by design. To update a memory, delete the old one and s
 Installed via pip, used from any directory:
 
 ```bash
-pip install qwick-rag
+pip install qwick-memory
 ```
 
 ### Commands
 
 ```bash
 # Save a memory
-qwick-rag save "We use PostgreSQL for transactional services"
-qwick-rag save --type decision --tags db,postgres "We chose PG over Mongo"
-qwick-rag save   # opens $EDITOR for longer memories
+qwick-memory save "We use PostgreSQL for transactional services"
+qwick-memory save --type decision --tags db,postgres "We chose PG over Mongo"
+qwick-memory save   # opens $EDITOR for longer memories
 
 # Semantic search
-qwick-rag search "what database do we use"
-qwick-rag search "auth pattern" --repo qwick-backend --type convention
-qwick-rag search "logging" --limit 5
+qwick-memory search "what database do we use"
+qwick-memory search "auth pattern" --repo qwick-backend --type convention
+qwick-memory search "logging" --limit 5
 
 # List memories
-qwick-rag list --repo qwick-backend
-qwick-rag list --type bug --tags payments
+qwick-memory list --repo qwick-backend
+qwick-memory list --type bug --tags payments
 
 # Delete a memory
-qwick-rag delete a1b2c3d4
+qwick-memory delete a1b2c3d4
 
 # Rebuild vector index from markdown files
-qwick-rag index
-qwick-rag index --force   # full rebuild (new embedding model, corruption recovery)
+qwick-memory index
+qwick-memory index --force   # full rebuild (new embedding model, corruption recovery)
 
 # Diagnostics
-qwick-rag doctor
+qwick-memory doctor
 ```
 
 ### Behaviors
@@ -150,7 +150,7 @@ qwick-rag doctor
 ### Plugin Structure
 
 ```
-qwick-rag/
+qwick-memory/
 ├── .claude-plugin/
 │   ├── plugin.json              # Plugin manifest
 │   └── marketplace.json         # Marketplace distribution
@@ -187,11 +187,11 @@ qwick-rag/
 
 ```json
 {
-  "name": "qwick-rag",
+  "name": "qwick-memory",
   "description": "Centralized RAG memory for multiple repositories",
   "version": "0.1.0",
   "author": { "name": "SidegigLLC" },
-  "repository": "https://github.com/SidegigLLC/qwick-rag",
+  "repository": "https://github.com/SidegigLLC/qwick-memory",
   "license": "MIT"
 }
 ```
@@ -201,7 +201,7 @@ qwick-rag/
 ```json
 {
   "mcpServers": {
-    "qwick-rag": {
+    "qwick-memory": {
       "command": "uv",
       "args": ["run", "--directory", "${CLAUDE_PLUGIN_ROOT}", "python", "-m", "qwick_rag.server"]
     }
@@ -212,8 +212,8 @@ qwick-rag/
 ### Distribution
 
 ```bash
-/plugin marketplace add SidegigLLC/qwick-rag
-/plugin install qwick-rag@qwick-rag
+/plugin marketplace add SidegigLLC/qwick-memory
+/plugin install qwick-memory@qwick-memory
 ```
 
 ## Indexing & Search Pipeline
@@ -270,13 +270,13 @@ Each error carries: error code, human-readable message, suggested fix, and conte
 
 | Scenario | Detection | Recovery | Fallback |
 |----------|-----------|----------|----------|
-| `.vectordb/` corrupted | LanceDB throws on connect | Roll back via `table.checkout(version)` | `qwick-rag index --force` to rebuild from scratch |
+| `.vectordb/` corrupted | LanceDB throws on connect | Roll back via `table.checkout(version)` | `qwick-memory index --force` to rebuild from scratch |
 | Markdown file malformed | YAML parse error | Skip file, log warning with path + line | Continue indexing remaining files |
 | Embedding model download fails | Network/timeout | Retry 3x with exponential backoff | Fail with clear message |
 | Disk full on save | OSError on file write | Fail before writing to LanceDB (atomic) | Report available disk space |
 | Git remote not found | `git remote` returns empty | Warn, use directory name as repo | Store `repo_source: "directory_name"` in metadata |
 | Crash during write | Process killed | ACID atomic writes — partial writes never committed | Next `index` cleans up orphans |
-| Memory file deleted outside tool | In LanceDB but not on disk | `qwick-rag index` detects orphans, removes from LanceDB | Automatic on next index |
+| Memory file deleted outside tool | In LanceDB but not on disk | `qwick-memory index` detects orphans, removes from LanceDB | Automatic on next index |
 | LanceDB version bloat | Storage grows over time | `table.optimize()` runs on every `index` | `index --force` for clean slate |
 
 ### Atomic Save Guarantee
@@ -289,7 +289,7 @@ Each error carries: error code, human-readable message, suggested fix, and conte
 4. Atomic rename temp file to final path (POSIX atomic)
 5. If any step fails: delete temp file, skip LanceDB upsert, report error
 
-If the process crashes between step 3 and 4, `qwick-rag index` detects the orphan in LanceDB (no matching file) and cleans it up.
+If the process crashes between step 3 and 4, `qwick-memory index` detects the orphan in LanceDB (no matching file) and cleans it up.
 
 ### Logging
 
@@ -303,7 +303,7 @@ If the process crashes between step 3 and 4, `qwick-rag index` detects the orpha
 
 ### Diagnostics
 
-`qwick-rag doctor` checks:
+`qwick-memory doctor` checks:
 - `.vectordb/` health (can LanceDB connect and read?)
 - `memories/` readability (any malformed files?)
 - Index consistency (orphans? missing entries?)
@@ -326,13 +326,13 @@ If the process crashes between step 3 and 4, `qwick-rag index` detects the orpha
 
 ```
 Developer A (in qwick-backend repo):
-  qwick-rag save --type decision "We use Redis for session caching"
-  cd ~/Projects/qwick-rag && git add . && git commit -m "Add Redis caching decision" && git push
+  qwick-memory save --type decision "We use Redis for session caching"
+  cd ~/Projects/qwick-memory && git add . && git commit -m "Add Redis caching decision" && git push
 
 Developer B:
-  cd ~/Projects/qwick-rag && git pull
-  qwick-rag index   # rebuilds vector index with new memories
-  qwick-rag search "session caching"   # finds Developer A's memory
+  cd ~/Projects/qwick-memory && git pull
+  qwick-memory index   # rebuilds vector index with new memories
+  qwick-memory search "session caching"   # finds Developer A's memory
 ```
 
 Git handles all sharing and merging. Each memory is its own file, so conflicts are near-impossible with append-only usage. The vector index is gitignored and rebuilt locally.
