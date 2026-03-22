@@ -39,7 +39,9 @@ CALL THIS TOOL FIRST when:
 - User's first message references a feature, problem, or project area
 - You lack context on a topic the user is discussing
 
-Always search BEFORE answering from general knowledge. Memory has project-specific context you don't.
+-> Always search BEFORE answering from general knowledge. Memory has project-specific context you don't.
+
+Default: search all repos. Use the repo filter only when the user explicitly scopes to one project.
 ```
 
 ### `qwick_memory_save`
@@ -80,9 +82,16 @@ CALL THIS when:
 - After completing a significant milestone
 ```
 
-### Other tools (`list`, `delete`, `index`)
+### Other tools (`list`, `index`)
 
-No changes — these are utility tools that don't need behavioral triggers.
+No description changes — these are utility tools that don't need behavioral triggers.
+
+### `qwick_memory_delete`
+
+Add a brief confirmation hint to the response:
+```
+Deleted memory {id}. Removed from disk and vector index.
+```
 
 ## Section 2: PROTOCOL Restructure — Decision Tree
 
@@ -103,6 +112,7 @@ User message contains ANY of these → call `qwick_memory_search` BEFORE respond
 - First message: always search with project/topic keywords
 → If unsure, SEARCH. Cost of an unnecessary search is near zero.
   Cost of missing context is a wrong answer.
+→ For "where were we?" or status requests, prefer `qwick_memory_context`.
 
 **Step 2: Should I SAVE after?**
 You just did ANY of these → call `qwick_memory_save` IMMEDIATELY:
@@ -148,17 +158,26 @@ Memory Protocol Active:
 -> SUMMARIZE before ending session
 ```
 
+**Implementation:** Add the 3-line footer as static `echo` statements in `session-start.sh` (not in the `qwick_memory_context` Python function). The footer is hook-specific reinforcement — it should not appear when `qwick_memory_context` is called interactively mid-session.
+
 No changes to PreCompact/PostCompact hooks — they already serve their purpose.
 
 ## Section 4: Tool Response Hints
 
 Brief contextual hints in tool responses that nudge Claude toward the next appropriate action. ~15 tokens each.
 
-### `qwick_memory_save` response
+### `qwick_memory_save` — success
 
 ```
 Saved memory {id} ({type}). Embedded and indexed for vector search.
 -> This memory is now searchable by semantic similarity across all future sessions.
+```
+
+### `qwick_memory_save` — duplicate detected
+
+```
+Memory already exists: {id}. Content was previously saved.
+-> No action needed. The memory is already indexed and searchable.
 ```
 
 ### `qwick_memory_search` — results found
@@ -189,7 +208,13 @@ Saved session summary {id}. Embedded and indexed for vector search.
 -> Session context preserved for next time.
 ```
 
-No hints on `list` or `delete` — utility tools that don't need behavioral reinforcement.
+### `qwick_memory_delete` response
+
+```
+Deleted memory {id}. Removed from disk and vector index.
+```
+
+No hints on `list` — utility tool that doesn't need behavioral reinforcement.
 
 ## Section 5: Marketplace & Plugin Metadata
 
@@ -212,7 +237,8 @@ Persistent developer memory with semantic vector search — Claude automatically
 | File | Changes |
 |------|---------|
 | `src/qwick_memory/server.py` | PROTOCOL rewrite, tool descriptions, response hints |
-| `scripts/session-start.sh` | Add 3-line decision guide footer |
+| `scripts/session-start.sh` | Add 3-line decision guide footer (static echo) |
+| `skills/memory/SKILL.md` | Trim to minimal pointer — defer to tool descriptions and PROTOCOL |
 | `.claude-plugin/marketplace.json` | New description |
 | `.claude-plugin/plugin.json` | New description |
 
@@ -228,6 +254,8 @@ Persistent developer memory with semantic vector search — Claude automatically
 
 Net increase of ~240 tokens spread across high-priority surfaces. The PROTOCOL itself shrinks by ~80 tokens because we removed the duplicated memory types list.
 
+**Verification:** After implementation, count actual tokens in PROTOCOL + tool descriptions + response hints to confirm the budget holds.
+
 ## Design Decisions
 
 1. **Tool descriptions are the primary injection point** — Claude's tool-calling model weighs descriptions heavily when deciding which tool to invoke. This is where "CALL THIS FIRST" has the most impact.
@@ -240,4 +268,12 @@ Net increase of ~240 tokens spread across high-priority surfaces. The PROTOCOL i
 
 5. **No changes to PreCompact/PostCompact** — They already work. Adding more surfaces there would increase tokens without proportional benefit.
 
-6. **No changes to SKILL.md** — The skill descriptor already has the right metadata. Behavioral rules are now carried by PROTOCOL + tool descriptions.
+6. **SKILL.md trimmed to minimal pointer** — The current SKILL.md has its own copy of the protocol (flat bullet list), which would conflict with the new decision tree. Trim it to a 3-line description that defers to tool descriptions and PROTOCOL for behavioral rules. This avoids contradictions and saves tokens.
+
+7. **SessionStart footer is shell-only** — The 3-line decision guide is added as static `echo` in `session-start.sh`, not in the `qwick_memory_context` Python function. This keeps the context tool clean for interactive mid-session use.
+
+8. **Default search is cross-repo** — `qwick_memory_search` searches all repos by default (no repo filter). This ensures cross-cutting decisions (deployment conventions, shared patterns) are discoverable. The repo filter is opt-in for when the user explicitly scopes a search.
+
+## Testing Notes
+
+Existing tests use `in` checks on response strings (e.g., `"Saved" in result`). The new response hints append text after the existing strings, so `in` assertions remain valid. However, review all test assertions in `tests/test_server.py` and `scripts/e2e-test.sh` after implementation to confirm nothing breaks.
