@@ -185,7 +185,10 @@ async def qwick_memory_search(
     preview = r.content[:80] + "..." if len(r.content) > 80 else r.content
     lines.append(f"[{r.score:.3f}] {r.repo} ({r.type}) {preview} — {r.id}")
   result = "\n".join(lines)
-  return f"{result}\n-> Results ranked by semantic similarity. Use these memories to inform your response."
+  return (
+    f"{result}\n"
+    f"-> Results ranked by semantic similarity. Use these memories to inform your response."
+  )
 
 
 @mcp.tool()
