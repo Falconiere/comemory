@@ -52,7 +52,7 @@ def test_full_lifecycle(tmp_path: Path, monkeypatch):
   assert "convention" in result.output
   assert "React" in result.output
 
-  # Delete one memory — files live under memories/
+  # Delete one memory
   files = list((rag_dir / "memories").glob("*.md"))
   first_id = files[0].stem
   result = runner.invoke(app, ["delete", first_id])

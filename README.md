@@ -30,7 +30,7 @@ qwick-memory doctor
 
 ```
 Developer saves a memory
-  -> Markdown file written to ~/.qwick-memory/memories/{repo}/{id}.md
+  -> Markdown file written to ~/.qwick-memory/memories/{id}.md
   -> Embedded locally via fastembed (all-MiniLM-L6-v2)
   -> Indexed in local LanceDB (.vectordb/, gitignored)
   -> Auto-committed and pushed to origin/memories branch

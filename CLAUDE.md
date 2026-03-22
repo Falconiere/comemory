@@ -6,7 +6,7 @@ qwick-memory is a centralized RAG memory system for multiple repositories. It's 
 
 ## Architecture
 
-- **Source of truth:** Markdown files with YAML frontmatter in `memories/{repo}/{id}.md`
+- **Source of truth:** Markdown files with YAML frontmatter in `memories/{id}.md`
 - **Vector index:** LanceDB embedded (local, file-based, gitignored at `.vectordb/`)
 - **Embeddings:** fastembed with `all-MiniLM-L6-v2` (ONNX, local, ~30MB model)
 - **Search:** Vector similarity with BM25 fallback, metadata filtering
@@ -74,10 +74,10 @@ The actual memory content goes here as markdown body.
 ## Save Flow (Atomic)
 
 1. Generate ID (SHA-256 of content)
-2. Write markdown to temp file `memories/{repo}/.{id}.tmp`
+2. Write markdown to temp file `memories/.{id}.tmp`
 3. Embed content via fastembed
 4. Upsert into LanceDB
-5. Atomic rename temp → final `memories/{repo}/{id}.md`
+5. Atomic rename temp → final `memories/{id}.md`
 6. `git_sync`: add + commit + push (best-effort, never fails the save)
 7. On failure (steps 2-5): delete temp file, report error
 
