@@ -262,6 +262,66 @@ def index(
 
 
 @app.command()
+def context(
+  repo: str | None = typer.Option(None, "--repo", "-r", help="Filter by repo."),
+  limit: int = typer.Option(10, "--limit", "-n", help="Max non-summary memories."),
+) -> None:
+  """Show recent memories for context restoration."""
+  memories_dir = get_memories_dir()
+  if not memories_dir.exists():
+    out.print("No memories found.")
+    return
+
+  md_files = scan_memories(memories_dir)
+  if not md_files:
+    out.print("No memories found.")
+    return
+
+  target_repo = repo or get_repo()
+
+  summaries: list[Memory] = []
+  regular: list[Memory] = []
+  for fp in md_files:
+    try:
+      mem = parse_memory(fp)
+    except Exception:
+      continue
+    if mem.repo != target_repo:
+      continue
+    if mem.type == "session-summary":
+      summaries.append(mem)
+    else:
+      regular.append(mem)
+
+  if not summaries and not regular:
+    out.print(f"No memories found for repo: {target_repo}")
+    return
+
+  # Section 1: Latest session summary
+  if summaries:
+    summaries.sort(key=lambda m: m.created, reverse=True)
+    latest = summaries[0]
+    out.print("### Last Session")
+    out.print(latest.content)
+    out.print()
+
+  # Section 2: Recent non-summary memories
+  if regular:
+    regular.sort(key=lambda m: m.created, reverse=True)
+    regular = regular[:limit]
+    out.print("### Recent Memories")
+    for mem in regular:
+      preview = (
+        mem.content[:120] + "..."
+        if len(mem.content) > 120
+        else mem.content
+      )
+      out.print(
+        f"- [{mem.created.isoformat()}] ({mem.type}) {preview}"
+      )
+
+
+@app.command()
 def doctor() -> None:
   """Check system health: files, index, git context."""
   from qwick_rag.git_utils import detect_author, detect_repo_name

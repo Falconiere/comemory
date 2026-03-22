@@ -73,3 +73,31 @@ def test_index_command(tmp_path: Path) -> None:
   result = runner.invoke(app, ["index"])
   assert result.exit_code == 0, result.output
   assert "Index built" in result.output
+
+
+def test_context_shows_memories(tmp_path: Path) -> None:
+  """context command shows recent memories."""
+  result = runner.invoke(app, ["save", "Context test memory content"])
+  assert result.exit_code == 0, result.output
+
+  result = runner.invoke(app, ["context"])
+  assert result.exit_code == 0, result.output
+  assert "Recent Memories" in result.output
+  assert "Context test memory" in result.output
+
+
+def test_context_empty(tmp_path: Path) -> None:
+  """context command on empty repo shows 'No memories found'."""
+  result = runner.invoke(app, ["context"])
+  assert result.exit_code == 0, result.output
+  assert "No memories found" in result.output
+
+
+def test_context_limit(tmp_path: Path) -> None:
+  """context --limit restricts number of memories shown."""
+  for i in range(5):
+    result = runner.invoke(app, ["save", f"Memory number {i} unique content here"])
+    assert result.exit_code == 0, result.output
+
+  result = runner.invoke(app, ["context", "--limit", "2"])
+  assert result.exit_code == 0, result.output
