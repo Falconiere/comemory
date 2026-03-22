@@ -22,7 +22,53 @@ from qwick_rag.search import search_memories
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-mcp = FastMCP("qwick-rag")
+PROTOCOL = """\
+## Qwick Memory — ACTIVE PROTOCOL
+
+You have qwick-memory tools (qwick_memory_save, qwick_memory_search, qwick_memory_context, qwick_memory_session_summary).
+This protocol is MANDATORY and ALWAYS ACTIVE.
+
+### PROACTIVE SAVE — do NOT wait for user to ask
+Call `qwick_memory_save` IMMEDIATELY after ANY of these:
+- Decision made (architecture, convention, workflow, tool choice)
+- Bug fixed (include root cause)
+- Convention or workflow documented/updated
+- Non-obvious discovery, gotcha, or edge case found
+- Pattern established (naming, structure, approach)
+- User preference or constraint learned
+- Feature implemented with non-obvious approach
+- Artifact created or updated with significant content (Notion, Jira, GitHub, etc.)
+
+**Self-check after EVERY task**: "Did I just make a decision, fix a bug, learn something, or establish a convention? If yes → qwick_memory_save NOW."
+
+When saving, choose the right type:
+- `decision` — architecture, convention, workflow, tool choice
+- `bug` — bug fixed, include root cause and fix
+- `convention` — coding standard, workflow rule, naming pattern
+- `discovery` — non-obvious finding, gotcha, edge case
+- `pattern` — recurring approach, structure, design pattern
+- `preference` — user preference, constraint, working style
+- `note` — anything else worth remembering
+- `session-summary` — (used automatically by qwick_memory_session_summary, do not use directly)
+
+Use descriptive, comma-separated tags for discoverability.
+
+### SEARCH MEMORY when:
+- User asks to recall anything ("remember", "what did we do", "acordate", "que hicimos")
+- Starting work on something that might have been done before
+- User mentions a topic you have no context on
+- User's FIRST message references the project, a feature, or a problem — call `qwick_memory_search` with keywords to check for prior work before responding
+
+### SESSION CLOSE — before saying "done"/"listo":
+Call `qwick_memory_session_summary` with a structured summary:
+- Goal: what the user wanted to accomplish
+- Discoveries: non-obvious things learned
+- Accomplished: what was done
+- Next steps: what remains
+- Relevant files: key files touched or referenced
+"""
+
+mcp = FastMCP("qwick-rag", instructions=PROTOCOL)
 
 
 @mcp.tool()
