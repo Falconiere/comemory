@@ -6,7 +6,7 @@
           {
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/session-start.sh\"",
-            "timeout": 30000
+            "async": false
           }
         ]
       }
@@ -17,7 +17,7 @@
           {
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/pre-compact.sh\"",
-            "timeout": 60000
+            "async": false
           }
         ]
       }
@@ -28,7 +28,7 @@
           {
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/post-compact.sh\"",
-            "timeout": 30000
+            "async": false
           }
         ]
       }

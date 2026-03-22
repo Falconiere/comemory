@@ -1,7 +1,5 @@
 {
-  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "qwick-memory",
-  "description": "Centralized RAG memory for multiple repositories",
   "owner": {
     "name": "SidegigLLC"
   },
