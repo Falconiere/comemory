@@ -13,9 +13,9 @@ runner = CliRunner()
 @pytest.fixture(autouse=True)
 def _cli_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
   """Set environment variables so CLI uses temp directories."""
-  monkeypatch.setenv("QWICK_RAG_DIR", str(tmp_path))
-  monkeypatch.setenv("QWICK_RAG_REPO", "test-repo")
-  monkeypatch.setenv("QWICK_RAG_AUTHOR", "tester")
+  monkeypatch.setenv("QWICK_MEMORY_DIR", str(tmp_path))
+  monkeypatch.setenv("QWICK_MEMORY_REPO", "test-repo")
+  monkeypatch.setenv("QWICK_MEMORY_AUTHOR", "tester")
   # Create memories directory
   (tmp_path / "memories").mkdir()
 

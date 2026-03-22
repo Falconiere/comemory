@@ -9,9 +9,9 @@ from qwick_rag.git_utils import detect_author, detect_repo_name
 def get_rag_dir() -> Path:
   """Resolve the qwick-memory root directory.
 
-  Priority: QWICK_RAG_DIR env var > ~/.qwick-memory/ (global default).
+  Priority: QWICK_MEMORY_DIR env var > ~/.qwick-memory/ (global default).
   """
-  env = os.environ.get("QWICK_RAG_DIR")
+  env = os.environ.get("QWICK_MEMORY_DIR")
   if env:
     return Path(env)
   return Path.home() / ".qwick-memory"
@@ -26,14 +26,14 @@ def get_vectordb_dir() -> Path:
 
 
 def get_repo() -> str:
-  env = os.environ.get("QWICK_RAG_REPO")
+  env = os.environ.get("QWICK_MEMORY_REPO")
   if env:
     return env
   return detect_repo_name()
 
 
 def get_author() -> str:
-  env = os.environ.get("QWICK_RAG_AUTHOR")
+  env = os.environ.get("QWICK_MEMORY_AUTHOR")
   if env:
     return env
   return detect_author()

@@ -12,9 +12,9 @@ def rag_env():
   """Set up a temp directory and env vars for MCP tool tests."""
   with tempfile.TemporaryDirectory() as tmp:
     env = {
-      "QWICK_RAG_DIR": tmp,
-      "QWICK_RAG_REPO": "test/mcp-repo",
-      "QWICK_RAG_AUTHOR": "mcp-tester",
+      "QWICK_MEMORY_DIR": tmp,
+      "QWICK_MEMORY_REPO": "test/mcp-repo",
+      "QWICK_MEMORY_AUTHOR": "mcp-tester",
     }
     with patch.dict(os.environ, env):
       os.makedirs(os.path.join(tmp, "memories"), exist_ok=True)

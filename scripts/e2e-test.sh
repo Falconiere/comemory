@@ -81,10 +81,10 @@ fi
 TEST_DIR=$(mktemp -d)
 trap 'rm -rf "$TEST_DIR"' EXIT
 
-export QWICK_RAG_DIR="$TEST_DIR"
-export QWICK_RAG_REPO="e2e-test-repo"
-export QWICK_RAG_AUTHOR="e2e-bot"
-export QWICK_RAG_REMOTE=""  # disable git remote in e2e tests
+export QWICK_MEMORY_DIR="$TEST_DIR"
+export QWICK_MEMORY_REPO="e2e-test-repo"
+export QWICK_MEMORY_AUTHOR="e2e-bot"
+export QWICK_MEMORY_REMOTE=""  # disable git remote in e2e tests
 
 mkdir -p "$TEST_DIR/memories"
 

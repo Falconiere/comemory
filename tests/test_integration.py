@@ -14,9 +14,9 @@ def test_full_lifecycle(tmp_path: Path, monkeypatch):
   rag_dir = tmp_path / "rag"
   rag_dir.mkdir()
   (rag_dir / "memories").mkdir()
-  monkeypatch.setenv("QWICK_RAG_DIR", str(rag_dir))
-  monkeypatch.setenv("QWICK_RAG_REPO", "integration-test")
-  monkeypatch.setenv("QWICK_RAG_AUTHOR", "tester")
+  monkeypatch.setenv("QWICK_MEMORY_DIR", str(rag_dir))
+  monkeypatch.setenv("QWICK_MEMORY_REPO", "integration-test")
+  monkeypatch.setenv("QWICK_MEMORY_AUTHOR", "tester")
 
   # Save three memories
   result = runner.invoke(

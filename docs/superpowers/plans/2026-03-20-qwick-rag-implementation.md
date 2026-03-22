@@ -466,7 +466,7 @@ from qwick_rag.git_utils import detect_author, detect_repo_name
 
 def get_rag_dir() -> Path:
     """Resolve the qwick-memory root directory."""
-    env = os.environ.get("QWICK_RAG_DIR")
+    env = os.environ.get("QWICK_MEMORY_DIR")
     if env:
         return Path(env)
     return Path.cwd()
@@ -481,14 +481,14 @@ def get_vectordb_dir() -> Path:
 
 
 def get_repo() -> str:
-    env = os.environ.get("QWICK_RAG_REPO")
+    env = os.environ.get("QWICK_MEMORY_REPO")
     if env:
         return env
     return detect_repo_name()
 
 
 def get_author() -> str:
-    env = os.environ.get("QWICK_RAG_AUTHOR")
+    env = os.environ.get("QWICK_MEMORY_AUTHOR")
     if env:
         return env
     return detect_author()
@@ -1321,10 +1321,10 @@ def test_save_creates_memory_file(tmp_path: Path, monkeypatch):
     rag_dir = tmp_path / "rag"
     rag_dir.mkdir()
     (rag_dir / "memories").mkdir()
-    monkeypatch.setenv("QWICK_RAG_DIR", str(rag_dir))
+    monkeypatch.setenv("QWICK_MEMORY_DIR", str(rag_dir))
     # Fake git context
-    monkeypatch.setenv("QWICK_RAG_REPO", "test-repo")
-    monkeypatch.setenv("QWICK_RAG_AUTHOR", "tester")
+    monkeypatch.setenv("QWICK_MEMORY_REPO", "test-repo")
+    monkeypatch.setenv("QWICK_MEMORY_AUTHOR", "tester")
 
     result = runner.invoke(app, ["save", "Test memory content", "--type", "note"])
     assert result.exit_code == 0, result.output
@@ -1338,9 +1338,9 @@ def test_search_returns_results(tmp_path: Path, monkeypatch):
     rag_dir = tmp_path / "rag"
     rag_dir.mkdir()
     (rag_dir / "memories").mkdir()
-    monkeypatch.setenv("QWICK_RAG_DIR", str(rag_dir))
-    monkeypatch.setenv("QWICK_RAG_REPO", "test-repo")
-    monkeypatch.setenv("QWICK_RAG_AUTHOR", "tester")
+    monkeypatch.setenv("QWICK_MEMORY_DIR", str(rag_dir))
+    monkeypatch.setenv("QWICK_MEMORY_REPO", "test-repo")
+    monkeypatch.setenv("QWICK_MEMORY_AUTHOR", "tester")
 
     # Save a memory first
     runner.invoke(app, ["save", "We use PostgreSQL for our database", "--type", "decision"])
@@ -1355,9 +1355,9 @@ def test_list_shows_memories(tmp_path: Path, monkeypatch):
     rag_dir = tmp_path / "rag"
     rag_dir.mkdir()
     (rag_dir / "memories").mkdir()
-    monkeypatch.setenv("QWICK_RAG_DIR", str(rag_dir))
-    monkeypatch.setenv("QWICK_RAG_REPO", "test-repo")
-    monkeypatch.setenv("QWICK_RAG_AUTHOR", "tester")
+    monkeypatch.setenv("QWICK_MEMORY_DIR", str(rag_dir))
+    monkeypatch.setenv("QWICK_MEMORY_REPO", "test-repo")
+    monkeypatch.setenv("QWICK_MEMORY_AUTHOR", "tester")
 
     runner.invoke(app, ["save", "A test memory", "--type", "note"])
     result = runner.invoke(app, ["list"])
@@ -1370,9 +1370,9 @@ def test_delete_removes_memory(tmp_path: Path, monkeypatch):
     rag_dir = tmp_path / "rag"
     rag_dir.mkdir()
     (rag_dir / "memories").mkdir()
-    monkeypatch.setenv("QWICK_RAG_DIR", str(rag_dir))
-    monkeypatch.setenv("QWICK_RAG_REPO", "test-repo")
-    monkeypatch.setenv("QWICK_RAG_AUTHOR", "tester")
+    monkeypatch.setenv("QWICK_MEMORY_DIR", str(rag_dir))
+    monkeypatch.setenv("QWICK_MEMORY_REPO", "test-repo")
+    monkeypatch.setenv("QWICK_MEMORY_AUTHOR", "tester")
 
     runner.invoke(app, ["save", "Memory to delete", "--type", "note"])
     files = list((rag_dir / "memories" / "test-repo").glob("*.md"))
@@ -1389,7 +1389,7 @@ def test_index_command(tmp_path: Path, monkeypatch):
     rag_dir = tmp_path / "rag"
     rag_dir.mkdir()
     (rag_dir / "memories").mkdir()
-    monkeypatch.setenv("QWICK_RAG_DIR", str(rag_dir))
+    monkeypatch.setenv("QWICK_MEMORY_DIR", str(rag_dir))
 
     result = runner.invoke(app, ["index"])
     assert result.exit_code == 0
@@ -1695,7 +1695,7 @@ Expected: 5 passed
 - [ ] **Step 5: Verify CLI works end-to-end**
 
 ```bash
-export QWICK_RAG_DIR=/Users/falconiere/Projects/qwick-memory
+export QWICK_MEMORY_DIR=/Users/falconiere/Projects/qwick-memory
 qwick-memory save "Test memory from CLI" --type note
 qwick-memory search "test"
 qwick-memory list
@@ -1737,9 +1737,9 @@ async def test_rag_save(tmp_path: Path):
     (rag_dir / "memories").mkdir()
 
     with patch.dict(os.environ, {
-        "QWICK_RAG_DIR": str(rag_dir),
-        "QWICK_RAG_REPO": "test-repo",
-        "QWICK_RAG_AUTHOR": "tester",
+        "QWICK_MEMORY_DIR": str(rag_dir),
+        "QWICK_MEMORY_REPO": "test-repo",
+        "QWICK_MEMORY_AUTHOR": "tester",
     }):
         result = await rag_save(
             content="We use Redis for caching",
@@ -1757,9 +1757,9 @@ async def test_rag_search(tmp_path: Path):
     (rag_dir / "memories").mkdir()
 
     with patch.dict(os.environ, {
-        "QWICK_RAG_DIR": str(rag_dir),
-        "QWICK_RAG_REPO": "test-repo",
-        "QWICK_RAG_AUTHOR": "tester",
+        "QWICK_MEMORY_DIR": str(rag_dir),
+        "QWICK_MEMORY_REPO": "test-repo",
+        "QWICK_MEMORY_AUTHOR": "tester",
     }):
         await rag_save(content="PostgreSQL is our primary database", type="decision", tags="db")
         result = await rag_search(query="database")
@@ -1773,7 +1773,7 @@ async def test_rag_index(tmp_path: Path):
     rag_dir.mkdir()
     (rag_dir / "memories").mkdir()
 
-    with patch.dict(os.environ, {"QWICK_RAG_DIR": str(rag_dir)}):
+    with patch.dict(os.environ, {"QWICK_MEMORY_DIR": str(rag_dir)}):
         result = await rag_index(force=False)
     assert "Indexed" in result
 ```
@@ -2273,9 +2273,9 @@ def test_full_lifecycle(tmp_path: Path, monkeypatch):
     rag_dir = tmp_path / "rag"
     rag_dir.mkdir()
     (rag_dir / "memories").mkdir()
-    monkeypatch.setenv("QWICK_RAG_DIR", str(rag_dir))
-    monkeypatch.setenv("QWICK_RAG_REPO", "integration-test")
-    monkeypatch.setenv("QWICK_RAG_AUTHOR", "tester")
+    monkeypatch.setenv("QWICK_MEMORY_DIR", str(rag_dir))
+    monkeypatch.setenv("QWICK_MEMORY_REPO", "integration-test")
+    monkeypatch.setenv("QWICK_MEMORY_AUTHOR", "tester")
 
     # Save three memories
     runner.invoke(app, ["save", "PostgreSQL is our primary database", "--type", "decision", "--tags", "db,postgres"])

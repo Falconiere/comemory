@@ -50,10 +50,10 @@ qwick-memory doctor            # Health check
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `QWICK_RAG_DIR` | Root directory for memories and vectordb | `~/.qwick-memory/` |
-| `QWICK_RAG_REPO` | Override repo name | Auto-detected from git remote |
-| `QWICK_RAG_AUTHOR` | Override author name | Auto-detected from git config |
-| `QWICK_RAG_REMOTE` | Override git remote URL (`""` to disable) | Auto-detected from source repo |
+| `QWICK_MEMORY_DIR` | Root directory for memories and vectordb | `~/.qwick-memory/` |
+| `QWICK_MEMORY_REPO` | Override repo name | Auto-detected from git remote |
+| `QWICK_MEMORY_AUTHOR` | Override author name | Auto-detected from git config |
+| `QWICK_MEMORY_REMOTE` | Override git remote URL (`""` to disable) | Auto-detected from source repo |
 
 ## Memory Data Model
 

@@ -99,8 +99,8 @@ def _ensure_rag_repo(rag_dir: Path) -> None:
     gitignore.write_text(".vectordb/\n")
 
   # Discover and configure remote.
-  # QWICK_RAG_REMOTE overrides auto-detection: set to URL or "" to disable.
-  remote_env = os.environ.get("QWICK_RAG_REMOTE")
+  # QWICK_MEMORY_REMOTE overrides auto-detection: set to URL or "" to disable.
+  remote_env = os.environ.get("QWICK_MEMORY_REMOTE")
   if remote_env is not None:
     remote_url = remote_env or None  # "" → None (disabled)
   else:
