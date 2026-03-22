@@ -63,15 +63,26 @@ mcp = FastMCP("qwick-memory", instructions=PROTOCOL)
 
 @mcp.tool()
 async def qwick_memory_save(content: str, type: str = "note", tags: str = "") -> str:
-  """Save a new memory to the RAG knowledge base.
+  """Save a memory to the knowledge base. Called proactively — do NOT wait for user to ask.
+
+  CALL THIS TOOL AFTER:
+  - Making an architecture, convention, or workflow decision
+  - Fixing a bug (include root cause and fix)
+  - Discovering a non-obvious gotcha or edge case
+  - Establishing a pattern or convention
+  - Learning a user preference or constraint
+  - Implementing a feature with a non-obvious approach
+
+  Self-check after every task: "Did I just decide, fix, learn, or
+  establish something?" If yes → save NOW.
 
   Args:
     content: The memory content to save.
     type: Memory type (decision, bug, convention, discovery, pattern, preference, note).
-    tags: Comma-separated tags.
+    tags: Comma-separated tags for discoverability.
 
   Returns:
-    Status string confirming the save.
+    Status string confirming the save with indexing details.
   """
   if not content or not content.strip():
     return "Error: content cannot be empty."
@@ -130,6 +141,19 @@ async def qwick_memory_search(
 ) -> str:
   """Search memories by semantic similarity.
 
+  CALL THIS TOOL FIRST when:
+  - User asks about prior work, PRs, decisions, bugs, or project history
+  - User asks "what do you know about...", "remember...", "what did we do..."
+  - Starting work that might overlap with previous sessions
+  - User's first message references a feature, problem, or project area
+  - You lack context on a topic the user is discussing
+
+  -> Always search BEFORE answering from general knowledge.
+  Memory has project-specific context you don't.
+
+  Default: search all repos. Use the repo filter only when the user
+  explicitly scopes to one project.
+
   Args:
     query: Search query text.
     repo: Filter by repository name.
@@ -138,7 +162,7 @@ async def qwick_memory_search(
     limit: Maximum number of results.
 
   Returns:
-    Formatted text with search results.
+    Formatted text with search results ranked by semantic similarity.
   """
   idx = get_index()
   results = search_memories(idx, query, repo=repo, type_filter=type, tag=tag, limit=limit)
@@ -248,7 +272,12 @@ async def qwick_memory_index(force: bool = False) -> str:
 
 @mcp.tool()
 async def qwick_memory_context(repo: str | None = None, limit: int = 20) -> str:
-  """Get recent memories for the current repo, with latest session summary first.
+  """Get recent memories for context. Includes latest session summary + recent memories.
+
+  CALL THIS when:
+  - Starting a new session (if SessionStart hook didn't fire)
+  - Resuming work after a pause
+  - User asks for a status update or "where were we?"
 
   Args:
     repo: Repository name (defaults to auto-detected repo).
@@ -340,9 +369,12 @@ async def qwick_memory_session_summary(
   next_steps: str,
   relevant_files: str,
 ) -> str:
-  """Save a structured session summary to memory.
+  """Save a structured session summary. MUST be called before ending a session.
 
-  Call this before ending a session or when context compaction is imminent.
+  CALL THIS when:
+  - User says "done", "listo", "that's it", "thanks", or signals session end
+  - Before context compaction
+  - After completing a significant milestone
 
   Args:
     goal: What the user wanted to accomplish.
@@ -352,7 +384,7 @@ async def qwick_memory_session_summary(
     relevant_files: Key files touched or referenced.
 
   Returns:
-    Status string confirming the save.
+    Status string confirming the save with indexing details.
   """
   if not goal or not goal.strip():
     return "Error: goal cannot be empty."
