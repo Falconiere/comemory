@@ -84,7 +84,14 @@ def save(
   # Generate ID and prepare memory
   memory_id = generate_id(content)
   tag_list = [t.strip() for t in tags.split(",") if t.strip()]
-  repo_list = [get_repo()]
+  detected = get_repo()
+  if detected is None:
+    console.print(
+      "[red]Could not auto-detect repo (no .git in project root). "
+      "Set QWICK_MEMORY_REPO or run from a git repository.[/red]"
+    )
+    raise typer.Exit(1)
+  repo_list = [detected]
   author = get_author()
 
   memories_dir = get_memories_dir()
@@ -289,7 +296,7 @@ def context(
       mem = parse_memory(fp)
     except Exception:
       continue
-    if target_repo not in mem.repo:
+    if target_repo is not None and target_repo not in mem.repo:
       continue
     if mem.type == "session-summary":
       summaries.append(mem)

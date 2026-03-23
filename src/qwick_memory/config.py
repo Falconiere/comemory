@@ -25,7 +25,8 @@ def get_vectordb_dir() -> Path:
   return get_rag_dir() / ".vectordb"
 
 
-def get_repo() -> str:
+def get_repo() -> str | None:
+  """Return repo name from env var or git detection. None if undetectable."""
   env = os.environ.get("QWICK_MEMORY_REPO")
   if env:
     return env

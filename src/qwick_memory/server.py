@@ -82,8 +82,9 @@ async def qwick_memory_save(
     content: The memory content to save.
     type: Memory type (decision, bug, convention, discovery, pattern, preference, note).
     tags: Comma-separated tags for discoverability.
-    repo: Comma-separated repo names. Defaults to auto-detected repo. Use multiple
-          for cross-repo work (e.g. "sidegig-api,sidegig-web").
+    repo: Comma-separated repo names (e.g. "sidegig-api" or "sidegig-api,sidegig-web").
+          REQUIRED when the working directory has no .git (e.g. multi-repo workspaces).
+          Auto-detected from git remote when available.
 
   Returns:
     Status string confirming the save with indexing details.
@@ -98,7 +99,20 @@ async def qwick_memory_save(
 
   memory_id = generate_id(content)
   tag_list = [t.strip() for t in tags.split(",") if t.strip()]
-  repo_list = [r.strip() for r in repo.split(",") if r.strip()] if repo else [get_repo()]
+
+  if repo:
+    repo_list = [r.strip() for r in repo.split(",") if r.strip()]
+  else:
+    detected = get_repo()
+    if detected is None:
+      return (
+        "Error: could not auto-detect repo (no .git in project root). "
+        "Please provide the repo parameter with the repository name(s) "
+        "this memory belongs to (e.g. repo='sidegig-api' or "
+        "repo='sidegig-api,sidegig-web' for cross-repo work)."
+      )
+    repo_list = [detected]
+
   author = get_author()
 
   memories_dir = get_memories_dir()
@@ -319,6 +333,7 @@ async def qwick_memory_context(repo: str | None = None, limit: int = 20) -> str:
   if not md_files:
     return "No memories found."
 
+  # If no repo detected/provided, return all memories (no repo filter)
   summaries: list[Memory] = []
   regular: list[Memory] = []
   for fp in md_files:
@@ -326,7 +341,7 @@ async def qwick_memory_context(repo: str | None = None, limit: int = 20) -> str:
       mem = parse_memory(fp)
     except Exception:
       continue
-    if target_repo not in mem.repo:
+    if target_repo is not None and target_repo not in mem.repo:
       continue
     if mem.type == "session-summary":
       summaries.append(mem)
@@ -392,6 +407,7 @@ async def qwick_memory_session_summary(
   accomplished: str,
   next_steps: str,
   relevant_files: str,
+  repo: str = "",
 ) -> str:
   """Save a structured session summary. MUST be called before ending a session.
 
@@ -406,6 +422,7 @@ async def qwick_memory_session_summary(
     accomplished: What was done.
     next_steps: What remains to be done.
     relevant_files: Key files touched or referenced.
+    repo: Comma-separated repo names. REQUIRED when the working directory has no .git.
 
   Returns:
     Status string confirming the save with indexing details.
@@ -423,7 +440,18 @@ async def qwick_memory_session_summary(
   )
 
   memory_id = generate_id(content)
-  repo_list = [get_repo()]
+
+  if repo:
+    repo_list = [r.strip() for r in repo.split(",") if r.strip()]
+  else:
+    detected = get_repo()
+    if detected is None:
+      return (
+        "Error: could not auto-detect repo (no .git in project root). "
+        "Please provide the repo parameter with the repository name(s)."
+      )
+    repo_list = [detected]
+
   author = get_author()
 
   memories_dir = get_memories_dir()

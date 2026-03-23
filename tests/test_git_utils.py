@@ -30,17 +30,15 @@ def test_detect_repo_name_ssh_remote(tmp_path: Path):
   assert name == "qwick-backend"
 
 
-def test_detect_repo_name_falls_back_to_dirname(tmp_path: Path):
-  """Falls back to directory name when no remote exists."""
+def test_detect_repo_name_returns_none_when_no_remote(tmp_path: Path):
+  """Returns None when git repo has no remote."""
   subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True)
-  name = detect_repo_name(tmp_path)
-  assert name == tmp_path.name
+  assert detect_repo_name(tmp_path) is None
 
 
-def test_detect_repo_name_no_git(tmp_path: Path):
-  """Falls back to directory name when not in a git repo."""
-  name = detect_repo_name(tmp_path)
-  assert name == tmp_path.name
+def test_detect_repo_name_returns_none_when_no_git(tmp_path: Path):
+  """Returns None when not in a git repo."""
+  assert detect_repo_name(tmp_path) is None
 
 
 def test_detect_repo_name_uses_claude_project_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

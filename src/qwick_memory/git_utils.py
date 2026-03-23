@@ -137,8 +137,11 @@ def git_sync(rag_dir: Path, message: str) -> None:
     logger.debug("git_sync failed (best-effort)", exc_info=True)
 
 
-def detect_repo_name(cwd: Path | None = None) -> str:
-  """Detect repository name from git remote URL, falling back to directory name.
+def detect_repo_name(cwd: Path | None = None) -> str | None:
+  """Detect repository name from git remote URL.
+
+  Returns None when no git repo is found — callers must handle this
+  (e.g. require the user/Claude to provide the repo explicitly).
 
   When running as an MCP server plugin, Path.cwd() points to the plugin cache
   directory (e.g. ~/.claude/plugins/cache/.../0.1.0/), not the user's project.
@@ -164,8 +167,8 @@ def detect_repo_name(cwd: Path | None = None) -> str:
   except (subprocess.TimeoutExpired, FileNotFoundError):
     pass
 
-  logger.warning("No git remote found, using directory name as repo: %s", cwd.name)
-  return cwd.name
+  logger.warning("No git remote found at %s, repo must be provided explicitly.", cwd)
+  return None
 
 
 def detect_author(cwd: Path | None = None) -> str:
