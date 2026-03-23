@@ -1,6 +1,8 @@
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from qwick_memory.git_utils import detect_author, detect_repo_name, git_sync
 
 
@@ -39,6 +41,38 @@ def test_detect_repo_name_no_git(tmp_path: Path):
   """Falls back to directory name when not in a git repo."""
   name = detect_repo_name(tmp_path)
   assert name == tmp_path.name
+
+
+def test_detect_repo_name_uses_claude_project_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+  """Uses CLAUDE_PROJECT_DIR env var when cwd is not passed (MCP server context)."""
+  project = tmp_path / "my-project"
+  project.mkdir()
+  subprocess.run(["git", "init"], cwd=project, capture_output=True)
+  subprocess.run(
+    ["git", "remote", "add", "origin", "https://github.com/org/my-project.git"],
+    cwd=project,
+    capture_output=True,
+  )
+  monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(project))
+  name = detect_repo_name()  # no cwd — should use CLAUDE_PROJECT_DIR
+  assert name == "my-project"
+
+
+def test_detect_repo_name_explicit_cwd_overrides_claude_project_dir(
+  tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+  """Explicit cwd parameter takes precedence over CLAUDE_PROJECT_DIR."""
+  project = tmp_path / "explicit-repo"
+  project.mkdir()
+  subprocess.run(["git", "init"], cwd=project, capture_output=True)
+  subprocess.run(
+    ["git", "remote", "add", "origin", "https://github.com/org/explicit-repo.git"],
+    cwd=project,
+    capture_output=True,
+  )
+  monkeypatch.setenv("CLAUDE_PROJECT_DIR", "/some/other/dir")
+  name = detect_repo_name(project)
+  assert name == "explicit-repo"
 
 
 def test_detect_author(tmp_path: Path):

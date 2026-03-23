@@ -62,7 +62,9 @@ mcp = FastMCP("qwick-memory", instructions=PROTOCOL)
 
 
 @mcp.tool()
-async def qwick_memory_save(content: str, type: str = "note", tags: str = "") -> str:
+async def qwick_memory_save(
+  content: str, type: str = "note", tags: str = "", repo: str = ""
+) -> str:
   """Save a memory to the knowledge base. Called proactively — do NOT wait for user to ask.
 
   CALL THIS TOOL AFTER:
@@ -80,6 +82,8 @@ async def qwick_memory_save(content: str, type: str = "note", tags: str = "") ->
     content: The memory content to save.
     type: Memory type (decision, bug, convention, discovery, pattern, preference, note).
     tags: Comma-separated tags for discoverability.
+    repo: Comma-separated repo names. Defaults to auto-detected repo. Use multiple
+          for cross-repo work (e.g. "sidegig-api,sidegig-web").
 
   Returns:
     Status string confirming the save with indexing details.
@@ -94,7 +98,7 @@ async def qwick_memory_save(content: str, type: str = "note", tags: str = "") ->
 
   memory_id = generate_id(content)
   tag_list = [t.strip() for t in tags.split(",") if t.strip()]
-  repo = get_repo()
+  repo_list = [r.strip() for r in repo.split(",") if r.strip()] if repo else [get_repo()]
   author = get_author()
 
   memories_dir = get_memories_dir()
@@ -110,7 +114,7 @@ async def qwick_memory_save(content: str, type: str = "note", tags: str = "") ->
 
   memory = Memory(
     id=memory_id,
-    repo=repo,
+    repo=repo_list,
     type=type,
     tags=tag_list,
     author=author,
@@ -130,8 +134,10 @@ async def qwick_memory_save(content: str, type: str = "note", tags: str = "") ->
     return f"Error saving memory: {exc}"
 
   git_sync(get_rag_dir(), f"save: {memory_id} ({type})")
+  repos_str = ", ".join(repo_list)
   return (
-    f"Saved memory {memory_id} ({type}). Embedded and indexed for vector search.\n"
+    f"Saved memory {memory_id} ({type}) for [{repos_str}]. "
+    f"Embedded and indexed for vector search.\n"
     f"-> This memory is now searchable by semantic similarity across all future sessions."
   )
 
@@ -216,14 +222,15 @@ async def qwick_memory_list(repo: str | None = None, type: str | None = None) ->
     except Exception:
       continue
 
-    if repo and mem.repo != repo:
+    if repo and repo not in mem.repo:
       continue
     if type and mem.type != type:
       continue
 
     preview = mem.content[:60] + "..." if len(mem.content) > 60 else mem.content
     tag_str = ", ".join(mem.tags) if mem.tags else ""
-    lines.append(f"{mem.id} | {mem.repo} | {mem.type} | [{tag_str}] | {preview}")
+    repo_str = ", ".join(mem.repo)
+    lines.append(f"{mem.id} | {repo_str} | {mem.type} | [{tag_str}] | {preview}")
 
   if not lines:
     return "No memories match the filters."
@@ -319,7 +326,7 @@ async def qwick_memory_context(repo: str | None = None, limit: int = 20) -> str:
       mem = parse_memory(fp)
     except Exception:
       continue
-    if mem.repo != target_repo:
+    if target_repo not in mem.repo:
       continue
     if mem.type == "session-summary":
       summaries.append(mem)
@@ -357,7 +364,7 @@ def _rotate_session_summaries(memories_dir: Path, repo: str, max_keep: int = 3) 
   for fp in memories_dir.glob("*.md"):
     try:
       mem = parse_memory(fp)
-      if mem.type == "session-summary" and mem.repo == repo:
+      if mem.type == "session-summary" and repo in mem.repo:
         summaries.append((mem.created, fp))
     except Exception:
       continue
@@ -416,7 +423,7 @@ async def qwick_memory_session_summary(
   )
 
   memory_id = generate_id(content)
-  repo = get_repo()
+  repo_list = [get_repo()]
   author = get_author()
 
   memories_dir = get_memories_dir()
@@ -432,7 +439,7 @@ async def qwick_memory_session_summary(
 
   memory = Memory(
     id=memory_id,
-    repo=repo,
+    repo=repo_list,
     type="session-summary",
     tags=["session-summary"],
     author=author,
@@ -451,9 +458,9 @@ async def qwick_memory_session_summary(
     logger.exception("Failed to save session summary %s", memory_id)
     return f"Error saving session summary: {exc}"
 
-  # Rotation: keep only 3 most recent session summaries
+  # Rotation: keep only 3 most recent session summaries per repo
   try:
-    _rotate_session_summaries(memories_dir, repo, max_keep=3)
+    _rotate_session_summaries(memories_dir, repo_list[0], max_keep=3)
   except Exception:
     logger.warning("Session summary rotation failed.")
 

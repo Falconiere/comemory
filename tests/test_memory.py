@@ -34,7 +34,7 @@ def test_memory_dataclass():
   created = datetime(2026, 3, 20, 12, 0, 0)
   mem = Memory(
     id="abc123def456",
-    repo="owner/repo",
+    repo=["owner/repo"],
     type="decision",
     tags=["python", "architecture"],
     author="alice",
@@ -42,7 +42,7 @@ def test_memory_dataclass():
     content="We decided to use FastAPI.",
   )
   assert mem.id == "abc123def456"
-  assert mem.repo == "owner/repo"
+  assert mem.repo == ["owner/repo"]
   assert mem.type == "decision"
   assert mem.tags == ["python", "architecture"]
   assert mem.author == "alice"
@@ -57,7 +57,7 @@ def test_write_and_parse_roundtrip(tmp_path: Path):
   created = datetime(2026, 3, 20, 10, 30, 0)
   mem = Memory(
     id="aabbccddeeff",
-    repo="org/project",
+    repo=["org/project"],
     type="bug",
     tags=["critical", "auth"],
     author="bob",
@@ -91,7 +91,7 @@ def test_write_memory_creates_frontmatter(tmp_path: Path):
   created = datetime(2026, 1, 1, 0, 0, 0)
   mem = Memory(
     id="112233445566",
-    repo="user/repo",
+    repo=["user/repo"],
     type="note",
     tags=["docs"],
     author="carol",

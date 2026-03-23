@@ -48,8 +48,8 @@ def search_memories(
   # Build metadata filter clauses (sanitize inputs to prevent injection)
   where_clauses: list[str] = []
   if repo is not None:
-    safe_repo = repo.replace('"', '\\"')
-    where_clauses.append(f'repo = "{safe_repo}"')
+    safe_repo = repo.replace('"', '\\"').replace("%", "")
+    where_clauses.append(f'repo LIKE "%{safe_repo}%"')
   if type_filter is not None:
     safe_type = type_filter.replace('"', '\\"')
     where_clauses.append(f'type = "{safe_type}"')

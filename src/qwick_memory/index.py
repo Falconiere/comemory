@@ -82,7 +82,7 @@ class MemoryIndex:
     """Convert a Memory + its embedding vector into a flat dict for LanceDB."""
     return {
       "id": memory.id,
-      "repo": memory.repo,
+      "repo": ",".join(memory.repo),
       "type": memory.type,
       "tags": ",".join(memory.tags),
       "author": memory.author,

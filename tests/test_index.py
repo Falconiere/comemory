@@ -54,7 +54,7 @@ def test_index_detects_new_file(
 
   new_mem = Memory(
     id="mem_new_004",
-    repo="acme/backend",
+    repo=["acme/backend"],
     type="discovery",
     tags=["performance"],
     author="dave",
@@ -108,7 +108,7 @@ def test_upsert_single_memory(
   idx = MemoryIndex(vectordb_dir)
   mem = Memory(
     id="mem_upsert_001",
-    repo="acme/backend",
+    repo=["acme/backend"],
     type="note",
     tags=["testing"],
     author="eve",

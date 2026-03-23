@@ -84,7 +84,7 @@ def save(
   # Generate ID and prepare memory
   memory_id = generate_id(content)
   tag_list = [t.strip() for t in tags.split(",") if t.strip()]
-  repo = get_repo()
+  repo_list = [get_repo()]
   author = get_author()
 
   memories_dir = get_memories_dir()
@@ -99,7 +99,7 @@ def save(
 
   memory = Memory(
     id=memory_id,
-    repo=repo,
+    repo=repo_list,
     type=type,
     tags=tag_list,
     author=author,
@@ -193,7 +193,7 @@ def list_memories(
       continue
 
     # Apply filters
-    if repo and mem.repo != repo:
+    if repo and repo not in mem.repo:
       continue
     if type and mem.type != type:
       continue
@@ -203,7 +203,7 @@ def list_memories(
     preview = mem.content[:50] + "..." if len(mem.content) > 50 else mem.content
     table.add_row(
       mem.id,
-      mem.repo,
+      ", ".join(mem.repo),
       mem.type,
       ", ".join(mem.tags),
       preview,
@@ -289,7 +289,7 @@ def context(
       mem = parse_memory(fp)
     except Exception:
       continue
-    if mem.repo != target_repo:
+    if target_repo not in mem.repo:
       continue
     if mem.type == "session-summary":
       summaries.append(mem)

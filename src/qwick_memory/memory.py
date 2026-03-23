@@ -44,7 +44,7 @@ class Memory:
   """A single unit of knowledge stored in qwick-memory."""
 
   id: str
-  repo: str
+  repo: list[str]
   type: MemoryType
   tags: list[str]
   author: str
@@ -107,9 +107,17 @@ def parse_memory(filepath: Path) -> Memory:
       raise TypeError(msg)
 
     mem_type: MemoryType = str(post.metadata["type"])  # type: ignore[assignment]  # validated by MEMORY_TYPES check downstream
+    # repo: accept both old string format and new list format for backwards compat
+    raw_repo = post.metadata["repo"]
+    if isinstance(raw_repo, str):
+      repo_list = [raw_repo]
+    elif isinstance(raw_repo, list):
+      repo_list = [str(r) for r in raw_repo]
+    else:
+      repo_list = [str(raw_repo)]
     return Memory(
       id=str(post.metadata["id"]),
-      repo=str(post.metadata["repo"]),
+      repo=repo_list,
       type=mem_type,
       tags=[str(t) for t in list(post.metadata["tags"])],  # type: ignore[arg-type]  # metadata values typed as object; runtime guarantees list
       author=str(post.metadata["author"]),

@@ -43,40 +43,15 @@ def _has_remote(cwd: Path) -> bool:
     return False
 
 
-def _find_source_repo() -> Path | None:
-  """Find the qwick-memory source repository by walking up from the package location.
-
-  Works for:
-  - Dev installs: __file__ is in src/qwick_memory/ inside the repo.
-  - Plugin installs: .venv/ is inside the clone, so ancestors reach .git.
-  """
-  pkg_file = Path(__file__).resolve()
-  for parent in pkg_file.parents:
-    if (parent / ".git").exists() or (parent / ".git").is_file():
-      return parent
-  return None
-
-
-def _get_remote_url(repo_dir: Path) -> str | None:
-  """Get the origin remote URL from a git repo."""
-  try:
-    result = _run_git(["remote", "get-url", "origin"], cwd=repo_dir)
-    if result.returncode == 0 and result.stdout.strip():
-      return result.stdout.strip()
-  except (subprocess.TimeoutExpired, FileNotFoundError):
-    pass
-  return None
-
 
 def _ensure_rag_repo(rag_dir: Path) -> None:
-  """Ensure rag_dir is a git repo on the orphan 'memories' branch with remote.
+  """Ensure rag_dir is a git repo on the orphan 'memories' branch.
 
   On first call:
     1. git init + checkout --orphan memories
     2. Write .gitignore for .vectordb/
-    3. Discover remote URL from the source repo (plugin clone or dev checkout)
-    4. If remote has an existing memories branch, pull it down
-    5. Otherwise, create an initial commit
+    3. If QWICK_MEMORY_REMOTE is set, configure remote and pull existing memories
+    4. Otherwise, create an initial commit (local-only)
   """
   global _rag_repo_ready
   if _rag_repo_ready == rag_dir:
@@ -98,14 +73,10 @@ def _ensure_rag_repo(rag_dir: Path) -> None:
   if not gitignore.exists():
     gitignore.write_text(".vectordb/\n")
 
-  # Discover and configure remote.
-  # QWICK_MEMORY_REMOTE overrides auto-detection: set to URL or "" to disable.
-  remote_env = os.environ.get("QWICK_MEMORY_REMOTE")
-  if remote_env is not None:
-    remote_url = remote_env or None  # "" → None (disabled)
-  else:
-    source = _find_source_repo()
-    remote_url = _get_remote_url(source) if source else None
+  # Configure remote only when explicitly set via QWICK_MEMORY_REMOTE.
+  # Previously auto-detected from the plugin source repo, which caused memories
+  # to be pushed to the qwick-memory GitHub repo instead of a user-controlled repo.
+  remote_url = os.environ.get("QWICK_MEMORY_REMOTE") or None
 
   if remote_url:
     _run_git(["remote", "add", "origin", remote_url], cwd=rag_dir)
@@ -167,8 +138,15 @@ def git_sync(rag_dir: Path, message: str) -> None:
 
 
 def detect_repo_name(cwd: Path | None = None) -> str:
-  """Detect repository name from git remote URL, falling back to directory name."""
-  cwd = cwd or Path.cwd()
+  """Detect repository name from git remote URL, falling back to directory name.
+
+  When running as an MCP server plugin, Path.cwd() points to the plugin cache
+  directory (e.g. ~/.claude/plugins/cache/.../0.1.0/), not the user's project.
+  CLAUDE_PROJECT_DIR is set by Claude Code and points to the actual project.
+  """
+  if cwd is None:
+    project_dir = os.environ.get("CLAUDE_PROJECT_DIR")
+    cwd = Path(project_dir) if project_dir else Path.cwd()
   try:
     result = subprocess.run(
       ["git", "remote", "get-url", "origin"],

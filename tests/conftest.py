@@ -10,10 +10,9 @@ from qwick_memory.memory import Memory, write_memory
 
 
 @pytest.fixture(autouse=True)
-def _reset_git_cache(monkeypatch: pytest.MonkeyPatch) -> None:
-  """Reset git_sync cache and prevent tests from discovering the real remote."""
+def _reset_git_cache() -> None:
+  """Reset git_sync cache between tests."""
   _git_mod._rag_repo_ready = None
-  monkeypatch.setattr(_git_mod, "_find_source_repo", lambda: None)
 
 
 @pytest.fixture()
@@ -22,7 +21,7 @@ def sample_memories() -> list[Memory]:
   return [
     Memory(
       id="mem_pg_001",
-      repo="acme/backend",
+      repo=["acme/backend"],
       type="decision",
       tags=["database", "postgresql"],
       author="alice",
@@ -33,7 +32,7 @@ def sample_memories() -> list[Memory]:
     ),
     Memory(
       id="mem_sess_002",
-      repo="acme/backend",
+      repo=["acme/backend"],
       type="bug",
       tags=["auth", "session"],
       author="bob",
@@ -44,7 +43,7 @@ def sample_memories() -> list[Memory]:
     ),
     Memory(
       id="mem_react_003",
-      repo="acme/frontend",
+      repo=["acme/frontend"],
       type="convention",
       tags=["react", "exports"],
       author="carol",
