@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 import tempfile
@@ -404,25 +403,24 @@ def doctor() -> None:
   else:
     out.print("  Skipped (missing memories or vectordb)")
 
-  # 5. Model version (meta.json)
+  # 5. Model version
   out.print("[bold]Checking model version...[/bold]")
-  meta_path = vectordb_dir / "meta.json"
-  if meta_path.exists():
+  if vectordb_dir.exists():
     try:
-      meta = json.loads(meta_path.read_text())
-      model = meta.get("model", "unknown")
-      if model == MODEL_NAME:
-        out.print(f"  Model: {model}")
+      idx = MemoryIndex(vectordb_dir)
+      if idx.model_matches():
+        out.print(f"  Model: {MODEL_NAME}")
       else:
+        stored = idx._current_meta.get("model", "unknown")
         console.print(
-          f"  [yellow]Model mismatch: meta.json has '{model}', "
+          f"  [yellow]Model mismatch: index has '{stored}', "
           f"expected '{MODEL_NAME}'. Run 'qwick-memory index --force'.[/yellow]"
         )
     except Exception as exc:
-      console.print(f"  [red]Cannot read meta.json: {exc}[/red]")
+      console.print(f"  [red]Cannot check model version: {exc}[/red]")
       ok = False
   else:
-    out.print("  No meta.json found (index not built yet)")
+    out.print("  No vectordb found (index not built yet)")
 
   # 6. Git context
   out.print("[bold]Checking git context...[/bold]")

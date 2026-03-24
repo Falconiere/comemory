@@ -284,6 +284,23 @@ async def test_save_requires_repo(rag_env: str) -> None:
 
 
 @pytest.mark.asyncio
+async def test_session_summary_requires_repo(rag_env: str) -> None:
+  """qwick_memory_session_summary returns error when repo is empty string."""
+  from qwick_memory.server import qwick_memory_session_summary
+
+  result = await qwick_memory_session_summary(
+    goal="Test",
+    discoveries="None",
+    accomplished="None",
+    next_steps="None",
+    relevant_files="None",
+    repo="",
+  )
+  assert "Error" in result
+  assert "repo is required" in result
+
+
+@pytest.mark.asyncio
 async def test_save_response_confirms_repo(rag_env: str) -> None:
   """qwick_memory_save response explicitly names the repos."""
   from qwick_memory.server import qwick_memory_save

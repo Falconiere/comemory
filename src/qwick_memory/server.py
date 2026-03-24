@@ -19,7 +19,7 @@ from qwick_memory.memory import (
   scan_memories,
   write_memory,
 )
-from qwick_memory.search import search_memories
+from qwick_memory.search import SearchResult, search_memories
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -73,10 +73,11 @@ def _estimate_tokens(text: str) -> int:
   return len(text) // 4
 
 
-def _format_tiered_results(results: list, budget: int = SEARCH_TOKEN_BUDGET) -> str:
+def _format_tiered_results(
+  results: list[SearchResult],
+  budget: int = SEARCH_TOKEN_BUDGET,
+) -> str:
   """Format search results into tiered markdown with token budget."""
-  from qwick_memory.search import SearchResult
-
   high: list[SearchResult] = []
   moderate: list[SearchResult] = []
   low: list[SearchResult] = []
@@ -102,8 +103,9 @@ def _format_tiered_results(results: list, budget: int = SEARCH_TOKEN_BUDGET) -> 
       entry = f"{header}\n{r.content}"
       cost = _estimate_tokens(entry)
       if cost > remaining:
-        max_chars = remaining * 4
-        entry = f"{header}\n{r.content[:max_chars]}... [truncated]"
+        header_chars = len(header) + 1  # +1 for newline
+        max_content_chars = max(0, (remaining * 4) - header_chars)
+        entry = f"{header}\n{r.content[:max_content_chars]}... [truncated]"
         remaining = 0
       else:
         remaining -= cost

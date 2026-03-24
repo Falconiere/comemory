@@ -54,7 +54,7 @@ class MemoryIndex:
     meta_path = self._vectordb_dir / "meta.json"
     meta_path.write_text(json.dumps({"model": MODEL_NAME}))
 
-  # -- public helpers -------------------------------------------------------
+  # -- embedding helpers ----------------------------------------------------
 
   def model_matches(self) -> bool:
     """Check if the indexed model matches the current MODEL_NAME."""
