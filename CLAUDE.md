@@ -8,7 +8,7 @@ qwick-memory is a centralized RAG memory system for multiple repositories. It's 
 
 - **Source of truth:** Markdown files with YAML frontmatter in `memories/{id}.md`
 - **Vector index:** LanceDB embedded (local, file-based, gitignored at `.vectordb/`)
-- **Embeddings:** fastembed with `all-MiniLM-L6-v2` (ONNX, local, ~30MB model)
+- **Embeddings:** fastembed with `nomic-embed-text-v1.5-Q` (ONNX, local, ~130MB model, 768 dims, 8192 token context)
 - **Search:** Vector similarity with BM25 fallback, metadata filtering
 - **Interfaces:** Typer CLI (`qwick-memory`) + MCP server (FastMCP) for Claude Code
 - **Sharing:** Git push/pull for markdown files, each dev rebuilds local index
@@ -86,7 +86,7 @@ The actual memory content goes here as markdown body.
 - `conftest.py` has shared fixtures: `_reset_git_cache`, `sample_memories`, `memories_dir`
 - CLI tests use `typer.testing.CliRunner` with `monkeypatch.setenv`
 - MCP server tests call async tool functions directly (not the protocol layer)
-- First test run downloads the embedding model (~30MB, cached at `~/.cache/fastembed/`)
+- First test run downloads the embedding model (~130MB, cached at `~/.cache/fastembed/`)
 - `scripts/e2e-test.sh` runs the real CLI binary end-to-end in an isolated temp directory (save, list, search, duplicate detection, delete, index rebuild, doctor)
 
 ## Claude Code Plugin
