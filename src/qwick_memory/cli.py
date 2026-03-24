@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 import tempfile
@@ -35,6 +36,21 @@ app = typer.Typer(help="qwick-memory: Centralized RAG memory for multiple reposi
 console = Console(stderr=True)
 out = Console()
 
+
+def _verbose_callback(value: bool) -> None:
+  if value:
+    logging.basicConfig(level=logging.DEBUG, format="%(name)s: %(message)s")
+
+
+verbose_option = typer.Option(
+  False,
+  "--verbose",
+  "-v",
+  help="Enable verbose logging.",
+  callback=_verbose_callback,
+  is_eager=True,
+)
+
 TOKEN_WARN_LIMIT = 6000  # calibrated for nomic 8192-token context
 
 
@@ -58,6 +74,10 @@ def save(
   content: str | None = typer.Argument(None, help="Memory content (opens $EDITOR if omitted)."),
   type: str = typer.Option("note", "--type", "-t", help="Memory type."),
   tags: str = typer.Option("", "--tags", help="Comma-separated tags."),
+  repo: str = typer.Option(
+    "", "--repo", "-r", help="Comma-separated repos (auto-detected if omitted)."
+  ),
+  verbose: bool = verbose_option,
 ) -> None:
   """Save a new memory."""
   # Validate type
@@ -83,14 +103,17 @@ def save(
   # Generate ID and prepare memory
   memory_id = generate_id(content)
   tag_list = [t.strip() for t in tags.split(",") if t.strip()]
-  detected = get_repo()
-  if detected is None:
-    console.print(
-      "[red]Could not auto-detect repo (no .git in project root). "
-      "Set QWICK_MEMORY_REPO or run from a git repository.[/red]"
-    )
-    raise typer.Exit(1)
-  repo_list = [detected]
+  if repo:
+    repo_list = [r.strip() for r in repo.split(",") if r.strip()]
+  else:
+    detected = get_repo()
+    if detected is None:
+      console.print(
+        "[red]Could not auto-detect repo (no .git in project root). "
+        "Use --repo or set QWICK_MEMORY_REPO.[/red]"
+      )
+      raise typer.Exit(1)
+    repo_list = [detected]
   author = get_author()
 
   memories_dir = get_memories_dir()
@@ -136,6 +159,7 @@ def search(
   type: str | None = typer.Option(None, "--type", "-t", help="Filter by type."),
   tag: str | None = typer.Option(None, "--tag", help="Filter by tag."),
   limit: int = typer.Option(10, "--limit", "-n", help="Max results."),
+  verbose: bool = verbose_option,
 ) -> None:
   """Search memories by semantic similarity."""
   idx = get_index()
@@ -170,6 +194,7 @@ def list_memories(
   repo: str | None = typer.Option(None, "--repo", "-r", help="Filter by repo."),
   type: str | None = typer.Option(None, "--type", "-t", help="Filter by type."),
   tags: str | None = typer.Option(None, "--tags", help="Filter by tags (comma-separated)."),
+  verbose: bool = verbose_option,
 ) -> None:
   """List memories from disk (not the index)."""
   memories_dir = get_memories_dir()
@@ -223,6 +248,7 @@ def list_memories(
 @app.command()
 def delete(
   memory_id: str = typer.Argument(..., help="ID of memory to delete."),
+  verbose: bool = verbose_option,
 ) -> None:
   """Delete a memory by ID."""
   memories_dir = get_memories_dir()
@@ -254,6 +280,7 @@ def delete(
 @app.command()
 def index(
   force: bool = typer.Option(False, "--force", "-f", help="Force full rebuild."),
+  verbose: bool = verbose_option,
 ) -> None:
   """Build or rebuild the vector index."""
   memories_dir = get_memories_dir()
@@ -271,7 +298,9 @@ def index(
 
 
 @app.command()
-def migrate() -> None:
+def migrate(
+  verbose: bool = verbose_option,
+) -> None:
   """Auto-migrate memories: flatten nested dirs, rebuild index if model changed.
 
   Safe to run repeatedly — skips if nothing to do. Called automatically by
@@ -317,6 +346,7 @@ def migrate() -> None:
 def context(
   repo: str | None = typer.Option(None, "--repo", "-r", help="Filter by repo."),
   limit: int = typer.Option(10, "--limit", "-n", help="Max non-summary memories."),
+  verbose: bool = verbose_option,
 ) -> None:
   """Show recent memories for context restoration."""
   memories_dir = get_memories_dir()
@@ -368,7 +398,9 @@ def context(
 
 
 @app.command()
-def doctor() -> None:
+def doctor(
+  verbose: bool = verbose_option,
+) -> None:
   """Check system health: files, index, git context."""
   from qwick_memory.git_utils import detect_author, detect_repo_name
   from qwick_memory.index import MODEL_NAME, MemoryIndex

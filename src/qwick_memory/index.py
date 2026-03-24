@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 TABLE_NAME = "memories"
 MODEL_NAME = "nomic-ai/nomic-embed-text-v1.5-Q"
+EXPECTED_DIM = 768
 
 
 class MemoryIndex:
@@ -60,17 +61,31 @@ class MemoryIndex:
     """Check if the indexed model matches the current MODEL_NAME."""
     return self._current_meta.get("model") == MODEL_NAME
 
+  def _validate_dim(self, vector: list[float], context: str) -> None:
+    """Raise if vector dimension doesn't match expected model output."""
+    if len(vector) != EXPECTED_DIM:
+      raise RuntimeError(
+        f"Embedding dim mismatch in {context}: got {len(vector)}, expected {EXPECTED_DIM}. "
+        f"The fastembed model may have fallen back to a different model. "
+        f"Try: rm -rf /tmp/fastembed_cache && qwick-memory index --force"
+      )
+
   def _embed_documents(self, texts: list[str]) -> list[list[float]]:
     """Embed documents with 'search_document: ' prefix for nomic model."""
     if not texts:
       return []
     prefixed = [f"search_document: {t}" for t in texts]
-    return [vec.tolist() for vec in self.model.embed(prefixed)]
+    vectors = [vec.tolist() for vec in self.model.embed(prefixed)]
+    if vectors:
+      self._validate_dim(vectors[0], "embed_documents")
+    return vectors
 
   def _embed_query(self, text: str) -> list[float]:
     """Embed a single query with 'search_query: ' prefix for nomic model."""
     prefixed = f"search_query: {text}"
-    return next(iter(self.model.embed([prefixed]))).tolist()
+    vector = next(iter(self.model.embed([prefixed]))).tolist()
+    self._validate_dim(vector, "embed_query")
+    return vector
 
   def _table_exists(self) -> bool:
     """Check whether the memories table already exists."""
