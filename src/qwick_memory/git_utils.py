@@ -14,6 +14,14 @@ MEMORIES_BRANCH = "memories"
 _rag_repo_ready: Path | None = None  # caches the rag_dir that was set up
 
 
+def _safe_cwd() -> Path:
+  """Return CWD, falling back to $HOME if CWD was deleted (e.g. plugin cache cleanup)."""
+  try:
+    return Path.cwd()
+  except (FileNotFoundError, OSError):
+    return Path.home()
+
+
 def _run_git(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
   """Run a git command, returning the CompletedProcess."""
   return subprocess.run(
@@ -148,7 +156,7 @@ def detect_repo_name(cwd: Path | None = None) -> str | None:
   """
   if cwd is None:
     project_dir = os.environ.get("CLAUDE_PROJECT_DIR")
-    cwd = Path(project_dir) if project_dir else Path.cwd()
+    cwd = Path(project_dir) if project_dir else _safe_cwd()
   try:
     result = subprocess.run(
       ["git", "remote", "get-url", "origin"],
@@ -172,7 +180,7 @@ def detect_repo_name(cwd: Path | None = None) -> str | None:
 
 def detect_author(cwd: Path | None = None) -> str:
   """Detect author from git config user.name, falling back to 'unknown'."""
-  cwd = cwd or Path.cwd()
+  cwd = cwd or _safe_cwd()
   try:
     result = subprocess.run(
       ["git", "config", "user.name"],
