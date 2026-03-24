@@ -223,7 +223,7 @@ async def test_search_no_results_includes_save_hint(rag_env: str) -> None:
   from qwick_memory.server import qwick_memory_search
 
   result = await qwick_memory_search("completely nonexistent topic xyz123")
-  assert "save it with qwick_memory_save" in result
+  assert "save it before the session ends" in result
 
 
 @pytest.mark.asyncio

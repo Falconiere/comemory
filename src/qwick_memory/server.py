@@ -248,6 +248,7 @@ async def qwick_memory_search(
   - You lack context on a topic the user is discussing
 
   -> Always search BEFORE answering from general knowledge.
+  If you're about to answer from general knowledge, STOP — search first.
   Memory has project-specific context you don't.
 
   Default: search all repos. Use the repo filter only when the user
@@ -268,9 +269,9 @@ async def qwick_memory_search(
 
   if not results:
     return (
-      "No semantically similar memories found.\n"
-      "-> If you learn something new about this topic, save it with qwick_memory_save "
-      "so future searches can find it."
+      "No results found.\n"
+      "-> If you learn something new about this topic during this task, "
+      "save it before the session ends."
     )
 
   result_text = _format_tiered_results(results)
