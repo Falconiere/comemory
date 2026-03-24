@@ -129,8 +129,6 @@ class MemoryIndex:
     table.add([record])
 
     with contextlib.suppress(Exception):
-      table.create_fts_index("content", replace=True)
-    with contextlib.suppress(Exception):
       table.optimize()
 
   def delete(self, memory_id: str) -> None:
