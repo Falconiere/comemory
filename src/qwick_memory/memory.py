@@ -1,6 +1,7 @@
 """Memory model for qwick-memory: core data structure for stored memories."""
 
 import hashlib
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -9,7 +10,9 @@ from typing import Literal
 import frontmatter
 import yaml
 
-from qwick_memory.errors import MemoryParseError
+from qwick_memory.errors import MemoryParseError, StorageError
+
+logger = logging.getLogger(__name__)
 
 MEMORY_TYPES = (
   "decision",
@@ -56,8 +59,14 @@ class Memory:
     self.content_hash = generate_id(self.content)
 
 
-def write_memory(memory: Memory, filepath: Path) -> None:
+def write_memory(memory: Memory, filepath: Path, memories_dir: Path | None = None) -> None:
   """Serialize a Memory to a markdown file with YAML frontmatter."""
+  if memories_dir is not None and filepath.parent.resolve() != memories_dir.resolve():
+    raise StorageError(
+      f"Cannot write to nested path: {filepath}",
+      suggested_fix="Write directly to the memories/ directory, not a subdirectory.",
+      context={"filepath": str(filepath)},
+    )
   post = frontmatter.Post(
     content=memory.content,
     id=memory.id,
@@ -133,5 +142,12 @@ def parse_memory(filepath: Path) -> Memory:
 
 
 def scan_memories(memories_dir: Path) -> list[Path]:
-  """Return all markdown files under memories_dir."""
+  """Return all markdown files directly in memories_dir (flat layout only)."""
+  subdirs = [p for p in memories_dir.iterdir() if p.is_dir()] if memories_dir.exists() else []
+  if subdirs:
+    logger.warning(
+      "Found subdirectories in memories/: %s. "
+      "Flat layout expected — these will be ignored.",
+      [d.name for d in subdirs],
+    )
   return list(memories_dir.glob("*.md"))

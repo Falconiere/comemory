@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from qwick_memory.errors import MemoryParseError
-from qwick_memory.memory import Memory, generate_id, parse_memory, write_memory
+from qwick_memory.errors import MemoryParseError, StorageError
+from qwick_memory.memory import Memory, generate_id, parse_memory, scan_memories, write_memory
 
 
 def test_generate_id_is_deterministic():
@@ -117,3 +117,35 @@ def test_session_summary_type_is_valid() -> None:
   from qwick_memory.memory import MEMORY_TYPES
 
   assert "session-summary" in MEMORY_TYPES
+
+
+def test_write_memory_rejects_nested_path(tmp_path: Path) -> None:
+  """write_memory raises StorageError when target is in a subdirectory."""
+  memories_dir = tmp_path / "memories"
+  nested_dir = memories_dir / "0.1.0"
+  nested_dir.mkdir(parents=True)
+  mem = Memory(
+    id="aabbccddeeff",
+    repo=["test/repo"],
+    type="note",
+    tags=[],
+    author="tester",
+    created=datetime(2026, 1, 1),
+    content="Should fail",
+  )
+  with pytest.raises(StorageError, match="nested"):
+    write_memory(mem, nested_dir / "test.md", memories_dir=memories_dir)
+
+
+def test_scan_memories_ignores_nested_files(tmp_path: Path) -> None:
+  """scan_memories only returns files directly in memories_dir, not subdirectories."""
+  memories_dir = tmp_path / "memories"
+  memories_dir.mkdir()
+  (memories_dir / "top.md").write_text("---\nid: top\n---\ntop level")
+  sub = memories_dir / "subdir"
+  sub.mkdir()
+  (sub / "nested.md").write_text("---\nid: nested\n---\nnested content")
+
+  results = scan_memories(memories_dir)
+  assert len(results) == 1
+  assert results[0].name == "top.md"

@@ -117,7 +117,7 @@ def save(
   # Atomic write: temp file -> embed -> upsert -> rename
   tmp_path = memories_dir / f".{memory_id}.tmp"
   try:
-    write_memory(memory, tmp_path)
+    write_memory(memory, tmp_path, memories_dir=memories_dir)
     idx = get_index()
     idx.upsert(memory)
     tmp_path.rename(final_path)
