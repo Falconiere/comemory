@@ -36,7 +36,7 @@ app = typer.Typer(help="qwick-memory: Centralized RAG memory for multiple reposi
 console = Console(stderr=True)
 out = Console()
 
-TOKEN_WARN_LIMIT = 180
+TOKEN_WARN_LIMIT = 6000  # calibrated for nomic 8192-token context
 
 
 def _open_editor() -> str | None:
@@ -360,6 +360,15 @@ def doctor() -> None:
     out.print(f"  {valid} valid, {invalid} invalid memory files")
   else:
     out.print("  Skipped (no memories directory)")
+
+  # 2b. Check for nested directories in memories/
+  if memories_dir.exists():
+    subdirs = [p for p in memories_dir.iterdir() if p.is_dir()]
+    if subdirs:
+      console.print(
+        f"  [yellow]Found nested directories: {[d.name for d in subdirs]}. "
+        f"Flat layout expected — remove them or move files to memories/.[/yellow]"
+      )
 
   # 3. Check .vectordb/ health
   out.print("[bold]Checking vector database...[/bold]")
