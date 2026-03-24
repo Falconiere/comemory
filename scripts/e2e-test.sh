@@ -152,6 +152,9 @@ OUT=$($QR search "completely unrelated quantum physics topic" 2>&1) || true
 EC=$?
 assert_exit_code 0 "$EC" "search for unrelated topic does not crash"
 
+OUT=$($QR search "which database do we use" 2>&1) || true
+assert_contains "$OUT" "result" "search output includes result count"
+
 echo ""
 
 # ── 4. Duplicate detection ──────────────────────────────────────────────────
