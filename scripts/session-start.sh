@@ -6,10 +6,11 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 UV="uv run --directory $PROJECT_ROOT"
 
-# Auto-index
-if [ -d "$PROJECT_ROOT/memories" ]; then
-  $UV python -m qwick_memory index 2>/dev/null || true
-fi
+# Auto-migrate (flatten nested dirs, rebuild index if model changed)
+$UV python -m qwick_memory migrate 2>/dev/null || true
+
+# Auto-index (incremental — picks up any new memories since last session)
+$UV python -m qwick_memory index 2>/dev/null || true
 
 # Output context for Claude
 echo "## Qwick Memory — Session Context"

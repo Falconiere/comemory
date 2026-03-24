@@ -271,6 +271,49 @@ def index(
 
 
 @app.command()
+def migrate() -> None:
+  """Auto-migrate memories: flatten nested dirs, rebuild index if model changed.
+
+  Safe to run repeatedly — skips if nothing to do. Called automatically by
+  the SessionStart hook on every session.
+  """
+  memories_dir = get_memories_dir()
+  if not memories_dir.exists():
+    return
+
+  changed = False
+
+  # 1. Flatten nested directories — move .md files to memories/ root
+  subdirs = [p for p in memories_dir.iterdir() if p.is_dir()]
+  for subdir in subdirs:
+    for md_file in subdir.glob("*.md"):
+      target = memories_dir / md_file.name
+      if target.exists():
+        # Duplicate — remove nested copy (flat version is canonical)
+        md_file.unlink()
+      else:
+        md_file.rename(target)
+      changed = True
+    # Remove empty subdirectory
+    if not any(subdir.iterdir()):
+      subdir.rmdir()
+
+  if changed:
+    out.print(f"Migrated: flattened {len(subdirs)} nested director(ies).")
+
+  # 2. Rebuild index if model changed (build() auto-detects via model_matches)
+  idx = get_index()
+  if not idx.model_matches():
+    out.print("Model changed — rebuilding index...")
+    stats = idx.build(memories_dir, force=True)
+    out.print(f"Index rebuilt: {stats['new']} new. Total: {idx.count()}")
+  elif changed:
+    # Files moved but model didn't change — incremental rebuild
+    stats = idx.build(memories_dir)
+    out.print(f"Index updated: {stats['new']} new. Total: {idx.count()}")
+
+
+@app.command()
 def context(
   repo: str | None = typer.Option(None, "--repo", "-r", help="Filter by repo."),
   limit: int = typer.Option(10, "--limit", "-n", help="Max non-summary memories."),

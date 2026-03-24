@@ -104,6 +104,43 @@ def test_context_empty(tmp_path: Path) -> None:
   assert "No memories found" in result.output
 
 
+def test_migrate_flattens_nested_dirs(tmp_path: Path) -> None:
+  """migrate moves .md files from nested dirs to flat layout."""
+  memories_dir = tmp_path / "memories"
+  # Create a nested dir with a memory file
+  nested = memories_dir / "old-repo"
+  nested.mkdir()
+  from datetime import datetime
+
+  from qwick_memory.memory import Memory, write_memory
+
+  mem = Memory(
+    id="nested_mem_001",
+    repo=["old-repo"],
+    type="note",
+    tags=[],
+    author="tester",
+    created=datetime(2026, 1, 1),
+    content="I was nested.",
+  )
+  write_memory(mem, nested / "nested_mem_001.md")
+
+  # Run migrate
+  result = runner.invoke(app, ["migrate"])
+  assert result.exit_code == 0, result.output
+  assert "flattened" in result.output.lower() or "Migrated" in result.output
+
+  # File should now be in flat layout
+  assert (memories_dir / "nested_mem_001.md").exists()
+  assert not nested.exists()
+
+
+def test_migrate_noop_when_already_flat(tmp_path: Path) -> None:
+  """migrate does nothing when layout is already flat."""
+  result = runner.invoke(app, ["migrate"])
+  assert result.exit_code == 0, result.output
+
+
 def test_context_limit(tmp_path: Path) -> None:
   """context --limit restricts number of memories shown."""
   for i in range(5):
