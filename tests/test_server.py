@@ -158,7 +158,12 @@ async def test_qwick_memory_context_shows_summary_first(rag_env: str) -> None:
     qwick_memory_session_summary,
   )
 
-  await qwick_memory_save("Regular memory about PostgreSQL", type="decision", tags="db", repo="test/mcp-repo")
+  await qwick_memory_save(
+    "Regular memory about PostgreSQL",
+    type="decision",
+    tags="db",
+    repo="test/mcp-repo",
+  )
   await qwick_memory_session_summary(
     goal="Test context ordering",
     discoveries="None",
@@ -191,7 +196,11 @@ async def test_save_response_includes_vector_hint(rag_env: str) -> None:
   """qwick_memory_save response mentions vector search indexing."""
   from qwick_memory.server import qwick_memory_save
 
-  result = await qwick_memory_save("Test memory for hint check", type="decision", repo="test/mcp-repo")
+  result = await qwick_memory_save(
+    "Test memory for hint check",
+    type="decision",
+    repo="test/mcp-repo",
+  )
   assert "Embedded and indexed for vector search" in result
   assert "(decision)" in result
 

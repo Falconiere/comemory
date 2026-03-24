@@ -43,7 +43,6 @@ def _has_remote(cwd: Path) -> bool:
     return False
 
 
-
 def _ensure_rag_repo(rag_dir: Path) -> None:
   """Ensure rag_dir is a git repo on the orphan 'memories' branch.
 

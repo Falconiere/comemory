@@ -146,8 +146,7 @@ def scan_memories(memories_dir: Path) -> list[Path]:
   subdirs = [p for p in memories_dir.iterdir() if p.is_dir()] if memories_dir.exists() else []
   if subdirs:
     logger.warning(
-      "Found subdirectories in memories/: %s. "
-      "Flat layout expected — these will be ignored.",
+      "Found subdirectories in memories/: %s. Flat layout expected — these will be ignored.",
       [d.name for d in subdirs],
     )
   return list(memories_dir.glob("*.md"))

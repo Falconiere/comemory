@@ -70,7 +70,7 @@ class MemoryIndex:
   def _embed_query(self, text: str) -> list[float]:
     """Embed a single query with 'search_query: ' prefix for nomic model."""
     prefixed = f"search_query: {text}"
-    return list(self.model.embed([prefixed]))[0].tolist()
+    return next(iter(self.model.embed([prefixed]))).tolist()
 
   def _table_exists(self) -> bool:
     """Check whether the memories table already exists."""
