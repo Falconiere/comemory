@@ -101,6 +101,15 @@ def test_force_rebuild(
   assert idx.count() == 3
 
 
+def test_embed_documents_adds_prefix(vectordb_dir: Path) -> None:
+  """_embed_documents prepends 'search_document: ' prefix to texts."""
+  idx = MemoryIndex(vectordb_dir)
+  # Embed same text with and without prefix — vectors should differ
+  doc_vecs = idx._embed_documents(["hello world"])
+  query_vecs = idx._embed_query("hello world")
+  assert doc_vecs[0] != query_vecs
+
+
 def test_upsert_single_memory(
   vectordb_dir: Path,
 ) -> None:

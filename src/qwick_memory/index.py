@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 TABLE_NAME = "memories"
-MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+MODEL_NAME = "nomic-ai/nomic-embed-text-v1.5-Q"
 
 
 class MemoryIndex:
@@ -35,7 +35,7 @@ class MemoryIndex:
 
   @property
   def model(self) -> TextEmbedding:
-    """Lazy-load the embedding model (first call downloads ~30 MB)."""
+    """Lazy-load the embedding model (first call downloads ~130 MB)."""
     if self._model is None:
       self._model = TextEmbedding(MODEL_NAME)
     return self._model
@@ -48,10 +48,20 @@ class MemoryIndex:
     meta_path.write_text(json.dumps({"model": MODEL_NAME}))
 
   def _embed(self, texts: list[str]) -> list[list[float]]:
-    """Embed a list of texts, returning a list of float vectors."""
+    """Backward-compatible alias for _embed_documents (used by search.py until Task 2)."""
+    return self._embed_documents(texts)
+
+  def _embed_documents(self, texts: list[str]) -> list[list[float]]:
+    """Embed documents with 'search_document: ' prefix for nomic model."""
     if not texts:
       return []
-    return [vec.tolist() for vec in self.model.embed(texts)]
+    prefixed = [f"search_document: {t}" for t in texts]
+    return [vec.tolist() for vec in self.model.embed(prefixed)]
+
+  def _embed_query(self, text: str) -> list[float]:
+    """Embed a single query with 'search_query: ' prefix for nomic model."""
+    prefixed = f"search_query: {text}"
+    return list(self.model.embed([prefixed]))[0].tolist()
 
   def _table_exists(self) -> bool:
     """Check whether the memories table already exists."""
@@ -96,7 +106,7 @@ class MemoryIndex:
 
   def upsert(self, memory: Memory) -> None:
     """Insert or update a single memory in the index."""
-    vectors = self._embed([memory.content])
+    vectors = self._embed_documents([memory.content])
     record = self._memory_to_record(memory, vectors[0])
 
     table = self._get_table()
@@ -170,7 +180,7 @@ class MemoryIndex:
 
     memories = [mem for mem, _fp in disk_memories.values()]
     texts = [m.content for m in memories]
-    vectors = self._embed(texts)
+    vectors = self._embed_documents(texts)
 
     records = [self._memory_to_record(mem, vec) for mem, vec in zip(memories, vectors, strict=True)]
     self._create_table(records)
@@ -217,7 +227,7 @@ class MemoryIndex:
     # Apply updates (delete + add)
     for uid in updated_ids:
       mem, _fp = disk_memories[uid]
-      vec = self._embed([mem.content])[0]
+      vec = self._embed_documents([mem.content])[0]
       record = self._memory_to_record(mem, vec)
       with contextlib.suppress(Exception):
         table.delete(f'id = "{uid}"')
@@ -227,7 +237,7 @@ class MemoryIndex:
     if new_ids:
       new_memories = [disk_memories[nid][0] for nid in new_ids]
       texts = [m.content for m in new_memories]
-      vectors = self._embed(texts)
+      vectors = self._embed_documents(texts)
       records = [
         self._memory_to_record(mem, vec) for mem, vec in zip(new_memories, vectors, strict=True)
       ]
