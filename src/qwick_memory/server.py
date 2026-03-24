@@ -60,6 +60,86 @@ User signals completion → call `qwick_memory_session_summary`:
 
 mcp = FastMCP("qwick-memory", instructions=PROTOCOL)
 
+# Token budget and tier thresholds for search results
+SEARCH_TOKEN_BUDGET = 4000
+CONTEXT_TOKEN_BUDGET = 6000
+CONTEXT_SUMMARY_BUDGET = 2000
+HIGH_RELEVANCE_THRESHOLD = 0.7
+MODERATE_RELEVANCE_THRESHOLD = 0.4
+
+
+def _estimate_tokens(text: str) -> int:
+  """Rough token estimate: ~4 chars per token for English text."""
+  return len(text) // 4
+
+
+def _format_tiered_results(results: list, budget: int = SEARCH_TOKEN_BUDGET) -> str:
+  """Format search results into tiered markdown with token budget."""
+  from qwick_memory.search import SearchResult
+
+  high: list[SearchResult] = []
+  moderate: list[SearchResult] = []
+  low: list[SearchResult] = []
+
+  for r in results:
+    if r.score > HIGH_RELEVANCE_THRESHOLD:
+      high.append(r)
+    elif r.score > MODERATE_RELEVANCE_THRESHOLD:
+      moderate.append(r)
+    else:
+      low.append(r)
+
+  lines: list[str] = []
+  remaining = budget
+
+  # High relevance: full content
+  if high:
+    lines.append("### High Relevance")
+    for r in high:
+      repos = r.repo.replace(",", ", ")
+      first_sentence = r.content.split("\n")[0].split(".")[0][:80]
+      header = f"**[{r.type}] {first_sentence}** — {repos} (tags: {r.tags})"
+      entry = f"{header}\n{r.content}"
+      cost = _estimate_tokens(entry)
+      if cost > remaining:
+        max_chars = remaining * 4
+        entry = f"{header}\n{r.content[:max_chars]}... [truncated]"
+        remaining = 0
+      else:
+        remaining -= cost
+      lines.append(entry)
+      lines.append("")
+      if remaining <= 0:
+        break
+
+  # Moderate relevance: truncated
+  if moderate and remaining > 0:
+    lines.append("### Moderate Relevance")
+    for r in moderate:
+      repos = r.repo.replace(",", ", ")
+      entry = f"**[{r.type}]** — {repos} | {r.content[:200]}... → ID: {r.id}"
+      cost = _estimate_tokens(entry)
+      if cost > remaining:
+        break
+      remaining -= cost
+      lines.append(entry)
+    lines.append("")
+
+  # Low relevance: one-liners
+  if low and remaining > 0:
+    lines.append("### Low Relevance")
+    for r in low:
+      repos = r.repo.replace(",", ", ")
+      first_sentence = r.content.split(".")[0][:80]
+      entry = f"- [{r.type}] {first_sentence} — {repos} → ID: {r.id}"
+      cost = _estimate_tokens(entry)
+      if cost > remaining:
+        break
+      remaining -= cost
+      lines.append(entry)
+
+  return "\n".join(lines)
+
 
 @mcp.tool()
 async def qwick_memory_save(
@@ -193,14 +273,11 @@ async def qwick_memory_search(
       "so future searches can find it."
     )
 
-  lines = []
-  for r in results:
-    preview = r.content[:80] + "..." if len(r.content) > 80 else r.content
-    lines.append(f"[{r.score:.3f}] {r.repo} ({r.type}) {preview} — {r.id}")
-  result = "\n".join(lines)
+  result_text = _format_tiered_results(results)
+  count = len(results)
   return (
-    f"{result}\n"
-    f"-> Results ranked by semantic similarity. Use these memories to inform your response."
+    f"{count} result(s) found. Use these to inform your response — do NOT ignore them.\n\n"
+    f"{result_text}"
   )
 
 

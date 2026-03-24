@@ -209,12 +209,12 @@ async def test_save_duplicate_response_hint(rag_env: str) -> None:
 
 @pytest.mark.asyncio
 async def test_search_results_include_similarity_hint(rag_env: str) -> None:
-  """qwick_memory_search results include semantic similarity hint."""
+  """qwick_memory_search results include result count hint."""
   from qwick_memory.server import qwick_memory_save, qwick_memory_search
 
   await qwick_memory_save("Redis is used for caching", repo="test/mcp-repo")
   result = await qwick_memory_search("Redis caching")
-  assert "Results ranked by semantic similarity" in result
+  assert "result(s) found" in result
 
 
 @pytest.mark.asyncio
@@ -284,3 +284,17 @@ async def test_save_response_confirms_repo(rag_env: str) -> None:
   )
   assert "sidegig-api" in result
   assert "sidegig-web" in result
+
+
+@pytest.mark.asyncio
+async def test_search_returns_tiered_format(rag_env: str) -> None:
+  """qwick_memory_search returns structured tiered markdown output."""
+  from qwick_memory.server import qwick_memory_save, qwick_memory_search
+
+  await qwick_memory_save(
+    "PostgreSQL is great for JSONB queries and relational data",
+    repo="test/mcp-repo",
+  )
+  result = await qwick_memory_search("PostgreSQL JSONB")
+  assert "PostgreSQL" in result
+  assert "result" in result.lower()
