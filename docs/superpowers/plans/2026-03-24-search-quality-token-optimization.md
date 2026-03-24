@@ -232,21 +232,9 @@ def model_matches(self) -> bool:
   """Check if the indexed model matches the current MODEL_NAME."""
   return self._current_meta.get("model") == MODEL_NAME
 
-# In _create_table (after line 79): add _write_meta call
-def _create_table(self, records: list[dict[str, Any]]) -> Any:
-  """Create the memories table and build an FTS index on content."""
-  if self._table_exists():
-    self._db.drop_table(TABLE_NAME)
-  table = self._db.create_table(TABLE_NAME, records)
-  try:
-    table.create_fts_index("content", replace=True)
-  except Exception:
-    logger.warning("Could not create FTS index; full-text search unavailable.")
-  self._write_meta()
-  self._current_meta = {"model": MODEL_NAME}
-  return table
+# _create_table stays unchanged (no _write_meta here — it's called in build() only)
 
-# In build() (lines 154-158): auto-force when model mismatches
+# In build() (lines 134-158): auto-force when model mismatches, write meta ONCE after success
 def build(self, memories_dir: Path, force: bool = False) -> dict[str, int]:
   md_files = scan_memories(memories_dir)
   # ... parse disk_memories (unchanged) ...
@@ -260,7 +248,7 @@ def build(self, memories_dir: Path, force: bool = False) -> dict[str, int]:
   else:
     stats = self._incremental_build(disk_memories)
 
-  # Write meta after any successful build
+  # Write meta ONCE after any successful build path
   self._write_meta()
   self._current_meta = {"model": MODEL_NAME}
   return stats
@@ -327,7 +315,8 @@ from qwick_memory.errors import StorageError
 
 def test_write_memory_rejects_nested_path(tmp_path: Path) -> None:
   """write_memory raises StorageError when target is in a subdirectory."""
-  nested_dir = tmp_path / "memories" / "0.1.0"
+  memories_dir = tmp_path / "memories"
+  nested_dir = memories_dir / "0.1.0"
   nested_dir.mkdir(parents=True)
   mem = Memory(
     id="aabbccddeeff",
@@ -339,8 +328,10 @@ def test_write_memory_rejects_nested_path(tmp_path: Path) -> None:
     content="Should fail",
   )
   with pytest.raises(StorageError, match="nested"):
-    write_memory(mem, nested_dir / "test.md")
+    write_memory(mem, nested_dir / "test.md", memories_dir=memories_dir)
 ```
+
+**Note:** Also update all callers of `write_memory` in `server.py` and `cli.py` to pass `memories_dir=memories_dir`.
 
 - [ ] **Step 2: Write failing test for scan_memories ignoring nested files**
 
@@ -365,7 +356,7 @@ def test_scan_memories_ignores_nested_files(tmp_path: Path) -> None:
 - [ ] **Step 3: Run tests to verify they fail**
 
 Run: `uv run pytest tests/test_memory.py::test_write_memory_rejects_nested_path tests/test_memory.py::test_scan_memories_ignores_nested_files -v`
-Expected: FAIL — no StorageError raised, scan_memories may return nested files
+Expected: `test_write_memory_rejects_nested_path` FAILS (no StorageError raised). `test_scan_memories_ignores_nested_files` may PASS (glob already flat) — that's fine, it's a regression guard.
 
 - [ ] **Step 4: Add flat layout validation to `write_memory` and warning to `scan_memories`**
 
@@ -379,11 +370,11 @@ from qwick_memory.errors import MemoryParseError, StorageError
 import logging
 logger = logging.getLogger(__name__)
 
-# In write_memory (before line 61):
-def write_memory(memory: Memory, filepath: Path) -> None:
+# Add memories_dir parameter to write_memory for flat layout validation:
+def write_memory(memory: Memory, filepath: Path, memories_dir: Path | None = None) -> None:
   """Serialize a Memory to a markdown file with YAML frontmatter."""
-  # Enforce flat layout: filepath must be directly in a memories directory, not nested
-  if filepath.parent.parent.name == "memories" and filepath.parent.name != "memories":
+  # Enforce flat layout: filepath parent must match memories_dir exactly
+  if memories_dir is not None and filepath.parent.resolve() != memories_dir.resolve():
     raise StorageError(
       f"Cannot write to nested path: {filepath}",
       suggested_fix="Write directly to the memories/ directory, not a subdirectory.",
@@ -434,21 +425,12 @@ git commit -m "feat: enforce flat memory layout, reject nested paths, warn on su
 # Add to tests/test_server.py
 
 @pytest.mark.asyncio
-async def test_save_requires_repo_when_no_git(rag_env: str) -> None:
-  """qwick_memory_save returns error when repo is empty and no git context."""
-  import os
-  from unittest.mock import patch
-
+async def test_save_requires_repo(rag_env: str) -> None:
+  """qwick_memory_save returns error when repo is empty string."""
   from qwick_memory.server import qwick_memory_save
 
-  # Remove QWICK_MEMORY_REPO to simulate no git context
-  env = os.environ.copy()
-  env.pop("QWICK_MEMORY_REPO", None)
-  with patch.dict(os.environ, env, clear=True):
-    # Restore non-repo env vars
-    os.environ["QWICK_MEMORY_DIR"] = rag_env
-    os.environ["QWICK_MEMORY_AUTHOR"] = "mcp-tester"
-    result = await qwick_memory_save("Test memory", repo="")
+  # repo="" should always error, regardless of env vars
+  result = await qwick_memory_save("Test memory", repo="")
   assert "Error" in result
   assert "repo is required" in result
 ```
@@ -542,11 +524,27 @@ Also update the session summary tool description for repo param:
     repo: Comma-separated repo names. REQUIRED — always specify which repo(s).
 ```
 
-- [ ] **Step 6: Update existing test that calls save without explicit repo**
+- [ ] **Step 6: Update ALL existing tests that call save/session_summary without explicit repo**
 
-The `rag_env` fixture sets `QWICK_MEMORY_REPO=test/mcp-repo`. Existing tests that call `qwick_memory_save` without `repo=` will now use the `repo=""` default and fail. Update all test calls to pass `repo="test/mcp-repo"` explicitly, OR keep the fixture's env var as the fallback in those tests.
+The server no longer calls `get_repo()` on save. Every call without `repo=` will fail. Add `repo="test/mcp-repo"` to ALL these call sites:
 
-Actually — the server function no longer calls `get_repo()`. So existing tests that don't pass `repo=` will now get the error. Fix by adding `repo="test/mcp-repo"` to all `qwick_memory_save` calls in existing tests.
+**`qwick_memory_save` calls (8 total):**
+1. `test_qwick_memory_save` (line 29): add `repo="test/mcp-repo"`
+2. `test_save_creates_flat_file` (line 40): add `repo="test/mcp-repo"`
+3. `test_qwick_memory_search` (line 53): add `repo="test/mcp-repo"`
+4. `test_save_response_includes_vector_hint` (line 189): add `repo="test/mcp-repo"`
+5. `test_save_duplicate_response_hint` (lines 199-200): add `repo="test/mcp-repo"` to BOTH calls
+6. `test_search_results_include_similarity_hint` (line 210): add `repo="test/mcp-repo"`
+7. `test_delete_response_confirms_both_layers` (line 238): add `repo="test/mcp-repo"`
+8. `test_qwick_memory_context_shows_summary_first` (line 157): add `repo="test/mcp-repo"`
+
+**`qwick_memory_session_summary` calls (5 total):**
+1. `test_qwick_memory_session_summary` (line 72): add `repo="test/mcp-repo"`
+2. `test_qwick_memory_session_summary_empty_goal` (line 87): add `repo="test/mcp-repo"`
+3. `test_qwick_memory_session_summary_rotation` (line 107): add `repo="test/mcp-repo"`
+4. `test_session_summary_creates_flat_file` (line 134): add `repo="test/mcp-repo"`
+5. `test_qwick_memory_context_shows_summary_first` (line 158): add `repo="test/mcp-repo"`
+6. `test_session_summary_response_includes_vector_hint` (line 251): add `repo="test/mcp-repo"`
 
 - [ ] **Step 7: Run all server tests**
 
@@ -635,7 +633,9 @@ def _format_tiered_results(results: list, budget: int = SEARCH_TOKEN_BUDGET) -> 
     lines.append("### High Relevance")
     for r in high:
       repos = r.repo.replace(",", ", ")
-      header = f"**[{r.type}] {r.content[:60]}** — {repos} (tags: {r.tags})"
+      # Use first sentence (up to first period/newline) as title, max 80 chars
+      first_sentence = r.content.split("\n")[0].split(".")[0][:80]
+      header = f"**[{r.type}] {first_sentence}** — {repos} (tags: {r.tags})"
       entry = f"{header}\n{r.content}"
       cost = _estimate_tokens(entry)
       if cost > remaining:
@@ -843,15 +843,23 @@ echo ""
 echo "REMINDER: save decisions, bugs, and discoveries to qwick-memory. Always specify repo."
 ```
 
-- [ ] **Step 4: Run tests to verify nothing breaks**
+- [ ] **Step 4: Update `test_search_no_results_includes_save_hint`**
+
+The test at line 221 checks for `"save it with qwick_memory_save"`. The new message says `"save it before the session ends"`. Update the assertion:
+
+```python
+assert "save it before the session ends" in result
+```
+
+- [ ] **Step 5: Run tests to verify nothing breaks**
 
 Run: `uv run pytest -v`
-Expected: ALL PASS. Update any tests checking for old response strings.
+Expected: ALL PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add src/qwick_memory/server.py scripts/session-start.sh
+git add src/qwick_memory/server.py scripts/session-start.sh tests/test_server.py
 git commit -m "feat: strengthen behavioral protocol, sharper tool descriptions and response nudges"
 ```
 
@@ -939,20 +947,24 @@ git commit -m "test: update e2e script for tiered search output format"
 
 **Files:**
 - Modify: `CLAUDE.md`
+- Modify: `README.md`
 
 - [ ] **Step 1: Update CLAUDE.md**
 
 Update these sections:
 - **Architecture / Embeddings** line: change model reference from `all-MiniLM-L6-v2` and `~30MB` to `nomic-ai/nomic-embed-text-v1.5-Q` and `~130MB`
 - **Key Commands** section: add note about `qwick-memory index --force` needed after model upgrade
-- **Memory Data Model**: no changes (frontmatter format unchanged)
-- **Save Flow**: no changes (flow unchanged, just embedding model swapped)
+- **Testing** section: update first-run download note from `~30MB` to `~130MB`
 
-- [ ] **Step 2: Commit**
+- [ ] **Step 2: Update README.md**
+
+Update any references to the embedding model name and size. Note the first-run download is ~130MB.
+
+- [ ] **Step 3: Commit**
 
 ```bash
-git add CLAUDE.md
-git commit -m "docs: update CLAUDE.md for nomic embedding model and repo-required change"
+git add CLAUDE.md README.md
+git commit -m "docs: update CLAUDE.md and README.md for nomic embedding model and repo-required change"
 ```
 
 ---
