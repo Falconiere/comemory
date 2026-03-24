@@ -43,7 +43,7 @@ def search_memories(
   if table is None:
     return []
 
-  query_vector = index._embed([query])[0]
+  query_vector = index._embed_query(query)
 
   # Build metadata filter clauses (sanitize inputs to prevent injection)
   where_clauses: list[str] = []
@@ -81,7 +81,7 @@ def _try_hybrid_search(
       builder = builder.where(where_expr)
     builder = builder.limit(limit)
     rows = builder.to_list()
-    return [_row_to_result(row, score_key="_relevance_score") for row in rows]
+    return [_row_to_result(row, score_key="_relevance_score", normalize=False) for row in rows]
   except Exception:
     # Hybrid search may not be available (no FTS index, API mismatch, etc.)
     # This is acceptable for MVP — fall back to vector-only.
@@ -101,11 +101,13 @@ def _vector_search(
     builder = builder.where(where_expr)
   builder = builder.limit(limit)
   rows = builder.to_list()
-  return [_row_to_result(row, score_key="_distance") for row in rows]
+  return [_row_to_result(row, score_key="_distance", normalize=True) for row in rows]
 
 
-def _row_to_result(row: dict[str, Any], score_key: str) -> SearchResult:
+def _row_to_result(row: dict[str, Any], score_key: str, normalize: bool = False) -> SearchResult:
   """Map a LanceDB result row to a SearchResult dataclass."""
+  raw_score = float(row.get(score_key, 0.0))
+  score = max(0.0, min(1.0, 1.0 - (raw_score / 2.0))) if normalize else raw_score
   return SearchResult(
     id=row["id"],
     repo=row["repo"],
@@ -114,5 +116,5 @@ def _row_to_result(row: dict[str, Any], score_key: str) -> SearchResult:
     author=row["author"],
     created=row["created"],
     content=row["content"],
-    score=float(row.get(score_key, 0.0)),
+    score=score,
   )

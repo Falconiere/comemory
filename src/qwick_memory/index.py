@@ -47,10 +47,6 @@ class MemoryIndex:
     meta_path = self._vectordb_dir / "meta.json"
     meta_path.write_text(json.dumps({"model": MODEL_NAME}))
 
-  def _embed(self, texts: list[str]) -> list[list[float]]:
-    """Backward-compatible alias for _embed_documents (used by search.py until Task 2)."""
-    return self._embed_documents(texts)
-
   def _embed_documents(self, texts: list[str]) -> list[list[float]]:
     """Embed documents with 'search_document: ' prefix for nomic model."""
     if not texts:

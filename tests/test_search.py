@@ -59,3 +59,11 @@ def test_search_result_has_score(built_index: MemoryIndex) -> None:
   for r in results:
     assert isinstance(r, SearchResult)
     assert r.score > 0
+
+
+def test_search_scores_are_normalized_similarity(built_index: MemoryIndex) -> None:
+  """All search scores should be in 0-1 range (normalized similarity)."""
+  results = search_memories(built_index, "PostgreSQL database")
+  assert len(results) > 0
+  for r in results:
+    assert 0.0 <= r.score <= 1.0, f"Score {r.score} not in 0-1 range"
