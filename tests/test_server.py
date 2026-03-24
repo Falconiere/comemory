@@ -298,3 +298,23 @@ async def test_search_returns_tiered_format(rag_env: str) -> None:
   result = await qwick_memory_search("PostgreSQL JSONB")
   assert "PostgreSQL" in result
   assert "result" in result.lower()
+
+
+@pytest.mark.asyncio
+async def test_context_respects_token_budget(rag_env: str) -> None:
+  """qwick_memory_context output stays within CONTEXT_TOKEN_BUDGET."""
+  from qwick_memory.server import CONTEXT_TOKEN_BUDGET, qwick_memory_context, qwick_memory_save
+
+  for i in range(15):
+    await qwick_memory_save(
+      f"Memory number {i} with some detailed content about topic {i} " * 10,
+      type="decision",
+      tags=f"tag{i}",
+      repo="test/mcp-repo",
+    )
+
+  result = await qwick_memory_context()
+  estimated_tokens = len(result) // 4
+  assert estimated_tokens <= CONTEXT_TOKEN_BUDGET * 1.2, (
+    f"Context output ({estimated_tokens} tokens) exceeds budget ({CONTEXT_TOKEN_BUDGET})"
+  )

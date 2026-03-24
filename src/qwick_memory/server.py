@@ -423,23 +423,38 @@ async def qwick_memory_context(repo: str | None = None, limit: int = 20) -> str:
     return f"No memories found for repo: {target_repo}"
 
   lines: list[str] = []
+  remaining = CONTEXT_TOKEN_BUDGET
 
-  # Section 1: Latest session summary
+  # Section 1: Latest session summary (up to CONTEXT_SUMMARY_BUDGET tokens)
   if summaries:
     summaries.sort(key=lambda m: m.created, reverse=True)
     latest = summaries[0]
     lines.append("### Last Session")
-    lines.append(latest.content)
+    summary_text = latest.content
+    summary_tokens = _estimate_tokens(summary_text)
+    if summary_tokens > CONTEXT_SUMMARY_BUDGET:
+      max_chars = CONTEXT_SUMMARY_BUDGET * 4
+      summary_text = summary_text[:max_chars] + "\n\n[truncated]"
+      remaining -= CONTEXT_SUMMARY_BUDGET
+    else:
+      remaining -= summary_tokens
+    lines.append(summary_text)
     lines.append("")
 
-  # Section 2: Recent non-summary memories
+  # Section 2: Recent non-summary memories (fill remaining budget)
   if regular:
     regular.sort(key=lambda m: m.created, reverse=True)
-    regular = regular[:limit]
     lines.append("### Recent Memories")
-    for mem in regular:
+    for mem in regular[:limit]:
+      if remaining <= 0:
+        break
       preview = mem.content[:120] + "..." if len(mem.content) > 120 else mem.content
-      lines.append(f"- [{mem.created.isoformat()}] ({mem.type}) {preview}")
+      entry = f"- [{mem.created.isoformat()}] ({mem.type}) {preview}"
+      cost = _estimate_tokens(entry)
+      if cost > remaining:
+        break
+      remaining -= cost
+      lines.append(entry)
 
   return "\n".join(lines)
 
