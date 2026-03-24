@@ -1,5 +1,6 @@
 """Tests for qwick_memory.index — LanceDB indexing with incremental rebuild."""
 
+import json
 from datetime import datetime
 from pathlib import Path
 
@@ -127,3 +128,27 @@ def test_upsert_single_memory(
 
   idx.upsert(mem)
   assert idx.count() == 1
+
+
+def test_meta_not_overwritten_on_init(tmp_path: Path) -> None:
+  """MemoryIndex.__init__ should NOT overwrite meta.json with current model."""
+  vectordb_dir = tmp_path / "vectordb"
+  vectordb_dir.mkdir()
+  meta_path = vectordb_dir / "meta.json"
+  meta_path.write_text(json.dumps({"model": "old-model-name"}))
+
+  MemoryIndex(vectordb_dir)
+
+  meta = json.loads(meta_path.read_text())
+  assert meta["model"] == "old-model-name", "init should not overwrite existing meta.json"
+
+
+def test_model_matches_detects_mismatch(tmp_path: Path) -> None:
+  """model_matches() returns False when meta.json has a different model."""
+  vectordb_dir = tmp_path / "vectordb"
+  vectordb_dir.mkdir()
+  meta_path = vectordb_dir / "meta.json"
+  meta_path.write_text(json.dumps({"model": "old-model-name"}))
+
+  idx = MemoryIndex(vectordb_dir)
+  assert idx.model_matches() is False

@@ -29,7 +29,7 @@ class MemoryIndex:
     self._vectordb_dir.mkdir(parents=True, exist_ok=True)
     self._db = lancedb.connect(str(vectordb_dir))
     self._model: TextEmbedding | None = None
-    self._write_meta()
+    self._current_meta = self._read_meta()
 
   # -- properties ----------------------------------------------------------
 
@@ -42,10 +42,23 @@ class MemoryIndex:
 
   # -- private helpers -----------------------------------------------------
 
+  def _read_meta(self) -> dict[str, str]:
+    """Read meta.json if it exists, return empty dict otherwise."""
+    meta_path = self._vectordb_dir / "meta.json"
+    if meta_path.exists():
+      return json.loads(meta_path.read_text())
+    return {}
+
   def _write_meta(self) -> None:
     """Write meta.json with model name for version tracking."""
     meta_path = self._vectordb_dir / "meta.json"
     meta_path.write_text(json.dumps({"model": MODEL_NAME}))
+
+  # -- public helpers -------------------------------------------------------
+
+  def model_matches(self) -> bool:
+    """Check if the indexed model matches the current MODEL_NAME."""
+    return self._current_meta.get("model") == MODEL_NAME
 
   def _embed_documents(self, texts: list[str]) -> list[list[float]]:
     """Embed documents with 'search_document: ' prefix for nomic model."""
@@ -157,11 +170,24 @@ class MemoryIndex:
       except Exception:
         logger.warning("Skipping unparseable file: %s", fp)
 
+    # Auto-force rebuild if model has changed
+    if not self.model_matches() and not force:
+      logger.info(
+        "Model changed (%s → %s). Forcing full rebuild.",
+        self._current_meta.get("model", "none"),
+        MODEL_NAME,
+      )
+      force = True
+
     # Force rebuild: drop and recreate
     if force or not self._table_exists():
-      return self._full_build(disk_memories)
+      result = self._full_build(disk_memories)
+    else:
+      result = self._incremental_build(disk_memories)
 
-    return self._incremental_build(disk_memories)
+    self._write_meta()
+    self._current_meta = {"model": MODEL_NAME}
+    return result
 
   def _full_build(
     self,
