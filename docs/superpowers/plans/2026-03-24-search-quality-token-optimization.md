@@ -452,7 +452,7 @@ async def test_save_response_confirms_repo(rag_env: str) -> None:
 
 - [ ] **Step 3: Run tests to verify they fail**
 
-Run: `uv run pytest tests/test_server.py::test_save_requires_repo_when_no_git tests/test_server.py::test_save_response_confirms_repo -v`
+Run: `uv run pytest tests/test_server.py::test_save_requires_repo tests/test_server.py::test_save_response_confirms_repo -v`
 Expected: FAIL — current code falls back to get_repo()
 
 - [ ] **Step 4: Update `qwick_memory_save` — make repo required, update description**
@@ -538,7 +538,7 @@ The server no longer calls `get_repo()` on save. Every call without `repo=` will
 7. `test_delete_response_confirms_both_layers` (line 238): add `repo="test/mcp-repo"`
 8. `test_qwick_memory_context_shows_summary_first` (line 157): add `repo="test/mcp-repo"`
 
-**`qwick_memory_session_summary` calls (5 total):**
+**`qwick_memory_session_summary` calls (6 total):**
 1. `test_qwick_memory_session_summary` (line 72): add `repo="test/mcp-repo"`
 2. `test_qwick_memory_session_summary_empty_goal` (line 87): add `repo="test/mcp-repo"`
 3. `test_qwick_memory_session_summary_rotation` (line 107): add `repo="test/mcp-repo"`
