@@ -37,7 +37,7 @@ qwick-memory doctor            # Health check
 
 | Module | Responsibility |
 |--------|---------------|
-| `cli.py` | Typer CLI commands (save, search, list, delete, index, context, doctor) |
+| `cli.py` | Typer CLI commands (save, search, list, delete, index, migrate, context, doctor) |
 | `server.py` | MCP server with 7 tools for Claude Code + memory protocol |
 | `memory.py` | Memory dataclass, markdown I/O, ID generation (SHA-256) |
 | `index.py` | LanceDB: embed, upsert, delete, incremental rebuild, FTS index |
@@ -53,17 +53,17 @@ qwick-memory doctor            # Health check
 | `QWICK_MEMORY_DIR` | Root directory for memories and vectordb | `~/.qwick-memory/` |
 | `QWICK_MEMORY_REPO` | Override repo name | Auto-detected from git remote |
 | `QWICK_MEMORY_AUTHOR` | Override author name | Auto-detected from git config |
-| `QWICK_MEMORY_REMOTE` | Override git remote URL (`""` to disable) | Auto-detected from source repo |
+| `QWICK_MEMORY_REMOTE` | Git remote URL for memory sync (`""` to disable) | Not set (local only) |
 
 ## Memory Data Model
 
 ```yaml
 ---
-id: a1b2c3d4e5f6       # SHA-256 of content, 12 hex chars
-repo: qwick-backend     # Auto-detected from git remote
-type: decision          # decision|bug|convention|discovery|pattern|preference|note|session-summary
+id: a1b2c3d4e5f6           # SHA-256 of content, 12 hex chars
+repo: [qwick-backend]      # List of repo names (auto-detected from git remote)
+type: decision              # decision|bug|convention|discovery|pattern|preference|note|session-summary
 tags: [database, postgres]
-author: falconiere      # Auto-detected from git config
+author: falconiere          # Auto-detected from git config
 created: 2026-03-20T14:30:00+00:00
 content_hash: a1b2c3d4e5f6  # For incremental indexing
 ---
@@ -91,11 +91,19 @@ The actual memory content goes here as markdown body.
 
 ## Claude Code Plugin
 
-The `.claude-plugin/` directory contains the marketplace manifest and plugin config. To install as a Claude Code plugin:
+The `.claude-plugin/` directory contains the marketplace manifest (`marketplace.json`) and plugin config (`plugin.json`). To install as a Claude Code plugin:
 
 ```bash
 claude plugin marketplace add SidegigLLC/qwick-memory
+
+# User scope (default — available in all projects)
 claude plugin install qwick-memory
+
+# Project scope (committed to .claude/plugins/, shared with team)
+claude plugin install qwick-memory --scope project
+
+# Local scope (project-local, not committed)
+claude plugin install qwick-memory --scope local
 ```
 
 The `marketplace.json` requires `owner` (object with `name`), and each plugin entry requires `name`, `description`, and `source`. See `.claude-plugin/marketplace.json` for the current schema.
@@ -125,13 +133,14 @@ qwick-memory includes an automatic memory protocol injected via MCP server instr
 - `PreCompact` — Reminder to save session summary
 - `PostCompact` — Restore context after compaction
 
-**Key tools:**
-- `qwick_memory_save` — Save a memory (all types)
-- `qwick_memory_search` — Semantic search
-- `qwick_memory_context` — Load recent context (summary first)
+**MCP tools (7):**
+- `qwick_memory_save` — Save a memory (all types, requires repo)
+- `qwick_memory_search` — Semantic vector search with metadata filtering
+- `qwick_memory_list` — List memories from disk with optional filters
+- `qwick_memory_delete` — Delete a memory by ID
+- `qwick_memory_index` — Build or rebuild the vector index
+- `qwick_memory_context` — Load recent context (session summary first, token-budgeted)
 - `qwick_memory_session_summary` — Save structured session summary (with rotation, keeps 3)
-
-This replaces engram. Disable engram when qwick-memory is active.
 
 ## Design Spec
 
