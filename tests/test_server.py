@@ -26,7 +26,7 @@ async def test_qwick_memory_save(rag_env: str) -> None:
   """qwick_memory_save creates a memory and returns 'Saved' in result."""
   from qwick_memory.server import qwick_memory_save
 
-  result = await qwick_memory_save("MCP server test memory")
+  result = await qwick_memory_save("MCP server test memory", repo="test/mcp-repo")
   assert "Saved" in result
 
 
@@ -37,7 +37,7 @@ async def test_save_creates_flat_file(rag_env: str) -> None:
 
   from qwick_memory.server import qwick_memory_save
 
-  await qwick_memory_save("Flat layout server test")
+  await qwick_memory_save("Flat layout server test", repo="test/mcp-repo")
   memories_dir = Path(rag_env) / "memories"
   md_files = list(memories_dir.glob("*.md"))
   assert len(md_files) == 1, f"Expected 1 file in memories/, got {md_files}"
@@ -50,7 +50,7 @@ async def test_qwick_memory_search(rag_env: str) -> None:
   """qwick_memory_save then qwick_memory_search finds the saved content."""
   from qwick_memory.server import qwick_memory_save, qwick_memory_search
 
-  await qwick_memory_save("PostgreSQL is great for JSONB queries")
+  await qwick_memory_save("PostgreSQL is great for JSONB queries", repo="test/mcp-repo")
   result = await qwick_memory_search("PostgreSQL")
   assert "PostgreSQL" in result
 
@@ -75,6 +75,7 @@ async def test_qwick_memory_session_summary(rag_env: str) -> None:
     accomplished="Renamed all tools",
     next_steps="Add hooks",
     relevant_files="server.py, hooks.json",
+    repo="test/mcp-repo",
   )
   assert "Saved" in result
 
@@ -90,6 +91,7 @@ async def test_qwick_memory_session_summary_empty_goal(rag_env: str) -> None:
     accomplished="something",
     next_steps="something",
     relevant_files="something",
+    repo="test/mcp-repo",
   )
   assert "Error" in result
 
@@ -110,6 +112,7 @@ async def test_qwick_memory_session_summary_rotation(rag_env: str) -> None:
       accomplished=f"Accomplished {i}",
       next_steps=f"Next {i}",
       relevant_files=f"file{i}.py",
+      repo="test/mcp-repo",
     )
     assert "Saved" in result
     time.sleep(0.01)
@@ -137,6 +140,7 @@ async def test_session_summary_creates_flat_file(rag_env: str) -> None:
     accomplished="Testing",
     next_steps="Verify",
     relevant_files="test.py",
+    repo="test/mcp-repo",
   )
   memories_dir = Path(rag_env) / "memories"
   md_files = list(memories_dir.glob("*.md"))
@@ -154,13 +158,14 @@ async def test_qwick_memory_context_shows_summary_first(rag_env: str) -> None:
     qwick_memory_session_summary,
   )
 
-  await qwick_memory_save("Regular memory about PostgreSQL", type="decision", tags="db")
+  await qwick_memory_save("Regular memory about PostgreSQL", type="decision", tags="db", repo="test/mcp-repo")
   await qwick_memory_session_summary(
     goal="Test context ordering",
     discoveries="None",
     accomplished="Saved a memory",
     next_steps="Verify ordering",
     relevant_files="test_server.py",
+    repo="test/mcp-repo",
   )
 
   result = await qwick_memory_context()
@@ -186,7 +191,7 @@ async def test_save_response_includes_vector_hint(rag_env: str) -> None:
   """qwick_memory_save response mentions vector search indexing."""
   from qwick_memory.server import qwick_memory_save
 
-  result = await qwick_memory_save("Test memory for hint check", type="decision")
+  result = await qwick_memory_save("Test memory for hint check", type="decision", repo="test/mcp-repo")
   assert "Embedded and indexed for vector search" in result
   assert "(decision)" in result
 
@@ -196,8 +201,8 @@ async def test_save_duplicate_response_hint(rag_env: str) -> None:
   """qwick_memory_save duplicate response includes 'no action needed' hint."""
   from qwick_memory.server import qwick_memory_save
 
-  await qwick_memory_save("Duplicate hint test content")
-  result = await qwick_memory_save("Duplicate hint test content")
+  await qwick_memory_save("Duplicate hint test content", repo="test/mcp-repo")
+  result = await qwick_memory_save("Duplicate hint test content", repo="test/mcp-repo")
   assert "already exists" in result
   assert "No action needed" in result
 
@@ -207,7 +212,7 @@ async def test_search_results_include_similarity_hint(rag_env: str) -> None:
   """qwick_memory_search results include semantic similarity hint."""
   from qwick_memory.server import qwick_memory_save, qwick_memory_search
 
-  await qwick_memory_save("Redis is used for caching")
+  await qwick_memory_save("Redis is used for caching", repo="test/mcp-repo")
   result = await qwick_memory_search("Redis caching")
   assert "Results ranked by semantic similarity" in result
 
@@ -235,7 +240,7 @@ async def test_delete_response_confirms_both_layers(rag_env: str) -> None:
   """qwick_memory_delete response confirms disk and vector index removal."""
   from qwick_memory.server import qwick_memory_delete, qwick_memory_save
 
-  result = await qwick_memory_save("Memory to delete for hint test")
+  result = await qwick_memory_save("Memory to delete for hint test", repo="test/mcp-repo")
   # Format: "Saved memory {id} ..." — ID is the third word
   memory_id = result.split()[2]
 
@@ -254,5 +259,28 @@ async def test_session_summary_response_includes_vector_hint(rag_env: str) -> No
     accomplished="Testing",
     next_steps="Verify",
     relevant_files="test_server.py",
+    repo="test/mcp-repo",
   )
   assert "Embedded and indexed for vector search" in result
+
+
+@pytest.mark.asyncio
+async def test_save_requires_repo(rag_env: str) -> None:
+  """qwick_memory_save returns error when repo is empty string."""
+  from qwick_memory.server import qwick_memory_save
+
+  result = await qwick_memory_save("Test memory", repo="")
+  assert "Error" in result
+  assert "repo is required" in result
+
+
+@pytest.mark.asyncio
+async def test_save_response_confirms_repo(rag_env: str) -> None:
+  """qwick_memory_save response explicitly names the repos."""
+  from qwick_memory.server import qwick_memory_save
+
+  result = await qwick_memory_save(
+    "Auth middleware decision", type="decision", repo="sidegig-api,sidegig-web"
+  )
+  assert "sidegig-api" in result
+  assert "sidegig-web" in result

@@ -82,9 +82,8 @@ async def qwick_memory_save(
     content: The memory content to save.
     type: Memory type (decision, bug, convention, discovery, pattern, preference, note).
     tags: Comma-separated tags for discoverability.
-    repo: Comma-separated repo names (e.g. "sidegig-api" or "sidegig-api,sidegig-web").
-          REQUIRED when the working directory has no .git (e.g. multi-repo workspaces).
-          Auto-detected from git remote when available.
+    repo: Comma-separated repo names (e.g. 'qwick-mobile' or 'sidegig-api,sidegig-web').
+          REQUIRED — always specify which repo(s) this memory belongs to. Never omit.
 
   Returns:
     Status string confirming the save with indexing details.
@@ -100,18 +99,13 @@ async def qwick_memory_save(
   memory_id = generate_id(content)
   tag_list = [t.strip() for t in tags.split(",") if t.strip()]
 
-  if repo:
-    repo_list = [r.strip() for r in repo.split(",") if r.strip()]
-  else:
-    detected = get_repo()
-    if detected is None:
-      return (
-        "Error: could not auto-detect repo (no .git in project root). "
-        "Please provide the repo parameter with the repository name(s) "
-        "this memory belongs to (e.g. repo='sidegig-api' or "
-        "repo='sidegig-api,sidegig-web' for cross-repo work)."
-      )
-    repo_list = [detected]
+  # Repo is required — no auto-detection fallback
+  if not repo or not repo.strip():
+    return (
+      "Error: repo is required. Specify which repo(s) this memory belongs to "
+      "(e.g. repo='sidegig-api' or repo='sidegig-api,sidegig-web')."
+    )
+  repo_list = [r.strip() for r in repo.split(",") if r.strip()]
 
   author = get_author()
 
@@ -422,7 +416,7 @@ async def qwick_memory_session_summary(
     accomplished: What was done.
     next_steps: What remains to be done.
     relevant_files: Key files touched or referenced.
-    repo: Comma-separated repo names. REQUIRED when the working directory has no .git.
+    repo: Comma-separated repo names. REQUIRED — always specify which repo(s).
 
   Returns:
     Status string confirming the save with indexing details.
@@ -441,16 +435,12 @@ async def qwick_memory_session_summary(
 
   memory_id = generate_id(content)
 
-  if repo:
-    repo_list = [r.strip() for r in repo.split(",") if r.strip()]
-  else:
-    detected = get_repo()
-    if detected is None:
-      return (
-        "Error: could not auto-detect repo (no .git in project root). "
-        "Please provide the repo parameter with the repository name(s)."
-      )
-    repo_list = [detected]
+  if not repo or not repo.strip():
+    return (
+      "Error: repo is required. Specify which repo(s) this session summary belongs to "
+      "(e.g. repo='sidegig-api' or repo='sidegig-api,sidegig-web')."
+    )
+  repo_list = [r.strip() for r in repo.split(",") if r.strip()]
 
   author = get_author()
 
