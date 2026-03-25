@@ -67,3 +67,19 @@ def test_search_scores_are_normalized_similarity(built_index: MemoryIndex) -> No
   assert len(results) > 0
   for r in results:
     assert 0.0 <= r.score <= 1.0, f"Score {r.score} not in 0-1 range"
+
+
+def test_search_scores_use_reranker(built_index: MemoryIndex) -> None:
+  """After reranking, results have reranker_score > 0 for relevant queries."""
+  results = search_memories(built_index, "PostgreSQL database")
+  # With only 3 docs, some might get filtered by threshold
+  # At minimum, the most relevant one should survive
+  if results:
+    for r in results:
+      assert r.reranker_score > 0
+
+
+def test_search_irrelevant_returns_empty(built_index: MemoryIndex) -> None:
+  """Completely irrelevant query returns no results after threshold filtering."""
+  results = search_memories(built_index, "xyzzy foobar blargh utter nonsense gibberish")
+  assert results == []

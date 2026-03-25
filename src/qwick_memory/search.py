@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import math
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
+
+from fastembed.rerank.cross_encoder import TextCrossEncoder
 
 if TYPE_CHECKING:
   from qwick_memory.index import MemoryIndex
@@ -28,6 +29,39 @@ HALF_LIFE_DAYS: dict[str, int] = {
   "session-summary": 14,
 }
 DEFAULT_HALF_LIFE = 90
+
+RERANKER_MODEL = "Xenova/ms-marco-MiniLM-L-6-v2"
+_reranker: TextCrossEncoder | None = None
+
+
+def _get_reranker() -> TextCrossEncoder:
+  """Lazy-load the cross-encoder reranker."""
+  global _reranker
+  if _reranker is None:
+    _reranker = TextCrossEncoder(model_name=RERANKER_MODEL)
+  return _reranker
+
+
+def _rerank(
+  query: str,
+  results: list[SearchResult],
+  limit: int,
+) -> list[SearchResult]:
+  """Rerank results using cross-encoder, normalize logits via sigmoid."""
+  if not results:
+    return []
+
+  reranker = _get_reranker()
+  documents = [r.content for r in results]
+  raw_scores = list(reranker.rerank(query, documents))
+
+  # Sigmoid normalize raw logits to 0-1
+  for result, raw in zip(results, raw_scores):
+    result.reranker_score = 1.0 / (1.0 + math.exp(-raw))
+
+  # Sort by reranker_score descending
+  results.sort(key=lambda r: r.reranker_score, reverse=True)
+  return results[:limit]
 
 
 @dataclass
@@ -118,8 +152,7 @@ def search_memories(
 ) -> list[SearchResult]:
   """Search the memory index with optional metadata filters.
 
-  Attempts hybrid search (vector + full-text) first, falling back to
-  vector-only search if the FTS index is unavailable.
+  Pipeline: hybrid search -> cross-encoder rerank -> threshold filter -> combined scoring.
   """
   table = index._get_table()
   if table is None:
@@ -138,15 +171,44 @@ def search_memories(
   if tag is not None:
     safe_tag = tag.replace('"', '\\"').replace("%", "")
     where_clauses.append(f'tags LIKE "%{safe_tag}%"')
-
   where_expr = " AND ".join(where_clauses) if where_clauses else None
 
-  # Try hybrid search first, fall back to vector-only
-  results = _try_hybrid_search(table, query, query_vector, where_expr, limit)
-  if results is not None:
-    return results
+  # Step 1: Hybrid search (over-retrieve)
+  retrieve_limit = max(limit * 2, 20)
+  results = _try_hybrid_search(table, query, query_vector, where_expr, retrieve_limit)
+  if results is None:
+    results = _vector_search(table, query_vector, where_expr, retrieve_limit)
 
-  return _vector_search(table, query_vector, where_expr, limit)
+  if not results:
+    return []
+
+  # Step 2: Cross-encoder rerank
+  results = _rerank(query, results, retrieve_limit)
+
+  # Step 3: Threshold filter on reranker_score
+  results = _apply_thresholds(results)
+
+  if not results:
+    return []
+
+  # Step 4: Combined scoring
+  from qwick_memory.stats import load_stats
+
+  all_stats = load_stats()
+  for r in results:
+    created_dt = datetime.fromisoformat(r.created)
+    mem_stats = all_stats.get(r.id)
+    r.score = _compute_final_score(
+      reranker_score=r.reranker_score,
+      memory_type=r.type,
+      created=created_dt,
+      quality=r.quality,
+      stats=mem_stats,
+    )
+
+  # Step 5: Sort by final_score, return top limit
+  results.sort(key=lambda r: r.score, reverse=True)
+  return results[:limit]
 
 
 def _try_hybrid_search(
@@ -156,17 +218,19 @@ def _try_hybrid_search(
   where_expr: str | None,
   limit: int,
 ) -> list[SearchResult] | None:
-  """Attempt hybrid (vector + FTS) search. Returns None on failure."""
+  """Attempt hybrid (vector + FTS) search with 50/50 vector/FTS weights."""
   try:
+    from lancedb.rerankers import LinearCombinationReranker
+
+    fuser = LinearCombinationReranker(weight=0.5)
     builder = table.search(query_type="hybrid").vector(query_vector).text(query)
+    builder = builder.rerank(reranker=fuser)
     if where_expr:
       builder = builder.where(where_expr)
     builder = builder.limit(limit)
     rows = builder.to_list()
     return [_row_to_result(row, score_key="_relevance_score", normalize=False) for row in rows]
   except Exception:
-    # Hybrid search may not be available (no FTS index, API mismatch, etc.)
-    # This is acceptable for MVP — fall back to vector-only.
     logger.debug("Hybrid search failed; falling back to vector-only search.")
     return None
 
@@ -199,4 +263,6 @@ def _row_to_result(row: dict[str, Any], score_key: str, normalize: bool = False)
     created=row["created"],
     content=row["content"],
     score=score,
+    quality=row.get("quality", 3),
+    enriched_content=row.get("enriched_content", ""),
   )
