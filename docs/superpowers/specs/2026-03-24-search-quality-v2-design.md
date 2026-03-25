@@ -36,10 +36,21 @@ SKILL locations in qwick-apps...
 - `index.py` — new standalone function `_enrich_text(memory: Memory) -> str` (not a method — pure function, easily unit-testable without instantiating `MemoryIndex`)
 - Called by `_embed_documents` path during `build()` and `upsert()`
 - LanceDB stores both `content` (original body, for display in results) and `enriched_content` (metadata + body, for embedding and FTS)
-- The FTS index is built on `enriched_content` instead of `content`
-- The hybrid search text query targets `enriched_content`
+- The FTS index is built on `enriched_content` instead of `content`: `table.create_fts_index("enriched_content", replace=True)`
+- The hybrid search `.text(query)` call must target `enriched_content` (verify LanceDB API supports column targeting, or ensure `enriched_content` is the only FTS-indexed column)
 - `_row_to_result` reads `content` (original) for display
 - The original markdown body on disk is untouched — enrichment only affects the vector index
+
+**Precise format:**
+```python
+def _enrich_text(memory: Memory) -> str:
+  parts = [f"[Repository: {', '.join(memory.repo)}]"]
+  parts.append(f"[Type: {memory.type}]")
+  if memory.tags:
+    parts.append(f"[Tags: {', '.join(memory.tags)}]")
+  return f"{' '.join(parts)}\n{memory.content}"
+```
+Empty tags → no `[Tags: ]` block. Multi-repo → `[Repository: sidegig-api, sidegig-web]`.
 
 **Rationale:** Anthropic's Contextual Retrieval research showed enriched embeddings reduce retrieval failure by 35%. For our small corpus, prepending structured metadata gives the embedding model enough signal to match queries like "cmux" against tags.
 
@@ -56,9 +67,13 @@ After hybrid search retrieves top-20 candidates, a cross-encoder rescores each (
 - Reranker is a module-level lazy singleton in `search.py` (not on `MemoryIndex` — keeps separation of concerns: `index.py` handles storage/embedding, `search.py` handles retrieval/ranking)
 - Search pipeline becomes: `hybrid search (top 20) → cross-encoder rerank → threshold filter → return top N`
 
+**Score normalization:** `TextCrossEncoder.rerank()` returns raw logits (range approximately -11 to +6). These MUST be normalized to 0-1 via sigmoid before thresholding: `reranker_score = 1 / (1 + exp(-raw_logit))`. Examples: highly relevant pair logit +4.19 → sigmoid 0.985; irrelevant pair logit -11.4 → sigmoid 0.00001. All threshold constants in this spec (Section 3: `MIN_RELEVANCE_SCORE = 0.3`, `MAX_SCORE_GAP = 0.15`) apply to sigmoid-normalized scores.
+
+**Ordering note:** `rerank()` returns scores in the same positional order as input documents (not sorted). The `_rerank` function must: (1) extract texts from results in order, (2) call `reranker.rerank(query, texts)`, (3) zip scores back to results, (4) sort descending, (5) return top `limit`.
+
 **Verified:** `TextCrossEncoder` confirmed available in fastembed 0.7.4 via `from fastembed.rerank.cross_encoder import TextCrossEncoder`. Supported models: `Xenova/ms-marco-MiniLM-L-6-v2`, `Xenova/ms-marco-MiniLM-L-12-v2`, `jinaai/jina-reranker-v1-tiny-en`, `jinaai/jina-reranker-v1-turbo-en`, `BAAI/bge-reranker-base`, `jinaai/jina-reranker-v2-base-multilingual`.
 
-**Rationale:** Cross-encoders process query and document together through a transformer, producing calibrated relevance scores. Studies show +10-25% precision improvement over hybrid search alone. At 66 memories, reranking top-20 takes milliseconds.
+**Rationale:** Cross-encoders process query and document together through a transformer. Raw logits require sigmoid normalization but then produce well-calibrated 0-1 relevance scores suitable for thresholding. Studies show +10-25% precision improvement over hybrid search alone. At 66 memories, reranking top-20 takes milliseconds.
 
 ---
 
@@ -97,6 +112,7 @@ Average the three dimensions, round to nearest integer.
 - Stored in frontmatter as `quality: 4` and in LanceDB record
 - `PROTOCOL` updated with rubric instructions
 - Backward compatible — existing memories without `quality` default to 3
+- `qwick_memory_session_summary` — always assigns `quality=3` (session summaries have 14-day half-life and are auto-rotated, so quality scoring adds no value)
 
 **Search-time boost:** `quality_boost = 0.6 + 0.08 * quality_score` — ranges 0.68 (quality=1) to 1.0 (quality=5). Low-quality memories are deprioritized, not excluded.
 
@@ -209,18 +225,20 @@ Feedback events reference the search:
 
 Explicit hybrid fusion weights instead of LanceDB defaults.
 
-**Change:** `_try_hybrid_search` in `search.py` uses `LinearCombinationReranker(weight=0.5)` — equal vector/FTS weighting instead of default 0.7/0.3.
+**Change:** `_try_hybrid_search` in `search.py` uses `LinearCombinationReranker(weight=0.5)` (from `lancedb.rerankers`) — equal vector/FTS weighting instead of default 0.7/0.3. Note: this is the *first-stage* LanceDB fusion reranker, distinct from the fastembed cross-encoder used for *post-retrieval* reranking in Section 2.
 
 **Rationale:** Memories contain many specific technical identifiers ("cmux", "CORE-5156", "SuperTokens") that benefit from exact keyword matching. With enriched content (Section 1), the FTS index also covers repo names, tags, and type.
 
-**Full pipeline:**
+**Full pipeline (precise order):**
 ```
-hybrid search (vector 0.5 + FTS 0.5, top 20)
-  → cross-encoder rerank
-    → combined scoring (freshness × quality × usage)
-      → threshold filter (hard floor + gap detection)
-        → return results
+1. hybrid search (vector 0.5 + FTS 0.5, top 20) → list[SearchResult]
+2. cross-encoder rerank → sigmoid(logits) → set reranker_score on each result
+3. threshold filter on reranker_score (hard floor 0.3 + gap detection 0.15)
+4. combined scoring → final_score = reranker_score * freshness * quality * usage
+5. sort by final_score descending → return results
 ```
+
+Threshold filtering (step 3) happens BEFORE combined scoring (step 4). This ensures relevant-but-old results pass the relevance gate, then get deprioritized by freshness/quality/usage for ranking.
 
 ---
 
@@ -230,6 +248,14 @@ hybrid search (vector 0.5 + FTS 0.5, top 20)
 
 New field:
 - `quality: int` — 1-5 quality rating (default 3)
+
+### SearchResult dataclass (`search.py`)
+
+Extended with new fields:
+- `reranker_score: float` — sigmoid-normalized cross-encoder score (0-1), used for threshold filtering
+- `quality: int` — memory quality (1-5), needed for `_compute_final_score`
+
+The existing `score` field becomes `final_score` after combined scoring. Callers (`server.py`, `cli.py`) use `score` for display and tiered formatting.
 
 ### Frontmatter schema
 
@@ -261,7 +287,7 @@ New columns:
 | `memory.py` | `quality` field on `Memory` (default 3), `parse_memory()` reads `quality` with fallback, `write_memory()` includes `quality` |
 | `server.py` | `qwick_memory_feedback` tool, `qwick_memory_save` gains `quality` param, `PROTOCOL` updated with quality rubric + feedback instructions, tiered thresholds recalibrated |
 | `cli.py` | `save` command gains `--quality` option (default 3), `search` displays composite score components, `doctor` checks stats file health |
-| `config.py` | `get_stats_path()` helper |
+| `config.py` | `get_stats_path()` and `get_search_log_path()` helpers |
 | `stats.py` | **New module** — `load_stats()`, `save_stats()`, `increment_retrieval()`, `record_feedback()`, atomic writes via temp-file-then-rename |
 
 ### New files
