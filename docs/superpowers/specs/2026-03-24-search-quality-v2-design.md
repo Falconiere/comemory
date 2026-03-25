@@ -33,9 +33,12 @@ SKILL locations in qwick-apps...
 ```
 
 **Changes:**
-- `index.py` — new `_enrich_text(memory: Memory) -> str` method
+- `index.py` — new standalone function `_enrich_text(memory: Memory) -> str` (not a method — pure function, easily unit-testable without instantiating `MemoryIndex`)
 - Called by `_embed_documents` path during `build()` and `upsert()`
-- The enriched text is stored as `content` in the LanceDB record (so FTS also searches metadata terms)
+- LanceDB stores both `content` (original body, for display in results) and `enriched_content` (metadata + body, for embedding and FTS)
+- The FTS index is built on `enriched_content` instead of `content`
+- The hybrid search text query targets `enriched_content`
+- `_row_to_result` reads `content` (original) for display
 - The original markdown body on disk is untouched — enrichment only affects the vector index
 
 **Rationale:** Anthropic's Contextual Retrieval research showed enriched embeddings reduce retrieval failure by 35%. For our small corpus, prepending structured metadata gives the embedding model enough signal to match queries like "cmux" against tags.
@@ -50,8 +53,10 @@ After hybrid search retrieves top-20 candidates, a cross-encoder rescores each (
 
 **Changes:**
 - `search.py` — new `_rerank(query: str, results: list[SearchResult], limit: int) -> list[SearchResult]` function
-- `MemoryIndex` gets a `_reranker: TextCrossEncoder | None` property, lazy-loaded like `_model`
+- Reranker is a module-level lazy singleton in `search.py` (not on `MemoryIndex` — keeps separation of concerns: `index.py` handles storage/embedding, `search.py` handles retrieval/ranking)
 - Search pipeline becomes: `hybrid search (top 20) → cross-encoder rerank → threshold filter → return top N`
+
+**Verified:** `TextCrossEncoder` confirmed available in fastembed 0.7.4 via `from fastembed.rerank.cross_encoder import TextCrossEncoder`. Supported models: `Xenova/ms-marco-MiniLM-L-6-v2`, `Xenova/ms-marco-MiniLM-L-12-v2`, `jinaai/jina-reranker-v1-tiny-en`, `jinaai/jina-reranker-v1-turbo-en`, `BAAI/bge-reranker-base`, `jinaai/jina-reranker-v2-base-multilingual`.
 
 **Rationale:** Cross-encoders process query and document together through a transformer, producing calibrated relevance scores. Studies show +10-25% precision improvement over hybrid search alone. At 66 memories, reranking top-20 takes milliseconds.
 
@@ -172,7 +177,9 @@ Where:
 
 **Changes:**
 - `search.py` — new `_compute_final_score(reranker_score, memory_type, created, quality, stats) -> float`
-- The threshold filter (Section 3) operates on `final_score`
+- **Threshold filter (Section 3) operates on `reranker_score` (raw relevance), not `final_score`** — this prevents a relevant-but-old result from being filtered out entirely. The freshness/quality/usage multipliers only affect ranking order, not inclusion.
+
+**Example:** A perfectly relevant 90-day-old bug (`reranker_score=0.85, freshness=0.5, quality_boost=0.84`) gets `final_score=0.32` — if threshold applied to `final_score`, this would be cut at 0.3. Instead, threshold checks `reranker_score=0.85` (passes), then `final_score=0.32` determines its rank position.
 
 ---
 
@@ -243,13 +250,25 @@ content_hash: a1b2c3d4e5f6
 
 New columns:
 - `quality` (int) — quality score
-- `enriched_content` (string) — metadata-enriched text (for FTS), separate from display `content`
+- `enriched_content` (string) — metadata-enriched text (for embedding + FTS), separate from display `content`
+
+### Modules requiring changes (complete list)
+
+| Module | Changes |
+|---|---|
+| `index.py` | `_enrich_text()`, `_memory_to_record()` adds `quality` + `enriched_content`, FTS index on `enriched_content`, schema version in `meta.json` |
+| `search.py` | Reranker singleton, `_rerank()`, `_apply_thresholds()`, `_freshness_decay()`, `_compute_final_score()`, `_log_search()`, hybrid weight tuning, retrieval count increment |
+| `memory.py` | `quality` field on `Memory` (default 3), `parse_memory()` reads `quality` with fallback, `write_memory()` includes `quality` |
+| `server.py` | `qwick_memory_feedback` tool, `qwick_memory_save` gains `quality` param, `PROTOCOL` updated with quality rubric + feedback instructions, tiered thresholds recalibrated |
+| `cli.py` | `save` command gains `--quality` option (default 3), `search` displays composite score components, `doctor` checks stats file health |
+| `config.py` | `get_stats_path()` helper |
+| `stats.py` | **New module** — `load_stats()`, `save_stats()`, `increment_retrieval()`, `record_feedback()`, atomic writes via temp-file-then-rename |
 
 ### New files
 
-- `stats.py` — Stats I/O for usage tracking (`.stats.json`)
-- `~/.qwick-memory/.stats.json` — Usage stats sidecar
-- `~/.qwick-memory/.search_log.jsonl` — Search interaction log
+- `stats.py` — Stats I/O for usage tracking (`.stats.json`), atomic writes
+- `~/.qwick-memory/.stats.json` — Usage stats sidecar (local, not git-shared)
+- `~/.qwick-memory/.search_log.jsonl` — Search interaction log (local, not git-shared)
 
 ### New MCP tool
 
@@ -257,24 +276,85 @@ New columns:
 
 ---
 
-## Migration
+## Migration & Org Rollout
 
-- Existing memories without `quality` field default to 3
-- Index rebuild required (enriched embeddings + new `quality` column)
-- The `migrate` command detects the schema change and triggers rebuild
-- Stats file created on first feedback call
+**Schema versioning:** `meta.json` gains a `schema_version` field:
+
+```json
+{"model": "nomic-ai/nomic-embed-text-v1.5-Q", "schema_version": 2}
+```
+
+Current (implicit) version is 1. This release bumps to 2 (enriched embeddings + quality column).
+
+**Automatic migration flow (triggered by `session-start.sh` → `migrate`):**
+
+1. `migrate` reads `meta.json`, compares `schema_version` to code's `SCHEMA_VERSION` constant
+2. On mismatch → forces full index rebuild from markdown files on disk
+3. Rebuild uses new enrichment format + adds `quality` column (defaults to 3)
+4. Writes updated `meta.json` with new `schema_version`
+
+**Backward compatibility across the SidegigLLC org:**
+
+- **Markdown files (git-shared):** New `quality` field in frontmatter is ignored by older plugin versions (python-frontmatter stores unknown fields harmlessly). Older memories without `quality` default to 3 on parse.
+- **Vector index (local):** Each dev rebuilds locally. The `schema_version` check ensures automatic rebuild on first session after plugin update.
+- **Stats + logs (local):** Created on first use, no migration needed.
+- **Cross-encoder model (local):** ~80MB download on first search after update, cached at `~/.cache/fastembed/`. First search is slower; subsequent searches use cache.
+- **New MCP tool (`qwick_memory_feedback`):** Discovered automatically by Claude via MCP protocol. No user action needed.
+
+**No breaking changes:** Devs who haven't updated the plugin continue working normally. Devs who update get automatic migration on next session start.
 
 ---
 
 ## Testing Strategy
 
-- Unit tests for `_enrich_text`, `_freshness_decay`, `_apply_thresholds`, `_compute_final_score`
-- Integration test: search "cmux" returns only the memory that mentions it (or no results if none exist)
-- Integration test: search with all scores below threshold returns empty list
-- Integration test: gap detection cuts results correctly
-- Integration test: quality and usage boosts affect final ordering
-- E2E test: save → search → feedback → verify stats updated
-- E2E test: enriched content appears in FTS matches
+**Unit tests:**
+- `_enrich_text` — verifies repo, type, tags are prepended; handles empty tags/repo
+- `_freshness_decay` — verifies decay values for each memory type at known ages
+- `_apply_thresholds` — hard floor filtering, gap detection, edge cases: empty list, single result, all below threshold, monotonically decreasing scores
+- `_compute_final_score` — verifies multiplicative combination, default values for missing stats/quality
+- `stats.py` — `load_stats` with missing/corrupted file, `save_stats` atomic write, `increment_retrieval`, `record_feedback`
+- `parse_memory` — backward compat: memories without `quality` field default to 3
+
+**Integration tests:**
+- Search "cmux" returns only the memory that mentions it (or no results if none exist)
+- Search with all scores below threshold returns empty list
+- Gap detection cuts results at the right position
+- Quality and usage boosts affect final ordering
+- Enriched content appears in FTS matches (search by tag name that only appears in enrichment)
+- Schema version mismatch triggers full rebuild in `migrate`
+- Reranker lazy-loads on first search, reuses on subsequent searches
+
+**E2E tests (`scripts/e2e-test.sh`):**
+- Save with `--quality` flag, verify frontmatter contains quality field
+- Search returns results with composite scores (not raw cosine distances)
+- Search for irrelevant query returns 0 results (threshold works)
+- Feedback updates `.stats.json`
+- Index rebuild after schema version bump
+- Save → search → feedback → search again (verify feedback affects ranking)
+
+---
+
+## PROTOCOL Updates (Draft)
+
+### Quality rubric (added to save tool description):
+
+```
+Rate quality 1-5 when saving:
+- Specificity: names concrete files, functions, versions, error messages? (1=vague, 5=precise)
+- Actionability: someone can act on this? (1=trivia, 5=directly useful)
+- Context-independence: makes sense in 6 months? (1=needs conversation, 5=self-contained)
+Average the three, round to nearest integer. When unsure, default to 3.
+```
+
+### Feedback instruction (added after search tool description):
+
+```
+After responding to a message where you used qwick_memory_search results:
+- Call qwick_memory_feedback with IDs you actually referenced in your response (used_ids)
+  and IDs that were irrelevant noise (irrelevant_ids).
+- Only call once per response, not per result.
+- Skip if you didn't use search in this response.
+```
 
 ---
 
