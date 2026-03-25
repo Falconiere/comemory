@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 from dataclasses import dataclass
@@ -142,6 +143,36 @@ def _compute_final_score(
   return reranker_score * freshness * quality_boost * usage_boost
 
 
+def _log_search(
+  query: str,
+  filters: dict[str, str | None],
+  results: list[SearchResult],
+  filtered_count: int,
+) -> None:
+  """Append search interaction to JSONL log. Fire-and-forget."""
+  try:
+    from qwick_memory.config import get_search_log_path
+
+    log_path = get_search_log_path()
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    entry = {
+      "timestamp": datetime.now(timezone.utc).isoformat(),
+      "type": "search",
+      "query": query,
+      **filters,
+      "results": [
+        {"id": r.id, "reranker_score": round(r.reranker_score, 4), "final_score": round(r.score, 4)}
+        for r in results
+      ],
+      "result_count": len(results),
+      "filtered_count": filtered_count,
+    }
+    with open(log_path, "a") as f:
+      f.write(json.dumps(entry) + "\n")
+  except Exception:
+    logger.debug("Failed to log search interaction.")
+
+
 def search_memories(
   index: MemoryIndex,
   query: str,
@@ -185,6 +216,9 @@ def search_memories(
   # Step 2: Cross-encoder rerank
   results = _rerank(query, results, retrieve_limit)
 
+  # Track pre-threshold count for logging
+  pre_threshold_count = len(results)
+
   # Step 3: Threshold filter on reranker_score
   results = _apply_thresholds(results)
 
@@ -216,6 +250,15 @@ def search_memories(
 
   # Step 5: Sort by final_score, return top limit
   results.sort(key=lambda r: r.score, reverse=True)
+
+  # Log search interaction (fire-and-forget)
+  _log_search(
+    query=query,
+    filters={"repo_filter": repo, "type_filter": type_filter, "tag_filter": tag},
+    results=results[:limit],
+    filtered_count=pre_threshold_count - len(results),
+  )
+
   return results[:limit]
 
 

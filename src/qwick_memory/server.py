@@ -629,6 +629,23 @@ async def qwick_memory_feedback(
 
   record_feedback(used_ids=used, irrelevant_ids=irrelevant)
 
+  try:
+    from qwick_memory.config import get_search_log_path
+
+    log_path = get_search_log_path()
+    entry = {
+      "timestamp": datetime.now(timezone.utc).isoformat(),
+      "type": "feedback",
+      "used_ids": used,
+      "irrelevant_ids": irrelevant,
+    }
+    import json as _json
+
+    with open(log_path, "a") as f:
+      f.write(_json.dumps(entry) + "\n")
+  except Exception:
+    pass
+
   return (
     f"Recorded feedback: {len(used)} used, {len(irrelevant)} irrelevant.\n"
     f"-> This feedback improves future search ranking."
