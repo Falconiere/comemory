@@ -234,6 +234,42 @@ assert_contains "$OUT" "All checks passed" "doctor reports all checks passed"
 
 echo ""
 
+# ── 10. Quality flag on save ─────────────────────────────────────────────────
+
+echo -e "${BOLD}10. Testing quality flag...${RESET}"
+OUT=$($QR save "High quality test memory with specific file paths and function names" --type decision --tags "test,quality" --quality 5 --repo test-repo 2>/dev/null)
+EC=$?
+assert_exit_code 0 $EC "save with --quality 5"
+
+# Verify frontmatter contains quality
+LAST_FILE=$(ls -t "$QWICK_MEMORY_DIR/memories/"*.md | head -1)
+assert_contains "$(cat "$LAST_FILE")" "quality: 5" "frontmatter contains quality: 5"
+
+echo ""
+
+# ── 11. Schema version rebuild ───────────────────────────────────────────────
+
+echo -e "${BOLD}11. Testing schema version...${RESET}"
+META="$QWICK_MEMORY_DIR/.vectordb/meta.json"
+if [ -f "$META" ]; then
+  # Tamper with schema version
+  python3 -c "
+import json, pathlib
+p = pathlib.Path('$META')
+m = json.loads(p.read_text())
+m['schema_version'] = 0
+p.write_text(json.dumps(m))
+"
+  OUT=$($QR migrate 2>/dev/null)
+  EC=$?
+  assert_exit_code 0 $EC "migrate with schema mismatch"
+  assert_contains "$OUT" "Schema version changed" "migrate detects schema change"
+else
+  fail "schema version test" "meta.json not found"
+fi
+
+echo ""
+
 # ── Results ──────────────────────────────────────────────────────────────────
 
 TOTAL=$((PASSED + FAILED))
