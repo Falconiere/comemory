@@ -45,3 +45,11 @@ def get_index():
   from qwick_memory.index import MemoryIndex
 
   return MemoryIndex(vectordb_dir=get_vectordb_dir())
+
+
+def get_stats_path() -> Path:
+  return get_rag_dir() / ".stats.json"
+
+
+def get_search_log_path() -> Path:
+  return get_rag_dir() / ".search_log.jsonl"

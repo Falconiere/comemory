@@ -149,3 +149,71 @@ def test_scan_memories_ignores_nested_files(tmp_path: Path) -> None:
   results = scan_memories(memories_dir)
   assert len(results) == 1
   assert results[0].name == "top.md"
+
+
+def test_memory_quality_default():
+  """Memory quality defaults to 3."""
+  mem = Memory(
+    id="test_q",
+    repo=["test"],
+    type="note",
+    tags=[],
+    author="tester",
+    created=datetime(2026, 1, 1),
+    content="test",
+  )
+  assert mem.quality == 3
+
+
+def test_memory_quality_explicit():
+  """Memory quality can be set explicitly."""
+  mem = Memory(
+    id="test_q",
+    repo=["test"],
+    type="note",
+    tags=[],
+    author="tester",
+    created=datetime(2026, 1, 1),
+    content="test",
+    quality=5,
+  )
+  assert mem.quality == 5
+
+
+def test_parse_memory_without_quality_defaults_to_3(tmp_path):
+  """Existing memories without quality field default to 3."""
+  md = tmp_path / "old.md"
+  md.write_text(
+    "---\n"
+    "id: old001\n"
+    "repo: [test]\n"
+    "type: note\n"
+    "tags: []\n"
+    "author: alice\n"
+    "created: 2026-01-01T00:00:00\n"
+    "content_hash: old001\n"
+    "---\n"
+    "Old memory without quality field.\n"
+  )
+  mem = parse_memory(md)
+  assert mem.quality == 3
+
+
+def test_parse_memory_with_quality(tmp_path):
+  """Memories with quality field parse correctly."""
+  md = tmp_path / "new.md"
+  md.write_text(
+    "---\n"
+    "id: new001\n"
+    "repo: [test]\n"
+    "type: note\n"
+    "tags: []\n"
+    "author: alice\n"
+    "created: 2026-01-01T00:00:00\n"
+    "quality: 5\n"
+    "content_hash: new001\n"
+    "---\n"
+    "New memory with quality.\n"
+  )
+  mem = parse_memory(md)
+  assert mem.quality == 5

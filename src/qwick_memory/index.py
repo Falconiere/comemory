@@ -20,6 +20,16 @@ logger = logging.getLogger(__name__)
 TABLE_NAME = "memories"
 MODEL_NAME = "nomic-ai/nomic-embed-text-v1.5-Q"
 EXPECTED_DIM = 768
+SCHEMA_VERSION = 2
+
+
+def _enrich_text(memory: Memory) -> str:
+  """Prepend metadata to content for richer embeddings and FTS."""
+  parts = [f"[Repository: {', '.join(memory.repo)}]"]
+  parts.append(f"[Type: {memory.type}]")
+  if memory.tags:
+    parts.append(f"[Tags: {', '.join(memory.tags)}]")
+  return f"{' '.join(parts)}\n{memory.content}"
 
 
 class MemoryIndex:
@@ -53,13 +63,17 @@ class MemoryIndex:
   def _write_meta(self) -> None:
     """Write meta.json with model name for version tracking."""
     meta_path = self._vectordb_dir / "meta.json"
-    meta_path.write_text(json.dumps({"model": MODEL_NAME}))
+    meta_path.write_text(json.dumps({"model": MODEL_NAME, "schema_version": SCHEMA_VERSION}))
 
   # -- embedding helpers ----------------------------------------------------
 
   def model_matches(self) -> bool:
     """Check if the indexed model matches the current MODEL_NAME."""
     return self._current_meta.get("model") == MODEL_NAME
+
+  def schema_matches(self) -> bool:
+    """Check if the indexed schema version matches the current SCHEMA_VERSION."""
+    return self._current_meta.get("schema_version") == SCHEMA_VERSION
 
   def _validate_dim(self, vector: list[float], context: str) -> None:
     """Raise if vector dimension doesn't match expected model output."""
@@ -107,7 +121,7 @@ class MemoryIndex:
       self._db.drop_table(TABLE_NAME)
     table = self._db.create_table(TABLE_NAME, records)
     try:
-      table.create_fts_index("content", replace=True)
+      table.create_fts_index("enriched_content", replace=True)
     except Exception:
       logger.warning("Could not create FTS index; full-text search unavailable.")
     return table
@@ -122,6 +136,8 @@ class MemoryIndex:
       "author": memory.author,
       "created": memory.created.isoformat(),
       "content": memory.content,
+      "enriched_content": _enrich_text(memory),
+      "quality": memory.quality,
       "content_hash": memory.content_hash,
       "vector": vector,
     }
@@ -130,7 +146,7 @@ class MemoryIndex:
 
   def upsert(self, memory: Memory) -> None:
     """Insert or update a single memory in the index."""
-    vectors = self._embed_documents([memory.content])
+    vectors = self._embed_documents([_enrich_text(memory)])
     record = self._memory_to_record(memory, vectors[0])
 
     table = self._get_table()
@@ -192,6 +208,14 @@ class MemoryIndex:
       )
       force = True
 
+    if not self.schema_matches() and not force:
+      logger.info(
+        "Schema version changed (%s → %s). Forcing full rebuild.",
+        self._current_meta.get("schema_version", 1),
+        SCHEMA_VERSION,
+      )
+      force = True
+
     # Force rebuild: drop and recreate
     if force or not self._table_exists():
       result = self._full_build(disk_memories)
@@ -199,7 +223,7 @@ class MemoryIndex:
       result = self._incremental_build(disk_memories)
 
     self._write_meta()
-    self._current_meta = {"model": MODEL_NAME}
+    self._current_meta = {"model": MODEL_NAME, "schema_version": SCHEMA_VERSION}
     return result
 
   def _full_build(
@@ -214,7 +238,7 @@ class MemoryIndex:
       return {"new": 0, "updated": 0, "deleted": 0}
 
     memories = [mem for mem, _fp in disk_memories.values()]
-    texts = [m.content for m in memories]
+    texts = [_enrich_text(mem) for mem in memories]
     vectors = self._embed_documents(texts)
 
     records = [self._memory_to_record(mem, vec) for mem, vec in zip(memories, vectors, strict=True)]
@@ -262,7 +286,7 @@ class MemoryIndex:
     # Apply updates (delete + add)
     for uid in updated_ids:
       mem, _fp = disk_memories[uid]
-      vec = self._embed_documents([mem.content])[0]
+      vec = self._embed_documents([_enrich_text(mem)])[0]
       record = self._memory_to_record(mem, vec)
       with contextlib.suppress(Exception):
         table.delete(f'id = "{uid}"')
@@ -271,7 +295,7 @@ class MemoryIndex:
     # Apply additions
     if new_ids:
       new_memories = [disk_memories[nid][0] for nid in new_ids]
-      texts = [m.content for m in new_memories]
+      texts = [_enrich_text(m) for m in new_memories]
       vectors = self._embed_documents(texts)
       records = [
         self._memory_to_record(mem, vec) for mem, vec in zip(new_memories, vectors, strict=True)
@@ -280,7 +304,7 @@ class MemoryIndex:
 
     # Rebuild FTS index
     with contextlib.suppress(Exception):
-      table.create_fts_index("content", replace=True)
+      table.create_fts_index("enriched_content", replace=True)
 
     # Best-effort optimize
     with contextlib.suppress(Exception):

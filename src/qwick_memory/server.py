@@ -56,6 +56,20 @@ User signals completion → call `qwick_memory_session_summary`:
 - "done", "listo", "thanks", "that's it", "bye"
 - Context compaction imminent
 - Major milestone completed
+
+**Step 4: Rate quality when saving**
+When calling qwick_memory_save, rate quality 1-5:
+- Specificity: names concrete files, functions, versions? (1=vague, 5=precise)
+- Actionability: someone can act on this? (1=trivia, 5=directly useful)
+- Context-independence: makes sense in 6 months? (1=needs conversation, 5=self-contained)
+Average the three, round to nearest integer. When unsure, default to 3.
+
+**Step 5: Give feedback after search**
+After responding to a message where you used qwick_memory_search results:
+- Call qwick_memory_feedback with IDs you referenced (used_ids)
+  and IDs that were noise (irrelevant_ids).
+- Only call once per response, not per result.
+- Skip if you didn't use search in this response.
 """
 
 mcp = FastMCP("qwick-memory", instructions=PROTOCOL)
@@ -64,8 +78,8 @@ mcp = FastMCP("qwick-memory", instructions=PROTOCOL)
 SEARCH_TOKEN_BUDGET = 4000
 CONTEXT_TOKEN_BUDGET = 6000
 CONTEXT_SUMMARY_BUDGET = 2000
-HIGH_RELEVANCE_THRESHOLD = 0.7
-MODERATE_RELEVANCE_THRESHOLD = 0.4
+HIGH_RELEVANCE_THRESHOLD = 0.6
+MODERATE_RELEVANCE_THRESHOLD = 0.35
 
 
 def _estimate_tokens(text: str) -> int:
@@ -145,7 +159,7 @@ def _format_tiered_results(
 
 @mcp.tool()
 async def qwick_memory_save(
-  content: str, type: str = "note", tags: str = "", repo: str = ""
+  content: str, type: str = "note", tags: str = "", repo: str = "", quality: int = 3
 ) -> str:
   """Save a memory to the knowledge base. Called proactively — do NOT wait for user to ask.
 
@@ -166,6 +180,9 @@ async def qwick_memory_save(
     tags: Comma-separated tags for discoverability.
     repo: Comma-separated repo names (e.g. 'qwick-mobile' or 'sidegig-api,sidegig-web').
           REQUIRED — always specify which repo(s) this memory belongs to. Never omit.
+    quality: Quality rating 1-5. Specificity (names concrete things?),
+             actionability (can act on it?), context-independence (6 months?).
+             Average, round to nearest integer. Default 3.
 
   Returns:
     Status string confirming the save with indexing details.
@@ -210,6 +227,7 @@ async def qwick_memory_save(
     author=author,
     created=datetime.now(timezone.utc),
     content=content,
+    quality=max(1, min(5, quality)),
   )
 
   tmp_path = memories_dir / f".{memory_id}.tmp"
@@ -558,6 +576,7 @@ async def qwick_memory_session_summary(
     author=author,
     created=datetime.now(timezone.utc),
     content=content,
+    quality=3,
   )
 
   tmp_path = memories_dir / f".{memory_id}.tmp"
@@ -581,6 +600,53 @@ async def qwick_memory_session_summary(
   return (
     f"Saved session summary {memory_id}. Embedded and indexed for vector search.\n"
     f"-> Session context preserved for next time."
+  )
+
+
+@mcp.tool()
+async def qwick_memory_feedback(used_ids: str = "", irrelevant_ids: str = "") -> str:
+  """Report which search results were useful after responding.
+
+  Call this AFTER responding to a message where you used qwick_memory_search results.
+  Only call once per response. Skip if you didn't use search in this response.
+
+  Args:
+    used_ids: Comma-separated memory IDs that you actually referenced in your response.
+    irrelevant_ids: Comma-separated memory IDs that were noise/irrelevant.
+
+  Returns:
+    Confirmation string.
+  """
+  used = [i.strip() for i in used_ids.split(",") if i.strip()]
+  irrelevant = [i.strip() for i in irrelevant_ids.split(",") if i.strip()]
+
+  if not used and not irrelevant:
+    return "No feedback provided."
+
+  from qwick_memory.stats import record_feedback
+
+  record_feedback(used_ids=used, irrelevant_ids=irrelevant)
+
+  try:
+    from qwick_memory.config import get_search_log_path
+
+    log_path = get_search_log_path()
+    entry = {
+      "timestamp": datetime.now(timezone.utc).isoformat(),
+      "type": "feedback",
+      "used_ids": used,
+      "irrelevant_ids": irrelevant,
+    }
+    import json as _json
+
+    with open(log_path, "a") as f:
+      f.write(_json.dumps(entry) + "\n")
+  except Exception:
+    pass
+
+  return (
+    f"Recorded feedback: {len(used)} used, {len(irrelevant)} irrelevant.\n"
+    f"-> This feedback improves future search ranking."
   )
 
 

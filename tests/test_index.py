@@ -152,3 +152,24 @@ def test_model_matches_detects_mismatch(tmp_path: Path) -> None:
 
   idx = MemoryIndex(vectordb_dir)
   assert idx.model_matches() is False
+
+
+def test_schema_version_mismatch_forces_rebuild(
+  memories_dir: Path,
+  vectordb_dir: Path,
+) -> None:
+  """When schema_version in meta.json doesn't match code, build forces full rebuild."""
+  idx = MemoryIndex(vectordb_dir)
+  idx.build(memories_dir)
+  assert idx.count() == 3
+
+  # Write old schema version
+  meta_path = vectordb_dir / "meta.json"
+  meta = json.loads(meta_path.read_text())
+  meta["schema_version"] = 1
+  meta_path.write_text(json.dumps(meta))
+
+  # Rebuild — should detect mismatch and force full rebuild
+  idx2 = MemoryIndex(vectordb_dir)
+  stats = idx2.build(memories_dir)
+  assert stats["new"] == 3  # full rebuild, not incremental

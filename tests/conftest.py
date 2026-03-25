@@ -29,6 +29,7 @@ def sample_memories() -> list[Memory]:
       content=(
         "We chose PostgreSQL as the primary database for its JSONB support and strong ecosystem."
       ),
+      quality=4,
     ),
     Memory(
       id="mem_sess_002",
@@ -40,6 +41,7 @@ def sample_memories() -> list[Memory]:
       content=(
         "Session tokens were not being invalidated on logout due to a missing Redis DEL call."
       ),
+      quality=5,
     ),
     Memory(
       id="mem_react_003",
@@ -51,6 +53,7 @@ def sample_memories() -> list[Memory]:
       content=(
         "All React components must use named exports, not default exports, for better tree-shaking."
       ),
+      quality=3,
     ),
   ]
 

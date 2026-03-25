@@ -53,6 +53,7 @@ class Memory:
   author: str
   created: datetime
   content: str
+  quality: int = 3
   content_hash: str = field(init=False)
 
   def __post_init__(self) -> None:
@@ -75,6 +76,7 @@ def write_memory(memory: Memory, filepath: Path, memories_dir: Path | None = Non
     tags=memory.tags,
     author=memory.author,
     created=memory.created,
+    quality=memory.quality,
     content_hash=memory.content_hash,
   )
   filepath.write_text(frontmatter.dumps(post))
@@ -124,6 +126,7 @@ def parse_memory(filepath: Path) -> Memory:
       repo_list = [str(r) for r in raw_repo]
     else:
       repo_list = [str(raw_repo)]
+    quality = int(post.metadata.get("quality", 3))
     return Memory(
       id=str(post.metadata["id"]),
       repo=repo_list,
@@ -132,6 +135,7 @@ def parse_memory(filepath: Path) -> Memory:
       author=str(post.metadata["author"]),
       created=created,
       content=post.content,
+      quality=quality,
     )
   except (KeyError, ValueError, TypeError) as exc:
     raise MemoryParseError(

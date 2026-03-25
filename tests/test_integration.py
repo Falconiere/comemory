@@ -46,7 +46,7 @@ def test_full_lifecycle(tmp_path: Path, monkeypatch):
   assert "PostgreSQL" in result.output
 
   # Search with type filter
-  result = runner.invoke(app, ["search", "react components", "--type", "convention"])
+  result = runner.invoke(app, ["search", "React export convention", "--type", "convention"])
   assert result.exit_code == 0
   # Content is "Always use named exports in React"; table may wrap it across lines
   assert "convention" in result.output

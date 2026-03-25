@@ -7,7 +7,7 @@
     {
       "name": "qwick-memory",
       "description": "Persistent developer memory across repos — automatically saves decisions, bugs, conventions, and discoveries. Semantic vector search recalls prior work so Claude never forgets what you've built.",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "source": "./",
       "author": {
         "name": "SidegigLLC"

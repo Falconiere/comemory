@@ -41,7 +41,8 @@ qwick-memory doctor            # Health check
 | `server.py` | MCP server with 7 tools for Claude Code + memory protocol |
 | `memory.py` | Memory dataclass, markdown I/O, ID generation (SHA-256) |
 | `index.py` | LanceDB: embed, upsert, delete, incremental rebuild, FTS index |
-| `search.py` | Hybrid search with metadata filtering |
+| `search.py` | Hybrid search with cross-encoder reranking, threshold filtering, combined scoring |
+| `stats.py` | Usage statistics: retrieval counts, feedback tracking, atomic file I/O |
 | `config.py` | Shared helpers (paths, repo/author detection from env or git) |
 | `git_utils.py` | Auto-detect repo name/author from git, auto-sync (commit+push) |
 | `errors.py` | QwickRagError hierarchy (5 error types) |
@@ -65,6 +66,7 @@ type: decision              # decision|bug|convention|discovery|pattern|preferen
 tags: [database, postgres]
 author: falconiere          # Auto-detected from git config
 created: 2026-03-20T14:30:00+00:00
+quality: 4                  # 1-5 quality rating (default 3)
 content_hash: a1b2c3d4e5f6  # For incremental indexing
 ---
 
@@ -133,14 +135,15 @@ qwick-memory includes an automatic memory protocol injected via MCP server instr
 - `PreCompact` — Reminder to save session summary
 - `PostCompact` — Restore context after compaction
 
-**MCP tools (7):**
-- `qwick_memory_save` — Save a memory (all types, requires repo)
-- `qwick_memory_search` — Semantic vector search with metadata filtering
+**MCP tools (8):**
+- `qwick_memory_save` — Save a memory (all types, requires repo, optional quality 1-5)
+- `qwick_memory_search` — Hybrid search + cross-encoder reranking + threshold filtering
 - `qwick_memory_list` — List memories from disk with optional filters
 - `qwick_memory_delete` — Delete a memory by ID
 - `qwick_memory_index` — Build or rebuild the vector index
 - `qwick_memory_context` — Load recent context (session summary first, token-budgeted)
 - `qwick_memory_session_summary` — Save structured session summary (with rotation, keeps 3)
+- `qwick_memory_feedback` — Report which search results were used vs irrelevant
 
 ## Design Spec
 

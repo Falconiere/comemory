@@ -77,6 +77,7 @@ def save(
   repo: str = typer.Option(
     "", "--repo", "-r", help="Comma-separated repos (auto-detected if omitted)."
   ),
+  quality: int = typer.Option(3, "--quality", "-q", help="Quality rating 1-5."),
   verbose: bool = verbose_option,
 ) -> None:
   """Save a new memory."""
@@ -134,6 +135,7 @@ def save(
     author=author,
     created=datetime.now(timezone.utc),
     content=content,
+    quality=max(1, min(5, quality)),
   )
 
   # Atomic write: temp file -> embed -> upsert -> rename
@@ -336,6 +338,10 @@ def migrate(
     out.print("Model changed — rebuilding index...")
     stats = idx.build(memories_dir, force=True)
     out.print(f"Index rebuilt: {stats['new']} new. Total: {idx.count()}")
+  elif not idx.schema_matches():
+    out.print("Schema version changed — rebuilding index...")
+    stats = idx.build(memories_dir, force=True)
+    out.print(f"Index rebuilt: {stats['new']} new. Total: {idx.count()}")
   elif changed:
     # Files moved but model didn't change — incremental rebuild
     stats = idx.build(memories_dir)
@@ -477,6 +483,20 @@ def doctor(
       out.print("  Skipped (index not available)")
   else:
     out.print("  Skipped (missing memories or vectordb)")
+
+  # 4b. Check stats file
+  out.print("[bold]Checking stats file...[/bold]")
+  stats_path = get_rag_dir() / ".stats.json"
+  if stats_path.exists():
+    try:
+      import json as _json
+
+      stats = _json.loads(stats_path.read_text())
+      out.print(f"  Stats file: {len(stats)} entries")
+    except Exception:
+      console.print("  [yellow]Stats file is corrupted. Delete and it will regenerate.[/yellow]")
+  else:
+    out.print("  No stats file yet (created on first search feedback)")
 
   # 5. Model version
   out.print("[bold]Checking model version...[/bold]")
