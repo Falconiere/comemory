@@ -191,6 +191,14 @@ def search_memories(
   if not results:
     return []
 
+  # Increment retrieval counts (fire-and-forget)
+  try:
+    from qwick_memory.stats import increment_retrieval
+
+    increment_retrieval([r.id for r in results])
+  except Exception:
+    logger.debug("Failed to increment retrieval counts.")
+
   # Step 4: Combined scoring
   from qwick_memory.stats import load_stats
 
