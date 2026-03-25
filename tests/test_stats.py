@@ -1,6 +1,5 @@
 """Tests for qwick_memory.stats — usage tracking with atomic writes."""
 
-
 from qwick_memory.stats import (
   increment_retrieval,
   load_stats,
