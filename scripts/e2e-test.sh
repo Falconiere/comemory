@@ -148,9 +148,10 @@ OUT=$($QR search "caching layer" --tag redis 2>&1) || true
 assert_contains "$OUT" "redis" "search with --tag redis returns redis results"
 
 OUT=$($QR search "completely unrelated quantum physics topic" 2>&1) || true
-# Should still return something (vector search always returns results), but score will be low
+# Threshold filtering correctly filters out irrelevant results — expect No results
 EC=$?
 assert_exit_code 0 "$EC" "search for unrelated topic does not crash"
+assert_contains "$OUT" "No results" "search for irrelevant topic returns No results after threshold filtering"
 
 OUT=$($QR search "which database do we use" 2>&1) || true
 assert_contains "$OUT" "result" "search output includes result count"
