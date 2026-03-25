@@ -4,7 +4,14 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-UV="uv run --directory $PROJECT_ROOT"
+
+# Persist the venv in CLAUDE_PLUGIN_DATA so it survives plugin updates.
+if [ -n "${CLAUDE_PLUGIN_DATA:-}" ]; then
+  mkdir -p "$CLAUDE_PLUGIN_DATA"
+  export UV_PROJECT_ENVIRONMENT="${CLAUDE_PLUGIN_DATA}/.venv"
+fi
+
+UV="uv run --locked --directory $PROJECT_ROOT"
 
 echo "## Qwick Memory — Context Restored After Compaction"
 echo ""

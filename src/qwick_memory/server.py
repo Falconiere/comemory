@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 # Eagerly validate that lancedb is importable — fail fast with diagnostics
 # instead of a mysterious "No module named 'lancedb'" on first tool call.
 try:
-  import lancedb as _lancedb  # noqa: F401
+  import lancedb as _lancedb
 
   logger.info("lancedb %s loaded OK", _lancedb.__version__)
 except ImportError:
