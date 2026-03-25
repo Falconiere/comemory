@@ -367,7 +367,5 @@ async def test_save_with_quality(rag_env: str) -> None:
   """qwick_memory_save accepts quality parameter."""
   from qwick_memory.server import qwick_memory_save
 
-  result = await qwick_memory_save(
-    "High quality memory", repo="test/mcp-repo", quality=5
-  )
+  result = await qwick_memory_save("High quality memory", repo="test/mcp-repo", quality=5)
   assert "Saved" in result

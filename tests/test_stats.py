@@ -1,7 +1,5 @@
 """Tests for qwick_memory.stats — usage tracking with atomic writes."""
 
-import json
-from pathlib import Path
 
 from qwick_memory.stats import (
   increment_retrieval,
@@ -28,7 +26,9 @@ def test_load_stats_corrupted_file(tmp_path):
 def test_save_and_load_roundtrip(tmp_path):
   """Save then load returns same data."""
   path = tmp_path / "stats.json"
-  data = {"abc123": {"retrieval_count": 5, "usage_count": 3, "last_retrieved": "2026-03-24T00:00:00"}}
+  data = {
+    "abc123": {"retrieval_count": 5, "usage_count": 3, "last_retrieved": "2026-03-24T00:00:00"}
+  }
   save_stats(data, path)
   loaded = load_stats(path)
   assert loaded == data

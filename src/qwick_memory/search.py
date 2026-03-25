@@ -57,7 +57,7 @@ def _rerank(
   raw_scores = list(reranker.rerank(query, documents))
 
   # Sigmoid normalize raw logits to 0-1
-  for result, raw in zip(results, raw_scores):
+  for result, raw in zip(results, raw_scores, strict=True):
     result.reranker_score = 1.0 / (1.0 + math.exp(-raw))
 
   # Sort by reranker_score descending

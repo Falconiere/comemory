@@ -12,14 +12,21 @@ from qwick_memory.search import (
 
 def _make_result(score: float, reranker_score: float = 0.0, **kwargs) -> SearchResult:
   defaults = dict(
-    id="x", repo="r", type="note", tags="", author="a",
-    created="2026-01-01T00:00:00", content="c", quality=3,
+    id="x",
+    repo="r",
+    type="note",
+    tags="",
+    author="a",
+    created="2026-01-01T00:00:00",
+    content="c",
+    quality=3,
   )
   defaults.update(kwargs)
   return SearchResult(score=score, reranker_score=reranker_score, **defaults)
 
 
 # -- _apply_thresholds --
+
 
 def test_apply_thresholds_filters_below_floor():
   results = [_make_result(0.0, 0.8), _make_result(0.0, 0.2), _make_result(0.0, 0.1)]
@@ -29,7 +36,12 @@ def test_apply_thresholds_filters_below_floor():
 
 
 def test_apply_thresholds_gap_detection():
-  results = [_make_result(0.0, 0.82), _make_result(0.0, 0.79), _make_result(0.0, 0.41), _make_result(0.0, 0.38)]
+  results = [
+    _make_result(0.0, 0.82),
+    _make_result(0.0, 0.79),
+    _make_result(0.0, 0.41),
+    _make_result(0.0, 0.38),
+  ]
   filtered = _apply_thresholds(results, min_score=0.3, max_gap=0.15)
   assert len(filtered) == 2
 
@@ -49,6 +61,7 @@ def test_apply_thresholds_all_below():
 
 
 # -- _freshness_decay --
+
 
 def test_freshness_decay_convention_365_half_life():
   created = datetime.now(timezone.utc) - timedelta(days=365)
@@ -75,6 +88,7 @@ def test_freshness_decay_unknown_type_uses_default():
 
 
 # -- _compute_final_score --
+
 
 def test_compute_final_score_all_perfect():
   score = _compute_final_score(

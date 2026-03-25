@@ -180,9 +180,9 @@ async def qwick_memory_save(
     tags: Comma-separated tags for discoverability.
     repo: Comma-separated repo names (e.g. 'qwick-mobile' or 'sidegig-api,sidegig-web').
           REQUIRED — always specify which repo(s) this memory belongs to. Never omit.
-    quality: Quality rating 1-5. Rate based on: specificity (names concrete things?),
-             actionability (someone can act on it?), context-independence (makes sense in 6 months?).
-             Average the three, round to nearest integer. Default 3.
+    quality: Quality rating 1-5. Specificity (names concrete things?),
+             actionability (can act on it?), context-independence (6 months?).
+             Average, round to nearest integer. Default 3.
 
   Returns:
     Status string confirming the save with indexing details.
@@ -604,9 +604,7 @@ async def qwick_memory_session_summary(
 
 
 @mcp.tool()
-async def qwick_memory_feedback(
-  used_ids: str = "", irrelevant_ids: str = ""
-) -> str:
+async def qwick_memory_feedback(used_ids: str = "", irrelevant_ids: str = "") -> str:
   """Report which search results were useful after responding.
 
   Call this AFTER responding to a message where you used qwick_memory_search results.
