@@ -336,6 +336,10 @@ def migrate(
     out.print("Model changed — rebuilding index...")
     stats = idx.build(memories_dir, force=True)
     out.print(f"Index rebuilt: {stats['new']} new. Total: {idx.count()}")
+  elif not idx.schema_matches():
+    out.print("Schema version changed — rebuilding index...")
+    stats = idx.build(memories_dir, force=True)
+    out.print(f"Index rebuilt: {stats['new']} new. Total: {idx.count()}")
   elif changed:
     # Files moved but model didn't change — incremental rebuild
     stats = idx.build(memories_dir)
