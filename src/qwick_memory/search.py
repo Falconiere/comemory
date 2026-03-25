@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import math
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -11,10 +14,29 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+MIN_RELEVANCE_SCORE = 0.3
+MAX_SCORE_GAP = 0.15
+
+HALF_LIFE_DAYS: dict[str, int] = {
+  "convention": 365,
+  "preference": 365,
+  "decision": 180,
+  "pattern": 180,
+  "discovery": 120,
+  "bug": 90,
+  "note": 60,
+  "session-summary": 14,
+}
+DEFAULT_HALF_LIFE = 90
+
 
 @dataclass
 class SearchResult:
-  """A single search result with relevance score."""
+  """A single search result with relevance score.
+
+  Score lifecycle: before reranking, score = raw similarity.
+  After pipeline: score = composite final score (reranker * freshness * quality * usage).
+  """
 
   id: str
   repo: str
@@ -24,6 +46,66 @@ class SearchResult:
   created: str
   content: str
   score: float
+  reranker_score: float = 0.0
+  quality: int = 3
+  enriched_content: str = ""
+
+
+def _apply_thresholds(
+  results: list[SearchResult],
+  min_score: float = MIN_RELEVANCE_SCORE,
+  max_gap: float = MAX_SCORE_GAP,
+) -> list[SearchResult]:
+  """Filter results by hard floor and gap detection on reranker_score."""
+  if not results:
+    return []
+
+  # Hard floor
+  above = [r for r in results if r.reranker_score >= min_score]
+  if not above:
+    return []
+
+  # Results should already be sorted by reranker_score descending
+  above.sort(key=lambda r: r.reranker_score, reverse=True)
+
+  # Gap detection
+  filtered = [above[0]]
+  for i in range(1, len(above)):
+    gap = above[i - 1].reranker_score - above[i].reranker_score
+    if gap > max_gap:
+      break
+    filtered.append(above[i])
+
+  return filtered
+
+
+def _freshness_decay(created: datetime, memory_type: str) -> float:
+  """Exponential decay based on memory age and type-specific half-life."""
+  half_life = HALF_LIFE_DAYS.get(memory_type, DEFAULT_HALF_LIFE)
+  now = datetime.now(timezone.utc)
+  if created.tzinfo is None:
+    created = created.replace(tzinfo=timezone.utc)
+  age_days = max(0.0, (now - created).total_seconds() / 86400)
+  return math.exp(-math.log(2) / half_life * age_days)
+
+
+def _compute_final_score(
+  reranker_score: float,
+  memory_type: str,
+  created: datetime,
+  quality: int,
+  stats: dict[str, Any] | None,
+) -> float:
+  """Combine reranker score with freshness, quality, and usage signals."""
+  freshness = _freshness_decay(created, memory_type)
+  quality_boost = 0.6 + 0.08 * quality
+  if stats is not None:
+    retrieval_count = stats.get("retrieval_count", 0)
+    usage_count = stats.get("usage_count", 0)
+    usage_boost = 0.8 + 0.2 * (usage_count / max(1, retrieval_count))
+  else:
+    usage_boost = 0.9
+  return reranker_score * freshness * quality_boost * usage_boost
 
 
 def search_memories(
