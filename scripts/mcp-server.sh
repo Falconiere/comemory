@@ -7,4 +7,4 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
-exec uv run --directory "$PROJECT_ROOT" python -m qwick_memory.server
+exec uv run --locked --directory "$PROJECT_ROOT" python -m qwick_memory.server

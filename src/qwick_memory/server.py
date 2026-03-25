@@ -24,6 +24,26 @@ from qwick_memory.search import SearchResult, search_memories
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Eagerly validate that lancedb is importable — fail fast with diagnostics
+# instead of a mysterious "No module named 'lancedb'" on first tool call.
+try:
+  import lancedb as _lancedb  # noqa: F401
+
+  logger.info("lancedb %s loaded OK", _lancedb.__version__)
+except ImportError:
+  logger.error(
+    "FATAL: Cannot import lancedb. Diagnostics:\n"
+    "  sys.executable = %s\n"
+    "  sys.path = %s\n"
+    "  VIRTUAL_ENV = %s\n"
+    "  PYTHONPATH = %s",
+    sys.executable,
+    sys.path,
+    __import__("os").environ.get("VIRTUAL_ENV", "<not set>"),
+    __import__("os").environ.get("PYTHONPATH", "<not set>"),
+  )
+  raise
+
 PROTOCOL = """\
 ## Qwick Memory — ACTIVE PROTOCOL
 
