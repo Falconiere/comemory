@@ -344,3 +344,30 @@ async def test_context_respects_token_budget(rag_env: str) -> None:
   assert estimated_tokens <= CONTEXT_TOKEN_BUDGET * 1.2, (
     f"Context output ({estimated_tokens} tokens) exceeds budget ({CONTEXT_TOKEN_BUDGET})"
   )
+
+
+@pytest.mark.asyncio
+async def test_qwick_memory_feedback(rag_env: str) -> None:
+  """qwick_memory_feedback records usage stats."""
+  import json
+  from pathlib import Path
+
+  from qwick_memory.server import qwick_memory_feedback
+
+  result = await qwick_memory_feedback(used_ids="abc123", irrelevant_ids="def456")
+  assert "Recorded" in result
+
+  stats_path = Path(rag_env) / ".stats.json"
+  stats = json.loads(stats_path.read_text())
+  assert stats["abc123"]["usage_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_save_with_quality(rag_env: str) -> None:
+  """qwick_memory_save accepts quality parameter."""
+  from qwick_memory.server import qwick_memory_save
+
+  result = await qwick_memory_save(
+    "High quality memory", repo="test/mcp-repo", quality=5
+  )
+  assert "Saved" in result
