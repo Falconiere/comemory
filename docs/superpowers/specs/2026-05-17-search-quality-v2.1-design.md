@@ -210,24 +210,30 @@ def compact() -> None:
 read-modify-write of `stats.json` to `append_event(...)`. Compaction runs:
 
 - On `qwick-memory index` (CLI explicit).
-- Automatically when `stats.events.jsonl` size exceeds 1 MB
-  (`append_event` checks file size after write; if over the threshold,
-  it submits compaction to a thread).
+- Automatically when `stats.events.jsonl` exceeds 1 MB
+  (`append_event` checks file size after writing; over-threshold submits
+  compaction to a thread). Single trigger — size only, not event count.
 
 Race safety: the compactor reads events under an advisory lock
 (`fcntl.flock`), folds into a temp file, renames atomically over
 `stats.json`, then truncates the events file.
 
-### B.9 — Eager reranker preload
+### B.9 — Eager model preload
 
 `server.py::main()` adds:
 
 ```python
 from qwick_memory.search import _get_reranker
-_get_reranker()  # pay cold start before stdio loop
+from qwick_memory.index import MemoryIndex
+
+_get_reranker()                 # cross-encoder ONNX
+MemoryIndex(get_vectordb_dir()).model  # embedding model (nomic)
 ```
 
-Adds ~1s to MCP server start; eliminates per-session first-query cliff.
+Both reranker and embedding model are lazy today; only the reranker was
+flagged in the audit, but the embedding model has the same cold-start
+profile and is also hit on first query. Preload both before stdio loop.
+Adds ~1–2 s to MCP server start; eliminates per-session first-query cliff.
 
 ### C.11 — Hybrid weight env
 
@@ -244,16 +250,33 @@ Field is already populated by `_row_to_result`.
 
 ### C.13 — Threshold backfill
 
-After `_apply_thresholds(results)`:
+`_apply_thresholds` is refactored to take the post-rerank list and return
+the filtered list plus the unused tail:
 
 ```python
-if len(filtered) < limit:
-    remaining = [r for r in results_pre_threshold if r not in filtered
-                 and r.reranker_score >= min_score]
-    filtered.extend(remaining[: limit - len(filtered)])
+def _apply_thresholds(results, min_score, max_gap):
+    above = [r for r in results if r.reranker_score >= min_score]
+    if not above:
+        return [], []
+    above.sort(key=lambda r: r.reranker_score, reverse=True)
+    filtered = [above[0]]
+    for i in range(1, len(above)):
+        if above[i - 1].reranker_score - above[i].reranker_score > max_gap:
+            break
+        filtered.append(above[i])
+    tail = above[len(filtered):]  # passed min_score but cut by gap
+    return filtered, tail
 ```
 
-`remaining` is bounded by `min_score` so the floor is still respected; only
+The caller backfills when scarce:
+
+```python
+filtered, tail = _apply_thresholds(results, min_score, max_gap)
+if len(filtered) < limit and tail:
+    filtered.extend(tail[: limit - len(filtered)])
+```
+
+`tail` is already bounded by `min_score`, so the floor is respected; only
 the gap rule is relaxed when results are scarce.
 
 ### C.14 — Dedup
