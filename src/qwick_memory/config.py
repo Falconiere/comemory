@@ -53,3 +53,24 @@ def get_stats_path() -> Path:
 
 def get_search_log_path() -> Path:
   return get_rag_dir() / ".search_log.jsonl"
+
+
+def _env_float(name: str, default: float) -> float:
+  raw = os.environ.get(name)
+  if raw is None or raw == "":
+    return default
+  try:
+    return float(raw)
+  except ValueError:
+    return default
+
+
+MIN_RELEVANCE_SCORE: float = _env_float("QWICK_MEMORY_MIN_RELEVANCE", 0.3)
+MAX_SCORE_GAP: float = _env_float("QWICK_MEMORY_MAX_GAP", 0.15)
+HYBRID_WEIGHT: float = _env_float("QWICK_MEMORY_HYBRID_WEIGHT", 0.5)
+RERANKER_MODEL: str = os.environ.get("QWICK_MEMORY_RERANKER_MODEL", "Xenova/ms-marco-MiniLM-L-6-v2")
+
+
+def get_search_events_path() -> Path:
+  """Append-only event log for stats (compacted into .stats.json)."""
+  return get_rag_dir() / ".stats.events.jsonl"
