@@ -7,8 +7,13 @@ use time::OffsetDateTime;
 use crate::prelude::*;
 
 /// Memory taxonomy. Stored lowercase in YAML.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+///
+/// `clap::ValueEnum` is derived so the CLI can drive `--kind` through the
+/// validated value-parser path; unknown values are rejected at parse time
+/// with a usage hint listing every accepted variant.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, clap::ValueEnum)]
 #[serde(rename_all = "lowercase")]
+#[clap(rename_all = "lowercase")]
 pub enum Kind {
     Decision,
     Bug,
@@ -16,6 +21,36 @@ pub enum Kind {
     Discovery,
     Pattern,
     Note,
+}
+
+impl Kind {
+    /// Canonical lowercase string used in YAML, SQL, and graph layers.
+    /// Mirrors `#[serde(rename_all = "lowercase")]` so callers that need a
+    /// plain `&str` (without going through serde) get the same wire form.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Decision => "decision",
+            Self::Bug => "bug",
+            Self::Convention => "convention",
+            Self::Discovery => "discovery",
+            Self::Pattern => "pattern",
+            Self::Note => "note",
+        }
+    }
+
+    /// Parse a lowercase kind string, falling back to `Note` for anything
+    /// unknown. Centralises the match arms previously duplicated across the
+    /// index and graph layers.
+    pub fn parse_or_note(s: &str) -> Self {
+        match s {
+            "decision" => Self::Decision,
+            "bug" => Self::Bug,
+            "convention" => Self::Convention,
+            "discovery" => Self::Discovery,
+            "pattern" => Self::Pattern,
+            _ => Self::Note,
+        }
+    }
 }
 
 /// External symbol / file references attached to a memory.

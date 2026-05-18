@@ -211,11 +211,83 @@ fn feedback_records_used_and_irrelevant_ids() {
 
 #[test]
 fn delete_missing_id_fails() {
+    // Fresh data dir: `delete` must call `ensure_dirs` before opening the
+    // store so the missing-id case surfaces "memory not found" instead of an
+    // ENOENT on `memories/`.
     let home = TempDir::new().expect("tempdir");
-    bin(&home)
+    let assertion = bin(&home)
         .args(["delete", "deadbeef0000"])
         .assert()
         .failure();
+    let stderr = String::from_utf8(assertion.get_output().stderr.clone()).expect("utf8 stderr");
+    assert!(
+        stderr.contains("memory not found"),
+        "stderr should mention 'memory not found', got: {stderr:?}"
+    );
+    assert!(
+        !stderr.contains("No such file or directory"),
+        "stderr should not surface raw ENOENT, got: {stderr:?}"
+    );
+}
+
+#[test]
+fn save_rejects_out_of_range_quality() {
+    // clap's value_parser range guard rejects --quality 99 with exit 2 before
+    // the save handler runs. The error message must reference the upper bound
+    // so users know the accepted range is 1..=5.
+    let home = TempDir::new().expect("tempdir");
+    let assertion = bin(&home)
+        .args(["save", "body", "--kind", "note", "--quality", "99"])
+        .assert()
+        .failure();
+    let stderr = String::from_utf8(assertion.get_output().stderr.clone()).expect("utf8 stderr");
+    assert!(
+        stderr.contains("5"),
+        "stderr should mention upper bound 5, got: {stderr:?}"
+    );
+    let code = assertion.get_output().status.code().expect("exit code");
+    assert_ne!(code, 0, "out-of-range quality should fail");
+}
+
+#[test]
+fn save_rejects_unknown_kind() {
+    // --kind is now a clap ValueEnum; unknown values like `banana` are
+    // rejected at parse time with exit 2 instead of being silently coerced
+    // to `Note` by the old `parse_kind` fallback.
+    let home = TempDir::new().expect("tempdir");
+    let assertion = bin(&home)
+        .args(["save", "body", "--kind", "banana"])
+        .assert()
+        .failure();
+    let code = assertion.get_output().status.code().expect("exit code");
+    assert_ne!(code, 0, "unknown --kind should fail");
+}
+
+#[test]
+fn save_wires_memory_into_graph() {
+    // After `save`, the kuzu graph must contain a Memory node with an InRepo
+    // edge to the supplied repo, proving the save flow now drives
+    // `Graph::upsert_memory` (not just markdown I/O).
+    use qwick::config::paths::Paths;
+    use qwick::graph::Graph;
+
+    let home = TempDir::new().expect("tempdir");
+    let body = "decision body mentioning myrepo:src/db.rs:run_migration in text";
+    let save = bin(&home)
+        .args(["save", body, "--kind", "decision", "--repo", "myrepo"])
+        .assert()
+        .success();
+    let id = extract_saved_id(
+        &String::from_utf8(save.get_output().stdout.clone()).expect("utf8 stdout"),
+    );
+
+    let paths = Paths::new(home.path().join(".qwick"));
+    let g = Graph::open(paths.graph_dir()).expect("graph open");
+    let neighbors = g.neighbors_by_repo("myrepo").expect("neighbors_by_repo");
+    assert!(
+        neighbors.contains(&id),
+        "neighbors_by_repo should include saved id {id}, got {neighbors:?}"
+    );
 }
 
 #[test]

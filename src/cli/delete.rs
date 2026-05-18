@@ -28,6 +28,10 @@ struct Output {
 /// Soft-delete the memory and report the affected id.
 pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
+    // `ensure_dirs` guarantees `memories/` exists before the store enumerates
+    // it — without this a fresh data dir surfaces ENOENT instead of the
+    // intended "memory not found" message from `MemoryStore::delete`.
+    paths.ensure_dirs()?;
     let removed = MemoryStore::new(paths).delete(&a.id)?;
     let mut out = std::io::stdout().lock();
     if json {
