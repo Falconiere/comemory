@@ -14,7 +14,7 @@ while IFS= read -r -d '' f; do
   if (( lines > LIMIT )); then
     oversized+=("$f ($lines lines)")
   fi
-done < <(git ls-files -z 'src/*.rs' 'scripts/*.sh' 'scripts/**/*.sh')
+done < <(git ls-files -z 'src/*.rs' 'scripts/*.sh' 'scripts/lib/*.sh')
 
 if (( ${#oversized[@]} > 0 )); then
   log_err "module-size-check" "file(s) exceed $LIMIT lines:"

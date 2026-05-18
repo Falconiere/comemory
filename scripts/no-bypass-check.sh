@@ -34,10 +34,7 @@ declare -a REGEXES=(
 )
 
 EXCLUDES=(
-  ":(exclude)tests/"
-  ":(exclude)docs/"
   ":(exclude)scripts/no-bypass-check.sh"
-  ":(exclude)benches/"
 )
 
 fail=0
@@ -46,13 +43,14 @@ for i in "${!NAMES[@]}"; do
   pattern="${REGEXES[$i]}"
   hits=$(git grep -nE "$pattern" -- 'src/*.rs' "${EXCLUDES[@]}" 2>/dev/null || true)
 
-  # Special case: unsafe { is allowed when followed within 3 lines by `// SAFETY:`
+  # Special case: unsafe { is allowed when preceded within 3 lines by `// SAFETY:`
   if [[ "$name" == "unsafe-without-safety-comment" && -n "$hits" ]]; then
     filtered=""
     while IFS= read -r line; do
       file="${line%%:*}"
       lineno="${line#*:}"; lineno="${lineno%%:*}"
-      window=$(sed -n "${lineno},$((lineno+3))p" "$file" 2>/dev/null || true)
+      start=$((lineno > 3 ? lineno - 3 : 1))
+      window=$(sed -n "${start},${lineno}p" "$file" 2>/dev/null || true)
       if ! echo "$window" | grep -q "SAFETY:"; then
         filtered+="$line"$'\n'
       fi
