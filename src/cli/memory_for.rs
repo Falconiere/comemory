@@ -22,8 +22,14 @@ use crate::prelude::*;
 
 const EXAMPLES: &str = "\
 Examples:
+  # Memories that reference a specific function
   qwick-memory memory-for myrepo:src/db.rs:run_migration
-  qwick-memory memory-for myrepo:src/db.rs";
+
+  # Memories that reference a whole file
+  qwick-memory memory-for myrepo:src/db.rs
+
+  # JSON for tool chaining
+  qwick-memory memory-for myrepo:src/db.rs --json";
 
 /// Arguments to `qwick-memory memory-for`.
 #[derive(ClapArgs, Debug)]

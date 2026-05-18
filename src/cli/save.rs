@@ -19,8 +19,17 @@ use crate::prelude::*;
 
 const EXAMPLES: &str = "\
 Examples:
+  # Save a decision with tags and elevated quality
   qwick-memory save \"Use Postgres for analytics\" --kind decision --repo myrepo --tags db,postgres --quality 4
-  echo \"Race in run_migration when run twice in <1s\" | qwick-memory save - --kind bug --repo myrepo";
+
+  # Pipe a bug report body from another command
+  echo \"Race in run_migration when run twice in <1s\" | qwick-memory save - --kind bug --repo myrepo
+
+  # Read the body from a file via shell redirect
+  qwick-memory save - --kind discovery --repo myrepo < notes/postgres-migration.md
+
+  # Minimal note (kind defaults to `note`, no repo/tags)
+  qwick-memory save \"Remember: cargo nextest serializes the embedder group\"";
 
 /// Arguments to `qwick-memory save`. The positional `body` is optional — if omitted
 /// or `-`, the body is read from stdin so callers can pipe content.

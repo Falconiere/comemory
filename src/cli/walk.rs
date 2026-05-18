@@ -19,7 +19,11 @@ use crate::prelude::*;
 
 const EXAMPLES: &str = "\
 Examples:
-  qwick-memory walk --from a1b2c3d4 --edge supersedes --depth 5 --json";
+  # Trace a supersedes chain up to 5 hops (JSON)
+  qwick-memory walk --from a1b2c3d4 --edge supersedes --depth 5 --json
+
+  # Single-hop walk (default edge = supersedes)
+  qwick-memory walk --from a1b2c3d4 --depth 1";
 
 /// Arguments to `qwick-memory walk`.
 #[derive(ClapArgs, Debug)]

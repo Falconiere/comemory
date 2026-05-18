@@ -24,8 +24,14 @@ use crate::retrieval::hybrid::{search_code, search_memory};
 
 const EXAMPLES: &str = "\
 Examples:
+  # Code symbol + linked memories in one round-trip (JSON)
   qwick-memory context run_migration --json
-  qwick-memory context \"postgres migration race\" --depth 2";
+
+  # Natural-language key with a deeper neighborhood walk
+  qwick-memory context \"postgres migration race\" --depth 2
+
+  # File-path fragment as the key
+  qwick-memory context \"src/db.rs\"";
 
 /// Arguments to `qwick-memory context`.
 #[derive(ClapArgs, Debug)]

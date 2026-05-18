@@ -15,7 +15,14 @@ use crate::stats::sqlite::StatsDb;
 
 const EXAMPLES: &str = "\
 Examples:
-  qwick-memory feedback q-2026-05-17-001 --used a1b2c3d4,e5f6a7b8 --irrelevant 0011223344";
+  # Mark two hits as useful and one as irrelevant
+  qwick-memory feedback q-2026-05-17-001 --used a1b2c3d4,e5f6a7b8 --irrelevant 0011223344
+
+  # Only-used feedback
+  qwick-memory feedback q-2026-05-17-002 --used a1b2c3d4
+
+  # Only-irrelevant feedback
+  qwick-memory feedback q-2026-05-17-003 --irrelevant 0011223344";
 
 /// Arguments to `qwick-memory feedback`. `query_id` is captured for future provenance;
 /// it is accepted today but does not yet influence storage.

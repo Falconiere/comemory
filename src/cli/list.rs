@@ -16,8 +16,14 @@ use crate::prelude::*;
 
 const EXAMPLES: &str = "\
 Examples:
+  # All decisions in a single repo
   qwick-memory list --repo myrepo --kind decision
-  qwick-memory list --json";
+
+  # Every memory across all repos, JSON
+  qwick-memory list --json
+
+  # Filter by kind only
+  qwick-memory list --kind bug";
 
 /// Arguments to `qwick-memory list`.
 #[derive(ClapArgs, Debug)]

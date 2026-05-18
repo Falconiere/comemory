@@ -77,8 +77,17 @@ Options:
   -h, --help                 Print help
 
 Examples:
+  # Save a decision with tags and elevated quality
   qwick-memory save "Use Postgres for analytics" --kind decision --repo myrepo --tags db,postgres --quality 4
+
+  # Pipe a bug report body from another command
   echo "Race in run_migration when run twice in <1s" | qwick-memory save - --kind bug --repo myrepo
+
+  # Read the body from a file via shell redirect
+  qwick-memory save - --kind discovery --repo myrepo < notes/postgres-migration.md
+
+  # Minimal note (kind defaults to `note`, no repo/tags)
+  qwick-memory save "Remember: cargo nextest serializes the embedder group"
 ```
 
 ---
@@ -100,8 +109,14 @@ Options:
   -h, --help                 Print help
 
 Examples:
+  # Natural-language query, top 12 hits (default)
   qwick-memory search "postgres migration race"
+
+  # Limit hits and emit JSON for agent consumption
   qwick-memory search "what database do we use" --limit 5 --json
+
+  # Tightly scoped query
+  qwick-memory search "tree-sitter ast pattern" --limit 3
 ```
 
 ---
@@ -121,8 +136,14 @@ Options:
   -h, --help                 Print help
 
 Examples:
+  # All decisions in a single repo
   qwick-memory list --repo myrepo --kind decision
+
+  # Every memory across all repos, JSON
   qwick-memory list --json
+
+  # Filter by kind only
+  qwick-memory list --kind bug
 ```
 
 ---
@@ -143,7 +164,10 @@ Options:
   -h, --help                 Print help
 
 Examples:
+  # Soft-delete by id (moves to memories/.trash/)
   qwick-memory delete a1b2c3d4
+
+  # JSON output for scripting
   qwick-memory delete a1b2c3d4 --json
 ```
 
@@ -167,7 +191,14 @@ Options:
   -h, --help                     Print help
 
 Examples:
+  # Mark two hits as useful and one as irrelevant
   qwick-memory feedback q-2026-05-17-001 --used a1b2c3d4,e5f6a7b8 --irrelevant 0011223344
+
+  # Only-used feedback
+  qwick-memory feedback q-2026-05-17-002 --used a1b2c3d4
+
+  # Only-irrelevant feedback
+  qwick-memory feedback q-2026-05-17-003 --irrelevant 0011223344
 ```
 
 ---
@@ -185,7 +216,10 @@ Options:
   -h, --help                 Print help
 
 Examples:
+  # Human-readable health report
   qwick-memory doctor
+
+  # JSON for monitoring or CI
   qwick-memory doctor --json
 ```
 
@@ -208,8 +242,14 @@ Options:
   -h, --help                 Print help
 
 Examples:
-  qwick-memory index-code --root . --repo myrepo
-  qwick-memory index-code --root /path/to/repo --incremental --quiet
+  # Index the current working directory
+  qwick-memory index-code
+
+  # Explicit root and repo label
+  qwick-memory index-code --root /path/to/repo --repo qwick-backend
+
+  # Incremental refresh, no human output
+  qwick-memory index-code --incremental --quiet
 ```
 
 ---
@@ -231,8 +271,14 @@ Options:
   -h, --help                 Print help
 
 Examples:
+  # Exact function-name hit
   qwick-memory symbol run_migration
+
+  # Natural-language descriptor, top 10 JSON
   qwick-memory symbol "parse frontmatter yaml" --limit 10 --json
+
+  # Broader semantic match
+  qwick-memory symbol "embed query string into vector"
 ```
 
 ---
@@ -253,8 +299,14 @@ Options:
   -h, --help                 Print help
 
 Examples:
+  # Memories that reference a specific function
   qwick-memory memory-for myrepo:src/db.rs:run_migration
+
+  # Memories that reference a whole file
   qwick-memory memory-for myrepo:src/db.rs
+
+  # JSON for tool chaining
+  qwick-memory memory-for myrepo:src/db.rs --json
 ```
 
 ---
@@ -277,8 +329,14 @@ Options:
   -h, --help                 Print help
 
 Examples:
+  # Match every fn returning Result<_>
   qwick-memory ast 'fn $NAME($$$ARGS) -> Result<$RET>' --lang rs --file src/db.rs
+
+  # Find tokio::spawn call sites
   qwick-memory ast 'tokio::spawn($$$)' --lang rs --file src/lib.rs --json
+
+  # Hunt for `console.log` left in TypeScript
+  qwick-memory ast 'console.log($$$)' --lang ts --file src/index.ts
 ```
 
 ---
@@ -300,8 +358,14 @@ Options:
   -h, --help                 Print help
 
 Examples:
+  # Code symbol + linked memories in one round-trip (JSON)
   qwick-memory context run_migration --json
+
+  # Natural-language key with a deeper neighborhood walk
   qwick-memory context "postgres migration race" --depth 2
+
+  # File-path fragment as the key
+  qwick-memory context "src/db.rs"
 ```
 
 ---
@@ -322,7 +386,11 @@ Options:
   -h, --help                 Print help
 
 Examples:
+  # Trace a supersedes chain up to 5 hops (JSON)
   qwick-memory walk --from a1b2c3d4 --edge supersedes --depth 5 --json
+
+  # Single-hop walk (default edge = supersedes)
+  qwick-memory walk --from a1b2c3d4 --depth 1
 ```
 
 ---
@@ -343,7 +411,10 @@ Options:
   -h, --help                 Print help
 
 Examples:
+  # List ConflictsWith neighbors of a memory
   qwick-memory conflicts a1b2c3d4
+
+  # JSON output
   qwick-memory conflicts a1b2c3d4 --json
 ```
 
@@ -366,6 +437,7 @@ Options:
   -h, --help                 Print help
 
 Examples:
+  # Mark e5f6a7b8 as superseding the older decision a1b2c3d4
   qwick-memory supersedes e5f6a7b8 a1b2c3d4
 ```
 
@@ -389,8 +461,13 @@ Options:
   -h, --help                           Print help
 
 Examples:
+  # Dry-run orphan detection (no deletes)
   qwick-memory prune --orphans
+
+  # Actually move orphans to memories/.trash/
   qwick-memory prune --orphans --apply
+
+  # Aggressive low-value sweep
   qwick-memory prune --low-value --below-quality 2 --unused-since 180 --apply
 ```
 
@@ -409,7 +486,10 @@ Options:
   -h, --help                 Print help
 
 Examples:
+  # Hard-delete .trash entries past the retention window
   qwick-memory gc
+
+  # JSON output for CI/automation
   qwick-memory gc --json
 ```
 
@@ -430,8 +510,14 @@ Options:
   -h, --help                 Print help
 
 Examples:
-  qwick-memory install-hooks --repo .
-  qwick-memory install-hooks --repo /path/to/repo --force
+  # Install into the current repo
+  qwick-memory install-hooks
+
+  # Install into a specific repo path
+  qwick-memory install-hooks --repo /path/to/repo
+
+  # Overwrite any hand-written hooks
+  qwick-memory install-hooks --force
 ```
 
 ---
@@ -452,8 +538,15 @@ Options:
   -h, --help                 Print help
 
 Examples:
+  # fish (autoloaded from this path)
   qwick-memory completions fish > ~/.config/fish/completions/qwick-memory.fish
-  qwick-memory completions zsh  > "${fpath[1]}/_qwick-memory"
-  qwick-memory completions bash > /usr/local/etc/bash_completion.d/qwick-memory
+
+  # zsh (homebrew site-functions path)
+  qwick-memory completions zsh > "$(brew --prefix)/share/zsh/site-functions/_qwick-memory"
+
+  # bash (homebrew bash-completion.d)
+  qwick-memory completions bash > "$(brew --prefix)/etc/bash_completion.d/qwick-memory"
+
+  # NOTE: scripts/install.sh writes these automatically by default.
 ```
 

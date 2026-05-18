@@ -16,9 +16,16 @@ use crate::prelude::*;
 
 const EXAMPLES: &str = "\
 Examples:
+  # fish (autoloaded from this path)
   qwick-memory completions fish > ~/.config/fish/completions/qwick-memory.fish
-  qwick-memory completions zsh  > \"${fpath[1]}/_qwick-memory\"
-  qwick-memory completions bash > /usr/local/etc/bash_completion.d/qwick-memory";
+
+  # zsh (homebrew site-functions path)
+  qwick-memory completions zsh > \"$(brew --prefix)/share/zsh/site-functions/_qwick-memory\"
+
+  # bash (homebrew bash-completion.d)
+  qwick-memory completions bash > \"$(brew --prefix)/etc/bash_completion.d/qwick-memory\"
+
+  # NOTE: scripts/install.sh writes these automatically by default.";
 
 /// Arguments for `qwick-memory completions`.
 #[derive(ClapArgs, Debug)]

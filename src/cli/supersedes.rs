@@ -21,6 +21,7 @@ use crate::prelude::*;
 
 const EXAMPLES: &str = "\
 Examples:
+  # Mark e5f6a7b8 as superseding the older decision a1b2c3d4
   qwick-memory supersedes e5f6a7b8 a1b2c3d4";
 
 /// Arguments to `qwick-memory supersedes`.

@@ -15,8 +15,14 @@ use crate::prelude::*;
 
 const EXAMPLES: &str = "\
 Examples:
+  # Match every fn returning Result<_>
   qwick-memory ast 'fn $NAME($$$ARGS) -> Result<$RET>' --lang rs --file src/db.rs
-  qwick-memory ast 'tokio::spawn($$$)' --lang rs --file src/lib.rs --json";
+
+  # Find tokio::spawn call sites
+  qwick-memory ast 'tokio::spawn($$$)' --lang rs --file src/lib.rs --json
+
+  # Hunt for `console.log` left in TypeScript
+  qwick-memory ast 'console.log($$$)' --lang ts --file src/index.ts";
 
 /// Arguments to `qwick-memory ast`.
 #[derive(ClapArgs, Debug)]

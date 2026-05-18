@@ -11,7 +11,10 @@ use crate::cli::resolve_data_dir;
 /// Example invocations shown at the bottom of `qwick-memory doctor --help`.
 pub const EXAMPLES: &str = "\
 Examples:
+  # Human-readable health report
   qwick-memory doctor
+
+  # JSON for monitoring or CI
   qwick-memory doctor --json";
 use crate::config::paths::Paths;
 use crate::memory::MemoryStore;

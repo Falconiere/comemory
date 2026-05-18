@@ -14,7 +14,10 @@ use crate::prelude::*;
 
 const EXAMPLES: &str = "\
 Examples:
+  # Soft-delete by id (moves to memories/.trash/)
   qwick-memory delete a1b2c3d4
+
+  # JSON output for scripting
   qwick-memory delete a1b2c3d4 --json";
 
 /// Arguments to `qwick-memory delete`.

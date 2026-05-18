@@ -36,8 +36,14 @@ const FALLBACK_MIN_CONFIDENCE: f32 = 0.15;
 
 const EXAMPLES: &str = "\
 Examples:
+  # Natural-language query, top 12 hits (default)
   qwick-memory search \"postgres migration race\"
-  qwick-memory search \"what database do we use\" --limit 5 --json";
+
+  # Limit hits and emit JSON for agent consumption
+  qwick-memory search \"what database do we use\" --limit 5 --json
+
+  # Tightly scoped query
+  qwick-memory search \"tree-sitter ast pattern\" --limit 3";
 
 /// Arguments to `qwick-memory search`.
 #[derive(ClapArgs, Debug)]

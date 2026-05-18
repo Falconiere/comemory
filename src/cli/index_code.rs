@@ -22,8 +22,14 @@ use crate::prelude::*;
 
 const EXAMPLES: &str = "\
 Examples:
-  qwick-memory index-code --root . --repo myrepo
-  qwick-memory index-code --root /path/to/repo --incremental --quiet";
+  # Index the current working directory
+  qwick-memory index-code
+
+  # Explicit root and repo label
+  qwick-memory index-code --root /path/to/repo --repo qwick-backend
+
+  # Incremental refresh, no human output
+  qwick-memory index-code --incremental --quiet";
 
 /// Arguments to `qwick-memory index-code`.
 #[derive(ClapArgs, Debug)]

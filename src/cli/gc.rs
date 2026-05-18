@@ -17,7 +17,10 @@ use crate::prelude::*;
 /// Example invocations shown at the bottom of `qwick-memory gc --help`.
 pub const EXAMPLES: &str = "\
 Examples:
+  # Hard-delete .trash entries past the retention window
   qwick-memory gc
+
+  # JSON output for CI/automation
   qwick-memory gc --json";
 
 const RETENTION_DAYS: i64 = 30;

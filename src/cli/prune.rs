@@ -21,8 +21,13 @@ use crate::prune::{low_value, orphans};
 
 const EXAMPLES: &str = "\
 Examples:
+  # Dry-run orphan detection (no deletes)
   qwick-memory prune --orphans
+
+  # Actually move orphans to memories/.trash/
   qwick-memory prune --orphans --apply
+
+  # Aggressive low-value sweep
   qwick-memory prune --low-value --below-quality 2 --unused-since 180 --apply";
 
 /// Arguments to `qwick-memory prune`.

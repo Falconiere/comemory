@@ -17,8 +17,14 @@ use crate::retrieval::hybrid::search_code;
 
 const EXAMPLES: &str = "\
 Examples:
+  # Exact function-name hit
   qwick-memory symbol run_migration
-  qwick-memory symbol \"parse frontmatter yaml\" --limit 10 --json";
+
+  # Natural-language descriptor, top 10 JSON
+  qwick-memory symbol \"parse frontmatter yaml\" --limit 10 --json
+
+  # Broader semantic match
+  qwick-memory symbol \"embed query string into vector\"";
 
 /// Arguments to `qwick-memory symbol`.
 #[derive(ClapArgs, Debug)]

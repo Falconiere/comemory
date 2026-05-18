@@ -23,8 +23,14 @@ use crate::prelude::*;
 
 const EXAMPLES: &str = "\
 Examples:
-  qwick-memory install-hooks --repo .
-  qwick-memory install-hooks --repo /path/to/repo --force";
+  # Install into the current repo
+  qwick-memory install-hooks
+
+  # Install into a specific repo path
+  qwick-memory install-hooks --repo /path/to/repo
+
+  # Overwrite any hand-written hooks
+  qwick-memory install-hooks --force";
 
 /// Arguments to `qwick-memory install-hooks`.
 #[derive(ClapArgs, Debug)]

@@ -16,7 +16,10 @@ use crate::prelude::*;
 
 const EXAMPLES: &str = "\
 Examples:
+  # List ConflictsWith neighbors of a memory
   qwick-memory conflicts a1b2c3d4
+
+  # JSON output
   qwick-memory conflicts a1b2c3d4 --json";
 
 /// Arguments to `qwick-memory conflicts`.
