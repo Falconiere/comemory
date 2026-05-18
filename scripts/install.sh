@@ -11,11 +11,13 @@ STEP="install"
 
 WITH_TOOLS=0
 CLEAN=1
+INSTALL_COMPLETIONS=1
 for arg in "$@"; do
   case "$arg" in
-    --with-tools) WITH_TOOLS=1 ;;
-    --no-clean)   CLEAN=0 ;;
-    *) die "$STEP" "unknown argument: $arg (expected --with-tools or --no-clean)" ;;
+    --with-tools)     WITH_TOOLS=1 ;;
+    --no-clean)       CLEAN=0 ;;
+    --no-completions) INSTALL_COMPLETIONS=0 ;;
+    *) die "$STEP" "unknown argument: $arg (expected --with-tools, --no-clean, or --no-completions)" ;;
   esac
 done
 
@@ -74,4 +76,55 @@ done
 if [[ -n "$SHADOW" ]]; then
   printf "%s[%s]%s warning: %s appears on PATH before %s — rehash your shell or remove the shadow\n" \
     "$C_YLW" "$STEP" "$C_RST" "$SHADOW" "$BIN_PATH"
+fi
+
+# Install shell completions for any detected shell. Writes to canonical
+# autoload paths so no manual sourcing is required after a new shell session.
+install_completion() {
+  local shell="$1"
+  local dest="$2"
+  local dir
+  dir="$(dirname "$dest")"
+  if ! mkdir -p "$dir" 2>/dev/null; then
+    log_info "$STEP" "completion[$shell]: cannot create $dir; skipping"
+    return
+  fi
+  if ! "$BIN_PATH" completions "$shell" > "$dest.tmp" 2>/dev/null; then
+    rm -f "$dest.tmp"
+    log_info "$STEP" "completion[$shell]: generation failed; skipping"
+    return
+  fi
+  mv "$dest.tmp" "$dest"
+  log_ok "$STEP" "completion[$shell] -> $dest"
+}
+
+if [[ "$INSTALL_COMPLETIONS" -eq 1 ]]; then
+  if command -v fish >/dev/null 2>&1; then
+    install_completion fish "${XDG_CONFIG_HOME:-$HOME/.config}/fish/completions/qwick-memory.fish"
+  fi
+
+  if command -v zsh >/dev/null 2>&1; then
+    ZSH_DEST=""
+    if command -v brew >/dev/null 2>&1; then
+      ZSH_BREW_DIR="$(brew --prefix 2>/dev/null)/share/zsh/site-functions"
+      [[ -d "$ZSH_BREW_DIR" && -w "$ZSH_BREW_DIR" ]] && ZSH_DEST="$ZSH_BREW_DIR/_qwick-memory"
+    fi
+    if [[ -z "$ZSH_DEST" ]]; then
+      ZSH_DEST="$HOME/.zfunc/_qwick-memory"
+      log_info "$STEP" "zsh: installing to ~/.zfunc; add 'fpath=(~/.zfunc \$fpath)' before 'compinit' in ~/.zshrc if not present"
+    fi
+    install_completion zsh "$ZSH_DEST"
+  fi
+
+  if command -v bash >/dev/null 2>&1; then
+    BASH_DEST=""
+    if command -v brew >/dev/null 2>&1; then
+      BASH_BREW_DIR="$(brew --prefix 2>/dev/null)/etc/bash_completion.d"
+      [[ -d "$BASH_BREW_DIR" && -w "$BASH_BREW_DIR" ]] && BASH_DEST="$BASH_BREW_DIR/qwick-memory"
+    fi
+    if [[ -z "$BASH_DEST" ]]; then
+      BASH_DEST="$HOME/.local/share/bash-completion/completions/qwick-memory"
+    fi
+    install_completion bash "$BASH_DEST"
+  fi
 fi
