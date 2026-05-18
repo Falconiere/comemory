@@ -33,7 +33,7 @@ if echo "$cmd_only" | grep -qE '(--no-verify|--no-gpg-sign)'; then
   exit 0
 fi
 
-if echo "$cmd_only" | grep -qE '(^|[[:space:]]|&&|\|\||;)(rustfmt|cargo[[:space:]]+fmt[[:space:]]|cargo[[:space:]]+clippy[[:space:]])'; then
+if echo "$cmd_only" | grep -qE '(^|[[:space:]]|&&|\|\||;)(rustfmt|cargo[[:space:]]+fmt([[:space:]]|$)|cargo[[:space:]]+clippy([[:space:]]|$))'; then
   if ! echo "$cmd_only" | grep -qE '(scripts/|just[[:space:]]|lefthook|post-tools|pre-tools)'; then
     deny_pre "Run quality gates via scripts/* or 'just check' — do not invoke rustfmt/clippy directly."
     exit 0
