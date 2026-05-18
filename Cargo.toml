@@ -55,3 +55,16 @@ tempfile = "3"
 lto = "fat"
 codegen-units = 1
 strip = "symbols"
+
+# Deps reserved for Tasks 4–22 of the Rust rewrite plan. cargo-machete flags
+# them as "unused" until those tasks land; whitelist them here so the dup-check
+# gate stays green during the early build-out.
+[package.metadata.cargo-machete]
+ignored = [
+  "ast-grep-core", "clap", "fastembed", "git2", "ignore", "kuzu", "lancedb",
+  "once_cell", "owo-colors", "rusqlite", "serde",
+  "sha2", "time", "tokio", "walkdir",
+  "anyhow", "tracing",
+  # url is a transitive-version pin (see comment above the [dependencies.url] entry).
+  "url",
+]
