@@ -6,3 +6,6 @@ mod state;
 
 #[path = "serve/dto.rs"]
 mod dto;
+
+#[path = "serve/error.rs"]
+mod error;
