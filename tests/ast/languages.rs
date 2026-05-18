@@ -8,7 +8,9 @@ fn rust_extension_resolves() {
 #[test]
 fn typescript_extensions_resolve() {
     assert_eq!(Lang::from_extension("ts"), Some(Lang::TypeScript));
-    assert_eq!(Lang::from_extension("tsx"), Some(Lang::TypeScript));
+    // `.tsx` now resolves to the dedicated `Tsx` variant so JSX-bearing
+    // source uses the right tree-sitter grammar.
+    assert_eq!(Lang::from_extension("tsx"), Some(Lang::Tsx));
 }
 
 #[test]
@@ -39,6 +41,7 @@ fn unknown_extension_is_none() {
 fn as_str_returns_canonical_name() {
     assert_eq!(Lang::Rust.as_str(), "rust");
     assert_eq!(Lang::TypeScript.as_str(), "typescript");
+    assert_eq!(Lang::Tsx.as_str(), "tsx");
     assert_eq!(Lang::JavaScript.as_str(), "javascript");
     assert_eq!(Lang::Python.as_str(), "python");
 }

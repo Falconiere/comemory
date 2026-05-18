@@ -94,3 +94,23 @@ fn non_matching_source_yields_no_symbols() {
     let syms = extract(Lang::Rust, "let _x = 1;").expect("extract");
     assert!(syms.is_empty(), "expected no syms, got {syms:?}");
 }
+
+#[test]
+fn tsx_jsx_component_extracted() {
+    // A function returning JSX parses cleanly under the Tsx grammar but
+    // explodes under the plain TypeScript grammar (`<` is treated as a
+    // comparison). The dedicated `Lang::Tsx` variant + `ast_grep_language::Tsx`
+    // parser must recover the function symbol.
+    let src = "function Hello() { return <div />; }\n";
+    let syms = extract(Lang::Tsx, src).expect("tsx extraction");
+    let hello = syms
+        .iter()
+        .find(|s| s.name == "Hello" && s.kind == "function")
+        .unwrap_or_else(|| panic!("missing function Hello in {syms:?}"));
+    assert_eq!(hello.language, "tsx", "language tag should be 'tsx'");
+    assert!(
+        hello.snippet.contains("<div"),
+        "snippet should retain JSX element, got {:?}",
+        hello.snippet,
+    );
+}

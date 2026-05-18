@@ -291,6 +291,44 @@ fn save_wires_memory_into_graph() {
 }
 
 #[test]
+#[ignore = "downloads ~130 MB nomic-text model on first run"]
+fn search_json_emits_route_field() {
+    // After wiring `retrieval::classify` into the CLI, `qwick search --json`
+    // MUST surface the chosen route so callers (and the corrective-fallback
+    // pipeline in later tasks) can observe which branch fired without
+    // re-running the classifier. Ignored by default because it loads the
+    // nomic-text embedder.
+    let home = TempDir::new().expect("tempdir");
+    bin(&home)
+        .args([
+            "save",
+            "postgres analytics decision body",
+            "--kind",
+            "decision",
+        ])
+        .assert()
+        .success();
+
+    let search = bin(&home)
+        .args([
+            "--json",
+            "search",
+            "what is the postgres analytics decision",
+        ])
+        .assert()
+        .success();
+    let stdout = String::from_utf8(search.get_output().stdout.clone()).expect("utf8 stdout");
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
+    let route = v["route"].as_str().expect("envelope has a 'route' string");
+    assert!(
+        matches!(route, "Hybrid" | "Symbol" | "FtsFirst"),
+        "route must be one of the known variants, got {route:?}",
+    );
+    assert!(v.get("hits").is_some(), "envelope must include 'hits' key");
+    assert!(v["hits"].is_array(), "hits must be a JSON array");
+}
+
+#[test]
 fn doctor_json_emits_object() {
     let home = TempDir::new().expect("tempdir");
     let doctor = bin(&home).args(["--json", "doctor"]).assert().success();

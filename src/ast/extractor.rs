@@ -8,7 +8,7 @@
 
 use ast_grep_core::tree_sitter::LanguageExt;
 use ast_grep_core::{AstGrep, Pattern};
-use ast_grep_language::{JavaScript, Python, Rust, TypeScript};
+use ast_grep_language::{JavaScript, Python, Rust, Tsx, TypeScript};
 
 use crate::ast::languages::Lang;
 use crate::prelude::*;
@@ -34,6 +34,9 @@ pub fn extract(lang: Lang, source: &str) -> Result<Vec<ExtractedSymbol>> {
     match lang {
         Lang::Rust => extract_with(Rust, lang, source, rust_patterns()),
         Lang::TypeScript => extract_with(TypeScript, lang, source, ts_js_patterns()),
+        // `Tsx` uses the same function/class patterns as TypeScript — the
+        // difference is the grammar, not the surface shape we extract.
+        Lang::Tsx => extract_with(Tsx, lang, source, ts_js_patterns()),
         Lang::JavaScript => extract_with(JavaScript, lang, source, ts_js_patterns()),
         Lang::Python => extract_with(Python, lang, source, python_patterns()),
     }

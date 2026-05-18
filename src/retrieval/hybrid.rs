@@ -13,7 +13,7 @@ use futures::TryStreamExt;
 use lancedb::query::{ExecutableQuery, QueryBase};
 
 use crate::index::schema::CODE_TABLE;
-use crate::index::{CodeIndex, MemoryHit, MemoryIndex};
+use crate::index::{score_from_distance, CodeIndex, MemoryHit, MemoryIndex};
 use crate::prelude::*;
 
 /// Vector search for memories.
@@ -69,32 +69,19 @@ pub async fn search_code(
     limit: usize,
     threshold: f32,
 ) -> Result<Vec<CodeHit>> {
-    let names = index
-        .conn()
-        .table_names()
-        .execute()
-        .await
-        .map_err(|e| Error::Other(e.to_string()))?;
+    let names = index.conn().table_names().execute().await?;
     if !names.iter().any(|n| n == CODE_TABLE) {
         return Ok(Vec::new());
     }
-    let tbl = index
-        .conn()
-        .open_table(CODE_TABLE)
-        .execute()
-        .await
-        .map_err(|e| Error::Other(e.to_string()))?;
+    let tbl = index.conn().open_table(CODE_TABLE).execute().await?;
     let batches: Vec<RecordBatch> = tbl
         .query()
-        .nearest_to(query_emb)
-        .map_err(|e| Error::Other(e.to_string()))?
+        .nearest_to(query_emb)?
         .limit(limit * 2)
         .execute()
-        .await
-        .map_err(|e| Error::Other(e.to_string()))?
+        .await?
         .try_collect()
-        .await
-        .map_err(|e| Error::Other(e.to_string()))?;
+        .await?;
 
     let mut out = Vec::new();
     for batch in &batches {
@@ -112,6 +99,9 @@ pub async fn search_code(
 /// Decode one `code_chunks` result `RecordBatch` into `CodeHit` rows. The
 /// `_distance` column is converted to a `1 / (1 + d)` similarity score so
 /// `threshold` comparisons read the same way for memory and code layers.
+///
+/// Missing `_distance` is treated as a schema mismatch — we error rather
+/// than silently scoring every hit as `1.0`, mirroring `memory_index::collect_hits`.
 fn collect_code_hits(batch: &RecordBatch, threshold: f32, out: &mut Vec<CodeHit>) -> Result<()> {
     let qualified = downcast_str(batch, "qualified")?;
     let snippet = downcast_str(batch, "snippet")?;
@@ -119,11 +109,11 @@ fn collect_code_hits(batch: &RecordBatch, threshold: f32, out: &mut Vec<CodeHit>
     let file = downcast_str(batch, "file")?;
     let dist = batch
         .column_by_name("_distance")
-        .and_then(|c| c.as_any().downcast_ref::<Float32Array>());
+        .and_then(|c| c.as_any().downcast_ref::<Float32Array>())
+        .ok_or_else(|| Error::Other("missing _distance column".into()))?;
 
     for i in 0..batch.num_rows() {
-        let d = dist.map(|c| c.value(i)).unwrap_or(0.0);
-        let score = 1.0 / (1.0 + d);
+        let score = score_from_distance(dist.value(i));
         if score < threshold {
             continue;
         }

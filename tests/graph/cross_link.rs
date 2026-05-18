@@ -71,3 +71,23 @@ fn requires_extension_to_match() {
     assert!(r.files.is_empty(), "no extension should mean no match");
     assert!(r.symbols.is_empty());
 }
+
+#[test]
+fn ignores_url_like_matches() {
+    // Prose memories often include URLs to source files. The regex would
+    // otherwise capture `https:` as a repo and `//github.com/.../bar.rs` as
+    // a path; the scp-style git URL `git@host:foo/bar.rs:fn` would yield a
+    // symbol ref. The URL filter (post-extraction) MUST drop both shapes.
+    let body = "see https://github.com/foo/bar.rs and git@github.com:foo/bar.rs:fn for details";
+    let r = extract_refs(body);
+    assert!(
+        r.files.is_empty(),
+        "URL-like matches must not produce file refs, got {:?}",
+        r.files,
+    );
+    assert!(
+        r.symbols.is_empty(),
+        "URL-like matches must not produce symbol refs, got {:?}",
+        r.symbols,
+    );
+}

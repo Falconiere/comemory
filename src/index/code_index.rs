@@ -50,10 +50,7 @@ impl CodeIndex {
     /// embedder used by `index_repo`.
     pub async fn open(dir: impl AsRef<Path>, dim: usize) -> Result<Self> {
         let uri = dir.as_ref().to_string_lossy().to_string();
-        let conn = lancedb::connect(&uri)
-            .execute()
-            .await
-            .map_err(|e| Error::Other(e.to_string()))?;
+        let conn = lancedb::connect(&uri).execute().await?;
         Ok(Self {
             conn,
             schema: code_schema(dim),
@@ -95,35 +92,21 @@ impl CodeIndex {
         }
         let batch = self.batch(&chunks, &vecs)?;
         let schema = self.schema.clone();
-        let names = self
-            .conn
-            .table_names()
-            .execute()
-            .await
-            .map_err(|e| Error::Other(e.to_string()))?;
+        let names = self.conn.table_names().execute().await?;
 
         if names.iter().any(|n| n == CODE_TABLE) {
             let batches = RecordBatchIterator::new(vec![Ok(batch)].into_iter(), schema);
-            let tbl = self
-                .conn
-                .open_table(CODE_TABLE)
-                .execute()
-                .await
-                .map_err(|e| Error::Other(e.to_string()))?;
+            let tbl = self.conn.open_table(CODE_TABLE).execute().await?;
             let mut merge = tbl.merge_insert(&["qualified"]);
             merge.when_matched_update_all(None);
             merge.when_not_matched_insert_all();
-            merge
-                .execute(Box::new(batches))
-                .await
-                .map_err(|e| Error::Other(e.to_string()))?;
+            merge.execute(Box::new(batches)).await?;
         } else {
             let batches = RecordBatchIterator::new(vec![Ok(batch)].into_iter(), schema);
             self.conn
                 .create_table(CODE_TABLE, Box::new(batches) as Box<_>)
                 .execute()
-                .await
-                .map_err(|e| Error::Other(e.to_string()))?;
+                .await?;
         }
         Ok(chunks.len())
     }

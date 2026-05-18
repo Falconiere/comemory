@@ -8,7 +8,7 @@
 
 use ast_grep_core::tree_sitter::LanguageExt;
 use ast_grep_core::{AstGrep, Pattern};
-use ast_grep_language::{JavaScript, Python, Rust, TypeScript};
+use ast_grep_language::{JavaScript, Python, Rust, Tsx, TypeScript};
 
 use crate::ast::languages::Lang;
 use crate::prelude::*;
@@ -20,6 +20,7 @@ pub fn find(lang: Lang, source: &str, pattern: &str) -> Result<Vec<(usize, Strin
     match lang {
         Lang::Rust => find_with(Rust, source, pattern),
         Lang::TypeScript => find_with(TypeScript, source, pattern),
+        Lang::Tsx => find_with(Tsx, source, pattern),
         Lang::JavaScript => find_with(JavaScript, source, pattern),
         Lang::Python => find_with(Python, source, pattern),
     }

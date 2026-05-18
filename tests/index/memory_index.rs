@@ -1,5 +1,10 @@
+use std::sync::Arc;
+
+use arrow_array::{RecordBatch, StringArray};
+use arrow_schema::{DataType, Field, Schema};
 use qwick::config::paths::Paths;
-use qwick::index::{Embedder, MemoryIndex};
+use qwick::index::memory_index::collect_hits;
+use qwick::index::{Embedder, MemoryHit, MemoryIndex};
 use qwick::memory::{Kind, MemoryStore};
 
 use super::common;
@@ -71,4 +76,36 @@ async fn upsert_same_id_overwrites_not_duplicates() {
     let hits = idx.search(&v, 10).await.unwrap();
     let same_id = hits.iter().filter(|h| h.id == rec.frontmatter.id).count();
     assert_eq!(same_id, 1, "expected exactly one row for id, got {same_id}");
+}
+
+#[test]
+fn collect_hits_errors_on_missing_distance() {
+    // Build a `RecordBatch` matching the columns `collect_hits` expects, but
+    // deliberately omit `_distance`. The decoder MUST surface the schema
+    // mismatch so callers don't silently get every hit at score 1.0.
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("id", DataType::Utf8, false),
+        Field::new("body", DataType::Utf8, false),
+        Field::new("kind", DataType::Utf8, false),
+        Field::new("repo", DataType::Utf8, false),
+    ]));
+    let batch = RecordBatch::try_new(
+        schema,
+        vec![
+            Arc::new(StringArray::from(vec!["abc"])),
+            Arc::new(StringArray::from(vec!["body"])),
+            Arc::new(StringArray::from(vec!["decision"])),
+            Arc::new(StringArray::from(vec!["r"])),
+        ],
+    )
+    .expect("build batch without _distance");
+
+    let mut out: Vec<MemoryHit> = Vec::new();
+    let err = collect_hits(&batch, &mut out).expect_err("missing _distance must error");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("missing _distance"),
+        "error must mention missing _distance column, got: {msg}",
+    );
+    assert!(out.is_empty(), "no hits should be appended on error");
 }
