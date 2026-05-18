@@ -104,9 +104,13 @@ ignored = [
   "url",
 ]
 
-# cargo-dist configuration. qwick-memory is a single-package crate (no [workspace]),
-# so the metadata table lives under [package.metadata.dist] rather than
-# [workspace.metadata.dist]. cargo-dist 0.22.x still recognises both spellings.
+# Single-member workspace so cargo-dist can read its workspace-only fields
+# (cargo-dist-version, ci, pr-run-mode, hosting). cargo-dist 0.22+ rejects
+# these fields when they live under [package.metadata.dist].
+[workspace]
+members = ["."]
+
+# cargo-dist configuration.
 #
 # When a tag matching `v*` is pushed, the GitHub workflow in
 # `.github/workflows/release.yml` builds prebuilt binaries for the targets
@@ -114,7 +118,7 @@ ignored = [
 # `SidegigLLC/homebrew-tap` repository.
 #
 # Docs: https://opensource.axo.dev/cargo-dist/book/
-[package.metadata.dist]
+[workspace.metadata.dist]
 cargo-dist-version = "0.22.1"
 ci = ["github"]
 installers = ["shell", "homebrew"]
