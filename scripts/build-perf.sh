@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Measure cold / warm / release build wall-clock and write a summary.
-# Output: target/build-perf/{cargo-timings-*.html,summary.json}
+# Output: .build-perf/{cargo-timings-*.html,summary.json}
 # Optionally appends a markdown row to docs/build-perf.md when --append-md is set.
 
 set -euo pipefail
@@ -17,7 +17,7 @@ WARM_RUNS=5
 
 command -v jq >/dev/null 2>&1 || die "$STEP" "jq is required (brew install jq)"
 
-OUT_DIR="$PROJECT_ROOT/target/build-perf"
+OUT_DIR="$PROJECT_ROOT/.build-perf"
 mkdir -p "$OUT_DIR"
 
 log_info "$STEP" "rustc $(rustc --version) / cargo $(cargo --version)"

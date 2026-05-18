@@ -3,3 +3,4 @@ Cargo.lock.bak
 .qwick-test/
 .claude/tmp/quality-gate-status.json
 .fastembed_cache/
+/.build-perf/
