@@ -147,3 +147,73 @@ fn conflicts_of_unknown_memory_is_empty() {
     let g = Graph::open(paths.graph_dir()).unwrap();
     assert!(g.conflicts_of("nonexistent").unwrap().is_empty());
 }
+
+use super::graph_fixture;
+
+#[test]
+fn seed_memory_layer_returns_memory_repo_author_tag() {
+    let fx = graph_fixture::build();
+    let payload = fx.graph.seed_memory_layer().expect("seed");
+    let kinds: std::collections::BTreeSet<_> =
+        payload.nodes.iter().map(|n| n.kind.as_str()).collect();
+    assert!(kinds.contains("Memory"));
+    assert!(kinds.contains("Repo"));
+    assert!(kinds.contains("Author"));
+    assert!(kinds.contains("Tag"));
+    assert!(!kinds.contains("File"));
+    assert!(!kinds.contains("Symbol"));
+
+    let memories = payload.nodes.iter().filter(|n| n.kind == "Memory").count();
+    assert_eq!(memories, 3);
+
+    // Verify node ids reference the fixture's known ids and repo.
+    let mem_ids: std::collections::BTreeSet<_> = payload
+        .nodes
+        .iter()
+        .filter(|n| n.kind == "Memory")
+        .map(|n| n.id.as_str())
+        .collect();
+    assert!(
+        mem_ids.contains(format!("m:{}", fx.primary_id).as_str()),
+        "primary memory missing: {mem_ids:?}"
+    );
+    assert!(
+        mem_ids.contains(format!("m:{}", fx.superseded_id).as_str()),
+        "superseded memory missing: {mem_ids:?}"
+    );
+    assert!(
+        mem_ids.contains(format!("m:{}", fx.conflict_id).as_str()),
+        "conflict memory missing: {mem_ids:?}"
+    );
+
+    // Repo and tag nodes should carry the fixture's known labels.
+    let repo_node = payload
+        .nodes
+        .iter()
+        .find(|n| n.kind == "Repo")
+        .expect("repo node");
+    assert_eq!(repo_node.label, fx.repo);
+
+    let tag_node = payload
+        .nodes
+        .iter()
+        .find(|n| n.kind == "Tag" && n.label == fx.tag)
+        .expect("tag node for 'database'");
+    assert_eq!(tag_node.id, format!("t:{}", fx.tag));
+
+    // Paths must be valid (data dir was created by build()).
+    assert!(fx.paths.graph_dir().exists());
+
+    // file_qualified and symbol_qualified are fixture metadata used by
+    // expand-layer tests; confirm they have the expected namespaced form.
+    assert!(
+        fx.file_qualified.contains(':'),
+        "file_qualified must be repo:path form: {}",
+        fx.file_qualified
+    );
+    assert!(
+        fx.symbol_qualified.contains(':'),
+        "symbol_qualified must be repo:path:symbol form: {}",
+        fx.symbol_qualified
+    );
+}

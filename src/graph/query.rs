@@ -1,9 +1,11 @@
 //! Read-only graph queries used by the retrieval pipeline.
 
 use kuzu::Value;
+use serde_json::json;
 
 use crate::graph::upsert::Graph;
 use crate::prelude::*;
+use crate::serve::dto::{edge_id, EdgeDto, GraphPayload, NodeDto};
 
 impl Graph {
     /// Return the ids of every `Memory` linked to the given repo via `:InRepo`.
@@ -72,5 +74,217 @@ impl Graph {
             }
         }
         Ok(out)
+    }
+
+    /// Return the full memory-layer subgraph: `Memory`, `Repo`, `Author`,
+    /// `Tag` nodes plus memory-layer edges (`InRepo`, `AuthoredBy`,
+    /// `Tagged`, `Supersedes`, `ConflictsWith`, `RelatesTo`, `DerivedFrom`).
+    pub fn seed_memory_layer(&self) -> Result<GraphPayload> {
+        let conn = self.conn()?;
+        let mut nodes = Vec::new();
+        let mut edges = Vec::new();
+
+        push_nodes(
+            &conn,
+            "MATCH (m:Memory) RETURN m.id, m.kind, m.created, m.quality",
+            |row| {
+                let id = string(&row, 0)?;
+                let kind = string(&row, 1)?;
+                let created = string(&row, 2)?;
+                let quality = int64(&row, 3)?;
+                Some(NodeDto {
+                    id: format!("m:{id}"),
+                    label: id.clone(),
+                    kind: "Memory".into(),
+                    props: json!({
+                        "memory_kind": kind,
+                        "created": created,
+                        "quality": quality,
+                    }),
+                })
+            },
+            &mut nodes,
+        )?;
+        push_nodes(
+            &conn,
+            "MATCH (r:Repo) RETURN r.name",
+            |row| {
+                let n = string(&row, 0)?;
+                Some(NodeDto {
+                    id: format!("r:{n}"),
+                    label: n,
+                    kind: "Repo".into(),
+                    props: json!({}),
+                })
+            },
+            &mut nodes,
+        )?;
+        push_nodes(
+            &conn,
+            "MATCH (a:Author) RETURN a.name",
+            |row| {
+                let n = string(&row, 0)?;
+                Some(NodeDto {
+                    id: format!("a:{n}"),
+                    label: n,
+                    kind: "Author".into(),
+                    props: json!({}),
+                })
+            },
+            &mut nodes,
+        )?;
+        push_nodes(
+            &conn,
+            "MATCH (t:Tag) RETURN t.name",
+            |row| {
+                let n = string(&row, 0)?;
+                Some(NodeDto {
+                    id: format!("t:{n}"),
+                    label: n,
+                    kind: "Tag".into(),
+                    props: json!({}),
+                })
+            },
+            &mut nodes,
+        )?;
+
+        push_edges_memory_layer(&conn, &mut edges)?;
+
+        Ok(GraphPayload { nodes, edges })
+    }
+}
+
+/// Push all memory-layer edges into `edges`.
+pub fn push_edges_memory_layer(
+    conn: &kuzu::Connection<'_>,
+    edges: &mut Vec<EdgeDto>,
+) -> Result<()> {
+    push_edges(
+        conn,
+        "MATCH (m:Memory)-[:InRepo]->(r:Repo) RETURN m.id, r.name",
+        |a, b| (format!("m:{a}"), "InRepo".to_string(), format!("r:{b}")),
+        edges,
+    )?;
+    push_edges(
+        conn,
+        "MATCH (m:Memory)-[:AuthoredBy]->(a:Author) RETURN m.id, a.name",
+        |a, b| (format!("m:{a}"), "AuthoredBy".to_string(), format!("a:{b}")),
+        edges,
+    )?;
+    push_edges(
+        conn,
+        "MATCH (m:Memory)-[:Tagged]->(t:Tag) RETURN m.id, t.name",
+        |a, b| (format!("m:{a}"), "Tagged".to_string(), format!("t:{b}")),
+        edges,
+    )?;
+    push_edges(
+        conn,
+        "MATCH (m:Memory)-[:Supersedes]->(n:Memory) RETURN m.id, n.id",
+        |a, b| (format!("m:{a}"), "Supersedes".to_string(), format!("m:{b}")),
+        edges,
+    )?;
+    push_edges(
+        conn,
+        "MATCH (m:Memory)-[:ConflictsWith]->(n:Memory) RETURN m.id, n.id",
+        |a, b| {
+            (
+                format!("m:{a}"),
+                "ConflictsWith".to_string(),
+                format!("m:{b}"),
+            )
+        },
+        edges,
+    )?;
+    push_edges(
+        conn,
+        "MATCH (m:Memory)-[:RelatesTo]->(n:Memory) RETURN m.id, n.id",
+        |a, b| (format!("m:{a}"), "RelatesTo".to_string(), format!("m:{b}")),
+        edges,
+    )?;
+    push_edges(
+        conn,
+        "MATCH (m:Memory)-[:DerivedFrom]->(n:Memory) RETURN m.id, n.id",
+        |a, b| {
+            (
+                format!("m:{a}"),
+                "DerivedFrom".to_string(),
+                format!("m:{b}"),
+            )
+        },
+        edges,
+    )?;
+    Ok(())
+}
+
+/// Execute `cypher`, build a [`NodeDto`] from each row via `build`, and
+/// append results to `out`. Rows for which `build` returns `None` are skipped.
+pub fn push_nodes<F>(
+    conn: &kuzu::Connection<'_>,
+    cypher: &str,
+    mut build: F,
+    out: &mut Vec<NodeDto>,
+) -> Result<()>
+where
+    F: FnMut(Vec<kuzu::Value>) -> Option<NodeDto>,
+{
+    let rs = conn
+        .query(cypher)
+        .map_err(|e| Error::Other(format!("kuzu query failed: {e}")))?;
+    for row in rs {
+        if let Some(n) = build(row) {
+            out.push(n);
+        }
+    }
+    Ok(())
+}
+
+/// Execute `cypher` (returns two string columns), build an [`EdgeDto`] via
+/// `build`, and append to `out`. Rows with non-string values are skipped.
+pub fn push_edges<F>(
+    conn: &kuzu::Connection<'_>,
+    cypher: &str,
+    mut build: F,
+    out: &mut Vec<EdgeDto>,
+) -> Result<()>
+where
+    F: FnMut(String, String) -> (String, String, String),
+{
+    let rs = conn
+        .query(cypher)
+        .map_err(|e| Error::Other(format!("kuzu query failed: {e}")))?;
+    for row in rs {
+        let a = match row.first() {
+            Some(kuzu::Value::String(s)) => s.clone(),
+            _ => continue,
+        };
+        let b = match row.get(1) {
+            Some(kuzu::Value::String(s)) => s.clone(),
+            _ => continue,
+        };
+        let (source, kind, target) = build(a, b);
+        out.push(EdgeDto {
+            id: edge_id(&source, &kind, &target),
+            source,
+            target,
+            kind,
+            props: json!({}),
+        });
+    }
+    Ok(())
+}
+
+/// Extract a `String` from `row[idx]`, returning `None` for other variants.
+pub fn string(row: &[kuzu::Value], idx: usize) -> Option<String> {
+    match row.get(idx) {
+        Some(kuzu::Value::String(s)) => Some(s.clone()),
+        _ => None,
+    }
+}
+
+/// Extract an `i64` from `row[idx]`, returning `None` for other variants.
+pub fn int64(row: &[kuzu::Value], idx: usize) -> Option<i64> {
+    match row.get(idx) {
+        Some(kuzu::Value::Int64(n)) => Some(*n),
+        _ => None,
     }
 }
