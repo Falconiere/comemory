@@ -14,6 +14,7 @@ pub mod doctor;
 pub mod feedback;
 pub mod gc;
 pub mod index_code;
+pub mod install_hooks;
 pub mod list;
 pub mod memory_for;
 pub mod prune;
@@ -84,6 +85,9 @@ pub enum Cmd {
     Prune(prune::Args),
     /// Purge old entries from `memories/.trash/`.
     Gc,
+    /// Install git hooks that trigger `qwick index-code --incremental` on
+    /// `post-commit`, `post-merge`, and `post-checkout`.
+    InstallHooks(install_hooks::Args),
 }
 
 /// Dispatch the parsed `Cli` to its subcommand. The dispatcher is the single
@@ -107,6 +111,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::Supersedes(a) => supersedes::run(a, cli.json, cli.data_dir).await,
         Cmd::Prune(a) => prune::run(a, cli.json, cli.data_dir).await,
         Cmd::Gc => gc::run(cli.json, cli.data_dir).await,
+        Cmd::InstallHooks(a) => install_hooks::run(a, cli.json, cli.data_dir).await,
     }
 }
 
