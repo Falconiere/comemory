@@ -12,7 +12,7 @@ use kuzu::{Connection, Database, SystemConfig};
 use time::format_description::well_known::Iso8601;
 use time::OffsetDateTime;
 
-use crate::graph::schema::MEMORY_LAYER_DDL;
+use crate::graph::schema::{CODE_LAYER_DDL, MEMORY_LAYER_DDL};
 use crate::memory::{Kind, MemoryRecord};
 use crate::prelude::*;
 
@@ -23,9 +23,9 @@ pub struct Graph {
 }
 
 impl Graph {
-    /// Open (or create) a kuzu database at `dir` and ensure the memory-layer DDL
-    /// is applied. Replaying the DDL on every open is safe because every
-    /// statement uses `IF NOT EXISTS`.
+    /// Open (or create) a kuzu database at `dir` and ensure both the memory-
+    /// and code-layer DDL are applied. Replaying the DDL on every open is safe
+    /// because every statement uses `IF NOT EXISTS`.
     pub fn open(dir: impl AsRef<Path>) -> Result<Self> {
         std::fs::create_dir_all(dir.as_ref())?;
         let db = Database::new(dir.as_ref(), SystemConfig::default())
@@ -34,6 +34,10 @@ impl Graph {
             let conn =
                 Connection::new(&db).map_err(|e| Error::Other(format!("kuzu connect: {e}")))?;
             for ddl in MEMORY_LAYER_DDL {
+                conn.query(ddl)
+                    .map_err(|e| Error::Other(format!("kuzu ddl '{ddl}': {e}")))?;
+            }
+            for ddl in CODE_LAYER_DDL {
                 conn.query(ddl)
                     .map_err(|e| Error::Other(format!("kuzu ddl '{ddl}': {e}")))?;
             }
@@ -145,6 +149,107 @@ impl Graph {
         a = esc(a),
         b = esc(b),
         s = score,
+      ),
+    )?;
+        Ok(())
+    }
+
+    /// Upsert a `File` node keyed on its `<repo>:<path>` qualified name.
+    ///
+    /// `indexed_at` is stamped to the current UTC time on every call so the
+    /// code-layer compactor can detect stale files. Safe to call repeatedly —
+    /// the MERGE keeps a single node per qualified name.
+    pub fn upsert_file(
+        &self,
+        qualified: &str,
+        repo: &str,
+        path: &str,
+        content_hash: &str,
+    ) -> Result<()> {
+        let now = OffsetDateTime::now_utc()
+            .format(&Iso8601::DEFAULT)
+            .map_err(|e| Error::Other(format!("iso8601 format: {e}")))?;
+        let conn = self.conn()?;
+        run(
+      &conn,
+      &format!(
+        "MERGE (f:File {{qualified: '{q}'}}) SET f.repo = '{r}', f.path = '{p}', f.content_hash = '{h}', f.indexed_at = '{now}'",
+        q = esc(qualified),
+        r = esc(repo),
+        p = esc(path),
+        h = esc(content_hash),
+        now = esc(&now),
+      ),
+    )?;
+        Ok(())
+    }
+
+    /// Upsert a `Symbol` node and its `DefinedIn` edge to the parent `File`.
+    ///
+    /// The caller is expected to have already upserted the file via
+    /// [`Graph::upsert_file`]; the `MATCH` will silently no-op if the file is
+    /// missing rather than erroring.
+    pub fn upsert_symbol(
+        &self,
+        qualified: &str,
+        name: &str,
+        kind: &str,
+        language: &str,
+        ast_hash: &str,
+        file_qualified: &str,
+    ) -> Result<()> {
+        let conn = self.conn()?;
+        run(
+      &conn,
+      &format!(
+        "MERGE (s:Symbol {{qualified: '{q}'}}) SET s.name = '{n}', s.kind = '{k}', s.language = '{l}', s.ast_hash = '{h}'",
+        q = esc(qualified),
+        n = esc(name),
+        k = esc(kind),
+        l = esc(language),
+        h = esc(ast_hash),
+      ),
+    )?;
+        run(
+      &conn,
+      &format!(
+        "MATCH (s:Symbol {{qualified: '{s}'}}), (f:File {{qualified: '{f}'}}) MERGE (s)-[:DefinedIn]->(f)",
+        s = esc(qualified),
+        f = esc(file_qualified),
+      ),
+    )?;
+        Ok(())
+    }
+
+    /// Connect a `Memory` to a `Symbol` it mentions in its body.
+    ///
+    /// The `MATCH` requires both endpoints to already exist; missing nodes are
+    /// silently skipped (the edge is simply not created), which matches the
+    /// best-effort semantics expected of the cross-link extractor.
+    pub fn add_references_symbol(&self, memory_id: &str, symbol_qualified: &str) -> Result<()> {
+        let conn = self.conn()?;
+        run(
+      &conn,
+      &format!(
+        "MATCH (m:Memory {{id: '{m}'}}), (s:Symbol {{qualified: '{s}'}}) MERGE (m)-[:ReferencesSymbol]->(s)",
+        m = esc(memory_id),
+        s = esc(symbol_qualified),
+      ),
+    )?;
+        Ok(())
+    }
+
+    /// Connect a `Memory` to a `File` it mentions in its body.
+    ///
+    /// Same best-effort semantics as [`Graph::add_references_symbol`].
+    pub fn add_references_file(&self, memory_id: &str, file_qualified: &str) -> Result<()> {
+        let conn = self.conn()?;
+        run(
+      &conn,
+      &format!(
+        "MATCH (m:Memory {{id: '{m}'}}), (f:File {{qualified: '{f}'}}) MERGE (m)-[:ReferencesFile]->(f)",
+        m = esc(memory_id),
+        f = esc(file_qualified),
       ),
     )?;
         Ok(())

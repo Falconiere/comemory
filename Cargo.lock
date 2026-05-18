@@ -5237,6 +5237,7 @@ dependencies = [
  "owo-colors",
  "predicates",
  "proptest",
+ "regex",
  "rusqlite",
  "serde",
  "serde_json",

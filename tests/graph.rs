@@ -9,3 +9,6 @@ mod upsert;
 
 #[path = "graph/query.rs"]
 mod query;
+
+#[path = "graph/cross_link.rs"]
+mod cross_link;

@@ -96,3 +96,87 @@ fn add_relates_to_does_not_error_after_upsert() {
     g.add_relates_to(&a.frontmatter.id, &b.frontmatter.id, 0.75)
         .unwrap();
 }
+
+#[test]
+fn upsert_file_and_symbol_round_trip() {
+    let sb = common::runner::Sandbox::new();
+    let paths = Paths::new(sb.data_dir());
+    paths.ensure_dirs().unwrap();
+    let g = Graph::open(paths.graph_dir()).unwrap();
+
+    g.upsert_file(
+        "qwick-backend:src/db.rs",
+        "qwick-backend",
+        "src/db.rs",
+        "deadbeef",
+    )
+    .unwrap();
+    g.upsert_symbol(
+        "qwick-backend:src/db.rs:run_migration",
+        "run_migration",
+        "function",
+        "rust",
+        "c0ffee",
+        "qwick-backend:src/db.rs",
+    )
+    .unwrap();
+    // Repeating must not error (MERGE semantics).
+    g.upsert_file(
+        "qwick-backend:src/db.rs",
+        "qwick-backend",
+        "src/db.rs",
+        "deadbeef",
+    )
+    .unwrap();
+    g.upsert_symbol(
+        "qwick-backend:src/db.rs:run_migration",
+        "run_migration",
+        "function",
+        "rust",
+        "c0ffee",
+        "qwick-backend:src/db.rs",
+    )
+    .unwrap();
+}
+
+#[test]
+fn add_references_file_and_symbol_work_after_upserts() {
+    let sb = common::runner::Sandbox::new();
+    let paths = Paths::new(sb.data_dir());
+    paths.ensure_dirs().unwrap();
+    let store = MemoryStore::new(paths.clone());
+    let rec = store
+        .save(
+            "Body mentioning qwick-backend:src/db.rs:run_migration",
+            Kind::Discovery,
+            "qwick-backend",
+            &[],
+            "alice",
+            3,
+        )
+        .unwrap();
+
+    let g = Graph::open(paths.graph_dir()).unwrap();
+    g.upsert_memory(&rec).unwrap();
+    g.upsert_file(
+        "qwick-backend:src/db.rs",
+        "qwick-backend",
+        "src/db.rs",
+        "deadbeef",
+    )
+    .unwrap();
+    g.upsert_symbol(
+        "qwick-backend:src/db.rs:run_migration",
+        "run_migration",
+        "function",
+        "rust",
+        "c0ffee",
+        "qwick-backend:src/db.rs",
+    )
+    .unwrap();
+
+    g.add_references_file(&rec.frontmatter.id, "qwick-backend:src/db.rs")
+        .unwrap();
+    g.add_references_symbol(&rec.frontmatter.id, "qwick-backend:src/db.rs:run_migration")
+        .unwrap();
+}
