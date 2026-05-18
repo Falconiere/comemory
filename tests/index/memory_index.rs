@@ -2,8 +2,7 @@ use qwick::config::paths::Paths;
 use qwick::index::{Embedder, MemoryIndex};
 use qwick::memory::{Kind, MemoryStore};
 
-#[path = "../common/mod.rs"]
-mod common;
+use super::common;
 
 #[tokio::test]
 async fn upsert_then_search_returns_hit() {

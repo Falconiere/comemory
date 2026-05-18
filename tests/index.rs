@@ -1,3 +1,9 @@
+#[path = "common/mod.rs"]
+mod common;
+
+#[path = "index/code_index.rs"]
+mod code_index;
+
 #[path = "index/embedder.rs"]
 mod embedder;
 
