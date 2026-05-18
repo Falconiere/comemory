@@ -5186,10 +5186,13 @@ name = "qwick"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "arrow-array",
+ "arrow-schema",
  "assert_cmd",
  "ast-grep-core",
  "clap",
  "fastembed",
+ "futures",
  "git2",
  "ignore",
  "insta",

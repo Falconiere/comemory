@@ -16,8 +16,11 @@ path = "src/lib.rs"
 
 [dependencies]
 anyhow = "1"
+arrow-array = "58"
+arrow-schema = "58"
 clap = { version = "4", features = ["derive"] }
 fastembed = "4"
+futures = "0.3"
 git2 = { version = "0.19", default-features = false, features = ["vendored-libgit2"] }
 ignore = "0.4"
 kuzu = "0.7"

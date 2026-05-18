@@ -9,4 +9,6 @@ pub mod config;
 
 pub mod memory;
 
+pub mod index;
+
 pub mod stats;
