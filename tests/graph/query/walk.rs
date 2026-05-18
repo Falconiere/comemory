@@ -1,8 +1,10 @@
+//! Tests for `Graph::neighbors_by_repo`, `supersedes_chain`, `conflicts_of`.
+
 use qwick_memory::config::paths::Paths;
 use qwick_memory::graph::Graph;
 use qwick_memory::memory::{Kind, MemoryStore};
 
-use super::common;
+use crate::common;
 
 #[test]
 fn neighbors_by_repo_returns_empty_for_unknown_repo() {
@@ -146,138 +148,4 @@ fn conflicts_of_unknown_memory_is_empty() {
     paths.ensure_dirs().unwrap();
     let g = Graph::open(paths.graph_dir()).unwrap();
     assert!(g.conflicts_of("nonexistent").unwrap().is_empty());
-}
-
-use super::graph_fixture;
-
-#[test]
-fn seed_all_includes_file_symbol_and_cross_layer_edges() {
-    let fx = graph_fixture::build();
-    let payload = fx.graph.seed_all().expect("seed all");
-    let kinds: std::collections::BTreeSet<_> =
-        payload.nodes.iter().map(|n| n.kind.as_str()).collect();
-    assert!(kinds.contains("File"));
-    assert!(kinds.contains("Symbol"));
-
-    let edge_kinds: std::collections::BTreeSet<_> =
-        payload.edges.iter().map(|e| e.kind.as_str()).collect();
-    assert!(edge_kinds.contains("ReferencesFile"));
-    assert!(edge_kinds.contains("ReferencesSymbol"));
-    assert!(edge_kinds.contains("DefinedIn"));
-    assert!(edge_kinds.contains("InRepo"));
-}
-
-#[test]
-fn seed_memory_layer_returns_memory_repo_author_tag() {
-    let fx = graph_fixture::build();
-    let payload = fx.graph.seed_memory_layer().expect("seed");
-    let kinds: std::collections::BTreeSet<_> =
-        payload.nodes.iter().map(|n| n.kind.as_str()).collect();
-    assert!(kinds.contains("Memory"));
-    assert!(kinds.contains("Repo"));
-    assert!(kinds.contains("Author"));
-    assert!(kinds.contains("Tag"));
-    assert!(!kinds.contains("File"));
-    assert!(!kinds.contains("Symbol"));
-
-    let memories = payload.nodes.iter().filter(|n| n.kind == "Memory").count();
-    assert_eq!(memories, 3);
-
-    // Verify node ids reference the fixture's known ids and repo.
-    let mem_ids: std::collections::BTreeSet<_> = payload
-        .nodes
-        .iter()
-        .filter(|n| n.kind == "Memory")
-        .map(|n| n.id.as_str())
-        .collect();
-    assert!(
-        mem_ids.contains(format!("m:{}", fx.primary_id).as_str()),
-        "primary memory missing: {mem_ids:?}"
-    );
-    assert!(
-        mem_ids.contains(format!("m:{}", fx.superseded_id).as_str()),
-        "superseded memory missing: {mem_ids:?}"
-    );
-    assert!(
-        mem_ids.contains(format!("m:{}", fx.conflict_id).as_str()),
-        "conflict memory missing: {mem_ids:?}"
-    );
-
-    // Repo and tag nodes should carry the fixture's known labels.
-    let repo_node = payload
-        .nodes
-        .iter()
-        .find(|n| n.kind == "Repo")
-        .expect("repo node");
-    assert_eq!(repo_node.label, fx.repo);
-
-    let tag_node = payload
-        .nodes
-        .iter()
-        .find(|n| n.kind == "Tag" && n.label == fx.tag)
-        .expect("tag node for 'database'");
-    assert_eq!(tag_node.id, format!("t:{}", fx.tag));
-
-    // Paths must be valid (data dir was created by build()).
-    assert!(fx.paths.graph_dir().exists());
-
-    // file_qualified and symbol_qualified are fixture metadata used by
-    // expand-layer tests; confirm they have the expected namespaced form.
-    assert!(
-        fx.file_qualified.contains(':'),
-        "file_qualified must be repo:path form: {}",
-        fx.file_qualified
-    );
-    assert!(
-        fx.symbol_qualified.contains(':'),
-        "symbol_qualified must be repo:path:symbol form: {}",
-        fx.symbol_qualified
-    );
-}
-
-#[test]
-fn expand_returns_one_hop_for_known_memory() {
-    let fx = graph_fixture::build();
-    let seed = format!("m:{}", fx.primary_id);
-    let payload = fx.graph.expand_neighbors(&seed, 1).expect("expand");
-    let ids: std::collections::BTreeSet<_> = payload.nodes.iter().map(|n| n.id.clone()).collect();
-    assert!(ids.contains(&seed));
-    assert!(ids.contains("r:qwick-backend"));
-    assert!(ids.contains("a:falconiere"));
-    assert!(ids.contains("t:database") || ids.contains("t:postgres"));
-}
-
-#[test]
-fn expand_unknown_id_returns_empty_payload() {
-    let fx = graph_fixture::build();
-    let payload = fx.graph.expand_neighbors("m:zzzzzzzz", 1).expect("expand");
-    assert!(payload.nodes.is_empty());
-    assert!(payload.edges.is_empty());
-}
-
-#[test]
-fn search_matches_tag_and_memory_id() {
-    let fx = graph_fixture::build();
-
-    let hits = fx.graph.search_nodes("database", 20).expect("search");
-    assert!(hits
-        .iter()
-        .any(|n| n.kind == "Tag" && n.label == "database"));
-
-    let prefix: String = fx.primary_id.chars().take(4).collect();
-    let hits = fx.graph.search_nodes(&prefix, 20).expect("search");
-    assert!(
-        hits.iter()
-            .any(|n| n.kind == "Memory" && n.id == format!("m:{}", fx.primary_id)),
-        "expected memory id match for prefix `{}` in {:?}",
-        prefix,
-        hits,
-    );
-}
-
-#[test]
-fn search_respects_limit() {
-    let fx = graph_fixture::build();
-    let hits = fx.graph.search_nodes("a", 2).expect("search");
-    assert!(hits.len() <= 2);
 }

@@ -10,7 +10,7 @@ mod schema;
 #[path = "graph/upsert.rs"]
 mod upsert;
 
-#[path = "graph/query.rs"]
+#[path = "graph/query/mod.rs"]
 mod query;
 
 #[path = "graph/cross_link.rs"]
