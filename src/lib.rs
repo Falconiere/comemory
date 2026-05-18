@@ -17,4 +17,6 @@ pub mod graph;
 
 pub mod retrieval;
 
+pub mod ast;
+
 pub mod cli;

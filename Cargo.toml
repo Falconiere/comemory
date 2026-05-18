@@ -45,7 +45,17 @@ walkdir = "2"
 url = "=2.5.7"
 
 [dependencies.ast-grep-core]
-version = "0.30"
+version = "0.38"
+
+# ast-grep-language provides the per-language `Language` trait impls (Rust,
+# Python, TypeScript, JavaScript, ...) that pair with ast-grep-core. The
+# plan pinned 0.30, but the 0.30 line transitively pulls
+# `tree-sitter-javascript 0.21.3`, which pins `cc ~1.0.90` — irreconcilable
+# with `aws-lc-sys` in lancedb's transitive graph. 0.38.x switched to the
+# 0.23+ parser line that uses `tree-sitter-language` and the modern `cc`,
+# so both stacks compose.
+[dependencies.ast-grep-language]
+version = "0.38"
 
 [dev-dependencies]
 assert_cmd = "2"
@@ -64,7 +74,7 @@ strip = "symbols"
 # gate stays green during the early build-out.
 [package.metadata.cargo-machete]
 ignored = [
-  "ast-grep-core", "clap", "fastembed", "git2", "ignore", "kuzu", "lancedb",
+  "ast-grep-core", "ast-grep-language", "clap", "fastembed", "git2", "ignore", "kuzu", "lancedb",
   "once_cell", "owo-colors", "rusqlite", "serde",
   "sha2", "time", "tokio", "walkdir",
   "anyhow", "tracing",
