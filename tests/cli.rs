@@ -227,3 +227,86 @@ fn doctor_json_emits_object() {
     assert!(v["data_dir"].is_string());
     assert_eq!(v["memories_count"].as_u64(), Some(0));
 }
+
+#[test]
+fn memory_for_unknown_qualified_returns_empty_json() {
+    // `memory-for` filter logic exercised without any memory references on
+    // disk: the result MUST be a JSON array (possibly empty) and never fail.
+    // Once the save flow persists `references.symbols` (later task), this
+    // test stays valid because the qualified key intentionally won't match
+    // any frontmatter.
+    let home = TempDir::new().expect("tempdir");
+    let cmd = bin(&home)
+        .args(["--json", "memory-for", "norepo:no/path:no_symbol"])
+        .assert()
+        .success();
+    let stdout = String::from_utf8(cmd.get_output().stdout.clone()).expect("utf8 stdout");
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
+    let arr = v.as_array().expect("top-level JSON array");
+    assert!(arr.is_empty(), "no memories should match: {arr:?}");
+}
+
+#[test]
+fn ast_finds_rust_function_pattern() {
+    // `ast` runs purely against a source file + ast-grep — no embedders,
+    // no LanceDB. Cheap, hermetic, validates the CLI shape end-to-end.
+    let home = TempDir::new().expect("tempdir");
+    let src_dir = home.path().join("ast-fixture");
+    std::fs::create_dir_all(&src_dir).expect("mkdir fixture");
+    let file = src_dir.join("lib.rs");
+    std::fs::write(&file, "fn run_migration() {}\nfn other() {}\n").expect("write fixture");
+
+    let cmd = bin(&home)
+        .args(["--json", "ast", "fn $NAME() {}", "--lang", "rs", "--file"])
+        .arg(&file)
+        .assert()
+        .success();
+    let stdout = String::from_utf8(cmd.get_output().stdout.clone()).expect("utf8 stdout");
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
+    let arr = v.as_array().expect("top-level JSON array");
+    assert_eq!(arr.len(), 2, "expected 2 matches, got {arr:?}");
+    let lines: Vec<u64> = arr
+        .iter()
+        .map(|r| r["line"].as_u64().expect("line"))
+        .collect();
+    assert!(
+        lines.contains(&1) && lines.contains(&2),
+        "lines were {lines:?}"
+    );
+}
+
+/// Runs the headline `context` flow end-to-end: `index-code` against a tiny
+/// fixture repo, then `context <symbol> --json` and parse the bundle. The
+/// first run downloads the jina-code (~300 MB) and nomic-text (~130 MB)
+/// embedder models, so the test is `#[ignore]`d by default. Run explicitly
+/// with `cargo test -- --ignored index_code_and_context_run`.
+#[test]
+#[ignore]
+fn index_code_and_context_run() {
+    let home = TempDir::new().expect("tempdir");
+    let repo_dir = home.path().join("myrepo");
+    std::fs::create_dir_all(repo_dir.join("src")).expect("mkdir src");
+    std::fs::write(repo_dir.join("src/lib.rs"), "fn run_migration() {}\n").expect("write lib.rs");
+
+    bin(&home)
+        .args(["index-code", "--root"])
+        .arg(&repo_dir)
+        .args(["--repo", "myrepo"])
+        .assert()
+        .success();
+
+    let ctx = bin(&home)
+        .args(["--json", "context", "run_migration"])
+        .assert()
+        .success();
+    let stdout = String::from_utf8(ctx.get_output().stdout.clone()).expect("utf8 stdout");
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
+    assert_eq!(v["key"].as_str(), Some("run_migration"));
+    assert!(v["memories"].is_array());
+    // Symbol may be null if the empty memory index path triggered an early
+    // return, but the bundle envelope must be present.
+    assert!(
+        v.get("symbol").is_some(),
+        "bundle should have a 'symbol' field"
+    );
+}

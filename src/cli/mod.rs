@@ -6,12 +6,17 @@ use clap::{Parser, Subcommand};
 
 use crate::prelude::*;
 
+pub mod ast;
+pub mod context;
 pub mod delete;
 pub mod doctor;
 pub mod feedback;
+pub mod index_code;
 pub mod list;
+pub mod memory_for;
 pub mod save;
 pub mod search;
+pub mod symbol;
 
 /// Top-level CLI. `qwick <subcommand> [--json] [--data-dir DIR]`. The `--json`
 /// and `--data-dir` flags are global so callers can place them either before
@@ -37,8 +42,9 @@ pub struct Cli {
     pub cmd: Cmd,
 }
 
-/// Memory-layer subcommands. Code-layer commands (`index`, `ask`, `pattern`)
-/// land in later tasks and will be additional variants here.
+/// Memory-layer + code-layer subcommands. Clap derives the kebab-case name
+/// from each variant, so `IndexCode` becomes `index-code`, `MemoryFor` becomes
+/// `memory-for`, etc.
 #[derive(Subcommand, Debug)]
 pub enum Cmd {
     /// Save a memory (body via arg, `-`, or stdin).
@@ -53,6 +59,16 @@ pub enum Cmd {
     Feedback(feedback::Args),
     /// Report on the data directory and memory count.
     Doctor,
+    /// Walk a repo, extract symbols, and upsert into the code index.
+    IndexCode(index_code::Args),
+    /// Semantic search over the code index for a symbol name.
+    Symbol(symbol::Args),
+    /// List memories that reference a qualified symbol or file path.
+    MemoryFor(memory_for::Args),
+    /// Run an ast-grep pattern against a single source file.
+    Ast(ast::Args),
+    /// Headline lookup: code symbol + memories matching a key.
+    Context(context::Args),
 }
 
 /// Dispatch the parsed `Cli` to its subcommand. The dispatcher is the single
@@ -66,6 +82,11 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::Delete(a) => delete::run(a, cli.json, cli.data_dir).await,
         Cmd::Feedback(a) => feedback::run(a, cli.json, cli.data_dir).await,
         Cmd::Doctor => doctor::run(cli.json, cli.data_dir).await,
+        Cmd::IndexCode(a) => index_code::run(a, cli.json, cli.data_dir).await,
+        Cmd::Symbol(a) => symbol::run(a, cli.json, cli.data_dir).await,
+        Cmd::MemoryFor(a) => memory_for::run(a, cli.json, cli.data_dir).await,
+        Cmd::Ast(a) => ast::run(a, cli.json, cli.data_dir).await,
+        Cmd::Context(a) => context::run(a, cli.json, cli.data_dir).await,
     }
 }
 
