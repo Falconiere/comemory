@@ -4,3 +4,5 @@ pub mod prelude;
 
 #[path = "errors.rs"]
 pub mod errors;
+
+pub mod config;
