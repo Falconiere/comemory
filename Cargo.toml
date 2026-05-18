@@ -18,7 +18,7 @@ path = "src/lib.rs"
 anyhow = "1"
 arrow-array = "58"
 arrow-schema = "58"
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "env"] }
 fastembed = "4"
 futures = "0.3"
 git2 = { version = "0.19", default-features = false, features = ["vendored-libgit2"] }
