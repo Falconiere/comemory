@@ -151,6 +151,23 @@ fn conflicts_of_unknown_memory_is_empty() {
 use super::graph_fixture;
 
 #[test]
+fn seed_all_includes_file_symbol_and_cross_layer_edges() {
+    let fx = graph_fixture::build();
+    let payload = fx.graph.seed_all().expect("seed all");
+    let kinds: std::collections::BTreeSet<_> =
+        payload.nodes.iter().map(|n| n.kind.as_str()).collect();
+    assert!(kinds.contains("File"));
+    assert!(kinds.contains("Symbol"));
+
+    let edge_kinds: std::collections::BTreeSet<_> =
+        payload.edges.iter().map(|e| e.kind.as_str()).collect();
+    assert!(edge_kinds.contains("ReferencesFile"));
+    assert!(edge_kinds.contains("ReferencesSymbol"));
+    assert!(edge_kinds.contains("DefinedIn"));
+    assert!(edge_kinds.contains("InRepo"));
+}
+
+#[test]
 fn seed_memory_layer_returns_memory_repo_author_tag() {
     let fx = graph_fixture::build();
     let payload = fx.graph.seed_memory_layer().expect("seed");
