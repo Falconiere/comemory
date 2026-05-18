@@ -1,4 +1,3 @@
 /target
 Cargo.lock.bak
 .qwick-test/
-.claude/tmp/quality-gate-status.json
