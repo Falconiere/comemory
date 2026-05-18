@@ -1,6 +1,5 @@
 [default]
 extend-ignore-identifiers-re = ["nomic", "kuzu", "qwick"]
-
-# `serde::ser` is a real Rust module path; typos otherwise flags `ser` -> `set`.
-[default.extend-words]
-ser = "ser"
+extend-ignore-re = [
+  "serde::ser::",
+]
