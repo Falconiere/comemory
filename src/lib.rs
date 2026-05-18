@@ -1,0 +1,6 @@
+//! qwick — agentic dev memory + code-aware semantic search.
+
+pub mod prelude;
+
+#[path = "errors.rs"]
+pub mod errors;
