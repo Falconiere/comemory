@@ -28,12 +28,14 @@ violations=""
 add() { violations="${violations}"$'\n'"  - $1"; }
 
 echo "$new_content" | grep -qE '#\[allow\('                                      && add "#[allow(...)] override"
+echo "$new_content" | grep -qE '//[[:space:]]*clippy::allow'                     && add "// clippy::allow comment override"
 echo "$new_content" | awk '
   /#\[cfg\(test\)\]/                                          { flagged = NR }
   /^[[:space:]]*mod[[:space:]]+tests([[:space:]]|\{|$)/       { if (flagged > 0 && NR - flagged <= 2) { found = 1; exit } }
   END                                                         { exit found ? 0 : 1 }
 ' && add "#[cfg(test)] mod tests inside src/ (move to tests/)"
 echo "$new_content" | grep -qE '\.unwrap\(\)'                                    && add ".unwrap() in src/"
+echo "$new_content" | grep -qE '\.expect\([[:space:]]*\)'                        && add ".expect() with empty message"
 echo "$new_content" | grep -qE '(^|[^a-zA-Z0-9_])println!'                       && add "println! (use tracing)"
 echo "$new_content" | grep -qE '(^|[^a-zA-Z0-9_])eprintln!'                      && add "eprintln! (use tracing)"
 echo "$new_content" | grep -qE '(^|[^a-zA-Z0-9_])todo!\('                        && add "todo!()"
