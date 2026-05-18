@@ -1,0 +1,114 @@
+//! YAML frontmatter struct plus split/render helpers for `memories/{id}-{slug}.md`.
+
+use serde::{Deserialize, Serialize};
+use time::format_description::well_known::Iso8601;
+use time::OffsetDateTime;
+
+use crate::prelude::*;
+
+/// Memory taxonomy. Stored lowercase in YAML.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Kind {
+    Decision,
+    Bug,
+    Convention,
+    Discovery,
+    Pattern,
+    Note,
+}
+
+/// External symbol / file references attached to a memory.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct References {
+    #[serde(default)]
+    pub symbols: Vec<String>,
+    #[serde(default)]
+    pub files: Vec<String>,
+}
+
+/// Cross-memory relationships used by the property graph.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Relations {
+    #[serde(default)]
+    pub supersedes: Vec<String>,
+    #[serde(default)]
+    pub conflicts_with: Vec<String>,
+    #[serde(default)]
+    pub derived_from: Vec<String>,
+}
+
+/// YAML frontmatter block at the top of every memory file.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Frontmatter {
+    pub id: String,
+    pub kind: Kind,
+    pub repo: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    pub author: String,
+    #[serde(with = "iso8601_serde")]
+    pub created: OffsetDateTime,
+    pub quality: u8,
+    pub schema: u32,
+    pub content_hash: String,
+    #[serde(default)]
+    pub references: References,
+    #[serde(default)]
+    pub relations: Relations,
+}
+
+impl Frontmatter {
+    /// Serialize to YAML (without the surrounding `---` fences).
+    pub fn to_yaml(&self) -> Result<String> {
+        Ok(serde_yaml::to_string(self)?)
+    }
+
+    /// Deserialize from YAML (without the surrounding `---` fences).
+    pub fn from_yaml(s: &str) -> Result<Self> {
+        Ok(serde_yaml::from_str(s)?)
+    }
+
+    /// Split a markdown file starting with `---\n…\n---\n` into frontmatter + body.
+    pub fn split(raw: &str) -> Result<(Self, String)> {
+        let stripped = raw
+            .strip_prefix("---\n")
+            .ok_or_else(|| Error::Other("missing leading '---'".into()))?;
+        let end = stripped
+            .find("\n---\n")
+            .ok_or_else(|| Error::Other("missing closing '---'".into()))?;
+        let yaml = &stripped[..end];
+        let body = &stripped[end + 5..];
+        let fm = Self::from_yaml(yaml)?;
+        Ok((fm, body.to_string()))
+    }
+
+    /// Render frontmatter + body as a complete markdown file.
+    pub fn render(&self, body: &str) -> Result<String> {
+        let yaml = self.to_yaml()?;
+        Ok(format!("---\n{}---\n{}", yaml, body))
+    }
+}
+
+mod iso8601_serde {
+    use super::*;
+    use serde::Deserializer;
+    use serde::Serializer;
+
+    pub fn serialize<S: Serializer>(
+        t: &OffsetDateTime,
+        s: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
+        let formatted = t
+            .format(&Iso8601::DEFAULT)
+            .map_err(serde::ser::Error::custom)?;
+        s.serialize_str(&formatted)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        d: D,
+    ) -> std::result::Result<OffsetDateTime, D::Error> {
+        let s: String = serde::Deserialize::deserialize(d)?;
+        OffsetDateTime::parse(&s, &Iso8601::DEFAULT).map_err(serde::de::Error::custom)
+    }
+}
