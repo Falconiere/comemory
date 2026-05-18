@@ -57,16 +57,20 @@ perf_time_runs() {
   fi
 }
 
-# Extract top-N crate-unit durations from a cargo-timings JSON file.
-# Args: <timings.json> <n>
+# Extract top-N unit durations from a cargo-timing.html file.
+# Args: <cargo-timing.html> <n>
 # Emits a JSON array: [{name, version, duration_s}, ...]
 perf_top_crates() {
   local file="$1"; local n="$2"
+  # cargo embeds: const UNIT_DATA = [ {...}, ... ];
+  # Extract the array literal, then sort + slice via jq.
+  local unit_json
+  unit_json="$(sed -n '/const UNIT_DATA = \[/,/^\];$/p' "$file" \
+    | sed -e 's/^const UNIT_DATA = //' -e 's/;$//')"
   jq -c --argjson n "$n" '
-    [ .invocations[]? | select(.target?) |
-      { name: .package_id // .target.name,
-        version: (.package_id // "") | capture("@(?<v>[^@]+)$")?.v // "",
-        duration_s: (.duration | tonumber | (.*1000|round)/1000) } ]
+    [ .[] | { name: .name,
+              version: .version,
+              duration_s: ((.duration | tonumber * 1000 | round) / 1000) } ]
     | sort_by(-.duration_s) | .[0:$n]
-  ' "$file"
+  ' <<< "$unit_json"
 }

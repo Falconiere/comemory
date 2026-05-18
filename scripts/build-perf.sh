@@ -22,27 +22,27 @@ mkdir -p "$OUT_DIR"
 
 log_info "$STEP" "rustc $(rustc --version) / cargo $(cargo --version)"
 
-log_info "$STEP" "cold build (cargo clean && cargo build --timings=html,json)"
+log_info "$STEP" "cold build (cargo clean && cargo build --timings)"
 (cd "$PROJECT_ROOT" && cargo clean >/dev/null)
 COLD_S="$(perf_time_once cold cargo build --manifest-path "$PROJECT_ROOT/Cargo.toml" \
-  --timings=html,json)"
-cp "$PROJECT_ROOT/target/cargo-timings/cargo-timings.html" \
+  --timings)"
+cp "$PROJECT_ROOT/target/cargo-timings/cargo-timing.html" \
    "$OUT_DIR/cargo-timings-cold.html"
-COLD_JSON="$PROJECT_ROOT/target/cargo-timings/cargo-timings.json"
+COLD_HTML="$PROJECT_ROOT/target/cargo-timings/cargo-timing.html"
 
 log_info "$STEP" "warm incremental builds (touch src/lib.rs, ${WARM_RUNS} runs)"
 touch "$PROJECT_ROOT/src/lib.rs"
 read -r WARM_P50 WARM_P95 < <(perf_time_runs warm "$WARM_RUNS" \
   bash -c "touch '$PROJECT_ROOT/src/lib.rs' && cargo build --manifest-path '$PROJECT_ROOT/Cargo.toml'")
 
-log_info "$STEP" "release build (cargo clean && cargo build --release --timings=html,json)"
+log_info "$STEP" "release build (cargo clean && cargo build --release --timings)"
 (cd "$PROJECT_ROOT" && cargo clean >/dev/null)
 RELEASE_S="$(perf_time_once release cargo build --manifest-path "$PROJECT_ROOT/Cargo.toml" \
-  --release --timings=html,json)"
-cp "$PROJECT_ROOT/target/cargo-timings/cargo-timings.html" \
+  --release --timings)"
+cp "$PROJECT_ROOT/target/cargo-timings/cargo-timing.html" \
    "$OUT_DIR/cargo-timings-release.html"
 
-TOP10="$(perf_top_crates "$COLD_JSON" 10)"
+TOP10="$(perf_top_crates "$COLD_HTML" 10)"
 SCCACHE_STATE="absent"
 [[ -n "${RUSTC_WRAPPER:-}" ]] && SCCACHE_STATE="${RUSTC_WRAPPER}"
 
@@ -71,6 +71,7 @@ log_info "$STEP" "summary: $OUT_DIR/summary.json"
 if [[ "$APPEND_MD" -eq 1 ]]; then
   MD="$PROJECT_ROOT/docs/build-perf.md"
   NOTES="${BUILD_PERF_NOTES:-}"
+  NOTES="${NOTES//|/\\|}"
   printf "| %s | %s | %s | %s | %s | %s | %s | %s |\n" \
     "$DATE" "$COMMIT" "$COLD_S" "$WARM_P50" "$WARM_P95" "$RELEASE_S" "$SCCACHE_STATE" "$NOTES" \
     >> "$MD"
