@@ -14,6 +14,7 @@ GATES=(
   module-size-check
   tests-mirror-check
   typos-check
+  cli-docs-check
 )
 
 failed=()
