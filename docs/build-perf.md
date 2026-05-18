@@ -16,3 +16,4 @@ Columns:
 | Date | Commit | Cold (s) | Warm p50 (s) | Warm p95 (s) | Release (s) | sccache | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 2026-05-18T16:48:28Z | 51ae8d9 | 702 | 4.12 | 4.12 | n/a | absent | baseline (pre-change, partial; release deferred to post-change run) |
+| 2026-05-18T17:29:33Z | 214fa44 | 420.640 | 2.856 | 2.856 | 1228.009 | absent | post-change (no sccache) |
