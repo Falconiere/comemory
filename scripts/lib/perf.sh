@@ -9,13 +9,30 @@ perf_now_ms() {
 
 # Run a single command, print wall-clock seconds (3 decimals) to stdout.
 # Args: <label> <cmd> [<args>...]
+# Returns non-zero if the timed command fails.
 perf_time_once() {
   local label="$1"; shift
-  local start end
+  local start end rc
   start="$(perf_now_ms)"
-  "$@" >/dev/null
+  "$@" >/dev/null; rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf "perf_time_once: command failed (rc=%s, label=%s): %s\n" \
+      "$rc" "$label" "$*" >&2
+    return "$rc"
+  fi
   end="$(perf_now_ms)"
   awk -v s="$start" -v e="$end" 'BEGIN { printf "%.3f", (e - s) / 1000.0 }'
+}
+
+# Build a single, shell-safely-escaped command string from positional args.
+# Used to pass varargs to tools (like hyperfine) that take one shell string.
+perf_shell_escape() {
+  local s=""
+  local arg
+  for arg in "$@"; do
+    s+="$(printf '%q' "$arg") "
+  done
+  printf "%s" "${s% }"
 }
 
 # Run a command N times via hyperfine if present; else fall back to perf_time_once.
@@ -24,10 +41,11 @@ perf_time_once() {
 perf_time_runs() {
   local label="$1"; local runs="$2"; shift 2
   if command -v hyperfine >/dev/null 2>&1; then
-    local json p50 p95
+    local json cmd_str p50 p95
     json="$(mktemp)"
+    cmd_str="$(perf_shell_escape "$@")"
     hyperfine --warmup 1 --runs "$runs" --export-json "$json" \
-      --command-name "$label" "$*" >/dev/null
+      --command-name "$label" "$cmd_str" >/dev/null
     p50="$(jq -r '.results[0].median' "$json")"
     p95="$(jq -r '.results[0].max' "$json")"
     rm -f "$json"
