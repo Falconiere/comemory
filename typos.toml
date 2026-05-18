@@ -1,5 +1,7 @@
 [default]
-extend-ignore-identifiers-re = ["nomic", "kuzu", "qwick"]
+extend-ignore-identifiers-re = ["nomic", "kuzu", "qwick", "cose"]
 extend-ignore-re = [
   "serde::ser::",
+  "cose-bilkent",
+  "cose-base",
 ]
