@@ -58,3 +58,41 @@ pub fn edge_id(source: &str, kind: &str, target: &str) -> String {
     h.write(target.as_bytes());
     format!("e:{:016x}", h.finish())
 }
+
+/// One row in the search result list.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SearchResult {
+    pub id: String,
+    pub label: String,
+    pub kind: String,
+}
+
+/// Wrapper for `/api/search` so the frontend reads a stable object shape.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SearchResponse {
+    pub results: Vec<SearchResult>,
+}
+
+/// Adjacent edge, used inside [`NodeDetail`]. Exactly one of `target` or
+/// `source` is set per direction.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EdgeRef {
+    pub edge_kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+}
+
+/// Response payload for `/api/node/{id}`. `memory_body` and `frontmatter`
+/// are only set when `node.kind == "Memory"`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NodeDetail {
+    pub node: NodeDto,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory_body: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub frontmatter: Option<serde_json::Value>,
+    pub outbound: Vec<EdgeRef>,
+    pub inbound: Vec<EdgeRef>,
+}
