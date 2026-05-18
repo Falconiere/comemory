@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Shared helpers for scripts/ — sourced, not executed.
-# Provides: PROJECT_ROOT, log_info, log_err, log_ok, find_src_files, die
+# Provides: PROJECT_ROOT, log_info, log_err, log_ok, die, run_cargo
 
 set -euo pipefail
 
@@ -20,18 +20,6 @@ log_info() { printf "%s[%s]%s %s\n" "$C_DIM" "$1" "$C_RST" "$2"; }
 log_ok()   { printf "%s[%s] OK%s %s\n" "$C_GRN" "$1" "$C_RST" "${2:-}"; }
 log_err()  { printf "%s[%s] FAIL%s %s\n" "$C_RED" "$1" "$C_RST" "$2" >&2; }
 die()      { log_err "${1:-script}" "${2:-failed}"; exit 1; }
-
-# Emit every tracked .rs file under src/, NUL-separated.
-find_src_files() {
-  cd "$PROJECT_ROOT"
-  git ls-files -z 'src/*.rs'
-}
-
-# Emit every tracked .rs file under tests/, NUL-separated.
-find_test_files() {
-  cd "$PROJECT_ROOT"
-  git ls-files -z 'tests/*.rs'
-}
 
 # Run a cargo command from PROJECT_ROOT.
 run_cargo() {

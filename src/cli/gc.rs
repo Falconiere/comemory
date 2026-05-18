@@ -3,14 +3,11 @@
 //! Uses filesystem mtime (`std::fs::Metadata::modified`) rather than a
 //! frontmatter-derived cutoff timestamp; this keeps gc working even on
 //! trash entries whose frontmatter is unparsable, and avoids re-reading
-//! every file. The 30-day retention is intentionally fixed in v1 — the
-//! plan's `cutoff` value is computed but not consulted, to keep the door
-//! open for swapping in a frontmatter-aware sweep later.
+//! every file. The 30-day retention is intentionally fixed in v1, leaving
+//! the door open for swapping in a frontmatter-aware sweep later.
 
 use std::io::Write as _;
 use std::path::PathBuf;
-
-use time::{Duration, OffsetDateTime};
 
 use crate::cli::resolve_data_dir;
 use crate::config::paths::Paths;
@@ -24,7 +21,6 @@ const RETENTION_DAYS: i64 = 30;
 /// no-op. Reports the count of files removed.
 pub async fn run(json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
-    let _cutoff = OffsetDateTime::now_utc() - Duration::days(RETENTION_DAYS);
     let mut removed = 0u64;
 
     if let Ok(rd) = std::fs::read_dir(paths.trash_dir()) {

@@ -10,6 +10,7 @@ qa:
     bash scripts/check-all.sh
     bash scripts/deny-check.sh
     bash scripts/dup-check.sh
+    bash scripts/machete-check.sh
 
 bench:
     cargo bench --all-features
