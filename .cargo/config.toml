@@ -1,0 +1,9 @@
+# Respect RUSTC_WRAPPER from the environment. Contributors without sccache
+# pay zero cost; contributors with sccache export RUSTC_WRAPPER=sccache in
+# their shell.
+
+[target.aarch64-apple-darwin]
+rustflags = ["-C", "link-arg=-Wl,-dead_strip"]
+
+[env]
+SCCACHE_CACHE_SIZE = { value = "20G", force = false }
