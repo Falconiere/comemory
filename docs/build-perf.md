@@ -1,0 +1,17 @@
+# Build Performance
+
+History of `just perf` runs. One row per measured run. Append rows via
+`bash scripts/build-perf.sh --append-md`.
+
+Columns:
+- **Date:** UTC timestamp of the run.
+- **Commit:** short SHA at measurement time.
+- **Cold (s):** `cargo clean && cargo build` wall-clock.
+- **Warm p50 (s):** median of 5 incremental rebuilds after `touch src/lib.rs`.
+- **Warm p95 (s):** max of the same 5 runs (when hyperfine is installed; equals p50 otherwise).
+- **Release (s):** `cargo clean && cargo build --release` wall-clock.
+- **sccache:** wrapper state (`sccache` if `RUSTC_WRAPPER=sccache`, else `absent`).
+- **Notes:** free-form context (e.g., "baseline", "post-config").
+
+| Date | Commit | Cold (s) | Warm p50 (s) | Warm p95 (s) | Release (s) | sccache | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |

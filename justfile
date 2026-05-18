@@ -20,3 +20,6 @@ build-release:
 
 e2e:
     bash scripts/e2e.sh
+
+perf:
+    bash scripts/build-perf.sh
