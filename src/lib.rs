@@ -12,3 +12,5 @@ pub mod memory;
 pub mod index;
 
 pub mod stats;
+
+pub mod graph;
