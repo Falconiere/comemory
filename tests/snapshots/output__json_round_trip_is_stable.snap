@@ -1,0 +1,14 @@
+---
+source: tests/output.rs
+expression: hits
+---
+[
+  {
+    "id": "a",
+    "score": 0.9
+  },
+  {
+    "id": "b",
+    "score": 0.6
+  }
+]
