@@ -2,10 +2,52 @@
 db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked = "warn"
-ignore = []
+# All ignores below are upstream-tracked issues on deep transitive deps that
+# we do not control. Each entry names the chain that pulls the crate so a
+# future reviewer can revisit when the upstream resolves.
+ignore = [
+  # bincode 2.x marked unmaintained
+  # chain: lindera → lance-tokenizer → lance → lancedb
+  "RUSTSEC-2025-0141",
+  # encoding 0.2 unmaintained, superseded by encoding_rs
+  # chain: lindera-dictionary → lindera → lance-tokenizer → lance
+  "RUSTSEC-2021-0153",
+  # number_prefix unmaintained
+  # chain: indicatif → hf-hub → fastembed
+  "RUSTSEC-2025-0119",
+  # paste proc-macro unmaintained
+  # chain: datafusion-common → datafusion → lance → lancedb
+  "RUSTSEC-2024-0436",
+  # Potential UB dereferencing Buf struct
+  # chain: deep in lance / datafusion stack; awaiting upstream fix
+  "RUSTSEC-2026-0008",
+]
 
 [licenses]
-allow = ["MIT", "Apache-2.0", "Apache-2.0 WITH LLVM-exception", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Unicode-DFS-2016", "Unicode-3.0", "CC0-1.0", "Zlib"]
+# Permissive FOSS licenses present in the transitive dep tree. Each is
+# OSI-approved or otherwise broadly permissive.
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Unicode-DFS-2016",
+  "Unicode-3.0",
+  "CC0-1.0",
+  "Zlib",
+  # 0BSD: simplified BSD (mock_instant)
+  "0BSD",
+  # MPL-2.0: weak file-level copyleft (option-ext via dirs-sys)
+  "MPL-2.0",
+  # CDLA-Permissive-2.0: data license used by Mozilla CA list (webpki-roots)
+  "CDLA-Permissive-2.0",
+  # BSL-1.0: Boost Software License, permissive (xxhash-rust)
+  "BSL-1.0",
+  # NCSA: University of Illinois/NCSA permissive (libfuzzer-sys portion)
+  "NCSA",
+]
 confidence-threshold = 0.93
 
 [bans]
