@@ -60,6 +60,13 @@ impl CodeIndex {
         })
     }
 
+    /// Borrow the inner LanceDB connection. Used by retrieval-layer code that
+    /// needs to open the `code_chunks` table directly for vector queries
+    /// without re-implementing the connection plumbing.
+    pub fn conn(&self) -> &Connection {
+        &self.conn
+    }
+
     /// Walk `repo_root`, extract symbols from every supported source file,
     /// embed snippets with `emb`, and upsert into `code_chunks`. Returns the
     /// number of rows written (0 if the repo has no indexable symbols).

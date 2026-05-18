@@ -15,3 +15,6 @@ mod hybrid;
 
 #[path = "retrieval/corrective.rs"]
 mod corrective;
+
+#[path = "retrieval/dual.rs"]
+mod dual;
