@@ -275,6 +275,102 @@ fn ast_finds_rust_function_pattern() {
     );
 }
 
+#[test]
+fn supersedes_then_walk_emits_json_chain() {
+    // Save two memories via the CLI, manually upsert their `Memory` nodes into
+    // the kuzu graph (the save command itself does not yet write the graph),
+    // then exercise `qwick supersedes` + `qwick walk --edge supersedes --json`
+    // and confirm the superseded id appears in the returned JSON array.
+    use qwick::config::paths::Paths;
+    use qwick::graph::Graph;
+    use qwick::memory::MemoryStore;
+
+    let home = TempDir::new().expect("tempdir");
+    let save_a = bin(&home)
+        .args([
+            "save",
+            "old decision body",
+            "--kind",
+            "decision",
+            "--repo",
+            "r",
+        ])
+        .assert()
+        .success();
+    let id_a = extract_saved_id(
+        &String::from_utf8(save_a.get_output().stdout.clone()).expect("utf8 stdout"),
+    );
+    let save_b = bin(&home)
+        .args([
+            "save",
+            "new decision body",
+            "--kind",
+            "decision",
+            "--repo",
+            "r",
+        ])
+        .assert()
+        .success();
+    let id_b = extract_saved_id(
+        &String::from_utf8(save_b.get_output().stdout.clone()).expect("utf8 stdout"),
+    );
+
+    // Bootstrap graph nodes: the v1 save command writes only markdown, so we
+    // seed the kuzu `Memory` nodes here. Once Task 18+ wires the upsert into
+    // the save flow, the seeding block can be deleted without touching the
+    // assertions below.
+    let paths = Paths::new(home.path().join(".qwick"));
+    paths.ensure_dirs().expect("ensure dirs");
+    let store = MemoryStore::new(paths.clone());
+    let mems = store.list().expect("list mems");
+    let g = Graph::open(paths.graph_dir()).expect("graph open");
+    for m in &mems {
+        g.upsert_memory(m).expect("upsert memory");
+    }
+    drop(g);
+
+    bin(&home)
+        .args(["supersedes", &id_b, &id_a])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("ok"));
+
+    let walk = bin(&home)
+        .args(["--json", "walk", "--from", &id_b, "--edge", "supersedes"])
+        .assert()
+        .success();
+    let stdout = String::from_utf8(walk.get_output().stdout.clone()).expect("utf8 stdout");
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
+    let arr = v.as_array().expect("top-level JSON array");
+    let ids: Vec<&str> = arr.iter().map(|x| x.as_str().expect("string id")).collect();
+    assert!(
+        ids.contains(&id_a.as_str()),
+        "walk should include the superseded id {id_a}, got {ids:?}"
+    );
+}
+
+#[test]
+fn walk_unsupported_edge_fails() {
+    let home = TempDir::new().expect("tempdir");
+    bin(&home)
+        .args(["walk", "--from", "deadbeef0000", "--edge", "relates"])
+        .assert()
+        .failure();
+}
+
+#[test]
+fn conflicts_for_unknown_id_emits_empty_json_array() {
+    let home = TempDir::new().expect("tempdir");
+    let cmd = bin(&home)
+        .args(["--json", "conflicts", "deadbeef0000"])
+        .assert()
+        .success();
+    let stdout = String::from_utf8(cmd.get_output().stdout.clone()).expect("utf8 stdout");
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
+    let arr = v.as_array().expect("top-level JSON array");
+    assert!(arr.is_empty(), "no conflicts expected: {arr:?}");
+}
+
 /// Runs the headline `context` flow end-to-end: `index-code` against a tiny
 /// fixture repo, then `context <symbol> --json` and parse the bundle. The
 /// first run downloads the jina-code (~300 MB) and nomic-text (~130 MB)

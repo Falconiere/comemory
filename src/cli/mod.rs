@@ -7,6 +7,7 @@ use clap::{Parser, Subcommand};
 use crate::prelude::*;
 
 pub mod ast;
+pub mod conflicts;
 pub mod context;
 pub mod delete;
 pub mod doctor;
@@ -16,7 +17,9 @@ pub mod list;
 pub mod memory_for;
 pub mod save;
 pub mod search;
+pub mod supersedes;
 pub mod symbol;
+pub mod walk;
 
 /// Top-level CLI. `qwick <subcommand> [--json] [--data-dir DIR]`. The `--json`
 /// and `--data-dir` flags are global so callers can place them either before
@@ -69,6 +72,12 @@ pub enum Cmd {
     Ast(ast::Args),
     /// Headline lookup: code symbol + memories matching a key.
     Context(context::Args),
+    /// Walk a graph edge from a memory id (currently `--edge supersedes`).
+    Walk(walk::Args),
+    /// List memories that conflict with the given memory id.
+    Conflicts(conflicts::Args),
+    /// Record that one memory supersedes another in the kuzu graph.
+    Supersedes(supersedes::Args),
 }
 
 /// Dispatch the parsed `Cli` to its subcommand. The dispatcher is the single
@@ -87,6 +96,9 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::MemoryFor(a) => memory_for::run(a, cli.json, cli.data_dir).await,
         Cmd::Ast(a) => ast::run(a, cli.json, cli.data_dir).await,
         Cmd::Context(a) => context::run(a, cli.json, cli.data_dir).await,
+        Cmd::Walk(a) => walk::run(a, cli.json, cli.data_dir).await,
+        Cmd::Conflicts(a) => conflicts::run(a, cli.json, cli.data_dir).await,
+        Cmd::Supersedes(a) => supersedes::run(a, cli.json, cli.data_dir).await,
     }
 }
 
