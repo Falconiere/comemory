@@ -16,7 +16,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:
-          tool: nextest,cargo-deny,typos-cli,cargo-machete
+          tool: nextest,cargo-deny,typos-cli,cargo-machete,similarity-rs
       - run: bash scripts/check-all.sh
       - run: bash scripts/deny-check.sh
       - run: bash scripts/dup-check.sh
