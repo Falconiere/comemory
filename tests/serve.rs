@@ -9,3 +9,6 @@ mod dto;
 
 #[path = "serve/error.rs"]
 mod error;
+
+#[path = "serve/assets.rs"]
+mod assets;

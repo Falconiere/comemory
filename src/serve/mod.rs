@@ -3,6 +3,7 @@
 //! Exposes `qwick-memory graph serve`. Read-only, loopback-only, embedded
 //! frontend served from `frontend/` via `rust-embed`.
 
+pub mod assets;
 pub mod dto;
 pub mod error;
 pub mod state;
