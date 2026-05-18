@@ -12,9 +12,11 @@ pub mod context;
 pub mod delete;
 pub mod doctor;
 pub mod feedback;
+pub mod gc;
 pub mod index_code;
 pub mod list;
 pub mod memory_for;
+pub mod prune;
 pub mod save;
 pub mod search;
 pub mod supersedes;
@@ -78,6 +80,10 @@ pub enum Cmd {
     Conflicts(conflicts::Args),
     /// Record that one memory supersedes another in the kuzu graph.
     Supersedes(supersedes::Args),
+    /// Detect (and optionally soft-delete) stale memories.
+    Prune(prune::Args),
+    /// Purge old entries from `memories/.trash/`.
+    Gc,
 }
 
 /// Dispatch the parsed `Cli` to its subcommand. The dispatcher is the single
@@ -99,6 +105,8 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::Walk(a) => walk::run(a, cli.json, cli.data_dir).await,
         Cmd::Conflicts(a) => conflicts::run(a, cli.json, cli.data_dir).await,
         Cmd::Supersedes(a) => supersedes::run(a, cli.json, cli.data_dir).await,
+        Cmd::Prune(a) => prune::run(a, cli.json, cli.data_dir).await,
+        Cmd::Gc => gc::run(cli.json, cli.data_dir).await,
     }
 }
 

@@ -19,4 +19,6 @@ pub mod retrieval;
 
 pub mod ast;
 
+pub mod prune;
+
 pub mod cli;
