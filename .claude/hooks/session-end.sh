@@ -1,11 +1,21 @@
 #!/usr/bin/env bash
-# Stop hook: run the fast subset of gates so issues surface at end-of-conversation.
+# Stop hook: run fast gates and surface failures.
+set -uo pipefail
 
 PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$PROJECT_ROOT" || exit 0
-echo "[session-end] running fast gates..."
-bash scripts/fmt-check.sh             2>&1 | tail -3 || true
-bash scripts/test-placement-check.sh  2>&1 | tail -3 || true
-bash scripts/no-bypass-check.sh       2>&1 | tail -3 || true
-bash scripts/module-size-check.sh     2>&1 | tail -3 || true
-echo "[session-end] done"
+
+failed=()
+for gate in fmt-check test-placement-check no-bypass-check module-size-check; do
+  if ! out=$(bash "scripts/$gate.sh" 2>&1); then
+    failed+=("$gate")
+    echo "[session-end] FAIL $gate"
+    echo "$out" | tail -10
+  fi
+done
+
+if (( ${#failed[@]} > 0 )); then
+  printf '\n[session-end] %s gate(s) failed: %s\n' "${#failed[@]}" "${failed[*]}"
+  exit 1
+fi
+echo "[session-end] all fast gates passed"

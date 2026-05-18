@@ -17,6 +17,7 @@ use serde::Serialize;
 use crate::cli::resolve_data_dir;
 use crate::config::paths::Paths;
 use crate::index::{CodeIndex, Embedder};
+use crate::output::json;
 use crate::prelude::*;
 
 /// Arguments to `qwick index-code`.
@@ -47,7 +48,7 @@ struct Output {
 }
 
 /// Walk + index the repo and report how many symbols landed in `code_chunks`.
-pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
+pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let _ = a.incremental; // wired in Task 19; accepted now to keep CLI shape stable.
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
@@ -64,10 +65,10 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
         repo: repo.clone(),
         indexed_symbols: n,
     };
-    let mut out = std::io::stdout().lock();
-    if json {
-        writeln!(out, "{}", serde_json::to_string(&report)?)?;
+    if json_flag {
+        json::write(&report)?;
     } else if !a.quiet {
+        let mut out = std::io::stdout().lock();
         writeln!(out, "indexed {n} symbols in repo '{repo}'")?;
     }
     Ok(())

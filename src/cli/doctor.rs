@@ -9,6 +9,7 @@ use serde::Serialize;
 use crate::cli::resolve_data_dir;
 use crate::config::paths::Paths;
 use crate::memory::MemoryStore;
+use crate::output::json;
 use crate::prelude::*;
 
 /// JSON shape emitted under `--json` and used to compute TTY output.
@@ -19,7 +20,7 @@ struct Report {
 }
 
 /// Build and emit the doctor report.
-pub async fn run(json: bool, data_dir: Option<PathBuf>) -> Result<()> {
+pub async fn run(json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
     let store = MemoryStore::new(paths.clone());
@@ -27,10 +28,10 @@ pub async fn run(json: bool, data_dir: Option<PathBuf>) -> Result<()> {
         data_dir: paths.data_dir().to_string_lossy().into_owned(),
         memories_count: store.list()?.len(),
     };
-    let mut out = std::io::stdout().lock();
-    if json {
-        writeln!(out, "{}", serde_json::to_string(&report)?)?;
+    if json_flag {
+        json::write(&report)?;
     } else {
+        let mut out = std::io::stdout().lock();
         writeln!(out, "data_dir       : {}", report.data_dir)?;
         writeln!(out, "memories_count : {}", report.memories_count)?;
     }

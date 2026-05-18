@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Reject forbidden patterns in new content for Edit/Write/MultiEdit on src/*.rs.
 # Pattern list mirrors scripts/no-bypass-check.sh — keep in sync.
+set -uo pipefail
 
 : "${tool_name:=}"
 : "${input:=}"

@@ -6,7 +6,11 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 source "$HERE/lib/common.sh"
 cd "$PROJECT_ROOT"
 if ! command -v similarity-rs >/dev/null 2>&1; then
-  log_info "dup-check" "similarity-rs not installed; skipping (install with 'cargo install similarity-rs')"
+  if [[ -n "${CI:-}" ]]; then
+    log_err "dup-check" "similarity-rs required in CI (cargo install similarity-rs)"
+    exit 1
+  fi
+  log_info "dup-check" "similarity-rs not installed; skipping locally"
   exit 0
 fi
 # Threshold 0.85 ≈ near-clones; treat any hit as failure.

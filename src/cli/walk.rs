@@ -14,6 +14,7 @@ use clap::Args as ClapArgs;
 use crate::cli::resolve_data_dir;
 use crate::config::paths::Paths;
 use crate::graph::Graph;
+use crate::output::json;
 use crate::prelude::*;
 
 /// Arguments to `qwick walk`.
@@ -31,7 +32,7 @@ pub struct Args {
 }
 
 /// Walk the requested edge and render the reachable ids.
-pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
+pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
     let g = Graph::open(paths.graph_dir())?;
@@ -40,10 +41,10 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
         other => return Err(Error::Other(format!("unsupported edge: {other}"))),
     };
 
-    let mut out = std::io::stdout().lock();
-    if json {
-        writeln!(out, "{}", serde_json::to_string(&ids)?)?;
+    if json_flag {
+        json::write(&ids)?;
     } else {
+        let mut out = std::io::stdout().lock();
         for id in &ids {
             writeln!(out, "{id}")?;
         }

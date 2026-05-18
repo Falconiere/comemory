@@ -8,6 +8,7 @@ use clap::Args as ClapArgs;
 
 use crate::cli::resolve_data_dir;
 use crate::config::paths::Paths;
+use crate::output::json;
 use crate::prelude::*;
 use crate::stats::feedback::Feedback;
 use crate::stats::sqlite::StatsDb;
@@ -26,19 +27,32 @@ pub struct Args {
     pub irrelevant: String,
 }
 
-/// Record feedback for each id provided and emit a one-line ack.
-pub async fn run(a: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<()> {
+/// Record feedback for each id provided and emit a one-line ack (or a JSON
+/// envelope with the recorded counts when `json` is set).
+pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
     let mut db = StatsDb::open(paths.stats_db())?;
     let fb = Feedback::new(&mut db);
+    let mut used = 0usize;
+    let mut irrelevant = 0usize;
     for id in a.used.split(',').filter(|s| !s.is_empty()) {
         fb.record_used(id)?;
+        used += 1;
     }
     for id in a.irrelevant.split(',').filter(|s| !s.is_empty()) {
         fb.record_irrelevant(id)?;
+        irrelevant += 1;
     }
-    let mut out = std::io::stdout().lock();
-    writeln!(out, "ok")?;
+    if json_flag {
+        json::write(&serde_json::json!({
+            "ok": true,
+            "used": used,
+            "irrelevant": irrelevant,
+        }))?;
+    } else {
+        let mut out = std::io::stdout().lock();
+        writeln!(out, "ok")?;
+    }
     Ok(())
 }

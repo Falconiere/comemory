@@ -15,6 +15,7 @@ use serde::Serialize;
 use crate::cli::resolve_data_dir;
 use crate::config::paths::Paths;
 use crate::memory::MemoryStore;
+use crate::output::json;
 use crate::prelude::*;
 use crate::prune::{low_value, orphans};
 
@@ -49,7 +50,7 @@ pub struct Report {
 
 /// Detect stale memories per the requested gates and (optionally) soft-delete
 /// low-value matches. Returns once the report is rendered.
-pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
+pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
 
@@ -79,10 +80,10 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
         low_value: low_ids,
         applied: a.apply,
     };
-    let mut out = std::io::stdout().lock();
-    if json {
-        writeln!(out, "{}", serde_json::to_string(&report)?)?;
+    if json_flag {
+        json::write(&report)?;
     } else {
+        let mut out = std::io::stdout().lock();
         writeln!(out, "orphans:   {:?}", report.orphans)?;
         writeln!(out, "low_value: {:?}", report.low_value)?;
         writeln!(out, "applied:   {}", report.applied)?;

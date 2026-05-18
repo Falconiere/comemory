@@ -18,6 +18,7 @@ use std::path::PathBuf;
 use clap::Args as ClapArgs;
 
 use crate::git_utils::install_hook;
+use crate::output::json;
 use crate::prelude::*;
 
 /// Arguments to `qwick install-hooks`.
@@ -49,7 +50,7 @@ const HOOKS: &[&str] = &["post-commit", "post-merge", "post-checkout"];
 /// success the human-readable line lists the hooks that were written; under
 /// `--json` we emit a small object so callers can detect success
 /// programmatically.
-pub async fn run(a: Args, json: bool, _data_dir: Option<PathBuf>) -> Result<()> {
+pub async fn run(a: Args, json_flag: bool, _data_dir: Option<PathBuf>) -> Result<()> {
     for hook in HOOKS {
         let target = a.repo.join(".git").join("hooks").join(hook);
         if target.exists() && !a.force {
@@ -60,17 +61,13 @@ pub async fn run(a: Args, json: bool, _data_dir: Option<PathBuf>) -> Result<()> 
         }
         install_hook(&a.repo, hook, SCRIPT)?;
     }
-    let mut out = std::io::stdout().lock();
-    if json {
-        writeln!(
-            out,
-            "{}",
-            serde_json::to_string(&serde_json::json!({
-              "installed": HOOKS,
-              "repo": a.repo.display().to_string(),
-            }))?
-        )?;
+    if json_flag {
+        json::write(&serde_json::json!({
+            "installed": HOOKS,
+            "repo": a.repo.display().to_string(),
+        }))?;
     } else {
+        let mut out = std::io::stdout().lock();
         writeln!(
             out,
             "installed {} hooks in {}",

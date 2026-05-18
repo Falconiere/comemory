@@ -2,6 +2,7 @@
 # Track exit codes of recognized quality commands and persist to
 # .claude/tmp/quality-gate-status.json. Emit a PostToolUse.additionalContext
 # warning when a gate fails so the agent surfaces the issue next turn.
+set -uo pipefail
 
 : "${tool_name:=}"; : "${input:=}"; : "${PROJECT_ROOT:=$(pwd)}"
 [[ "$tool_name" != "Bash" && "$tool_name" != "Shell" ]] && exit 0
@@ -31,6 +32,6 @@ fi
 
 if [[ "$exit_code" == "0" ]]; then
   jq -n --arg s "passing" --arg c "$command" --arg t "$ts" \
-    '{status:$s, command:$c, updatedAt:$t}' > "$GATE_FILE"
+    '{status:$s, command:$c, exit_code:0, updatedAt:$t, source:"gate-status-hook"}' > "$GATE_FILE"
 fi
 exit 0

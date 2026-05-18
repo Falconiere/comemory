@@ -16,6 +16,7 @@ use clap::Args as ClapArgs;
 use crate::cli::resolve_data_dir;
 use crate::config::paths::Paths;
 use crate::graph::Graph;
+use crate::output::json;
 use crate::prelude::*;
 
 /// Arguments to `qwick supersedes`.
@@ -27,13 +28,22 @@ pub struct Args {
     pub old_id: String,
 }
 
-/// Record the `:Supersedes` edge and emit a success line.
-pub async fn run(a: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<()> {
+/// Record the `:Supersedes` edge and emit a success line (or a JSON envelope
+/// with the new/old ids when `json` is set).
+pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
     let g = Graph::open(paths.graph_dir())?;
     g.add_supersedes(&a.new_id, &a.old_id)?;
-    let mut out = std::io::stdout().lock();
-    writeln!(out, "ok")?;
+    if json_flag {
+        json::write(&serde_json::json!({
+            "ok": true,
+            "new": a.new_id,
+            "old": a.old_id,
+        }))?;
+    } else {
+        let mut out = std::io::stdout().lock();
+        writeln!(out, "ok")?;
+    }
     Ok(())
 }

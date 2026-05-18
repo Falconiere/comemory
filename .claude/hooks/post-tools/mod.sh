@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Post-tool-use dispatcher.
+set -uo pipefail
 
 input=$(cat 2>/dev/null || echo "{}")
 tool_name=$(echo "$input" | jq -r '.tool_name // ""' 2>/dev/null || echo "")

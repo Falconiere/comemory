@@ -1,8 +1,9 @@
 //! `qwick context` — headline lookup. Embeds `key` with **both** the
 //! jina-code embedder (for the `code_chunks` table) and the nomic-text
-//! embedder (for the memory index), then returns a single `Bundle` with the
-//! best matching code symbol + top memories. JSON output is machine-friendly;
-//! TTY output reads as "here's the symbol, here are the memories".
+//! embedder (for the memory index), then returns a single `ContextBundle`
+//! with the best matching code symbol + top memories. JSON output is
+//! machine-friendly; TTY output reads as "here's the symbol, here are the
+//! memories".
 //!
 //! The `depth` flag is accepted for shape compatibility with Task 17's graph
 //! walk extension; the current implementation surfaces the 0-hop slice
@@ -17,7 +18,7 @@ use serde::Serialize;
 use crate::cli::resolve_data_dir;
 use crate::config::paths::Paths;
 use crate::index::{CodeIndex, Embedder, MemoryIndex};
-use crate::memory::MemoryStore;
+use crate::output::json;
 use crate::prelude::*;
 use crate::retrieval::hybrid::{search_code, search_memory};
 
@@ -33,9 +34,10 @@ pub struct Args {
     pub depth: u32,
 }
 
-/// JSON envelope returned to callers.
+/// JSON envelope returned to callers. Named `ContextBundle` so it doesn't
+/// collide with `retrieval::Bundle`.
 #[derive(Serialize)]
-struct Bundle {
+struct ContextBundle {
     key: String,
     symbol: Option<SymbolView>,
     memories: Vec<MemoryView>,
@@ -59,7 +61,7 @@ struct MemoryView {
 }
 
 /// Build the bundle and render JSON or TTY view.
-pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
+pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let _ = a.depth; // wired in Task 17 (graph walks).
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
@@ -88,17 +90,16 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
         })
         .collect();
 
-    let _ = MemoryStore::new(paths); // reserved for graph-walked memories in Task 17.
-    let bundle = Bundle {
+    let bundle = ContextBundle {
         key: a.key.clone(),
         symbol,
         memories,
     };
 
-    let mut out = std::io::stdout().lock();
-    if json {
-        writeln!(out, "{}", serde_json::to_string(&bundle)?)?;
+    if json_flag {
+        json::write(&bundle)?;
     } else {
+        let mut out = std::io::stdout().lock();
         if let Some(s) = &bundle.symbol {
             writeln!(out, "symbol: {} ({:.3})", s.qualified, s.score)?;
             writeln!(out, "{}", s.snippet)?;

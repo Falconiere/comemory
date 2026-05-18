@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Auto-format touched files (silent on success). Rust via rustfmt, TOML via taplo (if present).
+set -uo pipefail
 
 : "${tool_name:=}"; : "${input:=}"; : "${PROJECT_ROOT:=$(pwd)}"
 [[ "$tool_name" != "Edit" && "$tool_name" != "Write" && "$tool_name" != "MultiEdit" ]] && exit 0

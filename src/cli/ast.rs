@@ -10,6 +10,7 @@ use serde::Serialize;
 
 use crate::ast::pattern::find;
 use crate::ast::Lang;
+use crate::output::json;
 use crate::prelude::*;
 
 /// Arguments to `qwick ast`.
@@ -34,10 +35,11 @@ struct Row {
 }
 
 /// Read the file, run the pattern, and print matches.
-pub async fn run(a: Args, json: bool, _data_dir: Option<PathBuf>) -> Result<()> {
+pub async fn run(a: Args, json_flag: bool, _data_dir: Option<PathBuf>) -> Result<()> {
     let lang = match a.lang.as_str() {
         "rs" | "rust" => Lang::Rust,
-        "ts" | "tsx" => Lang::TypeScript,
+        "ts" => Lang::TypeScript,
+        "tsx" => Lang::Tsx,
         "js" | "jsx" => Lang::JavaScript,
         "py" => Lang::Python,
         other => return Err(Error::Other(format!("unsupported lang: {other}"))),
@@ -49,10 +51,10 @@ pub async fn run(a: Args, json: bool, _data_dir: Option<PathBuf>) -> Result<()> 
         .map(|(line, text)| Row { line, text })
         .collect();
 
-    let mut out = std::io::stdout().lock();
-    if json {
-        writeln!(out, "{}", serde_json::to_string(&rows)?)?;
+    if json_flag {
+        json::write(&rows)?;
     } else {
+        let mut out = std::io::stdout().lock();
         for r in &rows {
             writeln!(out, "{}:{}  {}", a.file.display(), r.line, r.text)?;
         }

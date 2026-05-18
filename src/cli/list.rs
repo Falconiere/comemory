@@ -11,6 +11,7 @@ use serde::Serialize;
 use crate::cli::resolve_data_dir;
 use crate::config::paths::Paths;
 use crate::memory::MemoryStore;
+use crate::output::json;
 use crate::prelude::*;
 
 /// Arguments to `qwick list`.
@@ -34,7 +35,7 @@ struct Row {
 }
 
 /// List filtered memories from disk.
-pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
+pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
     let mut all = MemoryStore::new(paths).list()?;
@@ -59,10 +60,10 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
         })
         .collect();
 
-    let mut out = std::io::stdout().lock();
-    if json {
-        writeln!(out, "{}", serde_json::to_string(&rows)?)?;
+    if json_flag {
+        json::write(&rows)?;
     } else {
+        let mut out = std::io::stdout().lock();
         for r in &rows {
             writeln!(out, "{}  {}  {}  {}", r.id, r.kind, r.repo, r.slug)?;
         }

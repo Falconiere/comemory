@@ -14,6 +14,7 @@ use time::{Duration, OffsetDateTime};
 
 use crate::cli::resolve_data_dir;
 use crate::config::paths::Paths;
+use crate::output::json;
 use crate::prelude::*;
 
 const RETENTION_DAYS: i64 = 30;
@@ -21,7 +22,7 @@ const RETENTION_DAYS: i64 = 30;
 /// Remove every file in the trash directory whose mtime is older than the
 /// retention window (`RETENTION_DAYS` days). Missing trash directory is a
 /// no-op. Reports the count of files removed.
-pub async fn run(json: bool, data_dir: Option<PathBuf>) -> Result<()> {
+pub async fn run(json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     let _cutoff = OffsetDateTime::now_utc() - Duration::days(RETENTION_DAYS);
     let mut removed = 0u64;
@@ -41,14 +42,10 @@ pub async fn run(json: bool, data_dir: Option<PathBuf>) -> Result<()> {
         }
     }
 
-    let mut out = std::io::stdout().lock();
-    if json {
-        writeln!(
-            out,
-            "{}",
-            serde_json::to_string(&serde_json::json!({ "removed": removed }))?
-        )?;
+    if json_flag {
+        json::write(&serde_json::json!({ "removed": removed }))?;
     } else {
+        let mut out = std::io::stdout().lock();
         writeln!(out, "gc removed {removed} trashed memories")?;
     }
     Ok(())

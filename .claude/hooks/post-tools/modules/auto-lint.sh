@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Auto-lint with clippy --fix on touched src/ or tests/ Rust files (silent on success).
+set -uo pipefail
 
 : "${tool_name:=}"; : "${input:=}"; : "${PROJECT_ROOT:=$(pwd)}"
 [[ "$tool_name" != "Edit" && "$tool_name" != "Write" && "$tool_name" != "MultiEdit" ]] && exit 0

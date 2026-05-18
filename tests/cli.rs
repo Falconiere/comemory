@@ -210,6 +210,49 @@ fn feedback_records_used_and_irrelevant_ids() {
 }
 
 #[test]
+fn feedback_json_emits_counts() {
+    // Under `--json`, `feedback` must emit a structured envelope reporting
+    // how many used/irrelevant ids were recorded, instead of the bare `ok`
+    // line. This is what callers piping into other tools rely on.
+    let home = TempDir::new().expect("tempdir");
+    let cmd = bin(&home)
+        .args([
+            "--json",
+            "feedback",
+            "q1",
+            "--used",
+            "aaa,bbb",
+            "--irrelevant",
+            "ccc",
+        ])
+        .assert()
+        .success();
+    let stdout = String::from_utf8(cmd.get_output().stdout.clone()).expect("utf8 stdout");
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
+    assert_eq!(v["ok"].as_bool(), Some(true));
+    assert_eq!(v["used"].as_u64(), Some(2));
+    assert_eq!(v["irrelevant"].as_u64(), Some(1));
+}
+
+#[test]
+fn supersedes_json_emits_ids() {
+    // Under `--json`, `supersedes` must emit `{ok, new, old}` instead of the
+    // bare `ok` line. The graph upsert is a no-op for unknown ids per
+    // [`Graph::add_supersedes`] semantics — the JSON shape is what we lock in
+    // here.
+    let home = TempDir::new().expect("tempdir");
+    let cmd = bin(&home)
+        .args(["--json", "supersedes", "newid000000", "oldid000000"])
+        .assert()
+        .success();
+    let stdout = String::from_utf8(cmd.get_output().stdout.clone()).expect("utf8 stdout");
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
+    assert_eq!(v["ok"].as_bool(), Some(true));
+    assert_eq!(v["new"].as_str(), Some("newid000000"));
+    assert_eq!(v["old"].as_str(), Some("oldid000000"));
+}
+
+#[test]
 fn delete_missing_id_fails() {
     // Fresh data dir: `delete` must call `ensure_dirs` before opening the
     // store so the missing-id case surfaces "memory not found" instead of an

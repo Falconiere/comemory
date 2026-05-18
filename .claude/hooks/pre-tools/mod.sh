@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Pre-tool-use dispatcher. Runs every module; first non-empty stdout wins.
+set -uo pipefail
 
 input=$(cat)
 tool_name=$(echo "$input" | jq -r '.tool_name // ""' 2>/dev/null || echo "")

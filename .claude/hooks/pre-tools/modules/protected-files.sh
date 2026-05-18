@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Block edits to vendored/build/protected paths.
+set -uo pipefail
 
 : "${tool_name:=}"
 : "${input:=}"

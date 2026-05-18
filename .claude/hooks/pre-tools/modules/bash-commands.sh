@@ -4,6 +4,7 @@
 #   2. Block destructive commands (rm -rf, git push --force, git reset --hard, chmod -R 777)
 #   3. Block bypass flags (--no-verify, --no-gpg-sign)
 #   4. Block direct rustfmt/clippy invocation — must go through scripts/ or just
+set -uo pipefail
 
 : "${tool_name:=}"
 : "${input:=}"
