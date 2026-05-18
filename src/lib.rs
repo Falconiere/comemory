@@ -8,3 +8,5 @@ pub mod errors;
 pub mod config;
 
 pub mod memory;
+
+pub mod stats;
