@@ -65,6 +65,7 @@ pub enum Cmd {
     /// Record per-memory feedback (used vs irrelevant).
     Feedback(feedback::Args),
     /// Report on the data directory and memory count.
+    #[command(after_help = doctor::EXAMPLES)]
     Doctor,
     /// Walk a repo, extract symbols, and upsert into the code index.
     IndexCode(index_code::Args),
@@ -87,6 +88,7 @@ pub enum Cmd {
     /// Detect (and optionally soft-delete) stale memories.
     Prune(prune::Args),
     /// Purge old entries from `memories/.trash/`.
+    #[command(after_help = gc::EXAMPLES)]
     Gc,
     /// Install git hooks that trigger `qwick-memory index-code --incremental` on
     /// `post-commit`, `post-merge`, and `post-checkout`.

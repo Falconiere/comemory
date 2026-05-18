@@ -17,8 +17,13 @@ use crate::graph::Graph;
 use crate::output::json;
 use crate::prelude::*;
 
+const EXAMPLES: &str = "\
+Examples:
+  qwick-memory walk --from a1b2c3d4 --edge supersedes --depth 5 --json";
+
 /// Arguments to `qwick-memory walk`.
 #[derive(ClapArgs, Debug)]
+#[command(after_help = EXAMPLES)]
 pub struct Args {
     /// Memory id to start walking from.
     #[arg(long)]

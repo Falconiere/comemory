@@ -12,8 +12,14 @@ use crate::config::paths::Paths;
 use crate::memory::MemoryStore;
 use crate::prelude::*;
 
+const EXAMPLES: &str = "\
+Examples:
+  qwick-memory delete a1b2c3d4
+  qwick-memory delete a1b2c3d4 --json";
+
 /// Arguments to `qwick-memory delete`.
 #[derive(ClapArgs, Debug)]
+#[command(after_help = EXAMPLES)]
 pub struct Args {
     /// 12-hex memory id to delete.
     pub id: String,

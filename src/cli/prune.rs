@@ -19,8 +19,15 @@ use crate::output::json;
 use crate::prelude::*;
 use crate::prune::{low_value, orphans};
 
+const EXAMPLES: &str = "\
+Examples:
+  qwick-memory prune --orphans
+  qwick-memory prune --orphans --apply
+  qwick-memory prune --low-value --below-quality 2 --unused-since 180 --apply";
+
 /// Arguments to `qwick-memory prune`.
 #[derive(ClapArgs, Debug)]
+#[command(after_help = EXAMPLES)]
 pub struct Args {
     /// Detect orphan entries in `memories/.trash/`.
     #[arg(long)]

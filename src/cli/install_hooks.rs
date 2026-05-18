@@ -21,8 +21,14 @@ use crate::git_utils::install_hook;
 use crate::output::json;
 use crate::prelude::*;
 
+const EXAMPLES: &str = "\
+Examples:
+  qwick-memory install-hooks --repo .
+  qwick-memory install-hooks --repo /path/to/repo --force";
+
 /// Arguments to `qwick-memory install-hooks`.
 #[derive(ClapArgs, Debug)]
+#[command(after_help = EXAMPLES)]
 pub struct Args {
     /// Repo root to install hooks into. Defaults to the current working
     /// directory.

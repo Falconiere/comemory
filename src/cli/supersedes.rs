@@ -19,8 +19,13 @@ use crate::graph::Graph;
 use crate::output::json;
 use crate::prelude::*;
 
+const EXAMPLES: &str = "\
+Examples:
+  qwick-memory supersedes e5f6a7b8 a1b2c3d4";
+
 /// Arguments to `qwick-memory supersedes`.
 #[derive(ClapArgs, Debug)]
+#[command(after_help = EXAMPLES)]
 pub struct Args {
     /// Memory id of the **new** decision (the one that supersedes).
     pub new_id: String,

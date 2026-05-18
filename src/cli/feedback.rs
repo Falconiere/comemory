@@ -13,9 +13,14 @@ use crate::prelude::*;
 use crate::stats::feedback::Feedback;
 use crate::stats::sqlite::StatsDb;
 
+const EXAMPLES: &str = "\
+Examples:
+  qwick-memory feedback q-2026-05-17-001 --used a1b2c3d4,e5f6a7b8 --irrelevant 0011223344";
+
 /// Arguments to `qwick-memory feedback`. `query_id` is captured for future provenance;
 /// it is accepted today but does not yet influence storage.
 #[derive(ClapArgs, Debug)]
+#[command(after_help = EXAMPLES)]
 pub struct Args {
     /// Identifier of the originating search query (recorded for provenance).
     pub query_id: String,

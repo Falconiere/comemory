@@ -17,9 +17,15 @@ use crate::graph::Graph;
 use crate::memory::{Kind, MemoryStore};
 use crate::prelude::*;
 
+const EXAMPLES: &str = "\
+Examples:
+  qwick-memory save \"Use Postgres for analytics\" --kind decision --repo myrepo --tags db,postgres --quality 4
+  echo \"Race in run_migration when run twice in <1s\" | qwick-memory save - --kind bug --repo myrepo";
+
 /// Arguments to `qwick-memory save`. The positional `body` is optional — if omitted
 /// or `-`, the body is read from stdin so callers can pipe content.
 #[derive(ClapArgs, Debug)]
+#[command(after_help = EXAMPLES)]
 pub struct Args {
     /// Memory body. Use `-` (or omit) to read from stdin.
     pub body: Option<String>,

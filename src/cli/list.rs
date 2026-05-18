@@ -14,8 +14,14 @@ use crate::memory::MemoryStore;
 use crate::output::json;
 use crate::prelude::*;
 
+const EXAMPLES: &str = "\
+Examples:
+  qwick-memory list --repo myrepo --kind decision
+  qwick-memory list --json";
+
 /// Arguments to `qwick-memory list`.
 #[derive(ClapArgs, Debug)]
+#[command(after_help = EXAMPLES)]
 pub struct Args {
     /// Filter to memories whose `repo` matches exactly.
     #[arg(long)]

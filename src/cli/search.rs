@@ -34,8 +34,14 @@ const MEMORY_THRESHOLD: f32 = 0.55;
 /// `retrieval::corrective::should_fallback`.
 const FALLBACK_MIN_CONFIDENCE: f32 = 0.15;
 
+const EXAMPLES: &str = "\
+Examples:
+  qwick-memory search \"postgres migration race\"
+  qwick-memory search \"what database do we use\" --limit 5 --json";
+
 /// Arguments to `qwick-memory search`.
 #[derive(ClapArgs, Debug)]
+#[command(after_help = EXAMPLES)]
 pub struct Args {
     /// Natural-language query string.
     pub query: String,

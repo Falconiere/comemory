@@ -7,6 +7,12 @@ use std::path::PathBuf;
 use serde::Serialize;
 
 use crate::cli::resolve_data_dir;
+
+/// Example invocations shown at the bottom of `qwick-memory doctor --help`.
+pub const EXAMPLES: &str = "\
+Examples:
+  qwick-memory doctor
+  qwick-memory doctor --json";
 use crate::config::paths::Paths;
 use crate::memory::MemoryStore;
 use crate::output::json;

@@ -13,8 +13,14 @@ use crate::ast::Lang;
 use crate::output::json;
 use crate::prelude::*;
 
+const EXAMPLES: &str = "\
+Examples:
+  qwick-memory ast 'fn $NAME($$$ARGS) -> Result<$RET>' --lang rs --file src/db.rs
+  qwick-memory ast 'tokio::spawn($$$)' --lang rs --file src/lib.rs --json";
+
 /// Arguments to `qwick-memory ast`.
 #[derive(ClapArgs, Debug)]
+#[command(after_help = EXAMPLES)]
 pub struct Args {
     /// ast-grep pattern (`$VAR`, `$$$ARGS`, etc.).
     pub pattern: String,

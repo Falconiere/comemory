@@ -20,8 +20,14 @@ use crate::memory::MemoryStore;
 use crate::output::json;
 use crate::prelude::*;
 
+const EXAMPLES: &str = "\
+Examples:
+  qwick-memory memory-for myrepo:src/db.rs:run_migration
+  qwick-memory memory-for myrepo:src/db.rs";
+
 /// Arguments to `qwick-memory memory-for`.
 #[derive(ClapArgs, Debug)]
+#[command(after_help = EXAMPLES)]
 pub struct Args {
     /// Qualified symbol (`<repo>:<path>:<symbol>`) or file path
     /// (`<repo>:<path>`) to look up.

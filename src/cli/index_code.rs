@@ -20,8 +20,14 @@ use crate::index::{CodeIndex, Embedder};
 use crate::output::json;
 use crate::prelude::*;
 
+const EXAMPLES: &str = "\
+Examples:
+  qwick-memory index-code --root . --repo myrepo
+  qwick-memory index-code --root /path/to/repo --incremental --quiet";
+
 /// Arguments to `qwick-memory index-code`.
 #[derive(ClapArgs, Debug)]
+#[command(after_help = EXAMPLES)]
 pub struct Args {
     /// Repo root to walk. Defaults to the current working directory.
     #[arg(long, default_value = ".")]

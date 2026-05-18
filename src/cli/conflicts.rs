@@ -14,8 +14,14 @@ use crate::graph::Graph;
 use crate::output::json;
 use crate::prelude::*;
 
+const EXAMPLES: &str = "\
+Examples:
+  qwick-memory conflicts a1b2c3d4
+  qwick-memory conflicts a1b2c3d4 --json";
+
 /// Arguments to `qwick-memory conflicts`.
 #[derive(ClapArgs, Debug)]
+#[command(after_help = EXAMPLES)]
 pub struct Args {
     /// Memory id whose outgoing `:ConflictsWith` edges should be listed.
     pub id: String,

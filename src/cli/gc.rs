@@ -14,6 +14,12 @@ use crate::config::paths::Paths;
 use crate::output::json;
 use crate::prelude::*;
 
+/// Example invocations shown at the bottom of `qwick-memory gc --help`.
+pub const EXAMPLES: &str = "\
+Examples:
+  qwick-memory gc
+  qwick-memory gc --json";
+
 const RETENTION_DAYS: i64 = 30;
 
 /// Remove every file in the trash directory whose mtime is older than the

@@ -15,8 +15,14 @@ use crate::output::json;
 use crate::prelude::*;
 use crate::retrieval::hybrid::search_code;
 
+const EXAMPLES: &str = "\
+Examples:
+  qwick-memory symbol run_migration
+  qwick-memory symbol \"parse frontmatter yaml\" --limit 10 --json";
+
 /// Arguments to `qwick-memory symbol`.
 #[derive(ClapArgs, Debug)]
+#[command(after_help = EXAMPLES)]
 pub struct Args {
     /// Free-form symbol name (or descriptor) to search for.
     pub name: String,

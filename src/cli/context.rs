@@ -22,8 +22,14 @@ use crate::output::json;
 use crate::prelude::*;
 use crate::retrieval::hybrid::{search_code, search_memory};
 
+const EXAMPLES: &str = "\
+Examples:
+  qwick-memory context run_migration --json
+  qwick-memory context \"postgres migration race\" --depth 2";
+
 /// Arguments to `qwick-memory context`.
 #[derive(ClapArgs, Debug)]
+#[command(after_help = EXAMPLES)]
 pub struct Args {
     /// Free-form key — symbol name, file path fragment, or natural-language
     /// phrase. Embedded against both the code index and the memory index.
