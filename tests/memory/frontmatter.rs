@@ -31,3 +31,30 @@ fn split_separates_frontmatter_and_body() {
     assert_eq!(fm.id, "a1b2c3d4");
     assert_eq!(body.trim(), "hello body");
 }
+
+#[test]
+fn kind_as_str_round_trips() {
+    // Pair (variant, wire form) for every Kind. Adding a variant without
+    // updating Kind::as_str will fail the round-trip below.
+    let cases: &[(Kind, &str)] = &[
+        (Kind::Decision, "decision"),
+        (Kind::Bug, "bug"),
+        (Kind::Convention, "convention"),
+        (Kind::Discovery, "discovery"),
+        (Kind::Pattern, "pattern"),
+        (Kind::Note, "note"),
+    ];
+    for (variant, expected) in cases {
+        assert_eq!(variant.as_str(), *expected, "as_str for {:?}", variant);
+        assert_eq!(
+            Kind::parse_or_note(expected),
+            *variant,
+            "parse_or_note for {expected}"
+        );
+    }
+
+    // Unknown strings fall through to Note instead of panicking.
+    assert_eq!(Kind::parse_or_note(""), Kind::Note);
+    assert_eq!(Kind::parse_or_note("DECISION"), Kind::Note); // case-sensitive
+    assert_eq!(Kind::parse_or_note("preference"), Kind::Note);
+}

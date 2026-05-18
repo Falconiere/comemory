@@ -19,11 +19,55 @@ fn env_overrides_apply() {
     // SAFETY: serial within this test; env vars scoped and removed after read.
     std::env::set_var("QWICK_INDEXING_AUTO_REINDEX", "hook");
     std::env::set_var("QWICK_RETRIEVAL_TOP_K", "20");
-    let c = Config::defaults().with_env();
+    let c = Config::defaults().with_env().unwrap();
     std::env::remove_var("QWICK_INDEXING_AUTO_REINDEX");
     std::env::remove_var("QWICK_RETRIEVAL_TOP_K");
     assert!(matches!(c.indexing.auto_reindex, AutoReindexMode::Hook));
     assert_eq!(c.retrieval.top_k, 20);
+}
+
+#[test]
+fn env_rejects_invalid_top_k() {
+    // Non-numeric top_k must surface as Err instead of silently keeping the
+    // default; otherwise typos go unnoticed until retrieval misbehaves.
+    std::env::set_var("QWICK_RETRIEVAL_TOP_K", "not-a-number");
+    let result = Config::defaults().with_env();
+    std::env::remove_var("QWICK_RETRIEVAL_TOP_K");
+    let err = result.expect_err("invalid top_k must error");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("QWICK_RETRIEVAL_TOP_K"),
+        "error message should name the offending var, got: {msg}"
+    );
+}
+
+#[test]
+fn env_rejects_invalid_auto_reindex() {
+    // Unknown mode (typo of "hook") must error, not fall through to Lazy.
+    std::env::set_var("QWICK_INDEXING_AUTO_REINDEX", "hooks");
+    let result = Config::defaults().with_env();
+    std::env::remove_var("QWICK_INDEXING_AUTO_REINDEX");
+    let err = result.expect_err("unknown auto_reindex must error");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("QWICK_INDEXING_AUTO_REINDEX"),
+        "error message should name the offending var, got: {msg}"
+    );
+}
+
+#[test]
+fn env_rejects_invalid_auto_sync() {
+    // Boolean parser only accepts true|1|yes|on / false|0|no|off; anything
+    // else (e.g. "maybe") must error.
+    std::env::set_var("QWICK_GIT_AUTO_SYNC", "maybe");
+    let result = Config::defaults().with_env();
+    std::env::remove_var("QWICK_GIT_AUTO_SYNC");
+    let err = result.expect_err("unknown auto_sync must error");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("QWICK_GIT_AUTO_SYNC"),
+        "error message should name the offending var, got: {msg}"
+    );
 }
 
 #[test]

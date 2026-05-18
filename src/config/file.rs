@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::prelude::*;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum AutoReindexMode {
@@ -94,32 +96,56 @@ impl Config {
         }
     }
 
-    pub fn with_env(mut self) -> Self {
+    /// Apply `QWICK_*` env-var overrides on top of `self`.
+    ///
+    /// Unlike the previous infallible variant, parse failures (non-numeric
+    /// `top_k` / thresholds, unknown `auto_reindex` mode, unknown boolean for
+    /// `auto_sync`) are now surfaced as `Error::Other` rather than silently
+    /// dropped. This catches typos at startup instead of letting them mask as
+    /// "defaults applied".
+    pub fn with_env(mut self) -> Result<Self> {
         if let Ok(v) = std::env::var("QWICK_INDEXING_AUTO_REINDEX") {
             self.indexing.auto_reindex = match v.as_str() {
+                "lazy" => AutoReindexMode::Lazy,
                 "hook" => AutoReindexMode::Hook,
                 "off" => AutoReindexMode::Off,
-                _ => AutoReindexMode::Lazy,
+                other => {
+                    return Err(Error::Other(format!(
+                        "invalid env var QWICK_INDEXING_AUTO_REINDEX: '{other}' (expected lazy|hook|off)"
+                    )));
+                }
             };
         }
         if let Ok(v) = std::env::var("QWICK_RETRIEVAL_TOP_K") {
-            if let Ok(n) = v.parse() {
-                self.retrieval.top_k = n;
-            }
+            self.retrieval.top_k = v
+                .parse::<usize>()
+                .map_err(|e| Error::Other(format!("invalid env var QWICK_RETRIEVAL_TOP_K: {e}")))?;
         }
         if let Ok(v) = std::env::var("QWICK_RETRIEVAL_MEMORY_THRESHOLD") {
-            if let Ok(n) = v.parse() {
-                self.retrieval.memory_threshold = n;
-            }
+            self.retrieval.memory_threshold = v.parse::<f32>().map_err(|e| {
+                Error::Other(format!(
+                    "invalid env var QWICK_RETRIEVAL_MEMORY_THRESHOLD: {e}"
+                ))
+            })?;
         }
         if let Ok(v) = std::env::var("QWICK_RETRIEVAL_CODE_THRESHOLD") {
-            if let Ok(n) = v.parse() {
-                self.retrieval.code_threshold = n;
-            }
+            self.retrieval.code_threshold = v.parse::<f32>().map_err(|e| {
+                Error::Other(format!(
+                    "invalid env var QWICK_RETRIEVAL_CODE_THRESHOLD: {e}"
+                ))
+            })?;
         }
         if let Ok(v) = std::env::var("QWICK_GIT_AUTO_SYNC") {
-            self.git.auto_sync = v == "true" || v == "1";
+            self.git.auto_sync = match v.as_str() {
+                "true" | "1" | "yes" | "on" => true,
+                "false" | "0" | "no" | "off" => false,
+                other => {
+                    return Err(Error::Other(format!(
+                        "invalid env var QWICK_GIT_AUTO_SYNC: '{other}' (expected true|1|yes|on or false|0|no|off)"
+                    )));
+                }
+            };
         }
-        self
+        Ok(self)
     }
 }

@@ -3,12 +3,11 @@
 use std::fs;
 use std::path::PathBuf;
 
-use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 
 use crate::config::paths::Paths;
 use crate::memory::frontmatter::{Frontmatter, Kind, References, Relations};
-use crate::memory::id::memory_id;
+use crate::memory::id::{memory_id, sha256_hex};
 use crate::memory::slug::slug_from_body;
 use crate::prelude::*;
 
@@ -34,8 +33,9 @@ impl MemoryStore {
     }
 
     /// Save a memory atomically: write to `.{id}.tmp`, then rename to
-    /// `{id}-{slug}.md`. On rename failure the temp file is removed so no
-    /// orphaned `.tmp` files are left behind.
+    /// `{id}-{slug}.md`. On any failure between staging and rename, the tmp
+    /// file is removed so no orphaned `.tmp` files are left behind (both
+    /// `fs::write` and `fs::rename` failure paths trigger cleanup).
     pub fn save(
         &self,
         body: &str,
@@ -66,7 +66,10 @@ impl MemoryStore {
         };
 
         let rendered = fm.render(body.trim_end())?;
-        fs::write(&tmp_path, rendered)?;
+        if let Err(e) = fs::write(&tmp_path, rendered) {
+            let _ = fs::remove_file(&tmp_path);
+            return Err(e.into());
+        }
 
         if let Err(e) = fs::rename(&tmp_path, &final_path) {
             let _ = fs::remove_file(&tmp_path);
@@ -145,14 +148,4 @@ impl MemoryStore {
         }
         Err(Error::Other(format!("memory not found: {id}")))
     }
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    let mut hex = String::with_capacity(64);
-    for byte in digest {
-        use std::fmt::Write as _;
-        let _ = write!(hex, "{:02x}", byte);
-    }
-    hex
 }

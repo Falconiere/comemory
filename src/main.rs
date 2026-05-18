@@ -42,6 +42,11 @@ async fn main() {
             let _ = writeln!(err, "error: toml: {e}");
             65
         }
+        Err(Error::Lance(msg)) => {
+            let mut err = std::io::stderr().lock();
+            let _ = writeln!(err, "error: lancedb: {msg}");
+            70
+        }
         Err(Error::Other(msg)) => {
             let mut err = std::io::stderr().lock();
             let _ = writeln!(err, "error: {msg}");

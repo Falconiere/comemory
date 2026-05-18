@@ -14,3 +14,19 @@ pub fn memory_id(body: &str) -> String {
     }
     hex
 }
+
+/// Compute the full 64-hex-char SHA-256 digest of `bytes`.
+///
+/// Shared by `memory::store` (content_hash) and other crate modules that need a
+/// stable hex digest; lifted out of `store.rs` to avoid the duplicated helper
+/// that previously lived alongside (`code_index.rs` carries its own copy that
+/// will fold in once Fix C lands).
+pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+    let digest = Sha256::digest(bytes);
+    let mut hex = String::with_capacity(64);
+    for byte in digest {
+        let _ = write!(hex, "{:02x}", byte);
+    }
+    hex
+}

@@ -57,17 +57,19 @@ impl<'a> Feedback<'a> {
     }
 
     /// Look up `(used_count, irrelevant_count)` for memory `id`. Returns
-    /// `(0, 0)` when no row exists.
+    /// `(0, 0)` only when no row exists; any other SQLite failure (missing
+    /// table, locked db, corrupted file) is surfaced as `Error::Other` so
+    /// downstream consumers (e.g. `prune::low_value`) cannot be silently fed
+    /// zeroed counts.
     pub fn counts(&self, id: &str) -> Result<(u64, u64)> {
-        let row = self
-            .db
-            .conn()
-            .query_row(
-                "SELECT used_count, irrelevant_count FROM feedback WHERE memory_id = ?1",
-                rusqlite::params![id],
-                |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)),
-            )
-            .unwrap_or((0, 0));
-        Ok((row.0 as u64, row.1 as u64))
+        match self.db.conn().query_row(
+            "SELECT used_count, irrelevant_count FROM feedback WHERE memory_id = ?1",
+            rusqlite::params![id],
+            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)),
+        ) {
+            Ok((u, i)) => Ok((u as u64, i as u64)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok((0, 0)),
+            Err(e) => Err(Error::Other(format!("feedback counts: {e}"))),
+        }
     }
 }
