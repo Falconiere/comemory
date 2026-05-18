@@ -123,3 +123,36 @@ The following items are intentionally deferred to v1.1:
 ## License
 
 MIT
+
+## Optional: faster builds
+
+These tools are entirely optional. The project builds with stock
+`cargo` out of the box.
+
+- **sccache** — caches rustc outputs across `cargo clean`. ~5–20%
+  cold-build win on a warm cache.
+- **hyperfine** — used by `just perf` to measure warm-incremental p50/p95.
+
+Install (Apple Silicon):
+
+```bash
+brew install sccache hyperfine
+# or: bash scripts/install.sh --with-tools
+```
+
+Activate sccache by exporting in your shell init:
+
+```bash
+export RUSTC_WRAPPER=sccache
+```
+
+Measure your builds:
+
+```bash
+just perf            # writes .build-perf/summary.json
+bash scripts/build-perf.sh --append-md   # also appends a row to docs/build-perf.md
+```
+
+Local fast release builds: `cargo build --profile release-quick`
+(`scripts/install.sh` already uses this). Distributed binaries continue
+to use `[profile.release]` via `cargo-dist`.
