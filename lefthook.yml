@@ -1,0 +1,16 @@
+pre-commit:
+  parallel: true
+  commands:
+    fmt:               { run: bash scripts/fmt-check.sh }
+    type_check:        { run: bash scripts/type-check.sh }
+    lint:              { run: bash scripts/lint-check.sh }
+    test_placement:    { run: bash scripts/test-placement-check.sh }
+    no_bypass:         { run: bash scripts/no-bypass-check.sh }
+    module_size:       { run: bash scripts/module-size-check.sh }
+    tests_mirror:      { run: bash scripts/tests-mirror-check.sh }
+    typos:             { run: bash scripts/typos-check.sh }
+
+pre-push:
+  commands:
+    check_all:
+      run: bash scripts/check-all.sh

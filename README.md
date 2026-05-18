@@ -1,285 +1,124 @@
 # qwick-memory
 
-Centralized RAG memory for multiple repositories. A Python CLI and Claude Code plugin that stores decisions, bugs, conventions, and discoveries as searchable, vector-embedded memories shared across your team via git.
+Agentic dev memory + code-aware semantic search via a two-layer property graph.
 
-Memories are plain markdown files with YAML frontmatter — git handles sharing and merging. The vector index is a local cache rebuilt from those files using LanceDB and local embeddings (fastembed, no API calls).
+`qwick-memory` is a single Rust binary that captures developer knowledge (decisions,
+bugs, conventions, discoveries) as markdown files and links it to your code
+through a kuzu property graph and LanceDB vector indices. Everything runs
+locally — no API calls, no remote database, no in-process LLM.
 
-## Quick Start
+## Install
 
 ```bash
-# Install globally (puts qwick-memory + qwick-memory-server on PATH)
-uv tool install -e ".[dev]"
+# From source (Cargo)
+cargo install qwick-memory
 
-# Save a memory (auto-detects repo and author from git)
-qwick-memory save "We use PostgreSQL for transactional services" --type decision --tags db,postgres
+# Homebrew (prebuilt binary via the SidegigLLC tap)
+brew install SidegigLLC/tap/qwick-memory
+```
 
-# Search across all memories
-qwick-memory search "what database do we use"
+Prebuilt binaries for macOS (aarch64, x86_64) and Linux (aarch64, x86_64)
+are published on the
+[GitHub Releases](https://github.com/SidegigLLC/qwick-memory/releases) page.
 
-# List all memories for a repo
-qwick-memory list --repo my-project
+## 60-second tour
 
-# Rebuild vector index (e.g. after git pull)
-qwick-memory index
+```bash
+# Save a memory (auto-detects repo + author from git)
+qwick-memory save "Use Postgres for analytics" --kind decision --repo myrepo --tags db,postgres
 
-# Check system health
+# Index your repo's code (symbols + files into kuzu + LanceDB)
+qwick-memory index-code --root . --repo myrepo
+
+# One-shot bundle for a symbol: source, memories, neighborhood
+qwick-memory context run_migration --json
+
+# Search across memories
+qwick-memory search "what database do we use" --limit 5
+
+# Semantic search over code symbols
+qwick-memory symbol parse_frontmatter
+
+# Memories that reference a file or symbol
+qwick-memory memory-for myrepo:src/db.rs:run_migration
+
+# Run an ast-grep pattern against a single file
+qwick-memory ast 'fn $NAME($$$) { $$$ }' --file src/lib.rs
+
+# Health check
 qwick-memory doctor
 ```
 
-## How It Works
+## Full command surface
 
-```
-Developer saves a memory
-  → Markdown file written to ~/.qwick-memory/memories/{id}.md
-  → Embedded locally via fastembed (nomic-embed-text-v1.5-Q, 768d, 8K tokens)
-  → Indexed in local LanceDB (.vectordb/, gitignored)
-  → Auto-committed and pushed to origin/memories branch
+| Command | Purpose |
+|---------|---------|
+| `qwick-memory save` | Save a memory (body via arg, `-`, or stdin) |
+| `qwick-memory search` | Search the memory index by natural-language query |
+| `qwick-memory list` | List memories with optional repo/kind filters |
+| `qwick-memory delete` | Soft-delete a memory by id (moves to `.trash/`) |
+| `qwick-memory feedback` | Record per-memory feedback (used vs irrelevant) |
+| `qwick-memory doctor` | Report on the data directory and memory count |
+| `qwick-memory index-code` | Walk a repo, extract symbols, upsert into the code index |
+| `qwick-memory symbol` | Semantic search over the code index for a symbol name |
+| `qwick-memory memory-for` | List memories that reference a qualified symbol or file path |
+| `qwick-memory ast` | Run an ast-grep pattern against a single source file |
+| `qwick-memory context` | Headline lookup: code symbol + memories matching a key |
+| `qwick-memory walk` | Walk a graph edge from a memory id (e.g. `--edge supersedes`) |
+| `qwick-memory conflicts` | List memories that conflict with the given memory id |
+| `qwick-memory supersedes` | Record that one memory supersedes another in the kuzu graph |
+| `qwick-memory prune` | Detect (and optionally soft-delete) stale memories |
+| `qwick-memory gc` | Purge old entries from `memories/.trash/` |
+| `qwick-memory install-hooks` | Install git hooks that run `qwick-memory index-code --incremental` on `post-commit`, `post-merge`, `post-checkout` |
 
-Team shares via git
-  → Memories auto-sync to an orphan "memories" branch on a configured remote
-  → Each developer's vector index rebuilds automatically
-  → No remote database needed
-```
+All commands accept `--json` for machine-readable output. Exit codes follow
+`sysexits.h` conventions. The data root defaults to `$HOME/.qwick-memory` and can be
+overridden with `--data-dir` or the `QWICK_MEMORY_DATA_DIR` environment variable.
 
-### Save Flow (Atomic)
+## Quality Gates
 
-1. Generate ID (SHA-256 of content, 12 hex chars)
-2. Write markdown to temp file `memories/.{id}.tmp`
-3. Embed content via fastembed
-4. Upsert into LanceDB
-5. Atomic rename temp → final `memories/{id}.md`
-6. `git_sync`: add + commit + push (best-effort, never fails the save)
-7. On failure: delete temp file, report error
+The umbrella gate is `bash scripts/check-all.sh`, which runs `fmt-check`,
+`type-check`, `lint-check`, `test-placement-check`, `no-bypass-check`,
+`module-size-check`, `tests-mirror-check`, and `typos-check` in order. Use
+`just check`, `just test`, or `just qa` for everyday workflows; CI runs the
+same scripts so local + CI parity is one command away.
 
-## Claude Code Plugin
+## Contributing
 
-qwick-memory integrates with Claude Code as a plugin, giving Claude 7 MCP tools for automatic memory management. When active, Claude proactively saves decisions, bugs, conventions, and discoveries — and searches memory before answering questions about prior work.
+Read [CLAUDE.md](CLAUDE.md) first — it documents the architecture, the five
+binding rules every contribution must satisfy (no duplication, modular
+modules, ≤500 lines per file, zero warnings, tests strictly in `tests/`
+mirroring `src/`), the module map, the frontmatter schema, and the
+`.claude/hooks/` integration.
 
-### Install via Marketplace (Recommended)
+## Docs
 
-```bash
-# Add the marketplace (one-time)
-claude plugin marketplace add SidegigLLC/qwick-memory
+- [Architecture overview](docs/architecture.md) — 2-page on-ramp into the
+  storage, retrieval pipeline, save flow, and code-indexing flow.
+- [CLI reference](docs/cli-reference.md) — every subcommand with arguments
+  and worked examples.
+- [Design spec](docs/superpowers/specs/2026-05-17-qwick-rust-agentic-rag-design.md) —
+  full specification, including the data model, kuzu schema, and risk register.
+- [Implementation plan](docs/superpowers/plans/2026-05-17-qwick-rust-agentic-rag-plan.md) —
+  the 22-task TDD plan this codebase was built from.
 
-# Install at user scope (available in all projects)
-claude plugin install qwick-memory
+## Known v1.1 gaps
 
-# Or install at project scope (only available in this project)
-claude plugin install qwick-memory --scope project
-```
+`qwick-memory` v1.0 ships the full retrieval pipeline, kuzu graph, and code indexer.
+The following items are intentionally deferred to v1.1:
 
-**Scope options:**
-- `--scope user` (default) — plugin is available in all projects for the current user
-- `--scope project` — plugin is installed into `.claude/plugins/` in the current project directory (committed to version control, shared with the team)
-- `--scope local` — plugin is installed locally for the current project but not committed to version control
-
-### Install Manually (MCP Server)
-
-If you prefer not to use the plugin marketplace:
-
-```bash
-# Prerequisite: install globally so the server binary is on PATH
-uv tool install -e /path/to/qwick-memory
-
-# Add the MCP server to Claude Code
-claude mcp add qwick-memory -- qwick-memory-server
-```
-
-### What the Plugin Provides
-
-**7 MCP tools:**
-
-| Tool | Purpose |
-|------|---------|
-| `qwick_memory_save` | Save a memory (decision, bug, convention, etc.) |
-| `qwick_memory_search` | Semantic vector search with metadata filtering |
-| `qwick_memory_list` | List memories from disk with optional filters |
-| `qwick_memory_delete` | Delete a memory by ID |
-| `qwick_memory_index` | Build or rebuild the vector index |
-| `qwick_memory_context` | Load recent context (session summary + memories) |
-| `qwick_memory_session_summary` | Save a structured session summary |
-
-**3 lifecycle hooks:**
-
-| Hook | Script | Purpose |
-|------|--------|---------|
-| `SessionStart` | `session-start.sh` | Auto-migrate, auto-index, load context |
-| `PreCompact` | `pre-compact.sh` | Remind to save session summary |
-| `PostCompact` | `post-compact.sh` | Restore context after compaction |
-
-**Memory protocol:** Claude follows a mandatory SEARCH → SAVE → SUMMARIZE decision tree on every message, so knowledge is never lost between sessions.
-
-## CLI Reference
-
-### `qwick-memory save [CONTENT]`
-
-Save a new memory. Opens `$EDITOR` if content is omitted.
-
-```
-Options:
-  -t, --type TEXT   Memory type (default: note)
-  -r, --repo TEXT   Comma-separated repos (auto-detected if omitted)
-  --tags TEXT       Comma-separated tags
-  -v, --verbose     Enable verbose logging
-```
-
-### `qwick-memory search QUERY`
-
-Search memories by semantic similarity.
-
-```
-Options:
-  -r, --repo TEXT   Filter by repo
-  -t, --type TEXT   Filter by type
-  --tag TEXT        Filter by tag
-  -n, --limit INT   Max results (default: 10)
-  -v, --verbose     Enable verbose logging
-```
-
-### `qwick-memory list`
-
-List memories from disk (not the index).
-
-```
-Options:
-  -r, --repo TEXT   Filter by repo
-  -t, --type TEXT   Filter by type
-  --tags TEXT       Filter by tags (comma-separated)
-  -v, --verbose     Enable verbose logging
-```
-
-### `qwick-memory delete ID`
-
-Delete a memory by ID. Removes from disk and vector index.
-
-### `qwick-memory index`
-
-Build or rebuild the vector index. Incremental by default.
-
-```
-Options:
-  -f, --force   Force full rebuild
-  -v, --verbose Enable verbose logging
-```
-
-### `qwick-memory migrate`
-
-Auto-migrate memories: flatten nested directories, rebuild index if the embedding model changed. Safe to run repeatedly — called automatically by the `SessionStart` hook.
-
-### `qwick-memory context`
-
-Show recent memories for context restoration. Displays the latest session summary followed by recent memories.
-
-```
-Options:
-  -r, --repo TEXT   Filter by repo
-  -n, --limit INT   Max non-summary memories (default: 10)
-  -v, --verbose     Enable verbose logging
-```
-
-### `qwick-memory doctor`
-
-Health check: validates memory files, index consistency, model version, and git context.
-
-## Memory Types
-
-| Type | Use for |
-|------|---------|
-| `decision` | Architecture, tool, or workflow choices |
-| `bug` | Bug root causes and fixes |
-| `convention` | Coding standards, naming patterns |
-| `discovery` | Non-obvious findings, gotchas |
-| `pattern` | Established approaches |
-| `preference` | User or team preferences |
-| `note` | General knowledge |
-| `session-summary` | Auto-generated session summaries (rotated, keeps 3) |
-
-## Memory Data Model
-
-Each memory is a markdown file with YAML frontmatter:
-
-```yaml
----
-id: a1b2c3d4e5f6          # SHA-256 of content, 12 hex chars
-repo: [qwick-backend]     # List of repo names
-type: decision             # One of the memory types above
-tags: [database, postgres] # Tags for filtering
-author: falconiere         # Auto-detected from git config
-created: 2026-03-20T14:30:00+00:00
-content_hash: a1b2c3d4e5f6  # For incremental indexing
----
-
-The actual memory content goes here as markdown body.
-```
-
-## Environment Variables
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `QWICK_MEMORY_DIR` | `~/.qwick-memory/` | Root directory for memories and vectordb |
-| `QWICK_MEMORY_REPO` | Auto-detected from git remote | Override repo name |
-| `QWICK_MEMORY_AUTHOR` | Auto-detected from git config | Override author name |
-| `QWICK_MEMORY_REMOTE` | Not set (local only) | Git remote URL for memory sync (`""` to disable) |
-
-### Team Sharing via Git
-
-To share memories across machines or team members, set `QWICK_MEMORY_REMOTE` to a git remote URL:
-
-```bash
-export QWICK_MEMORY_REMOTE="git@github.com:yourorg/team-memories.git"
-```
-
-Memories are stored on an orphan `memories` branch. On first save, qwick-memory will:
-1. Initialize a git repo in `~/.qwick-memory/`
-2. Configure the remote
-3. Pull existing memories (if any)
-4. Auto-commit and push on every save/delete
-
-Without `QWICK_MEMORY_REMOTE`, memories stay local (still git-tracked for history, but not pushed).
-
-## Project Structure
-
-```
-qwick-memory/
-├── src/qwick_memory/      # Python package
-│   ├── cli.py             # Typer CLI (8 commands)
-│   ├── server.py          # MCP server (FastMCP, 7 tools)
-│   ├── memory.py          # Memory dataclass, markdown I/O, ID generation
-│   ├── index.py           # LanceDB: embed, upsert, delete, incremental rebuild
-│   ├── search.py          # Hybrid search (vector + BM25 fallback)
-│   ├── config.py          # Shared path/context helpers
-│   ├── git_utils.py       # Git auto-detection + sync (orphan branch)
-│   └── errors.py          # QwickRagError hierarchy
-├── scripts/               # Shell scripts (self-locating, work from any CWD)
-│   ├── mcp-server.sh      # MCP server launcher
-│   ├── session-start.sh   # Auto-index + context on session start
-│   ├── pre-compact.sh     # Reminder before context compaction
-│   ├── post-compact.sh    # Restore context after compaction
-│   └── e2e-test.sh        # End-to-end CLI test (28 checks)
-├── hooks/hooks.json       # Claude Code lifecycle hooks
-├── skills/memory/         # Memory protocol skill for Claude
-├── .claude-plugin/        # Claude Code plugin manifest
-├── tests/                 # Test suite (49 tests)
-└── docs/superpowers/      # Design specs and implementation plans
-```
-
-## Development
-
-```bash
-uv tool install -e ".[dev]"     # Install globally with dev deps
-pytest                           # Unit + integration tests (49 tests)
-./scripts/e2e-test.sh            # Real CLI end-to-end test (28 checks)
-./scripts/e2e-test.sh --build    # Install from source + run e2e
-ruff check src/ tests/           # Lint
-ruff format src/ tests/          # Format (2-space indent)
-pyright src/                     # Type check
-```
-
-**First test run** downloads the embedding model (~130MB, cached at `~/.cache/fastembed/`).
-
-## Design
-
-See [docs/superpowers/specs/2026-03-20-qwick-rag-design.md](docs/superpowers/specs/2026-03-20-qwick-rag-design.md) for the full architecture and design decisions.
+- `qwick-memory save` writes the markdown + frontmatter and upserts the `Memory`
+  node + `InRepo` / `AuthoredBy` / `Tagged` / `ReferencesFile` /
+  `ReferencesSymbol` edges into kuzu, but does **not** yet embed the body
+  into `lancedb.memory_chunks` from the save path itself — rebuild via
+  `qwick-memory index-code` for now. `RelatesTo` neighbor discovery is also
+  deferred.
+- `stale_code::detect` is a stub that returns an empty list. v1.1 will walk
+  `references.files` for each memory against the repo's tracked files and
+  flag mismatches as stale.
+- LLM-driven supersedes / conflicts detection is out of scope. The current
+  implementation only records explicit edges via the `supersedes` and graph
+  commands.
 
 ## License
 

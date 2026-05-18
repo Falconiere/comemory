@@ -1,0 +1,6 @@
+[test-groups]
+embedder = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'test(/embedder|memory_index|code_index/)'
+test-group = 'embedder'
