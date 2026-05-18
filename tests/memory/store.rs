@@ -73,3 +73,51 @@ fn delete_removes_file_and_returns_record() {
     assert_eq!(removed.frontmatter.id, rec.frontmatter.id);
     assert!(store.load(&rec.frontmatter.id).is_err());
 }
+
+#[test]
+fn list_returns_results_sorted_by_created_desc() {
+    let sb = common::runner::Sandbox::new();
+    let paths = Paths::new(sb.data_dir());
+    paths.ensure_dirs().unwrap();
+    let store = MemoryStore::new(paths.clone());
+
+    let _ = store.save("alpha", Kind::Note, "r", &[], "a", 3).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(10));
+    let _ = store.save("beta", Kind::Note, "r", &[], "a", 3).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(10));
+    let _ = store.save("gamma", Kind::Note, "r", &[], "a", 3).unwrap();
+
+    let list = store.list().unwrap();
+    assert_eq!(list.len(), 3);
+
+    // Robust check: every adjacent pair is non-increasing by `created`.
+    let times: Vec<_> = list.iter().map(|m| m.frontmatter.created).collect();
+    assert!(
+        times.windows(2).all(|w| w[0] >= w[1]),
+        "list not sorted by created desc: {times:?}"
+    );
+}
+
+#[test]
+fn list_skips_malformed_files_and_returns_valid_ones() {
+    let sb = common::runner::Sandbox::new();
+    let paths = Paths::new(sb.data_dir());
+    paths.ensure_dirs().unwrap();
+    let store = MemoryStore::new(paths.clone());
+
+    let good = store
+        .save("valid memory", Kind::Note, "r", &[], "a", 3)
+        .unwrap();
+
+    // Drop a malformed .md file alongside the valid one.
+    let bad_path = paths.memories_dir().join("zzzzzzzz-bad.md");
+    std::fs::write(&bad_path, "this is not valid frontmatter at all\n").unwrap();
+
+    let list = store.list().unwrap();
+    assert_eq!(
+        list.len(),
+        1,
+        "expected only the valid record, got {list:?}"
+    );
+    assert_eq!(list[0].frontmatter.id, good.frontmatter.id);
+}

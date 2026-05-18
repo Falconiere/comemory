@@ -117,7 +117,11 @@ impl MemoryStore {
     }
 
     /// Enumerate every saved memory under `memories/`. Skips hidden files
-    /// (e.g. `.{id}.tmp`) and the `.trash/` directory.
+    /// (e.g. `.{id}.tmp`) and the `.trash/` directory. A single unreadable or
+    /// malformed `.md` file is logged and skipped rather than aborting the
+    /// whole listing. Results are sorted by `frontmatter.created` descending,
+    /// with `frontmatter.id` ascending as a tie-breaker, so output is
+    /// deterministic regardless of filesystem iteration order.
     pub fn list(&self) -> Result<Vec<MemoryRecord>> {
         let mut out = Vec::new();
         for entry in fs::read_dir(self.paths.memories_dir())? {
@@ -126,14 +130,30 @@ impl MemoryStore {
             if !name.ends_with(".md") || name.starts_with('.') {
                 continue;
             }
-            let raw = fs::read_to_string(entry.path())?;
-            let (fm, body) = Frontmatter::split(&raw)?;
-            out.push(MemoryRecord {
-                frontmatter: fm,
-                body,
-                path: entry.path(),
-            });
+            let raw = match fs::read_to_string(entry.path()) {
+                Ok(s) => s,
+                Err(e) => {
+                    tracing::warn!("memory load skipped: {} ({})", entry.path().display(), e);
+                    continue;
+                }
+            };
+            match Frontmatter::split(&raw) {
+                Ok((fm, body)) => out.push(MemoryRecord {
+                    frontmatter: fm,
+                    body,
+                    path: entry.path(),
+                }),
+                Err(e) => {
+                    tracing::warn!("memory parse skipped: {} ({})", entry.path().display(), e);
+                }
+            }
         }
+        out.sort_by(|a, b| {
+            b.frontmatter
+                .created
+                .cmp(&a.frontmatter.created)
+                .then_with(|| a.frontmatter.id.cmp(&b.frontmatter.id))
+        });
         Ok(out)
     }
 
