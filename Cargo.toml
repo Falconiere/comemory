@@ -82,3 +82,31 @@ ignored = [
   # url is a transitive-version pin (see comment above the [dependencies.url] entry).
   "url",
 ]
+
+# cargo-dist configuration. qwick is a single-package crate (no [workspace]),
+# so the metadata table lives under [package.metadata.dist] rather than
+# [workspace.metadata.dist]. cargo-dist 0.22.x still recognises both spellings.
+#
+# When a tag matching `v*` is pushed, the GitHub workflow in
+# `.github/workflows/release.yml` builds prebuilt binaries for the targets
+# listed below and publishes a shell installer + Homebrew formula to the
+# `SidegigLLC/homebrew-tap` repository.
+#
+# Docs: https://opensource.axo.dev/cargo-dist/book/
+[package.metadata.dist]
+cargo-dist-version = "0.22.1"
+ci = ["github"]
+installers = ["shell", "homebrew"]
+tap = "SidegigLLC/homebrew-tap"
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+]
+# Use GitHub Releases as the artifact host; cargo-dist uploads the tarballs
+# and updates the Homebrew tap formula in the same workflow run.
+hosting = ["github"]
+# Pull requests get a dry-run plan posted as a comment, but no artifacts are
+# uploaded until the matching `v*` tag is pushed.
+pr-run-mode = "plan"
