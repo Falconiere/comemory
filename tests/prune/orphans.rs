@@ -1,6 +1,6 @@
-use qwick::config::paths::Paths;
-use qwick::memory::{Kind, MemoryStore};
-use qwick::prune::orphans;
+use qwick_memory::config::paths::Paths;
+use qwick_memory::memory::{Kind, MemoryStore};
+use qwick_memory::prune::orphans;
 
 use super::common;
 

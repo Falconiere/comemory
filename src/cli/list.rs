@@ -1,4 +1,4 @@
-//! `qwick list` — enumerate memories on disk with optional `--repo` / `--kind`
+//! `qwick-memory list` — enumerate memories on disk with optional `--repo` / `--kind`
 //! filters. Output is one row per memory in TTY mode or a JSON array under
 //! `--json`.
 
@@ -14,7 +14,7 @@ use crate::memory::MemoryStore;
 use crate::output::json;
 use crate::prelude::*;
 
-/// Arguments to `qwick list`.
+/// Arguments to `qwick-memory list`.
 #[derive(ClapArgs, Debug)]
 pub struct Args {
     /// Filter to memories whose `repo` matches exactly.
@@ -25,7 +25,7 @@ pub struct Args {
     pub kind: Option<String>,
 }
 
-/// One row of `qwick list` output.
+/// One row of `qwick-memory list` output.
 #[derive(Serialize)]
 struct Row {
     id: String,

@@ -2,7 +2,7 @@
 //!
 //! Maps file extensions to a small, fixed enum of languages we support
 //! (Rust, TypeScript, Tsx, JavaScript, Python). The enum is the only
-//! qwick-internal surface code should touch — call sites convert it to
+//! qwick-memory-internal surface code should touch — call sites convert it to
 //! the concrete `ast_grep_language` parser inside `extractor` / `pattern`.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

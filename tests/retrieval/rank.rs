@@ -1,4 +1,4 @@
-use qwick::retrieval::rank::{confidence_gap, z_normalize};
+use qwick_memory::retrieval::rank::{confidence_gap, z_normalize};
 
 #[test]
 fn z_normalize_centers_around_zero() {

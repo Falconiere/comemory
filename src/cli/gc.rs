@@ -1,4 +1,4 @@
-//! `qwick gc` — purge entries in `memories/.trash/` older than 30 days.
+//! `qwick-memory gc` — purge entries in `memories/.trash/` older than 30 days.
 //!
 //! Uses filesystem mtime (`std::fs::Metadata::modified`) rather than a
 //! frontmatter-derived cutoff timestamp; this keeps gc working even on

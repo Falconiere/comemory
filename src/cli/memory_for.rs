@@ -1,4 +1,4 @@
-//! `qwick memory-for` — list memories that reference a qualified symbol or
+//! `qwick-memory memory-for` — list memories that reference a qualified symbol or
 //! file path. Filters `MemoryStore::list()` by frontmatter `references.symbols`
 //! (exact match) and `references.files` (prefix match: the `qualified`
 //! argument starts with the stored file path).
@@ -20,7 +20,7 @@ use crate::memory::MemoryStore;
 use crate::output::json;
 use crate::prelude::*;
 
-/// Arguments to `qwick memory-for`.
+/// Arguments to `qwick-memory memory-for`.
 #[derive(ClapArgs, Debug)]
 pub struct Args {
     /// Qualified symbol (`<repo>:<path>:<symbol>`) or file path
@@ -28,7 +28,7 @@ pub struct Args {
     pub qualified: String,
 }
 
-/// One row of `qwick memory-for` output.
+/// One row of `qwick-memory memory-for` output.
 #[derive(Serialize)]
 struct Row {
     id: String,

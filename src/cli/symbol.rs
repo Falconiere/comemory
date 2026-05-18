@@ -1,4 +1,4 @@
-//! `qwick symbol` — semantic search over the code index. Embeds the query
+//! `qwick-memory symbol` — semantic search over the code index. Embeds the query
 //! name with jina-code, queries the `code_chunks` table for the top hits,
 //! and renders qualified name + similarity score + a short snippet preview.
 
@@ -15,7 +15,7 @@ use crate::output::json;
 use crate::prelude::*;
 use crate::retrieval::hybrid::search_code;
 
-/// Arguments to `qwick symbol`.
+/// Arguments to `qwick-memory symbol`.
 #[derive(ClapArgs, Debug)]
 pub struct Args {
     /// Free-form symbol name (or descriptor) to search for.
@@ -25,7 +25,7 @@ pub struct Args {
     pub limit: usize,
 }
 
-/// One row of `qwick symbol` output.
+/// One row of `qwick-memory symbol` output.
 #[derive(Serialize)]
 struct Row {
     qualified: String,

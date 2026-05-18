@@ -7,7 +7,7 @@
 //! * [`changed_files`] — diff two commits and return the set of new-side paths.
 //!   Powers incremental `index-code` runs by limiting work to touched files.
 //! * [`install_hook`] — write a `.git/hooks/<hook>` script and `chmod +x` it on
-//!   unix. Used by `qwick install-hooks` to wire `post-commit`/`post-merge`/
+//!   unix. Used by `qwick-memory install-hooks` to wire `post-commit`/`post-merge`/
 //!   `post-checkout` to a background `index-code --incremental` invocation.
 //!
 //! All `git2::Error` cases are flattened into [`Error::Other`] via

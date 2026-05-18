@@ -1,4 +1,4 @@
-//! `qwick feedback` — record per-memory used/irrelevant feedback into the
+//! `qwick-memory feedback` — record per-memory used/irrelevant feedback into the
 //! SQLite stats database. Accepts comma-separated id lists for each side.
 
 use std::io::Write as _;
@@ -13,7 +13,7 @@ use crate::prelude::*;
 use crate::stats::feedback::Feedback;
 use crate::stats::sqlite::StatsDb;
 
-/// Arguments to `qwick feedback`. `query_id` is captured for future provenance;
+/// Arguments to `qwick-memory feedback`. `query_id` is captured for future provenance;
 /// it is accepted today but does not yet influence storage.
 #[derive(ClapArgs, Debug)]
 pub struct Args {

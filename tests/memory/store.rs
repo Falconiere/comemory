@@ -1,5 +1,5 @@
-use qwick::config::paths::Paths;
-use qwick::memory::{Kind, MemoryStore};
+use qwick_memory::config::paths::Paths;
+use qwick_memory::memory::{Kind, MemoryStore};
 
 #[path = "../common/mod.rs"]
 mod common;

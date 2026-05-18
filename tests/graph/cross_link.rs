@@ -1,4 +1,4 @@
-use qwick::graph::cross_link::extract_refs;
+use qwick_memory::graph::cross_link::extract_refs;
 
 #[test]
 fn extracts_file_and_symbol_refs() {

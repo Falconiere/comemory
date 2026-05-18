@@ -1,4 +1,4 @@
-//! `qwick doctor` — health/inventory check. Reports the data directory and
+//! `qwick-memory doctor` — health/inventory check. Reports the data directory and
 //! the number of memories currently on disk.
 
 use std::io::Write as _;

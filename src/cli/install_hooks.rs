@@ -1,9 +1,9 @@
-//! `qwick install-hooks` — drop git hooks into a repo so commits/merges/
-//! checkouts kick off `qwick index-code --incremental --quiet` in the
+//! `qwick-memory install-hooks` — drop git hooks into a repo so commits/merges/
+//! checkouts kick off `qwick-memory index-code --incremental --quiet` in the
 //! background.
 //!
-//! The hooks are intentionally minimal (`exec qwick … &`) so they don't slow
-//! down interactive git operations. If `qwick` isn't on `$PATH` the hook
+//! The hooks are intentionally minimal (`exec qwick-memory … &`) so they don't slow
+//! down interactive git operations. If `qwick-memory` isn't on `$PATH` the hook
 //! fails silently — git treats a missing executable as a hook error but the
 //! `&` detaches before the exit code reaches git, so the commit still
 //! completes cleanly.
@@ -21,7 +21,7 @@ use crate::git_utils::install_hook;
 use crate::output::json;
 use crate::prelude::*;
 
-/// Arguments to `qwick install-hooks`.
+/// Arguments to `qwick-memory install-hooks`.
 #[derive(ClapArgs, Debug)]
 pub struct Args {
     /// Repo root to install hooks into. Defaults to the current working
@@ -37,7 +37,7 @@ pub struct Args {
 
 /// Body written to each hook file. The trailing `&` detaches the indexer so
 /// git's hook runner returns immediately.
-const SCRIPT: &str = "#!/usr/bin/env bash\nexec qwick index-code --incremental --quiet &\n";
+const SCRIPT: &str = "#!/usr/bin/env bash\nexec qwick-memory index-code --incremental --quiet &\n";
 
 /// Hooks we install. All three trigger an incremental reindex because each
 /// can leave the working tree at a new HEAD: `post-commit` for new commits,

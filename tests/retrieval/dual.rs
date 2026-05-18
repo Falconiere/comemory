@@ -1,7 +1,7 @@
-use qwick::config::paths::Paths;
-use qwick::index::{CodeIndex, Embedder, MemoryIndex};
-use qwick::memory::{Kind, MemoryStore};
-use qwick::retrieval::hybrid::{search_code, search_memory};
+use qwick_memory::config::paths::Paths;
+use qwick_memory::index::{CodeIndex, Embedder, MemoryIndex};
+use qwick_memory::memory::{Kind, MemoryStore};
+use qwick_memory::retrieval::hybrid::{search_code, search_memory};
 
 use super::common;
 

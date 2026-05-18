@@ -1,4 +1,4 @@
-use qwick::retrieval::{Bundle, CitedHit};
+use qwick_memory::retrieval::{Bundle, CitedHit};
 
 #[test]
 fn bundle_serializes_to_expected_shape() {

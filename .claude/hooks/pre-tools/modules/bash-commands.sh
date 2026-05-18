@@ -20,7 +20,7 @@ command=$(echo "$input" | jq -r '.tool_input.command // ""')
 cmd_only=$(echo "$command" | sed '/<<['"'"'"]*EOF['"'"'"]*$/,/^EOF$/d')
 
 if echo "$cmd_only" | grep -qE '(^|[[:space:]]|&&|\|\||;|`|\()(npm|npx|yarn|pnpm|bun|bunx|pip|uv|poetry)[[:space:]]'; then
-  deny_pre "qwick is a Rust project — use cargo / just / scripts/* instead of npm|bun|pip|uv."
+  deny_pre "qwick-memory is a Rust project — use cargo / just / scripts/* instead of npm|bun|pip|uv."
   exit 0
 fi
 

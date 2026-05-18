@@ -1,4 +1,4 @@
-//! `qwick supersedes <new_id> <old_id>` — record that `new_id` supersedes
+//! `qwick-memory supersedes <new_id> <old_id>` — record that `new_id` supersedes
 //! `old_id` in the kuzu memory graph. Idempotent: calling repeatedly with the
 //! same pair re-uses the existing edge (the underlying `MERGE`).
 //!
@@ -19,7 +19,7 @@ use crate::graph::Graph;
 use crate::output::json;
 use crate::prelude::*;
 
-/// Arguments to `qwick supersedes`.
+/// Arguments to `qwick-memory supersedes`.
 #[derive(ClapArgs, Debug)]
 pub struct Args {
     /// Memory id of the **new** decision (the one that supersedes).

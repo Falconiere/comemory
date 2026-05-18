@@ -1,4 +1,4 @@
-//! Arrow schemas for qwick's LanceDB tables. Embedding dimension is
+//! Arrow schemas for qwick-memory's LanceDB tables. Embedding dimension is
 //! parameterized at build time so the same table layout works for any model.
 //!
 //! Two tables live here:

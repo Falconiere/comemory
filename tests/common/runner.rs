@@ -13,6 +13,6 @@ impl Sandbox {
     }
 
     pub fn data_dir(&self) -> PathBuf {
-        self.root.path().join(".qwick")
+        self.root.path().join(".qwick-memory")
     }
 }

@@ -1,4 +1,4 @@
-//! `qwick index-code` — walk a repo, extract symbols, embed snippets with
+//! `qwick-memory index-code` — walk a repo, extract symbols, embed snippets with
 //! jina-code, and upsert into the LanceDB `code_chunks` table. Repo name is
 //! auto-detected from the root path basename when `--repo` is omitted.
 //!
@@ -20,7 +20,7 @@ use crate::index::{CodeIndex, Embedder};
 use crate::output::json;
 use crate::prelude::*;
 
-/// Arguments to `qwick index-code`.
+/// Arguments to `qwick-memory index-code`.
 #[derive(ClapArgs, Debug)]
 pub struct Args {
     /// Repo root to walk. Defaults to the current working directory.

@@ -1,14 +1,14 @@
 [package]
-name = "qwick"
+name = "qwick-memory"
 version = "0.1.0"
 edition = "2021"
 description = "Agentic dev memory + code-aware semantic search via a two-layer property graph."
 license = "MIT"
-repository = "https://github.com/SidegigLLC/qwick"
+repository = "https://github.com/SidegigLLC/qwick-memory"
 rust-version = "1.78"
 
 [[bin]]
-name = "qwick"
+name = "qwick-memory"
 path = "src/main.rs"
 
 [lib]
@@ -83,7 +83,7 @@ ignored = [
   "url",
 ]
 
-# cargo-dist configuration. qwick is a single-package crate (no [workspace]),
+# cargo-dist configuration. qwick-memory is a single-package crate (no [workspace]),
 # so the metadata table lives under [package.metadata.dist] rather than
 # [workspace.metadata.dist]. cargo-dist 0.22.x still recognises both spellings.
 #

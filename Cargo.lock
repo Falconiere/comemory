@@ -5216,7 +5216,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "qwick"
+name = "qwick-memory"
 version = "0.1.0"
 dependencies = [
  "anyhow",

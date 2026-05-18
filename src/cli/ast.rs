@@ -1,4 +1,4 @@
-//! `qwick ast` — run an ast-grep pattern against a single source file and
+//! `qwick-memory ast` — run an ast-grep pattern against a single source file and
 //! print every match's `(file:line  text)` row. Language is required so we
 //! pick the right tree-sitter grammar without sniffing extensions.
 
@@ -13,7 +13,7 @@ use crate::ast::Lang;
 use crate::output::json;
 use crate::prelude::*;
 
-/// Arguments to `qwick ast`.
+/// Arguments to `qwick-memory ast`.
 #[derive(ClapArgs, Debug)]
 pub struct Args {
     /// ast-grep pattern (`$VAR`, `$$$ARGS`, etc.).
@@ -26,7 +26,7 @@ pub struct Args {
     pub file: PathBuf,
 }
 
-/// One row of `qwick ast` output (mirrors the `(line, text)` shape returned
+/// One row of `qwick-memory ast` output (mirrors the `(line, text)` shape returned
 /// by `ast::pattern::find`).
 #[derive(Serialize)]
 struct Row {

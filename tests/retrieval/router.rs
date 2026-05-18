@@ -1,4 +1,4 @@
-use qwick::retrieval::router::{classify, Route};
+use qwick_memory::retrieval::router::{classify, Route};
 
 #[test]
 fn symbol_looking_query_routes_to_symbol() {

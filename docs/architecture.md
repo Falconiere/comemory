@@ -1,6 +1,6 @@
 # Architecture overview
 
-This is a 2-page on-ramp into the qwick design. For full detail, every
+This is a 2-page on-ramp into the qwick-memory design. For full detail, every
 section here links back to the corresponding section in the
 [design spec](superpowers/specs/2026-05-17-qwick-rust-agentic-rag-design.md).
 
@@ -8,7 +8,7 @@ section here links back to the corresponding section in the
 
 ```
                   ┌─────────────────────────────────────┐
-                  │            qwick (Rust CLI)         │
+                  │            qwick-memory (Rust CLI)         │
                   │                                     │
    stdin/args ──▶ │  clap parser ─▶ command dispatcher  │ ──▶ stdout (TTY or --json)
                   │       │                             │
@@ -40,7 +40,7 @@ section here links back to the corresponding section in the
                      │           │            └──────────┘
                      ▼           ▼
               ┌───────────────────────┐
-              │  ~/.qwick/memories/   │
+              │  ~/.qwick-memory/memories/   │
               │    {id}-{slug}.md     │ ← source of truth
               └───────────────────────┘
 ```
@@ -64,7 +64,7 @@ section here links back to the corresponding section in the
 ## 3. Storage layout (spec §5.1)
 
 ```
-~/.qwick/
+~/.qwick-memory/
 ├── memories/{id}-{slug}.md      ← source of truth (markdown + frontmatter)
 ├── memories/.trash/{id}.md      ← soft-deleted memories, retained 30 days
 ├── index/
@@ -166,7 +166,7 @@ is end-to-end testable without external services.
 ## 6. Save flow (spec §8)
 
 ```
-qwick save "..." --kind=decision
+qwick-memory save "..." --kind=decision
   1. Parse args; build Memory; assign id = sha256(body)[:8].
   2. Write memories/.{id}.tmp (atomic stage).
   3. Embed body with nomic → upsert lancedb.memory_chunks.
@@ -190,7 +190,7 @@ current scope of steps 4–6.)
 ## 7. Code indexing flow (spec §9)
 
 ```
-qwick index-code [--incremental] [--include-dirty]
+qwick-memory index-code [--incremental] [--include-dirty]
   1. cur_head  = git rev-parse HEAD
   2. last_head = sqlite.repo_marker WHERE repo = $repo
   3. If cur_head == last_head and not --include-dirty: return early.
@@ -210,7 +210,7 @@ qwick index-code [--incremental] [--include-dirty]
 ```
 
 Working-tree (uncommitted) files are skipped by default; `--include-dirty`
-opts in. `qwick context` marks symbols whose backing file is dirty.
+opts in. `qwick-memory context` marks symbols whose backing file is dirty.
 
 ## 8. Auto-update modes (spec §10)
 
@@ -226,10 +226,10 @@ incremental_batch_size = 50
 | Mode | Trigger | Behavior |
 |---|---|---|
 | `lazy` (default) | Before every `search` / `context` / `symbol` | Compare `git rev-parse HEAD` to `last_indexed_head`. If different and estimated cost < threshold, reindex incrementally in-line. Otherwise warn and proceed with stale index. |
-| `hook` | git `post-commit`, `post-merge`, `post-checkout` | `qwick install-hooks` registers scripts that run `qwick index-code --incremental --quiet &` in the background after the event. |
-| `off` | Manual only | `qwick index-code` runs only when the user invokes it. |
+| `hook` | git `post-commit`, `post-merge`, `post-checkout` | `qwick-memory install-hooks` registers scripts that run `qwick-memory index-code --incremental --quiet &` in the background after the event. |
+| `off` | Manual only | `qwick-memory index-code` runs only when the user invokes it. |
 
-`qwick doctor` always reports the staleness gap (commits behind HEAD) for
+`qwick-memory doctor` always reports the staleness gap (commits behind HEAD) for
 every known repo, regardless of mode.
 
 ## 9. Pruning (spec §11)
@@ -243,11 +243,11 @@ Three kinds of stale data, three detection paths, one command surface:
 | Low-value memory | quality + usage + irrelevance threshold | sqlite join over feedback |
 
 Soft delete moves `memories/{id}.md` → `memories/.trash/{id}.md`. Trash is
-retained 30 days, then purged by `qwick gc`. Index rows are hard-deleted
+retained 30 days, then purged by `qwick-memory gc`. Index rows are hard-deleted
 (always rebuildable from markdown).
 
-`qwick index-code --incremental` auto-prunes code chunks for deleted files.
-`qwick doctor` reports stale counts read-only, never deletes.
+`qwick-memory index-code --incremental` auto-prunes code chunks for deleted files.
+`qwick-memory doctor` reports stale counts read-only, never deletes.
 
 ## Where to go next
 

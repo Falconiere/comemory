@@ -1,4 +1,4 @@
-//! `qwick context` — headline lookup. Embeds `key` with **both** the
+//! `qwick-memory context` — headline lookup. Embeds `key` with **both** the
 //! jina-code embedder (for the `code_chunks` table) and the nomic-text
 //! embedder (for the memory index), then returns a single `ContextBundle`
 //! with the best matching code symbol + top memories. JSON output is
@@ -22,7 +22,7 @@ use crate::output::json;
 use crate::prelude::*;
 use crate::retrieval::hybrid::{search_code, search_memory};
 
-/// Arguments to `qwick context`.
+/// Arguments to `qwick-memory context`.
 #[derive(ClapArgs, Debug)]
 pub struct Args {
     /// Free-form key — symbol name, file path fragment, or natural-language

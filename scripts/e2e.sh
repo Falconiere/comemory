@@ -9,10 +9,10 @@ source "$HERE/lib/common.sh"
 QWICK_HOME=$(mktemp -d)
 trap 'rm -rf "$QWICK_HOME"' EXIT
 
-export QWICK_DATA_DIR="$QWICK_HOME/.qwick"
+export QWICK_MEMORY_DATA_DIR="$QWICK_HOME/.qwick-memory"
 cd "$PROJECT_ROOT"
 cargo build --release --quiet
-BIN="$PROJECT_ROOT/target/release/qwick"
+BIN="$PROJECT_ROOT/target/release/qwick-memory"
 
-"$BIN" --version | grep -q "qwick" || die "e2e" "version check failed"
+"$BIN" --version | grep -q "qwick-memory" || die "e2e" "version check failed"
 log_ok "e2e" "version smoke passed"

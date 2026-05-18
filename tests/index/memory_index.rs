@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use arrow_array::{RecordBatch, StringArray};
 use arrow_schema::{DataType, Field, Schema};
-use qwick::config::paths::Paths;
-use qwick::index::memory_index::collect_hits;
-use qwick::index::{Embedder, MemoryHit, MemoryIndex};
-use qwick::memory::{Kind, MemoryStore};
+use qwick_memory::config::paths::Paths;
+use qwick_memory::index::memory_index::collect_hits;
+use qwick_memory::index::{Embedder, MemoryHit, MemoryIndex};
+use qwick_memory::memory::{Kind, MemoryStore};
 
 use super::common;
 

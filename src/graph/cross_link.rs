@@ -59,7 +59,7 @@ pub fn extract_refs(body: &str) -> Refs {
         // Walk back to the start of the contiguous non-whitespace run that
         // contains the match. If that prefix has a URL hallmark — `://` for
         // schemed URLs, `@` for scp-style git remotes — the match is part of
-        // a URL, not a qwick ref.
+        // a URL, not a qwick-memory ref.
         let prefix_start = bytes[..start]
             .iter()
             .rposition(|b| b.is_ascii_whitespace())

@@ -1,4 +1,4 @@
-//! `qwick delete` — soft-delete a memory by id (moves the file into
+//! `qwick-memory delete` — soft-delete a memory by id (moves the file into
 //! `memories/.trash/`).
 
 use std::io::Write as _;
@@ -12,7 +12,7 @@ use crate::config::paths::Paths;
 use crate::memory::MemoryStore;
 use crate::prelude::*;
 
-/// Arguments to `qwick delete`.
+/// Arguments to `qwick-memory delete`.
 #[derive(ClapArgs, Debug)]
 pub struct Args {
     /// 12-hex memory id to delete.

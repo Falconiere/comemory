@@ -1,4 +1,4 @@
-//! `qwick save` — write a new memory to disk via `MemoryStore::save`, then
+//! `qwick-memory save` — write a new memory to disk via `MemoryStore::save`, then
 //! best-effort wire the record into the kuzu property graph (Memory node +
 //! provenance edges + cross-link references). Graph errors are logged and
 //! swallowed because markdown remains the source of truth.
@@ -17,7 +17,7 @@ use crate::graph::Graph;
 use crate::memory::{Kind, MemoryStore};
 use crate::prelude::*;
 
-/// Arguments to `qwick save`. The positional `body` is optional — if omitted
+/// Arguments to `qwick-memory save`. The positional `body` is optional — if omitted
 /// or `-`, the body is read from stdin so callers can pipe content.
 #[derive(ClapArgs, Debug)]
 pub struct Args {

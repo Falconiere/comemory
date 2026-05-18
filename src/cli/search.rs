@@ -1,4 +1,4 @@
-//! `qwick search` — natural-language vector search over the memory index.
+//! `qwick-memory search` — natural-language vector search over the memory index.
 //! Returns top-K hits with score, repo, and a short body snippet.
 //!
 //! The retrieval pipeline lives in `crate::retrieval`: every query is first
@@ -34,7 +34,7 @@ const MEMORY_THRESHOLD: f32 = 0.55;
 /// `retrieval::corrective::should_fallback`.
 const FALLBACK_MIN_CONFIDENCE: f32 = 0.15;
 
-/// Arguments to `qwick search`.
+/// Arguments to `qwick-memory search`.
 #[derive(ClapArgs, Debug)]
 pub struct Args {
     /// Natural-language query string.

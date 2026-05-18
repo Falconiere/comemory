@@ -1,10 +1,10 @@
-//! `qwick prune` — detect (and optionally soft-delete) stale memories.
+//! `qwick-memory prune` — detect (and optionally soft-delete) stale memories.
 //!
 //! Dry-run by default: the command reports candidate ids without touching
 //! anything. With `--apply`, low-value candidates are soft-deleted via
 //! [`MemoryStore::delete`] (which moves the file into `memories/.trash/`).
 //! Orphan ids are reported either way; they live only in `.trash/` and are
-//! reaped by `qwick gc`.
+//! reaped by `qwick-memory gc`.
 
 use std::io::Write as _;
 use std::path::PathBuf;
@@ -19,7 +19,7 @@ use crate::output::json;
 use crate::prelude::*;
 use crate::prune::{low_value, orphans};
 
-/// Arguments to `qwick prune`.
+/// Arguments to `qwick-memory prune`.
 #[derive(ClapArgs, Debug)]
 pub struct Args {
     /// Detect orphan entries in `memories/.trash/`.

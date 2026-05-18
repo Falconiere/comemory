@@ -1,4 +1,4 @@
-//! `qwick walk` — graph walk over the memory layer. Today only the
+//! `qwick-memory walk` — graph walk over the memory layer. Today only the
 //! `--edge supersedes` form is wired; it traverses the `:Supersedes` chain
 //! out to `--depth` hops and emits the reachable memory ids. JSON output is
 //! a flat array of ids; TTY output prints one id per line.
@@ -17,7 +17,7 @@ use crate::graph::Graph;
 use crate::output::json;
 use crate::prelude::*;
 
-/// Arguments to `qwick walk`.
+/// Arguments to `qwick-memory walk`.
 #[derive(ClapArgs, Debug)]
 pub struct Args {
     /// Memory id to start walking from.

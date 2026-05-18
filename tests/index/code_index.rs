@@ -1,5 +1,5 @@
-use qwick::config::paths::Paths;
-use qwick::index::{CodeIndex, Embedder};
+use qwick_memory::config::paths::Paths;
+use qwick_memory::index::{CodeIndex, Embedder};
 
 use super::common;
 
