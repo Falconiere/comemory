@@ -5,7 +5,6 @@ on:
     branches: [main]
 
 env:
-  RUSTC_WRAPPER: sccache
   SCCACHE_GHA_ENABLED: "true"
 
 jobs:
@@ -16,9 +15,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with: { components: rustfmt, clippy }
       - uses: mozilla-actions/sccache-action@v0.0.5
+        id: sccache
+        continue-on-error: true
+      - name: Enable sccache wrapper if healthy
+        if: steps.sccache.outcome == 'success'
+        run: echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
-        with: { tool: nextest,cargo-deny,typos-cli,cargo-machete }
+        with:
+          tool: nextest,cargo-deny,typos-cli,cargo-machete
       - run: bash scripts/check-all.sh
       - run: bash scripts/deny-check.sh
       - run: bash scripts/dup-check.sh
