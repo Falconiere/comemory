@@ -49,11 +49,11 @@ perf_time_runs() {
     p50="$(jq -r '.results[0].median' "$json")"
     p95="$(jq -r '.results[0].max' "$json")"
     rm -f "$json"
-    awk -v p50="$p50" -v p95="$p95" 'BEGIN { printf "%.3f %.3f", p50, p95 }'
+    awk -v p50="$p50" -v p95="$p95" 'BEGIN { printf "%.3f %.3f\n", p50, p95 }'
   else
     local single
     single="$(perf_time_once "$label" "$@")"
-    printf "%s %s" "$single" "$single"
+    printf "%s %s\n" "$single" "$single"
   fi
 }
 
