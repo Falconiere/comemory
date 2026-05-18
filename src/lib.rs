@@ -14,3 +14,5 @@ pub mod index;
 pub mod stats;
 
 pub mod graph;
+
+pub mod retrieval;
