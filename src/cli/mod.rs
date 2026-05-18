@@ -7,6 +7,7 @@ use clap::{Parser, Subcommand};
 use crate::prelude::*;
 
 pub mod ast;
+pub mod completions;
 pub mod conflicts;
 pub mod context;
 pub mod delete;
@@ -77,6 +78,8 @@ pub enum Cmd {
     Context(context::Args),
     /// Walk a graph edge from a memory id (currently `--edge supersedes`).
     Walk(walk::Args),
+    /// Emit a shell completion script for `bash`, `zsh`, `fish`, `powershell`, or `elvish`.
+    Completions(completions::Args),
     /// List memories that conflict with the given memory id.
     Conflicts(conflicts::Args),
     /// Record that one memory supersedes another in the kuzu graph.
@@ -107,6 +110,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::Ast(a) => ast::run(a, cli.json, cli.data_dir).await,
         Cmd::Context(a) => context::run(a, cli.json, cli.data_dir).await,
         Cmd::Walk(a) => walk::run(a, cli.json, cli.data_dir).await,
+        Cmd::Completions(a) => completions::run(a, cli.json, cli.data_dir).await,
         Cmd::Conflicts(a) => conflicts::run(a, cli.json, cli.data_dir).await,
         Cmd::Supersedes(a) => supersedes::run(a, cli.json, cli.data_dir).await,
         Cmd::Prune(a) => prune::run(a, cli.json, cli.data_dir).await,
