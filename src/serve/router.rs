@@ -24,7 +24,7 @@ pub fn router(state: ServerState) -> Router {
         .route("/api/seed", get(handlers::seed::handle))
         .route("/api/expand", get(handlers::expand::handle))
         .route("/api/search", get(handlers::search::handle))
-        .route("/api/node/{id}", get(handlers::node::handle))
+        .route("/api/node/:id", get(handlers::node::handle))
         .route("/*path", get(serve_asset_route))
         .layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http())
