@@ -12,3 +12,9 @@ mod error;
 
 #[path = "serve/assets.rs"]
 mod assets;
+
+#[path = "serve/router.rs"]
+mod router;
+
+#[path = "serve/handlers/mod.rs"]
+mod handlers;
