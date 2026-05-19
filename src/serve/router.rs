@@ -21,11 +21,11 @@ const CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsa
 pub fn router(state: ServerState) -> Router {
     Router::new()
         .route("/", get(serve_root))
-        .route("/{*path}", get(serve_asset_route))
         .route("/api/seed", get(handlers::seed::handle))
         .route("/api/expand", get(handlers::expand::handle))
         .route("/api/search", get(handlers::search::handle))
         .route("/api/node/{id}", get(handlers::node::handle))
+        .route("/*path", get(serve_asset_route))
         .layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http())
         .with_state(state)

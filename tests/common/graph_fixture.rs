@@ -12,6 +12,10 @@ use qwick_memory::memory::{Kind, MemoryStore};
 use tempfile::TempDir;
 
 /// Owning handle: drop after the test to clean up the temp directory.
+///
+/// Fields are used selectively across different test binaries; the fixture is
+/// shared and some fields are only accessed from certain test binaries.
+#[allow(dead_code)]
 pub struct Fixture {
     pub paths: Paths,
     pub graph: Graph,
