@@ -117,6 +117,7 @@ cy.on("dblclick", "node", async (evt) => {
     runLayout(false);
   } catch (e) {
     console.error("expand failed", e);
+    showDetailMessage(`Expand failed: ${e.message}`);
   }
 });
 
@@ -189,6 +190,7 @@ function renderResults(items) {
         }
       } catch (e) {
         console.error(e);
+        showDetailMessage(`Open result failed: ${e.message}`);
       }
     });
     resultsEl.appendChild(li);
@@ -212,6 +214,7 @@ qInput.addEventListener("input", () => {
       renderResults(data.results || []);
     } catch (e) {
       console.error(e);
+      showDetailMessage(`Search failed: ${e.message}`);
     }
   }, 200);
 });
@@ -298,6 +301,7 @@ cy.on("tap", "node", async (evt) => {
     renderDetail(detail);
   } catch (e) {
     console.error("detail failed", e);
+    showDetailMessage(`Detail failed: ${e.message}`);
   }
 });
 
