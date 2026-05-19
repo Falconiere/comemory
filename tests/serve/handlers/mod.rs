@@ -1,7 +1,6 @@
 //! Test submodules mirroring `src/serve/handlers/`.
 
-#[path = "../../common/graph_fixture.rs"]
-mod graph_fixture;
+pub use super::graph_fixture;
 
 pub mod expand;
 pub mod node;

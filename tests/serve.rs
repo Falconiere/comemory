@@ -1,6 +1,9 @@
 //! Test binary for the `serve` module. Each submodule mirrors a file
 //! under `src/serve/`.
 
+#[path = "common/graph_fixture.rs"]
+pub mod graph_fixture;
+
 #[path = "serve/state.rs"]
 mod state;
 
