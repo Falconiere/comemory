@@ -2,5 +2,7 @@
 Cargo.lock.bak
 .qwick-test/
 .claude/tmp/quality-gate-status.json
+.claude/worktrees/
+.claude/scheduled_tasks.lock
 .fastembed_cache/
 /.build-perf/
