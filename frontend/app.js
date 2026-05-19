@@ -119,3 +119,48 @@ cy.on("dblclick", "node", async (evt) => {
     console.error("expand failed", e);
   }
 });
+
+const ALL_KINDS = ["Memory", "Repo", "Author", "Tag", "File", "Symbol"];
+
+function renderKindFilters() {
+  const fs = document.getElementById("kinds");
+  fs.replaceChildren();
+  const legend = document.createElement("legend");
+  legend.textContent = "Kinds";
+  fs.appendChild(legend);
+  for (const k of ALL_KINDS) {
+    const label = document.createElement("label");
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.dataset.kind = k;
+    input.checked = true;
+    input.addEventListener("change", applyKindFilter);
+    label.appendChild(input);
+    label.appendChild(document.createTextNode(` ${k}`));
+    fs.appendChild(label);
+  }
+}
+
+function applyKindFilter() {
+  document.querySelectorAll('input[data-kind]').forEach((cb) => {
+    const kind = cb.dataset.kind;
+    const display = cb.checked ? "element" : "none";
+    cy.elements(`node[kind = "${kind}"]`).style("display", display);
+  });
+}
+
+document.querySelectorAll('input[data-layer]').forEach((cb) => {
+  cb.addEventListener("change", async () => {
+    const memOn = document.querySelector('input[data-layer="memory"]').checked;
+    const codeOn = document.querySelector('input[data-layer="code"]').checked;
+    const layer = codeOn ? "all" : "memory";
+    await loadSeed(layer);
+    if (!memOn) {
+      ["Memory", "Repo", "Author", "Tag"].forEach((k) => {
+        cy.elements(`node[kind = "${k}"]`).style("display", "none");
+      });
+    }
+  });
+});
+
+renderKindFilters();
