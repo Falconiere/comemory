@@ -300,3 +300,25 @@ cy.on("tap", "node", async (evt) => {
     console.error("detail failed", e);
   }
 });
+
+async function resetView() {
+  document.querySelectorAll('input[data-layer]').forEach((cb) => {
+    cb.checked = cb.dataset.layer === "memory";
+  });
+  document.querySelectorAll('input[data-kind]').forEach((cb) => {
+    cb.checked = true;
+  });
+  applyKindFilter();
+  await loadSeed("memory");
+  showDetailMessage("Click a node to see details.");
+}
+
+document.getElementById("reset").addEventListener("click", resetView);
+document.addEventListener("keydown", (e) => {
+  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+    return;
+  }
+  if (e.key === "r" || e.key === "R") {
+    resetView();
+  }
+});
