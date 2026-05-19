@@ -221,3 +221,82 @@ document.addEventListener("click", (e) => {
     resultsEl.hidden = true;
   }
 });
+
+function buildBlock(title) {
+  const block = document.createElement("div");
+  block.className = "detail-block";
+  const h = document.createElement("h3");
+  h.textContent = title;
+  block.appendChild(h);
+  return block;
+}
+
+function buildBodyBlock(markdown) {
+  const block = buildBlock("Body");
+  const html = marked.parse(markdown);
+  const fragment = DOMPurify.sanitize(html, { RETURN_DOM_FRAGMENT: true });
+  block.appendChild(fragment);
+  return block;
+}
+
+function buildEdgeBlock(title, edges, fieldKey) {
+  const block = buildBlock(title);
+  const ul = document.createElement("ul");
+  ul.className = "edge-list";
+  for (const e of edges) {
+    const li = document.createElement("li");
+    const other = e[fieldKey] || "";
+    li.textContent = fieldKey === "target"
+      ? `${e.edge_kind} → ${other}`
+      : `${other} → ${e.edge_kind}`;
+    ul.appendChild(li);
+  }
+  block.appendChild(ul);
+  return block;
+}
+
+function renderDetail(detail) {
+  const el = document.getElementById("detail");
+  el.replaceChildren();
+
+  const head = buildBlock(detail.node.kind);
+  const idRow = document.createElement("p");
+  const idLabel = document.createElement("strong");
+  idLabel.textContent = "id: ";
+  idRow.appendChild(idLabel);
+  const idCode = document.createElement("code");
+  idCode.textContent = detail.node.id;
+  idRow.appendChild(idCode);
+  head.appendChild(idRow);
+
+  const labelRow = document.createElement("p");
+  const labelLabel = document.createElement("strong");
+  labelLabel.textContent = "label: ";
+  labelRow.appendChild(labelLabel);
+  labelRow.appendChild(document.createTextNode(detail.node.label));
+  head.appendChild(labelRow);
+
+  el.appendChild(head);
+
+  if (detail.memory_body) {
+    el.appendChild(buildBodyBlock(detail.memory_body));
+  }
+  if (detail.outbound && detail.outbound.length) {
+    el.appendChild(buildEdgeBlock("Outbound", detail.outbound, "target"));
+  }
+  if (detail.inbound && detail.inbound.length) {
+    el.appendChild(buildEdgeBlock("Inbound", detail.inbound, "source"));
+  }
+}
+
+cy.on("tap", "node", async (evt) => {
+  const node = evt.target;
+  try {
+    const detail = await fetchJson(
+      `/api/node/${encodeURIComponent(node.id())}`,
+    );
+    renderDetail(detail);
+  } catch (e) {
+    console.error("detail failed", e);
+  }
+});
