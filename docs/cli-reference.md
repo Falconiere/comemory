@@ -551,3 +551,51 @@ Examples:
   # NOTE: scripts/install.sh writes these automatically by default.
 ```
 
+---
+
+## qwick-memory graph
+
+```
+Property-graph tooling. Run `qwick-memory graph --help`
+
+Usage: qwick-memory graph [OPTIONS] <COMMAND>
+
+Commands:
+  serve  Spin up the local HTTP viewer for the property graph
+  help   Print this message or the help of the given subcommand(s)
+
+Options:
+      --json                 Emit machine-readable JSON instead of a human TTY view
+      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.qwick-memory`). Honors the `QWICK_MEMORY_DATA_DIR` environment variable [env: QWICK_MEMORY_DATA_DIR=]
+  -h, --help                 Print help
+```
+
+---
+
+## qwick-memory graph serve
+
+```
+Spin up the local HTTP viewer for the property graph
+
+Usage: qwick-memory graph serve [OPTIONS]
+
+Options:
+      --json                 Emit machine-readable JSON instead of a human TTY view
+      --port <PORT>          Override the bind port. `0` lets the kernel pick a free port [default: 0]
+      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.qwick-memory`). Honors the `QWICK_MEMORY_DATA_DIR` environment variable [env: QWICK_MEMORY_DATA_DIR=]
+      --no-open              Skip auto-opening the URL in the system browser
+      --host <HOST>          Bind address. Loopback by default [default: 127.0.0.1]
+      --bind-public          Required when `--host` is non-loopback. Acknowledges the network exposure: the viewer is read-only but unauthenticated
+  -h, --help                 Print help
+
+Examples:
+  # Open the viewer in the default browser
+  qwick-memory graph serve
+
+  # Headless / over SSH
+  qwick-memory graph serve --no-open
+
+  # Pin a port
+  qwick-memory graph serve --port 7878
+```
+

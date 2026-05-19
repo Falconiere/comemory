@@ -49,6 +49,27 @@ qwick-memory ast 'fn $NAME($$$) { $$$ }' --file src/lib.rs
 qwick-memory doctor
 ```
 
+## Graph viewer
+
+`qwick-memory graph serve` opens a local browser-based viewer for the
+property graph. Click-to-expand neighbours, search across kinds, filter
+by node kind, render memory bodies inline. Loopback-only; assets are
+embedded in the binary.
+
+```bash
+# Open the viewer in the default browser
+qwick-memory graph serve
+
+# Headless / over SSH
+qwick-memory graph serve --no-open
+
+# Pin a port
+qwick-memory graph serve --port 7878
+```
+
+See [docs/graph-viewer.md](docs/graph-viewer.md) for the REST API, smoke
+checklist, and architecture notes.
+
 ## Full command surface
 
 | Command | Purpose |
@@ -70,6 +91,7 @@ qwick-memory doctor
 | `qwick-memory prune` | Detect (and optionally soft-delete) stale memories |
 | `qwick-memory gc` | Purge old entries from `memories/.trash/` |
 | `qwick-memory install-hooks` | Install git hooks that run `qwick-memory index-code --incremental` on `post-commit`, `post-merge`, `post-checkout` |
+| `qwick-memory graph serve` | Open a local browser-based viewer for the property graph |
 
 All commands accept `--json` for machine-readable output. Exit codes follow
 `sysexits.h` conventions. The data root defaults to `$HOME/.qwick-memory` and can be
@@ -97,6 +119,8 @@ mirroring `src/`), the module map, the frontmatter schema, and the
   storage, retrieval pipeline, save flow, and code-indexing flow.
 - [CLI reference](docs/cli-reference.md) — every subcommand with arguments
   and worked examples.
+- [Graph viewer](docs/graph-viewer.md) — REST endpoints, smoke checklist,
+  and architecture notes for `qwick-memory graph serve`.
 - [Design spec](docs/superpowers/specs/2026-05-17-qwick-rust-agentic-rag-design.md) —
   full specification, including the data model, kuzu schema, and risk register.
 - [Implementation plan](docs/superpowers/plans/2026-05-17-qwick-rust-agentic-rag-plan.md) —
