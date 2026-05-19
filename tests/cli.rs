@@ -559,3 +559,6 @@ fn index_code_and_context_run() {
         "bundle should have a 'symbol' field"
     );
 }
+
+#[path = "cli/graph_serve.rs"]
+mod graph_serve;

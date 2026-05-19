@@ -45,6 +45,7 @@ Commands:
   prune          Detect (and optionally soft-delete) stale memories
   gc             Purge old entries from `memories/.trash/`
   install-hooks  Install git hooks that trigger `qwick-memory index-code --incremental` on `post-commit`, `post-merge`, and `post-checkout`
+  graph          Property-graph tooling. Run `qwick-memory graph --help`
   help           Print this message or the help of the given subcommand(s)
 
 Options:

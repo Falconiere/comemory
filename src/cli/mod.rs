@@ -14,6 +14,7 @@ pub mod delete;
 pub mod doctor;
 pub mod feedback;
 pub mod gc;
+pub mod graph_serve;
 pub mod index_code;
 pub mod install_hooks;
 pub mod list;
@@ -93,6 +94,18 @@ pub enum Cmd {
     /// Install git hooks that trigger `qwick-memory index-code --incremental` on
     /// `post-commit`, `post-merge`, and `post-checkout`.
     InstallHooks(install_hooks::Args),
+    /// Property-graph tooling. Run `qwick-memory graph --help`.
+    Graph {
+        #[command(subcommand)]
+        cmd: GraphCmd,
+    },
+}
+
+/// Subcommands nested under `qwick-memory graph`.
+#[derive(Subcommand, Debug)]
+pub enum GraphCmd {
+    /// Spin up the local HTTP viewer for the property graph.
+    Serve(graph_serve::Args),
 }
 
 /// Dispatch the parsed `Cli` to its subcommand. The dispatcher is the single
@@ -118,6 +131,9 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::Prune(a) => prune::run(a, cli.json, cli.data_dir).await,
         Cmd::Gc => gc::run(cli.json, cli.data_dir).await,
         Cmd::InstallHooks(a) => install_hooks::run(a, cli.json, cli.data_dir).await,
+        Cmd::Graph { cmd } => match cmd {
+            GraphCmd::Serve(a) => graph_serve::run(a, cli.json, cli.data_dir).await,
+        },
     }
 }
 
