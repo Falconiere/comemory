@@ -106,3 +106,16 @@ window.addEventListener("DOMContentLoaded", () => {
     showDetailMessage(`Failed to load graph: ${e.message}`);
   });
 });
+
+cy.on("dblclick", "node", async (evt) => {
+  const node = evt.target;
+  try {
+    const payload = await fetchJson(
+      `/api/expand?id=${encodeURIComponent(node.id())}&depth=1`,
+    );
+    mergeElements(payload);
+    runLayout(false);
+  } catch (e) {
+    console.error("expand failed", e);
+  }
+});
