@@ -23,6 +23,7 @@ async fn save_writes_into_memory_index_and_fts() {
         tags: String::new(),
         author: "a".into(),
         quality: 3,
+        no_index: false,
     };
     comemory::cli::save::run(args, false, Some(paths.data_dir().to_path_buf()))
         .await

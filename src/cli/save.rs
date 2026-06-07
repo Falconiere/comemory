@@ -29,7 +29,10 @@ Examples:
   comemory save - --kind discovery --repo myrepo < notes/postgres-migration.md
 
   # Minimal note (kind defaults to `note`, no repo/tags)
-  comemory save \"Remember: cargo nextest serializes the embedder group\"";
+  comemory save \"Remember: cargo nextest serializes the embedder group\"
+
+  # Batch import: skip the per-save embedder load, then rebuild indices once
+  for f in *.md; do comemory save - --no-index < \"$f\"; done && comemory index-code";
 
 /// Arguments to `comemory save`. The positional `body` is optional — if omitted
 /// or `-`, the body is read from stdin so callers can pipe content.
@@ -53,6 +56,11 @@ pub struct Args {
     /// Quality rating 1..=5. Defaults to 3.
     #[arg(long, default_value_t = 3, value_parser = clap::value_parser!(u8).range(1..=5))]
     pub quality: u8,
+    /// Skip the dense embed + FTS upsert (markdown + graph still run). Use
+    /// for batch imports; rebuild the dense table afterwards with
+    /// `comemory index-code` (or a future dedicated `comemory index` command).
+    #[arg(long, default_value_t = false)]
+    pub no_index: bool,
 }
 
 /// JSON shape emitted under `--json`.
@@ -88,8 +96,13 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     // swallowed: markdown remains the source of truth, and the user-facing
     // `comemory save` path must not fail just because LanceDB or SQLite
     // cannot open under the current data dir.
-    if let Err(e) = upsert_indices(&paths, &rec).await {
-        tracing::warn!("index upsert failed: {e}");
+    //
+    // `--no-index` skips this step entirely so batch / scripted saves do not
+    // pay the ~300ms–2s cold-load cost of `Embedder::nomic_text()` per file.
+    if !a.no_index {
+        if let Err(e) = upsert_indices(&paths, &rec).await {
+            tracing::warn!("index upsert failed: {e}");
+        }
     }
 
     let output = Output {
