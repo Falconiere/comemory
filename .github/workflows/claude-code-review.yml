@@ -1,0 +1,68 @@
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  id-token: write
+
+jobs:
+  auto-review:
+    name: Automatic PR review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Claude code review
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          direct_prompt: |
+            Review this pull request against the comemory crate's binding rules
+            (no .unwrap() in src/, ≤500 lines per file, doc comments on every
+            pub item, tests strictly in tests/ mirroring src/, no
+            println!/eprintln!/panic! in src/).
+
+            Surface: correctness bugs, missing test coverage on new public
+            surface, public API drift, and any violation of the binding rules.
+            Skip pure style nits. Output one finding per line as
+            `path:line: <severity>: <problem>. <fix>.` and a short summary at
+            the end with the top-3 must-fix items.
+          allowed_tools: "Bash(cargo:*),Bash(bash:*),Bash(git diff:*),Bash(git log:*),Bash(rg:*),Bash(grep:*)"
+
+  on-mention:
+    name: Respond to @claude mention
+    # Restrict to trusted authors so external commenters cannot burn budget or
+    # exfiltrate via crafted prompts. OWNER/MEMBER/COLLABORATOR covers maintainers;
+    # extend the list if your repo uses different associations.
+    if: |
+      contains(github.event.comment.body, '@claude') &&
+      (
+        github.event.comment.author_association == 'OWNER' ||
+        github.event.comment.author_association == 'MEMBER' ||
+        github.event.comment.author_association == 'COLLABORATOR'
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Claude responds
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          allowed_tools: "Bash(cargo:*),Bash(bash:*),Bash(git diff:*),Bash(git log:*),Bash(rg:*),Bash(grep:*)"
