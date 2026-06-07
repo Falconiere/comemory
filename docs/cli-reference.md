@@ -102,7 +102,7 @@ Arguments:
 
 Options:
       --json                 Emit machine-readable JSON instead of a human TTY view
-      --limit <LIMIT>        Maximum number of hits to return (default 12) [default: 12]
+      --limit <LIMIT>        Maximum number of hits to return (default 12). Must be >= 1 [default: 12]
       --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
   -h, --help                 Print help
 
@@ -353,6 +353,7 @@ Options:
       --depth <DEPTH>        Graph-walk depth. Reserved for Task 17 (Supersedes / ConflictsWith walks); accepted now to keep the CLI shape stable [default: 1]
       --json                 Emit machine-readable JSON instead of a human TTY view
       --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+      --limit <LIMIT>        Maximum number of memory hits to surface (default 5). Must be >= 1 [default: 5]
   -h, --help                 Print help
 
 Examples:
