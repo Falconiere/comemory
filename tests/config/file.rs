@@ -12,6 +12,10 @@ fn defaults_match_spec() {
     assert_eq!(c.retrieval.hybrid_weight, 0.65);
     assert_eq!(c.retrieval.top_k, 12);
     assert_eq!(c.prune.trash_retention_days, 30);
+    assert!(
+        (c.retrieval.rrf_k - 60.0).abs() < f32::EPSILON,
+        "default rrf_k must be 60.0"
+    );
 }
 
 #[test]
