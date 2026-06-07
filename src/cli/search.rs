@@ -78,15 +78,7 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let q = emb.embed_one(&a.query)?;
 
     let route = classify(&a.query);
-    let hits = search_memory_fused(
-        &idx,
-        paths.index_dir().join("fts.sqlite"),
-        &q,
-        &a.query,
-        a.limit,
-        60.0,
-    )
-    .await?;
+    let hits = search_memory_fused(&idx, &paths, &q, &a.query, a.limit, 60.0).await?;
 
     // Observability only: if confidence is low and the result set is sparse,
     // surface it via `tracing` so operators can spot weak queries. The
