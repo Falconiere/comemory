@@ -30,6 +30,7 @@ Commands:
   delete         Soft-delete a memory by id (moves to `.trash/`)
   feedback       Record per-memory feedback (used vs irrelevant)
   doctor         Report on the data directory and memory count
+  index          Memory-layer index maintenance (re-embed missing rows). Run `comemory index --help` for the available flags
   index-code     Walk a repo, extract symbols, and upsert into the code index
   symbol         Semantic search over the code index for a symbol name
   memory-for     List memories that reference a qualified symbol or file path
@@ -223,6 +224,33 @@ Examples:
 
   # JSON for monitoring or CI
   comemory doctor --json
+```
+
+---
+
+## comemory index
+
+```
+Memory-layer index maintenance (re-embed missing rows). Run `comemory index --help` for the available flags
+
+Usage: comemory index [OPTIONS]
+
+Options:
+      --json                 Emit machine-readable JSON instead of a human TTY view
+      --rebuild              Re-embed any markdown memory whose id is missing from the dense `memory_chunks` table
+      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+      --quiet                Suppress the human-readable summary line. JSON output is still emitted when `--json` is set
+  -h, --help                 Print help
+
+Examples:
+  # Re-embed every markdown memory missing from the dense index
+  comemory index --rebuild
+
+  # JSON summary for monitoring / CI
+  comemory index --rebuild --json
+
+  # Quiet rebuild (suppresses the human summary; JSON still respected)
+  comemory index --rebuild --quiet
 ```
 
 ---

@@ -10,7 +10,7 @@ use arrow_array::{
 };
 use arrow_schema::{DataType, Field, Schema};
 use futures::TryStreamExt;
-use lancedb::query::{ExecutableQuery, QueryBase};
+use lancedb::query::{ExecutableQuery, QueryBase, Select};
 use lancedb::Connection;
 use time::format_description::well_known::Iso8601;
 
@@ -94,6 +94,37 @@ impl MemoryIndex {
             collect_hits(b, &mut hits)?;
         }
         Ok(hits)
+    }
+
+    /// Enumerate every memory id currently in the `memory_chunks` table.
+    /// Used by `comemory index --rebuild` to diff the LanceDB row set
+    /// against the markdown store and re-embed only the missing ids.
+    ///
+    /// Returns `[]` when the table doesn't exist yet (no upserts have run).
+    /// Selects only the `id` column so the round-trip stays small even on
+    /// large corpora.
+    pub async fn list_ids(&self) -> Result<Vec<String>> {
+        let names = self.conn.table_names().execute().await?;
+        if !names.iter().any(|n| n == MEMORY_TABLE) {
+            return Ok(Vec::new());
+        }
+        let tbl = self.conn.open_table(MEMORY_TABLE).execute().await?;
+        let batches: Vec<RecordBatch> = tbl
+            .query()
+            .select(Select::Columns(vec!["id".to_string()]))
+            .execute()
+            .await?
+            .try_collect()
+            .await?;
+
+        let mut out = Vec::new();
+        for batch in &batches {
+            let id_col = downcast_str(batch, "id")?;
+            for i in 0..batch.num_rows() {
+                out.push(id_col.value(i).to_string());
+            }
+        }
+        Ok(out)
     }
 }
 
