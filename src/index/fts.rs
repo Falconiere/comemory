@@ -75,6 +75,12 @@ impl Fts {
     /// result so callers don't have to filter them. The raw query string is
     /// passed straight to FTS5 — callers that want phrase or column filters
     /// can pass standard FTS5 syntax.
+    ///
+    /// Malformed MATCH expressions (column qualifiers on missing columns,
+    /// trailing operators, bare apostrophes, etc.) are downgraded to an
+    /// empty result with a `tracing::debug!` note. FTS5 surfaces these as
+    /// `SQLITE_ERROR` strings during row iteration; we never want a typo in
+    /// the user query to abort the fused retrieval pipeline.
     pub fn search(&self, query: &str, limit: usize) -> Result<Vec<FtsHit>> {
         if query.trim().is_empty() || limit == 0 {
             return Ok(Vec::new());
@@ -87,22 +93,48 @@ impl Fts {
                  ORDER BY s ASC LIMIT ?2;",
             )
             .map_err(|e| Error::Other(e.to_string()))?;
-        let rows = stmt
-            .query_map(rusqlite::params![query, limit as i64], |row| {
-                let id: String = row.get(0)?;
-                let raw: f64 = row.get(1)?;
-                Ok(FtsHit {
-                    id,
-                    score: -raw as f32,
-                })
+        let rows = match stmt.query_map(rusqlite::params![query, limit as i64], |row| {
+            let id: String = row.get(0)?;
+            let raw: f64 = row.get(1)?;
+            Ok(FtsHit {
+                id,
+                score: -raw as f32,
             })
-            .map_err(|e| Error::Other(e.to_string()))?;
+        }) {
+            Ok(r) => r,
+            Err(e) => {
+                if is_fts5_parse_error(&e) {
+                    tracing::debug!("fts5 query parse error: {e}; treating as empty");
+                    return Ok(Vec::new());
+                }
+                return Err(Error::Other(e.to_string()));
+            }
+        };
         let mut out = Vec::new();
         for r in rows {
-            out.push(r.map_err(|e| Error::Other(e.to_string()))?);
+            match r {
+                Ok(hit) => out.push(hit),
+                Err(e) => {
+                    if is_fts5_parse_error(&e) {
+                        tracing::debug!("fts5 query parse error: {e}; treating as empty");
+                        return Ok(Vec::new());
+                    }
+                    return Err(Error::Other(e.to_string()));
+                }
+            }
         }
         Ok(out)
     }
+}
+
+/// Best-effort detection of an FTS5 MATCH-expression parse error. FTS5 reports
+/// these as `SQLITE_ERROR` (rusqlite's `SqliteFailure` variant) with a message
+/// like `"fts5: syntax error near \"\""` or `"no such column: id"`. We match
+/// on the message string because the SQLite extended error codes are not
+/// uniquely allocated for FTS5 parse failures.
+fn is_fts5_parse_error(e: &rusqlite::Error) -> bool {
+    let s = e.to_string().to_lowercase();
+    s.contains("fts5") || s.contains("syntax error") || s.contains("no such column")
 }
 
 /// One BM25 hit. `score` is the negated `bm25()` value (FTS5 returns negative
