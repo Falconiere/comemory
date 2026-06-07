@@ -140,9 +140,17 @@ impl Config {
             })?;
         }
         if let Ok(v) = std::env::var("COMEMORY_RETRIEVAL_RRF_K") {
-            self.retrieval.rrf_k = v.parse::<f32>().map_err(|e| {
+            let parsed = v.parse::<f32>().map_err(|e| {
                 Error::Other(format!("invalid env var COMEMORY_RETRIEVAL_RRF_K: {e}"))
             })?;
+            if parsed.is_finite() && parsed > 0.0 {
+                self.retrieval.rrf_k = parsed;
+            } else {
+                tracing::warn!(
+                    "ignoring non-finite or non-positive COMEMORY_RETRIEVAL_RRF_K={}",
+                    parsed
+                );
+            }
         }
         if let Ok(v) = std::env::var("COMEMORY_GIT_AUTO_SYNC") {
             self.git.auto_sync = match v.as_str() {
