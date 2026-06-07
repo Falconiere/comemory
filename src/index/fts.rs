@@ -34,14 +34,40 @@ impl Fts {
         Ok(Self { conn })
     }
 
-    /// Return the number of rows currently indexed in `memory_fts`. Useful
-    /// for health checks and progress reporting; upsert/search land in the
-    /// next tasks.
-    pub fn row_count(&self) -> Result<u64> {
+    /// Insert or overwrite the body indexed under `id`. Implemented as
+    /// `DELETE`+`INSERT` inside a single transaction because FTS5 virtual
+    /// tables do not support `ON CONFLICT` upserts. The transaction keeps
+    /// the row count correct under concurrent saves of the same id.
+    pub fn upsert(&self, id: &str, body: &str) -> Result<()> {
+        let tx = self
+            .conn
+            .unchecked_transaction()
+            .map_err(|e| Error::Other(e.to_string()))?;
+        tx.execute("DELETE FROM memory_fts WHERE id = ?1;", [id])
+            .map_err(|e| Error::Other(e.to_string()))?;
+        tx.execute(
+            "INSERT INTO memory_fts (id, body) VALUES (?1, ?2);",
+            [id, body],
+        )
+        .map_err(|e| Error::Other(e.to_string()))?;
+        tx.commit().map_err(|e| Error::Other(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Remove the row indexed under `id`. No-op when the id is not present.
+    pub fn delete(&self, id: &str) -> Result<()> {
         self.conn
-            .query_row("SELECT count(*) FROM memory_fts", [], |r| {
-                r.get::<_, u64>(0)
-            })
-            .map_err(|e| Error::Other(e.to_string()))
+            .execute("DELETE FROM memory_fts WHERE id = ?1;", [id])
+            .map_err(|e| Error::Other(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Number of indexed rows. Used by tests and `comemory doctor`.
+    pub fn count(&self) -> Result<usize> {
+        let n: i64 = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM memory_fts;", [], |row| row.get(0))
+            .map_err(|e| Error::Other(e.to_string()))?;
+        Ok(n.max(0) as usize)
     }
 }
