@@ -572,6 +572,9 @@ mod save_embed;
 #[path = "cli/save_no_index.rs"]
 mod save_no_index;
 
+#[path = "cli/save_graph_failure.rs"]
+mod save_graph_failure;
+
 #[path = "cli/search_fused.rs"]
 mod search_fused;
 
