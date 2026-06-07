@@ -69,6 +69,7 @@ version = "0.38"
 
 [dev-dependencies]
 assert_cmd = "2"
+criterion = { version = "0.5", default-features = false, features = ["html_reports", "async_tokio"] }
 insta = { version = "1", features = ["json", "yaml"] }
 predicates = "3"
 proptest = "1"
@@ -150,3 +151,11 @@ hosting = ["github"]
 # Pull requests get a dry-run plan posted as a comment, but no artifacts are
 # uploaded until the matching `v*` tag is pushed.
 pr-run-mode = "plan"
+
+[[bench]]
+name = "save"
+harness = false
+
+[[bench]]
+name = "retrieval"
+harness = false
