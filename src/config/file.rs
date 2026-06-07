@@ -36,6 +36,9 @@ pub struct RetrievalConfig {
     pub hybrid_weight: f32,
     pub top_k: usize,
     pub corrective_min_confidence: f32,
+    /// RRF constant for sparse/dense fusion. Default 60.0 matches the original
+    /// Cormack/Clarke/Buettcher RRF paper.
+    pub rrf_k: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -83,6 +86,7 @@ impl Config {
                 hybrid_weight: 0.65,
                 top_k: 12,
                 corrective_min_confidence: 0.15,
+                rrf_k: 60.0,
             },
             prune: PruneConfig {
                 trash_retention_days: 30,
@@ -133,6 +137,11 @@ impl Config {
                 Error::Other(format!(
                     "invalid env var COMEMORY_RETRIEVAL_CODE_THRESHOLD: {e}"
                 ))
+            })?;
+        }
+        if let Ok(v) = std::env::var("COMEMORY_RETRIEVAL_RRF_K") {
+            self.retrieval.rrf_k = v.parse::<f32>().map_err(|e| {
+                Error::Other(format!("invalid env var COMEMORY_RETRIEVAL_RRF_K: {e}"))
             })?;
         }
         if let Ok(v) = std::env::var("COMEMORY_GIT_AUTO_SYNC") {
