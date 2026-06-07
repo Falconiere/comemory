@@ -84,6 +84,14 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
         tracing::warn!("graph upsert failed: {e}");
     }
 
+    // Best-effort dense embedding + FTS upsert. Either failure logs and is
+    // swallowed: markdown remains the source of truth, and the user-facing
+    // `comemory save` path must not fail just because LanceDB or SQLite
+    // cannot open under the current data dir.
+    if let Err(e) = upsert_indices(&paths, &rec).await {
+        tracing::warn!("index upsert failed: {e}");
+    }
+
     let output = Output {
         id: rec.frontmatter.id.clone(),
         path: rec.path.to_string_lossy().into_owned(),
@@ -120,4 +128,22 @@ fn read_stdin() -> Result<String> {
     let mut buf = String::new();
     std::io::stdin().read_to_string(&mut buf)?;
     Ok(buf)
+}
+
+/// Best-effort dense + lexical index writes for the freshly saved memory.
+/// Opens the LanceDB `memory_chunks` table, embeds the body with the
+/// nomic-text model, upserts the row, then mirrors the same id+body into
+/// the SQLite FTS5 table. Called from `run` under a `warn!`-and-swallow
+/// guard so embedder or filesystem hiccups never block a save: markdown
+/// remains the source of truth and `comemory index-code` (or a future
+/// dedicated `comemory index` command) can rebuild what was missed.
+async fn upsert_indices(paths: &Paths, rec: &crate::memory::MemoryRecord) -> Result<()> {
+    let idx = crate::index::MemoryIndex::open(paths.vectors_dir(), 768).await?;
+    let mut emb = crate::index::Embedder::nomic_text()?;
+    let v = emb.embed_one(&rec.body)?;
+    idx.upsert(rec, &v).await?;
+
+    let fts = crate::index::Fts::open(paths.index_dir().join("fts.sqlite"))?;
+    fts.upsert(&rec.frontmatter.id, &rec.body)?;
+    Ok(())
 }
