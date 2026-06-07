@@ -1,5 +1,7 @@
 //! Markdown-as-source-of-truth memory store: atomic save, load, list, delete.
 
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
@@ -20,16 +22,43 @@ pub struct MemoryRecord {
     pub path: PathBuf,
 }
 
-/// Filesystem-backed CRUD over `memories/{id}-{slug}.md`. Stateless beyond the
-/// path roots in `paths`; cheap to clone.
-#[derive(Debug, Clone)]
+/// Filesystem-backed CRUD over `memories/{id}-{slug}.md`. Cheap to clone:
+/// only `Paths` plus a small per-instance id→path cache populated on the
+/// fly by `load` and `delete`. The cache is per-clone (not shared) — each
+/// clone re-warms on first lookup, so cloning never leaks stale entries.
+#[derive(Debug)]
 pub struct MemoryStore {
     paths: Paths,
+    /// Memoised mapping from `frontmatter.id` to the on-disk path. Populated
+    /// lazily by `find_by_id` on its first cache miss; entries persist for
+    /// the lifetime of this `MemoryStore`. `save` does *not* update the
+    /// cache (interior mutability would force a heavier API change for
+    /// little benefit) — the next `load` for that id walks `read_dir`
+    /// once and warms the cache. `delete` evicts the id when it moves the
+    /// file into `.trash/`.
+    id_to_path: RefCell<HashMap<String, PathBuf>>,
+}
+
+impl Clone for MemoryStore {
+    fn clone(&self) -> Self {
+        // Don't carry the cache across clones — each clone re-warms on
+        // demand so concurrent users never see a stale entry recorded by a
+        // sibling clone.
+        Self {
+            paths: self.paths.clone(),
+            id_to_path: RefCell::new(HashMap::new()),
+        }
+    }
 }
 
 impl MemoryStore {
+    /// Construct a fresh store rooted at `paths`. The id→path cache starts
+    /// empty and is populated lazily by `find_by_id`.
     pub fn new(paths: Paths) -> Self {
-        Self { paths }
+        Self {
+            paths,
+            id_to_path: RefCell::new(HashMap::new()),
+        }
     }
 
     /// Save a memory atomically: write to `.{id}.tmp`, then rename to
@@ -76,6 +105,10 @@ impl MemoryStore {
             return Err(e.into());
         }
 
+        // Warm the cache so a follow-up `load` for the same id hits without
+        // a `read_dir` scan.
+        self.id_to_path.borrow_mut().insert(id, final_path.clone());
+
         Ok(MemoryRecord {
             frontmatter: fm,
             body: body.trim_end().to_string(),
@@ -113,6 +146,8 @@ impl MemoryStore {
         fs::create_dir_all(&trash_dir)?;
         let trash_path = trash_dir.join(&file_name);
         fs::rename(&rec.path, &trash_path)?;
+        // Evict the cached entry — the file is no longer at the live path.
+        self.id_to_path.borrow_mut().remove(id);
         Ok(rec)
     }
 
@@ -157,13 +192,26 @@ impl MemoryStore {
         Ok(out)
     }
 
+    /// Look up the on-disk path for `id`. Cache-first: hits return without
+    /// touching the filesystem; misses fall back to a `read_dir` scan and
+    /// insert the resolved entry so subsequent lookups are O(1).
     fn find_by_id(&self, id: &str) -> Result<PathBuf> {
+        if let Some(p) = self.id_to_path.borrow().get(id) {
+            // Cache hit. We don't re-validate that the file still exists on
+            // disk — `delete` evicts entries and `load`'s subsequent
+            // `read_to_string` surfaces any external removal as `io::Error`.
+            return Ok(p.clone());
+        }
         let prefix = format!("{id}-");
         for entry in fs::read_dir(self.paths.memories_dir())? {
             let entry = entry?;
             let name = entry.file_name().into_string().unwrap_or_default();
             if name.starts_with(&prefix) && name.ends_with(".md") {
-                return Ok(entry.path());
+                let path = entry.path();
+                self.id_to_path
+                    .borrow_mut()
+                    .insert(id.to_string(), path.clone());
+                return Ok(path);
             }
         }
         Err(Error::Other(format!("memory not found: {id}")))
