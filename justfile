@@ -12,8 +12,9 @@ qa:
     bash scripts/dup-check.sh
     bash scripts/machete-check.sh
 
+# Run criterion benches and write a Markdown report to docs/bench/latest.md.
 bench:
-    cargo bench --all-features
+    bash scripts/bench.sh
 
 build-release:
     cargo build --release
