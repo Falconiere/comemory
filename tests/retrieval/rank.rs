@@ -63,10 +63,7 @@ fn rrf_fuse_two_rankings_boosts_intersection() {
     let r2 = vec!["c", "a", "d"];
     let out = rrf_fuse::<&str>(&[&r1, &r2], 60.0);
     let ids: Vec<&str> = out.iter().map(|(id, _)| id.as_str()).collect();
-    assert_eq!(ids[0], "a");
-    assert_eq!(ids[1], "c");
-    assert!(ids.contains(&"b"));
-    assert!(ids.contains(&"d"));
+    assert_eq!(ids, vec!["a", "c", "b", "d"]);
 }
 
 #[test]
