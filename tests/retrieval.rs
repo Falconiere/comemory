@@ -21,3 +21,6 @@ mod dual;
 
 #[path = "retrieval/fts.rs"]
 mod fts;
+
+#[path = "retrieval/fuse.rs"]
+mod fuse;

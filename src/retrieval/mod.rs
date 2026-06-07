@@ -6,9 +6,11 @@
 pub mod bundle;
 pub mod corrective;
 pub mod fts;
+pub mod fuse;
 pub mod hybrid;
 pub mod rank;
 pub mod router;
 
 pub use bundle::{Bundle, CitedHit};
+pub use fuse::search_memory_fused;
 pub use router::{classify, Route};
