@@ -9,10 +9,9 @@
 use std::collections::HashMap;
 
 use crate::config::paths::Paths;
-use crate::index::{MemoryHit, MemoryIndex};
+use crate::index::{Fts, MemoryHit, MemoryIndex};
 use crate::memory::MemoryStore;
 use crate::prelude::*;
-use crate::retrieval::fts::search_fts_ids;
 use crate::retrieval::rank::rrf_fuse;
 
 /// Run vector + BM25 retrieval over the memory layer, fuse the rankings with
@@ -25,8 +24,46 @@ use crate::retrieval::rank::rrf_fuse;
 /// source of truth. When a fused id has no matching markdown file (deleted
 /// between FTS upsert and query) we log via `tracing::warn!` and skip it.
 ///
+/// Opens the FTS5 database on every call. Callers that already hold an
+/// `Fts` handle (long-lived servers, benches that want to measure fusion
+/// latency without re-paying the connection cost) should call
+/// [`search_memory_fused_with_fts`] directly.
 pub async fn search_memory_fused(
     idx: &MemoryIndex,
+    paths: &Paths,
+    query_emb: &[f32],
+    query_text: &str,
+    limit: usize,
+    rrf_k: f32,
+) -> Result<Vec<MemoryHit>> {
+    let fts_db = paths.index_dir().join("fts.sqlite");
+    let fts = if fts_db.exists() {
+        Some(Fts::open(&fts_db)?)
+    } else {
+        None
+    };
+    search_memory_fused_with_fts(
+        idx,
+        fts.as_ref(),
+        paths,
+        query_emb,
+        query_text,
+        limit,
+        rrf_k,
+    )
+    .await
+}
+
+/// Variant of [`search_memory_fused`] that accepts a pre-opened FTS handle so
+/// callers can amortise the `Fts::open` cost across many queries.
+///
+/// `fts = None` means "FTS unavailable" and the function transparently
+/// degrades to dense-only retrieval. This mirrors the on-disk-missing
+/// fallback that [`search_memory_fused`] applies when `fts.sqlite` does not
+/// exist yet.
+pub async fn search_memory_fused_with_fts(
+    idx: &MemoryIndex,
+    fts: Option<&Fts>,
     paths: &Paths,
     query_emb: &[f32],
     query_text: &str,
@@ -40,8 +77,14 @@ pub async fn search_memory_fused(
 
     let dense_hits = idx.search(query_emb, over).await?;
     let dense_ids: Vec<String> = dense_hits.iter().map(|h| h.id.clone()).collect();
-    let fts_db = paths.index_dir().join("fts.sqlite");
-    let sparse_ids = search_fts_ids(&fts_db, query_text, over)?;
+    let sparse_ids: Vec<String> = match fts {
+        Some(handle) => handle
+            .search(query_text, over)?
+            .into_iter()
+            .map(|h| h.id)
+            .collect(),
+        None => Vec::new(),
+    };
 
     let dense_ref: &[String] = &dense_ids;
     let sparse_ref: &[String] = &sparse_ids;
