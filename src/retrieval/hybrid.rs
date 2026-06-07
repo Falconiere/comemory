@@ -1,12 +1,12 @@
-//! Memory-layer hybrid search. The "hybrid" name anticipates the FTS branch
-//! that lands in a later task; today it is vector-only with a deterministic
-//! threshold filter on top of `MemoryIndex::search`.
+//! Vector-only memory search. The `search_memory` function returns the dense
+//! LanceDB top-K with a threshold filter, no fusion. The production search
+//! pipeline lives in `retrieval::fuse::search_memory_fused`, which combines
+//! `search_memory`-equivalent dense retrieval with BM25 via Reciprocal Rank
+//! Fusion. This module is kept for the bench harness baseline (`search_vector_only`)
+//! and for callers that explicitly want vector-only ranking.
 //!
-//! Code-layer search lives here too: `search_code` queries the `code_chunks`
-//! LanceDB table directly via the connection borrowed from `CodeIndex`. The
-//! two functions share the same shape (`limit * 2` over-fetch, threshold
-//! filter, descending sort, truncate) so callers can merge their outputs
-//! into a single bundle in later tasks.
+//! Code-layer search also lives here: `search_code` queries the `code_chunks`
+//! LanceDB table directly via the connection borrowed from `CodeIndex`.
 
 use arrow_array::{Float32Array, RecordBatch, StringArray};
 use futures::TryStreamExt;
