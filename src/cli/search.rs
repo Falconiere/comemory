@@ -46,8 +46,12 @@ Examples:
 pub struct Args {
     /// Natural-language query string.
     pub query: String,
-    /// Maximum number of hits to return (default 12).
-    #[arg(long, default_value_t = 12)]
+    /// Maximum number of hits to return (default 12). Must be >= 1.
+    #[arg(
+        long,
+        default_value_t = 12,
+        value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..)
+    )]
     pub limit: usize,
 }
 

@@ -33,6 +33,9 @@ pub async fn search_memory_fused(
     limit: usize,
     rrf_k: f32,
 ) -> Result<Vec<MemoryHit>> {
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
     let over = limit.saturating_mul(4).max(limit);
 
     let dense_hits = idx.search(query_emb, over).await?;
