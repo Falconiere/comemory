@@ -112,6 +112,13 @@ pub async fn search_memory_fused_with_fts(
     let store = MemoryStore::new(paths.clone());
     let mut out = Vec::with_capacity(limit);
     for (id, score) in fused {
+        // Short-circuit before paying any per-id cost (notably
+        // `MemoryStore::load` for sparse-only ids). With the cache from G5
+        // the lookup is cheap, but the markdown read + frontmatter parse
+        // still cost on every iteration past the limit.
+        if out.len() == limit {
+            break;
+        }
         if let Some(mut hit) = by_id.get(&id).cloned() {
             hit.score = score;
             out.push(hit);
@@ -133,9 +140,6 @@ pub async fn search_memory_fused_with_fts(
                     continue;
                 }
             }
-        }
-        if out.len() == limit {
-            break;
         }
     }
     Ok(out)
