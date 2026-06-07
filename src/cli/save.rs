@@ -88,8 +88,12 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
 
     // Best-effort graph upsert: markdown is the source of truth, so any kuzu
     // failure is logged and swallowed rather than propagated to the user.
+    // The failure is also recorded in the stats DB so `comemory doctor`
+    // (and operators tailing the stats file) can spot a broken graph path
+    // instead of just a vanished warn!.
     if let Err(e) = upsert_graph(&paths, &rec) {
         tracing::warn!("graph upsert failed: {e}");
+        record_index_failure_best_effort(&paths, &format!("graph: {e}"));
     }
 
     // Best-effort dense embedding + FTS upsert. Either failure logs and is
@@ -102,14 +106,7 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     if !a.no_index {
         if let Err(e) = upsert_indices(&paths, &rec).await {
             tracing::warn!("index upsert failed: {e}");
-            // Best-effort durable signal: record the failure in the stats DB
-            // so `comemory doctor` (and operators tailing the stats file)
-            // can see an indexing problem instead of just a vanished warn!.
-            // A stats-DB failure itself is logged and ignored — markdown is
-            // still the source of truth.
-            if let Err(stats_err) = record_index_failure(&paths, &e.to_string()) {
-                tracing::warn!("record_index_failure: {stats_err}");
-            }
+            record_index_failure_best_effort(&paths, &e.to_string());
         }
     }
 
@@ -169,12 +166,18 @@ async fn upsert_indices(paths: &Paths, rec: &crate::memory::MemoryRecord) -> Res
     Ok(())
 }
 
-/// Open the stats SQLite database and append one row to `index_failures`.
-/// Used by [`run`] when `upsert_indices` fails: callers swallow the
-/// indexing error but we still want a durable counter so `comemory doctor`
-/// (and operators) can spot a broken indexing pipeline. The stats DB
-/// itself is best-effort — a write failure is logged by the caller.
-fn record_index_failure(paths: &Paths, error: &str) -> Result<()> {
-    let db = crate::stats::StatsDb::open(paths.stats_db())?;
-    db.record_index_failure(time::OffsetDateTime::now_utc(), error)
+/// Open the stats SQLite database and append one row to `index_failures`,
+/// swallowing any stats-DB error. The `index_failures` table records any
+/// save-time indexing failure (graph, dense embed, or FTS) so `comemory
+/// doctor` (and operators tailing the stats file) can spot a degraded
+/// pipeline instead of just a vanished `warn!`. Markdown remains the
+/// source of truth in every case.
+fn record_index_failure_best_effort(paths: &Paths, error: &str) {
+    let outcome = (|| -> Result<()> {
+        let db = crate::stats::StatsDb::open(paths.stats_db())?;
+        db.record_index_failure(time::OffsetDateTime::now_utc(), error)
+    })();
+    if let Err(stats_err) = outcome {
+        tracing::warn!("record_index_failure: {stats_err}");
+    }
 }
