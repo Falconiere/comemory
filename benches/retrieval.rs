@@ -21,7 +21,7 @@ fn bench_search(c: &mut Criterion) {
     let idx = rt
         .block_on(MemoryIndex::open(fx.paths.vectors_dir(), 768))
         .expect("idx");
-    let fts_db = fx.paths.index_dir().join("fts.sqlite");
+    let paths = fx.paths.clone();
 
     c.bench_function("search_vector_only", |b| {
         b.to_async(&rt)
@@ -30,7 +30,7 @@ fn bench_search(c: &mut Criterion) {
 
     c.bench_function("search_fused_rrf", |b| {
         b.to_async(&rt).iter(|| async {
-            search_memory_fused(&idx, &fts_db, &q_vec, &q_text, 12, 60.0)
+            search_memory_fused(&idx, &paths, &q_vec, &q_text, 12, 60.0)
                 .await
                 .expect("fused")
         });
