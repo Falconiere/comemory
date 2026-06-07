@@ -33,7 +33,7 @@ async fn fused_search_finds_lexical_only_match() {
     drop(fts);
 
     let q = emb.embed_one("zzzyx_unique_token").unwrap();
-    let hits = search_memory_fused(&idx, &paths, &q, "zzzyx_unique_token", 5, 60.0)
+    let hits = search_memory_fused(&idx, &paths, &q, "zzzyx_unique_token", 5, 0.0, 60.0)
         .await
         .unwrap();
     assert!(
@@ -70,7 +70,7 @@ async fn fused_search_degrades_to_vector_when_fts_missing() {
     if fts_db.exists() {
         std::fs::remove_file(&fts_db).unwrap();
     }
-    let hits = search_memory_fused(&idx, &paths, &q, "postgres analytics", 5, 60.0)
+    let hits = search_memory_fused(&idx, &paths, &q, "postgres analytics", 5, 0.0, 60.0)
         .await
         .unwrap();
     assert_eq!(hits[0].id, rec.frontmatter.id);
@@ -95,7 +95,7 @@ async fn fused_search_limit_zero_returns_empty() {
     idx.upsert(&rec, &v).await.unwrap();
 
     let q = emb.embed_one("any body text").unwrap();
-    let hits = search_memory_fused(&idx, &paths, &q, "any body text", 0, 60.0)
+    let hits = search_memory_fused(&idx, &paths, &q, "any body text", 0, 0.0, 60.0)
         .await
         .unwrap();
     assert!(hits.is_empty());
@@ -151,7 +151,7 @@ async fn fused_search_materializes_sparse_only_hit_outside_dense_window() {
     let q = emb
         .embed_one("postgres analytics zzzyx_unique_token")
         .unwrap();
-    let hits = search_memory_fused(&idx, &paths, &q, "zzzyx_unique_token", limit, 60.0)
+    let hits = search_memory_fused(&idx, &paths, &q, "zzzyx_unique_token", limit, 0.0, 60.0)
         .await
         .unwrap();
 
@@ -159,5 +159,94 @@ async fn fused_search_materializes_sparse_only_hit_outside_dense_window() {
         hits.iter().any(|h| h.id == rare.frontmatter.id),
         "fused search dropped sparse-only hit outside dense over-fetch window: got {:?}",
         hits.iter().map(|h| h.id.as_str()).collect::<Vec<_>>()
+    );
+}
+
+/// Regression for G2: `dense_threshold` must prune weak-cosine dense
+/// candidates *before* they feed into RRF. A memory whose embedding is
+/// semantically far from the query (low cosine) must be excluded from the
+/// dense side of the fused list when a non-zero threshold is supplied,
+/// while a memory whose body matches the query lexically (BM25-strong) must
+/// still survive via the sparse path.
+///
+/// Mechanism check: we set the threshold to `1.5` (impossible — the cosine
+/// score is bounded by `1.0`) so every dense candidate is pruned. The
+/// fused result must come entirely from the BM25 path. Then we re-run with
+/// threshold `0.0` and assert the dense hits are now visible.
+#[tokio::test]
+async fn fused_search_applies_dense_threshold_before_fusion() {
+    let sb = common::runner::Sandbox::new();
+    let paths = Paths::new(sb.data_dir());
+    paths.ensure_dirs().unwrap();
+
+    let store = MemoryStore::new(paths.clone());
+    // Memory A: rare token in body, BM25 will lift it on a rare-token query.
+    let rare = store
+        .save(
+            "An essay containing the arcane phrase zzzyx_unique_token only",
+            Kind::Note,
+            "r",
+            &[],
+            "a",
+            3,
+        )
+        .unwrap();
+    // Memory B: no rare token, only a dense candidate.
+    let dense = store
+        .save(
+            "Postgres analytics dashboard rollout decision",
+            Kind::Decision,
+            "r",
+            &[],
+            "a",
+            3,
+        )
+        .unwrap();
+
+    let mut emb = Embedder::nomic_text().unwrap();
+    let idx = MemoryIndex::open(paths.vectors_dir(), 768).await.unwrap();
+    let v_rare = emb.embed_one(&rare.body).unwrap();
+    idx.upsert(&rare, &v_rare).await.unwrap();
+    let v_dense = emb.embed_one(&dense.body).unwrap();
+    idx.upsert(&dense, &v_dense).await.unwrap();
+
+    let fts = Fts::open(paths.fts_db()).unwrap();
+    fts.upsert(&rare.frontmatter.id, &rare.body).unwrap();
+    fts.upsert(&dense.frontmatter.id, &dense.body).unwrap();
+    drop(fts);
+
+    // Query that matches the rare token via BM25. The dense path will return
+    // both rows; with threshold 1.5 (above the 1.0 cosine ceiling), the
+    // dense side is fully pruned and only BM25 contributes.
+    let q = emb.embed_one("zzzyx_unique_token").unwrap();
+    let hits_strict = search_memory_fused(&idx, &paths, &q, "zzzyx_unique_token", 5, 1.5, 60.0)
+        .await
+        .unwrap();
+    // With dense pruned, only the BM25-matched id (`rare`) should appear.
+    assert!(
+        hits_strict.iter().any(|h| h.id == rare.frontmatter.id),
+        "BM25-strong rare-token id must survive dense pruning, got {:?}",
+        hits_strict
+            .iter()
+            .map(|h| h.id.as_str())
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        !hits_strict.iter().any(|h| h.id == dense.frontmatter.id),
+        "dense-only id must be pruned when threshold > 1.0, got {:?}",
+        hits_strict
+            .iter()
+            .map(|h| h.id.as_str())
+            .collect::<Vec<_>>()
+    );
+
+    // With threshold 0.0, both ids should reappear (dense path unfiltered).
+    let hits_open = search_memory_fused(&idx, &paths, &q, "zzzyx_unique_token", 5, 0.0, 60.0)
+        .await
+        .unwrap();
+    assert!(
+        hits_open.iter().any(|h| h.id == dense.frontmatter.id),
+        "dense-only id must reappear with threshold 0.0, got {:?}",
+        hits_open.iter().map(|h| h.id.as_str()).collect::<Vec<_>>()
     );
 }
