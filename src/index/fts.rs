@@ -96,10 +96,7 @@ impl Fts {
         let rows = match stmt.query_map(rusqlite::params![query, limit as i64], |row| {
             let id: String = row.get(0)?;
             let raw: f64 = row.get(1)?;
-            Ok(FtsHit {
-                id,
-                score: -raw as f32,
-            })
+            Ok(FtsHit { id, score: -raw })
         }) {
             Ok(r) => r,
             Err(e) => {
@@ -145,5 +142,5 @@ pub struct FtsHit {
     /// Memory id stored in the `UNINDEXED` payload column.
     pub id: String,
     /// `-bm25()` so higher is more relevant.
-    pub score: f32,
+    pub score: f64,
 }
