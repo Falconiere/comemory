@@ -48,20 +48,24 @@ fn env_rrf_k_override_applies() {
 }
 
 #[test]
-fn env_rejects_non_finite_rrf_k() {
-    // Regression for C12: NaN / inf / non-positive rrf_k values must not be
-    // accepted. They would cause `1 / (k + rank)` to collapse to NaN or
-    // pin every score to the same bucket, silently destroying the ranking.
+fn env_invalid_rrf_k_returns_err() {
+    // Regression for G3: NaN / inf / non-positive rrf_k values must surface
+    // as `Err` rather than silently falling back to the default. They would
+    // cause `1 / (k + rank)` to collapse to NaN or pin every score to the
+    // same bucket, silently destroying the ranking — so a typo must abort
+    // at startup, matching the style used by `top_k` / `memory_threshold`.
+    //
+    // Run with `--test-threads=1` (already required by this binary) so env
+    // vars don't race with the other Config tests.
     for bad in ["nan", "NaN", "inf", "-inf", "0", "-1"] {
         std::env::set_var("COMEMORY_RETRIEVAL_RRF_K", bad);
-        let c = Config::defaults().with_env();
+        let result = Config::defaults().with_env();
         std::env::remove_var("COMEMORY_RETRIEVAL_RRF_K");
-        let cfg = c.expect("with_env must not error for finite-parseable strings");
-        // The override must be ignored — the default (60.0) is preserved.
+        let err = result.expect_err(&format!("'{bad}' must error"));
+        let msg = err.to_string();
         assert!(
-            (cfg.retrieval.rrf_k - 60.0).abs() < 1e-6,
-            "expected default 60.0 after rejecting '{bad}', got {}",
-            cfg.retrieval.rrf_k
+            msg.contains("COMEMORY_RETRIEVAL_RRF_K"),
+            "error must name the offending var for '{bad}', got: {msg}"
         );
     }
 }
