@@ -44,6 +44,25 @@ fn env_rrf_k_override_applies() {
 }
 
 #[test]
+fn env_rejects_non_finite_rrf_k() {
+    // Regression for C12: NaN / inf / non-positive rrf_k values must not be
+    // accepted. They would cause `1 / (k + rank)` to collapse to NaN or
+    // pin every score to the same bucket, silently destroying the ranking.
+    for bad in ["nan", "NaN", "inf", "-inf", "0", "-1"] {
+        std::env::set_var("COMEMORY_RETRIEVAL_RRF_K", bad);
+        let c = Config::defaults().with_env();
+        std::env::remove_var("COMEMORY_RETRIEVAL_RRF_K");
+        let cfg = c.expect("with_env must not error for finite-parseable strings");
+        // The override must be ignored — the default (60.0) is preserved.
+        assert!(
+            (cfg.retrieval.rrf_k - 60.0).abs() < 1e-6,
+            "expected default 60.0 after rejecting '{bad}', got {}",
+            cfg.retrieval.rrf_k
+        );
+    }
+}
+
+#[test]
 fn env_rejects_invalid_top_k() {
     // Non-numeric top_k must surface as Err instead of silently keeping the
     // default; otherwise typos go unnoticed until retrieval misbehaves.
