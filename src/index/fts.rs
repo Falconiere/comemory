@@ -70,4 +70,48 @@ impl Fts {
             .map_err(|e| Error::Other(e.to_string()))?;
         Ok(n.max(0) as usize)
     }
+
+    /// BM25 search. Empty / whitespace-only queries short-circuit to an empty
+    /// result so callers don't have to filter them. The raw query string is
+    /// passed straight to FTS5 — callers that want phrase or column filters
+    /// can pass standard FTS5 syntax.
+    pub fn search(&self, query: &str, limit: usize) -> Result<Vec<FtsHit>> {
+        if query.trim().is_empty() || limit == 0 {
+            return Ok(Vec::new());
+        }
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, bm25(memory_fts) AS s FROM memory_fts \
+                 WHERE memory_fts MATCH ?1 \
+                 ORDER BY s ASC LIMIT ?2;",
+            )
+            .map_err(|e| Error::Other(e.to_string()))?;
+        let rows = stmt
+            .query_map(rusqlite::params![query, limit as i64], |row| {
+                let id: String = row.get(0)?;
+                let raw: f64 = row.get(1)?;
+                Ok(FtsHit {
+                    id,
+                    score: -raw as f32,
+                })
+            })
+            .map_err(|e| Error::Other(e.to_string()))?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r.map_err(|e| Error::Other(e.to_string()))?);
+        }
+        Ok(out)
+    }
+}
+
+/// One BM25 hit. `score` is the negated `bm25()` value (FTS5 returns negative
+/// scores where smaller means more relevant); we flip the sign so callers can
+/// sort descending uniformly with `MemoryHit::score`.
+#[derive(Debug, Clone)]
+pub struct FtsHit {
+    /// Memory id stored in the `UNINDEXED` payload column.
+    pub id: String,
+    /// `-bm25()` so higher is more relevant.
+    pub score: f32,
 }
