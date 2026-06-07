@@ -72,6 +72,7 @@ Options:
       --tags <TAGS>          Comma-separated tag list (e.g. `database,postgres`) [default: ""]
       --author <AUTHOR>      Author identifier. Defaults to empty so callers may omit [default: ""]
       --quality <QUALITY>    Quality rating 1..=5. Defaults to 3 [default: 3]
+      --no-index             Skip the dense embed + FTS upsert (markdown + graph still run). Use for batch imports; rebuild the dense table afterwards with `comemory index-code` (or a future dedicated `comemory index` command)
   -h, --help                 Print help
 
 Examples:
@@ -86,6 +87,9 @@ Examples:
 
   # Minimal note (kind defaults to `note`, no repo/tags)
   comemory save "Remember: cargo nextest serializes the embedder group"
+
+  # Batch import: skip the per-save embedder load, then rebuild indices once
+  for f in *.md; do comemory save - --no-index < "$f"; done && comemory index-code
 ```
 
 ---
