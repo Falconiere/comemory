@@ -1,9 +1,13 @@
-//! Bench: vector-only `search_memory` vs RRF-fused `search_memory_fused` over
-//! a 100-row seeded corpus. Reports the latency delta directly.
+//! Bench: vector-only baseline vs RRF-fused `search_memory_fused` over a
+//! 100-row seeded corpus. Reports the latency delta directly.
 //!
 //! Three variants are tracked:
 //!
-//! - `search_vector_only` — pure vector path through `MemoryIndex::search`.
+//! - `search_vector_only` — dense-only baseline via
+//!   `search_memory_fused_with_fts(idx, None, ...)`. Passing `None` for the
+//!   FTS handle short-circuits the BM25 path so we measure pure dense
+//!   retrieval through the unified entry point (there is no longer a
+//!   separate `hybrid::search_memory`).
 //! - `search_fused_rrf_cold_fts` — production code path: every iteration
 //!   re-opens the FTS5 SQLite file (mirrors `comemory search` real-world).
 //! - `search_fused_rrf_warm_fts` — fusion latency in isolation: the `Fts`
@@ -15,7 +19,6 @@
 
 use comemory::index::{Embedder, Fts, MemoryIndex};
 use comemory::retrieval::fuse::{search_memory_fused, search_memory_fused_with_fts};
-use comemory::retrieval::hybrid::search_memory;
 use criterion::{criterion_group, criterion_main, Criterion};
 use tokio::runtime::Runtime;
 
@@ -39,8 +42,11 @@ fn bench_search(c: &mut Criterion) {
     let fts = Fts::open(paths.fts_db()).expect("fts");
 
     c.bench_function("search_vector_only", |b| {
-        b.to_async(&rt)
-            .iter(|| async { search_memory(&idx, &q_vec, 12, 0.55).await.expect("search") });
+        b.to_async(&rt).iter(|| async {
+            search_memory_fused_with_fts(&idx, None, &paths, &q_vec, &q_text, 12, 0.0, 60.0)
+                .await
+                .expect("search dense-only")
+        });
     });
 
     c.bench_function("search_fused_rrf_cold_fts", |b| {

@@ -1,43 +1,18 @@
-//! Vector-only memory search. The `search_memory` function returns the dense
-//! LanceDB top-K with a threshold filter, no fusion. The production search
-//! pipeline lives in `retrieval::fuse::search_memory_fused`, which combines
-//! `search_memory`-equivalent dense retrieval with BM25 via Reciprocal Rank
-//! Fusion. This module is kept for the bench harness baseline (`search_vector_only`)
-//! and for callers that explicitly want vector-only ranking.
+//! Code-layer vector search. The memory-layer equivalent has moved into
+//! `retrieval::fuse::search_memory_fused_with_fts`; pass `fts = None` to
+//! get pure dense retrieval without re-implementing the over-fetch and
+//! threshold logic.
 //!
-//! Code-layer search also lives here: `search_code` queries the `code_chunks`
-//! LanceDB table directly via the connection borrowed from `CodeIndex`.
+//! `search_code` queries the `code_chunks` LanceDB table directly via the
+//! connection borrowed from `CodeIndex`.
 
 use arrow_array::{Float32Array, RecordBatch, StringArray};
 use futures::TryStreamExt;
 use lancedb::query::{ExecutableQuery, QueryBase};
 
 use crate::index::schema::CODE_TABLE;
-use crate::index::{score_from_distance, CodeIndex, MemoryHit, MemoryIndex};
+use crate::index::{score_from_distance, CodeIndex};
 use crate::prelude::*;
-
-/// Vector search for memories.
-///
-/// Over-fetches `limit * 2` from LanceDB, sorts by score descending, drops
-/// anything below `threshold`, and truncates back to `limit`. The over-fetch
-/// gives the threshold room to act without starving callers that want a
-/// fixed number of results.
-pub async fn search_memory(
-    index: &MemoryIndex,
-    query_emb: &[f32],
-    limit: usize,
-    threshold: f32,
-) -> Result<Vec<MemoryHit>> {
-    let mut hits = index.search(query_emb, limit * 2).await?;
-    hits.sort_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-    hits.retain(|h| h.score >= threshold);
-    hits.truncate(limit);
-    Ok(hits)
-}
 
 /// One code-layer search result. Mirrors `MemoryHit`'s shape so the two
 /// layers can be presented side-by-side in a bundle without bespoke
