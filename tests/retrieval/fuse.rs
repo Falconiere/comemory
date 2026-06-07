@@ -28,7 +28,7 @@ async fn fused_search_finds_lexical_only_match() {
     let idx = MemoryIndex::open(paths.vectors_dir(), 768).await.unwrap();
     idx.upsert(&rec, &v).await.unwrap();
 
-    let fts = Fts::open(paths.index_dir().join("fts.sqlite")).unwrap();
+    let fts = Fts::open(paths.fts_db()).unwrap();
     fts.upsert(&rec.frontmatter.id, &rec.body).unwrap();
     drop(fts);
 
@@ -66,7 +66,7 @@ async fn fused_search_degrades_to_vector_when_fts_missing() {
 
     let q = emb.embed_one("postgres analytics").unwrap();
     // Delete the FTS db so the path doesn't exist; sparse path degrades.
-    let fts_db = paths.index_dir().join("fts.sqlite");
+    let fts_db = paths.fts_db();
     if fts_db.exists() {
         std::fs::remove_file(&fts_db).unwrap();
     }
@@ -113,7 +113,7 @@ async fn fused_search_materializes_sparse_only_hit_outside_dense_window() {
     let store = MemoryStore::new(paths.clone());
     let mut emb = Embedder::nomic_text().unwrap();
     let idx = MemoryIndex::open(paths.vectors_dir(), 768).await.unwrap();
-    let fts = Fts::open(paths.index_dir().join("fts.sqlite")).unwrap();
+    let fts = Fts::open(paths.fts_db()).unwrap();
 
     // Over-fetch window is limit * 4. With limit = 2 the dense pool is 8.
     // Seed `over * 2 + 1 = 17` decoy memories whose bodies are semantically

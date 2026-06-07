@@ -8,8 +8,8 @@ fn open_creates_db_and_table() {
     let sb = common::runner::Sandbox::new();
     let paths = Paths::new(sb.data_dir());
     paths.ensure_dirs().unwrap();
-    let _fts = Fts::open(paths.index_dir().join("fts.sqlite")).unwrap();
-    assert!(paths.index_dir().join("fts.sqlite").exists());
+    let _fts = Fts::open(paths.fts_db()).unwrap();
+    assert!(paths.fts_db().exists());
 }
 
 #[test]
@@ -17,7 +17,7 @@ fn upsert_then_count_returns_one() {
     let sb = common::runner::Sandbox::new();
     let paths = Paths::new(sb.data_dir());
     paths.ensure_dirs().unwrap();
-    let fts = Fts::open(paths.index_dir().join("fts.sqlite")).unwrap();
+    let fts = Fts::open(paths.fts_db()).unwrap();
     fts.upsert("a1b2c3d4", "Use Postgres for analytics")
         .unwrap();
     assert_eq!(fts.count().unwrap(), 1);
@@ -28,7 +28,7 @@ fn upsert_same_id_overwrites() {
     let sb = common::runner::Sandbox::new();
     let paths = Paths::new(sb.data_dir());
     paths.ensure_dirs().unwrap();
-    let fts = Fts::open(paths.index_dir().join("fts.sqlite")).unwrap();
+    let fts = Fts::open(paths.fts_db()).unwrap();
     fts.upsert("a1b2c3d4", "first body").unwrap();
     fts.upsert("a1b2c3d4", "second body").unwrap();
     assert_eq!(fts.count().unwrap(), 1);
@@ -39,7 +39,7 @@ fn delete_removes_row() {
     let sb = common::runner::Sandbox::new();
     let paths = Paths::new(sb.data_dir());
     paths.ensure_dirs().unwrap();
-    let fts = Fts::open(paths.index_dir().join("fts.sqlite")).unwrap();
+    let fts = Fts::open(paths.fts_db()).unwrap();
     fts.upsert("a1b2c3d4", "body").unwrap();
     fts.delete("a1b2c3d4").unwrap();
     assert_eq!(fts.count().unwrap(), 0);
@@ -50,7 +50,7 @@ fn search_returns_relevant_ids_in_score_order() {
     let sb = common::runner::Sandbox::new();
     let paths = Paths::new(sb.data_dir());
     paths.ensure_dirs().unwrap();
-    let fts = Fts::open(paths.index_dir().join("fts.sqlite")).unwrap();
+    let fts = Fts::open(paths.fts_db()).unwrap();
     fts.upsert("id1", "postgres analytics decision").unwrap();
     fts.upsert("id2", "redis cache notes").unwrap();
     fts.upsert("id3", "postgres migration race").unwrap();
@@ -67,7 +67,7 @@ fn search_respects_limit() {
     let sb = common::runner::Sandbox::new();
     let paths = Paths::new(sb.data_dir());
     paths.ensure_dirs().unwrap();
-    let fts = Fts::open(paths.index_dir().join("fts.sqlite")).unwrap();
+    let fts = Fts::open(paths.fts_db()).unwrap();
     for i in 0..5 {
         fts.upsert(&format!("id{i}"), "postgres").unwrap();
     }
@@ -80,7 +80,7 @@ fn search_empty_query_returns_empty() {
     let sb = common::runner::Sandbox::new();
     let paths = Paths::new(sb.data_dir());
     paths.ensure_dirs().unwrap();
-    let fts = Fts::open(paths.index_dir().join("fts.sqlite")).unwrap();
+    let fts = Fts::open(paths.fts_db()).unwrap();
     fts.upsert("id1", "postgres").unwrap();
     let hits = fts.search("", 5).unwrap();
     assert!(hits.is_empty());
@@ -95,7 +95,7 @@ fn search_treats_fts5_syntax_errors_as_empty() {
     let sb = common::runner::Sandbox::new();
     let paths = Paths::new(sb.data_dir());
     paths.ensure_dirs().unwrap();
-    let fts = Fts::open(paths.index_dir().join("fts.sqlite")).unwrap();
+    let fts = Fts::open(paths.fts_db()).unwrap();
     fts.upsert("id1", "the quick brown fox").unwrap();
 
     // Column-qualified form ("id:abc") — FTS5 rejects when the named column

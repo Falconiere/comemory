@@ -9,7 +9,7 @@ fn search_fts_ids_returns_bm25_ordered_ids() {
     let sb = common::runner::Sandbox::new();
     let paths = Paths::new(sb.data_dir());
     paths.ensure_dirs().unwrap();
-    let db = paths.index_dir().join("fts.sqlite");
+    let db = paths.fts_db();
     let fts = Fts::open(&db).unwrap();
     fts.upsert("id_match", "postgres analytics").unwrap();
     fts.upsert("id_miss", "redis cache").unwrap();

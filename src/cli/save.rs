@@ -164,7 +164,7 @@ async fn upsert_indices(paths: &Paths, rec: &crate::memory::MemoryRecord) -> Res
     let v = emb.embed_one(&rec.body)?;
     idx.upsert(rec, &v).await?;
 
-    let fts = crate::index::Fts::open(paths.index_dir().join("fts.sqlite"))?;
+    let fts = crate::index::Fts::open(paths.fts_db())?;
     fts.upsert(&rec.frontmatter.id, &rec.body)?;
     Ok(())
 }

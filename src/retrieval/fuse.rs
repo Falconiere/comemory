@@ -36,7 +36,7 @@ pub async fn search_memory_fused(
     limit: usize,
     rrf_k: f32,
 ) -> Result<Vec<MemoryHit>> {
-    let fts_db = paths.index_dir().join("fts.sqlite");
+    let fts_db = paths.fts_db();
     let fts = if fts_db.exists() {
         Some(Fts::open(&fts_db)?)
     } else {
