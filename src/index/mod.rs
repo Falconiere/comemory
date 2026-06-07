@@ -6,11 +6,13 @@
 
 pub mod code_index;
 pub mod embedder;
+pub mod fts;
 pub mod memory_index;
 pub mod schema;
 
 pub use code_index::{CodeChunk, CodeIndex};
 pub use embedder::Embedder;
+pub use fts::Fts;
 pub use memory_index::{MemoryHit, MemoryIndex};
 
 /// Convert a LanceDB L2 distance to a monotone similarity score so callers can

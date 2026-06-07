@@ -7,6 +7,9 @@ mod code_index;
 #[path = "index/embedder.rs"]
 mod embedder;
 
+#[path = "index/fts.rs"]
+mod fts;
+
 #[path = "index/memory_index.rs"]
 mod memory_index;
 
