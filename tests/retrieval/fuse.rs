@@ -76,6 +76,31 @@ async fn fused_search_degrades_to_vector_when_fts_missing() {
     assert_eq!(hits[0].id, rec.frontmatter.id);
 }
 
+/// Regression for C2: `limit == 0` must short-circuit to an empty vec
+/// without exercising the dense or sparse path (the dense path is a
+/// `Result<…, lancedb::Error>` whose `limit(0)` behaviour is undefined).
+#[tokio::test]
+async fn fused_search_limit_zero_returns_empty() {
+    let sb = common::runner::Sandbox::new();
+    let paths = Paths::new(sb.data_dir());
+    paths.ensure_dirs().unwrap();
+
+    let store = MemoryStore::new(paths.clone());
+    let rec = store
+        .save("any body text", Kind::Note, "r", &[], "a", 3)
+        .unwrap();
+    let mut emb = Embedder::nomic_text().unwrap();
+    let v = emb.embed_one(&rec.body).unwrap();
+    let idx = MemoryIndex::open(paths.vectors_dir(), 768).await.unwrap();
+    idx.upsert(&rec, &v).await.unwrap();
+
+    let q = emb.embed_one("any body text").unwrap();
+    let hits = search_memory_fused(&idx, &paths, &q, "any body text", 0, 60.0)
+        .await
+        .unwrap();
+    assert!(hits.is_empty());
+}
+
 /// Regression for C1: when an id is FTS-rank-1 but pushed out of the dense
 /// over-fetch window, the fused search must still surface it by loading the
 /// record from the markdown store.
