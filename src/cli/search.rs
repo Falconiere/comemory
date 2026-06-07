@@ -17,17 +17,13 @@ use clap::Args as ClapArgs;
 use serde::Serialize;
 
 use crate::cli::resolve_data_dir;
+use crate::config::file::Config;
 use crate::config::paths::Paths;
 use crate::index::{Embedder, MemoryIndex};
 use crate::prelude::*;
 use crate::retrieval::corrective::should_fallback;
 use crate::retrieval::fuse::search_memory_fused;
 use crate::retrieval::{classify, Route};
-
-/// Minimum top1 / top2 score gap below which we log a "confidence low"
-/// warning. Matches the corrective-fallback contract: see
-/// `retrieval::corrective::should_fallback`.
-const FALLBACK_MIN_CONFIDENCE: f32 = 0.15;
 
 const EXAMPLES: &str = "\
 Examples:
@@ -77,18 +73,20 @@ struct Envelope<'a> {
 pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
+    let cfg = Config::defaults().with_env()?;
     let idx = MemoryIndex::open(paths.vectors_dir(), 768).await?;
     let mut emb = Embedder::nomic_text()?;
     let q = emb.embed_one(&a.query)?;
 
     let route = classify(&a.query);
-    let hits = search_memory_fused(&idx, &paths, &q, &a.query, a.limit, 60.0).await?;
+    let hits =
+        search_memory_fused(&idx, &paths, &q, &a.query, a.limit, cfg.retrieval.rrf_k).await?;
 
     // Observability only: if confidence is low and the result set is sparse,
     // surface it via `tracing` so operators can spot weak queries. The
     // pipeline keeps the original hits — second-pass corrective retrieval
     // is a follow-up task.
-    if should_fallback(&hits, FALLBACK_MIN_CONFIDENCE) && hits.len() < a.limit {
+    if should_fallback(&hits, cfg.retrieval.corrective_min_confidence) && hits.len() < a.limit {
         tracing::warn!("search confidence low: route={:?}", route);
     }
 
