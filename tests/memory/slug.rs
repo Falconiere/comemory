@@ -1,4 +1,4 @@
-use qwick_memory::memory::slug::slug_from_body;
+use comemory::memory::slug::slug_from_body;
 
 #[test]
 fn slug_from_first_meaningful_line() {

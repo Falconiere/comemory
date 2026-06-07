@@ -1,4 +1,4 @@
-//! `qwick-memory save` — write a new memory to disk via `MemoryStore::save`, then
+//! `comemory save` — write a new memory to disk via `MemoryStore::save`, then
 //! best-effort wire the record into the kuzu property graph (Memory node +
 //! provenance edges + cross-link references). Graph errors are logged and
 //! swallowed because markdown remains the source of truth.
@@ -20,18 +20,18 @@ use crate::prelude::*;
 const EXAMPLES: &str = "\
 Examples:
   # Save a decision with tags and elevated quality
-  qwick-memory save \"Use Postgres for analytics\" --kind decision --repo myrepo --tags db,postgres --quality 4
+  comemory save \"Use Postgres for analytics\" --kind decision --repo myrepo --tags db,postgres --quality 4
 
   # Pipe a bug report body from another command
-  echo \"Race in run_migration when run twice in <1s\" | qwick-memory save - --kind bug --repo myrepo
+  echo \"Race in run_migration when run twice in <1s\" | comemory save - --kind bug --repo myrepo
 
   # Read the body from a file via shell redirect
-  qwick-memory save - --kind discovery --repo myrepo < notes/postgres-migration.md
+  comemory save - --kind discovery --repo myrepo < notes/postgres-migration.md
 
   # Minimal note (kind defaults to `note`, no repo/tags)
-  qwick-memory save \"Remember: cargo nextest serializes the embedder group\"";
+  comemory save \"Remember: cargo nextest serializes the embedder group\"";
 
-/// Arguments to `qwick-memory save`. The positional `body` is optional — if omitted
+/// Arguments to `comemory save`. The positional `body` is optional — if omitted
 /// or `-`, the body is read from stdin so callers can pipe content.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES)]

@@ -1,4 +1,4 @@
-//! qwick-memory — agentic dev memory + code-aware semantic search.
+//! comemory — agentic dev memory + code-aware semantic search.
 
 pub mod prelude;
 

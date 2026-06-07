@@ -1,6 +1,6 @@
-use qwick_memory::config::paths::Paths;
-use qwick_memory::memory::{Kind, MemoryStore};
-use qwick_memory::prune::orphans;
+use comemory::config::paths::Paths;
+use comemory::memory::{Kind, MemoryStore};
+use comemory::prune::orphans;
 
 use super::common;
 

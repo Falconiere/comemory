@@ -1,5 +1,5 @@
 //! LanceDB-backed vector index for memory bodies. Wraps `connect`, `merge_insert`,
-//! and `nearest_to` so the rest of qwick-memory treats memory search as upsert + topK.
+//! and `nearest_to` so the rest of comemory treats memory search as upsert + topK.
 
 use std::path::Path;
 use std::sync::Arc;

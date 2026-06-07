@@ -1,4 +1,4 @@
-//! `qwick-memory gc` — purge entries in `memories/.trash/` older than 30 days.
+//! `comemory gc` — purge entries in `memories/.trash/` older than 30 days.
 //!
 //! Uses filesystem mtime (`std::fs::Metadata::modified`) rather than a
 //! frontmatter-derived cutoff timestamp; this keeps gc working even on
@@ -14,14 +14,14 @@ use crate::config::paths::Paths;
 use crate::output::json;
 use crate::prelude::*;
 
-/// Example invocations shown at the bottom of `qwick-memory gc --help`.
+/// Example invocations shown at the bottom of `comemory gc --help`.
 pub const EXAMPLES: &str = "\
 Examples:
   # Hard-delete .trash entries past the retention window
-  qwick-memory gc
+  comemory gc
 
   # JSON output for CI/automation
-  qwick-memory gc --json";
+  comemory gc --json";
 
 const RETENTION_DAYS: i64 = 30;
 

@@ -1,4 +1,4 @@
-use qwick_memory::graph::schema::{CODE_LAYER_DDL, MEMORY_LAYER_DDL};
+use comemory::graph::schema::{CODE_LAYER_DDL, MEMORY_LAYER_DDL};
 
 #[test]
 fn memory_layer_ddl_is_non_empty() {

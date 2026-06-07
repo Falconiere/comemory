@@ -1,4 +1,4 @@
-use qwick_memory::prune::stale_code;
+use comemory::prune::stale_code;
 
 #[test]
 fn stale_code_returns_empty_on_empty_dir() {

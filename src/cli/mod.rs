@@ -26,12 +26,12 @@ pub mod supersedes;
 pub mod symbol;
 pub mod walk;
 
-/// Top-level CLI. `qwick-memory <subcommand> [--json] [--data-dir DIR]`. The `--json`
+/// Top-level CLI. `comemory <subcommand> [--json] [--data-dir DIR]`. The `--json`
 /// and `--data-dir` flags are global so callers can place them either before
 /// or after the subcommand.
 #[derive(Parser, Debug)]
 #[command(
-    name = "qwick-memory",
+    name = "comemory",
     version,
     about = "Agentic dev memory + code-aware semantic search",
     arg_required_else_help = true
@@ -41,9 +41,9 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub json: bool,
 
-    /// Override the data root (defaults to `$HOME/.qwick-memory`). Honors the
-    /// `QWICK_MEMORY_DATA_DIR` environment variable.
-    #[arg(long, global = true, env = "QWICK_MEMORY_DATA_DIR")]
+    /// Override the data root (defaults to `$HOME/.comemory`). Honors the
+    /// `COMEMORY_DATA_DIR` environment variable.
+    #[arg(long, global = true, env = "COMEMORY_DATA_DIR")]
     pub data_dir: Option<std::path::PathBuf>,
 
     #[command(subcommand)]
@@ -91,17 +91,17 @@ pub enum Cmd {
     /// Purge old entries from `memories/.trash/`.
     #[command(after_help = gc::EXAMPLES)]
     Gc,
-    /// Install git hooks that trigger `qwick-memory index-code --incremental` on
+    /// Install git hooks that trigger `comemory index-code --incremental` on
     /// `post-commit`, `post-merge`, and `post-checkout`.
     InstallHooks(install_hooks::Args),
-    /// Property-graph tooling. Run `qwick-memory graph --help`.
+    /// Property-graph tooling. Run `comemory graph --help`.
     Graph {
         #[command(subcommand)]
         cmd: GraphCmd,
     },
 }
 
-/// Subcommands nested under `qwick-memory graph`.
+/// Subcommands nested under `comemory graph`.
 #[derive(Subcommand, Debug)]
 pub enum GraphCmd {
     /// Spin up the local HTTP viewer for the property graph.
@@ -138,10 +138,10 @@ pub async fn run(cli: Cli) -> Result<()> {
 }
 
 /// Resolve the effective data directory. Caller passes the CLI flag (which
-/// also reads `QWICK_MEMORY_DATA_DIR`); on `None` we fall back to `$HOME/.qwick-memory`.
+/// also reads `COMEMORY_DATA_DIR`); on `None` we fall back to `$HOME/.comemory`.
 pub fn resolve_data_dir(opt: Option<std::path::PathBuf>) -> std::path::PathBuf {
     opt.unwrap_or_else(|| {
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-        std::path::PathBuf::from(home).join(".qwick-memory")
+        std::path::PathBuf::from(home).join(".comemory")
     })
 }

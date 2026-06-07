@@ -2,8 +2,8 @@
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use qwick_memory::serve::router::router;
-use qwick_memory::serve::state::ServerState;
+use comemory::serve::router::router;
+use comemory::serve::state::ServerState;
 use tower::ServiceExt;
 
 use super::graph_fixture;

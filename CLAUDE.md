@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-`qwick-memory` is a Rust CLI that fuses engram-style developer memory, grepai-style
+`comemory` is a Rust CLI that fuses engram-style developer memory, grepai-style
 semantic code search, and ast-grep AST patterns into a single binary, knit
 together by a two-layer property graph (memory + code). It is a **standalone
 agentic-RAG toolbox** invoked from the command line — not a Claude Code MCP
@@ -12,7 +12,7 @@ truth, vectors live in LanceDB, structural links live in kuzu.
 ## Architecture
 
 - **Source of truth:** markdown files with YAML frontmatter at
-  `~/.qwick-memory/memories/{id}-{slug}.md` (override with `QWICK_MEMORY_DATA_DIR`).
+  `~/.comemory/memories/{id}-{slug}.md` (override with `COMEMORY_DATA_DIR`).
 - **Vector indices:** `lancedb 0.29` embedded, two tables —
   `memory_chunks` (memory bodies) and `code_chunks` (symbol snippets).
 - **Property graph:** `kuzu 0.7` with a memory layer (`Memory`, `Repo`,
@@ -20,7 +20,7 @@ truth, vectors live in LanceDB, structural links live in kuzu.
   edges (`ReferencesFile`, `ReferencesSymbol`, `RelatesTo`, `Supersedes`,
   `ConflictsWith`).
 - **AST extraction:** `ast-grep-core 0.38` + `ast-grep-language 0.38` for
-  symbol enumeration and user-supplied `qwick-memory ast` patterns.
+  symbol enumeration and user-supplied `comemory ast` patterns.
 - **Embedders:** `fastembed 4` — `nomic-embed-text-v1.5-Q` for memories,
   `jina-embeddings-v2-base-code-Q` for code (ONNX, local, no API calls).
 - **Stats / indexing markers:** `rusqlite 0.32` (bundled SQLite).
@@ -39,7 +39,7 @@ just qa                         # check-all + cargo-deny + dup-check
 just e2e                        # real-binary end-to-end harness
 bash scripts/check-all.sh       # the umbrella gate (CI parity)
 cargo nextest run --all-features
-qwick-memory doctor                    # runtime health check
+comemory doctor                    # runtime health check
 ```
 
 ## Binding Rules (apply to every contribution)
@@ -83,8 +83,8 @@ enforced by `scripts/check-all.sh`. Every PR must satisfy all five.
 | `memory/` | markdown I/O, `Frontmatter`, slug, id (8-hex SHA-256), atomic save / load / soft-delete / list |
 | `index/` | `Embedder` (fastembed wrapper), `MemoryIndex` + `CodeIndex` LanceDB tables, schema |
 | `graph/` | kuzu schema, `Graph` upserts, `query` (Cypher helpers), `cross_link` reference extraction |
-| `retrieval/` | adaptive `router`, `hybrid` search, `corrective` fallback, `rank` blending, `bundle` for `qwick-memory context` |
-| `ast/` | `extractor` (symbol enumeration via tree-sitter through ast-grep), `pattern` (user-facing `qwick-memory ast`), per-language wiring |
+| `retrieval/` | adaptive `router`, `hybrid` search, `corrective` fallback, `rank` blending, `bundle` for `comemory context` |
+| `ast/` | `extractor` (symbol enumeration via tree-sitter through ast-grep), `pattern` (user-facing `comemory ast`), per-language wiring |
 | `stats/` | rusqlite stats store + feedback table |
 | `config/` | layered config (defaults → file → env) and `Paths` (data-dir layout) |
 | `output/` | TTY (`owo-colors`) and JSON (`serde_json`) emitters, shared between subcommands |
@@ -101,12 +101,12 @@ environment (`Config::with_env`, in `src/config/file.rs`).
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `QWICK_MEMORY_DATA_DIR` | Root data directory (memories + lancedb + kuzu + sqlite) | `~/.qwick-memory` |
-| `QWICK_MEMORY_INDEXING_AUTO_REINDEX` | `lazy` \| `hook` \| `off` — controls automatic code-index refresh | `lazy` |
-| `QWICK_MEMORY_RETRIEVAL_TOP_K` | Number of results returned by the hybrid router | `12` |
-| `QWICK_MEMORY_RETRIEVAL_MEMORY_THRESHOLD` | Minimum cosine similarity for the memory table | `0.55` |
-| `QWICK_MEMORY_RETRIEVAL_CODE_THRESHOLD` | Minimum cosine similarity for the code table | `0.50` |
-| `QWICK_MEMORY_GIT_AUTO_SYNC` | `true`/`1` to enable best-effort git commit + push after a save | `false` |
+| `COMEMORY_DATA_DIR` | Root data directory (memories + lancedb + kuzu + sqlite) | `~/.comemory` |
+| `COMEMORY_INDEXING_AUTO_REINDEX` | `lazy` \| `hook` \| `off` — controls automatic code-index refresh | `lazy` |
+| `COMEMORY_RETRIEVAL_TOP_K` | Number of results returned by the hybrid router | `12` |
+| `COMEMORY_RETRIEVAL_MEMORY_THRESHOLD` | Minimum cosine similarity for the memory table | `0.55` |
+| `COMEMORY_RETRIEVAL_CODE_THRESHOLD` | Minimum cosine similarity for the code table | `0.50` |
+| `COMEMORY_GIT_AUTO_SYNC` | `true`/`1` to enable best-effort git commit + push after a save | `false` |
 
 CLI flags `--data-dir` and `--json` are global and can appear before or
 after the subcommand.
@@ -140,7 +140,7 @@ Markdown body lives here.
 
 ## Save Flow (spec §8, current implementation)
 
-`qwick-memory save` runs:
+`comemory save` runs:
 
 1. Parse args, resolve repo/author defaults, build `Frontmatter` with
    `schema: 1` and `content_hash = sha256(body.trim_end())`.
@@ -153,7 +153,7 @@ Markdown body lives here.
    - `cross_link::extract_refs` walks the body for backtick-fenced
      `<repo>:<path>` / `<repo>:<path>:<symbol>` mentions and emits
      `ReferencesFile` / `ReferencesSymbol` edges (silently no-op when the
-     File/Symbol nodes do not yet exist — `qwick-memory index-code` fills them in
+     File/Symbol nodes do not yet exist — `comemory index-code` fills them in
      later).
    Graph failures are logged via `tracing::warn!` and swallowed; markdown
    remains the source of truth.
@@ -161,10 +161,10 @@ Markdown body lives here.
 **v1.x gaps** (tracked in `README.md` "Known v1.1 gaps"):
 
 - The memory body is **not yet** embedded into `lancedb.memory_chunks` from
-  the save path itself; rebuild via `qwick-memory index-code` or a future
-  dedicated `qwick-memory index` command.
+  the save path itself; rebuild via `comemory index-code` or a future
+  dedicated `comemory index` command.
 - `RelatesTo` neighbor discovery (spec §8 step 6) is deferred.
-- Git auto-sync from `git_utils` runs only when `QWICK_MEMORY_GIT_AUTO_SYNC` is
+- Git auto-sync from `git_utils` runs only when `COMEMORY_GIT_AUTO_SYNC` is
   enabled.
 
 ## Testing
@@ -175,7 +175,7 @@ Markdown body lives here.
   `tests/<module>/`.
 - `tests/common/` carries shared fixtures (temp data-dir builders, gold
   memory samples).
-- CLI integration tests use `assert_cmd` against the real `qwick-memory` binary.
+- CLI integration tests use `assert_cmd` against the real `comemory` binary.
 - Snapshot tests use `insta` (`tests/snapshots/`).
 - Property tests use `proptest`.
 - `.config/nextest.toml` serializes the `embedder` test group
@@ -204,12 +204,12 @@ exits 0.
 
 ## Distribution
 
-- `cargo install qwick-memory` (source, from crates.io once published).
-- `brew install SidegigLLC/tap/qwick-memory` (Homebrew tap
-  `SidegigLLC/homebrew-tap`, published by `cargo-dist`).
+- `cargo install comemory` (source, from crates.io once published).
+- `brew install Falconiere/tap/comemory` (Homebrew tap
+  `Falconiere/homebrew-tap`, published by `cargo-dist`).
 - Prebuilt tarballs for `aarch64-apple-darwin`, `x86_64-apple-darwin`,
   `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu` attached to
-  [GitHub Releases](https://github.com/SidegigLLC/qwick-memory/releases).
+  [GitHub Releases](https://github.com/Falconiere/comemory/releases).
 
 `cargo-dist` is configured in `[package.metadata.dist]` in `Cargo.toml`.
 PRs get a dry-run plan; only `v*` tags publish artifacts.
@@ -242,13 +242,6 @@ logic to the same gate scripts.
 - **Stop hook** (`session-end.sh`) runs `fmt-check`,
   `test-placement-check`, `no-bypass-check`, and `module-size-check` at
   end-of-conversation so regressions surface immediately.
-
-## Spec / Plan References
-
-- Design spec:
-  `docs/superpowers/specs/2026-05-17-qwick-rust-agentic-rag-design.md`
-- Implementation plan:
-  `docs/superpowers/plans/2026-05-17-qwick-rust-agentic-rag-plan.md`
 
 User-facing docs live in `docs/architecture.md` and
 `docs/cli-reference.md`; the README links to both.

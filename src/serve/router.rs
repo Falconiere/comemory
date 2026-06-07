@@ -62,7 +62,7 @@ pub async fn run(state: ServerState, addr: SocketAddr, open_browser: bool) -> Re
         .map_err(|e| Error::Other(format!("local_addr: {e}")))?;
     let url = format!("http://{bound}");
 
-    tracing::info!(%url, "qwick-memory graph viewer listening on {url}; press Ctrl-C to stop");
+    tracing::info!(%url, "comemory graph viewer listening on {url}; press Ctrl-C to stop");
 
     if open_browser {
         if let Err(e) = open::that(&url) {

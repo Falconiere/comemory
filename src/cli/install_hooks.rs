@@ -1,9 +1,9 @@
-//! `qwick-memory install-hooks` — drop git hooks into a repo so commits/merges/
-//! checkouts kick off `qwick-memory index-code --incremental --quiet` in the
+//! `comemory install-hooks` — drop git hooks into a repo so commits/merges/
+//! checkouts kick off `comemory index-code --incremental --quiet` in the
 //! background.
 //!
-//! The hooks are intentionally minimal (`exec qwick-memory … &`) so they don't slow
-//! down interactive git operations. If `qwick-memory` isn't on `$PATH` the hook
+//! The hooks are intentionally minimal (`exec comemory … &`) so they don't slow
+//! down interactive git operations. If `comemory` isn't on `$PATH` the hook
 //! fails silently — git treats a missing executable as a hook error but the
 //! `&` detaches before the exit code reaches git, so the commit still
 //! completes cleanly.
@@ -24,15 +24,15 @@ use crate::prelude::*;
 const EXAMPLES: &str = "\
 Examples:
   # Install into the current repo
-  qwick-memory install-hooks
+  comemory install-hooks
 
   # Install into a specific repo path
-  qwick-memory install-hooks --repo /path/to/repo
+  comemory install-hooks --repo /path/to/repo
 
   # Overwrite any hand-written hooks
-  qwick-memory install-hooks --force";
+  comemory install-hooks --force";
 
-/// Arguments to `qwick-memory install-hooks`.
+/// Arguments to `comemory install-hooks`.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES)]
 pub struct Args {
@@ -49,7 +49,7 @@ pub struct Args {
 
 /// Body written to each hook file. The trailing `&` detaches the indexer so
 /// git's hook runner returns immediately.
-const SCRIPT: &str = "#!/usr/bin/env bash\nexec qwick-memory index-code --incremental --quiet &\n";
+const SCRIPT: &str = "#!/usr/bin/env bash\nexec comemory index-code --incremental --quiet &\n";
 
 /// Hooks we install. All three trigger an incremental reindex because each
 /// can leave the working tree at a new HEAD: `post-commit` for new commits,

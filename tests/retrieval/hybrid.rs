@@ -1,7 +1,7 @@
-use qwick_memory::config::paths::Paths;
-use qwick_memory::index::{Embedder, MemoryIndex};
-use qwick_memory::memory::{Kind, MemoryStore};
-use qwick_memory::retrieval::hybrid::search_memory;
+use comemory::config::paths::Paths;
+use comemory::index::{Embedder, MemoryIndex};
+use comemory::memory::{Kind, MemoryStore};
+use comemory::retrieval::hybrid::search_memory;
 
 use super::common;
 

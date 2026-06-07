@@ -1,5 +1,5 @@
 use axum::http::header::CONTENT_TYPE;
-use qwick_memory::serve::assets::serve_asset;
+use comemory::serve::assets::serve_asset;
 
 fn fetch(path: &str) -> (axum::http::StatusCode, String, Vec<u8>) {
     let resp = futures::executor::block_on(serve_asset(path));

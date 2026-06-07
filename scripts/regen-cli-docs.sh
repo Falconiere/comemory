@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Regenerate docs/cli-reference.md from `qwick-memory <cmd> --help` output.
+# Regenerate docs/cli-reference.md from `comemory <cmd> --help` output.
 # This is the single source of truth for the CLI reference page.
 
 set -euo pipefail
@@ -14,7 +14,7 @@ OUT="${1:-$PROJECT_ROOT/docs/cli-reference.md}"
 log_info "$STEP" "building release-quick binary"
 run_cargo build --profile release-quick --locked --quiet
 
-BIN="$PROJECT_ROOT/target/release-quick/qwick-memory"
+BIN="$PROJECT_ROOT/target/release-quick/comemory"
 [[ -x "$BIN" ]] || die "$STEP" "expected binary at $BIN"
 
 SUBCOMMANDS=(
@@ -36,9 +36,6 @@ This page is **generated** by `scripts/regen-cli-docs.sh`. Do not edit by
 hand — re-run the script and commit the result. Drift is enforced by
 `scripts/cli-docs-check.sh` in the umbrella gate.
 
-For the design rationale behind each command, see the
-[design spec](superpowers/specs/2026-05-17-qwick-rust-agentic-rag-design.md).
-
 ## Global options
 
 Every subcommand inherits two global flags:
@@ -46,7 +43,7 @@ Every subcommand inherits two global flags:
 | Flag | Description |
 |---|---|
 | `--json` | Emit machine-readable JSON instead of a human TTY view. |
-| `--data-dir <DATA_DIR>` | Override the data root (defaults to `$HOME/.qwick-memory`). Honors the `QWICK_MEMORY_DATA_DIR` environment variable. |
+| `--data-dir <DATA_DIR>` | Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable. |
 
 Exit codes follow `sysexits.h`: `0` success, non-zero for usage / I/O /
 data errors.
@@ -64,7 +61,7 @@ HEADER
   for sub in "${SUBCOMMANDS[@]}"; do
     echo "---"
     echo
-    echo "## qwick-memory $sub"
+    echo "## comemory $sub"
     echo
     echo '```'
     "$BIN" "$sub" --help
@@ -80,7 +77,7 @@ HEADER
     if [[ ":${emitted_parents}:" != *":${parent}:"* ]]; then
       echo "---"
       echo
-      echo "## qwick-memory $parent"
+      echo "## comemory $parent"
       echo
       echo '```'
       "$BIN" "$parent" --help
@@ -91,7 +88,7 @@ HEADER
     echo "---"
     echo
     # shellcheck disable=SC2086
-    echo "## qwick-memory $nested"
+    echo "## comemory $nested"
     echo
     echo '```'
     # shellcheck disable=SC2086

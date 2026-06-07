@@ -18,7 +18,7 @@ pub use memory_index::{MemoryHit, MemoryIndex};
 /// any table. The mapping is `1 / (1 + d)` — `d = 0` ⇒ `score = 1.0`, larger
 /// distances asymptote toward 0.
 ///
-/// `pub(crate)` because every call site lives inside the qwick-memory crate (index +
+/// `pub(crate)` because every call site lives inside the comemory crate (index +
 /// retrieval modules); we don't want the helper leaking into the public API.
 pub(crate) fn score_from_distance(d: f32) -> f32 {
     1.0 / (1.0 + d)

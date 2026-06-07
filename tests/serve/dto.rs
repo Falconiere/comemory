@@ -1,4 +1,4 @@
-use qwick_memory::serve::dto::edge_id;
+use comemory::serve::dto::edge_id;
 
 #[test]
 fn edge_id_is_deterministic() {
@@ -23,7 +23,7 @@ fn edge_id_changes_with_endpoints() {
     assert_ne!(a, b);
 }
 
-use qwick_memory::serve::dto::{
+use comemory::serve::dto::{
     EdgeDto, EdgeRef, GraphPayload, NodeDetail, NodeDto, SearchResponse, SearchResult,
 };
 use serde_json::json;

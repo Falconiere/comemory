@@ -1,15 +1,15 @@
 [package]
-name = "qwick-memory"
+name = "comemory"
 version = "0.1.0"
 edition = "2021"
 description = "Agentic dev memory + code-aware semantic search via a two-layer property graph."
 license = "MIT"
-repository = "https://github.com/SidegigLLC/qwick-memory"
-homepage = "https://github.com/SidegigLLC/qwick-memory"
+repository = "https://github.com/Falconiere/comemory"
+homepage = "https://github.com/Falconiere/comemory"
 rust-version = "1.95"
 
 [[bin]]
-name = "qwick-memory"
+name = "comemory"
 path = "src/main.rs"
 
 [lib]
@@ -129,14 +129,14 @@ members = ["."]
 # When a tag matching `v*` is pushed, the GitHub workflow in
 # `.github/workflows/release.yml` builds prebuilt binaries for the targets
 # listed below and publishes a shell installer + Homebrew formula to the
-# `SidegigLLC/homebrew-tap` repository.
+# `Falconiere/homebrew-tap` repository.
 #
 # Docs: https://opensource.axo.dev/cargo-dist/book/
 [workspace.metadata.dist]
 cargo-dist-version = "0.31.0"
 ci = ["github"]
 installers = ["shell", "homebrew"]
-tap = "SidegigLLC/homebrew-tap"
+tap = "Falconiere/homebrew-tap"
 publish-jobs = ["homebrew"]
 targets = [
   "aarch64-apple-darwin",

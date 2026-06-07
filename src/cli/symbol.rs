@@ -1,4 +1,4 @@
-//! `qwick-memory symbol` — semantic search over the code index. Embeds the query
+//! `comemory symbol` — semantic search over the code index. Embeds the query
 //! name with jina-code, queries the `code_chunks` table for the top hits,
 //! and renders qualified name + similarity score + a short snippet preview.
 
@@ -18,15 +18,15 @@ use crate::retrieval::hybrid::search_code;
 const EXAMPLES: &str = "\
 Examples:
   # Exact function-name hit
-  qwick-memory symbol run_migration
+  comemory symbol run_migration
 
   # Natural-language descriptor, top 10 JSON
-  qwick-memory symbol \"parse frontmatter yaml\" --limit 10 --json
+  comemory symbol \"parse frontmatter yaml\" --limit 10 --json
 
   # Broader semantic match
-  qwick-memory symbol \"embed query string into vector\"";
+  comemory symbol \"embed query string into vector\"";
 
-/// Arguments to `qwick-memory symbol`.
+/// Arguments to `comemory symbol`.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES)]
 pub struct Args {
@@ -37,7 +37,7 @@ pub struct Args {
     pub limit: usize,
 }
 
-/// One row of `qwick-memory symbol` output.
+/// One row of `comemory symbol` output.
 #[derive(Serialize)]
 struct Row {
     qualified: String,

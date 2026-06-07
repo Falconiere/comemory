@@ -1,4 +1,4 @@
-use qwick_memory::ast::Lang;
+use comemory::ast::Lang;
 
 #[test]
 fn rust_extension_resolves() {

@@ -1,4 +1,4 @@
-//! `qwick-memory search` — natural-language vector search over the memory index.
+//! `comemory search` — natural-language vector search over the memory index.
 //! Returns top-K hits with score, repo, and a short body snippet.
 //!
 //! The retrieval pipeline lives in `crate::retrieval`: every query is first
@@ -37,15 +37,15 @@ const FALLBACK_MIN_CONFIDENCE: f32 = 0.15;
 const EXAMPLES: &str = "\
 Examples:
   # Natural-language query, top 12 hits (default)
-  qwick-memory search \"postgres migration race\"
+  comemory search \"postgres migration race\"
 
   # Limit hits and emit JSON for agent consumption
-  qwick-memory search \"what database do we use\" --limit 5 --json
+  comemory search \"what database do we use\" --limit 5 --json
 
   # Tightly scoped query
-  qwick-memory search \"tree-sitter ast pattern\" --limit 3";
+  comemory search \"tree-sitter ast pattern\" --limit 3";
 
-/// Arguments to `qwick-memory search`.
+/// Arguments to `comemory search`.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES)]
 pub struct Args {

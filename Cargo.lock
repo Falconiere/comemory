@@ -1008,6 +1008,56 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d07550c9036bf2ae0c684c4297d503f838287c83c53686d05370d0e139ae570"
 
 [[package]]
+name = "comemory"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "arrow-array",
+ "arrow-schema",
+ "assert_cmd",
+ "ast-grep-core",
+ "ast-grep-language",
+ "axum",
+ "clap",
+ "clap_complete",
+ "fastembed",
+ "futures",
+ "git2",
+ "ignore",
+ "insta",
+ "kuzu",
+ "lancedb",
+ "libc",
+ "mime_guess",
+ "nix",
+ "once_cell",
+ "open",
+ "owo-colors",
+ "predicates",
+ "proptest",
+ "regex",
+ "reqwest",
+ "rusqlite",
+ "rust-embed",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2",
+ "siphasher",
+ "tempfile",
+ "thiserror 1.0.69",
+ "time",
+ "tokio",
+ "toml",
+ "tower",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "walkdir",
+]
+
+[[package]]
 name = "comfy-table"
 version = "7.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5336,56 +5386,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "41f2619966050689382d2b44f664f4bc593e129785a36d6ee376ddf37259b924"
 dependencies = [
  "proc-macro2",
-]
-
-[[package]]
-name = "qwick-memory"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "arrow-array",
- "arrow-schema",
- "assert_cmd",
- "ast-grep-core",
- "ast-grep-language",
- "axum",
- "clap",
- "clap_complete",
- "fastembed",
- "futures",
- "git2",
- "ignore",
- "insta",
- "kuzu",
- "lancedb",
- "libc",
- "mime_guess",
- "nix",
- "once_cell",
- "open",
- "owo-colors",
- "predicates",
- "proptest",
- "regex",
- "reqwest",
- "rusqlite",
- "rust-embed",
- "serde",
- "serde_json",
- "serde_yaml",
- "sha2",
- "siphasher",
- "tempfile",
- "thiserror 1.0.69",
- "time",
- "tokio",
- "toml",
- "tower",
- "tower-http",
- "tracing",
- "tracing-subscriber",
- "url",
- "walkdir",
 ]
 
 [[package]]

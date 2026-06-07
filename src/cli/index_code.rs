@@ -1,4 +1,4 @@
-//! `qwick-memory index-code` — walk a repo, extract symbols, embed snippets with
+//! `comemory index-code` — walk a repo, extract symbols, embed snippets with
 //! jina-code, and upsert into the LanceDB `code_chunks` table. Repo name is
 //! auto-detected from the root path basename when `--repo` is omitted.
 //!
@@ -23,15 +23,15 @@ use crate::prelude::*;
 const EXAMPLES: &str = "\
 Examples:
   # Index the current working directory
-  qwick-memory index-code
+  comemory index-code
 
   # Explicit root and repo label
-  qwick-memory index-code --root /path/to/repo --repo qwick-backend
+  comemory index-code --root /path/to/repo --repo qwick-backend
 
   # Incremental refresh, no human output
-  qwick-memory index-code --incremental --quiet";
+  comemory index-code --incremental --quiet";
 
-/// Arguments to `qwick-memory index-code`.
+/// Arguments to `comemory index-code`.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES)]
 pub struct Args {

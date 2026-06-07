@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build a release binary of qwick-memory and install it into the user's
+# Build a release binary of comemory and install it into the user's
 # cargo bin directory (typically ~/.cargo/bin). Run from anywhere.
 
 set -euo pipefail
@@ -23,14 +23,14 @@ done
 
 if [[ "$CLEAN" -eq 1 ]]; then
   if command -v uv >/dev/null 2>&1 \
-     && uv tool list 2>/dev/null | awk '{print $1}' | grep -qx 'qwick-memory'; then
-    log_info "$STEP" "detected uv tool: qwick-memory — uninstalling"
-    uv tool uninstall qwick-memory >/dev/null
+     && uv tool list 2>/dev/null | awk '{print $1}' | grep -qx 'comemory'; then
+    log_info "$STEP" "detected uv tool: comemory — uninstalling"
+    uv tool uninstall comemory >/dev/null
   fi
   if command -v brew >/dev/null 2>&1 \
-     && brew list --formula 2>/dev/null | grep -qx 'qwick-memory'; then
-    log_info "$STEP" "detected brew formula: qwick-memory — uninstalling"
-    brew uninstall qwick-memory >/dev/null
+     && brew list --formula 2>/dev/null | grep -qx 'comemory'; then
+    log_info "$STEP" "detected brew formula: comemory — uninstalling"
+    brew uninstall comemory >/dev/null
   fi
 fi
 
@@ -50,7 +50,7 @@ if [[ "$WITH_TOOLS" -eq 1 ]]; then
 fi
 
 BIN_DIR="${CARGO_INSTALL_ROOT:-${CARGO_HOME:-$HOME/.cargo}/bin}"
-BIN_PATH="$BIN_DIR/qwick-memory"
+BIN_PATH="$BIN_DIR/comemory"
 
 if [[ ! -x "$BIN_PATH" ]]; then
   die "$STEP" "expected binary at $BIN_PATH but none found"
@@ -67,7 +67,7 @@ esac
 SHADOW=""
 IFS=':' read -r -a PATH_PARTS <<< "$PATH"
 for p in "${PATH_PARTS[@]}"; do
-  candidate="$p/qwick-memory"
+  candidate="$p/comemory"
   if [[ -x "$candidate" && "$candidate" != "$BIN_PATH" ]]; then
     SHADOW="$candidate"
     break
@@ -100,17 +100,17 @@ install_completion() {
 
 if [[ "$INSTALL_COMPLETIONS" -eq 1 ]]; then
   if command -v fish >/dev/null 2>&1; then
-    install_completion fish "${XDG_CONFIG_HOME:-$HOME/.config}/fish/completions/qwick-memory.fish"
+    install_completion fish "${XDG_CONFIG_HOME:-$HOME/.config}/fish/completions/comemory.fish"
   fi
 
   if command -v zsh >/dev/null 2>&1; then
     ZSH_DEST=""
     if command -v brew >/dev/null 2>&1; then
       ZSH_BREW_DIR="$(brew --prefix 2>/dev/null)/share/zsh/site-functions"
-      [[ -d "$ZSH_BREW_DIR" && -w "$ZSH_BREW_DIR" ]] && ZSH_DEST="$ZSH_BREW_DIR/_qwick-memory"
+      [[ -d "$ZSH_BREW_DIR" && -w "$ZSH_BREW_DIR" ]] && ZSH_DEST="$ZSH_BREW_DIR/_comemory"
     fi
     if [[ -z "$ZSH_DEST" ]]; then
-      ZSH_DEST="$HOME/.zfunc/_qwick-memory"
+      ZSH_DEST="$HOME/.zfunc/_comemory"
       log_info "$STEP" "zsh: installing to ~/.zfunc; add 'fpath=(~/.zfunc \$fpath)' before 'compinit' in ~/.zshrc if not present"
     fi
     install_completion zsh "$ZSH_DEST"
@@ -120,10 +120,10 @@ if [[ "$INSTALL_COMPLETIONS" -eq 1 ]]; then
     BASH_DEST=""
     if command -v brew >/dev/null 2>&1; then
       BASH_BREW_DIR="$(brew --prefix 2>/dev/null)/etc/bash_completion.d"
-      [[ -d "$BASH_BREW_DIR" && -w "$BASH_BREW_DIR" ]] && BASH_DEST="$BASH_BREW_DIR/qwick-memory"
+      [[ -d "$BASH_BREW_DIR" && -w "$BASH_BREW_DIR" ]] && BASH_DEST="$BASH_BREW_DIR/comemory"
     fi
     if [[ -z "$BASH_DEST" ]]; then
-      BASH_DEST="$HOME/.local/share/bash-completion/completions/qwick-memory"
+      BASH_DEST="$HOME/.local/share/bash-completion/completions/comemory"
     fi
     install_completion bash "$BASH_DEST"
   fi
