@@ -85,3 +85,29 @@ fn search_empty_query_returns_empty() {
     let hits = fts.search("", 5).unwrap();
     assert!(hits.is_empty());
 }
+
+/// Regression for C5: malformed FTS5 MATCH expressions ("id:abc", trailing
+/// `AND`, contractions with apostrophes, etc.) must not propagate as errors
+/// to retrieval callers — they should degrade to an empty result so the
+/// fused pipeline can still serve dense hits.
+#[test]
+fn search_treats_fts5_syntax_errors_as_empty() {
+    let sb = common::runner::Sandbox::new();
+    let paths = Paths::new(sb.data_dir());
+    paths.ensure_dirs().unwrap();
+    let fts = Fts::open(paths.index_dir().join("fts.sqlite")).unwrap();
+    fts.upsert("id1", "the quick brown fox").unwrap();
+
+    // Column-qualified form ("id:abc") — FTS5 rejects when the named column
+    // doesn't exist on the table.
+    let hits = fts.search("id:abc", 5).unwrap();
+    assert!(hits.is_empty(), "column-qualified token must not error");
+
+    // Trailing operator — FTS5 reports a syntax error during query iteration.
+    let hits = fts.search("foo AND", 5).unwrap();
+    assert!(hits.is_empty(), "trailing AND must not error");
+
+    // Contraction with an apostrophe — FTS5 chokes on bare quote.
+    let hits = fts.search("it's", 5).unwrap();
+    assert!(hits.is_empty(), "apostrophe contraction must not error");
+}
