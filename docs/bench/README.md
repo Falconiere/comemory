@@ -11,10 +11,12 @@ timer starts so the headline numbers measure actual work, not init.
 
 - `save_end_to_end` — `comemory save` cost: markdown write + nomic
   embedding + `MemoryIndex::upsert` + FTS5 insert. Each iteration reuses
-  the same embedder + LanceDB + FTS handle and overwrites the same id,
-  so the measurement reflects the steady-state upsert path
-  (`merge_insert` on dense, `DELETE`+`INSERT` on FTS). Watch this when
-  changing the embed or upsert path.
+  the same embedder + LanceDB + FTS handle but **varies the body per
+  iteration** via an atomic counter, so the resulting `memory_id` is
+  unique each time. The measurement therefore reflects the cold-insert
+  path (new markdown file, `merge_insert` against an id never seen
+  before, fresh FTS row) rather than the steady-state overwrite. Watch
+  this when changing the embed or upsert path.
 - `search_vector_only` — dense-only baseline via
   `retrieval::fuse::search_memory_fused_with_fts(idx, None, ...)`. Passing
   `None` for the FTS handle short-circuits the BM25 path so the
