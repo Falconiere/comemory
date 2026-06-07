@@ -11,6 +11,11 @@ cd "$ROOT"
 OUT="docs/bench"
 mkdir -p "$OUT"
 
+cleanup() {
+    echo '```' >> "$OUT/latest.md" 2>/dev/null || true
+}
+trap cleanup EXIT
+
 {
   echo "# comemory bench results"
   echo ""
@@ -22,7 +27,5 @@ mkdir -p "$OUT"
 } > "$OUT/latest.md"
 
 RUST_LOG=warn cargo bench --all-features 2>&1 | tee -a "$OUT/latest.md"
-
-echo '```' >> "$OUT/latest.md"
 
 echo "wrote $OUT/latest.md"
