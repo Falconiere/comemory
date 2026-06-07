@@ -5,6 +5,7 @@
 
 pub mod bundle;
 pub mod corrective;
+pub mod fts;
 pub mod hybrid;
 pub mod rank;
 pub mod router;
