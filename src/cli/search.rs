@@ -1,12 +1,12 @@
-//! `comemory search` — natural-language vector search over the memory index.
+//! `comemory search` — natural-language search over the memory index.
 //! Returns top-K hits with score, repo, and a short body snippet.
 //!
 //! The retrieval pipeline lives in `crate::retrieval`: every query is first
 //! classified into a [`Route`] (Hybrid / Symbol / FtsFirst), then run through
-//! `search_memory` with a Config-default similarity threshold, and finally
-//! checked against the corrective-fallback signal for observability (we log
-//! when confidence is low but do not yet change behaviour — that lands when
-//! the corrective second-pass is wired in).
+//! `search_memory_fused` (RRF over dense + BM25), and finally checked against
+//! the corrective-fallback signal for observability (we log when confidence is
+//! low but do not yet change behaviour — that lands when the corrective
+//! second-pass is wired in).
 //!
 //! [`Route`]: crate::retrieval::Route
 
@@ -21,13 +21,8 @@ use crate::config::paths::Paths;
 use crate::index::{Embedder, MemoryIndex};
 use crate::prelude::*;
 use crate::retrieval::corrective::should_fallback;
-use crate::retrieval::hybrid::search_memory;
+use crate::retrieval::fuse::search_memory_fused;
 use crate::retrieval::{classify, Route};
-
-/// Default similarity threshold for the memory layer. Mirrors the value the
-/// design spec earmarks for the eventual `Config` surface; hardcoded here
-/// until the config module is wired into the CLI.
-const MEMORY_THRESHOLD: f32 = 0.55;
 
 /// Minimum top1 / top2 score gap below which we log a "confidence low"
 /// warning. Matches the corrective-fallback contract: see
@@ -74,7 +69,7 @@ struct Envelope<'a> {
     hits: &'a [Row],
 }
 
-/// Embed the query, search the vector index, and render hits.
+/// Embed the query, run RRF-fused dense+BM25 retrieval, and render hits.
 pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
@@ -83,7 +78,15 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let q = emb.embed_one(&a.query)?;
 
     let route = classify(&a.query);
-    let hits = search_memory(&idx, &q, a.limit, MEMORY_THRESHOLD).await?;
+    let hits = search_memory_fused(
+        &idx,
+        paths.index_dir().join("fts.sqlite"),
+        &q,
+        &a.query,
+        a.limit,
+        60.0,
+    )
+    .await?;
 
     // Observability only: if confidence is low and the result set is sparse,
     // surface it via `tracing` so operators can spot weak queries. The
