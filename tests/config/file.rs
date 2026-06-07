@@ -27,6 +27,23 @@ fn env_overrides_apply() {
 }
 
 #[test]
+fn env_rrf_k_override_applies() {
+    // Regression for C3: the CLI must read rrf_k through Config instead of
+    // hardcoding 60.0. Verify the env var path drops a valid override into
+    // the retrieval config so callers (search, context) can consume it.
+    //
+    // This test exercises only one env var and reads through `with_env()`
+    // immediately, mirroring the pre-existing env-var tests in this file.
+    // Run with `--test-threads=1` to avoid races with other env-mutating
+    // tests (a pre-existing constraint of this test binary).
+    std::env::set_var("COMEMORY_RETRIEVAL_RRF_K", "42.0");
+    let c = Config::defaults().with_env();
+    std::env::remove_var("COMEMORY_RETRIEVAL_RRF_K");
+    let cfg = c.expect("rrf_k override must succeed");
+    assert!((cfg.retrieval.rrf_k - 42.0).abs() < 1e-6);
+}
+
+#[test]
 fn env_rejects_invalid_top_k() {
     // Non-numeric top_k must surface as Err instead of silently keeping the
     // default; otherwise typos go unnoticed until retrieval misbehaves.
