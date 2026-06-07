@@ -1,7 +1,8 @@
 use comemory::config::paths::Paths;
 use comemory::index::{CodeIndex, Embedder, MemoryIndex};
 use comemory::memory::{Kind, MemoryStore};
-use comemory::retrieval::hybrid::{search_code, search_memory};
+use comemory::retrieval::fuse::search_memory_fused_with_fts;
+use comemory::retrieval::hybrid::search_code;
 
 use super::common;
 
@@ -33,7 +34,21 @@ async fn search_returns_results_from_both_layers() {
 
     let q_text = text_emb.embed_one("postgres migration race").unwrap();
     let q_code = code_emb.embed_one("run_migration").unwrap();
-    let mhits = search_memory(&midx, &q_text, 5, 0.0).await.unwrap();
+    // Dense-only memory retrieval via the unified fused entry; `fts = None`
+    // short-circuits the BM25 path, equivalent to the now-removed
+    // `hybrid::search_memory`.
+    let mhits = search_memory_fused_with_fts(
+        &midx,
+        None,
+        &paths,
+        &q_text,
+        "postgres migration race",
+        5,
+        0.0,
+        60.0,
+    )
+    .await
+    .unwrap();
     let chits = search_code(&cidx, &q_code, 5, 0.0).await.unwrap();
     assert!(
         !mhits.is_empty(),

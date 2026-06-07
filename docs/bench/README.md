@@ -15,8 +15,11 @@ timer starts so the headline numbers measure actual work, not init.
   so the measurement reflects the steady-state upsert path
   (`merge_insert` on dense, `DELETE`+`INSERT` on FTS). Watch this when
   changing the embed or upsert path.
-- `search_vector_only` — `retrieval::hybrid::search_memory` baseline
-  (pure vector path through `MemoryIndex::search`).
+- `search_vector_only` — dense-only baseline via
+  `retrieval::fuse::search_memory_fused_with_fts(idx, None, ...)`. Passing
+  `None` for the FTS handle short-circuits the BM25 path so the
+  measurement reflects pure dense retrieval through the unified entry
+  point (there is no separate `hybrid::search_memory` anymore).
 - `search_fused_rrf_cold_fts` — `retrieval::fuse::search_memory_fused`
   exactly as `comemory search` invokes it: every iteration re-opens the
   FTS5 SQLite file. The delta vs `search_vector_only` is the production
