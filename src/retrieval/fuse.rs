@@ -24,6 +24,12 @@ use crate::retrieval::rank::rrf_fuse;
 /// source of truth. When a fused id has no matching markdown file (deleted
 /// between FTS upsert and query) we log via `tracing::warn!` and skip it.
 ///
+/// `dense_threshold` is the cosine-score floor applied to dense candidates
+/// **before** fusion. RRF only uses ranks (not scores), so this is the only
+/// place we can prune weak-similarity rows without distorting the BM25 path.
+/// Pass `0.0` to disable filtering (the bench harness does this so the
+/// measurement reflects pure fusion cost, not threshold sensitivity).
+///
 /// Opens the FTS5 database on every call. Callers that already hold an
 /// `Fts` handle (long-lived servers, benches that want to measure fusion
 /// latency without re-paying the connection cost) should call
@@ -34,6 +40,7 @@ pub async fn search_memory_fused(
     query_emb: &[f32],
     query_text: &str,
     limit: usize,
+    dense_threshold: f32,
     rrf_k: f32,
 ) -> Result<Vec<MemoryHit>> {
     let fts_db = paths.fts_db();
@@ -49,6 +56,7 @@ pub async fn search_memory_fused(
         query_emb,
         query_text,
         limit,
+        dense_threshold,
         rrf_k,
     )
     .await
@@ -61,6 +69,9 @@ pub async fn search_memory_fused(
 /// degrades to dense-only retrieval. This mirrors the on-disk-missing
 /// fallback that [`search_memory_fused`] applies when `fts.sqlite` does not
 /// exist yet.
+///
+/// `dense_threshold` is a cosine-similarity floor applied to the dense
+/// candidates **before** they feed into RRF. Use `0.0` to disable.
 pub async fn search_memory_fused_with_fts(
     idx: &MemoryIndex,
     fts: Option<&Fts>,
@@ -68,6 +79,7 @@ pub async fn search_memory_fused_with_fts(
     query_emb: &[f32],
     query_text: &str,
     limit: usize,
+    dense_threshold: f32,
     rrf_k: f32,
 ) -> Result<Vec<MemoryHit>> {
     if limit == 0 {
@@ -75,7 +87,11 @@ pub async fn search_memory_fused_with_fts(
     }
     let over = limit.saturating_mul(4).max(limit);
 
-    let dense_hits = idx.search(query_emb, over).await?;
+    let mut dense_hits = idx.search(query_emb, over).await?;
+    // Prune weak-similarity dense candidates before fusion. RRF uses ranks
+    // only, so this is the one place where the cosine threshold can act
+    // without distorting the BM25 side of the fused list.
+    dense_hits.retain(|h| h.score >= dense_threshold);
     let dense_ids: Vec<String> = dense_hits.iter().map(|h| h.id.clone()).collect();
     let sparse_ids: Vec<String> = match fts {
         Some(handle) => handle

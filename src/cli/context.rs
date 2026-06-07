@@ -105,8 +105,16 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     let midx = MemoryIndex::open(paths.vectors_dir(), 768).await?;
     let mut text_emb = Embedder::nomic_text()?;
     let text_q = text_emb.embed_one(&a.key)?;
-    let mhits =
-        search_memory_fused(&midx, &paths, &text_q, &a.key, a.limit, cfg.retrieval.rrf_k).await?;
+    let mhits = search_memory_fused(
+        &midx,
+        &paths,
+        &text_q,
+        &a.key,
+        a.limit,
+        cfg.retrieval.memory_threshold,
+        cfg.retrieval.rrf_k,
+    )
+    .await?;
     let memories: Vec<MemoryView> = mhits
         .into_iter()
         .map(|h| MemoryView {

@@ -45,7 +45,7 @@ fn bench_search(c: &mut Criterion) {
 
     c.bench_function("search_fused_rrf_cold_fts", |b| {
         b.to_async(&rt).iter(|| async {
-            search_memory_fused(&idx, &paths, &q_vec, &q_text, 12, 60.0)
+            search_memory_fused(&idx, &paths, &q_vec, &q_text, 12, 0.0, 60.0)
                 .await
                 .expect("fused")
         });
@@ -53,7 +53,7 @@ fn bench_search(c: &mut Criterion) {
 
     c.bench_function("search_fused_rrf_warm_fts", |b| {
         b.to_async(&rt).iter(|| async {
-            search_memory_fused_with_fts(&idx, Some(&fts), &paths, &q_vec, &q_text, 12, 60.0)
+            search_memory_fused_with_fts(&idx, Some(&fts), &paths, &q_vec, &q_text, 12, 0.0, 60.0)
                 .await
                 .expect("fused warm")
         });
