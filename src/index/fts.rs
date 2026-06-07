@@ -125,13 +125,18 @@ impl Fts {
 }
 
 /// Best-effort detection of an FTS5 MATCH-expression parse error. FTS5 reports
-/// these as `SQLITE_ERROR` (rusqlite's `SqliteFailure` variant) with a message
-/// like `"fts5: syntax error near \"\""` or `"no such column: id"`. We match
-/// on the message string because the SQLite extended error codes are not
-/// uniquely allocated for FTS5 parse failures.
+/// these as `SQLITE_ERROR` (rusqlite's `SqliteFailure` variant) prefixed with
+/// `"fts5:"`. Tokenizer parse failures (e.g. unbalanced quote) sometimes
+/// surface as `"syntax error near \"<token>\""` without the prefix on older
+/// SQLite builds, so we keep that keeper.
+///
+/// `"no such column"` is **not** matched here: it indicates a genuine schema
+/// mismatch (or a column-qualified MATCH expression against a missing column)
+/// and must propagate to the caller as `Err` instead of silently degrading
+/// to an empty result.
 fn is_fts5_parse_error(e: &rusqlite::Error) -> bool {
     let s = e.to_string().to_lowercase();
-    s.contains("fts5") || s.contains("syntax error") || s.contains("no such column")
+    s.starts_with("fts5:") || s.contains("fts5") || s.contains("syntax error")
 }
 
 /// One BM25 hit. `score` is the negated `bm25()` value (FTS5 returns negative

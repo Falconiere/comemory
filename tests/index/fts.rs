@@ -86,10 +86,14 @@ fn search_empty_query_returns_empty() {
     assert!(hits.is_empty());
 }
 
-/// Regression for C5: malformed FTS5 MATCH expressions ("id:abc", trailing
-/// `AND`, contractions with apostrophes, etc.) must not propagate as errors
-/// to retrieval callers — they should degrade to an empty result so the
-/// fused pipeline can still serve dense hits.
+/// Regression for C5: malformed FTS5 MATCH expressions (trailing `AND`,
+/// contractions with apostrophes, etc.) must not propagate as errors to
+/// retrieval callers — they should degrade to an empty result so the fused
+/// pipeline can still serve dense hits.
+///
+/// Column-qualified forms like `"id:abc"` are **not** in this class: see
+/// [`search_propagates_column_filter_as_err`] for the contract on schema
+/// mismatches.
 #[test]
 fn search_treats_fts5_syntax_errors_as_empty() {
     let sb = common::runner::Sandbox::new();
@@ -98,11 +102,6 @@ fn search_treats_fts5_syntax_errors_as_empty() {
     let fts = Fts::open(paths.fts_db()).unwrap();
     fts.upsert("id1", "the quick brown fox").unwrap();
 
-    // Column-qualified form ("id:abc") — FTS5 rejects when the named column
-    // doesn't exist on the table.
-    let hits = fts.search("id:abc", 5).unwrap();
-    assert!(hits.is_empty(), "column-qualified token must not error");
-
     // Trailing operator — FTS5 reports a syntax error during query iteration.
     let hits = fts.search("foo AND", 5).unwrap();
     assert!(hits.is_empty(), "trailing AND must not error");
@@ -110,4 +109,27 @@ fn search_treats_fts5_syntax_errors_as_empty() {
     // Contraction with an apostrophe — FTS5 chokes on bare quote.
     let hits = fts.search("it's", 5).unwrap();
     assert!(hits.is_empty(), "apostrophe contraction must not error");
+}
+
+/// Regression for G1: a column-qualified MATCH expression against a genuinely
+/// missing column (e.g. `"nonexistent:foo"`) is a schema/usage error, not a
+/// parse error. The FTS5 search path must propagate it as `Err` rather than
+/// swallowing it as an empty result, so callers can spot the mismatch
+/// instead of silently degrading every column-filtered query to zero hits.
+///
+/// (`"id:abc"` against the live schema tokenizes as a literal `id:abc` token
+/// and matches no rows — it does *not* exercise the schema-error path.)
+#[test]
+fn search_propagates_column_filter_as_err() {
+    let sb = common::runner::Sandbox::new();
+    let paths = Paths::new(sb.data_dir());
+    paths.ensure_dirs().unwrap();
+    let fts = Fts::open(paths.fts_db()).unwrap();
+    fts.upsert("id1", "the quick brown fox").unwrap();
+
+    let result = fts.search("nonexistent_column:foo", 5);
+    assert!(
+        result.is_err(),
+        "column-qualified MATCH against missing column must propagate as Err, got {result:?}"
+    );
 }
