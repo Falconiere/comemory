@@ -1,11 +1,11 @@
-//! Integration tests for `qwick_memory::git_utils`. We shell out to the real `git`
+//! Integration tests for `comemory::git_utils`. We shell out to the real `git`
 //! binary to construct fixtures (rather than driving `git2` directly) so the
 //! test exercises the same on-disk layout a user repo would have — including
 //! the `.git/` directory `Repository::discover` looks for.
 
 use std::process::Command;
 
-use qwick_memory::git_utils::{changed_files, current_head, install_hook};
+use comemory::git_utils::{changed_files, current_head, install_hook};
 use tempfile::TempDir;
 
 /// Build a git repo in `dir` with a single commit. Returns the path so the

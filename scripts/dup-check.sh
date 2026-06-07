@@ -14,8 +14,8 @@ if ! command -v similarity-rs >/dev/null 2>&1; then
   exit 0
 fi
 # Threshold 0.85 ≈ near-clones; treat any hit as failure.
-if similarity-rs --min-similarity 0.85 --paths src/ scripts/ | tee /tmp/qwick-memory-dup.txt | grep -qE '^Similar'; then
-  log_err "dup-check" "near-duplicate blocks detected; see /tmp/qwick-memory-dup.txt"
+if similarity-rs --min-similarity 0.85 --paths src/ scripts/ | tee /tmp/comemory-dup.txt | grep -qE '^Similar'; then
+  log_err "dup-check" "near-duplicate blocks detected; see /tmp/comemory-dup.txt"
   exit 1
 fi
 log_ok "dup-check" "no near-duplicates above threshold"

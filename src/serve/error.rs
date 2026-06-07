@@ -70,7 +70,7 @@ impl ApiError {
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        tracing::error!(target: "qwick_memory::serve", code = %self.code, message = %self.message);
+        tracing::error!(target: "comemory::serve", code = %self.code, message = %self.message);
         let body = Json(Envelope {
             error: Inner {
                 code: self.code,

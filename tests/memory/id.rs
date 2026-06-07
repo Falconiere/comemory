@@ -1,4 +1,4 @@
-use qwick_memory::memory::id::memory_id;
+use comemory::memory::id::memory_id;
 
 #[test]
 fn id_is_8_hex_prefix_of_sha256() {

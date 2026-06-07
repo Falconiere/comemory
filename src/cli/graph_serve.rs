@@ -1,4 +1,4 @@
-//! `qwick-memory graph serve` — local HTTP viewer for the property graph.
+//! `comemory graph serve` — local HTTP viewer for the property graph.
 
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
@@ -14,15 +14,15 @@ use crate::serve;
 const EXAMPLES: &str = "\
 Examples:
   # Open the viewer in the default browser
-  qwick-memory graph serve
+  comemory graph serve
 
   # Headless / over SSH
-  qwick-memory graph serve --no-open
+  comemory graph serve --no-open
 
   # Pin a port
-  qwick-memory graph serve --port 7878";
+  comemory graph serve --port 7878";
 
-/// Arguments to `qwick-memory graph serve`.
+/// Arguments to `comemory graph serve`.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES)]
 pub struct Args {
@@ -53,7 +53,7 @@ pub async fn run(a: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<()> 
         ));
     }
     if !host.is_loopback() {
-        tracing::warn!(%host, "qwick-memory graph serve is binding to a public address");
+        tracing::warn!(%host, "comemory graph serve is binding to a public address");
     }
 
     let paths = Paths::new(resolve_data_dir(data_dir));

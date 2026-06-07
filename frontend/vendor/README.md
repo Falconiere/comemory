@@ -1,6 +1,6 @@
 # Vendored frontend dependencies
 
-Pinned versions used by `qwick-memory graph serve`. Bumping any of these
+Pinned versions used by `comemory graph serve`. Bumping any of these
 requires re-running the smoke checklist in `docs/cli-reference.md`.
 
 | File | Upstream | Version |

@@ -1,4 +1,4 @@
-//! `qwick-memory doctor` — health/inventory check. Reports the data directory and
+//! `comemory doctor` — health/inventory check. Reports the data directory and
 //! the number of memories currently on disk.
 
 use std::io::Write as _;
@@ -8,14 +8,14 @@ use serde::Serialize;
 
 use crate::cli::resolve_data_dir;
 
-/// Example invocations shown at the bottom of `qwick-memory doctor --help`.
+/// Example invocations shown at the bottom of `comemory doctor --help`.
 pub const EXAMPLES: &str = "\
 Examples:
   # Human-readable health report
-  qwick-memory doctor
+  comemory doctor
 
   # JSON for monitoring or CI
-  qwick-memory doctor --json";
+  comemory doctor --json";
 use crate::config::paths::Paths;
 use crate::memory::MemoryStore;
 use crate::output::json;

@@ -1,16 +1,16 @@
-//! Integration tests for `qwick-memory` memory-only subcommands.
+//! Integration tests for `comemory` memory-only subcommands.
 //!
-//! Each test isolates state by pointing `QWICK_MEMORY_DATA_DIR` at a fresh
+//! Each test isolates state by pointing `COMEMORY_DATA_DIR` at a fresh
 //! `tempfile::TempDir`. We cover the side-effecting flow (save -> list ->
 //! delete) and the diagnostic command (doctor).
 
 use assert_cmd::Command;
 use tempfile::TempDir;
 
-/// Build a `qwick-memory` invocation with `QWICK_MEMORY_DATA_DIR` rooted at `home`.
+/// Build a `comemory` invocation with `COMEMORY_DATA_DIR` rooted at `home`.
 fn bin(home: &TempDir) -> Command {
-    let mut c = Command::cargo_bin("qwick-memory").expect("cargo_bin qwick-memory");
-    c.env("QWICK_MEMORY_DATA_DIR", home.path().join(".qwick-memory"));
+    let mut c = Command::cargo_bin("comemory").expect("cargo_bin comemory");
+    c.env("COMEMORY_DATA_DIR", home.path().join(".comemory"));
     c
 }
 
@@ -311,8 +311,8 @@ fn save_wires_memory_into_graph() {
     // After `save`, the kuzu graph must contain a Memory node with an InRepo
     // edge to the supplied repo, proving the save flow now drives
     // `Graph::upsert_memory` (not just markdown I/O).
-    use qwick_memory::config::paths::Paths;
-    use qwick_memory::graph::Graph;
+    use comemory::config::paths::Paths;
+    use comemory::graph::Graph;
 
     let home = TempDir::new().expect("tempdir");
     let body = "decision body mentioning myrepo:src/db.rs:run_migration in text";
@@ -324,7 +324,7 @@ fn save_wires_memory_into_graph() {
         &String::from_utf8(save.get_output().stdout.clone()).expect("utf8 stdout"),
     );
 
-    let paths = Paths::new(home.path().join(".qwick-memory"));
+    let paths = Paths::new(home.path().join(".comemory"));
     let g = Graph::open(paths.graph_dir()).expect("graph open");
     let neighbors = g.neighbors_by_repo("myrepo").expect("neighbors_by_repo");
     assert!(
@@ -336,7 +336,7 @@ fn save_wires_memory_into_graph() {
 #[test]
 #[ignore = "downloads ~130 MB nomic-text model on first run"]
 fn search_json_emits_route_field() {
-    // After wiring `retrieval::classify` into the CLI, `qwick-memory search --json`
+    // After wiring `retrieval::classify` into the CLI, `comemory search --json`
     // MUST surface the chosen route so callers (and the corrective-fallback
     // pipeline in later tasks) can observe which branch fired without
     // re-running the classifier. Ignored by default because it loads the
@@ -432,11 +432,11 @@ fn ast_finds_rust_function_pattern() {
 fn supersedes_then_walk_emits_json_chain() {
     // Save two memories via the CLI, manually upsert their `Memory` nodes into
     // the kuzu graph (the save command itself does not yet write the graph),
-    // then exercise `qwick-memory supersedes` + `qwick-memory walk --edge supersedes --json`
+    // then exercise `comemory supersedes` + `comemory walk --edge supersedes --json`
     // and confirm the superseded id appears in the returned JSON array.
-    use qwick_memory::config::paths::Paths;
-    use qwick_memory::graph::Graph;
-    use qwick_memory::memory::MemoryStore;
+    use comemory::config::paths::Paths;
+    use comemory::graph::Graph;
+    use comemory::memory::MemoryStore;
 
     let home = TempDir::new().expect("tempdir");
     let save_a = bin(&home)
@@ -472,7 +472,7 @@ fn supersedes_then_walk_emits_json_chain() {
     // seed the kuzu `Memory` nodes here. Once Task 18+ wires the upsert into
     // the save flow, the seeding block can be deleted without touching the
     // assertions below.
-    let paths = Paths::new(home.path().join(".qwick-memory"));
+    let paths = Paths::new(home.path().join(".comemory"));
     paths.ensure_dirs().expect("ensure dirs");
     let store = MemoryStore::new(paths.clone());
     let mems = store.list().expect("list mems");

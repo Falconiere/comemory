@@ -1,14 +1,12 @@
 # Architecture overview
 
-This is a 2-page on-ramp into the qwick-memory design. For full detail, every
-section here links back to the corresponding section in the
-[design spec](superpowers/specs/2026-05-17-qwick-rust-agentic-rag-design.md).
+This is a 2-page on-ramp into the comemory design.
 
 ## 1. High-level diagram (spec §4.1)
 
 ```
                   ┌─────────────────────────────────────┐
-                  │            qwick-memory (Rust CLI)         │
+                  │            comemory (Rust CLI)         │
                   │                                     │
    stdin/args ──▶ │  clap parser ─▶ command dispatcher  │ ──▶ stdout (TTY or --json)
                   │       │                             │
@@ -40,7 +38,7 @@ section here links back to the corresponding section in the
                      │           │            └──────────┘
                      ▼           ▼
               ┌───────────────────────┐
-              │  ~/.qwick-memory/memories/   │
+              │  ~/.comemory/memories/   │
               │    {id}-{slug}.md     │ ← source of truth
               └───────────────────────┘
 ```
@@ -60,12 +58,12 @@ section here links back to the corresponding section in the
 | `output` | TTY rendering (owo-colors) + JSON serializers (serde_json) |
 | `prune` | Orphan, stale-code, low-value detection and (soft) deletion |
 | `git_utils` | Repo/author detection, blob OID lookup, hook installation |
-| `serve` | Local HTTP viewer for the property graph. Bound by `qwick-memory graph serve`. Holds a shared `Arc<Mutex<Graph>>`, exposes read-only REST endpoints (`/api/seed`, `/api/expand`, `/api/search`, `/api/node/:id`), and embeds the vanilla-JS Cytoscape frontend from `frontend/` via `rust-embed`. Loopback-only by default. |
+| `serve` | Local HTTP viewer for the property graph. Bound by `comemory graph serve`. Holds a shared `Arc<Mutex<Graph>>`, exposes read-only REST endpoints (`/api/seed`, `/api/expand`, `/api/search`, `/api/node/:id`), and embeds the vanilla-JS Cytoscape frontend from `frontend/` via `rust-embed`. Loopback-only by default. |
 
 ## 3. Storage layout (spec §5.1)
 
 ```
-~/.qwick-memory/
+~/.comemory/
 ├── memories/{id}-{slug}.md      ← source of truth (markdown + frontmatter)
 ├── memories/.trash/{id}.md      ← soft-deleted memories, retained 30 days
 ├── index/
@@ -167,7 +165,7 @@ is end-to-end testable without external services.
 ## 6. Save flow (spec §8)
 
 ```
-qwick-memory save "..." --kind=decision
+comemory save "..." --kind=decision
   1. Parse args; build Memory; assign id = sha256(body)[:8].
   2. Write memories/.{id}.tmp (atomic stage).
   3. Embed body with nomic → upsert lancedb.memory_chunks.
@@ -191,7 +189,7 @@ current scope of steps 4–6.)
 ## 7. Code indexing flow (spec §9)
 
 ```
-qwick-memory index-code [--incremental] [--include-dirty]
+comemory index-code [--incremental] [--include-dirty]
   1. cur_head  = git rev-parse HEAD
   2. last_head = sqlite.repo_marker WHERE repo = $repo
   3. If cur_head == last_head and not --include-dirty: return early.
@@ -211,7 +209,7 @@ qwick-memory index-code [--incremental] [--include-dirty]
 ```
 
 Working-tree (uncommitted) files are skipped by default; `--include-dirty`
-opts in. `qwick-memory context` marks symbols whose backing file is dirty.
+opts in. `comemory context` marks symbols whose backing file is dirty.
 
 ## 8. Auto-update modes (spec §10)
 
@@ -227,10 +225,10 @@ incremental_batch_size = 50
 | Mode | Trigger | Behavior |
 |---|---|---|
 | `lazy` (default) | Before every `search` / `context` / `symbol` | Compare `git rev-parse HEAD` to `last_indexed_head`. If different and estimated cost < threshold, reindex incrementally in-line. Otherwise warn and proceed with stale index. |
-| `hook` | git `post-commit`, `post-merge`, `post-checkout` | `qwick-memory install-hooks` registers scripts that run `qwick-memory index-code --incremental --quiet &` in the background after the event. |
-| `off` | Manual only | `qwick-memory index-code` runs only when the user invokes it. |
+| `hook` | git `post-commit`, `post-merge`, `post-checkout` | `comemory install-hooks` registers scripts that run `comemory index-code --incremental --quiet &` in the background after the event. |
+| `off` | Manual only | `comemory index-code` runs only when the user invokes it. |
 
-`qwick-memory doctor` always reports the staleness gap (commits behind HEAD) for
+`comemory doctor` always reports the staleness gap (commits behind HEAD) for
 every known repo, regardless of mode.
 
 ## 9. Pruning (spec §11)
@@ -244,15 +242,12 @@ Three kinds of stale data, three detection paths, one command surface:
 | Low-value memory | quality + usage + irrelevance threshold | sqlite join over feedback |
 
 Soft delete moves `memories/{id}.md` → `memories/.trash/{id}.md`. Trash is
-retained 30 days, then purged by `qwick-memory gc`. Index rows are hard-deleted
+retained 30 days, then purged by `comemory gc`. Index rows are hard-deleted
 (always rebuildable from markdown).
 
-`qwick-memory index-code --incremental` auto-prunes code chunks for deleted files.
-`qwick-memory doctor` reports stale counts read-only, never deletes.
+`comemory index-code --incremental` auto-prunes code chunks for deleted files.
+`comemory doctor` reports stale counts read-only, never deletes.
 
 ## Where to go next
 
 - [CLI reference](cli-reference.md) — every command with worked examples.
-- [Design spec](superpowers/specs/2026-05-17-qwick-rust-agentic-rag-design.md) —
-  full sections including configuration (§15), distribution (§16), and the
-  risk register (§18).

@@ -1,4 +1,4 @@
-use qwick_memory::stats::sqlite::StatsDb;
+use comemory::stats::sqlite::StatsDb;
 
 use super::common;
 

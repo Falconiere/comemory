@@ -1,6 +1,6 @@
-use qwick_memory::index::MemoryHit;
-use qwick_memory::memory::Kind;
-use qwick_memory::retrieval::corrective::should_fallback;
+use comemory::index::MemoryHit;
+use comemory::memory::Kind;
+use comemory::retrieval::corrective::should_fallback;
 
 fn hit(score: f32) -> MemoryHit {
     MemoryHit {

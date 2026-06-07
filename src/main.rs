@@ -11,8 +11,8 @@ use std::io::Write as _;
 
 use clap::Parser;
 
-use qwick_memory::cli::{run, Cli};
-use qwick_memory::errors::Error;
+use comemory::cli::{run, Cli};
+use comemory::errors::Error;
 
 #[tokio::main]
 async fn main() {

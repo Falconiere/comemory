@@ -1,4 +1,4 @@
-use qwick_memory::memory::frontmatter::{Frontmatter, Kind};
+use comemory::memory::frontmatter::{Frontmatter, Kind};
 use time::OffsetDateTime;
 
 #[test]

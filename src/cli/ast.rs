@@ -1,4 +1,4 @@
-//! `qwick-memory ast` — run an ast-grep pattern against a single source file and
+//! `comemory ast` — run an ast-grep pattern against a single source file and
 //! print every match's `(file:line  text)` row. Language is required so we
 //! pick the right tree-sitter grammar without sniffing extensions.
 
@@ -16,15 +16,15 @@ use crate::prelude::*;
 const EXAMPLES: &str = "\
 Examples:
   # Match every fn returning Result<_>
-  qwick-memory ast 'fn $NAME($$$ARGS) -> Result<$RET>' --lang rs --file src/db.rs
+  comemory ast 'fn $NAME($$$ARGS) -> Result<$RET>' --lang rs --file src/db.rs
 
   # Find tokio::spawn call sites
-  qwick-memory ast 'tokio::spawn($$$)' --lang rs --file src/lib.rs --json
+  comemory ast 'tokio::spawn($$$)' --lang rs --file src/lib.rs --json
 
   # Hunt for `console.log` left in TypeScript
-  qwick-memory ast 'console.log($$$)' --lang ts --file src/index.ts";
+  comemory ast 'console.log($$$)' --lang ts --file src/index.ts";
 
-/// Arguments to `qwick-memory ast`.
+/// Arguments to `comemory ast`.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES)]
 pub struct Args {
@@ -38,7 +38,7 @@ pub struct Args {
     pub file: PathBuf,
 }
 
-/// One row of `qwick-memory ast` output (mirrors the `(line, text)` shape returned
+/// One row of `comemory ast` output (mirrors the `(line, text)` shape returned
 /// by `ast::pattern::find`).
 #[derive(Serialize)]
 struct Row {

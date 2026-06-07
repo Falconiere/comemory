@@ -1,4 +1,4 @@
-//! `qwick-memory conflicts` — list memory ids reachable from `<id>` via a single
+//! `comemory conflicts` — list memory ids reachable from `<id>` via a single
 //! `:ConflictsWith` edge. JSON output is a flat array; TTY output prints
 //! one id per line. Returns an empty list when the memory has no recorded
 //! conflicts (or does not exist in the graph at all).
@@ -17,12 +17,12 @@ use crate::prelude::*;
 const EXAMPLES: &str = "\
 Examples:
   # List ConflictsWith neighbors of a memory
-  qwick-memory conflicts a1b2c3d4
+  comemory conflicts a1b2c3d4
 
   # JSON output
-  qwick-memory conflicts a1b2c3d4 --json";
+  comemory conflicts a1b2c3d4 --json";
 
-/// Arguments to `qwick-memory conflicts`.
+/// Arguments to `comemory conflicts`.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES)]
 pub struct Args {

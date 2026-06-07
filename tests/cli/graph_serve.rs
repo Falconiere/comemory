@@ -1,4 +1,4 @@
-//! Spawn `qwick-memory graph serve --port 0 --no-open`, parse the URL
+//! Spawn `comemory graph serve --port 0 --no-open`, parse the URL
 //! from stdout (tracing-subscriber writes to stdout by default), hit
 //! `/api/seed`, and shut down.
 
@@ -12,15 +12,15 @@ use tempfile::TempDir;
 fn graph_serve_starts_and_serves_seed() {
     let tmp = TempDir::new().expect("tempdir");
 
-    let bin = env!("CARGO_BIN_EXE_qwick-memory");
+    let bin = env!("CARGO_BIN_EXE_comemory");
     let mut child = Command::new(bin)
         .args(["graph", "serve", "--port", "0", "--no-open"])
-        .env("QWICK_MEMORY_DATA_DIR", tmp.path())
-        .env("RUST_LOG", "qwick_memory=info")
+        .env("COMEMORY_DATA_DIR", tmp.path())
+        .env("RUST_LOG", "comemory=info")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .expect("spawn qwick-memory");
+        .expect("spawn comemory");
 
     // tracing-subscriber's default formatter writes to stdout (not stderr).
     // Verified empirically: redirecting fd-1 suppresses the tracing line;
@@ -29,7 +29,7 @@ fn graph_serve_starts_and_serves_seed() {
     let mut reader = BufReader::new(stdout);
 
     // Matches the URL that tracing logs in the startup message, e.g.:
-    // "... INFO qwick_memory::serve::router: qwick-memory graph viewer listening
+    // "... INFO comemory::serve::router: comemory graph viewer listening
     //  on http://127.0.0.1:12345; ... url=http://127.0.0.1:12345"
     // ANSI escape codes may appear around the `=` separator in the structured
     // field but the URL itself is emitted as a clean substring.

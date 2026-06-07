@@ -1,4 +1,4 @@
-//! `qwick-memory list` — enumerate memories on disk with optional `--repo` / `--kind`
+//! `comemory list` — enumerate memories on disk with optional `--repo` / `--kind`
 //! filters. Output is one row per memory in TTY mode or a JSON array under
 //! `--json`.
 
@@ -17,15 +17,15 @@ use crate::prelude::*;
 const EXAMPLES: &str = "\
 Examples:
   # All decisions in a single repo
-  qwick-memory list --repo myrepo --kind decision
+  comemory list --repo myrepo --kind decision
 
   # Every memory across all repos, JSON
-  qwick-memory list --json
+  comemory list --json
 
   # Filter by kind only
-  qwick-memory list --kind bug";
+  comemory list --kind bug";
 
-/// Arguments to `qwick-memory list`.
+/// Arguments to `comemory list`.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES)]
 pub struct Args {
@@ -37,7 +37,7 @@ pub struct Args {
     pub kind: Option<String>,
 }
 
-/// One row of `qwick-memory list` output.
+/// One row of `comemory list` output.
 #[derive(Serialize)]
 struct Row {
     id: String,

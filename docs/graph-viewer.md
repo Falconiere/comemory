@@ -1,6 +1,6 @@
 # Graph viewer
 
-`qwick-memory graph serve` starts a local HTTP server and opens a
+`comemory graph serve` starts a local HTTP server and opens a
 browser-based property-graph viewer. Assets are embedded in the binary via
 `rust-embed`; no network access is required after installation.
 
@@ -8,13 +8,13 @@ browser-based property-graph viewer. Assets are embedded in the binary via
 
 ```bash
 # Open the viewer (browser opens automatically)
-qwick-memory graph serve
+comemory graph serve
 
 # Headless or over SSH (print URL only)
-qwick-memory graph serve --no-open
+comemory graph serve --no-open
 
 # Pin to a specific port
-qwick-memory graph serve --port 7878
+comemory graph serve --port 7878
 ```
 
 The server binds to `127.0.0.1` (loopback) by default.  To expose it on a
@@ -34,13 +34,13 @@ All endpoints return JSON. The viewer itself is served from `/`.
 
 ## Manual smoke checklist
 
-After running `qwick-memory graph serve`, verify by eye:
+After running `comemory graph serve`, verify by eye:
 
-1. `qwick-memory save "test memory body"` (or use any existing memory).
-2. `qwick-memory graph serve` — note the printed URL; the browser opens automatically.
+1. `comemory save "test memory body"` (or use any existing memory).
+2. `comemory graph serve` — note the printed URL; the browser opens automatically.
 3. Default view shows the memory layer (`Memory`, `Repo`, `Author`, `Tag`).
 4. Double-click a `Memory` node — neighbours appear.
-5. Toggle the Code layer — `File` and `Symbol` nodes appear (if `qwick-memory index-code` has been run).
+5. Toggle the Code layer — `File` and `Symbol` nodes appear (if `comemory index-code` has been run).
 6. Type a tag name in the search box — pick a result; the node centres.
 7. Click a `Memory` node — body and edges render in the detail panel.
 8. Press `R` — view resets to the memory layer.

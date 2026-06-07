@@ -1,4 +1,4 @@
-// qwick-memory graph viewer. Vanilla JS, no build step, no innerHTML.
+// comemory graph viewer. Vanilla JS, no build step, no innerHTML.
 
 const KIND_COLOR = {
   Memory: "#2b6cb0",

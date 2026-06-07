@@ -1,4 +1,4 @@
-use qwick_memory::index::schema::{code_schema, memory_schema, CODE_TABLE, MEMORY_TABLE};
+use comemory::index::schema::{code_schema, memory_schema, CODE_TABLE, MEMORY_TABLE};
 
 #[test]
 fn memory_table_name_is_correct() {

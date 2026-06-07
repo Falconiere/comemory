@@ -1,7 +1,7 @@
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use qwick_memory::errors::Error;
-use qwick_memory::serve::error::ApiError;
+use comemory::errors::Error;
+use comemory::serve::error::ApiError;
 
 fn body_string(resp: axum::response::Response) -> (StatusCode, String) {
     let status = resp.status();

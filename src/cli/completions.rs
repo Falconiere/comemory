@@ -1,4 +1,4 @@
-//! `qwick-memory completions <shell>` — emit a shell completion script on stdout.
+//! `comemory completions <shell>` — emit a shell completion script on stdout.
 //!
 //! Wraps `clap_complete::generate` against the top-level `Cli` so completions
 //! always reflect the current subcommand surface. The `--json` and
@@ -17,17 +17,17 @@ use crate::prelude::*;
 const EXAMPLES: &str = "\
 Examples:
   # fish (autoloaded from this path)
-  qwick-memory completions fish > ~/.config/fish/completions/qwick-memory.fish
+  comemory completions fish > ~/.config/fish/completions/comemory.fish
 
   # zsh (homebrew site-functions path)
-  qwick-memory completions zsh > \"$(brew --prefix)/share/zsh/site-functions/_qwick-memory\"
+  comemory completions zsh > \"$(brew --prefix)/share/zsh/site-functions/_comemory\"
 
   # bash (homebrew bash-completion.d)
-  qwick-memory completions bash > \"$(brew --prefix)/etc/bash_completion.d/qwick-memory\"
+  comemory completions bash > \"$(brew --prefix)/etc/bash_completion.d/comemory\"
 
   # NOTE: scripts/install.sh writes these automatically by default.";
 
-/// Arguments for `qwick-memory completions`.
+/// Arguments for `comemory completions`.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES)]
 pub struct Args {

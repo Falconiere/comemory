@@ -1,6 +1,6 @@
-use qwick_memory::config::paths::Paths;
-use qwick_memory::graph::Graph;
-use qwick_memory::memory::{Kind, MemoryStore};
+use comemory::config::paths::Paths;
+use comemory::graph::Graph;
+use comemory::memory::{Kind, MemoryStore};
 
 use super::common;
 

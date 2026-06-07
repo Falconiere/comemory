@@ -1,4 +1,4 @@
-//! `qwick-memory memory-for` — list memories that reference a qualified symbol or
+//! `comemory memory-for` — list memories that reference a qualified symbol or
 //! file path. Filters `MemoryStore::list()` by frontmatter `references.symbols`
 //! (exact match) and `references.files` (prefix match: the `qualified`
 //! argument starts with the stored file path).
@@ -23,15 +23,15 @@ use crate::prelude::*;
 const EXAMPLES: &str = "\
 Examples:
   # Memories that reference a specific function
-  qwick-memory memory-for myrepo:src/db.rs:run_migration
+  comemory memory-for myrepo:src/db.rs:run_migration
 
   # Memories that reference a whole file
-  qwick-memory memory-for myrepo:src/db.rs
+  comemory memory-for myrepo:src/db.rs
 
   # JSON for tool chaining
-  qwick-memory memory-for myrepo:src/db.rs --json";
+  comemory memory-for myrepo:src/db.rs --json";
 
-/// Arguments to `qwick-memory memory-for`.
+/// Arguments to `comemory memory-for`.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES)]
 pub struct Args {
@@ -40,7 +40,7 @@ pub struct Args {
     pub qualified: String,
 }
 
-/// One row of `qwick-memory memory-for` output.
+/// One row of `comemory memory-for` output.
 #[derive(Serialize)]
 struct Row {
     id: String,

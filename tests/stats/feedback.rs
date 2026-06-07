@@ -1,5 +1,5 @@
-use qwick_memory::stats::feedback::Feedback;
-use qwick_memory::stats::sqlite::StatsDb;
+use comemory::stats::feedback::Feedback;
+use comemory::stats::sqlite::StatsDb;
 
 use super::common;
 

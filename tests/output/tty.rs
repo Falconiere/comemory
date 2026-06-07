@@ -3,7 +3,7 @@
 //! we are robust to ANSI escapes from `owo-colors` (which only kick in when
 //! the runtime detects a real TTY).
 
-use qwick_memory::output::tty;
+use comemory::output::tty;
 
 #[test]
 fn score_contains_three_decimal_digits() {

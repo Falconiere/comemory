@@ -1,5 +1,5 @@
-use qwick_memory::ast::pattern::find;
-use qwick_memory::ast::Lang;
+use comemory::ast::pattern::find;
+use comemory::ast::Lang;
 
 #[test]
 fn pattern_matches_function_call_in_rust() {

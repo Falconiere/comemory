@@ -1,5 +1,5 @@
-//! Asserts that every `qwick-memory <subcommand> --help` ends with an
-//! `Examples:` block containing at least one `qwick-memory` invocation.
+//! Asserts that every `comemory <subcommand> --help` ends with an
+//! `Examples:` block containing at least one `comemory` invocation.
 
 use assert_cmd::Command;
 
@@ -25,8 +25,8 @@ const SUBCOMMANDS: &[&str] = &[
 ];
 
 fn help_for(sub: &str) -> String {
-    let out = Command::cargo_bin("qwick-memory")
-        .expect("cargo_bin qwick-memory")
+    let out = Command::cargo_bin("comemory")
+        .expect("cargo_bin comemory")
         .args([sub, "--help"])
         .assert()
         .success()
@@ -45,13 +45,13 @@ fn every_subcommand_help_has_examples_block() {
         let has_invocation = help
             .lines()
             .skip_while(|l| !l.contains("Examples:"))
-            .any(|l| l.contains("qwick-memory "));
+            .any(|l| l.contains("comemory "));
         if !(has_block && has_invocation) {
             missing.push(sub);
         }
     }
     assert!(
         missing.is_empty(),
-        "subcommands missing an Examples: block with a qwick-memory invocation: {missing:?}"
+        "subcommands missing an Examples: block with a comemory invocation: {missing:?}"
     );
 }

@@ -1,4 +1,4 @@
-use qwick_memory::ast::{extract, ExtractedSymbol, Lang};
+use comemory::ast::{extract, ExtractedSymbol, Lang};
 
 fn names_of_kind<'a>(syms: &'a [ExtractedSymbol], kind: &str) -> Vec<&'a str> {
     syms.iter()

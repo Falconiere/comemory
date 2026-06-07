@@ -1,4 +1,4 @@
-use qwick_memory::index::Embedder;
+use comemory::index::Embedder;
 
 #[test]
 fn nomic_embeds_to_768d() {

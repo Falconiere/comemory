@@ -1,4 +1,4 @@
-//! `qwick-memory delete` — soft-delete a memory by id (moves the file into
+//! `comemory delete` — soft-delete a memory by id (moves the file into
 //! `memories/.trash/`).
 
 use std::io::Write as _;
@@ -15,12 +15,12 @@ use crate::prelude::*;
 const EXAMPLES: &str = "\
 Examples:
   # Soft-delete by id (moves to memories/.trash/)
-  qwick-memory delete a1b2c3d4
+  comemory delete a1b2c3d4
 
   # JSON output for scripting
-  qwick-memory delete a1b2c3d4 --json";
+  comemory delete a1b2c3d4 --json";
 
-/// Arguments to `qwick-memory delete`.
+/// Arguments to `comemory delete`.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES)]
 pub struct Args {

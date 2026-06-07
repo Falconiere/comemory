@@ -1,8 +1,8 @@
-use qwick_memory::config::paths::Paths;
-use qwick_memory::memory::{Kind, MemoryStore};
-use qwick_memory::prune::low_value;
-use qwick_memory::stats::feedback::Feedback;
-use qwick_memory::stats::sqlite::StatsDb;
+use comemory::config::paths::Paths;
+use comemory::memory::{Kind, MemoryStore};
+use comemory::prune::low_value;
+use comemory::stats::feedback::Feedback;
+use comemory::stats::sqlite::StatsDb;
 
 use super::common;
 

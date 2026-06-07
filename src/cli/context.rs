@@ -1,4 +1,4 @@
-//! `qwick-memory context` — headline lookup. Embeds `key` with **both** the
+//! `comemory context` — headline lookup. Embeds `key` with **both** the
 //! jina-code embedder (for the `code_chunks` table) and the nomic-text
 //! embedder (for the memory index), then returns a single `ContextBundle`
 //! with the best matching code symbol + top memories. JSON output is
@@ -25,15 +25,15 @@ use crate::retrieval::hybrid::{search_code, search_memory};
 const EXAMPLES: &str = "\
 Examples:
   # Code symbol + linked memories in one round-trip (JSON)
-  qwick-memory context run_migration --json
+  comemory context run_migration --json
 
   # Natural-language key with a deeper neighborhood walk
-  qwick-memory context \"postgres migration race\" --depth 2
+  comemory context \"postgres migration race\" --depth 2
 
   # File-path fragment as the key
-  qwick-memory context \"src/db.rs\"";
+  comemory context \"src/db.rs\"";
 
-/// Arguments to `qwick-memory context`.
+/// Arguments to `comemory context`.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES)]
 pub struct Args {
