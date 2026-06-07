@@ -571,3 +571,6 @@ mod save_embed;
 
 #[path = "cli/search_fused.rs"]
 mod search_fused;
+
+#[path = "cli/context_fused.rs"]
+mod context_fused;

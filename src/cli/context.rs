@@ -5,6 +5,10 @@
 //! machine-friendly; TTY output reads as "here's the symbol, here are the
 //! memories".
 //!
+//! Memory retrieval goes through `search_memory_fused` so dense + BM25
+//! rankings are RRF-fused together. The fusion constant `rrf_k` is read
+//! from `Config` (env-overridable via `COMEMORY_RETRIEVAL_RRF_K`).
+//!
 //! The `depth` flag is accepted for shape compatibility with Task 17's graph
 //! walk extension; the current implementation surfaces the 0-hop slice
 //! (direct vector hits) only.
@@ -16,11 +20,13 @@ use clap::Args as ClapArgs;
 use serde::Serialize;
 
 use crate::cli::resolve_data_dir;
+use crate::config::file::Config;
 use crate::config::paths::Paths;
 use crate::index::{CodeIndex, Embedder, MemoryIndex};
 use crate::output::json;
 use crate::prelude::*;
-use crate::retrieval::hybrid::{search_code, search_memory};
+use crate::retrieval::fuse::search_memory_fused;
+use crate::retrieval::hybrid::search_code;
 
 const EXAMPLES: &str = "\
 Examples:
@@ -44,6 +50,13 @@ pub struct Args {
     /// walks); accepted now to keep the CLI shape stable.
     #[arg(long, default_value_t = 1)]
     pub depth: u32,
+    /// Maximum number of memory hits to surface (default 5). Must be >= 1.
+    #[arg(
+        long,
+        default_value_t = 5,
+        value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..)
+    )]
+    pub limit: usize,
 }
 
 /// JSON envelope returned to callers. Named `ContextBundle` so it doesn't
@@ -77,6 +90,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     let _ = a.depth; // wired in Task 17 (graph walks).
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
+    let cfg = Config::defaults().with_env()?;
 
     let cidx = CodeIndex::open(paths.vectors_dir(), 768).await?;
     let mut code_emb = Embedder::jina_code()?;
@@ -91,7 +105,8 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     let midx = MemoryIndex::open(paths.vectors_dir(), 768).await?;
     let mut text_emb = Embedder::nomic_text()?;
     let text_q = text_emb.embed_one(&a.key)?;
-    let mhits = search_memory(&midx, &text_q, 5, 0.0).await?;
+    let mhits =
+        search_memory_fused(&midx, &paths, &text_q, &a.key, a.limit, cfg.retrieval.rrf_k).await?;
     let memories: Vec<MemoryView> = mhits
         .into_iter()
         .map(|h| MemoryView {
