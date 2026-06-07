@@ -575,6 +575,9 @@ mod save_no_index;
 #[path = "cli/save_graph_failure.rs"]
 mod save_graph_failure;
 
+#[path = "cli/index_rebuild.rs"]
+mod index_rebuild;
+
 #[path = "cli/search_fused.rs"]
 mod search_fused;
 

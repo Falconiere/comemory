@@ -15,6 +15,7 @@ pub mod doctor;
 pub mod feedback;
 pub mod gc;
 pub mod graph_serve;
+pub mod index;
 pub mod index_code;
 pub mod install_hooks;
 pub mod list;
@@ -68,6 +69,10 @@ pub enum Cmd {
     /// Report on the data directory and memory count.
     #[command(after_help = doctor::EXAMPLES)]
     Doctor,
+    /// Memory-layer index maintenance (re-embed missing rows). Run
+    /// `comemory index --help` for the available flags.
+    #[command(after_help = index::EXAMPLES)]
+    Index(index::Args),
     /// Walk a repo, extract symbols, and upsert into the code index.
     IndexCode(index_code::Args),
     /// Semantic search over the code index for a symbol name.
@@ -119,6 +124,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::Delete(a) => delete::run(a, cli.json, cli.data_dir).await,
         Cmd::Feedback(a) => feedback::run(a, cli.json, cli.data_dir).await,
         Cmd::Doctor => doctor::run(cli.json, cli.data_dir).await,
+        Cmd::Index(a) => index::run(a, cli.json, cli.data_dir).await,
         Cmd::IndexCode(a) => index_code::run(a, cli.json, cli.data_dir).await,
         Cmd::Symbol(a) => symbol::run(a, cli.json, cli.data_dir).await,
         Cmd::MemoryFor(a) => memory_for::run(a, cli.json, cli.data_dir).await,
