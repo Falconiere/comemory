@@ -29,6 +29,11 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
+  # Required by anthropics/claude-code-action for OIDC token exchange against
+  # the GitHub API. Dropping this triggers "Could not fetch an OIDC token"
+  # mid-run. The id-token grant only authorizes the runner to obtain a
+  # short-lived GH-signed JWT; it does NOT grant write access to anything.
+  id-token: write
 
 jobs:
   auto-review:
