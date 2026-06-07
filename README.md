@@ -122,17 +122,17 @@ mirroring `src/`), the module map, the frontmatter schema, and the
 - [Graph viewer](docs/graph-viewer.md) — REST endpoints, smoke checklist,
   and architecture notes for `comemory graph serve`.
 
+### Benchmarks
+
+`just bench` runs the criterion harness and writes `docs/bench/latest.md`.
+The save and retrieval suites cover the embed-on-save path and the RRF-fused
+dense+BM25 search introduced in v1.1.
+
 ## Known v1.1 gaps
 
 `comemory` v1.0 ships the full retrieval pipeline, kuzu graph, and code indexer.
 The following items are intentionally deferred to v1.1:
 
-- `comemory save` writes the markdown + frontmatter and upserts the `Memory`
-  node + `InRepo` / `AuthoredBy` / `Tagged` / `ReferencesFile` /
-  `ReferencesSymbol` edges into kuzu, but does **not** yet embed the body
-  into `lancedb.memory_chunks` from the save path itself — rebuild via
-  `comemory index-code` for now. `RelatesTo` neighbor discovery is also
-  deferred.
 - `stale_code::detect` is a stub that returns an empty list. v1.1 will walk
   `references.files` for each memory against the repo's tracked files and
   flag mismatches as stale.
