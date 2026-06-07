@@ -1,9 +1,17 @@
 use comemory::config::paths::Paths;
 use comemory::index::{Embedder, Fts, MemoryIndex};
 use comemory::memory::{Kind, MemoryStore};
-use comemory::retrieval::fuse::search_memory_fused;
+use comemory::retrieval::fuse::{search_memory_fused, FuseOptions};
 
 use super::common;
+
+/// Common bench/test default: no dense threshold, RRF 60. Limit is set per
+/// test via `..DEFAULT_OPTS`.
+const DEFAULT_OPTS: FuseOptions = FuseOptions {
+    limit: 5,
+    dense_threshold: 0.0,
+    rrf_k: 60.0,
+};
 
 #[tokio::test]
 async fn fused_search_finds_lexical_only_match() {
@@ -33,7 +41,7 @@ async fn fused_search_finds_lexical_only_match() {
     drop(fts);
 
     let q = emb.embed_one("zzzyx_unique_token").unwrap();
-    let hits = search_memory_fused(&idx, &paths, &q, "zzzyx_unique_token", 5, 0.0, 60.0)
+    let hits = search_memory_fused(&idx, &paths, &q, "zzzyx_unique_token", DEFAULT_OPTS)
         .await
         .unwrap();
     assert!(
@@ -70,7 +78,7 @@ async fn fused_search_degrades_to_vector_when_fts_missing() {
     if fts_db.exists() {
         std::fs::remove_file(&fts_db).unwrap();
     }
-    let hits = search_memory_fused(&idx, &paths, &q, "postgres analytics", 5, 0.0, 60.0)
+    let hits = search_memory_fused(&idx, &paths, &q, "postgres analytics", DEFAULT_OPTS)
         .await
         .unwrap();
     assert_eq!(hits[0].id, rec.frontmatter.id);
@@ -95,9 +103,18 @@ async fn fused_search_limit_zero_returns_empty() {
     idx.upsert(&rec, &v).await.unwrap();
 
     let q = emb.embed_one("any body text").unwrap();
-    let hits = search_memory_fused(&idx, &paths, &q, "any body text", 0, 0.0, 60.0)
-        .await
-        .unwrap();
+    let hits = search_memory_fused(
+        &idx,
+        &paths,
+        &q,
+        "any body text",
+        FuseOptions {
+            limit: 0,
+            ..DEFAULT_OPTS
+        },
+    )
+    .await
+    .unwrap();
     assert!(hits.is_empty());
 }
 
@@ -151,9 +168,18 @@ async fn fused_search_materializes_sparse_only_hit_outside_dense_window() {
     let q = emb
         .embed_one("postgres analytics zzzyx_unique_token")
         .unwrap();
-    let hits = search_memory_fused(&idx, &paths, &q, "zzzyx_unique_token", limit, 0.0, 60.0)
-        .await
-        .unwrap();
+    let hits = search_memory_fused(
+        &idx,
+        &paths,
+        &q,
+        "zzzyx_unique_token",
+        FuseOptions {
+            limit,
+            ..DEFAULT_OPTS
+        },
+    )
+    .await
+    .unwrap();
 
     assert!(
         hits.iter().any(|h| h.id == rare.frontmatter.id),
@@ -219,9 +245,18 @@ async fn fused_search_applies_dense_threshold_before_fusion() {
     // both rows; with threshold 1.5 (above the 1.0 cosine ceiling), the
     // dense side is fully pruned and only BM25 contributes.
     let q = emb.embed_one("zzzyx_unique_token").unwrap();
-    let hits_strict = search_memory_fused(&idx, &paths, &q, "zzzyx_unique_token", 5, 1.5, 60.0)
-        .await
-        .unwrap();
+    let hits_strict = search_memory_fused(
+        &idx,
+        &paths,
+        &q,
+        "zzzyx_unique_token",
+        FuseOptions {
+            dense_threshold: 1.5,
+            ..DEFAULT_OPTS
+        },
+    )
+    .await
+    .unwrap();
     // With dense pruned, only the BM25-matched id (`rare`) should appear.
     assert!(
         hits_strict.iter().any(|h| h.id == rare.frontmatter.id),
@@ -241,7 +276,7 @@ async fn fused_search_applies_dense_threshold_before_fusion() {
     );
 
     // With threshold 0.0, both ids should reappear (dense path unfiltered).
-    let hits_open = search_memory_fused(&idx, &paths, &q, "zzzyx_unique_token", 5, 0.0, 60.0)
+    let hits_open = search_memory_fused(&idx, &paths, &q, "zzzyx_unique_token", DEFAULT_OPTS)
         .await
         .unwrap();
     assert!(

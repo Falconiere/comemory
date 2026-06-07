@@ -1,7 +1,7 @@
 use comemory::config::paths::Paths;
 use comemory::index::{CodeIndex, Embedder, MemoryIndex};
 use comemory::memory::{Kind, MemoryStore};
-use comemory::retrieval::fuse::search_memory_fused_with_fts;
+use comemory::retrieval::fuse::{search_memory_fused_with_fts, FuseOptions};
 use comemory::retrieval::hybrid::search_code;
 
 use super::common;
@@ -43,9 +43,11 @@ async fn search_returns_results_from_both_layers() {
         &paths,
         &q_text,
         "postgres migration race",
-        5,
-        0.0,
-        60.0,
+        FuseOptions {
+            limit: 5,
+            dense_threshold: 0.0,
+            rrf_k: 60.0,
+        },
     )
     .await
     .unwrap();

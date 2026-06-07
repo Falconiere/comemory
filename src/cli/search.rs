@@ -22,7 +22,7 @@ use crate::config::paths::Paths;
 use crate::index::{Embedder, MemoryIndex};
 use crate::prelude::*;
 use crate::retrieval::corrective::should_fallback;
-use crate::retrieval::fuse::search_memory_fused;
+use crate::retrieval::fuse::{search_memory_fused, FuseOptions};
 use crate::retrieval::{classify, Route};
 
 const EXAMPLES: &str = "\
@@ -84,9 +84,11 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
         &paths,
         &q,
         &a.query,
-        a.limit,
-        cfg.retrieval.memory_threshold,
-        cfg.retrieval.rrf_k,
+        FuseOptions {
+            limit: a.limit,
+            dense_threshold: cfg.retrieval.memory_threshold,
+            rrf_k: cfg.retrieval.rrf_k,
+        },
     )
     .await?;
 
