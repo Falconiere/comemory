@@ -25,7 +25,7 @@ use crate::config::paths::Paths;
 use crate::index::{CodeIndex, Embedder, MemoryIndex};
 use crate::output::json;
 use crate::prelude::*;
-use crate::retrieval::fuse::search_memory_fused;
+use crate::retrieval::fuse::{search_memory_fused, FuseOptions};
 use crate::retrieval::hybrid::search_code;
 
 const EXAMPLES: &str = "\
@@ -110,9 +110,11 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         &paths,
         &text_q,
         &a.key,
-        a.limit,
-        cfg.retrieval.memory_threshold,
-        cfg.retrieval.rrf_k,
+        FuseOptions {
+            limit: a.limit,
+            dense_threshold: cfg.retrieval.memory_threshold,
+            rrf_k: cfg.retrieval.rrf_k,
+        },
     )
     .await?;
     let memories: Vec<MemoryView> = mhits

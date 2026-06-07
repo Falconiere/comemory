@@ -18,11 +18,20 @@
 //! measure actual retrieval work rather than init cost.
 
 use comemory::index::{Embedder, Fts, MemoryIndex};
-use comemory::retrieval::fuse::{search_memory_fused, search_memory_fused_with_fts};
+use comemory::retrieval::fuse::{search_memory_fused, search_memory_fused_with_fts, FuseOptions};
 use criterion::{criterion_group, criterion_main, Criterion};
 use tokio::runtime::Runtime;
 
 mod common;
+
+/// Default tuning for the bench: `dense_threshold = 0.0` so the bench
+/// measures pure fusion cost (not threshold sensitivity), `rrf_k = 60.0`
+/// matches production defaults, `limit = 12` mirrors the CLI default.
+const BENCH_OPTS: FuseOptions = FuseOptions {
+    limit: 12,
+    dense_threshold: 0.0,
+    rrf_k: 60.0,
+};
 
 fn bench_search(c: &mut Criterion) {
     let rt = Runtime::new().expect("rt");
@@ -43,7 +52,7 @@ fn bench_search(c: &mut Criterion) {
 
     c.bench_function("search_vector_only", |b| {
         b.to_async(&rt).iter(|| async {
-            search_memory_fused_with_fts(&idx, None, &paths, &q_vec, &q_text, 12, 0.0, 60.0)
+            search_memory_fused_with_fts(&idx, None, &paths, &q_vec, &q_text, BENCH_OPTS)
                 .await
                 .expect("search dense-only")
         });
@@ -51,7 +60,7 @@ fn bench_search(c: &mut Criterion) {
 
     c.bench_function("search_fused_rrf_cold_fts", |b| {
         b.to_async(&rt).iter(|| async {
-            search_memory_fused(&idx, &paths, &q_vec, &q_text, 12, 0.0, 60.0)
+            search_memory_fused(&idx, &paths, &q_vec, &q_text, BENCH_OPTS)
                 .await
                 .expect("fused")
         });
@@ -59,7 +68,7 @@ fn bench_search(c: &mut Criterion) {
 
     c.bench_function("search_fused_rrf_warm_fts", |b| {
         b.to_async(&rt).iter(|| async {
-            search_memory_fused_with_fts(&idx, Some(&fts), &paths, &q_vec, &q_text, 12, 0.0, 60.0)
+            search_memory_fused_with_fts(&idx, Some(&fts), &paths, &q_vec, &q_text, BENCH_OPTS)
                 .await
                 .expect("fused warm")
         });
