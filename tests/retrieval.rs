@@ -18,3 +18,6 @@ mod corrective;
 
 #[path = "retrieval/dual.rs"]
 mod dual;
+
+#[path = "retrieval/fts.rs"]
+mod fts;
