@@ -22,7 +22,7 @@ fn bench_save(c: &mut Criterion) {
     let idx = rt
         .block_on(MemoryIndex::open(fx.paths.vectors_dir(), 768))
         .expect("idx");
-    let fts = Fts::open(fx.paths.index_dir().join("fts.sqlite")).expect("fts");
+    let fts = Fts::open(fx.paths.fts_db()).expect("fts");
     let store = MemoryStore::new(fx.paths.clone());
     let body = String::from("Bench memory: postgres analytics decision token");
 

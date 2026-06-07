@@ -46,7 +46,7 @@ async fn save_no_index_skips_dense_and_fts_writes() {
 
     // FTS database may not exist yet (skipped entirely); when present it
     // must hold zero rows. Either way: no FTS row was upserted.
-    let fts_path = paths.index_dir().join("fts.sqlite");
+    let fts_path = paths.fts_db();
     if fts_path.exists() {
         let fts = Fts::open(&fts_path).unwrap();
         assert_eq!(fts.count().unwrap(), 0, "--no-index must leave FTS empty");

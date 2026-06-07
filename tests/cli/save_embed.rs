@@ -40,6 +40,6 @@ async fn save_writes_into_memory_index_and_fts() {
     let hits = idx.search(&q, 5).await.unwrap();
     assert!(hits.iter().any(|h| h.id == id), "vector index missing save");
 
-    let fts = Fts::open(paths.index_dir().join("fts.sqlite")).unwrap();
+    let fts = Fts::open(paths.fts_db()).unwrap();
     assert_eq!(fts.count().unwrap(), 1);
 }

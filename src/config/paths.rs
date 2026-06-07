@@ -38,6 +38,11 @@ impl Paths {
         self.index_dir().join("graph.kuzu")
     }
 
+    /// Path to the SQLite FTS5 BM25 index used for lexical memory search.
+    pub fn fts_db(&self) -> PathBuf {
+        self.index_dir().join("fts.sqlite")
+    }
+
     pub fn stats_db(&self) -> PathBuf {
         self.data_dir.join("stats.db")
     }

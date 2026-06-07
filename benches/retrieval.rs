@@ -36,7 +36,7 @@ fn bench_search(c: &mut Criterion) {
     let paths = fx.paths.clone();
     // Warm FTS handle opened once outside the timed loop. The seed step
     // already created `fts.sqlite`, so this never short-circuits.
-    let fts = Fts::open(paths.index_dir().join("fts.sqlite")).expect("fts");
+    let fts = Fts::open(paths.fts_db()).expect("fts");
 
     c.bench_function("search_vector_only", |b| {
         b.to_async(&rt)

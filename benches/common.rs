@@ -27,7 +27,7 @@ pub async fn seed(paths: &Paths, n: usize) -> Vec<String> {
     let idx = MemoryIndex::open(paths.vectors_dir(), 768)
         .await
         .expect("memory index");
-    let fts = Fts::open(paths.index_dir().join("fts.sqlite")).expect("fts");
+    let fts = Fts::open(paths.fts_db()).expect("fts");
     let bodies: Vec<String> = (0..n)
         .map(|i| format!("seed body {i}: postgres analytics token_{i}"))
         .collect();
