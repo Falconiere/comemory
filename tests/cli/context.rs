@@ -2,7 +2,7 @@
 //!
 //! Covers:
 //! - Lexical-only path (no vector).
-//! - Vector path (--vector CSV, 1024-dim).
+//! - Vector path (--vector-stdin JSON, 1024-dim).
 //! - Deep relation walk: supersedes chain surfaced in bundle relations.
 
 use assert_cmd::Command;
@@ -119,7 +119,7 @@ fn context_lexical_path_no_vector() {
 /// Uses --vector-stdin rather than --vector CSV to avoid clap misinterpreting
 /// a CSV string that starts with a negative float as a flag.
 #[test]
-fn context_vector_path_accepts_csv_vector() {
+fn context_vector_path_accepts_stdin_vector() {
     let home = TempDir::new().expect("tempdir");
     let id = save_memory(&home, "vector path context body", "note");
     seed_unit_vector(&home, &id, 1024);
