@@ -24,7 +24,7 @@ use crate::graph::cross_link;
 use crate::graph::edges::{self, EdgeKey};
 use crate::memory::{Kind, MemoryStore};
 use crate::prelude::*;
-use crate::store::{connection, fts, vector};
+use crate::store::{connection, embed, fts, vector};
 
 const EXAMPLES: &str = "\
 Examples:
@@ -109,10 +109,20 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
 
-    // Validate any caller-supplied vector against the schema-locked dim
-    // BEFORE the markdown write so a wrong-dim payload aborts cleanly with
-    // nothing on disk.
+    // Parse the optional caller-supplied vector (CSV or JSON-on-stdin).
     let vector_opt = read_optional_vector(&a)?;
+
+    // Validate the vector's dim against the schema-locked memory dim BEFORE
+    // the markdown write so a wrong-dim payload aborts cleanly with nothing
+    // on disk. We open the DB connection here so the same handle is reused
+    // by `write_sqlite_mirror` for the transactional mirror upsert below;
+    // the dim guard runs against `schema_meta.memory_vector_dim` via
+    // `vector::dim_memory`.
+    let mut conn = connection::open(paths.db_path())?;
+    if let Some(v) = vector_opt.as_deref() {
+        let dim = vector::dim_memory(&conn)?;
+        embed::guard_dim(v, dim)?;
+    }
 
     // 1. Markdown atomic write (source of truth).
     let store = MemoryStore::new(paths.clone());
@@ -121,7 +131,7 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     // 2. SQLite mirror in one transaction. Markdown is the source of truth,
     //    so a mirror failure surfaces as an `Err` — but the markdown file
     //    is already on disk and can be replayed by `comemory rebuild`.
-    write_sqlite_mirror(&paths, &rec, &tags, vector_opt.as_deref())?;
+    write_sqlite_mirror(&mut conn, &rec, &tags, vector_opt.as_deref())?;
 
     let output = Output {
         id: rec.frontmatter.id.clone(),
@@ -163,19 +173,20 @@ fn read_optional_vector(args: &Args) -> Result<Option<Vec<f32>>> {
 /// Mirror the markdown record into `comemory.db` in a single transaction:
 /// `memories`, `memory_tags`, `memory_fts`, optional `memory_vec`, and the
 /// graph `edges` table (in_repo/authored_by/tagged plus cross-link
-/// references parsed from the body).
+/// references parsed from the body). The caller-owned connection is passed
+/// in so `run` can share the same handle used for the up-front
+/// `vector::dim_memory` guard.
 fn write_sqlite_mirror(
-    paths: &Paths,
+    conn: &mut rusqlite::Connection,
     rec: &crate::memory::MemoryRecord,
     tags: &[String],
     vector_opt: Option<&[f32]>,
 ) -> Result<()> {
-    let mut conn = connection::open(paths.db_path())?;
     let tx = conn.transaction()?;
 
     let fm = &rec.frontmatter;
     let created_iso = format_iso(fm.created)?;
-    let slug = crate::memory::slug::slug_from_body(&rec.body);
+    let slug = rec.slug.as_str();
     let md_path = rec.path.to_string_lossy().to_string();
 
     let repo_opt: Option<&str> = if fm.repo.is_empty() {
@@ -196,7 +207,7 @@ fn write_sqlite_mirror(
          VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
         rusqlite::params![
             &fm.id,
-            &slug,
+            slug,
             fm.kind.as_str(),
             repo_opt,
             author_opt,

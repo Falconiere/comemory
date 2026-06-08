@@ -13,13 +13,18 @@ use crate::memory::id::{memory_id, sha256_hex};
 use crate::memory::slug::slug_from_body;
 use crate::prelude::*;
 
-/// One memory loaded from disk: parsed frontmatter, body string, and the path
-/// it lives at on disk.
+/// One memory loaded from disk: parsed frontmatter, body string, the path
+/// it lives at on disk, and the slug derived from the body.
 #[derive(Debug, Clone)]
 pub struct MemoryRecord {
     pub frontmatter: Frontmatter,
     pub body: String,
     pub path: PathBuf,
+    /// Filename-safe slug derived from the body's first non-empty line.
+    /// Cached on the record so callers (notably the SQLite mirror in
+    /// `cli::save`) don't recompute it from `body` after `save` already
+    /// did the work.
+    pub slug: String,
 }
 
 /// Filesystem-backed CRUD over `memories/{id}-{slug}.md`. Cheap to clone:
@@ -113,6 +118,7 @@ impl MemoryStore {
             frontmatter: fm,
             body: body.trim_end().to_string(),
             path: final_path,
+            slug,
         })
     }
 
@@ -121,10 +127,12 @@ impl MemoryStore {
         let path = self.find_by_id(id)?;
         let raw = fs::read_to_string(&path)?;
         let (fm, body) = Frontmatter::split(&raw)?;
+        let slug = slug_from_body(&body);
         Ok(MemoryRecord {
             frontmatter: fm,
             body,
             path,
+            slug,
         })
     }
 
@@ -173,11 +181,15 @@ impl MemoryStore {
                 }
             };
             match Frontmatter::split(&raw) {
-                Ok((fm, body)) => out.push(MemoryRecord {
-                    frontmatter: fm,
-                    body,
-                    path: entry.path(),
-                }),
+                Ok((fm, body)) => {
+                    let slug = slug_from_body(&body);
+                    out.push(MemoryRecord {
+                        frontmatter: fm,
+                        body,
+                        path: entry.path(),
+                        slug,
+                    });
+                }
                 Err(e) => {
                     tracing::warn!("memory parse skipped: {} ({})", entry.path().display(), e);
                 }
