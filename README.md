@@ -49,27 +49,6 @@ comemory ast 'fn $NAME($$$) { $$$ }' --file src/lib.rs
 comemory doctor
 ```
 
-## Graph viewer
-
-`comemory graph serve` opens a local browser-based viewer for the
-property graph. Click-to-expand neighbours, search across kinds, filter
-by node kind, render memory bodies inline. Loopback-only; assets are
-embedded in the binary.
-
-```bash
-# Open the viewer in the default browser
-comemory graph serve
-
-# Headless / over SSH
-comemory graph serve --no-open
-
-# Pin a port
-comemory graph serve --port 7878
-```
-
-See [docs/graph-viewer.md](docs/graph-viewer.md) for the REST API, smoke
-checklist, and architecture notes.
-
 ## Full command surface
 
 | Command | Purpose |
@@ -91,7 +70,6 @@ checklist, and architecture notes.
 | `comemory prune` | Detect (and optionally soft-delete) stale memories |
 | `comemory gc` | Purge old entries from `memories/.trash/` |
 | `comemory install-hooks` | Install git hooks that run `comemory index-code --incremental` on `post-commit`, `post-merge`, `post-checkout` |
-| `comemory graph serve` | Open a local browser-based viewer for the property graph |
 
 All commands accept `--json` for machine-readable output. Exit codes follow
 `sysexits.h` conventions. The data root defaults to `$HOME/.comemory` and can be
@@ -119,8 +97,6 @@ mirroring `src/`), the module map, the frontmatter schema, and the
   storage, retrieval pipeline, save flow, and code-indexing flow.
 - [CLI reference](docs/cli-reference.md) — every subcommand with arguments
   and worked examples.
-- [Graph viewer](docs/graph-viewer.md) — REST endpoints, smoke checklist,
-  and architecture notes for `comemory graph serve`.
 
 ### Benchmarks
 

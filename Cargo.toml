@@ -19,7 +19,6 @@ path = "src/lib.rs"
 anyhow = "1"
 arrow-array = "58"
 arrow-schema = "58"
-axum = { version = "0.7", default-features = false, features = ["http1", "json", "tokio", "query"] }
 clap = { version = "4", features = ["derive", "env"] }
 clap_complete = "4"
 fastembed = "4"
@@ -28,13 +27,10 @@ git2 = { version = "0.19", default-features = false, features = ["vendored-libgi
 ignore = "0.4"
 kuzu = "0.7"
 lancedb = "0.29"
-mime_guess = "2"
 once_cell = "1"
-open = "5"
 owo-colors = "4"
 regex = "1"
 rusqlite = { version = "0.32", features = ["bundled", "load_extension", "vtab", "blob"] }
-rust-embed = { version = "8", features = ["debug-embed"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
@@ -45,8 +41,6 @@ thiserror = "1"
 time = { version = "0.3", features = ["serde", "formatting", "parsing", "macros"] }
 tokio = { version = "1", features = ["full"] }
 toml = "0.8"
-tower = { version = "0.5", default-features = false, features = ["util"] }
-tower-http = { version = "0.6", features = ["compression-gzip", "trace", "set-header"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 walkdir = "2"
@@ -125,9 +119,9 @@ strip = "none"
 # gate stays green during the early build-out.
 [package.metadata.cargo-machete]
 ignored = [
-  "ast-grep-core", "ast-grep-language", "axum", "clap", "fastembed", "git2", "ignore", "kuzu",
-  "lancedb", "mime_guess", "once_cell", "open", "owo-colors", "rusqlite", "rust-embed", "serde",
-  "sha2", "siphasher", "time", "tokio", "tower", "tower-http", "walkdir",
+  "ast-grep-core", "ast-grep-language", "clap", "fastembed", "git2", "ignore", "kuzu",
+  "lancedb", "once_cell", "owo-colors", "rusqlite", "serde",
+  "sha2", "siphasher", "time", "tokio", "walkdir",
   "anyhow", "tracing",
   # url is a transitive-version pin (see comment above the [dependencies.url] entry).
   "url",
