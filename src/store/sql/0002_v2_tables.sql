@@ -30,11 +30,14 @@ CREATE TABLE memory_tags (
 CREATE INDEX idx_memory_tags_tag ON memory_tags(tag);
 
 -- ─── memory vectors (sqlite-vec) ─────────────────────────────────────────
--- dim configurable via COMEMORY_VECTOR_DIM (default 1024).
--- the caller MUST send vectors of the configured dim; mismatch is
--- a hard error. distance_metric=cosine matches the nomic-embed-text
--- family which produces unit vectors; score = 1.0 - distance gives
--- cosine similarity in ~[-1, 1].
+-- The dim literal `FLOAT[1024]` is the authoritative value: vec0 bakes it
+-- into the vtab at migration time and it cannot be reshaped afterwards.
+-- Changing the dim therefore requires editing this DDL (and the matching
+-- `schema_meta` seed at the bottom of the file). The caller MUST send
+-- vectors of this dim; mismatch is a hard error. distance_metric=cosine
+-- matches the nomic-embed-text family which produces unit vectors; the
+-- caller computes score = 1.0 - distance to recover cosine similarity in
+-- ~[-1, 1].
 CREATE VIRTUAL TABLE memory_vec USING vec0(
     memory_id TEXT PRIMARY KEY,
     embedding FLOAT[1024] distance_metric=cosine

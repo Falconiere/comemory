@@ -111,9 +111,14 @@ environment (`Config::with_env`, in `src/config/file.rs`).
 | `COMEMORY_RETRIEVAL_CODE_THRESHOLD` | Minimum cosine similarity for the code table | `0.50` |
 | `COMEMORY_RETRIEVAL_RRF_K` | RRF fusion constant for hybrid scoring | `60.0` |
 | `COMEMORY_GIT_AUTO_SYNC` | `true`/`1` to enable best-effort git commit + push after a save | `false` |
-| `COMEMORY_VECTOR_DIM` | Locked-in dimension for memory vectors (set on first save, enforced via `VecDimMismatch`) | `1024` |
-| `COMEMORY_CODE_VECTOR_DIM` | Locked-in dimension for code-symbol vectors | `768` |
 | `COMEMORY_EMBED_HINT` | Free-form identifier of the embedder you used (e.g. `ollama:nomic-embed-text`). Surfaced by `comemory doctor`; never consumed as a switch. | unset |
+
+The memory and code vector dims (1024 and 768) are baked into the
+`memory_vec` / `code_vec` vec0 DDL (`src/store/sql/0002_v2_tables.sql`)
+at migration time and are not env-configurable: a divergent env value
+would silently disagree with the vtab and surface as `VecDimMismatch`
+at first insert. Change the literal in the DDL if you need a different
+dim.
 
 CLI flags `--data-dir` and `--json` are global and can appear before or
 after the subcommand.

@@ -60,16 +60,17 @@ pub struct RetrievalConfig {
     /// `memory_vec` is a vec0 vtab whose dim is baked into its `CREATE
     /// VIRTUAL TABLE` at migration time and cannot be changed afterwards.
     /// `vector::insert_memory` reads `schema_meta.memory_vector_dim` (seeded
-    /// from the same migration) to gate inserts, so this config field is
-    /// surfaced for reporting / drift detection only; setting
-    /// `COMEMORY_VECTOR_DIM` does NOT reshape the vtab. Defaults to 1024
-    /// (nomic-embed-text-v1.5).
+    /// from the same migration) to gate inserts; this config field tracks
+    /// the same value for `comemory doctor` reporting only. Changing it has
+    /// no effect on the vtab and no env-var override is offered (a divergent
+    /// env value would just produce `VecDimMismatch` at insert time).
+    /// Defaults to 1024 (nomic-embed-text-v1.5).
     #[serde(default = "default_memory_vector_dim")]
     pub memory_vector_dim: usize,
     /// Operator-visible record of the code embedding dim. Same caveat as
-    /// [`memory_vector_dim`]: the authoritative value is the literal in
-    /// `0002_v2_tables.sql` and cannot be reshaped via env after the first
-    /// migration runs. Defaults to 768 (jina-embeddings-v2-base-code).
+    /// [`memory_vector_dim`]: authoritative value lives in the DDL, this
+    /// field is reporting-only with no env override. Defaults to 768
+    /// (jina-embeddings-v2-base-code).
     #[serde(default = "default_code_vector_dim")]
     pub code_vector_dim: usize,
 }
@@ -232,28 +233,11 @@ impl Config {
                 }
             };
         }
-        if let Ok(v) = std::env::var("COMEMORY_VECTOR_DIM") {
-            let parsed = v
-                .parse::<usize>()
-                .map_err(|e| Error::Config(format!("invalid env var COMEMORY_VECTOR_DIM: {e}")))?;
-            if parsed == 0 {
-                return Err(Error::Config(
-                    "invalid env var COMEMORY_VECTOR_DIM=0: must be a positive integer".into(),
-                ));
-            }
-            self.retrieval.memory_vector_dim = parsed;
-        }
-        if let Ok(v) = std::env::var("COMEMORY_CODE_VECTOR_DIM") {
-            let parsed = v.parse::<usize>().map_err(|e| {
-                Error::Config(format!("invalid env var COMEMORY_CODE_VECTOR_DIM: {e}"))
-            })?;
-            if parsed == 0 {
-                return Err(Error::Config(
-                    "invalid env var COMEMORY_CODE_VECTOR_DIM=0: must be a positive integer".into(),
-                ));
-            }
-            self.retrieval.code_vector_dim = parsed;
-        }
+        // COMEMORY_VECTOR_DIM and COMEMORY_CODE_VECTOR_DIM are intentionally
+        // not honoured here. The authoritative dim lives in the `memory_vec`
+        // / `code_vec` vec0 DDL (`src/store/sql/0002_v2_tables.sql`) and is
+        // baked in at migration time; an env override would silently disagree
+        // with the vtab and surface as `VecDimMismatch` at first insert.
         if let Ok(v) = std::env::var("COMEMORY_EMBED_HINT") {
             self.embed_hint = Some(v);
         }

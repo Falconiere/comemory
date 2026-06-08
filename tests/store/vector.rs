@@ -40,6 +40,58 @@ fn insert_and_knn_returns_nearest_neighbor() {
 }
 
 #[test]
+fn knn_memory_with_repo_filter_returns_full_k_under_cross_repo_corpus() {
+    // Regression for PR #3 review thread: vec0 returns the global nearest k
+    // and the `m.repo = ?` JOIN runs *after*. If we don't oversample, a
+    // corpus where the target repo is a minority returns far fewer than k
+    // hits to the caller.
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("comemory.db");
+    let conn = connection::open(&path).expect("open");
+
+    // 5 memories in repo "other", 3 in repo "target". Query vector is a
+    // copy of the closest "other" vector, so the global top-5 by cosine
+    // distance are all in repo "other". Without oversampling, asking for
+    // k=3 under --repo=target would return 0 hits.
+    for i in 0..5 {
+        let id = format!("oth{i:05}");
+        conn.execute(
+            "INSERT INTO memories(id,slug,kind,repo,content_hash,body,created_at,updated_at,md_path) \
+             VALUES(?1,?1,'note','other','h','b','2026-06-08T00:00:00Z','2026-06-08T00:00:00Z','x.md')",
+            [&id],
+        ).expect("seed other");
+        let v = vectors::vector(&format!("other-{i}"), 1024);
+        vector::insert_memory(&conn, &id, &v).expect("insert other");
+    }
+    for i in 0..3 {
+        let id = format!("tgt{i:05}");
+        conn.execute(
+            "INSERT INTO memories(id,slug,kind,repo,content_hash,body,created_at,updated_at,md_path) \
+             VALUES(?1,?1,'note','target','h','b','2026-06-08T00:00:00Z','2026-06-08T00:00:00Z','x.md')",
+            [&id],
+        ).expect("seed target");
+        let v = vectors::vector(&format!("target-{i}"), 1024);
+        vector::insert_memory(&conn, &id, &v).expect("insert target");
+    }
+    // Query vector identical to "other-0" — the global nearest neighbours
+    // are all in repo "other", forcing the JOIN to do real filtering.
+    let q = vectors::vector("other-0", 1024);
+
+    let hits = vector::knn_memory(&conn, &q, 3, Some("target")).expect("knn target");
+    assert_eq!(
+        hits.len(),
+        3,
+        "expected full k=3 hits from repo 'target', got {}",
+        hits.len()
+    );
+    assert!(
+        hits.iter().all(|h| h.memory_id.starts_with("tgt")),
+        "all hits must be from repo 'target': {:?}",
+        hits.iter().map(|h| &h.memory_id).collect::<Vec<_>>()
+    );
+}
+
+#[test]
 fn insert_rejects_mismatched_dim() {
     let dir = tempdir().expect("tempdir");
     let path = dir.path().join("comemory.db");

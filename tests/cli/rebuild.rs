@@ -189,6 +189,40 @@ fn rebuild_preserves_code_index() {
     );
 }
 
+/// Regression for PR #3 review thread: after a successful rebuild, neither
+/// the live DB path nor the tmp path should leave orphaned `*-wal` /
+/// `*-shm` sidecars in the data dir. SQLite leaves these next to the main
+/// file after a WAL-mode close, and the tmp connection's sidecars used to
+/// linger forever because the cleanup loop only iterated against `db`.
+#[test]
+fn rebuild_cleans_up_wal_shm_sidecars() {
+    let home = tempdir().expect("tempdir");
+    run_save(&home, &["--kind", "note", "sidecar cleanup body"]);
+
+    run_rebuild(&home);
+
+    let data_dir = home.path();
+    let live = data_dir.join("comemory.db");
+    let tmp = data_dir.join("comemory.db.rebuild.tmp");
+    for path in [&live, &tmp] {
+        for suffix in ["-wal", "-shm"] {
+            let mut sidecar = path.clone().into_os_string();
+            sidecar.push(suffix);
+            let sidecar = std::path::PathBuf::from(sidecar);
+            assert!(
+                !sidecar.exists(),
+                "rebuild must not leave a sidecar at {}",
+                sidecar.display()
+            );
+        }
+    }
+    assert!(
+        !tmp.exists(),
+        "rebuild must not leave the tmp DB at {}",
+        tmp.display()
+    );
+}
+
 /// When the rebuild cannot complete (e.g. the tmp DB path is blocked by a
 /// pre-existing directory), the original `comemory.db` must be left intact
 /// and the tmp artefact must be cleaned up.

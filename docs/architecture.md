@@ -135,8 +135,9 @@ relations:                           # indexer- and user-managed
 
 The two `*_vec` tables hold caller-supplied vectors. `comemory` never
 embeds locally; pass vectors via `--vector` / `--vector-stdin` (see the
-"BYO-Vector workflow" section in the README). `COMEMORY_VECTOR_DIM` and
-`COMEMORY_CODE_VECTOR_DIM` set the locked dimensionality;
+"BYO-Vector workflow" section in the README). The dims (1024 for
+`memory_vec`, 768 for `code_vec`) are baked into the vec0 DDL in
+`src/store/sql/0002_v2_tables.sql` and are not env-configurable.
 `COMEMORY_EMBED_HINT` records (and surfaces in `comemory doctor`) the
 identifier of the embedder you used.
 
