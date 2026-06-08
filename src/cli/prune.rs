@@ -147,6 +147,31 @@ fn apply(conn: &mut rusqlite::Connection) -> Result<()> {
                                AND i.path = code_symbols.path)",
         [],
     )?;
+    // Drop `references_symbol` / `references_file` edges whose dst no longer
+    // exists. `bundle::code_ref_lookup` already tolerates a dangling dst
+    // (returns `None`), so leaving these would not produce a user-visible
+    // bug — but the edge count grows monotonically across prune cycles and
+    // every read-time lookup pays a wasted DB hit. The dst_id is the
+    // textual qualified form (`<repo>:<path>:<symbol>` for symbols,
+    // `<repo>:<path>` for files); both match the existence checks below.
+    tx.execute(
+        "DELETE FROM edges \
+          WHERE rel = 'references_symbol' \
+            AND NOT EXISTS( \
+                SELECT 1 FROM code_symbols cs \
+                 WHERE edges.dst_id = cs.repo || ':' || cs.path || ':' || cs.symbol \
+            )",
+        [],
+    )?;
+    tx.execute(
+        "DELETE FROM edges \
+          WHERE rel = 'references_file' \
+            AND NOT EXISTS( \
+                SELECT 1 FROM code_symbols cs \
+                 WHERE edges.dst_id = cs.repo || ':' || cs.path \
+            )",
+        [],
+    )?;
     tx.commit()?;
     Ok(())
 }

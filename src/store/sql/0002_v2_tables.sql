@@ -101,10 +101,13 @@ CREATE TABLE indexed_files (
 );
 
 -- ─── graph edges (replaces kuzu) ─────────────────────────────────────────
--- node addressing:
+-- node addressing: dst_id is always the textual qualified form so the
+-- writer (`cross_link::extract_and_emit`) and the reader
+-- (`bundle::code_ref_lookup`) agree without needing a `code_symbols`
+-- row to already exist:
 --   memory:<id>
 --   file:<repo>:<path>
---   symbol:<symbol_id>
+--   symbol:<repo>:<path>:<symbol>
 --   repo:<repo>
 --   author:<name>
 --   tag:<name>

@@ -65,9 +65,16 @@ pub struct Args {
 pub async fn run(args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
-    let mut conn = connection::open(paths.db_path())?;
     let repo = Repository::open(&args.path).map_err(map_git_err)?;
 
+    // `--extract` only emits JSONL to stdout, never writes to the DB.
+    // Skip `connection::open` entirely so a read-only data dir is not a
+    // blocker (and so we don't pay WAL setup for a no-op transaction).
+    if args.extract {
+        return run_extract(&args, &repo);
+    }
+
+    let mut conn = connection::open(paths.db_path())?;
     let tx = conn.transaction()?;
     let mut walker = WalkBuilder::new(&args.path);
     walker.standard_filters(true);
@@ -86,13 +93,7 @@ pub async fn run(args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<(
             // an indexing cursor, so skip them.
             None => continue,
         };
-        // Under `--extract` the cursor is intentionally ignored: callers
-        // expect every supported file to be re-emitted to stdout each run
-        // (e.g. to re-feed an embedder), so a previous non-extract run's
-        // `indexed_files` row must not silently suppress the JSONL stream.
-        // The non-extract path keeps the cursor short-circuit so repeated
-        // `index-code` runs over an unchanged repo stay O(touched-files).
-        if !args.extract && oid_is_indexed(&tx, &args.repo, &rel, &oid)? {
+        if oid_is_indexed(&tx, &args.repo, &rel, &oid)? {
             continue;
         }
         // Drop any prior `code_symbols`/`code_vec`/`code_fts` rows for this
@@ -100,32 +101,53 @@ pub async fn run(args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<(
         // does not leave stale symbol rows behind alongside the fresh ones, and
         // so re-inserts with shifted `line_start` values cannot collide on the
         // `UNIQUE(repo, path, symbol, line_start)` constraint mid-transaction.
-        if !args.extract {
-            code_row::purge_file_symbols(&tx, &args.repo, &rel)?;
-        }
+        code_row::purge_file_symbols(&tx, &args.repo, &rel)?;
         let snippet = std::fs::read_to_string(entry.path()).map_err(Error::Io)?;
         let symbols = ast::extract(lang, &snippet)?;
         for s in &symbols {
-            handle_symbol(&tx, args.extract, &args.repo, &rel, &oid, lang, s)?;
+            write_symbol(&tx, &args.repo, &rel, &oid, lang, s)?;
         }
-        // Only stamp the `indexed_files` cursor when we actually wrote
-        // `code_symbols` rows. In `--extract` mode we emit JSONL to stdout
-        // without touching the symbol tables, so marking the file as indexed
-        // here would cause a subsequent (non-extract) `index-code` run to
-        // skip the file via `oid_is_indexed`, leaving `code_symbols`/
-        // `code_fts` permanently empty for that blob.
-        if !args.extract {
-            code_row::upsert_indexed_file(&tx, &args.repo, &rel, &oid)?;
-        }
+        code_row::upsert_indexed_file(&tx, &args.repo, &rel, &oid)?;
     }
     tx.commit()?;
     Ok(())
 }
 
-/// Insert (or print, under `--extract`) a single extracted symbol row.
-fn handle_symbol(
+/// `--extract` path. Walks the same files as the DB-write path but emits
+/// every symbol as a JSONL row on stdout without opening a SQLite
+/// connection. The caller's embedder + `comemory ingest-code` is expected
+/// to persist the resulting rows. The `indexed_files` cursor is *not*
+/// consulted under `--extract` so callers can re-feed an embedder
+/// deterministically over an unchanged repo.
+fn run_extract(args: &Args, repo: &Repository) -> Result<()> {
+    let mut walker = WalkBuilder::new(&args.path);
+    walker.standard_filters(true);
+    for entry in walker.build().filter_map(std::result::Result::ok) {
+        if !entry.file_type().is_some_and(|t| t.is_file()) {
+            continue;
+        }
+        let Some(lang) = languages::detect(entry.path()) else {
+            continue;
+        };
+        let rel = relative(&args.path, entry.path());
+        let oid = match blob_oid(repo, entry.path()) {
+            Some(v) => v,
+            None => continue,
+        };
+        let snippet = std::fs::read_to_string(entry.path()).map_err(Error::Io)?;
+        let symbols = ast::extract(lang, &snippet)?;
+        for s in &symbols {
+            emit_symbol_jsonl(&args.repo, &rel, &oid, lang, s)?;
+        }
+    }
+    Ok(())
+}
+
+/// Insert a single extracted symbol row into `code_symbols` + `code_fts`.
+/// Used by the DB-write path only; the `--extract` path goes through
+/// [`emit_symbol_jsonl`].
+fn write_symbol(
     conn: &Connection,
-    extract_mode: bool,
     repo: &str,
     rel: &str,
     blob_oid: &str,
@@ -136,25 +158,6 @@ fn handle_symbol(
     let line_end = line_end_of(s) as i64;
     let token_iter = simhash::tokens(&s.snippet);
     let sh = simhash::simhash64(token_iter.iter().map(|t| t.as_str())) as i64;
-
-    if extract_mode {
-        let row = serde_json::json!({
-            "repo": repo,
-            "path": rel,
-            "blob_oid": blob_oid,
-            "symbol": s.name,
-            "kind": s.kind,
-            "lang": lang.as_str(),
-            "line_start": line_start,
-            "line_end": line_end,
-            "snippet": s.snippet,
-            "simhash": sh,
-        });
-        let mut out = std::io::stdout().lock();
-        writeln!(out, "{row}").map_err(Error::Io)?;
-        return Ok(());
-    }
-
     let sid = code_row::insert(
         conn,
         &CodeSymbolRow {
@@ -171,6 +174,36 @@ fn handle_symbol(
         },
     )?;
     fts::index_code(conn, sid, &s.name, &s.snippet, &fts::path_to_tokens(rel))?;
+    Ok(())
+}
+
+/// Serialise a single extracted symbol as a JSONL row to stdout. Used by
+/// the `--extract` path; no SQLite connection is required.
+fn emit_symbol_jsonl(
+    repo: &str,
+    rel: &str,
+    blob_oid: &str,
+    lang: languages::Lang,
+    s: &ExtractedSymbol,
+) -> Result<()> {
+    let line_start = s.line as i64;
+    let line_end = line_end_of(s) as i64;
+    let token_iter = simhash::tokens(&s.snippet);
+    let sh = simhash::simhash64(token_iter.iter().map(|t| t.as_str())) as i64;
+    let row = serde_json::json!({
+        "repo": repo,
+        "path": rel,
+        "blob_oid": blob_oid,
+        "symbol": s.name,
+        "kind": s.kind,
+        "lang": lang.as_str(),
+        "line_start": line_start,
+        "line_end": line_end,
+        "snippet": s.snippet,
+        "simhash": sh,
+    });
+    let mut out = std::io::stdout().lock();
+    writeln!(out, "{row}").map_err(Error::Io)?;
     Ok(())
 }
 
