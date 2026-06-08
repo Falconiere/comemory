@@ -48,11 +48,19 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     let fb = Feedback::new(&mut db);
     let mut used = 0usize;
     let mut irrelevant = 0usize;
-    for id in a.used.split(',').filter(|s| !s.is_empty()) {
+    // Trim whitespace around each comma-split id so `--used "a, b,c"` records
+    // `a`, `b`, `c` rather than the literal strings ` b` and `c` (the latter
+    // would silently miss every downstream lookup keyed on the bare id).
+    for id in a.used.split(',').map(str::trim).filter(|s| !s.is_empty()) {
         fb.record_used(id)?;
         used += 1;
     }
-    for id in a.irrelevant.split(',').filter(|s| !s.is_empty()) {
+    for id in a
+        .irrelevant
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         fb.record_irrelevant(id)?;
         irrelevant += 1;
     }

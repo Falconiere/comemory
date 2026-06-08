@@ -74,14 +74,23 @@ const HOOKS: &[&str] = &["post-commit", "post-merge", "post-checkout"];
 /// `--json` we emit a small object so callers can detect success
 /// programmatically.
 pub async fn run(a: Args, json_flag: bool, _data_dir: Option<PathBuf>) -> Result<()> {
-    for hook in HOOKS {
-        let target = a.repo.join(".git").join("hooks").join(hook);
-        if target.exists() && !a.force {
-            return Err(Error::Other(format!(
-                "{} already exists; pass --force to overwrite",
-                target.display()
-            )));
+    // Pre-flight: verify every target hook either doesn't exist or `--force`
+    // is set BEFORE we start writing. The naive per-iteration check used to
+    // bail mid-loop, leaving the repo with a partial install — e.g. a fresh
+    // `post-commit` next to an unchanged pre-existing `post-merge` — which
+    // confuses both the operator and a follow-up `--force` rerun.
+    if !a.force {
+        for hook in HOOKS {
+            let target = a.repo.join(".git").join("hooks").join(hook);
+            if target.exists() {
+                return Err(Error::Other(format!(
+                    "{} already exists; pass --force to overwrite",
+                    target.display()
+                )));
+            }
         }
+    }
+    for hook in HOOKS {
         install_hook(&a.repo, hook, SCRIPT)?;
     }
     if json_flag {
