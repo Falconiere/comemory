@@ -17,6 +17,8 @@ pub mod graph;
 
 pub mod retrieval;
 
+pub mod store;
+
 pub mod ast;
 
 pub mod prune;
