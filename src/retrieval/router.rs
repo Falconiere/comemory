@@ -58,8 +58,13 @@ pub fn route(
 ) -> Result<Vec<RoutedHit>> {
     let k = cfg.retrieval.top_k;
 
+    // Trim the query before dispatching: a whitespace-only query like
+    // `"   "` is lexically empty (FTS5 returns no rows for it) so the
+    // hybrid arm would mislabel a vector-only result as `Source::Hybrid`
+    // and downstream consumers would assume lexical contributed signal.
+    let lex_meaningful = !query.trim().is_empty();
     match vec {
-        Some(v) if !query.is_empty() => route_hybrid(cfg, conn, query, v, k, repo),
+        Some(v) if lex_meaningful => route_hybrid(cfg, conn, query, v, k, repo),
         Some(v) => route_vector_only(conn, v, k, repo),
         None => route_lexical(conn, query, k, repo),
     }

@@ -63,12 +63,31 @@ pub async fn run(_args: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Res
     paths.ensure_dirs()?;
 
     let db_path = paths.db_path();
-    let writable = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .open(&db_path)
-        .is_ok();
+    // `doctor` is a diagnostic — it must NOT mutate the data dir as a
+    // side-effect. The previous `create(true)` would silently materialise a
+    // zero-byte `comemory.db` against a read-only-DB-but-writable-parent
+    // mount and then the migrate step on the next line would seed it,
+    // mutating state the operator asked us only to inspect.
+    //
+    // When the DB already exists, probe writability by opening
+    // read+write WITHOUT `create`. When it doesn't exist, probe parent-dir
+    // writability instead — the next code path (`connection::open`) will
+    // create the DB itself if everything checks out.
+    let writable = if db_path.exists() {
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&db_path)
+            .is_ok()
+    } else {
+        // Parent dir was already ensured by `paths.ensure_dirs()`; treat
+        // it as writable if a probe file can be created and removed.
+        let probe = paths.data_dir().join(".comemory.doctor.probe");
+        let ok = std::fs::write(&probe, b"").is_ok();
+        if ok {
+            let _ = std::fs::remove_file(&probe);
+        }
+        ok
+    };
     let conn = connection::open(&db_path)?;
     let schema_version: String = conn.query_row(
         "SELECT value FROM schema_meta WHERE key = 'version'",
