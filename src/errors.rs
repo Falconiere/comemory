@@ -19,6 +19,9 @@ pub enum Error {
     #[error("lancedb: {0}")]
     Lance(String),
 
+    #[error("schema migration failed: {0}")]
+    Migration(String),
+
     #[error("other: {0}")]
     Other(String),
 }

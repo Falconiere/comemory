@@ -89,6 +89,7 @@ impl From<Error> for ApiError {
             Error::Json(j) => Self::graph_error(format!("json: {j}")),
             Error::Toml(t) => Self::graph_error(format!("toml: {t}")),
             Error::Lance(s) => Self::graph_error(format!("lance: {s}")),
+            Error::Migration(s) => Self::graph_error(format!("migration: {s}")),
             Error::Other(s) => Self::graph_error(s),
         }
     }
