@@ -29,7 +29,7 @@ Commands:
   list           List memories with optional repo/kind filters
   delete         Soft-delete a memory by id (moves to `.trash/`)
   feedback       Record per-memory feedback (used vs irrelevant)
-  doctor         Report on the data directory and memory count
+  doctor         Report on the data directory and SQLite mirror health
   index          Memory-layer index maintenance (re-embed missing rows). Run `comemory index --help` for the available flags
   index-code     Walk a repo, extract symbols, and upsert into the code index
   ingest-code    Read pre-embedded JSONL rows from stdin and ingest them into the code index (`code_symbols` + `code_fts` + `code_vec`)
@@ -212,7 +212,7 @@ Examples:
 ## comemory doctor
 
 ```
-Report on the data directory and memory count
+Report on the data directory and SQLite mirror health
 
 Usage: comemory doctor [OPTIONS]
 
@@ -472,24 +472,20 @@ Detect (and optionally soft-delete) stale memories
 Usage: comemory prune [OPTIONS]
 
 Options:
-      --json                           Emit machine-readable JSON instead of a human TTY view
-      --orphans                        Detect orphan entries in `memories/.trash/`
-      --data-dir <DATA_DIR>            Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
-      --low-value                      Detect low-value memories (quality + unused + age gates)
-      --below-quality <BELOW_QUALITY>  Strict upper bound on quality for low-value matches [default: 2]
-      --unused-since <UNUSED_SINCE>    Minimum age in days (since `created`) for low-value matches [default: 180]
-      --apply                          Perform soft-deletes instead of a dry-run
-  -h, --help                           Print help
+      --dry-run              Report candidates without applying any deletes
+      --json                 Emit machine-readable JSON instead of a human TTY view
+      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+  -h, --help                 Print help
 
 Examples:
-  # Dry-run orphan detection (no deletes)
-  comemory prune --orphans
+  # Inspect candidates without mutating the DB
+  comemory prune --dry-run
 
-  # Actually move orphans to memories/.trash/
-  comemory prune --orphans --apply
+  # Apply orphan-edge + stale-code-symbol cleanup
+  comemory prune
 
-  # Aggressive low-value sweep
-  comemory prune --low-value --below-quality 2 --unused-since 180 --apply
+  # JSON output for CI/automation
+  comemory prune --json
 ```
 
 ---
