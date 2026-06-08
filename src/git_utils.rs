@@ -21,7 +21,7 @@ use crate::prelude::*;
 
 /// Lift a `git2::Error` into our `Error::Other` variant so the public API only
 /// surfaces a single error type. The git2 message is preserved verbatim.
-fn map_git_err(e: git2::Error) -> Error {
+pub(crate) fn map_git_err(e: git2::Error) -> Error {
     Error::Other(format!("git2: {e}"))
 }
 

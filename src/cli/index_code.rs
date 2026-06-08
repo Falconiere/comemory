@@ -21,6 +21,7 @@ use crate::ast::extractor::ExtractedSymbol;
 use crate::ast::{self, languages};
 use crate::cli::resolve_data_dir;
 use crate::config::paths::Paths;
+use crate::git_utils::map_git_err;
 use crate::prelude::*;
 use crate::simhash;
 use crate::store::{connection, fts};
@@ -53,12 +54,20 @@ pub struct Args {
 /// Walk `args.path`, extract symbols from every supported source file, and
 /// mirror them into `code_symbols` (+ `code_fts`) — or emit them as JSONL
 /// when `--extract` is set.
+///
+/// When the DB-write path is taken (i.e. `--extract` is not set), the whole
+/// walk runs inside a single SQLite transaction so a mid-walk failure rolls
+/// back cleanly: no partial `code_symbols`/`code_fts` rows, no stale
+/// `indexed_files` cursors, and re-running `index-code` on the same blob does
+/// not produce duplicate symbol rows for files whose `indexed_files` row had
+/// not yet been written.
 pub async fn run(args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
-    let conn = connection::open(paths.db_path())?;
+    let mut conn = connection::open(paths.db_path())?;
     let repo = Repository::open(&args.path).map_err(map_git_err)?;
 
+    let tx = conn.transaction()?;
     let mut walker = WalkBuilder::new(&args.path);
     walker.standard_filters(true);
     for entry in walker.build().filter_map(std::result::Result::ok) {
@@ -71,19 +80,22 @@ pub async fn run(args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<(
         let rel = relative(&args.path, entry.path());
         let oid = match blob_oid(&repo, entry.path()) {
             Some(v) => v,
-            // Untracked files have no blob OID; skip them silently.
+            // Untracked files (or files whose canonicalisation failed — that
+            // case is logged inside `blob_oid`) have no blob OID we can use as
+            // an indexing cursor, so skip them.
             None => continue,
         };
-        if oid_is_indexed(&conn, &args.repo, &rel, &oid)? {
+        if oid_is_indexed(&tx, &args.repo, &rel, &oid)? {
             continue;
         }
         let snippet = std::fs::read_to_string(entry.path()).map_err(Error::Io)?;
         let symbols = ast::extract(lang, &snippet)?;
         for s in &symbols {
-            handle_symbol(&conn, args.extract, &args.repo, &rel, &oid, lang, s)?;
+            handle_symbol(&tx, args.extract, &args.repo, &rel, &oid, lang, s)?;
         }
-        upsert_indexed_file(&conn, &args.repo, &rel, &oid)?;
+        upsert_indexed_file(&tx, &args.repo, &rel, &oid)?;
     }
+    tx.commit()?;
     Ok(())
 }
 
@@ -181,10 +193,35 @@ fn upsert_indexed_file(conn: &Connection, repo: &str, path: &str, oid: &str) -> 
 /// macOS the tempdir prefix differs (`/var/...` vs `/private/var/...`) so a
 /// naive `strip_prefix` over the configured workdir would silently fall back
 /// to passing the absolute path, which then panics inside libgit2.
+///
+/// Canonicalisation failures (e.g. a symlink with a broken target) are logged
+/// via `tracing::warn!` so they don't masquerade as a plain untracked-file
+/// skip — the caller still receives `None` and moves on, but the operator
+/// sees the failed path in the logs.
 fn blob_oid(repo: &Repository, file: &Path) -> Option<String> {
     let workdir = repo.workdir()?;
-    let workdir_canon = workdir.canonicalize().ok()?;
-    let file_canon = file.canonicalize().ok()?;
+    let workdir_canon = match workdir.canonicalize() {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::warn!(
+                workdir = %workdir.display(),
+                error = %e,
+                "index-code: failed to canonicalise git workdir; skipping file",
+            );
+            return None;
+        }
+    };
+    let file_canon = match file.canonicalize() {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::warn!(
+                file = %file.display(),
+                error = %e,
+                "index-code: failed to canonicalise file path; skipping",
+            );
+            return None;
+        }
+    };
     let rel = file_canon.strip_prefix(&workdir_canon).ok()?;
     let idx = repo.index().ok()?;
     let entry = idx.get_path(rel, 0)?;
@@ -201,13 +238,6 @@ fn line_end_of(s: &ExtractedSymbol) -> usize {
     } else {
         s.line + lines - 1
     }
-}
-
-/// Map a `git2::Error` into our `Error::Other` variant. Mirrors the helper in
-/// `git_utils::map_git_err` so the public API only surfaces a single error
-/// type.
-fn map_git_err(e: git2::Error) -> Error {
-    Error::Other(format!("git2: {e}"))
 }
 
 /// Render `file` relative to `root` for storage in the `code_symbols.path`
