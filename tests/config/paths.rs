@@ -21,7 +21,8 @@ fn paths_resolves_subdirs_relative_to_data_dir() {
         paths.graph_dir(),
         sb.data_dir().join("index").join("graph.kuzu")
     );
-    assert_eq!(paths.stats_db(), sb.data_dir().join("stats.db"));
+    // stats_db() is now an alias for db_path() — both land in comemory.db.
+    assert_eq!(paths.stats_db(), paths.db_path());
     assert_eq!(paths.config_file(), sb.data_dir().join("config.toml"));
 }
 

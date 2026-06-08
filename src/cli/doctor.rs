@@ -46,7 +46,7 @@ pub struct Report {
     pub data_dir: String,
     /// `true` when `comemory.db` exists and is writable.
     pub db_writable: bool,
-    /// Applied schema version from `schema_meta.version` (currently `"2"`).
+    /// Applied schema version from `schema_meta.version` (currently `"3"`).
     pub schema_version: String,
     /// `true` when `vec_version()` returns a string, i.e. the
     /// sqlite-vec extension was loaded into this connection.

@@ -1,59 +1,29 @@
-//! SQLite-backed stats store: schema bootstrap and connection accessors.
+//! SQLite-backed stats store: opens `comemory.db` via the shared
+//! [`crate::store::connection::open`] so all data lands in the single v0.2
+//! database (spec §4: one file).
 //!
-//! Holds three tables: `retrieval_log` (per-query log), `feedback` (per-memory
-//! used/irrelevant counters), and `repo_marker` (per-repo last-indexed head).
-//! Schema is idempotent (`CREATE TABLE IF NOT EXISTS`) so callers can open
-//! existing databases without migration.
-
-use std::path::Path;
+//! Three tables live here: `retrieval_log` (per-query log), `repo_marker`
+//! (per-repo last-indexed head), and `index_failures` (swallowed indexing
+//! errors). The `feedback` table was always in `0002_v2_tables.sql`; the
+//! remaining tables were added in migration `0003_stats_tables`.
 
 use rusqlite::Connection;
 use time::format_description::well_known::Iso8601;
 use time::OffsetDateTime;
 
 use crate::prelude::*;
+use crate::store::connection;
 
-/// Owns a SQLite connection for the stats database. Open on startup, reuse for
-/// the process lifetime.
+/// Owns a SQLite connection to `comemory.db` for stats operations.
 pub struct StatsDb {
     conn: Connection,
 }
 
-const SCHEMA: &str = r#"
-CREATE TABLE IF NOT EXISTS retrieval_log(
-  query_id     TEXT PRIMARY KEY,
-  query        TEXT NOT NULL,
-  returned_ids TEXT NOT NULL,
-  at           TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS feedback(
-  memory_id        TEXT PRIMARY KEY,
-  used_count       INTEGER NOT NULL DEFAULT 0,
-  irrelevant_count INTEGER NOT NULL DEFAULT 0,
-  last_used        TEXT
-);
-CREATE TABLE IF NOT EXISTS repo_marker(
-  repo            TEXT PRIMARY KEY,
-  last_head       TEXT,
-  last_indexed_at TEXT
-);
-CREATE TABLE IF NOT EXISTS index_failures(
-  id    INTEGER PRIMARY KEY AUTOINCREMENT,
-  ts    TEXT NOT NULL,
-  error TEXT NOT NULL
-);
-"#;
-
 impl StatsDb {
-    /// Open (or create) the stats database at `path`, ensuring the parent
-    /// directory exists and the schema is applied.
-    pub fn open(path: impl AsRef<Path>) -> Result<Self> {
-        if let Some(parent) = path.as_ref().parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let conn = Connection::open(path.as_ref()).map_err(|e| Error::Other(e.to_string()))?;
-        conn.execute_batch(SCHEMA)
-            .map_err(|e| Error::Other(e.to_string()))?;
+    /// Open (or create) `comemory.db` at `path`, running all pending
+    /// migrations so the stats tables are guaranteed to exist.
+    pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self> {
+        let conn = connection::open(path)?;
         Ok(Self { conn })
     }
 

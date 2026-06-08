@@ -22,8 +22,8 @@ fn doctor_reports_schema_version_two_on_fresh_dir() {
     let assertion = bin(&home).arg("doctor").assert().success();
     let out = String::from_utf8(assertion.get_output().stdout.clone()).expect("utf8 stdout");
     assert!(
-        out.contains("schema_version") && out.contains(": 2"),
-        "doctor should report schema_version 2 on a fresh dir: {out:?}"
+        out.contains("schema_version") && out.contains(": 3"),
+        "doctor should report schema_version 3 on a fresh dir: {out:?}"
     );
 }
 
@@ -35,7 +35,7 @@ fn doctor_json_emits_v2_report_shape() {
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
     assert!(v["data_dir"].is_string());
     assert_eq!(v["db_writable"].as_bool(), Some(true));
-    assert_eq!(v["schema_version"].as_str(), Some("2"));
+    assert_eq!(v["schema_version"].as_str(), Some("3"));
     assert_eq!(v["sqlite_vec_loaded"].as_bool(), Some(true));
 }
 
@@ -49,5 +49,5 @@ fn doctor_schema_version_persists_after_save() {
     let assertion = bin(&home).args(["--json", "doctor"]).assert().success();
     let stdout = String::from_utf8(assertion.get_output().stdout.clone()).expect("utf8 stdout");
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
-    assert_eq!(v["schema_version"].as_str(), Some("2"));
+    assert_eq!(v["schema_version"].as_str(), Some("3"));
 }
