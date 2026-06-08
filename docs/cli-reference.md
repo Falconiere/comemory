@@ -107,17 +107,13 @@ Options:
       --json                 Emit machine-readable JSON instead of a human TTY view
       --limit <LIMIT>        Maximum number of hits to return (default 12). Must be >= 1 [default: 12]
       --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+      --repo <REPO>          Optional repo filter
+      --kind <KIND>          Optional kind filter (decision|bug|...) [possible values: decision, bug, convention, discovery, pattern, note]
   -h, --help                 Print help
 
 Examples:
   # Natural-language query, top 12 hits (default)
   comemory search "postgres migration race"
-
-  # Limit hits and emit JSON for agent consumption
-  comemory search "what database do we use" --limit 5 --json
-
-  # Tightly scoped query
-  comemory search "tree-sitter ast pattern" --limit 3
 ```
 
 ---
@@ -301,12 +297,6 @@ Options:
 Examples:
   # Exact function-name hit
   comemory symbol run_migration
-
-  # Natural-language descriptor, top 10 JSON
-  comemory symbol "parse frontmatter yaml" --limit 10 --json
-
-  # Broader semantic match
-  comemory symbol "embed query string into vector"
 ```
 
 ---
@@ -377,10 +367,10 @@ Headline lookup: code symbol + memories matching a key
 Usage: comemory context [OPTIONS] <KEY>
 
 Arguments:
-  <KEY>  Free-form key — symbol name, file path fragment, or natural-language phrase. Embedded against both the code index and the memory index
+  <KEY>  Free-form key — symbol name, file path fragment, or phrase
 
 Options:
-      --depth <DEPTH>        Graph-walk depth. Reserved for Task 17 (Supersedes / ConflictsWith walks); accepted now to keep the CLI shape stable [default: 1]
+      --depth <DEPTH>        Graph-walk depth (reserved for Task 17) [default: 1]
       --json                 Emit machine-readable JSON instead of a human TTY view
       --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
       --limit <LIMIT>        Maximum number of memory hits to surface (default 5). Must be >= 1 [default: 5]
@@ -389,12 +379,6 @@ Options:
 Examples:
   # Code symbol + linked memories in one round-trip (JSON)
   comemory context run_migration --json
-
-  # Natural-language key with a deeper neighborhood walk
-  comemory context "postgres migration race" --depth 2
-
-  # File-path fragment as the key
-  comemory context "src/db.rs"
 ```
 
 ---

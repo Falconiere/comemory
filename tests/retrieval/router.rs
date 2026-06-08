@@ -1,34 +1,45 @@
-use comemory::retrieval::router::{classify, Route};
+use comemory::config::Config;
+use comemory::retrieval::router;
+use comemory::store::{connection, fts, vector};
+use tempfile::tempdir;
+
+#[path = "../common/vectors.rs"]
+mod vectors;
 
 #[test]
-fn symbol_looking_query_routes_to_symbol() {
-    assert_eq!(classify("handleLogin"), Route::Symbol);
-    assert_eq!(classify("run_migration"), Route::Symbol);
+fn lexical_path_when_no_vector() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("comemory.db");
+    let conn = connection::open(&path).expect("open");
+
+    seed_memory(&conn, "lex1", "advisory lock postgres");
+    fts::index_memory(&conn, "lex1", "advisory lock postgres", "").expect("fts");
+
+    let cfg = Config::defaults();
+    let hits = router::route(&cfg, &conn, "advisory lock", None, None).expect("route");
+    assert_eq!(hits[0].memory_id, "lex1");
 }
 
 #[test]
-fn long_question_routes_to_hybrid() {
-    assert_eq!(classify("postgres migration race condition"), Route::Hybrid);
+fn vector_path_when_vector_provided() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("comemory.db");
+    let conn = connection::open(&path).expect("open");
+
+    seed_memory(&conn, "vec1", "irrelevant text");
+    let v = vectors::vector("seed", 1024);
+    vector::insert_memory(&conn, "vec1", &v).expect("vec");
+
+    let cfg = Config::defaults();
+    let hits = router::route(&cfg, &conn, "no lex match", Some(&v), None).expect("route");
+    assert_eq!(hits[0].memory_id, "vec1");
 }
 
-#[test]
-fn empty_query_routes_to_fts_first() {
-    assert_eq!(classify(""), Route::FtsFirst);
-}
-
-#[test]
-fn whitespace_only_query_routes_to_fts_first() {
-    assert_eq!(classify("   \t  "), Route::FtsFirst);
-}
-
-#[test]
-fn two_word_query_routes_to_fts_first() {
-    assert_eq!(classify("postgres migration"), Route::FtsFirst);
-}
-
-#[test]
-fn single_token_with_punct_is_not_symbol() {
-    // A trailing `?` is not in the identifier charset, so this falls through
-    // to the FtsFirst branch (single token, but not symbol-like).
-    assert_eq!(classify("login?"), Route::FtsFirst);
+fn seed_memory(conn: &rusqlite::Connection, id: &str, body: &str) {
+    conn.execute(
+        "INSERT INTO memories(id,slug,kind,content_hash,body,created_at,updated_at,md_path) \
+         VALUES(?1, 'x','note','h', ?2, 't','t','x.md')",
+        rusqlite::params![id, body],
+    )
+    .expect("seed memory");
 }
