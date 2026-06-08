@@ -1,21 +1,30 @@
-//! `comemory save` — write a new memory to disk via `MemoryStore::save`, then
-//! best-effort wire the record into the kuzu property graph (Memory node +
-//! provenance edges + cross-link references). Graph errors are logged and
-//! swallowed because markdown remains the source of truth.
+//! `comemory save` — atomic markdown write + SQLite-mirror upsert.
+//!
+//! v0.2 collapses the v0.1 fan-out (markdown + kuzu + lancedb + sqlite FTS)
+//! into a single transaction against `comemory.db`. Markdown stays the
+//! source of truth: it is written first via [`MemoryStore::save`], then the
+//! SQLite mirror is upserted in one transaction (memories + memory_tags +
+//! memory_fts + optional memory_vec + edges).
+//!
+//! Embeddings are caller-supplied (BYO-vector). A vector may be passed as a
+//! comma-separated list via `--vector` or as a JSON object on stdin via
+//! `--vector-stdin`. The dim is validated against `schema_meta` before any
+//! INSERT runs so wrong-dim payloads fail loudly.
 
 use std::io::Read;
 use std::io::Write as _;
 use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::cli::resolve_data_dir;
 use crate::config::paths::Paths;
-use crate::graph::cross_link::extract_refs;
-use crate::graph::Graph;
+use crate::graph::cross_link;
+use crate::graph::edges::{self, EdgeKey};
 use crate::memory::{Kind, MemoryStore};
 use crate::prelude::*;
+use crate::store::{connection, fts, vector};
 
 const EXAMPLES: &str = "\
 Examples:
@@ -25,14 +34,11 @@ Examples:
   # Pipe a bug report body from another command
   echo \"Race in run_migration when run twice in <1s\" | comemory save - --kind bug --repo myrepo
 
-  # Read the body from a file via shell redirect
-  comemory save - --kind discovery --repo myrepo < notes/postgres-migration.md
+  # Save with a caller-supplied embedding (BYO-vector)
+  echo '{\"embedding\":[0.1,0.2,...]}' | comemory save \"...body...\" --vector-stdin
 
   # Minimal note (kind defaults to `note`, no repo/tags)
-  comemory save \"Remember: cargo nextest serializes the embedder group\"
-
-  # Batch import: skip the per-save embedder load, then rebuild indices once
-  for f in *.md; do comemory save - --no-index < \"$f\"; done && comemory index-code";
+  comemory save \"Remember: cargo nextest serializes the embedder group\"";
 
 /// Arguments to `comemory save`. The positional `body` is optional — if omitted
 /// or `-`, the body is read from stdin so callers can pipe content.
@@ -56,11 +62,17 @@ pub struct Args {
     /// Quality rating 1..=5. Defaults to 3.
     #[arg(long, default_value_t = 3, value_parser = clap::value_parser!(u8).range(1..=5))]
     pub quality: u8,
-    /// Skip the dense embed + FTS upsert (markdown + graph still run). Use
-    /// for batch imports; rebuild the dense table afterwards with
-    /// `comemory index-code` (or a future dedicated `comemory index` command).
+    /// Caller-supplied dense vector as a comma-separated float list. Length
+    /// must equal the configured memory vector dim or the save fails with
+    /// `vector dim mismatch`.
+    #[arg(long)]
+    pub vector: Option<String>,
+    /// Read a JSON `{ "embedding": [..] }` payload from stdin and use it as
+    /// the dense vector for the saved memory. Mutually exclusive with body
+    /// being read from stdin (the body must be supplied as a positional arg
+    /// when `--vector-stdin` is set).
     #[arg(long, default_value_t = false)]
-    pub no_index: bool,
+    pub vector_stdin: bool,
 }
 
 /// JSON shape emitted under `--json`.
@@ -70,10 +82,22 @@ struct Output {
     path: String,
 }
 
+#[derive(Deserialize)]
+struct EmbeddingPayload {
+    embedding: Vec<f32>,
+}
+
 /// Save the body and emit the new memory id + on-disk path.
 pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let body = match a.body.as_deref() {
-        Some("-") | None => read_stdin()?,
+        Some("-") | None => {
+            if a.vector_stdin {
+                return Err(Error::Config(
+                    "--vector-stdin requires the body to be passed as a positional arg".into(),
+                ));
+            }
+            read_stdin()?
+        }
         Some(s) => s.to_string(),
     };
     let tags: Vec<String> = if a.tags.is_empty() {
@@ -81,34 +105,23 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     } else {
         a.tags.split(',').map(|t| t.trim().to_string()).collect()
     };
+
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
+
+    // Validate any caller-supplied vector against the schema-locked dim
+    // BEFORE the markdown write so a wrong-dim payload aborts cleanly with
+    // nothing on disk.
+    let vector_opt = read_optional_vector(&a)?;
+
+    // 1. Markdown atomic write (source of truth).
     let store = MemoryStore::new(paths.clone());
     let rec = store.save(&body, a.kind, &a.repo, &tags, &a.author, a.quality)?;
 
-    // Best-effort graph upsert: markdown is the source of truth, so any kuzu
-    // failure is logged and swallowed rather than propagated to the user.
-    // The failure is also recorded in the stats DB so `comemory doctor`
-    // (and operators tailing the stats file) can spot a broken graph path
-    // instead of just a vanished warn!.
-    if let Err(e) = upsert_graph(&paths, &rec) {
-        tracing::warn!("graph upsert failed: {e}");
-        record_index_failure_best_effort(&paths, &format!("graph: {e}"));
-    }
-
-    // Best-effort dense embedding + FTS upsert. Either failure logs and is
-    // swallowed: markdown remains the source of truth, and the user-facing
-    // `comemory save` path must not fail just because LanceDB or SQLite
-    // cannot open under the current data dir.
-    //
-    // `--no-index` skips this step entirely so batch / scripted saves do not
-    // pay the ~300ms–2s cold-load cost of `Embedder::nomic_text()` per file.
-    if !a.no_index {
-        if let Err(e) = upsert_indices(&paths, &rec).await {
-            tracing::warn!("index upsert failed: {e}");
-            record_index_failure_best_effort(&paths, &e.to_string());
-        }
-    }
+    // 2. SQLite mirror in one transaction. Markdown is the source of truth,
+    //    so a mirror failure surfaces as an `Err` — but the markdown file
+    //    is already on disk and can be replayed by `comemory rebuild`.
+    write_sqlite_mirror(&paths, &rec, &tags, vector_opt.as_deref())?;
 
     let output = Output {
         id: rec.frontmatter.id.clone(),
@@ -124,21 +137,141 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     Ok(())
 }
 
-/// Open the graph, upsert the Memory + provenance edges, and add
-/// `:ReferencesFile` / `:ReferencesSymbol` edges for every cross-link found in
-/// the body. The `MATCH`-based reference edges silently no-op when their
-/// target File/Symbol nodes do not yet exist, which is the intended
-/// best-effort semantics: the code-layer indexer can fill them in later.
-fn upsert_graph(paths: &Paths, rec: &crate::memory::MemoryRecord) -> Result<()> {
-    let g = Graph::open(paths.graph_dir())?;
-    g.upsert_memory(rec)?;
-    let refs = extract_refs(&rec.body);
-    for file_q in &refs.files {
-        g.add_references_file(&rec.frontmatter.id, file_q)?;
+/// Read the optional caller-supplied vector from `--vector` (CSV) or
+/// `--vector-stdin` (JSON `{ "embedding": [..] }`). Returns `Ok(None)` when
+/// neither flag is set so the FTS-only path can proceed.
+fn read_optional_vector(args: &Args) -> Result<Option<Vec<f32>>> {
+    if args.vector_stdin {
+        let mut buf = String::new();
+        std::io::stdin()
+            .read_to_string(&mut buf)
+            .map_err(Error::Io)?;
+        let payload: EmbeddingPayload = serde_json::from_str(buf.trim())?;
+        return Ok(Some(payload.embedding));
     }
-    for sym_q in &refs.symbols {
-        g.add_references_symbol(&rec.frontmatter.id, sym_q)?;
+    if let Some(raw) = &args.vector {
+        let parsed: Vec<f32> = raw
+            .split(',')
+            .map(|s| s.trim().parse::<f32>())
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Config(format!("--vector parse: {e}")))?;
+        return Ok(Some(parsed));
     }
+    Ok(None)
+}
+
+/// Mirror the markdown record into `comemory.db` in a single transaction:
+/// `memories`, `memory_tags`, `memory_fts`, optional `memory_vec`, and the
+/// graph `edges` table (in_repo/authored_by/tagged plus cross-link
+/// references parsed from the body).
+fn write_sqlite_mirror(
+    paths: &Paths,
+    rec: &crate::memory::MemoryRecord,
+    tags: &[String],
+    vector_opt: Option<&[f32]>,
+) -> Result<()> {
+    let mut conn = connection::open(paths.db_path())?;
+    let tx = conn.transaction()?;
+
+    let fm = &rec.frontmatter;
+    let created_iso = format_iso(fm.created)?;
+    let slug = crate::memory::slug::slug_from_body(&rec.body);
+    let md_path = rec.path.to_string_lossy().to_string();
+
+    let repo_opt: Option<&str> = if fm.repo.is_empty() {
+        None
+    } else {
+        Some(fm.repo.as_str())
+    };
+    let author_opt: Option<&str> = if fm.author.is_empty() {
+        None
+    } else {
+        Some(fm.author.as_str())
+    };
+
+    tx.execute(
+        "INSERT INTO memories(\
+             id, slug, kind, repo, author, quality, schema, \
+             content_hash, body, created_at, updated_at, md_path) \
+         VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
+        rusqlite::params![
+            &fm.id,
+            &slug,
+            fm.kind.as_str(),
+            repo_opt,
+            author_opt,
+            fm.quality as i64,
+            fm.schema as i64,
+            &fm.content_hash,
+            &rec.body,
+            &created_iso,
+            &created_iso,
+            &md_path,
+        ],
+    )?;
+    for tag in tags {
+        tx.execute(
+            "INSERT INTO memory_tags(memory_id, tag) VALUES(?1, ?2)",
+            rusqlite::params![&fm.id, tag],
+        )?;
+    }
+    fts::index_memory(&tx, &fm.id, &rec.body, &tags.join(","))?;
+
+    if let Some(v) = vector_opt {
+        vector::insert_memory(&tx, &fm.id, v)?;
+    }
+
+    insert_save_edges(&tx, fm, tags, &rec.body)?;
+    tx.commit()?;
+    Ok(())
+}
+
+/// Insert the v0.2 graph edges that accompany a save: in_repo, authored_by,
+/// tagged, plus any references_file / references_symbol harvested from the
+/// body by the cross-link parser.
+fn insert_save_edges(
+    tx: &rusqlite::Connection,
+    fm: &crate::memory::Frontmatter,
+    tags: &[String],
+    body: &str,
+) -> Result<()> {
+    if !fm.repo.is_empty() {
+        edges::insert(
+            tx,
+            EdgeKey {
+                src_kind: "memory",
+                src_id: &fm.id,
+                dst_kind: "repo",
+                dst_id: &fm.repo,
+                rel: "in_repo",
+            },
+        )?;
+    }
+    if !fm.author.is_empty() {
+        edges::insert(
+            tx,
+            EdgeKey {
+                src_kind: "memory",
+                src_id: &fm.id,
+                dst_kind: "author",
+                dst_id: &fm.author,
+                rel: "authored_by",
+            },
+        )?;
+    }
+    for tag in tags {
+        edges::insert(
+            tx,
+            EdgeKey {
+                src_kind: "memory",
+                src_id: &fm.id,
+                dst_kind: "tag",
+                dst_id: tag,
+                rel: "tagged",
+            },
+        )?;
+    }
+    cross_link::extract_and_emit(tx, &fm.id, body)?;
     Ok(())
 }
 
@@ -148,36 +281,9 @@ fn read_stdin() -> Result<String> {
     Ok(buf)
 }
 
-/// Best-effort dense + lexical index writes for the freshly saved memory.
-/// Opens the LanceDB `memory_chunks` table, embeds the body with the
-/// nomic-text model, upserts the row, then mirrors the same id+body into
-/// the SQLite FTS5 table. Called from `run` under a `warn!`-and-swallow
-/// guard so embedder or filesystem hiccups never block a save: markdown
-/// remains the source of truth and `comemory index-code` (or a future
-/// dedicated `comemory index` command) can rebuild what was missed.
-async fn upsert_indices(paths: &Paths, rec: &crate::memory::MemoryRecord) -> Result<()> {
-    let idx = crate::index::MemoryIndex::open(paths.vectors_dir(), 768).await?;
-    let mut emb = crate::index::Embedder::nomic_text()?;
-    let v = emb.embed_one(&rec.body)?;
-    idx.upsert(rec, &v).await?;
-
-    let fts = crate::index::Fts::open(paths.fts_db())?;
-    fts.upsert(&rec.frontmatter.id, &rec.body)?;
-    Ok(())
-}
-
-/// Open the stats SQLite database and append one row to `index_failures`,
-/// swallowing any stats-DB error. The `index_failures` table records any
-/// save-time indexing failure (graph, dense embed, or FTS) so `comemory
-/// doctor` (and operators tailing the stats file) can spot a degraded
-/// pipeline instead of just a vanished `warn!`. Markdown remains the
-/// source of truth in every case.
-fn record_index_failure_best_effort(paths: &Paths, error: &str) {
-    let outcome = (|| -> Result<()> {
-        let db = crate::stats::StatsDb::open(paths.stats_db())?;
-        db.record_index_failure(time::OffsetDateTime::now_utc(), error)
-    })();
-    if let Err(stats_err) = outcome {
-        tracing::warn!("record_index_failure: {stats_err}");
-    }
+/// Format an `OffsetDateTime` as RFC3339 / ISO-8601 for storage in the
+/// `memories.created_at` / `updated_at` columns.
+fn format_iso(t: time::OffsetDateTime) -> Result<String> {
+    t.format(&time::format_description::well_known::Iso8601::DEFAULT)
+        .map_err(|e| Error::Other(format!("iso8601 format: {e}")))
 }

@@ -8,6 +8,10 @@
 
 use once_cell::sync::Lazy;
 use regex::Regex;
+use rusqlite::Connection;
+
+use crate::graph::edges::{self, EdgeKey};
+use crate::prelude::*;
 
 /// Code-layer references harvested from a memory body.
 ///
@@ -81,4 +85,39 @@ pub fn extract_refs(body: &str) -> Refs {
         }
     }
     refs
+}
+
+/// Walk `body`, extract every `<repo>:<path>[:<symbol>]` reference, and
+/// insert `references_file` / `references_symbol` edges into the v0.2
+/// `edges` table. Node addressing matches `src/store/sql/0002_v2_tables.sql`:
+/// `file:<repo>:<path>` and `symbol:<repo>:<path>:<symbol>`. Replaces the
+/// v0.1 kuzu writer; the file/symbol nodes themselves are populated later
+/// by `comemory index-code`.
+pub fn extract_and_emit(conn: &Connection, memory_id: &str, body: &str) -> Result<()> {
+    let refs = extract_refs(body);
+    for file_q in &refs.files {
+        edges::insert(
+            conn,
+            EdgeKey {
+                src_kind: "memory",
+                src_id: memory_id,
+                dst_kind: "file",
+                dst_id: file_q,
+                rel: "references_file",
+            },
+        )?;
+    }
+    for sym_q in &refs.symbols {
+        edges::insert(
+            conn,
+            EdgeKey {
+                src_kind: "memory",
+                src_id: memory_id,
+                dst_kind: "symbol",
+                dst_id: sym_q,
+                rel: "references_symbol",
+            },
+        )?;
+    }
+    Ok(())
 }

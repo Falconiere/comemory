@@ -73,7 +73,8 @@ Options:
       --tags <TAGS>          Comma-separated tag list (e.g. `database,postgres`) [default: ""]
       --author <AUTHOR>      Author identifier. Defaults to empty so callers may omit [default: ""]
       --quality <QUALITY>    Quality rating 1..=5. Defaults to 3 [default: 3]
-      --no-index             Skip the dense embed + FTS upsert (markdown + graph still run). Use for batch imports; rebuild the dense table afterwards with `comemory index-code` (or a future dedicated `comemory index` command)
+      --vector <VECTOR>      Caller-supplied dense vector as a comma-separated float list. Length must equal the configured memory vector dim or the save fails with `vector dim mismatch`
+      --vector-stdin         Read a JSON `{ "embedding": [..] }` payload from stdin and use it as the dense vector for the saved memory. Mutually exclusive with body being read from stdin (the body must be supplied as a positional arg when `--vector-stdin` is set)
   -h, --help                 Print help
 
 Examples:
@@ -83,14 +84,11 @@ Examples:
   # Pipe a bug report body from another command
   echo "Race in run_migration when run twice in <1s" | comemory save - --kind bug --repo myrepo
 
-  # Read the body from a file via shell redirect
-  comemory save - --kind discovery --repo myrepo < notes/postgres-migration.md
+  # Save with a caller-supplied embedding (BYO-vector)
+  echo '{"embedding":[0.1,0.2,...]}' | comemory save "...body..." --vector-stdin
 
   # Minimal note (kind defaults to `note`, no repo/tags)
   comemory save "Remember: cargo nextest serializes the embedder group"
-
-  # Batch import: skip the per-save embedder load, then rebuild indices once
-  for f in *.md; do comemory save - --no-index < "$f"; done && comemory index-code
 ```
 
 ---

@@ -47,6 +47,13 @@ impl Paths {
         self.data_dir.join("stats.db")
     }
 
+    /// Single-file SQLite mirror for v0.2 (`comemory.db`). Rooted directly at
+    /// the data dir so callers that override `COMEMORY_DATA_DIR` see a
+    /// predictable path next to `memories/`.
+    pub fn db_path(&self) -> PathBuf {
+        self.data_dir.join("comemory.db")
+    }
+
     pub fn config_file(&self) -> PathBuf {
         self.data_dir.join("config.toml")
     }
