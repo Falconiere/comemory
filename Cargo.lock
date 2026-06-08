@@ -1057,6 +1057,7 @@ dependencies = [
  "ast-grep-core",
  "ast-grep-language",
  "axum",
+ "cc",
  "clap",
  "clap_complete",
  "criterion",
