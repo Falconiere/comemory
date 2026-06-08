@@ -120,8 +120,10 @@ fn index_code_extract_emits_ingest_compatible_jsonl() {
     // its concrete value depends on the snippet tokens.
     let _ = row.simhash;
 
-    // DB-write path was NOT taken under --extract: comemory.db should not
-    // even exist (the connection::open call was bypassed).
+    // DB-write path was NOT taken under --extract. The connection is still
+    // opened (we use the same Paths layout to look up `comemory.db`), but
+    // the transaction never writes to `code_symbols`/`code_fts`/`code_vec`
+    // or `indexed_files`, so a count of 0 is the contract we pin here.
     let db = home.path().join("comemory.db");
     if db.exists() {
         let conn = rusqlite::Connection::open(&db).expect("open db");
