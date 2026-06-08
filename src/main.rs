@@ -47,6 +47,11 @@ async fn main() {
             let _ = writeln!(err, "error: lancedb: {msg}");
             70
         }
+        Err(Error::Migration(msg)) => {
+            let mut err = std::io::stderr().lock();
+            let _ = writeln!(err, "error: schema migration failed: {msg}");
+            70
+        }
         Err(Error::Other(msg)) => {
             let mut err = std::io::stderr().lock();
             let _ = writeln!(err, "error: {msg}");

@@ -24,13 +24,15 @@ use crate::prelude::*;
 
 /// Open (or create) the comemory.db file at `path` and prepare it for
 /// use: WAL mode, busy_timeout=5000ms, foreign_keys=ON, sqlite-vec
-/// registered as an auto-extension.
+/// registered as an auto-extension, and all pending schema migrations
+/// applied.
 pub fn open<P: AsRef<Path>>(path: P) -> Result<Connection> {
     ensure_sqlite_vec_registered()?;
-    let conn = Connection::open(path)?;
+    let mut conn = Connection::open(path)?;
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "busy_timeout", 5000_i64)?;
     conn.pragma_update(None, "foreign_keys", true)?;
+    crate::store::migrate::run(&mut conn)?;
     Ok(conn)
 }
 
