@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::cli::resolve_data_dir;
+use crate::cli::{override_top_k, resolve_data_dir};
 use crate::config::paths::Paths;
 use crate::config::Config;
 use crate::output;
@@ -49,17 +49,9 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     paths.ensure_dirs()?;
     let conn = connection::open(paths.db_path())?;
 
-    let cfg = override_k(Config::defaults().with_env()?, a.k);
+    let cfg = override_top_k(Config::defaults().with_env()?, a.k);
     let routed = router::route(&cfg, &conn, &a.query, None, a.repo.as_deref())?;
     let ids: Vec<String> = routed.into_iter().map(|h| h.memory_id).collect();
     let bundle = bundle::assemble(&conn, &a.query, &ids)?;
     output::context::emit(&bundle, json_flag)
-}
-
-/// Override the configured `top_k` when `--k` was supplied on the CLI.
-fn override_k(mut cfg: Config, k: Option<usize>) -> Config {
-    if let Some(k) = k {
-        cfg.retrieval.top_k = k;
-    }
-    cfg
 }
