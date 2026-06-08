@@ -9,26 +9,20 @@ use crate::prelude::*;
 
 pub mod ast;
 pub mod completions;
-pub mod conflicts;
 pub mod context;
 pub mod delete;
 pub mod doctor;
 pub(crate) mod embedding_input;
 pub mod feedback;
 pub mod gc;
-pub mod index;
 pub mod index_code;
 pub mod ingest_code;
 pub mod install_hooks;
 pub mod list;
-pub mod memory_for;
 pub mod prune;
 pub mod rebuild;
 pub mod save;
 pub mod search;
-pub mod supersedes;
-pub mod symbol;
-pub mod walk;
 
 /// Top-level CLI. `comemory <subcommand> [--json] [--data-dir DIR]`. The `--json`
 /// and `--data-dir` flags are global so callers can place them either before
@@ -71,31 +65,17 @@ pub enum Cmd {
     Feedback(feedback::Args),
     /// Report on the data directory and SQLite mirror health.
     Doctor(doctor::Args),
-    /// Memory-layer index maintenance (re-embed missing rows). Run
-    /// `comemory index --help` for the available flags.
-    #[command(after_help = index::EXAMPLES)]
-    Index(index::Args),
     /// Walk a repo, extract symbols, and upsert into the code index.
     IndexCode(index_code::Args),
     /// Read pre-embedded JSONL rows from stdin and ingest them into the code
     /// index (`code_symbols` + `code_fts` + `code_vec`).
     IngestCode(ingest_code::Args),
-    /// Semantic search over the code index for a symbol name.
-    Symbol(symbol::Args),
-    /// List memories that reference a qualified symbol or file path.
-    MemoryFor(memory_for::Args),
     /// Run an ast-grep pattern against a single source file.
     Ast(ast::Args),
     /// Headline lookup: code symbol + memories matching a key.
     Context(context::Args),
-    /// Walk a graph edge from a memory id (currently `--edge supersedes`).
-    Walk(walk::Args),
     /// Emit a shell completion script for `bash`, `zsh`, `fish`, `powershell`, or `elvish`.
     Completions(completions::Args),
-    /// List memories that conflict with the given memory id.
-    Conflicts(conflicts::Args),
-    /// Record that one memory supersedes another in the kuzu graph.
-    Supersedes(supersedes::Args),
     /// Detect (and optionally soft-delete) stale memories.
     Prune(prune::Args),
     /// Drop `comemory.db` and repopulate it from the markdown source of truth.
@@ -119,17 +99,11 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::Delete(a) => delete::run(a, cli.json, cli.data_dir).await,
         Cmd::Feedback(a) => feedback::run(a, cli.json, cli.data_dir).await,
         Cmd::Doctor(a) => doctor::run(a, cli.json, cli.data_dir).await,
-        Cmd::Index(a) => index::run(a, cli.json, cli.data_dir).await,
         Cmd::IndexCode(a) => index_code::run(a, cli.json, cli.data_dir).await,
         Cmd::IngestCode(a) => ingest_code::run(a, cli.json, cli.data_dir).await,
-        Cmd::Symbol(a) => symbol::run(a, cli.json, cli.data_dir).await,
-        Cmd::MemoryFor(a) => memory_for::run(a, cli.json, cli.data_dir).await,
         Cmd::Ast(a) => ast::run(a, cli.json, cli.data_dir).await,
         Cmd::Context(a) => context::run(a, cli.json, cli.data_dir).await,
-        Cmd::Walk(a) => walk::run(a, cli.json, cli.data_dir).await,
         Cmd::Completions(a) => completions::run(a, cli.json, cli.data_dir).await,
-        Cmd::Conflicts(a) => conflicts::run(a, cli.json, cli.data_dir).await,
-        Cmd::Supersedes(a) => supersedes::run(a, cli.json, cli.data_dir).await,
         Cmd::Prune(a) => prune::run(a, cli.json, cli.data_dir).await,
         Cmd::Rebuild(a) => rebuild::run(a, cli.json, cli.data_dir).await,
         Cmd::Gc => gc::run(cli.json, cli.data_dir).await,

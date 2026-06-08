@@ -1,17 +1,5 @@
-#[path = "common/mod.rs"]
-mod common;
-
-#[path = "index/code_index.rs"]
-mod code_index;
-
-#[path = "index/embedder.rs"]
-mod embedder;
-
-#[path = "index/fts.rs"]
-mod fts;
-
-#[path = "index/memory_index.rs"]
-mod memory_index;
-
-#[path = "index/schema.rs"]
-mod schema;
+//! Placeholder test binary for `comemory::index`. The v0.1 submodules
+//! (`embedder`, `memory_index`, `code_index`, `schema`, `fts`) were
+//! removed in v0.2; vector + lexical coverage now lives under
+//! `tests/store/`. This shim stays so the per-module test binary set
+//! remains stable for cargo nextest groupings.

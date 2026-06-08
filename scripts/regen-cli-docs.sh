@@ -19,8 +19,8 @@ BIN="$PROJECT_ROOT/target/release-quick/comemory"
 
 SUBCOMMANDS=(
   save search list delete feedback doctor
-  index index-code symbol memory-for ast context walk
-  conflicts supersedes prune gc install-hooks completions
+  index-code ingest-code ast context
+  prune rebuild gc install-hooks completions
 )
 
 {
