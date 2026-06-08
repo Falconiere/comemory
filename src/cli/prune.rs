@@ -1,12 +1,22 @@
-//! `comemory prune` — detect (and optionally soft-delete) stale memories.
+//! `comemory prune` — surface candidates for deletion against the v0.2
+//! SQLite mirror.
 //!
-//! Dry-run by default: the command reports candidate ids without touching
-//! anything. With `--apply`, low-value candidates are soft-deleted via
-//! [`MemoryStore::delete`] (which moves the file into `memories/.trash/`).
-//! Orphan ids are reported either way; they live only in `.trash/` and are
-//! reaped by `comemory gc`.
+//! v0.2 collapses the v0.1 markdown-scanning detectors (orphan trash
+//! entries, low-value memories) into a single SQL pass against
+//! `comemory.db`. Two classes are reported:
+//!
+//! 1. **Orphan edges** — `edges` rows whose `src_kind = 'memory'` source
+//!    is missing from `memories` or has `deleted_at IS NOT NULL`. These
+//!    accumulate when a memory is soft-deleted by `comemory delete`.
+//! 2. **Stale code files** — distinct `code_symbols.path`s that no
+//!    longer appear in `indexed_files` (i.e. the source file was
+//!    removed and a follow-up `index-code` never cleaned up the
+//!    leftover symbol rows).
+//!
+//! Default behaviour applies the cleanup in one transaction. Use
+//! `--dry-run` to inspect what would be removed without touching the
+//! DB.
 
-use std::io::Write as _;
 use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
@@ -14,91 +24,101 @@ use serde::Serialize;
 
 use crate::cli::resolve_data_dir;
 use crate::config::paths::Paths;
-use crate::memory::MemoryStore;
-use crate::output::json;
+use crate::output::prune as output;
 use crate::prelude::*;
-use crate::prune::{low_value, orphans};
+use crate::store::connection;
 
-const EXAMPLES: &str = "\
+/// Example invocations shown at the bottom of `comemory prune --help`.
+pub const EXAMPLES: &str = "\
 Examples:
-  # Dry-run orphan detection (no deletes)
-  comemory prune --orphans
+  # Inspect candidates without mutating the DB
+  comemory prune --dry-run
 
-  # Actually move orphans to memories/.trash/
-  comemory prune --orphans --apply
+  # Apply orphan-edge + stale-code-symbol cleanup
+  comemory prune
 
-  # Aggressive low-value sweep
-  comemory prune --low-value --below-quality 2 --unused-since 180 --apply";
+  # JSON output for CI/automation
+  comemory prune --json";
 
 /// Arguments to `comemory prune`.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES)]
 pub struct Args {
-    /// Detect orphan entries in `memories/.trash/`.
-    #[arg(long)]
-    pub orphans: bool,
-    /// Detect low-value memories (quality + unused + age gates).
-    #[arg(long)]
-    pub low_value: bool,
-    /// Strict upper bound on quality for low-value matches.
-    #[arg(long, default_value_t = 2)]
-    pub below_quality: u8,
-    /// Minimum age in days (since `created`) for low-value matches.
-    #[arg(long, default_value_t = 180)]
-    pub unused_since: u32,
-    /// Perform soft-deletes instead of a dry-run.
-    #[arg(long)]
-    pub apply: bool,
+    /// Report candidates without applying any deletes.
+    #[arg(long, default_value_t = false)]
+    pub dry_run: bool,
 }
 
 /// Output schema for both JSON and TTY rendering. Lives at module scope so
 /// downstream tooling can parse the JSON shape directly.
 #[derive(Serialize, Debug)]
 pub struct Report {
-    pub orphans: Vec<String>,
-    pub low_value: Vec<String>,
-    pub applied: bool,
+    /// Count of `edges` rows whose source memory is missing or
+    /// soft-deleted.
+    pub orphan_edges: i64,
+    /// Distinct `code_symbols.path` values whose corresponding
+    /// `indexed_files` row has been removed.
+    pub stale_code_files: Vec<String>,
 }
 
-/// Detect stale memories per the requested gates and (optionally) soft-delete
-/// low-value matches. Returns once the report is rendered.
+/// Scan `comemory.db` for prune candidates and (unless `--dry-run`)
+/// apply the cleanup in one transaction. Always emits the report.
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
-
-    let orphan_ids = if a.orphans {
-        orphans::detect(&paths)?
-    } else {
-        Vec::new()
-    };
-    let low_ids = if a.low_value {
-        low_value::detect(&paths, a.below_quality, a.unused_since)?
-    } else {
-        Vec::new()
-    };
-
-    if a.apply {
-        let store = MemoryStore::new(paths.clone());
-        for id in &low_ids {
-            // Best-effort: a missing id (e.g. concurrent delete) should not
-            // abort the rest of the batch. Failures will resurface on the
-            // next prune run because the file is still on disk.
-            let _ = store.delete(id);
-        }
+    let mut conn = connection::open(paths.db_path())?;
+    let report = scan(&conn)?;
+    if !a.dry_run {
+        apply(&mut conn)?;
     }
+    output::emit(&report, json_flag)
+}
 
-    let report = Report {
-        orphans: orphan_ids,
-        low_value: low_ids,
-        applied: a.apply,
-    };
-    if json_flag {
-        json::write(&report)?;
-    } else {
-        let mut out = std::io::stdout().lock();
-        writeln!(out, "orphans:   {:?}", report.orphans)?;
-        writeln!(out, "low_value: {:?}", report.low_value)?;
-        writeln!(out, "applied:   {}", report.applied)?;
-    }
+/// Read-only candidate scan. Returns the orphan-edge count and the list
+/// of stale code paths without touching either table.
+fn scan(conn: &rusqlite::Connection) -> Result<Report> {
+    let orphan_edges: i64 = conn.query_row(
+        "SELECT count(*) FROM edges e \
+          WHERE e.src_kind = 'memory' \
+            AND NOT EXISTS(SELECT 1 FROM memories m \
+                             WHERE m.id = e.src_id AND m.deleted_at IS NULL)",
+        [],
+        |r| r.get(0),
+    )?;
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT path FROM code_symbols \
+          WHERE NOT EXISTS(SELECT 1 FROM indexed_files i \
+                             WHERE i.repo = code_symbols.repo \
+                               AND i.path = code_symbols.path)",
+    )?;
+    let stale_code_files = stmt
+        .query_map([], |r| r.get::<_, String>(0))?
+        .filter_map(std::result::Result::ok)
+        .collect();
+    Ok(Report {
+        orphan_edges,
+        stale_code_files,
+    })
+}
+
+/// Apply the cleanup queries reported by [`scan`] in a single
+/// transaction. Safe to call on a clean DB — both `DELETE` statements
+/// are no-ops when no candidates exist.
+fn apply(conn: &mut rusqlite::Connection) -> Result<()> {
+    let tx = conn.transaction()?;
+    tx.execute(
+        "DELETE FROM edges WHERE src_kind = 'memory' \
+           AND NOT EXISTS(SELECT 1 FROM memories m \
+                            WHERE m.id = src_id AND m.deleted_at IS NULL)",
+        [],
+    )?;
+    tx.execute(
+        "DELETE FROM code_symbols \
+          WHERE NOT EXISTS(SELECT 1 FROM indexed_files i \
+                             WHERE i.repo = code_symbols.repo \
+                               AND i.path = code_symbols.path)",
+        [],
+    )?;
+    tx.commit()?;
     Ok(())
 }

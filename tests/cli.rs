@@ -58,35 +58,6 @@ fn save_then_list_shows_id() {
 }
 
 #[test]
-fn doctor_reports_zero_memories_on_fresh_dir() {
-    let home = TempDir::new().expect("tempdir");
-    bin(&home)
-        .arg("doctor")
-        .assert()
-        .success()
-        .stdout(predicates::str::contains("memories_count : 0"));
-}
-
-#[test]
-fn doctor_count_grows_after_save() {
-    let home = TempDir::new().expect("tempdir");
-    bin(&home)
-        .args(["save", "first memory body", "--kind", "decision"])
-        .assert()
-        .success();
-    bin(&home)
-        .args(["save", "second memory body", "--kind", "bug"])
-        .assert()
-        .success();
-    let doctor = bin(&home).arg("doctor").assert().success();
-    let out = String::from_utf8(doctor.get_output().stdout.clone()).expect("utf8 stdout");
-    assert!(
-        out.contains("memories_count : 2"),
-        "doctor should report 2 memories, got: {out:?}"
-    );
-}
-
-#[test]
 fn save_then_delete_removes_from_list() {
     let home = TempDir::new().expect("tempdir");
     let save = bin(&home)
@@ -345,16 +316,6 @@ fn search_json_emits_route_field() {
 }
 
 #[test]
-fn doctor_json_emits_object() {
-    let home = TempDir::new().expect("tempdir");
-    let doctor = bin(&home).args(["--json", "doctor"]).assert().success();
-    let stdout = String::from_utf8(doctor.get_output().stdout.clone()).expect("utf8 stdout");
-    let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
-    assert!(v["data_dir"].is_string());
-    assert_eq!(v["memories_count"].as_u64(), Some(0));
-}
-
-#[test]
 fn memory_for_unknown_qualified_returns_empty_json() {
     // `memory-for` filter logic exercised without any memory references on
     // disk: the result MUST be a JSON array (possibly empty) and never fail.
@@ -558,3 +519,9 @@ mod ast;
 
 #[path = "cli/rebuild.rs"]
 mod rebuild;
+
+#[path = "cli/doctor.rs"]
+mod doctor;
+
+#[path = "cli/prune.rs"]
+mod prune;

@@ -70,9 +70,8 @@ pub enum Cmd {
     Delete(delete::Args),
     /// Record per-memory feedback (used vs irrelevant).
     Feedback(feedback::Args),
-    /// Report on the data directory and memory count.
-    #[command(after_help = doctor::EXAMPLES)]
-    Doctor,
+    /// Report on the data directory and SQLite mirror health.
+    Doctor(doctor::Args),
     /// Memory-layer index maintenance (re-embed missing rows). Run
     /// `comemory index --help` for the available flags.
     #[command(after_help = index::EXAMPLES)]
@@ -132,7 +131,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::List(a) => list::run(a, cli.json, cli.data_dir).await,
         Cmd::Delete(a) => delete::run(a, cli.json, cli.data_dir).await,
         Cmd::Feedback(a) => feedback::run(a, cli.json, cli.data_dir).await,
-        Cmd::Doctor => doctor::run(cli.json, cli.data_dir).await,
+        Cmd::Doctor(a) => doctor::run(a, cli.json, cli.data_dir).await,
         Cmd::Index(a) => index::run(a, cli.json, cli.data_dir).await,
         Cmd::IndexCode(a) => index_code::run(a, cli.json, cli.data_dir).await,
         Cmd::IngestCode(a) => ingest_code::run(a, cli.json, cli.data_dir).await,

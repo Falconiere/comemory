@@ -5,5 +5,6 @@
 
 pub mod context;
 pub mod json;
+pub mod prune;
 pub mod search;
 pub mod tty;
