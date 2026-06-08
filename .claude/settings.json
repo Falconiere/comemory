@@ -1,4 +1,7 @@
 {
+  "enabledPlugins": {
+    "claudness@falconiere": true
+  },
   "hooks": {
     "PreToolUse": [
       {
