@@ -1,97 +1,221 @@
-//! `comemory index-code` — walk a repo, extract symbols, embed snippets with
-//! jina-code, and upsert into the LanceDB `code_chunks` table. Repo name is
-//! auto-detected from the root path basename when `--repo` is omitted.
+//! `comemory index-code` — incremental symbol extraction over a real git
+//! repo, mirrored into the `code_symbols` SQLite table.
 //!
-//! The `--incremental` and `--quiet` flags are accepted in this task to keep
-//! the CLI shape stable; Task 19 wires their actual semantics (skip rows with
-//! unchanged `ast_hash`, suppress the human-readable line). For now,
-//! `--quiet` suppresses TTY output and `--incremental` is a no-op pending
-//! that follow-up.
+//! v0.2 collapses the v0.1 LanceDB write into a single transaction against
+//! `comemory.db`: per-file blob OIDs gate the work (so re-runs are
+//! O(touched-files), not O(repo)), and per-symbol rows land in
+//! `code_symbols` + `code_fts`. Vectors are intentionally not produced here —
+//! callers feed `comemory ingest-code` with pre-embedded JSONL when they
+//! want a `code_vec` row, or pass `--extract` to emit JSONL on stdout for
+//! piping into an external embedder.
 
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 use clap::Args as ClapArgs;
-use serde::Serialize;
+use git2::Repository;
+use ignore::WalkBuilder;
+use rusqlite::Connection;
 
+use crate::ast::extractor::ExtractedSymbol;
+use crate::ast::{self, languages};
 use crate::cli::resolve_data_dir;
 use crate::config::paths::Paths;
-use crate::index::{CodeIndex, Embedder};
-use crate::output::json;
 use crate::prelude::*;
+use crate::simhash;
+use crate::store::{connection, fts};
 
 const EXAMPLES: &str = "\
 Examples:
-  # Index the current working directory
-  comemory index-code
+  # Index the current working directory with explicit repo label
+  comemory index-code --repo myrepo --path .
 
-  # Explicit root and repo label
-  comemory index-code --root /path/to/repo --repo qwick-backend
-
-  # Incremental refresh, no human output
-  comemory index-code --incremental --quiet";
+  # Emit one JSONL row per symbol on stdout (skips DB writes)
+  comemory index-code --repo myrepo --path ./src --extract";
 
 /// Arguments to `comemory index-code`.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES)]
 pub struct Args {
-    /// Repo root to walk. Defaults to the current working directory.
-    #[arg(long, default_value = ".")]
-    pub root: PathBuf,
-    /// Repo label stored in the `qualified` key. Auto-detected from `root`
-    /// basename when empty.
-    #[arg(long, default_value = "")]
+    /// Repo label stored alongside each symbol row.
+    #[arg(long)]
     pub repo: String,
-    /// Skip rows whose `ast_hash` is unchanged. Reserved for Task 19; accepted
-    /// but currently a no-op.
+    /// Root of the working tree to walk. Must live inside a git repo so
+    /// blob OIDs are available for the incremental skip path.
+    #[arg(long)]
+    pub path: PathBuf,
+    /// Emit JSONL on stdout instead of inserting rows. Suitable for piping
+    /// into an external embedder + `comemory ingest-code`.
     #[arg(long, default_value_t = false)]
-    pub incremental: bool,
-    /// Suppress the human-readable summary line. JSON output is still emitted
-    /// when `--json` is set.
-    #[arg(long, default_value_t = false)]
-    pub quiet: bool,
+    pub extract: bool,
 }
 
-/// JSON shape emitted under `--json`.
-#[derive(Serialize)]
-struct Output {
-    repo: String,
-    indexed_symbols: usize,
-}
-
-/// Walk + index the repo and report how many symbols landed in `code_chunks`.
-pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
-    let _ = a.incremental; // wired in Task 19; accepted now to keep CLI shape stable.
+/// Walk `args.path`, extract symbols from every supported source file, and
+/// mirror them into `code_symbols` (+ `code_fts`) — or emit them as JSONL
+/// when `--extract` is set.
+pub async fn run(args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
-    let repo = if a.repo.is_empty() {
-        detect_repo_name(&a.root)
-    } else {
-        a.repo.clone()
-    };
-    let idx = CodeIndex::open(paths.vectors_dir(), 768).await?;
-    let mut emb = Embedder::jina_code()?;
-    let n = idx.index_repo(&a.root, &repo, &mut emb).await?;
+    let conn = connection::open(paths.db_path())?;
+    let repo = Repository::open(&args.path).map_err(map_git_err)?;
 
-    let report = Output {
-        repo: repo.clone(),
-        indexed_symbols: n,
-    };
-    if json_flag {
-        json::write(&report)?;
-    } else if !a.quiet {
-        let mut out = std::io::stdout().lock();
-        writeln!(out, "indexed {n} symbols in repo '{repo}'")?;
+    let mut walker = WalkBuilder::new(&args.path);
+    walker.standard_filters(true);
+    for entry in walker.build().filter_map(std::result::Result::ok) {
+        if !entry.file_type().is_some_and(|t| t.is_file()) {
+            continue;
+        }
+        let Some(lang) = languages::detect(entry.path()) else {
+            continue;
+        };
+        let rel = relative(&args.path, entry.path());
+        let oid = match blob_oid(&repo, entry.path()) {
+            Some(v) => v,
+            // Untracked files have no blob OID; skip them silently.
+            None => continue,
+        };
+        if oid_is_indexed(&conn, &args.repo, &rel, &oid)? {
+            continue;
+        }
+        let snippet = std::fs::read_to_string(entry.path()).map_err(Error::Io)?;
+        let symbols = ast::extract(lang, &snippet)?;
+        for s in &symbols {
+            handle_symbol(&conn, args.extract, &args.repo, &rel, &oid, lang, s)?;
+        }
+        upsert_indexed_file(&conn, &args.repo, &rel, &oid)?;
     }
     Ok(())
 }
 
-/// Fall back to the canonicalized last path segment when callers omit
-/// `--repo`. `"unknown"` is returned only when the path can't be resolved at
-/// all (e.g. nonexistent root).
-fn detect_repo_name(root: &Path) -> String {
-    root.canonicalize()
-        .ok()
-        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
-        .unwrap_or_else(|| "unknown".into())
+/// Insert (or print, under `--extract`) a single extracted symbol row.
+fn handle_symbol(
+    conn: &Connection,
+    extract_mode: bool,
+    repo: &str,
+    rel: &str,
+    blob_oid: &str,
+    lang: languages::Lang,
+    s: &ExtractedSymbol,
+) -> Result<()> {
+    let line_start = s.line as i64;
+    let line_end = line_end_of(s) as i64;
+    let token_iter = simhash::tokens(&s.snippet);
+    let sh = simhash::simhash64(token_iter.iter().map(|t| t.as_str())) as i64;
+
+    if extract_mode {
+        let row = serde_json::json!({
+            "repo": repo,
+            "path": rel,
+            "blob_oid": blob_oid,
+            "symbol": s.name,
+            "kind": s.kind,
+            "lang": lang.as_str(),
+            "line_start": line_start,
+            "line_end": line_end,
+            "snippet": s.snippet,
+            "simhash": sh,
+        });
+        let mut out = std::io::stdout().lock();
+        writeln!(out, "{row}").map_err(Error::Io)?;
+        return Ok(());
+    }
+
+    let sid = conn.query_row(
+        "INSERT INTO code_symbols(\
+             repo, path, blob_oid, symbol, kind, lang, \
+             line_start, line_end, snippet, simhash, indexed_at) \
+         VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10, strftime('%Y-%m-%dT%H:%M:%fZ','now')) \
+         RETURNING id",
+        rusqlite::params![
+            repo,
+            rel,
+            blob_oid,
+            &s.name,
+            &s.kind,
+            lang.as_str(),
+            line_start,
+            line_end,
+            &s.snippet,
+            sh,
+        ],
+        |r| r.get::<_, i64>(0),
+    )?;
+    fts::index_code(conn, sid, &s.name, &s.snippet, &fts::path_to_tokens(rel))?;
+    Ok(())
+}
+
+/// Returns true when the `indexed_files` table already records `oid` for
+/// `repo + path`, meaning the working-tree blob hasn't changed since the
+/// last `index-code` run.
+fn oid_is_indexed(conn: &Connection, repo: &str, path: &str, oid: &str) -> Result<bool> {
+    let row: Option<String> = conn
+        .query_row(
+            "SELECT blob_oid FROM indexed_files WHERE repo = ?1 AND path = ?2",
+            rusqlite::params![repo, path],
+            |r| r.get(0),
+        )
+        .ok();
+    Ok(matches!(row, Some(v) if v == oid))
+}
+
+/// Upsert the `indexed_files` cursor row so the next run knows this blob has
+/// already been processed for `repo + path`.
+fn upsert_indexed_file(conn: &Connection, repo: &str, path: &str, oid: &str) -> Result<()> {
+    conn.execute(
+        "INSERT INTO indexed_files(repo, path, blob_oid, indexed_at) \
+         VALUES(?1, ?2, ?3, strftime('%Y-%m-%dT%H:%M:%fZ','now')) \
+         ON CONFLICT(repo, path) DO UPDATE \
+           SET blob_oid = excluded.blob_oid, \
+               indexed_at = excluded.indexed_at",
+        rusqlite::params![repo, path, oid],
+    )?;
+    Ok(())
+}
+
+/// Look up the working-tree blob OID for `file` via the repo index. Files
+/// that are untracked (or unreadable through git) return `None` so the caller
+/// can skip them.
+///
+/// `libgit2`'s `Index::get_path` rejects absolute paths, so we canonicalize
+/// both the working tree and the file path before stripping the prefix — on
+/// macOS the tempdir prefix differs (`/var/...` vs `/private/var/...`) so a
+/// naive `strip_prefix` over the configured workdir would silently fall back
+/// to passing the absolute path, which then panics inside libgit2.
+fn blob_oid(repo: &Repository, file: &Path) -> Option<String> {
+    let workdir = repo.workdir()?;
+    let workdir_canon = workdir.canonicalize().ok()?;
+    let file_canon = file.canonicalize().ok()?;
+    let rel = file_canon.strip_prefix(&workdir_canon).ok()?;
+    let idx = repo.index().ok()?;
+    let entry = idx.get_path(rel, 0)?;
+    Some(entry.id.to_string())
+}
+
+/// Compute the inclusive last line of `s.snippet` relative to `s.line`.
+/// `ExtractedSymbol::line` is one-based; for a single-line snippet this
+/// returns `s.line` unchanged. Empty snippets fall back to `s.line` too.
+fn line_end_of(s: &ExtractedSymbol) -> usize {
+    let lines = s.snippet.lines().count();
+    if lines <= 1 {
+        s.line
+    } else {
+        s.line + lines - 1
+    }
+}
+
+/// Map a `git2::Error` into our `Error::Other` variant. Mirrors the helper in
+/// `git_utils::map_git_err` so the public API only surfaces a single error
+/// type.
+fn map_git_err(e: git2::Error) -> Error {
+    Error::Other(format!("git2: {e}"))
+}
+
+/// Render `file` relative to `root` for storage in the `code_symbols.path`
+/// column. Falls back to the absolute path when `strip_prefix` fails so we
+/// never silently store an empty string.
+fn relative(root: &Path, file: &Path) -> String {
+    file.strip_prefix(root)
+        .unwrap_or(file)
+        .to_string_lossy()
+        .to_string()
 }

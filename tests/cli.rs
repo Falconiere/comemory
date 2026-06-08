@@ -511,9 +511,8 @@ fn index_code_and_context_run() {
     std::fs::write(repo_dir.join("src/lib.rs"), "fn run_migration() {}\n").expect("write lib.rs");
 
     bin(&home)
-        .args(["index-code", "--root"])
+        .args(["index-code", "--repo", "myrepo", "--path"])
         .arg(&repo_dir)
-        .args(["--repo", "myrepo"])
         .assert()
         .success();
 
@@ -547,3 +546,9 @@ mod search;
 
 #[path = "cli/context.rs"]
 mod context;
+
+#[path = "cli/index_code.rs"]
+mod index_code;
+
+#[path = "cli/ingest_code.rs"]
+mod ingest_code;

@@ -42,3 +42,11 @@ impl Lang {
         }
     }
 }
+
+/// Detect the language for a filesystem path by inspecting its extension.
+/// Returns `None` when the path has no extension or the extension is not in
+/// the supported set, so callers can skip files in a `WalkBuilder` loop.
+pub fn detect(path: &std::path::Path) -> Option<Lang> {
+    let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+    Lang::from_extension(&ext)
+}
