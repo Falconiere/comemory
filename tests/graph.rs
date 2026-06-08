@@ -1,9 +1,6 @@
 #[path = "common/mod.rs"]
 mod common;
 
-#[path = "common/graph_fixture.rs"]
-mod graph_fixture;
-
 #[path = "graph/schema.rs"]
 mod schema;
 

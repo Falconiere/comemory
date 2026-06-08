@@ -493,9 +493,6 @@ fn index_code_and_context_run() {
     );
 }
 
-#[path = "cli/graph_serve.rs"]
-mod graph_serve;
-
 #[path = "common/vectors.rs"]
 mod vectors;
 

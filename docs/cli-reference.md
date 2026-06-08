@@ -45,7 +45,6 @@ Commands:
   rebuild        Drop `comemory.db` and repopulate it from the markdown source of truth
   gc             Purge old entries from `memories/.trash/`
   install-hooks  Install git hooks that trigger `comemory index-code --incremental` on `post-commit`, `post-merge`, and `post-checkout`
-  graph          Property-graph tooling. Run `comemory graph --help`
   help           Print this message or the help of the given subcommand(s)
 
 Options:
@@ -565,53 +564,5 @@ Examples:
   comemory completions bash > "$(brew --prefix)/etc/bash_completion.d/comemory"
 
   # NOTE: scripts/install.sh writes these automatically by default.
-```
-
----
-
-## comemory graph
-
-```
-Property-graph tooling. Run `comemory graph --help`
-
-Usage: comemory graph [OPTIONS] <COMMAND>
-
-Commands:
-  serve  Spin up the local HTTP viewer for the property graph
-  help   Print this message or the help of the given subcommand(s)
-
-Options:
-      --json                 Emit machine-readable JSON instead of a human TTY view
-      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
-  -h, --help                 Print help
-```
-
----
-
-## comemory graph serve
-
-```
-Spin up the local HTTP viewer for the property graph
-
-Usage: comemory graph serve [OPTIONS]
-
-Options:
-      --json                 Emit machine-readable JSON instead of a human TTY view
-      --port <PORT>          Override the bind port. `0` lets the kernel pick a free port [default: 0]
-      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
-      --no-open              Skip auto-opening the URL in the system browser
-      --host <HOST>          Bind address. Loopback by default [default: 127.0.0.1]
-      --bind-public          Required when `--host` is non-loopback. Acknowledges the network exposure: the viewer is read-only but unauthenticated
-  -h, --help                 Print help
-
-Examples:
-  # Open the viewer in the default browser
-  comemory graph serve
-
-  # Headless / over SSH
-  comemory graph serve --no-open
-
-  # Pin a port
-  comemory graph serve --port 7878
 ```
 
