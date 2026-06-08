@@ -39,6 +39,25 @@ pub struct RetrievalConfig {
     /// RRF constant for sparse/dense fusion. Default 60.0 matches the original
     /// Cormack/Clarke/Buettcher RRF paper.
     pub rrf_k: f32,
+    /// Dimension of caller-supplied memory embeddings. The first save locks
+    /// this in `schema_meta`; later inserts that mismatch surface as
+    /// `VecDimMismatch`. Defaults to 1024 (nomic-embed-text-v1.5).
+    #[serde(default = "default_memory_vector_dim")]
+    pub memory_vector_dim: usize,
+    /// Dimension of caller-supplied code embeddings. The first
+    /// `comemory ingest-code` locks this in `schema_meta`; later inserts
+    /// that mismatch surface as `VecDimMismatch`. Defaults to 768
+    /// (jina-embeddings-v2-base-code).
+    #[serde(default = "default_code_vector_dim")]
+    pub code_vector_dim: usize,
+}
+
+fn default_memory_vector_dim() -> usize {
+    1024
+}
+
+fn default_code_vector_dim() -> usize {
+    768
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,6 +81,11 @@ pub struct Config {
     pub retrieval: RetrievalConfig,
     pub prune: PruneConfig,
     pub output: OutputConfig,
+    /// Free-form caller-set hint identifying the embedder that produced the
+    /// vectors (e.g. `ollama:nomic-embed-text`). Surfaced verbatim by
+    /// `comemory doctor`; comemory itself never reads it as a switch.
+    #[serde(default)]
+    pub embed_hint: Option<String>,
 }
 
 impl Config {
@@ -87,6 +111,8 @@ impl Config {
                 top_k: 12,
                 corrective_min_confidence: 0.15,
                 rrf_k: 60.0,
+                memory_vector_dim: default_memory_vector_dim(),
+                code_vector_dim: default_code_vector_dim(),
             },
             prune: PruneConfig {
                 trash_retention_days: 30,
@@ -97,6 +123,7 @@ impl Config {
                 json: false,
                 color: "auto".into(),
             },
+            embed_hint: None,
         }
     }
 
@@ -160,6 +187,19 @@ impl Config {
                     )));
                 }
             };
+        }
+        if let Ok(v) = std::env::var("COMEMORY_VECTOR_DIM") {
+            self.retrieval.memory_vector_dim = v
+                .parse::<usize>()
+                .map_err(|e| Error::Config(format!("invalid env var COMEMORY_VECTOR_DIM: {e}")))?;
+        }
+        if let Ok(v) = std::env::var("COMEMORY_CODE_VECTOR_DIM") {
+            self.retrieval.code_vector_dim = v.parse::<usize>().map_err(|e| {
+                Error::Config(format!("invalid env var COMEMORY_CODE_VECTOR_DIM: {e}"))
+            })?;
+        }
+        if let Ok(v) = std::env::var("COMEMORY_EMBED_HINT") {
+            self.embed_hint = Some(v);
         }
         Ok(self)
     }

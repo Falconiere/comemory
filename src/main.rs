@@ -1,11 +1,13 @@
 //! Binary entry point. Parses CLI args, runs the dispatched command, and
 //! maps any returned [`Error`] to a sysexits-style exit code so shell users
-//! and supervisors can react meaningfully:
+//! and supervisors can react meaningfully (mapping per design §6.4):
 //!
-//! - 0   — success
-//! - 65  — `EX_DATAERR` (malformed yaml / json / toml on disk or in args)
-//! - 70  — `EX_SOFTWARE` (internal logic / wrapped foreign errors)
-//! - 74  — `EX_IOERR` (filesystem, network, sub-process I/O)
+//! - 0  — success
+//! - 64 — `EX_USAGE` (`NotFound`)
+//! - 65 — `EX_DATAERR` (`Yaml`, `Json`, `Toml`, `Frontmatter`, `VecDimMismatch`)
+//! - 70 — `EX_SOFTWARE` (`Sqlite`, `Migration`, `Ast`, `Git`, `Other`)
+//! - 74 — `EX_IOERR` (`Io`)
+//! - 78 — `EX_CONFIG` (`Config`)
 
 use std::io::Write as _;
 
@@ -27,6 +29,11 @@ async fn main() {
             let _ = writeln!(err, "error: io: {e}");
             74
         }
+        Err(Error::Sqlite(e)) => {
+            let mut err = std::io::stderr().lock();
+            let _ = writeln!(err, "error: sqlite: {e}");
+            70
+        }
         Err(Error::Yaml(e)) => {
             let mut err = std::io::stderr().lock();
             let _ = writeln!(err, "error: yaml: {e}");
@@ -42,6 +49,16 @@ async fn main() {
             let _ = writeln!(err, "error: toml: {e}");
             65
         }
+        Err(Error::Ast(msg)) => {
+            let mut err = std::io::stderr().lock();
+            let _ = writeln!(err, "error: ast: {msg}");
+            70
+        }
+        Err(Error::Git(e)) => {
+            let mut err = std::io::stderr().lock();
+            let _ = writeln!(err, "error: git: {e}");
+            70
+        }
         Err(Error::Migration(msg)) => {
             let mut err = std::io::stderr().lock();
             let _ = writeln!(err, "error: schema migration failed: {msg}");
@@ -52,10 +69,20 @@ async fn main() {
             let _ = writeln!(err, "error: {e}");
             65
         }
+        Err(Error::Frontmatter(msg)) => {
+            let mut err = std::io::stderr().lock();
+            let _ = writeln!(err, "error: invalid frontmatter: {msg}");
+            65
+        }
+        Err(Error::NotFound(msg)) => {
+            let mut err = std::io::stderr().lock();
+            let _ = writeln!(err, "error: memory not found: {msg}");
+            64
+        }
         Err(Error::Config(msg)) => {
             let mut err = std::io::stderr().lock();
             let _ = writeln!(err, "error: config: {msg}");
-            65
+            78
         }
         Err(Error::Other(msg)) => {
             let mut err = std::io::stderr().lock();
