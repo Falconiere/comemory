@@ -390,3 +390,6 @@ mod doctor;
 
 #[path = "cli/prune.rs"]
 mod prune;
+
+#[path = "cli/delete.rs"]
+mod delete;

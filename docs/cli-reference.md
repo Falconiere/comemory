@@ -155,7 +155,7 @@ Soft-delete a memory by id (moves to `.trash/`)
 Usage: comemory delete [OPTIONS] <ID>
 
 Arguments:
-  <ID>  12-hex memory id to delete
+  <ID>  8-hex memory id to delete
 
 Options:
       --json                 Emit machine-readable JSON instead of a human TTY view
