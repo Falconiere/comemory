@@ -46,7 +46,7 @@ the in-process embedder, vector database, and graph database:
 | Version | Release binary | Notes |
 |---------|---------------:|-------|
 | v0.1    | ~117 MB        | bundled fastembed + lancedb + kuzu |
-| v0.2    | ~25 MB         | one SQLite file, BYO vectors        |
+| v0.2    | ~8 MB          | one SQLite file, BYO vectors, trimmed tree-sitter set |
 
 ## Install
 

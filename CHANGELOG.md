@@ -23,4 +23,6 @@
 ### Changed
 - Single `~/.comemory/comemory.db` SQLite file backs all storage
   (memories, FTS5, sqlite-vec, edges, stats).
-- Release binary size: 117 MB → ~25 MB.
+- Release binary size: 117 MB → ~8 MB (after dropping the in-process
+  embedder/lancedb/kuzu and trimming `ast-grep-language` to the
+  rust/typescript/javascript/python/go tree-sitter parsers).
