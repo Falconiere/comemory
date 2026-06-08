@@ -16,7 +16,6 @@ pub mod doctor;
 pub(crate) mod embedding_input;
 pub mod feedback;
 pub mod gc;
-pub mod graph_serve;
 pub mod index;
 pub mod index_code;
 pub mod ingest_code;
@@ -107,18 +106,6 @@ pub enum Cmd {
     /// Install git hooks that trigger `comemory index-code --incremental` on
     /// `post-commit`, `post-merge`, and `post-checkout`.
     InstallHooks(install_hooks::Args),
-    /// Property-graph tooling. Run `comemory graph --help`.
-    Graph {
-        #[command(subcommand)]
-        cmd: GraphCmd,
-    },
-}
-
-/// Subcommands nested under `comemory graph`.
-#[derive(Subcommand, Debug)]
-pub enum GraphCmd {
-    /// Spin up the local HTTP viewer for the property graph.
-    Serve(graph_serve::Args),
 }
 
 /// Dispatch the parsed `Cli` to its subcommand. The dispatcher is the single
@@ -147,9 +134,6 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::Rebuild(a) => rebuild::run(a, cli.json, cli.data_dir).await,
         Cmd::Gc => gc::run(cli.json, cli.data_dir).await,
         Cmd::InstallHooks(a) => install_hooks::run(a, cli.json, cli.data_dir).await,
-        Cmd::Graph { cmd } => match cmd {
-            GraphCmd::Serve(a) => graph_serve::run(a, cli.json, cli.data_dir).await,
-        },
     }
 }
 

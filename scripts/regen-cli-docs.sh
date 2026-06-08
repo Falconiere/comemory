@@ -23,11 +23,6 @@ SUBCOMMANDS=(
   conflicts supersedes prune gc install-hooks completions
 )
 
-# Nested subcommands: each entry is "parent sub" (space-separated).
-NESTED_SUBCOMMANDS=(
-  "graph serve"
-)
-
 {
   cat <<'HEADER'
 # CLI reference
@@ -65,34 +60,6 @@ HEADER
     echo
     echo '```'
     "$BIN" "$sub" --help
-    echo '```'
-    echo
-  done
-
-  # Emit parent-level help then each nested subcommand.
-  # emitted_parents is a colon-delimited string (bash 3 compatible).
-  emitted_parents=""
-  for nested in "${NESTED_SUBCOMMANDS[@]}"; do
-    parent="${nested%% *}"
-    if [[ ":${emitted_parents}:" != *":${parent}:"* ]]; then
-      echo "---"
-      echo
-      echo "## comemory $parent"
-      echo
-      echo '```'
-      "$BIN" "$parent" --help
-      echo '```'
-      echo
-      emitted_parents="${emitted_parents}:${parent}"
-    fi
-    echo "---"
-    echo
-    # shellcheck disable=SC2086
-    echo "## comemory $nested"
-    echo
-    echo '```'
-    # shellcheck disable=SC2086
-    "$BIN" $nested --help
     echo '```'
     echo
   done
