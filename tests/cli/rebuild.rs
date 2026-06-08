@@ -35,6 +35,13 @@ fn open_db(home: &TempDir) -> Connection {
     Connection::open(home.path().join("comemory.db")).expect("open")
 }
 
+/// Like [`open_db`] but routes through `connection::open` so the
+/// `sqlite-vec` extension is loaded. Use this when the test needs to
+/// SELECT against `code_vec` or `memory_vec`.
+fn open_db_with_vec(home: &TempDir) -> Connection {
+    comemory::store::connection::open(home.path().join("comemory.db")).expect("open with vec0")
+}
+
 #[test]
 fn rebuild_reconstructs_memories_from_markdown() {
     let home = tempdir().expect("tempdir");
@@ -171,7 +178,7 @@ fn rebuild_preserves_code_index() {
     // Rebuild: must preserve the code index.
     run_rebuild(&home);
 
-    let conn = open_db(&home);
+    let conn = open_db_with_vec(&home);
     assert_eq!(
         count(&conn, "SELECT count(*) FROM memories"),
         1,
@@ -186,6 +193,13 @@ fn rebuild_preserves_code_index() {
         count(&conn, "SELECT count(*) FROM indexed_files"),
         1,
         "rebuild must preserve indexed_files rows"
+    );
+    // Regression for PR #3 xhigh review: vec0 cross-DB INSERT-SELECT must
+    // actually carry the embedding rows over, not silently drop them.
+    assert_eq!(
+        count(&conn, "SELECT count(*) FROM code_vec"),
+        1,
+        "rebuild must preserve code_vec rows"
     );
 }
 

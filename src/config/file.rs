@@ -10,7 +10,13 @@ use crate::prelude::*;
 /// keys is valid TOML. Fields present in the file overlay the defaults;
 /// absent fields leave the defaults untouched. Env-var overrides applied
 /// afterwards via [`Config::with_env`] take precedence over the file.
+///
+/// `deny_unknown_fields` makes a typo in a config key (e.g. `embedhint`
+/// instead of `embed_hint`) a hard error at load time rather than
+/// silently dropping the override and leaving the operator wondering why
+/// their setting didn't take effect.
 #[derive(Debug, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 struct PartialConfig {
     /// Operator-supplied hint identifying the active embedder; surfaced by
     /// `comemory doctor` and echoed back verbatim. Not interpreted by

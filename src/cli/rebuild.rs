@@ -83,15 +83,29 @@ pub async fn run(_args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<
 
     match result {
         Ok(()) => {
-            // Atomic swap: rename tmp over the live path.
-            std::fs::rename(&tmp_path, &db).map_err(Error::Io)?;
-            // Remove stale WAL/SHM sidecars next to both the live DB (so the
-            // next open of `comemory.db` starts clean) and the tmp path (so
-            // the leftover `comemory.db.rebuild.tmp-wal` / `-shm` from the
-            // just-renamed tmp connection don't linger in the data dir).
-            remove_sidecars(&db);
-            remove_sidecars(&tmp_path);
-            Ok(())
+            // Atomic swap: rename tmp over the live path. Capture the result
+            // so we can clean up the tmp DB + its sidecars even on rename
+            // failure — `?` would otherwise skip the cleanup blocks below
+            // and leave the orphaned tmp file in the data dir.
+            match std::fs::rename(&tmp_path, &db) {
+                Ok(()) => {
+                    // Remove stale WAL/SHM sidecars next to both the live DB
+                    // (so the next open of `comemory.db` starts clean) and
+                    // the tmp path (so the leftover
+                    // `comemory.db.rebuild.tmp-wal` / `-shm` from the
+                    // just-renamed tmp connection don't linger).
+                    remove_sidecars(&db);
+                    remove_sidecars(&tmp_path);
+                    Ok(())
+                }
+                Err(e) => {
+                    // Rename failed (e.g. cross-device, permission, the live
+                    // DB held open exclusively on Windows). Remove the tmp DB
+                    // + sidecars so the caller can retry cleanly.
+                    remove_db_and_sidecars(&tmp_path);
+                    Err(Error::Io(e))
+                }
+            }
         }
         Err(e) => {
             // Remove the partial tmp + sidecars so the caller can retry cleanly.

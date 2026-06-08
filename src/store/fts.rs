@@ -110,14 +110,15 @@ where
 /// / [`search_code`] to downgrade a user-typed malformed query to an empty
 /// result rather than aborting the wider retrieval pipeline.
 ///
-/// The matcher is intentionally narrow: a bare `contains("fts5")` would also
-/// swallow operational failures like a corrupt FTS5 index or a schema-drifted
-/// `memory_fts` table, masking real bugs behind a silently empty result. Only
-/// the canonical `fts5: ...` prefix and the legacy `syntax error` substring
-/// are accepted so non-parse failures bubble up to the CLI.
+/// The matcher is deliberately narrow:
+/// - `fts5: ...` prefix is the canonical modern shape.
+/// - `syntax error near` is the legacy shape; we require the trailing
+///   `near` token so an unrelated SQLite error whose message happens to
+///   contain `syntax error` (e.g. a `SQLITE_CORRUPT` text on the FTS5
+///   shadow table) doesn't silently truncate results to an empty success.
 fn is_fts5_parse_error(e: &rusqlite::Error) -> bool {
     let s = e.to_string().to_lowercase();
-    s.starts_with("fts5:") || s.contains("syntax error")
+    s.starts_with("fts5:") || s.contains("syntax error near")
 }
 
 /// Insert a row into the `code_fts` virtual table for a code symbol.
