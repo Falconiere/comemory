@@ -56,12 +56,10 @@ impl StatsDb {
             .to_offset(time::UtcOffset::UTC)
             .format(&Iso8601::DEFAULT)
             .map_err(|e| Error::Other(e.to_string()))?;
-        self.conn
-            .execute(
-                "INSERT INTO index_failures(ts, error) VALUES (?1, ?2)",
-                rusqlite::params![ts, error],
-            )
-            .map_err(|e| Error::Other(e.to_string()))?;
+        self.conn.execute(
+            "INSERT INTO index_failures(ts, error) VALUES (?1, ?2)",
+            rusqlite::params![ts, error],
+        )?;
         Ok(())
     }
 
@@ -71,8 +69,7 @@ impl StatsDb {
     pub fn index_failure_count(&self) -> Result<usize> {
         let n: i64 = self
             .conn
-            .query_row("SELECT COUNT(*) FROM index_failures", [], |r| r.get(0))
-            .map_err(|e| Error::Other(e.to_string()))?;
+            .query_row("SELECT COUNT(*) FROM index_failures", [], |r| r.get(0))?;
         Ok(n.max(0) as usize)
     }
 
@@ -88,7 +85,7 @@ impl StatsDb {
         ) {
             Ok(row) => Ok(Some(row)),
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(Error::Other(format!("last_index_failure: {e}"))),
+            Err(e) => Err(Error::Sqlite(e)),
         }
     }
 }

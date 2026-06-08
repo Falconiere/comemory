@@ -58,7 +58,7 @@ pub fn route(
     match vec {
         Some(v) if !query.is_empty() => route_hybrid(cfg, conn, query, v, k, repo),
         Some(v) => route_vector_with_corrective(conn, query, v, k, repo),
-        None => route_lexical(conn, query, k),
+        None => route_lexical(conn, query, k, repo),
     }
 }
 
@@ -72,7 +72,7 @@ fn route_hybrid(
     repo: Option<&str>,
 ) -> Result<Vec<RoutedHit>> {
     let ann = vector::knn_memory(conn, vec, k, repo)?;
-    let lex = fts::search_memory(conn, query, k)?;
+    let lex = fts::search_memory(conn, query, k, repo)?;
 
     let ann_ranked: Vec<RankedHit> = ann
         .into_iter()
@@ -129,7 +129,7 @@ fn route_vector_with_corrective(
         .collect();
     let need = k.saturating_sub(routed.len());
     if need > 0 && !query.is_empty() {
-        let lex = fts::search_memory(conn, query, need)?;
+        let lex = fts::search_memory(conn, query, need, repo)?;
         for hit in lex {
             if !routed.iter().any(|h| h.memory_id == hit.memory_id) {
                 routed.push(RoutedHit {
@@ -144,8 +144,13 @@ fn route_vector_with_corrective(
 }
 
 /// Pure-lexical path via FTS5 BM25.
-fn route_lexical(conn: &Connection, query: &str, k: usize) -> Result<Vec<RoutedHit>> {
-    let lex = fts::search_memory(conn, query, k)?;
+fn route_lexical(
+    conn: &Connection,
+    query: &str,
+    k: usize,
+    repo: Option<&str>,
+) -> Result<Vec<RoutedHit>> {
+    let lex = fts::search_memory(conn, query, k, repo)?;
     Ok(lex
         .into_iter()
         .map(|h| RoutedHit {

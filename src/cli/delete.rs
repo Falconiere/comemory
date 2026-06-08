@@ -7,7 +7,6 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 use serde::Serialize;
-use time::format_description::well_known::Iso8601;
 use time::OffsetDateTime;
 
 use crate::cli::resolve_data_dir;
@@ -15,7 +14,7 @@ use crate::config::paths::Paths;
 use crate::graph::edges;
 use crate::memory::MemoryStore;
 use crate::prelude::*;
-use crate::store::connection;
+use crate::store::{connection, memory_row};
 
 const EXAMPLES: &str = "\
 Examples:
@@ -57,9 +56,7 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
 
     // Mirror the soft-delete into comemory.db in one transaction.
     let mut conn = connection::open(paths.db_path())?;
-    let now = OffsetDateTime::now_utc()
-        .format(&Iso8601::DEFAULT)
-        .map_err(|e| Error::Other(format!("iso8601 format: {e}")))?;
+    let now = memory_row::iso_format(OffsetDateTime::now_utc())?;
     let tx = conn.transaction()?;
     tx.execute(
         "UPDATE memories SET deleted_at = ?1 WHERE id = ?2",
@@ -67,6 +64,13 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     )?;
     tx.execute(
         "DELETE FROM memory_fts WHERE memory_id = ?1",
+        rusqlite::params![id],
+    )?;
+    // memory_vec is a vec0 vtab — no FK cascade and no JOIN-side filter on
+    // `deleted_at`, so the row would survive a soft-delete and block a
+    // future re-save of the same body with a PK constraint failure.
+    tx.execute(
+        "DELETE FROM memory_vec WHERE memory_id = ?1",
         rusqlite::params![id],
     )?;
     edges::delete_touching(&tx, "memory", id)?;

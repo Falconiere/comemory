@@ -80,12 +80,14 @@ fn python_patterns() -> &'static [(&'static str, &'static str)] {
 
 fn go_patterns() -> &'static [(&'static str, &'static str)] {
     // Go functions can be free-standing (`func Foo(...) { ... }`) or
-    // method-receiver bound (`func (r R) Foo(...) { ... }`). We list the
-    // free function shape with and without a return type to recover the
-    // name in either case.
+    // method-receiver bound (`func (r R) Foo(...) { ... }`). Each shape is
+    // listed with and without a return-type clause so the `$NAME` binding
+    // is recovered whether or not the function returns a value.
     &[
         ("function", "func $NAME($$$ARGS) $RET { $$$BODY }"),
         ("function", "func $NAME($$$ARGS) { $$$BODY }"),
+        ("function", "func ($$$RECV) $NAME($$$ARGS) $RET { $$$BODY }"),
+        ("function", "func ($$$RECV) $NAME($$$ARGS) { $$$BODY }"),
     ]
 }
 

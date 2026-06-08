@@ -39,15 +39,21 @@ pub struct RetrievalConfig {
     /// RRF constant for sparse/dense fusion. Default 60.0 matches the original
     /// Cormack/Clarke/Buettcher RRF paper.
     pub rrf_k: f32,
-    /// Dimension of caller-supplied memory embeddings. The first save locks
-    /// this in `schema_meta`; later inserts that mismatch surface as
-    /// `VecDimMismatch`. Defaults to 1024 (nomic-embed-text-v1.5).
+    /// Operator-visible record of the memory embedding dim. The authoritative
+    /// value is the literal in `src/store/sql/0002_v2_tables.sql` —
+    /// `memory_vec` is a vec0 vtab whose dim is baked into its `CREATE
+    /// VIRTUAL TABLE` at migration time and cannot be changed afterwards.
+    /// `vector::insert_memory` reads `schema_meta.memory_vector_dim` (seeded
+    /// from the same migration) to gate inserts, so this config field is
+    /// surfaced for reporting / drift detection only; setting
+    /// `COMEMORY_VECTOR_DIM` does NOT reshape the vtab. Defaults to 1024
+    /// (nomic-embed-text-v1.5).
     #[serde(default = "default_memory_vector_dim")]
     pub memory_vector_dim: usize,
-    /// Dimension of caller-supplied code embeddings. The first
-    /// `comemory ingest-code` locks this in `schema_meta`; later inserts
-    /// that mismatch surface as `VecDimMismatch`. Defaults to 768
-    /// (jina-embeddings-v2-base-code).
+    /// Operator-visible record of the code embedding dim. Same caveat as
+    /// [`memory_vector_dim`]: the authoritative value is the literal in
+    /// `0002_v2_tables.sql` and cannot be reshaped via env after the first
+    /// migration runs. Defaults to 768 (jina-embeddings-v2-base-code).
     #[serde(default = "default_code_vector_dim")]
     pub code_vector_dim: usize,
 }
@@ -189,14 +195,26 @@ impl Config {
             };
         }
         if let Ok(v) = std::env::var("COMEMORY_VECTOR_DIM") {
-            self.retrieval.memory_vector_dim = v
+            let parsed = v
                 .parse::<usize>()
                 .map_err(|e| Error::Config(format!("invalid env var COMEMORY_VECTOR_DIM: {e}")))?;
+            if parsed == 0 {
+                return Err(Error::Config(
+                    "invalid env var COMEMORY_VECTOR_DIM=0: must be a positive integer".into(),
+                ));
+            }
+            self.retrieval.memory_vector_dim = parsed;
         }
         if let Ok(v) = std::env::var("COMEMORY_CODE_VECTOR_DIM") {
-            self.retrieval.code_vector_dim = v.parse::<usize>().map_err(|e| {
+            let parsed = v.parse::<usize>().map_err(|e| {
                 Error::Config(format!("invalid env var COMEMORY_CODE_VECTOR_DIM: {e}"))
             })?;
+            if parsed == 0 {
+                return Err(Error::Config(
+                    "invalid env var COMEMORY_CODE_VECTOR_DIM=0: must be a positive integer".into(),
+                ));
+            }
+            self.retrieval.code_vector_dim = parsed;
         }
         if let Ok(v) = std::env::var("COMEMORY_EMBED_HINT") {
             self.embed_hint = Some(v);

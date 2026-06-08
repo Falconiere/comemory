@@ -38,7 +38,12 @@ CREATE VIRTUAL TABLE memory_vec USING vec0(
     embedding FLOAT[1024]
 );
 
--- ─── memory full-text (FTS5, contentless mirror) ─────────────────────────
+-- ─── memory full-text (FTS5, external-content-less) ──────────────────────
+-- This is NOT a contentless FTS5 table (no `content=''` option); FTS5
+-- stores its own copy of `body` and `tags` so search results can render
+-- snippets without joining `memories`. Re-saves of the same memory must
+-- DELETE+INSERT the row to avoid accumulating duplicates against the
+-- UNINDEXED `memory_id` payload column.
 CREATE VIRTUAL TABLE memory_fts USING fts5(
     memory_id UNINDEXED,
     body,

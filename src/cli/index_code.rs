@@ -24,6 +24,7 @@ use crate::config::paths::Paths;
 use crate::git_utils::map_git_err;
 use crate::prelude::*;
 use crate::simhash;
+use crate::store::code_row::{self, CodeSymbolRow};
 use crate::store::{connection, fts};
 
 const EXAMPLES: &str = "\
@@ -88,6 +89,14 @@ pub async fn run(args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<(
         if oid_is_indexed(&tx, &args.repo, &rel, &oid)? {
             continue;
         }
+        // Drop any prior `code_symbols`/`code_vec`/`code_fts` rows for this
+        // `(repo, path)` before re-inserting so a blob_oid change (file edited)
+        // does not leave stale symbol rows behind alongside the fresh ones, and
+        // so re-inserts with shifted `line_start` values cannot collide on the
+        // `UNIQUE(repo, path, symbol, line_start)` constraint mid-transaction.
+        if !args.extract {
+            purge_file_symbols(&tx, &args.repo, &rel)?;
+        }
         let snippet = std::fs::read_to_string(entry.path()).map_err(Error::Io)?;
         let symbols = ast::extract(lang, &snippet)?;
         for s in &symbols {
@@ -132,25 +141,20 @@ fn handle_symbol(
         return Ok(());
     }
 
-    let sid = conn.query_row(
-        "INSERT INTO code_symbols(\
-             repo, path, blob_oid, symbol, kind, lang, \
-             line_start, line_end, snippet, simhash, indexed_at) \
-         VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10, strftime('%Y-%m-%dT%H:%M:%fZ','now')) \
-         RETURNING id",
-        rusqlite::params![
+    let sid = code_row::insert(
+        conn,
+        &CodeSymbolRow {
             repo,
-            rel,
+            path: rel,
             blob_oid,
-            &s.name,
-            &s.kind,
-            lang.as_str(),
+            symbol: &s.name,
+            kind: &s.kind,
+            lang: lang.as_str(),
             line_start,
             line_end,
-            &s.snippet,
-            sh,
-        ],
-        |r| r.get::<_, i64>(0),
+            snippet: &s.snippet,
+            simhash: sh,
+        },
     )?;
     fts::index_code(conn, sid, &s.name, &s.snippet, &fts::path_to_tokens(rel))?;
     Ok(())
@@ -168,6 +172,35 @@ fn oid_is_indexed(conn: &Connection, repo: &str, path: &str, oid: &str) -> Resul
         )
         .ok();
     Ok(matches!(row, Some(v) if v == oid))
+}
+
+/// Delete every prior `code_symbols` row (and its cascaded `code_vec` /
+/// `code_fts` siblings) for `(repo, path)` so a fresh `index-code` pass on
+/// a changed blob_oid doesn't leave stale rows behind. `code_vec` and
+/// `code_fts` are addressed by the same `symbol_id` PK that `code_symbols`
+/// just shed, so we explicitly delete them here — neither vtab participates
+/// in SQLite's FK cascade.
+fn purge_file_symbols(conn: &Connection, repo: &str, path: &str) -> Result<()> {
+    let mut stmt = conn.prepare("SELECT id FROM code_symbols WHERE repo = ?1 AND path = ?2")?;
+    let ids: Vec<i64> = stmt
+        .query_map(rusqlite::params![repo, path], |r| r.get::<_, i64>(0))?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    drop(stmt);
+    for sid in &ids {
+        conn.execute(
+            "DELETE FROM code_vec WHERE symbol_id = ?1",
+            rusqlite::params![sid],
+        )?;
+        conn.execute(
+            "DELETE FROM code_fts WHERE symbol_id = ?1",
+            rusqlite::params![sid],
+        )?;
+    }
+    conn.execute(
+        "DELETE FROM code_symbols WHERE repo = ?1 AND path = ?2",
+        rusqlite::params![repo, path],
+    )?;
+    Ok(())
 }
 
 /// Upsert the `indexed_files` cursor row so the next run knows this blob has

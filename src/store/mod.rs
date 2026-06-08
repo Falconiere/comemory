@@ -16,6 +16,7 @@
 //! Tasks 3–6 of the v0.2 plan flesh out the bodies; Task 2 publishes
 //! the skeleton so downstream tasks have stable import paths.
 
+pub mod code_row;
 pub mod connection;
 pub mod embed;
 pub mod fts;

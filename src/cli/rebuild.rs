@@ -49,6 +49,19 @@ pub async fn run(_args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<
     if db.exists() {
         std::fs::remove_file(&db).map_err(Error::Io)?;
     }
+    // WAL mode leaves `comemory.db-wal` and `comemory.db-shm` next to the
+    // main DB. Removing only the main file would leave those sidecars
+    // pointing at the now-deleted DB header; SQLite normally recovers, but
+    // the safer move is to drop them too so the next `connection::open`
+    // starts from a guaranteed-clean slate.
+    for suffix in ["-wal", "-shm"] {
+        let mut sidecar = db.clone().into_os_string();
+        sidecar.push(suffix);
+        let sidecar = std::path::PathBuf::from(sidecar);
+        if sidecar.exists() {
+            std::fs::remove_file(&sidecar).map_err(Error::Io)?;
+        }
+    }
     let mut conn = connection::open(&db)?;
     let tx = conn.transaction()?;
 

@@ -24,7 +24,7 @@ fn bm25_returns_seeded_match() {
     )
     .expect("index");
 
-    let hits = fts::search_memory(&conn, "advisory lock", 10).expect("search");
+    let hits = fts::search_memory(&conn, "advisory lock", 10, None).expect("search");
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].memory_id, "mem1");
 }
@@ -50,7 +50,7 @@ fn search_memory_skips_soft_deleted() {
     )
     .expect("index");
 
-    let hits = fts::search_memory(&conn, "advisory lock", 10).expect("search");
+    let hits = fts::search_memory(&conn, "advisory lock", 10, None).expect("search");
     assert!(
         hits.is_empty(),
         "soft-deleted memories must not appear in FTS results, got {hits:?}",

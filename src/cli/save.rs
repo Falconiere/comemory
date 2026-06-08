@@ -104,7 +104,7 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     paths.ensure_dirs()?;
 
     // Parse the optional caller-supplied vector (CSV or JSON-on-stdin).
-    let vector_opt = read_optional_vector(&a)?;
+    let vector_opt = embedding_input::read_optional(a.vector_stdin, a.vector.as_deref())?;
 
     // Validate the vector's dim against the schema-locked memory dim BEFORE
     // the markdown write so a wrong-dim payload aborts cleanly with nothing
@@ -141,19 +141,6 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     Ok(())
 }
 
-/// Read the optional caller-supplied vector from `--vector` (CSV) or
-/// `--vector-stdin` (JSON `{ "embedding": [..] }`). Returns `Ok(None)` when
-/// neither flag is set so the FTS-only path can proceed.
-fn read_optional_vector(args: &Args) -> Result<Option<Vec<f32>>> {
-    if args.vector_stdin {
-        return Ok(Some(embedding_input::read_stdin_payload()?));
-    }
-    if let Some(raw) = &args.vector {
-        return Ok(Some(embedding_input::parse_csv(raw)?));
-    }
-    Ok(None)
-}
-
 /// Mirror the markdown record into `comemory.db` in a single transaction:
 /// `memories`, `memory_tags`, `memory_fts`, optional `memory_vec`, and the
 /// graph `edges` table (in_repo/authored_by/tagged plus cross-link
@@ -174,6 +161,14 @@ fn write_sqlite_mirror(
     let md_path = rec.path.to_string_lossy();
     memory_row::insert(&tx, fm, &rec.body, rec.slug.as_str(), &md_path, tags)?;
     if let Some(v) = vector_opt {
+        // memory_vec is a vec0 vtab — its PK is `memory_id` but it does not
+        // participate in SQLite's FK cascade, so a re-save of the same id
+        // must drop any prior vector row before re-inserting or vec0 will
+        // reject the second INSERT with a PK constraint failure.
+        tx.execute(
+            "DELETE FROM memory_vec WHERE memory_id = ?1",
+            rusqlite::params![&fm.id],
+        )?;
         vector::insert_memory(&tx, &fm.id, v)?;
     }
     tx.commit()?;

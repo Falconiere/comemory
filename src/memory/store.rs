@@ -122,7 +122,7 @@ impl MemoryStore {
         })
     }
 
-    /// Load a memory by id. Returns `Error::Other` when no file matches.
+    /// Load a memory by id. Returns `Error::NotFound` when no file matches.
     pub fn load(&self, id: &str) -> Result<MemoryRecord> {
         let path = self.find_by_id(id)?;
         let raw = fs::read_to_string(&path)?;
@@ -226,6 +226,6 @@ impl MemoryStore {
                 return Ok(path);
             }
         }
-        Err(Error::Other(format!("memory not found: {id}")))
+        Err(Error::NotFound(id.to_string()))
     }
 }

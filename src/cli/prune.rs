@@ -102,14 +102,36 @@ fn scan(conn: &rusqlite::Connection) -> Result<Report> {
 }
 
 /// Apply the cleanup queries reported by [`scan`] in a single
-/// transaction. Safe to call on a clean DB — both `DELETE` statements
-/// are no-ops when no candidates exist.
+/// transaction. Safe to call on a clean DB — all `DELETE` statements are
+/// no-ops when no candidates exist.
+///
+/// `code_vec` and `code_fts` are vec0 / fts5 virtual tables and do not
+/// participate in the SQLite FK cascade triggered by deleting `code_symbols`,
+/// so we explicitly drop their rows first (keyed by the `id` of the about-
+/// to-be-removed `code_symbols` row). Otherwise prune would leave orphan
+/// vector and FTS rows that the KNN / BM25 path could still surface.
 fn apply(conn: &mut rusqlite::Connection) -> Result<()> {
     let tx = conn.transaction()?;
     tx.execute(
         "DELETE FROM edges WHERE src_kind = 'memory' \
            AND NOT EXISTS(SELECT 1 FROM memories m \
                             WHERE m.id = src_id AND m.deleted_at IS NULL)",
+        [],
+    )?;
+    tx.execute(
+        "DELETE FROM code_vec WHERE symbol_id IN ( \
+             SELECT id FROM code_symbols \
+              WHERE NOT EXISTS(SELECT 1 FROM indexed_files i \
+                                 WHERE i.repo = code_symbols.repo \
+                                   AND i.path = code_symbols.path))",
+        [],
+    )?;
+    tx.execute(
+        "DELETE FROM code_fts WHERE symbol_id IN ( \
+             SELECT id FROM code_symbols \
+              WHERE NOT EXISTS(SELECT 1 FROM indexed_files i \
+                                 WHERE i.repo = code_symbols.repo \
+                                   AND i.path = code_symbols.path))",
         [],
     )?;
     tx.execute(
