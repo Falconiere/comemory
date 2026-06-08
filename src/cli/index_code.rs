@@ -95,14 +95,14 @@ pub async fn run(args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<(
         // so re-inserts with shifted `line_start` values cannot collide on the
         // `UNIQUE(repo, path, symbol, line_start)` constraint mid-transaction.
         if !args.extract {
-            purge_file_symbols(&tx, &args.repo, &rel)?;
+            code_row::purge_file_symbols(&tx, &args.repo, &rel)?;
         }
         let snippet = std::fs::read_to_string(entry.path()).map_err(Error::Io)?;
         let symbols = ast::extract(lang, &snippet)?;
         for s in &symbols {
             handle_symbol(&tx, args.extract, &args.repo, &rel, &oid, lang, s)?;
         }
-        upsert_indexed_file(&tx, &args.repo, &rel, &oid)?;
+        code_row::upsert_indexed_file(&tx, &args.repo, &rel, &oid)?;
     }
     tx.commit()?;
     Ok(())
@@ -172,49 +172,6 @@ fn oid_is_indexed(conn: &Connection, repo: &str, path: &str, oid: &str) -> Resul
         )
         .ok();
     Ok(matches!(row, Some(v) if v == oid))
-}
-
-/// Delete every prior `code_symbols` row (and its cascaded `code_vec` /
-/// `code_fts` siblings) for `(repo, path)` so a fresh `index-code` pass on
-/// a changed blob_oid doesn't leave stale rows behind. `code_vec` and
-/// `code_fts` are addressed by the same `symbol_id` PK that `code_symbols`
-/// just shed, so we explicitly delete them here — neither vtab participates
-/// in SQLite's FK cascade.
-fn purge_file_symbols(conn: &Connection, repo: &str, path: &str) -> Result<()> {
-    let mut stmt = conn.prepare("SELECT id FROM code_symbols WHERE repo = ?1 AND path = ?2")?;
-    let ids: Vec<i64> = stmt
-        .query_map(rusqlite::params![repo, path], |r| r.get::<_, i64>(0))?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    drop(stmt);
-    for sid in &ids {
-        conn.execute(
-            "DELETE FROM code_vec WHERE symbol_id = ?1",
-            rusqlite::params![sid],
-        )?;
-        conn.execute(
-            "DELETE FROM code_fts WHERE symbol_id = ?1",
-            rusqlite::params![sid],
-        )?;
-    }
-    conn.execute(
-        "DELETE FROM code_symbols WHERE repo = ?1 AND path = ?2",
-        rusqlite::params![repo, path],
-    )?;
-    Ok(())
-}
-
-/// Upsert the `indexed_files` cursor row so the next run knows this blob has
-/// already been processed for `repo + path`.
-fn upsert_indexed_file(conn: &Connection, repo: &str, path: &str, oid: &str) -> Result<()> {
-    conn.execute(
-        "INSERT INTO indexed_files(repo, path, blob_oid, indexed_at) \
-         VALUES(?1, ?2, ?3, strftime('%Y-%m-%dT%H:%M:%fZ','now')) \
-         ON CONFLICT(repo, path) DO UPDATE \
-           SET blob_oid = excluded.blob_oid, \
-               indexed_at = excluded.indexed_at",
-        rusqlite::params![repo, path, oid],
-    )?;
-    Ok(())
 }
 
 /// Look up the working-tree blob OID for `file` via the repo index. Files

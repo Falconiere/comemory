@@ -163,24 +163,14 @@ pub fn search_code(conn: &Connection, query: &str, k: usize) -> Result<Vec<CodeF
         Err(e) if is_fts5_parse_error(&e) => return Ok(Vec::new()),
         Err(e) => return Err(e.into()),
     };
-    let mapped = match stmt.query_map(params![query, k as i64], |row| {
+    let row_fn = |row: &rusqlite::Row<'_>| {
         Ok(CodeFtsHit {
             symbol_id: row.get(0)?,
             score: row.get(1)?,
         })
-    }) {
-        Ok(it) => it,
-        Err(e) if is_fts5_parse_error(&e) => return Ok(Vec::new()),
-        Err(e) => return Err(e.into()),
     };
     let mut out = Vec::new();
-    for row in mapped {
-        match row {
-            Ok(hit) => out.push(hit),
-            Err(e) if is_fts5_parse_error(&e) => return Ok(Vec::new()),
-            Err(e) => return Err(e.into()),
-        }
-    }
+    collect_with_fts5_guard(stmt.query_map(params![query, k as i64], row_fn), &mut out)?;
     Ok(out)
 }
 

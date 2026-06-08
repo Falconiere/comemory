@@ -8,6 +8,11 @@
 //!
 //! The caller decides whether to also write a `code_vec` row — vectors are
 //! BYO so `index_code` skips them while `ingest_code` always supplies one.
+//!
+//! [`purge_file_symbols`] and [`upsert_indexed_file`] are shared with
+//! `ingest_code` so re-ingesting a previously-ingested `(repo, path)` does not
+//! collide on the `UNIQUE (repo, path, symbol, line_start)` constraint and so
+//! the `indexed_files` cursor reflects the most-recent ingest as well.
 
 use rusqlite::Connection;
 
@@ -29,6 +34,48 @@ pub struct CodeSymbolRow<'a> {
     pub line_end: i64,
     pub snippet: &'a str,
     pub simhash: i64,
+}
+
+/// Delete every prior `code_symbols` row (and its cascaded `code_vec` /
+/// `code_fts` siblings) for `(repo, path)` so a fresh ingest pass with a new
+/// `blob_oid` doesn't leave stale rows behind. `code_vec` and `code_fts` are
+/// vec0 / fts5 virtual tables and do not participate in the SQLite FK
+/// cascade, so we explicitly drop their rows via set-based `IN (SELECT ...)`.
+///
+/// Shared by `cli::index_code` (file walk) and `cli::ingest_code` (JSONL
+/// stream) so both paths cannot drift on the purge SQL.
+pub fn purge_file_symbols(conn: &Connection, repo: &str, path: &str) -> Result<()> {
+    conn.execute(
+        "DELETE FROM code_vec WHERE symbol_id IN (\
+             SELECT id FROM code_symbols WHERE repo = ?1 AND path = ?2)",
+        rusqlite::params![repo, path],
+    )?;
+    conn.execute(
+        "DELETE FROM code_fts WHERE symbol_id IN (\
+             SELECT id FROM code_symbols WHERE repo = ?1 AND path = ?2)",
+        rusqlite::params![repo, path],
+    )?;
+    conn.execute(
+        "DELETE FROM code_symbols WHERE repo = ?1 AND path = ?2",
+        rusqlite::params![repo, path],
+    )?;
+    Ok(())
+}
+
+/// Upsert the `indexed_files` cursor row so the next `index-code` run knows
+/// this blob has already been processed for `(repo, path)`. Used by both
+/// `cli::index_code` (after walking a file) and `cli::ingest_code` (after the
+/// final symbol row for `(repo, path)` lands).
+pub fn upsert_indexed_file(conn: &Connection, repo: &str, path: &str, oid: &str) -> Result<()> {
+    conn.execute(
+        "INSERT INTO indexed_files(repo, path, blob_oid, indexed_at) \
+         VALUES(?1, ?2, ?3, strftime('%Y-%m-%dT%H:%M:%fZ','now')) \
+         ON CONFLICT(repo, path) DO UPDATE \
+           SET blob_oid = excluded.blob_oid, \
+               indexed_at = excluded.indexed_at",
+        rusqlite::params![repo, path, oid],
+    )?;
+    Ok(())
 }
 
 /// Insert one `code_symbols` row and return its newly-assigned primary key.
