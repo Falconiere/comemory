@@ -84,6 +84,7 @@ nix = { version = "0.29", default-features = false, features = ["signal"] }
 lto = "fat"
 codegen-units = 1
 strip = "symbols"
+panic = "abort"
 
 [profile.dev]
 debug = "line-tables-only"
