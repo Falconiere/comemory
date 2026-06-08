@@ -16,8 +16,9 @@ use std::io::Write as _;
 use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
+use crate::cli::embedding_input;
 use crate::cli::resolve_data_dir;
 use crate::config::paths::Paths;
 use crate::graph::cross_link;
@@ -80,11 +81,6 @@ pub struct Args {
 struct Output {
     id: String,
     path: String,
-}
-
-#[derive(Deserialize)]
-struct EmbeddingPayload {
-    embedding: Vec<f32>,
 }
 
 /// Save the body and emit the new memory id + on-disk path.
@@ -152,20 +148,10 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
 /// neither flag is set so the FTS-only path can proceed.
 fn read_optional_vector(args: &Args) -> Result<Option<Vec<f32>>> {
     if args.vector_stdin {
-        let mut buf = String::new();
-        std::io::stdin()
-            .read_to_string(&mut buf)
-            .map_err(Error::Io)?;
-        let payload: EmbeddingPayload = serde_json::from_str(buf.trim())?;
-        return Ok(Some(payload.embedding));
+        return Ok(Some(embedding_input::read_stdin_payload()?));
     }
     if let Some(raw) = &args.vector {
-        let parsed: Vec<f32> = raw
-            .split(',')
-            .map(|s| s.trim().parse::<f32>())
-            .collect::<std::result::Result<Vec<_>, _>>()
-            .map_err(|e| Error::Config(format!("--vector parse: {e}")))?;
-        return Ok(Some(parsed));
+        return Ok(Some(embedding_input::parse_csv(raw)?));
     }
     Ok(None)
 }

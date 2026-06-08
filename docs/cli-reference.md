@@ -105,15 +105,23 @@ Arguments:
 
 Options:
       --json                 Emit machine-readable JSON instead of a human TTY view
-      --limit <LIMIT>        Maximum number of hits to return (default 12). Must be >= 1 [default: 12]
+      --k <K>                Override the configured `retrieval.top_k`. Must be >= 1
       --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
-      --repo <REPO>          Optional repo filter
-      --kind <KIND>          Optional kind filter (decision|bug|...) [possible values: decision, bug, convention, discovery, pattern, note]
+      --repo <REPO>          Optional repo filter forwarded to the vector branch
+      --kind <KIND>          Reserved kind filter (accepted for forward compatibility; not yet applied by the router) [possible values: decision, bug, convention, discovery, pattern, note]
+      --vector <VECTOR>      Caller-supplied dense vector as a comma-separated float list
+      --vector-stdin         Read a JSON `{ "embedding": [..] }` payload from stdin and use it as the dense vector for the query
   -h, --help                 Print help
 
 Examples:
   # Natural-language query, top 12 hits (default)
   comemory search "postgres migration race"
+
+  # JSON envelope for piping into other tools
+  comemory search "advisory lock" --json
+
+  # Caller-supplied vector (BYO-vector, CSV form)
+  comemory search "advisory lock" --vector 0.1,0.2,0.3,...
 ```
 
 ---
@@ -364,21 +372,24 @@ Examples:
 ```
 Headline lookup: code symbol + memories matching a key
 
-Usage: comemory context [OPTIONS] <KEY>
+Usage: comemory context [OPTIONS] <QUERY>
 
 Arguments:
-  <KEY>  Free-form key — symbol name, file path fragment, or phrase
+  <QUERY>  Free-form query — symbol name, file path fragment, or phrase
 
 Options:
-      --depth <DEPTH>        Graph-walk depth (reserved for Task 17) [default: 1]
       --json                 Emit machine-readable JSON instead of a human TTY view
+      --k <K>                Override the configured `retrieval.top_k` for this bundle. Must be >= 1
       --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
-      --limit <LIMIT>        Maximum number of memory hits to surface (default 5). Must be >= 1 [default: 5]
+      --repo <REPO>          Optional repo filter forwarded to the router
   -h, --help                 Print help
 
 Examples:
-  # Code symbol + linked memories in one round-trip (JSON)
+  # Headline lookup for a symbol name, JSON envelope
   comemory context run_migration --json
+
+  # Pin the bundle width to the top 3 hits
+  comemory context "advisory lock" --k 3
 ```
 
 ---

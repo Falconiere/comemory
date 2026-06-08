@@ -541,3 +541,9 @@ mod vectors;
 
 #[path = "cli/save.rs"]
 mod save;
+
+#[path = "cli/search.rs"]
+mod search;
+
+#[path = "cli/context.rs"]
+mod context;

@@ -12,6 +12,7 @@ pub mod conflicts;
 pub mod context;
 pub mod delete;
 pub mod doctor;
+pub(crate) mod embedding_input;
 pub mod feedback;
 pub mod gc;
 pub mod graph_serve;
