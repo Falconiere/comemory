@@ -4,6 +4,7 @@
 
 use clap::{Parser, Subcommand};
 
+use crate::config::Config;
 use crate::prelude::*;
 
 pub mod ast;
@@ -151,4 +152,14 @@ pub fn resolve_data_dir(opt: Option<std::path::PathBuf>) -> std::path::PathBuf {
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
         std::path::PathBuf::from(home).join(".comemory")
     })
+}
+
+/// Override the configured `retrieval.top_k` when a subcommand received a
+/// `--k` flag on the CLI. Shared by `search` and `context` so the two
+/// subcommands cannot drift on what "override top_k" means.
+pub(crate) fn override_top_k(mut cfg: Config, k: Option<usize>) -> Config {
+    if let Some(k) = k {
+        cfg.retrieval.top_k = k;
+    }
+    cfg
 }

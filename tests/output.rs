@@ -1,6 +1,6 @@
 //! Integration tests for the `output` module. Includes a stable JSON snapshot
 //! to catch accidental format drift, plus the tests-mirror entry points for
-//! `output/tty.rs` and `output/json.rs` so the `tests-mirror-check` gate is
+//! every `src/output/*.rs` file so the `tests-mirror-check` gate is
 //! satisfied.
 
 use serde::Serialize;
@@ -10,6 +10,12 @@ mod tty;
 
 #[path = "output/json.rs"]
 mod json;
+
+#[path = "output/search.rs"]
+mod search;
+
+#[path = "output/context.rs"]
+mod context;
 
 #[derive(Serialize)]
 struct Hit {

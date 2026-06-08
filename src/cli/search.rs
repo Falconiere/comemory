@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::cli::{embedding_input, resolve_data_dir};
+use crate::cli::{embedding_input, override_top_k, resolve_data_dir};
 use crate::config::paths::Paths;
 use crate::config::Config;
 use crate::memory::Kind;
@@ -44,9 +44,10 @@ pub struct Args {
     /// Optional repo filter forwarded to the vector branch.
     #[arg(long)]
     pub repo: Option<String>,
-    /// Reserved kind filter (accepted for forward compatibility; not yet
-    /// applied by the router).
-    #[arg(long)]
+    /// Reserved kind filter. Hidden until the router actually applies it
+    /// (Task 12); declared here so callers that pre-bake a flag list keep
+    /// parsing without error.
+    #[arg(long, hide = true)]
     pub kind: Option<Kind>,
     /// Caller-supplied dense vector as a comma-separated float list.
     #[arg(long)]
@@ -65,17 +66,9 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     let conn = connection::open(paths.db_path())?;
 
     let vec = read_optional_vector(&a)?;
-    let cfg = override_k(Config::defaults().with_env()?, a.k);
+    let cfg = override_top_k(Config::defaults().with_env()?, a.k);
     let hits = router::route(&cfg, &conn, &a.query, vec.as_deref(), a.repo.as_deref())?;
     output::search::emit(&hits, json_flag)
-}
-
-/// Override the configured `top_k` when `--k` was supplied on the CLI.
-fn override_k(mut cfg: Config, k: Option<usize>) -> Config {
-    if let Some(k) = k {
-        cfg.retrieval.top_k = k;
-    }
-    cfg
 }
 
 /// Resolve the optional caller-supplied vector from `--vector` (CSV) or
