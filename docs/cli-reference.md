@@ -30,17 +30,11 @@ Commands:
   delete         Soft-delete a memory by id (moves to `.trash/`)
   feedback       Record per-memory feedback (used vs irrelevant)
   doctor         Report on the data directory and SQLite mirror health
-  index          Memory-layer index maintenance (re-embed missing rows). Run `comemory index --help` for the available flags
   index-code     Walk a repo, extract symbols, and upsert into the code index
   ingest-code    Read pre-embedded JSONL rows from stdin and ingest them into the code index (`code_symbols` + `code_fts` + `code_vec`)
-  symbol         Semantic search over the code index for a symbol name
-  memory-for     List memories that reference a qualified symbol or file path
   ast            Run an ast-grep pattern against a single source file
   context        Headline lookup: code symbol + memories matching a key
-  walk           Walk a graph edge from a memory id (currently `--edge supersedes`)
   completions    Emit a shell completion script for `bash`, `zsh`, `fish`, `powershell`, or `elvish`
-  conflicts      List memories that conflict with the given memory id
-  supersedes     Record that one memory supersedes another in the kuzu graph
   prune          Detect (and optionally soft-delete) stale memories
   rebuild        Drop `comemory.db` and repopulate it from the markdown source of truth
   gc             Purge old entries from `memories/.trash/`
@@ -230,33 +224,6 @@ Examples:
 
 ---
 
-## comemory index
-
-```
-Memory-layer index maintenance (re-embed missing rows). Run `comemory index --help` for the available flags
-
-Usage: comemory index [OPTIONS]
-
-Options:
-      --json                 Emit machine-readable JSON instead of a human TTY view
-      --rebuild              Re-embed any markdown memory whose id is missing from the dense `memory_chunks` table
-      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
-      --quiet                Suppress the human-readable summary line. JSON output is still emitted when `--json` is set
-  -h, --help                 Print help
-
-Examples:
-  # Re-embed every markdown memory missing from the dense index
-  comemory index --rebuild
-
-  # JSON summary for monitoring / CI
-  comemory index --rebuild --json
-
-  # Quiet rebuild (suppresses the human summary; JSON still respected)
-  comemory index --rebuild --quiet
-```
-
----
-
 ## comemory index-code
 
 ```
@@ -282,38 +249,12 @@ Examples:
 
 ---
 
-## comemory symbol
+## comemory ingest-code
 
 ```
-Semantic search over the code index for a symbol name
+Read pre-embedded JSONL rows from stdin and ingest them into the code index (`code_symbols` + `code_fts` + `code_vec`)
 
-Usage: comemory symbol [OPTIONS] <NAME>
-
-Arguments:
-  <NAME>  Free-form symbol name (or descriptor) to search for
-
-Options:
-      --json                 Emit machine-readable JSON instead of a human TTY view
-      --limit <LIMIT>        Maximum number of hits to return (default 5) [default: 5]
-      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
-  -h, --help                 Print help
-
-Examples:
-  # Exact function-name hit
-  comemory symbol run_migration
-```
-
----
-
-## comemory memory-for
-
-```
-List memories that reference a qualified symbol or file path
-
-Usage: comemory memory-for [OPTIONS] <QUALIFIED>
-
-Arguments:
-  <QUALIFIED>  Qualified symbol (`<repo>:<path>:<symbol>`) or file path (`<repo>:<path>`) to look up
+Usage: comemory ingest-code [OPTIONS]
 
 Options:
       --json                 Emit machine-readable JSON instead of a human TTY view
@@ -321,14 +262,10 @@ Options:
   -h, --help                 Print help
 
 Examples:
-  # Memories that reference a specific function
-  comemory memory-for myrepo:src/db.rs:run_migration
-
-  # Memories that reference a whole file
-  comemory memory-for myrepo:src/db.rs
-
-  # JSON for tool chaining
-  comemory memory-for myrepo:src/db.rs --json
+  # Pipe pre-embedded JSONL from your embedder into the SQLite store
+  comemory index-code --repo myrepo --path . --extract \
+    | embed-snippets \
+    | comemory ingest-code
 ```
 
 ---
@@ -390,79 +327,6 @@ Examples:
 
 ---
 
-## comemory walk
-
-```
-Walk a graph edge from a memory id (currently `--edge supersedes`)
-
-Usage: comemory walk [OPTIONS] --from <FROM>
-
-Options:
-      --from <FROM>          Memory id to start walking from
-      --json                 Emit machine-readable JSON instead of a human TTY view
-      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
-      --edge <EDGE>          Edge kind to traverse. Currently only `supersedes` is supported [default: supersedes]
-      --depth <DEPTH>        Maximum hop depth. Clamped to at least 1 by the underlying query [default: 5]
-  -h, --help                 Print help
-
-Examples:
-  # Trace a supersedes chain up to 5 hops (JSON)
-  comemory walk --from a1b2c3d4 --edge supersedes --depth 5 --json
-
-  # Single-hop walk (default edge = supersedes)
-  comemory walk --from a1b2c3d4 --depth 1
-```
-
----
-
-## comemory conflicts
-
-```
-List memories that conflict with the given memory id
-
-Usage: comemory conflicts [OPTIONS] <ID>
-
-Arguments:
-  <ID>  Memory id whose outgoing `:ConflictsWith` edges should be listed
-
-Options:
-      --json                 Emit machine-readable JSON instead of a human TTY view
-      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
-  -h, --help                 Print help
-
-Examples:
-  # List ConflictsWith neighbors of a memory
-  comemory conflicts a1b2c3d4
-
-  # JSON output
-  comemory conflicts a1b2c3d4 --json
-```
-
----
-
-## comemory supersedes
-
-```
-Record that one memory supersedes another in the kuzu graph
-
-Usage: comemory supersedes [OPTIONS] <NEW_ID> <OLD_ID>
-
-Arguments:
-  <NEW_ID>  Memory id of the **new** decision (the one that supersedes)
-  <OLD_ID>  Memory id of the **old** decision (the one being superseded)
-
-Options:
-      --json                 Emit machine-readable JSON instead of a human TTY view
-      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
-  -h, --help                 Print help
-
-Examples:
-  # Mark e5f6a7b8 as superseding the older decision a1b2c3d4
-  comemory supersedes e5f6a7b8 a1b2c3d4
-```
-
----
-
 ## comemory prune
 
 ```
@@ -485,6 +349,21 @@ Examples:
 
   # JSON output for CI/automation
   comemory prune --json
+```
+
+---
+
+## comemory rebuild
+
+```
+Drop `comemory.db` and repopulate it from the markdown source of truth
+
+Usage: comemory rebuild [OPTIONS]
+
+Options:
+      --json                 Emit machine-readable JSON instead of a human TTY view
+      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+  -h, --help                 Print help
 ```
 
 ---
