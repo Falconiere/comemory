@@ -19,6 +19,7 @@ pub mod gc;
 pub mod graph_serve;
 pub mod index;
 pub mod index_code;
+pub mod ingest_code;
 pub mod install_hooks;
 pub mod list;
 pub mod memory_for;
@@ -77,6 +78,9 @@ pub enum Cmd {
     Index(index::Args),
     /// Walk a repo, extract symbols, and upsert into the code index.
     IndexCode(index_code::Args),
+    /// Read pre-embedded JSONL rows from stdin and ingest them into the code
+    /// index (`code_symbols` + `code_fts` + `code_vec`).
+    IngestCode(ingest_code::Args),
     /// Semantic search over the code index for a symbol name.
     Symbol(symbol::Args),
     /// List memories that reference a qualified symbol or file path.
@@ -128,6 +132,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::Doctor => doctor::run(cli.json, cli.data_dir).await,
         Cmd::Index(a) => index::run(a, cli.json, cli.data_dir).await,
         Cmd::IndexCode(a) => index_code::run(a, cli.json, cli.data_dir).await,
+        Cmd::IngestCode(a) => ingest_code::run(a, cli.json, cli.data_dir).await,
         Cmd::Symbol(a) => symbol::run(a, cli.json, cli.data_dir).await,
         Cmd::MemoryFor(a) => memory_for::run(a, cli.json, cli.data_dir).await,
         Cmd::Ast(a) => ast::run(a, cli.json, cli.data_dir).await,

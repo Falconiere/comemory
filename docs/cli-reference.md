@@ -32,6 +32,7 @@ Commands:
   doctor         Report on the data directory and memory count
   index          Memory-layer index maintenance (re-embed missing rows). Run `comemory index --help` for the available flags
   index-code     Walk a repo, extract symbols, and upsert into the code index
+  ingest-code    Read pre-embedded JSONL rows from stdin and ingest them into the code index (`code_symbols` + `code_fts` + `code_vec`)
   symbol         Semantic search over the code index for a symbol name
   memory-for     List memories that reference a qualified symbol or file path
   ast            Run an ast-grep pattern against a single source file
@@ -261,26 +262,22 @@ Examples:
 ```
 Walk a repo, extract symbols, and upsert into the code index
 
-Usage: comemory index-code [OPTIONS]
+Usage: comemory index-code [OPTIONS] --repo <REPO> --path <PATH>
 
 Options:
       --json                 Emit machine-readable JSON instead of a human TTY view
-      --root <ROOT>          Repo root to walk. Defaults to the current working directory [default: .]
+      --repo <REPO>          Repo label stored alongside each symbol row
       --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
-      --repo <REPO>          Repo label stored in the `qualified` key. Auto-detected from `root` basename when empty [default: ""]
-      --incremental          Skip rows whose `ast_hash` is unchanged. Reserved for Task 19; accepted but currently a no-op
-      --quiet                Suppress the human-readable summary line. JSON output is still emitted when `--json` is set
+      --path <PATH>          Root of the working tree to walk. Must live inside a git repo so blob OIDs are available for the incremental skip path
+      --extract              Emit JSONL on stdout instead of inserting rows. Suitable for piping into an external embedder + `comemory ingest-code`
   -h, --help                 Print help
 
 Examples:
-  # Index the current working directory
-  comemory index-code
+  # Index the current working directory with explicit repo label
+  comemory index-code --repo myrepo --path .
 
-  # Explicit root and repo label
-  comemory index-code --root /path/to/repo --repo qwick-backend
-
-  # Incremental refresh, no human output
-  comemory index-code --incremental --quiet
+  # Emit one JSONL row per symbol on stdout (skips DB writes)
+  comemory index-code --repo myrepo --path ./src --extract
 ```
 
 ---

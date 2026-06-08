@@ -5,4 +5,4 @@ pub mod languages;
 pub mod pattern;
 
 pub use extractor::{extract, ExtractedSymbol};
-pub use languages::Lang;
+pub use languages::{detect, Lang};

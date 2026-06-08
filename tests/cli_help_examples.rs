@@ -11,6 +11,7 @@ const SUBCOMMANDS: &[&str] = &[
     "feedback",
     "doctor",
     "index-code",
+    "ingest-code",
     "symbol",
     "memory-for",
     "ast",
