@@ -52,6 +52,16 @@ async fn main() {
             let _ = writeln!(err, "error: schema migration failed: {msg}");
             70
         }
+        Err(e @ Error::VecDimMismatch { .. }) => {
+            let mut err = std::io::stderr().lock();
+            let _ = writeln!(err, "error: {e}");
+            65
+        }
+        Err(Error::Config(msg)) => {
+            let mut err = std::io::stderr().lock();
+            let _ = writeln!(err, "error: config: {msg}");
+            65
+        }
         Err(Error::Other(msg)) => {
             let mut err = std::io::stderr().lock();
             let _ = writeln!(err, "error: {msg}");
