@@ -1,8 +1,11 @@
 # Architecture overview
 
-This is a 2-page on-ramp into the comemory design.
+This is a 2-page on-ramp into the comemory v0.2 design. The authoritative
+write-up lives in
+[`docs/superpowers/specs/2026-06-07-lightweight-v2-design.md`](superpowers/specs/2026-06-07-lightweight-v2-design.md);
+this page mirrors the highlights for quick reference.
 
-## 1. High-level diagram (spec §4.1)
+## 1. High-level diagram
 
 ```
                   ┌─────────────────────────────────────┐
@@ -16,7 +19,7 @@ This is a 2-page on-ramp into the comemory design.
                   │  │   adaptive router          │     │
                   │  │     │                      │     │
                   │  │     ▼                      │     │
-                  │  │   vector + FTS + graph     │     │
+                  │  │   vector + FTS + edges     │     │
                   │  │     │                      │     │
                   │  │     ▼                      │     │
                   │  │   corrective fallback      │     │
@@ -24,58 +27,88 @@ This is a 2-page on-ramp into the comemory design.
                   │  │     ▼                      │     │
                   │  │   cited result bundle      │     │
                   │  └────────────────────────────┘     │
-                  └───┬──────────┬─────────┬─────────┬──┘
-                      │          │         │         │
-                      ▼          ▼         ▼         ▼
-                ┌─────────┐ ┌────────┐ ┌──────┐ ┌─────────┐
-                │ lancedb │ │  kuzu  │ │stats │ │ astgrep │
-                │ vectors │ │ graph  │ │.db   │ │  core   │
-                └────┬────┘ └────┬───┘ └──────┘ └────┬────┘
-                     │           │                   │
-                     │           │                   ▼
-                     │           │            ┌──────────┐
-                     │           │            │tree-sitter│
-                     │           │            └──────────┘
-                     ▼           ▼
-              ┌───────────────────────┐
-              │  ~/.comemory/memories/   │
-              │    {id}-{slug}.md     │ ← source of truth
-              └───────────────────────┘
+                  └───────────────┬─────────────────────┘
+                                  │
+                                  ▼
+                       ┌──────────────────────┐
+                       │  ~/.comemory/           │
+                       │   ├── memories/      │ ← source of truth
+                       │   │    {id}-{slug}.md │
+                       │   └── comemory.db       │ ← SQLite (everything else)
+                       └──────────────────────┘
+                                  │
+                                  ▼
+                       ┌──────────────────────┐
+                       │  comemory.db tables     │
+                       │   memories            │
+                       │   memory_fts (FTS5)   │
+                       │   memory_vec (vec0)   │
+                       │   code_symbols        │
+                       │   code_fts  (FTS5)    │
+                       │   code_vec  (vec0)    │
+                       │   edges               │
+                       │   schema_meta         │
+                       │   retrieval_log /     │
+                       │   feedback / repo_*   │
+                       └──────────────────────┘
 ```
 
-## 2. Component map (spec §4.2)
+## 2. Component map
 
 | Component | Responsibility |
 |---|---|
 | `cli` | clap subcommand definitions, arg parsing, dispatch, exit codes |
 | `memory` | Markdown I/O, frontmatter parsing, atomic save, ID generation |
-| `index` | LanceDB tables (memory + code), dual fastembed wrapper |
-| `graph` | kuzu schema, node/edge upserts, multi-hop Cypher queries |
-| `retrieval` | Adaptive router, hybrid vector+FTS, corrective fallback, ranking |
-| `ast` | ast-grep wrapper, per-language symbol extractor, user pattern API |
-| `stats` | SQLite — retrieval counts, feedback, irrelevance, repo index markers |
+| `store` | SQLite connection layer, schema_meta, migrations, vector + FTS helpers |
+| `simhash` | 64-bit SimHash + Hamming distance over tokenized memory bodies |
+| `graph` | SQL-backed edges (`Supersedes`, `ConflictsWith`, `RelatesTo`, `ReferencesFile`, `ReferencesSymbol`) + recursive walks; `cross_link` parses backticked refs |
+| `retrieval` | Adaptive router, RRF-fused vector+FTS hybrid, corrective fallback, ranking |
+| `ast` | ast-grep wrapper (rust/ts/js/py/go), per-language symbol extractor, user pattern API |
+| `stats` | rusqlite usage / feedback / repo-marker tables (lives inside the same DB) |
 | `config` | Layered config: built-in defaults → `config.toml` → env → CLI flags |
 | `output` | TTY rendering (owo-colors) + JSON serializers (serde_json) |
 | `prune` | Orphan, stale-code, low-value detection and (soft) deletion |
 | `git_utils` | Repo/author detection, blob OID lookup, hook installation |
 
-## 3. Storage layout (spec §5.1)
+## 3. Storage layout
 
 ```
 ~/.comemory/
 ├── memories/{id}-{slug}.md      ← source of truth (markdown + frontmatter)
 ├── memories/.trash/{id}.md      ← soft-deleted memories, retained 30 days
-├── index/
-│   ├── vectors.lance/           ← LanceDB tables: memory_chunks, code_chunks
-│   └── graph.kuzu/              ← kuzu database
-├── stats.db                     ← SQLite: usage, feedback, repo markers
+├── comemory.db                     ← single SQLite file (see §3.1)
 └── config.toml                  ← per-user configuration
 ```
 
-Markdown is the single source of truth. Both indices are fully rebuildable
-from `memories/*.md` plus a re-scan of the target repo(s).
+Markdown is the single source of truth. `comemory.db` is fully rebuildable
+from `memories/*.md` (plus a re-walk of indexed repos) via
+`comemory rebuild`.
 
-## 4. Data model snapshot (spec §5)
+### 3.1 Inside `comemory.db`
+
+One SQLite file replaces v0.1's `lancedb/`, `kuzu/`, and `stats.db` trio.
+The database is created on first use, extended with the `sqlite-vec`
+extension at runtime, and version-tracked through `schema_meta` so future
+migrations stay idempotent.
+
+| Table | Purpose |
+|---|---|
+| `schema_meta` | Single-row schema version + locked-in vector dimensions |
+| `memories` | Frontmatter + body mirror keyed by memory id |
+| `memory_fts` (FTS5) | Lexical index over memory body + title |
+| `memory_vec` (vec0) | Dense vectors keyed by memory id; dim locked at first save |
+| `code_symbols` | Symbols extracted from indexed repos (file, kind, snippet, ast_hash) |
+| `code_fts` (FTS5) | Lexical index over symbol identifiers + snippets |
+| `code_vec` (vec0) | Dense vectors for code symbols; dim locked at first ingest |
+| `edges` | Sparse table replacing the kuzu graph (typed src→dst rows + payload) |
+| `retrieval_log`, `feedback`, `repo_marker` | Stats / indexing markers carried over from v0.1 |
+
+Every dense lookup goes through `sqlite-vec`'s `vec0` virtual table with a
+dimension guard so a mismatched embedder fails fast (`VecDimMismatch`)
+instead of corrupting the index. FTS5 hits and vector hits are fused via
+Reciprocal Rank Fusion (RRF, `k = 60` by default).
+
+## 4. Data model snapshot
 
 Frontmatter (schema v1):
 
@@ -100,119 +133,96 @@ relations:                           # indexer- and user-managed
 ---
 ```
 
-LanceDB has two tables:
+The two `*_vec` tables hold caller-supplied vectors. `comemory` never
+embeds locally; pass vectors via `--vector` / `--vector-stdin` (see the
+"BYO-Vector workflow" section in the README). `COMEMORY_VECTOR_DIM` and
+`COMEMORY_CODE_VECTOR_DIM` set the locked dimensionality;
+`COMEMORY_EMBED_HINT` records (and surfaces in `comemory doctor`) the
+identifier of the embedder you used.
 
-- `memory_chunks` — `id`, `body`, `embedding` (nomic-embed-text-v1.5, 768d),
-  `kind`, `repo`, `tags`, `created`, `quality`, `content_hash`.
-- `code_chunks` — `qualified` (`<repo>:<path>:<symbol>`), `snippet`,
-  `embedding` (jina-embeddings-v2-base-code, 768d), `language`, `file`,
-  `symbol_kind`, `ast_hash`.
+The `edges` table is a flat `(src_kind, src_id, edge_kind, dst_kind, dst_id)`
+schema that replaces the v0.1 kuzu graph for the small set of edges we
+actually use (`Supersedes`, `ConflictsWith`, `RelatesTo`, `ReferencesFile`,
+`ReferencesSymbol`). Multi-hop traversals use SQLite recursive CTEs.
 
-Each text column also gets a LanceDB FTS index for hybrid vector+FTS scoring.
+## 5. Retrieval pipeline
 
-Kuzu holds the two-layer graph:
-
-- **Memory layer:** `Memory`, `Repo`, `Author`, `Tag` nodes; `InRepo`,
-  `AuthoredBy`, `Tagged`, `Supersedes`, `ConflictsWith`, `RelatesTo`,
-  `DerivedFrom` edges.
-- **Code layer:** `File`, `Symbol` nodes; `DefinedIn`, `Calls`, `Imports`
-  edges.
-- **Cross-layer (the killer feature):** `ReferencesFile`, `ReferencesSymbol`
-  edges. Multi-hop queries like *"all decisions referencing symbols defined
-  in files imported by src/db.rs"* become a single Cypher query.
-
-SQLite (`stats.db`) tracks `retrieval_log`, `feedback` (used / irrelevant
-counts), and `repo_marker` (last indexed HEAD per repo).
-
-## 5. Retrieval pipeline (spec §7)
-
-The pipeline runs entirely in Rust. No LLM calls. It implements the
-canonical agentic RAG control loop deterministically:
+The pipeline runs entirely in Rust. No LLM calls.
 
 ```
-search("postgres migration race", in=both)
+search("postgres migration race")
   │
-  ├─ adaptive router (rule-based classifier)
-  │   ├─ looks like a symbol identifier?         → symbol lookup + 1-hop graph
-  │   ├─ has filters (--repo, --kind)?           → constrained vector
-  │   ├─ short, factual, all stopwords removed?  → FTS-first
-  │   └─ otherwise                                → hybrid (vector + FTS, parallel)
+  ├─ adaptive router
+  │   ├─ symbol-like identifier?            → code symbol lookup + edge walk
+  │   ├─ has filters (--repo, --kind)?      → constrained branch
+  │   ├─ short, factual?                    → FTS5-first
+  │   └─ otherwise                          → hybrid (vector + FTS5, fused via RRF)
   │
-  ├─ retrieve (parallel via tokio)
-  │   ├─ lancedb memory_chunks (nomic embed)
-  │   ├─ lancedb code_chunks (jina-code embed)   -- when in ∈ {code, both}
-  │   ├─ kuzu graph walk from top-k seeds (1 hop, both layers)
-  │   └─ sqlite stats join (usage boost, irrelevance penalty)
+  ├─ retrieve
+  │   ├─ memory_vec / code_vec (if vector supplied)
+  │   ├─ memory_fts / code_fts (always)
+  │   ├─ edges walk from top-k seeds (1 hop, recursive CTE)
+  │   └─ stats join (usage boost, irrelevance penalty)
   │
-  ├─ reflect (deterministic, no LLM)
-  │   ├─ per-table score z-normalization
-  │   ├─ relevance threshold filter (configurable per table)
-  │   └─ confidence = top1_score − top2_score (gap signal)
+  ├─ reflect (deterministic)
+  │   ├─ RRF fusion across vector + FTS branches
+  │   ├─ per-table threshold filter
+  │   └─ confidence = top1_score − top2_score
   │
   ├─ refine (corrective fallback)
-  │   ├─ if confidence < 0.15 AND results < 3:
-  │   │       expand via graph RelatesTo from top seed → merge & re-rank
-  │   └─ if results == 0 AND a strict filter was applied:
-  │           drop the strictest filter, re-run once, mark "filter relaxed"
+  │   ├─ if low confidence: expand via RelatesTo edges → merge & re-rank
+  │   └─ if zero results + strict filter: drop strictest filter, retry once
   │
-  └─ stop and emit a cited bundle (id, score, kind, snippet, why)
+  └─ emit a cited bundle (id, score, kind, snippet, why)
 ```
 
-Each step is a pure function on a `RetrievalState` struct, so the pipeline
-is end-to-end testable without external services.
+If no vector is supplied, the vector branch is skipped and the router
+returns the FTS5 ranking unchanged.
 
-## 6. Save flow (spec §8)
+## 6. Save flow
 
 ```
-comemory save "..." --kind=decision
+comemory save "..." --kind=decision [--vector ... | --vector-stdin]
   1. Parse args; build Memory; assign id = sha256(body)[:8].
   2. Write memories/.{id}.tmp (atomic stage).
-  3. Embed body with nomic → upsert lancedb.memory_chunks.
-  4. ast-grep against the current repo's code index:
-       - resolve symbol references → frontmatter.references.symbols
-       - resolve file references   → frontmatter.references.files
-  5. kuzu upserts:
-       - Memory node
-       - InRepo, AuthoredBy, Tagged edges
-       - ReferencesSymbol, ReferencesFile edges (cross-layer)
-  6. lancedb cosine query top-5 neighbors above threshold → kuzu RelatesTo edges.
-  7. Atomic rename memories/.{id}.tmp → memories/{id}-{slug}.md.
-  8. git add + commit + push (best-effort, never fails the save).
+  3. SQLite upsert (inside one transaction):
+       - memories row
+       - memory_fts row
+       - memory_vec row (only if a vector was supplied; dim guard runs first)
+       - edges from cross_link::extract_refs (ReferencesFile / ReferencesSymbol)
+  4. Atomic rename memories/.{id}.tmp → memories/{id}-{slug}.md.
+  5. git add + commit + push (best-effort, only when COMEMORY_GIT_AUTO_SYNC is on).
 ```
 
-On failure between steps 2–7 the temp file is deleted and any partial kuzu
-or LanceDB rows keyed by `id` are rolled back. The save is logically atomic
-from the caller's perspective. (See README "Known v1.1 gaps" for the
-current scope of steps 4–6.)
+Markdown is always the source of truth. If the SQLite transaction fails,
+the markdown file is removed and the caller sees the original error;
+`comemory rebuild` can always reconstruct the DB from `memories/*.md`.
 
-## 7. Code indexing flow (spec §9)
+## 7. Code indexing flow
 
 ```
-comemory index-code [--incremental] [--include-dirty]
-  1. cur_head  = git rev-parse HEAD
-  2. last_head = sqlite.repo_marker WHERE repo = $repo
-  3. If cur_head == last_head and not --include-dirty: return early.
-  4. changed   = git diff-tree --name-only $last_head $cur_head
-                 (∪ git status --porcelain for working-tree, if --include-dirty)
-  5. For each path in changed:
-       a. If deleted: remove File, Symbol(s), code_chunks rows for that path.
-       b. Else:
-          - Hash the blob (git rev-parse :path or git hash-object).
-          - If kuzu.File.content_hash matches: skip.
-          - Else: ast-grep parse, diff symbol set vs. existing Symbols.
-                  Upsert new/changed Symbols + DefinedIn + Calls + Imports.
-                  Embed new/changed symbol snippets via jina-code → lancedb.
-                  Remove deleted Symbols, edges, and code_chunks rows.
-  6. Update sqlite.repo_marker.last_head = cur_head.
-  7. Re-resolve cross-layer references for memories pointing at this repo.
+comemory index-code --repo myrepo --path .
+  1. Walk the working tree (respecting .gitignore) and group files by language.
+  2. For each path, look up the git blob OID. If repo_marker says we already
+     ingested that blob, skip.
+  3. ast-grep extracts symbols (rust/ts/js/py/go only — see Cargo features).
+  4. Upsert code_symbols + code_fts rows in one transaction per file.
+  5. Update repo_marker.last_head = git rev-parse HEAD.
+
+comemory ingest-code  (BYO embedder)
+  • Reads JSONL rows from stdin of the shape
+    `{"qualified": "...", "snippet": "...", "embedding": [..]}`.
+  • Inserts into code_vec (dim guard) and refreshes the matching
+    code_symbols / code_fts rows.
 ```
 
-Working-tree (uncommitted) files are skipped by default; `--include-dirty`
-opts in. `comemory context` marks symbols whose backing file is dirty.
+`comemory rebuild` drops `comemory.db` and reruns step 4 of "save" for every
+markdown file. Use it after upgrading from v0.1 or after editing the DB by
+hand.
 
-## 8. Auto-update modes (spec §10)
+## 8. Auto-update modes
 
-Three configurable modes for keeping indices fresh:
+Three configurable modes for keeping the code index fresh:
 
 ```toml
 [indexing]
@@ -223,30 +233,31 @@ incremental_batch_size = 50
 
 | Mode | Trigger | Behavior |
 |---|---|---|
-| `lazy` (default) | Before every `search` / `context` / `symbol` | Compare `git rev-parse HEAD` to `last_indexed_head`. If different and estimated cost < threshold, reindex incrementally in-line. Otherwise warn and proceed with stale index. |
-| `hook` | git `post-commit`, `post-merge`, `post-checkout` | `comemory install-hooks` registers scripts that run `comemory index-code --incremental --quiet &` in the background after the event. |
-| `off` | Manual only | `comemory index-code` runs only when the user invokes it. |
+| `lazy` (default) | Before every `search` / `context` | Compare `git rev-parse HEAD` to `repo_marker.last_head`. If different and estimated cost is below the threshold, reindex incrementally in-line. Otherwise warn and proceed. |
+| `hook` | git `post-commit`, `post-merge`, `post-checkout` | `comemory install-hooks` registers scripts that run `comemory index-code --incremental --quiet &`. |
+| `off` | Manual only | `comemory index-code` runs only when invoked. |
 
-`comemory doctor` always reports the staleness gap (commits behind HEAD) for
-every known repo, regardless of mode.
+`comemory doctor` always reports the staleness gap (commits behind HEAD)
+for every known repo, regardless of mode.
 
-## 9. Pruning (spec §11)
+## 9. Pruning
 
 Three kinds of stale data, three detection paths, one command surface:
 
 | Stale | Cause | Detection |
 |---|---|---|
-| Orphan index entry | `.md` deleted but lancedb/kuzu row remains | scan: id in index ∧ id ∉ memories/ |
-| Stale code chunk | source file deleted or content hash changed | re-`index-code`: file missing OR hash mismatch |
-| Low-value memory | quality + usage + irrelevance threshold | sqlite join over feedback |
+| Orphan SQL row | `.md` deleted but `memories` row remains | scan: id in DB ∧ id ∉ memories/ |
+| Stale code symbol | source file deleted or content hash changed | re-`index-code`: file missing OR ast_hash mismatch |
+| Low-value memory | quality + usage + irrelevance threshold | SQL join over `feedback` |
 
 Soft delete moves `memories/{id}.md` → `memories/.trash/{id}.md`. Trash is
-retained 30 days, then purged by `comemory gc`. Index rows are hard-deleted
+retained 30 days, then purged by `comemory gc`. SQL rows are hard-deleted
 (always rebuildable from markdown).
 
-`comemory index-code --incremental` auto-prunes code chunks for deleted files.
-`comemory doctor` reports stale counts read-only, never deletes.
+`comemory index-code --incremental` auto-prunes code symbols for deleted
+files. `comemory doctor` reports stale counts read-only, never deletes.
 
 ## Where to go next
 
 - [CLI reference](cli-reference.md) — every command with worked examples.
+- [v0.2 lightweight design spec](superpowers/specs/2026-06-07-lightweight-v2-design.md) — authoritative architecture and schema notes.

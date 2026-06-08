@@ -25,4 +25,5 @@ Columns:
 | Baseline (v0.1)          | release | 116.8 | 2026-06-08 |
 | Task 1 (`panic="abort"`) | release | 97.1 | 2026-06-08 |
 | Task 18 (deps deleted)   | release | 8.2 | 2026-06-08 |
-| Task 20 (final)          | release | TBD | TBD |
+| Task 20 (final, unstripped) | release | 8.2 | 2026-06-08 |
+| Task 20 (final, stripped)   | release | 8.2 | 2026-06-08 |

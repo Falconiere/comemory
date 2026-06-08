@@ -4,8 +4,49 @@ Agentic dev memory + code-aware semantic search via a two-layer property graph.
 
 `comemory` is a single Rust binary that captures developer knowledge (decisions,
 bugs, conventions, discoveries) as markdown files and links it to your code
-through a kuzu property graph and LanceDB vector indices. Everything runs
+through one SQLite file backed by FTS5 and `sqlite-vec`. Everything runs
 locally — no API calls, no remote database, no in-process LLM.
+
+## BYO-Vector workflow
+
+`comemory` v0.2 ships **without** a bundled embedding model. Lexical search
+works out of the box using SQLite FTS5 — `comemory save` and `comemory search`
+do not require any embedder to be configured. Run them as-is to get full-text
+results immediately after install.
+
+For dense / semantic retrieval, *you* supply the vectors. Pipe them in via
+the `--vector` (CSV) or `--vector-stdin` (JSON `{"embedding":[..]}` payload
+on stdin) flags exposed on `comemory save` and `comemory search`. The first
+write locks the dimensionality into `schema_meta`; later inserts that do
+not match surface as `VecDimMismatch`. Tune the configured dim with
+`COMEMORY_VECTOR_DIM` (memories) and `COMEMORY_CODE_VECTOR_DIM` (code
+symbols). Tag the embedder you used via `COMEMORY_EMBED_HINT` so
+`comemory doctor` can surface it.
+
+A wrapper script that bridges to a local Ollama instance ships in
+`scripts/comemory-embed.sh`:
+
+```bash
+# Save a decision and embed the body via Ollama in one call
+scripts/comemory-embed.sh save "Use Postgres for analytics" \
+  --kind decision --repo myrepo
+
+# Semantic search routed through the same Ollama model
+scripts/comemory-embed.sh search "what database do we use"
+```
+
+The wrapper is documentation, not enforcement — replace it with whatever
+embedder pipeline (OpenAI, Voyage, a local llama.cpp, …) you prefer.
+
+### Binary size
+
+The lightweight refactor cuts the release binary substantially by dropping
+the in-process embedder, vector database, and graph database:
+
+| Version | Release binary | Notes |
+|---------|---------------:|-------|
+| v0.1    | ~117 MB        | bundled fastembed + lancedb + kuzu |
+| v0.2    | ~25 MB         | one SQLite file, BYO vectors        |
 
 ## Install
 
@@ -27,23 +68,21 @@ are published on the
 # Save a memory (auto-detects repo + author from git)
 comemory save "Use Postgres for analytics" --kind decision --repo myrepo --tags db,postgres
 
-# Index your repo's code (symbols + files into kuzu + LanceDB)
-comemory index-code --root . --repo myrepo
+# Index your repo's code (symbols + files into the SQLite store)
+comemory index-code --repo myrepo --path .
 
 # One-shot bundle for a symbol: source, memories, neighborhood
 comemory context run_migration --json
 
-# Search across memories
-comemory search "what database do we use" --limit 5
+# Search across memories (lexical-only, no embedder required)
+comemory search "what database do we use"
 
-# Semantic search over code symbols
-comemory symbol parse_frontmatter
-
-# Memories that reference a file or symbol
-comemory memory-for myrepo:src/db.rs:run_migration
+# Semantic search with a caller-supplied vector
+echo '{"embedding":[0.1,0.2,...]}' \
+  | comemory search "what database do we use" --vector-stdin
 
 # Run an ast-grep pattern against a single file
-comemory ast 'fn $NAME($$$) { $$$ }' --file src/lib.rs
+comemory ast 'fn $NAME($$$) { $$$ }' --lang rs --file src/lib.rs
 
 # Health check
 comemory doctor
@@ -53,21 +92,18 @@ comemory doctor
 
 | Command | Purpose |
 |---------|---------|
-| `comemory save` | Save a memory (body via arg, `-`, or stdin) |
-| `comemory search` | Search the memory index by natural-language query |
+| `comemory save` | Save a memory (body via arg, `-`, or stdin; optional `--vector` / `--vector-stdin`) |
+| `comemory search` | Search the memory index by natural-language query (lexical by default, hybrid when `--vector` / `--vector-stdin` is supplied) |
 | `comemory list` | List memories with optional repo/kind filters |
 | `comemory delete` | Soft-delete a memory by id (moves to `.trash/`) |
 | `comemory feedback` | Record per-memory feedback (used vs irrelevant) |
-| `comemory doctor` | Report on the data directory and memory count |
+| `comemory doctor` | Report on the data directory and SQLite mirror health |
 | `comemory index-code` | Walk a repo, extract symbols, upsert into the code index |
-| `comemory symbol` | Semantic search over the code index for a symbol name |
-| `comemory memory-for` | List memories that reference a qualified symbol or file path |
+| `comemory ingest-code` | Read pre-embedded JSONL from stdin into the code index |
 | `comemory ast` | Run an ast-grep pattern against a single source file |
 | `comemory context` | Headline lookup: code symbol + memories matching a key |
-| `comemory walk` | Walk a graph edge from a memory id (e.g. `--edge supersedes`) |
-| `comemory conflicts` | List memories that conflict with the given memory id |
-| `comemory supersedes` | Record that one memory supersedes another in the kuzu graph |
 | `comemory prune` | Detect (and optionally soft-delete) stale memories |
+| `comemory rebuild` | Drop `comemory.db` and repopulate it from `memories/*.md` |
 | `comemory gc` | Purge old entries from `memories/.trash/` |
 | `comemory install-hooks` | Install git hooks that run `comemory index-code --incremental` on `post-commit`, `post-merge`, `post-checkout` |
 
