@@ -4,16 +4,23 @@ use rusqlite::{params, Connection};
 
 use crate::prelude::*;
 
+/// FTS5 hit for the memory table; lower `score` (BM25) = better match.
 pub struct MemoryFtsHit {
+    /// Identifier of the matched memory row.
     pub memory_id: String,
+    /// BM25 relevance score; lower is better.
     pub score: f32,
 }
 
+/// FTS5 hit for the code table; lower `score` (BM25) = better match.
 pub struct CodeFtsHit {
+    /// Identifier of the matched `code_symbols` row.
     pub symbol_id: i64,
+    /// BM25 relevance score; lower is better.
     pub score: f32,
 }
 
+/// Insert a row into the `memory_fts` virtual table indexing the memory body and tags.
 pub fn index_memory(conn: &Connection, memory_id: &str, body: &str, tags_csv: &str) -> Result<()> {
     conn.execute(
         "INSERT INTO memory_fts(memory_id, body, tags) VALUES(?1, ?2, ?3)",
@@ -22,6 +29,7 @@ pub fn index_memory(conn: &Connection, memory_id: &str, body: &str, tags_csv: &s
     Ok(())
 }
 
+/// Run a BM25 search over `memory_fts`, skipping soft-deleted memories.
 pub fn search_memory(conn: &Connection, query: &str, k: usize) -> Result<Vec<MemoryFtsHit>> {
     let mut stmt = conn.prepare(
         "SELECT memory_fts.memory_id, bm25(memory_fts) AS score \
@@ -42,6 +50,7 @@ pub fn search_memory(conn: &Connection, query: &str, k: usize) -> Result<Vec<Mem
     Ok(rows)
 }
 
+/// Insert a row into the `code_fts` virtual table for a code symbol.
 pub fn index_code(
     conn: &Connection,
     symbol_id: i64,
@@ -57,6 +66,7 @@ pub fn index_code(
     Ok(())
 }
 
+/// Run a BM25 search over `code_fts` and return the top-`k` symbol hits.
 pub fn search_code(conn: &Connection, query: &str, k: usize) -> Result<Vec<CodeFtsHit>> {
     let mut stmt = conn.prepare(
         "SELECT symbol_id, bm25(code_fts) AS score \
