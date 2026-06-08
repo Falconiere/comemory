@@ -1,5 +1,8 @@
 //! Test-binary shim for the store module. Submodules live in tests/store/.
 
+#[path = "common/vectors.rs"]
+mod vectors;
+
 #[path = "store/connection.rs"]
 mod connection;
 

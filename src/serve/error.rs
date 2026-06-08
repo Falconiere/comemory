@@ -90,6 +90,8 @@ impl From<Error> for ApiError {
             Error::Toml(t) => Self::graph_error(format!("toml: {t}")),
             Error::Lance(s) => Self::graph_error(format!("lance: {s}")),
             Error::Migration(s) => Self::graph_error(format!("migration: {s}")),
+            e @ Error::VecDimMismatch { .. } => Self::graph_error(format!("vector: {e}")),
+            Error::Config(s) => Self::graph_error(format!("config: {s}")),
             Error::Other(s) => Self::graph_error(s),
         }
     }

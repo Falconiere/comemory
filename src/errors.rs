@@ -22,6 +22,12 @@ pub enum Error {
     #[error("schema migration failed: {0}")]
     Migration(String),
 
+    #[error("vector dim mismatch: expected {expected}, got {got}")]
+    VecDimMismatch { expected: usize, got: usize },
+
+    #[error("config: {0}")]
+    Config(String),
+
     #[error("other: {0}")]
     Other(String),
 }
