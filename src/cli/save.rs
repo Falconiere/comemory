@@ -21,11 +21,9 @@ use serde::Serialize;
 use crate::cli::embedding_input;
 use crate::cli::resolve_data_dir;
 use crate::config::paths::Paths;
-use crate::graph::cross_link;
-use crate::graph::edges::{self, EdgeKey};
 use crate::memory::{Kind, MemoryStore};
 use crate::prelude::*;
-use crate::store::{connection, embed, fts, vector};
+use crate::store::{connection, embed, memory_row, vector};
 
 const EXAMPLES: &str = "\
 Examples:
@@ -162,6 +160,9 @@ fn read_optional_vector(args: &Args) -> Result<Option<Vec<f32>>> {
 /// references parsed from the body). The caller-owned connection is passed
 /// in so `run` can share the same handle used for the up-front
 /// `vector::dim_memory` guard.
+///
+/// The non-vector branch is delegated to [`memory_row::insert`] so save and
+/// `comemory rebuild` cannot drift on the row, tag, FTS, or edge SQL.
 fn write_sqlite_mirror(
     conn: &mut rusqlite::Connection,
     rec: &crate::memory::MemoryRecord,
@@ -169,106 +170,13 @@ fn write_sqlite_mirror(
     vector_opt: Option<&[f32]>,
 ) -> Result<()> {
     let tx = conn.transaction()?;
-
     let fm = &rec.frontmatter;
-    let created_iso = format_iso(fm.created)?;
-    let slug = rec.slug.as_str();
-    let md_path = rec.path.to_string_lossy().to_string();
-
-    let repo_opt: Option<&str> = if fm.repo.is_empty() {
-        None
-    } else {
-        Some(fm.repo.as_str())
-    };
-    let author_opt: Option<&str> = if fm.author.is_empty() {
-        None
-    } else {
-        Some(fm.author.as_str())
-    };
-
-    tx.execute(
-        "INSERT INTO memories(\
-             id, slug, kind, repo, author, quality, schema, \
-             content_hash, body, created_at, updated_at, md_path) \
-         VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
-        rusqlite::params![
-            &fm.id,
-            slug,
-            fm.kind.as_str(),
-            repo_opt,
-            author_opt,
-            fm.quality as i64,
-            fm.schema as i64,
-            &fm.content_hash,
-            &rec.body,
-            &created_iso,
-            &created_iso,
-            &md_path,
-        ],
-    )?;
-    for tag in tags {
-        tx.execute(
-            "INSERT INTO memory_tags(memory_id, tag) VALUES(?1, ?2)",
-            rusqlite::params![&fm.id, tag],
-        )?;
-    }
-    fts::index_memory(&tx, &fm.id, &rec.body, &tags.join(","))?;
-
+    let md_path = rec.path.to_string_lossy();
+    memory_row::insert(&tx, fm, &rec.body, rec.slug.as_str(), &md_path, tags)?;
     if let Some(v) = vector_opt {
         vector::insert_memory(&tx, &fm.id, v)?;
     }
-
-    insert_save_edges(&tx, fm, tags, &rec.body)?;
     tx.commit()?;
-    Ok(())
-}
-
-/// Insert the v0.2 graph edges that accompany a save: in_repo, authored_by,
-/// tagged, plus any references_file / references_symbol harvested from the
-/// body by the cross-link parser.
-fn insert_save_edges(
-    tx: &rusqlite::Connection,
-    fm: &crate::memory::Frontmatter,
-    tags: &[String],
-    body: &str,
-) -> Result<()> {
-    if !fm.repo.is_empty() {
-        edges::insert(
-            tx,
-            EdgeKey {
-                src_kind: "memory",
-                src_id: &fm.id,
-                dst_kind: "repo",
-                dst_id: &fm.repo,
-                rel: "in_repo",
-            },
-        )?;
-    }
-    if !fm.author.is_empty() {
-        edges::insert(
-            tx,
-            EdgeKey {
-                src_kind: "memory",
-                src_id: &fm.id,
-                dst_kind: "author",
-                dst_id: &fm.author,
-                rel: "authored_by",
-            },
-        )?;
-    }
-    for tag in tags {
-        edges::insert(
-            tx,
-            EdgeKey {
-                src_kind: "memory",
-                src_id: &fm.id,
-                dst_kind: "tag",
-                dst_id: tag,
-                rel: "tagged",
-            },
-        )?;
-    }
-    cross_link::extract_and_emit(tx, &fm.id, body)?;
     Ok(())
 }
 
@@ -276,11 +184,4 @@ fn read_stdin() -> Result<String> {
     let mut buf = String::new();
     std::io::stdin().read_to_string(&mut buf)?;
     Ok(buf)
-}
-
-/// Format an `OffsetDateTime` as RFC3339 / ISO-8601 for storage in the
-/// `memories.created_at` / `updated_at` columns.
-fn format_iso(t: time::OffsetDateTime) -> Result<String> {
-    t.format(&time::format_description::well_known::Iso8601::DEFAULT)
-        .map_err(|e| Error::Other(format!("iso8601 format: {e}")))
 }
