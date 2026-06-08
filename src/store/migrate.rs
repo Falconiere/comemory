@@ -13,16 +13,18 @@ use crate::prelude::*;
 
 /// Highest schema version known to this build. Bumped each time a new
 /// migration file is added under `src/store/sql/`.
-pub const CURRENT_VERSION: &str = "2";
+pub const CURRENT_VERSION: &str = "3";
 
 const M_BOOTSTRAP: &str = include_str!("./sql/0001_schema_meta.sql");
 const M_V2: &str = include_str!("./sql/0002_v2_tables.sql");
+const M_V3: &str = include_str!("./sql/0003_stats_tables.sql");
 
 /// Apply all pending migrations. Safe to re-run; each migration is
 /// only applied if its key is absent from `schema_meta`.
 pub fn run(conn: &mut Connection) -> Result<()> {
     apply(conn, "0001_schema_meta", M_BOOTSTRAP)?;
     apply(conn, "0002_v2_tables", M_V2)?;
+    apply(conn, "0003_stats_tables", M_V3)?;
     set_version(conn, CURRENT_VERSION)?;
     Ok(())
 }

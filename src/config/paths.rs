@@ -43,8 +43,14 @@ impl Paths {
         self.index_dir().join("fts.sqlite")
     }
 
+    /// Path to the unified SQLite database.
+    ///
+    /// Previously this returned `stats.db`; v0.2 consolidates all tables
+    /// into `comemory.db` (spec §4: one file). The method is kept so callers
+    /// need no churn — they still pass the path to [`StatsDb::open`] which
+    /// now delegates to [`crate::store::connection::open`].
     pub fn stats_db(&self) -> PathBuf {
-        self.data_dir.join("stats.db")
+        self.db_path()
     }
 
     /// Single-file SQLite mirror for v0.2 (`comemory.db`). Rooted directly at

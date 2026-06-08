@@ -1,3 +1,9 @@
+//! Tests for [`comemory::stats::feedback::Feedback`].
+//!
+//! v0.2: feedback rows land in `comemory.db` (via `StatsDb::open` which
+//! now delegates to `crate::store::connection::open`).
+
+use comemory::config::paths::Paths;
 use comemory::stats::feedback::Feedback;
 use comemory::stats::sqlite::StatsDb;
 
@@ -6,11 +12,12 @@ use super::common;
 #[test]
 fn record_used_increments_count() {
     let sb = common::runner::Sandbox::new();
-    let mut db = StatsDb::open(sb.data_dir().join("stats.db")).unwrap();
+    let paths = Paths::new(sb.data_dir());
+    let mut db = StatsDb::open(paths.stats_db()).expect("open");
     let fb = Feedback::new(&mut db);
-    fb.record_used("m1").unwrap();
-    fb.record_used("m1").unwrap();
-    let (used, irrelevant) = fb.counts("m1").unwrap();
+    fb.record_used("m1").expect("record_used 1");
+    fb.record_used("m1").expect("record_used 2");
+    let (used, irrelevant) = fb.counts("m1").expect("counts");
     assert_eq!(used, 2);
     assert_eq!(irrelevant, 0);
 }
@@ -18,10 +25,11 @@ fn record_used_increments_count() {
 #[test]
 fn record_irrelevant_increments_count() {
     let sb = common::runner::Sandbox::new();
-    let mut db = StatsDb::open(sb.data_dir().join("stats.db")).unwrap();
+    let paths = Paths::new(sb.data_dir());
+    let mut db = StatsDb::open(paths.stats_db()).expect("open");
     let fb = Feedback::new(&mut db);
-    fb.record_irrelevant("m2").unwrap();
-    let (used, irrelevant) = fb.counts("m2").unwrap();
+    fb.record_irrelevant("m2").expect("record_irrelevant");
+    let (used, irrelevant) = fb.counts("m2").expect("counts");
     assert_eq!(used, 0);
     assert_eq!(irrelevant, 1);
 }
@@ -33,7 +41,8 @@ fn counts_returns_error_on_schema_drift() {
     // previous implementation used `unwrap_or((0, 0))` which masked any
     // failure mode that wasn't `QueryReturnedNoRows`.
     let sb = common::runner::Sandbox::new();
-    let mut db = StatsDb::open(sb.data_dir().join("stats.db")).unwrap();
+    let paths = Paths::new(sb.data_dir());
+    let mut db = StatsDb::open(paths.stats_db()).expect("open");
     db.conn()
         .execute("DROP TABLE feedback", [])
         .expect("drop feedback table");
