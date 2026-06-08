@@ -4,30 +4,32 @@
 
 `comemory` is a Rust CLI that fuses engram-style developer memory, grepai-style
 semantic code search, and ast-grep AST patterns into a single binary, knit
-together by a two-layer property graph (memory + code). It is a **standalone
-agentic-RAG toolbox** invoked from the command line — not a Claude Code MCP
-plugin or in-process LLM. Everything runs locally: markdown is the source of
-truth, vectors live in LanceDB, structural links live in kuzu.
+together by a SQLite-backed store (memory + code rows + edges). It is a
+**standalone agentic-RAG toolbox** invoked from the command line — not a
+Claude Code MCP plugin or in-process LLM. Everything runs locally: markdown
+is the source of truth and one SQLite file (`comemory.db`) backs FTS5 +
+`sqlite-vec` + edges.
 
 ## Architecture
 
 - **Source of truth:** markdown files with YAML frontmatter at
   `~/.comemory/memories/{id}-{slug}.md` (override with `COMEMORY_DATA_DIR`).
-- **Vector indices:** `lancedb 0.29` embedded, two tables —
-  `memory_chunks` (memory bodies) and `code_chunks` (symbol snippets).
-- **Property graph:** `kuzu 0.7` with a memory layer (`Memory`, `Repo`,
-  `Author`, `Tag`) and a code layer (`File`, `Symbol`) plus cross-layer
-  edges (`ReferencesFile`, `ReferencesSymbol`, `RelatesTo`, `Supersedes`,
-  `ConflictsWith`).
-- **AST extraction:** `ast-grep-core 0.38` + `ast-grep-language 0.38` for
-  symbol enumeration and user-supplied `comemory ast` patterns.
-- **Embedders:** `fastembed 4` — `nomic-embed-text-v1.5-Q` for memories,
-  `jina-embeddings-v2-base-code-Q` for code (ONNX, local, no API calls).
-- **Stats / indexing markers:** `rusqlite 0.32` (bundled SQLite).
+- **Single SQLite file:** `~/.comemory/comemory.db` with `memories`,
+  `memory_fts` (FTS5), `memory_vec` (`sqlite-vec` `vec0`), `code_symbols`,
+  `code_fts`, `code_vec`, `edges`, `schema_meta`, plus stats / repo-marker
+  tables. `rusqlite 0.32` with `bundled` + `load_extension` features.
+- **Edges:** flat `(src_kind, src_id, edge_kind, dst_kind, dst_id)` rows in
+  the `edges` table replace the v0.1 kuzu graph. Recursive CTEs handle
+  multi-hop traversal.
+- **AST extraction:** `ast-grep-core 0.38` + `ast-grep-language 0.38` (rust,
+  typescript, javascript, python, go only).
+- **Vectors are BYO.** No in-process embedder. Callers pass vectors via
+  `--vector` (CSV) or `--vector-stdin` (JSON `{"embedding":[..]}`). A sample
+  Ollama wrapper ships in `scripts/comemory-embed.sh`.
 - **Output:** TTY via `owo-colors`, JSON via `serde_json`. Exit codes follow
   `sysexits.h`.
-- **No in-process LLM.** All ranking is deterministic (vector similarity,
-  hybrid + corrective fallback, graph walks).
+- **No in-process LLM.** All ranking is deterministic (RRF fusion of FTS5 +
+  `sqlite-vec`, corrective fallback, edge walks).
 
 ## Key Commands
 
@@ -81,15 +83,16 @@ enforced by `scripts/check-all.sh`. Every PR must satisfy all five.
 |--------|---------------|
 | `cli/` | clap subcommand entry points + the top-level dispatcher in `mod.rs` |
 | `memory/` | markdown I/O, `Frontmatter`, slug, id (8-hex SHA-256), atomic save / load / soft-delete / list |
-| `index/` | `Embedder` (fastembed wrapper), `MemoryIndex` + `CodeIndex` LanceDB tables, schema |
-| `graph/` | kuzu schema, `Graph` upserts, `query` (Cypher helpers), `cross_link` reference extraction |
-| `retrieval/` | adaptive `router`, `hybrid` search, `corrective` fallback, `rank` blending, `bundle` for `comemory context` |
-| `ast/` | `extractor` (symbol enumeration via tree-sitter through ast-grep), `pattern` (user-facing `comemory ast`), per-language wiring |
-| `stats/` | rusqlite stats store + feedback table |
+| `store/` | central SQLite layer — `connection` (pooled rusqlite + `sqlite-vec` loader), `schema`, `migrate` (versioned + idempotent), `vector` (`vec0` insert/KNN with dim guard), `fts` (FTS5 helpers), `embed` (`to_vec_blob`, dim helpers) |
+| `simhash.rs` | 64-bit SimHash + Hamming distance over tokenized memory bodies (siphasher-based) |
+| `graph/` | SQL-backed `edges` table upserts, recursive-CTE walks, `cross_link` reference extraction |
+| `retrieval/` | adaptive `router`, RRF-fused `hybrid` (FTS5 + `vec0`), `corrective` fallback, `rank` blending, `bundle` for `comemory context` |
+| `ast/` | `extractor` (symbol enumeration via tree-sitter through ast-grep — rust/ts/js/py/go only), `pattern` (user-facing `comemory ast`), per-language wiring |
+| `stats/` | usage / feedback / repo-marker tables (lives inside `comemory.db`) |
 | `config/` | layered config (defaults → file → env) and `Paths` (data-dir layout) |
 | `output/` | TTY (`owo-colors`) and JSON (`serde_json`) emitters, shared between subcommands |
 | `prune/` | orphan / low-value / stale-code detection plus soft-delete & gc |
-| `git_utils.rs` | repo + author auto-detection, git-hook installation helpers |
+| `git_utils.rs` | repo + author auto-detection, blob OID lookup, git-hook installation helpers |
 | `errors.rs` | `thiserror`-derived `Error` enum and `Result<T>` alias |
 | `prelude.rs` | crate-internal prelude (`Error`, `Result`, common imports) |
 | `lib.rs` / `main.rs` | library surface + binary entry that parses `Cli` and calls `cli::run` |
@@ -101,12 +104,16 @@ environment (`Config::with_env`, in `src/config/file.rs`).
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `COMEMORY_DATA_DIR` | Root data directory (memories + lancedb + kuzu + sqlite) | `~/.comemory` |
+| `COMEMORY_DATA_DIR` | Root data directory (`memories/` + `comemory.db`) | `~/.comemory` |
 | `COMEMORY_INDEXING_AUTO_REINDEX` | `lazy` \| `hook` \| `off` — controls automatic code-index refresh | `lazy` |
 | `COMEMORY_RETRIEVAL_TOP_K` | Number of results returned by the hybrid router | `12` |
 | `COMEMORY_RETRIEVAL_MEMORY_THRESHOLD` | Minimum cosine similarity for the memory table | `0.55` |
 | `COMEMORY_RETRIEVAL_CODE_THRESHOLD` | Minimum cosine similarity for the code table | `0.50` |
+| `COMEMORY_RETRIEVAL_RRF_K` | RRF fusion constant for hybrid scoring | `60.0` |
 | `COMEMORY_GIT_AUTO_SYNC` | `true`/`1` to enable best-effort git commit + push after a save | `false` |
+| `COMEMORY_VECTOR_DIM` | Locked-in dimension for memory vectors (set on first save, enforced via `VecDimMismatch`) | `1024` |
+| `COMEMORY_CODE_VECTOR_DIM` | Locked-in dimension for code-symbol vectors | `768` |
+| `COMEMORY_EMBED_HINT` | Free-form identifier of the embedder you used (e.g. `ollama:nomic-embed-text`). Surfaced by `comemory doctor`; never consumed as a switch. | unset |
 
 CLI flags `--data-dir` and `--json` are global and can appear before or
 after the subcommand.
@@ -138,34 +145,37 @@ relations:
 Markdown body lives here.
 ```
 
-## Save Flow (spec §8, current implementation)
+## Save Flow (BYO-vector, current implementation)
 
 `comemory save` runs:
 
 1. Parse args, resolve repo/author defaults, build `Frontmatter` with
    `schema: 1` and `content_hash = sha256(body.trim_end())`.
-2. Atomic stage: write `memories/.{id}.tmp`, then `fs::rename` to
-   `memories/{id}-{slug}.md`. On any failure between stage and rename, the
-   tmp file is removed.
-3. Best-effort graph upsert (`src/cli/save.rs::upsert_graph`):
-   - `Graph::upsert_memory` — `Memory` node + `InRepo`, `AuthoredBy`,
-     `Tagged` edges.
+2. If `--vector` (CSV) or `--vector-stdin` (JSON `{"embedding":[..]}`) is
+   set, parse it into a `Vec<f32>` and run the `store::embed::dim_guard`
+   against `schema_meta` so a mismatched embedder fails fast with
+   `Error::VecDimMismatch`. With neither flag, the save is lexical-only —
+   no `memory_vec` row is written.
+3. Atomic stage: write `memories/.{id}.tmp`, then `fs::rename` to
+   `memories/{id}-{slug}.md`. On failure between stage and rename, the tmp
+   file is removed.
+4. Single `store` transaction:
+   - upsert `memories` row (frontmatter + body)
+   - upsert `memory_fts` row (FTS5)
+   - upsert `memory_vec` row (`vec0`) when a vector was supplied
    - `cross_link::extract_refs` walks the body for backtick-fenced
-     `<repo>:<path>` / `<repo>:<path>:<symbol>` mentions and emits
-     `ReferencesFile` / `ReferencesSymbol` edges (silently no-op when the
-     File/Symbol nodes do not yet exist — `comemory index-code` fills them in
-     later).
-   Graph failures are logged via `tracing::warn!` and swallowed; markdown
-   remains the source of truth.
+     `<repo>:<path>` / `<repo>:<path>:<symbol>` mentions and writes
+     `ReferencesFile` / `ReferencesSymbol` rows into `edges`. Missing
+     `code_symbols` rows are tolerated — `comemory index-code` fills them
+     in later.
+5. Best-effort git auto-sync via `git_utils`, only when
+   `COMEMORY_GIT_AUTO_SYNC` is enabled.
 
-**v1.x gaps** (tracked in `README.md` "Known v1.1 gaps"):
-
-- The memory body is **not yet** embedded into `lancedb.memory_chunks` from
-  the save path itself; rebuild via `comemory index-code` or a future
-  dedicated `comemory index` command.
-- `RelatesTo` neighbor discovery (spec §8 step 6) is deferred.
-- Git auto-sync from `git_utils` runs only when `COMEMORY_GIT_AUTO_SYNC` is
-  enabled.
+If the SQLite transaction fails, the staged markdown file is removed and
+the original error is surfaced. Markdown remains the source of truth, and
+`comemory rebuild` can always reconstruct `comemory.db` from
+`memories/*.md`. See the README "BYO-Vector workflow" section and
+`scripts/comemory-embed.sh` for the recommended caller pattern.
 
 ## Testing
 
