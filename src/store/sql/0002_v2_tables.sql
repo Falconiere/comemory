@@ -120,10 +120,17 @@ CREATE TABLE search_stats (
     ran_at      TEXT NOT NULL
 );
 
+-- Per-memory feedback counters consumed by `comemory feedback` and
+-- `prune::low_value::detect`. Schema matches the live `Feedback` API in
+-- `src/stats/feedback.rs` (UPSERT on memory_id, increment counters).
+-- No FK to memories(id) — callers may record feedback for ids that do not
+-- yet (or no longer) exist as rows (e.g. ids cited in a retrieval query
+-- log but never persisted as memories).
 CREATE TABLE feedback (
-    memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
-    delta     INTEGER NOT NULL,
-    given_at  TEXT NOT NULL
+    memory_id        TEXT PRIMARY KEY,
+    used_count       INTEGER NOT NULL DEFAULT 0,
+    irrelevant_count INTEGER NOT NULL DEFAULT 0,
+    last_used        TEXT
 );
 
 -- ─── schema metadata seeds ───────────────────────────────────────────────

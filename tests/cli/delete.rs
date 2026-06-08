@@ -170,7 +170,10 @@ fn deleted_memory_excluded_from_search() {
         .success();
     let out_before = String::from_utf8(search_before.get_output().stdout.clone()).expect("utf8");
     let v: serde_json::Value = serde_json::from_str(out_before.trim()).expect("json");
-    let hits_before = v.as_array().expect("array");
+    let hits_before = v
+        .get("hits")
+        .and_then(serde_json::Value::as_array)
+        .expect("hits array");
     assert!(
         hits_before
             .iter()
@@ -188,7 +191,10 @@ fn deleted_memory_excluded_from_search() {
         .success();
     let out_after = String::from_utf8(search_after.get_output().stdout.clone()).expect("utf8");
     let v2: serde_json::Value = serde_json::from_str(out_after.trim()).expect("json");
-    let hits_after = v2.as_array().expect("array");
+    let hits_after = v2
+        .get("hits")
+        .and_then(serde_json::Value::as_array)
+        .expect("hits array");
     assert!(
         !hits_after
             .iter()

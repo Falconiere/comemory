@@ -1,6 +1,6 @@
 [package]
 name = "comemory"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Agentic dev memory + code-aware semantic search via a two-layer property graph."
 license = "MIT"
@@ -65,6 +65,20 @@ version = "0.38"
 # crate still compiles the full parser table.
 [dependencies.ast-grep-language]
 version = "0.38"
+default-features = false
+# `builtin-parser` is the umbrella feature that wires each per-parser flag
+# into the actual `language_*()` dispatch (see CLAUDE.md note on
+# `into_lang!` / `into_napi_lang!`). Without it every `language_*` call stubs
+# to `unimplemented!()`. The per-parser features still narrow which
+# tree-sitter parsers get linked: only rust/typescript/javascript/python/go.
+features = [
+  "builtin-parser",
+  "tree-sitter-rust",
+  "tree-sitter-typescript",
+  "tree-sitter-javascript",
+  "tree-sitter-python",
+  "tree-sitter-go",
+]
 
 [build-dependencies]
 cc = "1"

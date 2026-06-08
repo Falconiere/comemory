@@ -140,18 +140,6 @@ mirroring `src/`), the module map, the frontmatter schema, and the
 The save and retrieval suites cover the embed-on-save path and the RRF-fused
 dense+BM25 search introduced in v1.1.
 
-## Known v1.1 gaps
-
-`comemory` v1.0 ships the full retrieval pipeline, kuzu graph, and code indexer.
-The following items are intentionally deferred to v1.1:
-
-- `stale_code::detect` is a stub that returns an empty list. v1.1 will walk
-  `references.files` for each memory against the repo's tracked files and
-  flag mismatches as stale.
-- LLM-driven supersedes / conflicts detection is out of scope. The current
-  implementation only records explicit edges via the `supersedes` and graph
-  commands.
-
 ## License
 
 MIT

@@ -21,8 +21,13 @@ pub struct StatsDb {
 
 impl StatsDb {
     /// Open (or create) `comemory.db` at `path`, running all pending
-    /// migrations so the stats tables are guaranteed to exist.
+    /// migrations so the stats tables are guaranteed to exist. Creates the
+    /// parent directory on demand so callers do not need to invoke
+    /// [`crate::config::paths::Paths::ensure_dirs`] first.
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self> {
+        if let Some(parent) = path.as_ref().parent() {
+            std::fs::create_dir_all(parent)?;
+        }
         let conn = connection::open(path)?;
         Ok(Self { conn })
     }

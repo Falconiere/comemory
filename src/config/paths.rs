@@ -30,14 +30,6 @@ impl Paths {
         self.data_dir.join("index")
     }
 
-    pub fn vectors_dir(&self) -> PathBuf {
-        self.index_dir().join("vectors.lance")
-    }
-
-    pub fn graph_dir(&self) -> PathBuf {
-        self.index_dir().join("graph.kuzu")
-    }
-
     /// Path to the SQLite FTS5 BM25 index used for lexical memory search.
     pub fn fts_db(&self) -> PathBuf {
         self.index_dir().join("fts.sqlite")
