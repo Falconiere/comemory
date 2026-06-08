@@ -16,8 +16,8 @@ use std::path::PathBuf;
 use clap::Args as ClapArgs;
 use serde::Serialize;
 
-use crate::cli::resolve_data_dir;
-use crate::config::{paths::Paths, Config};
+use crate::cli::{load_config, resolve_data_dir};
+use crate::config::paths::Paths;
 use crate::output::json;
 use crate::prelude::*;
 use crate::store::{connection, migrate};
@@ -78,9 +78,7 @@ pub async fn run(_args: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Res
     let sqlite_vec_loaded = conn
         .query_row("SELECT vec_version()", [], |r| r.get::<_, String>(0))
         .is_ok();
-    let cfg = Config::defaults()
-        .with_file(paths.config_file().as_path())?
-        .with_env()?;
+    let cfg = load_config(&paths)?;
     let report = Report {
         data_dir: paths.data_dir().to_string_lossy().into_owned(),
         db_writable: writable,

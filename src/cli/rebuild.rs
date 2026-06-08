@@ -140,13 +140,36 @@ fn build_new_db(old_db: &Path, tmp_path: &Path, paths: &Paths) -> Result<()> {
 /// already-open `conn` (which points at the tmp path). Uses INSERT-SELECT so
 /// no intermediate buffers are needed; runs outside a transaction because
 /// vec0 virtual tables cannot participate in user transactions.
+///
+/// The ATTACH path is bound via a parameter rather than interpolated into the
+/// SQL so a data dir whose path contains a single quote (or other SQL
+/// metacharacter) cannot break the statement.
+///
+/// Each source table is only copied if it actually exists on the attached
+/// database: a v0.1 or otherwise legacy `comemory.db` may not have any of the
+/// v2 code-index tables, in which case the rebuild should still succeed
+/// rather than failing with "no such table".
 fn copy_code_tables_from_old(conn: &mut rusqlite::Connection, old_db: &Path) -> Result<()> {
-    let old_db_str = old_db.to_string_lossy();
-    conn.execute_batch(&format!("ATTACH DATABASE '{old_db_str}' AS old;"))?;
+    conn.execute(
+        "ATTACH DATABASE ? AS old",
+        rusqlite::params![old_db.to_string_lossy().as_ref()],
+    )?;
+    let copy_result = copy_code_tables_inner(conn);
+    // Always DETACH so the connection is reusable even if the copy failed.
+    let _ = conn.execute_batch("DETACH DATABASE old;");
+    copy_result
+}
+
+/// Inner copy loop separated so the outer wrapper can guarantee `DETACH`
+/// runs even on error.
+fn copy_code_tables_inner(conn: &rusqlite::Connection) -> Result<()> {
     // Copy regular tables first, then the virtual tables (FTS5 + vec0).
     // code_symbols must come before code_vec/code_fts because the latter
     // reference code_symbols.id in their data streams.
     for table in ["code_symbols", "indexed_files"] {
+        if !old_table_exists(conn, table)? {
+            continue;
+        }
         conn.execute_batch(&format!(
             "INSERT OR IGNORE INTO main.{table} SELECT * FROM old.{table};"
         ))?;
@@ -155,14 +178,28 @@ fn copy_code_tables_from_old(conn: &mut rusqlite::Connection, old_db: &Path) -> 
     // from an attached DB in all sqlite-vec versions; copy each row
     // explicitly via named columns for safety. For code_fts we insert via
     // the FTS5 content table shape; vec0 rows are blobs tied to symbol_id.
-    conn.execute_batch(
-        "INSERT OR IGNORE INTO main.code_fts(symbol_id, symbol, snippet, path_tokens) \
-         SELECT symbol_id, symbol, snippet, path_tokens FROM old.code_fts;",
-    )?;
-    conn.execute_batch(
-        "INSERT OR IGNORE INTO main.code_vec(symbol_id, embedding) \
-         SELECT symbol_id, embedding FROM old.code_vec;",
-    )?;
-    conn.execute_batch("DETACH DATABASE old;")?;
+    if old_table_exists(conn, "code_fts")? {
+        conn.execute_batch(
+            "INSERT OR IGNORE INTO main.code_fts(symbol_id, symbol, snippet, path_tokens) \
+             SELECT symbol_id, symbol, snippet, path_tokens FROM old.code_fts;",
+        )?;
+    }
+    if old_table_exists(conn, "code_vec")? {
+        conn.execute_batch(
+            "INSERT OR IGNORE INTO main.code_vec(symbol_id, embedding) \
+             SELECT symbol_id, embedding FROM old.code_vec;",
+        )?;
+    }
     Ok(())
+}
+
+/// True when `name` exists as a table (regular or virtual) on the attached
+/// `old` database. Lets the copy loop skip tables that predate v0.2.
+fn old_table_exists(conn: &rusqlite::Connection, name: &str) -> Result<bool> {
+    let n: i64 = conn.query_row(
+        "SELECT count(*) FROM old.sqlite_master WHERE type = 'table' AND name = ?1",
+        rusqlite::params![name],
+        |r| r.get(0),
+    )?;
+    Ok(n > 0)
 }

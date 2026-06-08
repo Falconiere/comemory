@@ -4,6 +4,7 @@
 
 use clap::{Parser, Subcommand};
 
+use crate::config::paths::Paths;
 use crate::config::Config;
 use crate::prelude::*;
 
@@ -128,4 +129,14 @@ pub(crate) fn override_top_k(mut cfg: Config, k: Option<usize>) -> Config {
         cfg.retrieval.top_k = k;
     }
     cfg
+}
+
+/// Load the layered config: defaults → optional `config.toml` → env. Every
+/// CLI entry point goes through this helper so the file layer cannot silently
+/// drop out for one subcommand (which would cause `comemory doctor` and
+/// `comemory search` to disagree on the effective config).
+pub(crate) fn load_config(paths: &Paths) -> Result<Config> {
+    Config::defaults()
+        .with_file(paths.config_file().as_path())?
+        .with_env()
 }
