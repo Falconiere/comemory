@@ -86,6 +86,17 @@ pub async fn run(_args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<
         let key = (row.repo.clone(), row.path.clone());
         if !seen_files.contains_key(&key) {
             code_row::purge_file_symbols(&tx, &row.repo, &row.path)?;
+        } else if let Some(prev_oid) = seen_files.get(&key) {
+            // Reject mixed blob_oid for the same (repo, path) — only the last
+            // would otherwise survive in `indexed_files` and a follow-up
+            // `index-code` would believe a stale oid is current.
+            if prev_oid != &row.blob_oid {
+                return Err(Error::Config(format!(
+                    "ingest-code: conflicting blob_oid for {}:{} ({} vs {}); \
+                     all symbols of one file must share the same blob_oid",
+                    row.repo, row.path, prev_oid, row.blob_oid
+                )));
+            }
         }
         seen_files.insert(key, row.blob_oid.clone());
         insert_row(&tx, &row)?;

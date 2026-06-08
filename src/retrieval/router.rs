@@ -5,8 +5,10 @@
 //! - vec = Some, query non-empty → **hybrid**: run both ANN and FTS5 BM25
 //!   independently, fuse via RRF, truncate to `top_k`. This is the correct
 //!   path when the caller supplies both a semantic vector *and* a text query.
-//! - vec = Some, query empty → **pure vector**: ANN only; corrective lexical
-//!   top-up when ANN returns fewer than `top_k` rows.
+//! - vec = Some, query empty → **pure vector**: ANN only. A lexical top-up
+//!   is impossible here because FTS5 returns nothing for an empty query;
+//!   callers that want the dense + sparse fusion must pass both `vec` and
+//!   a non-empty `query` so the hybrid arm is taken.
 //! - vec = None → **pure lexical**: FTS5 BM25 only.
 
 use rusqlite::Connection;
@@ -43,9 +45,10 @@ pub enum Source {
 ///
 /// When both `vec` and a non-empty `query` are provided, both ANN and
 /// FTS5 BM25 run independently and their results are fused via RRF.
-/// When only `vec` is provided (empty `query`), ANN runs with a
-/// corrective lexical top-up when fewer than `top_k` rows survive.
-/// When only `query` is provided (no `vec`), only the lexical path runs.
+/// When only `vec` is provided (empty `query`), only the ANN path runs:
+/// FTS5 returns nothing for an empty query, so no lexical top-up is
+/// possible. When only `query` is provided (no `vec`), only the lexical
+/// path runs.
 pub fn route(
     cfg: &Config,
     conn: &Connection,
@@ -57,7 +60,7 @@ pub fn route(
 
     match vec {
         Some(v) if !query.is_empty() => route_hybrid(cfg, conn, query, v, k, repo),
-        Some(v) => route_vector_with_corrective(conn, query, v, k, repo),
+        Some(v) => route_vector_only(conn, v, k, repo),
         None => route_lexical(conn, query, k, repo),
     }
 }
@@ -74,20 +77,8 @@ fn route_hybrid(
     let ann = vector::knn_memory(conn, vec, k, repo)?;
     let lex = fts::search_memory(conn, query, k, repo)?;
 
-    let ann_ranked: Vec<RankedHit> = ann
-        .into_iter()
-        .map(|h| RankedHit {
-            memory_id: h.memory_id,
-            score: 1.0 - h.distance,
-        })
-        .collect();
-    let lex_ranked: Vec<RankedHit> = lex
-        .into_iter()
-        .map(|h| RankedHit {
-            memory_id: h.memory_id,
-            score: -h.score,
-        })
-        .collect();
+    let ann_ranked: Vec<RankedHit> = ann.into_iter().map(ann_to_ranked).collect();
+    let lex_ranked: Vec<RankedHit> = lex.into_iter().map(lex_to_ranked).collect();
 
     let fused = fuse::rrf_k(&ann_ranked, &lex_ranked, k, cfg.retrieval.rrf_k);
     Ok(fused
@@ -100,47 +91,19 @@ fn route_hybrid(
         .collect())
 }
 
-/// Pure-vector path with corrective lexical top-up when ANN is short.
-fn route_vector_with_corrective(
+/// Pure-vector path. The lexical top-up that previously lived here was
+/// dead: this arm is only reached when `query` is empty (the dispatcher
+/// routes `vec + non-empty query` to [`route_hybrid`]), and FTS5 BM25
+/// returns no rows for an empty query. Callers that want sparse+dense
+/// fusion must pass a non-empty `query` so the hybrid arm fires.
+fn route_vector_only(
     conn: &Connection,
-    query: &str,
     vec: &[f32],
     k: usize,
     repo: Option<&str>,
 ) -> Result<Vec<RoutedHit>> {
     let ann = vector::knn_memory(conn, vec, k, repo)?;
-    if ann.len() >= k {
-        return Ok(ann
-            .into_iter()
-            .map(|h| RoutedHit {
-                memory_id: h.memory_id,
-                score: 1.0 - h.distance,
-                source: Source::Vector,
-            })
-            .collect());
-    }
-    let mut routed: Vec<RoutedHit> = ann
-        .into_iter()
-        .map(|h| RoutedHit {
-            memory_id: h.memory_id,
-            score: 1.0 - h.distance,
-            source: Source::Vector,
-        })
-        .collect();
-    let need = k.saturating_sub(routed.len());
-    if need > 0 && !query.is_empty() {
-        let lex = fts::search_memory(conn, query, need, repo)?;
-        for hit in lex {
-            if !routed.iter().any(|h| h.memory_id == hit.memory_id) {
-                routed.push(RoutedHit {
-                    memory_id: hit.memory_id,
-                    score: -hit.score,
-                    source: Source::Lexical,
-                });
-            }
-        }
-    }
-    Ok(routed)
+    Ok(ann.into_iter().map(ann_to_routed).collect())
 }
 
 /// Pure-lexical path via FTS5 BM25.
@@ -151,12 +114,43 @@ fn route_lexical(
     repo: Option<&str>,
 ) -> Result<Vec<RoutedHit>> {
     let lex = fts::search_memory(conn, query, k, repo)?;
-    Ok(lex
-        .into_iter()
-        .map(|h| RoutedHit {
-            memory_id: h.memory_id,
-            score: -h.score,
-            source: Source::Lexical,
-        })
-        .collect())
+    Ok(lex.into_iter().map(lex_to_routed).collect())
+}
+
+/// Map a `vector::MemoryHit` to a [`RankedHit`] for RRF fusion. Vector
+/// distance is converted to a higher-is-better score via `1.0 - distance`.
+fn ann_to_ranked(h: vector::MemoryHit) -> RankedHit {
+    RankedHit {
+        memory_id: h.memory_id,
+        score: 1.0 - h.distance,
+    }
+}
+
+/// Map an `fts::MemoryFtsHit` to a [`RankedHit`] for RRF fusion. BM25 is
+/// lower-is-better, so we negate to get a higher-is-better score.
+fn lex_to_ranked(h: fts::MemoryFtsHit) -> RankedHit {
+    RankedHit {
+        memory_id: h.memory_id,
+        score: -h.score,
+    }
+}
+
+/// Map a `vector::MemoryHit` directly to a [`RoutedHit`] tagged
+/// `Source::Vector`. Used by the pure-vector path.
+fn ann_to_routed(h: vector::MemoryHit) -> RoutedHit {
+    RoutedHit {
+        memory_id: h.memory_id,
+        score: 1.0 - h.distance,
+        source: Source::Vector,
+    }
+}
+
+/// Map an `fts::MemoryFtsHit` directly to a [`RoutedHit`] tagged
+/// `Source::Lexical`. Used by the pure-lexical path.
+fn lex_to_routed(h: fts::MemoryFtsHit) -> RoutedHit {
+    RoutedHit {
+        memory_id: h.memory_id,
+        score: -h.score,
+        source: Source::Lexical,
+    }
 }

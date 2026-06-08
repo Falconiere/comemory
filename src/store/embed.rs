@@ -33,13 +33,20 @@ pub fn from_vec_blob(blob: &[u8], expected_dim: usize) -> Result<Vec<f32>> {
     Ok(out)
 }
 
-/// Validates that `vector.len() == expected_dim`. Used at API boundaries.
+/// Validates that `vector.len() == expected_dim` and that every entry is
+/// finite (rejects NaN and ±inf). Used at API boundaries so the vec0
+/// vtab and KNN/cosine distance paths never see undefined inputs.
 pub fn guard_dim(vector: &[f32], expected_dim: usize) -> Result<()> {
     if vector.len() != expected_dim {
         return Err(Error::VecDimMismatch {
             expected: expected_dim,
             got: vector.len(),
         });
+    }
+    if let Some((i, bad)) = vector.iter().enumerate().find(|(_, v)| !v.is_finite()) {
+        return Err(Error::Config(format!(
+            "vector entry {i} is non-finite ({bad}); NaN and ±inf are rejected"
+        )));
     }
     Ok(())
 }

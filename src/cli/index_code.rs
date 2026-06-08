@@ -102,7 +102,15 @@ pub async fn run(args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<(
         for s in &symbols {
             handle_symbol(&tx, args.extract, &args.repo, &rel, &oid, lang, s)?;
         }
-        code_row::upsert_indexed_file(&tx, &args.repo, &rel, &oid)?;
+        // Only stamp the `indexed_files` cursor when we actually wrote
+        // `code_symbols` rows. In `--extract` mode we emit JSONL to stdout
+        // without touching the symbol tables, so marking the file as indexed
+        // here would cause a subsequent (non-extract) `index-code` run to
+        // skip the file via `oid_is_indexed`, leaving `code_symbols`/
+        // `code_fts` permanently empty for that blob.
+        if !args.extract {
+            code_row::upsert_indexed_file(&tx, &args.repo, &rel, &oid)?;
+        }
     }
     tx.commit()?;
     Ok(())
