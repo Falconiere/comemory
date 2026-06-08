@@ -2,14 +2,23 @@
 //!
 //! `assemble` joins the SQLite `memories` table with `code_symbols`
 //! through the `edges` graph table so a single bundle contains the
-//! matched memories, the code symbols they reference, and a flat list
-//! of relation triples.
+//! matched memories, the code symbols they reference via any of the four
+//! context rels (`references_file`, `references_symbol`, `relates_to`,
+//! `supersedes`) walked to depth ≤ 2, and a flat list of relation triples.
 
 use rusqlite::Connection;
 use serde::Serialize;
 
-use crate::graph::edges;
 use crate::prelude::*;
+
+/// One row returned by [`walk_context_edges`]: a directed edge from the graph.
+struct ContextEdge {
+    src_kind: String,
+    src_id: String,
+    dst_kind: String,
+    dst_id: String,
+    rel: String,
+}
 
 /// JSON-serializable retrieval bundle returned to `comemory context`.
 #[derive(Serialize)]
@@ -61,9 +70,10 @@ pub struct RelationRow {
     pub to: String,
 }
 
-/// Assemble a [`Bundle`] for `query`, expanding each memory id by one
-/// hop along `references_symbol` edges so the JSON ships the referenced
-/// code snippets alongside the matched memories.
+/// Assemble a [`Bundle`] for `query`, expanding each memory id by walking
+/// `references_file`, `references_symbol`, `relates_to`, and `supersedes`
+/// edges up to depth 2 via a recursive CTE. Code snippets are pulled for
+/// every `references_symbol` destination that resolves in `code_symbols`.
 pub fn assemble<'a>(
     conn: &Connection,
     query: &'a str,
@@ -72,6 +82,7 @@ pub fn assemble<'a>(
     let mut memories = Vec::new();
     let mut relations = Vec::new();
     let mut code_refs = Vec::new();
+
     for id in memory_ids {
         let (kind, body): (String, String) =
             conn.query_row("SELECT kind, body FROM memories WHERE id = ?1", [id], |r| {
@@ -84,19 +95,23 @@ pub fn assemble<'a>(
             score: 0.0,
         });
 
-        for (dst_kind, dst_id) in edges::outgoing(conn, "memory", id, "references_symbol")? {
+        // Walk all four context rels at depth ≤ 2 from this memory node.
+        let walked = walk_context_edges(conn, id, 2)?;
+        for e in walked {
             relations.push(RelationRow {
-                from: format!("memory:{id}"),
-                rel: "references_symbol".into(),
-                to: format!("{dst_kind}:{dst_id}"),
+                from: format!("{}:{}", e.src_kind, e.src_id),
+                rel: e.rel.clone(),
+                to: format!("{}:{}", e.dst_kind, e.dst_id),
             });
-            if let Some((repo, path, symbol, snippet)) = code_ref_lookup(conn, &dst_id)? {
-                code_refs.push(CodeRow {
-                    repo,
-                    path,
-                    symbol,
-                    snippet,
-                });
+            if e.rel == "references_symbol" {
+                if let Some((repo, path, symbol, snippet)) = code_ref_lookup(conn, &e.dst_id)? {
+                    code_refs.push(CodeRow {
+                        repo,
+                        path,
+                        symbol,
+                        snippet,
+                    });
+                }
             }
         }
     }
@@ -106,6 +121,43 @@ pub fn assemble<'a>(
         code_refs,
         relations,
     })
+}
+
+/// Walk `references_file`, `references_symbol`, `relates_to`, and `supersedes`
+/// edges starting from `(memory, start_id)` up to `max_depth` hops using a
+/// recursive CTE. Returns one [`ContextEdge`] per traversed edge.
+fn walk_context_edges(
+    conn: &Connection,
+    start_id: &str,
+    max_depth: u32,
+) -> Result<Vec<ContextEdge>> {
+    let mut stmt = conn.prepare(
+        "WITH RECURSIVE walk(src_kind, src_id, dst_kind, dst_id, rel, depth) AS (
+             SELECT e.src_kind, e.src_id, e.dst_kind, e.dst_id, e.rel, 1
+               FROM edges e
+              WHERE e.src_kind = 'memory' AND e.src_id = ?1
+                AND e.rel IN ('references_file','references_symbol','relates_to','supersedes')
+             UNION
+             SELECT e.src_kind, e.src_id, e.dst_kind, e.dst_id, e.rel, w.depth + 1
+               FROM edges e
+               JOIN walk w ON e.src_kind = w.dst_kind AND e.src_id = w.dst_id
+              WHERE e.rel IN ('references_file','references_symbol','relates_to','supersedes')
+                AND w.depth < ?2
+         )
+         SELECT src_kind, src_id, dst_kind, dst_id, rel FROM walk",
+    )?;
+    let rows = stmt
+        .query_map(rusqlite::params![start_id, max_depth as i64], |r| {
+            Ok(ContextEdge {
+                src_kind: r.get(0)?,
+                src_id: r.get(1)?,
+                dst_kind: r.get(2)?,
+                dst_id: r.get(3)?,
+                rel: r.get(4)?,
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(rows)
 }
 
 /// Look up the `code_symbols` row addressed by a `<repo>:<path>:<symbol>`
