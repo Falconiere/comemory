@@ -307,33 +307,6 @@ fn save_rejects_unknown_kind() {
 }
 
 #[test]
-fn save_wires_memory_into_graph() {
-    // After `save`, the kuzu graph must contain a Memory node with an InRepo
-    // edge to the supplied repo, proving the save flow now drives
-    // `Graph::upsert_memory` (not just markdown I/O).
-    use comemory::config::paths::Paths;
-    use comemory::graph::Graph;
-
-    let home = TempDir::new().expect("tempdir");
-    let body = "decision body mentioning myrepo:src/db.rs:run_migration in text";
-    let save = bin(&home)
-        .args(["save", body, "--kind", "decision", "--repo", "myrepo"])
-        .assert()
-        .success();
-    let id = extract_saved_id(
-        &String::from_utf8(save.get_output().stdout.clone()).expect("utf8 stdout"),
-    );
-
-    let paths = Paths::new(home.path().join(".comemory"));
-    let g = Graph::open(paths.graph_dir()).expect("graph open");
-    let neighbors = g.neighbors_by_repo("myrepo").expect("neighbors_by_repo");
-    assert!(
-        neighbors.contains(&id),
-        "neighbors_by_repo should include saved id {id}, got {neighbors:?}"
-    );
-}
-
-#[test]
 #[ignore = "downloads ~130 MB nomic-text model on first run"]
 fn search_json_emits_route_field() {
     // After wiring `retrieval::classify` into the CLI, `comemory search --json`
@@ -563,23 +536,8 @@ fn index_code_and_context_run() {
 #[path = "cli/graph_serve.rs"]
 mod graph_serve;
 
-#[path = "common/mod.rs"]
-mod common;
+#[path = "common/vectors.rs"]
+mod vectors;
 
-#[path = "cli/save_embed.rs"]
-mod save_embed;
-
-#[path = "cli/save_no_index.rs"]
-mod save_no_index;
-
-#[path = "cli/save_graph_failure.rs"]
-mod save_graph_failure;
-
-#[path = "cli/index_rebuild.rs"]
-mod index_rebuild;
-
-#[path = "cli/search_fused.rs"]
-mod search_fused;
-
-#[path = "cli/context_fused.rs"]
-mod context_fused;
+#[path = "cli/save.rs"]
+mod save;
