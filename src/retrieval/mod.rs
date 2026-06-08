@@ -1,16 +1,10 @@
-//! Deterministic retrieval pipeline over the memory layer: query routing,
-//! hybrid (vector + future FTS) search, ranking helpers, and the corrective
-//! fallback signal. Each submodule owns one concern; this `mod.rs` only
-//! re-exports the shapes callers (CLI, MCP) need at the boundary.
+//! Retrieval pipeline over the v0.2 SQLite + sqlite-vec store.
+//!
+//! [`router`] picks between ANN and FTS5 (or runs both with a corrective
+//! top-up). [`fuse`] is the Reciprocal Rank Fusion helper used when a
+//! caller wants to merge two ranked id lists. [`bundle`] shapes the JSON
+//! emitted by `comemory context`.
 
 pub mod bundle;
-pub mod corrective;
-pub mod fts;
 pub mod fuse;
-pub mod hybrid;
-pub mod rank;
 pub mod router;
-
-pub use bundle::{Bundle, CitedHit};
-pub use fuse::search_memory_fused;
-pub use router::{classify, Route};

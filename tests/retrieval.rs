@@ -1,26 +1,8 @@
-#[path = "common/mod.rs"]
-mod common;
-
 #[path = "retrieval/router.rs"]
 mod router;
 
-#[path = "retrieval/rank.rs"]
-mod rank;
-
 #[path = "retrieval/bundle.rs"]
 mod bundle;
-
-#[path = "retrieval/hybrid.rs"]
-mod hybrid;
-
-#[path = "retrieval/corrective.rs"]
-mod corrective;
-
-#[path = "retrieval/dual.rs"]
-mod dual;
-
-#[path = "retrieval/fts.rs"]
-mod fts;
 
 #[path = "retrieval/fuse.rs"]
 mod fuse;

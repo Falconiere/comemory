@@ -1,30 +1,19 @@
-//! `comemory symbol` — semantic search over the code index. Embeds the query
-//! name with jina-code, queries the `code_chunks` table for the top hits,
-//! and renders qualified name + similarity score + a short snippet preview.
+//! `comemory symbol` — semantic search over the code index.
+//!
+//! Pending Task 13 of the v0.2 refactor: this stub keeps the CLI surface
+//! stable while the code-layer search is migrated off LanceDB and onto
+//! SQLite + sqlite-vec / SimHash.
 
-use std::io::Write as _;
 use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
-use serde::Serialize;
 
-use crate::cli::resolve_data_dir;
-use crate::config::paths::Paths;
-use crate::index::{CodeIndex, Embedder};
-use crate::output::json;
 use crate::prelude::*;
-use crate::retrieval::hybrid::search_code;
 
 const EXAMPLES: &str = "\
 Examples:
   # Exact function-name hit
-  comemory symbol run_migration
-
-  # Natural-language descriptor, top 10 JSON
-  comemory symbol \"parse frontmatter yaml\" --limit 10 --json
-
-  # Broader semantic match
-  comemory symbol \"embed query string into vector\"";
+  comemory symbol run_migration";
 
 /// Arguments to `comemory symbol`.
 #[derive(ClapArgs, Debug)]
@@ -37,39 +26,12 @@ pub struct Args {
     pub limit: usize,
 }
 
-/// One row of `comemory symbol` output.
-#[derive(Serialize)]
-struct Row {
-    qualified: String,
-    score: f32,
-    snippet: String,
-}
-
-/// Embed the query name, search `code_chunks`, and render top hits.
-pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
-    let paths = Paths::new(resolve_data_dir(data_dir));
-    paths.ensure_dirs()?;
-    let idx = CodeIndex::open(paths.vectors_dir(), 768).await?;
-    let mut emb = Embedder::jina_code()?;
-    let q = emb.embed_one(&a.name)?;
-    let hits = search_code(&idx, &q, a.limit, 0.0).await?;
-    let rows: Vec<Row> = hits
-        .into_iter()
-        .map(|h| Row {
-            qualified: h.qualified,
-            score: h.score,
-            snippet: h.snippet.chars().take(200).collect(),
-        })
-        .collect();
-
-    if json_flag {
-        json::write(&rows)?;
-    } else {
-        let mut out = std::io::stdout().lock();
-        for r in &rows {
-            writeln!(out, "{:.3}  {}", r.score, r.qualified)?;
-            writeln!(out, "  {}", r.snippet)?;
-        }
-    }
-    Ok(())
+/// Placeholder while Task 13 of the v0.2 plan migrates this entry point
+/// onto the SQLite + sqlite-vec / SimHash code-symbol search.
+pub async fn run(_a: Args, _json_flag: bool, _data_dir: Option<PathBuf>) -> Result<()> {
+    Err(Error::Other(
+        "comemory symbol is being rewired against the v0.2 SQLite store; \
+         see Task 13 of the v0.2 plan"
+            .into(),
+    ))
 }

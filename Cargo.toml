@@ -160,7 +160,3 @@ pr-run-mode = "plan"
 [[bench]]
 name = "save"
 harness = false
-
-[[bench]]
-name = "retrieval"
-harness = false
