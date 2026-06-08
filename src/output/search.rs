@@ -1,5 +1,5 @@
 //! Output helpers for `comemory search`. JSON shape is
-//! `{"hits":[{"memory_id":..,"score":..,"source":"vector"|"lexical"}]}`.
+//! `{"hits":[{"memory_id":..,"score":..,"source":"vector"|"lexical"|"hybrid"}]}`.
 //! TTY mode emits one hit per line with a colored score prefix.
 
 use std::io::Write as _;
@@ -59,5 +59,6 @@ fn source_label(s: Source) -> &'static str {
     match s {
         Source::Vector => "vector",
         Source::Lexical => "lexical",
+        Source::Hybrid => "hybrid",
     }
 }

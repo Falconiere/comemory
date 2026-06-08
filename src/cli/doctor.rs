@@ -17,7 +17,7 @@ use clap::Args as ClapArgs;
 use serde::Serialize;
 
 use crate::cli::resolve_data_dir;
-use crate::config::paths::Paths;
+use crate::config::{paths::Paths, Config};
 use crate::output::json;
 use crate::prelude::*;
 use crate::store::{connection, migrate};
@@ -51,6 +51,10 @@ pub struct Report {
     /// `true` when `vec_version()` returns a string, i.e. the
     /// sqlite-vec extension was loaded into this connection.
     pub sqlite_vec_loaded: bool,
+    /// Free-form identifier of the embedder the operator configured
+    /// (e.g. `ollama:nomic-embed-text`). `None` when `COMEMORY_EMBED_HINT`
+    /// is not set.
+    pub embed_hint: Option<String>,
 }
 
 /// Build and emit the doctor report.
@@ -74,11 +78,13 @@ pub async fn run(_args: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Res
     let sqlite_vec_loaded = conn
         .query_row("SELECT vec_version()", [], |r| r.get::<_, String>(0))
         .is_ok();
+    let cfg = Config::defaults().with_env()?;
     let report = Report {
         data_dir: paths.data_dir().to_string_lossy().into_owned(),
         db_writable: writable,
         schema_version,
         sqlite_vec_loaded,
+        embed_hint: cfg.embed_hint,
     };
     if report.schema_version != migrate::CURRENT_VERSION {
         return Err(Error::Migration(format!(
@@ -102,5 +108,10 @@ fn emit(report: &Report, json_flag: bool) -> Result<()> {
     writeln!(out, "db_writable       : {}", report.db_writable)?;
     writeln!(out, "schema_version    : {}", report.schema_version)?;
     writeln!(out, "sqlite_vec_loaded : {}", report.sqlite_vec_loaded)?;
+    writeln!(
+        out,
+        "embed_hint        : {}",
+        report.embed_hint.as_deref().unwrap_or("(none)")
+    )?;
     Ok(())
 }
