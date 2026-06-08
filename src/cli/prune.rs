@@ -56,8 +56,9 @@ pub struct Report {
     /// Count of `edges` rows whose source memory is missing or
     /// soft-deleted.
     pub orphan_edges: i64,
-    /// Distinct `code_symbols.path` values whose corresponding
-    /// `indexed_files` row has been removed.
+    /// Distinct `<repo>:<path>` values whose corresponding `indexed_files`
+    /// row has been removed. The repo prefix disambiguates identical paths
+    /// across different repos (e.g. `src/main.rs` in two checkouts).
     pub stale_code_files: Vec<String>,
 }
 
@@ -86,13 +87,18 @@ fn scan(conn: &rusqlite::Connection) -> Result<Report> {
         |r| r.get(0),
     )?;
     let mut stmt = conn.prepare(
-        "SELECT DISTINCT path FROM code_symbols \
+        "SELECT DISTINCT repo, path FROM code_symbols \
           WHERE NOT EXISTS(SELECT 1 FROM indexed_files i \
                              WHERE i.repo = code_symbols.repo \
-                               AND i.path = code_symbols.path)",
+                               AND i.path = code_symbols.path) \
+          ORDER BY repo, path",
     )?;
     let stale_code_files = stmt
-        .query_map([], |r| r.get::<_, String>(0))?
+        .query_map([], |r| {
+            let repo: String = r.get(0)?;
+            let path: String = r.get(1)?;
+            Ok(format!("{repo}:{path}"))
+        })?
         .filter_map(std::result::Result::ok)
         .collect();
     Ok(Report {

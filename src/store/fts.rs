@@ -46,24 +46,16 @@ pub fn search_memory(
     if query.trim().is_empty() || k == 0 {
         return Ok(Vec::new());
     }
-    let sql = match repo {
-        Some(_) => {
-            "SELECT memory_fts.memory_id, bm25(memory_fts) AS score \
-               FROM memory_fts \
-               JOIN memories m ON m.id = memory_fts.memory_id \
-              WHERE memory_fts MATCH ?1 AND m.deleted_at IS NULL AND m.repo = ?3 \
-              ORDER BY score \
-              LIMIT ?2"
-        }
-        None => {
-            "SELECT memory_fts.memory_id, bm25(memory_fts) AS score \
-               FROM memory_fts \
-               JOIN memories m ON m.id = memory_fts.memory_id \
-              WHERE memory_fts MATCH ?1 AND m.deleted_at IS NULL \
-              ORDER BY score \
-              LIMIT ?2"
-        }
-    };
+    // `?3 IS NULL OR m.repo = ?3` lets us bind the optional repo filter as
+    // a single SQL string. SQLite short-circuits on the first disjunct when
+    // `?3` is NULL, so the repo filter is a no-op in that case.
+    let sql = "SELECT memory_fts.memory_id, bm25(memory_fts) AS score \
+                 FROM memory_fts \
+                 JOIN memories m ON m.id = memory_fts.memory_id \
+                WHERE memory_fts MATCH ?1 AND m.deleted_at IS NULL \
+                  AND (?3 IS NULL OR m.repo = ?3) \
+                ORDER BY score \
+                LIMIT ?2";
     let mut stmt = match conn.prepare(sql) {
         Ok(s) => s,
         Err(e) if is_fts5_parse_error(&e) => return Ok(Vec::new()),
@@ -76,22 +68,17 @@ pub fn search_memory(
         })
     };
     let mut out = Vec::new();
-    match repo {
-        Some(r) => collect_with_fts5_guard(
-            stmt.query_map(params![query, k as i64, r], row_fn),
-            &mut out,
-        )?,
-        None => {
-            collect_with_fts5_guard(stmt.query_map(params![query, k as i64], row_fn), &mut out)?
-        }
-    }
+    collect_with_fts5_guard(
+        stmt.query_map(params![query, k as i64, repo], row_fn),
+        &mut out,
+    )?;
     Ok(out)
 }
 
 /// Drain a `query_map` result iterator, downgrading any FTS5 MATCH parse
-/// error to an empty result and propagating every other SQLite error. Used
-/// by both [`search_memory`] branches so the repo-filtered and unfiltered
-/// SQL paths share the same parse-error handling.
+/// error to an empty result and propagating every other SQLite error.
+/// Shared by [`search_memory`] and [`search_code`] so the memory and code
+/// FTS paths cannot drift on parse-error handling.
 fn collect_with_fts5_guard<R, F>(
     iter: rusqlite::Result<rusqlite::MappedRows<'_, F>>,
     out: &mut Vec<R>,

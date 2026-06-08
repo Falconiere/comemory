@@ -155,7 +155,8 @@ fn walk_context_edges(
               WHERE e.rel IN ('references_file','references_symbol','relates_to','supersedes')
                 AND w.depth < ?2
          )
-         SELECT src_kind, src_id, dst_kind, dst_id, rel FROM walk",
+         SELECT src_kind, src_id, dst_kind, dst_id, rel FROM walk \
+         ORDER BY depth, rel, src_kind, src_id, dst_kind, dst_id",
     )?;
     let rows = stmt
         .query_map(rusqlite::params![start_id, max_depth as i64], |r| {

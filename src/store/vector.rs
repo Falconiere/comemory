@@ -57,41 +57,25 @@ pub fn knn_memory(
 ) -> Result<Vec<MemoryHit>> {
     let dim = dim_memory(conn)?;
     embed::guard_dim(query, dim)?;
-    let sql = match repo {
-        Some(_) => {
-            "SELECT v.memory_id, v.distance FROM memory_vec v \
-             JOIN memories m ON m.id = v.memory_id \
-             WHERE v.embedding MATCH ?1 AND k = ?2 AND m.repo = ?3 \
-               AND m.deleted_at IS NULL \
-             ORDER BY v.distance"
-        }
-        None => {
-            "SELECT v.memory_id, v.distance FROM memory_vec v \
-             JOIN memories m ON m.id = v.memory_id \
-             WHERE v.embedding MATCH ?1 AND k = ?2 \
-               AND m.deleted_at IS NULL \
-             ORDER BY v.distance"
-        }
-    };
+    // `?3 IS NULL OR m.repo = ?3` lets us bind the optional repo filter as
+    // a single SQL string. SQLite short-circuits on the first disjunct when
+    // `?3` is NULL, so the repo filter is a no-op in that case.
+    let sql = "SELECT v.memory_id, v.distance FROM memory_vec v \
+                 JOIN memories m ON m.id = v.memory_id \
+                WHERE v.embedding MATCH ?1 AND k = ?2 \
+                  AND (?3 IS NULL OR m.repo = ?3) \
+                  AND m.deleted_at IS NULL \
+                ORDER BY v.distance";
     let blob = embed::to_vec_blob(query);
     let mut stmt = conn.prepare(sql)?;
-    let rows = if let Some(r) = repo {
-        stmt.query_map(params![blob, k as i64, r], |row| {
+    let rows = stmt
+        .query_map(params![blob, k as i64, repo], |row| {
             Ok(MemoryHit {
                 memory_id: row.get(0)?,
                 distance: row.get(1)?,
             })
         })?
-        .collect::<std::result::Result<Vec<_>, _>>()?
-    } else {
-        stmt.query_map(params![blob, k as i64], |row| {
-            Ok(MemoryHit {
-                memory_id: row.get(0)?,
-                distance: row.get(1)?,
-            })
-        })?
-        .collect::<std::result::Result<Vec<_>, _>>()?
-    };
+        .collect::<std::result::Result<Vec<_>, _>>()?;
     Ok(rows)
 }
 
