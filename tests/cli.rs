@@ -555,3 +555,6 @@ mod ingest_code;
 
 #[path = "cli/ast.rs"]
 mod ast;
+
+#[path = "cli/rebuild.rs"]
+mod rebuild;

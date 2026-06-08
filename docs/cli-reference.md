@@ -42,6 +42,7 @@ Commands:
   conflicts      List memories that conflict with the given memory id
   supersedes     Record that one memory supersedes another in the kuzu graph
   prune          Detect (and optionally soft-delete) stale memories
+  rebuild        Drop `comemory.db` and repopulate it from the markdown source of truth
   gc             Purge old entries from `memories/.trash/`
   install-hooks  Install git hooks that trigger `comemory index-code --incremental` on `post-commit`, `post-merge`, and `post-checkout`
   graph          Property-graph tooling. Run `comemory graph --help`

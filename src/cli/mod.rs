@@ -24,6 +24,7 @@ pub mod install_hooks;
 pub mod list;
 pub mod memory_for;
 pub mod prune;
+pub mod rebuild;
 pub mod save;
 pub mod search;
 pub mod supersedes;
@@ -99,6 +100,8 @@ pub enum Cmd {
     Supersedes(supersedes::Args),
     /// Detect (and optionally soft-delete) stale memories.
     Prune(prune::Args),
+    /// Drop `comemory.db` and repopulate it from the markdown source of truth.
+    Rebuild(rebuild::Args),
     /// Purge old entries from `memories/.trash/`.
     #[command(after_help = gc::EXAMPLES)]
     Gc,
@@ -142,6 +145,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::Conflicts(a) => conflicts::run(a, cli.json, cli.data_dir).await,
         Cmd::Supersedes(a) => supersedes::run(a, cli.json, cli.data_dir).await,
         Cmd::Prune(a) => prune::run(a, cli.json, cli.data_dir).await,
+        Cmd::Rebuild(a) => rebuild::run(a, cli.json, cli.data_dir).await,
         Cmd::Gc => gc::run(cli.json, cli.data_dir).await,
         Cmd::InstallHooks(a) => install_hooks::run(a, cli.json, cli.data_dir).await,
         Cmd::Graph { cmd } => match cmd {
