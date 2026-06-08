@@ -12,6 +12,9 @@ mod embed;
 #[path = "store/fts.rs"]
 mod fts;
 
+#[path = "store/memory_row.rs"]
+mod memory_row;
+
 #[path = "store/migrate.rs"]
 mod migrate;
 

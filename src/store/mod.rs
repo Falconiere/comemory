@@ -19,6 +19,7 @@
 pub mod connection;
 pub mod embed;
 pub mod fts;
+pub mod memory_row;
 pub mod migrate;
 pub mod schema;
 pub mod vector;
