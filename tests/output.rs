@@ -17,6 +17,9 @@ mod search;
 #[path = "output/context.rs"]
 mod context;
 
+#[path = "output/prune.rs"]
+mod prune;
+
 #[derive(Serialize)]
 struct Hit {
     id: &'static str,

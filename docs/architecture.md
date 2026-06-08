@@ -58,7 +58,6 @@ This is a 2-page on-ramp into the comemory design.
 | `output` | TTY rendering (owo-colors) + JSON serializers (serde_json) |
 | `prune` | Orphan, stale-code, low-value detection and (soft) deletion |
 | `git_utils` | Repo/author detection, blob OID lookup, hook installation |
-| `serve` | Local HTTP viewer for the property graph. Bound by `comemory graph serve`. Holds a shared `Arc<Mutex<Graph>>`, exposes read-only REST endpoints (`/api/seed`, `/api/expand`, `/api/search`, `/api/node/:id`), and embeds the vanilla-JS Cytoscape frontend from `frontend/` via `rust-embed`. Loopback-only by default. |
 
 ## 3. Storage layout (spec §5.1)
 
