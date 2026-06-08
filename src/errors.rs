@@ -16,9 +16,6 @@ pub enum Error {
     #[error("toml: {0}")]
     Toml(#[from] toml::de::Error),
 
-    #[error("lancedb: {0}")]
-    Lance(String),
-
     #[error("schema migration failed: {0}")]
     Migration(String),
 
