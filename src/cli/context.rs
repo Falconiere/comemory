@@ -2,14 +2,15 @@
 //!
 //! Routes the query through [`crate::retrieval::router::route`] to surface
 //! relevant memory ids, then assembles a [`crate::retrieval::bundle`] that
-//! pulls each memory's body and any `references_symbol` edges (and the
-//! referenced `code_symbols` rows) in a single round-trip.
+//! pulls each memory's body and any cross-link edges
+//! (`references_file`, `references_symbol`, `relates_to`, `supersedes`)
+//! up to depth 2.
 
 use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::cli::{override_top_k, resolve_data_dir};
+use crate::cli::{embedding_input, override_top_k, resolve_data_dir};
 use crate::config::paths::Paths;
 use crate::config::Config;
 use crate::output;
@@ -23,7 +24,10 @@ Examples:
   comemory context run_migration --json
 
   # Pin the bundle width to the top 3 hits
-  comemory context \"advisory lock\" --k 3";
+  comemory context \"advisory lock\" --k 3
+
+  # ANN-assisted context with a caller-supplied vector
+  comemory context \"advisory lock\" --vector 0.1,0.2,...";
 
 /// Arguments to `comemory context`.
 #[derive(ClapArgs, Debug)]
@@ -40,18 +44,43 @@ pub struct Args {
     /// Optional repo filter forwarded to the router.
     #[arg(long)]
     pub repo: Option<String>,
+    /// Caller-supplied dense vector as a comma-separated float list. When
+    /// provided together with `query`, both ANN and lexical branches run and
+    /// their results are fused via RRF. Without a vector only the lexical
+    /// FTS5 path runs.
+    #[arg(long)]
+    pub vector: Option<String>,
+    /// Read a JSON `{ "embedding": [..] }` payload from stdin and use it as
+    /// the dense vector for the context lookup. Mutually exclusive with reading
+    /// the query from stdin.
+    #[arg(long, default_value_t = false)]
+    pub vector_stdin: bool,
 }
 
-/// Run `comemory context`. Opens the DB, routes the query, then assembles
-/// a bundle covering each matched memory plus any cross-link references.
+/// Run `comemory context`. Opens the DB, routes the query (with optional
+/// vector), then assembles a bundle covering each matched memory plus all
+/// cross-link edges walked to depth ≤ 2.
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
     let conn = connection::open(paths.db_path())?;
 
+    let vec = read_optional_vector(&a)?;
     let cfg = override_top_k(Config::defaults().with_env()?, a.k);
-    let routed = router::route(&cfg, &conn, &a.query, None, a.repo.as_deref())?;
+    let routed = router::route(&cfg, &conn, &a.query, vec.as_deref(), a.repo.as_deref())?;
     let ids: Vec<String> = routed.into_iter().map(|h| h.memory_id).collect();
     let bundle = bundle::assemble(&conn, &a.query, &ids)?;
     output::context::emit(&bundle, json_flag)
+}
+
+/// Resolve the optional caller-supplied vector from `--vector` (CSV) or
+/// `--vector-stdin` (JSON). Returns `Ok(None)` when neither flag is set.
+fn read_optional_vector(args: &Args) -> Result<Option<Vec<f32>>> {
+    if args.vector_stdin {
+        return Ok(Some(embedding_input::read_stdin_payload()?));
+    }
+    if let Some(raw) = &args.vector {
+        return Ok(Some(embedding_input::parse_csv(raw)?));
+    }
+    Ok(None)
 }

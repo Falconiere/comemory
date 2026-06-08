@@ -315,6 +315,8 @@ Options:
       --k <K>                Override the configured `retrieval.top_k` for this bundle. Must be >= 1
       --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
       --repo <REPO>          Optional repo filter forwarded to the router
+      --vector <VECTOR>      Caller-supplied dense vector as a comma-separated float list. When provided together with `query`, both ANN and lexical branches run and their results are fused via RRF. Without a vector only the lexical FTS5 path runs
+      --vector-stdin         Read a JSON `{ "embedding": [..] }` payload from stdin and use it as the dense vector for the context lookup. Mutually exclusive with reading the query from stdin
   -h, --help                 Print help
 
 Examples:
@@ -323,6 +325,9 @@ Examples:
 
   # Pin the bundle width to the top 3 hits
   comemory context "advisory lock" --k 3
+
+  # ANN-assisted context with a caller-supplied vector
+  comemory context "advisory lock" --vector 0.1,0.2,...
 ```
 
 ---
