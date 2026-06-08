@@ -84,10 +84,21 @@ pub fn assemble<'a>(
     let mut code_refs = Vec::new();
 
     for id in memory_ids {
-        let (kind, body): (String, String) =
-            conn.query_row("SELECT kind, body FROM memories WHERE id = ?1", [id], |r| {
-                Ok((r.get(0)?, r.get(1)?))
-            })?;
+        // Tolerate a missing/soft-deleted memory row here: the router emits
+        // ids drawn from independent indices (FTS5, vec0) that may drift past
+        // a soft-delete or rebuild, and a stale id should skip cleanly rather
+        // than abort the whole bundle.
+        let row = conn
+            .query_row(
+                "SELECT kind, body FROM memories \
+                  WHERE id = ?1 AND deleted_at IS NULL",
+                [id],
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+            )
+            .ok();
+        let Some((kind, body)) = row else {
+            continue;
+        };
         memories.push(MemoryBundleRow {
             id: id.clone(),
             kind,

@@ -89,7 +89,7 @@ pub fn insert(
              schema       = excluded.schema, \
              content_hash = excluded.content_hash, \
              body         = excluded.body, \
-             updated_at   = excluded.updated_at, \
+             updated_at   = strftime('%Y-%m-%dT%H:%M:%fZ','now'), \
              md_path      = excluded.md_path, \
              deleted_at   = NULL",
         rusqlite::params![

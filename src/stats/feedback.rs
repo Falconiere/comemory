@@ -25,42 +25,44 @@ impl<'a> Feedback<'a> {
 
     /// Record that memory `id` was used in a response. Increments `used_count`
     /// and refreshes `last_used` to the current UTC time.
+    ///
+    /// SQLite errors propagate through `Error::Sqlite` so the CLI surfaces
+    /// them with `EX_SOFTWARE` and a sqlite-tagged message — matching the
+    /// `stats::sqlite` module's recent shift away from `Error::Other` wraps.
     pub fn record_used(&self, id: &str) -> Result<()> {
         let now = OffsetDateTime::now_utc()
             .format(&Iso8601::DEFAULT)
             .map_err(|e| Error::Other(e.to_string()))?;
-        self.db
-            .conn()
-            .execute(
-                "INSERT INTO feedback(memory_id, used_count, irrelevant_count, last_used)
+        self.db.conn().execute(
+            "INSERT INTO feedback(memory_id, used_count, irrelevant_count, last_used)
                  VALUES (?1, 1, 0, ?2)
                  ON CONFLICT(memory_id) DO UPDATE SET used_count = used_count + 1, last_used = ?2",
-                rusqlite::params![id, now],
-            )
-            .map_err(|e| Error::Other(e.to_string()))?;
+            rusqlite::params![id, now],
+        )?;
         Ok(())
     }
 
     /// Record that memory `id` was surfaced but judged irrelevant. Increments
     /// `irrelevant_count`; does not touch `last_used`.
+    ///
+    /// SQLite errors propagate through `Error::Sqlite` for the same reason
+    /// as [`Self::record_used`].
     pub fn record_irrelevant(&self, id: &str) -> Result<()> {
-        self.db
-            .conn()
-            .execute(
-                "INSERT INTO feedback(memory_id, used_count, irrelevant_count)
+        self.db.conn().execute(
+            "INSERT INTO feedback(memory_id, used_count, irrelevant_count)
                  VALUES (?1, 0, 1)
                  ON CONFLICT(memory_id) DO UPDATE SET irrelevant_count = irrelevant_count + 1",
-                rusqlite::params![id],
-            )
-            .map_err(|e| Error::Other(e.to_string()))?;
+            rusqlite::params![id],
+        )?;
         Ok(())
     }
 
     /// Look up `(used_count, irrelevant_count)` for memory `id`. Returns
     /// `(0, 0)` only when no row exists; any other SQLite failure (missing
-    /// table, locked db, corrupted file) is surfaced as `Error::Other` so
+    /// table, locked db, corrupted file) is surfaced as `Error::Sqlite` so
     /// downstream consumers (e.g. `prune::low_value`) cannot be silently fed
-    /// zeroed counts.
+    /// zeroed counts and the CLI exit code stays consistent with the rest of
+    /// the stats layer.
     pub fn counts(&self, id: &str) -> Result<(u64, u64)> {
         match self.db.conn().query_row(
             "SELECT used_count, irrelevant_count FROM feedback WHERE memory_id = ?1",
@@ -69,7 +71,7 @@ impl<'a> Feedback<'a> {
         ) {
             Ok((u, i)) => Ok((u as u64, i as u64)),
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok((0, 0)),
-            Err(e) => Err(Error::Other(format!("feedback counts: {e}"))),
+            Err(e) => Err(Error::Sqlite(e)),
         }
     }
 }

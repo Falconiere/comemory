@@ -49,7 +49,18 @@ pub struct Args {
 
 /// Body written to each hook file. The trailing `&` detaches the indexer so
 /// git's hook runner returns immediately.
-const SCRIPT: &str = "#!/usr/bin/env bash\nexec comemory index-code --incremental --quiet &\n";
+///
+/// `--repo` and `--path` are required by `comemory index-code`; we derive the
+/// repo label from the working-tree directory name and the path from the repo
+/// root via `git rev-parse --show-toplevel`. The `index-code` walker uses each
+/// file's blob OID as the cursor, so re-running it on an unchanged tree is a
+/// cheap no-op (the v0.2 replacement for the old `--incremental` flag).
+const SCRIPT: &str = "#!/usr/bin/env bash\n\
+                      ROOT=\"$(git rev-parse --show-toplevel 2>/dev/null)\"\n\
+                      [ -z \"$ROOT\" ] && exit 0\n\
+                      REPO=\"$(basename \"$ROOT\")\"\n\
+                      ( comemory index-code --repo \"$REPO\" --path \"$ROOT\" >/dev/null 2>&1 & )\n\
+                      exit 0\n";
 
 /// Hooks we install. All three trigger an incremental reindex because each
 /// can leave the working tree at a new HEAD: `post-commit` for new commits,

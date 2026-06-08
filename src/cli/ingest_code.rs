@@ -7,6 +7,7 @@
 //! between the two commands when they want vector hits without forcing
 //! comemory to download a model.
 
+use std::collections::HashMap;
 use std::io::BufRead;
 use std::path::PathBuf;
 
@@ -58,12 +59,23 @@ struct Row {
 /// The whole stdin loop runs inside one SQLite transaction so a malformed
 /// row mid-stream rolls back every prior insert — no half-ingested batches
 /// land in `code_symbols`/`code_fts`/`code_vec`.
+///
+/// Each `(repo, path)` tuple is purged via [`code_row::purge_file_symbols`]
+/// on its first sighting in the stream so re-ingesting a previously-ingested
+/// file (e.g. a fresh embedding pass over the same blob) cannot collide on
+/// the `UNIQUE (repo, path, symbol, line_start)` constraint. After the
+/// stream is drained, the `indexed_files` cursor is upserted for every
+/// `(repo, path)` seen — using the last `blob_oid` observed for that pair —
+/// so a follow-up `index-code` run knows the file is already current.
 pub async fn run(_args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
     let mut conn = connection::open(paths.db_path())?;
 
     let tx = conn.transaction()?;
+    // `(repo, path) -> last blob_oid seen` so we know which `indexed_files`
+    // rows to refresh once the stream completes.
+    let mut seen_files: HashMap<(String, String), String> = HashMap::new();
     let stdin = std::io::stdin();
     for line in stdin.lock().lines() {
         let line = line.map_err(Error::Io)?;
@@ -71,7 +83,15 @@ pub async fn run(_args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<
             continue;
         }
         let row: Row = serde_json::from_str(&line)?;
+        let key = (row.repo.clone(), row.path.clone());
+        if !seen_files.contains_key(&key) {
+            code_row::purge_file_symbols(&tx, &row.repo, &row.path)?;
+        }
+        seen_files.insert(key, row.blob_oid.clone());
         insert_row(&tx, &row)?;
+    }
+    for ((repo, path), oid) in &seen_files {
+        code_row::upsert_indexed_file(&tx, repo, path, oid)?;
     }
     tx.commit()?;
     Ok(())
