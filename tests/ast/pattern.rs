@@ -47,10 +47,24 @@ fn pattern_matches_python_function_call() {
 #[test]
 fn pattern_matches_ts_function_call() {
     let src = "function main() { foo(1, 2); bar(); }\n";
-    let hits = find(Lang::TypeScript, src, "$F($$$ARGS)").expect("ts pattern");
+    let hits = find(Lang::Typescript, src, "$F($$$ARGS)").expect("ts pattern");
     assert!(
         hits.iter().any(|(_, s)| s.starts_with("foo(")),
         "missing foo() in {hits:?}",
+    );
+}
+
+#[test]
+fn pattern_matches_go_function_call() {
+    let src = "package main\n\nfunc main() {\n\tfoo(1, 2)\n\tbar()\n}\n";
+    let hits = find(Lang::Go, src, "$F($$$ARGS)").expect("go pattern");
+    assert!(
+        hits.iter().any(|(_, s)| s.starts_with("foo(")),
+        "missing foo() in {hits:?}",
+    );
+    assert!(
+        hits.iter().any(|(_, s)| s.starts_with("bar(")),
+        "missing bar() in {hits:?}",
     );
 }
 

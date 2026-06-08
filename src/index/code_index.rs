@@ -15,7 +15,8 @@ use ignore::Walk;
 use lancedb::Connection;
 use sha2::{Digest, Sha256};
 
-use crate::ast::{extract, Lang};
+use crate::ast::extract;
+use crate::ast::languages::detect as detect_lang;
 use crate::index::embedder::Embedder;
 use crate::index::schema::{code_schema, CODE_TABLE};
 use crate::prelude::*;
@@ -164,12 +165,7 @@ pub fn iter_files(root: &Path) -> Vec<PathBuf> {
 fn collect_chunks(repo_root: &Path, repo: &str) -> Result<Vec<CodeChunk>> {
     let mut chunks = Vec::new();
     for path in iter_files(repo_root) {
-        let ext = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("")
-            .to_ascii_lowercase();
-        let Some(lang) = Lang::from_extension(&ext) else {
+        let Some(lang) = detect_lang(&path) else {
             continue;
         };
         let Ok(src) = std::fs::read_to_string(&path) else {

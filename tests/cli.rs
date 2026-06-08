@@ -552,3 +552,6 @@ mod index_code;
 
 #[path = "cli/ingest_code.rs"]
 mod ingest_code;
+
+#[path = "cli/ast.rs"]
+mod ast;

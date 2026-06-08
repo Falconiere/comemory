@@ -5,10 +5,13 @@
 //! and one-based start line. The set of patterns per language is small and
 //! intentionally generic — we are not building a full language server here,
 //! just a corpus of indexable snippets for the code-side embedding store.
+//!
+//! `Lang::Typescript` dispatches to the Tsx grammar so JSX-bearing `.tsx`
+//! files extract just as cleanly as plain `.ts`.
 
 use ast_grep_core::tree_sitter::LanguageExt;
 use ast_grep_core::{AstGrep, Pattern};
-use ast_grep_language::{JavaScript, Python, Rust, Tsx, TypeScript};
+use ast_grep_language::{Go, JavaScript, Python, Rust, Tsx};
 
 use crate::ast::languages::Lang;
 use crate::prelude::*;
@@ -33,12 +36,13 @@ pub struct ExtractedSymbol {
 pub fn extract(lang: Lang, source: &str) -> Result<Vec<ExtractedSymbol>> {
     match lang {
         Lang::Rust => extract_with(Rust, lang, source, rust_patterns()),
-        Lang::TypeScript => extract_with(TypeScript, lang, source, ts_js_patterns()),
-        // `Tsx` uses the same function/class patterns as TypeScript — the
-        // difference is the grammar, not the surface shape we extract.
-        Lang::Tsx => extract_with(Tsx, lang, source, ts_js_patterns()),
-        Lang::JavaScript => extract_with(JavaScript, lang, source, ts_js_patterns()),
+        // Tsx is a superset of the plain TypeScript grammar — it parses
+        // JSX-bearing source as well as pure TS, so we route both `.ts` and
+        // `.tsx` through it.
+        Lang::Typescript => extract_with(Tsx, lang, source, ts_js_patterns()),
+        Lang::Javascript => extract_with(JavaScript, lang, source, ts_js_patterns()),
         Lang::Python => extract_with(Python, lang, source, python_patterns()),
+        Lang::Go => extract_with(Go, lang, source, go_patterns()),
     }
 }
 
@@ -71,6 +75,17 @@ fn python_patterns() -> &'static [(&'static str, &'static str)] {
     &[
         ("function", "def $NAME($$$ARGS): $$$BODY"),
         ("class", "class $NAME: $$$BODY"),
+    ]
+}
+
+fn go_patterns() -> &'static [(&'static str, &'static str)] {
+    // Go functions can be free-standing (`func Foo(...) { ... }`) or
+    // method-receiver bound (`func (r R) Foo(...) { ... }`). We list the
+    // free function shape with and without a return type to recover the
+    // name in either case.
+    &[
+        ("function", "func $NAME($$$ARGS) $RET { $$$BODY }"),
+        ("function", "func $NAME($$$ARGS) { $$$BODY }"),
     ]
 }
 

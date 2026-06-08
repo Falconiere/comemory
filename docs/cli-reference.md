@@ -345,7 +345,7 @@ Arguments:
 
 Options:
       --json                 Emit machine-readable JSON instead of a human TTY view
-      --lang <LANG>          Language tag: `rs`/`rust`, `ts`/`tsx`, `js`/`jsx`, `py`
+      --lang <LANG>          Language tag: `rs`/`rust`, `ts`/`tsx`/`typescript`, `js`/`jsx`/`javascript`, `py`/`python`, `go`
       --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
       --file <FILE>          File to search
   -h, --help                 Print help
