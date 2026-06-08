@@ -57,11 +57,41 @@ pub fn insert(
         Some(fm.author.as_str())
     };
 
+    // Upsert semantics: re-saving the same `id` (content_hash is the id seed,
+    // so this happens when the body hasn't changed) must not blow up with a PK
+    // conflict — markdown is the source of truth and a re-save just refreshes
+    // the metadata. ON CONFLICT preserves the original `created_at` and bumps
+    // `updated_at` to the new timestamp. The `memory_tags`, `memory_fts`, and
+    // `edges` rows are wiped first so the refresh is clean rather than
+    // additive (stale tag rows from a previous save can't survive a tag list
+    // change, and the FTS row's UNINDEXED `memory_id` would otherwise pile up
+    // duplicates).
+    conn.execute(
+        "DELETE FROM memory_tags WHERE memory_id = ?1",
+        rusqlite::params![&fm.id],
+    )?;
+    conn.execute(
+        "DELETE FROM memory_fts WHERE memory_id = ?1",
+        rusqlite::params![&fm.id],
+    )?;
+    edges::delete_touching(conn, "memory", &fm.id)?;
     conn.execute(
         "INSERT INTO memories(\
              id, slug, kind, repo, author, quality, schema, \
              content_hash, body, created_at, updated_at, md_path) \
-         VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
+         VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12) \
+         ON CONFLICT(id) DO UPDATE SET \
+             slug         = excluded.slug, \
+             kind         = excluded.kind, \
+             repo         = excluded.repo, \
+             author       = excluded.author, \
+             quality      = excluded.quality, \
+             schema       = excluded.schema, \
+             content_hash = excluded.content_hash, \
+             body         = excluded.body, \
+             updated_at   = excluded.updated_at, \
+             md_path      = excluded.md_path, \
+             deleted_at   = NULL",
         rusqlite::params![
             &fm.id,
             slug,

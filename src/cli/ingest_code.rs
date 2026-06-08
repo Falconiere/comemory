@@ -17,6 +17,7 @@ use serde::Deserialize;
 use crate::cli::resolve_data_dir;
 use crate::config::paths::Paths;
 use crate::prelude::*;
+use crate::store::code_row::{self, CodeSymbolRow};
 use crate::store::{connection, fts, vector};
 
 const EXAMPLES: &str = "\
@@ -79,25 +80,20 @@ pub async fn run(_args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<
 /// Insert one parsed JSONL row into the three code tables. Extracted so the
 /// stdin loop in `run` stays free of plumbing details.
 fn insert_row(conn: &Connection, row: &Row) -> Result<()> {
-    let sid: i64 = conn.query_row(
-        "INSERT INTO code_symbols(\
-             repo, path, blob_oid, symbol, kind, lang, \
-             line_start, line_end, snippet, simhash, indexed_at) \
-         VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10, strftime('%Y-%m-%dT%H:%M:%fZ','now')) \
-         RETURNING id",
-        rusqlite::params![
-            &row.repo,
-            &row.path,
-            &row.blob_oid,
-            &row.symbol,
-            &row.kind,
-            &row.lang,
-            row.line_start as i64,
-            row.line_end as i64,
-            &row.snippet,
-            row.simhash,
-        ],
-        |r| r.get(0),
+    let sid = code_row::insert(
+        conn,
+        &CodeSymbolRow {
+            repo: &row.repo,
+            path: &row.path,
+            blob_oid: &row.blob_oid,
+            symbol: &row.symbol,
+            kind: &row.kind,
+            lang: &row.lang,
+            line_start: row.line_start as i64,
+            line_end: row.line_end as i64,
+            snippet: &row.snippet,
+            simhash: row.simhash,
+        },
     )?;
     fts::index_code(
         conn,

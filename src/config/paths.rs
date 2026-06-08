@@ -30,11 +30,6 @@ impl Paths {
         self.data_dir.join("index")
     }
 
-    /// Path to the SQLite FTS5 BM25 index used for lexical memory search.
-    pub fn fts_db(&self) -> PathBuf {
-        self.index_dir().join("fts.sqlite")
-    }
-
     /// Path to the unified SQLite database.
     ///
     /// Previously this returned `stats.db`; v0.2 consolidates all tables

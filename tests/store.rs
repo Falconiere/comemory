@@ -3,6 +3,9 @@
 #[path = "common/vectors.rs"]
 mod vectors;
 
+#[path = "store/code_row.rs"]
+mod code_row;
+
 #[path = "store/connection.rs"]
 mod connection;
 

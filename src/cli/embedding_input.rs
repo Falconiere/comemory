@@ -46,3 +46,21 @@ pub(crate) fn read_stdin_payload() -> Result<Vec<f32>> {
     let payload: EmbeddingPayload = serde_json::from_str(buf.trim())?;
     Ok(payload.embedding)
 }
+
+/// Resolve the optional caller-supplied vector from the `--vector` (CSV) and
+/// `--vector-stdin` (JSON) flag pair. Returns `Ok(None)` when neither flag is
+/// set so the FTS-only / lexical-only branches can proceed. Shared by every
+/// subcommand that accepts a BYO-vector input (`save`, `search`, `context`)
+/// so they cannot drift on what "no vector" means.
+pub(crate) fn read_optional(
+    vector_stdin: bool,
+    vector_csv: Option<&str>,
+) -> Result<Option<Vec<f32>>> {
+    if vector_stdin {
+        return Ok(Some(read_stdin_payload()?));
+    }
+    if let Some(raw) = vector_csv {
+        return Ok(Some(parse_csv(raw)?));
+    }
+    Ok(None)
+}

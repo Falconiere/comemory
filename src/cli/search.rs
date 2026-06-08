@@ -65,21 +65,8 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     paths.ensure_dirs()?;
     let conn = connection::open(paths.db_path())?;
 
-    let vec = read_optional_vector(&a)?;
+    let vec = embedding_input::read_optional(a.vector_stdin, a.vector.as_deref())?;
     let cfg = override_top_k(Config::defaults().with_env()?, a.k);
     let hits = router::route(&cfg, &conn, &a.query, vec.as_deref(), a.repo.as_deref())?;
     output::search::emit(&hits, json_flag)
-}
-
-/// Resolve the optional caller-supplied vector from `--vector` (CSV) or
-/// `--vector-stdin` (JSON). Returns `Ok(None)` when neither flag is set so
-/// the lexical-only branch runs.
-fn read_optional_vector(args: &Args) -> Result<Option<Vec<f32>>> {
-    if args.vector_stdin {
-        return Ok(Some(embedding_input::read_stdin_payload()?));
-    }
-    if let Some(raw) = &args.vector {
-        return Ok(Some(embedding_input::parse_csv(raw)?));
-    }
-    Ok(None)
 }

@@ -169,6 +169,10 @@ fn code_ref_lookup(
 ) -> Result<Option<(String, String, String, String)>> {
     let parts: Vec<&str> = dst_id.splitn(3, ':').collect();
     if parts.len() != 3 {
+        tracing::warn!(
+            dst_id = %dst_id,
+            "malformed references_symbol edge destination (expected <repo>:<path>:<symbol>); skipping"
+        );
         return Ok(None);
     }
     let (repo, path, symbol) = (parts[0], parts[1], parts[2]);
