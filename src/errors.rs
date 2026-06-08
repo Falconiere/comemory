@@ -32,12 +32,6 @@ pub enum Error {
     Other(String),
 }
 
-impl From<lancedb::Error> for Error {
-    fn from(e: lancedb::Error) -> Self {
-        Self::Lance(e.to_string())
-    }
-}
-
 impl From<rusqlite::Error> for Error {
     fn from(e: rusqlite::Error) -> Self {
         Self::Other(format!("rusqlite: {e}"))
