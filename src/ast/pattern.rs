@@ -5,10 +5,13 @@
 //! meta-variable syntax the CLI surfaces) and get back the one-based
 //! line + the matched snippet. The full match envelope (env, kind…) is
 //! intentionally hidden — extraction is `extractor`'s job.
+//!
+//! `Lang::Typescript` dispatches to the Tsx grammar so that `.tsx` files
+//! with embedded JSX parse without callers needing a separate variant.
 
 use ast_grep_core::tree_sitter::LanguageExt;
 use ast_grep_core::{AstGrep, Pattern};
-use ast_grep_language::{JavaScript, Python, Rust, Tsx, TypeScript};
+use ast_grep_language::{Go, JavaScript, Python, Rust, Tsx};
 
 use crate::ast::languages::Lang;
 use crate::prelude::*;
@@ -19,10 +22,13 @@ use crate::prelude::*;
 pub fn find(lang: Lang, source: &str, pattern: &str) -> Result<Vec<(usize, String)>> {
     match lang {
         Lang::Rust => find_with(Rust, source, pattern),
-        Lang::TypeScript => find_with(TypeScript, source, pattern),
-        Lang::Tsx => find_with(Tsx, source, pattern),
-        Lang::JavaScript => find_with(JavaScript, source, pattern),
+        // Use the Tsx grammar for plain `.ts` and `.tsx` alike — it is a
+        // superset that parses JSX-bearing files cleanly without rejecting
+        // pure-TypeScript inputs.
+        Lang::Typescript => find_with(Tsx, source, pattern),
+        Lang::Javascript => find_with(JavaScript, source, pattern),
         Lang::Python => find_with(Python, source, pattern),
+        Lang::Go => find_with(Go, source, pattern),
     }
 }
 

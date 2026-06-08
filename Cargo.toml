@@ -59,12 +59,21 @@ url = "=2.5.7"
 version = "0.38"
 
 # ast-grep-language provides the per-language `Language` trait impls (Rust,
-# Python, TypeScript, JavaScript, ...) that pair with ast-grep-core. The
-# plan pinned 0.30, but the 0.30 line transitively pulls
-# `tree-sitter-javascript 0.21.3`, which pins `cc ~1.0.90` — irreconcilable
-# with `aws-lc-sys` in lancedb's transitive graph. 0.38.x switched to the
-# 0.23+ parser line that uses `tree-sitter-language` and the modern `cc`,
-# so both stacks compose.
+# Python, TypeScript, JavaScript, Go) that pair with ast-grep-core. We pin
+# 0.38.x because the 0.30 line transitively pulls `tree-sitter-javascript
+# 0.21.3`, which pins `cc ~1.0.90` — irreconcilable with `aws-lc-sys` in
+# lancedb's transitive graph. 0.38.x switched to the 0.23+ parser line that
+# uses `tree-sitter-language` and the modern `cc`, so both stacks compose.
+#
+# 0.38.x exposes the per-tree-sitter feature flags (`tree-sitter-rust`,
+# `tree-sitter-python`, etc.), but the per-parser dispatch in
+# `ast-grep-language/src/parsers.rs` (`into_lang!` / `into_napi_lang!`)
+# only enables real parser construction when one of the umbrella features
+# (`builtin-parser` or `napi-lang`) is on — without an umbrella, every
+# `language_*()` call stubs to `unimplemented!()`. The comemory-level
+# language gate in `src/ast/languages.rs` is therefore where we cap the
+# supported set to rust/typescript/javascript/python/go even though the
+# crate still compiles the full parser table.
 [dependencies.ast-grep-language]
 version = "0.38"
 

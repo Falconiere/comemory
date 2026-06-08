@@ -54,7 +54,7 @@ fn python_function_and_class_extracted() {
 fn typescript_function_and_class_extracted() {
     let src = "function add(a: number, b: number): number { return a + b; }\n\
              class Greeter { hello(name: string) { return `hi ${name}`; } }\n";
-    let syms = extract(Lang::TypeScript, src).expect("ts extraction");
+    let syms = extract(Lang::Typescript, src).expect("ts extraction");
     assert!(
         syms.iter().any(|s| s.name == "add" && s.kind == "function"),
         "missing function add in {syms:?}",
@@ -71,7 +71,7 @@ fn typescript_function_and_class_extracted() {
 #[test]
 fn javascript_function_extracted() {
     let src = "function add(a, b) { return a + b; }\n";
-    let syms = extract(Lang::JavaScript, src).expect("js extraction");
+    let syms = extract(Lang::Javascript, src).expect("js extraction");
     let add = syms
         .iter()
         .find(|s| s.name == "add" && s.kind == "function")
@@ -81,8 +81,26 @@ fn javascript_function_extracted() {
 }
 
 #[test]
+fn go_function_extracted() {
+    let src = "package main\n\nfunc add(a int, b int) int {\n\treturn a + b\n}\n";
+    let syms = extract(Lang::Go, src).expect("go extraction");
+    let add = syms
+        .iter()
+        .find(|s| s.name == "add" && s.kind == "function")
+        .expect("missing go function add");
+    assert_eq!(add.language, "go");
+    assert!(add.snippet.contains("func add"));
+}
+
+#[test]
 fn empty_source_yields_no_symbols() {
-    for lang in [Lang::Rust, Lang::TypeScript, Lang::JavaScript, Lang::Python] {
+    for lang in [
+        Lang::Rust,
+        Lang::Typescript,
+        Lang::Javascript,
+        Lang::Python,
+        Lang::Go,
+    ] {
         let syms = extract(lang, "").expect("extract empty");
         assert!(syms.is_empty(), "{lang:?} produced symbols from empty src");
     }
@@ -97,17 +115,16 @@ fn non_matching_source_yields_no_symbols() {
 
 #[test]
 fn tsx_jsx_component_extracted() {
-    // A function returning JSX parses cleanly under the Tsx grammar but
-    // explodes under the plain TypeScript grammar (`<` is treated as a
-    // comparison). The dedicated `Lang::Tsx` variant + `ast_grep_language::Tsx`
-    // parser must recover the function symbol.
+    // A function returning JSX parses cleanly under the Tsx grammar (which
+    // `Lang::Typescript` now dispatches to internally), so callers don't
+    // need a separate variant for JSX-bearing source.
     let src = "function Hello() { return <div />; }\n";
-    let syms = extract(Lang::Tsx, src).expect("tsx extraction");
+    let syms = extract(Lang::Typescript, src).expect("tsx extraction");
     let hello = syms
         .iter()
         .find(|s| s.name == "Hello" && s.kind == "function")
-        .unwrap_or_else(|| panic!("missing function Hello in {syms:?}"));
-    assert_eq!(hello.language, "tsx", "language tag should be 'tsx'");
+        .expect("missing function Hello in JSX-bearing source");
+    assert_eq!(hello.language, "typescript", "language tag is canonical");
     assert!(
         hello.snippet.contains("<div"),
         "snippet should retain JSX element, got {:?}",
