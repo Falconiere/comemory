@@ -53,11 +53,16 @@ struct Row {
 /// Drain stdin and insert each row into `code_symbols` + `code_fts` +
 /// `code_vec`. The caller-supplied `embedding` is dim-checked by
 /// `vector::insert_code` against `schema_meta.code_vector_dim`.
+///
+/// The whole stdin loop runs inside one SQLite transaction so a malformed
+/// row mid-stream rolls back every prior insert — no half-ingested batches
+/// land in `code_symbols`/`code_fts`/`code_vec`.
 pub async fn run(_args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
-    let conn = connection::open(paths.db_path())?;
+    let mut conn = connection::open(paths.db_path())?;
 
+    let tx = conn.transaction()?;
     let stdin = std::io::stdin();
     for line in stdin.lock().lines() {
         let line = line.map_err(Error::Io)?;
@@ -65,8 +70,9 @@ pub async fn run(_args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<
             continue;
         }
         let row: Row = serde_json::from_str(&line)?;
-        insert_row(&conn, &row)?;
+        insert_row(&tx, &row)?;
     }
+    tx.commit()?;
     Ok(())
 }
 
