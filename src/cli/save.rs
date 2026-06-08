@@ -94,10 +94,20 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
         }
         Some(s) => s.to_string(),
     };
+    // Trim, drop empties, and de-duplicate while preserving first-mention
+    // order. `memory_tags` has a `PRIMARY KEY (memory_id, tag)` constraint,
+    // so feeding `--tags foo,foo` straight through would abort the save
+    // transaction with a UNIQUE violation. Empty entries (`--tags ,foo`)
+    // are dropped because tag rows must be non-empty per the schema.
     let tags: Vec<String> = if a.tags.is_empty() {
         Vec::new()
     } else {
-        a.tags.split(',').map(|t| t.trim().to_string()).collect()
+        let mut seen = std::collections::HashSet::new();
+        a.tags
+            .split(',')
+            .map(|t| t.trim().to_string())
+            .filter(|t| !t.is_empty() && seen.insert(t.clone()))
+            .collect()
     };
 
     let paths = Paths::new(resolve_data_dir(data_dir));

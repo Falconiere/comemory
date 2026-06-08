@@ -86,7 +86,13 @@ pub async fn run(args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<(
             // an indexing cursor, so skip them.
             None => continue,
         };
-        if oid_is_indexed(&tx, &args.repo, &rel, &oid)? {
+        // Under `--extract` the cursor is intentionally ignored: callers
+        // expect every supported file to be re-emitted to stdout each run
+        // (e.g. to re-feed an embedder), so a previous non-extract run's
+        // `indexed_files` row must not silently suppress the JSONL stream.
+        // The non-extract path keeps the cursor short-circuit so repeated
+        // `index-code` runs over an unchanged repo stay O(touched-files).
+        if !args.extract && oid_is_indexed(&tx, &args.repo, &rel, &oid)? {
             continue;
         }
         // Drop any prior `code_symbols`/`code_vec`/`code_fts` rows for this

@@ -105,14 +105,19 @@ where
 }
 
 /// Best-effort classification for FTS5 MATCH-expression parse errors.
-/// FTS5 surfaces these as `SQLITE_ERROR` with a `fts5:` prefix or a
-/// `syntax error near "<token>"` substring on older builds. Used by
-/// [`search_memory`] / [`search_code`] to downgrade a user-typed
-/// malformed query to an empty result rather than aborting the wider
-/// retrieval pipeline.
+/// FTS5 surfaces these as `SQLITE_ERROR` with a `fts5:` prefix or, on older
+/// builds, a `syntax error near "<token>"` message. Used by [`search_memory`]
+/// / [`search_code`] to downgrade a user-typed malformed query to an empty
+/// result rather than aborting the wider retrieval pipeline.
+///
+/// The matcher is intentionally narrow: a bare `contains("fts5")` would also
+/// swallow operational failures like a corrupt FTS5 index or a schema-drifted
+/// `memory_fts` table, masking real bugs behind a silently empty result. Only
+/// the canonical `fts5: ...` prefix and the legacy `syntax error` substring
+/// are accepted so non-parse failures bubble up to the CLI.
 fn is_fts5_parse_error(e: &rusqlite::Error) -> bool {
     let s = e.to_string().to_lowercase();
-    s.starts_with("fts5:") || s.contains("fts5") || s.contains("syntax error")
+    s.starts_with("fts5:") || s.contains("syntax error")
 }
 
 /// Insert a row into the `code_fts` virtual table for a code symbol.
