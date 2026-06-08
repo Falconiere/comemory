@@ -1,4 +1,6 @@
-use comemory::graph::cross_link::extract_refs;
+use comemory::graph::cross_link::{extract_and_emit, extract_refs};
+use comemory::store::connection;
+use tempfile::tempdir;
 
 #[test]
 fn extracts_file_and_symbol_refs() {
@@ -70,6 +72,68 @@ fn requires_extension_to_match() {
     let r = extract_refs("see qwick-backend:src/db for the call");
     assert!(r.files.is_empty(), "no extension should mean no match");
     assert!(r.symbols.is_empty());
+}
+
+#[test]
+fn extract_and_emit_writes_v02_edges() {
+    // Direct coverage of the v0.2 edge-emission path. The parse logic is
+    // exercised elsewhere — this test confirms that for a body referencing
+    // one file and one (file, symbol) pair, `extract_and_emit` inserts
+    // exactly the rows that the v0.2 `edges` table contract documents:
+    // `file:<repo>:<path>` for `references_file`, and
+    // `symbol:<repo>:<path>:<sym>` for `references_symbol`.
+    let dir = tempdir().expect("tempdir");
+    let db = dir.path().join("comemory.db");
+    let conn = connection::open(&db).expect("open db");
+
+    let body = "Touches qwick-backend:src/db.rs:run_migration and \
+                qwick-backend:src/util.rs.";
+    extract_and_emit(&conn, "mem001", body).expect("emit");
+
+    let file_rows: Vec<(String, String, String)> = conn
+        .prepare(
+            "SELECT src_id, dst_id, rel FROM edges \
+              WHERE rel = 'references_file' ORDER BY dst_id",
+        )
+        .expect("prep")
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .expect("query")
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .expect("rows");
+    assert_eq!(
+        file_rows,
+        vec![
+            (
+                "mem001".to_string(),
+                "qwick-backend:src/db.rs".to_string(),
+                "references_file".to_string(),
+            ),
+            (
+                "mem001".to_string(),
+                "qwick-backend:src/util.rs".to_string(),
+                "references_file".to_string(),
+            ),
+        ],
+    );
+
+    let sym_rows: Vec<(String, String, String)> = conn
+        .prepare(
+            "SELECT src_id, dst_id, rel FROM edges \
+              WHERE rel = 'references_symbol' ORDER BY dst_id",
+        )
+        .expect("prep")
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .expect("query")
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .expect("rows");
+    assert_eq!(
+        sym_rows,
+        vec![(
+            "mem001".to_string(),
+            "qwick-backend:src/db.rs:run_migration".to_string(),
+            "references_symbol".to_string(),
+        )],
+    );
 }
 
 #[test]
