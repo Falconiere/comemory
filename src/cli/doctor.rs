@@ -88,6 +88,22 @@ pub async fn run(_args: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Res
         }
         ok
     };
+    // When the DB is not writable we skip `connection::open` — it issues
+    // `PRAGMA journal_mode = WAL` which is itself a write op and would
+    // surface as a hard error before the report is ever emitted. The
+    // operator still gets the partial report telling them why doctor
+    // can't go further (db_writable=false).
+    let cfg = load_config(&paths)?;
+    if !writable {
+        let report = Report {
+            data_dir: paths.data_dir().to_string_lossy().into_owned(),
+            db_writable: false,
+            schema_version: "unknown".into(),
+            sqlite_vec_loaded: false,
+            embed_hint: cfg.embed_hint,
+        };
+        return emit(&report, json_flag);
+    }
     let conn = connection::open(&db_path)?;
     let schema_version: String = conn.query_row(
         "SELECT value FROM schema_meta WHERE key = 'version'",
@@ -97,7 +113,6 @@ pub async fn run(_args: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Res
     let sqlite_vec_loaded = conn
         .query_row("SELECT vec_version()", [], |r| r.get::<_, String>(0))
         .is_ok();
-    let cfg = load_config(&paths)?;
     let report = Report {
         data_dir: paths.data_dir().to_string_lossy().into_owned(),
         db_writable: writable,

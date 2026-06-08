@@ -25,10 +25,24 @@ command -v curl >/dev/null || { echo "comemory-embed requires curl" >&2; exit 69
 command -v jq   >/dev/null || { echo "comemory-embed requires jq"   >&2; exit 69; }
 case "$cmd" in
     save)
-        body="${@: -1}"
+        # `${@: -1:1}` is `set -u`-safe even when $@ is empty; the inner guard
+        # rejects the case where the would-be body is empty or looks like a
+        # flag (the caller forgot the positional body argument).
+        body="${*: -1:1}"
+        if [[ -z "$body" || "$body" == -* ]]; then
+            echo "usage: comemory-embed save [opts] BODY" >&2
+            exit 64
+        fi
         embed "$body" | comemory save --vector-stdin "$@" ;;
     search)
-        query="$1"; shift
+        # `${1:-}` keeps `set -u` from killing the script before the usage
+        # line on a `comemory-embed search` with no query argument.
+        query="${1:-}"
+        if [[ -z "$query" ]]; then
+            echo "usage: comemory-embed search QUERY [opts]" >&2
+            exit 64
+        fi
+        shift
         embed "$query" | comemory search "$query" --vector-stdin "$@" ;;
     *) echo "usage: comemory-embed save|search ..." >&2; exit 64 ;;
 esac
