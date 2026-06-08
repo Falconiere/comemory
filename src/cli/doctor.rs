@@ -78,7 +78,9 @@ pub async fn run(_args: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Res
     let sqlite_vec_loaded = conn
         .query_row("SELECT vec_version()", [], |r| r.get::<_, String>(0))
         .is_ok();
-    let cfg = Config::defaults().with_env()?;
+    let cfg = Config::defaults()
+        .with_file(paths.config_file().as_path())?
+        .with_env()?;
     let report = Report {
         data_dir: paths.data_dir().to_string_lossy().into_owned(),
         db_writable: writable,

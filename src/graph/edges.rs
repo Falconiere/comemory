@@ -55,11 +55,16 @@ pub fn outgoing(
 
 /// Transitive `supersedes` chain starting at `start` memory id,
 /// depth-bounded by `max_depth`.
+///
+/// Uses `UNION` (not `UNION ALL`) in the recursive CTE so SQLite deduplicates
+/// `(id, depth)` tuples on the fly and terminates immediately when a cycle
+/// would re-visit an already-seen node. This prevents exponential blowup on
+/// graphs with back-edges (e.g. a→b, b→a).
 pub fn supersedes_chain(conn: &Connection, start: &str, max_depth: u32) -> Result<Vec<String>> {
     let mut stmt = conn.prepare(
         "WITH RECURSIVE walk(id, depth) AS (
              SELECT ?1, 0
-             UNION ALL
+             UNION
              SELECT e.dst_id, w.depth + 1
                FROM edges e
                JOIN walk w ON e.src_id = w.id
