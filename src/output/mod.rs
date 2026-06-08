@@ -3,5 +3,7 @@
 //! route through `writeln!` on the locked standard streams to keep the
 //! `no-bypass-check` gate happy.
 
+pub mod context;
 pub mod json;
+pub mod search;
 pub mod tty;
