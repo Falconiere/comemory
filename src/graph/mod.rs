@@ -5,6 +5,7 @@
 //! read-only traversals off the same [`Graph`] handle.
 
 pub mod cross_link;
+pub mod edges;
 pub mod query;
 pub mod schema;
 pub mod upsert;
