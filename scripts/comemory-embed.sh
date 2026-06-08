@@ -15,7 +15,14 @@ embed() {
       | jq -c '{embedding}'
 }
 
-cmd="$1"; shift
+cmd="${1:-}"
+if [[ -z "$cmd" ]]; then
+    echo "usage: comemory-embed save|search ..." >&2
+    exit 64
+fi
+shift
+command -v curl >/dev/null || { echo "comemory-embed requires curl" >&2; exit 69; }
+command -v jq   >/dev/null || { echo "comemory-embed requires jq"   >&2; exit 69; }
 case "$cmd" in
     save)
         body="${@: -1}"
@@ -23,5 +30,5 @@ case "$cmd" in
     search)
         query="$1"; shift
         embed "$query" | comemory search "$query" --vector-stdin "$@" ;;
-    *) echo "usage: comemory-embed save|search ..."; exit 64 ;;
+    *) echo "usage: comemory-embed save|search ..." >&2; exit 64 ;;
 esac

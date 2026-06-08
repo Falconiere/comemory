@@ -32,10 +32,12 @@ CREATE INDEX idx_memory_tags_tag ON memory_tags(tag);
 -- ─── memory vectors (sqlite-vec) ─────────────────────────────────────────
 -- dim configurable via COMEMORY_VECTOR_DIM (default 1024).
 -- the caller MUST send vectors of the configured dim; mismatch is
--- a hard error.
+-- a hard error. distance_metric=cosine matches the nomic-embed-text
+-- family which produces unit vectors; score = 1.0 - distance gives
+-- cosine similarity in ~[-1, 1].
 CREATE VIRTUAL TABLE memory_vec USING vec0(
     memory_id TEXT PRIMARY KEY,
-    embedding FLOAT[1024]
+    embedding FLOAT[1024] distance_metric=cosine
 );
 
 -- ─── memory full-text (FTS5, external-content-less) ──────────────────────
@@ -71,9 +73,11 @@ CREATE INDEX idx_code_repo_path ON code_symbols(repo, path);
 CREATE INDEX idx_code_blob      ON code_symbols(blob_oid);
 CREATE INDEX idx_code_simhash   ON code_symbols(simhash);
 
+-- distance_metric=cosine matches jina-embeddings-v2-base-code which
+-- produces unit vectors; score = 1.0 - distance gives cosine similarity.
 CREATE VIRTUAL TABLE code_vec USING vec0(
     symbol_id INTEGER PRIMARY KEY,
-    embedding FLOAT[768]
+    embedding FLOAT[768] distance_metric=cosine
 );
 
 CREATE VIRTUAL TABLE code_fts USING fts5(
