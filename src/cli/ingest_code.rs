@@ -37,7 +37,11 @@ pub struct Args;
 
 /// JSONL row shape accepted by the ingest path. Mirrors the JSON emitted by
 /// `comemory index-code --extract` plus the caller-supplied dense vector.
+///
+/// `deny_unknown_fields` causes malformed or extended rows to fail loudly so
+/// schema drift is caught at the ingest boundary rather than silently dropped.
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Row {
     repo: String,
     path: String,

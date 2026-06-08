@@ -20,7 +20,11 @@ use crate::prelude::*;
 /// `pub(crate)` because both `cli::save` and `cli::search` deserialize this
 /// shape; the visibility lets either subcommand reuse it without exposing
 /// the type in the public crate surface.
+///
+/// `deny_unknown_fields` rejects stray keys so callers notice schema drift
+/// immediately rather than silently passing bad payloads.
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct EmbeddingPayload {
     /// Dense vector handed in by the caller.
     pub(crate) embedding: Vec<f32>,
@@ -38,11 +42,20 @@ pub(crate) fn parse_csv(raw: &str) -> Result<Vec<f32>> {
 /// Read a JSON `{ "embedding": [..] }` payload from stdin and return the
 /// inner vector. Caller is responsible for ensuring stdin is not also being
 /// consumed for the memory body.
+///
+/// Reads at most 8 MiB from stdin before returning
+/// `Error::Config("vector payload exceeds 8 MB limit")`, guarding against
+/// callers accidentally piping a huge file into a vector slot.
 pub(crate) fn read_stdin_payload() -> Result<Vec<f32>> {
+    const LIMIT: u64 = 8 * 1024 * 1024;
     let mut buf = String::new();
     std::io::stdin()
+        .take(LIMIT + 1)
         .read_to_string(&mut buf)
         .map_err(Error::Io)?;
+    if buf.len() as u64 > LIMIT {
+        return Err(Error::Config("vector payload exceeds 8 MB limit".into()));
+    }
     let payload: EmbeddingPayload = serde_json::from_str(buf.trim())?;
     Ok(payload.embedding)
 }

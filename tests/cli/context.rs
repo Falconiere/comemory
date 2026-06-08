@@ -10,6 +10,8 @@ use comemory::store::connection;
 use serde_json::Value;
 use tempfile::TempDir;
 
+use super::vectors;
+
 fn bin(home: &TempDir) -> Command {
     let mut c = Command::cargo_bin("comemory").expect("cargo_bin comemory");
     c.env("COMEMORY_DATA_DIR", home.path().join(".comemory"));
@@ -38,11 +40,15 @@ fn save_memory(home: &TempDir, body: &str, kind: &str) -> String {
     extract_saved_id(&String::from_utf8(out.get_output().stdout.clone()).expect("utf8"))
 }
 
-/// Insert a zero-blob vector row for `id` into `memory_vec`.
-fn seed_zero_vector(home: &TempDir, id: &str, dim: usize) {
+/// Insert a deterministic non-zero vector row for `id` into `memory_vec`.
+/// Uses the vectors helper so the vector is well-scaled (no zero components),
+/// which is required for cosine distance to be well-defined.
+fn seed_unit_vector(home: &TempDir, id: &str, dim: usize) {
     let data_dir = home.path().join(".comemory");
     let conn = connection::open(data_dir.join("comemory.db")).expect("open");
-    let blob: Vec<u8> = vec![0u8; dim * 4];
+    let v = vectors::vector(id, dim);
+    // Encode via the same LE-float32 BLOB path the live INSERT path uses.
+    let blob: Vec<u8> = v.iter().flat_map(|f| f.to_le_bytes()).collect();
     conn.execute(
         "INSERT OR REPLACE INTO memory_vec(memory_id, embedding) VALUES(?1, ?2)",
         rusqlite::params![id, blob],
@@ -107,14 +113,26 @@ fn context_lexical_path_no_vector() {
     assert!(v.get("memories").and_then(Value::as_array).is_some());
 }
 
-/// --vector path: 1024-dim zero vector triggers ANN branch; bundle shape valid.
+/// --vector-stdin path: 1024-dim non-zero vector triggers ANN branch; bundle shape valid.
+/// Cosine distance requires non-zero vectors; we use the deterministic helper
+/// so the query and the stored vector are both well-formed unit-scale vectors.
+/// Uses --vector-stdin rather than --vector CSV to avoid clap misinterpreting
+/// a CSV string that starts with a negative float as a flag.
 #[test]
 fn context_vector_path_accepts_csv_vector() {
     let home = TempDir::new().expect("tempdir");
     let id = save_memory(&home, "vector path context body", "note");
-    seed_zero_vector(&home, &id, 1024);
-    let vec_csv = vec!["0.0"; 1024].join(",");
-    let v = context_json(&home, "vector path", &["--vector", &vec_csv]);
+    seed_unit_vector(&home, &id, 1024);
+    let query_vec = vectors::vector("context-query", 1024);
+    let payload = serde_json::to_string(&serde_json::json!({ "embedding": query_vec }))
+        .expect("json payload");
+    let out = bin(&home)
+        .args(["context", "vector path", "--json", "--vector-stdin"])
+        .write_stdin(payload)
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    let v: Value = serde_json::from_str(&stdout).expect("json");
     assert!(v.get("memories").and_then(Value::as_array).is_some());
 }
 

@@ -3,6 +3,12 @@
 //! All callers must pass vectors of the configured dim. The dim is
 //! locked once at the schema layer and surfaced via `dim_memory()` /
 //! `dim_code()`.
+//!
+//! Both `memory_vec` and `code_vec` are created with
+//! `distance_metric=cosine` so the KNN distance returned is cosine
+//! distance (not L2²). The score formula `score = 1.0 - distance`
+//! yields cosine similarity in the range `[-1, 1]`, where `1.0` is
+//! identical and `-1.0` is opposite.
 
 use rusqlite::{params, Connection};
 
