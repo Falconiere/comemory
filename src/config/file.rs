@@ -1,6 +1,22 @@
+use std::path::Path;
+
 use serde::{Deserialize, Serialize};
 
 use crate::prelude::*;
+
+/// Partial config overlay loaded from a `config.toml` file.
+///
+/// Every field is `Option<_>` so a sparse file that only sets a handful of
+/// keys is valid TOML. Fields present in the file overlay the defaults;
+/// absent fields leave the defaults untouched. Env-var overrides applied
+/// afterwards via [`Config::with_env`] take precedence over the file.
+#[derive(Debug, Deserialize, Default)]
+struct PartialConfig {
+    /// Operator-supplied hint identifying the active embedder; surfaced by
+    /// `comemory doctor` and echoed back verbatim. Not interpreted by
+    /// comemory itself.
+    embed_hint: Option<String>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -131,6 +147,28 @@ impl Config {
             },
             embed_hint: None,
         }
+    }
+
+    /// Overlay settings from an optional TOML config file.
+    ///
+    /// Only keys present in the file are applied; absent keys leave the
+    /// defaults (or any previously-applied overrides) untouched. Returns
+    /// `self` unchanged when the file does not exist, so callers can call
+    /// `Config::defaults().with_file(path)?.with_env()?` unconditionally.
+    ///
+    /// A file that exists but fails to parse is a hard error so operators
+    /// notice immediately rather than silently running on stale defaults.
+    pub fn with_file(mut self, path: &Path) -> Result<Self> {
+        if !path.exists() {
+            return Ok(self);
+        }
+        let raw = std::fs::read_to_string(path).map_err(Error::Io)?;
+        let partial: PartialConfig =
+            toml::from_str(&raw).map_err(|e| Error::Config(format!("config.toml: {e}")))?;
+        if let Some(hint) = partial.embed_hint {
+            self.embed_hint = Some(hint);
+        }
+        Ok(self)
     }
 
     /// Apply `COMEMORY_*` env-var overrides on top of `self`.

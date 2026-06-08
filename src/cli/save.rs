@@ -135,7 +135,17 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     // 2. SQLite mirror in one transaction. Markdown is the source of truth,
     //    so a mirror failure surfaces as an `Err` — but the markdown file
     //    is already on disk and can be replayed by `comemory rebuild`.
-    write_sqlite_mirror(&mut conn, &rec, &tags, vector_opt.as_deref())?;
+    //    We wrap the error with the markdown path and a rebuild hint so the
+    //    operator knows exactly which file was written and how to reconcile.
+    let md_path = rec.path.clone();
+    write_sqlite_mirror(&mut conn, &rec, &tags, vector_opt.as_deref()).map_err(|e| {
+        Error::Other(format!(
+            "save: markdown at {} was written but SQLite mirror failed: {}; \
+             run `comemory rebuild` to reconcile",
+            md_path.display(),
+            e
+        ))
+    })?;
 
     let output = Output {
         id: rec.frontmatter.id.clone(),

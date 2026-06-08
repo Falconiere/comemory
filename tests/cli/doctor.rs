@@ -77,3 +77,55 @@ fn doctor_embed_hint_round_trips_via_env_var() {
         "TTY output must contain embed_hint; got: {tty_out:?}"
     );
 }
+
+/// `embed_hint` set in config.toml (the file layer) must appear in the doctor
+/// report even when the env var is absent. This validates that `doctor` honours
+/// the full defaults → file → env layering order rather than skipping the file.
+#[test]
+fn doctor_embed_hint_round_trips_via_config_file() {
+    let home = TempDir::new().expect("tempdir");
+    // Bootstrap the data dir so config.toml has a place to live.
+    bin(&home).args(["doctor"]).assert().success();
+
+    // Write a minimal config.toml under the data dir.
+    let data_dir = home.path().join(".comemory");
+    let config_path = data_dir.join("config.toml");
+    std::fs::write(&config_path, "embed_hint = \"file-layer-embedder\"\n")
+        .expect("write config.toml");
+
+    // Run doctor without the env var so the value must come from the file.
+    let assertion = bin(&home).args(["--json", "doctor"]).assert().success();
+    let stdout = String::from_utf8(assertion.get_output().stdout.clone()).expect("utf8 stdout");
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
+    assert_eq!(
+        v["embed_hint"].as_str(),
+        Some("file-layer-embedder"),
+        "embed_hint from config.toml must reach the doctor report; got: {v}"
+    );
+}
+
+/// Env var must override config.toml when both are set (env wins in the
+/// defaults → file → env layering order).
+#[test]
+fn doctor_embed_hint_env_overrides_config_file() {
+    let home = TempDir::new().expect("tempdir");
+    bin(&home).args(["doctor"]).assert().success();
+
+    let data_dir = home.path().join(".comemory");
+    std::fs::write(
+        data_dir.join("config.toml"),
+        "embed_hint = \"file-value\"\n",
+    )
+    .expect("write config.toml");
+
+    let mut c = bin(&home);
+    c.env("COMEMORY_EMBED_HINT", "env-value");
+    let assertion = c.args(["--json", "doctor"]).assert().success();
+    let stdout = String::from_utf8(assertion.get_output().stdout.clone()).expect("utf8 stdout");
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
+    assert_eq!(
+        v["embed_hint"].as_str(),
+        Some("env-value"),
+        "env var must override config.toml embed_hint; got: {v}"
+    );
+}

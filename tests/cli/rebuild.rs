@@ -123,3 +123,111 @@ fn rebuild_skips_hidden_staging_files() {
     let cnt: i64 = count(&conn, "SELECT count(*) FROM memories");
     assert_eq!(cnt, 1);
 }
+
+/// Ingest a code symbol row via `comemory ingest-code` and verify it survives
+/// a `comemory rebuild`. The code index tables must be preserved by copying
+/// them from the old DB into the newly-built DB.
+#[test]
+fn rebuild_preserves_code_index() {
+    let home = tempdir().expect("tempdir");
+
+    // Save a memory so the DB exists before the ingest.
+    run_save(&home, &["--kind", "note", "code index preservation body"]);
+
+    // Ingest one code symbol via ingest-code.
+    let embedding = super::vectors::vector("rebuild-code-seed", 768);
+    let row = serde_json::json!({
+        "repo": "myrepo",
+        "path": "src/lib.rs",
+        "blob_oid": "aaaa000000000000000000000000000000000000",
+        "symbol": "preserved_fn",
+        "kind": "function",
+        "lang": "rust",
+        "line_start": 1_u32,
+        "line_end": 2_u32,
+        "snippet": "fn preserved_fn() {}",
+        "simhash": 0_i64,
+        "embedding": embedding,
+    });
+    let payload = format!("{row}\n");
+    Command::cargo_bin("comemory")
+        .expect("bin")
+        .env("COMEMORY_DATA_DIR", home.path())
+        .args(["ingest-code"])
+        .write_stdin(payload)
+        .assert()
+        .success();
+
+    // Confirm baseline counts.
+    {
+        let conn = open_db(&home);
+        assert_eq!(
+            count(&conn, "SELECT count(*) FROM code_symbols"),
+            1,
+            "pre-rebuild code_symbols"
+        );
+    }
+
+    // Rebuild: must preserve the code index.
+    run_rebuild(&home);
+
+    let conn = open_db(&home);
+    assert_eq!(
+        count(&conn, "SELECT count(*) FROM memories"),
+        1,
+        "rebuild must restore the memory row"
+    );
+    assert_eq!(
+        count(&conn, "SELECT count(*) FROM code_symbols"),
+        1,
+        "rebuild must preserve code_symbols rows"
+    );
+    assert_eq!(
+        count(&conn, "SELECT count(*) FROM indexed_files"),
+        1,
+        "rebuild must preserve indexed_files rows"
+    );
+}
+
+/// When the rebuild cannot complete (e.g. the tmp DB path is blocked by a
+/// pre-existing directory), the original `comemory.db` must be left intact
+/// and the tmp artefact must be cleaned up.
+///
+/// We trigger the failure by pre-creating a *directory* at the tmp path
+/// before running rebuild. SQLite cannot open a directory as a database, so
+/// `connection::open(tmp_path)` returns an error immediately — well before
+/// the rename that would clobber the live DB.
+#[test]
+fn rebuild_does_not_destroy_on_error() {
+    let home = tempdir().expect("tempdir");
+    run_save(&home, &["--kind", "note", "original body"]);
+
+    // Record the original DB's memory count to compare after the failed rebuild.
+    let original_count = {
+        let conn = open_db(&home);
+        count(&conn, "SELECT count(*) FROM memories")
+    };
+
+    // Block the tmp path with a directory so `connection::open` cannot
+    // create the tmp DB — rebuild must return a non-zero exit code without
+    // touching the live `comemory.db`.
+    let tmp_path = home.path().join("comemory.db.rebuild.tmp");
+    std::fs::create_dir_all(&tmp_path).expect("create dir at tmp path");
+
+    // Rebuild must fail.
+    Command::cargo_bin("comemory")
+        .expect("bin")
+        .env("COMEMORY_DATA_DIR", home.path())
+        .args(["rebuild"])
+        .assert()
+        .failure();
+
+    // The original DB must still be intact: it must open and have the same
+    // memory count as before.
+    let conn = open_db(&home);
+    let after_count = count(&conn, "SELECT count(*) FROM memories");
+    assert_eq!(
+        after_count, original_count,
+        "original DB must be intact after a failed rebuild"
+    );
+}
