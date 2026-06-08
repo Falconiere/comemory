@@ -123,10 +123,12 @@ fn toml_round_trip() {
 }
 
 #[test]
-fn default_vector_dims_match_spec() {
-    // Spec §7: COMEMORY_VECTOR_DIM default 1024 (memory) and
-    // COMEMORY_CODE_VECTOR_DIM default 768 (code). These pin caller-supplied
-    // vectors so dim drift surfaces as `VecDimMismatch` at insert time.
+fn default_vector_dims_match_ddl() {
+    // The authoritative dim lives in src/store/sql/0002_v2_tables.sql:
+    // `memory_vec FLOAT[1024]` and `code_vec FLOAT[768]`. Config defaults
+    // mirror those literals for `comemory doctor` reporting; they cannot
+    // be overridden via env (a divergent env value would just surface as
+    // `VecDimMismatch` at first insert).
     let c = Config::defaults();
     assert_eq!(c.retrieval.memory_vector_dim, 1024);
     assert_eq!(c.retrieval.code_vector_dim, 768);
@@ -140,23 +142,32 @@ fn default_embed_hint_is_unset() {
 }
 
 #[test]
-fn env_vector_dim_overrides_apply() {
-    // Caller can pin a different memory embedder dimension; with_env must
-    // reflect it on the resulting Config.
+fn env_vector_dim_is_ignored() {
+    // Regression for PR #3 review thread: COMEMORY_VECTOR_DIM used to feed
+    // `with_env` and silently overwrite `retrieval.memory_vector_dim`,
+    // creating a footgun where the config value disagreed with the
+    // hardcoded vec0 DDL. `with_env` must leave the field on its default
+    // even when the env var is set.
     std::env::set_var("COMEMORY_VECTOR_DIM", "512");
     let c = Config::defaults().with_env();
     std::env::remove_var("COMEMORY_VECTOR_DIM");
-    let cfg = c.expect("vector dim override must succeed");
-    assert_eq!(cfg.retrieval.memory_vector_dim, 512);
+    let cfg = c.expect("with_env must succeed even with COMEMORY_VECTOR_DIM set");
+    assert_eq!(
+        cfg.retrieval.memory_vector_dim, 1024,
+        "COMEMORY_VECTOR_DIM must not override the DDL-locked dim"
+    );
 }
 
 #[test]
-fn env_code_vector_dim_overrides_apply() {
+fn env_code_vector_dim_is_ignored() {
     std::env::set_var("COMEMORY_CODE_VECTOR_DIM", "384");
     let c = Config::defaults().with_env();
     std::env::remove_var("COMEMORY_CODE_VECTOR_DIM");
-    let cfg = c.expect("code vector dim override must succeed");
-    assert_eq!(cfg.retrieval.code_vector_dim, 384);
+    let cfg = c.expect("with_env must succeed even with COMEMORY_CODE_VECTOR_DIM set");
+    assert_eq!(
+        cfg.retrieval.code_vector_dim, 768,
+        "COMEMORY_CODE_VECTOR_DIM must not override the DDL-locked dim"
+    );
 }
 
 #[test]
@@ -168,32 +179,4 @@ fn env_embed_hint_overrides_apply() {
     std::env::remove_var("COMEMORY_EMBED_HINT");
     let cfg = c.expect("embed hint override must succeed");
     assert_eq!(cfg.embed_hint.as_deref(), Some("ollama:nomic-embed-text"));
-}
-
-#[test]
-fn env_rejects_invalid_vector_dim() {
-    // Non-numeric vector dim must error — silently dropping it would let a
-    // typo mask the configured dimension and fall back to the default.
-    std::env::set_var("COMEMORY_VECTOR_DIM", "not-a-number");
-    let result = Config::defaults().with_env();
-    std::env::remove_var("COMEMORY_VECTOR_DIM");
-    let err = result.expect_err("invalid vector dim must error");
-    let msg = err.to_string();
-    assert!(
-        msg.contains("COMEMORY_VECTOR_DIM"),
-        "error must name the offending var, got: {msg}"
-    );
-}
-
-#[test]
-fn env_rejects_invalid_code_vector_dim() {
-    std::env::set_var("COMEMORY_CODE_VECTOR_DIM", "huge");
-    let result = Config::defaults().with_env();
-    std::env::remove_var("COMEMORY_CODE_VECTOR_DIM");
-    let err = result.expect_err("invalid code vector dim must error");
-    let msg = err.to_string();
-    assert!(
-        msg.contains("COMEMORY_CODE_VECTOR_DIM"),
-        "error must name the offending var, got: {msg}"
-    );
 }

@@ -72,10 +72,12 @@ pub async fn run(_args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<
         PathBuf::from(p)
     };
 
-    // Best-effort cleanup of any leftover tmp from a previous crashed run.
-    if tmp_path.exists() {
-        let _ = std::fs::remove_file(&tmp_path);
-    }
+    // Best-effort cleanup of any leftover tmp + its WAL/SHM sidecars from a
+    // previous crashed run. SQLite leaves `*-wal` / `*-shm` next to the main
+    // file after a `PRAGMA journal_mode = WAL` open even on a clean close,
+    // so the tmp path needs its sidecars removed alongside the main file or
+    // the next rebuild reuses stale WALs.
+    remove_db_and_sidecars(&tmp_path);
 
     let result = build_new_db(&db, &tmp_path, &paths);
 
@@ -83,21 +85,39 @@ pub async fn run(_args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<
         Ok(()) => {
             // Atomic swap: rename tmp over the live path.
             std::fs::rename(&tmp_path, &db).map_err(Error::Io)?;
-            // Remove stale WAL/SHM sidecars so the next open starts clean.
-            for suffix in ["-wal", "-shm"] {
-                let mut sidecar = db.clone().into_os_string();
-                sidecar.push(suffix);
-                let sidecar = PathBuf::from(sidecar);
-                if sidecar.exists() {
-                    let _ = std::fs::remove_file(&sidecar);
-                }
-            }
+            // Remove stale WAL/SHM sidecars next to both the live DB (so the
+            // next open of `comemory.db` starts clean) and the tmp path (so
+            // the leftover `comemory.db.rebuild.tmp-wal` / `-shm` from the
+            // just-renamed tmp connection don't linger in the data dir).
+            remove_sidecars(&db);
+            remove_sidecars(&tmp_path);
             Ok(())
         }
         Err(e) => {
-            // Remove the partial tmp so the caller can retry cleanly.
-            let _ = std::fs::remove_file(&tmp_path);
+            // Remove the partial tmp + sidecars so the caller can retry cleanly.
+            remove_db_and_sidecars(&tmp_path);
             Err(e)
+        }
+    }
+}
+
+/// Remove `path` plus its SQLite WAL/SHM sidecars if present. Best-effort:
+/// each removal is independent so a missing file does not abort the loop.
+fn remove_db_and_sidecars(path: &Path) {
+    if path.exists() {
+        let _ = std::fs::remove_file(path);
+    }
+    remove_sidecars(path);
+}
+
+/// Remove `path-wal` and `path-shm` if present. Best-effort.
+fn remove_sidecars(path: &Path) {
+    for suffix in ["-wal", "-shm"] {
+        let mut sidecar = path.to_path_buf().into_os_string();
+        sidecar.push(suffix);
+        let sidecar = PathBuf::from(sidecar);
+        if sidecar.exists() {
+            let _ = std::fs::remove_file(&sidecar);
         }
     }
 }

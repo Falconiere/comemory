@@ -16,11 +16,12 @@ results immediately after install.
 
 For dense / semantic retrieval, *you* supply the vectors. Pipe them in via
 the `--vector` (CSV) or `--vector-stdin` (JSON `{"embedding":[..]}` payload
-on stdin) flags exposed on `comemory save` and `comemory search`. The first
-write locks the dimensionality into `schema_meta`; later inserts that do
-not match surface as `VecDimMismatch`. Tune the configured dim with
-`COMEMORY_VECTOR_DIM` (memories) and `COMEMORY_CODE_VECTOR_DIM` (code
-symbols). Tag the embedder you used via `COMEMORY_EMBED_HINT` so
+on stdin) flags exposed on `comemory save` and `comemory search`. The
+caller-supplied vectors must match the dims baked into the vec0 DDL —
+1024 for `memory_vec`, 768 for `code_vec` (defined in
+`src/store/sql/0002_v2_tables.sql`); mismatched dims surface as
+`VecDimMismatch`. To use a different embedder dim, edit the DDL literal
+and rebuild. Tag the embedder you used via `COMEMORY_EMBED_HINT` so
 `comemory doctor` can surface it.
 
 A wrapper script that bridges to a local Ollama instance ships in

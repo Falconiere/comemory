@@ -54,7 +54,22 @@ pub fn insert_memory(conn: &Connection, memory_id: &str, vector: &[f32]) -> Resu
     Ok(())
 }
 
+/// Oversample factor applied to the vec0 KNN candidate set when a `repo`
+/// post-filter is in play. vec0 returns the global nearest-k by cosine
+/// distance and the JOIN against `memories` runs *after* that, so a corpus
+/// spread across multiple repos can drop most of the top-k before the
+/// caller ever sees them. Asking for `k * factor` candidates gives the
+/// JOIN room to keep `k` survivors in the common case where the requested
+/// repo holds a sizeable fraction of the corpus.
+const REPO_FILTER_OVERSAMPLE: usize = 8;
+
 /// Top-k nearest memories. Optional `repo` filter applied via join.
+///
+/// When `repo` is `Some`, the vec0 candidate set is oversampled by
+/// [`REPO_FILTER_OVERSAMPLE`] so the post-filter JOIN against `memories`
+/// has enough room to keep `k` survivors. Without oversampling a corpus
+/// where the requested repo holds e.g. 20% of the rows would receive only
+/// ~`0.2 * k` hits on average, silently undersampling the caller.
 pub fn knn_memory(
     conn: &Connection,
     query: &[f32],
@@ -65,17 +80,24 @@ pub fn knn_memory(
     embed::guard_dim(query, dim)?;
     // `?3 IS NULL OR m.repo = ?3` lets us bind the optional repo filter as
     // a single SQL string. SQLite short-circuits on the first disjunct when
-    // `?3` is NULL, so the repo filter is a no-op in that case.
+    // `?3` is NULL, so the repo filter is a no-op in that case. The final
+    // `LIMIT ?4` trims the oversampled candidate set back to `k`.
     let sql = "SELECT v.memory_id, v.distance FROM memory_vec v \
                  JOIN memories m ON m.id = v.memory_id \
                 WHERE v.embedding MATCH ?1 AND k = ?2 \
                   AND (?3 IS NULL OR m.repo = ?3) \
                   AND m.deleted_at IS NULL \
-                ORDER BY v.distance";
+                ORDER BY v.distance \
+                LIMIT ?4";
     let blob = embed::to_vec_blob(query);
+    let candidate_k = if repo.is_some() {
+        k.saturating_mul(REPO_FILTER_OVERSAMPLE).max(k)
+    } else {
+        k
+    };
     let mut stmt = conn.prepare(sql)?;
     let rows = stmt
-        .query_map(params![blob, k as i64, repo], |row| {
+        .query_map(params![blob, candidate_k as i64, repo, k as i64], |row| {
             Ok(MemoryHit {
                 memory_id: row.get(0)?,
                 distance: row.get(1)?,
