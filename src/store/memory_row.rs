@@ -107,14 +107,26 @@ pub fn insert(
             md_path,
         ],
     )?;
-    for tag in tags {
+    // Defense-in-depth: `memory_tags` has `PRIMARY KEY (memory_id, tag)`, so a
+    // duplicate entry would abort the whole transaction. Save already de-dupes
+    // its `--tags` argument upstream, but rebuild feeds us `fm.tags` straight
+    // from a markdown file that a human may have hand-edited with repeats. The
+    // dedup here keeps the helper safe for any caller without requiring every
+    // entry point to remember the constraint.
+    let mut seen = std::collections::HashSet::new();
+    let unique_tags: Vec<&str> = tags
+        .iter()
+        .map(|t| t.as_str())
+        .filter(|t| !t.is_empty() && seen.insert(*t))
+        .collect();
+    for tag in &unique_tags {
         conn.execute(
             "INSERT INTO memory_tags(memory_id, tag) VALUES(?1, ?2)",
             rusqlite::params![&fm.id, tag],
         )?;
     }
-    fts::index_memory(conn, &fm.id, body, &tags.join(","))?;
-    insert_edges(conn, fm, tags, body)?;
+    fts::index_memory(conn, &fm.id, body, &unique_tags.join(","))?;
+    insert_edges(conn, fm, &unique_tags, body)?;
     Ok(())
 }
 
@@ -122,7 +134,7 @@ pub fn insert(
 /// `in_repo`, `authored_by`, `tagged`, plus the `references_file` /
 /// `references_symbol` edges harvested from the body by
 /// [`cross_link::extract_and_emit`].
-fn insert_edges(conn: &Connection, fm: &Frontmatter, tags: &[String], body: &str) -> Result<()> {
+fn insert_edges(conn: &Connection, fm: &Frontmatter, tags: &[&str], body: &str) -> Result<()> {
     if !fm.repo.is_empty() {
         edges::insert(
             conn,
