@@ -60,6 +60,12 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.95"
+      - name: Run check-all gate
+        run: bash scripts/check-all.sh
       - name: Install dist
         # we specify bash to get pipefail; it guards against the `curl` command
         # failing. otherwise `sh` won't catch that `curl` returned non-0
