@@ -1,6 +1,12 @@
 # Changelog
 
-## 0.2.0 — 2026-06-08 (Lightweight refactor)
+## 0.2.0-rc.1 — 2026-06-09 (Pre-release dry-run)
+
+Pre-release exercising the cargo-dist release pipeline before the
+final 0.2.0 cut. No source changes vs. 0.2.0. Pre-release tag does
+not update the Homebrew tap.
+
+## 0.2.0 — 2026-06-09 (Lightweight refactor)
 
 ### Breaking
 - Dropped `comemory serve` (axum web UI).
