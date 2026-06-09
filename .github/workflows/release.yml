@@ -64,6 +64,7 @@ jobs:
         uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
         with:
           toolchain: "1.95"
+          components: rustfmt, clippy
       - name: Run check-all gate
         run: bash scripts/check-all.sh
       - name: Install dist
