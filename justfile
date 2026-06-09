@@ -24,3 +24,8 @@ e2e:
 
 perf:
     bash scripts/build-perf.sh
+
+# Print the cargo-dist plan for a tag without uploading anything.
+# Usage: just release-dry-run v0.2.0-rc.1
+release-dry-run tag:
+    dist plan --tag {{tag}}
