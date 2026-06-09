@@ -50,7 +50,7 @@ pub fn split_text(text: &str) -> Vec<SplitToken> {
     let mut run_start: Option<usize> = None;
     let mut iter = text.char_indices().peekable();
     while let Some(&(i, c)) = iter.peek() {
-        let is_word = c.is_ascii_alphanumeric() || c == '_';
+        let is_word = c.is_alphanumeric() || c == '_';
         match (run_start, is_word) {
             (None, true) => {
                 run_start = Some(i);
@@ -72,12 +72,21 @@ pub fn split_text(text: &str) -> Vec<SplitToken> {
     out
 }
 
+/// True when lowercasing left no uppercase char behind. A handful of
+/// Unicode codepoints (e.g. `🄰` U+1F130) report `is_uppercase()` but
+/// have no lowercase mapping; tokens containing them are dropped so
+/// every emitted token is genuinely lowercase.
+fn fully_lowercased(token: &str) -> bool {
+    !token.chars().any(char::is_uppercase)
+}
+
 fn emit_run(text: &str, s: usize, e: usize, out: &mut Vec<SplitToken>) {
     let run = &text[s..e];
     let parts = part_ranges(run);
     let whole = run.to_lowercase();
+    let whole_ok = !whole.is_empty() && whole != "_" && fully_lowercased(&whole);
     if parts.len() <= 1 {
-        if !whole.is_empty() && whole != "_" {
+        if whole_ok {
             out.push(SplitToken {
                 text: whole,
                 start: s,
@@ -90,7 +99,7 @@ fn emit_run(text: &str, s: usize, e: usize, out: &mut Vec<SplitToken>) {
     let mut first = true;
     for (ps, pe) in parts {
         let part = run[ps..pe].to_lowercase();
-        if part.is_empty() {
+        if part.is_empty() || !fully_lowercased(&part) {
             continue;
         }
         out.push(SplitToken {
@@ -99,15 +108,15 @@ fn emit_run(text: &str, s: usize, e: usize, out: &mut Vec<SplitToken>) {
             end: s + pe,
             colocated: false,
         });
-        if first {
+        if first && whole_ok {
             out.push(SplitToken {
                 text: whole.clone(),
                 start: s,
                 end: e,
                 colocated: true,
             });
-            first = false;
         }
+        first = false;
     }
 }
 

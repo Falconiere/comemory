@@ -58,6 +58,23 @@ fn acronym_runs_stay_grouped() {
     assert_eq!(texts(&toks), vec!["html", "htmlparser", "parser"]);
 }
 
+#[test]
+fn non_ascii_words_are_tokenized() {
+    let toks = split_text("über café");
+    assert_eq!(texts(&toks), vec!["über", "café"]);
+    assert!(toks.iter().all(|t| !t.colocated));
+}
+
+#[test]
+fn unlowercaseable_chars_never_emit_uppercase_tokens() {
+    // U+1F130 SQUARED LATIN CAPITAL LETTER A: is_uppercase() is true but
+    // to_lowercase() is a no-op, so any token containing it is dropped.
+    let toks = split_text("🄰");
+    assert!(toks
+        .iter()
+        .all(|t| t.text.chars().all(|c| !c.is_uppercase())));
+}
+
 proptest! {
     #[test]
     fn never_panics_and_tokens_are_lowercase(s in "\\PC*") {
