@@ -51,17 +51,38 @@ the in-process embedder, vector database, and graph database:
 
 ## Install
 
-```bash
-# From source (Cargo)
-cargo install comemory
+### Homebrew (macOS + Linuxbrew)
 
-# Homebrew (prebuilt binary via the Falconiere tap)
+```bash
 brew install Falconiere/tap/comemory
 ```
+
+### Curl installer
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/Falconiere/comemory/releases/latest/download/comemory-installer.sh \
+  | sh
+```
+
+Drops the binary in `$CARGO_HOME/bin` (or `~/.local/bin`) and installs
+shell completions.
+
+### From source (contributors)
+
+```bash
+git clone https://github.com/Falconiere/comemory && cd comemory
+bash scripts/dev-install.sh
+```
+
+Builds and installs to `$CARGO_HOME/bin` via `cargo install --path .`.
 
 Prebuilt binaries for macOS (aarch64, x86_64) and Linux (aarch64, x86_64)
 are published on the
 [GitHub Releases](https://github.com/Falconiere/comemory/releases) page.
+
+After install, run `comemory doctor` to verify the SQLite store and
+data directory.
 
 ## 60-second tour
 
