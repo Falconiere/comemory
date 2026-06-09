@@ -65,6 +65,8 @@ jobs:
         with:
           toolchain: "1.95"
           components: rustfmt, clippy
+      - name: Install typos-cli
+        run: cargo install typos-cli --version 1.32.0 --locked
       - name: Run check-all gate
         run: bash scripts/check-all.sh
       - name: Install dist
