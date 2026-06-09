@@ -1,0 +1,154 @@
+//! Splits text into FTS tokens with camelCase / snake_case / digit
+//! boundary awareness. Each alphanumeric run yields its sub-parts at
+//! distinct token positions; when a run splits into more than one part,
+//! the whole lowercased run is also emitted colocated with the first
+//! part so exact-identifier queries still match.
+
+/// One token produced by [`split_text`]: lowercased text, byte range in
+/// the original input, and whether FTS5 should treat it as colocated
+/// with the previous token.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SplitToken {
+    /// Lowercased token text.
+    pub text: String,
+    /// Byte offset of the token start in the original text.
+    pub start: usize,
+    /// Byte offset of the token end in the original text.
+    pub end: usize,
+    /// True when FTS5 should place this token at the previous token's position.
+    pub colocated: bool,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Class {
+    Lower,
+    Upper,
+    Digit,
+    Other,
+}
+
+fn classify(c: char) -> Class {
+    if c.is_lowercase() {
+        Class::Lower
+    } else if c.is_uppercase() {
+        Class::Upper
+    } else if c.is_ascii_digit() {
+        Class::Digit
+    } else {
+        Class::Other
+    }
+}
+
+/// Tokenize `text` into identifier-aware [`SplitToken`]s.
+///
+/// Alphanumeric-plus-underscore runs are split at camelCase transitions,
+/// letter↔digit transitions, and `_` separators. When a run yields more
+/// than one part the whole lowercased run is emitted colocated with the
+/// first part so exact-identifier queries still match.
+pub fn split_text(text: &str) -> Vec<SplitToken> {
+    let mut out = Vec::new();
+    let mut run_start: Option<usize> = None;
+    let mut iter = text.char_indices().peekable();
+    while let Some(&(i, c)) = iter.peek() {
+        let is_word = c.is_ascii_alphanumeric() || c == '_';
+        match (run_start, is_word) {
+            (None, true) => {
+                run_start = Some(i);
+                iter.next();
+            }
+            (Some(s), false) => {
+                emit_run(text, s, i, &mut out);
+                run_start = None;
+                iter.next();
+            }
+            _ => {
+                iter.next();
+            }
+        }
+    }
+    if let Some(s) = run_start {
+        emit_run(text, s, text.len(), &mut out);
+    }
+    out
+}
+
+fn emit_run(text: &str, s: usize, e: usize, out: &mut Vec<SplitToken>) {
+    let run = &text[s..e];
+    let parts = part_ranges(run);
+    let whole = run.to_lowercase();
+    if parts.len() <= 1 {
+        if !whole.is_empty() && whole != "_" {
+            out.push(SplitToken {
+                text: whole,
+                start: s,
+                end: e,
+                colocated: false,
+            });
+        }
+        return;
+    }
+    let mut first = true;
+    for (ps, pe) in parts {
+        let part = run[ps..pe].to_lowercase();
+        if part.is_empty() {
+            continue;
+        }
+        out.push(SplitToken {
+            text: part,
+            start: s + ps,
+            end: s + pe,
+            colocated: false,
+        });
+        if first {
+            out.push(SplitToken {
+                text: whole.clone(),
+                start: s,
+                end: e,
+                colocated: true,
+            });
+            first = false;
+        }
+    }
+}
+
+fn part_ranges(run: &str) -> Vec<(usize, usize)> {
+    let chars: Vec<(usize, char)> = run.char_indices().collect();
+    let mut ranges = Vec::new();
+    let mut start: Option<usize> = None;
+    for w in 0..chars.len() {
+        let (i, c) = chars[w];
+        if c == '_' {
+            if let Some(s) = start.take() {
+                ranges.push((s, i));
+            }
+            continue;
+        }
+        let cls = classify(c);
+        if let Some(s) = start {
+            let prev = classify(chars[w - 1].1);
+            let lower_to_upper = prev == Class::Lower && cls == Class::Upper;
+            let letter_digit =
+                (prev == Class::Digit) != (cls == Class::Digit) && chars[w - 1].1 != '_';
+            let upper_run_ends = prev == Class::Upper
+                && cls == Class::Lower
+                && w >= 2
+                && classify(chars[w - 2].1) == Class::Upper;
+            if lower_to_upper || letter_digit {
+                ranges.push((s, i));
+                start = Some(i);
+            } else if upper_run_ends {
+                let prev_i = chars[w - 1].0;
+                if prev_i > s {
+                    ranges.push((s, prev_i));
+                    start = Some(prev_i);
+                }
+            }
+        } else {
+            start = Some(i);
+        }
+    }
+    if let Some(s) = start {
+        ranges.push((s, run.len()));
+    }
+    ranges
+}
