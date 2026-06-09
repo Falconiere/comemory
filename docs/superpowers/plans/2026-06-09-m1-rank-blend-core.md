@@ -1254,7 +1254,7 @@ fn live_superseder(conn: &Connection, id: &str) -> Result<Option<String>> {
 fn days_between(rfc3339: &str, now: OffsetDateTime) -> f64 {
     match OffsetDateTime::parse(rfc3339, &Rfc3339) {
         Ok(then) => ((now - then).whole_seconds() as f64 / 86_400.0).max(0.0),
-        Err(_) => 0.0, // unparseable timestamp → treat as fresh, never punish
+        Err(_) => 0.0, // unparsable timestamp → treat as fresh, never punish
     }
 }
 ```

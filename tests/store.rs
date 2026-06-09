@@ -26,3 +26,6 @@ mod schema;
 
 #[path = "store/vector.rs"]
 mod vector;
+
+#[path = "store/tokenizer/split.rs"]
+mod tokenizer_split;
