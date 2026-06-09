@@ -196,5 +196,6 @@ bash scripts/build-perf.sh --append-md   # also appends a row to docs/build-perf
 ```
 
 Local fast release builds: `cargo build --profile release-quick`
-(`scripts/dev-install.sh` already uses this). Distributed binaries continue
-to use `[profile.release]` via `cargo-dist`.
+(`scripts/dev-install.sh` already uses this). Distributed binaries are built
+with `[profile.dist]` (inherits `[profile.release]`, overrides `lto = "thin"`
+for faster CI build times).
