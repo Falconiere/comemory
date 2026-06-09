@@ -179,7 +179,7 @@ Install (Apple Silicon):
 
 ```bash
 brew install sccache hyperfine
-# or: bash scripts/install.sh --with-tools
+# or: bash scripts/dev-install.sh --with-tools
 ```
 
 Activate sccache by exporting in your shell init:

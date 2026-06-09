@@ -447,6 +447,6 @@ Examples:
   # bash (homebrew bash-completion.d)
   comemory completions bash > "$(brew --prefix)/etc/bash_completion.d/comemory"
 
-  # NOTE: scripts/install.sh writes these automatically by default.
+  # NOTE: scripts/dev-install.sh writes these automatically by default.
 ```
 
