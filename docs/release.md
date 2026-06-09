@@ -33,7 +33,7 @@ Actions runs `release.yml` → builds 4 targets → uploads tarballs
 4. Local dry-run:
 
    ```bash
-   just release-dry-run TAG=vX.Y.Z
+   just release-dry-run vX.Y.Z
    ```
 
    Inspect printed plan. Reject and fix if Cargo.toml/tag/CHANGELOG mismatch.
