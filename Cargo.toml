@@ -123,6 +123,11 @@ lto = "thin"
 codegen-units = 16
 strip = "none"
 
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
+
 # Deps reserved for Tasks 4–22 of the Rust rewrite plan. cargo-machete flags
 # them as "unused" until those tasks land; whitelist them here so the dup-check
 # gate stays green during the early build-out.
@@ -142,29 +147,25 @@ ignored = [
 [workspace]
 members = ["."]
 
-# cargo-dist configuration.
-#
-# When a tag matching `v*` is pushed, the GitHub workflow in
-# `.github/workflows/release.yml` builds prebuilt binaries for the targets
-# listed below and publishes a shell installer + Homebrew formula to the
-# `Falconiere/homebrew-tap` repository.
-#
-# Docs: https://opensource.axo.dev/cargo-dist/book/
+# Config for 'dist'
 [workspace.metadata.dist]
+# The preferred dist version to use in CI (Cargo.toml SemVer syntax)
 cargo-dist-version = "0.31.0"
-ci = ["github"]
+# CI backends to support
+ci = "github"
+# The installers to generate for each app
 installers = ["shell", "homebrew"]
+# A GitHub repo to push Homebrew formulas to
 tap = "Falconiere/homebrew-tap"
+# Publish jobs to run in CI
 publish-jobs = ["homebrew"]
-targets = [
-  "aarch64-apple-darwin",
-  "x86_64-apple-darwin",
-  "x86_64-unknown-linux-gnu",
-  "aarch64-unknown-linux-gnu",
-]
-# Use GitHub Releases as the artifact host; cargo-dist uploads the tarballs
-# and updates the Homebrew tap formula in the same workflow run.
-hosting = ["github"]
-# Pull requests get a dry-run plan posted as a comment, but no artifacts are
-# uploaded until the matching `v*` tag is pushed.
+# Target platforms to build apps for (Rust target-triple syntax)
+targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu"]
+# Where to host releases
+hosting = "github"
+# Which actions to run on pull requests
 pr-run-mode = "plan"
+# Path that installers should place binaries in
+install-path = "CARGO_HOME"
+# Whether to install an updater program
+install-updater = false
