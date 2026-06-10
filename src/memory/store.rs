@@ -13,6 +13,47 @@ use crate::memory::id::{memory_id, sha256_hex};
 use crate::memory::slug::slug_from_body;
 use crate::prelude::*;
 
+/// Caller-supplied inputs for [`MemoryStore::save`]. Grouped into a struct
+/// (rather than a growing positional list) so new frontmatter knobs extend
+/// one type instead of every call site, and the argument count stays within
+/// clippy's `too_many_arguments` budget.
+#[derive(Debug, Clone)]
+pub struct SaveParams<'a> {
+    /// Memory body (markdown). Trailing whitespace is trimmed before hashing.
+    pub body: &'a str,
+    /// Memory taxonomy kind.
+    pub kind: Kind,
+    /// Repo the memory belongs to. May be empty.
+    pub repo: &'a str,
+    /// Tag list (already de-duplicated by the caller).
+    pub tags: &'a [String],
+    /// Author identifier. May be empty.
+    pub author: &'a str,
+    /// Quality rating 1..=5.
+    pub quality: u8,
+    /// Cross-memory relations written verbatim into the frontmatter
+    /// (`supersedes` / `conflicts_with` / `derived_from`); materialized as
+    /// `edges` rows by `store::memory_row::insert`.
+    pub relations: Relations,
+}
+
+impl<'a> SaveParams<'a> {
+    /// Minimal params: `body` + `kind` with empty repo/tags/author, default
+    /// quality 3, and no relations. Test fixtures and simple callers extend
+    /// via struct update syntax.
+    pub fn new(body: &'a str, kind: Kind) -> Self {
+        Self {
+            body,
+            kind,
+            repo: "",
+            tags: &[],
+            author: "",
+            quality: 3,
+            relations: Relations::default(),
+        }
+    }
+}
+
 /// One memory loaded from disk: parsed frontmatter, body string, the path
 /// it lives at on disk, and the slug derived from the body.
 #[derive(Debug, Clone)]
@@ -70,15 +111,8 @@ impl MemoryStore {
     /// `{id}-{slug}.md`. On any failure between staging and rename, the tmp
     /// file is removed so no orphaned `.tmp` files are left behind (both
     /// `fs::write` and `fs::rename` failure paths trigger cleanup).
-    pub fn save(
-        &self,
-        body: &str,
-        kind: Kind,
-        repo: &str,
-        tags: &[String],
-        author: &str,
-        quality: u8,
-    ) -> Result<MemoryRecord> {
+    pub fn save(&self, p: SaveParams<'_>) -> Result<MemoryRecord> {
+        let body = p.body;
         let id = memory_id(body);
         let slug = slug_from_body(body);
         let final_path = self.paths.memories_dir().join(format!("{id}-{slug}.md"));
@@ -87,16 +121,16 @@ impl MemoryStore {
         let content_hash = sha256_hex(body.trim_end().as_bytes());
         let fm = Frontmatter {
             id: id.clone(),
-            kind,
-            repo: repo.to_string(),
-            tags: tags.to_vec(),
-            author: author.to_string(),
+            kind: p.kind,
+            repo: p.repo.to_string(),
+            tags: p.tags.to_vec(),
+            author: p.author.to_string(),
             created: OffsetDateTime::now_utc(),
-            quality,
+            quality: p.quality,
             schema: 1,
             content_hash,
             references: References::default(),
-            relations: Relations::default(),
+            relations: p.relations,
         };
 
         let rendered = fm.render(body.trim_end())?;

@@ -171,7 +171,8 @@ Markdown body lives here.
 2a. **Near-duplicate check** (best-effort, advisory): scan live `memories`
    rows for a SimHash Hamming distance within `NEAR_DUP_HAMMING`. If a
    near-duplicate is found its id is recorded as `duplicate_of`. The save
-   always proceeds; the caller decides whether to set `supersedes`. TTY
+   always proceeds; the caller decides whether to re-save with
+   `--supersedes <id>`. TTY
    mode prints a `warning: similar memory <id> exists` to stderr;
    `--json` mode includes `"duplicate_of": "<id>"` in the output object.
    Self-matches (re-save of the same body, same content-hash-derived id)
@@ -183,6 +184,12 @@ Markdown body lives here.
    - upsert `memories` row (frontmatter + body + simhash)
    - upsert `memory_fts` row (FTS5)
    - upsert `memory_vec` row (`vec0`) when a vector was supplied
+   - frontmatter `relations.{supersedes,conflicts_with,derived_from}` ids
+     (`supersedes` is populated by `--supersedes`; the others come from
+     hand-edited markdown) are materialized as memory→memory `edges` rows.
+     Targets may dangle — every consumer (rerank's supersede penalty,
+     prune's superseded-rule, `supersedes_chain`) joins on live `memories`
+     rows. `comemory rebuild` re-materializes these edges from markdown.
    - `cross_link::extract_refs` walks the body for backtick-fenced
      `<repo>:<path>` / `<repo>:<path>:<symbol>` mentions and writes
      `ReferencesFile` / `ReferencesSymbol` rows into `edges`. Missing

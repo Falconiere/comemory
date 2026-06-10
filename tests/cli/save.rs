@@ -207,16 +207,25 @@ const DUP_BODY_B: &str = "postgres connection pool exhausts under load spikes ra
 const DUP_BODY_C: &str =
     "ast-grep pattern matching finds unwrap calls across the rust codebase quickly";
 
-/// Run `comemory --json save <body>` under `home` and parse the JSON output.
-fn save_json(home: &tempfile::TempDir, body: &str) -> serde_json::Value {
+/// Run `comemory --json save <body> [extra...]` under `home` and parse the
+/// JSON output. `extra` is appended after the body so tests can exercise
+/// flags like `--supersedes`.
+fn save_json_args(home: &tempfile::TempDir, body: &str, extra: &[&str]) -> serde_json::Value {
+    let mut args = vec!["--json", "save", "--kind", "note", body];
+    args.extend_from_slice(extra);
     let assertion = Command::cargo_bin("comemory")
         .expect("bin")
         .env("COMEMORY_DATA_DIR", home.path())
-        .args(["--json", "save", "--kind", "note", body])
+        .args(&args)
         .assert()
         .success();
     let stdout = String::from_utf8_lossy(&assertion.get_output().stdout).to_string();
     serde_json::from_str(stdout.trim()).expect("save --json emits one JSON object")
+}
+
+/// Run `comemory --json save <body>` under `home` and parse the JSON output.
+fn save_json(home: &tempfile::TempDir, body: &str) -> serde_json::Value {
+    save_json_args(home, body, &[])
 }
 
 #[test]
@@ -315,5 +324,169 @@ fn save_rejects_wrong_dim_vector() {
         count_md_files(home.path()),
         0,
         "dim guard must abort before the markdown write — orphan .md detected",
+    );
+}
+
+// ─── --supersedes flag + edge materialization ────────────────────────────
+
+/// Old memory body for the supersede tests. Shares query tokens with
+/// `SUP_BODY_NEW` (advisory/locks/postgres/migrations) so a single search
+/// returns both, while staying far apart in simhash space so the diversify
+/// stage's near-dup collapse cannot fold one into the other.
+const SUP_BODY_OLD: &str = "advisory locks serialize concurrent migrations in postgres";
+/// Replacement memory body saved with `--supersedes <old id>`.
+const SUP_BODY_NEW: &str = "advisory locks guidance update: prefer a migrations table with \
+     select for update row locking instead of advisory locks in postgres";
+
+/// Save the old + new supersede fixture bodies and return `(old_id, new_id,
+/// new_md_path)`.
+fn save_supersede_pair(home: &tempfile::TempDir) -> (String, String, String) {
+    let old = save_json(home, SUP_BODY_OLD);
+    let old_id = old["id"].as_str().expect("old id").to_string();
+    let new = save_json_args(home, SUP_BODY_NEW, &["--supersedes", &old_id]);
+    let new_id = new["id"].as_str().expect("new id").to_string();
+    let new_path = new["path"].as_str().expect("new path").to_string();
+    (old_id, new_id, new_path)
+}
+
+/// Count `supersedes` edges from `src` to `dst` in the live DB under `home`.
+fn supersedes_edge_count(home: &tempfile::TempDir, src: &str, dst: &str) -> i64 {
+    let conn = connection::open(home.path().join("comemory.db")).expect("open db");
+    conn.query_row(
+        "SELECT count(*) FROM edges WHERE src_kind = 'memory' AND src_id = ?1 \
+           AND rel = 'supersedes' AND dst_kind = 'memory' AND dst_id = ?2",
+        rusqlite::params![src, dst],
+        |r| r.get(0),
+    )
+    .expect("count edges")
+}
+
+/// Run `comemory --json search <query>` under `home` and return the `hits`
+/// array.
+fn search_hits(home: &tempfile::TempDir, query: &str) -> Vec<serde_json::Value> {
+    let assertion = Command::cargo_bin("comemory")
+        .expect("bin")
+        .env("COMEMORY_DATA_DIR", home.path())
+        .args(["--json", "search", query])
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&assertion.get_output().stdout).to_string();
+    let v: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("search --json emits one JSON object");
+    v["hits"].as_array().expect("hits array").clone()
+}
+
+/// Find the hit for `id` in `hits`, panicking with the full hit list when
+/// absent so failures are debuggable.
+fn hit_for<'a>(hits: &'a [serde_json::Value], id: &str) -> &'a serde_json::Value {
+    hits.iter()
+        .find(|h| h["memory_id"].as_str() == Some(id))
+        .unwrap_or_else(|| panic!("no hit for {id} in {hits:?}"))
+}
+
+/// Assert the search-visible supersede contract for the fixture pair: the
+/// old memory is annotated `superseded_by = new_id` with the 0.2 penalty,
+/// while the new memory is unpenalized and unannotated. Shared between the
+/// save-path test and the rebuild-parity test.
+fn assert_supersede_search_contract(home: &tempfile::TempDir, old_id: &str, new_id: &str) {
+    let hits = search_hits(home, "advisory locks postgres migrations");
+    let old_hit = hit_for(&hits, old_id);
+    assert_eq!(
+        old_hit["superseded_by"].as_str(),
+        Some(new_id),
+        "old memory must carry superseded_by: {old_hit}",
+    );
+    assert_eq!(
+        old_hit["score_parts"]["supersede"].as_f64(),
+        Some(0.2),
+        "old memory must take the supersede penalty: {old_hit}",
+    );
+    let new_hit = hit_for(&hits, new_id);
+    assert!(
+        new_hit.get("superseded_by").is_none(),
+        "new memory must not be annotated: {new_hit}",
+    );
+    assert_eq!(
+        new_hit["score_parts"]["supersede"].as_f64(),
+        Some(1.0),
+        "new memory must be unpenalized: {new_hit}",
+    );
+}
+
+#[test]
+fn save_supersedes_writes_edge_frontmatter_and_penalizes_ranking() {
+    let home = tempdir().expect("tempdir");
+    let (old_id, new_id, new_path) = save_supersede_pair(&home);
+
+    // (a) The supersedes edge exists, directed new -> old.
+    assert_eq!(
+        supersedes_edge_count(&home, &new_id, &old_id),
+        1,
+        "expected exactly one supersedes edge {new_id} -> {old_id}",
+    );
+
+    // (b) Markdown stays the source of truth: the new memory's frontmatter
+    // carries relations.supersedes = [old_id].
+    let raw = fs::read_to_string(&new_path).expect("read new memory markdown");
+    let (fm, _) = comemory::memory::Frontmatter::split(&raw).expect("parse frontmatter");
+    assert_eq!(
+        fm.relations.supersedes,
+        vec![old_id.clone()],
+        "frontmatter must record the supersedes relation",
+    );
+
+    // (c) Ranking: old memory penalized + annotated, new memory untouched.
+    assert_supersede_search_contract(&home, &old_id, &new_id);
+}
+
+#[test]
+fn rebuild_rematerializes_supersedes_edge_from_markdown() {
+    let home = tempdir().expect("tempdir");
+    let (old_id, new_id, _) = save_supersede_pair(&home);
+
+    // Throw the derived DB away entirely — rebuild must reconstruct the
+    // relation edge from frontmatter alone.
+    fs::remove_file(home.path().join("comemory.db")).expect("drop db");
+    Command::cargo_bin("comemory")
+        .expect("bin")
+        .env("COMEMORY_DATA_DIR", home.path())
+        .arg("rebuild")
+        .assert()
+        .success();
+
+    assert_eq!(
+        supersedes_edge_count(&home, &new_id, &old_id),
+        1,
+        "rebuild must rematerialize the supersedes edge from frontmatter",
+    );
+    assert_supersede_search_contract(&home, &old_id, &new_id);
+}
+
+#[test]
+fn save_rejects_malformed_supersedes_id() {
+    let home = tempdir().expect("tempdir");
+    let assertion = Command::cargo_bin("comemory")
+        .expect("bin")
+        .env("COMEMORY_DATA_DIR", home.path())
+        .args([
+            "save",
+            "--kind",
+            "note",
+            "--supersedes",
+            "NOT-HEX!",
+            "body that must never land on disk",
+        ])
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&assertion.get_output().stderr).to_string();
+    assert!(
+        stderr.contains("--supersedes") && stderr.contains("NOT-HEX!"),
+        "stderr should name the flag and the bad id, got: {stderr}",
+    );
+    // Validation runs before the markdown write — nothing saved.
+    assert_eq!(
+        count_md_files(home.path()),
+        0,
+        "invalid --supersedes must not leave a markdown file",
     );
 }

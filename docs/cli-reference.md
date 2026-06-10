@@ -61,16 +61,17 @@ Arguments:
   [BODY]  Memory body. Use `-` (or omit) to read from stdin
 
 Options:
-      --json                 Emit machine-readable JSON instead of a human TTY view
-      --kind <KIND>          Memory kind: decision|bug|convention|discovery|pattern|note [default: note] [possible values: decision, bug, convention, discovery, pattern, note]
-      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
-      --repo <REPO>          Repo name attached to the memory (free-form string) [default: ""]
-      --tags <TAGS>          Comma-separated tag list (e.g. `database,postgres`) [default: ""]
-      --author <AUTHOR>      Author identifier. Defaults to empty so callers may omit [default: ""]
-      --quality <QUALITY>    Quality rating 1..=5. Defaults to 3 [default: 3]
-      --vector <VECTOR>      Caller-supplied dense vector as a comma-separated float list. Length must equal the configured memory vector dim or the save fails with `vector dim mismatch`
-      --vector-stdin         Read a JSON `{ "embedding": [..] }` payload from stdin and use it as the dense vector for the saved memory. Mutually exclusive with body being read from stdin (the body must be supplied as a positional arg when `--vector-stdin` is set)
-  -h, --help                 Print help
+      --json                     Emit machine-readable JSON instead of a human TTY view
+      --kind <KIND>              Memory kind: decision|bug|convention|discovery|pattern|note [default: note] [possible values: decision, bug, convention, discovery, pattern, note]
+      --data-dir <DATA_DIR>      Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+      --repo <REPO>              Repo name attached to the memory (free-form string) [default: ""]
+      --tags <TAGS>              Comma-separated tag list (e.g. `database,postgres`) [default: ""]
+      --author <AUTHOR>          Author identifier. Defaults to empty so callers may omit [default: ""]
+      --quality <QUALITY>        Quality rating 1..=5. Defaults to 3 [default: 3]
+      --supersedes <SUPERSEDES>  Comma-separated 8-hex memory ids this memory replaces (e.g. `a1b2c3d4,e5f6a7b8`). Recorded in the frontmatter `relations.supersedes` list and materialized as `supersedes` edges, so the older memories are demoted in ranking and annotated `superseded_by` in search results [default: ""]
+      --vector <VECTOR>          Caller-supplied dense vector as a comma-separated float list. Length must equal the configured memory vector dim or the save fails with `vector dim mismatch`
+      --vector-stdin             Read a JSON `{ "embedding": [..] }` payload from stdin and use it as the dense vector for the saved memory. Mutually exclusive with body being read from stdin (the body must be supplied as a positional arg when `--vector-stdin` is set)
+  -h, --help                     Print help
 
 Examples:
   # Save a decision with tags and elevated quality
@@ -85,9 +86,13 @@ Examples:
   # Minimal note (kind defaults to `note`, no repo/tags)
   comemory save "Remember: cargo nextest serializes the embedder group"
 
+  # Replace an outdated memory: a1b2c3d4 is annotated `superseded_by` in
+  # search results and demoted in ranking (score_parts.supersede = 0.2)
+  comemory save "new convention: pgbouncer in transaction mode" --supersedes a1b2c3d4
+
   # Near-duplicate detection: if a similar memory exists, a TTY warning is
   # printed to stderr and --json output includes a `duplicate_of` field with
-  # the matching memory id. The save always proceeds — use `supersedes` to
+  # the matching memory id. The save always proceeds — use `--supersedes` to
   # mark the relationship if the new memory replaces the old one.
 ```
 
