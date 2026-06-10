@@ -39,14 +39,16 @@ struct PartialRankConfig {
 
 /// File-overlay partial for [`PruneConfig`]. All fields optional.
 ///
-/// Carries every `PruneConfig` field, not just the M1 scoring extensions:
-/// `deny_unknown_fields` would otherwise hard-error on a valid `[prune]`
-/// key like `trash_retention_days` once the section is overlayable at all.
+/// Carries every *consumed* `PruneConfig` field, not just the M1 scoring
+/// extensions: `deny_unknown_fields` would otherwise hard-error on a valid
+/// `[prune]` key like `trash_retention_days` once the section is
+/// overlayable at all. `low_value_default_unused_since_days` is
+/// deliberately absent — the knob has zero consumers (see [`PruneConfig`])
+/// and offering an overlay for it would be a silent no-op footgun.
 #[derive(Debug, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 struct PartialPruneConfig {
     trash_retention_days: Option<u32>,
-    low_value_default_unused_since_days: Option<u32>,
     low_value_default_below_quality: Option<u32>,
     min_activation: Option<f64>,
     min_feedback: Option<f64>,
@@ -152,10 +154,10 @@ pub struct RankConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PruneConfig {
     pub trash_retention_days: u32,
-    /// Legacy calendar-age knob for low-value detection. No longer
-    /// consumed by detection as of M1 (`min_activation` replaced the
-    /// calendar criterion); kept for config back-compat and slated for
-    /// removal in M2. Env: `COMEMORY_PRUNE_UNUSED_SINCE_DAYS`.
+    /// Legacy calendar-age knob for low-value detection. Unconsumed as of
+    /// M1 (`min_activation` replaced the calendar criterion) and exposed
+    /// through neither env nor the config-file overlay; the struct field
+    /// only remains so serialized configs round-trip. Removed in M2.
     pub low_value_default_unused_since_days: u32,
     pub low_value_default_below_quality: u32,
     /// Activation floor (ACT-R scale) below which a memory is prune-eligible.
@@ -271,9 +273,6 @@ impl Config {
         if let Some(pp) = partial.prune {
             if let Some(v) = pp.trash_retention_days {
                 self.prune.trash_retention_days = v;
-            }
-            if let Some(v) = pp.low_value_default_unused_since_days {
-                self.prune.low_value_default_unused_since_days = v;
             }
             if let Some(v) = pp.low_value_default_below_quality {
                 self.prune.low_value_default_below_quality = v;

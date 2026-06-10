@@ -84,14 +84,14 @@ fn prune_file_overlay_accepts_existing_fields() {
     // Regression: PartialPruneConfig initially carried only the M1 scoring
     // extensions (min_activation / min_feedback) under deny_unknown_fields,
     // so a valid `[prune] trash_retention_days = 60` in config.toml
-    // hard-errored at startup. Every PruneConfig field must be overlayable.
+    // hard-errored at startup. Every consumed PruneConfig field must be
+    // overlayable.
     let dir = tempfile::tempdir().expect("create temp dir");
     let path = dir.path().join("config.toml");
     std::fs::write(
         &path,
         "[prune]\n\
          trash_retention_days = 60\n\
-         low_value_default_unused_since_days = 90\n\
          low_value_default_below_quality = 4\n",
     )
     .expect("write config.toml");
@@ -99,11 +99,29 @@ fn prune_file_overlay_accepts_existing_fields() {
         .with_file(&path)
         .expect("existing prune keys in [prune] must parse and apply");
     assert_eq!(cfg.prune.trash_retention_days, 60);
-    assert_eq!(cfg.prune.low_value_default_unused_since_days, 90);
     assert_eq!(cfg.prune.low_value_default_below_quality, 4);
     // Untouched keys keep their defaults.
     assert_eq!(cfg.prune.min_activation, -2.0);
     assert_eq!(cfg.prune.min_feedback, 0.25);
+}
+
+#[test]
+fn prune_overlay_rejects_legacy_unused_since_days_key() {
+    // The legacy low_value_default_unused_since_days knob has zero
+    // consumers; its overlay was removed so a config.toml setting it
+    // errors loudly (deny_unknown_fields) instead of silently no-opping.
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "[prune]\nlow_value_default_unused_since_days = 90\n")
+        .expect("write config.toml");
+    let err = Config::defaults()
+        .with_file(&path)
+        .expect_err("legacy key must be rejected");
+    assert!(
+        err.to_string()
+            .contains("low_value_default_unused_since_days"),
+        "error must name the rejected key, got: {err}"
+    );
 }
 
 #[test]

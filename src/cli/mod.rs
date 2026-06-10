@@ -131,6 +131,37 @@ pub(crate) fn override_top_k(mut cfg: Config, k: Option<usize>) -> Config {
     cfg
 }
 
+/// Split a comma-separated flag value into trimmed, non-empty, de-duplicated
+/// entries preserving first-mention order. Shared by `save` (`--tags`,
+/// `--supersedes`) and `feedback` (`--used`, `--irrelevant`) so every CSV
+/// flag tolerates `a,,a , b` style input identically.
+pub(crate) fn csv_unique(raw: &str) -> Vec<String> {
+    if raw.is_empty() {
+        return Vec::new();
+    }
+    let mut seen = std::collections::HashSet::new();
+    raw.split(',')
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty() && seen.insert(t.clone()))
+        .collect()
+}
+
+/// Parse a CSV of memory ids via [`csv_unique`] and validate every entry
+/// against [`crate::memory::id::is_valid_memory_id`], naming the offending
+/// `flag` in the error. Shared by `save --supersedes` and the `feedback`
+/// id flags so malformed ids are rejected identically everywhere.
+pub(crate) fn parse_id_csv(raw: &str, flag: &str) -> Result<Vec<String>> {
+    let ids = csv_unique(raw);
+    for entry in &ids {
+        if !crate::memory::id::is_valid_memory_id(entry) {
+            return Err(Error::Config(format!(
+                "{flag}: invalid memory id `{entry}` (expected 8 lowercase hex chars)"
+            )));
+        }
+    }
+    Ok(ids)
+}
+
 /// Load the layered config: defaults → optional `config.toml` → env. Every
 /// CLI entry point goes through this helper so the file layer cannot silently
 /// drop out for one subcommand (which would cause `comemory doctor` and

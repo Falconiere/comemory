@@ -174,7 +174,14 @@ fn list_filters_by_repo_and_kind() {
 fn feedback_records_used_and_irrelevant_ids() {
     let home = TempDir::new().expect("tempdir");
     bin(&home)
-        .args(["feedback", "q1", "--used", "aaa,bbb", "--irrelevant", "ccc"])
+        .args([
+            "feedback",
+            "q1",
+            "--used",
+            "aaaa0001,bbbb0002",
+            "--irrelevant",
+            "cccc0003",
+        ])
         .assert()
         .success()
         .stdout(predicates::str::contains("ok"));
@@ -192,9 +199,9 @@ fn feedback_json_emits_counts() {
             "feedback",
             "q1",
             "--used",
-            "aaa,bbb",
+            "aaaa0001,bbbb0002",
             "--irrelevant",
-            "ccc",
+            "cccc0003",
         ])
         .assert()
         .success();
@@ -203,6 +210,47 @@ fn feedback_json_emits_counts() {
     assert_eq!(v["ok"].as_bool(), Some(true));
     assert_eq!(v["used"].as_u64(), Some(2));
     assert_eq!(v["irrelevant"].as_u64(), Some(1));
+}
+
+#[test]
+fn feedback_deduplicates_repeated_ids() {
+    // Fix 9 regression: `--used a,a` used to record twice, double-counting
+    // the Beta-feedback posterior. The CSV is de-duplicated now.
+    let home = TempDir::new().expect("tempdir");
+    let cmd = bin(&home)
+        .args(["--json", "feedback", "q1", "--used", "a1b2c3d4,a1b2c3d4"])
+        .assert()
+        .success();
+    let stdout = String::from_utf8(cmd.get_output().stdout.clone()).expect("utf8 stdout");
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
+    assert_eq!(v["used"].as_u64(), Some(1), "duplicate id must count once");
+
+    let conn = rusqlite::Connection::open(home.path().join(".comemory").join("comemory.db"))
+        .expect("open db");
+    let used_count: i64 = conn
+        .query_row(
+            "SELECT used_count FROM feedback WHERE memory_id = 'a1b2c3d4'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("feedback row");
+    assert_eq!(used_count, 1, "DB must record exactly one use");
+}
+
+#[test]
+fn feedback_rejects_invalid_memory_id() {
+    // Fix 9 regression: malformed ids used to write orphan feedback rows
+    // that no ranking lookup would ever join. They are rejected up front.
+    let home = TempDir::new().expect("tempdir");
+    let assertion = bin(&home)
+        .args(["feedback", "q1", "--used", "not-an-id"])
+        .assert()
+        .failure();
+    let stderr = String::from_utf8(assertion.get_output().stderr.clone()).expect("utf8 stderr");
+    assert!(
+        stderr.contains("--used") && stderr.contains("not-an-id"),
+        "stderr should name the flag and the bad id, got: {stderr:?}"
+    );
 }
 
 #[test]

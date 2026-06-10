@@ -244,14 +244,18 @@ fn bad_prune_below_quality_out_of_range_is_an_error() {
 }
 
 #[test]
-fn env_prune_unused_since_days_override_applies() {
-    // COMEMORY_PRUNE_UNUSED_SINCE_DAYS newly wired to the existing field
-    // low_value_default_unused_since_days.
+fn env_prune_unused_since_days_is_ignored() {
+    // The legacy low_value_default_unused_since_days knob has zero
+    // consumers as of M1, so its env wiring was removed: setting the var
+    // must neither error nor change the field.
     std::env::set_var("COMEMORY_PRUNE_UNUSED_SINCE_DAYS", "90");
     let result = Config::defaults().with_env();
     std::env::remove_var("COMEMORY_PRUNE_UNUSED_SINCE_DAYS");
-    let cfg = result.expect("valid unused_since_days override must succeed");
-    assert_eq!(cfg.prune.low_value_default_unused_since_days, 90);
+    let cfg = result.expect("with_env must succeed with the legacy var set");
+    assert_eq!(
+        cfg.prune.low_value_default_unused_since_days, 180,
+        "legacy env var must not override the unconsumed field"
+    );
 }
 
 #[test]
