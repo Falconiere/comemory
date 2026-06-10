@@ -1,0 +1,22 @@
+---
+source: tests/output/search.rs
+assertion_line: 35
+expression: "search::envelope(&hits)"
+---
+{
+  "hits": [
+    {
+      "memory_id": "aaaa0001",
+      "score": 0.016,
+      "source": "hybrid",
+      "score_parts": {
+        "rrf": 0.016,
+        "activation": 1.0,
+        "feedback": 1.0,
+        "quality": 1.0,
+        "supersede": 1.0,
+        "final_score": 0.016
+      }
+    }
+  ]
+}
