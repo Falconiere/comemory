@@ -38,7 +38,12 @@ Examples:
   echo '{\"embedding\":[0.1,0.2,...]}' | comemory save \"...body...\" --vector-stdin
 
   # Minimal note (kind defaults to `note`, no repo/tags)
-  comemory save \"Remember: cargo nextest serializes the embedder group\"";
+  comemory save \"Remember: cargo nextest serializes the embedder group\"
+
+  # Near-duplicate detection: if a similar memory exists, a TTY warning is
+  # printed to stderr and --json output includes a `duplicate_of` field with
+  # the matching memory id. The save always proceeds — use `supersedes` to
+  # mark the relationship if the new memory replaces the old one.";
 
 /// Arguments to `comemory save`. The positional `body` is optional — if omitted
 /// or `-`, the body is read from stdin so callers can pipe content.

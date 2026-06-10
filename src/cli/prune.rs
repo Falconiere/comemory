@@ -45,7 +45,11 @@ Examples:
   # and clean up orphan edges + stale code symbols
   comemory prune
 
-  # JSON output for CI/automation
+  # JSON output for CI/automation; Report fields:
+  #   low_value_memories — ids matching ALL of: activation < COMEMORY_PRUNE_MIN_ACTIVATION
+  #     (-2.0), Beta feedback <= COMEMORY_PRUNE_MIN_FEEDBACK (0.25), quality <=
+  #     COMEMORY_PRUNE_BELOW_QUALITY (2), and zero incoming edges — OR superseded
+  #     by a live memory with no access since the supersede edge was written.
   comemory prune --json";
 
 /// Arguments to `comemory prune`.

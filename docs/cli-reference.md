@@ -84,6 +84,11 @@ Examples:
 
   # Minimal note (kind defaults to `note`, no repo/tags)
   comemory save "Remember: cargo nextest serializes the embedder group"
+
+  # Near-duplicate detection: if a similar memory exists, a TTY warning is
+  # printed to stderr and --json output includes a `duplicate_of` field with
+  # the matching memory id. The save always proceeds — use `supersedes` to
+  # mark the relationship if the new memory replaces the old one.
 ```
 
 ---
@@ -108,11 +113,20 @@ Options:
   -h, --help                 Print help
 
 Examples:
-  # Natural-language query, top 12 hits (default)
-  comemory search "postgres migration race"
+  # Natural-language query, top 12 hits (default); weighted BM25 + priors
+  comemory search "postgres pool exhausted"
 
-  # JSON envelope for piping into other tools
-  comemory search "advisory lock" --json
+  # Identifier-aware matching — camelCase/snake_case tokens split automatically
+  comemory search "VecDimMismatch"
+
+  # JSON output; hits[].score_parts breaks down every ranking factor:
+  #   rrf         — fused relevance score (RRF/lexical/vector), neutral > 0
+  #   activation  — ACT-R recency boost (post-clamp), neutral = 1.0
+  #   feedback    — Beta-smoothed used/irrelevant ratio, neutral = 1.0
+  #   quality     — frontmatter quality nudge (1-5 scale), neutral = 1.0
+  #   supersede   — 0.2 penalty when superseded by a live memory, else 1.0
+  #   final_score — product of all factors (== score at root level)
+  comemory search "auth race" --json
 
   # Caller-supplied vector (BYO-vector, CSV form)
   comemory search "advisory lock" --vector 0.1,0.2,0.3,...
@@ -353,7 +367,11 @@ Examples:
   # and clean up orphan edges + stale code symbols
   comemory prune
 
-  # JSON output for CI/automation
+  # JSON output for CI/automation; Report fields:
+  #   low_value_memories — ids matching ALL of: activation < COMEMORY_PRUNE_MIN_ACTIVATION
+  #     (-2.0), Beta feedback <= COMEMORY_PRUNE_MIN_FEEDBACK (0.25), quality <=
+  #     COMEMORY_PRUNE_BELOW_QUALITY (2), and zero incoming edges — OR superseded
+  #     by a live memory with no access since the supersede edge was written.
   comemory prune --json
 ```
 
