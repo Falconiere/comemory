@@ -1,6 +1,8 @@
 //! Output helpers for `comemory prune`. JSON mode serialises the
 //! [`crate::cli::prune::Report`] struct directly; TTY mode renders a
-//! two-line summary of orphan-edge count and stale code file count.
+//! summary of orphan-edge count, stale code file count, and low-value
+//! memory count, with the flagged entries listed indented below each
+//! count.
 
 use std::io::Write as _;
 
@@ -15,10 +17,22 @@ pub fn emit(report: &Report, json_flag: bool) -> Result<()> {
         return Ok(());
     }
     let mut out = std::io::stdout().lock();
-    writeln!(out, "orphan_edges     : {}", report.orphan_edges)?;
-    writeln!(out, "stale_code_files : {}", report.stale_code_files.len())?;
+    writeln!(out, "orphan_edges       : {}", report.orphan_edges)?;
+    writeln!(
+        out,
+        "stale_code_files   : {}",
+        report.stale_code_files.len()
+    )?;
     for path in &report.stale_code_files {
         writeln!(out, "  - {path}")?;
+    }
+    writeln!(
+        out,
+        "low_value_memories : {}",
+        report.low_value_memories.len()
+    )?;
+    for id in &report.low_value_memories {
+        writeln!(out, "  - {id}")?;
     }
     Ok(())
 }

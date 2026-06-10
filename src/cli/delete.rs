@@ -38,24 +38,22 @@ struct Output {
     deleted: String,
 }
 
-/// Soft-delete the memory and report the affected id.
+/// Soft-delete one memory: move the markdown file into `memories/.trash/`
+/// (source of truth), then mirror the delete into `comemory.db` in one
+/// transaction (stamp `deleted_at`, drop the `memory_fts` + `memory_vec`
+/// rows, remove all touching edges). Returns the canonical id from the
+/// removed record's frontmatter.
 ///
-/// Steps:
-/// 1. Move the markdown file into `memories/.trash/` (source of truth).
-/// 2. In `comemory.db`, set `memories.deleted_at` and remove the
-///    `memory_fts` row and all touching edges — wrapped in one transaction.
-pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
-    let paths = Paths::new(resolve_data_dir(data_dir));
-    // `ensure_dirs` guarantees `memories/` exists before the store enumerates
-    // it — without this a fresh data dir surfaces ENOENT instead of the
-    // intended "memory not found" message from `MemoryStore::delete`.
-    paths.ensure_dirs()?;
+/// Shared by `comemory delete` and `comemory prune` (low-value apply) so
+/// the two soft-delete surfaces cannot drift.
+pub(crate) fn soft_delete(
+    paths: &Paths,
+    conn: &mut rusqlite::Connection,
+    id: &str,
+) -> Result<String> {
+    let removed = MemoryStore::new(paths.clone()).delete(id)?;
+    let id = removed.frontmatter.id;
 
-    let removed = MemoryStore::new(paths.clone()).delete(&a.id)?;
-    let id = &removed.frontmatter.id;
-
-    // Mirror the soft-delete into comemory.db in one transaction.
-    let mut conn = connection::open(paths.db_path())?;
     let now = memory_row::iso_format(OffsetDateTime::now_utc())?;
     let tx = conn.transaction()?;
     tx.execute(
@@ -73,8 +71,26 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
         "DELETE FROM memory_vec WHERE memory_id = ?1",
         rusqlite::params![id],
     )?;
-    edges::delete_touching(&tx, "memory", id)?;
+    edges::delete_touching(&tx, "memory", &id)?;
     tx.commit()?;
+    Ok(id)
+}
+
+/// Soft-delete the memory and report the affected id.
+///
+/// Steps:
+/// 1. Move the markdown file into `memories/.trash/` (source of truth).
+/// 2. In `comemory.db`, set `memories.deleted_at` and remove the
+///    `memory_fts` row and all touching edges — wrapped in one transaction.
+pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
+    let paths = Paths::new(resolve_data_dir(data_dir));
+    // `ensure_dirs` guarantees `memories/` exists before the store enumerates
+    // it — without this a fresh data dir surfaces ENOENT instead of the
+    // intended "memory not found" message from `MemoryStore::delete`.
+    paths.ensure_dirs()?;
+
+    let mut conn = connection::open(paths.db_path())?;
+    let id = &soft_delete(&paths, &mut conn, &a.id)?;
 
     let mut out = std::io::stdout().lock();
     if json {

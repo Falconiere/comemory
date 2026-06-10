@@ -1,9 +1,7 @@
 //! `comemory prune` — surface candidates for deletion against the v0.2
 //! SQLite mirror.
 //!
-//! v0.2 collapses the v0.1 markdown-scanning detectors (orphan trash
-//! entries, low-value memories) into a single SQL pass against
-//! `comemory.db`. Two classes are reported:
+//! Three classes are reported:
 //!
 //! 1. **Orphan edges** — `edges` rows whose `src_kind = 'memory'` source
 //!    is missing from `memories` or has `deleted_at IS NOT NULL`. These
@@ -12,20 +10,29 @@
 //!    longer appear in `indexed_files` (i.e. the source file was
 //!    removed and a follow-up `index-code` never cleaned up the
 //!    leftover symbol rows).
+//! 3. **Low-value memories** — ids flagged by
+//!    [`crate::prune::low_value::detect`]: cold (activation below floor),
+//!    unloved (feedback at/below ceiling), low quality, unreferenced — or
+//!    superseded by a live memory and never accessed since.
 //!
-//! Default behaviour applies the cleanup in one transaction. Use
-//! `--dry-run` to inspect what would be removed without touching the
-//! DB.
+//! Default behaviour applies the cleanup: low-value memories are
+//! soft-deleted through the same path as `comemory delete`
+//! (markdown → `.trash/`, `deleted_at` stamp, FTS/vec row + edge
+//! removal), then the orphan/stale cleanup runs in one transaction. Use
+//! `--dry-run` to inspect what would be removed without touching
+//! anything.
 
 use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 use serde::Serialize;
 
-use crate::cli::resolve_data_dir;
+use crate::cli::{delete, load_config, resolve_data_dir};
 use crate::config::paths::Paths;
+use crate::config::Config;
 use crate::output::prune as output;
 use crate::prelude::*;
+use crate::prune::low_value;
 use crate::store::connection;
 
 /// Example invocations shown at the bottom of `comemory prune --help`.
@@ -60,24 +67,29 @@ pub struct Report {
     /// row has been removed. The repo prefix disambiguates identical paths
     /// across different repos (e.g. `src/main.rs` in two checkouts).
     pub stale_code_files: Vec<String>,
+    /// Memory ids flagged by [`low_value::detect`] — soft-delete
+    /// candidates (applied unless `--dry-run`).
+    pub low_value_memories: Vec<String>,
 }
 
 /// Scan `comemory.db` for prune candidates and (unless `--dry-run`)
-/// apply the cleanup in one transaction. Always emits the report.
+/// apply the cleanup. Always emits the report.
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
+    let cfg = load_config(&paths)?;
     let mut conn = connection::open(paths.db_path())?;
-    let report = scan(&conn)?;
+    let report = scan(&conn, &cfg)?;
     if !a.dry_run {
-        apply(&mut conn)?;
+        apply(&mut conn, &paths, &report.low_value_memories)?;
     }
     output::emit(&report, json_flag)
 }
 
-/// Read-only candidate scan. Returns the orphan-edge count and the list
-/// of stale code paths without touching either table.
-fn scan(conn: &rusqlite::Connection) -> Result<Report> {
+/// Read-only candidate scan. Returns the orphan-edge count, the list of
+/// stale code paths, and the low-value memory ids without touching any
+/// table.
+fn scan(conn: &rusqlite::Connection, cfg: &Config) -> Result<Report> {
     let orphan_edges: i64 = conn.query_row(
         "SELECT count(*) FROM edges e \
           WHERE e.src_kind = 'memory' \
@@ -104,19 +116,27 @@ fn scan(conn: &rusqlite::Connection) -> Result<Report> {
     Ok(Report {
         orphan_edges,
         stale_code_files,
+        low_value_memories: low_value::detect(conn, cfg)?,
     })
 }
 
-/// Apply the cleanup queries reported by [`scan`] in a single
-/// transaction. Safe to call on a clean DB — all `DELETE` statements are
-/// no-ops when no candidates exist.
+/// Apply the cleanup reported by [`scan`]. Low-value memories are
+/// soft-deleted first through [`delete::soft_delete`] (the exact path
+/// `comemory delete` uses: markdown → `.trash/`, `deleted_at` stamp,
+/// FTS/vec row + edge removal — one transaction per memory), then the
+/// orphan-edge / stale-code cleanup runs in a single transaction. Safe
+/// to call on a clean DB — all `DELETE` statements are no-ops when no
+/// candidates exist.
 ///
 /// `code_vec` and `code_fts` are vec0 / fts5 virtual tables and do not
 /// participate in the SQLite FK cascade triggered by deleting `code_symbols`,
 /// so we explicitly drop their rows first (keyed by the `id` of the about-
 /// to-be-removed `code_symbols` row). Otherwise prune would leave orphan
 /// vector and FTS rows that the KNN / BM25 path could still surface.
-fn apply(conn: &mut rusqlite::Connection) -> Result<()> {
+fn apply(conn: &mut rusqlite::Connection, paths: &Paths, low_value_ids: &[String]) -> Result<()> {
+    for id in low_value_ids {
+        delete::soft_delete(paths, conn, id)?;
+    }
     let tx = conn.transaction()?;
     tx.execute(
         "DELETE FROM edges WHERE src_kind = 'memory' \

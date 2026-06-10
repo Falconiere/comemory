@@ -1,47 +1,85 @@
-//! Low-value detection: memories that are quality-poor, unused, and stale.
+//! Low-value memory detection driven by the same signals the rank
+//! pipeline uses: activation, Beta feedback, quality, graph degree —
+//! plus an independent superseded-and-forgotten rule.
 //!
-//! A memory qualifies as low-value when *all three* hold:
-//! - `quality < below_quality`
-//! - feedback `used_count == 0`
-//! - `created` is older than `unused_since_days` ago
-//!
-//! The detector opens a fresh [`StatsDb`] per call (as required by the
-//! task spec) so it can read the feedback counters without owning a
-//! long-lived connection. Detection is read-only; the CLI surface is what
-//! actually soft-deletes.
+//! Detection is read-only; the CLI surface (`cli::prune`) is what
+//! actually soft-deletes. The thresholds come from `cfg.prune`
+//! (`min_activation`, `min_feedback`, `low_value_default_below_quality`)
+//! and the activation decay from `cfg.rank.decay`, so prune and rerank
+//! can never disagree on what "cold" means.
 
-use time::{Duration, OffsetDateTime};
+use rusqlite::Connection;
+use time::OffsetDateTime;
 
-use crate::config::paths::Paths;
-use crate::memory::MemoryStore;
+use crate::config::Config;
 use crate::prelude::*;
-use crate::stats::feedback::Feedback;
-use crate::stats::sqlite::StatsDb;
+use crate::retrieval::score;
 
-/// Return the ids of memories that match every low-value criterion.
-///
-/// `below_quality` is a strict upper bound on `frontmatter.quality`;
-/// `unused_since_days` is the minimum age (in days) since `created` for
-/// a memory to qualify.
-pub fn detect(paths: &Paths, below_quality: u8, unused_since_days: u32) -> Result<Vec<String>> {
-    let store = MemoryStore::new(paths.clone());
-    let mems = store.list()?;
-    let mut db = StatsDb::open(paths.stats_db())?;
-    let cutoff = OffsetDateTime::now_utc() - Duration::days(i64::from(unused_since_days));
+/// Memories matching ALL of: activation below `cfg.prune.min_activation`,
+/// Beta feedback at/below `cfg.prune.min_feedback`, quality ≤
+/// `cfg.prune.low_value_default_below_quality` (inclusive), and zero
+/// incoming edges — plus any memory superseded by a live one and never
+/// accessed since the supersede edge was written. Returns sorted,
+/// de-duplicated ids.
+pub fn detect(conn: &Connection, cfg: &Config) -> Result<Vec<String>> {
+    let now = OffsetDateTime::now_utc();
+    let mut flagged = signal_rule(conn, cfg, now)?;
+    for id in superseded_rule(conn)? {
+        if !flagged.contains(&id) {
+            flagged.push(id);
+        }
+    }
+    flagged.sort();
+    Ok(flagged)
+}
 
+/// Stale-signal rule: low quality + no incoming edges in SQL, then the
+/// activation/feedback floors evaluated in Rust with the exact scoring
+/// primitives the rerank stage uses.
+fn signal_rule(conn: &Connection, cfg: &Config, now: OffsetDateTime) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT m.id, m.access_count, COALESCE(m.last_accessed, m.created_at),
+                COALESCE(f.used_count, 0), COALESCE(f.irrelevant_count, 0)
+           FROM memories m
+           LEFT JOIN feedback f ON f.memory_id = m.id
+          WHERE m.deleted_at IS NULL
+            AND m.quality <= ?1
+            AND NOT EXISTS (SELECT 1 FROM edges e
+                             WHERE e.dst_kind = 'memory' AND e.dst_id = m.id)",
+    )?;
+    let rows: Vec<(String, i64, String, i64, i64)> = stmt
+        .query_map([cfg.prune.low_value_default_below_quality], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+        })?
+        .collect::<std::result::Result<_, _>>()?;
     let mut out = Vec::new();
-    for m in mems {
-        if m.frontmatter.quality >= below_quality {
-            continue;
+    for (id, access, last, used, irrelevant) in rows {
+        let days = score::days_since(&last, now);
+        let act = score::activation(access.max(0) as u64, days, cfg.rank.decay);
+        let beta = score::beta_feedback(used.max(0) as u64, irrelevant.max(0) as u64);
+        if act < cfg.prune.min_activation && beta <= cfg.prune.min_feedback {
+            out.push(id);
         }
-        if m.frontmatter.created > cutoff {
-            continue;
-        }
-        let (used, _) = Feedback::new(&mut db).counts(&m.frontmatter.id)?;
-        if used > 0 {
-            continue;
-        }
-        out.push(m.frontmatter.id);
     }
     Ok(out)
+}
+
+/// Superseded-and-forgotten rule: a live memory superseded by another
+/// *live* memory, with no access recorded since the supersede edge was
+/// created. Quality and feedback are deliberately ignored here — a
+/// replaced memory nobody has touched since its replacement is prune
+/// material regardless of how good it once was.
+fn superseded_rule(conn: &Connection) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT old.id FROM memories old
+           JOIN edges e ON e.rel = 'supersedes'
+                       AND e.dst_kind = 'memory' AND e.dst_id = old.id
+           JOIN memories newer ON newer.id = e.src_id AND newer.deleted_at IS NULL
+          WHERE old.deleted_at IS NULL
+            AND COALESCE(old.last_accessed, old.created_at) < e.created_at",
+    )?;
+    let ids = stmt
+        .query_map([], |r| r.get(0))?
+        .collect::<std::result::Result<Vec<String>, _>>()?;
+    Ok(ids)
 }

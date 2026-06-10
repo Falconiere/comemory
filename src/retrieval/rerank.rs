@@ -8,7 +8,6 @@
 //! clamp and decay knobs come from `cfg.rank`.
 
 use rusqlite::{Connection, OptionalExtension};
-use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
 use crate::config::Config;
@@ -65,7 +64,7 @@ pub fn rerank(conn: &Connection, cfg: &Config, hits: &[RoutedHit]) -> Result<Vec
         let Some(row) = memory_signals(conn, &hit.memory_id)? else {
             continue;
         };
-        let days = days_between(&row.last_accessed, now);
+        let days = score::days_since(&row.last_accessed, now);
         let act = score::activation(row.access_count, days, cfg.rank.decay);
         let beta = score::beta_feedback(row.used, row.irrelevant);
         let superseded_by = live_superseder(conn, &hit.memory_id)?;
@@ -162,26 +161,4 @@ fn live_superseder(conn: &Connection, id: &str) -> Result<Option<String>> {
     stmt.query_row([id], |r| r.get(0))
         .optional()
         .map_err(Error::from)
-}
-
-/// Whole days elapsed between an RFC 3339 timestamp and `now`, floored at
-/// zero. All timestamp writers (`memory_row::iso_format` — shared by save,
-/// rebuild, and `pipeline::record_access` — plus the SQLite
-/// `strftime('%Y-%m-%dT%H:%M:%fZ', ...)` upsert arm) emit RFC 3339-parseable
-/// strings. An unparsable timestamp is treated as fresh — never punish a
-/// memory for a malformed clock value — but it is logged: a value that
-/// fails to parse means a writer bug or row corruption, and silently
-/// scoring it as fresh would mask that.
-fn days_between(rfc3339: &str, now: OffsetDateTime) -> f64 {
-    match OffsetDateTime::parse(rfc3339, &Rfc3339) {
-        Ok(then) => ((now - then).whole_seconds() as f64 / 86_400.0).max(0.0),
-        Err(e) => {
-            tracing::warn!(
-                timestamp = rfc3339,
-                error = %e,
-                "rerank: malformed last_accessed/created_at; scoring as fresh"
-            );
-            0.0
-        }
-    }
 }
