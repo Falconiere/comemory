@@ -49,35 +49,27 @@ fn jaccard(a: &HashSet<String>, b: &HashSet<String>) -> f64 {
 }
 
 /// Greedy MMR selection: at each step pick the candidate with the highest
-/// `lambda * relevance - (1 - lambda) * max_jaccard_to_selected`.
-/// Ties within `max_by` resolve to the last equal element; since `remaining`
-/// is traversed in ascending index order (= descending relevance order from
-/// the prior dedup step), ties are broken toward the higher-index, lower-
-/// relevance candidate. To preserve relevance order on ties, the score
-/// comparison is augmented by an index tie-break that prefers the smaller
-/// index (earlier = more relevant).
+/// `lambda * relevance - (1 - lambda) * max_jaccard_to_selected`. Equal MMR
+/// scores break toward the earlier (more relevant) candidate via an index
+/// tie-break.
 fn mmr(items: Vec<Reranked>, lambda: f64, top_k: usize) -> Vec<Reranked> {
     let sets: Vec<HashSet<String>> = items.iter().map(|i| token_set(&i.body)).collect();
     let mut remaining: Vec<usize> = (0..items.len()).collect();
     let mut picked_idx: Vec<usize> = Vec::with_capacity(top_k.min(items.len()));
 
     while picked_idx.len() < top_k && !remaining.is_empty() {
-        // Find the remaining candidate with the highest MMR score.
-        // On equal scores the `ib.cmp(ia)` tie-break reverses the index
-        // ordering inside `max_by`, so the earlier (= more relevant)
-        // candidate wins the tie.
-        let pos = remaining
+        let Some(pos) = remaining
             .iter()
             .enumerate()
             .max_by(|(ia, &a), (ib, &b)| {
                 let sa = mmr_score(&items, &sets, &picked_idx, a, lambda);
                 let sb = mmr_score(&items, &sets, &picked_idx, b, lambda);
-                sa.total_cmp(&sb)
-                    // equal MMR score: prefer the earlier (more relevant) candidate
-                    .then_with(|| ib.cmp(ia))
+                sa.total_cmp(&sb).then_with(|| ib.cmp(ia))
             })
             .map(|(pos, _)| pos)
-            .unwrap_or(0);
+        else {
+            break;
+        };
 
         picked_idx.push(remaining[pos]);
         remaining.remove(pos);
