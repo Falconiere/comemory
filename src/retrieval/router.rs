@@ -3,8 +3,9 @@
 //!
 //! Decision table:
 //! - vec = Some, query non-empty → **hybrid**: run both ANN and FTS5 BM25
-//!   independently, fuse via RRF, truncate to `top_k`. This is the correct
-//!   path when the caller supplies both a semantic vector *and* a text query.
+//!   independently, fuse via RRF, truncate to the candidate pool size.
+//!   This is the correct path when the caller supplies both a semantic
+//!   vector *and* a text query.
 //! - vec = Some, query empty → **pure vector**: ANN only. A lexical top-up
 //!   is impossible here because FTS5 returns nothing for an empty query;
 //!   callers that want the dense + sparse fusion must pass both `vec` and
@@ -17,6 +18,10 @@ use crate::config::Config;
 use crate::prelude::*;
 use crate::retrieval::fuse::{self, RankedHit};
 use crate::store::{fts, vector};
+
+/// Candidate pool fed to the rerank stage; the pipeline cuts to top_k
+/// after diversification.
+pub const CANDIDATE_POOL: usize = 50;
 
 /// One unified retrieval hit, regardless of which branch produced it.
 #[derive(Debug, Clone)]
@@ -49,6 +54,13 @@ pub enum Source {
 /// FTS5 returns nothing for an empty query, so no lexical top-up is
 /// possible. When only `query` is provided (no `vec`), only the lexical
 /// path runs.
+///
+/// The fetch size is [`CANDIDATE_POOL`] (or `top_k` when configured
+/// larger): `route` produces a candidate pool for the rerank + diversify
+/// stages, which perform the final `top_k` cut. When the lexical or
+/// hybrid branch comes back empty and the query has at least two terms,
+/// a relaxed OR tier ([`fts::search_memory_relaxed`]) retries the lexical
+/// branch so a single absent term cannot zero out the result set.
 pub fn route(
     cfg: &Config,
     conn: &Connection,
@@ -56,7 +68,7 @@ pub fn route(
     vec: Option<&[f32]>,
     repo: Option<&str>,
 ) -> Result<Vec<RoutedHit>> {
-    let k = cfg.retrieval.top_k;
+    let k = CANDIDATE_POOL.max(cfg.retrieval.top_k);
 
     // Trim the query before dispatching: a whitespace-only query like
     // `"   "` is lexically empty (FTS5 returns no rows for it) so the
@@ -86,14 +98,18 @@ fn route_hybrid(
     let lex_ranked: Vec<RankedHit> = lex.into_iter().map(lex_to_ranked).collect();
 
     let fused = fuse::rrf_k(&ann_ranked, &lex_ranked, k, cfg.retrieval.rrf_k);
-    Ok(fused
+    let hits: Vec<RoutedHit> = fused
         .into_iter()
         .map(|h| RoutedHit {
             memory_id: h.memory_id,
             score: h.score,
             source: Source::Hybrid,
         })
-        .collect())
+        .collect();
+    if hits.is_empty() {
+        return route_lexical_relaxed(conn, query, k, repo);
+    }
+    Ok(hits)
 }
 
 /// Pure-vector path. The lexical top-up that previously lived here was
@@ -111,7 +127,7 @@ fn route_vector_only(
     Ok(ann.into_iter().map(ann_to_routed).collect())
 }
 
-/// Pure-lexical path via FTS5 BM25.
+/// Pure-lexical path via FTS5 BM25, with the relaxed OR fallback tier.
 fn route_lexical(
     conn: &Connection,
     query: &str,
@@ -119,6 +135,28 @@ fn route_lexical(
     repo: Option<&str>,
 ) -> Result<Vec<RoutedHit>> {
     let lex = fts::search_memory(conn, query, k, repo)?;
+    if lex.is_empty() {
+        return route_lexical_relaxed(conn, query, k, repo);
+    }
+    Ok(lex.into_iter().map(lex_to_routed).collect())
+}
+
+/// Relaxed fallback tier shared by the lexical and hybrid paths: when the
+/// strict AND query found nothing and the query has at least two terms,
+/// retry with the OR variant so one absent term cannot zero out the
+/// result set. Single-term queries return empty — OR of one term is the
+/// same query, so retrying would only waste a round trip. Hits are tagged
+/// [`Source::Lexical`] because only the FTS branch contributed signal.
+fn route_lexical_relaxed(
+    conn: &Connection,
+    query: &str,
+    k: usize,
+    repo: Option<&str>,
+) -> Result<Vec<RoutedHit>> {
+    if query.split_whitespace().nth(1).is_none() {
+        return Ok(Vec::new());
+    }
+    let lex = fts::search_memory_relaxed(conn, query, k, repo)?;
     Ok(lex.into_iter().map(lex_to_routed).collect())
 }
 
