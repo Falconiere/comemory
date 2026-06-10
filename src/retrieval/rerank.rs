@@ -76,6 +76,9 @@ pub fn rerank(conn: &Connection, cfg: &Config, hits: &[RoutedHit]) -> Result<Vec
         let activation_boost = score::activation_boost(act, clamp);
         let feedback_boost = score::feedback_boost(beta, clamp);
         let quality_boost = score::quality_boost(row.quality, clamp);
+        // A negative rrf (pure-vector cosine distance > 1) inverts the boost
+        // direction; the clamps keep it finite — acceptable until M2
+        // normalizes the candidate scores.
         let final_score =
             f64::from(hit.score) * activation_boost * feedback_boost * quality_boost * supersede;
         out.push(Reranked {

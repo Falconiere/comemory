@@ -54,8 +54,8 @@ pub struct Args {
     /// Optional repo filter forwarded to the vector branch.
     #[arg(long)]
     pub repo: Option<String>,
-    /// Reserved kind filter. Hidden until the router actually applies it
-    /// (Task 12); declared here so callers that pre-bake a flag list keep
+    /// Reserved kind filter. Hidden until the router applies it (future
+    /// milestone); declared here so callers that pre-bake a flag list keep
     /// parsing without error.
     #[arg(long, hide = true)]
     pub kind: Option<Kind>,
