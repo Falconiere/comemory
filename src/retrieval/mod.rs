@@ -7,9 +7,12 @@
 //! [`bundle`] shapes the JSON emitted by `comemory context`. [`rerank`]
 //! is the second pipeline stage: it multiplies the fused relevance by
 //! bounded deterministic priors (activation, feedback, quality,
-//! supersede) built from the [`score`] primitives.
+//! supersede) built from the [`score`] primitives. [`diversify`] is the
+//! third stage: SimHash near-duplicate collapse followed by Jaccard-MMR
+//! greedy selection up to top-k.
 
 pub mod bundle;
+pub mod diversify;
 pub mod fuse;
 pub mod rerank;
 pub mod router;
