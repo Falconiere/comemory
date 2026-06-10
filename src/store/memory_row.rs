@@ -82,6 +82,13 @@ pub fn insert(
     // belong to their source memory and must survive a re-save — and a
     // rebuild, which replays memories newest-first, so the superseder's
     // edge lands before the superseded memory is inserted.
+    //
+    // Relation-edge timestamps are captured before the wipe so a re-save
+    // re-inserting the same relation keeps the original `created_at`:
+    // `prune::low_value::superseded_rule` compares the superseded memory's
+    // `last_accessed` against the edge timestamp, and a refreshed stamp
+    // would re-arm the rule on every re-save of the superseder.
+    let relation_stamps = relation_edge_stamps(conn, &fm.id)?;
     edges::delete_outgoing(conn, "memory", &fm.id)?;
     // Simhash is persisted at write time so the rank/diversify layers never
     // see the `DEFAULT 0` placeholder from migration 0004 on fresh saves.
@@ -141,16 +148,45 @@ pub fn insert(
         )?;
     }
     fts::index_memory(conn, &fm.id, body, &unique_tags.join(","))?;
-    insert_edges(conn, fm, &unique_tags, body)?;
+    insert_edges(conn, fm, &unique_tags, body, &relation_stamps)?;
     Ok(())
+}
+
+/// Capture `(rel, dst_id) → created_at` for a memory's existing outgoing
+/// relation edges (`supersedes` / `conflicts_with` / `derived_from`).
+/// Called by [`insert`] *before* the outgoing-edge wipe so re-inserted
+/// relation edges can keep their original timestamps.
+fn relation_edge_stamps(
+    conn: &Connection,
+    memory_id: &str,
+) -> Result<std::collections::HashMap<(String, String), String>> {
+    let mut stmt = conn.prepare(
+        "SELECT rel, dst_id, created_at FROM edges \
+          WHERE src_kind = 'memory' AND src_id = ?1 AND dst_kind = 'memory' \
+            AND rel IN ('supersedes','conflicts_with','derived_from')",
+    )?;
+    let rows = stmt
+        .query_map([memory_id], |r| {
+            Ok(((r.get::<_, String>(0)?, r.get::<_, String>(1)?), r.get(2)?))
+        })?
+        .collect::<std::result::Result<_, _>>()?;
+    Ok(rows)
 }
 
 /// Insert the v0.2 graph edges that accompany a saved or rebuilt memory:
 /// `in_repo`, `authored_by`, `tagged`, the frontmatter relation edges
 /// (`supersedes` / `conflicts_with` / `derived_from`), plus the
 /// `references_file` / `references_symbol` edges harvested from the body by
-/// [`cross_link::extract_and_emit`].
-fn insert_edges(conn: &Connection, fm: &Frontmatter, tags: &[&str], body: &str) -> Result<()> {
+/// [`cross_link::extract_and_emit`]. Relation edges that recur from a
+/// previous save reuse the captured `relation_stamps` timestamp instead of
+/// a fresh one (see [`relation_edge_stamps`]).
+fn insert_edges(
+    conn: &Connection,
+    fm: &Frontmatter,
+    tags: &[&str],
+    body: &str,
+    relation_stamps: &std::collections::HashMap<(String, String), String>,
+) -> Result<()> {
     if !fm.repo.is_empty() {
         edges::insert(
             conn,
@@ -212,7 +248,8 @@ fn insert_edges(conn: &Connection, fm: &Frontmatter, tags: &[&str], body: &str) 
                 );
                 continue;
             }
-            edges::insert(
+            let stamp = relation_stamps.get(&(rel.to_string(), dst_id.clone()));
+            edges::insert_at(
                 conn,
                 EdgeKey {
                     src_kind: "memory",
@@ -221,6 +258,7 @@ fn insert_edges(conn: &Connection, fm: &Frontmatter, tags: &[&str], body: &str) 
                     dst_id,
                     rel,
                 },
+                stamp.map(String::as_str),
             )?;
         }
     }

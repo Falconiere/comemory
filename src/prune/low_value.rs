@@ -24,7 +24,7 @@ use crate::retrieval::score;
 pub fn detect(conn: &Connection, cfg: &Config) -> Result<Vec<String>> {
     let now = OffsetDateTime::now_utc();
     let mut flagged = signal_rule(conn, cfg, now)?;
-    for id in superseded_rule(conn)? {
+    for id in superseded_rule(conn, now)? {
         if !flagged.contains(&id) {
             flagged.push(id);
         }
@@ -64,12 +64,23 @@ fn signal_rule(conn: &Connection, cfg: &Config, now: OffsetDateTime) -> Result<V
     Ok(out)
 }
 
+/// Grace window for the superseded rule: only supersede edges older than
+/// this many days count. Protects freshly-rebuilt DBs — `comemory rebuild`
+/// rematerializes every edge with a rebuild-time timestamp, so without a
+/// grace period every superseded memory would instantly look
+/// "never accessed since the edge was written" and get flagged. M2 may
+/// make this configurable.
+const SUPERSEDED_GRACE_DAYS: i64 = 7;
+
 /// Superseded-and-forgotten rule: a live memory superseded by another
 /// *live* memory, with no access recorded since the supersede edge was
-/// created. Quality and feedback are deliberately ignored here — a
-/// replaced memory nobody has touched since its replacement is prune
-/// material regardless of how good it once was.
-fn superseded_rule(conn: &Connection) -> Result<Vec<String>> {
+/// created — and only when the edge has aged past
+/// [`SUPERSEDED_GRACE_DAYS`]. Quality and feedback are deliberately
+/// ignored here — a replaced memory nobody has touched since its
+/// replacement is prune material regardless of how good it once was.
+/// Self-edges (`src_id = dst_id`) are ignored as defense-in-depth; the
+/// writers refuse to create them.
+fn superseded_rule(conn: &Connection, now: OffsetDateTime) -> Result<Vec<String>> {
     // The `<` compares timestamps as strings. That is sound here: both
     // writer formats — `memory_row::iso_format` (Iso8601, 9-digit
     // subseconds) and the SQLite `strftime('%Y-%m-%dT%H:%M:%fZ', ...)`
@@ -77,6 +88,8 @@ fn superseded_rule(conn: &Connection) -> Result<Vec<String>> {
     // UTC prefix, so lexicographic order matches chronological order to
     // second granularity; only mixed-format sub-second ties could
     // misorder, and this rule operates at days scale.
+    let cutoff =
+        crate::store::memory_row::iso_format(now - time::Duration::days(SUPERSEDED_GRACE_DAYS))?;
     let mut stmt = conn.prepare(
         "SELECT old.id FROM memories old
            JOIN edges e ON e.rel = 'supersedes'
@@ -85,10 +98,11 @@ fn superseded_rule(conn: &Connection) -> Result<Vec<String>> {
                        AND e.src_id <> e.dst_id
            JOIN memories newer ON newer.id = e.src_id AND newer.deleted_at IS NULL
           WHERE old.deleted_at IS NULL
-            AND COALESCE(old.last_accessed, old.created_at) < e.created_at",
+            AND COALESCE(old.last_accessed, old.created_at) < e.created_at
+            AND e.created_at < ?1",
     )?;
     let ids = stmt
-        .query_map([], |r| r.get(0))?
+        .query_map([cutoff], |r| r.get(0))?
         .collect::<std::result::Result<Vec<String>, _>>()?;
     Ok(ids)
 }
