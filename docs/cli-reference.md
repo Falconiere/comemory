@@ -210,13 +210,13 @@ Options:
 
 Examples:
   # Mark two hits as useful and one as irrelevant
-  comemory feedback q-2026-05-17-001 --used a1b2c3d4,e5f6a7b8 --irrelevant 0011223344
+  comemory feedback q-2026-05-17-001 --used a1b2c3d4,e5f6a7b8 --irrelevant 00112233
 
   # Only-used feedback
   comemory feedback q-2026-05-17-002 --used a1b2c3d4
 
   # Only-irrelevant feedback
-  comemory feedback q-2026-05-17-003 --irrelevant 0011223344
+  comemory feedback q-2026-05-17-003 --irrelevant 00112233
 ```
 
 ---

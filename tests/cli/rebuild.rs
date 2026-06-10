@@ -239,8 +239,9 @@ fn rebuild_cleans_up_wal_shm_sidecars() {
     );
 }
 
-/// Regression: a `comemory.db` written by a pre-v4 binary is ATTACHed raw
-/// (never migrated) during rebuild, so its 12-column `code_symbols` table
+/// Regression: a `comemory.db` written by a pre-v4 binary is attached raw
+/// (`ATTACH DATABASE`, never migrated) during rebuild, so its 12-column
+/// `code_symbols` table
 /// used to break the `SELECT *` copy into the new 14-column schema
 /// ("table main.code_symbols has 14 columns but 12 values were supplied"),
 /// aborting the whole rebuild. The copy now lists columns explicitly and
