@@ -154,19 +154,22 @@ The pipeline runs entirely in Rust. No LLM calls.
 search("postgres migration race")
   │
   ├─ route  (router.rs)
-  │   ├─ identifier-like query?             → identifier FTS5 tokenizer path
-  │   ├─ has filters (--repo, --kind)?      → constrained branch
-  │   ├─ has caller vector?                 → hybrid (vector + FTS5, fused via RRF)
-  │   └─ otherwise                          → lexical FTS5-first
-  │   └─ relaxed OR fallback: if zero hits, retry FTS5 with OR operator
+  │   ├─ vector + non-empty query           → hybrid (ANN + FTS5 BM25, fused via RRF)
+  │   ├─ vector + empty query               → pure vector (ANN only)
+  │   └─ no vector                          → pure lexical (FTS5 BM25)
+  │   ├─ --repo filter (when set) constrains every branch
+  │   └─ relaxed OR fallback: when the lexical or hybrid branch returns zero
+  │       hits AND the query has ≥ 2 sanitized terms, retry FTS5 with the OR
+  │       variant (never fires on the pure-vector path)
   │
   ├─ rerank  (rerank.rs)
   │   ├─ per-hit: ACT-R activation boost (recency × access count)
   │   ├─ Beta-smoothed feedback multiplier (used / irrelevant counts)
   │   ├─ quality multiplier (frontmatter quality 1-5)
-  │   ├─ supersede penalty (0.2× if superseded by a live memory)
+  │   ├─ supersede penalty (fixed 0.2× if superseded by a live memory)
   │   └─ final_score = rrf × activation × feedback × quality × supersede
-  │       (all priors clamped to [prior_clamp.lo, prior_clamp.hi])
+  │       (activation/feedback/quality clamped to [prior_clamp.lo, prior_clamp.hi];
+  │        the supersede penalty intentionally bypasses the clamp)
   │
   ├─ diversify  (diversify.rs)
   │   ├─ SimHash near-dup collapse (Hamming ≤ threshold → keep highest score)
@@ -174,12 +177,14 @@ search("postgres migration race")
   │
   └─ emit  (output/search.rs)
       ├─ TTY: one line per hit with colored score + source label
-      └─ JSON: {"hits":[{"memory_id","score","source","superseded_by?,"score_parts":{
+      └─ JSON: {"hits":[{"memory_id","score","source","superseded_by"?,"score_parts":{
                rrf, activation, feedback, quality, supersede, final_score}}]}
 ```
 
 `score_parts` is a stable explainability contract (M2 tuning reads it).
-If no vector is supplied the vector branch is skipped; only FTS5 runs.
+Identifier-aware matching (camelCase/snake_case splitting) is not a routing
+branch — the custom `identifier` FTS5 tokenizer is baked into the
+`memory_fts` / `code_fts` DDL, so every lexical query benefits from it.
 
 ## 6. Save flow
 
@@ -199,9 +204,10 @@ comemory save "..." --kind=decision [--vector ... | --vector-stdin]
   5. git add + commit + push (best-effort, only when COMEMORY_GIT_AUTO_SYNC is on).
 ```
 
-Markdown is always the source of truth. If the SQLite transaction fails,
-the markdown file is removed and the caller sees the original error;
-`comemory rebuild` can always reconstruct the DB from `memories/*.md`.
+Markdown is always the source of truth. If the SQLite mirror transaction
+fails, the markdown file is **kept** (it was already written as the source
+of truth) and the error names the markdown path with a hint to run
+`comemory rebuild`, which reconstructs the DB from `memories/*.md`.
 
 ## 7. Code indexing flow
 

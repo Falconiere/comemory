@@ -100,7 +100,7 @@ enforced by `scripts/check-all.sh`. Every PR must satisfy all five.
 ## Environment Variables
 
 Values are layered: defaults (`Config::defaults`) → optional config file →
-environment (`Config::with_env`, in `src/config/file.rs`).
+environment (`Config::with_env`, in `src/config/env.rs`).
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
@@ -113,7 +113,7 @@ environment (`Config::with_env`, in `src/config/file.rs`).
 | `COMEMORY_GIT_AUTO_SYNC` | `true`/`1` to enable best-effort git commit + push after a save | `false` |
 | `COMEMORY_EMBED_HINT` | Free-form identifier of the embedder you used (e.g. `ollama:nomic-embed-text`). Surfaced by `comemory doctor`; never consumed as a switch. | unset |
 | `COMEMORY_RANK_DECAY` | ACT-R decay exponent `d` in `ln(n) − d·ln(days+1)`. Must be ≥ 0. Higher → older memories decay faster. | `0.5` |
-| `COMEMORY_RANK_PRIOR_CLAMP` | `"lo,hi"` bounds applied to every rerank prior multiplier. Both finite; lo > 0, lo ≤ hi. | `0.5,2.0` |
+| `COMEMORY_RANK_PRIOR_CLAMP` | `"lo,hi"` bounds applied to the activation, feedback, and quality boost multipliers (the fixed `0.2` supersede penalty intentionally bypasses the clamp). Both finite; lo > 0, lo ≤ hi. | `0.5,2.0` |
 | `COMEMORY_RANK_MMR_LAMBDA` | MMR relevance-vs-diversity trade-off in `[0.0, 1.0]`. `1.0` = pure relevance; `0.0` = pure diversity. | `0.7` |
 | `COMEMORY_PRUNE_MIN_ACTIVATION` | Activation floor (ACT-R scale) below which a memory is prune-eligible. | `-2.0` |
 | `COMEMORY_PRUNE_MIN_FEEDBACK` | Beta-feedback ceiling (range `[0.0, 1.0]`) at or below which a memory is prune-eligible. | `0.25` |
@@ -191,11 +191,12 @@ Markdown body lives here.
 5. Best-effort git auto-sync via `git_utils`, only when
    `COMEMORY_GIT_AUTO_SYNC` is enabled.
 
-If the SQLite transaction fails, the staged markdown file is removed and
-the original error is surfaced. Markdown remains the source of truth, and
-`comemory rebuild` can always reconstruct `comemory.db` from
-`memories/*.md`. See the README "BYO-Vector workflow" section and
-`scripts/comemory-embed.sh` for the recommended caller pattern.
+If the SQLite mirror transaction fails, the markdown file is **kept** (it
+was already written as the source of truth) and the error wraps the
+markdown path with a hint to run `comemory rebuild`, which can always
+reconstruct `comemory.db` from `memories/*.md`. See the README
+"BYO-Vector workflow" section and `scripts/comemory-embed.sh` for the
+recommended caller pattern.
 
 ## Testing
 
