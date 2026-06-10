@@ -87,7 +87,7 @@ fn backfill_memory_simhash(conn: &mut Connection) -> Result<()> {
             .collect::<std::result::Result<_, _>>()?;
         drop(stmt);
         for (id, body) in rows {
-            let hash = crate::simhash::simhash64(crate::simhash::tokens(&body));
+            let hash = crate::simhash::of_body(&body);
             // SQLite INTEGER is i64; store the u64 bit pattern.
             tx.execute(
                 "UPDATE memories SET simhash = ?1 WHERE id = ?2",

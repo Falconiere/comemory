@@ -1,7 +1,8 @@
 //! ANSI-colored renderers for human-readable CLI output. Each helper returns
 //! a `String` carrying the appropriate `owo-colors` escape sequences so call
-//! sites can compose them into a `writeln!`. `header` writes directly to
-//! stdout because it is meant to stand alone above a section.
+//! sites can compose them into a `writeln!`. Two helpers write directly
+//! instead: `header` to stdout because it stands alone above a section, and
+//! `warning` to stderr so advisory lines stay out of pipeable stdout.
 
 use std::io::Write as _;
 
