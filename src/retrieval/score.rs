@@ -1,7 +1,11 @@
 //! Deterministic scoring primitives: ACT-R activation (Petrov
-//! approximation), Beta-smoothed feedback, and the bounded multiplier
-//! mappings used by the rerank stage. Pure functions — time and counts
-//! come in as arguments so tests stay clock-free.
+//! approximation), Beta-smoothed feedback, the bounded multiplier
+//! mappings used by the rerank stage, and the shared timestamp→days
+//! helper. Pure functions — time and counts come in as arguments so
+//! tests stay clock-free.
+
+use time::format_description::well_known::Rfc3339;
+use time::OffsetDateTime;
 
 /// ACT-R base-level activation, Petrov approximation:
 /// `ln(max(n,1)) − d·ln(max(days,0) + 1)`. Time is measured in days; the
@@ -66,6 +70,29 @@ pub fn quality_boost(quality: u8, clamp: (f64, f64)) -> f64 {
 /// Intentionally bypasses `prior_clamp`: a supersede is a penalty stronger
 /// than any prior and must NOT be run through `bounded()`.
 pub const SUPERSEDE_PENALTY: f64 = 0.2;
+
+/// Whole days elapsed between an RFC 3339 timestamp and `now`, floored at
+/// zero. All timestamp writers (`memory_row::iso_format` — shared by save,
+/// rebuild, and `pipeline::record_access` — plus the SQLite
+/// `strftime('%Y-%m-%dT%H:%M:%fZ', ...)` upsert arm) emit RFC 3339-parseable
+/// strings. An unparsable timestamp is treated as fresh — never punish a
+/// memory for a malformed clock value — but it is logged: a value that
+/// fails to parse means a writer bug or row corruption, and silently
+/// scoring it as fresh would mask that. Shared by `retrieval::rerank` and
+/// `prune::low_value` so the two consumers cannot drift on day math.
+pub fn days_since(rfc3339: &str, now: OffsetDateTime) -> f64 {
+    match OffsetDateTime::parse(rfc3339, &Rfc3339) {
+        Ok(then) => ((now - then).whole_seconds() as f64 / 86_400.0).max(0.0),
+        Err(e) => {
+            tracing::warn!(
+                timestamp = rfc3339,
+                error = %e,
+                "score: malformed last_accessed/created_at; scoring as fresh"
+            );
+            0.0
+        }
+    }
+}
 
 fn bounded(v: f64, (lo, hi): (f64, f64)) -> f64 {
     if !v.is_finite() {

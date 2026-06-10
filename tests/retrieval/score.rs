@@ -30,6 +30,25 @@ fn old_unaccessed_memory_sinks_below_threshold() {
     assert!(a < -2.0, "got {a}");
 }
 
+#[test]
+fn days_since_counts_elapsed_days() {
+    let now = time::macros::datetime!(2026-06-09 00:00:00 UTC);
+    let d = days_since("2026-06-01T00:00:00Z", now);
+    assert!((d - 8.0).abs() < 1e-9, "got {d}");
+}
+
+#[test]
+fn days_since_floors_future_timestamps_at_zero() {
+    let now = time::macros::datetime!(2026-06-09 00:00:00 UTC);
+    assert_eq!(days_since("2026-07-01T00:00:00Z", now), 0.0);
+}
+
+#[test]
+fn days_since_treats_malformed_timestamp_as_fresh() {
+    let now = time::macros::datetime!(2026-06-09 00:00:00 UTC);
+    assert_eq!(days_since("not-a-timestamp", now), 0.0);
+}
+
 proptest! {
     #[test]
     fn activation_monotone_in_count(n in 1u64..10_000, days in 0.0f64..3650.0) {
