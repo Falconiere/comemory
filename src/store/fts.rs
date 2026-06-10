@@ -29,49 +29,128 @@ pub fn index_memory(conn: &Connection, memory_id: &str, body: &str, tags_csv: &s
     Ok(())
 }
 
+/// Split `query` on whitespace into FTS5-safe terms: embedded double quotes
+/// are stripped so user text is always treated as data, never as MATCH
+/// syntax. Shared by [`build_match_query`] and [`build_or_query`].
+fn sanitize_terms(query: &str) -> Vec<String> {
+    query
+        .split_whitespace()
+        .map(|t| t.replace('"', ""))
+        .filter(|t| !t.is_empty())
+        .collect()
+}
+
+/// Build a strict FTS5 MATCH query: every whitespace term double-quoted
+/// (quotes stripped from input — terms are data, never syntax), last term
+/// prefix-matched so an in-progress final word still hits.
+pub fn build_match_query(query: &str) -> String {
+    let terms = sanitize_terms(query);
+    let n = terms.len();
+    terms
+        .iter()
+        .enumerate()
+        .map(|(i, t)| {
+            if i + 1 == n {
+                format!("\"{t}\"*")
+            } else {
+                format!("\"{t}\"")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Build a relaxed OR query over the same sanitized terms (no prefixing).
+/// Used as the fallback tier when the strict AND query finds nothing.
+pub fn build_or_query(query: &str) -> String {
+    sanitize_terms(query)
+        .iter()
+        .map(|t| format!("\"{t}\""))
+        .collect::<Vec<_>>()
+        .join(" OR ")
+}
+
 /// Run a BM25 search over `memory_fts`, skipping soft-deleted memories.
 ///
-/// Optional `repo` filter is applied via the same JOIN that gates on
-/// `deleted_at`, so the lexical and vector branches share the same scope
-/// when a hybrid query is run with a repo filter. FTS5 MATCH parse errors
-/// (malformed user query syntax, e.g. a stray apostrophe or unbalanced
-/// quote) are downgraded to an empty result rather than propagated, so a
-/// typo in the query string cannot abort the wider retrieval pipeline.
+/// The user query is rewritten via [`build_match_query`] (quoted terms,
+/// last term prefix-matched) and ranked with a weighted BM25 that boosts
+/// the `tags` column over `body`. Optional `repo` filter is applied via
+/// the same JOIN that gates on `deleted_at`, so the lexical and vector
+/// branches share the same scope when a hybrid query is run with a repo
+/// filter. FTS5 MATCH parse errors (malformed user query syntax) are
+/// downgraded to an empty result rather than propagated, so a typo in the
+/// query string cannot abort the wider retrieval pipeline.
 pub fn search_memory(
     conn: &Connection,
     query: &str,
     k: usize,
     repo: Option<&str>,
 ) -> Result<Vec<MemoryFtsHit>> {
-    if query.trim().is_empty() || k == 0 {
+    run_memory_match(conn, &build_match_query(query), k, repo)
+}
+
+/// Relaxed variant of [`search_memory`]: OR-joins the sanitized terms via
+/// [`build_or_query`] so a memory matching any single term still surfaces.
+/// Used by the router as a fallback tier when the strict query is empty.
+pub fn search_memory_relaxed(
+    conn: &Connection,
+    query: &str,
+    k: usize,
+    repo: Option<&str>,
+) -> Result<Vec<MemoryFtsHit>> {
+    run_memory_match(conn, &build_or_query(query), k, repo)
+}
+
+/// Execute a prebuilt MATCH expression against `memory_fts`. Shared by
+/// [`search_memory`] and [`search_memory_relaxed`] so the strict and
+/// relaxed tiers cannot drift on SQL, weights, or error handling.
+///
+/// BM25 weights follow the `memory_fts` column order
+/// `(memory_id UNINDEXED, body, tags)`: a tag hit (weight 3.0) outranks a
+/// body hit (1.0). FTS5 `bm25()` returns negative scores (more negative =
+/// better), so `ORDER BY score` ascending keeps best-first.
+fn run_memory_match(
+    conn: &Connection,
+    match_expr: &str,
+    k: usize,
+    repo: Option<&str>,
+) -> Result<Vec<MemoryFtsHit>> {
+    if match_expr.is_empty() || k == 0 {
         return Ok(Vec::new());
     }
     // `?3 IS NULL OR m.repo = ?3` lets us bind the optional repo filter as
     // a single SQL string. SQLite short-circuits on the first disjunct when
     // `?3` is NULL, so the repo filter is a no-op in that case.
-    let sql = "SELECT memory_fts.memory_id, bm25(memory_fts) AS score \
+    let sql = "SELECT memory_fts.memory_id, bm25(memory_fts, 0.0, 1.0, 3.0) AS score \
                  FROM memory_fts \
                  JOIN memories m ON m.id = memory_fts.memory_id \
                 WHERE memory_fts MATCH ?1 AND m.deleted_at IS NULL \
                   AND (?3 IS NULL OR m.repo = ?3) \
                 ORDER BY score \
                 LIMIT ?2";
+    run_fts_query(conn, sql, params![match_expr, k as i64, repo], |row| {
+        Ok(MemoryFtsHit {
+            memory_id: row.get(0)?,
+            score: row.get(1)?,
+        })
+    })
+}
+
+/// Prepare and drain an FTS5 query, downgrading MATCH parse errors at both
+/// the prepare and the row-iteration stage to an empty result. Shared by
+/// the memory and code paths so they cannot drift on parse-error handling.
+fn run_fts_query<R, P, F>(conn: &Connection, sql: &str, params: P, row_fn: F) -> Result<Vec<R>>
+where
+    P: rusqlite::Params,
+    F: FnMut(&rusqlite::Row<'_>) -> rusqlite::Result<R>,
+{
     let mut stmt = match conn.prepare(sql) {
         Ok(s) => s,
         Err(e) if is_fts5_parse_error(&e) => return Ok(Vec::new()),
         Err(e) => return Err(e.into()),
     };
-    let row_fn = |row: &rusqlite::Row<'_>| {
-        Ok(MemoryFtsHit {
-            memory_id: row.get(0)?,
-            score: row.get(1)?,
-        })
-    };
     let mut out = Vec::new();
-    collect_with_fts5_guard(
-        stmt.query_map(params![query, k as i64, repo], row_fn),
-        &mut out,
-    )?;
+    collect_with_fts5_guard(stmt.query_map(params, row_fn), &mut out)?;
     Ok(out)
 }
 
@@ -138,33 +217,30 @@ pub fn index_code(
 }
 
 /// Run a BM25 search over `code_fts` and return the top-`k` symbol hits.
-/// FTS5 MATCH parse errors are downgraded to an empty result for the same
+///
+/// The query is rewritten via [`build_match_query`] and ranked with a
+/// weighted BM25 over the `code_fts` column order
+/// `(symbol_id UNINDEXED, symbol, snippet, path_tokens)`: symbol-name hits
+/// (2.0) outrank path hits (1.5), which outrank snippet hits (1.0). FTS5
+/// MATCH parse errors are downgraded to an empty result for the same
 /// reason as [`search_memory`] — a typo in the user query should not abort
 /// the wider retrieval pipeline.
 pub fn search_code(conn: &Connection, query: &str, k: usize) -> Result<Vec<CodeFtsHit>> {
-    if query.trim().is_empty() || k == 0 {
+    let match_expr = build_match_query(query);
+    if match_expr.is_empty() || k == 0 {
         return Ok(Vec::new());
     }
-    let mut stmt = match conn.prepare(
-        "SELECT symbol_id, bm25(code_fts) AS score \
-           FROM code_fts \
-          WHERE code_fts MATCH ?1 \
-          ORDER BY score \
-          LIMIT ?2",
-    ) {
-        Ok(s) => s,
-        Err(e) if is_fts5_parse_error(&e) => return Ok(Vec::new()),
-        Err(e) => return Err(e.into()),
-    };
-    let row_fn = |row: &rusqlite::Row<'_>| {
+    let sql = "SELECT symbol_id, bm25(code_fts, 0.0, 2.0, 1.0, 1.5) AS score \
+                 FROM code_fts \
+                WHERE code_fts MATCH ?1 \
+                ORDER BY score \
+                LIMIT ?2";
+    run_fts_query(conn, sql, params![match_expr, k as i64], |row| {
         Ok(CodeFtsHit {
             symbol_id: row.get(0)?,
             score: row.get(1)?,
         })
-    };
-    let mut out = Vec::new();
-    collect_with_fts5_guard(stmt.query_map(params![query, k as i64], row_fn), &mut out)?;
-    Ok(out)
+    })
 }
 
 /// Split a path into BM25-friendly tokens: lowercase, alnum runs.

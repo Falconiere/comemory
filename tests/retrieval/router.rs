@@ -52,6 +52,60 @@ fn pure_vector_path_when_empty_query() {
 }
 
 #[test]
+fn relaxed_fallback_fires_when_strict_finds_nothing() {
+    let dir = tempdir().expect("tempdir");
+    let conn = connection::open(dir.path().join("c.db")).expect("open");
+    conn.execute_batch(
+        "INSERT INTO memories(id, slug, kind, repo, author, quality, schema, content_hash,
+                              body, created_at, updated_at, md_path, simhash)
+         VALUES ('aaaa0001','a','note','d','f',3,1,'h1','the oauth refresh race condition',
+                 '2026-06-09T00:00:00Z','2026-06-09T00:00:00Z','m/1.md',1);
+         INSERT INTO memory_fts(memory_id, body, tags)
+         VALUES ('aaaa0001','the oauth refresh race condition','');",
+    )
+    .expect("seed");
+    let cfg = Config::defaults();
+    // strict AND of all three terms fails ('login' absent) → OR tier finds it
+    let hits = router::route(&cfg, &conn, "oauth login race", None, None).expect("route");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].memory_id, "aaaa0001");
+    assert_eq!(hits[0].source, Source::Lexical);
+}
+
+#[test]
+fn relaxed_fallback_fires_on_empty_hybrid_result() {
+    // Hybrid path with an empty vector table and a strict-miss query: both
+    // branches come back empty, so the relaxed OR tier must fire and tag
+    // its hits as lexical.
+    let dir = tempdir().expect("tempdir");
+    let conn = connection::open(dir.path().join("c.db")).expect("open");
+    seed_memory(&conn, "hx1", "the oauth refresh race condition");
+    fts::index_memory(&conn, "hx1", "the oauth refresh race condition", "").expect("fts");
+
+    let cfg = Config::defaults();
+    let v = vectors::vector("seed", 1024);
+    let hits = router::route(&cfg, &conn, "oauth login race", Some(&v), None).expect("route");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].memory_id, "hx1");
+    assert_eq!(hits[0].source, Source::Lexical);
+}
+
+#[test]
+fn single_term_miss_does_not_trigger_relaxed_fallback() {
+    let dir = tempdir().expect("tempdir");
+    let conn = connection::open(dir.path().join("c.db")).expect("open");
+    seed_memory(&conn, "s1", "the oauth refresh race condition");
+    fts::index_memory(&conn, "s1", "the oauth refresh race condition", "").expect("fts");
+
+    let cfg = Config::defaults();
+    let hits = router::route(&cfg, &conn, "kubernetes", None, None).expect("route");
+    assert!(
+        hits.is_empty(),
+        "single absent term must not fall back to OR"
+    );
+}
+
+#[test]
 fn hybrid_path_when_both_vector_and_query() {
     // Non-empty query + vector → hybrid RRF path.
     let dir = tempdir().expect("tempdir");
