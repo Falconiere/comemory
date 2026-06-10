@@ -57,13 +57,17 @@ fn mmr_prefers_diverse_over_marginally_better() {
     // two near-identical topics + one distinct; k=2 must pick one of each.
     // Body `b` differs enough in token count to survive SimHash dedup while
     // still having high Jaccard overlap with `a` so MMR penalises it.
+    //
+    // Selection uses pool-normalized relevance: a→1.0, b→(0.65−0.6)/0.3=1/6,
+    // c→0.0. Pick 2 compares b: 0.7·(1/6) − 0.3·0.714 ≈ −0.098 against
+    // c: 0 − 0.3·0 = 0, so the diverse c wins despite b's higher raw score.
     let a = item("aaaa0001", 0.9, "sqlite fts5 tokenizer registration order");
     // Body b shares 5 of 7 unique tokens with a (Jaccard=0.714) so MMR
     // penalises it, and its SimHash is Hamming=13 away from a so SimHash
     // dedup does NOT remove it — the MMR stage decides.
     let b = item(
         "aaaa0002",
-        0.89,
+        0.65,
         "sqlite fts5 tokenizer registration order by sequence",
     );
     let c = item("aaaa0003", 0.6, "git hooks install path on windows runners");
@@ -75,6 +79,52 @@ fn mmr_prefers_diverse_over_marginally_better() {
     assert_eq!(out.len(), 2);
     assert_eq!(out[0].memory_id, "aaaa0001");
     assert_eq!(out[1].memory_id, "aaaa0003");
+}
+
+#[test]
+fn mmr_selection_is_scale_invariant() {
+    // Same geometry at two extreme score scales: RRF-like scores packed
+    // within ~1e-6 of each other vs lexical-like scores spread over 6.0.
+    // Min-max normalization is affine-invariant, so both pools normalize to
+    // a→1.0, b→1/6, c→0.0 and MMR must pick the identical id order. Before
+    // normalization the diversity term dominated the tiny scale and
+    // vanished against the large one, flipping picks across branches.
+    let bodies = [
+        "sqlite fts5 tokenizer registration order",
+        "sqlite fts5 tokenizer registration order by sequence",
+        "git hooks install path on windows runners",
+    ];
+    let tiny = vec![
+        item("aaaa0001", 0.016_000_6, bodies[0]),
+        item("aaaa0002", 0.016_000_1, bodies[1]),
+        item("aaaa0003", 0.016_000_0, bodies[2]),
+    ];
+    let large = vec![
+        item("aaaa0001", 11.0, bodies[0]),
+        item("aaaa0002", 6.0, bodies[1]),
+        item("aaaa0003", 5.0, bodies[2]),
+    ];
+    let tiny_ids: Vec<String> = diversify(tiny, 0.7, 2)
+        .iter()
+        .map(|r| r.memory_id.clone())
+        .collect();
+    let large_ids: Vec<String> = diversify(large, 0.7, 2)
+        .iter()
+        .map(|r| r.memory_id.clone())
+        .collect();
+    assert_eq!(tiny_ids, large_ids, "selection must be scale-invariant");
+    assert_eq!(tiny_ids, vec!["aaaa0001", "aaaa0003"]);
+}
+
+#[test]
+fn diversify_returns_original_final_scores() {
+    // Normalization is selection-only: the emitted items must carry their
+    // original `parts.final_score`, untouched by the internal min-max.
+    let a = item("aaaa0001", 0.016_000_6, "completely unique topic one fish");
+    let b = item("aaaa0002", 0.016_000_1, "completely unique topic two birds");
+    let out = diversify(vec![a, b], 0.7, 2);
+    let scores: Vec<f64> = out.iter().map(|r| r.parts.final_score).collect();
+    assert_eq!(scores, vec![0.016_000_6, 0.016_000_1]);
 }
 
 #[test]
