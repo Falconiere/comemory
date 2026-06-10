@@ -16,13 +16,13 @@ this page mirrors the highlights for quick reference.
                   │       ▼                             │
                   │  ┌────────────────────────────┐     │
                   │  │  Retrieval pipeline        │     │
-                  │  │   adaptive router          │     │
+                  │  │   router (candidates)      │     │
+                  │  │     │  relaxed OR fallback │     │
+                  │  │     ▼                      │     │
+                  │  │   rerank (priors ×score)   │     │
                   │  │     │                      │     │
                   │  │     ▼                      │     │
-                  │  │   vector + FTS + edges     │     │
-                  │  │     │                      │     │
-                  │  │     ▼                      │     │
-                  │  │   corrective fallback      │     │
+                  │  │   diversify (MMR/SimHash)  │     │
                   │  │     │                      │     │
                   │  │     ▼                      │     │
                   │  │   cited result bundle      │     │
@@ -59,10 +59,10 @@ this page mirrors the highlights for quick reference.
 |---|---|
 | `cli` | clap subcommand definitions, arg parsing, dispatch, exit codes |
 | `memory` | Markdown I/O, frontmatter parsing, atomic save, ID generation |
-| `store` | SQLite connection layer, schema_meta, migrations, vector + FTS helpers |
+| `store` | SQLite connection layer, schema_meta, migrations, vector + FTS helpers, identifier tokenizer (camelCase/snake_case split + FFI registration) |
 | `simhash` | 64-bit SimHash + Hamming distance over tokenized memory bodies |
 | `graph` | SQL-backed edges (`Supersedes`, `ConflictsWith`, `RelatesTo`, `ReferencesFile`, `ReferencesSymbol`) + recursive walks; `cross_link` parses backticked refs |
-| `retrieval` | Adaptive router, RRF-fused vector+FTS hybrid, corrective fallback, ranking |
+| `retrieval` | router (candidates + relaxed OR fallback), score (ACT-R/Beta primitives), rerank (multiplicative priors), diversify (SimHash collapse + MMR), pipeline (orchestration + access tracking), fuse (RRF), bundle (context lookup) |
 | `ast` | ast-grep wrapper (rust/ts/js/py/go), per-language symbol extractor, user pattern API |
 | `stats` | rusqlite usage / feedback / repo-marker tables (lives inside the same DB) |
 | `config` | Layered config: built-in defaults → `config.toml` → env → CLI flags |
@@ -153,45 +153,49 @@ The pipeline runs entirely in Rust. No LLM calls.
 ```
 search("postgres migration race")
   │
-  ├─ adaptive router
-  │   ├─ symbol-like identifier?            → code symbol lookup + edge walk
+  ├─ route  (router.rs)
+  │   ├─ identifier-like query?             → identifier FTS5 tokenizer path
   │   ├─ has filters (--repo, --kind)?      → constrained branch
-  │   ├─ short, factual?                    → FTS5-first
-  │   └─ otherwise                          → hybrid (vector + FTS5, fused via RRF)
+  │   ├─ has caller vector?                 → hybrid (vector + FTS5, fused via RRF)
+  │   └─ otherwise                          → lexical FTS5-first
+  │   └─ relaxed OR fallback: if zero hits, retry FTS5 with OR operator
   │
-  ├─ retrieve
-  │   ├─ memory_vec / code_vec (if vector supplied)
-  │   ├─ memory_fts / code_fts (always)
-  │   ├─ edges walk from top-k seeds (1 hop, recursive CTE)
-  │   └─ stats join (usage boost, irrelevance penalty)
+  ├─ rerank  (rerank.rs)
+  │   ├─ per-hit: ACT-R activation boost (recency × access count)
+  │   ├─ Beta-smoothed feedback multiplier (used / irrelevant counts)
+  │   ├─ quality multiplier (frontmatter quality 1-5)
+  │   ├─ supersede penalty (0.2× if superseded by a live memory)
+  │   └─ final_score = rrf × activation × feedback × quality × supersede
+  │       (all priors clamped to [prior_clamp.lo, prior_clamp.hi])
   │
-  ├─ reflect (deterministic)
-  │   ├─ RRF fusion across vector + FTS branches
-  │   ├─ per-table threshold filter
-  │   └─ confidence = top1_score − top2_score
+  ├─ diversify  (diversify.rs)
+  │   ├─ SimHash near-dup collapse (Hamming ≤ threshold → keep highest score)
+  │   └─ MMR re-ranking (mmr_lambda blends relevance vs. diversity)
   │
-  ├─ refine (corrective fallback)
-  │   ├─ if low confidence: expand via RelatesTo edges → merge & re-rank
-  │   └─ if zero results + strict filter: drop strictest filter, retry once
-  │
-  └─ emit a cited bundle (id, score, kind, snippet, why)
+  └─ emit  (output/search.rs)
+      ├─ TTY: one line per hit with colored score + source label
+      └─ JSON: {"hits":[{"memory_id","score","source","superseded_by?,"score_parts":{
+               rrf, activation, feedback, quality, supersede, final_score}}]}
 ```
 
-If no vector is supplied, the vector branch is skipped and the router
-returns the FTS5 ranking unchanged.
+`score_parts` is a stable explainability contract (M2 tuning reads it).
+If no vector is supplied the vector branch is skipped; only FTS5 runs.
 
 ## 6. Save flow
 
 ```
 comemory save "..." --kind=decision [--vector ... | --vector-stdin]
   1. Parse args; build Memory; assign id = sha256(body)[:8].
-  2. Write memories/.{id}.tmp (atomic stage).
-  3. SQLite upsert (inside one transaction):
-       - memories row
+  2. Validate vector dim (if supplied) against schema_meta — fails fast.
+  2a. Near-duplicate check (best-effort): scan live memories rows via SimHash
+      Hamming distance. If a near-dup is found, record duplicate_of id.
+      TTY: stderr warning. JSON: duplicate_of field. Save always proceeds.
+  3. Atomic markdown write: memories/.{id}.tmp → memories/{id}-{slug}.md.
+  4. SQLite upsert (inside one transaction):
+       - memories row (+ simhash column)
        - memory_fts row
-       - memory_vec row (only if a vector was supplied; dim guard runs first)
+       - memory_vec row (only if a vector was supplied)
        - edges from cross_link::extract_refs (ReferencesFile / ReferencesSymbol)
-  4. Atomic rename memories/.{id}.tmp → memories/{id}-{slug}.md.
   5. git add + commit + push (best-effort, only when COMEMORY_GIT_AUTO_SYNC is on).
 ```
 

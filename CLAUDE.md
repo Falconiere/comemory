@@ -83,10 +83,10 @@ enforced by `scripts/check-all.sh`. Every PR must satisfy all five.
 |--------|---------------|
 | `cli/` | clap subcommand entry points + the top-level dispatcher in `mod.rs` |
 | `memory/` | markdown I/O, `Frontmatter`, slug, id (8-hex SHA-256), atomic save / load / soft-delete / list |
-| `store/` | central SQLite layer — `connection` (pooled rusqlite + `sqlite-vec` loader), `schema`, `migrate` (versioned + idempotent), `vector` (`vec0` insert/KNN with dim guard), `fts` (FTS5 helpers), `embed` (`to_vec_blob`, dim helpers) |
+| `store/` | central SQLite layer — `connection` (pooled rusqlite + `sqlite-vec` loader), `schema`, `migrate` (versioned + idempotent), `vector` (`vec0` insert/KNN with dim guard), `fts` (FTS5 helpers), `embed` (`to_vec_blob`, dim helpers), `tokenizer` (custom FTS5 identifier tokenizer: camelCase/snake_case split + FFI registration) |
 | `simhash.rs` | 64-bit SimHash + Hamming distance over tokenized memory bodies (siphasher-based) |
 | `graph/` | SQL-backed `edges` table upserts, recursive-CTE walks, `cross_link` reference extraction |
-| `retrieval/` | adaptive `router`, RRF-fused `hybrid` (FTS5 + `vec0`), `corrective` fallback, `rank` blending, `bundle` for `comemory context` |
+| `retrieval/` | `router` (candidates + relaxed OR fallback), `score` (ACT-R/Beta scoring primitives), `rerank` (multiplicative priors: activation × feedback × quality × supersede), `diversify` (SimHash near-dup collapse + MMR), `pipeline` (orchestration + access tracking), `fuse` (RRF), `bundle` (context lookup) |
 | `ast/` | `extractor` (symbol enumeration via tree-sitter through ast-grep — rust/ts/js/py/go only), `pattern` (user-facing `comemory ast`), per-language wiring |
 | `stats/` | usage / feedback / repo-marker tables (lives inside `comemory.db`) |
 | `config/` | layered config (defaults → file → env) and `Paths` (data-dir layout) |
@@ -112,6 +112,13 @@ environment (`Config::with_env`, in `src/config/file.rs`).
 | `COMEMORY_RETRIEVAL_RRF_K` | RRF fusion constant for hybrid scoring | `60.0` |
 | `COMEMORY_GIT_AUTO_SYNC` | `true`/`1` to enable best-effort git commit + push after a save | `false` |
 | `COMEMORY_EMBED_HINT` | Free-form identifier of the embedder you used (e.g. `ollama:nomic-embed-text`). Surfaced by `comemory doctor`; never consumed as a switch. | unset |
+| `COMEMORY_RANK_DECAY` | ACT-R decay exponent `d` in `ln(n) − d·ln(days+1)`. Must be ≥ 0. Higher → older memories decay faster. | `0.5` |
+| `COMEMORY_RANK_PRIOR_CLAMP` | `"lo,hi"` bounds applied to every rerank prior multiplier. Both finite; lo > 0, lo ≤ hi. | `0.5,2.0` |
+| `COMEMORY_RANK_MMR_LAMBDA` | MMR relevance-vs-diversity trade-off in `[0.0, 1.0]`. `1.0` = pure relevance; `0.0` = pure diversity. | `0.7` |
+| `COMEMORY_PRUNE_MIN_ACTIVATION` | Activation floor (ACT-R scale) below which a memory is prune-eligible. | `-2.0` |
+| `COMEMORY_PRUNE_MIN_FEEDBACK` | Beta-feedback ceiling (range `[0.0, 1.0]`) at or below which a memory is prune-eligible. | `0.25` |
+| `COMEMORY_PRUNE_BELOW_QUALITY` | Quality threshold (1..=5); memories at or below this value are prune candidates (used together with activation + feedback floors). | `2` |
+| `COMEMORY_PRUNE_UNUSED_SINCE_DAYS` | Legacy calendar-age knob. No longer consumed by low-value detection as of M1 (activation replaced the calendar criterion); retained for config back-compat. Slated for removal in M2. | `180` |
 
 The memory and code vector dims (1024 and 768) are baked into the
 `memory_vec` / `code_vec` vec0 DDL (`src/store/sql/0002_v2_tables.sql`)
@@ -161,11 +168,19 @@ Markdown body lives here.
    against `schema_meta` so a mismatched embedder fails fast with
    `Error::VecDimMismatch`. With neither flag, the save is lexical-only —
    no `memory_vec` row is written.
+2a. **Near-duplicate check** (best-effort, advisory): scan live `memories`
+   rows for a SimHash Hamming distance within `NEAR_DUP_HAMMING`. If a
+   near-duplicate is found its id is recorded as `duplicate_of`. The save
+   always proceeds; the caller decides whether to set `supersedes`. TTY
+   mode prints a `warning: similar memory <id> exists` to stderr;
+   `--json` mode includes `"duplicate_of": "<id>"` in the output object.
+   Self-matches (re-save of the same body, same content-hash-derived id)
+   are filtered out.
 3. Atomic stage: write `memories/.{id}.tmp`, then `fs::rename` to
    `memories/{id}-{slug}.md`. On failure between stage and rename, the tmp
    file is removed.
 4. Single `store` transaction:
-   - upsert `memories` row (frontmatter + body)
+   - upsert `memories` row (frontmatter + body + simhash)
    - upsert `memory_fts` row (FTS5)
    - upsert `memory_vec` row (`vec0`) when a vector was supplied
    - `cross_link::extract_refs` walks the body for backtick-fenced

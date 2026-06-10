@@ -21,11 +21,20 @@ use crate::store::connection;
 
 const EXAMPLES: &str = "\
 Examples:
-  # Natural-language query, top 12 hits (default)
-  comemory search \"postgres migration race\"
+  # Natural-language query, top 12 hits (default); weighted BM25 + priors
+  comemory search \"postgres pool exhausted\"
 
-  # JSON envelope for piping into other tools
-  comemory search \"advisory lock\" --json
+  # Identifier-aware matching — camelCase/snake_case tokens split automatically
+  comemory search \"VecDimMismatch\"
+
+  # JSON output; hits[].score_parts breaks down every ranking factor:
+  #   rrf         — fused relevance score (RRF/lexical/vector), neutral > 0
+  #   activation  — ACT-R recency boost (post-clamp), neutral = 1.0
+  #   feedback    — Beta-smoothed used/irrelevant ratio, neutral = 1.0
+  #   quality     — frontmatter quality nudge (1-5 scale), neutral = 1.0
+  #   supersede   — 0.2 penalty when superseded by a live memory, else 1.0
+  #   final_score — product of all factors (== score at root level)
+  comemory search \"auth race\" --json
 
   # Caller-supplied vector (BYO-vector, CSV form)
   comemory search \"advisory lock\" --vector 0.1,0.2,0.3,...";
