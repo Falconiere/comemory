@@ -109,6 +109,23 @@ fn soft_deleted_superseder_does_not_penalize() {
 }
 
 #[test]
+fn self_supersede_edge_does_not_penalize() {
+    // Defense-in-depth: a hand-seeded self-edge (the writers refuse to
+    // create one) must not annotate the memory as "superseded by itself"
+    // or apply the 0.2 penalty.
+    let (_d, conn) = open_seeded();
+    conn.execute_batch(
+        "INSERT INTO edges(src_kind, src_id, dst_kind, dst_id, rel, created_at)
+         VALUES ('memory','aaaa0003','memory','aaaa0003','supersedes','2026-06-09T00:00:00Z');",
+    )
+    .expect("seed self edge");
+    let cfg = comemory::config::Config::defaults();
+    let out = rerank(&conn, &cfg, &[hit("aaaa0003", 1.0)]).expect("rerank");
+    assert_eq!(out[0].superseded_by, None, "self-edge must not annotate");
+    assert!((out[0].parts.supersede - 1.0).abs() < 1e-12);
+}
+
+#[test]
 fn malformed_last_accessed_scores_as_fresh() {
     let (_d, conn) = open_seeded();
     conn.execute(

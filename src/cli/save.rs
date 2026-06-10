@@ -122,9 +122,15 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     // transaction with a UNIQUE violation. Empty entries (`--tags ,foo`)
     // are dropped because tag rows must be non-empty per the schema.
     let tags = csv_unique(&a.tags);
+    // The id is content-derived, so it is known before anything is written.
+    // Computing it up front lets `--supersedes` reject a self-reference and
+    // lets the near-dup scan exclude the body's own row on identical
+    // re-saves (so the *second*-closest live near-dup still surfaces).
+    let new_id = id::memory_id(&body);
     // Validate `--supersedes` BEFORE anything touches disk so a malformed
-    // id list aborts with no markdown file and no DB rows.
-    let supersedes = parse_supersedes(&a.supersedes)?;
+    // (or self-referential) id list aborts with no markdown file and no DB
+    // rows.
+    let supersedes = parse_supersedes(&a.supersedes, &new_id)?;
 
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
@@ -147,7 +153,7 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     // Near-duplicate check BEFORE the markdown write. Best-effort and
     // advisory only: the save always proceeds, the caller decides whether
     // to supersede the hit.
-    let duplicate_of = near_duplicate(&conn, &body);
+    let duplicate_of = near_duplicate(&conn, &body, &new_id);
 
     // 1. Markdown atomic write (source of truth). The `--supersedes` ids
     //    land in frontmatter `relations.supersedes`, so the relationship
@@ -165,11 +171,6 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
             ..Relations::default()
         },
     })?;
-
-    // A re-save of an identical body produces the same content-hash-derived
-    // id, so the pre-save scan would otherwise report the memory as a
-    // duplicate of itself. Self-matches are not actionable — drop them.
-    let duplicate_of = duplicate_of.filter(|dup| *dup != rec.frontmatter.id);
 
     // 2. SQLite mirror in one transaction. Markdown is the source of truth,
     //    so a mirror failure surfaces as an `Err` — but the markdown file
@@ -208,12 +209,15 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
 
 /// Find a live memory whose body simhash is within near-dup range
 /// ([`crate::simhash::NEAR_DUP_HAMMING`]) of `body`, returning the closest
-/// hit's id. Best-effort: any DB error is logged and treated as "no
-/// duplicate" so the check can never block a save. A full scan over live
-/// rows is fine at personal-memory scale.
-fn near_duplicate(conn: &rusqlite::Connection, body: &str) -> Option<String> {
+/// hit's id. `self_id` (the body's own content-derived id) is excluded
+/// before the closest-hit selection so an identical re-save still surfaces
+/// the second-closest live near-dup instead of matching itself. Best-effort:
+/// any DB error is logged and treated as "no duplicate" so the check can
+/// never block a save. A full scan over live rows is fine at
+/// personal-memory scale.
+fn near_duplicate(conn: &rusqlite::Connection, body: &str, self_id: &str) -> Option<String> {
     let hash = crate::simhash::of_body(body);
-    match near_duplicate_inner(conn, hash) {
+    match near_duplicate_inner(conn, hash, self_id) {
         Ok(hit) => hit,
         Err(e) => {
             tracing::warn!(error = %e, "duplicate check skipped");
@@ -222,13 +226,18 @@ fn near_duplicate(conn: &rusqlite::Connection, body: &str) -> Option<String> {
     }
 }
 
-/// Fallible core of [`near_duplicate`]: scan live `memories` rows and
-/// return the id of the closest simhash neighbor within
-/// [`crate::simhash::NEAR_DUP_HAMMING`], if any.
-fn near_duplicate_inner(conn: &rusqlite::Connection, hash: u64) -> Result<Option<String>> {
-    let mut stmt = conn.prepare("SELECT id, simhash FROM memories WHERE deleted_at IS NULL")?;
+/// Fallible core of [`near_duplicate`]: scan live `memories` rows (minus
+/// the body's own `self_id` row) and return the id of the closest simhash
+/// neighbor within [`crate::simhash::NEAR_DUP_HAMMING`], if any.
+fn near_duplicate_inner(
+    conn: &rusqlite::Connection,
+    hash: u64,
+    self_id: &str,
+) -> Result<Option<String>> {
+    let mut stmt =
+        conn.prepare("SELECT id, simhash FROM memories WHERE deleted_at IS NULL AND id <> ?1")?;
     let rows: Vec<(String, i64)> = stmt
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .query_map([self_id], |r| Ok((r.get(0)?, r.get(1)?)))?
         .collect::<std::result::Result<_, _>>()?;
     Ok(rows
         .into_iter()
@@ -287,15 +296,24 @@ fn csv_unique(raw: &str) -> Vec<String> {
 }
 
 /// Parse and validate the `--supersedes` CSV: every entry must be a
-/// well-formed 8-hex-lowercase memory id. The target memory is *not*
+/// well-formed 8-hex-lowercase memory id and must not equal `self_id`
+/// (the content-derived id of the body being saved) — a memory cannot
+/// supersede itself, and a self-edge would permanently penalize the
+/// memory in ranking and flag it for prune. The target memory is *not*
 /// required to exist — edges may dangle (same stance as cross-link refs)
 /// and every consumer JOINs on live `memories` rows.
-fn parse_supersedes(raw: &str) -> Result<Vec<String>> {
+fn parse_supersedes(raw: &str, self_id: &str) -> Result<Vec<String>> {
     let ids = csv_unique(raw);
     for entry in &ids {
         if !id::is_valid_memory_id(entry) {
             return Err(Error::Config(format!(
                 "--supersedes: invalid memory id `{entry}` (expected 8 lowercase hex chars)"
+            )));
+        }
+        if entry == self_id {
+            return Err(Error::Config(format!(
+                "--supersedes: a memory cannot supersede itself (`{entry}` is the id of the \
+                 body being saved)"
             )));
         }
     }
