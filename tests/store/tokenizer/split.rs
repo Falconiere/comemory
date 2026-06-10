@@ -59,6 +59,24 @@ fn acronym_runs_stay_grouped() {
 }
 
 #[test]
+fn leading_underscore_is_trimmed() {
+    let toks = split_text("_foo");
+    assert_eq!(texts(&toks), vec!["foo"]);
+}
+
+#[test]
+fn dunder_wrapped_word_emits_inner_part() {
+    let toks = split_text("__init__");
+    assert_eq!(texts(&toks), vec!["init"]);
+}
+
+#[test]
+fn underscore_only_runs_emit_nothing() {
+    let toks = split_text("a __ b");
+    assert_eq!(texts(&toks), vec!["a", "b"]);
+}
+
+#[test]
 fn non_ascii_words_are_tokenized() {
     let toks = split_text("über café");
     assert_eq!(texts(&toks), vec!["über", "café"]);
@@ -82,6 +100,9 @@ proptest! {
             prop_assert!(t.text.chars().all(|c| !c.is_uppercase()));
             prop_assert!(t.end <= s.len());
             prop_assert!(t.start <= t.end);
+            if !t.colocated {
+                prop_assert_eq!(s[t.start..t.end].to_lowercase(), t.text);
+            }
         }
     }
 

@@ -83,19 +83,23 @@ fn fully_lowercased(token: &str) -> bool {
 fn emit_run(text: &str, s: usize, e: usize, out: &mut Vec<SplitToken>) {
     let run = &text[s..e];
     let parts = part_ranges(run);
-    let whole = run.to_lowercase();
-    let whole_ok = !whole.is_empty() && whole != "_" && fully_lowercased(&whole);
-    if parts.len() <= 1 {
-        if whole_ok {
+    if parts.is_empty() {
+        return;
+    }
+    if let [(ps, pe)] = parts[..] {
+        let part = run[ps..pe].to_lowercase();
+        if !part.is_empty() && fully_lowercased(&part) {
             out.push(SplitToken {
-                text: whole,
-                start: s,
-                end: e,
+                text: part,
+                start: s + ps,
+                end: s + pe,
                 colocated: false,
             });
         }
         return;
     }
+    let whole = run.to_lowercase();
+    let whole_ok = fully_lowercased(&whole);
     let mut first = true;
     for (ps, pe) in parts {
         let part = run[ps..pe].to_lowercase();
@@ -120,6 +124,16 @@ fn emit_run(text: &str, s: usize, e: usize, out: &mut Vec<SplitToken>) {
     }
 }
 
+/// Byte ranges of the sub-parts inside one alphanumeric+`_` run.
+///
+/// A new part starts at each of three boundaries:
+/// 1. `_` separators — underscores terminate the current part and are
+///    never included in any part;
+/// 2. lower→upper transitions (`camelCase`), plus the last uppercase of
+///    an acronym run followed by lowercase (`HTMLParser` → `html` +
+///    `parser`);
+/// 3. digit boundaries — any digit↔non-digit transition (`sha256sum` →
+///    `sha` + `256` + `sum`).
 fn part_ranges(run: &str) -> Vec<(usize, usize)> {
     let chars: Vec<(usize, char)> = run.char_indices().collect();
     let mut ranges = Vec::new();
@@ -136,13 +150,12 @@ fn part_ranges(run: &str) -> Vec<(usize, usize)> {
         if let Some(s) = start {
             let prev = classify(chars[w - 1].1);
             let lower_to_upper = prev == Class::Lower && cls == Class::Upper;
-            let letter_digit =
-                (prev == Class::Digit) != (cls == Class::Digit) && chars[w - 1].1 != '_';
+            let digit_boundary = (prev == Class::Digit) != (cls == Class::Digit);
             let upper_run_ends = prev == Class::Upper
                 && cls == Class::Lower
                 && w >= 2
                 && classify(chars[w - 2].1) == Class::Upper;
-            if lower_to_upper || letter_digit {
+            if lower_to_upper || digit_boundary {
                 ranges.push((s, i));
                 start = Some(i);
             } else if upper_run_ends {
