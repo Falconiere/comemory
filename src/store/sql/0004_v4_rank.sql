@@ -9,6 +9,8 @@
 ALTER TABLE memories ADD COLUMN access_count INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE memories ADD COLUMN last_accessed TEXT;
 ALTER TABLE memories ADD COLUMN simhash INTEGER NOT NULL DEFAULT 0;
+-- code_symbols access columns: written for parity with memories; no
+-- reader/writer until M3 code rerank.
 ALTER TABLE code_symbols ADD COLUMN access_count INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE code_symbols ADD COLUMN last_accessed TEXT;
 

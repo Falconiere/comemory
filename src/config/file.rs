@@ -119,7 +119,8 @@ fn default_code_vector_dim() -> usize {
 
 /// Ranking knobs for the rerank/diversify pipeline (M1).
 ///
-/// These values are consumed by `retrieval::rank` and the ACT-R decay scorer.
+/// These values are consumed by `retrieval::{rerank,diversify}` and the
+/// ACT-R decay scorer.
 /// Defaults are tuned for typical developer-memory workloads; operators can
 /// override via env vars or a `[rank]` section in `config.toml`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
