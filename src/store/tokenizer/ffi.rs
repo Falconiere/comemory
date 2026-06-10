@@ -18,8 +18,10 @@ use crate::store::tokenizer::split::split_text;
 /// Tokenizer name used in `tokenize = '...'` DDL clauses.
 pub const TOKENIZER_NAME: &CStr = c"identifier";
 
-/// Register the `identifier` tokenizer on `conn`. Idempotent per
-/// connection (re-registration overwrites the same entry).
+/// Register the `identifier` tokenizer on `conn`. Safe to call more
+/// than once per connection: `fts5CreateTokenizer` prepends to the
+/// tokenizer list and lookup takes the first match, so a
+/// re-registration shadows (not overwrites) the previous entry.
 pub fn register(conn: &Connection) -> Result<()> {
     let api = fts5_api_ptr(conn)?;
     let tokenizer = ffi::fts5_tokenizer {
@@ -66,15 +68,22 @@ fn fts5_api_ptr(conn: &Connection) -> Result<*mut ffi::fts5_api> {
                 "fts5 api probe prepare failed: rc={rc}"
             )));
         }
-        ffi::sqlite3_bind_pointer(
+        let rc = ffi::sqlite3_bind_pointer(
             stmt,
             1,
             &mut api as *mut *mut ffi::fts5_api as *mut c_void,
             c"fts5_api_ptr".as_ptr(),
             None,
         );
-        ffi::sqlite3_step(stmt);
+        if rc != ffi::SQLITE_OK {
+            ffi::sqlite3_finalize(stmt);
+            return Err(Error::Other(format!("fts5 api probe bind failed: rc={rc}")));
+        }
+        let rc = ffi::sqlite3_step(stmt);
         ffi::sqlite3_finalize(stmt);
+        if rc != ffi::SQLITE_ROW {
+            return Err(Error::Other(format!("fts5 api probe step failed: rc={rc}")));
+        }
     }
     if api.is_null() {
         return Err(Error::Other(
