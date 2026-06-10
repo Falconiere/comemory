@@ -9,3 +9,4 @@
 pub mod bundle;
 pub mod fuse;
 pub mod router;
+pub mod score;
