@@ -3,6 +3,7 @@
 use comemory::retrieval::diversify::diversify;
 use comemory::retrieval::rerank::{Reranked, ScoreParts};
 use comemory::retrieval::router::Source;
+use comemory::simhash::{hamming64, NEAR_DUP_HAMMING};
 
 fn item(id: &str, score: f64, body: &str) -> Reranked {
     Reranked {
@@ -26,6 +27,9 @@ fn item(id: &str, score: f64, body: &str) -> Reranked {
 
 #[test]
 fn near_duplicates_collapse_to_best_scored() {
+    // Measured Hamming(a, b) = 8 — exactly at the NEAR_DUP_HAMMING boundary,
+    // exercising the inclusive `<=` edge of the collapse. The identical-body
+    // (Hamming 0) case is covered by `simhash_collapse_keeps_first_of_dup_group`.
     let a = item(
         "aaaa0001",
         0.9,
@@ -63,6 +67,10 @@ fn mmr_prefers_diverse_over_marginally_better() {
         "sqlite fts5 tokenizer registration order by sequence",
     );
     let c = item("aaaa0003", 0.6, "git hooks install path on windows runners");
+    assert!(
+        hamming64(a.simhash, b.simhash) > NEAR_DUP_HAMMING,
+        "fixture must survive dedup so MMR decides"
+    );
     let out = diversify(vec![a, b, c], 0.7, 2);
     assert_eq!(out.len(), 2);
     assert_eq!(out[0].memory_id, "aaaa0001");
@@ -101,6 +109,18 @@ fn lambda_one_preserves_relevance_order() {
     let out = diversify(vec![a, b, c], 1.0, 3);
     let ids: Vec<&str> = out.iter().map(|r| r.memory_id.as_str()).collect();
     assert_eq!(ids, vec!["aaaa0001", "aaaa0002", "aaaa0003"]);
+}
+
+#[test]
+fn equal_scores_break_toward_earlier_input() {
+    // Two items with identical final_score and disjoint bodies (no Jaccard
+    // penalty, no SimHash collapse): the MMR tie-break must pick the earlier
+    // input, preserving the rerank stage's deterministic ordering.
+    let a = item("aaaa0001", 0.8, "alpha bravo charlie delta");
+    let b = item("aaaa0002", 0.8, "echo foxtrot golf hotel");
+    let out = diversify(vec![a, b], 0.7, 1);
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].memory_id, "aaaa0001", "earlier input wins the tie");
 }
 
 #[test]
