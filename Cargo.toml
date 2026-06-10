@@ -47,6 +47,7 @@ walkdir = "2"
 # url 2.5.8 was published with a duplicate Debug impl on `Url` that fails to
 # compile under recent rustc; pin transitive dep to last good release.
 url = "=2.5.7"
+unicode-normalization = "0.1"
 
 [dependencies.ast-grep-core]
 version = "0.38"

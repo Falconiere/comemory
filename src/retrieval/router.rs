@@ -57,13 +57,14 @@ pub enum Source {
 ///
 /// The fetch size is [`CANDIDATE_POOL`] (or `top_k` when configured
 /// larger): `route` produces a candidate pool for the rerank + diversify
-/// stages, which perform the final `top_k` cut. When the lexical or
-/// hybrid branch comes back empty, the relaxed ladder in
-/// [`route_lexical_relaxed`] retries the lexical branch: a word-level OR
+/// stages, which perform the final `top_k` cut. When the strict lexical
+/// leg comes back empty (in either the pure-lexical or the hybrid path),
+/// the relaxed ladder in [`lexical_ladder`] retries it: a word-level OR
 /// tier (queries with ≥ 2 terms) so a single absent term cannot zero out
 /// the result set, then an identifier-subtoken OR tier so an identifier
 /// query like `VecDimMismatch` can still reach prose that only mentions
-/// its parts.
+/// its parts. ANN hits below `cfg.retrieval.memory_threshold` cosine
+/// similarity are dropped before use in both vector-consuming paths.
 pub fn route(
     cfg: &Config,
     conn: &Connection,
@@ -80,12 +81,20 @@ pub fn route(
     let lex_meaningful = !query.trim().is_empty();
     match vec {
         Some(v) if lex_meaningful => route_hybrid(cfg, conn, query, v, k, repo),
-        Some(v) => route_vector_only(conn, v, k, repo),
+        Some(v) => route_vector_only(cfg, conn, v, k, repo),
         None => route_lexical(conn, query, k, repo),
     }
 }
 
 /// Hybrid path: run ANN + FTS5 independently and fuse via RRF.
+///
+/// The lexical leg walks the same relaxed ladder as the pure-lexical path
+/// when the strict query is empty, *before* fusion — otherwise a noisy ANN
+/// leg would suppress the fallback entirely (the fused result is non-empty,
+/// so memories reachable only via the relaxed/subtoken tiers would never
+/// surface). When the ANN leg contributes nothing (empty vector table, or
+/// every hit below the similarity threshold), the result is tagged
+/// [`Source::Lexical`] because only the FTS branch produced signal.
 fn route_hybrid(
     cfg: &Config,
     conn: &Connection,
@@ -94,52 +103,74 @@ fn route_hybrid(
     k: usize,
     repo: Option<&str>,
 ) -> Result<Vec<RoutedHit>> {
-    let ann = vector::knn_memory(conn, vec, k, repo)?;
-    let lex = fts::search_memory(conn, query, k, repo)?;
+    let ann = above_memory_threshold(
+        vector::knn_memory(conn, vec, k, repo)?,
+        cfg.retrieval.memory_threshold,
+    );
+    let mut lex = fts::search_memory(conn, query, k, repo)?;
+    if lex.is_empty() {
+        lex = lexical_ladder(conn, query, k, repo)?;
+    }
+    if ann.is_empty() {
+        return Ok(lex.into_iter().map(lex_to_routed).collect());
+    }
 
     let ann_ranked: Vec<RankedHit> = ann.into_iter().map(ann_to_ranked).collect();
     let lex_ranked: Vec<RankedHit> = lex.into_iter().map(lex_to_ranked).collect();
 
     let fused = fuse::rrf_k(&ann_ranked, &lex_ranked, k, cfg.retrieval.rrf_k);
-    let hits: Vec<RoutedHit> = fused
+    Ok(fused
         .into_iter()
         .map(|h| RoutedHit {
             memory_id: h.memory_id,
             score: h.score,
             source: Source::Hybrid,
         })
-        .collect();
-    if hits.is_empty() {
-        return route_lexical_relaxed(conn, query, k, repo);
-    }
-    Ok(hits)
+        .collect())
 }
 
 /// Pure-vector path. The lexical top-up that previously lived here was
 /// dead: this arm is only reached when `query` is empty (the dispatcher
 /// routes `vec + non-empty query` to [`route_hybrid`]), and FTS5 BM25
 /// returns no rows for an empty query. Callers that want sparse+dense
-/// fusion must pass a non-empty `query` so the hybrid arm fires.
+/// fusion must pass a non-empty `query` so the hybrid arm fires. Hits
+/// below `cfg.retrieval.memory_threshold` are dropped — KNN always
+/// returns the k nearest rows no matter how far away they are.
 fn route_vector_only(
+    cfg: &Config,
     conn: &Connection,
     vec: &[f32],
     k: usize,
     repo: Option<&str>,
 ) -> Result<Vec<RoutedHit>> {
-    let ann = vector::knn_memory(conn, vec, k, repo)?;
+    let ann = above_memory_threshold(
+        vector::knn_memory(conn, vec, k, repo)?,
+        cfg.retrieval.memory_threshold,
+    );
     Ok(ann.into_iter().map(ann_to_routed).collect())
 }
 
-/// Pure-lexical path via FTS5 BM25, with the relaxed OR fallback tier.
+/// Drop ANN hits whose cosine similarity (`1.0 - distance`) falls below
+/// `threshold` (`cfg.retrieval.memory_threshold`, default 0.55). vec0 KNN
+/// always returns the k nearest rows regardless of distance, so without
+/// this floor a query vector far from the whole corpus pads the candidate
+/// pool with k nearest-but-irrelevant noise hits.
+fn above_memory_threshold(hits: Vec<vector::MemoryHit>, threshold: f32) -> Vec<vector::MemoryHit> {
+    hits.into_iter()
+        .filter(|h| (1.0 - h.distance) >= threshold)
+        .collect()
+}
+
+/// Pure-lexical path via FTS5 BM25, with the relaxed fallback ladder.
 fn route_lexical(
     conn: &Connection,
     query: &str,
     k: usize,
     repo: Option<&str>,
 ) -> Result<Vec<RoutedHit>> {
-    let lex = fts::search_memory(conn, query, k, repo)?;
+    let mut lex = fts::search_memory(conn, query, k, repo)?;
     if lex.is_empty() {
-        return route_lexical_relaxed(conn, query, k, repo);
+        lex = lexical_ladder(conn, query, k, repo)?;
     }
     Ok(lex.into_iter().map(lex_to_routed).collect())
 }
@@ -161,22 +192,20 @@ fn route_lexical(
 ///
 /// The ladder only *adds* recall on previously-empty results — a non-empty
 /// earlier tier always short-circuits, so it can never reorder hits the
-/// stricter tiers already produced. Hits are tagged [`Source::Lexical`]
-/// because only the FTS branch contributed signal.
-fn route_lexical_relaxed(
+/// stricter tiers already produced.
+fn lexical_ladder(
     conn: &Connection,
     query: &str,
     k: usize,
     repo: Option<&str>,
-) -> Result<Vec<RoutedHit>> {
+) -> Result<Vec<fts::MemoryFtsHit>> {
     if fts::term_count(query) >= 2 {
         let lex = fts::search_memory_relaxed(conn, query, k, repo)?;
         if !lex.is_empty() {
-            return Ok(lex.into_iter().map(lex_to_routed).collect());
+            return Ok(lex);
         }
     }
-    let lex = fts::search_memory_subtokens(conn, query, k, repo)?;
-    Ok(lex.into_iter().map(lex_to_routed).collect())
+    fts::search_memory_subtokens(conn, query, k, repo)
 }
 
 /// Map a `vector::MemoryHit` to a [`RankedHit`] for RRF fusion. Vector

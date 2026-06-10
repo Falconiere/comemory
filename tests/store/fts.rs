@@ -77,18 +77,39 @@ fn code_fts_returns_seeded_match() {
     )
     .expect("seed code symbol");
 
-    let path_tokens = fts::path_to_tokens(symbol_path);
     fts::index_code(
         &conn,
         1,
         "login::handle",
         "fn handle() { /* advisory login flow */ }",
-        &path_tokens,
+        symbol_path,
     )
     .expect("index code");
 
     let hits = fts::search_code(&conn, "login", 10).expect("search code");
     assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].symbol_id, 1);
+}
+
+#[test]
+fn camel_case_path_is_reachable_by_subtoken() {
+    // Regression: `path_to_tokens` used to pre-lowercase the path before
+    // the identifier tokenizer saw it, destroying the camelCase boundary —
+    // `MyComponent.tsx` indexed as `mycomponent` and the query `component`
+    // missed. The raw path now goes straight to the tokenizer.
+    let dir = tempdir().expect("tempdir");
+    let conn = connection::open(dir.path().join("c.db")).expect("open");
+    fts::index_code(
+        &conn,
+        1,
+        "render",
+        "fn body without the query term",
+        "src/MyComponent.tsx",
+    )
+    .expect("index code");
+
+    let hits = fts::search_code(&conn, "component", 10).expect("search code");
+    assert_eq!(hits.len(), 1, "camelCase path subtoken must match");
     assert_eq!(hits[0].symbol_id, 1);
 }
 
@@ -123,6 +144,23 @@ fn build_subtoken_or_query_expands_identifier_terms() {
     assert_eq!(
         fts::build_subtoken_or_query("dim_guard"),
         r#""dim" OR "dim_guard" OR "guard""#
+    );
+}
+
+#[test]
+fn build_subtoken_or_query_expands_despite_cross_term_part_collisions() {
+    // Regression: the old guard compared the aggregate count of distinct
+    // non-colocated parts against the term count, so a query whose
+    // identifier parts collide with its plain terms ("VecDim vec" → parts
+    // vec/dim, 2 terms) was wrongly suppressed to "". The split check is
+    // per-term now.
+    assert_eq!(
+        fts::build_subtoken_or_query("VecDim vec"),
+        r#""vec" OR "vecdim" OR "dim""#
+    );
+    assert_eq!(
+        fts::build_subtoken_or_query("DimGuard dim guard"),
+        r#""dim" OR "dimguard" OR "guard""#
     );
 }
 
@@ -280,17 +318,4 @@ fn code_symbol_match_outranks_snippet_match() {
         hits[0].symbol_id, 2,
         "symbol-column hit must outrank snippet hit"
     );
-}
-
-#[test]
-fn path_to_tokens_lowercases_and_splits_non_alnum() {
-    assert_eq!(
-        fts::path_to_tokens("src/Foo/Bar_baz.rs"),
-        "src foo bar baz rs"
-    );
-    assert_eq!(
-        fts::path_to_tokens("crates/CoreLib/mod-utils.ts"),
-        "crates corelib mod utils ts"
-    );
-    assert_eq!(fts::path_to_tokens(""), "");
 }

@@ -2,7 +2,14 @@
 //! boundary awareness. Each alphanumeric run yields its sub-parts at
 //! distinct token positions; when a run splits into more than one part,
 //! the whole lowercased run is also emitted colocated with the first
-//! part so exact-identifier queries still match.
+//! part so exact-identifier queries still match. Emitted token text is
+//! lowercased and diacritic-folded (`café` → `cafe`), restoring the
+//! `remove_diacritics 2` behavior of the unicode61 tokenizer this one
+//! replaced — both the index and the query side go through this
+//! tokenizer, so the folding is symmetric.
+
+use unicode_normalization::char::is_combining_mark;
+use unicode_normalization::UnicodeNormalization;
 
 /// One token produced by [`split_text`]: lowercased text, byte range in
 /// the original input, and whether FTS5 should treat it as colocated
@@ -80,6 +87,19 @@ fn fully_lowercased(token: &str) -> bool {
     !token.chars().any(char::is_uppercase)
 }
 
+/// Strip diacritics: NFD-decompose and drop combining marks, so `café` /
+/// `naïve` / `über` fold to `cafe` / `naive` / `uber`. Restores the
+/// recall the old `unicode61 remove_diacritics 2` tokenizer provided.
+/// Exposed so the tests can express the index↔query symmetry invariant.
+pub fn fold_diacritics(s: &str) -> String {
+    s.nfd().filter(|c| !is_combining_mark(*c)).collect()
+}
+
+/// Normalize raw token text for emission: lowercase, then diacritic-fold.
+fn normalize_token(raw: &str) -> String {
+    fold_diacritics(&raw.to_lowercase())
+}
+
 fn emit_run(text: &str, s: usize, e: usize, out: &mut Vec<SplitToken>) {
     let run = &text[s..e];
     let parts = part_ranges(run);
@@ -87,7 +107,7 @@ fn emit_run(text: &str, s: usize, e: usize, out: &mut Vec<SplitToken>) {
         return;
     }
     if let [(ps, pe)] = parts[..] {
-        let part = run[ps..pe].to_lowercase();
+        let part = normalize_token(&run[ps..pe]);
         if !part.is_empty() && fully_lowercased(&part) {
             out.push(SplitToken {
                 text: part,
@@ -98,11 +118,11 @@ fn emit_run(text: &str, s: usize, e: usize, out: &mut Vec<SplitToken>) {
         }
         return;
     }
-    let whole = run.to_lowercase();
+    let whole = normalize_token(run);
     let whole_ok = fully_lowercased(&whole);
     let mut first = true;
     for (ps, pe) in parts {
-        let part = run[ps..pe].to_lowercase();
+        let part = normalize_token(&run[ps..pe]);
         if part.is_empty() || !fully_lowercased(&part) {
             continue;
         }

@@ -130,13 +130,9 @@ fn insert_row(conn: &Connection, row: &Row) -> Result<()> {
             simhash: row.simhash,
         },
     )?;
-    fts::index_code(
-        conn,
-        sid,
-        &row.symbol,
-        &row.snippet,
-        &fts::path_to_tokens(&row.path),
-    )?;
+    // The raw relative path goes straight into `code_fts.path_tokens`:
+    // the identifier tokenizer handles the splitting (see fts::index_code).
+    fts::index_code(conn, sid, &row.symbol, &row.snippet, &row.path)?;
     vector::insert_code(conn, sid, &row.embedding)?;
     Ok(())
 }

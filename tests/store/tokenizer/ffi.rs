@@ -86,6 +86,33 @@ fn register_twice_on_same_connection_still_matches() {
 }
 
 #[test]
+fn diacritics_fold_symmetrically_between_doc_and_query() {
+    // Regression: the unicode61 tokenizer's `remove_diacritics 2` folded
+    // café ↔ cafe; the identifier tokenizer must do the same in both
+    // directions (doc-side and query-side go through the same xTokenize).
+    let conn = conn_with_tokenizer();
+    conn.execute_batch(
+        "CREATE VIRTUAL TABLE t6 USING fts5(body, tokenize = 'identifier');
+         INSERT INTO t6(body) VALUES ('met at the café yesterday');
+         INSERT INTO t6(body) VALUES ('plain cafe on the corner');
+         INSERT INTO t6(body) VALUES ('über driver took the long way');",
+    )
+    .expect("create + insert");
+
+    let count = |q: &str| -> i64 {
+        conn.query_row("SELECT count(*) FROM t6 WHERE t6 MATCH ?1", [q], |r| {
+            r.get(0)
+        })
+        .expect("match query")
+    };
+    // accented doc found by plain query, plain doc found by accented query
+    assert_eq!(count("cafe"), 2, "query 'cafe' must hit café + cafe docs");
+    assert_eq!(count("café"), 2, "query 'café' must hit café + cafe docs");
+    assert_eq!(count("uber"), 1, "query 'uber' must hit the über doc");
+    assert_eq!(count("über"), 1, "query 'über' must hit the über doc");
+}
+
+#[test]
 fn invalid_utf8_blob_inserts_matches_and_highlights() {
     let conn = conn_with_tokenizer();
     conn.execute_batch("CREATE VIRTUAL TABLE t4 USING fts5(body, tokenize = 'identifier');")

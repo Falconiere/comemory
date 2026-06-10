@@ -1,4 +1,4 @@
-use comemory::store::tokenizer::split::{split_text, SplitToken};
+use comemory::store::tokenizer::split::{fold_diacritics, split_text, SplitToken};
 use proptest::prelude::*;
 
 fn texts(tokens: &[SplitToken]) -> Vec<&str> {
@@ -77,10 +77,25 @@ fn underscore_only_runs_emit_nothing() {
 }
 
 #[test]
-fn non_ascii_words_are_tokenized() {
+fn non_ascii_words_are_tokenized_and_diacritic_folded() {
+    // Diacritics fold so `café` and `cafe` index/query identically —
+    // restores the old `unicode61 remove_diacritics 2` behavior.
     let toks = split_text("über café");
-    assert_eq!(texts(&toks), vec!["über", "café"]);
+    assert_eq!(texts(&toks), vec!["uber", "cafe"]);
     assert!(toks.iter().all(|t| !t.colocated));
+}
+
+#[test]
+fn diacritics_fold_to_ascii_base_letters() {
+    assert_eq!(texts(&split_text("café")), vec!["cafe"]);
+    assert_eq!(texts(&split_text("naïve")), vec!["naive"]);
+    assert_eq!(texts(&split_text("über")), vec!["uber"]);
+    // Already-folded text is untouched.
+    assert_eq!(texts(&split_text("cafe")), vec!["cafe"]);
+    // NFD input (base letter + combining mark) folds to the same token as
+    // the precomposed form.
+    assert_eq!(texts(&split_text("cafe\u{301}")), vec!["cafe"]);
+    assert_eq!(fold_diacritics("éàü"), "eau");
 }
 
 #[test]
@@ -101,7 +116,10 @@ proptest! {
             prop_assert!(t.end <= s.len());
             prop_assert!(t.start <= t.end);
             if !t.colocated {
-                prop_assert_eq!(s[t.start..t.end].to_lowercase(), t.text);
+                prop_assert_eq!(
+                    fold_diacritics(&s[t.start..t.end].to_lowercase()),
+                    t.text
+                );
             }
         }
     }
