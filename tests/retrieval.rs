@@ -6,3 +6,6 @@ mod bundle;
 
 #[path = "retrieval/fuse.rs"]
 mod fuse;
+
+#[path = "retrieval/score.rs"]
+mod score;
