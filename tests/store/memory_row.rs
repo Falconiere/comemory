@@ -64,6 +64,50 @@ fn assert_all_edges(conn: &Connection) {
     );
 }
 
+/// Run `memory_row::insert` for `body` inside its own transaction.
+fn insert_body(conn: &mut Connection, fm: &Frontmatter, body: &str) {
+    let tx = conn.transaction().expect("tx");
+    memory_row::insert(&tx, fm, body, "slug-x", "/abs/path.md", &fm.tags).expect("insert");
+    tx.commit().expect("commit");
+}
+
+/// Read the persisted `memories.simhash` for the fixture id.
+fn stored_simhash(conn: &Connection) -> i64 {
+    conn.query_row("SELECT simhash FROM memories WHERE id = ?1", [ID], |r| {
+        r.get(0)
+    })
+    .expect("simhash row")
+}
+
+#[test]
+fn insert_persists_simhash_and_upsert_refreshes_it() {
+    let dir = tempdir().expect("tempdir");
+    let mut conn = connection::open(dir.path().join("comemory.db")).expect("open");
+    let fm = sample_fm();
+
+    let body_a = "advisory locks serialize concurrent migrations in postgres";
+    insert_body(&mut conn, &fm, body_a);
+    let expected_a = comemory::simhash::simhash64(comemory::simhash::tokens(body_a)) as i64;
+    let got_a = stored_simhash(&conn);
+    assert_ne!(
+        got_a, 0,
+        "fresh insert must not leave the DEFAULT 0 simhash"
+    );
+    assert_eq!(
+        got_a, expected_a,
+        "stored simhash != simhash64(tokens(body))"
+    );
+
+    // Re-save with the same id but a changed body must hit the ON CONFLICT
+    // upsert arm and refresh the fingerprint, not keep the stale one.
+    let body_b = "completely different note about ast-grep pattern syntax";
+    insert_body(&mut conn, &fm, body_b);
+    let expected_b = comemory::simhash::simhash64(comemory::simhash::tokens(body_b)) as i64;
+    let got_b = stored_simhash(&conn);
+    assert_eq!(got_b, expected_b, "upsert must refresh simhash");
+    assert_ne!(got_b, got_a, "changed body should change the simhash");
+}
+
 #[test]
 fn inserts_row_tags_fts_and_edges() {
     let dir = tempdir().expect("tempdir");

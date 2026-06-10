@@ -194,6 +194,104 @@ fn save_csv_vector_with_bad_token_fails_to_parse() {
     );
 }
 
+/// Body A for the near-duplicate tests. Measured: simhash Hamming(A, B) = 5
+/// (within NEAR_DUP_HAMMING = 8), Hamming(A, C) = 37, Hamming(B, C) = 36.
+const DUP_BODY_A: &str = "postgres connection pool exhausts under load spikes raise \
+     max_connections to fifty and add pgbouncer in transaction mode for the api workers \
+     during peak traffic hours";
+/// Body B: A with one word changed (`fifty` → `eighty`).
+const DUP_BODY_B: &str = "postgres connection pool exhausts under load spikes raise \
+     max_connections to eighty and add pgbouncer in transaction mode for the api workers \
+     during peak traffic hours";
+/// Body C: a genuinely distinct topic.
+const DUP_BODY_C: &str =
+    "ast-grep pattern matching finds unwrap calls across the rust codebase quickly";
+
+/// Run `comemory --json save <body>` under `home` and parse the JSON output.
+fn save_json(home: &tempfile::TempDir, body: &str) -> serde_json::Value {
+    let assertion = Command::cargo_bin("comemory")
+        .expect("bin")
+        .env("COMEMORY_DATA_DIR", home.path())
+        .args(["--json", "save", "--kind", "note", body])
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&assertion.get_output().stdout).to_string();
+    serde_json::from_str(stdout.trim()).expect("save --json emits one JSON object")
+}
+
+#[test]
+fn near_duplicate_save_warns_and_hints() {
+    let home = tempdir().expect("tempdir");
+
+    let first = save_json(&home, DUP_BODY_A);
+    let first_id = first["id"].as_str().expect("id string").to_string();
+    assert!(
+        first.get("duplicate_of").is_none(),
+        "first save has nothing to duplicate: {first}",
+    );
+
+    // One-word edit of A: Hamming 5 <= NEAR_DUP_HAMMING, so the save still
+    // succeeds but reports the original id as `duplicate_of`.
+    let second = save_json(&home, DUP_BODY_B);
+    assert_eq!(
+        second["duplicate_of"].as_str(),
+        Some(first_id.as_str()),
+        "near-dup save should point at the first id: {second}",
+    );
+    assert_ne!(second["id"].as_str(), Some(first_id.as_str()));
+
+    // Distinct topic: the key must be ABSENT (skip_serializing_if), not null.
+    let third = save_json(&home, DUP_BODY_C);
+    assert!(
+        third.get("duplicate_of").is_none(),
+        "distinct save must omit duplicate_of entirely: {third}",
+    );
+}
+
+#[test]
+fn near_duplicate_save_tty_emits_warning_line() {
+    let home = tempdir().expect("tempdir");
+    let first = save_json(&home, DUP_BODY_A);
+    let first_id = first["id"].as_str().expect("id string").to_string();
+
+    let assertion = Command::cargo_bin("comemory")
+        .expect("bin")
+        .env("COMEMORY_DATA_DIR", home.path())
+        .args(["save", "--kind", "note", DUP_BODY_B])
+        .assert()
+        .success();
+    let stderr = String::from_utf8_lossy(&assertion.get_output().stderr).to_string();
+    assert!(
+        stderr.contains(&format!("similar memory {first_id} exists")),
+        "stderr should carry the duplicate warning, got: {stderr:?}",
+    );
+    assert!(
+        stderr.contains("supersedes"),
+        "warning should hint at supersedes: {stderr:?}",
+    );
+    // The saved-id line still lands on stdout, untouched by the warning.
+    let stdout = String::from_utf8_lossy(&assertion.get_output().stdout).to_string();
+    assert!(stdout.starts_with("saved "), "stdout: {stdout:?}");
+}
+
+#[test]
+fn distinct_save_tty_emits_no_warning() {
+    let home = tempdir().expect("tempdir");
+    save_json(&home, DUP_BODY_A);
+
+    let assertion = Command::cargo_bin("comemory")
+        .expect("bin")
+        .env("COMEMORY_DATA_DIR", home.path())
+        .args(["save", "--kind", "note", DUP_BODY_C])
+        .assert()
+        .success();
+    let stderr = String::from_utf8_lossy(&assertion.get_output().stderr).to_string();
+    assert!(
+        !stderr.contains("similar memory"),
+        "distinct topic must not warn: {stderr:?}",
+    );
+}
+
 #[test]
 fn save_rejects_wrong_dim_vector() {
     let home = tempdir().expect("tempdir");

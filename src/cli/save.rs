@@ -22,6 +22,7 @@ use crate::cli::embedding_input;
 use crate::cli::resolve_data_dir;
 use crate::config::paths::Paths;
 use crate::memory::{Kind, MemoryStore};
+use crate::output::tty;
 use crate::prelude::*;
 use crate::store::{connection, embed, memory_row, vector};
 
@@ -74,11 +75,16 @@ pub struct Args {
     pub vector_stdin: bool,
 }
 
-/// JSON shape emitted under `--json`.
+/// JSON shape emitted under `--json`. `duplicate_of` is present only when a
+/// live memory with a near-identical body (SimHash Hamming distance within
+/// [`crate::simhash::NEAR_DUP_HAMMING`]) already exists — the save still
+/// proceeds; the caller decides whether to mark it `supersedes`.
 #[derive(Serialize)]
 struct Output {
     id: String,
     path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    duplicate_of: Option<String>,
 }
 
 /// Save the body and emit the new memory id + on-disk path.
@@ -128,9 +134,19 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
         embed::guard_dim(v, dim)?;
     }
 
+    // Near-duplicate check BEFORE the markdown write. Best-effort and
+    // advisory only: the save always proceeds, the caller decides whether
+    // to supersede the hit.
+    let duplicate_of = near_duplicate(&conn, &body);
+
     // 1. Markdown atomic write (source of truth).
     let store = MemoryStore::new(paths.clone());
     let rec = store.save(&body, a.kind, &a.repo, &tags, &a.author, a.quality)?;
+
+    // A re-save of an identical body produces the same content-hash-derived
+    // id, so the pre-save scan would otherwise report the memory as a
+    // duplicate of itself. Self-matches are not actionable — drop them.
+    let duplicate_of = duplicate_of.filter(|dup| *dup != rec.frontmatter.id);
 
     // 2. SQLite mirror in one transaction. Markdown is the source of truth,
     //    so a mirror failure surfaces as an `Err` — but the markdown file
@@ -150,6 +166,7 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let output = Output {
         id: rec.frontmatter.id.clone(),
         path: rec.path.to_string_lossy().into_owned(),
+        duplicate_of,
     };
     let mut out = std::io::stdout().lock();
     if json {
@@ -157,8 +174,41 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     } else {
         writeln!(out, "saved {}", output.id)?;
         writeln!(out, "  path: {}", output.path)?;
+        if let Some(dup) = output.duplicate_of.as_deref() {
+            tty::warning(&format!(
+                "similar memory {dup} exists — consider supersedes"
+            ))?;
+        }
     }
     Ok(())
+}
+
+/// Find a live memory whose body simhash is within near-dup range
+/// ([`crate::simhash::NEAR_DUP_HAMMING`]) of `body`, returning the closest
+/// hit's id. Best-effort: any DB error is logged and treated as "no
+/// duplicate" so the check can never block a save. A full scan over live
+/// rows is fine at personal-memory scale.
+fn near_duplicate(conn: &rusqlite::Connection, body: &str) -> Option<String> {
+    let hash = crate::simhash::simhash64(crate::simhash::tokens(body));
+    let result: Result<Option<String>> = (|| {
+        let mut stmt = conn.prepare("SELECT id, simhash FROM memories WHERE deleted_at IS NULL")?;
+        let rows: Vec<(String, i64)> = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<std::result::Result<_, _>>()?;
+        Ok(rows
+            .into_iter()
+            .map(|(id, h)| (id, crate::simhash::hamming64(hash, h as u64)))
+            .filter(|(_, d)| *d <= crate::simhash::NEAR_DUP_HAMMING)
+            .min_by_key(|(_, d)| *d)
+            .map(|(id, _)| id))
+    })();
+    match result {
+        Ok(hit) => hit,
+        Err(e) => {
+            tracing::warn!(error = %e, "duplicate check skipped");
+            None // dup check is best-effort: never blocks a save
+        }
+    }
 }
 
 /// Mirror the markdown record into `comemory.db` in a single transaction:
