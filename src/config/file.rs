@@ -37,10 +37,17 @@ struct PartialRankConfig {
     mmr_lambda: Option<f64>,
 }
 
-/// File-overlay partial for prune scoring extensions. All fields optional.
+/// File-overlay partial for [`PruneConfig`]. All fields optional.
+///
+/// Carries every `PruneConfig` field, not just the M1 scoring extensions:
+/// `deny_unknown_fields` would otherwise hard-error on a valid `[prune]`
+/// key like `trash_retention_days` once the section is overlayable at all.
 #[derive(Debug, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 struct PartialPruneConfig {
+    trash_retention_days: Option<u32>,
+    low_value_default_unused_since_days: Option<u32>,
+    low_value_default_below_quality: Option<u32>,
     min_activation: Option<f64>,
     min_feedback: Option<f64>,
 }
@@ -250,6 +257,15 @@ impl Config {
             }
         }
         if let Some(pp) = partial.prune {
+            if let Some(v) = pp.trash_retention_days {
+                self.prune.trash_retention_days = v;
+            }
+            if let Some(v) = pp.low_value_default_unused_since_days {
+                self.prune.low_value_default_unused_since_days = v;
+            }
+            if let Some(v) = pp.low_value_default_below_quality {
+                self.prune.low_value_default_below_quality = v;
+            }
             if let Some(v) = pp.min_activation {
                 self.prune.min_activation = v;
             }

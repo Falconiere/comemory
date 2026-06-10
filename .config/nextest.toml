@@ -1,6 +1,14 @@
 [test-groups]
 embedder = { max-threads = 1 }
+# The config test binary mutates process-global env vars (std::env::set_var /
+# remove_var) in its tests; nextest runs tests within a binary on separate
+# threads of one process, so they must be serialized to avoid env races.
+config-env = { max-threads = 1 }
 
 [[profile.default.overrides]]
 filter = 'test(/embedder|memory_index|code_index/)'
 test-group = 'embedder'
+
+[[profile.default.overrides]]
+filter = 'binary(config)'
+test-group = 'config-env'
