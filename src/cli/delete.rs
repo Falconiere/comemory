@@ -39,10 +39,9 @@ struct Output {
 }
 
 /// Soft-delete one memory: move the markdown file into `memories/.trash/`
-/// (source of truth), then mirror the delete into `comemory.db` in one
-/// transaction (stamp `deleted_at`, drop the `memory_fts` + `memory_vec`
-/// rows, remove all touching edges). Returns the canonical id from the
-/// removed record's frontmatter.
+/// (source of truth), then mirror the delete into `comemory.db` via
+/// [`mirror_soft_delete`]. Returns the canonical id from the removed
+/// record's frontmatter.
 ///
 /// Shared by `comemory delete` and `comemory prune` (low-value apply) so
 /// the two soft-delete surfaces cannot drift.
@@ -53,7 +52,19 @@ pub(crate) fn soft_delete(
 ) -> Result<String> {
     let removed = MemoryStore::new(paths.clone()).delete(id)?;
     let id = removed.frontmatter.id;
+    mirror_soft_delete(conn, &id)?;
+    Ok(id)
+}
 
+/// Mirror a soft-delete into `comemory.db` in one transaction: stamp
+/// `deleted_at`, drop the `memory_fts` + `memory_vec` rows, remove all
+/// touching edges.
+///
+/// Factored out of [`soft_delete`] so `comemory prune` can heal a
+/// half-deleted memory — live DB row but markdown already gone (e.g. a
+/// crash between the file move and this transaction) — without requiring
+/// a markdown move that can no longer succeed.
+pub(crate) fn mirror_soft_delete(conn: &mut rusqlite::Connection, id: &str) -> Result<()> {
     let now = memory_row::iso_format(OffsetDateTime::now_utc())?;
     let tx = conn.transaction()?;
     tx.execute(
@@ -71,9 +82,9 @@ pub(crate) fn soft_delete(
         "DELETE FROM memory_vec WHERE memory_id = ?1",
         rusqlite::params![id],
     )?;
-    edges::delete_touching(&tx, "memory", &id)?;
+    edges::delete_touching(&tx, "memory", id)?;
     tx.commit()?;
-    Ok(id)
+    Ok(())
 }
 
 /// Soft-delete the memory and report the affected id.

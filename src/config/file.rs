@@ -144,6 +144,10 @@ pub struct RankConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PruneConfig {
     pub trash_retention_days: u32,
+    /// Legacy calendar-age knob for low-value detection. No longer
+    /// consumed by detection as of M1 (`min_activation` replaced the
+    /// calendar criterion); kept for config back-compat and slated for
+    /// removal in M2. Env: `COMEMORY_PRUNE_UNUSED_SINCE_DAYS`.
     pub low_value_default_unused_since_days: u32,
     pub low_value_default_below_quality: u32,
     /// Activation floor (ACT-R scale) below which a memory is prune-eligible.
