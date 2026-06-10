@@ -359,18 +359,18 @@ Detect (and optionally soft-delete) stale memories
 Usage: comemory prune [OPTIONS]
 
 Options:
-      --dry-run              Report candidates without applying any deletes
+      --apply                Execute the cleanup (soft-delete low-value memories, drop orphan edges + stale code symbols). Without this flag prune only scans and reports
       --json                 Emit machine-readable JSON instead of a human TTY view
       --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
   -h, --help                 Print help
 
 Examples:
-  # Inspect candidates without mutating anything
-  comemory prune --dry-run
+  # Default is a dry run: inspect candidates without mutating anything
+  comemory prune
 
   # Apply: soft-delete low-value memories (markdown -> memories/.trash/)
   # and clean up orphan edges + stale code symbols
-  comemory prune
+  comemory prune --apply
 
   # JSON output for CI/automation; Report fields:
   #   low_value_memories — ids matching ALL of: activation < COMEMORY_PRUNE_MIN_ACTIVATION

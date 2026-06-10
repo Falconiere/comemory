@@ -15,12 +15,11 @@
 //!    unloved (feedback at/below ceiling), low quality, unreferenced — or
 //!    superseded by a live memory and never accessed since.
 //!
-//! Default behaviour applies the cleanup: low-value memories are
-//! soft-deleted through the same path as `comemory delete`
+//! Default behaviour is a dry run: scan and report candidates without
+//! touching anything. Pass `--apply` to execute the cleanup: low-value
+//! memories are soft-deleted through the same path as `comemory delete`
 //! (markdown → `.trash/`, `deleted_at` stamp, FTS/vec row + edge
-//! removal), then the orphan/stale cleanup runs in one transaction. Use
-//! `--dry-run` to inspect what would be removed without touching
-//! anything.
+//! removal), then the orphan/stale cleanup runs in one transaction.
 
 use std::path::PathBuf;
 
@@ -38,12 +37,12 @@ use crate::store::connection;
 /// Example invocations shown at the bottom of `comemory prune --help`.
 pub const EXAMPLES: &str = "\
 Examples:
-  # Inspect candidates without mutating anything
-  comemory prune --dry-run
+  # Default is a dry run: inspect candidates without mutating anything
+  comemory prune
 
   # Apply: soft-delete low-value memories (markdown -> memories/.trash/)
   # and clean up orphan edges + stale code symbols
-  comemory prune
+  comemory prune --apply
 
   # JSON output for CI/automation; Report fields:
   #   low_value_memories — ids matching ALL of: activation < COMEMORY_PRUNE_MIN_ACTIVATION
@@ -56,9 +55,11 @@ Examples:
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES)]
 pub struct Args {
-    /// Report candidates without applying any deletes.
+    /// Execute the cleanup (soft-delete low-value memories, drop orphan
+    /// edges + stale code symbols). Without this flag prune only scans and
+    /// reports.
     #[arg(long, default_value_t = false)]
-    pub dry_run: bool,
+    pub apply: bool,
 }
 
 /// Output schema for both JSON and TTY rendering. Lives at module scope so
@@ -73,19 +74,19 @@ pub struct Report {
     /// across different repos (e.g. `src/main.rs` in two checkouts).
     pub stale_code_files: Vec<String>,
     /// Memory ids flagged by [`low_value::detect`] — soft-delete
-    /// candidates (applied unless `--dry-run`).
+    /// candidates (applied only with `--apply`).
     pub low_value_memories: Vec<String>,
 }
 
-/// Scan `comemory.db` for prune candidates and (unless `--dry-run`)
-/// apply the cleanup. Always emits the report.
+/// Scan `comemory.db` for prune candidates and, only when `--apply` is
+/// set, apply the cleanup. Always emits the report.
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
     let cfg = load_config(&paths)?;
     let mut conn = connection::open(paths.db_path())?;
     let report = scan(&conn, &cfg)?;
-    if !a.dry_run {
+    if a.apply {
         apply(&mut conn, &paths, &report.low_value_memories)?;
     }
     output::emit(&report, json_flag)
