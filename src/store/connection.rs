@@ -32,6 +32,9 @@ pub fn open<P: AsRef<Path>>(path: P) -> Result<Connection> {
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "busy_timeout", 5000_i64)?;
     conn.pragma_update(None, "foreign_keys", true)?;
+    // Must precede migrate::run: bundled SQLite 3.46 resolves
+    // `tokenize = 'identifier'` eagerly when FTS DDL is prepared.
+    crate::store::tokenizer::ffi::register(&conn)?;
     crate::store::migrate::run(&mut conn)?;
     Ok(conn)
 }

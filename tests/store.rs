@@ -27,5 +27,8 @@ mod schema;
 #[path = "store/vector.rs"]
 mod vector;
 
+#[path = "store/tokenizer/ffi.rs"]
+mod tokenizer_ffi;
+
 #[path = "store/tokenizer/split.rs"]
 mod tokenizer_split;
