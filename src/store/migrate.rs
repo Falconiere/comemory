@@ -75,9 +75,12 @@ fn apply(conn: &mut Connection, key: &str, sql: &str) -> Result<bool> {
 /// DEFAULT 0 placeholder left by the v4 migration. Runs unconditionally
 /// on every [`run`] so a crash between the migration commit and the
 /// backfill heals on the next open; once every row is hashed the
-/// `WHERE simhash = 0` scan returns nothing and this is a no-op. All
-/// updates commit in one transaction so a partial backfill never
-/// persists.
+/// `WHERE simhash = 0` scan returns (almost) nothing. Sentinel
+/// collision: a body whose tokens genuinely hash to 0 (empty or
+/// punctuation-only bodies — `simhash::of_body` over zero tokens is 0)
+/// is re-selected and re-updated to the identical value on every open;
+/// idempotent and harmless. All updates commit in one transaction so a
+/// partial backfill never persists.
 fn backfill_memory_simhash(conn: &mut Connection) -> Result<()> {
     let tx = conn.transaction()?;
     {
