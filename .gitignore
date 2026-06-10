@@ -7,3 +7,5 @@ Cargo.lock.bak
 .claude/scheduled_tasks.lock
 .fastembed_cache/
 /.build-perf/
+
+docs/superpowers/
