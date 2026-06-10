@@ -165,7 +165,8 @@ fn live_superseder(conn: &Connection, id: &str) -> Result<Option<String>> {
 }
 
 /// Whole days elapsed between an RFC 3339 timestamp and `now`, floored at
-/// zero. Both timestamp writers (`memory_row::iso_format` and the SQLite
+/// zero. All timestamp writers (`memory_row::iso_format` — shared by save,
+/// rebuild, and `pipeline::record_access` — plus the SQLite
 /// `strftime('%Y-%m-%dT%H:%M:%fZ', ...)` upsert arm) emit RFC 3339-parseable
 /// strings. An unparsable timestamp is treated as fresh — never punish a
 /// memory for a malformed clock value — but it is logged: a value that

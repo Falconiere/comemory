@@ -1,6 +1,5 @@
 ---
 source: tests/output/search.rs
-assertion_line: 35
 expression: "search::envelope(&hits)"
 ---
 {
