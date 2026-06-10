@@ -239,6 +239,67 @@ fn rebuild_cleans_up_wal_shm_sidecars() {
     );
 }
 
+/// Regression: a `comemory.db` written by a pre-v4 binary is ATTACHed raw
+/// (never migrated) during rebuild, so its 12-column `code_symbols` table
+/// used to break the `SELECT *` copy into the new 14-column schema
+/// ("table main.code_symbols has 14 columns but 12 values were supplied"),
+/// aborting the whole rebuild. The copy now lists columns explicitly and
+/// synthesizes the v4 access columns (`access_count = 0`, `last_accessed =
+/// indexed_at` — the same defaults migration 0004 backfills).
+#[test]
+fn rebuild_succeeds_against_pre_v4_old_db() {
+    let home = tempdir().expect("tempdir");
+    std::fs::create_dir_all(home.path().join("memories")).expect("mkdir memories");
+
+    // Register the process-global sqlite-vec extension (the 0002 DDL creates
+    // vec0 vtabs) before replaying the old migrations on a raw connection.
+    let scratch = tempdir().expect("scratch dir");
+    drop(
+        comemory::store::connection::open(scratch.path().join("scratch.db"))
+            .expect("register sqlite-vec"),
+    );
+
+    let conn = Connection::open(home.path().join("comemory.db")).expect("open raw");
+    conn.execute_batch(comemory::store::migrate::M_BOOTSTRAP)
+        .expect("0001");
+    conn.execute_batch(comemory::store::migrate::M_V2)
+        .expect("0002");
+    conn.execute_batch(comemory::store::migrate::M_V3)
+        .expect("0003");
+    conn.execute_batch(
+        "INSERT INTO schema_meta(key, value) VALUES
+            ('0002_v2_tables','1'), ('0003_stats_tables','1'), ('version','3');
+         INSERT INTO code_symbols(id, repo, path, blob_oid, symbol, kind, lang,
+                                  line_start, line_end, snippet, simhash, indexed_at)
+         VALUES (1,'demo','src/lib.rs','beef0000','old_fn','function','rust',
+                 1,2,'fn old_fn() {}',7,'2026-01-02T00:00:00Z');
+         INSERT INTO code_fts(symbol_id, symbol, snippet, path_tokens)
+         VALUES (1,'old_fn','fn old_fn() {}','src lib rs');
+         INSERT INTO indexed_files(repo, path, blob_oid, indexed_at)
+         VALUES ('demo','src/lib.rs','beef0000','2026-01-02T00:00:00Z');",
+    )
+    .expect("seed v3 rows");
+    drop(conn);
+
+    run_rebuild(&home);
+
+    let conn = open_db_with_vec(&home);
+    let (access, last): (i64, String) = conn
+        .query_row(
+            "SELECT access_count, last_accessed FROM code_symbols WHERE id = 1",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .expect("copied code_symbols row with synthesized v4 columns");
+    assert_eq!(access, 0, "synthesized access_count must default to 0");
+    assert_eq!(
+        last, "2026-01-02T00:00:00Z",
+        "synthesized last_accessed must fall back to indexed_at"
+    );
+    assert_eq!(count(&conn, "SELECT count(*) FROM code_fts"), 1);
+    assert_eq!(count(&conn, "SELECT count(*) FROM indexed_files"), 1);
+}
+
 /// When the rebuild cannot complete (e.g. the tmp DB path is blocked by a
 /// pre-existing directory), the original `comemory.db` must be left intact
 /// and the tmp artefact must be cleaned up.

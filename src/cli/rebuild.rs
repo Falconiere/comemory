@@ -196,17 +196,38 @@ fn copy_code_tables_from_old(conn: &mut rusqlite::Connection, old_db: &Path) -> 
 
 /// Inner copy loop separated so the outer wrapper can guarantee `DETACH`
 /// runs even on error.
+///
+/// Every copy lists its columns explicitly — `SELECT *` would break the
+/// moment the attached DB predates a migration that widened a table,
+/// because the old DB is attached raw and never migrated. A pre-v4
+/// `code_symbols` lacks the `access_count` / `last_accessed` columns added
+/// by migration 0004, so those two are sourced conditionally: carried over
+/// when the old table already has them, otherwise synthesized with the
+/// same defaults 0004's backfill applies (`0` / `indexed_at`).
 fn copy_code_tables_inner(conn: &rusqlite::Connection) -> Result<()> {
     // Copy regular tables first, then the virtual tables (FTS5 + vec0).
     // code_symbols must come before code_vec/code_fts because the latter
     // reference code_symbols.id in their data streams.
-    for table in ["code_symbols", "indexed_files"] {
-        if !old_table_exists(conn, table)? {
-            continue;
-        }
+    if old_table_exists(conn, "code_symbols")? {
+        let (count_expr, last_expr) = if old_column_exists(conn, "code_symbols", "access_count")? {
+            ("access_count", "COALESCE(last_accessed, indexed_at)")
+        } else {
+            ("0", "indexed_at")
+        };
         conn.execute_batch(&format!(
-            "INSERT OR IGNORE INTO main.{table} SELECT * FROM old.{table};"
+            "INSERT OR IGNORE INTO main.code_symbols(\
+                 id, repo, path, blob_oid, symbol, kind, lang, line_start, line_end, \
+                 snippet, simhash, indexed_at, access_count, last_accessed) \
+             SELECT id, repo, path, blob_oid, symbol, kind, lang, line_start, line_end, \
+                 snippet, simhash, indexed_at, {count_expr}, {last_expr} \
+             FROM old.code_symbols;"
         ))?;
+    }
+    if old_table_exists(conn, "indexed_files")? {
+        conn.execute_batch(
+            "INSERT OR IGNORE INTO main.indexed_files(repo, path, blob_oid, indexed_at) \
+             SELECT repo, path, blob_oid, indexed_at FROM old.indexed_files;",
+        )?;
     }
     // FTS5 and vec0 virtual tables may not support `INSERT INTO … SELECT *`
     // from an attached DB in all sqlite-vec versions; copy each row
@@ -233,6 +254,18 @@ fn old_table_exists(conn: &rusqlite::Connection, name: &str) -> Result<bool> {
     let n: i64 = conn.query_row(
         "SELECT count(*) FROM old.sqlite_master WHERE type = 'table' AND name = ?1",
         rusqlite::params![name],
+        |r| r.get(0),
+    )?;
+    Ok(n > 0)
+}
+
+/// True when `column` exists on `table` in the attached `old` database.
+/// Lets [`copy_code_tables_inner`] adapt its SELECT list to the attached
+/// DB's schema version instead of assuming the current one.
+fn old_column_exists(conn: &rusqlite::Connection, table: &str, column: &str) -> Result<bool> {
+    let n: i64 = conn.query_row(
+        "SELECT count(*) FROM pragma_table_info(?1, 'old') WHERE name = ?2",
+        rusqlite::params![table, column],
         |r| r.get(0),
     )?;
     Ok(n > 0)
