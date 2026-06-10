@@ -116,7 +116,7 @@ fn recall_at_3_floor_over_smoke_corpus() {
     assert_eq!(
         bodies.len(),
         CORPUS.len(),
-        "corpus bodies must hash to distinct ids"
+        "duplicate ids detected: corpus contains bodies with the same SHA-256 prefix"
     );
 
     let mut failures = Vec::new();
@@ -210,6 +210,9 @@ fn irrelevant_feedback_reorders_results() {
 fn rebuild_preserves_search_results() {
     let sandbox = Sandbox::new();
     let dir = sandbox.data_dir();
+    // Entries 0..6 (pgbouncer, vec-blob DDL, VecDimMismatch, CLI --json,
+    // bm25 sign, tracing::warn) chosen so q1/q2 below have disjoint top-3
+    // sets; the disjointness assertion guards future corpus edits.
     save_corpus(&dir, &CORPUS[..6]);
 
     // q1 resolves via the strict AND tier (only the pgbouncer memory matches
