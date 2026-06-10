@@ -41,6 +41,14 @@ where
     out
 }
 
+/// Canonical fingerprint of a memory body: [`simhash64`] over [`tokens`].
+/// The single definition shared by save, rebuild, the v4 migration
+/// backfill, and the save-time duplicate check — so every writer and
+/// reader of `memories.simhash` agrees on the hash.
+pub fn of_body(body: &str) -> u64 {
+    simhash64(tokens(body))
+}
+
 /// Hamming distance between two 64-bit values.
 pub fn hamming64(a: u64, b: u64) -> u32 {
     (a ^ b).count_ones()

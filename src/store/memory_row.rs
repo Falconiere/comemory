@@ -79,7 +79,7 @@ pub fn insert(
     // see the `DEFAULT 0` placeholder from migration 0004 on fresh saves.
     // The upsert arm refreshes it too: a re-save with a changed body must
     // not keep a stale fingerprint.
-    let simhash = crate::simhash::simhash64(crate::simhash::tokens(body)) as i64;
+    let simhash = crate::simhash::of_body(body) as i64;
     conn.execute(
         "INSERT INTO memories(\
              id, slug, kind, repo, author, quality, schema, \

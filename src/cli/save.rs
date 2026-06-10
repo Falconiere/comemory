@@ -189,26 +189,30 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
 /// duplicate" so the check can never block a save. A full scan over live
 /// rows is fine at personal-memory scale.
 fn near_duplicate(conn: &rusqlite::Connection, body: &str) -> Option<String> {
-    let hash = crate::simhash::simhash64(crate::simhash::tokens(body));
-    let result: Result<Option<String>> = (|| {
-        let mut stmt = conn.prepare("SELECT id, simhash FROM memories WHERE deleted_at IS NULL")?;
-        let rows: Vec<(String, i64)> = stmt
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
-            .collect::<std::result::Result<_, _>>()?;
-        Ok(rows
-            .into_iter()
-            .map(|(id, h)| (id, crate::simhash::hamming64(hash, h as u64)))
-            .filter(|(_, d)| *d <= crate::simhash::NEAR_DUP_HAMMING)
-            .min_by_key(|(_, d)| *d)
-            .map(|(id, _)| id))
-    })();
-    match result {
+    let hash = crate::simhash::of_body(body);
+    match near_duplicate_inner(conn, hash) {
         Ok(hit) => hit,
         Err(e) => {
             tracing::warn!(error = %e, "duplicate check skipped");
             None // dup check is best-effort: never blocks a save
         }
     }
+}
+
+/// Fallible core of [`near_duplicate`]: scan live `memories` rows and
+/// return the id of the closest simhash neighbor within
+/// [`crate::simhash::NEAR_DUP_HAMMING`], if any.
+fn near_duplicate_inner(conn: &rusqlite::Connection, hash: u64) -> Result<Option<String>> {
+    let mut stmt = conn.prepare("SELECT id, simhash FROM memories WHERE deleted_at IS NULL")?;
+    let rows: Vec<(String, i64)> = stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<std::result::Result<_, _>>()?;
+    Ok(rows
+        .into_iter()
+        .map(|(id, h)| (id, crate::simhash::hamming64(hash, h as u64)))
+        .filter(|(_, d)| *d <= crate::simhash::NEAR_DUP_HAMMING)
+        .min_by_key(|(_, d)| *d)
+        .map(|(id, _)| id))
 }
 
 /// Mirror the markdown record into `comemory.db` in a single transaction:
