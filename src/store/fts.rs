@@ -93,6 +93,48 @@ pub fn build_or_query(query: &str) -> String {
         .join(" OR ")
 }
 
+/// Build an OR query over the identifier sub-tokens of every sanitized
+/// term, for the final recall tier when both the strict AND and the
+/// word-level OR tiers come back empty.
+///
+/// Each sanitized term is split via the identifier tokenizer
+/// ([`crate::store::tokenizer::split::split_text`]): `VecDimMismatch`
+/// yields the parts `vec`/`dim`/`mismatch` plus the colocated whole
+/// `vecdimmismatch`. The colocated whole is deliberately *included* in the
+/// OR expression — it can only add recall (a verbatim-identifier mention
+/// still matches via its colocated index token) and never subtracts, so
+/// the expression for `VecDimMismatch` is
+/// `"vec" OR "vecdimmismatch" OR "dim" OR "mismatch"`.
+///
+/// Returns an empty string when no term actually split (the count of
+/// distinct non-colocated parts is not greater than the term count):
+/// plain-word queries gain nothing from this tier, and the empty
+/// expression signals "no subtoken expansion possible" so
+/// [`search_memory_subtokens`] short-circuits to an empty result.
+pub fn build_subtoken_or_query(query: &str) -> String {
+    let terms = sanitize_terms(query);
+    let mut tokens: Vec<String> = Vec::new();
+    let mut distinct_parts: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for term in &terms {
+        for tok in crate::store::tokenizer::split::split_text(term) {
+            if !tok.colocated {
+                distinct_parts.insert(tok.text.clone());
+            }
+            if !tokens.contains(&tok.text) {
+                tokens.push(tok.text);
+            }
+        }
+    }
+    if distinct_parts.len() <= terms.len() {
+        return String::new();
+    }
+    tokens
+        .iter()
+        .map(|t| format!("\"{t}\""))
+        .collect::<Vec<_>>()
+        .join(" OR ")
+}
+
 /// Run a BM25 search over `memory_fts`, skipping soft-deleted memories.
 ///
 /// The user query is rewritten via [`build_match_query`] (quoted terms,
@@ -122,6 +164,22 @@ pub fn search_memory_relaxed(
     repo: Option<&str>,
 ) -> Result<Vec<MemoryFtsHit>> {
     run_memory_match(conn, &build_or_query(query), k, repo)
+}
+
+/// Subtoken variant of [`search_memory`]: OR-joins the identifier
+/// sub-tokens of every sanitized term via [`build_subtoken_or_query`] so a
+/// memory whose prose mentions the *parts* of an identifier (`dim
+/// mismatch` for `VecDimMismatch`) still surfaces. Used by the router as
+/// the final fallback tier when both the strict AND and the word-level OR
+/// tiers are empty. A query with no splittable term builds an empty MATCH
+/// expression and returns an empty result.
+pub fn search_memory_subtokens(
+    conn: &Connection,
+    query: &str,
+    k: usize,
+    repo: Option<&str>,
+) -> Result<Vec<MemoryFtsHit>> {
+    run_memory_match(conn, &build_subtoken_or_query(query), k, repo)
 }
 
 /// Execute a prebuilt MATCH expression against `memory_fts`. Shared by

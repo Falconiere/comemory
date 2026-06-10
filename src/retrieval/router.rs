@@ -58,9 +58,12 @@ pub enum Source {
 /// The fetch size is [`CANDIDATE_POOL`] (or `top_k` when configured
 /// larger): `route` produces a candidate pool for the rerank + diversify
 /// stages, which perform the final `top_k` cut. When the lexical or
-/// hybrid branch comes back empty and the query has at least two terms,
-/// a relaxed OR tier ([`fts::search_memory_relaxed`]) retries the lexical
-/// branch so a single absent term cannot zero out the result set.
+/// hybrid branch comes back empty, the relaxed ladder in
+/// [`route_lexical_relaxed`] retries the lexical branch: a word-level OR
+/// tier (queries with ≥ 2 terms) so a single absent term cannot zero out
+/// the result set, then an identifier-subtoken OR tier so an identifier
+/// query like `VecDimMismatch` can still reach prose that only mentions
+/// its parts.
 pub fn route(
     cfg: &Config,
     conn: &Connection,
@@ -141,25 +144,38 @@ fn route_lexical(
     Ok(lex.into_iter().map(lex_to_routed).collect())
 }
 
-/// Relaxed fallback tier shared by the lexical and hybrid paths: when the
-/// strict AND query found nothing and the query has at least two
-/// *sanitized* terms ([`fts::term_count`] — the same terms the MATCH
-/// builders quote, so the guard and the builders cannot disagree on what
-/// counts as a term), retry with the OR variant so one absent term cannot
-/// zero out the result set. Single-term queries return empty — OR of one
-/// term is the same query, so retrying would only waste a round trip.
-/// Hits are tagged [`Source::Lexical`] because only the FTS branch
-/// contributed signal.
+/// Relaxed fallback ladder shared by the lexical and hybrid paths, walked
+/// only when the strict AND query found nothing:
+///
+/// 1. **Word-level OR** ([`fts::search_memory_relaxed`]) — only when the
+///    query has at least two *sanitized* terms ([`fts::term_count`] — the
+///    same terms the MATCH builders quote, so the guard and the builders
+///    cannot disagree on what counts as a term). OR of one term is the
+///    same query as the strict tier, so retrying would only waste a round
+///    trip.
+/// 2. **Subtoken OR** ([`fts::search_memory_subtokens`]) — when the word
+///    tier was skipped or empty, OR the identifier sub-tokens of each term
+///    so a prose body mentioning `dim mismatch` is still reachable from
+///    the identifier query `VecDimMismatch`. Queries with no splittable
+///    term build an empty expression and stay empty.
+///
+/// The ladder only *adds* recall on previously-empty results — a non-empty
+/// earlier tier always short-circuits, so it can never reorder hits the
+/// stricter tiers already produced. Hits are tagged [`Source::Lexical`]
+/// because only the FTS branch contributed signal.
 fn route_lexical_relaxed(
     conn: &Connection,
     query: &str,
     k: usize,
     repo: Option<&str>,
 ) -> Result<Vec<RoutedHit>> {
-    if fts::term_count(query) < 2 {
-        return Ok(Vec::new());
+    if fts::term_count(query) >= 2 {
+        let lex = fts::search_memory_relaxed(conn, query, k, repo)?;
+        if !lex.is_empty() {
+            return Ok(lex.into_iter().map(lex_to_routed).collect());
+        }
     }
-    let lex = fts::search_memory_relaxed(conn, query, k, repo)?;
+    let lex = fts::search_memory_subtokens(conn, query, k, repo)?;
     Ok(lex.into_iter().map(lex_to_routed).collect())
 }
 

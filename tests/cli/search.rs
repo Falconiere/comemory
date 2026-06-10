@@ -37,3 +37,33 @@ fn search_finds_seeded_memory_lexically() {
     let hits = v.get("hits").and_then(Value::as_array).expect("hits array");
     assert!(!hits.is_empty(), "got: {out}");
 }
+
+#[test]
+fn identifier_query_finds_prose_only_memory_in_top_3() {
+    // Spec promise: searching the identifier `VecDimMismatch` must surface
+    // a memory whose body describes the "dim mismatch" in prose without
+    // ever containing the identifier verbatim. Exercises the router's
+    // subtoken OR tier end-to-end through the real binary.
+    let home = tempdir().expect("tempdir");
+    let body = "embedder returned wrong dim mismatch against the vec table";
+    Command::cargo_bin("comemory")
+        .expect("bin")
+        .env("COMEMORY_DATA_DIR", home.path())
+        .args(["save", "--kind", "bug", body])
+        .assert()
+        .success();
+
+    let assert = Command::cargo_bin("comemory")
+        .expect("bin")
+        .env("COMEMORY_DATA_DIR", home.path())
+        .args(["search", "VecDimMismatch", "--k", "3", "--json"])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let v: Value = serde_json::from_str(&out).expect("json");
+    let hits = v.get("hits").and_then(Value::as_array).expect("hits array");
+    assert!(
+        !hits.is_empty(),
+        "identifier query must reach the prose-only body, got: {out}"
+    );
+}

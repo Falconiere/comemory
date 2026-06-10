@@ -117,11 +117,51 @@ fn single_term_miss_does_not_trigger_relaxed_fallback() {
     fts::index_memory(&conn, "s1", "the oauth refresh race condition", "").expect("fts");
 
     let cfg = Config::defaults();
+    // A plain (non-splittable) single term skips the word-level OR tier
+    // (OR of one term is the strict query) and builds an empty subtoken
+    // expression, so the whole ladder stays empty.
     let hits = router::route(&cfg, &conn, "kubernetes", None, None).expect("route");
     assert!(
         hits.is_empty(),
         "single absent term must not fall back to OR"
     );
+}
+
+#[test]
+fn identifier_query_reaches_prose_body_via_subtoken_tier() {
+    // Spec scenario: querying the identifier `VecDimMismatch` must find a
+    // memory whose body talks about a "dim mismatch" without ever spelling
+    // the identifier verbatim. Strict tier misses (phrase over subtokens,
+    // non-consecutive in the body), word OR tier is skipped (1 term), so
+    // the subtoken OR tier must fire.
+    let dir = tempdir().expect("tempdir");
+    let conn = connection::open(dir.path().join("c.db")).expect("open");
+    let body = "embedder returned wrong dim mismatch against the vec table";
+    seed_memory(&conn, "id1", body);
+    fts::index_memory(&conn, "id1", body, "").expect("fts");
+
+    let cfg = Config::defaults();
+    let hits = router::route(&cfg, &conn, "VecDimMismatch", None, None).expect("route");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].memory_id, "id1");
+    assert_eq!(hits[0].source, Source::Lexical);
+}
+
+#[test]
+fn subtoken_tier_fires_when_word_or_tier_is_also_empty() {
+    // Multi-term query where neither whole word matches but one term's
+    // subtokens do: strict → empty, word OR → empty, subtoken OR → hit.
+    let dir = tempdir().expect("tempdir");
+    let conn = connection::open(dir.path().join("c.db")).expect("open");
+    let body = "embedder returned wrong dim mismatch against the vec table";
+    seed_memory(&conn, "id2", body);
+    fts::index_memory(&conn, "id2", body, "").expect("fts");
+
+    let cfg = Config::defaults();
+    let hits = router::route(&cfg, &conn, "VecDimMismatch kubernetes", None, None).expect("route");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].memory_id, "id2");
+    assert_eq!(hits[0].source, Source::Lexical);
 }
 
 #[test]
