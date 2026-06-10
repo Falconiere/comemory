@@ -34,10 +34,8 @@ pub fn run(conn: &mut Connection) -> Result<()> {
     apply(conn, "0001_schema_meta", M_BOOTSTRAP)?;
     apply(conn, "0002_v2_tables", M_V2)?;
     apply(conn, "0003_stats_tables", M_V3)?;
-    let v4_applied = apply(conn, "0004_v4_rank", M_V4)?;
-    if v4_applied {
-        backfill_memory_simhash(conn)?;
-    }
+    apply(conn, "0004_v4_rank", M_V4)?;
+    backfill_memory_simhash(conn)?;
     set_version(conn, CURRENT_VERSION)?;
     Ok(())
 }
@@ -46,7 +44,9 @@ pub fn run(conn: &mut Connection) -> Result<()> {
 /// `schema_meta`; returns `true` when the SQL was newly executed. The
 /// bootstrap migration is a special case: it creates `schema_meta`
 /// itself, so we cannot read from it before the migration runs. The SQL
-/// uses `CREATE TABLE IF NOT EXISTS`, which is idempotent on its own.
+/// uses `CREATE TABLE IF NOT EXISTS`, which is idempotent on its own —
+/// but it therefore always reports `true`, so never hang a
+/// run-exactly-once hook off the bootstrap's return value.
 fn apply(conn: &mut Connection, key: &str, sql: &str) -> Result<bool> {
     if key == "0001_schema_meta" {
         conn.execute_batch(sql)
@@ -72,22 +72,30 @@ fn apply(conn: &mut Connection, key: &str, sql: &str) -> Result<bool> {
 }
 
 /// Compute and store simhash for every memory that still has the
-/// DEFAULT 0 placeholder (one-shot after the v4 migration; also heals
-/// rows from interrupted runs).
-fn backfill_memory_simhash(conn: &Connection) -> Result<()> {
-    let mut stmt = conn.prepare("SELECT id, body FROM memories WHERE simhash = 0")?;
-    let rows: Vec<(String, String)> = stmt
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
-        .collect::<std::result::Result<_, _>>()?;
-    drop(stmt);
-    for (id, body) in rows {
-        let hash = crate::simhash::simhash64(crate::simhash::tokens(&body));
-        // SQLite INTEGER is i64; store the u64 bit pattern.
-        conn.execute(
-            "UPDATE memories SET simhash = ?1 WHERE id = ?2",
-            rusqlite::params![hash as i64, id],
-        )?;
+/// DEFAULT 0 placeholder left by the v4 migration. Runs unconditionally
+/// on every [`run`] so a crash between the migration commit and the
+/// backfill heals on the next open; once every row is hashed the
+/// `WHERE simhash = 0` scan returns nothing and this is a no-op. All
+/// updates commit in one transaction so a partial backfill never
+/// persists.
+fn backfill_memory_simhash(conn: &mut Connection) -> Result<()> {
+    let tx = conn.transaction()?;
+    {
+        let mut stmt = tx.prepare("SELECT id, body FROM memories WHERE simhash = 0")?;
+        let rows: Vec<(String, String)> = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<std::result::Result<_, _>>()?;
+        drop(stmt);
+        for (id, body) in rows {
+            let hash = crate::simhash::simhash64(crate::simhash::tokens(&body));
+            // SQLite INTEGER is i64; store the u64 bit pattern.
+            tx.execute(
+                "UPDATE memories SET simhash = ?1 WHERE id = ?2",
+                rusqlite::params![hash as i64, id],
+            )?;
+        }
     }
+    tx.commit()?;
     Ok(())
 }
 
