@@ -136,11 +136,14 @@ fn open_migrates_v3_db_to_v4() {
         ),
         0
     );
-    // ...and code_fts finds the symbol via a camelCase subtoken.
+    // ...and code_fts finds the symbol via a camelCase subtoken. The
+    // column-scoped query is the discriminating form: under the old
+    // unicode61 tokenizer `parseConfig` is a single symbol token, so
+    // `symbol:config` only matches after the identifier rebuild.
     assert_eq!(
         count(
             &conn,
-            "SELECT count(*) FROM code_fts WHERE code_fts MATCH 'config'"
+            "SELECT count(*) FROM code_fts WHERE code_fts MATCH 'symbol:config'"
         ),
         1
     );
