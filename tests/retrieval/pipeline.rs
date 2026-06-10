@@ -50,6 +50,29 @@ fn retrieval_hit_bumps_access_tracking() {
 }
 
 #[test]
+fn access_tracking_failure_does_not_break_reads() {
+    let (_d, conn) = seeded();
+    // Make every write fail: query_only rejects the access-tracking UPDATE
+    // while leaving the read path untouched.
+    conn.pragma_update(None, "query_only", true)
+        .expect("pragma");
+    let cfg = comemory::config::Config::defaults();
+    let out = search(&cfg, &conn, "sqlite busy", None, None)
+        .expect("search must succeed when access tracking cannot write");
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].memory_id, "aaaa0001");
+    // The bump itself was skipped, not silently rerouted somewhere else.
+    let count: i64 = conn
+        .query_row(
+            "SELECT access_count FROM memories WHERE id='aaaa0001'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("row");
+    assert_eq!(count, 0);
+}
+
+#[test]
 fn pipeline_cuts_to_configured_top_k() {
     let dir = tempfile::tempdir().expect("tempdir");
     let conn = comemory::store::connection::open(dir.path().join("c.db")).expect("open");
