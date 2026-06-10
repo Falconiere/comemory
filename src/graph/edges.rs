@@ -80,6 +80,20 @@ pub fn supersedes_chain(conn: &Connection, start: &str, max_depth: u32) -> Resul
     Ok(rows)
 }
 
+/// Delete every edge originating at `(kind, id)` (source side only). Used
+/// by the re-insert cleanup in `store::memory_row`: a re-save or rebuild of
+/// a memory must refresh the edges it *emits* without destroying incoming
+/// edges such as another memory's `supersedes` pointing at it — rebuild
+/// replays memories newest-first, so the superseder's edge is already in
+/// place when the superseded memory is inserted.
+pub fn delete_outgoing(conn: &Connection, kind: &str, id: &str) -> Result<()> {
+    conn.execute(
+        "DELETE FROM edges WHERE src_kind = ?1 AND src_id = ?2",
+        params![kind, id],
+    )?;
+    Ok(())
+}
+
 /// Delete every edge touching `(kind, id)`, either side. Used by
 /// soft-delete.
 pub fn delete_touching(conn: &Connection, kind: &str, id: &str) -> Result<()> {

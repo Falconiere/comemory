@@ -15,6 +15,16 @@ pub fn memory_id(body: &str) -> String {
     hex
 }
 
+/// True when `s` has the exact shape of a memory id produced by
+/// [`memory_id`]: eight lowercase hexadecimal characters. Used to validate
+/// caller-supplied id lists (e.g. `comemory save --supersedes`) before
+/// anything is written to disk.
+pub fn is_valid_memory_id(s: &str) -> bool {
+    s.len() == 8
+        && s.bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
 /// Compute the full 64-hex-char SHA-256 digest of `bytes`.
 ///
 /// Shared by `memory::store` (content_hash) and other crate modules that need a

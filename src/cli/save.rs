@@ -21,7 +21,7 @@ use serde::Serialize;
 use crate::cli::embedding_input;
 use crate::cli::resolve_data_dir;
 use crate::config::paths::Paths;
-use crate::memory::{Kind, MemoryStore};
+use crate::memory::{id, Kind, MemoryStore, Relations, SaveParams};
 use crate::output::tty;
 use crate::prelude::*;
 use crate::store::{connection, embed, memory_row, vector};
@@ -40,9 +40,13 @@ Examples:
   # Minimal note (kind defaults to `note`, no repo/tags)
   comemory save \"Remember: cargo nextest serializes the embedder group\"
 
+  # Replace an outdated memory: a1b2c3d4 is annotated `superseded_by` in
+  # search results and demoted in ranking (score_parts.supersede = 0.2)
+  comemory save \"new convention: pgbouncer in transaction mode\" --supersedes a1b2c3d4
+
   # Near-duplicate detection: if a similar memory exists, a TTY warning is
   # printed to stderr and --json output includes a `duplicate_of` field with
-  # the matching memory id. The save always proceeds — use `supersedes` to
+  # the matching memory id. The save always proceeds — use `--supersedes` to
   # mark the relationship if the new memory replaces the old one.";
 
 /// Arguments to `comemory save`. The positional `body` is optional — if omitted
@@ -67,6 +71,13 @@ pub struct Args {
     /// Quality rating 1..=5. Defaults to 3.
     #[arg(long, default_value_t = 3, value_parser = clap::value_parser!(u8).range(1..=5))]
     pub quality: u8,
+    /// Comma-separated 8-hex memory ids this memory replaces (e.g.
+    /// `a1b2c3d4,e5f6a7b8`). Recorded in the frontmatter
+    /// `relations.supersedes` list and materialized as `supersedes` edges,
+    /// so the older memories are demoted in ranking and annotated
+    /// `superseded_by` in search results.
+    #[arg(long, default_value = "")]
+    pub supersedes: String,
     /// Caller-supplied dense vector as a comma-separated float list. Length
     /// must equal the configured memory vector dim or the save fails with
     /// `vector dim mismatch`.
@@ -110,16 +121,10 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     // so feeding `--tags foo,foo` straight through would abort the save
     // transaction with a UNIQUE violation. Empty entries (`--tags ,foo`)
     // are dropped because tag rows must be non-empty per the schema.
-    let tags: Vec<String> = if a.tags.is_empty() {
-        Vec::new()
-    } else {
-        let mut seen = std::collections::HashSet::new();
-        a.tags
-            .split(',')
-            .map(|t| t.trim().to_string())
-            .filter(|t| !t.is_empty() && seen.insert(t.clone()))
-            .collect()
-    };
+    let tags = csv_unique(&a.tags);
+    // Validate `--supersedes` BEFORE anything touches disk so a malformed
+    // id list aborts with no markdown file and no DB rows.
+    let supersedes = parse_supersedes(&a.supersedes)?;
 
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
@@ -144,9 +149,22 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     // to supersede the hit.
     let duplicate_of = near_duplicate(&conn, &body);
 
-    // 1. Markdown atomic write (source of truth).
+    // 1. Markdown atomic write (source of truth). The `--supersedes` ids
+    //    land in frontmatter `relations.supersedes`, so the relationship
+    //    survives a `comemory rebuild` from markdown alone.
     let store = MemoryStore::new(paths.clone());
-    let rec = store.save(&body, a.kind, &a.repo, &tags, &a.author, a.quality)?;
+    let rec = store.save(SaveParams {
+        body: &body,
+        kind: a.kind,
+        repo: &a.repo,
+        tags: &tags,
+        author: &a.author,
+        quality: a.quality,
+        relations: Relations {
+            supersedes,
+            ..Relations::default()
+        },
+    })?;
 
     // A re-save of an identical body produces the same content-hash-derived
     // id, so the pre-save scan would otherwise report the memory as a
@@ -252,6 +270,36 @@ fn write_sqlite_mirror(
     }
     tx.commit()?;
     Ok(())
+}
+
+/// Split a comma-separated flag value into trimmed, non-empty, de-duplicated
+/// entries preserving first-mention order. Shared by `--tags` and
+/// `--supersedes` so both flags tolerate `a,,a , b` style input identically.
+fn csv_unique(raw: &str) -> Vec<String> {
+    if raw.is_empty() {
+        return Vec::new();
+    }
+    let mut seen = std::collections::HashSet::new();
+    raw.split(',')
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty() && seen.insert(t.clone()))
+        .collect()
+}
+
+/// Parse and validate the `--supersedes` CSV: every entry must be a
+/// well-formed 8-hex-lowercase memory id. The target memory is *not*
+/// required to exist — edges may dangle (same stance as cross-link refs)
+/// and every consumer JOINs on live `memories` rows.
+fn parse_supersedes(raw: &str) -> Result<Vec<String>> {
+    let ids = csv_unique(raw);
+    for entry in &ids {
+        if !id::is_valid_memory_id(entry) {
+            return Err(Error::Config(format!(
+                "--supersedes: invalid memory id `{entry}` (expected 8 lowercase hex chars)"
+            )));
+        }
+    }
+    Ok(ids)
 }
 
 fn read_stdin() -> Result<String> {

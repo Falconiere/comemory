@@ -58,6 +58,42 @@ fn supersedes_walk_is_transitive() {
     assert_eq!(chain, vec!["b".to_string(), "c".to_string()]);
 }
 
+/// `delete_outgoing` must remove only edges *originating* at the node:
+/// incoming edges (e.g. a newer memory's `supersedes` pointing at it) have
+/// to survive — `store::memory_row` relies on this when re-saving or
+/// rebuilding a memory that something else supersedes.
+#[test]
+fn delete_outgoing_keeps_incoming_edges() {
+    let conn = seed_db();
+    for (src, dst) in [("old1", "tag-x"), ("new1", "old1")] {
+        edges::insert(
+            &conn,
+            EdgeKey {
+                src_kind: "memory",
+                src_id: src,
+                dst_kind: if dst == "tag-x" { "tag" } else { "memory" },
+                dst_id: dst,
+                rel: if dst == "tag-x" {
+                    "tagged"
+                } else {
+                    "supersedes"
+                },
+            },
+        )
+        .expect("insert edge");
+    }
+
+    edges::delete_outgoing(&conn, "memory", "old1").expect("delete outgoing");
+
+    // old1's own tagged edge is gone...
+    assert!(edges::outgoing(&conn, "memory", "old1", "tagged")
+        .expect("outgoing")
+        .is_empty());
+    // ...but the incoming supersedes edge from new1 survives.
+    let incoming = edges::outgoing(&conn, "memory", "new1", "supersedes").expect("outgoing");
+    assert_eq!(incoming, vec![("memory".to_string(), "old1".to_string())]);
+}
+
 /// A cyclic supersedes graph (a→b, b→a) must not loop forever. UNION in the
 /// recursive CTE deduplicates (id, depth) tuples so the walk terminates at
 /// max_depth even when back-edges exist.

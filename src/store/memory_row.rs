@@ -3,8 +3,10 @@
 //! Both `cli::save` and `cli::rebuild` need to materialise a markdown record
 //! into the v0.2 SQLite mirror with byte-identical SQL: the `memories` row,
 //! every `memory_tags` row, the FTS5 index entry, and the graph edges
-//! (`in_repo`, `authored_by`, `tagged`, plus the `references_file` /
-//! `references_symbol` edges harvested from the body by [`cross_link`]).
+//! (`in_repo`, `authored_by`, `tagged`, the frontmatter relation edges
+//! `supersedes` / `conflicts_with` / `derived_from`, plus the
+//! `references_file` / `references_symbol` edges harvested from the body by
+//! [`cross_link`]).
 //!
 //! Save adds one extra step (`memory_vec` for the caller-supplied embedding)
 //! that rebuild deliberately skips — vectors are BYO and cannot be
@@ -30,8 +32,8 @@ use crate::store::fts;
 /// caller so save can reuse the already-computed values from `MemoryRecord`
 /// while rebuild recomputes them from the on-disk file), every
 /// `memory_tags` entry, the `memory_fts` row, and the v0.2 graph edges
-/// (`in_repo` / `authored_by` / `tagged` plus cross-link references parsed
-/// from the body).
+/// (`in_repo` / `authored_by` / `tagged`, the frontmatter relation edges,
+/// plus cross-link references parsed from the body).
 ///
 /// The vector branch is *not* handled here — `cli::save` inserts the
 /// optional `memory_vec` row inline after this helper returns. Rebuild
@@ -74,7 +76,13 @@ pub fn insert(
         "DELETE FROM memory_fts WHERE memory_id = ?1",
         rusqlite::params![&fm.id],
     )?;
-    edges::delete_touching(conn, "memory", &fm.id)?;
+    // Only *outgoing* edges are wiped: this memory re-emits its own
+    // in_repo/authored_by/tagged/relation/cross-link edges below, but
+    // incoming edges (e.g. a newer memory's `supersedes` pointing here)
+    // belong to their source memory and must survive a re-save — and a
+    // rebuild, which replays memories newest-first, so the superseder's
+    // edge lands before the superseded memory is inserted.
+    edges::delete_outgoing(conn, "memory", &fm.id)?;
     // Simhash is persisted at write time so the rank/diversify layers never
     // see the `DEFAULT 0` placeholder from migration 0004 on fresh saves.
     // The upsert arm refreshes it too: a re-save with a changed body must
@@ -138,8 +146,9 @@ pub fn insert(
 }
 
 /// Insert the v0.2 graph edges that accompany a saved or rebuilt memory:
-/// `in_repo`, `authored_by`, `tagged`, plus the `references_file` /
-/// `references_symbol` edges harvested from the body by
+/// `in_repo`, `authored_by`, `tagged`, the frontmatter relation edges
+/// (`supersedes` / `conflicts_with` / `derived_from`), plus the
+/// `references_file` / `references_symbol` edges harvested from the body by
 /// [`cross_link::extract_and_emit`].
 fn insert_edges(conn: &Connection, fm: &Frontmatter, tags: &[&str], body: &str) -> Result<()> {
     if !fm.repo.is_empty() {
@@ -177,6 +186,30 @@ fn insert_edges(conn: &Connection, fm: &Frontmatter, tags: &[&str], body: &str) 
                 rel: "tagged",
             },
         )?;
+    }
+    // Frontmatter relations become memory→memory edges so their consumers
+    // (rerank's supersede penalty, prune's superseded-and-forgotten rule,
+    // `edges::supersedes_chain`) actually see them. Targets are allowed to
+    // dangle — same stance as cross-link refs: the dst memory may not exist
+    // yet (or was hand-cited), and every reader JOINs on live `memories`
+    // rows, so a dangling edge is inert until the target lands.
+    for (rel, ids) in [
+        ("supersedes", &fm.relations.supersedes),
+        ("conflicts_with", &fm.relations.conflicts_with),
+        ("derived_from", &fm.relations.derived_from),
+    ] {
+        for dst_id in ids {
+            edges::insert(
+                conn,
+                EdgeKey {
+                    src_kind: "memory",
+                    src_id: &fm.id,
+                    dst_kind: "memory",
+                    dst_id,
+                    rel,
+                },
+            )?;
+        }
     }
     cross_link::extract_and_emit(conn, &fm.id, body)?;
     Ok(())

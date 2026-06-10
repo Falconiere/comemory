@@ -109,6 +109,34 @@ fn insert_persists_simhash_and_upsert_refreshes_it() {
 }
 
 #[test]
+fn frontmatter_relations_materialize_as_memory_edges() {
+    let dir = tempdir().expect("tempdir");
+    let mut conn = connection::open(dir.path().join("comemory.db")).expect("open");
+    let mut fm = sample_fm();
+    fm.relations = Relations {
+        supersedes: vec!["11111111".to_string()],
+        conflicts_with: vec!["22222222".to_string()],
+        derived_from: vec!["33333333".to_string()],
+    };
+
+    insert_body(&mut conn, &fm, "newer convention body");
+
+    // Direction: src = the memory carrying the relation, dst = the target.
+    // Targets are dangling (no `memories` row exists for them) — tolerated
+    // by design, same as cross-link refs.
+    assert_edge(&conn, "supersedes", "memory", "11111111");
+    assert_edge(&conn, "conflicts_with", "memory", "22222222");
+    assert_edge(&conn, "derived_from", "memory", "33333333");
+
+    // Re-insert (upsert path) must stay idempotent: still exactly one edge
+    // per relation, not duplicates.
+    insert_body(&mut conn, &fm, "newer convention body");
+    assert_edge(&conn, "supersedes", "memory", "11111111");
+    assert_edge(&conn, "conflicts_with", "memory", "22222222");
+    assert_edge(&conn, "derived_from", "memory", "33333333");
+}
+
+#[test]
 fn inserts_row_tags_fts_and_edges() {
     let dir = tempdir().expect("tempdir");
     let mut conn = connection::open(dir.path().join("comemory.db")).expect("open");

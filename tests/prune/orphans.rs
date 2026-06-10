@@ -1,5 +1,5 @@
 use comemory::config::paths::Paths;
-use comemory::memory::{Kind, MemoryStore};
+use comemory::memory::{Kind, MemoryStore, SaveParams};
 use comemory::prune::orphans;
 
 use super::common;
@@ -20,7 +20,11 @@ fn trashed_memory_shows_up_as_orphan() {
     let store = MemoryStore::new(paths.clone());
 
     let rec = store
-        .save("to be trashed", Kind::Note, "r", &[], "a", 3)
+        .save(SaveParams {
+            repo: "r",
+            author: "a",
+            ..SaveParams::new("to be trashed", Kind::Note)
+        })
         .unwrap();
     let _ = store.delete(&rec.frontmatter.id).unwrap();
 
@@ -39,7 +43,11 @@ fn live_memory_does_not_appear_as_orphan() {
     paths.ensure_dirs().unwrap();
     let store = MemoryStore::new(paths.clone());
     let _ = store
-        .save("still alive", Kind::Note, "r", &[], "a", 3)
+        .save(SaveParams {
+            repo: "r",
+            author: "a",
+            ..SaveParams::new("still alive", Kind::Note)
+        })
         .unwrap();
 
     // No trash entries exist — orphans must be empty.
