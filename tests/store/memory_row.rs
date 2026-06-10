@@ -137,6 +137,46 @@ fn frontmatter_relations_materialize_as_memory_edges() {
 }
 
 #[test]
+fn re_save_preserves_relation_edge_created_at() {
+    // The prune superseded-rule compares the target's `last_accessed`
+    // against the supersede edge's `created_at`. A re-save of the
+    // superseder wipes + re-emits its outgoing edges; the recurring
+    // relation edge must keep the original timestamp or every re-save
+    // would re-arm the rule.
+    let dir = tempdir().expect("tempdir");
+    let mut conn = connection::open(dir.path().join("comemory.db")).expect("open");
+    let mut fm = sample_fm();
+    fm.relations = Relations {
+        supersedes: vec!["11111111".to_string()],
+        ..Relations::default()
+    };
+
+    insert_body(&mut conn, &fm, "superseder body");
+    // Backdate the edge so a preserved-vs-refreshed timestamp is
+    // distinguishable from two inserts moments apart.
+    conn.execute(
+        "UPDATE edges SET created_at = '2025-01-01T00:00:00Z' \
+          WHERE rel = 'supersedes' AND src_id = ?1",
+        [ID],
+    )
+    .expect("backdate edge");
+
+    insert_body(&mut conn, &fm, "superseder body");
+
+    let stamp: String = conn
+        .query_row(
+            "SELECT created_at FROM edges WHERE rel = 'supersedes' AND src_id = ?1",
+            [ID],
+            |r| r.get(0),
+        )
+        .expect("edge survives re-save");
+    assert_eq!(
+        stamp, "2025-01-01T00:00:00Z",
+        "re-save must preserve the relation edge's created_at"
+    );
+}
+
+#[test]
 fn self_referential_relation_edges_are_skipped() {
     // Hand-edited markdown may carry `relations.supersedes: [<own id>]`;
     // rebuild replays it through this helper, which must drop the

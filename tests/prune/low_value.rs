@@ -95,6 +95,25 @@ fn superseded_but_accessed_since_survives() {
 }
 
 #[test]
+fn freshly_created_supersede_edge_is_not_flagged() {
+    let (_d, conn) = open_db();
+    // Same shape as the flagged case, but the edge was written just now —
+    // inside the 7-day grace window that protects freshly-rebuilt DBs
+    // (rebuild resets every edge timestamp to rebuild time).
+    seed_memory(&conn, "aaaa0001", 4, 10, "2025-06-01T00:00:00Z");
+    seed_memory(&conn, "aaaa0002", 4, 1, "2026-06-01T00:00:00Z");
+    conn.execute_batch(
+        "INSERT INTO edges(src_kind, src_id, dst_kind, dst_id, rel, created_at)
+         VALUES ('memory','aaaa0002','memory','aaaa0001','supersedes',
+                 strftime('%Y-%m-%dT%H:%M:%fZ','now'));",
+    )
+    .expect("seed fresh supersede edge");
+
+    let ids = detect(&conn, &Config::defaults()).expect("detect");
+    assert!(ids.is_empty(), "grace-window edge flagged: {ids:?}");
+}
+
+#[test]
 fn self_supersede_edge_does_not_flag() {
     let (_d, conn) = open_db();
     // Defense-in-depth: a hand-seeded self-edge (the writers refuse to
