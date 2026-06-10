@@ -1,9 +1,11 @@
 //! Integration tests for `comemory doctor`.
 //!
-//! Covers schema_version "3", embed_hint round-trip via COMEMORY_EMBED_HINT,
-//! and the v0.2 JSON report shape (data_dir, db_writable, sqlite_vec_loaded).
+//! Covers schema_version (pinned to `migrate::CURRENT_VERSION`), embed_hint
+//! round-trip via COMEMORY_EMBED_HINT, and the v0.2 JSON report shape
+//! (data_dir, db_writable, sqlite_vec_loaded).
 
 use assert_cmd::Command;
+use comemory::store::migrate::CURRENT_VERSION;
 use tempfile::TempDir;
 
 fn bin(home: &TempDir) -> Command {
@@ -13,13 +15,13 @@ fn bin(home: &TempDir) -> Command {
 }
 
 #[test]
-fn doctor_reports_schema_version_three_on_fresh_dir() {
+fn doctor_reports_current_schema_version_on_fresh_dir() {
     let home = TempDir::new().expect("tempdir");
     let assertion = bin(&home).arg("doctor").assert().success();
     let out = String::from_utf8(assertion.get_output().stdout.clone()).expect("utf8 stdout");
     assert!(
-        out.contains("schema_version") && out.contains(": 3"),
-        "doctor should report schema_version 3 on a fresh dir: {out:?}"
+        out.contains("schema_version") && out.contains(&format!(": {CURRENT_VERSION}")),
+        "doctor should report schema_version {CURRENT_VERSION} on a fresh dir: {out:?}"
     );
 }
 
@@ -31,7 +33,7 @@ fn doctor_json_emits_v2_report_shape() {
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
     assert!(v["data_dir"].is_string());
     assert_eq!(v["db_writable"].as_bool(), Some(true));
-    assert_eq!(v["schema_version"].as_str(), Some("3"));
+    assert_eq!(v["schema_version"].as_str(), Some(CURRENT_VERSION));
     assert_eq!(v["sqlite_vec_loaded"].as_bool(), Some(true));
     // embed_hint must be present (null when not set).
     assert!(
@@ -50,7 +52,7 @@ fn doctor_schema_version_persists_after_save() {
     let assertion = bin(&home).args(["--json", "doctor"]).assert().success();
     let stdout = String::from_utf8(assertion.get_output().stdout.clone()).expect("utf8 stdout");
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
-    assert_eq!(v["schema_version"].as_str(), Some("3"));
+    assert_eq!(v["schema_version"].as_str(), Some(CURRENT_VERSION));
 }
 
 #[test]

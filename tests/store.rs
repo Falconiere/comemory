@@ -21,6 +21,9 @@ mod memory_row;
 #[path = "store/migrate.rs"]
 mod migrate;
 
+#[path = "store/migrate_v4.rs"]
+mod migrate_v4;
+
 #[path = "store/schema.rs"]
 mod schema;
 
