@@ -36,8 +36,10 @@ fn open_db(home: &TempDir) -> Connection {
 }
 
 /// Like [`open_db`] but routes through `connection::open` so the
-/// `sqlite-vec` extension is loaded. Use this when the test needs to
-/// SELECT against `code_vec` or `memory_vec`.
+/// `sqlite-vec` extension and the `identifier` FTS5 tokenizer are
+/// available. Use this when the test needs to SELECT against
+/// `code_vec` / `memory_vec` or MATCH against the FTS tables (their v4
+/// DDL references `tokenize = 'identifier'`).
 fn open_db_with_vec(home: &TempDir) -> Connection {
     comemory::store::connection::open(home.path().join("comemory.db")).expect("open with vec0")
 }
@@ -111,7 +113,7 @@ fn rebuild_restores_tags_fts_and_edges() {
     save_rich_memory(&home);
     std::fs::remove_file(home.path().join("comemory.db")).expect("rm db");
     run_rebuild(&home);
-    let conn = open_db(&home);
+    let conn = open_db_with_vec(&home);
     assert_rebuilt_state(&conn);
 }
 
