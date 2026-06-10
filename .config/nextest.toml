@@ -1,8 +1,11 @@
 [test-groups]
 embedder = { max-threads = 1 }
 # The config test binary mutates process-global env vars (std::env::set_var /
-# remove_var) in its tests; nextest runs tests within a binary on separate
-# threads of one process, so they must be serialized to avoid env races.
+# remove_var). Under nextest each test runs in its own process, so env
+# mutations are already isolated; this group serializes the binary anyway as
+# defense-in-depth and to document the constraint — plain `cargo test` runs
+# test threads inside one shared process and needs `--test-threads=1` for
+# these tests, which this file cannot enforce.
 config-env = { max-threads = 1 }
 
 [[profile.default.overrides]]

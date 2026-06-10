@@ -273,169 +273,53 @@ impl Config {
                 self.prune.min_feedback = v;
             }
         }
-        Ok(self)
+        self.validate()
     }
 
-    /// Apply `COMEMORY_*` env-var overrides on top of `self`.
+    /// Enforce the documented rank/prune invariants.
     ///
-    /// Unlike the previous infallible variant, parse failures (non-numeric
-    /// `top_k` / thresholds, unknown `auto_reindex` mode, unknown boolean for
-    /// `auto_sync`) are now surfaced as `Error::Other` rather than silently
-    /// dropped. This catches typos at startup instead of letting them mask as
-    /// "defaults applied".
-    pub fn with_env(mut self) -> Result<Self> {
-        if let Ok(v) = std::env::var("COMEMORY_INDEXING_AUTO_REINDEX") {
-            self.indexing.auto_reindex = match v.as_str() {
-                "lazy" => AutoReindexMode::Lazy,
-                "hook" => AutoReindexMode::Hook,
-                "off" => AutoReindexMode::Off,
-                other => {
-                    return Err(Error::Other(format!(
-                        "invalid env var COMEMORY_INDEXING_AUTO_REINDEX: '{other}' (expected lazy|hook|off)"
-                    )));
-                }
-            };
+    /// Runs at the end of both [`Config::with_file`] and
+    /// [`Config::with_env`] so the file overlay and env overrides are
+    /// validated identically — `[rank] decay = -1.0` in config.toml fails
+    /// exactly like `COMEMORY_RANK_DECAY=-1.0`. Each message names both
+    /// the config field and its env var so the offending knob is
+    /// identifiable from either entry point.
+    pub(crate) fn validate(self) -> Result<Self> {
+        let d = self.rank.decay;
+        if !d.is_finite() || d < 0.0 {
+            return Err(Error::Config(format!(
+                "invalid rank.decay={d} (env COMEMORY_RANK_DECAY): must be a finite non-negative number"
+            )));
         }
-        if let Ok(v) = std::env::var("COMEMORY_RETRIEVAL_TOP_K") {
-            self.retrieval.top_k = v.parse::<usize>().map_err(|e| {
-                Error::Other(format!("invalid env var COMEMORY_RETRIEVAL_TOP_K: {e}"))
-            })?;
+        let (lo, hi) = self.rank.prior_clamp;
+        if !lo.is_finite() || !hi.is_finite() || lo <= 0.0 || lo > hi {
+            return Err(Error::Config(format!(
+                "invalid rank.prior_clamp={lo},{hi} (env COMEMORY_RANK_PRIOR_CLAMP): both values must be finite, lo > 0, and lo <= hi"
+            )));
         }
-        if let Ok(v) = std::env::var("COMEMORY_RETRIEVAL_MEMORY_THRESHOLD") {
-            self.retrieval.memory_threshold = v.parse::<f32>().map_err(|e| {
-                Error::Other(format!(
-                    "invalid env var COMEMORY_RETRIEVAL_MEMORY_THRESHOLD: {e}"
-                ))
-            })?;
+        let l = self.rank.mmr_lambda;
+        if !l.is_finite() || !(0.0..=1.0).contains(&l) {
+            return Err(Error::Config(format!(
+                "invalid rank.mmr_lambda={l} (env COMEMORY_RANK_MMR_LAMBDA): must be a finite value in [0.0, 1.0]"
+            )));
         }
-        if let Ok(v) = std::env::var("COMEMORY_RETRIEVAL_CODE_THRESHOLD") {
-            self.retrieval.code_threshold = v.parse::<f32>().map_err(|e| {
-                Error::Other(format!(
-                    "invalid env var COMEMORY_RETRIEVAL_CODE_THRESHOLD: {e}"
-                ))
-            })?;
+        let a = self.prune.min_activation;
+        if !a.is_finite() {
+            return Err(Error::Config(format!(
+                "invalid prune.min_activation={a} (env COMEMORY_PRUNE_MIN_ACTIVATION): must be a finite number"
+            )));
         }
-        if let Ok(v) = std::env::var("COMEMORY_RETRIEVAL_RRF_K") {
-            let parsed = v.parse::<f32>().map_err(|e| {
-                Error::Other(format!("invalid env var COMEMORY_RETRIEVAL_RRF_K: {e}"))
-            })?;
-            if !parsed.is_finite() || parsed <= 0.0 {
-                return Err(Error::Other(format!(
-                    "invalid env var COMEMORY_RETRIEVAL_RRF_K={v} must be a finite positive number"
-                )));
-            }
-            self.retrieval.rrf_k = parsed;
+        let f = self.prune.min_feedback;
+        if !f.is_finite() || !(0.0..=1.0).contains(&f) {
+            return Err(Error::Config(format!(
+                "invalid prune.min_feedback={f} (env COMEMORY_PRUNE_MIN_FEEDBACK): must be a finite value in [0.0, 1.0]"
+            )));
         }
-        if let Ok(v) = std::env::var("COMEMORY_GIT_AUTO_SYNC") {
-            self.git.auto_sync = match v.as_str() {
-                "true" | "1" | "yes" | "on" => true,
-                "false" | "0" | "no" | "off" => false,
-                other => {
-                    return Err(Error::Other(format!(
-                        "invalid env var COMEMORY_GIT_AUTO_SYNC: '{other}' (expected true|1|yes|on or false|0|no|off)"
-                    )));
-                }
-            };
-        }
-        // COMEMORY_VECTOR_DIM and COMEMORY_CODE_VECTOR_DIM are intentionally
-        // not honoured here. The authoritative dim lives in the `memory_vec`
-        // / `code_vec` vec0 DDL (`src/store/sql/0002_v2_tables.sql`) and is
-        // baked in at migration time; an env override would silently disagree
-        // with the vtab and surface as `VecDimMismatch` at first insert.
-        if let Ok(v) = std::env::var("COMEMORY_EMBED_HINT") {
-            self.embed_hint = Some(v);
-        }
-        // ── Rank knobs ───────────────────────────────────────────────────────
-        if let Ok(v) = std::env::var("COMEMORY_RANK_DECAY") {
-            let parsed = v
-                .parse::<f64>()
-                .map_err(|e| Error::Other(format!("invalid env var COMEMORY_RANK_DECAY: {e}")))?;
-            if !parsed.is_finite() || parsed < 0.0 {
-                return Err(Error::Other(format!(
-                    "invalid env var COMEMORY_RANK_DECAY={v} must be a finite non-negative number"
-                )));
-            }
-            self.rank.decay = parsed;
-        }
-        if let Ok(v) = std::env::var("COMEMORY_RANK_PRIOR_CLAMP") {
-            let parts: Vec<&str> = v.splitn(3, ',').collect();
-            if parts.len() != 2 {
-                return Err(Error::Other(format!(
-                    "invalid env var COMEMORY_RANK_PRIOR_CLAMP={v} expected \"lo,hi\" (two comma-separated finite numbers)"
-                )));
-            }
-            let lo = parts[0].trim().parse::<f64>().map_err(|e| {
-                Error::Other(format!(
-                    "invalid env var COMEMORY_RANK_PRIOR_CLAMP lo value: {e}"
-                ))
-            })?;
-            let hi = parts[1].trim().parse::<f64>().map_err(|e| {
-                Error::Other(format!(
-                    "invalid env var COMEMORY_RANK_PRIOR_CLAMP hi value: {e}"
-                ))
-            })?;
-            if !lo.is_finite() || !hi.is_finite() || lo <= 0.0 || lo > hi {
-                return Err(Error::Other(format!(
-                    "invalid env var COMEMORY_RANK_PRIOR_CLAMP={v}: both values must be finite, lo > 0, and lo <= hi"
-                )));
-            }
-            self.rank.prior_clamp = (lo, hi);
-        }
-        if let Ok(v) = std::env::var("COMEMORY_RANK_MMR_LAMBDA") {
-            let parsed = v.parse::<f64>().map_err(|e| {
-                Error::Other(format!("invalid env var COMEMORY_RANK_MMR_LAMBDA: {e}"))
-            })?;
-            if !parsed.is_finite() || !(0.0..=1.0).contains(&parsed) {
-                return Err(Error::Other(format!(
-                    "invalid env var COMEMORY_RANK_MMR_LAMBDA={v} must be a finite value in [0.0, 1.0]"
-                )));
-            }
-            self.rank.mmr_lambda = parsed;
-        }
-        // ── Prune scoring knobs ──────────────────────────────────────────────
-        if let Ok(v) = std::env::var("COMEMORY_PRUNE_MIN_ACTIVATION") {
-            let parsed = v.parse::<f64>().map_err(|e| {
-                Error::Other(format!(
-                    "invalid env var COMEMORY_PRUNE_MIN_ACTIVATION: {e}"
-                ))
-            })?;
-            if !parsed.is_finite() {
-                return Err(Error::Other(format!(
-                    "invalid env var COMEMORY_PRUNE_MIN_ACTIVATION={v} must be a finite number"
-                )));
-            }
-            self.prune.min_activation = parsed;
-        }
-        if let Ok(v) = std::env::var("COMEMORY_PRUNE_MIN_FEEDBACK") {
-            let parsed = v.parse::<f64>().map_err(|e| {
-                Error::Other(format!("invalid env var COMEMORY_PRUNE_MIN_FEEDBACK: {e}"))
-            })?;
-            if !parsed.is_finite() || !(0.0..=1.0).contains(&parsed) {
-                return Err(Error::Other(format!(
-                    "invalid env var COMEMORY_PRUNE_MIN_FEEDBACK={v} must be a finite value in [0.0, 1.0]"
-                )));
-            }
-            self.prune.min_feedback = parsed;
-        }
-        // ── Existing prune knobs, newly wired to env ─────────────────────────
-        if let Ok(v) = std::env::var("COMEMORY_PRUNE_BELOW_QUALITY") {
-            let parsed = v.parse::<u32>().map_err(|e| {
-                Error::Other(format!("invalid env var COMEMORY_PRUNE_BELOW_QUALITY: {e}"))
-            })?;
-            if !(1..=5).contains(&parsed) {
-                return Err(Error::Other(format!(
-                    "invalid env var COMEMORY_PRUNE_BELOW_QUALITY={v} must be in 1..=5"
-                )));
-            }
-            self.prune.low_value_default_below_quality = parsed;
-        }
-        if let Ok(v) = std::env::var("COMEMORY_PRUNE_UNUSED_SINCE_DAYS") {
-            let parsed = v.parse::<u32>().map_err(|e| {
-                Error::Other(format!(
-                    "invalid env var COMEMORY_PRUNE_UNUSED_SINCE_DAYS: {e}"
-                ))
-            })?;
-            self.prune.low_value_default_unused_since_days = parsed;
+        let q = self.prune.low_value_default_below_quality;
+        if !(1..=5).contains(&q) {
+            return Err(Error::Config(format!(
+                "invalid prune.low_value_default_below_quality={q} (env COMEMORY_PRUNE_BELOW_QUALITY): must be in 1..=5"
+            )));
         }
         Ok(self)
     }
