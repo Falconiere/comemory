@@ -19,7 +19,7 @@ use clap::Args as ClapArgs;
 use serde::Serialize;
 
 use crate::cli::embedding_input;
-use crate::cli::resolve_data_dir;
+use crate::cli::{csv_unique, parse_id_csv, resolve_data_dir};
 use crate::config::paths::Paths;
 use crate::memory::{id, Kind, MemoryStore, Relations, SaveParams};
 use crate::output::tty;
@@ -281,35 +281,17 @@ fn write_sqlite_mirror(
     Ok(())
 }
 
-/// Split a comma-separated flag value into trimmed, non-empty, de-duplicated
-/// entries preserving first-mention order. Shared by `--tags` and
-/// `--supersedes` so both flags tolerate `a,,a , b` style input identically.
-fn csv_unique(raw: &str) -> Vec<String> {
-    if raw.is_empty() {
-        return Vec::new();
-    }
-    let mut seen = std::collections::HashSet::new();
-    raw.split(',')
-        .map(|t| t.trim().to_string())
-        .filter(|t| !t.is_empty() && seen.insert(t.clone()))
-        .collect()
-}
-
-/// Parse and validate the `--supersedes` CSV: every entry must be a
-/// well-formed 8-hex-lowercase memory id and must not equal `self_id`
-/// (the content-derived id of the body being saved) — a memory cannot
-/// supersede itself, and a self-edge would permanently penalize the
-/// memory in ranking and flag it for prune. The target memory is *not*
-/// required to exist — edges may dangle (same stance as cross-link refs)
-/// and every consumer JOINs on live `memories` rows.
+/// Parse and validate the `--supersedes` CSV via the shared
+/// [`parse_id_csv`]: every entry must be a well-formed 8-hex-lowercase
+/// memory id and must not equal `self_id` (the content-derived id of the
+/// body being saved) — a memory cannot supersede itself, and a self-edge
+/// would permanently penalize the memory in ranking and flag it for
+/// prune. The target memory is *not* required to exist — edges may dangle
+/// (same stance as cross-link refs) and every consumer JOINs on live
+/// `memories` rows.
 fn parse_supersedes(raw: &str, self_id: &str) -> Result<Vec<String>> {
-    let ids = csv_unique(raw);
+    let ids = parse_id_csv(raw, "--supersedes")?;
     for entry in &ids {
-        if !id::is_valid_memory_id(entry) {
-            return Err(Error::Config(format!(
-                "--supersedes: invalid memory id `{entry}` (expected 8 lowercase hex chars)"
-            )));
-        }
         if entry == self_id {
             return Err(Error::Config(format!(
                 "--supersedes: a memory cannot supersede itself (`{entry}` is the id of the \

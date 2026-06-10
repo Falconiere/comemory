@@ -149,12 +149,10 @@ impl Config {
         if let Some(v) = env_u32("COMEMORY_PRUNE_BELOW_QUALITY")? {
             self.prune.low_value_default_below_quality = v;
         }
-        // Legacy knob: no longer consumed by low-value detection as of M1
-        // (activation replaced the calendar criterion); kept for
-        // back-compat and slated for removal in M2.
-        if let Some(v) = env_u32("COMEMORY_PRUNE_UNUSED_SINCE_DAYS")? {
-            self.prune.low_value_default_unused_since_days = v;
-        }
+        // COMEMORY_PRUNE_UNUSED_SINCE_DAYS is intentionally NOT honoured:
+        // the legacy `low_value_default_unused_since_days` knob has zero
+        // consumers as of M1 (activation replaced the calendar criterion),
+        // so wiring an env var to it would just be a silent no-op footgun.
         self.validate()
     }
 }

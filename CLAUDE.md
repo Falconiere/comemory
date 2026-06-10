@@ -118,7 +118,6 @@ environment (`Config::with_env`, in `src/config/env.rs`).
 | `COMEMORY_PRUNE_MIN_ACTIVATION` | Activation floor (ACT-R scale) below which a memory is prune-eligible. | `-2.0` |
 | `COMEMORY_PRUNE_MIN_FEEDBACK` | Beta-feedback ceiling (range `[0.0, 1.0]`) at or below which a memory is prune-eligible. | `0.25` |
 | `COMEMORY_PRUNE_BELOW_QUALITY` | Quality threshold (1..=5); memories at or below this value are prune candidates (used together with activation + feedback floors). | `2` |
-| `COMEMORY_PRUNE_UNUSED_SINCE_DAYS` | Legacy calendar-age knob. No longer consumed by low-value detection as of M1 (activation replaced the calendar criterion); retained for config back-compat. Slated for removal in M2. | `180` |
 
 The memory and code vector dims (1024 and 768) are baked into the
 `memory_vec` / `code_vec` vec0 DDL (`src/store/sql/0002_v2_tables.sql`)
