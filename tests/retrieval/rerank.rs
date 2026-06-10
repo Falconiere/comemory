@@ -94,6 +94,36 @@ fn missing_or_soft_deleted_hits_are_dropped() {
 }
 
 #[test]
+fn soft_deleted_superseder_does_not_penalize() {
+    let (_d, conn) = open_seeded();
+    // Kill the superseder: its edge must stop punishing aaaa0001.
+    conn.execute(
+        "UPDATE memories SET deleted_at = '2026-06-09T01:00:00Z' WHERE id = 'aaaa0002'",
+        [],
+    )
+    .expect("soft delete superseder");
+    let cfg = comemory::config::Config::defaults();
+    let out = rerank(&conn, &cfg, &[hit("aaaa0001", 1.0)]).expect("rerank");
+    assert_eq!(out[0].superseded_by, None);
+    assert!((out[0].parts.supersede - 1.0).abs() < 1e-12);
+}
+
+#[test]
+fn malformed_last_accessed_scores_as_fresh() {
+    let (_d, conn) = open_seeded();
+    conn.execute(
+        "UPDATE memories SET last_accessed = 'not-a-timestamp' WHERE id = 'aaaa0002'",
+        [],
+    )
+    .expect("corrupt timestamp");
+    let cfg = comemory::config::Config::defaults();
+    // No error, and the garbage timestamp scores as fresh: access_count 0
+    // + 0 days → activation 0 → boost exactly 1.0 (neutral).
+    let out = rerank(&conn, &cfg, &[hit("aaaa0002", 1.0)]).expect("rerank");
+    assert!((out[0].parts.activation - 1.0).abs() < 1e-12);
+}
+
+#[test]
 fn no_feedback_row_is_neutral() {
     let (_d, conn) = open_seeded();
     let cfg = comemory::config::Config::defaults();

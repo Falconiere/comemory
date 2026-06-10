@@ -95,11 +95,14 @@ pub fn rerank(conn: &Connection, cfg: &Config, hits: &[RoutedHit]) -> Result<Vec
             simhash: row.simhash,
         });
     }
+    // `total_cmp` keeps the comparator a total order even if an upstream
+    // stage ever leaks a NaN rrf score — `sort_by` panics on detected
+    // ordering violations (Rust 1.81+), so a non-total comparator would
+    // turn a bad score into a crash instead of a bad rank.
     out.sort_by(|a, b| {
         b.parts
             .final_score
-            .partial_cmp(&a.parts.final_score)
-            .unwrap_or(std::cmp::Ordering::Equal)
+            .total_cmp(&a.parts.final_score)
             .then_with(|| a.memory_id.cmp(&b.memory_id))
     });
     Ok(out)
@@ -118,56 +121,66 @@ struct Signals {
 }
 
 /// Fetch the ranking signals for one live memory. Returns `Ok(None)` when
-/// the row does not exist or is soft-deleted.
+/// the row does not exist or is soft-deleted. The statement is
+/// `prepare_cached` so the per-hit loop in [`rerank`] reuses one prepared
+/// statement instead of re-parsing the SQL for every candidate.
 fn memory_signals(conn: &Connection, id: &str) -> Result<Option<Signals>> {
-    conn.query_row(
+    let mut stmt = conn.prepare_cached(
         "SELECT m.quality, m.access_count, COALESCE(m.last_accessed, m.created_at),
                 m.body, m.simhash,
                 COALESCE(f.used_count, 0), COALESCE(f.irrelevant_count, 0)
            FROM memories m
            LEFT JOIN feedback f ON f.memory_id = m.id
           WHERE m.id = ?1 AND m.deleted_at IS NULL",
-        [id],
-        |r| {
-            Ok(Signals {
-                quality: r.get(0)?,
-                access_count: r.get::<_, i64>(1)?.max(0) as u64,
-                last_accessed: r.get(2)?,
-                body: r.get(3)?,
-                simhash: r.get::<_, i64>(4)? as u64,
-                used: r.get::<_, i64>(5)?.max(0) as u64,
-                irrelevant: r.get::<_, i64>(6)?.max(0) as u64,
-            })
-        },
-    )
+    )?;
+    stmt.query_row([id], |r| {
+        Ok(Signals {
+            quality: r.get(0)?,
+            access_count: r.get::<_, i64>(1)?.max(0) as u64,
+            last_accessed: r.get(2)?,
+            body: r.get(3)?,
+            simhash: r.get::<_, i64>(4)? as u64,
+            used: r.get::<_, i64>(5)?.max(0) as u64,
+            irrelevant: r.get::<_, i64>(6)?.max(0) as u64,
+        })
+    })
     .optional()
     .map_err(Error::from)
 }
 
 /// Find a *live* memory that supersedes `id`, if any. Edges from
 /// soft-deleted memories don't count: a deleted superseder must not keep
-/// punishing the memory it once replaced.
+/// punishing the memory it once replaced. `prepare_cached` for the same
+/// per-hit-loop reason as [`memory_signals`].
 fn live_superseder(conn: &Connection, id: &str) -> Result<Option<String>> {
-    conn.query_row(
+    let mut stmt = conn.prepare_cached(
         "SELECT e.src_id FROM edges e
            JOIN memories m ON m.id = e.src_id AND m.deleted_at IS NULL
           WHERE e.rel = 'supersedes' AND e.dst_kind = 'memory' AND e.dst_id = ?1
           LIMIT 1",
-        [id],
-        |r| r.get(0),
-    )
-    .optional()
-    .map_err(Error::from)
+    )?;
+    stmt.query_row([id], |r| r.get(0))
+        .optional()
+        .map_err(Error::from)
 }
 
 /// Whole days elapsed between an RFC 3339 timestamp and `now`, floored at
 /// zero. Both timestamp writers (`memory_row::iso_format` and the SQLite
 /// `strftime('%Y-%m-%dT%H:%M:%fZ', ...)` upsert arm) emit RFC 3339-parseable
 /// strings. An unparsable timestamp is treated as fresh — never punish a
-/// memory for a malformed clock value.
+/// memory for a malformed clock value — but it is logged: a value that
+/// fails to parse means a writer bug or row corruption, and silently
+/// scoring it as fresh would mask that.
 fn days_between(rfc3339: &str, now: OffsetDateTime) -> f64 {
     match OffsetDateTime::parse(rfc3339, &Rfc3339) {
         Ok(then) => ((now - then).whole_seconds() as f64 / 86_400.0).max(0.0),
-        Err(_) => 0.0,
+        Err(e) => {
+            tracing::warn!(
+                timestamp = rfc3339,
+                error = %e,
+                "rerank: malformed last_accessed/created_at; scoring as fresh"
+            );
+            0.0
+        }
     }
 }
