@@ -112,6 +112,34 @@ fn build_or_query_joins_terms() {
 }
 
 #[test]
+fn term_count_matches_what_the_builders_quote() {
+    // `" foo` is 2 raw whitespace terms but only 1 sanitized term: the
+    // lone quote sanitizes to empty and is dropped, exactly as the MATCH
+    // builders do.
+    assert_eq!(fts::term_count(r#"" foo"#), 1);
+    assert_eq!(fts::term_count("a b c"), 3);
+    assert_eq!(fts::term_count(""), 0);
+    assert_eq!(fts::term_count("\"\" \"\""), 0);
+}
+
+#[test]
+fn builders_clamp_to_first_32_sanitized_terms() {
+    let query = (0..40)
+        .map(|i| format!("t{i}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let strict = fts::build_match_query(&query);
+    // 32 terms × 2 quotes each; the prefix `*` lands on the 32nd kept term.
+    assert_eq!(strict.matches('"').count(), 64);
+    assert!(strict.ends_with(r#""t31"*"#), "got: {strict}");
+    assert!(!strict.contains("t32"));
+    let relaxed = fts::build_or_query(&query);
+    assert_eq!(relaxed.matches(" OR ").count(), 31);
+    assert!(!relaxed.contains('*'), "relaxed tier must not prefix-match");
+    assert_eq!(fts::term_count(&query), 32);
+}
+
+#[test]
 fn tag_match_outranks_body_match() {
     let dir = tempdir().expect("tempdir");
     let conn = connection::open(dir.path().join("c.db")).expect("open");
