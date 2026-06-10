@@ -10,7 +10,9 @@
 //!   `NEAR_DUP_HAMMING = 8` (measured via `comemory::simhash::of_body`;
 //!   pinned by `corpus_contains_exactly_one_near_duplicate_pair`). The pair
 //!   doubles as the conceptually supersede-able pair (same fact, different
-//!   wording). Every other pair sits at Hamming ≥ 19.
+//!   wording). Every other pair sits above `NEAR_DUP_HAMMING` (the guard
+//!   test enforces the count, not a specific floor; ≥ 19 was the measured
+//!   minimum when the corpus was authored).
 
 /// `(kind, body, tags, quality)` rows fed to `comemory save`.
 pub const CORPUS: &[(&str, &str, &str, u8)] = &[
