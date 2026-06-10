@@ -1886,7 +1886,7 @@ fn near_duplicate(conn: &rusqlite::Connection, body: &str) -> Option<String> {
         Ok(rows
             .into_iter()
             .map(|(id, h)| (id, crate::simhash::hamming64(hash, h as u64)))
-            .filter(|(_, d)| *d <= 3)
+            .filter(|(_, d)| *d <= crate::simhash::NEAR_DUP_HAMMING)
             .min_by_key(|(_, d)| *d)
             .map(|(id, _)| id))
     })();
@@ -1917,7 +1917,7 @@ TTY path: when `duplicate_of` is set, emit a warning line through the save emitt
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `cargo nextest run --all-features -E 'binary(cli) or binary(store)'`
-Expected: PASS. The SimHash near-dup threshold on short bodies can be touchy — if the two seeded bodies don't land within Hamming ≤ 3, lengthen the shared phrasing in the test (more overlapping tokens) rather than loosening the threshold.
+Expected: PASS. The SimHash near-dup threshold on short bodies can be touchy — the shared constant is `simhash::NEAR_DUP_HAMMING = 8` (amended from 3 after Task 7 calibration: a one-word edit on a 7-token body lands at Hamming ~16, so MEASURE the seeded pair with simhash64+hamming64 first and lengthen the shared phrasing until it lands ≤ 8, rather than loosening the threshold).
 
 - [ ] **Step 5: Commit**
 

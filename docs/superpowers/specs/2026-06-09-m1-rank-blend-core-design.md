@@ -113,8 +113,15 @@ query → router (existing) → candidates → rerank → diversify → emit
    - MMR with token-set Jaccard similarity, `λ = 0.7` (configurable):
      greedily pick the next result maximizing
      `λ·score − (1−λ)·max_similarity_to_picked`.
-   - SimHash near-duplicate collapse: Hamming distance ≤ 3 keeps only the
-     highest-scored member.
+   - SimHash near-duplicate collapse: Hamming distance ≤ 8 keeps only the
+     highest-scored member. (Amended from ≤ 3 during implementation:
+     empirical calibration over realistic short memory bodies showed a
+     median one-word edit lands at Hamming 8–16 for 5–12-token bodies,
+     while distinct-topic pairs stay ≥ ~11; threshold 3 only catches
+     near-exact duplicates. The shared constant
+     `simhash::NEAR_DUP_HAMMING = 8` is used by both the query-time
+     collapse and the save-time duplicate warning so there is one notion
+     of "near-dup".)
    - Cut to top-k (default 12, existing knob).
 
 4. **Save-time duplicate warning**: `comemory save` runs a SimHash check
