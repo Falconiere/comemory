@@ -361,3 +361,57 @@ fn bad_clamp_wrong_arity_is_an_error() {
         );
     }
 }
+
+#[test]
+fn prune_file_overlay_accepts_existing_fields() {
+    // Regression: PartialPruneConfig initially carried only the M1 scoring
+    // extensions (min_activation / min_feedback) under deny_unknown_fields,
+    // so a valid `[prune] trash_retention_days = 60` in config.toml
+    // hard-errored at startup. Every PruneConfig field must be overlayable.
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        "[prune]\n\
+         trash_retention_days = 60\n\
+         low_value_default_unused_since_days = 90\n\
+         low_value_default_below_quality = 4\n",
+    )
+    .expect("write config.toml");
+    let cfg = Config::defaults()
+        .with_file(&path)
+        .expect("existing prune keys in [prune] must parse and apply");
+    assert_eq!(cfg.prune.trash_retention_days, 60);
+    assert_eq!(cfg.prune.low_value_default_unused_since_days, 90);
+    assert_eq!(cfg.prune.low_value_default_below_quality, 4);
+    // Untouched keys keep their defaults.
+    assert_eq!(cfg.prune.min_activation, -2.0);
+    assert_eq!(cfg.prune.min_feedback, 0.25);
+}
+
+#[test]
+fn rank_and_prune_file_overlay_applies_scoring_knobs() {
+    // The [rank] section and the M1 prune scoring extensions are settable
+    // from config.toml; absent keys keep defaults.
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        "[rank]\n\
+         decay = 0.8\n\
+         mmr_lambda = 0.4\n\
+         [prune]\n\
+         min_activation = -3.0\n\
+         min_feedback = 0.1\n",
+    )
+    .expect("write config.toml");
+    let cfg = Config::defaults()
+        .with_file(&path)
+        .expect("rank + prune scoring keys must parse and apply");
+    assert!((cfg.rank.decay - 0.8).abs() < f64::EPSILON);
+    assert!((cfg.rank.mmr_lambda - 0.4).abs() < f64::EPSILON);
+    // prior_clamp absent from the file → default retained.
+    assert_eq!(cfg.rank.prior_clamp, (0.5, 2.0));
+    assert!((cfg.prune.min_activation - (-3.0)).abs() < f64::EPSILON);
+    assert!((cfg.prune.min_feedback - 0.1).abs() < f64::EPSILON);
+}
