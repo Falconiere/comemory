@@ -58,4 +58,24 @@ proptest! {
     fn no_nan_ever(n in 0u64..u64::MAX, days in -10.0f64..1.0e9, d in 0.0f64..10.0) {
         prop_assert!(activation(n, days, d).is_finite());
     }
+
+    #[test]
+    fn quality_boost_monotone_in_quality(q in 1u8..5) {
+        prop_assert!(quality_boost(q + 1, CLAMP) >= quality_boost(q, CLAMP));
+    }
+
+    #[test]
+    fn feedback_boost_monotone_in_beta(b in 0.0f64..1.0, delta in 0.0f64..1.0) {
+        prop_assert!(feedback_boost(b + delta, CLAMP) >= feedback_boost(b, CLAMP));
+    }
+
+    #[test]
+    fn activation_boost_monotone_in_activation(a in -100.0f64..100.0, delta in 0.0f64..100.0) {
+        prop_assert!(activation_boost(a + delta, CLAMP) >= activation_boost(a, CLAMP));
+    }
+
+    #[test]
+    fn used_votes_never_lower_feedback(u in 0u64..1000, i in 0u64..1000) {
+        prop_assert!(beta_feedback(u + 1, i) >= beta_feedback(u, i));
+    }
 }
