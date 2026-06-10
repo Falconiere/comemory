@@ -6,6 +6,13 @@
 use siphasher::sip::SipHasher24;
 use std::hash::{Hash, Hasher};
 
+/// Hamming radius treated as "same memory, different wording".
+/// Calibrated for short memory bodies: the median one-word edit lands at
+/// Hamming ≤ 8 for bodies of ≤ 12 tokens, while genuinely distinct topics
+/// sit at Hamming ≥ ~11. Shared by the query-time near-duplicate collapse
+/// (`retrieval::diversify`) and the save-time duplicate warning.
+pub const NEAR_DUP_HAMMING: u32 = 8;
+
 /// Compute the 64-bit SimHash of an iterator of tokens.
 pub fn simhash64<I, T>(tokens: I) -> u64
 where

@@ -5,13 +5,7 @@
 use std::collections::HashSet;
 
 use crate::retrieval::rerank::Reranked;
-use crate::simhash::hamming64;
-
-/// Hamming radius treated as "same memory, different wording".
-/// Short developer-memory bodies (8-20 tokens) produce ~8 differing bits
-/// for a one-word edit; a threshold of 8 collapses near-paraphrases while
-/// leaving genuinely different topics (Hamming ≥ 16) untouched.
-const NEAR_DUP_HAMMING: u32 = 8;
+use crate::simhash::{hamming64, NEAR_DUP_HAMMING};
 
 /// Collapse near-duplicates, then greedily select up to `top_k` items
 /// maximizing `lambda·score − (1−lambda)·max_jaccard_to_selected`.
@@ -69,9 +63,9 @@ fn mmr(items: Vec<Reranked>, lambda: f64, top_k: usize) -> Vec<Reranked> {
 
     while picked_idx.len() < top_k && !remaining.is_empty() {
         // Find the remaining candidate with the highest MMR score.
-        // On equal scores, prefer the lower index (= higher relevance) via
-        // the secondary comparison: `b_score.total_cmp(&a_score)` used as
-        // tie-break inverts the index ordering so smaller index wins.
+        // On equal scores the `ib.cmp(ia)` tie-break reverses the index
+        // ordering inside `max_by`, so the earlier (= more relevant)
+        // candidate wins the tie.
         let pos = remaining
             .iter()
             .enumerate()
