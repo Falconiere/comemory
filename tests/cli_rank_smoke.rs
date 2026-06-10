@@ -198,24 +198,27 @@ fn irrelevant_feedback_reorders_results() {
 
 /// `comemory rebuild` must not change lexical ranking. Ordered equality is
 /// deterministic here even though searches bump `access_count` and rebuild
-/// resets it: activation is `ln(max(n, 1))`, so counts 0 and 1 both yield
-/// exactly 0 — the single bump each pre-rebuild search applies is invisible
-/// to the score. The before/after sequences also see identical count states
-/// (q1's search bumps its top-3 before q2 runs, in both halves), no feedback
-/// is recorded (and rebuild wipes the feedback table anyway), and
-/// `created_at` survives the rebuild via frontmatter, so every score input
-/// is bit-for-bit comparable.
+/// resets it, because the two queries' top-3 sets are *disjoint* (asserted
+/// below, so corpus drift is caught): no memory is ever bumped twice, so
+/// every access count seen at scoring time is 0 or 1 — and activation is
+/// `ln(max(n, 1))`, which yields exactly 0 for both. The bumps are therefore
+/// score-invisible regardless of where `record_access` runs relative to
+/// scoring. No feedback is recorded (and rebuild wipes the feedback table
+/// anyway), and `created_at` survives the rebuild via frontmatter, so every
+/// score input is bit-for-bit comparable across the swap.
 #[test]
 fn rebuild_preserves_search_results() {
     let sandbox = Sandbox::new();
     let dir = sandbox.data_dir();
     save_corpus(&dir, &CORPUS[..6]);
 
-    // q1 resolves via the strict AND tier; q2 deliberately has no single
-    // memory matching all terms, falling through to the relaxed OR tier
-    // where several memories compete — a meaningful ordering to preserve.
+    // q1 resolves via the strict AND tier (only the pgbouncer memory matches
+    // all terms); q2 deliberately has no single memory matching all terms,
+    // falling through to the relaxed OR tier where several memories compete
+    // — a meaningful ordering to preserve. q2's terms avoid "postgres" so
+    // its OR tier cannot pull in q1's hit: the result sets stay disjoint.
     let q1 = "postgres pool exhausted";
-    let q2 = "postgres sqlite vectors";
+    let q2 = "sqlite fts5 vectors";
 
     let before1 = top_ids(&dir, q1);
     let before2 = top_ids(&dir, q2);
@@ -223,6 +226,13 @@ fn rebuild_preserves_search_results() {
     assert!(
         before2.len() >= 2,
         "q2 must rank multiple competitors before rebuild: {before2:?}"
+    );
+    // Disjointness underpins the counts-≤-1 → activation-0 invariant in the
+    // doc comment; if a corpus edit ever makes the sets overlap, fail loudly
+    // here instead of silently leaning on BM25 margins.
+    assert!(
+        before1.iter().all(|id| !before2.contains(id)),
+        "q1/q2 top-3 sets must be disjoint (q1: {before1:?}, q2: {before2:?})"
     );
 
     bin(&dir).args(["rebuild"]).assert().success();
