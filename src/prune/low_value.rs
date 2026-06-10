@@ -70,9 +70,17 @@ fn signal_rule(conn: &Connection, cfg: &Config, now: OffsetDateTime) -> Result<V
 /// replaced memory nobody has touched since its replacement is prune
 /// material regardless of how good it once was.
 fn superseded_rule(conn: &Connection) -> Result<Vec<String>> {
+    // The `<` compares timestamps as strings. That is sound here: both
+    // writer formats — `memory_row::iso_format` (Iso8601, 9-digit
+    // subseconds) and the SQLite `strftime('%Y-%m-%dT%H:%M:%fZ', ...)`
+    // upsert arm (3-digit) — share the fixed-width `YYYY-MM-DDTHH:MM:SS`
+    // UTC prefix, so lexicographic order matches chronological order to
+    // second granularity; only mixed-format sub-second ties could
+    // misorder, and this rule operates at days scale.
     let mut stmt = conn.prepare(
         "SELECT old.id FROM memories old
            JOIN edges e ON e.rel = 'supersedes'
+                       AND e.src_kind = 'memory'
                        AND e.dst_kind = 'memory' AND e.dst_id = old.id
            JOIN memories newer ON newer.id = e.src_id AND newer.deleted_at IS NULL
           WHERE old.deleted_at IS NULL

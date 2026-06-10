@@ -150,6 +150,78 @@ fn prune_apply_soft_deletes_low_value_memory() {
 }
 
 #[test]
+fn prune_apply_heals_half_deleted_memory_instead_of_wedging() {
+    // Wedge state: live `memories` row, markdown file already gone —
+    // producible by a crash inside `comemory delete` between its file
+    // move and its DB transaction. Prune apply must not abort on the
+    // NotFound: it heals the DB mirror, still processes every other
+    // flagged id, and emits the full report.
+    let home = TempDir::new().expect("tempdir");
+    let wedged = save_memory(&home, "wedged half-deleted body");
+    let normal = save_memory(&home, "normal prune candidate body");
+    make_prune_eligible(&home, &wedged);
+    make_prune_eligible(&home, &normal);
+
+    // Doctor the wedge: remove the markdown file but keep the DB row live.
+    let memories = home.path().join(".comemory/memories");
+    let md = std::fs::read_dir(&memories)
+        .expect("read memories dir")
+        .filter_map(std::result::Result::ok)
+        .find(|e| e.file_name().to_string_lossy().starts_with(&wedged))
+        .expect("wedged markdown file exists");
+    std::fs::remove_file(md.path()).expect("remove wedged markdown");
+
+    let assertion = bin(&home).args(["--json", "prune"]).assert().success();
+    let stdout = String::from_utf8(assertion.get_output().stdout.clone()).expect("utf8 stdout");
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
+    let mut flagged: Vec<&str> = v["low_value_memories"]
+        .as_array()
+        .expect("low_value_memories is array")
+        .iter()
+        .map(|x| x.as_str().expect("string entry"))
+        .collect();
+    flagged.sort_unstable();
+    let mut expected = vec![wedged.as_str(), normal.as_str()];
+    expected.sort_unstable();
+    assert_eq!(flagged, expected, "report must list both flagged ids");
+
+    // The normal candidate went through the full soft-delete path.
+    let trashed = std::fs::read_dir(memories.join(".trash"))
+        .expect("read .trash")
+        .filter_map(std::result::Result::ok)
+        .filter(|e| e.file_name().to_string_lossy().starts_with(&normal))
+        .count();
+    assert_eq!(trashed, 1, "normal candidate must land in .trash/");
+
+    // The wedged row was healed: deleted_at stamped despite the missing
+    // markdown.
+    let db = home.path().join(".comemory").join("comemory.db");
+    let conn = comemory::store::connection::open(db).expect("open mirror");
+    let deleted_at: Option<String> = conn
+        .query_row(
+            "SELECT deleted_at FROM memories WHERE id = ?1",
+            [wedged.as_str()],
+            |r| r.get(0),
+        )
+        .expect("wedged row still present");
+    assert!(
+        deleted_at.is_some(),
+        "wedged row must be stamped deleted_at"
+    );
+    drop(conn);
+
+    // And the wedge is gone for good: a follow-up prune flags nothing.
+    let assertion = bin(&home).args(["--json", "prune"]).assert().success();
+    let stdout = String::from_utf8(assertion.get_output().stdout.clone()).expect("utf8 stdout");
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
+    assert_eq!(
+        v["low_value_memories"].as_array().expect("array").len(),
+        0,
+        "healed wedge must not be re-flagged"
+    );
+}
+
+#[test]
 fn prune_dry_run_after_save_is_idempotent() {
     // Saving a memory creates `memory→{repo,author}` edges via the v0.2
     // mirror. Those edges are live (the source memory exists with

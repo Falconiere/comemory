@@ -38,10 +38,11 @@ use crate::store::connection;
 /// Example invocations shown at the bottom of `comemory prune --help`.
 pub const EXAMPLES: &str = "\
 Examples:
-  # Inspect candidates without mutating the DB
+  # Inspect candidates without mutating anything
   comemory prune --dry-run
 
-  # Apply orphan-edge + stale-code-symbol cleanup
+  # Apply: soft-delete low-value memories (markdown -> memories/.trash/)
+  # and clean up orphan edges + stale code symbols
   comemory prune
 
   # JSON output for CI/automation
@@ -135,7 +136,23 @@ fn scan(conn: &rusqlite::Connection, cfg: &Config) -> Result<Report> {
 /// vector and FTS rows that the KNN / BM25 path could still surface.
 fn apply(conn: &mut rusqlite::Connection, paths: &Paths, low_value_ids: &[String]) -> Result<()> {
     for id in low_value_ids {
-        delete::soft_delete(paths, conn, id)?;
+        match delete::soft_delete(paths, conn, id) {
+            Ok(_) => {}
+            // Half-deleted state: live DB row, markdown already gone —
+            // producible by a crash inside `delete` between its file move
+            // and its DB transaction. The markdown (source of truth)
+            // already says deleted, so heal the mirror side instead of
+            // aborting; otherwise detect re-flags the row every run and
+            // prune wedges forever on the same id.
+            Err(Error::NotFound(_)) => {
+                tracing::warn!(
+                    id = %id,
+                    "prune: markdown missing for flagged memory; healing DB mirror"
+                );
+                delete::mirror_soft_delete(conn, id)?;
+            }
+            Err(e) => return Err(e),
+        }
     }
     let tx = conn.transaction()?;
     tx.execute(
