@@ -55,6 +55,14 @@ pub fn hamming64(a: u64, b: u64) -> u32 {
 }
 
 /// Tokenize a snippet for SimHash input: lowercase alphanumeric runs.
+///
+/// Known asymmetry vs the FTS5 `identifier` tokenizer: this uses
+/// `to_ascii_lowercase`, so non-ASCII uppercase (e.g. `É`) is kept
+/// verbatim and "Café"/"café" hash differently, while FTS treats them
+/// as the same token. Aligning (Unicode lowercase + diacritic fold)
+/// changes every stored `memories.simhash` / `code_symbols.simhash`,
+/// so it needs a re-hash migration — scheduled for M2; do not change
+/// this function without one.
 pub fn tokens(snippet: &str) -> Vec<String> {
     snippet
         .chars()

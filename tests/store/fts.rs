@@ -319,3 +319,36 @@ fn code_symbol_match_outranks_snippet_match() {
         "symbol-column hit must outrank snippet hit"
     );
 }
+
+/// Pins the SQLite error-text contract behind `is_fts5_parse_error`: a
+/// genuinely malformed MATCH expression must classify as a parse error
+/// (so search downgrades to empty results), and a non-parse error must
+/// not. If a future SQLite/rusqlite bump changes the error wording,
+/// this fails at CI time instead of silently swallowing real errors.
+#[test]
+fn fts5_parse_error_classifier_matches_real_sqlite_errors() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let conn = comemory::store::connection::open(dir.path().join("c.db")).expect("open");
+
+    // Bare operator: real FTS5 parse error ("fts5: syntax error near ...").
+    // An unbalanced quote yields the different "unterminated string" text
+    // the classifier deliberately does NOT match — the builders strip
+    // quotes, so that shape is unreachable from built queries.
+    let parse_err = conn
+        .prepare("SELECT count(*) FROM memory_fts WHERE memory_fts MATCH 'AND'")
+        .and_then(|mut s| s.query_row([], |r| r.get::<_, i64>(0)))
+        .expect_err("malformed MATCH must error");
+    assert!(
+        comemory::store::fts::is_fts5_parse_error(&parse_err),
+        "classifier must accept a real FTS5 parse error, got: {parse_err}"
+    );
+
+    // Missing table: ordinary SQLite error, must NOT classify as parse.
+    let other_err = conn
+        .prepare("SELECT count(*) FROM no_such_table")
+        .expect_err("missing table must error");
+    assert!(
+        !comemory::store::fts::is_fts5_parse_error(&other_err),
+        "classifier must reject non-parse errors, got: {other_err}"
+    );
+}

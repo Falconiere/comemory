@@ -283,7 +283,7 @@ where
 ///   `near` token so an unrelated SQLite error whose message happens to
 ///   contain `syntax error` (e.g. a `SQLITE_CORRUPT` text on the FTS5
 ///   shadow table) doesn't silently truncate results to an empty success.
-fn is_fts5_parse_error(e: &rusqlite::Error) -> bool {
+pub fn is_fts5_parse_error(e: &rusqlite::Error) -> bool {
     let s = e.to_string().to_lowercase();
     s.starts_with("fts5:") || s.contains("syntax error near")
 }
