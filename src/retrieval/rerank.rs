@@ -152,13 +152,16 @@ fn memory_signals(conn: &Connection, id: &str) -> Result<Option<Signals>> {
 
 /// Find a *live* memory that supersedes `id`, if any. Edges from
 /// soft-deleted memories don't count: a deleted superseder must not keep
-/// punishing the memory it once replaced. `prepare_cached` for the same
-/// per-hit-loop reason as [`memory_signals`].
+/// punishing the memory it once replaced. Self-edges (`src_id = dst_id`)
+/// are ignored as defense-in-depth — the writers refuse to create them,
+/// but a hand-seeded cycle must not permanently penalize its own memory.
+/// `prepare_cached` for the same per-hit-loop reason as [`memory_signals`].
 fn live_superseder(conn: &Connection, id: &str) -> Result<Option<String>> {
     let mut stmt = conn.prepare_cached(
         "SELECT e.src_id FROM edges e
            JOIN memories m ON m.id = e.src_id AND m.deleted_at IS NULL
           WHERE e.rel = 'supersedes' AND e.dst_kind = 'memory' AND e.dst_id = ?1
+            AND e.src_id <> e.dst_id
           LIMIT 1",
     )?;
     stmt.query_row([id], |r| r.get(0))

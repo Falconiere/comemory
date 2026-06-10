@@ -95,6 +95,23 @@ fn superseded_but_accessed_since_survives() {
 }
 
 #[test]
+fn self_supersede_edge_does_not_flag() {
+    let (_d, conn) = open_db();
+    // Defense-in-depth: a hand-seeded self-edge (the writers refuse to
+    // create one) must not make the memory "superseded and forgotten" —
+    // quality 4 keeps it clear of the signal rule.
+    seed_memory(&conn, "aaaa0001", 4, 10, "2025-06-01T00:00:00Z");
+    conn.execute_batch(
+        "INSERT INTO edges(src_kind, src_id, dst_kind, dst_id, rel, created_at)
+         VALUES ('memory','aaaa0001','memory','aaaa0001','supersedes','2026-01-01T00:00:00Z');",
+    )
+    .expect("seed self edge");
+
+    let ids = detect(&conn, &Config::defaults()).expect("detect");
+    assert!(ids.is_empty(), "self-superseded memory flagged: {ids:?}");
+}
+
+#[test]
 fn soft_deleted_superseder_does_not_flag() {
     let (_d, conn) = open_db();
     seed_memory(&conn, "aaaa0001", 4, 10, "2025-06-01T00:00:00Z");

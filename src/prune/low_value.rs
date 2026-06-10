@@ -82,6 +82,7 @@ fn superseded_rule(conn: &Connection) -> Result<Vec<String>> {
            JOIN edges e ON e.rel = 'supersedes'
                        AND e.src_kind = 'memory'
                        AND e.dst_kind = 'memory' AND e.dst_id = old.id
+                       AND e.src_id <> e.dst_id
            JOIN memories newer ON newer.id = e.src_id AND newer.deleted_at IS NULL
           WHERE old.deleted_at IS NULL
             AND COALESCE(old.last_accessed, old.created_at) < e.created_at",

@@ -302,6 +302,32 @@ fn distinct_save_tty_emits_no_warning() {
 }
 
 #[test]
+fn identical_resave_reports_second_closest_near_dup() {
+    // Fix 8 regression: the near-dup scan excludes the body's own
+    // content-derived id BEFORE the closest-hit selection, so an identical
+    // re-save surfaces the second-closest live near-dup instead of
+    // self-matching (which the old post-save filter silently dropped,
+    // yielding no duplicate_of at all).
+    let home = tempdir().expect("tempdir");
+    let first = save_json(&home, DUP_BODY_A);
+    let first_id = first["id"].as_str().expect("id string").to_string();
+
+    let second = save_json(&home, DUP_BODY_B);
+    let second_id = second["id"].as_str().expect("id string").to_string();
+    assert_eq!(second["duplicate_of"].as_str(), Some(first_id.as_str()));
+
+    // Identical re-save of A: its own row is excluded, so B (the real
+    // near-dup) must surface.
+    let resave = save_json(&home, DUP_BODY_A);
+    assert_eq!(resave["id"].as_str(), Some(first_id.as_str()));
+    assert_eq!(
+        resave["duplicate_of"].as_str(),
+        Some(second_id.as_str()),
+        "identical re-save must report the second-closest live near-dup: {resave}",
+    );
+}
+
+#[test]
 fn save_rejects_wrong_dim_vector() {
     let home = tempdir().expect("tempdir");
     let bad = vectors::vector("seed", 16);
@@ -460,6 +486,42 @@ fn rebuild_rematerializes_supersedes_edge_from_markdown() {
         "rebuild must rematerialize the supersedes edge from frontmatter",
     );
     assert_supersede_search_contract(&home, &old_id, &new_id);
+}
+
+#[test]
+fn save_rejects_self_supersede() {
+    // Fix 2 regression: re-saving an identical body with --supersedes set
+    // to its own content-hash id used to create a self-edge A→A that
+    // permanently 0.2x-penalized the memory and flagged it for prune. The
+    // save must now abort before any write.
+    let home = tempdir().expect("tempdir");
+    let first = save_json(&home, SUP_BODY_OLD);
+    let own_id = first["id"].as_str().expect("id string").to_string();
+
+    let assertion = Command::cargo_bin("comemory")
+        .expect("bin")
+        .env("COMEMORY_DATA_DIR", home.path())
+        .args([
+            "save",
+            "--kind",
+            "note",
+            "--supersedes",
+            &own_id,
+            SUP_BODY_OLD,
+        ])
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&assertion.get_output().stderr).to_string();
+    assert!(
+        stderr.contains("cannot supersede itself"),
+        "stderr should explain the self-supersede rejection, got: {stderr}",
+    );
+    // No self-edge was written.
+    assert_eq!(
+        supersedes_edge_count(&home, &own_id, &own_id),
+        0,
+        "self-supersede must not write an edge",
+    );
 }
 
 #[test]

@@ -199,6 +199,19 @@ fn insert_edges(conn: &Connection, fm: &Frontmatter, tags: &[&str], body: &str) 
         ("derived_from", &fm.relations.derived_from),
     ] {
         for dst_id in ids {
+            // Self-referential relations are skipped: a `supersedes` self-edge
+            // would mark the memory as superseded by itself (permanent rank
+            // penalty + prune flag). `cli::save` rejects this up front; the
+            // guard here protects rebuild from hand-edited markdown carrying
+            // the cycle.
+            if dst_id == &fm.id {
+                tracing::warn!(
+                    memory_id = %fm.id,
+                    rel,
+                    "skipping self-referential relation edge from frontmatter"
+                );
+                continue;
+            }
             edges::insert(
                 conn,
                 EdgeKey {

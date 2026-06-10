@@ -137,6 +137,38 @@ fn frontmatter_relations_materialize_as_memory_edges() {
 }
 
 #[test]
+fn self_referential_relation_edges_are_skipped() {
+    // Hand-edited markdown may carry `relations.supersedes: [<own id>]`;
+    // rebuild replays it through this helper, which must drop the
+    // self-edge (it would otherwise permanently penalize the memory in
+    // rerank and flag it for prune) while keeping the valid relations.
+    let dir = tempdir().expect("tempdir");
+    let mut conn = connection::open(dir.path().join("comemory.db")).expect("open");
+    let mut fm = sample_fm();
+    fm.relations = Relations {
+        supersedes: vec![ID.to_string()],
+        derived_from: vec!["33333333".to_string()],
+        ..Relations::default()
+    };
+
+    insert_body(&mut conn, &fm, "body with a self relation");
+
+    let self_edges: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM edges WHERE src_kind = 'memory' AND src_id = ?1 \
+               AND dst_kind = 'memory' AND dst_id = ?1",
+            [ID],
+            |r| r.get(0),
+        )
+        .expect("count self edges");
+    assert_eq!(
+        self_edges, 0,
+        "self-referential relation edge must be skipped"
+    );
+    assert_edge(&conn, "derived_from", "memory", "33333333");
+}
+
+#[test]
 fn inserts_row_tags_fts_and_edges() {
     let dir = tempdir().expect("tempdir");
     let mut conn = connection::open(dir.path().join("comemory.db")).expect("open");
