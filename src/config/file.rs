@@ -22,6 +22,27 @@ struct PartialConfig {
     /// `comemory doctor` and echoed back verbatim. Not interpreted by
     /// comemory itself.
     embed_hint: Option<String>,
+    /// Optional file-overlay for ranking knobs. Absent keys leave defaults.
+    rank: Option<PartialRankConfig>,
+    /// Optional file-overlay for prune scoring knobs. Absent keys leave defaults.
+    prune: Option<PartialPruneConfig>,
+}
+
+/// File-overlay partial for [`RankConfig`]. All fields optional.
+#[derive(Debug, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct PartialRankConfig {
+    decay: Option<f64>,
+    prior_clamp: Option<(f64, f64)>,
+    mmr_lambda: Option<f64>,
+}
+
+/// File-overlay partial for prune scoring extensions. All fields optional.
+#[derive(Debug, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct PartialPruneConfig {
+    min_activation: Option<f64>,
+    min_feedback: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -89,11 +110,45 @@ fn default_code_vector_dim() -> usize {
     768
 }
 
+/// Ranking knobs for the rerank/diversify pipeline (M1).
+///
+/// These values are consumed by `retrieval::rank` and the ACT-R decay scorer.
+/// Defaults are tuned for typical developer-memory workloads; operators can
+/// override via env vars or a `[rank]` section in `config.toml`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RankConfig {
+    /// ACT-R decay exponent `d` in `ln(n) − d·ln(days + 1)`.
+    ///
+    /// Must be ≥ 0. Higher values decay older memories faster.
+    /// Default: `0.5` (moderate recency preference).
+    pub decay: f64,
+    /// Bounds `(lo, hi)` applied to every rerank prior multiplier.
+    ///
+    /// Both values must be finite; `lo` must be > 0 and ≤ `hi`.
+    /// Default: `(0.5, 2.0)`.
+    pub prior_clamp: (f64, f64),
+    /// MMR relevance-vs-diversity trade-off in `[0.0, 1.0]`.
+    ///
+    /// `1.0` = pure relevance (no diversification); `0.0` = pure diversity.
+    /// Default: `0.7` (lean toward relevance).
+    pub mmr_lambda: f64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PruneConfig {
     pub trash_retention_days: u32,
     pub low_value_default_unused_since_days: u32,
     pub low_value_default_below_quality: u32,
+    /// Activation floor (ACT-R scale) below which a memory is prune-eligible.
+    ///
+    /// Memories whose computed activation falls below this threshold are
+    /// candidates for soft-deletion. Default: `-2.0`.
+    pub min_activation: f64,
+    /// Beta-feedback ceiling at or below which a memory is prune-eligible.
+    ///
+    /// Range `[0.0, 1.0]`. A memory with cumulative feedback ≤ this value
+    /// is considered low-value. Default: `0.25`.
+    pub min_feedback: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -108,6 +163,7 @@ pub struct Config {
     pub embeddings: EmbeddingsConfig,
     pub indexing: IndexingConfig,
     pub retrieval: RetrievalConfig,
+    pub rank: RankConfig,
     pub prune: PruneConfig,
     pub output: OutputConfig,
     /// Free-form caller-set hint identifying the embedder that produced the
@@ -143,10 +199,17 @@ impl Config {
                 memory_vector_dim: default_memory_vector_dim(),
                 code_vector_dim: default_code_vector_dim(),
             },
+            rank: RankConfig {
+                decay: 0.5,
+                prior_clamp: (0.5, 2.0),
+                mmr_lambda: 0.7,
+            },
             prune: PruneConfig {
                 trash_retention_days: 30,
                 low_value_default_unused_since_days: 180,
                 low_value_default_below_quality: 2,
+                min_activation: -2.0,
+                min_feedback: 0.25,
             },
             output: OutputConfig {
                 json: false,
@@ -174,6 +237,25 @@ impl Config {
             toml::from_str(&raw).map_err(|e| Error::Config(format!("config.toml: {e}")))?;
         if let Some(hint) = partial.embed_hint {
             self.embed_hint = Some(hint);
+        }
+        if let Some(pr) = partial.rank {
+            if let Some(v) = pr.decay {
+                self.rank.decay = v;
+            }
+            if let Some(v) = pr.prior_clamp {
+                self.rank.prior_clamp = v;
+            }
+            if let Some(v) = pr.mmr_lambda {
+                self.rank.mmr_lambda = v;
+            }
+        }
+        if let Some(pp) = partial.prune {
+            if let Some(v) = pp.min_activation {
+                self.prune.min_activation = v;
+            }
+            if let Some(v) = pp.min_feedback {
+                self.prune.min_feedback = v;
+            }
         }
         Ok(self)
     }
@@ -246,6 +328,98 @@ impl Config {
         // with the vtab and surface as `VecDimMismatch` at first insert.
         if let Ok(v) = std::env::var("COMEMORY_EMBED_HINT") {
             self.embed_hint = Some(v);
+        }
+        // ── Rank knobs ───────────────────────────────────────────────────────
+        if let Ok(v) = std::env::var("COMEMORY_RANK_DECAY") {
+            let parsed = v
+                .parse::<f64>()
+                .map_err(|e| Error::Other(format!("invalid env var COMEMORY_RANK_DECAY: {e}")))?;
+            if !parsed.is_finite() || parsed < 0.0 {
+                return Err(Error::Other(format!(
+                    "invalid env var COMEMORY_RANK_DECAY={v} must be a finite non-negative number"
+                )));
+            }
+            self.rank.decay = parsed;
+        }
+        if let Ok(v) = std::env::var("COMEMORY_RANK_PRIOR_CLAMP") {
+            let parts: Vec<&str> = v.splitn(3, ',').collect();
+            if parts.len() != 2 {
+                return Err(Error::Other(format!(
+                    "invalid env var COMEMORY_RANK_PRIOR_CLAMP={v} expected \"lo,hi\" (two comma-separated finite numbers)"
+                )));
+            }
+            let lo = parts[0].trim().parse::<f64>().map_err(|e| {
+                Error::Other(format!(
+                    "invalid env var COMEMORY_RANK_PRIOR_CLAMP lo value: {e}"
+                ))
+            })?;
+            let hi = parts[1].trim().parse::<f64>().map_err(|e| {
+                Error::Other(format!(
+                    "invalid env var COMEMORY_RANK_PRIOR_CLAMP hi value: {e}"
+                ))
+            })?;
+            if !lo.is_finite() || !hi.is_finite() || lo <= 0.0 || lo > hi {
+                return Err(Error::Other(format!(
+                    "invalid env var COMEMORY_RANK_PRIOR_CLAMP={v}: both values must be finite, lo > 0, and lo <= hi"
+                )));
+            }
+            self.rank.prior_clamp = (lo, hi);
+        }
+        if let Ok(v) = std::env::var("COMEMORY_RANK_MMR_LAMBDA") {
+            let parsed = v.parse::<f64>().map_err(|e| {
+                Error::Other(format!("invalid env var COMEMORY_RANK_MMR_LAMBDA: {e}"))
+            })?;
+            if !parsed.is_finite() || !(0.0..=1.0).contains(&parsed) {
+                return Err(Error::Other(format!(
+                    "invalid env var COMEMORY_RANK_MMR_LAMBDA={v} must be a finite value in [0.0, 1.0]"
+                )));
+            }
+            self.rank.mmr_lambda = parsed;
+        }
+        // ── Prune scoring knobs ──────────────────────────────────────────────
+        if let Ok(v) = std::env::var("COMEMORY_PRUNE_MIN_ACTIVATION") {
+            let parsed = v.parse::<f64>().map_err(|e| {
+                Error::Other(format!(
+                    "invalid env var COMEMORY_PRUNE_MIN_ACTIVATION: {e}"
+                ))
+            })?;
+            if !parsed.is_finite() {
+                return Err(Error::Other(format!(
+                    "invalid env var COMEMORY_PRUNE_MIN_ACTIVATION={v} must be a finite number"
+                )));
+            }
+            self.prune.min_activation = parsed;
+        }
+        if let Ok(v) = std::env::var("COMEMORY_PRUNE_MIN_FEEDBACK") {
+            let parsed = v.parse::<f64>().map_err(|e| {
+                Error::Other(format!("invalid env var COMEMORY_PRUNE_MIN_FEEDBACK: {e}"))
+            })?;
+            if !parsed.is_finite() || !(0.0..=1.0).contains(&parsed) {
+                return Err(Error::Other(format!(
+                    "invalid env var COMEMORY_PRUNE_MIN_FEEDBACK={v} must be a finite value in [0.0, 1.0]"
+                )));
+            }
+            self.prune.min_feedback = parsed;
+        }
+        // ── Existing prune knobs, newly wired to env ─────────────────────────
+        if let Ok(v) = std::env::var("COMEMORY_PRUNE_BELOW_QUALITY") {
+            let parsed = v.parse::<u32>().map_err(|e| {
+                Error::Other(format!("invalid env var COMEMORY_PRUNE_BELOW_QUALITY: {e}"))
+            })?;
+            if !(1..=5).contains(&parsed) {
+                return Err(Error::Other(format!(
+                    "invalid env var COMEMORY_PRUNE_BELOW_QUALITY={v} must be in 1..=5"
+                )));
+            }
+            self.prune.low_value_default_below_quality = parsed;
+        }
+        if let Ok(v) = std::env::var("COMEMORY_PRUNE_UNUSED_SINCE_DAYS") {
+            let parsed = v.parse::<u32>().map_err(|e| {
+                Error::Other(format!(
+                    "invalid env var COMEMORY_PRUNE_UNUSED_SINCE_DAYS: {e}"
+                ))
+            })?;
+            self.prune.low_value_default_unused_since_days = parsed;
         }
         Ok(self)
     }

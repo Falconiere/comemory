@@ -1,4 +1,4 @@
-use comemory::config::file::{AutoReindexMode, Config};
+use comemory::config::file::{AutoReindexMode, Config, PruneConfig, RankConfig};
 
 #[test]
 fn defaults_match_spec() {
@@ -179,4 +179,185 @@ fn env_embed_hint_overrides_apply() {
     std::env::remove_var("COMEMORY_EMBED_HINT");
     let cfg = c.expect("embed hint override must succeed");
     assert_eq!(cfg.embed_hint.as_deref(), Some("ollama:nomic-embed-text"));
+}
+
+// ── RankConfig + PruneConfig extension tests ─────────────────────────────────
+
+#[test]
+fn rank_config_is_accessible() {
+    // RankConfig and PruneConfig are public items re-exported from config::file.
+    // Verify the types exist and their fields compile.
+    let _r: RankConfig = Config::defaults().rank;
+    let _p: PruneConfig = Config::defaults().prune;
+}
+
+#[test]
+fn rank_defaults() {
+    let cfg = Config::defaults();
+    assert_eq!(cfg.rank.decay, 0.5);
+    assert_eq!(cfg.rank.prior_clamp, (0.5, 2.0));
+    assert_eq!(cfg.rank.mmr_lambda, 0.7);
+    assert_eq!(cfg.prune.min_activation, -2.0);
+    assert_eq!(cfg.prune.min_feedback, 0.25);
+}
+
+#[test]
+fn rank_env_overrides() {
+    // All five new rank/prune env vars must be picked up by with_env().
+    std::env::set_var("COMEMORY_RANK_DECAY", "0.7");
+    std::env::set_var("COMEMORY_RANK_PRIOR_CLAMP", "0.6,1.8");
+    std::env::set_var("COMEMORY_RANK_MMR_LAMBDA", "0.5");
+    std::env::set_var("COMEMORY_PRUNE_MIN_ACTIVATION", "-1.5");
+    std::env::set_var("COMEMORY_PRUNE_MIN_FEEDBACK", "0.3");
+    let result = Config::defaults().with_env();
+    std::env::remove_var("COMEMORY_RANK_DECAY");
+    std::env::remove_var("COMEMORY_RANK_PRIOR_CLAMP");
+    std::env::remove_var("COMEMORY_RANK_MMR_LAMBDA");
+    std::env::remove_var("COMEMORY_PRUNE_MIN_ACTIVATION");
+    std::env::remove_var("COMEMORY_PRUNE_MIN_FEEDBACK");
+    let cfg = result.expect("all valid rank/prune env vars must succeed");
+    assert!((cfg.rank.decay - 0.7).abs() < f64::EPSILON);
+    assert_eq!(cfg.rank.prior_clamp, (0.6, 1.8));
+    assert!((cfg.rank.mmr_lambda - 0.5).abs() < f64::EPSILON);
+    assert!((cfg.prune.min_activation - (-1.5)).abs() < f64::EPSILON);
+    assert!((cfg.prune.min_feedback - 0.3).abs() < f64::EPSILON);
+}
+
+#[test]
+fn bad_clamp_lo_gt_hi_is_an_error() {
+    // lo > hi is an invalid configuration: RRF rank fusion requires a valid
+    // [lo, hi] interval. This must surface as Err rather than silent no-op.
+    std::env::set_var("COMEMORY_RANK_PRIOR_CLAMP", "2.0,0.5");
+    let result = Config::defaults().with_env();
+    std::env::remove_var("COMEMORY_RANK_PRIOR_CLAMP");
+    let err = result.expect_err("lo > hi prior_clamp must error");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("COMEMORY_RANK_PRIOR_CLAMP"),
+        "error must name the offending var, got: {msg}"
+    );
+}
+
+#[test]
+fn bad_decay_negative_is_an_error() {
+    // Negative decay violates the ACT-R formula (ln(n) - d*ln(days+1)):
+    // a negative d would invert recency weighting. Must surface as Err.
+    std::env::set_var("COMEMORY_RANK_DECAY", "-1.0");
+    let result = Config::defaults().with_env();
+    std::env::remove_var("COMEMORY_RANK_DECAY");
+    let err = result.expect_err("negative decay must error");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("COMEMORY_RANK_DECAY"),
+        "error must name the offending var, got: {msg}"
+    );
+}
+
+#[test]
+fn bad_mmr_lambda_out_of_range_is_an_error() {
+    // MMR lambda must be in [0, 1]. A value > 1 has no defined meaning in
+    // the relevance-vs-diversity trade-off and must be rejected.
+    std::env::set_var("COMEMORY_RANK_MMR_LAMBDA", "2.0");
+    let result = Config::defaults().with_env();
+    std::env::remove_var("COMEMORY_RANK_MMR_LAMBDA");
+    let err = result.expect_err("lambda > 1 must error");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("COMEMORY_RANK_MMR_LAMBDA"),
+        "error must name the offending var, got: {msg}"
+    );
+}
+
+#[test]
+fn bad_min_feedback_out_of_range_is_an_error() {
+    // min_feedback is a beta-feedback value in [0, 1]. A value > 1 means no
+    // memory is ever prune-eligible, which is a configuration error.
+    std::env::set_var("COMEMORY_PRUNE_MIN_FEEDBACK", "1.5");
+    let result = Config::defaults().with_env();
+    std::env::remove_var("COMEMORY_PRUNE_MIN_FEEDBACK");
+    let err = result.expect_err("min_feedback > 1 must error");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("COMEMORY_PRUNE_MIN_FEEDBACK"),
+        "error must name the offending var, got: {msg}"
+    );
+}
+
+#[test]
+fn env_prune_below_quality_override_applies() {
+    // COMEMORY_PRUNE_BELOW_QUALITY newly wired to the existing field
+    // low_value_default_below_quality. Valid range 1..=5.
+    std::env::set_var("COMEMORY_PRUNE_BELOW_QUALITY", "3");
+    let result = Config::defaults().with_env();
+    std::env::remove_var("COMEMORY_PRUNE_BELOW_QUALITY");
+    let cfg = result.expect("valid below_quality override must succeed");
+    assert_eq!(cfg.prune.low_value_default_below_quality, 3);
+}
+
+#[test]
+fn bad_prune_below_quality_out_of_range_is_an_error() {
+    // Quality 0 is below the minimum allowed value of 1.
+    std::env::set_var("COMEMORY_PRUNE_BELOW_QUALITY", "0");
+    let result = Config::defaults().with_env();
+    std::env::remove_var("COMEMORY_PRUNE_BELOW_QUALITY");
+    let err = result.expect_err("below_quality=0 must error");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("COMEMORY_PRUNE_BELOW_QUALITY"),
+        "error must name the offending var, got: {msg}"
+    );
+}
+
+#[test]
+fn env_prune_unused_since_days_override_applies() {
+    // COMEMORY_PRUNE_UNUSED_SINCE_DAYS newly wired to the existing field
+    // low_value_default_unused_since_days.
+    std::env::set_var("COMEMORY_PRUNE_UNUSED_SINCE_DAYS", "90");
+    let result = Config::defaults().with_env();
+    std::env::remove_var("COMEMORY_PRUNE_UNUSED_SINCE_DAYS");
+    let cfg = result.expect("valid unused_since_days override must succeed");
+    assert_eq!(cfg.prune.low_value_default_unused_since_days, 90);
+}
+
+#[test]
+fn rank_toml_round_trip() {
+    // RankConfig fields must survive a serde_json/toml round-trip so
+    // config.toml writers can inspect their settings.
+    let c = Config::defaults();
+    let s = toml::to_string(&c).expect("serialize defaults to toml");
+    let back: Config = toml::from_str(&s).expect("deserialize defaults from toml");
+    assert!((back.rank.decay - c.rank.decay).abs() < f64::EPSILON);
+    assert_eq!(back.rank.prior_clamp, c.rank.prior_clamp);
+    assert!((back.rank.mmr_lambda - c.rank.mmr_lambda).abs() < f64::EPSILON);
+}
+
+#[test]
+fn bad_clamp_lo_zero_is_an_error() {
+    // lo must be > 0 per spec — a zero lower bound would collapse the clamp
+    // interval to a single point and defeat multiplier bounding.
+    std::env::set_var("COMEMORY_RANK_PRIOR_CLAMP", "0.0,1.5");
+    let result = Config::defaults().with_env();
+    std::env::remove_var("COMEMORY_RANK_PRIOR_CLAMP");
+    let err = result.expect_err("clamp lo=0 must error");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("COMEMORY_RANK_PRIOR_CLAMP"),
+        "error must name the offending var, got: {msg}"
+    );
+}
+
+#[test]
+fn bad_clamp_wrong_arity_is_an_error() {
+    // Only "lo,hi" (two values) is accepted. A bare scalar or triple is invalid.
+    for bad in ["0.5", "0.5,1.0,1.5"] {
+        std::env::set_var("COMEMORY_RANK_PRIOR_CLAMP", bad);
+        let result = Config::defaults().with_env();
+        std::env::remove_var("COMEMORY_RANK_PRIOR_CLAMP");
+        let err = result.expect_err(&format!("bad clamp arity '{bad}' must error"));
+        let msg = err.to_string();
+        assert!(
+            msg.contains("COMEMORY_RANK_PRIOR_CLAMP"),
+            "error must name the offending var for '{bad}', got: {msg}"
+        );
+    }
 }
