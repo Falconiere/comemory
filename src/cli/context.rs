@@ -1,6 +1,7 @@
 //! `comemory context` — headline lookup over the v0.2 SQLite store.
 //!
-//! Routes the query through [`crate::retrieval::router::route`] to surface
+//! Runs the query through [`crate::retrieval::pipeline::search`] (the same
+//! route → rerank → diversify path as `comemory search`) to surface
 //! relevant memory ids, then assembles a [`crate::retrieval::bundle`] that
 //! pulls each memory's body and any cross-link edges
 //! (`references_file`, `references_symbol`, `relates_to`, `supersedes`)
@@ -14,7 +15,7 @@ use crate::cli::{embedding_input, load_config, override_top_k, resolve_data_dir}
 use crate::config::paths::Paths;
 use crate::output;
 use crate::prelude::*;
-use crate::retrieval::{bundle, router};
+use crate::retrieval::{bundle, pipeline};
 use crate::store::connection;
 
 const EXAMPLES: &str = "\
@@ -66,8 +67,8 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
 
     let vec = embedding_input::read_optional(a.vector_stdin, a.vector.as_deref())?;
     let cfg = override_top_k(load_config(&paths)?, a.k);
-    let routed = router::route(&cfg, &conn, &a.query, vec.as_deref(), a.repo.as_deref())?;
-    let ids: Vec<String> = routed.into_iter().map(|h| h.memory_id).collect();
+    let hits = pipeline::search(&cfg, &conn, &a.query, vec.as_deref(), a.repo.as_deref())?;
+    let ids: Vec<String> = hits.into_iter().map(|h| h.memory_id).collect();
     let bundle = bundle::assemble(&conn, &a.query, &ids)?;
     output::context::emit(&bundle, json_flag)
 }

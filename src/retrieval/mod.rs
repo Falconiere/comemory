@@ -9,11 +9,14 @@
 //! bounded deterministic priors (activation, feedback, quality,
 //! supersede) built from the [`score`] primitives. [`diversify`] is the
 //! third stage: SimHash near-duplicate collapse followed by Jaccard-MMR
-//! greedy selection up to top-k.
+//! greedy selection up to top-k. [`pipeline`] chains all three stages
+//! (route → rerank → diversify → top-k) and bumps access tracking; it is
+//! the single retrieval entry point used by the CLI.
 
 pub mod bundle;
 pub mod diversify;
 pub mod fuse;
+pub mod pipeline;
 pub mod rerank;
 pub mod router;
 pub mod score;

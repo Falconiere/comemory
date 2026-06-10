@@ -10,6 +10,9 @@ mod diversify;
 #[path = "retrieval/fuse.rs"]
 mod fuse;
 
+#[path = "retrieval/pipeline.rs"]
+mod pipeline;
+
 #[path = "retrieval/rerank.rs"]
 mod rerank;
 

@@ -1,9 +1,11 @@
 //! `comemory search` — natural-language search over the v0.2 SQLite store.
 //!
 //! Resolves the data dir, opens `comemory.db`, parses any caller-supplied
-//! vector, then delegates to [`crate::retrieval::router::route`]. When the
+//! vector, then delegates to [`crate::retrieval::pipeline::search`]
+//! (route → rerank → diversify → top-k, plus access tracking). When the
 //! caller does not supply a vector (`--vector` / `--vector-stdin`), the
-//! lexical FTS5 BM25 branch handles the query — no embedder is loaded.
+//! lexical FTS5 BM25 branch handles the candidate stage — no embedder is
+//! loaded.
 
 use std::path::PathBuf;
 
@@ -14,7 +16,7 @@ use crate::config::paths::Paths;
 use crate::memory::Kind;
 use crate::output;
 use crate::prelude::*;
-use crate::retrieval::router;
+use crate::retrieval::pipeline;
 use crate::store::connection;
 
 const EXAMPLES: &str = "\
@@ -58,7 +60,9 @@ pub struct Args {
 }
 
 /// Run `comemory search`. Opens the DB, resolves the vector input (if any),
-/// routes the query, and emits results in either TTY or JSON form.
+/// runs the full retrieval pipeline, and emits results in either TTY or
+/// JSON form. The `--k` flag overrides `retrieval.top_k`, which the
+/// pipeline uses for the final cut.
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
@@ -66,6 +70,6 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
 
     let vec = embedding_input::read_optional(a.vector_stdin, a.vector.as_deref())?;
     let cfg = override_top_k(load_config(&paths)?, a.k);
-    let hits = router::route(&cfg, &conn, &a.query, vec.as_deref(), a.repo.as_deref())?;
+    let hits = pipeline::search(&cfg, &conn, &a.query, vec.as_deref(), a.repo.as_deref())?;
     output::search::emit(&hits, json_flag)
 }
