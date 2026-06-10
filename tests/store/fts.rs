@@ -112,6 +112,53 @@ fn build_or_query_joins_terms() {
 }
 
 #[test]
+fn build_subtoken_or_query_expands_identifier_terms() {
+    // The colocated whole (`vecdimmismatch`) is deliberately included: it
+    // can only add recall for verbatim-identifier mentions, never subtract.
+    assert_eq!(
+        fts::build_subtoken_or_query("VecDimMismatch"),
+        r#""vec" OR "vecdimmismatch" OR "dim" OR "mismatch""#
+    );
+    // snake_case splits the same way; whole stays colocated after part 1.
+    assert_eq!(
+        fts::build_subtoken_or_query("dim_guard"),
+        r#""dim" OR "dim_guard" OR "guard""#
+    );
+}
+
+#[test]
+fn build_subtoken_or_query_is_empty_when_nothing_splits() {
+    // Plain words yield exactly one part per term — no expansion possible,
+    // so the builder signals that with an empty expression.
+    assert_eq!(fts::build_subtoken_or_query("kubernetes"), "");
+    assert_eq!(fts::build_subtoken_or_query("oauth login race"), "");
+    assert_eq!(fts::build_subtoken_or_query(""), "");
+}
+
+#[test]
+fn subtoken_search_matches_prose_parts_of_identifier() {
+    let dir = tempdir().expect("tempdir");
+    let conn = connection::open(dir.path().join("c.db")).expect("open");
+    let body = "embedder returned wrong dim mismatch against the vec table";
+    conn.execute(
+        "INSERT INTO memories(id,slug,kind,content_hash,body,created_at,updated_at,md_path) \
+         VALUES('mem1','m','note','h',?1,'t','t','m.md')",
+        [body],
+    )
+    .expect("seed memory");
+    fts::index_memory(&conn, "mem1", body, "").expect("index");
+
+    // Strict tier misses: the quoted identifier becomes a *phrase* over
+    // its subtokens, which the prose body has non-consecutively…
+    let strict = fts::search_memory(&conn, "VecDimMismatch", 10, None).expect("strict");
+    assert!(strict.is_empty(), "strict phrase tier must miss prose body");
+    // …but the subtoken OR tier finds it.
+    let hits = fts::search_memory_subtokens(&conn, "VecDimMismatch", 10, None).expect("subtokens");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].memory_id, "mem1");
+}
+
+#[test]
 fn term_count_matches_what_the_builders_quote() {
     // `" foo` is 2 raw whitespace terms but only 1 sanitized term: the
     // lone quote sanitizes to empty and is dropped, exactly as the MATCH
