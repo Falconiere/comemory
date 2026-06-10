@@ -5,8 +5,8 @@
 //! `indexed_files`), and low-value memories (signal-based detection
 //! from `prune::low_value`).
 //!
-//! On a freshly-initialised DB all lists are empty and `--dry-run`
-//! must not mutate anything. Apply mode (the default) soft-deletes
+//! On a freshly-initialised DB all lists are empty and the default
+//! (dry-run) mode must not mutate anything. `--apply` soft-deletes
 //! flagged low-value memories through the same path as `comemory
 //! delete`.
 
@@ -23,10 +23,7 @@ fn bin(home: &TempDir) -> Command {
 #[test]
 fn prune_dry_run_on_clean_db_emits_zero_counts() {
     let home = TempDir::new().expect("tempdir");
-    let assertion = bin(&home)
-        .args(["--json", "prune", "--dry-run"])
-        .assert()
-        .success();
+    let assertion = bin(&home).args(["--json", "prune"]).assert().success();
     let stdout = String::from_utf8(assertion.get_output().stdout.clone()).expect("utf8 stdout");
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
     assert_eq!(v["orphan_edges"].as_i64(), Some(0));
@@ -78,10 +75,8 @@ fn prune_dry_run_reports_low_value_memory_without_deleting() {
     let id = save_memory(&home, "stale prune candidate body");
     make_prune_eligible(&home, &id);
 
-    let assertion = bin(&home)
-        .args(["--json", "prune", "--dry-run"])
-        .assert()
-        .success();
+    // No --apply: the default mode must scan + report only.
+    let assertion = bin(&home).args(["--json", "prune"]).assert().success();
     let stdout = String::from_utf8(assertion.get_output().stdout.clone()).expect("utf8 stdout");
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
     let flagged: Vec<&str> = v["low_value_memories"]
@@ -97,7 +92,7 @@ fn prune_dry_run_reports_low_value_memory_without_deleting() {
     let trashed = std::fs::read_dir(&trash)
         .map(|d| d.count())
         .unwrap_or_default();
-    assert_eq!(trashed, 0, "dry-run must not move files to .trash");
+    assert_eq!(trashed, 0, "default dry-run must not move files to .trash");
 }
 
 #[test]
@@ -106,7 +101,10 @@ fn prune_apply_soft_deletes_low_value_memory() {
     let id = save_memory(&home, "doomed prune candidate body");
     make_prune_eligible(&home, &id);
 
-    let assertion = bin(&home).args(["--json", "prune"]).assert().success();
+    let assertion = bin(&home)
+        .args(["--json", "prune", "--apply"])
+        .assert()
+        .success();
     let stdout = String::from_utf8(assertion.get_output().stdout.clone()).expect("utf8 stdout");
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
     assert_eq!(
@@ -138,8 +136,11 @@ fn prune_apply_soft_deletes_low_value_memory() {
         "soft-deleted memory must not appear in list output: {stdout}"
     );
 
-    // Idempotent: a second prune finds nothing left to flag.
-    let assertion = bin(&home).args(["--json", "prune"]).assert().success();
+    // Idempotent: a second apply-mode prune finds nothing left to flag.
+    let assertion = bin(&home)
+        .args(["--json", "prune", "--apply"])
+        .assert()
+        .success();
     let stdout = String::from_utf8(assertion.get_output().stdout.clone()).expect("utf8 stdout");
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
     assert_eq!(
@@ -153,7 +154,7 @@ fn prune_apply_soft_deletes_low_value_memory() {
 fn prune_apply_heals_half_deleted_memory_instead_of_wedging() {
     // Wedge state: live `memories` row, markdown file already gone —
     // producible by a crash inside `comemory delete` between its file
-    // move and its DB transaction. Prune apply must not abort on the
+    // move and its DB transaction. Prune --apply must not abort on the
     // NotFound: it heals the DB mirror, still processes every other
     // flagged id, and emits the full report.
     let home = TempDir::new().expect("tempdir");
@@ -171,7 +172,10 @@ fn prune_apply_heals_half_deleted_memory_instead_of_wedging() {
         .expect("wedged markdown file exists");
     std::fs::remove_file(md.path()).expect("remove wedged markdown");
 
-    let assertion = bin(&home).args(["--json", "prune"]).assert().success();
+    let assertion = bin(&home)
+        .args(["--json", "prune", "--apply"])
+        .assert()
+        .success();
     let stdout = String::from_utf8(assertion.get_output().stdout.clone()).expect("utf8 stdout");
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
     let mut flagged: Vec<&str> = v["low_value_memories"]
@@ -211,7 +215,10 @@ fn prune_apply_heals_half_deleted_memory_instead_of_wedging() {
     drop(conn);
 
     // And the wedge is gone for good: a follow-up prune flags nothing.
-    let assertion = bin(&home).args(["--json", "prune"]).assert().success();
+    let assertion = bin(&home)
+        .args(["--json", "prune", "--apply"])
+        .assert()
+        .success();
     let stdout = String::from_utf8(assertion.get_output().stdout.clone()).expect("utf8 stdout");
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
     assert_eq!(
@@ -225,17 +232,14 @@ fn prune_apply_heals_half_deleted_memory_instead_of_wedging() {
 fn prune_dry_run_after_save_is_idempotent() {
     // Saving a memory creates `memory→{repo,author}` edges via the v0.2
     // mirror. Those edges are live (the source memory exists with
-    // deleted_at IS NULL) so prune --dry-run must report 0 orphans and
+    // deleted_at IS NULL) so default-mode prune must report 0 orphans and
     // a follow-up doctor invocation must still succeed.
     let home = TempDir::new().expect("tempdir");
     bin(&home)
         .args(["save", "prune dry-run body", "--kind", "note"])
         .assert()
         .success();
-    let assertion = bin(&home)
-        .args(["--json", "prune", "--dry-run"])
-        .assert()
-        .success();
+    let assertion = bin(&home).args(["--json", "prune"]).assert().success();
     let stdout = String::from_utf8(assertion.get_output().stdout.clone()).expect("utf8 stdout");
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
     assert_eq!(v["orphan_edges"].as_i64(), Some(0));
