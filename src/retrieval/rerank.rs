@@ -160,7 +160,8 @@ fn live_superseder(conn: &Connection, id: &str) -> Result<Option<String>> {
     let mut stmt = conn.prepare_cached(
         "SELECT e.src_id FROM edges e
            JOIN memories m ON m.id = e.src_id AND m.deleted_at IS NULL
-          WHERE e.rel = 'supersedes' AND e.dst_kind = 'memory' AND e.dst_id = ?1
+          WHERE e.rel = 'supersedes'
+            AND e.src_kind = 'memory' AND e.dst_kind = 'memory' AND e.dst_id = ?1
             AND e.src_id <> e.dst_id
           LIMIT 1",
     )?;
