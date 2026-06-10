@@ -75,11 +75,16 @@ pub fn insert(
         rusqlite::params![&fm.id],
     )?;
     edges::delete_touching(conn, "memory", &fm.id)?;
+    // Simhash is persisted at write time so the rank/diversify layers never
+    // see the `DEFAULT 0` placeholder from migration 0004 on fresh saves.
+    // The upsert arm refreshes it too: a re-save with a changed body must
+    // not keep a stale fingerprint.
+    let simhash = crate::simhash::simhash64(crate::simhash::tokens(body)) as i64;
     conn.execute(
         "INSERT INTO memories(\
              id, slug, kind, repo, author, quality, schema, \
-             content_hash, body, created_at, updated_at, md_path) \
-         VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12) \
+             content_hash, body, created_at, updated_at, md_path, simhash) \
+         VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13) \
          ON CONFLICT(id) DO UPDATE SET \
              slug         = excluded.slug, \
              kind         = excluded.kind, \
@@ -91,6 +96,7 @@ pub fn insert(
              body         = excluded.body, \
              updated_at   = strftime('%Y-%m-%dT%H:%M:%fZ','now'), \
              md_path      = excluded.md_path, \
+             simhash      = excluded.simhash, \
              deleted_at   = NULL",
         rusqlite::params![
             &fm.id,
@@ -105,6 +111,7 @@ pub fn insert(
             &created_iso,
             &created_iso,
             md_path,
+            simhash,
         ],
     )?;
     // Defense-in-depth: `memory_tags` has `PRIMARY KEY (memory_id, tag)`, so a
