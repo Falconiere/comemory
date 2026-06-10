@@ -29,20 +29,39 @@ pub fn index_memory(conn: &Connection, memory_id: &str, body: &str, tags_csv: &s
     Ok(())
 }
 
+/// Maximum number of sanitized terms used when building MATCH expressions.
+/// Multi-KB queries are clamped to this many terms so the FTS5 expression
+/// stays bounded; terms past the cap are silently dropped.
+const MAX_QUERY_TERMS: usize = 32;
+
 /// Split `query` on whitespace into FTS5-safe terms: embedded double quotes
 /// are stripped so user text is always treated as data, never as MATCH
-/// syntax. Shared by [`build_match_query`] and [`build_or_query`].
+/// syntax, and the list is clamped to [`MAX_QUERY_TERMS`]. Shared by
+/// [`build_match_query`], [`build_or_query`], and [`term_count`].
 fn sanitize_terms(query: &str) -> Vec<String> {
     query
         .split_whitespace()
         .map(|t| t.replace('"', ""))
         .filter(|t| !t.is_empty())
+        .take(MAX_QUERY_TERMS)
         .collect()
+}
+
+/// Number of sanitized terms in `query` — exactly the terms the MATCH
+/// builders quote (quote-stripped, empty terms dropped, clamped to the
+/// same [`MAX_QUERY_TERMS`] cap). Used by the router's relaxed-fallback
+/// guard so the guard and the builders cannot disagree on what counts as
+/// a term.
+pub fn term_count(query: &str) -> usize {
+    sanitize_terms(query).len()
 }
 
 /// Build a strict FTS5 MATCH query: every whitespace term double-quoted
 /// (quotes stripped from input — terms are data, never syntax), last term
-/// prefix-matched so an in-progress final word still hits.
+/// prefix-matched so an in-progress final word still hits. Clamped to the
+/// first [`MAX_QUERY_TERMS`] (32) sanitized terms; when clamped, the
+/// prefix `*` lands on the 32nd kept term rather than the query's true
+/// final word.
 pub fn build_match_query(query: &str) -> String {
     let terms = sanitize_terms(query);
     let n = terms.len();
@@ -60,8 +79,12 @@ pub fn build_match_query(query: &str) -> String {
         .join(" ")
 }
 
-/// Build a relaxed OR query over the same sanitized terms (no prefixing).
-/// Used as the fallback tier when the strict AND query finds nothing.
+/// Build a relaxed OR query over the same sanitized terms, clamped to the
+/// first [`MAX_QUERY_TERMS`] (32). The last-term prefix `*` used by
+/// [`build_match_query`] is intentionally dropped here: the relaxed tier
+/// already broadens recall via OR, and prefixing on top of that would
+/// trade precision for matches the strict tier never implied. Used as the
+/// fallback tier when the strict AND query finds nothing.
 pub fn build_or_query(query: &str) -> String {
     sanitize_terms(query)
         .iter()

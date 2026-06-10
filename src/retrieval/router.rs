@@ -142,18 +142,21 @@ fn route_lexical(
 }
 
 /// Relaxed fallback tier shared by the lexical and hybrid paths: when the
-/// strict AND query found nothing and the query has at least two terms,
-/// retry with the OR variant so one absent term cannot zero out the
-/// result set. Single-term queries return empty — OR of one term is the
-/// same query, so retrying would only waste a round trip. Hits are tagged
-/// [`Source::Lexical`] because only the FTS branch contributed signal.
+/// strict AND query found nothing and the query has at least two
+/// *sanitized* terms ([`fts::term_count`] — the same terms the MATCH
+/// builders quote, so the guard and the builders cannot disagree on what
+/// counts as a term), retry with the OR variant so one absent term cannot
+/// zero out the result set. Single-term queries return empty — OR of one
+/// term is the same query, so retrying would only waste a round trip.
+/// Hits are tagged [`Source::Lexical`] because only the FTS branch
+/// contributed signal.
 fn route_lexical_relaxed(
     conn: &Connection,
     query: &str,
     k: usize,
     repo: Option<&str>,
 ) -> Result<Vec<RoutedHit>> {
-    if query.split_whitespace().nth(1).is_none() {
+    if fts::term_count(query) < 2 {
         return Ok(Vec::new());
     }
     let lex = fts::search_memory_relaxed(conn, query, k, repo)?;

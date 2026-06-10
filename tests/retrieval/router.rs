@@ -91,6 +91,25 @@ fn relaxed_fallback_fires_on_empty_hybrid_result() {
 }
 
 #[test]
+fn hybrid_ann_hit_with_lexical_miss_stays_hybrid() {
+    // ANN returns a hit but the strict lexical query misses ('login' is
+    // absent): the fused result is non-empty, so the relaxed tier must
+    // NOT fire and the source stays Hybrid.
+    let dir = tempdir().expect("tempdir");
+    let conn = connection::open(dir.path().join("c.db")).expect("open");
+    seed_memory(&conn, "hv1", "the oauth refresh race condition");
+    fts::index_memory(&conn, "hv1", "the oauth refresh race condition", "").expect("fts");
+    let v = vectors::vector("seed", 1024);
+    vector::insert_memory(&conn, "hv1", &v).expect("vec");
+
+    let cfg = Config::defaults();
+    let hits = router::route(&cfg, &conn, "oauth login race", Some(&v), None).expect("route");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].memory_id, "hv1");
+    assert_eq!(hits[0].source, Source::Hybrid);
+}
+
+#[test]
 fn single_term_miss_does_not_trigger_relaxed_fallback() {
     let dir = tempdir().expect("tempdir");
     let conn = connection::open(dir.path().join("c.db")).expect("open");
