@@ -106,26 +106,33 @@ pub fn build_or_query(query: &str) -> String {
 /// the expression for `VecDimMismatch` is
 /// `"vec" OR "vecdimmismatch" OR "dim" OR "mismatch"`.
 ///
-/// Returns an empty string when no term actually split (the count of
-/// distinct non-colocated parts is not greater than the term count):
-/// plain-word queries gain nothing from this tier, and the empty
-/// expression signals "no subtoken expansion possible" so
-/// [`search_memory_subtokens`] short-circuits to an empty result.
+/// Returns an empty string when no individual term actually split (a term
+/// "splits" when it yields more than one non-colocated part): plain-word
+/// queries gain nothing from this tier, and the empty expression signals
+/// "no subtoken expansion possible" so [`search_memory_subtokens`]
+/// short-circuits to an empty result. The split check is per-term — an
+/// aggregate distinct-part count would wrongly suppress expansion when
+/// parts collide across terms (`VecDim vec` splits but its parts
+/// `vec`/`dim` number no more than its terms).
 pub fn build_subtoken_or_query(query: &str) -> String {
     let terms = sanitize_terms(query);
     let mut tokens: Vec<String> = Vec::new();
-    let mut distinct_parts: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut any_term_split = false;
     for term in &terms {
+        let mut non_colocated_parts = 0usize;
         for tok in crate::store::tokenizer::split::split_text(term) {
             if !tok.colocated {
-                distinct_parts.insert(tok.text.clone());
+                non_colocated_parts += 1;
             }
             if !tokens.contains(&tok.text) {
                 tokens.push(tok.text);
             }
         }
+        if non_colocated_parts > 1 {
+            any_term_split = true;
+        }
     }
-    if distinct_parts.len() <= terms.len() {
+    if !any_term_split {
         return String::new();
     }
     tokens
@@ -282,6 +289,13 @@ fn is_fts5_parse_error(e: &rusqlite::Error) -> bool {
 }
 
 /// Insert a row into the `code_fts` virtual table for a code symbol.
+///
+/// `path_tokens` should be the *raw* relative path: the `identifier`
+/// tokenizer splits on `/`, `.`, `-` and camelCase/digit boundaries
+/// itself, and pre-lowercasing would destroy the camelCase boundaries it
+/// needs (`MyComponent.tsx` would index as the single token
+/// `mycomponent` instead of `my` + `component`). This matches what the
+/// 0004 migration backfill feeds it (`SELECT … path FROM code_symbols`).
 pub fn index_code(
     conn: &Connection,
     symbol_id: i64,
@@ -322,21 +336,4 @@ pub fn search_code(conn: &Connection, query: &str, k: usize) -> Result<Vec<CodeF
             score: row.get(1)?,
         })
     })
-}
-
-/// Split a path into BM25-friendly tokens: lowercase, alnum runs.
-/// Used by index-code to populate `code_fts.path_tokens`.
-pub fn path_to_tokens(path: &str) -> String {
-    path.chars()
-        .map(|c| {
-            if c.is_alphanumeric() {
-                c.to_ascii_lowercase()
-            } else {
-                ' '
-            }
-        })
-        .collect::<String>()
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
 }

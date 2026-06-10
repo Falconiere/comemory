@@ -165,6 +165,54 @@ fn subtoken_tier_fires_when_word_or_tier_is_also_empty() {
 }
 
 #[test]
+fn hybrid_empty_lexical_leg_retries_ladder_despite_ann_hits() {
+    // Regression: a memory reachable only via the subtoken tier used to be
+    // suppressed in the hybrid arm whenever the ANN leg returned anything —
+    // the fused result was non-empty, so the whole-result fallback never
+    // fired. The lexical leg now walks the relaxed ladder before fusion.
+    let dir = tempdir().expect("tempdir");
+    let conn = connection::open(dir.path().join("c.db")).expect("open");
+    // Target memory: prose mentioning the identifier's parts, FTS only.
+    let body = "embedder returned wrong dim mismatch against the vec table";
+    seed_memory(&conn, "tgt1", body);
+    fts::index_memory(&conn, "tgt1", body, "").expect("fts");
+    // Noise memory: carries the vector the query supplies (similarity 1.0,
+    // above the threshold) but matches nothing lexically.
+    seed_memory(&conn, "noise1", "completely unrelated body");
+    let v = vectors::vector("noise-seed", 1024);
+    vector::insert_memory(&conn, "noise1", &v).expect("vec");
+
+    let cfg = Config::defaults();
+    let hits = router::route(&cfg, &conn, "VecDimMismatch", Some(&v), None).expect("route");
+    assert!(
+        hits.iter().any(|h| h.memory_id == "tgt1"),
+        "subtoken-only memory must survive ANN noise in the hybrid arm: {hits:?}",
+    );
+    assert!(hits.iter().all(|h| h.source == Source::Hybrid));
+}
+
+#[test]
+fn vector_hits_below_memory_threshold_are_dropped() {
+    // KNN always returns the k nearest rows no matter how far away; the
+    // memory_threshold floor (default 0.55 cosine similarity) must drop
+    // noise instead of returning it. Two deterministic pseudo-random
+    // 1024-d vectors have near-zero cosine similarity.
+    let dir = tempdir().expect("tempdir");
+    let conn = connection::open(dir.path().join("c.db")).expect("open");
+    seed_memory(&conn, "far1", "irrelevant text");
+    let stored = vectors::vector("seed", 1024);
+    vector::insert_memory(&conn, "far1", &stored).expect("vec");
+
+    let cfg = Config::defaults();
+    let query = vectors::vector("far-away-query", 1024);
+    let hits = router::route(&cfg, &conn, "", Some(&query), None).expect("route");
+    assert!(
+        hits.is_empty(),
+        "below-threshold ANN hits must be dropped, got {hits:?}",
+    );
+}
+
+#[test]
 fn hybrid_path_when_both_vector_and_query() {
     // Non-empty query + vector → hybrid RRF path.
     let dir = tempdir().expect("tempdir");

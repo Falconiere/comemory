@@ -173,7 +173,9 @@ fn write_symbol(
             simhash: sh,
         },
     )?;
-    fts::index_code(conn, sid, &s.name, &s.snippet, &fts::path_to_tokens(rel))?;
+    // The raw relative path goes straight into `code_fts.path_tokens`:
+    // the identifier tokenizer handles the splitting (see fts::index_code).
+    fts::index_code(conn, sid, &s.name, &s.snippet, rel)?;
     Ok(())
 }
 

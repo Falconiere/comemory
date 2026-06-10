@@ -81,7 +81,14 @@ pub struct IndexingConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RetrievalConfig {
+    /// Minimum cosine similarity (`1.0 - distance`) for memory ANN hits.
+    /// Consumed by the router's vector-consuming paths: KNN hits below
+    /// this floor are dropped instead of padding the candidate pool with
+    /// nearest-but-irrelevant noise. Default `0.55`.
     pub memory_threshold: f32,
+    /// Minimum cosine similarity for code ANN hits. No code-vector search
+    /// path exists in M1 routing (`vector::knn_code` has no caller), so
+    /// this knob is currently unconsumed; the M3 code rerank will read it.
     pub code_threshold: f32,
     pub hybrid_weight: f32,
     pub top_k: usize,

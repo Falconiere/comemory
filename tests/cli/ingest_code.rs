@@ -68,6 +68,37 @@ fn ingest_code_inserts_row_with_supplied_embedding() {
     assert_eq!(vecs, 1);
 }
 
+/// Regression for the path-token lowercase divergence: the ingest path must
+/// hand the RAW relative path to `code_fts.path_tokens` so the identifier
+/// tokenizer can split camelCase segments — pre-lowercasing made
+/// `MyComponent.tsx` unreachable from the query `component`.
+#[test]
+fn ingest_code_camel_case_path_is_searchable_by_subtoken() {
+    let home = tempdir().expect("tempdir");
+    let row = make_row(
+        "camel",
+        "webapp",
+        "src/MyComponent.tsx",
+        "cccc000000000000000000000000000000000000",
+    );
+
+    Command::cargo_bin("comemory")
+        .expect("bin")
+        .env("COMEMORY_DATA_DIR", home.path())
+        .args(["ingest-code"])
+        .write_stdin(format!("{row}\n"))
+        .assert()
+        .success();
+
+    let conn = connection::open(home.path().join("comemory.db")).expect("open db");
+    let hits = comemory::store::fts::search_code(&conn, "component", 10).expect("search code");
+    assert_eq!(
+        hits.len(),
+        1,
+        "camelCase path segment must be reachable via its subtoken"
+    );
+}
+
 /// A malformed row mid-stream must roll back the entire batch; no rows should
 /// land in `code_symbols` after a partial stream that fails on the second row.
 #[test]
