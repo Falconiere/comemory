@@ -4,7 +4,7 @@
 //! explainability contract (M2 tuning reads it), not debug info. TTY mode
 //! emits one hit per line with a colored score prefix.
 
-use std::io::Write as _;
+use std::io::Write;
 
 use serde::Serialize;
 
@@ -59,7 +59,15 @@ pub fn emit(hits: &[Reranked], query_id: Option<&str>, json_flag: bool) -> Resul
     if json_flag {
         return json::write(&envelope(hits, query_id));
     }
-    let mut out = std::io::stdout().lock();
+    write_tty(&mut std::io::stdout().lock(), hits, query_id)
+}
+
+/// Render the TTY view of `hits` to `out`. Public so tests can capture the
+/// output without going through stdout. The `query: <qid>` footer is always
+/// printed when a query id exists — zero-hit queries are still logged for
+/// reformulation mining — but the feedback hint is appended only when there
+/// are hits, since with no hits there is nothing to mark `--used`.
+pub fn write_tty(out: &mut impl Write, hits: &[Reranked], query_id: Option<&str>) -> Result<()> {
     for hit in hits {
         let suffix = match hit.superseded_by.as_deref() {
             Some(id) => format!(" (superseded by {id})"),
@@ -75,10 +83,12 @@ pub fn emit(hits: &[Reranked], query_id: Option<&str>, json_flag: bool) -> Resul
         )?;
     }
     if let Some(qid) = query_id {
-        writeln!(
-            out,
-            "query: {qid}  (feedback: comemory feedback {qid} --used <ids>)"
-        )?;
+        let hint = if hits.is_empty() {
+            String::new()
+        } else {
+            format!("  (feedback: comemory feedback {qid} --used <ids>)")
+        };
+        writeln!(out, "query: {qid}{hint}")?;
     }
     Ok(())
 }
