@@ -61,11 +61,11 @@ this page mirrors the highlights for quick reference.
 | `memory` | Markdown I/O, frontmatter parsing, atomic save, ID generation |
 | `store` | SQLite connection layer, schema_meta, migrations, vector + FTS helpers, identifier tokenizer (camelCase/snake_case split + FFI registration) |
 | `simhash` | 64-bit SimHash + Hamming distance over tokenized memory bodies |
-| `graph` | SQL-backed edges (`Supersedes`, `ConflictsWith`, `RelatesTo`, `ReferencesFile`, `ReferencesSymbol`) + recursive walks; `cross_link` parses backticked refs |
-| `retrieval` | router (candidates + 4-tier lexical ladder ending in learned expansion), score (ACT-R/Beta primitives), rerank (multiplicative priors), diversify (SimHash collapse + MMR), pipeline (orchestration + access tracking), fuse (RRF), bundle (context lookup) |
-| `eval` | learning loop: golden sets (file + feedback harvest), recall@k/MRR metrics, eval runner, reformulation mining, grid tune |
-| `ast` | ast-grep wrapper (rust/ts/js/py/go), per-language symbol extractor, user pattern API |
-| `stats` | rusqlite usage / feedback / repo-marker tables (lives inside the same DB) |
+| `graph` | SQL-backed edges (`Supersedes`, `ConflictsWith`, `RelatesTo`, `ReferencesFile`, `ReferencesSymbol`, `CoChanged`, `Imports`, …) + recursive walks; `cross_link` parses backticked refs; `cochange` mines git history, `imports` extracts per-language import edges, `pagerank` + `materialize` write `code_symbols.rank_score` |
+| `retrieval` | router (candidates + 4-tier lexical ladder ending in learned expansion), score (ACT-R/Beta primitives), rerank (multiplicative priors), diversify (SimHash collapse + MMR), pipeline (orchestration + access tracking), fuse (RRF), bundle (context lookup, code refs ranked by graph priors); code side: code_route (BM25 + thresholded ANN + RRF, chunk→parent coalesce), code_rerank + code_prior (PageRank / recency / working-set affinity / feedback) |
+| `eval` | learning loop: golden sets (file + feedback harvest), recall@k/MRR metrics, eval runner (replays originating repo/kind filters), reformulation mining, grid tune |
+| `ast` | ast-grep wrapper (rust/ts/js/py/go), per-language symbol extractor, cAST chunking of oversized symbols, user pattern API |
+| `stats` | rusqlite usage / feedback / code_feedback / repo-marker tables (lives inside the same DB) |
 | `config` | Layered config: built-in defaults → `config.toml` → env → CLI flags |
 | `output` | TTY rendering (owo-colors) + JSON serializers (serde_json) |
 | `prune` | Orphan, stale-code, low-value detection and (soft) deletion |
@@ -98,11 +98,11 @@ migrations stay idempotent.
 | `memories` | Frontmatter + body mirror keyed by memory id |
 | `memory_fts` (FTS5) | Lexical index over memory body + title |
 | `memory_vec` (vec0) | Dense vectors keyed by memory id; dim locked at first save |
-| `code_symbols` | Symbols extracted from indexed repos (file, kind, snippet, ast_hash) |
-| `code_fts` (FTS5) | Lexical index over symbol identifiers + snippets |
+| `code_symbols` | Symbols extracted from indexed repos (file, kind, snippet, simhash) plus a materialized `rank_score` (PageRank) and `parent_id` (cAST chunk → parent symbol) |
+| `code_fts` (FTS5) | Lexical index over symbol identifiers + snippets + path tokens |
 | `code_vec` (vec0) | Dense vectors for code symbols; dim locked at first ingest |
-| `edges` | Sparse table replacing the kuzu graph (typed src→dst rows + payload) |
-| `retrieval_log`, `feedback`, `feedback_events`, `query_expansions`, `repo_marker` | Learning-loop telemetry (query log + per-query feedback provenance), aggregated feedback counters, mined expansions, indexing markers |
+| `edges` | Sparse weighted table replacing the kuzu graph (typed src→dst rows; includes mined `co_changed` + `imports` code-graph edges) |
+| `retrieval_log`, `feedback`, `feedback_events`, `code_feedback`, `query_expansions`, `repo_marker` | Learning-loop telemetry (query log + per-query feedback provenance), aggregated memory + code-symbol feedback counters, mined expansions, indexing markers |
 
 Every dense lookup goes through `sqlite-vec`'s `vec0` virtual table with a
 dimension guard so a mismatched embedder fails fast (`VecDimMismatch`)
@@ -143,9 +143,11 @@ embeds locally; pass vectors via `--vector` / `--vector-stdin` (see the
 identifier of the embedder you used.
 
 The `edges` table is a flat `(src_kind, src_id, edge_kind, dst_kind, dst_id)`
-schema that replaces the v0.1 kuzu graph for the small set of edges we
-actually use (`Supersedes`, `ConflictsWith`, `RelatesTo`, `ReferencesFile`,
-`ReferencesSymbol`). Multi-hop traversals use SQLite recursive CTEs.
+schema (plus an integer `weight`) that replaces the v0.1 kuzu graph for the
+set of edges we actually use (`Supersedes`, `ConflictsWith`, `RelatesTo`,
+`DerivedFrom`, `ReferencesFile`, `ReferencesSymbol`, `InRepo`, `AuthoredBy`,
+`Tagged`, and the mined code-graph kinds `CoChanged` + `Imports`).
+Multi-hop traversals use SQLite recursive CTEs.
 
 ## 5. Retrieval pipeline
 
@@ -190,6 +192,16 @@ Identifier-aware matching (camelCase/snake_case splitting) is not a routing
 branch — the custom `identifier` FTS5 tokenizer is baked into the
 `memory_fts` / `code_fts` DDL, so every lexical query benefits from it.
 
+`comemory search-code` runs a parallel code-side pipeline: `code_route`
+(weighted BM25 over symbol/snippet/path_tokens + an optional thresholded
+BYO-vector ANN leg, fused via RRF; chunk hits coalesce to their parent
+symbol) followed by `code_rerank`, which multiplies the relevance by four
+priors from `code_prior` — materialized PageRank, recency, working-set
+affinity (dirty/recent files in the current checkout), and Beta-smoothed
+`code_feedback`. Hits carry a `score_parts` breakdown and the envelope a
+`query_id` for `comemory feedback --used-code`. `comemory context` ranks
+the code refs in its bundle with the same graph priors.
+
 ## 6. Save flow
 
 ```
@@ -221,8 +233,15 @@ comemory index-code --repo myrepo --path .
   2. For each path, look up the git blob OID. If repo_marker says we already
      ingested that blob, skip.
   3. ast-grep extracts symbols (rust/ts/js/py/go only — see Cargo features).
+     Oversized symbols are split into child chunk rows at AST boundaries
+     (cAST); chunks point at their parent via code_symbols.parent_id.
   4. Upsert code_symbols + code_fts rows in one transaction per file.
-  5. Update repo_marker.last_head = git rev-parse HEAD.
+  5. Mine the code graph: co_changed edges from git history (windowed, with
+     a mega-commit guard and a last_mined_commit cursor) and imports edges
+     from per-language import resolution.
+  6. Run weighted PageRank over the graph and materialize the score into
+     code_symbols.rank_score (read by search-code / context reranking).
+  7. Update repo_marker.last_head = git rev-parse HEAD.
 
 comemory ingest-code  (BYO embedder)
   • Reads JSONL rows from stdin of the shape

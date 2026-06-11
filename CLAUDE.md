@@ -18,9 +18,12 @@ is the source of truth and one SQLite file (`comemory.db`) backs FTS5 +
   `memory_fts` (FTS5), `memory_vec` (`sqlite-vec` `vec0`), `code_symbols`,
   `code_fts`, `code_vec`, `edges`, `schema_meta`, plus stats / repo-marker
   tables. `rusqlite 0.32` with `bundled` + `load_extension` features.
-- **Edges:** flat `(src_kind, src_id, edge_kind, dst_kind, dst_id)` rows in
-  the `edges` table replace the v0.1 kuzu graph. Recursive CTEs handle
-  multi-hop traversal.
+- **Edges:** flat `(src_kind, src_id, edge_kind, dst_kind, dst_id)` rows
+  (plus an integer `weight`) in the `edges` table replace the v0.1 kuzu
+  graph. v6 adds code-graph kinds: `co_changed` (mined from git history)
+  and `imports` (per-language import resolution), feeding a materialized
+  PageRank on `code_symbols.rank_score`. Recursive CTEs handle multi-hop
+  traversal.
 - **AST extraction:** `ast-grep-core 0.38` + `ast-grep-language 0.38` (rust,
   typescript, javascript, python, go only).
 - **Vectors are BYO.** No in-process embedder. Callers pass vectors via
@@ -43,6 +46,7 @@ just e2e                        # real-binary end-to-end harness
 bash scripts/check-all.sh       # the umbrella gate (CI parity)
 cargo nextest run --all-features
 comemory doctor                    # runtime health check
+comemory search-code "query"       # ranked code search (BM25 + graph priors)
 comemory eval                      # score retrieval (recall@k, MRR) vs golden set
 comemory mine --apply              # distill query reformulations into expansions
 comemory tune --apply              # grid-search ranking knobs into config.toml
@@ -89,11 +93,11 @@ enforced by `scripts/check-all.sh`. Every PR must satisfy all five.
 | `memory/` | markdown I/O, `Frontmatter`, slug, id (8-hex SHA-256), atomic save / load / soft-delete / list |
 | `store/` | central SQLite layer — `connection` (pooled rusqlite + `sqlite-vec` loader), `schema`, `migrate` (versioned + idempotent), `vector` (`vec0` insert/KNN with dim guard), `fts` (FTS5 helpers), `embed` (`to_vec_blob`, dim helpers), `tokenizer` (custom FTS5 identifier tokenizer: camelCase/snake_case split + FFI registration) |
 | `simhash.rs` | 64-bit SimHash + Hamming distance over tokenized memory bodies (siphasher-based) |
-| `graph/` | SQL-backed `edges` table upserts, recursive-CTE walks, `cross_link` reference extraction |
-| `retrieval/` | `router` (candidates + 4-tier lexical ladder: strict → word-OR → subtoken-OR → tier-4 learned expansion from mined `query_expansions`), `score` (ACT-R/Beta scoring primitives), `rerank` (multiplicative priors over the max-normalized relevance: activation × feedback × quality × supersede), `diversify` (SimHash near-dup collapse + MMR), `pipeline` (orchestration + access tracking), `fuse` (RRF), `bundle` (context lookup) |
+| `graph/` | SQL-backed `edges` table upserts, recursive-CTE walks, `cross_link` reference extraction, `cochange` (git-history co-change mining), `imports` (per-language import edges), `pagerank` (deterministic weighted PageRank), `materialize` (writes `rank_score` onto `code_symbols`) |
+| `retrieval/` | `router` (candidates + 4-tier lexical ladder: strict → word-OR → subtoken-OR → tier-4 learned expansion from mined `query_expansions`), `score` (ACT-R/Beta scoring primitives), `rerank` (multiplicative priors over the max-normalized relevance: activation × feedback × quality × supersede), `diversify` (SimHash near-dup collapse + MMR), `pipeline` (orchestration + access tracking), `fuse` (RRF), `bundle` (context lookup with graph-prior-ranked code refs), `code_route` (code candidates: BM25 + thresholded ANN + RRF, chunk→parent coalesce), `code_rerank` (four-prior code rerank), `code_prior` (PageRank / recency / working-set affinity / feedback priors) |
 | `eval/` | learning loop — `golden` (YAML golden sets + feedback harvest), `metrics` (recall@k, MRR), `runner` (eval over the real pipeline, tracking off), `mine` (reformulation mining → `query_expansions`), `tune` (deterministic grid search over the blend knobs) |
-| `ast/` | `extractor` (symbol enumeration via tree-sitter through ast-grep — rust/ts/js/py/go only), `pattern` (user-facing `comemory ast`), per-language wiring |
-| `stats/` | usage / feedback / repo-marker tables (lives inside `comemory.db`) |
+| `ast/` | `extractor` (symbol enumeration via tree-sitter through ast-grep — rust/ts/js/py/go only), `chunk` (cAST split of oversized symbols into child rows at AST boundaries), `pattern` (user-facing `comemory ast`), per-language wiring |
+| `stats/` | usage / feedback / `code_feedback` (per-symbol counters) / repo-marker tables (lives inside `comemory.db`) |
 | `config/` | layered config (defaults → file → env) and `Paths` (data-dir layout) |
 | `output/` | TTY (`owo-colors`) and JSON (`serde_json`) emitters, shared between subcommands |
 | `prune/` | orphan / low-value / stale-code detection plus soft-delete & gc |
@@ -113,8 +117,10 @@ environment (`Config::with_env`, in `src/config/env.rs`).
 | `COMEMORY_INDEXING_AUTO_REINDEX` | `lazy` \| `hook` \| `off` — controls automatic code-index refresh | `lazy` |
 | `COMEMORY_RETRIEVAL_TOP_K` | Number of results returned by the hybrid router | `12` |
 | `COMEMORY_RETRIEVAL_MEMORY_THRESHOLD` | Minimum cosine similarity for the memory table | `0.55` |
+| `COMEMORY_RETRIEVAL_CODE_THRESHOLD` | Minimum cosine similarity for the code table (ANN leg of `search-code`, range `[0.0, 1.0]`) | `0.50` |
 | `COMEMORY_RETRIEVAL_RRF_K` | RRF fusion constant for hybrid scoring | `60.0` |
 | `COMEMORY_RETRIEVAL_BM25_WEIGHTS` | `"body,tags"` BM25 column weights for `memory_fts` (both finite ≥ 0, at least one > 0) | `1.0,3.0` |
+| `COMEMORY_RETRIEVAL_CODE_BM25_WEIGHTS` | `"symbol,snippet,path_tokens"` BM25 column weights for `code_fts` (all finite ≥ 0, at least one > 0) | `2.0,1.0,1.5` |
 | `COMEMORY_LEARNING_RETENTION_DAYS` | `comemory gc` retention window (days) for raw `retrieval_log` + `feedback_events` rows; aggregated `feedback` counters and mined `query_expansions` never expire | `90` |
 | `COMEMORY_TUNE_MIN_GOLDEN` | Test hook lowering `comemory tune`'s minimum-golden-pairs floor; not a tuning knob | `10` |
 | `COMEMORY_GIT_AUTO_SYNC` | `true`/`1` to enable best-effort git commit + push after a save | `false` |
@@ -122,9 +128,15 @@ environment (`Config::with_env`, in `src/config/env.rs`).
 | `COMEMORY_RANK_DECAY` | ACT-R decay exponent `d` in `ln(n) − d·ln(days+1)`. Must be ≥ 0. Higher → older memories decay faster. | `0.5` |
 | `COMEMORY_RANK_PRIOR_CLAMP` | `"lo,hi"` bounds applied to the activation, feedback, and quality boost multipliers (the fixed `0.2` supersede penalty intentionally bypasses the clamp). Both finite; lo > 0, lo ≤ hi. | `0.5,2.0` |
 | `COMEMORY_RANK_MMR_LAMBDA` | MMR relevance-vs-diversity trade-off in `[0.0, 1.0]`. `1.0` = pure relevance; `0.0` = pure diversity. | `0.7` |
+| `COMEMORY_RANK_NEAR_DUP_HAMMING` | SimHash Hamming radius for near-dup detection (save-time advisory + diversify collapse). Must be ≤ 64 (SimHash is 64-bit). | `8` |
 | `COMEMORY_PRUNE_MIN_ACTIVATION` | Activation floor (ACT-R scale) below which a memory is prune-eligible. | `-2.0` |
 | `COMEMORY_PRUNE_MIN_FEEDBACK` | Beta-feedback ceiling (range `[0.0, 1.0]`) at or below which a memory is prune-eligible. | `0.25` |
 | `COMEMORY_PRUNE_BELOW_QUALITY` | Quality threshold (1..=5); memories at or below this value are prune candidates (used together with activation + feedback floors). | `2` |
+| `COMEMORY_PRUNE_SUPERSEDED_GRACE_DAYS` | Grace window (days) before a superseded-and-never-accessed memory becomes prune-eligible; protects freshly-rebuilt DBs whose supersede edges all carry rebuild-time timestamps. | `7` |
+
+The `[tune]` grid knobs (`tune.rrf_k_grid`, `tune.decay_grid`,
+`tune.mmr_lambda_grid`, `tune.bm25_grid`) are file-only — set them in
+`config.toml`; they have no env override.
 
 The memory and code vector dims (1024 and 768) are baked into the
 `memory_vec` / `code_vec` vec0 DDL (`src/store/sql/0002_v2_tables.sql`)
