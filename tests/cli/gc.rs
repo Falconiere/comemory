@@ -51,11 +51,18 @@ fn seed_telemetry(home: &TempDir) {
     // gc compares `at < cutoff` lexicographically; that is only chronological
     // if the writer format is fixed-width. Pin the shape here so a format
     // change in iso_format breaks this test rather than silently breaking gc.
-    assert_eq!(
-        old.len(),
-        fresh.len(),
-        "iso_format must be fixed-width for lexicographic comparison: {old} vs {fresh}"
-    );
+    for stamp in [&old, &fresh] {
+        assert_eq!(
+            stamp.len(),
+            30,
+            "iso_format must stay fixed-width (YYYY-MM-DDTHH:MM:SS.nnnnnnnnnZ) \
+             for lexicographic comparison: {stamp}"
+        );
+        assert!(
+            stamp.ends_with('Z') && stamp.as_bytes()[19] == b'.',
+            "iso_format must keep 9 fractional digits + Z suffix: {stamp}"
+        );
+    }
     for (qid, at) in [("q-old", &old), ("q-new", &fresh)] {
         conn.execute(
             "INSERT INTO retrieval_log(query_id, query, returned_ids, at) \
