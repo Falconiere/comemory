@@ -7,5 +7,8 @@ mod cross_link;
 #[path = "graph/edges.rs"]
 mod edges;
 
+#[path = "graph/imports.rs"]
+mod imports;
+
 #[path = "graph/pagerank.rs"]
 mod pagerank;
