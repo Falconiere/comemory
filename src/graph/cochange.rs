@@ -113,7 +113,9 @@ pub fn mine_cochange(
 /// delta walk to [`crate::git_utils::collect_diff_paths`] — the
 /// rev-string-resolving [`crate::git_utils::changed_files`] cannot
 /// serve a revwalk directly, but the underlying collection is shared.
-fn commit_changed_paths(repo: &Repository, commit: &Commit<'_>) -> Result<Vec<String>> {
+/// `pub(crate)` so `retrieval::code_rerank::working_set` reuses the
+/// same first-parent diff for its recent-commit window.
+pub(crate) fn commit_changed_paths(repo: &Repository, commit: &Commit<'_>) -> Result<Vec<String>> {
     let tree = commit.tree().map_err(map_git_err)?;
     let parent_tree = if commit.parent_count() > 0 {
         let parent = commit.parent(0).map_err(map_git_err)?;

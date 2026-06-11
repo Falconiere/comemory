@@ -24,6 +24,17 @@ fn quality_three_is_neutral() {
 }
 
 #[test]
+fn bounded_boost_clamps_and_neutralizes_non_finite() {
+    assert_eq!(bounded_boost(1.3, CLAMP), 1.3);
+    assert_eq!(bounded_boost(100.0, CLAMP), CLAMP.1);
+    assert_eq!(bounded_boost(0.001, CLAMP), CLAMP.0);
+    // non-finite input → neutral 1.0, itself clamped
+    assert_eq!(bounded_boost(f64::NAN, CLAMP), 1.0);
+    assert_eq!(bounded_boost(f64::INFINITY, CLAMP), 1.0);
+    assert_eq!(bounded_boost(f64::NAN, (1.5, 2.0)), 1.5);
+}
+
+#[test]
 fn old_unaccessed_memory_sinks_below_threshold() {
     // single access 90 days ago ≈ −2.26 < default prune floor −2.0
     let a = activation(1, 90.0, 0.5);
