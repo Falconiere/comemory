@@ -2,7 +2,9 @@
 //!
 //! [`router`] picks between the pure-vector, pure-lexical, and hybrid
 //! (RRF-fused) branches based on whether the caller supplied a vector
-//! and/or a non-empty query. [`fuse`] is the Reciprocal Rank Fusion
+//! and/or a non-empty query; [`code_route`] is its `code_symbols`-side
+//! sibling (BM25 + thresholded ANN + RRF, no relaxation ladder).
+//! [`fuse`] is the Reciprocal Rank Fusion
 //! helper used when a caller wants to merge two ranked id lists.
 //! [`bundle`] shapes the JSON emitted by `comemory context`. [`rerank`]
 //! is the second pipeline stage: it multiplies the fused relevance by
@@ -14,6 +16,7 @@
 //! the single retrieval entry point used by the CLI.
 
 pub mod bundle;
+pub mod code_route;
 pub mod diversify;
 pub mod fuse;
 pub mod pipeline;

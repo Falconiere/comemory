@@ -54,13 +54,13 @@ pub fn insert_memory(conn: &Connection, memory_id: &str, vector: &[f32]) -> Resu
     Ok(())
 }
 
-/// Oversample factor applied to the vec0 KNN candidate set when a `repo`
-/// post-filter is in play. vec0 returns the global nearest-k by cosine
-/// distance and the JOIN against `memories` runs *after* that, so a corpus
-/// spread across multiple repos can drop most of the top-k before the
-/// caller ever sees them. Asking for `k * factor` candidates gives the
-/// JOIN room to keep `k` survivors in the common case where the requested
-/// repo holds a sizeable fraction of the corpus.
+/// Oversample factor applied to the vec0 KNN candidate set when a scope
+/// filter (memory `repo`, code `repo`/`lang`) is in play. vec0 returns the
+/// global nearest-k by cosine distance and the filter runs *after* that,
+/// so a corpus spread across multiple repos can drop most of the top-k
+/// before the caller ever sees them. Asking for `k * factor` candidates
+/// gives the filter room to keep `k` survivors in the common case where
+/// the requested scope holds a sizeable fraction of the corpus.
 const REPO_FILTER_OVERSAMPLE: usize = 8;
 
 /// Top-k nearest memories. Optional `repo` filter applied via join.
@@ -124,21 +124,88 @@ pub fn insert_code(conn: &Connection, symbol_id: i64, vector: &[f32]) -> Result<
     Ok(())
 }
 
-/// Top-k nearest code symbols.
-pub fn knn_code(conn: &Connection, query: &[f32], k: usize) -> Result<Vec<CodeHit>> {
+/// Top-k nearest code symbols, optionally restricted to one `repo`
+/// and/or `lang`.
+///
+/// vec0 cannot filter inside the KNN virtual-table query, so the scope
+/// filters run *afterwards* via [`filter_code_scope`] (one `IN` query
+/// against `code_symbols`, the code-side sibling of the memory router's
+/// kind post-filter). When a filter is in play the vec0 candidate set is
+/// oversampled by [`REPO_FILTER_OVERSAMPLE`] for the same reason
+/// [`knn_memory`] oversamples: the global nearest-k can live mostly
+/// outside the requested scope, and without headroom the post-filter
+/// would silently undersample the caller. The surviving list is trimmed
+/// back to `k`.
+pub fn knn_code(
+    conn: &Connection,
+    query: &[f32],
+    k: usize,
+    repo: Option<&str>,
+    lang: Option<&str>,
+) -> Result<Vec<CodeHit>> {
     let dim = dim_code(conn)?;
     embed::guard_dim(query, dim)?;
+    let candidate_k = if repo.is_some() || lang.is_some() {
+        k.saturating_mul(REPO_FILTER_OVERSAMPLE).max(k)
+    } else {
+        k
+    };
     let mut stmt = conn.prepare(
         "SELECT symbol_id, distance FROM code_vec \
          WHERE embedding MATCH ?1 AND k = ?2 ORDER BY distance",
     )?;
     let rows = stmt
-        .query_map(params![embed::to_vec_blob(query), k as i64], |row| {
-            Ok(CodeHit {
-                symbol_id: row.get(0)?,
-                distance: row.get(1)?,
-            })
-        })?
+        .query_map(
+            params![embed::to_vec_blob(query), candidate_k as i64],
+            |row| {
+                Ok(CodeHit {
+                    symbol_id: row.get(0)?,
+                    distance: row.get(1)?,
+                })
+            },
+        )?
         .collect::<std::result::Result<Vec<_>, _>>()?;
+    let mut rows = filter_code_scope(conn, rows, repo, lang)?;
+    rows.truncate(k);
     Ok(rows)
+}
+
+/// Batch repo/lang post-filter for code KNN hits: out-of-scope symbol ids
+/// are dropped in one `IN` query against `code_symbols`. Both filters are
+/// conjunctive and an absent filter is a no-op (`?1 IS NULL OR ...` —
+/// SQLite short-circuits on the first disjunct). Input order (ascending
+/// distance) is preserved: only membership in the surviving id set is
+/// consulted.
+fn filter_code_scope(
+    conn: &Connection,
+    hits: Vec<CodeHit>,
+    repo: Option<&str>,
+    lang: Option<&str>,
+) -> Result<Vec<CodeHit>> {
+    if (repo.is_none() && lang.is_none()) || hits.is_empty() {
+        return Ok(hits);
+    }
+    let qmarks = crate::store::qmarks(hits.len());
+    // The unnumbered `?` placeholders inside `IN (...)` continue numbering
+    // after the highest explicit index (?2), so the id bindings start at ?3.
+    let sql = format!(
+        "SELECT id FROM code_symbols \
+          WHERE (?1 IS NULL OR repo = ?1) \
+            AND (?2 IS NULL OR lang = ?2) \
+            AND id IN ({qmarks})"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let mut bind: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(hits.len() + 2);
+    bind.push(&repo);
+    bind.push(&lang);
+    for h in &hits {
+        bind.push(&h.symbol_id);
+    }
+    let keep: std::collections::HashSet<i64> = stmt
+        .query_map(bind.as_slice(), |r| r.get(0))?
+        .collect::<std::result::Result<_, _>>()?;
+    Ok(hits
+        .into_iter()
+        .filter(|h| keep.contains(&h.symbol_id))
+        .collect())
 }

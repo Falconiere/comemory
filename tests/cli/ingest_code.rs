@@ -91,7 +91,9 @@ fn ingest_code_camel_case_path_is_searchable_by_subtoken() {
         .success();
 
     let conn = connection::open(home.path().join("comemory.db")).expect("open db");
-    let hits = comemory::store::fts::search_code(&conn, "component", 10).expect("search code");
+    let hits =
+        comemory::store::fts::search_code(&conn, "component", 10, None, None, (2.0, 1.0, 1.5))
+            .expect("search code");
     assert_eq!(
         hits.len(),
         1,

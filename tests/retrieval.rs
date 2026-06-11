@@ -4,6 +4,9 @@ mod router;
 #[path = "retrieval/bundle.rs"]
 mod bundle;
 
+#[path = "retrieval/code_route.rs"]
+mod code_route;
+
 #[path = "retrieval/diversify.rs"]
 mod diversify;
 
