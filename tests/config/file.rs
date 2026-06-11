@@ -165,6 +165,73 @@ fn file_overlay_invalid_values_are_an_error() {
 }
 
 #[test]
+fn bm25_weights_default_and_file_overlay() {
+    let cfg = Config::defaults();
+    assert_eq!(cfg.retrieval.bm25_weights, (1.0, 3.0));
+
+    let dir = tempfile::tempdir().expect("tmp");
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "[retrieval]\nbm25_weights = [2.0, 1.0]\n").expect("write");
+    let cfg = Config::defaults().with_file(&path).expect("load");
+    assert_eq!(cfg.retrieval.bm25_weights, (2.0, 1.0));
+}
+
+#[test]
+fn bm25_weights_rejects_negative_and_zero_pair() {
+    let dir = tempfile::tempdir().expect("tmp");
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "[retrieval]\nbm25_weights = [0.0, 0.0]\n").expect("write");
+    assert!(Config::defaults().with_file(&path).is_err());
+
+    std::fs::write(&path, "[retrieval]\nbm25_weights = [-1.0, 3.0]\n").expect("write");
+    assert!(Config::defaults().with_file(&path).is_err());
+}
+
+#[test]
+fn retrieval_file_overlay_applies_tunable_keys() {
+    // The [retrieval] section previously hard-errored under
+    // deny_unknown_fields (no PartialRetrievalConfig existed); the four
+    // M2-tunable keys are now overlayable, and absent keys keep defaults.
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        "[retrieval]\n\
+         rrf_k = 30.0\n\
+         top_k = 8\n\
+         memory_threshold = 0.4\n",
+    )
+    .expect("write config.toml");
+    let cfg = Config::defaults()
+        .with_file(&path)
+        .expect("retrieval keys must parse and apply");
+    assert!((cfg.retrieval.rrf_k - 30.0).abs() < f32::EPSILON);
+    assert_eq!(cfg.retrieval.top_k, 8);
+    assert!((cfg.retrieval.memory_threshold - 0.4).abs() < f32::EPSILON);
+    // bm25_weights absent from the file → default retained.
+    assert_eq!(cfg.retrieval.bm25_weights, (1.0, 3.0));
+}
+
+#[test]
+fn retrieval_file_overlay_rejects_invalid_rrf_k() {
+    // rrf_k validation moved from the env arm into validate() so the file
+    // overlay enforces the same finite-positive invariant.
+    let dir = tempfile::tempdir().expect("create temp dir");
+    for bad in ["rrf_k = 0.0", "rrf_k = -1.0", "rrf_k = nan"] {
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, format!("[retrieval]\n{bad}\n")).expect("write config.toml");
+        let err = Config::defaults()
+            .with_file(&path)
+            .expect_err(&format!("invalid '{bad}' in config.toml must error"));
+        let msg = err.to_string();
+        assert!(
+            msg.contains("rrf_k"),
+            "error must name the offending field for '{bad}', got: {msg}"
+        );
+    }
+}
+
+#[test]
 fn file_overlay_prior_clamp_array_applies() {
     // Pins the serde representation of the (f64, f64) tuple: in TOML a
     // tuple is written as a two-element array.

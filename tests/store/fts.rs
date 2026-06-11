@@ -24,7 +24,7 @@ fn bm25_returns_seeded_match() {
     )
     .expect("index");
 
-    let hits = fts::search_memory(&conn, "advisory lock", 10, None).expect("search");
+    let hits = fts::search_memory(&conn, "advisory lock", 10, None, (1.0, 3.0)).expect("search");
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].memory_id, "mem1");
 }
@@ -50,7 +50,7 @@ fn search_memory_skips_soft_deleted() {
     )
     .expect("index");
 
-    let hits = fts::search_memory(&conn, "advisory lock", 10, None).expect("search");
+    let hits = fts::search_memory(&conn, "advisory lock", 10, None, (1.0, 3.0)).expect("search");
     assert!(
         hits.is_empty(),
         "soft-deleted memories must not appear in FTS results, got {hits:?}",
@@ -188,10 +188,11 @@ fn subtoken_search_matches_prose_parts_of_identifier() {
 
     // Strict tier misses: the quoted identifier becomes a *phrase* over
     // its subtokens, which the prose body has non-consecutively…
-    let strict = fts::search_memory(&conn, "VecDimMismatch", 10, None).expect("strict");
+    let strict = fts::search_memory(&conn, "VecDimMismatch", 10, None, (1.0, 3.0)).expect("strict");
     assert!(strict.is_empty(), "strict phrase tier must miss prose body");
     // …but the subtoken OR tier finds it.
-    let hits = fts::search_memory_subtokens(&conn, "VecDimMismatch", 10, None).expect("subtokens");
+    let hits = fts::search_memory_subtokens(&conn, "VecDimMismatch", 10, None, (1.0, 3.0))
+        .expect("subtokens");
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].memory_id, "mem1");
 }
@@ -240,7 +241,7 @@ fn tag_match_outranks_body_match() {
                 ('aaaa0002','completely unrelated body text','postgres');",
     )
     .expect("seed");
-    let hits = fts::search_memory(&conn, "postgres", 10, None).expect("search");
+    let hits = fts::search_memory(&conn, "postgres", 10, None, (1.0, 3.0)).expect("search");
     assert_eq!(
         hits[0].memory_id, "aaaa0002",
         "tag hit must outrank body hit"
@@ -248,15 +249,50 @@ fn tag_match_outranks_body_match() {
 }
 
 #[test]
+fn bm25_weights_parameter_flips_column_priority() {
+    // One memory matches the query only in its body, the other only in its
+    // tags. Tags-heavy weights (the (1.0, 3.0) default) must rank the tag
+    // hit first; body-heavy weights (3.0, 1.0) must flip the order.
+    let dir = tempdir().expect("tempdir");
+    let conn = connection::open(dir.path().join("c.db")).expect("open");
+    conn.execute_batch(
+        "INSERT INTO memories(id, slug, kind, repo, author, quality, schema, content_hash,
+                              body, created_at, updated_at, md_path, simhash)
+         VALUES ('bodyhit1','a','note','d','f',3,1,'h1','postgres mentioned once in body',
+                 '2026-06-09T00:00:00Z','2026-06-09T00:00:00Z','m/1.md',1),
+                ('taghit01','b','note','d','f',3,1,'h2','completely unrelated body text',
+                 '2026-06-09T00:00:00Z','2026-06-09T00:00:00Z','m/2.md',2);
+         INSERT INTO memory_fts(memory_id, body, tags)
+         VALUES ('bodyhit1','postgres mentioned once in body',''),
+                ('taghit01','completely unrelated body text','postgres');",
+    )
+    .expect("seed");
+
+    let tags_heavy = fts::search_memory(&conn, "postgres", 10, None, (1.0, 3.0)).expect("search");
+    assert_eq!(tags_heavy.len(), 2);
+    assert_eq!(
+        tags_heavy[0].memory_id, "taghit01",
+        "tags-heavy weights must rank the tag hit first"
+    );
+
+    let body_heavy = fts::search_memory(&conn, "postgres", 10, None, (3.0, 1.0)).expect("search");
+    assert_eq!(body_heavy.len(), 2);
+    assert_eq!(
+        body_heavy[0].memory_id, "bodyhit1",
+        "body-heavy weights must rank the body hit first"
+    );
+}
+
+#[test]
 fn empty_and_quote_only_queries_return_empty_without_error() {
     let dir = tempdir().expect("tempdir");
     let conn = connection::open(dir.path().join("c.db")).expect("open");
-    assert!(fts::search_memory(&conn, "", 10, None)
+    assert!(fts::search_memory(&conn, "", 10, None, (1.0, 3.0))
         .expect("empty query")
         .is_empty());
     // A quote-only query sanitizes to an empty MATCH expression; it must
     // come back empty rather than surfacing an FTS5 syntax error.
-    assert!(fts::search_memory(&conn, "\"\"", 10, None)
+    assert!(fts::search_memory(&conn, "\"\"", 10, None, (1.0, 3.0))
         .expect("quote-only query")
         .is_empty());
     assert!(fts::search_code(&conn, "", 10)
@@ -280,13 +316,15 @@ fn relaxed_search_matches_on_any_term() {
     fts::index_memory(&conn, "mem1", "the oauth refresh race condition", "").expect("index");
 
     // Strict AND of all three terms fails ('login' is absent)…
-    let strict = fts::search_memory(&conn, "oauth login race", 10, None).expect("strict");
+    let strict =
+        fts::search_memory(&conn, "oauth login race", 10, None, (1.0, 3.0)).expect("strict");
     assert!(
         strict.is_empty(),
         "strict AND must miss when a term is absent"
     );
     // …but the relaxed OR variant still finds the memory.
-    let relaxed = fts::search_memory_relaxed(&conn, "oauth login race", 10, None).expect("relaxed");
+    let relaxed = fts::search_memory_relaxed(&conn, "oauth login race", 10, None, (1.0, 3.0))
+        .expect("relaxed");
     assert_eq!(relaxed.len(), 1);
     assert_eq!(relaxed[0].memory_id, "mem1");
 }

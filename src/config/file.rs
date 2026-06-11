@@ -22,10 +22,24 @@ struct PartialConfig {
     /// `comemory doctor` and echoed back verbatim. Not interpreted by
     /// comemory itself.
     embed_hint: Option<String>,
+    /// Optional file-overlay for retrieval knobs. Absent keys leave defaults.
+    retrieval: Option<PartialRetrievalConfig>,
     /// Optional file-overlay for ranking knobs. Absent keys leave defaults.
     rank: Option<PartialRankConfig>,
     /// Optional file-overlay for prune scoring knobs. Absent keys leave defaults.
     prune: Option<PartialPruneConfig>,
+}
+
+/// File-overlay partial for [`RetrievalConfig`]. Only the M2-tunable
+/// keys are overlayable; structural knobs (vector dims) stay
+/// reporting-only and are not offered here.
+#[derive(Debug, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct PartialRetrievalConfig {
+    rrf_k: Option<f32>,
+    bm25_weights: Option<(f32, f32)>,
+    top_k: Option<usize>,
+    memory_threshold: Option<f32>,
 }
 
 /// File-overlay partial for [`RankConfig`]. All fields optional.
@@ -92,6 +106,12 @@ pub struct RetrievalConfig {
     /// RRF constant for sparse/dense fusion. Default 60.0 matches the original
     /// Cormack/Clarke/Buettcher RRF paper.
     pub rrf_k: f32,
+    /// Weighted-BM25 column weights for `memory_fts` in column order
+    /// `(body, tags)`. The `memory_id UNINDEXED` column is always 0.
+    /// Both must be finite and >= 0, and at least one must be > 0.
+    /// Default `(1.0, 3.0)` — a tag hit outranks a body hit.
+    #[serde(default = "default_bm25_weights")]
+    pub bm25_weights: (f32, f32),
     /// Operator-visible record of the memory embedding dim. The authoritative
     /// value is the literal in `src/store/sql/0002_v2_tables.sql` —
     /// `memory_vec` is a vec0 vtab whose dim is baked into its `CREATE
@@ -114,6 +134,10 @@ pub struct RetrievalConfig {
 
 fn default_memory_vector_dim() -> usize {
     1024
+}
+
+fn default_bm25_weights() -> (f32, f32) {
+    (1.0, 3.0)
 }
 
 fn default_code_vector_dim() -> usize {
@@ -205,6 +229,7 @@ impl Config {
                 top_k: 12,
                 corrective_min_confidence: 0.15,
                 rrf_k: 60.0,
+                bm25_weights: default_bm25_weights(),
                 memory_vector_dim: default_memory_vector_dim(),
                 code_vector_dim: default_code_vector_dim(),
             },
@@ -246,6 +271,20 @@ impl Config {
         if let Some(hint) = partial.embed_hint {
             self.embed_hint = Some(hint);
         }
+        if let Some(pr) = partial.retrieval {
+            if let Some(v) = pr.rrf_k {
+                self.retrieval.rrf_k = v;
+            }
+            if let Some(v) = pr.bm25_weights {
+                self.retrieval.bm25_weights = v;
+            }
+            if let Some(v) = pr.top_k {
+                self.retrieval.top_k = v;
+            }
+            if let Some(v) = pr.memory_threshold {
+                self.retrieval.memory_threshold = v;
+            }
+        }
         if let Some(pr) = partial.rank {
             if let Some(v) = pr.decay {
                 self.rank.decay = v;
@@ -283,6 +322,18 @@ impl Config {
     /// the config field and its env var so the offending knob is
     /// identifiable from either entry point.
     pub(crate) fn validate(self) -> Result<Self> {
+        let (b, t) = self.retrieval.bm25_weights;
+        if !b.is_finite() || !t.is_finite() || b < 0.0 || t < 0.0 || (b == 0.0 && t == 0.0) {
+            return Err(Error::Config(format!(
+                "invalid retrieval.bm25_weights={b},{t} (env COMEMORY_RETRIEVAL_BM25_WEIGHTS): both must be finite and >= 0, and at least one > 0"
+            )));
+        }
+        let k = self.retrieval.rrf_k;
+        if !k.is_finite() || k <= 0.0 {
+            return Err(Error::Config(format!(
+                "invalid retrieval.rrf_k={k} (env COMEMORY_RETRIEVAL_RRF_K): must be a finite positive number"
+            )));
+        }
         let d = self.rank.decay;
         if !d.is_finite() || d < 0.0 {
             return Err(Error::Config(format!(

@@ -145,8 +145,10 @@ pub fn build_subtoken_or_query(query: &str) -> String {
 /// Run a BM25 search over `memory_fts`, skipping soft-deleted memories.
 ///
 /// The user query is rewritten via [`build_match_query`] (quoted terms,
-/// last term prefix-matched) and ranked with a weighted BM25 that boosts
-/// the `tags` column over `body`. Optional `repo` filter is applied via
+/// last term prefix-matched) and ranked with a weighted BM25 whose
+/// `(body, tags)` column weights come from `weights`
+/// (`cfg.retrieval.bm25_weights`; the default `(1.0, 3.0)` boosts the
+/// `tags` column over `body`). Optional `repo` filter is applied via
 /// the same JOIN that gates on `deleted_at`, so the lexical and vector
 /// branches share the same scope when a hybrid query is run with a repo
 /// filter. FTS5 MATCH parse errors (malformed user query syntax) are
@@ -157,8 +159,9 @@ pub fn search_memory(
     query: &str,
     k: usize,
     repo: Option<&str>,
+    weights: (f32, f32),
 ) -> Result<Vec<MemoryFtsHit>> {
-    run_memory_match(conn, &build_match_query(query), k, repo)
+    run_memory_match(conn, &build_match_query(query), k, repo, weights)
 }
 
 /// Relaxed variant of [`search_memory`]: OR-joins the sanitized terms via
@@ -169,8 +172,9 @@ pub fn search_memory_relaxed(
     query: &str,
     k: usize,
     repo: Option<&str>,
+    weights: (f32, f32),
 ) -> Result<Vec<MemoryFtsHit>> {
-    run_memory_match(conn, &build_or_query(query), k, repo)
+    run_memory_match(conn, &build_or_query(query), k, repo, weights)
 }
 
 /// Subtoken variant of [`search_memory`]: OR-joins the identifier
@@ -185,23 +189,29 @@ pub fn search_memory_subtokens(
     query: &str,
     k: usize,
     repo: Option<&str>,
+    weights: (f32, f32),
 ) -> Result<Vec<MemoryFtsHit>> {
-    run_memory_match(conn, &build_subtoken_or_query(query), k, repo)
+    run_memory_match(conn, &build_subtoken_or_query(query), k, repo, weights)
 }
 
 /// Execute a prebuilt MATCH expression against `memory_fts`. Shared by
 /// [`search_memory`] and [`search_memory_relaxed`] so the strict and
 /// relaxed tiers cannot drift on SQL, weights, or error handling.
 ///
-/// BM25 weights follow the `memory_fts` column order
-/// `(memory_id UNINDEXED, body, tags)`: a tag hit (weight 3.0) outranks a
-/// body hit (1.0). FTS5 `bm25()` returns negative scores (more negative =
-/// better), so `ORDER BY score` ascending keeps best-first.
+/// `weights` follows the `memory_fts` column order
+/// `(memory_id UNINDEXED, body, tags)` with the UNINDEXED column pinned
+/// to 0; with the default `(1.0, 3.0)` a tag hit outranks a body hit.
+/// The weights are interpolated into the SQL text rather than bound:
+/// `bm25()` arguments cannot be parameters, and the values come from
+/// validated config (finite, >= 0), never raw user input. FTS5 `bm25()`
+/// returns negative scores (more negative = better), so `ORDER BY score`
+/// ascending keeps best-first.
 fn run_memory_match(
     conn: &Connection,
     match_expr: &str,
     k: usize,
     repo: Option<&str>,
+    weights: (f32, f32),
 ) -> Result<Vec<MemoryFtsHit>> {
     if match_expr.is_empty() || k == 0 {
         return Ok(Vec::new());
@@ -209,14 +219,17 @@ fn run_memory_match(
     // `?3 IS NULL OR m.repo = ?3` lets us bind the optional repo filter as
     // a single SQL string. SQLite short-circuits on the first disjunct when
     // `?3` is NULL, so the repo filter is a no-op in that case.
-    let sql = "SELECT memory_fts.memory_id, bm25(memory_fts, 0.0, 1.0, 3.0) AS score \
-                 FROM memory_fts \
-                 JOIN memories m ON m.id = memory_fts.memory_id \
-                WHERE memory_fts MATCH ?1 AND m.deleted_at IS NULL \
-                  AND (?3 IS NULL OR m.repo = ?3) \
-                ORDER BY score \
-                LIMIT ?2";
-    run_fts_query(conn, sql, params![match_expr, k as i64, repo], |row| {
+    let (w_body, w_tags) = weights;
+    let sql = format!(
+        "SELECT memory_fts.memory_id, bm25(memory_fts, 0.0, {w_body}, {w_tags}) AS score \
+           FROM memory_fts \
+           JOIN memories m ON m.id = memory_fts.memory_id \
+          WHERE memory_fts MATCH ?1 AND m.deleted_at IS NULL \
+            AND (?3 IS NULL OR m.repo = ?3) \
+          ORDER BY score \
+          LIMIT ?2"
+    );
+    run_fts_query(conn, &sql, params![match_expr, k as i64, repo], |row| {
         Ok(MemoryFtsHit {
             memory_id: row.get(0)?,
             score: row.get(1)?,

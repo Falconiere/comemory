@@ -51,6 +51,47 @@ fn env_invalid_rrf_k_returns_err() {
 }
 
 #[test]
+fn env_bm25_weights_override_applies() {
+    // COMEMORY_RETRIEVAL_BM25_WEIGHTS sets the (body, tags) weighted-BM25
+    // pair consumed by the memory FTS search.
+    std::env::set_var("COMEMORY_RETRIEVAL_BM25_WEIGHTS", "2.0,1.0");
+    let result = Config::defaults().with_env();
+    std::env::remove_var("COMEMORY_RETRIEVAL_BM25_WEIGHTS");
+    let cfg = result.expect("valid bm25_weights override must succeed");
+    assert_eq!(cfg.retrieval.bm25_weights, (2.0, 1.0));
+}
+
+#[test]
+fn env_bm25_weights_invalid_is_an_error() {
+    // A non-numeric component must surface as Err naming the variable, not
+    // silently fall back to the default weights.
+    std::env::set_var("COMEMORY_RETRIEVAL_BM25_WEIGHTS", "x,1");
+    let result = Config::defaults().with_env();
+    std::env::remove_var("COMEMORY_RETRIEVAL_BM25_WEIGHTS");
+    let err = result.expect_err("non-numeric bm25 weight must error");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("COMEMORY_RETRIEVAL_BM25_WEIGHTS"),
+        "error must name the offending var, got: {msg}"
+    );
+}
+
+#[test]
+fn env_bm25_weights_zero_pair_is_an_error() {
+    // Both-zero weights would zero out every BM25 score; validate() must
+    // reject the pair just like the file overlay does.
+    std::env::set_var("COMEMORY_RETRIEVAL_BM25_WEIGHTS", "0,0");
+    let result = Config::defaults().with_env();
+    std::env::remove_var("COMEMORY_RETRIEVAL_BM25_WEIGHTS");
+    let err = result.expect_err("zero bm25 weight pair must error");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("COMEMORY_RETRIEVAL_BM25_WEIGHTS"),
+        "error must name the offending var, got: {msg}"
+    );
+}
+
+#[test]
 fn env_rejects_invalid_top_k() {
     // Non-numeric top_k must surface as Err instead of silently keeping the
     // default; otherwise typos go unnoticed until retrieval misbehaves.
