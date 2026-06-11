@@ -90,8 +90,11 @@ data directory.
 # Save a memory (auto-detects repo + author from git)
 comemory save "Use Postgres for analytics" --kind decision --repo myrepo --tags db,postgres
 
-# Index your repo's code (symbols + files into the SQLite store)
+# Index your repo's code (symbols + co-change/import graph + PageRank)
 comemory index-code --repo myrepo --path .
+
+# Ranked code search (BM25 + graph priors; --json carries score_parts)
+comemory search-code "parse frontmatter" --repo myrepo
 
 # One-shot bundle for a symbol: source, memories, neighborhood
 comemory context run_migration --json
@@ -116,9 +119,10 @@ comemory doctor
 |---------|---------|
 | `comemory save` | Save a memory (body via arg, `-`, or stdin; optional `--vector` / `--vector-stdin`) |
 | `comemory search` | Search the memory index by natural-language query (lexical by default, hybrid when `--vector` / `--vector-stdin` is supplied) |
+| `comemory search-code` | Search the code index (BM25 + optional BYO-vector ANN, reranked by graph priors) |
 | `comemory list` | List memories with optional repo/kind filters |
 | `comemory delete` | Soft-delete a memory by id (moves to `.trash/`) |
-| `comemory feedback` | Record per-memory feedback (used vs irrelevant) against a search's `query_id` |
+| `comemory feedback` | Record per-hit feedback (used vs irrelevant) against a search's `query_id` — memories via `--used`, code symbols via `--used-code` |
 | `comemory eval` | Score retrieval quality (recall@k, MRR) against a golden set (feedback-harvested and/or `--golden` YAML) |
 | `comemory mine` | Distill failed→successful query rewordings into expansion mappings (`--apply` feeds search) |
 | `comemory tune` | Grid-search the ranking knobs against the golden set (`--apply` writes the winner to `config.toml`) |
@@ -175,6 +179,36 @@ rebuild` carries all learning state across too. Note that eval replays
 are lexical-only (BYO vectors cannot be replayed offline); the
 `--repo`/`--kind` filters of the originating search travel with each
 golden pair and are replayed faithfully.
+
+## Code search
+
+`comemory index-code` builds more than the symbol index: it also mines the
+code graph from your git history — co-change edges (files that change in
+the same commits), per-language import edges, and a materialized PageRank
+score per symbol. Oversized symbols are split into child chunks at AST
+boundaries (cAST), so each row stays small enough to embed; at query time
+chunk hits coalesce to their parent symbol and carry the chunk's line
+range for jump-to.
+
+`comemory search-code` queries that index: BM25 over identifiers, snippets,
+and path tokens, plus an optional BYO-vector ANN leg fused via RRF.
+Candidates are then reranked by four priors: PageRank (graph centrality),
+recency, working-set affinity, and feedback. The affinity boost applies
+only when the search runs inside the repo's checkout — dirty and
+recently-touched files near a hit raise its score.
+`comemory feedback --used-code` closes the loop, just like memory feedback:
+
+```bash
+# 1. Build the symbol index + code graph (run inside the repo)
+comemory index-code --repo myrepo --path .
+
+# 2. Search — score_parts in --json explains every ranking factor
+comemory search-code "connection pool retry" --repo myrepo --json
+# {"hits":[{"symbol_id":42,...}],"query_id":"q-20260611-c3d4e5f6"}
+
+# 3. Tell it which symbols actually helped
+comemory feedback q-20260611-c3d4e5f6 --used-code 42 --irrelevant-code 17
+```
 
 ## Quality Gates
 
