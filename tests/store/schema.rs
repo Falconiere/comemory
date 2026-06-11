@@ -4,7 +4,8 @@
 //! base table, virtual table, and index named in
 //! `docs/superpowers/specs/2026-06-07-lightweight-v2-design.md` §4.1 is
 //! present in `sqlite_master` (except `search_stats`, dropped by the
-//! v5 migration), plus the v5 learning-loop tables.
+//! v5 migration), plus the v5 learning-loop tables and the v6
+//! `code_feedback` table.
 
 use comemory::store::connection;
 use tempfile::tempdir;
@@ -36,6 +37,7 @@ fn fresh_db_has_all_v2_tables_and_vtabs() {
         "feedback",
         "feedback_events",
         "query_expansions",
+        "code_feedback",
         "schema_meta",
         "idx_memories_repo",
         "idx_edges_src",
