@@ -44,42 +44,79 @@ pub fn extract(lang: Lang, source: &str) -> Result<Vec<ExtractedSymbol>> {
         // Tsx is a superset of the plain TypeScript grammar — it parses
         // JSX-bearing source as well as pure TS, so we route both `.ts` and
         // `.tsx` through it.
-        Lang::Typescript => extract_with(Tsx, lang, source, ts_js_patterns()),
-        Lang::Javascript => extract_with(JavaScript, lang, source, ts_js_patterns()),
+        Lang::Typescript => extract_with(Tsx, lang, source, ts_patterns()),
+        Lang::Javascript => extract_with(JavaScript, lang, source, js_patterns()),
         Lang::Python => extract_with(Python, lang, source, python_patterns()),
         Lang::Go => extract_with(Go, lang, source, go_patterns()),
     }
 }
 
 fn rust_patterns() -> &'static [(&'static str, &'static str)] {
-    // Functions in Rust may have a `-> Ret` return-type clause between
-    // the arg list and the body — the explicit return arrow is the only
-    // pattern that ast-grep matches against `fn add(...) -> i32 { ... }`.
-    // We list both variants so plain `fn foo() { ... }` is still picked up.
+    // Two axes are spelled out explicitly because ast-grep patterns match
+    // Rust definitions strictly (a `fn $NAME(...)` pattern does NOT match
+    // `pub fn` or `async fn` — probed empirically):
+    //   * return clause: `-> Ret` present vs absent;
+    //   * modifiers: bare / `pub` / `async` / `pub async`.
+    // The `pub` patterns also cover `pub(crate)` / `pub(super)` — ast-grep
+    // treats the visibility node loosely, same as the `pub use` import
+    // patterns in `crate::graph::imports`. Known gap, accepted to keep the
+    // table small: `const fn` / `unsafe fn` items (any visibility) are not
+    // matched.
     &[
         ("function", "fn $NAME($$$ARGS) -> $RET { $$$BODY }"),
         ("function", "fn $NAME($$$ARGS) { $$$BODY }"),
+        ("function", "pub fn $NAME($$$ARGS) -> $RET { $$$BODY }"),
+        ("function", "pub fn $NAME($$$ARGS) { $$$BODY }"),
+        ("function", "async fn $NAME($$$ARGS) -> $RET { $$$BODY }"),
+        ("function", "async fn $NAME($$$ARGS) { $$$BODY }"),
+        (
+            "function",
+            "pub async fn $NAME($$$ARGS) -> $RET { $$$BODY }",
+        ),
+        ("function", "pub async fn $NAME($$$ARGS) { $$$BODY }"),
         ("struct", "struct $NAME { $$$BODY }"),
+        ("struct", "pub struct $NAME { $$$BODY }"),
         ("enum", "enum $NAME { $$$BODY }"),
+        ("enum", "pub enum $NAME { $$$BODY }"),
         ("trait", "trait $NAME { $$$BODY }"),
+        ("trait", "pub trait $NAME { $$$BODY }"),
     ]
 }
 
-fn ts_js_patterns() -> &'static [(&'static str, &'static str)] {
+fn ts_patterns() -> &'static [(&'static str, &'static str)] {
     // TypeScript functions may carry a return annotation (`: number`)
     // between the arg list and the body; JavaScript skips it. List both
     // shapes so we recover the function name in either case.
+    //
+    // `export` / `export default` / `async` prefixes need no extra
+    // patterns: the wrapped declaration is a child node of the export
+    // statement and `find_all` descends into it (probed empirically).
+    // `abstract class` is a distinct node kind, so it gets its own row —
+    // it must stay LAST so `js_patterns` can reuse this table minus it.
     &[
         ("function", "function $NAME($$$ARGS): $RET { $$$BODY }"),
         ("function", "function $NAME($$$ARGS) { $$$BODY }"),
         ("class", "class $NAME { $$$BODY }"),
+        ("class", "abstract class $NAME { $$$BODY }"),
     ]
 }
 
+fn js_patterns() -> &'static [(&'static str, &'static str)] {
+    // JavaScript shares the TS table except `abstract class`, which the
+    // JS grammar rejects at pattern-compile time (no abstract classes).
+    let all = ts_patterns();
+    &all[..all.len() - 1]
+}
+
 fn python_patterns() -> &'static [(&'static str, &'static str)] {
+    // Decorated defs/classes and `async def` need no extra patterns — the
+    // wrapped definition is a child of the decorated node and `find_all`
+    // descends into it (probed empirically). A base-class list however
+    // changes the node shape, so `class Foo(Base):` gets its own row.
     &[
         ("function", "def $NAME($$$ARGS): $$$BODY"),
         ("class", "class $NAME: $$$BODY"),
+        ("class", "class $NAME($$$BASES): $$$BODY"),
     ]
 }
 

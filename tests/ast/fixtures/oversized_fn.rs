@@ -1,9 +1,10 @@
 // Real oversized function copied from THIS repo:
 // src/config/env.rs::Config::with_env (88 lines at copy time).
-// Adapted only by dropping the `pub ` qualifier so the extractor's
-// plain-`fn` pattern matches it; the body is verbatim. The fixture is
-// parsed by tree-sitter, never compiled, so the bare `self` receiver
-// and unresolved names are fine.
+// Adapted only by dropping the `pub ` qualifier (a historical workaround,
+// kept because chunking tests pin the `fn with_env` headline — this
+// fixture tests chunking, not visibility); the body is verbatim. The
+// fixture is parsed by tree-sitter, never compiled, so the bare `self`
+// receiver and unresolved names are fine.
 fn with_env(mut self) -> Result<Self> {
     if let Ok(v) = std::env::var("COMEMORY_INDEXING_AUTO_REINDEX") {
         self.indexing.auto_reindex = match v.as_str() {
