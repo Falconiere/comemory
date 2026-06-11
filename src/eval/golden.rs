@@ -22,7 +22,8 @@ pub struct GoldenPair {
 
 /// Load golden pairs from a YAML file (`- query: ...` / `  relevant: [..]`).
 pub fn load_file(path: &Path) -> Result<Vec<GoldenPair>> {
-    let raw = std::fs::read_to_string(path).map_err(Error::Io)?;
+    let raw = std::fs::read_to_string(path)
+        .map_err(|e| Error::Config(format!("golden file {}: {e}", path.display())))?;
     serde_yaml::from_str(&raw)
         .map_err(|e| Error::Config(format!("golden file {}: {e}", path.display())))
 }
