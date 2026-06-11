@@ -179,7 +179,7 @@ fn irrelevant_feedback_reorders_results() {
 
     for _ in 0..3 {
         bin(&dir)
-            .args(["feedback", "q1", "--irrelevant", &leader])
+            .args(["feedback", "q-20260610-aabbccdd", "--irrelevant", &leader])
             .assert()
             .success();
     }
