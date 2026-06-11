@@ -117,6 +117,150 @@ fn non_matching_source_yields_no_symbols() {
 }
 
 #[test]
+fn rust_pub_and_async_functions_extracted() {
+    // Real-world-shaped signatures lifted from this repo: most public API
+    // surface carries a visibility and/or `async` modifier. Each must be
+    // extracted exactly once (no double-match across the pattern table).
+    let cases: &[(&str, &str)] = &[
+        (
+            "extract",
+            "pub fn extract(lang: Lang, source: &str) -> Result<Vec<ExtractedSymbol>> {\n    run(lang, source)\n}\n",
+        ),
+        (
+            "run_indexer",
+            "pub fn run_indexer(paths: &Paths) {\n    walk(paths);\n}\n",
+        ),
+        (
+            "dim_guard",
+            "pub(crate) fn dim_guard(conn: &Connection, dim: usize) -> Result<()> {\n    check(conn, dim)\n}\n",
+        ),
+        (
+            "helper",
+            "pub(super) fn helper(x: u8) -> u8 {\n    x\n}\n",
+        ),
+        (
+            "fetch_embedding",
+            "async fn fetch_embedding(text: &str) -> Result<Vec<f32>> {\n    call(text).await\n}\n",
+        ),
+        (
+            "warm_cache",
+            "async fn warm_cache(store: &Store) {\n    store.touch().await;\n}\n",
+        ),
+        (
+            "sync_repo",
+            "pub async fn sync_repo(repo: &str) -> Result<()> {\n    push(repo).await\n}\n",
+        ),
+        (
+            "fire_hook",
+            "pub async fn fire_hook(event: Event) {\n    dispatch(event).await;\n}\n",
+        ),
+    ];
+    for (name, src) in cases {
+        let syms = extract(Lang::Rust, src).expect("rust extraction");
+        let hits: Vec<_> = syms
+            .iter()
+            .filter(|s| s.name == *name && s.kind == "function")
+            .collect();
+        assert_eq!(
+            hits.len(),
+            1,
+            "{name}: want exactly one match, got {syms:?}"
+        );
+        assert!(
+            hits[0].snippet.contains("fn "),
+            "{name}: snippet keeps the definition, got {:?}",
+            hits[0].snippet,
+        );
+    }
+}
+
+#[test]
+fn rust_pub_struct_enum_trait_extracted() {
+    let src = "pub struct Frontmatter { pub id: String }\n\
+             pub(crate) struct Paths { root: PathBuf }\n\
+             pub enum Error { NotFound, VecDimMismatch }\n\
+             pub trait Emitter { fn emit(&self); }\n\
+             pub(crate) trait Walk { fn step(&self); }\n";
+    let syms = extract(Lang::Rust, src).expect("rust extraction");
+    let structs = names_of_kind(&syms, "struct");
+    assert!(
+        structs.contains(&"Frontmatter"),
+        "pub struct in {structs:?}"
+    );
+    assert!(
+        structs.contains(&"Paths"),
+        "pub(crate) struct in {structs:?}"
+    );
+    assert!(names_of_kind(&syms, "enum").contains(&"Error"), "pub enum");
+    let traits = names_of_kind(&syms, "trait");
+    assert!(traits.contains(&"Emitter"), "pub trait in {traits:?}");
+    assert!(traits.contains(&"Walk"), "pub(crate) trait in {traits:?}");
+}
+
+#[test]
+fn rust_const_and_unsafe_fns_are_a_documented_gap() {
+    // Pinned gap (see the `rust_patterns` comment): `const fn` and
+    // `unsafe fn` items are not matched. If a pattern lands that covers
+    // them, update this test together with that comment.
+    for src in [
+        "const fn budget() -> usize { 64 }\n",
+        "pub const fn budget() -> usize { 64 }\n",
+        "unsafe fn raw_read(p: *const u8) -> u8 { *p }\n",
+    ] {
+        let syms = extract(Lang::Rust, src).expect("rust extraction");
+        assert!(syms.is_empty(), "gap changed for {src:?}: {syms:?}");
+    }
+}
+
+#[test]
+fn typescript_export_declarations_extracted() {
+    // `export` / `export default` / `async` wrap the declaration node, and
+    // extraction descends into it — no dedicated export patterns needed.
+    // `abstract class` is a distinct node kind with its own pattern row.
+    let src = "export function parseQuery(raw: string): Query { return lex(raw); }\n\
+             export default function bootstrap() { mount(); }\n\
+             export async function loadIndex(path: string): Promise<Index> { return read(path); }\n\
+             export class SearchClient { query(q: string) { return run(q); } }\n\
+             export default class App { render() { return null; } }\n\
+             export abstract class BaseStore { abstract flush(): void; }\n";
+    let syms = extract(Lang::Typescript, src).expect("ts extraction");
+    let fns = names_of_kind(&syms, "function");
+    for name in ["parseQuery", "bootstrap", "loadIndex"] {
+        assert!(fns.contains(&name), "missing function {name} in {fns:?}");
+    }
+    let classes = names_of_kind(&syms, "class");
+    for name in ["SearchClient", "App", "BaseStore"] {
+        assert!(
+            classes.contains(&name),
+            "missing class {name} in {classes:?}"
+        );
+    }
+}
+
+#[test]
+fn python_decorated_async_and_based_definitions_extracted() {
+    // Decorators and `async` wrap the definition node and extraction
+    // descends into it; a base-class list needs its own pattern row.
+    let src = "@app.route(\"/health\")\ndef health():\n    return ok()\n\n\
+             @staticmethod\n@cached\ndef stacked():\n    return 1\n\n\
+             async def fetch_rows(conn):\n    return await conn.fetch()\n\n\
+             @dataclass\nclass Record:\n    pass\n\n\
+             class Indexer(BaseIndexer):\n    def run(self):\n        pass\n";
+    let syms = extract(Lang::Python, src).expect("python extraction");
+    let fns = names_of_kind(&syms, "function");
+    for name in ["health", "stacked", "fetch_rows"] {
+        assert!(fns.contains(&name), "missing function {name} in {fns:?}");
+    }
+    let classes = names_of_kind(&syms, "class");
+    for name in ["Record", "Indexer"] {
+        assert!(
+            classes.contains(&name),
+            "missing class {name} in {classes:?}"
+        );
+    }
+}
+
+#[test]
 fn tsx_jsx_component_extracted() {
     // A function returning JSX parses cleanly under the Tsx grammar (which
     // `Lang::Typescript` now dispatches to internally), so callers don't

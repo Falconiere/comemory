@@ -20,10 +20,10 @@ log_ok "e2e" "version smoke passed"
 # ── index-code → search-code → feedback --used-code round-trip ───────────
 REPO_DIR="$QWICK_HOME/fixture-repo"
 mkdir -p "$REPO_DIR/src"
-# NOTE: the extractor patterns match plain `fn` items (no `pub`
-# modifier) — keep the fixture in that shape.
+# `pub fn` on purpose: pins the extractor's coverage of visibility-modified
+# definitions (the common shape in real repos) end to end.
 cat > "$REPO_DIR/src/lib.rs" <<'EOF'
-fn parse_frontmatter(input: &str) -> Option<&str> {
+pub fn parse_frontmatter(input: &str) -> Option<&str> {
     input.strip_prefix("---")
 }
 EOF
