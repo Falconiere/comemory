@@ -69,7 +69,9 @@ pub fn mine_cochange(
     walk.push_head().map_err(map_git_err)?;
 
     let mut counts: BTreeMap<(String, String), u32> = BTreeMap::new();
-    // `walked` counts commits already processed (enumerate index).
+    // `walked` counts commits already walked (enumerate index),
+    // including mega-skipped ones — the first-run bound caps the walk,
+    // not the number of pair-contributing commits.
     for (walked, oid) in walk.enumerate() {
         let oid = oid.map_err(map_git_err)?;
         match since {
@@ -107,9 +109,10 @@ pub fn mine_cochange(
 }
 
 /// Collect the new-side paths changed by `commit` against its FIRST
-/// parent; root commits diff against the empty tree. Mirrors the
-/// delta-path handling of [`crate::git_utils::changed_files`], which
-/// resolves rev strings and therefore cannot serve a revwalk directly.
+/// parent; root commits diff against the empty tree. Delegates the
+/// delta walk to [`crate::git_utils::collect_diff_paths`] — the
+/// rev-string-resolving [`crate::git_utils::changed_files`] cannot
+/// serve a revwalk directly, but the underlying collection is shared.
 fn commit_changed_paths(repo: &Repository, commit: &Commit<'_>) -> Result<Vec<String>> {
     let tree = commit.tree().map_err(map_git_err)?;
     let parent_tree = if commit.parent_count() > 0 {
@@ -118,21 +121,5 @@ fn commit_changed_paths(repo: &Repository, commit: &Commit<'_>) -> Result<Vec<St
     } else {
         None
     };
-    let diff = repo
-        .diff_tree_to_tree(parent_tree.as_ref(), Some(&tree), None)
-        .map_err(map_git_err)?;
-    let mut out = Vec::new();
-    diff.foreach(
-        &mut |d, _| {
-            if let Some(path) = d.new_file().path().and_then(|p| p.to_str()) {
-                out.push(path.to_string());
-            }
-            true
-        },
-        None,
-        None,
-        None,
-    )
-    .map_err(map_git_err)?;
-    Ok(out)
+    crate::git_utils::collect_diff_paths(repo, parent_tree.as_ref(), &tree)
 }

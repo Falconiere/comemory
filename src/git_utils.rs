@@ -25,6 +25,35 @@ pub(crate) fn map_git_err(e: git2::Error) -> Error {
     Error::Other(format!("git2: {e}"))
 }
 
+/// Diff `old` (`None` = empty tree, for root commits) against `new` and
+/// collect the new-side path of every delta. Shared by [`changed_files`]
+/// (which resolves rev strings to trees first) and
+/// `graph::cochange::commit_changed_paths` (which passes revwalk-held
+/// trees directly).
+pub(crate) fn collect_diff_paths(
+    repo: &Repository,
+    old: Option<&git2::Tree>,
+    new: &git2::Tree,
+) -> Result<Vec<String>> {
+    let diff = repo
+        .diff_tree_to_tree(old, Some(new), None)
+        .map_err(map_git_err)?;
+    let mut out = Vec::new();
+    diff.foreach(
+        &mut |d, _| {
+            if let Some(path) = d.new_file().path().and_then(|p| p.to_str()) {
+                out.push(path.to_string());
+            }
+            true
+        },
+        None,
+        None,
+        None,
+    )
+    .map_err(map_git_err)?;
+    Ok(out)
+}
+
 /// Return the current HEAD commit OID for the repo containing `repo_root`.
 ///
 /// Uses `Repository::discover`, which walks up the filesystem from the given
@@ -63,23 +92,7 @@ pub fn changed_files(repo_root: &Path, from_sha: &str, to_sha: &str) -> Result<V
         .map_err(map_git_err)?
         .peel_to_tree()
         .map_err(map_git_err)?;
-    let diff = repo
-        .diff_tree_to_tree(Some(&from), Some(&to), None)
-        .map_err(map_git_err)?;
-    let mut out = Vec::new();
-    diff.foreach(
-        &mut |d, _| {
-            if let Some(path) = d.new_file().path().and_then(|p| p.to_str()) {
-                out.push(path.to_string());
-            }
-            true
-        },
-        None,
-        None,
-        None,
-    )
-    .map_err(map_git_err)?;
-    Ok(out)
+    collect_diff_paths(&repo, Some(&from), &to)
 }
 
 /// Install (or overwrite) a single git hook under `<repo_root>/.git/hooks/`.
