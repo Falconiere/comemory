@@ -40,6 +40,11 @@ pub struct Args;
 ///
 /// `deny_unknown_fields` causes malformed or extended rows to fail loudly so
 /// schema drift is caught at the ingest boundary rather than silently dropped.
+///
+/// cAST chunk rows additionally carry `parent_symbol` + `chunk_index`
+/// (both or neither): the parent symbol must have appeared EARLIER in the
+/// same stream for the same `(repo, path)` so its freshly-assigned rowid
+/// can back the child's `parent_id` column.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Row {
@@ -54,6 +59,10 @@ struct Row {
     snippet: String,
     simhash: i64,
     embedding: Vec<f32>,
+    #[serde(default)]
+    parent_symbol: Option<String>,
+    #[serde(default)]
+    chunk_index: Option<u32>,
 }
 
 /// Drain stdin and insert each row into `code_symbols` + `code_fts` +
@@ -80,6 +89,9 @@ pub async fn run(_args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<
     // `(repo, path) -> last blob_oid seen` so we know which `indexed_files`
     // rows to refresh once the stream completes.
     let mut seen_files: HashMap<(String, String), String> = HashMap::new();
+    // `(repo, path, symbol) -> rowid` for every row inserted so far in
+    // THIS stream, so chunk rows can resolve their parent's rowid.
+    let mut inserted_ids: HashMap<(String, String, String), i64> = HashMap::new();
     let stdin = std::io::stdin();
     for line in stdin.lock().lines() {
         let line = line.map_err(Error::Io)?;
@@ -103,7 +115,12 @@ pub async fn run(_args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<
             Some(_) => {}
         }
         seen_files.insert(key, row.blob_oid.clone());
-        insert_row(&tx, &row)?;
+        let parent_id = resolve_parent(&inserted_ids, &row)?;
+        let sid = insert_row(&tx, &row, parent_id)?;
+        inserted_ids.insert(
+            (row.repo.clone(), row.path.clone(), row.symbol.clone()),
+            sid,
+        );
     }
     for ((repo, path), oid) in &seen_files {
         code_row::upsert_indexed_file(&tx, repo, path, oid)?;
@@ -112,9 +129,40 @@ pub async fn run(_args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<
     Ok(())
 }
 
-/// Insert one parsed JSONL row into the three code tables. Extracted so the
-/// stdin loop in `run` stays free of plumbing details.
-fn insert_row(conn: &Connection, row: &Row) -> Result<()> {
+/// Resolve a chunk row's `parent_id` from the rows already inserted in
+/// this stream. Plain rows (no `parent_symbol`/`chunk_index`) resolve to
+/// `None`; carrying only one of the two fields, or naming a parent that
+/// has not appeared earlier in the stream for the same `(repo, path)`,
+/// is a hard error naming the offending row.
+fn resolve_parent(
+    inserted_ids: &HashMap<(String, String, String), i64>,
+    row: &Row,
+) -> Result<Option<i64>> {
+    match (&row.parent_symbol, row.chunk_index) {
+        (None, None) => Ok(None),
+        (Some(parent), Some(_)) => {
+            let key = (row.repo.clone(), row.path.clone(), parent.clone());
+            match inserted_ids.get(&key) {
+                Some(sid) => Ok(Some(*sid)),
+                None => Err(Error::Config(format!(
+                    "ingest-code: chunk row {}:{}:{} names parent_symbol '{}' \
+                     which has not appeared earlier in this stream",
+                    row.repo, row.path, row.symbol, parent
+                ))),
+            }
+        }
+        _ => Err(Error::Config(format!(
+            "ingest-code: row {}:{}:{} must carry both parent_symbol and \
+             chunk_index, or neither",
+            row.repo, row.path, row.symbol
+        ))),
+    }
+}
+
+/// Insert one parsed JSONL row into the three code tables, returning the
+/// new `code_symbols` rowid so `run` can record it for later chunk rows.
+/// Extracted so the stdin loop in `run` stays free of plumbing details.
+fn insert_row(conn: &Connection, row: &Row, parent_id: Option<i64>) -> Result<i64> {
     let sid = code_row::insert(
         conn,
         &CodeSymbolRow {
@@ -128,11 +176,12 @@ fn insert_row(conn: &Connection, row: &Row) -> Result<()> {
             line_end: row.line_end as i64,
             snippet: &row.snippet,
             simhash: row.simhash,
+            parent_id,
         },
     )?;
     // The raw relative path goes straight into `code_fts.path_tokens`:
     // the identifier tokenizer handles the splitting (see fts::index_code).
     fts::index_code(conn, sid, &row.symbol, &row.snippet, &row.path)?;
     vector::insert_code(conn, sid, &row.embedding)?;
-    Ok(())
+    Ok(sid)
 }

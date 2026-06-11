@@ -20,6 +20,8 @@ fn rust_functions_extracted_with_lines() {
     assert_eq!(add.line, 1);
     assert_eq!(add.language, "rust");
     assert!(add.snippet.contains("fn add"));
+    // Symbols under the chunk line budget are stored whole.
+    assert!(add.chunks.is_empty(), "small symbol must stay unchunked");
     let sub = syms.iter().find(|s| s.name == "sub").expect("sub sym");
     assert_eq!(sub.line, 2);
 }
@@ -90,6 +92,7 @@ fn go_function_extracted() {
         .expect("missing go function add");
     assert_eq!(add.language, "go");
     assert!(add.snippet.contains("func add"));
+    assert!(add.chunks.is_empty(), "small symbol must stay unchunked");
 }
 
 #[test]

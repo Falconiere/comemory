@@ -34,6 +34,10 @@ pub struct CodeSymbolRow<'a> {
     pub line_end: i64,
     pub snippet: &'a str,
     pub simhash: i64,
+    /// Rowid of the parent symbol when this row is a cAST chunk child
+    /// (`symbol` is then `<parent>#<n>`); `None` for whole symbols and
+    /// chunk parents.
+    pub parent_id: Option<i64>,
 }
 
 /// Delete every prior `code_symbols` row (and its cascaded `code_vec` /
@@ -85,8 +89,8 @@ pub fn insert(conn: &Connection, row: &CodeSymbolRow<'_>) -> Result<i64> {
     let sid = conn.query_row(
         "INSERT INTO code_symbols(\
              repo, path, blob_oid, symbol, kind, lang, \
-             line_start, line_end, snippet, simhash, indexed_at) \
-         VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10, strftime('%Y-%m-%dT%H:%M:%fZ','now')) \
+             line_start, line_end, snippet, simhash, parent_id, indexed_at) \
+         VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11, strftime('%Y-%m-%dT%H:%M:%fZ','now')) \
          RETURNING id",
         rusqlite::params![
             row.repo,
@@ -99,6 +103,7 @@ pub fn insert(conn: &Connection, row: &CodeSymbolRow<'_>) -> Result<i64> {
             row.line_end,
             row.snippet,
             row.simhash,
+            row.parent_id,
         ],
         |r| r.get::<_, i64>(0),
     )?;
