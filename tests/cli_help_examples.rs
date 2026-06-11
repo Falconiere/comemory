@@ -6,6 +6,7 @@ use assert_cmd::Command;
 const SUBCOMMANDS: &[&str] = &[
     "save",
     "search",
+    "search-code",
     "list",
     "delete",
     "feedback",

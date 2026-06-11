@@ -14,6 +14,9 @@ mod json;
 #[path = "output/search.rs"]
 mod search;
 
+#[path = "output/search_code.rs"]
+mod search_code;
+
 #[path = "output/context.rs"]
 mod context;
 

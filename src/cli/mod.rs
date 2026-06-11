@@ -26,6 +26,7 @@ pub mod prune;
 pub mod rebuild;
 pub mod save;
 pub mod search;
+pub mod search_code;
 pub mod tune;
 
 /// Top-level CLI. `comemory <subcommand> [--json] [--data-dir DIR]`. The `--json`
@@ -61,6 +62,8 @@ pub enum Cmd {
     Save(save::Args),
     /// Search the memory index by natural-language query.
     Search(search::Args),
+    /// Search the code index by natural-language or identifier query.
+    SearchCode(search_code::Args),
     /// List memories with optional repo/kind filters.
     List(list::Args),
     /// Soft-delete a memory by id (moves to `.trash/`).
@@ -108,6 +111,7 @@ pub async fn run(cli: Cli) -> Result<()> {
     match cli.cmd {
         Cmd::Save(a) => save::run(a, cli.json, cli.data_dir).await,
         Cmd::Search(a) => search::run(a, cli.json, cli.data_dir).await,
+        Cmd::SearchCode(a) => search_code::run(a, cli.json, cli.data_dir).await,
         Cmd::List(a) => list::run(a, cli.json, cli.data_dir).await,
         Cmd::Delete(a) => delete::run(a, cli.json, cli.data_dir).await,
         Cmd::Feedback(a) => feedback::run(a, cli.json, cli.data_dir).await,
