@@ -34,6 +34,31 @@ fn emit_accepts_empty_hits_in_json_mode() {
 }
 
 #[test]
+fn tty_footer_omits_feedback_hint_for_empty_hits() {
+    let hits: Vec<Reranked> = Vec::new();
+    let mut buf: Vec<u8> = Vec::new();
+    search::write_tty(&mut buf, &hits, Some("q-20260610-a1b2c3d4")).expect("write_tty");
+    let out = String::from_utf8(buf).expect("utf8");
+    assert!(
+        out.contains("query: q-20260610-a1b2c3d4"),
+        "query id footer must survive empty hits: {out}"
+    );
+    assert!(
+        !out.contains("feedback:"),
+        "no feedback hint without hits: {out}"
+    );
+}
+
+#[test]
+fn tty_footer_includes_feedback_hint_with_hits() {
+    let hits = sample_hits();
+    let mut buf: Vec<u8> = Vec::new();
+    search::write_tty(&mut buf, &hits, Some("q-20260610-a1b2c3d4")).expect("write_tty");
+    let out = String::from_utf8(buf).expect("utf8");
+    assert!(out.contains("feedback:"), "feedback hint expected: {out}");
+}
+
+#[test]
 fn search_json_envelope_contract() {
     insta::assert_json_snapshot!(search::envelope(&sample_hits(), None));
 }
