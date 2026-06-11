@@ -9,8 +9,8 @@
 //! `Lang::Typescript` dispatches to the Tsx grammar so JSX-bearing `.tsx`
 //! files extract just as cleanly as plain `.ts`.
 
-use ast_grep_core::tree_sitter::LanguageExt;
-use ast_grep_core::{AstGrep, Pattern};
+use ast_grep_core::tree_sitter::{LanguageExt, StrDoc};
+use ast_grep_core::{AstGrep, NodeMatch, Pattern};
 use ast_grep_language::{Go, JavaScript, Python, Rust, Tsx};
 
 use crate::ast::languages::Lang;
@@ -91,35 +91,54 @@ fn go_patterns() -> &'static [(&'static str, &'static str)] {
     ]
 }
 
+/// Compile each `(tag, pattern)` pair for `language` and invoke `on_match`
+/// with the tag and every node the pattern matches in `source`. Shared by
+/// symbol extraction here and import extraction in `crate::graph::imports`.
+pub(crate) fn for_each_match<L, F>(
+    language: L,
+    source: &str,
+    patterns: &[(&str, &str)],
+    mut on_match: F,
+) -> Result<()>
+where
+    L: LanguageExt + Clone,
+    F: FnMut(&str, &NodeMatch<StrDoc<L>>),
+{
+    let grep = AstGrep::str(source, language.clone());
+    let root = grep.root();
+    for (tag, pat) in patterns {
+        let pattern = Pattern::try_new(pat, language.clone())
+            .map_err(|e| Error::Other(format!("ast-grep pattern '{pat}' failed: {e:?}")))?;
+        for matched in root.find_all(&pattern) {
+            on_match(tag, &matched);
+        }
+    }
+    Ok(())
+}
+
 fn extract_with<L: LanguageExt + Clone>(
     language: L,
     lang: Lang,
     source: &str,
     patterns: &[(&str, &str)],
 ) -> Result<Vec<ExtractedSymbol>> {
-    let grep = AstGrep::str(source, language.clone());
-    let root = grep.root();
     let mut out = Vec::new();
-    for (kind, pat) in patterns {
-        let pattern = Pattern::try_new(pat, language.clone())
-            .map_err(|e| Error::Other(format!("ast-grep pattern '{pat}' failed: {e:?}")))?;
-        for m in root.find_all(&pattern) {
-            let Some(name_node) = m.get_env().get_match("NAME") else {
-                continue;
-            };
-            let name = name_node.text().to_string();
-            if name.is_empty() {
-                continue;
-            }
-            let pos = m.start_pos();
-            out.push(ExtractedSymbol {
-                name,
-                kind: (*kind).to_string(),
-                language: lang.as_str().to_string(),
-                snippet: m.text().to_string(),
-                line: pos.line() + 1,
-            });
+    for_each_match(language, source, patterns, |kind, m| {
+        let Some(name_node) = m.get_env().get_match("NAME") else {
+            return;
+        };
+        let name = name_node.text().to_string();
+        if name.is_empty() {
+            return;
         }
-    }
+        let pos = m.start_pos();
+        out.push(ExtractedSymbol {
+            name,
+            kind: kind.to_string(),
+            language: lang.as_str().to_string(),
+            snippet: m.text().to_string(),
+            line: pos.line() + 1,
+        });
+    })?;
     Ok(out)
 }
