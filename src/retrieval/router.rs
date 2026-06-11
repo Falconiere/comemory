@@ -82,7 +82,7 @@ pub fn route(
     match vec {
         Some(v) if lex_meaningful => route_hybrid(cfg, conn, query, v, k, repo),
         Some(v) => route_vector_only(cfg, conn, v, k, repo),
-        None => route_lexical(conn, query, k, repo),
+        None => route_lexical(conn, query, k, repo, cfg.retrieval.bm25_weights),
     }
 }
 
@@ -107,9 +107,10 @@ fn route_hybrid(
         vector::knn_memory(conn, vec, k, repo)?,
         cfg.retrieval.memory_threshold,
     );
-    let mut lex = fts::search_memory(conn, query, k, repo)?;
+    let weights = cfg.retrieval.bm25_weights;
+    let mut lex = fts::search_memory(conn, query, k, repo, weights)?;
     if lex.is_empty() {
-        lex = lexical_ladder(conn, query, k, repo)?;
+        lex = lexical_ladder(conn, query, k, repo, weights)?;
     }
     if ann.is_empty() {
         return Ok(lex.into_iter().map(lex_to_routed).collect());
@@ -162,15 +163,18 @@ fn above_memory_threshold(hits: Vec<vector::MemoryHit>, threshold: f32) -> Vec<v
 }
 
 /// Pure-lexical path via FTS5 BM25, with the relaxed fallback ladder.
+/// `weights` is `cfg.retrieval.bm25_weights`, threaded explicitly because
+/// this arm needs no other config.
 fn route_lexical(
     conn: &Connection,
     query: &str,
     k: usize,
     repo: Option<&str>,
+    weights: (f32, f32),
 ) -> Result<Vec<RoutedHit>> {
-    let mut lex = fts::search_memory(conn, query, k, repo)?;
+    let mut lex = fts::search_memory(conn, query, k, repo, weights)?;
     if lex.is_empty() {
-        lex = lexical_ladder(conn, query, k, repo)?;
+        lex = lexical_ladder(conn, query, k, repo, weights)?;
     }
     Ok(lex.into_iter().map(lex_to_routed).collect())
 }
@@ -198,14 +202,15 @@ fn lexical_ladder(
     query: &str,
     k: usize,
     repo: Option<&str>,
+    weights: (f32, f32),
 ) -> Result<Vec<fts::MemoryFtsHit>> {
     if fts::term_count(query) >= 2 {
-        let lex = fts::search_memory_relaxed(conn, query, k, repo)?;
+        let lex = fts::search_memory_relaxed(conn, query, k, repo, weights)?;
         if !lex.is_empty() {
             return Ok(lex);
         }
     }
-    fts::search_memory_subtokens(conn, query, k, repo)
+    fts::search_memory_subtokens(conn, query, k, repo, weights)
 }
 
 /// Map a `vector::MemoryHit` to a [`RankedHit`] for RRF fusion. Vector

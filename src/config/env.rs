@@ -31,30 +31,35 @@ fn env_u32(name: &str) -> Result<Option<u32>> {
     Ok(Some(parsed))
 }
 
-/// Read an env var as a `"lo,hi"` pair of `f64`s; `Ok(None)` when unset.
+/// Read an env var as an `"a,b"` pair of numbers; `Ok(None)` when unset.
 ///
-/// Only the shape (exactly two comma-separated numbers) is checked here;
-/// the range invariants (finite, lo > 0, lo ≤ hi) live in
+/// Only the shape (exactly two comma-separated values that parse as `T`)
+/// is checked here; the range invariants (finite, ordering, sign) live in
 /// `Config::validate` so the file overlay enforces them identically.
-fn env_f64_pair(name: &str) -> Result<Option<(f64, f64)>> {
+/// Shared by `COMEMORY_RANK_PRIOR_CLAMP` (`f64`) and
+/// `COMEMORY_RETRIEVAL_BM25_WEIGHTS` (`f32`).
+fn env_pair<T: std::str::FromStr>(name: &str) -> Result<Option<(T, T)>>
+where
+    T::Err: std::fmt::Display,
+{
     let Ok(v) = std::env::var(name) else {
         return Ok(None);
     };
     let parts: Vec<&str> = v.split(',').collect();
     if parts.len() != 2 {
         return Err(Error::Other(format!(
-            "invalid env var {name}={v}: expected \"lo,hi\" (two comma-separated numbers)"
+            "invalid env var {name}={v}: expected \"a,b\" (two comma-separated numbers)"
         )));
     }
-    let lo = parts[0]
+    let a = parts[0]
         .trim()
-        .parse::<f64>()
-        .map_err(|e| Error::Other(format!("invalid env var {name}={v}: lo: {e}")))?;
-    let hi = parts[1]
+        .parse::<T>()
+        .map_err(|e| Error::Other(format!("invalid env var {name}={v}: first value: {e}")))?;
+    let b = parts[1]
         .trim()
-        .parse::<f64>()
-        .map_err(|e| Error::Other(format!("invalid env var {name}={v}: hi: {e}")))?;
-    Ok(Some((lo, hi)))
+        .parse::<T>()
+        .map_err(|e| Error::Other(format!("invalid env var {name}={v}: second value: {e}")))?;
+    Ok(Some((a, b)))
 }
 
 impl Config {
@@ -91,16 +96,15 @@ impl Config {
                 ))
             })?;
         }
+        // Only the parse happens here; the finite/positive invariant lives
+        // in `Config::validate` so the file overlay is checked identically.
         if let Ok(v) = std::env::var("COMEMORY_RETRIEVAL_RRF_K") {
-            let parsed = v.parse::<f32>().map_err(|e| {
+            self.retrieval.rrf_k = v.parse::<f32>().map_err(|e| {
                 Error::Other(format!("invalid env var COMEMORY_RETRIEVAL_RRF_K={v}: {e}"))
             })?;
-            if !parsed.is_finite() || parsed <= 0.0 {
-                return Err(Error::Other(format!(
-                    "invalid env var COMEMORY_RETRIEVAL_RRF_K={v} must be a finite positive number"
-                )));
-            }
-            self.retrieval.rrf_k = parsed;
+        }
+        if let Some(v) = env_pair::<f32>("COMEMORY_RETRIEVAL_BM25_WEIGHTS")? {
+            self.retrieval.bm25_weights = v;
         }
         if let Ok(v) = std::env::var("COMEMORY_GIT_AUTO_SYNC") {
             self.git.auto_sync = match v.as_str() {
@@ -127,7 +131,7 @@ impl Config {
         if let Some(v) = env_f64("COMEMORY_RANK_DECAY")? {
             self.rank.decay = v;
         }
-        if let Some(v) = env_f64_pair("COMEMORY_RANK_PRIOR_CLAMP")? {
+        if let Some(v) = env_pair::<f64>("COMEMORY_RANK_PRIOR_CLAMP")? {
             self.rank.prior_clamp = v;
         }
         if let Some(v) = env_f64("COMEMORY_RANK_MMR_LAMBDA")? {
