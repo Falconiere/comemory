@@ -42,9 +42,7 @@ struct PartialRankConfig {
 /// Carries every *consumed* `PruneConfig` field, not just the M1 scoring
 /// extensions: `deny_unknown_fields` would otherwise hard-error on a valid
 /// `[prune]` key like `trash_retention_days` once the section is
-/// overlayable at all. `low_value_default_unused_since_days` is
-/// deliberately absent — the knob has zero consumers (see [`PruneConfig`])
-/// and offering an overlay for it would be a silent no-op footgun.
+/// overlayable at all.
 #[derive(Debug, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 struct PartialPruneConfig {
@@ -88,10 +86,6 @@ pub struct RetrievalConfig {
     /// this floor are dropped instead of padding the candidate pool with
     /// nearest-but-irrelevant noise. Default `0.55`.
     pub memory_threshold: f32,
-    /// Minimum cosine similarity for code ANN hits. No code-vector search
-    /// path exists in M1 routing (`vector::knn_code` has no caller), so
-    /// this knob is currently unconsumed; the M3 code rerank will read it.
-    pub code_threshold: f32,
     pub hybrid_weight: f32,
     pub top_k: usize,
     pub corrective_min_confidence: f32,
@@ -154,11 +148,6 @@ pub struct RankConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PruneConfig {
     pub trash_retention_days: u32,
-    /// Legacy calendar-age knob for low-value detection. Unconsumed as of
-    /// M1 (`min_activation` replaced the calendar criterion) and exposed
-    /// through neither env nor the config-file overlay; the struct field
-    /// only remains so serialized configs round-trip. Removed in M2.
-    pub low_value_default_unused_since_days: u32,
     pub low_value_default_below_quality: u32,
     /// Activation floor (ACT-R scale) below which a memory is prune-eligible.
     ///
@@ -212,7 +201,6 @@ impl Config {
             },
             retrieval: RetrievalConfig {
                 memory_threshold: 0.55,
-                code_threshold: 0.50,
                 hybrid_weight: 0.65,
                 top_k: 12,
                 corrective_min_confidence: 0.15,
@@ -227,7 +215,6 @@ impl Config {
             },
             prune: PruneConfig {
                 trash_retention_days: 30,
-                low_value_default_unused_since_days: 180,
                 low_value_default_below_quality: 2,
                 min_activation: -2.0,
                 min_feedback: 0.25,

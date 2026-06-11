@@ -91,13 +91,6 @@ impl Config {
                 ))
             })?;
         }
-        if let Ok(v) = std::env::var("COMEMORY_RETRIEVAL_CODE_THRESHOLD") {
-            self.retrieval.code_threshold = v.parse::<f32>().map_err(|e| {
-                Error::Other(format!(
-                    "invalid env var COMEMORY_RETRIEVAL_CODE_THRESHOLD={v}: {e}"
-                ))
-            })?;
-        }
         if let Ok(v) = std::env::var("COMEMORY_RETRIEVAL_RRF_K") {
             let parsed = v.parse::<f32>().map_err(|e| {
                 Error::Other(format!("invalid env var COMEMORY_RETRIEVAL_RRF_K={v}: {e}"))
@@ -149,10 +142,6 @@ impl Config {
         if let Some(v) = env_u32("COMEMORY_PRUNE_BELOW_QUALITY")? {
             self.prune.low_value_default_below_quality = v;
         }
-        // COMEMORY_PRUNE_UNUSED_SINCE_DAYS is intentionally NOT honoured:
-        // the legacy `low_value_default_unused_since_days` knob has zero
-        // consumers as of M1 (activation replaced the calendar criterion),
-        // so wiring an env var to it would just be a silent no-op footgun.
         self.validate()
     }
 }
