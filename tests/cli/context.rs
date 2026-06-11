@@ -136,6 +136,58 @@ fn context_vector_path_accepts_stdin_vector() {
     assert!(v.get("memories").and_then(Value::as_array).is_some());
 }
 
+/// M2 final-integration review (finding H): `comemory context` runs the
+/// tracked pipeline, so it must surface the `query_id` of its retrieval_log
+/// row — otherwise context lookups enter the log but can never receive
+/// feedback, and `mine` permanently counts every one as a failed query.
+#[test]
+fn context_json_emits_query_id_and_logs_retrieval() {
+    let home = TempDir::new().expect("tempdir");
+    save_memory(&home, "postgres advisory locks for ordering", "note");
+
+    let v = context_json(&home, "advisory locks", &[]);
+    let qid = v
+        .get("query_id")
+        .and_then(Value::as_str)
+        .expect("context envelope must carry query_id");
+    assert!(
+        qid.starts_with("q-") && qid.len() == "q-20260611-a1b2c3d4".len(),
+        "query_id must have the q-<yyyymmdd>-<8hex> shape: {qid:?}"
+    );
+
+    let conn = connection::open(home.path().join(".comemory").join("comemory.db")).expect("open");
+    let n: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM retrieval_log WHERE query_id = ?1",
+            [qid],
+            |r| r.get(0),
+        )
+        .expect("count retrieval_log");
+    assert_eq!(n, 1, "the emitted query_id must join retrieval_log");
+}
+
+/// TTY mode must print the same `query: <qid>` footer as `comemory search`
+/// (with the feedback hint, since the lookup produced memory hits).
+#[test]
+fn context_tty_prints_query_footer() {
+    let home = TempDir::new().expect("tempdir");
+    save_memory(&home, "tty footer context body", "note");
+
+    let out = bin(&home)
+        .args(["context", "tty footer"])
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    assert!(
+        stdout.contains("query: q-"),
+        "TTY context must print the query id footer: {stdout:?}"
+    );
+    assert!(
+        stdout.contains("feedback:"),
+        "TTY context with hits must print the feedback hint: {stdout:?}"
+    );
+}
+
 /// Supersedes chain: bundle relations must include the supersedes edge.
 #[test]
 fn context_bundle_includes_supersedes_relations() {

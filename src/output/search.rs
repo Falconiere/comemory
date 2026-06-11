@@ -68,10 +68,8 @@ pub fn emit(hits: &[Reranked], query_id: Option<&str>, json_flag: bool) -> Resul
 }
 
 /// Render the TTY view of `hits` to `out`. Public so tests can capture the
-/// output without going through stdout. The `query: <qid>` footer is always
-/// printed when a query id exists — zero-hit queries are still logged for
-/// reformulation mining — but the feedback hint is appended only when there
-/// are hits, since with no hits there is nothing to mark `--used`.
+/// output without going through stdout. The `query: <qid>` footer semantics
+/// live in [`tty::write_query_footer`], shared with `comemory context`.
 pub fn write_tty(out: &mut impl Write, hits: &[Reranked], query_id: Option<&str>) -> Result<()> {
     for hit in hits {
         let suffix = match hit.superseded_by.as_deref() {
@@ -91,15 +89,7 @@ pub fn write_tty(out: &mut impl Write, hits: &[Reranked], query_id: Option<&str>
             expanded
         )?;
     }
-    if let Some(qid) = query_id {
-        let hint = if hits.is_empty() {
-            String::new()
-        } else {
-            format!("  (feedback: comemory feedback {qid} --used <ids>)")
-        };
-        writeln!(out, "query: {qid}{hint}")?;
-    }
-    Ok(())
+    tty::write_query_footer(out, query_id, !hits.is_empty())
 }
 
 fn row_from(h: &Reranked) -> Row<'_> {

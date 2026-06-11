@@ -138,12 +138,15 @@ fn feedback_rejects_malformed_query_id() {
 fn feedback_unknown_query_id_warns_but_records() {
     // A valid-shaped query id absent from `retrieval_log` (evicted by gc,
     // or replayed feedback) is a warning, not an error: exit 0 and the
-    // counters + events are still written.
+    // counters + events are still written. The TTY ack must carry the
+    // notice itself — the `tracing::warn!` is invisible at the default
+    // EnvFilter level, so a bare "ok" would silently hide the orphan.
     let home = TempDir::new().expect("tempdir");
     bin(&home)
         .args(["feedback", "q-20260610-deadbeef", "--used", "a1b2c3d4"])
         .assert()
-        .success();
+        .success()
+        .stdout(predicates::str::contains("query id not in log"));
 
     let conn = open_db_readonly(&home);
     let (used_count, events): (i64, i64) = conn
@@ -212,4 +215,17 @@ fn feedback_full_flow_links_events_to_retrieval_log() {
         .expect("joined provenance row");
     assert_eq!(events, 1, "exactly one event must join retrieval_log");
     assert_eq!(verdict, "used");
+
+    // Known-query TTY ack stays a plain "ok" — the orphan notice is
+    // reserved for ids missing from retrieval_log.
+    let ack = bin(&home)
+        .args(["feedback", &query_id, "--used", &memory_id])
+        .assert()
+        .success();
+    let stdout = String::from_utf8(ack.get_output().stdout.clone()).expect("utf8 stdout");
+    assert_eq!(
+        stdout.trim(),
+        "ok",
+        "known query id must ack with a bare ok"
+    );
 }

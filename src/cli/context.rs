@@ -59,7 +59,10 @@ pub struct Args {
 
 /// Run `comemory context`. Opens the DB, routes the query (with optional
 /// vector), then assembles a bundle covering each matched memory plus all
-/// cross-link edges walked to depth ≤ 2.
+/// cross-link edges walked to depth ≤ 2. The lookup is tracked like a
+/// search, and the resulting `query_id` is surfaced (JSON field / TTY
+/// footer) so context lookups can receive `comemory feedback` instead of
+/// polluting reformulation mining as permanently-failed queries.
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
@@ -78,5 +81,5 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     )?;
     let ids: Vec<String> = run.hits.into_iter().map(|h| h.memory_id).collect();
     let bundle = bundle::assemble(&conn, &a.query, &ids)?;
-    output::context::emit(&bundle, json_flag)
+    output::context::emit(&bundle, run.query_id.as_deref(), json_flag)
 }
