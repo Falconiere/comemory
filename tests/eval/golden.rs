@@ -27,10 +27,24 @@ fn insert_memory(conn: &rusqlite::Connection, id: &str, body: &str, deleted_at: 
 
 /// Insert a `retrieval_log` row plus a used-verdict `feedback_events` row.
 fn mark_used(conn: &rusqlite::Connection, query_id: &str, query: &str, memory_id: &str) {
+    mark_used_filtered(conn, query_id, query, memory_id, None, None);
+}
+
+/// Like [`mark_used`] but recording the repo/kind filters the originating
+/// search ran with (`None` → NULL, i.e. unfiltered).
+fn mark_used_filtered(
+    conn: &rusqlite::Connection,
+    query_id: &str,
+    query: &str,
+    memory_id: &str,
+    repo: Option<&str>,
+    kind: Option<&str>,
+) {
     conn.execute(
-        "INSERT OR IGNORE INTO retrieval_log(query_id, query, returned_ids, at, duration_ms)
-         VALUES (?1, ?2, '[]', '2026-06-09T00:00:00Z', 1)",
-        rusqlite::params![query_id, query],
+        "INSERT OR IGNORE INTO retrieval_log(query_id, query, returned_ids, at, duration_ms,
+                                             repo, kind)
+         VALUES (?1, ?2, '[]', '2026-06-09T00:00:00Z', 1, ?3, ?4)",
+        rusqlite::params![query_id, query, repo, kind],
     )
     .expect("insert retrieval_log");
     conn.execute(
@@ -57,6 +71,30 @@ fn load_file_parses_two_pairs() {
     assert_eq!(pairs[0].relevant, vec!["aaaaaaa1", "aaaaaaa2"]);
     assert_eq!(pairs[1].query, "auth race");
     assert_eq!(pairs[1].relevant, vec!["bbbbbbb1"]);
+}
+
+#[test]
+fn load_file_parses_repo_kind_and_defaults_none() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("golden.yaml");
+    std::fs::write(
+        &path,
+        "- query: postgres pool\n  relevant: [aaaaaaa1]\n  repo: r\n  kind: decision\n\
+         - query: auth race\n  relevant: [bbbbbbb1]\n",
+    )
+    .expect("write yaml");
+    let pairs = load_file(&path).expect("load");
+    assert_eq!(pairs.len(), 2);
+    assert_eq!(pairs[0].repo.as_deref(), Some("r"));
+    assert_eq!(pairs[0].kind.as_deref(), Some("decision"));
+    assert_eq!(
+        pairs[1].repo, None,
+        "pair without repo key must default None (backward compatible)"
+    );
+    assert_eq!(
+        pairs[1].kind, None,
+        "pair without kind key must default None (backward compatible)"
+    );
 }
 
 #[test]
@@ -126,19 +164,57 @@ fn harvest_deduplicates_repeated_verdicts() {
 }
 
 #[test]
+fn harvest_carries_repo_and_kind_from_originating_search() {
+    let (_d, conn) = open_db();
+    insert_memory(&conn, "aaaaaaa1", "postgres pool exhausted fix", None);
+    insert_memory(&conn, "aaaaaaa2", "postgres pool sizing decision", None);
+    mark_used_filtered(
+        &conn,
+        "q-20260609-aabbccdd",
+        "postgres pool",
+        "aaaaaaa2",
+        Some("r"),
+        Some("decision"),
+    );
+    mark_used(&conn, "q-20260610-aabbccdd", "postgres pool", "aaaaaaa1");
+
+    let pairs = harvest(&conn).expect("harvest");
+    assert_eq!(
+        pairs.len(),
+        2,
+        "same query under different filters must yield distinct pairs: {pairs:?}"
+    );
+    // BTreeMap key order: NULL repo/kind (None) sorts before Some.
+    assert_eq!(pairs[0].query, "postgres pool");
+    assert_eq!(pairs[0].repo, None, "unfiltered search must harvest None");
+    assert_eq!(pairs[0].kind, None, "unfiltered search must harvest None");
+    assert_eq!(pairs[0].relevant, vec!["aaaaaaa1"]);
+    assert_eq!(pairs[1].query, "postgres pool");
+    assert_eq!(pairs[1].repo.as_deref(), Some("r"));
+    assert_eq!(pairs[1].kind.as_deref(), Some("decision"));
+    assert_eq!(pairs[1].relevant, vec!["aaaaaaa2"]);
+}
+
+#[test]
 fn merge_file_wins_on_duplicate_query_and_sorts() {
     let file = vec![GoldenPair {
         query: "postgres pool".into(),
         relevant: vec!["aaaaaaa1".into()],
+        repo: None,
+        kind: None,
     }];
     let harvested = vec![
         GoldenPair {
             query: "postgres pool".into(),
             relevant: vec!["bbbbbbb1".into()],
+            repo: None,
+            kind: None,
         },
         GoldenPair {
             query: "auth race".into(),
             relevant: vec!["ccccccc1".into()],
+            repo: None,
+            kind: None,
         },
     ];
     let merged = merge(file, harvested);
@@ -149,6 +225,28 @@ fn merge_file_wins_on_duplicate_query_and_sorts() {
         merged[1].relevant,
         vec!["aaaaaaa1"],
         "file pair must win over harvested pair"
+    );
+}
+
+#[test]
+fn merge_keys_on_query_repo_and_kind() {
+    let file = vec![GoldenPair {
+        query: "postgres pool".into(),
+        relevant: vec!["aaaaaaa1".into()],
+        repo: None,
+        kind: Some("decision".into()),
+    }];
+    let harvested = vec![GoldenPair {
+        query: "postgres pool".into(),
+        relevant: vec!["bbbbbbb1".into()],
+        repo: None,
+        kind: None,
+    }];
+    let merged = merge(file, harvested);
+    assert_eq!(
+        merged.len(),
+        2,
+        "file pair beats harvested only on full (query, repo, kind) match: {merged:?}"
     );
 }
 

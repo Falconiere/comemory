@@ -46,6 +46,8 @@ fn seeded() -> (tempfile::TempDir, rusqlite::Connection, Vec<GoldenPair>) {
         pairs.push(GoldenPair {
             query: (*body).into(),
             relevant: vec![(*id).into()],
+            repo: None,
+            kind: None,
         });
     }
     (dir, conn, pairs)

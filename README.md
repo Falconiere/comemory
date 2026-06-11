@@ -172,9 +172,9 @@ doubles as eval ground truth. Raw telemetry (`retrieval_log`,
 (`COMEMORY_LEARNING_RETENTION_DAYS`); aggregated feedback counters and
 mined expansions are distilled knowledge and never expire — `comemory
 rebuild` carries all learning state across too. Note that eval replays
-are lexical and unfiltered: any `--repo`/`--kind` filters on the
-originating search are ignored, so pairs born under filters are scored
-against the unfiltered candidate pool.
+are lexical-only (BYO vectors cannot be replayed offline); the
+`--repo`/`--kind` filters of the originating search travel with each
+golden pair and are replayed faithfully.
 
 ## Quality Gates
 

@@ -189,6 +189,8 @@ pub fn golden_pairs(bodies: &HashMap<String, String>) -> Vec<GoldenPair> {
             GoldenPair {
                 query: (*query).to_string(),
                 relevant,
+                repo: None,
+                kind: None,
             }
         })
         .collect()
