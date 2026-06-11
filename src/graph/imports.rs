@@ -24,9 +24,11 @@
 //! - **Python** — line parsing. Fallback because the pattern `import $MOD`
 //!   drops every name after the first in `import a, b` (verified), while
 //!   `import` / `from … import` statements are strictly line-structured.
-//! - **Go** — line parsing. Fallback because a parenthesized import block
-//!   (`import ( … )`) is not matched by `import ($$$SPECS)` (verified); a
-//!   small line state machine handles both single imports and blocks.
+//! - **Go** — line parsing. Fallback because while `import ($$$SPECS)`
+//!   does match a parenthesized block, the `$$$` multi-metavar is not
+//!   retrievable through the single-metavar `get_match` API the shared
+//!   `for_each_match` helper exposes (verified); a small line state
+//!   machine handles both single imports and blocks instead.
 
 use std::collections::HashSet;
 
