@@ -10,6 +10,20 @@ use time::OffsetDateTime;
 use crate::prelude::*;
 use crate::stats::sqlite::StatsDb;
 
+/// Validate the `q-<yyyymmdd>-<8hex>` query-id shape emitted by
+/// `retrieval::pipeline`. Shared by `comemory feedback` (reject typos
+/// loudly) and tests.
+pub fn is_valid_query_id(s: &str) -> bool {
+    let b = s.as_bytes();
+    b.len() == 19
+        && s.starts_with("q-")
+        && b[2..10].iter().all(u8::is_ascii_digit)
+        && b[10] == b'-'
+        && b[11..19]
+            .iter()
+            .all(|c| matches!(c, b'0'..=b'9' | b'a'..=b'f'))
+}
+
 /// Thin handle that borrows a [`StatsDb`] and exposes feedback operations.
 /// The borrow is `&mut` per the plan; rusqlite uses interior mutability so the
 /// individual operations only need `&self`.

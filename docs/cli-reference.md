@@ -132,6 +132,8 @@ Examples:
   #   quality     — frontmatter quality nudge (1-5 scale), neutral = 1.0
   #   supersede   — 0.2 penalty when superseded by a live memory, else 1.0
   #   final_score — product of all factors (== score at root level)
+  # The envelope also carries query_id — the retrieval_log row for this
+  # run; pass it to `comemory feedback <query_id> --used <ids>`.
   comemory search "auth race" --json
 
   # Caller-supplied vector (BYO-vector, CSV form)

@@ -1,8 +1,8 @@
 //! Tests for [`comemory::retrieval::pipeline::search`] — the end-to-end
 //! route → rerank → diversify → top-k path plus best-effort access
-//! tracking.
+//! tracking and query logging.
 
-use comemory::retrieval::pipeline::search;
+use comemory::retrieval::pipeline::{search, SearchOptions};
 use comemory::simhash::{hamming64, NEAR_DUP_HAMMING};
 
 fn seeded() -> (tempfile::TempDir, rusqlite::Connection) {
@@ -24,17 +24,35 @@ fn seeded() -> (tempfile::TempDir, rusqlite::Connection) {
 fn search_returns_reranked_diversified_hits() {
     let (_d, conn) = seeded();
     let cfg = comemory::config::Config::defaults();
-    let out = search(&cfg, &conn, "sqlite busy", None, None, None).expect("search");
-    assert_eq!(out.len(), 1);
-    assert_eq!(out[0].memory_id, "aaaa0001");
-    assert!(out[0].parts.final_score > 0.0);
+    let run = search(
+        &cfg,
+        &conn,
+        "sqlite busy",
+        None,
+        None,
+        None,
+        SearchOptions { track: false },
+    )
+    .expect("search");
+    assert_eq!(run.hits.len(), 1);
+    assert_eq!(run.hits[0].memory_id, "aaaa0001");
+    assert!(run.hits[0].parts.final_score > 0.0);
 }
 
 #[test]
 fn retrieval_hit_bumps_access_tracking() {
     let (_d, conn) = seeded();
     let cfg = comemory::config::Config::defaults();
-    search(&cfg, &conn, "sqlite busy", None, None, None).expect("search");
+    search(
+        &cfg,
+        &conn,
+        "sqlite busy",
+        None,
+        None,
+        None,
+        SearchOptions { track: true },
+    )
+    .expect("search");
     let (count, last): (i64, String) = conn
         .query_row(
             "SELECT access_count, last_accessed FROM memories WHERE id='aaaa0001'",
@@ -53,14 +71,24 @@ fn retrieval_hit_bumps_access_tracking() {
 fn access_tracking_failure_does_not_break_reads() {
     let (_d, conn) = seeded();
     // Make every write fail: query_only rejects the access-tracking UPDATE
-    // while leaving the read path untouched.
+    // and the retrieval_log INSERT while leaving the read path untouched.
     conn.pragma_update(None, "query_only", true)
         .expect("pragma");
     let cfg = comemory::config::Config::defaults();
-    let out = search(&cfg, &conn, "sqlite busy", None, None, None)
-        .expect("search must succeed when access tracking cannot write");
-    assert_eq!(out.len(), 1);
-    assert_eq!(out[0].memory_id, "aaaa0001");
+    let run = search(
+        &cfg,
+        &conn,
+        "sqlite busy",
+        None,
+        None,
+        None,
+        SearchOptions { track: true },
+    )
+    .expect("search must succeed when access tracking cannot write");
+    assert_eq!(run.hits.len(), 1);
+    assert_eq!(run.hits[0].memory_id, "aaaa0001");
+    // Query logging is best-effort too: a failed INSERT yields no id.
+    assert!(run.query_id.is_none(), "logging failed, id must be None");
     // The bump itself was skipped, not silently rerouted somewhere else.
     let count: i64 = conn
         .query_row(
@@ -70,6 +98,75 @@ fn access_tracking_failure_does_not_break_reads() {
         )
         .expect("row");
     assert_eq!(count, 0);
+}
+
+#[test]
+fn search_with_track_logs_one_retrieval_log_row() {
+    let (_d, conn) = seeded();
+    let cfg = comemory::config::Config::defaults();
+    let run = search(
+        &cfg,
+        &conn,
+        "sqlite busy",
+        None,
+        None,
+        None,
+        SearchOptions { track: true },
+    )
+    .expect("search");
+    let qid = run.query_id.expect("query_id present when tracking");
+    assert!(comemory::stats::feedback::is_valid_query_id(&qid));
+    let (q, ids, dur): (String, String, Option<i64>) = conn
+        .query_row(
+            "SELECT query, returned_ids, duration_ms FROM retrieval_log WHERE query_id = ?1",
+            [&qid],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .expect("logged");
+    assert_eq!(q, "sqlite busy");
+    let parsed: Vec<String> = serde_json::from_str(&ids).expect("json ids");
+    assert_eq!(parsed.len(), run.hits.len());
+    assert_eq!(parsed[0], "aaaa0001");
+    assert!(dur.is_some());
+}
+
+#[test]
+fn search_without_track_logs_nothing_and_freezes_access() {
+    let (_d, conn) = seeded();
+    let cfg = comemory::config::Config::defaults();
+    let before: i64 = conn
+        .query_row(
+            "SELECT access_count FROM memories WHERE id='aaaa0001'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("row");
+    for _ in 0..2 {
+        let run = search(
+            &cfg,
+            &conn,
+            "sqlite busy",
+            None,
+            None,
+            None,
+            SearchOptions { track: false },
+        )
+        .expect("search");
+        assert!(run.query_id.is_none(), "no query_id when track is off");
+        assert_eq!(run.hits.len(), 1);
+    }
+    let logged: i64 = conn
+        .query_row("SELECT count(*) FROM retrieval_log", [], |r| r.get(0))
+        .expect("count");
+    assert_eq!(logged, 0, "track:false must not write retrieval_log");
+    let after: i64 = conn
+        .query_row(
+            "SELECT access_count FROM memories WHERE id='aaaa0001'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("row");
+    assert_eq!(after, before, "track:false must not bump access_count");
 }
 
 #[test]
@@ -118,6 +215,15 @@ fn pipeline_cuts_to_configured_top_k() {
         cfg.retrieval.top_k, 12,
         "default top_k expected by this test"
     );
-    let out = search(&cfg, &conn, "sqlite", None, None, None).expect("search");
-    assert_eq!(out.len(), 12, "pipeline must cut to top_k");
+    let run = search(
+        &cfg,
+        &conn,
+        "sqlite",
+        None,
+        None,
+        None,
+        SearchOptions { track: false },
+    )
+    .expect("search");
+    assert_eq!(run.hits.len(), 12, "pipeline must cut to top_k");
 }

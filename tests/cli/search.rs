@@ -39,6 +39,62 @@ fn search_finds_seeded_memory_lexically() {
 }
 
 #[test]
+fn search_json_emits_query_id_backed_by_retrieval_log_row() {
+    // The envelope's query_id must be a valid `q-<yyyymmdd>-<8hex>` id and
+    // must round-trip to a `retrieval_log` row in the same db, so
+    // `comemory feedback <id>` can attribute the session later.
+    let home = tempdir().expect("tempdir");
+    Command::cargo_bin("comemory")
+        .expect("bin")
+        .env("COMEMORY_DATA_DIR", home.path())
+        .args([
+            "save",
+            "--kind",
+            "decision",
+            "--repo",
+            "foo",
+            "postgres advisory locks for migration ordering",
+        ])
+        .assert()
+        .success();
+
+    let assert = Command::cargo_bin("comemory")
+        .expect("bin")
+        .env("COMEMORY_DATA_DIR", home.path())
+        .args(["search", "advisory lock", "--json"])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let v: Value = serde_json::from_str(&out).expect("json");
+    let qid = v
+        .get("query_id")
+        .and_then(Value::as_str)
+        .expect("query_id in envelope")
+        .to_string();
+    assert!(
+        comemory::stats::feedback::is_valid_query_id(&qid),
+        "query_id shape, got: {qid}"
+    );
+
+    let db = rusqlite::Connection::open_with_flags(
+        home.path().join("comemory.db"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .expect("open db read-only");
+    let (query, returned): (String, String) = db
+        .query_row(
+            "SELECT query, returned_ids FROM retrieval_log WHERE query_id = ?1",
+            [&qid],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .expect("retrieval_log row for emitted query_id");
+    assert_eq!(query, "advisory lock");
+    let ids: Vec<String> = serde_json::from_str(&returned).expect("returned_ids json");
+    let hits = v.get("hits").and_then(Value::as_array).expect("hits array");
+    assert_eq!(ids.len(), hits.len(), "logged ids must match emitted hits");
+}
+
+#[test]
 fn kind_filter_limits_hits_to_matching_kind() {
     // `--kind decision` must drop the bug memory even though both bodies
     // match the query lexically. The saved decision id (from `save --json`)
