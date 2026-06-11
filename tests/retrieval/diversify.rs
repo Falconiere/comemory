@@ -9,6 +9,7 @@ fn item(id: &str, score: f64, body: &str) -> Reranked {
     Reranked {
         memory_id: id.into(),
         source: Source::Lexical,
+        tier: 1,
         parts: ScoreParts {
             rrf: score as f32,
             activation: 1.0,

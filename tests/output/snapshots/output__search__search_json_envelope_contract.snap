@@ -8,6 +8,7 @@ expression: "search::envelope(&hits)"
       "memory_id": "aaaa0001",
       "score": 0.016,
       "source": "hybrid",
+      "tier": 1,
       "score_parts": {
         "rrf": 0.016,
         "activation": 1.0,

@@ -6,5 +6,8 @@ mod golden;
 #[path = "eval/metrics.rs"]
 mod metrics;
 
+#[path = "eval/mine.rs"]
+mod mine;
+
 #[path = "eval/runner.rs"]
 mod runner;

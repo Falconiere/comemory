@@ -47,6 +47,10 @@ pub struct Reranked {
     pub memory_id: String,
     /// Which retrieval branch produced the underlying candidate.
     pub source: Source,
+    /// Lexical ladder tier of the underlying candidate (see
+    /// [`RoutedHit::tier`]): 1 strict, 2 word-OR, 3 subtoken-OR,
+    /// 4 learned expansion.
+    pub tier: u8,
     /// Every multiplicative factor behind `parts.final_score`.
     pub parts: ScoreParts,
     /// Live memory that supersedes this one, if any.
@@ -90,6 +94,7 @@ pub fn rerank(conn: &Connection, cfg: &Config, hits: &[RoutedHit]) -> Result<Vec
         out.push(Reranked {
             memory_id: hit.memory_id.clone(),
             source: hit.source,
+            tier: hit.tier,
             parts: ScoreParts {
                 rrf: *norm as f32,
                 activation: activation_boost,

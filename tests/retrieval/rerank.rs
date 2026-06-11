@@ -35,6 +35,7 @@ fn hit(id: &str, score: f32) -> RoutedHit {
         memory_id: id.into(),
         score,
         source: Source::Lexical,
+        tier: 1,
     }
 }
 

@@ -21,6 +21,7 @@ pub mod index_code;
 pub mod ingest_code;
 pub mod install_hooks;
 pub mod list;
+pub mod mine;
 pub mod prune;
 pub mod rebuild;
 pub mod save;
@@ -67,6 +68,9 @@ pub enum Cmd {
     Feedback(feedback::Args),
     /// Score retrieval quality against a golden set (recall@k, MRR).
     Eval(eval::Args),
+    /// Mine reformulation pairs from the query log into term-expansion
+    /// mappings (report only; `--apply` rebuilds `query_expansions`).
+    Mine(mine::Args),
     /// Report on the data directory and SQLite mirror health.
     Doctor(doctor::Args),
     /// Walk a repo, extract symbols, and upsert into the code index.
@@ -103,6 +107,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::Delete(a) => delete::run(a, cli.json, cli.data_dir).await,
         Cmd::Feedback(a) => feedback::run(a, cli.json, cli.data_dir).await,
         Cmd::Eval(a) => eval::run(a, cli.json, cli.data_dir).await,
+        Cmd::Mine(a) => mine::run(a, cli.json, cli.data_dir).await,
         Cmd::Doctor(a) => doctor::run(a, cli.json, cli.data_dir).await,
         Cmd::IndexCode(a) => index_code::run(a, cli.json, cli.data_dir).await,
         Cmd::IngestCode(a) => ingest_code::run(a, cli.json, cli.data_dir).await,

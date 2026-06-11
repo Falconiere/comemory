@@ -11,6 +11,7 @@ fn sample_hits() -> Vec<Reranked> {
     vec![Reranked {
         memory_id: "aaaa0001".into(),
         source: Source::Hybrid,
+        tier: 1,
         parts: ScoreParts {
             rrf: 0.016,
             activation: 1.0,

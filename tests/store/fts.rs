@@ -389,6 +389,81 @@ fn code_symbol_match_outranks_snippet_match() {
     );
 }
 
+/// Seed one `query_expansions` row.
+fn seed_expansion(conn: &rusqlite::Connection, term: &str, expansion: &str, support: i64) {
+    conn.execute(
+        "INSERT INTO query_expansions(term, expansion, support, last_mined) \
+         VALUES (?1, ?2, ?3, '2026-06-09T12:00:00Z')",
+        rusqlite::params![term, expansion, support],
+    )
+    .expect("seed expansion");
+}
+
+#[test]
+fn build_expanded_or_query_ors_terms_with_mined_expansions() {
+    let dir = tempdir().expect("tempdir");
+    let conn = connection::open(dir.path().join("c.db")).expect("open");
+    // Three mappings for `sizing`: support 3 wins, then the support-2 tie
+    // breaks alphabetically; the per-term cap (2) drops `guard`.
+    seed_expansion(&conn, "sizing", "vecdimmismatch", 3);
+    seed_expansion(&conn, "sizing", "dim", 2);
+    seed_expansion(&conn, "sizing", "guard", 2);
+    let expr = fts::build_expanded_or_query(&conn, "sizing problem").expect("build");
+    assert_eq!(
+        expr,
+        r#""sizing" OR "vecdimmismatch" OR "dim" OR "problem""#
+    );
+}
+
+#[test]
+fn build_expanded_or_query_lowercases_the_lookup_key() {
+    // Mining stores tokenized (lowercase) terms; the raw-cased query term
+    // must still find its mapping.
+    let dir = tempdir().expect("tempdir");
+    let conn = connection::open(dir.path().join("c.db")).expect("open");
+    seed_expansion(&conn, "sizing", "vecdimmismatch", 2);
+    let expr = fts::build_expanded_or_query(&conn, "Sizing").expect("build");
+    assert_eq!(expr, r#""sizing" OR "vecdimmismatch""#);
+}
+
+#[test]
+fn build_expanded_or_query_is_empty_below_min_support() {
+    // Support 1 is an anecdote, not a rule: no applicable expansion means
+    // an empty expression so the tier short-circuits.
+    let dir = tempdir().expect("tempdir");
+    let conn = connection::open(dir.path().join("c.db")).expect("open");
+    seed_expansion(&conn, "sizing", "vecdimmismatch", 1);
+    let expr = fts::build_expanded_or_query(&conn, "sizing").expect("build");
+    assert_eq!(expr, "");
+    let empty = fts::build_expanded_or_query(&conn, "").expect("build empty");
+    assert_eq!(empty, "");
+}
+
+#[test]
+fn expanded_search_reaches_memory_containing_only_the_expansion_term() {
+    let dir = tempdir().expect("tempdir");
+    let conn = connection::open(dir.path().join("c.db")).expect("open");
+    let body = "the vecdimmismatch guard fired again";
+    conn.execute(
+        "INSERT INTO memories(id,slug,kind,content_hash,body,created_at,updated_at,md_path) \
+         VALUES('mem1','m','note','h',?1,'t','t','m.md')",
+        [body],
+    )
+    .expect("seed memory");
+    fts::index_memory(&conn, "mem1", body, "").expect("index");
+    seed_expansion(&conn, "sizing", "vecdimmismatch", 2);
+
+    let hits = fts::search_memory_expanded(&conn, "sizing", 10, None, None, (1.0, 3.0))
+        .expect("expanded search");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].memory_id, "mem1");
+
+    // No applicable expansion (different term) -> empty without touching FTS.
+    let none = fts::search_memory_expanded(&conn, "kubernetes", 10, None, None, (1.0, 3.0))
+        .expect("no expansion");
+    assert!(none.is_empty());
+}
+
 /// Pins the SQLite error-text contract behind `is_fts5_parse_error`: a
 /// genuinely malformed MATCH expression must classify as a parse error
 /// (so search downgrades to empty results), and a non-parse error must

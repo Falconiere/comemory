@@ -142,6 +142,84 @@ pub fn build_subtoken_or_query(query: &str) -> String {
         .join(" OR ")
 }
 
+/// Minimum mined support for an expansion to be applied at query time.
+/// Below this, a mapping is visible in `comemory mine` reports but
+/// never changes retrieval (one observation is an anecdote, not a rule).
+pub const EXPANSION_MIN_SUPPORT: i64 = 2;
+
+/// Maximum expansions OR-ed in per query term (highest support first).
+pub const MAX_EXPANSIONS_PER_TERM: usize = 2;
+
+/// Build the tier-4 MATCH expression: every sanitized term OR-ed with
+/// its mined expansions (support >= [`EXPANSION_MIN_SUPPORT`], at most
+/// [`MAX_EXPANSIONS_PER_TERM`] each, highest support first, ties broken
+/// alphabetically). Returns an empty string when no term has an
+/// applicable expansion — the tier has nothing the earlier tiers did
+/// not already try, so the caller short-circuits to empty.
+///
+/// The lookup key is the lowercased sanitized term: mining stores
+/// *tokenized* terms (lowercase, diacritic-folded), while
+/// [`sanitize_terms`] output is raw-cased. A raw multiword or diacritic
+/// term may still miss its mapping; acceptable v1 — terms that split
+/// (`VecDimMismatch`) already went through the subtoken tier before
+/// this tier fires.
+pub fn build_expanded_or_query(conn: &Connection, query: &str) -> Result<String> {
+    let terms = sanitize_terms(query);
+    let mut tokens: Vec<String> = Vec::new();
+    let mut any_expansion = false;
+    let mut stmt = conn.prepare_cached(
+        "SELECT expansion FROM query_expansions
+          WHERE term = ?1 AND support >= ?2
+          ORDER BY support DESC, expansion
+          LIMIT ?3",
+    )?;
+    for term in &terms {
+        let key = term.to_lowercase();
+        if !tokens.contains(&key) {
+            tokens.push(key.clone());
+        }
+        let expansions: Vec<String> = stmt
+            .query_map(
+                params![key, EXPANSION_MIN_SUPPORT, MAX_EXPANSIONS_PER_TERM as i64],
+                |r| r.get(0),
+            )?
+            .collect::<std::result::Result<_, _>>()?;
+        for e in expansions {
+            if !tokens.contains(&e) {
+                tokens.push(e);
+                any_expansion = true;
+            }
+        }
+    }
+    if !any_expansion {
+        return Ok(String::new());
+    }
+    Ok(tokens
+        .iter()
+        .map(|t| format!("\"{t}\""))
+        .collect::<Vec<_>>()
+        .join(" OR "))
+}
+
+/// Tier-4 search: learned-expansion OR query via
+/// [`build_expanded_or_query`], so a memory containing only a mined
+/// expansion of a query term still surfaces. An empty expression (no
+/// applicable expansion) returns empty without touching FTS.
+pub fn search_memory_expanded(
+    conn: &Connection,
+    query: &str,
+    k: usize,
+    repo: Option<&str>,
+    kind: Option<&str>,
+    weights: (f32, f32),
+) -> Result<Vec<MemoryFtsHit>> {
+    let expr = build_expanded_or_query(conn, query)?;
+    if expr.is_empty() {
+        return Ok(Vec::new());
+    }
+    run_memory_match(conn, &expr, k, repo, kind, weights)
+}
+
 /// Run a BM25 search over `memory_fts`, skipping soft-deleted memories.
 ///
 /// The user query is rewritten via [`build_match_query`] (quoted terms,

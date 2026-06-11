@@ -196,6 +196,119 @@ fn hybrid_empty_lexical_leg_retries_ladder_despite_ann_hits() {
     assert!(hits.iter().all(|h| h.source == Source::Hybrid));
 }
 
+/// Seed one mined `query_expansions` row.
+fn seed_expansion(conn: &rusqlite::Connection, term: &str, expansion: &str, support: i64) {
+    conn.execute(
+        "INSERT INTO query_expansions(term, expansion, support, last_mined) \
+         VALUES (?1, ?2, ?3, '2026-06-09T12:00:00Z')",
+        rusqlite::params![term, expansion, support],
+    )
+    .expect("seed expansion");
+}
+
+#[test]
+fn strict_lexical_hits_carry_tier_1() {
+    let dir = tempdir().expect("tempdir");
+    let conn = connection::open(dir.path().join("c.db")).expect("open");
+    seed_memory(&conn, "lex1", "advisory lock postgres");
+    fts::index_memory(&conn, "lex1", "advisory lock postgres", "").expect("fts");
+
+    let cfg = Config::defaults();
+    let hits = router::route(&cfg, &conn, "advisory lock", None, None, None).expect("route");
+    assert_eq!(hits[0].tier, 1, "strict tier is 1");
+}
+
+#[test]
+fn word_or_ladder_hits_carry_tier_2() {
+    let dir = tempdir().expect("tempdir");
+    let conn = connection::open(dir.path().join("c.db")).expect("open");
+    seed_memory(&conn, "or1", "the oauth refresh race condition");
+    fts::index_memory(&conn, "or1", "the oauth refresh race condition", "").expect("fts");
+
+    let cfg = Config::defaults();
+    let hits = router::route(&cfg, &conn, "oauth login race", None, None, None).expect("route");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].tier, 2, "word-OR tier is 2");
+}
+
+#[test]
+fn subtoken_ladder_hits_carry_tier_3() {
+    let dir = tempdir().expect("tempdir");
+    let conn = connection::open(dir.path().join("c.db")).expect("open");
+    let body = "embedder returned wrong dim mismatch against the vec table";
+    seed_memory(&conn, "sub1", body);
+    fts::index_memory(&conn, "sub1", body, "").expect("fts");
+
+    let cfg = Config::defaults();
+    let hits = router::route(&cfg, &conn, "VecDimMismatch", None, None, None).expect("route");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].tier, 3, "subtoken tier is 3");
+}
+
+#[test]
+fn learned_expansion_tier_fires_when_every_other_tier_misses() {
+    // The only path to the memory is via a mined expansion: the body
+    // contains the token `vecdimmismatch` in prose, the query is the
+    // unrelated word `sizing` (1 term -> word-OR skipped; not splittable
+    // -> subtoken tier empty), and a support-2 mapping bridges the gap.
+    let dir = tempdir().expect("tempdir");
+    let conn = connection::open(dir.path().join("c.db")).expect("open");
+    let body = "the vecdimmismatch guard fired again in prose";
+    seed_memory(&conn, "exp1", body);
+    fts::index_memory(&conn, "exp1", body, "").expect("fts");
+    seed_expansion(&conn, "sizing", "vecdimmismatch", 2);
+
+    let cfg = Config::defaults();
+    let hits = router::route(&cfg, &conn, "sizing", None, None, None).expect("route");
+    assert_eq!(hits.len(), 1, "expansion tier must surface the memory");
+    assert_eq!(hits[0].memory_id, "exp1");
+    assert_eq!(hits[0].source, Source::Lexical);
+    assert_eq!(hits[0].tier, 4, "learned-expansion tier is 4");
+}
+
+#[test]
+fn learned_expansion_below_min_support_stays_empty() {
+    // Support 1 is below EXPANSION_MIN_SUPPORT (2): the mapping is visible
+    // in `comemory mine` reports but must never change retrieval.
+    let dir = tempdir().expect("tempdir");
+    let conn = connection::open(dir.path().join("c.db")).expect("open");
+    let body = "the vecdimmismatch guard fired again in prose";
+    seed_memory(&conn, "exp2", body);
+    fts::index_memory(&conn, "exp2", body, "").expect("fts");
+    seed_expansion(&conn, "sizing", "vecdimmismatch", 1);
+
+    let cfg = Config::defaults();
+    let hits = router::route(&cfg, &conn, "sizing", None, None, None).expect("route");
+    assert!(hits.is_empty(), "support-1 mapping must not fire: {hits:?}");
+}
+
+#[test]
+fn hybrid_fused_hits_carry_the_lexical_ladder_tier() {
+    // Hybrid arm with ANN noise: the lexical leg only finds the target via
+    // the learned-expansion tier, so the fused hits must carry tier 4.
+    let dir = tempdir().expect("tempdir");
+    let conn = connection::open(dir.path().join("c.db")).expect("open");
+    let body = "the vecdimmismatch guard fired again in prose";
+    seed_memory(&conn, "tgt2", body);
+    fts::index_memory(&conn, "tgt2", body, "").expect("fts");
+    seed_memory(&conn, "noise2", "completely unrelated body");
+    let v = vectors::vector("noise-seed", 1024);
+    vector::insert_memory(&conn, "noise2", &v).expect("vec");
+    seed_expansion(&conn, "sizing", "vecdimmismatch", 2);
+
+    let cfg = Config::defaults();
+    let hits = router::route(&cfg, &conn, "sizing", Some(&v), None, None).expect("route");
+    assert!(
+        hits.iter().any(|h| h.memory_id == "tgt2"),
+        "expansion-only memory must survive ANN noise: {hits:?}"
+    );
+    assert!(hits.iter().all(|h| h.source == Source::Hybrid));
+    assert!(
+        hits.iter().all(|h| h.tier == 4),
+        "fused hits carry lex tier 4"
+    );
+}
+
 #[test]
 fn vector_hits_below_memory_threshold_are_dropped() {
     // KNN always returns the k nearest rows no matter how far away; the
