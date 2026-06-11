@@ -58,6 +58,10 @@ fn min_max_normalize_maps_pool_to_unit_interval() {
 fn min_max_normalize_degenerate_pools_are_all_ones() {
     assert_eq!(min_max_normalize(&[7.0, 7.0]), vec![1.0, 1.0]);
     assert_eq!(min_max_normalize(&[f64::NAN, 1.0]), vec![1.0, 1.0]);
+    assert_eq!(
+        min_max_normalize(&[1.0, 2.0, f64::NAN]),
+        vec![1.0, 1.0, 1.0]
+    );
     assert_eq!(min_max_normalize(&[]), Vec::<f64>::new());
 }
 

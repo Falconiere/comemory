@@ -114,7 +114,9 @@ pub fn min_max_normalize(scores: &[f64]) -> Vec<f64> {
     let min = scores.iter().copied().fold(f64::INFINITY, f64::min);
     let max = scores.iter().copied().fold(f64::NEG_INFINITY, f64::max);
     let range = max - min;
-    if !range.is_finite() || range <= 0.0 {
+    // f64::min/max ignore NaN, so non-finiteness is checked per element,
+    // not on the fold results.
+    if !range.is_finite() || range <= 0.0 || scores.iter().any(|s| !s.is_finite()) {
         return vec![1.0; scores.len()];
     }
     scores.iter().map(|s| (s - min) / range).collect()
