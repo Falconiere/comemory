@@ -364,3 +364,6 @@ mod feedback;
 
 #[path = "cli/eval.rs"]
 mod eval;
+
+#[path = "cli/mine.rs"]
+mod mine;

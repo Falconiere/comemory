@@ -10,6 +10,7 @@ const SUBCOMMANDS: &[&str] = &[
     "delete",
     "feedback",
     "eval",
+    "mine",
     "doctor",
     "index-code",
     "ingest-code",

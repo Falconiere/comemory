@@ -33,6 +33,11 @@ pub struct RoutedHit {
     pub score: f32,
     /// Which branch produced this hit.
     pub source: Source,
+    /// Lexical ladder tier that produced the candidate set: 1 strict
+    /// (also the vector/hybrid default), 2 word-OR, 3 subtoken-OR,
+    /// 4 learned expansion. Hybrid fused hits carry the lexical leg's
+    /// ladder tier when the ladder fired.
+    pub tier: u8,
 }
 
 /// Which retrieval branch produced a [`RoutedHit`].
@@ -63,7 +68,9 @@ pub enum Source {
 /// tier (queries with ≥ 2 terms) so a single absent term cannot zero out
 /// the result set, then an identifier-subtoken OR tier so an identifier
 /// query like `VecDimMismatch` can still reach prose that only mentions
-/// its parts. ANN hits below `cfg.retrieval.memory_threshold` cosine
+/// its parts, and finally a learned-expansion tier that ORs in mined
+/// reformulation mappings from `query_expansions`. ANN hits below
+/// `cfg.retrieval.memory_threshold` cosine
 /// similarity are dropped before use in both vector-consuming paths.
 ///
 /// `kind` restricts every path to one memory kind (canonical lowercase
@@ -124,11 +131,21 @@ fn route_hybrid(
     )?;
     let weights = cfg.retrieval.bm25_weights;
     let mut lex = fts::search_memory(conn, query, k, repo, kind, weights)?;
+    let mut lex_tier = 1u8;
     if lex.is_empty() {
-        lex = lexical_ladder(conn, query, k, repo, kind, weights)?;
+        let (ladder_hits, ladder_tier) = lexical_ladder(conn, query, k, repo, kind, weights)?;
+        lex = ladder_hits;
+        if !lex.is_empty() {
+            // Only a tier that produced rows tags the result; an empty
+            // ladder leaves the fused (ANN-only) hits at the default 1.
+            lex_tier = ladder_tier;
+        }
     }
     if ann.is_empty() {
-        return Ok(lex.into_iter().map(lex_to_routed).collect());
+        return Ok(lex
+            .into_iter()
+            .map(|h| lex_to_routed(h, lex_tier))
+            .collect());
     }
 
     let ann_ranked: Vec<RankedHit> = ann.into_iter().map(ann_to_ranked).collect();
@@ -141,6 +158,7 @@ fn route_hybrid(
             memory_id: h.memory_id,
             score: h.score,
             source: Source::Hybrid,
+            tier: lex_tier,
         })
         .collect())
 }
@@ -222,10 +240,11 @@ fn route_lexical(
     weights: (f32, f32),
 ) -> Result<Vec<RoutedHit>> {
     let mut lex = fts::search_memory(conn, query, k, repo, kind, weights)?;
+    let mut tier = 1u8;
     if lex.is_empty() {
-        lex = lexical_ladder(conn, query, k, repo, kind, weights)?;
+        (lex, tier) = lexical_ladder(conn, query, k, repo, kind, weights)?;
     }
-    Ok(lex.into_iter().map(lex_to_routed).collect())
+    Ok(lex.into_iter().map(|h| lex_to_routed(h, tier)).collect())
 }
 
 /// Relaxed fallback ladder shared by the lexical and hybrid paths, walked
@@ -242,10 +261,20 @@ fn route_lexical(
 ///    so a prose body mentioning `dim mismatch` is still reachable from
 ///    the identifier query `VecDimMismatch`. Queries with no splittable
 ///    term build an empty expression and stay empty.
+/// 3. **Learned expansion** ([`fts::search_memory_expanded`]) — when the
+///    subtoken tier is also empty, OR each term with its mined
+///    reformulation expansions (`query_expansions`, support ≥
+///    [`fts::EXPANSION_MIN_SUPPORT`]). Queries with no applicable
+///    expansion build an empty expression and stay empty.
 ///
 /// The ladder only *adds* recall on previously-empty results — a non-empty
 /// earlier tier always short-circuits, so it can never reorder hits the
 /// stricter tiers already produced.
+///
+/// Returns the hits plus the [`RoutedHit::tier`] that produced them
+/// (word-OR → 2, subtoken → 3, expansion → 4). When every tier comes back
+/// empty the returned tier is 4 — the deepest tier attempted — which
+/// callers never observe because there are no hits to tag.
 fn lexical_ladder(
     conn: &Connection,
     query: &str,
@@ -253,14 +282,19 @@ fn lexical_ladder(
     repo: Option<&str>,
     kind: Option<&str>,
     weights: (f32, f32),
-) -> Result<Vec<fts::MemoryFtsHit>> {
+) -> Result<(Vec<fts::MemoryFtsHit>, u8)> {
     if fts::term_count(query) >= 2 {
         let lex = fts::search_memory_relaxed(conn, query, k, repo, kind, weights)?;
         if !lex.is_empty() {
-            return Ok(lex);
+            return Ok((lex, 2));
         }
     }
-    fts::search_memory_subtokens(conn, query, k, repo, kind, weights)
+    let lex = fts::search_memory_subtokens(conn, query, k, repo, kind, weights)?;
+    if !lex.is_empty() {
+        return Ok((lex, 3));
+    }
+    let lex = fts::search_memory_expanded(conn, query, k, repo, kind, weights)?;
+    Ok((lex, 4))
 }
 
 /// Map a `vector::MemoryHit` to a [`RankedHit`] for RRF fusion. Vector
@@ -282,21 +316,25 @@ fn lex_to_ranked(h: fts::MemoryFtsHit) -> RankedHit {
 }
 
 /// Map a `vector::MemoryHit` directly to a [`RoutedHit`] tagged
-/// `Source::Vector`. Used by the pure-vector path.
+/// `Source::Vector` at the default tier 1. Used by the pure-vector path.
 fn ann_to_routed(h: vector::MemoryHit) -> RoutedHit {
     RoutedHit {
         memory_id: h.memory_id,
         score: 1.0 - h.distance,
         source: Source::Vector,
+        tier: 1,
     }
 }
 
 /// Map an `fts::MemoryFtsHit` directly to a [`RoutedHit`] tagged
-/// `Source::Lexical`. Used by the pure-lexical path.
-fn lex_to_routed(h: fts::MemoryFtsHit) -> RoutedHit {
+/// `Source::Lexical`, carrying the ladder `tier` that produced it (1 when
+/// the strict query hit). Used by the pure-lexical and lex-only-hybrid
+/// paths.
+fn lex_to_routed(h: fts::MemoryFtsHit, tier: u8) -> RoutedHit {
     RoutedHit {
         memory_id: h.memory_id,
         score: -h.score,
         source: Source::Lexical,
+        tier,
     }
 }

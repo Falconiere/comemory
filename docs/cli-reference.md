@@ -30,6 +30,7 @@ Commands:
   delete         Soft-delete a memory by id (moves to `.trash/`)
   feedback       Record per-memory feedback (used vs irrelevant)
   eval           Score retrieval quality against a golden set (recall@k, MRR)
+  mine           Mine reformulation pairs from the query log into term-expansion mappings (report only; `--apply` rebuilds `query_expansions`)
   doctor         Report on the data directory and SQLite mirror health
   index-code     Walk a repo, extract symbols, and upsert into the code index
   ingest-code    Read pre-embedded JSONL rows from stdin and ingest them into the code index (`code_symbols` + `code_fts` + `code_vec`)
@@ -249,6 +250,32 @@ Examples:
 
   # File only, recall@5, JSON report
   comemory eval --golden golden.yaml --golden-only --k 5 --json
+```
+
+---
+
+## comemory mine
+
+```
+Mine reformulation pairs from the query log into term-expansion mappings (report only; `--apply` rebuilds `query_expansions`)
+
+Usage: comemory mine [OPTIONS]
+
+Options:
+      --apply                Rebuild the query_expansions table from the mined mappings (default: report only)
+      --json                 Emit machine-readable JSON instead of a human TTY view
+      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+  -h, --help                 Print help
+
+Examples:
+  # Report mined expansion mappings without changing retrieval
+  comemory mine
+
+  # Rebuild the query_expansions table from the current retrieval_log
+  comemory mine --apply
+
+  # Machine-readable report
+  comemory mine --json
 ```
 
 ---

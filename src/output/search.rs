@@ -1,6 +1,6 @@
 //! Output helpers for `comemory search`. JSON shape is
 //! `{"hits":[{"memory_id":..,"score":..,"source":"vector"|"lexical"|"hybrid",
-//! "superseded_by"?:..,"score_parts":{..}}]}`. `score_parts` is a stable
+//! "tier":1..4,"superseded_by"?:..,"score_parts":{..}}]}`. `score_parts` is a stable
 //! explainability contract (M2 tuning reads it), not debug info. TTY mode
 //! emits one hit per line with a colored score prefix.
 
@@ -24,6 +24,11 @@ pub struct Row<'a> {
     pub score: f64,
     /// Which retrieval branch produced the hit.
     pub source: &'static str,
+    /// Lexical ladder tier that produced the underlying candidate:
+    /// 1 strict (also vector/hybrid default), 2 word-OR, 3 subtoken-OR,
+    /// 4 learned expansion. Always serialized — a small int, no skip
+    /// needed.
+    pub tier: u8,
     /// Live memory that supersedes this one, if any.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub superseded_by: Option<&'a str>,
@@ -73,13 +78,17 @@ pub fn write_tty(out: &mut impl Write, hits: &[Reranked], query_id: Option<&str>
             Some(id) => format!(" (superseded by {id})"),
             None => String::new(),
         };
+        // Tier 4 means the hit was only reachable via a mined query
+        // expansion — flag it so users understand the looser match.
+        let expanded = if hit.tier == 4 { " [expanded]" } else { "" };
         writeln!(
             out,
-            "{}  {}  {}{}",
+            "{}  {}  {}{}{}",
             tty::score(hit.parts.final_score as f32),
             source_label(hit.source),
             hit.memory_id,
-            suffix
+            suffix,
+            expanded
         )?;
     }
     if let Some(qid) = query_id {
@@ -98,6 +107,7 @@ fn row_from(h: &Reranked) -> Row<'_> {
         memory_id: h.memory_id.as_str(),
         score: h.parts.final_score,
         source: source_label(h.source),
+        tier: h.tier,
         superseded_by: h.superseded_by.as_deref(),
         score_parts: &h.parts,
     }

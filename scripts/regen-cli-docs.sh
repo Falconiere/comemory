@@ -18,7 +18,7 @@ BIN="$PROJECT_ROOT/target/release-quick/comemory"
 [[ -x "$BIN" ]] || die "$STEP" "expected binary at $BIN"
 
 SUBCOMMANDS=(
-  save search list delete feedback eval doctor
+  save search list delete feedback eval mine doctor
   index-code ingest-code ast context
   prune rebuild gc install-hooks completions
 )
