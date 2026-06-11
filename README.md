@@ -138,9 +138,10 @@ overridden with `--data-dir` or the `COMEMORY_DATA_DIR` environment variable.
 
 ## Learning loop
 
-Every `comemory search` is logged automatically: the JSON envelope (and the
-TTY footer) carries a `query_id`. Feed back which hits actually helped,
-then measure and tune retrieval against that ground truth:
+Every `comemory search` and `comemory context` lookup is logged
+automatically: the JSON envelope (and the TTY footer) carries a `query_id`.
+Feed back which hits actually helped, then measure and tune retrieval
+against that ground truth:
 
 ```bash
 # 1. Search — note the query_id in the output
@@ -169,7 +170,11 @@ Feedback both reranks future searches (Beta-smoothed boost/demotion) and
 doubles as eval ground truth. Raw telemetry (`retrieval_log`,
 `feedback_events`) is swept by `comemory gc` after 90 days
 (`COMEMORY_LEARNING_RETENTION_DAYS`); aggregated feedback counters and
-mined expansions are distilled knowledge and never expire.
+mined expansions are distilled knowledge and never expire — `comemory
+rebuild` carries all learning state across too. Note that eval replays
+are lexical and unfiltered: any `--repo`/`--kind` filters on the
+originating search are ignored, so pairs born under filters are scored
+against the unfiltered candidate pool.
 
 ## Quality Gates
 

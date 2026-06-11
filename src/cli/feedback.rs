@@ -90,7 +90,16 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         }))?;
     } else {
         let mut out = std::io::stdout().lock();
-        writeln!(out, "ok")?;
+        // The tracing::warn above is invisible at the default EnvFilter
+        // level, so the TTY ack itself must carry the orphan notice.
+        if known {
+            writeln!(out, "ok")?;
+        } else {
+            writeln!(
+                out,
+                "ok (query id not in log — evicted or never logged; recorded anyway)"
+            )?;
+        }
     }
     Ok(())
 }

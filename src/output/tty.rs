@@ -38,3 +38,24 @@ pub fn score(v: f32) -> String {
 pub fn dim(s: &str) -> String {
     s.dimmed().to_string()
 }
+
+/// Write the shared `query: <qid>` TTY footer used by `comemory search` and
+/// `comemory context`. The footer is printed whenever a query id exists —
+/// zero-hit queries are still logged for reformulation mining — but the
+/// feedback hint is appended only when `has_hits`, since with no hits there
+/// is nothing to mark `--used`.
+pub fn write_query_footer(
+    out: &mut impl std::io::Write,
+    query_id: Option<&str>,
+    has_hits: bool,
+) -> Result<()> {
+    if let Some(qid) = query_id {
+        let hint = if has_hits {
+            format!("  (feedback: comemory feedback {qid} --used <ids>)")
+        } else {
+            String::new()
+        };
+        writeln!(out, "query: {qid}{hint}")?;
+    }
+    Ok(())
+}

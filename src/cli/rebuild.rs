@@ -13,12 +13,17 @@
 //! error mid-rebuild leaves the original `comemory.db` intact. On success,
 //! `fs::rename` replaces the live DB in one atomic filesystem operation.
 //!
-//! ## Code index preservation
+//! ## Code index + learning-state preservation
 //!
 //! `code_symbols`, `code_vec`, `code_fts`, and `indexed_files` are copied
 //! from the old DB into the new one via `ATTACH DATABASE` before the
 //! connection is closed, so a rebuild triggered by a schema drift on the
-//! memory side does not force a full re-index of the code corpus.
+//! memory side does not force a full re-index of the code corpus. The
+//! learning-loop tables (`feedback`, `feedback_events`, `retrieval_log`,
+//! `query_expansions`) are copied the same way: they exist only in SQLite
+//! — there is no markdown to rebuild them from — and dropping them would
+//! silently reset the Beta feedback rerank prior and erase mined
+//! expansions, contradicting the documented never-expire contract.
 //!
 //! Vectors are intentionally *not* repopulated here for the memory side:
 //! the v0.2 contract is BYO-vector, so re-embedding requires running the
@@ -53,7 +58,9 @@ pub struct Args;
 ///    `memory_fts` + edges row into the temp DB.
 /// 3. If the original `comemory.db` exists, `ATTACH` it and copy
 ///    `code_symbols`, `code_vec`, `code_fts`, and `indexed_files` rows into
-///    the new DB so the code index survives the rebuild.
+///    the new DB so the code index survives the rebuild, plus the four
+///    learning tables (`feedback`, `feedback_events`, `retrieval_log`,
+///    `query_expansions`) so feedback counters and mined expansions do too.
 /// 4. Close the temp connection then `fs::rename` it over the live path
 ///    (atomic on POSIX; on Windows this may fail if the DB is held open by
 ///    another process).
@@ -157,12 +164,13 @@ fn build_new_db(old_db: &Path, tmp_path: &Path, paths: &Paths) -> Result<()> {
     }
     tx.commit()?;
 
-    // Copy code index from the old DB if it exists. We do this outside the
-    // memory transaction so a code-copy failure doesn't prevent the memory
-    // rebuild from landing; the worst outcome is a missing code index that
-    // the operator can restore with `comemory index-code`.
+    // Copy the code index + learning tables from the old DB if it exists.
+    // We do this outside the memory transaction so a copy failure doesn't
+    // prevent the memory rebuild from landing; the worst outcome is a
+    // missing code index that the operator can restore with
+    // `comemory index-code`.
     if old_db.exists() {
-        copy_code_tables_from_old(&mut conn, old_db)?;
+        copy_preserved_tables_from_old(&mut conn, old_db)?;
     }
 
     // Close the connection before rename by dropping it here.
@@ -170,10 +178,11 @@ fn build_new_db(old_db: &Path, tmp_path: &Path, paths: &Paths) -> Result<()> {
     Ok(())
 }
 
-/// Attach `old_db` as `old` and copy the four code-index tables into the
-/// already-open `conn` (which points at the tmp path). Uses INSERT-SELECT so
-/// no intermediate buffers are needed; runs outside a transaction because
-/// vec0 virtual tables cannot participate in user transactions.
+/// Attach `old_db` as `old` and copy the four code-index tables plus the
+/// four learning tables into the already-open `conn` (which points at the
+/// tmp path). Uses INSERT-SELECT so no intermediate buffers are needed;
+/// runs outside a transaction because vec0 virtual tables cannot
+/// participate in user transactions.
 ///
 /// The ATTACH path is bound via a parameter rather than interpolated into the
 /// SQL so a data dir whose path contains a single quote (or other SQL
@@ -181,14 +190,15 @@ fn build_new_db(old_db: &Path, tmp_path: &Path, paths: &Paths) -> Result<()> {
 ///
 /// Each source table is only copied if it actually exists on the attached
 /// database: a v0.1 or otherwise legacy `comemory.db` may not have any of the
-/// v2 code-index tables, in which case the rebuild should still succeed
+/// v2 code-index tables (and a pre-v5 one lacks `feedback_events` /
+/// `query_expansions`), in which case the rebuild should still succeed
 /// rather than failing with "no such table".
-fn copy_code_tables_from_old(conn: &mut rusqlite::Connection, old_db: &Path) -> Result<()> {
+fn copy_preserved_tables_from_old(conn: &mut rusqlite::Connection, old_db: &Path) -> Result<()> {
     conn.execute(
         "ATTACH DATABASE ? AS old",
         rusqlite::params![old_db.to_string_lossy().as_ref()],
     )?;
-    let copy_result = copy_code_tables_inner(conn);
+    let copy_result = copy_code_tables_inner(conn).and_then(|()| copy_learning_tables_inner(conn));
     // Always DETACH so the connection is reusable even if the copy failed.
     let _ = conn.execute_batch("DETACH DATABASE old;");
     copy_result
@@ -248,6 +258,58 @@ fn copy_code_tables_inner(conn: &rusqlite::Connection) -> Result<()> {
     Ok(())
 }
 
+/// Inner copy loop for the learning-loop tables: `feedback` counters (v2),
+/// `retrieval_log` telemetry (v3), `feedback_events` provenance and mined
+/// `query_expansions` (both v5). These rows exist only in SQLite — there is
+/// no markdown source to rebuild them from — so a rebuild that dropped them
+/// would silently reset the Beta feedback rerank prior to neutral and erase
+/// mined expansions, contradicting the documented never-expire contract.
+///
+/// Same schema-evolution guards as [`copy_code_tables_inner`]: each table is
+/// only copied when it exists on the attached DB, and
+/// `retrieval_log.duration_ms` (added in v5) is probed via
+/// [`old_column_exists`] and defaulted to NULL when the source predates it.
+fn copy_learning_tables_inner(conn: &rusqlite::Connection) -> Result<()> {
+    if old_table_exists(conn, "feedback")? {
+        conn.execute_batch(
+            "INSERT OR IGNORE INTO main.feedback(\
+                 memory_id, used_count, irrelevant_count, last_used) \
+             SELECT memory_id, used_count, irrelevant_count, last_used \
+             FROM old.feedback;",
+        )?;
+    }
+    if old_table_exists(conn, "retrieval_log")? {
+        let duration_expr = if old_column_exists(conn, "retrieval_log", "duration_ms")? {
+            "duration_ms"
+        } else {
+            "NULL"
+        };
+        conn.execute_batch(&format!(
+            "INSERT OR IGNORE INTO main.retrieval_log(\
+                 query_id, query, returned_ids, at, duration_ms) \
+             SELECT query_id, query, returned_ids, at, {duration_expr} \
+             FROM old.retrieval_log;"
+        ))?;
+    }
+    if old_table_exists(conn, "feedback_events")? {
+        conn.execute_batch(
+            "INSERT OR IGNORE INTO main.feedback_events(\
+                 id, query_id, memory_id, verdict, at) \
+             SELECT id, query_id, memory_id, verdict, at \
+             FROM old.feedback_events;",
+        )?;
+    }
+    if old_table_exists(conn, "query_expansions")? {
+        conn.execute_batch(
+            "INSERT OR IGNORE INTO main.query_expansions(\
+                 term, expansion, support, last_mined) \
+             SELECT term, expansion, support, last_mined \
+             FROM old.query_expansions;",
+        )?;
+    }
+    Ok(())
+}
+
 /// True when `name` exists as a table (regular or virtual) on the attached
 /// `old` database. Lets the copy loop skip tables that predate v0.2.
 fn old_table_exists(conn: &rusqlite::Connection, name: &str) -> Result<bool> {
@@ -260,8 +322,9 @@ fn old_table_exists(conn: &rusqlite::Connection, name: &str) -> Result<bool> {
 }
 
 /// True when `column` exists on `table` in the attached `old` database.
-/// Lets [`copy_code_tables_inner`] adapt its SELECT list to the attached
-/// DB's schema version instead of assuming the current one.
+/// Lets [`copy_code_tables_inner`] and [`copy_learning_tables_inner`] adapt
+/// their SELECT lists to the attached DB's schema version instead of
+/// assuming the current one.
 fn old_column_exists(conn: &rusqlite::Connection, table: &str, column: &str) -> Result<bool> {
     let n: i64 = conn.query_row(
         "SELECT count(*) FROM pragma_table_info(?1, 'old') WHERE name = ?2",
