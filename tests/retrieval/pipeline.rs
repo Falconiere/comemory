@@ -24,7 +24,7 @@ fn seeded() -> (tempfile::TempDir, rusqlite::Connection) {
 fn search_returns_reranked_diversified_hits() {
     let (_d, conn) = seeded();
     let cfg = comemory::config::Config::defaults();
-    let out = search(&cfg, &conn, "sqlite busy", None, None).expect("search");
+    let out = search(&cfg, &conn, "sqlite busy", None, None, None).expect("search");
     assert_eq!(out.len(), 1);
     assert_eq!(out[0].memory_id, "aaaa0001");
     assert!(out[0].parts.final_score > 0.0);
@@ -34,7 +34,7 @@ fn search_returns_reranked_diversified_hits() {
 fn retrieval_hit_bumps_access_tracking() {
     let (_d, conn) = seeded();
     let cfg = comemory::config::Config::defaults();
-    search(&cfg, &conn, "sqlite busy", None, None).expect("search");
+    search(&cfg, &conn, "sqlite busy", None, None, None).expect("search");
     let (count, last): (i64, String) = conn
         .query_row(
             "SELECT access_count, last_accessed FROM memories WHERE id='aaaa0001'",
@@ -57,7 +57,7 @@ fn access_tracking_failure_does_not_break_reads() {
     conn.pragma_update(None, "query_only", true)
         .expect("pragma");
     let cfg = comemory::config::Config::defaults();
-    let out = search(&cfg, &conn, "sqlite busy", None, None)
+    let out = search(&cfg, &conn, "sqlite busy", None, None, None)
         .expect("search must succeed when access tracking cannot write");
     assert_eq!(out.len(), 1);
     assert_eq!(out[0].memory_id, "aaaa0001");
@@ -118,6 +118,6 @@ fn pipeline_cuts_to_configured_top_k() {
         cfg.retrieval.top_k, 12,
         "default top_k expected by this test"
     );
-    let out = search(&cfg, &conn, "sqlite", None, None).expect("search");
+    let out = search(&cfg, &conn, "sqlite", None, None, None).expect("search");
     assert_eq!(out.len(), 12, "pipeline must cut to top_k");
 }

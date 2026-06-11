@@ -10,15 +10,18 @@ use crate::retrieval::rerank::Reranked;
 use crate::retrieval::{diversify, rerank, router};
 use crate::store::memory_row;
 
-/// Run the full retrieval pipeline for a memory query.
+/// Run the full retrieval pipeline for a memory query. `kind` restricts
+/// hits to one memory kind (canonical lowercase string, e.g. `decision`);
+/// `None` searches every kind.
 pub fn search(
     cfg: &Config,
     conn: &Connection,
     query: &str,
     vec: Option<&[f32]>,
     repo: Option<&str>,
+    kind: Option<&str>,
 ) -> Result<Vec<Reranked>> {
-    let candidates = router::route(cfg, conn, query, vec, repo)?;
+    let candidates = router::route(cfg, conn, query, vec, repo, kind)?;
     let reranked = rerank::rerank(conn, cfg, &candidates)?;
     let final_hits = diversify::diversify(reranked, cfg.rank.mmr_lambda, cfg.retrieval.top_k);
     record_access(conn, &final_hits);

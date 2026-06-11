@@ -67,7 +67,14 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
 
     let vec = embedding_input::read_optional(a.vector_stdin, a.vector.as_deref())?;
     let cfg = override_top_k(load_config(&paths)?, a.k);
-    let hits = pipeline::search(&cfg, &conn, &a.query, vec.as_deref(), a.repo.as_deref())?;
+    let hits = pipeline::search(
+        &cfg,
+        &conn,
+        &a.query,
+        vec.as_deref(),
+        a.repo.as_deref(),
+        None,
+    )?;
     let ids: Vec<String> = hits.into_iter().map(|h| h.memory_id).collect();
     let bundle = bundle::assemble(&conn, &a.query, &ids)?;
     output::context::emit(&bundle, json_flag)
