@@ -55,6 +55,42 @@ pub struct TuneReport {
     pub ranked: Vec<ScoredCandidate>,
 }
 
+impl TuneReport {
+    /// The top-ranked candidate. Errors only on an empty ranking, which
+    /// [`run_tune`] can never produce (the grid is a fixed 81 points).
+    pub fn winner(&self) -> Result<&ScoredCandidate> {
+        self.ranked
+            .first()
+            .ok_or_else(|| Error::Other("tune produced an empty candidate ranking".into()))
+    }
+
+    /// True when the winner *strictly* beats the baseline: higher mrr,
+    /// or exactly-equal mrr with strictly higher recall@k. Ties never
+    /// count as an improvement, so `comemory tune --apply` cannot churn
+    /// `config.toml` when the grid merely matches the current knobs.
+    pub fn improves_baseline(&self) -> bool {
+        let Ok(w) = self.winner() else {
+            return false;
+        };
+        match w.mrr.total_cmp(&self.baseline.mrr) {
+            std::cmp::Ordering::Greater => true,
+            std::cmp::Ordering::Equal => w.recall_at_k > self.baseline.recall_at_k,
+            std::cmp::Ordering::Less => false,
+        }
+    }
+}
+
+/// Resolve the minimum-golden-pairs floor: `COMEMORY_TUNE_MIN_GOLDEN`
+/// when set (a test hook, documented as such — an invalid value is a
+/// hard error naming the variable), else [`MIN_GOLDEN_PAIRS`]. Lives
+/// next to the constant it overrides so the policy has one home.
+pub fn resolve_min_pairs() -> Result<usize> {
+    Ok(
+        crate::config::env::env_parse::<usize>("COMEMORY_TUNE_MIN_GOLDEN")?
+            .unwrap_or(MIN_GOLDEN_PAIRS),
+    )
+}
+
 /// The 3×3×3×3 = 81-point grid. Values bracket the M1 defaults.
 pub fn grid() -> Vec<TuneCandidate> {
     let mut out = Vec::with_capacity(81);
@@ -118,9 +154,34 @@ pub fn run_tune(
     };
     let baseline = score(&runner::run_eval(base, conn, pairs, k)?, baseline_candidate);
     let mut ranked = Vec::with_capacity(81);
+    // `rrf_k` only feeds the hybrid fusion arm, and eval replay is
+    // lexical-only (BYO vectors cannot be replayed offline) — so two grid
+    // points differing only in rrf_k always score identically. Memoize on
+    // the knobs that actually reach the lexical path; 54 of the 81 grid
+    // points reuse a cached (mrr, recall@k) pair instead of re-running
+    // the whole golden set.
+    let mut cache: std::collections::HashMap<(u64, u64, u32, u32), (f64, f64)> =
+        std::collections::HashMap::new();
     for c in grid() {
-        let report = runner::run_eval(&with_candidate(base, &c), conn, pairs, k)?;
-        ranked.push(score(&report, c));
+        let key = (
+            c.decay.to_bits(),
+            c.mmr_lambda.to_bits(),
+            c.bm25_weights.0.to_bits(),
+            c.bm25_weights.1.to_bits(),
+        );
+        let (mrr, recall_at_k) = match cache.get(&key) {
+            Some(&cached) => cached,
+            None => {
+                let report = runner::run_eval(&with_candidate(base, &c), conn, pairs, k)?;
+                cache.insert(key, (report.mrr, report.recall_at_k));
+                (report.mrr, report.recall_at_k)
+            }
+        };
+        ranked.push(ScoredCandidate {
+            candidate: c,
+            mrr,
+            recall_at_k,
+        });
     }
     ranked.sort_by(|a, b| {
         b.mrr

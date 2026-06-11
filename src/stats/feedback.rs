@@ -2,7 +2,8 @@
 //!
 //! Each record corresponds to one memory id and tracks how many times the
 //! memory was surfaced and accepted vs. dismissed. Inserts use SQLite UPSERT
-//! so callers do not need to seed rows.
+//! so callers do not need to seed rows. The query-id contract (generate +
+//! validate) lives here too so the writer and the checker cannot drift.
 
 use rusqlite::Connection;
 use time::OffsetDateTime;
@@ -11,25 +12,45 @@ use crate::prelude::*;
 use crate::stats::sqlite::StatsDb;
 use crate::store::memory_row;
 
+/// `q-<yyyymmdd>-<8hex>`: day-sortable, collision-resistant query id
+/// derived from the query text and a nanosecond timestamp. Not a content
+/// hash — the same query run twice gets two distinct ids. The writer
+/// side of the contract checked by [`is_valid_query_id`]; written into
+/// `retrieval_log` by `retrieval::pipeline`.
+pub fn generate_query_id(query: &str, now: OffsetDateTime) -> String {
+    let mut input = Vec::with_capacity(query.len() + 16);
+    input.extend_from_slice(query.as_bytes());
+    input.extend_from_slice(&now.unix_timestamp_nanos().to_be_bytes());
+    let hex = crate::memory::id::sha256_hex(&input);
+    format!(
+        "q-{:04}{:02}{:02}-{}",
+        now.year(),
+        u8::from(now.month()),
+        now.day(),
+        &hex[..8]
+    )
+}
+
 /// Validate the `q-<yyyymmdd>-<8hex>` query-id shape emitted by
-/// `retrieval::pipeline`. Shared by `comemory feedback` (reject typos
-/// loudly) and tests.
+/// [`generate_query_id`]. Shared by `comemory feedback` (reject typos
+/// loudly) and tests. The 8-hex tail has exactly the shape of a memory
+/// id, so the check is delegated to
+/// [`crate::memory::id::is_valid_memory_id`]; the byte slice at 11 is
+/// safe because the earlier checks pin the first 11 bytes to ASCII.
 pub fn is_valid_query_id(s: &str) -> bool {
     let b = s.as_bytes();
     b.len() == 19
         && s.starts_with("q-")
         && b[2..10].iter().all(u8::is_ascii_digit)
         && b[10] == b'-'
-        && b[11..19]
-            .iter()
-            .all(|c| matches!(c, b'0'..=b'9' | b'a'..=b'f'))
+        && crate::memory::id::is_valid_memory_id(&s[11..])
 }
 
 /// Upsert the `used` side of the per-memory counter row: insert with
 /// `used_count = 1` or bump the existing count, refreshing `last_used`
-/// to `now` either way. Shared by [`Feedback::record_used`] and
-/// [`record_with_provenance`] so the UPSERT SQL exists exactly once.
-/// Accepts any [`Connection`] (a `rusqlite::Transaction` derefs to one).
+/// to `now` either way. Composed by [`record_with_provenance`] so the
+/// UPSERT SQL exists exactly once. Accepts any [`Connection`] (a
+/// `rusqlite::Transaction` derefs to one).
 pub(crate) fn upsert_used(conn: &Connection, id: &str, now: &str) -> Result<()> {
     conn.execute(
         "INSERT INTO feedback(memory_id, used_count, irrelevant_count, last_used)
@@ -42,8 +63,8 @@ pub(crate) fn upsert_used(conn: &Connection, id: &str, now: &str) -> Result<()> 
 
 /// Upsert the `irrelevant` side of the per-memory counter row: insert with
 /// `irrelevant_count = 1` or bump the existing count. `last_used` is left
-/// untouched — a dismissal is not a use. Shared by
-/// [`Feedback::record_irrelevant`] and [`record_with_provenance`].
+/// untouched — a dismissal is not a use. Composed by
+/// [`record_with_provenance`].
 pub(crate) fn upsert_irrelevant(conn: &Connection, id: &str) -> Result<()> {
     conn.execute(
         "INSERT INTO feedback(memory_id, used_count, irrelevant_count)
@@ -54,10 +75,29 @@ pub(crate) fn upsert_irrelevant(conn: &Connection, id: &str) -> Result<()> {
     Ok(())
 }
 
+/// Insert one `feedback_events` provenance row. Private helper so
+/// [`record_with_provenance`]'s used and irrelevant loops share the
+/// INSERT SQL.
+fn insert_event(
+    conn: &Connection,
+    query_id: &str,
+    id: &str,
+    verdict: &str,
+    at: &str,
+) -> Result<()> {
+    conn.execute(
+        "INSERT INTO feedback_events(query_id, memory_id, verdict, at)
+         VALUES (?1, ?2, ?3, ?4)",
+        rusqlite::params![query_id, id, verdict, at],
+    )?;
+    Ok(())
+}
+
 /// Record a batch of used/irrelevant verdicts for one query in a single
 /// transaction: one `feedback_events` row per id plus the matching
-/// counter upserts. All-or-nothing — a failure on any id leaves both
-/// tables untouched, so events and counters cannot drift.
+/// counter upsert, written together per id. All-or-nothing — a failure
+/// on any id leaves both tables untouched, so events and counters
+/// cannot drift.
 ///
 /// The query id is recorded verbatim; it is not required to exist in
 /// `retrieval_log` (gc may have evicted the row, or the caller may be
@@ -74,73 +114,14 @@ pub fn record_with_provenance(
 ) -> Result<()> {
     let now = memory_row::iso_format(OffsetDateTime::now_utc())?;
     let tx = db.conn_mut().transaction()?;
-    for (ids, verdict) in [(used, "used"), (irrelevant, "irrelevant")] {
-        for id in ids {
-            tx.execute(
-                "INSERT INTO feedback_events(query_id, memory_id, verdict, at)
-                 VALUES (?1, ?2, ?3, ?4)",
-                rusqlite::params![query_id, id, verdict, now],
-            )?;
-        }
-    }
     for id in used {
+        insert_event(&tx, query_id, id, "used", &now)?;
         upsert_used(&tx, id, &now)?;
     }
     for id in irrelevant {
+        insert_event(&tx, query_id, id, "irrelevant", &now)?;
         upsert_irrelevant(&tx, id)?;
     }
     tx.commit()?;
     Ok(())
-}
-
-/// Thin handle that borrows a [`StatsDb`] and exposes feedback operations.
-/// The borrow is `&mut` per the plan; rusqlite uses interior mutability so the
-/// individual operations only need `&self`.
-pub struct Feedback<'a> {
-    db: &'a mut StatsDb,
-}
-
-impl<'a> Feedback<'a> {
-    /// Borrow `db` for the duration of feedback operations.
-    pub fn new(db: &'a mut StatsDb) -> Self {
-        Self { db }
-    }
-
-    /// Record that memory `id` was used in a response. Increments `used_count`
-    /// and refreshes `last_used` to the current UTC time.
-    ///
-    /// SQLite errors propagate through `Error::Sqlite` so the CLI surfaces
-    /// them with `EX_SOFTWARE` and a sqlite-tagged message — matching the
-    /// `stats::sqlite` module's recent shift away from `Error::Other` wraps.
-    pub fn record_used(&self, id: &str) -> Result<()> {
-        let now = memory_row::iso_format(OffsetDateTime::now_utc())?;
-        upsert_used(self.db.conn(), id, &now)
-    }
-
-    /// Record that memory `id` was surfaced but judged irrelevant. Increments
-    /// `irrelevant_count`; does not touch `last_used`.
-    ///
-    /// SQLite errors propagate through `Error::Sqlite` for the same reason
-    /// as [`Self::record_used`].
-    pub fn record_irrelevant(&self, id: &str) -> Result<()> {
-        upsert_irrelevant(self.db.conn(), id)
-    }
-
-    /// Look up `(used_count, irrelevant_count)` for memory `id`. Returns
-    /// `(0, 0)` only when no row exists; any other SQLite failure (missing
-    /// table, locked db, corrupted file) is surfaced as `Error::Sqlite` so
-    /// downstream consumers (e.g. `prune::low_value`) cannot be silently fed
-    /// zeroed counts and the CLI exit code stays consistent with the rest of
-    /// the stats layer.
-    pub fn counts(&self, id: &str) -> Result<(u64, u64)> {
-        match self.db.conn().query_row(
-            "SELECT used_count, irrelevant_count FROM feedback WHERE memory_id = ?1",
-            rusqlite::params![id],
-            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)),
-        ) {
-            Ok((u, i)) => Ok((u as u64, i as u64)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok((0, 0)),
-            Err(e) => Err(Error::Sqlite(e)),
-        }
-    }
 }

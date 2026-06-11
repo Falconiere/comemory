@@ -48,8 +48,7 @@ pub fn search(
     let reranked = rerank::rerank(conn, cfg, &candidates)?;
     let final_hits = diversify::diversify(reranked, cfg.rank.mmr_lambda, cfg.retrieval.top_k);
     let query_id = if opts.track {
-        record_access(conn, &final_hits);
-        record_query(conn, query, &final_hits, started.elapsed())
+        record_telemetry(conn, query, &final_hits, started.elapsed())
     } else {
         None
     };
@@ -59,15 +58,49 @@ pub fn search(
     })
 }
 
+/// Best-effort telemetry for one tracked run: bump access counts and
+/// write the `retrieval_log` row inside ONE transaction, so the pair
+/// costs a single WAL fsync instead of two. The contract stays
+/// best-effort end to end — search never fails on telemetry: if the
+/// transaction cannot be opened the two writes fall back to direct
+/// autocommit calls, and if the commit fails both writes are dropped
+/// with a warning and no `query_id` is reported.
+fn record_telemetry(
+    conn: &Connection,
+    query: &str,
+    hits: &[Reranked],
+    elapsed: std::time::Duration,
+) -> Option<String> {
+    match conn.unchecked_transaction() {
+        Ok(tx) => {
+            record_access(&tx, hits);
+            let query_id = record_query(&tx, query, hits, elapsed);
+            match tx.commit() {
+                Ok(()) => query_id,
+                Err(e) => {
+                    tracing::warn!(error = %e, "telemetry commit failed; access counts and query log dropped");
+                    None
+                }
+            }
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "telemetry transaction unavailable; falling back to direct writes");
+            record_access(conn, hits);
+            record_query(conn, query, hits, elapsed)
+        }
+    }
+}
+
 /// Bump access tracking for returned hits. Best-effort: a failure must
 /// never break the read path.
 ///
 /// All ids are folded into one `UPDATE ... WHERE id IN (...)` statement so
-/// the bump costs a single autocommit transaction (one WAL fsync) and
-/// waits on `busy_timeout` at most once — per-row statements would fsync
-/// and potentially block once per hit. The timestamp goes through
-/// [`memory_row::iso_format`] so every `last_accessed` writer emits the
-/// same string format as `created_at` / `updated_at`.
+/// the bump costs a single statement and waits on `busy_timeout` at most
+/// once — per-row statements could block once per hit. The WAL fsync is
+/// shared with the `retrieval_log` write via [`record_telemetry`]'s
+/// transaction. The timestamp goes through [`memory_row::iso_format`] so
+/// every `last_accessed` writer emits the same string format as
+/// `created_at` / `updated_at`.
 fn record_access(conn: &Connection, hits: &[Reranked]) {
     if hits.is_empty() {
         return;
@@ -79,7 +112,7 @@ fn record_access(conn: &Connection, hits: &[Reranked]) {
             return;
         }
     };
-    let qmarks = vec!["?"; hits.len()].join(",");
+    let qmarks = crate::store::qmarks(hits.len());
     let sql = format!(
         "UPDATE memories SET access_count = access_count + 1, last_accessed = ? \
          WHERE id IN ({qmarks})"
@@ -107,7 +140,7 @@ fn record_query(
             return None;
         }
     };
-    let query_id = generate_query_id(query, now);
+    let query_id = crate::stats::feedback::generate_query_id(query, now);
     let ids: Vec<&str> = hits.iter().map(|h| h.memory_id.as_str()).collect();
     let returned = match serde_json::to_string(&ids) {
         Ok(s) => s,
@@ -128,22 +161,4 @@ fn record_query(
             None
         }
     }
-}
-
-/// `q-<yyyymmdd>-<8hex>`: day-sortable, collision-resistant id derived
-/// from the query text and a nanosecond timestamp. Not a content hash —
-/// the same query run twice gets two distinct ids.
-fn generate_query_id(query: &str, now: OffsetDateTime) -> String {
-    use sha2::{Digest, Sha256};
-    let mut h = Sha256::new();
-    h.update(query.as_bytes());
-    h.update(now.unix_timestamp_nanos().to_be_bytes());
-    let digest = h.finalize();
-    let hex: String = digest.iter().take(4).map(|b| format!("{b:02x}")).collect();
-    format!(
-        "q-{:04}{:02}{:02}-{hex}",
-        now.year(),
-        u8::from(now.month()),
-        now.day()
-    )
 }

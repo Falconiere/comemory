@@ -23,6 +23,12 @@ use crate::store::{fts, vector};
 /// after diversification.
 pub const CANDIDATE_POOL: usize = 50;
 
+/// [`RoutedHit::tier`] value of the learned-expansion ladder tier — the
+/// only tier output rendering treats specially (the `[expanded]` flag in
+/// `output::search`). The JSON contract serializes `tier` as a bare u8
+/// (1..=4), so a full enum is deliberately not used.
+pub const TIER_EXPANDED: u8 = 4;
+
 /// One unified retrieval hit, regardless of which branch produced it.
 #[derive(Debug, Clone)]
 pub struct RoutedHit {
@@ -101,13 +107,15 @@ pub fn route(
 
 /// Hybrid path: run ANN + FTS5 independently and fuse via RRF.
 ///
-/// The lexical leg walks the same relaxed ladder as the pure-lexical path
-/// when the strict query is empty, *before* fusion — otherwise a noisy ANN
+/// The lexical leg goes through the same [`strict_then_ladder`] policy
+/// as the pure-lexical path, *before* fusion — otherwise a noisy ANN
 /// leg would suppress the fallback entirely (the fused result is non-empty,
 /// so memories reachable only via the relaxed/subtoken tiers would never
 /// surface). When the ANN leg contributes nothing (empty vector table, or
 /// every hit below the similarity threshold), the result is tagged
 /// [`Source::Lexical`] because only the FTS branch produced signal.
+/// Fused hits carry the lexical leg's tier (1 when the leg was empty —
+/// the strict default).
 ///
 /// The `kind` filter is applied to the ANN leg *before* fusion (the
 /// lexical leg already filters in SQL) so RRF only ranks eligible
@@ -130,17 +138,7 @@ fn route_hybrid(
         kind,
     )?;
     let weights = cfg.retrieval.bm25_weights;
-    let mut lex = fts::search_memory(conn, query, k, repo, kind, weights)?;
-    let mut lex_tier = 1u8;
-    if lex.is_empty() {
-        let (ladder_hits, ladder_tier) = lexical_ladder(conn, query, k, repo, kind, weights)?;
-        lex = ladder_hits;
-        if !lex.is_empty() {
-            // Only a tier that produced rows tags the result; an empty
-            // ladder leaves the fused (ANN-only) hits at the default 1.
-            lex_tier = ladder_tier;
-        }
-    }
+    let (lex, lex_tier) = strict_then_ladder(conn, query, k, repo, kind, weights)?;
     if ann.is_empty() {
         return Ok(lex
             .into_iter()
@@ -204,7 +202,7 @@ fn filter_kind(
     if hits.is_empty() {
         return Ok(hits);
     }
-    let qmarks = vec!["?"; hits.len()].join(",");
+    let qmarks = crate::store::qmarks(hits.len());
     let sql = format!("SELECT id FROM memories WHERE kind = ? AND id IN ({qmarks})");
     let mut stmt = conn.prepare(&sql)?;
     let params = std::iter::once(kind).chain(hits.iter().map(|h| h.memory_id.as_str()));
@@ -239,12 +237,28 @@ fn route_lexical(
     kind: Option<&str>,
     weights: (f32, f32),
 ) -> Result<Vec<RoutedHit>> {
-    let mut lex = fts::search_memory(conn, query, k, repo, kind, weights)?;
-    let mut tier = 1u8;
-    if lex.is_empty() {
-        (lex, tier) = lexical_ladder(conn, query, k, repo, kind, weights)?;
-    }
+    let (lex, tier) = strict_then_ladder(conn, query, k, repo, kind, weights)?;
     Ok(lex.into_iter().map(|h| lex_to_routed(h, tier)).collect())
+}
+
+/// The full lexical policy shared by [`route_lexical`] and the hybrid
+/// arm's FTS leg: run the strict AND tier first (tier 1 on hits), then
+/// walk the relaxed [`lexical_ladder`] when it found nothing. Returning
+/// the tier alongside the hits keeps both callers free of fallback
+/// bookkeeping, so they cannot drift on when the ladder fires.
+fn strict_then_ladder(
+    conn: &Connection,
+    query: &str,
+    k: usize,
+    repo: Option<&str>,
+    kind: Option<&str>,
+    weights: (f32, f32),
+) -> Result<(Vec<fts::MemoryFtsHit>, u8)> {
+    let lex = fts::search_memory(conn, query, k, repo, kind, weights)?;
+    if !lex.is_empty() {
+        return Ok((lex, 1));
+    }
+    lexical_ladder(conn, query, k, repo, kind, weights)
 }
 
 /// Relaxed fallback ladder shared by the lexical and hybrid paths, walked
@@ -272,9 +286,10 @@ fn route_lexical(
 /// stricter tiers already produced.
 ///
 /// Returns the hits plus the [`RoutedHit::tier`] that produced them
-/// (word-OR → 2, subtoken → 3, expansion → 4). When every tier comes back
-/// empty the returned tier is 4 — the deepest tier attempted — which
-/// callers never observe because there are no hits to tag.
+/// (word-OR → 2, subtoken → 3, expansion → [`TIER_EXPANDED`]). When
+/// every tier comes back empty the returned tier is 1 — the strict
+/// default — so an empty ladder leaves the hybrid arm's fused
+/// (ANN-only) hits tagged exactly like a strict run.
 fn lexical_ladder(
     conn: &Connection,
     query: &str,
@@ -294,7 +309,10 @@ fn lexical_ladder(
         return Ok((lex, 3));
     }
     let lex = fts::search_memory_expanded(conn, query, k, repo, kind, weights)?;
-    Ok((lex, 4))
+    if !lex.is_empty() {
+        return Ok((lex, TIER_EXPANDED));
+    }
+    Ok((Vec::new(), 1))
 }
 
 /// Map a `vector::MemoryHit` to a [`RankedHit`] for RRF fusion. Vector

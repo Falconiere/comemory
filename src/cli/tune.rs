@@ -11,10 +11,11 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
+use crate::cli::eval::GoldenSetArgs;
 use crate::cli::{load_config, resolve_data_dir};
 use crate::config::paths::Paths;
 use crate::eval::golden;
-use crate::eval::tune::{self, ScoredCandidate, TuneCandidate};
+use crate::eval::tune::{self, TuneCandidate};
 use crate::output::json;
 use crate::prelude::*;
 use crate::store::connection;
@@ -36,45 +37,15 @@ Examples:
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES)]
 pub struct Args {
-    /// Path to a YAML golden file (`- query: ...` / `  relevant: [..]`).
-    #[arg(long)]
-    pub golden: Option<PathBuf>,
-    /// Skip the feedback harvest; use only the --golden file.
-    #[arg(long, default_value_t = false, requires = "golden")]
-    pub golden_only: bool,
-    /// recall@k cut (defaults to 3).
-    #[arg(long, default_value_t = 3,
-          value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..))]
-    pub k: usize,
+    /// Golden-set selection (`--golden`, `--golden-only`, `--k`),
+    /// shared with `comemory eval`.
+    #[command(flatten)]
+    pub golden_set: GoldenSetArgs,
     /// Rewrite config.toml with the winning knobs when (and only when)
     /// the winner strictly beats the current config. Comments in an
     /// existing config.toml are dropped by the rewrite.
     #[arg(long, default_value_t = false)]
     pub apply: bool,
-}
-
-/// Resolve the minimum-golden-pairs floor: `COMEMORY_TUNE_MIN_GOLDEN`
-/// when set (a test hook — invalid values are a hard error naming the
-/// variable), else [`tune::MIN_GOLDEN_PAIRS`].
-fn min_golden_pairs() -> Result<usize> {
-    match std::env::var("COMEMORY_TUNE_MIN_GOLDEN") {
-        Ok(raw) => raw.trim().parse::<usize>().map_err(|_| {
-            Error::Other(format!(
-                "COMEMORY_TUNE_MIN_GOLDEN: expected a non-negative integer, got {raw:?}"
-            ))
-        }),
-        Err(_) => Ok(tune::MIN_GOLDEN_PAIRS),
-    }
-}
-
-/// True when the winner strictly beats the baseline on mrr, with
-/// recall@k breaking exact mrr ties.
-fn strictly_beats(winner: &ScoredCandidate, baseline: &ScoredCandidate) -> bool {
-    match winner.mrr.total_cmp(&baseline.mrr) {
-        std::cmp::Ordering::Greater => true,
-        std::cmp::Ordering::Equal => winner.recall_at_k > baseline.recall_at_k,
-        std::cmp::Ordering::Less => false,
-    }
 }
 
 /// Render one candidate's knobs for the TTY view.
@@ -94,15 +65,13 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     let conn = connection::open(paths.db_path())?;
     let cfg = load_config(&paths)?;
 
-    let pairs = golden::resolve(&conn, a.golden.as_deref(), a.golden_only)?;
-    let min_pairs = min_golden_pairs()?;
-    let report = tune::run_tune(&cfg, &conn, &pairs, a.k, min_pairs)?;
-    let winner = report
-        .ranked
-        .first()
-        .ok_or_else(|| Error::Other("tune produced an empty candidate ranking".into()))?;
+    let g = &a.golden_set;
+    let pairs = golden::resolve(&conn, g.golden.as_deref(), g.golden_only)?;
+    let min_pairs = tune::resolve_min_pairs()?;
+    let report = tune::run_tune(&cfg, &conn, &pairs, g.k, min_pairs)?;
+    let winner = report.winner()?;
 
-    let improved = strictly_beats(winner, &report.baseline);
+    let improved = report.improves_baseline();
     let applied = a.apply && improved;
     if applied {
         tune::apply_to_config_file(&paths.config_file(), &winner.candidate)?;

@@ -10,6 +10,7 @@ use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
 use crate::prelude::*;
+use crate::store::tokenizer::split::query_tokens;
 
 /// Reformulation window: a follow-up query counts as a rewording of a
 /// failed one only when it ran within this many minutes after it.
@@ -24,17 +25,6 @@ pub struct MinedMapping {
     pub expansion: String,
     /// Number of (failed, successful) pairs that produced this mapping.
     pub support: u64,
-}
-
-/// Tokenize a query the same way the FTS index sees it: identifier
-/// split, lowercased, diacritic-folded, non-colocated parts only.
-/// Single-character tokens are dropped (too noisy to expand on).
-fn query_tokens(query: &str) -> BTreeSet<String> {
-    crate::store::tokenizer::split::split_text(query)
-        .into_iter()
-        .filter(|t| !t.colocated && t.text.chars().count() > 1)
-        .map(|t| t.text)
-        .collect()
 }
 
 /// Scan `retrieval_log` for (failed q1 → used-feedback q2) pairs inside
@@ -105,12 +95,19 @@ pub fn mine(conn: &Connection) -> Result<Vec<MinedMapping>> {
 pub fn apply(conn: &mut Connection, mappings: &[MinedMapping], now_iso: &str) -> Result<()> {
     let tx = conn.transaction()?;
     tx.execute("DELETE FROM query_expansions", [])?;
-    for m in mappings {
-        tx.execute(
+    {
+        let mut stmt = tx.prepare(
             "INSERT INTO query_expansions(term, expansion, support, last_mined)
              VALUES (?1, ?2, ?3, ?4)",
-            rusqlite::params![m.term, m.expansion, m.support as i64, now_iso],
         )?;
+        for m in mappings {
+            stmt.execute(rusqlite::params![
+                m.term,
+                m.expansion,
+                m.support as i64,
+                now_iso
+            ])?;
+        }
     }
     tx.commit()?;
     Ok(())

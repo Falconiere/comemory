@@ -11,7 +11,7 @@ use serde::Serialize;
 use crate::output::{json, tty};
 use crate::prelude::*;
 use crate::retrieval::rerank::{Reranked, ScoreParts};
-use crate::retrieval::router::Source;
+use crate::retrieval::router::{Source, TIER_EXPANDED};
 
 /// One search hit as emitted to the user. `score` duplicates
 /// `score_parts.final_score` so simple consumers never need to descend
@@ -76,9 +76,13 @@ pub fn write_tty(out: &mut impl Write, hits: &[Reranked], query_id: Option<&str>
             Some(id) => format!(" (superseded by {id})"),
             None => String::new(),
         };
-        // Tier 4 means the hit was only reachable via a mined query
-        // expansion — flag it so users understand the looser match.
-        let expanded = if hit.tier == 4 { " [expanded]" } else { "" };
+        // The expansion tier means the hit was only reachable via a mined
+        // query expansion — flag it so users understand the looser match.
+        let expanded = if hit.tier == TIER_EXPANDED {
+            " [expanded]"
+        } else {
+            ""
+        };
         writeln!(
             out,
             "{}  {}  {}{}{}",

@@ -4,5 +4,4 @@
 pub mod feedback;
 pub mod sqlite;
 
-pub use feedback::Feedback;
 pub use sqlite::StatsDb;
