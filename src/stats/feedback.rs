@@ -75,9 +75,11 @@ pub(crate) fn upsert_irrelevant(conn: &Connection, id: &str) -> Result<()> {
     Ok(())
 }
 
-/// Insert one `feedback_events` provenance row. Private helper so
-/// [`record_with_provenance`]'s used and irrelevant loops share the
-/// INSERT SQL.
+/// Insert one memory-tagged `feedback_events` provenance row. Private
+/// helper so [`record_with_provenance`]'s used and irrelevant loops share
+/// the INSERT SQL. `target_kind` is written explicitly (not left to the
+/// column default) now that code-tagged rows exist too — see
+/// [`crate::stats::code_feedback`] for the code-side writer.
 fn insert_event(
     conn: &Connection,
     query_id: &str,
@@ -86,8 +88,8 @@ fn insert_event(
     at: &str,
 ) -> Result<()> {
     conn.execute(
-        "INSERT INTO feedback_events(query_id, memory_id, verdict, at)
-         VALUES (?1, ?2, ?3, ?4)",
+        "INSERT INTO feedback_events(query_id, memory_id, verdict, at, target_kind)
+         VALUES (?1, ?2, ?3, ?4, 'memory')",
         rusqlite::params![query_id, id, verdict, at],
     )?;
     Ok(())

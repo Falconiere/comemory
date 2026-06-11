@@ -51,13 +51,19 @@ pub fn load_file(path: &Path) -> Result<Vec<GoldenPair>> {
 /// so eval can replay them faithfully. Ids whose memory row is gone or
 /// soft-deleted are dropped; keys left with zero live relevant ids are
 /// omitted. BTreeMap keeps the output deterministic.
+///
+/// Only `target_kind = 'memory'` events qualify: code-target events
+/// text-encode a symbol id into `memory_id` (see
+/// [`crate::stats::code_feedback`]), and an all-digit symbol id is also a
+/// valid 8-hex memory id, so without the guard a code verdict could join
+/// an unrelated live memory and pollute the golden set.
 pub fn harvest(conn: &Connection) -> Result<Vec<GoldenPair>> {
     let mut stmt = conn.prepare(
         "SELECT DISTINCT r.query, r.repo, r.kind, e.memory_id
            FROM feedback_events e
            JOIN retrieval_log r ON r.query_id = e.query_id
            JOIN memories m ON m.id = e.memory_id AND m.deleted_at IS NULL
-          WHERE e.verdict = 'used'
+          WHERE e.verdict = 'used' AND e.target_kind = 'memory'
           ORDER BY r.query, r.repo, r.kind, e.memory_id",
     )?;
     let rows: Vec<(PairKey, String)> = stmt

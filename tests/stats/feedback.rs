@@ -108,14 +108,18 @@ fn record_with_provenance_writes_events_and_counters_atomically() {
         )
         .expect("used");
     assert_eq!(used, 1);
-    let verdict: String = conn
+    let (verdict, target_kind): (String, String) = conn
         .query_row(
-            "SELECT verdict FROM feedback_events WHERE memory_id='aaaaaaa2'",
+            "SELECT verdict, target_kind FROM feedback_events WHERE memory_id='aaaaaaa2'",
             [],
-            |r| r.get(0),
+            |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .expect("verdict");
     assert_eq!(verdict, "irrelevant");
+    assert_eq!(
+        target_kind, "memory",
+        "memory-side events must be explicitly tagged target_kind='memory'"
+    );
 }
 
 #[test]
