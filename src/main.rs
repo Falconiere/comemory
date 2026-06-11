@@ -5,6 +5,7 @@
 //! - 0  — success
 //! - 64 — `EX_USAGE` (`NotFound`)
 //! - 65 — `EX_DATAERR` (`Yaml`, `Json`, `Toml`, `Frontmatter`, `VecDimMismatch`)
+//! - 69 — `EX_UNAVAILABLE` (`Unavailable`)
 //! - 70 — `EX_SOFTWARE` (`Sqlite`, `Migration`, `Ast`, `Git`, `Other`)
 //! - 74 — `EX_IOERR` (`Io`)
 //! - 78 — `EX_CONFIG` (`Config`)
@@ -83,6 +84,11 @@ async fn main() {
             let mut err = std::io::stderr().lock();
             let _ = writeln!(err, "error: config: {msg}");
             78
+        }
+        Err(Error::Unavailable(msg)) => {
+            let mut err = std::io::stderr().lock();
+            let _ = writeln!(err, "error: unavailable: {msg}");
+            69
         }
         Err(Error::Other(msg)) => {
             let mut err = std::io::stderr().lock();

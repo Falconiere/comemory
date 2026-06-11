@@ -361,3 +361,6 @@ mod delete;
 
 #[path = "cli/feedback.rs"]
 mod feedback;
+
+#[path = "cli/eval.rs"]
+mod eval;

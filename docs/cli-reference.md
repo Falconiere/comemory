@@ -29,6 +29,7 @@ Commands:
   list           List memories with optional repo/kind filters
   delete         Soft-delete a memory by id (moves to `.trash/`)
   feedback       Record per-memory feedback (used vs irrelevant)
+  eval           Score retrieval quality against a golden set (recall@k, MRR)
   doctor         Report on the data directory and SQLite mirror health
   index-code     Walk a repo, extract symbols, and upsert into the code index
   ingest-code    Read pre-embedded JSONL rows from stdin and ingest them into the code index (`code_symbols` + `code_fts` + `code_vec`)
@@ -220,6 +221,34 @@ Examples:
 
   # Only-irrelevant feedback
   comemory feedback q-20260610-c3d4e5f6 --irrelevant 00112233
+```
+
+---
+
+## comemory eval
+
+```
+Score retrieval quality against a golden set (recall@k, MRR)
+
+Usage: comemory eval [OPTIONS]
+
+Options:
+      --golden <GOLDEN>      Path to a YAML golden file (`- query: ...` / `  relevant: [..]`)
+      --json                 Emit machine-readable JSON instead of a human TTY view
+      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+      --golden-only          Skip the feedback harvest; use only the --golden file
+      --k <K>                recall@k cut (defaults to 3) [default: 3]
+  -h, --help                 Print help
+
+Examples:
+  # Score retrieval against feedback-harvested golden pairs
+  comemory eval
+
+  # Merge a hand-written golden file (file wins on duplicate query)
+  comemory eval --golden golden.yaml
+
+  # File only, recall@5, JSON report
+  comemory eval --golden golden.yaml --golden-only --k 5 --json
 ```
 
 ---

@@ -14,6 +14,7 @@ pub mod context;
 pub mod delete;
 pub mod doctor;
 pub(crate) mod embedding_input;
+pub mod eval;
 pub mod feedback;
 pub mod gc;
 pub mod index_code;
@@ -64,6 +65,8 @@ pub enum Cmd {
     Delete(delete::Args),
     /// Record per-memory feedback (used vs irrelevant).
     Feedback(feedback::Args),
+    /// Score retrieval quality against a golden set (recall@k, MRR).
+    Eval(eval::Args),
     /// Report on the data directory and SQLite mirror health.
     Doctor(doctor::Args),
     /// Walk a repo, extract symbols, and upsert into the code index.
@@ -99,6 +102,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::List(a) => list::run(a, cli.json, cli.data_dir).await,
         Cmd::Delete(a) => delete::run(a, cli.json, cli.data_dir).await,
         Cmd::Feedback(a) => feedback::run(a, cli.json, cli.data_dir).await,
+        Cmd::Eval(a) => eval::run(a, cli.json, cli.data_dir).await,
         Cmd::Doctor(a) => doctor::run(a, cli.json, cli.data_dir).await,
         Cmd::IndexCode(a) => index_code::run(a, cli.json, cli.data_dir).await,
         Cmd::IngestCode(a) => ingest_code::run(a, cli.json, cli.data_dir).await,

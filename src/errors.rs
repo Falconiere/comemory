@@ -40,6 +40,11 @@ pub enum Error {
     #[error("config: {0}")]
     Config(String),
 
+    /// Required learning data is absent (no golden pairs, not enough
+    /// feedback). Maps to EX_UNAVAILABLE (69).
+    #[error("unavailable: {0}")]
+    Unavailable(String),
+
     #[error("other: {0}")]
     Other(String),
 }
