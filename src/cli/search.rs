@@ -34,6 +34,8 @@ Examples:
   #   quality     — frontmatter quality nudge (1-5 scale), neutral = 1.0
   #   supersede   — 0.2 penalty when superseded by a live memory, else 1.0
   #   final_score — product of all factors (== score at root level)
+  # The envelope also carries query_id — the retrieval_log row for this
+  # run; pass it to `comemory feedback <query_id> --used <ids>`.
   comemory search \"auth race\" --json
 
   # Caller-supplied vector (BYO-vector, CSV form)
@@ -77,13 +79,14 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
 
     let vec = embedding_input::read_optional(a.vector_stdin, a.vector.as_deref())?;
     let cfg = override_top_k(load_config(&paths)?, a.k);
-    let hits = pipeline::search(
+    let run = pipeline::search(
         &cfg,
         &conn,
         &a.query,
         vec.as_deref(),
         a.repo.as_deref(),
         a.kind.map(Kind::as_str),
+        pipeline::SearchOptions { track: true },
     )?;
-    output::search::emit(&hits, json_flag)
+    output::search::emit(&run.hits, run.query_id.as_deref(), json_flag)
 }

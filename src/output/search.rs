@@ -38,20 +38,26 @@ pub struct Row<'a> {
 pub struct Envelope<'a> {
     /// Reranked hits in final pipeline order.
     pub hits: Vec<Row<'a>>,
+    /// Id of the retrieval_log row for this run; absent when logging
+    /// was off or failed. Feed it back via `comemory feedback <id>`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub query_id: Option<&'a str>,
 }
 
 /// Build the serializable envelope. Public so snapshot tests can pin the
 /// JSON contract without going through stdout.
-pub fn envelope(hits: &[Reranked]) -> Envelope<'_> {
+pub fn envelope<'a>(hits: &'a [Reranked], query_id: Option<&'a str>) -> Envelope<'a> {
     Envelope {
         hits: hits.iter().map(row_from).collect(),
+        query_id,
     }
 }
 
-/// Render `hits` to stdout in either JSON or TTY mode.
-pub fn emit(hits: &[Reranked], json_flag: bool) -> Result<()> {
+/// Render `hits` to stdout in either JSON or TTY mode. `query_id` is the
+/// retrieval_log id for this run (JSON field / TTY footer); `None` skips it.
+pub fn emit(hits: &[Reranked], query_id: Option<&str>, json_flag: bool) -> Result<()> {
     if json_flag {
-        return json::write(&envelope(hits));
+        return json::write(&envelope(hits, query_id));
     }
     let mut out = std::io::stdout().lock();
     for hit in hits {
@@ -66,6 +72,12 @@ pub fn emit(hits: &[Reranked], json_flag: bool) -> Result<()> {
             source_label(hit.source),
             hit.memory_id,
             suffix
+        )?;
+    }
+    if let Some(qid) = query_id {
+        writeln!(
+            out,
+            "query: {qid}  (feedback: comemory feedback {qid} --used <ids>)"
         )?;
     }
     Ok(())

@@ -4,7 +4,7 @@
 //! now delegates to `crate::store::connection::open`).
 
 use comemory::config::paths::Paths;
-use comemory::stats::feedback::Feedback;
+use comemory::stats::feedback::{is_valid_query_id, Feedback};
 use comemory::stats::sqlite::StatsDb;
 
 use super::common;
@@ -32,6 +32,26 @@ fn record_irrelevant_increments_count() {
     let (used, irrelevant) = fb.counts("m2").expect("counts");
     assert_eq!(used, 0);
     assert_eq!(irrelevant, 1);
+}
+
+#[test]
+fn valid_query_id_shape_is_accepted() {
+    assert!(is_valid_query_id("q-20260610-a1b2c3d4"));
+}
+
+#[test]
+fn malformed_query_ids_are_rejected() {
+    let bad = [
+        "",                     // empty
+        "q-2026061-a1b2c3d4",   // 7-digit date
+        "q-20260610-A1B2C3D4",  // uppercase hex
+        "q-20260610-a1b2c3",    // short hex
+        "x-20260610-a1b2c3d4",  // wrong prefix
+        "q-20260610-a1b2c3d4x", // trailing garbage
+    ];
+    for s in bad {
+        assert!(!is_valid_query_id(s), "must reject {s:?}");
+    }
 }
 
 #[test]
