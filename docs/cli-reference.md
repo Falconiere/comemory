@@ -202,7 +202,7 @@ Record per-memory feedback (used vs irrelevant)
 Usage: comemory feedback [OPTIONS] <QUERY_ID>
 
 Arguments:
-  <QUERY_ID>  Identifier of the originating search query (recorded for provenance)
+  <QUERY_ID>  Id of the originating search query (`q-<yyyymmdd>-<8hex>`, as printed by `comemory search`); recorded for provenance
 
 Options:
       --json                     Emit machine-readable JSON instead of a human TTY view
@@ -213,13 +213,13 @@ Options:
 
 Examples:
   # Mark two hits as useful and one as irrelevant
-  comemory feedback q-2026-05-17-001 --used a1b2c3d4,e5f6a7b8 --irrelevant 00112233
+  comemory feedback q-20260610-a1b2c3d4 --used a1b2c3d4,e5f6a7b8 --irrelevant 00112233
 
   # Only-used feedback
-  comemory feedback q-2026-05-17-002 --used a1b2c3d4
+  comemory feedback q-20260610-b2c3d4e5 --used a1b2c3d4
 
   # Only-irrelevant feedback
-  comemory feedback q-2026-05-17-003 --irrelevant 00112233
+  comemory feedback q-20260610-c3d4e5f6 --irrelevant 00112233
 ```
 
 ---

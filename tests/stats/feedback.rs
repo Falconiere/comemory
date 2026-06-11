@@ -4,7 +4,7 @@
 //! now delegates to `crate::store::connection::open`).
 
 use comemory::config::paths::Paths;
-use comemory::stats::feedback::{is_valid_query_id, Feedback};
+use comemory::stats::feedback::{is_valid_query_id, record_with_provenance, Feedback};
 use comemory::stats::sqlite::StatsDb;
 
 use super::common;
@@ -32,6 +32,46 @@ fn record_irrelevant_increments_count() {
     let (used, irrelevant) = fb.counts("m2").expect("counts");
     assert_eq!(used, 0);
     assert_eq!(irrelevant, 1);
+}
+
+#[test]
+fn record_with_provenance_writes_events_and_counters_atomically() {
+    let sb = common::runner::Sandbox::new();
+    let paths = Paths::new(sb.data_dir());
+    let mut db = StatsDb::open(paths.stats_db()).expect("open");
+    record_with_provenance(
+        &mut db,
+        "q-20260610-aabbccdd",
+        &["aaaaaaa1".into()],
+        &["aaaaaaa2".into()],
+    )
+    .expect("record");
+
+    let conn = db.conn();
+    let events: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM feedback_events WHERE query_id='q-20260610-aabbccdd'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("events");
+    assert_eq!(events, 2);
+    let used: i64 = conn
+        .query_row(
+            "SELECT used_count FROM feedback WHERE memory_id='aaaaaaa1'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("used");
+    assert_eq!(used, 1);
+    let verdict: String = conn
+        .query_row(
+            "SELECT verdict FROM feedback_events WHERE memory_id='aaaaaaa2'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("verdict");
+    assert_eq!(verdict, "irrelevant");
 }
 
 #[test]
