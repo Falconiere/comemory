@@ -20,11 +20,12 @@ fn defaults_match_spec() {
 #[test]
 fn config_has_no_dead_knobs() {
     let cfg = comemory::config::Config::defaults();
-    // Struct compiles without the removed fields — this test pins the
-    // serialized shape so a re-introduction is caught.
+    // Struct compiles without the removed field — this test pins the
+    // serialized shape so a re-introduction is caught. (code_threshold,
+    // removed in M2 for having no consumer, returned in M3 with the
+    // code-search wiring and is no longer a dead knob.)
     let toml = toml::to_string(&cfg).expect("serialize defaults");
     assert!(!toml.contains("low_value_default_unused_since_days"));
-    assert!(!toml.contains("code_threshold"));
 }
 
 #[test]
@@ -295,6 +296,98 @@ fn file_overlay_unknown_rank_key_is_an_error() {
     assert!(
         msg.contains("decai"),
         "error must name the unknown key, got: {msg}"
+    );
+}
+
+// ── M3 code knobs + configurable constants ───────────────────────────────────
+
+#[test]
+fn code_knob_defaults() {
+    let cfg = Config::defaults();
+    assert!(
+        (cfg.retrieval.code_threshold - 0.50).abs() < f32::EPSILON,
+        "default code_threshold must be 0.50"
+    );
+    // Column order (symbol, snippet, path_tokens) — mirrors the previously
+    // hardcoded `bm25(code_fts, 0.0, 2.0, 1.0, 1.5)`.
+    assert_eq!(cfg.retrieval.code_bm25_weights, (2.0, 1.0, 1.5));
+    assert_eq!(cfg.rank.near_dup_hamming, 8);
+    assert_eq!(cfg.prune.superseded_grace_days, 7);
+}
+
+#[test]
+fn tune_grid_defaults() {
+    // The M1 3×3×3×3 grid, now configuration instead of hardcoded loops.
+    let cfg = Config::defaults();
+    assert_eq!(cfg.tune.rrf_k_grid, vec![20.0f32, 60.0, 100.0]);
+    assert_eq!(cfg.tune.decay_grid, vec![0.3f64, 0.5, 0.8]);
+    assert_eq!(cfg.tune.mmr_lambda_grid, vec![0.5f64, 0.7, 0.9]);
+    assert_eq!(
+        cfg.tune.bm25_grid,
+        vec![(1.0f32, 3.0f32), (1.0, 1.0), (2.0, 1.0)]
+    );
+}
+
+#[test]
+fn code_knob_file_overlays_apply() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        "[retrieval]\n\
+         code_threshold = 0.6\n\
+         code_bm25_weights = [3.0, 1.0, 2.0]\n\
+         [rank]\n\
+         near_dup_hamming = 4\n\
+         [prune]\n\
+         superseded_grace_days = 14\n",
+    )
+    .expect("write config.toml");
+    let cfg = Config::defaults()
+        .with_file(&path)
+        .expect("code knob overlays must parse and apply");
+    assert!((cfg.retrieval.code_threshold - 0.6).abs() < f32::EPSILON);
+    assert_eq!(cfg.retrieval.code_bm25_weights, (3.0, 1.0, 2.0));
+    assert_eq!(cfg.rank.near_dup_hamming, 4);
+    assert_eq!(cfg.prune.superseded_grace_days, 14);
+}
+
+#[test]
+fn tune_grid_file_overlay_applies() {
+    // Grids are file-only (no COMEMORY_TUNE_* env vars: a four-list env
+    // value is unreadable). Absent grid keys keep their defaults.
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        "[tune]\n\
+         rrf_k_grid = [60.0]\n\
+         decay_grid = [0.5, 0.7]\n\
+         bm25_grid = [[2.0, 1.0]]\n",
+    )
+    .expect("write config.toml");
+    let cfg = Config::defaults()
+        .with_file(&path)
+        .expect("tune grid overlays must parse and apply");
+    assert_eq!(cfg.tune.rrf_k_grid, vec![60.0f32]);
+    assert_eq!(cfg.tune.decay_grid, vec![0.5f64, 0.7]);
+    assert_eq!(cfg.tune.bm25_grid, vec![(2.0f32, 1.0f32)]);
+    // mmr_lambda_grid absent from the file → default retained.
+    assert_eq!(cfg.tune.mmr_lambda_grid, vec![0.5f64, 0.7, 0.9]);
+}
+
+#[test]
+fn tune_overlay_unknown_key_is_an_error() {
+    // deny_unknown_fields applies inside [tune] too.
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "[tune]\nrrf_grid = [60.0]\n").expect("write config.toml");
+    let err = Config::defaults()
+        .with_file(&path)
+        .expect_err("unknown key inside [tune] must error");
+    assert!(
+        err.to_string().contains("rrf_grid"),
+        "error must name the unknown key, got: {err}"
     );
 }
 

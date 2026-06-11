@@ -258,6 +258,30 @@ fn near_duplicate_save_warns_and_hints() {
 }
 
 #[test]
+fn near_dup_radius_env_is_honored() {
+    // Hamming(A, B) = 5: with COMEMORY_RANK_NEAR_DUP_HAMMING tightened to 4
+    // the second save must NOT report a duplicate — the save-time check
+    // reads cfg.rank.near_dup_hamming instead of the hardcoded constant.
+    let home = tempdir().expect("tempdir");
+    save_json(&home, DUP_BODY_A);
+
+    let assertion = Command::cargo_bin("comemory")
+        .expect("bin")
+        .env("COMEMORY_DATA_DIR", home.path())
+        .env("COMEMORY_RANK_NEAR_DUP_HAMMING", "4")
+        .args(["--json", "save", "--kind", "note", DUP_BODY_B])
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&assertion.get_output().stdout).to_string();
+    let second: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("save --json emits one JSON object");
+    assert!(
+        second.get("duplicate_of").is_none(),
+        "radius 4 must not flag a Hamming-5 near-dup: {second}",
+    );
+}
+
+#[test]
 fn near_duplicate_save_tty_emits_warning_line() {
     let home = tempdir().expect("tempdir");
     let first = save_json(&home, DUP_BODY_A);

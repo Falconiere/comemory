@@ -46,7 +46,12 @@ pub fn search(
     let started = std::time::Instant::now();
     let candidates = router::route(cfg, conn, query, vec, repo, kind)?;
     let reranked = rerank::rerank(conn, cfg, &candidates)?;
-    let final_hits = diversify::diversify(reranked, cfg.rank.mmr_lambda, cfg.retrieval.top_k);
+    let final_hits = diversify::diversify(
+        reranked,
+        cfg.rank.near_dup_hamming,
+        cfg.rank.mmr_lambda,
+        cfg.retrieval.top_k,
+    );
     let query_id = if opts.track {
         record_telemetry(conn, query, &final_hits, started.elapsed())
     } else {

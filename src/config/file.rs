@@ -28,6 +28,10 @@ struct PartialConfig {
     rank: Option<PartialRankConfig>,
     /// Optional file-overlay for prune scoring knobs. Absent keys leave defaults.
     prune: Option<PartialPruneConfig>,
+    /// Optional file-overlay for the `comemory tune` grid lists. Absent keys
+    /// leave defaults. File-only: no env-var equivalents exist (a four-list
+    /// env value is unreadable).
+    tune: Option<PartialTuneConfig>,
 }
 
 /// File-overlay partial for [`RetrievalConfig`]. Only the M2-tunable
@@ -40,6 +44,8 @@ struct PartialRetrievalConfig {
     bm25_weights: Option<(f32, f32)>,
     top_k: Option<usize>,
     memory_threshold: Option<f32>,
+    code_threshold: Option<f32>,
+    code_bm25_weights: Option<(f32, f32, f32)>,
 }
 
 /// File-overlay partial for [`RankConfig`]. All fields optional.
@@ -49,6 +55,17 @@ struct PartialRankConfig {
     decay: Option<f64>,
     prior_clamp: Option<(f64, f64)>,
     mmr_lambda: Option<f64>,
+    near_dup_hamming: Option<u32>,
+}
+
+/// File-overlay partial for [`TuneConfig`]. All fields optional.
+#[derive(Debug, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct PartialTuneConfig {
+    rrf_k_grid: Option<Vec<f32>>,
+    decay_grid: Option<Vec<f64>>,
+    mmr_lambda_grid: Option<Vec<f64>>,
+    bm25_grid: Option<Vec<(f32, f32)>>,
 }
 
 /// File-overlay partial for [`PruneConfig`]. All fields optional.
@@ -65,6 +82,7 @@ struct PartialPruneConfig {
     min_activation: Option<f64>,
     min_feedback: Option<f64>,
     learning_retention_days: Option<u32>,
+    superseded_grace_days: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -101,6 +119,12 @@ pub struct RetrievalConfig {
     /// this floor are dropped instead of padding the candidate pool with
     /// nearest-but-irrelevant noise. Default `0.55`.
     pub memory_threshold: f32,
+    /// Minimum cosine similarity (`1.0 - distance`) for code ANN hits,
+    /// the `code_vec` counterpart of [`memory_threshold`]. Must be a
+    /// finite value in `[0.0, 1.0]`. Validated from day one; consumed by
+    /// the M3 code-search wiring. Default `0.50`.
+    #[serde(default = "default_code_threshold")]
+    pub code_threshold: f32,
     pub hybrid_weight: f32,
     pub top_k: usize,
     pub corrective_min_confidence: f32,
@@ -113,6 +137,15 @@ pub struct RetrievalConfig {
     /// Default `(1.0, 3.0)` — a tag hit outranks a body hit.
     #[serde(default = "default_bm25_weights")]
     pub bm25_weights: (f32, f32),
+    /// Weighted-BM25 column weights for `code_fts` in column order
+    /// `(symbol, snippet, path_tokens)`. The `symbol_id UNINDEXED` column
+    /// is always 0. Every weight must be finite and >= 0, and at least one
+    /// must be > 0. Validated from day one; consumed by the M3 code-search
+    /// wiring (which replaces the hardcoded
+    /// `bm25(code_fts, 0.0, 2.0, 1.0, 1.5)`). Default `(2.0, 1.0, 1.5)` —
+    /// a symbol-name hit outranks snippet and path hits.
+    #[serde(default = "default_code_bm25_weights")]
+    pub code_bm25_weights: (f32, f32, f32),
     /// Operator-visible record of the memory embedding dim. The authoritative
     /// value is the literal in `src/store/sql/0002_v2_tables.sql` —
     /// `memory_vec` is a vec0 vtab whose dim is baked into its `CREATE
@@ -141,8 +174,28 @@ fn default_bm25_weights() -> (f32, f32) {
     (1.0, 3.0)
 }
 
+fn default_code_threshold() -> f32 {
+    0.50
+}
+
+fn default_code_bm25_weights() -> (f32, f32, f32) {
+    (2.0, 1.0, 1.5)
+}
+
 fn default_code_vector_dim() -> usize {
     768
+}
+
+/// The shared constant in `simhash` stays the single source of the default
+/// radius; the config field merely makes it operator-tunable.
+fn default_near_dup_hamming() -> u32 {
+    crate::simhash::NEAR_DUP_HAMMING
+}
+
+/// The constant next to the prune rule stays the single source of the
+/// default grace window; the config field merely makes it operator-tunable.
+fn default_superseded_grace_days() -> u32 {
+    crate::prune::low_value::SUPERSEDED_GRACE_DAYS
 }
 
 /// Ranking knobs for the rerank/diversify pipeline (M1).
@@ -168,6 +221,50 @@ pub struct RankConfig {
     /// `1.0` = pure relevance (no diversification); `0.0` = pure diversity.
     /// Default: `0.7` (lean toward relevance).
     pub mmr_lambda: f64,
+    /// SimHash Hamming radius treated as "same memory, different wording".
+    ///
+    /// Consumed by the query-time near-duplicate collapse
+    /// (`retrieval::diversify`) and the save-time duplicate warning. Must
+    /// be <= 64 (the hash is 64-bit; a larger radius would collapse every
+    /// pair); `0` collapses only bit-identical hashes.
+    /// Default: `crate::simhash::NEAR_DUP_HAMMING` (8).
+    #[serde(default = "default_near_dup_hamming")]
+    pub near_dup_hamming: u32,
+}
+
+/// Grid lists for `comemory tune`'s deterministic search — the cartesian
+/// product of the four lists is the candidate grid.
+///
+/// File-only (`[tune]` in `config.toml`): no `COMEMORY_TUNE_*` env vars are
+/// offered because a four-list env value is unreadable and error-prone.
+/// Each list must be non-empty, and every value must pass the same bounds
+/// its scalar knob enforces (see `Config::validate`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TuneConfig {
+    /// RRF fusion constants to sweep; same finite-positive invariant as
+    /// `retrieval.rrf_k`. Default `[20.0, 60.0, 100.0]`.
+    pub rrf_k_grid: Vec<f32>,
+    /// ACT-R decay exponents to sweep; same finite, >= 0 invariant as
+    /// `rank.decay`. Default `[0.3, 0.5, 0.8]`.
+    pub decay_grid: Vec<f64>,
+    /// MMR lambdas to sweep; same `[0.0, 1.0]` invariant as
+    /// `rank.mmr_lambda`. Default `[0.5, 0.7, 0.9]`.
+    pub mmr_lambda_grid: Vec<f64>,
+    /// `(body, tags)` BM25 weight pairs to sweep; same invariants as
+    /// `retrieval.bm25_weights`. Default `[(1.0, 3.0), (1.0, 1.0), (2.0, 1.0)]`.
+    pub bm25_grid: Vec<(f32, f32)>,
+}
+
+impl Default for TuneConfig {
+    /// The M1 3×3×3×3 grid (81 points), bracketing the shipped defaults.
+    fn default() -> Self {
+        Self {
+            rrf_k_grid: vec![20.0, 60.0, 100.0],
+            decay_grid: vec![0.3, 0.5, 0.8],
+            mmr_lambda_grid: vec![0.5, 0.7, 0.9],
+            bm25_grid: vec![(1.0, 3.0), (1.0, 1.0), (2.0, 1.0)],
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -189,6 +286,13 @@ pub struct PruneConfig {
     /// Aggregated `feedback` counters are permanent — only raw event
     /// rows age out. Must be >= 1. Default: `90`.
     pub learning_retention_days: u32,
+    /// Grace window (days) for the superseded-and-forgotten prune rule:
+    /// only supersede edges older than this many days count. Protects
+    /// freshly-rebuilt DBs, whose edges all carry rebuild-time timestamps.
+    /// `0` disables the grace entirely.
+    /// Default: `crate::prune::low_value::SUPERSEDED_GRACE_DAYS` (7).
+    #[serde(default = "default_superseded_grace_days")]
+    pub superseded_grace_days: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -205,6 +309,9 @@ pub struct Config {
     pub retrieval: RetrievalConfig,
     pub rank: RankConfig,
     pub prune: PruneConfig,
+    /// Grid lists for `comemory tune`. File-only — see [`TuneConfig`].
+    #[serde(default)]
+    pub tune: TuneConfig,
     pub output: OutputConfig,
     /// Free-form caller-set hint identifying the embedder that produced the
     /// vectors (e.g. `ollama:nomic-embed-text`). Surfaced verbatim by
@@ -231,11 +338,13 @@ impl Config {
             },
             retrieval: RetrievalConfig {
                 memory_threshold: 0.55,
+                code_threshold: default_code_threshold(),
                 hybrid_weight: 0.65,
                 top_k: 12,
                 corrective_min_confidence: 0.15,
                 rrf_k: 60.0,
                 bm25_weights: default_bm25_weights(),
+                code_bm25_weights: default_code_bm25_weights(),
                 memory_vector_dim: default_memory_vector_dim(),
                 code_vector_dim: default_code_vector_dim(),
             },
@@ -243,6 +352,7 @@ impl Config {
                 decay: 0.5,
                 prior_clamp: (0.5, 2.0),
                 mmr_lambda: 0.7,
+                near_dup_hamming: default_near_dup_hamming(),
             },
             prune: PruneConfig {
                 trash_retention_days: 30,
@@ -250,7 +360,9 @@ impl Config {
                 min_activation: -2.0,
                 min_feedback: 0.25,
                 learning_retention_days: 90,
+                superseded_grace_days: default_superseded_grace_days(),
             },
+            tune: TuneConfig::default(),
             output: OutputConfig {
                 json: false,
                 color: "auto".into(),
@@ -291,6 +403,12 @@ impl Config {
             if let Some(v) = pr.memory_threshold {
                 self.retrieval.memory_threshold = v;
             }
+            if let Some(v) = pr.code_threshold {
+                self.retrieval.code_threshold = v;
+            }
+            if let Some(v) = pr.code_bm25_weights {
+                self.retrieval.code_bm25_weights = v;
+            }
         }
         if let Some(pr) = partial.rank {
             if let Some(v) = pr.decay {
@@ -301,6 +419,9 @@ impl Config {
             }
             if let Some(v) = pr.mmr_lambda {
                 self.rank.mmr_lambda = v;
+            }
+            if let Some(v) = pr.near_dup_hamming {
+                self.rank.near_dup_hamming = v;
             }
         }
         if let Some(pp) = partial.prune {
@@ -319,73 +440,24 @@ impl Config {
             if let Some(v) = pp.learning_retention_days {
                 self.prune.learning_retention_days = v;
             }
+            if let Some(v) = pp.superseded_grace_days {
+                self.prune.superseded_grace_days = v;
+            }
+        }
+        if let Some(pt) = partial.tune {
+            if let Some(v) = pt.rrf_k_grid {
+                self.tune.rrf_k_grid = v;
+            }
+            if let Some(v) = pt.decay_grid {
+                self.tune.decay_grid = v;
+            }
+            if let Some(v) = pt.mmr_lambda_grid {
+                self.tune.mmr_lambda_grid = v;
+            }
+            if let Some(v) = pt.bm25_grid {
+                self.tune.bm25_grid = v;
+            }
         }
         self.validate()
-    }
-
-    /// Enforce the documented rank/prune invariants.
-    ///
-    /// Runs at the end of both [`Config::with_file`] and
-    /// [`Config::with_env`] so the file overlay and env overrides are
-    /// validated identically — `[rank] decay = -1.0` in config.toml fails
-    /// exactly like `COMEMORY_RANK_DECAY=-1.0`. Each message names both
-    /// the config field and its env var so the offending knob is
-    /// identifiable from either entry point.
-    pub(crate) fn validate(self) -> Result<Self> {
-        let (b, t) = self.retrieval.bm25_weights;
-        if !b.is_finite() || !t.is_finite() || b < 0.0 || t < 0.0 || (b == 0.0 && t == 0.0) {
-            return Err(Error::Config(format!(
-                "invalid retrieval.bm25_weights={b},{t} (env COMEMORY_RETRIEVAL_BM25_WEIGHTS): both must be finite and >= 0, and at least one > 0"
-            )));
-        }
-        let k = self.retrieval.rrf_k;
-        if !k.is_finite() || k <= 0.0 {
-            return Err(Error::Config(format!(
-                "invalid retrieval.rrf_k={k} (env COMEMORY_RETRIEVAL_RRF_K): must be a finite positive number"
-            )));
-        }
-        let d = self.rank.decay;
-        if !d.is_finite() || d < 0.0 {
-            return Err(Error::Config(format!(
-                "invalid rank.decay={d} (env COMEMORY_RANK_DECAY): must be a finite non-negative number"
-            )));
-        }
-        let (lo, hi) = self.rank.prior_clamp;
-        if !lo.is_finite() || !hi.is_finite() || lo <= 0.0 || lo > hi {
-            return Err(Error::Config(format!(
-                "invalid rank.prior_clamp={lo},{hi} (env COMEMORY_RANK_PRIOR_CLAMP): both values must be finite, lo > 0, and lo <= hi"
-            )));
-        }
-        let l = self.rank.mmr_lambda;
-        if !l.is_finite() || !(0.0..=1.0).contains(&l) {
-            return Err(Error::Config(format!(
-                "invalid rank.mmr_lambda={l} (env COMEMORY_RANK_MMR_LAMBDA): must be a finite value in [0.0, 1.0]"
-            )));
-        }
-        let a = self.prune.min_activation;
-        if !a.is_finite() {
-            return Err(Error::Config(format!(
-                "invalid prune.min_activation={a} (env COMEMORY_PRUNE_MIN_ACTIVATION): must be a finite number"
-            )));
-        }
-        let f = self.prune.min_feedback;
-        if !f.is_finite() || !(0.0..=1.0).contains(&f) {
-            return Err(Error::Config(format!(
-                "invalid prune.min_feedback={f} (env COMEMORY_PRUNE_MIN_FEEDBACK): must be a finite value in [0.0, 1.0]"
-            )));
-        }
-        let r = self.prune.learning_retention_days;
-        if r < 1 {
-            return Err(Error::Config(format!(
-                "invalid prune.learning_retention_days={r} (env COMEMORY_LEARNING_RETENTION_DAYS): must be >= 1"
-            )));
-        }
-        let q = self.prune.low_value_default_below_quality;
-        if !(1..=5).contains(&q) {
-            return Err(Error::Config(format!(
-                "invalid prune.low_value_default_below_quality={q} (env COMEMORY_PRUNE_BELOW_QUALITY): must be in 1..=5"
-            )));
-        }
-        Ok(self)
     }
 }

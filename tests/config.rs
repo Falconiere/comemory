@@ -6,3 +6,6 @@ mod file;
 
 #[path = "config/env.rs"]
 mod env;
+
+#[path = "config/validate.rs"]
+mod validate;
