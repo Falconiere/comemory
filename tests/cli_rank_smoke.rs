@@ -1,7 +1,9 @@
 //! Ranking smoke tests through the real `comemory` binary: a recall@3 floor
-//! over a 20-memory corpus, feedback-driven reordering, and rebuild parity.
-//! All three drive the full save → search pipeline (identifier tokenizer,
-//! weighted bm25, candidate pool, rerank priors, diversify) end-to-end.
+//! over a 20-memory corpus (scored by `comemory eval` against a golden YAML
+//! generated from the corpus), feedback-driven reordering, and rebuild
+//! parity. All three drive the full save → search pipeline (identifier
+//! tokenizer, weighted bm25, candidate pool, rerank priors, diversify)
+//! end-to-end.
 
 mod common;
 
@@ -105,9 +107,14 @@ fn corpus_contains_exactly_one_near_duplicate_pair() {
     );
 }
 
-/// Recall@3 floor: for every smoke query, the expected answer's body must
-/// appear among the top-3 hits. Failures are collected so a regression
-/// dumps every miss at once instead of stopping at the first.
+/// Recall@3 floor, scored by the real `comemory eval` command. The golden
+/// YAML is generated from the corpus at test time (ids are content-derived,
+/// so a checked-in file would rot on body edits) and fed via
+/// `--golden --golden-only`. Each query's relevant set is exactly one id
+/// (enforced by `corpus::golden_pairs`), so the report's mean `recall_at_k`
+/// reaches 1.0 iff every expected body lands in the top-3 — the identical
+/// bar the previous hand-rolled loop asserted. Per-query misses are dumped
+/// from the report so a regression shows every failure at once.
 #[test]
 fn recall_at_3_floor_over_smoke_corpus() {
     let sandbox = Sandbox::new();
@@ -119,29 +126,54 @@ fn recall_at_3_floor_over_smoke_corpus() {
         "duplicate ids detected: corpus contains bodies with the same SHA-256 prefix"
     );
 
-    let mut failures = Vec::new();
-    for (query, expected) in SMOKE_QUERIES {
-        let ids = top_ids(&dir, query);
-        let found = ids
-            .iter()
-            .any(|id| bodies.get(id).is_some_and(|b| b.contains(expected)));
-        if !found {
-            let got: Vec<String> = ids
+    let pairs = corpus::golden_pairs(&bodies);
+    let golden_path = sandbox.root.path().join("golden.yaml");
+    let yaml = serde_yaml::to_string(&pairs).expect("serialize golden pairs to YAML");
+    std::fs::write(&golden_path, yaml).expect("write generated golden.yaml");
+
+    let assert = bin(&dir)
+        .args(["--json", "eval", "--golden"])
+        .arg(&golden_path)
+        .args(["--golden-only", "--k", "3"])
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let report: Value = serde_json::from_str(stdout.trim()).expect("eval --json report");
+
+    let results = report["results"].as_array().expect("results array");
+    assert_eq!(
+        results.len(),
+        SMOKE_QUERIES.len(),
+        "eval must score every smoke query exactly once"
+    );
+    let failures: Vec<String> = results
+        .iter()
+        .filter(|r| r["recall"].as_f64().expect("recall field") < 1.0)
+        .map(|r| {
+            let got: Vec<String> = r["returned"]
+                .as_array()
+                .expect("returned array")
                 .iter()
+                .take(3)
                 .map(|id| {
+                    let id = id.as_str().expect("returned id");
                     let body = bodies.get(id).map(String::as_str).unwrap_or("<unknown id>");
                     format!("{id}: {body}")
                 })
                 .collect();
-            failures.push(format!(
-                "query {query:?}: no top-3 body contains {expected:?}; top-3:\n    {}",
+            format!(
+                "query {:?}: relevant {:?} not in top-3:\n    {}",
+                r["query"],
+                r["relevant"],
                 got.join("\n    ")
-            ));
-        }
-    }
+            )
+        })
+        .collect();
+    let recall_at_3 = report["recall_at_k"].as_f64().expect("recall_at_k field");
     assert!(
-        failures.is_empty(),
-        "recall@3 floor failed for {}/{} queries:\n{}",
+        recall_at_3 >= 1.0,
+        "recall@3 floor failed (mean {:.3}) for {}/{} queries:\n{}",
+        recall_at_3,
         failures.len(),
         SMOKE_QUERIES.len(),
         failures.join("\n")

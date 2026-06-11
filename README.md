@@ -118,7 +118,10 @@ comemory doctor
 | `comemory search` | Search the memory index by natural-language query (lexical by default, hybrid when `--vector` / `--vector-stdin` is supplied) |
 | `comemory list` | List memories with optional repo/kind filters |
 | `comemory delete` | Soft-delete a memory by id (moves to `.trash/`) |
-| `comemory feedback` | Record per-memory feedback (used vs irrelevant) |
+| `comemory feedback` | Record per-memory feedback (used vs irrelevant) against a search's `query_id` |
+| `comemory eval` | Score retrieval quality (recall@k, MRR) against a golden set (feedback-harvested and/or `--golden` YAML) |
+| `comemory mine` | Distill failed→successful query rewordings into expansion mappings (`--apply` feeds search) |
+| `comemory tune` | Grid-search the ranking knobs against the golden set (`--apply` writes the winner to `config.toml`) |
 | `comemory doctor` | Report on the data directory and SQLite mirror health |
 | `comemory index-code` | Walk a repo, extract symbols, upsert into the code index |
 | `comemory ingest-code` | Read pre-embedded JSONL from stdin into the code index |
@@ -132,6 +135,41 @@ comemory doctor
 All commands accept `--json` for machine-readable output. Exit codes follow
 `sysexits.h` conventions. The data root defaults to `$HOME/.comemory` and can be
 overridden with `--data-dir` or the `COMEMORY_DATA_DIR` environment variable.
+
+## Learning loop
+
+Every `comemory search` is logged automatically: the JSON envelope (and the
+TTY footer) carries a `query_id`. Feed back which hits actually helped,
+then measure and tune retrieval against that ground truth:
+
+```bash
+# 1. Search — note the query_id in the output
+comemory search "postgres pool exhausted" --json
+# {"hits":[...],"query_id":"q-20260611-a1b2c3d4"}
+
+# 2. Record which hits you used (and which were noise)
+comemory feedback q-20260611-a1b2c3d4 --used a1b2c3d4 --irrelevant 00112233
+
+# 3. Score retrieval (recall@k + MRR) against feedback-harvested golden
+#    pairs, optionally merged with a hand-written YAML file (file wins)
+comemory eval
+comemory eval --golden golden.yaml --golden-only --k 5 --json
+
+# 4. Distill failed→successful query rewordings into expansions that the
+#    lexical fallback ladder applies (mappings need support >= 2)
+comemory mine --apply
+
+# 5. Grid-search the ranking knobs; --apply rewrites config.toml only when
+#    the winner strictly beats the current config (needs >= 10 golden
+#    pairs; the rewrite drops any comments in config.toml)
+comemory tune --apply
+```
+
+Feedback both reranks future searches (Beta-smoothed boost/demotion) and
+doubles as eval ground truth. Raw telemetry (`retrieval_log`,
+`feedback_events`) is swept by `comemory gc` after 90 days
+(`COMEMORY_LEARNING_RETENTION_DAYS`); aggregated feedback counters and
+mined expansions are distilled knowledge and never expire.
 
 ## Quality Gates
 
