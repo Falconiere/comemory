@@ -65,12 +65,18 @@ pub enum Source {
 /// query like `VecDimMismatch` can still reach prose that only mentions
 /// its parts. ANN hits below `cfg.retrieval.memory_threshold` cosine
 /// similarity are dropped before use in both vector-consuming paths.
+///
+/// `kind` restricts every path to one memory kind (canonical lowercase
+/// string, e.g. `decision`): the lexical legs filter in SQL via the
+/// `memories` join, while the ANN legs post-filter through [`filter_kind`]
+/// because vec0 cannot filter inside the KNN query.
 pub fn route(
     cfg: &Config,
     conn: &Connection,
     query: &str,
     vec: Option<&[f32]>,
     repo: Option<&str>,
+    kind: Option<&str>,
 ) -> Result<Vec<RoutedHit>> {
     let k = CANDIDATE_POOL.max(cfg.retrieval.top_k);
 
@@ -80,9 +86,9 @@ pub fn route(
     // and downstream consumers would assume lexical contributed signal.
     let lex_meaningful = !query.trim().is_empty();
     match vec {
-        Some(v) if lex_meaningful => route_hybrid(cfg, conn, query, v, k, repo),
-        Some(v) => route_vector_only(cfg, conn, v, k, repo),
-        None => route_lexical(conn, query, k, repo, cfg.retrieval.bm25_weights),
+        Some(v) if lex_meaningful => route_hybrid(cfg, conn, query, v, k, repo, kind),
+        Some(v) => route_vector_only(cfg, conn, v, k, repo, kind),
+        None => route_lexical(conn, query, k, repo, kind, cfg.retrieval.bm25_weights),
     }
 }
 
@@ -95,6 +101,10 @@ pub fn route(
 /// surface). When the ANN leg contributes nothing (empty vector table, or
 /// every hit below the similarity threshold), the result is tagged
 /// [`Source::Lexical`] because only the FTS branch produced signal.
+///
+/// The `kind` filter is applied to the ANN leg *before* fusion (the
+/// lexical leg already filters in SQL) so RRF only ranks eligible
+/// candidates — a wrong-kind ANN hit must not eat a fusion rank slot.
 fn route_hybrid(
     cfg: &Config,
     conn: &Connection,
@@ -102,15 +112,20 @@ fn route_hybrid(
     vec: &[f32],
     k: usize,
     repo: Option<&str>,
+    kind: Option<&str>,
 ) -> Result<Vec<RoutedHit>> {
-    let ann = above_memory_threshold(
-        vector::knn_memory(conn, vec, k, repo)?,
-        cfg.retrieval.memory_threshold,
-    );
+    let ann = filter_kind(
+        conn,
+        above_memory_threshold(
+            vector::knn_memory(conn, vec, k, repo)?,
+            cfg.retrieval.memory_threshold,
+        ),
+        kind,
+    )?;
     let weights = cfg.retrieval.bm25_weights;
-    let mut lex = fts::search_memory(conn, query, k, repo, weights)?;
+    let mut lex = fts::search_memory(conn, query, k, repo, kind, weights)?;
     if lex.is_empty() {
-        lex = lexical_ladder(conn, query, k, repo, weights)?;
+        lex = lexical_ladder(conn, query, k, repo, kind, weights)?;
     }
     if ann.is_empty() {
         return Ok(lex.into_iter().map(lex_to_routed).collect());
@@ -136,19 +151,52 @@ fn route_hybrid(
 /// returns no rows for an empty query. Callers that want sparse+dense
 /// fusion must pass a non-empty `query` so the hybrid arm fires. Hits
 /// below `cfg.retrieval.memory_threshold` are dropped — KNN always
-/// returns the k nearest rows no matter how far away they are.
+/// returns the k nearest rows no matter how far away they are. The `kind`
+/// filter runs post-threshold via [`filter_kind`].
 fn route_vector_only(
     cfg: &Config,
     conn: &Connection,
     vec: &[f32],
     k: usize,
     repo: Option<&str>,
+    kind: Option<&str>,
 ) -> Result<Vec<RoutedHit>> {
-    let ann = above_memory_threshold(
-        vector::knn_memory(conn, vec, k, repo)?,
-        cfg.retrieval.memory_threshold,
-    );
+    let ann = filter_kind(
+        conn,
+        above_memory_threshold(
+            vector::knn_memory(conn, vec, k, repo)?,
+            cfg.retrieval.memory_threshold,
+        ),
+        kind,
+    )?;
     Ok(ann.into_iter().map(ann_to_routed).collect())
+}
+
+/// Batch kind filter for ANN-routed hits: the vec0 KNN leg cannot filter
+/// by kind inside the virtual-table query, so non-matching ids are dropped
+/// afterwards in one `IN` query against `memories`. The lexical legs
+/// filter in SQL via the `memories` join and must NOT pass through here —
+/// double-filtering would cost a redundant round trip.
+fn filter_kind(
+    conn: &Connection,
+    hits: Vec<vector::MemoryHit>,
+    kind: Option<&str>,
+) -> Result<Vec<vector::MemoryHit>> {
+    let Some(kind) = kind else { return Ok(hits) };
+    if hits.is_empty() {
+        return Ok(hits);
+    }
+    let qmarks = vec!["?"; hits.len()].join(",");
+    let sql = format!("SELECT id FROM memories WHERE kind = ? AND id IN ({qmarks})");
+    let mut stmt = conn.prepare(&sql)?;
+    let params = std::iter::once(kind).chain(hits.iter().map(|h| h.memory_id.as_str()));
+    let keep: std::collections::HashSet<String> = stmt
+        .query_map(rusqlite::params_from_iter(params), |r| r.get(0))?
+        .collect::<std::result::Result<_, _>>()?;
+    Ok(hits
+        .into_iter()
+        .filter(|h| keep.contains(&h.memory_id))
+        .collect())
 }
 
 /// Drop ANN hits whose cosine similarity (`1.0 - distance`) falls below
@@ -170,11 +218,12 @@ fn route_lexical(
     query: &str,
     k: usize,
     repo: Option<&str>,
+    kind: Option<&str>,
     weights: (f32, f32),
 ) -> Result<Vec<RoutedHit>> {
-    let mut lex = fts::search_memory(conn, query, k, repo, weights)?;
+    let mut lex = fts::search_memory(conn, query, k, repo, kind, weights)?;
     if lex.is_empty() {
-        lex = lexical_ladder(conn, query, k, repo, weights)?;
+        lex = lexical_ladder(conn, query, k, repo, kind, weights)?;
     }
     Ok(lex.into_iter().map(lex_to_routed).collect())
 }
@@ -202,15 +251,16 @@ fn lexical_ladder(
     query: &str,
     k: usize,
     repo: Option<&str>,
+    kind: Option<&str>,
     weights: (f32, f32),
 ) -> Result<Vec<fts::MemoryFtsHit>> {
     if fts::term_count(query) >= 2 {
-        let lex = fts::search_memory_relaxed(conn, query, k, repo, weights)?;
+        let lex = fts::search_memory_relaxed(conn, query, k, repo, kind, weights)?;
         if !lex.is_empty() {
             return Ok(lex);
         }
     }
-    fts::search_memory_subtokens(conn, query, k, repo, weights)
+    fts::search_memory_subtokens(conn, query, k, repo, kind, weights)
 }
 
 /// Map a `vector::MemoryHit` to a [`RankedHit`] for RRF fusion. Vector

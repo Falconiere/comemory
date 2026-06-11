@@ -54,10 +54,8 @@ pub struct Args {
     /// Optional repo filter forwarded to the vector branch.
     #[arg(long)]
     pub repo: Option<String>,
-    /// Reserved kind filter. Hidden until the router applies it (future
-    /// milestone); declared here so callers that pre-bake a flag list keep
-    /// parsing without error.
-    #[arg(long, hide = true)]
+    /// Filter results to one memory kind.
+    #[arg(long)]
     pub kind: Option<Kind>,
     /// Caller-supplied dense vector as a comma-separated float list.
     #[arg(long)]
@@ -79,6 +77,13 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
 
     let vec = embedding_input::read_optional(a.vector_stdin, a.vector.as_deref())?;
     let cfg = override_top_k(load_config(&paths)?, a.k);
-    let hits = pipeline::search(&cfg, &conn, &a.query, vec.as_deref(), a.repo.as_deref())?;
+    let hits = pipeline::search(
+        &cfg,
+        &conn,
+        &a.query,
+        vec.as_deref(),
+        a.repo.as_deref(),
+        a.kind.map(Kind::as_str),
+    )?;
     output::search::emit(&hits, json_flag)
 }

@@ -113,6 +113,7 @@ Options:
       --k <K>                Override the configured `retrieval.top_k`. Must be >= 1
       --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
       --repo <REPO>          Optional repo filter forwarded to the vector branch
+      --kind <KIND>          Filter results to one memory kind [possible values: decision, bug, convention, discovery, pattern, note]
       --vector <VECTOR>      Caller-supplied dense vector as a comma-separated float list
       --vector-stdin         Read a JSON `{ "embedding": [..] }` payload from stdin and use it as the dense vector for the query
   -h, --help                 Print help

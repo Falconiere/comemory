@@ -148,20 +148,23 @@ pub fn build_subtoken_or_query(query: &str) -> String {
 /// last term prefix-matched) and ranked with a weighted BM25 whose
 /// `(body, tags)` column weights come from `weights`
 /// (`cfg.retrieval.bm25_weights`; the default `(1.0, 3.0)` boosts the
-/// `tags` column over `body`). Optional `repo` filter is applied via
-/// the same JOIN that gates on `deleted_at`, so the lexical and vector
-/// branches share the same scope when a hybrid query is run with a repo
-/// filter. FTS5 MATCH parse errors (malformed user query syntax) are
-/// downgraded to an empty result rather than propagated, so a typo in the
-/// query string cannot abort the wider retrieval pipeline.
+/// `tags` column over `body`). Optional `repo` and `kind` filters are
+/// applied via the same JOIN that gates on `deleted_at`, so the lexical
+/// and vector branches share the same scope when a hybrid query is run
+/// with a filter (`kind` is the canonical lowercase string stored in
+/// `memories.kind`, e.g. `decision`). FTS5 MATCH parse errors (malformed
+/// user query syntax) are downgraded to an empty result rather than
+/// propagated, so a typo in the query string cannot abort the wider
+/// retrieval pipeline.
 pub fn search_memory(
     conn: &Connection,
     query: &str,
     k: usize,
     repo: Option<&str>,
+    kind: Option<&str>,
     weights: (f32, f32),
 ) -> Result<Vec<MemoryFtsHit>> {
-    run_memory_match(conn, &build_match_query(query), k, repo, weights)
+    run_memory_match(conn, &build_match_query(query), k, repo, kind, weights)
 }
 
 /// Relaxed variant of [`search_memory`]: OR-joins the sanitized terms via
@@ -172,9 +175,10 @@ pub fn search_memory_relaxed(
     query: &str,
     k: usize,
     repo: Option<&str>,
+    kind: Option<&str>,
     weights: (f32, f32),
 ) -> Result<Vec<MemoryFtsHit>> {
-    run_memory_match(conn, &build_or_query(query), k, repo, weights)
+    run_memory_match(conn, &build_or_query(query), k, repo, kind, weights)
 }
 
 /// Subtoken variant of [`search_memory`]: OR-joins the identifier
@@ -189,9 +193,17 @@ pub fn search_memory_subtokens(
     query: &str,
     k: usize,
     repo: Option<&str>,
+    kind: Option<&str>,
     weights: (f32, f32),
 ) -> Result<Vec<MemoryFtsHit>> {
-    run_memory_match(conn, &build_subtoken_or_query(query), k, repo, weights)
+    run_memory_match(
+        conn,
+        &build_subtoken_or_query(query),
+        k,
+        repo,
+        kind,
+        weights,
+    )
 }
 
 /// Execute a prebuilt MATCH expression against `memory_fts`. Shared by
@@ -211,14 +223,16 @@ fn run_memory_match(
     match_expr: &str,
     k: usize,
     repo: Option<&str>,
+    kind: Option<&str>,
     weights: (f32, f32),
 ) -> Result<Vec<MemoryFtsHit>> {
     if match_expr.is_empty() || k == 0 {
         return Ok(Vec::new());
     }
-    // `?3 IS NULL OR m.repo = ?3` lets us bind the optional repo filter as
-    // a single SQL string. SQLite short-circuits on the first disjunct when
-    // `?3` is NULL, so the repo filter is a no-op in that case.
+    // `?3 IS NULL OR m.repo = ?3` (and `?4` for kind) lets us bind each
+    // optional filter as a single SQL string. SQLite short-circuits on the
+    // first disjunct when the parameter is NULL, so an absent filter is a
+    // no-op.
     let (w_body, w_tags) = weights;
     let sql = format!(
         "SELECT memory_fts.memory_id, bm25(memory_fts, 0.0, {w_body}, {w_tags}) AS score \
@@ -226,15 +240,21 @@ fn run_memory_match(
            JOIN memories m ON m.id = memory_fts.memory_id \
           WHERE memory_fts MATCH ?1 AND m.deleted_at IS NULL \
             AND (?3 IS NULL OR m.repo = ?3) \
+            AND (?4 IS NULL OR m.kind = ?4) \
           ORDER BY score \
           LIMIT ?2"
     );
-    run_fts_query(conn, &sql, params![match_expr, k as i64, repo], |row| {
-        Ok(MemoryFtsHit {
-            memory_id: row.get(0)?,
-            score: row.get(1)?,
-        })
-    })
+    run_fts_query(
+        conn,
+        &sql,
+        params![match_expr, k as i64, repo, kind],
+        |row| {
+            Ok(MemoryFtsHit {
+                memory_id: row.get(0)?,
+                score: row.get(1)?,
+            })
+        },
+    )
 }
 
 /// Prepare and drain an FTS5 query, downgrading MATCH parse errors at both
