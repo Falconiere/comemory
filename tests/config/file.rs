@@ -8,7 +8,6 @@ fn defaults_match_spec() {
     assert!(matches!(c.indexing.auto_reindex, AutoReindexMode::Lazy));
     assert_eq!(c.indexing.auto_reindex_threshold_ms, 200);
     assert_eq!(c.retrieval.memory_threshold, 0.55);
-    assert_eq!(c.retrieval.code_threshold, 0.50);
     assert_eq!(c.retrieval.hybrid_weight, 0.65);
     assert_eq!(c.retrieval.top_k, 12);
     assert_eq!(c.prune.trash_retention_days, 30);
@@ -16,6 +15,16 @@ fn defaults_match_spec() {
         (c.retrieval.rrf_k - 60.0).abs() < f32::EPSILON,
         "default rrf_k must be 60.0"
     );
+}
+
+#[test]
+fn config_has_no_dead_knobs() {
+    let cfg = comemory::config::Config::defaults();
+    // Struct compiles without the removed fields — this test pins the
+    // serialized shape so a re-introduction is caught.
+    let toml = toml::to_string(&cfg).expect("serialize defaults");
+    assert!(!toml.contains("low_value_default_unused_since_days"));
+    assert!(!toml.contains("code_threshold"));
 }
 
 #[test]
@@ -107,9 +116,9 @@ fn prune_file_overlay_accepts_existing_fields() {
 
 #[test]
 fn prune_overlay_rejects_legacy_unused_since_days_key() {
-    // The legacy low_value_default_unused_since_days knob has zero
-    // consumers; its overlay was removed so a config.toml setting it
-    // errors loudly (deny_unknown_fields) instead of silently no-opping.
+    // The legacy low_value_default_unused_since_days knob was removed in
+    // M2 (zero consumers since M1), so a config.toml setting it errors
+    // loudly (deny_unknown_fields) instead of silently no-opping.
     let dir = tempfile::tempdir().expect("create temp dir");
     let path = dir.path().join("config.toml");
     std::fs::write(&path, "[prune]\nlow_value_default_unused_since_days = 90\n")

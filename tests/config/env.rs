@@ -244,17 +244,33 @@ fn bad_prune_below_quality_out_of_range_is_an_error() {
 }
 
 #[test]
+fn env_retrieval_code_threshold_is_ignored() {
+    // The code_threshold knob was removed in M2: `vector::knn_code` has no
+    // caller, so the value was never consumed. With the env arm deleted,
+    // setting the var — even to an unparsable value — must neither error
+    // nor change anything.
+    std::env::set_var("COMEMORY_RETRIEVAL_CODE_THRESHOLD", "not-a-number");
+    let result = Config::defaults().with_env();
+    std::env::remove_var("COMEMORY_RETRIEVAL_CODE_THRESHOLD");
+    let cfg = result.expect("with_env must succeed with the removed var set");
+    assert!(
+        (cfg.retrieval.memory_threshold - 0.55).abs() < f32::EPSILON,
+        "unrelated retrieval knobs must keep their defaults"
+    );
+}
+
+#[test]
 fn env_prune_unused_since_days_is_ignored() {
-    // The legacy low_value_default_unused_since_days knob has zero
-    // consumers as of M1, so its env wiring was removed: setting the var
-    // must neither error nor change the field.
+    // The legacy low_value_default_unused_since_days knob was removed in
+    // M2 (zero consumers since M1): setting the legacy var must neither
+    // error nor change any prune knob.
     std::env::set_var("COMEMORY_PRUNE_UNUSED_SINCE_DAYS", "90");
     let result = Config::defaults().with_env();
     std::env::remove_var("COMEMORY_PRUNE_UNUSED_SINCE_DAYS");
     let cfg = result.expect("with_env must succeed with the legacy var set");
     assert_eq!(
-        cfg.prune.low_value_default_unused_since_days, 180,
-        "legacy env var must not override the unconsumed field"
+        cfg.prune.trash_retention_days, 30,
+        "legacy env var must not touch any prune field"
     );
 }
 
