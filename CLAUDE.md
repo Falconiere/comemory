@@ -29,7 +29,8 @@ is the source of truth and one SQLite file (`comemory.db`) backs FTS5 +
 - **Output:** TTY via `owo-colors`, JSON via `serde_json`. Exit codes follow
   `sysexits.h`.
 - **No in-process LLM.** All ranking is deterministic (RRF fusion of FTS5 +
-  `sqlite-vec`, corrective fallback, edge walks).
+  `sqlite-vec`, a tiered lexical fallback ladder ending in mined learned
+  expansions, edge walks).
 
 ## Key Commands
 
@@ -42,6 +43,9 @@ just e2e                        # real-binary end-to-end harness
 bash scripts/check-all.sh       # the umbrella gate (CI parity)
 cargo nextest run --all-features
 comemory doctor                    # runtime health check
+comemory eval                      # score retrieval (recall@k, MRR) vs golden set
+comemory mine --apply              # distill query reformulations into expansions
+comemory tune --apply              # grid-search ranking knobs into config.toml
 ```
 
 ## Binding Rules (apply to every contribution)
@@ -86,7 +90,8 @@ enforced by `scripts/check-all.sh`. Every PR must satisfy all five.
 | `store/` | central SQLite layer — `connection` (pooled rusqlite + `sqlite-vec` loader), `schema`, `migrate` (versioned + idempotent), `vector` (`vec0` insert/KNN with dim guard), `fts` (FTS5 helpers), `embed` (`to_vec_blob`, dim helpers), `tokenizer` (custom FTS5 identifier tokenizer: camelCase/snake_case split + FFI registration) |
 | `simhash.rs` | 64-bit SimHash + Hamming distance over tokenized memory bodies (siphasher-based) |
 | `graph/` | SQL-backed `edges` table upserts, recursive-CTE walks, `cross_link` reference extraction |
-| `retrieval/` | `router` (candidates + relaxed OR fallback), `score` (ACT-R/Beta scoring primitives), `rerank` (multiplicative priors: activation × feedback × quality × supersede), `diversify` (SimHash near-dup collapse + MMR), `pipeline` (orchestration + access tracking), `fuse` (RRF), `bundle` (context lookup) |
+| `retrieval/` | `router` (candidates + 4-tier lexical ladder: strict → word-OR → subtoken-OR → tier-4 learned expansion from mined `query_expansions`), `score` (ACT-R/Beta scoring primitives), `rerank` (multiplicative priors over the max-normalized relevance: activation × feedback × quality × supersede), `diversify` (SimHash near-dup collapse + MMR), `pipeline` (orchestration + access tracking), `fuse` (RRF), `bundle` (context lookup) |
+| `eval/` | learning loop — `golden` (YAML golden sets + feedback harvest), `metrics` (recall@k, MRR), `runner` (eval over the real pipeline, tracking off), `mine` (reformulation mining → `query_expansions`), `tune` (deterministic grid search over the blend knobs) |
 | `ast/` | `extractor` (symbol enumeration via tree-sitter through ast-grep — rust/ts/js/py/go only), `pattern` (user-facing `comemory ast`), per-language wiring |
 | `stats/` | usage / feedback / repo-marker tables (lives inside `comemory.db`) |
 | `config/` | layered config (defaults → file → env) and `Paths` (data-dir layout) |
@@ -108,8 +113,10 @@ environment (`Config::with_env`, in `src/config/env.rs`).
 | `COMEMORY_INDEXING_AUTO_REINDEX` | `lazy` \| `hook` \| `off` — controls automatic code-index refresh | `lazy` |
 | `COMEMORY_RETRIEVAL_TOP_K` | Number of results returned by the hybrid router | `12` |
 | `COMEMORY_RETRIEVAL_MEMORY_THRESHOLD` | Minimum cosine similarity for the memory table | `0.55` |
-| `COMEMORY_RETRIEVAL_CODE_THRESHOLD` | Minimum cosine similarity for the code table | `0.50` |
 | `COMEMORY_RETRIEVAL_RRF_K` | RRF fusion constant for hybrid scoring | `60.0` |
+| `COMEMORY_RETRIEVAL_BM25_WEIGHTS` | `"body,tags"` BM25 column weights for `memory_fts` (both finite ≥ 0, at least one > 0) | `1.0,3.0` |
+| `COMEMORY_LEARNING_RETENTION_DAYS` | `comemory gc` retention window (days) for raw `retrieval_log` + `feedback_events` rows; aggregated `feedback` counters and mined `query_expansions` never expire | `90` |
+| `COMEMORY_TUNE_MIN_GOLDEN` | Test hook lowering `comemory tune`'s minimum-golden-pairs floor; not a tuning knob | `10` |
 | `COMEMORY_GIT_AUTO_SYNC` | `true`/`1` to enable best-effort git commit + push after a save | `false` |
 | `COMEMORY_EMBED_HINT` | Free-form identifier of the embedder you used (e.g. `ollama:nomic-embed-text`). Surfaced by `comemory doctor`; never consumed as a switch. | unset |
 | `COMEMORY_RANK_DECAY` | ACT-R decay exponent `d` in `ln(n) − d·ln(days+1)`. Must be ≥ 0. Higher → older memories decay faster. | `0.5` |

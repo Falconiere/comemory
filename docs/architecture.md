@@ -62,7 +62,8 @@ this page mirrors the highlights for quick reference.
 | `store` | SQLite connection layer, schema_meta, migrations, vector + FTS helpers, identifier tokenizer (camelCase/snake_case split + FFI registration) |
 | `simhash` | 64-bit SimHash + Hamming distance over tokenized memory bodies |
 | `graph` | SQL-backed edges (`Supersedes`, `ConflictsWith`, `RelatesTo`, `ReferencesFile`, `ReferencesSymbol`) + recursive walks; `cross_link` parses backticked refs |
-| `retrieval` | router (candidates + relaxed OR fallback), score (ACT-R/Beta primitives), rerank (multiplicative priors), diversify (SimHash collapse + MMR), pipeline (orchestration + access tracking), fuse (RRF), bundle (context lookup) |
+| `retrieval` | router (candidates + 4-tier lexical ladder ending in learned expansion), score (ACT-R/Beta primitives), rerank (multiplicative priors), diversify (SimHash collapse + MMR), pipeline (orchestration + access tracking), fuse (RRF), bundle (context lookup) |
+| `eval` | learning loop: golden sets (file + feedback harvest), recall@k/MRR metrics, eval runner, reformulation mining, grid tune |
 | `ast` | ast-grep wrapper (rust/ts/js/py/go), per-language symbol extractor, user pattern API |
 | `stats` | rusqlite usage / feedback / repo-marker tables (lives inside the same DB) |
 | `config` | Layered config: built-in defaults → `config.toml` → env → CLI flags |
@@ -101,7 +102,7 @@ migrations stay idempotent.
 | `code_fts` (FTS5) | Lexical index over symbol identifiers + snippets |
 | `code_vec` (vec0) | Dense vectors for code symbols; dim locked at first ingest |
 | `edges` | Sparse table replacing the kuzu graph (typed src→dst rows + payload) |
-| `retrieval_log`, `feedback`, `repo_marker` | Stats / indexing markers carried over from v0.1 |
+| `retrieval_log`, `feedback`, `feedback_events`, `query_expansions`, `repo_marker` | Learning-loop telemetry (query log + per-query feedback provenance), aggregated feedback counters, mined expansions, indexing markers |
 
 Every dense lookup goes through `sqlite-vec`'s `vec0` virtual table with a
 dimension guard so a mismatched embedder fails fast (`VecDimMismatch`)
@@ -157,10 +158,11 @@ search("postgres migration race")
   │   ├─ vector + non-empty query           → hybrid (ANN + FTS5 BM25, fused via RRF)
   │   ├─ vector + empty query               → pure vector (ANN only)
   │   └─ no vector                          → pure lexical (FTS5 BM25)
-  │   ├─ --repo filter (when set) constrains every branch
-  │   └─ relaxed OR fallback: when the lexical or hybrid branch returns zero
-  │       hits AND the query has ≥ 2 sanitized terms, retry FTS5 with the OR
-  │       variant (never fires on the pure-vector path)
+  │   ├─ --repo / --kind filters (when set) constrain every branch
+  │   └─ lexical fallback ladder: when the strict lexical leg returns zero
+  │       hits, retry word-OR (≥ 2 terms), then subtoken-OR, then a
+  │       learned-expansion tier ORing in mined query_expansions mappings
+  │       (never fires on the pure-vector path; hits carry a tier 1..4)
   │
   ├─ rerank  (rerank.rs)
   │   ├─ per-hit: ACT-R activation boost (recency × access count)
@@ -177,11 +179,13 @@ search("postgres migration race")
   │
   └─ emit  (output/search.rs)
       ├─ TTY: one line per hit with colored score + source label
-      └─ JSON: {"hits":[{"memory_id","score","source","superseded_by"?,"score_parts":{
-               rrf, activation, feedback, quality, supersede, final_score}}]}
+      └─ JSON: {"hits":[{"memory_id","score","source","tier","superseded_by"?,"score_parts":{
+               rrf, activation, feedback, quality, supersede, final_score}}],"query_id"?}
 ```
 
-`score_parts` is a stable explainability contract (M2 tuning reads it).
+`score_parts` is a stable explainability contract (`comemory tune` reads
+it); its `rrf` field is the max-normalized relevance in `[0, 1]` (pool max
+maps to 1.0), not the raw fused score.
 Identifier-aware matching (camelCase/snake_case splitting) is not a routing
 branch — the custom `identifier` FTS5 tokenizer is baked into the
 `memory_fts` / `code_fts` DDL, so every lexical query benefits from it.

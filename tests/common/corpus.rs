@@ -14,6 +14,10 @@
 //!   test enforces the count, not a specific floor; ≥ 19 was the measured
 //!   minimum when the corpus was authored).
 
+use std::collections::HashMap;
+
+use comemory::eval::golden::GoldenPair;
+
 /// `(kind, body, tags, quality)` rows fed to `comemory save`.
 pub const CORPUS: &[(&str, &str, &str, u8)] = &[
     (
@@ -158,3 +162,34 @@ pub const SMOKE_QUERIES: &[(&str, &str)] = &[
     ("alter table default backfill", "follow-up UPDATE"),
     ("atomic write rename", "fs::rename"),
 ];
+
+/// Build golden eval pairs from the saved corpus: each smoke query's
+/// relevant set is the saved id whose body contains the expected
+/// substring. Generated per-run rather than checked in — corpus ids are
+/// content-derived (8-hex of the body), so a static golden file would rot
+/// on any body edit. Panics when a substring resolves to anything but
+/// exactly one body: the recall@k bar in `tests/cli_rank_smoke.rs` assumes
+/// single-id relevant sets (mirroring the old "expected substring appears
+/// in the top-3" semantics), and a multi-match would silently weaken it.
+pub fn golden_pairs(bodies: &HashMap<String, String>) -> Vec<GoldenPair> {
+    SMOKE_QUERIES
+        .iter()
+        .map(|(query, expected)| {
+            let relevant: Vec<String> = bodies
+                .iter()
+                .filter(|(_, body)| body.contains(expected))
+                .map(|(id, _)| id.clone())
+                .collect();
+            assert_eq!(
+                relevant.len(),
+                1,
+                "smoke query {query:?}: expected substring {expected:?} must identify exactly \
+                 one corpus body, got {relevant:?}"
+            );
+            GoldenPair {
+                query: (*query).to_string(),
+                relevant,
+            }
+        })
+        .collect()
+}
