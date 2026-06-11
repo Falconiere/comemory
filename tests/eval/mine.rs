@@ -37,6 +37,18 @@ fn mark_used(conn: &rusqlite::Connection, qid: &str) {
     .expect("insert feedback event");
 }
 
+/// Insert a `used` feedback event tagged `target_kind='code'` for the given
+/// query id (symbol id text-encoded into the memory_id column, as
+/// `stats::code_feedback` writes it).
+fn mark_used_code(conn: &rusqlite::Connection, qid: &str) {
+    conn.execute(
+        "INSERT INTO feedback_events(query_id, memory_id, verdict, at, target_kind) \
+         VALUES (?1, '42', 'used', '2026-06-09T10:30:00Z', 'code')",
+        [qid],
+    )
+    .expect("insert code feedback event");
+}
+
 #[test]
 fn mine_distills_term_diff_mappings_from_reformulation_pair() {
     // Worked example (same tokenizer as the impl — identifier split,
@@ -220,6 +232,33 @@ fn mine_ignores_failed_code_search_rows() {
     assert!(
         mined.is_empty(),
         "search-code rows must not seed mining: {mined:?}"
+    );
+}
+
+#[test]
+fn mine_ignores_code_target_used_feedback_on_the_follow_up() {
+    // Failed q1 + a follow-up q2 whose ONLY used feedback is code-target:
+    // a code verdict says nothing about memory retrieval quality, so q2 is
+    // not a successful rewording and the pair must mint no mappings.
+    let (_d, conn) = open_db();
+    log_query(
+        &conn,
+        "q-20260609-00000001",
+        "sizing error",
+        "2026-06-09T10:00:00Z",
+    );
+    log_query(
+        &conn,
+        "q-20260609-00000002",
+        "mismatch error",
+        "2026-06-09T10:04:00Z",
+    );
+    mark_used_code(&conn, "q-20260609-00000002");
+
+    let mined = mine(&conn).expect("mine");
+    assert!(
+        mined.is_empty(),
+        "code-only used feedback must not mark q2 successful: {mined:?}"
     );
 }
 

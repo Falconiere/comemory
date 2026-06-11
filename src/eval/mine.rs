@@ -50,8 +50,14 @@ pub fn mine(conn: &Connection) -> Result<Vec<MinedMapping>> {
     let log: Vec<(String, String, String)> = stmt
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
         .collect::<std::result::Result<_, _>>()?;
-    let mut stmt =
-        conn.prepare("SELECT DISTINCT query_id FROM feedback_events WHERE verdict = 'used'")?;
+    // Only memory-target verdicts mark a query successful: a code verdict
+    // (target_kind = 'code', written by `stats::code_feedback`) says
+    // nothing about memory retrieval quality, so a follow-up whose only
+    // used feedback is code-target must not read as a successful rewording.
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT query_id FROM feedback_events
+          WHERE verdict = 'used' AND target_kind = 'memory'",
+    )?;
     let used: HashSet<String> = stmt
         .query_map([], |r| r.get(0))?
         .collect::<std::result::Result<_, _>>()?;

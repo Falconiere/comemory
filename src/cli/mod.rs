@@ -177,6 +177,31 @@ pub(crate) fn parse_id_csv(raw: &str, flag: &str) -> Result<Vec<String>> {
     Ok(ids)
 }
 
+/// Parse a CSV of code-symbol ids via [`csv_unique`] and validate every
+/// entry as a positive integer (`code_symbols.id` is an INTEGER rowid; 0
+/// and negatives never name a row), naming the offending `flag` in the
+/// error. De-duplicates again on the parsed value so `07,7` cannot
+/// double-count a counter. Sibling of [`parse_id_csv`] for the
+/// `feedback --used-code` / `--irrelevant-code` flags.
+pub(crate) fn parse_symbol_id_csv(raw: &str, flag: &str) -> Result<Vec<i64>> {
+    let mut ids: Vec<i64> = Vec::new();
+    for entry in csv_unique(raw) {
+        let bad = || {
+            Error::Config(format!(
+                "{flag}: invalid symbol id `{entry}` (expected a positive integer)"
+            ))
+        };
+        let id: i64 = entry.parse().map_err(|_| bad())?;
+        if id <= 0 {
+            return Err(bad());
+        }
+        if !ids.contains(&id) {
+            ids.push(id);
+        }
+    }
+    Ok(ids)
+}
+
 /// Load the layered config: defaults → optional `config.toml` → env. Every
 /// CLI entry point goes through this helper so the file layer cannot silently
 /// drop out for one subcommand (which would cause `comemory doctor` and

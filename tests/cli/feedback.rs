@@ -162,6 +162,122 @@ fn feedback_unknown_query_id_warns_but_records() {
     assert_eq!(events, 1, "event must be recorded on the warn path");
 }
 
+#[test]
+fn feedback_records_code_target_ids() {
+    // `--used-code` / `--irrelevant-code` write `feedback_events` rows with
+    // target_kind='code' (symbol id text-encoded into the memory_id column)
+    // plus `code_feedback` counter rows, and the JSON ack reports the counts.
+    let home = TempDir::new().expect("tempdir");
+    let v = run_json(
+        &home,
+        &[
+            "feedback",
+            "q-20260610-aabbccdd",
+            "--used-code",
+            "12",
+            "--irrelevant-code",
+            "13",
+        ],
+    );
+    assert_eq!(v["ok"].as_bool(), Some(true));
+    assert_eq!(v["used_code"].as_u64(), Some(1));
+    assert_eq!(v["irrelevant_code"].as_u64(), Some(1));
+
+    let conn = open_db_readonly(&home);
+    let (code_events, used_count, irrelevant_count): (i64, i64, i64) = conn
+        .query_row(
+            "SELECT (SELECT count(*) FROM feedback_events
+                      WHERE query_id = 'q-20260610-aabbccdd' AND target_kind = 'code'),
+                    (SELECT used_count FROM code_feedback WHERE symbol_id = 12),
+                    (SELECT irrelevant_count FROM code_feedback WHERE symbol_id = 13)",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .expect("code feedback rows");
+    assert_eq!(code_events, 2, "one code-tagged event per symbol id");
+    assert_eq!(used_count, 1);
+    assert_eq!(irrelevant_count, 1);
+}
+
+#[test]
+fn feedback_rejects_non_positive_and_non_numeric_symbol_ids() {
+    // Symbol ids are positive integers (code_symbols rowids): zero,
+    // negatives, and non-numeric input must fail loudly, naming the flag,
+    // before anything is written.
+    let home = TempDir::new().expect("tempdir");
+    for bad in ["0", "-5", "abc"] {
+        let assertion = bin(&home)
+            .args([
+                "feedback",
+                "q-20260610-aabbccdd",
+                &format!("--used-code={bad}"),
+            ])
+            .assert()
+            .failure();
+        let stderr = String::from_utf8(assertion.get_output().stderr.clone()).expect("utf8 stderr");
+        assert!(
+            stderr.contains("--used-code") && stderr.contains(bad),
+            "stderr should name the flag and the bad id {bad:?}, got: {stderr:?}"
+        );
+    }
+    let db_path = home.path().join(".comemory").join("comemory.db");
+    assert!(
+        !db_path.exists(),
+        "rejected symbol ids must not create or write the db"
+    );
+}
+
+#[test]
+fn feedback_mixed_memory_and_code_flags_write_all_four_kinds() {
+    // One invocation carrying all four flags records every verdict: two
+    // memory-tagged events + the `feedback` counters, two code-tagged
+    // events + the `code_feedback` counters.
+    let home = TempDir::new().expect("tempdir");
+    let v = run_json(
+        &home,
+        &[
+            "feedback",
+            "q-20260610-aabbccdd",
+            "--used",
+            "a1b2c3d4",
+            "--irrelevant",
+            "cccc0003",
+            "--used-code",
+            "12",
+            "--irrelevant-code",
+            "13",
+        ],
+    );
+    assert_eq!(v["used"].as_u64(), Some(1));
+    assert_eq!(v["irrelevant"].as_u64(), Some(1));
+    assert_eq!(v["used_code"].as_u64(), Some(1));
+    assert_eq!(v["irrelevant_code"].as_u64(), Some(1));
+
+    let conn = open_db_readonly(&home);
+    let (memory_events, code_events): (i64, i64) = conn
+        .query_row(
+            "SELECT (SELECT count(*) FROM feedback_events
+                      WHERE query_id = 'q-20260610-aabbccdd' AND target_kind = 'memory'),
+                    (SELECT count(*) FROM feedback_events
+                      WHERE query_id = 'q-20260610-aabbccdd' AND target_kind = 'code')",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .expect("event counts");
+    assert_eq!(memory_events, 2, "used + irrelevant memory events");
+    assert_eq!(code_events, 2, "used + irrelevant code events");
+    let (mem_used, code_used): (i64, i64) = conn
+        .query_row(
+            "SELECT (SELECT used_count FROM feedback WHERE memory_id = 'a1b2c3d4'),
+                    (SELECT used_count FROM code_feedback WHERE symbol_id = 12)",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .expect("counter rows");
+    assert_eq!(mem_used, 1);
+    assert_eq!(code_used, 1);
+}
+
 /// Run a `--json` subcommand to success and parse its stdout envelope.
 fn run_json(home: &TempDir, args: &[&str]) -> Value {
     let mut cmd = bin(home);

@@ -6,3 +6,6 @@ mod sqlite;
 
 #[path = "stats/feedback.rs"]
 mod feedback;
+
+#[path = "stats/code_feedback.rs"]
+mod code_feedback;

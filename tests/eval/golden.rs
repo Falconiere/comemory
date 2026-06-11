@@ -196,6 +196,34 @@ fn harvest_carries_repo_and_kind_from_originating_search() {
 }
 
 #[test]
+fn harvest_excludes_code_target_events() {
+    // Code feedback text-encodes the symbol id into feedback_events.memory_id
+    // (the documented column-name wart). A symbol id like 12345678 is also a
+    // valid 8-hex memory id, so without the target_kind='memory' guard a code
+    // event could join a live memories row and pollute the golden harvest.
+    let (_d, conn) = open_db();
+    insert_memory(&conn, "12345678", "postgres pool exhausted fix", None);
+    conn.execute(
+        "INSERT INTO retrieval_log(query_id, query, returned_ids, at, duration_ms)
+         VALUES ('q-20260609-aabbccdd', 'postgres pool', '[]', '2026-06-09T00:00:00Z', 1)",
+        [],
+    )
+    .expect("insert retrieval_log");
+    conn.execute(
+        "INSERT INTO feedback_events(query_id, memory_id, verdict, at, target_kind)
+         VALUES ('q-20260609-aabbccdd', '12345678', 'used', '2026-06-09T00:00:00Z', 'code')",
+        [],
+    )
+    .expect("insert code feedback event");
+
+    let pairs = harvest(&conn).expect("harvest");
+    assert!(
+        pairs.is_empty(),
+        "code-target events must not seed golden pairs: {pairs:?}"
+    );
+}
+
+#[test]
 fn merge_file_wins_on_duplicate_query_and_sorts() {
     let file = vec![GoldenPair {
         query: "postgres pool".into(),

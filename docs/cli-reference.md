@@ -208,11 +208,20 @@ Arguments:
   <QUERY_ID>  Id of the originating search query (`q-<yyyymmdd>-<8hex>`, as printed by `comemory search`); recorded for provenance
 
 Options:
-      --json                     Emit machine-readable JSON instead of a human TTY view
-      --used <USED>              Comma-separated memory ids that were used [default: ""]
-      --data-dir <DATA_DIR>      Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
-      --irrelevant <IRRELEVANT>  Comma-separated memory ids that were judged irrelevant [default: ""]
-  -h, --help                     Print help
+      --json
+          Emit machine-readable JSON instead of a human TTY view
+      --used <USED>
+          Comma-separated memory ids that were used [default: ""]
+      --data-dir <DATA_DIR>
+          Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+      --irrelevant <IRRELEVANT>
+          Comma-separated memory ids that were judged irrelevant [default: ""]
+      --used-code <USED_CODE>
+          Comma-separated code-symbol ids (positive integers, as printed by `comemory search-code`) that were used [default: ""]
+      --irrelevant-code <IRRELEVANT_CODE>
+          Comma-separated code-symbol ids that were judged irrelevant [default: ""]
+  -h, --help
+          Print help
 
 Examples:
   # Mark two hits as useful and one as irrelevant
@@ -223,6 +232,12 @@ Examples:
 
   # Only-irrelevant feedback
   comemory feedback q-20260610-c3d4e5f6 --irrelevant 00112233
+
+  # Code-symbol feedback (ids printed by comemory search-code)
+  comemory feedback q-20260610-d4e5f6a7 --used-code 12 --irrelevant-code 13
+
+  # Memory and code verdicts in one call
+  comemory feedback q-20260610-e5f6a7b8 --used a1b2c3d4 --used-code 12
 ```
 
 ---
