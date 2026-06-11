@@ -285,6 +285,32 @@ fn bad_prune_below_quality_out_of_range_is_an_error() {
 }
 
 #[test]
+fn env_learning_retention_days_override_applies() {
+    // COMEMORY_LEARNING_RETENTION_DAYS feeds prune.learning_retention_days,
+    // the telemetry retention window consumed by `comemory gc`.
+    std::env::set_var("COMEMORY_LEARNING_RETENTION_DAYS", "7");
+    let result = Config::defaults().with_env();
+    std::env::remove_var("COMEMORY_LEARNING_RETENTION_DAYS");
+    let cfg = result.expect("valid learning retention override must succeed");
+    assert_eq!(cfg.prune.learning_retention_days, 7);
+}
+
+#[test]
+fn env_learning_retention_days_zero_is_an_error() {
+    // Retention must be >= 1 day; 0 would evict telemetry the moment it is
+    // written. Same validate() pass as the file overlay.
+    std::env::set_var("COMEMORY_LEARNING_RETENTION_DAYS", "0");
+    let result = Config::defaults().with_env();
+    std::env::remove_var("COMEMORY_LEARNING_RETENTION_DAYS");
+    let err = result.expect_err("learning retention 0 must error");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("COMEMORY_LEARNING_RETENTION_DAYS"),
+        "error must name the offending var, got: {msg}"
+    );
+}
+
+#[test]
 fn env_retrieval_code_threshold_is_ignored() {
     // The code_threshold knob was removed in M2: `vector::knn_code` has no
     // caller, so the value was never consumed. With the env arm deleted,

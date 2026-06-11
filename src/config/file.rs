@@ -64,6 +64,7 @@ struct PartialPruneConfig {
     low_value_default_below_quality: Option<u32>,
     min_activation: Option<f64>,
     min_feedback: Option<f64>,
+    learning_retention_days: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -183,6 +184,11 @@ pub struct PruneConfig {
     /// Range `[0.0, 1.0]`. A memory with cumulative feedback ≤ this value
     /// is considered low-value. Default: `0.25`.
     pub min_feedback: f64,
+    /// Days to retain learning telemetry (`retrieval_log` rows and
+    /// `feedback_events` rows). `comemory gc` deletes older rows.
+    /// Aggregated `feedback` counters are permanent — only raw event
+    /// rows age out. Must be >= 1. Default: `90`.
+    pub learning_retention_days: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -243,6 +249,7 @@ impl Config {
                 low_value_default_below_quality: 2,
                 min_activation: -2.0,
                 min_feedback: 0.25,
+                learning_retention_days: 90,
             },
             output: OutputConfig {
                 json: false,
@@ -309,6 +316,9 @@ impl Config {
             if let Some(v) = pp.min_feedback {
                 self.prune.min_feedback = v;
             }
+            if let Some(v) = pp.learning_retention_days {
+                self.prune.learning_retention_days = v;
+            }
         }
         self.validate()
     }
@@ -362,6 +372,12 @@ impl Config {
         if !f.is_finite() || !(0.0..=1.0).contains(&f) {
             return Err(Error::Config(format!(
                 "invalid prune.min_feedback={f} (env COMEMORY_PRUNE_MIN_FEEDBACK): must be a finite value in [0.0, 1.0]"
+            )));
+        }
+        let r = self.prune.learning_retention_days;
+        if r < 1 {
+            return Err(Error::Config(format!(
+                "invalid prune.learning_retention_days={r} (env COMEMORY_LEARNING_RETENTION_DAYS): must be >= 1"
             )));
         }
         let q = self.prune.low_value_default_below_quality;
