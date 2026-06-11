@@ -383,4 +383,16 @@ fn open_migrates_v5_db_to_v6() {
         )
         .expect("version row");
     assert_eq!(v, "6");
+
+    // The rebuild must recreate both edge indexes — a dropped index would
+    // silently degrade every edge walk rather than fail loudly.
+    let idx: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM sqlite_master WHERE type='index'
+              AND name IN ('idx_edges_src','idx_edges_dst')",
+            [],
+            |r| r.get(0),
+        )
+        .expect("index probe");
+    assert_eq!(idx, 2, "edge indexes missing after v6 rebuild");
 }
