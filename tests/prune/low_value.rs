@@ -114,6 +114,34 @@ fn freshly_created_supersede_edge_is_not_flagged() {
 }
 
 #[test]
+fn superseded_grace_days_config_is_honored() {
+    let (_d, conn) = open_db();
+    // Edge written ~14 days ago, memory untouched since: outside the
+    // default 7-day grace (flagged), inside a widened 30-day grace
+    // (cfg.prune.superseded_grace_days = 30 → not flagged).
+    seed_memory(&conn, "aaaa0001", 4, 10, "2025-06-01T00:00:00Z");
+    seed_memory(&conn, "aaaa0002", 4, 1, "2026-06-01T00:00:00Z");
+    conn.execute_batch(
+        "INSERT INTO edges(src_kind, src_id, dst_kind, dst_id, rel, created_at)
+         VALUES ('memory','aaaa0002','memory','aaaa0001','supersedes',
+                 strftime('%Y-%m-%dT%H:%M:%fZ','now','-14 days'));",
+    )
+    .expect("seed aged supersede edge");
+
+    let ids = detect(&conn, &Config::defaults()).expect("detect default grace");
+    assert_eq!(
+        ids,
+        vec!["aaaa0001".to_string()],
+        "14-day-old edge is past the default 7-day grace"
+    );
+
+    let mut cfg = Config::defaults();
+    cfg.prune.superseded_grace_days = 30;
+    let ids = detect(&conn, &cfg).expect("detect widened grace");
+    assert!(ids.is_empty(), "30-day grace must shield the edge: {ids:?}");
+}
+
+#[test]
 fn self_supersede_edge_does_not_flag() {
     let (_d, conn) = open_db();
     // Defense-in-depth: a hand-seeded self-edge (the writers refuse to

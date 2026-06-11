@@ -27,14 +27,13 @@ where
     Ok(Some(parsed))
 }
 
-/// Read an env var as an `"a,b"` pair of numbers; `Ok(None)` when unset.
+/// Read an env var as exactly `n` comma-separated numbers; `Ok(None)` when
+/// unset, `Err` naming the variable on a shape or parse failure.
 ///
-/// Only the shape (exactly two comma-separated values that parse as `T`)
-/// is checked here; the range invariants (finite, ordering, sign) live in
-/// `Config::validate` so the file overlay enforces them identically.
-/// Shared by `COMEMORY_RANK_PRIOR_CLAMP` (`f64`) and
-/// `COMEMORY_RETRIEVAL_BM25_WEIGHTS` (`f32`).
-fn env_pair<T: std::str::FromStr>(name: &str) -> Result<Option<(T, T)>>
+/// Only the shape is checked here; the range invariants (finite, ordering,
+/// sign) live in `Config::validate` so the file overlay enforces them
+/// identically. The shared core of [`env_pair`] and [`env_triple`].
+fn env_numbers<T: std::str::FromStr>(name: &str, n: usize) -> Result<Option<Vec<T>>>
 where
     T::Err: std::fmt::Display,
 {
@@ -42,20 +41,38 @@ where
         return Ok(None);
     };
     let parts: Vec<&str> = v.split(',').collect();
-    if parts.len() != 2 {
+    if parts.len() != n {
         return Err(Error::Other(format!(
-            "invalid env var {name}={v}: expected \"a,b\" (two comma-separated numbers)"
+            "invalid env var {name}={v}: expected {n} comma-separated numbers"
         )));
     }
-    let a = parts[0]
-        .trim()
-        .parse::<T>()
-        .map_err(|e| Error::Other(format!("invalid env var {name}={v}: first value: {e}")))?;
-    let b = parts[1]
-        .trim()
-        .parse::<T>()
-        .map_err(|e| Error::Other(format!("invalid env var {name}={v}: second value: {e}")))?;
-    Ok(Some((a, b)))
+    let mut out = Vec::with_capacity(n);
+    for (i, part) in parts.iter().enumerate() {
+        out.push(part.trim().parse::<T>().map_err(|e| {
+            Error::Other(format!("invalid env var {name}={v}: value {}: {e}", i + 1))
+        })?);
+    }
+    Ok(Some(out))
+}
+
+/// Read an env var as an `"a,b"` pair of numbers; `Ok(None)` when unset.
+/// Shared by `COMEMORY_RANK_PRIOR_CLAMP` (`f64`) and
+/// `COMEMORY_RETRIEVAL_BM25_WEIGHTS` (`f32`).
+fn env_pair<T: std::str::FromStr + Copy>(name: &str) -> Result<Option<(T, T)>>
+where
+    T::Err: std::fmt::Display,
+{
+    Ok(env_numbers::<T>(name, 2)?.map(|v| (v[0], v[1])))
+}
+
+/// Read an env var as an `"a,b,c"` triple of numbers; `Ok(None)` when unset.
+/// Used by `COMEMORY_RETRIEVAL_CODE_BM25_WEIGHTS` (`f32`, column order
+/// symbol,snippet,path_tokens).
+fn env_triple<T: std::str::FromStr + Copy>(name: &str) -> Result<Option<(T, T, T)>>
+where
+    T::Err: std::fmt::Display,
+{
+    Ok(env_numbers::<T>(name, 3)?.map(|v| (v[0], v[1], v[2])))
 }
 
 impl Config {
@@ -94,6 +111,12 @@ impl Config {
         if let Some(v) = env_pair::<f32>("COMEMORY_RETRIEVAL_BM25_WEIGHTS")? {
             self.retrieval.bm25_weights = v;
         }
+        if let Some(v) = env_parse::<f32>("COMEMORY_RETRIEVAL_CODE_THRESHOLD")? {
+            self.retrieval.code_threshold = v;
+        }
+        if let Some(v) = env_triple::<f32>("COMEMORY_RETRIEVAL_CODE_BM25_WEIGHTS")? {
+            self.retrieval.code_bm25_weights = v;
+        }
         if let Ok(v) = std::env::var("COMEMORY_GIT_AUTO_SYNC") {
             self.git.auto_sync = match v.as_str() {
                 "true" | "1" | "yes" | "on" => true,
@@ -125,6 +148,9 @@ impl Config {
         if let Some(v) = env_parse::<f64>("COMEMORY_RANK_MMR_LAMBDA")? {
             self.rank.mmr_lambda = v;
         }
+        if let Some(v) = env_parse::<u32>("COMEMORY_RANK_NEAR_DUP_HAMMING")? {
+            self.rank.near_dup_hamming = v;
+        }
         if let Some(v) = env_parse::<f64>("COMEMORY_PRUNE_MIN_ACTIVATION")? {
             self.prune.min_activation = v;
         }
@@ -137,6 +163,13 @@ impl Config {
         if let Some(v) = env_parse::<u32>("COMEMORY_LEARNING_RETENTION_DAYS")? {
             self.prune.learning_retention_days = v;
         }
+        if let Some(v) = env_parse::<u32>("COMEMORY_PRUNE_SUPERSEDED_GRACE_DAYS")? {
+            self.prune.superseded_grace_days = v;
+        }
+        // The `[tune]` grid lists deliberately have NO env equivalents: a
+        // four-list env value ("20,60,100" × 4 vars, or worse, one var with
+        // semicolons) is unreadable and easy to misquote. Set them in
+        // config.toml's `[tune]` section instead; validation still runs.
         self.validate()
     }
 }

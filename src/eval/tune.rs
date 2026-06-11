@@ -6,6 +6,7 @@ use std::path::Path;
 use rusqlite::Connection;
 use serde::Serialize;
 
+use crate::config::file::TuneConfig;
 use crate::config::Config;
 use crate::eval::golden::GoldenPair;
 use crate::eval::runner::{self, EvalReport};
@@ -57,7 +58,8 @@ pub struct TuneReport {
 
 impl TuneReport {
     /// The top-ranked candidate. Errors only on an empty ranking, which
-    /// [`run_tune`] can never produce (the grid is a fixed 81 points).
+    /// [`run_tune`] can never produce (`Config::validate` rejects empty
+    /// `[tune]` grid lists, so the cartesian product has >= 1 point).
     pub fn winner(&self) -> Result<&ScoredCandidate> {
         self.ranked
             .first()
@@ -91,13 +93,17 @@ pub fn resolve_min_pairs() -> Result<usize> {
     )
 }
 
-/// The 3×3×3×3 = 81-point grid. Values bracket the M1 defaults.
-pub fn grid() -> Vec<TuneCandidate> {
-    let mut out = Vec::with_capacity(81);
-    for &rrf_k in &[20.0f32, 60.0, 100.0] {
-        for &decay in &[0.3f64, 0.5, 0.8] {
-            for &mmr_lambda in &[0.5f64, 0.7, 0.9] {
-                for &bm25_weights in &[(1.0f32, 3.0f32), (1.0, 1.0), (2.0, 1.0)] {
+/// The cartesian product of the configured grid lists (`[tune]` in
+/// config.toml). The defaults reproduce the M1 3×3×3×3 = 81-point grid;
+/// `Config::validate` guarantees every list is non-empty and every value
+/// passes its scalar knob's bounds, so the product is never empty.
+pub fn grid(t: &TuneConfig) -> Vec<TuneCandidate> {
+    let cap = t.rrf_k_grid.len() * t.decay_grid.len() * t.mmr_lambda_grid.len() * t.bm25_grid.len();
+    let mut out = Vec::with_capacity(cap);
+    for &rrf_k in &t.rrf_k_grid {
+        for &decay in &t.decay_grid {
+            for &mmr_lambda in &t.mmr_lambda_grid {
+                for &bm25_weights in &t.bm25_grid {
                     out.push(TuneCandidate {
                         rrf_k,
                         decay,
@@ -139,11 +145,13 @@ pub fn run_tune(
     k: usize,
     min_pairs: usize,
 ) -> Result<TuneReport> {
+    let candidates = grid(&base.tune);
     if pairs.len() < min_pairs {
         return Err(Error::Unavailable(format!(
-            "tune needs >= {min_pairs} golden pairs (have {}): grid-searching 81 configs \
+            "tune needs >= {min_pairs} golden pairs (have {}): grid-searching {} configs \
              against a thin set is overfitting, not tuning",
-            pairs.len()
+            pairs.len(),
+            candidates.len()
         )));
     }
     let baseline_candidate = TuneCandidate {
@@ -153,16 +161,16 @@ pub fn run_tune(
         bm25_weights: base.retrieval.bm25_weights,
     };
     let baseline = score(&runner::run_eval(base, conn, pairs, k)?, baseline_candidate);
-    let mut ranked = Vec::with_capacity(81);
+    let mut ranked = Vec::with_capacity(candidates.len());
     // `rrf_k` only feeds the hybrid fusion arm, and eval replay is
     // lexical-only (BYO vectors cannot be replayed offline) — so two grid
     // points differing only in rrf_k always score identically. Memoize on
-    // the knobs that actually reach the lexical path; 54 of the 81 grid
-    // points reuse a cached (mrr, recall@k) pair instead of re-running
-    // the whole golden set.
+    // the knobs that actually reach the lexical path; with the default
+    // grid, 54 of the 81 points reuse a cached (mrr, recall@k) pair
+    // instead of re-running the whole golden set.
     let mut cache: std::collections::HashMap<(u64, u64, u32, u32), (f64, f64)> =
         std::collections::HashMap::new();
-    for c in grid() {
+    for c in candidates {
         let key = (
             c.decay.to_bits(),
             c.mmr_lambda.to_bits(),

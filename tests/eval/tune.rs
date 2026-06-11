@@ -1,6 +1,7 @@
 //! Tests for [`comemory::eval::tune`] — grid shape, the honesty floor,
 //! report determinism over a real db, and atomic config.toml apply.
 
+use comemory::config::file::TuneConfig;
 use comemory::config::Config;
 use comemory::errors::Error;
 use comemory::eval::golden::GoldenPair;
@@ -50,15 +51,44 @@ fn seeded() -> (tempfile::TempDir, rusqlite::Connection, Vec<GoldenPair>) {
     (dir, conn, pairs)
 }
 
-#[test]
-fn grid_is_81_distinct_configs() {
-    let g = tune::grid();
-    assert_eq!(g.len(), 81, "3^4 grid must have 81 points");
+/// Assert every pair of grid points differs.
+fn assert_pairwise_distinct(g: &[TuneCandidate]) {
     for (i, a) in g.iter().enumerate() {
         for b in &g[i + 1..] {
             assert_ne!(a, b, "grid points must be pairwise distinct");
         }
     }
+}
+
+#[test]
+fn default_grid_is_81_distinct_configs() {
+    let g = tune::grid(&Config::defaults().tune);
+    assert_eq!(g.len(), 81, "default 3^4 grid must have 81 points");
+    assert_pairwise_distinct(&g);
+}
+
+#[test]
+fn grid_len_is_the_product_of_the_configured_lists() {
+    // The grid is the cartesian product of the four configured lists, so
+    // its length is the product of their lengths — here 1 × 2 × 1 × 2 = 4.
+    let t = TuneConfig {
+        rrf_k_grid: vec![60.0],
+        decay_grid: vec![0.3, 0.5],
+        mmr_lambda_grid: vec![0.7],
+        bm25_grid: vec![(1.0, 3.0), (2.0, 1.0)],
+    };
+    let g = tune::grid(&t);
+    assert_eq!(g.len(), 4);
+    assert_pairwise_distinct(&g);
+    assert!(
+        g.contains(&TuneCandidate {
+            rrf_k: 60.0,
+            decay: 0.5,
+            mmr_lambda: 0.7,
+            bm25_weights: (2.0, 1.0),
+        }),
+        "every list combination must appear in the product"
+    );
 }
 
 #[test]

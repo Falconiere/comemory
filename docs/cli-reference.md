@@ -298,7 +298,8 @@ Options:
   -h, --help                 Print help
 
 Examples:
-  # Grid-search 81 configs against the merged golden set (report only)
+  # Grid-search the configured [tune] grid (81 configs by default)
+  # against the merged golden set (report only)
   comemory tune
 
   # File-only golden set, recall@5, machine-readable report

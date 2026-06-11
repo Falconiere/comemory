@@ -46,7 +46,7 @@ fn near_duplicates_collapse_to_best_scored() {
         0.7,
         "rustfmt disagrees with clippy about line width",
     );
-    let out = diversify(vec![a, b, c], 0.7, 10);
+    let out = diversify(vec![a, b, c], NEAR_DUP_HAMMING, 0.7, 10);
     let ids: Vec<&str> = out.iter().map(|r| r.memory_id.as_str()).collect();
     assert!(ids.contains(&"aaaa0001"), "best dup kept");
     assert!(!ids.contains(&"aaaa0002"), "worse dup collapsed");
@@ -76,7 +76,7 @@ fn mmr_prefers_diverse_over_marginally_better() {
         hamming64(a.simhash, b.simhash) > NEAR_DUP_HAMMING,
         "fixture must survive dedup so MMR decides"
     );
-    let out = diversify(vec![a, b, c], 0.7, 2);
+    let out = diversify(vec![a, b, c], NEAR_DUP_HAMMING, 0.7, 2);
     assert_eq!(out.len(), 2);
     assert_eq!(out[0].memory_id, "aaaa0001");
     assert_eq!(out[1].memory_id, "aaaa0003");
@@ -105,11 +105,11 @@ fn mmr_selection_is_scale_invariant() {
         item("aaaa0002", 6.0, bodies[1]),
         item("aaaa0003", 5.0, bodies[2]),
     ];
-    let tiny_ids: Vec<String> = diversify(tiny, 0.7, 2)
+    let tiny_ids: Vec<String> = diversify(tiny, NEAR_DUP_HAMMING, 0.7, 2)
         .iter()
         .map(|r| r.memory_id.clone())
         .collect();
-    let large_ids: Vec<String> = diversify(large, 0.7, 2)
+    let large_ids: Vec<String> = diversify(large, NEAR_DUP_HAMMING, 0.7, 2)
         .iter()
         .map(|r| r.memory_id.clone())
         .collect();
@@ -123,7 +123,7 @@ fn diversify_returns_original_final_scores() {
     // original `parts.final_score`, untouched by the internal min-max.
     let a = item("aaaa0001", 0.016_000_6, "completely unique topic one fish");
     let b = item("aaaa0002", 0.016_000_1, "completely unique topic two birds");
-    let out = diversify(vec![a, b], 0.7, 2);
+    let out = diversify(vec![a, b], NEAR_DUP_HAMMING, 0.7, 2);
     let scores: Vec<f64> = out.iter().map(|r| r.parts.final_score).collect();
     assert_eq!(scores, vec![0.016_000_6, 0.016_000_1]);
 }
@@ -139,14 +139,39 @@ fn truncates_to_top_k() {
             )
         })
         .collect();
-    assert_eq!(diversify(items, 0.7, 12).len(), 12);
+    assert_eq!(diversify(items, NEAR_DUP_HAMMING, 0.7, 12).len(), 12);
+}
+
+#[test]
+fn near_dup_radius_parameter_is_honored() {
+    // The same Hamming-8 pair as `near_duplicates_collapse_to_best_scored`,
+    // but with the radius tightened to 4 (cfg.rank.near_dup_hamming = 4 in
+    // the pipeline): the pair must survive the collapse and reach MMR.
+    let a = item(
+        "aaaa0001",
+        0.9,
+        "postgres connection pool exhausted under load spikes",
+    );
+    let b = item(
+        "aaaa0002",
+        0.5,
+        "postgres connection pool exhausted under heavy load spikes",
+    );
+    assert_eq!(hamming64(a.simhash, b.simhash), 8, "fixture distance");
+    let out = diversify(vec![a, b], 4, 1.0, 10);
+    let ids: Vec<&str> = out.iter().map(|r| r.memory_id.as_str()).collect();
+    assert_eq!(
+        ids,
+        vec!["aaaa0001", "aaaa0002"],
+        "radius 4 must keep a Hamming-8 pair apart"
+    );
 }
 
 // ── Additional tests ───────────────────────────────────────────────────────
 
 #[test]
 fn empty_input_returns_empty_output() {
-    let out = diversify(vec![], 0.7, 10);
+    let out = diversify(vec![], NEAR_DUP_HAMMING, 0.7, 10);
     assert!(out.is_empty());
 }
 
@@ -157,7 +182,7 @@ fn lambda_one_preserves_relevance_order() {
     let a = item("aaaa0001", 0.9, "completely unique topic one fish");
     let b = item("aaaa0002", 0.8, "completely unique topic two birds");
     let c = item("aaaa0003", 0.7, "completely unique topic three cats");
-    let out = diversify(vec![a, b, c], 1.0, 3);
+    let out = diversify(vec![a, b, c], NEAR_DUP_HAMMING, 1.0, 3);
     let ids: Vec<&str> = out.iter().map(|r| r.memory_id.as_str()).collect();
     assert_eq!(ids, vec!["aaaa0001", "aaaa0002", "aaaa0003"]);
 }
@@ -169,7 +194,7 @@ fn equal_scores_break_toward_earlier_input() {
     // input, preserving the rerank stage's deterministic ordering.
     let a = item("aaaa0001", 0.8, "alpha bravo charlie delta");
     let b = item("aaaa0002", 0.8, "echo foxtrot golf hotel");
-    let out = diversify(vec![a, b], 0.7, 1);
+    let out = diversify(vec![a, b], NEAR_DUP_HAMMING, 0.7, 1);
     assert_eq!(out.len(), 1);
     assert_eq!(out[0].memory_id, "aaaa0001", "earlier input wins the tie");
 }
@@ -194,7 +219,7 @@ fn simhash_collapse_keeps_first_of_dup_group() {
         0.50,
         "entirely different topic about memory allocation",
     );
-    let out = diversify(vec![high, low, other], 1.0, 10);
+    let out = diversify(vec![high, low, other], NEAR_DUP_HAMMING, 1.0, 10);
     let ids: Vec<&str> = out.iter().map(|r| r.memory_id.as_str()).collect();
     // First of the dup group (aaaa0001, highest score) must survive.
     assert!(ids.contains(&"aaaa0001"), "first (highest) dup kept");

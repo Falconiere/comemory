@@ -19,7 +19,7 @@ use clap::Args as ClapArgs;
 use serde::Serialize;
 
 use crate::cli::embedding_input;
-use crate::cli::{csv_unique, parse_id_csv, resolve_data_dir};
+use crate::cli::{csv_unique, load_config, parse_id_csv, resolve_data_dir};
 use crate::config::paths::Paths;
 use crate::memory::{id, Kind, MemoryStore, Relations, SaveParams};
 use crate::output::tty;
@@ -93,7 +93,7 @@ pub struct Args {
 
 /// JSON shape emitted under `--json`. `duplicate_of` is present only when a
 /// live memory with a near-identical body (SimHash Hamming distance within
-/// [`crate::simhash::NEAR_DUP_HAMMING`]) already exists — the save still
+/// `cfg.rank.near_dup_hamming`) already exists — the save still
 /// proceeds; the caller decides whether to mark it `supersedes`.
 #[derive(Serialize)]
 struct Output {
@@ -134,6 +134,7 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
 
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
+    let cfg = load_config(&paths)?;
 
     // Parse the optional caller-supplied vector (CSV or JSON-on-stdin).
     let vector_opt = embedding_input::read_optional(a.vector_stdin, a.vector.as_deref())?;
@@ -153,7 +154,7 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     // Near-duplicate check BEFORE the markdown write. Best-effort and
     // advisory only: the save always proceeds, the caller decides whether
     // to supersede the hit.
-    let duplicate_of = near_duplicate(&conn, &body, &new_id);
+    let duplicate_of = near_duplicate(&conn, &body, &new_id, cfg.rank.near_dup_hamming);
 
     // 1. Markdown atomic write (source of truth). The `--supersedes` ids
     //    land in frontmatter `relations.supersedes`, so the relationship
@@ -207,17 +208,23 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     Ok(())
 }
 
-/// Find a live memory whose body simhash is within near-dup range
-/// ([`crate::simhash::NEAR_DUP_HAMMING`]) of `body`, returning the closest
-/// hit's id. `self_id` (the body's own content-derived id) is excluded
-/// before the closest-hit selection so an identical re-save still surfaces
-/// the second-closest live near-dup instead of matching itself. Best-effort:
+/// Find a live memory whose body simhash is within `radius` Hamming bits
+/// of `body` (callers pass `cfg.rank.near_dup_hamming`, which defaults to
+/// [`crate::simhash::NEAR_DUP_HAMMING`]), returning the closest hit's id.
+/// `self_id` (the body's own content-derived id) is excluded before the
+/// closest-hit selection so an identical re-save still surfaces the
+/// second-closest live near-dup instead of matching itself. Best-effort:
 /// any DB error is logged and treated as "no duplicate" so the check can
 /// never block a save. A full scan over live rows is fine at
 /// personal-memory scale.
-fn near_duplicate(conn: &rusqlite::Connection, body: &str, self_id: &str) -> Option<String> {
+fn near_duplicate(
+    conn: &rusqlite::Connection,
+    body: &str,
+    self_id: &str,
+    radius: u32,
+) -> Option<String> {
     let hash = crate::simhash::of_body(body);
-    match near_duplicate_inner(conn, hash, self_id) {
+    match near_duplicate_inner(conn, hash, self_id, radius) {
         Ok(hit) => hit,
         Err(e) => {
             tracing::warn!(error = %e, "duplicate check skipped");
@@ -228,11 +235,12 @@ fn near_duplicate(conn: &rusqlite::Connection, body: &str, self_id: &str) -> Opt
 
 /// Fallible core of [`near_duplicate`]: scan live `memories` rows (minus
 /// the body's own `self_id` row) and return the id of the closest simhash
-/// neighbor within [`crate::simhash::NEAR_DUP_HAMMING`], if any.
+/// neighbor within `radius` Hamming bits, if any.
 fn near_duplicate_inner(
     conn: &rusqlite::Connection,
     hash: u64,
     self_id: &str,
+    radius: u32,
 ) -> Result<Option<String>> {
     let mut stmt =
         conn.prepare("SELECT id, simhash FROM memories WHERE deleted_at IS NULL AND id <> ?1")?;
@@ -242,7 +250,7 @@ fn near_duplicate_inner(
     Ok(rows
         .into_iter()
         .map(|(id, h)| (id, crate::simhash::hamming64(hash, h as u64)))
-        .filter(|(_, d)| *d <= crate::simhash::NEAR_DUP_HAMMING)
+        .filter(|(_, d)| *d <= radius)
         .min_by_key(|(_, d)| *d)
         .map(|(id, _)| id))
 }

@@ -5,27 +5,35 @@
 use std::collections::HashSet;
 
 use crate::retrieval::rerank::Reranked;
-use crate::simhash::{hamming64, NEAR_DUP_HAMMING};
+use crate::simhash::hamming64;
 
-/// Collapse near-duplicates, then greedily select up to `top_k` items
-/// maximizing `lambda·score − (1−lambda)·max_jaccard_to_selected`.
+/// Collapse near-duplicates within `near_dup_hamming` SimHash bits
+/// (callers pass `cfg.rank.near_dup_hamming`, which defaults to
+/// [`crate::simhash::NEAR_DUP_HAMMING`]), then greedily select up to
+/// `top_k` items maximizing
+/// `lambda·score − (1−lambda)·max_jaccard_to_selected`.
 /// Input must already be sorted by final score descending (rerank output).
-pub fn diversify(items: Vec<Reranked>, lambda: f64, top_k: usize) -> Vec<Reranked> {
-    let deduped = collapse_near_dups(items);
+pub fn diversify(
+    items: Vec<Reranked>,
+    near_dup_hamming: u32,
+    lambda: f64,
+    top_k: usize,
+) -> Vec<Reranked> {
+    let deduped = collapse_near_dups(items, near_dup_hamming);
     mmr(deduped, lambda, top_k)
 }
 
-/// Remove near-duplicate entries, keeping the first (highest-scored)
-/// representative of each SimHash cluster. Input is expected to arrive
-/// sorted descending by final score so the best variant is always
-/// encountered before its weaker duplicates.
-fn collapse_near_dups(items: Vec<Reranked>) -> Vec<Reranked> {
+/// Remove entries within `near_dup_hamming` SimHash bits of a kept one,
+/// keeping the first (highest-scored) representative of each cluster.
+/// Input is expected to arrive sorted descending by final score so the
+/// best variant is always encountered before its weaker duplicates.
+fn collapse_near_dups(items: Vec<Reranked>, near_dup_hamming: u32) -> Vec<Reranked> {
     let mut kept: Vec<Reranked> = Vec::with_capacity(items.len());
     for item in items {
         // items arrive best-first, so the first of a dup group wins
         let dup = kept
             .iter()
-            .any(|k| hamming64(k.simhash, item.simhash) <= NEAR_DUP_HAMMING);
+            .any(|k| hamming64(k.simhash, item.simhash) <= near_dup_hamming);
         if !dup {
             kept.push(item);
         }
