@@ -9,6 +9,7 @@
 //! want a `code_vec` row, or pass `--extract` to emit JSONL on stdout for
 //! piping into an external embedder.
 
+use std::borrow::Cow;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -26,6 +27,15 @@ use crate::prelude::*;
 use crate::simhash;
 use crate::store::code_row::{self, CodeSymbolRow};
 use crate::store::{connection, fts};
+
+/// On-disk format version of the extracted rows for one repo. Stamped
+/// per-repo in `schema_meta` under `code_format:<repo>`; when the stamp
+/// disagrees (e.g. rows indexed before cAST chunking landed), every
+/// `indexed_files` cursor for the repo is dropped so the next walk
+/// re-extracts all files under the current format. Version "2" = cAST
+/// chunk children with `parent_id` (the value the v6 migration writes
+/// to the global `code_format_version` key).
+pub(crate) const CODE_FORMAT_VERSION: &str = "2";
 
 const EXAMPLES: &str = "\
 Examples:
@@ -76,6 +86,7 @@ pub async fn run(args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<(
 
     let mut conn = connection::open(paths.db_path())?;
     let tx = conn.transaction()?;
+    ensure_repo_format(&tx, &args.repo)?;
     let mut walker = WalkBuilder::new(&args.path);
     walker.standard_filters(true);
     for entry in walker.build().filter_map(std::result::Result::ok) {
@@ -109,8 +120,44 @@ pub async fn run(args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<(
         }
         code_row::upsert_indexed_file(&tx, &args.repo, &rel, &oid)?;
     }
+    stamp_repo_format(&tx, &args.repo)?;
     tx.commit()?;
     Ok(())
+}
+
+/// Drop every `indexed_files` cursor for `repo` when its per-repo format
+/// stamp (`schema_meta` key `code_format:<repo>`) is missing or differs
+/// from [`CODE_FORMAT_VERSION`], forcing the walk that follows to
+/// re-extract every file. `purge_file_symbols` then replaces the stale
+/// per-file rows as the walk proceeds.
+fn ensure_repo_format(conn: &Connection, repo: &str) -> Result<()> {
+    let stamped: Option<String> = conn
+        .query_row(
+            "SELECT value FROM schema_meta WHERE key = ?1",
+            [repo_format_key(repo)],
+            |r| r.get(0),
+        )
+        .ok();
+    if stamped.as_deref() != Some(CODE_FORMAT_VERSION) {
+        conn.execute("DELETE FROM indexed_files WHERE repo = ?1", [repo])?;
+    }
+    Ok(())
+}
+
+/// Upsert the per-repo format stamp after a successful walk so the next
+/// run skips the [`ensure_repo_format`] cursor purge.
+fn stamp_repo_format(conn: &Connection, repo: &str) -> Result<()> {
+    conn.execute(
+        "INSERT INTO schema_meta(key, value) VALUES(?1, ?2) \
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        rusqlite::params![repo_format_key(repo), CODE_FORMAT_VERSION],
+    )?;
+    Ok(())
+}
+
+/// `schema_meta` key carrying the per-repo code format stamp.
+fn repo_format_key(repo: &str) -> String {
+    format!("code_format:{repo}")
 }
 
 /// `--extract` path. Walks the same files as the DB-write path but emits
@@ -143,9 +190,18 @@ fn run_extract(args: &Args, repo: &Repository) -> Result<()> {
     Ok(())
 }
 
-/// Insert a single extracted symbol row into `code_symbols` + `code_fts`.
+/// Insert a single extracted symbol into `code_symbols` + `code_fts`.
 /// Used by the DB-write path only; the `--extract` path goes through
 /// [`emit_symbol_jsonl`].
+///
+/// Unchunked symbols land as one row carrying the full snippet. cAST-
+/// chunked symbols land as one PARENT row — its snippet reduced to the
+/// headline (see [`parent_snippet_of`]) — followed by one CHILD row per
+/// chunk: symbol `<name>#<n>`, the chunk's own line span / text /
+/// simhash, and `parent_id` pointing at the parent's rowid. Each child
+/// gets its own `code_fts` row; the parent keeps an fts row over the
+/// headline. The `UNIQUE(repo, path, symbol, line_start)` constraint is
+/// satisfied because `<name>#<n>` symbols are distinct from the parent's.
 fn write_symbol(
     conn: &Connection,
     repo: &str,
@@ -154,11 +210,8 @@ fn write_symbol(
     lang: languages::Lang,
     s: &ExtractedSymbol,
 ) -> Result<()> {
-    let line_start = s.line as i64;
-    let line_end = line_end_of(s) as i64;
-    let token_iter = simhash::tokens(&s.snippet);
-    let sh = simhash::simhash64(token_iter.iter().map(|t| t.as_str())) as i64;
-    let sid = code_row::insert(
+    let snippet = parent_snippet_of(s);
+    let parent_sid = code_row::insert(
         conn,
         &CodeSymbolRow {
             repo,
@@ -167,20 +220,49 @@ fn write_symbol(
             symbol: &s.name,
             kind: &s.kind,
             lang: lang.as_str(),
-            line_start,
-            line_end,
-            snippet: &s.snippet,
-            simhash: sh,
+            line_start: s.line as i64,
+            line_end: line_end_of(s) as i64,
+            snippet: &snippet,
+            simhash: simhash_of(&snippet),
+            parent_id: None,
         },
     )?;
     // The raw relative path goes straight into `code_fts.path_tokens`:
     // the identifier tokenizer handles the splitting (see fts::index_code).
-    fts::index_code(conn, sid, &s.name, &s.snippet, rel)?;
+    fts::index_code(conn, parent_sid, &s.name, &snippet, rel)?;
+    for (i, c) in s.chunks.iter().enumerate() {
+        let child_symbol = chunk_symbol(&s.name, i);
+        let child_sid = code_row::insert(
+            conn,
+            &CodeSymbolRow {
+                repo,
+                path: rel,
+                blob_oid,
+                symbol: &child_symbol,
+                kind: &s.kind,
+                lang: lang.as_str(),
+                line_start: c.line_start as i64,
+                line_end: c.line_end as i64,
+                snippet: &c.text,
+                simhash: simhash_of(&c.text),
+                parent_id: Some(parent_sid),
+            },
+        )?;
+        fts::index_code(conn, child_sid, &child_symbol, &c.text, rel)?;
+    }
     Ok(())
 }
 
-/// Serialise a single extracted symbol as a JSONL row to stdout. Used by
-/// the `--extract` path; no SQLite connection is required.
+/// Serialise a single extracted symbol as JSONL on stdout. Used by the
+/// `--extract` path; no SQLite connection is required.
+///
+/// JSONL contract (consumed by `comemory ingest-code`): unchunked
+/// symbols emit exactly one row. cAST-chunked symbols emit the parent
+/// row first (headline snippet, no `parent_symbol` field) followed by
+/// one row per chunk carrying two extra fields — `parent_symbol` (the
+/// parent's `symbol` value) and `chunk_index` (one-based) — which the
+/// ingest side uses to resolve `parent_id` from rows earlier in the
+/// same stream.
 fn emit_symbol_jsonl(
     repo: &str,
     rel: &str,
@@ -188,10 +270,8 @@ fn emit_symbol_jsonl(
     lang: languages::Lang,
     s: &ExtractedSymbol,
 ) -> Result<()> {
-    let line_start = s.line as i64;
-    let line_end = line_end_of(s) as i64;
-    let token_iter = simhash::tokens(&s.snippet);
-    let sh = simhash::simhash64(token_iter.iter().map(|t| t.as_str())) as i64;
+    let snippet = parent_snippet_of(s);
+    let mut out = std::io::stdout().lock();
     let row = serde_json::json!({
         "repo": repo,
         "path": rel,
@@ -199,14 +279,63 @@ fn emit_symbol_jsonl(
         "symbol": s.name,
         "kind": s.kind,
         "lang": lang.as_str(),
-        "line_start": line_start,
-        "line_end": line_end,
-        "snippet": s.snippet,
-        "simhash": sh,
+        "line_start": s.line as i64,
+        "line_end": line_end_of(s) as i64,
+        "snippet": snippet,
+        "simhash": simhash_of(&snippet),
     });
-    let mut out = std::io::stdout().lock();
     writeln!(out, "{row}").map_err(Error::Io)?;
+    for (i, c) in s.chunks.iter().enumerate() {
+        let row = serde_json::json!({
+            "repo": repo,
+            "path": rel,
+            "blob_oid": blob_oid,
+            "symbol": chunk_symbol(&s.name, i),
+            "kind": s.kind,
+            "lang": lang.as_str(),
+            "line_start": c.line_start as i64,
+            "line_end": c.line_end as i64,
+            "snippet": c.text,
+            "simhash": simhash_of(&c.text),
+            "parent_symbol": s.name,
+            "chunk_index": (i + 1) as i64,
+        });
+        writeln!(out, "{row}").map_err(Error::Io)?;
+    }
     Ok(())
+}
+
+/// Snippet stored on the symbol's own row. Whole symbols keep their full
+/// snippet; chunked symbols reduce to a headline of the snippet's first
+/// line + the first chunk, so the parent row stays within the line
+/// budget while remaining a useful FTS/embedding target. Taking the
+/// first line as "the signature" is an approximation — multi-line
+/// signatures lose their continuation lines to the chunk rows.
+fn parent_snippet_of(s: &ExtractedSymbol) -> Cow<'_, str> {
+    match s.chunks.first() {
+        None => Cow::Borrowed(&s.snippet),
+        Some(first) => Cow::Owned(format!("{}\n{}", first_line_of(&s.snippet), first.text)),
+    }
+}
+
+/// First line of `snippet` (the signature line for every supported
+/// symbol kind); empty snippets yield an empty signature.
+fn first_line_of(snippet: &str) -> &str {
+    snippet.lines().next().unwrap_or("")
+}
+
+/// Symbol name of the `i`-th (zero-based) chunk child: `<name>#<n>`
+/// with a one-based `n`, matching the JSONL `chunk_index` field.
+fn chunk_symbol(name: &str, i: usize) -> String {
+    format!("{}#{}", name, i + 1)
+}
+
+/// 64-bit SimHash of `text`'s tokens, as the i64 the `simhash` column
+/// stores. Shared by the parent-row and chunk-row writers on both the
+/// DB and JSONL paths.
+fn simhash_of(text: &str) -> i64 {
+    let token_iter = simhash::tokens(text);
+    simhash::simhash64(token_iter.iter().map(|t| t.as_str())) as i64
 }
 
 /// Returns true when the `indexed_files` table already records `oid` for

@@ -13,6 +13,7 @@ use ast_grep_core::tree_sitter::{LanguageExt, StrDoc};
 use ast_grep_core::{AstGrep, NodeMatch, Pattern};
 use ast_grep_language::{Go, JavaScript, Python, Rust, Tsx};
 
+use crate::ast::chunk::{self, Chunk, CHUNK_LINE_BUDGET};
 use crate::ast::languages::Lang;
 use crate::prelude::*;
 
@@ -29,6 +30,10 @@ pub struct ExtractedSymbol {
     pub snippet: String,
     /// One-based line number of the start of the match.
     pub line: usize,
+    /// cAST chunks for symbols whose span exceeds
+    /// [`CHUNK_LINE_BUDGET`] lines; empty means the symbol is stored
+    /// whole (unchunked).
+    pub chunks: Vec<Chunk>,
 }
 
 /// Run every per-kind pattern for `lang` against `source` and return the
@@ -131,13 +136,22 @@ fn extract_with<L: LanguageExt + Clone>(
         if name.is_empty() {
             return;
         }
-        let pos = m.start_pos();
+        let node = m.get_node();
+        let (line_start, line_end) = chunk::line_span(node);
+        // Oversized symbols are additionally split into cAST chunks so
+        // downstream FTS/embedding rows stay within the line budget.
+        let chunks = if line_end - line_start + 1 > CHUNK_LINE_BUDGET {
+            chunk::chunk_node(node, source)
+        } else {
+            Vec::new()
+        };
         out.push(ExtractedSymbol {
             name,
             kind: kind.to_string(),
             language: lang.as_str().to_string(),
             snippet: m.text().to_string(),
-            line: pos.line() + 1,
+            line: line_start,
+            chunks,
         });
     })?;
     Ok(out)

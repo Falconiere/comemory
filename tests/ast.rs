@@ -1,3 +1,6 @@
+#[path = "ast/chunk.rs"]
+mod chunk;
+
 #[path = "ast/extractor.rs"]
 mod extractor;
 
