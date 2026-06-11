@@ -62,7 +62,10 @@ pub fn run_eval(
             None,
             None,
             None,
-            SearchOptions { track: false },
+            SearchOptions {
+                track: false,
+                source: "search",
+            },
         )?;
         let returned: Vec<String> = run.hits.iter().map(|h| h.memory_id.clone()).collect();
         let recall = metrics::recall_at_k(&pair.relevant, &returned, k);

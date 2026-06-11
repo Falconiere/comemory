@@ -86,7 +86,10 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         vec.as_deref(),
         a.repo.as_deref(),
         a.kind.map(Kind::as_str),
-        pipeline::SearchOptions { track: true },
+        pipeline::SearchOptions {
+            track: true,
+            source: "search",
+        },
     )?;
     output::search::emit(&run.hits, run.query_id.as_deref(), json_flag)
 }
