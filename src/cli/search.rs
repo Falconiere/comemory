@@ -28,7 +28,7 @@ Examples:
   comemory search \"VecDimMismatch\"
 
   # JSON output; hits[].score_parts breaks down every ranking factor:
-  #   rrf         — fused relevance score (RRF/lexical/vector), neutral > 0
+  #   rrf         — pool-normalized relevance in [0,1]
   #   activation  — ACT-R recency boost (post-clamp), neutral = 1.0
   #   feedback    — Beta-smoothed used/irrelevant ratio, neutral = 1.0
   #   quality     — frontmatter quality nudge (1-5 scale), neutral = 1.0

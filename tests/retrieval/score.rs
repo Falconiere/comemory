@@ -49,6 +49,37 @@ fn days_since_treats_malformed_timestamp_as_fresh() {
     assert_eq!(days_since("not-a-timestamp", now), 0.0);
 }
 
+#[test]
+fn min_max_normalize_maps_pool_to_unit_interval() {
+    assert_eq!(min_max_normalize(&[2.0, 4.0, 3.0]), vec![0.0, 1.0, 0.5]);
+}
+
+#[test]
+fn min_max_normalize_degenerate_pools_are_all_ones() {
+    assert_eq!(min_max_normalize(&[7.0, 7.0]), vec![1.0, 1.0]);
+    assert_eq!(min_max_normalize(&[f64::NAN, 1.0]), vec![1.0, 1.0]);
+    assert_eq!(min_max_normalize(&[]), Vec::<f64>::new());
+}
+
+#[test]
+fn max_normalize_preserves_within_pool_ratios() {
+    assert_eq!(max_normalize(&[2.0, 8.0, 4.0]), vec![0.25, 1.0, 0.5]);
+}
+
+#[test]
+fn max_normalize_degenerate_pools_are_all_ones() {
+    assert_eq!(max_normalize(&[7.0, 7.0]), vec![1.0, 1.0]);
+    // all-non-positive → degenerate
+    assert_eq!(max_normalize(&[-8.0, -2.0]), vec![1.0, 1.0]);
+    assert_eq!(max_normalize(&[f64::NAN, 1.0]), vec![1.0, 1.0]);
+    assert_eq!(max_normalize(&[]), Vec::<f64>::new());
+}
+
+#[test]
+fn max_normalize_clamps_stray_negatives_in_positive_pools() {
+    assert_eq!(max_normalize(&[-1.0, 2.0]), vec![0.0, 1.0]);
+}
+
 proptest! {
     #[test]
     fn activation_monotone_in_count(n in 1u64..10_000, days in 0.0f64..3650.0) {
