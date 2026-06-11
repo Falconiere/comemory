@@ -268,6 +268,52 @@ fn chunks_coalesce_onto_parent_identity() {
 }
 
 #[test]
+fn parent_and_chunks_in_one_pool_coalesce_to_single_row() {
+    let (_d, conn) = open_db();
+    let cfg = Config::defaults();
+    let parent = seed(&conn, "demo", "big.rs", "big_fn", (1, 100), None);
+    let c0 = seed(&conn, "demo", "big.rs", "big_fn#0", (1, 50), Some(parent));
+    let c1 = seed(&conn, "demo", "big.rs", "big_fn#1", (51, 100), Some(parent));
+
+    // Chunk c1 carries the highest route score: the group must collapse
+    // to one row with the parent's identity but c1's line range.
+    let out = rerank_code(
+        &conn,
+        &cfg,
+        &[hit(parent, 0.6), hit(c0, 0.4), hit(c1, 1.0)],
+        &WorkingSet::default(),
+    )
+    .expect("rerank");
+    assert_eq!(out.len(), 1, "parent + two chunks → one output row");
+    assert_eq!(out[0].symbol_id, parent, "output carries the parent id");
+    assert_eq!(out[0].symbol, "big_fn", "output carries the parent symbol");
+    assert_eq!(
+        (out[0].line_start, out[0].line_end),
+        (51, 100),
+        "output keeps the winning chunk's line range"
+    );
+
+    // Parent-wins variant: bump the parent's route score highest and the
+    // single output row must keep the parent's OWN line range — no
+    // identity swap onto a chunk's narrower span.
+    let out = rerank_code(
+        &conn,
+        &cfg,
+        &[hit(parent, 1.0), hit(c0, 0.5), hit(c1, 0.4)],
+        &WorkingSet::default(),
+    )
+    .expect("rerank");
+    assert_eq!(out.len(), 1, "parent + two chunks → one output row");
+    assert_eq!(out[0].symbol_id, parent, "output carries the parent id");
+    assert_eq!(out[0].symbol, "big_fn", "output carries the parent symbol");
+    assert_eq!(
+        (out[0].line_start, out[0].line_end),
+        (1, 100),
+        "winning parent keeps its own line range"
+    );
+}
+
+#[test]
 fn score_parts_product_invariant() {
     let (_d, conn) = open_db();
     let cfg = Config::defaults();
