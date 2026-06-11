@@ -18,10 +18,15 @@ use crate::retrieval::score;
 /// Multiplicative factors behind a final score. Serialized verbatim into
 /// `--json` output — a stable contract, not debug info. The invariant is
 /// `final_score == f64::from(rrf) * activation * feedback * quality *
-/// supersede`; every field except `rrf` is a post-clamp multiplier.
+/// supersede` (up to f32 rounding of the normalized value); `rrf` is the
+/// pool-normalized relevance and every other field is a post-clamp
+/// multiplier.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ScoreParts {
-    /// Fused relevance from the candidate stage (RRF / lexical / vector).
+    /// Max-normalized relevance in `[0, 1]`: pool max maps to 1.0,
+    /// within-pool ratios preserved; degenerate pools normalize to 1.0.
+    /// The raw fused score is not exposed — normalization makes priors
+    /// branch-stable.
     pub rrf: f32,
     /// ACT-R activation boost (post-clamp multiplier).
     pub activation: f64,
@@ -59,8 +64,13 @@ pub struct Reranked {
 pub fn rerank(conn: &Connection, cfg: &Config, hits: &[RoutedHit]) -> Result<Vec<Reranked>> {
     let now = OffsetDateTime::now_utc();
     let clamp = cfg.rank.prior_clamp;
+    // Normalize the whole candidate pool up front, then zip — pairing is
+    // established before any hit is dropped below, so a vanished memory
+    // row cannot skew which norm belongs to which hit.
+    let normalized: Vec<f64> =
+        score::max_normalize(&hits.iter().map(|h| f64::from(h.score)).collect::<Vec<_>>());
     let mut out = Vec::with_capacity(hits.len());
-    for hit in hits {
+    for (hit, norm) in hits.iter().zip(&normalized) {
         let Some(row) = memory_signals(conn, &hit.memory_id)? else {
             continue;
         };
@@ -76,16 +86,12 @@ pub fn rerank(conn: &Connection, cfg: &Config, hits: &[RoutedHit]) -> Result<Vec
         let activation_boost = score::activation_boost(act, clamp);
         let feedback_boost = score::feedback_boost(beta, clamp);
         let quality_boost = score::quality_boost(row.quality, clamp);
-        // A negative rrf (pure-vector cosine distance > 1) inverts the boost
-        // direction; the clamps keep it finite — acceptable until M2
-        // normalizes the candidate scores.
-        let final_score =
-            f64::from(hit.score) * activation_boost * feedback_boost * quality_boost * supersede;
+        let final_score = *norm * activation_boost * feedback_boost * quality_boost * supersede;
         out.push(Reranked {
             memory_id: hit.memory_id.clone(),
             source: hit.source,
             parts: ScoreParts {
-                rrf: hit.score,
+                rrf: *norm as f32,
                 activation: activation_boost,
                 feedback: feedback_boost,
                 quality: quality_boost,

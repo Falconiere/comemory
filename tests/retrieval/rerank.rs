@@ -173,6 +173,45 @@ fn ties_break_on_memory_id_ascending() {
 }
 
 #[test]
+fn priors_boost_on_normalized_scale_no_inversion() {
+    // Raw candidate scores arrive on arbitrary per-branch scales; priors
+    // multiplied onto them raw could invert boost direction. After
+    // max-ratio normalization the priors multiply a positive [0,1]
+    // relevance with within-pool ratios preserved, so boosts cannot
+    // invert direction and no candidate is prior-immune at zero.
+    let (_d, conn) = open_seeded();
+    let cfg = comemory::config::Config::defaults();
+    let hits = vec![
+        hit("aaaa0001", 2.0), // worse lexical hit
+        hit("aaaa0002", 8.0), // better lexical hit
+    ];
+    let out = rerank(&conn, &cfg, &hits).expect("rerank");
+    let worse = out
+        .iter()
+        .find(|r| r.memory_id == "aaaa0001")
+        .expect("worse");
+    let better = out
+        .iter()
+        .find(|r| r.memory_id == "aaaa0002")
+        .expect("better");
+    assert_eq!(better.parts.rrf, 1.0);
+    assert_eq!(worse.parts.rrf, 0.25);
+    assert!(better.parts.final_score > worse.parts.final_score);
+    // ratio preservation: the pool minimum keeps a nonzero score, so
+    // priors can still reorder it (no prior-immune zero).
+    assert!(worse.parts.final_score > 0.0);
+    // invariant holds on the normalized scale
+    for r in &out {
+        let product = f64::from(r.parts.rrf)
+            * r.parts.activation
+            * r.parts.feedback
+            * r.parts.quality
+            * r.parts.supersede;
+        assert!((r.parts.final_score - product).abs() < 1e-12);
+    }
+}
+
+#[test]
 fn carries_body_and_simhash_for_diversify() {
     let (_d, conn) = open_seeded();
     let cfg = comemory::config::Config::defaults();
