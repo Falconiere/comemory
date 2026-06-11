@@ -91,6 +91,72 @@ fn knn_memory_with_repo_filter_returns_full_k_under_cross_repo_corpus() {
     );
 }
 
+/// A real 768-dim (the `code_vec` dim) unit vector with a single `1.0`
+/// component; distinct indices are exactly orthogonal.
+fn code_basis(idx: usize) -> Vec<f32> {
+    let mut v = vec![0.0f32; 768];
+    v[idx] = 1.0;
+    v
+}
+
+/// Insert one `code_symbols` row so the knn_code repo/lang post-filter has
+/// scope columns to consult.
+fn seed_code_symbol(conn: &rusqlite::Connection, id: i64, repo: &str, lang: &str) {
+    conn.execute(
+        "INSERT INTO code_symbols\
+            (id,repo,path,blob_oid,symbol,kind,lang,line_start,line_end,snippet,simhash,indexed_at) \
+         VALUES(?1,?2,'src/f.rs','oid','sym'||?1,'function',?3,1,10,'snippet',0,'t')",
+        rusqlite::params![id, repo, lang],
+    )
+    .expect("seed code symbol");
+}
+
+#[test]
+fn insert_and_knn_code_returns_nearest_neighbor() {
+    let dir = tempdir().expect("tempdir");
+    let conn = connection::open(dir.path().join("comemory.db")).expect("open");
+    seed_code_symbol(&conn, 1, "webapp", "rust");
+    seed_code_symbol(&conn, 2, "webapp", "rust");
+    vector::insert_code(&conn, 1, &code_basis(0)).expect("insert 1");
+    vector::insert_code(&conn, 2, &code_basis(1)).expect("insert 2");
+
+    let hits = vector::knn_code(&conn, &code_basis(0), 1, None, None).expect("knn");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].symbol_id, 1);
+    assert!(
+        hits[0].distance < 1e-5,
+        "identical vector must be distance 0"
+    );
+}
+
+#[test]
+fn knn_code_repo_and_lang_filters_restrict() {
+    let dir = tempdir().expect("tempdir");
+    let conn = connection::open(dir.path().join("comemory.db")).expect("open");
+    seed_code_symbol(&conn, 1, "frontend", "rust");
+    seed_code_symbol(&conn, 2, "backend", "python");
+    // Both vectors are equally near the query so only the post-filter can
+    // separate them.
+    vector::insert_code(&conn, 1, &code_basis(0)).expect("insert 1");
+    vector::insert_code(&conn, 2, &code_basis(0)).expect("insert 2");
+    let q = code_basis(0);
+
+    let by_repo = vector::knn_code(&conn, &q, 10, Some("backend"), None).expect("repo filter");
+    assert_eq!(by_repo.len(), 1, "repo filter must drop the frontend row");
+    assert_eq!(by_repo[0].symbol_id, 2);
+
+    let by_lang = vector::knn_code(&conn, &q, 10, None, Some("rust")).expect("lang filter");
+    assert_eq!(by_lang.len(), 1, "lang filter must drop the python row");
+    assert_eq!(by_lang[0].symbol_id, 1);
+
+    let both = vector::knn_code(&conn, &q, 10, Some("frontend"), Some("python"))
+        .expect("conjunctive filter");
+    assert!(both.is_empty(), "repo and lang filters are conjunctive");
+
+    let unfiltered = vector::knn_code(&conn, &q, 10, None, None).expect("unfiltered");
+    assert_eq!(unfiltered.len(), 2, "no filter must keep both rows");
+}
+
 #[test]
 fn insert_rejects_mismatched_dim() {
     let dir = tempdir().expect("tempdir");

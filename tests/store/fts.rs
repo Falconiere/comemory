@@ -87,32 +87,48 @@ fn kind_filter_restricts_memory_search() {
     assert_eq!(all.len(), 2, "kind = None must keep both rows");
 }
 
+/// Default `code_fts` BM25 weights `(symbol, snippet, path_tokens)`.
+const CODE_WEIGHTS: (f32, f32, f32) = (2.0, 1.0, 1.5);
+
+/// Insert one `code_symbols` row plus its `code_fts` sibling. The
+/// `code_symbols` row is required since `search_code` joins it for the
+/// repo / lang filters.
+fn seed_code_symbol(
+    conn: &rusqlite::Connection,
+    id: i64,
+    repo: &str,
+    lang: &str,
+    symbol: &str,
+    snippet: &str,
+    path: &str,
+) {
+    conn.execute(
+        "INSERT INTO code_symbols\
+            (id,repo,path,blob_oid,symbol,kind,lang,line_start,line_end,snippet,simhash,indexed_at) \
+         VALUES(?1,?2,?3,'oid',?4,'function',?5,1,10,?6,0,'t')",
+        rusqlite::params![id, repo, path, symbol, lang, snippet],
+    )
+    .expect("seed code symbol");
+    fts::index_code(conn, id, symbol, snippet, path).expect("index code");
+}
+
 #[test]
 fn code_fts_returns_seeded_match() {
     let dir = tempdir().expect("tempdir");
     let path = dir.path().join("comemory.db");
     let conn = connection::open(&path).expect("open");
 
-    let symbol_path = "src/auth/login.rs";
-    conn.execute(
-        "INSERT INTO code_symbols\
-            (id,repo,path,blob_oid,symbol,kind,lang,line_start,line_end,snippet,simhash,indexed_at) \
-         VALUES(1,'r',?1,'oid','login::handle','function','rust',1,10,\
-                'fn handle() { /* advisory login flow */ }',0,'t')",
-        [symbol_path],
-    )
-    .expect("seed code symbol");
-
-    fts::index_code(
+    seed_code_symbol(
         &conn,
         1,
+        "r",
+        "rust",
         "login::handle",
         "fn handle() { /* advisory login flow */ }",
-        symbol_path,
-    )
-    .expect("index code");
+        "src/auth/login.rs",
+    );
 
-    let hits = fts::search_code(&conn, "login", 10).expect("search code");
+    let hits = fts::search_code(&conn, "login", 10, None, None, CODE_WEIGHTS).expect("search code");
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].symbol_id, 1);
 }
@@ -125,18 +141,104 @@ fn camel_case_path_is_reachable_by_subtoken() {
     // missed. The raw path now goes straight to the tokenizer.
     let dir = tempdir().expect("tempdir");
     let conn = connection::open(dir.path().join("c.db")).expect("open");
-    fts::index_code(
+    seed_code_symbol(
         &conn,
         1,
+        "r",
+        "typescript",
         "render",
         "fn body without the query term",
         "src/MyComponent.tsx",
-    )
-    .expect("index code");
+    );
 
-    let hits = fts::search_code(&conn, "component", 10).expect("search code");
+    let hits =
+        fts::search_code(&conn, "component", 10, None, None, CODE_WEIGHTS).expect("search code");
     assert_eq!(hits.len(), 1, "camelCase path subtoken must match");
     assert_eq!(hits[0].symbol_id, 1);
+}
+
+#[test]
+fn repo_and_lang_filters_restrict_code_search() {
+    let dir = tempdir().expect("tempdir");
+    let conn = connection::open(dir.path().join("c.db")).expect("open");
+    seed_code_symbol(
+        &conn,
+        1,
+        "frontend",
+        "rust",
+        "config::parse",
+        "fn parse() { /* config */ }",
+        "src/config.rs",
+    );
+    seed_code_symbol(
+        &conn,
+        2,
+        "backend",
+        "python",
+        "parse_config",
+        "def parse_config(): pass",
+        "tools/config.py",
+    );
+
+    let rust_only = fts::search_code(&conn, "config", 10, None, Some("rust"), CODE_WEIGHTS)
+        .expect("lang filter");
+    assert_eq!(rust_only.len(), 1, "lang filter must drop the python row");
+    assert_eq!(rust_only[0].symbol_id, 1);
+
+    let backend_only = fts::search_code(&conn, "config", 10, Some("backend"), None, CODE_WEIGHTS)
+        .expect("repo filter");
+    assert_eq!(
+        backend_only.len(),
+        1,
+        "repo filter must drop the frontend row"
+    );
+    assert_eq!(backend_only[0].symbol_id, 2);
+
+    let all = fts::search_code(&conn, "config", 10, None, None, CODE_WEIGHTS).expect("unfiltered");
+    assert_eq!(all.len(), 2, "no filter must keep both rows");
+}
+
+#[test]
+fn code_bm25_weights_parameter_flips_column_priority() {
+    // Symbol 1 matches the query only in its snippet; symbol 2 only in its
+    // symbol name. Symbol-heavy weights (the default) must rank 2 first;
+    // snippet-heavy weights must flip the order.
+    let dir = tempdir().expect("tempdir");
+    let conn = connection::open(dir.path().join("c.db")).expect("open");
+    seed_code_symbol(
+        &conn,
+        1,
+        "r",
+        "rust",
+        "unrelated_name",
+        "calls handle_login somewhere",
+        "src other rs",
+    );
+    seed_code_symbol(
+        &conn,
+        2,
+        "r",
+        "rust",
+        "handle_login",
+        "fn body without the query term",
+        "src auth rs",
+    );
+
+    let symbol_heavy =
+        fts::search_code(&conn, "handle_login", 10, None, None, CODE_WEIGHTS).expect("search");
+    assert_eq!(symbol_heavy.len(), 2);
+    assert_eq!(
+        symbol_heavy[0].symbol_id, 2,
+        "symbol-heavy weights must rank the symbol-name hit first"
+    );
+
+    let snippet_heavy =
+        fts::search_code(&conn, "handle_login", 10, None, None, (1.0, 6.0, 1.5)).expect("search");
+    assert_eq!(snippet_heavy.len(), 2);
+    assert_eq!(
+        snippet_heavy[0].symbol_id, 1,
+        "snippet-heavy weights must rank the snippet hit first"
+    );
 }
 
 #[test]
@@ -326,12 +428,14 @@ fn empty_and_quote_only_queries_return_empty_without_error() {
             .expect("quote-only query")
             .is_empty()
     );
-    assert!(fts::search_code(&conn, "", 10)
+    assert!(fts::search_code(&conn, "", 10, None, None, CODE_WEIGHTS)
         .expect("empty code query")
         .is_empty());
-    assert!(fts::search_code(&conn, "\"\"", 10)
-        .expect("quote-only code query")
-        .is_empty());
+    assert!(
+        fts::search_code(&conn, "\"\"", 10, None, None, CODE_WEIGHTS)
+            .expect("quote-only code query")
+            .is_empty()
+    );
 }
 
 #[test]
@@ -358,35 +462,6 @@ fn relaxed_search_matches_on_any_term() {
         .expect("relaxed");
     assert_eq!(relaxed.len(), 1);
     assert_eq!(relaxed[0].memory_id, "mem1");
-}
-
-#[test]
-fn code_symbol_match_outranks_snippet_match() {
-    let dir = tempdir().expect("tempdir");
-    let conn = connection::open(dir.path().join("c.db")).expect("open");
-    fts::index_code(
-        &conn,
-        1,
-        "unrelated_name",
-        "calls handle_login somewhere",
-        "src other rs",
-    )
-    .expect("index 1");
-    fts::index_code(
-        &conn,
-        2,
-        "handle_login",
-        "fn body without the query term",
-        "src auth rs",
-    )
-    .expect("index 2");
-
-    let hits = fts::search_code(&conn, "handle_login", 10).expect("search code");
-    assert_eq!(hits.len(), 2);
-    assert_eq!(
-        hits[0].symbol_id, 2,
-        "symbol-column hit must outrank snippet hit"
-    );
 }
 
 /// Seed one `query_expansions` row.

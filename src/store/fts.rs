@@ -429,26 +429,50 @@ pub fn index_code(
 /// Run a BM25 search over `code_fts` and return the top-`k` symbol hits.
 ///
 /// The query is rewritten via [`build_match_query`] and ranked with a
-/// weighted BM25 over the `code_fts` column order
-/// `(symbol_id UNINDEXED, symbol, snippet, path_tokens)`: symbol-name hits
-/// (2.0) outrank path hits (1.5), which outrank snippet hits (1.0). FTS5
-/// MATCH parse errors are downgraded to an empty result for the same
-/// reason as [`search_memory`] — a typo in the user query should not abort
-/// the wider retrieval pipeline.
-pub fn search_code(conn: &Connection, query: &str, k: usize) -> Result<Vec<CodeFtsHit>> {
+/// weighted BM25 whose `(symbol, snippet, path_tokens)` column weights
+/// come from `weights` (`cfg.retrieval.code_bm25_weights`; with the
+/// default `(2.0, 1.0, 1.5)` symbol-name hits outrank path hits, which
+/// outrank snippet hits). Like [`run_memory_match`], the weights are
+/// interpolated into the SQL text — `bm25()` arguments cannot be bound
+/// parameters, and the values come from validated config, never raw user
+/// input. Optional `repo` and `lang` filters are applied via a JOIN on
+/// `code_symbols` so the lexical and ANN branches share the same scope
+/// when the code route runs a filtered hybrid query. FTS5 MATCH parse
+/// errors are downgraded to an empty result for the same reason as
+/// [`search_memory`] — a typo in the user query should not abort the
+/// wider retrieval pipeline.
+pub fn search_code(
+    conn: &Connection,
+    query: &str,
+    k: usize,
+    repo: Option<&str>,
+    lang: Option<&str>,
+    weights: (f32, f32, f32),
+) -> Result<Vec<CodeFtsHit>> {
     let match_expr = build_match_query(query);
     if match_expr.is_empty() || k == 0 {
         return Ok(Vec::new());
     }
-    let sql = "SELECT symbol_id, bm25(code_fts, 0.0, 2.0, 1.0, 1.5) AS score \
-                 FROM code_fts \
-                WHERE code_fts MATCH ?1 \
-                ORDER BY score \
-                LIMIT ?2";
-    run_fts_query(conn, sql, params![match_expr, k as i64], |row| {
-        Ok(CodeFtsHit {
-            symbol_id: row.get(0)?,
-            score: row.get(1)?,
-        })
-    })
+    let (w_sym, w_snip, w_path) = weights;
+    let sql = format!(
+        "SELECT code_fts.symbol_id, bm25(code_fts, 0.0, {w_sym}, {w_snip}, {w_path}) AS score \
+           FROM code_fts \
+           JOIN code_symbols c ON c.id = code_fts.symbol_id \
+          WHERE code_fts MATCH ?1 \
+            AND (?3 IS NULL OR c.repo = ?3) \
+            AND (?4 IS NULL OR c.lang = ?4) \
+          ORDER BY score \
+          LIMIT ?2"
+    );
+    run_fts_query(
+        conn,
+        &sql,
+        params![match_expr, k as i64, repo, lang],
+        |row| {
+            Ok(CodeFtsHit {
+                symbol_id: row.get(0)?,
+                score: row.get(1)?,
+            })
+        },
+    )
 }
