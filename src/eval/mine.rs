@@ -36,9 +36,17 @@ pub struct MinedMapping {
 /// unparsable timestamp are skipped. Deterministic: rows are processed
 /// in `(at, query_id)` order and the output is sorted by
 /// `(term, expansion)`.
+///
+/// Rows with `source = 'search-code'` are excluded entirely: code-search
+/// queries can only receive code-target feedback, so without memory
+/// verdicts they would read as permanently failed and mint spurious
+/// expansions. `source = 'context'` rows still participate — context
+/// queries are first-class mining citizens since M2.
 pub fn mine(conn: &Connection) -> Result<Vec<MinedMapping>> {
-    let mut stmt =
-        conn.prepare("SELECT query_id, query, at FROM retrieval_log ORDER BY at, query_id")?;
+    let mut stmt = conn.prepare(
+        "SELECT query_id, query, at FROM retrieval_log
+         WHERE source != 'search-code' ORDER BY at, query_id",
+    )?;
     let log: Vec<(String, String, String)> = stmt
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
         .collect::<std::result::Result<_, _>>()?;

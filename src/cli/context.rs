@@ -77,7 +77,10 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         vec.as_deref(),
         a.repo.as_deref(),
         None,
-        pipeline::SearchOptions { track: true },
+        pipeline::SearchOptions {
+            track: true,
+            source: "context",
+        },
     )?;
     let ids: Vec<String> = run.hits.into_iter().map(|h| h.memory_id).collect();
     let bundle = bundle::assemble(&conn, &a.query, &ids)?;

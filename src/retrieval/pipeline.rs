@@ -18,6 +18,11 @@ pub struct SearchOptions {
     /// search/context set `true`; eval and tune set `false` so offline
     /// measurement cannot pollute its own training signal.
     pub track: bool,
+    /// Query origin written verbatim to `retrieval_log.source`:
+    /// `"search"` (memory search), `"context"` (context bundles), or
+    /// `"search-code"` (code search). Reformulation mining excludes
+    /// `search-code` rows, which can only earn code-target feedback.
+    pub source: &'static str,
 }
 
 /// Outcome of one pipeline run: the hits plus the logged query id
@@ -53,7 +58,15 @@ pub fn search(
         cfg.retrieval.top_k,
     );
     let query_id = if opts.track {
-        record_telemetry(conn, query, &final_hits, started.elapsed())
+        record_telemetry(
+            conn,
+            query,
+            repo,
+            kind,
+            opts.source,
+            &final_hits,
+            started.elapsed(),
+        )
     } else {
         None
     };
@@ -73,13 +86,16 @@ pub fn search(
 fn record_telemetry(
     conn: &Connection,
     query: &str,
+    repo: Option<&str>,
+    kind: Option<&str>,
+    source: &str,
     hits: &[Reranked],
     elapsed: std::time::Duration,
 ) -> Option<String> {
     match conn.unchecked_transaction() {
         Ok(tx) => {
             record_access(&tx, hits);
-            let query_id = record_query(&tx, query, hits, elapsed);
+            let query_id = record_query(&tx, query, repo, kind, source, hits, elapsed);
             match tx.commit() {
                 Ok(()) => query_id,
                 Err(e) => {
@@ -91,7 +107,7 @@ fn record_telemetry(
         Err(e) => {
             tracing::warn!(error = %e, "telemetry transaction unavailable; falling back to direct writes");
             record_access(conn, hits);
-            record_query(conn, query, hits, elapsed)
+            record_query(conn, query, repo, kind, source, hits, elapsed)
         }
     }
 }
@@ -128,12 +144,17 @@ fn record_access(conn: &Connection, hits: &[Reranked]) {
     }
 }
 
-/// Write the `retrieval_log` row for this run. Best-effort like
-/// [`record_access`]: a logging failure warns and returns `None` —
-/// the search result must never depend on telemetry.
+/// Write the `retrieval_log` row for this run, including the repo/kind
+/// filters the caller searched with (logged verbatim, `None` → NULL)
+/// and the query `source`. Best-effort like [`record_access`]: a
+/// logging failure warns and returns `None` — the search result must
+/// never depend on telemetry.
 fn record_query(
     conn: &Connection,
     query: &str,
+    repo: Option<&str>,
+    kind: Option<&str>,
+    source: &str,
     hits: &[Reranked],
     elapsed: std::time::Duration,
 ) -> Option<String> {
@@ -156,9 +177,10 @@ fn record_query(
     };
     let dur = i64::try_from(elapsed.as_millis()).unwrap_or(i64::MAX);
     match conn.execute(
-        "INSERT INTO retrieval_log(query_id, query, returned_ids, at, duration_ms)
-         VALUES (?1, ?2, ?3, ?4, ?5)",
-        rusqlite::params![query_id, query, returned, at, dur],
+        "INSERT INTO retrieval_log(query_id, query, returned_ids, at, duration_ms,
+                                   repo, kind, source)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        rusqlite::params![query_id, query, returned, at, dur, repo, kind, source],
     ) {
         Ok(_) => Some(query_id),
         Err(e) => {

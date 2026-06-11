@@ -31,7 +31,10 @@ fn search_returns_reranked_diversified_hits() {
         None,
         None,
         None,
-        SearchOptions { track: false },
+        SearchOptions {
+            track: false,
+            source: "search",
+        },
     )
     .expect("search");
     assert_eq!(run.hits.len(), 1);
@@ -50,7 +53,10 @@ fn retrieval_hit_bumps_access_tracking() {
         None,
         None,
         None,
-        SearchOptions { track: true },
+        SearchOptions {
+            track: true,
+            source: "search",
+        },
     )
     .expect("search");
     let (count, last): (i64, String) = conn
@@ -82,7 +88,10 @@ fn access_tracking_failure_does_not_break_reads() {
         None,
         None,
         None,
-        SearchOptions { track: true },
+        SearchOptions {
+            track: true,
+            source: "search",
+        },
     )
     .expect("search must succeed when access tracking cannot write");
     assert_eq!(run.hits.len(), 1);
@@ -111,7 +120,10 @@ fn search_with_track_logs_one_retrieval_log_row() {
         None,
         None,
         None,
-        SearchOptions { track: true },
+        SearchOptions {
+            track: true,
+            source: "search",
+        },
     )
     .expect("search");
     let qid = run.query_id.expect("query_id present when tracking");
@@ -128,6 +140,66 @@ fn search_with_track_logs_one_retrieval_log_row() {
     assert_eq!(parsed.len(), run.hits.len());
     assert_eq!(parsed[0], "aaaa0001");
     assert!(dur.is_some());
+}
+
+#[test]
+fn search_with_filters_logs_repo_kind_and_source() {
+    let (_d, conn) = seeded();
+    let cfg = comemory::config::Config::defaults();
+    let run = search(
+        &cfg,
+        &conn,
+        "sqlite busy",
+        None,
+        Some("d"),
+        Some("note"),
+        SearchOptions {
+            track: true,
+            source: "search",
+        },
+    )
+    .expect("search");
+    let qid = run.query_id.expect("query_id present when tracking");
+    let (repo, kind, source): (Option<String>, Option<String>, String) = conn
+        .query_row(
+            "SELECT repo, kind, source FROM retrieval_log WHERE query_id = ?1",
+            [&qid],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .expect("logged");
+    assert_eq!(repo.as_deref(), Some("d"), "repo filter logged verbatim");
+    assert_eq!(kind.as_deref(), Some("note"), "kind filter logged verbatim");
+    assert_eq!(source, "search");
+}
+
+#[test]
+fn search_without_filters_logs_null_repo_and_kind() {
+    let (_d, conn) = seeded();
+    let cfg = comemory::config::Config::defaults();
+    let run = search(
+        &cfg,
+        &conn,
+        "sqlite busy",
+        None,
+        None,
+        None,
+        SearchOptions {
+            track: true,
+            source: "context",
+        },
+    )
+    .expect("search");
+    let qid = run.query_id.expect("query_id present when tracking");
+    let (repo, kind, source): (Option<String>, Option<String>, String) = conn
+        .query_row(
+            "SELECT repo, kind, source FROM retrieval_log WHERE query_id = ?1",
+            [&qid],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .expect("logged");
+    assert_eq!(repo, None, "no repo filter must log NULL");
+    assert_eq!(kind, None, "no kind filter must log NULL");
+    assert_eq!(source, "context", "caller-declared source logged verbatim");
 }
 
 #[test]
@@ -149,7 +221,10 @@ fn search_without_track_logs_nothing_and_freezes_access() {
             None,
             None,
             None,
-            SearchOptions { track: false },
+            SearchOptions {
+                track: false,
+                source: "search",
+            },
         )
         .expect("search");
         assert!(run.query_id.is_none(), "no query_id when track is off");
@@ -222,7 +297,10 @@ fn pipeline_cuts_to_configured_top_k() {
         None,
         None,
         None,
-        SearchOptions { track: false },
+        SearchOptions {
+            track: false,
+            source: "search",
+        },
     )
     .expect("search");
     assert_eq!(run.hits.len(), 12, "pipeline must cut to top_k");

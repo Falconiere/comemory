@@ -11,12 +11,18 @@ fn open_db() -> (tempfile::TempDir, rusqlite::Connection) {
     (dir, conn)
 }
 
-/// Insert a `retrieval_log` row with the given id, query text, and time.
+/// Insert a `retrieval_log` row with the given id, query text, and time
+/// (the v6 `source` column keeps its `'search'` default).
 fn log_query(conn: &rusqlite::Connection, qid: &str, query: &str, at: &str) {
+    log_query_src(conn, qid, query, at, "search");
+}
+
+/// Insert a `retrieval_log` row with an explicit `source` value.
+fn log_query_src(conn: &rusqlite::Connection, qid: &str, query: &str, at: &str, source: &str) {
     conn.execute(
-        "INSERT INTO retrieval_log(query_id, query, returned_ids, at) \
-         VALUES (?1, ?2, '[]', ?3)",
-        rusqlite::params![qid, query, at],
+        "INSERT INTO retrieval_log(query_id, query, returned_ids, at, source) \
+         VALUES (?1, ?2, '[]', ?3, ?4)",
+        rusqlite::params![qid, query, at, source],
     )
     .expect("insert retrieval_log row");
 }
@@ -184,6 +190,70 @@ fn mine_aggregates_support_across_repeated_pairs() {
             expansion: "mismatch".into(),
             support: 2,
         }]
+    );
+}
+
+#[test]
+fn mine_ignores_failed_code_search_rows() {
+    // Same shape as the worked example, but the failed q1 came from
+    // `comemory search-code` (source='search-code'). Code-search rows can
+    // only ever receive code-target feedback, so without memory verdicts
+    // they would read as permanently failed — mining must skip them
+    // entirely instead of minting spurious expansions.
+    let (_d, conn) = open_db();
+    log_query_src(
+        &conn,
+        "q-20260609-00000001",
+        "embedding size error",
+        "2026-06-09T10:00:00Z",
+        "search-code",
+    );
+    log_query(
+        &conn,
+        "q-20260609-00000002",
+        "VecDimMismatch error",
+        "2026-06-09T10:05:00Z",
+    );
+    mark_used(&conn, "q-20260609-00000002");
+
+    let mined = mine(&conn).expect("mine");
+    assert!(
+        mined.is_empty(),
+        "search-code rows must not seed mining: {mined:?}"
+    );
+}
+
+#[test]
+fn mine_includes_failed_context_rows() {
+    // Context lookups are first-class mining citizens (they carry
+    // query_ids and can receive feedback since M2): a failed
+    // source='context' row pairs with a later used-feedback query
+    // exactly like a failed search row.
+    let (_d, conn) = open_db();
+    log_query_src(
+        &conn,
+        "q-20260609-00000001",
+        "sizing error",
+        "2026-06-09T10:00:00Z",
+        "context",
+    );
+    log_query(
+        &conn,
+        "q-20260609-00000002",
+        "mismatch error",
+        "2026-06-09T10:04:00Z",
+    );
+    mark_used(&conn, "q-20260609-00000002");
+
+    let mined = mine(&conn).expect("mine");
+    assert_eq!(
+        mined,
+        vec![MinedMapping {
+            term: "sizing".into(),
+            expansion: "mismatch".into(),
+            support: 1,
+        }],
+        "context rows must still participate in mining"
     );
 }
 
