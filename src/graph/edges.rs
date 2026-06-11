@@ -48,6 +48,25 @@ pub fn insert_at(conn: &Connection, e: EdgeKey<'_>, created_at: Option<&str>) ->
     Ok(())
 }
 
+/// Insert one weighted edge, ADDING `weight` to the stored weight when the
+/// edge already exists (`ON CONFLICT ... weight = weight + excluded.weight`).
+///
+/// This is the accumulating writer for `co_changed` edges: each mining run
+/// walks only commits newer than the `repo_marker.last_mined_commit` cursor,
+/// so the per-run pair counts are deltas to add, not totals to overwrite.
+/// State-like relations (e.g. `imports`) should keep using [`insert`], whose
+/// `INSERT OR IGNORE` leaves the existing row untouched.
+pub fn insert_weighted(conn: &Connection, e: EdgeKey<'_>, weight: i64) -> Result<()> {
+    conn.execute(
+        "INSERT INTO edges(src_kind,src_id,dst_kind,dst_id,rel,weight,created_at) \
+         VALUES(?1,?2,?3,?4,?5,?6, strftime('%Y-%m-%dT%H:%M:%fZ','now')) \
+         ON CONFLICT(src_kind,src_id,dst_kind,dst_id,rel) \
+         DO UPDATE SET weight = weight + excluded.weight",
+        params![e.src_kind, e.src_id, e.dst_kind, e.dst_id, e.rel, weight],
+    )?;
+    Ok(())
+}
+
 /// Outgoing neighbors of `(src_kind, src_id)` following `rel`.
 pub fn outgoing(
     conn: &Connection,

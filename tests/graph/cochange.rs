@@ -13,8 +13,7 @@ use comemory::git_utils::current_head;
 use comemory::graph::cochange::{mine_cochange, CoChange, MEGA_COMMIT_FILE_CAP};
 use tempfile::TempDir;
 
-#[path = "../common/git_setup.rs"]
-mod git_setup;
+use crate::git_setup;
 
 /// Known-files set `{a.rs, b.rs, c.rs}` shared by every test.
 fn known() -> HashSet<String> {

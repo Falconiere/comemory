@@ -10,6 +10,7 @@
 //! piping into an external embedder.
 
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -23,6 +24,7 @@ use crate::ast::{self, languages};
 use crate::cli::resolve_data_dir;
 use crate::config::paths::Paths;
 use crate::git_utils::map_git_err;
+use crate::graph::{imports, materialize};
 use crate::prelude::*;
 use crate::simhash;
 use crate::store::code_row::{self, CodeSymbolRow};
@@ -72,6 +74,15 @@ pub struct Args {
 /// `indexed_files` cursors, and re-running `index-code` on the same blob does
 /// not produce duplicate symbol rows for files whose `indexed_files` row had
 /// not yet been written.
+///
+/// After the symbol transaction commits, a best-effort graph post-pass
+/// ([`materialize::materialize`]) mines co-change pairs, refreshes the
+/// import edges of the files (re)indexed this run, and projects PageRank
+/// onto `code_symbols.rank_score`. Its errors are logged via
+/// `tracing::warn!` and swallowed — the symbol index must land even when
+/// graph materialization cannot. Files skipped by the blob-OID gate are
+/// absent from `imports_by_file`, so their existing import edges survive
+/// untouched (unchanged file, unchanged imports).
 pub async fn run(args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
@@ -85,6 +96,7 @@ pub async fn run(args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<(
     }
 
     let mut conn = connection::open(paths.db_path())?;
+    let mut imports_by_file: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let tx = conn.transaction()?;
     ensure_repo_format(&tx, &args.repo)?;
     let mut walker = WalkBuilder::new(&args.path);
@@ -118,10 +130,31 @@ pub async fn run(args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<(
         for s in &symbols {
             write_symbol(&tx, &args.repo, &rel, &oid, lang, s)?;
         }
+        // Collect this file's raw imports for the graph post-pass. An empty
+        // Vec still matters — it clears the file's stale `imports` edges.
+        // Extraction failures (an ast-grep pattern bug) must not sink the
+        // symbol walk: warn and leave the file's previous edges in place.
+        match imports::extract_imports(lang, &snippet) {
+            Ok(modules) => {
+                imports_by_file.insert(rel.clone(), modules);
+            }
+            Err(e) => {
+                tracing::warn!(file = %rel, error = %e, "index-code: import extraction failed");
+            }
+        }
         code_row::upsert_indexed_file(&tx, &args.repo, &rel, &oid)?;
     }
     stamp_repo_format(&tx, &args.repo)?;
     tx.commit()?;
+    // Best-effort graph post-pass: the symbol index above is already
+    // durable; a graph failure (e.g. unborn HEAD) costs only freshness.
+    if let Err(e) = materialize::materialize(&mut conn, &args.path, &args.repo, &imports_by_file) {
+        tracing::warn!(
+            repo = %args.repo,
+            error = %e,
+            "index-code: graph materialization failed; symbol index kept",
+        );
+    }
     Ok(())
 }
 

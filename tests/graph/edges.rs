@@ -58,6 +58,35 @@ fn supersedes_walk_is_transitive() {
     assert_eq!(chain, vec!["b".to_string(), "c".to_string()]);
 }
 
+/// `insert_weighted` is the accumulating writer the co-change post-pass
+/// uses: a fresh edge lands with the given weight, and re-inserting the
+/// same key ADDS to the stored weight instead of ignoring the row (each
+/// mining run walks only commits newer than the cursor, so weights are
+/// deltas, not totals).
+#[test]
+fn insert_weighted_accumulates_on_conflict() {
+    let conn = seed_db();
+    let key = EdgeKey {
+        src_kind: "file",
+        src_id: "file:r:a.rs",
+        dst_kind: "file",
+        dst_id: "file:r:b.rs",
+        rel: "co_changed",
+    };
+    edges::insert_weighted(&conn, key, 2).expect("first insert");
+    edges::insert_weighted(&conn, key, 3).expect("accumulating insert");
+
+    let weight: i64 = conn
+        .query_row(
+            "SELECT weight FROM edges WHERE src_id='file:r:a.rs' \
+             AND dst_id='file:r:b.rs' AND rel='co_changed'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("weight");
+    assert_eq!(weight, 5, "weights accumulate across mining runs");
+}
+
 /// `delete_outgoing` must remove only edges *originating* at the node:
 /// incoming edges (e.g. a newer memory's `supersedes` pointing at it) have
 /// to survive — `store::memory_row` relies on this when re-saving or
