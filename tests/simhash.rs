@@ -19,3 +19,15 @@ fn unrelated_strings_have_far_simhash() {
 fn tokenize(s: &str) -> impl Iterator<Item = &str> {
     s.split_whitespace()
 }
+
+#[test]
+fn tokens_unicode_lowercase_and_diacritic_fold() {
+    // Unicode lowercase: É → e (not kept verbatim)
+    assert_eq!(
+        simhash::tokens("Café CAFÉ café"),
+        vec!["cafe", "cafe", "cafe"]
+    );
+    // hashes converge
+    assert_eq!(simhash::of_body("Café"), simhash::of_body("café"));
+    assert_eq!(simhash::of_body("Café"), simhash::of_body("cafe"));
+}
