@@ -96,6 +96,9 @@ predicates = "3"
 proptest = "1"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls", "json"] }
 tempfile = "3"
+# Tests construct `OffsetDateTime` values to drive the query-id round-trip
+# (`stats::feedback::generate_query_id`); same version line as the main dep.
+time = { version = "0.3", features = ["macros"] }
 
 [target.'cfg(unix)'.dev-dependencies]
 libc = "0.2"

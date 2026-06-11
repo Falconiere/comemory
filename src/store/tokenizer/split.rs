@@ -95,9 +95,43 @@ pub fn fold_diacritics(s: &str) -> String {
     s.nfd().filter(|c| !is_combining_mark(*c)).collect()
 }
 
-/// Normalize raw token text for emission: lowercase, then diacritic-fold.
-fn normalize_token(raw: &str) -> String {
-    fold_diacritics(&raw.to_lowercase())
+/// The single casing/folding definition: lowercase, then diacritic-fold.
+/// The FTS index tokenizer, FTS query tokenization, and SimHash tokens
+/// all funnel through here, so the three can never disagree on `Café`
+/// vs `cafe`. Pure-ASCII input takes the `to_ascii_lowercase` fast path
+/// (identical result — ASCII has no diacritics to fold and no
+/// multi-char lowercase mappings) and skips the NFD walk plus the
+/// second allocation.
+pub(crate) fn normalize(s: &str) -> String {
+    if s.is_ascii() {
+        s.to_ascii_lowercase()
+    } else {
+        fold_diacritics(&s.to_lowercase())
+    }
+}
+
+/// Tokenize a query the same way the FTS index sees it: identifier
+/// split, lowercased, diacritic-folded, non-colocated parts only, in
+/// first-mention order without duplicates. Single-character tokens are
+/// dropped (too noisy to expand on). Shared by reformulation mining
+/// (`eval::mine`, which writes `query_expansions` keys in this form)
+/// and the tier-4 expansion builder
+/// (`store::fts::build_expanded_or_query`), so mined keys and
+/// query-time lookups can never disagree on tokenization.
+pub(crate) fn query_token_list(query: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for tok in split_text(query) {
+        if !tok.colocated && tok.text.chars().count() > 1 && !out.contains(&tok.text) {
+            out.push(tok.text);
+        }
+    }
+    out
+}
+
+/// Set form of [`query_token_list`], for callers that need set algebra
+/// over the tokens (mining's intent guard and term diffs).
+pub(crate) fn query_tokens(query: &str) -> std::collections::BTreeSet<String> {
+    query_token_list(query).into_iter().collect()
 }
 
 fn emit_run(text: &str, s: usize, e: usize, out: &mut Vec<SplitToken>) {
@@ -107,7 +141,7 @@ fn emit_run(text: &str, s: usize, e: usize, out: &mut Vec<SplitToken>) {
         return;
     }
     if let [(ps, pe)] = parts[..] {
-        let part = normalize_token(&run[ps..pe]);
+        let part = normalize(&run[ps..pe]);
         if !part.is_empty() && fully_lowercased(&part) {
             out.push(SplitToken {
                 text: part,
@@ -118,11 +152,11 @@ fn emit_run(text: &str, s: usize, e: usize, out: &mut Vec<SplitToken>) {
         }
         return;
     }
-    let whole = normalize_token(run);
+    let whole = normalize(run);
     let whole_ok = fully_lowercased(&whole);
     let mut first = true;
     for (ps, pe) in parts {
-        let part = normalize_token(&run[ps..pe]);
+        let part = normalize(&run[ps..pe]);
         if part.is_empty() || !fully_lowercased(&part) {
             continue;
         }

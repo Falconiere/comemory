@@ -60,6 +60,13 @@ fn jaccard(a: &HashSet<String>, b: &HashSet<String>) -> f64 {
 /// output contract. This re-normalizes scores the rerank stage already
 /// normalized: intentional, because `final_score` after priors is no
 /// longer in `[0, 1]`.
+///
+/// `max_sim` (each candidate's max Jaccard to the picked set) is kept
+/// incrementally: after every pick, each remaining candidate is compared
+/// against only the newest pick — one Jaccard per remaining candidate per
+/// round (O(n·k) total) instead of recomputing the whole picked set every
+/// round (O(n·k²)). Selection semantics are bitwise-identical to the
+/// recomputing form, including tie-breaks.
 fn mmr(items: Vec<Reranked>, lambda: f64, top_k: usize) -> Vec<Reranked> {
     let relevance = crate::retrieval::score::min_max_normalize(
         &items
@@ -69,6 +76,7 @@ fn mmr(items: Vec<Reranked>, lambda: f64, top_k: usize) -> Vec<Reranked> {
     );
     let sets: Vec<HashSet<String>> = items.iter().map(|i| token_set(&i.body)).collect();
     let mut remaining: Vec<usize> = (0..items.len()).collect();
+    let mut max_sim: Vec<f64> = vec![0.0; items.len()];
     let mut picked_idx: Vec<usize> = Vec::with_capacity(top_k.min(items.len()));
 
     while picked_idx.len() < top_k && !remaining.is_empty() {
@@ -76,8 +84,8 @@ fn mmr(items: Vec<Reranked>, lambda: f64, top_k: usize) -> Vec<Reranked> {
             .iter()
             .enumerate()
             .max_by(|(ia, &a), (ib, &b)| {
-                let sa = mmr_score(&relevance, &sets, &picked_idx, a, lambda);
-                let sb = mmr_score(&relevance, &sets, &picked_idx, b, lambda);
+                let sa = lambda * relevance[a] - (1.0 - lambda) * max_sim[a];
+                let sb = lambda * relevance[b] - (1.0 - lambda) * max_sim[b];
                 sa.total_cmp(&sb).then_with(|| ib.cmp(ia))
             })
             .map(|(pos, _)| pos)
@@ -85,8 +93,12 @@ fn mmr(items: Vec<Reranked>, lambda: f64, top_k: usize) -> Vec<Reranked> {
             break;
         };
 
-        picked_idx.push(remaining[pos]);
+        let newest = remaining[pos];
+        picked_idx.push(newest);
         remaining.remove(pos);
+        for &candidate in &remaining {
+            max_sim[candidate] = max_sim[candidate].max(jaccard(&sets[candidate], &sets[newest]));
+        }
     }
 
     let mut slots: Vec<Option<Reranked>> = items.into_iter().map(Some).collect();
@@ -94,22 +106,4 @@ fn mmr(items: Vec<Reranked>, lambda: f64, top_k: usize) -> Vec<Reranked> {
         .into_iter()
         .filter_map(|i| slots[i].take())
         .collect()
-}
-
-/// MMR objective for one candidate given the set already selected.
-/// `relevance` is the pool-normalized score from
-/// [`crate::retrieval::score::min_max_normalize`], not the raw
-/// `final_score`.
-fn mmr_score(
-    relevance: &[f64],
-    sets: &[HashSet<String>],
-    picked: &[usize],
-    candidate: usize,
-    lambda: f64,
-) -> f64 {
-    let max_sim = picked
-        .iter()
-        .map(|&p| jaccard(&sets[candidate], &sets[p]))
-        .fold(0.0f64, f64::max);
-    lambda * relevance[candidate] - (1.0 - lambda) * max_sim
 }

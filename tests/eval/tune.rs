@@ -4,7 +4,7 @@
 use comemory::config::Config;
 use comemory::errors::Error;
 use comemory::eval::golden::GoldenPair;
-use comemory::eval::tune::{self, TuneCandidate};
+use comemory::eval::tune::{self, ScoredCandidate, TuneCandidate, TuneReport};
 
 /// Ten lexically distinct (id, body) rows so each golden query
 /// discriminates a single memory.
@@ -84,6 +84,81 @@ fn tune_is_deterministic() {
         serde_json::to_string(&r1).expect("serialize first"),
         serde_json::to_string(&r2).expect("serialize second"),
         "two tune runs over the same db must be byte-identical"
+    );
+}
+
+/// Build a [`ScoredCandidate`] with fixed knobs and the given scores.
+fn scored(mrr: f64, recall_at_k: f64) -> ScoredCandidate {
+    ScoredCandidate {
+        candidate: TuneCandidate {
+            rrf_k: 60.0,
+            decay: 0.5,
+            mmr_lambda: 0.7,
+            bm25_weights: (1.0, 3.0),
+        },
+        mrr,
+        recall_at_k,
+    }
+}
+
+/// Build a [`TuneReport`] whose ranking carries exactly `winner`.
+fn report_with(baseline: ScoredCandidate, winner: ScoredCandidate) -> TuneReport {
+    TuneReport {
+        k: 3,
+        golden_pairs: 10,
+        baseline,
+        ranked: vec![winner],
+    }
+}
+
+#[test]
+fn winner_is_the_top_ranked_candidate() {
+    let report = report_with(scored(0.5, 0.5), scored(0.9, 0.7));
+    let w = report.winner().expect("non-empty ranking has a winner");
+    assert!((w.mrr - 0.9).abs() < f64::EPSILON);
+
+    let empty = TuneReport {
+        k: 3,
+        golden_pairs: 10,
+        baseline: scored(0.5, 0.5),
+        ranked: vec![],
+    };
+    assert!(empty.winner().is_err(), "empty ranking must error");
+}
+
+#[test]
+fn improves_baseline_requires_a_strict_win() {
+    // Higher mrr wins outright.
+    assert!(report_with(scored(0.5, 0.9), scored(0.6, 0.1)).improves_baseline());
+    // Exact mrr tie: recall@k breaks it, strictly.
+    assert!(report_with(scored(0.5, 0.5), scored(0.5, 0.6)).improves_baseline());
+    // Full tie is NOT an improvement — --apply must not churn config.toml.
+    assert!(!report_with(scored(0.5, 0.5), scored(0.5, 0.5)).improves_baseline());
+    // Lower mrr never improves, regardless of recall.
+    assert!(!report_with(scored(0.5, 0.1), scored(0.4, 1.0)).improves_baseline());
+}
+
+#[test]
+fn resolve_min_pairs_reads_the_env_hook() {
+    // Unset: the documented floor.
+    std::env::remove_var("COMEMORY_TUNE_MIN_GOLDEN");
+    assert_eq!(
+        tune::resolve_min_pairs().expect("default"),
+        tune::MIN_GOLDEN_PAIRS
+    );
+    // Set: the test hook lowers (or raises) the floor.
+    std::env::set_var("COMEMORY_TUNE_MIN_GOLDEN", "3");
+    let lowered = tune::resolve_min_pairs();
+    std::env::set_var("COMEMORY_TUNE_MIN_GOLDEN", "not-a-number");
+    let invalid = tune::resolve_min_pairs();
+    std::env::remove_var("COMEMORY_TUNE_MIN_GOLDEN");
+    assert_eq!(lowered.expect("valid override"), 3);
+    let msg = invalid
+        .expect_err("invalid override must error")
+        .to_string();
+    assert!(
+        msg.contains("COMEMORY_TUNE_MIN_GOLDEN"),
+        "error must name the offending var, got: {msg}"
     );
 }
 

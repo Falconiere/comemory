@@ -427,6 +427,34 @@ fn build_expanded_or_query_lowercases_the_lookup_key() {
 }
 
 #[test]
+fn build_expanded_or_query_folds_diacritics_like_mining_does() {
+    // Regression: mining writes tokenizer-normalized keys (diacritic
+    // folded — a failed query "Café" is stored under "cafe"), but the
+    // lookup used to be a bare to_lowercase(), so the mapping could never
+    // fire for the very query shape that produced it. The lookup now goes
+    // through the same tokenization; the base OR-token is folded too, so
+    // it matches the (folded) FTS index tokens.
+    let dir = tempdir().expect("tempdir");
+    let conn = connection::open(dir.path().join("c.db")).expect("open");
+    seed_expansion(&conn, "cafe", "espresso", 2);
+    let expr = fts::build_expanded_or_query(&conn, "Café").expect("build");
+    assert_eq!(expr, r#""cafe" OR "espresso""#);
+}
+
+#[test]
+fn build_expanded_or_query_splits_identifier_terms_like_mining_does() {
+    // Mining tokenizes identifiers into their non-colocated parts, so a
+    // mapping mined from a failed `VecDim` query is keyed `dim` (or
+    // `vec`), never the raw `vecdim`. The lookup must split identically
+    // for the mapping to fire.
+    let dir = tempdir().expect("tempdir");
+    let conn = connection::open(dir.path().join("c.db")).expect("open");
+    seed_expansion(&conn, "dim", "embedding", 2);
+    let expr = fts::build_expanded_or_query(&conn, "VecDim").expect("build");
+    assert_eq!(expr, r#""vec" OR "dim" OR "embedding""#);
+}
+
+#[test]
 fn build_expanded_or_query_is_empty_below_min_support() {
     // Support 1 is an anecdote, not a rule: no applicable expansion means
     // an empty expression so the tier short-circuits.

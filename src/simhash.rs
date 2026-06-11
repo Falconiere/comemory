@@ -55,8 +55,9 @@ pub fn hamming64(a: u64, b: u64) -> u32 {
 }
 
 /// Tokenize a snippet for SimHash input: lowercased, diacritic-folded
-/// alphanumeric runs. Casing/folding matches the FTS5 `identifier`
-/// tokenizer (`store::tokenizer::split`) so "Café" and "café" hash
+/// alphanumeric runs. Casing/folding goes through the canonical
+/// [`crate::store::tokenizer::split::normalize`] — the same definition
+/// the FTS5 `identifier` tokenizer uses — so "Café" and "café" hash
 /// identically; token *boundaries* remain whole alphanumeric runs (no
 /// camelCase splitting — SimHash measures body similarity, not
 /// identifier recall). Stored hashes were recomputed by the v5
@@ -66,7 +67,7 @@ pub fn tokens(snippet: &str) -> Vec<String> {
     snippet
         .split(|c: char| !c.is_alphanumeric())
         .filter(|s| !s.is_empty())
-        .map(|s| crate::store::tokenizer::split::fold_diacritics(&s.to_lowercase()))
+        .map(crate::store::tokenizer::split::normalize)
         .filter(|s| !s.is_empty())
         .collect()
 }

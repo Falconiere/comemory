@@ -24,10 +24,11 @@ Examples:
   # File only, recall@5, JSON report
   comemory eval --golden golden.yaml --golden-only --k 5 --json";
 
-/// Arguments to `comemory eval`.
+/// Golden-set selection flags shared by `comemory eval` and
+/// `comemory tune` (via `#[command(flatten)]`), so the two subcommands
+/// cannot drift on file/harvest/k semantics or help text.
 #[derive(ClapArgs, Debug)]
-#[command(after_help = EXAMPLES)]
-pub struct Args {
+pub struct GoldenSetArgs {
     /// Path to a YAML golden file (`- query: ...` / `  relevant: [..]`).
     #[arg(long)]
     pub golden: Option<PathBuf>,
@@ -40,6 +41,15 @@ pub struct Args {
     pub k: usize,
 }
 
+/// Arguments to `comemory eval`.
+#[derive(ClapArgs, Debug)]
+#[command(after_help = EXAMPLES)]
+pub struct Args {
+    /// Golden-set selection (`--golden`, `--golden-only`, `--k`).
+    #[command(flatten)]
+    pub golden_set: GoldenSetArgs,
+}
+
 /// Run `comemory eval`: build the merged golden set, drive the real
 /// pipeline with tracking off, and emit the report.
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
@@ -48,8 +58,9 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     let conn = connection::open(paths.db_path())?;
     let cfg = load_config(&paths)?;
 
-    let pairs = golden::resolve(&conn, a.golden.as_deref(), a.golden_only)?;
-    let report = runner::run_eval(&cfg, &conn, &pairs, a.k)?;
+    let g = &a.golden_set;
+    let pairs = golden::resolve(&conn, g.golden.as_deref(), g.golden_only)?;
+    let report = runner::run_eval(&cfg, &conn, &pairs, g.k)?;
     if json_flag {
         json::write(&report)?;
     } else {

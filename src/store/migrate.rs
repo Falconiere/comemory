@@ -46,63 +46,64 @@ pub fn run(conn: &mut Connection) -> Result<()> {
 }
 
 /// Apply one migration if it has not yet been recorded in
-/// `schema_meta`; returns `true` when the SQL was newly executed. The
-/// bootstrap migration is a special case: it creates `schema_meta`
-/// itself, so we cannot read from it before the migration runs. The SQL
-/// uses `CREATE TABLE IF NOT EXISTS`, which is idempotent on its own —
-/// but it therefore always reports `true`, so never hang a
-/// run-exactly-once hook off the bootstrap's return value.
-fn apply(conn: &mut Connection, key: &str, sql: &str) -> Result<bool> {
+/// `schema_meta`. The bootstrap migration is a special case: it creates
+/// `schema_meta` itself, so we cannot read from it before the migration
+/// runs; its SQL uses `CREATE TABLE IF NOT EXISTS`, which is idempotent
+/// on its own.
+fn apply(conn: &mut Connection, key: &str, sql: &str) -> Result<()> {
     if key == "0001_schema_meta" {
         conn.execute_batch(sql)
             .map_err(|e| Error::Migration(format!("{key}: {e}")))?;
-        return Ok(true);
+        return Ok(());
     }
-    let already: Option<String> = conn
-        .query_row(
-            "SELECT value FROM schema_meta WHERE key = ?1",
-            [key],
-            |row| row.get(0),
-        )
-        .ok();
-    if already.is_some() {
-        return Ok(false);
+    if marker_done(conn, key) {
+        return Ok(());
     }
     let tx = conn.transaction()?;
     tx.execute_batch(sql)
         .map_err(|e| Error::Migration(format!("{key}: {e}")))?;
-    tx.execute("INSERT INTO schema_meta(key, value) VALUES(?1, '1')", [key])?;
+    insert_marker(&tx, key)?;
     tx.commit()?;
-    Ok(true)
+    Ok(())
+}
+
+/// True when the run-once marker `key` is already recorded in
+/// `schema_meta`. Shared by [`apply`] and the simhash backfill/rehash
+/// passes so every run-once gate reads the marker identically.
+fn marker_done(conn: &Connection, key: &str) -> bool {
+    conn.query_row(
+        "SELECT value FROM schema_meta WHERE key = ?1",
+        [key],
+        |row| row.get::<_, String>(0),
+    )
+    .is_ok()
+}
+
+/// Record the run-once marker `key` inside the caller's transaction so
+/// the marker only persists together with the work it gates.
+fn insert_marker(tx: &rusqlite::Transaction<'_>, key: &str) -> Result<()> {
+    tx.execute("INSERT INTO schema_meta(key, value) VALUES(?1, '1')", [key])?;
+    Ok(())
 }
 
 /// Compute and store simhash for every memory that still has the
-/// DEFAULT 0 placeholder left by the v4 migration. Runs unconditionally
-/// on every [`run`] so a crash between the migration commit and the
-/// backfill heals on the next open; once every row is hashed the
-/// `WHERE simhash = 0` scan returns (almost) nothing. Sentinel
-/// collision: a body whose tokens genuinely hash to 0 (empty or
-/// punctuation-only bodies — `simhash::of_body` over zero tokens is 0)
-/// is re-selected and re-updated to the identical value on every open;
-/// idempotent and harmless. All updates commit in one transaction so a
-/// partial backfill never persists.
+/// DEFAULT 0 placeholder left by the v4 migration. Runs exactly once,
+/// keyed '0004_simhash_backfill' in `schema_meta` — the marker insert
+/// commits in the same transaction as the updates, so a crash between
+/// the v4 apply and the backfill (or mid-backfill) heals on the next
+/// open: the marker is absent and the whole pass re-runs. Once the
+/// marker is committed, opens skip the `memories` table scan entirely.
 fn backfill_memory_simhash(conn: &mut Connection) -> Result<()> {
-    let tx = conn.transaction()?;
-    {
-        let mut stmt = tx.prepare("SELECT id, body FROM memories WHERE simhash = 0")?;
-        let rows: Vec<(String, String)> = stmt
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
-            .collect::<std::result::Result<_, _>>()?;
-        drop(stmt);
-        for (id, body) in rows {
-            let hash = crate::simhash::of_body(&body);
-            // SQLite INTEGER is i64; store the u64 bit pattern.
-            tx.execute(
-                "UPDATE memories SET simhash = ?1 WHERE id = ?2",
-                rusqlite::params![hash as i64, id],
-            )?;
-        }
+    if marker_done(conn, "0004_simhash_backfill") {
+        return Ok(());
     }
+    let tx = conn.transaction()?;
+    recompute_simhashes(
+        &tx,
+        "SELECT id, body FROM memories WHERE simhash = 0",
+        "UPDATE memories SET simhash = ?1 WHERE id = ?2",
+    )?;
+    insert_marker(&tx, "0004_simhash_backfill")?;
     tx.commit()?;
     Ok(())
 }
@@ -114,50 +115,46 @@ fn backfill_memory_simhash(conn: &mut Connection) -> Result<()> {
 /// the whole pass on the next open (idempotent — the recompute is a
 /// pure function of the stored body/snippet).
 fn rehash_simhashes(conn: &mut Connection) -> Result<()> {
-    let done: Option<String> = conn
-        .query_row(
-            "SELECT value FROM schema_meta WHERE key = '0005_simhash_rehash'",
-            [],
-            |row| row.get(0),
-        )
-        .ok();
-    if done.is_some() {
+    if marker_done(conn, "0005_simhash_rehash") {
         return Ok(());
     }
     let tx = conn.transaction()?;
-    {
-        let mut stmt = tx.prepare("SELECT id, body FROM memories")?;
-        let rows: Vec<(String, String)> = stmt
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
-            .collect::<std::result::Result<_, _>>()?;
-        drop(stmt);
-        for (id, body) in rows {
-            // SQLite INTEGER is i64; store the u64 bit pattern.
-            let hash = crate::simhash::of_body(&body) as i64;
-            tx.execute(
-                "UPDATE memories SET simhash = ?1 WHERE id = ?2",
-                rusqlite::params![hash, id],
-            )?;
-        }
-        let mut stmt = tx.prepare("SELECT id, snippet FROM code_symbols")?;
-        let rows: Vec<(i64, String)> = stmt
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
-            .collect::<std::result::Result<_, _>>()?;
-        drop(stmt);
-        for (id, snippet) in rows {
-            let toks = crate::simhash::tokens(&snippet);
-            let hash = crate::simhash::simhash64(toks.iter().map(|t| t.as_str())) as i64;
-            tx.execute(
-                "UPDATE code_symbols SET simhash = ?1 WHERE id = ?2",
-                rusqlite::params![hash, id],
-            )?;
-        }
-    }
-    tx.execute(
-        "INSERT INTO schema_meta(key, value) VALUES('0005_simhash_rehash', '1')",
-        [],
+    recompute_simhashes(
+        &tx,
+        "SELECT id, body FROM memories",
+        "UPDATE memories SET simhash = ?1 WHERE id = ?2",
     )?;
+    recompute_simhashes(
+        &tx,
+        "SELECT id, snippet FROM code_symbols",
+        "UPDATE code_symbols SET simhash = ?1 WHERE id = ?2",
+    )?;
+    insert_marker(&tx, "0005_simhash_rehash")?;
     tx.commit()?;
+    Ok(())
+}
+
+/// Recompute `simhash::of_body` over every `(id, text)` row that
+/// `sql_select` yields and persist via `sql_update` (`?1` = hash,
+/// `?2` = id). Both statements are prepared once, outside the row loop.
+/// The id column is bound as a dynamic [`rusqlite::types::Value`] so
+/// one helper serves both `memories` (TEXT id) and `code_symbols`
+/// (INTEGER id).
+fn recompute_simhashes(
+    tx: &rusqlite::Transaction<'_>,
+    sql_select: &str,
+    sql_update: &str,
+) -> Result<()> {
+    let mut select = tx.prepare(sql_select)?;
+    let mut update = tx.prepare(sql_update)?;
+    let rows: Vec<(rusqlite::types::Value, String)> = select
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<std::result::Result<_, _>>()?;
+    for (id, text) in rows {
+        // SQLite INTEGER is i64; store the u64 bit pattern.
+        let hash = crate::simhash::of_body(&text) as i64;
+        update.execute(rusqlite::params![hash, id])?;
+    }
     Ok(())
 }
 

@@ -9,24 +9,20 @@
 use super::file::{AutoReindexMode, Config};
 use crate::prelude::*;
 
-/// Read an env var as `f64`; `Ok(None)` when unset, `Err` on parse failure.
-fn env_f64(name: &str) -> Result<Option<f64>> {
+/// Read an env var and parse it as `T`; `Ok(None)` when unset, `Err`
+/// naming the variable on parse failure. Only the parse happens here —
+/// range invariants live in `Config::validate` so the file overlay
+/// enforces them identically. Also reused by `eval::tune` for its
+/// `COMEMORY_TUNE_MIN_GOLDEN` test hook.
+pub(crate) fn env_parse<T: std::str::FromStr>(name: &str) -> Result<Option<T>>
+where
+    T::Err: std::fmt::Display,
+{
     let Ok(v) = std::env::var(name) else {
         return Ok(None);
     };
     let parsed = v
-        .parse::<f64>()
-        .map_err(|e| Error::Other(format!("invalid env var {name}={v}: {e}")))?;
-    Ok(Some(parsed))
-}
-
-/// Read an env var as `u32`; `Ok(None)` when unset, `Err` on parse failure.
-fn env_u32(name: &str) -> Result<Option<u32>> {
-    let Ok(v) = std::env::var(name) else {
-        return Ok(None);
-    };
-    let parsed = v
-        .parse::<u32>()
+        .parse::<T>()
         .map_err(|e| Error::Other(format!("invalid env var {name}={v}: {e}")))?;
     Ok(Some(parsed))
 }
@@ -84,24 +80,16 @@ impl Config {
                 }
             };
         }
-        if let Ok(v) = std::env::var("COMEMORY_RETRIEVAL_TOP_K") {
-            self.retrieval.top_k = v.parse::<usize>().map_err(|e| {
-                Error::Other(format!("invalid env var COMEMORY_RETRIEVAL_TOP_K={v}: {e}"))
-            })?;
+        if let Some(v) = env_parse::<usize>("COMEMORY_RETRIEVAL_TOP_K")? {
+            self.retrieval.top_k = v;
         }
-        if let Ok(v) = std::env::var("COMEMORY_RETRIEVAL_MEMORY_THRESHOLD") {
-            self.retrieval.memory_threshold = v.parse::<f32>().map_err(|e| {
-                Error::Other(format!(
-                    "invalid env var COMEMORY_RETRIEVAL_MEMORY_THRESHOLD={v}: {e}"
-                ))
-            })?;
+        if let Some(v) = env_parse::<f32>("COMEMORY_RETRIEVAL_MEMORY_THRESHOLD")? {
+            self.retrieval.memory_threshold = v;
         }
         // Only the parse happens here; the finite/positive invariant lives
         // in `Config::validate` so the file overlay is checked identically.
-        if let Ok(v) = std::env::var("COMEMORY_RETRIEVAL_RRF_K") {
-            self.retrieval.rrf_k = v.parse::<f32>().map_err(|e| {
-                Error::Other(format!("invalid env var COMEMORY_RETRIEVAL_RRF_K={v}: {e}"))
-            })?;
+        if let Some(v) = env_parse::<f32>("COMEMORY_RETRIEVAL_RRF_K")? {
+            self.retrieval.rrf_k = v;
         }
         if let Some(v) = env_pair::<f32>("COMEMORY_RETRIEVAL_BM25_WEIGHTS")? {
             self.retrieval.bm25_weights = v;
@@ -128,25 +116,25 @@ impl Config {
         // ── Rank + prune knobs ───────────────────────────────────────────────
         // Parsing happens here; range invariants are enforced once for both
         // env and file overlays by `Config::validate`.
-        if let Some(v) = env_f64("COMEMORY_RANK_DECAY")? {
+        if let Some(v) = env_parse::<f64>("COMEMORY_RANK_DECAY")? {
             self.rank.decay = v;
         }
         if let Some(v) = env_pair::<f64>("COMEMORY_RANK_PRIOR_CLAMP")? {
             self.rank.prior_clamp = v;
         }
-        if let Some(v) = env_f64("COMEMORY_RANK_MMR_LAMBDA")? {
+        if let Some(v) = env_parse::<f64>("COMEMORY_RANK_MMR_LAMBDA")? {
             self.rank.mmr_lambda = v;
         }
-        if let Some(v) = env_f64("COMEMORY_PRUNE_MIN_ACTIVATION")? {
+        if let Some(v) = env_parse::<f64>("COMEMORY_PRUNE_MIN_ACTIVATION")? {
             self.prune.min_activation = v;
         }
-        if let Some(v) = env_f64("COMEMORY_PRUNE_MIN_FEEDBACK")? {
+        if let Some(v) = env_parse::<f64>("COMEMORY_PRUNE_MIN_FEEDBACK")? {
             self.prune.min_feedback = v;
         }
-        if let Some(v) = env_u32("COMEMORY_PRUNE_BELOW_QUALITY")? {
+        if let Some(v) = env_parse::<u32>("COMEMORY_PRUNE_BELOW_QUALITY")? {
             self.prune.low_value_default_below_quality = v;
         }
-        if let Some(v) = env_u32("COMEMORY_LEARNING_RETENTION_DAYS")? {
+        if let Some(v) = env_parse::<u32>("COMEMORY_LEARNING_RETENTION_DAYS")? {
             self.prune.learning_retention_days = v;
         }
         self.validate()

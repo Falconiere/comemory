@@ -79,6 +79,19 @@ pub fn build_match_query(query: &str) -> String {
         .join(" ")
 }
 
+/// Quote every token and join with ` OR `. This is the FTS5-injection
+/// guard shared by every OR-tier builder: terms are data, never syntax —
+/// the surrounding double quotes make FTS5 treat each token as a string
+/// literal (callers must have stripped embedded quotes already, which
+/// [`sanitize_terms`] and the identifier tokenizer both guarantee).
+fn quote_or_join(tokens: &[String]) -> String {
+    tokens
+        .iter()
+        .map(|t| format!("\"{t}\""))
+        .collect::<Vec<_>>()
+        .join(" OR ")
+}
+
 /// Build a relaxed OR query over the same sanitized terms, clamped to the
 /// first [`MAX_QUERY_TERMS`] (32). The last-term prefix `*` used by
 /// [`build_match_query`] is intentionally dropped here: the relaxed tier
@@ -86,11 +99,7 @@ pub fn build_match_query(query: &str) -> String {
 /// trade precision for matches the strict tier never implied. Used as the
 /// fallback tier when the strict AND query finds nothing.
 pub fn build_or_query(query: &str) -> String {
-    sanitize_terms(query)
-        .iter()
-        .map(|t| format!("\"{t}\""))
-        .collect::<Vec<_>>()
-        .join(" OR ")
+    quote_or_join(&sanitize_terms(query))
 }
 
 /// Build an OR query over the identifier sub-tokens of every sanitized
@@ -135,11 +144,7 @@ pub fn build_subtoken_or_query(query: &str) -> String {
     if !any_term_split {
         return String::new();
     }
-    tokens
-        .iter()
-        .map(|t| format!("\"{t}\""))
-        .collect::<Vec<_>>()
-        .join(" OR ")
+    quote_or_join(&tokens)
 }
 
 /// Minimum mined support for an expansion to be applied at query time.
@@ -150,21 +155,22 @@ pub const EXPANSION_MIN_SUPPORT: i64 = 2;
 /// Maximum expansions OR-ed in per query term (highest support first).
 pub const MAX_EXPANSIONS_PER_TERM: usize = 2;
 
-/// Build the tier-4 MATCH expression: every sanitized term OR-ed with
-/// its mined expansions (support >= [`EXPANSION_MIN_SUPPORT`], at most
+/// Build the tier-4 MATCH expression: every query token OR-ed with its
+/// mined expansions (support >= [`EXPANSION_MIN_SUPPORT`], at most
 /// [`MAX_EXPANSIONS_PER_TERM`] each, highest support first, ties broken
-/// alphabetically). Returns an empty string when no term has an
+/// alphabetically). Returns an empty string when no token has an
 /// applicable expansion — the tier has nothing the earlier tiers did
 /// not already try, so the caller short-circuits to empty.
 ///
-/// The lookup key is the lowercased sanitized term: mining stores
-/// *tokenized* terms (lowercase, diacritic-folded), while
-/// [`sanitize_terms`] output is raw-cased. A raw multiword or diacritic
-/// term may still miss its mapping; acceptable v1 — terms that split
-/// (`VecDimMismatch`) already went through the subtoken tier before
-/// this tier fires.
+/// Both the lookup keys and the base OR-tokens come from
+/// [`crate::store::tokenizer::split::query_token_list`] — the exact
+/// tokenization mining uses when it writes `query_expansions` keys
+/// (identifier-split, lowercased, diacritic-folded). A mapping mined
+/// from the failed query `Café sizing` is stored under `cafe`, and the
+/// same fold here makes the lookup hit; the folded base tokens likewise
+/// match the FTS index tokens. The token list is clamped to
+/// [`MAX_QUERY_TERMS`] like every other builder.
 pub fn build_expanded_or_query(conn: &Connection, query: &str) -> Result<String> {
-    let terms = sanitize_terms(query);
     let mut tokens: Vec<String> = Vec::new();
     let mut any_expansion = false;
     let mut stmt = conn.prepare_cached(
@@ -173,8 +179,10 @@ pub fn build_expanded_or_query(conn: &Connection, query: &str) -> Result<String>
           ORDER BY support DESC, expansion
           LIMIT ?3",
     )?;
-    for term in &terms {
-        let key = term.to_lowercase();
+    for key in crate::store::tokenizer::split::query_token_list(query)
+        .into_iter()
+        .take(MAX_QUERY_TERMS)
+    {
         if !tokens.contains(&key) {
             tokens.push(key.clone());
         }
@@ -194,11 +202,7 @@ pub fn build_expanded_or_query(conn: &Connection, query: &str) -> Result<String>
     if !any_expansion {
         return Ok(String::new());
     }
-    Ok(tokens
-        .iter()
-        .map(|t| format!("\"{t}\""))
-        .collect::<Vec<_>>()
-        .join(" OR "))
+    Ok(quote_or_join(&tokens))
 }
 
 /// Tier-4 search: learned-expansion OR query via

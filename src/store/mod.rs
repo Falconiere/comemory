@@ -25,3 +25,8 @@ pub mod migrate;
 pub mod schema;
 pub mod tokenizer;
 pub mod vector;
+
+/// `?,?,...,?` — `n` comma-joined SQL placeholders for one `IN (...)` clause.
+pub(crate) fn qmarks(n: usize) -> String {
+    vec!["?"; n].join(",")
+}
