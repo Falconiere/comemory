@@ -5,7 +5,8 @@
 //! accepts an empty bundle without panicking.
 
 use comemory::output::context;
-use comemory::retrieval::bundle::Bundle;
+use comemory::retrieval::bundle::{Bundle, CodeRow};
+use comemory::retrieval::code_prior::CodePriorParts;
 
 fn empty_bundle() -> Bundle<'static> {
     Bundle {
@@ -41,6 +42,49 @@ fn envelope_carries_query_id_and_flattens_bundle() {
         Some("smoke")
     );
     assert!(v.get("memories").is_some(), "bundle fields must flatten");
+}
+
+#[test]
+fn code_ref_rank_parts_serialize_when_present_and_skip_when_none() {
+    let bundle = Bundle {
+        query: "q",
+        memories: Vec::new(),
+        code_refs: vec![
+            CodeRow {
+                repo: "r".to_string(),
+                path: "a.rs".to_string(),
+                symbol: "a_run".to_string(),
+                snippet: "fn a_run() {}".to_string(),
+                rank_parts: Some(CodePriorParts {
+                    rank: 1.2,
+                    activation: 1.0,
+                    affinity: 1.0,
+                    feedback: 0.9,
+                    final_score: 1.08,
+                }),
+            },
+            CodeRow {
+                repo: "r".to_string(),
+                path: "b.rs".to_string(),
+                symbol: "b_ghost".to_string(),
+                snippet: String::new(),
+                rank_parts: None,
+            },
+        ],
+        relations: Vec::new(),
+    };
+    let v = serde_json::to_value(context::envelope(&bundle, None)).expect("serialize");
+    let refs = v["code_refs"].as_array().expect("code_refs array");
+    for key in ["rank", "activation", "affinity", "feedback", "final_score"] {
+        assert!(
+            refs[0]["rank_parts"][key].is_number(),
+            "rank_parts.{key} missing: {v}"
+        );
+    }
+    assert!(
+        refs[1].get("rank_parts").is_none(),
+        "rank_parts must be skipped when None: {v}"
+    );
 }
 
 #[test]

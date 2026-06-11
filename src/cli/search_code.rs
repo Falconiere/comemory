@@ -14,27 +14,25 @@
 //!
 //! The affinity prior needs the repo's checkout path, which the database
 //! does not know — `search-code` may run from anywhere. Decision: the
-//! process CWD is used as the working-tree candidate, so the affinity
-//! boost activates only when the command runs inside the relevant repo's
-//! checkout (documented in `--help`). [`code_rerank::working_set`] is
-//! best-effort by contract — a non-repo CWD degrades to the empty set and
-//! a neutral prior. The working-set file ids need a repo *label* too:
-//! the `--repo` filter when given, else the basename of the discovered
-//! working tree (matching the common `index-code --repo <dirname>`
-//! convention); when neither resolves, affinity stays neutral.
+//! process CWD is used as the working-tree candidate (via the shared
+//! [`crate::cli::cwd_working_set`] helper, which also covers `context`),
+//! so the affinity boost activates only when the command runs inside the
+//! relevant repo's checkout (documented in `--help`).
+//! [`code_rerank::working_set`] is best-effort by contract — a non-repo
+//! CWD degrades to the empty set and a neutral prior.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 use rusqlite::Connection;
 use time::OffsetDateTime;
 
 use crate::ast::languages::{self, Lang};
-use crate::cli::{embedding_input, load_config, override_top_k, resolve_data_dir};
+use crate::cli::{cwd_working_set, embedding_input, load_config, override_top_k, resolve_data_dir};
 use crate::config::paths::Paths;
 use crate::output;
 use crate::prelude::*;
-use crate::retrieval::code_rerank::{self, CodeReranked, WorkingSet};
+use crate::retrieval::code_rerank::{self, CodeReranked};
 use crate::retrieval::code_route;
 use crate::store::{connection, memory_row};
 
@@ -140,34 +138,6 @@ fn canonical_lang(raw: Option<&str>) -> Result<Option<&'static str>> {
             ))
         }),
     }
-}
-
-/// Build the working set from the process CWD (see the module doc for why
-/// the CWD is the only checkout candidate available). The repo label is
-/// the `--repo` filter when given, else the discovered working tree's
-/// directory basename; with no resolvable label the affinity prior stays
-/// neutral via the empty default set.
-fn cwd_working_set(repo_filter: Option<&str>) -> WorkingSet {
-    let Ok(cwd) = std::env::current_dir() else {
-        return WorkingSet::default();
-    };
-    let label = match repo_filter {
-        Some(r) => r.to_string(),
-        None => match worktree_basename(&cwd) {
-            Some(l) => l,
-            None => return WorkingSet::default(),
-        },
-    };
-    code_rerank::working_set(&cwd, &label)
-}
-
-/// Basename of the git working tree containing `cwd`, if any — the
-/// default repo label for [`cwd_working_set`]. Bare repos (no workdir)
-/// and non-repo paths return `None`.
-fn worktree_basename(cwd: &Path) -> Option<String> {
-    let repo = git2::Repository::discover(cwd).ok()?;
-    let name = repo.workdir()?.file_name()?.to_str()?.to_string();
-    Some(name)
 }
 
 /// `true` when at least one `code_symbols` row exists — distinguishes

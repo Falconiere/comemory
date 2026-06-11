@@ -1,9 +1,10 @@
-//! Code rerank: max-normalized relevance × four bounded priors
-//! (PageRank, ACT-R activation, working-set affinity, Beta feedback),
-//! then chunk→parent coalescing. Mirrors [`crate::retrieval::rerank`]
-//! (the memory side): the same zip-before-filter normalization, the
-//! same one-cached-statement-per-hit signals fetch, and the same
-//! deterministic `final_score`-desc / id-asc ordering.
+//! Code rerank: max-normalized relevance × the four bounded priors from
+//! [`crate::retrieval::code_prior`] (PageRank, ACT-R activation,
+//! working-set affinity, Beta feedback), then chunk→parent coalescing.
+//! Mirrors [`crate::retrieval::rerank`] (the memory side): the same
+//! zip-before-filter normalization, the same one-cached-statement-per-hit
+//! signals fetch, and the same deterministic `final_score`-desc / id-asc
+//! ordering.
 //!
 //! Consumes the [`CodeRoutedHit`] list produced by
 //! [`crate::retrieval::code_route`] and emits [`CodeReranked`] entries
@@ -18,19 +19,10 @@ use time::OffsetDateTime;
 
 use crate::config::Config;
 use crate::prelude::*;
+use crate::retrieval::code_prior::{self, Signals};
 use crate::retrieval::code_route::CodeRoutedHit;
 use crate::retrieval::router::Source;
 use crate::retrieval::score;
-
-/// Scale for the PageRank boost: `1 + RANK_SCALE·ln(1 + raw/median)`.
-/// A file at the pool median maps to `1 + 0.2·ln 2 ≈ 1.14`; the clamp
-/// from `cfg.rank.prior_clamp` bounds the extremes.
-pub const RANK_SCALE: f64 = 0.2;
-
-/// Scale for the working-set co-change affinity boost:
-/// `1 + AFFINITY_SCALE·ln(1 + w_sum)`. Zero co-change weight maps to
-/// exactly 1.0 (neutral).
-pub const AFFINITY_SCALE: f64 = 0.2;
 
 /// Number of most-recent first-parent commits whose changed files are
 /// folded into the working set alongside the dirty/staged paths. Five
@@ -42,7 +34,8 @@ pub const WORKING_SET_COMMITS: usize = 5;
 /// verbatim into `--json` output — a stable contract, not debug info.
 /// The invariant is `final_score == f64::from(relevance) * rank *
 /// activation * affinity * feedback` (up to f32 rounding of the
-/// normalized relevance).
+/// normalized relevance). The four prior factors are computed by
+/// [`code_prior::priors`].
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct CodeScoreParts {
     /// Max-normalized relevance in `[0, 1]` (pool max → 1.0,
@@ -165,8 +158,8 @@ fn collect_working_paths(repo_root: &Path) -> Result<BTreeSet<String>> {
 }
 
 /// Rerank code candidates by multiplying the max-normalized relevance
-/// with four bounded priors, then coalescing cAST chunk rows onto their
-/// parent. Sorted by descending `final_score`, ties on ascending
+/// with the four bounded priors, then coalescing cAST chunk rows onto
+/// their parent. Sorted by descending `final_score`, ties on ascending
 /// `symbol_id` so the order is fully deterministic. Hits whose
 /// `code_symbols` row vanished (raced re-index delete) are silently
 /// dropped.
@@ -177,7 +170,6 @@ pub fn rerank_code(
     working_set: &WorkingSet,
 ) -> Result<Vec<CodeReranked>> {
     let now = OffsetDateTime::now_utc();
-    let clamp = cfg.rank.prior_clamp;
     // Normalize the whole candidate pool up front, then zip — pairing
     // is established before any hit is dropped below, so a vanished
     // symbol row cannot skew which norm belongs to which hit.
@@ -185,30 +177,29 @@ pub fn rerank_code(
         score::max_normalize(&hits.iter().map(|h| f64::from(h.score)).collect::<Vec<_>>());
     let mut pool: Vec<(&CodeRoutedHit, f64, Signals)> = Vec::with_capacity(hits.len());
     for (hit, norm) in hits.iter().zip(&normalized) {
-        let Some(sig) = code_signals(conn, hit.symbol_id)? else {
+        let Some(sig) = code_prior::signals(conn, hit.symbol_id)? else {
             continue;
         };
         pool.push((hit, *norm, sig));
     }
 
-    let median = median_file_rank(&pool);
+    let median = code_prior::median_file_rank(
+        pool.iter()
+            .map(|(_, _, s)| ((s.repo.as_str(), s.path.as_str()), s.rank_score)),
+    );
     let mut affinity_cache: BTreeMap<String, f64> = BTreeMap::new();
     let mut scored = Vec::with_capacity(pool.len());
     for (hit, norm, sig) in pool {
-        let rank = rank_boost(sig.rank_score, median, clamp);
-        let days = score::days_since(&sig.last_accessed, now);
-        let act = score::activation(sig.access_count, days, cfg.rank.decay);
-        let activation = score::activation_boost(act, clamp);
-        let affinity = file_affinity(
+        let pri = code_prior::priors(
             conn,
+            cfg,
+            now,
+            &sig,
             working_set,
-            &sig.repo,
-            &sig.path,
-            clamp,
+            median,
             &mut affinity_cache,
         )?;
-        let feedback = score::feedback_boost(score::beta_feedback(sig.used, sig.irrelevant), clamp);
-        let final_score = norm * rank * activation * affinity * feedback;
+        let final_score = norm * pri.final_score;
         scored.push(Scored {
             parent_id: sig.parent_id,
             row: CodeReranked {
@@ -223,10 +214,10 @@ pub fn rerank_code(
                 source: hit.source,
                 parts: CodeScoreParts {
                     relevance: norm as f32,
-                    rank,
-                    activation,
-                    affinity,
-                    feedback,
+                    rank: pri.rank,
+                    activation: pri.activation,
+                    affinity: pri.affinity,
+                    feedback: pri.feedback,
                     final_score,
                 },
             },
@@ -251,145 +242,6 @@ pub fn rerank_code(
 struct Scored {
     row: CodeReranked,
     parent_id: Option<i64>,
-}
-
-/// Per-symbol ranking signals pulled in one query: identity columns,
-/// rank/access counters, and the (optional) feedback counters with
-/// `COALESCE` neutralizing absent rows.
-struct Signals {
-    repo: String,
-    path: String,
-    symbol: String,
-    kind: String,
-    lang: String,
-    line_start: i64,
-    line_end: i64,
-    rank_score: f64,
-    access_count: u64,
-    last_accessed: String,
-    parent_id: Option<i64>,
-    used: u64,
-    irrelevant: u64,
-}
-
-/// Fetch the ranking signals for one code symbol. Returns `Ok(None)`
-/// when the row vanished (raced re-index delete). `prepare_cached` so
-/// the per-hit loop in [`rerank_code`] reuses one prepared statement.
-fn code_signals(conn: &Connection, symbol_id: i64) -> Result<Option<Signals>> {
-    let mut stmt = conn.prepare_cached(
-        "SELECT c.repo, c.path, c.symbol, c.kind, c.lang, c.line_start, c.line_end,
-                c.rank_score, c.access_count, COALESCE(c.last_accessed, c.indexed_at),
-                c.parent_id, COALESCE(f.used_count, 0), COALESCE(f.irrelevant_count, 0)
-           FROM code_symbols c
-           LEFT JOIN code_feedback f ON f.symbol_id = c.id
-          WHERE c.id = ?1",
-    )?;
-    stmt.query_row([symbol_id], |r| {
-        Ok(Signals {
-            repo: r.get(0)?,
-            path: r.get(1)?,
-            symbol: r.get(2)?,
-            kind: r.get(3)?,
-            lang: r.get(4)?,
-            line_start: r.get(5)?,
-            line_end: r.get(6)?,
-            rank_score: r.get(7)?,
-            access_count: r.get::<_, i64>(8)?.max(0) as u64,
-            last_accessed: r.get(9)?,
-            parent_id: r.get(10)?,
-            used: r.get::<_, i64>(11)?.max(0) as u64,
-            irrelevant: r.get::<_, i64>(12)?.max(0) as u64,
-        })
-    })
-    .optional()
-    .map_err(Error::from)
-}
-
-/// Median of the candidate pool's DISTINCT per-file `rank_score`s
-/// (chunk rows share their file's projected score, so dedup is by
-/// `(repo, path)`). Absolute PageRank scales with `1/file-count`, so a
-/// fixed reference would make the boost depend on repo size;
-/// median-relative mapping is repo-size invariant. Even-sized pools
-/// take the mean of the middle two; an empty pool returns 0.0, which
-/// [`rank_boost`] treats as "unranked repo → neutral".
-fn median_file_rank(pool: &[(&CodeRoutedHit, f64, Signals)]) -> f64 {
-    let by_file: BTreeMap<(&str, &str), f64> = pool
-        .iter()
-        .map(|(_, _, s)| ((s.repo.as_str(), s.path.as_str()), s.rank_score))
-        .collect();
-    let mut ranks: Vec<f64> = by_file.into_values().collect();
-    if ranks.is_empty() {
-        return 0.0;
-    }
-    ranks.sort_by(f64::total_cmp);
-    let n = ranks.len();
-    if n % 2 == 1 {
-        ranks[n / 2]
-    } else {
-        (ranks[n / 2 - 1] + ranks[n / 2]) / 2.0
-    }
-}
-
-/// PageRank prior: `bounded(1 + RANK_SCALE·ln(1 + raw/median), clamp)`,
-/// pool-median-relative (see [`median_file_rank`] for why). A
-/// non-positive median (unranked repo, every `rank_score` at the 0.0
-/// column default) keeps every rank prior at the neutral 1.0.
-fn rank_boost(raw: f64, median: f64, clamp: (f64, f64)) -> f64 {
-    if median <= 0.0 {
-        return 1.0;
-    }
-    score::bounded_boost(1.0 + RANK_SCALE * (1.0 + raw.max(0.0) / median).ln(), clamp)
-}
-
-/// Working-set affinity prior for one candidate file:
-/// `bounded(1 + AFFINITY_SCALE·ln(1 + w_sum), clamp)` where `w_sum` is
-/// the total `co_changed` edge weight between the candidate's file and
-/// the working-set files. Cached per distinct candidate file in
-/// `cache` so a pool with many symbols from one file runs one edge
-/// query. An empty working set short-circuits to neutral 1.0 with no
-/// query at all.
-fn file_affinity(
-    conn: &Connection,
-    ws: &WorkingSet,
-    repo: &str,
-    path: &str,
-    clamp: (f64, f64),
-    cache: &mut BTreeMap<String, f64>,
-) -> Result<f64> {
-    if ws.files.is_empty() {
-        return Ok(1.0);
-    }
-    let fid = format!("file:{repo}:{path}");
-    if let Some(boost) = cache.get(&fid) {
-        return Ok(*boost);
-    }
-    let w_sum = co_change_weight(conn, &fid, &ws.files)?;
-    let boost = score::bounded_boost(1.0 + AFFINITY_SCALE * (1.0 + w_sum).ln(), clamp);
-    cache.insert(fid, boost);
-    Ok(boost)
-}
-
-/// Total `co_changed` weight between `fid` and the working-set file
-/// ids, in either direction (the miner stores one canonical row per
-/// undirected pair). Numbered placeholders are reused across both `IN`
-/// lists so the parameter vector binds once; `prepare_cached` caches
-/// one statement per working-set arity.
-fn co_change_weight(conn: &Connection, fid: &str, ws_files: &[String]) -> Result<f64> {
-    let marks = (0..ws_files.len())
-        .map(|i| format!("?{}", i + 2))
-        .collect::<Vec<_>>()
-        .join(",");
-    let sql = format!(
-        "SELECT COALESCE(SUM(weight), 0) FROM edges \
-          WHERE rel = 'co_changed' AND src_kind = 'file' AND dst_kind = 'file' \
-            AND ((src_id = ?1 AND dst_id IN ({marks})) \
-              OR (dst_id = ?1 AND src_id IN ({marks})))"
-    );
-    let mut stmt = conn.prepare_cached(&sql)?;
-    let params =
-        rusqlite::params_from_iter(std::iter::once(fid).chain(ws_files.iter().map(String::as_str)));
-    let w: i64 = stmt.query_row(params, |r| r.get(0))?;
-    Ok(w.max(0) as f64)
 }
 
 /// Coalesce chunk rows onto their parent: group by
