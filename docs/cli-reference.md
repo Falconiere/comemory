@@ -497,6 +497,12 @@ Examples:
 
   # ANN-assisted context with a caller-supplied vector
   comemory context "advisory lock" --vector 0.1,0.2,...
+
+Code refs in the bundle are ranked by graph priors (PageRank, recency,
+working-set affinity, feedback); each resolved ref carries a rank_parts
+breakdown in --json mode. The working-set affinity boost applies only
+when context runs inside the referenced repo's working tree (the CWD is
+used to detect dirty/recent files).
 ```
 
 ---

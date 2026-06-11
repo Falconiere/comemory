@@ -10,14 +10,17 @@
 //! is the second pipeline stage: it multiplies the fused relevance by
 //! bounded deterministic priors (activation, feedback, quality,
 //! supersede) built from the [`score`] primitives; [`code_rerank`] is
-//! its code-side sibling (PageRank, activation, working-set affinity,
-//! feedback priors + chunk→parent coalescing). [`diversify`] is the
+//! its code-side sibling (the four [`code_prior`] boosts — PageRank,
+//! activation, working-set affinity, feedback — + chunk→parent
+//! coalescing; [`bundle`] reuses the same priors, relevance-free, to
+//! rank context code refs). [`diversify`] is the
 //! third stage: SimHash near-duplicate collapse followed by Jaccard-MMR
 //! greedy selection up to top-k. [`pipeline`] chains all three stages
 //! (route → rerank → diversify → top-k) and bumps access tracking; it is
 //! the single retrieval entry point used by the CLI.
 
 pub mod bundle;
+pub mod code_prior;
 pub mod code_rerank;
 pub mod code_route;
 pub mod diversify;

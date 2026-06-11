@@ -3,7 +3,11 @@
 //! also carries the optional `query_id` of the retrieval_log row; TTY mode
 //! prints a human-readable summary of the matched memories and any code
 //! references reached via the graph, plus the same query-id footer as
-//! `comemory search` so a context lookup can receive feedback.
+//! `comemory search` so a context lookup can receive feedback. Code refs
+//! arrive prior-ranked from the bundle and are rendered in that order;
+//! in JSON, each resolved ref carries its `rank_parts` breakdown
+//! ([`crate::retrieval::code_prior::CodePriorParts`], omitted when the
+//! ref never resolved to an indexed symbol row).
 
 use std::io::Write as _;
 

@@ -5,13 +5,17 @@
 //! relevant memory ids, then assembles a [`crate::retrieval::bundle`] that
 //! pulls each memory's body and any cross-link edges
 //! (`references_file`, `references_symbol`, `relates_to`, `supersedes`)
-//! up to depth 2.
+//! up to depth 2. Code refs inside the bundle are ranked by the
+//! [`crate::retrieval::code_prior`] product, with the working set built
+//! from the process CWD via the shared [`crate::cli::cwd_working_set`]
+//! helper (same caveat as `search-code`: the affinity boost only
+//! activates inside the referenced repo's checkout).
 
 use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::cli::{embedding_input, load_config, override_top_k, resolve_data_dir};
+use crate::cli::{cwd_working_set, embedding_input, load_config, override_top_k, resolve_data_dir};
 use crate::config::paths::Paths;
 use crate::output;
 use crate::prelude::*;
@@ -27,7 +31,13 @@ Examples:
   comemory context \"advisory lock\" --k 3
 
   # ANN-assisted context with a caller-supplied vector
-  comemory context \"advisory lock\" --vector 0.1,0.2,...";
+  comemory context \"advisory lock\" --vector 0.1,0.2,...
+
+Code refs in the bundle are ranked by graph priors (PageRank, recency,
+working-set affinity, feedback); each resolved ref carries a rank_parts
+breakdown in --json mode. The working-set affinity boost applies only
+when context runs inside the referenced repo's working tree (the CWD is
+used to detect dirty/recent files).";
 
 /// Arguments to `comemory context`.
 #[derive(ClapArgs, Debug)]
@@ -83,6 +93,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         },
     )?;
     let ids: Vec<String> = run.hits.into_iter().map(|h| h.memory_id).collect();
-    let bundle = bundle::assemble(&conn, &a.query, &ids)?;
+    let ws = cwd_working_set(a.repo.as_deref());
+    let bundle = bundle::assemble(&conn, &cfg, &a.query, &ids, &ws)?;
     output::context::emit(&bundle, run.query_id.as_deref(), json_flag)
 }

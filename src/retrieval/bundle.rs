@@ -5,11 +5,20 @@
 //! matched memories, the code symbols they reference via any of the four
 //! context rels (`references_file`, `references_symbol`, `relates_to`,
 //! `supersedes`) walked to depth ≤ 2, and a flat list of relation triples.
+//!
+//! Code refs are ranked by the four-prior product from
+//! [`crate::retrieval::code_prior`] (PageRank, activation, working-set
+//! affinity, feedback). There is no relevance term: refs are
+//! address-resolved by the graph walk — every one is "fully relevant" to
+//! the memory that cites it — so only the priors can order them.
 
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 use serde::Serialize;
 
+use crate::config::Config;
 use crate::prelude::*;
+use crate::retrieval::code_prior::{self, CodePriorParts};
+use crate::retrieval::code_rerank::WorkingSet;
 
 /// One row returned by [`walk_context_edges`]: a directed edge from the graph.
 struct ContextEdge {
@@ -27,7 +36,10 @@ pub struct Bundle<'a> {
     pub query: &'a str,
     /// Memory rows surfaced by the router.
     pub memories: Vec<MemoryBundleRow>,
-    /// Code-symbol rows reached by walking `references_symbol` edges.
+    /// Code-symbol rows reached by walking `references_symbol` edges,
+    /// prior-ranked (see the module doc): resolved refs first by
+    /// descending `rank_parts.final_score`, then unresolved refs, each
+    /// group tie-broken by `(path, symbol)`.
     pub code_refs: Vec<CodeRow>,
     /// Flat list of relation triples for downstream UIs.
     pub relations: Vec<RelationRow>,
@@ -55,8 +67,15 @@ pub struct CodeRow {
     pub path: String,
     /// Qualified symbol name.
     pub symbol: String,
-    /// Source snippet for the symbol.
+    /// Source snippet for the symbol; empty when the ref did not resolve
+    /// to an indexed `code_symbols` row.
     pub snippet: String,
+    /// Four-prior breakdown behind this ref's position. `None` (and
+    /// omitted from JSON) when the ref did not resolve to a
+    /// `code_symbols` row — a memory may cite symbols before
+    /// `comemory index-code` has indexed them.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rank_parts: Option<CodePriorParts>,
 }
 
 /// One relation triple inside a [`Bundle`].
@@ -70,18 +89,33 @@ pub struct RelationRow {
     pub to: String,
 }
 
+/// A code ref pulled during the edge walk, before prior ranking:
+/// the parsed `<repo>:<path>:<symbol>` address plus the `code_symbols`
+/// rowid and snippet when the address resolved.
+struct RawRef {
+    repo: String,
+    path: String,
+    symbol: String,
+    snippet: String,
+    symbol_id: Option<i64>,
+}
+
 /// Assemble a [`Bundle`] for `query`, expanding each memory id by walking
 /// `references_file`, `references_symbol`, `relates_to`, and `supersedes`
 /// edges up to depth 2 via a recursive CTE. Code snippets are pulled for
-/// every `references_symbol` destination that resolves in `code_symbols`.
+/// every `references_symbol` destination that resolves in `code_symbols`,
+/// and the resulting refs are prior-ranked against `working_set` (see
+/// [`rank_code_refs`]).
 pub fn assemble<'a>(
     conn: &Connection,
+    cfg: &Config,
     query: &'a str,
     memory_ids: &[String],
+    working_set: &WorkingSet,
 ) -> Result<Bundle<'a>> {
     let mut memories = Vec::new();
     let mut relations = Vec::new();
-    let mut code_refs = Vec::new();
+    let mut raw_refs = Vec::new();
 
     for id in memory_ids {
         // Tolerate a missing/soft-deleted memory row here: the router emits
@@ -115,23 +149,62 @@ pub fn assemble<'a>(
                 to: format!("{}:{}", e.dst_kind, e.dst_id),
             });
             if e.rel == "references_symbol" {
-                if let Some((repo, path, symbol, snippet)) = code_ref_lookup(conn, &e.dst_id)? {
-                    code_refs.push(CodeRow {
-                        repo,
-                        path,
-                        symbol,
-                        snippet,
-                    });
+                if let Some(raw) = code_ref_lookup(conn, &e.dst_id)? {
+                    raw_refs.push(raw);
                 }
             }
         }
     }
+    let code_refs = rank_code_refs(conn, cfg, raw_refs, working_set)?;
     Ok(Bundle {
         query,
         memories,
         code_refs,
         relations,
     })
+}
+
+/// Score every resolved ref with the four-prior product (no relevance
+/// term — see the module doc) and sort: resolved refs by descending
+/// `final_score`, ties on `(path, symbol)`; unresolved refs after them,
+/// also `(path, symbol)`-ordered. The median for the rank prior is taken
+/// over THIS ref set's files, exactly the way `rerank_code` takes it over
+/// its candidate pool.
+fn rank_code_refs(
+    conn: &Connection,
+    cfg: &Config,
+    raw_refs: Vec<RawRef>,
+    working_set: &WorkingSet,
+) -> Result<Vec<CodeRow>> {
+    let ids: Vec<i64> = raw_refs.iter().filter_map(|r| r.symbol_id).collect();
+    let median = code_prior::pool_median_rank(conn, &ids)?;
+    let mut out = Vec::with_capacity(raw_refs.len());
+    for r in raw_refs {
+        // A row that vanished between lookup and scoring (raced re-index
+        // delete) degrades to `None` and sorts with the unresolved refs.
+        let rank_parts = match r.symbol_id {
+            Some(id) => code_prior::prior_product(conn, cfg, id, working_set, median)?,
+            None => None,
+        };
+        out.push(CodeRow {
+            repo: r.repo,
+            path: r.path,
+            symbol: r.symbol,
+            snippet: r.snippet,
+            rank_parts,
+        });
+    }
+    out.sort_by(|a, b| match (&a.rank_parts, &b.rank_parts) {
+        (Some(x), Some(y)) => y
+            .final_score
+            .total_cmp(&x.final_score)
+            .then_with(|| a.path.cmp(&b.path))
+            .then_with(|| a.symbol.cmp(&b.symbol)),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => a.path.cmp(&b.path).then_with(|| a.symbol.cmp(&b.symbol)),
+    });
+    Ok(out)
 }
 
 /// Walk `references_file`, `references_symbol`, `relates_to`, and `supersedes`
@@ -173,13 +246,12 @@ fn walk_context_edges(
     Ok(rows)
 }
 
-/// Look up the `code_symbols` row addressed by a `<repo>:<path>:<symbol>`
-/// edge destination. Returns `Ok(None)` when the address shape is wrong
-/// or no row matches so the caller can skip silently.
-fn code_ref_lookup(
-    conn: &Connection,
-    dst_id: &str,
-) -> Result<Option<(String, String, String, String)>> {
+/// Parse a `<repo>:<path>:<symbol>` edge destination and look up its
+/// `code_symbols` row. Returns `Ok(None)` only when the address shape is
+/// wrong (logged, skipped); a well-formed address with no matching row
+/// still yields a [`RawRef`] — with no `symbol_id` and an empty snippet —
+/// so refs to not-yet-indexed symbols stay visible in the bundle.
+fn code_ref_lookup(conn: &Connection, dst_id: &str) -> Result<Option<RawRef>> {
     let parts: Vec<&str> = dst_id.splitn(3, ':').collect();
     if parts.len() != 3 {
         tracing::warn!(
@@ -191,11 +263,21 @@ fn code_ref_lookup(
     let (repo, path, symbol) = (parts[0], parts[1], parts[2]);
     let row = conn
         .query_row(
-            "SELECT snippet FROM code_symbols \
+            "SELECT id, snippet FROM code_symbols \
               WHERE repo = ?1 AND path = ?2 AND symbol = ?3 LIMIT 1",
             rusqlite::params![repo, path, symbol],
-            |r| r.get::<_, String>(0),
+            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)),
         )
-        .ok();
-    Ok(row.map(|s| (repo.into(), path.into(), symbol.into(), s)))
+        .optional()?;
+    let (symbol_id, snippet) = match row {
+        Some((id, snippet)) => (Some(id), snippet),
+        None => (None, String::new()),
+    };
+    Ok(Some(RawRef {
+        repo: repo.into(),
+        path: path.into(),
+        symbol: symbol.into(),
+        snippet,
+        symbol_id,
+    }))
 }

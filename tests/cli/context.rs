@@ -10,7 +10,7 @@ use comemory::store::connection;
 use serde_json::Value;
 use tempfile::TempDir;
 
-use super::vectors;
+use super::{git_setup, vectors};
 
 fn bin(home: &TempDir) -> Command {
     let mut c = Command::cargo_bin("comemory").expect("cargo_bin comemory");
@@ -186,6 +186,93 @@ fn context_tty_prints_query_footer() {
         stdout.contains("feedback:"),
         "TTY context with hits must print the feedback hint: {stdout:?}"
     );
+}
+
+/// Task 14: code refs in the context bundle are ranked by the four graph
+/// priors. End-to-end: index a real fixture repo, save a memory whose body
+/// cross-links both symbols, boost the alphabetically-later symbol's
+/// rank_score + access_count, and assert it sorts first in both JSON
+/// (with serialized `rank_parts`) and TTY output.
+#[test]
+fn context_code_refs_ranked_by_priors_with_rank_parts() {
+    let home = TempDir::new().expect("tempdir");
+    let workspace = TempDir::new().expect("workspace");
+    let repo = workspace.path().join("code-repo");
+    git_setup::init_repo(&repo);
+    git_setup::commit_files(
+        &repo,
+        &[(
+            "alpha.rs",
+            "fn alpha_router() {}\nfn unrelated_helper() {}\n",
+        )],
+        "init",
+    );
+    bin(&home)
+        .args(["index-code", "--repo", "r", "--path"])
+        .arg(&repo)
+        .assert()
+        .success();
+
+    save_memory(
+        &home,
+        "router decision compares r:alpha.rs:alpha_router and \
+         r:alpha.rs:unrelated_helper for dispatch",
+        "decision",
+    );
+
+    // `alpha_router` wins the (path, symbol) tie-break, so only the priors
+    // on `unrelated_helper` can put it on top.
+    {
+        let conn =
+            connection::open(home.path().join(".comemory").join("comemory.db")).expect("open");
+        conn.execute(
+            "UPDATE code_symbols SET rank_score = 0.9, access_count = 30 \
+             WHERE symbol = 'unrelated_helper'",
+            [],
+        )
+        .expect("boost unrelated_helper");
+        conn.execute(
+            "UPDATE code_symbols SET rank_score = 0.1 WHERE symbol = 'alpha_router'",
+            [],
+        )
+        .expect("set alpha_router rank");
+    }
+
+    let v = context_json(&home, "router decision dispatch", &[]);
+    let refs = v["code_refs"].as_array().expect("code_refs array");
+    assert_eq!(refs.len(), 2, "both referenced symbols expected: {v}");
+    assert_eq!(
+        refs[0]["symbol"].as_str(),
+        Some("unrelated_helper"),
+        "prior-boosted symbol must sort first: {v}"
+    );
+    for key in ["rank", "activation", "affinity", "feedback", "final_score"] {
+        assert!(
+            refs[0]["rank_parts"][key].is_number(),
+            "rank_parts.{key} missing: {v}"
+        );
+    }
+    let first = refs[0]["rank_parts"]["final_score"]
+        .as_f64()
+        .expect("final_score");
+    let second = refs[1]["rank_parts"]["final_score"]
+        .as_f64()
+        .expect("final_score");
+    assert!(first > second, "ranked order must be final_score desc: {v}");
+
+    // TTY order must match the ranked order.
+    let out = bin(&home)
+        .args(["context", "router decision dispatch"])
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    let hot = stdout
+        .find("r:alpha.rs:unrelated_helper")
+        .unwrap_or_else(|| panic!("boosted ref missing from TTY output: {stdout}"));
+    let cold = stdout
+        .find("r:alpha.rs:alpha_router")
+        .unwrap_or_else(|| panic!("other ref missing from TTY output: {stdout}"));
+    assert!(hot < cold, "TTY order must match ranked order: {stdout}");
 }
 
 /// Supersedes chain: bundle relations must include the supersedes edge.
