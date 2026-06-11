@@ -44,7 +44,7 @@ pub const FEEDBACK_NEUTRAL: f64 = 0.25;
 ///
 /// `clamp` must satisfy `lo <= hi` (validated by `RankConfig`).
 pub fn activation_boost(activation: f64, clamp: (f64, f64)) -> f64 {
-    bounded((0.2 * activation).exp(), clamp)
+    bounded_boost((0.2 * activation).exp(), clamp)
 }
 
 /// Map Beta feedback to a bounded multiplier; the [`FEEDBACK_NEUTRAL`]
@@ -52,7 +52,7 @@ pub fn activation_boost(activation: f64, clamp: (f64, f64)) -> f64 {
 ///
 /// `clamp` must satisfy `lo <= hi` (validated by `RankConfig`).
 pub fn feedback_boost(beta: f64, clamp: (f64, f64)) -> f64 {
-    bounded(beta / FEEDBACK_NEUTRAL, clamp)
+    bounded_boost(beta / FEEDBACK_NEUTRAL, clamp)
 }
 
 /// Map quality 1..=5 to a bounded multiplier; quality 3 → 1.0.
@@ -62,7 +62,7 @@ pub fn feedback_boost(beta: f64, clamp: (f64, f64)) -> f64 {
 ///
 /// `clamp` must satisfy `lo <= hi` (validated by `RankConfig`).
 pub fn quality_boost(quality: u8, clamp: (f64, f64)) -> f64 {
-    bounded(1.0 + 0.075 * (f64::from(quality) - 3.0), clamp)
+    bounded_boost(1.0 + 0.075 * (f64::from(quality) - 3.0), clamp)
 }
 
 /// Fixed multiplier applied to results superseded by a live memory.
@@ -145,7 +145,15 @@ pub fn max_normalize(scores: &[f64]) -> Vec<f64> {
     scores.iter().map(|s| (s / max).clamp(0.0, 1.0)).collect()
 }
 
-fn bounded(v: f64, (lo, hi): (f64, f64)) -> f64 {
+/// Clamp a raw prior multiplier into the configured `(lo, hi)` bounds;
+/// non-finite input maps to the neutral 1.0 (itself clamped, so a clamp
+/// range that excludes 1.0 still holds). The single clamp definition
+/// shared by every boost mapping above and by
+/// `retrieval::code_rerank`'s pool-relative PageRank and working-set
+/// affinity boosts.
+///
+/// `clamp` must satisfy `lo <= hi` (validated by `RankConfig`).
+pub fn bounded_boost(v: f64, (lo, hi): (f64, f64)) -> f64 {
     if !v.is_finite() {
         return 1.0f64.max(lo).min(hi);
     }
