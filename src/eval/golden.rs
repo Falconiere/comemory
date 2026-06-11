@@ -1,5 +1,6 @@
 //! Golden-set model: hand-written YAML pairs + pairs harvested from
-//! feedback provenance, merged (file wins on duplicate query text).
+//! feedback provenance, merged (file wins on duplicate
+//! (query, repo, kind) key).
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -18,6 +19,22 @@ pub struct GoldenPair {
     pub query: String,
     /// Memory ids considered relevant for the query.
     pub relevant: Vec<String>,
+    /// Repo filter the originating search used, replayed by eval.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
+    /// Kind filter the originating search used, replayed by eval.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+}
+
+/// Identity of a golden pair for harvest aggregation and merge:
+/// (query, repo, kind). The same query text searched under different
+/// filters is a different retrieval problem and stays a distinct pair.
+type PairKey = (String, Option<String>, Option<String>);
+
+/// Lift a pair's [`PairKey`] out by clone.
+fn pair_key(p: &GoldenPair) -> PairKey {
+    (p.query.clone(), p.repo.clone(), p.kind.clone())
 }
 
 /// Load golden pairs from a YAML file (`- query: ...` / `  relevant: [..]`).
@@ -28,45 +45,50 @@ pub fn load_file(path: &Path) -> Result<Vec<GoldenPair>> {
         .map_err(|e| Error::Config(format!("golden file {}: {e}", path.display())))
 }
 
-/// Harvest golden pairs from feedback provenance: every distinct query
-/// text in `retrieval_log` paired with the ids marked `used` for it.
-/// Ids whose memory row is gone or soft-deleted are dropped; queries
-/// left with zero live relevant ids are omitted. BTreeMap keeps the
-/// output deterministic.
+/// Harvest golden pairs from feedback provenance: every distinct
+/// (query, repo, kind) triple in `retrieval_log` paired with the ids
+/// marked `used` for it — the originating filters travel with the pair
+/// so eval can replay them faithfully. Ids whose memory row is gone or
+/// soft-deleted are dropped; keys left with zero live relevant ids are
+/// omitted. BTreeMap keeps the output deterministic.
 pub fn harvest(conn: &Connection) -> Result<Vec<GoldenPair>> {
     let mut stmt = conn.prepare(
-        "SELECT DISTINCT r.query, e.memory_id
+        "SELECT DISTINCT r.query, r.repo, r.kind, e.memory_id
            FROM feedback_events e
            JOIN retrieval_log r ON r.query_id = e.query_id
            JOIN memories m ON m.id = e.memory_id AND m.deleted_at IS NULL
           WHERE e.verdict = 'used'
-          ORDER BY r.query, e.memory_id",
+          ORDER BY r.query, r.repo, r.kind, e.memory_id",
     )?;
-    let rows: Vec<(String, String)> = stmt
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+    let rows: Vec<(PairKey, String)> = stmt
+        .query_map([], |r| Ok(((r.get(0)?, r.get(1)?, r.get(2)?), r.get(3)?)))?
         .collect::<std::result::Result<_, _>>()?;
-    let mut by_query: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for (query, id) in rows {
-        by_query.entry(query).or_default().push(id);
+    let mut by_key: BTreeMap<PairKey, Vec<String>> = BTreeMap::new();
+    for (key, id) in rows {
+        by_key.entry(key).or_default().push(id);
     }
-    Ok(by_query
+    Ok(by_key
         .into_iter()
-        .map(|(query, relevant)| GoldenPair { query, relevant })
+        .map(|((query, repo, kind), relevant)| GoldenPair {
+            query,
+            relevant,
+            repo,
+            kind,
+        })
         .collect())
 }
 
-/// Merge file pairs over harvested pairs: identical query text → the
-/// file pair wins (hand-curated truth beats inferred truth). Output is
-/// sorted by query text for deterministic eval order.
+/// Merge file pairs over harvested pairs: identical (query, repo, kind)
+/// key → the file pair wins (hand-curated truth beats inferred truth).
+/// A file pair under different filters is a different retrieval problem
+/// and coexists with the harvested one. Output is sorted by key for
+/// deterministic eval order.
 pub fn merge(file: Vec<GoldenPair>, harvested: Vec<GoldenPair>) -> Vec<GoldenPair> {
-    let mut by_query: BTreeMap<String, GoldenPair> = BTreeMap::new();
-    for p in harvested {
-        by_query.insert(p.query.clone(), p);
+    let mut by_key: BTreeMap<PairKey, GoldenPair> = BTreeMap::new();
+    for p in harvested.into_iter().chain(file) {
+        by_key.insert(pair_key(&p), p);
     }
-    for p in file {
-        by_query.insert(p.query.clone(), p);
-    }
-    by_query.into_values().collect()
+    by_key.into_values().collect()
 }
 
 /// Resolve the effective golden set for eval/tune: optional file pairs

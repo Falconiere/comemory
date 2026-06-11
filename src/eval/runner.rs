@@ -41,10 +41,9 @@ pub struct EvalReport {
 
 /// Run every golden query through the real pipeline (`track: false` —
 /// measurement must not feed the signals it measures) and aggregate
-/// recall@k + MRR. Lexical path only: BYO vectors cannot be replayed
-/// offline. Replays also ignore any `--repo`/`--kind` filters the original
-/// search used, so pairs born under filters are scored against the
-/// unfiltered candidate pool.
+/// recall@k + MRR. Each pair's originating `repo`/`kind` filters are
+/// replayed verbatim. Lexical path only: BYO vectors cannot be replayed
+/// offline.
 pub fn run_eval(
     cfg: &Config,
     conn: &Connection,
@@ -60,8 +59,8 @@ pub fn run_eval(
             conn,
             &pair.query,
             None,
-            None,
-            None,
+            pair.repo.as_deref(),
+            pair.kind.as_deref(),
             SearchOptions {
                 track: false,
                 source: "search",
