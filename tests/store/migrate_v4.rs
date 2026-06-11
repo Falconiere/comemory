@@ -155,7 +155,9 @@ fn open_migrates_v3_db_to_v4() {
             |r| r.get(0),
         )
         .expect("version row");
-    assert_eq!(v, "4");
+    // `connection::open` always migrates to the latest schema, so a
+    // v3 db lands on CURRENT_VERSION (v4 + every later migration).
+    assert_eq!(v, comemory::store::migrate::CURRENT_VERSION);
 }
 
 #[test]

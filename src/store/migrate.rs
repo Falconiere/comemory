@@ -13,7 +13,7 @@ use crate::prelude::*;
 
 /// Highest schema version known to this build. Bumped each time a new
 /// migration file is added under `src/store/sql/`.
-pub const CURRENT_VERSION: &str = "4";
+pub const CURRENT_VERSION: &str = "5";
 
 /// 0001 bootstrap SQL (`schema_meta` table). Public so tests can replay
 /// historical schema states exactly as an old binary created them.
@@ -27,6 +27,9 @@ pub const M_V3: &str = include_str!("./sql/0003_stats_tables.sql");
 /// 0004 SQL: access-tracking columns, `memories.simhash` placeholder,
 /// and the identifier-tokenized FTS rebuild.
 pub const M_V4: &str = include_str!("./sql/0004_v4_rank.sql");
+/// 0005 SQL: learning-loop tables (feedback_events, query_expansions),
+/// retrieval_log.duration_ms, and the search_stats drop.
+pub const M_V5: &str = include_str!("./sql/0005_v5_learning.sql");
 
 /// Apply all pending migrations. Safe to re-run; each migration is
 /// only applied if its key is absent from `schema_meta`.
@@ -36,6 +39,8 @@ pub fn run(conn: &mut Connection) -> Result<()> {
     apply(conn, "0003_stats_tables", M_V3)?;
     apply(conn, "0004_v4_rank", M_V4)?;
     backfill_memory_simhash(conn)?;
+    apply(conn, "0005_v5_learning", M_V5)?;
+    rehash_simhashes(conn)?;
     set_version(conn, CURRENT_VERSION)?;
     Ok(())
 }
@@ -98,6 +103,60 @@ fn backfill_memory_simhash(conn: &mut Connection) -> Result<()> {
             )?;
         }
     }
+    tx.commit()?;
+    Ok(())
+}
+
+/// Recompute every stored simhash with the M2-aligned `simhash::tokens`
+/// (Unicode lowercase + diacritic fold). Runs exactly once, keyed
+/// '0005_simhash_rehash' in schema_meta; the marker insert commits in
+/// the same transaction as the updates so a crash mid-rehash re-runs
+/// the whole pass on the next open (idempotent — the recompute is a
+/// pure function of the stored body/snippet).
+fn rehash_simhashes(conn: &mut Connection) -> Result<()> {
+    let done: Option<String> = conn
+        .query_row(
+            "SELECT value FROM schema_meta WHERE key = '0005_simhash_rehash'",
+            [],
+            |row| row.get(0),
+        )
+        .ok();
+    if done.is_some() {
+        return Ok(());
+    }
+    let tx = conn.transaction()?;
+    {
+        let mut stmt = tx.prepare("SELECT id, body FROM memories")?;
+        let rows: Vec<(String, String)> = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<std::result::Result<_, _>>()?;
+        drop(stmt);
+        for (id, body) in rows {
+            // SQLite INTEGER is i64; store the u64 bit pattern.
+            let hash = crate::simhash::of_body(&body) as i64;
+            tx.execute(
+                "UPDATE memories SET simhash = ?1 WHERE id = ?2",
+                rusqlite::params![hash, id],
+            )?;
+        }
+        let mut stmt = tx.prepare("SELECT id, snippet FROM code_symbols")?;
+        let rows: Vec<(i64, String)> = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<std::result::Result<_, _>>()?;
+        drop(stmt);
+        for (id, snippet) in rows {
+            let toks = crate::simhash::tokens(&snippet);
+            let hash = crate::simhash::simhash64(toks.iter().map(|t| t.as_str())) as i64;
+            tx.execute(
+                "UPDATE code_symbols SET simhash = ?1 WHERE id = ?2",
+                rusqlite::params![hash, id],
+            )?;
+        }
+    }
+    tx.execute(
+        "INSERT INTO schema_meta(key, value) VALUES('0005_simhash_rehash', '1')",
+        [],
+    )?;
     tx.commit()?;
     Ok(())
 }
