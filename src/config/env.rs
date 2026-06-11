@@ -146,6 +146,9 @@ impl Config {
         if let Some(v) = env_u32("COMEMORY_PRUNE_BELOW_QUALITY")? {
             self.prune.low_value_default_below_quality = v;
         }
+        if let Some(v) = env_u32("COMEMORY_LEARNING_RETENTION_DAYS")? {
+            self.prune.learning_retention_days = v;
+        }
         self.validate()
     }
 }

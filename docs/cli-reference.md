@@ -40,7 +40,7 @@ Commands:
   completions    Emit a shell completion script for `bash`, `zsh`, `fish`, `powershell`, or `elvish`
   prune          Detect (and optionally soft-delete) stale memories
   rebuild        Drop `comemory.db` and repopulate it from the markdown source of truth
-  gc             Purge old entries from `memories/.trash/`
+  gc             Purge old `memories/.trash/` entries and learning telemetry past retention
   install-hooks  Install git hooks that trigger `comemory index-code --incremental` on `post-commit`, `post-merge`, and `post-checkout`
   help           Print this message or the help of the given subcommand(s)
 
@@ -491,7 +491,7 @@ Options:
 ## comemory gc
 
 ```
-Purge old entries from `memories/.trash/`
+Purge old `memories/.trash/` entries and learning telemetry past retention
 
 Usage: comemory gc [OPTIONS]
 
@@ -501,8 +501,11 @@ Options:
   -h, --help                 Print help
 
 Examples:
-  # Hard-delete .trash entries past the retention window
+  # Hard-delete .trash entries and learning telemetry past retention
   comemory gc
+
+  # Tighten the telemetry window (retrieval_log + feedback_events) to a week
+  COMEMORY_LEARNING_RETENTION_DAYS=7 comemory gc
 
   # JSON output for CI/automation
   comemory gc --json

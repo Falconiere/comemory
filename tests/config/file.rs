@@ -165,6 +165,43 @@ fn file_overlay_invalid_values_are_an_error() {
 }
 
 #[test]
+fn learning_retention_days_defaults_to_90() {
+    // Task 12: telemetry retention window for `comemory gc`. Aggregated
+    // `feedback` counters are permanent; only raw event rows age out.
+    assert_eq!(Config::defaults().prune.learning_retention_days, 90);
+}
+
+#[test]
+fn learning_retention_days_file_overlay_applies() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "[prune]\nlearning_retention_days = 7\n").expect("write config.toml");
+    let cfg = Config::defaults()
+        .with_file(&path)
+        .expect("valid learning_retention_days must parse and apply");
+    assert_eq!(cfg.prune.learning_retention_days, 7);
+    // Untouched prune keys keep their defaults.
+    assert_eq!(cfg.prune.trash_retention_days, 30);
+}
+
+#[test]
+fn learning_retention_days_zero_in_file_is_an_error() {
+    // 0 would make `gc` evict telemetry written microseconds ago,
+    // including the rows `mine` needs; the floor is one day.
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "[prune]\nlearning_retention_days = 0\n").expect("write config.toml");
+    let err = Config::defaults()
+        .with_file(&path)
+        .expect_err("learning_retention_days=0 must error");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("prune.learning_retention_days"),
+        "error must name the offending field, got: {msg}"
+    );
+}
+
+#[test]
 fn bm25_weights_default_and_file_overlay() {
     let cfg = Config::defaults();
     assert_eq!(cfg.retrieval.bm25_weights, (1.0, 3.0));

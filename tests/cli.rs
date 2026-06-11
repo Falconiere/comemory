@@ -370,3 +370,6 @@ mod mine;
 
 #[path = "cli/tune.rs"]
 mod tune;
+
+#[path = "cli/gc.rs"]
+mod gc;

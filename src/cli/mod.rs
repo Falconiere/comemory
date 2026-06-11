@@ -92,7 +92,8 @@ pub enum Cmd {
     Prune(prune::Args),
     /// Drop `comemory.db` and repopulate it from the markdown source of truth.
     Rebuild(rebuild::Args),
-    /// Purge old entries from `memories/.trash/`.
+    /// Purge old `memories/.trash/` entries and learning telemetry past
+    /// retention.
     #[command(after_help = gc::EXAMPLES)]
     Gc,
     /// Install git hooks that trigger `comemory index-code --incremental` on
