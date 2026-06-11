@@ -171,8 +171,14 @@ fn project_pagerank(tx: &Transaction<'_>, repo: &str, known: &[String]) -> Resul
         .map(|(i, p)| (p.as_str(), i as u32))
         .collect();
     let prefix = format!("file:{repo}:");
+    // ORDER BY makes the edge list — and therefore pagerank's f64
+    // accumulation order — a function of the logical graph, not rowid
+    // insertion order (an imports delete+reinsert would otherwise
+    // reorder rows and perturb scores in the last ulps).
     let mut stmt = tx.prepare(
-        "SELECT src_id, dst_id, rel, weight FROM edges WHERE rel IN ('co_changed','imports')",
+        "SELECT src_id, dst_id, rel, weight FROM edges \
+          WHERE rel IN ('co_changed','imports') \
+          ORDER BY rel, src_id, dst_id",
     )?;
     let rows = stmt
         .query_map([], |r| {
