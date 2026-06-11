@@ -73,6 +73,18 @@ fn load_file_malformed_yaml_names_the_path() {
 }
 
 #[test]
+fn load_file_missing_path_names_the_path() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("absent.yaml");
+    let err = load_file(&path).expect_err("missing file must fail");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("absent.yaml"),
+        "error must name the offending path, got: {msg}"
+    );
+}
+
+#[test]
 fn harvest_drops_soft_deleted_and_missing_ids() {
     let (_d, conn) = open_db();
     insert_memory(&conn, "aaaaaaa1", "postgres pool exhausted fix", None);
