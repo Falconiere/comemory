@@ -165,10 +165,9 @@ fn build_new_db(old_db: &Path, tmp_path: &Path, paths: &Paths) -> Result<()> {
     tx.commit()?;
 
     // Copy the code index + learning tables from the old DB if it exists.
-    // We do this outside the memory transaction so a copy failure doesn't
-    // prevent the memory rebuild from landing; the worst outcome is a
-    // missing code index that the operator can restore with
-    // `comemory index-code`.
+    // A copy failure aborts the whole rebuild (tmp removed, live DB never
+    // renamed over): learning state must not be silently dropped, and the
+    // operator can retry once the source DB is readable again.
     if old_db.exists() {
         copy_preserved_tables_from_old(&mut conn, old_db)?;
     }
