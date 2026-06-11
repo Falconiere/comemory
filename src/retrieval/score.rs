@@ -68,7 +68,7 @@ pub fn quality_boost(quality: u8, clamp: (f64, f64)) -> f64 {
 /// Fixed multiplier applied to results superseded by a live memory.
 ///
 /// Intentionally bypasses `prior_clamp`: a supersede is a penalty stronger
-/// than any prior and must NOT be run through `bounded()`.
+/// than any prior and must NOT be run through `bounded_boost()`.
 pub const SUPERSEDE_PENALTY: f64 = 0.2;
 
 /// Whole days elapsed between an RFC 3339 timestamp and `now`, floored at
