@@ -11,3 +11,6 @@ mod mine;
 
 #[path = "eval/runner.rs"]
 mod runner;
+
+#[path = "eval/tune.rs"]
+mod tune;

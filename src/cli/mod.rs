@@ -26,6 +26,7 @@ pub mod prune;
 pub mod rebuild;
 pub mod save;
 pub mod search;
+pub mod tune;
 
 /// Top-level CLI. `comemory <subcommand> [--json] [--data-dir DIR]`. The `--json`
 /// and `--data-dir` flags are global so callers can place them either before
@@ -71,6 +72,9 @@ pub enum Cmd {
     /// Mine reformulation pairs from the query log into term-expansion
     /// mappings (report only; `--apply` rebuilds `query_expansions`).
     Mine(mine::Args),
+    /// Grid-search blend weights against the golden set (report only;
+    /// `--apply` writes the winner into config.toml).
+    Tune(tune::Args),
     /// Report on the data directory and SQLite mirror health.
     Doctor(doctor::Args),
     /// Walk a repo, extract symbols, and upsert into the code index.
@@ -108,6 +112,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::Feedback(a) => feedback::run(a, cli.json, cli.data_dir).await,
         Cmd::Eval(a) => eval::run(a, cli.json, cli.data_dir).await,
         Cmd::Mine(a) => mine::run(a, cli.json, cli.data_dir).await,
+        Cmd::Tune(a) => tune::run(a, cli.json, cli.data_dir).await,
         Cmd::Doctor(a) => doctor::run(a, cli.json, cli.data_dir).await,
         Cmd::IndexCode(a) => index_code::run(a, cli.json, cli.data_dir).await,
         Cmd::IngestCode(a) => ingest_code::run(a, cli.json, cli.data_dir).await,
