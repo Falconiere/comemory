@@ -329,11 +329,17 @@ fn index_code_and_context_run() {
 #[path = "common/vectors.rs"]
 mod vectors;
 
+#[path = "common/git_setup.rs"]
+mod git_setup;
+
 #[path = "cli/save.rs"]
 mod save;
 
 #[path = "cli/search.rs"]
 mod search;
+
+#[path = "cli/search_code.rs"]
+mod search_code;
 
 #[path = "cli/context.rs"]
 mod context;

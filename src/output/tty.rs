@@ -39,23 +39,50 @@ pub fn dim(s: &str) -> String {
     s.dimmed().to_string()
 }
 
-/// Write the shared `query: <qid>` TTY footer used by `comemory search` and
-/// `comemory context`. The footer is printed whenever a query id exists —
-/// zero-hit queries are still logged for reformulation mining — but the
-/// feedback hint is appended only when `has_hits`, since with no hits there
-/// is nothing to mark `--used`.
+/// Which `comemory feedback` flag family the query footer's hint should
+/// reference. Memory results are fed back via `--used <ids>` (8-hex memory
+/// ids); code results via `--used-code <ids>` (integer `code_symbols` ids).
+/// One enum + one footer writer keeps the two hints from drifting apart.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FeedbackHint {
+    /// Memory-id verdicts: `comemory feedback <qid> --used <ids>`.
+    Memory,
+    /// Code-symbol verdicts: `comemory feedback <qid> --used-code <ids>`.
+    Code,
+}
+
+impl FeedbackHint {
+    /// The feedback flag this flavor's hint names.
+    fn flag(self) -> &'static str {
+        match self {
+            FeedbackHint::Memory => "--used",
+            FeedbackHint::Code => "--used-code",
+        }
+    }
+}
+
+/// Write the shared `query: <qid>` TTY footer used by `comemory search`,
+/// `comemory search-code`, and `comemory context`. The footer is printed
+/// whenever a query id exists — zero-hit queries are still logged for
+/// reformulation mining — but the feedback hint is appended only when
+/// `has_hits`, since with no hits there is nothing to mark used. `hint`
+/// picks which feedback flag family the appended hint references.
 pub fn write_query_footer(
     out: &mut impl std::io::Write,
     query_id: Option<&str>,
     has_hits: bool,
+    hint: FeedbackHint,
 ) -> Result<()> {
     if let Some(qid) = query_id {
-        let hint = if has_hits {
-            format!("  (feedback: comemory feedback {qid} --used <ids>)")
+        let suffix = if has_hits {
+            format!(
+                "  (feedback: comemory feedback {qid} {} <ids>)",
+                hint.flag()
+            )
         } else {
             String::new()
         };
-        writeln!(out, "query: {qid}{hint}")?;
+        writeln!(out, "query: {qid}{suffix}")?;
     }
     Ok(())
 }

@@ -57,5 +57,10 @@ pub fn emit<'a>(bundle: &'a Bundle<'a>, query_id: Option<&'a str>, json_flag: bo
     for c in &bundle.code_refs {
         writeln!(out, "  {}:{}:{}", c.repo, c.path, c.symbol)?;
     }
-    tty::write_query_footer(&mut out, query_id, !bundle.memories.is_empty())
+    tty::write_query_footer(
+        &mut out,
+        query_id,
+        !bundle.memories.is_empty(),
+        tty::FeedbackHint::Memory,
+    )
 }

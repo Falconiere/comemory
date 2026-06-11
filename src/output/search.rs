@@ -93,7 +93,7 @@ pub fn write_tty(out: &mut impl Write, hits: &[Reranked], query_id: Option<&str>
             expanded
         )?;
     }
-    tty::write_query_footer(out, query_id, !hits.is_empty())
+    tty::write_query_footer(out, query_id, !hits.is_empty(), tty::FeedbackHint::Memory)
 }
 
 fn row_from(h: &Reranked) -> Row<'_> {
@@ -107,7 +107,10 @@ fn row_from(h: &Reranked) -> Row<'_> {
     }
 }
 
-fn source_label(s: Source) -> &'static str {
+/// Stable lowercase label for a retrieval [`Source`], shared with
+/// `output::search_code` so the two `--json` envelopes agree on the
+/// `source` vocabulary.
+pub(crate) fn source_label(s: Source) -> &'static str {
     match s {
         Source::Vector => "vector",
         Source::Lexical => "lexical",

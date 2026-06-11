@@ -26,6 +26,7 @@ Usage: comemory [OPTIONS] <COMMAND>
 Commands:
   save           Save a memory (body via arg, `-`, or stdin)
   search         Search the memory index by natural-language query
+  search-code    Search the code index by natural-language or identifier query
   list           List memories with optional repo/kind filters
   delete         Soft-delete a memory by id (moves to `.trash/`)
   feedback       Record per-memory feedback (used vs irrelevant)
@@ -141,6 +142,48 @@ Examples:
 
   # Caller-supplied vector (BYO-vector, CSV form)
   comemory search "advisory lock" --vector 0.1,0.2,0.3,...
+```
+
+---
+
+## comemory search-code
+
+```
+Search the code index by natural-language or identifier query
+
+Usage: comemory search-code [OPTIONS] <QUERY>
+
+Arguments:
+  <QUERY>  Natural-language or identifier query string
+
+Options:
+      --json                 Emit machine-readable JSON instead of a human TTY view
+      --k <K>                Override the configured `retrieval.top_k`. Must be >= 1
+      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+      --repo <REPO>          Restrict hits to one repo label (as passed to `index-code --repo`)
+      --lang <LANG>          Restrict hits to one language: `rust`, `typescript`, `javascript`, `python`, `go` (short aliases like `rs`/`ts`/`py` accepted)
+      --vector <VECTOR>      Caller-supplied dense vector as a comma-separated float list
+      --vector-stdin         Read a JSON `{ "embedding": [..] }` payload from stdin and use it as the dense vector for the query
+  -h, --help                 Print help
+
+Examples:
+  # Lexical code search; identifier tokens split automatically
+  comemory search-code "parse frontmatter"
+
+  # JSON output; hits[].score_parts breaks down every ranking factor
+  # (relevance, rank, activation, affinity, feedback, final_score) and
+  # the envelope carries query_id — pass it to
+  # `comemory feedback <query_id> --used-code <ids>`.
+  comemory search-code "dim guard" --json
+
+  # Scope to one repo and language (aliases like `rs`/`py` accepted)
+  comemory search-code "router" --repo myrepo --lang rust
+
+  # Caller-supplied vector (BYO-vector; code vectors are 768-dim)
+  comemory search-code "knn" --vector 0.1,0.2,0.3,...
+
+The working-set affinity boost applies only when search-code runs inside
+the repo's working tree (the CWD is used to detect dirty/recent files).
 ```
 
 ---

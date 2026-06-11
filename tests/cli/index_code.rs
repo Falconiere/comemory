@@ -7,8 +7,7 @@ use assert_cmd::Command;
 use serde::Deserialize;
 use tempfile::tempdir;
 
-#[path = "../common/git_setup.rs"]
-mod git_setup;
+use super::git_setup;
 
 /// Build the three-file graph fixture for the post-pass tests: `a.rs`
 /// declares `mod b;` (an import the resolver maps a.rs → b.rs), `c.rs`
