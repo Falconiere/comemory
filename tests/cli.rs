@@ -367,3 +367,6 @@ mod eval;
 
 #[path = "cli/mine.rs"]
 mod mine;
+
+#[path = "cli/tune.rs"]
+mod tune;

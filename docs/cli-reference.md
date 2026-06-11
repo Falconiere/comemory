@@ -31,6 +31,7 @@ Commands:
   feedback       Record per-memory feedback (used vs irrelevant)
   eval           Score retrieval quality against a golden set (recall@k, MRR)
   mine           Mine reformulation pairs from the query log into term-expansion mappings (report only; `--apply` rebuilds `query_expansions`)
+  tune           Grid-search blend weights against the golden set (report only; `--apply` writes the winner into config.toml)
   doctor         Report on the data directory and SQLite mirror health
   index-code     Walk a repo, extract symbols, and upsert into the code index
   ingest-code    Read pre-embedded JSONL rows from stdin and ingest them into the code index (`code_symbols` + `code_fts` + `code_vec`)
@@ -276,6 +277,37 @@ Examples:
 
   # Machine-readable report
   comemory mine --json
+```
+
+---
+
+## comemory tune
+
+```
+Grid-search blend weights against the golden set (report only; `--apply` writes the winner into config.toml)
+
+Usage: comemory tune [OPTIONS]
+
+Options:
+      --golden <GOLDEN>      Path to a YAML golden file (`- query: ...` / `  relevant: [..]`)
+      --json                 Emit machine-readable JSON instead of a human TTY view
+      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+      --golden-only          Skip the feedback harvest; use only the --golden file
+      --k <K>                recall@k cut (defaults to 3) [default: 3]
+      --apply                Rewrite config.toml with the winning knobs when (and only when) the winner strictly beats the current config. Comments in an existing config.toml are dropped by the rewrite
+  -h, --help                 Print help
+
+Examples:
+  # Grid-search 81 configs against the merged golden set (report only)
+  comemory tune
+
+  # File-only golden set, recall@5, machine-readable report
+  # (JSON envelope: {"report": <TuneReport>, "applied": bool})
+  comemory tune --golden golden.yaml --golden-only --k 5 --json
+
+  # Write the winning knobs into config.toml (atomic rename; the file
+  # is re-rendered from parsed TOML, so comments are dropped)
+  comemory tune --golden golden.yaml --apply
 ```
 
 ---
