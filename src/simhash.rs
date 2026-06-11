@@ -54,27 +54,19 @@ pub fn hamming64(a: u64, b: u64) -> u32 {
     (a ^ b).count_ones()
 }
 
-/// Tokenize a snippet for SimHash input: lowercase alphanumeric runs.
-///
-/// Known asymmetry vs the FTS5 `identifier` tokenizer: this uses
-/// `to_ascii_lowercase`, so non-ASCII uppercase (e.g. `É`) is kept
-/// verbatim and "Café"/"café" hash differently, while FTS treats them
-/// as the same token. Aligning (Unicode lowercase + diacritic fold)
-/// changes every stored `memories.simhash` / `code_symbols.simhash`,
-/// so it needs a re-hash migration — scheduled for M2; do not change
-/// this function without one.
+/// Tokenize a snippet for SimHash input: lowercased, diacritic-folded
+/// alphanumeric runs. Casing/folding matches the FTS5 `identifier`
+/// tokenizer (`store::tokenizer::split`) so "Café" and "café" hash
+/// identically; token *boundaries* remain whole alphanumeric runs (no
+/// camelCase splitting — SimHash measures body similarity, not
+/// identifier recall). Stored hashes were recomputed by the v5
+/// migration (`migrate::rehash_simhashes`); changing this function
+/// again requires another re-hash migration.
 pub fn tokens(snippet: &str) -> Vec<String> {
     snippet
-        .chars()
-        .map(|c| {
-            if c.is_alphanumeric() {
-                c.to_ascii_lowercase()
-            } else {
-                ' '
-            }
-        })
-        .collect::<String>()
-        .split_whitespace()
-        .map(|s| s.to_string())
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|s| !s.is_empty())
+        .map(|s| crate::store::tokenizer::split::fold_diacritics(&s.to_lowercase()))
+        .filter(|s| !s.is_empty())
         .collect()
 }
