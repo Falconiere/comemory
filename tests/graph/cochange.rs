@@ -47,6 +47,22 @@ fn build_cochange_repo(root: &Path) -> PathBuf {
     repo
 }
 
+/// The full-history pair counts the fixture produces on a first run.
+fn first_run_pairs() -> Vec<CoChange> {
+    vec![
+        CoChange {
+            a: "a.rs".into(),
+            b: "b.rs".into(),
+            count: 2,
+        },
+        CoChange {
+            a: "b.rs".into(),
+            b: "c.rs".into(),
+            count: 1,
+        },
+    ]
+}
+
 #[test]
 fn first_run_mines_weighted_pairs_and_skips_mega_commit() {
     let tmp = TempDir::new().expect("tempdir");
@@ -55,44 +71,34 @@ fn first_run_mines_weighted_pairs_and_skips_mega_commit() {
     // `None` cursor: the walk covers the full (5-commit) history because
     // it is far below FIRST_RUN_COMMIT_LIMIT — the deepest pair-bearing
     // commit (c1) is only reachable if the bound did not cut the walk.
-    let (pairs, cursor) = mine_cochange(&repo, &known(), None).expect("mine");
+    let out = mine_cochange(&repo, &known(), None).expect("mine");
     assert_eq!(
-        pairs,
-        vec![
-            CoChange {
-                a: "a.rs".into(),
-                b: "b.rs".into(),
-                count: 2
-            },
-            CoChange {
-                a: "b.rs".into(),
-                b: "c.rs".into(),
-                count: 1
-            },
-        ],
+        out.pairs,
+        first_run_pairs(),
         "expected mega-commit skipped and pairs in lexicographic order"
     );
-    assert_eq!(cursor, head_oid_of(&repo));
+    assert_eq!(out.cursor, head_oid_of(&repo));
+    assert!(!out.cursor_lost, "a None cursor is absent, not lost");
 }
 
 #[test]
 fn incremental_mine_counts_only_commits_after_cursor() {
     let tmp = TempDir::new().expect("tempdir");
     let repo = build_cochange_repo(tmp.path());
-    let (_, cursor) = mine_cochange(&repo, &known(), None).expect("first mine");
+    let first = mine_cochange(&repo, &known(), None).expect("first mine");
 
     git_setup::commit_files(&repo, &[("a.rs", "a v5"), ("c.rs", "c v5")], "c5");
-    let (pairs, new_cursor) =
-        mine_cochange(&repo, &known(), Some(&cursor)).expect("incremental mine");
+    let out = mine_cochange(&repo, &known(), Some(&first.cursor)).expect("incremental mine");
     assert_eq!(
-        pairs,
+        out.pairs,
         vec![CoChange {
             a: "a.rs".into(),
             b: "c.rs".into(),
             count: 1
         }]
     );
-    assert_eq!(new_cursor, head_oid_of(&repo));
+    assert_eq!(out.cursor, head_oid_of(&repo));
+    assert!(!out.cursor_lost, "a resolvable cursor is not lost");
 }
 
 #[test]
@@ -101,9 +107,86 @@ fn mine_with_cursor_at_head_returns_empty_and_same_cursor() {
     let repo = build_cochange_repo(tmp.path());
     let head = head_oid_of(&repo);
 
-    let (pairs, cursor) = mine_cochange(&repo, &known(), Some(&head)).expect("mine at HEAD");
-    assert!(pairs.is_empty(), "no commits newer than HEAD: {pairs:?}");
-    assert_eq!(cursor, head);
+    let out = mine_cochange(&repo, &known(), Some(&head)).expect("mine at HEAD");
+    assert!(
+        out.pairs.is_empty(),
+        "no commits newer than HEAD: {:?}",
+        out.pairs
+    );
+    assert_eq!(out.cursor, head);
+    assert!(!out.cursor_lost);
+}
+
+/// Resolved-cursor equivalence: hiding the cursor commit must produce
+/// exactly the same counts as the old break-on-sight loop did for a
+/// linear history — the deep cursor excludes itself and every ancestor,
+/// leaving only the newer commits.
+#[test]
+fn deep_cursor_excludes_itself_and_all_ancestors() {
+    let tmp = TempDir::new().expect("tempdir");
+    let repo = build_cochange_repo(tmp.path());
+    // Cursor at c1 (HEAD~3): only c2 (a+b) and c3 (b+c) count — the mega
+    // commit is skipped and c1 itself plus the root are hidden.
+    let c1_parent_of_head = {
+        let out = std::process::Command::new("git")
+            .current_dir(&repo)
+            .args(["rev-parse", "HEAD~3"])
+            .output()
+            .expect("rev-parse HEAD~3");
+        assert!(out.status.success(), "rev-parse failed");
+        String::from_utf8(out.stdout)
+            .expect("utf8 oid")
+            .trim()
+            .to_string()
+    };
+
+    let out = mine_cochange(&repo, &known(), Some(&c1_parent_of_head)).expect("mine");
+    assert_eq!(
+        out.pairs,
+        vec![
+            CoChange {
+                a: "a.rs".into(),
+                b: "b.rs".into(),
+                count: 1
+            },
+            CoChange {
+                a: "b.rs".into(),
+                b: "c.rs".into(),
+                count: 1
+            },
+        ],
+        "hidden cursor must match the old break-on-sight semantics"
+    );
+    assert!(!out.cursor_lost);
+}
+
+/// A cursor that no longer resolves to a commit (history rewrite + gc, or
+/// a corrupted marker) must NOT walk uncapped to the root and silently
+/// re-count: the pass degrades to a bounded first run and reports
+/// `cursor_lost` so the caller resets the accumulated weights.
+#[test]
+fn lost_cursor_degrades_to_capped_first_run_and_signals_reset() {
+    let tmp = TempDir::new().expect("tempdir");
+    let repo = build_cochange_repo(tmp.path());
+
+    for garbage in [
+        // Well-formed oid that names no object in this repo.
+        "0123456789abcdef0123456789abcdef01234567",
+        // Not an oid at all.
+        "not-an-oid",
+    ] {
+        let out = mine_cochange(&repo, &known(), Some(garbage)).expect("mine with lost cursor");
+        assert!(
+            out.cursor_lost,
+            "unresolvable cursor {garbage:?} must be reported lost"
+        );
+        assert_eq!(
+            out.pairs,
+            first_run_pairs(),
+            "lost cursor must re-mine exactly the bounded first-run history"
+        );
+        assert_eq!(out.cursor, head_oid_of(&repo));
+    }
 }
 
 #[test]

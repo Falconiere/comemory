@@ -7,7 +7,7 @@
 //! between the two commands when they want vector hits without forcing
 //! comemory to download a model.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::io::BufRead;
 use std::path::PathBuf;
 
@@ -80,6 +80,14 @@ struct Row {
 /// stream is drained, the `indexed_files` cursor is upserted for every
 /// `(repo, path)` seen — using the last `blob_oid` observed for that pair —
 /// so a follow-up `index-code` run knows the file is already current.
+///
+/// Every repo in the stream goes through the same per-repo format gate as
+/// `index-code`: [`code_row::ensure_repo_format`] on first sighting (drops
+/// stale cursors when the stamp predates the current row format) and
+/// [`code_row::stamp_repo_format`] once the stream commits. Skipping the
+/// stamp would make the NEXT `index-code` run see a missing stamp, drop
+/// every `indexed_files` cursor for the repo, and purge the just-ingested
+/// BYO `code_vec` embeddings in its full re-walk.
 pub async fn run(_args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
@@ -89,6 +97,8 @@ pub async fn run(_args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<
     // `(repo, path) -> last blob_oid seen` so we know which `indexed_files`
     // rows to refresh once the stream completes.
     let mut seen_files: HashMap<(String, String), String> = HashMap::new();
+    // Repos sighted so far, for the per-repo format gate + final stamp.
+    let mut seen_repos: BTreeSet<String> = BTreeSet::new();
     // `(repo, path, symbol) -> rowid` for every row inserted so far in
     // THIS stream, so chunk rows can resolve their parent's rowid.
     let mut inserted_ids: HashMap<(String, String, String), i64> = HashMap::new();
@@ -99,6 +109,9 @@ pub async fn run(_args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<
             continue;
         }
         let row: Row = serde_json::from_str(&line)?;
+        if seen_repos.insert(row.repo.clone()) {
+            code_row::ensure_repo_format(&tx, &row.repo)?;
+        }
         let key = (row.repo.clone(), row.path.clone());
         match seen_files.get(&key) {
             None => code_row::purge_file_symbols(&tx, &row.repo, &row.path)?,
@@ -124,6 +137,9 @@ pub async fn run(_args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<
     }
     for ((repo, path), oid) in &seen_files {
         code_row::upsert_indexed_file(&tx, repo, path, oid)?;
+    }
+    for repo in &seen_repos {
+        code_row::stamp_repo_format(&tx, repo)?;
     }
     tx.commit()?;
     Ok(())

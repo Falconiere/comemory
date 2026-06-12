@@ -165,6 +165,53 @@ fn materialize_accumulates_cochange_incrementally() {
     assert_eq!(cursor, current_head(&repo_root).expect("HEAD after c3"));
 }
 
+/// A stored cursor that no longer resolves (history rewrite + gc, or a
+/// corrupted marker row) makes the miner re-count bounded history from
+/// scratch; materialize must RESET the repo's accumulated `co_changed`
+/// weights before applying the re-mined pairs — accumulating on top would
+/// double-count every pair that survived the rewrite.
+#[test]
+fn materialize_resets_cochange_weights_when_cursor_is_lost() {
+    let workspace = TempDir::new().expect("workspace");
+    let home = TempDir::new().expect("home");
+    let repo_root = build_repo(workspace.path());
+    let mut conn = seed_symbols(&home, "r", &["a.rs", "b.rs", "c.rs"]);
+    let no_imports = BTreeMap::new();
+
+    materialize(&mut conn, &repo_root, "r", &no_imports).expect("first run");
+    // Corrupt the cursor to a well-formed oid that names no object —
+    // the same observable state a rebase/amend + gc leaves behind.
+    conn.execute(
+        "UPDATE repo_marker SET last_mined_commit = \
+         '0123456789abcdef0123456789abcdef01234567' WHERE repo = 'r'",
+        [],
+    )
+    .expect("corrupt cursor");
+
+    materialize(&mut conn, &repo_root, "r", &no_imports).expect("lost-cursor run");
+    let weight: i64 = conn
+        .query_row(
+            "SELECT weight FROM edges WHERE src_id='file:r:a.rs' \
+             AND dst_id='file:r:b.rs' AND rel='co_changed'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("co_changed edge");
+    assert_eq!(
+        weight, 2,
+        "lost cursor must reset weights before re-applying (not 4 = double-count)"
+    );
+    // The cursor heals to the current HEAD so the next run is incremental.
+    let cursor: String = conn
+        .query_row(
+            "SELECT last_mined_commit FROM repo_marker WHERE repo='r'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("cursor row");
+    assert_eq!(cursor, current_head(&repo_root).expect("HEAD"));
+}
+
 #[test]
 fn materialize_refreshes_imports_as_state_not_accumulation() {
     let workspace = TempDir::new().expect("workspace");

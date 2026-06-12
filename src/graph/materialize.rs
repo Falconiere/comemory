@@ -78,6 +78,13 @@ fn known_paths(tx: &Transaction<'_>, repo: &str) -> Result<Vec<String>> {
 /// produced by [`cochange::mine_cochange`]), and advance the cursor to
 /// HEAD. The `repo_marker` row is created on first mine; `last_head` /
 /// `last_indexed_at` are preserved via the targeted `DO UPDATE`.
+///
+/// When the miner reports `cursor_lost` (the stored cursor's commit no
+/// longer resolves — history rewrite + gc, or a corrupted marker), the
+/// repo's accumulated `co_changed` edges are DELETED before the fresh
+/// pairs are applied: the bounded re-mine re-counted history that earlier
+/// runs already accumulated, so adding the new counts on top of the old
+/// weights would double-count every surviving pair.
 fn mine_into_edges(
     tx: &Transaction<'_>,
     repo_root: &Path,
@@ -93,7 +100,20 @@ fn mine_into_edges(
         .optional()?
         .flatten();
     let known_set: HashSet<String> = known.iter().cloned().collect();
-    let (pairs, head) = cochange::mine_cochange(repo_root, &known_set, cursor.as_deref())?;
+    let outcome = cochange::mine_cochange(repo_root, &known_set, cursor.as_deref())?;
+    if outcome.cursor_lost {
+        // Prefix-match via substr (not LIKE) so a repo label containing
+        // `%`/`_` cannot widen the delete. Both endpoints of a co_changed
+        // edge live in the same repo, so matching src_id suffices.
+        let prefix = format!("file:{repo}:");
+        tx.execute(
+            "DELETE FROM edges \
+              WHERE rel = 'co_changed' AND src_kind = 'file' \
+                AND substr(src_id, 1, length(?1)) = ?1",
+            [&prefix],
+        )?;
+    }
+    let (pairs, head) = (outcome.pairs, outcome.cursor);
     for pair in &pairs {
         let src = file_node_id(repo, &pair.a);
         let dst = file_node_id(repo, &pair.b);

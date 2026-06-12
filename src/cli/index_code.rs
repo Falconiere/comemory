@@ -30,15 +30,6 @@ use crate::simhash;
 use crate::store::code_row::{self, CodeSymbolRow};
 use crate::store::{connection, fts};
 
-/// On-disk format version of the extracted rows for one repo. Stamped
-/// per-repo in `schema_meta` under `code_format:<repo>`; when the stamp
-/// disagrees (e.g. rows indexed before cAST chunking landed), every
-/// `indexed_files` cursor for the repo is dropped so the next walk
-/// re-extracts all files under the current format. Version "2" = cAST
-/// chunk children with `parent_id` (the value the v6 migration writes
-/// to the global `code_format_version` key).
-pub(crate) const CODE_FORMAT_VERSION: &str = "2";
-
 const EXAMPLES: &str = "\
 Examples:
   # Index the current working directory with explicit repo label
@@ -98,7 +89,7 @@ pub async fn run(args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<(
     let mut conn = connection::open(paths.db_path())?;
     let mut imports_by_file: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let tx = conn.transaction()?;
-    ensure_repo_format(&tx, &args.repo)?;
+    code_row::ensure_repo_format(&tx, &args.repo)?;
     let mut walker = WalkBuilder::new(&args.path);
     walker.standard_filters(true);
     for entry in walker.build().filter_map(std::result::Result::ok) {
@@ -144,7 +135,7 @@ pub async fn run(args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<(
         }
         code_row::upsert_indexed_file(&tx, &args.repo, &rel, &oid)?;
     }
-    stamp_repo_format(&tx, &args.repo)?;
+    code_row::stamp_repo_format(&tx, &args.repo)?;
     tx.commit()?;
     // Best-effort graph post-pass: the symbol index above is already
     // durable; a graph failure (e.g. unborn HEAD) costs only freshness.
@@ -156,41 +147,6 @@ pub async fn run(args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<(
         );
     }
     Ok(())
-}
-
-/// Drop every `indexed_files` cursor for `repo` when its per-repo format
-/// stamp (`schema_meta` key `code_format:<repo>`) is missing or differs
-/// from [`CODE_FORMAT_VERSION`], forcing the walk that follows to
-/// re-extract every file. `purge_file_symbols` then replaces the stale
-/// per-file rows as the walk proceeds.
-fn ensure_repo_format(conn: &Connection, repo: &str) -> Result<()> {
-    let stamped: Option<String> = conn
-        .query_row(
-            "SELECT value FROM schema_meta WHERE key = ?1",
-            [repo_format_key(repo)],
-            |r| r.get(0),
-        )
-        .ok();
-    if stamped.as_deref() != Some(CODE_FORMAT_VERSION) {
-        conn.execute("DELETE FROM indexed_files WHERE repo = ?1", [repo])?;
-    }
-    Ok(())
-}
-
-/// Upsert the per-repo format stamp after a successful walk so the next
-/// run skips the [`ensure_repo_format`] cursor purge.
-fn stamp_repo_format(conn: &Connection, repo: &str) -> Result<()> {
-    conn.execute(
-        "INSERT INTO schema_meta(key, value) VALUES(?1, ?2) \
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        rusqlite::params![repo_format_key(repo), CODE_FORMAT_VERSION],
-    )?;
-    Ok(())
-}
-
-/// `schema_meta` key carrying the per-repo code format stamp.
-fn repo_format_key(repo: &str) -> String {
-    format!("code_format:{repo}")
 }
 
 /// `--extract` path. Walks the same files as the DB-write path but emits

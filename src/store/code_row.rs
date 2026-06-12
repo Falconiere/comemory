@@ -18,6 +18,60 @@ use rusqlite::Connection;
 
 use crate::prelude::*;
 
+/// On-disk format version of the extracted rows for one repo. Stamped
+/// per-repo in `schema_meta` under `code_format:<repo>`; when the stamp
+/// disagrees (e.g. rows indexed before cAST chunking landed), every
+/// `indexed_files` cursor for the repo is dropped so the next walk
+/// re-extracts all files under the current format. Version "2" = cAST
+/// chunk children with `parent_id` (the value the v6 migration writes
+/// to the global `code_format_version` key).
+///
+/// Lives here (not in `cli::index_code`) because BOTH writers must stamp:
+/// an `ingest-code` run that skipped the stamp would leave
+/// [`ensure_repo_format`] seeing a missing/stale stamp on the next
+/// `index-code`, which drops the repo's `indexed_files` cursors and the
+/// full re-walk purges every freshly-ingested `code_vec` embedding.
+pub(crate) const CODE_FORMAT_VERSION: &str = "2";
+
+/// `schema_meta` key carrying the per-repo code format stamp.
+fn repo_format_key(repo: &str) -> String {
+    format!("code_format:{repo}")
+}
+
+/// Drop every `indexed_files` cursor for `repo` when its per-repo format
+/// stamp (`schema_meta` key `code_format:<repo>`) is missing or differs
+/// from [`CODE_FORMAT_VERSION`], forcing the walk/stream that follows to
+/// re-extract every file. [`purge_file_symbols`] then replaces the stale
+/// per-file rows as the walk proceeds. Shared by `cli::index_code` and
+/// `cli::ingest_code` so the two writers cannot drift on the gate.
+pub(crate) fn ensure_repo_format(conn: &Connection, repo: &str) -> Result<()> {
+    let stamped: Option<String> = conn
+        .query_row(
+            "SELECT value FROM schema_meta WHERE key = ?1",
+            [repo_format_key(repo)],
+            |r| r.get(0),
+        )
+        .ok();
+    if stamped.as_deref() != Some(CODE_FORMAT_VERSION) {
+        conn.execute("DELETE FROM indexed_files WHERE repo = ?1", [repo])?;
+    }
+    Ok(())
+}
+
+/// Upsert the per-repo format stamp after a successful walk/stream so the
+/// next run skips the [`ensure_repo_format`] cursor purge. Shared by
+/// `cli::index_code` and `cli::ingest_code` — every writer that refreshes
+/// `indexed_files` cursors must also stamp, or the next `index-code` run
+/// wipes the cursors (and with them the BYO `code_vec` rows) it left.
+pub(crate) fn stamp_repo_format(conn: &Connection, repo: &str) -> Result<()> {
+    conn.execute(
+        "INSERT INTO schema_meta(key, value) VALUES(?1, ?2) \
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        rusqlite::params![repo_format_key(repo), CODE_FORMAT_VERSION],
+    )?;
+    Ok(())
+}
+
 /// Owned column payload for one `code_symbols` row insert.
 ///
 /// Borrowed-reference fields (rather than owned `String`s) keep call sites
