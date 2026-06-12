@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.4.0 — 2026-06-11 (M3 code graph + code-aware retrieval)
+
+The code layer becomes a graph. A v6 migration adds code-graph edges,
+PageRank/chunk columns, and a `code_feedback` table; the database
+auto-migrates v5 → v6 on first open and markdown files are untouched.
+
+### Added
+- **`comemory search-code`** — ranked code search (weighted BM25 + a
+  thresholded ANN leg fused with RRF, chunk→parent coalesce) reranked
+  by four graph priors (PageRank, recency, working-set affinity,
+  feedback), with per-query logging and a `query_id` for feedback.
+- **Code-graph edges**: `co_changed` (mined from git history with a
+  sliding window, mega-commit guard, and resumable cursor) and
+  `imports` (conservative per-language import resolution for rust /
+  typescript / javascript / python / go).
+- **Deterministic weighted PageRank** over the code graph, materialized
+  onto `code_symbols.rank_score` by `comemory index-code`.
+- **cAST chunking**: oversized symbols split into child rows at AST
+  boundaries so large definitions stay retrievable.
+- `comemory feedback` accepts code targets and records per-query
+  provenance for code results.
+- `comemory context` ranks referenced code symbols by graph priors.
+- `comemory ast` / the extractor now capture `pub` / `export`-modified
+  definitions.
+- Config: code BM25 weights and `COMEMORY_RETRIEVAL_CODE_THRESHOLD`
+  (re-consumed for the `search-code` ANN leg), plus configurable
+  rank / prune / tune constants and matching `COMEMORY_*` env vars.
+
+### Changed
+- `comemory eval` replays each golden query's originating repo / kind
+  filters so measurement matches production retrieval.
+- The learning loop logs search filters and source; mining ignores
+  code searches so reformulation expansions stay memory-scoped.
+- `comemory index-code` mines co-change + imports and materializes
+  PageRank as part of the indexing pass.
+
+### Fixed
+- Retrieval skips working-set discovery when the context query returns
+  no hits.
+- Feedback resolves chunk ids to their parent symbol identity.
+- PageRank edge load is ordered by logical graph keys for determinism.
+
 ## 0.3.0 — 2026-06-11 (Rank-blend retrieval + learning loop)
 
 Two milestones in one release: M1 (rank-blend core, PR #4) and M2
