@@ -375,6 +375,8 @@ enforcement — swap in OpenAI, Voyage, llama.cpp, or anything else.
 - **[CLI reference](docs/cli-reference.md)** — every subcommand with arguments
   and worked examples.
 - **[CHANGELOG](CHANGELOG.md)** — what changed, version by version.
+- **[Claude Code plugin](integrations/claude-code/README.md)** — auto-recall on
+  session start plus recall/search-code/save skills, wrapping the CLI.
 
 ---
 

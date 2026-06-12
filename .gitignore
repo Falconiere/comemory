@@ -6,3 +6,6 @@
 
 # Local MCP config — not committed
 .mcp.json
+
+# claudness workflow artifacts (specs/plans) — local, not committed
+/docs/claudness/
