@@ -1,5 +1,52 @@
 # Changelog
 
+## 0.7.0 — 2026-06-12 (interactive web viewer + editor)
+
+Adds `comemory serve`: a loopback-only web app for exploring the code
+graph and viewing, editing, and saving indexed source files — a live
+complement to the static `graph --format html` export, served from a
+single binary with no Node toolchain or network at runtime.
+
+### Added
+- **`comemory serve`.** An axum server bound to `127.0.0.1` on an
+  ephemeral port (override with `--port`), hosting a React/Vite/Tailwind
+  single-page app embedded in the binary via `rust-embed`. The graph
+  payload reuses a shared `cli::graph::build_code_graph`, so the served
+  and static renderers cannot drift. The access URL (carrying a
+  per-session token) prints via the output module — visible without
+  `RUST_LOG`, machine-readable under `--json`. `--open` launches a
+  browser; `--read-only` disables writes (PUT → 405).
+- **In-browser editing.** CodeMirror 6 editor with `If-Match` optimistic
+  concurrency keyed on the git blob OID, an editable-extension allowlist,
+  a 5 MiB size cap, and atomic temp-file writes that preserve the original
+  file's permissions.
+- **`--root <repo>=<path>`** on `serve` overrides the persisted working-tree
+  root (and covers pre-v7 repos whose root is `NULL`).
+
+### Schema
+- **v7 migration:** a nullable `repo_marker.root_path` column persisting the
+  absolute working-tree root at index time (`canonicalize(--path)`) — the
+  exact base `code_symbols.path` is relative to, so `serve` can resolve
+  `file:<repo>:<path>` ids back to on-disk files. Idempotent; pre-v7 repos
+  read `NULL` and rely on `--root`.
+
+### Security
+- Loopback-only bind, a 256-bit per-session token required on `/` and
+  `/api/*` (compared in constant time), a `Host`-header guard
+  (DNS-rebinding defense), default-deny CORS, and a single
+  canonicalize-and-contain chokepoint (`id_to_abs_path`) that rejects
+  `..`/absolute/symlink escapes. The token is set as an HttpOnly
+  `SameSite=Strict` cookie and stripped from the URL after first load
+  (`history.replaceState` + `Referrer-Policy: no-referrer`) so it does not
+  persist in history or `Referer`. The raw embedded shell (with its
+  `__COMEMORY_TOKEN__` sentinel) is never served — `GET /index.html`
+  redirects to the token-substituted `/`.
+
+### Internal
+- Embedded frontend assets are `rust-embed` gzip-compressed
+  (`compression` feature) to offset the bundle's contribution to binary
+  size.
+
 ## 0.6.0 — 2026-06-12 (WebGL graph viewer)
 
 Replaces the `comemory graph --format html` viewer with a WebGL-rendered
