@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use clap::{Args as ClapArgs, ValueEnum};
-use rusqlite::{params, Connection, Row};
+use rusqlite::{Connection, Row};
 
 use crate::cli::resolve_data_dir;
 use crate::config::paths::Paths;
@@ -174,34 +174,29 @@ type NodeRow = (String, String, f64, u32);
 /// symbol count. Only parent rows (`parent_id IS NULL`) are counted so AST
 /// chunk children do not inflate the symbol tally.
 fn fetch_nodes(conn: &Connection, repo: Option<&str>) -> Result<Vec<NodeRow>> {
-    let (sql, repo_bind): (&str, Option<&str>) = match repo {
-        Some(r) => (
-            "SELECT repo, path, MAX(rank_score), COUNT(*) FROM code_symbols \
-              WHERE parent_id IS NULL AND repo = ?1 \
-              GROUP BY repo, path ORDER BY repo, path",
-            Some(r),
-        ),
-        None => (
-            "SELECT repo, path, MAX(rank_score), COUNT(*) FROM code_symbols \
-              WHERE parent_id IS NULL \
-              GROUP BY repo, path ORDER BY repo, path",
-            None,
-        ),
-    };
-    let mut stmt = conn.prepare(sql)?;
-    let map = |r: &Row<'_>| -> rusqlite::Result<NodeRow> {
-        Ok((
-            r.get::<_, String>(0)?,
-            r.get::<_, String>(1)?,
-            r.get::<_, f64>(2)?,
-            r.get::<_, i64>(3)? as u32,
-        ))
-    };
-    let rows = match repo_bind {
-        Some(r) => stmt.query_map(params![r], map)?,
-        None => stmt.query_map([], map)?,
+    let mut sql = String::from(
+        "SELECT repo, path, MAX(rank_score), COUNT(*) FROM code_symbols \
+          WHERE parent_id IS NULL",
+    );
+    // Borrow `repo` (the parameter, which outlives `binds`) rather than the
+    // if-let local, so the `&&str` pushed here lives until `query_map`.
+    let mut binds: Vec<&dyn rusqlite::ToSql> = Vec::new();
+    if let Some(r) = &repo {
+        sql.push_str(" AND repo = ?1");
+        binds.push(r);
     }
-    .collect::<std::result::Result<Vec<_>, _>>()?;
+    sql.push_str(" GROUP BY repo, path ORDER BY repo, path");
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt
+        .query_map(rusqlite::params_from_iter(binds), |r: &Row<'_>| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, f64>(2)?,
+                r.get::<_, i64>(3)? as u32,
+            ))
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
     Ok(rows)
 }
 
