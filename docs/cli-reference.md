@@ -551,7 +551,7 @@ Options:
       --port <PORT>          Loopback port to bind. `0` (default) selects an ephemeral port whose URL is printed at startup [default: 0]
       --read-only            Disable all writes: `PUT /api/file` returns 405 and the editor's Save action is hidden
       --root <REPO=PATH>     Override a repo's working-tree root as `<repo>=<abs-path>` (repeatable). Required for repos indexed before the v7 schema captured the root
-      --open                 Open the printed URL in the default browser after binding
+      --open                 Open the printed URL in the default browser after binding. The URL carries the session token and is passed as an argument to the system opener, so it is briefly visible to other local users (e.g. via `/proc/<pid>/cmdline` or `ps`)
   -h, --help                 Print help
 
 Examples:

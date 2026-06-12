@@ -6,7 +6,7 @@
 
 use axum::extract::{Query, State};
 use axum::http::{header, HeaderMap, StatusCode, Uri};
-use axum::response::{Html, IntoResponse, Response};
+use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::Json;
 use serde::Deserialize;
 use serde_json::json;
@@ -22,12 +22,41 @@ pub struct FileQuery {
     id: String,
 }
 
+/// Optional `?rel=…&min_weight=…` filters for the graph endpoint, mirroring the
+/// `comemory graph` CLI flags so the server can filter before sending instead
+/// of shipping every edge for the client to hide.
+#[derive(Deserialize)]
+pub struct GraphQuery {
+    /// `all` (default) | `imports` | `co_changed`.
+    rel: Option<String>,
+    /// Minimum `co_changed` edge weight; defaults to (and is floored at) 1.
+    min_weight: Option<i64>,
+}
+
 /// `GET /` — the embedded SPA shell with the session token injected.
+///
+/// Sets the token as an `HttpOnly`, `SameSite=Strict` cookie so a later page
+/// reload re-authenticates (browser navigation can't send `X-Comemory-Token`,
+/// and the frontend strips the `?token=` query from the URL after first load).
+/// `SameSite=Strict` keeps the cookie off cross-site requests, so it adds no
+/// CSRF surface; no `Secure` flag because the server is plain http on loopback.
+/// `Referrer-Policy: no-referrer` stops the token leaking via `Referer`.
 pub async fn index(State(state): State<AppState>) -> std::result::Result<Response, ApiError> {
     let html = assets::index_html_with_token(state.token()).ok_or_else(|| {
         Error::NotFound("frontend not built (web/dist/index.html missing)".into())
     })?;
-    Ok(Html(html).into_response())
+    let cookie = format!(
+        "comemory_token={}; Path=/; HttpOnly; SameSite=Strict",
+        state.token()
+    );
+    Ok((
+        [
+            (header::REFERRER_POLICY, "no-referrer"),
+            (header::SET_COOKIE, cookie.as_str()),
+        ],
+        Html(html),
+    )
+        .into_response())
 }
 
 /// `GET /api/health` — capability probe used by the frontend to enable or
@@ -40,12 +69,21 @@ pub async fn health(State(state): State<AppState>) -> Json<serde_json::Value> {
 }
 
 /// `GET /api/graph` — the file-level code graph, built by the same routine the
-/// static `graph --format html` export uses.
+/// static `graph --format html` export uses. Honors optional `rel` /
+/// `min_weight` query filters (defaults match the CLI: all relations, weight 1).
 pub async fn graph(
     State(state): State<AppState>,
+    Query(q): Query<GraphQuery>,
 ) -> std::result::Result<Json<serde_json::Value>, ApiError> {
+    let rel = match q.rel.as_deref() {
+        None | Some("all") => Rel::All,
+        Some("imports") => Rel::Imports,
+        Some("co_changed") | Some("co-changed") => Rel::CoChanged,
+        Some(other) => return Err(Error::BadRequest(format!("unknown rel: {other}")).into()),
+    };
+    let min_weight = q.min_weight.unwrap_or(1).max(1);
     let conn = state.conn()?;
-    let graph = build_code_graph(&conn, state.repo(), Rel::All, 1)?;
+    let graph = build_code_graph(&conn, state.repo(), rel, min_weight)?;
     Ok(Json(serde_json::to_value(graph).map_err(Error::Json)?))
 }
 
@@ -96,11 +134,18 @@ pub async fn put_file(
 
 /// Fallback — serve any other embedded frontend asset (Vite's hashed JS/CSS,
 /// icons) by its request path. `404` for paths with no embedded file.
+///
+/// `index.html` (and the bare root, were it ever to fall through here) is
+/// redirected to `/` so the only way to a usable SPA shell is the token-gated,
+/// token-substituted [`index`] handler — never the raw embedded file with its
+/// `__COMEMORY_TOKEN__` sentinel.
 pub async fn static_asset(uri: Uri) -> Response {
     let path = uri.path().trim_start_matches('/');
-    let key = if path.is_empty() { "index.html" } else { path };
-    match assets::asset_bytes(key) {
-        Some(bytes) => ([(header::CONTENT_TYPE, assets::mime_for(key))], bytes).into_response(),
+    if path.is_empty() || path == "index.html" {
+        return Redirect::to("/").into_response();
+    }
+    match assets::asset_bytes(path) {
+        Some(bytes) => ([(header::CONTENT_TYPE, assets::mime_for(path))], bytes).into_response(),
         None => (StatusCode::NOT_FOUND, "not found").into_response(),
     }
 }
