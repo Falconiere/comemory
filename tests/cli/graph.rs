@@ -3,7 +3,54 @@
 //! is a pure read over `comemory.db` and never indexes.
 
 use assert_cmd::Command;
+use comemory::cli::graph::{build_graph, parse_id};
+use comemory::output::graph::Edge;
 use tempfile::TempDir;
+
+#[test]
+fn build_graph_materializes_dangling_edge_endpoints() {
+    // A `co_changed` edge to a file with no `code_symbols` row (e.g. a
+    // deleted file) must still yield a zero-rank node so the edge is not
+    // orphaned. Only the source node is backed by a real row here.
+    let nodes = vec![("demo".into(), "src/a.rs".into(), 0.7, 2)];
+    let edges = vec![Edge {
+        src: "file:demo:src/a.rs".into(),
+        dst: "file:demo:src/gone.rs".into(),
+        rel: "co_changed".into(),
+        weight: 3,
+    }];
+    let g = build_graph(nodes, edges);
+
+    assert_eq!(g.nodes.len(), 2, "dangling dst must be materialized");
+    let dangling = g
+        .nodes
+        .iter()
+        .find(|n| n.id == "file:demo:src/gone.rs")
+        .expect("dangling node present");
+    assert_eq!(dangling.rank, 0.0, "dangling node is zero-rank");
+    assert_eq!(dangling.symbols, 0, "dangling node has no symbols");
+    assert_eq!(dangling.label, "src/gone.rs");
+    assert_eq!(dangling.repo, "demo");
+}
+
+#[test]
+fn parse_id_splits_repo_and_path() {
+    assert_eq!(
+        parse_id("file:demo:src/a.rs"),
+        Some(("demo", "src/a.rs")),
+        "well-formed id splits into (repo, path)"
+    );
+    assert_eq!(
+        parse_id("file:demo:src/dir:weird.rs"),
+        Some(("demo", "src/dir:weird.rs"))
+    );
+    assert_eq!(parse_id("notfile:demo:x"), None, "wrong prefix rejected");
+    assert_eq!(
+        parse_id("file:demo"),
+        None,
+        "missing path separator rejected"
+    );
+}
 
 /// Build a `comemory` invocation with `COMEMORY_DATA_DIR` rooted at `home`.
 fn bin(home: &TempDir) -> Command {
