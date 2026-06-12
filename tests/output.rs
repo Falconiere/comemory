@@ -23,6 +23,9 @@ mod context;
 #[path = "output/prune.rs"]
 mod prune;
 
+#[path = "output/graph.rs"]
+mod graph;
+
 #[derive(Serialize)]
 struct Hit {
     id: &'static str,
