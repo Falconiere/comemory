@@ -9,7 +9,7 @@
 use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 
-use git2::{Commit, Repository, Sort};
+use git2::{Commit, Oid, Repository, Sort};
 
 use crate::git_utils::map_git_err;
 use crate::prelude::*;
@@ -33,10 +33,40 @@ pub struct CoChange {
     pub count: u32,
 }
 
+/// Result of one mining pass: the counted pairs, the new cursor (HEAD
+/// oid), and whether the *previous* cursor could not be resolved.
+///
+/// `cursor_lost` is the caller's signal to RESET the repo's accumulated
+/// `co_changed` weights before applying `pairs`: a lost cursor means the
+/// bounded walk re-counted history that earlier runs already accumulated
+/// into the edges table, so adding the fresh counts on top would
+/// double-count every pair that survived the rewrite.
+#[derive(Debug)]
+pub struct MineOutcome {
+    /// Mined undirected pairs, sorted lexicographically by `(a, b)`.
+    pub pairs: Vec<CoChange>,
+    /// New cursor: the HEAD oid at mining time.
+    pub cursor: String,
+    /// True when `since` was `Some` but its commit object no longer
+    /// exists (rebase/amend/force-push followed by gc, or a corrupted
+    /// marker row) — the pass ran as a bounded first run instead.
+    pub cursor_lost: bool,
+}
+
 /// Walk commits newer than `since` (exclusive; `None` = first run,
 /// bounded by [`FIRST_RUN_COMMIT_LIMIT`]) and count co-changed pairs
-/// among `known_files`. Returns the pairs, sorted lexicographically by
-/// `(a, b)`, plus the new cursor (HEAD oid).
+/// among `known_files`. Returns a [`MineOutcome`] carrying the pairs,
+/// the new cursor (HEAD oid), and the lost-cursor flag.
+///
+/// The cursor is resolved BEFORE the walk starts: when its commit object
+/// still exists, `revwalk.hide` excludes it and all its ancestors (exact
+/// and exclusive — equivalent to the naive "break on sight" for a linear
+/// history, and correct for branched ones). When it cannot be resolved
+/// (gc'd after a history rewrite, or garbage), waiting to "see" it would
+/// walk uncapped to the root and re-count everything into the
+/// accumulating edge weights — instead the pass degrades to a first run
+/// ([`FIRST_RUN_COMMIT_LIMIT`] cap) and reports `cursor_lost` so the
+/// caller resets the accumulated weights.
 ///
 /// Per commit, the full changed-file footprint is measured first: a
 /// commit touching more than [`MEGA_COMMIT_FILE_CAP`] files is skipped
@@ -54,7 +84,7 @@ pub fn mine_cochange(
     repo_root: &Path,
     known_files: &HashSet<String>,
     since: Option<&str>,
-) -> Result<(Vec<CoChange>, String)> {
+) -> Result<MineOutcome> {
     let repo = Repository::open(repo_root).map_err(map_git_err)?;
     let cursor = repo
         .head()
@@ -68,16 +98,35 @@ pub fn mine_cochange(
         .map_err(map_git_err)?;
     walk.push_head().map_err(map_git_err)?;
 
+    let mut cursor_lost = false;
+    if let Some(stop) = since {
+        match Oid::from_str(stop)
+            .ok()
+            .filter(|oid| repo.find_commit(*oid).is_ok())
+        {
+            Some(oid) => walk.hide(oid).map_err(map_git_err)?,
+            None => {
+                tracing::warn!(
+                    cursor = %stop,
+                    "cochange: stored cursor unresolvable (history rewrite?); \
+                     re-mining bounded history and signaling a weight reset",
+                );
+                cursor_lost = true;
+            }
+        }
+    }
+    // The first-run cap also applies when the cursor was lost — without
+    // it the walk would run to the root.
+    let capped = since.is_none() || cursor_lost;
+
     let mut counts: BTreeMap<(String, String), u32> = BTreeMap::new();
     // `walked` counts commits already walked (enumerate index),
     // including mega-skipped ones — the first-run bound caps the walk,
     // not the number of pair-contributing commits.
     for (walked, oid) in walk.enumerate() {
         let oid = oid.map_err(map_git_err)?;
-        match since {
-            Some(stop) if oid.to_string() == stop => break,
-            None if walked >= FIRST_RUN_COMMIT_LIMIT => break,
-            _ => {}
+        if capped && walked >= FIRST_RUN_COMMIT_LIMIT {
+            break;
         }
 
         let commit = repo.find_commit(oid).map_err(map_git_err)?;
@@ -105,7 +154,11 @@ pub fn mine_cochange(
         .into_iter()
         .map(|((a, b), count)| CoChange { a, b, count })
         .collect();
-    Ok((pairs, cursor))
+    Ok(MineOutcome {
+        pairs,
+        cursor,
+        cursor_lost,
+    })
 }
 
 /// Collect the new-side paths changed by `commit` against its FIRST

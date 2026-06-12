@@ -19,11 +19,15 @@
 //! from the old DB into the new one via `ATTACH DATABASE` before the
 //! connection is closed, so a rebuild triggered by a schema drift on the
 //! memory side does not force a full re-index of the code corpus. The
-//! learning-loop tables (`feedback`, `feedback_events`, `retrieval_log`,
-//! `query_expansions`) are copied the same way: they exist only in SQLite
-//! — there is no markdown to rebuild them from — and dropping them would
-//! silently reset the Beta feedback rerank prior and erase mined
-//! expansions, contradicting the documented never-expire contract.
+//! v6 code-graph state rides along: the mined `co_changed` / `imports`
+//! edges (the markdown replay rebuilds only memory-emitted edges) and the
+//! `repo_marker` rows with their `last_mined_commit` cursor. The
+//! learning-loop tables (`feedback`, `code_feedback`, `feedback_events`,
+//! `retrieval_log`, `query_expansions`) are copied the same way: they
+//! exist only in SQLite — there is no markdown to rebuild them from — and
+//! dropping them would silently reset the Beta feedback rerank priors and
+//! erase mined expansions, contradicting the documented never-expire
+//! contract.
 //!
 //! Vectors are intentionally *not* repopulated here for the memory side:
 //! the v0.2 contract is BYO-vector, so re-embedding requires running the
@@ -58,8 +62,9 @@ pub struct Args;
 ///    `memory_fts` + edges row into the temp DB.
 /// 3. If the original `comemory.db` exists, `ATTACH` it and copy
 ///    `code_symbols`, `code_vec`, `code_fts`, and `indexed_files` rows into
-///    the new DB so the code index survives the rebuild, plus the four
-///    learning tables (`feedback`, `feedback_events`, `retrieval_log`,
+///    the new DB so the code index survives the rebuild, plus the mined
+///    code-graph edges + `repo_marker` cursors and the five learning tables
+///    (`feedback`, `code_feedback`, `feedback_events`, `retrieval_log`,
 ///    `query_expansions`) so feedback counters and mined expansions do too.
 /// 4. Close the temp connection then `fs::rename` it over the live path
 ///    (atomic on POSIX; on Windows this may fail if the DB is held open by
@@ -177,11 +182,12 @@ fn build_new_db(old_db: &Path, tmp_path: &Path, paths: &Paths) -> Result<()> {
     Ok(())
 }
 
-/// Attach `old_db` as `old` and copy the four code-index tables plus the
-/// four learning tables into the already-open `conn` (which points at the
-/// tmp path). Uses INSERT-SELECT so no intermediate buffers are needed;
-/// runs outside a transaction because vec0 virtual tables cannot
-/// participate in user transactions.
+/// Attach `old_db` as `old` and copy the code-index tables (+ mined
+/// code-graph edges and `repo_marker` cursors) plus the five learning
+/// tables into the already-open `conn` (which points at the tmp path).
+/// Uses INSERT-SELECT so no intermediate buffers are needed; runs outside
+/// a transaction because vec0 virtual tables cannot participate in user
+/// transactions.
 ///
 /// The ATTACH path is bound via a parameter rather than interpolated into the
 /// SQL so a data dir whose path contains a single quote (or other SQL
@@ -212,7 +218,18 @@ fn copy_preserved_tables_from_old(conn: &mut rusqlite::Connection, old_db: &Path
 /// `code_symbols` lacks the `access_count` / `last_accessed` columns added
 /// by migration 0004, so those two are sourced conditionally: carried over
 /// when the old table already has them, otherwise synthesized with the
-/// same defaults 0004's backfill applies (`0` / `indexed_at`).
+/// same defaults 0004's backfill applies (`0` / `indexed_at`). The v6
+/// columns (`rank_score` / `parent_id`, added together by 0006) are probed
+/// the same way and synthesized with the 0006 defaults (`0.0` / NULL) for
+/// pre-v6 sources. `id` is carried verbatim so `parent_id` chunk → parent
+/// pointers stay valid in the copy.
+///
+/// Beyond the four code tables, three more pieces of v6 code-graph state
+/// exist only in SQLite and must survive the rebuild: the mined
+/// `co_changed` / `imports` edges (the markdown replay rebuilds only
+/// memory-emitted edges), the `repo_marker` rows whose `last_mined_commit`
+/// cursor bounds the next mining pass, and (in
+/// [`copy_learning_tables_inner`]) the `code_feedback` counters.
 fn copy_code_tables_inner(conn: &rusqlite::Connection) -> Result<()> {
     // Copy regular tables first, then the virtual tables (FTS5 + vec0).
     // code_symbols must come before code_vec/code_fts because the latter
@@ -223,12 +240,19 @@ fn copy_code_tables_inner(conn: &rusqlite::Connection) -> Result<()> {
         } else {
             ("0", "indexed_at")
         };
+        let (rank_expr, parent_expr) = if old_column_exists(conn, "code_symbols", "rank_score")? {
+            ("rank_score", "parent_id")
+        } else {
+            ("0.0", "NULL")
+        };
         conn.execute_batch(&format!(
             "INSERT OR IGNORE INTO main.code_symbols(\
                  id, repo, path, blob_oid, symbol, kind, lang, line_start, line_end, \
-                 snippet, simhash, indexed_at, access_count, last_accessed) \
+                 snippet, simhash, indexed_at, access_count, last_accessed, \
+                 rank_score, parent_id) \
              SELECT id, repo, path, blob_oid, symbol, kind, lang, line_start, line_end, \
-                 snippet, simhash, indexed_at, {count_expr}, {last_expr} \
+                 snippet, simhash, indexed_at, {count_expr}, {last_expr}, \
+                 {rank_expr}, {parent_expr} \
              FROM old.code_symbols;"
         ))?;
     }
@@ -237,6 +261,51 @@ fn copy_code_tables_inner(conn: &rusqlite::Connection) -> Result<()> {
             "INSERT OR IGNORE INTO main.indexed_files(repo, path, blob_oid, indexed_at) \
              SELECT repo, path, blob_oid, indexed_at FROM old.indexed_files;",
         )?;
+    }
+    // Mined code-graph edges. The rel filter narrows to the two kinds the
+    // markdown replay cannot reproduce; a pre-v6 source has no such rows
+    // (its rel CHECK predates the kinds) and no `weight` column, hence the
+    // probe defaulting to the pre-v6 implicit weight of 1.
+    if old_table_exists(conn, "edges")? {
+        let weight_expr = if old_column_exists(conn, "edges", "weight")? {
+            "weight"
+        } else {
+            "1"
+        };
+        conn.execute_batch(&format!(
+            "INSERT OR IGNORE INTO main.edges(\
+                 src_kind, src_id, dst_kind, dst_id, rel, weight, created_at) \
+             SELECT src_kind, src_id, dst_kind, dst_id, rel, {weight_expr}, created_at \
+             FROM old.edges WHERE rel IN ('co_changed', 'imports');"
+        ))?;
+    }
+    // Per-repo code-format stamps (`schema_meta` keys `code_format:<repo>`,
+    // exactly 12 prefix chars — the global `code_format_version` key does
+    // NOT match): without them the next `index-code` sees an unstamped
+    // repo, drops its `indexed_files` cursors, and the full re-walk purges
+    // the BYO `code_vec` rows the copy above just preserved.
+    if old_table_exists(conn, "schema_meta")? {
+        conn.execute_batch(
+            "INSERT OR IGNORE INTO main.schema_meta(key, value) \
+             SELECT key, value FROM old.schema_meta \
+              WHERE substr(key, 1, 12) = 'code_format:';",
+        )?;
+    }
+    // Per-repo indexing markers: dropping `last_mined_commit` would make
+    // the next index-code re-mine bounded history into the (just-copied)
+    // accumulated co_changed weights, double-counting every pair.
+    if old_table_exists(conn, "repo_marker")? {
+        let mined_expr = if old_column_exists(conn, "repo_marker", "last_mined_commit")? {
+            "last_mined_commit"
+        } else {
+            "NULL"
+        };
+        conn.execute_batch(&format!(
+            "INSERT OR IGNORE INTO main.repo_marker(\
+                 repo, last_head, last_indexed_at, last_mined_commit) \
+             SELECT repo, last_head, last_indexed_at, {mined_expr} \
+             FROM old.repo_marker;"
+        ))?;
     }
     // FTS5 and vec0 virtual tables may not support `INSERT INTO … SELECT *`
     // from an attached DB in all sqlite-vec versions; copy each row
@@ -259,15 +328,20 @@ fn copy_code_tables_inner(conn: &rusqlite::Connection) -> Result<()> {
 
 /// Inner copy loop for the learning-loop tables: `feedback` counters (v2),
 /// `retrieval_log` telemetry (v3), `feedback_events` provenance and mined
-/// `query_expansions` (both v5). These rows exist only in SQLite — there is
-/// no markdown source to rebuild them from — so a rebuild that dropped them
-/// would silently reset the Beta feedback rerank prior to neutral and erase
-/// mined expansions, contradicting the documented never-expire contract.
+/// `query_expansions` (both v5), `code_feedback` counters (v6). These rows
+/// exist only in SQLite — there is no markdown source to rebuild them from
+/// — so a rebuild that dropped them would silently reset the Beta feedback
+/// rerank priors to neutral and erase mined expansions, contradicting the
+/// documented never-expire contract.
 ///
 /// Same schema-evolution guards as [`copy_code_tables_inner`]: each table is
-/// only copied when it exists on the attached DB, and
-/// `retrieval_log.duration_ms` (added in v5) is probed via
-/// [`old_column_exists`] and defaulted to NULL when the source predates it.
+/// only copied when it exists on the attached DB; `retrieval_log.duration_ms`
+/// (v5) and its `repo` / `kind` / `source` filter columns (v6, probed
+/// together via `source`) are defaulted to NULL / NULL / NULL / `'search'`
+/// when the source predates them, and `feedback_events.target_kind` (v6)
+/// defaults to `'memory'` — dropping either would let old `search-code` log
+/// rows re-enter reformulation mining and code verdicts masquerade as
+/// memory verdicts in the harvest.
 fn copy_learning_tables_inner(conn: &rusqlite::Connection) -> Result<()> {
     if old_table_exists(conn, "feedback")? {
         conn.execute_batch(
@@ -277,26 +351,49 @@ fn copy_learning_tables_inner(conn: &rusqlite::Connection) -> Result<()> {
              FROM old.feedback;",
         )?;
     }
+    // The `repo` column probe also covers the brief dev-era rowid-keyed
+    // `code_feedback` shape (never released): skip rather than abort.
+    if old_table_exists(conn, "code_feedback")? && old_column_exists(conn, "code_feedback", "repo")?
+    {
+        conn.execute_batch(
+            "INSERT OR IGNORE INTO main.code_feedback(\
+                 repo, path, symbol, used_count, irrelevant_count, last_used) \
+             SELECT repo, path, symbol, used_count, irrelevant_count, last_used \
+             FROM old.code_feedback;",
+        )?;
+    }
     if old_table_exists(conn, "retrieval_log")? {
         let duration_expr = if old_column_exists(conn, "retrieval_log", "duration_ms")? {
             "duration_ms"
         } else {
             "NULL"
         };
+        let (repo_expr, kind_expr, source_expr) =
+            if old_column_exists(conn, "retrieval_log", "source")? {
+                ("repo", "kind", "source")
+            } else {
+                ("NULL", "NULL", "'search'")
+            };
         conn.execute_batch(&format!(
             "INSERT OR IGNORE INTO main.retrieval_log(\
-                 query_id, query, returned_ids, at, duration_ms) \
-             SELECT query_id, query, returned_ids, at, {duration_expr} \
+                 query_id, query, returned_ids, at, duration_ms, repo, kind, source) \
+             SELECT query_id, query, returned_ids, at, {duration_expr}, \
+                 {repo_expr}, {kind_expr}, {source_expr} \
              FROM old.retrieval_log;"
         ))?;
     }
     if old_table_exists(conn, "feedback_events")? {
-        conn.execute_batch(
+        let target_expr = if old_column_exists(conn, "feedback_events", "target_kind")? {
+            "target_kind"
+        } else {
+            "'memory'"
+        };
+        conn.execute_batch(&format!(
             "INSERT OR IGNORE INTO main.feedback_events(\
-                 id, query_id, memory_id, verdict, at) \
-             SELECT id, query_id, memory_id, verdict, at \
-             FROM old.feedback_events;",
-        )?;
+                 id, query_id, memory_id, verdict, at, target_kind) \
+             SELECT id, query_id, memory_id, verdict, at, {target_expr} \
+             FROM old.feedback_events;"
+        ))?;
     }
     if old_table_exists(conn, "query_expansions")? {
         conn.execute_batch(

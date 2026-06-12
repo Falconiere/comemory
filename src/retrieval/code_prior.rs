@@ -71,13 +71,25 @@ pub(crate) struct Signals {
 /// Fetch the ranking signals for one code symbol. Returns `Ok(None)` when
 /// the row vanished (raced re-index delete). `prepare_cached` so per-hit
 /// loops reuse one prepared statement.
+///
+/// `code_feedback` is keyed by stable (repo, path, symbol) identity (see
+/// `stats::code_feedback`), joined here by the row's EFFECTIVE identity:
+/// the CLI feedback path records against the COALESCED parent id, so a
+/// cAST chunk row (`parent_id` NOT NULL, symbol `<name>#<n>`) never owns a
+/// feedback row of its own — it inherits the PARENT's counters via the
+/// `COALESCE(parent.symbol, c.symbol)` join so the parent's feedback
+/// influences its chunks while they are scored pre-coalesce.
 pub(crate) fn signals(conn: &Connection, symbol_id: i64) -> Result<Option<Signals>> {
     let mut stmt = conn.prepare_cached(
         "SELECT c.repo, c.path, c.symbol, c.kind, c.lang, c.line_start, c.line_end,
                 c.rank_score, c.access_count, COALESCE(c.last_accessed, c.indexed_at),
                 c.parent_id, COALESCE(f.used_count, 0), COALESCE(f.irrelevant_count, 0)
            FROM code_symbols c
-           LEFT JOIN code_feedback f ON f.symbol_id = c.id
+           LEFT JOIN code_feedback f
+                  ON f.repo = c.repo AND f.path = c.path
+                 AND f.symbol = COALESCE(
+                       (SELECT p.symbol FROM code_symbols p WHERE p.id = c.parent_id),
+                       c.symbol)
           WHERE c.id = ?1",
     )?;
     stmt.query_row([symbol_id], |r| {

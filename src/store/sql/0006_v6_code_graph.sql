@@ -47,13 +47,24 @@ ALTER TABLE retrieval_log ADD COLUMN source TEXT NOT NULL DEFAULT 'search';
 ALTER TABLE feedback_events ADD COLUMN target_kind TEXT NOT NULL DEFAULT 'memory';
 
 -- Per-symbol feedback counters, the code-side sibling of `feedback`
--- (memories). No FK to code_symbols(id) — re-indexing may drop/recreate
--- symbol rows while feedback history persists.
+-- (memories). Keyed by the STABLE (repo, path, symbol) identity, not the
+-- code_symbols rowid: re-indexing purges + reinserts every row of a
+-- touched file and SQLite recycles the freed rowids, so a rowid key would
+-- silently re-attribute feedback history to whatever symbol inherits the
+-- number. No FK to code_symbols — feedback history must outlive the rows
+-- it scores (the identity re-joins after every re-index).
+--
+-- NOTE: this migration was amended in place before v6 ever shipped (the
+-- table was briefly rowid-keyed during development); no released binary
+-- created the old shape, so no follow-up migration is needed.
 CREATE TABLE code_feedback (
-    symbol_id        INTEGER PRIMARY KEY,
+    repo             TEXT NOT NULL,
+    path             TEXT NOT NULL,
+    symbol           TEXT NOT NULL,
     used_count       INTEGER NOT NULL DEFAULT 0,
     irrelevant_count INTEGER NOT NULL DEFAULT 0,
-    last_used        TEXT
+    last_used        TEXT,
+    PRIMARY KEY (repo, path, symbol)
 );
 
 ALTER TABLE repo_marker ADD COLUMN last_mined_commit TEXT;

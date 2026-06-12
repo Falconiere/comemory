@@ -70,8 +70,9 @@ fn boosted_signals_raise_the_product() {
     )
     .expect("set cold");
     conn.execute(
-        "INSERT INTO code_feedback(symbol_id, used_count, irrelevant_count) VALUES (?1, 6, 0)",
-        [hot],
+        "INSERT INTO code_feedback(repo, path, symbol, used_count, irrelevant_count) \
+         VALUES ('demo', 'hot.rs', 'hot_run', 6, 0)",
+        [],
     )
     .expect("seed feedback");
 
@@ -93,6 +94,61 @@ fn boosted_signals_raise_the_product() {
     assert!(h.activation > 1.0, "recent accesses must boost activation");
     assert!(h.feedback > 1.0, "positive feedback must boost");
     assert!(h.final_score > c.final_score);
+}
+
+/// cAST chunk rows inherit their PARENT's feedback: the CLI feedback path
+/// records against the coalesced parent id, so the chunk's own `<name>#<n>`
+/// symbol never owns a `code_feedback` row — the prior join resolves the
+/// chunk's EFFECTIVE identity (the parent's symbol name) instead, so the
+/// parent's feedback influences its chunks while they are scored
+/// pre-coalesce.
+#[test]
+fn chunk_rows_inherit_parent_feedback() {
+    use comemory::store::code_row::{self, CodeSymbolRow};
+
+    let (_d, conn) = code_seed::open_db();
+    let cfg = Config::defaults();
+    let parent = code_seed::seed_symbol(&conn, "demo", "big.rs", "big_run");
+    let chunk = code_row::insert(
+        &conn,
+        &CodeSymbolRow {
+            repo: "demo",
+            path: "big.rs",
+            blob_oid: "oid",
+            symbol: "big_run#1",
+            kind: "function",
+            lang: "rust",
+            line_start: 11,
+            line_end: 20,
+            snippet: "chunk body",
+            simhash: 0,
+            parent_id: Some(parent),
+        },
+    )
+    .expect("insert chunk row");
+    // Feedback recorded under the parent's identity (what the CLI path
+    // writes after coalescing).
+    conn.execute(
+        "INSERT INTO code_feedback(repo, path, symbol, used_count, irrelevant_count) \
+         VALUES ('demo', 'big.rs', 'big_run', 6, 0)",
+        [],
+    )
+    .expect("seed parent feedback");
+
+    let ws = WorkingSet::default();
+    let p = prior_product(&conn, &cfg, parent, &ws, 0.0)
+        .expect("prior_product")
+        .expect("parent row");
+    let c = prior_product(&conn, &cfg, chunk, &ws, 0.0)
+        .expect("prior_product")
+        .expect("chunk row");
+    assert!(p.feedback > 1.0, "parent feedback boosts the parent");
+    assert!(
+        (c.feedback - p.feedback).abs() < 1e-12,
+        "chunk must inherit the parent's feedback boost, got chunk {} vs parent {}",
+        c.feedback,
+        p.feedback
+    );
 }
 
 #[test]

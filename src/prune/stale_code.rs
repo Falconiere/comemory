@@ -9,6 +9,15 @@
 //! to flag. Returning `Ok(vec![])` keeps the CLI surface usable today and
 //! makes the upgrade path additive — the signature does not change when the
 //! real walker lands.
+//!
+//! **Deleted-files gap (honest limitation):** because this is a stub,
+//! `code_symbols` rows, `indexed_files` cursors, and `co_changed` /
+//! `imports` edges for files DELETED from an indexed repo persist
+//! indefinitely — `index-code` only walks files that still exist, so
+//! nothing ever removes them. They keep their PageRank mass and can still
+//! surface in `search-code` results. A real stale-code prune (detect
+//! indexed paths absent from the working tree, soft-purge their rows and
+//! edges, re-run PageRank) is an M4 candidate.
 
 use std::path::Path;
 

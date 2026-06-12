@@ -56,7 +56,12 @@ pub fn load_file(path: &Path) -> Result<Vec<GoldenPair>> {
 /// text-encode a symbol id into `memory_id` (see
 /// [`crate::stats::code_feedback`]), and an all-digit symbol id is also a
 /// valid 8-hex memory id, so without the guard a code verdict could join
-/// an unrelated live memory and pollute the golden set.
+/// an unrelated live memory and pollute the golden set. The
+/// `source != 'search-code'` guard is the mirror image on the query side:
+/// a memory verdict manually recorded against a code query id would
+/// otherwise mint a golden pair whose `kind` filter is a *language*
+/// (`retrieval_log.kind` carries `--lang` for search-code rows), which
+/// eval would replay as a memory-kind filter and score garbage.
 pub fn harvest(conn: &Connection) -> Result<Vec<GoldenPair>> {
     let mut stmt = conn.prepare(
         "SELECT DISTINCT r.query, r.repo, r.kind, e.memory_id
@@ -64,6 +69,7 @@ pub fn harvest(conn: &Connection) -> Result<Vec<GoldenPair>> {
            JOIN retrieval_log r ON r.query_id = e.query_id
            JOIN memories m ON m.id = e.memory_id AND m.deleted_at IS NULL
           WHERE e.verdict = 'used' AND e.target_kind = 'memory'
+            AND r.source != 'search-code'
           ORDER BY r.query, r.repo, r.kind, e.memory_id",
     )?;
     let rows: Vec<(PairKey, String)> = stmt

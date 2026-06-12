@@ -250,6 +250,13 @@ comemory ingest-code  (BYO embedder)
     code_symbols / code_fts rows.
 ```
 
+**Deleted-files gap (known limitation):** `index-code` only walks files
+that exist in the working tree, so symbols, `indexed_files` cursors, and
+`co_changed`/`imports` edges for files *deleted* from a repo persist in
+the index until a future stale-code prune lands (an M4 candidate — see
+`src/prune/stale_code.rs`). Until then, deleted files keep their PageRank
+mass and can still surface in `search-code` results.
+
 `comemory rebuild` drops `comemory.db` and reruns step 4 of "save" for every
 markdown file. Use it after upgrading from v0.1 or after editing the DB by
 hand.
@@ -288,8 +295,11 @@ Soft delete moves `memories/{id}.md` → `memories/.trash/{id}.md`. Trash is
 retained 30 days, then purged by `comemory gc`. SQL rows are hard-deleted
 (always rebuildable from markdown).
 
-`comemory index-code --incremental` auto-prunes code symbols for deleted
-files. `comemory doctor` reports stale counts read-only, never deletes.
+Stale-code pruning is **not implemented yet** (`prune::stale_code::detect`
+is a stub returning an empty set): code symbols and graph edges for files
+deleted from a repo persist — keeping their PageRank mass — until a future
+stale-code prune lands (M4 candidate). `comemory doctor` reports stale
+counts read-only, never deletes.
 
 ## Where to go next
 

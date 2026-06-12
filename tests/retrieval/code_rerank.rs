@@ -159,8 +159,9 @@ fn irrelevant_heavy_symbol_sinks_below_neutral_twin() {
     let b = seed(&conn, "demo", "b.rs", "b::run", (1, 10), None);
     // `a` would win the symbol_id tie-break; downvotes must sink it below b.
     conn.execute(
-        "INSERT INTO code_feedback(symbol_id, used_count, irrelevant_count) VALUES (?1, 0, 20)",
-        [a],
+        "INSERT INTO code_feedback(repo, path, symbol, used_count, irrelevant_count) \
+         VALUES ('demo', 'a.rs', 'a::run', 0, 20)",
+        [],
     )
     .expect("seed feedback");
 
@@ -331,8 +332,9 @@ fn score_parts_product_invariant() {
     )
     .expect("set rank");
     conn.execute(
-        "INSERT INTO code_feedback(symbol_id, used_count, irrelevant_count) VALUES (?1, 6, 1)",
-        [a],
+        "INSERT INTO code_feedback(repo, path, symbol, used_count, irrelevant_count) \
+         VALUES ('demo', 'a.rs', 'a::run', 6, 1)",
+        [],
     )
     .expect("seed feedback");
 

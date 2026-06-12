@@ -54,7 +54,10 @@ Examples:
   comemory search-code \"knn\" --vector 0.1,0.2,0.3,...
 
 The working-set affinity boost applies only when search-code runs inside
-the repo's working tree (the CWD is used to detect dirty/recent files).";
+the indexed repo's checkout (the CWD is used to detect dirty/recent files)
+AND the repo label used at index time (`index-code --repo`) matches the
+--repo flag — or, when --repo is omitted, the checkout directory's
+basename.";
 
 /// Arguments to `comemory search-code`.
 #[derive(ClapArgs, Debug)]

@@ -224,6 +224,37 @@ fn harvest_excludes_code_target_events() {
 }
 
 #[test]
+fn harvest_excludes_search_code_query_rows() {
+    // A memory verdict manually recorded against a `search-code` query id
+    // joins a retrieval_log row whose `kind` column carries a LANGUAGE
+    // (the --lang filter), not a memory kind. Without the source guard the
+    // harvest would mint a golden pair whose kind filter is `rust`, which
+    // eval would replay as a memory-kind filter and score garbage.
+    let (_d, conn) = open_db();
+    insert_memory(&conn, "aaaaaaa1", "postgres pool exhausted fix", None);
+    conn.execute(
+        "INSERT INTO retrieval_log(query_id, query, returned_ids, at, duration_ms,
+                                   repo, kind, source)
+         VALUES ('q-20260609-aabbccdd', 'postgres pool', '[]', '2026-06-09T00:00:00Z', 1,
+                 'r', 'rust', 'search-code')",
+        [],
+    )
+    .expect("insert search-code retrieval_log row");
+    conn.execute(
+        "INSERT INTO feedback_events(query_id, memory_id, verdict, at, target_kind)
+         VALUES ('q-20260609-aabbccdd', 'aaaaaaa1', 'used', '2026-06-09T00:00:00Z', 'memory')",
+        [],
+    )
+    .expect("insert memory verdict against the code query");
+
+    let pairs = harvest(&conn).expect("harvest");
+    assert!(
+        pairs.is_empty(),
+        "search-code query rows must not seed golden pairs: {pairs:?}"
+    );
+}
+
+#[test]
 fn merge_file_wins_on_duplicate_query_and_sorts() {
     let file = vec![GoldenPair {
         query: "postgres pool".into(),

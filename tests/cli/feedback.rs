@@ -24,6 +24,33 @@ fn open_db_readonly(home: &TempDir) -> rusqlite::Connection {
     .expect("open db read-only")
 }
 
+/// Seed one real `code_symbols` row through the production writer
+/// (creating + migrating the sandbox db on first call) and return its
+/// rowid. Code feedback resolves ids against live rows now, so the code
+/// flags need actual symbols to point at.
+fn seed_code_symbol(home: &TempDir, repo: &str, path: &str, symbol: &str) -> i64 {
+    let data_dir = home.path().join(".comemory");
+    std::fs::create_dir_all(&data_dir).expect("create data dir");
+    let conn = comemory::store::connection::open(data_dir.join("comemory.db")).expect("open db");
+    comemory::store::code_row::insert(
+        &conn,
+        &comemory::store::code_row::CodeSymbolRow {
+            repo,
+            path,
+            blob_oid: "oid",
+            symbol,
+            kind: "function",
+            lang: "rust",
+            line_start: 1,
+            line_end: 10,
+            snippet: "fn body() {}",
+            simhash: 0,
+            parent_id: None,
+        },
+    )
+    .expect("insert code symbol")
+}
+
 #[test]
 fn feedback_records_used_and_irrelevant_ids() {
     let home = TempDir::new().expect("tempdir");
@@ -166,17 +193,20 @@ fn feedback_unknown_query_id_warns_but_records() {
 fn feedback_records_code_target_ids() {
     // `--used-code` / `--irrelevant-code` write `feedback_events` rows with
     // target_kind='code' (symbol id text-encoded into the memory_id column)
-    // plus `code_feedback` counter rows, and the JSON ack reports the counts.
+    // plus identity-keyed `code_feedback` counter rows, and the JSON ack
+    // reports the counts.
     let home = TempDir::new().expect("tempdir");
+    let used_id = seed_code_symbol(&home, "demo", "a.rs", "alpha");
+    let irrelevant_id = seed_code_symbol(&home, "demo", "b.rs", "beta");
     let v = run_json(
         &home,
         &[
             "feedback",
             "q-20260610-aabbccdd",
             "--used-code",
-            "12",
+            &used_id.to_string(),
             "--irrelevant-code",
-            "13",
+            &irrelevant_id.to_string(),
         ],
     );
     assert_eq!(v["ok"].as_bool(), Some(true));
@@ -188,8 +218,10 @@ fn feedback_records_code_target_ids() {
         .query_row(
             "SELECT (SELECT count(*) FROM feedback_events
                       WHERE query_id = 'q-20260610-aabbccdd' AND target_kind = 'code'),
-                    (SELECT used_count FROM code_feedback WHERE symbol_id = 12),
-                    (SELECT irrelevant_count FROM code_feedback WHERE symbol_id = 13)",
+                    (SELECT used_count FROM code_feedback
+                      WHERE repo = 'demo' AND path = 'a.rs' AND symbol = 'alpha'),
+                    (SELECT irrelevant_count FROM code_feedback
+                      WHERE repo = 'demo' AND path = 'b.rs' AND symbol = 'beta')",
             [],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
@@ -197,6 +229,38 @@ fn feedback_records_code_target_ids() {
     assert_eq!(code_events, 2, "one code-tagged event per symbol id");
     assert_eq!(used_count, 1);
     assert_eq!(irrelevant_count, 1);
+}
+
+#[test]
+fn feedback_errors_loudly_on_vanished_code_symbol_id() {
+    // A well-formed symbol id that names no live `code_symbols` row must
+    // fail loudly (unlike the query-id warn path): the rowid may already
+    // belong to an unrelated symbol after a re-index, so recording it
+    // would misattribute the verdict.
+    let home = TempDir::new().expect("tempdir");
+    // Create the db (and one symbol) so the failure is the missing id,
+    // not a missing table.
+    let live = seed_code_symbol(&home, "demo", "a.rs", "alpha");
+    let dead = live + 1_000;
+    let assertion = bin(&home)
+        .args([
+            "feedback",
+            "q-20260610-aabbccdd",
+            "--used-code",
+            &dead.to_string(),
+        ])
+        .assert()
+        .failure();
+    let stderr = String::from_utf8(assertion.get_output().stderr.clone()).expect("utf8 stderr");
+    assert!(
+        stderr.contains(&dead.to_string()),
+        "stderr should name the vanished id, got: {stderr:?}"
+    );
+    let conn = open_db_readonly(&home);
+    let rows: i64 = conn
+        .query_row("SELECT count(*) FROM code_feedback", [], |r| r.get(0))
+        .expect("count");
+    assert_eq!(rows, 0, "nothing may be recorded for a vanished id");
 }
 
 #[test]
@@ -233,6 +297,8 @@ fn feedback_mixed_memory_and_code_flags_write_all_four_kinds() {
     // memory-tagged events + the `feedback` counters, two code-tagged
     // events + the `code_feedback` counters.
     let home = TempDir::new().expect("tempdir");
+    let used_code = seed_code_symbol(&home, "demo", "a.rs", "alpha");
+    let irrelevant_code = seed_code_symbol(&home, "demo", "b.rs", "beta");
     let v = run_json(
         &home,
         &[
@@ -243,9 +309,9 @@ fn feedback_mixed_memory_and_code_flags_write_all_four_kinds() {
             "--irrelevant",
             "cccc0003",
             "--used-code",
-            "12",
+            &used_code.to_string(),
             "--irrelevant-code",
-            "13",
+            &irrelevant_code.to_string(),
         ],
     );
     assert_eq!(v["used"].as_u64(), Some(1));
@@ -269,7 +335,8 @@ fn feedback_mixed_memory_and_code_flags_write_all_four_kinds() {
     let (mem_used, code_used): (i64, i64) = conn
         .query_row(
             "SELECT (SELECT used_count FROM feedback WHERE memory_id = 'a1b2c3d4'),
-                    (SELECT used_count FROM code_feedback WHERE symbol_id = 12)",
+                    (SELECT used_count FROM code_feedback
+                      WHERE repo = 'demo' AND path = 'a.rs' AND symbol = 'alpha')",
             [],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
