@@ -38,6 +38,7 @@ Commands:
   ingest-code    Read pre-embedded JSONL rows from stdin and ingest them into the code index (`code_symbols` + `code_fts` + `code_vec`)
   ast            Run an ast-grep pattern against a single source file
   graph          Export the file-level code-connection graph (imports + co-change) as JSON, Graphviz DOT, or an interactive HTML page
+  serve          Launch the local web viewer + in-browser code editor (loopback HTTP)
   context        Headline lookup: code symbol + memories matching a key
   completions    Emit a shell completion script for `bash`, `zsh`, `fish`, `powershell`, or `elvish`
   prune          Detect (and optionally soft-delete) stale memories
@@ -532,6 +533,39 @@ Examples:
 
   # Drop weak co-change links (accumulated weight < 3)
   comemory graph --rel co-changed --min-weight 3
+```
+
+---
+
+## comemory serve
+
+```
+Launch the local web viewer + in-browser code editor (loopback HTTP)
+
+Usage: comemory serve [OPTIONS]
+
+Options:
+      --json                 Emit machine-readable JSON instead of a human TTY view
+      --repo <REPO>          Restrict the graph to one repo label (as passed to `index-code --repo`)
+      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+      --port <PORT>          Loopback port to bind. `0` (default) selects an ephemeral port whose URL is printed at startup [default: 0]
+      --read-only            Disable all writes: `PUT /api/file` returns 405 and the editor's Save action is hidden
+      --root <REPO=PATH>     Override a repo's working-tree root as `<repo>=<abs-path>` (repeatable). Required for repos indexed before the v7 schema captured the root
+      --open                 Open the printed URL in the default browser after binding
+  -h, --help                 Print help
+
+Examples:
+  # Serve the graph + editor for every indexed repo on an ephemeral port
+  comemory serve
+
+  # One repo, fixed port, opened in the browser
+  comemory serve --repo myrepo --port 8787 --open
+
+  # Read-only exploration (no writes to disk)
+  comemory serve --read-only
+
+  # Supply a repo root for repos indexed before the v7 schema captured it
+  comemory serve --root myrepo=/abs/path/to/repo
 ```
 
 ---

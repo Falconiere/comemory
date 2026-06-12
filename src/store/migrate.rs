@@ -13,7 +13,7 @@ use crate::prelude::*;
 
 /// Highest schema version known to this build. Bumped each time a new
 /// migration file is added under `src/store/sql/`.
-pub const CURRENT_VERSION: &str = "6";
+pub const CURRENT_VERSION: &str = "7";
 
 /// 0001 bootstrap SQL (`schema_meta` table). Public so tests can replay
 /// historical schema states exactly as an old binary created them.
@@ -35,6 +35,11 @@ pub const M_V5: &str = include_str!("./sql/0005_v5_learning.sql");
 /// filters, feedback_events.target_kind, code_feedback table, and
 /// repo_marker.last_mined_commit.
 pub const M_V6: &str = include_str!("./sql/0006_v6_code_graph.sql");
+/// 0007 SQL: `repo_marker.root_path`, the absolute working-tree root
+/// captured at index time so `comemory serve` can resolve file-node ids
+/// back to real files on disk. Public so tests can replay historical
+/// schema states exactly as an old binary created them.
+pub const M_V7: &str = include_str!("./sql/0007_v7_repo_root.sql");
 
 /// Apply all pending migrations. Safe to re-run; each migration is
 /// only applied if its key is absent from `schema_meta`.
@@ -47,6 +52,7 @@ pub fn run(conn: &mut Connection) -> Result<()> {
     apply(conn, "0005_v5_learning", M_V5)?;
     rehash_simhashes(conn)?;
     apply(conn, "0006_v6_code_graph", M_V6)?;
+    apply(conn, "0007_v7_repo_root", M_V7)?;
     set_version(conn, CURRENT_VERSION)?;
     Ok(())
 }

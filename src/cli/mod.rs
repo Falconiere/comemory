@@ -28,6 +28,7 @@ pub mod rebuild;
 pub mod save;
 pub mod search;
 pub mod search_code;
+pub mod serve;
 pub mod tune;
 
 /// Top-level CLI. `comemory <subcommand> [--json] [--data-dir DIR]`. The `--json`
@@ -91,6 +92,8 @@ pub enum Cmd {
     /// Export the file-level code-connection graph (imports + co-change)
     /// as JSON, Graphviz DOT, or an interactive HTML page.
     Graph(graph::Args),
+    /// Launch the local web viewer + in-browser code editor (loopback HTTP).
+    Serve(serve::Args),
     /// Headline lookup: code symbol + memories matching a key.
     Context(context::Args),
     /// Emit a shell completion script for `bash`, `zsh`, `fish`, `powershell`, or `elvish`.
@@ -127,6 +130,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::IngestCode(a) => ingest_code::run(a, cli.json, cli.data_dir).await,
         Cmd::Ast(a) => ast::run(a, cli.json, cli.data_dir).await,
         Cmd::Graph(a) => graph::run(a, cli.json, cli.data_dir).await,
+        Cmd::Serve(a) => serve::run(a, cli.json, cli.data_dir).await,
         Cmd::Context(a) => context::run(a, cli.json, cli.data_dir).await,
         Cmd::Completions(a) => completions::run(a, cli.json, cli.data_dir).await,
         Cmd::Prune(a) => prune::run(a, cli.json, cli.data_dir).await,

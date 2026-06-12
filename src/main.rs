@@ -6,7 +6,8 @@
 //! - 64 — `EX_USAGE` (`NotFound`)
 //! - 65 — `EX_DATAERR` (`Yaml`, `Json`, `Toml`, `Frontmatter`, `VecDimMismatch`)
 //! - 69 — `EX_UNAVAILABLE` (`Unavailable`)
-//! - 70 — `EX_SOFTWARE` (`Sqlite`, `Migration`, `Ast`, `Git`, `Other`)
+//! - 70 — `EX_SOFTWARE` (`Sqlite`, `Migration`, `Ast`, `Git`, `Forbidden`,
+//!   `BadRequest`, `Other`)
 //! - 74 — `EX_IOERR` (`Io`)
 //! - 78 — `EX_CONFIG` (`Config`)
 
@@ -84,6 +85,16 @@ async fn main() {
             let mut err = std::io::stderr().lock();
             let _ = writeln!(err, "error: config: {msg}");
             78
+        }
+        Err(Error::Forbidden(msg)) => {
+            let mut err = std::io::stderr().lock();
+            let _ = writeln!(err, "error: forbidden: {msg}");
+            70
+        }
+        Err(Error::BadRequest(msg)) => {
+            let mut err = std::io::stderr().lock();
+            let _ = writeln!(err, "error: bad request: {msg}");
+            70
         }
         Err(Error::Unavailable(msg)) => {
             let mut err = std::io::stderr().lock();
