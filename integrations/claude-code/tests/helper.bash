@@ -4,6 +4,7 @@
 PLUGIN_ROOT="$(cd "${BATS_TEST_DIRNAME}/.." && pwd)"
 export WRAPPER="${PLUGIN_ROOT}/scripts/comemory.sh"
 export HOOK="${PLUGIN_ROOT}/hooks/session-start.sh"
+export UNINSTALL="${PLUGIN_ROOT}/scripts/uninstall.sh"
 
 setup() {
     COMEMORY_DATA_DIR="$(mktemp -d)"
