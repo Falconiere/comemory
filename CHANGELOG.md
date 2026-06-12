@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.8.0 — 2026-06-12 (edition 2024 + leaner release builds)
+
+Build, packaging, and toolchain hardening. No CLI behavior changes.
+
+### Changed
+- **`[profile.dist]` now uses fat LTO** (was thin), so prebuilt release
+  tarballs and the Homebrew bottle match local `cargo build --release`
+  codegen quality (`codegen-units = 1`, `strip = "symbols"`,
+  `panic = "abort"`, all inherited from `[profile.release]`). Trade-off:
+  release CI is slower per target.
+- Migrated the crate to **Rust edition 2024** (`rust-version = "1.95"`
+  clears the edition's 1.85 rustc floor). Mechanical migration only:
+  import reordering, let-chains, and `unsafe { … }` around
+  `std::env::set_var/remove_var` in tests as edition 2024 requires.
+
+### Removed
+- **Dropped the `x86_64-apple-darwin` (Intel macOS) prebuilt target.**
+  Supported prebuilt targets are now `aarch64-apple-darwin`,
+  `x86_64-unknown-linux-gnu`, and `aarch64-unknown-linux-gnu`. Intel-Mac
+  users install from source via `cargo install comemory` or
+  `cargo install --path .`.
+
 ## 0.7.0 — 2026-06-12 (interactive web viewer + editor)
 
 Adds `comemory serve`: a loopback-only web app for exploring the code
