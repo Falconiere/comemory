@@ -26,12 +26,23 @@ build-release:
 e2e:
     bash scripts/e2e.sh
 
+# >>> comemory claude-code plugin recipes >>>
 # Claude Code plugin tests (bats, real binary). Outside the Rust gate; skips if
 # bats is absent. Requires `comemory` on PATH (cargo install --path .).
 claude-plugin-test:
     bash -n integrations/claude-code/scripts/comemory.sh
     bash -n integrations/claude-code/hooks/session-start.sh
     if command -v bats >/dev/null; then bats integrations/claude-code/tests/; else echo "bats not installed — skipping plugin tests"; fi
+
+# Fully remove the plugin FROM THIS REPO: reverts the README link, deletes the
+# plugin dir, and removes these recipes. Review with `git status` after. (To
+# uninstall as an end user instead, run integrations/.../scripts/uninstall.sh.)
+claude-plugin-remove:
+    sed -i '/^# >>> comemory claude-code plugin/,/^# <<< comemory claude-code plugin/d' justfile
+    sed -i '/\[Claude Code plugin\](integrations\/claude-code/,+1d' README.md
+    rm -rf integrations/claude-code
+    @echo "comemory Claude Code plugin removed from the repo. Review: git status"
+# <<< comemory claude-code plugin recipes <<<
 
 perf:
     bash scripts/build-perf.sh

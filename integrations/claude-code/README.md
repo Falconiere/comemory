@@ -34,6 +34,27 @@ Install from the marketplace (the plugin root is this directory,
 `integrations/claude-code/`). The `.claude-plugin/plugin.json` manifest,
 `hooks/hooks.json`, and `skills/` are picked up automatically.
 
+## Uninstall
+
+**End user** — back the plugin out of your Claude Code setup:
+
+```bash
+integrations/claude-code/scripts/uninstall.sh            # unhook; keep memories
+integrations/claude-code/scripts/uninstall.sh --purge-data   # also delete ~/.comemory (typed confirmation)
+```
+
+It prints how to remove the plugin from Claude Code and leaves your stored
+memories untouched unless you pass `--purge-data`.
+
+**Repo maintainer** — remove the integration from this repository entirely:
+
+```bash
+just claude-plugin-remove
+```
+
+Deletes `integrations/claude-code/`, reverts the README link, and removes the
+plugin's `just` recipes. Review with `git status` afterward.
+
 ## Optional: vector ranking
 
 v1 is lexical-only. To improve ranking with embeddings, supply vectors yourself
