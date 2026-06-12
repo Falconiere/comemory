@@ -198,14 +198,14 @@ fn dot_format_emits_digraph_header() {
 }
 
 #[test]
-fn html_format_loads_cytoscape() {
+fn html_format_loads_sigma() {
     let home = TempDir::new().expect("tempdir");
     let out = bin(&home)
         .args(["graph", "--format", "html"])
         .assert()
         .success();
     let stdout = String::from_utf8(out.get_output().stdout.clone()).expect("utf8");
-    assert!(stdout.contains("cytoscape"), "viewer must embed cytoscape");
+    assert!(stdout.contains("sigma"), "viewer must embed sigma.js");
     assert!(!stdout.contains("__GRAPH_DATA__"), "data must be inlined");
 }
 

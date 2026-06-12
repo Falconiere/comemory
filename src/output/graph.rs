@@ -1,8 +1,9 @@
 //! Render the file-level code-connection graph (PageRank-weighted nodes +
 //! `imports` / `co_changed` edges) in three shapes: machine-readable JSON,
 //! Graphviz DOT (`dot -Tsvg`), and an interactive HTML page backed by
-//! `cytoscape.js` (loaded from a CDN, so the page needs network access on
-//! first load). The data shape (`CodeGraph`) is built by
+//! `sigma.js` + `graphology` (WebGL render, ForceAtlas2 layout, loaded from a
+//! CDN, so the page needs network access on first load). The data shape
+//! (`CodeGraph`) is built by
 //! `crate::cli::graph` and consumed here; keeping the structs in `output`
 //! lets the integration tests render without a database.
 

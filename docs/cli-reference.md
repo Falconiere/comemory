@@ -498,7 +498,7 @@ Options:
           Possible values:
           - json: Machine-readable `{ nodes, edges }` JSON
           - dot:  Graphviz DOT source (pipe to `dot`)
-          - html: Interactive HTML page (cytoscape.js, loaded from a CDN)
+          - html: Interactive HTML page (sigma.js, loaded from a CDN)
           
           [default: json]
 

@@ -3,7 +3,9 @@
 <head>
 <meta charset="utf-8">
 <title>comemory — code graph</title>
-<script src="https://unpkg.com/cytoscape@3.30.2/dist/cytoscape.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/graphology@0.25.4/dist/graphology.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/graphology-layout-forceatlas2@0.10.1/dist/graphology-layout-forceatlas2.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sigma@3.0.2/dist/sigma.min.js"></script>
 <style>
   html,body{margin:0;height:100%;font-family:system-ui,sans-serif}
   #cy{width:100%;height:100vh;display:block;background:#fafbfc}
@@ -14,6 +16,8 @@
     vertical-align:middle;border-radius:2px}
   #stats{color:#555;margin-top:6px}
   #hint{color:#888;margin-top:4px;font-size:11px}
+  #err{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+    color:#b00;font-size:14px;text-align:center;display:none}
 </style>
 </head>
 <body>
@@ -27,66 +31,140 @@
   <label><input type="checkbox" id="f-cochanged" checked>
     <span class="sw" style="background:#d9730d"></span>co_changed</label>
   <div id="stats"></div>
-  <div id="hint">node size = PageRank · click a file to focus</div>
+  <div id="hint">node size = PageRank · click a file to focus · drag to pan · scroll to zoom</div>
 </div>
 <div id="cy"></div>
+<div id="err">could not load the sigma.js viewer (needs network on first load)</div>
 <script>
 const DATA = __GRAPH_DATA__;
-const els = [];
-for (const n of DATA.nodes) {
-  els.push({ data: { id: n.id, label: n.label, repo: n.repo,
-    rank: n.rank, symbols: n.symbols } });
+
+// Guard: the three CDN libraries must all have loaded. WebGL render lives in
+// Sigma; without it we cannot draw anything, so surface a clear message rather
+// than failing silently on a blank canvas.
+if (typeof graphology === 'undefined' ||
+    typeof graphologyLayoutForceAtlas2 === 'undefined' ||
+    typeof Sigma === 'undefined') {
+  document.getElementById('err').style.display = 'block';
+} else {
+  renderGraph();
 }
-for (let i = 0; i < DATA.edges.length; i++) {
-  const e = DATA.edges[i];
-  els.push({ data: { id: 'e' + i, source: e.src, target: e.dst,
-    rel: e.rel, weight: e.weight } });
-}
-const maxRank = DATA.nodes.reduce((m, n) => Math.max(m, n.rank), 0) || 1;
-const maxWeight = DATA.edges.reduce((m, e) => Math.max(m, e.weight), 1);
-const cy = cytoscape({
-  container: document.getElementById('cy'),
-  elements: els,
-  style: [
-    { selector: 'node', style: {
-      'label': 'data(label)', 'font-size': 7, 'color': '#222',
-      'background-color': '#5b8def', 'text-wrap': 'wrap', 'text-max-width': 120,
-      'width': 'mapData(rank, 0, ' + maxRank + ', 12, 60)',
-      'height': 'mapData(rank, 0, ' + maxRank + ', 12, 60)' } },
-    { selector: 'edge[rel="imports"]', style: {
-      'line-color': '#3367d6', 'target-arrow-color': '#3367d6',
-      'target-arrow-shape': 'triangle', 'curve-style': 'bezier', 'width': 1 } },
-    { selector: 'edge[rel="co_changed"]', style: {
-      'line-color': '#d9730d', 'line-style': 'dashed', 'curve-style': 'bezier',
-      'width': 'mapData(weight, 1, ' + maxWeight + ', 1, 6)' } },
-    { selector: '.hidden', style: { 'display': 'none' } },
-    { selector: '.faded', style: { 'opacity': 0.12 } },
-    { selector: 'node:selected', style: { 'background-color': '#111' } }
-  ],
-  layout: { name: 'cose', animate: false, nodeRepulsion: 8000, idealEdgeLength: 80 }
-});
-function applyFilters() {
-  const im = document.getElementById('f-imports').checked;
-  const co = document.getElementById('f-cochanged').checked;
-  cy.batch(() => {
-    cy.edges().forEach(e => {
-      const r = e.data('rel');
-      const show = (r === 'imports' && im) || (r === 'co_changed' && co);
-      e.toggleClass('hidden', !show);
+
+function renderGraph() {
+  const Graph = graphology.Graph || graphology;
+  const fa2 = graphologyLayoutForceAtlas2;
+
+  const maxRank = DATA.nodes.reduce((m, n) => Math.max(m, n.rank), 0) || 1;
+  const maxWeight = DATA.edges.reduce((m, e) => Math.max(m, e.weight), 1);
+
+  // Directed multigraph: imports are directed, co_changed undirected, and the
+  // same file pair may carry both — so parallel edges must be allowed.
+  const graph = new Graph({ type: 'directed', multi: true });
+
+  // Seed nodes on a circle so ForceAtlas2 has non-degenerate start positions
+  // (FA2 produces NaN coordinates if every node starts at the origin).
+  const N = DATA.nodes.length || 1;
+  DATA.nodes.forEach((n, i) => {
+    const a = (2 * Math.PI * i) / N;
+    graph.addNode(n.id, {
+      label: n.label,
+      repo: n.repo,
+      rank: n.rank,
+      symbols: n.symbols,
+      x: Math.cos(a),
+      y: Math.sin(a),
+      size: 3 + 17 * (n.rank / maxRank),
+      color: '#5b8def'
     });
   });
+
+  DATA.edges.forEach((e, i) => {
+    // Tolerate dangling endpoints: index-code may not have populated every
+    // referenced file yet. Skip rather than throw on a missing node.
+    if (!graph.hasNode(e.src) || !graph.hasNode(e.dst)) return;
+    const imports = e.rel === 'imports';
+    const size = imports
+      ? 1
+      : 1 + 5 * ((e.weight - 1) / (maxWeight - 1 || 1));
+    try {
+      graph.addDirectedEdgeWithKey('e' + i, e.src, e.dst, {
+        rel: e.rel,
+        weight: e.weight,
+        type: imports ? 'arrow' : 'line',
+        color: imports ? '#3367d6' : '#d9730d',
+        size
+      });
+    } catch (_) {
+      // Duplicate key / self-loop: ignore, the edge adds no signal.
+    }
+  });
+
+  // Interaction state, read by the reducers below.
+  const filter = { imports: true, co_changed: true };
+  let focus = null;        // focused node id, or null
+  let focusHood = null;    // Set of node ids in the focus neighborhood
+
+  const renderer = new Sigma(graph, document.getElementById('cy'), {
+    defaultEdgeType: 'line',
+    renderEdgeLabels: false,
+    labelRenderedSizeThreshold: 6,
+    nodeReducer(node, data) {
+      const res = Object.assign({}, data);
+      if (focus && focusHood && !focusHood.has(node)) {
+        res.color = '#d6dbe1';
+        res.label = '';
+      }
+      return res;
+    },
+    edgeReducer(edge, data) {
+      const res = Object.assign({}, data);
+      if (!filter[data.rel]) {
+        res.hidden = true;
+        return res;
+      }
+      if (focus) {
+        const ext = graph.extremities(edge);
+        if (ext[0] !== focus && ext[1] !== focus) {
+          res.hidden = true;
+        }
+      }
+      return res;
+    }
+  });
+
+  // ForceAtlas2 driven on requestAnimationFrame: a few iterations per frame so
+  // the layout animates and never blocks the main thread. The WebGL render
+  // stays at 60fps throughout; the simulation stops after a fixed budget.
+  const settings = fa2.inferSettings(graph);
+  let frames = 0;
+  const MAX_FRAMES = 600;
+  (function step() {
+    fa2.assign(graph, { iterations: 1, settings });
+    if (++frames < MAX_FRAMES) requestAnimationFrame(step);
+  })();
+
+  function applyFilters() {
+    filter.imports = document.getElementById('f-imports').checked;
+    filter.co_changed = document.getElementById('f-cochanged').checked;
+    renderer.refresh();
+  }
+  document.getElementById('f-imports').addEventListener('change', applyFilters);
+  document.getElementById('f-cochanged').addEventListener('change', applyFilters);
+
+  renderer.on('clickNode', ({ node }) => {
+    focus = node;
+    focusHood = new Set(graph.neighbors(node));
+    focusHood.add(node);
+    renderer.refresh();
+  });
+  renderer.on('clickStage', () => {
+    focus = null;
+    focusHood = null;
+    renderer.refresh();
+  });
+
+  document.getElementById('stats').textContent =
+    DATA.nodes.length + ' files · ' + DATA.edges.length + ' edges';
 }
-document.getElementById('f-imports').addEventListener('change', applyFilters);
-document.getElementById('f-cochanged').addEventListener('change', applyFilters);
-cy.on('tap', 'node', evt => {
-  cy.elements().removeClass('faded');
-  const hood = evt.target.closedNeighborhood();
-  cy.elements().not(hood).addClass('faded');
-});
-cy.on('tap', evt => { if (evt.target === cy) cy.elements().removeClass('faded'); });
-document.getElementById('stats').textContent =
-  DATA.nodes.length + ' files · ' + DATA.edges.length + ' edges';
-applyFilters();
 </script>
 </body>
 </html>

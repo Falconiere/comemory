@@ -1,7 +1,7 @@
 //! `comemory graph` — export the file-level code-connection graph mined by
 //! `index-code` (the `imports` + `co_changed` edges, with nodes weighted by
 //! the materialized PageRank `code_symbols.rank_score`) as JSON, Graphviz
-//! DOT, or an interactive HTML page (the viewer loads `cytoscape.js` from a
+//! DOT, or an interactive HTML page (the viewer loads `sigma.js` from a
 //! CDN, so rendering the page needs network access on first load).
 //!
 //! The graph is purely a read over `comemory.db`: it never re-indexes. Run
@@ -44,7 +44,7 @@ pub enum Format {
     Json,
     /// Graphviz DOT source (pipe to `dot`).
     Dot,
-    /// Interactive HTML page (cytoscape.js, loaded from a CDN).
+    /// Interactive HTML page (sigma.js, loaded from a CDN).
     Html,
 }
 
