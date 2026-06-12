@@ -8,7 +8,9 @@
 //! silently re-attribute feedback history to whatever symbol inherits the
 //! number. Callers still address symbols by rowid (the id `search-code`
 //! prints); [`record_code_with_provenance`] resolves each id to its
-//! identity before writing the counter row.
+//! identity before writing the counter row, following a chunk's
+//! `parent_id` one hop so the counter lands under the parent's key — the
+//! only key the scoring join in `retrieval::code_prior::signals` matches.
 //!
 //! Provenance lands in the shared `feedback_events` table tagged
 //! `target_kind = 'code'` with the **text-encoded symbol rowid** in the
@@ -38,8 +40,28 @@ struct SymbolIdentity {
     symbol: String,
 }
 
+/// Map one `(repo, path, symbol)` projection row into a [`SymbolIdentity`].
+/// Shared by both lookups in [`resolve_identity`].
+fn identity_columns(r: &rusqlite::Row<'_>) -> rusqlite::Result<SymbolIdentity> {
+    Ok(SymbolIdentity {
+        repo: r.get(0)?,
+        path: r.get(1)?,
+        symbol: r.get(2)?,
+    })
+}
+
 /// Resolve a `code_symbols` rowid to its stable identity, or error loudly
 /// naming the id when the row is gone.
+///
+/// A cAST CHUNK row (`parent_id` NOT NULL, symbol `<name>#<n>`) resolves
+/// one hop further to its PARENT's identity: the `name#n` key is one the
+/// COALESCE-to-parent feedback join in `retrieval::code_prior::signals`
+/// can never match, so a chunk-keyed counter row would be silently inert.
+/// `search-code` only prints coalesced parent ids, but `feedback
+/// --used-code` accepts any rowid (IDE callers, manual entry), so the
+/// writer must normalize. A chunk whose parent vanished (raced re-index
+/// delete) keeps its own identity — the same degraded case as
+/// `retrieval::code_rerank::coalesce` and the `signals` COALESCE fallback.
 ///
 /// This is deliberately ASYMMETRIC with the query-id check in
 /// `cli::feedback` (which only warns when the id is absent from
@@ -49,25 +71,31 @@ struct SymbolIdentity {
 /// a re-index purge+reinsert), so writing it anyway would be exactly the
 /// misattribution the identity key exists to prevent.
 fn resolve_identity(conn: &Connection, id: i64) -> Result<SymbolIdentity> {
-    conn.query_row(
-        "SELECT repo, path, symbol FROM code_symbols WHERE id = ?1",
-        [id],
-        |r| {
-            Ok(SymbolIdentity {
-                repo: r.get(0)?,
-                path: r.get(1)?,
-                symbol: r.get(2)?,
-            })
-        },
-    )
-    .optional()?
-    .ok_or_else(|| {
-        Error::Config(format!(
-            "code feedback: symbol id {id} not found in code_symbols \
-             (re-indexed away or never existed); re-run comemory search-code \
-             for current ids"
-        ))
-    })
+    let (own, parent_id) = conn
+        .query_row(
+            "SELECT repo, path, symbol, parent_id FROM code_symbols WHERE id = ?1",
+            [id],
+            |r| Ok((identity_columns(r)?, r.get::<_, Option<i64>>(3)?)),
+        )
+        .optional()?
+        .ok_or_else(|| {
+            Error::Config(format!(
+                "code feedback: symbol id {id} not found in code_symbols \
+                 (re-indexed away or never existed); re-run comemory search-code \
+                 for current ids"
+            ))
+        })?;
+    let Some(parent_id) = parent_id else {
+        return Ok(own);
+    };
+    let parent = conn
+        .query_row(
+            "SELECT repo, path, symbol FROM code_symbols WHERE id = ?1",
+            [parent_id],
+            identity_columns,
+        )
+        .optional()?;
+    Ok(parent.unwrap_or(own))
 }
 
 /// Upsert the `used` side of the per-symbol counter row: insert with

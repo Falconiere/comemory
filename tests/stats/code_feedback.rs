@@ -27,8 +27,15 @@ fn open_db() -> (common::runner::Sandbox, StatsDb) {
 
 /// Insert one real `code_symbols` row via the production writer and
 /// return its rowid — feedback now resolves ids against live rows, so
-/// every test seeds the symbols it scores.
-fn seed_symbol(conn: &rusqlite::Connection, repo: &str, path: &str, symbol: &str) -> i64 {
+/// every test seeds the symbols it scores. A `Some` `parent_id` makes the
+/// row a cAST chunk child of an earlier-seeded parent.
+fn seed_row(
+    conn: &rusqlite::Connection,
+    repo: &str,
+    path: &str,
+    symbol: &str,
+    parent_id: Option<i64>,
+) -> i64 {
     code_row::insert(
         conn,
         &CodeSymbolRow {
@@ -42,10 +49,15 @@ fn seed_symbol(conn: &rusqlite::Connection, repo: &str, path: &str, symbol: &str
             line_end: 10,
             snippet: "fn body() {}",
             simhash: 0,
-            parent_id: None,
+            parent_id,
         },
     )
     .expect("insert code symbol")
+}
+
+/// Top-level (non-chunk) convenience wrapper over [`seed_row`].
+fn seed_symbol(conn: &rusqlite::Connection, repo: &str, path: &str, symbol: &str) -> i64 {
+    seed_row(conn, repo, path, symbol, None)
 }
 
 /// Fetch the identity-keyed counter row for one symbol.
@@ -258,4 +270,62 @@ fn feedback_survives_reindex_rowid_recycling_without_misattribution() {
         .expect("record new beta");
     let (used, _, _) = counter_row(db.conn(), "demo", "f.rs", "beta").expect("beta row");
     assert_eq!(used, 3, "post-re-index feedback joins the same identity");
+}
+
+/// PR #7 follow-up: a verdict recorded against a CHUNK rowid (`parent_id`
+/// set) must land under the PARENT's identity. The chunk's own `name#n`
+/// key is one the COALESCE-to-parent scoring join in
+/// `retrieval::code_prior::signals` can never match, so a chunk-keyed
+/// counter row would be silently inert feedback.
+#[test]
+fn feedback_against_chunk_id_resolves_to_parent_identity() {
+    let (_sb, mut db) = open_db();
+    let parent = seed_symbol(db.conn(), "demo", "a.rs", "alpha");
+    let chunk = seed_row(db.conn(), "demo", "a.rs", "alpha#1", Some(parent));
+    record_code_with_provenance(&mut db, "q-20260611-aabbccd1", &[chunk], &[])
+        .expect("record chunk verdict");
+    let (used, _, _) = counter_row(db.conn(), "demo", "a.rs", "alpha").expect("parent-keyed row");
+    assert_eq!(used, 1, "chunk verdict must land under the parent symbol");
+    assert!(
+        counter_row(db.conn(), "demo", "a.rs", "alpha#1").is_none(),
+        "no inert chunk-keyed counter row may be written"
+    );
+    // The provenance event still carries the CHUNK rowid verbatim —
+    // identity resolution is a counter-key concern only.
+    let event_target: String = db
+        .conn()
+        .query_row(
+            "SELECT memory_id FROM feedback_events WHERE query_id = 'q-20260611-aabbccd1'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("event row");
+    assert_eq!(event_target, chunk.to_string());
+
+    // A verdict against the parent's own id increments the SAME row.
+    record_code_with_provenance(&mut db, "q-20260611-aabbccd2", &[parent], &[])
+        .expect("record parent verdict");
+    let (used, _, _) = counter_row(db.conn(), "demo", "a.rs", "alpha").expect("parent-keyed row");
+    assert_eq!(used, 2, "parent and chunk verdicts share one identity row");
+}
+
+/// Degraded case: a chunk whose parent row vanished (raced re-index
+/// delete) keeps its OWN identity — consistent with
+/// `retrieval::code_rerank::coalesce` and the COALESCE fallback in
+/// `retrieval::code_prior::signals`.
+#[test]
+fn chunk_with_vanished_parent_falls_back_to_own_identity() {
+    let (_sb, mut db) = open_db();
+    let parent = seed_symbol(db.conn(), "demo", "a.rs", "alpha");
+    let chunk = seed_row(db.conn(), "demo", "a.rs", "alpha#1", Some(parent));
+    db.conn()
+        .execute("DELETE FROM code_symbols WHERE id = ?1", [parent])
+        .expect("vanish parent row");
+    record_code_with_provenance(&mut db, "q-20260611-aabbccd1", &[chunk], &[])
+        .expect("record against orphaned chunk");
+    let (used, _, _) = counter_row(db.conn(), "demo", "a.rs", "alpha#1").expect("own-identity row");
+    assert_eq!(
+        used, 1,
+        "dangling parent_id degrades to the chunk's own identity"
+    );
 }
