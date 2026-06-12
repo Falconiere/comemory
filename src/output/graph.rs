@@ -130,7 +130,13 @@ pub fn to_html(g: &CodeGraph) -> Result<String> {
 }
 
 /// Escape a string for use inside a double-quoted Graphviz DOT identifier
-/// or label (`\` and `"` are the only metacharacters that matter there).
+/// or label. `\` and `"` are the metacharacters that matter; raw newlines
+/// (which can legally appear in a POSIX path) are escaped to `\n` / `\r` so
+/// they never produce invalid DOT syntax. `\` must be replaced first so the
+/// escapes introduced by the later passes are not themselves doubled.
 fn dot_escape(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"")
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
 }
