@@ -24,6 +24,30 @@ pub struct EdgeKey<'a> {
     pub rel: &'a str,
 }
 
+/// Graph node id for a file: `file:<repo>:<path>` — the addressing
+/// convention pinned in `src/store/sql/0002_v2_tables.sql` and used by
+/// every graph-side writer/reader (`materialize`, the working set, the
+/// affinity prior).
+///
+/// KNOWN pre-existing divergence: [`crate::graph::cross_link`]'s
+/// `extract_and_emit` writes `references_file` / `references_symbol`
+/// destination ids WITHOUT the `file:` / `symbol:` kind prefix (bare
+/// `<repo>:<path>` / `<repo>:<path>:<symbol>`), and its reader
+/// `retrieval::bundle::code_ref_lookup` matches that bare form. This works
+/// because every query filters by `rel` first, so the two id grammars never
+/// meet. Do NOT change the stored formats here — reconciling them needs a
+/// data migration (M4 reconcile candidate).
+pub(crate) fn file_node_id(repo: &str, path: &str) -> String {
+    format!("file:{repo}:{path}")
+}
+
+/// Prefix shared by every [`file_node_id`] of `repo`: `file:<repo>:`.
+/// Used by repo-scoped `substr`-prefix SQL predicates (injection-proof —
+/// a repo label containing `%`/`_` cannot widen a `LIKE`).
+pub(crate) fn file_node_prefix(repo: &str) -> String {
+    format!("file:{repo}:")
+}
+
 /// Insert (or no-op if already present) one edge stamped with the current
 /// UTC time.
 pub fn insert(conn: &Connection, e: EdgeKey<'_>) -> Result<()> {

@@ -15,11 +15,11 @@
 //! The affinity prior needs the repo's checkout path, which the database
 //! does not know — `search-code` may run from anywhere. Decision: the
 //! process CWD is used as the working-tree candidate (via the shared
-//! [`crate::cli::cwd_working_set`] helper, which also covers `context`),
-//! so the affinity boost activates only when the command runs inside the
-//! relevant repo's checkout (documented in `--help`).
-//! [`code_rerank::working_set`] is best-effort by contract — a non-repo
-//! CWD degrades to the empty set and a neutral prior.
+//! [`WorkingSet::from_cwd`] policy, which also covers `context`), so the
+//! affinity boost activates only when the command runs inside the
+//! relevant repo's checkout (documented in `--help`). The detection is
+//! best-effort by contract — a non-repo CWD degrades to the empty set
+//! and a neutral prior.
 
 use std::path::PathBuf;
 
@@ -28,12 +28,12 @@ use rusqlite::Connection;
 use time::OffsetDateTime;
 
 use crate::ast::languages::{self, Lang};
-use crate::cli::{cwd_working_set, embedding_input, load_config, override_top_k, resolve_data_dir};
+use crate::cli::{embedding_input, load_config, override_top_k, resolve_data_dir};
 use crate::config::paths::Paths;
 use crate::output;
 use crate::prelude::*;
-use crate::retrieval::code_rerank::{self, CodeReranked};
-use crate::retrieval::code_route;
+use crate::retrieval::code_rerank::{self, CodeReranked, WorkingSet};
+use crate::retrieval::{code_route, pipeline};
 use crate::store::{connection, memory_row};
 
 // The closing working-set caveat paragraph is intentionally duplicated in
@@ -115,11 +115,11 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         lang,
     )?;
     // Zero candidates → nothing for the affinity prior to boost, so the
-    // git discovery + status walk behind `cwd_working_set` is skipped.
+    // git discovery + status walk behind `WorkingSet::from_cwd` is skipped.
     let ws = if candidates.is_empty() {
-        code_rerank::WorkingSet::default()
+        WorkingSet::default()
     } else {
-        cwd_working_set(a.repo.as_deref())
+        WorkingSet::from_cwd(a.repo.as_deref())
     };
     let mut hits = code_rerank::rerank_code(&conn, &cfg, &candidates, &ws)?;
     hits.truncate(cfg.retrieval.top_k);
@@ -166,11 +166,17 @@ fn code_index_populated(conn: &Connection) -> Result<bool> {
 
 /// Best-effort telemetry for one tracked code search, the code-side
 /// sibling of `retrieval::pipeline::record_telemetry` (same one-tx /
-/// fall-back-to-autocommit / never-fail contract, kept separate because
-/// the access bump targets `code_symbols`, not `memories`): bump
-/// `access_count`/`last_accessed` on the returned (parent) symbol ids and
-/// insert the `retrieval_log` row in a single transaction. Returns the
-/// logged query id, or `None` when logging failed.
+/// fall-back-to-autocommit / never-fail contract; the tx scaffold is
+/// deliberately a thin local twin rather than a shared closure-taking
+/// helper — the two access-bump + log sequences differ in target table
+/// and id mapping, and a generic scaffold would contort both callers):
+/// bump `access_count`/`last_accessed` on the returned (parent) symbol
+/// ids and insert the `retrieval_log` row in a single transaction via the
+/// shared [`pipeline::log_retrieval`] writer, with the symbol ids
+/// text-encoded so the `returned_ids` column shape matches the memory
+/// rows and the `repo`/`kind` columns carrying the `--repo`/`--lang`
+/// filters verbatim. Returns the logged query id, or `None` when logging
+/// failed.
 fn record_code_telemetry(
     conn: &Connection,
     query: &str,
@@ -179,10 +185,22 @@ fn record_code_telemetry(
     hits: &[CodeReranked],
     elapsed: std::time::Duration,
 ) -> Option<String> {
+    let ids: Vec<String> = hits.iter().map(|h| h.symbol_id.to_string()).collect();
+    let log = |conn: &Connection| {
+        pipeline::log_retrieval(
+            conn,
+            query,
+            &ids,
+            elapsed,
+            repo,
+            lang,
+            crate::stats::source::SEARCH_CODE,
+        )
+    };
     match conn.unchecked_transaction() {
         Ok(tx) => {
             record_code_access(&tx, hits);
-            let query_id = record_code_query(&tx, query, repo, lang, hits, elapsed);
+            let query_id = log(&tx);
             match tx.commit() {
                 Ok(()) => query_id,
                 Err(e) => {
@@ -194,7 +212,7 @@ fn record_code_telemetry(
         Err(e) => {
             tracing::warn!(error = %e, "code telemetry transaction unavailable; falling back to direct writes");
             record_code_access(conn, hits);
-            record_code_query(conn, query, repo, lang, hits, elapsed)
+            log(conn)
         }
     }
 }
@@ -227,50 +245,5 @@ fn record_code_access(conn: &Connection, hits: &[CodeReranked]) {
     }
     if let Err(e) = conn.execute(&sql, params.as_slice()) {
         tracing::warn!(error = %e, hit_count = hits.len(), "code access tracking update failed");
-    }
-}
-
-/// Write the `retrieval_log` row for this code search: `source` is
-/// `'search-code'`, the `repo`/`kind` columns carry the `--repo`/`--lang`
-/// filters verbatim (`None` → NULL), and `returned_ids` is a JSON array
-/// of symbol-id *strings* so the column shape matches the memory rows.
-/// Best-effort like [`record_code_access`].
-fn record_code_query(
-    conn: &Connection,
-    query: &str,
-    repo: Option<&str>,
-    lang: Option<&str>,
-    hits: &[CodeReranked],
-    elapsed: std::time::Duration,
-) -> Option<String> {
-    let now = OffsetDateTime::now_utc();
-    let at = match memory_row::iso_format(now) {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::warn!(error = %e, "code query logging skipped: timestamp format failed");
-            return None;
-        }
-    };
-    let query_id = crate::stats::feedback::generate_query_id(query, now);
-    let ids: Vec<String> = hits.iter().map(|h| h.symbol_id.to_string()).collect();
-    let returned = match serde_json::to_string(&ids) {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::warn!(error = %e, "code query logging skipped: id serialization failed");
-            return None;
-        }
-    };
-    let dur = i64::try_from(elapsed.as_millis()).unwrap_or(i64::MAX);
-    match conn.execute(
-        "INSERT INTO retrieval_log(query_id, query, returned_ids, at, duration_ms,
-                                   repo, kind, source)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'search-code')",
-        rusqlite::params![query_id, query, returned, at, dur, repo, lang],
-    ) {
-        Ok(_) => Some(query_id),
-        Err(e) => {
-            tracing::warn!(error = %e, "code query logging failed");
-            None
-        }
     }
 }

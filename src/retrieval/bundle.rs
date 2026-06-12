@@ -12,12 +12,15 @@
 //! address-resolved by the graph walk — every one is "fully relevant" to
 //! the memory that cites it — so only the priors can order them.
 
+use std::collections::BTreeMap;
+
 use rusqlite::{Connection, OptionalExtension};
 use serde::Serialize;
+use time::OffsetDateTime;
 
 use crate::config::Config;
 use crate::prelude::*;
-use crate::retrieval::code_prior::{self, CodePriorParts};
+use crate::retrieval::code_prior::{self, CodePriorParts, Signals};
 use crate::retrieval::code_rerank::WorkingSet;
 
 /// One row returned by [`walk_context_edges`]: a directed edge from the graph.
@@ -167,23 +170,45 @@ pub fn assemble<'a>(
 /// Score every resolved ref with the four-prior product (no relevance
 /// term — see the module doc) and sort: resolved refs by descending
 /// `final_score`, ties on `(path, symbol)`; unresolved refs after them,
-/// also `(path, symbol)`-ordered. The median for the rank prior is taken
-/// over THIS ref set's files, exactly the way `rerank_code` takes it over
-/// its candidate pool.
+/// also `(path, symbol)`-ordered. Follows the same pooled discipline as
+/// `rerank_code`: each ref's [`code_prior::signals`] row is fetched once,
+/// the rank-prior median is derived from those rows via
+/// [`code_prior::median_file_rank`], and the whole pool is scored under
+/// one shared clock and one shared affinity cache.
 fn rank_code_refs(
     conn: &Connection,
     cfg: &Config,
     raw_refs: Vec<RawRef>,
     working_set: &WorkingSet,
 ) -> Result<Vec<CodeRow>> {
-    let ids: Vec<i64> = raw_refs.iter().filter_map(|r| r.symbol_id).collect();
-    let median = code_prior::pool_median_rank(conn, &ids)?;
+    // A row that vanished between lookup and scoring (raced re-index
+    // delete) degrades to `None` and sorts with the unresolved refs.
+    let mut sigs: Vec<Option<Signals>> = Vec::with_capacity(raw_refs.len());
+    for r in &raw_refs {
+        sigs.push(match r.symbol_id {
+            Some(id) => code_prior::signals(conn, id)?,
+            None => None,
+        });
+    }
+    let median = code_prior::median_file_rank(
+        sigs.iter()
+            .flatten()
+            .map(|s| ((s.repo.as_str(), s.path.as_str()), s.rank_score)),
+    );
+    let now = OffsetDateTime::now_utc();
+    let mut affinity_cache: BTreeMap<String, f64> = BTreeMap::new();
     let mut out = Vec::with_capacity(raw_refs.len());
-    for r in raw_refs {
-        // A row that vanished between lookup and scoring (raced re-index
-        // delete) degrades to `None` and sorts with the unresolved refs.
-        let rank_parts = match r.symbol_id {
-            Some(id) => code_prior::prior_product(conn, cfg, id, working_set, median)?,
+    for (r, sig) in raw_refs.into_iter().zip(sigs) {
+        let rank_parts = match sig {
+            Some(sig) => Some(code_prior::priors(
+                conn,
+                cfg,
+                now,
+                &sig,
+                working_set,
+                median,
+                &mut affinity_cache,
+            )?),
             None => None,
         };
         out.push(CodeRow {

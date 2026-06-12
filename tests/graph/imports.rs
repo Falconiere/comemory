@@ -1,5 +1,5 @@
 use comemory::ast::languages::Lang;
-use comemory::graph::imports::{extract_imports, resolve};
+use comemory::graph::imports::{extract_imports, PathIndex};
 
 fn paths(v: &[&str]) -> Vec<String> {
     v.iter().map(|s| s.to_string()).collect()
@@ -48,12 +48,12 @@ fn typescript_relative_import_resolves_against_indexed_paths() {
     let indexed = paths(&["src/util/db.ts", "src/index.ts"]);
     // Unanchored: leading `./` is stripped and `util/db` suffix-matches.
     assert_eq!(
-        resolve("./util/db", &indexed, None),
+        PathIndex::new(&indexed).resolve("./util/db", None),
         Some("src/util/db.ts".to_string())
     );
     // Anchored: joined against the importer's directory, exact match.
     assert_eq!(
-        resolve("./util/db", &indexed, Some("src/index.ts")),
+        PathIndex::new(&indexed).resolve("./util/db", Some("src/index.ts")),
         Some("src/util/db.ts".to_string())
     );
 }
@@ -62,14 +62,17 @@ fn typescript_relative_import_resolves_against_indexed_paths() {
 fn relative_parent_modules_anchor_to_the_importing_file() {
     let indexed = paths(&["src/util/db.ts", "lib/util/db.ts"]);
     // Without an importer the stripped suffix `util/db` is ambiguous.
-    assert_eq!(resolve("../util/db", &indexed, None), None);
+    assert_eq!(PathIndex::new(&indexed).resolve("../util/db", None), None);
     // Anchored to the importer, `..` walks from `src/views` up into `src`.
     assert_eq!(
-        resolve("../util/db", &indexed, Some("src/views/page.ts")),
+        PathIndex::new(&indexed).resolve("../util/db", Some("src/views/page.ts")),
         Some("src/util/db.ts".to_string())
     );
     // `..` escaping the repo root cannot resolve.
-    assert_eq!(resolve("../../escape", &indexed, Some("src/a.ts")), None);
+    assert_eq!(
+        PathIndex::new(&indexed).resolve("../../escape", Some("src/a.ts")),
+        None
+    );
 }
 
 #[test]
@@ -86,11 +89,11 @@ fn javascript_require_extracts_string_literals_only() {
 fn javascript_require_resolves_relative_module() {
     let indexed = paths(&["src/legacy.js", "src/index.js"]);
     assert_eq!(
-        resolve("./legacy", &indexed, None),
+        PathIndex::new(&indexed).resolve("./legacy", None),
         Some("src/legacy.js".to_string())
     );
     assert_eq!(
-        resolve("./legacy", &indexed, Some("src/index.js")),
+        PathIndex::new(&indexed).resolve("./legacy", Some("src/index.js")),
         Some("src/legacy.js".to_string())
     );
 }
@@ -111,16 +114,16 @@ fn python_import_and_from_yield_dotted_modules() {
 fn python_dotted_module_resolves_to_file_or_package() {
     let indexed = paths(&["app/models.py", "app/views.py", "app/api/__init__.py"]);
     assert_eq!(
-        resolve("app.models", &indexed, None),
+        PathIndex::new(&indexed).resolve("app.models", None),
         Some("app/models.py".to_string())
     );
     // Packages resolve via their `__init__.py` entry file.
     assert_eq!(
-        resolve("app.api", &indexed, None),
+        PathIndex::new(&indexed).resolve("app.api", None),
         Some("app/api/__init__.py".to_string())
     );
     // External package: no local candidate.
-    assert_eq!(resolve("django.db", &indexed, None), None);
+    assert_eq!(PathIndex::new(&indexed).resolve("django.db", None), None);
 }
 
 #[test]
@@ -143,36 +146,36 @@ fn go_module_prefixed_import_resolves_to_package_entry_file() {
     // stands in for the package, and one leading module-prefix segment
     // (`myrepo/`) is tolerated when the full path finds no candidate.
     assert_eq!(
-        resolve("myrepo/pkg/util", &indexed, None),
+        PathIndex::new(&indexed).resolve("myrepo/pkg/util", None),
         Some("pkg/util/util.go".to_string())
     );
     // A repo-relative package path resolves directly.
     assert_eq!(
-        resolve("pkg/util", &indexed, None),
+        PathIndex::new(&indexed).resolve("pkg/util", None),
         Some("pkg/util/util.go".to_string())
     );
     // Stdlib package: no local candidate.
-    assert_eq!(resolve("fmt", &indexed, None), None);
+    assert_eq!(PathIndex::new(&indexed).resolve("fmt", None), None);
 }
 
 #[test]
 fn resolve_matches_unique_suffix_and_skips_ambiguous() {
     let indexed = paths(&["src/store/fts.rs", "src/store/mod.rs", "src/eval/mod.rs"]);
     assert_eq!(
-        resolve("store::fts", &indexed, None),
+        PathIndex::new(&indexed).resolve("store::fts", None),
         Some("src/store/fts.rs".to_string())
     );
-    assert_eq!(resolve("mod", &indexed, None), None); // ambiguous suffix (two mod.rs)
-    assert_eq!(resolve("serde", &indexed, None), None); // external, no match
+    assert_eq!(PathIndex::new(&indexed).resolve("mod", None), None); // ambiguous suffix (two mod.rs)
+    assert_eq!(PathIndex::new(&indexed).resolve("serde", None), None); // external, no match
 }
 
 #[test]
 fn resolve_requires_segment_aligned_suffixes() {
     let indexed = paths(&["src/bookstore/fts.rs"]);
     // `store/fts` is a substring suffix but not segment-aligned: no match.
-    assert_eq!(resolve("store::fts", &indexed, None), None);
+    assert_eq!(PathIndex::new(&indexed).resolve("store::fts", None), None);
     assert_eq!(
-        resolve("bookstore::fts", &indexed, None),
+        PathIndex::new(&indexed).resolve("bookstore::fts", None),
         Some("src/bookstore/fts.rs".to_string())
     );
 }
@@ -182,7 +185,7 @@ fn resolve_strips_dir_entry_files_to_their_directory() {
     let indexed = paths(&["src/store/mod.rs"]);
     // `mod.rs` stands in for its directory, so the bare module name matches.
     assert_eq!(
-        resolve("store", &indexed, None),
+        PathIndex::new(&indexed).resolve("store", None),
         Some("src/store/mod.rs".to_string())
     );
 }

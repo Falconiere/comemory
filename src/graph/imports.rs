@@ -2,11 +2,13 @@
 //!
 //! [`extract_imports`] returns the raw module strings a source file imports
 //! (deduped, first-seen order within pattern-first/source-second traversal).
-//! [`resolve`] maps one module string onto the repo's indexed file paths and
-//! answers only when the match is unambiguous: zero or two-plus candidates
-//! yield `None`, so external packages and ambiguous suffixes drop out
-//! naturally instead of being guessed at (spec §2.2). The module is pure —
-//! no SQLite, no filesystem — the indexer wires it to real data.
+//! [`PathIndex`] — built once per materialize run from the repo's indexed
+//! file paths — maps one module string onto those paths via
+//! [`PathIndex::resolve`] and answers only when the match is unambiguous:
+//! zero or two-plus candidates yield `None`, so external packages and
+//! ambiguous suffixes drop out naturally instead of being guessed at
+//! (spec §2.2). The module is pure — no SQLite, no filesystem — the
+//! indexer wires it to real data.
 //!
 //! Extraction strategy per language (ast-grep patterns were tried first and
 //! the outcome of that experiment is recorded honestly):
@@ -30,7 +32,7 @@
 //!   `for_each_match` helper exposes (verified); a small line state
 //!   machine handles both single imports and blocks instead.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use ast_grep_core::tree_sitter::LanguageExt;
 use ast_grep_language::{JavaScript, Rust, Tsx};
@@ -64,76 +66,179 @@ pub fn extract_imports(lang: Lang, source: &str) -> Result<Vec<String>> {
         .collect())
 }
 
-/// Resolve a raw module string against the repo's indexed file paths.
+/// Resolution state of one lookup key: the single path that owns it, or a
+/// tombstone once a second path claims the same key.
+enum Candidate {
+    /// Exactly one indexed path matches this key.
+    Unique(String),
+    /// Two or more indexed paths match — conservative: skip, never guess.
+    Ambiguous,
+}
+
+/// Module-to-path resolution index over a repo's indexed file paths,
+/// built ONCE per materialize run (the per-call path rescan it replaces
+/// was O(files × imports × paths)).
 ///
-/// Returns `Some(path)` only when exactly one indexed path matches; zero or
-/// multiple candidates return `None` (conservative: skip, never guess).
-///
-/// Matching rules, pinned by `tests/graph/imports.rs`:
-///
-/// 1. The module is normalized to a path fragment: `::` becomes `/`; dots
-///    become `/` when the module has no slash of its own (Python style);
-///    leading `./` / `../` segments and trailing slashes are stripped.
-/// 2. Each indexed path contributes its path-minus-extension as a key, plus
-///    its parent directory when the file is a directory entry point
-///    (`mod.*`, `index.*`, `__init__.*`, or `<dir>/<dirname>.<ext>` — the
-///    Go package convention).
-/// 3. A path is a candidate when one of its keys ends with the fragment at
-///    a whole-segment boundary (`store/fts` never matches `bookstore/fts`).
-/// 4. Go module-prefix tolerance: when the full fragment has three or more
-///    slash-separated segments and finds nothing, the leading segment (the
-///    module name, e.g. `myrepo/`) is dropped once and matching retried.
-/// 5. When `importing_file` is `Some` and the module starts with `./` or
-///    `../`, the module is joined against the importer's parent directory
-///    (normalizing `..`), and an exact key match is required instead of a
-///    suffix match. `..` escaping the repo root resolves to `None`.
-pub fn resolve(
-    module: &str,
-    indexed_paths: &[String],
-    importing_file: Option<&str>,
-) -> Option<String> {
-    if module.starts_with("./") || module.starts_with("../") {
-        if let Some(importer) = importing_file {
-            return resolve_relative(module, indexed_paths, importer);
-        }
-    }
-    let fragment = normalize(module)?;
-    let candidates = suffix_candidates(&fragment, indexed_paths);
-    if candidates.len() == 1 {
-        return Some(candidates[0].clone());
-    }
-    // Go module-prefix tolerance: `myrepo/pkg/util` finds nothing because
-    // the module name is not on disk; retry once without it. Only on a
-    // clean miss (never to break ambiguity) and only when at least two
-    // segments remain, so bare externals cannot collapse onto local files.
-    if candidates.is_empty() && module.contains('/') && !module.starts_with('.') {
-        if let Some((_, rest)) = fragment.split_once('/') {
-            if rest.contains('/') {
-                let retry = suffix_candidates(rest, indexed_paths);
-                if retry.len() == 1 {
-                    return Some(retry[0].clone());
+/// Each indexed path contributes the candidate keys of [`candidate_keys`];
+/// every segment-aligned suffix of every key lands in the suffix table and
+/// the full keys land in the exact table, each entry collapsing to
+/// [`Candidate::Ambiguous`] as soon as a second path claims it. A path
+/// whose multiple keys share a suffix still counts as one candidate.
+pub struct PathIndex {
+    /// Segment-aligned key suffix → owning path (suffix-match lookups).
+    by_suffix: HashMap<String, Candidate>,
+    /// Full candidate key → owning path (exact-match lookups, used by
+    /// relative `./` / `../` resolution).
+    by_key: HashMap<String, Candidate>,
+}
+
+impl PathIndex {
+    /// Build the index from the repo's indexed file paths.
+    pub fn new(indexed_paths: &[String]) -> PathIndex {
+        let mut by_suffix = HashMap::new();
+        let mut by_key = HashMap::new();
+        for path in indexed_paths {
+            for key in candidate_keys(path) {
+                insert_candidate(&mut by_key, key.clone(), path);
+                let mut start = 0;
+                loop {
+                    insert_candidate(&mut by_suffix, key[start..].to_string(), path);
+                    match key[start..].find('/') {
+                        Some(i) => start += i + 1,
+                        None => break,
+                    }
                 }
             }
         }
+        PathIndex { by_suffix, by_key }
     }
-    None
+
+    /// Resolve a raw module string against the indexed paths.
+    ///
+    /// Returns `Some(path)` only when exactly one indexed path matches;
+    /// zero or multiple candidates return `None` (conservative: skip,
+    /// never guess).
+    ///
+    /// Matching rules, pinned by `tests/graph/imports.rs`:
+    ///
+    /// 1. The module is normalized to a path fragment: `::` becomes `/`;
+    ///    dots become `/` when the module has no slash of its own (Python
+    ///    style); leading `./` / `../` segments and trailing slashes are
+    ///    stripped.
+    /// 2. Each indexed path contributes its path-minus-extension as a key,
+    ///    plus its parent directory when the file is a directory entry
+    ///    point (`mod.*`, `index.*`, `__init__.*`, or
+    ///    `<dir>/<dirname>.<ext>` — the Go package convention).
+    /// 3. A path is a candidate when one of its keys ends with the
+    ///    fragment at a whole-segment boundary (`store/fts` never matches
+    ///    `bookstore/fts`).
+    /// 4. Go module-prefix tolerance: when the full fragment has three or
+    ///    more slash-separated segments and finds nothing, the leading
+    ///    segment (the module name, e.g. `myrepo/`) is dropped once and
+    ///    matching retried — only on a clean miss (never to break
+    ///    ambiguity), so bare externals cannot collapse onto local files.
+    /// 5. When `importing_file` is `Some` and the module starts with `./`
+    ///    or `../`, the module is joined against the importer's parent
+    ///    directory (normalizing `..`), and an exact key match is required
+    ///    instead of a suffix match. `..` escaping the repo root resolves
+    ///    to `None`.
+    pub fn resolve(&self, module: &str, importing_file: Option<&str>) -> Option<String> {
+        if module.starts_with("./") || module.starts_with("../") {
+            if let Some(importer) = importing_file {
+                return self.resolve_relative(module, importer);
+            }
+        }
+        let fragment = normalize(module)?;
+        match self.by_suffix.get(&fragment) {
+            Some(Candidate::Unique(p)) => Some(p.clone()),
+            Some(Candidate::Ambiguous) => None,
+            // Go module-prefix tolerance (rule 4): retry once without the
+            // leading segment, only when at least two segments remain.
+            None if module.contains('/') && !module.starts_with('.') => {
+                let (_, rest) = fragment.split_once('/')?;
+                if !rest.contains('/') {
+                    return None;
+                }
+                match self.by_suffix.get(rest) {
+                    Some(Candidate::Unique(p)) => Some(p.clone()),
+                    _ => None,
+                }
+            }
+            None => None,
+        }
+    }
+
+    /// Anchored resolution for `./` / `../` modules (rule 5): join against
+    /// the importing file's parent directory, normalize `..` segments, and
+    /// require an exact candidate-key match. `..` walking above the repo
+    /// root yields `None`.
+    fn resolve_relative(&self, module: &str, importer: &str) -> Option<String> {
+        let dir = importer.rsplit_once('/').map_or("", |(dir, _)| dir);
+        let mut segments: Vec<&str> = dir.split('/').filter(|s| !s.is_empty()).collect();
+        for segment in module.split('/') {
+            match segment {
+                "" | "." => {}
+                ".." => {
+                    segments.pop()?;
+                }
+                other => segments.push(other),
+            }
+        }
+        if segments.is_empty() {
+            return None;
+        }
+        match self.by_key.get(&segments.join("/")) {
+            Some(Candidate::Unique(p)) => Some(p.clone()),
+            _ => None,
+        }
+    }
 }
 
-/// Rust extraction: `use` / `pub use` / `mod` / `pub mod` patterns, with the
-/// use-path post-processing described in the module doc.
+/// Record `path` as claiming `key`, collapsing to [`Candidate::Ambiguous`]
+/// when a DIFFERENT path already owns the key (the same path claiming a
+/// key twice — e.g. the Go `x/x.go` convention whose stem and directory
+/// keys share the suffix `x` — stays unique).
+fn insert_candidate(map: &mut HashMap<String, Candidate>, key: String, path: &str) {
+    match map.entry(key) {
+        std::collections::hash_map::Entry::Vacant(v) => {
+            v.insert(Candidate::Unique(path.to_string()));
+        }
+        std::collections::hash_map::Entry::Occupied(mut o) => {
+            if !matches!(o.get(), Candidate::Unique(p) if p == path) {
+                o.insert(Candidate::Ambiguous);
+            }
+        }
+    }
+}
+
+/// Rust extraction: `use` / `pub use` / `mod` / `pub mod` patterns in ONE
+/// `for_each_match` pass (one tree-sitter parse per file), with the
+/// use-path post-processing described in the module doc. The metavar name
+/// tags which pattern row hit: `PATH` rows get the use-path trimming,
+/// `NAME` rows are taken verbatim.
 fn rust_imports(source: &str) -> Result<Vec<String>> {
-    let uses = find_pattern_texts(
+    let mut out = Vec::new();
+    for_each_match(
         Rust,
         source,
-        &[("PATH", "use $PATH;"), ("PATH", "pub use $PATH;")],
+        &[
+            ("PATH", "use $PATH;"),
+            ("PATH", "pub use $PATH;"),
+            ("NAME", "mod $NAME;"),
+            ("NAME", "pub mod $NAME;"),
+        ],
+        |var, matched| {
+            let Some(node) = matched.get_env().get_match(var) else {
+                return;
+            };
+            let text = node.text().to_string();
+            out.push(if var == "PATH" {
+                rust_use_path(&text)
+            } else {
+                text
+            });
+        },
     )?;
-    let mods = find_pattern_texts(
-        Rust,
-        source,
-        &[("NAME", "mod $NAME;"), ("NAME", "pub mod $NAME;")],
-    )?;
-    let mut out: Vec<String> = uses.iter().map(|text| rust_use_path(text)).collect();
-    out.extend(mods);
     Ok(out)
 }
 
@@ -164,27 +269,40 @@ fn rust_use_path(text: &str) -> String {
     }
 }
 
-/// TypeScript / JavaScript extraction: ESM `import … from`, bare `import`,
-/// and CommonJS `require()` — each string pattern in both quote styles.
+/// TypeScript / JavaScript extraction: ESM `import … from`, bare `import`
+/// (each string pattern in both quote styles), and CommonJS `require()` —
+/// all in ONE `for_each_match` pass (one tree-sitter parse per file). The
+/// metavar name tags which pattern row hit: `SRC` binds the bare
+/// `string_fragment`, while `ARG` binds the whole `require` call argument,
+/// quotes included — only string literals are kept; dynamic
+/// `require(expr)` calls are dropped, never guessed at.
 fn ts_js_imports<L: LanguageExt + Clone>(language: L, source: &str) -> Result<Vec<String>> {
-    let mut out = find_pattern_texts(
-        language.clone(),
+    let mut out = Vec::new();
+    for_each_match(
+        language,
         source,
         &[
             ("SRC", "import $$$SPEC from '$SRC'"),
             ("SRC", "import $$$SPEC from \"$SRC\""),
             ("SRC", "import '$SRC'"),
             ("SRC", "import \"$SRC\""),
+            ("ARG", "require($ARG)"),
         ],
+        |var, matched| {
+            let Some(node) = matched.get_env().get_match(var) else {
+                return;
+            };
+            let text = node.text().to_string();
+            if var == "ARG" {
+                let stripped = text.trim_matches(QUOTES);
+                if stripped.len() < text.len() && !stripped.contains(QUOTES) {
+                    out.push(stripped.to_string());
+                }
+            } else {
+                out.push(text);
+            }
+        },
     )?;
-    // `$ARG` binds the whole call argument, quotes included; keep only
-    // string literals and drop dynamic `require(expr)` calls.
-    for text in find_pattern_texts(language, source, &[("ARG", "require($ARG)")])? {
-        let stripped = text.trim_matches(QUOTES);
-        if stripped.len() < text.len() && !stripped.contains(QUOTES) {
-            out.push(stripped.to_string());
-        }
-    }
     Ok(out)
 }
 
@@ -247,23 +365,6 @@ fn first_quoted(line: &str) -> Option<String> {
     Some(rest[..end].to_string())
 }
 
-/// Compile each `(metavar, pattern)` pair for `language` and collect the
-/// text bound to the metavariable for every match in `source`. The pattern
-/// machinery itself is shared with `ast::extractor::for_each_match`.
-fn find_pattern_texts<L: LanguageExt + Clone>(
-    language: L,
-    source: &str,
-    patterns: &[(&str, &str)],
-) -> Result<Vec<String>> {
-    let mut out = Vec::new();
-    for_each_match(language, source, patterns, |var, matched| {
-        if let Some(node) = matched.get_env().get_match(var) {
-            out.push(node.text().to_string());
-        }
-    })?;
-    Ok(out)
-}
-
 /// Normalize a module string to a slash-separated path fragment, or `None`
 /// when nothing remains (e.g. a bare `.`).
 fn normalize(module: &str) -> Option<String> {
@@ -294,19 +395,6 @@ fn normalize(module: &str) -> Option<String> {
     }
 }
 
-/// All indexed paths with a candidate key ending in `fragment` at a
-/// whole-segment boundary.
-fn suffix_candidates<'a>(fragment: &str, indexed_paths: &'a [String]) -> Vec<&'a String> {
-    indexed_paths
-        .iter()
-        .filter(|path| {
-            candidate_keys(path)
-                .iter()
-                .any(|key| ends_with_segments(key, fragment))
-        })
-        .collect()
-}
-
 /// Match keys for one indexed path: the path minus its extension, plus the
 /// parent directory when the file is a directory entry point (`mod.*`,
 /// `index.*`, `__init__.*`, or the Go `<dir>/<dirname>.<ext>` convention).
@@ -329,42 +417,5 @@ fn strip_extension(path: &str) -> &str {
     match path[file_start..].rfind('.') {
         Some(rel) if rel > 0 => &path[..file_start + rel],
         _ => path,
-    }
-}
-
-/// `key` ends with `fragment` aligned on whole `/`-separated segments.
-fn ends_with_segments(key: &str, fragment: &str) -> bool {
-    key.len() >= fragment.len()
-        && key.ends_with(fragment)
-        && (key.len() == fragment.len() || key.as_bytes()[key.len() - fragment.len() - 1] == b'/')
-}
-
-/// Anchored resolution for `./` / `../` modules: join against the importing
-/// file's parent directory, normalize `..` segments, and require an exact
-/// candidate-key match. `..` walking above the repo root yields `None`.
-fn resolve_relative(module: &str, indexed_paths: &[String], importer: &str) -> Option<String> {
-    let dir = importer.rsplit_once('/').map_or("", |(dir, _)| dir);
-    let mut segments: Vec<&str> = dir.split('/').filter(|s| !s.is_empty()).collect();
-    for segment in module.split('/') {
-        match segment {
-            "" | "." => {}
-            ".." => {
-                segments.pop()?;
-            }
-            other => segments.push(other),
-        }
-    }
-    if segments.is_empty() {
-        return None;
-    }
-    let target = segments.join("/");
-    let candidates: Vec<&String> = indexed_paths
-        .iter()
-        .filter(|path| candidate_keys(path).iter().any(|key| key == &target))
-        .collect();
-    if candidates.len() == 1 {
-        Some(candidates[0].clone())
-    } else {
-        None
     }
 }

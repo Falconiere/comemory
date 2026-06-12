@@ -115,8 +115,14 @@ fn insert_code_event(
 ) -> Result<()> {
     conn.execute(
         "INSERT INTO feedback_events(query_id, memory_id, verdict, at, target_kind)
-         VALUES (?1, ?2, ?3, ?4, 'code')",
-        rusqlite::params![query_id, id.to_string(), verdict, at],
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        rusqlite::params![
+            query_id,
+            id.to_string(),
+            verdict,
+            at,
+            crate::stats::target::CODE
+        ],
     )?;
     Ok(())
 }

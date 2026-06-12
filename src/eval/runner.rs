@@ -63,7 +63,7 @@ pub fn run_eval(
             pair.kind.as_deref(),
             SearchOptions {
                 track: false,
-                source: "search",
+                source: crate::stats::source::SEARCH,
             },
         )?;
         let returned: Vec<String> = run.hits.iter().map(|h| h.memory_id.clone()).collect();

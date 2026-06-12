@@ -7,7 +7,6 @@ use clap::{Parser, Subcommand};
 use crate::config::paths::Paths;
 use crate::config::Config;
 use crate::prelude::*;
-use crate::retrieval::code_rerank::{self, WorkingSet};
 
 pub mod ast;
 pub mod completions;
@@ -205,40 +204,6 @@ pub(crate) fn parse_symbol_id_csv(raw: &str, flag: &str) -> Result<Vec<i64>> {
         }
     }
     Ok(ids)
-}
-
-/// Build the working set for the code-prior affinity boost from the
-/// process CWD. The database does not know a repo's checkout path and the
-/// CLI may run from anywhere, so the CWD is the only working-tree
-/// candidate: the boost activates only when the command runs inside the
-/// relevant repo's checkout (documented in the `search-code` and `context`
-/// help text). The working-set file ids also need a repo *label*: the
-/// `--repo` filter when given, else the basename of the discovered working
-/// tree (matching the common `index-code --repo <dirname>` convention);
-/// when neither resolves, affinity stays neutral via the empty default
-/// set. Shared by `search-code` and `context` so the two subcommands
-/// cannot drift on what "working set" means.
-pub(crate) fn cwd_working_set(repo_filter: Option<&str>) -> WorkingSet {
-    let Ok(cwd) = std::env::current_dir() else {
-        return WorkingSet::default();
-    };
-    let label = match repo_filter {
-        Some(r) => r.to_string(),
-        None => match worktree_basename(&cwd) {
-            Some(l) => l,
-            None => return WorkingSet::default(),
-        },
-    };
-    code_rerank::working_set(&cwd, &label)
-}
-
-/// Basename of the git working tree containing `cwd`, if any — the
-/// default repo label for [`cwd_working_set`]. Bare repos (no workdir)
-/// and non-repo paths return `None`.
-fn worktree_basename(cwd: &std::path::Path) -> Option<String> {
-    let repo = git2::Repository::discover(cwd).ok()?;
-    let name = repo.workdir()?.file_name()?.to_str()?.to_string();
-    Some(name)
 }
 
 /// Load the layered config: defaults → optional `config.toml` → env. Every

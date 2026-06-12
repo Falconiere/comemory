@@ -68,12 +68,18 @@ pub fn harvest(conn: &Connection) -> Result<Vec<GoldenPair>> {
            FROM feedback_events e
            JOIN retrieval_log r ON r.query_id = e.query_id
            JOIN memories m ON m.id = e.memory_id AND m.deleted_at IS NULL
-          WHERE e.verdict = 'used' AND e.target_kind = 'memory'
-            AND r.source != 'search-code'
+          WHERE e.verdict = 'used' AND e.target_kind = ?1
+            AND r.source != ?2
           ORDER BY r.query, r.repo, r.kind, e.memory_id",
     )?;
     let rows: Vec<(PairKey, String)> = stmt
-        .query_map([], |r| Ok(((r.get(0)?, r.get(1)?, r.get(2)?), r.get(3)?)))?
+        .query_map(
+            [
+                crate::stats::target::MEMORY,
+                crate::stats::source::SEARCH_CODE,
+            ],
+            |r| Ok(((r.get(0)?, r.get(1)?, r.get(2)?), r.get(3)?)),
+        )?
         .collect::<std::result::Result<_, _>>()?;
     let mut by_key: BTreeMap<PairKey, Vec<String>> = BTreeMap::new();
     for (key, id) in rows {

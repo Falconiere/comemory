@@ -45,10 +45,12 @@ pub struct MinedMapping {
 pub fn mine(conn: &Connection) -> Result<Vec<MinedMapping>> {
     let mut stmt = conn.prepare(
         "SELECT query_id, query, at FROM retrieval_log
-         WHERE source != 'search-code' ORDER BY at, query_id",
+         WHERE source != ?1 ORDER BY at, query_id",
     )?;
     let log: Vec<(String, String, String)> = stmt
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+        .query_map([crate::stats::source::SEARCH_CODE], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        })?
         .collect::<std::result::Result<_, _>>()?;
     // Only memory-target verdicts mark a query successful: a code verdict
     // (target_kind = 'code', written by `stats::code_feedback`) says
@@ -56,10 +58,10 @@ pub fn mine(conn: &Connection) -> Result<Vec<MinedMapping>> {
     // used feedback is code-target must not read as a successful rewording.
     let mut stmt = conn.prepare(
         "SELECT DISTINCT query_id FROM feedback_events
-          WHERE verdict = 'used' AND target_kind = 'memory'",
+          WHERE verdict = 'used' AND target_kind = ?1",
     )?;
     let used: HashSet<String> = stmt
-        .query_map([], |r| r.get(0))?
+        .query_map([crate::stats::target::MEMORY], |r| r.get(0))?
         .collect::<std::result::Result<_, _>>()?;
 
     let parsed: Vec<(bool, BTreeSet<String>, OffsetDateTime)> = log
