@@ -42,3 +42,14 @@ load helper
     [ "$status" -eq 0 ]
     [[ "$output" == *'"comemory":"unavailable"'* ]]
 }
+
+@test "scope: a leading flag is refused, not run unscoped" {
+    require_comemory
+    repo="$(make_repo foo)"
+    cd "$repo"
+    # A global flag before the subcommand would otherwise fall through to the
+    # unscoped passthrough and silently skip --repo injection.
+    run "$WRAPPER" --json list
+    [ "$status" -eq 64 ]
+    [[ "$output" == *"subcommand must precede flags"* ]]
+}

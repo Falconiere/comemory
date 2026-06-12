@@ -11,6 +11,10 @@ wrapper="${here}/../scripts/comemory.sh"
 
 # Plain (non-JSON) list, captured into a var: a later `head` truncation must
 # not SIGPIPE-fail the producer (which `list | head` under pipefail would).
+# This trusts `comemory list`'s plain format: one row per memory, no header
+# (src/cli/list.rs), so an empty repo yields empty output. If `list` ever
+# grows a header row, that header would surface as a fake memory line here —
+# switch this to `list --json` + a `jq -r` projection at that point.
 if ! out=$("$wrapper" list 2>/dev/null); then
     exit 0
 fi

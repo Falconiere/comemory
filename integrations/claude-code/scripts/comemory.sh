@@ -10,7 +10,9 @@
 set -uo pipefail
 
 # Missing binary: emit a sentinel and exit 0 so a not-yet-installed comemory
-# never breaks a session, hook, or skill.
+# never breaks a session, hook, or skill. The sentinel is JSON regardless of
+# whether the caller passed --json; callers substring-match
+# `"comemory":"unavailable"` rather than parse, so this stays JSON in all modes.
 if ! command -v comemory >/dev/null 2>&1; then
     printf '%s\n' '{"comemory":"unavailable","hint":"cargo install comemory"}'
     exit 0
@@ -28,6 +30,19 @@ fi
 
 sub="${1:-}"
 shift || true
+
+# Subcommand must come first. A leading global flag (e.g. `--data-dir`,
+# `--json`) would fall through to the unscoped `*)` arm and silently skip
+# `--repo` injection, so refuse it rather than file a memory under the wrong
+# scope. Callers (skills + hooks) always lead with the subcommand.
+case "$sub" in
+    -*)
+        printf '%s\n' \
+            "error: subcommand must precede flags; got '$sub'" \
+            'usage: comemory.sh <save|list|context|search|search-code> [args...]' >&2
+        exit 64
+        ;;
+esac
 
 # The injected `--repo "$repo"` precedes "$@", so a caller's explicit
 # `--repo X` lands last and wins (clap's repeated-Option is last-wins).
