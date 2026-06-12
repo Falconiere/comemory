@@ -102,6 +102,7 @@ pub fn to_dot(g: &CodeGraph) -> String {
         let (color, style, dir) = match e.rel.as_str() {
             "imports" => ("#3367d6", "solid", "forward"),
             "co_changed" => ("#d9730d", "dashed", "none"),
+            // Defensive default; `rels_of` only ever emits the two arms above.
             _ => ("#888888", "solid", "forward"),
         };
         s.push_str(&format!(
