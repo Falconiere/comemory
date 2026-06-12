@@ -67,9 +67,6 @@ function renderGraph() {
     const a = (2 * Math.PI * i) / N;
     graph.addNode(n.id, {
       label: n.label,
-      repo: n.repo,
-      rank: n.rank,
-      symbols: n.symbols,
       x: Math.cos(a),
       y: Math.sin(a),
       size: 3 + 17 * (n.rank / maxRank),
@@ -142,13 +139,15 @@ function renderGraph() {
     if (++frames < MAX_FRAMES) requestAnimationFrame(step);
   })();
 
+  const importsBox = document.getElementById('f-imports');
+  const cochangedBox = document.getElementById('f-cochanged');
   function applyFilters() {
-    filter.imports = document.getElementById('f-imports').checked;
-    filter.co_changed = document.getElementById('f-cochanged').checked;
+    filter.imports = importsBox.checked;
+    filter.co_changed = cochangedBox.checked;
     renderer.refresh();
   }
-  document.getElementById('f-imports').addEventListener('change', applyFilters);
-  document.getElementById('f-cochanged').addEventListener('change', applyFilters);
+  importsBox.addEventListener('change', applyFilters);
+  cochangedBox.addEventListener('change', applyFilters);
 
   renderer.on('clickNode', ({ node }) => {
     focus = node;
