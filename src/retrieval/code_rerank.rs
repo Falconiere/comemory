@@ -18,6 +18,7 @@ use rusqlite::{Connection, OptionalExtension};
 use time::OffsetDateTime;
 
 use crate::config::Config;
+use crate::graph::cochange;
 use crate::prelude::*;
 use crate::retrieval::code_prior::{self, Signals};
 use crate::retrieval::code_route::CodeRoutedHit;
@@ -130,6 +131,12 @@ pub fn working_set(repo_root: &Path, repo: &str) -> WorkingSet {
 /// (worktree + index changes, untracked files included), then the
 /// first-parent diffs of the most recent [`WORKING_SET_COMMITS`]
 /// commits via [`crate::graph::cochange::commit_changed_paths`].
+///
+/// Commits touching more than [`cochange::MEGA_COMMIT_FILE_CAP`] files
+/// are skipped for the same reason the co-change miner skips them: a
+/// formatting sweep or bulk rename says nothing about what the developer
+/// is working on, and folding it in would flood the working set (and the
+/// affinity SQL's `IN` lists) with noise.
 fn collect_working_paths(repo_root: &Path) -> Result<BTreeSet<String>> {
     use crate::git_utils::map_git_err;
     let repo = git2::Repository::discover(repo_root).map_err(map_git_err)?;
@@ -150,9 +157,16 @@ fn collect_working_paths(repo_root: &Path) -> Result<BTreeSet<String>> {
         let commit = repo
             .find_commit(oid.map_err(map_git_err)?)
             .map_err(map_git_err)?;
-        out.extend(crate::graph::cochange::commit_changed_paths(
-            &repo, &commit,
-        )?);
+        let changed = cochange::commit_changed_paths(&repo, &commit)?;
+        if changed.len() > cochange::MEGA_COMMIT_FILE_CAP {
+            tracing::debug!(
+                oid = %commit.id(),
+                files = changed.len(),
+                "code_rerank: skipping mega-commit in working-set window"
+            );
+            continue;
+        }
+        out.extend(changed);
     }
     Ok(out)
 }

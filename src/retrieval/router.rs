@@ -131,8 +131,9 @@ fn route_hybrid(
 ) -> Result<Vec<RoutedHit>> {
     let ann = filter_kind(
         conn,
-        above_memory_threshold(
+        above_similarity_threshold(
             vector::knn_memory(conn, vec, k, repo)?,
+            |h| h.distance,
             cfg.retrieval.memory_threshold,
         ),
         kind,
@@ -179,8 +180,9 @@ fn route_vector_only(
 ) -> Result<Vec<RoutedHit>> {
     let ann = filter_kind(
         conn,
-        above_memory_threshold(
+        above_similarity_threshold(
             vector::knn_memory(conn, vec, k, repo)?,
+            |h| h.distance,
             cfg.retrieval.memory_threshold,
         ),
         kind,
@@ -215,14 +217,22 @@ fn filter_kind(
         .collect())
 }
 
-/// Drop ANN hits whose cosine similarity (`1.0 - distance`) falls below
-/// `threshold` (`cfg.retrieval.memory_threshold`, default 0.55). vec0 KNN
-/// always returns the k nearest rows regardless of distance, so without
-/// this floor a query vector far from the whole corpus pads the candidate
-/// pool with k nearest-but-irrelevant noise hits.
-fn above_memory_threshold(hits: Vec<vector::MemoryHit>, threshold: f32) -> Vec<vector::MemoryHit> {
+/// Drop ANN hits whose cosine similarity (`1.0 - distance(hit)`) falls
+/// below `threshold`. vec0 KNN always returns the k nearest rows
+/// regardless of distance, so without this floor a query vector far from
+/// the whole corpus pads the candidate pool with k nearest-but-irrelevant
+/// noise hits. Shared by the memory ANN floor here
+/// (`cfg.retrieval.memory_threshold`, default 0.55) and the code ANN
+/// floor in [`crate::retrieval::code_route`]
+/// (`cfg.retrieval.code_threshold`, default 0.50), generic over the hit
+/// type since the two legs return different row structs.
+pub(crate) fn above_similarity_threshold<H>(
+    hits: Vec<H>,
+    distance: impl Fn(&H) -> f32,
+    threshold: f32,
+) -> Vec<H> {
     hits.into_iter()
-        .filter(|h| (1.0 - h.distance) >= threshold)
+        .filter(|h| (1.0 - distance(h)) >= threshold)
         .collect()
 }
 

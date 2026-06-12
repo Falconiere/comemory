@@ -215,6 +215,44 @@ fn lang_filter_narrows_hits_to_one_language() {
 }
 
 #[test]
+fn working_set_caveat_stays_in_sync_with_context_help() {
+    // Drift tripwire for the intentionally-duplicated working-set caveat
+    // paragraph in `cli::search_code::EXAMPLES` and `cli::context::EXAMPLES`
+    // (a shared const cannot reproduce both frozen renderings — see the
+    // comments on the two consts). Modulo whitespace, the command name, and
+    // the indexed/referenced adjective, the paragraphs must stay identical;
+    // editing one without the other fails here.
+    let help_of = |cmd: &str| -> String {
+        let assert = Command::cargo_bin("comemory")
+            .expect("bin")
+            .args([cmd, "--help"])
+            .assert()
+            .success();
+        String::from_utf8_lossy(&assert.get_output().stdout).to_string()
+    };
+    let caveat_of = |help: &str, cmd: &str, adjective: &str| -> String {
+        let start = help
+            .find("The working-set affinity boost")
+            .unwrap_or_else(|| panic!("{cmd} --help lost its working-set caveat: {help}"));
+        let end = help[start..]
+            .find("basename.")
+            .unwrap_or_else(|| panic!("{cmd} --help caveat lost its closing sentence: {help}"));
+        help[start..start + end + "basename.".len()]
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .replace(&format!("when {cmd} runs"), "when <CMD> runs")
+            .replace(&format!("the {adjective} repo's"), "the <ADJ> repo's")
+    };
+    let sc = caveat_of(&help_of("search-code"), "search-code", "indexed");
+    let cx = caveat_of(&help_of("context"), "context", "referenced");
+    assert_eq!(
+        sc, cx,
+        "the working-set caveat paragraphs in search-code/context --help drifted apart"
+    );
+}
+
+#[test]
 fn empty_index_exits_zero_and_hints_index_code() {
     // Fresh data dir, nothing indexed: exit 0 with a TTY hint pointing at
     // `comemory index-code` instead of a silent empty result.

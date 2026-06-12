@@ -43,7 +43,7 @@ use crate::cli::resolve_data_dir;
 use crate::config::paths::Paths;
 use crate::memory::MemoryStore;
 use crate::prelude::*;
-use crate::store::{connection, memory_row};
+use crate::store::{code_row, connection, memory_row};
 
 /// Arguments to `comemory rebuild`. Currently no flags — the command always
 /// rebuilds the entire memory layer of the SQLite mirror from `memories/`
@@ -279,17 +279,22 @@ fn copy_code_tables_inner(conn: &rusqlite::Connection) -> Result<()> {
              FROM old.edges WHERE rel IN ('co_changed', 'imports');"
         ))?;
     }
-    // Per-repo code-format stamps (`schema_meta` keys `code_format:<repo>`,
-    // exactly 12 prefix chars — the global `code_format_version` key does
-    // NOT match): without them the next `index-code` sees an unstamped
+    // Per-repo code-format stamps (`schema_meta` keys
+    // `code_format:<repo>`, matched on [`code_row::CODE_FORMAT_KEY_PREFIX`]
+    // — the global `code_format_version` key lacks the colon and does NOT
+    // match): without them the next `index-code` sees an unstamped
     // repo, drops its `indexed_files` cursors, and the full re-walk purges
-    // the BYO `code_vec` rows the copy above just preserved.
+    // the BYO `code_vec` rows the copy above just preserved. The prefix is
+    // a crate-internal const (no quotes / SQL metacharacters), so the
+    // interpolation cannot break the statement.
     if old_table_exists(conn, "schema_meta")? {
-        conn.execute_batch(
+        let prefix = code_row::CODE_FORMAT_KEY_PREFIX;
+        conn.execute_batch(&format!(
             "INSERT OR IGNORE INTO main.schema_meta(key, value) \
              SELECT key, value FROM old.schema_meta \
-              WHERE substr(key, 1, 12) = 'code_format:';",
-        )?;
+              WHERE substr(key, 1, {len}) = '{prefix}';",
+            len = prefix.len(),
+        ))?;
     }
     // Per-repo indexing markers: dropping `last_mined_commit` would make
     // the next index-code re-mine bounded history into the (just-copied)

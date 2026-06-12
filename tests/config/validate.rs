@@ -26,6 +26,25 @@ fn assert_rejected(body: &str, field: &str) {
 }
 
 #[test]
+fn memory_threshold_rejects_non_finite_and_out_of_range() {
+    // Symmetry with code_threshold: before this arm existed,
+    // `memory_threshold = 5` passed silently and the ANN floor dropped
+    // every hit.
+    for bad in ["nan", "inf", "5", "1.5", "-0.1"] {
+        assert_rejected(
+            &format!("[retrieval]\nmemory_threshold = {bad}\n"),
+            "retrieval.memory_threshold",
+        );
+    }
+    // Boundary values are valid: 0.0 disables the floor, 1.0 demands
+    // exact-match similarity.
+    for ok in ["0.0", "1.0"] {
+        load(&format!("[retrieval]\nmemory_threshold = {ok}\n"))
+            .expect("boundary memory_threshold must be accepted");
+    }
+}
+
+#[test]
 fn code_threshold_rejects_non_finite_and_out_of_range() {
     for bad in ["nan", "inf", "1.5", "-0.1"] {
         assert_rejected(

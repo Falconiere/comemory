@@ -33,9 +33,18 @@ use crate::prelude::*;
 /// full re-walk purges every freshly-ingested `code_vec` embedding.
 pub(crate) const CODE_FORMAT_VERSION: &str = "2";
 
+/// `schema_meta` key prefix of the per-repo code-format stamps
+/// (`code_format:<repo>`). Shared with `cli::rebuild`, which copies the
+/// stamps by prefix-matching `schema_meta` keys — interpolating this
+/// const (and its `.len()`) into that SQL keeps the two sides from
+/// drifting on the prefix or its length. The global
+/// `code_format_version` key does NOT carry the trailing colon and never
+/// matches.
+pub(crate) const CODE_FORMAT_KEY_PREFIX: &str = "code_format:";
+
 /// `schema_meta` key carrying the per-repo code format stamp.
 fn repo_format_key(repo: &str) -> String {
-    format!("code_format:{repo}")
+    format!("{CODE_FORMAT_KEY_PREFIX}{repo}")
 }
 
 /// Drop every `indexed_files` cursor for `repo` when its per-repo format

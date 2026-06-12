@@ -30,6 +30,12 @@ pub struct ExtractedSymbol {
     pub snippet: String,
     /// One-based line number of the start of the match.
     pub line: usize,
+    /// One-based line number of the (inclusive) end of the match, taken
+    /// from the same tree-sitter span as [`ExtractedSymbol::line`] — the
+    /// authoritative value persistence must store, rather than re-deriving
+    /// it from the snippet's line count (which can disagree at a
+    /// column-0 end edge).
+    pub line_end: usize,
     /// cAST chunks for symbols whose span exceeds
     /// [`CHUNK_LINE_BUDGET`] lines; empty means the symbol is stored
     /// whole (unchunked).
@@ -44,7 +50,7 @@ pub fn extract(lang: Lang, source: &str) -> Result<Vec<ExtractedSymbol>> {
         // Tsx is a superset of the plain TypeScript grammar — it parses
         // JSX-bearing source as well as pure TS, so we route both `.ts` and
         // `.tsx` through it.
-        Lang::Typescript => extract_with(Tsx, lang, source, ts_patterns()),
+        Lang::Typescript => extract_with(Tsx, lang, source, &ts_patterns()),
         Lang::Javascript => extract_with(JavaScript, lang, source, js_patterns()),
         Lang::Python => extract_with(Python, lang, source, python_patterns()),
         Lang::Go => extract_with(Go, lang, source, go_patterns()),
@@ -83,29 +89,35 @@ fn rust_patterns() -> &'static [(&'static str, &'static str)] {
     ]
 }
 
-fn ts_patterns() -> &'static [(&'static str, &'static str)] {
-    // TypeScript functions may carry a return annotation (`: number`)
-    // between the arg list and the body; JavaScript skips it. List both
-    // shapes so we recover the function name in either case.
-    //
-    // `export` / `export default` / `async` prefixes need no extra
-    // patterns: the wrapped declaration is a child node of the export
-    // statement and `find_all` descends into it (probed empirically).
-    // `abstract class` is a distinct node kind, so it gets its own row —
-    // it must stay LAST so `js_patterns` can reuse this table minus it.
-    &[
-        ("function", "function $NAME($$$ARGS): $RET { $$$BODY }"),
-        ("function", "function $NAME($$$ARGS) { $$$BODY }"),
-        ("class", "class $NAME { $$$BODY }"),
-        ("class", "abstract class $NAME { $$$BODY }"),
-    ]
+/// Pattern rows shared by the TypeScript and JavaScript tables.
+///
+/// TypeScript functions may carry a return annotation (`: number`)
+/// between the arg list and the body; JavaScript skips it. Both shapes
+/// are listed so we recover the function name in either case (the
+/// `: $RET` row simply never matches under the JS grammar).
+///
+/// `export` / `export default` / `async` prefixes need no extra
+/// patterns: the wrapped declaration is a child node of the export
+/// statement and `find_all` descends into it (probed empirically).
+const TS_JS_COMMON: &[(&str, &str)] = &[
+    ("function", "function $NAME($$$ARGS): $RET { $$$BODY }"),
+    ("function", "function $NAME($$$ARGS) { $$$BODY }"),
+    ("class", "class $NAME { $$$BODY }"),
+];
+
+fn ts_patterns() -> Vec<(&'static str, &'static str)> {
+    // `abstract class` is a distinct node kind, so it gets its own row on
+    // top of [`TS_JS_COMMON`]. Built per call — extraction is per-file and
+    // the Vec is four tiny tuples, so no caching is warranted.
+    let mut out = TS_JS_COMMON.to_vec();
+    out.push(("class", "abstract class $NAME { $$$BODY }"));
+    out
 }
 
 fn js_patterns() -> &'static [(&'static str, &'static str)] {
-    // JavaScript shares the TS table except `abstract class`, which the
-    // JS grammar rejects at pattern-compile time (no abstract classes).
-    let all = ts_patterns();
-    &all[..all.len() - 1]
+    // JavaScript is exactly the shared table: `abstract class` is
+    // rejected by the JS grammar at pattern-compile time.
+    TS_JS_COMMON
 }
 
 fn python_patterns() -> &'static [(&'static str, &'static str)] {
@@ -188,6 +200,7 @@ fn extract_with<L: LanguageExt + Clone>(
             language: lang.as_str().to_string(),
             snippet: m.text().to_string(),
             line: line_start,
+            line_end,
             chunks,
         });
     })?;

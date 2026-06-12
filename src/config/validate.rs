@@ -27,8 +27,11 @@ fn check_decay(v: f64) -> std::result::Result<(), &'static str> {
     Ok(())
 }
 
-/// Bounds for `rank.mmr_lambda` and every `tune.mmr_lambda_grid` entry.
-fn check_mmr_lambda(v: f64) -> std::result::Result<(), &'static str> {
+/// Bounds shared by every knob constrained to the unit interval:
+/// `rank.mmr_lambda` (and every `tune.mmr_lambda_grid` entry),
+/// `retrieval.memory_threshold`, `retrieval.code_threshold`, and
+/// `prune.min_feedback`.
+fn check_unit_interval(v: f64) -> std::result::Result<(), &'static str> {
     if !v.is_finite() || !(0.0..=1.0).contains(&v) {
         return Err("must be a finite value in [0.0, 1.0]");
     }
@@ -96,10 +99,16 @@ impl Config {
                 "invalid retrieval.rrf_k={k} (env COMEMORY_RETRIEVAL_RRF_K): {why}"
             )));
         }
-        let ct = self.retrieval.code_threshold;
-        if !ct.is_finite() || !(0.0..=1.0).contains(&ct) {
+        let mt = self.retrieval.memory_threshold;
+        if let Err(why) = check_unit_interval(f64::from(mt)) {
             return Err(Error::Config(format!(
-                "invalid retrieval.code_threshold={ct} (env COMEMORY_RETRIEVAL_CODE_THRESHOLD): must be a finite value in [0.0, 1.0]"
+                "invalid retrieval.memory_threshold={mt} (env COMEMORY_RETRIEVAL_MEMORY_THRESHOLD): {why}"
+            )));
+        }
+        let ct = self.retrieval.code_threshold;
+        if let Err(why) = check_unit_interval(f64::from(ct)) {
+            return Err(Error::Config(format!(
+                "invalid retrieval.code_threshold={ct} (env COMEMORY_RETRIEVAL_CODE_THRESHOLD): {why}"
             )));
         }
         let d = self.rank.decay;
@@ -115,7 +124,7 @@ impl Config {
             )));
         }
         let l = self.rank.mmr_lambda;
-        if let Err(why) = check_mmr_lambda(l) {
+        if let Err(why) = check_unit_interval(l) {
             return Err(Error::Config(format!(
                 "invalid rank.mmr_lambda={l} (env COMEMORY_RANK_MMR_LAMBDA): {why}"
             )));
@@ -133,9 +142,9 @@ impl Config {
             )));
         }
         let f = self.prune.min_feedback;
-        if !f.is_finite() || !(0.0..=1.0).contains(&f) {
+        if let Err(why) = check_unit_interval(f) {
             return Err(Error::Config(format!(
-                "invalid prune.min_feedback={f} (env COMEMORY_PRUNE_MIN_FEEDBACK): must be a finite value in [0.0, 1.0]"
+                "invalid prune.min_feedback={f} (env COMEMORY_PRUNE_MIN_FEEDBACK): {why}"
             )));
         }
         let r = self.prune.learning_retention_days;
@@ -157,7 +166,7 @@ impl Config {
         check_grid(
             "tune.mmr_lambda_grid",
             &self.tune.mmr_lambda_grid,
-            check_mmr_lambda,
+            check_unit_interval,
         )?;
         check_grid("tune.bm25_grid", &self.tune.bm25_grid, |(wb, wt)| {
             check_bm25_weights(&[wb, wt])

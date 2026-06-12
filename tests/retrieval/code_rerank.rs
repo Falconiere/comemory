@@ -231,6 +231,38 @@ fn working_set_includes_recently_committed_files() {
 }
 
 #[test]
+fn working_set_skips_mega_commit_diffs() {
+    // A formatting-sweep-sized commit (more files than
+    // cochange::MEGA_COMMIT_FILE_CAP) inside the last-N-commits window
+    // must NOT flood the working set; a normal-sized commit in the same
+    // window still contributes its files.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let repo = dir.path().join("repo");
+    git_setup::init_repo(&repo);
+    git_setup::commit_files(&repo, &[("kept.rs", "fn kept() {}\n")], "small change");
+    let sweep: Vec<(String, String)> = (0..25)
+        .map(|i| (format!("sweep/f{i}.rs"), format!("fn f{i}() {{}}\n")))
+        .collect();
+    let sweep_refs: Vec<(&str, &str)> = sweep
+        .iter()
+        .map(|(p, c)| (p.as_str(), c.as_str()))
+        .collect();
+    git_setup::commit_files(&repo, &sweep_refs, "formatting sweep");
+
+    let ws = working_set(&repo, "demo");
+    assert!(
+        ws.files().iter().any(|f| f == "file:demo:kept.rs"),
+        "normal commit's file must be in the working set, got {:?}",
+        ws.files()
+    );
+    assert!(
+        !ws.files().iter().any(|f| f.contains("sweep/")),
+        "mega-commit files must be skipped, got {:?}",
+        ws.files()
+    );
+}
+
+#[test]
 fn working_set_outside_any_repo_is_empty() {
     let dir = tempfile::tempdir().expect("tempdir");
     let ws = working_set(&dir.path().join("not-a-repo"), "demo");

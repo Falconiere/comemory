@@ -18,6 +18,7 @@ fn rust_functions_extracted_with_lines() {
     // lines are one-based and stable across the two definitions.
     let add = syms.iter().find(|s| s.name == "add").expect("add sym");
     assert_eq!(add.line, 1);
+    assert_eq!(add.line_end, 1, "single-line symbol ends on its own line");
     assert_eq!(add.language, "rust");
     assert!(add.snippet.contains("fn add"));
     // Symbols under the chunk line budget are stored whole.
@@ -93,6 +94,9 @@ fn go_function_extracted() {
     assert_eq!(add.language, "go");
     assert!(add.snippet.contains("func add"));
     assert!(add.chunks.is_empty(), "small symbol must stay unchunked");
+    // Multi-line definition: the tree-sitter span carries the true
+    // inclusive end line (func opens on line 3, closes on line 5).
+    assert_eq!((add.line, add.line_end), (3, 5));
 }
 
 #[test]

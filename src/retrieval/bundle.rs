@@ -261,13 +261,17 @@ fn code_ref_lookup(conn: &Connection, dst_id: &str) -> Result<Option<RawRef>> {
         return Ok(None);
     }
     let (repo, path, symbol) = (parts[0], parts[1], parts[2]);
-    let row = conn
-        .query_row(
-            "SELECT id, snippet FROM code_symbols \
-              WHERE repo = ?1 AND path = ?2 AND symbol = ?3 LIMIT 1",
-            rusqlite::params![repo, path, symbol],
-            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)),
-        )
+    // `prepare_cached`: this lookup runs once per walked edge inside the
+    // assemble loop, so a fresh prepare per call would re-parse the SQL
+    // for every ref.
+    let mut stmt = conn.prepare_cached(
+        "SELECT id, snippet FROM code_symbols \
+          WHERE repo = ?1 AND path = ?2 AND symbol = ?3 LIMIT 1",
+    )?;
+    let row = stmt
+        .query_row(rusqlite::params![repo, path, symbol], |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+        })
         .optional()?;
     let (symbol_id, snippet) = match row {
         Some((id, snippet)) => (Some(id), snippet),
