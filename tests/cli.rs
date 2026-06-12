@@ -353,6 +353,9 @@ mod ingest_code;
 #[path = "cli/ast.rs"]
 mod ast;
 
+#[path = "cli/graph.rs"]
+mod graph;
+
 #[path = "cli/rebuild.rs"]
 mod rebuild;
 

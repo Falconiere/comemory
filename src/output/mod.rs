@@ -4,6 +4,7 @@
 //! `no-bypass-check` gate happy.
 
 pub mod context;
+pub mod graph;
 pub mod json;
 pub mod prune;
 pub mod search;

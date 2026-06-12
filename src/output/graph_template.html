@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>comemory — code graph</title>
+<script src="https://unpkg.com/cytoscape@3.30.2/dist/cytoscape.min.js"></script>
+<style>
+  html,body{margin:0;height:100%;font-family:system-ui,sans-serif}
+  #cy{width:100%;height:100vh;display:block;background:#fafbfc}
+  #panel{position:fixed;top:10px;left:10px;background:rgba(255,255,255,.93);
+    border:1px solid #ccc;border-radius:8px;padding:10px 12px;font-size:13px;z-index:10}
+  #panel label{display:block;margin:3px 0;cursor:pointer}
+  .sw{display:inline-block;width:12px;height:12px;margin-right:6px;
+    vertical-align:middle;border-radius:2px}
+  #stats{color:#555;margin-top:6px}
+  #hint{color:#888;margin-top:4px;font-size:11px}
+</style>
+</head>
+<body>
+<div id="panel">
+  <strong>comemory code graph</strong>
+  <label><input type="checkbox" id="f-imports" checked>
+    <span class="sw" style="background:#3367d6"></span>imports</label>
+  <label><input type="checkbox" id="f-cochanged" checked>
+    <span class="sw" style="background:#d9730d"></span>co_changed</label>
+  <div id="stats"></div>
+  <div id="hint">node size = PageRank · click a file to focus</div>
+</div>
+<div id="cy"></div>
+<script>
+const DATA = __GRAPH_DATA__;
+const els = [];
+for (const n of DATA.nodes) {
+  els.push({ data: { id: n.id, label: n.label, repo: n.repo,
+    rank: n.rank, symbols: n.symbols } });
+}
+for (let i = 0; i < DATA.edges.length; i++) {
+  const e = DATA.edges[i];
+  els.push({ data: { id: 'e' + i, source: e.src, target: e.dst,
+    rel: e.rel, weight: e.weight } });
+}
+const maxRank = DATA.nodes.reduce((m, n) => Math.max(m, n.rank), 0) || 1;
+const cy = cytoscape({
+  container: document.getElementById('cy'),
+  elements: els,
+  style: [
+    { selector: 'node', style: {
+      'label': 'data(label)', 'font-size': 7, 'color': '#222',
+      'background-color': '#5b8def', 'text-wrap': 'wrap', 'text-max-width': 120,
+      'width': 'mapData(rank, 0, ' + maxRank + ', 12, 60)',
+      'height': 'mapData(rank, 0, ' + maxRank + ', 12, 60)' } },
+    { selector: 'edge[rel="imports"]', style: {
+      'line-color': '#3367d6', 'target-arrow-color': '#3367d6',
+      'target-arrow-shape': 'triangle', 'curve-style': 'bezier', 'width': 1 } },
+    { selector: 'edge[rel="co_changed"]', style: {
+      'line-color': '#d9730d', 'line-style': 'dashed', 'curve-style': 'bezier',
+      'width': 'mapData(weight, 1, 10, 1, 6)' } },
+    { selector: '.hidden', style: { 'display': 'none' } },
+    { selector: '.faded', style: { 'opacity': 0.12 } },
+    { selector: 'node:selected', style: { 'background-color': '#111' } }
+  ],
+  layout: { name: 'cose', animate: false, nodeRepulsion: 8000, idealEdgeLength: 80 }
+});
+function applyFilters() {
+  const im = document.getElementById('f-imports').checked;
+  const co = document.getElementById('f-cochanged').checked;
+  cy.batch(() => {
+    cy.edges().forEach(e => {
+      const r = e.data('rel');
+      const show = (r === 'imports' && im) || (r === 'co_changed' && co);
+      e.toggleClass('hidden', !show);
+    });
+  });
+}
+document.getElementById('f-imports').addEventListener('change', applyFilters);
+document.getElementById('f-cochanged').addEventListener('change', applyFilters);
+cy.on('tap', 'node', evt => {
+  cy.elements().removeClass('faded');
+  const hood = evt.target.closedNeighborhood();
+  cy.elements().not(hood).addClass('faded');
+});
+cy.on('tap', evt => { if (evt.target === cy) cy.elements().removeClass('faded'); });
+document.getElementById('stats').textContent =
+  DATA.nodes.length + ' files · ' + DATA.edges.length + ' edges';
+applyFilters();
+</script>
+</body>
+</html>

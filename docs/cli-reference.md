@@ -37,6 +37,7 @@ Commands:
   index-code     Walk a repo, extract symbols, and upsert into the code index
   ingest-code    Read pre-embedded JSONL rows from stdin and ingest them into the code index (`code_symbols` + `code_fts` + `code_vec`)
   ast            Run an ast-grep pattern against a single source file
+  graph          Export the file-level code-connection graph (imports + co-change) as JSON, Graphviz DOT, or an interactive HTML page
   context        Headline lookup: code symbol + memories matching a key
   completions    Emit a shell completion script for `bash`, `zsh`, `fish`, `powershell`, or `elvish`
   prune          Detect (and optionally soft-delete) stale memories

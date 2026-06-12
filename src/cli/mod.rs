@@ -17,6 +17,7 @@ pub(crate) mod embedding_input;
 pub mod eval;
 pub mod feedback;
 pub mod gc;
+pub mod graph;
 pub mod index_code;
 pub mod ingest_code;
 pub mod install_hooks;
@@ -87,6 +88,9 @@ pub enum Cmd {
     IngestCode(ingest_code::Args),
     /// Run an ast-grep pattern against a single source file.
     Ast(ast::Args),
+    /// Export the file-level code-connection graph (imports + co-change)
+    /// as JSON, Graphviz DOT, or an interactive HTML page.
+    Graph(graph::Args),
     /// Headline lookup: code symbol + memories matching a key.
     Context(context::Args),
     /// Emit a shell completion script for `bash`, `zsh`, `fish`, `powershell`, or `elvish`.
@@ -122,6 +126,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::IndexCode(a) => index_code::run(a, cli.json, cli.data_dir).await,
         Cmd::IngestCode(a) => ingest_code::run(a, cli.json, cli.data_dir).await,
         Cmd::Ast(a) => ast::run(a, cli.json, cli.data_dir).await,
+        Cmd::Graph(a) => graph::run(a, cli.json, cli.data_dir).await,
         Cmd::Context(a) => context::run(a, cli.json, cli.data_dir).await,
         Cmd::Completions(a) => completions::run(a, cli.json, cli.data_dir).await,
         Cmd::Prune(a) => prune::run(a, cli.json, cli.data_dir).await,
