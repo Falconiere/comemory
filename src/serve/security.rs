@@ -36,8 +36,26 @@ pub fn generate_token() -> Result<String> {
 }
 
 /// True when `provided` equals the session token. Absent token → false.
+///
+/// The comparison is constant-time over the token bytes (XOR-accumulate, no
+/// early byte-wise exit) so a network attacker cannot recover the token one
+/// byte at a time from response-timing differences. A length mismatch returns
+/// early, but the token length is fixed and public (64 hex chars), so that
+/// leaks nothing secret.
 pub fn token_matches(provided: Option<&str>, expected: &str) -> bool {
-    matches!(provided, Some(t) if t == expected)
+    let provided = match provided {
+        Some(p) => p.as_bytes(),
+        None => return false,
+    };
+    let expected = expected.as_bytes();
+    if provided.len() != expected.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (a, b) in provided.iter().zip(expected.iter()) {
+        diff |= a ^ b;
+    }
+    diff == 0
 }
 
 /// True when the `Host` header names a loopback host. Only the hostname part
