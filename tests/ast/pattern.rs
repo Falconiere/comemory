@@ -1,5 +1,5 @@
-use comemory::ast::pattern::find;
 use comemory::ast::Lang;
+use comemory::ast::pattern::find;
 
 #[test]
 fn pattern_matches_function_call_in_rust() {

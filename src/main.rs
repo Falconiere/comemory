@@ -15,7 +15,7 @@ use std::io::Write as _;
 
 use clap::Parser;
 
-use comemory::cli::{run, Cli};
+use comemory::cli::{Cli, run};
 use comemory::errors::Error;
 
 #[tokio::main]

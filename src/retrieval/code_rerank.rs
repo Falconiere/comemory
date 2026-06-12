@@ -268,6 +268,31 @@ pub fn rerank_code(
         pool.iter()
             .map(|(_, _, s)| ((s.repo.as_str(), s.path.as_str()), s.rank_score)),
     );
+    let scored = score_pool(conn, cfg, now, pool, working_set, median)?;
+
+    let mut out = coalesce(conn, scored)?;
+    // `total_cmp` keeps the comparator a total order even if an
+    // upstream stage ever leaks a NaN score (see the matching note in
+    // `retrieval::rerank`).
+    out.sort_by(|a, b| {
+        b.parts
+            .final_score
+            .total_cmp(&a.parts.final_score)
+            .then_with(|| a.symbol_id.cmp(&b.symbol_id))
+    });
+    Ok(out)
+}
+
+/// Score each pooled candidate by multiplying its max-normalized relevance
+/// with the four bounded priors, sharing one clock and affinity cache.
+fn score_pool(
+    conn: &Connection,
+    cfg: &Config,
+    now: OffsetDateTime,
+    pool: Vec<(&CodeRoutedHit, f64, Signals)>,
+    working_set: &WorkingSet,
+    median: f64,
+) -> Result<Vec<Scored>> {
     let mut affinity_cache: BTreeMap<String, f64> = BTreeMap::new();
     let mut scored = Vec::with_capacity(pool.len());
     for (hit, norm, sig) in pool {
@@ -304,18 +329,7 @@ pub fn rerank_code(
             },
         });
     }
-
-    let mut out = coalesce(conn, scored)?;
-    // `total_cmp` keeps the comparator a total order even if an
-    // upstream stage ever leaks a NaN score (see the matching note in
-    // `retrieval::rerank`).
-    out.sort_by(|a, b| {
-        b.parts
-            .final_score
-            .total_cmp(&a.parts.final_score)
-            .then_with(|| a.symbol_id.cmp(&b.symbol_id))
-    });
-    Ok(out)
+    Ok(scored)
 }
 
 /// A scored candidate before chunk coalescing: the output row plus the
@@ -350,12 +364,12 @@ fn coalesce(conn: &Connection, scored: Vec<Scored>) -> Result<Vec<CodeReranked>>
     }
     let mut out = Vec::with_capacity(groups.len());
     for (key, mut s) in groups {
-        if s.parent_id.is_some() {
-            if let Some((symbol, kind)) = parent_identity(conn, key)? {
-                s.row.symbol_id = key;
-                s.row.symbol = symbol;
-                s.row.kind = kind;
-            }
+        if s.parent_id.is_some()
+            && let Some((symbol, kind)) = parent_identity(conn, key)?
+        {
+            s.row.symbol_id = key;
+            s.row.symbol = symbol;
+            s.row.kind = kind;
         }
         out.push(s.row);
     }

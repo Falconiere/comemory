@@ -8,8 +8,8 @@
 //! replaced — both the index and the query side go through this
 //! tokenizer, so the folding is symmetric.
 
-use unicode_normalization::char::is_combining_mark;
 use unicode_normalization::UnicodeNormalization;
+use unicode_normalization::char::is_combining_mark;
 
 /// One token produced by [`split_text`]: lowercased text, byte range in
 /// the original input, and whether FTS5 should treat it as colocated

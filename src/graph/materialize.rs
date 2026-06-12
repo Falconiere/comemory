@@ -11,9 +11,9 @@
 use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 
-use rusqlite::{params, Connection, OptionalExtension, Transaction};
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
-use crate::graph::edges::{self, file_node_id, file_node_prefix, EdgeKey};
+use crate::graph::edges::{self, EdgeKey, file_node_id, file_node_prefix};
 use crate::graph::{cochange, imports, pagerank};
 use crate::prelude::*;
 

@@ -17,8 +17,8 @@
 use std::path::Path;
 use std::sync::OnceLock;
 
-use rusqlite::auto_extension::{register_auto_extension, RawAutoExtension};
 use rusqlite::Connection;
+use rusqlite::auto_extension::{RawAutoExtension, register_auto_extension};
 
 use crate::prelude::*;
 

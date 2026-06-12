@@ -1,7 +1,7 @@
 [package]
 name = "comemory"
 version = "0.7.0"
-edition = "2021"
+edition = "2024"
 description = "Agentic dev memory + code-aware semantic search via a two-layer property graph."
 license = "MIT"
 repository = "https://github.com/Falconiere/comemory"

@@ -17,8 +17,8 @@
 //! `Connection`); callers own the surrounding `BEGIN`/`COMMIT`.
 
 use rusqlite::Connection;
-use time::format_description::well_known::Iso8601;
 use time::OffsetDateTime;
+use time::format_description::well_known::Iso8601;
 
 use crate::graph::cross_link;
 use crate::graph::edges::{self, EdgeKey};

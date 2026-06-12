@@ -1,4 +1,4 @@
-use comemory::retrieval::fuse::{rrf, RankedHit};
+use comemory::retrieval::fuse::{RankedHit, rrf};
 
 #[test]
 fn rrf_merges_two_ranked_lists() {

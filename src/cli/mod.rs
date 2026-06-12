@@ -4,8 +4,8 @@
 
 use clap::{Parser, Subcommand};
 
-use crate::config::paths::Paths;
 use crate::config::Config;
+use crate::config::paths::Paths;
 use crate::prelude::*;
 
 pub mod ast;

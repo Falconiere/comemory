@@ -4,17 +4,17 @@
 //! Authentication and the Host guard are applied upstream by the router
 //! middleware, so handlers assume the request is already authorized.
 
-use axum::extract::{Query, State};
-use axum::http::{header, HeaderMap, StatusCode, Uri};
-use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::Json;
+use axum::extract::{Query, State};
+use axum::http::{HeaderMap, StatusCode, Uri, header};
+use axum::response::{Html, IntoResponse, Redirect, Response};
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::cli::graph::{build_code_graph, Rel};
+use crate::cli::graph::{Rel, build_code_graph};
 use crate::prelude::*;
 use crate::serve::error::ApiError;
-use crate::serve::{assets, fileio, repo_root, AppState};
+use crate::serve::{AppState, assets, fileio, repo_root};
 
 /// `?id=<file:repo:path>` query for the file endpoints.
 #[derive(Deserialize)]

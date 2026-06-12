@@ -143,10 +143,10 @@ impl PathIndex {
     ///    instead of a suffix match. `..` escaping the repo root resolves
     ///    to `None`.
     pub fn resolve(&self, module: &str, importing_file: Option<&str>) -> Option<String> {
-        if module.starts_with("./") || module.starts_with("../") {
-            if let Some(importer) = importing_file {
-                return self.resolve_relative(module, importer);
-            }
+        if (module.starts_with("./") || module.starts_with("../"))
+            && let Some(importer) = importing_file
+        {
+            return self.resolve_relative(module, importer);
         }
         let fragment = normalize(module)?;
         match self.by_suffix.get(&fragment) {
@@ -338,19 +338,19 @@ fn go_imports(source: &str) -> Vec<String> {
         if in_block {
             if trimmed.starts_with(')') {
                 in_block = false;
-            } else if !trimmed.starts_with("//") {
-                if let Some(path) = first_quoted(trimmed) {
-                    out.push(path);
-                }
+            } else if !trimmed.starts_with("//")
+                && let Some(path) = first_quoted(trimmed)
+            {
+                out.push(path);
             }
-        } else if let Some(rest) = trimmed.strip_prefix("import") {
-            if rest.starts_with('(') || rest.starts_with(char::is_whitespace) {
-                let rest = rest.trim_start();
-                if rest.starts_with('(') && !rest.contains(')') {
-                    in_block = true;
-                } else if let Some(path) = first_quoted(rest) {
-                    out.push(path);
-                }
+        } else if let Some(rest) = trimmed.strip_prefix("import")
+            && (rest.starts_with('(') || rest.starts_with(char::is_whitespace))
+        {
+            let rest = rest.trim_start();
+            if rest.starts_with('(') && !rest.contains(')') {
+                in_block = true;
+            } else if let Some(path) = first_quoted(rest) {
+                out.push(path);
             }
         }
     }

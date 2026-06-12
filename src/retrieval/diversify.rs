@@ -91,7 +91,7 @@ fn mmr(items: Vec<Reranked>, lambda: f64, top_k: usize) -> Vec<Reranked> {
         let Some(pos) = remaining
             .iter()
             .enumerate()
-            .max_by(|(ia, &a), (ib, &b)| {
+            .max_by(|&(ref ia, &a), &(ref ib, &b)| {
                 let sa = lambda * relevance[a] - (1.0 - lambda) * max_sim[a];
                 let sb = lambda * relevance[b] - (1.0 - lambda) * max_sim[b];
                 sa.total_cmp(&sb).then_with(|| ib.cmp(ia))

@@ -10,7 +10,7 @@ use rusqlite::Connection;
 use crate::config::Config;
 use crate::prelude::*;
 use crate::retrieval::fuse::{self, RankedHit};
-use crate::retrieval::router::{above_similarity_threshold, Source, CANDIDATE_POOL};
+use crate::retrieval::router::{CANDIDATE_POOL, Source, above_similarity_threshold};
 use crate::store::{fts, vector};
 
 /// One unified code-retrieval hit, regardless of which branch produced it.

@@ -10,7 +10,7 @@
 
 use assert_cmd::Command;
 use rusqlite::Connection;
-use tempfile::{tempdir, TempDir};
+use tempfile::{TempDir, tempdir};
 
 fn run_save(home: &TempDir, args: &[&str]) {
     let mut cmd = Command::cargo_bin("comemory").expect("bin");

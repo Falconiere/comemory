@@ -10,7 +10,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use comemory::git_utils::current_head;
-use comemory::graph::cochange::{mine_cochange, CoChange, MEGA_COMMIT_FILE_CAP};
+use comemory::graph::cochange::{CoChange, MEGA_COMMIT_FILE_CAP, mine_cochange};
 use tempfile::TempDir;
 
 use crate::git_setup;

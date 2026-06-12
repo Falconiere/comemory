@@ -9,7 +9,7 @@
 use std::collections::BTreeMap;
 
 use comemory::config::Config;
-use comemory::retrieval::code_prior::{median_file_rank, priors, signals, CodePriorParts, Signals};
+use comemory::retrieval::code_prior::{CodePriorParts, Signals, median_file_rank, priors, signals};
 use comemory::retrieval::code_rerank::WorkingSet;
 use time::OffsetDateTime;
 

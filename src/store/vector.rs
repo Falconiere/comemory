@@ -10,7 +10,7 @@
 //! yields cosine similarity in the range `[-1, 1]`, where `1.0` is
 //! identical and `-1.0` is opposite.
 
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 
 use crate::prelude::*;
 use crate::store::embed;

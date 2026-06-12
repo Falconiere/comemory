@@ -121,42 +121,7 @@ pub fn assemble<'a>(
     let mut raw_refs = Vec::new();
 
     for id in memory_ids {
-        // Tolerate a missing/soft-deleted memory row here: the router emits
-        // ids drawn from independent indices (FTS5, vec0) that may drift past
-        // a soft-delete or rebuild, and a stale id should skip cleanly rather
-        // than abort the whole bundle.
-        let row = conn
-            .query_row(
-                "SELECT kind, body FROM memories \
-                  WHERE id = ?1 AND deleted_at IS NULL",
-                [id],
-                |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
-            )
-            .ok();
-        let Some((kind, body)) = row else {
-            continue;
-        };
-        memories.push(MemoryBundleRow {
-            id: id.clone(),
-            kind,
-            body,
-            score: 0.0,
-        });
-
-        // Walk all four context rels at depth ≤ 2 from this memory node.
-        let walked = walk_context_edges(conn, id, 2)?;
-        for e in walked {
-            relations.push(RelationRow {
-                from: format!("{}:{}", e.src_kind, e.src_id),
-                rel: e.rel.clone(),
-                to: format!("{}:{}", e.dst_kind, e.dst_id),
-            });
-            if e.rel == "references_symbol" {
-                if let Some(raw) = code_ref_lookup(conn, &e.dst_id)? {
-                    raw_refs.push(raw);
-                }
-            }
-        }
+        collect_memory(conn, id, &mut memories, &mut relations, &mut raw_refs)?;
     }
     let code_refs = rank_code_refs(conn, cfg, raw_refs, working_set)?;
     Ok(Bundle {
@@ -165,6 +130,54 @@ pub fn assemble<'a>(
         code_refs,
         relations,
     })
+}
+
+/// Load one memory row and append its bundle row, walked relations, and any
+/// resolved code refs into the caller's accumulators.
+///
+/// Tolerates a missing/soft-deleted memory row: the router emits ids drawn
+/// from independent indices (FTS5, vec0) that may drift past a soft-delete or
+/// rebuild, and a stale id should skip cleanly rather than abort the bundle.
+fn collect_memory(
+    conn: &Connection,
+    id: &str,
+    memories: &mut Vec<MemoryBundleRow>,
+    relations: &mut Vec<RelationRow>,
+    raw_refs: &mut Vec<RawRef>,
+) -> Result<()> {
+    let row = conn
+        .query_row(
+            "SELECT kind, body FROM memories \
+              WHERE id = ?1 AND deleted_at IS NULL",
+            [id],
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+        )
+        .ok();
+    let Some((kind, body)) = row else {
+        return Ok(());
+    };
+    memories.push(MemoryBundleRow {
+        id: id.to_string(),
+        kind,
+        body,
+        score: 0.0,
+    });
+
+    // Walk all four context rels at depth ≤ 2 from this memory node.
+    let walked = walk_context_edges(conn, id, 2)?;
+    for e in walked {
+        relations.push(RelationRow {
+            from: format!("{}:{}", e.src_kind, e.src_id),
+            rel: e.rel.clone(),
+            to: format!("{}:{}", e.dst_kind, e.dst_id),
+        });
+        if e.rel == "references_symbol"
+            && let Some(raw) = code_ref_lookup(conn, &e.dst_id)?
+        {
+            raw_refs.push(raw);
+        }
+    }
+    Ok(())
 }
 
 /// Score every resolved ref with the four-prior product (no relevance
@@ -195,6 +208,30 @@ fn rank_code_refs(
             .flatten()
             .map(|s| ((s.repo.as_str(), s.path.as_str()), s.rank_score)),
     );
+    let mut out = score_refs(conn, cfg, raw_refs, sigs, working_set, median)?;
+    out.sort_by(|a, b| match (&a.rank_parts, &b.rank_parts) {
+        (Some(x), Some(y)) => y
+            .final_score
+            .total_cmp(&x.final_score)
+            .then_with(|| a.path.cmp(&b.path))
+            .then_with(|| a.symbol.cmp(&b.symbol)),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => a.path.cmp(&b.path).then_with(|| a.symbol.cmp(&b.symbol)),
+    });
+    Ok(out)
+}
+
+/// Score each ref against its (possibly `None`) signals row, building the
+/// unsorted [`CodeRow`] pool under one shared clock and affinity cache.
+fn score_refs(
+    conn: &Connection,
+    cfg: &Config,
+    raw_refs: Vec<RawRef>,
+    sigs: Vec<Option<Signals>>,
+    working_set: &WorkingSet,
+    median: f64,
+) -> Result<Vec<CodeRow>> {
     let now = OffsetDateTime::now_utc();
     let mut affinity_cache: BTreeMap<String, f64> = BTreeMap::new();
     let mut out = Vec::with_capacity(raw_refs.len());
@@ -219,16 +256,6 @@ fn rank_code_refs(
             rank_parts,
         });
     }
-    out.sort_by(|a, b| match (&a.rank_parts, &b.rank_parts) {
-        (Some(x), Some(y)) => y
-            .final_score
-            .total_cmp(&x.final_score)
-            .then_with(|| a.path.cmp(&b.path))
-            .then_with(|| a.symbol.cmp(&b.symbol)),
-        (Some(_), None) => std::cmp::Ordering::Less,
-        (None, Some(_)) => std::cmp::Ordering::Greater,
-        (None, None) => a.path.cmp(&b.path).then_with(|| a.symbol.cmp(&b.symbol)),
-    });
     Ok(out)
 }
 

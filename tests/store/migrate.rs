@@ -253,13 +253,14 @@ fn v6_extends_edges_adds_code_graph_columns() {
         .expect("w");
     assert_eq!(w, 1);
     // an unknown rel still violates the CHECK
-    assert!(conn
-        .execute(
+    assert!(
+        conn.execute(
             "INSERT INTO edges(src_kind,src_id,dst_kind,dst_id,rel,created_at)
              VALUES('a','a','b','b','bogus','2026-01-01T00:00:00Z')",
             []
         )
-        .is_err());
+        .is_err()
+    );
 
     // new columns + tables exist
     for (table, col) in [

@@ -6,8 +6,8 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use rusqlite::Connection;
 use serde::Serialize;
-use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
+use time::format_description::well_known::Rfc3339;
 
 use crate::prelude::*;
 use crate::store::tokenizer::split::query_tokens;

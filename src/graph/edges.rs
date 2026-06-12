@@ -1,6 +1,6 @@
 //! SQLite-backed edge store. Replaces the v0.1 kuzu writer.
 
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 
 use crate::prelude::*;
 
@@ -67,7 +67,9 @@ pub fn insert_at(conn: &Connection, e: EdgeKey<'_>, created_at: Option<&str>) ->
     conn.execute(
         "INSERT OR IGNORE INTO edges(src_kind,src_id,dst_kind,dst_id,rel,created_at) \
          VALUES(?1,?2,?3,?4,?5, COALESCE(?6, strftime('%Y-%m-%dT%H:%M:%fZ','now')))",
-        params![e.src_kind, e.src_id, e.dst_kind, e.dst_id, e.rel, created_at],
+        params![
+            e.src_kind, e.src_id, e.dst_kind, e.dst_id, e.rel, created_at
+        ],
     )?;
     Ok(())
 }

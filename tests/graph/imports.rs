@@ -1,5 +1,5 @@
 use comemory::ast::languages::Lang;
-use comemory::graph::imports::{extract_imports, PathIndex};
+use comemory::graph::imports::{PathIndex, extract_imports};
 
 fn paths(v: &[&str]) -> Vec<String> {
     v.iter().map(|s| s.to_string()).collect()
