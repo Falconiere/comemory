@@ -234,6 +234,13 @@ fn file_affinity(
 /// undirected pair). Numbered placeholders are reused across both `IN`
 /// lists so the parameter vector binds once; `prepare_cached` caches
 /// one statement per working-set arity.
+///
+/// Arity-keyed caching tradeoff: the SQL string (and thus the cache
+/// key) embeds the working-set length, so each distinct arity compiles
+/// its own statement, and rusqlite's default cache capacity of 16 means
+/// fluctuating arities can evict older entries (re-prepare churn, never
+/// wrong results). Fine unless affinity shows up in a profile — revisit
+/// with arity bucketing (pad the `IN` list to fixed sizes) if it does.
 fn co_change_weight(conn: &Connection, fid: &str, ws_files: &[String]) -> Result<f64> {
     let marks = (0..ws_files.len())
         .map(|i| format!("?{}", i + 2))

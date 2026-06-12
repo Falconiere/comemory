@@ -275,6 +275,27 @@ fn context_code_refs_ranked_by_priors_with_rank_parts() {
     assert!(hot < cold, "TTY order must match ranked order: {stdout}");
 }
 
+/// Zero pipeline hits: the empty-hits guard skips the working-set build
+/// (`WorkingSet::default()` instead of git discovery) and the no-hits
+/// context call must still succeed with an empty bundle. The skipped git
+/// walk itself is not observable without instrumenting git calls, so this
+/// asserts the guarded path's behavior end-to-end.
+#[test]
+fn context_no_hits_returns_empty_bundle() {
+    let home = TempDir::new().expect("tempdir");
+    save_memory(&home, "completely unrelated body text", "note");
+
+    let v = context_json(&home, "zzz-no-such-term-zzz", &[]);
+    let mems = v
+        .get("memories")
+        .and_then(Value::as_array)
+        .expect("memories");
+    assert!(
+        mems.is_empty(),
+        "no-hits query must yield empty bundle: {v}"
+    );
+}
+
 /// Supersedes chain: bundle relations must include the supersedes edge.
 #[test]
 fn context_bundle_includes_supersedes_relations() {
