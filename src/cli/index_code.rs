@@ -210,7 +210,7 @@ fn write_symbol(
             kind: &s.kind,
             lang: lang.as_str(),
             line_start: s.line as i64,
-            line_end: line_end_of(s) as i64,
+            line_end: s.line_end as i64,
             snippet: &snippet,
             simhash: simhash_of(&snippet),
             parent_id: None,
@@ -269,7 +269,7 @@ fn emit_symbol_jsonl(
         "kind": s.kind,
         "lang": lang.as_str(),
         "line_start": s.line as i64,
-        "line_end": line_end_of(s) as i64,
+        "line_end": s.line_end as i64,
         "snippet": snippet,
         "simhash": simhash_of(&snippet),
     });
@@ -319,12 +319,11 @@ fn chunk_symbol(name: &str, i: usize) -> String {
     format!("{}#{}", name, i + 1)
 }
 
-/// 64-bit SimHash of `text`'s tokens, as the i64 the `simhash` column
-/// stores. Shared by the parent-row and chunk-row writers on both the
-/// DB and JSONL paths.
+/// 64-bit SimHash of `text` ([`simhash::of_body`]), as the i64 the
+/// `simhash` column stores. Shared by the parent-row and chunk-row
+/// writers on both the DB and JSONL paths.
 fn simhash_of(text: &str) -> i64 {
-    let token_iter = simhash::tokens(text);
-    simhash::simhash64(token_iter.iter().map(|t| t.as_str())) as i64
+    simhash::of_body(text) as i64
 }
 
 /// Returns true when the `indexed_files` table already records `oid` for
@@ -383,18 +382,6 @@ fn blob_oid(repo: &Repository, file: &Path) -> Option<String> {
     let idx = repo.index().ok()?;
     let entry = idx.get_path(rel, 0)?;
     Some(entry.id.to_string())
-}
-
-/// Compute the inclusive last line of `s.snippet` relative to `s.line`.
-/// `ExtractedSymbol::line` is one-based; for a single-line snippet this
-/// returns `s.line` unchanged. Empty snippets fall back to `s.line` too.
-fn line_end_of(s: &ExtractedSymbol) -> usize {
-    let lines = s.snippet.lines().count();
-    if lines <= 1 {
-        s.line
-    } else {
-        s.line + lines - 1
-    }
 }
 
 /// Render `file` relative to `root` for storage in the `code_symbols.path`

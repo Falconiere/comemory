@@ -86,12 +86,7 @@ pub fn mine_cochange(
     since: Option<&str>,
 ) -> Result<MineOutcome> {
     let repo = Repository::open(repo_root).map_err(map_git_err)?;
-    let cursor = repo
-        .head()
-        .map_err(map_git_err)?
-        .target()
-        .ok_or_else(|| Error::Other("cochange: HEAD has no target oid (unborn branch?)".into()))?
-        .to_string();
+    let cursor = crate::git_utils::head_oid(&repo)?;
 
     let mut walk = repo.revwalk().map_err(map_git_err)?;
     walk.set_sorting(Sort::TOPOLOGICAL | Sort::TIME)

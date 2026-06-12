@@ -51,6 +51,33 @@ fn env_invalid_rrf_k_returns_err() {
 }
 
 #[test]
+fn env_invalid_memory_threshold_returns_err() {
+    // Out-of-range or non-finite memory_threshold must abort at startup
+    // exactly like code_threshold does — before the validate() arm landed,
+    // COMEMORY_RETRIEVAL_MEMORY_THRESHOLD=5 passed silently and the ANN
+    // floor dropped every hit.
+    for bad in ["5", "1.5", "-0.1", "nan", "inf"] {
+        std::env::set_var("COMEMORY_RETRIEVAL_MEMORY_THRESHOLD", bad);
+        let result = Config::defaults().with_env();
+        std::env::remove_var("COMEMORY_RETRIEVAL_MEMORY_THRESHOLD");
+        let err = result.expect_err(&format!("'{bad}' must error"));
+        let msg = err.to_string();
+        assert!(
+            msg.contains("COMEMORY_RETRIEVAL_MEMORY_THRESHOLD"),
+            "error must name the offending var for '{bad}', got: {msg}"
+        );
+    }
+    // Boundary values pass: 0.0 disables the floor, 1.0 demands
+    // exact-match similarity.
+    for ok in ["0.0", "1.0"] {
+        std::env::set_var("COMEMORY_RETRIEVAL_MEMORY_THRESHOLD", ok);
+        let result = Config::defaults().with_env();
+        std::env::remove_var("COMEMORY_RETRIEVAL_MEMORY_THRESHOLD");
+        result.expect("boundary memory_threshold must be accepted");
+    }
+}
+
+#[test]
 fn env_bm25_weights_override_applies() {
     // COMEMORY_RETRIEVAL_BM25_WEIGHTS sets the (body, tags) weighted-BM25
     // pair consumed by the memory FTS search.

@@ -22,6 +22,12 @@ use crate::prelude::*;
 use crate::retrieval::{bundle, pipeline};
 use crate::store::connection;
 
+// The closing working-set caveat sentence is intentionally duplicated in
+// `cli::search_code::EXAMPLES` (same semantics; only the command name and
+// the indexed/referenced adjective differ). clap's `after_help` plus the
+// regenerated docs/cli-reference.md freeze the exact wrapped text, so a
+// shared const cannot reproduce both renderings. A drift tripwire in
+// `tests/cli/search_code.rs` asserts the two paragraphs stay equivalent.
 const EXAMPLES: &str = "\
 Examples:
   # Headline lookup for a symbol name, JSON envelope

@@ -54,6 +54,23 @@ pub(crate) fn collect_diff_paths(
     Ok(out)
 }
 
+/// Resolve the HEAD commit OID of an already-open repository as a 40-char
+/// hex string. Shared by [`current_head`] (which discovers the repo from a
+/// path first) and `graph::cochange::mine_cochange` (which already holds an
+/// open `Repository`), so the two callers cannot drift on the unborn-HEAD
+/// handling.
+///
+/// # Errors
+/// * `HEAD` cannot be resolved.
+/// * `HEAD` exists but is unborn (no commits yet — `target()` returns `None`).
+pub(crate) fn head_oid(repo: &Repository) -> Result<String> {
+    let head = repo.head().map_err(map_git_err)?;
+    let oid = head
+        .target()
+        .ok_or_else(|| Error::Other("git_utils: HEAD has no target oid (unborn branch?)".into()))?;
+    Ok(oid.to_string())
+}
+
 /// Return the current HEAD commit OID for the repo containing `repo_root`.
 ///
 /// Uses `Repository::discover`, which walks up the filesystem from the given
@@ -65,11 +82,7 @@ pub(crate) fn collect_diff_paths(
 /// * `HEAD` exists but is unborn (no commits yet — `target()` returns `None`).
 pub fn current_head(repo_root: &Path) -> Result<String> {
     let repo = Repository::discover(repo_root).map_err(map_git_err)?;
-    let head = repo.head().map_err(map_git_err)?;
-    let oid = head
-        .target()
-        .ok_or_else(|| Error::Other("git_utils: HEAD has no target oid (unborn branch?)".into()))?;
-    Ok(oid.to_string())
+    head_oid(&repo)
 }
 
 /// Return the set of paths whose new-side tree entry changed between two

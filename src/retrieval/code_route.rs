@@ -10,7 +10,7 @@ use rusqlite::Connection;
 use crate::config::Config;
 use crate::prelude::*;
 use crate::retrieval::fuse::{self, RankedHit};
-use crate::retrieval::router::{Source, CANDIDATE_POOL};
+use crate::retrieval::router::{above_similarity_threshold, Source, CANDIDATE_POOL};
 use crate::store::{fts, vector};
 
 /// One unified code-retrieval hit, regardless of which branch produced it.
@@ -55,8 +55,9 @@ pub fn route_code(
         fts::search_code(conn, query, k, repo, lang, cfg.retrieval.code_bm25_weights)?
     };
     let ann = match vec {
-        Some(v) => above_code_threshold(
+        Some(v) => above_similarity_threshold(
             vector::knn_code(conn, v, k, repo, lang)?,
+            |h| h.distance,
             cfg.retrieval.code_threshold,
         ),
         None => Vec::new(),
@@ -67,18 +68,6 @@ pub fn route_code(
         (true, false) => lex.into_iter().map(lex_to_hit).collect(),
         (false, false) => fuse_legs(ann, lex, k, cfg.retrieval.rrf_k),
     })
-}
-
-/// Drop ANN hits whose cosine similarity (`1.0 - distance`) falls below
-/// `threshold` (`cfg.retrieval.code_threshold`, default 0.50). vec0 KNN
-/// always returns the k nearest rows regardless of distance, so without
-/// this floor a query vector far from the whole corpus pads the candidate
-/// pool with nearest-but-irrelevant noise — the code-side sibling of the
-/// memory router's `above_memory_threshold`.
-fn above_code_threshold(hits: Vec<vector::CodeHit>, threshold: f32) -> Vec<vector::CodeHit> {
-    hits.into_iter()
-        .filter(|h| (1.0 - h.distance) >= threshold)
-        .collect()
 }
 
 /// RRF-fuse the ANN and lexical legs and tag the result [`Source::Hybrid`].

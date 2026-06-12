@@ -113,8 +113,7 @@ fn mine_into_edges(
             [&prefix],
         )?;
     }
-    let (pairs, head) = (outcome.pairs, outcome.cursor);
-    for pair in &pairs {
+    for pair in &outcome.pairs {
         let src = file_node_id(repo, &pair.a);
         let dst = file_node_id(repo, &pair.b);
         edges::insert_weighted(
@@ -132,7 +131,7 @@ fn mine_into_edges(
     tx.execute(
         "INSERT INTO repo_marker(repo, last_mined_commit) VALUES(?1, ?2) \
          ON CONFLICT(repo) DO UPDATE SET last_mined_commit = excluded.last_mined_commit",
-        params![repo, head],
+        params![repo, outcome.cursor],
     )?;
     Ok(())
 }
@@ -194,14 +193,19 @@ fn project_pagerank(tx: &Transaction<'_>, repo: &str, known: &[String]) -> Resul
     // ORDER BY makes the edge list — and therefore pagerank's f64
     // accumulation order — a function of the logical graph, not rowid
     // insertion order (an imports delete+reinsert would otherwise
-    // reorder rows and perturb scores in the last ulps).
+    // reorder rows and perturb scores in the last ulps). The substr
+    // predicate (injection-proof, same shape as the cursor-lost delete in
+    // [`mine_into_edges`]) keeps other repos' rows out of the fetch; the
+    // Rust-side strip below still guards the dst side and yields the
+    // repo-relative paths.
     let mut stmt = tx.prepare(
         "SELECT src_id, dst_id, rel, weight FROM edges \
           WHERE rel IN ('co_changed','imports') \
+            AND substr(src_id, 1, length(?1)) = ?1 \
           ORDER BY rel, src_id, dst_id",
     )?;
     let rows = stmt
-        .query_map([], |r| {
+        .query_map([&prefix], |r| {
             Ok((
                 r.get::<_, String>(0)?,
                 r.get::<_, String>(1)?,
@@ -212,7 +216,8 @@ fn project_pagerank(tx: &Transaction<'_>, repo: &str, known: &[String]) -> Resul
         .collect::<std::result::Result<Vec<_>, _>>()?;
     let mut graph: Vec<(u32, u32, f64)> = Vec::new();
     for (src, dst, rel, weight) in &rows {
-        // The rel filter above spans every repo; the prefix narrows to ours.
+        // src is pre-filtered in SQL; the strip also re-checks dst (a
+        // cross-repo edge must not slip in) and drops the prefix.
         let (Some(s), Some(d)) = (src.strip_prefix(&prefix), dst.strip_prefix(&prefix)) else {
             continue;
         };

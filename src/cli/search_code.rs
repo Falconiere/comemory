@@ -36,6 +36,12 @@ use crate::retrieval::code_rerank::{self, CodeReranked};
 use crate::retrieval::code_route;
 use crate::store::{connection, memory_row};
 
+// The closing working-set caveat paragraph is intentionally duplicated in
+// `cli::context::EXAMPLES` (same semantics; only the command name and the
+// indexed/referenced adjective differ). clap's `after_help` plus the
+// regenerated docs/cli-reference.md freeze the exact wrapped text, so a
+// shared const cannot reproduce both renderings. A drift tripwire in
+// `tests/cli/search_code.rs` asserts the two paragraphs stay equivalent.
 const EXAMPLES: &str = "\
 Examples:
   # Lexical code search; identifier tokens split automatically
@@ -108,7 +114,13 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         a.repo.as_deref(),
         lang,
     )?;
-    let ws = cwd_working_set(a.repo.as_deref());
+    // Zero candidates → nothing for the affinity prior to boost, so the
+    // git discovery + status walk behind `cwd_working_set` is skipped.
+    let ws = if candidates.is_empty() {
+        code_rerank::WorkingSet::default()
+    } else {
+        cwd_working_set(a.repo.as_deref())
+    };
     let mut hits = code_rerank::rerank_code(&conn, &cfg, &candidates, &ws)?;
     hits.truncate(cfg.retrieval.top_k);
     let query_id = record_code_telemetry(
