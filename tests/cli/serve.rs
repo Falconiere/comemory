@@ -146,6 +146,29 @@ fn serve_graph_token_traversal_and_edit_round_trip() {
     assert_eq!(refetched["contents"], new_body);
     assert_eq!(refetched["blob_oid"], new_oid);
 
+    // 5. A 3 MiB save — above axum's 2 MiB default body limit, below the 5 MiB
+    // editor cap — must reach our handler and succeed, not hit a generic 413.
+    let big = format!("// big\n{}", "a".repeat(3 * 1024 * 1024));
+    let big_put = client
+        .put(format!("{base}/api/file?id=file:demo:a.rs"))
+        .header("X-Comemory-Token", &token)
+        .header("If-Match", &new_oid)
+        .body(big.clone())
+        .send()
+        .expect("big put");
+    assert_eq!(
+        big_put.status().as_u16(),
+        200,
+        "3 MiB save must succeed, not 413"
+    );
+    assert_eq!(
+        std::fs::read_to_string(repo.join("a.rs"))
+            .expect("read big")
+            .len(),
+        big.len(),
+        "3 MiB content must land on disk in full"
+    );
+
     // A stale If-Match (the now-superseded oid) → 409 Conflict.
     let res = client
         .put(format!("{base}/api/file?id=file:demo:a.rs"))

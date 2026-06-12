@@ -3,10 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Never leak the session token via the Referer header. -->
+    <meta name="referrer" content="no-referrer" />
     <!-- Replaced with the per-session token by `comemory serve` at request
          time (see src/serve/assets.rs). Read by src/api.ts. -->
     <meta name="comemory-token" content="__COMEMORY_TOKEN__" />
     <title>comemory · code graph</title>
+    <!-- Drop the ?token= query from the URL bar / history after first load so
+         it is not exposed in screenshots or screen-shares. The token is already
+         in the <meta> above (for the API) and in an HttpOnly cookie (so a
+         reload still authenticates), so removing it from the URL is safe. -->
+    <script>
+      history.replaceState(null, "", location.pathname);
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -49,7 +49,10 @@ pub struct Args {
     /// Required for repos indexed before the v7 schema captured the root.
     #[arg(long = "root", value_name = "REPO=PATH")]
     pub root: Vec<String>,
-    /// Open the printed URL in the default browser after binding.
+    /// Open the printed URL in the default browser after binding. The URL
+    /// carries the session token and is passed as an argument to the system
+    /// opener, so it is briefly visible to other local users (e.g. via
+    /// `/proc/<pid>/cmdline` or `ps`).
     #[arg(long, default_value_t = false)]
     pub open: bool,
 }

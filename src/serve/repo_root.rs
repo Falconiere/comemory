@@ -31,14 +31,18 @@ pub fn resolve_root(conn: &Connection, repo: &str, overrides: &RootOverrides) ->
             .canonicalize()
             .map_err(|e| Error::BadRequest(format!("--root for `{repo}` is unusable: {e}")));
     }
-    let stored: Option<String> = conn
-        .query_row(
-            "SELECT root_path FROM repo_marker WHERE repo = ?1",
-            [repo],
-            |r| r.get::<_, Option<String>>(0),
-        )
-        .ok()
-        .flatten();
+    // Only "no such repo row" means "no stored root"; a real query error
+    // (e.g. a half-applied v7 migration with no `root_path` column) must not be
+    // disguised as the friendly "pass --root" hint.
+    let stored: Option<String> = match conn.query_row(
+        "SELECT root_path FROM repo_marker WHERE repo = ?1",
+        [repo],
+        |r| r.get::<_, Option<String>>(0),
+    ) {
+        Ok(v) => v,
+        Err(rusqlite::Error::QueryReturnedNoRows) => None,
+        Err(e) => return Err(Error::Sqlite(e)),
+    };
     match stored {
         Some(path) => PathBuf::from(&path)
             .canonicalize()

@@ -17,8 +17,10 @@ use crate::ast::languages;
 use crate::prelude::*;
 
 /// Maximum editable file size (bytes). Source files are far smaller; the cap
-/// stops the editor from trying to load or persist a huge blob.
-const MAX_FILE_BYTES: u64 = 5 * 1024 * 1024;
+/// stops the editor from trying to load or persist a huge blob. Exposed so the
+/// router can layer a matching `DefaultBodyLimit`, keeping axum's body-limit
+/// rejection and this in-handler check on the same threshold.
+pub(crate) const MAX_FILE_BYTES: u64 = 5 * 1024 * 1024;
 
 /// A file's contents plus the metadata the editor needs.
 #[derive(Debug, Serialize)]
@@ -115,6 +117,13 @@ pub fn write_file(abs: &Path, contents: &str, if_match: Option<&str>) -> Result<
         .to_string_lossy();
     let tmp = parent.join(format!(".{file_name}.comemory.tmp"));
     std::fs::write(&tmp, contents.as_bytes()).map_err(Error::Io)?;
+    // Carry the original file's permissions onto the replacement so a save
+    // never silently relaxes a 0600 file or drops the +x bit on a script.
+    // Best-effort: a permissions copy failure must not sink an otherwise-good
+    // write (the rename below is what actually matters).
+    if let Ok(meta) = std::fs::metadata(abs) {
+        let _ = std::fs::set_permissions(&tmp, meta.permissions());
+    }
     if let Err(e) = std::fs::rename(&tmp, abs) {
         // Best-effort cleanup so a failed rename does not litter temp files.
         let _ = std::fs::remove_file(&tmp);
