@@ -9,6 +9,7 @@
 //! attacker's domain; the containment check ensures a crafted `file:<repo>:…`
 //! id can never escape the repo root, even through `..` or a symlink.
 
+use std::fmt::Write as _;
 use std::io::Read as _;
 use std::path::{Component, Path, PathBuf};
 
@@ -28,7 +29,8 @@ pub fn generate_token() -> Result<String> {
     f.read_exact(&mut buf).map_err(Error::Io)?;
     let mut hex = String::with_capacity(TOKEN_BYTES * 2);
     for b in buf {
-        hex.push_str(&format!("{b:02x}"));
+        // Infallible: writing to a String never errors.
+        let _ = write!(hex, "{b:02x}");
     }
     Ok(hex)
 }
