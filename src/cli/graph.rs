@@ -177,7 +177,9 @@ fn map_node_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<NodeRow> {
         r.get::<_, String>(0)?,
         r.get::<_, String>(1)?,
         r.get::<_, f64>(2)?,
-        r.get::<_, i64>(3)? as u32,
+        // Saturate rather than wrap: a file with > u32::MAX symbols is
+        // impossible in practice, but a silent truncating cast would lie.
+        u32::try_from(r.get::<_, i64>(3)?).unwrap_or(u32::MAX),
     ))
 }
 
