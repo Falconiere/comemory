@@ -29,7 +29,7 @@ if [ -z "$repo" ]; then
 fi
 
 sub="${1:-}"
-shift || true
+[ "$#" -gt 0 ] && shift
 
 # Subcommand must come first. A leading global flag (e.g. `--data-dir`,
 # `--json`) would fall through to the unscoped `*)` arm and silently skip
