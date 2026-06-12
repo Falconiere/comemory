@@ -1,6 +1,6 @@
 //! FTS5 wrappers for memory and code lexical search.
 
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 
 use crate::prelude::*;
 

@@ -1,7 +1,7 @@
 //! Mirror tests for `src/output/graph.rs`. Lock the DOT and HTML rendering
 //! shapes and the JSON serialization contract without touching a database.
 
-use comemory::output::graph::{to_dot, to_html, CodeGraph, Edge, Node};
+use comemory::output::graph::{CodeGraph, Edge, Node, to_dot, to_html};
 
 /// A small two-file graph: one `imports` edge and one weighted `co_changed`
 /// edge, with one zero-rank dangling endpoint.

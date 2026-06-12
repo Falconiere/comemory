@@ -2,8 +2,8 @@
 //! route → rerank → diversify → top-k path plus best-effort access
 //! tracking and query logging.
 
-use comemory::retrieval::pipeline::{search, SearchOptions};
-use comemory::simhash::{hamming64, NEAR_DUP_HAMMING};
+use comemory::retrieval::pipeline::{SearchOptions, search};
+use comemory::simhash::{NEAR_DUP_HAMMING, hamming64};
 
 fn seeded() -> (tempfile::TempDir, rusqlite::Connection) {
     let dir = tempfile::tempdir().expect("tempdir");

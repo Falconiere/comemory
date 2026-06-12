@@ -3,6 +3,10 @@ default: check
 check:
     bash scripts/check-all.sh
 
+# Apply rustfmt formatting in place.
+fmt:
+    bash scripts/fmt-fix.sh
+
 test:
     bash scripts/test-run.sh
 

@@ -11,7 +11,7 @@
 mod git_setup;
 
 use comemory::config::Config;
-use comemory::retrieval::code_rerank::{rerank_code, working_set, CodeReranked, WorkingSet};
+use comemory::retrieval::code_rerank::{CodeReranked, WorkingSet, rerank_code, working_set};
 use comemory::retrieval::code_route::CodeRoutedHit;
 use comemory::retrieval::router::Source;
 use comemory::store::code_row::{self, CodeSymbolRow};

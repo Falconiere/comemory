@@ -418,9 +418,11 @@ fn bm25_weights_parameter_flips_column_priority() {
 fn empty_and_quote_only_queries_return_empty_without_error() {
     let dir = tempdir().expect("tempdir");
     let conn = connection::open(dir.path().join("c.db")).expect("open");
-    assert!(fts::search_memory(&conn, "", 10, None, None, (1.0, 3.0))
-        .expect("empty query")
-        .is_empty());
+    assert!(
+        fts::search_memory(&conn, "", 10, None, None, (1.0, 3.0))
+            .expect("empty query")
+            .is_empty()
+    );
     // A quote-only query sanitizes to an empty MATCH expression; it must
     // come back empty rather than surfacing an FTS5 syntax error.
     assert!(
@@ -428,9 +430,11 @@ fn empty_and_quote_only_queries_return_empty_without_error() {
             .expect("quote-only query")
             .is_empty()
     );
-    assert!(fts::search_code(&conn, "", 10, None, None, CODE_WEIGHTS)
-        .expect("empty code query")
-        .is_empty());
+    assert!(
+        fts::search_code(&conn, "", 10, None, None, CODE_WEIGHTS)
+            .expect("empty code query")
+            .is_empty()
+    );
     assert!(
         fts::search_code(&conn, "\"\"", 10, None, None, CODE_WEIGHTS)
             .expect("quote-only code query")

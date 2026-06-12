@@ -31,10 +31,10 @@ pub fn detect(paths: &Paths) -> Result<Vec<String>> {
         if !name.ends_with(".md") || name.starts_with('.') {
             continue;
         }
-        if let Some(id_part) = name.split('-').next() {
-            if !on_disk.contains(id_part) {
-                orphans.push(id_part.to_string());
-            }
+        if let Some(id_part) = name.split('-').next()
+            && !on_disk.contains(id_part)
+        {
+            orphans.push(id_part.to_string());
         }
     }
     Ok(orphans)

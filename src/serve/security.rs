@@ -101,10 +101,10 @@ pub fn resolve_within(root: &Path, rel: &str) -> Result<PathBuf> {
     for comp in rel_path.components() {
         match comp {
             Component::ParentDir => {
-                return Err(Error::Forbidden("'..' not allowed in path".into()))
+                return Err(Error::Forbidden("'..' not allowed in path".into()));
             }
             Component::Prefix(_) | Component::RootDir => {
-                return Err(Error::Forbidden("absolute path not allowed".into()))
+                return Err(Error::Forbidden("absolute path not allowed".into()));
             }
             Component::CurDir | Component::Normal(_) => {}
         }

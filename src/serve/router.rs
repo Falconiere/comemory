@@ -6,14 +6,14 @@
 //! Static frontend assets stay ungated — they carry no secrets. No CORS layer
 //! is added, so the default is deny (no `Access-Control-Allow-Origin`).
 
+use axum::Router;
 use axum::extract::{DefaultBodyLimit, Request, State};
-use axum::http::{header, StatusCode};
+use axum::http::{StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
-use axum::Router;
 
-use crate::serve::{fileio, handlers, security, AppState};
+use crate::serve::{AppState, fileio, handlers, security};
 
 /// Build the application router with the security middleware layered on.
 pub fn build_router(state: AppState) -> Router {

@@ -1,4 +1,4 @@
-use comemory::store::tokenizer::split::{fold_diacritics, split_text, SplitToken};
+use comemory::store::tokenizer::split::{SplitToken, fold_diacritics, split_text};
 use proptest::prelude::*;
 
 fn texts(tokens: &[SplitToken]) -> Vec<&str> {
@@ -103,9 +103,10 @@ fn unlowercaseable_chars_never_emit_uppercase_tokens() {
     // U+1F130 SQUARED LATIN CAPITAL LETTER A: is_uppercase() is true but
     // to_lowercase() is a no-op, so any token containing it is dropped.
     let toks = split_text("🄰");
-    assert!(toks
-        .iter()
-        .all(|t| t.text.chars().all(|c| !c.is_uppercase())));
+    assert!(
+        toks.iter()
+            .all(|t| t.text.chars().all(|c| !c.is_uppercase()))
+    );
 }
 
 proptest! {

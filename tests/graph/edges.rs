@@ -115,9 +115,11 @@ fn delete_outgoing_keeps_incoming_edges() {
     edges::delete_outgoing(&conn, "memory", "old1").expect("delete outgoing");
 
     // old1's own tagged edge is gone...
-    assert!(edges::outgoing(&conn, "memory", "old1", "tagged")
-        .expect("outgoing")
-        .is_empty());
+    assert!(
+        edges::outgoing(&conn, "memory", "old1", "tagged")
+            .expect("outgoing")
+            .is_empty()
+    );
     // ...but the incoming supersedes edge from new1 survives.
     let incoming = edges::outgoing(&conn, "memory", "new1", "supersedes").expect("outgoing");
     assert_eq!(incoming, vec![("memory".to_string(), "old1".to_string())]);

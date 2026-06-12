@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use comemory::eval::golden::{harvest, load_file, merge, resolve, GoldenPair};
+use comemory::eval::golden::{GoldenPair, harvest, load_file, merge, resolve};
 
 /// Open a real `comemory.db` (with migrations applied) in a tempdir.
 fn open_db() -> (tempfile::TempDir, rusqlite::Connection) {

@@ -1,4 +1,4 @@
-use comemory::ast::{extract, ExtractedSymbol, Lang};
+use comemory::ast::{ExtractedSymbol, Lang, extract};
 
 fn names_of_kind<'a>(syms: &'a [ExtractedSymbol], kind: &str) -> Vec<&'a str> {
     syms.iter()
@@ -138,10 +138,7 @@ fn rust_pub_and_async_functions_extracted() {
             "dim_guard",
             "pub(crate) fn dim_guard(conn: &Connection, dim: usize) -> Result<()> {\n    check(conn, dim)\n}\n",
         ),
-        (
-            "helper",
-            "pub(super) fn helper(x: u8) -> u8 {\n    x\n}\n",
-        ),
+        ("helper", "pub(super) fn helper(x: u8) -> u8 {\n    x\n}\n"),
         (
             "fetch_embedding",
             "async fn fetch_embedding(text: &str) -> Result<Vec<f32>> {\n    call(text).await\n}\n",

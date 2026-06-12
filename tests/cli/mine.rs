@@ -76,11 +76,13 @@ fn mine_reports_and_apply_rebuilds_query_expansions() {
     // --apply rebuilds the table from the mined set.
     let applied = run_json(&home, &["mine", "--apply"]);
     assert_eq!(applied["applied"].as_bool(), Some(true));
-    assert!(applied["mappings"]
-        .as_array()
-        .expect("mappings array")
-        .iter()
-        .any(|m| m["term"] == "embedding" && m["expansion"] == "vec" && m["support"] == 1));
+    assert!(
+        applied["mappings"]
+            .as_array()
+            .expect("mappings array")
+            .iter()
+            .any(|m| m["term"] == "embedding" && m["expansion"] == "vec" && m["support"] == 1)
+    );
     assert_eq!(expansion_rows(&home), 6, "apply must persist all mappings");
 }
 

@@ -3,7 +3,7 @@
 //! concurrency (stale match → conflict, not clobber).
 
 use comemory::errors::Error;
-use comemory::serve::fileio::{read_file, write_file, WriteOutcome};
+use comemory::serve::fileio::{WriteOutcome, read_file, write_file};
 use tempfile::TempDir;
 
 #[test]

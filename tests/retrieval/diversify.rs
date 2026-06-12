@@ -3,7 +3,7 @@
 use comemory::retrieval::diversify::diversify;
 use comemory::retrieval::rerank::{Reranked, ScoreParts};
 use comemory::retrieval::router::Source;
-use comemory::simhash::{hamming64, NEAR_DUP_HAMMING};
+use comemory::simhash::{NEAR_DUP_HAMMING, hamming64};
 
 fn item(id: &str, score: f64, body: &str) -> Reranked {
     Reranked {

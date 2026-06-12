@@ -4,7 +4,7 @@
 //! migration v4 present) and asserts that the bounded multiplicative
 //! priors reorder, annotate, and explain candidates deterministically.
 
-use comemory::retrieval::rerank::{rerank, Reranked};
+use comemory::retrieval::rerank::{Reranked, rerank};
 use comemory::retrieval::router::{RoutedHit, Source};
 
 fn open_seeded() -> (tempfile::TempDir, rusqlite::Connection) {

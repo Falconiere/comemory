@@ -1,8 +1,8 @@
 //! Tests for [`comemory::eval::tune`] — grid shape, the honesty floor,
 //! report determinism over a real db, and atomic config.toml apply.
 
-use comemory::config::file::TuneConfig;
 use comemory::config::Config;
+use comemory::config::file::TuneConfig;
 use comemory::errors::Error;
 use comemory::eval::golden::GoldenPair;
 use comemory::eval::tune::{self, ScoredCandidate, TuneCandidate, TuneReport};
@@ -173,17 +173,21 @@ fn improves_baseline_requires_a_strict_win() {
 #[test]
 fn resolve_min_pairs_reads_the_env_hook() {
     // Unset: the documented floor.
-    std::env::remove_var("COMEMORY_TUNE_MIN_GOLDEN");
+    // FIXME: Audit that the environment access only happens in single-threaded code.
+    unsafe { std::env::remove_var("COMEMORY_TUNE_MIN_GOLDEN") };
     assert_eq!(
         tune::resolve_min_pairs().expect("default"),
         tune::MIN_GOLDEN_PAIRS
     );
     // Set: the test hook lowers (or raises) the floor.
-    std::env::set_var("COMEMORY_TUNE_MIN_GOLDEN", "3");
+    // FIXME: Audit that the environment access only happens in single-threaded code.
+    unsafe { std::env::set_var("COMEMORY_TUNE_MIN_GOLDEN", "3") };
     let lowered = tune::resolve_min_pairs();
-    std::env::set_var("COMEMORY_TUNE_MIN_GOLDEN", "not-a-number");
+    // FIXME: Audit that the environment access only happens in single-threaded code.
+    unsafe { std::env::set_var("COMEMORY_TUNE_MIN_GOLDEN", "not-a-number") };
     let invalid = tune::resolve_min_pairs();
-    std::env::remove_var("COMEMORY_TUNE_MIN_GOLDEN");
+    // FIXME: Audit that the environment access only happens in single-threaded code.
+    unsafe { std::env::remove_var("COMEMORY_TUNE_MIN_GOLDEN") };
     assert_eq!(lowered.expect("valid override"), 3);
     let msg = invalid
         .expect_err("invalid override must error")

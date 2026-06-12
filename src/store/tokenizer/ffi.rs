@@ -6,7 +6,7 @@
 //! state, so `store::connection::open` calls [`register`] on every
 //! connection it hands out, before any migration DDL runs.
 
-use std::ffi::{c_char, c_int, c_void, CStr};
+use std::ffi::{CStr, c_char, c_int, c_void};
 use std::ptr;
 
 use libsqlite3_sys as ffi;

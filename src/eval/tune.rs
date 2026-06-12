@@ -6,8 +6,8 @@ use std::path::Path;
 use rusqlite::Connection;
 use serde::Serialize;
 
-use crate::config::file::TuneConfig;
 use crate::config::Config;
+use crate::config::file::TuneConfig;
 use crate::eval::golden::GoldenPair;
 use crate::eval::runner::{self, EvalReport};
 use crate::prelude::*;

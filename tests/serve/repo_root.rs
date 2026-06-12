@@ -3,7 +3,7 @@
 //! turns a `file:<repo>:<path>` id into a contained absolute path.
 
 use comemory::errors::Error;
-use comemory::serve::repo_root::{id_to_abs_path, rel_of, resolve_root, RootOverrides};
+use comemory::serve::repo_root::{RootOverrides, id_to_abs_path, rel_of, resolve_root};
 use comemory::store::{code_row, connection};
 use tempfile::TempDir;
 

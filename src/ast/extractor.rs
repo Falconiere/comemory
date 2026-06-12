@@ -13,7 +13,7 @@ use ast_grep_core::tree_sitter::{LanguageExt, StrDoc};
 use ast_grep_core::{AstGrep, NodeMatch, Pattern};
 use ast_grep_language::{Go, JavaScript, Python, Rust, Tsx};
 
-use crate::ast::chunk::{self, Chunk, CHUNK_LINE_BUDGET};
+use crate::ast::chunk::{self, CHUNK_LINE_BUDGET, Chunk};
 use crate::ast::languages::Lang;
 use crate::prelude::*;
 

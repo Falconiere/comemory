@@ -21,7 +21,7 @@ use serde::Serialize;
 use crate::cli::embedding_input;
 use crate::cli::{csv_unique, load_config, parse_id_csv, resolve_data_dir};
 use crate::config::paths::Paths;
-use crate::memory::{id, Kind, MemoryStore, Relations, SaveParams};
+use crate::memory::{Kind, MemoryStore, Relations, SaveParams, id};
 use crate::output::tty;
 use crate::prelude::*;
 use crate::store::{connection, embed, memory_row, vector};

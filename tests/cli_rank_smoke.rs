@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use assert_cmd::Command;
-use comemory::simhash::{hamming64, of_body, NEAR_DUP_HAMMING};
+use comemory::simhash::{NEAR_DUP_HAMMING, hamming64, of_body};
 use serde_json::Value;
 
 use common::runner::Sandbox;

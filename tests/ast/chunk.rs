@@ -5,8 +5,8 @@
 //! repo into `fixtures/oversized_fn.rs`) through the real extractor; the
 //! property tests hit the pure packing function directly.
 
-use comemory::ast::chunk::{pack_spans, Chunk, CHUNK_LINE_BUDGET, MIN_CHUNK_LINES};
-use comemory::ast::{extract, Lang};
+use comemory::ast::chunk::{CHUNK_LINE_BUDGET, Chunk, MIN_CHUNK_LINES, pack_spans};
+use comemory::ast::{Lang, extract};
 use proptest::prelude::*;
 
 const OVERSIZED_SRC: &str = include_str!("fixtures/oversized_fn.rs");

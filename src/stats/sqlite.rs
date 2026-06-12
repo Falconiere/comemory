@@ -8,8 +8,8 @@
 //! remaining tables were added in migration `0003_stats_tables`.
 
 use rusqlite::Connection;
-use time::format_description::well_known::Iso8601;
 use time::OffsetDateTime;
+use time::format_description::well_known::Iso8601;
 
 use crate::prelude::*;
 use crate::store::connection;

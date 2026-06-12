@@ -1,5 +1,5 @@
-use comemory::ast::languages::{detect, supported};
 use comemory::ast::Lang;
+use comemory::ast::languages::{detect, supported};
 use std::path::Path;
 
 #[test]

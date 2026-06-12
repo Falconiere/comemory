@@ -1,7 +1,7 @@
 //! Tests for [`comemory::eval::mine`] — reformulation mining over
 //! `retrieval_log` + the rebuild-not-increment `apply` semantics.
 
-use comemory::eval::mine::{apply, mine, MinedMapping};
+use comemory::eval::mine::{MinedMapping, apply, mine};
 use comemory::store::connection;
 
 /// Open a real migrated db in a tempdir.

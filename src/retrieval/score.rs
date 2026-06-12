@@ -4,8 +4,8 @@
 //! helper. Pure functions — time and counts come in as arguments so
 //! tests stay clock-free.
 
-use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
+use time::format_description::well_known::Rfc3339;
 
 /// ACT-R base-level activation, Petrov approximation:
 /// `ln(max(n,1)) − d·ln(max(days,0) + 1)`. Time is measured in days; the

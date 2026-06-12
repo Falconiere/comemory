@@ -9,7 +9,7 @@ use std::io;
 use std::path::PathBuf;
 
 use clap::{Args as ClapArgs, CommandFactory};
-use clap_complete::{generate, Shell};
+use clap_complete::{Shell, generate};
 
 use crate::cli::Cli;
 use crate::prelude::*;

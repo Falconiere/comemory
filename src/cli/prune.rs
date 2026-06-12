@@ -27,8 +27,8 @@ use clap::Args as ClapArgs;
 use serde::Serialize;
 
 use crate::cli::{delete, load_config, resolve_data_dir};
-use crate::config::paths::Paths;
 use crate::config::Config;
+use crate::config::paths::Paths;
 use crate::output::prune as output;
 use crate::prelude::*;
 use crate::prune::low_value;
