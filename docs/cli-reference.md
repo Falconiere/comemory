@@ -473,6 +473,69 @@ Examples:
 
 ---
 
+## comemory graph
+
+```
+Export the file-level code-connection graph (imports + co-change) as JSON, Graphviz DOT, or an interactive HTML page
+
+Usage: comemory graph [OPTIONS]
+
+Options:
+      --json
+          Emit machine-readable JSON instead of a human TTY view
+
+      --repo <REPO>
+          Restrict to one repo label (as passed to `index-code --repo`)
+
+      --data-dir <DATA_DIR>
+          Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable
+          
+          [env: COMEMORY_DATA_DIR=]
+
+      --format <FORMAT>
+          Output format
+
+          Possible values:
+          - json: Machine-readable `{ nodes, edges }` JSON
+          - dot:  Graphviz DOT source (pipe to `dot`)
+          - html: Interactive HTML page (cytoscape.js, loaded from a CDN)
+          
+          [default: json]
+
+      --rel <REL>
+          Which edge relations to include
+
+          Possible values:
+          - all:        Both `imports` and `co_changed`
+          - imports:    Static import edges only
+          - co-changed: Git co-change edges only
+          
+          [default: all]
+
+      --min-weight <MIN_WEIGHT>
+          Drop `co_changed` edges whose accumulated weight is below this floor (does not affect `imports`, which always carry weight 1). Must be >= 1
+          
+          [default: 1]
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+Examples:
+  # Whole graph as JSON (every indexed repo)
+  comemory graph
+
+  # Interactive viewer for one repo
+  comemory graph --repo myrepo --format html > graph.html && open graph.html
+
+  # Graphviz DOT, imports only, piped to an SVG
+  comemory graph --repo myrepo --rel imports --format dot | dot -Tsvg > graph.svg
+
+  # Drop weak co-change links (accumulated weight < 3)
+  comemory graph --rel co-changed --min-weight 3
+```
+
+---
+
 ## comemory context
 
 ```
