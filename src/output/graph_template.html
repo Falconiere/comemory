@@ -46,7 +46,14 @@ if (typeof graphology === 'undefined' ||
     typeof Sigma === 'undefined') {
   document.getElementById('err').style.display = 'block';
 } else {
-  renderGraph();
+  // The globals exist, but a broken bundle or a Sigma/WebGL init failure can
+  // still throw mid-render. Catch it and show the same message rather than
+  // leaving the user staring at a blank canvas.
+  try {
+    renderGraph();
+  } catch (_) {
+    document.getElementById('err').style.display = 'block';
+  }
 }
 
 function renderGraph() {
