@@ -88,6 +88,26 @@ fn html_escapes_closing_script_sequence() {
 }
 
 #[test]
+fn dot_escapes_newlines_in_labels() {
+    // A label with a raw newline (legal in a POSIX path) must not emit a bare
+    // line break into the DOT source, which `dot` would reject as a syntax
+    // error. It is escaped to `\n` instead.
+    let g = CodeGraph {
+        nodes: vec![Node {
+            id: "file:demo:src/a\nb.rs".into(),
+            label: "src/a\nb.rs".into(),
+            repo: "demo".into(),
+            rank: 0.5,
+            symbols: 1,
+        }],
+        edges: vec![],
+    };
+    let dot = to_dot(&g);
+    assert!(!dot.contains("src/a\nb.rs"), "raw newline must not survive");
+    assert!(dot.contains("src/a\\nb.rs"), "newline escaped to \\n");
+}
+
+#[test]
 fn json_round_trips_node_and_edge_fields() {
     let json = serde_json::to_value(sample()).expect("serialize");
     assert_eq!(json["nodes"][0]["rank"], 0.8);
