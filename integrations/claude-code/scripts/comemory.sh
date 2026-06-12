@@ -31,19 +31,6 @@ fi
 sub="${1:-}"
 [ "$#" -gt 0 ] && shift
 
-# Subcommand must come first. A leading global flag (e.g. `--data-dir`,
-# `--json`) would fall through to the unscoped `*)` arm and silently skip
-# `--repo` injection, so refuse it rather than file a memory under the wrong
-# scope. Callers (skills + hooks) always lead with the subcommand.
-case "$sub" in
-    -*)
-        printf '%s\n' \
-            "error: subcommand must precede flags; got '$sub'" \
-            'usage: comemory.sh <save|list|context|search|search-code> [args...]' >&2
-        exit 64
-        ;;
-esac
-
 # The injected `--repo "$repo"` precedes "$@", so a caller's explicit
 # `--repo X` lands last and wins (clap's repeated-Option is last-wins).
 case "$sub" in
@@ -53,6 +40,16 @@ case "$sub" in
         ;;
     list | context | search | search-code)
         exec comemory "$sub" --repo "$repo" "$@"
+        ;;
+    -*)
+        # Subcommand must come first. A leading global flag (e.g. `--data-dir`,
+        # `--json`) would otherwise fall through to the unscoped `*)` arm and
+        # silently skip `--repo` injection, filing a memory under the wrong
+        # scope. Refuse it; callers (skills + hooks) always lead with the sub.
+        printf '%s\n' \
+            "error: subcommand must precede flags; got '$sub'" \
+            'usage: comemory.sh <save|list|context|search|search-code> [args...]' >&2
+        exit 64
         ;;
     "")
         printf '%s\n' \
