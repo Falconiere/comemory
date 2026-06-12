@@ -1,13 +1,13 @@
 {
-  "enabledPlugins": {
-    "claudness@falconiere": true
-  },
   "hooks": {
     "PreToolUse": [
       {
         "matcher": "Edit|Write|MultiEdit|Bash|Shell",
         "hooks": [
-          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pre-tools/mod.sh" }
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pre-tools/mod.sh"
+          }
         ]
       }
     ],
@@ -15,16 +15,26 @@
       {
         "matcher": "Edit|Write|MultiEdit|Bash|Shell",
         "hooks": [
-          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post-tools/mod.sh" }
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post-tools/mod.sh"
+          }
         ]
       }
     ],
     "Stop": [
       {
         "hooks": [
-          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session-end.sh" }
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session-end.sh"
+          }
         ]
       }
     ]
+  },
+  "enabledPlugins": {
+    "claudness@falconiere": true,
+    "code-simplifier@claude-plugins-official": true
   }
 }
