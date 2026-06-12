@@ -1,7 +1,8 @@
 //! Render the file-level code-connection graph (PageRank-weighted nodes +
 //! `imports` / `co_changed` edges) in three shapes: machine-readable JSON,
-//! Graphviz DOT (`dot -Tsvg`), and a self-contained interactive HTML page
-//! backed by `cytoscape.js`. The data shape (`CodeGraph`) is built by
+//! Graphviz DOT (`dot -Tsvg`), and an interactive HTML page backed by
+//! `cytoscape.js` (loaded from a CDN, so the page needs network access on
+//! first load). The data shape (`CodeGraph`) is built by
 //! `crate::cli::graph` and consumed here; keeping the structs in `output`
 //! lets the integration tests render without a database.
 
@@ -68,7 +69,7 @@ pub fn write_dot(g: &CodeGraph) -> Result<()> {
     Ok(())
 }
 
-/// Write the self-contained HTML viewer to stdout.
+/// Write the interactive HTML viewer to stdout.
 pub fn write_html(g: &CodeGraph) -> Result<()> {
     let mut out = std::io::stdout().lock();
     write!(out, "{}", to_html(g)?)?;
@@ -115,10 +116,15 @@ pub fn to_dot(g: &CodeGraph) -> String {
 }
 
 /// Render the interactive HTML viewer by inlining the graph JSON into the
-/// embedded template. The payload's `</` sequences are escaped so a path
-/// can never break out of the `<script>` element.
+/// embedded template. The payload's `</` sequences are escaped so a path can
+/// never break out of the `<script>` element, and the line-terminator code
+/// points U+2028 / U+2029 are escaped to their `\u….` form so pre-ES2019
+/// engines can still parse the inlined string literal.
 pub fn to_html(g: &CodeGraph) -> Result<String> {
-    let data = serde_json::to_string(g)?.replace("</", "<\\/");
+    let data = serde_json::to_string(g)?
+        .replace("</", "<\\/")
+        .replace('\u{2028}', "\\u2028")
+        .replace('\u{2029}', "\\u2029");
     Ok(TEMPLATE.replace("__GRAPH_DATA__", &data))
 }
 

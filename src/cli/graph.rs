@@ -1,7 +1,8 @@
 //! `comemory graph` — export the file-level code-connection graph mined by
 //! `index-code` (the `imports` + `co_changed` edges, with nodes weighted by
 //! the materialized PageRank `code_symbols.rank_score`) as JSON, Graphviz
-//! DOT, or a self-contained interactive HTML page.
+//! DOT, or an interactive HTML page (the viewer loads `cytoscape.js` from a
+//! CDN, so rendering the page needs network access on first load).
 //!
 //! The graph is purely a read over `comemory.db`: it never re-indexes. Run
 //! `comemory index-code` first so the `edges` table and `rank_score` are
@@ -12,7 +13,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use clap::{Args as ClapArgs, ValueEnum};
-use rusqlite::{Connection, Row};
+use rusqlite::Connection;
 
 use crate::cli::resolve_data_dir;
 use crate::config::paths::Paths;
@@ -43,7 +44,7 @@ pub enum Format {
     Json,
     /// Graphviz DOT source (pipe to `dot`).
     Dot,
-    /// Self-contained interactive HTML page (cytoscape.js).
+    /// Interactive HTML page (cytoscape.js, loaded from a CDN).
     Html,
 }
 
@@ -117,12 +118,12 @@ fn rels_of(rel: Rel) -> &'static [&'static str] {
 
 /// Split a canonical file node id (`file:<repo>:<path>`) into `(repo, path)`.
 /// Returns `None` for ids that do not follow the convention.
-pub(crate) fn parse_id(id: &str) -> Option<(&str, &str)> {
+pub fn parse_id(id: &str) -> Option<(&str, &str)> {
     id.strip_prefix("file:")?.split_once(':')
 }
 
 /// Map one `edges` row into an [`Edge`].
-fn map_edge(r: &Row<'_>) -> rusqlite::Result<Edge> {
+fn map_edge(r: &rusqlite::Row<'_>) -> rusqlite::Result<Edge> {
     Ok(Edge {
         src: r.get(0)?,
         dst: r.get(1)?,
@@ -168,7 +169,7 @@ fn fetch_edges(
 }
 
 /// A raw per-file node row: `(repo, path, rank, symbol_count)`.
-type NodeRow = (String, String, f64, u32);
+pub type NodeRow = (String, String, f64, u32);
 
 /// Fetch one node row per indexed file, with its PageRank and top-level
 /// symbol count. Only parent rows (`parent_id IS NULL`) are counted so AST
@@ -188,14 +189,17 @@ fn fetch_nodes(conn: &Connection, repo: Option<&str>) -> Result<Vec<NodeRow>> {
     sql.push_str(" GROUP BY repo, path ORDER BY repo, path");
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt
-        .query_map(rusqlite::params_from_iter(binds), |r: &Row<'_>| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, f64>(2)?,
-                r.get::<_, i64>(3)? as u32,
-            ))
-        })?
+        .query_map(
+            rusqlite::params_from_iter(binds),
+            |r: &rusqlite::Row<'_>| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, f64>(2)?,
+                    r.get::<_, i64>(3)? as u32,
+                ))
+            },
+        )?
         .collect::<std::result::Result<Vec<_>, _>>()?;
     Ok(rows)
 }
@@ -203,7 +207,7 @@ fn fetch_nodes(conn: &Connection, repo: Option<&str>) -> Result<Vec<NodeRow>> {
 /// Assemble the [`CodeGraph`] from node rows and edges. Edge endpoints that
 /// have no `code_symbols` row (e.g. a stale co-change link to a deleted file)
 /// are still materialized as zero-rank nodes so the edge is not orphaned.
-pub(crate) fn build_graph(node_rows: Vec<NodeRow>, edges: Vec<Edge>) -> CodeGraph {
+pub fn build_graph(node_rows: Vec<NodeRow>, edges: Vec<Edge>) -> CodeGraph {
     let mut nodes: BTreeMap<String, Node> = BTreeMap::new();
     for (repo, path, rank, symbols) in node_rows {
         let id = file_node_id(&repo, &path);
