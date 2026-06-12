@@ -3,3 +3,6 @@
 /web/.vite
 /.claude/tmp/
 /.fastembed_cache/
+
+# Local MCP config — not committed
+.mcp.json
