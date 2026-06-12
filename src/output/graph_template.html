@@ -40,6 +40,7 @@ for (let i = 0; i < DATA.edges.length; i++) {
     rel: e.rel, weight: e.weight } });
 }
 const maxRank = DATA.nodes.reduce((m, n) => Math.max(m, n.rank), 0) || 1;
+const maxWeight = DATA.edges.reduce((m, e) => Math.max(m, e.weight), 1);
 const cy = cytoscape({
   container: document.getElementById('cy'),
   elements: els,
@@ -54,7 +55,7 @@ const cy = cytoscape({
       'target-arrow-shape': 'triangle', 'curve-style': 'bezier', 'width': 1 } },
     { selector: 'edge[rel="co_changed"]', style: {
       'line-color': '#d9730d', 'line-style': 'dashed', 'curve-style': 'bezier',
-      'width': 'mapData(weight, 1, 10, 1, 6)' } },
+      'width': 'mapData(weight, 1, ' + maxWeight + ', 1, 6)' } },
     { selector: '.hidden', style: { 'display': 'none' } },
     { selector: '.faded', style: { 'opacity': 0.12 } },
     { selector: 'node:selected', style: { 'background-color': '#111' } }

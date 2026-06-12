@@ -89,13 +89,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     paths.ensure_dirs()?;
     let conn = connection::open(paths.db_path())?;
 
-    let mut edges = fetch_edges(&conn, a.repo.as_deref(), rels_of(a.rel), a.min_weight)?;
-    if let Some(repo) = a.repo.as_deref() {
-        // The SQL filters the source side by `file:<repo>:` prefix; drop any
-        // edge whose destination belongs to a different repo so the export
-        // stays within the requested repo.
-        edges.retain(|e| parse_id(&e.dst).is_some_and(|(r, _)| r == repo));
-    }
+    let edges = fetch_edges(&conn, a.repo.as_deref(), rels_of(a.rel), a.min_weight)?;
     let node_rows = fetch_nodes(&conn, a.repo.as_deref())?;
     let graph = build_graph(node_rows, edges);
 
@@ -117,7 +111,9 @@ fn rels_of(rel: Rel) -> &'static [&'static str] {
 }
 
 /// Split a canonical file node id (`file:<repo>:<path>`) into `(repo, path)`.
-/// Returns `None` for ids that do not follow the convention.
+/// Returns `None` for ids that do not follow the convention. Assumes repo
+/// labels contain no `:` (the same assumption baked into `file_node_prefix`'s
+/// `substr` predicate); a repo with a `:` would split on the wrong colon.
 pub fn parse_id(id: &str) -> Option<(&str, &str)> {
     id.strip_prefix("file:")?.split_once(':')
 }
@@ -154,7 +150,11 @@ fn fetch_edges(
     );
     let mut binds: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(min_weight)];
     if let Some(r) = repo {
-        sql.push_str(" AND substr(src_id, 1, length(?2)) = ?2");
+        // Gate both endpoints by the `file:<repo>:` prefix so SQLite rejects
+        // cross-repo edges directly — no Rust-side post-filter, and same index.
+        sql.push_str(
+            " AND substr(src_id, 1, length(?2)) = ?2 AND substr(dst_id, 1, length(?2)) = ?2",
+        );
         binds.push(Box::new(file_node_prefix(r)));
     }
     sql.push_str(" ORDER BY rel, src_id, dst_id");
@@ -171,10 +171,23 @@ fn fetch_edges(
 /// A raw per-file node row: `(repo, path, rank, symbol_count)`.
 pub type NodeRow = (String, String, f64, u32);
 
+/// Map one `code_symbols` aggregate row into a [`NodeRow`].
+fn map_node_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<NodeRow> {
+    Ok((
+        r.get::<_, String>(0)?,
+        r.get::<_, String>(1)?,
+        r.get::<_, f64>(2)?,
+        r.get::<_, i64>(3)? as u32,
+    ))
+}
+
 /// Fetch one node row per indexed file, with its PageRank and top-level
 /// symbol count. Only parent rows (`parent_id IS NULL`) are counted so AST
 /// chunk children do not inflate the symbol tally.
 fn fetch_nodes(conn: &Connection, repo: Option<&str>) -> Result<Vec<NodeRow>> {
+    // MAX(rank_score) projects the file's most important symbol's PageRank
+    // onto the file node (rather than SUM/AVG), so a file is sized by its
+    // single most central symbol.
     let mut sql = String::from(
         "SELECT repo, path, MAX(rank_score), COUNT(*) FROM code_symbols \
           WHERE parent_id IS NULL",
@@ -189,17 +202,7 @@ fn fetch_nodes(conn: &Connection, repo: Option<&str>) -> Result<Vec<NodeRow>> {
     sql.push_str(" GROUP BY repo, path ORDER BY repo, path");
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt
-        .query_map(
-            rusqlite::params_from_iter(binds),
-            |r: &rusqlite::Row<'_>| {
-                Ok((
-                    r.get::<_, String>(0)?,
-                    r.get::<_, String>(1)?,
-                    r.get::<_, f64>(2)?,
-                    r.get::<_, i64>(3)? as u32,
-                ))
-            },
-        )?
+        .query_map(rusqlite::params_from_iter(binds), map_node_row)?
         .collect::<std::result::Result<Vec<_>, _>>()?;
     Ok(rows)
 }
