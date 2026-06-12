@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.6.0 — 2026-06-12 (WebGL graph viewer)
+
+Replaces the `comemory graph --format html` viewer with a WebGL-rendered
+stack for smooth interaction on larger graphs. No CLI, schema, or data
+change — same JSON payload inlined into the page.
+
+### Changed
+- **HTML graph viewer → sigma.js v3 + graphology + ForceAtlas2.** WebGL
+  rendering (pan/zoom/hover stay at 60fps with headroom to ~100k nodes)
+  replaces the cytoscape.js Canvas viewer. ForceAtlas2 runs on
+  `requestAnimationFrame` so layout animates without blocking the main
+  thread. WebGL2 is chosen over WebGPU libraries (still browser-gated)
+  and over GPU-sim libraries that trade away styling/labels/interaction.
+  The `imports`/`co_changed` toggles, click-to-focus neighborhood
+  dimming, and PageRank-scaled node sizing are preserved. The Rust
+  `to_html` path is unchanged — the graph JSON is still inlined at
+  `__GRAPH_DATA__` with the same `</`, U+2028/U+2029 escaping.
+- `co_changed` edges now render solid orange rather than dashed (sigma
+  core has no dashed-edge program); layout force-animates then settles
+  over a fixed frame budget instead of laying out instantly.
+
+### Security
+- The three CDN `<script>` tags now carry Subresource Integrity
+  (`integrity` sha384 + `crossorigin="anonymous"`): a tampered or cached
+  bundle fails the integrity check instead of executing arbitrary JS.
+
+### Fixed
+- ForceAtlas2 is loaded from the `graphology-library` UMD bundle
+  (`graphologyLibrary.layoutForceAtlas2`); the standalone
+  `graphology-layout-forceatlas2` package ships no UMD build, so its
+  `dist/` URL 404'd and the viewer fell through to the error overlay.
+- The viewer surfaces a clear `#err` overlay (and logs via
+  `console.error`) on a CDN-load failure or a mid-render Sigma/WebGL
+  init error, instead of leaving a blank canvas.
+
 ## 0.5.0 — 2026-06-12 (code-graph export)
 
 Surfaces the code-connection graph mined by `index-code` (the `imports` +
