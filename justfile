@@ -32,14 +32,15 @@ e2e:
 claude-plugin-test:
     bash -n integrations/claude-code/scripts/comemory.sh
     bash -n integrations/claude-code/hooks/session-start.sh
+    bash -n integrations/claude-code/scripts/uninstall.sh
     if command -v bats >/dev/null; then bats integrations/claude-code/tests/; else echo "bats not installed — skipping plugin tests"; fi
 
 # Fully remove the plugin FROM THIS REPO: reverts the README link, deletes the
 # plugin dir, and removes these recipes. Review with `git status` after. (To
 # uninstall as an end user instead, run integrations/.../scripts/uninstall.sh.)
 claude-plugin-remove:
-    sed -i '/^# >>> comemory claude-code plugin/,/^# <<< comemory claude-code plugin/d' justfile
-    sed -i '/\[Claude Code plugin\](integrations\/claude-code/,+1d' README.md
+    sed -i.bak '/^# >>> comemory claude-code plugin/,/^# <<< comemory claude-code plugin/d' justfile && rm -f justfile.bak
+    sed -i.bak '/\[Claude Code plugin\](integrations\/claude-code/{N;d;}' README.md && rm -f README.md.bak
     rm -rf integrations/claude-code
     @echo "comemory Claude Code plugin removed from the repo. Review: git status"
 # <<< comemory claude-code plugin recipes <<<

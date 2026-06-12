@@ -29,6 +29,8 @@ fi
 sub="${1:-}"
 shift || true
 
+# The injected `--repo "$repo"` precedes "$@", so a caller's explicit
+# `--repo X` lands last and wins (clap's repeated-Option is last-wins).
 case "$sub" in
     save)
         # Body on stdin via positional "-"; --repo scopes the memory.
