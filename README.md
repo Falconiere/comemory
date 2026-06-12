@@ -126,8 +126,8 @@ git clone https://github.com/Falconiere/comemory && cd comemory
 cargo install --path .          # or: bash scripts/dev-install.sh
 ```
 
-Prebuilt binaries for **macOS** (aarch64, x86_64) and **Linux** (aarch64,
-x86_64) are attached to every
+Prebuilt binaries for **macOS** (aarch64) and **Linux** (aarch64, x86_64)
+are attached to every
 [GitHub Release](https://github.com/Falconiere/comemory/releases).
 
 After install, run `comemory doctor` to verify the SQLite store and data
