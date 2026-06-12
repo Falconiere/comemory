@@ -275,7 +275,7 @@ incremental_batch_size = 50
 | Mode | Trigger | Behavior |
 |---|---|---|
 | `lazy` (default) | Before every `search` / `context` | Compare `git rev-parse HEAD` to `repo_marker.last_head`. If different and estimated cost is below the threshold, reindex incrementally in-line. Otherwise warn and proceed. |
-| `hook` | git `post-commit`, `post-merge`, `post-checkout` | `comemory install-hooks` registers scripts that run `comemory index-code --incremental --quiet &`. |
+| `hook` | git `post-commit`, `post-merge`, `post-checkout` | `comemory install-hooks` registers scripts that run `comemory index-code --repo <repo> --path <root> &`. |
 | `off` | Manual only | `comemory index-code` runs only when invoked. |
 
 `comemory doctor` always reports the staleness gap (commits behind HEAD)

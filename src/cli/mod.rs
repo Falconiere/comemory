@@ -106,7 +106,7 @@ pub enum Cmd {
     /// retention.
     #[command(after_help = gc::EXAMPLES)]
     Gc,
-    /// Install git hooks that trigger `comemory index-code --incremental` on
+    /// Install git hooks that trigger `comemory index-code` on
     /// `post-commit`, `post-merge`, and `post-checkout`.
     InstallHooks(install_hooks::Args),
 }

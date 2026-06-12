@@ -1,5 +1,5 @@
 //! `comemory install-hooks` — drop git hooks into a repo so commits/merges/
-//! checkouts kick off `comemory index-code --incremental --quiet` in the
+//! checkouts kick off `comemory index-code` in the
 //! background.
 //!
 //! The hooks are intentionally minimal (`exec comemory … &`) so they don't slow

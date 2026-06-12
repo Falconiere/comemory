@@ -18,7 +18,7 @@ Locate where a symbol or behavior lives using comemory's ranked code index.
 "${CLAUDE_PLUGIN_ROOT}/scripts/comemory.sh" search-code "<symbol or intent>" --json
 ```
 
-Optional: `--lang rust|typescript|javascript|python|go` (aliases `rs|ts|py|go`)
+Optional: `--lang rust|typescript|javascript|python|go` (aliases `rs|ts|tsx|js|jsx|py`)
 to constrain language, `--k N` to cap results.
 
 Returns `hits[]` with `repo`, `path`, `symbol`, `kind`, `lang`, `lines`, and a

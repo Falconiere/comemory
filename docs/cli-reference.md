@@ -44,7 +44,7 @@ Commands:
   prune          Detect (and optionally soft-delete) stale memories
   rebuild        Drop `comemory.db` and repopulate it from the markdown source of truth
   gc             Purge old `memories/.trash/` entries and learning telemetry past retention
-  install-hooks  Install git hooks that trigger `comemory index-code --incremental` on `post-commit`, `post-merge`, and `post-checkout`
+  install-hooks  Install git hooks that trigger `comemory index-code` on `post-commit`, `post-merge`, and `post-checkout`
   help           Print this message or the help of the given subcommand(s)
 
 Options:
@@ -684,7 +684,7 @@ Examples:
 ## comemory install-hooks
 
 ```
-Install git hooks that trigger `comemory index-code --incremental` on `post-commit`, `post-merge`, and `post-checkout`
+Install git hooks that trigger `comemory index-code` on `post-commit`, `post-merge`, and `post-checkout`
 
 Usage: comemory install-hooks [OPTIONS]
 
