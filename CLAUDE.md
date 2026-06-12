@@ -263,7 +263,7 @@ exits 0.
 - `cargo install comemory` (source, from crates.io once published).
 - `brew install Falconiere/tap/comemory` (Homebrew tap
   `Falconiere/homebrew-tap`, published by `cargo-dist`).
-- Prebuilt tarballs for `aarch64-apple-darwin`, `x86_64-apple-darwin`,
+- Prebuilt tarballs for `aarch64-apple-darwin`,
   `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu` attached to
   [GitHub Releases](https://github.com/Falconiere/comemory/releases).
 

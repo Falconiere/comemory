@@ -83,7 +83,6 @@ Then re-tag once `main` is fixed.
 ## Supported targets
 
 - `aarch64-apple-darwin`
-- `x86_64-apple-darwin`
 - `x86_64-unknown-linux-gnu`
 - `aarch64-unknown-linux-gnu`
 
