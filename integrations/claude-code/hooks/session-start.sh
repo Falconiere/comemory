@@ -11,10 +11,6 @@ wrapper="${here}/../scripts/comemory.sh"
 
 # Plain (non-JSON) list, captured into a var: a later `head` truncation must
 # not SIGPIPE-fail the producer (which `list | head` under pipefail would).
-# This trusts `comemory list`'s plain format: one row per memory, no header
-# (src/cli/list.rs), so an empty repo yields empty output. If `list` ever
-# grows a header row, that header would surface as a fake memory line here —
-# switch this to `list --json` + a `jq -r` projection at that point.
 if ! out=$("$wrapper" list 2>/dev/null); then
     exit 0
 fi
@@ -24,7 +20,13 @@ case "$out" in
     '' | '{"comemory":"unavailable"'*) exit 0 ;;
 esac
 
-digest=$(printf '%s\n' "$out" | head -n 5)
+# Keep only real memory rows. `comemory list`'s plain format is
+# `{8-hex id}␣␣{kind}␣␣{repo}␣␣{slug}` (src/cli/list.rs), so anchoring on the
+# id prefix decouples the digest from CLI table formatting: a future header,
+# banner, or summary line that isn't id-shaped is dropped rather than surfaced
+# as a fake memory. grep returning no match is fine — the guard below handles
+# the empty result.
+digest=$(printf '%s\n' "$out" | grep -E '^[0-9a-f]{8}  ' | head -n 5)
 [ -n "$digest" ] || exit 0
 
 printf 'comemory — recalled memories for this repo:\n%s\n' "$digest"
