@@ -40,6 +40,18 @@ pub enum Error {
     #[error("config: {0}")]
     Config(String),
 
+    /// A `comemory serve` request was rejected by the security layer
+    /// (token mismatch, non-loopback Host, or a path that escaped the repo
+    /// root). Maps to HTTP 403; on the CLI path it maps to EX_SOFTWARE.
+    #[error("forbidden: {0}")]
+    Forbidden(String),
+
+    /// A `comemory serve` request was malformed (unparsable node id,
+    /// missing parameter, unknown repo root). Maps to HTTP 400; on the CLI
+    /// path it maps to EX_SOFTWARE.
+    #[error("bad request: {0}")]
+    BadRequest(String),
+
     /// Required learning data is absent (no golden pairs, not enough
     /// feedback). Maps to EX_UNAVAILABLE (69).
     #[error("unavailable: {0}")]

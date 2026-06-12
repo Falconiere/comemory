@@ -1,3 +1,8 @@
+[files]
+# The committed Vite build output is minified and hash-named; never spell-check
+# it (or the lockfile). The frontend source under web/src is still checked.
+extend-exclude = ["web/dist/", "web/package-lock.json"]
+
 [default]
 extend-ignore-identifiers-re = ["nomic", "kuzu", "qwick", "cose"]
 extend-ignore-re = [

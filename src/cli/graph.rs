@@ -89,9 +89,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     paths.ensure_dirs()?;
     let conn = connection::open(paths.db_path())?;
 
-    let edges = fetch_edges(&conn, a.repo.as_deref(), rels_of(a.rel), a.min_weight)?;
-    let node_rows = fetch_nodes(&conn, a.repo.as_deref())?;
-    let graph = build_graph(node_rows, edges);
+    let graph = build_code_graph(&conn, a.repo.as_deref(), a.rel, a.min_weight)?;
 
     let fmt = if json_flag { Format::Json } else { a.format };
     match fmt {
@@ -99,6 +97,21 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         Format::Dot => render::write_dot(&graph),
         Format::Html => render::write_html(&graph),
     }
+}
+
+/// Build the file-level [`CodeGraph`] for the selected repo / relations /
+/// min-weight by reading `edges` + `code_symbols`. Shared by `cli::graph::run`
+/// (the static exports) and the `comemory serve` graph handler so the two
+/// renderers cannot drift on which nodes and edges the graph contains.
+pub(crate) fn build_code_graph(
+    conn: &Connection,
+    repo: Option<&str>,
+    rel: Rel,
+    min_weight: i64,
+) -> Result<CodeGraph> {
+    let edges = fetch_edges(conn, repo, rels_of(rel), min_weight)?;
+    let node_rows = fetch_nodes(conn, repo)?;
+    Ok(build_graph(node_rows, edges))
 }
 
 /// The `edges.rel` values selected by a [`Rel`] choice.

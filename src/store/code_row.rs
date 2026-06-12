@@ -145,6 +145,22 @@ pub fn upsert_indexed_file(conn: &Connection, repo: &str, path: &str, oid: &str)
     Ok(())
 }
 
+/// Upsert the absolute working-tree `root` for `repo` into
+/// `repo_marker.root_path`, creating the marker row if `index-code` is the
+/// first writer to touch this repo. `root` is the canonicalized `--path`
+/// argument (the exact base `code_symbols.path` values are relative to), so
+/// `comemory serve` can rejoin `root + path` to resolve a `file:<repo>:<path>`
+/// graph node id to a real file on disk. Stored as an absolute path string;
+/// `comemory serve` re-canonicalizes it before any containment check.
+pub fn upsert_repo_root(conn: &Connection, repo: &str, root: &str) -> Result<()> {
+    conn.execute(
+        "INSERT INTO repo_marker(repo, root_path) VALUES(?1, ?2) \
+         ON CONFLICT(repo) DO UPDATE SET root_path = excluded.root_path",
+        rusqlite::params![repo, root],
+    )?;
+    Ok(())
+}
+
 /// Insert one `code_symbols` row and return its newly-assigned primary key.
 /// The `indexed_at` column is stamped server-side via `strftime` so callers
 /// don't need to format the timestamp themselves.

@@ -356,6 +356,9 @@ mod ast;
 #[path = "cli/graph.rs"]
 mod graph;
 
+#[path = "cli/serve.rs"]
+mod serve;
+
 #[path = "cli/rebuild.rs"]
 mod rebuild;
 

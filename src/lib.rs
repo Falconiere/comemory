@@ -29,6 +29,8 @@ pub mod git_utils;
 
 pub mod output;
 
+pub mod serve;
+
 pub mod cli;
 
 pub mod simhash;

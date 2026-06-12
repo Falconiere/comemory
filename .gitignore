@@ -1,11 +1,3 @@
 /target
-Cargo.lock.bak
-.qwick-test/
-.claude/tmp/quality-gate-status.json
-.claude/tmp/push-review/
-.claude/worktrees/
-.claude/scheduled_tasks.lock
-.fastembed_cache/
-/.build-perf/
-
-docs/superpowers/
+/web/node_modules
+/web/.vite

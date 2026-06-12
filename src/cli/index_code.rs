@@ -136,6 +136,24 @@ pub async fn run(args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<(
         code_row::upsert_indexed_file(&tx, &args.repo, &rel, &oid)?;
     }
     code_row::stamp_repo_format(&tx, &args.repo)?;
+    // Persist the absolute working-tree root so `comemory serve` can resolve a
+    // `file:<repo>:<path>` node id back to a real file. `code_symbols.path` is
+    // produced by `relative(&args.path, ...)`, so the canonicalized `args.path`
+    // is the exact base those relative paths join back onto. A canonicalize
+    // failure (path vanished mid-run) leaves `root_path` NULL — `serve` then
+    // requires an explicit `--root` override rather than guessing.
+    match args.path.canonicalize() {
+        Ok(root) => {
+            code_row::upsert_repo_root(&tx, &args.repo, &root.to_string_lossy())?;
+        }
+        Err(e) => {
+            tracing::warn!(
+                path = %args.path.display(),
+                error = %e,
+                "index-code: could not canonicalize --path for repo root; serve will need --root",
+            );
+        }
+    }
     tx.commit()?;
     // Best-effort graph post-pass: the symbol index above is already
     // durable; a graph failure (e.g. unborn HEAD) costs only freshness.
