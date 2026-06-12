@@ -102,7 +102,14 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         },
     )?;
     let ids: Vec<String> = run.hits.into_iter().map(|h| h.memory_id).collect();
-    let ws = WorkingSet::from_cwd(a.repo.as_deref());
+    // Zero hits → no edges to walk, hence no code refs for the affinity
+    // prior to boost, so the git discovery + status walk behind
+    // `WorkingSet::from_cwd` is skipped (mirrors the `search-code` guard).
+    let ws = if ids.is_empty() {
+        WorkingSet::default()
+    } else {
+        WorkingSet::from_cwd(a.repo.as_deref())
+    };
     let bundle = bundle::assemble(&conn, &cfg, &a.query, &ids, &ws)?;
     output::context::emit(&bundle, run.query_id.as_deref(), json_flag)
 }

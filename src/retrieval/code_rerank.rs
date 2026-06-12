@@ -115,6 +115,13 @@ impl WorkingSet {
     /// discovery serves both the label and the path walk. Shared by
     /// `search-code` and `context` so the two subcommands cannot drift on
     /// what "working set" means.
+    ///
+    /// The derived label can silently drift from the label used at index
+    /// time (`index-code --repo foo` vs a checkout basename `bar`), in
+    /// which case affinity stays neutral with no signal. A
+    /// `tracing::debug!` below logs the derived label and file count so
+    /// `RUST_LOG=debug` users can spot the mismatch; the full mismatch
+    /// advisory belongs to the M4 `comemory doctor` item.
     pub fn from_cwd(repo_filter: Option<&str>) -> WorkingSet {
         let Ok(cwd) = std::env::current_dir() else {
             return WorkingSet::default();
@@ -139,7 +146,14 @@ impl WorkingSet {
                 }
             }
         };
-        from_repo(&git, &label)
+        let ws = from_repo(&git, &label);
+        tracing::debug!(
+            label = %label,
+            files = ws.files.len(),
+            "code_rerank: working set built from CWD; affinity is neutral \
+             unless this label matches the repo label used at index time"
+        );
+        ws
     }
 }
 
