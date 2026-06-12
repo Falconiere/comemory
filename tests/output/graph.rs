@@ -63,7 +63,7 @@ fn higher_rank_yields_wider_dot_node() {
 #[test]
 fn html_inlines_data_and_escapes_script_break() {
     let html = to_html(&sample()).expect("render html");
-    assert!(html.contains("cytoscape"), "loads cytoscape");
+    assert!(html.contains("sigma"), "loads sigma.js");
     // The data placeholder is replaced with real JSON, not left verbatim.
     assert!(!html.contains("__GRAPH_DATA__"));
     assert!(html.contains("file:demo:src/a.rs"));
