@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.5.0 — 2026-06-12 (code-graph export)
+
+Surfaces the code-connection graph mined by `index-code` (the `imports` +
+`co_changed` edges, with file nodes weighted by the materialized PageRank)
+as a first-class export. Pure read over `comemory.db` — no re-indexing,
+no schema change.
+
+### Added
+- **`comemory graph`** — export the file-level code-connection graph as
+  machine-readable JSON, Graphviz DOT (`dot -Tsvg`), or an interactive
+  HTML viewer (cytoscape.js, loaded from a CDN). Flags: `--repo` (scope
+  to one repo label, gating both edge endpoints in SQL), `--rel`
+  (`all` | `imports` | `co-changed`), `--format` (`json` | `dot` |
+  `html`), and `--min-weight` (drop weak `co_changed` links; `imports`
+  are untouched). The global `--json` flag forces JSON output.
+  Edge endpoints with no `code_symbols` row (stale edges to deleted
+  files) still render as zero-rank nodes so edges are never orphaned.
+  DOT labels and the inlined HTML JSON payload are escaped (`\`, `"`,
+  newlines for DOT; `</`, U+2028/U+2029 for HTML) so paths can never
+  break the output.
+
+### Docs
+- `docs/cli-reference.md` gains a generated `## comemory graph` section.
+
 ## 0.4.0 — 2026-06-11 (M3 code graph + code-aware retrieval)
 
 The code layer becomes a graph. A v6 migration adds code-graph edges,
