@@ -19,6 +19,7 @@ use time::OffsetDateTime;
 
 use crate::config::Config;
 use crate::graph::cochange;
+use crate::graph::edges::file_node_id;
 use crate::prelude::*;
 use crate::retrieval::code_prior::{self, Signals};
 use crate::retrieval::code_route::CodeRoutedHit;
@@ -100,6 +101,46 @@ impl WorkingSet {
     pub fn files(&self) -> &[String] {
         &self.files
     }
+
+    /// Build the working set for the affinity boost from the process CWD.
+    /// The database does not know a repo's checkout path and the CLI may
+    /// run from anywhere, so the CWD is the only working-tree candidate:
+    /// the boost activates only when the command runs inside the relevant
+    /// repo's checkout (documented in the `search-code` and `context`
+    /// help text). The working-set file ids also need a repo *label*: the
+    /// `--repo` filter when given, else the basename of the discovered
+    /// working tree (matching the common `index-code --repo <dirname>`
+    /// convention); when neither resolves (non-repo CWD, bare repo), the
+    /// set degrades to empty and affinity stays neutral. One git2
+    /// discovery serves both the label and the path walk. Shared by
+    /// `search-code` and `context` so the two subcommands cannot drift on
+    /// what "working set" means.
+    pub fn from_cwd(repo_filter: Option<&str>) -> WorkingSet {
+        let Ok(cwd) = std::env::current_dir() else {
+            return WorkingSet::default();
+        };
+        let Ok(git) = git2::Repository::discover(&cwd) else {
+            tracing::debug!(
+                cwd = %cwd.display(),
+                "code_rerank: CWD is not inside a git repo; affinity neutral"
+            );
+            return WorkingSet::default();
+        };
+        let label = match repo_filter {
+            Some(r) => r.to_string(),
+            None => {
+                let basename = git
+                    .workdir()
+                    .and_then(Path::file_name)
+                    .and_then(|n| n.to_str());
+                match basename {
+                    Some(n) => n.to_string(),
+                    None => return WorkingSet::default(),
+                }
+            }
+        };
+        from_repo(&git, &label)
+    }
 }
 
 /// Best-effort working-set detection for the repo containing
@@ -109,16 +150,29 @@ impl WorkingSet {
 /// empty set with a `tracing::debug` — affinity is a bonus signal,
 /// never a failure mode.
 pub fn working_set(repo_root: &Path, repo: &str) -> WorkingSet {
-    match collect_working_paths(repo_root) {
-        Ok(paths) => WorkingSet {
-            files: paths
-                .into_iter()
-                .map(|p| format!("file:{repo}:{p}"))
-                .collect(),
-        },
+    match git2::Repository::discover(repo_root) {
+        Ok(git) => from_repo(&git, repo),
         Err(e) => {
             tracing::debug!(
                 repo_root = %repo_root.display(),
+                error = %e,
+                "code_rerank: working-set detection failed; affinity neutral"
+            );
+            WorkingSet::default()
+        }
+    }
+}
+
+/// Working set of an already-discovered repository, with each path
+/// qualified into a `file:<label>:<path>` graph id. Path-walk errors
+/// (unborn HEAD, …) degrade to the empty set with a `tracing::debug`.
+fn from_repo(git: &git2::Repository, label: &str) -> WorkingSet {
+    match collect_working_paths(git) {
+        Ok(paths) => WorkingSet {
+            files: paths.into_iter().map(|p| file_node_id(label, &p)).collect(),
+        },
+        Err(e) => {
+            tracing::debug!(
                 error = %e,
                 "code_rerank: working-set detection failed; affinity neutral"
             );
@@ -137,9 +191,8 @@ pub fn working_set(repo_root: &Path, repo: &str) -> WorkingSet {
 /// formatting sweep or bulk rename says nothing about what the developer
 /// is working on, and folding it in would flood the working set (and the
 /// affinity SQL's `IN` lists) with noise.
-fn collect_working_paths(repo_root: &Path) -> Result<BTreeSet<String>> {
+fn collect_working_paths(repo: &git2::Repository) -> Result<BTreeSet<String>> {
     use crate::git_utils::map_git_err;
-    let repo = git2::Repository::discover(repo_root).map_err(map_git_err)?;
     let mut out = BTreeSet::new();
 
     let mut opts = git2::StatusOptions::new();
@@ -157,7 +210,7 @@ fn collect_working_paths(repo_root: &Path) -> Result<BTreeSet<String>> {
         let commit = repo
             .find_commit(oid.map_err(map_git_err)?)
             .map_err(map_git_err)?;
-        let changed = cochange::commit_changed_paths(&repo, &commit)?;
+        let changed = cochange::commit_changed_paths(repo, &commit)?;
         if changed.len() > cochange::MEGA_COMMIT_FILE_CAP {
             tracing::debug!(
                 oid = %commit.id(),

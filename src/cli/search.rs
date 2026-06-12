@@ -88,7 +88,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         a.kind.map(Kind::as_str),
         pipeline::SearchOptions {
             track: true,
-            source: "search",
+            source: crate::stats::source::SEARCH,
         },
     )?;
     output::search::emit(&run.hits, run.query_id.as_deref(), json_flag)

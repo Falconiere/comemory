@@ -13,15 +13,9 @@ use std::path::Path;
 
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
-use crate::graph::edges::{self, EdgeKey};
+use crate::graph::edges::{self, file_node_id, file_node_prefix, EdgeKey};
 use crate::graph::{cochange, imports, pagerank};
 use crate::prelude::*;
-
-/// Graph node id for a file: `file:<repo>:<path>` (the convention pinned
-/// in `src/store/sql/0002_v2_tables.sql`).
-fn file_node_id(repo: &str, path: &str) -> String {
-    format!("file:{repo}:{path}")
-}
 
 /// Materialize the code graph for `repo`: mine new co-change pairs
 /// (incremental via the `repo_marker.last_mined_commit` cursor),
@@ -57,7 +51,10 @@ pub fn materialize(
     }
 
     mine_into_edges(&tx, repo_root, repo, &known)?;
-    refresh_import_edges(&tx, repo, &known, imports_by_file)?;
+    // Built once per run: per-module resolution against the index replaces
+    // the per-call rescan of every known path.
+    let index = imports::PathIndex::new(&known);
+    refresh_import_edges(&tx, repo, &index, imports_by_file)?;
     project_pagerank(&tx, repo, &known)?;
     tx.commit()?;
     Ok(())
@@ -105,7 +102,7 @@ fn mine_into_edges(
         // Prefix-match via substr (not LIKE) so a repo label containing
         // `%`/`_` cannot widen the delete. Both endpoints of a co_changed
         // edge live in the same repo, so matching src_id suffices.
-        let prefix = format!("file:{repo}:");
+        let prefix = file_node_prefix(repo);
         tx.execute(
             "DELETE FROM edges \
               WHERE rel = 'co_changed' AND src_kind = 'file' \
@@ -138,14 +135,15 @@ fn mine_into_edges(
 
 /// Replace the outgoing `imports` edges of every file (re)indexed this
 /// run: delete the file's previous edges, then re-insert one edge per
-/// raw module that [`imports::resolve`] maps unambiguously onto a known
-/// path. Self-imports (a module resolving back onto its own file, e.g. a
-/// stray `mod b;` inside `b.rs`) are skipped — a self-loop carries no
-/// coupling signal and would only inflate the file's own PageRank.
+/// raw module that [`imports::PathIndex::resolve`] maps unambiguously
+/// onto a known path. Self-imports (a module resolving back onto its own
+/// file, e.g. a stray `mod b;` inside `b.rs`) are skipped — a self-loop
+/// carries no coupling signal and would only inflate the file's own
+/// PageRank.
 fn refresh_import_edges(
     tx: &Transaction<'_>,
     repo: &str,
-    known: &[String],
+    index: &imports::PathIndex,
     imports_by_file: &BTreeMap<String, Vec<String>>,
 ) -> Result<()> {
     for (file, modules) in imports_by_file {
@@ -155,7 +153,7 @@ fn refresh_import_edges(
             [&src],
         )?;
         for module in modules {
-            let Some(target) = imports::resolve(module, known, Some(file)) else {
+            let Some(target) = index.resolve(module, Some(file)) else {
                 continue;
             };
             if &target == file {
@@ -189,7 +187,7 @@ fn project_pagerank(tx: &Transaction<'_>, repo: &str, known: &[String]) -> Resul
         .enumerate()
         .map(|(i, p)| (p.as_str(), i as u32))
         .collect();
-    let prefix = format!("file:{repo}:");
+    let prefix = file_node_prefix(repo);
     // ORDER BY makes the edge list — and therefore pagerank's f64
     // accumulation order — a function of the logical graph, not rowid
     // insertion order (an imports delete+reinsert would otherwise

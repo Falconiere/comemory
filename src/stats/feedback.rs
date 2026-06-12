@@ -89,8 +89,8 @@ fn insert_event(
 ) -> Result<()> {
     conn.execute(
         "INSERT INTO feedback_events(query_id, memory_id, verdict, at, target_kind)
-         VALUES (?1, ?2, ?3, ?4, 'memory')",
-        rusqlite::params![query_id, id, verdict, at],
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        rusqlite::params![query_id, id, verdict, at, crate::stats::target::MEMORY],
     )?;
     Ok(())
 }

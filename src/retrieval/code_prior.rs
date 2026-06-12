@@ -3,11 +3,13 @@
 //!
 //! Two consumers share this math: [`crate::retrieval::code_rerank`]
 //! multiplies the prior product into a max-normalized relevance score for
-//! `comemory search-code` (via [`priors`], sharing one clock and one
-//! affinity cache across its pool), and [`crate::retrieval::bundle`] ranks
-//! the code refs of `comemory context` by the prior product alone (via
-//! [`prior_product`] / [`pool_median_rank`]) — refs are address-resolved by
-//! the graph walk, not query-matched, so they carry no relevance term.
+//! `comemory search-code`, and [`crate::retrieval::bundle`] ranks the code
+//! refs of `comemory context` by the prior product alone — refs are
+//! address-resolved by the graph walk, not query-matched, so they carry no
+//! relevance term. Both follow the same pooled discipline: fetch
+//! [`signals`] once per candidate, derive the median via
+//! [`median_file_rank`], then score with [`priors`] under one shared clock
+//! and one shared affinity cache.
 
 use std::collections::BTreeMap;
 
@@ -52,20 +54,33 @@ pub struct CodePriorParts {
 /// Per-symbol ranking signals pulled in one query: identity columns,
 /// rank/access counters, and the (optional) feedback counters with
 /// `COALESCE` neutralizing absent rows.
-pub(crate) struct Signals {
-    pub(crate) repo: String,
-    pub(crate) path: String,
-    pub(crate) symbol: String,
-    pub(crate) kind: String,
-    pub(crate) lang: String,
-    pub(crate) line_start: i64,
-    pub(crate) line_end: i64,
-    pub(crate) rank_score: f64,
-    pub(crate) access_count: u64,
-    pub(crate) last_accessed: String,
-    pub(crate) parent_id: Option<i64>,
-    pub(crate) used: u64,
-    pub(crate) irrelevant: u64,
+pub struct Signals {
+    /// Repository the symbol was indexed from.
+    pub repo: String,
+    /// Repo-relative file path.
+    pub path: String,
+    /// Qualified symbol name.
+    pub symbol: String,
+    /// Symbol kind, e.g. `function`.
+    pub kind: String,
+    /// Source language, e.g. `rust`.
+    pub lang: String,
+    /// First line of the symbol.
+    pub line_start: i64,
+    /// Last line of the symbol.
+    pub line_end: i64,
+    /// Projected PageRank score of the symbol's file.
+    pub rank_score: f64,
+    /// Times the symbol was returned by a tracked search.
+    pub access_count: u64,
+    /// Last access timestamp (falls back to `indexed_at`).
+    pub last_accessed: String,
+    /// Parent `code_symbols` rowid for cAST chunk rows.
+    pub parent_id: Option<i64>,
+    /// `code_feedback.used_count` under the row's effective identity.
+    pub used: u64,
+    /// `code_feedback.irrelevant_count` under the row's effective identity.
+    pub irrelevant: u64,
 }
 
 /// Fetch the ranking signals for one code symbol. Returns `Ok(None)` when
@@ -79,7 +94,7 @@ pub(crate) struct Signals {
 /// feedback row of its own — it inherits the PARENT's counters via the
 /// `COALESCE(parent.symbol, c.symbol)` join so the parent's feedback
 /// influences its chunks while they are scored pre-coalesce.
-pub(crate) fn signals(conn: &Connection, symbol_id: i64) -> Result<Option<Signals>> {
+pub fn signals(conn: &Connection, symbol_id: i64) -> Result<Option<Signals>> {
     let mut stmt = conn.prepare_cached(
         "SELECT c.repo, c.path, c.symbol, c.kind, c.lang, c.line_start, c.line_end,
                 c.rank_score, c.access_count, COALESCE(c.last_accessed, c.indexed_at),
@@ -114,10 +129,12 @@ pub(crate) fn signals(conn: &Connection, symbol_id: i64) -> Result<Option<Signal
 }
 
 /// Compute the four bounded priors for one signals row — the single home
-/// of the prior math. Pool-scoring callers (`rerank_code`) pass a shared
-/// `now` so one pool is judged against one clock, and a shared
-/// `affinity_cache` so many symbols from one file run one edge query.
-pub(crate) fn priors(
+/// of the prior math. Pool-scoring callers (`rerank_code`, the context
+/// bundle) pass a shared `now` so one pool is judged against one clock,
+/// and a shared `affinity_cache` so many symbols from one file run one
+/// edge query. Derive `pool_median_rank` for the caller's candidate set
+/// via [`median_file_rank`] over the pool's fetched [`signals`] rows.
+pub fn priors(
     conn: &Connection,
     cfg: &Config,
     now: OffsetDateTime,
@@ -151,57 +168,6 @@ pub(crate) fn priors(
     })
 }
 
-/// One-shot prior product for a single symbol, fetching its signals on the
-/// spot. Returns `Ok(None)` when the `code_symbols` row vanished (raced
-/// re-index delete) so callers can degrade per-ref instead of aborting.
-/// Derive `pool_median_rank` for the caller's candidate set via
-/// [`pool_median_rank`]; pool-scoring callers should use [`priors`]
-/// directly to share the clock and the affinity cache across the pool.
-pub fn prior_product(
-    conn: &Connection,
-    cfg: &Config,
-    symbol_id: i64,
-    working_set: &WorkingSet,
-    pool_median_rank: f64,
-) -> Result<Option<CodePriorParts>> {
-    let Some(sig) = signals(conn, symbol_id)? else {
-        return Ok(None);
-    };
-    let mut affinity_cache = BTreeMap::new();
-    priors(
-        conn,
-        cfg,
-        OffsetDateTime::now_utc(),
-        &sig,
-        working_set,
-        pool_median_rank,
-        &mut affinity_cache,
-    )
-    .map(Some)
-}
-
-/// Median per-file `rank_score` for a set of symbol ids — how a caller
-/// without a routed candidate pool (the context bundle) derives the
-/// [`prior_product`] median the same way `rerank_code` does. Vanished ids
-/// are skipped silently; an empty surviving set returns 0.0, which the
-/// rank boost treats as "unranked repo → neutral".
-pub fn pool_median_rank(conn: &Connection, symbol_ids: &[i64]) -> Result<f64> {
-    let mut stmt =
-        conn.prepare_cached("SELECT repo, path, rank_score FROM code_symbols WHERE id = ?1")?;
-    let mut rows: Vec<(String, String, f64)> = Vec::with_capacity(symbol_ids.len());
-    for id in symbol_ids {
-        let row = stmt
-            .query_row([id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
-            .optional()?;
-        if let Some(row) = row {
-            rows.push(row);
-        }
-    }
-    Ok(median_file_rank(
-        rows.iter().map(|(r, p, s)| ((r.as_str(), p.as_str()), *s)),
-    ))
-}
-
 /// Median of the candidate pool's DISTINCT per-file `rank_score`s
 /// (chunk rows share their file's projected score, so dedup is by
 /// `(repo, path)`). Absolute PageRank scales with `1/file-count`, so a
@@ -209,9 +175,7 @@ pub fn pool_median_rank(conn: &Connection, symbol_ids: &[i64]) -> Result<f64> {
 /// median-relative mapping is repo-size invariant. Even-sized pools
 /// take the mean of the middle two; an empty pool returns 0.0, which
 /// [`rank_boost`] treats as "unranked repo → neutral".
-pub(crate) fn median_file_rank<'a>(
-    files: impl IntoIterator<Item = ((&'a str, &'a str), f64)>,
-) -> f64 {
+pub fn median_file_rank<'a>(files: impl IntoIterator<Item = ((&'a str, &'a str), f64)>) -> f64 {
     let by_file: BTreeMap<(&str, &str), f64> = files.into_iter().collect();
     let mut ranks: Vec<f64> = by_file.into_values().collect();
     if ranks.is_empty() {
@@ -255,7 +219,7 @@ fn file_affinity(
     if ws.files().is_empty() {
         return Ok(1.0);
     }
-    let fid = format!("file:{repo}:{path}");
+    let fid = crate::graph::edges::file_node_id(repo, path);
     if let Some(boost) = cache.get(&fid) {
         return Ok(*boost);
     }

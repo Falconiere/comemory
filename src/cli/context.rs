@@ -7,18 +7,19 @@
 //! (`references_file`, `references_symbol`, `relates_to`, `supersedes`)
 //! up to depth 2. Code refs inside the bundle are ranked by the
 //! [`crate::retrieval::code_prior`] product, with the working set built
-//! from the process CWD via the shared [`crate::cli::cwd_working_set`]
-//! helper (same caveat as `search-code`: the affinity boost only
-//! activates inside the referenced repo's checkout).
+//! from the process CWD via the shared [`WorkingSet::from_cwd`] policy
+//! (same caveat as `search-code`: the affinity boost only activates
+//! inside the referenced repo's checkout).
 
 use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::cli::{cwd_working_set, embedding_input, load_config, override_top_k, resolve_data_dir};
+use crate::cli::{embedding_input, load_config, override_top_k, resolve_data_dir};
 use crate::config::paths::Paths;
 use crate::output;
 use crate::prelude::*;
+use crate::retrieval::code_rerank::WorkingSet;
 use crate::retrieval::{bundle, pipeline};
 use crate::store::connection;
 
@@ -97,11 +98,11 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         None,
         pipeline::SearchOptions {
             track: true,
-            source: "context",
+            source: crate::stats::source::CONTEXT,
         },
     )?;
     let ids: Vec<String> = run.hits.into_iter().map(|h| h.memory_id).collect();
-    let ws = cwd_working_set(a.repo.as_deref());
+    let ws = WorkingSet::from_cwd(a.repo.as_deref());
     let bundle = bundle::assemble(&conn, &cfg, &a.query, &ids, &ws)?;
     output::context::emit(&bundle, run.query_id.as_deref(), json_flag)
 }

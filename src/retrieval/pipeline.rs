@@ -18,10 +18,10 @@ pub struct SearchOptions {
     /// search/context set `true`; eval and tune set `false` so offline
     /// measurement cannot pollute its own training signal.
     pub track: bool,
-    /// Query origin written verbatim to `retrieval_log.source`:
-    /// `"search"` (memory search), `"context"` (context bundles), or
-    /// `"search-code"` (code search). Reformulation mining excludes
-    /// `search-code` rows, which can only earn code-target feedback.
+    /// Query origin written verbatim to `retrieval_log.source` — one of
+    /// the [`crate::stats::source`] consts (`SEARCH`, `CONTEXT`,
+    /// `SEARCH_CODE`). Reformulation mining excludes `search-code` rows,
+    /// which can only earn code-target feedback.
     pub source: &'static str,
 }
 
@@ -88,7 +88,7 @@ fn record_telemetry(
     query: &str,
     repo: Option<&str>,
     kind: Option<&str>,
-    source: &str,
+    source: &'static str,
     hits: &[Reranked],
     elapsed: std::time::Duration,
 ) -> Option<String> {
@@ -144,19 +144,36 @@ fn record_access(conn: &Connection, hits: &[Reranked]) {
     }
 }
 
-/// Write the `retrieval_log` row for this run, including the repo/kind
-/// filters the caller searched with (logged verbatim, `None` → NULL)
-/// and the query `source`. Best-effort like [`record_access`]: a
-/// logging failure warns and returns `None` — the search result must
-/// never depend on telemetry.
+/// Thin id-mapping wrapper over [`log_retrieval`] for memory hits.
 fn record_query(
     conn: &Connection,
     query: &str,
     repo: Option<&str>,
     kind: Option<&str>,
-    source: &str,
+    source: &'static str,
     hits: &[Reranked],
     elapsed: std::time::Duration,
+) -> Option<String> {
+    let ids: Vec<String> = hits.iter().map(|h| h.memory_id.clone()).collect();
+    log_retrieval(conn, query, &ids, elapsed, repo, kind, source)
+}
+
+/// The single `retrieval_log` writer, shared by memory searches (via
+/// [`record_query`]) and code searches (`cli::search_code`, which
+/// text-encodes its symbol ids so the `returned_ids` column shape matches
+/// the memory rows). Logs the repo/kind filters the caller searched with
+/// (verbatim, `None` → NULL; `kind` carries `--lang` for code searches)
+/// and the query `source` (a [`crate::stats::source`] const). Best-effort
+/// like [`record_access`]: a logging failure warns and returns `None` —
+/// the search result must never depend on telemetry.
+pub(crate) fn log_retrieval(
+    conn: &Connection,
+    query: &str,
+    returned_ids: &[String],
+    elapsed: std::time::Duration,
+    repo: Option<&str>,
+    kind: Option<&str>,
+    source: &'static str,
 ) -> Option<String> {
     let now = OffsetDateTime::now_utc();
     let at = match memory_row::iso_format(now) {
@@ -167,8 +184,7 @@ fn record_query(
         }
     };
     let query_id = crate::stats::feedback::generate_query_id(query, now);
-    let ids: Vec<&str> = hits.iter().map(|h| h.memory_id.as_str()).collect();
-    let returned = match serde_json::to_string(&ids) {
+    let returned = match serde_json::to_string(returned_ids) {
         Ok(s) => s,
         Err(e) => {
             tracing::warn!(error = %e, "query logging skipped: id serialization failed");
