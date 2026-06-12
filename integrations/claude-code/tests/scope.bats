@@ -28,8 +28,13 @@ load helper
 @test "scope: outside any git repo falls back to 'unknown'" {
     require_comemory
     cd "$TEST_TMP"   # mktemp dir, not a git repo
+    # Save with no git scope, then assert the memory is filed under "unknown"
+    # (exit code alone would pass even if scoping were silently skipped).
+    run bash -c 'printf "%s" "rootless scope memory" | "$WRAPPER" save --kind note --json'
+    [ "$status" -eq 0 ]
     run "$WRAPPER" list
     [ "$status" -eq 0 ]
+    [[ "$output" == *unknown* ]]
 }
 
 @test "fail-soft: missing binary emits the unavailable sentinel, exit 0" {
