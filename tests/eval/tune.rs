@@ -173,20 +173,20 @@ fn improves_baseline_requires_a_strict_win() {
 #[test]
 fn resolve_min_pairs_reads_the_env_hook() {
     // Unset: the documented floor.
-    // FIXME: Audit that the environment access only happens in single-threaded code.
+    // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
     unsafe { std::env::remove_var("COMEMORY_TUNE_MIN_GOLDEN") };
     assert_eq!(
         tune::resolve_min_pairs().expect("default"),
         tune::MIN_GOLDEN_PAIRS
     );
     // Set: the test hook lowers (or raises) the floor.
-    // FIXME: Audit that the environment access only happens in single-threaded code.
+    // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
     unsafe { std::env::set_var("COMEMORY_TUNE_MIN_GOLDEN", "3") };
     let lowered = tune::resolve_min_pairs();
-    // FIXME: Audit that the environment access only happens in single-threaded code.
+    // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
     unsafe { std::env::set_var("COMEMORY_TUNE_MIN_GOLDEN", "not-a-number") };
     let invalid = tune::resolve_min_pairs();
-    // FIXME: Audit that the environment access only happens in single-threaded code.
+    // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
     unsafe { std::env::remove_var("COMEMORY_TUNE_MIN_GOLDEN") };
     assert_eq!(lowered.expect("valid override"), 3);
     let msg = invalid
