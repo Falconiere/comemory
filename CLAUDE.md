@@ -41,7 +41,7 @@ is the source of truth and one SQLite file (`comemory.db`) backs FTS5 +
 cargo install --path .          # build + install the binary locally
 just check                      # umbrella gate (alias of scripts/check-all.sh)
 just test                       # cargo nextest run --all-features
-just qa                         # check-all + cargo-deny + dup-check
+just qa                         # check-all + cargo-deny + dup-check + machete
 just e2e                        # real-binary end-to-end harness
 bash scripts/check-all.sh       # the umbrella gate (CI parity)
 cargo nextest run --all-features
@@ -260,15 +260,16 @@ exits 0.
 
 ## Distribution
 
-- `cargo install comemory` (source, from crates.io once published).
+- `cargo install --path .` (build from a local checkout; not published to
+  crates.io).
 - `brew install Falconiere/tap/comemory` (Homebrew tap
   `Falconiere/homebrew-tap`, published by `cargo-dist`).
 - Prebuilt tarballs for `aarch64-apple-darwin`,
   `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu` attached to
   [GitHub Releases](https://github.com/Falconiere/comemory/releases).
 
-`cargo-dist` is configured in `[package.metadata.dist]` in `Cargo.toml`.
-PRs get a dry-run plan; only `v*` tags publish artifacts.
+`cargo-dist` is configured in `[workspace.metadata.dist]` in `Cargo.toml`.
+PRs get a dry-run plan; only version tags (e.g. `vX.Y.Z`) publish artifacts.
 
 ## Claude Code Hooks
 
@@ -292,7 +293,6 @@ logic to the same gate scripts.
     must not edit casually.
 - **PostTool hooks** (`post-tools/modules/`):
   - `auto-format.sh` re-runs `rustfmt` on touched files.
-  - `auto-lint.sh` runs clippy on the affected crate.
   - `gate-status.sh` records which gates are currently green for the
     session.
 - **Stop hook** (`session-end.sh`) runs `fmt-check`,

@@ -47,8 +47,7 @@ Build, packaging, and toolchain hardening. No CLI behavior changes.
 - **Dropped the `x86_64-apple-darwin` (Intel macOS) prebuilt target.**
   Supported prebuilt targets are now `aarch64-apple-darwin`,
   `x86_64-unknown-linux-gnu`, and `aarch64-unknown-linux-gnu`. Intel-Mac
-  users install from source via `cargo install comemory` or
-  `cargo install --path .`.
+  users install from source via `cargo install --path .`.
 
 ## 0.7.0 — 2026-06-12 (interactive web viewer + editor)
 

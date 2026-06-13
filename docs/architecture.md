@@ -1,9 +1,9 @@
 # Architecture overview
 
-This is a 2-page on-ramp into the comemory v0.2 design. The authoritative
-write-up lives in
-[`docs/superpowers/specs/2026-06-07-lightweight-v2-design.md`](superpowers/specs/2026-06-07-lightweight-v2-design.md);
-this page mirrors the highlights for quick reference.
+This is a 2-page on-ramp into the comemory design — storage layout,
+retrieval pipeline, save flow, and code-indexing flow. It is the
+authoritative architecture reference; pair it with the
+[CLI reference](cli-reference.md) for command-level detail.
 
 ## 1. High-level diagram
 
@@ -69,6 +69,7 @@ this page mirrors the highlights for quick reference.
 | `config` | Layered config: built-in defaults → `config.toml` → env → CLI flags |
 | `output` | TTY rendering (owo-colors) + JSON serializers (serde_json) |
 | `prune` | Orphan, stale-code, low-value detection and (soft) deletion |
+| `serve` | Loopback-only axum web server behind the `comemory serve` command (256-bit per-session token, Host-header guard, default-deny CORS, path-containment chokepoint) hosting the embedded React SPA: WebGL code-graph viewer + in-browser source editor with `If-Match` optimistic concurrency. The `comemory graph` command exports the same code graph as JSON / DOT / static HTML |
 | `git_utils` | Repo/author detection, blob OID lookup, hook installation |
 
 ## 3. Storage layout
@@ -94,7 +95,7 @@ migrations stay idempotent.
 
 | Table | Purpose |
 |---|---|
-| `schema_meta` | Single-row schema version + locked-in vector dimensions |
+| `schema_meta` | Key/value rows: schema version, locked-in vector dimensions, code-format version, and migration markers |
 | `memories` | Frontmatter + body mirror keyed by memory id |
 | `memory_fts` (FTS5) | Lexical index over memory body + title |
 | `memory_vec` (vec0) | Dense vectors keyed by memory id; dim locked at first save |
@@ -102,7 +103,7 @@ migrations stay idempotent.
 | `code_fts` (FTS5) | Lexical index over symbol identifiers + snippets + path tokens |
 | `code_vec` (vec0) | Dense vectors for code symbols; dim locked at first ingest |
 | `edges` | Sparse weighted table replacing the kuzu graph (typed src→dst rows; includes mined `co_changed` + `imports` code-graph edges) |
-| `retrieval_log`, `feedback`, `feedback_events`, `code_feedback`, `query_expansions`, `repo_marker` | Learning-loop telemetry (query log + per-query feedback provenance), aggregated memory + code-symbol feedback counters, mined expansions, indexing markers |
+| `retrieval_log`, `feedback`, `feedback_events`, `code_feedback`, `query_expansions`, `repo_marker` | Learning-loop telemetry (query log + per-query feedback provenance), aggregated memory + code-symbol feedback counters, mined expansions, indexing markers (incl. the v7 `repo_marker.root_path` working-tree root used by `serve` to resolve `file:<repo>:<path>` ids back to disk) |
 
 Every dense lookup goes through `sqlite-vec`'s `vec0` virtual table with a
 dimension guard so a mismatched embedder fails fast (`VecDimMismatch`)
@@ -274,12 +275,9 @@ incremental_batch_size = 50
 
 | Mode | Trigger | Behavior |
 |---|---|---|
-| `lazy` (default) | Before every `search` / `context` | Compare `git rev-parse HEAD` to `repo_marker.last_head`. If different and estimated cost is below the threshold, reindex incrementally in-line. Otherwise warn and proceed. |
 | `hook` | git `post-commit`, `post-merge`, `post-checkout` | `comemory install-hooks` registers scripts that run `comemory index-code --repo <repo> --path <root> &`. |
 | `off` | Manual only | `comemory index-code` runs only when invoked. |
-
-`comemory doctor` always reports the staleness gap (commits behind HEAD)
-for every known repo, regardless of mode.
+| `lazy` (default) | — | **Not yet wired.** The `auto_reindex` / `auto_reindex_threshold_ms` / `incremental_batch_size` knobs are parsed (`src/config`) but not yet consumed, so today `lazy` behaves like `off`: the index refreshes only when you run `index-code` (manually or via installed hooks). Inline reindex-before-`search` is planned. |
 
 ## 9. Pruning
 
@@ -298,10 +296,9 @@ retained 30 days, then purged by `comemory gc`. SQL rows are hard-deleted
 Stale-code pruning is **not implemented yet** (`prune::stale_code::detect`
 is a stub returning an empty set): code symbols and graph edges for files
 deleted from a repo persist — keeping their PageRank mass — until a future
-stale-code prune lands (M4 candidate). `comemory doctor` reports stale
-counts read-only, never deletes.
+stale-code prune lands (M4 candidate).
 
 ## Where to go next
 
 - [CLI reference](cli-reference.md) — every command with worked examples.
-- [v0.2 lightweight design spec](superpowers/specs/2026-06-07-lightweight-v2-design.md) — authoritative architecture and schema notes.
+- [README](../README.md) — install, quickstart, and the feature tour.
