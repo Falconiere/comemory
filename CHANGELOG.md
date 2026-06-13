@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.8.1 — 2026-06-12 (Claude Code plugin)
+
+Repo tooling only. The published binary is unchanged from 0.8.0 — the
+plugin lives entirely under `integrations/` and is not compiled into the
+crate.
+
+### Added
+- **Claude Code plugin** (`integrations/claude-code/`) wrapping the
+  `comemory` CLI: a single `comemory.sh` wrapper (sole authority for
+  git-repo scoping + missing-binary fail-soft), a SessionStart auto-recall
+  hook, `save` / `recall` / `search-code` skills, an `uninstall.sh` with a
+  typed-confirmation data purge, and `bats` tests against the real binary.
+  `just claude-plugin-*` recipes install/remove/test it.
+
+### Changed
+- Documented the plugin in `docs/architecture.md`, `docs/cli-reference.md`,
+  and the README.
+
 ## 0.8.0 — 2026-06-12 (edition 2024 + leaner release builds)
 
 Build, packaging, and toolchain hardening. No CLI behavior changes.
