@@ -141,7 +141,7 @@ directory.
 | v0.1    | ~117 MB        | bundled fastembed + lancedb + kuzu |
 | v0.2    | ~8 MB          | one SQLite file, BYO vectors, trimmed tree-sitter set |
 | v0.7    | ~10.5 MB       | adds the `serve` web SPA, embedded + gzip-compressed |
-| v0.8    | ~10.5 MB       | edition 2024 + fat-LTO release profile; no new runtime weight |
+| v0.8    | ~10.7 MB       | edition 2024 + fat-LTO release profile; no new runtime code (measured 10.74 MB, `aarch64-apple-darwin` v0.8.2) |
 
 The v0.2 rewrite dropped the in-process embedder, vector DB, and graph DB. The
 web viewer added since is the only meaningful weight back, and it's

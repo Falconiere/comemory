@@ -273,6 +273,10 @@ auto_reindex_threshold_ms = 200
 incremental_batch_size = 50
 ```
 
+> **Note:** `lazy` is the configured default but is currently a no-op alias
+> for `off` — automatic reindex-before-`search` is not yet wired (see the
+> `lazy` row below). The implemented modes are `hook` and `off`.
+
 | Mode | Trigger | Behavior |
 |---|---|---|
 | `hook` | git `post-commit`, `post-merge`, `post-checkout` | `comemory install-hooks` registers scripts that run `comemory index-code --repo <repo> --path <root> &`. |
