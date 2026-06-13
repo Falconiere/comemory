@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.2 — 2026-06-13 (remove Claude Code plugin)
+
+Repo tooling only. The published binary is unchanged from 0.8.0/0.8.1.
+
+### Removed
+- **Claude Code plugin** (`integrations/claude-code/`) and its
+  `just claude-plugin-*` recipes. comemory is a standalone CLI again and
+  carries no editor/agent integration. The 0.8.1 plugin remains available
+  at the `v0.8.1` tag for anyone who wants it.
+
 ## 0.8.1 — 2026-06-12 (Claude Code plugin)
 
 Repo tooling only. The published binary is unchanged from 0.8.0 — the
