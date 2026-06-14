@@ -122,7 +122,7 @@ environment (`Config::with_env`, in `src/config/env.rs`).
 | Variable | Purpose | Default |
 |----------|---------|---------|
 | `COMEMORY_DATA_DIR` | Root data directory (`memories/` + `comemory.db`) | `~/.comemory` |
-| `COMEMORY_INDEXING_AUTO_REINDEX` | `lazy` \| `hook` \| `off` — controls automatic code-index refresh | `lazy` |
+| `COMEMORY_INDEXING_AUTO_REINDEX` | `lazy` \| `hook` \| `off` — automatic code-index refresh. `lazy` (wired in `src/cli/lazy_reindex.rs`): `search-code`/`context` spawn a detached, non-blocking `index-code` when the repo HEAD moved since the last index, then search the current index immediately; `hook` relies on installed git hooks; `off` is manual-only | `lazy` |
 | `COMEMORY_RETRIEVAL_TOP_K` | Number of results returned by the hybrid router (also the default page size for `search` / `search-code` / `context` when `--k`/`--limit` is omitted) | `12` |
 | `COMEMORY_RETRIEVAL_MAX_PAGE_WINDOW` | Maximum depth pagination can reach into the ranked result list. `search` / `search-code` / `context` fetch a candidate pool sized `clamp(offset + k + k, CANDIDATE_POOL, max_page_window)`, run the full fuse → rerank → diversify pipeline over it, then slice `[offset, offset+k]`; `has_more` is forced false once this ceiling is hit (deeper results require refining the query). Validated `> 0`. | `200` |
 | `COMEMORY_RETRIEVAL_MEMORY_THRESHOLD` | Minimum cosine similarity for the memory table | `0.55` |

@@ -273,15 +273,43 @@ auto_reindex_threshold_ms = 200
 incremental_batch_size = 50
 ```
 
-> **Note:** `lazy` is the configured default but is currently a no-op alias
-> for `off` — automatic reindex-before-`search` is not yet wired (see the
-> `lazy` row below). The implemented modes are `hook` and `off`.
-
 | Mode | Trigger | Behavior |
 |---|---|---|
-| `hook` | git `post-commit`, `post-merge`, `post-checkout` | `comemory install-hooks` registers scripts that run `comemory index-code --repo <repo> --path <root> &`. |
+| `lazy` (default) | `search-code` / `context`, when the repo's HEAD moved | A **detached, non-blocking** background `comemory index-code --repo <repo> --path <root>` is spawned, then the search proceeds against the *current* (possibly slightly stale) index immediately — the read path never blocks on or fails because of the reindex. See [§8.1](#81-lazy-auto-reindex). |
+| `hook` | git `post-commit`, `post-merge`, `post-checkout` | `comemory install-hooks` registers scripts that run `comemory index-code --repo <repo> --path <root> &`. No in-process trigger. |
 | `off` | Manual only | `comemory index-code` runs only when invoked. |
-| `lazy` (default) | — | **Not yet wired.** The `auto_reindex` / `auto_reindex_threshold_ms` / `incremental_batch_size` knobs are parsed (`src/config`) but not yet consumed, so today `lazy` behaves like `off`: the index refreshes only when you run `index-code` (manually or via installed hooks). Inline reindex-before-`search` is planned. |
+
+### 8.1 Lazy auto-reindex
+
+`lazy` is wired in `src/cli/lazy_reindex.rs`, shared by `search-code` and
+`context` (Binding Rule 1). A trigger fires only when **all** hold: mode is
+`lazy`, the command runs inside a git repo (CWD discovery, same policy as the
+working-set affinity probe), and the code index is **stale**.
+
+- **Staleness probe (cheap — runs on every search).** Stale iff the repo was
+  never indexed (no `repo_marker` row, or a NULL `last_mined_commit`) OR the
+  current repo HEAD differs from `repo_marker.last_mined_commit` (the cursor
+  `graph::materialize` advances to HEAD after each successful `index-code`).
+  Cost: one `git2` HEAD resolve plus two single-row SQLite reads — **no**
+  working-tree walk or per-file blob hash. Consequently, uncommitted
+  (un-HEAD) working-tree edits are **intentionally not** detected by the lazy
+  probe; the git `hook` mode or a manual `index-code` covers those. Lazy is a
+  best-effort freshness fallback keyed on HEAD.
+- **Detached spawn.** `std::process::Command` on `std::env::current_exe()`
+  runs `index-code --repo <repo> --path <root> --data-dir <dir>` with null
+  stdio; the child handle is dropped (not awaited). Best-effort: a missing
+  `current_exe` or a spawn error is logged via `tracing` and swallowed — a
+  failed spawn never surfaces as a search error.
+- **Debounce.** The last trigger is recorded in `schema_meta` under
+  `lazy_reindex_head:<repo>` as `"<head>|<unix_millis>"`. A fresh spawn is
+  suppressed when EITHER the recorded head equals the current head (a reindex
+  already fired for this HEAD), OR the recorded trigger is younger than
+  `auto_reindex_threshold_ms` (the herd guard against a burst of searches).
+- **`incremental_batch_size`** is currently **reserved** (parsed/validated,
+  not consumed): `index-code` runs its whole walk in one transaction with no
+  batch seam to thread it through, and the lazy trigger delegates to that
+  single invocation. It is kept as an honest reserved knob for a future
+  chunked-commit indexing path rather than wired to a fake consumer.
 
 ## 9. Pruning
 

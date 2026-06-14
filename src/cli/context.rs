@@ -15,7 +15,9 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::cli::{embedding_input, load_config, page_meta, page_window, resolve_data_dir};
+use crate::cli::{
+    embedding_input, lazy_reindex, load_config, page_meta, page_window, resolve_data_dir,
+};
 use crate::config::paths::Paths;
 use crate::output;
 use crate::prelude::*;
@@ -94,6 +96,11 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
 
     let vec = embedding_input::read_optional(a.vector_stdin, a.vector.as_deref())?;
     let cfg = load_config(&paths)?;
+    // Non-blocking lazy auto-reindex (see `cli::lazy_reindex`): fire a
+    // detached `index-code` when this repo's HEAD moved since the last index,
+    // then proceed against the current index. No-op for `hook`/`off`,
+    // off-repo, or a fresh index; never blocks or fails the lookup.
+    lazy_reindex::maybe_trigger(&conn, &cfg, &paths, a.repo.as_deref());
     let window = page_window(&cfg, a.k, a.offset);
     // A user-facing lookup always tracks. The flag is carried on
     // `SearchOptions` so the memory access bump (inside `pipeline::search`)

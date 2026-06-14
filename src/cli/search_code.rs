@@ -27,7 +27,9 @@ use clap::Args as ClapArgs;
 use rusqlite::Connection;
 
 use crate::ast::languages::{self, Lang};
-use crate::cli::{embedding_input, load_config, page_meta, page_window, resolve_data_dir};
+use crate::cli::{
+    embedding_input, lazy_reindex, load_config, page_meta, page_window, resolve_data_dir,
+};
 use crate::config::paths::Paths;
 use crate::output;
 use crate::prelude::*;
@@ -108,6 +110,12 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
 
     let vec = embedding_input::read_optional(a.vector_stdin, a.vector.as_deref())?;
     let cfg = load_config(&paths)?;
+    // Non-blocking lazy auto-reindex: under `auto_reindex = lazy`, fire a
+    // detached `index-code` when this repo's HEAD has moved since the last
+    // index, then search the current (possibly slightly stale) index. No-op
+    // for `hook`/`off`, off-repo, or a fresh index. Never blocks or fails the
+    // search (see `cli::lazy_reindex`).
+    lazy_reindex::maybe_trigger(&conn, &cfg, &paths, a.repo.as_deref());
     let window = page_window(&cfg, a.k, a.offset);
     let max_window = cfg.retrieval.max_page_window;
     let pool = pipeline::pool_size(window.offset, window.limit, max_window);
