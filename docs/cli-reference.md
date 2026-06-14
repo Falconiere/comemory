@@ -205,6 +205,8 @@ Options:
       --repo <REPO>          Filter to memories whose `repo` matches exactly
       --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
       --kind <KIND>          Filter by kind (case-insensitive): decision|bug|convention|discovery|pattern|note
+      --limit <LIMIT>        Maximum number of results to return. `0` means "all" (no limit) [default: 50]
+      --offset <OFFSET>      Number of leading results to skip before the window starts [default: 0]
   -h, --help                 Print help
 
 Examples:
@@ -216,6 +218,9 @@ Examples:
 
   # Filter by kind only
   comemory list --kind bug
+
+  # Second page of 20 memories
+  comemory list --limit 20 --offset 20
 ```
 
 ---
