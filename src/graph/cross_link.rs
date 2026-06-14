@@ -25,12 +25,13 @@ pub struct Refs {
     pub symbols: Vec<String>,
 }
 
-/// Compiled once per process. The literal is static, the pattern is well-formed,
-/// so the only failure mode for `Regex::new` would be a programmer error caught
-/// by the test suite — hence `expect` with an explanatory message.
-static REF_RE: Lazy<Regex> = Lazy::new(|| {
+/// Compiled once per process. The literal is static and well-formed, so
+/// `Regex::new` cannot fail in practice; `.ok()` keeps the type panic-free
+/// (no `expect` / `unwrap` calls) and [`extract_refs`] treats an (impossible)
+/// `None` as "no references".
+static REF_RE: Lazy<Option<Regex>> = Lazy::new(|| {
     Regex::new(r"\b([a-z0-9_-]+):([A-Za-z0-9_./\-]+\.[a-zA-Z]+)(?::([A-Za-z_][A-Za-z0-9_]*))?\b")
-        .expect("cross-link reference regex must compile")
+        .ok()
 });
 
 /// Scan `body` for `<repo>:<path>` and `<repo>:<path>:<symbol>` tokens.
@@ -49,9 +50,12 @@ static REF_RE: Lazy<Regex> = Lazy::new(|| {
 /// it. Any of `://`, `@`, or a `//` prefix on the captured path is enough to
 /// classify the surrounding token as a URL, in which case the match is dropped.
 pub fn extract_refs(body: &str) -> Refs {
+    let Some(re) = REF_RE.as_ref() else {
+        return Refs::default();
+    };
     let bytes = body.as_bytes();
     let mut refs = Refs::default();
-    for cap in REF_RE.captures_iter(body) {
+    for cap in re.captures_iter(body) {
         let Some(whole) = cap.get(0) else { continue };
         let start = whole.start();
         let Some(repo) = cap.get(1) else { continue };

@@ -11,7 +11,7 @@ declare -a NAMES=(
   "allow-attr"
   "clippy-allow-comment"
   "unwrap-in-src"
-  "expect-without-msg"
+  "expect-in-src"
   "println-in-src"
   "eprintln-in-src"
   "todo-macro"
@@ -24,7 +24,7 @@ declare -a REGEXES=(
   '#\[allow\('
   '//\s*clippy::allow'
   '\.unwrap\(\)'
-  '\.expect\(\s*\)'
+  '\.expect\('
   '\bprintln!'
   '\beprintln!'
   '\btodo!\('
@@ -37,10 +37,24 @@ EXCLUDES=(
   ":(exclude)scripts/no-bypass-check.sh"
 )
 
+declare -a MESSAGES=(
+  "use targeted #[cfg_attr] or remove the attribute"
+  "remove clippy::allow comment — fix the root cause"
+  ".unwrap() in src/ — use ? or match"
+  ".expect() in src/ — use ? or match"
+  "println! in src/ — use tracing macros"
+  "eprintln! in src/ — use tracing macros"
+  "todo!() in src/ — implement or remove"
+  "unimplemented!() in src/ — implement or remove"
+  "unsafe block without // SAFETY: comment"
+  "panic!() in src/ — use Result instead"
+)
+
 fail=0
 for i in "${!NAMES[@]}"; do
   name="${NAMES[$i]}"
   pattern="${REGEXES[$i]}"
+  msg="${MESSAGES[$i]}"
   hits=$(git grep -nE "$pattern" -- 'src/*.rs' "${EXCLUDES[@]}" 2>/dev/null || true)
 
   # Special case: unsafe { is allowed when preceded within 3 lines by `// SAFETY:`
@@ -59,7 +73,7 @@ for i in "${!NAMES[@]}"; do
   fi
 
   if [[ -n "$hits" ]]; then
-    log_err "no-bypass-check" "forbidden pattern '$name':"
+    log_err "no-bypass-check" "forbidden pattern '$name': $msg"
     printf "%s\n" "$hits" >&2
     fail=1
   fi

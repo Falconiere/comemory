@@ -61,24 +61,32 @@ enforced by `scripts/check-all.sh`. Every PR must satisfy all five.
    Enforced by `scripts/dup-check.sh` and reviewer scrutiny.
 2. **Very modular modules.** Each `src/<module>/` directory contains
    narrow, single-purpose files. Files that change together live together.
-3. **≤500 lines per file in `src/` or `scripts/`.** Enforced by
-   `scripts/module-size-check.sh`.
+3. **≤300 code lines per file in `src/` (blanks/comments excluded).**
+   Enforced by `scripts/module-size-check.sh`.
 4. **Zero errors, zero warnings.** No `#[allow(...)]` overrides, no
-   `// clippy::allow`, no `.unwrap()` outside `tests/`, no `expect(` without
-   a message, no `println!` / `eprintln!` / `todo!()` / `unimplemented!()` /
-   `panic!` in `src/`, no `unsafe { … }` without an adjacent `// SAFETY:`
-   comment within 3 lines above. Enforced by `scripts/no-bypass-check.sh`.
-5. **Tests strictly in `tests/` mirroring `src/` 1:1.** No
+   `// clippy::allow`, no `.unwrap()` outside `tests/`, no `.expect(...)`
+   (any, with or without a message) in `src/`, no `println!` / `eprintln!` /
+   `todo!()` / `unimplemented!()` / `panic!` in `src/`, no `unsafe { … }`
+   without an adjacent `// SAFETY:` comment within 3 lines above. Enforced by
+   `scripts/no-bypass-check.sh`.
+5. **Tests strictly in `tests/` mirroring `src/` 1:1, FLAT.** No
    `#[cfg(test)] mod tests { … }` block ever appears inside any file in
-   `src/`. Items needing tests are exposed via `pub(crate)`. Each
-   `tests/<module>.rs` is a thin test binary that declares submodules in
-   `tests/<module>/`. Enforced by `scripts/test-placement-check.sh` and
+   `src/`. Items needing tests are exposed via `pub(crate)`. The mirror is
+   flat and dunder-joined: `src/<path>.rs` maps to a single
+   `tests/<dunder-path>.rs` (e.g. `src/store/tokenizer/split.rs` ↔
+   `tests/store__tokenizer__split.rs`). Each flat file is its own
+   integration-test binary — there are no `tests/<module>.rs` shims and no
+   nested `tests/<module>/` submodule directories. An oversized test file is
+   split into `<base>.rs` + `<base>_2.rs`. Shared helpers/fixtures live in
+   `tests/common/`. Enforced by `scripts/test-placement-check.sh` and
    `scripts/tests-mirror-check.sh`.
 
 ## Code Style
 
 - `rustfmt` defaults — **4-space indent**, 100-column line length
   (`rustfmt.toml`).
+- **≤300 code lines per `src/` file** (blanks/comments excluded; see
+  Binding Rule 3) — split into submodules before crossing it.
 - `cargo clippy --all-targets --all-features -- -D warnings`.
 - Doc comments (`///`) on every public item.
 - `Result<T>` alias from `crate::prelude::*`; errors flow through the
@@ -226,9 +234,12 @@ recommended caller pattern.
 ## Testing
 
 - Runner: `cargo nextest run --all-features` (alias `just test`).
-- `tests/` mirrors `src/` 1:1. Each top-level test binary
-  (`tests/<module>.rs`) is a thin shim that declares submodules in
-  `tests/<module>/`.
+- `tests/` mirrors `src/` 1:1 with a **flat, dunder-joined** layout:
+  `src/<path>.rs` ↔ `tests/<dunder-path>.rs` (e.g.
+  `src/store/tokenizer/split.rs` ↔ `tests/store__tokenizer__split.rs`).
+  Each flat file is its own integration-test binary — there are no
+  `tests/<module>.rs` shims and no nested `tests/<module>/` directories. An
+  oversized test file is split into `<base>.rs` + `<base>_2.rs`.
 - `tests/common/` carries shared fixtures (temp data-dir builders, gold
   memory samples).
 - CLI integration tests use `assert_cmd` against the real `comemory` binary.
@@ -248,7 +259,7 @@ scripts/type-check.sh            # cargo check --all-targets --all-features
 scripts/lint-check.sh            # cargo clippy --all-targets --all-features -- -D warnings
 scripts/test-placement-check.sh  # no #[cfg(test)] mod tests in src/
 scripts/no-bypass-check.sh       # no allow/unwrap/println!/unsafe-without-SAFETY/etc.
-scripts/module-size-check.sh     # no file > 500 lines in src/ or scripts/
+scripts/module-size-check.sh     # no src/ file > 300 code lines (blanks/comments excluded)
 scripts/tests-mirror-check.sh    # every src/ file has a mirror in tests/
 scripts/typos-check.sh           # typos
 ```
@@ -285,10 +296,10 @@ logic to the same gate scripts.
     `scripts/` or `just`.
   - `code-edit-rules.sh` rejects edits to `src/*.rs` that introduce
     forbidden patterns: `#[allow(...)]`, `// clippy::allow`,
-    `#[cfg(test)] mod tests`, `.unwrap()`, empty `.expect()`,
-    `println!`/`eprintln!`, `todo!()`/`unimplemented!()`, `panic!()`, or
-    `unsafe { … }` without a nearby `// SAFETY:` comment. Mirrors
-    `scripts/no-bypass-check.sh`.
+    `#[cfg(test)] mod tests`, `.unwrap()`, `.expect(...)` (any, with or
+    without a message), `println!`/`eprintln!`, `todo!()`/`unimplemented!()`,
+    `panic!()`, or `unsafe { … }` without a nearby `// SAFETY:` comment.
+    Mirrors `scripts/no-bypass-check.sh`.
   - `protected-files.sh` guards generated artifacts and config the agent
     must not edit casually.
 - **PostTool hooks** (`post-tools/modules/`):
