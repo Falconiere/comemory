@@ -13,5 +13,5 @@ filter = 'test(/embedder|memory_index|code_index/)'
 test-group = 'embedder'
 
 [[profile.default.overrides]]
-filter = 'binary(config)'
+filter = 'binary(config__env) or binary(config__env_2)'
 test-group = 'config-env'

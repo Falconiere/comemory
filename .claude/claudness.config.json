@@ -1,0 +1,8 @@
+{
+  "lang": {
+    "rust": {
+      "maxFileLines": 300,
+      "maxFnLines": 150
+    }
+  }
+}

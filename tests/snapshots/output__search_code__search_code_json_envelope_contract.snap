@@ -1,0 +1,31 @@
+---
+source: tests/output__search_code.rs
+assertion_line: 44
+expression: "search_code::envelope(&sample_hits(), None)"
+---
+{
+  "hits": [
+    {
+      "symbol_id": 12,
+      "repo": "r",
+      "path": "src/lib.rs",
+      "symbol": "alpha_router",
+      "kind": "function",
+      "lang": "rust",
+      "lines": [
+        3,
+        9
+      ],
+      "score": 1.0,
+      "source": "lexical",
+      "score_parts": {
+        "relevance": 1.0,
+        "rank": 1.0,
+        "activation": 1.0,
+        "affinity": 1.0,
+        "feedback": 1.0,
+        "final_score": 1.0
+      }
+    }
+  ]
+}
