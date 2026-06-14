@@ -106,7 +106,7 @@ fn save_json_emits_id_and_path() {
 }
 
 #[test]
-fn list_json_emits_array() {
+fn list_json_emits_page_envelope() {
     let home = TempDir::new().expect("tempdir");
     bin(&home)
         .args(["save", "first list-json body", "--kind", "note"])
@@ -126,7 +126,11 @@ fn list_json_emits_array() {
     let list = bin(&home).args(["--json", "list"]).assert().success();
     let stdout = String::from_utf8(list.get_output().stdout.clone()).expect("utf8 stdout");
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
-    let arr = v.as_array().expect("top-level JSON array");
+    // The contract is now the shared `Page` envelope, not a bare array.
+    assert!(v.is_object(), "list --json must be a Page object: {v}");
+    assert_eq!(v["total"], serde_json::json!(2));
+    assert_eq!(v["has_more"], serde_json::json!(false));
+    let arr = v["items"].as_array().expect("items array");
     assert_eq!(arr.len(), 2, "two rows expected, got {arr:?}");
     for row in arr {
         assert!(row["id"].is_string());
@@ -164,10 +168,24 @@ fn list_filters_by_repo_and_kind() {
         .assert()
         .success();
     let out = String::from_utf8(filtered.get_output().stdout.clone()).expect("utf8 stdout");
-    let line_count = out.lines().filter(|l| !l.is_empty()).count();
-    assert_eq!(line_count, 1, "exactly one alpha+bug row expected: {out:?}");
-    assert!(out.contains("alpha"));
-    assert!(out.contains("bug"));
+    // TTY output is now one row line per match plus a pagination footer. Count
+    // only the row lines (the footer line carries the dim "showing …" marker).
+    let row_lines: Vec<&str> = out
+        .lines()
+        .filter(|l| !l.is_empty() && !l.contains("showing"))
+        .collect();
+    assert_eq!(
+        row_lines.len(),
+        1,
+        "exactly one alpha+bug row expected: {out:?}"
+    );
+    assert!(row_lines[0].contains("alpha"));
+    assert!(row_lines[0].contains("bug"));
+    // The footer reflects the filtered total of one.
+    assert!(
+        out.contains("showing 1\u{2013}1 of 1 (--offset 0)"),
+        "footer missing or wrong: {out:?}"
+    );
 }
 
 #[test]
