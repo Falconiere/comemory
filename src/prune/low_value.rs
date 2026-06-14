@@ -19,8 +19,14 @@ use crate::retrieval::score;
 /// Beta feedback at/below `cfg.prune.min_feedback`, quality ≤
 /// `cfg.prune.low_value_default_below_quality` (inclusive), and zero
 /// incoming edges — plus any memory superseded by a live one and never
-/// accessed since the supersede edge was written. Returns sorted,
-/// de-duplicated ids.
+/// accessed since the supersede edge was written. Returns the FULL
+/// candidate set, sorted and de-duplicated.
+///
+/// This is the authoritative list `cli::prune --apply` soft-deletes, and the
+/// list its dry-run display windows via [`crate::output::page::Page`] —
+/// pagination never gates deletions. The activation/feedback floor runs here
+/// in Rust with the shared [`score`] primitives so prune and rerank cannot
+/// drift on what "cold" means.
 pub fn detect(conn: &Connection, cfg: &Config) -> Result<Vec<String>> {
     let now = OffsetDateTime::now_utc();
     let mut flagged = signal_rule(conn, cfg, now)?;

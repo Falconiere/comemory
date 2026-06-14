@@ -10,15 +10,12 @@
 //! flagged low-value memories through the same path as `comemory
 //! delete`.
 
-use assert_cmd::Command;
-use tempfile::TempDir;
+#[path = "common/cli_prune_support.rs"]
+mod support;
 
-/// Build a `comemory` invocation with `COMEMORY_DATA_DIR` rooted at `home`.
-fn bin(home: &TempDir) -> Command {
-    let mut c = Command::cargo_bin("comemory").expect("cargo_bin comemory");
-    c.env("COMEMORY_DATA_DIR", home.path().join(".comemory"));
-    c
-}
+use assert_cmd::Command;
+use support::{bin, make_prune_eligible, save_memory};
+use tempfile::TempDir;
 
 #[test]
 fn prune_dry_run_on_clean_db_emits_zero_counts() {
@@ -27,46 +24,25 @@ fn prune_dry_run_on_clean_db_emits_zero_counts() {
     let stdout = String::from_utf8(assertion.get_output().stdout.clone()).expect("utf8 stdout");
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
     assert_eq!(v["orphan_edges"].as_i64(), Some(0));
-    let stale: Vec<&str> = v["stale_code_files"]
+    // Each list is now a `Page` envelope: { items, limit, offset, total, has_more }.
+    let stale: Vec<&str> = v["stale_code_files"]["items"]
         .as_array()
-        .expect("stale_code_files is array")
+        .expect("stale_code_files.items is array")
         .iter()
         .map(|x| x.as_str().expect("string entry"))
         .collect();
     assert!(stale.is_empty(), "expected no stale code files: {stale:?}");
-    let low_value = v["low_value_memories"]
+    assert_eq!(v["stale_code_files"]["total"].as_u64(), Some(0));
+    assert_eq!(v["stale_code_files"]["has_more"].as_bool(), Some(false));
+    let low_value = v["low_value_memories"]["items"]
         .as_array()
-        .expect("low_value_memories is array");
+        .expect("low_value_memories.items is array");
     assert!(
         low_value.is_empty(),
         "expected no low-value memories: {low_value:?}"
     );
-}
-
-/// Save a memory via the real binary and return its id from the JSON
-/// output.
-fn save_memory(home: &TempDir, body: &str) -> String {
-    let assertion = bin(home)
-        .args(["--json", "save", body, "--kind", "note"])
-        .assert()
-        .success();
-    let stdout = String::from_utf8(assertion.get_output().stdout.clone()).expect("utf8 stdout");
-    let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse save JSON");
-    v["id"].as_str().expect("save emits id").to_string()
-}
-
-/// Make the memory prune-eligible by doctoring the mirror row: drop the
-/// quality to 2 and back-date `last_accessed` so the activation falls
-/// below the default −2.0 floor. Saves carry no feedback row, so the
-/// Beta posterior sits exactly at the 0.25 ceiling (inclusive).
-fn make_prune_eligible(home: &TempDir, id: &str) {
-    let db = home.path().join(".comemory").join("comemory.db");
-    let conn = comemory::store::connection::open(db).expect("open mirror");
-    conn.execute(
-        "UPDATE memories SET quality = 2, last_accessed = '2025-01-01T00:00:00Z' WHERE id = ?1",
-        [id],
-    )
-    .expect("doctor row");
+    assert_eq!(v["low_value_memories"]["total"].as_u64(), Some(0));
+    assert_eq!(v["low_value_memories"]["has_more"].as_bool(), Some(false));
 }
 
 #[test]
@@ -79,13 +55,14 @@ fn prune_dry_run_reports_low_value_memory_without_deleting() {
     let assertion = bin(&home).args(["--json", "prune"]).assert().success();
     let stdout = String::from_utf8(assertion.get_output().stdout.clone()).expect("utf8 stdout");
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
-    let flagged: Vec<&str> = v["low_value_memories"]
+    let flagged: Vec<&str> = v["low_value_memories"]["items"]
         .as_array()
-        .expect("low_value_memories is array")
+        .expect("low_value_memories.items is array")
         .iter()
         .map(|x| x.as_str().expect("string entry"))
         .collect();
     assert_eq!(flagged, vec![id.as_str()]);
+    assert_eq!(v["low_value_memories"]["total"].as_u64(), Some(1));
 
     // Dry run must not touch the markdown source of truth.
     let trash = home.path().join(".comemory/memories/.trash");
@@ -108,7 +85,7 @@ fn prune_apply_soft_deletes_low_value_memory() {
     let stdout = String::from_utf8(assertion.get_output().stdout.clone()).expect("utf8 stdout");
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
     assert_eq!(
-        v["low_value_memories"][0].as_str(),
+        v["low_value_memories"]["items"][0].as_str(),
         Some(id.as_str()),
         "apply-mode report must still list the flagged id"
     );
@@ -144,7 +121,10 @@ fn prune_apply_soft_deletes_low_value_memory() {
     let stdout = String::from_utf8(assertion.get_output().stdout.clone()).expect("utf8 stdout");
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
     assert_eq!(
-        v["low_value_memories"].as_array().expect("array").len(),
+        v["low_value_memories"]["items"]
+            .as_array()
+            .expect("array")
+            .len(),
         0,
         "second prune must report no low-value memories"
     );
@@ -178,9 +158,9 @@ fn prune_apply_heals_half_deleted_memory_instead_of_wedging() {
         .success();
     let stdout = String::from_utf8(assertion.get_output().stdout.clone()).expect("utf8 stdout");
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
-    let mut flagged: Vec<&str> = v["low_value_memories"]
+    let mut flagged: Vec<&str> = v["low_value_memories"]["items"]
         .as_array()
-        .expect("low_value_memories is array")
+        .expect("low_value_memories.items is array")
         .iter()
         .map(|x| x.as_str().expect("string entry"))
         .collect();
@@ -222,7 +202,10 @@ fn prune_apply_heals_half_deleted_memory_instead_of_wedging() {
     let stdout = String::from_utf8(assertion.get_output().stdout.clone()).expect("utf8 stdout");
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
     assert_eq!(
-        v["low_value_memories"].as_array().expect("array").len(),
+        v["low_value_memories"]["items"]
+            .as_array()
+            .expect("array")
+            .len(),
         0,
         "healed wedge must not be re-flagged"
     );

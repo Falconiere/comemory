@@ -638,6 +638,8 @@ Options:
       --apply                Execute the cleanup (soft-delete low-value memories, drop orphan edges + stale code symbols). Without this flag prune only scans and reports
       --json                 Emit machine-readable JSON instead of a human TTY view
       --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+      --limit <LIMIT>        Maximum number of results to return. `0` means "all" (no limit) [default: 50]
+      --offset <OFFSET>      Number of leading results to skip before the window starts [default: 0]
   -h, --help                 Print help
 
 Examples:
@@ -648,11 +650,17 @@ Examples:
   # and clean up orphan edges + stale code symbols
   comemory prune --apply
 
+  # Page the dry-run lists (window applies to display only; --apply is
+  # always full-set): second page of 20 candidates
+  comemory prune --limit 20 --offset 20
+
   # JSON output for CI/automation; Report fields:
-  #   low_value_memories — ids matching ALL of: activation < COMEMORY_PRUNE_MIN_ACTIVATION
-  #     (-2.0), Beta feedback <= COMEMORY_PRUNE_MIN_FEEDBACK (0.25), quality <=
-  #     COMEMORY_PRUNE_BELOW_QUALITY (2), and zero incoming edges — OR superseded
-  #     by a live memory with no access since the supersede edge was written.
+  #   low_value_memories / stale_code_files — Page envelopes
+  #     ({items, limit, offset, total, has_more}). low_value ids match ALL
+  #     of: activation < COMEMORY_PRUNE_MIN_ACTIVATION (-2.0), Beta feedback
+  #     <= COMEMORY_PRUNE_MIN_FEEDBACK (0.25), quality <=
+  #     COMEMORY_PRUNE_BELOW_QUALITY (2), and zero incoming edges — OR
+  #     superseded by a live memory with no access since the supersede edge.
   comemory prune --json
 ```
 
