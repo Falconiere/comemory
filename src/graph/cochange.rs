@@ -6,7 +6,7 @@
 //! FIRST parent only (standard co-change practice: the second-parent
 //! diff replays already-counted commits and would double-count pairs).
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 
 use git2::{Commit, Oid, Repository, Sort};
@@ -51,6 +51,12 @@ pub struct MineOutcome {
     /// exists (rebase/amend/force-push followed by gc, or a corrupted
     /// marker row) — the pass ran as a bounded first run instead.
     pub cursor_lost: bool,
+    /// Per repo-relative path, the number of commits in the mined window
+    /// that touched it. Counts ALL changed paths (NOT filtered to
+    /// `known_files`) because memory references can point at non-code
+    /// files (docs/configs) that never appear in `code_symbols`. Feeds
+    /// the co-activation reward; mega-commits are excluded here too.
+    pub touched: HashMap<String, u32>,
 }
 
 /// Walk commits newer than `since` (exclusive; `None` = first run,
@@ -115,6 +121,7 @@ pub fn mine_cochange(
     let capped = since.is_none() || cursor_lost;
 
     let mut counts: BTreeMap<(String, String), u32> = BTreeMap::new();
+    let mut touched: HashMap<String, u32> = HashMap::new();
     // `walked` counts commits already walked (enumerate index),
     // including mega-skipped ones — the first-run bound caps the walk,
     // not the number of pair-contributing commits.
@@ -129,6 +136,11 @@ pub fn mine_cochange(
         if changed.len() > MEGA_COMMIT_FILE_CAP {
             tracing::debug!(oid = %oid, files = changed.len(), "cochange: skipping mega-commit");
             continue;
+        }
+        // Co-activation reward counts every changed path (docs/configs
+        // included), not just the `known_files` subset co-change pairs on.
+        for path in &changed {
+            *touched.entry(path.clone()).or_insert(0) += 1;
         }
         let mut hit: Vec<&String> = changed
             .iter()
@@ -153,6 +165,7 @@ pub fn mine_cochange(
         pairs,
         cursor,
         cursor_lost,
+        touched,
     })
 }
 

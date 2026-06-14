@@ -1,8 +1,22 @@
 //! SQLite-backed edge store. Replaces the v0.1 kuzu writer.
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::prelude::*;
+
+/// The `co_activated` relation label: a weighted memory→file edge minted
+/// by the co-activation reward when commits touch files a memory
+/// references. Named here so the writer ([`crate::graph::coactivate`]) and
+/// the `edges.rel` CHECK in `0008_v8_reinforcement.sql` cannot drift on the
+/// literal. The weight accumulates via [`insert_weighted`].
+pub(crate) const CO_ACTIVATED: &str = "co_activated";
+
+/// The `references_file` relation label: a memory→file edge written by
+/// [`crate::graph::cross_link`] whose `dst_id` is the BARE `<repo>:<path>`
+/// form (no `file:` kind prefix — see [`file_node_id`]'s divergence note).
+/// Named here so the co-activation reverse query binds the same literal the
+/// cross-link writer emits.
+pub(crate) const REFERENCES_FILE: &str = "references_file";
 
 /// Addressing tuple for a single directed edge.
 ///
@@ -91,6 +105,22 @@ pub fn insert_weighted(conn: &Connection, e: EdgeKey<'_>, weight: i64) -> Result
         params![e.src_kind, e.src_id, e.dst_kind, e.dst_id, e.rel, weight],
     )?;
     Ok(())
+}
+
+/// Current accumulated weight of the edge addressed by `e`, or `0` when the
+/// edge does not yet exist. The co-activation reward reads this BEFORE
+/// [`insert_weighted`] so it can detect the Beta crossing-once boundary
+/// (`old < 2 && old + delta >= 2`) as a pure function of the stored state.
+pub(crate) fn current_weight(conn: &Connection, e: EdgeKey<'_>) -> Result<i64> {
+    let w: Option<i64> = conn
+        .query_row(
+            "SELECT weight FROM edges \
+              WHERE src_kind=?1 AND src_id=?2 AND dst_kind=?3 AND dst_id=?4 AND rel=?5",
+            params![e.src_kind, e.src_id, e.dst_kind, e.dst_id, e.rel],
+            |r| r.get(0),
+        )
+        .optional()?;
+    Ok(w.unwrap_or(0))
 }
 
 /// Outgoing neighbors of `(src_kind, src_id)` following `rel`.

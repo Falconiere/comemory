@@ -12,6 +12,20 @@ use crate::prelude::*;
 use crate::stats::sqlite::StatsDb;
 use crate::store::memory_row;
 
+/// `provenance` tag for implicit `used` feedback minted by the
+/// co-activation reward (commits touching a memory's referenced files).
+/// Distinguishes auto-reinforcement rows from the `'manual'` default
+/// written by `comemory feedback`. Matches the column added in
+/// `0008_v8_reinforcement.sql`.
+pub(crate) const PROV_AUTO_COACTIVATION: &str = "auto_coactivation";
+
+/// Sentinel `query_id` stamped on co-activation `feedback_events` rows.
+/// Deliberately NOT a real `q-<yyyymmdd>-<8hex>` id: `eval::golden::harvest`
+/// INNER JOINs `feedback_events.query_id = retrieval_log.query_id`, and this
+/// sentinel has no `retrieval_log` row, so an auto-reinforced memory can
+/// never mint a golden pair — closing the confirmation loop.
+pub(crate) const COACTIVATION_QUERY_ID: &str = "auto-coactivation";
+
 /// `q-<yyyymmdd>-<8hex>`: day-sortable, collision-resistant query id
 /// derived from the query text and a nanosecond timestamp. Not a content
 /// hash — the same query run twice gets two distinct ids. The writer
@@ -92,6 +106,32 @@ fn insert_event(
          VALUES (?1, ?2, ?3, ?4, ?5)",
         rusqlite::params![query_id, id, verdict, at, crate::stats::target::MEMORY],
     )?;
+    Ok(())
+}
+
+/// Mint one implicit `used` for `id`, tagged `provenance='auto_coactivation'`
+/// under the sentinel [`COACTIVATION_QUERY_ID`]: bumps the `feedback`
+/// counter via the shared [`upsert_used`] and writes a memory-target
+/// `feedback_events` row carrying the provenance. Composes inside the
+/// caller's transaction (the co-activation reward runs within materialize's),
+/// so it takes a bare [`Connection`] rather than a [`StatsDb`].
+///
+/// `at` is the run timestamp (already `iso_format`-shaped by the caller).
+/// The provenance column is set explicitly here; the manual `comemory
+/// feedback` path keeps writing the `'manual'` default via [`insert_event`].
+pub(crate) fn record_implicit_used(conn: &Connection, id: &str, at: &str) -> Result<()> {
+    conn.execute(
+        "INSERT INTO feedback_events(query_id, memory_id, verdict, at, target_kind, provenance)
+         VALUES (?1, ?2, 'used', ?3, ?4, ?5)",
+        rusqlite::params![
+            COACTIVATION_QUERY_ID,
+            id,
+            at,
+            crate::stats::target::MEMORY,
+            PROV_AUTO_COACTIVATION
+        ],
+    )?;
+    upsert_used(conn, id, at)?;
     Ok(())
 }
 

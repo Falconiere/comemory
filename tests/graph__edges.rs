@@ -87,6 +87,33 @@ fn insert_weighted_accumulates_on_conflict() {
     assert_eq!(weight, 5, "weights accumulate across mining runs");
 }
 
+/// The v8 `edges.rel` CHECK must admit `'co_activated'` (the memory→file
+/// reinforcement edge minted by the co-activation reward). A regression in
+/// the migration's CHECK list would surface here as an INSERT failure rather
+/// than only inside the harder-to-read end-to-end materialize test.
+#[test]
+fn co_activated_rel_is_accepted_and_accumulates() {
+    let conn = seed_db();
+    let key = EdgeKey {
+        src_kind: "memory",
+        src_id: "aaaaaaa1",
+        dst_kind: "file",
+        dst_id: "file:r:docs/x.md",
+        rel: "co_activated",
+    };
+    edges::insert_weighted(&conn, key, 1).expect("first co_activated insert");
+    edges::insert_weighted(&conn, key, 2).expect("accumulating co_activated insert");
+    let weight: i64 = conn
+        .query_row(
+            "SELECT weight FROM edges WHERE src_id='aaaaaaa1' \
+             AND dst_id='file:r:docs/x.md' AND rel='co_activated'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("co_activated weight");
+    assert_eq!(weight, 3, "co_activated weights accumulate like co_changed");
+}
+
 /// `delete_outgoing` must remove only edges *originating* at the node:
 /// incoming edges (e.g. a newer memory's `supersedes` pointing at it) have
 /// to survive — `store::memory_row` relies on this when re-saving or

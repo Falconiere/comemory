@@ -8,14 +8,16 @@
 //! land even when graph materialization cannot — a broken git history or
 //! a locked db never costs the user their freshly-indexed symbols.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use crate::graph::edges::{self, EdgeKey, file_node_id, file_node_prefix};
-use crate::graph::{cochange, imports, pagerank};
+use crate::graph::{coactivate, cochange, imports, pagerank};
 use crate::prelude::*;
+use crate::store::memory_row;
+use time::OffsetDateTime;
 
 /// Materialize the code graph for `repo`: mine new co-change pairs
 /// (incremental via the `repo_marker.last_mined_commit` cursor),
@@ -50,12 +52,18 @@ pub fn materialize(
         return Ok(());
     }
 
-    mine_into_edges(&tx, repo_root, repo, &known)?;
+    let (touched, cursor) = mine_into_edges(&tx, repo_root, repo, &known)?;
     // Built once per run: per-module resolution against the index replaces
     // the per-call rescan of every known path.
     let index = imports::PathIndex::new(&known);
     refresh_import_edges(&tx, repo, &index, imports_by_file)?;
     project_pagerank(&tx, repo, &known)?;
+    // Co-activation reward: AFTER pagerank, BEFORE the cursor advances —
+    // so the reinforcement is atomic with the cursor (a crash can't
+    // half-apply it, and the cursor still reflects only-harvested-once).
+    let at = memory_row::iso_format(OffsetDateTime::now_utc())?;
+    coactivate::harvest(&tx, repo, &touched, &at)?;
+    advance_cursor(&tx, repo, &cursor)?;
     tx.commit()?;
     Ok(())
 }
@@ -70,11 +78,11 @@ fn known_paths(tx: &Transaction<'_>, repo: &str) -> Result<Vec<String>> {
     Ok(rows)
 }
 
-/// Mine co-change pairs from commits newer than the stored cursor,
+/// Mine co-change pairs from commits newer than the stored cursor and
 /// accumulate them onto `co_changed` edges (canonical a < b order, as
-/// produced by [`cochange::mine_cochange`]), and advance the cursor to
-/// HEAD. The `repo_marker` row is created on first mine; `last_head` /
-/// `last_indexed_at` are preserved via the targeted `DO UPDATE`.
+/// produced by [`cochange::mine_cochange`]). Returns the per-pass touch map
+/// and the new HEAD cursor for the caller to feed the co-activation reward
+/// and then [`advance_cursor`] — the cursor is NOT written here.
 ///
 /// When the miner reports `cursor_lost` (the stored cursor's commit no
 /// longer resolves — history rewrite + gc, or a corrupted marker), the
@@ -87,7 +95,7 @@ fn mine_into_edges(
     repo_root: &Path,
     repo: &str,
     known: &[String],
-) -> Result<()> {
+) -> Result<(HashMap<String, u32>, String)> {
     let cursor: Option<String> = tx
         .query_row(
             "SELECT last_mined_commit FROM repo_marker WHERE repo = ?1",
@@ -125,10 +133,25 @@ fn mine_into_edges(
             i64::from(pair.count),
         )?;
     }
+    // The cursor is NOT advanced here: the co-activation reward must run
+    // (and commit atomically) before the marker moves, so a crash can't
+    // leave commits credited-but-cursored or cursored-but-uncredited. The
+    // touch map (all changed paths this pass, not just `known_files`) feeds
+    // that reward.
+    Ok((outcome.touched, outcome.cursor))
+}
+
+/// Advance the `repo_marker.last_mined_commit` cursor to the HEAD oid the
+/// miner reported. Split out of [`mine_into_edges`] so it runs AFTER the
+/// co-activation reward within the same transaction: the cursor and the
+/// reward commit together, keeping the once-only harvest invariant intact
+/// even on a crash. The `repo_marker` row is created on first mine;
+/// `last_head` / `last_indexed_at` are preserved via the targeted update.
+fn advance_cursor(tx: &Transaction<'_>, repo: &str, cursor: &str) -> Result<()> {
     tx.execute(
         "INSERT INTO repo_marker(repo, last_mined_commit) VALUES(?1, ?2) \
          ON CONFLICT(repo) DO UPDATE SET last_mined_commit = excluded.last_mined_commit",
-        params![repo, outcome.cursor],
+        params![repo, cursor],
     )?;
     Ok(())
 }
