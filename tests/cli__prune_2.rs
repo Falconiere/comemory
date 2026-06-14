@@ -168,3 +168,82 @@ fn prune_apply_with_limit_one_soft_deletes_all_candidates() {
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
     assert_eq!(v["low_value_memories"]["total"].as_u64(), Some(0));
 }
+
+#[test]
+fn prune_apply_drops_dangling_co_activated_but_keeps_live_one() {
+    // `co_activated` edges point at the `file:`-PREFIXED node id
+    // (`file:<repo>:<path>`), unlike `references_file`'s bare form. When a
+    // referenced file's `code_symbols` rows are purged the edge dangles;
+    // `--apply` must delete the dangling one while leaving the live one (whose
+    // dst file still has a `code_symbols` row) untouched.
+    use comemory::store::code_row::{self, CodeSymbolRow};
+
+    let home = TempDir::new().expect("tempdir");
+    // A save bootstraps the data dir + migrated mirror.
+    let mem = save_memory(&home, "co_activated prune fixture body");
+
+    let db = home.path().join(".comemory").join("comemory.db");
+    let conn = comemory::store::connection::open(db).expect("open mirror");
+
+    // One LIVE file (`live.rs`) with a real code_symbols row; `gone.rs` has
+    // none, so its co_activated edge is dangling.
+    code_row::insert(
+        &conn,
+        &CodeSymbolRow {
+            repo: "demo",
+            path: "live.rs",
+            blob_oid: "oid",
+            symbol: "live_fn",
+            kind: "function",
+            lang: "rust",
+            line_start: 1,
+            line_end: 10,
+            snippet: "fn live_fn() {}",
+            simhash: 0,
+            parent_id: None,
+        },
+    )
+    .expect("insert live code symbol");
+    // Register `live.rs` in `indexed_files` so the stale-code cleanup (which
+    // runs in the SAME `--apply` transaction, BEFORE the co_activated sweep)
+    // does not purge its `code_symbols` row out from under the live edge.
+    conn.execute(
+        "INSERT INTO indexed_files(repo, path, blob_oid, indexed_at) \
+         VALUES('demo','live.rs','oid','t')",
+        [],
+    )
+    .expect("register live indexed_file");
+
+    // Seed both co_activated edges directly (the reinforcement writer uses the
+    // `file:`-prefixed dst grammar — match it here).
+    for dst in ["file:demo:live.rs", "file:demo:gone.rs"] {
+        conn.execute(
+            "INSERT INTO edges(src_kind,src_id,dst_kind,dst_id,rel,weight,created_at) \
+             VALUES('memory',?1,'file',?2,'co_activated',3,'t')",
+            rusqlite::params![mem, dst],
+        )
+        .expect("seed co_activated edge");
+    }
+    drop(conn);
+
+    bin(&home)
+        .args(["--json", "prune", "--apply"])
+        .assert()
+        .success();
+
+    // Re-open and assert: the live edge survives, the dangling one is gone.
+    let db = home.path().join(".comemory").join("comemory.db");
+    let conn = comemory::store::connection::open(db).expect("reopen mirror");
+    let remaining: Vec<String> = conn
+        .prepare("SELECT dst_id FROM edges WHERE rel = 'co_activated' ORDER BY dst_id")
+        .expect("prepare")
+        .query_map([], |r| r.get::<_, String>(0))
+        .expect("query")
+        .filter_map(std::result::Result::ok)
+        .collect();
+    assert_eq!(
+        remaining,
+        vec!["file:demo:live.rs".to_string()],
+        "dangling co_activated edge must be pruned, live one kept"
+    );
+}

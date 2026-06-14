@@ -205,15 +205,18 @@ fn rank_code_refs(
     raw_refs: Vec<RawRef>,
     working_set: &WorkingSet,
 ) -> Result<Vec<CodeRow>> {
-    // A row that vanished between lookup and scoring (raced re-index
-    // delete) degrades to `None` and sorts with the unresolved refs.
-    let mut sigs: Vec<Option<Signals>> = Vec::with_capacity(raw_refs.len());
-    for r in &raw_refs {
-        sigs.push(match r.symbol_id {
-            Some(id) => code_prior::signals(conn, id)?,
-            None => None,
-        });
-    }
+    // Fetch every resolved ref's signals in ONE batched query, then map back
+    // per-ref preserving order. A row that vanished between lookup and scoring
+    // (raced re-index delete) has no map entry, degrading to the same `None`
+    // the per-ref `signals` returned — it sorts with the unresolved refs.
+    let ids: Vec<i64> = raw_refs.iter().filter_map(|r| r.symbol_id).collect();
+    let by_id = code_prior::signals_batch(conn, &ids)?;
+    let sigs: Vec<Option<Signals>> = raw_refs
+        .iter()
+        // `.cloned()` (not `remove`) so two refs sharing a `symbol_id` each
+        // get the row, exactly as the per-ref `signals` fetch did.
+        .map(|r| r.symbol_id.and_then(|id| by_id.get(&id).cloned()))
+        .collect();
     let median = code_prior::median_file_rank(
         sigs.iter()
             .flatten()
