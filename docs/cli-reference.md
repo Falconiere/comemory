@@ -459,6 +459,8 @@ Options:
       --lang <LANG>          Language tag: `rs`/`rust`, `ts`/`tsx`/`typescript`, `js`/`jsx`/`javascript`, `py`/`python`, `go`
       --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
       --file <FILE>          File to search
+      --limit <LIMIT>        Maximum number of results to return. `0` means "all" (no limit) [default: 50]
+      --offset <OFFSET>      Number of leading results to skip before the window starts [default: 0]
   -h, --help                 Print help
 
 Examples:

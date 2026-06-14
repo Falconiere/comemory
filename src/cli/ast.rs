@@ -12,7 +12,9 @@ use serde::Serialize;
 
 use crate::ast::languages::{self, Lang};
 use crate::ast::pattern::find;
-use crate::output::json;
+use crate::cli::pagination::PaginationArgs;
+use crate::output::page::Page;
+use crate::output::{json, tty};
 use crate::prelude::*;
 
 const EXAMPLES: &str = "\
@@ -39,6 +41,9 @@ pub struct Args {
     /// File to search.
     #[arg(long)]
     pub file: PathBuf,
+    /// `--limit` / `--offset` window over the matches.
+    #[command(flatten)]
+    pub page: PaginationArgs,
 }
 
 /// One row of `comemory ast` output (mirrors the `(line, text)` shape returned
@@ -64,14 +69,16 @@ pub async fn run(a: Args, json_flag: bool, _data_dir: Option<PathBuf>) -> Result
         .into_iter()
         .map(|(line, text)| Row { line, text })
         .collect();
+    let page = Page::from_slice(rows, a.page.limit, a.page.offset);
 
     if json_flag {
-        json::write(&rows)?;
+        json::write(&page)?;
     } else {
         let mut out = std::io::stdout().lock();
-        for r in &rows {
+        for r in &page.items {
             writeln!(out, "{}:{}  {}", a.file.display(), r.line, r.text)?;
         }
+        tty::write_page_footer(&mut out, page.items.len(), page.offset, page.total)?;
     }
     Ok(())
 }
