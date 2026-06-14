@@ -280,6 +280,88 @@ fn context_code_refs_ranked_by_priors_with_rank_parts() {
     assert!(hot < cold, "TTY order must match ranked order: {stdout}");
 }
 
+/// Phase 0 auto-reinforcement: a tracked `context` lookup must self-reinforce
+/// the code refs it actually surfaced — the code-side twin of the memory
+/// access bump. End-to-end: index a real fixture repo, save a memory that
+/// cross-links one of the two indexed symbols, run `context`, and assert the
+/// referenced symbol's `access_count` rose to 1 while the un-referenced
+/// symbol stayed at 0 (proving the bump is scoped to returned refs, not the
+/// whole index).
+#[test]
+fn context_bumps_access_count_for_resolved_code_refs() {
+    let home = TempDir::new().expect("tempdir");
+    let workspace = TempDir::new().expect("workspace");
+    let repo = workspace.path().join("code-repo");
+    git_repo::init_repo(&repo);
+    git_commit::commit_files(
+        &repo,
+        &[(
+            "alpha.rs",
+            "fn alpha_router() {}\nfn unrelated_helper() {}\n",
+        )],
+        "init",
+    );
+    bin(&home)
+        .args(["index-code", "--repo", "r", "--path"])
+        .arg(&repo)
+        .assert()
+        .success();
+
+    // The memory cross-links ONLY alpha_router, so unrelated_helper never
+    // enters the bundle and must keep its zero access count.
+    save_memory(
+        &home,
+        "router decision references r:alpha.rs:alpha_router for dispatch",
+        "decision",
+    );
+
+    let db_path = home.path().join(".comemory").join("comemory.db");
+    // Fresh index: nothing accessed yet.
+    {
+        let conn = connection::open(&db_path).expect("open");
+        let touched: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM code_symbols WHERE access_count > 0",
+                [],
+                |r| r.get(0),
+            )
+            .expect("count accessed");
+        assert_eq!(touched, 0, "fresh index must have zero accessed symbols");
+    }
+
+    let v = context_json(&home, "router decision dispatch", &[]);
+    let refs = v["code_refs"].as_array().expect("code_refs array");
+    assert!(
+        refs.iter()
+            .any(|r| r["symbol"].as_str() == Some("alpha_router")),
+        "alpha_router must be surfaced as a resolved code ref: {v}"
+    );
+
+    let conn = connection::open(&db_path).expect("open");
+    let referenced: i64 = conn
+        .query_row(
+            "SELECT access_count FROM code_symbols WHERE symbol = 'alpha_router'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("alpha_router row");
+    assert_eq!(
+        referenced, 1,
+        "the resolved code ref must be bumped exactly once by the tracked lookup"
+    );
+    let unreferenced: i64 = conn
+        .query_row(
+            "SELECT access_count FROM code_symbols WHERE symbol = 'unrelated_helper'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("unrelated_helper row");
+    assert_eq!(
+        unreferenced, 0,
+        "a symbol never surfaced in the bundle must not be bumped"
+    );
+}
+
 /// Zero pipeline hits: the empty-hits guard skips the working-set build
 /// (`WorkingSet::default()` instead of git discovery) and the no-hits
 /// context call must still succeed with an empty bundle. The skipped git

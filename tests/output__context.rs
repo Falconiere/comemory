@@ -14,6 +14,7 @@ fn empty_bundle() -> Bundle<'static> {
         memories: Vec::new(),
         code_refs: Vec::new(),
         relations: Vec::new(),
+        resolved_code_ids: Vec::new(),
     }
 }
 
@@ -72,6 +73,7 @@ fn code_ref_rank_parts_serialize_when_present_and_skip_when_none() {
             },
         ],
         relations: Vec::new(),
+        resolved_code_ids: Vec::new(),
     };
     let v = serde_json::to_value(context::envelope(&bundle, None)).expect("serialize");
     let refs = v["code_refs"].as_array().expect("code_refs array");

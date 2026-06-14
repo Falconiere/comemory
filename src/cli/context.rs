@@ -21,7 +21,7 @@ use crate::output;
 use crate::prelude::*;
 use crate::retrieval::code_rerank::WorkingSet;
 use crate::retrieval::{bundle, pipeline};
-use crate::store::connection;
+use crate::store::{code_row, connection};
 
 // The closing working-set caveat sentence is intentionally duplicated in
 // `cli::search_code::EXAMPLES` (same semantics; only the command name and
@@ -89,6 +89,14 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
 
     let vec = embedding_input::read_optional(a.vector_stdin, a.vector.as_deref())?;
     let cfg = override_top_k(load_config(&paths)?, a.k);
+    // A user-facing lookup always tracks. The flag is carried on
+    // `SearchOptions` so the memory access bump (inside `pipeline::search`)
+    // and the code-ref bump below share one gate: an eval/tune caller that
+    // ever runs `context` with `track = false` suppresses both signals.
+    let opts = pipeline::SearchOptions {
+        track: true,
+        source: crate::stats::source::CONTEXT,
+    };
     let run = pipeline::search(
         &cfg,
         &conn,
@@ -96,10 +104,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         vec.as_deref(),
         a.repo.as_deref(),
         None,
-        pipeline::SearchOptions {
-            track: true,
-            source: crate::stats::source::CONTEXT,
-        },
+        opts,
     )?;
     let ids: Vec<String> = run.hits.into_iter().map(|h| h.memory_id).collect();
     // Zero hits → no edges to walk, hence no code refs for the affinity
@@ -111,5 +116,12 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         WorkingSet::from_cwd(a.repo.as_deref())
     };
     let bundle = bundle::assemble(&conn, &cfg, &a.query, &ids, &ws)?;
+    // Self-reinforce the code refs the bundle actually surfaced (resolved
+    // to an indexed `code_symbols` row), the code-side twin of the memory
+    // access bump `pipeline::search` already applied — gated by the same
+    // `opts.track` flag and best-effort via the shared writer.
+    if opts.track {
+        code_row::record_access(&conn, &bundle.resolved_code_ids);
+    }
     output::context::emit(&bundle, run.query_id.as_deref(), json_flag)
 }
