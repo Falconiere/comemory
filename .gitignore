@@ -3,6 +3,9 @@
 /web/.vite
 /.claude/tmp/
 /.fastembed_cache/
+# cargo-mutants scratch output — never committed
+/mutants.out/
+/mutants.out.old/
 
 # Local MCP config — not committed
 .mcp.json

@@ -16,6 +16,18 @@ qa:
     bash scripts/dup-check.sh
     bash scripts/machete-check.sh
 
+# Run the test suite under cargo-llvm-cov; enforce coverage-floor.txt if present.
+coverage:
+    bash scripts/coverage-check.sh
+
+# Full-crate mutation run (slow; nightly CI job). Survivor => non-zero exit.
+mutation:
+    bash scripts/mutation-check.sh full
+
+# Score lexical retrieval against the frozen golden corpus.
+eval:
+    bash scripts/eval-check.sh
+
 # Run criterion benches and write a Markdown report to docs/bench/latest.md.
 bench:
     bash scripts/bench.sh

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Shared helpers for scripts/ — sourced, not executed.
-# Provides: PROJECT_ROOT, log_info, log_err, log_ok, die, run_cargo
+# Provides: PROJECT_ROOT, log_info, log_err, log_ok, die, run_cargo, require_cmd
 
 set -euo pipefail
 
@@ -24,4 +24,10 @@ die()      { log_err "${1:-script}" "${2:-failed}"; exit 1; }
 # Run a cargo command from PROJECT_ROOT.
 run_cargo() {
   cd "$PROJECT_ROOT" && cargo "$@"
+}
+
+# Fail with an install hint if a required command is missing.
+# Usage: require_cmd <command> [install-hint]
+require_cmd() {
+  command -v "$1" >/dev/null 2>&1 || die "$1" "not found — install: ${2:-$1}"
 }

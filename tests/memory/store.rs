@@ -151,3 +151,50 @@ fn list_skips_malformed_files_and_returns_valid_ones() {
     );
     assert_eq!(list[0].frontmatter.id, good.frontmatter.id);
 }
+
+/// Kills the `||` → `&&` mutant on `MemoryStore::list` line 207.
+///
+/// The skip predicate is:
+///   `!name.ends_with(".md") || name.starts_with('.')`
+///
+/// Under `&&` that becomes:
+///   `!name.ends_with(".md") && name.starts_with('.')`
+///
+/// Two rogue files expose each half independently:
+///
+/// 1. `.hidden.md` — starts with `.` AND ends with `.md`.
+///    With `||` the predicate is true (dot-prefix) → skipped ✓
+///    With `&&` the predicate is false (ends with .md, so first clause false) → included ✗
+///
+/// 2. `notes.txt` — does NOT end with `.md` and does NOT start with `.`.
+///    With `||` the predicate is true (not .md) → skipped ✓
+///    With `&&` the predicate is false (no dot-prefix, so second clause false) → included ✗
+///
+/// The test expects exactly the one real memory; under the mutant either
+/// rogue file makes the count > 1 (or causes a parse error that inflates
+/// the skip counter rather than the result).
+#[test]
+fn list_skips_dot_prefix_md_and_non_md_files() {
+    let sb = common::runner::Sandbox::new();
+    let paths = Paths::new(sb.data_dir());
+    paths.ensure_dirs().unwrap();
+    let store = MemoryStore::new(paths.clone());
+
+    let good = store.save(quick("real memory")).unwrap();
+
+    // File that starts with '.' and ends with '.md' — should be skipped.
+    let hidden_md = paths.memories_dir().join(".hidden.md");
+    std::fs::write(&hidden_md, "---\nid: 00000000\n---\nhidden\n").unwrap();
+
+    // File that does not end with '.md' and has no dot-prefix — should be skipped.
+    let non_md = paths.memories_dir().join("notes.txt");
+    std::fs::write(&non_md, "plain text, not a memory\n").unwrap();
+
+    let list = store.list().unwrap();
+    assert_eq!(
+        list.len(),
+        1,
+        "list must include only the real memory; dot-prefix .md and non-.md files must be skipped. got {list:?}"
+    );
+    assert_eq!(list[0].frontmatter.id, good.frontmatter.id);
+}
