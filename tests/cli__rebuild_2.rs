@@ -283,6 +283,165 @@ fn rebuild_preserves_v6_code_graph_state() {
     );
 }
 
+/// Step 4 (v8 auto-reinforcement): the reinforcement state earned by the
+/// co-activation reward is DB-only — markdown has no source for it — so
+/// `comemory rebuild` must carry it forward exactly like the v6 mined edges
+/// and the feedback counters. This seeds the three reinforcement channels
+/// the way `graph::coactivate::reward_pair` + `feedback::record_implicit_used`
+/// write them — a weighted `co_activated` memory→file edge, an
+/// `auto_coactivation`-provenance `feedback_events` row under the
+/// `auto-coactivation` sentinel query id, and the `feedback.used_count` bump
+/// that minted it — then asserts all three survive a rebuild. Without Step 4
+/// the rebuild would silently erase the accumulated reinforcement.
+#[test]
+fn rebuild_preserves_v8_reinforcement_state() {
+    let home = tempdir().expect("tempdir");
+
+    let save = run_json(
+        &home,
+        &[
+            "save",
+            "--kind",
+            "decision",
+            "--repo",
+            "myrepo",
+            "co-activation reward reinforces this memory",
+        ],
+    );
+    let memory_id = save["id"].as_str().expect("save id").to_string();
+
+    // Seed the earned reinforcement state the materialize/coactivate path
+    // produces: a weighted co_activated memory→file edge (canonical
+    // `file:<repo>:<path>` dst_id), the implicit feedback_events row tagged
+    // provenance='auto_coactivation' under the sentinel query id, and the
+    // feedback.used_count bump that minted it.
+    let file_node = "file:myrepo:src/lib.rs";
+    {
+        let conn = open_db(&home);
+        conn.execute(
+            "INSERT INTO edges(src_kind, src_id, dst_kind, dst_id, rel, weight, created_at) \
+             VALUES ('memory', ?1, 'file', ?2, 'co_activated', 5, '2026-06-12T00:00:00Z')",
+            rusqlite::params![memory_id, file_node],
+        )
+        .expect("seed co_activated edge");
+        conn.execute(
+            "INSERT INTO feedback_events(query_id, memory_id, verdict, at, target_kind, provenance) \
+             VALUES ('auto-coactivation', ?1, 'used', '2026-06-12T00:00:00Z', 'memory', \
+                     'auto_coactivation')",
+            rusqlite::params![memory_id],
+        )
+        .expect("seed implicit feedback_events row");
+        conn.execute(
+            "INSERT INTO feedback(memory_id, used_count, irrelevant_count, last_used) \
+             VALUES (?1, 3, 0, '2026-06-12T00:00:00Z')",
+            rusqlite::params![memory_id],
+        )
+        .expect("seed feedback counter");
+    }
+
+    run_rebuild(&home);
+
+    let conn = open_db(&home);
+    // The co_activated edge survives with its accumulated weight.
+    let edge_weight: i64 = conn
+        .query_row(
+            "SELECT weight FROM edges WHERE rel = 'co_activated' \
+               AND src_kind = 'memory' AND src_id = ?1 \
+               AND dst_kind = 'file' AND dst_id = ?2",
+            rusqlite::params![memory_id, file_node],
+            |r| r.get(0),
+        )
+        .expect("co_activated edge must survive rebuild");
+    assert_eq!(edge_weight, 5, "co_activated weight must survive rebuild");
+
+    // The implicit feedback_events row survives WITH its provenance tag.
+    let (verdict, provenance): (String, String) = conn
+        .query_row(
+            "SELECT verdict, provenance FROM feedback_events \
+               WHERE query_id = 'auto-coactivation' AND memory_id = ?1",
+            rusqlite::params![memory_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .expect("implicit feedback_events row must survive rebuild");
+    assert_eq!(verdict, "used", "implicit verdict must survive rebuild");
+    assert_eq!(
+        provenance, "auto_coactivation",
+        "auto_coactivation provenance must survive rebuild"
+    );
+
+    // The feedback counter (the implicit reward lands here) survives.
+    let used: i64 = conn
+        .query_row(
+            "SELECT used_count FROM feedback WHERE memory_id = ?1",
+            rusqlite::params![memory_id],
+            |r| r.get(0),
+        )
+        .expect("feedback counter must survive rebuild");
+    assert_eq!(used, 3, "implicit used_count must survive rebuild");
+}
+
+/// Step 4: a pre-0008 source DB whose `feedback_events` table lacks the v8
+/// `provenance` column must still rebuild — the copy probes for the column
+/// and defaults a missing one to `'manual'` (the same backfill the 0008
+/// migration applies). Replaying the migration chain on a raw connection up
+/// to v7 is not viable (0004+ needs the custom FTS5 identifier tokenizer,
+/// which is only registered by `connection::open`), so the v8 source is
+/// opened fully migrated and then its `provenance` column is dropped to
+/// reproduce the pre-v8 `feedback_events` shape that the rebuild copy's
+/// structural `old_column_exists` probe keys off — the probe reads
+/// `pragma_table_info`, never `schema_meta`, so the dropped column is an
+/// exact stand-in for a genuinely pre-v8 source.
+#[test]
+fn rebuild_defaults_missing_provenance_to_manual() {
+    let home = tempdir().expect("tempdir");
+
+    // Save a memory so the DB exists and is fully migrated to v8.
+    let save = run_json(
+        &home,
+        &["save", "--kind", "note", "pre-v8 provenance probe"],
+    );
+    let memory_id = save["id"].as_str().expect("save id").to_string();
+
+    // Seed a feedback_events row, then DROP the v8 provenance column so the
+    // source looks pre-0008 to the rebuild copy's structural column probe.
+    {
+        let conn = open_db(&home);
+        conn.execute(
+            "INSERT INTO feedback_events(query_id, memory_id, verdict, at, target_kind, provenance) \
+             VALUES ('q-20260103-aabbccdd', ?1, 'used', '2026-01-03T00:00:00Z', 'memory', \
+                     'auto_coactivation')",
+            rusqlite::params![memory_id],
+        )
+        .expect("seed feedback_events row");
+        conn.execute_batch("ALTER TABLE feedback_events DROP COLUMN provenance;")
+            .expect("drop provenance column to simulate pre-v8 source");
+        let has_prov: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM pragma_table_info('feedback_events') \
+                   WHERE name = 'provenance'",
+                [],
+                |r| r.get(0),
+            )
+            .expect("probe provenance");
+        assert_eq!(has_prov, 0, "source must now lack the v8 provenance column");
+    }
+
+    run_rebuild(&home);
+
+    let conn = open_db_with_vec(&home);
+    let provenance: String = conn
+        .query_row(
+            "SELECT provenance FROM feedback_events WHERE memory_id = ?1",
+            rusqlite::params![memory_id],
+            |r| r.get(0),
+        )
+        .expect("pre-v8 feedback_events row must survive rebuild");
+    assert_eq!(
+        provenance, "manual",
+        "missing pre-v8 provenance must default to 'manual'"
+    );
+}
+
 /// Regression: a `comemory.db` written by a pre-v4 binary is attached raw
 /// (`ATTACH DATABASE`, never migrated) during rebuild, so its 12-column
 /// `code_symbols` table
