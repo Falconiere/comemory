@@ -241,6 +241,8 @@ fn fetch_edges(
     }
 
     let total: usize = {
+        // The COUNT carries only the filter params (`min_weight`/`repo`) — never
+        // the window.
         let count_sql = format!("SELECT count(*) FROM edges{where_clause}");
         let mut stmt = conn.prepare(&count_sql)?;
         let n: i64 = stmt.query_row(
@@ -251,15 +253,18 @@ fn fetch_edges(
     };
 
     // SQLite forbids a bare `OFFSET`, so `limit == 0` ("all") uses its
-    // `LIMIT -1` ("no limit") idiom while still honoring `offset`.
-    let window = if limit == 0 {
-        format!(" LIMIT -1 OFFSET {offset}")
+    // `LIMIT -1` ("no limit") idiom while still honoring `offset`. Both are
+    // bound params appended after the filter params.
+    let limit_param: i64 = if limit == 0 {
+        -1
     } else {
-        format!(" LIMIT {limit} OFFSET {offset}")
+        i64::try_from(limit).unwrap_or(i64::MAX)
     };
+    binds.push(Box::new(limit_param));
+    binds.push(Box::new(i64::try_from(offset).unwrap_or(i64::MAX)));
     let sql = format!(
         "SELECT src_id, dst_id, rel, weight FROM edges{where_clause} \
-          ORDER BY weight DESC, rel ASC, src_id ASC, dst_id ASC{window}"
+          ORDER BY weight DESC, rel ASC, src_id ASC, dst_id ASC LIMIT ? OFFSET ?"
     );
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt

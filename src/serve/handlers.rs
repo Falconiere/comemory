@@ -115,6 +115,10 @@ fn parse_window_param(v: Option<i64>, name: &str, default: usize) -> Result<usiz
     match v {
         None => Ok(default),
         Some(n) if n < 0 => Err(Error::BadRequest(format!("{name} must be >= 0"))),
+        // An out-of-range-high value (only possible on a target where usize is
+        // narrower than i64) clamps to usize::MAX rather than being rejected;
+        // pagination then bounds the page by the actual total. Negatives are
+        // already rejected above, so the clamp can never hide a sign error.
         Some(n) => Ok(usize::try_from(n).unwrap_or(usize::MAX)),
     }
 }
