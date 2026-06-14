@@ -36,33 +36,74 @@ pub struct Row<'a> {
     pub score_parts: &'a ScoreParts,
 }
 
+/// Pagination cursor metadata carried alongside the hits in an
+/// [`Envelope`]. `total` is the in-window ranked count (the diversified
+/// list the page was sliced from, capped by `max_page_window`), not a
+/// global match count.
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct PageMeta {
+    /// Requested page size (`--k` / `--limit`).
+    pub limit: usize,
+    /// Number of leading ranked results skipped (`--offset`).
+    pub offset: usize,
+    /// Whether more in-window ranked results exist beyond this page.
+    pub has_more: bool,
+    /// In-window ranked count the page was sliced from.
+    pub total: Option<usize>,
+}
+
 /// JSON envelope returned to `--json` callers. Wraps the hits under `hits`
 /// so future top-level fields (route, filters, ...) can be added without
-/// breaking parsers.
+/// breaking parsers. `hits` and `query_id` are unchanged from the
+/// pre-pagination contract; `limit` / `offset` / `has_more` / `total` are
+/// the pagination cursor (see [`PageMeta`]).
 #[derive(Serialize)]
 pub struct Envelope<'a> {
-    /// Reranked hits in final pipeline order.
+    /// Reranked hits in final pipeline order for the requested page.
     pub hits: Vec<Row<'a>>,
     /// Id of the retrieval_log row for this run; absent when logging
     /// was off or failed. Feed it back via `comemory feedback <id>`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub query_id: Option<&'a str>,
+    /// Requested page size.
+    pub limit: usize,
+    /// Number of leading ranked results skipped.
+    pub offset: usize,
+    /// Whether more in-window ranked results exist beyond this page.
+    pub has_more: bool,
+    /// In-window ranked count (diversified) the page was sliced from;
+    /// `None` when not cheaply known.
+    pub total: Option<usize>,
 }
 
 /// Build the serializable envelope. Public so snapshot tests can pin the
 /// JSON contract without going through stdout.
-pub fn envelope<'a>(hits: &'a [Reranked], query_id: Option<&'a str>) -> Envelope<'a> {
+pub fn envelope<'a>(
+    hits: &'a [Reranked],
+    query_id: Option<&'a str>,
+    page: PageMeta,
+) -> Envelope<'a> {
     Envelope {
         hits: hits.iter().map(row_from).collect(),
         query_id,
+        limit: page.limit,
+        offset: page.offset,
+        has_more: page.has_more,
+        total: page.total,
     }
 }
 
 /// Render `hits` to stdout in either JSON or TTY mode. `query_id` is the
-/// retrieval_log id for this run (JSON field / TTY footer); `None` skips it.
-pub fn emit(hits: &[Reranked], query_id: Option<&str>, json_flag: bool) -> Result<()> {
+/// retrieval_log id for this run (JSON field / TTY footer); `None` skips
+/// it. `page` carries the pagination cursor for the JSON envelope.
+pub fn emit(
+    hits: &[Reranked],
+    query_id: Option<&str>,
+    page: PageMeta,
+    json_flag: bool,
+) -> Result<()> {
     if json_flag {
-        return json::write(&envelope(hits, query_id));
+        return json::write(&envelope(hits, query_id, page));
     }
     write_tty(&mut std::io::stdout().lock(), hits, query_id)
 }

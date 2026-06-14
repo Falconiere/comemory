@@ -2,7 +2,7 @@
 //! route → rerank → diversify → top-k path plus best-effort access
 //! tracking and query logging.
 
-use comemory::retrieval::pipeline::{SearchOptions, search};
+use comemory::retrieval::pipeline::{PageWindow, SearchOptions, search};
 use comemory::simhash::{NEAR_DUP_HAMMING, hamming64};
 
 fn seeded() -> (tempfile::TempDir, rusqlite::Connection) {
@@ -34,6 +34,7 @@ fn search_returns_reranked_diversified_hits() {
         SearchOptions {
             track: false,
             source: "search",
+            window: PageWindow::top_k(&cfg),
         },
     )
     .expect("search");
@@ -56,6 +57,7 @@ fn retrieval_hit_bumps_access_tracking() {
         SearchOptions {
             track: true,
             source: "search",
+            window: PageWindow::top_k(&cfg),
         },
     )
     .expect("search");
@@ -91,6 +93,7 @@ fn access_tracking_failure_does_not_break_reads() {
         SearchOptions {
             track: true,
             source: "search",
+            window: PageWindow::top_k(&cfg),
         },
     )
     .expect("search must succeed when access tracking cannot write");
@@ -123,6 +126,7 @@ fn search_with_track_logs_one_retrieval_log_row() {
         SearchOptions {
             track: true,
             source: "search",
+            window: PageWindow::top_k(&cfg),
         },
     )
     .expect("search");
@@ -156,6 +160,7 @@ fn search_with_filters_logs_repo_kind_and_source() {
         SearchOptions {
             track: true,
             source: "search",
+            window: PageWindow::top_k(&cfg),
         },
     )
     .expect("search");
@@ -186,6 +191,7 @@ fn search_without_filters_logs_null_repo_and_kind() {
         SearchOptions {
             track: true,
             source: "context",
+            window: PageWindow::top_k(&cfg),
         },
     )
     .expect("search");
@@ -224,6 +230,7 @@ fn search_without_track_logs_nothing_and_freezes_access() {
             SearchOptions {
                 track: false,
                 source: "search",
+                window: PageWindow::top_k(&cfg),
             },
         )
         .expect("search");
@@ -300,6 +307,7 @@ fn pipeline_cuts_to_configured_top_k() {
         SearchOptions {
             track: false,
             source: "search",
+            window: PageWindow::top_k(&cfg),
         },
     )
     .expect("search");

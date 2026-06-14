@@ -224,3 +224,33 @@ fn bad_clamp_wrong_arity_is_an_error() {
         );
     }
 }
+
+#[test]
+fn env_max_page_window_override_applies() {
+    // COMEMORY_RETRIEVAL_MAX_PAGE_WINDOW caps how deep pagination can reach.
+    // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
+    unsafe { std::env::set_var("COMEMORY_RETRIEVAL_MAX_PAGE_WINDOW", "75") };
+    let c = Config::defaults().with_env();
+    // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
+    unsafe { std::env::remove_var("COMEMORY_RETRIEVAL_MAX_PAGE_WINDOW") };
+    assert_eq!(
+        c.expect("override must succeed").retrieval.max_page_window,
+        75
+    );
+}
+
+#[test]
+fn env_zero_max_page_window_returns_err() {
+    // 0 is invalid — the window must admit at least one page.
+    // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
+    unsafe { std::env::set_var("COMEMORY_RETRIEVAL_MAX_PAGE_WINDOW", "0") };
+    let result = Config::defaults().with_env();
+    // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
+    unsafe { std::env::remove_var("COMEMORY_RETRIEVAL_MAX_PAGE_WINDOW") };
+    let err = result.expect_err("0 max_page_window must error");
+    assert!(
+        err.to_string()
+            .contains("COMEMORY_RETRIEVAL_MAX_PAGE_WINDOW"),
+        "error must name the offending var, got: {err}"
+    );
+}

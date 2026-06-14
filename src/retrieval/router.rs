@@ -66,9 +66,11 @@ pub enum Source {
 /// possible. When only `query` is provided (no `vec`), only the lexical
 /// path runs.
 ///
-/// The fetch size is [`CANDIDATE_POOL`] (or `top_k` when configured
-/// larger): `route` produces a candidate pool for the rerank + diversify
-/// stages, which perform the final `top_k` cut. When the strict lexical
+/// The fetch size is the caller-supplied `pool` (see
+/// [`crate::retrieval::pipeline::pool_size`], which clamps it into
+/// `[CANDIDATE_POOL, max_page_window]` for the requested page): `route`
+/// produces a candidate pool for the rerank + diversify stages, which
+/// perform the final paginated cut. When the strict lexical
 /// leg comes back empty (in either the pure-lexical or the hybrid path),
 /// the relaxed ladder in [`lexical_ladder`] retries it: a word-level OR
 /// tier (queries with ≥ 2 terms) so a single absent term cannot zero out
@@ -90,8 +92,9 @@ pub fn route(
     vec: Option<&[f32]>,
     repo: Option<&str>,
     kind: Option<&str>,
+    pool: usize,
 ) -> Result<Vec<RoutedHit>> {
-    let k = CANDIDATE_POOL.max(cfg.retrieval.top_k);
+    let k = pool;
 
     // Trim the query before dispatching: a whitespace-only query like
     // `"   "` is lexically empty (FTS5 returns no rows for it) so the

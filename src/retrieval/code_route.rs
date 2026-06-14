@@ -10,7 +10,7 @@ use rusqlite::Connection;
 use crate::config::Config;
 use crate::prelude::*;
 use crate::retrieval::fuse::{self, RankedHit};
-use crate::retrieval::router::{CANDIDATE_POOL, Source, above_similarity_threshold};
+use crate::retrieval::router::{Source, above_similarity_threshold};
 use crate::store::{fts, vector};
 
 /// One unified code-retrieval hit, regardless of which branch produced it.
@@ -29,8 +29,9 @@ pub struct CodeRoutedHit {
 /// Route a code query: lexical BM25 (whenever the query is non-empty),
 /// ANN (whenever a vector is supplied), RRF fusion when both contribute.
 ///
-/// The fetch size is [`CANDIDATE_POOL`] (or `top_k` when configured
-/// larger) — this stage produces a candidate pool, not the final cut.
+/// The fetch size is the caller-supplied `pool` (see
+/// [`crate::retrieval::pipeline::pool_size`]) — this stage produces a
+/// candidate pool, not the final cut.
 /// Both legs share the same `repo` / `lang` scope: the lexical leg
 /// filters in SQL via the `code_symbols` JOIN while the ANN leg
 /// post-filters inside [`vector::knn_code`]. ANN hits below
@@ -47,8 +48,9 @@ pub fn route_code(
     vec: Option<&[f32]>,
     repo: Option<&str>,
     lang: Option<&str>,
+    pool: usize,
 ) -> Result<Vec<CodeRoutedHit>> {
-    let k = CANDIDATE_POOL.max(cfg.retrieval.top_k);
+    let k = pool;
     let lex = if query.trim().is_empty() {
         Vec::new()
     } else {

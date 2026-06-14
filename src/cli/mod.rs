@@ -150,14 +150,37 @@ pub fn resolve_data_dir(opt: Option<std::path::PathBuf>) -> std::path::PathBuf {
     })
 }
 
-/// Override the configured `retrieval.top_k` when a subcommand received a
-/// `--k` flag on the CLI. Shared by `search` and `context` so the two
-/// subcommands cannot drift on what "override top_k" means.
-pub(crate) fn override_top_k(mut cfg: Config, k: Option<usize>) -> Config {
-    if let Some(k) = k {
-        cfg.retrieval.top_k = k;
+/// Build the retrieval [`PageWindow`] for a paginated subcommand from its
+/// `--k`/`--limit` page size (`None` → configured `retrieval.top_k`) and
+/// `--offset`. Shared by `search`, `search-code`, and `context` so the
+/// three subcommands cannot drift on what "page size" means (Binding
+/// Rule 1). `--k 0` / `--limit 0` is preserved as the "all remaining
+/// within the window" sentinel.
+pub(crate) fn page_window(
+    cfg: &Config,
+    k: Option<usize>,
+    offset: usize,
+) -> crate::retrieval::pipeline::PageWindow {
+    crate::retrieval::pipeline::PageWindow {
+        offset,
+        limit: k.unwrap_or(cfg.retrieval.top_k),
     }
-    cfg
+}
+
+/// Translate a finished pipeline run's window metadata into the
+/// [`crate::output::search::PageMeta`] the JSON envelopes carry. Shared by
+/// the three paginated subcommands so the cursor shape stays uniform.
+pub(crate) fn page_meta(
+    window: crate::retrieval::pipeline::PageWindow,
+    has_more: bool,
+    total: usize,
+) -> crate::output::search::PageMeta {
+    crate::output::search::PageMeta {
+        limit: window.limit,
+        offset: window.offset,
+        has_more,
+        total: Some(total),
+    }
 }
 
 /// Split a comma-separated flag value into trimmed, non-empty, de-duplicated

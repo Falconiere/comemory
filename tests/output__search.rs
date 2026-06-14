@@ -3,9 +3,20 @@
 //! surface — M2 tuning reads it) via an insta snapshot, and locks in that
 //! `output::search::emit` accepts an empty hit slice without panicking.
 
-use comemory::output::search;
+use comemory::output::search::{self, PageMeta};
 use comemory::retrieval::rerank::{Reranked, ScoreParts};
 use comemory::retrieval::router::Source;
+
+/// Representative pagination cursor for the unpaginated first page: page
+/// size 12 (default `top_k`), no offset, single in-window hit.
+fn meta() -> PageMeta {
+    PageMeta {
+        limit: 12,
+        offset: 0,
+        has_more: false,
+        total: Some(1),
+    }
+}
 
 fn sample_hits() -> Vec<Reranked> {
     vec![Reranked {
@@ -31,7 +42,7 @@ fn emit_accepts_empty_hits_in_json_mode() {
     // Smoke test: emitting zero hits in JSON mode must succeed. The full
     // JSON envelope shape is pinned by `search_json_envelope_contract`.
     let hits: Vec<Reranked> = Vec::new();
-    search::emit(&hits, None, true).expect("emit must succeed for empty hits");
+    search::emit(&hits, None, meta(), true).expect("emit must succeed for empty hits");
 }
 
 #[test]
@@ -61,13 +72,13 @@ fn tty_footer_includes_feedback_hint_with_hits() {
 
 #[test]
 fn search_json_envelope_contract() {
-    insta::assert_json_snapshot!(search::envelope(&sample_hits(), None));
+    insta::assert_json_snapshot!(search::envelope(&sample_hits(), None, meta()));
 }
 
 #[test]
 fn envelope_carries_query_id_when_present() {
     let hits = sample_hits();
-    let v = serde_json::to_value(search::envelope(&hits, Some("q-20260610-a1b2c3d4")))
+    let v = serde_json::to_value(search::envelope(&hits, Some("q-20260610-a1b2c3d4"), meta()))
         .expect("serialize");
     assert_eq!(
         v.get("query_id").and_then(serde_json::Value::as_str),
@@ -133,7 +144,7 @@ fn tty_expanded_label_appears_only_for_tier4() {
 #[test]
 fn envelope_omits_query_id_when_absent() {
     let hits = sample_hits();
-    let v = serde_json::to_value(search::envelope(&hits, None)).expect("serialize");
+    let v = serde_json::to_value(search::envelope(&hits, None, meta())).expect("serialize");
     assert!(
         v.get("query_id").is_none(),
         "query_id must be skipped when None: {v}"

@@ -57,7 +57,16 @@ fn lexical_query_returns_bm25_hits_without_vector() {
     );
 
     let cfg = Config::defaults();
-    let hits = route_code(&cfg, &conn, "login", None, None, None).expect("route");
+    let hits = route_code(
+        &cfg,
+        &conn,
+        "login",
+        None,
+        None,
+        None,
+        comemory::retrieval::router::CANDIDATE_POOL,
+    )
+    .expect("route");
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].symbol_id, 1);
     assert_eq!(hits[0].source, Source::Lexical);
@@ -92,7 +101,16 @@ fn hybrid_fuses_both_legs() {
 
     let cfg = Config::defaults();
     let q = basis(0);
-    let hits = route_code(&cfg, &conn, "login", Some(&q), None, None).expect("route");
+    let hits = route_code(
+        &cfg,
+        &conn,
+        "login",
+        Some(&q),
+        None,
+        None,
+        comemory::retrieval::router::CANDIDATE_POOL,
+    )
+    .expect("route");
     let ids: Vec<i64> = hits.iter().map(|h| h.symbol_id).collect();
     assert!(ids.contains(&1), "lexical leg must contribute, got {ids:?}");
     assert!(ids.contains(&2), "ANN leg must contribute, got {ids:?}");
@@ -121,7 +139,16 @@ fn ann_hits_below_code_threshold_are_dropped() {
     // Orthogonal query vector: cosine similarity 0.0 < code_threshold 0.5,
     // so the vector-only route must come back empty.
     let q = basis(1);
-    let hits = route_code(&cfg, &conn, "", Some(&q), None, None).expect("route");
+    let hits = route_code(
+        &cfg,
+        &conn,
+        "",
+        Some(&q),
+        None,
+        None,
+        comemory::retrieval::router::CANDIDATE_POOL,
+    )
+    .expect("route");
     assert!(
         hits.is_empty(),
         "sub-threshold ANN hit must be dropped, got {hits:?}",
@@ -131,7 +158,16 @@ fn ann_hits_below_code_threshold_are_dropped() {
     // Positive control: the matching vector clears the floor and is tagged
     // Vector (empty query → no lexical leg).
     let q = basis(0);
-    let hits = route_code(&cfg, &conn, "", Some(&q), None, None).expect("route");
+    let hits = route_code(
+        &cfg,
+        &conn,
+        "",
+        Some(&q),
+        None,
+        None,
+        comemory::retrieval::router::CANDIDATE_POOL,
+    )
+    .expect("route");
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].symbol_id, 1);
     assert_eq!(hits[0].source, Source::Vector);
@@ -164,7 +200,16 @@ fn lang_filter_restricts_both_legs() {
 
     let cfg = Config::defaults();
     let q = basis(0);
-    let hits = route_code(&cfg, &conn, "config", Some(&q), None, Some("rust")).expect("route");
+    let hits = route_code(
+        &cfg,
+        &conn,
+        "config",
+        Some(&q),
+        None,
+        Some("rust"),
+        comemory::retrieval::router::CANDIDATE_POOL,
+    )
+    .expect("route");
     assert!(!hits.is_empty(), "rust symbol must survive the lang filter");
     assert!(
         hits.iter().all(|h| h.symbol_id == 1),
@@ -200,7 +245,16 @@ fn repo_filter_restricts_both_legs() {
 
     let cfg = Config::defaults();
     let q = basis(0);
-    let hits = route_code(&cfg, &conn, "config", Some(&q), Some("backend"), None).expect("route");
+    let hits = route_code(
+        &cfg,
+        &conn,
+        "config",
+        Some(&q),
+        Some("backend"),
+        None,
+        comemory::retrieval::router::CANDIDATE_POOL,
+    )
+    .expect("route");
     assert!(
         !hits.is_empty(),
         "backend symbol must survive the repo filter"
@@ -227,6 +281,15 @@ fn empty_query_and_no_vector_returns_empty() {
     );
 
     let cfg = Config::defaults();
-    let hits = route_code(&cfg, &conn, "   ", None, None, None).expect("route");
+    let hits = route_code(
+        &cfg,
+        &conn,
+        "   ",
+        None,
+        None,
+        None,
+        comemory::retrieval::router::CANDIDATE_POOL,
+    )
+    .expect("route");
     assert!(hits.is_empty(), "no query + no vector must return nothing");
 }

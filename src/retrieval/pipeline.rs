@@ -8,6 +8,7 @@ use time::OffsetDateTime;
 use crate::config::Config;
 use crate::prelude::*;
 use crate::retrieval::rerank::Reranked;
+use crate::retrieval::router::CANDIDATE_POOL;
 use crate::retrieval::{diversify, rerank, router};
 use crate::store::memory_row;
 
@@ -23,22 +24,108 @@ pub struct SearchOptions {
     /// `SEARCH_CODE`). Reformulation mining excludes `search-code` rows,
     /// which can only earn code-target feedback.
     pub source: &'static str,
+    /// The `(offset, limit)` page of the bounded ranked window to return.
+    /// Use [`PageWindow::top_k`] for the unpaginated first-page default.
+    pub window: PageWindow,
 }
 
-/// Outcome of one pipeline run: the hits plus the logged query id
-/// (`None` when `track` was off or logging failed best-effort).
+/// The `(offset, limit)` slice a paginated retrieval should return from the
+/// bounded ranked window. `limit == 0` is the "page size = remaining within
+/// the window" sentinel (mirrors the shared [`crate::output::page::Page`]
+/// "all" rule, bounded here by `max_page_window`).
+#[derive(Debug, Clone, Copy)]
+pub struct PageWindow {
+    /// Leading ranked results to skip before the page starts.
+    pub offset: usize,
+    /// Page size; `0` means "everything remaining within the window".
+    pub limit: usize,
+}
+
+impl PageWindow {
+    /// The full first page sized to `top_k` — the unpaginated default that
+    /// reproduces the pre-pagination behavior (`offset = 0`, `limit =
+    /// top_k`).
+    pub fn top_k(cfg: &Config) -> Self {
+        Self {
+            offset: 0,
+            limit: cfg.retrieval.top_k,
+        }
+    }
+}
+
+/// Candidate-pool size for paging into a ranked result list with this
+/// window: `clamp(offset + limit + buffer, CANDIDATE_POOL, max_window)`.
+///
+/// The `+ buffer` (one extra page, `limit`) headroom keeps near-dup /
+/// MMR boundary collapse from truncating the requested page — a candidate
+/// dropped during diversification must not shorten the slice. A `limit ==
+/// 0` ("all within the window") request fetches the whole `max_window`.
+///
+/// Stability rests on this being a *prefix* fetch: RRF rank-fusion and
+/// MMR/near-dup selection keep their top prefix stable as the pool grows
+/// (adding lower-ranked tail candidates never reorders the higher-ranked
+/// head), so paging deeper (a larger pool) does not shift earlier pages.
+pub fn pool_size(offset: usize, limit: usize, max_window: usize) -> usize {
+    let max_window = max_window.max(1);
+    if limit == 0 {
+        return max_window;
+    }
+    let want = offset
+        .saturating_add(limit)
+        .saturating_add(limit)
+        .min(max_window);
+    want.clamp(CANDIDATE_POOL.min(max_window), max_window)
+}
+
+/// Slice `ranked` to the `window` and report whether more in-window
+/// results exist. Returns `(page, has_more, total)`:
+/// - `total` is the in-window ranked count (`ranked.len()`), capped by
+///   `max_window` — **not** a global match count.
+/// - `has_more` is `true` iff ranked results exist beyond `offset + limit`
+///   *and* that boundary is still inside `max_window`; once the window
+///   ceiling is reached `has_more` is `false` (deeper results require
+///   refining the query).
+/// - `limit == 0` returns everything from `offset` onward (within the
+///   window) with `has_more = false`.
+pub fn paginate<T>(ranked: Vec<T>, window: PageWindow, max_window: usize) -> (Vec<T>, bool, usize) {
+    let total = ranked.len();
+    let start = window.offset.min(total);
+    let mut page: Vec<T> = ranked.into_iter().skip(start).collect();
+    let has_more = if window.limit == 0 {
+        false
+    } else {
+        if page.len() > window.limit {
+            page.truncate(window.limit);
+        }
+        let end = window.offset.saturating_add(window.limit);
+        end < total && end < max_window
+    };
+    (page, has_more, total)
+}
+
+/// Outcome of one pipeline run: the page of hits plus the logged query id
+/// (`None` when `track` was off or logging failed best-effort) and the
+/// window metadata describing the slice.
 #[derive(Debug)]
 pub struct SearchRun {
-    /// Final reranked + diversified hits.
+    /// Final reranked + diversified hits for the requested page.
     pub hits: Vec<Reranked>,
     /// Id of the `retrieval_log` row written for this run.
     pub query_id: Option<String>,
+    /// Whether in-window ranked results exist beyond this page.
+    pub has_more: bool,
+    /// In-window ranked count (diversified): the size of the ranked list
+    /// the page was sliced from, capped by `max_page_window`. Not a global
+    /// match count.
+    pub total: usize,
 }
 
 /// Run the full retrieval pipeline for a memory query. `kind` restricts
 /// hits to one memory kind (canonical lowercase string, e.g. `decision`);
-/// `None` searches every kind. With `opts.track` set, access counts are
-/// bumped and the query is logged to `retrieval_log`.
+/// `None` searches every kind. `opts.window` selects the `(offset, limit)`
+/// page of the bounded ranked window (use [`PageWindow::top_k`] for the
+/// unpaginated default). With `opts.track` set, access counts are bumped
+/// and the query is logged to `retrieval_log` — for the RETURNED page only.
 pub fn search(
     cfg: &Config,
     conn: &Connection,
@@ -49,14 +136,20 @@ pub fn search(
     opts: SearchOptions,
 ) -> Result<SearchRun> {
     let started = std::time::Instant::now();
-    let candidates = router::route(cfg, conn, query, vec, repo, kind)?;
+    let window = opts.window;
+    let max_window = cfg.retrieval.max_page_window;
+    let pool = pool_size(window.offset, window.limit, max_window);
+    let candidates = router::route(cfg, conn, query, vec, repo, kind, pool)?;
     let reranked = rerank::rerank(conn, cfg, &candidates)?;
-    let final_hits = diversify::diversify(
+    // Diversify over the WHOLE pool (cut at `pool`, not `top_k`) so the
+    // full ranked window is materialized before the page is sliced.
+    let ranked = diversify::diversify(
         reranked,
         cfg.rank.near_dup_hamming,
         cfg.rank.mmr_lambda,
-        cfg.retrieval.top_k,
+        pool,
     );
+    let (page, has_more, total) = paginate(ranked, window, max_window);
     let query_id = if opts.track {
         record_telemetry(
             conn,
@@ -64,15 +157,17 @@ pub fn search(
             repo,
             kind,
             opts.source,
-            &final_hits,
+            &page,
             started.elapsed(),
         )
     } else {
         None
     };
     Ok(SearchRun {
-        hits: final_hits,
+        hits: page,
         query_id,
+        has_more,
+        total,
     })
 }
 

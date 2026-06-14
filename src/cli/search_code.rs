@@ -27,7 +27,7 @@ use clap::Args as ClapArgs;
 use rusqlite::Connection;
 
 use crate::ast::languages::{self, Lang};
-use crate::cli::{embedding_input, load_config, override_top_k, resolve_data_dir};
+use crate::cli::{embedding_input, load_config, page_meta, page_window, resolve_data_dir};
 use crate::config::paths::Paths;
 use crate::output;
 use crate::prelude::*;
@@ -70,12 +70,16 @@ basename.";
 pub struct Args {
     /// Natural-language or identifier query string.
     pub query: String,
-    /// Override the configured `retrieval.top_k`. Must be >= 1.
-    #[arg(
-        long,
-        value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..)
-    )]
+    /// Page size — overrides the configured `retrieval.top_k`. `--limit`
+    /// is an accepted alias. `0` means "all remaining within the
+    /// `max_page_window`".
+    #[arg(long, visible_alias = "limit")]
     pub k: Option<usize>,
+    /// Number of leading ranked results to skip (deep paging). Bounded by
+    /// `retrieval.max_page_window`; once the window ceiling is reached
+    /// `has_more` is false and deeper results require refining the query.
+    #[arg(long, default_value_t = 0)]
+    pub offset: usize,
     /// Restrict hits to one repo label (as passed to `index-code --repo`).
     #[arg(long)]
     pub repo: Option<String>,
@@ -103,7 +107,10 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     let conn = connection::open(paths.db_path())?;
 
     let vec = embedding_input::read_optional(a.vector_stdin, a.vector.as_deref())?;
-    let cfg = override_top_k(load_config(&paths)?, a.k);
+    let cfg = load_config(&paths)?;
+    let window = page_window(&cfg, a.k, a.offset);
+    let max_window = cfg.retrieval.max_page_window;
+    let pool = pipeline::pool_size(window.offset, window.limit, max_window);
     let started = std::time::Instant::now();
     let candidates = code_route::route_code(
         &cfg,
@@ -112,6 +119,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         vec.as_deref(),
         a.repo.as_deref(),
         lang,
+        pool,
     )?;
     // Zero candidates → nothing for the affinity prior to boost, so the
     // git discovery + status walk behind `WorkingSet::from_cwd` is skipped.
@@ -120,8 +128,13 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     } else {
         WorkingSet::from_cwd(a.repo.as_deref())
     };
-    let mut hits = code_rerank::rerank_code(&conn, &cfg, &candidates, &ws)?;
-    hits.truncate(cfg.retrieval.top_k);
+    // Rerank produces the full ranked (post-coalesce) window; the page is
+    // sliced from it via the shared paginator so search-code, search, and
+    // context agree on window semantics.
+    let ranked = code_rerank::rerank_code(&conn, &cfg, &candidates, &ws)?;
+    let (hits, has_more, total) = pipeline::paginate(ranked, window, max_window);
+    // Telemetry reflects the RETURNED page only (consistent with `search`):
+    // the access bump + retrieval_log row cover the sliced ids.
     let query_id = record_code_telemetry(
         &conn,
         &a.query,
@@ -133,7 +146,8 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     // The empty-index probe only matters for the zero-hit TTY hint, so it
     // is skipped entirely whenever there are hits.
     let index_empty = hits.is_empty() && !code_index_populated(&conn)?;
-    output::search_code::emit(&hits, query_id.as_deref(), index_empty, json_flag)
+    let meta = page_meta(window, has_more, total);
+    output::search_code::emit(&hits, query_id.as_deref(), meta, index_empty, json_flag)
 }
 
 /// Validate and canonicalize the `--lang` flag through

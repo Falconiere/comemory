@@ -14,7 +14,7 @@ use std::io::Write;
 
 use serde::Serialize;
 
-use crate::output::search::source_label;
+use crate::output::search::{PageMeta, source_label};
 use crate::output::{json, tty};
 use crate::prelude::*;
 use crate::retrieval::code_rerank::{CodeReranked, CodeScoreParts};
@@ -53,21 +53,38 @@ pub struct Row<'a> {
 /// mirroring the `comemory search` envelope.
 #[derive(Serialize)]
 pub struct Envelope<'a> {
-    /// Reranked hits in final pipeline order.
+    /// Reranked hits in final pipeline order for the requested page.
     pub hits: Vec<Row<'a>>,
     /// Id of the retrieval_log row for this run; absent when logging
     /// was off or failed. Feed it back via
     /// `comemory feedback <id> --used-code <ids>`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub query_id: Option<&'a str>,
+    /// Requested page size.
+    pub limit: usize,
+    /// Number of leading ranked results skipped.
+    pub offset: usize,
+    /// Whether more in-window ranked results exist beyond this page.
+    pub has_more: bool,
+    /// In-window ranked count (post-coalesce) the page was sliced from;
+    /// `None` when not cheaply known. Not a global match count.
+    pub total: Option<usize>,
 }
 
 /// Build the serializable envelope. Public so mirror tests can pin the
 /// JSON contract without going through stdout.
-pub fn envelope<'a>(hits: &'a [CodeReranked], query_id: Option<&'a str>) -> Envelope<'a> {
+pub fn envelope<'a>(
+    hits: &'a [CodeReranked],
+    query_id: Option<&'a str>,
+    page: PageMeta,
+) -> Envelope<'a> {
     Envelope {
         hits: hits.iter().map(row_from).collect(),
         query_id,
+        limit: page.limit,
+        offset: page.offset,
+        has_more: page.has_more,
+        total: page.total,
     }
 }
 
@@ -80,11 +97,12 @@ pub fn envelope<'a>(hits: &'a [CodeReranked], query_id: Option<&'a str>) -> Enve
 pub fn emit(
     hits: &[CodeReranked],
     query_id: Option<&str>,
+    page: PageMeta,
     index_empty: bool,
     json_flag: bool,
 ) -> Result<()> {
     if json_flag {
-        return json::write(&envelope(hits, query_id));
+        return json::write(&envelope(hits, query_id, page));
     }
     write_tty(&mut std::io::stdout().lock(), hits, query_id, index_empty)
 }

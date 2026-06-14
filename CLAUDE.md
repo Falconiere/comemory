@@ -123,7 +123,8 @@ environment (`Config::with_env`, in `src/config/env.rs`).
 |----------|---------|---------|
 | `COMEMORY_DATA_DIR` | Root data directory (`memories/` + `comemory.db`) | `~/.comemory` |
 | `COMEMORY_INDEXING_AUTO_REINDEX` | `lazy` \| `hook` \| `off` — controls automatic code-index refresh | `lazy` |
-| `COMEMORY_RETRIEVAL_TOP_K` | Number of results returned by the hybrid router | `12` |
+| `COMEMORY_RETRIEVAL_TOP_K` | Number of results returned by the hybrid router (also the default page size for `search` / `search-code` / `context` when `--k`/`--limit` is omitted) | `12` |
+| `COMEMORY_RETRIEVAL_MAX_PAGE_WINDOW` | Maximum depth pagination can reach into the ranked result list. `search` / `search-code` / `context` fetch a candidate pool sized `clamp(offset + k + k, CANDIDATE_POOL, max_page_window)`, run the full fuse → rerank → diversify pipeline over it, then slice `[offset, offset+k]`; `has_more` is forced false once this ceiling is hit (deeper results require refining the query). Validated `> 0`. | `200` |
 | `COMEMORY_RETRIEVAL_MEMORY_THRESHOLD` | Minimum cosine similarity for the memory table | `0.55` |
 | `COMEMORY_RETRIEVAL_CODE_THRESHOLD` | Minimum cosine similarity for the code table (ANN leg of `search-code`, range `[0.0, 1.0]`) | `0.50` |
 | `COMEMORY_RETRIEVAL_RRF_K` | RRF fusion constant for hybrid scoring | `60.0` |
