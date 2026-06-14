@@ -33,12 +33,15 @@
 //!   machine handles both single imports and blocks instead.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::OnceLock;
 
+use ast_grep_core::Pattern;
 use ast_grep_core::tree_sitter::LanguageExt;
 use ast_grep_language::{JavaScript, Rust, Tsx};
 
 use crate::ast::extractor::for_each_match;
 use crate::ast::languages::Lang;
+use crate::ast::pattern_cache::{self, CompiledPatterns};
 use crate::prelude::*;
 
 /// Quote characters stripped from / checked against string-literal nodes.
@@ -54,8 +57,8 @@ pub fn extract_imports(lang: Lang, source: &str) -> Result<Vec<String>> {
         Lang::Rust => rust_imports(source)?,
         // Tsx parses both plain TS and JSX-bearing source (same dispatch
         // choice as `ast::extractor`).
-        Lang::Typescript => ts_js_imports(Tsx, source)?,
-        Lang::Javascript => ts_js_imports(JavaScript, source)?,
+        Lang::Typescript => ts_imports(source)?,
+        Lang::Javascript => js_imports(source)?,
         Lang::Python => python_imports(source),
         Lang::Go => go_imports(source),
     };
@@ -217,28 +220,29 @@ fn insert_candidate(map: &mut HashMap<String, Candidate>, key: String, path: &st
 /// tags which pattern row hit: `PATH` rows get the use-path trimming,
 /// `NAME` rows are taken verbatim.
 fn rust_imports(source: &str) -> Result<Vec<String>> {
-    let mut out = Vec::new();
-    for_each_match(
+    static CELL: OnceLock<std::result::Result<CompiledPatterns, String>> = OnceLock::new();
+    let patterns = pattern_cache::cached(
+        &CELL,
         Rust,
-        source,
         &[
             ("PATH", "use $PATH;"),
             ("PATH", "pub use $PATH;"),
             ("NAME", "mod $NAME;"),
             ("NAME", "pub mod $NAME;"),
         ],
-        |var, matched| {
-            let Some(node) = matched.get_env().get_match(var) else {
-                return;
-            };
-            let text = node.text().to_string();
-            out.push(if var == "PATH" {
-                rust_use_path(&text)
-            } else {
-                text
-            });
-        },
     )?;
+    let mut out = Vec::new();
+    for_each_match(Rust, source, patterns, |var, matched| {
+        let Some(node) = matched.get_env().get_match(var) else {
+            return;
+        };
+        let text = node.text().to_string();
+        out.push(if var == "PATH" {
+            rust_use_path(&text)
+        } else {
+            text
+        });
+    })?;
     Ok(out)
 }
 
@@ -276,34 +280,54 @@ fn rust_use_path(text: &str) -> String {
 /// `string_fragment`, while `ARG` binds the whole `require` call argument,
 /// quotes included — only string literals are kept; dynamic
 /// `require(expr)` calls are dropped, never guessed at.
-fn ts_js_imports<L: LanguageExt + Clone>(language: L, source: &str) -> Result<Vec<String>> {
+fn ts_js_imports<L: LanguageExt + Clone>(
+    language: L,
+    source: &str,
+    patterns: &[(&'static str, Pattern)],
+) -> Result<Vec<String>> {
     let mut out = Vec::new();
-    for_each_match(
-        language,
-        source,
-        &[
-            ("SRC", "import $$$SPEC from '$SRC'"),
-            ("SRC", "import $$$SPEC from \"$SRC\""),
-            ("SRC", "import '$SRC'"),
-            ("SRC", "import \"$SRC\""),
-            ("ARG", "require($ARG)"),
-        ],
-        |var, matched| {
-            let Some(node) = matched.get_env().get_match(var) else {
-                return;
-            };
-            let text = node.text().to_string();
-            if var == "ARG" {
-                let stripped = text.trim_matches(QUOTES);
-                if stripped.len() < text.len() && !stripped.contains(QUOTES) {
-                    out.push(stripped.to_string());
-                }
-            } else {
-                out.push(text);
+    for_each_match(language, source, patterns, |var, matched| {
+        let Some(node) = matched.get_env().get_match(var) else {
+            return;
+        };
+        let text = node.text().to_string();
+        if var == "ARG" {
+            let stripped = text.trim_matches(QUOTES);
+            if stripped.len() < text.len() && !stripped.contains(QUOTES) {
+                out.push(stripped.to_string());
             }
-        },
-    )?;
+        } else {
+            out.push(text);
+        }
+    })?;
     Ok(out)
+}
+
+/// Raw TypeScript / JavaScript import pattern rows, shared by both grammar
+/// caches. The same strings compile to distinct trees under each grammar, so
+/// [`ts_imports`] and [`js_imports`] own separate cells.
+fn ts_js_import_patterns() -> &'static [(&'static str, &'static str)] {
+    &[
+        ("SRC", "import $$$SPEC from '$SRC'"),
+        ("SRC", "import $$$SPEC from \"$SRC\""),
+        ("SRC", "import '$SRC'"),
+        ("SRC", "import \"$SRC\""),
+        ("ARG", "require($ARG)"),
+    ]
+}
+
+/// TypeScript import extraction (Tsx grammar), patterns compiled once.
+fn ts_imports(source: &str) -> Result<Vec<String>> {
+    static CELL: OnceLock<std::result::Result<CompiledPatterns, String>> = OnceLock::new();
+    let patterns = pattern_cache::cached(&CELL, Tsx, ts_js_import_patterns())?;
+    ts_js_imports(Tsx, source, patterns)
+}
+
+/// JavaScript import extraction, patterns compiled once.
+fn js_imports(source: &str) -> Result<Vec<String>> {
+    static CELL: OnceLock<std::result::Result<CompiledPatterns, String>> = OnceLock::new();
+    let patterns = pattern_cache::cached(&CELL, JavaScript, ts_js_import_patterns())?;
+    ts_js_imports(JavaScript, source, patterns)
 }
 
 /// Python extraction by line parsing: `import a[, b][ as c]` and
