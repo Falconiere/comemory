@@ -28,7 +28,7 @@ jobs:
       - name: Install cargo tools
         uses: taiki-e/install-action@7a79fe8c3a13344501c80d99cae481c1c9085912 # v2.81.10
         with:
-          tool: cargo-nextest,cargo-llvm-cov
+          tool: cargo-nextest,cargo-llvm-cov,typos-cli@1.32.0
       - name: Run check-all gate
         run: bash scripts/check-all.sh
       - name: Run coverage gate
