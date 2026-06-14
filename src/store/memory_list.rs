@@ -58,49 +58,62 @@ pub fn list_memories(
     offset: usize,
 ) -> Result<ListPage> {
     let mut filters = String::new();
-    let mut binds: Vec<&str> = Vec::new();
+    // Filter params (`repo`/`kind`) come first; the windowed query appends the
+    // bound `LIMIT`/`OFFSET` after them. Boxed so the string filters and the
+    // integer window can share one `ToSql` list.
+    let mut binds: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
     if let Some(r) = repo {
         filters.push_str(" AND repo = ?");
-        binds.push(r);
+        binds.push(Box::new(r.to_string()));
     }
     if let Some(k) = kind {
         filters.push_str(" AND kind = ?");
-        binds.push(k);
+        binds.push(Box::new(k.to_string()));
     }
 
     let total: usize = {
+        // The COUNT carries only the filter params — never the window.
         let count_sql = format!("SELECT count(*) FROM memories WHERE deleted_at IS NULL{filters}");
         let mut stmt = conn.prepare(&count_sql)?;
-        let n: i64 = stmt.query_row(rusqlite::params_from_iter(binds.iter()), |r| r.get(0))?;
+        let n: i64 = stmt.query_row(
+            rusqlite::params_from_iter(binds.iter().map(|b| b.as_ref())),
+            |r| r.get(0),
+        )?;
         usize::try_from(n).unwrap_or(0)
     };
 
     // `limit == 0` means "all": SQLite forbids a bare `OFFSET`, so use its
-    // `LIMIT -1` ("no limit") idiom while still honoring `offset`.
-    let window = if limit == 0 {
-        format!(" LIMIT -1 OFFSET {offset}")
+    // `LIMIT -1` ("no limit") idiom while still honoring `offset`. Both are
+    // bound params appended after the filter params.
+    let limit_param: i64 = if limit == 0 {
+        -1
     } else {
-        format!(" LIMIT {limit} OFFSET {offset}")
+        i64::try_from(limit).unwrap_or(i64::MAX)
     };
+    binds.push(Box::new(limit_param));
+    binds.push(Box::new(i64::try_from(offset).unwrap_or(i64::MAX)));
     let sql = format!(
         "SELECT id, kind, repo, md_path FROM memories \
           WHERE deleted_at IS NULL{filters} \
-          ORDER BY created_at DESC, id ASC{window}"
+          ORDER BY created_at DESC, id ASC LIMIT ? OFFSET ?"
     );
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt
-        .query_map(rusqlite::params_from_iter(binds.iter()), |r| {
-            let id: String = r.get(0)?;
-            let kind: String = r.get(1)?;
-            let repo: Option<String> = r.get(2)?;
-            let md_path: String = r.get(3)?;
-            Ok(ListRow {
-                slug: file_stem(&md_path),
-                repo: repo.unwrap_or_default(),
-                id,
-                kind,
-            })
-        })?
+        .query_map(
+            rusqlite::params_from_iter(binds.iter().map(|b| b.as_ref())),
+            |r| {
+                let id: String = r.get(0)?;
+                let kind: String = r.get(1)?;
+                let repo: Option<String> = r.get(2)?;
+                let md_path: String = r.get(3)?;
+                Ok(ListRow {
+                    slug: file_stem(&md_path),
+                    repo: repo.unwrap_or_default(),
+                    id,
+                    kind,
+                })
+            },
+        )?
         .collect::<std::result::Result<Vec<_>, _>>()?;
     Ok(ListPage { rows, total })
 }
