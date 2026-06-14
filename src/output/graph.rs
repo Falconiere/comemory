@@ -50,17 +50,63 @@ pub struct Edge {
 pub struct CodeGraph {
     /// File nodes, sorted by id for deterministic output.
     pub nodes: Vec<Node>,
-    /// Directed edges, ordered `(rel, src, dst)`.
+    /// Directed edges, ordered `weight DESC, rel, src, dst`.
     pub edges: Vec<Edge>,
+}
+
+/// A paginated graph: one self-contained subgraph window plus its cursor
+/// metadata. Bespoke (not `Page<T>`) because a graph is two coupled
+/// collections, not a flat list. The **edge** dimension is paginated; `nodes`
+/// is derived to hold exactly the windowed edges' endpoints (no dangling, no
+/// extras). JSON:
+/// `{ nodes, edges, limit, offset, total, has_more }` (`total` = edge count).
+#[derive(Serialize, Debug)]
+pub struct GraphPage {
+    /// The endpoints of the windowed `edges` (and only those), sorted by id.
+    pub nodes: Vec<Node>,
+    /// The windowed edges, in `weight DESC, rel, src, dst` order.
+    pub edges: Vec<Edge>,
+    /// Requested edge-window size. `0` is the sentinel for "all" (no slicing).
+    pub limit: usize,
+    /// Number of edges skipped before this window started.
+    pub offset: usize,
+    /// Total number of edges matching the scope filters (pre-window).
+    pub total: usize,
+    /// Whether edges exist beyond this window (`offset + edges.len() < total`).
+    pub has_more: bool,
+}
+
+impl GraphPage {
+    /// Build a `GraphPage` from a window of edges (already sliced in SQL),
+    /// their derived `nodes`, and the cursor metadata. `total` is the count of
+    /// all edges matching the scope filters; `has_more` is derived here from
+    /// the same window math [`crate::output::page::Page::from_slice`] uses so
+    /// the two envelopes agree (Binding Rule 1).
+    pub fn new(graph: CodeGraph, limit: usize, offset: usize, total: usize) -> Self {
+        let has_more = offset.saturating_add(graph.edges.len()) < total;
+        Self {
+            nodes: graph.nodes,
+            edges: graph.edges,
+            limit,
+            offset,
+            total,
+            has_more,
+        }
+    }
 }
 
 /// Embedded HTML viewer template; `__GRAPH_DATA__` is replaced with the
 /// inlined JSON payload at render time.
 const TEMPLATE: &str = include_str!("graph_template.html");
 
-/// Write the graph as a single line of JSON to stdout.
+/// Write the full graph as a single line of JSON to stdout.
 pub fn write_json(g: &CodeGraph) -> Result<()> {
     json::write(g)
+}
+
+/// Write a paginated [`GraphPage`] as a single line of JSON to stdout.
+pub fn write_json_page(p: &GraphPage) -> Result<()> {
+    json::write(p)
 }
 
 /// Write the Graphviz DOT rendering to stdout.

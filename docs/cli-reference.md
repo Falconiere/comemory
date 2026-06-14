@@ -525,6 +525,16 @@ Options:
           
           [default: 1]
 
+      --limit <LIMIT>
+          Maximum number of results to return. `0` means "all" (no limit)
+          
+          [default: 50]
+
+      --offset <OFFSET>
+          Number of leading results to skip before the window starts
+          
+          [default: 0]
+
   -h, --help
           Print help (see a summary with '-h')
 
