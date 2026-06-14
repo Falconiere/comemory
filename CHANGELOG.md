@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.8.3 — 2026-06-13 (docs accuracy)
+
+Docs only. The published binary is unchanged from 0.8.0–0.8.2.
+
+### Fixed
+- **Documentation audit.** Corrected stale/misleading docs: `architecture.md`
+  §8 now states the `lazy` auto-reindex mode is unwired (behaves like `off`)
+  and drops the false `comemory doctor` staleness-report claim; added the v7
+  `serve`/`graph` subsystems and `repo_marker.root_path` to the component
+  map; removed two dead `docs/superpowers/` links. Rewrote `docs/bench/`
+  (it described a removed v0.1 LanceDB/nomic harness). Fixed `CLAUDE.md`
+  (`[workspace.metadata.dist]`, dropped the non-existent `auto-lint.sh`
+  hook, `just qa` + machete, unpublished `cargo install comemory` →
+  `cargo install --path .`). `README.md` install-hooks wording + a measured
+  v0.8 binary-size row.
+
 ## 0.8.2 — 2026-06-13 (remove Claude Code plugin)
 
 Repo tooling only. The published binary is unchanged from 0.8.0/0.8.1.
