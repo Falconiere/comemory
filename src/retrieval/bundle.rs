@@ -46,6 +46,13 @@ pub struct Bundle<'a> {
     pub code_refs: Vec<CodeRow>,
     /// Flat list of relation triples for downstream UIs.
     pub relations: Vec<RelationRow>,
+    /// `code_symbols` rowids of the code refs that resolved to an indexed
+    /// row — the access-trackable identities `comemory context` bumps
+    /// under its tracking flag (the code-side twin of the memory access
+    /// bump). Not part of the JSON contract: skipped from serialization
+    /// so the `#[serde(flatten)]` envelope shape stays unchanged.
+    #[serde(skip)]
+    pub resolved_code_ids: Vec<i64>,
 }
 
 /// One memory row inside a [`Bundle`].
@@ -123,12 +130,16 @@ pub fn assemble<'a>(
     for id in memory_ids {
         collect_memory(conn, id, &mut memories, &mut relations, &mut raw_refs)?;
     }
+    // Snapshot the resolved ids before `rank_code_refs` consumes the raw
+    // refs — these are the rows `context` self-reinforces under tracking.
+    let resolved_code_ids: Vec<i64> = raw_refs.iter().filter_map(|r| r.symbol_id).collect();
     let code_refs = rank_code_refs(conn, cfg, raw_refs, working_set)?;
     Ok(Bundle {
         query,
         memories,
         code_refs,
         relations,
+        resolved_code_ids,
     })
 }
 

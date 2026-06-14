@@ -15,8 +15,10 @@
 //! the `indexed_files` cursor reflects the most-recent ingest as well.
 
 use rusqlite::Connection;
+use time::OffsetDateTime;
 
 use crate::prelude::*;
+use crate::store::memory_row;
 
 /// On-disk format version of the extracted rows for one repo. Stamped
 /// per-repo in `schema_meta` under `code_format:<repo>`; when the stamp
@@ -187,4 +189,43 @@ pub fn insert(conn: &Connection, row: &CodeSymbolRow<'_>) -> Result<i64> {
         |r| r.get::<_, i64>(0),
     )?;
     Ok(sid)
+}
+
+/// Bump `access_count`/`last_accessed` on every `code_symbols` row in
+/// `ids`, the code-side twin of `retrieval::pipeline`'s `record_access`
+/// over `memories`. Shared by `search-code` (the returned hit ids) and
+/// `context` (the resolved code-ref ids) so the two self-reinforcement
+/// paths cannot drift on the SQL, the timestamp format, or the
+/// best-effort contract.
+///
+/// All ids fold into one `UPDATE ... WHERE id IN (...)` so the bump costs
+/// a single statement and waits on `busy_timeout` at most once. The
+/// timestamp goes through [`memory_row::iso_format`] so every
+/// `last_accessed` writer (memory and code) emits the same string format.
+/// Best-effort: an empty id list is a no-op, and any failure is logged
+/// and swallowed — a telemetry write must never break the read path.
+pub fn record_access(conn: &Connection, ids: &[i64]) {
+    if ids.is_empty() {
+        return;
+    }
+    let now = match memory_row::iso_format(OffsetDateTime::now_utc()) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!(error = %e, "code access tracking skipped: timestamp format failed");
+            return;
+        }
+    };
+    let qmarks = crate::store::qmarks(ids.len());
+    let sql = format!(
+        "UPDATE code_symbols SET access_count = access_count + 1, last_accessed = ? \
+         WHERE id IN ({qmarks})"
+    );
+    let mut params: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(ids.len() + 1);
+    params.push(&now);
+    for id in ids {
+        params.push(id);
+    }
+    if let Err(e) = conn.execute(&sql, params.as_slice()) {
+        tracing::warn!(error = %e, hit_count = ids.len(), "code access tracking update failed");
+    }
 }
