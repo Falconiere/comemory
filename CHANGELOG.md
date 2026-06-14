@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.8.4 — 2026-06-14 (test-confidence + lang-quality migration)
+
+Internal test infrastructure, CI, and conventions. The published binary is
+functionally unchanged from 0.8.3 — the only `src/` change is a panic-free
+regex in `graph::cross_link` that preserves behavior.
+
+### Added
+- **Test-confidence program.** Measure-first tooling —
+  `scripts/{coverage-check,mutation-check,eval-check}.sh` (a cargo-llvm-cov
+  line-coverage floor, diff-scoped/nightly cargo-mutants, lexical eval) with
+  `just coverage|mutation|eval` and committed baselines (85% line coverage,
+  the mutant-survivor list), plus real-data tests that kill 12 of 14 baseline
+  survivors in graph/memory/output.
+- **CI gates.** `test.yml` (check-all → coverage floor → eval) and
+  `mutation.yml` (diff-scoped report-only on PRs + a nightly full run).
+
+### Changed
+- **Adopted the lang-quality Rust standard repo-wide.** Flattened the nested
+  test layout to flat dunder mirrors (`tests/<a>__<b>.rs`, 100 binaries) with
+  every test file ≤300 code lines; re-pointed the gate scripts
+  (`tests-mirror-check` flat mapping, `module-size-check` 300-code-line `src/`
+  cap, `no-bypass-check` full `.expect()` ban) and `CLAUDE.md`. Limits set via
+  `.claude/claudness.config.json`.
+- Purged the one `src/` `.expect()` (the `cross_link` regex now compiles into a
+  non-panicking `Lazy<Option<Regex>>`); no behavior change.
+
 ## 0.8.3 — 2026-06-13 (docs accuracy)
 
 Docs only. The published binary is unchanged from 0.8.0–0.8.2.
