@@ -26,9 +26,11 @@ use std::path::PathBuf;
 use clap::Args as ClapArgs;
 use serde::Serialize;
 
+use crate::cli::pagination::PaginationArgs;
 use crate::cli::{delete, load_config, resolve_data_dir};
 use crate::config::Config;
 use crate::config::paths::Paths;
+use crate::output::page::Page;
 use crate::output::prune as output;
 use crate::prelude::*;
 use crate::prune::low_value;
@@ -44,11 +46,17 @@ Examples:
   # and clean up orphan edges + stale code symbols
   comemory prune --apply
 
+  # Page the dry-run lists (window applies to display only; --apply is
+  # always full-set): second page of 20 candidates
+  comemory prune --limit 20 --offset 20
+
   # JSON output for CI/automation; Report fields:
-  #   low_value_memories — ids matching ALL of: activation < COMEMORY_PRUNE_MIN_ACTIVATION
-  #     (-2.0), Beta feedback <= COMEMORY_PRUNE_MIN_FEEDBACK (0.25), quality <=
-  #     COMEMORY_PRUNE_BELOW_QUALITY (2), and zero incoming edges — OR superseded
-  #     by a live memory with no access since the supersede edge was written.
+  #   low_value_memories / stale_code_files — Page envelopes
+  #     ({items, limit, offset, total, has_more}). low_value ids match ALL
+  #     of: activation < COMEMORY_PRUNE_MIN_ACTIVATION (-2.0), Beta feedback
+  #     <= COMEMORY_PRUNE_MIN_FEEDBACK (0.25), quality <=
+  #     COMEMORY_PRUNE_BELOW_QUALITY (2), and zero incoming edges — OR
+  #     superseded by a live memory with no access since the supersede edge.
   comemory prune --json";
 
 /// Arguments to `comemory prune`.
@@ -60,6 +68,12 @@ pub struct Args {
     /// reports.
     #[arg(long, default_value_t = false)]
     pub apply: bool,
+    /// `--limit` / `--offset` window over the dry-run `stale_code_files`
+    /// and `low_value_memories` lists. The same window applies to BOTH.
+    /// It windows DISPLAY ONLY: `--apply` always acts on the full
+    /// candidate set regardless of `--limit` / `--offset`.
+    #[command(flatten)]
+    pub page: PaginationArgs,
 }
 
 /// Output schema for both JSON and TTY rendering. Lives at module scope so
@@ -67,35 +81,56 @@ pub struct Args {
 #[derive(Serialize, Debug)]
 pub struct Report {
     /// Count of `edges` rows whose source memory is missing or
-    /// soft-deleted.
+    /// soft-deleted. A bare count (already a number, not a list), so it
+    /// is never paginated.
     pub orphan_edges: i64,
-    /// Distinct `<repo>:<path>` values whose corresponding `indexed_files`
+    /// Paginated `<repo>:<path>` values whose corresponding `indexed_files`
     /// row has been removed. The repo prefix disambiguates identical paths
-    /// across different repos (e.g. `src/main.rs` in two checkouts).
-    pub stale_code_files: Vec<String>,
-    /// Memory ids flagged by [`low_value::detect`] — soft-delete
-    /// candidates (applied only with `--apply`).
-    pub low_value_memories: Vec<String>,
+    /// across different repos (e.g. `src/main.rs` in two checkouts). The
+    /// shared `--limit` / `--offset` window applies to the dry-run display
+    /// only.
+    pub stale_code_files: Page<String>,
+    /// Paginated memory ids flagged by [`low_value::detect`] — soft-delete
+    /// candidates (applied to the FULL set, not the page, when `--apply`
+    /// is set). The window applies to the dry-run display only.
+    pub low_value_memories: Page<String>,
 }
 
 /// Scan `comemory.db` for prune candidates and, only when `--apply` is
-/// set, apply the cleanup. Always emits the report.
+/// set, apply the cleanup. The scan runs FIRST so the emitted report reflects
+/// the candidates that were (about to be) pruned; its `stale_code_files` and
+/// `low_value_memories` lists are windowed to `a.page` for display. `--apply`
+/// then acts on the FULL low-value candidate set captured by the scan (never
+/// the page) so pagination can never reduce what gets soft-deleted. Always
+/// emits the report.
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
     let cfg = load_config(&paths)?;
     let mut conn = connection::open(paths.db_path())?;
-    let report = scan(&conn, &cfg)?;
+    let scanned = scan(&conn, &cfg, a.page.limit, a.page.offset)?;
     if a.apply {
-        apply(&mut conn, &paths, &report.low_value_memories)?;
+        // Act on the FULL candidate set the scan captured (not the windowed
+        // report) — pagination is a display concern and must not gate
+        // deletions.
+        apply(&mut conn, &paths, &scanned.full_low_value)?;
     }
-    output::emit(&report, json_flag)
+    output::emit(&scanned.report, json_flag)
 }
 
-/// Read-only candidate scan. Returns the orphan-edge count, the list of
-/// stale code paths, and the low-value memory ids without touching any
-/// table.
-fn scan(conn: &rusqlite::Connection, cfg: &Config) -> Result<Report> {
+/// A completed scan: the windowed [`Report`] for display plus the FULL
+/// (unwindowed) low-value candidate list that `--apply` must act on.
+struct Scan {
+    /// Display report, with both lists windowed to `(limit, offset)`.
+    report: Report,
+    /// Every flagged low-value id, regardless of the page window.
+    full_low_value: Vec<String>,
+}
+
+/// Read-only candidate scan. Builds the windowed display [`Report`] AND
+/// captures the full low-value candidate list (so `--apply` acts on every
+/// id, never just the page). `limit == 0` is the shared "all" sentinel.
+fn scan(conn: &rusqlite::Connection, cfg: &Config, limit: usize, offset: usize) -> Result<Scan> {
     let orphan_edges: i64 = conn.query_row(
         "SELECT count(*) FROM edges e \
           WHERE e.src_kind = 'memory' \
@@ -111,7 +146,7 @@ fn scan(conn: &rusqlite::Connection, cfg: &Config) -> Result<Report> {
                                AND i.path = code_symbols.path) \
           ORDER BY repo, path",
     )?;
-    let stale_code_files = stmt
+    let stale: Vec<String> = stmt
         .query_map([], |r| {
             let repo: String = r.get(0)?;
             let path: String = r.get(1)?;
@@ -119,10 +154,17 @@ fn scan(conn: &rusqlite::Connection, cfg: &Config) -> Result<Report> {
         })?
         .filter_map(std::result::Result::ok)
         .collect();
-    Ok(Report {
+    // Detect the full candidate set once: window a clone for the report,
+    // keep the full list for `--apply`.
+    let full_low_value = low_value::detect(conn, cfg)?;
+    let report = Report {
         orphan_edges,
-        stale_code_files,
-        low_value_memories: low_value::detect(conn, cfg)?,
+        stale_code_files: Page::from_slice(stale, limit, offset),
+        low_value_memories: Page::from_slice(full_low_value.clone(), limit, offset),
+    };
+    Ok(Scan {
+        report,
+        full_low_value,
     })
 }
 
