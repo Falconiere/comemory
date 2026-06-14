@@ -21,13 +21,16 @@
 //! memory side does not force a full re-index of the code corpus. The
 //! v6 code-graph state rides along: the mined `co_changed` / `imports`
 //! edges (the markdown replay rebuilds only memory-emitted edges) and the
-//! `repo_marker` rows with their `last_mined_commit` cursor. The
-//! learning-loop tables (`feedback`, `code_feedback`, `feedback_events`,
-//! `retrieval_log`, `query_expansions`) are copied the same way: they
-//! exist only in SQLite — there is no markdown to rebuild them from — and
-//! dropping them would silently reset the Beta feedback rerank priors and
-//! erase mined expansions, contradicting the documented never-expire
-//! contract.
+//! `repo_marker` rows with their `last_mined_commit` cursor. The v8
+//! auto-reinforcement state joins them: the `co_activated` memory→file
+//! edges earned by the co-activation reward and the `provenance` tag on the
+//! implicit `feedback_events` rows it mints — both DB-only, with no markdown
+//! source. The learning-loop tables (`feedback`, `code_feedback`,
+//! `feedback_events`, `retrieval_log`, `query_expansions`) are copied the
+//! same way: they exist only in SQLite — there is no markdown to rebuild
+//! them from — and dropping them would silently reset the Beta feedback
+//! rerank priors, erase mined expansions, and wipe accumulated
+//! reinforcement, contradicting the documented never-expire contract.
 //!
 //! Vectors are intentionally *not* repopulated here for the memory side:
 //! the v0.2 contract is BYO-vector, so re-embedding requires running the
@@ -41,6 +44,7 @@ use clap::Args as ClapArgs;
 
 use crate::cli::resolve_data_dir;
 use crate::config::paths::Paths;
+use crate::graph::edges::CO_ACTIVATED;
 use crate::memory::MemoryStore;
 use crate::prelude::*;
 use crate::store::{code_row, connection, memory_row};
@@ -224,12 +228,13 @@ fn copy_preserved_tables_from_old(conn: &mut rusqlite::Connection, old_db: &Path
 /// pre-v6 sources. `id` is carried verbatim so `parent_id` chunk → parent
 /// pointers stay valid in the copy.
 ///
-/// Beyond the four code tables, three more pieces of v6 code-graph state
-/// exist only in SQLite and must survive the rebuild: the mined
-/// `co_changed` / `imports` edges (the markdown replay rebuilds only
-/// memory-emitted edges), the `repo_marker` rows whose `last_mined_commit`
-/// cursor bounds the next mining pass, and (in
-/// [`copy_learning_tables_inner`]) the `code_feedback` counters.
+/// Beyond the four code tables, more graph state exists only in SQLite and
+/// must survive the rebuild: the mined `co_changed` / `imports` edges and
+/// the v8 `co_activated` reinforcement edges (the markdown replay rebuilds
+/// only memory-emitted edges), the `repo_marker` rows whose
+/// `last_mined_commit` cursor bounds the next mining pass, and (in
+/// [`copy_learning_tables_inner`]) the `code_feedback` counters and the v8
+/// `feedback_events.provenance` tag.
 fn copy_code_tables_inner(conn: &rusqlite::Connection) -> Result<()> {
     // Copy regular tables first, then the virtual tables (FTS5 + vec0).
     // code_symbols must come before code_vec/code_fts because the latter
@@ -262,10 +267,17 @@ fn copy_code_tables_inner(conn: &rusqlite::Connection) -> Result<()> {
              SELECT repo, path, blob_oid, indexed_at FROM old.indexed_files;",
         )?;
     }
-    // Mined code-graph edges. The rel filter narrows to the two kinds the
-    // markdown replay cannot reproduce; a pre-v6 source has no such rows
-    // (its rel CHECK predates the kinds) and no `weight` column, hence the
-    // probe defaulting to the pre-v6 implicit weight of 1.
+    // Mined/earned code-graph edges. The rel filter narrows to the three
+    // kinds the markdown replay cannot reproduce: the git-mined
+    // `co_changed` / `imports` edges plus the v8 `co_activated` edges earned
+    // by the co-activation reward (memory→file, weighted — earned state that
+    // markdown has no source for, like the feedback counters). A pre-v6
+    // source has no such rows (its rel CHECK predates the kinds) and no
+    // `weight` column, hence the probe defaulting to the pre-v6 implicit
+    // weight of 1. The [`CO_ACTIVATED`] const is bound rather than inlined so
+    // the filter cannot drift from the writer's literal; it is a
+    // crate-internal const with no SQL metacharacters, so interpolation is
+    // safe.
     if old_table_exists(conn, "edges")? {
         let weight_expr = if old_column_exists(conn, "edges", "weight")? {
             "weight"
@@ -276,7 +288,7 @@ fn copy_code_tables_inner(conn: &rusqlite::Connection) -> Result<()> {
             "INSERT OR IGNORE INTO main.edges(\
                  src_kind, src_id, dst_kind, dst_id, rel, weight, created_at) \
              SELECT src_kind, src_id, dst_kind, dst_id, rel, {weight_expr}, created_at \
-             FROM old.edges WHERE rel IN ('co_changed', 'imports');"
+             FROM old.edges WHERE rel IN ('co_changed', 'imports', '{CO_ACTIVATED}');"
         ))?;
     }
     // Per-repo code-format stamps (`schema_meta` keys
@@ -343,10 +355,11 @@ fn copy_code_tables_inner(conn: &rusqlite::Connection) -> Result<()> {
 /// only copied when it exists on the attached DB; `retrieval_log.duration_ms`
 /// (v5) and its `repo` / `kind` / `source` filter columns (v6, probed
 /// together via `source`) are defaulted to NULL / NULL / NULL / `'search'`
-/// when the source predates them, and `feedback_events.target_kind` (v6)
-/// defaults to `'memory'` — dropping either would let old `search-code` log
-/// rows re-enter reformulation mining and code verdicts masquerade as
-/// memory verdicts in the harvest.
+/// when the source predates them, `feedback_events.target_kind` (v6)
+/// defaults to `'memory'`, and `feedback_events.provenance` (v8) defaults to
+/// `'manual'` — dropping any would let old `search-code` log rows re-enter
+/// reformulation mining, code verdicts masquerade as memory verdicts in the
+/// harvest, or auto-reinforcement events be relabelled as manual.
 fn copy_learning_tables_inner(conn: &rusqlite::Connection) -> Result<()> {
     if old_table_exists(conn, "feedback")? {
         conn.execute_batch(
@@ -393,10 +406,22 @@ fn copy_learning_tables_inner(conn: &rusqlite::Connection) -> Result<()> {
         } else {
             "'memory'"
         };
+        // v8 `provenance` (NOT NULL DEFAULT 'manual'): carries the
+        // auto-reinforcement tag (`auto_coactivation`) earned by the
+        // co-activation reward. A pre-0008 source lacks the column, so probe
+        // and default to the same `'manual'` the migration backfills —
+        // dropping it would relabel every implicit reinforcement event as
+        // manual and let `eval::golden::harvest` treat auto rows as user
+        // verdicts.
+        let prov_expr = if old_column_exists(conn, "feedback_events", "provenance")? {
+            "provenance"
+        } else {
+            "'manual'"
+        };
         conn.execute_batch(&format!(
             "INSERT OR IGNORE INTO main.feedback_events(\
-                 id, query_id, memory_id, verdict, at, target_kind) \
-             SELECT id, query_id, memory_id, verdict, at, {target_expr} \
+                 id, query_id, memory_id, verdict, at, target_kind, provenance) \
+             SELECT id, query_id, memory_id, verdict, at, {target_expr}, {prov_expr} \
              FROM old.feedback_events;"
         ))?;
     }
