@@ -1,5 +1,47 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **Auto-reinforcement (Phase 0+1).** comemory now learns from git activity:
+  commits that touch files a memory references reinforce that memory
+  automatically — no manual `comemory feedback`. During `index-code` a
+  triple-channel reward is harvested deterministically — a weighted
+  `co_activated` edge, an ACT-R activation bump, and a confidence-gated
+  (crossing-once at edge weight ≥ 2) Bayesian `used` increment — idempotent via
+  the existing co-change `last_mined_commit` cursor. Implicit feedback is
+  provenance-tagged (`auto_coactivation`, sentinel query id) and excluded from
+  the golden-set harvest. Migration `0008` adds the `co_activated` edge kind +
+  `feedback_events.provenance`; `comemory rebuild` preserves the earned state.
+  `context` now also reinforces code-ref `access_count` (parity with
+  `search-code`), via a de-duplicated `code_row::record_access`.
+- **Pagination across data-returning commands.** `--limit`/`--offset` on
+  `search`, `search-code`, `context`, `list`, `graph`, `prune`, `ast`. Ranked
+  retrieval pages stably within a bounded window
+  (`retrieval.max_page_window`, env `COMEMORY_RETRIEVAL_MAX_PAGE_WINDOW`,
+  default 200): the pipeline diversifies over a prefix-sized pool then slices
+  `[offset, offset+limit]`, so pages never drift (RRF/MMR top-prefix is
+  stable as the pool grows). `list` now reads the SQLite mirror with
+  pushed-down repo/kind filters + SQL `LIMIT/OFFSET` instead of scanning every
+  markdown file.
+
+### Changed
+- **BREAKING (`--json` output shape).** Data-returning commands now emit a
+  paginated envelope:
+  - `ast` and `list` change from a bare JSON array to a `Page` envelope
+    `{items, limit, offset, total, has_more}`.
+  - `search`/`search-code` keep `{hits, query_id?}` and gain
+    `limit, offset, has_more, total` (the in-window ranked count).
+  - `graph` gains `{nodes, edges, limit, offset, total, has_more}` (edge-windowed,
+    nodes derived from the page); `prune` wraps `stale_code_files` /
+    `low_value_memories` as `Page` envelopes (`orphan_edges` stays a count).
+  - `serve` `GET /api/graph` returns the full graph when `limit`/`offset` are
+    absent (unchanged) and a paginated subgraph when either is present.
+  - `prune --apply` still acts on the full candidate set regardless of
+    `--limit`/`--offset`.
+- `--k` on retrieval commands gains a `--limit` alias; `--k 0` / `--limit 0`
+  now means "all within the window" (previously `--k 0` was rejected).
+
 ## 0.8.4 — 2026-06-14 (test-confidence + lang-quality migration)
 
 Internal test infrastructure, CI, and conventions. The published binary is
