@@ -13,7 +13,7 @@ use crate::prelude::*;
 
 /// Highest schema version known to this build. Bumped each time a new
 /// migration file is added under `src/store/sql/`.
-pub const CURRENT_VERSION: &str = "7";
+pub const CURRENT_VERSION: &str = "8";
 
 /// 0001 bootstrap SQL (`schema_meta` table). Public so tests can replay
 /// historical schema states exactly as an old binary created them.
@@ -40,6 +40,13 @@ pub const M_V6: &str = include_str!("./sql/0006_v6_code_graph.sql");
 /// back to real files on disk. Public so tests can replay historical
 /// schema states exactly as an old binary created them.
 pub const M_V7: &str = include_str!("./sql/0007_v7_repo_root.sql");
+/// 0008 SQL: auto-reinforcement schema — the `edges` table is rebuilt to
+/// add the `co_activated` rel kind to its `rel` CHECK (create-copy-drop-
+/// rename, both indexes recreated), and `feedback_events` gains a
+/// `provenance TEXT NOT NULL DEFAULT 'manual'` column. Public so tests
+/// can replay historical schema states exactly as an old binary created
+/// them.
+pub const M_V8: &str = include_str!("./sql/0008_v8_reinforcement.sql");
 
 /// Apply all pending migrations. Safe to re-run; each migration is
 /// only applied if its key is absent from `schema_meta`.
@@ -53,6 +60,7 @@ pub fn run(conn: &mut Connection) -> Result<()> {
     rehash_simhashes(conn)?;
     apply(conn, "0006_v6_code_graph", M_V6)?;
     apply(conn, "0007_v7_repo_root", M_V7)?;
+    apply(conn, "0008_v8_reinforcement", M_V8)?;
     set_version(conn, CURRENT_VERSION)?;
     Ok(())
 }

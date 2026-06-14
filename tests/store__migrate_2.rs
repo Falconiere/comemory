@@ -81,7 +81,7 @@ fn v6_extends_edges_adds_code_graph_columns() {
             |r| r.get(0),
         )
         .expect("v");
-    assert_eq!(v, "7");
+    assert_eq!(v, migrate::CURRENT_VERSION);
     let fv: String = conn
         .query_row(
             "SELECT value FROM schema_meta WHERE key='code_format_version'",
@@ -168,7 +168,7 @@ fn open_migrates_v5_db_to_v6() {
             |r| r.get(0),
         )
         .expect("version row");
-    assert_eq!(v, "7");
+    assert_eq!(v, migrate::CURRENT_VERSION);
 
     // The rebuild must recreate both edge indexes — a dropped index would
     // silently degrade every edge walk rather than fail loudly.
