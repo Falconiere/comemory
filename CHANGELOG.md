@@ -3,8 +3,9 @@
 ## 0.8.4 — 2026-06-14 (test-confidence + lang-quality migration)
 
 Internal test infrastructure, CI, and conventions. The published binary is
-functionally unchanged from 0.8.3 — the only `src/` change is a panic-free
-regex in `graph::cross_link` that preserves behavior.
+functionally unchanged from 0.8.3 — the two `src/` changes are
+behavior-preserving (a panic-free `graph::cross_link` regex and a
+`tty::write_header` extraction).
 
 ### Added
 - **Test-confidence program.** Measure-first tooling —
@@ -25,6 +26,8 @@ regex in `graph::cross_link` that preserves behavior.
   `.claude/claudness.config.json`.
 - Purged the one `src/` `.expect()` (the `cross_link` regex now compiles into a
   non-panicking `Lazy<Option<Regex>>`); no behavior change.
+- Extracted `output::tty::write_header` from `header()` — a behavior-preserving
+  seam that lets the header path be tested without a TTY.
 
 ## 0.8.3 — 2026-06-13 (docs accuracy)
 
