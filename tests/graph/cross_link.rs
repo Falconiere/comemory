@@ -155,3 +155,69 @@ fn ignores_url_like_matches() {
         r.symbols,
     );
 }
+
+/// Mutation guard for the prefix-start offset at
+/// `src/graph/cross_link.rs:70` (`.map(|i| i + 1)`).
+///
+/// `i` is the index of the last whitespace before the match; `i + 1` is
+/// the first byte of the token, so the URL-prefix slice starts AFTER the
+/// separator. Here an `@` sits in its OWN whitespace-separated token right
+/// before a clean ref:
+///
+/// ```text
+/// @ qwick-backend:src/db.rs
+/// ^ ^^ the space at index 1 is the last whitespace before the match
+/// 0 2  the match begins at index 2; correct prefix = bytes[2..2] = ""
+/// ```
+///
+/// With the correct `+ 1`, the prefix is empty → no `@` → the ref is KEPT.
+/// The `+`→`-` mutant makes the prefix start at index 0, pulling the `@`
+/// (and the space) into the prefix → the `@` URL-hallmark fires and the
+/// ref is wrongly DROPPED. Asserting the ref survives kills `+`→`-`.
+#[test]
+fn at_sign_in_a_separate_token_does_not_taint_the_following_ref() {
+    let r = extract_refs("@ qwick-backend:src/db.rs");
+    assert_eq!(
+        r.files,
+        vec!["qwick-backend:src/db.rs".to_string()],
+        "an `@` in its own token precedes the ref by whitespace; the prefix \
+         must start after that whitespace, leaving the ref intact",
+    );
+    assert!(
+        r.symbols.is_empty(),
+        "no symbol expected, got {:?}",
+        r.symbols
+    );
+}
+
+/// Mutation guard for the URL-window equality at
+/// `src/graph/cross_link.rs:73` (`prefix.windows(3).any(|w| w == b"://")`).
+///
+/// The check keeps a ref unless some 3-byte window of its non-whitespace
+/// prefix equals `://`. Here a ref is glued to a three-dot lead-in inside
+/// one contiguous run:
+///
+/// ```text
+/// see ...qwick-backend:src/db.rs ok
+///     ^^^ prefix = "..." (3 bytes, no `://`, no `@`)
+/// ```
+///
+/// The correct `== b"://"` finds no `://` window → the ref is KEPT. The
+/// `==`→`!=` mutant turns the test into "any window that ISN'T `://`",
+/// which `...` trivially satisfies → the ref is wrongly DROPPED. Asserting
+/// the ref survives (its prefix is a non-URL run of length ≥ 3) kills
+/// `==`→`!=`.
+#[test]
+fn non_url_three_byte_prefix_keeps_the_ref() {
+    let r = extract_refs("see ...qwick-backend:src/db.rs ok");
+    assert_eq!(
+        r.files,
+        vec!["qwick-backend:src/db.rs".to_string()],
+        "a `...` prefix is not a URL hallmark; the ref must be kept",
+    );
+    assert!(
+        r.symbols.is_empty(),
+        "no symbol expected, got {:?}",
+        r.symbols
+    );
+}

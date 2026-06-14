@@ -75,6 +75,61 @@ fn envelope_carries_query_id_when_present() {
     );
 }
 
+/// Build a `Reranked` fixture with a given `memory_id` and `tier`.
+fn make_hit(memory_id: &str, tier: u8, final_score: f64) -> Reranked {
+    Reranked {
+        memory_id: memory_id.into(),
+        source: Source::Lexical,
+        tier,
+        parts: ScoreParts {
+            rrf: final_score as f32,
+            activation: 1.0,
+            feedback: 1.0,
+            quality: 1.0,
+            supersede: 1.0,
+            final_score,
+        },
+        superseded_by: None,
+        body: String::new(),
+        simhash: 0,
+    }
+}
+
+/// Kill mutant `src/output/search.rs:81`: `hit.tier == TIER_EXPANDED` → `hit.tier != TIER_EXPANDED`.
+///
+/// Original: tier-4 → `[expanded]`, tier-1 → nothing.
+/// Mutant:   tier-4 → nothing,       tier-1 → `[expanded]`.
+/// Both assertions must hold to distinguish the two.
+#[test]
+fn tty_expanded_label_appears_only_for_tier4() {
+    // TIER_EXPANDED == 4 must show "[expanded]"; tier 1 must not.
+    let hits = vec![
+        make_hit("bbbb0004", 4, 0.010),
+        make_hit("cccc0001", 1, 0.020),
+    ];
+    let mut buf: Vec<u8> = Vec::new();
+    search::write_tty(&mut buf, &hits, None).expect("write_tty");
+    let out = String::from_utf8(buf).expect("utf8");
+
+    let tier4_line = out
+        .lines()
+        .find(|l| l.contains("bbbb0004"))
+        .expect("tier4 line");
+    assert!(
+        tier4_line.contains("[expanded]"),
+        "tier-4 hit must be labelled [expanded]: {tier4_line:?}"
+    );
+
+    let tier1_line = out
+        .lines()
+        .find(|l| l.contains("cccc0001"))
+        .expect("tier1 line");
+    assert!(
+        !tier1_line.contains("[expanded]"),
+        "tier-1 hit must not be labelled [expanded]: {tier1_line:?}"
+    );
+}
+
 #[test]
 fn envelope_omits_query_id_when_absent() {
     let hits = sample_hits();

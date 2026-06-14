@@ -1,7 +1,7 @@
 //! Mirror tests for `src/output/graph.rs`. Lock the DOT and HTML rendering
 //! shapes and the JSON serialization contract without touching a database.
 
-use comemory::output::graph::{CodeGraph, Edge, Node, to_dot, to_html};
+use comemory::output::graph::{to_dot, to_html, CodeGraph, Edge, Node};
 
 /// A small two-file graph: one `imports` edge and one weighted `co_changed`
 /// edge, with one zero-rank dangling endpoint.
@@ -105,6 +105,48 @@ fn dot_escapes_newlines_in_labels() {
     let dot = to_dot(&g);
     assert!(!dot.contains("src/a\nb.rs"), "raw newline must not survive");
     assert!(dot.contains("src/a\\nb.rs"), "newline escaped to \\n");
+}
+
+/// Kill mutant `src/output/graph.rs:90`: `> 0.0` → `>= 0.0`.
+///
+/// When every node has `rank == 0.0`, `max_rank` is `0.0`. The original
+/// guard (`> 0.0` is false) takes the else branch and assigns `scale = 0.0`,
+/// yielding `width = 0.60`. The mutant (`>= 0.0` is true) divides by zero,
+/// producing `width = NaN`. A NaN-formatted float produces `NaN` in the DOT
+/// output, so the test asserts the width literal is `0.60` — which passes on
+/// the original and fails under the mutation.
+#[test]
+fn dot_zero_rank_nodes_get_minimum_width() {
+    let g = CodeGraph {
+        nodes: vec![
+            Node {
+                id: "file:demo:src/x.rs".into(),
+                label: "src/x.rs".into(),
+                repo: "demo".into(),
+                rank: 0.0,
+                symbols: 0,
+            },
+            Node {
+                id: "file:demo:src/y.rs".into(),
+                label: "src/y.rs".into(),
+                repo: "demo".into(),
+                rank: 0.0,
+                symbols: 0,
+            },
+        ],
+        edges: vec![],
+    };
+    let dot = to_dot(&g);
+    // Both nodes have rank 0.0, so max_rank == 0.0. The scale must be 0.0
+    // and the width must be the base 0.60, not NaN.
+    assert!(
+        dot.contains("width=0.60"),
+        "all-zero-rank nodes must use base width 0.60, not NaN: {dot}"
+    );
+    assert!(
+        !dot.contains("NaN"),
+        "NaN must not appear in DOT output: {dot}"
+    );
 }
 
 #[test]

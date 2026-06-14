@@ -1,5 +1,5 @@
 use comemory::ast::languages::Lang;
-use comemory::graph::imports::{PathIndex, extract_imports};
+use comemory::graph::imports::{extract_imports, PathIndex};
 
 fn paths(v: &[&str]) -> Vec<String> {
     v.iter().map(|s| s.to_string()).collect()
@@ -211,4 +211,41 @@ fn empty_source_yields_no_imports() {
     ] {
         assert!(extract_imports(lang, "").expect("extract").is_empty());
     }
+}
+
+/// Mutation guard for the Go-prefix-retry match guard at
+/// `src/graph/imports.rs:157`
+/// (`None if module.contains('/') && !module.starts_with('.')`).
+///
+/// The guard restricts the "drop one leading segment and retry" tolerance
+/// to slash-bearing, non-dotted module strings (Go module prefixes). A
+/// DOTTED Python module like `a.b.c` has NO literal slash, so the guard is
+/// false and resolution must STOP at the first `by_suffix` miss, returning
+/// `None` — even though its normalized fragment `a/b/c` would, after
+/// dropping the leading `a/`, suffix-match the indexed `x/b/c.py` on `b/c`.
+///
+/// Two surviving mutants both make this wrongly resolve to `Some`:
+///   * guard → `true` (line 157:21): retry runs for the dotted module.
+///   * `&&` → `||` (line 157:42): `contains('/')` is false but
+///     `!starts_with('.')` is true, so `false || true` enables the retry.
+///
+/// The original guard yields `false && true = false`, so it returns
+/// `None`. Asserting `None` kills BOTH survivors — each would instead
+/// surface `Some("x/b/c.py")` via the unwarranted retry.
+#[test]
+fn dotted_module_does_not_trigger_go_prefix_retry() {
+    // `a/b/c` has no full-fragment candidate; `b/c` does (via x/b/c.py).
+    let indexed = paths(&["x/b/c.py"]);
+    let idx = PathIndex::new(&indexed);
+
+    // Sanity: the retry target `b/c` IS resolvable on its own, so a `Some`
+    // here can only come from the guard wrongly enabling the retry.
+    assert_eq!(idx.resolve("b.c", None), Some("x/b/c.py".to_string()));
+
+    // The dotted three-segment module must NOT borrow the Go-prefix retry.
+    assert_eq!(
+        idx.resolve("a.b.c", None),
+        None,
+        "dotted (slash-less) module must not trigger the Go module-prefix retry",
+    );
 }

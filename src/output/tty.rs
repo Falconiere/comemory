@@ -10,11 +10,16 @@ use owo_colors::OwoColorize;
 
 use crate::prelude::*;
 
-/// Render `s` as a bold cyan section header on stdout, followed by a newline.
-pub fn header(s: &str) -> Result<()> {
-    let mut out = std::io::stdout().lock();
+/// Render `s` as a bold cyan section header to `out`, followed by a newline.
+/// Extracted so tests can capture the output without going through stdout.
+pub fn write_header(out: &mut impl std::io::Write, s: &str) -> Result<()> {
     writeln!(out, "{}", s.bold().cyan())?;
     Ok(())
+}
+
+/// Render `s` as a bold cyan section header on stdout, followed by a newline.
+pub fn header(s: &str) -> Result<()> {
+    write_header(&mut std::io::stdout().lock(), s)
 }
 
 /// Render `msg` as a yellow `warning: <msg>` line on stderr, followed by a

@@ -1,0 +1,8 @@
+# cargo-mutants config. CLI dispatch + the binary entry are glue covered by
+# integration tests; mutating them is noise. Bundled rusqlite + sqlite-vec make
+# each rebuild slow, so widen the per-mutant timeout headroom.
+exclude_globs = ["src/main.rs", "src/cli/**"]
+timeout_multiplier = 3.0
+# Use nextest so the config-env test group serializes env-mutating tests,
+# matching the project's .config/nextest.toml constraints (max-threads = 1).
+test_tool = "nextest"

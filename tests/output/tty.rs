@@ -5,6 +5,24 @@
 
 use comemory::output::tty;
 
+/// Kill mutant `src/output/tty.rs:15`: `header` body replaced with `Ok(())`.
+///
+/// The original writes the header text to the output; the mutant writes
+/// nothing. `write_header` (the extracted helper that `header` delegates to)
+/// is called with a `Vec<u8>` buffer so the output is capturable without a
+/// real TTY. The test asserts the buffer is non-empty and contains the
+/// expected text — which passes on the original and fails under the mutation.
+#[test]
+fn write_header_emits_text_to_writer() {
+    let mut buf: Vec<u8> = Vec::new();
+    tty::write_header(&mut buf, "section title").expect("write_header");
+    let out = String::from_utf8(buf).expect("utf8");
+    assert!(
+        out.contains("section title"),
+        "write_header must emit the header text; got {out:?}"
+    );
+}
+
 #[test]
 fn score_contains_three_decimal_digits() {
     let rendered = tty::score(0.5);
