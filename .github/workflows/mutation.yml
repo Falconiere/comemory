@@ -13,8 +13,6 @@ jobs:
   mutants-diff:
     if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-24.04
-    # Report-only at launch: surface surviving mutants without failing the PR.
-    continue-on-error: true
     env:
       COMEMORY_INDEXING_AUTO_REINDEX: "off"
     steps:
@@ -39,10 +37,13 @@ jobs:
         # so this needs no origin/<ref> remote-tracking ref to exist.
         run: git diff ${{ github.event.pull_request.base.sha }}...HEAD --unified=3 > pr.diff
       - name: Run diff-scoped mutants
-        # Report-only at launch: a surviving mutant must not fail the check (the
-        # survivor is surfaced in the log + uploaded mutants.out/ artifact).
-        # Drop the `|| true` to flip this gate to blocking later.
-        run: bash scripts/mutation-check.sh diff pr.diff || true
+        # Report-only at launch: step-level continue-on-error tolerates a
+        # surviving mutant so the check stays green, while a failed step is still
+        # visible in the job (unlike `|| true`, which masks tool errors too).
+        # Survivors are surfaced in the log + uploaded mutants.out/ artifact.
+        # Remove this line to flip the gate to blocking later.
+        continue-on-error: true
+        run: bash scripts/mutation-check.sh diff pr.diff
       - name: Upload mutants report
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
