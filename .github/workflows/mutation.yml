@@ -72,8 +72,11 @@ jobs:
         with:
           tool: cargo-mutants,cargo-nextest
       - name: Run full-crate mutants
-        # Report-only: never fail the nightly schedule.
-        run: bash scripts/mutation-check.sh full || true
+        # Report-only: step-level continue-on-error (not `|| true`) so survivors
+        # don't fail the nightly run while a genuine cargo-mutants tool error
+        # stays visible — same shape as the mutants-diff job.
+        continue-on-error: true
+        run: bash scripts/mutation-check.sh full
       - name: Upload mutants report
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
