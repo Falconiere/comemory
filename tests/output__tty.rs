@@ -80,6 +80,40 @@ fn query_footer_appends_hint_only_with_hits() {
 }
 
 #[test]
+fn page_footer_shows_one_based_range() {
+    // offset 4, 3 shown, 10 total -> "showing 5-7 of 10 (--offset 4)".
+    let mut buf: Vec<u8> = Vec::new();
+    tty::write_page_footer(&mut buf, 3, 4, Some(10)).expect("write page footer");
+    let out = String::from_utf8(buf).expect("utf8");
+    assert!(
+        out.contains("showing 5\u{2013}7 of 10 (--offset 4)"),
+        "expected 1-based range footer; got {out:?}"
+    );
+}
+
+#[test]
+fn page_footer_empty_shows_zero() {
+    let mut buf: Vec<u8> = Vec::new();
+    tty::write_page_footer(&mut buf, 0, 2, Some(5)).expect("write page footer");
+    let out = String::from_utf8(buf).expect("utf8");
+    assert!(
+        out.contains("showing 0 of 5 (--offset 2)"),
+        "empty page must show 0; got {out:?}"
+    );
+}
+
+#[test]
+fn page_footer_unknown_total_renders_question_mark() {
+    let mut buf: Vec<u8> = Vec::new();
+    tty::write_page_footer(&mut buf, 2, 0, None).expect("write page footer");
+    let out = String::from_utf8(buf).expect("utf8");
+    assert!(
+        out.contains("showing 1\u{2013}2 of ? (--offset 0)"),
+        "unknown total must render as ?; got {out:?}"
+    );
+}
+
+#[test]
 fn query_footer_code_flavor_references_used_code() {
     let mut buf: Vec<u8> = Vec::new();
     tty::write_query_footer(

@@ -23,6 +23,7 @@ pub mod ingest_code;
 pub mod install_hooks;
 pub mod list;
 pub mod mine;
+pub mod pagination;
 pub mod prune;
 pub mod rebuild;
 pub mod save;

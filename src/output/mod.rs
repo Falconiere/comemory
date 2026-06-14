@@ -6,6 +6,7 @@
 pub mod context;
 pub mod graph;
 pub mod json;
+pub mod page;
 pub mod prune;
 pub mod search;
 pub mod search_code;

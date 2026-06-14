@@ -44,6 +44,33 @@ pub fn dim(s: &str) -> String {
     s.dimmed().to_string()
 }
 
+/// Write a dim pagination footer for a [`crate::output::page::Page`] view:
+/// `showing A–B of TOTAL (--offset M)`, where `A..=B` is the 1-based range
+/// of `shown` items starting at `offset`. An empty page prints
+/// `showing 0 of TOTAL (--offset M)`. Shared by every paginated TTY command
+/// so the footer never drifts. `total` is `None` when the full count is
+/// unknown, in which case `TOTAL` is rendered as `?`.
+pub fn write_page_footer(
+    out: &mut impl std::io::Write,
+    shown: usize,
+    offset: usize,
+    total: Option<usize>,
+) -> Result<()> {
+    let total_label = match total {
+        Some(t) => t.to_string(),
+        None => "?".to_string(),
+    };
+    let body = if shown == 0 {
+        format!("showing 0 of {total_label} (--offset {offset})")
+    } else {
+        let first = offset + 1;
+        let last = offset + shown;
+        format!("showing {first}\u{2013}{last} of {total_label} (--offset {offset})")
+    };
+    writeln!(out, "{}", dim(&body))?;
+    Ok(())
+}
+
 /// Which `comemory feedback` flag family the query footer's hint should
 /// reference. Memory results are fed back via `--used <ids>` (8-hex memory
 /// ids); code results via `--used-code <ids>` (integer `code_symbols` ids).

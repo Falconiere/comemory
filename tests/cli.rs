@@ -279,8 +279,16 @@ fn ast_finds_rust_function_pattern() {
         .success();
     let stdout = String::from_utf8(cmd.get_output().stdout.clone()).expect("utf8 stdout");
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
-    let arr = v.as_array().expect("top-level JSON array");
+    // `ast --json` now emits the shared `Page` envelope, not a bare array:
+    // `{ items, limit, offset, total, has_more }`.
+    let arr = v["items"].as_array().expect("Page.items array");
     assert_eq!(arr.len(), 2, "expected 2 matches, got {arr:?}");
+    assert_eq!(v["total"], serde_json::json!(2), "Page.total in {v}");
+    assert_eq!(
+        v["has_more"],
+        serde_json::json!(false),
+        "Page.has_more in {v}"
+    );
     let lines: Vec<u64> = arr
         .iter()
         .map(|r| r["line"].as_u64().expect("line"))
