@@ -88,6 +88,28 @@ fn first_run_mines_weighted_pairs_and_skips_mega_commit() {
     assert!(!out.cursor_lost, "a None cursor is absent, not lost");
 }
 
+/// The `touched` map counts EVERY changed path in the mined window (not
+/// just `known_files`) so the co-activation reward can reach memories that
+/// reference non-code files. The mega-commit is excluded here too. The base
+/// `build_sample_repo` root commit touches `src.rs` once.
+#[test]
+fn first_run_touched_counts_all_changed_paths_excluding_mega() {
+    let tmp = TempDir::new().expect("tempdir");
+    let repo = build_cochange_repo(tmp.path());
+
+    let out = mine_cochange(&repo, &known(), None).expect("mine");
+    // root: src.rs; c1: a,b; c2: a,b; c3: b,c; mega: SKIPPED.
+    assert_eq!(out.touched.get("src.rs"), Some(&1), "root commit's file");
+    assert_eq!(out.touched.get("a.rs"), Some(&2), "a.rs in c1+c2");
+    assert_eq!(out.touched.get("b.rs"), Some(&3), "b.rs in c1+c2+c3");
+    assert_eq!(out.touched.get("c.rs"), Some(&1), "c.rs in c3");
+    assert!(
+        out.touched.keys().all(|p| !p.starts_with("filler_")),
+        "mega-commit filler paths must not be counted: {:?}",
+        out.touched
+    );
+}
+
 #[test]
 fn incremental_mine_counts_only_commits_after_cursor() {
     let tmp = TempDir::new().expect("tempdir");
