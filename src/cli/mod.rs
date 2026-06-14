@@ -21,6 +21,7 @@ pub mod graph;
 pub mod index_code;
 pub mod ingest_code;
 pub mod install_hooks;
+pub mod lazy_reindex;
 pub mod list;
 pub mod mine;
 pub mod pagination;

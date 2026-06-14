@@ -113,8 +113,29 @@ pub struct EmbeddingsConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IndexingConfig {
+    /// How the code index is kept fresh: `lazy` (default), `hook`, or `off`.
+    ///
+    /// `lazy` — `search-code` / `context` fire a DETACHED background
+    /// `index-code` when the repo's HEAD has moved since the last index, then
+    /// search the current index immediately (see `cli::lazy_reindex`).
+    /// `hook` — relies on installed git hooks; no in-process trigger. `off` —
+    /// the index refreshes only on a manual `index-code`.
     pub auto_reindex: AutoReindexMode,
+    /// Debounce window (milliseconds) for the `lazy` background trigger.
+    ///
+    /// After a lazy reindex is fired for a repo, a fresh spawn is suppressed
+    /// for this many milliseconds even across a HEAD change, so a burst of
+    /// searches (e.g. during a rebase) cannot fork a herd of `index-code`
+    /// processes. A trigger already fired for the *current* HEAD is always
+    /// suppressed regardless of this window. Default `200`.
     pub auto_reindex_threshold_ms: u64,
+    /// RESERVED. Intended max files per incremental indexing batch.
+    ///
+    /// Currently parsed and validated but not consumed: `index-code` runs the
+    /// whole walk in one SQLite transaction with no batch seam to thread this
+    /// through, and the `lazy` trigger delegates to that single `index-code`
+    /// invocation. Kept as an honest reserved knob (rather than wired to a
+    /// fake consumer) for a future chunked-commit indexing path. Default `50`.
     pub incremental_batch_size: usize,
 }
 
