@@ -39,7 +39,10 @@ jobs:
         # so this needs no origin/<ref> remote-tracking ref to exist.
         run: git diff ${{ github.event.pull_request.base.sha }}...HEAD --unified=3 > pr.diff
       - name: Run diff-scoped mutants
-        run: bash scripts/mutation-check.sh diff pr.diff
+        # Report-only at launch: a surviving mutant must not fail the check (the
+        # survivor is surfaced in the log + uploaded mutants.out/ artifact).
+        # Drop the `|| true` to flip this gate to blocking later.
+        run: bash scripts/mutation-check.sh diff pr.diff || true
       - name: Upload mutants report
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
