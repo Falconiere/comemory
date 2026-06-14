@@ -12,7 +12,7 @@ permissions:
 jobs:
   mutants-diff:
     if: ${{ github.event_name == 'pull_request' }}
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     # Report-only at launch: surface surviving mutants without failing the PR.
     continue-on-error: true
     env:
@@ -49,7 +49,7 @@ jobs:
 
   mutants-full:
     if: ${{ github.event_name == 'schedule' }}
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     env:
       COMEMORY_INDEXING_AUTO_REINDEX: "off"
     steps:
