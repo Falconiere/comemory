@@ -1,7 +1,7 @@
 //! Mirror tests for `src/output/graph.rs`. Lock the DOT and HTML rendering
 //! shapes and the JSON serialization contract without touching a database.
 
-use comemory::output::graph::{CodeGraph, Edge, Node, to_dot, to_html};
+use comemory::output::graph::{CodeGraph, Edge, GraphPage, Node, to_dot, to_html};
 
 /// A small two-file graph: one `imports` edge and one weighted `co_changed`
 /// edge, with one zero-rank dangling endpoint.
@@ -156,4 +156,33 @@ fn json_round_trips_node_and_edge_fields() {
     assert_eq!(json["nodes"][0]["symbols"], 3);
     assert_eq!(json["edges"][1]["rel"], "co_changed");
     assert_eq!(json["edges"][1]["weight"], 4);
+}
+
+#[test]
+fn graph_page_has_more_true_when_window_short_of_total() {
+    // 2 edges shown at offset 0, but total is 5 → more pages remain.
+    let page = GraphPage::new(sample(), 2, 0, 5);
+    assert_eq!(page.limit, 2);
+    assert_eq!(page.offset, 0);
+    assert_eq!(page.total, 5);
+    assert!(page.has_more, "offset 0 + 2 shown < 5 total");
+}
+
+#[test]
+fn graph_page_has_more_false_at_last_window() {
+    // 2 edges shown starting at offset 3 reaches the end of a 5-edge set.
+    let page = GraphPage::new(sample(), 2, 3, 5);
+    assert!(!page.has_more, "offset 3 + 2 shown == 5 total");
+}
+
+#[test]
+fn graph_page_json_carries_envelope_metadata() {
+    let json = serde_json::to_value(GraphPage::new(sample(), 2, 0, 5)).expect("serialize");
+    // The page carries both collections plus the cursor metadata.
+    assert_eq!(json["edges"].as_array().expect("edges").len(), 2);
+    assert_eq!(json["nodes"].as_array().expect("nodes").len(), 2);
+    assert_eq!(json["limit"], 2);
+    assert_eq!(json["offset"], 0);
+    assert_eq!(json["total"], 5);
+    assert_eq!(json["has_more"], true);
 }

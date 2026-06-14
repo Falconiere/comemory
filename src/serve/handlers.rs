@@ -11,7 +11,7 @@ use axum::response::{Html, IntoResponse, Redirect, Response};
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::cli::graph::{Rel, build_code_graph};
+use crate::cli::graph::{Rel, build_code_graph, build_graph_page};
 use crate::prelude::*;
 use crate::serve::error::ApiError;
 use crate::serve::{AppState, assets, fileio, repo_root};
@@ -22,15 +22,23 @@ pub struct FileQuery {
     id: String,
 }
 
-/// Optional `?rel=…&min_weight=…` filters for the graph endpoint, mirroring the
-/// `comemory graph` CLI flags so the server can filter before sending instead
-/// of shipping every edge for the client to hide.
+/// Optional `?rel=…&min_weight=…&limit=…&offset=…` filters for the graph
+/// endpoint, mirroring the `comemory graph` CLI flags so the server can filter
+/// before sending instead of shipping every edge for the client to hide.
+///
+/// When **both** `limit` and `offset` are absent the handler returns the full
+/// `{nodes, edges}` graph (today's behavior, so the embedded SPA keeps working);
+/// when either is present it returns the paginated `GraphPage` envelope.
 #[derive(Deserialize)]
 pub struct GraphQuery {
     /// `all` (default) | `imports` | `co_changed`.
     rel: Option<String>,
     /// Minimum `co_changed` edge weight; defaults to (and is floored at) 1.
     min_weight: Option<i64>,
+    /// Edge-window size. Negative → 400; absent (with `offset`) defaults to 50.
+    limit: Option<i64>,
+    /// Edges to skip. Negative → 400; absent (with `limit`) defaults to 0.
+    offset: Option<i64>,
 }
 
 /// `GET /` — the embedded SPA shell with the session token injected.
@@ -71,6 +79,13 @@ pub async fn health(State(state): State<AppState>) -> Json<serde_json::Value> {
 /// `GET /api/graph` — the file-level code graph, built by the same routine the
 /// static `graph --format html` export uses. Honors optional `rel` /
 /// `min_weight` query filters (defaults match the CLI: all relations, weight 1).
+///
+/// Backward-compatible: with neither `limit` nor `offset` present it returns
+/// the full `{nodes, edges}` graph the embedded SPA already consumes. When
+/// either is present it paginates the edge dimension and returns the
+/// `GraphPage` envelope (`{nodes, edges, limit, offset, total, has_more}`).
+/// A negative `limit`/`offset` is rejected with 400, mirroring `min_weight`'s
+/// defensive parse.
 pub async fn graph(
     State(state): State<AppState>,
     Query(q): Query<GraphQuery>,
@@ -83,8 +98,25 @@ pub async fn graph(
     };
     let min_weight = q.min_weight.unwrap_or(1).max(1);
     let conn = state.conn()?;
-    let graph = build_code_graph(&conn, state.repo(), rel, min_weight)?;
-    Ok(Json(serde_json::to_value(graph).map_err(Error::Json)?))
+    if q.limit.is_none() && q.offset.is_none() {
+        let graph = build_code_graph(&conn, state.repo(), rel, min_weight)?;
+        return Ok(Json(serde_json::to_value(graph).map_err(Error::Json)?));
+    }
+    let limit = parse_window_param(q.limit, "limit", 50)?;
+    let offset = parse_window_param(q.offset, "offset", 0)?;
+    let page = build_graph_page(&conn, state.repo(), rel, min_weight, limit, offset)?;
+    Ok(Json(serde_json::to_value(page).map_err(Error::Json)?))
+}
+
+/// Coerce an optional signed window param into a `usize`, applying `default`
+/// when absent and rejecting negatives with a 400 (`BadRequest`) so a bad
+/// `?limit=-1` fails loudly rather than silently clamping.
+fn parse_window_param(v: Option<i64>, name: &str, default: usize) -> Result<usize> {
+    match v {
+        None => Ok(default),
+        Some(n) if n < 0 => Err(Error::BadRequest(format!("{name} must be >= 0"))),
+        Some(n) => Ok(usize::try_from(n).unwrap_or(usize::MAX)),
+    }
 }
 
 /// `GET /api/file?id=…` — read an indexed source file for the editor.
