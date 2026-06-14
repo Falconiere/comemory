@@ -281,6 +281,12 @@ fn fetch_edges(
 /// others). Endpoints whose ids don't parse, or that have no `code_symbols`
 /// rows (stale edges), simply produce no row here — [`build_graph`] then
 /// materializes them as zero-rank nodes so the edge is never orphaned.
+///
+/// All distinct `(repo, path)` endpoints are aggregated in ONE chunked query
+/// (a `(repo, path)` `VALUES`-join), not one query per endpoint, so a page of
+/// many edges costs a bounded number of round-trips. The per-pair
+/// `MAX(rank_score)` + `COUNT(*)` aggregation and the `parent_id IS NULL`
+/// filter are preserved exactly; a pair with no parent rows yields no row.
 fn fetch_nodes_for_edges(conn: &Connection, edges: &[Edge]) -> Result<Vec<NodeRow>> {
     // Dedup endpoints into a stable set so each file is fetched once and the
     // node list is deterministic.
@@ -289,19 +295,55 @@ fn fetch_nodes_for_edges(conn: &Connection, edges: &[Edge]) -> Result<Vec<NodeRo
         .flat_map(|e| [e.src.as_str(), e.dst.as_str()])
         .filter_map(|id| parse_id(id).map(|(r, p)| (r.to_string(), p.to_string())))
         .collect();
+    let pairs: Vec<(String, String)> = pairs.into_iter().collect();
     let mut rows = Vec::with_capacity(pairs.len());
-    let mut stmt = conn.prepare(
-        "SELECT repo, path, MAX(rank_score), COUNT(*) FROM code_symbols \
-          WHERE parent_id IS NULL AND repo = ?1 AND path = ?2 \
-          GROUP BY repo, path",
-    )?;
-    for (repo, path) in &pairs {
-        let mut got = stmt.query_map(rusqlite::params![repo, path], map_node_row)?;
-        if let Some(row) = got.next() {
-            rows.push(row?);
-        }
+    // Two host params per pair; stay well under SQLite's variable cap.
+    for chunk in pairs.chunks(NODE_PAIR_CHUNK) {
+        fetch_node_chunk(conn, chunk, &mut rows)?;
     }
     Ok(rows)
+}
+
+/// Max `(repo, path)` pairs per batched node fetch. Each pair binds two host
+/// params, so `500 × 2 = 1000` stays far under bundled SQLite's
+/// `SQLITE_MAX_VARIABLE_NUMBER` (32766).
+const NODE_PAIR_CHUNK: usize = 500;
+
+/// Aggregate one chunk of distinct `(repo, path)` endpoints in a single query.
+/// Restricting to the wanted pairs with a row-value `(repo, path) IN (VALUES …)`
+/// keeps the `parent_id IS NULL` filter and the per-pair `MAX(rank_score)` +
+/// `COUNT(*)` aggregation identical to the old per-endpoint loop; pairs with no
+/// `parent_id IS NULL` rows simply produce no group, matching its "no row"
+/// behavior. Endpoint order is preserved (`ORDER BY repo, path` over the
+/// already-sorted input).
+fn fetch_node_chunk(
+    conn: &Connection,
+    chunk: &[(String, String)],
+    rows: &mut Vec<NodeRow>,
+) -> Result<()> {
+    if chunk.is_empty() {
+        return Ok(());
+    }
+    // One `(?,?)` tuple per wanted pair, fed to a row-value `IN (VALUES …)`.
+    let values = std::iter::repeat_n("(?,?)", chunk.len())
+        .collect::<Vec<_>>()
+        .join(",");
+    let sql = format!(
+        "SELECT c.repo, c.path, MAX(c.rank_score), COUNT(*) FROM code_symbols c \
+          WHERE c.parent_id IS NULL \
+            AND (c.repo, c.path) IN (VALUES {values}) \
+          GROUP BY c.repo, c.path \
+          ORDER BY c.repo, c.path"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let params = chunk
+        .iter()
+        .flat_map(|(repo, path)| [repo.as_str(), path.as_str()]);
+    let chunk_rows = stmt
+        .query_map(rusqlite::params_from_iter(params), map_node_row)?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    rows.extend(chunk_rows);
+    Ok(())
 }
 
 /// A raw per-file node row: `(repo, path, rank, symbol_count)`.

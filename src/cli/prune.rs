@@ -256,6 +256,20 @@ fn apply(conn: &mut rusqlite::Connection, paths: &Paths, low_value_ids: &[String
             )",
         [],
     )?;
+    // `co_activated` edges point at the `file:`-PREFIXED node id
+    // (`file:<repo>:<path>` — `graph::edges::file_node_id`), NOT the bare form
+    // `references_file` uses, so the existence check carries the `'file:'`
+    // prefix. Like the two above, they dangle once a file's `code_symbols`
+    // rows are purged.
+    tx.execute(
+        "DELETE FROM edges \
+          WHERE rel = 'co_activated' \
+            AND NOT EXISTS( \
+                SELECT 1 FROM code_symbols cs \
+                 WHERE edges.dst_id = 'file:' || cs.repo || ':' || cs.path \
+            )",
+        [],
+    )?;
     tx.commit()?;
     Ok(())
 }

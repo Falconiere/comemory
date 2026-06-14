@@ -12,7 +12,9 @@ mod code_seed;
 use std::collections::BTreeMap;
 
 use comemory::config::Config;
-use comemory::retrieval::code_prior::{CodePriorParts, Signals, median_file_rank, priors, signals};
+use comemory::retrieval::code_prior::{
+    CodePriorParts, Signals, median_file_rank, priors, signals, signals_batch,
+};
 use comemory::retrieval::code_rerank::WorkingSet;
 use time::OffsetDateTime;
 
@@ -217,4 +219,54 @@ fn median_file_rank_dedups_files_and_skips_vanished_ids() {
 
     let empty = median_file_rank(std::iter::empty::<((&str, &str), f64)>());
     assert_eq!(empty, 0.0, "empty pool maps to 0.0 (neutral rank prior)");
+}
+
+/// `signals_batch` must return rows byte-identical to the per-row `signals`
+/// fetch, skip ids that have no `code_symbols` row (the vanished-row `None`
+/// case becomes a missing map entry), and survive an empty input.
+#[test]
+fn signals_batch_matches_per_row_fetch_and_skips_vanished() {
+    let (_d, conn) = code_seed::open_db();
+    let a = code_seed::seed_symbol(&conn, "demo", "a.rs", "a_run");
+    let b = code_seed::seed_symbol(&conn, "demo", "b.rs", "b_run");
+    // Boost one row so the batch carries the same non-default counters the
+    // per-row fetch would.
+    conn.execute(
+        "UPDATE code_symbols SET rank_score = 0.7, access_count = 12 WHERE id = ?1",
+        [a],
+    )
+    .expect("boost a");
+    conn.execute(
+        "INSERT INTO code_feedback(repo, path, symbol, used_count, irrelevant_count) \
+         VALUES ('demo', 'a.rs', 'a_run', 4, 1)",
+        [],
+    )
+    .expect("seed feedback");
+
+    // 9_999 is a vanished id; it must be absent from the map.
+    let map = signals_batch(&conn, &[a, b, 9_999]).expect("signals_batch");
+    assert_eq!(map.len(), 2, "vanished id must be skipped, not error");
+    assert!(!map.contains_key(&9_999), "vanished id has no entry");
+
+    for id in [a, b] {
+        let one = fetch_signals(&conn, id).expect("per-row row exists");
+        let batched = map.get(&id).expect("id present in batch");
+        assert_eq!(batched.repo, one.repo);
+        assert_eq!(batched.path, one.path);
+        assert_eq!(batched.symbol, one.symbol);
+        assert_eq!(batched.kind, one.kind);
+        assert_eq!(batched.lang, one.lang);
+        assert_eq!(batched.line_start, one.line_start);
+        assert_eq!(batched.line_end, one.line_end);
+        assert!((batched.rank_score - one.rank_score).abs() < 1e-12);
+        assert_eq!(batched.access_count, one.access_count);
+        assert_eq!(batched.last_accessed, one.last_accessed);
+        assert_eq!(batched.parent_id, one.parent_id);
+        assert_eq!(batched.used, one.used);
+        assert_eq!(batched.irrelevant, one.irrelevant);
+    }
+
+    // Empty input is a no-op empty map.
+    let empty = signals_batch(&conn, &[]).expect("empty batch");
+    assert!(empty.is_empty(), "empty ids → empty map");
 }
