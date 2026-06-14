@@ -15,7 +15,7 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::cli::{embedding_input, load_config, override_top_k, resolve_data_dir};
+use crate::cli::{embedding_input, load_config, page_meta, page_window, resolve_data_dir};
 use crate::config::paths::Paths;
 use crate::output;
 use crate::prelude::*;
@@ -54,12 +54,17 @@ omitted, the checkout directory's basename.";
 pub struct Args {
     /// Free-form query — symbol name, file path fragment, or phrase.
     pub query: String,
-    /// Override the configured `retrieval.top_k` for this bundle. Must be >= 1.
-    #[arg(
-        long,
-        value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..)
-    )]
+    /// Page size for the bundle's memory list — overrides the configured
+    /// `retrieval.top_k`. `--limit` is an accepted alias. `0` means "all
+    /// remaining within the `max_page_window`".
+    #[arg(long, visible_alias = "limit")]
     pub k: Option<usize>,
+    /// Number of leading ranked memories to skip (deep paging of the
+    /// bundle's memory list). Bounded by `retrieval.max_page_window`. Per-
+    /// memory code refs are not paginated — each surfaced memory keeps its
+    /// full ref set.
+    #[arg(long, default_value_t = 0)]
+    pub offset: usize,
     /// Optional repo filter forwarded to the router.
     #[arg(long)]
     pub repo: Option<String>,
@@ -88,7 +93,8 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     let conn = connection::open(paths.db_path())?;
 
     let vec = embedding_input::read_optional(a.vector_stdin, a.vector.as_deref())?;
-    let cfg = override_top_k(load_config(&paths)?, a.k);
+    let cfg = load_config(&paths)?;
+    let window = page_window(&cfg, a.k, a.offset);
     // A user-facing lookup always tracks. The flag is carried on
     // `SearchOptions` so the memory access bump (inside `pipeline::search`)
     // and the code-ref bump below share one gate: an eval/tune caller that
@@ -96,6 +102,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     let opts = pipeline::SearchOptions {
         track: true,
         source: crate::stats::source::CONTEXT,
+        window,
     };
     let run = pipeline::search(
         &cfg,
@@ -106,6 +113,8 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         None,
         opts,
     )?;
+    let meta = page_meta(window, run.has_more, run.total);
+    let query_id = run.query_id.clone();
     let ids: Vec<String> = run.hits.into_iter().map(|h| h.memory_id).collect();
     // Zero hits → no edges to walk, hence no code refs for the affinity
     // prior to boost, so the git discovery + status walk behind
@@ -123,5 +132,5 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     if opts.track {
         code_row::record_access(&conn, &bundle.resolved_code_ids);
     }
-    output::context::emit(&bundle, run.query_id.as_deref(), json_flag)
+    output::context::emit(&bundle, query_id.as_deref(), meta, json_flag)
 }

@@ -5,9 +5,21 @@
 //! `score path:start-end symbol (kind) #id` rows, the code-flavored
 //! `--used-code` feedback footer, and the empty-index hint.
 
+use comemory::output::search::PageMeta;
 use comemory::output::search_code;
 use comemory::retrieval::code_rerank::{CodeReranked, CodeScoreParts};
 use comemory::retrieval::router::Source;
+
+/// Representative pagination cursor for the unpaginated first page: page
+/// size 12 (default `top_k`), no offset, single in-window hit.
+fn meta() -> PageMeta {
+    PageMeta {
+        limit: 12,
+        offset: 0,
+        has_more: false,
+        total: Some(1),
+    }
+}
 
 fn sample_hits() -> Vec<CodeReranked> {
     vec![CodeReranked {
@@ -36,12 +48,12 @@ fn emit_accepts_empty_hits_in_json_mode() {
     // Smoke test: emitting zero hits in JSON mode must succeed. The full
     // envelope shape is pinned by `search_code_json_envelope_contract`.
     let hits: Vec<CodeReranked> = Vec::new();
-    search_code::emit(&hits, None, false, true).expect("emit must succeed for empty hits");
+    search_code::emit(&hits, None, meta(), false, true).expect("emit must succeed for empty hits");
 }
 
 #[test]
 fn search_code_json_envelope_contract() {
-    insta::assert_json_snapshot!(search_code::envelope(&sample_hits(), None));
+    insta::assert_json_snapshot!(search_code::envelope(&sample_hits(), None, meta()));
 }
 
 #[test]
@@ -49,6 +61,7 @@ fn envelope_carries_query_id_when_present() {
     let v = serde_json::to_value(search_code::envelope(
         &sample_hits(),
         Some("q-20260611-a1b2c3d4"),
+        meta(),
     ))
     .expect("serialize");
     assert_eq!(
@@ -59,7 +72,8 @@ fn envelope_carries_query_id_when_present() {
 
 #[test]
 fn envelope_omits_query_id_when_absent() {
-    let v = serde_json::to_value(search_code::envelope(&sample_hits(), None)).expect("serialize");
+    let v = serde_json::to_value(search_code::envelope(&sample_hits(), None, meta()))
+        .expect("serialize");
     assert!(
         v.get("query_id").is_none(),
         "query_id must be skipped when None: {v}"
@@ -68,7 +82,8 @@ fn envelope_omits_query_id_when_absent() {
 
 #[test]
 fn envelope_serializes_lines_as_start_end_array() {
-    let v = serde_json::to_value(search_code::envelope(&sample_hits(), None)).expect("serialize");
+    let v = serde_json::to_value(search_code::envelope(&sample_hits(), None, meta()))
+        .expect("serialize");
     assert_eq!(
         v["hits"][0]["lines"],
         serde_json::json!([3, 9]),

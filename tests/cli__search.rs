@@ -189,3 +189,117 @@ fn identifier_query_finds_prose_only_memory_in_top_3() {
         "identifier query must reach the prose-only body, got: {out}"
     );
 }
+
+/// Seed `n` lexically-matching memories through the real CLI.
+fn seed_many(home: &tempfile::TempDir, n: usize) {
+    for i in 0..n {
+        Command::cargo_bin("comemory")
+            .expect("bin")
+            .env("COMEMORY_DATA_DIR", home.path())
+            .args([
+                "save",
+                "--kind",
+                "note",
+                &format!("paging corpus row {i} about sqlite indexing"),
+            ])
+            .assert()
+            .success();
+    }
+}
+
+/// Run `comemory search --json` with extra args, return the parsed envelope.
+fn search_json(home: &tempfile::TempDir, extra: &[&str]) -> Value {
+    let mut args = vec!["search", "sqlite indexing", "--json"];
+    args.extend_from_slice(extra);
+    let assert = Command::cargo_bin("comemory")
+        .expect("bin")
+        .env("COMEMORY_DATA_DIR", home.path())
+        .args(&args)
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    serde_json::from_str(&out).unwrap_or_else(|e| panic!("json ({e}): {out}"))
+}
+
+fn ids_of(v: &Value) -> Vec<String> {
+    v.get("hits")
+        .and_then(Value::as_array)
+        .expect("hits array")
+        .iter()
+        .map(|h| h["memory_id"].as_str().expect("memory_id").to_string())
+        .collect()
+}
+
+/// CLI-level stability: page through 25 matches with `--k 8` and rising
+/// `--offset`. No id repeats across pages, none is skipped, and the
+/// concatenation equals the single-shot ranked window. The envelope's
+/// `limit`/`offset`/`has_more`/`total` track each page correctly.
+#[test]
+fn search_pagination_is_stable_across_offsets() {
+    let home = tempdir().expect("tempdir");
+    seed_many(&home, 25);
+
+    // Single-shot ground truth: the whole window.
+    let full = search_json(&home, &["--k", "0"]);
+    let full_ids = ids_of(&full);
+    let total = full["total"].as_u64().expect("total") as usize;
+    assert_eq!(full_ids.len(), total, "total == in-window ranked count");
+    // The diversified window may collapse a near-dup or two; it must still
+    // hold more than two pages so the stability walk is meaningful.
+    assert!(total > 16, "need > 2 pages of distinct hits: {total}");
+    assert_eq!(
+        full["has_more"],
+        Value::Bool(false),
+        "whole window: no more"
+    );
+
+    let page_size = 8;
+    let mut seen = std::collections::HashSet::new();
+    let mut joined: Vec<String> = Vec::new();
+    let mut offset = 0;
+    loop {
+        let v = search_json(&home, &["--k", "8", "--offset", &offset.to_string()]);
+        assert_eq!(v["limit"].as_u64(), Some(8), "limit echoes --k");
+        assert_eq!(v["offset"].as_u64(), Some(offset as u64), "offset echoed");
+        assert_eq!(v["total"].as_u64(), Some(total as u64), "stable total");
+        let ids = ids_of(&v);
+        for id in &ids {
+            assert!(seen.insert(id.clone()), "id {id} on two pages (overlap)");
+        }
+        joined.extend(ids);
+        let expect_more = offset + page_size < full_ids.len();
+        assert_eq!(
+            v["has_more"],
+            Value::Bool(expect_more),
+            "has_more wrong at offset {offset}"
+        );
+        if !expect_more {
+            break;
+        }
+        offset += page_size;
+    }
+    assert_eq!(
+        joined, full_ids,
+        "concatenated pages must reproduce the single-shot ranked window"
+    );
+}
+
+#[test]
+fn search_limit_is_a_visible_alias_of_k() {
+    let home = tempdir().expect("tempdir");
+    seed_many(&home, 10);
+    let via_k = ids_of(&search_json(&home, &["--k", "3"]));
+    let via_limit = ids_of(&search_json(&home, &["--limit", "3"]));
+    assert_eq!(via_k.len(), 3, "k bounds the page");
+    assert_eq!(via_k, via_limit, "--limit must alias --k exactly");
+}
+
+#[test]
+fn search_offset_beyond_window_is_empty_with_no_more() {
+    let home = tempdir().expect("tempdir");
+    seed_many(&home, 5);
+    let v = search_json(&home, &["--k", "5", "--offset", "9999"]);
+    assert!(ids_of(&v).is_empty(), "offset past the window is empty");
+    assert_eq!(v["has_more"], Value::Bool(false), "nothing beyond");
+    assert!(v["total"].as_u64().unwrap() >= 5, "total still reported");
+}

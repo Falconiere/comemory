@@ -100,6 +100,9 @@ impl Config {
         if let Some(v) = env_parse::<usize>("COMEMORY_RETRIEVAL_TOP_K")? {
             self.retrieval.top_k = v;
         }
+        if let Some(v) = env_parse::<usize>("COMEMORY_RETRIEVAL_MAX_PAGE_WINDOW")? {
+            self.retrieval.max_page_window = v;
+        }
         if let Some(v) = env_parse::<f32>("COMEMORY_RETRIEVAL_MEMORY_THRESHOLD")? {
             self.retrieval.memory_threshold = v;
         }

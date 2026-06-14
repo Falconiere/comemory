@@ -1,7 +1,6 @@
 ---
 source: tests/output__search_code.rs
-assertion_line: 44
-expression: "search_code::envelope(&sample_hits(), None)"
+expression: "search_code::envelope(&sample_hits(), None, meta())"
 ---
 {
   "hits": [
@@ -27,5 +26,9 @@ expression: "search_code::envelope(&sample_hits(), None)"
         "final_score": 1.0
       }
     }
-  ]
+  ],
+  "limit": 12,
+  "offset": 0,
+  "has_more": false,
+  "total": 1
 }

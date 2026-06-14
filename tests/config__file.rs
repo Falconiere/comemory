@@ -13,6 +13,7 @@ fn defaults_match_spec() {
     assert_eq!(c.retrieval.memory_threshold, 0.55);
     assert_eq!(c.retrieval.hybrid_weight, 0.65);
     assert_eq!(c.retrieval.top_k, 12);
+    assert_eq!(c.retrieval.max_page_window, 200);
     assert_eq!(c.prune.trash_retention_days, 30);
     assert!(
         (c.retrieval.rrf_k - 60.0).abs() < f32::EPSILON,

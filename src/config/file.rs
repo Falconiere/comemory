@@ -2,6 +2,11 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use super::defaults::{
+    default_bm25_weights, default_code_bm25_weights, default_code_threshold,
+    default_code_vector_dim, default_max_page_window, default_memory_vector_dim,
+    default_near_dup_hamming, default_superseded_grace_days,
+};
 use crate::prelude::*;
 
 /// Partial config overlay loaded from a `config.toml` file.
@@ -43,6 +48,7 @@ struct PartialRetrievalConfig {
     rrf_k: Option<f32>,
     bm25_weights: Option<(f32, f32)>,
     top_k: Option<usize>,
+    max_page_window: Option<usize>,
     memory_threshold: Option<f32>,
     code_threshold: Option<f32>,
     code_bm25_weights: Option<(f32, f32, f32)>,
@@ -127,6 +133,16 @@ pub struct RetrievalConfig {
     pub code_threshold: f32,
     pub hybrid_weight: f32,
     pub top_k: usize,
+    /// Maximum depth a paginated retrieval (`search`, `search-code`,
+    /// `context`) can page into the ranked result list. A request for
+    /// `(offset, k)` fetches a candidate pool sized
+    /// `clamp(offset + k + k, CANDIDATE_POOL, max_page_window)`, runs the
+    /// full fuse → rerank → diversify pipeline over it, then slices the
+    /// page; `has_more` is forced `false` once this window boundary is hit
+    /// (deeper results require refining the query). Must be > 0.
+    /// Default `200`.
+    #[serde(default = "default_max_page_window")]
+    pub max_page_window: usize,
     pub corrective_min_confidence: f32,
     /// RRF constant for sparse/dense fusion. Default 60.0 matches the original
     /// Cormack/Clarke/Buettcher RRF paper.
@@ -164,38 +180,6 @@ pub struct RetrievalConfig {
     /// (jina-embeddings-v2-base-code).
     #[serde(default = "default_code_vector_dim")]
     pub code_vector_dim: usize,
-}
-
-fn default_memory_vector_dim() -> usize {
-    1024
-}
-
-fn default_bm25_weights() -> (f32, f32) {
-    (1.0, 3.0)
-}
-
-fn default_code_threshold() -> f32 {
-    0.50
-}
-
-fn default_code_bm25_weights() -> (f32, f32, f32) {
-    (2.0, 1.0, 1.5)
-}
-
-fn default_code_vector_dim() -> usize {
-    768
-}
-
-/// The shared constant in `simhash` stays the single source of the default
-/// radius; the config field merely makes it operator-tunable.
-fn default_near_dup_hamming() -> u32 {
-    crate::simhash::NEAR_DUP_HAMMING
-}
-
-/// The constant next to the prune rule stays the single source of the
-/// default grace window; the config field merely makes it operator-tunable.
-fn default_superseded_grace_days() -> u32 {
-    crate::prune::low_value::SUPERSEDED_GRACE_DAYS
 }
 
 /// Ranking knobs for the rerank/diversify pipeline (M1).
@@ -341,6 +325,7 @@ impl Config {
                 code_threshold: default_code_threshold(),
                 hybrid_weight: 0.65,
                 top_k: 12,
+                max_page_window: default_max_page_window(),
                 corrective_min_confidence: 0.15,
                 rrf_k: 60.0,
                 bm25_weights: default_bm25_weights(),
@@ -399,6 +384,9 @@ impl Config {
             }
             if let Some(v) = pr.top_k {
                 self.retrieval.top_k = v;
+            }
+            if let Some(v) = pr.max_page_window {
+                self.retrieval.max_page_window = v;
             }
             if let Some(v) = pr.memory_threshold {
                 self.retrieval.memory_threshold = v;

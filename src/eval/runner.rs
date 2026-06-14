@@ -64,6 +64,9 @@ pub fn run_eval(
             SearchOptions {
                 track: false,
                 source: crate::stats::source::SEARCH,
+                // Eval scores the unpaginated first page (the historical
+                // `top_k` cut), so metrics stay comparable across runs.
+                window: pipeline::PageWindow::top_k(cfg),
             },
         )?;
         let returned: Vec<String> = run.hits.iter().map(|h| h.memory_id.clone()).collect();

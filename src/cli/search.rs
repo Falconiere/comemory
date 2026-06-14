@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::cli::{embedding_input, load_config, override_top_k, resolve_data_dir};
+use crate::cli::{embedding_input, load_config, page_meta, page_window, resolve_data_dir};
 use crate::config::paths::Paths;
 use crate::memory::Kind;
 use crate::output;
@@ -47,12 +47,16 @@ Examples:
 pub struct Args {
     /// Natural-language query string.
     pub query: String,
-    /// Override the configured `retrieval.top_k`. Must be >= 1.
-    #[arg(
-        long,
-        value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..)
-    )]
+    /// Page size — overrides the configured `retrieval.top_k`. `--limit`
+    /// is an accepted alias. `0` means "all remaining within the
+    /// `max_page_window`".
+    #[arg(long, visible_alias = "limit")]
     pub k: Option<usize>,
+    /// Number of leading ranked results to skip (deep paging). Bounded by
+    /// `retrieval.max_page_window`; once the window ceiling is reached
+    /// `has_more` is false and deeper results require refining the query.
+    #[arg(long, default_value_t = 0)]
+    pub offset: usize,
     /// Optional repo filter forwarded to the vector branch.
     #[arg(long)]
     pub repo: Option<String>,
@@ -78,7 +82,8 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     let conn = connection::open(paths.db_path())?;
 
     let vec = embedding_input::read_optional(a.vector_stdin, a.vector.as_deref())?;
-    let cfg = override_top_k(load_config(&paths)?, a.k);
+    let cfg = load_config(&paths)?;
+    let window = page_window(&cfg, a.k, a.offset);
     let run = pipeline::search(
         &cfg,
         &conn,
@@ -89,7 +94,9 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         pipeline::SearchOptions {
             track: true,
             source: crate::stats::source::SEARCH,
+            window,
         },
     )?;
-    output::search::emit(&run.hits, run.query_id.as_deref(), json_flag)
+    let meta = page_meta(window, run.has_more, run.total);
+    output::search::emit(&run.hits, run.query_id.as_deref(), meta, json_flag)
 }

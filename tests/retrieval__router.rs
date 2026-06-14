@@ -32,7 +32,16 @@ fn lexical_path_when_no_vector() {
     fts::index_memory(&conn, "lex1", "advisory lock postgres", "").expect("fts");
 
     let cfg = Config::defaults();
-    let hits = router::route(&cfg, &conn, "advisory lock", None, None, None).expect("route");
+    let hits = router::route(
+        &cfg,
+        &conn,
+        "advisory lock",
+        None,
+        None,
+        None,
+        router::CANDIDATE_POOL,
+    )
+    .expect("route");
     assert!(!hits.is_empty());
     assert_eq!(hits[0].memory_id, "lex1");
     assert_eq!(hits[0].source, Source::Lexical);
@@ -49,7 +58,16 @@ fn pure_vector_path_when_empty_query() {
 
     let cfg = Config::defaults();
     // Empty query → pure-vector branch.
-    let hits = router::route(&cfg, &conn, "", Some(&v), None, None).expect("route");
+    let hits = router::route(
+        &cfg,
+        &conn,
+        "",
+        Some(&v),
+        None,
+        None,
+        router::CANDIDATE_POOL,
+    )
+    .expect("route");
     assert!(!hits.is_empty());
     assert_eq!(hits[0].memory_id, "vec1");
     assert_eq!(hits[0].source, Source::Vector);
@@ -70,7 +88,16 @@ fn relaxed_fallback_fires_when_strict_finds_nothing() {
     .expect("seed");
     let cfg = Config::defaults();
     // strict AND of all three terms fails ('login' absent) → OR tier finds it
-    let hits = router::route(&cfg, &conn, "oauth login race", None, None, None).expect("route");
+    let hits = router::route(
+        &cfg,
+        &conn,
+        "oauth login race",
+        None,
+        None,
+        None,
+        router::CANDIDATE_POOL,
+    )
+    .expect("route");
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].memory_id, "aaaa0001");
     assert_eq!(hits[0].source, Source::Lexical);
@@ -88,7 +115,16 @@ fn relaxed_fallback_fires_on_empty_hybrid_result() {
 
     let cfg = Config::defaults();
     let v = vectors::vector("seed", 1024);
-    let hits = router::route(&cfg, &conn, "oauth login race", Some(&v), None, None).expect("route");
+    let hits = router::route(
+        &cfg,
+        &conn,
+        "oauth login race",
+        Some(&v),
+        None,
+        None,
+        router::CANDIDATE_POOL,
+    )
+    .expect("route");
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].memory_id, "hx1");
     assert_eq!(hits[0].source, Source::Lexical);
@@ -107,7 +143,16 @@ fn hybrid_ann_hit_with_lexical_miss_stays_hybrid() {
     vector::insert_memory(&conn, "hv1", &v).expect("vec");
 
     let cfg = Config::defaults();
-    let hits = router::route(&cfg, &conn, "oauth login race", Some(&v), None, None).expect("route");
+    let hits = router::route(
+        &cfg,
+        &conn,
+        "oauth login race",
+        Some(&v),
+        None,
+        None,
+        router::CANDIDATE_POOL,
+    )
+    .expect("route");
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].memory_id, "hv1");
     assert_eq!(hits[0].source, Source::Hybrid);
@@ -124,7 +169,16 @@ fn single_term_miss_does_not_trigger_relaxed_fallback() {
     // A plain (non-splittable) single term skips the word-level OR tier
     // (OR of one term is the strict query) and builds an empty subtoken
     // expression, so the whole ladder stays empty.
-    let hits = router::route(&cfg, &conn, "kubernetes", None, None, None).expect("route");
+    let hits = router::route(
+        &cfg,
+        &conn,
+        "kubernetes",
+        None,
+        None,
+        None,
+        router::CANDIDATE_POOL,
+    )
+    .expect("route");
     assert!(
         hits.is_empty(),
         "single absent term must not fall back to OR"
@@ -145,7 +199,16 @@ fn identifier_query_reaches_prose_body_via_subtoken_tier() {
     fts::index_memory(&conn, "id1", body, "").expect("fts");
 
     let cfg = Config::defaults();
-    let hits = router::route(&cfg, &conn, "VecDimMismatch", None, None, None).expect("route");
+    let hits = router::route(
+        &cfg,
+        &conn,
+        "VecDimMismatch",
+        None,
+        None,
+        None,
+        router::CANDIDATE_POOL,
+    )
+    .expect("route");
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].memory_id, "id1");
     assert_eq!(hits[0].source, Source::Lexical);
@@ -162,8 +225,16 @@ fn subtoken_tier_fires_when_word_or_tier_is_also_empty() {
     fts::index_memory(&conn, "id2", body, "").expect("fts");
 
     let cfg = Config::defaults();
-    let hits =
-        router::route(&cfg, &conn, "VecDimMismatch kubernetes", None, None, None).expect("route");
+    let hits = router::route(
+        &cfg,
+        &conn,
+        "VecDimMismatch kubernetes",
+        None,
+        None,
+        None,
+        router::CANDIDATE_POOL,
+    )
+    .expect("route");
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].memory_id, "id2");
     assert_eq!(hits[0].source, Source::Lexical);
@@ -188,7 +259,16 @@ fn hybrid_empty_lexical_leg_retries_ladder_despite_ann_hits() {
     vector::insert_memory(&conn, "noise1", &v).expect("vec");
 
     let cfg = Config::defaults();
-    let hits = router::route(&cfg, &conn, "VecDimMismatch", Some(&v), None, None).expect("route");
+    let hits = router::route(
+        &cfg,
+        &conn,
+        "VecDimMismatch",
+        Some(&v),
+        None,
+        None,
+        router::CANDIDATE_POOL,
+    )
+    .expect("route");
     assert!(
         hits.iter().any(|h| h.memory_id == "tgt1"),
         "subtoken-only memory must survive ANN noise in the hybrid arm: {hits:?}",
@@ -214,7 +294,16 @@ fn strict_lexical_hits_carry_tier_1() {
     fts::index_memory(&conn, "lex1", "advisory lock postgres", "").expect("fts");
 
     let cfg = Config::defaults();
-    let hits = router::route(&cfg, &conn, "advisory lock", None, None, None).expect("route");
+    let hits = router::route(
+        &cfg,
+        &conn,
+        "advisory lock",
+        None,
+        None,
+        None,
+        router::CANDIDATE_POOL,
+    )
+    .expect("route");
     assert_eq!(hits[0].tier, 1, "strict tier is 1");
 }
 
@@ -226,7 +315,16 @@ fn word_or_ladder_hits_carry_tier_2() {
     fts::index_memory(&conn, "or1", "the oauth refresh race condition", "").expect("fts");
 
     let cfg = Config::defaults();
-    let hits = router::route(&cfg, &conn, "oauth login race", None, None, None).expect("route");
+    let hits = router::route(
+        &cfg,
+        &conn,
+        "oauth login race",
+        None,
+        None,
+        None,
+        router::CANDIDATE_POOL,
+    )
+    .expect("route");
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].tier, 2, "word-OR tier is 2");
 }
@@ -240,7 +338,16 @@ fn subtoken_ladder_hits_carry_tier_3() {
     fts::index_memory(&conn, "sub1", body, "").expect("fts");
 
     let cfg = Config::defaults();
-    let hits = router::route(&cfg, &conn, "VecDimMismatch", None, None, None).expect("route");
+    let hits = router::route(
+        &cfg,
+        &conn,
+        "VecDimMismatch",
+        None,
+        None,
+        None,
+        router::CANDIDATE_POOL,
+    )
+    .expect("route");
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].tier, 3, "subtoken tier is 3");
 }
@@ -259,7 +366,16 @@ fn learned_expansion_tier_fires_when_every_other_tier_misses() {
     seed_expansion(&conn, "sizing", "vecdimmismatch", 2);
 
     let cfg = Config::defaults();
-    let hits = router::route(&cfg, &conn, "sizing", None, None, None).expect("route");
+    let hits = router::route(
+        &cfg,
+        &conn,
+        "sizing",
+        None,
+        None,
+        None,
+        router::CANDIDATE_POOL,
+    )
+    .expect("route");
     assert_eq!(hits.len(), 1, "expansion tier must surface the memory");
     assert_eq!(hits[0].memory_id, "exp1");
     assert_eq!(hits[0].source, Source::Lexical);
@@ -278,7 +394,16 @@ fn learned_expansion_below_min_support_stays_empty() {
     seed_expansion(&conn, "sizing", "vecdimmismatch", 1);
 
     let cfg = Config::defaults();
-    let hits = router::route(&cfg, &conn, "sizing", None, None, None).expect("route");
+    let hits = router::route(
+        &cfg,
+        &conn,
+        "sizing",
+        None,
+        None,
+        None,
+        router::CANDIDATE_POOL,
+    )
+    .expect("route");
     assert!(hits.is_empty(), "support-1 mapping must not fire: {hits:?}");
 }
 
@@ -297,7 +422,16 @@ fn hybrid_fused_hits_carry_the_lexical_ladder_tier() {
     seed_expansion(&conn, "sizing", "vecdimmismatch", 2);
 
     let cfg = Config::defaults();
-    let hits = router::route(&cfg, &conn, "sizing", Some(&v), None, None).expect("route");
+    let hits = router::route(
+        &cfg,
+        &conn,
+        "sizing",
+        Some(&v),
+        None,
+        None,
+        router::CANDIDATE_POOL,
+    )
+    .expect("route");
     assert!(
         hits.iter().any(|h| h.memory_id == "tgt2"),
         "expansion-only memory must survive ANN noise: {hits:?}"
@@ -323,7 +457,16 @@ fn vector_hits_below_memory_threshold_are_dropped() {
 
     let cfg = Config::defaults();
     let query = vectors::vector("far-away-query", 1024);
-    let hits = router::route(&cfg, &conn, "", Some(&query), None, None).expect("route");
+    let hits = router::route(
+        &cfg,
+        &conn,
+        "",
+        Some(&query),
+        None,
+        None,
+        router::CANDIDATE_POOL,
+    )
+    .expect("route");
     assert!(
         hits.is_empty(),
         "below-threshold ANN hits must be dropped, got {hits:?}",
@@ -343,11 +486,29 @@ fn vector_path_kind_filter_drops_other_kinds() {
     vector::insert_memory(&conn, "kbug1", &v).expect("vec");
 
     let cfg = Config::defaults();
-    let hits = router::route(&cfg, &conn, "", Some(&v), None, Some("decision")).expect("route");
+    let hits = router::route(
+        &cfg,
+        &conn,
+        "",
+        Some(&v),
+        None,
+        Some("decision"),
+        router::CANDIDATE_POOL,
+    )
+    .expect("route");
     assert_eq!(hits.len(), 1, "kind filter must drop the bug hit: {hits:?}");
     assert_eq!(hits[0].memory_id, "kdec1");
 
-    let unfiltered = router::route(&cfg, &conn, "", Some(&v), None, None).expect("route");
+    let unfiltered = router::route(
+        &cfg,
+        &conn,
+        "",
+        Some(&v),
+        None,
+        None,
+        router::CANDIDATE_POOL,
+    )
+    .expect("route");
     assert_eq!(unfiltered.len(), 2, "kind = None must keep both hits");
 }
 
@@ -364,8 +525,16 @@ fn hybrid_ann_leg_is_kind_filtered_before_fusion() {
     vector::insert_memory(&conn, "hbug1", &v).expect("vec");
 
     let cfg = Config::defaults();
-    let hits =
-        router::route(&cfg, &conn, "postgres", Some(&v), None, Some("decision")).expect("route");
+    let hits = router::route(
+        &cfg,
+        &conn,
+        "postgres",
+        Some(&v),
+        None,
+        Some("decision"),
+        router::CANDIDATE_POOL,
+    )
+    .expect("route");
     assert_eq!(
         hits.len(),
         1,
@@ -385,7 +554,16 @@ fn hybrid_path_when_both_vector_and_query() {
     fts::index_memory(&conn, "h1", "advisory lock postgres migration", "").expect("fts");
 
     let cfg = Config::defaults();
-    let hits = router::route(&cfg, &conn, "advisory lock", Some(&v), None, None).expect("route");
+    let hits = router::route(
+        &cfg,
+        &conn,
+        "advisory lock",
+        Some(&v),
+        None,
+        None,
+        router::CANDIDATE_POOL,
+    )
+    .expect("route");
     assert!(!hits.is_empty());
     assert_eq!(hits[0].source, Source::Hybrid);
 }

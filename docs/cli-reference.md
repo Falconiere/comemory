@@ -116,8 +116,9 @@ Arguments:
 
 Options:
       --json                 Emit machine-readable JSON instead of a human TTY view
-      --k <K>                Override the configured `retrieval.top_k`. Must be >= 1
+      --k <K>                Page size — overrides the configured `retrieval.top_k`. `--limit` is an accepted alias. `0` means "all remaining within the `max_page_window`" [aliases: --limit]
       --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+      --offset <OFFSET>      Number of leading ranked results to skip (deep paging). Bounded by `retrieval.max_page_window`; once the window ceiling is reached `has_more` is false and deeper results require refining the query [default: 0]
       --repo <REPO>          Optional repo filter forwarded to the vector branch
       --kind <KIND>          Filter results to one memory kind [possible values: decision, bug, convention, discovery, pattern, note]
       --vector <VECTOR>      Caller-supplied dense vector as a comma-separated float list
@@ -160,8 +161,9 @@ Arguments:
 
 Options:
       --json                 Emit machine-readable JSON instead of a human TTY view
-      --k <K>                Override the configured `retrieval.top_k`. Must be >= 1
+      --k <K>                Page size — overrides the configured `retrieval.top_k`. `--limit` is an accepted alias. `0` means "all remaining within the `max_page_window`" [aliases: --limit]
       --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+      --offset <OFFSET>      Number of leading ranked results to skip (deep paging). Bounded by `retrieval.max_page_window`; once the window ceiling is reached `has_more` is false and deeper results require refining the query [default: 0]
       --repo <REPO>          Restrict hits to one repo label (as passed to `index-code --repo`)
       --lang <LANG>          Restrict hits to one language: `rust`, `typescript`, `javascript`, `python`, `go` (short aliases like `rs`/`ts`/`py` accepted)
       --vector <VECTOR>      Caller-supplied dense vector as a comma-separated float list
@@ -599,8 +601,9 @@ Arguments:
 
 Options:
       --json                 Emit machine-readable JSON instead of a human TTY view
-      --k <K>                Override the configured `retrieval.top_k` for this bundle. Must be >= 1
+      --k <K>                Page size for the bundle's memory list — overrides the configured `retrieval.top_k`. `--limit` is an accepted alias. `0` means "all remaining within the `max_page_window`" [aliases: --limit]
       --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+      --offset <OFFSET>      Number of leading ranked memories to skip (deep paging of the bundle's memory list). Bounded by `retrieval.max_page_window`. Per- memory code refs are not paginated — each surfaced memory keeps its full ref set [default: 0]
       --repo <REPO>          Optional repo filter forwarded to the router
       --vector <VECTOR>      Caller-supplied dense vector as a comma-separated float list. When provided together with `query`, both ANN and lexical branches run and their results are fused via RRF. Without a vector only the lexical FTS5 path runs
       --vector-stdin         Read a JSON `{ "embedding": [..] }` payload from stdin and use it as the dense vector for the context lookup. Mutually exclusive with reading the query from stdin

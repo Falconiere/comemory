@@ -99,6 +99,12 @@ impl Config {
                 "invalid retrieval.rrf_k={k} (env COMEMORY_RETRIEVAL_RRF_K): {why}"
             )));
         }
+        let w = self.retrieval.max_page_window;
+        if w == 0 {
+            return Err(Error::Config(
+                "invalid retrieval.max_page_window=0 (env COMEMORY_RETRIEVAL_MAX_PAGE_WINDOW): must be > 0".into(),
+            ));
+        }
         let mt = self.retrieval.memory_threshold;
         if let Err(why) = check_unit_interval(f64::from(mt)) {
             return Err(Error::Config(format!(
