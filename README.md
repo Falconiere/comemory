@@ -15,7 +15,7 @@ No in-process LLM.**
 [![Single binary](https://img.shields.io/badge/runtime-single%20binary-purple.svg?style=flat-square)](#install)
 [![Local-first](https://img.shields.io/badge/privacy-100%25%20local-brightgreen.svg?style=flat-square)](#why-comemory)
 
-[Why](#why-comemory) · [Features](#features) · [Install](#install) · [Quickstart](#quickstart) · [Concepts](#core-concepts) · [Commands](#command-reference) · [Architecture](docs/architecture.md)
+[Why](#why-comemory) · [Features](#features) · [Install](#install) · [Quickstart](#quickstart) · [Commands](#command-reference) · [Docs](#documentation) · [Architecture](docs/architecture.md)
 
 </div>
 
@@ -69,228 +69,77 @@ SQLite file is the rebuildable index.
 ## How it works
 
 comemory is a **two-layer property graph** stitched together by typed edges in
-one SQLite file:
+one SQLite file — a **memory layer** (markdown, source of truth) and a **code
+layer** (symbols extracted from your repo), joined by `references`, `supersedes`,
+`co_changed`, and `imports` edges:
 
 ```
-        MEMORY LAYER                              CODE LAYER
-   (markdown, source of truth)            (extracted from your repo)
-
-   ┌────────────────────┐                 ┌────────────────────┐
-   │  decision  a1b2c3d4 │  references     │  run_migration      │
-   │  "use Postgres for  │ ──────────────▶ │  src/db.rs          │
-   │   analytics"        │                 │  rank_score: 0.82   │
-   └─────────┬──────────┘                 └─────────┬──────────┘
-             │ supersedes                            │ co_changed (git)
-             ▼                                       ▼  imports (lang)
-   ┌────────────────────┐                 ┌────────────────────┐
-   │  decision  9f8e7d6c │                 │  apply_pool_config  │
-   │  (older, demoted)   │                 │  src/pool.rs        │
-   └────────────────────┘                 └────────────────────┘
-
-   ─────────────────────────────────────────────────────────────
-              one SQLite file:  comemory.db
-   memories · memory_fts · memory_vec · code_symbols · code_fts
-   code_vec · edges · learning-loop telemetry
+memories · memory_fts · memory_vec · code_symbols · code_fts
+code_vec · edges · learning-loop telemetry   →  one file: comemory.db
 ```
 
 A query runs through a pure-Rust pipeline — **route** (candidates + lexical
 ladder) → **rerank** (multiplicative priors over relevance) → **diversify**
 (SimHash near-dup collapse + MMR) → **cited bundle**. No LLM calls anywhere.
-See [`docs/architecture.md`](docs/architecture.md) for the full diagram.
+See [`docs/architecture.md`](docs/architecture.md) for the full diagram, storage
+layout, and edge graph.
 
 ---
 
 ## Install
 
-### Homebrew (macOS + Linuxbrew)
-
 ```bash
+# Homebrew (macOS + Linuxbrew)
 brew install Falconiere/tap/comemory
-```
 
-### Curl installer
-
-```bash
-curl --proto '=https' --tlsv1.2 -LsSf \
-  https://github.com/Falconiere/comemory/releases/latest/download/comemory-installer.sh \
-  | sh
-```
-
-Drops the binary in `$CARGO_HOME/bin` (or `~/.local/bin`) and installs shell
-completions.
-
-### From source
-
-```bash
+# From a local checkout (not published to crates.io)
 git clone https://github.com/Falconiere/comemory && cd comemory
-cargo install --path .          # or: bash scripts/dev-install.sh
+cargo install --path .
 ```
 
-Prebuilt binaries for **macOS** (aarch64) and **Linux** (aarch64, x86_64)
-are attached to every
+Then verify: `comemory doctor`. Prebuilt binaries for **macOS** (aarch64) and
+**Linux** (aarch64, x86_64) are attached to every
 [GitHub Release](https://github.com/Falconiere/comemory/releases).
 
-After install, run `comemory doctor` to verify the SQLite store and data
-directory.
-
-<details>
-<summary><b>Binary size over time</b></summary>
-
-| Version | Release binary | Notes |
-|---------|---------------:|-------|
-| v0.1    | ~117 MB        | bundled fastembed + lancedb + kuzu |
-| v0.2    | ~8 MB          | one SQLite file, BYO vectors, trimmed tree-sitter set |
-| v0.7    | ~10.5 MB       | adds the `serve` web SPA, embedded + gzip-compressed |
-| v0.8    | ~10.7 MB       | edition 2024 + fat-LTO release profile; no new runtime code (measured 10.74 MB, `aarch64-apple-darwin` v0.8.2) |
-
-The v0.2 rewrite dropped the in-process embedder, vector DB, and graph DB. The
-web viewer added since is the only meaningful weight back, and it's
-gzip-compressed in the binary.
-
-</details>
+Full install details — the curl installer, shell completions, and binary-size
+history — are in **[docs/getting-started.md](docs/getting-started.md)**.
 
 ---
 
 ## Quickstart
 
 ```bash
-# 1. Save a memory — repo + author auto-detected from git
 comemory save "Use Postgres for analytics, not ClickHouse — see ADR-14" \
-  --kind decision --repo myrepo --tags db,postgres
-
-# 2. Index your code — symbols + co-change/import graph + PageRank
-comemory index-code --repo myrepo --path .
-
-# 3. Search memories (lexical, no embedder needed)
-comemory search "what database do we use"
-
-# 4. Ranked code search — BM25 + graph priors; --json carries score_parts
-comemory search-code "connection pool retry" --repo myrepo
-
-# 5. One-shot bundle for a symbol: source + related memories + neighborhood
-comemory context run_migration --json
-
-# 6. Explore it all in the browser (loopback-only, opens a token URL)
-comemory serve --open
-
-# 7. Health check
-comemory doctor
+  --kind decision --repo myrepo --tags db,postgres   # capture a memory
+comemory index-code --repo myrepo --path .           # symbols + graph + PageRank
+comemory search "what database do we use"            # recall memories (lexical)
+comemory search-code "connection pool retry" --repo myrepo   # ranked code search
+comemory context run_migration --json                # source + memories + neighbors
+comemory serve --open                                # explore it in the browser
 ```
 
-That's the whole loop: **capture → index → recall**. Dense/semantic search is
-opt-in (see [BYO-Vector](#byo-vector-workflow)); everything above works with
-zero configuration.
+That's the whole loop: **capture → index → recall** — zero configuration. Dense/
+semantic search is opt-in (see [BYO-Vector](#byo-vector-workflow)).
+
+Full walkthrough — sandbox tips, JSON pagination, scoping flags:
+**[docs/getting-started.md](docs/getting-started.md)**.
 
 ---
 
-## Core Concepts
+## Core concepts
 
-### Memory: capture & recall
+A **memory** is a markdown file with YAML frontmatter (`id`, `kind`, `repo`,
+`tags`, `quality`, plus `references` into code and `relations` between memories).
+Backticked `<repo>:<path>:<symbol>` mentions in the body auto-link to the code
+layer; a SimHash near-dup check and `--supersedes` keep the store tidy.
+**Code search** blends weighted BM25 over identifiers/snippets/paths with an
+optional BYO-vector ANN leg, reranked by four graph priors (PageRank, recency,
+working-set affinity, feedback), every hit carrying a `score_parts` breakdown.
+A deterministic **learning loop** (`feedback → eval → mine → tune`) measures and
+improves ranking offline.
 
-A memory is a markdown file with frontmatter — schema v1:
-
-```yaml
----
-id: a1b2c3d4                  # 8-hex prefix of SHA-256(body.trim_end())
-kind: decision                # decision | bug | convention | discovery | pattern | note
-repo: myrepo
-tags: [database, postgres]
-author: falconiere
-created: 2026-05-17T14:30:00Z
-quality: 4                    # 1–5, biases ranking
-schema: 1
-content_hash: <64-hex SHA-256 of body.trim_end()>
-references:                   # indexer-managed links into the code layer
-  symbols: [myrepo:src/db.rs:run_migration]
-  files:   [myrepo:src/db.rs]
-relations:                    # memory→memory edges
-  supersedes:     []
-  conflicts_with: []
-  derived_from:   []
----
-
-Postgres handles our analytics volume fine with proper indexing.
-ClickHouse added ops burden we didn't need. See `myrepo:src/db.rs`.
-```
-
-Backticked `<repo>:<path>` / `<repo>:<path>:<symbol>` mentions in the body are
-auto-extracted into edges, so memories stitch themselves to code. On save,
-comemory runs a **near-duplicate check** (64-bit SimHash) and, if you re-save a
-refined version, `--supersedes <id>` demotes the old one in every future
-ranking.
-
-### Code search: BM25 + a mined graph
-
-`comemory index-code` does far more than list symbols. It:
-
-1. Extracts symbols via ast-grep (Rust / TS / JS / Python / Go), splitting
-   oversized ones into AST-boundary child chunks (cAST).
-2. Mines **co-change** edges from your git history (which files move together).
-3. Resolves per-language **import** edges.
-4. Runs weighted **PageRank** over that graph and writes `rank_score` onto every
-   symbol.
-
-`comemory search-code` then fuses weighted BM25 (over identifiers, snippets, and
-path tokens) with an optional BYO-vector ANN leg, and reranks by **four priors**:
-PageRank centrality, recency, working-set affinity (dirty/recently-touched files
-near a hit, when you search inside the checkout), and feedback. Every hit carries
-a `score_parts` breakdown explaining exactly why it ranked where it did.
-
-### The learning loop
-
-Every `search` and `context` lookup emits a `query_id`. Close the loop:
-
-```bash
-# 1. Search — note the query_id
-comemory search "postgres pool exhausted" --json
-#    {"hits":[...],"query_id":"q-20260611-a1b2c3d4"}
-
-# 2. Tell it what actually helped (and what was noise)
-comemory feedback q-20260611-a1b2c3d4 --used a1b2c3d4 --irrelevant 00112233
-
-# 3. Score retrieval quality against feedback-harvested + YAML golden pairs
-comemory eval --k 5 --json
-
-# 4. Distill failed→successful rewordings into expansions the search applies
-comemory mine --apply
-
-# 5. Grid-search the ranking knobs; --apply rewrites config.toml only on a win
-comemory tune --apply
-```
-
-Feedback does double duty: it reranks future searches (Beta-smoothed) *and* it's
-eval ground truth. Raw telemetry is swept after 90 days; distilled knowledge
-(aggregated counters, mined expansions) never expires and survives
-`comemory rebuild`.
-
-### Interactive web viewer
-
-```bash
-comemory serve --open                 # ephemeral port, prints a token URL
-comemory serve --port 8787 --read-only  # pin a port, disable writes
-```
-
-`comemory serve` boots an axum server **bound to `127.0.0.1` only**, handing out
-a React/Vite/Tailwind SPA embedded in the binary. Explore the WebGL-rendered
-(sigma.js + ForceAtlas2) code graph — pan/zoom/hover stay smooth into ~100k
-nodes — and open any indexed file in a CodeMirror 6 editor to view *and save*
-edits, with `If-Match` optimistic concurrency keyed on the git blob OID.
-
-> **Security posture:** loopback-only bind, a 256-bit per-session token
-> (constant-time compared, set as an `HttpOnly; SameSite=Strict` cookie and
-> stripped from the URL after first load), a `Host`-header guard against
-> DNS-rebinding, default-deny CORS, an editable-extension allowlist, a 5 MiB
-> write cap, and a single canonicalize-and-contain chokepoint that rejects
-> `..` / absolute / symlink path escapes.
-
-### AST patterns
-
-```bash
-comemory ast 'fn $NAME($$$) { $$$ }' --lang rs --file src/lib.rs
-```
-
-Structural search over Rust, TypeScript, JavaScript, Python, and Go via
-ast-grep — find shapes, not strings.
+Full data model, save flow, retrieval pipeline, and graph mechanics:
+**[docs/architecture.md](docs/architecture.md)**.
 
 ---
 
@@ -320,61 +169,55 @@ ast-grep — find shapes, not strings.
 | `comemory completions` | Generate shell completions |
 | `comemory install-hooks` | Install git hooks that reindex code on commit/merge/checkout |
 
-Every command accepts `--json`. The data root defaults to `~/.comemory` and is
-overridable with `--data-dir` or `COMEMORY_DATA_DIR`. Full per-command docs with
-worked examples: **[docs/cli-reference.md](docs/cli-reference.md)**.
+Every command accepts `--json`; the data root defaults to `~/.comemory`
+(overridable with `--data-dir` or `COMEMORY_DATA_DIR`). Full per-command docs
+with flags and worked examples:
+**[docs/cli-reference.md](docs/cli-reference.md)**.
 
 ---
 
 ## Configuration
 
 Config is layered: built-in defaults → `~/.comemory/config.toml` → environment →
-CLI flags. A few of the most useful knobs:
-
-| Variable | Purpose | Default |
-|----------|---------|---------|
-| `COMEMORY_DATA_DIR` | Root data directory | `~/.comemory` |
-| `COMEMORY_RETRIEVAL_TOP_K` | Results returned by the hybrid router | `12` |
-| `COMEMORY_INDEXING_AUTO_REINDEX` | `lazy` \| `hook` \| `off` auto code-index refresh | `lazy` |
-| `COMEMORY_RANK_DECAY` | ACT-R decay exponent — higher = older memories fade faster | `0.5` |
-| `COMEMORY_RANK_MMR_LAMBDA` | MMR relevance-vs-diversity trade-off `[0,1]` | `0.7` |
-| `COMEMORY_GIT_AUTO_SYNC` | Best-effort commit + push after a save | `false` |
-| `COMEMORY_EMBED_HINT` | Records the embedder you used (surfaced by `doctor`) | unset |
-
-The complete table — including ranking, pruning, and BM25-weight knobs — lives in
-[CLAUDE.md](CLAUDE.md#environment-variables).
+CLI flags. The full environment-variable table (data dir, retrieval top-k,
+auto-reindex mode, ACT-R decay, MMR lambda, BM25 weights, prune floors, …) lives
+in **[docs/configuration.md](docs/configuration.md)**; the ranking knobs and how
+to tune them are walked through in
+**[docs/guides/ranking-and-eval.md](docs/guides/ranking-and-eval.md)**.
 
 ---
 
 ## BYO-Vector workflow
 
-comemory ships **without** a bundled embedding model. Lexical search works
-immediately. For dense/semantic retrieval, *you* supply the vectors via
-`--vector` (CSV) or `--vector-stdin` (JSON `{"embedding":[..]}`):
+comemory ships **without** a bundled embedding model — lexical search works
+immediately, and you supply vectors via `--vector` (CSV) or `--vector-stdin`
+(JSON `{"embedding":[..]}`) to add the dense leg (dims **1024** for `memory_vec`,
+**768** for `code_vec`; mismatches fail fast with `VecDimMismatch`).
 
-```bash
-# Save + embed via a local Ollama model in one call (sample wrapper)
-scripts/comemory-embed.sh save "Use Postgres for analytics" \
-  --kind decision --repo myrepo
-
-# Semantic search routed through the same model
-scripts/comemory-embed.sh search "what database do we use"
-```
-
-Vectors must match the dims baked into the `vec0` DDL — **1024** for
-`memory_vec`, **768** for `code_vec`. Mismatches fail fast with
-`VecDimMismatch` rather than corrupting the index. The wrapper in
-[`scripts/comemory-embed.sh`](scripts/comemory-embed.sh) is documentation, not
-enforcement — swap in OpenAI, Voyage, llama.cpp, or anything else.
+Full recipe, including the sample Ollama wrapper
+[`scripts/comemory-embed.sh`](scripts/comemory-embed.sh):
+**[docs/guides/byo-vectors.md](docs/guides/byo-vectors.md)**.
 
 ---
 
 ## Documentation
 
-- **[Architecture overview](docs/architecture.md)** — storage, retrieval
-  pipeline, save flow, and code-indexing flow on two pages.
-- **[CLI reference](docs/cli-reference.md)** — every subcommand with arguments
-  and worked examples.
+Start at the docs index — **[docs/README.md](docs/README.md)** — or jump to a
+tier directly:
+
+- **Tutorial** — [docs/getting-started.md](docs/getting-started.md): install,
+  save, search, and index code in a few minutes.
+- **How-to guides** —
+  [byo-vectors](docs/guides/byo-vectors.md) ·
+  [auto-reindex](docs/guides/auto-reindex.md) ·
+  [ranking-and-eval](docs/guides/ranking-and-eval.md) ·
+  [serve-web](docs/guides/serve-web.md) ·
+  [prune-and-gc](docs/guides/prune-and-gc.md).
+- **Reference** — [docs/cli-reference.md](docs/cli-reference.md): every
+  subcommand and flag · [docs/configuration.md](docs/configuration.md): every
+  environment variable and config knob.
+- **Explanation** — [docs/architecture.md](docs/architecture.md): storage
+  layout, retrieval pipeline, edge graph, save flow.
 - **[CHANGELOG](CHANGELOG.md)** — what changed, version by version.
 
 ---
@@ -387,10 +230,10 @@ contribution must satisfy:
 
 1. No duplication — shared logic is extracted.
 2. Very modular modules — narrow, single-purpose files.
-3. ≤ 500 lines per file in `src/` or `scripts/`.
+3. ≤ 300 code lines per file in `src/` (blanks/comments excluded).
 4. Zero errors, zero warnings — no `#[allow]`, no bare `.unwrap()`, no
    `println!` in `src/`.
-5. Tests strictly in `tests/`, mirroring `src/` 1:1.
+5. Tests strictly in `tests/`, mirroring `src/` 1:1 (flat, dunder-joined).
 
 The umbrella quality gate is one command — CI runs the same scripts:
 

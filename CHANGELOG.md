@@ -42,6 +42,22 @@
 - `--k` on retrieval commands gains a `--limit` alias; `--k 0` / `--limit 0`
   now means "all within the window" (previously `--k 0` was rejected).
 
+### Fixed
+- **`index-code` no longer aborts on duplicate symbol keys.** Minified/bundled
+  sources (e.g. a tracked `web/dist` SPA bundle) pack many one-letter
+  `function` expressions onto a single physical line; two such symbols share an
+  identifier *and* a start line, which is indistinguishable under the
+  `code_symbols` UNIQUE(repo, path, symbol, line_start) key. Extraction now
+  collapses same-`(name, line_start)` symbols to the first occurrence, so a
+  whole-repo `index-code` over such a tree completes instead of failing the
+  transaction with `UNIQUE constraint failed: code_symbols…`.
+- **`lazy` auto-reindex is now wired.** `0.8.3` reported the `lazy`
+  `COMEMORY_INDEXING_AUTO_REINDEX` mode as unwired (behaving like `off`); it is
+  now fully wired — `search-code` / `context` spawn a detached, non-blocking
+  `index-code` when the repo HEAD moved since the last index, then search the
+  current index immediately, debounced by `auto_reindex_threshold_ms`
+  (default 200 ms). See [`docs/guides/auto-reindex.md`](docs/guides/auto-reindex.md).
+
 ## 0.8.4 — 2026-06-14 (test-confidence + lang-quality migration)
 
 Internal test infrastructure, CI, and conventions. The published binary is

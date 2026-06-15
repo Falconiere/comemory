@@ -311,5 +311,9 @@ logic to the same gate scripts.
   `test-placement-check`, `no-bypass-check`, and `module-size-check` at
   end-of-conversation so regressions surface immediately.
 
-User-facing docs live in `docs/architecture.md` and
-`docs/cli-reference.md`; the README links to both.
+User-facing docs live under `docs/`, organized in Diátaxis tiers and indexed by
+`docs/README.md`: the `docs/getting-started.md` tutorial, the task-oriented
+`docs/guides/` how-tos (byo-vectors, auto-reindex, ranking-and-eval, serve-web,
+prune-and-gc), the `docs/cli-reference.md` reference (every subcommand, flag, and
+env var), and the `docs/architecture.md` explanation. The README is a front door
+that links into them.

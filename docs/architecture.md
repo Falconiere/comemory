@@ -203,6 +203,26 @@ affinity (dirty/recent files in the current checkout), and Beta-smoothed
 `query_id` for `comemory feedback --used-code`. `comemory context` ranks
 the code refs in its bundle with the same graph priors.
 
+### 5.1 Bounded-window pagination
+
+The data-returning retrieval commands (`search`, `search-code`, `context`)
+page within a **bounded window**. The pipeline fetches a candidate pool
+sized `clamp(offset + limit + limit, CANDIDATE_POOL=50, max_page_window)`
+(env `COMEMORY_RETRIEVAL_MAX_PAGE_WINDOW`, default `200`), runs the full
+fuse → rerank → diversify over that pool, then slices `[offset,
+offset+limit]`. Because the RRF/MMR top-prefix is stable as the pool grows,
+pages don't drift as you walk deeper. `has_more` is forced **false** once
+the window ceiling is reached — deeper results require a refined query, not
+more paging.
+
+The `--json` envelope is `Page<T>` = `{items, limit, offset, total,
+has_more}`. For retrieval, `total` is the **in-window** ranked count, not a
+global match count.
+
+The mechanism differs per command: `list` / `graph` page via SQLite
+`LIMIT/OFFSET`; `ast` / `prune` page **in-memory** (and `prune` paging is
+display-only — `--apply` acts on the full set, not the current page).
+
 ## 6. Save flow
 
 ```
@@ -257,6 +277,33 @@ that exist in the working tree, so symbols, `indexed_files` cursors, and
 the index until a future stale-code prune lands (an M4 candidate — see
 `src/prune/stale_code.rs`). Until then, deleted files keep their PageRank
 mass and can still surface in `search-code` results.
+
+### 7.1 Auto-reinforcement reward
+
+`index-code` harvests an implicit-feedback signal on every run — always on,
+no flag. When `graph::materialize` mines commit co-activation, it applies a
+**triple-channel** reinforcement reward for each `(memory, referenced-file)`
+pair that co-occurs in a commit:
+
+1. a weighted `co_activated` memory→file edge (accumulating weight by the
+   file's per-pass touch count);
+2. an ACT-R activation bump (`memories.access_count += 1`, plus
+   `last_accessed`);
+3. a confidence-gated Bayesian `used` increment that fires **once**, the
+   first time the edge weight crosses the threshold (`≥ 2`), writing a
+   `feedback_events` row tagged `provenance = auto_coactivation` under a
+   sentinel query id — excluded from golden-set harvest.
+
+The whole reward runs inside `materialize`'s transaction and is idempotent
+via the `repo_marker.last_mined_commit` cursor (read before, advanced after,
+in the same transaction), so reruns over already-mined commits make every
+delta zero and never double-count. Migration `0008` adds the `co_activated`
+edge kind and the `feedback_events.provenance` column; `comemory rebuild`
+preserves this earned state rather than discarding it.
+
+**Phase 0:** `comemory context` bumps the code-ref `access_count` for its
+resolved refs (parity with `search-code`'s existing access tracking), so the
+recency/activation priors stay honest across both read paths.
 
 `comemory rebuild` drops `comemory.db` and reruns step 4 of "save" for every
 markdown file. Use it after upgrading from v0.1 or after editing the DB by
