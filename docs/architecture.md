@@ -377,6 +377,24 @@ is a stub returning an empty set): code symbols and graph edges for files
 deleted from a repo persist — keeping their PageRank mass — until a future
 stale-code prune lands (M4 candidate).
 
+## 10. Interactive terminal explorer (`comemory tui`)
+
+`comemory tui` is a read-only, terminal-native front end over the same
+retrieval pipeline the one-shot commands use — it adds no ranking of its own.
+A ratatui UI runs an async `EventStream` + `tokio::select!` loop; as-you-type
+queries are debounced and run lexically (FTS5, no embedder), and an explicit
+`Ctrl-S` on the Memory tab shells out to a configured embed command for
+semantic enrichment.
+
+Because `store::connection::open` hands back one non-`Sync` connection, a
+dedicated worker thread owns it and answers requests over channels; each
+response carries the request's generation `seq` so the loop can discard the
+results of a superseded query. Every query sets `track = false`, so browsing
+never writes `retrieval_log` or bumps `access_count`. The UI draws to stderr
+and reserves stdout for the Enter-selected id (`id=$(comemory tui)`); the
+terminal is restored by an RAII guard on every exit path. It complements — it
+does not replace — `comemory serve`'s in-browser viewer.
+
 ## Where to go next
 
 - [CLI reference](cli-reference.md) — every command with worked examples.

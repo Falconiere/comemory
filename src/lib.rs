@@ -33,4 +33,7 @@ pub mod serve;
 
 pub mod cli;
 
+/// Read-only interactive terminal explorer (`comemory tui`).
+pub mod tui;
+
 pub mod simhash;

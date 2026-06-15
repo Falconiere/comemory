@@ -39,6 +39,7 @@ Commands:
   ast            Run an ast-grep pattern against a single source file
   graph          Export the file-level code-connection graph (imports + co-change) as JSON, Graphviz DOT, or an interactive HTML page
   serve          Launch the local web viewer + in-browser code editor (loopback HTTP)
+  tui            Launch the read-only interactive terminal explorer
   context        Headline lookup: code symbol + memories matching a key
   completions    Emit a shell completion script for `bash`, `zsh`, `fish`, `powershell`, or `elvish`
   prune          Detect (and optionally soft-delete) stale memories
@@ -585,6 +586,47 @@ Examples:
 
   # Supply a repo root for repos indexed before the v7 schema captured it
   comemory serve --root myrepo=/abs/path/to/repo
+```
+
+---
+
+## comemory tui
+
+```
+Launch the read-only interactive terminal explorer
+
+Usage: comemory tui [OPTIONS]
+
+Options:
+      --json                   Emit machine-readable JSON instead of a human TTY view
+      --repo <REPO>            Restrict search to one repo label (forwarded to both retrieval legs)
+      --data-dir <DATA_DIR>    Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+      --query <QUERY>          Seed the search box with an initial query on launch
+      --embed-cmd <EMBED_CMD>  External command to vectorize a query for Memory-tab semantic search. Reads the query string on stdin, must emit `{"embedding":[<f32>,..]}` (1024-dim) on stdout. Falls back to `COMEMORY_EMBED_CMD`. Unset → `Ctrl-S` is a no-op (lexical search still works) [env: COMEMORY_EMBED_CMD=]
+  -h, --help                   Print help
+
+Examples:
+  # Browse every indexed repo, Memory + Code tabs, lexical live search
+  comemory tui
+
+  # Seed the search box and restrict to one repo
+  comemory tui --repo myrepo --query "postgres pool"
+
+  # Memory-tab semantic enrich (Ctrl-S) via an external embedder
+  comemory tui --embed-cmd 'comemory-embed.sh'
+
+  # Capture the Enter-selected id in a shell variable (stdout is reserved)
+  id=$(comemory tui)
+
+Keys:
+  type / Backspace   edit the query (Ctrl-U clears it)
+  Up / Down          move the selection
+  PageUp / PageDown  previous / next page
+  Tab                switch the Memory / Code tab
+  Ctrl-S             Memory-tab semantic enrich (needs an embed command)
+  Ctrl-Y             show the selected id on the status line
+  Enter              quit and print the selected id to stdout
+  Esc / Ctrl-C       quit (prints nothing)
 ```
 
 ---

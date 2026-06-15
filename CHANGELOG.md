@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **`comemory tui` — read-only interactive terminal explorer.** A ratatui front
+  end over the existing retrieval pipeline: live lexical search as you type
+  (FTS5, no embedder) across the Memory and Code tabs, a preview pane, and
+  optional Memory-tab semantic enrich (`Ctrl-S`) via a configured embed command
+  (`--embed-cmd` / `COMEMORY_EMBED_CMD`, run as `sh -c`, query on stdin →
+  `{"embedding":[..]}` on stdout). Results match `search` / `search-code`; the
+  TUI adds no ranking. A dedicated worker thread owns the SQLite connection and
+  the async loop discards stale results by generation `seq`. Querying is
+  read-only (`track=false` — no `retrieval_log` / `access_count` writes). The UI
+  renders to stderr and reserves stdout for the Enter-selected id
+  (`id=$(comemory tui)`); `--json` and a non-interactive terminal are rejected
+  with `EX_CONFIG`.
+
 ## 0.9.0 — 2026-06-15 (auto-reinforcement + pagination)
 
 ### Added
