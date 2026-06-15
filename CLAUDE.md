@@ -98,6 +98,7 @@ enforced by `scripts/check-all.sh`. Every PR must satisfy all five.
 | Module | Responsibility |
 |--------|---------------|
 | `cli/` | clap subcommand entry points + the top-level dispatcher in `mod.rs` |
+| `tui/` | read-only interactive terminal explorer (`comemory tui`): ratatui front end + async `EventStream`/`tokio::select!` loop (`mod.rs`), pure state (`app`) + key map (`event`), a dedicated-thread DB-worker that owns the connection (`worker`), the lexical/semantic request bridge (`search`), embed shell-out (`embed`), preview text (`preview`), RAII terminal guard (`terminal`), and pure ratatui widgets (`view/`) |
 | `memory/` | markdown I/O, `Frontmatter`, slug, id (8-hex SHA-256), atomic save / load / soft-delete / list |
 | `store/` | central SQLite layer — `connection` (pooled rusqlite + `sqlite-vec` loader), `schema`, `migrate` (versioned + idempotent), `vector` (`vec0` insert/KNN with dim guard), `fts` (FTS5 helpers), `embed` (`to_vec_blob`, dim helpers), `tokenizer` (custom FTS5 identifier tokenizer: camelCase/snake_case split + FFI registration) |
 | `simhash.rs` | 64-bit SimHash + Hamming distance over tokenized memory bodies (siphasher-based) |
@@ -134,6 +135,7 @@ environment (`Config::with_env`, in `src/config/env.rs`).
 | `COMEMORY_TUNE_MIN_GOLDEN` | Test hook lowering `comemory tune`'s minimum-golden-pairs floor; not a tuning knob | `10` |
 | `COMEMORY_GIT_AUTO_SYNC` | `true`/`1` to enable best-effort git commit + push after a save | `false` |
 | `COMEMORY_EMBED_HINT` | Free-form identifier of the embedder you used (e.g. `ollama:nomic-embed-text`). Surfaced by `comemory doctor`; never consumed as a switch. | unset |
+| `COMEMORY_EMBED_CMD` | Embed command used by `comemory tui`'s Memory-tab semantic enrich (Ctrl-S). Run as `sh -c <cmd>`; reads the query on stdin, must emit `{"embedding":[..]}` (1024-dim) on stdout. `--embed-cmd` overrides it. Unset → Ctrl-S is a no-op and lexical search still works. | unset |
 | `COMEMORY_RANK_DECAY` | ACT-R decay exponent `d` in `ln(n) − d·ln(days+1)`. Must be ≥ 0. Higher → older memories decay faster. | `0.5` |
 | `COMEMORY_RANK_PRIOR_CLAMP` | `"lo,hi"` bounds applied to the activation, feedback, and quality boost multipliers (the fixed `0.2` supersede penalty intentionally bypasses the clamp). Both finite; lo > 0, lo ≤ hi. | `0.5,2.0` |
 | `COMEMORY_RANK_MMR_LAMBDA` | MMR relevance-vs-diversity trade-off in `[0.0, 1.0]`. `1.0` = pure relevance; `0.0` = pure diversity. | `0.7` |

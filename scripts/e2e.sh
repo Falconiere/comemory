@@ -45,3 +45,14 @@ QUERY_ID=$(printf '%s' "$SEARCH_JSON" | sed -n 's/.*"query_id":"\([^"]*\)".*/\1/
 "$BIN" feedback "$QUERY_ID" --used-code "$SYMBOL_ID" --json >/dev/null \
   || die "e2e" "feedback --used-code failed"
 log_ok "e2e" "index-code → search-code → feedback round-trip passed"
+
+# ── tui interactivity guard ──────────────────────────────────────────────
+# The interactive loop can't be driven headless, but the guard that refuses a
+# non-interactive invocation must exit EX_CONFIG (78) rather than take over a
+# pipe. (Under this harness stderr is not a tty, so the guard fires.)
+set +e
+"$BIN" tui --json >/dev/null 2>&1
+TUI_CODE=$?
+set -e
+[[ "$TUI_CODE" -eq 78 ]] || die "e2e" "tui --json should exit 78 (got $TUI_CODE)"
+log_ok "e2e" "tui interactivity guard passed"

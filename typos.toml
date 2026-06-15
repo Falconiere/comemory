@@ -7,7 +7,7 @@
 extend-exclude = ["web/dist/", "web/package-lock.json", "tests/golden/"]
 
 [default]
-extend-ignore-identifiers-re = ["nomic", "kuzu", "qwick", "cose"]
+extend-ignore-identifiers-re = ["nomic", "kuzu", "qwick", "cose", "ratatui"]
 extend-ignore-re = [
   "serde::ser::",
   "cose-bilkent",
