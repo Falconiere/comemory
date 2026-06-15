@@ -52,9 +52,12 @@ trigger younger than the threshold suppresses a fresh spawn. Set it in
 auto_reindex_threshold_ms = 200
 ```
 
-Lazy reindex only runs from the checkout it originally indexed, and is
-best-effort throughout — if a reindex cannot start, the search still succeeds
-against the current index.
+Lazy reindex only runs from the checkout it originally indexed (once a repo has
+a recorded working-tree root). The exception is a repo with no recorded root —
+never indexed via `index-code`, e.g. one populated through `ingest-code` — whose
+first lazy reindex runs from the current directory. It is best-effort
+throughout: if a reindex cannot start, the search still succeeds against the
+current index.
 
 ## Hook mode
 
