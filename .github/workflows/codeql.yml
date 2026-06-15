@@ -16,4 +16,4 @@ permissions:
 
 jobs:
   analyze:
-    uses: Falconiere/workflows/.github/workflows/codeql.yml@v1
+    uses: Falconiere/workflows/.github/workflows/codeql.yml@v2
