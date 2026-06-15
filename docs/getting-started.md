@@ -37,7 +37,18 @@ cargo install --path .
 
 Prefer a prebuilt binary? Tarballs for macOS (aarch64) and Linux (aarch64,
 x86_64) are attached to every
-[GitHub Release](https://github.com/Falconiere/comemory/releases).
+[GitHub Release](https://github.com/Falconiere/comemory/releases). The curl
+installer fetches the right one, drops it in `$CARGO_HOME/bin` (or
+`~/.local/bin`), and installs shell completions:
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/Falconiere/comemory/releases/latest/download/comemory-installer.sh \
+  | sh
+```
+
+If you installed another way, generate completions yourself with
+`comemory completions <bash|zsh|fish|powershell>`.
 
 Verify the install — `comemory doctor` checks the data directory and the SQLite
 mirror:

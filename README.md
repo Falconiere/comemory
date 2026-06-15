@@ -101,8 +101,9 @@ Then verify: `comemory doctor`. Prebuilt binaries for **macOS** (aarch64) and
 **Linux** (aarch64, x86_64) are attached to every
 [GitHub Release](https://github.com/Falconiere/comemory/releases).
 
-Full install details — the curl installer, shell completions, and binary-size
-history — are in **[docs/getting-started.md](docs/getting-started.md)**.
+Full install details — the curl installer and shell completions — are in
+**[docs/getting-started.md](docs/getting-started.md)**; the binary-size history
+lives in **[docs/build-perf.md](docs/build-perf.md)**.
 
 ---
 

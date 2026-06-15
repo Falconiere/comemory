@@ -284,6 +284,13 @@ fn duplicate_name_and_line_collapsed_to_one() {
         syms.iter().any(|s| s.name == "n"),
         "distinct same-line symbol kept, got {syms:?}",
     );
+    // Exactly two survive (one `e`, one `n`): catches both a regression that
+    // drops the distinct `n` and one that leaves a spurious duplicate.
+    assert_eq!(
+        syms.len(),
+        2,
+        "only the two distinct symbols remain: {syms:?}"
+    );
 }
 
 #[test]
