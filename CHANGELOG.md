@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.9.0 — 2026-06-15 (auto-reinforcement + pagination)
 
 ### Added
 - **Auto-reinforcement (Phase 0+1).** comemory now learns from git activity:
