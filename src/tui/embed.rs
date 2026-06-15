@@ -20,9 +20,15 @@ pub const EMBED_TIMEOUT: Duration = Duration::from_secs(10);
 /// Vectorize `query` via `cmd` (`sh -c <cmd>`), bounded by [`EMBED_TIMEOUT`].
 /// Returns the parsed embedding, or an `Error` describing the failed phase.
 pub fn embed_query(cmd: &str, query: &str) -> Result<Vec<f32>> {
+    embed_query_with_timeout(cmd, query, EMBED_TIMEOUT)
+}
+
+/// [`embed_query`] with an explicit read `timeout`. Exposed so tests can drive
+/// the timeout path with a tiny bound instead of waiting [`EMBED_TIMEOUT`].
+pub fn embed_query_with_timeout(cmd: &str, query: &str, timeout: Duration) -> Result<Vec<f32>> {
     let mut child = spawn(cmd)?;
     write_stdin(&mut child, query)?;
-    let stdout = read_with_timeout(&mut child)?;
+    let stdout = read_with_timeout(&mut child, timeout)?;
     let status = child.wait().map_err(|e| fail("wait", e))?;
     if !status.success() {
         return Err(Error::Config(format!("embed-cmd exited with {status}")));
@@ -55,7 +61,7 @@ fn write_stdin(child: &mut Child, query: &str) -> Result<()> {
 
 /// Read the child's stdout to EOF on a helper thread, bounded by
 /// [`EMBED_TIMEOUT`]; on timeout the child is killed and an error returned.
-fn read_with_timeout(child: &mut Child) -> Result<String> {
+fn read_with_timeout(child: &mut Child, timeout: Duration) -> Result<String> {
     let mut stdout = child
         .stdout
         .take()
@@ -66,11 +72,14 @@ fn read_with_timeout(child: &mut Child) -> Result<String> {
         let res = stdout.read_to_string(&mut buf).map(|_| buf);
         let _ = tx.send(res);
     });
-    match rx.recv_timeout(EMBED_TIMEOUT) {
+    match rx.recv_timeout(timeout) {
         Ok(Ok(buf)) => Ok(buf),
         Ok(Err(e)) => Err(fail("stdout read", e)),
         Err(_) => {
+            // Kill AND reap: `Child::kill` only signals; without `wait` the
+            // SIGKILLed child lingers as a zombie until this process exits.
             let _ = child.kill();
+            let _ = child.wait();
             Err(Error::Config("embed-cmd timed out".into()))
         }
     }
