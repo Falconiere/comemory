@@ -7,3 +7,10 @@ rustflags = ["-C", "link-arg=-Wl,-dead_strip"]
 
 [env]
 SCCACHE_CACHE_SIZE = { value = "20G", force = false }
+# Hermetic dev/test default: keep `cargo run`/`cargo test`/`cargo nextest`
+# invoked from this worktree from auto-indexing the worktree's own source into
+# the developer's `~/.comemory` (or a test's data dir) as a side effect of a
+# `search-code`/`context` call. The installed binary (`cargo install`) does not
+# read this file, so end users keep the `lazy` default. Tests that exercise the
+# feature set the var explicitly per-command, which overrides this.
+COMEMORY_INDEXING_AUTO_REINDEX = { value = "off", force = false }
