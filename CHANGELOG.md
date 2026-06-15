@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.10.0 — 2026-06-15 (interactive TUI explorer)
 
 ### Added
 - **`comemory tui` — read-only interactive terminal explorer.** A ratatui front
@@ -15,6 +15,12 @@
   renders to stderr and reserves stdout for the Enter-selected id
   (`id=$(comemory tui)`); `--json` and a non-interactive terminal are rejected
   with `EX_CONFIG`.
+
+### Internal
+- **Criterion perf suite + committed golden eval gate.** A real `criterion`
+  benchmark harness and a checked-in golden eval set so `comemory eval`'s
+  retrieval quality (recall@k, MRR) and end-to-end performance are guarded in
+  CI against regressions.
 
 ## 0.9.0 — 2026-06-15 (auto-reinforcement + pagination)
 
