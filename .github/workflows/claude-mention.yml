@@ -19,6 +19,6 @@ permissions:
 
 jobs:
   mention:
-    uses: Falconiere/workflows/.github/workflows/claude-mention.yml@v1
+    uses: Falconiere/workflows/.github/workflows/claude-mention.yml@v2
     secrets:
       CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
