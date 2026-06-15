@@ -49,10 +49,14 @@ pub fn apply_response(app: &mut App, resp: Response) {
     }
     match resp.result {
         Ok(Hits::Memory { hits, has_more }) => {
+            app.status.clear(); // fresh results supersede any prior error hint
             app.enriched = resp.semantic;
             app.set_memory_hits(hits, has_more);
         }
-        Ok(Hits::Code { hits, has_more }) => app.set_code_hits(hits, has_more),
+        Ok(Hits::Code { hits, has_more }) => {
+            app.status.clear();
+            app.set_code_hits(hits, has_more);
+        }
         Err(msg) => app.status = msg,
     }
 }

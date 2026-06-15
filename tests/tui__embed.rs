@@ -4,7 +4,9 @@
 //! `cat` that round-trips stdin, and failing commands that must surface as
 //! errors rather than panics.
 
-use comemory::tui::embed::embed_query;
+use std::time::{Duration, Instant};
+
+use comemory::tui::embed::{embed_query, embed_query_with_timeout};
 
 #[test]
 fn printf_command_yields_vector() {
@@ -36,4 +38,19 @@ fn garbage_output_is_error() {
     // Not JSON → parse error. Any Error is acceptable; the point is no panic.
     let err = embed_query("printf 'not json'", "q");
     assert!(err.is_err(), "garbage output must be an error");
+}
+
+#[test]
+fn slow_command_times_out_promptly_and_reaps() {
+    // `sleep 5` outlives the 150ms bound: the timeout must fire and the child
+    // be killed+reaped (not waited on for the full 5s). Asserting prompt return
+    // proves we don't block on the child; the kill+wait avoids a zombie.
+    let start = Instant::now();
+    let err = embed_query_with_timeout("sleep 5", "q", Duration::from_millis(150));
+    assert!(err.is_err(), "a command slower than the timeout must error");
+    assert!(
+        start.elapsed() < Duration::from_secs(3),
+        "timeout must return promptly, not wait for the child: {:?}",
+        start.elapsed()
+    );
 }

@@ -106,3 +106,16 @@ fn error_response_sets_status() {
     apply_response(&mut app, resp);
     assert!(app.status.contains("timed out"), "status: {}", app.status);
 }
+
+#[test]
+fn ok_response_clears_prior_error_status() {
+    let mut app = App::new(None, Some("q".to_string()), 12);
+    app.status = "embed-cmd timed out".to_string();
+    let seq = app.seq;
+    apply_response(&mut app, mem_response(seq, false, &["aaaa0001"], false));
+    assert!(
+        app.status.is_empty(),
+        "fresh results must clear a stale error status, got: {}",
+        app.status
+    );
+}
