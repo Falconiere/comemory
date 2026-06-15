@@ -262,6 +262,31 @@ fn python_decorated_async_and_based_definitions_extracted() {
 }
 
 #[test]
+fn duplicate_name_and_line_collapsed_to_one() {
+    // Minified/bundled JS packs many one-letter `function` expressions onto a
+    // single physical line. Two such functions share an identifier *and* a
+    // start line, which is indistinguishable under the `code_symbols`
+    // UNIQUE(repo, path, symbol, line_start) key — a later duplicate insert
+    // would abort the whole index-code transaction. Extraction must collapse
+    // them to one. Regression for the minified-SPA-bundle index-code crash.
+    let src = "function e(){return 1};function e(){return 2};function n(){return 3}";
+    let syms = extract(Lang::Javascript, src).expect("js extraction");
+    let es: Vec<_> = syms.iter().filter(|s| s.name == "e").collect();
+    assert_eq!(
+        es.len(),
+        1,
+        "duplicate (name, line) collapsed, got {syms:?}"
+    );
+    assert_eq!(es[0].line, 1, "survivor is the first occurrence");
+    // A distinct name sharing the same start line is kept — only exact
+    // (name, line_start) collisions are dropped.
+    assert!(
+        syms.iter().any(|s| s.name == "n"),
+        "distinct same-line symbol kept, got {syms:?}",
+    );
+}
+
+#[test]
 fn tsx_jsx_component_extracted() {
     // A function returning JSX parses cleanly under the Tsx grammar (which
     // `Lang::Typescript` now dispatches to internally), so callers don't

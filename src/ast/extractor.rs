@@ -9,6 +9,7 @@
 //! `Lang::Typescript` dispatches to the Tsx grammar so JSX-bearing `.tsx`
 //! files extract just as cleanly as plain `.ts`.
 
+use std::collections::HashSet;
 use std::sync::OnceLock;
 
 use ast_grep_core::tree_sitter::{LanguageExt, StrDoc};
@@ -246,5 +247,13 @@ fn extract_with<L: LanguageExt + Clone>(
             chunks,
         });
     })?;
+    // Collapse symbols that share an identifier *and* a start line: they are
+    // indistinguishable under the `code_symbols` UNIQUE(repo, path, symbol,
+    // line_start) key, so a later duplicate insert would abort the whole
+    // index-code transaction. The usual source is minified/bundled JS, which
+    // packs many one-letter `function` expressions onto a single physical
+    // line. Keep the first occurrence and drop the rest.
+    let mut seen = HashSet::new();
+    out.retain(|s| seen.insert((s.name.clone(), s.line)));
     Ok(out)
 }
