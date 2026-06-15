@@ -1,0 +1,91 @@
+# Hand-curated golden retrieval pairs for the lexical eval gate.
+# Each `relevant` id is the corpus memory whose body genuinely answers the
+# query. Run via: comemory eval --golden tests/golden/memory.yml --golden-only --k 3
+# Scored by scripts/eval-check.sh (recall@3 + MRR against tests/golden/floor.toml).
+#
+# IMPORTANT: query text must NOT contain any bare 8-hex token, or the
+# eval-check preflight greps it as an id and fails.
+
+- query: pgbouncer connection pool exhausted under load
+  relevant: [ea4c5335]
+  repo: shipfast-api
+
+- query: why did we pick UUIDv7 for primary keys
+  relevant: [302ae4ba]
+  kind: decision
+
+- query: standard error response shape for API handlers
+  relevant: [8ef38cb3]
+  repo: shipfast-api
+
+- query: cache stampede when a hot key expires
+  relevant: [2bbfbe7e]
+
+- query: intermittent 401 errors from clock skew between auth nodes
+  relevant: [d3fe2052]
+
+- query: making stripe charge retries safe with idempotency keys
+  relevant: [a1bf18f9]
+
+- query: avoid dual write between database and event bus
+  relevant: [e4ac8713]
+  repo: shipfast-api
+
+- query: alter table migration deadlock and lock timeout
+  relevant: [e901902d]
+
+- query: correlate logs with a trace id across services
+  relevant: [834ce976]
+
+- query: fixing an N+1 query on the order list endpoint
+  relevant: [1cef7266]
+
+- query: rate limiting with a redis token bucket lua script
+  relevant: [8eee499b]
+
+- query: react useEffect websocket subscription memory leak
+  relevant: [9afc8f46]
+  repo: lumen-web
+
+- query: migrating client state from redux to zustand
+  relevant: [c7c23898]
+
+- query: reduce initial bundle size by lazy loading the chart library
+  relevant: [fe4332f9]
+
+- query: hydration mismatch warning from rendering a date during SSR
+  relevant: [cefec797]
+
+- query: cors request with credentials rejected by wildcard origin
+  relevant: [fb41bb45]
+
+- query: timestamp off by a day timezone bug
+  relevant: [a9b3897b]
+
+- query: how do we keep server and client form validation in sync
+  relevant: [3f22189d]
+
+# Harder / discriminating queries below: plausible distractors share keywords,
+# so the top-3 will not always be a clean hit and recall@3 stays under 1.0.
+
+- query: postgres query plan ignored the index and did a seq scan
+  relevant: [496f00d6]
+
+- query: handling flaky third party API calls with backoff
+  relevant: [afd1bd61]
+
+- query: react re-render performance from a single context provider
+  relevant: [f520c62d]
+
+# Distractor: the true answer (context-provider re-render fix, f520c62d) is
+# keyword-starved on "performance", so the lexical pipeline surfaces other
+# react memories ahead of it and it falls outside the top-3 -> a genuine miss
+# that drives recall@3 and MRR below 1.0. This is the discriminating query.
+- query: react performance
+  relevant: [f520c62d]
+
+# Distractor: both redis memories match; the stampede fix (2bbfbe7e) is the
+# heavy-traffic one but the token-bucket memory outranks it, landing the true
+# answer at rank 2 -> recall@3 hit, reciprocal rank 0.5.
+- query: redis under heavy traffic
+  relevant: [2bbfbe7e]

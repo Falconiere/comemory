@@ -1,7 +1,10 @@
 [files]
 # The committed Vite build output is minified and hash-named; never spell-check
 # it (or the lockfile). The frontend source under web/src is still checked.
-extend-exclude = ["web/dist/", "web/package-lock.json"]
+# tests/golden/ is benchmark fixture data: content-derived 8-hex ids and slugs
+# (file names + memory.yml id refs) spuriously trip the dictionary — data, not
+# prose, so never spell-check it.
+extend-exclude = ["web/dist/", "web/package-lock.json", "tests/golden/"]
 
 [default]
 extend-ignore-identifiers-re = ["nomic", "kuzu", "qwick", "cose"]

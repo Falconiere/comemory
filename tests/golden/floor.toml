@@ -1,0 +1,8 @@
+# Measured lexical-retrieval baseline floors for scripts/eval-check.sh.
+# Computed deterministically over tests/golden/corpus/*.md +
+# tests/golden/memory.yml with `comemory eval --golden-only --k 3`.
+# Measured 2026-06-14: recall@3 = 0.9565, mrr = 0.9348 (23 pairs).
+# Floors sit just below the measured values to absorb trivial reordering;
+# a real regression in ranking trips the gate.
+recall_at_k = 0.95
+mrr = 0.93
