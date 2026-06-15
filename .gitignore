@@ -12,3 +12,6 @@
 
 # claudness workflow artifacts (specs/plans) — local, not committed
 /docs/claudness/
+
+# toolu workflow artifacts (specs/plans) — local, not committed
+/docs/toolu/
