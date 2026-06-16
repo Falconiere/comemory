@@ -21,6 +21,9 @@ ignore = [
   # Potential UB dereferencing Buf struct
   # chain: deep in lance / datafusion stack; awaiting upstream fix
   "RUSTSEC-2026-0008",
+  # proc-macro-error2 unmaintained (confirmed by author; no safe upgrade)
+  # chain: include-flate-codegen → include-flate → rust-embed
+  "RUSTSEC-2026-0173",
 ]
 
 [licenses]

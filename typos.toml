@@ -12,4 +12,7 @@ extend-ignore-re = [
   "serde::ser::",
   "cose-bilkent",
   "cose-base",
+  # `include-flate` / `include-flate-codegen` are real crate names; flagged
+  # because `flate` looks like `flat` to the dictionary.
+  "include-flate",
 ]
