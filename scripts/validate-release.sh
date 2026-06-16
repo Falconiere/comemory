@@ -7,7 +7,7 @@
 #      --untracked-files=no` below).
 #   2. Current branch is `main` (override with $RELEASE_BRANCH).
 #   3. Cargo.toml `version` matches the requested version.
-#   4. CHANGELOG.md has a `## [<version>] — YYYY-MM-DD` heading dated today.
+#   4. CHANGELOG.md has a `## [<version>] - YYYY-MM-DD` heading dated today.
 #
 # Soft warnings (exit 0, but print a yellow warning line):
 #   - Cargo.lock is dirty.
