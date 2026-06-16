@@ -2,7 +2,9 @@
 # scripts/validate-release.sh — preflight checks before tagging a release.
 #
 # Hard checks (exit 1 on any failure):
-#   1. Working tree is clean (no staged, unstaged, or untracked changes).
+#   1. Working tree is clean (no staged or unstaged changes; untracked
+#      files are tolerated — see `git status --porcelain
+#      --untracked-files=no` below).
 #   2. Current branch is `main` (override with $RELEASE_BRANCH).
 #   3. Cargo.toml `version` matches the requested version.
 #   4. CHANGELOG.md has a `## [<version>] — YYYY-MM-DD` heading dated today.

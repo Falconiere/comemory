@@ -4,12 +4,25 @@
 #
 # Behaviour:
 #   - If `minisign` is on PATH: download SHA256SUMS, sign it with the
-#     secret key (path from $MINISIGN_KEY env or the conventional
-#     $HOME/.minisign/comemory.key location), and upload the .sig back
-#     to the release with `gh release upload`.
+#     secret key, and upload the .sig back to the release with
+#     `gh release upload`.
 #   - If `minisign` is absent OR the key is missing: print a yellow
 #     warning and exit 0. The release is still published, just without
 #     a detached signature.
+#
+# Key resolution:
+#   - $MINISIGN_KEY env var set (with the key contents, as set by
+#     `gh secret set MINISIGN_KEY < key.file` per keys/README.md):
+#     write the contents to a 0600 temp file and use that as the key
+#     path. Cleaned up on exit.
+#   - $MINISIGN_KEY unset: fall back to $HOME/.minisign/comemory.key
+#     (override with $MINISIGN_KEY_PATH if you need a different path).
+#
+# Passphrase:
+#   - $MINISIGN_PASSPHRASE set: pipe via stdin so the secret never
+#     appears in argv (visible in `ps` / /proc/*/cmdline for the
+#     duration of the call). minisign reads the passphrase from stdin
+#     when stdin is not a TTY — the default on a CI runner.
 #
 # This script is opt-in: missing tools never fail the release workflow.
 # Configure it by setting the MINISIGN_KEY and MINISIGN_PASSPHRASE GitHub
@@ -41,15 +54,34 @@ if ! command -v gh >/dev/null 2>&1; then
   exit 0
 fi
 
-key_path="${MINISIGN_KEY:-$HOME/.minisign/comemory.key}"
-if [[ ! -f "$key_path" ]]; then
+# Resolve the secret key path. Two modes (see header):
+#   1. MINISIGN_KEY holds the key contents → write to a 0600 temp file
+#      (tracked in $key_cleanup so the EXIT trap can remove it).
+#   2. MINISIGN_KEY unset → fall back to $MINISIGN_KEY_PATH or
+#      $HOME/.minisign/comemory.key.
+key_cleanup=""
+if [[ -n "${MINISIGN_KEY:-}" ]]; then
+  key_path="$(mktemp)"
+  chmod 600 "$key_path"
+  printf '%s' "$MINISIGN_KEY" > "$key_path"
+  key_cleanup="$key_path"
+else
+  key_path="${MINISIGN_KEY_PATH:-$HOME/.minisign/comemory.key}"
+fi
+
+if [[ ! -s "$key_path" ]]; then
   log_info "$step" "no key at $key_path — skipping signature"
   log_ok "$step" "skipped (no key)"
+  [[ -n "$key_cleanup" ]] && rm -f "$key_cleanup"
   exit 0
 fi
 
 work="$(mktemp -d)"
-trap 'rm -rf "$work"' EXIT
+cleanup() {
+  rm -rf "$work"
+  [[ -n "$key_cleanup" ]] && rm -f "$key_cleanup"
+}
+trap cleanup EXIT
 
 # Download SHA256SUMS from the release.
 if ! gh release download "$ver" --pattern SHA256SUMS --dir "$work" >/dev/null 2>&1; then
@@ -64,17 +96,22 @@ if [[ ! -s "$work/SHA256SUMS" ]]; then
   exit 0
 fi
 
-# Sign. Use the passphrase non-interactively if MINISIGN_PASSPHRASE is set;
-# otherwise fall back to minisign's own TTY prompt (caller decides).
-sign_args=("-s" "$key_path" "-m" "$work/SHA256SUMS" "-W")
+# Sign. Pass the passphrase via stdin (not -P) so the secret never
+# appears in argv, which is visible in `ps` / /proc/*/cmdline for the
+# duration of the call. minisign reads the passphrase from stdin when
+# stdin is not a TTY — true on a CI runner. The trailing newline is
+# required: minisign uses fgets() and trims it.
 if [[ -n "${MINISIGN_PASSPHRASE:-}" ]]; then
-  sign_args=("-s" "$key_path" "-m" "$work/SHA256SUMS" \
-    "-W" "-P" "$MINISIGN_PASSPHRASE")
-fi
-
-if ! minisign "${sign_args[@]}" >/dev/null 2>&1; then
-  log_err "$step" "minisign failed (bad passphrase or corrupt key)"
-  exit 1
+  if ! printf '%s\n' "$MINISIGN_PASSPHRASE" \
+      | minisign -W -s "$key_path" -m "$work/SHA256SUMS" >/dev/null 2>&1; then
+    log_err "$step" "minisign failed (bad passphrase, corrupt key, or wrong version)"
+    exit 1
+  fi
+else
+  if ! minisign -W -s "$key_path" -m "$work/SHA256SUMS" >/dev/null 2>&1; then
+    log_err "$step" "minisign failed (corrupt key or wrong version)"
+    exit 1
+  fi
 fi
 
 # Upload the signature back to the release.
