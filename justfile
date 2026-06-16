@@ -45,3 +45,14 @@ perf:
 # Usage: just release-dry-run v0.2.0-rc.1
 release-dry-run tag:
     dist plan --tag {{tag}}
+
+# Draft the next CHANGELOG.md section from conventional commits since the
+# last semver tag. Prints the markdown to stdout — paste it under
+# `## [Unreleased]` in CHANGELOG.md, edit, and rename to a dated heading.
+changelog:
+    bash scripts/changelog-draft.sh
+
+# Like `changelog`, but against an explicit ref. Useful for back-fills.
+# Usage: just changelog-since v0.9.0
+changelog-since ref:
+    bash scripts/changelog-draft.sh {{ref}}

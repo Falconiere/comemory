@@ -1,8 +1,42 @@
 # Changelog
 
-## 0.10.0 — 2026-06-15 (interactive TUI explorer)
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
 
 ### Added
+
+_(empty)_
+
+### Changed
+
+_(empty)_
+
+### Fixed
+
+_(empty)_
+
+### Removed
+
+_(empty)_
+
+### Security
+
+_(empty)_
+
+### Internal
+
+_(empty)_
+
+## [0.10.0] - 2026-06-15
+
+_Interactive TUI explorer._
+
+### Added
+
 - **`comemory tui` — read-only interactive terminal explorer.** A ratatui front
   end over the existing retrieval pipeline: live lexical search as you type
   (FTS5, no embedder) across the Memory and Code tabs, a preview pane, and
@@ -17,14 +51,18 @@
   with `EX_CONFIG`.
 
 ### Internal
+
 - **Criterion perf suite + committed golden eval gate.** A real `criterion`
   benchmark harness and a checked-in golden eval set so `comemory eval`'s
   retrieval quality (recall@k, MRR) and end-to-end performance are guarded in
   CI against regressions.
 
-## 0.9.0 — 2026-06-15 (auto-reinforcement + pagination)
+## [0.9.0] - 2026-06-15
+
+_Auto-reinforcement + pagination._
 
 ### Added
+
 - **Auto-reinforcement (Phase 0+1).** comemory now learns from git activity:
   commits that touch files a memory references reinforce that memory
   automatically — no manual `comemory feedback`. During `index-code` a
@@ -48,23 +86,26 @@
   markdown file.
 
 ### Changed
-- **BREAKING (`--json` output shape).** Data-returning commands now emit a
-  paginated envelope:
-  - `ast` and `list` change from a bare JSON array to a `Page` envelope
-    `{items, limit, offset, total, has_more}`.
-  - `search`/`search-code` keep `{hits, query_id?}` and gain
-    `limit, offset, has_more, total` (the in-window ranked count).
-  - `graph` gains `{nodes, edges, limit, offset, total, has_more}` (edge-windowed,
-    nodes derived from the page); `prune` wraps `stale_code_files` /
-    `low_value_memories` as `Page` envelopes (`orphan_edges` stays a count).
-  - `serve` `GET /api/graph` returns the full graph when `limit`/`offset` are
-    absent (unchanged) and a paginated subgraph when either is present.
-  - `prune --apply` still acts on the full candidate set regardless of
-    `--limit`/`--offset`.
+
+- > **BREAKING (`--json` output shape).** Data-returning commands now emit a
+  > paginated envelope:
+  >
+  > - `ast` and `list` change from a bare JSON array to a `Page` envelope
+  >   `{items, limit, offset, total, has_more}`.
+  > - `search`/`search-code` keep `{hits, query_id?}` and gain
+  >   `limit, offset, has_more, total` (the in-window ranked count).
+  > - `graph` gains `{nodes, edges, limit, offset, total, has_more}` (edge-windowed,
+  >   nodes derived from the page); `prune` wraps `stale_code_files` /
+  >   `low_value_memories` as `Page` envelopes (`orphan_edges` stays a count).
+  > - `serve` `GET /api/graph` returns the full graph when `limit`/`offset` are
+  >   absent (unchanged) and a paginated subgraph when either is present.
+  > - `prune --apply` still acts on the full candidate set regardless of
+  >   `--limit`/`--offset`.
 - `--k` on retrieval commands gains a `--limit` alias; `--k 0` / `--limit 0`
   now means "all within the window" (previously `--k 0` was rejected).
 
 ### Fixed
+
 - **`index-code` no longer aborts on duplicate symbol keys.** Minified/bundled
   sources (e.g. a tracked `web/dist` SPA bundle) pack many one-letter
   `function` expressions onto a single physical line; two such symbols share an
@@ -80,24 +121,24 @@
   current index immediately, debounced by `auto_reindex_threshold_ms`
   (default 200 ms). See [`docs/guides/auto-reindex.md`](docs/guides/auto-reindex.md).
 
-## 0.8.4 — 2026-06-14 (test-confidence + lang-quality migration)
+## [0.8.4] - 2026-06-14
 
-Internal test infrastructure, CI, and conventions. The published binary is
-functionally unchanged from 0.8.3 — the two `src/` changes are
-behavior-preserving (a panic-free `graph::cross_link` regex and a
-`tty::write_header` extraction).
+_Test-confidence + lang-quality migration. Internal test infrastructure, CI,
+and conventions. The published binary is functionally unchanged from 0.8.3 —
+the two `src/` changes are behavior-preserving (a panic-free
+`graph::cross_link` regex and a `tty::write_header` extraction)._
 
 ### Added
+
 - **Test-confidence program.** Measure-first tooling —
   `scripts/{coverage-check,mutation-check,eval-check}.sh` (a cargo-llvm-cov
   line-coverage floor, diff-scoped/nightly cargo-mutants, lexical eval) with
   `just coverage|mutation|eval` and committed baselines (85% line coverage,
   the mutant-survivor list), plus real-data tests that kill 12 of 14 baseline
   survivors in graph/memory/output.
-- **CI gates.** `test.yml` (check-all → coverage floor → eval) and
-  `mutation.yml` (diff-scoped report-only on PRs + a nightly full run).
 
 ### Changed
+
 - **Adopted the lang-quality Rust standard repo-wide.** Flattened the nested
   test layout to flat dunder mirrors (`tests/<a>__<b>.rs`, 100 binaries) with
   every test file ≤300 code lines; re-pointed the gate scripts
@@ -109,11 +150,17 @@ behavior-preserving (a panic-free `graph::cross_link` regex and a
 - Extracted `output::tty::write_header` from `header()` — a behavior-preserving
   seam that lets the header path be tested without a TTY.
 
-## 0.8.3 — 2026-06-13 (docs accuracy)
+### Internal
 
-Docs only. The published binary is unchanged from 0.8.0–0.8.2.
+- **CI gates.** `test.yml` (check-all → coverage floor → eval) and
+  `mutation.yml` (diff-scoped report-only on PRs + a nightly full run).
+
+## [0.8.3] - 2026-06-13
+
+_Docs only. The published binary is unchanged from 0.8.0–0.8.2._
 
 ### Fixed
+
 - **Documentation audit.** Corrected stale/misleading docs: `architecture.md`
   §8 now states the `lazy` auto-reindex mode is unwired (behaves like `off`)
   and drops the false `comemory doctor` staleness-report claim; added the v7
@@ -125,23 +172,26 @@ Docs only. The published binary is unchanged from 0.8.0–0.8.2.
   `cargo install --path .`). `README.md` install-hooks wording + a measured
   v0.8 binary-size row.
 
-## 0.8.2 — 2026-06-13 (remove Claude Code plugin)
+## [0.8.2] - 2026-06-13
 
-Repo tooling only. The published binary is unchanged from 0.8.0/0.8.1.
+_Remove Claude Code plugin. Repo tooling only. The published binary is
+unchanged from 0.8.0/0.8.1._
 
 ### Removed
+
 - **Claude Code plugin** (`integrations/claude-code/`) and its
   `just claude-plugin-*` recipes. comemory is a standalone CLI again and
   carries no editor/agent integration. The 0.8.1 plugin remains available
   at the `v0.8.1` tag for anyone who wants it.
 
-## 0.8.1 — 2026-06-12 (Claude Code plugin)
+## [0.8.1] - 2026-06-12
 
-Repo tooling only. The published binary is unchanged from 0.8.0 — the
-plugin lives entirely under `integrations/` and is not compiled into the
-crate.
+_Claude Code plugin. Repo tooling only. The published binary is unchanged
+from 0.8.0 — the plugin lives entirely under `integrations/` and is not
+compiled into the crate._
 
 ### Added
+
 - **Claude Code plugin** (`integrations/claude-code/`) wrapping the
   `comemory` CLI: a single `comemory.sh` wrapper (sole authority for
   git-repo scoping + missing-binary fail-soft), a SessionStart auto-recall
@@ -150,14 +200,17 @@ crate.
   `just claude-plugin-*` recipes install/remove/test it.
 
 ### Changed
+
 - Documented the plugin in `docs/architecture.md`, `docs/cli-reference.md`,
   and the README.
 
-## 0.8.0 — 2026-06-12 (edition 2024 + leaner release builds)
+## [0.8.0] - 2026-06-12
 
-Build, packaging, and toolchain hardening. No CLI behavior changes.
+_Edition 2024 + leaner release builds. Build, packaging, and toolchain
+hardening. No CLI behavior changes._
 
 ### Changed
+
 - **`[profile.dist]` now uses fat LTO** (was thin), so prebuilt release
   tarballs and the Homebrew bottle match local `cargo build --release`
   codegen quality (`codegen-units = 1`, `strip = "symbols"`,
@@ -169,19 +222,22 @@ Build, packaging, and toolchain hardening. No CLI behavior changes.
   `std::env::set_var/remove_var` in tests as edition 2024 requires.
 
 ### Removed
+
 - **Dropped the `x86_64-apple-darwin` (Intel macOS) prebuilt target.**
   Supported prebuilt targets are now `aarch64-apple-darwin`,
   `x86_64-unknown-linux-gnu`, and `aarch64-unknown-linux-gnu`. Intel-Mac
   users install from source via `cargo install --path .`.
 
-## 0.7.0 — 2026-06-12 (interactive web viewer + editor)
+## [0.7.0] - 2026-06-12
 
-Adds `comemory serve`: a loopback-only web app for exploring the code
-graph and viewing, editing, and saving indexed source files — a live
-complement to the static `graph --format html` export, served from a
-single binary with no Node toolchain or network at runtime.
+_Interactive web viewer + editor. Adds `comemory serve`: a loopback-only
+web app for exploring the code graph and viewing, editing, and saving
+indexed source files — a live complement to the static `graph --format
+html` export, served from a single binary with no Node toolchain or
+network at runtime._
 
 ### Added
+
 - **`comemory serve`.** An axum server bound to `127.0.0.1` on an
   ephemeral port (override with `--port`), hosting a React/Vite/Tailwind
   single-page app embedded in the binary via `rust-embed`. The graph
@@ -197,7 +253,8 @@ single binary with no Node toolchain or network at runtime.
 - **`--root <repo>=<path>`** on `serve` overrides the persisted working-tree
   root (and covers pre-v7 repos whose root is `NULL`).
 
-### Schema
+### Changed
+
 - **v7 migration:** a nullable `repo_marker.root_path` column persisting the
   absolute working-tree root at index time (`canonicalize(--path)`) — the
   exact base `code_symbols.path` is relative to, so `serve` can resolve
@@ -205,6 +262,7 @@ single binary with no Node toolchain or network at runtime.
   read `NULL` and rely on `--root`.
 
 ### Security
+
 - Loopback-only bind, a 256-bit per-session token required on `/` and
   `/api/*` (compared in constant time), a `Host`-header guard
   (DNS-rebinding defense), default-deny CORS, and a single
@@ -217,17 +275,19 @@ single binary with no Node toolchain or network at runtime.
   redirects to the token-substituted `/`.
 
 ### Internal
+
 - Embedded frontend assets are `rust-embed` gzip-compressed
   (`compression` feature) to offset the bundle's contribution to binary
   size.
 
-## 0.6.0 — 2026-06-12 (WebGL graph viewer)
+## [0.6.0] - 2026-06-12
 
-Replaces the `comemory graph --format html` viewer with a WebGL-rendered
-stack for smooth interaction on larger graphs. No CLI, schema, or data
-change — same JSON payload inlined into the page.
+_WebGL graph viewer. Replaces the `comemory graph --format html` viewer
+with a WebGL-rendered stack for smooth interaction on larger graphs. No
+CLI, schema, or data change — same JSON payload inlined into the page._
 
 ### Changed
+
 - **HTML graph viewer → sigma.js v3 + graphology + ForceAtlas2.** WebGL
   rendering (pan/zoom/hover stay at 60fps with headroom to ~100k nodes)
   replaces the cytoscape.js Canvas viewer. ForceAtlas2 runs on
@@ -243,11 +303,13 @@ change — same JSON payload inlined into the page.
   over a fixed frame budget instead of laying out instantly.
 
 ### Security
+
 - The three CDN `<script>` tags now carry Subresource Integrity
   (`integrity` sha384 + `crossorigin="anonymous"`): a tampered or cached
   bundle fails the integrity check instead of executing arbitrary JS.
 
 ### Fixed
+
 - ForceAtlas2 is loaded from the `graphology-library` UMD bundle
   (`graphologyLibrary.layoutForceAtlas2`); the standalone
   `graphology-layout-forceatlas2` package ships no UMD build, so its
@@ -256,14 +318,15 @@ change — same JSON payload inlined into the page.
   `console.error`) on a CDN-load failure or a mid-render Sigma/WebGL
   init error, instead of leaving a blank canvas.
 
-## 0.5.0 — 2026-06-12 (code-graph export)
+## [0.5.0] - 2026-06-12
 
-Surfaces the code-connection graph mined by `index-code` (the `imports` +
-`co_changed` edges, with file nodes weighted by the materialized PageRank)
-as a first-class export. Pure read over `comemory.db` — no re-indexing,
-no schema change.
+_Code-graph export. Surfaces the code-connection graph mined by
+`index-code` (the `imports` + `co_changed` edges, with file nodes
+weighted by the materialized PageRank) as a first-class export. Pure
+read over `comemory.db` — no re-indexing, no schema change._
 
 ### Added
+
 - **`comemory graph`** — export the file-level code-connection graph as
   machine-readable JSON, Graphviz DOT (`dot -Tsvg`), or an interactive
   HTML viewer (cytoscape.js, loaded from a CDN). Flags: `--repo` (scope
@@ -277,16 +340,19 @@ no schema change.
   newlines for DOT; `</`, U+2028/U+2029 for HTML) so paths can never
   break the output.
 
-### Docs
+### Internal
+
 - `docs/cli-reference.md` gains a generated `## comemory graph` section.
 
-## 0.4.0 — 2026-06-11 (M3 code graph + code-aware retrieval)
+## [0.4.0] - 2026-06-11
 
-The code layer becomes a graph. A v6 migration adds code-graph edges,
-PageRank/chunk columns, and a `code_feedback` table; the database
-auto-migrates v5 → v6 on first open and markdown files are untouched.
+_M3 code graph + code-aware retrieval. The code layer becomes a graph. A
+v6 migration adds code-graph edges, PageRank/chunk columns, and a
+`code_feedback` table; the database auto-migrates v5 → v6 on first open
+and markdown files are untouched._
 
 ### Added
+
 - **`comemory search-code`** — ranked code search (weighted BM25 + a
   thresholded ANN leg fused with RRF, chunk→parent coalesce) reranked
   by four graph priors (PageRank, recency, working-set affinity,
@@ -309,6 +375,7 @@ auto-migrates v5 → v6 on first open and markdown files are untouched.
   rank / prune / tune constants and matching `COMEMORY_*` env vars.
 
 ### Changed
+
 - `comemory eval` replays each golden query's originating repo / kind
   filters so measurement matches production retrieval.
 - The learning loop logs search filters and source; mining ignores
@@ -317,32 +384,35 @@ auto-migrates v5 → v6 on first open and markdown files are untouched.
   PageRank as part of the indexing pass.
 
 ### Fixed
+
 - Retrieval skips working-set discovery when the context query returns
   no hits.
 - Feedback resolves chunk ids to their parent symbol identity.
 - PageRank edge load is ordered by logical graph keys for determinism.
 
-## 0.3.0 — 2026-06-11 (Rank-blend retrieval + learning loop)
+## [0.3.0] - 2026-06-11
 
-Two milestones in one release: M1 (rank-blend core, PR #4) and M2
-(learning loop, PR #5). The database auto-migrates v2/v3/v4 → v5 on
-first open; markdown files are untouched.
+_Rank-blend retrieval + learning loop. Two milestones in one release: M1
+(rank-blend core, PR #4) and M2 (learning loop, PR #5). The database
+auto-migrates v2/v3/v4 → v5 on first open; markdown files are untouched._
 
-### Breaking
-- `comemory feedback` requires the `q-<yyyymmdd>-<8hex>` query id
-  printed by `comemory search` / `comemory context`; free-form ids are
-  rejected.
-- `score_parts.rrf` in `--json` output is now max-normalized relevance
-  in `[0, 1]` (pool max → 1.0), no longer the raw fused score. The
-  product invariant `final_score == rrf × activation × feedback ×
-  quality × supersede` still holds.
-- `comemory prune` reports by default; pass `--apply` to soft-delete.
-- The unused `search_stats` table is dropped and the unconsumed
-  `COMEMORY_RETRIEVAL_CODE_THRESHOLD` knob is removed.
-- `comemory gc` now loads the layered config and errors on invalid
-  values, like every other subcommand.
+### Changed
+
+- > **BREAKING:** `comemory feedback` requires the `q-<yyyymmdd>-<8hex>` query id
+  > printed by `comemory search` / `comemory context`; free-form ids are
+  > rejected.
+- > **BREAKING:** `score_parts.rrf` in `--json` output is now max-normalized relevance
+  > in `[0, 1]` (pool max → 1.0), no longer the raw fused score. The
+  > product invariant `final_score == rrf × activation × feedback ×
+  > quality × supersede` still holds.
+- > **BREAKING:** `comemory prune` reports by default; pass `--apply` to soft-delete.
+- > **BREAKING:** The unused `search_stats` table is dropped and the unconsumed
+  > `COMEMORY_RETRIEVAL_CODE_THRESHOLD` knob is removed.
+- > **BREAKING:** `comemory gc` now loads the layered config and errors on invalid
+  > values, like every other subcommand.
 
 ### Added
+
 - **Learning loop**: every search logs to `retrieval_log` and emits a
   `query_id`; `comemory feedback <query_id>` records per-query
   provenance in `feedback_events`.
@@ -365,6 +435,7 @@ first open; markdown files are untouched.
   matching `COMEMORY_*` env vars.
 
 ### Changed
+
 - Custom FTS5 `identifier` tokenizer: camelCase / snake_case / digit
   splitting with colocated whole tokens and diacritic folding —
   `VecDimMismatch` and "dim mismatch" reach each other.
@@ -377,25 +448,29 @@ first open; markdown files are untouched.
 - `comemory gc` evicts learning telemetry older than 90 days
   (configurable); counters and expansions never expire.
 
-## 0.2.0-rc.1 — 2026-06-09 (Pre-release dry-run)
+## [0.2.0-rc.1] - 2026-06-09
 
-Pre-release exercising the cargo-dist release pipeline before the
-final 0.2.0 cut. No source changes vs. 0.2.0. Pre-release tag does
-not update the Homebrew tap.
+_Pre-release exercising the cargo-dist release pipeline before the final
+0.2.0 cut. No source changes vs. 0.2.0. Pre-release tag does not update
+the Homebrew tap._
 
-## 0.2.0 — 2026-06-09 (Lightweight refactor)
+## [0.2.0] - 2026-06-09
 
-### Breaking
-- Dropped `comemory serve` (axum web UI).
-- Dropped the in-process embedder. Embedding is now the caller's
-  responsibility; pass vectors via `--vector` or `--vector-stdin`.
-- `~/.comemory/lancedb/` and `~/.comemory/kuzu/` directories are
-  ignored. Run `comemory rebuild` to populate `~/.comemory/comemory.db`
-  from `memories/*.md`.
-- `--lang` on `comemory ast` now accepts only `rust`, `typescript`,
-  `javascript`, `python`, `go`.
+_Lightweight refactor._
+
+### Changed
+
+- > **BREAKING:** Dropped `comemory serve` (axum web UI).
+- > **BREAKING:** Dropped the in-process embedder. Embedding is now the caller's
+  > responsibility; pass vectors via `--vector` or `--vector-stdin`.
+- > **BREAKING:** `~/.comemory/lancedb/` and `~/.comemory/kuzu/` directories are
+  > ignored. Run `comemory rebuild` to populate `~/.comemory/comemory.db`
+  > from `memories/*.md`.
+- > **BREAKING:** `--lang` on `comemory ast` now accepts only `rust`, `typescript`,
+  > `javascript`, `python`, `go`.
 
 ### Added
+
 - `comemory ingest-code` reads pre-embedded JSONL into `code_symbols`
   and `code_vec`.
 - `comemory rebuild` drops and reconstructs `comemory.db` from
@@ -404,8 +479,25 @@ not update the Homebrew tap.
   contract.
 
 ### Changed
+
 - Single `~/.comemory/comemory.db` SQLite file backs all storage
   (memories, FTS5, sqlite-vec, edges, stats).
 - Release binary size: 117 MB → ~8 MB (after dropping the in-process
   embedder/lancedb/kuzu and trimming `ast-grep-language` to the
   rust/typescript/javascript/python/go tree-sitter parsers).
+
+[Unreleased]: https://github.com/Falconiere/comemory/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/Falconiere/comemory/compare/v0.9.0...v0.10.0
+[0.9.0]: https://github.com/Falconiere/comemory/compare/v0.8.4...v0.9.0
+[0.8.4]: https://github.com/Falconiere/comemory/compare/v0.8.3...v0.8.4
+[0.8.3]: https://github.com/Falconiere/comemory/compare/v0.8.2...v0.8.3
+[0.8.2]: https://github.com/Falconiere/comemory/compare/v0.8.1...v0.8.2
+[0.8.1]: https://github.com/Falconiere/comemory/compare/v0.8.0...v0.8.1
+[0.8.0]: https://github.com/Falconiere/comemory/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/Falconiere/comemory/compare/v0.6.0...v0.7.0
+[0.6.0]: https://github.com/Falconiere/comemory/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/Falconiere/comemory/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/Falconiere/comemory/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/Falconiere/comemory/compare/v0.2.0...v0.3.0
+[0.2.0-rc.1]: https://github.com/Falconiere/comemory/compare/v0.2.0-rc.1...v0.2.0-rc.1
+[0.2.0]: https://github.com/Falconiere/comemory/releases/tag/v0.2.0
