@@ -23,7 +23,10 @@ pushes the formula to `Falconiere/homebrew-tap` (on stable tags only).
 ## Cut a release
 
 1. Bump `Cargo.toml` `version = "X.Y.Z"`.
-2. Add `## X.Y.Z — YYYY-MM-DD` section to `CHANGELOG.md`.
+2. Run `just changelog` to draft a section from the conventional commits
+   since the last tag. Paste it under `## [Unreleased]` in `CHANGELOG.md`,
+   edit the bucket names, then move it under a dated `## [X.Y.Z] — YYYY-MM-DD`
+   heading (Keep-a-Changelog 1.1.0 format).
 3. Commit on `main`:
 
    ```bash
