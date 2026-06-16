@@ -189,8 +189,10 @@ installers = ["shell", "homebrew"]
 tap = "Falconiere/homebrew-tap"
 # Publish jobs to run in CI
 publish-jobs = ["homebrew"]
-# Target platforms to build apps for (Rust target-triple syntax)
-targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"]
+# Target platforms to build apps for (Rust target-triple syntax).
+# Single target by design: macOS aarch64. Linux/Windows users fork the repo and
+# run `cargo install --path .`; see README "Platform support" + docs/release.md.
+targets = ["aarch64-apple-darwin"]
 # Where to host releases
 hosting = "github"
 # Which actions to run on pull requests
