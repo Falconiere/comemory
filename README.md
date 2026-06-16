@@ -97,13 +97,29 @@ git clone https://github.com/Falconiere/comemory && cd comemory
 cargo install --path .
 ```
 
-Then verify: `comemory doctor`. Prebuilt binaries for **macOS** (aarch64) and
-**Linux** (aarch64, x86_64) are attached to every
-[GitHub Release](https://github.com/Falconiere/comemory/releases).
+Then verify: `comemory doctor`. Prebuilt binaries for **macOS aarch64** are
+attached to every [GitHub Release](https://github.com/Falconiere/comemory/releases).
+Linux and Windows users fork the repo and run `cargo install --path .` — see
+[Platform support](#platform-support) below.
 
-Full install details — the curl installer and shell completions — are in
+Full install details — Homebrew taps and shell completions — are in
 **[docs/getting-started.md](docs/getting-started.md)**; the binary-size history
 lives in **[docs/build-perf.md](docs/build-perf.md)**.
+
+### Platform support
+
+| Platform | Install |
+|---|---|
+| **macOS aarch64** (Apple Silicon) | Prebuilt: `brew install Falconiere/tap/comemory` or download from the latest [GitHub Release](https://github.com/Falconiere/comemory/releases) |
+| **Linux** (any arch) | Fork the repo and `cargo install --path .` (single-target build, ~10 MB binary) |
+| **Windows** | Fork the repo and `cargo install --path .` |
+
+macOS aarch64 is the only prebuilt target by design. The single-target release
+build keeps the CI matrix to one job, which halves the release budget versus
+the previous aarch64-apple-darwin + 2× Linux gnu matrix. If you need a prebuilt
+for another platform, run `cargo dist build --target <triple>` from a fork —
+cargo-dist is already wired up; only the published `targets` list is
+narrowed.
 
 ---
 

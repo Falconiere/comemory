@@ -1,9 +1,9 @@
 # Release runbook (comemory)
 
 Single-tag-triggered pipeline via cargo-dist. Push `vX.Y.Z` → GitHub
-Actions runs `release.yml` → builds 4 targets → uploads tarballs
-+ shell installer to GitHub Releases → pushes formula to
-`Falconiere/homebrew-tap` (on stable tags only).
+Actions runs `release.yml` → builds the single `aarch64-apple-darwin`
+target → uploads the tarball + shell installer to GitHub Releases →
+pushes the formula to `Falconiere/homebrew-tap` (on stable tags only).
 
 ## Pre-flight (every release)
 
@@ -83,19 +83,19 @@ Then re-tag once `main` is fixed.
 ## Supported targets
 
 - `aarch64-apple-darwin`
-- `x86_64-unknown-linux-gnu`
-- `aarch64-unknown-linux-gnu`
+
+Linux and Windows users fork the repo and `cargo install --path .`. The
+single-target build is by design — see [README § Platform support](../README.md#platform-support).
 
 ## End-user install paths
 
 ```bash
-# Homebrew tap
+# macOS / Linuxbrew — prebuilt aarch64-apple-darwin
 brew install Falconiere/tap/comemory
 
-# Curl installer
-curl --proto '=https' --tlsv1.2 -LsSf \
-  https://github.com/Falconiere/comemory/releases/latest/download/comemory-installer.sh \
-  | sh
+# Linux / Windows — fork and build from source
+git clone https://github.com/<you>/comemory && cd comemory
+cargo install --path .
 ```
 
 After install, run `comemory doctor` to verify.
