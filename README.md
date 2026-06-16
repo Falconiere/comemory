@@ -121,6 +121,30 @@ for another platform, run `cargo dist build --target <triple>` from a fork —
 cargo-dist is already wired up; only the published `targets` list is
 narrowed.
 
+### Verifying releases
+
+Every release publishes a `SHA256SUMS` file alongside the tarball. Releases
+may also carry a minisign signature when the maintainer has configured
+`MINISIGN_KEY` + `MINISIGN_PASSPHRASE` on the CI side (opt-in).
+
+```bash
+# 1. Download the artifacts.
+curl -L -O https://github.com/Falconiere/comemory/releases/latest/download/SHA256SUMS
+curl -L -O https://github.com/Falconiere/comemory/releases/latest/download/SHA256SUMS.minisig
+curl -L -O https://raw.githubusercontent.com/Falconiere/comemory/main/keys/comemory.pub
+curl -L -O https://github.com/Falconiere/comemory/releases/latest/download/comemory-aarch64-apple-darwin.tar.xz
+
+# 2. Verify the signature (skip step 2 if no .minisig is attached).
+minisign -V -p comemory.pub -m SHA256SUMS
+
+# 3. Verify the checksum.
+sha256sum -c SHA256SUMS
+```
+
+The public key is committed at `keys/comemory.pub`; the private key is held
+out-of-band (1Password) and never enters git. See `keys/README.md` for the
+maintainer-side setup + rotation procedure.
+
 ---
 
 ## Quickstart
