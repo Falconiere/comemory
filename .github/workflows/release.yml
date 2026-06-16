@@ -69,6 +69,15 @@ jobs:
         run: cargo install typos-cli --version 1.32.0 --locked
       - name: Run check-all gate
         run: bash scripts/check-all.sh
+      # NOTE: this `validate` step is hand-maintained (the rest of the file is
+      # dist-generated). On a future `cargo dist init`, re-apply this block.
+      - name: Validate release preflight
+        if: ${{ !github.event.pull_request }}
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          ver="${REF_NAME#v}"
+          bash scripts/validate-release.sh "$ver"
       - name: Install dist
         # we specify bash to get pipefail; it guards against the `curl` command
         # failing. otherwise `sh` won't catch that `curl` returned non-0
