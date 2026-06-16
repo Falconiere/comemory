@@ -60,16 +60,21 @@ jobs:
           echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
 
       - name: Verify tarball layout + size
+        env:
+          # Same defense-in-depth as the curate step above: route the step
+          # output through env: rather than inlining ${{ ... }} into the
+          # shell command line.
+          TARBALL: ${{ steps.locate.outputs.tarball }}
         run: |
           # Confirm the tarball is a valid archive with the expected binary
           # path and a sane size (> 1 MB — the binary alone is ~10 MB).
-          size="$(stat -c%s "${{ steps.locate.outputs.tarball }}" 2>/dev/null \
-            || stat -f%z "${{ steps.locate.outputs.tarball }}")"
+          size="$(stat -c%s "$TARBALL" 2>/dev/null \
+            || stat -f%z "$TARBALL")"
           if (( size < 1048576 )); then
             echo "::error::tarball is suspiciously small: ${size} bytes"
             exit 1
           fi
-          tar -tJf "${{ steps.locate.outputs.tarball }}" \
+          tar -tJf "$TARBALL" \
             | grep -q '^comemory-aarch64-apple-darwin/comemory$' \
             || { echo "::error::expected binary not in tarball"; exit 1; }
           echo "::notice::tarball layout OK (${size} bytes)"
@@ -78,12 +83,20 @@ jobs:
         id: notes
         env:
           TAG: ${{ github.event.release.tag_name }}
+          # Route all interpolated GitHub contexts through env: rather than
+          # inlining ${{ ... }} into the shell command. Tag names are
+          # user-controllable, and Actions expands ${{ ... }} before bash
+          # parses the line — so an inlined tag like `$(rm -rf /)` would
+          # execute in the runner. Variable expansion inside a quoted string
+          # is safe; command substitution is not.
+          PREV_TAG: ${{ github.event.release.previous_tag_name }}
+          REPO: ${{ github.repository }}
         run: |
           ver="${TAG#v}"
           bash scripts/curate-release-notes.sh "$ver" > "$RUNNER_TEMP/notes.md"
           if [[ ! -s "$RUNNER_TEMP/notes.md" ]]; then
             echo "::warning::curate-release-notes.sh produced empty output; falling back to default"
-            echo "See the commit log at https://github.com/${{ github.repository }}/compare/${{ github.event.release.previous_tag_name }}...$TAG" > "$RUNNER_TEMP/notes.md"
+            echo "See the commit log at https://github.com/${REPO}/compare/${PREV_TAG}...${TAG}" > "$RUNNER_TEMP/notes.md"
           fi
           echo "notes-bytes=$(wc -c < "$RUNNER_TEMP/notes.md" | tr -d ' ')" >> "$GITHUB_OUTPUT"
 
