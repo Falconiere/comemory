@@ -1,0 +1,71 @@
+# release-plz configuration.
+#
+# release-plz runs as a Release-PR bot: on each push to `main` it opens/maintains
+# a "release PR" that bumps the workspace version + rewrites CHANGELOG.md from the
+# conventional commits since the last tag. Merging that PR makes release-plz push
+# the `vX.Y.Z` annotated tag — which is the ONLY thing that fires the
+# dist-generated `.github/workflows/release.yml`.
+#
+# Ownership split (see docs/claudness/specs/2026-06-17-automated-releases-release-plz-design.md):
+#   release-plz -> next version + CHANGELOG + git tag
+#   cargo-dist  -> build + GitHub Release + Homebrew + announce + sign (unchanged)
+
+[workspace]
+# Push the vX.Y.Z git tag when the release PR merges. This tag triggers
+# release.yml. Annotated by default (this repo rejects lightweight tags).
+git_tag_enable = true
+# cargo-dist's `host` job creates the GitHub Release (its body is then curated
+# from CHANGELOG.md by release-finalize.yml). release-plz must NOT create one.
+git_release_enable = false
+# comemory is not published to crates.io (bundled rusqlite + load_extension).
+publish = false
+
+# Changelog generation (git-cliff under the hood). The commit_parsers below
+# reproduce the buckets of the now-retired scripts/changelog-draft.sh so the
+# bot-authored sections are continuous with the hand-authored history.
+[changelog]
+protect_breaking_commits = true
+
+# A hidden "<!-- N -->" sort-index prefixes each group so the sections render in
+# Keep-a-Changelog order; the body template strips it back off.
+commit_parsers = [
+    { message = '^[a-z]+(\(.+\))?!:', group = "<!-- 0 -->BREAKING" },
+    { body = '.*BREAKING CHANGE', group = "<!-- 0 -->BREAKING" },
+    { message = '^feat', group = "<!-- 1 -->Added" },
+    { message = '^refactor', group = "<!-- 2 -->Changed" },
+    { message = '^perf', group = "<!-- 2 -->Changed" },
+    { message = '^style', group = "<!-- 2 -->Changed" },
+    { message = '^fix', group = "<!-- 3 -->Fixed" },
+    { message = '^revert', group = "<!-- 4 -->Removed" },
+    { message = '^sec(urity)?', group = "<!-- 5 -->Security" },
+    { message = '^docs', group = "<!-- 6 -->Internal" },
+    { message = '^chore', group = "<!-- 6 -->Internal" },
+    { message = '^ci', group = "<!-- 6 -->Internal" },
+    { message = '^test', group = "<!-- 6 -->Internal" },
+    { message = '^build', group = "<!-- 6 -->Internal" },
+    { message = '.*', group = "<!-- 6 -->Internal" },
+]
+
+header = """
+# Changelog
+
+All notable changes to this project are documented in this file. The format is
+based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+"""
+
+# Tera template. `timestamp` is stamped when the release-pr job last runs, so the
+# heading date is NOT guaranteed to be the merge day — scripts/validate-release.sh
+# accepts any ISO date for this reason.
+body = """
+{% if version %}\
+## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
+{% else %}\
+## [Unreleased]
+{% endif %}\
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | split(pat="-->") | last | trim }}
+{% for commit in commits %}
+- {{ commit.message | split(pat="\n") | first | trim }}\
+{% endfor %}
+{% endfor %}
+"""

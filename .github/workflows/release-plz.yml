@@ -1,0 +1,84 @@
+# release-plz: Release-PR automation that fronts the cargo-dist pipeline.
+#
+# Two jobs, both on push to `main`:
+#   release-plz-pr      — opens/maintains the "release PR" (version bump +
+#                         CHANGELOG).
+#   release-plz-release — on the merged version-bump commit, pushes the vX.Y.Z
+#                         tag (which is what fires release.yml).
+#
+# Both jobs authenticate with RELEASE_COMEMORY_TOKEN, a fine-grained PAT with
+# Contents: read+write and Pull requests: read+write on this repo. The PAT is
+# REQUIRED on the release job: a tag pushed with the default GITHUB_TOKEN does
+# NOT trigger downstream workflows, so release.yml would never fire. Using the
+# PAT on the release-pr job too means the release PR also triggers CI checks.
+#
+# Both jobs are gated behind the `RELEASE_PLZ_ENABLED` repo variable so merging
+# this file does not immediately start cutting releases. Flip it on (Actions →
+# Variables → RELEASE_PLZ_ENABLED=true) only AFTER RELEASE_COMEMORY_TOKEN exists.
+# See docs/release.md § one-time setup.
+#
+# config: release-plz.toml (git_release_enable=false, publish=false — cargo-dist
+# owns build + GitHub Release; release-plz owns version + CHANGELOG + tag).
+
+name: Release-plz
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # Open / maintain the release PR.
+  release-plz-pr:
+    name: Release-plz PR
+    if: ${{ vars.RELEASE_PLZ_ENABLED == 'true' }}
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: release-plz-pr-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        with:
+          toolchain: "1.95"
+      - name: Run release-plz (release-pr)
+        # TODO(release-plz): pin to a commit SHA before flipping RELEASE_PLZ_ENABLED on.
+        uses: release-plz/action@v0.5
+        with:
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_COMEMORY_TOKEN }}
+
+  # On the merged version bump, push the vX.Y.Z tag (which fires release.yml).
+  # The PAT is mandatory here — see the header note.
+  release-plz-release:
+    name: Release-plz release
+    if: ${{ vars.RELEASE_PLZ_ENABLED == 'true' }}
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        with:
+          toolchain: "1.95"
+      - name: Run release-plz (release)
+        # TODO(release-plz): pin to a commit SHA before flipping RELEASE_PLZ_ENABLED on.
+        uses: release-plz/action@v0.5
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_COMEMORY_TOKEN }}

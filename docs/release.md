@@ -1,28 +1,60 @@
 # Release runbook (comemory)
 
-> **TL;DR — cutting a stable release is one command:**
+> **TL;DR — releasing is a pull request you merge:**
 >
-> ```bash
-> just release 0.11.0
-> ```
+> 1. Land your changes on `main` as usual (conventional-commit messages).
+> 2. The **release-plz** bot opens/updates a **release PR** that bumps the
+>    version and writes the `CHANGELOG.md` section from your commits.
+> 3. Review the PR (sanity-check the version bump + changelog), then **merge it**.
+> 4. Merging makes release-plz push the `vX.Y.Z` tag, which fires the cargo-dist
+>    pipeline. Verify the workflows are green (§4).
 >
-> That runs the preflight, bumps the version, drafts the changelog,
-> commits, dry-runs `dist plan`, tags, and pushes. The sections below
-> are the long-form fallback + the things `just release` doesn't (and
-> shouldn't) automate: secret setup, post-tag verification, rollback.
+> No `just release`, no hand-edited version, no babysitting. The manual
+> `just release` flow (§3) survives only as a fallback for when the bot is down.
 
-Single-tag-triggered pipeline via cargo-dist. Push `vX.Y.Z` → GitHub
-Actions runs `release.yml` → builds the single `aarch64-apple-darwin`
-target → uploads the tarball + shell installer to GitHub Releases →
-pushes the formula to `Falconiere/homebrew-tap` (on stable tags only).
-A second hand-maintained workflow, `release-finalize.yml`, runs after
-the release is published to smoke-test the artifact, curate the release
-body from `CHANGELOG.md`, and (optionally) sign the `SHA256SUMS`.
+The release-plz bot (`.github/workflows/release-plz.yml`, config
+`release-plz.toml`) owns **version + CHANGELOG + tag**. cargo-dist owns
+everything after the tag: push `vX.Y.Z` → `release.yml` builds the single
+`aarch64-apple-darwin` target → uploads the tarball + shell installer to GitHub
+Releases → pushes the formula to `Falconiere/homebrew-tap` (stable tags only).
+A second hand-maintained workflow, `release-finalize.yml`, runs after the
+release is published to smoke-test the artifact, curate the release body from
+`CHANGELOG.md`, and (optionally) sign the `SHA256SUMS`.
+
+```
+push to main ──> release-plz ──> [release PR] ──merge──> push vX.Y.Z tag
+                                                              │
+                            release.yml (build + GitHub Release + Homebrew)
+                                                              │
+                            release-finalize.yml (smoke + curate notes + sign)
+```
 
 ---
 
 ## 1. One-time setup
 
+- [ ] **`RELEASE_COMEMORY_TOKEN` for release-plz (required).** A tag pushed with the
+  default `GITHUB_TOKEN` does **not** trigger downstream workflows, so the bot
+  must push the tag with its own token, or `release.yml` never fires. Create a
+  fine-grained PAT (`github.com/settings/tokens`) scoped to
+  `Falconiere/comemory` with **Contents: read and write** + **Pull requests:
+  read and write**, and set it as a repo secret:
+  ```bash
+  gh secret set RELEASE_COMEMORY_TOKEN --repo Falconiere/comemory   # paste the PAT
+  ```
+  If a `v*` tag-protection ruleset exists, add the PAT's account as a bypass
+  actor (branch protection on `main` does not cover tags).
+  - *GitHub App alternative:* a GitHub App token (`APP_ID` + `APP_PRIVATE_KEY`,
+    Contents + Pull requests read/write, installed on the repo) avoids
+    account-tied/expiring tokens. To use it, add a
+    `actions/create-github-app-token` step to the `release` job in
+    `release-plz.yml` and set that job's `GITHUB_TOKEN` to its output.
+- [ ] **Enable the bot.** Set the repo **variable** `RELEASE_PLZ_ENABLED=true`
+  (Actions → Variables). Both release-plz jobs are gated behind it so merging
+  the workflow doesn't start cutting releases before the token is in place.
+  ```bash
+  gh variable set RELEASE_PLZ_ENABLED --body true --repo Falconiere/comemory
+  ```
 - [ ] The `Falconiere/homebrew-tap` repo exists.
 - [ ] The `HOMEBREW_TAP_TOKEN` secret is set on `Falconiere/comemory`:
   ```bash
@@ -30,8 +62,8 @@ body from `CHANGELOG.md`, and (optionally) sign the `SHA256SUMS`.
   ```
   If missing, create a fine-scoped PAT (`contents: write` on
   `Falconiere/homebrew-tap` only) and add it as a repo secret.
-- [ ] `cargo install cargo-edit --locked` (one-time host tool used by
-  `just release` for `cargo set-version`).
+- [ ] `cargo install cargo-edit --locked` (only for the manual `just release`
+  fallback, which uses `cargo set-version`).
 - [ ] *(Optional, for signed releases)* Set up the minisign keypair per
   [`keys/README.md`](../keys/README.md): generate the keypair, store
   the private half in 1Password, set `MINISIGN_KEY` +
@@ -39,9 +71,34 @@ body from `CHANGELOG.md`, and (optionally) sign the `SHA256SUMS`.
 
 ---
 
-## 2. Cutting a stable release
+## 2. Cutting a release (the bot)
 
-The one-liner: **`just release X.Y.Z`**. The seven steps inside:
+The normal path — no local commands:
+
+1. **Merge your work to `main`** with conventional-commit subjects
+   (`feat:`, `fix:`, `refactor:`, `docs:`, …). These drive both the next
+   semver and the changelog buckets.
+2. **release-plz opens/updates the release PR** (job `release-plz-pr`). It bumps
+   `Cargo.toml` + `Cargo.lock` and rewrites the `CHANGELOG.md` section from the
+   commits since the last tag. Each new push to `main` refreshes the same PR.
+3. **Review the PR.** Confirm the computed version is what you expect (breaking
+   `feat!:`/`fix!:` → major-ish bump, `feat:` → minor, `fix:` → patch) and the
+   changelog reads well. Edit the PR branch directly if you want to reword.
+4. **Merge it.** Job `release-plz-release` then pushes the `vX.Y.Z` annotated
+   tag with the App token, which triggers `release.yml`. Proceed to §4.
+
+The changelog buckets (feat→Added, fix→Fixed, refactor/perf/style→Changed,
+revert→Removed, `!`→BREAKING, docs/chore/ci/test/build→Internal, security→
+Security) are defined in `release-plz.toml`'s `[changelog]` section. The heading
+date is stamped when the PR is (re)built, not at merge — that's why
+`validate-release.sh` accepts any ISO date.
+
+---
+
+## 3. Manual fallback — `just release X.Y.Z`
+
+Use this only when the bot is unavailable. It does by hand what release-plz
+automates. The seven steps inside:
 
 ### Step 1 — Preflight
 
@@ -50,7 +107,7 @@ The one-liner: **`just release X.Y.Z`**. The seven steps inside:
 1. Working tree clean (modified + staged; untracked is fine).
 2. Current branch is `main` (override with `RELEASE_BRANCH=...`).
 3. `Cargo.toml` `version = "X.Y.Z"`.
-4. `CHANGELOG.md` has a `## [X.Y.Z] - YYYY-MM-DD` heading dated today.
+4. `CHANGELOG.md` has a `## [X.Y.Z] - YYYY-MM-DD` heading (any ISO date).
 
 Plus soft warnings: dirty `Cargo.lock`, unset `git user.email`, the
 latest CI run on the tip commit not green. Any hard check fails → exit
@@ -61,13 +118,13 @@ latest CI run on the tip commit not green. Any hard check fails → exit
 Bumps `Cargo.toml` + `Cargo.lock`. Requires `cargo-edit` (see one-time
 setup). Re-run preflight if you need to verify.
 
-### Step 3 — Draft the CHANGELOG section
+### Step 3 — Write the CHANGELOG section
 
-`just changelog` prints a Keep-a-Changelog-formatted draft of the
-conventional commits since the last tag. Paste it under
-`## [Unreleased]` in `CHANGELOG.md`, edit the bucket names, then
-rename the heading to `## [X.Y.Z] - YYYY-MM-DD`. The recipe pauses for
-the edit (read the prompt).
+By hand, add a `## [X.Y.Z] - YYYY-MM-DD` heading under `## [Unreleased]`
+in `CHANGELOG.md`, bucketed Added / Changed / Fixed / Removed / Security /
+Internal. The recipe pauses for the edit (read the prompt). (The old
+`just changelog` draft helper was retired when release-plz took over
+changelog generation.)
 
 ### Step 4 — Re-validate
 
@@ -101,17 +158,17 @@ git push origin main vX.Y.Z
 
 ---
 
-## 3. Cutting a release candidate
+## 3a. Cutting a release candidate
 
 For pre-release tags (`X.Y.Z-rc.N`), use **`just release-rc X.Y.Z-rc.N`**
-instead of `just release`. The RC variant:
+(release-plz drives stable bumps only; RC cutting stays manual). The RC variant:
 
 - Refuses plain semver (`0.11.0`) — only accepts versions with a
   pre-release suffix.
 - Prints a banner before continuing: "this will create a PRE-RELEASE
   on GitHub; the Homebrew tap will NOT be updated."
 - Everything else (preflight, bump, changelog, commit, dry-run, tag,
-  push) is the same as the stable flow.
+  push) is the same as the stable manual flow.
 
 The Homebrew tap is gated off by `publish-prereleases = false` in
 `[workspace.metadata.dist]`, and the release-finalize smoke test
@@ -173,10 +230,12 @@ re-tag once `main` is fixed.
 
 | Symptom | Cause | Fix |
 |---|---|---|
+| release PR never opens | `RELEASE_PLZ_ENABLED` unset, or the `release-plz-pr` job failed | Check the variable is `true`; read the Release-plz workflow logs |
+| PR merged but `release.yml` never runs | tag was pushed with the default `GITHUB_TOKEN` (not the PAT) | Confirm `RELEASE_COMEMORY_TOKEN` is set and the `release` job uses it |
 | `plan` job fails on "Validate release preflight" | One of the 4 hard checks failed | Read the `validate-release` step log; the failing check is named |
 | `host` job fails mid-upload | cargo-dist couldn't upload to the release (network, perms) | Retry the workflow run; if it persists, check `HOMEBREW_TAP_TOKEN` |
 | `release-finalize.yml` smoke test fails | The tarball is malformed (missing binary, too small) | Delete the release, investigate the build artifacts (downloaded to the `artifacts-*` workflow run artifacts) |
-| `release-finalize.yml` signs step warns "minisign not installed" | Maintainer hasn't configured signing | Expected — release is published unsigned. To enable, see one-time setup step 4 |
+| `release-finalize.yml` signs step warns "minisign not installed" | Maintainer hasn't configured signing | Expected — release is published unsigned. To enable, see one-time setup |
 | Homebrew tap didn't update | Stable tag was pushed but the formula didn't land | Re-run the `publish-homebrew-formula` job from the Actions UI; check the PAT scopes |
 
 ---
