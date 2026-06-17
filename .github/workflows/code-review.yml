@@ -16,10 +16,11 @@ concurrency:
 jobs:
   review:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: falconiere/toolu-ghactions/code-review@v1
+      - uses: falconiere/toolu-ghactions/code-review@v2
         with:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
