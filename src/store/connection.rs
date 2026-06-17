@@ -29,8 +29,14 @@ use crate::prelude::*;
 pub fn open<P: AsRef<Path>>(path: P) -> Result<Connection> {
     ensure_sqlite_vec_registered()?;
     let mut conn = Connection::open(path)?;
-    conn.pragma_update(None, "journal_mode", "WAL")?;
+    // Set busy_timeout FIRST: it defaults to 0 on a fresh connection, so any
+    // later lock-taking statement run before it would fail instantly with
+    // SQLITE_BUSY ("database is locked") under contention instead of waiting.
+    // On a brand-new DB the `journal_mode=WAL` conversion below takes an
+    // exclusive lock; ordering the timeout first lets concurrent first-time
+    // opens wait it out rather than racing to an error.
     conn.pragma_update(None, "busy_timeout", 5000_i64)?;
+    conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "foreign_keys", true)?;
     // Must precede migrate::run: bundled SQLite 3.46 resolves
     // `tokenize = 'identifier'` eagerly when FTS DDL is prepared.

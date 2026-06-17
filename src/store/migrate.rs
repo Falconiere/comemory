@@ -179,7 +179,27 @@ fn recompute_simhashes(
 }
 
 /// Upsert the current schema version into `schema_meta`.
+///
+/// Read-first: on an up-to-date schema the stored version already equals
+/// `version`, so the UPSERT is skipped. Without this guard every `open`
+/// would write here — including read-only commands like `search`, `list`,
+/// and `context` — taking SQLite's single WAL write lock on each run. That
+/// write blocks on, and after `busy_timeout` fails against, any concurrent
+/// writer (e.g. a detached `maintain`), surfacing as "database is locked"
+/// on a command the user issued as a pure read. With every other migration
+/// step gated behind its `schema_meta` marker, this guard makes an open on
+/// a current schema perform zero writes.
 fn set_version(conn: &Connection, version: &str) -> Result<()> {
+    let current = conn
+        .query_row(
+            "SELECT value FROM schema_meta WHERE key = 'version'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .ok();
+    if current.as_deref() == Some(version) {
+        return Ok(());
+    }
     conn.execute(
         "INSERT INTO schema_meta(key, value) VALUES('version', ?1)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value",
