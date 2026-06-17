@@ -292,7 +292,7 @@ the version + rewrites `CHANGELOG.md` from conventional commits; merging it push
 cargo-dist owns build + GitHub Release + Homebrew (`git_release_enable=false`,
 `publish=false` — crates.io stays off). The bot is gated behind the
 `RELEASE_PLZ_ENABLED` repo variable and needs a fine-grained PAT
-(`RELEASE_COMEMORY_TOKEN`, Contents + Pull requests read/write) so the pushed tag
+(`RELEASE_PLZ_TOKEN`, Contents + Pull requests read/write) so the pushed tag
 triggers downstream workflows. The `just release` recipe remains a manual
 fallback. See `docs/release.md`.
 
