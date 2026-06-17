@@ -31,6 +31,22 @@ _(empty)_
 
 _(empty)_
 
+## [0.10.1] - 2026-06-17
+
+_Patch: read commands no longer fail with `database is locked`._
+
+### Fixed
+
+- **`sqlite: database is locked` on `comemory search` (and other read
+  commands).** Every `connection::open` ran a schema-version UPSERT
+  unconditionally, so a nominally read-only command took SQLite's single
+  WAL write lock and could fail against a concurrent writer (e.g. a
+  detached `maintain`). The version write is now skipped when the schema
+  is already current, so an open on a current schema performs zero
+  writes. `busy_timeout` is also now set before the `journal_mode=WAL`
+  pragma so the WAL conversion on a fresh DB waits instead of racing to a
+  lock error.
+
 ## [0.10.0] - 2026-06-15
 
 _Interactive TUI explorer._
