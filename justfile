@@ -46,27 +46,18 @@ perf:
 release-dry-run tag:
     dist plan --tag {{tag}}
 
-# Draft the next CHANGELOG.md section from conventional commits since the
-# last semver tag. Prints the markdown to stdout — paste it under
-# `## [Unreleased]` in CHANGELOG.md, edit, and rename to a dated heading.
-changelog:
-    bash scripts/changelog-draft.sh
-
-# Like `changelog`, but against an explicit ref. Useful for back-fills.
-# Usage: just changelog-since v0.9.0
-changelog-since ref:
-    bash scripts/changelog-draft.sh {{ref}}
-
 # Bare preflight check. Useful when you want to test the state without
 # actually doing a release. Same checks as `just release` step 1.
 # Usage: just release-validate 0.11.0
 release-validate ver:
     bash scripts/validate-release.sh {{ver}}
 
-# Cut a stable release end-to-end. Steps:
+# MANUAL FALLBACK. The primary release path is the release-plz bot: push to
+# main, then review + merge the auto-opened release PR. Use this recipe only
+# when the bot is unavailable. Cuts a stable release end-to-end. Steps:
 #   1. Preflight (4 hard checks; fails loud on any miss)
 #   2. cargo set-version (requires `cargo install cargo-edit`)
-#   3. Draft the CHANGELOG section (paste/edit under ## [Unreleased])
+#   3. Write the CHANGELOG section by hand (under ## [Unreleased])
 #   4. Re-validate
 #   5. Commit the bump
 #   6. dist plan dry-run (read the output, then continue)
@@ -87,11 +78,11 @@ release ver:
     fi
     cargo set-version "$ver"
 
-    printf '\n=== step 3/7: draft CHANGELOG section ===\n'
-    just changelog
-    printf '\nPaste the section above under "## [Unreleased]" in CHANGELOG.md,'
-    printf '\nedit the buckets, then rename the heading to "## [%s] - %s".\n' \
+    printf '\n=== step 3/7: write the CHANGELOG section ===\n'
+    printf '\nManual fallback (release-plz normally authors this). By hand, add a\n'
+    printf '"## [%s] - %s" heading under "## [Unreleased]" in CHANGELOG.md,\n' \
         "$ver" "$(date -u +%Y-%m-%d)"
+    printf 'bucketed Added / Changed / Fixed / Removed / Security / Internal.\n'
     read -r -p "press enter when CHANGELOG.md is ready (or Ctrl-C to abort)... "
 
     printf '\n=== step 4/7: re-validate ===\n'

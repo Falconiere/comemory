@@ -285,6 +285,17 @@ exits 0.
 `cargo-dist` is configured in `[workspace.metadata.dist]` in `Cargo.toml`.
 PRs get a dry-run plan; only version tags (e.g. `vX.Y.Z`) publish artifacts.
 
+Releases are driven by the **release-plz** bot (`.github/workflows/release-plz.yml`,
+config `release-plz.toml`): a push to `main` opens/updates a "release PR" that bumps
+the version + rewrites `CHANGELOG.md` from conventional commits; merging it pushes the
+`vX.Y.Z` tag, which fires `release.yml`. release-plz owns version + changelog + tag;
+cargo-dist owns build + GitHub Release + Homebrew (`git_release_enable=false`,
+`publish=false` — crates.io stays off). The bot is gated behind the
+`RELEASE_PLZ_ENABLED` repo variable and needs a fine-grained PAT
+(`RELEASE_COMEMORY_TOKEN`, Contents + Pull requests read/write) so the pushed tag
+triggers downstream workflows. The `just release` recipe remains a manual
+fallback. See `docs/release.md`.
+
 ## Claude Code Hooks
 
 `.claude/hooks/` is adapted from `qwick-business-app` and delegates rule

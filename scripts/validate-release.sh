@@ -7,7 +7,8 @@
 #      --untracked-files=no` below).
 #   2. Current branch is `main` (override with $RELEASE_BRANCH).
 #   3. Cargo.toml `version` matches the requested version.
-#   4. CHANGELOG.md has a `## [<version>] - YYYY-MM-DD` heading dated today.
+#   4. CHANGELOG.md has a `## [<version>] - YYYY-MM-DD` heading (any ISO date;
+#      release-plz stamps it at PR-build time, not the merge day).
 #
 # Soft warnings (exit 0, but print a yellow warning line):
 #   - Cargo.lock is dirty.
@@ -29,7 +30,6 @@ if [[ -z "$ver" ]]; then
 fi
 
 branch="${RELEASE_BRANCH:-main}"
-today="$(date -u +%Y-%m-%d)"
 fails=0
 warns=0
 
@@ -76,15 +76,16 @@ check "cargo-toml-version" \
   "$([[ "$cargo_ver" == "$ver" ]] && echo 1 || echo 0)" \
   "Cargo.toml says '$cargo_ver', expected '$ver'"
 
-# 4. CHANGELOG.md has a `## [<version>] — YYYY-MM-DD` heading dated today.
-changelog_heading_pattern="^## \[${ver}\] - ${today}\$"
+# 4. CHANGELOG.md has a `## [<version>] - YYYY-MM-DD` heading (any ISO date —
+#    release-plz authors it, dated at PR-build time rather than the merge day).
+changelog_heading_pattern="^## \[${ver}\] - [0-9]{4}-[0-9]{2}-[0-9]{2}\$"
 if grep -qE "$changelog_heading_pattern" CHANGELOG.md; then
-  check "changelog-heading" 1 "## [$ver] - $today present"
+  check "changelog-heading" 1 "## [$ver] - <date> present"
 else
   # Check what's actually there for a useful error message.
   actual="$(grep -E "^## \[${ver}\]" CHANGELOG.md 2>/dev/null || echo "(no matching heading)")"
   check "changelog-heading" 0 \
-    "expected '## [$ver] - $today', found: $actual"
+    "expected '## [$ver] - YYYY-MM-DD', found: $actual"
 fi
 
 # Soft warnings.
