@@ -6,7 +6,7 @@
 #   release-plz-release — on the merged version-bump commit, pushes the vX.Y.Z
 #                         tag (which is what fires release.yml).
 #
-# Both jobs authenticate with RELEASE_COMEMORY_TOKEN, a fine-grained PAT with
+# Both jobs authenticate with RELEASE_PLZ_TOKEN, a fine-grained PAT with
 # Contents: read+write and Pull requests: read+write on this repo. The PAT is
 # REQUIRED on the release job: a tag pushed with the default GITHUB_TOKEN does
 # NOT trigger downstream workflows, so release.yml would never fire. Using the
@@ -14,7 +14,7 @@
 #
 # Both jobs are gated behind the `RELEASE_PLZ_ENABLED` repo variable so merging
 # this file does not immediately start cutting releases. Flip it on (Actions →
-# Variables → RELEASE_PLZ_ENABLED=true) only AFTER RELEASE_COMEMORY_TOKEN exists.
+# Variables → RELEASE_PLZ_ENABLED=true) only AFTER RELEASE_PLZ_TOKEN exists.
 # See docs/release.md § one-time setup.
 #
 # config: release-plz.toml (git_release_enable=false, publish=false — cargo-dist
@@ -56,7 +56,7 @@ jobs:
         with:
           command: release-pr
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_COMEMORY_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
 
   # On the merged version bump, push the vX.Y.Z tag (which fires release.yml).
   # The PAT is mandatory here — see the header note.
@@ -81,4 +81,4 @@ jobs:
         with:
           command: release
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_COMEMORY_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}

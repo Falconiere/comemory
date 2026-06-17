@@ -33,14 +33,14 @@ push to main ──> release-plz ──> [release PR] ──merge──> push vX
 
 ## 1. One-time setup
 
-- [ ] **`RELEASE_COMEMORY_TOKEN` for release-plz (required).** A tag pushed with the
+- [ ] **`RELEASE_PLZ_TOKEN` for release-plz (required).** A tag pushed with the
   default `GITHUB_TOKEN` does **not** trigger downstream workflows, so the bot
   must push the tag with its own token, or `release.yml` never fires. Create a
   fine-grained PAT (`github.com/settings/tokens`) scoped to
   `Falconiere/comemory` with **Contents: read and write** + **Pull requests:
   read and write**, and set it as a repo secret:
   ```bash
-  gh secret set RELEASE_COMEMORY_TOKEN --repo Falconiere/comemory   # paste the PAT
+  gh secret set RELEASE_PLZ_TOKEN --repo Falconiere/comemory   # paste the PAT
   ```
   If a `v*` tag-protection ruleset exists, add the PAT's account as a bypass
   actor (branch protection on `main` does not cover tags).
@@ -231,7 +231,7 @@ re-tag once `main` is fixed.
 | Symptom | Cause | Fix |
 |---|---|---|
 | release PR never opens | `RELEASE_PLZ_ENABLED` unset, or the `release-plz-pr` job failed | Check the variable is `true`; read the Release-plz workflow logs |
-| PR merged but `release.yml` never runs | tag was pushed with the default `GITHUB_TOKEN` (not the PAT) | Confirm `RELEASE_COMEMORY_TOKEN` is set and the `release` job uses it |
+| PR merged but `release.yml` never runs | tag was pushed with the default `GITHUB_TOKEN` (not the PAT) | Confirm `RELEASE_PLZ_TOKEN` is set and the `release` job uses it |
 | `plan` job fails on "Validate release preflight" | One of the 4 hard checks failed | Read the `validate-release` step log; the failing check is named |
 | `host` job fails mid-upload | cargo-dist couldn't upload to the release (network, perms) | Retry the workflow run; if it persists, check `HOMEBREW_TAP_TOKEN` |
 | `release-finalize.yml` smoke test fails | The tarball is malformed (missing binary, too small) | Delete the release, investigate the build artifacts (downloaded to the `artifacts-*` workflow run artifacts) |
