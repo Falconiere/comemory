@@ -16,10 +16,12 @@ concurrency:
 jobs:
   review:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - uses: falconiere/toolu-ghactions/code-review@v2
         with:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          PROVIDERS: |
+            [{"provider": "minimax", "model": "MiniMax-M3", "api_key": "${{ secrets.MINIMAX_API_KEY }}"}]
