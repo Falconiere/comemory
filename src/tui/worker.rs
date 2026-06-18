@@ -10,13 +10,13 @@
 use rusqlite::Connection;
 
 use crate::config::Config;
+use crate::embed;
 use crate::prelude::*;
 use crate::retrieval::code_rerank::{self, CodeReranked, WorkingSet};
 use crate::retrieval::code_route;
 use crate::retrieval::pipeline::{self, PageWindow, SearchOptions};
 use crate::retrieval::rerank::Reranked;
 use crate::tui::app::Tab;
-use crate::tui::embed;
 
 /// A search request tagged with the generation counter that produced it.
 pub struct Request {

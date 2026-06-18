@@ -18,6 +18,51 @@ full mechanics behind the blend, see [architecture](../architecture.md).
 
 ---
 
+## Read a `search --json` hit
+
+`comemory search --json` returns a `Page` envelope (`{ items, limit, offset,
+total, has_more }`) whose `items` are hits. Each hit carries the ranking
+contract plus navigation metadata so a caller can both inspect the score and
+open the result:
+
+```jsonc
+{
+  "memory_id": "a1b2c3d4",
+  "score": 0.83,
+  "source": "hybrid",
+  "tier": 1,
+  "score_parts": {
+    "rrf": 1.0, "activation": 1.2, "feedback": 1.0,
+    "quality": 1.1, "supersede": 1.0, "final_score": 0.83
+  },
+  "path": "/Users/me/.comemory/memories/a1b2c3d4-postgres-analytics.md",
+  "title": "Use Postgres for analytics rollups",
+  "repo": "comemory",
+  "kind": "decision",
+  "tags": ["database", "postgres"],
+  "references": { "symbols": [], "files": [] }
+}
+```
+
+The navigation fields are **additive** — `score_parts` is unchanged, and the
+existing `memory_id` / `score` / `source` / `tier` / `superseded_by` fields
+keep their meaning. The new fields are:
+
+| Field | Meaning |
+|-------|---------|
+| `path` | Absolute path to the memory's markdown file (open it, or `cat` it). Empty if the row's metadata couldn't be resolved (raced soft-delete / rebuild). |
+| `title` | First non-empty line of the body — a human-readable label. Empty when the body is blank. |
+| `repo` | Repo the memory belongs to; omitted when unset. |
+| `kind` | `decision` \| `bug` \| `convention` \| `discovery` \| `pattern` \| `note`. Empty when metadata couldn't be resolved. |
+| `tags` | Tag list from the frontmatter. |
+| `references` | Code references harvested from the body: `{ symbols, files }`. |
+
+`score_parts` remains the stable explainability contract (`comemory tune`
+reads it); see [architecture](../architecture.md) for what each multiplier
+means.
+
+---
+
 ## Build a golden set
 
 A golden set is the ground truth eval scores against: each entry is a query

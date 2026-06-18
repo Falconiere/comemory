@@ -1,10 +1,10 @@
-//! Embed-command shell-out for Memory-tab semantic enrichment.
+//! Shared embed-command shell-out (Memory-tab semantic enrich + `serve`).
 //!
 //! Spawns the user-configured command via `sh -c`, pipes the query to its
 //! stdin, and parses a JSON `{"embedding":[..]}` payload from its stdout. The
 //! read is bounded by [`EMBED_TIMEOUT`] so a hung embedder cannot pin the
-//! DB-worker thread. Every failure path returns an `Error` for the caller to
-//! surface on the status line — it never panics and never blocks forever.
+//! caller's thread. Every failure path returns an `Error` for the caller to
+//! surface — it never panics and never blocks forever.
 
 use std::io::{Read, Write};
 use std::process::{Child, Command, Stdio};

@@ -15,6 +15,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use rusqlite::Connection;
 use serde::Serialize;
 
+use crate::config::Config;
 use crate::config::paths::Paths;
 use crate::prelude::*;
 use crate::store::connection;
@@ -25,6 +26,7 @@ pub mod fileio;
 pub mod handlers;
 pub mod repo_root;
 pub mod router;
+pub mod search;
 pub mod security;
 
 pub use repo_root::RootOverrides;
@@ -41,6 +43,11 @@ pub struct ServeOptions {
     pub roots: RootOverrides,
     /// Best-effort open the printed URL in the user's browser.
     pub open: bool,
+    /// Layered config, threaded to the search helper's ranking knobs.
+    pub cfg: Config,
+    /// Embed command for semantic web search (`--embed-cmd` /
+    /// `COMEMORY_EMBED_CMD`). Unset → `/api/search` stays lexical.
+    pub embed_cmd: Option<String>,
 }
 
 /// Shared, cheaply-cloneable handler state. The SQLite connection is wrapped
@@ -54,6 +61,8 @@ pub struct AppState {
     token: Arc<str>,
     read_only: bool,
     repo: Option<String>,
+    cfg: Arc<Config>,
+    embed_cmd: Option<Arc<str>>,
 }
 
 impl AppState {
@@ -85,6 +94,16 @@ impl AppState {
     pub(crate) fn repo(&self) -> Option<&str> {
         self.repo.as_deref()
     }
+
+    /// The layered config for this session (ranking knobs, page size).
+    pub(crate) fn cfg(&self) -> &Config {
+        &self.cfg
+    }
+
+    /// The embed command for semantic web search, if configured.
+    pub(crate) fn embed_cmd(&self) -> Option<&str> {
+        self.embed_cmd.as_deref()
+    }
 }
 
 /// What the startup banner reports (also the `--json` payload).
@@ -108,6 +127,8 @@ pub async fn serve(paths: &Paths, opts: ServeOptions, json: bool) -> Result<()> 
         token: Arc::from(token.as_str()),
         read_only: opts.read_only,
         repo: opts.repo,
+        cfg: Arc::new(opts.cfg),
+        embed_cmd: opts.embed_cmd.map(Arc::from),
     };
 
     let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, opts.port))

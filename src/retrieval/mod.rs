@@ -23,6 +23,7 @@ pub mod bundle;
 pub mod code_prior;
 pub mod code_rerank;
 pub mod code_route;
+pub mod code_search;
 pub mod diversify;
 pub mod fuse;
 pub mod pipeline;

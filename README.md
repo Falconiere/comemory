@@ -59,7 +59,7 @@ SQLite file is the rebuildable index.
 | 🕸️ **Two-layer code graph** | `index-code` mines **co-change** edges from git history and **import** edges per language, then materializes a weighted **PageRank** onto every symbol. |
 | 🧠 **Memory that decays** | ACT-R activation (recency × access count) and Beta-smoothed feedback rerank results the way human memory actually surfaces things. |
 | 📈 **A real learning loop** | Record which hits helped → score recall@k / MRR against a golden set → mine reformulations → grid-search the ranking knobs. All offline, all deterministic. |
-| 🌐 **Interactive web viewer** | `comemory serve` ships a loopback-only React SPA (embedded in the binary) to explore the WebGL code graph and *edit source in the browser* — no Node toolchain at runtime. |
+| 🌐 **Interactive web viewer** | `comemory serve` ships a loopback-only React SPA (embedded in the binary): orbit a 3D code graph, run natural-language file search, and read source in a browser pane — no Node toolchain at runtime. |
 | 🌳 **AST patterns** | `comemory ast` runs ast-grep structural patterns over Rust, TypeScript, JavaScript, Python, and Go. |
 | 🔌 **Machine-friendly** | `--json` on every command, `score_parts` explainability contract, exit codes per `sysexits.h`. |
 | 📦 **One binary, fully local** | One SQLite file backs FTS5 + `sqlite-vec` + edges. Rebuildable from markdown at any time with `comemory rebuild`. |
@@ -201,7 +201,7 @@ Full data model, save flow, retrieval pipeline, and graph mechanics:
 | `comemory index-code` | Walk a repo, extract symbols, mine the co-change/import graph, run PageRank |
 | `comemory ingest-code` | Read pre-embedded JSONL from stdin into the code index |
 | `comemory graph` | Export the code-connection graph as JSON, Graphviz DOT, or interactive HTML |
-| `comemory serve` | Loopback web viewer + in-browser editor over `comemory.db` and source |
+| `comemory serve` | Loopback web viewer: 3D code graph, natural-language file search, read-only source pane |
 | `comemory ast` | Run an ast-grep structural pattern against a source file |
 | `comemory doctor` | Report on data-directory and SQLite-mirror health |
 | `comemory prune` | Detect (and optionally soft-delete) stale memories |

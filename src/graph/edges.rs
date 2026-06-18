@@ -18,6 +18,13 @@ pub(crate) const CO_ACTIVATED: &str = "co_activated";
 /// cross-link writer emits.
 pub(crate) const REFERENCES_FILE: &str = "references_file";
 
+/// The `references_symbol` relation label: a memory→symbol edge written by
+/// [`crate::graph::cross_link`] whose `dst_id` is the BARE
+/// `<repo>:<path>:<symbol>` form (no `symbol:` kind prefix — see
+/// [`file_node_id`]'s divergence note). Named here so the cross-link writer
+/// and the navigation-metadata reader bind the same literal.
+pub(crate) const REFERENCES_SYMBOL: &str = "references_symbol";
+
 /// Addressing tuple for a single directed edge.
 ///
 /// Node identifiers follow the v0.2 convention documented in

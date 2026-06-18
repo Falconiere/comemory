@@ -13,7 +13,7 @@ use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 
-use crate::serve::{AppState, fileio, handlers, security};
+use crate::serve::{AppState, fileio, handlers, search, security};
 
 /// Build the application router with the security middleware layered on.
 pub fn build_router(state: AppState) -> Router {
@@ -21,6 +21,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/", get(handlers::index))
         .route("/api/health", get(handlers::health))
         .route("/api/graph", get(handlers::graph))
+        .route("/api/search", get(search::search))
         .route("/api/file", get(handlers::get_file).put(handlers::put_file))
         .fallback(handlers::static_asset)
         // Lift axum's 2 MiB default body limit to the editor's own cap so a

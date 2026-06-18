@@ -6,7 +6,7 @@
 
 use std::time::{Duration, Instant};
 
-use comemory::tui::embed::{embed_query, embed_query_with_timeout};
+use comemory::embed::{embed_query, embed_query_with_timeout};
 
 #[test]
 fn printf_command_yields_vector() {

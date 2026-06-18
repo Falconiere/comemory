@@ -33,8 +33,8 @@ use crate::cli::{
 use crate::config::paths::Paths;
 use crate::output;
 use crate::prelude::*;
-use crate::retrieval::code_rerank::{self, CodeReranked, WorkingSet};
-use crate::retrieval::{code_route, pipeline};
+use crate::retrieval::code_rerank::CodeReranked;
+use crate::retrieval::{code_search, pipeline};
 use crate::store::{code_row, connection};
 
 // The closing working-set caveat paragraph is intentionally duplicated in
@@ -120,7 +120,12 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     let max_window = cfg.retrieval.max_page_window;
     let pool = pipeline::pool_size(window.offset, window.limit, max_window);
     let started = std::time::Instant::now();
-    let candidates = code_route::route_code(
+    // Route + (zero-candidate-aware) working set + rerank, shared with any
+    // programmatic caller via `code_search::search_code_hits`. It produces
+    // the full ranked (post-coalesce) window; the page is sliced from it
+    // via the shared paginator so search-code, search, and context agree on
+    // window semantics.
+    let ranked = code_search::search_code_hits(
         &cfg,
         &conn,
         &a.query,
@@ -129,17 +134,6 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         lang,
         pool,
     )?;
-    // Zero candidates → nothing for the affinity prior to boost, so the
-    // git discovery + status walk behind `WorkingSet::from_cwd` is skipped.
-    let ws = if candidates.is_empty() {
-        WorkingSet::default()
-    } else {
-        WorkingSet::from_cwd(a.repo.as_deref())
-    };
-    // Rerank produces the full ranked (post-coalesce) window; the page is
-    // sliced from it via the shared paginator so search-code, search, and
-    // context agree on window semantics.
-    let ranked = code_rerank::rerank_code(&conn, &cfg, &candidates, &ws)?;
     let (hits, has_more, total) = pipeline::paginate(ranked, window, max_window);
     // Telemetry reflects the RETURNED page only (consistent with `search`):
     // the access bump + retrieval_log row cover the sliced ids.
