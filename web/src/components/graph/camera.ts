@@ -31,7 +31,13 @@ export function flyTo(
     return;
   }
   const { x = 0, y = 0, z = 0 } = node;
-  const dist = Math.hypot(x, y, z) || 1;
+  const dist = Math.hypot(x, y, z);
+  if (dist < 1e-6) {
+    // Node sits at (essentially) the origin: scaling the view ray would leave
+    // the camera on top of it. Offset straight out along z instead.
+    fg.cameraPosition({ x, y, z: z + FLY_DISTANCE }, { x, y, z }, FLY_MS);
+    return;
+  }
   const ratio = 1 + FLY_DISTANCE / dist;
   fg.cameraPosition(
     { x: x * ratio, y: y * ratio, z: z * ratio },

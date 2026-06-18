@@ -71,7 +71,11 @@ pub async fn search(
 ) -> std::result::Result<Json<SearchResult>, ApiError> {
     let query = q.q.trim().to_string();
     let cfg = state.cfg();
-    let k = q.k.unwrap_or(cfg.retrieval.top_k);
+    // `k` of 0 (or absent) means "use the configured page size", not "return
+    // nothing": `pool_size(_, 0, _)` reads 0 as the all-within-window sentinel,
+    // so a literal `?k=0` would run a full search and then `truncate(0)` would
+    // silently drop every hit. Treat any non-positive `k` as unset.
+    let k = q.k.filter(|&k| k > 0).unwrap_or(cfg.retrieval.top_k);
     if query.is_empty() {
         return Ok(Json(SearchResult {
             query,
@@ -94,12 +98,14 @@ pub async fn search(
         pool,
     ) {
         Ok(r) => r,
-        // A vectored retrieval can still fail after a "successful" embed — e.g.
-        // a wrong-dimension vector from a mismatched embedder hits the vec0
-        // dim guard. That is the same DEGRADE intent as an embed-cmd failure:
-        // log, drop the vector, and retry lexical so the request still answers.
-        Err(e) if vector.is_some() => {
-            tracing::warn!(error = %e, "serve search: vectored retrieval failed; retrying lexical");
+        // A "successful" embed can still yield a wrong-dimension vector (a
+        // mismatched embedder), which the vec0 dim guard rejects with
+        // `VecDimMismatch`. That is the same DEGRADE intent as an embed-cmd
+        // failure: log, drop the vector, retry lexical. Scope the retry to that
+        // one fault so a genuine DB error (I/O, corruption) still surfaces as a
+        // 5xx instead of masquerading as an empty lexical result.
+        Err(e @ crate::errors::Error::VecDimMismatch { .. }) if vector.is_some() => {
+            tracing::warn!(error = %e, "serve search: embedding dim mismatch; retrying lexical");
             mode = "lexical";
             search_code_hits(cfg, &conn, &query, None, state.repo(), None, pool)?
         }
