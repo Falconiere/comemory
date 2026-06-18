@@ -145,9 +145,12 @@ fn attach_references(
         };
         if rel == REFERENCES_FILE {
             meta.references.files.push(dst_id);
-        } else {
+        } else if rel == REFERENCES_SYMBOL {
             meta.references.symbols.push(dst_id);
         }
+        // Any other rel is ignored: the WHERE clause only selects the two
+        // reference kinds today, but matching explicitly keeps a future
+        // memory→* rel from silently landing in `symbols`.
     }
     Ok(())
 }
