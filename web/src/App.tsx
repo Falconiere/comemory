@@ -4,9 +4,9 @@ import DetailPanel from "./components/DetailPanel";
 import Legend from "./components/Legend";
 import Toolbar from "./components/Toolbar";
 import Editor from "./components/Editor";
-import { getFile, getGraph, getHealth } from "./api";
+import { getFile, getGraph, searchFiles } from "./api";
 import { repoColorMap } from "./colors";
-import type { CodeGraph, FileView, Filters, Health } from "./types";
+import type { CodeGraph, FileView, Filters } from "./types";
 
 interface OpenFile {
   nodeId: string;
@@ -15,7 +15,6 @@ interface OpenFile {
 
 export default function App() {
   const [graph, setGraph] = useState<CodeGraph | null>(null);
-  const [health, setHealth] = useState<Health | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -41,7 +40,6 @@ export default function App() {
 
   useEffect(() => {
     getGraph().then(setGraph).catch((e) => setError(String(e)));
-    getHealth().then(setHealth).catch(() => undefined);
   }, []);
 
   const repoColors = useMemo(
@@ -57,18 +55,25 @@ export default function App() {
   const onSelect = useCallback((id: string | null) => setSelectedId(id), []);
 
   const onSearchSubmit = useCallback(() => {
-    if (!graph || !search.trim()) return;
-    const q = search.trim().toLowerCase();
-    const hit = graph.nodes.find((n) => n.label.toLowerCase().includes(q));
-    if (hit) {
-      setSelectedId(hit.id);
-      setSearchTarget(hit.id);
-      setSearchNonce((n) => n + 1);
-      setNotice(null);
-    } else {
-      setNotice(`no file matching "${search.trim()}"`);
-    }
-  }, [graph, search]);
+    const q = search.trim();
+    if (!q) return;
+    void (async () => {
+      try {
+        const result = await searchFiles(q);
+        const top = result.hits[0];
+        if (top) {
+          setSelectedId(top.node_id);
+          setSearchTarget(top.node_id);
+          setSearchNonce((n) => n + 1);
+          setNotice(null);
+        } else {
+          setNotice(`no file matching "${q}"`);
+        }
+      } catch (e) {
+        setNotice(String(e));
+      }
+    })();
+  }, [search]);
 
   const viewSource = useCallback(async (id: string) => {
     try {
@@ -79,16 +84,6 @@ export default function App() {
       setNotice(String(e));
     }
   }, []);
-
-  const reloadFile = useCallback(async () => {
-    if (!openFile) return;
-    try {
-      const view = await getFile(openFile.nodeId);
-      setOpenFile({ nodeId: openFile.nodeId, view });
-    } catch (e) {
-      setNotice(String(e));
-    }
-  }, [openFile]);
 
   return (
     <div className="flex h-screen flex-col bg-slate-950 text-slate-100">
@@ -137,13 +132,7 @@ export default function App() {
 
         {openFile ? (
           <div className="w-1/2 border-l border-slate-700">
-            <Editor
-              nodeId={openFile.nodeId}
-              view={openFile.view}
-              serverReadOnly={health?.read_only ?? false}
-              onClose={() => setOpenFile(null)}
-              onReload={() => void reloadFile()}
-            />
+            <Editor view={openFile.view} onClose={() => setOpenFile(null)} />
           </div>
         ) : (
           <aside className="w-80 overflow-auto border-l border-slate-700 bg-slate-900">

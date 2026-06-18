@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::cli::resolve_data_dir;
+use crate::cli::{load_config, resolve_data_dir};
 use crate::config::paths::Paths;
 use crate::prelude::*;
 use crate::serve::{self, RootOverrides, ServeOptions};
@@ -41,8 +41,8 @@ pub struct Args {
     /// URL is printed at startup.
     #[arg(long, default_value_t = 0)]
     pub port: u16,
-    /// Disable all writes: `PUT /api/file` returns 405 and the editor's Save
-    /// action is hidden.
+    /// Disable backend writes: `PUT /api/file` returns 405. The source panel
+    /// is read-only regardless of this flag (it has no Save action).
     #[arg(long, default_value_t = false)]
     pub read_only: bool,
     /// Override a repo's working-tree root as `<repo>=<abs-path>` (repeatable).
@@ -55,12 +55,18 @@ pub struct Args {
     /// `/proc/<pid>/cmdline` or `ps`).
     #[arg(long, default_value_t = false)]
     pub open: bool,
+    /// Embed command for semantic web search; run as sh -c, reads query on
+    /// stdin, emits {"embedding":[..]}. Unset → lexical only. Mirrors
+    /// COMEMORY_EMBED_CMD.
+    #[arg(long, value_name = "CMD", env = "COMEMORY_EMBED_CMD")]
+    pub embed_cmd: Option<String>,
 }
 
 /// Parse, validate, and launch the server. Blocks until interrupted.
 pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
+    let cfg = load_config(&paths)?;
     let roots = parse_roots(&a.root)?;
     let opts = ServeOptions {
         repo: a.repo,
@@ -68,6 +74,8 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
         read_only: a.read_only,
         roots,
         open: a.open,
+        cfg,
+        embed_cmd: a.embed_cmd,
     };
     serve::serve(&paths, opts, json).await
 }

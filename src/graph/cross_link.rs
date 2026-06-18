@@ -10,7 +10,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use rusqlite::Connection;
 
-use crate::graph::edges::{self, EdgeKey};
+use crate::graph::edges::{self, EdgeKey, REFERENCES_FILE, REFERENCES_SYMBOL};
 use crate::prelude::*;
 
 /// Code-layer references harvested from a memory body.
@@ -107,7 +107,7 @@ pub fn extract_and_emit(conn: &Connection, memory_id: &str, body: &str) -> Resul
                 src_id: memory_id,
                 dst_kind: "file",
                 dst_id: file_q,
-                rel: "references_file",
+                rel: REFERENCES_FILE,
             },
         )?;
     }
@@ -119,7 +119,7 @@ pub fn extract_and_emit(conn: &Connection, memory_id: &str, body: &str) -> Resul
                 src_id: memory_id,
                 dst_kind: "symbol",
                 dst_id: sym_q,
-                rel: "references_symbol",
+                rel: REFERENCES_SYMBOL,
             },
         )?;
     }

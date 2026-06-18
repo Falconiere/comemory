@@ -1,17 +1,23 @@
-//! Output helpers for `comemory search`. JSON shape is
-//! `{"hits":[{"memory_id":..,"score":..,"source":"vector"|"lexical"|"hybrid",
-//! "tier":1..4,"superseded_by"?:..,"score_parts":{..}}]}`. `score_parts` is a stable
-//! explainability contract (M2 tuning reads it), not debug info. TTY mode
-//! emits one hit per line with a colored score prefix.
+//! Output helpers for `comemory search`. Each hit carries
+//! `memory_id`, `score`, `source` (`vector`|`lexical`|`hybrid`), `tier` (1..4),
+//! optional `superseded_by`, the `score_parts` object, and the navigation
+//! fields `path` / `title` / `repo` / `kind` / `tags` / `references`.
+//! `score_parts` is a stable explainability contract (M2 tuning reads it), not
+//! debug info; the navigation fields are additive. TTY mode emits one hit per
+//! line with a colored score prefix plus a dim path/title line.
 
+use std::collections::HashMap;
 use std::io::Write;
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
+use crate::memory::References;
 use crate::output::{json, tty};
 use crate::prelude::*;
 use crate::retrieval::rerank::{Reranked, ScoreParts};
 use crate::retrieval::router::{Source, TIER_EXPANDED};
+use crate::store::memory_meta::MemoryMeta;
 
 /// One search hit as emitted to the user. `score` duplicates
 /// `score_parts.final_score` so simple consumers never need to descend
@@ -34,6 +40,23 @@ pub struct Row<'a> {
     pub superseded_by: Option<&'a str>,
     /// Every multiplicative factor behind `score` (stable contract).
     pub score_parts: &'a ScoreParts,
+    /// Absolute path to the memory's markdown file (`data_dir` joined with
+    /// the stored `md_path`). Empty when the row's metadata could not be
+    /// resolved (raced soft-delete / rebuild).
+    pub path: String,
+    /// First non-empty trimmed line of the body — a human-readable title.
+    /// Empty when the body is blank.
+    pub title: String,
+    /// Repo the memory belongs to, if any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
+    /// Memory kind (decision|bug|convention|discovery|pattern|note); empty
+    /// when the row's metadata could not be resolved.
+    pub kind: String,
+    /// Tag list from `memory_tags`.
+    pub tags: Vec<String>,
+    /// Code references harvested from the body (`{symbols, files}`).
+    pub references: References,
 }
 
 /// Pagination cursor metadata carried alongside the hits in an
@@ -77,14 +100,18 @@ pub struct Envelope<'a> {
 }
 
 /// Build the serializable envelope. Public so snapshot tests can pin the
-/// JSON contract without going through stdout.
+/// JSON contract without going through stdout. `meta` carries the batched
+/// navigation metadata (keyed by memory id) and `data_dir` resolves each
+/// row's stored `md_path` into an absolute path.
 pub fn envelope<'a>(
     hits: &'a [Reranked],
     query_id: Option<&'a str>,
     page: PageMeta,
+    meta: &HashMap<String, MemoryMeta>,
+    data_dir: &Path,
 ) -> Envelope<'a> {
     Envelope {
-        hits: hits.iter().map(row_from).collect(),
+        hits: hits.iter().map(|h| row_from(h, meta, data_dir)).collect(),
         query_id,
         limit: page.limit,
         offset: page.offset,
@@ -95,23 +122,41 @@ pub fn envelope<'a>(
 
 /// Render `hits` to stdout in either JSON or TTY mode. `query_id` is the
 /// retrieval_log id for this run (JSON field / TTY footer); `None` skips
-/// it. `page` carries the pagination cursor for the JSON envelope.
+/// it. `page` carries the pagination cursor for the JSON envelope. `meta`
+/// holds the per-hit navigation metadata and `data_dir` resolves each
+/// markdown path to an absolute one.
 pub fn emit(
     hits: &[Reranked],
     query_id: Option<&str>,
     page: PageMeta,
     json_flag: bool,
+    meta: &HashMap<String, MemoryMeta>,
+    data_dir: &Path,
 ) -> Result<()> {
     if json_flag {
-        return json::write(&envelope(hits, query_id, page));
+        return json::write(&envelope(hits, query_id, page, meta, data_dir));
     }
-    write_tty(&mut std::io::stdout().lock(), hits, query_id)
+    write_tty(
+        &mut std::io::stdout().lock(),
+        hits,
+        query_id,
+        meta,
+        data_dir,
+    )
 }
 
 /// Render the TTY view of `hits` to `out`. Public so tests can capture the
-/// output without going through stdout. The `query: <qid>` footer semantics
-/// live in [`tty::write_query_footer`], shared with `comemory context`.
-pub fn write_tty(out: &mut impl Write, hits: &[Reranked], query_id: Option<&str>) -> Result<()> {
+/// output without going through stdout. Each hit prints a score/source/id
+/// line followed by a dim navigation line carrying the markdown path (and
+/// title when present). The `query: <qid>` footer semantics live in
+/// [`tty::write_query_footer`], shared with `comemory context`.
+pub fn write_tty(
+    out: &mut impl Write,
+    hits: &[Reranked],
+    query_id: Option<&str>,
+    meta: &HashMap<String, MemoryMeta>,
+    data_dir: &Path,
+) -> Result<()> {
     for hit in hits {
         let suffix = match hit.superseded_by.as_deref() {
             Some(id) => format!(" (superseded by {id})"),
@@ -133,11 +178,24 @@ pub fn write_tty(out: &mut impl Write, hits: &[Reranked], query_id: Option<&str>
             suffix,
             expanded
         )?;
+        let path = abs_path(meta.get(&hit.memory_id), data_dir);
+        let title = title_of(&hit.body);
+        let nav = if title.is_empty() {
+            format!("    {path}")
+        } else {
+            format!("    {title} — {path}")
+        };
+        writeln!(out, "{}", tty::dim(&nav))?;
     }
     tty::write_query_footer(out, query_id, !hits.is_empty(), tty::FeedbackHint::Memory)
 }
 
-fn row_from(h: &Reranked) -> Row<'_> {
+/// Build one [`Row`] for `h`, enriching it with navigation fields from
+/// `meta` (keyed by memory id). A missing entry (raced soft-delete / rebuild)
+/// degrades to empty path/kind/tags and an absent repo; `title` always comes
+/// from the body, which the rerank stage carries inline.
+fn row_from<'a>(h: &'a Reranked, meta: &HashMap<String, MemoryMeta>, data_dir: &Path) -> Row<'a> {
+    let entry = meta.get(&h.memory_id);
     Row {
         memory_id: h.memory_id.as_str(),
         score: h.parts.final_score,
@@ -145,7 +203,37 @@ fn row_from(h: &Reranked) -> Row<'_> {
         tier: h.tier,
         superseded_by: h.superseded_by.as_deref(),
         score_parts: &h.parts,
+        path: abs_path(entry, data_dir),
+        title: title_of(&h.body),
+        repo: entry.and_then(|m| m.repo.clone()),
+        kind: entry.map(|m| m.kind.clone()).unwrap_or_default(),
+        tags: entry.map(|m| m.tags.clone()).unwrap_or_default(),
+        references: entry.map(|m| m.references.clone()).unwrap_or_default(),
     }
+}
+
+/// Resolve a memory's stored `md_path` against `data_dir` into an absolute
+/// path string. Returns an empty string when the metadata is absent.
+/// `Path::join` returns an absolute `md_path` unchanged and joins a relative
+/// one, so this is correct whichever form the writer stored.
+fn abs_path(entry: Option<&MemoryMeta>, data_dir: &Path) -> String {
+    match entry {
+        Some(m) => PathBuf::from(data_dir)
+            .join(&m.md_path)
+            .to_string_lossy()
+            .into_owned(),
+        None => String::new(),
+    }
+}
+
+/// First non-empty trimmed line of `body` — a human-readable title. Empty
+/// when the body has no non-blank line.
+fn title_of(body: &str) -> String {
+    body.lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .unwrap_or_default()
+        .to_string()
 }
 
 /// Stable lowercase label for a retrieval [`Source`], shared with

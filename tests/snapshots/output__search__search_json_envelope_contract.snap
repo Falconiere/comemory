@@ -1,6 +1,6 @@
 ---
 source: tests/output__search.rs
-expression: "search::envelope(&sample_hits(), None, meta())"
+expression: "search::envelope(&sample_hits(), None, meta(), &sample_meta(), data_dir())"
 ---
 {
   "hits": [
@@ -16,6 +16,22 @@ expression: "search::envelope(&sample_hits(), None, meta())"
         "quality": 1.0,
         "supersede": 1.0,
         "final_score": 0.016
+      },
+      "path": "/data/memories/aaaa0001-use-postgres.md",
+      "title": "Use Postgres for analytics",
+      "repo": "qwick-backend",
+      "kind": "decision",
+      "tags": [
+        "database",
+        "postgres"
+      ],
+      "references": {
+        "symbols": [
+          "qwick-backend:src/db.rs:connect"
+        ],
+        "files": [
+          "qwick-backend:src/db.rs"
+        ]
       }
     }
   ],

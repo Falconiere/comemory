@@ -1,4 +1,4 @@
-import type { CodeGraph, FileView, Health, SaveResult } from "./types";
+import type { CodeGraph, FileView, Health, SaveResult, SearchResult } from "./types";
 
 /** The per-session token injected into the page `<meta>` by the server. */
 function token(): string {
@@ -25,6 +25,14 @@ export async function getHealth(): Promise<Health> {
 
 export async function getGraph(): Promise<CodeGraph> {
   const res = await ok(await fetch("/api/graph", { headers: authHeaders() }));
+  return res.json();
+}
+
+export async function searchFiles(q: string, k?: number): Promise<SearchResult> {
+  const params = new URLSearchParams({ q });
+  if (k != null) params.set("k", String(k));
+  const url = `/api/search?${params.toString()}`;
+  const res = await ok(await fetch(url, { headers: authHeaders() }));
   return res.json();
 }
 

@@ -29,8 +29,6 @@ use crate::tui::worker::Request;
 
 /// Pure UI state (`App`, `Action`, `Effect`) and its transitions.
 pub mod app;
-/// Embed-command shell-out for Memory-tab semantic enrichment.
-pub mod embed;
 /// Pure key-press → `Action` mapping.
 pub mod event;
 /// Preview text for the selected row (pure formatting).

@@ -17,7 +17,7 @@ use crate::memory::Kind;
 use crate::output;
 use crate::prelude::*;
 use crate::retrieval::pipeline;
-use crate::store::connection;
+use crate::store::{connection, memory_meta};
 
 const EXAMPLES: &str = "\
 Examples:
@@ -98,5 +98,16 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         },
     )?;
     let meta = page_meta(window, run.has_more, run.total);
-    output::search::emit(&run.hits, run.query_id.as_deref(), meta, json_flag)
+    // Batch-fetch navigation metadata (path/repo/kind/tags/references) for
+    // this page's hits so each result is navigable without a per-hit query.
+    let ids: Vec<&str> = run.hits.iter().map(|h| h.memory_id.as_str()).collect();
+    let nav = memory_meta::fetch_meta(&conn, &ids)?;
+    output::search::emit(
+        &run.hits,
+        run.query_id.as_deref(),
+        meta,
+        json_flag,
+        &nav,
+        paths.data_dir(),
+    )
 }

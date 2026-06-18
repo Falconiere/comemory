@@ -39,3 +39,17 @@ export interface Filters {
 export type SaveResult =
   | { conflict: false; blob_oid: string }
   | { conflict: true; current_oid: string };
+
+export interface FileHit {
+  node_id: string;
+  repo: string;
+  path: string;
+  score: number;
+  top_symbol: string;
+}
+
+export interface SearchResult {
+  query: string;
+  mode: "lexical" | "hybrid";
+  hits: FileHit[];
+}

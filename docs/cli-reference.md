@@ -569,9 +569,10 @@ Options:
       --repo <REPO>          Restrict the graph to one repo label (as passed to `index-code --repo`)
       --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
       --port <PORT>          Loopback port to bind. `0` (default) selects an ephemeral port whose URL is printed at startup [default: 0]
-      --read-only            Disable all writes: `PUT /api/file` returns 405 and the editor's Save action is hidden
+      --read-only            Disable backend writes: `PUT /api/file` returns 405. The source panel is read-only regardless of this flag (it has no Save action)
       --root <REPO=PATH>     Override a repo's working-tree root as `<repo>=<abs-path>` (repeatable). Required for repos indexed before the v7 schema captured the root
       --open                 Open the printed URL in the default browser after binding. The URL carries the session token and is passed as an argument to the system opener, so it is briefly visible to other local users (e.g. via `/proc/<pid>/cmdline` or `ps`)
+      --embed-cmd <CMD>      Embed command for semantic web search; run as sh -c, reads query on stdin, emits {"embedding":[..]}. Unset → lexical only. Mirrors COMEMORY_EMBED_CMD [env: COMEMORY_EMBED_CMD=]
   -h, --help                 Print help
 
 Examples:

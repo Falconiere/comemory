@@ -35,6 +35,10 @@ bench:
 build-release:
     cargo build --release
 
+# Build the serve-web SPA into web/dist (embedded via rust-embed).
+web:
+    bash scripts/web-build.sh
+
 e2e:
     bash scripts/e2e.sh
 

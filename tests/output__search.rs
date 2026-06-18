@@ -3,9 +3,25 @@
 //! surface — M2 tuning reads it) via an insta snapshot, and locks in that
 //! `output::search::emit` accepts an empty hit slice without panicking.
 
+use std::collections::HashMap;
+use std::path::Path;
+
+use comemory::memory::References;
 use comemory::output::search::{self, PageMeta};
 use comemory::retrieval::rerank::{Reranked, ScoreParts};
 use comemory::retrieval::router::Source;
+use comemory::store::memory_meta::MemoryMeta;
+
+/// Empty navigation map: hits degrade to empty path/kind/tags. Used by the
+/// tests that only exercise the score/source/tier shape.
+fn no_meta() -> HashMap<String, MemoryMeta> {
+    HashMap::new()
+}
+
+/// Data dir for path resolution in the navigation line / `path` field.
+fn data_dir() -> &'static Path {
+    Path::new("/data")
+}
 
 /// Representative pagination cursor for the unpaginated first page: page
 /// size 12 (default `top_k`), no offset, single in-window hit.
@@ -32,9 +48,31 @@ fn sample_hits() -> Vec<Reranked> {
             final_score: 0.016,
         },
         superseded_by: None,
-        body: String::new(),
+        body: "Use Postgres for analytics\nmore detail".into(),
         simhash: 0,
     }]
+}
+
+/// Deterministic navigation metadata for the `aaaa0001` sample hit so the
+/// JSON contract snapshot is stable. The `md_path` is relative so resolving
+/// it against `data_dir()` yields a fixed absolute path.
+fn sample_meta() -> HashMap<String, MemoryMeta> {
+    let mut map = HashMap::new();
+    map.insert(
+        "aaaa0001".to_string(),
+        MemoryMeta {
+            md_path: "memories/aaaa0001-use-postgres.md".into(),
+            repo: Some("qwick-backend".into()),
+            kind: "decision".into(),
+            slug: "use-postgres".into(),
+            tags: vec!["database".into(), "postgres".into()],
+            references: References {
+                symbols: vec!["qwick-backend:src/db.rs:connect".into()],
+                files: vec!["qwick-backend:src/db.rs".into()],
+            },
+        },
+    );
+    map
 }
 
 #[test]
@@ -42,14 +80,22 @@ fn emit_accepts_empty_hits_in_json_mode() {
     // Smoke test: emitting zero hits in JSON mode must succeed. The full
     // JSON envelope shape is pinned by `search_json_envelope_contract`.
     let hits: Vec<Reranked> = Vec::new();
-    search::emit(&hits, None, meta(), true).expect("emit must succeed for empty hits");
+    search::emit(&hits, None, meta(), true, &no_meta(), data_dir())
+        .expect("emit must succeed for empty hits");
 }
 
 #[test]
 fn tty_footer_omits_feedback_hint_for_empty_hits() {
     let hits: Vec<Reranked> = Vec::new();
     let mut buf: Vec<u8> = Vec::new();
-    search::write_tty(&mut buf, &hits, Some("q-20260610-a1b2c3d4")).expect("write_tty");
+    search::write_tty(
+        &mut buf,
+        &hits,
+        Some("q-20260610-a1b2c3d4"),
+        &no_meta(),
+        data_dir(),
+    )
+    .expect("write_tty");
     let out = String::from_utf8(buf).expect("utf8");
     assert!(
         out.contains("query: q-20260610-a1b2c3d4"),
@@ -65,21 +111,50 @@ fn tty_footer_omits_feedback_hint_for_empty_hits() {
 fn tty_footer_includes_feedback_hint_with_hits() {
     let hits = sample_hits();
     let mut buf: Vec<u8> = Vec::new();
-    search::write_tty(&mut buf, &hits, Some("q-20260610-a1b2c3d4")).expect("write_tty");
+    search::write_tty(
+        &mut buf,
+        &hits,
+        Some("q-20260610-a1b2c3d4"),
+        &sample_meta(),
+        data_dir(),
+    )
+    .expect("write_tty");
     let out = String::from_utf8(buf).expect("utf8");
     assert!(out.contains("feedback:"), "feedback hint expected: {out}");
+    // The navigation line carries the resolved absolute markdown path and the
+    // body-derived title so the TTY view is navigable.
+    assert!(
+        out.contains("/data/memories/aaaa0001-use-postgres.md"),
+        "nav line must carry the absolute md path: {out}"
+    );
+    assert!(
+        out.contains("Use Postgres for analytics"),
+        "nav line must carry the body title: {out}"
+    );
 }
 
 #[test]
 fn search_json_envelope_contract() {
-    insta::assert_json_snapshot!(search::envelope(&sample_hits(), None, meta()));
+    insta::assert_json_snapshot!(search::envelope(
+        &sample_hits(),
+        None,
+        meta(),
+        &sample_meta(),
+        data_dir()
+    ));
 }
 
 #[test]
 fn envelope_carries_query_id_when_present() {
     let hits = sample_hits();
-    let v = serde_json::to_value(search::envelope(&hits, Some("q-20260610-a1b2c3d4"), meta()))
-        .expect("serialize");
+    let v = serde_json::to_value(search::envelope(
+        &hits,
+        Some("q-20260610-a1b2c3d4"),
+        meta(),
+        &sample_meta(),
+        data_dir(),
+    ))
+    .expect("serialize");
     assert_eq!(
         v.get("query_id").and_then(serde_json::Value::as_str),
         Some("q-20260610-a1b2c3d4")
@@ -119,7 +194,7 @@ fn tty_expanded_label_appears_only_for_tier4() {
         make_hit("cccc0001", 1, 0.020),
     ];
     let mut buf: Vec<u8> = Vec::new();
-    search::write_tty(&mut buf, &hits, None).expect("write_tty");
+    search::write_tty(&mut buf, &hits, None, &no_meta(), data_dir()).expect("write_tty");
     let out = String::from_utf8(buf).expect("utf8");
 
     let tier4_line = out
@@ -144,7 +219,14 @@ fn tty_expanded_label_appears_only_for_tier4() {
 #[test]
 fn envelope_omits_query_id_when_absent() {
     let hits = sample_hits();
-    let v = serde_json::to_value(search::envelope(&hits, None, meta())).expect("serialize");
+    let v = serde_json::to_value(search::envelope(
+        &hits,
+        None,
+        meta(),
+        &sample_meta(),
+        data_dir(),
+    ))
+    .expect("serialize");
     assert!(
         v.get("query_id").is_none(),
         "query_id must be skipped when None: {v}"

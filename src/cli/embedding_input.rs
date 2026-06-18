@@ -60,8 +60,8 @@ pub(crate) fn read_stdin_payload() -> Result<Vec<f32>> {
 }
 
 /// Parse a JSON `{ "embedding": [..] }` payload string into its inner vector.
-/// Shared by [`read_stdin_payload`] and the TUI's embed-command shell-out
-/// (`tui::embed`) so the payload shape is decoded in exactly one place.
+/// Shared by [`read_stdin_payload`] and the embed-command shell-out
+/// (`crate::embed`) so the payload shape is decoded in exactly one place.
 pub(crate) fn parse_payload(raw: &str) -> Result<Vec<f32>> {
     let payload: EmbeddingPayload = serde_json::from_str(raw.trim())?;
     Ok(payload.embedding)
