@@ -24,4 +24,4 @@ jobs:
       - uses: falconiere/toolu-ghactions/code-review@v2
         with:
           PROVIDERS: |
-            [{"provider": "minimax", "model": "MiniMax-M3", "api_key": "${{ secrets.MINIMAX_API_KEY }}"}]
+            [{"provider": "openrouter", "model": "deepseek/deepseek-v4-pro", "api_key": "${{ secrets.OPENROUTER_API_KEY }}"}]
