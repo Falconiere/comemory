@@ -21,6 +21,8 @@ Task-oriented recipes for a specific job:
   `eval → mine → tune` learning loop and the ranking knobs.
 - **[Serve the web viewer](guides/serve-web.md)** — `comemory serve` and the
   `/api/graph` endpoint.
+- **[Link code to memories](guides/linking-code-to-memories.md)** — pin
+  `--ref-file` / `--ref-symbol` references and read fresh/stale/ghost status.
 - **[Prune, rebuild, and gc](guides/prune-and-gc.md)** — maintenance: trim
   low-value memories, rebuild the DB from markdown, garbage-collect logs.
 

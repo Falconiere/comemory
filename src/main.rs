@@ -3,7 +3,7 @@
 //! and supervisors can react meaningfully (mapping per design §6.4):
 //!
 //! - 0  — success
-//! - 64 — `EX_USAGE` (`NotFound`)
+//! - 64 — `EX_USAGE` (`NotFound`, `Usage`)
 //! - 65 — `EX_DATAERR` (`Yaml`, `Json`, `Toml`, `Frontmatter`, `VecDimMismatch`)
 //! - 69 — `EX_UNAVAILABLE` (`Unavailable`)
 //! - 70 — `EX_SOFTWARE` (`Sqlite`, `Migration`, `Ast`, `Git`, `Forbidden`,
@@ -26,86 +26,42 @@ async fn main() {
     let cli = Cli::parse();
     let code = match run(cli).await {
         Ok(()) => 0,
-        Err(Error::Io(e)) => {
-            let mut err = std::io::stderr().lock();
-            let _ = writeln!(err, "error: io: {e}");
-            74
-        }
-        Err(Error::Sqlite(e)) => {
-            let mut err = std::io::stderr().lock();
-            let _ = writeln!(err, "error: sqlite: {e}");
-            70
-        }
-        Err(Error::Yaml(e)) => {
-            let mut err = std::io::stderr().lock();
-            let _ = writeln!(err, "error: yaml: {e}");
-            65
-        }
-        Err(Error::Json(e)) => {
-            let mut err = std::io::stderr().lock();
-            let _ = writeln!(err, "error: json: {e}");
-            65
-        }
-        Err(Error::Toml(e)) => {
-            let mut err = std::io::stderr().lock();
-            let _ = writeln!(err, "error: toml: {e}");
-            65
-        }
-        Err(Error::Ast(msg)) => {
-            let mut err = std::io::stderr().lock();
-            let _ = writeln!(err, "error: ast: {msg}");
-            70
-        }
-        Err(Error::Git(e)) => {
-            let mut err = std::io::stderr().lock();
-            let _ = writeln!(err, "error: git: {e}");
-            70
-        }
-        Err(Error::Migration(msg)) => {
-            let mut err = std::io::stderr().lock();
-            let _ = writeln!(err, "error: schema migration failed: {msg}");
-            70
-        }
-        Err(e @ Error::VecDimMismatch { .. }) => {
-            let mut err = std::io::stderr().lock();
-            let _ = writeln!(err, "error: {e}");
-            65
-        }
-        Err(Error::Frontmatter(msg)) => {
-            let mut err = std::io::stderr().lock();
-            let _ = writeln!(err, "error: invalid frontmatter: {msg}");
-            65
-        }
-        Err(Error::NotFound(msg)) => {
-            let mut err = std::io::stderr().lock();
-            let _ = writeln!(err, "error: memory not found: {msg}");
-            64
-        }
-        Err(Error::Config(msg)) => {
-            let mut err = std::io::stderr().lock();
-            let _ = writeln!(err, "error: config: {msg}");
-            78
-        }
-        Err(Error::Forbidden(msg)) => {
-            let mut err = std::io::stderr().lock();
-            let _ = writeln!(err, "error: forbidden: {msg}");
-            70
-        }
-        Err(Error::BadRequest(msg)) => {
-            let mut err = std::io::stderr().lock();
-            let _ = writeln!(err, "error: bad request: {msg}");
-            70
-        }
-        Err(Error::Unavailable(msg)) => {
-            let mut err = std::io::stderr().lock();
-            let _ = writeln!(err, "error: unavailable: {msg}");
-            69
-        }
-        Err(Error::Other(msg)) => {
-            let mut err = std::io::stderr().lock();
-            let _ = writeln!(err, "error: {msg}");
-            70
-        }
+        Err(e) => report(e),
     };
     std::process::exit(code);
+}
+
+/// Print `error: <message>` for `err` to stderr and return its sysexits exit
+/// code (mapping per design §6.4; see the module header). The printed message
+/// is the error's `Display` for every variant except [`Error::Other`], whose
+/// `other:` prefix is dropped so the bare message reaches the user.
+fn report(err: Error) -> i32 {
+    let mut sink = std::io::stderr().lock();
+    let _ = match &err {
+        Error::Other(msg) => writeln!(sink, "error: {msg}"),
+        _ => writeln!(sink, "error: {err}"),
+    };
+    exit_code(&err)
+}
+
+/// Map an [`Error`] to its sysexits-style exit code (mapping per design §6.4).
+fn exit_code(err: &Error) -> i32 {
+    match err {
+        Error::Io(_) => 74,
+        Error::Config(_) => 78,
+        Error::Unavailable(_) => 69,
+        Error::NotFound(_) | Error::Usage(_) => 64,
+        Error::Yaml(_)
+        | Error::Json(_)
+        | Error::Toml(_)
+        | Error::VecDimMismatch { .. }
+        | Error::Frontmatter(_) => 65,
+        Error::Sqlite(_)
+        | Error::Ast(_)
+        | Error::Git(_)
+        | Error::Migration(_)
+        | Error::Forbidden(_)
+        | Error::BadRequest(_)
+        | Error::Other(_) => 70,
+    }
 }

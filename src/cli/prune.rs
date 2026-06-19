@@ -1,25 +1,14 @@
-//! `comemory prune` — surface candidates for deletion against the v0.2
-//! SQLite mirror.
+//! `comemory prune` — surface candidates for deletion against the SQLite mirror.
 //!
-//! Three classes are reported:
+//! Reported classes: orphan `edges` (source memory missing/deleted), stale code
+//! files (`code_symbols` paths gone from `indexed_files`), low-value memories
+//! ([`low_value::detect`]: cold/unloved/low-quality/unreferenced or superseded),
+//! and ghost code-refs ([`stale_code::detect`]: memories whose pinned symbol no
+//! longer resolves — advisory only, never auto-deleted, per spec Non-Goal 5).
 //!
-//! 1. **Orphan edges** — `edges` rows whose `src_kind = 'memory'` source
-//!    is missing from `memories` or has `deleted_at IS NOT NULL`. These
-//!    accumulate when a memory is soft-deleted by `comemory delete`.
-//! 2. **Stale code files** — distinct `code_symbols.path`s that no
-//!    longer appear in `indexed_files` (i.e. the source file was
-//!    removed and a follow-up `index-code` never cleaned up the
-//!    leftover symbol rows).
-//! 3. **Low-value memories** — ids flagged by
-//!    [`crate::prune::low_value::detect`]: cold (activation below floor),
-//!    unloved (feedback at/below ceiling), low quality, unreferenced — or
-//!    superseded by a live memory and never accessed since.
-//!
-//! Default behaviour is a dry run: scan and report candidates without
-//! touching anything. Pass `--apply` to execute the cleanup: low-value
-//! memories are soft-deleted through the same path as `comemory delete`
-//! (markdown → `.trash/`, `deleted_at` stamp, FTS/vec row + edge
-//! removal), then the orphan/stale cleanup runs in one transaction.
+//! Default is a dry run. `--apply` soft-deletes low-value memories through the
+//! `comemory delete` path then runs the orphan/stale cleanup in one
+//! transaction; ghost-ref candidates are surfaced but not deleted.
 
 use std::path::PathBuf;
 
@@ -33,7 +22,7 @@ use crate::config::paths::Paths;
 use crate::output::page::Page;
 use crate::output::prune as output;
 use crate::prelude::*;
-use crate::prune::low_value;
+use crate::prune::{low_value, stale_code};
 use crate::store::connection;
 
 /// Example invocations shown at the bottom of `comemory prune --help`.
@@ -51,12 +40,14 @@ Examples:
   comemory prune --limit 20 --offset 20
 
   # JSON output for CI/automation; Report fields:
-  #   low_value_memories / stale_code_files — Page envelopes
-  #     ({items, limit, offset, total, has_more}). low_value ids match ALL
-  #     of: activation < COMEMORY_PRUNE_MIN_ACTIVATION (-2.0), Beta feedback
-  #     <= COMEMORY_PRUNE_MIN_FEEDBACK (0.25), quality <=
+  #   low_value_memories / stale_code_files / ghost_ref_memories — Page
+  #     envelopes ({items, limit, offset, total, has_more}). low_value ids
+  #     match ALL of: activation < COMEMORY_PRUNE_MIN_ACTIVATION (-2.0), Beta
+  #     feedback <= COMEMORY_PRUNE_MIN_FEEDBACK (0.25), quality <=
   #     COMEMORY_PRUNE_BELOW_QUALITY (2), and zero incoming edges — OR
   #     superseded by a live memory with no access since the supersede edge.
+  #   ghost_ref_memories: owners of a pinned --ref-symbol whose target is gone
+  #     from a CURRENT index (advisory — never deleted by --apply).
   comemory prune --json";
 
 /// Arguments to `comemory prune`.
@@ -94,6 +85,11 @@ pub struct Report {
     /// candidates (applied to the FULL set, not the page, when `--apply`
     /// is set). The window applies to the dry-run display only.
     pub low_value_memories: Page<String>,
+    /// Paginated memory ids flagged by [`stale_code::detect`] — owners of a
+    /// pinned `references_symbol` whose target is a `ghost` (gone from a
+    /// current index). Advisory: surfaced for the operator, never deleted by
+    /// `--apply` (spec Non-Goal 5). The window applies to display only.
+    pub ghost_ref_memories: Page<String>,
 }
 
 /// Scan `comemory.db` for prune candidates and, only when `--apply` is
@@ -157,10 +153,14 @@ fn scan(conn: &rusqlite::Connection, cfg: &Config, limit: usize, offset: usize) 
     // Detect the full candidate set once: window a clone for the report,
     // keep the full list for `--apply`.
     let full_low_value = low_value::detect(conn, cfg)?;
+    // Ghost code-refs are advisory (spec Non-Goal 5): detected and reported,
+    // never fed to `--apply`.
+    let ghost_refs = stale_code::detect(conn)?;
     let report = Report {
         orphan_edges,
         stale_code_files: Page::from_slice(stale, limit, offset),
         low_value_memories: Page::from_slice(full_low_value.clone(), limit, offset),
+        ghost_ref_memories: Page::from_slice(ghost_refs, limit, offset),
     };
     Ok(Scan {
         report,
@@ -168,20 +168,25 @@ fn scan(conn: &rusqlite::Connection, cfg: &Config, limit: usize, offset: usize) 
     })
 }
 
-/// Apply the cleanup reported by [`scan`]. Low-value memories are
-/// soft-deleted first through [`delete::soft_delete`] (the exact path
-/// `comemory delete` uses: markdown → `.trash/`, `deleted_at` stamp,
-/// FTS/vec row + edge removal — one transaction per memory), then the
-/// orphan-edge / stale-code cleanup runs in a single transaction. Safe
-/// to call on a clean DB — all `DELETE` statements are no-ops when no
-/// candidates exist.
-///
-/// `code_vec` and `code_fts` are vec0 / fts5 virtual tables and do not
-/// participate in the SQLite FK cascade triggered by deleting `code_symbols`,
-/// so we explicitly drop their rows first (keyed by the `id` of the about-
-/// to-be-removed `code_symbols` row). Otherwise prune would leave orphan
-/// vector and FTS rows that the KNN / BM25 path could still surface.
+/// Apply the cleanup reported by [`scan`]: soft-delete low-value memories
+/// ([`soft_delete_low_value`]) then drop orphan/stale rows in one transaction
+/// ([`cleanup_orphans`]). Safe on a clean DB — every `DELETE` is a no-op when
+/// no candidates exist.
 fn apply(conn: &mut rusqlite::Connection, paths: &Paths, low_value_ids: &[String]) -> Result<()> {
+    soft_delete_low_value(conn, paths, low_value_ids)?;
+    cleanup_orphans(conn)
+}
+
+/// Soft-delete every flagged low-value id through [`delete::soft_delete`] (the
+/// same path `comemory delete` uses), healing the DB mirror when a flagged
+/// memory's markdown is already gone so prune cannot wedge on a half-deleted
+/// row. Ghost-ref candidates are intentionally NOT deleted here: they are
+/// advisory (spec Non-Goal 5).
+fn soft_delete_low_value(
+    conn: &mut rusqlite::Connection,
+    paths: &Paths,
+    low_value_ids: &[String],
+) -> Result<()> {
     for id in low_value_ids {
         match delete::soft_delete(paths, conn, id) {
             Ok(_) => {}
@@ -201,6 +206,13 @@ fn apply(conn: &mut rusqlite::Connection, paths: &Paths, low_value_ids: &[String
             Err(e) => return Err(e),
         }
     }
+    Ok(())
+}
+
+/// Drop orphan/stale rows in a single transaction: orphan memory edges, the
+/// `code_vec` / `code_fts` / `code_symbols` rows for files no longer in
+/// `indexed_files`, and the now-dangling `references_*` / `co_activated` edges.
+fn cleanup_orphans(conn: &mut rusqlite::Connection) -> Result<()> {
     let tx = conn.transaction()?;
     tx.execute(
         "DELETE FROM edges WHERE src_kind = 'memory' \
@@ -208,6 +220,17 @@ fn apply(conn: &mut rusqlite::Connection, paths: &Paths, low_value_ids: &[String
                             WHERE m.id = src_id AND m.deleted_at IS NULL)",
         [],
     )?;
+    purge_stale_code_rows(&tx)?;
+    drop_dangling_edges(&tx)?;
+    tx.commit()?;
+    Ok(())
+}
+
+/// Delete the `code_vec` / `code_fts` / `code_symbols` rows for files no longer
+/// in `indexed_files`. The two virtual tables (vec0 / fts5) don't participate
+/// in the FK cascade, so their rows are dropped first by the about-to-be-removed
+/// `code_symbols.id`.
+fn purge_stale_code_rows(tx: &rusqlite::Transaction<'_>) -> Result<()> {
     tx.execute(
         "DELETE FROM code_vec WHERE symbol_id IN ( \
              SELECT id FROM code_symbols \
@@ -231,13 +254,14 @@ fn apply(conn: &mut rusqlite::Connection, paths: &Paths, low_value_ids: &[String
                                AND i.path = code_symbols.path)",
         [],
     )?;
-    // Drop `references_symbol` / `references_file` edges whose dst no longer
-    // exists. `bundle::code_ref_lookup` already tolerates a dangling dst
-    // (returns `None`), so leaving these would not produce a user-visible
-    // bug — but the edge count grows monotonically across prune cycles and
-    // every read-time lookup pays a wasted DB hit. The dst_id is the
-    // textual qualified form (`<repo>:<path>:<symbol>` for symbols,
-    // `<repo>:<path>` for files); both match the existence checks below.
+    Ok(())
+}
+
+/// Drop edges that dangle once a file's `code_symbols` rows are purged:
+/// `references_symbol` / `references_file` (bare qualified dst) and
+/// `co_activated` (the `file:`-prefixed node id from `graph::edges`). The
+/// read path tolerates a dangling dst, but the count grows every prune cycle.
+fn drop_dangling_edges(tx: &rusqlite::Transaction<'_>) -> Result<()> {
     tx.execute(
         "DELETE FROM edges \
           WHERE rel = 'references_symbol' \
@@ -256,11 +280,6 @@ fn apply(conn: &mut rusqlite::Connection, paths: &Paths, low_value_ids: &[String
             )",
         [],
     )?;
-    // `co_activated` edges point at the `file:`-PREFIXED node id
-    // (`file:<repo>:<path>` — `graph::edges::file_node_id`), NOT the bare form
-    // `references_file` uses, so the existence check carries the `'file:'`
-    // prefix. Like the two above, they dangle once a file's `code_symbols`
-    // rows are purged.
     tx.execute(
         "DELETE FROM edges \
           WHERE rel = 'co_activated' \
@@ -270,6 +289,27 @@ fn apply(conn: &mut rusqlite::Connection, paths: &Paths, low_value_ids: &[String
             )",
         [],
     )?;
-    tx.commit()?;
+    drop_orphan_code_refs(tx)?;
+    Ok(())
+}
+
+/// Drop `code_ref` rows left behind once their backing `references_file` /
+/// `references_symbol` edge is gone. `code_ref` and `edges` share the same
+/// `(memory_id, rel, dst_id)` key for these two relations, so a `code_ref`
+/// with no surviving edge is an orphan — exactly the rows
+/// [`drop_dangling_edges`] just purged (dangling dst) or that a deleted
+/// memory's edge sweep removed. Without this, `stale_code::detect` would keep
+/// re-flagging the memory and the side table would diverge from the read path.
+fn drop_orphan_code_refs(tx: &rusqlite::Transaction<'_>) -> Result<()> {
+    tx.execute(
+        "DELETE FROM code_ref \
+          WHERE NOT EXISTS( \
+              SELECT 1 FROM edges e \
+               WHERE e.rel = code_ref.rel \
+                 AND e.src_id = code_ref.memory_id \
+                 AND e.dst_id = code_ref.dst_id \
+          )",
+        [],
+    )?;
     Ok(())
 }

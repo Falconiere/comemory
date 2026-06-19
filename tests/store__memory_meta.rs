@@ -86,14 +86,17 @@ fn assert_ref_memory(a: &comemory::store::memory_meta::MemoryMeta, id_a: &str) {
     let mut tags = a.tags.clone();
     tags.sort();
     assert_eq!(tags, vec!["database".to_string(), "postgres".to_string()]);
-    // References are the bare qualified strings the edge dst_id carries.
+    // References are the bare qualified strings the edge dst_id carries
+    // (no anchor → unanchored `Ref`s).
     assert_eq!(
         a.references.files,
-        vec!["qwick-backend:src/db.rs".to_string()]
+        vec![comemory::memory::Ref::new("qwick-backend:src/db.rs")]
     );
     assert_eq!(
         a.references.symbols,
-        vec!["qwick-backend:src/db.rs:connect".to_string()]
+        vec![comemory::memory::Ref::new(
+            "qwick-backend:src/db.rs:connect"
+        )]
     );
 }
 

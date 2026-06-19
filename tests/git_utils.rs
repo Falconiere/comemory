@@ -5,7 +5,9 @@
 
 use std::process::Command;
 
-use comemory::git_utils::{changed_files, current_head, install_hook};
+use comemory::git_utils::{
+    blob_oid_at_head, changed_files, current_branch, current_head, install_hook,
+};
 use tempfile::TempDir;
 
 /// Build a git repo in `dir` with a single commit. Returns the path so the
@@ -101,4 +103,113 @@ fn install_hook_writes_executable_script() {
         // Lower 9 bits = rwx triples; we wrote 0o755.
         assert_eq!(mode & 0o777, 0o755, "expected 0755, got {:o}", mode & 0o777);
     }
+}
+
+/// Path to the real comemory checkout this test crate lives in — a genuine git
+/// repo with committed files. `CARGO_MANIFEST_DIR` is the crate root.
+fn comemory_repo_root() -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
+
+#[test]
+fn blob_oid_at_head_returns_hex_for_tracked_file() {
+    let root = comemory_repo_root();
+    let oid = blob_oid_at_head(&root, "Cargo.toml")
+        .expect("blob_oid_at_head")
+        .expect("Cargo.toml is tracked in the comemory repo");
+    assert_eq!(
+        oid.len(),
+        40,
+        "git blob OID should be 40 hex chars, got {oid:?}"
+    );
+    assert!(
+        oid.chars().all(|c| c.is_ascii_hexdigit()),
+        "non-hex chars in {oid}"
+    );
+}
+
+#[test]
+fn blob_oid_at_head_returns_none_for_bogus_path() {
+    let root = comemory_repo_root();
+    let got = blob_oid_at_head(&root, "does/not/exist/zzz.nope")
+        .expect("blob_oid_at_head for bogus path");
+    assert_eq!(got, None, "untracked path should yield None");
+}
+
+#[test]
+fn blob_oid_at_head_returns_none_for_directory() {
+    let root = comemory_repo_root();
+    // `src` is a tree in the HEAD commit, not a blob.
+    let got = blob_oid_at_head(&root, "src").expect("blob_oid_at_head for directory");
+    assert_eq!(got, None, "a directory tree entry is not a blob");
+}
+
+#[test]
+fn current_branch_returns_some_in_real_repo() {
+    let root = comemory_repo_root();
+    let branch = current_branch(&root).expect("current_branch");
+    // CI may run on a detached HEAD tag checkout; tolerate that. When attached,
+    // the shorthand must be a non-empty branch name.
+    if let Some(name) = branch {
+        assert!(!name.is_empty(), "branch shorthand should be non-empty");
+    }
+}
+
+#[test]
+fn blob_oid_at_head_none_when_head_is_unborn() {
+    let tmp = TempDir::new().expect("tempdir");
+    run_git(tmp.path(), &["init", "--quiet"]);
+    // No commits: HEAD is unborn.
+    let got = blob_oid_at_head(tmp.path(), "a.txt").expect("blob_oid_at_head on unborn HEAD");
+    assert_eq!(got, None, "unborn HEAD has no committed blobs");
+    assert_eq!(
+        current_branch(tmp.path()).expect("current_branch on unborn HEAD"),
+        None,
+        "unborn HEAD has no resolvable branch"
+    );
+}
+
+#[test]
+fn blob_and_branch_track_committed_state_in_fixture() {
+    let tmp = TempDir::new().expect("tempdir");
+    make_repo_with_one_commit(&tmp);
+
+    // Tracked file → Some(40-hex), matching the committed blob.
+    let oid = blob_oid_at_head(tmp.path(), "a.txt")
+        .expect("blob_oid_at_head")
+        .expect("a.txt is committed");
+    assert_eq!(oid.len(), 40, "got {oid:?}");
+
+    // Untracked-on-disk file → None even though it exists in the working tree.
+    std::fs::write(tmp.path().join("untracked.txt"), "x").expect("write untracked");
+    assert_eq!(
+        blob_oid_at_head(tmp.path(), "untracked.txt").expect("blob_oid_at_head untracked"),
+        None,
+        "untracked working-tree file has no HEAD blob"
+    );
+
+    // `make_repo_with_one_commit` pins the branch to `main`.
+    assert_eq!(
+        current_branch(tmp.path()).expect("current_branch"),
+        Some("main".to_string())
+    );
+}
+
+#[test]
+fn current_branch_none_when_detached() {
+    let tmp = TempDir::new().expect("tempdir");
+    make_repo_with_one_commit(&tmp);
+    let head = current_head(tmp.path()).expect("head");
+    // Detach HEAD onto the commit OID directly.
+    run_git(tmp.path(), &["checkout", "-q", &head]);
+    assert_eq!(
+        current_branch(tmp.path()).expect("current_branch detached"),
+        None,
+        "detached HEAD has no branch shorthand"
+    );
+    // A detached HEAD still resolves committed blobs.
+    let oid = blob_oid_at_head(tmp.path(), "a.txt")
+        .expect("blob_oid_at_head detached")
+        .expect("a.txt still committed when detached");
+    assert_eq!(oid.len(), 40, "got {oid:?}");
 }

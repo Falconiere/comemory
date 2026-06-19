@@ -193,15 +193,10 @@ fn context_tty_prints_query_footer() {
     );
 }
 
-/// Task 14: code refs in the context bundle are ranked by the four graph
-/// priors. End-to-end: index a real fixture repo, save a memory whose body
-/// cross-links both symbols, boost the alphabetically-later symbol's
-/// rank_score + access_count, and assert it sorts first in both JSON
-/// (with serialized `rank_parts`) and TTY output.
-#[test]
-fn context_code_refs_ranked_by_priors_with_rank_parts() {
-    let home = TempDir::new().expect("tempdir");
-    let workspace = TempDir::new().expect("workspace");
+/// Index a fixture repo at `<workspace>/code-repo` containing a single
+/// `alpha.rs` with two functions, committed and indexed under repo label `r`.
+/// Returns the repo path so callers can mutate + recommit it.
+fn index_alpha_repo(home: &TempDir, workspace: &TempDir) -> std::path::PathBuf {
     let repo = workspace.path().join("code-repo");
     git_repo::init_repo(&repo);
     git_commit::commit_files(
@@ -212,11 +207,52 @@ fn context_code_refs_ranked_by_priors_with_rank_parts() {
         )],
         "init",
     );
-    bin(&home)
+    bin(home)
         .args(["index-code", "--repo", "r", "--path"])
         .arg(&repo)
         .assert()
         .success();
+    repo
+}
+
+/// Boost `unrelated_helper` (rank_score + access_count) above `alpha_router`
+/// so only the graph priors — not the lexical tie-break — can reorder them.
+fn boost_unrelated_helper(home: &TempDir) {
+    let conn = connection::open(home.path().join(".comemory").join("comemory.db")).expect("open");
+    conn.execute(
+        "UPDATE code_symbols SET rank_score = 0.9, access_count = 30 \
+         WHERE symbol = 'unrelated_helper'",
+        [],
+    )
+    .expect("boost unrelated_helper");
+    conn.execute(
+        "UPDATE code_symbols SET rank_score = 0.1 WHERE symbol = 'alpha_router'",
+        [],
+    )
+    .expect("set alpha_router rank");
+}
+
+/// Read the `access_count` of a `code_symbols` row by symbol name.
+fn access_count(db_path: &std::path::Path, symbol: &str) -> i64 {
+    let conn = connection::open(db_path).expect("open");
+    conn.query_row(
+        "SELECT access_count FROM code_symbols WHERE symbol = ?1",
+        [symbol],
+        |r| r.get(0),
+    )
+    .expect("access_count row")
+}
+
+/// Task 14: code refs in the context bundle are ranked by the four graph
+/// priors. End-to-end: index a real fixture repo, save a memory whose body
+/// cross-links both symbols, boost the alphabetically-later symbol's
+/// rank_score + access_count, and assert it sorts first in both JSON
+/// (with serialized `rank_parts`) and TTY output.
+#[test]
+fn context_code_refs_ranked_by_priors_with_rank_parts() {
+    let home = TempDir::new().expect("tempdir");
+    let workspace = TempDir::new().expect("workspace");
+    index_alpha_repo(&home, &workspace);
 
     save_memory(
         &home,
@@ -227,46 +263,56 @@ fn context_code_refs_ranked_by_priors_with_rank_parts() {
 
     // `alpha_router` wins the (path, symbol) tie-break, so only the priors
     // on `unrelated_helper` can put it on top.
-    {
-        let conn =
-            connection::open(home.path().join(".comemory").join("comemory.db")).expect("open");
-        conn.execute(
-            "UPDATE code_symbols SET rank_score = 0.9, access_count = 30 \
-             WHERE symbol = 'unrelated_helper'",
-            [],
-        )
-        .expect("boost unrelated_helper");
-        conn.execute(
-            "UPDATE code_symbols SET rank_score = 0.1 WHERE symbol = 'alpha_router'",
-            [],
-        )
-        .expect("set alpha_router rank");
-    }
+    boost_unrelated_helper(&home);
 
     let v = context_json(&home, "router decision dispatch", &[]);
     let refs = v["code_refs"].as_array().expect("code_refs array");
-    assert_eq!(refs.len(), 2, "both referenced symbols expected: {v}");
+    // Two symbol refs (resolved, ranked) plus the file ref `r:alpha.rs` that
+    // `cross_link` mines from the same `repo:path:sym` token — file refs newly
+    // surface and trail the ranked symbol refs (no rank_parts to sort by).
+    assert_eq!(
+        refs.len(),
+        3,
+        "two symbol refs + one file ref expected: {v}"
+    );
+    assert!(
+        refs.iter()
+            .any(|r| r["id"].as_str() == Some("r:alpha.rs") && r["symbol"].as_str() == Some("")),
+        "the file ref must surface in the bundle: {v}"
+    );
+    assert_ranked_with_parts(refs);
+
+    // TTY order must match the ranked order.
+    assert_tty_ranked_order(&home);
+}
+
+/// Assert the boosted symbol leads, carries a full `rank_parts` breakdown, and
+/// outranks the second symbol ref by `final_score`.
+fn assert_ranked_with_parts(refs: &[Value]) {
     assert_eq!(
         refs[0]["symbol"].as_str(),
         Some("unrelated_helper"),
-        "prior-boosted symbol must sort first: {v}"
+        "prior-boosted symbol must sort first: {refs:?}"
     );
     for key in ["rank", "activation", "affinity", "feedback", "final_score"] {
         assert!(
             refs[0]["rank_parts"][key].is_number(),
-            "rank_parts.{key} missing: {v}"
+            "rank_parts.{key} missing: {refs:?}"
         );
     }
     let first = refs[0]["rank_parts"]["final_score"]
         .as_f64()
-        .expect("final_score");
+        .expect("score");
     let second = refs[1]["rank_parts"]["final_score"]
         .as_f64()
-        .expect("final_score");
-    assert!(first > second, "ranked order must be final_score desc: {v}");
+        .expect("score");
+    assert!(first > second, "ranked order must be final_score desc");
+}
 
-    // TTY order must match the ranked order.
-    let out = bin(&home)
+/// Run `context` in TTY mode and assert the prior-boosted `unrelated_helper`
+/// ref renders before `alpha_router`.
+fn assert_tty_ranked_order(home: &TempDir) {
+    let out = bin(home)
         .args(["context", "router decision dispatch"])
         .assert()
         .success();
@@ -291,21 +337,7 @@ fn context_code_refs_ranked_by_priors_with_rank_parts() {
 fn context_bumps_access_count_for_resolved_code_refs() {
     let home = TempDir::new().expect("tempdir");
     let workspace = TempDir::new().expect("workspace");
-    let repo = workspace.path().join("code-repo");
-    git_repo::init_repo(&repo);
-    git_commit::commit_files(
-        &repo,
-        &[(
-            "alpha.rs",
-            "fn alpha_router() {}\nfn unrelated_helper() {}\n",
-        )],
-        "init",
-    );
-    bin(&home)
-        .args(["index-code", "--repo", "r", "--path"])
-        .arg(&repo)
-        .assert()
-        .success();
+    index_alpha_repo(&home, &workspace);
 
     // The memory cross-links ONLY alpha_router, so unrelated_helper never
     // enters the bundle and must keep its zero access count.
@@ -317,17 +349,11 @@ fn context_bumps_access_count_for_resolved_code_refs() {
 
     let db_path = home.path().join(".comemory").join("comemory.db");
     // Fresh index: nothing accessed yet.
-    {
-        let conn = connection::open(&db_path).expect("open");
-        let touched: i64 = conn
-            .query_row(
-                "SELECT count(*) FROM code_symbols WHERE access_count > 0",
-                [],
-                |r| r.get(0),
-            )
-            .expect("count accessed");
-        assert_eq!(touched, 0, "fresh index must have zero accessed symbols");
-    }
+    assert_eq!(
+        access_count(&db_path, "alpha_router"),
+        0,
+        "fresh index must have zero accessed symbols"
+    );
 
     let v = context_json(&home, "router decision dispatch", &[]);
     let refs = v["code_refs"].as_array().expect("code_refs array");
@@ -337,27 +363,14 @@ fn context_bumps_access_count_for_resolved_code_refs() {
         "alpha_router must be surfaced as a resolved code ref: {v}"
     );
 
-    let conn = connection::open(&db_path).expect("open");
-    let referenced: i64 = conn
-        .query_row(
-            "SELECT access_count FROM code_symbols WHERE symbol = 'alpha_router'",
-            [],
-            |r| r.get(0),
-        )
-        .expect("alpha_router row");
     assert_eq!(
-        referenced, 1,
+        access_count(&db_path, "alpha_router"),
+        1,
         "the resolved code ref must be bumped exactly once by the tracked lookup"
     );
-    let unreferenced: i64 = conn
-        .query_row(
-            "SELECT access_count FROM code_symbols WHERE symbol = 'unrelated_helper'",
-            [],
-            |r| r.get(0),
-        )
-        .expect("unrelated_helper row");
     assert_eq!(
-        unreferenced, 0,
+        access_count(&db_path, "unrelated_helper"),
+        0,
         "a symbol never surfaced in the bundle must not be bumped"
     );
 }
@@ -400,5 +413,176 @@ fn context_bundle_includes_supersedes_relations() {
         rels.iter()
             .any(|r| r.get("rel").and_then(Value::as_str) == Some("supersedes")),
         "expected supersedes in relations; got: {v}"
+    );
+}
+
+/// Save a memory with `--ref-symbol <ref>` run from inside `repo` so the anchor
+/// captures the file's HEAD blob. Returns the saved id.
+fn save_with_symbol_ref(
+    home: &TempDir,
+    repo: &std::path::Path,
+    body: &str,
+    sym_ref: &str,
+) -> String {
+    let out = bin(home)
+        .current_dir(repo)
+        .args([
+            "save",
+            body,
+            "--kind",
+            "decision",
+            "--repo",
+            "r",
+            "--ref-symbol",
+            sym_ref,
+        ])
+        .assert()
+        .success();
+    extract_saved_id(&String::from_utf8(out.get_output().stdout.clone()).expect("utf8"))
+}
+
+/// Find the code ref with the given `id` in a context bundle.
+fn find_ref<'a>(v: &'a Value, id: &str) -> &'a Value {
+    v["code_refs"]
+        .as_array()
+        .expect("code_refs array")
+        .iter()
+        .find(|r| r["id"].as_str() == Some(id))
+        .unwrap_or_else(|| panic!("ref {id} missing from bundle: {v}"))
+}
+
+/// A pinned symbol ref whose file's HEAD blob is unchanged since save, with the
+/// index current, reports `status: "fresh"` and surfaces line + signature.
+#[test]
+fn context_symbol_ref_status_fresh() {
+    let home = TempDir::new().expect("tempdir");
+    let workspace = TempDir::new().expect("workspace");
+    let repo = index_alpha_repo(&home, &workspace);
+    save_with_symbol_ref(
+        &home,
+        &repo,
+        "pin to alpha_router behavior",
+        "alpha.rs:alpha_router",
+    );
+
+    let v = context_json(&home, "pin alpha_router behavior", &[]);
+    let r = find_ref(&v, "r:alpha.rs:alpha_router");
+    assert_eq!(
+        r["status"], "fresh",
+        "unchanged pinned symbol must be fresh: {v}"
+    );
+    assert_eq!(r["line"], 1, "fresh symbol carries its line: {v}");
+    assert_eq!(
+        r["signature"], "fn alpha_router() {}",
+        "fresh symbol carries signature: {v}"
+    );
+}
+
+/// Editing and committing the referenced file changes its blob; after a
+/// re-index (so the index is current) the pinned symbol ref reports `stale`.
+#[test]
+fn context_symbol_ref_status_stale_after_committed_edit() {
+    let home = TempDir::new().expect("tempdir");
+    let workspace = TempDir::new().expect("workspace");
+    let repo = index_alpha_repo(&home, &workspace);
+    save_with_symbol_ref(
+        &home,
+        &repo,
+        "pin to alpha_router for stale check",
+        "alpha.rs:alpha_router",
+    );
+
+    // Change the file's committed blob, then re-index so symbol_present is known.
+    git_commit::commit_files(
+        &repo,
+        &[(
+            "alpha.rs",
+            "fn alpha_router() { let _ = 1; }\nfn unrelated_helper() {}\n",
+        )],
+        "edit alpha_router",
+    );
+    bin(&home)
+        .args(["index-code", "--repo", "r", "--path"])
+        .arg(&repo)
+        .assert()
+        .success();
+
+    let v = context_json(&home, "pin alpha_router stale check", &[]);
+    let r = find_ref(&v, "r:alpha.rs:alpha_router");
+    assert_eq!(
+        r["status"], "stale",
+        "committed blob change must be stale: {v}"
+    );
+}
+
+/// A `--ref-file` reference surfaces in the bundle with file-level fields null
+/// and a status decided purely by the HEAD-tree blob (index-independent).
+#[test]
+fn context_file_ref_surfaces_with_status() {
+    let home = TempDir::new().expect("tempdir");
+    let workspace = TempDir::new().expect("workspace");
+    let repo = index_alpha_repo(&home, &workspace);
+    bin(&home)
+        .current_dir(&repo)
+        .args([
+            "save",
+            "pin the whole alpha file",
+            "--kind",
+            "decision",
+            "--repo",
+            "r",
+            "--ref-file",
+            "alpha.rs",
+        ])
+        .assert()
+        .success();
+
+    let v = context_json(&home, "pin whole alpha file", &[]);
+    let r = find_ref(&v, "r:alpha.rs");
+    assert_eq!(
+        r["status"], "fresh",
+        "unchanged pinned file must be fresh: {v}"
+    );
+    assert_eq!(r["symbol"], "", "file ref has no symbol: {v}");
+    assert!(r["line"].is_null(), "file ref has no line: {v}");
+    assert!(r["signature"].is_null(), "file ref has no signature: {v}");
+}
+
+/// A ref whose repo has no `repo_marker.root_path` on disk cannot be verified:
+/// `resolve_root` fails, so `repo_on_disk` is false and the status is `unknown`.
+#[test]
+fn context_symbol_ref_status_unknown_when_repo_not_on_disk() {
+    let home = TempDir::new().expect("tempdir");
+    let workspace = TempDir::new().expect("workspace");
+    let repo = index_alpha_repo(&home, &workspace);
+    let id = save_with_symbol_ref(
+        &home,
+        &repo,
+        "pin alpha for unknown check",
+        "alpha.rs:alpha_router",
+    );
+
+    // Point the code_ref's repo at an unindexed label (no repo_marker row), so
+    // resolve_root errors -> repo_on_disk=false -> Unknown. The anchor stays
+    // pinned (a non-null blob), which is what separates Unknown from Unpinned.
+    let db = home.path().join(".comemory").join("comemory.db");
+    let conn = connection::open(&db).expect("open");
+    conn.execute(
+        "UPDATE code_ref SET dst_id = 'ghostrepo:alpha.rs:alpha_router' WHERE memory_id = ?1",
+        [&id],
+    )
+    .expect("repoint code_ref");
+    conn.execute(
+        "UPDATE edges SET dst_id = 'ghostrepo:alpha.rs:alpha_router' \
+         WHERE src_id = ?1 AND rel = 'references_symbol'",
+        [&id],
+    )
+    .expect("repoint edge");
+
+    let v = context_json(&home, "pin alpha unknown check", &[]);
+    let r = find_ref(&v, "ghostrepo:alpha.rs:alpha_router");
+    assert_eq!(
+        r["status"], "unknown",
+        "pinned ref in an off-disk repo must be unknown: {v}"
     );
 }

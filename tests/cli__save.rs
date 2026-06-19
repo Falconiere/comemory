@@ -228,3 +228,136 @@ fn near_dup_radius_env_is_honored() {
         "radius 4 must not flag a Hamming-5 near-dup: {second}",
     );
 }
+
+/// Read the single saved `.md` body from a temp data dir's `memories/`.
+fn read_only_memory(home: &std::path::Path) -> String {
+    let mem_dir = home.join("memories");
+    let entry = std::fs::read_dir(&mem_dir)
+        .expect("memories dir")
+        .flatten()
+        .find(|e| {
+            e.file_name()
+                .to_str()
+                .map(|n| n.ends_with(".md") && !n.starts_with('.'))
+                .unwrap_or(false)
+        })
+        .expect("one saved markdown");
+    std::fs::read_to_string(entry.path()).expect("read md")
+}
+
+#[test]
+fn save_ref_symbol_writes_frontmatter_anchor_edge_and_code_ref_row() {
+    // Runs inside the real comemory git checkout (test cwd = crate root), so
+    // `--repo comemory --ref-symbol src/cli/save.rs:run` pins a committed
+    // anchor against the on-disk HEAD tree.
+    let home = tempdir().expect("tempdir");
+    Command::cargo_bin("comemory")
+        .expect("bin")
+        .env("COMEMORY_DATA_DIR", home.path())
+        .args([
+            "save",
+            "--kind",
+            "note",
+            "--repo",
+            "comemory",
+            "--ref-symbol",
+            "src/cli/save.rs:run",
+            "links the save run fn",
+        ])
+        .assert()
+        .success();
+
+    let md = read_only_memory(home.path());
+    assert!(
+        md.contains("comemory:src/cli/save.rs:run"),
+        "frontmatter must carry the qualified symbol ref:\n{md}",
+    );
+
+    let conn = connection::open(home.path().join("comemory.db")).expect("open db");
+    assert_eq!(
+        count_query(
+            &conn,
+            "SELECT count(*) FROM code_ref WHERE rel = 'references_symbol' \
+              AND dst_id = 'comemory:src/cli/save.rs:run' AND pinned_blob IS NOT NULL",
+        ),
+        1,
+        "a pinned code_ref row must exist for the symbol",
+    );
+    assert_eq!(
+        count_query(
+            &conn,
+            "SELECT count(*) FROM edges WHERE rel = 'references_symbol' \
+              AND dst_id = 'comemory:src/cli/save.rs:run'",
+        ),
+        1,
+        "a references_symbol edge must exist for the symbol",
+    );
+}
+
+#[test]
+fn save_malformed_ref_symbol_exits_64() {
+    // `foo.rs` has no `:symbol` segment → EX_USAGE (exit 64), pre-write.
+    let home = tempdir().expect("tempdir");
+    let assertion = Command::cargo_bin("comemory")
+        .expect("bin")
+        .env("COMEMORY_DATA_DIR", home.path())
+        .args([
+            "save",
+            "--kind",
+            "note",
+            "--repo",
+            "comemory",
+            "--ref-symbol",
+            "foo.rs",
+            "body",
+        ])
+        .assert()
+        .code(64);
+    let stderr = String::from_utf8_lossy(&assertion.get_output().stderr).to_string();
+    assert!(
+        stderr.contains("foo.rs"),
+        "exit-64 message must name the bad value, got: {stderr}",
+    );
+    assert!(
+        !stderr.contains("memory not found"),
+        "a malformed flag must surface as a usage error, not 'memory not found', got: {stderr}",
+    );
+    assert_eq!(
+        count_md_files(home.path()),
+        0,
+        "a malformed ref must abort before the markdown write",
+    );
+}
+
+#[test]
+fn save_untracked_ref_exits_0_with_json_warning() {
+    let home = tempdir().expect("tempdir");
+    let assertion = Command::cargo_bin("comemory")
+        .expect("bin")
+        .env("COMEMORY_DATA_DIR", home.path())
+        .args([
+            "--json",
+            "save",
+            "--kind",
+            "note",
+            "--repo",
+            "comemory",
+            "--ref-file",
+            "src/does/not/exist/zzz.nope",
+            "links a missing file",
+        ])
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&assertion.get_output().stdout).to_string();
+    let out: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("save --json emits one JSON object");
+    let warnings = out["warnings"].as_array().expect("warnings array present");
+    assert_eq!(warnings.len(), 1, "one unpinned-ref warning: {out}");
+    assert!(
+        warnings[0]
+            .as_str()
+            .map(|w| w.contains("zzz.nope") || w.contains("untracked"))
+            .unwrap_or(false),
+        "warning should describe the unpinned ref: {out}",
+    );
+}

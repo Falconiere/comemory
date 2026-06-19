@@ -21,6 +21,7 @@ pub fn emit(report: &Report, json_flag: bool) -> Result<()> {
     writeln!(out, "orphan_edges       : {}", report.orphan_edges)?;
     write_list(&mut out, "stale_code_files", &report.stale_code_files)?;
     write_list(&mut out, "low_value_memories", &report.low_value_memories)?;
+    write_list(&mut out, "ghost_ref_memories", &report.ghost_ref_memories)?;
     Ok(())
 }
 

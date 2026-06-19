@@ -126,11 +126,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     // Zero hits → no edges to walk, hence no code refs for the affinity
     // prior to boost, so the git discovery + status walk behind
     // `WorkingSet::from_cwd` is skipped (mirrors the `search-code` guard).
-    let ws = if ids.is_empty() {
-        WorkingSet::default()
-    } else {
-        WorkingSet::from_cwd(a.repo.as_deref())
-    };
+    let ws = working_set_for(&ids, a.repo.as_deref());
     let bundle = bundle::assemble(&conn, &cfg, &a.query, &ids, &ws)?;
     // Self-reinforce the code refs the bundle actually surfaced (resolved
     // to an indexed `code_symbols` row), the code-side twin of the memory
@@ -140,4 +136,15 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         code_row::record_access(&conn, &bundle.resolved_code_ids);
     }
     output::context::emit(&bundle, query_id.as_deref(), meta, json_flag)
+}
+
+/// The working set for the bundle's affinity prior: empty when there are no
+/// hits (no edges to walk → skip the git discovery), else discovered from the
+/// CWD. Split out of [`run`] so it stays ≤50 lines.
+fn working_set_for(ids: &[String], repo: Option<&str>) -> WorkingSet {
+    if ids.is_empty() {
+        WorkingSet::default()
+    } else {
+        WorkingSet::from_cwd(repo)
+    }
 }

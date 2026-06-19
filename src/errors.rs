@@ -37,6 +37,13 @@ pub enum Error {
     #[error("memory not found: {0}")]
     NotFound(String),
 
+    /// A command-line invocation was malformed (a bad flag value, an empty or
+    /// ill-formed argument). Maps to `EX_USAGE` (exit 64) with a plain
+    /// `error:` prefix — distinct from [`Error::NotFound`]'s "memory not
+    /// found" wording.
+    #[error("{0}")]
+    Usage(String),
+
     #[error("config: {0}")]
     Config(String),
 

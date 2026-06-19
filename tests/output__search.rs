@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use comemory::memory::References;
+use comemory::memory::{Ref, References};
 use comemory::output::search::{self, PageMeta};
 use comemory::retrieval::rerank::{Reranked, ScoreParts};
 use comemory::retrieval::router::Source;
@@ -67,8 +67,8 @@ fn sample_meta() -> HashMap<String, MemoryMeta> {
             slug: "use-postgres".into(),
             tags: vec!["database".into(), "postgres".into()],
             references: References {
-                symbols: vec!["qwick-backend:src/db.rs:connect".into()],
-                files: vec!["qwick-backend:src/db.rs".into()],
+                symbols: vec![Ref::new("qwick-backend:src/db.rs:connect")],
+                files: vec![Ref::new("qwick-backend:src/db.rs")],
             },
         },
     );

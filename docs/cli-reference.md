@@ -78,6 +78,8 @@ Options:
       --supersedes <SUPERSEDES>  Comma-separated 8-hex memory ids this memory replaces (e.g. `a1b2c3d4,e5f6a7b8`). Recorded in the frontmatter `relations.supersedes` list and materialized as `supersedes` edges, so the older memories are demoted in ranking and annotated `superseded_by` in search results [default: ""]
       --vector <VECTOR>          Caller-supplied dense vector as a comma-separated float list. Length must equal the configured memory vector dim or the save fails with `vector dim mismatch`
       --vector-stdin             Read a JSON `{ "embedding": [..] }` payload from stdin and use it as the dense vector for the saved memory. Mutually exclusive with body being read from stdin (the body must be supplied as a positional arg when `--vector-stdin` is set)
+      --ref-file <REF_FILE>      Version-anchored file reference `[repo:]path` (repeatable; comma-splittable). Pins the HEAD-tree blob + commit + branch when the path is tracked in the cwd repo; untracked/cross-repo refs save unpinned with an advisory warning
+      --ref-symbol <REF_SYMBOL>  Version-anchored symbol reference `[repo:]path:symbol` (repeatable; comma-splittable). A value without a trailing `:symbol` is a usage error (exit 64). Anchoring matches `--ref-file`
   -h, --help                     Print help
 
 Examples:
@@ -701,12 +703,14 @@ Examples:
   comemory prune --limit 20 --offset 20
 
   # JSON output for CI/automation; Report fields:
-  #   low_value_memories / stale_code_files — Page envelopes
-  #     ({items, limit, offset, total, has_more}). low_value ids match ALL
-  #     of: activation < COMEMORY_PRUNE_MIN_ACTIVATION (-2.0), Beta feedback
-  #     <= COMEMORY_PRUNE_MIN_FEEDBACK (0.25), quality <=
+  #   low_value_memories / stale_code_files / ghost_ref_memories — Page
+  #     envelopes ({items, limit, offset, total, has_more}). low_value ids
+  #     match ALL of: activation < COMEMORY_PRUNE_MIN_ACTIVATION (-2.0), Beta
+  #     feedback <= COMEMORY_PRUNE_MIN_FEEDBACK (0.25), quality <=
   #     COMEMORY_PRUNE_BELOW_QUALITY (2), and zero incoming edges — OR
   #     superseded by a live memory with no access since the supersede edge.
+  #   ghost_ref_memories: owners of a pinned --ref-symbol whose target is gone
+  #     from a CURRENT index (advisory — never deleted by --apply).
   comemory prune --json
 ```
 
