@@ -20,3 +20,6 @@
 
 # toolu workflow artifacts (specs/plans) — local, not committed
 /docs/toolu/
+
+# Serena MCP local project cache — not committed
+/.serena/
