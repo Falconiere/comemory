@@ -70,6 +70,22 @@ fn v8_extends_edges_check_and_adds_feedback_provenance() {
     );
 
     // feedback_events has provenance defaulting to 'manual'.
+    assert_feedback_provenance_defaults(&conn);
+
+    let v: String = conn
+        .query_row(
+            "SELECT value FROM schema_meta WHERE key='version'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("v");
+    assert_eq!(v, migrate::CURRENT_VERSION);
+    assert_eq!(migrate::CURRENT_VERSION, "9");
+}
+
+/// After v8 migration, `feedback_events.provenance` exists and defaults to
+/// `'manual'` when a row is inserted without it.
+fn assert_feedback_provenance_defaults(conn: &rusqlite::Connection) {
     let has_col: i64 = conn
         .query_row(
             "SELECT count(*) FROM pragma_table_info('feedback_events')
@@ -97,16 +113,6 @@ fn v8_extends_edges_check_and_adds_feedback_provenance() {
         prov, "manual",
         "omitted provenance must default to 'manual'"
     );
-
-    let v: String = conn
-        .query_row(
-            "SELECT value FROM schema_meta WHERE key='version'",
-            [],
-            |r| r.get(0),
-        )
-        .expect("v");
-    assert_eq!(v, migrate::CURRENT_VERSION);
-    assert_eq!(migrate::CURRENT_VERSION, "8");
 }
 
 /// Build a genuine v7 database by replaying the 0001..0007 SQL exactly as
@@ -140,8 +146,13 @@ fn build_v7_db(path: &std::path::Path) {
     )
     .expect("seed v7 schema_meta");
 
-    // One edge per pre-v8 rel kind, each with a distinct weight + created_at
-    // so the rebuild's column copy can be checked exactly.
+    seed_pre_v8_edges(&conn);
+    seed_v7_feedback(&conn);
+}
+
+/// Seed one `edges` row per pre-v8 rel kind, each with a distinct weight +
+/// created_at so the v8 rebuild's column copy can be checked exactly.
+fn seed_pre_v8_edges(conn: &Connection) {
     let mut insert = conn
         .prepare(
             "INSERT INTO edges(src_kind,src_id,dst_kind,dst_id,rel,weight,created_at)
@@ -159,8 +170,11 @@ fn build_v7_db(path: &std::path::Path) {
             ])
             .unwrap_or_else(|e| panic!("seed edge {rel}: {e}"));
     }
-    drop(insert);
+}
 
+/// Seed two pre-0008 `feedback_events` rows (no `provenance` column yet) so
+/// the v8 `provenance` default must backfill them to `'manual'`.
+fn seed_v7_feedback(conn: &Connection) {
     conn.execute_batch(
         "INSERT INTO feedback_events(query_id, memory_id, verdict, at, target_kind)
          VALUES ('q-old','aaaa1111','used','2026-02-01T00:00:00Z','memory'),
@@ -177,6 +191,46 @@ fn open_migrates_v7_db_to_v8_preserving_edges_and_indexes() {
 
     let conn = connection::open(&db).expect("open migrates v7 -> v8");
 
+    assert_edges_preserved(&conn);
+
+    // The new rel kind is accepted post-upgrade.
+    conn.execute(
+        "INSERT INTO edges(src_kind,src_id,dst_kind,dst_id,rel,created_at)
+         VALUES('memory','m9','file','file:r:z.rs','co_activated','2026-03-01T00:00:00Z')",
+        [],
+    )
+    .expect("co_activated edge accepted after upgrade");
+
+    assert_indexes_present(&conn);
+
+    // Pre-0008 feedback rows now read provenance='manual'.
+    let manual: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM feedback_events
+              WHERE query_id='q-old' AND provenance='manual'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("provenance backfill probe");
+    assert_eq!(
+        manual, 2,
+        "pre-0008 feedback rows must backfill to 'manual'"
+    );
+
+    let v: String = conn
+        .query_row(
+            "SELECT value FROM schema_meta WHERE key='version'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("version row");
+    assert_eq!(v, migrate::CURRENT_VERSION);
+}
+
+/// Assert every seeded pre-v8 edge row survived the v8 rebuild: the total
+/// count, the full `(rel, weight, created_at)` set verbatim, and a sampled
+/// `supersedes` row intact with its weight.
+fn assert_edges_preserved(conn: &Connection) {
     // Every seeded edge row survived the rebuild (count).
     let count: i64 = conn
         .query_row("SELECT count(*) FROM edges", [], |r| r.get(0))
@@ -226,15 +280,11 @@ fn open_migrates_v7_db_to_v8_preserving_edges_and_indexes() {
         sampled,
         (format!("src{idx}"), format!("dst{idx}"), (idx as i64) + 1)
     );
+}
 
-    // The new rel kind is accepted post-upgrade.
-    conn.execute(
-        "INSERT INTO edges(src_kind,src_id,dst_kind,dst_id,rel,created_at)
-         VALUES('memory','m9','file','file:r:z.rs','co_activated','2026-03-01T00:00:00Z')",
-        [],
-    )
-    .expect("co_activated edge accepted after upgrade");
-
+/// Assert both edge indexes (`idx_edges_src`, `idx_edges_dst`) were
+/// recreated by the v8 rebuild, via both `sqlite_master` and `index_list`.
+fn assert_indexes_present(conn: &Connection) {
     // Both edge indexes were recreated by the rebuild.
     let idx_count: i64 = conn
         .query_row(
@@ -256,40 +306,12 @@ fn open_migrates_v7_db_to_v8_preserving_edges_and_indexes() {
         )
         .expect("index_list probe");
     assert_eq!(listed, 2, "index_list must report both edge indexes");
-
-    // Pre-0008 feedback rows now read provenance='manual'.
-    let manual: i64 = conn
-        .query_row(
-            "SELECT count(*) FROM feedback_events
-              WHERE query_id='q-old' AND provenance='manual'",
-            [],
-            |r| r.get(0),
-        )
-        .expect("provenance backfill probe");
-    assert_eq!(
-        manual, 2,
-        "pre-0008 feedback rows must backfill to 'manual'"
-    );
-
-    let v: String = conn
-        .query_row(
-            "SELECT value FROM schema_meta WHERE key='version'",
-            [],
-            |r| r.get(0),
-        )
-        .expect("version row");
-    assert_eq!(v, migrate::CURRENT_VERSION);
 }
 
-#[test]
-fn v8_migration_is_idempotent() {
-    let dir = tempdir().expect("tempdir");
-    let db = dir.path().join("comemory.db");
-    let mut conn = connection::open(&db).expect("open runs v8");
-
-    // Seed an edge using the new rel + a feedback row so the second run
-    // would surface any non-idempotent re-application (e.g. a re-run of
-    // the table rebuild would lose this row, and a re-ADD COLUMN errors).
+/// Seed an edge using the new rel + a provenance-tagged feedback row so a
+/// second migrate run would surface any non-idempotent re-application (a
+/// re-run table rebuild would lose the edge; a re-ADD COLUMN would error).
+fn seed_idempotency_probe_rows(conn: &Connection) {
     conn.execute(
         "INSERT INTO edges(src_kind,src_id,dst_kind,dst_id,rel,created_at)
          VALUES('memory','keep','file','file:r:k.rs','co_activated','2026-04-01T00:00:00Z')",
@@ -302,6 +324,15 @@ fn v8_migration_is_idempotent() {
         [],
     )
     .expect("seed provenance-tagged feedback");
+}
+
+#[test]
+fn v8_migration_is_idempotent() {
+    let dir = tempdir().expect("tempdir");
+    let db = dir.path().join("comemory.db");
+    let mut conn = connection::open(&db).expect("open runs v8");
+
+    seed_idempotency_probe_rows(&conn);
 
     migrate::run(&mut conn).expect("second migrate run is a no-op");
 
