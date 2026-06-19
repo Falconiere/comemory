@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use rusqlite::Connection;
 
 use crate::graph::edges::{REFERENCES_FILE, REFERENCES_SYMBOL};
-use crate::memory::References;
+use crate::memory::{Ref, References};
 use crate::prelude::*;
 use crate::store::qmarks;
 
@@ -144,9 +144,9 @@ fn attach_references(
             continue;
         };
         if rel == REFERENCES_FILE {
-            meta.references.files.push(dst_id);
+            meta.references.files.push(Ref::new(dst_id));
         } else if rel == REFERENCES_SYMBOL {
-            meta.references.symbols.push(dst_id);
+            meta.references.symbols.push(Ref::new(dst_id));
         }
         // Any other rel is ignored: the WHERE clause only selects the two
         // reference kinds today, but matching explicitly keeps a future

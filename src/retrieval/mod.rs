@@ -21,6 +21,12 @@
 
 pub mod bundle;
 pub mod code_prior;
+/// Collect a memory's walked reference edges (+ pinned anchors) into ranked-ready refs.
+pub mod code_ref_collect;
+/// Per-repo current-state lookups (root, HEAD blob, index currency) for code-ref freshness.
+pub mod code_ref_fetch;
+/// Freshness (`fresh|stale|ghost|unpinned|unknown`) classification of pinned code refs.
+pub mod code_ref_status;
 pub mod code_rerank;
 pub mod code_route;
 pub mod code_search;

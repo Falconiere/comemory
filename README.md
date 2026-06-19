@@ -57,6 +57,7 @@ SQLite file is the rebuildable index.
 | 🔎 **Hybrid retrieval** | FTS5 BM25 + optional BYO-vector ANN, fused via Reciprocal Rank Fusion, with a 4-tier lexical fallback ladder ending in *mined* query expansions. |
 | 🧬 **Identifier-aware search** | A custom FTS5 tokenizer splits `camelCase` / `snake_case`, so `parseFrontmatter` matches `parse_frontmatter` matches `frontmatter parsing`. |
 | 🕸️ **Two-layer code graph** | `index-code` mines **co-change** edges from git history and **import** edges per language, then materializes a weighted **PageRank** onto every symbol. |
+| 🔗 **Versioned code references** | `save --ref-file` / `--ref-symbol` pin a memory to code at a git anchor (blob + commit); `context` flags each link `fresh` / `stale` / `ghost`. See [linking code to memories](docs/guides/linking-code-to-memories.md). |
 | 🧠 **Memory that decays** | ACT-R activation (recency × access count) and Beta-smoothed feedback rerank results the way human memory actually surfaces things. |
 | 📈 **A real learning loop** | Record which hits helped → score recall@k / MRR against a golden set → mine reformulations → grid-search the ranking knobs. All offline, all deterministic. |
 | 🌐 **Interactive web viewer** | `comemory serve` ships a loopback-only React SPA (embedded in the binary): orbit a 3D code graph, run natural-language file search, and read source in a browser pane — no Node toolchain at runtime. |

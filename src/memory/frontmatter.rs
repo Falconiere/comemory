@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use time::format_description::well_known::Iso8601;
 
+use crate::memory::references::Ref;
 use crate::prelude::*;
 
 /// Memory taxonomy. Stored lowercase in YAML.
@@ -57,9 +58,9 @@ impl Kind {
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct References {
     #[serde(default)]
-    pub symbols: Vec<String>,
+    pub symbols: Vec<Ref>,
     #[serde(default)]
-    pub files: Vec<String>,
+    pub files: Vec<Ref>,
 }
 
 /// Cross-memory relationships used by the property graph.

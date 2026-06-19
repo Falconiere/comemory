@@ -309,6 +309,42 @@ recency/activation priors stay honest across both read paths.
 markdown file. Use it after upgrading from v0.1 or after editing the DB by
 hand.
 
+### 7.2 Versioned-pointer code references
+
+`comemory save --ref-file <[repo:]path>` and `--ref-symbol <[repo:]path:symbol>`
+attach **explicit, version-pinned** links from a memory to code. At save time, if
+the referenced path is tracked in the current git repo, comemory captures a
+**versioned anchor** — the file's HEAD-tree blob OID, the HEAD commit SHA, and the
+branch — and records it in the markdown frontmatter (`references.{files,symbols}`,
+the source of truth). There is no content snapshot: refs point at *live* code, the
+anchor only records *which committed state* the link was made against.
+
+These refs are materialized two ways by `memory_row::insert` (so `comemory rebuild`
+restores them from markdown for free): a `references_file` / `references_symbol`
+row in the `edges` table (graph shape) **plus** a row in the dedicated `code_ref`
+side table carrying the anchor (`pinned_blob`, `pinned_commit`, `branch`). The
+side table is a full-replace on re-save, so a dropped ref is actually removed.
+
+**Staleness model.** On `comemory context`, each ref is classified by comparing
+its `pinned_blob` against the file's *current* HEAD-tree blob — a cheap git
+lookup, no reindex:
+
+- `fresh` — pinned blob equals the current HEAD blob.
+- `stale` — the committed file changed since the anchor was taken.
+- `ghost` — the target no longer exists: the file is gone from HEAD, or (for a
+  symbol) the file is present but the symbol is absent from a **current** code
+  index.
+- `unpinned` — no anchor was captured (untracked path, unborn HEAD, cross-repo,
+  or a body-mined backtick mention).
+- `unknown` — pinned but unverifiable now (repo not on disk, or a symbol-ghost
+  verdict needs an index that is absent or stale).
+
+File refs are **index-independent** (fresh/stale/ghost come straight from the
+git blob compare); only the symbol-*ghost* verdict is **index-dependent**, and
+when no current index covers the file it degrades to `unknown` rather than a
+false `ghost`. A `ghost` symbol ref also makes its owning memory eligible for the
+`comemory prune` ghost-ref rule.
+
 ## 8. Auto-update modes
 
 Three configurable modes for keeping the code index fresh:

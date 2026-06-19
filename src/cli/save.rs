@@ -13,13 +13,13 @@
 
 use std::io::Read;
 use std::io::Write as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::Args as ClapArgs;
 use serde::Serialize;
 
 use crate::cli::embedding_input;
-use crate::cli::{csv_unique, load_config, parse_id_csv, resolve_data_dir};
+use crate::cli::{csv_unique, load_config, parse_id_csv, ref_args, resolve_data_dir};
 use crate::config::paths::Paths;
 use crate::memory::{Kind, MemoryStore, Relations, SaveParams, id};
 use crate::output::tty;
@@ -89,78 +89,66 @@ pub struct Args {
     /// when `--vector-stdin` is set).
     #[arg(long, default_value_t = false)]
     pub vector_stdin: bool,
+    /// Version-anchored file reference `[repo:]path` (repeatable;
+    /// comma-splittable). Pins the HEAD-tree blob + commit + branch when the
+    /// path is tracked in the cwd repo; untracked/cross-repo refs save
+    /// unpinned with an advisory warning.
+    #[arg(long)]
+    pub ref_file: Vec<String>,
+    /// Version-anchored symbol reference `[repo:]path:symbol` (repeatable;
+    /// comma-splittable). A value without a trailing `:symbol` is a usage
+    /// error (exit 64). Anchoring matches `--ref-file`.
+    #[arg(long)]
+    pub ref_symbol: Vec<String>,
 }
 
 /// JSON shape emitted under `--json`. `duplicate_of` is present only when a
 /// live memory with a near-identical body (SimHash Hamming distance within
 /// `cfg.rank.near_dup_hamming`) already exists — the save still
 /// proceeds; the caller decides whether to mark it `supersedes`.
+///
+/// `warnings` collects the version-pointer ref advisories (untracked /
+/// cross-repo refs saved unpinned); it is omitted from `--json` output when
+/// empty, mirroring the `duplicate_of` advisory convention.
 #[derive(Serialize)]
 struct Output {
     id: String,
     path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     duplicate_of: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    warnings: Vec<String>,
 }
 
 /// Save the body and emit the new memory id + on-disk path.
 pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
-    let body = match a.body.as_deref() {
-        Some("-") | None => {
-            if a.vector_stdin {
-                return Err(Error::Config(
-                    "--vector-stdin requires the body to be passed as a positional arg".into(),
-                ));
-            }
-            read_stdin()?
-        }
-        Some(s) => s.to_string(),
-    };
-    // Trim, drop empties, and de-duplicate while preserving first-mention
-    // order. `memory_tags` has a `PRIMARY KEY (memory_id, tag)` constraint,
-    // so feeding `--tags foo,foo` straight through would abort the save
-    // transaction with a UNIQUE violation. Empty entries (`--tags ,foo`)
-    // are dropped because tag rows must be non-empty per the schema.
+    let body = read_body(&a)?;
     let tags = csv_unique(&a.tags);
-    // The id is content-derived, so it is known before anything is written.
-    // Computing it up front lets `--supersedes` reject a self-reference and
-    // lets the near-dup scan exclude the body's own row on identical
-    // re-saves (so the *second*-closest live near-dup still surfaces).
+    // Content-derived id is known before any write, so `--supersedes` and the
+    // near-dup scan can use it up front.
     let new_id = id::memory_id(&body);
-    // Validate `--supersedes` BEFORE anything touches disk so a malformed
-    // (or self-referential) id list aborts with no markdown file and no DB
-    // rows.
+    // Validate `--supersedes` and `--ref-*` BEFORE touching disk: a malformed
+    // value aborts with no markdown file and no DB rows.
     let supersedes = parse_supersedes(&a.supersedes, &new_id)?;
+    let repo_root = resolve_repo_root();
+    let (references, ref_warnings) =
+        ref_args::collect(&a.ref_file, &a.ref_symbol, &a.repo, repo_root.as_deref())?;
 
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
     let cfg = load_config(&paths)?;
 
-    // Parse the optional caller-supplied vector (CSV or JSON-on-stdin).
+    // Validate the caller-supplied vector's dim before the write, reusing the
+    // connection for the transactional mirror upsert below.
     let vector_opt = embedding_input::read_optional(a.vector_stdin, a.vector.as_deref())?;
-
-    // Validate the vector's dim against the schema-locked memory dim BEFORE
-    // the markdown write so a wrong-dim payload aborts cleanly with nothing
-    // on disk. We open the DB connection here so the same handle is reused
-    // by `write_sqlite_mirror` for the transactional mirror upsert below;
-    // the dim guard runs against `schema_meta.memory_vector_dim` via
-    // `vector::dim_memory`.
     let mut conn = connection::open(paths.db_path())?;
     if let Some(v) = vector_opt.as_deref() {
         let dim = vector::dim_memory(&conn)?;
         embed::guard_dim(v, dim)?;
     }
-
-    // Near-duplicate check BEFORE the markdown write. Best-effort and
-    // advisory only: the save always proceeds, the caller decides whether
-    // to supersede the hit.
     let duplicate_of = near_duplicate(&conn, &body, &new_id, cfg.rank.near_dup_hamming);
 
-    // 1. Markdown atomic write (source of truth). The `--supersedes` ids
-    //    land in frontmatter `relations.supersedes`, so the relationship
-    //    survives a `comemory rebuild` from markdown alone.
-    let store = MemoryStore::new(paths.clone());
-    let rec = store.save(SaveParams {
+    let params = SaveParams {
         body: &body,
         kind: a.kind,
         repo: &a.repo,
@@ -171,15 +159,34 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
             supersedes,
             ..Relations::default()
         },
-    })?;
+        references,
+    };
+    let rec = persist(&mut conn, &paths, params, vector_opt.as_deref())?;
 
-    // 2. SQLite mirror in one transaction. Markdown is the source of truth,
-    //    so a mirror failure surfaces as an `Err` — but the markdown file
-    //    is already on disk and can be replayed by `comemory rebuild`.
-    //    We wrap the error with the markdown path and a rebuild hint so the
-    //    operator knows exactly which file was written and how to reconcile.
+    let output = Output {
+        id: rec.frontmatter.id.clone(),
+        path: rec.path.to_string_lossy().into_owned(),
+        duplicate_of,
+        warnings: ref_warnings,
+    };
+    emit(json, &output)
+}
+
+/// Write the markdown record (source of truth, surviving `rebuild` because
+/// `--supersedes` ids and `--ref-*` anchors live in the frontmatter), then
+/// mirror it into `comemory.db` in one transaction. A mirror failure keeps
+/// the markdown and names it plus the `rebuild` recovery path.
+fn persist(
+    conn: &mut rusqlite::Connection,
+    paths: &Paths,
+    params: SaveParams<'_>,
+    vector_opt: Option<&[f32]>,
+) -> Result<crate::memory::MemoryRecord> {
+    let tags = params.tags.to_vec();
+    let store = MemoryStore::new(paths.clone());
+    let rec = store.save(params)?;
     let md_path = rec.path.clone();
-    write_sqlite_mirror(&mut conn, &rec, &tags, vector_opt.as_deref()).map_err(|e| {
+    write_sqlite_mirror(conn, &rec, &tags, vector_opt).map_err(|e| {
         Error::Other(format!(
             "save: markdown at {} was written but SQLite mirror failed: {}; \
              run `comemory rebuild` to reconcile",
@@ -187,23 +194,51 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
             e
         ))
     })?;
+    Ok(rec)
+}
 
-    let output = Output {
-        id: rec.frontmatter.id.clone(),
-        path: rec.path.to_string_lossy().into_owned(),
-        duplicate_of,
-    };
+/// Resolve the body from the positional arg or stdin, rejecting the
+/// `--vector-stdin` + stdin-body combination (both would consume stdin).
+fn read_body(a: &Args) -> Result<String> {
+    match a.body.as_deref() {
+        Some("-") | None => {
+            if a.vector_stdin {
+                return Err(Error::Config(
+                    "--vector-stdin requires the body to be passed as a positional arg".into(),
+                ));
+            }
+            read_stdin()
+        }
+        Some(s) => Ok(s.to_string()),
+    }
+}
+
+/// Discover the git working-tree root containing the process cwd, or `None`
+/// when the save is not run inside a repo. Used to make `--ref-*` paths
+/// repo-root-relative and to capture anchors.
+fn resolve_repo_root() -> Option<PathBuf> {
+    let cwd = std::env::current_dir().ok()?;
+    let repo = git2::Repository::discover(&cwd).ok()?;
+    repo.workdir().map(Path::to_path_buf)
+}
+
+/// Emit the save result: a single JSON object under `--json`, else a TTY
+/// summary with the near-dup advisory and each ref warning on stderr.
+fn emit(json: bool, output: &Output) -> Result<()> {
     let mut out = std::io::stdout().lock();
     if json {
-        writeln!(out, "{}", serde_json::to_string(&output)?)?;
-    } else {
-        writeln!(out, "saved {}", output.id)?;
-        writeln!(out, "  path: {}", output.path)?;
-        if let Some(dup) = output.duplicate_of.as_deref() {
-            tty::warning(&format!(
-                "similar memory {dup} exists — consider supersedes"
-            ))?;
-        }
+        writeln!(out, "{}", serde_json::to_string(output)?)?;
+        return Ok(());
+    }
+    writeln!(out, "saved {}", output.id)?;
+    writeln!(out, "  path: {}", output.path)?;
+    if let Some(dup) = output.duplicate_of.as_deref() {
+        tty::warning(&format!(
+            "similar memory {dup} exists — consider supersedes"
+        ))?;
+    }
+    for w in &output.warnings {
+        tty::warning(w)?;
     }
     Ok(())
 }

@@ -14,13 +14,15 @@
 
 use std::collections::BTreeMap;
 
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::Connection;
 use serde::Serialize;
 use time::OffsetDateTime;
 
 use crate::config::Config;
 use crate::prelude::*;
 use crate::retrieval::code_prior::{self, CodePriorParts, Signals};
+use crate::retrieval::code_ref_collect::{self, RawRef};
+use crate::retrieval::code_ref_fetch::RefStatusCache;
 use crate::retrieval::code_rerank::WorkingSet;
 
 /// One row returned by [`walk_context_edges`]: a directed edge from the graph.
@@ -71,15 +73,27 @@ pub struct MemoryBundleRow {
 /// One code-symbol row inside a [`Bundle`].
 #[derive(Serialize)]
 pub struct CodeRow {
+    /// Qualified address `<repo>:<path>[:<symbol>]` of the reference.
+    pub id: String,
     /// Repo identifier the symbol lives in.
     pub repo: String,
     /// Repo-relative path of the file.
     pub path: String,
-    /// Qualified symbol name.
+    /// Qualified symbol name; empty for a file ref.
     pub symbol: String,
     /// Source snippet for the symbol; empty when the ref did not resolve
     /// to an indexed `code_symbols` row.
     pub snippet: String,
+    /// First source line of the symbol; `None` for file refs or unresolved
+    /// symbols (no current index covers them).
+    pub line: Option<i64>,
+    /// First line of the symbol's snippet (its signature); `None` when the
+    /// snippet is empty.
+    pub signature: Option<String>,
+    /// Freshness verdict (`fresh|stale|ghost|unpinned|unknown`).
+    pub status: String,
+    /// Ranking score — the code-prior product when resolved, else `0.0`.
+    pub score: f64,
     /// Four-prior breakdown behind this ref's position. `None` (and
     /// omitted from JSON) when the ref did not resolve to a
     /// `code_symbols` row — a memory may cite symbols before
@@ -97,17 +111,6 @@ pub struct RelationRow {
     pub rel: String,
     /// `<dst_kind>:<dst_id>` address of the destination node.
     pub to: String,
-}
-
-/// A code ref pulled during the edge walk, before prior ranking:
-/// the parsed `<repo>:<path>:<symbol>` address plus the `code_symbols`
-/// rowid and snippet when the address resolved.
-struct RawRef {
-    repo: String,
-    path: String,
-    symbol: String,
-    snippet: String,
-    symbol_id: Option<i64>,
 }
 
 /// Assemble a [`Bundle`] for `query`, expanding each memory id by walking
@@ -174,6 +177,9 @@ fn collect_memory(
         score: 0.0,
     });
 
+    // Pinned anchors for this memory, keyed by `(rel, dst_id)`, so each walked
+    // reference edge can carry the blob captured at save.
+    let anchors = code_ref_collect::anchor_map(conn, id)?;
     // Walk all four context rels at depth ≤ 2 from this memory node.
     let walked = walk_context_edges(conn, id, 2)?;
     for e in walked {
@@ -182,9 +188,7 @@ fn collect_memory(
             rel: e.rel.clone(),
             to: format!("{}:{}", e.dst_kind, e.dst_id),
         });
-        if e.rel == "references_symbol"
-            && let Some(raw) = code_ref_lookup(conn, &e.dst_id)?
-        {
+        if let Some(raw) = code_ref_collect::ref_from_edge(conn, &e.rel, &e.dst_id, &anchors)? {
             raw_refs.push(raw);
         }
     }
@@ -248,6 +252,7 @@ fn score_refs(
 ) -> Result<Vec<CodeRow>> {
     let now = OffsetDateTime::now_utc();
     let mut affinity_cache: BTreeMap<String, f64> = BTreeMap::new();
+    let mut status_cache = RefStatusCache::default();
     let mut out = Vec::with_capacity(raw_refs.len());
     for (r, sig) in raw_refs.into_iter().zip(sigs) {
         let rank_parts = match sig {
@@ -262,15 +267,46 @@ fn score_refs(
             )?),
             None => None,
         };
-        out.push(CodeRow {
-            repo: r.repo,
-            path: r.path,
-            symbol: r.symbol,
-            snippet: r.snippet,
-            rank_parts,
-        });
+        out.push(build_code_row(conn, &mut status_cache, r, rank_parts));
     }
     Ok(out)
+}
+
+/// Assemble one [`CodeRow`]: classify freshness against the live repo state and
+/// derive the nav-minimal display fields (`line`, `signature`, `score`).
+fn build_code_row(
+    conn: &Connection,
+    status_cache: &mut RefStatusCache,
+    r: RawRef,
+    rank_parts: Option<CodePriorParts>,
+) -> CodeRow {
+    let status = status_cache.status(
+        conn,
+        &r.repo,
+        &r.path,
+        r.is_symbol,
+        r.pinned_blob.as_deref(),
+        r.symbol_id.is_some(),
+    );
+    let signature = r
+        .snippet
+        .lines()
+        .next()
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    let score = rank_parts.as_ref().map(|p| p.final_score).unwrap_or(0.0);
+    CodeRow {
+        id: r.id,
+        repo: r.repo,
+        path: r.path,
+        symbol: r.symbol,
+        snippet: r.snippet,
+        line: r.line_start,
+        signature,
+        status: status.as_str().to_string(),
+        score,
+        rank_parts,
+    }
 }
 
 /// Walk `references_file`, `references_symbol`, `relates_to`, and `supersedes`
@@ -310,44 +346,4 @@ fn walk_context_edges(
         })?
         .collect::<std::result::Result<Vec<_>, _>>()?;
     Ok(rows)
-}
-
-/// Parse a `<repo>:<path>:<symbol>` edge destination and look up its
-/// `code_symbols` row. Returns `Ok(None)` only when the address shape is
-/// wrong (logged, skipped); a well-formed address with no matching row
-/// still yields a [`RawRef`] — with no `symbol_id` and an empty snippet —
-/// so refs to not-yet-indexed symbols stay visible in the bundle.
-fn code_ref_lookup(conn: &Connection, dst_id: &str) -> Result<Option<RawRef>> {
-    let parts: Vec<&str> = dst_id.splitn(3, ':').collect();
-    if parts.len() != 3 {
-        tracing::warn!(
-            dst_id = %dst_id,
-            "malformed references_symbol edge destination (expected <repo>:<path>:<symbol>); skipping"
-        );
-        return Ok(None);
-    }
-    let (repo, path, symbol) = (parts[0], parts[1], parts[2]);
-    // `prepare_cached`: this lookup runs once per walked edge inside the
-    // assemble loop, so a fresh prepare per call would re-parse the SQL
-    // for every ref.
-    let mut stmt = conn.prepare_cached(
-        "SELECT id, snippet FROM code_symbols \
-          WHERE repo = ?1 AND path = ?2 AND symbol = ?3 LIMIT 1",
-    )?;
-    let row = stmt
-        .query_row(rusqlite::params![repo, path, symbol], |r| {
-            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
-        })
-        .optional()?;
-    let (symbol_id, snippet) = match row {
-        Some((id, snippet)) => (Some(id), snippet),
-        None => (None, String::new()),
-    };
-    Ok(Some(RawRef {
-        repo: repo.into(),
-        path: path.into(),
-        symbol: symbol.into(),
-        snippet,
-        symbol_id,
-    }))
 }

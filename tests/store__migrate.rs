@@ -42,16 +42,50 @@ fn running_migrations_twice_is_idempotent() {
     migrate::run(&mut conn).expect("second run is a no-op");
 }
 
-#[test]
-fn v5_adds_learning_tables_drops_search_stats_and_rehashes() {
-    // Build a current database.
-    let dir = tempdir().expect("tempdir");
-    let db = dir.path().join("comemory.db");
-    let mut conn = connection::open(&db).expect("open runs migrations");
+/// `count(*)` over `sqlite_master`/`pragma_*` for the given `where`-less query
+/// body. Shared by the migration assertions so each call site stays small.
+fn count(conn: &Connection, sql: &str) -> i64 {
+    conn.query_row(sql, [], |r| r.get(0)).expect("count query")
+}
 
-    // Seed a memory whose simhash under the OLD tokens() differs from
-    // the new one (non-ASCII uppercase). Insert via raw SQL with
-    // simhash=0 so the v5 re-hash must produce the aligned value.
+/// Assert the v5 learning tables exist and `search_stats` was dropped — the
+/// invariant shared by both the upgrade-in-place and v4→v5 migration tests.
+fn assert_learning_tables_and_no_search_stats(conn: &Connection) {
+    assert_eq!(
+        count(
+            conn,
+            "SELECT count(*) FROM sqlite_master
+              WHERE name IN ('feedback_events','query_expansions')",
+        ),
+        2,
+        "learning tables should exist",
+    );
+    assert_eq!(
+        count(
+            conn,
+            "SELECT count(*) FROM sqlite_master WHERE name='search_stats'",
+        ),
+        0,
+        "search_stats should be dropped",
+    );
+}
+
+/// Assert `schema_meta.version` landed on the latest schema. `migrate::run`
+/// always migrates fully forward, so every migration test ends here.
+fn assert_version_current(conn: &Connection) {
+    let v: String = conn
+        .query_row(
+            "SELECT value FROM schema_meta WHERE key='version'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("version row");
+    assert_eq!(v, migrate::CURRENT_VERSION);
+}
+
+/// Insert one `memories` row with a placeholder `simhash=0` so a re-hash pass
+/// must overwrite it with the value aligned to the current `simhash::tokens`.
+fn seed_unhashed_memory(conn: &Connection) {
     conn.execute(
         "INSERT INTO memories(id, slug, kind, repo, author, quality, schema,
                               content_hash, body, created_at, updated_at,
@@ -62,6 +96,73 @@ fn v5_adds_learning_tables_drops_search_stats_and_rehashes() {
         [],
     )
     .expect("seed memory");
+}
+
+/// Read the stored simhash of memory `id` as `u64`.
+fn simhash_of(conn: &Connection, id: &str) -> u64 {
+    let sh: i64 = conn
+        .query_row("SELECT simhash FROM memories WHERE id=?1", [id], |r| {
+            r.get(0)
+        })
+        .expect("simhash");
+    sh as u64
+}
+
+/// Collect the column names of `table` in a fresh migrated db, sorted.
+fn column_names(conn: &Connection, table: &str) -> Vec<String> {
+    let sql = format!("SELECT name FROM pragma_table_info('{table}') ORDER BY name");
+    let mut stmt = conn.prepare(&sql).expect("prepare pragma");
+    stmt.query_map([], |r| r.get::<_, String>(0))
+        .expect("query cols")
+        .map(|c| c.expect("col name"))
+        .collect()
+}
+
+#[test]
+fn v9_creates_code_ref_table_with_expected_columns() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("comemory.db");
+    let mut conn = connection::open(&path).expect("open");
+
+    migrate::run(&mut conn).expect("migrate");
+
+    // PRAGMA table_info exposes exactly the spec'd anchor columns (sorted).
+    assert_eq!(
+        column_names(&conn, "code_ref"),
+        [
+            "branch",
+            "created_at",
+            "dst_id",
+            "memory_id",
+            "pinned_blob",
+            "pinned_commit",
+            "rel"
+        ]
+    );
+
+    // The dst-side lookup index is present.
+    let idx_exists: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM sqlite_master
+              WHERE type='index' AND name='idx_code_ref_dst'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("index query");
+    assert_eq!(idx_exists, 1, "idx_code_ref_dst should exist after v9");
+}
+
+#[test]
+fn v5_adds_learning_tables_drops_search_stats_and_rehashes() {
+    // Build a current database.
+    let dir = tempdir().expect("tempdir");
+    let db = dir.path().join("comemory.db");
+    let mut conn = connection::open(&db).expect("open runs migrations");
+
+    // Seed a memory whose simhash under the OLD tokens() differs from the
+    // new one (non-ASCII uppercase), with a simhash=0 placeholder so the v5
+    // re-hash must produce the aligned value.
+    seed_unhashed_memory(&conn);
 
     // Force the re-hash to run again as if upgrading: delete its marker.
     conn.execute(
@@ -71,55 +172,28 @@ fn v5_adds_learning_tables_drops_search_stats_and_rehashes() {
     .expect("clear marker");
     migrate::run(&mut conn).expect("re-run migrations");
 
-    let sh: i64 = conn
-        .query_row(
-            "SELECT simhash FROM memories WHERE id='aaaaaaaa'",
-            [],
-            |r| r.get(0),
-        )
-        .expect("simhash");
-    assert_eq!(sh as u64, comemory::simhash::of_body("Café notes"));
+    assert_eq!(
+        simhash_of(&conn, "aaaaaaaa"),
+        comemory::simhash::of_body("Café notes")
+    );
 
     // Learning tables exist; search_stats is gone.
-    let n: i64 = conn
-        .query_row(
-            "SELECT count(*) FROM sqlite_master
-              WHERE name IN ('feedback_events','query_expansions')",
-            [],
-            |r| r.get(0),
-        )
-        .expect("tables");
-    assert_eq!(n, 2);
-    let gone: i64 = conn
-        .query_row(
-            "SELECT count(*) FROM sqlite_master WHERE name='search_stats'",
-            [],
-            |r| r.get(0),
-        )
-        .expect("gone");
-    assert_eq!(gone, 0);
+    assert_learning_tables_and_no_search_stats(&conn);
 
     // retrieval_log gained duration_ms.
-    let has_col: i64 = conn
-        .query_row(
+    assert_eq!(
+        count(
+            &conn,
             "SELECT count(*) FROM pragma_table_info('retrieval_log')
               WHERE name='duration_ms'",
-            [],
-            |r| r.get(0),
-        )
-        .expect("col");
-    assert_eq!(has_col, 1);
+        ),
+        1,
+        "retrieval_log should have duration_ms",
+    );
 
     // Version bumped. `migrate::run` always lands on the latest schema,
     // so the v5 artifacts above coexist with every later migration.
-    let v: String = conn
-        .query_row(
-            "SELECT value FROM schema_meta WHERE key='version'",
-            [],
-            |r| r.get(0),
-        )
-        .expect("v");
-    assert_eq!(v, migrate::CURRENT_VERSION);
+    assert_version_current(&conn);
 }
 
 /// Build a genuine v4 database by replaying the 0001..0004 SQL exactly
@@ -170,14 +244,10 @@ fn open_migrates_v4_db_to_v5() {
     let conn = connection::open(&db).expect("open migrates");
 
     // Both stored simhashes were recomputed with the new tokens().
-    let mem_sh: i64 = conn
-        .query_row(
-            "SELECT simhash FROM memories WHERE id='cafecafe'",
-            [],
-            |r| r.get(0),
-        )
-        .expect("memory simhash");
-    assert_eq!(mem_sh as u64, comemory::simhash::of_body("Café notes"));
+    assert_eq!(
+        simhash_of(&conn, "cafecafe"),
+        comemory::simhash::of_body("Café notes")
+    );
 
     let code_sh: i64 = conn
         .query_row("SELECT simhash FROM code_symbols WHERE id=1", [], |r| {
@@ -191,32 +261,9 @@ fn open_migrates_v4_db_to_v5() {
     );
 
     // Learning tables present; search_stats dropped.
-    let n: i64 = conn
-        .query_row(
-            "SELECT count(*) FROM sqlite_master
-              WHERE name IN ('feedback_events','query_expansions')",
-            [],
-            |r| r.get(0),
-        )
-        .expect("tables");
-    assert_eq!(n, 2);
-    let gone: i64 = conn
-        .query_row(
-            "SELECT count(*) FROM sqlite_master WHERE name='search_stats'",
-            [],
-            |r| r.get(0),
-        )
-        .expect("gone");
-    assert_eq!(gone, 0);
+    assert_learning_tables_and_no_search_stats(&conn);
 
     // `connection::open` always migrates to the latest schema, so a
     // v4 db lands on CURRENT_VERSION (v5 + every later migration).
-    let v: String = conn
-        .query_row(
-            "SELECT value FROM schema_meta WHERE key='version'",
-            [],
-            |r| r.get(0),
-        )
-        .expect("version row");
-    assert_eq!(v, migrate::CURRENT_VERSION);
+    assert_version_current(&conn);
 }

@@ -61,33 +61,50 @@ fn envelope_carries_query_id_and_flattens_bundle() {
     assert!(v.get("memories").is_some(), "bundle fields must flatten");
 }
 
+/// A resolved code ref carrying its four-prior breakdown and a `fresh` status.
+fn resolved_ref() -> CodeRow {
+    CodeRow {
+        id: "r:a.rs:a_run".to_string(),
+        repo: "r".to_string(),
+        path: "a.rs".to_string(),
+        symbol: "a_run".to_string(),
+        snippet: "fn a_run() {}".to_string(),
+        line: Some(7),
+        signature: Some("fn a_run() {}".to_string()),
+        status: "fresh".to_string(),
+        score: 1.08,
+        rank_parts: Some(CodePriorParts {
+            rank: 1.2,
+            activation: 1.0,
+            affinity: 1.0,
+            feedback: 0.9,
+            final_score: 1.08,
+        }),
+    }
+}
+
+/// An unresolved (and unpinned) code ref with no rank parts / line / signature.
+fn unresolved_ref() -> CodeRow {
+    CodeRow {
+        id: "r:b.rs:b_ghost".to_string(),
+        repo: "r".to_string(),
+        path: "b.rs".to_string(),
+        symbol: "b_ghost".to_string(),
+        snippet: String::new(),
+        line: None,
+        signature: None,
+        status: "unpinned".to_string(),
+        score: 0.0,
+        rank_parts: None,
+    }
+}
+
 #[test]
 fn code_ref_rank_parts_serialize_when_present_and_skip_when_none() {
     let bundle = Bundle {
         query: "q",
         memories: Vec::new(),
-        code_refs: vec![
-            CodeRow {
-                repo: "r".to_string(),
-                path: "a.rs".to_string(),
-                symbol: "a_run".to_string(),
-                snippet: "fn a_run() {}".to_string(),
-                rank_parts: Some(CodePriorParts {
-                    rank: 1.2,
-                    activation: 1.0,
-                    affinity: 1.0,
-                    feedback: 0.9,
-                    final_score: 1.08,
-                }),
-            },
-            CodeRow {
-                repo: "r".to_string(),
-                path: "b.rs".to_string(),
-                symbol: "b_ghost".to_string(),
-                snippet: String::new(),
-                rank_parts: None,
-            },
-        ],
+        code_refs: vec![resolved_ref(), unresolved_ref()],
         relations: Vec::new(),
         resolved_code_ids: Vec::new(),
     };
@@ -99,6 +116,17 @@ fn code_ref_rank_parts_serialize_when_present_and_skip_when_none() {
             "rank_parts.{key} missing: {v}"
         );
     }
+    // Nav-minimal fields (id/line/signature/status/score) ride along.
+    assert_eq!(refs[0]["status"], "fresh", "status must serialize: {v}");
+    assert_eq!(refs[0]["id"], "r:a.rs:a_run");
+    assert_eq!(refs[0]["line"], 7);
+    assert_eq!(refs[0]["signature"], "fn a_run() {}");
+    assert!(refs[0]["score"].is_number(), "score must serialize: {v}");
+    assert_eq!(refs[1]["status"], "unpinned");
+    assert!(
+        refs[1]["line"].is_null(),
+        "file/unresolved line is null: {v}"
+    );
     assert!(
         refs[1].get("rank_parts").is_none(),
         "rank_parts must be skipped when None: {v}"

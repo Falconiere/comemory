@@ -16,6 +16,8 @@
 //! Tasks 3–6 of the v0.2 plan flesh out the bodies; Task 2 publishes
 //! the skeleton so downstream tasks have stable import paths.
 
+/// `code_ref` side table: version-anchor store for explicit code references.
+pub mod code_ref;
 pub mod code_row;
 pub mod connection;
 pub mod embed;

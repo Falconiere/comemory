@@ -35,6 +35,10 @@ pub struct SaveParams<'a> {
     /// (`supersedes` / `conflicts_with` / `derived_from`); materialized as
     /// `edges` rows by `store::memory_row::insert`.
     pub relations: Relations,
+    /// Version-anchored code references (`--ref-file` / `--ref-symbol`)
+    /// written into the frontmatter and materialized to `edges` + `code_ref`
+    /// rows by `store::memory_row::insert`.
+    pub references: References,
 }
 
 impl<'a> SaveParams<'a> {
@@ -50,6 +54,7 @@ impl<'a> SaveParams<'a> {
             author: "",
             quality: 3,
             relations: Relations::default(),
+            references: References::default(),
         }
     }
 }
@@ -129,7 +134,7 @@ impl MemoryStore {
             quality: p.quality,
             schema: 1,
             content_hash,
-            references: References::default(),
+            references: p.references,
             relations: p.relations,
         };
 

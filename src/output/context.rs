@@ -90,7 +90,7 @@ pub fn emit<'a>(
         )?;
     }
     for c in &bundle.code_refs {
-        writeln!(out, "  {}:{}:{}", c.repo, c.path, c.symbol)?;
+        write_code_ref(&mut out, c)?;
     }
     tty::write_query_footer(
         &mut out,
@@ -98,4 +98,32 @@ pub fn emit<'a>(
         !bundle.memories.is_empty(),
         tty::FeedbackHint::Memory,
     )
+}
+
+/// Render one code ref: the qualified address line (symbol refs keep the
+/// `<repo>:<path>:<symbol>` form; file refs drop the trailing colon) followed
+/// by a `↳ <path>:<line>  <signature>  [<status>]` detail line. `line` and
+/// `signature` are omitted when absent (file refs / unresolved symbols).
+fn write_code_ref<W: std::io::Write>(
+    out: &mut W,
+    c: &crate::retrieval::bundle::CodeRow,
+) -> Result<()> {
+    if c.symbol.is_empty() {
+        writeln!(out, "  {}:{}", c.repo, c.path)?;
+    } else {
+        writeln!(out, "  {}:{}:{}", c.repo, c.path, c.symbol)?;
+    }
+    let loc = match c.line {
+        Some(n) => format!("{}:{n}", c.path),
+        None => c.path.clone(),
+    };
+    let sig = c.signature.as_deref().unwrap_or("");
+    writeln!(
+        out,
+        "    {} {}  [{}]",
+        tty::dim(&format!("↳ {loc}")),
+        sig,
+        c.status
+    )?;
+    Ok(())
 }

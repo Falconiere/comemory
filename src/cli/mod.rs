@@ -27,6 +27,7 @@ pub mod mine;
 pub mod pagination;
 pub mod prune;
 pub mod rebuild;
+pub mod ref_args;
 pub mod save;
 pub mod search;
 pub mod search_code;

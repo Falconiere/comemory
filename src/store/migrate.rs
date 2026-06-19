@@ -13,7 +13,7 @@ use crate::prelude::*;
 
 /// Highest schema version known to this build. Bumped each time a new
 /// migration file is added under `src/store/sql/`.
-pub const CURRENT_VERSION: &str = "8";
+pub const CURRENT_VERSION: &str = "9";
 
 /// 0001 bootstrap SQL (`schema_meta` table). Public so tests can replay
 /// historical schema states exactly as an old binary created them.
@@ -47,6 +47,12 @@ pub const M_V7: &str = include_str!("./sql/0007_v7_repo_root.sql");
 /// can replay historical schema states exactly as an old binary created
 /// them.
 pub const M_V8: &str = include_str!("./sql/0008_v8_reinforcement.sql");
+/// 0009 SQL: the `code_ref` side table (+ `idx_code_ref_dst`) storing the
+/// version anchor (blob OID + commit + branch) for versioned-pointer code
+/// references. Rebuilt from frontmatter by `memory_row::insert`, so it is
+/// not among the `copy_preserved_tables_from_old` set. Public so tests can
+/// replay historical schema states exactly as an old binary created them.
+pub const M_V9: &str = include_str!("./sql/0009_v9_code_refs.sql");
 
 /// Apply all pending migrations. Safe to re-run; each migration is
 /// only applied if its key is absent from `schema_meta`.
@@ -61,6 +67,7 @@ pub fn run(conn: &mut Connection) -> Result<()> {
     apply(conn, "0006_v6_code_graph", M_V6)?;
     apply(conn, "0007_v7_repo_root", M_V7)?;
     apply(conn, "0008_v8_reinforcement", M_V8)?;
+    apply(conn, "0009_v9_code_refs", M_V9)?;
     set_version(conn, CURRENT_VERSION)?;
     Ok(())
 }

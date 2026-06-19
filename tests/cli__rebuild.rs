@@ -100,17 +100,9 @@ fn rebuild_skips_hidden_staging_files() {
     assert_eq!(cnt, 1);
 }
 
-/// Ingest a code symbol row via `comemory ingest-code` and verify it survives
-/// a `comemory rebuild`. The code index tables must be preserved by copying
-/// them from the old DB into the newly-built DB.
-#[test]
-fn rebuild_preserves_code_index() {
-    let home = tempdir().expect("tempdir");
-
-    // Save a memory so the DB exists before the ingest.
-    run_save(&home, &["--kind", "note", "code index preservation body"]);
-
-    // Ingest one code symbol via ingest-code.
+/// Ingest one code symbol row (with a 768-d embedding) via `comemory
+/// ingest-code` into `home`'s DB.
+fn ingest_code_symbol(home: &TempDir) {
     let embedding = vectors::vector("rebuild-code-seed", 768);
     let row = serde_json::json!({
         "repo": "myrepo",
@@ -133,6 +125,18 @@ fn rebuild_preserves_code_index() {
         .write_stdin(payload)
         .assert()
         .success();
+}
+
+/// Ingest a code symbol row via `comemory ingest-code` and verify it survives
+/// a `comemory rebuild`. The code index tables must be preserved by copying
+/// them from the old DB into the newly-built DB.
+#[test]
+fn rebuild_preserves_code_index() {
+    let home = tempdir().expect("tempdir");
+
+    // Save a memory so the DB exists before the ingest.
+    run_save(&home, &["--kind", "note", "code index preservation body"]);
+    ingest_code_symbol(&home);
 
     // Confirm baseline counts.
     {
@@ -246,5 +250,92 @@ fn rebuild_does_not_destroy_on_error() {
     assert_eq!(
         after_count, original_count,
         "original DB must be intact after a failed rebuild"
+    );
+}
+
+/// Snapshot of the persisted code references for a memory: the `code_ref`
+/// anchor rows plus the count of each reference-edge kind. Captured before and
+/// after a DB-delete + rebuild to prove anchors survive markdown round-trip.
+#[derive(Debug, PartialEq, Eq)]
+struct RefSnapshot {
+    rows: Vec<comemory::store::code_ref::CodeRefRow>,
+    file_edges: i64,
+    symbol_edges: i64,
+}
+
+/// Capture the [`RefSnapshot`] for `memory_id` from `home`'s DB.
+fn ref_snapshot(home: &TempDir, memory_id: &str) -> RefSnapshot {
+    let conn = open_db(home);
+    let rows = comemory::store::code_ref::for_memory(&conn, memory_id).expect("code_ref rows");
+    let edge_count = |rel: &str| {
+        conn.query_row(
+            "SELECT count(*) FROM edges WHERE src_kind = 'memory' AND src_id = ?1 AND rel = ?2",
+            rusqlite::params![memory_id, rel],
+            |r| r.get::<_, i64>(0),
+        )
+        .expect("edge count")
+    };
+    RefSnapshot {
+        rows,
+        file_edges: edge_count("references_file"),
+        symbol_edges: edge_count("references_symbol"),
+    }
+}
+
+/// Save a memory anchored to one file + one symbol ref, returning its id.
+/// Run from the crate-root cwd (a real git checkout) so the tracked refs
+/// capture a real HEAD anchor (blob + commit + branch).
+fn save_anchored_memory(home: &TempDir) -> String {
+    run_save(
+        home,
+        &[
+            "--repo",
+            "comemory",
+            "--kind",
+            "note",
+            "--ref-file",
+            "src/cli/save.rs",
+            "--ref-symbol",
+            "src/cli/save.rs:run",
+            "rebuild must replay anchored code refs from markdown",
+        ],
+    );
+    let conn = open_db(home);
+    conn.query_row("SELECT DISTINCT memory_id FROM code_ref", [], |r| r.get(0))
+        .expect("a code_ref row exists after an anchored save")
+}
+
+/// Remove the DB and its WAL/SHM sidecars so the next open is a fresh rebuild.
+fn delete_db(home: &TempDir) {
+    std::fs::remove_file(home.path().join("comemory.db")).expect("remove db");
+    let _ = std::fs::remove_file(home.path().join("comemory.db-wal"));
+    let _ = std::fs::remove_file(home.path().join("comemory.db-shm"));
+}
+
+#[test]
+fn rebuild_restores_code_ref_anchors_and_edges_from_frontmatter() {
+    let home = tempdir().expect("tempdir");
+    let memory_id = save_anchored_memory(&home);
+
+    let before = ref_snapshot(&home, &memory_id);
+    assert_eq!(
+        before.rows.len(),
+        2,
+        "one file + one symbol anchor expected"
+    );
+    assert!(
+        before.rows.iter().any(|r| r.pinned_blob.is_some()),
+        "a tracked ref must capture a HEAD blob anchor: {before:?}"
+    );
+    assert_eq!(before.file_edges, 1);
+    assert_eq!(before.symbol_edges, 1);
+
+    delete_db(&home);
+    run_rebuild(&home);
+
+    let after = ref_snapshot(&home, &memory_id);
+    assert_eq!(
+        before, after,
+        "rebuild must reconstruct identical code_ref anchors + reference edges from frontmatter"
     );
 }

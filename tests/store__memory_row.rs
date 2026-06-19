@@ -3,8 +3,8 @@
 //! v0.2 edges (in_repo / authored_by / tagged plus cross-link references)
 //! that both `cli::save` and `cli::rebuild` depend on.
 
-use comemory::memory::{Frontmatter, Kind, References, Relations};
-use comemory::store::{connection, memory_row};
+use comemory::memory::{Frontmatter, Kind, Ref, References, Relations};
+use comemory::store::{code_ref, connection, memory_row};
 use rusqlite::Connection;
 use tempfile::tempdir;
 use time::OffsetDateTime;
@@ -220,4 +220,55 @@ fn inserts_row_tags_fts_and_edges() {
 
     assert_row_counts(&conn);
     assert_all_edges(&conn);
+}
+
+#[test]
+fn anchored_frontmatter_refs_materialize_edges_and_code_ref() {
+    // A save whose frontmatter carries explicit, anchored `--ref-file` /
+    // `--ref-symbol` links must land both the additive graph edges and the
+    // typed `code_ref` anchor rows (so `rebuild` restores them for free).
+    let dir = tempdir().expect("tempdir");
+    let mut conn = connection::open(dir.path().join("comemory.db")).expect("open");
+    let mut fm = sample_fm();
+    fm.references = References {
+        files: vec![Ref {
+            id: "qwick:src/db.rs".to_string(),
+            blob: Some("blobfile00".to_string()),
+            commit: Some("commitfile".to_string()),
+            branch: Some("main".to_string()),
+        }],
+        symbols: vec![Ref {
+            id: "qwick:src/db.rs:connect".to_string(),
+            blob: Some("blobsym000".to_string()),
+            commit: Some("commitsym0".to_string()),
+            branch: Some("dev".to_string()),
+        }],
+    };
+
+    insert_body(&mut conn, &fm, "body referencing pinned code");
+
+    // Graph edges (additive, dst_kind file/symbol).
+    assert_edge(&conn, "references_file", "file", "qwick:src/db.rs");
+    assert_edge(
+        &conn,
+        "references_symbol",
+        "symbol",
+        "qwick:src/db.rs:connect",
+    );
+
+    // Typed anchor rows, ordered (rel, dst_id): file before symbol.
+    let rows = code_ref::for_memory(&conn, ID).expect("for_memory");
+    assert_eq!(rows.len(), 2, "one file + one symbol anchor row");
+
+    assert_eq!(rows[0].rel, "references_file");
+    assert_eq!(rows[0].dst_id, "qwick:src/db.rs");
+    assert_eq!(rows[0].pinned_blob.as_deref(), Some("blobfile00"));
+    assert_eq!(rows[0].pinned_commit.as_deref(), Some("commitfile"));
+    assert_eq!(rows[0].branch.as_deref(), Some("main"));
+
+    assert_eq!(rows[1].rel, "references_symbol");
+    assert_eq!(rows[1].dst_id, "qwick:src/db.rs:connect");
+    assert_eq!(rows[1].pinned_blob.as_deref(), Some("blobsym000"));
+    assert_eq!(rows[1].pinned_commit.as_deref(), Some("commitsym0"));
+    assert_eq!(rows[1].branch.as_deref(), Some("dev"));
 }
