@@ -114,10 +114,11 @@ fn normalize_path(path: &str, repo_root: Option<&Path>) -> String {
 /// HEAD tree (a dirty working copy still pins the last committed blob).
 ///
 /// # Errors
-/// Propagates a hard git fault from [`git_utils::blob_oid_at_head`]: a corrupt
-/// or unreadable repository must surface, not be silently saved unpinned. A
-/// legitimately untracked path (`Ok(None)`) is *not* an error — it yields an
-/// unpinned [`Ref`] plus an advisory warning.
+/// Propagates a hard git fault from the HEAD queries
+/// ([`git_utils::blob_oid_at_head`] and, for a tracked blob, the commit /
+/// branch lookups): a corrupt or unreadable repository must surface, not be
+/// silently saved unpinned. A legitimately untracked path (`Ok(None)`) is
+/// *not* an error — it yields an unpinned [`Ref`] plus an advisory warning.
 fn capture_anchor(
     q: Qualified,
     repo: &str,
@@ -133,8 +134,8 @@ fn capture_anchor(
     };
     match git_utils::blob_oid_at_head(root, &q.path)? {
         Some(blob) => Ok(Ref {
-            commit: git_utils::current_head(root).ok(),
-            branch: git_utils::current_branch(root).ok().flatten(),
+            commit: Some(git_utils::current_head(root)?),
+            branch: git_utils::current_branch(root)?,
             blob: Some(blob),
             id,
         }),

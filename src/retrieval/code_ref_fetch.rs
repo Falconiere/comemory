@@ -94,8 +94,12 @@ fn head_blob_for(root: Option<&Path>, path: &str) -> Option<String> {
 /// signal — `repo_marker.last_mined_commit` equals `git_utils::current_head`.
 /// A missing marker, unborn HEAD, or read error is treated as not-current.
 fn index_is_current(conn: &Connection, repo: &str, root: &Path) -> bool {
-    let Ok(head) = crate::git_utils::current_head(root) else {
-        return false;
+    let head = match crate::git_utils::current_head(root) {
+        Ok(head) => head,
+        Err(e) => {
+            tracing::debug!(repo, error = %e, "current_head failed; treating index as stale");
+            return false;
+        }
     };
     let last: Option<String> = conn
         .query_row(

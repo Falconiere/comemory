@@ -140,7 +140,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
 
 /// The working set for the bundle's affinity prior: empty when there are no
 /// hits (no edges to walk → skip the git discovery), else discovered from the
-/// CWD. Split out of [`run`] so it stays ≤50 lines.
+/// CWD. Extracted from [`run`] to keep that function focused.
 fn working_set_for(ids: &[String], repo: Option<&str>) -> WorkingSet {
     if ids.is_empty() {
         WorkingSet::default()
