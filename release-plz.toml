@@ -11,6 +11,12 @@
 #   cargo-dist  -> build + GitHub Release + Homebrew + announce + sign (unchanged)
 
 [workspace]
+# Tag as `vX.Y.Z` to match the existing tag history (and what release.yml /
+# cargo-dist consume). release-plz's default is `{{package}}-v{{version}}`,
+# which never matches our `v*` tags — so it found no prior release, treated
+# the crate as unreleased, saw Cargo.toml already at the latest CHANGELOG
+# version, and reported "already up-to-date" on every push (no release PR).
+git_tag_name = "v{{ version }}"
 # Push the vX.Y.Z git tag when the release PR merges. This tag triggers
 # release.yml. Annotated by default (this repo rejects lightweight tags).
 git_tag_enable = true
