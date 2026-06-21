@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-06-21
+
+### Added
+
+- versioned-pointer code references for memories
+- 3D graph, NL file search, read-only editor, navigable search JSON
+- automate releases via release-plz Release-PR bot
+
+### Fixed
+
+- enable release-plz git_only so it cuts releases
+- match release-plz tag pattern to v* tag history
+- surface git faults in ref anchor capture
+- align v8 migration test with v9 schema version
+- address code-review findings on /api/search + nav metadata
+- stop ignoring the tracked .claude/tmp/.gitkeep
+- use the secret name RELEASE_PLZ_TOKEN that is actually set
+
+### Internal
+
+- ignore .serena/ MCP project cache
+- pin code-review action to @v3
+- use openrouter deepseek-v4-pro provider
+- use direct MiniMax M3 provider + 15m timeout
+- pin code-review action to @v2 (was @main, hung without a timeout)
+- code review via toolu-ghactions/code-review@main
+
 ### Added
 
 - **Versioned-pointer code references.** `comemory save --ref-file` /
