@@ -11,11 +11,19 @@
 #   cargo-dist  -> build + GitHub Release + Homebrew + announce + sign (unchanged)
 
 [workspace]
-# Tag as `vX.Y.Z` to match the existing tag history (and what release.yml /
-# cargo-dist consume). release-plz's default is `{{package}}-v{{version}}`,
-# which never matches our `v*` tags — so it found no prior release, treated
-# the crate as unreleased, saw Cargo.toml already at the latest CHANGELOG
-# version, and reported "already up-to-date" on every push (no release PR).
+# comemory is never published to a cargo registry (publish = false below).
+# By default release-plz derives the previous version from the registry; with
+# the crate absent from crates.io that lookup returns "not found", release-plz
+# treats it as already at its Cargo.toml version, and reports "already
+# up-to-date" on every push — opening no release PR despite unreleased commits.
+# git_only switches the baseline to git tags: release-plz reads the existing
+# `vX.Y.Z` tags, diffs the commits since, computes the bump, and opens the PR.
+# (Requires publish != true for the package, which holds here. Shipped in
+# release-plz 0.3.156 via https://github.com/release-plz/release-plz/issues/1144.)
+git_only = true
+# Match the existing `vX.Y.Z` tag history (also what release.yml / cargo-dist
+# consume). This equals release-plz's default template, pinned explicitly so
+# git_only's tag scan keeps matching regardless of upstream default changes.
 git_tag_name = "v{{ version }}"
 # Push the vX.Y.Z git tag when the release PR merges. This tag triggers
 # release.yml. Annotated by default (this repo rejects lightweight tags).
