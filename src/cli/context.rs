@@ -17,6 +17,7 @@ use clap::Args as ClapArgs;
 
 use crate::cli::{
     embedding_input, lazy_reindex, load_config, page_meta, page_window, resolve_data_dir,
+    track_searches,
 };
 use crate::config::paths::Paths;
 use crate::output;
@@ -102,12 +103,13 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     // off-repo, or a fresh index; never blocks or fails the lookup.
     lazy_reindex::maybe_trigger(&conn, &cfg, &paths, a.repo.as_deref());
     let window = page_window(&cfg, a.k, a.offset);
-    // A user-facing lookup always tracks. The flag is carried on
+    // A user-facing lookup tracks by default (the `COMEMORY_DISABLE_ACCESS_TRACKING`
+    // test hook can lower it — see `track_searches`). The flag is carried on
     // `SearchOptions` so the memory access bump (inside `pipeline::search`)
     // and the code-ref bump below share one gate: an eval/tune caller that
     // ever runs `context` with `track = false` suppresses both signals.
     let opts = pipeline::SearchOptions {
-        track: true,
+        track: track_searches()?,
         source: crate::stats::source::CONTEXT,
         window,
     };
