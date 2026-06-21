@@ -208,12 +208,19 @@ fn seed_many(home: &tempfile::TempDir, n: usize) {
 }
 
 /// Run `comemory search --json` with extra args, return the parsed envelope.
+///
+/// `COMEMORY_DISABLE_ACCESS_TRACKING` is set so each query does NOT bump
+/// `access_count` / `last_accessed`. These helpers back ranking/pagination
+/// stability tests that drive `search` many times over one corpus; tracked,
+/// every call would feed ACT-R activation and reorder the window between
+/// calls (the pagination flake). The access side-effect is out of scope here.
 fn search_json(home: &tempfile::TempDir, extra: &[&str]) -> Value {
     let mut args = vec!["search", "sqlite indexing", "--json"];
     args.extend_from_slice(extra);
     let assert = Command::cargo_bin("comemory")
         .expect("bin")
         .env("COMEMORY_DATA_DIR", home.path())
+        .env("COMEMORY_DISABLE_ACCESS_TRACKING", "true")
         .args(&args)
         .assert()
         .success();

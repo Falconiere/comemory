@@ -189,6 +189,22 @@ pub(crate) fn page_meta(
     }
 }
 
+/// Whether a user-facing lookup (`search` / `context`) should record access
+/// tracking + the `retrieval_log` row this run — the `SearchOptions::track`
+/// gate. `true` (the default) for every real invocation; lowered to `false`
+/// only when `COMEMORY_DISABLE_ACCESS_TRACKING` is set truthy.
+///
+/// This is a test hook, not a user knob (mirrors `eval::tune`'s
+/// `COMEMORY_TUNE_MIN_GOLDEN`): it lets a stability harness drive the binary
+/// repeatedly without each query mutating `access_count` / `last_accessed`,
+/// which feeds ACT-R activation and would reorder ranking between calls. An
+/// unparsable value errors, naming the variable, like every other env hook.
+pub(crate) fn track_searches() -> Result<bool> {
+    let disabled =
+        crate::config::env::env_parse::<bool>("COMEMORY_DISABLE_ACCESS_TRACKING")?.unwrap_or(false);
+    Ok(!disabled)
+}
+
 /// Split a comma-separated flag value into trimmed, non-empty, de-duplicated
 /// entries preserving first-mention order. Shared by `save` (`--tags`,
 /// `--supersedes`) and `feedback` (`--used`, `--irrelevant`) so every CSV

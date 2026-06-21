@@ -11,7 +11,9 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::cli::{embedding_input, load_config, page_meta, page_window, resolve_data_dir};
+use crate::cli::{
+    embedding_input, load_config, page_meta, page_window, resolve_data_dir, track_searches,
+};
 use crate::config::paths::Paths;
 use crate::memory::Kind;
 use crate::output;
@@ -92,7 +94,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         a.repo.as_deref(),
         a.kind.map(Kind::as_str),
         pipeline::SearchOptions {
-            track: true,
+            track: track_searches()?,
             source: crate::stats::source::SEARCH,
             window,
         },
