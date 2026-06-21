@@ -34,38 +34,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - pin code-review action to @v2 (was @main, hung without a timeout)
 - code review via toolu-ghactions/code-review@main
 
-### Added
-
-- **Versioned-pointer code references.** `comemory save --ref-file` /
-  `--ref-symbol` attach explicit, version-pinned links from a memory to code,
-  capturing a git anchor (HEAD blob OID + commit + branch) at save time and
-  storing it in the markdown frontmatter (so `comemory rebuild` restores it).
-  `comemory context` reports each reference's freshness — `fresh` / `stale` /
-  `ghost` / `unpinned` / `unknown` — from a cheap git-blob compare (file refs
-  index-independent; symbol-ghost index-dependent). `comemory prune` surfaces
-  memories whose pinned symbol has become a ghost under `ghost_ref_memories`
-  (advisory). See `docs/guides/linking-code-to-memories.md`.
-
-### Changed
-
-_(empty)_
-
-### Fixed
-
-_(empty)_
-
-### Removed
-
-_(empty)_
-
-### Security
-
-_(empty)_
-
-### Internal
-
-_(empty)_
-
 ## [0.10.1] - 2026-06-17
 
 _Patch: read commands no longer fail with `database is locked`._
