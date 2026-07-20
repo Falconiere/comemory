@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-07-20
+
+### Added
+
+- search→edit auto-reward and eval-gated bandit
+
+### Changed
+
+- rustfmt import order for SplitMix64
+
+### Fixed
+
+- disable access tracking in context pagination harness
+- end ranked borrow before confirm eval
+- make sample_beta always return a finite [0,1] draw
+- clamp non-finite Thompson draws to 0.5
+- expect schema v10 after bandit migration
+
+### Internal
+
+- assert DB schema version in v10 bandit test
+
 ## [0.11.1] - 2026-06-21
 
 ### Fixed
