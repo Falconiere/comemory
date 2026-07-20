@@ -167,6 +167,7 @@ pub fn thompson_sample(arms: &[Arm], seed: u64) -> Result<&Arm> {
     let mut best_s = f64::NEG_INFINITY;
     for (i, arm) in arms.iter().enumerate() {
         let s = sample_beta(&mut rng, arm.alpha, arm.beta);
+        let s = if s.is_finite() { s } else { 0.5 };
         if s > best_s
             || (s == best_s
                 && arm.candidate.rrf_k.total_cmp(&arms[best_i].candidate.rrf_k)
