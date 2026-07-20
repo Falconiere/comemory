@@ -21,7 +21,7 @@ use rusqlite::Connection;
 
 use crate::ast::extractor::ExtractedSymbol;
 use crate::ast::{self, languages};
-use crate::cli::resolve_data_dir;
+use crate::cli::{load_config, resolve_data_dir};
 use crate::config::paths::Paths;
 use crate::git_utils::map_git_err;
 use crate::graph::{imports, materialize};
@@ -87,6 +87,7 @@ pub async fn run(args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<(
     }
 
     let mut conn = connection::open(paths.db_path())?;
+    let cfg = load_config(&paths)?;
     let mut imports_by_file: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let tx = conn.transaction()?;
     code_row::ensure_repo_format(&tx, &args.repo)?;
@@ -157,7 +158,13 @@ pub async fn run(args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<(
     tx.commit()?;
     // Best-effort graph post-pass: the symbol index above is already
     // durable; a graph failure (e.g. unborn HEAD) costs only freshness.
-    if let Err(e) = materialize::materialize(&mut conn, &args.path, &args.repo, &imports_by_file) {
+    if let Err(e) = materialize::materialize(
+        &mut conn,
+        &args.path,
+        &args.repo,
+        &imports_by_file,
+        cfg.reinforce.search_edit_days,
+    ) {
         tracing::warn!(
             repo = %args.repo,
             error = %e,

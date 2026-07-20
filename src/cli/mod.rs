@@ -9,6 +9,7 @@ use crate::config::paths::Paths;
 use crate::prelude::*;
 
 pub mod ast;
+pub mod bandit;
 pub mod completions;
 pub mod context;
 pub mod delete;
@@ -84,6 +85,9 @@ pub enum Cmd {
     /// Grid-search blend weights against the golden set (report only;
     /// `--apply` writes the winner into config.toml).
     Tune(tune::Args),
+    /// Thompson-sample blend knobs against the golden set (report only;
+    /// `--apply` writes when the sample beats baseline).
+    Bandit(bandit::Args),
     /// Report on the data directory and SQLite mirror health.
     Doctor(doctor::Args),
     /// Walk a repo, extract symbols, and upsert into the code index.
@@ -131,6 +135,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::Eval(a) => eval::run(a, cli.json, cli.data_dir).await,
         Cmd::Mine(a) => mine::run(a, cli.json, cli.data_dir).await,
         Cmd::Tune(a) => tune::run(a, cli.json, cli.data_dir).await,
+        Cmd::Bandit(a) => bandit::run(a, cli.json, cli.data_dir).await,
         Cmd::Doctor(a) => doctor::run(a, cli.json, cli.data_dir).await,
         Cmd::IndexCode(a) => index_code::run(a, cli.json, cli.data_dir).await,
         Cmd::IngestCode(a) => ingest_code::run(a, cli.json, cli.data_dir).await,

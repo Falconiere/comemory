@@ -37,11 +37,15 @@ use time::OffsetDateTime;
 /// When `repo` has no `code_symbols` rows yet, the call is a no-op and
 /// the mining cursor is NOT advanced — advancing it before any file is
 /// indexed would permanently skip the history those files appear in.
+///
+/// `lookback_days` is the search→edit `retrieval_log` window passed through
+/// to [`coactivate::harvest`] (from `Config.reinforce.search_edit_days`).
 pub fn materialize(
     conn: &mut Connection,
     repo_root: &Path,
     repo: &str,
     imports_by_file: &BTreeMap<String, Vec<String>>,
+    lookback_days: u32,
 ) -> Result<()> {
     let tx = conn.transaction()?;
     // Sorted for the deterministic dense-index mapping PageRank needs;
@@ -62,7 +66,7 @@ pub fn materialize(
     // so the reinforcement is atomic with the cursor (a crash can't
     // half-apply it, and the cursor still reflects only-harvested-once).
     let at = memory_row::iso_format(OffsetDateTime::now_utc())?;
-    coactivate::harvest(&tx, repo, &touched, &at)?;
+    coactivate::harvest(&tx, repo, &touched, &at, lookback_days)?;
     advance_cursor(&tx, repo, &cursor)?;
     tx.commit()?;
     Ok(())

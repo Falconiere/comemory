@@ -6,7 +6,9 @@
 //! half-apply it and the cursor harvests each commit's touch count exactly
 //! once. Three reinforcement channels per affected memory: a weighted
 //! `co_activated` edge, a one-shot Beta `used` minted when the edge weight
-//! first reaches `>= 2`, and one `access_count` bump + `last_accessed = at`.
+//! first reaches `>= 2` (provenance `auto_coactivation` or `auto_search_edit`
+//! when the memory also appeared on a recent search/context page), and one
+//! `access_count` bump + `last_accessed = at`.
 //!
 //! Determinism/idempotency: the edge upsert is `old + delta`, the Beta
 //! crossing is a pure function of `(old_weight, delta)`, and re-running over
@@ -17,6 +19,7 @@ use std::collections::{HashMap, HashSet};
 use rusqlite::Connection;
 
 use crate::graph::edges::{self, EdgeKey, REFERENCES_FILE, file_node_id};
+use crate::graph::search_edit;
 use crate::prelude::*;
 use crate::stats::feedback;
 
@@ -31,24 +34,28 @@ const BETA_THRESHOLD: i64 = 2;
 /// Apply the commit co-activation reward for `repo`: for every `(memory,
 /// file)` pair where the memory `references_file` a file touched this pass,
 /// accumulate the `co_activated` edge weight by the file's touch count, mint
-/// a one-shot Beta `used` when the weight first crosses [`BETA_THRESHOLD`],
-/// and bump each reinforced memory's activation once.
+/// a one-shot Beta `used` when the weight first crosses [`BETA_THRESHOLD`]
+/// (search→edit provenance when the memory was recently returned by search
+/// or context), and bump each reinforced memory's activation once.
 ///
 /// `touched` maps repo-relative paths to per-pass commit-touch counts (from
 /// [`crate::graph::cochange::MineOutcome::touched`]). `at` is the run
-/// timestamp for `feedback_events.at` and `memories.last_accessed` —
-/// commit-time crediting is a deliberate deferral. A `conn` that is a
-/// `rusqlite::Transaction` keeps the whole reward atomic with the caller.
+/// timestamp for `feedback_events.at` and `memories.last_accessed`.
+/// `lookback_days` bounds the search→edit `retrieval_log` window.
 pub(crate) fn harvest(
     conn: &Connection,
     repo: &str,
     touched: &HashMap<String, u32>,
     at: &str,
+    lookback_days: u32,
 ) -> Result<()> {
     if touched.is_empty() {
         return Ok(());
     }
     let pairs = referencing_memories(conn, repo, touched)?;
+    let candidates: HashSet<String> = pairs.iter().map(|p| p.memory_id.clone()).collect();
+    let search_edit_hits =
+        search_edit::memories_seen_recently(conn, repo, &candidates, at, lookback_days)?;
     let mut reinforced: Vec<String> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
     for Pair { memory_id, path } in &pairs {
@@ -58,7 +65,15 @@ pub(crate) fn harvest(
         if delta == 0 {
             continue;
         }
-        reward_pair(conn, repo, memory_id, path, i64::from(delta), at)?;
+        reward_pair(
+            conn,
+            repo,
+            memory_id,
+            path,
+            i64::from(delta),
+            at,
+            search_edit_hits.contains(memory_id),
+        )?;
         if seen.insert(memory_id.clone()) {
             reinforced.push(memory_id.clone());
         }
@@ -78,14 +93,11 @@ struct Pair {
 /// touched file. The cross-link writer stores those dst_ids in the BARE
 /// `<repo>:<path>` form (no `file:` prefix — see
 /// [`crate::graph::edges::file_node_id`]), so the candidate dst_ids match.
-/// The `idx_edges_dst` index backs the lookup; the IN-list is chunked under
-/// [`IN_CHUNK`] so a large touch set cannot exceed the host-parameter cap.
 fn referencing_memories(
     conn: &Connection,
     repo: &str,
     touched: &HashMap<String, u32>,
 ) -> Result<Vec<Pair>> {
-    // Sorted candidates → deterministic chunk boundaries and stable order.
     let mut dst_ids: Vec<String> = touched.keys().map(|p| format!("{repo}:{p}")).collect();
     dst_ids.sort();
     let prefix = format!("{repo}:");
@@ -105,7 +117,6 @@ fn referencing_memories(
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         for (memory_id, dst_id) in rows {
-            // Strip the `<repo>:` head to recover the touch-map path key.
             let Some(path) = dst_id.strip_prefix(&prefix) else {
                 continue;
             };
@@ -120,14 +131,7 @@ fn referencing_memories(
 
 /// Accumulate the `(memory→file, co_activated)` edge weight by `delta` and,
 /// when the weight first crosses [`BETA_THRESHOLD`], mint one implicit `used`
-/// stamped with the run timestamp `at`. The co_activated edge uses the
-/// canonical `file:` node id (per `0008_v8_reinforcement.sql`); the reverse
-/// lookup keyed off the bare cross-link form — each rel keeps its own id
-/// grammar.
-///
-/// The crossing reads the stored weight BEFORE the upsert, so it is a pure
-/// function of `(old_weight, delta)`: idempotent across re-runs because the
-/// mining cursor makes `delta` zero for already-counted commits.
+/// with search→edit or co-activation provenance.
 fn reward_pair(
     conn: &Connection,
     repo: &str,
@@ -135,6 +139,7 @@ fn reward_pair(
     path: &str,
     delta: i64,
     at: &str,
+    search_edit: bool,
 ) -> Result<()> {
     let dst = file_node_id(repo, path);
     let key = EdgeKey {
@@ -147,7 +152,18 @@ fn reward_pair(
     let old = edges::current_weight(conn, key)?;
     edges::insert_weighted(conn, key, delta)?;
     if old < BETA_THRESHOLD && old + delta >= BETA_THRESHOLD {
-        feedback::record_implicit_used(conn, memory_id, at)?;
+        let (prov, qid) = if search_edit {
+            (
+                feedback::PROV_AUTO_SEARCH_EDIT,
+                feedback::SEARCH_EDIT_QUERY_ID,
+            )
+        } else {
+            (
+                feedback::PROV_AUTO_COACTIVATION,
+                feedback::COACTIVATION_QUERY_ID,
+            )
+        };
+        feedback::record_implicit_used(conn, memory_id, at, prov, qid)?;
     }
     Ok(())
 }

@@ -141,7 +141,7 @@ fn harvest_rewards_referenced_touched_files_only() {
     seed_memory_referencing(&conn, "aaaaaaa3", "untouched.md"); // touched x0
 
     let mut conn = conn;
-    materialize(&mut conn, &repo_root, REPO, &BTreeMap::new()).expect("materialize");
+    materialize(&mut conn, &repo_root, REPO, &BTreeMap::new(), 7).expect("materialize");
 
     // (a) edge weight equals commit-touch count.
     assert_eq!(
@@ -201,11 +201,11 @@ fn rerun_does_not_double_count() {
     let mut conn = open_db_with_symbols(&home);
     seed_memory_referencing(&conn, "aaaaaaa1", "docs/guide.md");
 
-    materialize(&mut conn, &repo_root, REPO, &BTreeMap::new()).expect("first run");
+    materialize(&mut conn, &repo_root, REPO, &BTreeMap::new(), 7).expect("first run");
     let weight_after_first = co_activated_weight(&conn, "aaaaaaa1", "docs/guide.md");
     let access_after_first = access_count(&conn, "aaaaaaa1");
 
-    materialize(&mut conn, &repo_root, REPO, &BTreeMap::new()).expect("second run (no-op mine)");
+    materialize(&mut conn, &repo_root, REPO, &BTreeMap::new(), 7).expect("second run (no-op mine)");
 
     assert_eq!(
         co_activated_weight(&conn, "aaaaaaa1", "docs/guide.md"),
@@ -236,9 +236,9 @@ fn incremental_commit_accumulates_weight_without_reminting_used() {
     let mut conn = open_db_with_symbols(&home);
     seed_memory_referencing(&conn, "aaaaaaa1", "docs/guide.md");
 
-    materialize(&mut conn, &repo_root, REPO, &BTreeMap::new()).expect("first run");
+    materialize(&mut conn, &repo_root, REPO, &BTreeMap::new(), 7).expect("first run");
     git_commit::commit_files(&repo_root, &[("docs/guide.md", "v3\n")], "c3");
-    materialize(&mut conn, &repo_root, REPO, &BTreeMap::new()).expect("incremental run");
+    materialize(&mut conn, &repo_root, REPO, &BTreeMap::new(), 7).expect("incremental run");
 
     assert_eq!(
         co_activated_weight(&conn, "aaaaaaa1", "docs/guide.md"),
@@ -264,7 +264,7 @@ fn coactivation_feedback_is_excluded_from_golden_harvest() {
     let mut conn = open_db_with_symbols(&home);
     seed_memory_referencing(&conn, "aaaaaaa1", "docs/guide.md");
 
-    materialize(&mut conn, &repo_root, REPO, &BTreeMap::new()).expect("materialize");
+    materialize(&mut conn, &repo_root, REPO, &BTreeMap::new(), 7).expect("materialize");
 
     // Precondition: a co-activation `used` event exists (sentinel query_id).
     assert_eq!(

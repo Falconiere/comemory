@@ -7,7 +7,13 @@ use super::defaults::{
     default_code_vector_dim, default_max_page_window, default_memory_vector_dim,
     default_near_dup_hamming, default_superseded_grace_days,
 };
+use super::learning::{
+    BanditConfig, PartialBanditConfig, PartialReinforceConfig, PartialTuneConfig, ReinforceConfig,
+};
 use crate::prelude::*;
+
+/// Re-export: historical `config::file::TuneConfig` import path.
+pub use super::learning::TuneConfig;
 
 /// Partial config overlay loaded from a `config.toml` file.
 ///
@@ -37,6 +43,10 @@ struct PartialConfig {
     /// leave defaults. File-only: no env-var equivalents exist (a four-list
     /// env value is unreadable).
     tune: Option<PartialTuneConfig>,
+    /// Search→edit lookback. Absent keys leave defaults.
+    reinforce: Option<PartialReinforceConfig>,
+    /// Bandit apply gate. Absent keys leave defaults.
+    bandit: Option<PartialBanditConfig>,
 }
 
 /// File-overlay partial for [`RetrievalConfig`]. Only the M2-tunable
@@ -62,16 +72,6 @@ struct PartialRankConfig {
     prior_clamp: Option<(f64, f64)>,
     mmr_lambda: Option<f64>,
     near_dup_hamming: Option<u32>,
-}
-
-/// File-overlay partial for [`TuneConfig`]. All fields optional.
-#[derive(Debug, Deserialize, Default)]
-#[serde(deny_unknown_fields)]
-struct PartialTuneConfig {
-    rrf_k_grid: Option<Vec<f32>>,
-    decay_grid: Option<Vec<f64>>,
-    mmr_lambda_grid: Option<Vec<f64>>,
-    bm25_grid: Option<Vec<(f32, f32)>>,
 }
 
 /// File-overlay partial for [`PruneConfig`]. All fields optional.
@@ -237,41 +237,6 @@ pub struct RankConfig {
     pub near_dup_hamming: u32,
 }
 
-/// Grid lists for `comemory tune`'s deterministic search — the cartesian
-/// product of the four lists is the candidate grid.
-///
-/// File-only (`[tune]` in `config.toml`): no `COMEMORY_TUNE_*` env vars are
-/// offered because a four-list env value is unreadable and error-prone.
-/// Each list must be non-empty, and every value must pass the same bounds
-/// its scalar knob enforces (see `Config::validate`).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TuneConfig {
-    /// RRF fusion constants to sweep; same finite-positive invariant as
-    /// `retrieval.rrf_k`. Default `[20.0, 60.0, 100.0]`.
-    pub rrf_k_grid: Vec<f32>,
-    /// ACT-R decay exponents to sweep; same finite, >= 0 invariant as
-    /// `rank.decay`. Default `[0.3, 0.5, 0.8]`.
-    pub decay_grid: Vec<f64>,
-    /// MMR lambdas to sweep; same `[0.0, 1.0]` invariant as
-    /// `rank.mmr_lambda`. Default `[0.5, 0.7, 0.9]`.
-    pub mmr_lambda_grid: Vec<f64>,
-    /// `(body, tags)` BM25 weight pairs to sweep; same invariants as
-    /// `retrieval.bm25_weights`. Default `[(1.0, 3.0), (1.0, 1.0), (2.0, 1.0)]`.
-    pub bm25_grid: Vec<(f32, f32)>,
-}
-
-impl Default for TuneConfig {
-    /// The M1 3×3×3×3 grid (81 points), bracketing the shipped defaults.
-    fn default() -> Self {
-        Self {
-            rrf_k_grid: vec![20.0, 60.0, 100.0],
-            decay_grid: vec![0.3, 0.5, 0.8],
-            mmr_lambda_grid: vec![0.5, 0.7, 0.9],
-            bm25_grid: vec![(1.0, 3.0), (1.0, 1.0), (2.0, 1.0)],
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PruneConfig {
     pub trash_retention_days: u32,
@@ -317,6 +282,12 @@ pub struct Config {
     /// Grid lists for `comemory tune`. File-only — see [`TuneConfig`].
     #[serde(default)]
     pub tune: TuneConfig,
+    /// Search→edit auto-reinforcement lookback.
+    #[serde(default)]
+    pub reinforce: ReinforceConfig,
+    /// `comemory bandit` apply gate.
+    #[serde(default)]
+    pub bandit: BanditConfig,
     pub output: OutputConfig,
     /// Free-form caller-set hint identifying the embedder that produced the
     /// vectors (e.g. `ollama:nomic-embed-text`). Surfaced verbatim by
@@ -369,6 +340,8 @@ impl Config {
                 superseded_grace_days: default_superseded_grace_days(),
             },
             tune: TuneConfig::default(),
+            reinforce: ReinforceConfig::default(),
+            bandit: BanditConfig::default(),
             output: OutputConfig {
                 json: false,
                 color: "auto".into(),
@@ -466,6 +439,16 @@ impl Config {
             if let Some(v) = pt.bm25_grid {
                 self.tune.bm25_grid = v;
             }
+        }
+        if let Some(pr) = partial.reinforce
+            && let Some(v) = pr.search_edit_days
+        {
+            self.reinforce.search_edit_days = v;
+        }
+        if let Some(pb) = partial.bandit
+            && let Some(v) = pb.enabled
+        {
+            self.bandit.enabled = v;
         }
         self.validate()
     }

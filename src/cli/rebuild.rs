@@ -433,6 +433,16 @@ fn copy_learning_tables_inner(conn: &rusqlite::Connection) -> Result<()> {
              FROM old.query_expansions;",
         )?;
     }
+    if old_table_exists(conn, "bandit_arms")? {
+        conn.execute_batch(
+            "INSERT OR IGNORE INTO main.bandit_arms(\
+                 arm_id, rrf_k, decay, mmr_lambda, bm25_body, bm25_tags, \
+                 alpha, beta, pulls, last_mrr, updated_at) \
+             SELECT arm_id, rrf_k, decay, mmr_lambda, bm25_body, bm25_tags, \
+                 alpha, beta, pulls, last_mrr, updated_at \
+             FROM old.bandit_arms;",
+        )?;
+    }
     Ok(())
 }
 

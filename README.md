@@ -59,7 +59,7 @@ SQLite file is the rebuildable index.
 | 🕸️ **Two-layer code graph** | `index-code` mines **co-change** edges from git history and **import** edges per language, then materializes a weighted **PageRank** onto every symbol. |
 | 🔗 **Versioned code references** | `save --ref-file` / `--ref-symbol` pin a memory to code at a git anchor (blob + commit); `context` flags each link `fresh` / `stale` / `ghost`. See [linking code to memories](docs/guides/linking-code-to-memories.md). |
 | 🧠 **Memory that decays** | ACT-R activation (recency × access count) and Beta-smoothed feedback rerank results the way human memory actually surfaces things. |
-| 📈 **A real learning loop** | Record which hits helped → score recall@k / MRR against a golden set → mine reformulations → grid-search the ranking knobs. All offline, all deterministic. |
+| 📈 **A real learning loop** | Record which hits helped → score recall@k / MRR → mine reformulations → grid-search (`tune`) or Thompson-sample (`bandit`) the ranking knobs. Auto search→edit reinforcement on `index-code`. All offline, all deterministic. |
 | 🌐 **Interactive web viewer** | `comemory serve` ships a loopback-only React SPA (embedded in the binary): orbit a 3D code graph, run natural-language file search, and read source in a browser pane — no Node toolchain at runtime. |
 | 🌳 **AST patterns** | `comemory ast` runs ast-grep structural patterns over Rust, TypeScript, JavaScript, Python, and Go. |
 | 🔌 **Machine-friendly** | `--json` on every command, `score_parts` explainability contract, exit codes per `sysexits.h`. |
@@ -177,7 +177,7 @@ layer; a SimHash near-dup check and `--supersedes` keep the store tidy.
 **Code search** blends weighted BM25 over identifiers/snippets/paths with an
 optional BYO-vector ANN leg, reranked by four graph priors (PageRank, recency,
 working-set affinity, feedback), every hit carrying a `score_parts` breakdown.
-A deterministic **learning loop** (`feedback → eval → mine → tune`) measures and
+A deterministic **learning loop** (`feedback → eval → mine → tune|bandit`) measures and
 improves ranking offline.
 
 Full data model, save flow, retrieval pipeline, and graph mechanics:
@@ -199,6 +199,7 @@ Full data model, save flow, retrieval pipeline, and graph mechanics:
 | `comemory eval` | Score retrieval quality (recall@k, MRR) against a golden set |
 | `comemory mine` | Distill failed→successful query rewordings into expansions (`--apply`) |
 | `comemory tune` | Grid-search ranking knobs against the golden set (`--apply` writes `config.toml`) |
+| `comemory bandit` | Thompson-sample ranking knobs (`--apply` writes when the sample beats baseline) |
 | `comemory index-code` | Walk a repo, extract symbols, mine the co-change/import graph, run PageRank |
 | `comemory ingest-code` | Read pre-embedded JSONL from stdin into the code index |
 | `comemory graph` | Export the code-connection graph as JSON, Graphviz DOT, or interactive HTML |
