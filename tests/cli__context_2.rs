@@ -60,10 +60,17 @@ fn seed_many(home: &TempDir, n: usize) {
     }
 }
 
+/// Drive `context --json` with access tracking off so multi-call pagination
+/// harnesses do not mutate ACT-R counters between pages (same hook as
+/// `tests/cli__search.rs::search_json`).
 fn context_json(home: &TempDir, extra: &[&str]) -> Value {
     let mut args = vec!["context", "advisory locking", "--json"];
     args.extend_from_slice(extra);
-    let out = bin(home).args(&args).assert().success();
+    let out = bin(home)
+        .env("COMEMORY_DISABLE_ACCESS_TRACKING", "true")
+        .args(&args)
+        .assert()
+        .success();
     let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
     serde_json::from_str(&stdout).unwrap_or_else(|e| panic!("json ({e}): {stdout}"))
 }
