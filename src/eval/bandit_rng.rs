@@ -26,11 +26,17 @@ impl SplitMix64 {
 }
 
 /// Sample Beta(α, β) via two Gamma(shape, 1) draws (Marsaglia & Tsang).
+/// Always returns a finite value in `[0.0, 1.0]` (falls back to `0.5`).
 pub(crate) fn sample_beta(rng: &mut SplitMix64, alpha: f64, beta: f64) -> f64 {
-    let x = sample_gamma(rng, alpha);
-    let y = sample_gamma(rng, beta);
+    let x = sample_gamma(rng, alpha.max(f64::MIN_POSITIVE));
+    let y = sample_gamma(rng, beta.max(f64::MIN_POSITIVE));
     let s = x + y;
-    if s <= 0.0 { 0.5 } else { x / s }
+    let out = if s.is_finite() && s > 0.0 { x / s } else { 0.5 };
+    if out.is_finite() {
+        out.clamp(0.0, 1.0)
+    } else {
+        0.5
+    }
 }
 
 fn sample_gamma(rng: &mut SplitMix64, shape: f64) -> f64 {
