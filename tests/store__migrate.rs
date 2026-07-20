@@ -175,6 +175,15 @@ fn v10_creates_bandit_arms_table() {
             "updated_at",
         ]
     );
+    let v: String = conn
+        .query_row(
+            "SELECT value FROM schema_meta WHERE key = 'version'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("schema version");
+    assert_eq!(v, migrate::CURRENT_VERSION);
+    // Pin: bump this when CURRENT_VERSION advances past v10.
     assert_eq!(migrate::CURRENT_VERSION, "10");
 }
 
