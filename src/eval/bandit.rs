@@ -13,7 +13,7 @@ use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 
 use crate::config::Config;
-use crate::eval::bandit_rng::{sample_beta, SplitMix64};
+use crate::eval::bandit_rng::{SplitMix64, sample_beta};
 use crate::eval::golden::GoldenPair;
 use crate::eval::runner;
 use crate::eval::tune::{self, TuneCandidate};
