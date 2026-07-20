@@ -153,6 +153,32 @@ fn v9_creates_code_ref_table_with_expected_columns() {
 }
 
 #[test]
+fn v10_creates_bandit_arms_table() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("comemory.db");
+    let mut conn = connection::open(&path).expect("open");
+    migrate::run(&mut conn).expect("migrate");
+
+    assert_eq!(
+        column_names(&conn, "bandit_arms"),
+        [
+            "alpha",
+            "arm_id",
+            "beta",
+            "bm25_body",
+            "bm25_tags",
+            "decay",
+            "last_mrr",
+            "mmr_lambda",
+            "pulls",
+            "rrf_k",
+            "updated_at",
+        ]
+    );
+    assert_eq!(migrate::CURRENT_VERSION, "10");
+}
+
+#[test]
 fn v5_adds_learning_tables_drops_search_stats_and_rehashes() {
     // Build a current database.
     let dir = tempdir().expect("tempdir");
