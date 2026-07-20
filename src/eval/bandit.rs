@@ -13,7 +13,7 @@ use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 
 use crate::config::Config;
-use crate::eval::bandit_rng::{SplitMix64, sample_beta};
+use crate::eval::bandit_rng::{sample_beta, SplitMix64};
 use crate::eval::golden::GoldenPair;
 use crate::eval::runner;
 use crate::eval::tune::{self, TuneCandidate};
@@ -167,6 +167,7 @@ pub fn thompson_sample(arms: &[Arm], seed: u64) -> Result<&Arm> {
     let mut best_s = f64::NEG_INFINITY;
     for (i, arm) in arms.iter().enumerate() {
         let s = sample_beta(&mut rng, arm.alpha, arm.beta);
+        // sample_beta already returns finite; 0.5 == Beta(1,1) mean if not.
         let s = if s.is_finite() { s } else { 0.5 };
         if s > best_s
             || (s == best_s
@@ -218,9 +219,12 @@ pub fn run_bandit(
     }
     let at = memory_row::iso_format(OffsetDateTime::now_utc())?;
     seed_arms(conn, cfg, &at)?;
-    let ranked = load_ranked(conn, cfg)?;
-    let seed = sample_seed(pairs.len(), ranked.len());
-    let proposed = thompson_sample(&ranked, seed)?.candidate;
+    // Drop the ranked borrow before confirm: run_eval needs &mut Connection.
+    let proposed = {
+        let ranked = load_ranked(conn, cfg)?;
+        let seed = sample_seed(pairs.len(), ranked.len());
+        thompson_sample(&ranked, seed)?.candidate
+    };
 
     let baseline = runner::run_eval(cfg, conn, pairs, k)?;
     let cand = runner::run_eval(&tune::with_candidate(cfg, &proposed), conn, pairs, k)?;
@@ -237,6 +241,7 @@ pub fn run_bandit(
         tune::apply_to_config_file(config_path, &proposed)?;
     }
 
+    // Reload so the report's ranked posteriors include this run's outcome.
     Ok(BanditReport {
         k,
         golden_pairs: pairs.len(),
