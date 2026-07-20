@@ -18,7 +18,8 @@ comemory's settings are layered: built-in defaults → an optional `config.toml`
 | `COMEMORY_RETRIEVAL_BM25_WEIGHTS` | `"body,tags"` BM25 column weights for `memory_fts` (both finite ≥ 0, at least one > 0). | `1.0,3.0` |
 | `COMEMORY_RETRIEVAL_CODE_BM25_WEIGHTS` | `"symbol,snippet,path_tokens"` BM25 column weights for `code_fts` (all finite ≥ 0, at least one > 0). | `2.0,1.0,1.5` |
 | `COMEMORY_LEARNING_RETENTION_DAYS` | `comemory gc` retention window (days) for raw `retrieval_log` + `feedback_events` rows; aggregated `feedback` counters and mined `query_expansions` never expire. | `90` |
-| `COMEMORY_TUNE_MIN_GOLDEN` | Test hook lowering `comemory tune`'s minimum-golden-pairs floor; not a tuning knob. | `10` |
+| `COMEMORY_TUNE_MIN_GOLDEN` | Test hook lowering `comemory tune` / `comemory bandit` minimum-golden-pairs floor; not a tuning knob. | `10` |
+| `COMEMORY_REINFORCE_SEARCH_EDIT_DAYS` | Lookback (days) for search→edit auto-reinforcement: a memory that appeared on a recent `search`/`context` page earns `auto_search_edit` provenance when a referenced file is touched. Must be `≥ 1`. | `7` |
 | `COMEMORY_GIT_AUTO_SYNC` | `true`/`1` to enable best-effort git commit + push after a save. | `false` |
 | `COMEMORY_EMBED_HINT` | Free-form identifier of the embedder you used (e.g. `ollama:nomic-embed-text`). Surfaced by `comemory doctor`; never consumed as a switch. | unset |
 | `COMEMORY_RANK_DECAY` | ACT-R decay exponent `d` in `ln(n) − d·ln(days+1)`. Must be ≥ 0. Higher → older memories decay faster. | `0.5` |
@@ -41,7 +42,9 @@ Set these in `config.toml`; they have **no** environment override.
 | Knob | Purpose | Default |
 |------|---------|---------|
 | `indexing.auto_reindex_threshold_ms` | Debounce (ms) that suppresses spawning bursts of `lazy` auto-reindex processes during rapid successive searches: a new background `index-code` is only spawned if at least this long elapsed since the last trigger. | `200` |
-| `tune.rrf_k_grid` / `tune.decay_grid` / `tune.mmr_lambda_grid` / `tune.bm25_grid` | The `[tune]` grid-search axes consumed by `comemory tune`. | — |
+| `tune.rrf_k_grid` / `tune.decay_grid` / `tune.mmr_lambda_grid` / `tune.bm25_grid` | The `[tune]` grid-search axes consumed by `comemory tune` and `comemory bandit`. | — |
+| `bandit.enabled` | When `false`, `comemory bandit --apply` refuses; report still works. | `true` |
+| `reinforce.search_edit_days` | File overlay for the search→edit lookback (same as `COMEMORY_REINFORCE_SEARCH_EDIT_DAYS`). | `7` |
 
 ## Vector dimensions (not configurable)
 

@@ -169,6 +169,9 @@ impl Config {
         if let Some(v) = env_parse::<u32>("COMEMORY_PRUNE_SUPERSEDED_GRACE_DAYS")? {
             self.prune.superseded_grace_days = v;
         }
+        if let Some(v) = env_parse::<u32>("COMEMORY_REINFORCE_SEARCH_EDIT_DAYS")? {
+            self.reinforce.search_edit_days = v;
+        }
         // The `[tune]` grid lists deliberately have NO env equivalents: a
         // four-list env value ("20,60,100" × 4 vars, or worse, one var with
         // semicolons) is unreadable and easy to misquote. Set them in

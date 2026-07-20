@@ -85,7 +85,7 @@ fn bench_cochange(c: &mut Criterion) {
     let imports = seed_repo_symbols(&conn, "bench", &root);
     group.bench_function("materialize", |b| {
         b.iter(|| {
-            materialize::materialize(&mut conn, &root, "bench", &imports).unwrap();
+            materialize::materialize(&mut conn, &root, "bench", &imports, 7).unwrap();
         });
     });
     group.finish();

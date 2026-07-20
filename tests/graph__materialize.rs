@@ -77,7 +77,7 @@ fn materialize_writes_edges_ranks_and_cursor() {
     let repo_root = build_repo(workspace.path());
     let mut conn = seed_symbols(&home, "r", &["a.rs", "b.rs", "c.rs"]);
 
-    materialize(&mut conn, &repo_root, "r", &imports_a_to_b()).expect("materialize");
+    materialize(&mut conn, &repo_root, "r", &imports_a_to_b(), 7).expect("materialize");
 
     let weight: i64 = conn
         .query_row(
@@ -126,9 +126,9 @@ fn materialize_accumulates_cochange_incrementally() {
     let mut conn = seed_symbols(&home, "r", &["a.rs", "b.rs", "c.rs"]);
     let no_imports = BTreeMap::new();
 
-    materialize(&mut conn, &repo_root, "r", &no_imports).expect("first run");
+    materialize(&mut conn, &repo_root, "r", &no_imports, 7).expect("first run");
     // No new commits: the cursor short-circuits mining, weight stays 2.
-    materialize(&mut conn, &repo_root, "r", &no_imports).expect("no-op run");
+    materialize(&mut conn, &repo_root, "r", &no_imports, 7).expect("no-op run");
     let weight: i64 = conn
         .query_row(
             "SELECT weight FROM edges WHERE src_id='file:r:a.rs' \
@@ -148,7 +148,7 @@ fn materialize_accumulates_cochange_incrementally() {
         ],
         "c3",
     );
-    materialize(&mut conn, &repo_root, "r", &no_imports).expect("incremental run");
+    materialize(&mut conn, &repo_root, "r", &no_imports, 7).expect("incremental run");
     let weight: i64 = conn
         .query_row(
             "SELECT weight FROM edges WHERE src_id='file:r:a.rs' \
@@ -181,7 +181,7 @@ fn materialize_resets_cochange_weights_when_cursor_is_lost() {
     let mut conn = seed_symbols(&home, "r", &["a.rs", "b.rs", "c.rs"]);
     let no_imports = BTreeMap::new();
 
-    materialize(&mut conn, &repo_root, "r", &no_imports).expect("first run");
+    materialize(&mut conn, &repo_root, "r", &no_imports, 7).expect("first run");
     // Corrupt the cursor to a well-formed oid that names no object —
     // the same observable state a rebase/amend + gc leaves behind.
     conn.execute(
@@ -191,7 +191,7 @@ fn materialize_resets_cochange_weights_when_cursor_is_lost() {
     )
     .expect("corrupt cursor");
 
-    materialize(&mut conn, &repo_root, "r", &no_imports).expect("lost-cursor run");
+    materialize(&mut conn, &repo_root, "r", &no_imports, 7).expect("lost-cursor run");
     let weight: i64 = conn
         .query_row(
             "SELECT weight FROM edges WHERE src_id='file:r:a.rs' \
@@ -222,9 +222,9 @@ fn materialize_refreshes_imports_as_state_not_accumulation() {
     let repo_root = build_repo(workspace.path());
     let mut conn = seed_symbols(&home, "r", &["a.rs", "b.rs", "c.rs"]);
 
-    materialize(&mut conn, &repo_root, "r", &imports_a_to_b()).expect("first run");
+    materialize(&mut conn, &repo_root, "r", &imports_a_to_b(), 7).expect("first run");
     // Same imports again: still exactly one edge (INSERT OR IGNORE).
-    materialize(&mut conn, &repo_root, "r", &imports_a_to_b()).expect("repeat run");
+    materialize(&mut conn, &repo_root, "r", &imports_a_to_b(), 7).expect("repeat run");
     let count: i64 = conn
         .query_row(
             "SELECT count(*) FROM edges WHERE src_id='file:r:a.rs' AND rel='imports'",
@@ -236,7 +236,7 @@ fn materialize_refreshes_imports_as_state_not_accumulation() {
 
     // a.rs re-indexed with its import dropped: the old edge must vanish.
     let dropped = BTreeMap::from([("a.rs".to_string(), Vec::<String>::new())]);
-    materialize(&mut conn, &repo_root, "r", &dropped).expect("dropped-import run");
+    materialize(&mut conn, &repo_root, "r", &dropped, 7).expect("dropped-import run");
     let count: i64 = conn
         .query_row(
             "SELECT count(*) FROM edges WHERE src_id='file:r:a.rs' AND rel='imports'",
@@ -257,7 +257,7 @@ fn materialize_without_indexed_symbols_is_a_noop_and_keeps_no_cursor() {
     let repo_root = build_repo(workspace.path());
     let mut conn = connection::open(home.path().join("comemory.db")).expect("open db");
 
-    materialize(&mut conn, &repo_root, "r", &BTreeMap::new()).expect("empty-repo run");
+    materialize(&mut conn, &repo_root, "r", &BTreeMap::new(), 7).expect("empty-repo run");
 
     let edges: i64 = conn
         .query_row("SELECT count(*) FROM edges", [], |r| r.get(0))
@@ -283,7 +283,7 @@ fn materialize_on_commitless_repo_errors_and_rolls_back() {
     git_repo::init_repo(&repo_root);
     let mut conn = seed_symbols(&home, "r", &["a.rs"]);
 
-    let err = materialize(&mut conn, &repo_root, "r", &BTreeMap::new());
+    let err = materialize(&mut conn, &repo_root, "r", &BTreeMap::new(), 7);
     assert!(
         err.is_err(),
         "unborn HEAD must surface as Err for the caller's warn path"

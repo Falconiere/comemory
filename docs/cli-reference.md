@@ -33,6 +33,7 @@ Commands:
   eval           Score retrieval quality against a golden set (recall@k, MRR)
   mine           Mine reformulation pairs from the query log into term-expansion mappings (report only; `--apply` rebuilds `query_expansions`)
   tune           Grid-search blend weights against the golden set (report only; `--apply` writes the winner into config.toml)
+  bandit         Thompson-sample blend knobs against the golden set (report only; `--apply` writes when the sample beats baseline)
   doctor         Report on the data directory and SQLite mirror health
   index-code     Walk a repo, extract symbols, and upsert into the code index
   ingest-code    Read pre-embedded JSONL rows from stdin and ingest them into the code index (`code_symbols` + `code_fts` + `code_vec`)

@@ -291,15 +291,21 @@ pair that co-occurs in a commit:
    `last_accessed`);
 3. a confidence-gated Bayesian `used` increment that fires **once**, the
    first time the edge weight crosses the threshold (`≥ 2`), writing a
-   `feedback_events` row tagged `provenance = auto_coactivation` under a
-   sentinel query id — excluded from golden-set harvest.
+   `feedback_events` row under a sentinel query id — excluded from
+   golden-set harvest. Provenance is classified at mint time:
+   - `auto_search_edit` / `auto-search-edit` when the memory also appeared
+     in a recent `retrieval_log` page (`source` = `search` or `context`,
+     within `reinforce.search_edit_days`, default 7; unscoped
+     `repo IS NULL` rows still credit);
+   - otherwise `auto_coactivation` / `auto-coactivation`.
 
 The whole reward runs inside `materialize`'s transaction and is idempotent
 via the `repo_marker.last_mined_commit` cursor (read before, advanced after,
 in the same transaction), so reruns over already-mined commits make every
 delta zero and never double-count. Migration `0008` adds the `co_activated`
-edge kind and the `feedback_events.provenance` column; `comemory rebuild`
-preserves this earned state rather than discarding it.
+edge kind and the `feedback_events.provenance` column; `0010` adds
+`bandit_arms` for the eval-gated online bandit (`comemory bandit`).
+`comemory rebuild` preserves this earned state rather than discarding it.
 
 **Phase 0:** `comemory context` bumps the code-ref `access_count` for its
 resolved refs (parity with `search-code`'s existing access tracking), so the

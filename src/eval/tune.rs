@@ -7,7 +7,7 @@ use rusqlite::Connection;
 use serde::Serialize;
 
 use crate::config::Config;
-use crate::config::file::TuneConfig;
+use crate::config::TuneConfig;
 use crate::eval::golden::GoldenPair;
 use crate::eval::runner::{self, EvalReport};
 use crate::prelude::*;
@@ -74,11 +74,21 @@ impl TuneReport {
         let Ok(w) = self.winner() else {
             return false;
         };
-        match w.mrr.total_cmp(&self.baseline.mrr) {
-            std::cmp::Ordering::Greater => true,
-            std::cmp::Ordering::Equal => w.recall_at_k > self.baseline.recall_at_k,
-            std::cmp::Ordering::Less => false,
-        }
+        beats_baseline(
+            w.mrr,
+            w.recall_at_k,
+            self.baseline.mrr,
+            self.baseline.recall_at_k,
+        )
+    }
+}
+
+/// Strict improvement predicate shared by `tune --apply` and `bandit --apply`.
+pub fn beats_baseline(cand_mrr: f64, cand_recall: f64, base_mrr: f64, base_recall: f64) -> bool {
+    match cand_mrr.total_cmp(&base_mrr) {
+        std::cmp::Ordering::Greater => true,
+        std::cmp::Ordering::Equal => cand_recall > base_recall,
+        std::cmp::Ordering::Less => false,
     }
 }
 
@@ -118,7 +128,7 @@ pub fn grid(t: &TuneConfig) -> Vec<TuneCandidate> {
 }
 
 /// Clone `base` with the candidate's four knobs swapped in.
-fn with_candidate(base: &Config, c: &TuneCandidate) -> Config {
+pub(crate) fn with_candidate(base: &Config, c: &TuneCandidate) -> Config {
     let mut cfg = base.clone();
     cfg.retrieval.rrf_k = c.rrf_k;
     cfg.retrieval.bm25_weights = c.bm25_weights;

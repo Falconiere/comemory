@@ -4,9 +4,13 @@ Retrieval quality is something you measure, not guess at. `comemory` ships a
 deterministic learning loop you drive from the command line:
 
 ```
-measure  →  distill  →  tune  →  re-measure
- eval        mine        tune       eval
+measure  →  distill  →  tune / bandit  →  re-measure
+ eval        mine      tune | bandit       eval
 ```
+
+Auto-reinforcement also runs inside `index-code`: commit co-activation (and
+search→edit when a memory was recently returned by `search`/`context`) mint
+implicit `used` feedback without touching the golden set.
 
 This guide walks that loop end to end: build a golden set, score it with
 `comemory eval`, fold harvested reformulations into the lexical fallback with
@@ -159,6 +163,18 @@ comemory tune --golden golden.yaml --golden-only --k 5 --json
 
 # Write the winning knobs into config.toml (atomic; comments are dropped)
 comemory tune --golden golden.yaml --apply
+```
+
+### Online bandit (same knobs, one sample)
+
+`comemory bandit` Thompson-samples one arm from the same `[tune]` grid,
+confirms it against the golden set, and with `--apply` writes `config.toml`
+only when that sample strictly beats baseline (same predicate as `tune`).
+Set `[bandit] enabled = false` to keep report-only mode from applying.
+
+```bash
+comemory bandit
+comemory bandit --golden golden.yaml --apply --json
 ```
 
 The search space is the `[tune]` grid in `config.toml`: `tune.rrf_k_grid`,

@@ -19,12 +19,21 @@ use crate::store::memory_row;
 /// `0008_v8_reinforcement.sql`.
 pub(crate) const PROV_AUTO_COACTIVATION: &str = "auto_coactivation";
 
+/// `provenance` for search→edit credit: memory appeared in a recent
+/// `retrieval_log` page *and* a referenced file was touched in the mined
+/// commits. Still excluded from golden harvest via the sentinel query id.
+pub(crate) const PROV_AUTO_SEARCH_EDIT: &str = "auto_search_edit";
+
 /// Sentinel `query_id` stamped on co-activation `feedback_events` rows.
 /// Deliberately NOT a real `q-<yyyymmdd>-<8hex>` id: `eval::golden::harvest`
 /// INNER JOINs `feedback_events.query_id = retrieval_log.query_id`, and this
 /// sentinel has no `retrieval_log` row, so an auto-reinforced memory can
 /// never mint a golden pair — closing the confirmation loop.
 pub(crate) const COACTIVATION_QUERY_ID: &str = "auto-coactivation";
+
+/// Sentinel `query_id` for search→edit implicit `used` rows. Same golden
+/// exclusion contract as [`COACTIVATION_QUERY_ID`].
+pub(crate) const SEARCH_EDIT_QUERY_ID: &str = "auto-search-edit";
 
 /// `q-<yyyymmdd>-<8hex>`: day-sortable, collision-resistant query id
 /// derived from the query text and a nanosecond timestamp. Not a content
@@ -109,27 +118,28 @@ fn insert_event(
     Ok(())
 }
 
-/// Mint one implicit `used` for `id`, tagged `provenance='auto_coactivation'`
-/// under the sentinel [`COACTIVATION_QUERY_ID`]: bumps the `feedback`
-/// counter via the shared [`upsert_used`] and writes a memory-target
-/// `feedback_events` row carrying the provenance. Composes inside the
+/// Mint one implicit `used` for `id` with caller-chosen `provenance` and
+/// sentinel `query_id`: bumps the `feedback` counter via [`upsert_used`] and
+/// writes a memory-target `feedback_events` row. Composes inside the
 /// caller's transaction (the co-activation reward runs within materialize's),
 /// so it takes a bare [`Connection`] rather than a [`StatsDb`].
 ///
 /// `at` is the run timestamp (already `iso_format`-shaped by the caller).
-/// The provenance column is set explicitly here; the manual `comemory
-/// feedback` path keeps writing the `'manual'` default via [`insert_event`].
-pub(crate) fn record_implicit_used(conn: &Connection, id: &str, at: &str) -> Result<()> {
+/// Callers pass [`PROV_AUTO_COACTIVATION`] with [`COACTIVATION_QUERY_ID`] or
+/// [`PROV_AUTO_SEARCH_EDIT`] with [`SEARCH_EDIT_QUERY_ID`]. The manual
+/// `comemory feedback` path keeps writing the `'manual'` default via
+/// [`insert_event`].
+pub(crate) fn record_implicit_used(
+    conn: &Connection,
+    id: &str,
+    at: &str,
+    provenance: &str,
+    query_id: &str,
+) -> Result<()> {
     conn.execute(
         "INSERT INTO feedback_events(query_id, memory_id, verdict, at, target_kind, provenance)
          VALUES (?1, ?2, 'used', ?3, ?4, ?5)",
-        rusqlite::params![
-            COACTIVATION_QUERY_ID,
-            id,
-            at,
-            crate::stats::target::MEMORY,
-            PROV_AUTO_COACTIVATION
-        ],
+        rusqlite::params![query_id, id, at, crate::stats::target::MEMORY, provenance],
     )?;
     upsert_used(conn, id, at)?;
     Ok(())

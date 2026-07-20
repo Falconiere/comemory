@@ -177,6 +177,12 @@ impl Config {
         check_grid("tune.bm25_grid", &self.tune.bm25_grid, |(wb, wt)| {
             check_bm25_weights(&[wb, wt])
         })?;
+        let sed = self.reinforce.search_edit_days;
+        if sed < 1 {
+            return Err(Error::Config(format!(
+                "invalid reinforce.search_edit_days={sed} (env COMEMORY_REINFORCE_SEARCH_EDIT_DAYS): must be >= 1"
+            )));
+        }
         Ok(self)
     }
 }
