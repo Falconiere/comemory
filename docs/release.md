@@ -56,12 +56,16 @@ push to main ──> release-plz ──> [release PR] ──merge──> push vX
   gh variable set RELEASE_PLZ_ENABLED --body true --repo Falconiere/comemory
   ```
 - [ ] The `Falconiere/homebrew-tap` repo exists.
-- [ ] The `HOMEBREW_TAP_TOKEN` secret is set on `Falconiere/comemory`:
+- [ ] The homebrew-publish GitHub App (`APP_ID` + `APP_PRIVATE_KEY` secrets on
+  `Falconiere/comemory`) is installed on `Falconiere/homebrew-tap` with
+  **Contents: read and write**. The `publish-homebrew-formula` job mints a
+  short-lived installation token from it via `actions/create-github-app-token`
+  — no expiring PAT to rotate. Verify the secrets exist:
   ```bash
-  gh secret list --repo Falconiere/comemory | grep HOMEBREW_TAP_TOKEN
+  gh secret list --repo Falconiere/comemory | grep -E 'APP_ID|APP_PRIVATE_KEY'
   ```
-  If missing, create a fine-scoped PAT (`contents: write` on
-  `Falconiere/homebrew-tap` only) and add it as a repo secret.
+  If the App is not installed on the tap, the job fails with "not installed";
+  install it from the App's settings page.
 - [ ] `cargo install cargo-edit --locked` (only for the manual `just release`
   fallback, which uses `cargo set-version`).
 - [ ] *(Optional, for signed releases)* Set up the minisign keypair per
@@ -233,10 +237,10 @@ re-tag once `main` is fixed.
 | release PR never opens | `RELEASE_PLZ_ENABLED` unset, or the `release-plz-pr` job failed | Check the variable is `true`; read the Release-plz workflow logs |
 | PR merged but `release.yml` never runs | tag was pushed with the default `GITHUB_TOKEN` (not the PAT) | Confirm `RELEASE_PLZ_TOKEN` is set and the `release` job uses it |
 | `plan` job fails on "Validate release preflight" | One of the 4 hard checks failed | Read the `validate-release` step log; the failing check is named |
-| `host` job fails mid-upload | cargo-dist couldn't upload to the release (network, perms) | Retry the workflow run; if it persists, check `HOMEBREW_TAP_TOKEN` |
+| `host` job fails mid-upload | cargo-dist couldn't upload to the release (network, perms) | Retry the workflow run; if it persists, check the job's `GITHUB_TOKEN` permissions |
 | `release-finalize.yml` smoke test fails | The tarball is malformed (missing binary, too small) | Delete the release, investigate the build artifacts (downloaded to the `artifacts-*` workflow run artifacts) |
 | `release-finalize.yml` signs step warns "minisign not installed" | Maintainer hasn't configured signing | Expected — release is published unsigned. To enable, see one-time setup |
-| Homebrew tap didn't update | Stable tag was pushed but the formula didn't land | Re-run the `publish-homebrew-formula` job from the Actions UI; check the PAT scopes |
+| Homebrew tap didn't update | Stable tag was pushed but the formula didn't land | Re-run the `publish-homebrew-formula` job from the Actions UI; confirm the GitHub App is installed on the tap with Contents: write |
 
 ---
 
