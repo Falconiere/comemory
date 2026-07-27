@@ -37,7 +37,7 @@ open the result:
   "tier": 1,
   "score_parts": {
     "rrf": 1.0, "activation": 1.2, "feedback": 1.0,
-    "quality": 1.1, "supersede": 1.0, "final_score": 0.83
+    "quality": 1.1, "supersede": 1.0, "rank": 1.1386, "final_score": 0.83
   },
   "path": "/Users/me/.comemory/memories/a1b2c3d4-postgres-analytics.md",
   "title": "Use Postgres for analytics rollups",
@@ -64,6 +64,38 @@ keep their meaning. The new fields are:
 `score_parts` remains the stable explainability contract (`comemory tune`
 reads it); see [architecture](../architecture.md) for what each multiplier
 means.
+
+### Reading `score_parts.rank`
+
+`score_parts.rank` is the memory-graph PageRank prior: how *central* a
+memory is in your own notes, independent of the query. A memory that later
+memories build on — through `--supersedes`, a hand-edited
+`relations.derived_from`, or simply by citing the same file or symbol —
+accumulates centrality and gets a boost; an orphan note does not. The score
+lives in `memories.rank_score` and is recomputed best-effort after every
+`save`, `delete`, and `rebuild`, so you never run anything by hand.
+
+The multiplier is pool-relative: `1 + 0.2·ln(1 + raw/median)` against the
+median of the *distinct* `rank_score`s among the candidates for that query,
+then clamped by `COMEMORY_RANK_PRIOR_CLAMP`. Relative rather than absolute
+because PageRank scores shrink as `1/n` — a fixed reference would make the
+same memory score differently purely as your corpus grew.
+
+Two situations make it exactly neutral, which is usually what you are
+seeing if every hit shows the same value:
+
+- **`rank` is exactly `1.0` for every hit.** No recompute has run yet, so
+  every `rank_score` is still the `0.0` default. Upgraded databases start
+  here; the next `save` or `rebuild` fixes it.
+- **`rank` is `1.1386` for every hit.** The recompute ran, but your corpus
+  has no memory→memory relations and no shared code references, so PageRank
+  is uniform and every candidate sits exactly at the median. Start using
+  `--supersedes` and backticked `repo:path` references and the values will
+  spread out.
+
+Because both regimes hand every candidate the *same* multiplier, neither
+can reorder a result set — which is why enabling this prior left every
+recall and MRR number unchanged.
 
 ---
 
@@ -197,7 +229,7 @@ live in the [configuration env table](../configuration.md)):
 | Knob | Env override | Grid knob | What it moves |
 |------|--------------|-----------|---------------|
 | ACT-R decay | `COMEMORY_RANK_DECAY` | `tune.decay_grid` | how fast older memories fade |
-| Prior clamp | `COMEMORY_RANK_PRIOR_CLAMP` | — | `lo,hi` bounds on activation/feedback/quality multipliers |
+| Prior clamp | `COMEMORY_RANK_PRIOR_CLAMP` | — | `lo,hi` bounds on the activation/feedback/quality/rank multipliers |
 | MMR lambda | `COMEMORY_RANK_MMR_LAMBDA` | `tune.mmr_lambda_grid` | relevance ↔ diversity in `[0,1]` |
 | RRF constant | `COMEMORY_RETRIEVAL_RRF_K` | `tune.rrf_k_grid` | fusion constant blending FTS5 + vector ranks |
 | Memory BM25 weights | `COMEMORY_RETRIEVAL_BM25_WEIGHTS` | `tune.bm25_grid` | `body,tags` column weights |

@@ -48,6 +48,17 @@ fn supersedes_edge_count(home: &tempfile::TempDir, src: &str, dst: &str) -> i64 
     .expect("count edges")
 }
 
+/// Read `memories.rank_score` for `id` from the live DB under `home`.
+fn rank_score(home: &tempfile::TempDir, id: &str) -> f64 {
+    let conn = connection::open(home.path().join("comemory.db")).expect("open db");
+    conn.query_row(
+        "SELECT rank_score FROM memories WHERE id = ?1",
+        rusqlite::params![id],
+        |r| r.get(0),
+    )
+    .expect("rank_score row")
+}
+
 /// Run `comemory --json search <query>` under `home` and return the `hits`
 /// array.
 fn search_hits(home: &tempfile::TempDir, query: &str) -> Vec<serde_json::Value> {
@@ -278,6 +289,31 @@ fn save_rejects_self_supersede() {
         supersedes_edge_count(&home, &own_id, &own_id),
         0,
         "self-supersede must not write an edge",
+    );
+}
+
+#[test]
+fn save_refreshes_memory_rank_scores() {
+    // AC-7. `save` recomputes memory-graph PageRank once its mirror
+    // transaction has committed, so both memories leave the save with a
+    // nonzero rank_score — and the superseded one, which holds the graph's
+    // only inlink, outranks the replacement that points at it.
+    let home = tempdir().expect("tempdir");
+    let (old_id, new_id, _) = save_supersede_pair(&home);
+
+    let old_rank = rank_score(&home, &old_id);
+    let new_rank = rank_score(&home, &new_id);
+    assert!(
+        old_rank > 0.0,
+        "the save trigger must score the superseded memory, got {old_rank}",
+    );
+    assert!(
+        new_rank > 0.0,
+        "the save trigger must score the replacement, got {new_rank}",
+    );
+    assert!(
+        old_rank > new_rank,
+        "PageRank mass flows to the memory being built upon: {old_rank} vs {new_rank}",
     );
 }
 
