@@ -8,6 +8,7 @@ use crate::eval::golden::GoldenPair;
 use crate::eval::metrics;
 use crate::prelude::*;
 use crate::retrieval::pipeline::{self, SearchOptions};
+use crate::retrieval::scope::Filters;
 
 /// Per-query eval outcome, serialized into the `--json` report.
 #[derive(Debug, Serialize)]
@@ -54,33 +55,10 @@ pub fn run_eval(
     let mut recall_sum = 0.0;
     let mut rr_sum = 0.0;
     for pair in pairs {
-        let run = pipeline::search(
-            cfg,
-            conn,
-            &pair.query,
-            None,
-            pair.repo.as_deref(),
-            pair.kind.as_deref(),
-            SearchOptions {
-                track: false,
-                source: crate::stats::source::SEARCH,
-                // Eval scores the unpaginated first page (the historical
-                // `top_k` cut), so metrics stay comparable across runs.
-                window: pipeline::PageWindow::top_k(cfg),
-            },
-        )?;
-        let returned: Vec<String> = run.hits.iter().map(|h| h.memory_id.clone()).collect();
-        let recall = metrics::recall_at_k(&pair.relevant, &returned, k);
-        let rank = metrics::first_hit_rank(&pair.relevant, &returned);
-        recall_sum += recall;
-        rr_sum += rank.map_or(0.0, |r| 1.0 / r as f64);
-        results.push(QueryResult {
-            query: pair.query.clone(),
-            relevant: pair.relevant.clone(),
-            returned,
-            rank_of_first_hit: rank,
-            recall,
-        });
+        let scored = score_pair(cfg, conn, pair, k)?;
+        recall_sum += scored.recall;
+        rr_sum += scored.rank_of_first_hit.map_or(0.0, |r| 1.0 / r as f64);
+        results.push(scored);
     }
     let n = pairs.len().max(1) as f64;
     results.sort_by(|a, b| {
@@ -94,5 +72,37 @@ pub fn run_eval(
         mrr: rr_sum / n,
         queries: pairs.len(),
         results,
+    })
+}
+
+/// Replay one golden pair through the pipeline (unscoped in time — eval
+/// measures the present-day corpus) and score it against its relevant ids.
+fn score_pair(cfg: &Config, conn: &Connection, pair: &GoldenPair, k: usize) -> Result<QueryResult> {
+    let run = pipeline::search(
+        cfg,
+        conn,
+        &pair.query,
+        None,
+        Filters {
+            repo: pair.repo.as_deref(),
+            kind: pair.kind.as_deref(),
+            ..Filters::none()
+        },
+        SearchOptions {
+            track: false,
+            source: crate::stats::source::SEARCH,
+            // Eval scores the unpaginated first page (the historical
+            // `top_k` cut), so metrics stay comparable across runs.
+            window: pipeline::PageWindow::top_k(cfg),
+        },
+    )?;
+    let returned: Vec<String> = run.hits.iter().map(|h| h.memory_id.clone()).collect();
+    let recall = metrics::recall_at_k(&pair.relevant, &returned, k);
+    Ok(QueryResult {
+        rank_of_first_hit: metrics::first_hit_rank(&pair.relevant, &returned),
+        query: pair.query.clone(),
+        relevant: pair.relevant.clone(),
+        returned,
+        recall,
     })
 }

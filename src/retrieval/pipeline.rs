@@ -9,6 +9,7 @@ use crate::config::Config;
 use crate::prelude::*;
 use crate::retrieval::rerank::Reranked;
 use crate::retrieval::router::CANDIDATE_POOL;
+use crate::retrieval::scope::Filters;
 use crate::retrieval::{diversify, rerank, router};
 use crate::store::memory_row;
 
@@ -120,27 +121,31 @@ pub struct SearchRun {
     pub total: usize,
 }
 
-/// Run the full retrieval pipeline for a memory query. `kind` restricts
-/// hits to one memory kind (canonical lowercase string, e.g. `decision`);
-/// `None` searches every kind. `opts.window` selects the `(offset, limit)`
-/// page of the bounded ranked window (use [`PageWindow::top_k`] for the
-/// unpaginated default). With `opts.track` set, access counts are bumped
-/// and the query is logged to `retrieval_log` — for the RETURNED page only.
+/// Run the full retrieval pipeline for a memory query. `filters` narrows
+/// candidates by repo, memory kind (canonical lowercase string, e.g.
+/// `decision`), and created-date scope — [`Filters::none`] searches
+/// everything. `opts.window` selects the `(offset, limit)` page of the
+/// bounded ranked window (use [`PageWindow::top_k`] for the unpaginated
+/// default). With `opts.track` set, access counts are bumped and the query
+/// is logged to `retrieval_log` — for the RETURNED page only.
+///
+/// An `--as-of` scope additionally reaches the rerank stage, where it
+/// limits the supersede penalty to superseders that existed at the cutoff;
+/// a plain `--until` filters candidates only.
 pub fn search(
     cfg: &Config,
     conn: &Connection,
     query: &str,
     vec: Option<&[f32]>,
-    repo: Option<&str>,
-    kind: Option<&str>,
+    filters: Filters<'_>,
     opts: SearchOptions,
 ) -> Result<SearchRun> {
     let started = std::time::Instant::now();
     let window = opts.window;
     let max_window = cfg.retrieval.max_page_window;
     let pool = pool_size(window.offset, window.limit, max_window);
-    let candidates = router::route(cfg, conn, query, vec, repo, kind, pool)?;
-    let reranked = rerank::rerank(conn, cfg, &candidates)?;
+    let candidates = router::route(cfg, conn, query, vec, filters, pool)?;
+    let reranked = rerank::rerank(conn, cfg, &candidates, filters.scope.as_of_cutoff())?;
     // Diversify over the WHOLE pool (cut at `pool`, not `top_k`) so the
     // full ranked window is materialized before the page is sliced.
     let ranked = diversify::diversify(
@@ -154,8 +159,8 @@ pub fn search(
         record_telemetry(
             conn,
             query,
-            repo,
-            kind,
+            filters.repo,
+            filters.kind,
             opts.source,
             &page,
             started.elapsed(),

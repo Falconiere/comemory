@@ -19,6 +19,7 @@ use crate::memory::Kind;
 use crate::output;
 use crate::prelude::*;
 use crate::retrieval::pipeline;
+use crate::retrieval::scope::Filters;
 use crate::store::{connection, memory_meta};
 
 const EXAMPLES: &str = "\
@@ -98,8 +99,11 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         &conn,
         &a.query,
         vec.as_deref(),
-        a.repo.as_deref(),
-        a.kind.map(Kind::as_str),
+        Filters {
+            repo: a.repo.as_deref(),
+            kind: a.kind.map(Kind::as_str),
+            ..Filters::none()
+        },
         pipeline::SearchOptions {
             track: track_searches()?,
             source: crate::stats::source::SEARCH,

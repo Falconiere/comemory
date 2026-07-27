@@ -8,6 +8,7 @@
 
 use comemory::config::Config;
 use comemory::retrieval::pipeline::{self, PageWindow, SearchOptions};
+use comemory::retrieval::scope::Filters;
 use comemory::store::{connection, fts};
 use comemory::tui::app::Tab;
 use comemory::tui::worker::{self, Hits, Request};
@@ -88,8 +89,7 @@ fn memory_leg_matches_pipeline_search_order() {
         &conn,
         "pool",
         None,
-        None,
-        None,
+        Filters::none(),
         SearchOptions {
             track: false,
             source: "search",
@@ -142,8 +142,7 @@ fn memory_leg_honors_page_offset() {
         &conn,
         "pool",
         None,
-        None,
-        None,
+        Filters::none(),
         SearchOptions {
             track: false,
             source: "search",
@@ -188,8 +187,7 @@ fn querying_is_read_only() {
         &conn,
         "pool",
         None,
-        None,
-        None,
+        Filters::none(),
         SearchOptions {
             track: true,
             source: "search",

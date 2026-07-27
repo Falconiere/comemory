@@ -8,6 +8,7 @@
 
 use comemory::config::Config;
 use comemory::retrieval::router::{self, RoutedHit, Source};
+use comemory::retrieval::scope::{Filters, TimeScope};
 use comemory::store::{connection, fts};
 use tempfile::tempdir;
 
@@ -52,8 +53,7 @@ fn route_dark(cfg: &Config, conn: &rusqlite::Connection) -> Vec<RoutedHit> {
         conn,
         "advisory lock",
         None,
-        None,
-        None,
+        Filters::none(),
         router::CANDIDATE_POOL,
     )
     .expect("route")
@@ -135,5 +135,69 @@ fn graph_hops_zero_reproduces_the_edgeless_ranking() {
         shape(&disabled),
         vec![("aaaa0001".to_string(), Source::Lexical, 1)],
         "the dark pair must not surface with the leg off"
+    );
+}
+
+/// Give a seeded row a real `created_at` (the shared fixture stores the
+/// placeholder `'t'`, which no created-date window can compare against).
+fn set_created(conn: &rusqlite::Connection, id: &str, created: &str) {
+    conn.execute(
+        "UPDATE memories SET created_at = ?2 WHERE id = ?1",
+        rusqlite::params![id, created],
+    )
+    .expect("set created_at");
+}
+
+/// Route "advisory lock" with an inclusive created-date cutoff.
+fn route_dark_until(cfg: &Config, conn: &rusqlite::Connection, cutoff: &str) -> Vec<RoutedHit> {
+    let scope = TimeScope {
+        cutoff: Some(cutoff.to_string()),
+        ..TimeScope::none()
+    };
+    router::route(
+        cfg,
+        conn,
+        "advisory lock",
+        None,
+        Filters {
+            scope: &scope,
+            ..Filters::none()
+        },
+        router::CANDIDATE_POOL,
+    )
+    .expect("route")
+}
+
+#[test]
+fn graph_leg_dark_neighbor_is_hidden_by_an_earlier_cutoff() {
+    // AC-5. The dark neighbour is only reachable through `edges`, so this
+    // is the leg's own filter under test: the walk still *reaches*
+    // bbbb0002 from the in-window seed, and the final join must drop it
+    // for being created after the cutoff.
+    let dir = tempdir().expect("tempdir");
+    let conn = dark_db(dir.path(), "c.db", true);
+    set_created(&conn, "aaaa0001", "2026-03-01T00:00:00Z");
+    set_created(&conn, "bbbb0002", "2026-05-01T00:00:00Z");
+    set_created(&conn, "cccc0003", "2026-05-02T00:00:00Z");
+    let cfg = Config::defaults();
+
+    let unscoped = route_dark(&cfg, &conn);
+    assert!(
+        unscoped.iter().any(|h| h.memory_id == "bbbb0002"),
+        "baseline: the dark neighbour surfaces without a scope: {unscoped:?}"
+    );
+
+    let scoped = route_dark_until(&cfg, &conn, "2026-04-01T00:00:00Z");
+    assert!(
+        scoped.iter().any(|h| h.memory_id == "aaaa0001"),
+        "the in-window lexical seed must survive: {scoped:?}"
+    );
+    assert!(
+        !scoped.iter().any(|h| h.memory_id == "bbbb0002"),
+        "a neighbour created after the cutoff must not surface: {scoped:?}"
+    );
+    assert!(
+        !scoped.iter().any(|h| h.memory_id == "cccc0003"),
+        "nor the two-hop neighbour behind it: {scoped:?}"
     );
 }

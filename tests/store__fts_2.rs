@@ -1,7 +1,7 @@
 //! Test mirror for `src/store/fts.rs` (part 2 — expanded-query and
 //! error-classifier tests).
 
-use comemory::store::{connection, fts};
+use comemory::store::{CreatedWindow, connection, fts};
 use tempfile::tempdir;
 
 /// Seed one `query_expansions` row.
@@ -22,11 +22,27 @@ fn empty_and_quote_only_queries_return_empty_without_error() {
     /// Default `code_fts` BM25 weights `(symbol, snippet, path_tokens)`.
     const CODE_WEIGHTS: (f32, f32, f32) = (2.0, 1.0, 1.5);
 
-    let results = fts::search_memory(&conn, "", 10, None, None, (1.0, 3.0));
+    let results = fts::search_memory(
+        &conn,
+        "",
+        10,
+        None,
+        None,
+        CreatedWindow::default(),
+        (1.0, 3.0),
+    );
     assert!(results.expect("empty query").is_empty());
     // A quote-only query sanitizes to an empty MATCH expression; it must
     // come back empty rather than surfacing an FTS5 syntax error.
-    let results = fts::search_memory(&conn, "\"\"", 10, None, None, (1.0, 3.0));
+    let results = fts::search_memory(
+        &conn,
+        "\"\"",
+        10,
+        None,
+        None,
+        CreatedWindow::default(),
+        (1.0, 3.0),
+    );
     assert!(results.expect("quote-only query").is_empty());
     let results = fts::search_code(&conn, "", 10, None, None, CODE_WEIGHTS);
     assert!(results.expect("empty code query").is_empty());

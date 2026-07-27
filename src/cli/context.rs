@@ -23,6 +23,7 @@ use crate::config::paths::Paths;
 use crate::output;
 use crate::prelude::*;
 use crate::retrieval::code_rerank::WorkingSet;
+use crate::retrieval::scope::Filters;
 use crate::retrieval::{bundle, pipeline};
 use crate::store::{code_row, connection};
 
@@ -113,15 +114,11 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         source: crate::stats::source::CONTEXT,
         window,
     };
-    let run = pipeline::search(
-        &cfg,
-        &conn,
-        &a.query,
-        vec.as_deref(),
-        a.repo.as_deref(),
-        None,
-        opts,
-    )?;
+    let filters = Filters {
+        repo: a.repo.as_deref(),
+        ..Filters::none()
+    };
+    let run = pipeline::search(&cfg, &conn, &a.query, vec.as_deref(), filters, opts)?;
     let meta = page_meta(window, run.has_more, run.total);
     let query_id = run.query_id.clone();
     let ids: Vec<String> = run.hits.into_iter().map(|h| h.memory_id).collect();
