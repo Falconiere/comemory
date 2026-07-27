@@ -14,6 +14,8 @@ mod common;
 // failing the zero-warnings gate. Same pattern as `tests/common/vectors.rs`.
 #[path = "common/corpus.rs"]
 mod corpus;
+#[path = "common/corpus_golden.rs"]
+mod corpus_golden;
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -107,46 +109,11 @@ fn corpus_contains_exactly_one_near_duplicate_pair() {
     );
 }
 
-/// Recall@3 floor, scored by the real `comemory eval` command. The golden
-/// YAML is generated from the corpus at test time (ids are content-derived,
-/// so a checked-in file would rot on body edits) and fed via
-/// `--golden --golden-only`. Each query's relevant set is exactly one id
-/// (enforced by `corpus::golden_pairs`), so the report's mean `recall_at_k`
-/// reaches 1.0 iff every expected body lands in the top-3 — the identical
-/// bar the previous hand-rolled loop asserted. Per-query misses are dumped
-/// from the report so a regression shows every failure at once.
-#[test]
-fn recall_at_3_floor_over_smoke_corpus() {
-    let sandbox = Sandbox::new();
-    let dir = sandbox.data_dir();
-    let bodies = save_corpus(&dir, CORPUS);
-    assert_eq!(
-        bodies.len(),
-        CORPUS.len(),
-        "duplicate ids detected: corpus contains bodies with the same SHA-256 prefix"
-    );
-
-    let pairs = corpus::golden_pairs(&bodies);
-    let golden_path = sandbox.root.path().join("golden.yaml");
-    let yaml = serde_yaml::to_string(&pairs).expect("serialize golden pairs to YAML");
-    std::fs::write(&golden_path, yaml).expect("write generated golden.yaml");
-
-    let assert = bin(&dir)
-        .args(["--json", "eval", "--golden"])
-        .arg(&golden_path)
-        .args(["--golden-only", "--k", "3"])
-        .assert()
-        .success();
-    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
-    let report: Value = serde_json::from_str(stdout.trim()).expect("eval --json report");
-
-    let results = report["results"].as_array().expect("results array");
-    assert_eq!(
-        results.len(),
-        SMOKE_QUERIES.len(),
-        "eval must score every smoke query exactly once"
-    );
-    let failures: Vec<String> = results
+/// Render one human-readable line per `eval` result that fell short of
+/// full recall: the query, its relevant set, and the top-3 ids it actually
+/// returned resolved back to their bodies. Empty when every query hit.
+fn missed_queries(results: &[Value], bodies: &HashMap<String, String>) -> Vec<String> {
+    results
         .iter()
         .filter(|r| r["recall"].as_f64().expect("recall field") < 1.0)
         .map(|r| {
@@ -168,7 +135,49 @@ fn recall_at_3_floor_over_smoke_corpus() {
                 got.join("\n    ")
             )
         })
-        .collect();
+        .collect()
+}
+
+/// Recall@3 floor, scored by the real `comemory eval` command. The golden
+/// YAML is generated from the corpus at test time (ids are content-derived,
+/// so a checked-in file would rot on body edits) and fed via
+/// `--golden --golden-only`. Each query's relevant set is exactly one id
+/// (enforced by `corpus_golden::golden_pairs`), so the report's mean `recall_at_k`
+/// reaches 1.0 iff every expected body lands in the top-3 — the identical
+/// bar the previous hand-rolled loop asserted. Per-query misses are dumped
+/// from the report so a regression shows every failure at once.
+#[test]
+fn recall_at_3_floor_over_smoke_corpus() {
+    let sandbox = Sandbox::new();
+    let dir = sandbox.data_dir();
+    let bodies = save_corpus(&dir, CORPUS);
+    assert_eq!(
+        bodies.len(),
+        CORPUS.len(),
+        "duplicate ids detected: corpus contains bodies with the same SHA-256 prefix"
+    );
+
+    let pairs = corpus_golden::golden_pairs(&bodies);
+    let golden_path = sandbox.root.path().join("golden.yaml");
+    let yaml = serde_yaml::to_string(&pairs).expect("serialize golden pairs to YAML");
+    std::fs::write(&golden_path, yaml).expect("write generated golden.yaml");
+
+    let assert = bin(&dir)
+        .args(["--json", "eval", "--golden"])
+        .arg(&golden_path)
+        .args(["--golden-only", "--k", "3"])
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let report: Value = serde_json::from_str(stdout.trim()).expect("eval --json report");
+
+    let results = report["results"].as_array().expect("results array");
+    assert_eq!(
+        results.len(),
+        SMOKE_QUERIES.len(),
+        "eval must score every smoke query exactly once"
+    );
+    let failures = missed_queries(results, &bodies);
     let recall_at_3 = report["recall_at_k"].as_f64().expect("recall_at_k field");
     assert!(
         recall_at_3 >= 1.0,

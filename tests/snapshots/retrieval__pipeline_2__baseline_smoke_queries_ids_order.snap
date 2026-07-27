@@ -1,0 +1,27 @@
+---
+source: tests/retrieval__pipeline_2.rs
+expression: rendered
+---
+postgres pool exhausted
+  b5f8a401
+VecDimMismatch
+  6d3a829d
+  d6165d9b
+vec dim mismatch
+  d6165d9b
+  6d3a829d
+bm25 negative score
+  440f4cf4
+oauth token race
+  d762061b
+rrf fusion constant
+  88a5903b
+rebuild database from markdown
+  93b8a668
+  b5f8a401
+camelcase identifier search
+  6d3a829d
+alter table default backfill
+  8eafda2e
+atomic write rename
+  b6e71073
