@@ -6,6 +6,7 @@ use comemory::config::Config;
 use comemory::retrieval::pipeline::{PageWindow, SearchOptions, search};
 use comemory::retrieval::rerank::Reranked;
 use comemory::retrieval::router::Source;
+use comemory::retrieval::scope::{Filters, TimeScope};
 use comemory::retrieval::score::SUPERSEDE_PENALTY;
 use comemory::simhash::{NEAR_DUP_HAMMING, hamming64};
 
@@ -67,8 +68,7 @@ fn run_search(cfg: &Config, conn: &rusqlite::Connection, query: &str) -> Vec<Rer
         conn,
         query,
         None,
-        None,
-        None,
+        Filters::none(),
         SearchOptions {
             track: false,
             source: "search",
@@ -100,8 +100,7 @@ fn search_returns_reranked_diversified_hits() {
         &conn,
         "sqlite busy",
         None,
-        None,
-        None,
+        Filters::none(),
         SearchOptions {
             track: false,
             source: "search",
@@ -123,8 +122,7 @@ fn retrieval_hit_bumps_access_tracking() {
         &conn,
         "sqlite busy",
         None,
-        None,
-        None,
+        Filters::none(),
         SearchOptions {
             track: true,
             source: "search",
@@ -159,8 +157,7 @@ fn access_tracking_failure_does_not_break_reads() {
         &conn,
         "sqlite busy",
         None,
-        None,
-        None,
+        Filters::none(),
         SearchOptions {
             track: true,
             source: "search",
@@ -192,8 +189,7 @@ fn search_with_track_logs_one_retrieval_log_row() {
         &conn,
         "sqlite busy",
         None,
-        None,
-        None,
+        Filters::none(),
         SearchOptions {
             track: true,
             source: "search",
@@ -226,8 +222,11 @@ fn search_with_filters_logs_repo_kind_and_source() {
         &conn,
         "sqlite busy",
         None,
-        Some("d"),
-        Some("note"),
+        Filters {
+            repo: Some("d"),
+            kind: Some("note"),
+            ..Filters::none()
+        },
         SearchOptions {
             track: true,
             source: "search",
@@ -257,8 +256,7 @@ fn search_without_filters_logs_null_repo_and_kind() {
         &conn,
         "sqlite busy",
         None,
-        None,
-        None,
+        Filters::none(),
         SearchOptions {
             track: true,
             source: "context",
@@ -296,8 +294,7 @@ fn search_without_track_logs_nothing_and_freezes_access() {
             &conn,
             "sqlite busy",
             None,
-            None,
-            None,
+            Filters::none(),
             SearchOptions {
                 track: false,
                 source: "search",
@@ -356,8 +353,7 @@ fn pipeline_cuts_to_configured_top_k() {
         &conn,
         "sqlite",
         None,
-        None,
-        None,
+        Filters::none(),
         SearchOptions {
             track: false,
             source: "search",
@@ -504,5 +500,62 @@ fn repeated_searches_over_graph_edges_return_identical_order() {
         ids(&first),
         ids(&second),
         "repeated identical searches must not reorder"
+    );
+}
+
+/// Run one lexical-only search under `scope`, tracking off, returning ids.
+fn scoped_ids(cfg: &Config, conn: &rusqlite::Connection, scope: &TimeScope) -> Vec<String> {
+    search(
+        cfg,
+        conn,
+        "sqlite pool",
+        None,
+        Filters {
+            scope,
+            ..Filters::none()
+        },
+        SearchOptions {
+            track: false,
+            source: "search",
+            window: PageWindow::top_k(cfg),
+        },
+    )
+    .expect("search")
+    .hits
+    .into_iter()
+    .map(|h| h.memory_id)
+    .collect()
+}
+
+#[test]
+fn scope_cutoff_excludes_a_candidate_end_to_end() {
+    // The scope has to survive every stage — route, rerank, diversify and
+    // the page cut — so this asserts on what `search` actually returns,
+    // not on the candidate pool.
+    let (_d, conn) = open_db();
+    seed_body(&conn, "aaaa0001", "sqlite pool tuning notes", 0);
+    seed_body(&conn, "bbbb0002", "sqlite pool sizing rewrite", 1);
+    conn.execute(
+        "UPDATE memories SET created_at = '2026-08-01T00:00:00Z' WHERE id = 'bbbb0002'",
+        [],
+    )
+    .expect("re-date the later memory");
+    let cfg = Config::defaults();
+
+    let unscoped = scoped_ids(&cfg, &conn, &TimeScope::none());
+    assert_eq!(unscoped.len(), 2, "baseline sees both: {unscoped:?}");
+
+    let scoped = scoped_ids(
+        &cfg,
+        &conn,
+        &TimeScope {
+            cutoff: Some("2026-07-01T00:00:00Z".to_string()),
+            ..TimeScope::none()
+        },
+    );
+    assert_eq!(
+        scoped,
+        ["aaaa0001"],
+        "the memory created after the cutoff must not reach the caller"
     );
 }

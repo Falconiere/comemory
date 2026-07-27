@@ -7,7 +7,7 @@
 #[path = "common/vectors.rs"]
 mod vectors;
 
-use comemory::store::{connection, vector};
+use comemory::store::{CreatedWindow, connection, vector};
 use tempfile::tempdir;
 
 #[test]
@@ -35,7 +35,7 @@ fn insert_and_knn_returns_nearest_neighbor() {
     vector::insert_memory(&conn, "aaaa1111", &v_a).expect("insert a");
     vector::insert_memory(&conn, "bbbb2222", &v_b).expect("insert b");
 
-    let hits = vector::knn_memory(&conn, &v_q, 1, None).expect("knn");
+    let hits = vector::knn_memory(&conn, &v_q, 1, None, CreatedWindow::default()).expect("knn");
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].memory_id, "aaaa1111");
 }
@@ -78,7 +78,8 @@ fn knn_memory_with_repo_filter_returns_full_k_under_cross_repo_corpus() {
     // are all in repo "other", forcing the JOIN to do real filtering.
     let q = vectors::vector("other-0", 1024);
 
-    let hits = vector::knn_memory(&conn, &q, 3, Some("target")).expect("knn target");
+    let hits = vector::knn_memory(&conn, &q, 3, Some("target"), CreatedWindow::default())
+        .expect("knn target");
     assert_eq!(
         hits.len(),
         3,
@@ -173,4 +174,69 @@ fn insert_rejects_mismatched_dim() {
     let bad = vectors::vector("c", 16);
     let err = vector::insert_memory(&conn, "cccc3333", &bad).expect_err("dim mismatch");
     assert!(format!("{err}").contains("dim mismatch"));
+}
+
+#[test]
+fn knn_memory_created_window_excludes_nearest_and_still_fills_k() {
+    // AC-6. The single nearest neighbour by cosine distance sits outside
+    // the window, and every in-window row is farther away. The window
+    // predicate runs after vec0 has already cut to the candidate set, so
+    // this only returns a full k when the candidate set was oversampled.
+    let dir = tempdir().expect("tempdir");
+    let conn = connection::open(dir.path().join("comemory.db")).expect("open");
+
+    let seed_row = |id: &str, created: &str| {
+        conn.execute(
+            "INSERT INTO memories(id,slug,kind,content_hash,body,created_at,updated_at,md_path) \
+             VALUES(?1,?1,'note','h','b',?2,?2,'x.md')",
+            rusqlite::params![id, created],
+        )
+        .expect("seed memory");
+    };
+
+    // Five recent rows carry the vectors nearest the query; three older
+    // rows sit farther out. Asking for k=3 inside the old window must
+    // still return three, which means the KNN fetched more than three.
+    let q = vectors::vector("new-0", 1024);
+    for i in 0..5 {
+        let id = format!("new{i:05}");
+        seed_row(&id, "2026-06-20T00:00:00Z");
+        let v = vectors::vector(&format!("new-{i}"), 1024);
+        vector::insert_memory(&conn, &id, &v).expect("insert new");
+    }
+    for i in 0..3 {
+        let id = format!("old{i:05}");
+        seed_row(&id, "2026-01-05T00:00:00Z");
+        let v = vectors::vector(&format!("old-{i}"), 1024);
+        vector::insert_memory(&conn, &id, &v).expect("insert old");
+    }
+
+    let nearest = vector::knn_memory(&conn, &q, 1, None, CreatedWindow::default()).expect("knn");
+    assert_eq!(
+        nearest[0].memory_id, "new00000",
+        "fixture assumes the excluded row is the global nearest neighbour"
+    );
+
+    let scoped = vector::knn_memory(
+        &conn,
+        &q,
+        3,
+        None,
+        CreatedWindow {
+            since: None,
+            cutoff: Some("2026-02-01T00:00:00Z"),
+        },
+    )
+    .expect("knn scoped");
+    assert_eq!(
+        scoped.len(),
+        3,
+        "in-window rows must still fill k: {:?}",
+        scoped.iter().map(|h| &h.memory_id).collect::<Vec<_>>()
+    );
+    assert!(
+        scoped.iter().all(|h| h.memory_id.starts_with("old")),
+        "the nearest (out-of-window) rows must be excluded: {:?}",
+        scoped.iter().map(|h| &h.memory_id).collect::<Vec<_>>()
+    );
 }

@@ -12,6 +12,7 @@
 use rusqlite::{Connection, params};
 
 use crate::prelude::*;
+use crate::store::CreatedWindow;
 use crate::store::fts::{
     build_expanded_or_query, build_match_query, build_or_query, build_subtoken_or_query,
     run_fts_query,
@@ -33,18 +34,27 @@ pub struct MemoryFtsHit {
 /// (`cfg.retrieval.bm25_weights`). Optional `repo` / `kind` filters ride
 /// the same JOIN that gates on `deleted_at`, so the lexical and vector
 /// branches share one scope on a filtered hybrid query (`kind` is the
-/// lowercase string stored in `memories.kind`, e.g. `decision`). FTS5
-/// MATCH parse errors are downgraded to an empty result so a typo cannot
-/// abort the wider pipeline.
+/// lowercase string stored in `memories.kind`, e.g. `decision`), as does
+/// the `window` created-date bound. FTS5 MATCH parse errors are downgraded
+/// to an empty result so a typo cannot abort the wider pipeline.
 pub fn search_memory(
     conn: &Connection,
     query: &str,
     k: usize,
     repo: Option<&str>,
     kind: Option<&str>,
+    window: CreatedWindow<'_>,
     weights: (f32, f32),
 ) -> Result<Vec<MemoryFtsHit>> {
-    run_memory_match(conn, &build_match_query(query), k, repo, kind, weights)
+    run_memory_match(
+        conn,
+        &build_match_query(query),
+        k,
+        repo,
+        kind,
+        window,
+        weights,
+    )
 }
 
 /// Relaxed variant of [`search_memory`]: OR-joins the sanitized terms via
@@ -56,9 +66,10 @@ pub fn search_memory_relaxed(
     k: usize,
     repo: Option<&str>,
     kind: Option<&str>,
+    window: CreatedWindow<'_>,
     weights: (f32, f32),
 ) -> Result<Vec<MemoryFtsHit>> {
-    run_memory_match(conn, &build_or_query(query), k, repo, kind, weights)
+    run_memory_match(conn, &build_or_query(query), k, repo, kind, window, weights)
 }
 
 /// Subtoken variant of [`search_memory`]: OR-joins the identifier
@@ -74,6 +85,7 @@ pub fn search_memory_subtokens(
     k: usize,
     repo: Option<&str>,
     kind: Option<&str>,
+    window: CreatedWindow<'_>,
     weights: (f32, f32),
 ) -> Result<Vec<MemoryFtsHit>> {
     run_memory_match(
@@ -82,6 +94,7 @@ pub fn search_memory_subtokens(
         k,
         repo,
         kind,
+        window,
         weights,
     )
 }
@@ -96,13 +109,14 @@ pub fn search_memory_expanded(
     k: usize,
     repo: Option<&str>,
     kind: Option<&str>,
+    window: CreatedWindow<'_>,
     weights: (f32, f32),
 ) -> Result<Vec<MemoryFtsHit>> {
     let expr = build_expanded_or_query(conn, query)?;
     if expr.is_empty() {
         return Ok(Vec::new());
     }
-    run_memory_match(conn, &expr, k, repo, kind, weights)
+    run_memory_match(conn, &expr, k, repo, kind, window, weights)
 }
 
 /// Execute a prebuilt MATCH expression against `memory_fts`. Shared by
@@ -116,22 +130,26 @@ pub fn search_memory_expanded(
 /// `bm25()` arguments cannot be parameters, and the values come from
 /// validated config (finite, >= 0), never raw user input. FTS5 `bm25()`
 /// returns negative scores (more negative = better), so `ORDER BY score`
-/// ascending keeps best-first.
+/// ascending keeps best-first. `window` bounds `memories.created_at`
+/// through `datetime()`, immune to mixed stored precision.
 fn run_memory_match(
     conn: &Connection,
     match_expr: &str,
     k: usize,
     repo: Option<&str>,
     kind: Option<&str>,
+    window: CreatedWindow<'_>,
     weights: (f32, f32),
 ) -> Result<Vec<MemoryFtsHit>> {
     if match_expr.is_empty() || k == 0 {
         return Ok(Vec::new());
     }
-    // `?3 IS NULL OR m.repo = ?3` (and `?4` for kind) lets us bind each
-    // optional filter as a single SQL string. SQLite short-circuits on the
-    // first disjunct when the parameter is NULL, so an absent filter is a
-    // no-op.
+    // `?3 IS NULL OR m.repo = ?3` (and `?4` for kind, `?5`/`?6` for the
+    // created-date window) lets us bind each optional filter as a single
+    // SQL string. SQLite short-circuits on the first disjunct when the
+    // parameter is NULL, so an absent filter is a no-op. A row whose
+    // `created_at` does not parse yields NULL from `datetime()` and drops
+    // out of any bounded window — unbounded runs still see it.
     let (w_body, w_tags) = weights;
     let sql = format!(
         "SELECT memory_fts.memory_id, bm25(memory_fts, 0.0, {w_body}, {w_tags}) AS score \
@@ -140,13 +158,22 @@ fn run_memory_match(
           WHERE memory_fts MATCH ?1 AND m.deleted_at IS NULL \
             AND (?3 IS NULL OR m.repo = ?3) \
             AND (?4 IS NULL OR m.kind = ?4) \
+            AND (?5 IS NULL OR datetime(m.created_at) >= datetime(?5)) \
+            AND (?6 IS NULL OR datetime(m.created_at) <= datetime(?6)) \
           ORDER BY score \
           LIMIT ?2"
     );
     run_fts_query(
         conn,
         &sql,
-        params![match_expr, k as i64, repo, kind],
+        params![
+            match_expr,
+            k as i64,
+            repo,
+            kind,
+            window.since,
+            window.cutoff
+        ],
         |row| {
             Ok(MemoryFtsHit {
                 memory_id: row.get(0)?,

@@ -10,6 +10,7 @@ use corpus::vectors::vector;
 use corpus::{BenchCorpus, CODE_DIM, MEMORY_DIM, build_corpus};
 
 use comemory::retrieval::pipeline::{self, PageWindow, SearchOptions};
+use comemory::retrieval::scope::Filters;
 use comemory::retrieval::{code_rerank, code_route};
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 
@@ -42,8 +43,10 @@ fn run_memory_search(corpus: &BenchCorpus, qvec: &[f32]) {
         &corpus.conn,
         "postgres pool tokenizer ranking",
         Some(qvec),
-        Some("bench"),
-        None,
+        Filters {
+            repo: Some("bench"),
+            ..Filters::none()
+        },
         opts,
     )
     .unwrap();

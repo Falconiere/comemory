@@ -12,7 +12,7 @@ use corpus::vectors::vector;
 use corpus::{BenchCorpus, CODE_DIM, MEMORY_DIM, build_corpus};
 
 use comemory::graph::edges::{self, EdgeKey};
-use comemory::store::{fts, vector as store_vec};
+use comemory::store::{CreatedWindow, fts, vector as store_vec};
 use criterion::{Criterion, criterion_group, criterion_main};
 
 /// Rows seeded for the store micro-benches (≥1k per acceptance #4).
@@ -46,7 +46,7 @@ fn bench_knn(c: &mut Criterion) {
     let mvec = vector("q", MEMORY_DIM);
     let cvec = vector("q", CODE_DIM);
     assert!(
-        !store_vec::knn_memory(&corpus.conn, &mvec, K, None)
+        !store_vec::knn_memory(&corpus.conn, &mvec, K, None, CreatedWindow::default())
             .unwrap()
             .is_empty(),
         "memory KNN must return hits over a seeded corpus"
@@ -54,7 +54,10 @@ fn bench_knn(c: &mut Criterion) {
     let mut group = c.benchmark_group("store/knn");
     group.bench_function("memory", |b| {
         b.iter(|| {
-            std::hint::black_box(store_vec::knn_memory(&corpus.conn, &mvec, K, None).unwrap());
+            std::hint::black_box(
+                store_vec::knn_memory(&corpus.conn, &mvec, K, None, CreatedWindow::default())
+                    .unwrap(),
+            );
         });
     });
     group.bench_function("code", |b| {
@@ -77,6 +80,7 @@ fn bench_fts(c: &mut Criterion) {
                 K,
                 None,
                 None,
+                CreatedWindow::default(),
                 corpus.cfg.retrieval.bm25_weights,
             )
             .unwrap();

@@ -13,6 +13,7 @@
 use rusqlite::{Connection, params};
 
 use crate::prelude::*;
+use crate::store::CreatedWindow;
 use crate::store::embed;
 
 /// Result row from a KNN query.
@@ -55,54 +56,74 @@ pub fn insert_memory(conn: &Connection, memory_id: &str, vector: &[f32]) -> Resu
 }
 
 /// Oversample factor applied to the vec0 KNN candidate set when a scope
-/// filter (memory `repo`, code `repo`/`lang`) is in play. vec0 returns the
-/// global nearest-k by cosine distance and the filter runs *after* that,
-/// so a corpus spread across multiple repos can drop most of the top-k
-/// before the caller ever sees them. Asking for `k * factor` candidates
-/// gives the filter room to keep `k` survivors in the common case where
-/// the requested scope holds a sizeable fraction of the corpus.
-const REPO_FILTER_OVERSAMPLE: usize = 8;
+/// filter (memory `repo` / created-date window, code `repo`/`lang`) is in
+/// play. vec0 returns the global nearest-k by cosine distance and the
+/// filter runs *after* that, so a corpus spread across multiple repos or
+/// eras can drop most of the top-k before the caller ever sees them.
+/// Asking for `k * factor` candidates gives the filter room to keep `k`
+/// survivors in the common case where the requested scope holds a sizeable
+/// fraction of the corpus.
+const SCOPE_FILTER_OVERSAMPLE: usize = 8;
 
-/// Top-k nearest memories. Optional `repo` filter applied via join.
+/// vec0 candidate-set size for one KNN: `k` when nothing filters the
+/// result, oversampled by [`SCOPE_FILTER_OVERSAMPLE`] when something does.
+fn candidate_k(k: usize, filtered: bool) -> usize {
+    if filtered {
+        k.saturating_mul(SCOPE_FILTER_OVERSAMPLE).max(k)
+    } else {
+        k
+    }
+}
+
+/// Map one `(memory_id, distance)` KNN row.
+fn to_memory_hit(row: &rusqlite::Row<'_>) -> rusqlite::Result<MemoryHit> {
+    Ok(MemoryHit {
+        memory_id: row.get(0)?,
+        distance: row.get(1)?,
+    })
+}
+
+/// Top-k nearest memories, optionally restricted to one `repo` and/or a
+/// created-date `window`, both applied via the `memories` join.
 ///
-/// When `repo` is `Some`, the vec0 candidate set is oversampled by
-/// [`REPO_FILTER_OVERSAMPLE`] so the post-filter JOIN against `memories`
-/// has enough room to keep `k` survivors. Without oversampling a corpus
-/// where the requested repo holds e.g. 20% of the rows would receive only
-/// ~`0.2 * k` hits on average, silently undersampling the caller.
+/// When any filter is set, the vec0 candidate set is oversampled by
+/// [`SCOPE_FILTER_OVERSAMPLE`] so the post-filter JOIN has enough room to
+/// keep `k` survivors. Without oversampling a corpus where the requested
+/// scope holds e.g. 20% of the rows would receive only ~`0.2 * k` hits on
+/// average, silently undersampling the caller.
 pub fn knn_memory(
     conn: &Connection,
     query: &[f32],
     k: usize,
     repo: Option<&str>,
+    window: CreatedWindow<'_>,
 ) -> Result<Vec<MemoryHit>> {
     let dim = dim_memory(conn)?;
     embed::guard_dim(query, dim)?;
-    // `?3 IS NULL OR m.repo = ?3` lets us bind the optional repo filter as
-    // a single SQL string. SQLite short-circuits on the first disjunct when
-    // `?3` is NULL, so the repo filter is a no-op in that case. The final
-    // `LIMIT ?4` trims the oversampled candidate set back to `k`.
+    // `?3 IS NULL OR m.repo = ?3` (and `?4`/`?5` for the created-date
+    // window) binds each optional filter as one SQL string: SQLite
+    // short-circuits the disjunct when the parameter is NULL, so an absent
+    // filter is a no-op. The window compares through `datetime()` so mixed
+    // stored precision cannot invert the order, and `LIMIT ?6` trims the
+    // oversampled candidate set back to `k`.
     let sql = "SELECT v.memory_id, v.distance FROM memory_vec v \
                  JOIN memories m ON m.id = v.memory_id \
                 WHERE v.embedding MATCH ?1 AND k = ?2 \
                   AND (?3 IS NULL OR m.repo = ?3) \
+                  AND (?4 IS NULL OR datetime(m.created_at) >= datetime(?4)) \
+                  AND (?5 IS NULL OR datetime(m.created_at) <= datetime(?5)) \
                   AND m.deleted_at IS NULL \
                 ORDER BY v.distance \
-                LIMIT ?4";
+                LIMIT ?6";
     let blob = embed::to_vec_blob(query);
-    let candidate_k = if repo.is_some() {
-        k.saturating_mul(REPO_FILTER_OVERSAMPLE).max(k)
-    } else {
-        k
-    };
+    let filtered = repo.is_some() || window.since.is_some() || window.cutoff.is_some();
+    let cand = candidate_k(k, filtered) as i64;
     let mut stmt = conn.prepare(sql)?;
     let rows = stmt
-        .query_map(params![blob, candidate_k as i64, repo, k as i64], |row| {
-            Ok(MemoryHit {
-                memory_id: row.get(0)?,
-                distance: row.get(1)?,
-            })
-        })?
+        .query_map(
+            params![blob, cand, repo, window.since, window.cutoff, k as i64],
+            to_memory_hit,
+        )?
         .collect::<std::result::Result<Vec<_>, _>>()?;
     Ok(rows)
 }
@@ -129,7 +150,7 @@ pub fn insert_code(conn: &Connection, symbol_id: i64, vector: &[f32]) -> Result<
 /// predicates JOIN `code_symbols` in the same statement (`?N IS NULL OR
 /// c.col = ?N`, a no-op when the filter is absent), and when a filter is
 /// in play the vec0 candidate set is oversampled by
-/// [`REPO_FILTER_OVERSAMPLE`] for the same reason [`knn_memory`]
+/// [`SCOPE_FILTER_OVERSAMPLE`] for the same reason [`knn_memory`]
 /// oversamples: the global nearest-k can live mostly outside the
 /// requested scope, and without headroom the join would silently
 /// undersample the caller. The final `LIMIT` trims back to `k`.
@@ -150,22 +171,15 @@ pub fn knn_code(
                 ORDER BY v.distance \
                 LIMIT ?5";
     let blob = embed::to_vec_blob(query);
-    let candidate_k = if repo.is_some() || lang.is_some() {
-        k.saturating_mul(REPO_FILTER_OVERSAMPLE).max(k)
-    } else {
-        k
-    };
+    let cand = candidate_k(k, repo.is_some() || lang.is_some()) as i64;
     let mut stmt = conn.prepare(sql)?;
     let rows = stmt
-        .query_map(
-            params![blob, candidate_k as i64, repo, lang, k as i64],
-            |row| {
-                Ok(CodeHit {
-                    symbol_id: row.get(0)?,
-                    distance: row.get(1)?,
-                })
-            },
-        )?
+        .query_map(params![blob, cand, repo, lang, k as i64], |row| {
+            Ok(CodeHit {
+                symbol_id: row.get(0)?,
+                distance: row.get(1)?,
+            })
+        })?
         .collect::<std::result::Result<Vec<_>, _>>()?;
     Ok(rows)
 }
