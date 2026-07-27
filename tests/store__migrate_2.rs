@@ -1,6 +1,7 @@
 //! Behavior tests for `crate::store::migrate` (part 2 — the v6 migration
-//! and v5→v6 upgrade path, plus the v11 `memories.rank_score` migration
-//! and its v10→v11 upgrade path).
+//! and v5→v6 upgrade path, the v11 `memories.rank_score` migration and its
+//! v10→v11 upgrade path, and the v12 `edge_fts` triplet index with its
+//! v11→v12 upgrade path).
 
 use comemory::store::{connection, migrate};
 use rusqlite::Connection;
@@ -225,50 +226,69 @@ fn v11_adds_memories_rank_score_defaulting_to_zero() {
     assert_eq!(schema_meta(&conn, "version"), migrate::CURRENT_VERSION);
 }
 
-/// Build a genuine v10 database by replaying 0001..0010 exactly as a v10
-/// binary would have, including the `schema_meta` keys it wrote. The 0002
-/// DDL needs the process-global sqlite-vec auto-extension and the 0004 FTS
-/// rebuild needs the `identifier` tokenizer on this raw connection. Seeds
-/// one pre-v11 memory row, which the additive column must backfill to 0.0.
-fn build_v10_db(path: &std::path::Path) {
+/// Every migration in apply order as `(schema_meta marker, SQL)` — the
+/// replay source [`build_legacy_db`] slices to reconstruct an older schema.
+fn migration_chain() -> Vec<(&'static str, &'static str)> {
+    vec![
+        ("0001_schema_meta", migrate::M_BOOTSTRAP),
+        ("0002_v2_tables", migrate::M_V2),
+        ("0003_stats_tables", migrate::M_V3),
+        ("0004_v4_rank", migrate::M_V4),
+        ("0005_v5_learning", migrate::M_V5),
+        ("0006_v6_code_graph", migrate::M_V6),
+        ("0007_v7_repo_root", migrate::M_V7),
+        ("0008_v8_reinforcement", migrate::M_V8),
+        ("0009_v9_code_refs", migrate::M_V9),
+        ("0010_v10_bandit", migrate::M_V10),
+        ("0011_v11_memory_rank", migrate::M_V11),
+    ]
+}
+
+/// Build a genuine pre-upgrade database by replaying the first `through`
+/// migrations exactly as a binary of that vintage would have, including the
+/// `schema_meta` keys it wrote. The 0002 DDL needs the process-global
+/// sqlite-vec auto-extension and the 0004 FTS rebuild needs the
+/// `identifier` tokenizer on this raw connection. Seeds one pre-upgrade
+/// memory row so the additive v11 column has something to backfill.
+///
+/// 0001 is replayed but records no marker: `migrate::apply` special-cases
+/// the bootstrap migration, whose SQL is `CREATE TABLE IF NOT EXISTS`.
+fn build_legacy_db(path: &std::path::Path, through: usize, version: &str, memory_id: &str) {
     let scratch = path.with_file_name("scratch-vec-register.db");
     drop(connection::open(&scratch).expect("register sqlite-vec"));
 
     let conn = Connection::open(path).expect("open raw");
     comemory::store::tokenizer::ffi::register(&conn).expect("register identifier tokenizer");
-    for (label, sql) in [
-        ("0001", migrate::M_BOOTSTRAP),
-        ("0002", migrate::M_V2),
-        ("0003", migrate::M_V3),
-        ("0004", migrate::M_V4),
-        ("0005", migrate::M_V5),
-        ("0006", migrate::M_V6),
-        ("0007", migrate::M_V7),
-        ("0008", migrate::M_V8),
-        ("0009", migrate::M_V9),
-        ("0010", migrate::M_V10),
-    ] {
+    let chain = migration_chain();
+    for (marker, sql) in &chain[..through] {
         conn.execute_batch(sql)
-            .unwrap_or_else(|e| panic!("replay {label}: {e}"));
+            .unwrap_or_else(|e| panic!("replay {marker}: {e}"));
+    }
+    for (marker, _) in &chain[1..through] {
+        conn.execute(
+            "INSERT INTO schema_meta(key, value) VALUES(?1, '1')",
+            [marker],
+        )
+        .expect("seed migration marker");
     }
     conn.execute_batch(
         "INSERT INTO schema_meta(key, value) VALUES
-            ('0002_v2_tables','1'), ('0003_stats_tables','1'),
-            ('0004_v4_rank','1'), ('0004_simhash_backfill','1'),
-            ('0005_v5_learning','1'), ('0005_simhash_rehash','1'),
-            ('0006_v6_code_graph','1'), ('0007_v7_repo_root','1'),
-            ('0008_v8_reinforcement','1'), ('0009_v9_code_refs','1'),
-            ('0010_v10_bandit','1'), ('version','10');",
+            ('0004_simhash_backfill','1'), ('0005_simhash_rehash','1');",
     )
-    .expect("seed v10 schema_meta");
-    seed_memory(&conn, "bbbb2222");
+    .expect("seed simhash run-once markers");
+    conn.execute(
+        "INSERT INTO schema_meta(key, value) VALUES('version', ?1)",
+        [version],
+    )
+    .expect("seed version");
+    seed_memory(&conn, memory_id);
 }
 
 #[test]
 fn open_migrates_v10_db_to_v11_backfilling_rank_score() {
     let dir = tempdir().expect("tempdir");
     let db = dir.path().join("comemory.db");
-    build_v10_db(&db);
+    build_legacy_db(&db, 10, "10", "bbbb2222");
 
     let conn = connection::open(&db).expect("open migrates v10 -> v11");
 
@@ -297,5 +317,92 @@ fn v11_migration_is_idempotent() {
     migrate::run(&mut conn).expect("second migrate run is a no-op");
 
     assert_eq!(rank_score(&conn, "cccc3333"), 0.375);
+    assert_eq!(schema_meta(&conn, "version"), migrate::CURRENT_VERSION);
+}
+
+/// Row count in `edge_fts`.
+fn edge_fts_rows(conn: &Connection) -> i64 {
+    conn.query_row("SELECT count(*) FROM edge_fts", [], |r| r.get(0))
+        .expect("edge_fts row count")
+}
+
+/// Insert one rendered triplet directly, bypassing `edge_fts::refresh` —
+/// these tests assert what the *migration* does, not what refresh renders.
+fn seed_edge_fts(conn: &Connection, src_text: &str) {
+    conn.execute(
+        "INSERT INTO edge_fts(src_text, rel_text, dst_text, src_kind, src_id,
+                              rel, dst_kind, dst_id, weight)
+         VALUES(?1, 'supersedes', 'decision queue-v1', 'memory', 'aaaa1111',
+                'supersedes', 'memory', 'bbbb2222', 1)",
+        [src_text],
+    )
+    .expect("seed edge_fts row");
+}
+
+#[test]
+fn v12_creates_edge_fts_empty_with_the_identifier_tokenizer() {
+    let tmp = tempdir().expect("tmpdir");
+    let db = tmp.path().join("comemory.db");
+    let conn = connection::open(&db).expect("open migrates to v12");
+
+    // Created empty: the migration ships no backfill, because rendering
+    // lives once in `store::edge_fts::refresh`.
+    assert_eq!(edge_fts_rows(&conn), 0);
+
+    // The `identifier` tokenizer is in force, not FTS5's default: it splits
+    // `queue-design-v2` so a bare `design` term hits.
+    seed_edge_fts(&conn, "decision queue-design-v2");
+    let hits: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM edge_fts WHERE edge_fts MATCH '\"design\"'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("match probe");
+    assert_eq!(hits, 1, "identifier tokenizer not applied to edge_fts");
+
+    assert_eq!(schema_meta(&conn, "version"), migrate::CURRENT_VERSION);
+}
+
+#[test]
+fn open_migrates_v11_db_to_v12_adding_edge_fts() {
+    let dir = tempdir().expect("tempdir");
+    let db = dir.path().join("comemory.db");
+    build_legacy_db(&db, 11, "11", "dddd4444");
+
+    // Pre-upgrade the table does not exist at all.
+    let raw = Connection::open(&db).expect("open raw");
+    let before: i64 = raw
+        .query_row(
+            "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='edge_fts'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("table probe");
+    assert_eq!(before, 0, "v11 replay should not have edge_fts");
+    drop(raw);
+
+    let conn = connection::open(&db).expect("open migrates v11 -> v12");
+
+    // The upgraded database gains an EMPTY index; it self-heals on the
+    // first `comemory edges` run rather than being backfilled in SQL.
+    assert_eq!(edge_fts_rows(&conn), 0);
+    assert_eq!(rank_score(&conn, "dddd4444"), 0.0);
+    assert_eq!(schema_meta(&conn, "version"), migrate::CURRENT_VERSION);
+}
+
+#[test]
+fn v12_migration_is_idempotent() {
+    let dir = tempdir().expect("tempdir");
+    let db = dir.path().join("comemory.db");
+    let mut conn = connection::open(&db).expect("open runs v12");
+
+    // Indexed content must survive a second run — a re-applied CREATE
+    // VIRTUAL TABLE would error outright, and a backfill would wipe this.
+    seed_edge_fts(&conn, "decision queue-design-v2");
+
+    migrate::run(&mut conn).expect("second migrate run is a no-op");
+
+    assert_eq!(edge_fts_rows(&conn), 1);
     assert_eq!(schema_meta(&conn, "version"), migrate::CURRENT_VERSION);
 }

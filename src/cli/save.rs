@@ -199,7 +199,7 @@ fn persist(
             e
         ))
     })?;
-    crate::graph::memory_rank::refresh_best_effort(conn);
+    crate::graph::derived::refresh_derived_best_effort(conn);
     Ok(rec)
 }
 

@@ -20,6 +20,8 @@
 pub mod code_ref;
 pub mod code_row;
 pub mod connection;
+/// FTS5 triplet index over `edges` (rendering + refresh + lexical ladder).
+pub mod edge_fts;
 pub mod embed;
 pub mod fts;
 /// Memory-leg FTS5 ladder (strict → relaxed → subtoken → expanded).

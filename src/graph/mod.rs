@@ -11,12 +11,16 @@
 //! [`materialize`] is the `index-code` post-pass that persists mined pairs
 //! and resolved imports as edges, then projects PageRank onto
 //! `code_symbols.rank_score`, and [`memory_rank`] does the same over the
-//! derived memory graph, scoring `memories.rank_score`. The previous
+//! derived memory graph, scoring `memories.rank_score`. [`derived`] is the
+//! one entry point every write seam calls, refreshing both derived
+//! artifacts (rank + `edge_fts`). The previous
 //! kuzu-backed `schema`/`upsert`/`query` modules were removed in v0.2.
 
 pub mod coactivate;
 pub mod cochange;
 pub mod cross_link;
+/// Unified best-effort refresh of every derived artifact.
+pub mod derived;
 pub mod edges;
 pub mod imports;
 pub mod materialize;
