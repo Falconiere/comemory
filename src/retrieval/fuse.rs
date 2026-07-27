@@ -1,13 +1,18 @@
-//! Reciprocal Rank Fusion across two ranked memory lists.
+//! Reciprocal Rank Fusion across ranked memory lists.
 //!
 //! Each input is ranked best-first. The fused score for a memory id is
 //! the sum of `1 / (rrf_k + rank + 1)` across every list it appears in.
 //! Output is sorted by score descending and truncated to `top_k`.
+//!
+//! [`rrf_multi`] is the N-ary core; the two-list [`rrf`] / [`rrf_k`] entry
+//! points delegate to it so every caller shares one accumulation and one
+//! tie-break rule.
 
 use std::collections::HashMap;
 
-/// One row in a ranked memory list passed to [`rrf`] / [`rrf_k`]. `score` is
-/// kept for compatibility with caller-side rendering; RRF itself uses ranks only.
+/// One row in a ranked memory list passed to [`rrf`] / [`rrf_k`] /
+/// [`rrf_multi`]. `score` is kept for compatibility with caller-side
+/// rendering; RRF itself uses ranks only.
 #[derive(Debug, Clone)]
 pub struct RankedHit {
     /// Identifier of the ranked memory.
@@ -32,12 +37,24 @@ pub fn rrf(a: &[RankedHit], b: &[RankedHit], top_k: usize) -> Vec<RankedHit> {
 /// descending. Use this variant when the RRF constant comes from config
 /// (`cfg.retrieval.rrf_k`).
 pub fn rrf_k(a: &[RankedHit], b: &[RankedHit], top_k: usize, k: f32) -> Vec<RankedHit> {
+    rrf_multi(&[a, b], top_k, k)
+}
+
+/// Fuse any number of ranked lists with Reciprocal Rank Fusion using a
+/// caller-supplied constant `k`, returning the top-`top_k` rows sorted by
+/// fused score descending with ascending memory id as the tie-break.
+///
+/// `legs` are accumulated in the order given, each leg walked in rank order,
+/// so every id's contributions are summed in exactly the sequence a
+/// hand-written two-list fusion would use: `rrf_multi(&[a, b], top_k, k)` is
+/// [`rrf_k`]`(a, b, top_k, k)` — same order, same float bits. An empty `legs`
+/// slice, or legs that are all empty, yields an empty vector.
+pub fn rrf_multi(legs: &[&[RankedHit]], top_k: usize, k: f32) -> Vec<RankedHit> {
     let mut acc: HashMap<String, f32> = HashMap::new();
-    for (rank, h) in a.iter().enumerate() {
-        *acc.entry(h.memory_id.clone()).or_default() += 1.0 / (k + rank as f32 + 1.0);
-    }
-    for (rank, h) in b.iter().enumerate() {
-        *acc.entry(h.memory_id.clone()).or_default() += 1.0 / (k + rank as f32 + 1.0);
+    for leg in legs {
+        for (rank, h) in leg.iter().enumerate() {
+            *acc.entry(h.memory_id.clone()).or_default() += 1.0 / (k + rank as f32 + 1.0);
+        }
     }
     let mut merged: Vec<RankedHit> = acc
         .into_iter()
