@@ -3,6 +3,8 @@
 //! Every test here mutates process-global env vars. Under nextest each
 //! test runs in its own process; under plain `cargo test` this binary
 //! must run with `--test-threads=1` (see `.config/nextest.toml`).
+//! `set_var` is mandatory-`unsafe` in Rust 2024; each use carries an
+//! adjacent `// SAFETY:` note per the repo gate (`scripts/no-bypass-check.sh`).
 
 use comemory::config::file::{AutoReindexMode, Config};
 
@@ -86,6 +88,65 @@ fn env_invalid_memory_threshold_returns_err() {
         unsafe { std::env::remove_var("COMEMORY_RETRIEVAL_MEMORY_THRESHOLD") };
         result.expect("boundary memory_threshold must be accepted");
     }
+}
+
+#[test]
+fn env_graph_knob_overrides_apply() {
+    // Both graph-leg knobs must be readable from the environment so a run
+    // can be pinned to the legacy path (hops=0) or a single seed.
+    // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
+    unsafe { std::env::set_var("COMEMORY_RETRIEVAL_GRAPH_HOPS", "0") };
+    // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
+    unsafe { std::env::set_var("COMEMORY_RETRIEVAL_GRAPH_SEEDS", "3") };
+    let result = Config::defaults().with_env();
+    // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
+    unsafe { std::env::remove_var("COMEMORY_RETRIEVAL_GRAPH_HOPS") };
+    // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
+    unsafe { std::env::remove_var("COMEMORY_RETRIEVAL_GRAPH_SEEDS") };
+    let cfg = result.expect("valid graph knob overrides must succeed");
+    assert_eq!(cfg.retrieval.graph_hops, 0);
+    assert_eq!(cfg.retrieval.graph_seeds, 3);
+}
+
+#[test]
+fn env_graph_hops_over_ceiling_is_an_error() {
+    // AC-8: 9 hops must abort at startup naming the var, not silently
+    // clamp to the ceiling and run an unbounded-feeling walk.
+    // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
+    unsafe { std::env::set_var("COMEMORY_RETRIEVAL_GRAPH_HOPS", "9") };
+    let result = Config::defaults().with_env();
+    // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
+    unsafe { std::env::remove_var("COMEMORY_RETRIEVAL_GRAPH_HOPS") };
+    let err = result.expect_err("graph_hops=9 must error");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("COMEMORY_RETRIEVAL_GRAPH_HOPS"),
+        "error must name the offending var, got: {msg}"
+    );
+    assert!(
+        msg.contains("retrieval.graph_hops"),
+        "error must name the config key, got: {msg}"
+    );
+}
+
+#[test]
+fn env_graph_seeds_zero_is_an_error() {
+    // AC-8: 0 seeds is rejected — `graph_hops = 0` is the off switch.
+    // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
+    unsafe { std::env::set_var("COMEMORY_RETRIEVAL_GRAPH_SEEDS", "0") };
+    let result = Config::defaults().with_env();
+    // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
+    unsafe { std::env::remove_var("COMEMORY_RETRIEVAL_GRAPH_SEEDS") };
+    let err = result.expect_err("graph_seeds=0 must error");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("COMEMORY_RETRIEVAL_GRAPH_SEEDS"),
+        "error must name the offending var, got: {msg}"
+    );
+    assert!(
+        msg.contains("retrieval.graph_seeds"),
+        "error must name the config key, got: {msg}"
+    );
 }
 
 #[test]

@@ -219,6 +219,30 @@ fn bm25_weights_default_and_file_overlay() {
 }
 
 #[test]
+fn graph_leg_defaults_and_file_overlay() {
+    // The graph-expansion leg walks two hops from the top 8 provisional
+    // hits by default; both knobs are overlayable from `[retrieval]`.
+    let cfg = Config::defaults();
+    assert_eq!(cfg.retrieval.graph_hops, 2);
+    assert_eq!(cfg.retrieval.graph_seeds, 8);
+
+    let dir = tempfile::tempdir().expect("tmp");
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "[retrieval]\ngraph_hops = 3\ngraph_seeds = 1\n").expect("write");
+    let cfg = Config::defaults().with_file(&path).expect("load");
+    assert_eq!(cfg.retrieval.graph_hops, 3);
+    assert_eq!(cfg.retrieval.graph_seeds, 1);
+    // Untouched retrieval keys keep their defaults.
+    assert_eq!(cfg.retrieval.top_k, 12);
+
+    // 0 hops is valid and disables the leg; the seed count is unaffected.
+    std::fs::write(&path, "[retrieval]\ngraph_hops = 0\n").expect("write");
+    let cfg = Config::defaults().with_file(&path).expect("load");
+    assert_eq!(cfg.retrieval.graph_hops, 0);
+    assert_eq!(cfg.retrieval.graph_seeds, 8);
+}
+
+#[test]
 fn bm25_weights_rejects_negative_and_zero_pair() {
     let dir = tempfile::tempdir().expect("tmp");
     let path = dir.path().join("config.toml");
