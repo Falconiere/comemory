@@ -204,9 +204,33 @@ live in the [configuration env table](../configuration.md)):
 | Code BM25 weights | `COMEMORY_RETRIEVAL_CODE_BM25_WEIGHTS` | — | `symbol,snippet,path_tokens` column weights |
 | Memory cosine floor | `COMEMORY_RETRIEVAL_MEMORY_THRESHOLD` | — | min similarity for the memory vector leg |
 | Code cosine floor | `COMEMORY_RETRIEVAL_CODE_THRESHOLD` | — | min similarity for the code vector leg |
+| Graph walk depth | `COMEMORY_RETRIEVAL_GRAPH_HOPS` | — | hops the graph-expansion leg walks (`0` disables it) |
+| Graph seed count | `COMEMORY_RETRIEVAL_GRAPH_SEEDS` | — | how many top hits seed that walk |
 
 The `[tune]` grid knobs are file-only (no env override); the env variables let
 you probe a single setting by hand before committing it to the grid.
+
+### Isolating the graph-expansion leg
+
+Memory search fuses a third candidate list alongside FTS5 and the vector leg:
+the graph-expansion leg walks `edges` outward from the top hits of the
+provisional ranking and pulls in memories that are lexically dark for the
+query but already linked to something that matched. Those hits come back
+labeled `"source": "graph"` with `"tier": 0`, so `--json` tells you which
+results only the graph found.
+
+The two knobs are **not** in the `[tune]` grid. Probe them by hand:
+
+```bash
+comemory --json search "sqlite-vec ANN" | jq '[.hits[] | {memory_id, source}]'
+COMEMORY_RETRIEVAL_GRAPH_HOPS=0 comemory --json search "sqlite-vec ANN"   # leg off
+```
+
+`COMEMORY_RETRIEVAL_GRAPH_HOPS=0` short-circuits the leg entirely and takes
+the legacy two-leg path, which is the clean A/B when you are attributing a
+recall or ranking change. Widening `graph_seeds` expands from further down
+the provisional ranking; raising `graph_hops` reaches further from each seed
+(and pulls in looser associations).
 
 ---
 

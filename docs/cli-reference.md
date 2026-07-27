@@ -149,6 +149,13 @@ Examples:
 
   # Caller-supplied vector (BYO-vector, CSV form)
   comemory search "advisory lock" --vector 0.1,0.2,0.3,...
+
+  # A hit tagged "source": "graph" (tier 0) is lexically dark for the
+  # query — the graph-expansion leg reached it by walking `edges` out from
+  # the top hits. COMEMORY_RETRIEVAL_GRAPH_HOPS bounds the walk depth
+  # (default 2, 0 disables the leg); COMEMORY_RETRIEVAL_GRAPH_SEEDS sets
+  # how many top hits seed it (default 8).
+  COMEMORY_RETRIEVAL_GRAPH_HOPS=0 comemory search "auth race" --json
 ```
 
 ---

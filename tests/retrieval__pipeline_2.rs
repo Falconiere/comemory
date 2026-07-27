@@ -345,11 +345,19 @@ fn seed_smoke_corpus() -> (tempfile::TempDir, rusqlite::Connection) {
 fn baseline_smoke_queries_ids_order() {
     let (_d, conn) = seed_smoke_corpus();
     let cfg = comemory::config::Config::defaults();
+    let rendered = render_smoke_ranking(&cfg, &conn);
+    insta::assert_snapshot!(rendered);
+}
+
+/// Run every `SMOKE_QUERIES` entry through the pipeline under `cfg` and
+/// render `query` / indented result ids — the ids-and-order projection both
+/// parity assertions compare.
+fn render_smoke_ranking(cfg: &comemory::config::Config, conn: &rusqlite::Connection) -> String {
     let mut rendered = String::new();
     for (query, _expected) in corpus::SMOKE_QUERIES {
         let run = search(
-            &cfg,
-            &conn,
+            cfg,
+            conn,
             query,
             None,
             None,
@@ -357,7 +365,7 @@ fn baseline_smoke_queries_ids_order() {
             SearchOptions {
                 track: false,
                 source: "search",
-                window: PageWindow::top_k(&cfg),
+                window: PageWindow::top_k(cfg),
             },
         )
         .expect("search");
@@ -371,5 +379,56 @@ fn baseline_smoke_queries_ids_order() {
             rendered.push('\n');
         }
     }
-    insta::assert_snapshot!(rendered);
+    rendered
+}
+
+/// Count the `edges` rows the graph-expansion leg is allowed to traverse.
+fn walkable_edges(conn: &rusqlite::Connection) -> i64 {
+    let rels = comemory::retrieval::graph_route::ALLOWED_RELS
+        .iter()
+        .map(|rel| format!("'{rel}'"))
+        .collect::<Vec<_>>()
+        .join(",");
+    conn.query_row(
+        &format!("SELECT count(*) FROM edges WHERE rel IN ({rels})"),
+        [],
+        |r| r.get(0),
+    )
+    .expect("count edges")
+}
+
+/// AC-4 parity: `graph_hops = 0` short-circuits to the legacy code path, so
+/// it must still reproduce the ranking committed *before* the graph leg
+/// existed — this asserts against that same pre-change snapshot, which is
+/// ground truth and must never be regenerated to make this pass.
+///
+/// The default-config run is held to it too, with the reason pinned rather
+/// than assumed: `comemory save` writes only the hub edges `in_repo`,
+/// `authored_by` and `tagged` for this corpus (no `--supersedes`, no
+/// backtick-fenced code references in any body), and every hub rel is
+/// outside `ALLOWED_RELS` — so the expansion is empty and the leg's second
+/// short-circuit returns the provisional ranking untouched.
+#[test]
+fn graph_hops_zero_reproduces_the_pre_change_ranking() {
+    let (_d, conn) = seed_smoke_corpus();
+    let mut cfg = comemory::config::Config::defaults();
+    assert_eq!(
+        cfg.retrieval.graph_hops, 2,
+        "the default config must enable the leg, or this proves nothing"
+    );
+    let with_leg = render_smoke_ranking(&cfg, &conn);
+
+    cfg.retrieval.graph_hops = 0;
+    let rendered = render_smoke_ranking(&cfg, &conn);
+    insta::assert_snapshot!("baseline_smoke_queries_ids_order", rendered);
+
+    assert_eq!(
+        walkable_edges(&conn),
+        0,
+        "the smoke corpus carries no expansion-eligible edge"
+    );
+    assert_eq!(
+        with_leg, rendered,
+        "an empty expansion must leave the ranking untouched"
+    );
 }

@@ -62,7 +62,7 @@ authoritative architecture reference; pair it with the
 | `store` | SQLite connection layer, schema_meta, migrations, vector + FTS helpers, identifier tokenizer (camelCase/snake_case split + FFI registration) |
 | `simhash` | 64-bit SimHash + Hamming distance over tokenized memory bodies |
 | `graph` | SQL-backed edges (`Supersedes`, `ConflictsWith`, `RelatesTo`, `ReferencesFile`, `ReferencesSymbol`, `CoChanged`, `Imports`, …) + recursive walks; `cross_link` parses backticked refs; `cochange` mines git history, `imports` extracts per-language import edges, `pagerank` + `materialize` write `code_symbols.rank_score` |
-| `retrieval` | router (candidates + 4-tier lexical ladder ending in learned expansion), score (ACT-R/Beta primitives), rerank (multiplicative priors), diversify (SimHash collapse + MMR), pipeline (orchestration + access tracking), fuse (RRF), bundle (context lookup, code refs ranked by graph priors); code side: code_route (BM25 + thresholded ANN + RRF, chunk→parent coalesce), code_rerank + code_prior (PageRank / recency / working-set affinity / feedback) |
+| `retrieval` | router (candidates + 4-tier lexical ladder ending in learned expansion), graph_route (graph-expansion leg: an edge walk seeded from the provisional top hits), score (ACT-R/Beta primitives), rerank (multiplicative priors), diversify (SimHash collapse + MMR), pipeline (orchestration + access tracking), fuse (RRF, pairwise + N-ary), bundle (context lookup, code refs ranked by graph priors); code side: code_route (BM25 + thresholded ANN + RRF, chunk→parent coalesce), code_rerank + code_prior (PageRank / recency / working-set affinity / feedback) |
 | `eval` | learning loop: golden sets (file + feedback harvest), recall@k/MRR metrics, eval runner (replays originating repo/kind filters), reformulation mining, grid tune |
 | `ast` | ast-grep wrapper (rust/ts/js/py/go), per-language symbol extractor, cAST chunking of oversized symbols, user pattern API |
 | `stats` | rusqlite usage / feedback / code_feedback / repo-marker tables (lives inside the same DB) |
@@ -167,6 +167,16 @@ search("postgres migration race")
   │       learned-expansion tier ORing in mined query_expansions mappings
   │       (never fires on the pure-vector path; hits carry a tier 1..4)
   │
+  ├─ graph expand  (graph_route.rs)          — third candidate leg
+  │   ├─ seeds = top graph_seeds hits of the provisional ranking above
+  │   ├─ one recursive CTE over edges, depth ≤ graph_hops, traversed
+  │   │   undirected (both orientations) over an allowlist of rels;
+  │   │   the hub rels in_repo / authored_by / tagged are excluded
+  │   ├─ MIN(depth) per memory, live rows only, --repo/--kind applied,
+  │   │   ranked (hops ASC, memory_id ASC)
+  │   └─ fused in as one more RRF list (fuse::rrf_multi); ids only the
+  │       walk found are labeled source "graph", tier 0
+  │
   ├─ rerank  (rerank.rs)
   │   ├─ per-hit: ACT-R activation boost (recency × access count)
   │   ├─ Beta-smoothed feedback multiplier (used / irrelevant counts)
@@ -192,6 +202,22 @@ maps to 1.0), not the raw fused score.
 Identifier-aware matching (camelCase/snake_case splitting) is not a routing
 branch — the custom `identifier` FTS5 tokenizer is baked into the
 `memory_fts` / `code_fts` DDL, so every lexical query benefits from it.
+
+The graph-expansion leg exists because a memory can be *lexically dark* for
+a query — different vocabulary, no shared subtokens — while `edges` already
+links it to a top hit. Expansion runs **after** leg ranking rather than as a
+per-hop re-query: whichever routing branch fired produces a provisional
+ranking, its top `graph_seeds` ids (default 8) seed one walk, and the result
+fuses back in. The trade-off is that graph candidates cannot themselves seed
+further expansion — that is what `graph_hops` (default 2) covers. Ranking
+inside the leg is `(hops, memory_id)` only; edge weights are not consulted.
+The leg is strictly additive: `COMEMORY_RETRIEVAL_GRAPH_HOPS=0` and an empty
+expansion both return the provisional ranking through the same functions
+that produced it, so the disabled path is the pre-leg pipeline by
+construction (pinned by a committed parity snapshot). `rerank`, `diversify`
+and pagination are source-agnostic, so a graph candidate is scored, deduped
+and penalized exactly like any other — a superseded one still takes the
+0.2× supersede penalty.
 
 `comemory search-code` runs a parallel code-side pipeline: `code_route`
 (weighted BM25 over symbol/snippet/path_tokens + an optional thresholded
