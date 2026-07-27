@@ -15,6 +15,8 @@ comemory's settings are layered: built-in defaults → an optional `config.toml`
 | `COMEMORY_RETRIEVAL_MEMORY_THRESHOLD` | Minimum cosine similarity for the memory table. | `0.55` |
 | `COMEMORY_RETRIEVAL_CODE_THRESHOLD` | Minimum cosine similarity for the code table (ANN leg of `search-code`, range `[0.0, 1.0]`). | `0.50` |
 | `COMEMORY_RETRIEVAL_RRF_K` | RRF fusion constant for hybrid scoring. | `60.0` |
+| `COMEMORY_RETRIEVAL_GRAPH_HOPS` | Maximum hop depth of the graph-expansion leg — the `edges` walk seeded from the provisional top hits of memory `search`. Validated `≤ 4`; `0` disables the leg. | `2` |
+| `COMEMORY_RETRIEVAL_GRAPH_SEEDS` | How many provisional top hits seed that walk. Validated `≥ 1`. | `8` |
 | `COMEMORY_RETRIEVAL_BM25_WEIGHTS` | `"body,tags"` BM25 column weights for `memory_fts` (both finite ≥ 0, at least one > 0). | `1.0,3.0` |
 | `COMEMORY_RETRIEVAL_CODE_BM25_WEIGHTS` | `"symbol,snippet,path_tokens"` BM25 column weights for `code_fts` (all finite ≥ 0, at least one > 0). | `2.0,1.0,1.5` |
 | `COMEMORY_LEARNING_RETENTION_DAYS` | `comemory gc` retention window (days) for raw `retrieval_log` + `feedback_events` rows; aggregated `feedback` counters and mined `query_expansions` never expire. | `90` |
