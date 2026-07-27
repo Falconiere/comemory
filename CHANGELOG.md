@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-07-27
+
+### Added
+
+- graph-expansion candidate leg (third RRF leg)
+- graph-leg retrieval knobs + sub-50-line helper split
+
+### Internal
+
+- address PR review feedback — SQL-safety invariants
+- graph-leg e2e coverage + docs sync
+- baseline SMOKE_QUERIES ids+order snapshot
+
 ## [0.12.1] - 2026-07-21
 
 ### Internal
