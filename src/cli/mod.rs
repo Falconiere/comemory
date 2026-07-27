@@ -14,6 +14,8 @@ pub mod completions;
 pub mod context;
 pub mod delete;
 pub mod doctor;
+/// `comemory edges`: lexical search over the relation graph.
+pub mod edges;
 pub(crate) mod embedding_input;
 pub mod eval;
 pub mod feedback;
@@ -102,6 +104,8 @@ pub enum Cmd {
     /// Export the file-level code-connection graph (imports + co-change)
     /// as JSON, Graphviz DOT, or an interactive HTML page.
     Graph(graph::Args),
+    /// Search the relation graph lexically (supersedes, imports, references).
+    Edges(edges::Args),
     /// Launch the local web viewer + in-browser code editor (loopback HTTP).
     Serve(serve::Args),
     /// Launch the read-only interactive terminal explorer.
@@ -143,6 +147,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::IngestCode(a) => ingest_code::run(a, cli.json, cli.data_dir).await,
         Cmd::Ast(a) => ast::run(a, cli.json, cli.data_dir).await,
         Cmd::Graph(a) => graph::run(a, cli.json, cli.data_dir).await,
+        Cmd::Edges(a) => edges::run(a, cli.json, cli.data_dir).await,
         Cmd::Serve(a) => serve::run(a, cli.json, cli.data_dir).await,
         Cmd::Tui(a) => tui::run(a, cli.json, cli.data_dir).await,
         Cmd::Context(a) => context::run(a, cli.json, cli.data_dir).await,

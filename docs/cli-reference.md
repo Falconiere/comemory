@@ -39,6 +39,7 @@ Commands:
   ingest-code    Read pre-embedded JSONL rows from stdin and ingest them into the code index (`code_symbols` + `code_fts` + `code_vec`)
   ast            Run an ast-grep pattern against a single source file
   graph          Export the file-level code-connection graph (imports + co-change) as JSON, Graphviz DOT, or an interactive HTML page
+  edges          Search the relation graph lexically (supersedes, imports, references)
   serve          Launch the local web viewer + in-browser code editor (loopback HTTP)
   tui            Launch the read-only interactive terminal explorer
   context        Headline lookup: code symbol + memories matching a key
@@ -576,6 +577,41 @@ Examples:
 
   # Drop weak co-change links (accumulated weight < 3)
   comemory graph --rel co-changed --min-weight 3
+```
+
+---
+
+## comemory edges
+
+```
+Search the relation graph lexically (supersedes, imports, references)
+
+Usage: comemory edges [OPTIONS] <QUERY>
+
+Arguments:
+  <QUERY>  Free-form query — relation verb, memory slug words, path or symbol fragment, or any mix of them
+
+Options:
+      --json                 Emit machine-readable JSON instead of a human TTY view
+      --k <K>                Page size — overrides the configured `retrieval.top_k`. `--limit` is an accepted alias. `0` means "all remaining within the `max_page_window`" [aliases: --limit]
+      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+      --offset <OFFSET>      Number of leading ranked relations to skip (deep paging) [default: 0]
+  -h, --help                 Print help
+
+Examples:
+  # Which memory supersedes the queue decision?
+  comemory edges "supersedes queue design"
+
+  # Machine-readable rows plus the page cursor
+  comemory edges "imports tokenizer" --json
+
+  # Second page of ten relations
+  comemory edges tokenizer --k 10 --offset 10
+
+The query is matched against the rendered triplet text: a memory endpoint
+renders as `<kind> <slug>`, a file or symbol endpoint as its id with the
+kind prefix stripped. Two tiers are tried — strict AND, then word-OR — and
+the tier is chosen once per query, so paging never switches ladders midway.
 ```
 
 ---
