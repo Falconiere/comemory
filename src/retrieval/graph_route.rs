@@ -58,7 +58,10 @@ const GRAPH_TIER: u8 = 0;
 /// Quoted, comma-joined [`ALLOWED_RELS`] for the `rel IN (…)` predicate.
 /// Interpolated into the SQL rather than bound because SQLite cannot
 /// parameterize an `IN` list; every value is a compile-time constant of
-/// this module, never user input.
+/// this module, never user input. INVARIANT: [`ALLOWED_RELS`] must never
+/// be extended with runtime- or user-supplied strings — interpolation
+/// would turn any such value into a SQL injection vector. The list is
+/// `const` precisely so the query text stays stable (and cacheable).
 fn rel_list() -> String {
     ALLOWED_RELS
         .iter()
@@ -127,6 +130,11 @@ pub fn expand_memory_seeds(
     if seed_ids.is_empty() || cfg.retrieval.graph_hops == 0 || pool == 0 {
         return Ok(Vec::new());
     }
+    // The JSON array is BOUND as the `:seeds` named parameter — never
+    // interpolated into the SQL text — so quoting/escaping is entirely
+    // serde_json's job and `json_each` only ever parses a bound string.
+    // Seed ids are internal 8-hex content hashes from the provisional
+    // ranking, not caller-supplied text.
     let seeds = serde_json::to_string(seed_ids)?;
     let mut stmt = conn.prepare(&expansion_sql())?;
     let rows = stmt
