@@ -1,14 +1,23 @@
-//! Pagination tests for [`comemory::retrieval::pipeline`] — split from
-//! `retrieval__pipeline.rs` to keep each test binary under the size cap.
+//! Pagination and ranking-parity tests for
+//! [`comemory::retrieval::pipeline`] — split from `retrieval__pipeline.rs`
+//! to keep each test binary under the size cap.
 //!
-//! Covers `pool_size` / `paginate` unit behavior plus the end-to-end
-//! STABILITY property of deep paging: paging deeper (a larger candidate
-//! pool) must not reorder or drop earlier pages, because RRF rank-fusion
-//! and MMR/near-dup selection keep a stable top prefix as the pool grows.
+//! Covers `pool_size` / `paginate` unit behavior, the end-to-end STABILITY
+//! property of deep paging (paging deeper — a larger candidate pool — must
+//! not reorder or drop earlier pages, because RRF rank-fusion and MMR/
+//! near-dup selection keep a stable top prefix as the pool grows), and the
+//! committed baseline ranking snapshot over the shared smoke corpus.
 
+use assert_cmd::Command;
 use comemory::retrieval::pipeline::{PageWindow, SearchOptions, paginate, pool_size, search};
 use comemory::retrieval::router::CANDIDATE_POOL;
 use comemory::simhash::{NEAR_DUP_HAMMING, hamming64};
+
+// Included via `#[path]` rather than a declaration in `tests/common/mod.rs`
+// so only the binaries that actually call the corpus pull it in — same
+// pattern as `tests/cli_rank_smoke.rs`.
+#[path = "common/corpus.rs"]
+mod corpus;
 
 // ── pool_size unit tests ────────────────────────────────────────────────
 
@@ -293,4 +302,74 @@ fn offset_beyond_window_yields_empty_page_and_no_more() {
     assert!(ids.is_empty(), "offset past the window must be empty");
     assert!(!has_more, "nothing beyond an out-of-range offset");
     assert_eq!(total, 15, "total still reports the in-window ranked count");
+}
+
+// ── baseline ranking parity snapshot ────────────────────────────────────
+
+/// Seed a temp data dir with the shared smoke corpus through the real
+/// `comemory save` binary — markdown, FTS5 rows (identifier tokenizer) and
+/// SimHashes are written exactly as production writes them — then open the
+/// resulting `comemory.db` for in-process pipeline calls.
+fn seed_smoke_corpus() -> (tempfile::TempDir, rusqlite::Connection) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let data_dir = dir.path().join(".comemory");
+    for (kind, body, tags, quality) in corpus::CORPUS {
+        let quality = quality.to_string();
+        Command::cargo_bin("comemory")
+            .expect("cargo_bin comemory")
+            .env("COMEMORY_DATA_DIR", &data_dir)
+            .args(["save", body, "--kind", kind, "--tags", tags, "--quality"])
+            .arg(&quality)
+            .assert()
+            .success();
+    }
+    let conn = comemory::store::connection::open(data_dir.join("comemory.db")).expect("open");
+    (dir, conn)
+}
+
+/// Committed baseline: the ordered result ids the pipeline returns for
+/// every `SMOKE_QUERIES` entry, lexical-only (no vector) with tracking off
+/// so nothing the run observes is mutated by the run itself.
+///
+/// Ids are content-derived (8-hex of the body) and every scoring input is
+/// run-invariant here — access counts stay 0, no feedback exists, and all
+/// 20 memories are saved on the same day so ACT-R recency is uniform — so
+/// the snapshot is stable across repeated runs and machines.
+///
+/// This is a *parity* fixture, not a quality bar: it pins today's ranking
+/// so a later ranking change can prove its disabled path is bit-for-bit
+/// the legacy one. Body edits to the corpus legitimately churn it (ids are
+/// derived from bodies); an unexplained diff on unchanged corpus text is
+/// the regression this catches.
+#[test]
+fn baseline_smoke_queries_ids_order() {
+    let (_d, conn) = seed_smoke_corpus();
+    let cfg = comemory::config::Config::defaults();
+    let mut rendered = String::new();
+    for (query, _expected) in corpus::SMOKE_QUERIES {
+        let run = search(
+            &cfg,
+            &conn,
+            query,
+            None,
+            None,
+            None,
+            SearchOptions {
+                track: false,
+                source: "search",
+                window: PageWindow::top_k(&cfg),
+            },
+        )
+        .expect("search");
+        // Guard against an all-empty snapshot silently passing forever.
+        assert!(!run.hits.is_empty(), "query {query:?} returned no hits");
+        rendered.push_str(query);
+        rendered.push('\n');
+        for hit in &run.hits {
+            rendered.push_str("  ");
+            rendered.push_str(&hit.memory_id);
+            rendered.push('\n');
+        }
+    }
+    insta::assert_snapshot!(rendered);
 }
