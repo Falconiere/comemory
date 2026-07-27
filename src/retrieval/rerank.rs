@@ -187,20 +187,17 @@ fn memory_signals(conn: &Connection, id: &str) -> Result<Option<Signals>> {
     .map_err(Error::from)
 }
 
-/// Find the *live* memory that supersedes `id`, if any — the earliest one
-/// by `created_at` (ties break on `id`), so a memory replaced several times
-/// always reports the same superseder. Edges from soft-deleted memories
-/// don't count: a deleted superseder must not keep punishing the memory it
-/// once replaced. Self-edges (`src_id = dst_id`) are ignored as
-/// defense-in-depth — the writers refuse to create them, but a hand-seeded
-/// cycle must not permanently penalize its own memory. `prepare_cached` for
-/// the same per-hit-loop reason as [`memory_signals`].
+/// Find the *live* memory that supersedes `id`, if any — earliest by
+/// `created_at` (ties on `id`) so repeated replacements report one stable
+/// superseder. Soft-deleted superseders don't count; self-edges ignored as
+/// defense-in-depth. `prepare_cached` per [`memory_signals`].
 ///
 /// `as_of_cutoff` bounds the **superseder's own `created_at`**, never
-/// `edges.created_at`: `comemory rebuild` re-materializes every edge with a
-/// fresh timestamp, while a memory's `created_at` comes from frontmatter
-/// and survives the rebuild. Keying on the edge would make as-of results
-/// depend on when the database was last rebuilt.
+/// `edges.created_at` — rebuild re-stamps edges, frontmatter `created`
+/// survives. The cutoff is `memory_row::iso_format` output; that
+/// formatter ↔ SQLite `datetime()` contract is pinned by the
+/// mixed-precision store tests and the `--as-of` CLI e2e, so a format
+/// drift fails loudly, not silently.
 fn live_superseder(
     conn: &Connection,
     id: &str,
