@@ -65,6 +65,43 @@ pub fn quality_boost(quality: u8, clamp: (f64, f64)) -> f64 {
     bounded_boost(1.0 + 0.075 * (f64::from(quality) - 3.0), clamp)
 }
 
+/// Median of `values`, sorted in place: the middle element for odd counts,
+/// the mean of the middle two for even counts. An empty pool returns 0.0,
+/// which [`rank_boost`] reads as "nothing ranked yet → neutral".
+///
+/// Shared by both PageRank pools — `code_prior::median_file_rank` (which
+/// dedups per file first) and the memory rerank pool — so the two cannot
+/// drift on the even-count rule.
+pub fn median_rank(values: &mut [f64]) -> f64 {
+    if values.is_empty() {
+        return 0.0;
+    }
+    values.sort_by(f64::total_cmp);
+    let n = values.len();
+    if n % 2 == 1 {
+        values[n / 2]
+    } else {
+        (values[n / 2 - 1] + values[n / 2]) / 2.0
+    }
+}
+
+/// PageRank prior: `bounded(1 + scale·ln(1 + raw/median), clamp)`, relative
+/// to the candidate pool's median (see [`median_rank`]). Absolute PageRank
+/// scales with `1/node-count`, so a fixed reference would make the boost
+/// depend on corpus size; median-relative mapping is size-invariant.
+///
+/// A non-positive median — every score still at the 0.0 column default —
+/// returns the neutral 1.0 unclamped, so an unranked corpus cannot reorder
+/// anything. `scale` stays at the call site (`code_prior::RANK_SCALE`,
+/// `rerank::MEMORY_RANK_SCALE`) so each consumer sets its own slope over
+/// one shared curve.
+pub fn rank_boost(raw: f64, median: f64, scale: f64, clamp: (f64, f64)) -> f64 {
+    if median <= 0.0 {
+        return 1.0;
+    }
+    bounded_boost(1.0 + scale * (1.0 + raw.max(0.0) / median).ln(), clamp)
+}
+
 /// Fixed multiplier applied to results superseded by a live memory.
 ///
 /// Intentionally bypasses `prior_clamp`: a supersede is a penalty stronger
