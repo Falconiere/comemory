@@ -44,6 +44,9 @@ pub struct EdgeFtsHit {
 /// in the text would only plant `file`/`symbol`/`repo` as a high-frequency
 /// term in nearly every triplet. Bare `references_*` targets
 /// (`<repo>:<path>[:<symbol>]`) carry no prefix and fall through unchanged.
+/// INVARIANT: compile-time constants only — entries are interpolated into
+/// SQL text by [`strip_prefix_expr`]; a runtime- or user-supplied entry
+/// would be a SQL injection vector.
 const KIND_PREFIXES: [&str; 5] = ["file:", "symbol:", "repo:", "author:", "tag:"];
 
 /// A SQLite expression rendering `col` with any leading [`KIND_PREFIXES`]
@@ -115,7 +118,11 @@ pub fn refresh(conn: &mut Connection) -> Result<usize> {
 /// True when `edges` has rows but `edge_fts` does not — the upgraded-database
 /// state the 0012 migration deliberately leaves behind. `comemory edges`
 /// calls this and refreshes once before querying, so an upgrade self-heals
-/// with no flag and no migration backfill.
+/// with no flag and no migration backfill. The two counts are read without
+/// a shared transaction on purpose: a concurrent writer can only make the
+/// answer stale, and every stale outcome is benign — [`refresh`] is an
+/// idempotent wholesale rebuild, so the worst cases are one redundant
+/// refresh or one no-op refresh over an emptied table.
 pub fn needs_refresh(conn: &Connection) -> Result<bool> {
     let indexed: i64 = conn.query_row("SELECT count(*) FROM edge_fts", [], |r| r.get(0))?;
     if indexed > 0 {
