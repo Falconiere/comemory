@@ -62,7 +62,7 @@ authoritative architecture reference; pair it with the
 | `store` | SQLite connection layer, schema_meta, migrations, vector + FTS helpers, identifier tokenizer (camelCase/snake_case split + FFI registration) |
 | `simhash` | 64-bit SimHash + Hamming distance over tokenized memory bodies |
 | `graph` | SQL-backed edges (`Supersedes`, `ConflictsWith`, `RelatesTo`, `ReferencesFile`, `ReferencesSymbol`, `CoChanged`, `Imports`, …) + recursive walks; `cross_link` parses backticked refs; `cochange` mines git history, `imports` extracts per-language import edges, `pagerank` + `materialize` write `code_symbols.rank_score` |
-| `retrieval` | router (candidates + 4-tier lexical ladder ending in learned expansion), graph_route (graph-expansion leg: an edge walk seeded from the provisional top hits), score (ACT-R/Beta primitives), rerank (multiplicative priors), diversify (SimHash collapse + MMR), pipeline (orchestration + access tracking), fuse (RRF, pairwise + N-ary), bundle (context lookup, code refs ranked by graph priors); code side: code_route (BM25 + thresholded ANN + RRF, chunk→parent coalesce), code_rerank + code_prior (PageRank / recency / working-set affinity / feedback) |
+| `retrieval` | router (candidates + 4-tier lexical ladder ending in learned expansion), graph_route (graph-expansion leg: an edge walk seeded from the provisional top hits), scope (the created-date `TimeScope` + the `Filters` bundle threading repo/kind/time through every leg), score (ACT-R/Beta primitives), rerank (multiplicative priors), diversify (SimHash collapse + MMR), pipeline (orchestration + access tracking), fuse (RRF, pairwise + N-ary), bundle (context lookup, code refs ranked by graph priors); code side: code_route (BM25 + thresholded ANN + RRF, chunk→parent coalesce), code_rerank + code_prior (PageRank / recency / working-set affinity / feedback) |
 | `eval` | learning loop: golden sets (file + feedback harvest), recall@k/MRR metrics, eval runner (replays originating repo/kind filters), reformulation mining, grid tune |
 | `ast` | ast-grep wrapper (rust/ts/js/py/go), per-language symbol extractor, cAST chunking of oversized symbols, user pattern API |
 | `stats` | rusqlite usage / feedback / code_feedback / repo-marker tables (lives inside the same DB) |
@@ -248,6 +248,42 @@ global match count.
 The mechanism differs per command: `list` / `graph` page via SQLite
 `LIMIT/OFFSET`; `ast` / `prune` page **in-memory** (and `prune` paging is
 display-only — `--apply` acts on the full set, not the current page).
+
+### 5.2 Time scoping (`--since` / `--until` / `--as-of`)
+
+`search` and `context` accept a created-date window, carried as a
+`retrieval::scope::TimeScope` inside the `Filters` bundle that already
+holds `--repo` / `--kind`. All three candidate legs apply it to
+`memories.created_at`: the lexical ladder (through the single
+`store::fts_memory::run_memory_match` choke-point, so every tier is
+covered), the vector KNN, and the graph walk. Bounds travel as normalized
+ISO-8601 strings and every predicate compares through SQLite
+`datetime(…)` rather than raw string `<=`: stored precision is mixed (the
+writer emits 9-digit fractional seconds, older rows and seeds second
+precision) and lexicographic compare inverts across precisions. Two
+consequences fall out of `datetime()`: it truncates fractional seconds, so
+`--until <date>` behaves as `<= 23:59:59` of that day and sub-second bound
+precision is ignored (the inclusive-window intent is unaffected); and a row
+whose `created_at` will not parse yields NULL and drops out of any scoped
+run.
+
+`--as-of` is `--until` plus **supersede scoping**: the rerank stage only
+counts a superseder that itself existed at the cutoff, so a memory
+superseded later shows its original, unpenalized score. That check keys on
+the superseder *memory's* `created_at` — never on `edges.created_at`, which
+`comemory rebuild` re-stamps with the rebuild time, while frontmatter
+`created` survives it. When several live superseders exist the earliest one
+wins (`ORDER BY datetime(created_at), id`), so the reported `superseded_by`
+is deterministic in and out of as-of mode.
+
+Time scoping is deliberately **corpus-only**. The ACT-R activation prior
+still uses wall-clock `now` and present-day access counts (access history
+is not versioned, so "activation as it was then" is unknowable), and
+soft-deleted memories stay excluded even when the cutoff predates the
+deletion — their FTS/vec rows and edges are physically purged at
+soft-delete. An unscoped run binds NULL for both bounds, which every
+predicate short-circuits on, so the no-flags path is bit-identical to the
+pre-time-travel pipeline.
 
 ## 6. Save flow
 

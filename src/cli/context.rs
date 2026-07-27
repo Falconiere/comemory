@@ -17,7 +17,7 @@ use clap::Args as ClapArgs;
 
 use crate::cli::{
     embedding_input, lazy_reindex, load_config, page_meta, page_window, resolve_data_dir,
-    track_searches,
+    track_searches, when,
 };
 use crate::config::paths::Paths;
 use crate::output;
@@ -83,6 +83,20 @@ pub struct Args {
     /// the query from stdin.
     #[arg(long, default_value_t = false)]
     pub vector_stdin: bool,
+    /// Only consider memories created at or after this instant. Accepts an
+    /// RFC3339 timestamp or a bare `YYYY-MM-DD` date (start of that UTC day).
+    #[arg(long, value_name = "WHEN")]
+    pub since: Option<String>,
+    /// Only consider memories created at or before this instant. Accepts an
+    /// RFC3339 timestamp or a bare `YYYY-MM-DD` date (end of that UTC day).
+    /// Filters candidates only — the supersede penalty stays present-day.
+    #[arg(long, value_name = "WHEN")]
+    pub until: Option<String>,
+    /// Bundle the corpus as it stood at this instant: `--until` plus
+    /// supersede-penalty scoping, so a memory counts as superseded only by
+    /// one that already existed then. Same value grammar as `--until`.
+    #[arg(long = "as-of", value_name = "WHEN", conflicts_with = "until")]
+    pub as_of: Option<String>,
 }
 
 /// Run `comemory context`. Opens the DB, routes the query (with optional
@@ -114,9 +128,11 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         source: crate::stats::source::CONTEXT,
         window,
     };
+    let scope = when::scope_from_flags(a.since.as_deref(), a.until.as_deref(), a.as_of.as_deref())?;
     let filters = Filters {
         repo: a.repo.as_deref(),
-        ..Filters::none()
+        kind: None,
+        scope: &scope,
     };
     let run = pipeline::search(&cfg, &conn, &a.query, vec.as_deref(), filters, opts)?;
     let meta = page_meta(window, run.has_more, run.total);
@@ -134,7 +150,8 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     if opts.track {
         code_row::record_access(&conn, &bundle.resolved_code_ids);
     }
-    output::context::emit(&bundle, query_id.as_deref(), meta, json_flag)
+    let echo = output::search::ScopeEcho::of(&scope);
+    output::context::emit(&bundle, query_id.as_deref(), meta, json_flag, echo)
 }
 
 /// The working set for the bundle's affinity prior: empty when there are no

@@ -17,6 +17,7 @@ use crate::output::{json, tty};
 use crate::prelude::*;
 use crate::retrieval::rerank::{Reranked, ScoreParts};
 use crate::retrieval::router::{Source, TIER_EXPANDED};
+use crate::retrieval::scope::TimeScope;
 use crate::store::memory_meta::MemoryMeta;
 
 /// One search hit as emitted to the user. `score` duplicates
@@ -75,6 +76,44 @@ pub struct PageMeta {
     pub total: Option<usize>,
 }
 
+/// The time-scoping flags echoed back at the root of a `--json` envelope,
+/// flattened into both the `search` and `context` envelopes so the two
+/// commands report a scoped run identically.
+///
+/// Every field is absent unless the corresponding flag was passed, which
+/// keeps an unscoped envelope byte-identical to the pre-time-travel
+/// contract. `until` and `as_of` are distinguished (they share
+/// [`TimeScope::cutoff`]) so a consumer can tell whether the supersede
+/// penalty was time-scoped too. Values are the normalized ISO-8601 bounds
+/// the store actually compared against, not the raw flag text.
+#[derive(Debug, Clone, Copy, Default, Serialize)]
+pub struct ScopeEcho<'a> {
+    /// Normalized `--since` bound.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub since: Option<&'a str>,
+    /// Normalized `--until` bound; `None` when the cutoff came from
+    /// `--as-of` (or when there is no cutoff).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub until: Option<&'a str>,
+    /// Normalized `--as-of` bound; `None` when the cutoff came from
+    /// `--until` (or when there is no cutoff).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub as_of: Option<&'a str>,
+}
+
+impl<'a> ScopeEcho<'a> {
+    /// The echo for `scope`: the cutoff is reported under `as_of` when the
+    /// run carries as-of semantics and under `until` otherwise.
+    pub fn of(scope: &'a TimeScope) -> Self {
+        let cutoff = scope.cutoff.as_deref();
+        ScopeEcho {
+            since: scope.since.as_deref(),
+            until: (!scope.as_of).then_some(cutoff).flatten(),
+            as_of: scope.as_of.then_some(cutoff).flatten(),
+        }
+    }
+}
+
 /// JSON envelope returned to `--json` callers. Wraps the hits under `hits`
 /// so future top-level fields (route, filters, ...) can be added without
 /// breaking parsers. `hits` and `query_id` are unchanged from the
@@ -97,18 +136,25 @@ pub struct Envelope<'a> {
     /// In-window ranked count (diversified) the page was sliced from;
     /// `None` when not cheaply known.
     pub total: Option<usize>,
+    /// The run's time-scoping flags, echoed at the envelope root. Every
+    /// field is skipped when unset, so an unscoped run is unchanged.
+    #[serde(flatten)]
+    pub scope: ScopeEcho<'a>,
 }
 
 /// Build the serializable envelope. Public so snapshot tests can pin the
 /// JSON contract without going through stdout. `meta` carries the batched
 /// navigation metadata (keyed by memory id) and `data_dir` resolves each
-/// row's stored `md_path` into an absolute path.
+/// row's stored `md_path` into an absolute path. `scope` echoes the
+/// time-scoping flags for this run ([`ScopeEcho::default`] for an
+/// unscoped one).
 pub fn envelope<'a>(
     hits: &'a [Reranked],
     query_id: Option<&'a str>,
     page: PageMeta,
     meta: &HashMap<String, MemoryMeta>,
     data_dir: &Path,
+    scope: ScopeEcho<'a>,
 ) -> Envelope<'a> {
     Envelope {
         hits: hits.iter().map(|h| row_from(h, meta, data_dir)).collect(),
@@ -117,6 +163,7 @@ pub fn envelope<'a>(
         offset: page.offset,
         has_more: page.has_more,
         total: page.total,
+        scope,
     }
 }
 
@@ -124,7 +171,8 @@ pub fn envelope<'a>(
 /// retrieval_log id for this run (JSON field / TTY footer); `None` skips
 /// it. `page` carries the pagination cursor for the JSON envelope. `meta`
 /// holds the per-hit navigation metadata and `data_dir` resolves each
-/// markdown path to an absolute one.
+/// markdown path to an absolute one. `scope` is echoed in the JSON
+/// envelope only; the TTY view is unchanged by time scoping.
 pub fn emit(
     hits: &[Reranked],
     query_id: Option<&str>,
@@ -132,9 +180,10 @@ pub fn emit(
     json_flag: bool,
     meta: &HashMap<String, MemoryMeta>,
     data_dir: &Path,
+    scope: ScopeEcho<'_>,
 ) -> Result<()> {
     if json_flag {
-        return json::write(&envelope(hits, query_id, page, meta, data_dir));
+        return json::write(&envelope(hits, query_id, page, meta, data_dir, scope));
     }
     write_tty(
         &mut std::io::stdout().lock(),
