@@ -12,13 +12,14 @@ use std::path::PathBuf;
 use clap::Args as ClapArgs;
 
 use crate::cli::{
-    embedding_input, load_config, page_meta, page_window, resolve_data_dir, track_searches,
+    embedding_input, load_config, page_meta, page_window, resolve_data_dir, track_searches, when,
 };
 use crate::config::paths::Paths;
 use crate::memory::Kind;
 use crate::output;
 use crate::prelude::*;
 use crate::retrieval::pipeline;
+use crate::retrieval::scope::Filters;
 use crate::store::{connection, memory_meta};
 
 const EXAMPLES: &str = "\
@@ -42,6 +43,16 @@ Examples:
 
   # Caller-supplied vector (BYO-vector, CSV form)
   comemory search \"advisory lock\" --vector 0.1,0.2,0.3,...
+
+  # Time travel: the corpus as it stood on 2026-06-01 — memories created
+  # later are excluded, and a hit only counts as superseded if its
+  # superseder already existed by then (\"what did we decide back then?\").
+  comemory search \"queue backend\" --as-of 2026-06-01 --json
+
+  # Plain created-date window; --until filters candidates only, so a hit
+  # superseded *after* the cutoff still shows its present-day penalty.
+  # Both bounds accept RFC3339 or a bare YYYY-MM-DD (whole-day inclusive).
+  comemory search \"queue backend\" --since 2026-05-01 --until 2026-06-01
 
   # A hit tagged \"source\": \"graph\" (tier 0) is lexically dark for the
   # query — the graph-expansion leg reached it by walking `edges` out from
@@ -79,6 +90,20 @@ pub struct Args {
     /// the dense vector for the query.
     #[arg(long, default_value_t = false)]
     pub vector_stdin: bool,
+    /// Only search memories created at or after this instant. Accepts an
+    /// RFC3339 timestamp or a bare `YYYY-MM-DD` date (start of that UTC day).
+    #[arg(long, value_name = "WHEN")]
+    pub since: Option<String>,
+    /// Only search memories created at or before this instant. Accepts an
+    /// RFC3339 timestamp or a bare `YYYY-MM-DD` date (end of that UTC day).
+    /// Filters candidates only — the supersede penalty stays present-day.
+    #[arg(long, value_name = "WHEN")]
+    pub until: Option<String>,
+    /// Search the corpus as it stood at this instant: `--until` plus
+    /// supersede-penalty scoping, so a hit counts as superseded only by a
+    /// memory that already existed then. Same value grammar as `--until`.
+    #[arg(long = "as-of", value_name = "WHEN", conflicts_with = "until")]
+    pub as_of: Option<String>,
 }
 
 /// Run `comemory search`. Opens the DB, resolves the vector input (if any),
@@ -93,13 +118,17 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     let vec = embedding_input::read_optional(a.vector_stdin, a.vector.as_deref())?;
     let cfg = load_config(&paths)?;
     let window = page_window(&cfg, a.k, a.offset);
+    let scope = when::scope_from_flags(a.since.as_deref(), a.until.as_deref(), a.as_of.as_deref())?;
     let run = pipeline::search(
         &cfg,
         &conn,
         &a.query,
         vec.as_deref(),
-        a.repo.as_deref(),
-        a.kind.map(Kind::as_str),
+        Filters {
+            repo: a.repo.as_deref(),
+            kind: a.kind.map(Kind::as_str),
+            scope: &scope,
+        },
         pipeline::SearchOptions {
             track: track_searches()?,
             source: crate::stats::source::SEARCH,
@@ -118,5 +147,6 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         json_flag,
         &nav,
         paths.data_dir(),
+        output::search::ScopeEcho::of(&scope),
     )
 }

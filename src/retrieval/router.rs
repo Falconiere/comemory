@@ -18,6 +18,7 @@ use crate::config::Config;
 use crate::prelude::*;
 use crate::retrieval::fuse::{self, RankedHit};
 use crate::retrieval::graph_route::{self, GraphFuse};
+use crate::retrieval::scope::Filters;
 use crate::store::{fts, vector};
 
 /// Candidate pool fed to the rerank stage; the pipeline cuts to top_k
@@ -92,17 +93,18 @@ pub enum Source {
 /// `cfg.retrieval.graph_hops = 0` or an empty expansion returns the
 /// provisional ranking unchanged.
 ///
-/// `kind` restricts every path to one memory kind (canonical lowercase
-/// string, e.g. `decision`): the lexical legs filter in SQL via the
-/// `memories` join, while the ANN legs post-filter through [`filter_kind`]
-/// because vec0 cannot filter inside the KNN query.
+/// `filters.kind` restricts every path to one memory kind (canonical
+/// lowercase string, e.g. `decision`): the lexical legs filter in SQL via
+/// the `memories` join, while the ANN legs post-filter through
+/// [`filter_kind`] because vec0 cannot filter inside the KNN query.
+/// `filters.scope` bounds `created_at` in SQL on every leg, so an
+/// unbounded scope binds NULL and reproduces an unscoped run exactly.
 pub fn route(
     cfg: &Config,
     conn: &Connection,
     query: &str,
     vec: Option<&[f32]>,
-    repo: Option<&str>,
-    kind: Option<&str>,
+    filters: Filters<'_>,
     pool: usize,
 ) -> Result<Vec<RoutedHit>> {
     let k = pool;
@@ -118,9 +120,9 @@ pub fn route(
         source,
         tier,
     } = match vec {
-        Some(v) if lex_meaningful => route_hybrid(cfg, conn, query, v, k, repo, kind)?,
-        Some(v) => route_vector_only(cfg, conn, v, k, repo, kind)?,
-        None => route_lexical(cfg, conn, query, k, repo, kind)?,
+        Some(v) if lex_meaningful => route_hybrid(cfg, conn, query, v, k, filters)?,
+        Some(v) => route_vector_only(cfg, conn, v, k, filters)?,
+        None => route_lexical(cfg, conn, query, k, filters)?,
     };
     let legs: Vec<&[RankedHit]> = legs.iter().map(Vec::as_slice).collect();
     graph_route::expand_and_fuse(
@@ -131,8 +133,7 @@ pub fn route(
             legs: &legs,
             source,
             tier,
-            repo,
-            kind,
+            filters,
             pool: k,
         },
     )
@@ -192,20 +193,11 @@ fn route_hybrid(
     query: &str,
     vec: &[f32],
     k: usize,
-    repo: Option<&str>,
-    kind: Option<&str>,
+    filters: Filters<'_>,
 ) -> Result<Provisional> {
-    let ann = filter_kind(
-        conn,
-        above_similarity_threshold(
-            vector::knn_memory(conn, vec, k, repo)?,
-            |h| h.distance,
-            cfg.retrieval.memory_threshold,
-        ),
-        kind,
-    )?;
+    let ann = ann_leg(cfg, conn, vec, k, filters)?;
     let weights = cfg.retrieval.bm25_weights;
-    let (lex, lex_tier) = strict_then_ladder(conn, query, k, repo, kind, weights)?;
+    let (lex, lex_tier) = strict_then_ladder(conn, query, k, filters, weights)?;
     let lex_ranked: Vec<RankedHit> = lex.into_iter().map(lex_to_ranked).collect();
     if ann.is_empty() {
         return Ok(Provisional::new(
@@ -238,18 +230,9 @@ fn route_vector_only(
     conn: &Connection,
     vec: &[f32],
     k: usize,
-    repo: Option<&str>,
-    kind: Option<&str>,
+    filters: Filters<'_>,
 ) -> Result<Provisional> {
-    let ann = filter_kind(
-        conn,
-        above_similarity_threshold(
-            vector::knn_memory(conn, vec, k, repo)?,
-            |h| h.distance,
-            cfg.retrieval.memory_threshold,
-        ),
-        kind,
-    )?;
+    let ann = ann_leg(cfg, conn, vec, k, filters)?;
     let ann_ranked: Vec<RankedHit> = ann.into_iter().map(ann_to_ranked).collect();
     Ok(Provisional::new(
         &ann_ranked,
@@ -257,6 +240,28 @@ fn route_vector_only(
         Source::Vector,
         1,
     ))
+}
+
+/// The ANN leg shared by the hybrid and pure-vector arms: KNN under the
+/// repo + created-date scope, cut at the similarity threshold, then
+/// kind-filtered. Both arms consume it identically, so the scope, the
+/// threshold, and the post-filter cannot drift between them.
+fn ann_leg(
+    cfg: &Config,
+    conn: &Connection,
+    vec: &[f32],
+    k: usize,
+    filters: Filters<'_>,
+) -> Result<Vec<vector::MemoryHit>> {
+    filter_kind(
+        conn,
+        above_similarity_threshold(
+            vector::knn_memory(conn, vec, k, filters.repo, filters.window())?,
+            |h| h.distance,
+            cfg.retrieval.memory_threshold,
+        ),
+        filters.kind,
+    )
 }
 
 /// Batch kind filter for ANN-routed hits: the vec0 KNN leg cannot filter
@@ -311,11 +316,10 @@ fn route_lexical(
     conn: &Connection,
     query: &str,
     k: usize,
-    repo: Option<&str>,
-    kind: Option<&str>,
+    filters: Filters<'_>,
 ) -> Result<Provisional> {
     let weights = cfg.retrieval.bm25_weights;
-    let (lex, tier) = strict_then_ladder(conn, query, k, repo, kind, weights)?;
+    let (lex, tier) = strict_then_ladder(conn, query, k, filters, weights)?;
     let lex_ranked: Vec<RankedHit> = lex.into_iter().map(lex_to_ranked).collect();
     Ok(Provisional::new(
         &lex_ranked,
@@ -334,15 +338,15 @@ fn strict_then_ladder(
     conn: &Connection,
     query: &str,
     k: usize,
-    repo: Option<&str>,
-    kind: Option<&str>,
+    filters: Filters<'_>,
     weights: (f32, f32),
 ) -> Result<(Vec<fts::MemoryFtsHit>, u8)> {
-    let lex = fts::search_memory(conn, query, k, repo, kind, weights)?;
+    let (repo, kind, win) = (filters.repo, filters.kind, filters.window());
+    let lex = fts::search_memory(conn, query, k, repo, kind, win, weights)?;
     if !lex.is_empty() {
         return Ok((lex, 1));
     }
-    lexical_ladder(conn, query, k, repo, kind, weights)
+    lexical_ladder(conn, query, k, filters, weights)
 }
 
 /// Relaxed fallback ladder shared by the lexical and hybrid paths, walked
@@ -378,21 +382,21 @@ fn lexical_ladder(
     conn: &Connection,
     query: &str,
     k: usize,
-    repo: Option<&str>,
-    kind: Option<&str>,
+    filters: Filters<'_>,
     weights: (f32, f32),
 ) -> Result<(Vec<fts::MemoryFtsHit>, u8)> {
+    let (repo, kind, win) = (filters.repo, filters.kind, filters.window());
     if fts::term_count(query) >= 2 {
-        let lex = fts::search_memory_relaxed(conn, query, k, repo, kind, weights)?;
+        let lex = fts::search_memory_relaxed(conn, query, k, repo, kind, win, weights)?;
         if !lex.is_empty() {
             return Ok((lex, 2));
         }
     }
-    let lex = fts::search_memory_subtokens(conn, query, k, repo, kind, weights)?;
+    let lex = fts::search_memory_subtokens(conn, query, k, repo, kind, win, weights)?;
     if !lex.is_empty() {
         return Ok((lex, 3));
     }
-    let lex = fts::search_memory_expanded(conn, query, k, repo, kind, weights)?;
+    let lex = fts::search_memory_expanded(conn, query, k, repo, kind, win, weights)?;
     if !lex.is_empty() {
         return Ok((lex, TIER_EXPANDED));
     }

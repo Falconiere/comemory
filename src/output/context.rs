@@ -13,7 +13,7 @@ use std::io::Write as _;
 
 use serde::Serialize;
 
-use crate::output::search::PageMeta;
+use crate::output::search::{PageMeta, ScopeEcho};
 use crate::output::{json, tty};
 use crate::prelude::*;
 use crate::retrieval::bundle::Bundle;
@@ -44,14 +44,21 @@ pub struct Envelope<'a> {
     /// In-window ranked memory count the page was sliced from; `None` when
     /// not cheaply known.
     pub total: Option<usize>,
+    /// The lookup's time-scoping flags, echoed at the envelope root in the
+    /// same shape `comemory search` uses. Skipped field-by-field when
+    /// unset, so an unscoped lookup is unchanged.
+    #[serde(flatten)]
+    pub scope: ScopeEcho<'a>,
 }
 
 /// Build the serializable envelope. Public so tests can pin the JSON
-/// contract without going through stdout.
+/// contract without going through stdout. `scope` echoes the time-scoping
+/// flags for this lookup ([`ScopeEcho::default`] for an unscoped one).
 pub fn envelope<'a>(
     bundle: &'a Bundle<'a>,
     query_id: Option<&'a str>,
     page: PageMeta,
+    scope: ScopeEcho<'a>,
 ) -> Envelope<'a> {
     Envelope {
         bundle,
@@ -60,6 +67,7 @@ pub fn envelope<'a>(
         offset: page.offset,
         has_more: page.has_more,
         total: page.total,
+        scope,
     }
 }
 
@@ -68,15 +76,17 @@ pub fn envelope<'a>(
 /// it. `page` carries the memory-list pagination cursor for the JSON
 /// envelope. Footer semantics are shared with `comemory search` via
 /// [`tty::write_query_footer`]: the feedback hint only appears when the
-/// bundle actually surfaced memories.
+/// bundle actually surfaced memories. `scope` is echoed in the JSON
+/// envelope only; the TTY view is unchanged by time scoping.
 pub fn emit<'a>(
     bundle: &'a Bundle<'a>,
     query_id: Option<&'a str>,
     page: PageMeta,
     json_flag: bool,
+    scope: ScopeEcho<'a>,
 ) -> Result<()> {
     if json_flag {
-        return json::write(&envelope(bundle, query_id, page));
+        return json::write(&envelope(bundle, query_id, page, scope));
     }
     tty::header(&format!("context: {}", bundle.query))?;
     let mut out = std::io::stdout().lock();

@@ -19,6 +19,7 @@ use crate::config::Config;
 use crate::prelude::*;
 use crate::retrieval::fuse::{self, RankedHit};
 use crate::retrieval::router::{RoutedHit, Source};
+use crate::retrieval::scope::Filters;
 
 /// Relation labels the expansion walk may traverse.
 ///
@@ -102,6 +103,8 @@ fn expansion_sql() -> String {
             AND m.deleted_at IS NULL
             AND (:repo IS NULL OR m.repo = :repo)
             AND (:kind IS NULL OR m.kind = :kind)
+            AND (:since IS NULL OR datetime(m.created_at) >= datetime(:since))
+            AND (:cutoff IS NULL OR datetime(m.created_at) <= datetime(:cutoff))
             AND w.id NOT IN (SELECT value FROM json_each(:seeds))
           GROUP BY w.id
           ORDER BY hops ASC, w.id ASC
@@ -115,16 +118,17 @@ fn expansion_sql() -> String {
 /// `seed_ids` are the provisional top hits, already truncated to
 /// `cfg.retrieval.graph_seeds` by the caller; they are excluded from the
 /// result, so the leg contributes only *new* candidates. Only live
-/// `memories` rows survive, `repo` / `kind` filter them as in the other
-/// legs, and output is capped at `min(pool, MAX_EXPANDED)`. Score is
+/// `memories` rows survive, `filters` (repo / kind / created-date scope)
+/// narrow them as in the other legs, and output is capped at
+/// `min(pool, MAX_EXPANDED)`. The walk itself is unfiltered — it may
+/// *reach* an out-of-scope memory, and the final join drops it. Score is
 /// `1 / (1 + hops)` — informational, since RRF consumes rank order. Empty
 /// seeds or a disabled walk return empty without touching the database.
 pub fn expand_memory_seeds(
     conn: &Connection,
     cfg: &Config,
     seed_ids: &[String],
-    repo: Option<&str>,
-    kind: Option<&str>,
+    filters: Filters<'_>,
     pool: usize,
 ) -> Result<Vec<RoutedHit>> {
     if seed_ids.is_empty() || cfg.retrieval.graph_hops == 0 || pool == 0 {
@@ -136,6 +140,7 @@ pub fn expand_memory_seeds(
     // Seed ids are internal 8-hex content hashes from the provisional
     // ranking, not caller-supplied text.
     let seeds = serde_json::to_string(seed_ids)?;
+    let window = filters.window();
     let mut stmt = conn.prepare(&expansion_sql())?;
     let rows = stmt
         .query_map(
@@ -143,8 +148,10 @@ pub fn expand_memory_seeds(
                 ":seeds": seeds,
                 ":hops": i64::from(cfg.retrieval.graph_hops),
                 ":max_walk": MAX_WALK,
-                ":repo": repo,
-                ":kind": kind,
+                ":repo": filters.repo,
+                ":kind": filters.kind,
+                ":since": window.since,
+                ":cutoff": window.cutoff,
                 ":cap": pool.min(MAX_EXPANDED) as i64,
             },
             |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)),
@@ -175,10 +182,9 @@ pub struct GraphFuse<'a> {
     pub source: Source,
     /// [`RoutedHit::tier`] every id already present in `legs` keeps.
     pub tier: u8,
-    /// Repo filter, applied to the expansion exactly as to the other legs.
-    pub repo: Option<&'a str>,
-    /// Kind filter, applied to the expansion exactly as to the other legs.
-    pub kind: Option<&'a str>,
+    /// Repo / kind / created-date filters, applied to the expansion
+    /// exactly as to the other legs.
+    pub filters: Filters<'a>,
     /// Candidate-pool size; also the fused output's truncation point.
     pub pool: usize,
 }
@@ -202,7 +208,7 @@ pub fn expand_and_fuse(
         .take(cfg.retrieval.graph_seeds)
         .map(|h| h.memory_id.clone())
         .collect();
-    let graph = expand_memory_seeds(conn, cfg, &seeds, f.repo, f.kind, f.pool)?;
+    let graph = expand_memory_seeds(conn, cfg, &seeds, f.filters, f.pool)?;
     if graph.is_empty() {
         return Ok(f.base);
     }

@@ -127,6 +127,9 @@ Options:
       --kind <KIND>          Filter results to one memory kind [possible values: decision, bug, convention, discovery, pattern, note]
       --vector <VECTOR>      Caller-supplied dense vector as a comma-separated float list
       --vector-stdin         Read a JSON `{ "embedding": [..] }` payload from stdin and use it as the dense vector for the query
+      --since <WHEN>         Only search memories created at or after this instant. Accepts an RFC3339 timestamp or a bare `YYYY-MM-DD` date (start of that UTC day)
+      --until <WHEN>         Only search memories created at or before this instant. Accepts an RFC3339 timestamp or a bare `YYYY-MM-DD` date (end of that UTC day). Filters candidates only — the supersede penalty stays present-day
+      --as-of <WHEN>         Search the corpus as it stood at this instant: `--until` plus supersede-penalty scoping, so a hit counts as superseded only by a memory that already existed then. Same value grammar as `--until`
   -h, --help                 Print help
 
 Examples:
@@ -149,6 +152,16 @@ Examples:
 
   # Caller-supplied vector (BYO-vector, CSV form)
   comemory search "advisory lock" --vector 0.1,0.2,0.3,...
+
+  # Time travel: the corpus as it stood on 2026-06-01 — memories created
+  # later are excluded, and a hit only counts as superseded if its
+  # superseder already existed by then ("what did we decide back then?").
+  comemory search "queue backend" --as-of 2026-06-01 --json
+
+  # Plain created-date window; --until filters candidates only, so a hit
+  # superseded *after* the cutoff still shows its present-day penalty.
+  # Both bounds accept RFC3339 or a bare YYYY-MM-DD (whole-day inclusive).
+  comemory search "queue backend" --since 2026-05-01 --until 2026-06-01
 
   # A hit tagged "source": "graph" (tier 0) is lexically dark for the
   # query — the graph-expansion leg reached it by walking `edges` out from
@@ -660,6 +673,9 @@ Options:
       --repo <REPO>          Optional repo filter forwarded to the router
       --vector <VECTOR>      Caller-supplied dense vector as a comma-separated float list. When provided together with `query`, both ANN and lexical branches run and their results are fused via RRF. Without a vector only the lexical FTS5 path runs
       --vector-stdin         Read a JSON `{ "embedding": [..] }` payload from stdin and use it as the dense vector for the context lookup. Mutually exclusive with reading the query from stdin
+      --since <WHEN>         Only consider memories created at or after this instant. Accepts an RFC3339 timestamp or a bare `YYYY-MM-DD` date (start of that UTC day)
+      --until <WHEN>         Only consider memories created at or before this instant. Accepts an RFC3339 timestamp or a bare `YYYY-MM-DD` date (end of that UTC day). Filters candidates only — the supersede penalty stays present-day
+      --as-of <WHEN>         Bundle the corpus as it stood at this instant: `--until` plus supersede-penalty scoping, so a memory counts as superseded only by one that already existed then. Same value grammar as `--until`
   -h, --help                 Print help
 
 Examples:

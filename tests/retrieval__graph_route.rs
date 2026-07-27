@@ -11,6 +11,7 @@ mod code_seed;
 use comemory::config::Config;
 use comemory::retrieval::graph_route;
 use comemory::retrieval::router::{RoutedHit, Source};
+use comemory::retrieval::scope::Filters;
 
 /// Default config with the walk depth pinned to `hops`.
 fn cfg_hops(hops: u32) -> Config {
@@ -47,7 +48,7 @@ fn edge(conn: &rusqlite::Connection, src: (&str, &str), dst: (&str, &str), rel: 
 /// Expand from `seeds` with no repo/kind filter and a pool of 50.
 fn expand(conn: &rusqlite::Connection, cfg: &Config, seeds: &[&str]) -> Vec<RoutedHit> {
     let ids: Vec<String> = seeds.iter().map(|s| (*s).to_string()).collect();
-    graph_route::expand_memory_seeds(conn, cfg, &ids, None, None, 50).expect("expand")
+    graph_route::expand_memory_seeds(conn, cfg, &ids, Filters::none(), 50).expect("expand")
 }
 
 /// Result ids in returned order.
@@ -177,11 +178,21 @@ fn repo_and_kind_filters_drop_non_matching_neighbors() {
 
     let cfg = cfg_hops(1);
     let filtered = |repo, kind| -> Vec<String> {
-        graph_route::expand_memory_seeds(&conn, &cfg, &["aaaa0001".to_string()], repo, kind, 50)
-            .expect("expand")
-            .into_iter()
-            .map(|h| h.memory_id)
-            .collect()
+        graph_route::expand_memory_seeds(
+            &conn,
+            &cfg,
+            &["aaaa0001".to_string()],
+            Filters {
+                repo,
+                kind,
+                ..Filters::none()
+            },
+            50,
+        )
+        .expect("expand")
+        .into_iter()
+        .map(|h| h.memory_id)
+        .collect()
     };
 
     assert_eq!(filtered(None, None).len(), 3, "unfiltered sees all three");
@@ -267,8 +278,8 @@ fn empty_seeds_and_zero_hops_expand_to_nothing() {
         "derived_from",
     );
 
-    let no_seeds =
-        graph_route::expand_memory_seeds(&conn, &cfg_hops(2), &[], None, None, 50).expect("expand");
+    let no_seeds = graph_route::expand_memory_seeds(&conn, &cfg_hops(2), &[], Filters::none(), 50)
+        .expect("expand");
     assert!(no_seeds.is_empty(), "no seeds, no walk: {no_seeds:?}");
 
     let disabled = expand(&conn, &cfg_hops(0), &["aaaa0001"]);
@@ -319,7 +330,7 @@ fn pool_truncates_to_the_nearest_then_smallest_ids() {
     }
 
     let seeds = ["aaaa0000".to_string()];
-    let hits = graph_route::expand_memory_seeds(&conn, &cfg_hops(1), &seeds, None, None, 2)
+    let hits = graph_route::expand_memory_seeds(&conn, &cfg_hops(1), &seeds, Filters::none(), 2)
         .expect("expand");
     assert_eq!(
         ids(&hits),
@@ -327,7 +338,7 @@ fn pool_truncates_to_the_nearest_then_smallest_ids() {
         "pool caps the leg, keeping the lexicographically smallest ids"
     );
 
-    let none = graph_route::expand_memory_seeds(&conn, &cfg_hops(1), &seeds, None, None, 0)
+    let none = graph_route::expand_memory_seeds(&conn, &cfg_hops(1), &seeds, Filters::none(), 0)
         .expect("expand");
     assert!(none.is_empty(), "a zero pool asks for no candidates");
 }

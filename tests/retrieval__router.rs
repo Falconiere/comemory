@@ -5,6 +5,7 @@
 
 use comemory::config::Config;
 use comemory::retrieval::router::{self, Source};
+use comemory::retrieval::scope::Filters;
 use comemory::store::{connection, fts, vector};
 use tempfile::tempdir;
 
@@ -37,8 +38,7 @@ fn lexical_path_when_no_vector() {
         &conn,
         "advisory lock",
         None,
-        None,
-        None,
+        Filters::none(),
         router::CANDIDATE_POOL,
     )
     .expect("route");
@@ -63,8 +63,7 @@ fn pure_vector_path_when_empty_query() {
         &conn,
         "",
         Some(&v),
-        None,
-        None,
+        Filters::none(),
         router::CANDIDATE_POOL,
     )
     .expect("route");
@@ -93,8 +92,7 @@ fn relaxed_fallback_fires_when_strict_finds_nothing() {
         &conn,
         "oauth login race",
         None,
-        None,
-        None,
+        Filters::none(),
         router::CANDIDATE_POOL,
     )
     .expect("route");
@@ -120,8 +118,7 @@ fn relaxed_fallback_fires_on_empty_hybrid_result() {
         &conn,
         "oauth login race",
         Some(&v),
-        None,
-        None,
+        Filters::none(),
         router::CANDIDATE_POOL,
     )
     .expect("route");
@@ -148,8 +145,7 @@ fn hybrid_ann_hit_with_lexical_miss_stays_hybrid() {
         &conn,
         "oauth login race",
         Some(&v),
-        None,
-        None,
+        Filters::none(),
         router::CANDIDATE_POOL,
     )
     .expect("route");
@@ -174,8 +170,7 @@ fn single_term_miss_does_not_trigger_relaxed_fallback() {
         &conn,
         "kubernetes",
         None,
-        None,
-        None,
+        Filters::none(),
         router::CANDIDATE_POOL,
     )
     .expect("route");
@@ -204,8 +199,7 @@ fn identifier_query_reaches_prose_body_via_subtoken_tier() {
         &conn,
         "VecDimMismatch",
         None,
-        None,
-        None,
+        Filters::none(),
         router::CANDIDATE_POOL,
     )
     .expect("route");
@@ -230,8 +224,7 @@ fn subtoken_tier_fires_when_word_or_tier_is_also_empty() {
         &conn,
         "VecDimMismatch kubernetes",
         None,
-        None,
-        None,
+        Filters::none(),
         router::CANDIDATE_POOL,
     )
     .expect("route");
@@ -264,8 +257,7 @@ fn hybrid_empty_lexical_leg_retries_ladder_despite_ann_hits() {
         &conn,
         "VecDimMismatch",
         Some(&v),
-        None,
-        None,
+        Filters::none(),
         router::CANDIDATE_POOL,
     )
     .expect("route");
@@ -299,8 +291,7 @@ fn strict_lexical_hits_carry_tier_1() {
         &conn,
         "advisory lock",
         None,
-        None,
-        None,
+        Filters::none(),
         router::CANDIDATE_POOL,
     )
     .expect("route");
@@ -320,8 +311,7 @@ fn word_or_ladder_hits_carry_tier_2() {
         &conn,
         "oauth login race",
         None,
-        None,
-        None,
+        Filters::none(),
         router::CANDIDATE_POOL,
     )
     .expect("route");
@@ -343,8 +333,7 @@ fn subtoken_ladder_hits_carry_tier_3() {
         &conn,
         "VecDimMismatch",
         None,
-        None,
-        None,
+        Filters::none(),
         router::CANDIDATE_POOL,
     )
     .expect("route");
@@ -371,8 +360,7 @@ fn learned_expansion_tier_fires_when_every_other_tier_misses() {
         &conn,
         "sizing",
         None,
-        None,
-        None,
+        Filters::none(),
         router::CANDIDATE_POOL,
     )
     .expect("route");
@@ -399,8 +387,7 @@ fn learned_expansion_below_min_support_stays_empty() {
         &conn,
         "sizing",
         None,
-        None,
-        None,
+        Filters::none(),
         router::CANDIDATE_POOL,
     )
     .expect("route");
@@ -427,8 +414,7 @@ fn hybrid_fused_hits_carry_the_lexical_ladder_tier() {
         &conn,
         "sizing",
         Some(&v),
-        None,
-        None,
+        Filters::none(),
         router::CANDIDATE_POOL,
     )
     .expect("route");
@@ -462,8 +448,7 @@ fn vector_hits_below_memory_threshold_are_dropped() {
         &conn,
         "",
         Some(&query),
-        None,
-        None,
+        Filters::none(),
         router::CANDIDATE_POOL,
     )
     .expect("route");
@@ -491,8 +476,10 @@ fn vector_path_kind_filter_drops_other_kinds() {
         &conn,
         "",
         Some(&v),
-        None,
-        Some("decision"),
+        Filters {
+            kind: Some("decision"),
+            ..Filters::none()
+        },
         router::CANDIDATE_POOL,
     )
     .expect("route");
@@ -504,8 +491,7 @@ fn vector_path_kind_filter_drops_other_kinds() {
         &conn,
         "",
         Some(&v),
-        None,
-        None,
+        Filters::none(),
         router::CANDIDATE_POOL,
     )
     .expect("route");
@@ -530,8 +516,10 @@ fn hybrid_ann_leg_is_kind_filtered_before_fusion() {
         &conn,
         "postgres",
         Some(&v),
-        None,
-        Some("decision"),
+        Filters {
+            kind: Some("decision"),
+            ..Filters::none()
+        },
         router::CANDIDATE_POOL,
     )
     .expect("route");
@@ -559,8 +547,7 @@ fn hybrid_path_when_both_vector_and_query() {
         &conn,
         "advisory lock",
         Some(&v),
-        None,
-        None,
+        Filters::none(),
         router::CANDIDATE_POOL,
     )
     .expect("route");

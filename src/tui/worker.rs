@@ -16,6 +16,7 @@ use crate::retrieval::code_rerank::{self, CodeReranked, WorkingSet};
 use crate::retrieval::code_route;
 use crate::retrieval::pipeline::{self, PageWindow, SearchOptions};
 use crate::retrieval::rerank::Reranked;
+use crate::retrieval::scope::Filters;
 use crate::tui::app::Tab;
 
 /// A search request tagged with the generation counter that produced it.
@@ -89,8 +90,10 @@ fn run_memory(cfg: &Config, conn: &Connection, req: &Request) -> Result<Hits> {
         conn,
         &req.query,
         owned.as_deref(),
-        req.repo.as_deref(),
-        None,
+        Filters {
+            repo: req.repo.as_deref(),
+            ..Filters::none()
+        },
         SearchOptions {
             track: false,
             source: crate::stats::source::SEARCH,

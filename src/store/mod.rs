@@ -22,6 +22,8 @@ pub mod code_row;
 pub mod connection;
 pub mod embed;
 pub mod fts;
+/// Memory-leg FTS5 ladder (strict → relaxed → subtoken → expanded).
+pub mod fts_memory;
 pub mod memory_list;
 pub mod memory_meta;
 pub mod memory_row;
@@ -33,4 +35,21 @@ pub mod vector;
 /// `?,?,...,?` — `n` comma-joined SQL placeholders for one `IN (...)` clause.
 pub(crate) fn qmarks(n: usize) -> String {
     vec!["?"; n].join(",")
+}
+
+/// Inclusive `created_at` window restricting a memory query.
+///
+/// Bounds are pre-normalized ISO-8601 strings compared through SQLite
+/// `datetime()`, so mixed stored precision cannot invert the order the way
+/// a lexicographic compare would. A `None` bound leaves that side open, so
+/// [`CreatedWindow::default`] reproduces an unfiltered query exactly. The
+/// borrow-only pair (rather than two parameters) keeps the query helpers
+/// within clippy's argument budget and `store` independent of `retrieval`,
+/// whose `scope::TimeScope` owns the equivalent strings.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CreatedWindow<'a> {
+    /// Inclusive lower bound: keep rows created at or after this instant.
+    pub since: Option<&'a str>,
+    /// Inclusive upper bound: keep rows created at or before this instant.
+    pub cutoff: Option<&'a str>,
 }

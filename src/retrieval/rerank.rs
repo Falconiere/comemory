@@ -65,9 +65,17 @@ pub struct Reranked {
 /// by descending `final_score` (ties break on ascending `memory_id` so the
 /// order is fully deterministic). Hits whose memory row vanished or was
 /// soft-deleted (raced delete) are silently dropped.
-pub fn rerank(conn: &Connection, cfg: &Config, hits: &[RoutedHit]) -> Result<Vec<Reranked>> {
+///
+/// `as_of_cutoff` (set only by `--as-of`) scopes the supersede penalty to
+/// superseders that already existed at that instant; `None` — including
+/// under a plain `--until` — penalizes by the present-day corpus.
+pub fn rerank(
+    conn: &Connection,
+    cfg: &Config,
+    hits: &[RoutedHit],
+    as_of_cutoff: Option<&str>,
+) -> Result<Vec<Reranked>> {
     let now = OffsetDateTime::now_utc();
-    let clamp = cfg.rank.prior_clamp;
     // Normalize the whole candidate pool up front, then zip — pairing is
     // established before any hit is dropped below, so a vanished memory
     // row cannot skew which norm belongs to which hit.
@@ -75,38 +83,9 @@ pub fn rerank(conn: &Connection, cfg: &Config, hits: &[RoutedHit]) -> Result<Vec
         score::max_normalize(&hits.iter().map(|h| f64::from(h.score)).collect::<Vec<_>>());
     let mut out = Vec::with_capacity(hits.len());
     for (hit, norm) in hits.iter().zip(&normalized) {
-        let Some(row) = memory_signals(conn, &hit.memory_id)? else {
-            continue;
-        };
-        let days = score::days_since(&row.last_accessed, now);
-        let act = score::activation(row.access_count, days, cfg.rank.decay);
-        let beta = score::beta_feedback(row.used, row.irrelevant);
-        let superseded_by = live_superseder(conn, &hit.memory_id)?;
-        let supersede = if superseded_by.is_some() {
-            score::SUPERSEDE_PENALTY
-        } else {
-            1.0
-        };
-        let activation_boost = score::activation_boost(act, clamp);
-        let feedback_boost = score::feedback_boost(beta, clamp);
-        let quality_boost = score::quality_boost(row.quality, clamp);
-        let final_score = *norm * activation_boost * feedback_boost * quality_boost * supersede;
-        out.push(Reranked {
-            memory_id: hit.memory_id.clone(),
-            source: hit.source,
-            tier: hit.tier,
-            parts: ScoreParts {
-                rrf: *norm as f32,
-                activation: activation_boost,
-                feedback: feedback_boost,
-                quality: quality_boost,
-                supersede,
-                final_score,
-            },
-            superseded_by,
-            body: row.body,
-            simhash: row.simhash,
-        });
+        if let Some(scored) = score_hit(conn, cfg, hit, *norm, now, as_of_cutoff)? {
+            out.push(scored);
+        }
     }
     // `total_cmp` keeps the comparator a total order even if an upstream
     // stage ever leaks a NaN rrf score — `sort_by` panics on detected
@@ -119,6 +98,53 @@ pub fn rerank(conn: &Connection, cfg: &Config, hits: &[RoutedHit]) -> Result<Vec
             .then_with(|| a.memory_id.cmp(&b.memory_id))
     });
     Ok(out)
+}
+
+/// Score one candidate: pull its signals, build every bounded prior, and
+/// multiply them into `norm` (the pool-normalized relevance). Returns
+/// `Ok(None)` when the memory row vanished or was soft-deleted, which
+/// [`rerank`] drops from the output.
+fn score_hit(
+    conn: &Connection,
+    cfg: &Config,
+    hit: &RoutedHit,
+    norm: f64,
+    now: OffsetDateTime,
+    as_of_cutoff: Option<&str>,
+) -> Result<Option<Reranked>> {
+    let Some(row) = memory_signals(conn, &hit.memory_id)? else {
+        return Ok(None);
+    };
+    let clamp = cfg.rank.prior_clamp;
+    let days = score::days_since(&row.last_accessed, now);
+    let act = score::activation(row.access_count, days, cfg.rank.decay);
+    let beta = score::beta_feedback(row.used, row.irrelevant);
+    let superseded_by = live_superseder(conn, &hit.memory_id, as_of_cutoff)?;
+    let supersede = if superseded_by.is_some() {
+        score::SUPERSEDE_PENALTY
+    } else {
+        1.0
+    };
+    let activation = score::activation_boost(act, clamp);
+    let feedback = score::feedback_boost(beta, clamp);
+    let quality = score::quality_boost(row.quality, clamp);
+    let final_score = norm * activation * feedback * quality * supersede;
+    Ok(Some(Reranked {
+        memory_id: hit.memory_id.clone(),
+        source: hit.source,
+        tier: hit.tier,
+        parts: ScoreParts {
+            rrf: norm as f32,
+            activation,
+            feedback,
+            quality,
+            supersede,
+            final_score,
+        },
+        superseded_by,
+        body: row.body,
+        simhash: row.simhash,
+    }))
 }
 
 /// Per-memory ranking signals pulled in one query: row metadata plus the
@@ -161,22 +187,33 @@ fn memory_signals(conn: &Connection, id: &str) -> Result<Option<Signals>> {
     .map_err(Error::from)
 }
 
-/// Find a *live* memory that supersedes `id`, if any. Edges from
-/// soft-deleted memories don't count: a deleted superseder must not keep
-/// punishing the memory it once replaced. Self-edges (`src_id = dst_id`)
-/// are ignored as defense-in-depth — the writers refuse to create them,
-/// but a hand-seeded cycle must not permanently penalize its own memory.
-/// `prepare_cached` for the same per-hit-loop reason as [`memory_signals`].
-fn live_superseder(conn: &Connection, id: &str) -> Result<Option<String>> {
+/// Find the *live* memory that supersedes `id`, if any — earliest by
+/// `created_at` (ties on `id`) so repeated replacements report one stable
+/// superseder. Soft-deleted superseders don't count; self-edges ignored as
+/// defense-in-depth. `prepare_cached` per [`memory_signals`].
+///
+/// `as_of_cutoff` bounds the **superseder's own `created_at`**, never
+/// `edges.created_at` — rebuild re-stamps edges, frontmatter `created`
+/// survives. The cutoff is `memory_row::iso_format` output; that
+/// formatter ↔ SQLite `datetime()` contract is pinned by the
+/// mixed-precision store tests and the `--as-of` CLI e2e, so a format
+/// drift fails loudly, not silently.
+fn live_superseder(
+    conn: &Connection,
+    id: &str,
+    as_of_cutoff: Option<&str>,
+) -> Result<Option<String>> {
     let mut stmt = conn.prepare_cached(
         "SELECT e.src_id FROM edges e
            JOIN memories m ON m.id = e.src_id AND m.deleted_at IS NULL
           WHERE e.rel = 'supersedes'
             AND e.src_kind = 'memory' AND e.dst_kind = 'memory' AND e.dst_id = ?1
             AND e.src_id <> e.dst_id
+            AND (?2 IS NULL OR datetime(m.created_at) <= datetime(?2))
+          ORDER BY datetime(m.created_at) ASC, m.id ASC
           LIMIT 1",
     )?;
-    stmt.query_row([id], |r| r.get(0))
+    stmt.query_row(rusqlite::params![id, as_of_cutoff], |r| r.get(0))
         .optional()
         .map_err(Error::from)
 }

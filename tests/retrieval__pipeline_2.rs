@@ -11,6 +11,7 @@
 use assert_cmd::Command;
 use comemory::retrieval::pipeline::{PageWindow, SearchOptions, paginate, pool_size, search};
 use comemory::retrieval::router::CANDIDATE_POOL;
+use comemory::retrieval::scope::Filters;
 use comemory::simhash::{NEAR_DUP_HAMMING, hamming64};
 
 // Included via `#[path]` rather than a declaration in `tests/common/mod.rs`
@@ -204,8 +205,7 @@ fn page_ids(
         conn,
         "sqlite",
         None,
-        None,
-        None,
+        Filters::none(),
         SearchOptions {
             track: false,
             source: "search",
@@ -360,8 +360,7 @@ fn render_smoke_ranking(cfg: &comemory::config::Config, conn: &rusqlite::Connect
             conn,
             query,
             None,
-            None,
-            None,
+            Filters::none(),
             SearchOptions {
                 track: false,
                 source: "search",
