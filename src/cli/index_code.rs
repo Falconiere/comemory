@@ -24,7 +24,7 @@ use crate::ast::{self, languages};
 use crate::cli::{load_config, resolve_data_dir};
 use crate::config::paths::Paths;
 use crate::git_utils::map_git_err;
-use crate::graph::{imports, materialize};
+use crate::graph::{derived, imports, materialize};
 use crate::prelude::*;
 use crate::simhash;
 use crate::store::code_row::{self, CodeSymbolRow};
@@ -59,21 +59,12 @@ pub struct Args {
 /// mirror them into `code_symbols` (+ `code_fts`) — or emit them as JSONL
 /// when `--extract` is set.
 ///
-/// When the DB-write path is taken (i.e. `--extract` is not set), the whole
-/// walk runs inside a single SQLite transaction so a mid-walk failure rolls
-/// back cleanly: no partial `code_symbols`/`code_fts` rows, no stale
-/// `indexed_files` cursors, and re-running `index-code` on the same blob does
-/// not produce duplicate symbol rows for files whose `indexed_files` row had
-/// not yet been written.
-///
-/// After the symbol transaction commits, a best-effort graph post-pass
-/// ([`materialize::materialize`]) mines co-change pairs, refreshes the
-/// import edges of the files (re)indexed this run, and projects PageRank
-/// onto `code_symbols.rank_score`. Its errors are logged via
-/// `tracing::warn!` and swallowed — the symbol index must land even when
-/// graph materialization cannot. Files skipped by the blob-OID gate are
-/// absent from `imports_by_file`, so their existing import edges survive
-/// untouched (unchanged file, unchanged imports).
+/// The DB-write path runs the whole walk in one SQLite transaction, so a
+/// mid-walk failure rolls back cleanly: no partial `code_symbols`/`code_fts`
+/// rows, no stale `indexed_files` cursors, no duplicate symbol rows on a
+/// re-run. Files skipped by the blob-OID gate are absent from
+/// `imports_by_file`, so their existing import edges survive untouched
+/// (unchanged file, unchanged imports).
 pub async fn run(args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
@@ -94,70 +85,20 @@ pub async fn run(args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<(
     let mut walker = WalkBuilder::new(&args.path);
     walker.standard_filters(true);
     for entry in walker.build().filter_map(std::result::Result::ok) {
-        if !entry.file_type().is_some_and(|t| t.is_file()) {
-            continue;
+        if entry.file_type().is_some_and(|t| t.is_file()) {
+            index_file(&tx, &args, &repo, entry.path(), &mut imports_by_file)?;
         }
-        let Some(lang) = languages::detect(entry.path()) else {
-            continue;
-        };
-        let rel = relative(&args.path, entry.path());
-        let oid = match blob_oid(&repo, entry.path()) {
-            Some(v) => v,
-            // Untracked files (or files whose canonicalisation failed — that
-            // case is logged inside `blob_oid`) have no blob OID we can use as
-            // an indexing cursor, so skip them.
-            None => continue,
-        };
-        if oid_is_indexed(&tx, &args.repo, &rel, &oid)? {
-            continue;
-        }
-        // Drop any prior `code_symbols`/`code_vec`/`code_fts` rows for this
-        // `(repo, path)` before re-inserting so a blob_oid change (file edited)
-        // does not leave stale symbol rows behind alongside the fresh ones, and
-        // so re-inserts with shifted `line_start` values cannot collide on the
-        // `UNIQUE(repo, path, symbol, line_start)` constraint mid-transaction.
-        code_row::purge_file_symbols(&tx, &args.repo, &rel)?;
-        let snippet = std::fs::read_to_string(entry.path()).map_err(Error::Io)?;
-        let symbols = ast::extract(lang, &snippet)?;
-        for s in &symbols {
-            write_symbol(&tx, &args.repo, &rel, &oid, lang, s)?;
-        }
-        // Collect this file's raw imports for the graph post-pass. An empty
-        // Vec still matters — it clears the file's stale `imports` edges.
-        // Extraction failures (an ast-grep pattern bug) must not sink the
-        // symbol walk: warn and leave the file's previous edges in place.
-        match imports::extract_imports(lang, &snippet) {
-            Ok(modules) => {
-                imports_by_file.insert(rel.clone(), modules);
-            }
-            Err(e) => {
-                tracing::warn!(file = %rel, error = %e, "index-code: import extraction failed");
-            }
-        }
-        code_row::upsert_indexed_file(&tx, &args.repo, &rel, &oid)?;
     }
     code_row::stamp_repo_format(&tx, &args.repo)?;
-    // Persist the absolute working-tree root so `comemory serve` can resolve a
-    // `file:<repo>:<path>` node id back to a real file. `code_symbols.path` is
-    // produced by `relative(&args.path, ...)`, so the canonicalized `args.path`
-    // is the exact base those relative paths join back onto. A canonicalize
-    // failure (path vanished mid-run) leaves `root_path` NULL — `serve` then
-    // requires an explicit `--root` override rather than guessing.
-    match args.path.canonicalize() {
-        Ok(root) => {
-            code_row::upsert_repo_root(&tx, &args.repo, &root.to_string_lossy())?;
-        }
-        Err(e) => {
-            tracing::warn!(
-                path = %args.path.display(),
-                error = %e,
-                "index-code: could not canonicalize --path for repo root; serve will need --root",
-            );
-        }
-    }
+    stamp_repo_root(&tx, &args)?;
     tx.commit()?;
-    // Best-effort graph post-pass: the symbol index above is already
-    // durable; a graph failure (e.g. unborn HEAD) costs only freshness.
+    // Best-effort graph post-pass. `materialize` persists the mined
+    // code-graph edges, then the derived artifacts are refreshed so
+    // `memories.rank_score` and `edge_fts` reflect the `co_activated` edges
+    // it just wrote — without that second call a co-citation reward would
+    // sit in `edges` unread until the next save. The symbol index is
+    // already durable, so a failure here (e.g. an unborn HEAD) costs only
+    // freshness.
     if let Err(e) = materialize::materialize(
         &mut conn,
         &args.path,
@@ -171,7 +112,77 @@ pub async fn run(args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<(
             "index-code: graph materialization failed; symbol index kept",
         );
     }
+    derived::refresh_derived_best_effort(&mut conn);
     Ok(())
+}
+
+/// Index one walked file into the caller's open transaction.
+///
+/// A file is skipped (plain `Ok(())`) when no language is detected, when it
+/// has no blob OID — untracked, or a canonicalisation failure already
+/// logged inside [`blob_oid`] — or when that OID is already indexed. Errors
+/// abort the whole walk, so the caller's transaction rolls back.
+fn index_file(
+    tx: &Connection,
+    args: &Args,
+    repo: &Repository,
+    path: &Path,
+    imports_by_file: &mut BTreeMap<String, Vec<String>>,
+) -> Result<()> {
+    let Some(lang) = languages::detect(path) else {
+        return Ok(());
+    };
+    let rel = relative(&args.path, path);
+    let Some(oid) = blob_oid(repo, path) else {
+        return Ok(());
+    };
+    if oid_is_indexed(tx, &args.repo, &rel, &oid)? {
+        return Ok(());
+    }
+    // Drop any prior `code_symbols`/`code_vec`/`code_fts` rows for this
+    // `(repo, path)` before re-inserting so a blob_oid change (file edited)
+    // does not leave stale symbol rows behind alongside the fresh ones, and
+    // so re-inserts with shifted `line_start` values cannot collide on the
+    // `UNIQUE(repo, path, symbol, line_start)` constraint mid-transaction.
+    code_row::purge_file_symbols(tx, &args.repo, &rel)?;
+    let snippet = std::fs::read_to_string(path).map_err(Error::Io)?;
+    for s in &ast::extract(lang, &snippet)? {
+        write_symbol(tx, &args.repo, &rel, &oid, lang, s)?;
+    }
+    // Collect this file's raw imports for the graph post-pass. An empty
+    // Vec still matters — it clears the file's stale `imports` edges.
+    // Extraction failures (an ast-grep pattern bug) must not sink the
+    // symbol walk: warn and leave the file's previous edges in place.
+    match imports::extract_imports(lang, &snippet) {
+        Ok(modules) => {
+            imports_by_file.insert(rel.clone(), modules);
+        }
+        Err(e) => {
+            tracing::warn!(file = %rel, error = %e, "index-code: import extraction failed");
+        }
+    }
+    code_row::upsert_indexed_file(tx, &args.repo, &rel, &oid)?;
+    Ok(())
+}
+
+/// Persist the absolute working-tree root so `comemory serve` can resolve a
+/// `file:<repo>:<path>` node id back to a real file. `code_symbols.path`
+/// comes from `relative(&args.path, ...)`, so the canonicalized `args.path`
+/// is the exact base those relative paths join back onto. A canonicalize
+/// failure (path vanished mid-run) leaves `root_path` NULL — `serve` then
+/// requires an explicit `--root` override rather than guessing.
+fn stamp_repo_root(tx: &Connection, args: &Args) -> Result<()> {
+    match args.path.canonicalize() {
+        Ok(root) => code_row::upsert_repo_root(tx, &args.repo, &root.to_string_lossy()),
+        Err(e) => {
+            tracing::warn!(
+                path = %args.path.display(),
+                error = %e,
+                "index-code: could not canonicalize --path for repo root; serve will need --root",
+            );
+            Ok(())
+        }
+    }
 }
 
 /// `--extract` path. Walks the same files as the DB-write path but emits

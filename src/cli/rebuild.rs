@@ -177,9 +177,10 @@ fn build_new_db(old_db: &Path, tmp_path: &Path, paths: &Paths) -> Result<()> {
         copy_preserved_tables_from_old(&mut conn, old_db)?;
     }
 
-    // Rank last: the replay supplies the memory→memory relations and the
-    // copy above restores `co_activated`, so the graph is only whole now.
-    crate::graph::memory_rank::refresh_best_effort(&mut conn);
+    // Derived artifacts last: the replay supplies the memory→memory
+    // relations and the copy above restores the mined code-graph edges, so
+    // the graph is only whole now.
+    crate::graph::derived::refresh_derived_best_effort(&mut conn);
 
     // Close the connection before rename by dropping it here.
     drop(conn);

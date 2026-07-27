@@ -13,7 +13,7 @@ use crate::prelude::*;
 
 /// Highest schema version known to this build. Bumped each time a new
 /// migration file is added under `src/store/sql/`.
-pub const CURRENT_VERSION: &str = "11";
+pub const CURRENT_VERSION: &str = "12";
 
 /// 0001 bootstrap SQL (`schema_meta` table). Public so tests can replay
 /// historical schema states exactly as an old binary created them.
@@ -61,6 +61,11 @@ pub const M_V10: &str = include_str!("./sql/0010_v10_bandit.sql");
 /// backfill; rows stay at the neutral 0.0 until the first recompute. Public
 /// so tests can replay historical schema states.
 pub const M_V11: &str = include_str!("./sql/0011_v11_memory_rank.sql");
+/// 0012 SQL: the `edge_fts` FTS5 triplet index over `edges`, created empty
+/// — rendering lives in `store::edge_fts::refresh`, and upgraded databases
+/// self-heal on the first `comemory edges` run. Public so tests can replay
+/// historical schema states.
+pub const M_V12: &str = include_str!("./sql/0012_v12_edge_fts.sql");
 
 /// Apply all pending migrations. Safe to re-run; each migration is
 /// only applied if its key is absent from `schema_meta`.
@@ -78,6 +83,7 @@ pub fn run(conn: &mut Connection) -> Result<()> {
     apply(conn, "0009_v9_code_refs", M_V9)?;
     apply(conn, "0010_v10_bandit", M_V10)?;
     apply(conn, "0011_v11_memory_rank", M_V11)?;
+    apply(conn, "0012_v12_edge_fts", M_V12)?;
     set_version(conn, CURRENT_VERSION)?;
     Ok(())
 }
