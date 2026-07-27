@@ -78,6 +78,24 @@ pub(crate) struct PartialTuneConfig {
     pub(crate) bm25_grid: Option<Vec<(f32, f32)>>,
 }
 
+impl TuneConfig {
+    /// Overlay the file's `[tune]` keys; absent keys leave `self` untouched.
+    pub(crate) fn apply(&mut self, p: PartialTuneConfig) {
+        if let Some(v) = p.rrf_k_grid {
+            self.rrf_k_grid = v;
+        }
+        if let Some(v) = p.decay_grid {
+            self.decay_grid = v;
+        }
+        if let Some(v) = p.mmr_lambda_grid {
+            self.mmr_lambda_grid = v;
+        }
+        if let Some(v) = p.bm25_grid {
+            self.bm25_grid = v;
+        }
+    }
+}
+
 /// File-overlay partial for [`ReinforceConfig`].
 #[derive(Debug, Deserialize, Default)]
 #[serde(deny_unknown_fields)]

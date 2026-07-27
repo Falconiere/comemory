@@ -19,6 +19,23 @@ fn check_rrf_k(v: f32) -> std::result::Result<(), &'static str> {
     Ok(())
 }
 
+/// Bounds for `retrieval.graph_hops`. `0` is valid and disables the
+/// graph-expansion leg; the ceiling keeps the recursive edge walk bounded.
+fn check_graph_hops(v: u32) -> std::result::Result<(), &'static str> {
+    if v > 4 {
+        return Err("must be <= 4 (0 disables the graph-expansion leg)");
+    }
+    Ok(())
+}
+
+/// Bounds for `retrieval.graph_seeds`: the walk needs at least one seed.
+fn check_graph_seeds(v: usize) -> std::result::Result<(), &'static str> {
+    if v < 1 {
+        return Err("must be >= 1");
+    }
+    Ok(())
+}
+
 /// Bounds for `rank.decay` and every `tune.decay_grid` entry.
 fn check_decay(v: f64) -> std::result::Result<(), &'static str> {
     if !v.is_finite() || v < 0.0 {
@@ -81,6 +98,17 @@ impl Config {
     /// the config field and its env var (when one exists) so the offending
     /// knob is identifiable from either entry point.
     pub(crate) fn validate(self) -> Result<Self> {
+        self.check_retrieval_weights()?;
+        self.check_retrieval_knobs()?;
+        self.check_rank_knobs()?;
+        self.check_prune_knobs()?;
+        self.check_tune_grids()?;
+        self.check_reinforce_knobs()?;
+        Ok(self)
+    }
+
+    /// Weighted-BM25 column-weight sets for `memory_fts` and `code_fts`.
+    fn check_retrieval_weights(&self) -> Result<()> {
         let (b, t) = self.retrieval.bm25_weights;
         if let Err(why) = check_bm25_weights(&[b, t]) {
             return Err(Error::Config(format!(
@@ -93,10 +121,28 @@ impl Config {
                 "invalid retrieval.code_bm25_weights={cs},{cn},{cp} (env COMEMORY_RETRIEVAL_CODE_BM25_WEIGHTS): {why}"
             )));
         }
+        Ok(())
+    }
+
+    /// Scalar retrieval knobs: fusion constant, graph-walk bounds, page
+    /// window, and the two ANN similarity floors.
+    fn check_retrieval_knobs(&self) -> Result<()> {
         let k = self.retrieval.rrf_k;
         if let Err(why) = check_rrf_k(k) {
             return Err(Error::Config(format!(
                 "invalid retrieval.rrf_k={k} (env COMEMORY_RETRIEVAL_RRF_K): {why}"
+            )));
+        }
+        let gh = self.retrieval.graph_hops;
+        if let Err(why) = check_graph_hops(gh) {
+            return Err(Error::Config(format!(
+                "invalid retrieval.graph_hops={gh} (env COMEMORY_RETRIEVAL_GRAPH_HOPS): {why}"
+            )));
+        }
+        let gs = self.retrieval.graph_seeds;
+        if let Err(why) = check_graph_seeds(gs) {
+            return Err(Error::Config(format!(
+                "invalid retrieval.graph_seeds={gs} (env COMEMORY_RETRIEVAL_GRAPH_SEEDS): {why}"
             )));
         }
         let w = self.retrieval.max_page_window;
@@ -117,6 +163,11 @@ impl Config {
                 "invalid retrieval.code_threshold={ct} (env COMEMORY_RETRIEVAL_CODE_THRESHOLD): {why}"
             )));
         }
+        Ok(())
+    }
+
+    /// Ranking knobs consumed by `retrieval::{rerank,diversify}`.
+    fn check_rank_knobs(&self) -> Result<()> {
         let d = self.rank.decay;
         if let Err(why) = check_decay(d) {
             return Err(Error::Config(format!(
@@ -141,6 +192,11 @@ impl Config {
                 "invalid rank.near_dup_hamming={h} (env COMEMORY_RANK_NEAR_DUP_HAMMING): must be <= 64 (SimHash is 64-bit)"
             )));
         }
+        Ok(())
+    }
+
+    /// Prune scoring floors and the learning-telemetry retention window.
+    fn check_prune_knobs(&self) -> Result<()> {
         let a = self.prune.min_activation;
         if !a.is_finite() {
             return Err(Error::Config(format!(
@@ -167,6 +223,11 @@ impl Config {
         }
         // `prune.superseded_grace_days` has no range arm: any u32 is valid
         // (0 disables the grace window).
+        Ok(())
+    }
+
+    /// The file-only `[tune]` grids, each held to its scalar knob's bounds.
+    fn check_tune_grids(&self) -> Result<()> {
         check_grid("tune.rrf_k_grid", &self.tune.rrf_k_grid, check_rrf_k)?;
         check_grid("tune.decay_grid", &self.tune.decay_grid, check_decay)?;
         check_grid(
@@ -177,12 +238,17 @@ impl Config {
         check_grid("tune.bm25_grid", &self.tune.bm25_grid, |(wb, wt)| {
             check_bm25_weights(&[wb, wt])
         })?;
+        Ok(())
+    }
+
+    /// Search→edit auto-reinforcement lookback.
+    fn check_reinforce_knobs(&self) -> Result<()> {
         let sed = self.reinforce.search_edit_days;
         if sed < 1 {
             return Err(Error::Config(format!(
                 "invalid reinforce.search_edit_days={sed} (env COMEMORY_REINFORCE_SEARCH_EDIT_DAYS): must be >= 1"
             )));
         }
-        Ok(self)
+        Ok(())
     }
 }

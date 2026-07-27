@@ -85,6 +85,22 @@ impl Config {
     /// "defaults applied". Rank/prune range invariants are enforced by the
     /// shared `Config::validate` pass at the end.
     pub fn with_env(mut self) -> Result<Self> {
+        self.apply_indexing_env()?;
+        self.apply_retrieval_env()?;
+        self.apply_git_env()?;
+        self.apply_embed_hint_env();
+        self.apply_rank_env()?;
+        self.apply_prune_env()?;
+        self.apply_reinforce_env()?;
+        // The `[tune]` grid lists deliberately have NO env equivalents: a
+        // four-list env value ("20,60,100" × 4 vars, or worse, one var with
+        // semicolons) is unreadable and easy to misquote. Set them in
+        // config.toml's `[tune]` section instead; validation still runs.
+        self.validate()
+    }
+
+    /// `COMEMORY_INDEXING_AUTO_REINDEX` → [`Config::indexing`].
+    fn apply_indexing_env(&mut self) -> Result<()> {
         if let Ok(v) = std::env::var("COMEMORY_INDEXING_AUTO_REINDEX") {
             self.indexing.auto_reindex = match v.as_str() {
                 "lazy" => AutoReindexMode::Lazy,
@@ -97,6 +113,11 @@ impl Config {
                 }
             };
         }
+        Ok(())
+    }
+
+    /// `COMEMORY_RETRIEVAL_*` → [`Config::retrieval`].
+    fn apply_retrieval_env(&mut self) -> Result<()> {
         if let Some(v) = env_parse::<usize>("COMEMORY_RETRIEVAL_TOP_K")? {
             self.retrieval.top_k = v;
         }
@@ -111,6 +132,12 @@ impl Config {
         if let Some(v) = env_parse::<f32>("COMEMORY_RETRIEVAL_RRF_K")? {
             self.retrieval.rrf_k = v;
         }
+        if let Some(v) = env_parse::<u32>("COMEMORY_RETRIEVAL_GRAPH_HOPS")? {
+            self.retrieval.graph_hops = v;
+        }
+        if let Some(v) = env_parse::<usize>("COMEMORY_RETRIEVAL_GRAPH_SEEDS")? {
+            self.retrieval.graph_seeds = v;
+        }
         if let Some(v) = env_pair::<f32>("COMEMORY_RETRIEVAL_BM25_WEIGHTS")? {
             self.retrieval.bm25_weights = v;
         }
@@ -120,6 +147,11 @@ impl Config {
         if let Some(v) = env_triple::<f32>("COMEMORY_RETRIEVAL_CODE_BM25_WEIGHTS")? {
             self.retrieval.code_bm25_weights = v;
         }
+        Ok(())
+    }
+
+    /// `COMEMORY_GIT_AUTO_SYNC` → [`Config::git`].
+    fn apply_git_env(&mut self) -> Result<()> {
         if let Ok(v) = std::env::var("COMEMORY_GIT_AUTO_SYNC") {
             self.git.auto_sync = match v.as_str() {
                 "true" | "1" | "yes" | "on" => true,
@@ -131,6 +163,12 @@ impl Config {
                 }
             };
         }
+        Ok(())
+    }
+
+    /// `COMEMORY_EMBED_HINT` → [`Config::embed_hint`]. Infallible: the hint
+    /// is free-form text, echoed back verbatim by `comemory doctor`.
+    fn apply_embed_hint_env(&mut self) {
         // COMEMORY_VECTOR_DIM and COMEMORY_CODE_VECTOR_DIM are intentionally
         // not honoured here. The authoritative dim lives in the `memory_vec`
         // / `code_vec` vec0 DDL (`src/store/sql/0002_v2_tables.sql`) and is
@@ -139,9 +177,13 @@ impl Config {
         if let Ok(v) = std::env::var("COMEMORY_EMBED_HINT") {
             self.embed_hint = Some(v);
         }
-        // ── Rank + prune knobs ───────────────────────────────────────────────
-        // Parsing happens here; range invariants are enforced once for both
-        // env and file overlays by `Config::validate`.
+    }
+
+    /// `COMEMORY_RANK_*` → [`Config::rank`].
+    ///
+    /// Parsing happens here; range invariants are enforced once for both
+    /// env and file overlays by `Config::validate`.
+    fn apply_rank_env(&mut self) -> Result<()> {
         if let Some(v) = env_parse::<f64>("COMEMORY_RANK_DECAY")? {
             self.rank.decay = v;
         }
@@ -154,6 +196,12 @@ impl Config {
         if let Some(v) = env_parse::<u32>("COMEMORY_RANK_NEAR_DUP_HAMMING")? {
             self.rank.near_dup_hamming = v;
         }
+        Ok(())
+    }
+
+    /// `COMEMORY_PRUNE_*` and `COMEMORY_LEARNING_RETENTION_DAYS` →
+    /// [`Config::prune`]. Range invariants live in `Config::validate`.
+    fn apply_prune_env(&mut self) -> Result<()> {
         if let Some(v) = env_parse::<f64>("COMEMORY_PRUNE_MIN_ACTIVATION")? {
             self.prune.min_activation = v;
         }
@@ -169,13 +217,14 @@ impl Config {
         if let Some(v) = env_parse::<u32>("COMEMORY_PRUNE_SUPERSEDED_GRACE_DAYS")? {
             self.prune.superseded_grace_days = v;
         }
+        Ok(())
+    }
+
+    /// `COMEMORY_REINFORCE_SEARCH_EDIT_DAYS` → [`Config::reinforce`].
+    fn apply_reinforce_env(&mut self) -> Result<()> {
         if let Some(v) = env_parse::<u32>("COMEMORY_REINFORCE_SEARCH_EDIT_DAYS")? {
             self.reinforce.search_edit_days = v;
         }
-        // The `[tune]` grid lists deliberately have NO env equivalents: a
-        // four-list env value ("20,60,100" × 4 vars, or worse, one var with
-        // semicolons) is unreadable and easy to misquote. Set them in
-        // config.toml's `[tune]` section instead; validation still runs.
-        self.validate()
+        Ok(())
     }
 }

@@ -2,18 +2,17 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use super::defaults::{
-    default_bm25_weights, default_code_bm25_weights, default_code_threshold,
-    default_code_vector_dim, default_max_page_window, default_memory_vector_dim,
-    default_near_dup_hamming, default_superseded_grace_days,
-};
+use super::defaults::{default_near_dup_hamming, default_superseded_grace_days};
 use super::learning::{
     BanditConfig, PartialBanditConfig, PartialReinforceConfig, PartialTuneConfig, ReinforceConfig,
 };
+use super::retrieval::PartialRetrievalConfig;
 use crate::prelude::*;
 
 /// Re-export: historical `config::file::TuneConfig` import path.
 pub use super::learning::TuneConfig;
+/// Re-export: historical `config::file::RetrievalConfig` import path.
+pub use super::retrieval::RetrievalConfig;
 
 /// Partial config overlay loaded from a `config.toml` file.
 ///
@@ -49,21 +48,6 @@ struct PartialConfig {
     bandit: Option<PartialBanditConfig>,
 }
 
-/// File-overlay partial for [`RetrievalConfig`]. Only the M2-tunable
-/// keys are overlayable; structural knobs (vector dims) stay
-/// reporting-only and are not offered here.
-#[derive(Debug, Deserialize, Default)]
-#[serde(deny_unknown_fields)]
-struct PartialRetrievalConfig {
-    rrf_k: Option<f32>,
-    bm25_weights: Option<(f32, f32)>,
-    top_k: Option<usize>,
-    max_page_window: Option<usize>,
-    memory_threshold: Option<f32>,
-    code_threshold: Option<f32>,
-    code_bm25_weights: Option<(f32, f32, f32)>,
-}
-
 /// File-overlay partial for [`RankConfig`]. All fields optional.
 #[derive(Debug, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
@@ -91,26 +75,39 @@ struct PartialPruneConfig {
     superseded_grace_days: Option<u32>,
 }
 
+/// How the code index is refreshed — see [`IndexingConfig::auto_reindex`].
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum AutoReindexMode {
+    /// `search-code` / `context` spawn a detached background `index-code`.
     Lazy,
+    /// Refresh relies on the installed git hooks; no in-process trigger.
     Hook,
+    /// Manual only: the index refreshes on an explicit `index-code`.
     Off,
 }
 
+/// Best-effort git auto-sync of the markdown source of truth.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GitConfig {
+    /// Commit + push after a save when enabled. Env: `COMEMORY_GIT_AUTO_SYNC`.
     pub auto_sync: bool,
+    /// Remote pushed to by the auto-sync; empty means the git default.
     pub remote: String,
 }
 
+/// Operator-visible record of the embedders that produced the vectors.
+///
+/// Reporting-only: comemory is BYO-vector and never runs an embedder.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmbeddingsConfig {
+    /// Model name recorded for `memory_vec` vectors.
     pub memory_model: String,
+    /// Model name recorded for `code_vec` vectors.
     pub code_model: String,
 }
 
+/// Code-index freshness knobs.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IndexingConfig {
     /// How the code index is kept fresh: `lazy` (default), `hook`, or `off`.
@@ -137,70 +134,6 @@ pub struct IndexingConfig {
     /// invocation. Kept as an honest reserved knob (rather than wired to a
     /// fake consumer) for a future chunked-commit indexing path. Default `50`.
     pub incremental_batch_size: usize,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RetrievalConfig {
-    /// Minimum cosine similarity (`1.0 - distance`) for memory ANN hits.
-    /// Consumed by the router's vector-consuming paths: KNN hits below
-    /// this floor are dropped instead of padding the candidate pool with
-    /// nearest-but-irrelevant noise. Default `0.55`.
-    pub memory_threshold: f32,
-    /// Minimum cosine similarity (`1.0 - distance`) for code ANN hits,
-    /// the `code_vec` counterpart of [`memory_threshold`]. Must be a
-    /// finite value in `[0.0, 1.0]`. Validated from day one; consumed by
-    /// the M3 code-search wiring. Default `0.50`.
-    #[serde(default = "default_code_threshold")]
-    pub code_threshold: f32,
-    pub hybrid_weight: f32,
-    pub top_k: usize,
-    /// Maximum depth a paginated retrieval (`search`, `search-code`,
-    /// `context`) can page into the ranked result list. A request for
-    /// `(offset, k)` fetches a candidate pool sized
-    /// `clamp(offset + k + k, CANDIDATE_POOL, max_page_window)`, runs the
-    /// full fuse → rerank → diversify pipeline over it, then slices the
-    /// page; `has_more` is forced `false` once this window boundary is hit
-    /// (deeper results require refining the query). Must be > 0.
-    /// Default `200`.
-    #[serde(default = "default_max_page_window")]
-    pub max_page_window: usize,
-    pub corrective_min_confidence: f32,
-    /// RRF constant for sparse/dense fusion. Default 60.0 matches the original
-    /// Cormack/Clarke/Buettcher RRF paper.
-    pub rrf_k: f32,
-    /// Weighted-BM25 column weights for `memory_fts` in column order
-    /// `(body, tags)`. The `memory_id UNINDEXED` column is always 0.
-    /// Both must be finite and >= 0, and at least one must be > 0.
-    /// Default `(1.0, 3.0)` — a tag hit outranks a body hit.
-    #[serde(default = "default_bm25_weights")]
-    pub bm25_weights: (f32, f32),
-    /// Weighted-BM25 column weights for `code_fts` in column order
-    /// `(symbol, snippet, path_tokens)`. The `symbol_id UNINDEXED` column
-    /// is always 0. Every weight must be finite and >= 0, and at least one
-    /// must be > 0. Validated from day one; consumed by the M3 code-search
-    /// wiring (which replaces the hardcoded
-    /// `bm25(code_fts, 0.0, 2.0, 1.0, 1.5)`). Default `(2.0, 1.0, 1.5)` —
-    /// a symbol-name hit outranks snippet and path hits.
-    #[serde(default = "default_code_bm25_weights")]
-    pub code_bm25_weights: (f32, f32, f32),
-    /// Operator-visible record of the memory embedding dim. The authoritative
-    /// value is the literal in `src/store/sql/0002_v2_tables.sql` —
-    /// `memory_vec` is a vec0 vtab whose dim is baked into its `CREATE
-    /// VIRTUAL TABLE` at migration time and cannot be changed afterwards.
-    /// `vector::insert_memory` reads `schema_meta.memory_vector_dim` (seeded
-    /// from the same migration) to gate inserts; this config field tracks
-    /// the same value for `comemory doctor` reporting only. Changing it has
-    /// no effect on the vtab and no env-var override is offered (a divergent
-    /// env value would just produce `VecDimMismatch` at insert time).
-    /// Defaults to 1024 (nomic-embed-text-v1.5).
-    #[serde(default = "default_memory_vector_dim")]
-    pub memory_vector_dim: usize,
-    /// Operator-visible record of the code embedding dim. Same caveat as
-    /// [`memory_vector_dim`]: authoritative value lives in the DDL, this
-    /// field is reporting-only with no env override. Defaults to 768
-    /// (jina-embeddings-v2-base-code).
-    #[serde(default = "default_code_vector_dim")]
-    pub code_vector_dim: usize,
 }
 
 /// Ranking knobs for the rerank/diversify pipeline (M1).
@@ -237,9 +170,30 @@ pub struct RankConfig {
     pub near_dup_hamming: u32,
 }
 
+impl RankConfig {
+    /// Overlay the file's `[rank]` keys; absent keys leave `self` untouched.
+    fn apply(&mut self, p: PartialRankConfig) {
+        if let Some(v) = p.decay {
+            self.decay = v;
+        }
+        if let Some(v) = p.prior_clamp {
+            self.prior_clamp = v;
+        }
+        if let Some(v) = p.mmr_lambda {
+            self.mmr_lambda = v;
+        }
+        if let Some(v) = p.near_dup_hamming {
+            self.near_dup_hamming = v;
+        }
+    }
+}
+
+/// Prune scoring floors and retention windows for `comemory prune` / `gc`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PruneConfig {
+    /// Days a soft-deleted memory stays in the trash before `gc` reaps it.
     pub trash_retention_days: u32,
+    /// Quality (1..=5) at or below which a memory is a low-value candidate.
     pub low_value_default_below_quality: u32,
     /// Activation floor (ACT-R scale) below which a memory is prune-eligible.
     ///
@@ -265,19 +219,53 @@ pub struct PruneConfig {
     pub superseded_grace_days: u32,
 }
 
+impl PruneConfig {
+    /// Overlay the file's `[prune]` keys; absent keys leave `self` untouched.
+    fn apply(&mut self, p: PartialPruneConfig) {
+        if let Some(v) = p.trash_retention_days {
+            self.trash_retention_days = v;
+        }
+        if let Some(v) = p.low_value_default_below_quality {
+            self.low_value_default_below_quality = v;
+        }
+        if let Some(v) = p.min_activation {
+            self.min_activation = v;
+        }
+        if let Some(v) = p.min_feedback {
+            self.min_feedback = v;
+        }
+        if let Some(v) = p.learning_retention_days {
+            self.learning_retention_days = v;
+        }
+        if let Some(v) = p.superseded_grace_days {
+            self.superseded_grace_days = v;
+        }
+    }
+}
+
+/// Emitter defaults shared by every subcommand.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OutputConfig {
+    /// Emit JSON instead of the TTY renderer. Overridden by `--json`.
     pub json: bool,
+    /// Colour policy for the TTY renderer: `auto`, `always`, or `never`.
     pub color: String,
 }
 
+/// The fully-layered configuration: defaults → `config.toml` → env.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
+    /// Git auto-sync knobs.
     pub git: GitConfig,
+    /// Reporting-only record of the active embedders.
     pub embeddings: EmbeddingsConfig,
+    /// Code-index freshness knobs.
     pub indexing: IndexingConfig,
+    /// Hybrid-retrieval knobs — see [`RetrievalConfig`].
     pub retrieval: RetrievalConfig,
+    /// Rerank/diversify knobs — see [`RankConfig`].
     pub rank: RankConfig,
+    /// Prune scoring floors and retention windows — see [`PruneConfig`].
     pub prune: PruneConfig,
     /// Grid lists for `comemory tune`. File-only — see [`TuneConfig`].
     #[serde(default)]
@@ -288,6 +276,7 @@ pub struct Config {
     /// `comemory bandit` apply gate.
     #[serde(default)]
     pub bandit: BanditConfig,
+    /// Emitter defaults — see [`OutputConfig`].
     pub output: OutputConfig,
     /// Free-form caller-set hint identifying the embedder that produced the
     /// vectors (e.g. `ollama:nomic-embed-text`). Surfaced verbatim by
@@ -297,6 +286,7 @@ pub struct Config {
 }
 
 impl Config {
+    /// The shipped defaults — the base layer every overlay is applied to.
     pub fn defaults() -> Self {
         Self {
             git: GitConfig {
@@ -312,19 +302,7 @@ impl Config {
                 auto_reindex_threshold_ms: 200,
                 incremental_batch_size: 50,
             },
-            retrieval: RetrievalConfig {
-                memory_threshold: 0.55,
-                code_threshold: default_code_threshold(),
-                hybrid_weight: 0.65,
-                top_k: 12,
-                max_page_window: default_max_page_window(),
-                corrective_min_confidence: 0.15,
-                rrf_k: 60.0,
-                bm25_weights: default_bm25_weights(),
-                code_bm25_weights: default_code_bm25_weights(),
-                memory_vector_dim: default_memory_vector_dim(),
-                code_vector_dim: default_code_vector_dim(),
-            },
+            retrieval: RetrievalConfig::defaults(),
             rank: RankConfig {
                 decay: 0.5,
                 prior_clamp: (0.5, 2.0),
@@ -370,75 +348,16 @@ impl Config {
             self.embed_hint = Some(hint);
         }
         if let Some(pr) = partial.retrieval {
-            if let Some(v) = pr.rrf_k {
-                self.retrieval.rrf_k = v;
-            }
-            if let Some(v) = pr.bm25_weights {
-                self.retrieval.bm25_weights = v;
-            }
-            if let Some(v) = pr.top_k {
-                self.retrieval.top_k = v;
-            }
-            if let Some(v) = pr.max_page_window {
-                self.retrieval.max_page_window = v;
-            }
-            if let Some(v) = pr.memory_threshold {
-                self.retrieval.memory_threshold = v;
-            }
-            if let Some(v) = pr.code_threshold {
-                self.retrieval.code_threshold = v;
-            }
-            if let Some(v) = pr.code_bm25_weights {
-                self.retrieval.code_bm25_weights = v;
-            }
+            self.retrieval.apply(pr);
         }
         if let Some(pr) = partial.rank {
-            if let Some(v) = pr.decay {
-                self.rank.decay = v;
-            }
-            if let Some(v) = pr.prior_clamp {
-                self.rank.prior_clamp = v;
-            }
-            if let Some(v) = pr.mmr_lambda {
-                self.rank.mmr_lambda = v;
-            }
-            if let Some(v) = pr.near_dup_hamming {
-                self.rank.near_dup_hamming = v;
-            }
+            self.rank.apply(pr);
         }
         if let Some(pp) = partial.prune {
-            if let Some(v) = pp.trash_retention_days {
-                self.prune.trash_retention_days = v;
-            }
-            if let Some(v) = pp.low_value_default_below_quality {
-                self.prune.low_value_default_below_quality = v;
-            }
-            if let Some(v) = pp.min_activation {
-                self.prune.min_activation = v;
-            }
-            if let Some(v) = pp.min_feedback {
-                self.prune.min_feedback = v;
-            }
-            if let Some(v) = pp.learning_retention_days {
-                self.prune.learning_retention_days = v;
-            }
-            if let Some(v) = pp.superseded_grace_days {
-                self.prune.superseded_grace_days = v;
-            }
+            self.prune.apply(pp);
         }
         if let Some(pt) = partial.tune {
-            if let Some(v) = pt.rrf_k_grid {
-                self.tune.rrf_k_grid = v;
-            }
-            if let Some(v) = pt.decay_grid {
-                self.tune.decay_grid = v;
-            }
-            if let Some(v) = pt.mmr_lambda_grid {
-                self.tune.mmr_lambda_grid = v;
-            }
-            if let Some(v) = pt.bm25_grid {
-                self.tune.bm25_grid = v;
-            }
+            self.tune.apply(pt);
         }
         if let Some(pr) = partial.reinforce
             && let Some(v) = pr.search_edit_days

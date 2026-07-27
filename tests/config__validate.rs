@@ -90,6 +90,50 @@ fn near_dup_hamming_rejects_over_64() {
 }
 
 #[test]
+fn graph_hops_rejects_over_four() {
+    // The edge walk is bounded: past 4 hops a recursive CTE over a dense
+    // `edges` table stops being a cheap expansion.
+    assert_rejected("[retrieval]\ngraph_hops = 5\n", "retrieval.graph_hops");
+    assert_rejected("[retrieval]\ngraph_hops = 9\n", "retrieval.graph_hops");
+    // 0 (leg disabled) and 4 (the ceiling) are the inclusive bounds.
+    for ok in ["0", "4"] {
+        let cfg = load(&format!("[retrieval]\ngraph_hops = {ok}\n"))
+            .expect("boundary graph_hops must be accepted");
+        assert_eq!(cfg.retrieval.graph_hops.to_string(), ok);
+    }
+}
+
+#[test]
+fn graph_seeds_rejects_zero() {
+    // Zero seeds would leave the walk nothing to start from — an
+    // accidentally-silent way to disable the leg. `graph_hops = 0` is the
+    // documented off switch.
+    assert_rejected("[retrieval]\ngraph_seeds = 0\n", "retrieval.graph_seeds");
+    let cfg = load("[retrieval]\ngraph_seeds = 1\n").expect("1 seed must be accepted");
+    assert_eq!(cfg.retrieval.graph_seeds, 1);
+}
+
+#[test]
+fn graph_knob_errors_name_the_env_var() {
+    // Both entry points share one validate() pass, so the file-overlay
+    // message must still point at the env var an operator may have set.
+    for (body, var) in [
+        (
+            "[retrieval]\ngraph_hops = 9\n",
+            "COMEMORY_RETRIEVAL_GRAPH_HOPS",
+        ),
+        (
+            "[retrieval]\ngraph_seeds = 0\n",
+            "COMEMORY_RETRIEVAL_GRAPH_SEEDS",
+        ),
+    ] {
+        let err = load(body).expect_err("invalid graph knob must be rejected");
+        let msg = err.to_string();
+        assert!(msg.contains(var), "error must name '{var}', got: {msg}");
+    }
+}
+
+#[test]
 fn empty_tune_grids_are_rejected() {
     // An empty grid would make `comemory tune` evaluate nothing and crown
     // no winner; each list must carry at least one point.
