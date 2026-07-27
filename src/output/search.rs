@@ -244,5 +244,6 @@ pub(crate) fn source_label(s: Source) -> &'static str {
         Source::Vector => "vector",
         Source::Lexical => "lexical",
         Source::Hybrid => "hybrid",
+        Source::Graph => "graph",
     }
 }

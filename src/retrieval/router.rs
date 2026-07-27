@@ -17,6 +17,7 @@ use rusqlite::Connection;
 use crate::config::Config;
 use crate::prelude::*;
 use crate::retrieval::fuse::{self, RankedHit};
+use crate::retrieval::graph_route::{self, GraphFuse};
 use crate::store::{fts, vector};
 
 /// Candidate pool fed to the rerank stage; the pipeline cuts to top_k
@@ -55,6 +56,10 @@ pub enum Source {
     Lexical,
     /// RRF fusion of vector + lexical branches.
     Hybrid,
+    /// Edge-walk expansion: a memory reached only by traversing `edges`
+    /// from the provisional top hits, with no lexical or vector match of
+    /// its own.
+    Graph,
 }
 
 /// Run the retrieval pipeline for `query`.
@@ -81,6 +86,12 @@ pub enum Source {
 /// `cfg.retrieval.memory_threshold` cosine
 /// similarity are dropped before use in both vector-consuming paths.
 ///
+/// Whichever arm runs, its ranking is *provisional*: its top hits then seed
+/// the graph-expansion leg ([`graph_route::expand_and_fuse`]), which fuses
+/// edge-reachable memories in as one more RRF list. That leg is additive —
+/// `cfg.retrieval.graph_hops = 0` or an empty expansion returns the
+/// provisional ranking unchanged.
+///
 /// `kind` restricts every path to one memory kind (canonical lowercase
 /// string, e.g. `decision`): the lexical legs filter in SQL via the
 /// `memories` join, while the ANN legs post-filter through [`filter_kind`]
@@ -101,10 +112,62 @@ pub fn route(
     // hybrid arm would mislabel a vector-only result as `Source::Hybrid`
     // and downstream consumers would assume lexical contributed signal.
     let lex_meaningful = !query.trim().is_empty();
-    match vec {
-        Some(v) if lex_meaningful => route_hybrid(cfg, conn, query, v, k, repo, kind),
-        Some(v) => route_vector_only(cfg, conn, v, k, repo, kind),
-        None => route_lexical(conn, query, k, repo, kind, cfg.retrieval.bm25_weights),
+    let Provisional {
+        base,
+        legs,
+        source,
+        tier,
+    } = match vec {
+        Some(v) if lex_meaningful => route_hybrid(cfg, conn, query, v, k, repo, kind)?,
+        Some(v) => route_vector_only(cfg, conn, v, k, repo, kind)?,
+        None => route_lexical(cfg, conn, query, k, repo, kind)?,
+    };
+    let legs: Vec<&[RankedHit]> = legs.iter().map(Vec::as_slice).collect();
+    graph_route::expand_and_fuse(
+        conn,
+        cfg,
+        GraphFuse {
+            base,
+            legs: &legs,
+            source,
+            tier,
+            repo,
+            kind,
+            pool: k,
+        },
+    )
+}
+
+/// What a routing arm produces before the graph leg runs: the ranking that
+/// arm returns today, the owned legs behind it, and the `(source, tier)`
+/// label every id in those legs keeps.
+struct Provisional {
+    base: Vec<RoutedHit>,
+    legs: Vec<Vec<RankedHit>>,
+    source: Source,
+    tier: u8,
+}
+
+impl Provisional {
+    /// Build an arm's output from its already-ranked `legs`, labeling
+    /// `base` — the list `ranked` — with `(source, tier)`. Single-leg arms
+    /// pass their one leg as `ranked`; the hybrid arm passes the RRF fusion.
+    fn new(ranked: &[RankedHit], legs: Vec<Vec<RankedHit>>, source: Source, tier: u8) -> Self {
+        let base = ranked
+            .iter()
+            .map(|h| RoutedHit {
+                memory_id: h.memory_id.clone(),
+                score: h.score,
+                source,
+                tier,
+            })
+            .collect();
+        Provisional {
+            base,
+            legs,
+            source,
+            tier,
+        }
     }
 }
 
@@ -131,7 +194,7 @@ fn route_hybrid(
     k: usize,
     repo: Option<&str>,
     kind: Option<&str>,
-) -> Result<Vec<RoutedHit>> {
+) -> Result<Provisional> {
     let ann = filter_kind(
         conn,
         above_similarity_threshold(
@@ -143,26 +206,23 @@ fn route_hybrid(
     )?;
     let weights = cfg.retrieval.bm25_weights;
     let (lex, lex_tier) = strict_then_ladder(conn, query, k, repo, kind, weights)?;
-    if ann.is_empty() {
-        return Ok(lex
-            .into_iter()
-            .map(|h| lex_to_routed(h, lex_tier))
-            .collect());
-    }
-
-    let ann_ranked: Vec<RankedHit> = ann.into_iter().map(ann_to_ranked).collect();
     let lex_ranked: Vec<RankedHit> = lex.into_iter().map(lex_to_ranked).collect();
-
+    if ann.is_empty() {
+        return Ok(Provisional::new(
+            &lex_ranked,
+            vec![lex_ranked.clone()],
+            Source::Lexical,
+            lex_tier,
+        ));
+    }
+    let ann_ranked: Vec<RankedHit> = ann.into_iter().map(ann_to_ranked).collect();
     let fused = fuse::rrf_k(&ann_ranked, &lex_ranked, k, cfg.retrieval.rrf_k);
-    Ok(fused
-        .into_iter()
-        .map(|h| RoutedHit {
-            memory_id: h.memory_id,
-            score: h.score,
-            source: Source::Hybrid,
-            tier: lex_tier,
-        })
-        .collect())
+    Ok(Provisional::new(
+        &fused,
+        vec![ann_ranked, lex_ranked],
+        Source::Hybrid,
+        lex_tier,
+    ))
 }
 
 /// Pure-vector path. The lexical top-up that previously lived here was
@@ -180,7 +240,7 @@ fn route_vector_only(
     k: usize,
     repo: Option<&str>,
     kind: Option<&str>,
-) -> Result<Vec<RoutedHit>> {
+) -> Result<Provisional> {
     let ann = filter_kind(
         conn,
         above_similarity_threshold(
@@ -190,7 +250,13 @@ fn route_vector_only(
         ),
         kind,
     )?;
-    Ok(ann.into_iter().map(ann_to_routed).collect())
+    let ann_ranked: Vec<RankedHit> = ann.into_iter().map(ann_to_ranked).collect();
+    Ok(Provisional::new(
+        &ann_ranked,
+        vec![ann_ranked.clone()],
+        Source::Vector,
+        1,
+    ))
 }
 
 /// Batch kind filter for ANN-routed hits: the vec0 KNN leg cannot filter
@@ -240,18 +306,23 @@ pub(crate) fn above_similarity_threshold<H>(
 }
 
 /// Pure-lexical path via FTS5 BM25, with the relaxed fallback ladder.
-/// `weights` is `cfg.retrieval.bm25_weights`, threaded explicitly because
-/// this arm needs no other config.
 fn route_lexical(
+    cfg: &Config,
     conn: &Connection,
     query: &str,
     k: usize,
     repo: Option<&str>,
     kind: Option<&str>,
-    weights: (f32, f32),
-) -> Result<Vec<RoutedHit>> {
+) -> Result<Provisional> {
+    let weights = cfg.retrieval.bm25_weights;
     let (lex, tier) = strict_then_ladder(conn, query, k, repo, kind, weights)?;
-    Ok(lex.into_iter().map(|h| lex_to_routed(h, tier)).collect())
+    let lex_ranked: Vec<RankedHit> = lex.into_iter().map(lex_to_ranked).collect();
+    Ok(Provisional::new(
+        &lex_ranked,
+        vec![lex_ranked.clone()],
+        Source::Lexical,
+        tier,
+    ))
 }
 
 /// The full lexical policy shared by [`route_lexical`] and the hybrid
@@ -343,29 +414,5 @@ fn lex_to_ranked(h: fts::MemoryFtsHit) -> RankedHit {
     RankedHit {
         memory_id: h.memory_id,
         score: -h.score,
-    }
-}
-
-/// Map a `vector::MemoryHit` directly to a [`RoutedHit`] tagged
-/// `Source::Vector` at the default tier 1. Used by the pure-vector path.
-fn ann_to_routed(h: vector::MemoryHit) -> RoutedHit {
-    RoutedHit {
-        memory_id: h.memory_id,
-        score: 1.0 - h.distance,
-        source: Source::Vector,
-        tier: 1,
-    }
-}
-
-/// Map an `fts::MemoryFtsHit` directly to a [`RoutedHit`] tagged
-/// `Source::Lexical`, carrying the ladder `tier` that produced it (1 when
-/// the strict query hit). Used by the pure-lexical and lex-only-hybrid
-/// paths.
-fn lex_to_routed(h: fts::MemoryFtsHit, tier: u8) -> RoutedHit {
-    RoutedHit {
-        memory_id: h.memory_id,
-        score: -h.score,
-        source: Source::Lexical,
-        tier,
     }
 }

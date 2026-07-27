@@ -32,6 +32,7 @@ pub mod code_route;
 pub mod code_search;
 pub mod diversify;
 pub mod fuse;
+pub mod graph_route;
 pub mod pipeline;
 pub mod rerank;
 pub mod router;
