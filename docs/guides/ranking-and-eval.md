@@ -232,6 +232,39 @@ recall or ranking change. Widening `graph_seeds` expands from further down
 the provisional ranking; raising `graph_hops` reaches further from each seed
 (and pulls in looser associations).
 
+### Time scoping vs. the ranking priors
+
+`--as-of` rewinds the **corpus**, not the ranking. Two things move: memories
+created after the cutoff drop out of every leg, and the supersede penalty
+only counts superseders that already existed then. Everything else — ACT-R
+activation, Beta feedback, quality — still reflects **today's** usage.
+Access history is not versioned, so activation as it stood back then is
+unknowable; a memory that was hot in March and untouched since ranks by its
+present-day (decayed) activation even under `--as-of 2026-03-31`. Treat a
+scoped run as "these are the memories that existed then, ranked by what we
+know now", not as a replay of that day's result list.
+
+The A/B is the same query with and without the flag:
+
+```bash
+comemory --json search "queue backend" | jq '[.hits[] | {memory_id, superseded_by}]'
+comemory --json search "queue backend" --as-of 2026-06-01 \
+  | jq '{as_of, hits: [.hits[] | {memory_id, supersede: .score_parts.supersede}]}'
+```
+
+The scoped envelope echoes the normalized bound it actually compared
+against (`as_of`, or `since` / `until` for the plain window flags), so a
+recorded run says exactly which cutoff produced it. Hits that lost their
+`0.2` supersede factor are the ones whose superseder had not been written
+yet. Use `--until` instead when you want the window without the rewind: it
+filters candidates and leaves the penalty at its present-day value.
+
+Two caveats when eyeballing results: soft-deleted memories stay deleted
+regardless of the cutoff (their index rows are physically purged, so there
+is nothing to bring back), and because comparison goes through SQLite
+`datetime()`, `--until 2026-06-01` means `<= 23:59:59` that day —
+sub-second precision in a bound is ignored.
+
 ---
 
 ## Re-measure

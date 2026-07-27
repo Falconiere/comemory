@@ -1,9 +1,15 @@
-//! Pagination tests for `comemory context` — split from `cli__context.rs`.
+//! Pagination and time-scoping tests for `comemory context` — split from
+//! `cli__context.rs`.
 //!
 //! `context` returns a bundle; pagination applies to its primary memory
 //! list (the `memories` array). Per-memory code refs are intentionally
 //! left unpaginated — each surfaced memory keeps its full ref set. These
-//! tests page the memory list and assert stability + the envelope cursor.
+//! tests page the memory list and assert stability + the envelope cursor,
+//! then check that `--as-of` scopes the bundle exactly as it scopes
+//! `comemory search`.
+
+#[path = "common/time_travel.rs"]
+mod time_travel;
 
 use assert_cmd::Command;
 use serde_json::Value;
@@ -157,4 +163,39 @@ fn context_offset_beyond_window_is_empty_with_no_more() {
         "offset past the window yields no memories"
     );
     assert_eq!(v["has_more"], Value::Bool(false), "nothing beyond");
+}
+
+/// AC-10: `context` routes through the same pipeline as `search`, so
+/// `--as-of` must scope its bundle the same way — the superseder that did
+/// not exist yet is gone, the supersede relation it owned goes with it, and
+/// the normalized cutoff is echoed in the envelope.
+#[test]
+fn context_as_of_scopes_the_bundle_to_the_cutoff() {
+    let c = time_travel::seed();
+
+    let now = c.run("context", &[]);
+    assert_eq!(
+        memory_ids(&now),
+        vec![c.newer.clone(), c.older.clone()],
+        "both memories are in the present-day bundle: {now}"
+    );
+
+    let back_then = c.run("context", &["--as-of", "2026-04-01"]);
+    assert_eq!(
+        memory_ids(&back_then),
+        vec![c.older.clone()],
+        "the superseder was not created yet: {back_then}"
+    );
+    assert_eq!(
+        back_then["as_of"].as_str(),
+        Some("2026-04-01T23:59:59.999999999Z"),
+        "context echoes the normalized cutoff like search does: {back_then}"
+    );
+    assert!(
+        back_then["relations"]
+            .as_array()
+            .expect("relations array")
+            .is_empty(),
+        "the supersede relation left with its owner: {back_then}"
+    );
 }

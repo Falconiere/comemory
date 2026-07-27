@@ -1,6 +1,6 @@
 ---
 source: tests/output__search.rs
-expression: "search::envelope(&sample_hits(), None, meta(), &sample_meta(), data_dir())"
+expression: "search::envelope(&sample_hits(), None, meta(), &sample_meta(), data_dir(),\nScopeEcho::default())"
 ---
 {
   "hits": [
