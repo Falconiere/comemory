@@ -61,9 +61,13 @@ pub(crate) fn soft_delete(
 /// touching edges.
 ///
 /// Factored out of [`soft_delete`] so `comemory prune` can heal a
-/// half-deleted memory — live DB row but markdown already gone (e.g. a
-/// crash between the file move and this transaction) — without requiring
-/// a markdown move that can no longer succeed.
+/// half-deleted memory — live DB row, markdown already gone after a crash
+/// between the file move and this transaction — with no markdown move.
+///
+/// After the commit the memory has left the node universe, so
+/// [`crate::graph::memory_rank`] is refreshed best-effort here, not at the
+/// [`soft_delete`] call site: every soft-delete surface (delete, prune
+/// apply, prune heal) then redistributes its mass identically.
 pub(crate) fn mirror_soft_delete(conn: &mut rusqlite::Connection, id: &str) -> Result<()> {
     let now = memory_row::iso_format(OffsetDateTime::now_utc())?;
     let tx = conn.transaction()?;
@@ -84,6 +88,7 @@ pub(crate) fn mirror_soft_delete(conn: &mut rusqlite::Connection, id: &str) -> R
     )?;
     edges::delete_touching(&tx, "memory", id)?;
     tx.commit()?;
+    crate::graph::memory_rank::refresh_best_effort(conn);
     Ok(())
 }
 

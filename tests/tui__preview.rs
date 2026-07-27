@@ -17,6 +17,7 @@ fn mem_hit(id: &str, body: &str) -> Reranked {
             feedback: 1.0,
             quality: 1.0,
             supersede: 1.0,
+            rank: 1.0,
             final_score: 0.5,
         },
         superseded_by: None,

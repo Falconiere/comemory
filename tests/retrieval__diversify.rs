@@ -16,6 +16,7 @@ fn item(id: &str, score: f64, body: &str) -> Reranked {
             feedback: 1.0,
             quality: 1.0,
             supersede: 1.0,
+            rank: 1.0,
             final_score: score,
         },
         superseded_by: None,

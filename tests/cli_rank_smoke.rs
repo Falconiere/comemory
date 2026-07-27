@@ -70,6 +70,38 @@ fn save_corpus(data_dir: &Path, items: &[(&str, &str, &str, u8)]) -> HashMap<Str
     bodies
 }
 
+/// Save one memory that supersedes `target` and return its id. The relation
+/// lands in the markdown frontmatter, so the memory→memory edge it creates
+/// survives a rebuild from disk.
+fn save_superseding(data_dir: &Path, body: &str, target: &str) -> String {
+    let assert = bin(data_dir)
+        .args([
+            "--json",
+            "save",
+            body,
+            "--kind",
+            "note",
+            "--supersedes",
+            target,
+        ])
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let v: Value = serde_json::from_str(stdout.trim()).expect("save --json envelope");
+    v["id"].as_str().expect("save id field").to_string()
+}
+
+/// Read `memories.rank_score` for `id` out of the mirror under `data_dir`.
+fn rank_score(data_dir: &Path, id: &str) -> f64 {
+    let conn = comemory::store::connection::open(data_dir.join("comemory.db")).expect("open db");
+    conn.query_row(
+        "SELECT rank_score FROM memories WHERE id = ?1",
+        rusqlite::params![id],
+        |r| r.get(0),
+    )
+    .expect("rank_score row")
+}
+
 /// Run `comemory search <query> --k 3 --json` and return the hit ids in
 /// final pipeline order. Shared by all three tests.
 fn top_ids(data_dir: &Path, query: &str) -> Vec<String> {
@@ -283,4 +315,95 @@ fn rebuild_preserves_search_results() {
 
     assert_eq!(before1, top_ids(&dir, q1), "rebuild changed the q1 ranking");
     assert_eq!(before2, top_ids(&dir, q2), "rebuild changed the q2 ranking");
+}
+
+/// Remove `comemory.db` and its WAL/SHM sidecars under `data_dir`, so the
+/// next `rebuild` has nothing but markdown to work from.
+fn remove_mirror(data_dir: &Path) {
+    let db = data_dir.join("comemory.db");
+    std::fs::remove_file(&db).expect("remove comemory.db");
+    for suffix in ["-wal", "-shm"] {
+        let mut sidecar = db.clone().into_os_string();
+        sidecar.push(suffix);
+        let _ = std::fs::remove_file(std::path::PathBuf::from(sidecar));
+    }
+}
+
+/// AC-8. `comemory rebuild` recomputes memory-graph PageRank as its final
+/// step. The mirror is deleted first, so a nonzero `rank_score` in the
+/// rebuilt DB can only come from that pass replaying the frontmatter
+/// relations — there was nothing to copy forward.
+#[test]
+fn rebuild_recomputes_memory_rank_from_markdown() {
+    let sandbox = Sandbox::new();
+    let dir = sandbox.data_dir();
+    let hub = save(
+        &dir,
+        "note",
+        "advisory locks serialize concurrent migrations in postgres",
+        "",
+        3,
+    );
+    let newer = save_superseding(
+        &dir,
+        "guidance update: prefer a migrations table with select for update row locking",
+        &hub,
+    );
+
+    remove_mirror(&dir);
+    bin(&dir).args(["rebuild"]).assert().success();
+
+    let hub_rank = rank_score(&dir, &hub);
+    let newer_rank = rank_score(&dir, &newer);
+    assert!(hub_rank > 0.0, "rebuild must score the hub, got {hub_rank}");
+    assert!(
+        newer_rank > 0.0,
+        "rebuild must score the replacement, got {newer_rank}"
+    );
+    assert!(
+        hub_rank > newer_rank,
+        "the memory holding the replayed inlink must lead: {hub_rank} vs {newer_rank}"
+    );
+}
+
+/// Every `score_parts.rank` value in the top-k for `query`.
+fn rank_priors(data_dir: &Path, query: &str) -> Vec<f64> {
+    let assert = bin(data_dir)
+        .args(["--json", "search", query, "--k", "5"])
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let v: Value = serde_json::from_str(stdout.trim()).expect("search --json envelope");
+    v["hits"]
+        .as_array()
+        .expect("hits array")
+        .iter()
+        .map(|h| h["score_parts"]["rank"].as_f64().expect("score_parts.rank"))
+        .collect()
+}
+
+/// AC-6b. The save trigger runs on this corpus too, but it has no
+/// memory→memory relations and no shared code references, so PageRank comes
+/// out uniform (`1/n` each): every candidate's raw score equals the pool
+/// median and the prior collapses to the same `1 + 0.2·ln 2 ≈ 1.1386`. A
+/// uniform multiplier cannot reorder anything — which is exactly why the
+/// baseline ranking snapshots stay byte-identical across this change.
+#[test]
+fn edge_free_corpus_yields_a_uniform_rank_prior() {
+    let sandbox = Sandbox::new();
+    let dir = sandbox.data_dir();
+    save_corpus(&dir, &CORPUS[..6]);
+
+    let ranks = rank_priors(&dir, "sqlite fts5 vectors");
+    assert!(ranks.len() >= 2, "need several candidates, got {ranks:?}");
+    for r in &ranks {
+        assert!(
+            (r - ranks[0]).abs() < 1e-9,
+            "the rank prior must be uniform across the pool: {ranks:?}"
+        );
+        assert!(
+            (r - 1.1386).abs() < 1e-3,
+            "uniform PageRank maps every candidate to 1 + 0.2·ln 2, got {r}"
+        );
+    }
 }

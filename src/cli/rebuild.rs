@@ -95,38 +95,34 @@ pub async fn run(_args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<
     // the next rebuild reuses stale WALs.
     remove_db_and_sidecars(&tmp_path);
 
-    let result = build_new_db(&db, &tmp_path, &paths);
-
-    match result {
-        Ok(()) => {
-            // Atomic swap: rename tmp over the live path. Capture the result
-            // so we can clean up the tmp DB + its sidecars even on rename
-            // failure — `?` would otherwise skip the cleanup blocks below
-            // and leave the orphaned tmp file in the data dir.
-            match std::fs::rename(&tmp_path, &db) {
-                Ok(()) => {
-                    // Remove stale WAL/SHM sidecars next to both the live DB
-                    // (so the next open of `comemory.db` starts clean) and
-                    // the tmp path (so the leftover
-                    // `comemory.db.rebuild.tmp-wal` / `-shm` from the
-                    // just-renamed tmp connection don't linger).
-                    remove_sidecars(&db);
-                    remove_sidecars(&tmp_path);
-                    Ok(())
-                }
-                Err(e) => {
-                    // Rename failed (e.g. cross-device, permission, the live
-                    // DB held open exclusively on Windows). Remove the tmp DB
-                    // + sidecars so the caller can retry cleanly.
-                    remove_db_and_sidecars(&tmp_path);
-                    Err(Error::Io(e))
-                }
-            }
-        }
+    match build_new_db(&db, &tmp_path, &paths) {
+        Ok(()) => swap_into_place(&tmp_path, &db),
         Err(e) => {
             // Remove the partial tmp + sidecars so the caller can retry cleanly.
             remove_db_and_sidecars(&tmp_path);
             Err(e)
+        }
+    }
+}
+
+/// Atomic swap: rename the freshly built tmp DB over the live path, then
+/// remove stale WAL/SHM sidecars next to both (so the next open of
+/// `comemory.db` starts clean and the just-renamed tmp connection's
+/// `comemory.db.rebuild.tmp-wal` / `-shm` don't linger).
+///
+/// The rename result is matched rather than `?`-propagated so a failure
+/// (cross-device, permission, the live DB held open exclusively on Windows)
+/// still removes the tmp DB and lets the caller retry cleanly.
+fn swap_into_place(tmp_path: &Path, db: &Path) -> Result<()> {
+    match std::fs::rename(tmp_path, db) {
+        Ok(()) => {
+            remove_sidecars(db);
+            remove_sidecars(tmp_path);
+            Ok(())
+        }
+        Err(e) => {
+            remove_db_and_sidecars(tmp_path);
+            Err(Error::Io(e))
         }
     }
 }
@@ -181,6 +177,10 @@ fn build_new_db(old_db: &Path, tmp_path: &Path, paths: &Paths) -> Result<()> {
         copy_preserved_tables_from_old(&mut conn, old_db)?;
     }
 
+    // Rank last: the replay supplies the memory→memory relations and the
+    // copy above restores `co_activated`, so the graph is only whole now.
+    crate::graph::memory_rank::refresh_best_effort(&mut conn);
+
     // Close the connection before rename by dropping it here.
     drop(conn);
     Ok(())
@@ -229,16 +229,21 @@ fn copy_preserved_tables_from_old(conn: &mut rusqlite::Connection, old_db: &Path
 /// pointers stay valid in the copy.
 ///
 /// Beyond the four code tables, more graph state exists only in SQLite and
-/// must survive the rebuild: the mined `co_changed` / `imports` edges and
-/// the v8 `co_activated` reinforcement edges (the markdown replay rebuilds
-/// only memory-emitted edges), the `repo_marker` rows whose
-/// `last_mined_commit` cursor bounds the next mining pass, and (in
-/// [`copy_learning_tables_inner`]) the `code_feedback` counters and the v8
-/// `feedback_events.provenance` tag.
+/// must survive the rebuild — see [`copy_mined_edges`] and
+/// [`copy_code_markers`] here, and the counters in
+/// [`copy_learning_tables_inner`].
 fn copy_code_tables_inner(conn: &rusqlite::Connection) -> Result<()> {
-    // Copy regular tables first, then the virtual tables (FTS5 + vec0).
-    // code_symbols must come before code_vec/code_fts because the latter
-    // reference code_symbols.id in their data streams.
+    // Regular tables first, then the virtual ones (FTS5 + vec0):
+    // `code_symbols` must land before `code_vec` / `code_fts` because the
+    // latter reference `code_symbols.id` in their data streams.
+    copy_code_index_tables(conn)?;
+    copy_mined_edges(conn)?;
+    copy_code_markers(conn)?;
+    copy_code_virtual_tables(conn)
+}
+
+/// Copy the `code_symbols` rows and the `indexed_files` cursors.
+fn copy_code_index_tables(conn: &rusqlite::Connection) -> Result<()> {
     if old_table_exists(conn, "code_symbols")? {
         let (count_expr, last_expr) = if old_column_exists(conn, "code_symbols", "access_count")? {
             ("access_count", "COALESCE(last_accessed, indexed_at)")
@@ -267,17 +272,20 @@ fn copy_code_tables_inner(conn: &rusqlite::Connection) -> Result<()> {
              SELECT repo, path, blob_oid, indexed_at FROM old.indexed_files;",
         )?;
     }
-    // Mined/earned code-graph edges. The rel filter narrows to the three
-    // kinds the markdown replay cannot reproduce: the git-mined
-    // `co_changed` / `imports` edges plus the v8 `co_activated` edges earned
-    // by the co-activation reward (memory→file, weighted — earned state that
-    // markdown has no source for, like the feedback counters). A pre-v6
-    // source has no such rows (its rel CHECK predates the kinds) and no
-    // `weight` column, hence the probe defaulting to the pre-v6 implicit
-    // weight of 1. The [`CO_ACTIVATED`] const is bound rather than inlined so
-    // the filter cannot drift from the writer's literal; it is a
-    // crate-internal const with no SQL metacharacters, so interpolation is
-    // safe.
+    Ok(())
+}
+
+/// Copy the mined/earned code-graph edges. The rel filter narrows to the
+/// three kinds the markdown replay cannot reproduce: the git-mined
+/// `co_changed` / `imports` edges plus the v8 `co_activated` edges earned by
+/// the co-activation reward (memory→file, weighted — earned state markdown
+/// has no source for, like the feedback counters). A pre-v6 source has no
+/// such rows (its rel CHECK predates the kinds) and no `weight` column,
+/// hence the probe defaulting to the pre-v6 implicit weight of 1. The
+/// [`CO_ACTIVATED`] const is bound rather than inlined so the filter cannot
+/// drift from the writer's literal; it is a crate-internal const with no SQL
+/// metacharacters, so interpolation is safe.
+fn copy_mined_edges(conn: &rusqlite::Connection) -> Result<()> {
     if old_table_exists(conn, "edges")? {
         let weight_expr = if old_column_exists(conn, "edges", "weight")? {
             "weight"
@@ -291,14 +299,20 @@ fn copy_code_tables_inner(conn: &rusqlite::Connection) -> Result<()> {
              FROM old.edges WHERE rel IN ('co_changed', 'imports', '{CO_ACTIVATED}');"
         ))?;
     }
-    // Per-repo code-format stamps (`schema_meta` keys
-    // `code_format:<repo>`, matched on [`code_row::CODE_FORMAT_KEY_PREFIX`]
-    // — the global `code_format_version` key lacks the colon and does NOT
-    // match): without them the next `index-code` sees an unstamped
-    // repo, drops its `indexed_files` cursors, and the full re-walk purges
-    // the BYO `code_vec` rows the copy above just preserved. The prefix is
-    // a crate-internal const (no quotes / SQL metacharacters), so the
-    // interpolation cannot break the statement.
+    Ok(())
+}
+
+/// Copy the per-repo cursors an `index-code` pass reads before deciding what
+/// to re-walk: the `code_format:<repo>` stamps in `schema_meta` (matched on
+/// [`code_row::CODE_FORMAT_KEY_PREFIX`] — the global `code_format_version`
+/// key lacks the colon and does NOT match; without them the next index-code
+/// sees an unstamped repo, drops its `indexed_files` cursors, and the full
+/// re-walk purges the BYO `code_vec` rows), plus the `repo_marker` rows
+/// whose `last_mined_commit` bounds the next mining pass (dropping it would
+/// re-mine bounded history into the just-copied co_changed weights,
+/// double-counting every pair). Both prefixes are crate-internal consts with
+/// no SQL metacharacters, so the interpolation cannot break the statements.
+fn copy_code_markers(conn: &rusqlite::Connection) -> Result<()> {
     if old_table_exists(conn, "schema_meta")? {
         let prefix = code_row::CODE_FORMAT_KEY_PREFIX;
         conn.execute_batch(&format!(
@@ -308,9 +322,6 @@ fn copy_code_tables_inner(conn: &rusqlite::Connection) -> Result<()> {
             len = prefix.len(),
         ))?;
     }
-    // Per-repo indexing markers: dropping `last_mined_commit` would make
-    // the next index-code re-mine bounded history into the (just-copied)
-    // accumulated co_changed weights, double-counting every pair.
     if old_table_exists(conn, "repo_marker")? {
         let mined_expr = if old_column_exists(conn, "repo_marker", "last_mined_commit")? {
             "last_mined_commit"
@@ -324,10 +335,14 @@ fn copy_code_tables_inner(conn: &rusqlite::Connection) -> Result<()> {
              FROM old.repo_marker;"
         ))?;
     }
-    // FTS5 and vec0 virtual tables may not support `INSERT INTO … SELECT *`
-    // from an attached DB in all sqlite-vec versions; copy each row
-    // explicitly via named columns for safety. For code_fts we insert via
-    // the FTS5 content table shape; vec0 rows are blobs tied to symbol_id.
+    Ok(())
+}
+
+/// Copy the FTS5 + vec0 virtual tables. These may not support
+/// `INSERT INTO … SELECT *` from an attached DB in all sqlite-vec versions,
+/// so each row is copied via named columns: `code_fts` through the FTS5
+/// content-table shape, `code_vec` as blobs tied to `symbol_id`.
+fn copy_code_virtual_tables(conn: &rusqlite::Connection) -> Result<()> {
     if old_table_exists(conn, "code_fts")? {
         conn.execute_batch(
             "INSERT OR IGNORE INTO main.code_fts(symbol_id, symbol, snippet, path_tokens) \
@@ -343,24 +358,25 @@ fn copy_code_tables_inner(conn: &rusqlite::Connection) -> Result<()> {
     Ok(())
 }
 
-/// Inner copy loop for the learning-loop tables: `feedback` counters (v2),
-/// `retrieval_log` telemetry (v3), `feedback_events` provenance and mined
-/// `query_expansions` (both v5), `code_feedback` counters (v6). These rows
-/// exist only in SQLite — there is no markdown source to rebuild them from
-/// — so a rebuild that dropped them would silently reset the Beta feedback
-/// rerank priors to neutral and erase mined expansions, contradicting the
-/// documented never-expire contract.
+/// Inner copy loop for the learning-loop tables. These rows exist only in
+/// SQLite — there is no markdown to rebuild them from — so dropping them
+/// would silently reset the Beta feedback rerank priors to neutral and erase
+/// mined expansions, contradicting the documented never-expire contract.
 ///
 /// Same schema-evolution guards as [`copy_code_tables_inner`]: each table is
-/// only copied when it exists on the attached DB; `retrieval_log.duration_ms`
-/// (v5) and its `repo` / `kind` / `source` filter columns (v6, probed
-/// together via `source`) are defaulted to NULL / NULL / NULL / `'search'`
-/// when the source predates them, `feedback_events.target_kind` (v6)
-/// defaults to `'memory'`, and `feedback_events.provenance` (v8) defaults to
-/// `'manual'` — dropping any would let old `search-code` log rows re-enter
-/// reformulation mining, code verdicts masquerade as memory verdicts in the
-/// harvest, or auto-reinforcement events be relabelled as manual.
+/// copied only when it exists on the attached DB, and columns added by later
+/// migrations are probed and defaulted per callee.
 fn copy_learning_tables_inner(conn: &rusqlite::Connection) -> Result<()> {
+    copy_feedback_tables(conn)?;
+    copy_retrieval_log(conn)?;
+    copy_event_and_mined_tables(conn)
+}
+
+/// Copy the aggregated feedback counters: memory-side `feedback` (v2) and
+/// symbol-side `code_feedback` (v6). The `repo` column probe also covers the
+/// brief dev-era rowid-keyed `code_feedback` shape (never released): skip
+/// rather than abort.
+fn copy_feedback_tables(conn: &rusqlite::Connection) -> Result<()> {
     if old_table_exists(conn, "feedback")? {
         conn.execute_batch(
             "INSERT OR IGNORE INTO main.feedback(\
@@ -369,8 +385,6 @@ fn copy_learning_tables_inner(conn: &rusqlite::Connection) -> Result<()> {
              FROM old.feedback;",
         )?;
     }
-    // The `repo` column probe also covers the brief dev-era rowid-keyed
-    // `code_feedback` shape (never released): skip rather than abort.
     if old_table_exists(conn, "code_feedback")? && old_column_exists(conn, "code_feedback", "repo")?
     {
         conn.execute_batch(
@@ -380,6 +394,15 @@ fn copy_learning_tables_inner(conn: &rusqlite::Connection) -> Result<()> {
              FROM old.code_feedback;",
         )?;
     }
+    Ok(())
+}
+
+/// Copy the `retrieval_log` telemetry (v3). `duration_ms` (v5) and the
+/// `repo` / `kind` / `source` filter columns (v6, probed together via
+/// `source`) default to NULL / NULL / NULL / `'search'` when the source
+/// predates them — without that, old `search-code` rows would re-enter
+/// reformulation mining as memory queries.
+fn copy_retrieval_log(conn: &rusqlite::Connection) -> Result<()> {
     if old_table_exists(conn, "retrieval_log")? {
         let duration_expr = if old_column_exists(conn, "retrieval_log", "duration_ms")? {
             "duration_ms"
@@ -400,19 +423,22 @@ fn copy_learning_tables_inner(conn: &rusqlite::Connection) -> Result<()> {
              FROM old.retrieval_log;"
         ))?;
     }
+    Ok(())
+}
+
+/// Copy the `feedback_events` verdict log (v5), the mined
+/// `query_expansions` (v5), and the `bandit_arms` state. On pre-migration
+/// sources `target_kind` (v6) defaults to `'memory'` and `provenance` (v8)
+/// to `'manual'`, the same values those migrations backfill — dropping
+/// either would let code verdicts masquerade as memory verdicts in the
+/// harvest, or relabel implicit reinforcement as a user verdict.
+fn copy_event_and_mined_tables(conn: &rusqlite::Connection) -> Result<()> {
     if old_table_exists(conn, "feedback_events")? {
         let target_expr = if old_column_exists(conn, "feedback_events", "target_kind")? {
             "target_kind"
         } else {
             "'memory'"
         };
-        // v8 `provenance` (NOT NULL DEFAULT 'manual'): carries the
-        // auto-reinforcement tag (`auto_coactivation`) earned by the
-        // co-activation reward. A pre-0008 source lacks the column, so probe
-        // and default to the same `'manual'` the migration backfills —
-        // dropping it would relabel every implicit reinforcement event as
-        // manual and let `eval::golden::harvest` treat auto rows as user
-        // verdicts.
         let prov_expr = if old_column_exists(conn, "feedback_events", "provenance")? {
             "provenance"
         } else {

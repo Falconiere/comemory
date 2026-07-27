@@ -61,8 +61,8 @@ authoritative architecture reference; pair it with the
 | `memory` | Markdown I/O, frontmatter parsing, atomic save, ID generation |
 | `store` | SQLite connection layer, schema_meta, migrations, vector + FTS helpers, identifier tokenizer (camelCase/snake_case split + FFI registration) |
 | `simhash` | 64-bit SimHash + Hamming distance over tokenized memory bodies |
-| `graph` | SQL-backed edges (`Supersedes`, `ConflictsWith`, `RelatesTo`, `ReferencesFile`, `ReferencesSymbol`, `CoChanged`, `Imports`, …) + recursive walks; `cross_link` parses backticked refs; `cochange` mines git history, `imports` extracts per-language import edges, `pagerank` + `materialize` write `code_symbols.rank_score` |
-| `retrieval` | router (candidates + 4-tier lexical ladder ending in learned expansion), graph_route (graph-expansion leg: an edge walk seeded from the provisional top hits), scope (the created-date `TimeScope` + the `Filters` bundle threading repo/kind/time through every leg), score (ACT-R/Beta primitives), rerank (multiplicative priors), diversify (SimHash collapse + MMR), pipeline (orchestration + access tracking), fuse (RRF, pairwise + N-ary), bundle (context lookup, code refs ranked by graph priors); code side: code_route (BM25 + thresholded ANN + RRF, chunk→parent coalesce), code_rerank + code_prior (PageRank / recency / working-set affinity / feedback) |
+| `graph` | SQL-backed edges (`Supersedes`, `ConflictsWith`, `RelatesTo`, `ReferencesFile`, `ReferencesSymbol`, `CoChanged`, `Imports`, …) + recursive walks; `cross_link` parses backticked refs; `cochange` mines git history, `imports` extracts per-language import edges, `pagerank` + `materialize` write `code_symbols.rank_score`, `memory_rank` writes `memories.rank_score` from the derived memory graph |
+| `retrieval` | router (candidates + 4-tier lexical ladder ending in learned expansion), graph_route (graph-expansion leg: an edge walk seeded from the provisional top hits), scope (the created-date `TimeScope` + the `Filters` bundle threading repo/kind/time through every leg), score (ACT-R/Beta primitives + the shared median/PageRank-boost math), rerank (five multiplicative priors, including the memory PageRank boost), diversify (SimHash collapse + MMR), pipeline (orchestration + access tracking), fuse (RRF, pairwise + N-ary), bundle (context lookup, code refs ranked by graph priors); code side: code_route (BM25 + thresholded ANN + RRF, chunk→parent coalesce), code_rerank + code_prior (PageRank / recency / working-set affinity / feedback) |
 | `eval` | learning loop: golden sets (file + feedback harvest), recall@k/MRR metrics, eval runner (replays originating repo/kind filters), reformulation mining, grid tune |
 | `ast` | ast-grep wrapper (rust/ts/js/py/go), per-language symbol extractor, cAST chunking of oversized symbols, user pattern API |
 | `stats` | rusqlite usage / feedback / code_feedback / repo-marker tables (lives inside the same DB) |
@@ -96,7 +96,7 @@ migrations stay idempotent.
 | Table | Purpose |
 |---|---|
 | `schema_meta` | Key/value rows: schema version, locked-in vector dimensions, code-format version, and migration markers |
-| `memories` | Frontmatter + body mirror keyed by memory id |
+| `memories` | Frontmatter + body mirror keyed by memory id, plus a materialized `rank_score` (memory-graph PageRank) |
 | `memory_fts` (FTS5) | Lexical index over memory body + title |
 | `memory_vec` (vec0) | Dense vectors keyed by memory id; dim locked at first save |
 | `code_symbols` | Symbols extracted from indexed repos (file, kind, snippet, simhash) plus a materialized `rank_score` (PageRank) and `parent_id` (cAST chunk → parent symbol) |
@@ -182,8 +182,10 @@ search("postgres migration race")
   │   ├─ Beta-smoothed feedback multiplier (used / irrelevant counts)
   │   ├─ quality multiplier (frontmatter quality 1-5)
   │   ├─ supersede penalty (fixed 0.2× if superseded by a live memory)
-  │   └─ final_score = rrf × activation × feedback × quality × supersede
-  │       (activation/feedback/quality clamped to [prior_clamp.lo, prior_clamp.hi];
+  │   ├─ PageRank boost from memories.rank_score, relative to the median of
+  │   │   the pool's DISTINCT scores: 1 + 0.2·ln(1 + raw/median)
+  │   └─ final_score = rrf × activation × feedback × quality × supersede × rank
+  │       (activation/feedback/quality/rank clamped to [prior_clamp.lo, prior_clamp.hi];
   │        the supersede penalty intentionally bypasses the clamp)
   │
   ├─ diversify  (diversify.rs)
@@ -193,12 +195,38 @@ search("postgres migration race")
   └─ emit  (output/search.rs)
       ├─ TTY: one line per hit with colored score + source label
       └─ JSON: {"hits":[{"memory_id","score","source","tier","superseded_by"?,"score_parts":{
-               rrf, activation, feedback, quality, supersede, final_score}}],"query_id"?}
+               rrf, activation, feedback, quality, supersede, rank, final_score}}],"query_id"?}
 ```
 
 `score_parts` is a stable explainability contract (`comemory tune` reads
 it); its `rrf` field is the max-normalized relevance in `[0, 1]` (pool max
 maps to 1.0), not the raw fused score.
+
+The fifth prior, `rank`, is the memory-side mirror of what `code_prior`
+already does for symbols. `graph::memory_rank` runs PageRank over a graph
+derived at compute time — the direct memory→memory relations
+(`supersedes`, `conflicts_with`, `derived_from`, `relates_to`) plus
+undirected co-citation edges between memories that reference the same file
+or symbol, with the hub rels `in_repo` / `authored_by` / `tagged` excluded
+for the same reason the graph walk excludes them — and writes the result to
+`memories.rank_score`. Because absolute PageRank scales with `1/n`, the
+boost is taken relative to the median of the candidate pool's *distinct*
+scores, which makes it corpus-size invariant. The recompute is a
+best-effort post-pass wired to three triggers, each firing only after its
+own transaction has committed, so a failed refresh costs rank freshness and
+never the primary write: `save` (after the SQLite mirror commits), soft
+delete (inside `mirror_soft_delete`, so `comemory delete` and both of
+`comemory prune`'s delete paths behave alike), and `rebuild` (after the
+markdown replay and the preserved-table copy, before the atomic swap).
+
+Two regimes make the prior neutral, both order-preserving. A corpus where
+no pass has ever run leaves every `rank_score` at the `0.0` column default,
+so the pool median is 0 and the boost is exactly `1.0`. A corpus that has
+been ranked but carries no qualifying edges gets uniform PageRank (`1/n`
+each), so every candidate's raw score equals the median and every boost is
+the same `1 + 0.2·ln 2 ≈ 1.1386`. A uniform multiplier cannot reorder a
+ranking, which is why upgrading an existing database — and the committed
+ranking snapshots — sees no movement until real structure exists.
 Identifier-aware matching (camelCase/snake_case splitting) is not a routing
 branch — the custom `identifier` FTS5 tokenizer is baked into the
 `memory_fts` / `code_fts` DDL, so every lexical query benefits from it.

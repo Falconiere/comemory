@@ -69,9 +69,13 @@ fn superseded_hit_is_annotated_and_penalized() {
 fn score_parts_multiply_to_final() {
     let (_d, conn) = open_seeded();
     let cfg = comemory::config::Config::defaults();
+    // A nonzero stored PageRank keeps `rank` off its neutral 1.0, so the
+    // invariant covers the fifth factor rather than multiplying by one.
+    set_rank(&conn, "aaaa0002", 0.4);
     let out = rerank(&conn, &cfg, &[hit("aaaa0002", 0.8)], None).expect("rerank");
     let p = &out[0].parts;
-    let expect = f64::from(p.rrf) * p.activation * p.feedback * p.quality * p.supersede;
+    assert!(p.rank > 1.0, "rank prior must be engaged, got {}", p.rank);
+    let expect = f64::from(p.rrf) * p.activation * p.feedback * p.quality * p.supersede * p.rank;
     assert!((p.final_score - expect).abs() < 1e-9);
 }
 
@@ -150,12 +154,10 @@ fn no_feedback_row_is_neutral() {
     assert!((out[0].parts.feedback - 1.0).abs() < 1e-12);
 }
 
-#[test]
-fn ties_break_on_memory_id_ascending() {
-    let (_d, conn) = open_seeded();
-    let cfg = comemory::config::Config::defaults();
-    // Seed two rows with identical priors (same quality, no feedback,
-    // not superseded) so their final scores tie exactly.
+/// Seed two memories whose quality, feedback, and access signals are all
+/// identical, so any ordering between them comes from the one factor the
+/// calling test varies (or, when nothing varies, from the id tie-break).
+fn seed_tie_pair(conn: &rusqlite::Connection) {
     conn.execute_batch(
         "INSERT INTO memories(id, slug, kind, repo, author, quality, schema, content_hash,
                               body, created_at, updated_at, md_path, access_count, last_accessed, simhash)
@@ -166,6 +168,27 @@ fn ties_break_on_memory_id_ascending() {
           '2026-06-09T00:00:00Z','2026-06-09T00:00:00Z','m/5.md',0,'2026-06-09T00:00:00Z',5);",
     )
     .expect("seed ties");
+}
+
+/// Stamp a stored `memories.rank_score`. Production writes the column from
+/// a whole-corpus `graph::memory_rank` pass (covered end-to-end by the CLI
+/// trigger tests); the rerank stage only ever reads it, so seeding the
+/// column directly is the honest fixture for these unit tests.
+fn set_rank(conn: &rusqlite::Connection, id: &str, rank: f64) {
+    conn.execute(
+        "UPDATE memories SET rank_score = ?2 WHERE id = ?1",
+        rusqlite::params![id, rank],
+    )
+    .expect("set rank_score");
+}
+
+#[test]
+fn ties_break_on_memory_id_ascending() {
+    let (_d, conn) = open_seeded();
+    let cfg = comemory::config::Config::defaults();
+    // Seed two rows with identical priors (same quality, no feedback,
+    // not superseded) so their final scores tie exactly.
+    seed_tie_pair(&conn);
     // Present in descending-id order; equal scores must come back ascending.
     let hits = vec![hit("bbbb0002", 1.0), hit("bbbb0001", 1.0)];
     let out = rerank(&conn, &cfg, &hits, None).expect("rerank");
@@ -207,8 +230,87 @@ fn priors_boost_on_normalized_scale_no_inversion() {
             * r.parts.activation
             * r.parts.feedback
             * r.parts.quality
-            * r.parts.supersede;
+            * r.parts.supersede
+            * r.parts.rank;
         assert!((r.parts.final_score - product).abs() < 1e-12);
+    }
+}
+
+#[test]
+fn rank_prior_orders_equal_signal_candidates() {
+    // AC-5. Two candidates with equal relevance and identical
+    // activation/feedback/quality signals: only the stored PageRank differs,
+    // and it must decide the order — beating the ascending-id tie-break that
+    // would otherwise put bbbb0001 first.
+    let (_d, conn) = open_seeded();
+    seed_tie_pair(&conn);
+    set_rank(&conn, "bbbb0001", 0.01);
+    set_rank(&conn, "bbbb0002", 0.09);
+    let cfg = comemory::config::Config::defaults();
+    let hits = vec![hit("bbbb0001", 1.0), hit("bbbb0002", 1.0)];
+    let out = rerank(&conn, &cfg, &hits, None).expect("rerank");
+    assert_eq!(
+        out[0].memory_id, "bbbb0002",
+        "the more central memory leads"
+    );
+    assert!(
+        out[0].parts.rank > out[1].parts.rank,
+        "rank prior must carry the ordering: {} vs {}",
+        out[0].parts.rank,
+        out[1].parts.rank
+    );
+}
+
+#[test]
+fn rank_prior_respects_the_prior_clamp() {
+    // A pool spanning six orders of magnitude drives the raw boost far past
+    // the clamp ceiling; every candidate must still land inside
+    // `cfg.rank.prior_clamp`, and the outlier lands exactly on it.
+    let (_d, conn) = open_seeded();
+    set_rank(&conn, "aaaa0001", 0.0);
+    set_rank(&conn, "aaaa0002", 1e-6);
+    set_rank(&conn, "aaaa0003", 1.0);
+    let cfg = comemory::config::Config::defaults();
+    let (lo, hi) = cfg.rank.prior_clamp;
+    let hits = vec![
+        hit("aaaa0001", 1.0),
+        hit("aaaa0002", 1.0),
+        hit("aaaa0003", 1.0),
+    ];
+    let out = rerank(&conn, &cfg, &hits, None).expect("rerank");
+    assert_eq!(out.len(), 3);
+    for r in &out {
+        assert!(
+            r.parts.rank >= lo && r.parts.rank <= hi,
+            "{} rank {} escaped the clamp {lo}..{hi}",
+            r.memory_id,
+            r.parts.rank
+        );
+    }
+    let hub = out
+        .iter()
+        .find(|r| r.memory_id == "aaaa0003")
+        .expect("hub in pool");
+    assert_eq!(hub.parts.rank, hi, "a raw boost above the ceiling clamps");
+}
+
+#[test]
+fn unranked_pool_leaves_the_rank_prior_neutral() {
+    // AC-6a. These rows were seeded by raw SQL, so no `memory_rank` pass ever
+    // ran and every rank_score is the 0.0 column default → the pool median is
+    // 0 → the prior is EXACTLY 1.0 for every candidate, which is what keeps
+    // pre-PageRank orderings (and their snapshots) bit-identical.
+    let (_d, conn) = open_seeded();
+    let cfg = comemory::config::Config::defaults();
+    let hits = vec![
+        hit("aaaa0001", 1.0),
+        hit("aaaa0002", 1.0),
+        hit("aaaa0003", 1.0),
+    ];
+    let out = rerank(&conn, &cfg, &hits, None).expect("rerank");
+    assert_eq!(out.len(), 3);
+    for r in &out {
+        assert_eq!(r.parts.rank, 1.0, "{} must be exactly neutral", r.memory_id);
     }
 }
 

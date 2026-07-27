@@ -176,6 +176,11 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
 /// `--supersedes` ids and `--ref-*` anchors live in the frontmatter), then
 /// mirror it into `comemory.db` in one transaction. A mirror failure keeps
 /// the markdown and names it plus the `rebuild` recovery path.
+///
+/// Once the mirror has committed, the memory-graph PageRank is refreshed
+/// best-effort: the new memory's relations and references reshape the graph,
+/// and the save is already durable, so a failed refresh costs rank freshness
+/// and nothing else.
 fn persist(
     conn: &mut rusqlite::Connection,
     paths: &Paths,
@@ -194,6 +199,7 @@ fn persist(
             e
         ))
     })?;
+    crate::graph::memory_rank::refresh_best_effort(conn);
     Ok(rec)
 }
 
