@@ -36,4 +36,6 @@ pub mod graph_route;
 pub mod pipeline;
 pub mod rerank;
 pub mod router;
+/// Created-date window (`--since` / `--until` / `--as-of`) shared by every leg.
+pub mod scope;
 pub mod score;
