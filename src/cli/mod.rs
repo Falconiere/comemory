@@ -35,6 +35,8 @@ pub mod search_code;
 pub mod serve;
 pub mod tui;
 pub mod tune;
+/// `--since` / `--until` / `--as-of` value parsing.
+pub mod when;
 
 /// Top-level CLI. `comemory <subcommand> [--json] [--data-dir DIR]`. The `--json`
 /// and `--data-dir` flags are global so callers can place them either before

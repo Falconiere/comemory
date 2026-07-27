@@ -22,6 +22,8 @@ pub mod code_row;
 pub mod connection;
 pub mod embed;
 pub mod fts;
+/// Memory-leg FTS5 ladder (strict → relaxed → subtoken → expanded).
+pub mod fts_memory;
 pub mod memory_list;
 pub mod memory_meta;
 pub mod memory_row;
