@@ -4,6 +4,8 @@
 //! `no-bypass-check` gate happy.
 
 pub mod context;
+/// Rendering for `comemory edges` (triplet rows + the shared page envelope).
+pub mod edges;
 pub mod graph;
 pub mod json;
 pub mod page;

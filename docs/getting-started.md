@@ -135,6 +135,17 @@ memories attached to it, with code refs ranked by graph priors — use `context`
 comemory context "frontmatter" --repo demo
 ```
 
+The relations themselves are searchable too. `comemory edges` reads the graph
+lexically, so "what replaced that decision?" or "what imports the parser?" have
+word-shaped answers instead of requiring an id:
+
+```bash
+comemory edges "supersedes frontmatter"
+```
+
+Each hit prints as `src —rel→ dst`, where a memory endpoint renders as its kind
+plus slug and a code endpoint as its path.
+
 That's the loop: save what you learn, search it back, and let the code index and
 graph surface the symbols and memories that matter.
 

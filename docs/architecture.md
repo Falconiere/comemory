@@ -59,9 +59,9 @@ authoritative architecture reference; pair it with the
 |---|---|
 | `cli` | clap subcommand definitions, arg parsing, dispatch, exit codes |
 | `memory` | Markdown I/O, frontmatter parsing, atomic save, ID generation |
-| `store` | SQLite connection layer, schema_meta, migrations, vector + FTS helpers, identifier tokenizer (camelCase/snake_case split + FFI registration) |
+| `store` | SQLite connection layer, schema_meta, migrations, vector + FTS helpers, identifier tokenizer (camelCase/snake_case split + FFI registration), `edge_fts` (the triplet index over `edges` — rendering, refresh, and the ladder behind `comemory edges`) |
 | `simhash` | 64-bit SimHash + Hamming distance over tokenized memory bodies |
-| `graph` | SQL-backed edges (`Supersedes`, `ConflictsWith`, `RelatesTo`, `ReferencesFile`, `ReferencesSymbol`, `CoChanged`, `Imports`, …) + recursive walks; `cross_link` parses backticked refs; `cochange` mines git history, `imports` extracts per-language import edges, `pagerank` + `materialize` write `code_symbols.rank_score`, `memory_rank` writes `memories.rank_score` from the derived memory graph |
+| `graph` | SQL-backed edges (`Supersedes`, `ConflictsWith`, `RelatesTo`, `ReferencesFile`, `ReferencesSymbol`, `CoChanged`, `Imports`, …) + recursive walks; `cross_link` parses backticked refs; `cochange` mines git history, `imports` extracts per-language import edges, `pagerank` + `materialize` write `code_symbols.rank_score`, `memory_rank` writes `memories.rank_score` from the derived memory graph, `derived` refreshes every derived artifact in one best-effort post-write pass (§5.3) |
 | `retrieval` | router (candidates + 4-tier lexical ladder ending in learned expansion), graph_route (graph-expansion leg: an edge walk seeded from the provisional top hits), scope (the created-date `TimeScope` + the `Filters` bundle threading repo/kind/time through every leg), score (ACT-R/Beta primitives + the shared median/PageRank-boost math), rerank (five multiplicative priors, including the memory PageRank boost), diversify (SimHash collapse + MMR), pipeline (orchestration + access tracking), fuse (RRF, pairwise + N-ary), bundle (context lookup, code refs ranked by graph priors); code side: code_route (BM25 + thresholded ANN + RRF, chunk→parent coalesce), code_rerank + code_prior (PageRank / recency / working-set affinity / feedback) |
 | `eval` | learning loop: golden sets (file + feedback harvest), recall@k/MRR metrics, eval runner (replays originating repo/kind filters), reformulation mining, grid tune |
 | `ast` | ast-grep wrapper (rust/ts/js/py/go), per-language symbol extractor, cAST chunking of oversized symbols, user pattern API |
@@ -103,6 +103,7 @@ migrations stay idempotent.
 | `code_fts` (FTS5) | Lexical index over symbol identifiers + snippets + path tokens |
 | `code_vec` (vec0) | Dense vectors for code symbols; dim locked at first ingest |
 | `edges` | Sparse weighted table replacing the kuzu graph (typed src→dst rows; includes mined `co_changed` + `imports` code-graph edges) |
+| `edge_fts` (FTS5) | Derived triplet index over `edges`: each row rendered as searchable `src —rel→ dst` text with the raw edge carried in UNINDEXED payload columns. Refresh-materialized (§5.3), never written incrementally |
 | `retrieval_log`, `feedback`, `feedback_events`, `code_feedback`, `query_expansions`, `repo_marker` | Learning-loop telemetry (query log + per-query feedback provenance), aggregated memory + code-symbol feedback counters, mined expansions, indexing markers (incl. the v7 `repo_marker.root_path` working-tree root used by `serve` to resolve `file:<repo>:<path>` ids back to disk) |
 
 Every dense lookup goes through `sqlite-vec`'s `vec0` virtual table with a
@@ -212,12 +213,8 @@ for the same reason the graph walk excludes them — and writes the result to
 `memories.rank_score`. Because absolute PageRank scales with `1/n`, the
 boost is taken relative to the median of the candidate pool's *distinct*
 scores, which makes it corpus-size invariant. The recompute is a
-best-effort post-pass wired to three triggers, each firing only after its
-own transaction has committed, so a failed refresh costs rank freshness and
-never the primary write: `save` (after the SQLite mirror commits), soft
-delete (inside `mirror_soft_delete`, so `comemory delete` and both of
-`comemory prune`'s delete paths behave alike), and `rebuild` (after the
-markdown replay and the preserved-table copy, before the atomic swap).
+best-effort post-pass, one of the two derived artifacts refreshed together
+at the seams described in §5.3.
 
 Two regimes make the prior neutral, both order-preserving. A corpus where
 no pass has ever run leaves every `rank_score` at the `0.0` column default,
@@ -312,6 +309,47 @@ deletion — their FTS/vec rows and edges are physically purged at
 soft-delete. An unscoped run binds NULL for both bounds, which every
 predicate short-circuits on, so the no-flags path is bit-identical to the
 pre-time-travel pipeline.
+
+### 5.3 Derived artifacts and their refresh seams
+
+Two things in `comemory.db` are computed *from* `memories` + `edges` rather
+than written alongside them: the memory-graph PageRank in
+`memories.rank_score` (§5) and the `edge_fts` triplet index that backs
+`comemory edges`. They share a staleness window and a set of trigger points,
+so they share one entry point — `graph::derived::refresh_derived_best_effort`
+— and a new seam cannot refresh half the derived state. Each artifact is
+independently best-effort: a failure warns and the other still runs.
+
+Four seams call it, each only after its own transaction has committed, so a
+failed refresh costs freshness and never the primary write:
+
+- `save`, after the SQLite mirror commits;
+- soft delete, inside `mirror_soft_delete`, so `comemory delete` and both of
+  `comemory prune`'s delete paths behave alike;
+- `rebuild`, after the markdown replay and the preserved-table copy, before
+  the atomic swap;
+- `index-code`, after `graph::materialize` returns. This seam is new, and it
+  closes a real gap: `materialize` writes the `co_activated` memory→file
+  edges earned by the co-activation reward (§7.1), but nothing used to
+  recompute rank afterwards, so a reward sat in `edges` unread until the
+  next save.
+
+`edge_fts` is **refresh-materialized, not written through**: one transaction
+deletes the table and re-inserts it from `edges` in a single ordered
+`INSERT … SELECT`. The alternative — hooking each of the ten-plus edge write
+paths, two of which are raw `DELETE FROM edges` statements inside
+`materialize` — is incremental but rots the moment the next edge writer
+forgets a hook. At personal-memory scale a full pass is milliseconds, the
+same economics that make `memory_rank` a full recompute. Insertion order is
+pinned to `(src_kind, src_id, rel, dst_kind, dst_id)`, so two databases
+holding the same edges index identically.
+
+Migration 0012 creates `edge_fts` **empty** on purpose: the triplet
+rendering lives in Rust and only there, and duplicating it as migration SQL
+would be a drift trap. An upgraded database therefore arrives with edges but
+no triplets, and heals itself — the first `comemory edges` invocation sees
+an empty index over a non-empty `edges`, refreshes once, and answers in the
+same run. No flag, no backfill, no separate upgrade step.
 
 ## 6. Save flow
 

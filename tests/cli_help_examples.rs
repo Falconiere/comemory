@@ -18,6 +18,7 @@ const SUBCOMMANDS: &[&str] = &[
     "ingest-code",
     "ast",
     "context",
+    "edges",
     "prune",
     "gc",
     "install-hooks",
