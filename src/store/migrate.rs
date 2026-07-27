@@ -13,7 +13,7 @@ use crate::prelude::*;
 
 /// Highest schema version known to this build. Bumped each time a new
 /// migration file is added under `src/store/sql/`.
-pub const CURRENT_VERSION: &str = "10";
+pub const CURRENT_VERSION: &str = "11";
 
 /// 0001 bootstrap SQL (`schema_meta` table). Public so tests can replay
 /// historical schema states exactly as an old binary created them.
@@ -56,6 +56,11 @@ pub const M_V9: &str = include_str!("./sql/0009_v9_code_refs.sql");
 /// 0010 SQL: `bandit_arms` table for the eval-gated online bandit over
 /// `[tune]` knobs. Public so tests can replay historical schema states.
 pub const M_V10: &str = include_str!("./sql/0010_v10_bandit.sql");
+/// 0011 SQL: `memories.rank_score`, the materialized memory-graph PageRank
+/// read by the rerank stage's fifth prior. Additive defaulted column — no
+/// backfill; rows stay at the neutral 0.0 until the first recompute. Public
+/// so tests can replay historical schema states.
+pub const M_V11: &str = include_str!("./sql/0011_v11_memory_rank.sql");
 
 /// Apply all pending migrations. Safe to re-run; each migration is
 /// only applied if its key is absent from `schema_meta`.
@@ -72,6 +77,7 @@ pub fn run(conn: &mut Connection) -> Result<()> {
     apply(conn, "0008_v8_reinforcement", M_V8)?;
     apply(conn, "0009_v9_code_refs", M_V9)?;
     apply(conn, "0010_v10_bandit", M_V10)?;
+    apply(conn, "0011_v11_memory_rank", M_V11)?;
     set_version(conn, CURRENT_VERSION)?;
     Ok(())
 }

@@ -192,7 +192,7 @@ pub fn priors(
     affinity_cache: &mut BTreeMap<String, f64>,
 ) -> Result<CodePriorParts> {
     let clamp = cfg.rank.prior_clamp;
-    let rank = rank_boost(sig.rank_score, pool_median_rank, clamp);
+    let rank = score::rank_boost(sig.rank_score, pool_median_rank, RANK_SCALE, clamp);
     let days = score::days_since(&sig.last_accessed, now);
     let activation = score::activation_boost(
         score::activation(sig.access_count, days, cfg.rank.decay),
@@ -216,37 +216,13 @@ pub fn priors(
     })
 }
 
-/// Median of the candidate pool's DISTINCT per-file `rank_score`s
-/// (chunk rows share their file's projected score, so dedup is by
-/// `(repo, path)`). Absolute PageRank scales with `1/file-count`, so a
-/// fixed reference would make the boost depend on repo size;
-/// median-relative mapping is repo-size invariant. Even-sized pools
-/// take the mean of the middle two; an empty pool returns 0.0, which
-/// [`rank_boost`] treats as "unranked repo → neutral".
+/// Median of the candidate pool's DISTINCT per-file `rank_score`s — chunk
+/// rows share their file's projected score, so dedup is by `(repo, path)`
+/// before the shared [`score::median_rank`] does the median math.
 pub fn median_file_rank<'a>(files: impl IntoIterator<Item = ((&'a str, &'a str), f64)>) -> f64 {
     let by_file: BTreeMap<(&str, &str), f64> = files.into_iter().collect();
     let mut ranks: Vec<f64> = by_file.into_values().collect();
-    if ranks.is_empty() {
-        return 0.0;
-    }
-    ranks.sort_by(f64::total_cmp);
-    let n = ranks.len();
-    if n % 2 == 1 {
-        ranks[n / 2]
-    } else {
-        (ranks[n / 2 - 1] + ranks[n / 2]) / 2.0
-    }
-}
-
-/// PageRank prior: `bounded(1 + RANK_SCALE·ln(1 + raw/median), clamp)`,
-/// pool-median-relative (see [`median_file_rank`] for why). A
-/// non-positive median (unranked repo, every `rank_score` at the 0.0
-/// column default) keeps every rank prior at the neutral 1.0.
-fn rank_boost(raw: f64, median: f64, clamp: (f64, f64)) -> f64 {
-    if median <= 0.0 {
-        return 1.0;
-    }
-    score::bounded_boost(1.0 + RANK_SCALE * (1.0 + raw.max(0.0) / median).ln(), clamp)
+    score::median_rank(&mut ranks)
 }
 
 /// Working-set affinity prior for one candidate file:
