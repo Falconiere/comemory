@@ -41,7 +41,7 @@ pub fn parse_when(s: &str, edge: DayEdge) -> Result<OffsetDateTime> {
     }
     let date = Date::parse(raw, format_description!("[year]-[month]-[day]")).map_err(|_| {
         Error::Usage(format!(
-            "invalid time value `{s}` (expected an RFC3339 timestamp or YYYY-MM-DD)"
+            "invalid time value `{raw}` (expected an RFC3339 timestamp or YYYY-MM-DD)"
         ))
     })?;
     Ok(date.with_time(day_edge_time(edge)).assume_utc())

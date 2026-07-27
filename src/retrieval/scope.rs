@@ -1,16 +1,11 @@
 //! Created-date window applied to a retrieval run.
 //!
-//! Every leg of the pipeline (lexical, vector, graph) filters candidates
-//! on `memories.created_at` against the same [`TimeScope`], so a scoped
-//! run answers "what did we know then" instead of "what do we know now".
-//! Bounds are pre-normalized ISO-8601 strings produced by the CLI's
-//! `--since` / `--until` / `--as-of` parsing; the store layer compares
-//! them through SQLite `datetime()` so mixed stored precision cannot
-//! invert the order.
-//!
-//! [`Filters`] bundles the scope with the `repo` / `kind` filters that
-//! travel beside it, so one value carries everything a leg narrows
-//! candidates by.
+//! Every leg filters candidates on `memories.created_at` against the same
+//! [`TimeScope`] — "what did we know then" instead of "what do we know
+//! now". Bounds are pre-normalized ISO-8601 strings from the CLI's
+//! `--since` / `--until` / `--as-of` parsing, compared through SQLite
+//! `datetime()` so mixed stored precision cannot invert the order.
+//! [`Filters`] bundles the scope with the `repo` / `kind` filters.
 
 use crate::store::CreatedWindow;
 
@@ -80,9 +75,10 @@ impl TimeScope {
     }
 }
 
-/// Everything one retrieval run narrows candidates by: the `repo` / `kind`
-/// filters and the [`TimeScope`], carried as a single value so each leg
-/// takes one parameter instead of three.
+/// Everything one retrieval run narrows candidates by: `repo` / `kind` +
+/// the [`TimeScope`], one value per leg instead of three parameters.
+/// `Copy` is load-bearing — call sites pass by value, then keep reading
+/// fields; removing the derive is a breaking refactor, not a cleanup.
 #[derive(Debug, Clone, Copy)]
 pub struct Filters<'a> {
     /// Repo filter, or `None` to search every repo.
