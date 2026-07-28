@@ -3,6 +3,12 @@
 /// Seeded SplitMix64 PRNG. Public because it is a parameter of
 /// [`crate::eval::metrics::bootstrap_ci`], whose callers own the stream so
 /// that several intervals drawn in one run stay jointly reproducible.
+///
+/// [`SplitMix64::new`] and [`SplitMix64::next_u64`] are public for the same
+/// reason: a `pub fn` taking a `pub(crate)` type trips `private_interfaces`
+/// (fatal under `-D warnings`), and an external caller that owns the stream
+/// must be able to construct it and draw from it. `next_f64` stays private —
+/// nothing outside this module needs the unit-interval form.
 pub struct SplitMix64 {
     state: u64,
 }

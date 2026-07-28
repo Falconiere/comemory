@@ -184,6 +184,51 @@ fn eval_json_adds_confidence_intervals_without_changing_point_estimates() {
     }
 }
 
+/// `(point, lo, hi)` for one `label: 0.500 [0.250, 0.750]` group of the TTY
+/// summary line.
+fn tty_metric(line: &str, label: &str) -> (f64, f64, f64) {
+    let rest = line
+        .split_once(&format!("{label}: "))
+        .expect("summary line carries the label")
+        .1;
+    let (point, rest) = rest.split_once(" [").expect("point precedes its CI");
+    let (bounds, _) = rest.split_once(']').expect("CI closes its bracket");
+    let (lo, hi) = bounds.split_once(", ").expect("CI renders as 'lo, hi'");
+    let num = |s: &str| s.trim().parse::<f64>().expect("summary numbers parse");
+    (num(point), num(lo), num(hi))
+}
+
+#[test]
+fn eval_tty_brackets_widen_on_a_mixed_hit_miss_set() {
+    let (home, golden) = mixed_golden_home();
+    let assert = bin(&home)
+        .args(["eval", "--golden"])
+        .arg(&golden)
+        .args(["--golden-only", "--k", "3"])
+        .assert()
+        .success();
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).expect("utf8 stdout");
+    let summary = stdout.lines().next().expect("summary line").to_string();
+    assert!(
+        summary.contains("(4 queries)"),
+        "summary counts the golden pairs, got: {summary:?}"
+    );
+
+    // Two hits out of four: unlike the perfect-score case, both bootstrap
+    // intervals must render distinct lo/hi bounds around their point.
+    for label in ["recall@3", "mrr"] {
+        let (point, lo, hi) = tty_metric(&summary, label);
+        assert!(
+            lo < hi,
+            "{label} must bracket a mixed set with distinct bounds, got [{lo}, {hi}] in {summary:?}"
+        );
+        assert!(
+            lo <= point && point <= hi,
+            "{label} CI [{lo}, {hi}] must contain {point} in {summary:?}"
+        );
+    }
+}
+
 #[test]
 fn eval_reruns_are_byte_identical() {
     let (home, golden) = mixed_golden_home();
