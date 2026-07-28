@@ -152,9 +152,15 @@ environment (`Config::with_env`, in `src/config/env.rs`).
 | `COMEMORY_PRUNE_BELOW_QUALITY` | Quality threshold (1..=5); memories at or below this value are prune candidates (used together with activation + feedback floors). | `2` |
 | `COMEMORY_PRUNE_SUPERSEDED_GRACE_DAYS` | Grace window (days) before a superseded-and-never-accessed memory becomes prune-eligible; protects freshly-rebuilt DBs whose supersede edges all carry rebuild-time timestamps. | `7` |
 
-The `[tune]` grid knobs (`tune.rrf_k_grid`, `tune.decay_grid`,
-`tune.mmr_lambda_grid`, `tune.bm25_grid`) are file-only — set them in
-`config.toml`; they have no env override.
+The `[tune]` knobs are file-only — set them in `config.toml`; they have no
+env override. Six grids (`tune.rrf_k_grid`, `tune.decay_grid`,
+`tune.mmr_lambda_grid`, `tune.bm25_grid`, `tune.graph_hops_grid`,
+`tune.graph_seeds_grid`) define the search space — 729 candidates at the
+defaults — and `tune.samples` (default `64`) caps how many of them a run
+actually scores by drawing that many distinct candidates from the pools with
+a derived-or-`--seed`-pinned PRNG; `tune.samples = 0` restores the exhaustive
+cartesian sweep. `comemory bandit` ignores `tune.samples` — its arms stay the
+full grid.
 
 The memory and code vector dims (1024 and 768) are baked into the
 `memory_vec` / `code_vec` vec0 DDL (`src/store/sql/0002_v2_tables.sql`)

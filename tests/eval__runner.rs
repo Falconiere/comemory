@@ -57,6 +57,11 @@ fn run_eval_scores_obvious_lexical_match_perfectly() {
     assert_eq!(report.queries, 1);
     assert_eq!(report.recall_at_k, 1.0);
     assert_eq!(report.mrr, 1.0);
+    assert_eq!(
+        (report.recall_ci, report.mrr_ci),
+        ((1.0, 1.0), (1.0, 1.0)),
+        "a single query carries no spread to bracket"
+    );
     assert_eq!(report.results.len(), 1);
     assert_eq!(report.results[0].rank_of_first_hit, Some(1));
     assert_eq!(report.results[0].returned[0], "aaaa0001");
@@ -90,6 +95,171 @@ fn run_eval_misses_score_zero_and_sort_worst_first() {
     );
     assert_eq!(report.results[0].rank_of_first_hit, None);
     assert_eq!(report.results[0].recall, 0.0);
+}
+
+/// Insert one directed edge in the production `(kind, id)` addressing.
+fn insert_edge(conn: &rusqlite::Connection, src: &str, dst: &str, rel: &str) {
+    conn.execute(
+        "INSERT INTO edges(src_kind,src_id,dst_kind,dst_id,rel,created_at) \
+         VALUES('memory',?1,'memory',?2,?3,'t')",
+        rusqlite::params![src, dst, rel],
+    )
+    .expect("insert edge");
+}
+
+/// A citer the lexical leg finds, a `derived_from` target that is dark for
+/// the same query, and one unrelated memory. Returns the tempdir guard and
+/// the connection.
+fn edge_linked() -> (tempfile::TempDir, rusqlite::Connection) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let conn = comemory::store::connection::open(dir.path().join("c.db")).expect("open");
+    insert_memory(
+        &conn,
+        "cccc0001",
+        "note",
+        "duplicate invoice notifications reached customers twice",
+        1,
+    );
+    insert_memory(
+        &conn,
+        "cccc0002",
+        "note",
+        "reconciliation sweep double counted when two shifts overlapped",
+        u32::MAX as i64,
+    );
+    insert_memory(&conn, "cccc0003", "note", "clap derive flag placement", -1);
+    insert_edge(&conn, "cccc0001", "cccc0002", "derived_from");
+    (dir, conn)
+}
+
+/// `Config::defaults()` with the graph walk depth pinned to `hops`.
+fn cfg_hops(hops: u32) -> comemory::config::Config {
+    let mut cfg = comemory::config::Config::defaults();
+    cfg.retrieval.graph_hops = hops;
+    cfg
+}
+
+#[test]
+fn graph_expansion_leg_is_visible_to_eval() {
+    // AC-4: the golden target is lexically dark for its query and reachable
+    // only by walking `derived_from` out of the memory the lexical leg does
+    // find. Scoring the same pair with the walk disabled must therefore be
+    // strictly worse — which is what lets `comemory tune` see the leg at all.
+    let (_d, conn) = edge_linked();
+    let pairs = vec![GoldenPair {
+        query: "duplicate invoice notifications".into(),
+        relevant: vec!["cccc0002".into()],
+        repo: None,
+        kind: None,
+    }];
+    let on = run_eval(&cfg_hops(2), &conn, &pairs, 3).expect("run_eval hops=2");
+    let off = run_eval(&cfg_hops(0), &conn, &pairs, 3).expect("run_eval hops=0");
+
+    assert!(
+        off.recall_at_k < on.recall_at_k,
+        "hops=0 must lose recall: {} !< {}",
+        off.recall_at_k,
+        on.recall_at_k
+    );
+    assert!(
+        off.mrr < on.mrr,
+        "hops=0 must lose mrr: {} !< {}",
+        off.mrr,
+        on.mrr
+    );
+    assert_eq!(
+        off.results[0].rank_of_first_hit, None,
+        "the target is lexically dark, so the walk is its only route"
+    );
+    assert!(
+        on.results[0].returned.contains(&"cccc0002".to_string()),
+        "the walk must surface the dark target: {:?}",
+        on.results[0].returned
+    );
+}
+
+#[test]
+fn run_eval_brackets_its_point_estimates_reproducibly() {
+    let (_d, conn) = seeded();
+    let cfg = comemory::config::Config::defaults();
+    let pairs = vec![
+        GoldenPair {
+            query: "postgres pool exhausted".into(),
+            relevant: vec!["aaaa0001".into()],
+            repo: None,
+            kind: None,
+        },
+        GoldenPair {
+            query: "tokio runtime shutdown ordering".into(),
+            relevant: vec!["aaaa0002".into()],
+            repo: None,
+            kind: None,
+        },
+        GoldenPair {
+            query: "zebra quantum nonsense".into(),
+            relevant: vec!["aaaa0003".into()],
+            repo: None,
+            kind: None,
+        },
+    ];
+    let first = run_eval(&cfg, &conn, &pairs, 3).expect("run_eval");
+    let second = run_eval(&cfg, &conn, &pairs, 3).expect("run_eval again");
+
+    assert_eq!(
+        (first.recall_ci, first.mrr_ci),
+        (second.recall_ci, second.mrr_ci),
+        "the bootstrap seed derives from the golden set, so reruns match"
+    );
+    for (label, point, (lo, hi)) in [
+        ("recall", first.recall_at_k, first.recall_ci),
+        ("mrr", first.mrr, first.mrr_ci),
+    ] {
+        assert!(
+            lo <= point && point <= hi,
+            "{label} interval [{lo}, {hi}] must contain the point estimate {point}"
+        );
+        assert!(
+            lo < hi,
+            "a mixed hit/miss set must produce a non-zero {label} width"
+        );
+    }
+}
+
+#[test]
+fn run_eval_confidence_intervals_track_the_recall_cut() {
+    // k is mixed into the bootstrap seed, so the same corpus scored at a
+    // different cut does not reuse the same resample.
+    let (_d, conn) = seeded();
+    let cfg = comemory::config::Config::defaults();
+    let pairs = vec![
+        GoldenPair {
+            query: "postgres pool exhausted".into(),
+            relevant: vec!["aaaa0001".into(), "aaaa0002".into()],
+            repo: None,
+            kind: None,
+        },
+        GoldenPair {
+            query: "clap derive global flag".into(),
+            relevant: vec!["aaaa0003".into()],
+            repo: None,
+            kind: None,
+        },
+    ];
+    let at_one = run_eval(&cfg, &conn, &pairs, 1).expect("k=1");
+    let at_three = run_eval(&cfg, &conn, &pairs, 3).expect("k=3");
+    assert!(
+        at_one.recall_at_k <= at_three.recall_at_k,
+        "recall cannot fall as k grows: {} > {}",
+        at_one.recall_at_k,
+        at_three.recall_at_k
+    );
+    assert_eq!(
+        at_three.recall_ci,
+        run_eval(&cfg, &conn, &pairs, 3)
+            .expect("k=3 again")
+            .recall_ci,
+        "same k must replay the same interval"
+    );
 }
 
 #[test]

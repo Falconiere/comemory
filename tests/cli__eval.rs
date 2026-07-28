@@ -118,7 +118,87 @@ fn eval_golden_file_tty_summary_line() {
         .success();
     let stdout = String::from_utf8(assert.get_output().stdout.clone()).expect("utf8 stdout");
     assert!(
-        stdout.contains("recall@5: 1.000") && stdout.contains("mrr: 1.000"),
-        "TTY summary should report perfect scores, got: {stdout:?}"
+        stdout.contains("recall@5: 1.000 [1.000, 1.000]")
+            && stdout.contains("mrr: 1.000 [1.000, 1.000]"),
+        "TTY summary should bracket perfect scores with their CIs, got: {stdout:?}"
+    );
+}
+
+/// Save four memories and a golden file that hits two of them and misses
+/// two, so the report has real spread for the bootstrap to bracket.
+fn mixed_golden_home() -> (TempDir, std::path::PathBuf) {
+    let home = TempDir::new().expect("tempdir");
+    let bodies = [
+        "postgres advisory locks for migration ordering",
+        "tokio runtime shutdown ordering bug in the worker pool",
+        "clap derive places global flags before the subcommand",
+        "sqlite wal checkpoint starvation under long readers",
+    ];
+    let ids: Vec<String> = bodies
+        .iter()
+        .map(|b| json_str(&run_json(&home, &["save", b, "--kind", "note"]), "id"))
+        .collect();
+    let golden = home.path().join("golden.yaml");
+    let mut yaml = String::new();
+    for (query, id) in [
+        ("advisory lock migration", &ids[0]),
+        ("tokio shutdown worker pool", &ids[1]),
+        ("zebra quantum nonsense", &ids[2]),
+        ("entirely unrelated gibberish phrase", &ids[3]),
+    ] {
+        yaml.push_str(&format!("- query: {query}\n  relevant: [{id}]\n"));
+    }
+    std::fs::write(&golden, yaml).expect("write golden file");
+    (home, golden)
+}
+
+#[test]
+fn eval_json_adds_confidence_intervals_without_changing_point_estimates() {
+    let (home, golden) = mixed_golden_home();
+    let golden_arg = golden.to_string_lossy().to_string();
+    let args = ["eval", "--golden", &golden_arg, "--golden-only", "--k", "3"];
+    let report = run_json(&home, &args);
+
+    // The pre-CI shape is untouched: eval-check.sh's jq paths and floors
+    // still read plain numbers here.
+    assert!(
+        report["recall_at_k"].is_number() && report["mrr"].is_number(),
+        "point estimates must stay scalars: {report}"
+    );
+    assert_eq!(report["queries"].as_u64(), Some(4));
+
+    for (field, point) in [
+        ("recall_ci", report["recall_at_k"].as_f64()),
+        ("mrr_ci", report["mrr"].as_f64()),
+    ] {
+        let ci = report[field].as_array().expect("CI serializes as an array");
+        assert_eq!(ci.len(), 2, "{field} is a (lo, hi) pair: {report}");
+        let lo = ci[0].as_f64().expect("lo is a number");
+        let hi = ci[1].as_f64().expect("hi is a number");
+        let point = point.expect("point estimate is a number");
+        assert!(
+            lo <= point && point <= hi,
+            "{field} [{lo}, {hi}] must contain {point}"
+        );
+        assert!(lo < hi, "{field} must have width on a mixed hit/miss set");
+    }
+}
+
+#[test]
+fn eval_reruns_are_byte_identical() {
+    let (home, golden) = mixed_golden_home();
+    let golden_arg = golden.to_string_lossy().to_string();
+    let run = || {
+        let assert = bin(&home)
+            .args(["--json", "eval", "--golden", &golden_arg])
+            .args(["--golden-only", "--k", "3"])
+            .assert()
+            .success();
+        assert.get_output().stdout.clone()
+    };
+    assert_eq!(
+        run(),
+        run(),
+        "eval is measurement only — two runs on one corpus must match byte for byte"
     );
 }
