@@ -5,8 +5,12 @@ use comemory::eval::golden::GoldenPair;
 use comemory::eval::runner::run_eval;
 
 /// Insert one searchable memory (`memories` row + FTS row) with an
-/// explicit kind and simhash.
-fn insert_memory(conn: &rusqlite::Connection, id: &str, kind: &str, body: &str, sim: i64) {
+/// explicit kind and the *real* simhash of `body` — the same
+/// `simhash::of_body(..) as i64` the production save path stores, so the
+/// near-dup/diversify leg sees production-shaped values instead of
+/// hand-picked sentinels.
+fn insert_memory(conn: &rusqlite::Connection, id: &str, kind: &str, body: &str) {
+    let sim = comemory::simhash::of_body(body) as i64;
     conn.execute(
         "INSERT INTO memories(id, slug, kind, repo, author, quality, schema, content_hash,
                               body, created_at, updated_at, md_path, simhash)
@@ -22,22 +26,32 @@ fn insert_memory(conn: &rusqlite::Connection, id: &str, kind: &str, body: &str, 
     .expect("insert fts");
 }
 
+/// Fixture guard: two bodies the assertions expect to co-exist in one
+/// result list must sit outside the near-dup radius. Real simhashes replaced
+/// the old hand-picked sentinels, so a body edit that pulls two rows inside
+/// that radius has to fail here rather than as a mystery collapse downstream.
+fn assert_not_near_dup(a: &str, b: &str) {
+    let radius = comemory::config::Config::defaults().rank.near_dup_hamming;
+    let d =
+        comemory::simhash::hamming64(comemory::simhash::of_body(a), comemory::simhash::of_body(b));
+    assert!(
+        d > radius,
+        "fixture bodies collapse as near-dups (hamming {d} <= {radius}): {a:?} / {b:?}"
+    );
+}
+
 /// Build a db with three lexically distinct memories. Returns the tempdir
 /// guard and the connection.
 fn seeded() -> (tempfile::TempDir, rusqlite::Connection) {
     let dir = tempfile::tempdir().expect("tempdir");
     let conn = comemory::store::connection::open(dir.path().join("c.db")).expect("open");
-    let rows: &[(&str, &str, i64)] = &[
-        ("aaaa0001", "postgres pool exhausted advisory lock fix", 1),
-        (
-            "aaaa0002",
-            "tokio runtime shutdown ordering bug",
-            u32::MAX as i64,
-        ),
-        ("aaaa0003", "clap derive global flag placement note", -1),
+    let rows: &[(&str, &str)] = &[
+        ("aaaa0001", "postgres pool exhausted advisory lock fix"),
+        ("aaaa0002", "tokio runtime shutdown ordering bug"),
+        ("aaaa0003", "clap derive global flag placement note"),
     ];
-    for (id, body, sim) in rows {
-        insert_memory(&conn, id, "note", body, *sim);
+    for (id, body) in rows {
+        insert_memory(&conn, id, "note", body);
     }
     (dir, conn)
 }
@@ -118,16 +132,14 @@ fn edge_linked() -> (tempfile::TempDir, rusqlite::Connection) {
         "cccc0001",
         "note",
         "duplicate invoice notifications reached customers twice",
-        1,
     );
     insert_memory(
         &conn,
         "cccc0002",
         "note",
         "reconciliation sweep double counted when two shifts overlapped",
-        u32::MAX as i64,
     );
-    insert_memory(&conn, "cccc0003", "note", "clap derive flag placement", -1);
+    insert_memory(&conn, "cccc0003", "note", "clap derive flag placement");
     insert_edge(&conn, "cccc0001", "cccc0002", "derived_from");
     (dir, conn)
 }
@@ -299,20 +311,13 @@ fn run_eval_does_not_pollute_tracking_state() {
 fn run_eval_replays_kind_filter_from_the_pair() {
     let dir = tempfile::tempdir().expect("tempdir");
     let conn = comemory::store::connection::open(dir.path().join("c.db")).expect("open");
-    insert_memory(
-        &conn,
-        "bbbb0001",
-        "decision",
-        "postgres pool exhausted advisory lock fix",
-        1,
-    );
-    insert_memory(
-        &conn,
-        "bbbb0002",
-        "note",
-        "postgres pool exhausted incident note",
-        u32::MAX as i64,
-    );
+    let decision_body = "postgres pool exhausted advisory lock fix";
+    let note_body = "postgres pool exhausted incident note";
+    insert_memory(&conn, "bbbb0001", "decision", decision_body);
+    insert_memory(&conn, "bbbb0002", "note", note_body);
+    // Both rows must survive the unfiltered assertion below, so they have to
+    // stay outside the collapse radius on their real simhashes.
+    assert_not_near_dup(decision_body, note_body);
     let cfg = comemory::config::Config::defaults();
 
     let filtered = vec![GoldenPair {

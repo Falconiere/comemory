@@ -47,6 +47,23 @@ fn candidate_at(t: &TuneConfig, idx: [usize; 6]) -> Option<TuneCandidate> {
     })
 }
 
+/// Record `idx` and push its candidate when this grid point is new.
+/// Shared by both fill paths (Binding Rule 1); the `Some` arm is written
+/// out rather than folded into `Vec::extend` so the unreachable-`None`
+/// contract of [`candidate_at`] stays visible at the call site.
+fn push_unseen(
+    t: &TuneConfig,
+    idx: [usize; 6],
+    seen: &mut HashSet<[usize; 6]>,
+    out: &mut Vec<TuneCandidate>,
+) {
+    if seen.insert(idx)
+        && let Some(candidate) = candidate_at(t, idx)
+    {
+        out.push(candidate);
+    }
+}
+
 /// Mixed-radix decomposition of `linear` over `sizes`, index 0 most
 /// significant. `None` once `linear` reaches the pool product (or a pool
 /// is empty), which ends the enumeration walk.
@@ -86,9 +103,7 @@ fn fill_in_grid_order(
             return;
         };
         linear += 1;
-        if seen.insert(idx) {
-            out.extend(candidate_at(t, idx));
-        }
+        push_unseen(t, idx, seen, out);
     }
 }
 
@@ -118,9 +133,7 @@ pub fn sample_candidates(t: &TuneConfig, seed: u64) -> Vec<TuneCandidate> {
         for (slot, &n) in idx.iter_mut().zip(sizes.iter()) {
             *slot = (rng.next_u64() % n as u64) as usize;
         }
-        if seen.insert(idx) {
-            out.extend(candidate_at(t, idx));
-        }
+        push_unseen(t, idx, &mut seen, &mut out);
     }
     if out.len() < target {
         fill_in_grid_order(t, &sizes, &mut seen, &mut out, target);
@@ -129,9 +142,14 @@ pub fn sample_candidates(t: &TuneConfig, seed: u64) -> Vec<TuneCandidate> {
 }
 
 /// Deterministic default seed from golden-set size + pool shape + schema
-/// version (the [`crate::eval::bandit::sample_seed`] pattern): unchanged
-/// inputs reproduce a run bit-identically with no `--seed`, while widening
-/// a grid or the corpus reshuffles the draw.
+/// version. Same construction as [`crate::eval::bandit::sample_seed`],
+/// which hashes an arm count where this hashes the whole pool shape:
+/// unchanged inputs reproduce a run bit-identically with no `--seed`,
+/// while widening a grid or the corpus reshuffles the draw.
+///
+/// `pool_sizes` is a slice, not `&[usize; 6]`, so the hash is defined for
+/// any pool shape; [`candidates_for`](crate::eval::tune) passes the
+/// six-element array from [`pool_sizes`].
 pub(crate) fn sample_seed(pairs: usize, pool_sizes: &[usize]) -> u64 {
     let mut h = Sha256::new();
     h.update(pairs.to_le_bytes());
