@@ -148,7 +148,7 @@ pub fn sample_candidates(t: &TuneConfig, seed: u64) -> Vec<TuneCandidate> {
 /// while widening a grid or the corpus reshuffles the draw.
 ///
 /// `pool_sizes` is a slice, not `&[usize; 6]`, so the hash is defined for
-/// any pool shape; [`candidates_for`](crate::eval::tune) passes the
+/// any pool shape; the single caller in [`crate::eval::tune`] passes the
 /// six-element array from [`pool_sizes`].
 pub(crate) fn sample_seed(pairs: usize, pool_sizes: &[usize]) -> u64 {
     let mut h = Sha256::new();

@@ -188,9 +188,10 @@ fn candidates_for(t: &TuneConfig, pairs: usize, seed: Option<u64>) -> Vec<TuneCa
 /// Memoization key for [`score_all`]: bit patterns of the six knobs that
 /// reach the lexical replay path, in this exact order —
 /// `(decay, mmr_lambda, bm25_weights.0, bm25_weights.1, graph_hops,
-/// graph_seeds)`. That is every [`TuneCandidate`] field except `rrf_k`,
-/// which is dead on the lexical path and deliberately absent so rrf_k-only
-/// variants collapse onto one cache entry.
+/// graph_seeds)` — every [`TuneCandidate`] field except `rrf_k`, with the
+/// `bm25_weights` pair contributing both of its components. `rrf_k` is dead
+/// on the lexical path and deliberately absent, so rrf_k-only variants
+/// collapse onto one cache entry.
 type ScoreKey = (u64, u64, u32, u32, u32, u64);
 
 /// Score every candidate against the golden set.
