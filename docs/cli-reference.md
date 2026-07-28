@@ -390,12 +390,17 @@ Options:
       --golden-only          Skip the feedback harvest; use only the --golden file
       --k <K>                recall@k cut (defaults to 3) [default: 3]
       --apply                Rewrite config.toml with the winning knobs when (and only when) the winner strictly beats the current config. Comments in an existing config.toml are dropped by the rewrite
+      --seed <SEED>          Seed for the candidate sampler (`[tune] samples > 0`). Omitted, the seed is derived from the golden-set size, grid shape, and schema version — so runs are reproducible either way. No effect when `samples = 0` (exhaustive grid)
   -h, --help                 Print help
 
 Examples:
-  # Grid-search the configured [tune] grid (81 configs by default)
-  # against the merged golden set (report only)
+  # Search the configured [tune] surface (64 sampled configs out of 729
+  # by default) against the merged golden set (report only)
   comemory tune
+
+  # Reproduce an exact candidate draw ([tune] samples > 0); without
+  # --seed the seed is derived from the golden size and grid shape
+  comemory tune --seed 42
 
   # File-only golden set, recall@5, machine-readable report
   # (JSON envelope: {"report": <TuneReport>, "applied": bool})

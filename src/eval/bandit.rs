@@ -63,7 +63,14 @@ pub struct BanditReport {
     pub applied: bool,
 }
 
-/// Stable 16-hex arm id from little-endian `to_bits` of the five knobs.
+/// Stable 16-hex arm id from little-endian bit patterns of all seven knobs.
+///
+/// The two graph fields joined the hash in F5, so rows written by the
+/// pre-F5 five-field hash no longer match any current candidate. They are
+/// orphaned, not migrated: [`seed_arms`] is `INSERT OR IGNORE` and never
+/// touches them, and [`load_ranked`] only reads ids it recomputes — so the
+/// stale rows are inert, and re-seeding starts the widened arms at
+/// Beta(1,1).
 pub fn arm_id(c: &TuneCandidate) -> String {
     let mut h = Sha256::new();
     h.update(c.rrf_k.to_bits().to_le_bytes());
@@ -71,6 +78,8 @@ pub fn arm_id(c: &TuneCandidate) -> String {
     h.update(c.mmr_lambda.to_bits().to_le_bytes());
     h.update(c.bm25_weights.0.to_bits().to_le_bytes());
     h.update(c.bm25_weights.1.to_bits().to_le_bytes());
+    h.update(c.graph_hops.to_le_bytes());
+    h.update((c.graph_seeds as u64).to_le_bytes());
     let dig = h.finalize();
     let mut out = String::with_capacity(16);
     const HEX: &[u8; 16] = b"0123456789abcdef";

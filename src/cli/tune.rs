@@ -1,12 +1,14 @@
-//! `comemory tune` — deterministic grid search over the four blend
-//! knobs (rrf_k, decay, mmr_lambda, bm25_weights), scored by eval MRR
-//! with recall@k as the tie-break, and an opt-in `--apply` that writes
-//! the winner into `config.toml`.
+//! `comemory tune` — deterministic search over the six blend knobs
+//! (rrf_k, decay, mmr_lambda, bm25_weights, graph_hops, graph_seeds),
+//! scored by eval MRR with recall@k as the tie-break, and an opt-in
+//! `--apply` that writes the winner into `config.toml`. `[tune] samples`
+//! decides whether a run enumerates the grid or samples it; `--seed`
+//! pins the draw.
 //!
 //! `COMEMORY_TUNE_MIN_GOLDEN` overrides the minimum-golden-pairs floor.
 //! It is a test hook (documented as such), not a tuning knob.
 
-use std::io::Write as _;
+use std::io::Write;
 use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
@@ -22,9 +24,13 @@ use crate::store::connection;
 
 const EXAMPLES: &str = "\
 Examples:
-  # Grid-search the configured [tune] grid (81 configs by default)
-  # against the merged golden set (report only)
+  # Search the configured [tune] surface (64 sampled configs out of 729
+  # by default) against the merged golden set (report only)
   comemory tune
+
+  # Reproduce an exact candidate draw ([tune] samples > 0); without
+  # --seed the seed is derived from the golden size and grid shape
+  comemory tune --seed 42
 
   # File-only golden set, recall@5, machine-readable report
   # (JSON envelope: {\"report\": <TuneReport>, \"applied\": bool})
@@ -47,48 +53,32 @@ pub struct Args {
     /// existing config.toml are dropped by the rewrite.
     #[arg(long, default_value_t = false)]
     pub apply: bool,
+    /// Seed for the candidate sampler (`[tune] samples > 0`). Omitted, the
+    /// seed is derived from the golden-set size, grid shape, and schema
+    /// version — so runs are reproducible either way. No effect when
+    /// `samples = 0` (exhaustive grid).
+    #[arg(long)]
+    pub seed: Option<u64>,
 }
 
 /// Render one candidate's knobs for the TTY view.
 fn fmt_candidate(c: &TuneCandidate) -> String {
     format!(
-        "rrf_k={} decay={} mmr_lambda={} bm25=({},{})",
-        c.rrf_k, c.decay, c.mmr_lambda, c.bm25_weights.0, c.bm25_weights.1
+        "rrf_k={} decay={} mmr_lambda={} bm25=({},{}) graph_hops={} graph_seeds={}",
+        c.rrf_k,
+        c.decay,
+        c.mmr_lambda,
+        c.bm25_weights.0,
+        c.bm25_weights.1,
+        c.graph_hops,
+        c.graph_seeds
     )
 }
 
-/// Run `comemory tune`: build the merged golden set, grid-search the
-/// blend knobs through the real pipeline (tracking off), and report —
-/// or, with `--apply`, persist a strictly-better winner to config.toml.
-pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
-    let paths = Paths::new(resolve_data_dir(data_dir));
-    paths.ensure_dirs()?;
-    let conn = connection::open(paths.db_path())?;
-    let cfg = load_config(&paths)?;
-
-    let g = &a.golden_set;
-    let pairs = golden::resolve(&conn, g.golden.as_deref(), g.golden_only)?;
-    let min_pairs = tune::resolve_min_pairs()?;
-    let report = tune::run_tune(&cfg, &conn, &pairs, g.k, min_pairs)?;
-    let winner = report.winner()?;
-
-    let improved = report.improves_baseline();
-    let applied = a.apply && improved;
-    if applied {
-        tune::apply_to_config_file(&paths.config_file(), &winner.candidate)?;
-    }
-
-    if json_flag {
-        json::write(&serde_json::json!({
-            "report": report,
-            "applied": applied,
-        }))?;
-        return Ok(());
-    }
-
-    let mut out = std::io::stdout().lock();
+/// TTY view: baseline, winner delta, and the top 5 of the ranking.
+fn render(out: &mut impl Write, report: &tune::TuneReport) -> Result<()> {
     let b = &report.baseline;
-    let w = winner;
+    let w = report.winner()?;
     writeln!(
         out,
         "baseline: mrr {:.3} recall@{} {:.3}  ({})",
@@ -120,6 +110,40 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
             fmt_candidate(&s.candidate)
         )?;
     }
+    Ok(())
+}
+
+/// Run `comemory tune`: build the merged golden set, search the blend
+/// knobs through the real pipeline (tracking off), and report — or, with
+/// `--apply`, persist a strictly-better winner to config.toml.
+pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
+    let paths = Paths::new(resolve_data_dir(data_dir));
+    paths.ensure_dirs()?;
+    let conn = connection::open(paths.db_path())?;
+    let cfg = load_config(&paths)?;
+
+    let g = &a.golden_set;
+    let pairs = golden::resolve(&conn, g.golden.as_deref(), g.golden_only)?;
+    let min_pairs = tune::resolve_min_pairs()?;
+    let report = tune::run_tune(&cfg, &conn, &pairs, g.k, min_pairs, a.seed)?;
+    let winner = report.winner()?;
+
+    let improved = report.improves_baseline();
+    let applied = a.apply && improved;
+    if applied {
+        tune::apply_to_config_file(&paths.config_file(), &winner.candidate)?;
+    }
+
+    if json_flag {
+        json::write(&serde_json::json!({
+            "report": report,
+            "applied": applied,
+        }))?;
+        return Ok(());
+    }
+
+    let mut out = std::io::stdout().lock();
+    render(&mut out, &report)?;
     if applied {
         writeln!(out, "(applied to {})", paths.config_file().display())?;
     } else if !improved {

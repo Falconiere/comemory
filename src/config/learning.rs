@@ -5,7 +5,8 @@
 use serde::{Deserialize, Serialize};
 
 /// Grid lists for `comemory tune`'s deterministic search — the cartesian
-/// product of the four lists is the candidate grid.
+/// product of the six lists is the candidate grid, of which `samples`
+/// decides how many points a run actually evaluates.
 ///
 /// File-only (`[tune]` in `config.toml`): no `COMEMORY_TUNE_*` env vars.
 /// Each list must be non-empty; every value passes the same bounds as its
@@ -20,16 +21,29 @@ pub struct TuneConfig {
     pub mmr_lambda_grid: Vec<f64>,
     /// `(body, tags)` BM25 pairs; same invariants as `retrieval.bm25_weights`.
     pub bm25_grid: Vec<(f32, f32)>,
+    /// Graph-expansion hop depths; same `<= 4` invariant as
+    /// `retrieval.graph_hops` (`0` disables the leg for that candidate).
+    pub graph_hops_grid: Vec<u32>,
+    /// Graph-walk seed counts; same `>= 1` invariant as `retrieval.graph_seeds`.
+    pub graph_seeds_grid: Vec<usize>,
+    /// Candidates drawn per run by the seeded sampler. `0` evaluates the
+    /// exhaustive cartesian product instead (the pre-sampling behaviour);
+    /// a value above the product is clamped to it.
+    pub samples: usize,
 }
 
 impl Default for TuneConfig {
-    /// The M1 3×3×3×3 grid (81 points), bracketing the shipped defaults.
+    /// The M1 3^4 grid widened by the two graph knobs (3^6 = 729 points),
+    /// bracketing the shipped defaults, of which 64 are sampled per run.
     fn default() -> Self {
         Self {
             rrf_k_grid: vec![20.0, 60.0, 100.0],
             decay_grid: vec![0.3, 0.5, 0.8],
             mmr_lambda_grid: vec![0.5, 0.7, 0.9],
             bm25_grid: vec![(1.0, 3.0), (1.0, 1.0), (2.0, 1.0)],
+            graph_hops_grid: vec![0, 1, 2],
+            graph_seeds_grid: vec![4, 8, 16],
+            samples: 64,
         }
     }
 }
@@ -76,6 +90,9 @@ pub(crate) struct PartialTuneConfig {
     pub(crate) decay_grid: Option<Vec<f64>>,
     pub(crate) mmr_lambda_grid: Option<Vec<f64>>,
     pub(crate) bm25_grid: Option<Vec<(f32, f32)>>,
+    pub(crate) graph_hops_grid: Option<Vec<u32>>,
+    pub(crate) graph_seeds_grid: Option<Vec<usize>>,
+    pub(crate) samples: Option<usize>,
 }
 
 impl TuneConfig {
@@ -92,6 +109,15 @@ impl TuneConfig {
         }
         if let Some(v) = p.bm25_grid {
             self.bm25_grid = v;
+        }
+        if let Some(v) = p.graph_hops_grid {
+            self.graph_hops_grid = v;
+        }
+        if let Some(v) = p.graph_seeds_grid {
+            self.graph_seeds_grid = v;
+        }
+        if let Some(v) = p.samples {
+            self.samples = v;
         }
     }
 }

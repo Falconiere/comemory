@@ -166,9 +166,44 @@ fn valid_singleton_grids_are_accepted() {
          rrf_k_grid = [60.0]\n\
          decay_grid = [0.5]\n\
          mmr_lambda_grid = [0.7]\n\
-         bm25_grid = [[1.0, 3.0]]\n",
+         bm25_grid = [[1.0, 3.0]]\n\
+         graph_hops_grid = [1]\n\
+         graph_seeds_grid = [8]\n",
     )
     .expect("singleton grids must be accepted");
     assert_eq!(cfg.tune.rrf_k_grid, vec![60.0f32]);
     assert_eq!(cfg.tune.bm25_grid, vec![(1.0f32, 3.0f32)]);
+    assert_eq!(cfg.tune.graph_hops_grid, vec![1u32]);
+    assert_eq!(cfg.tune.graph_seeds_grid, vec![8usize]);
+}
+
+#[test]
+fn empty_graph_grids_are_rejected() {
+    // Same rule as every other pool: an empty list gives the sampler
+    // nothing to draw and the grid no points.
+    assert_rejected("[tune]\ngraph_hops_grid = []\n", "tune.graph_hops_grid");
+    assert_rejected("[tune]\ngraph_seeds_grid = []\n", "tune.graph_seeds_grid");
+}
+
+#[test]
+fn graph_grid_values_run_the_scalar_checks() {
+    // Each pool value passes the bounds its scalar knob enforces — hops
+    // beyond the walk ceiling, or a zero seed count, fail exactly like
+    // `retrieval.graph_hops = 9` / `retrieval.graph_seeds = 0`.
+    assert_rejected("[tune]\ngraph_hops_grid = [0, 9]\n", "tune.graph_hops_grid");
+    assert_rejected(
+        "[tune]\ngraph_seeds_grid = [8, 0]\n",
+        "tune.graph_seeds_grid",
+    );
+}
+
+#[test]
+fn tune_samples_takes_any_usize() {
+    // `samples` is a budget, not a bounded knob: 0 selects the exhaustive
+    // cartesian grid and an oversized value is clamped by the sampler.
+    for n in ["0", "1", "100000"] {
+        let cfg = load(&format!("[tune]\nsamples = {n}\n"))
+            .expect("any usize samples value must be accepted");
+        assert_eq!(cfg.tune.samples.to_string(), n);
+    }
 }
