@@ -235,21 +235,29 @@ fn tune_apply_writes_the_graph_knobs_and_keeps_unrelated_keys() {
         "a zero-weight tags column must be beatable, report: {v}"
     );
 
-    let raw = std::fs::read_to_string(&config).expect("read applied config.toml");
+    // Reload through the real parser rather than substring-matching the raw
+    // TOML: this pins the values to their typed slots in `[retrieval]`, so a
+    // key written into the wrong table — or a float where a u32 belongs —
+    // fails here instead of passing on a stray textual match.
+    let reloaded = comemory::config::Config::defaults()
+        .with_file(&config)
+        .expect("applied config.toml reloads");
     let winner = &v["report"]["ranked"][0]["candidate"];
     let hops = winner["graph_hops"].as_u64().expect("winner graph_hops");
     let seeds = winner["graph_seeds"].as_u64().expect("winner graph_seeds");
-    assert!(
-        raw.contains(&format!("graph_hops = {hops}")),
-        "winner's graph_hops must land in [retrieval] as an integer, got: {raw:?}"
+    assert_eq!(
+        u64::from(reloaded.retrieval.graph_hops),
+        hops,
+        "winner's graph_hops must land in retrieval.graph_hops as an integer"
     );
-    assert!(
-        raw.contains(&format!("graph_seeds = {seeds}")),
-        "winner's graph_seeds must land in [retrieval] as an integer, got: {raw:?}"
+    assert_eq!(
+        reloaded.retrieval.graph_seeds as u64, seeds,
+        "winner's graph_seeds must land in retrieval.graph_seeds as an integer"
     );
-    assert!(
-        raw.contains("keep-me"),
-        "unrelated keys must survive the rewrite, got: {raw:?}"
+    assert_eq!(
+        reloaded.embed_hint.as_deref(),
+        Some("keep-me"),
+        "the unrelated top-level embed_hint must survive the rewrite"
     );
 
     // The rewritten file must reload and pass Config::validate — a float
