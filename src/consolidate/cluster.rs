@@ -74,6 +74,10 @@ impl UnionFind {
 /// Rows whose `simhash` is `0` are an absent fingerprint, not a real one:
 /// clustering them would exact-collide every unbackfilled row into one
 /// fabricated mega-cluster, so they are dropped and counted instead.
+///
+/// The pairwise sweep is O(n²) XOR+popcount — ~50M ops at 10k memories, tens
+/// of milliseconds — so no LSH banding or spatial index is warranted at
+/// personal-memory scale, and a report command can afford the exact answer.
 pub fn group_near_dups(rows: &[SimhashRow], radius: u32) -> Grouping {
     let hashed: Vec<&SimhashRow> = rows.iter().filter(|r| r.simhash != 0).collect();
     let mut uf = UnionFind::new(hashed.len());

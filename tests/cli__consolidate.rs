@@ -113,28 +113,72 @@ fn the_tty_report_marks_the_keeper_and_offers_the_merge_command() {
     );
 }
 
+/// The mutable memory columns, id-ordered — counts alone would miss an
+/// in-place rewrite of `access_count`, `quality` or `updated_at`.
+fn memory_rows(db: &std::path::Path) -> Vec<(String, i64, i64, String)> {
+    let conn = comemory::store::connection::open(db).expect("open mirror");
+    let mut stmt = conn
+        .prepare("SELECT id, access_count, quality, updated_at FROM memories ORDER BY id")
+        .expect("prepare memories snapshot");
+    stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+        .expect("query memories")
+        .collect::<std::result::Result<_, _>>()
+        .expect("collect memories")
+}
+
+/// Every markdown file's name, size and mtime — a rewrite that kept the file
+/// count identical still moves one of the last two.
+fn markdown_files(home: &TempDir) -> Vec<(String, u64, std::time::SystemTime)> {
+    let mut files: Vec<(String, u64, std::time::SystemTime)> =
+        std::fs::read_dir(home.path().join(".comemory").join("memories"))
+            .expect("read memories dir")
+            .map(|entry| {
+                let entry = entry.expect("dir entry");
+                let meta = entry.metadata().expect("file metadata");
+                (
+                    entry.file_name().to_string_lossy().to_string(),
+                    meta.len(),
+                    meta.modified().expect("mtime"),
+                )
+            })
+            .collect();
+    files.sort();
+    files
+}
+
+/// Rows, markdown, and the edge count in one comparable tuple.
+type StoreSnapshot = (
+    Vec<(String, i64, i64, String)>,
+    Vec<(String, u64, std::time::SystemTime)>,
+    i64,
+);
+
+/// Capture everything `consolidate` is forbidden from touching.
+fn snapshot(home: &TempDir, db: &std::path::Path) -> StoreSnapshot {
+    let conn = comemory::store::connection::open(db).expect("open mirror");
+    let edges: i64 = conn
+        .query_row("SELECT count(*) FROM edges", [], |r| r.get(0))
+        .expect("count edges");
+    (memory_rows(db), markdown_files(home), edges)
+}
+
 #[test]
 fn consolidate_never_writes() {
     let home = seeded();
     let db = home.path().join(".comemory").join("comemory.db");
-    let snapshot = || -> (i64, i64, i64, usize) {
-        let conn = comemory::store::connection::open(&db).expect("open mirror");
-        let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).expect("count") };
-        let files = std::fs::read_dir(home.path().join(".comemory").join("memories"))
-            .expect("read memories dir")
-            .count();
-        (
-            count("SELECT count(*) FROM memories"),
-            count("SELECT count(*) FROM edges"),
-            count("SELECT count(*) FROM retrieval_log"),
-            files,
-        )
-    };
-
-    let before = snapshot();
+    let before = snapshot(&home, &db);
     let first = report(&home, &[]);
     let second = report(&home, &[]);
-    assert_eq!(before, snapshot(), "the report mutated the store");
+    let after = snapshot(&home, &db);
+    assert_eq!(
+        before.0, after.0,
+        "no memory row was touched — access_count, quality and updated_at are unchanged"
+    );
+    assert_eq!(
+        before.1, after.1,
+        "no markdown file was created, resized or rewritten"
+    );
+    assert_eq!(before.2, after.2, "no edge was written");
     assert_eq!(
         first, second,
         "two consecutive runs must produce identical JSON"
