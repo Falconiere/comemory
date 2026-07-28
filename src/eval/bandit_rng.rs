@@ -1,20 +1,22 @@
 //! Deterministic SplitMix64 + Beta/Gamma sampling for the bandit (no `rand`).
 
-/// Seeded SplitMix64 PRNG.
-pub(crate) struct SplitMix64 {
+/// Seeded SplitMix64 PRNG. Public because it is a parameter of
+/// [`crate::eval::metrics::bootstrap_ci`], whose callers own the stream so
+/// that several intervals drawn in one run stay jointly reproducible.
+pub struct SplitMix64 {
     state: u64,
 }
 
 impl SplitMix64 {
     /// Construct from an opaque 64-bit seed.
-    pub(crate) fn new(seed: u64) -> Self {
+    pub fn new(seed: u64) -> Self {
         Self { state: seed }
     }
 
-    /// Next raw 64-bit draw. `pub(crate)` for the eval siblings that need
-    /// integer draws (`tune_sample`'s pool indices); `next_f64` covers the
-    /// unit-interval callers.
-    pub(crate) fn next_u64(&mut self) -> u64 {
+    /// Next raw 64-bit draw — the integer-draw entry point for `tune_sample`'s
+    /// pool indices and the bootstrap's resample indices; `next_f64` covers
+    /// the crate-internal unit-interval callers.
+    pub fn next_u64(&mut self) -> u64 {
         self.state = self.state.wrapping_add(0x9e3779b97f4a7c15);
         let mut z = self.state;
         z = (z ^ (z >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);

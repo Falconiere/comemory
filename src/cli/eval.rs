@@ -65,10 +65,19 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         json::write(&report)?;
     } else {
         let mut out = std::io::stdout().lock();
+        // Brackets are the 95% bootstrap intervals: a gap between two runs
+        // that sits inside them is noise, not a ranking change.
         writeln!(
             out,
-            "recall@{}: {:.3}  mrr: {:.3}  ({} queries)",
-            report.k, report.recall_at_k, report.mrr, report.queries
+            "recall@{}: {:.3} [{:.3}, {:.3}]  mrr: {:.3} [{:.3}, {:.3}]  ({} queries)",
+            report.k,
+            report.recall_at_k,
+            report.recall_ci.0,
+            report.recall_ci.1,
+            report.mrr,
+            report.mrr_ci.0,
+            report.mrr_ci.1,
+            report.queries
         )?;
         for r in report.results.iter().take(5) {
             writeln!(

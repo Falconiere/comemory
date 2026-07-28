@@ -65,6 +65,17 @@
 - query: how do we keep server and client form validation in sync
   relevant: [3f22189d]
 
+# Graph-leg pair: 94633d83 (the double-counted reconciliation sweep) shares no
+# vocabulary with this query — it is reachable only by walking `derived_from`
+# out of the two citing memories the lexical legs do surface. With
+# COMEMORY_RETRIEVAL_GRAPH_HOPS=0 it never appears and this pair scores 0,
+# which is what makes the expansion leg visible to eval and to `comemory tune`.
+# Its body is also kept clear of every OTHER query's vocabulary above: one
+# shared stem would let the tier-2 word-OR rung seed the walk from the hub on
+# an unrelated query and drag both citers into that query's top-3.
+- query: customers received duplicate invoice notifications
+  relevant: [94633d83]
+
 # Harder / discriminating queries below: plausible distractors share keywords,
 # so the top-3 will not always be a clean hit and recall@3 stays under 1.0.
 
@@ -89,3 +100,12 @@
 # answer at rank 2 -> recall@3 hit, reciprocal rank 0.5.
 - query: redis under heavy traffic
   relevant: [2bbfbe7e]
+
+# Distractor + graph-leg guard: the incident report (4e45fa9d) repeats
+# "invoice notification" more often and outranks the decision that actually
+# establishes the one-per-invoice invariant, so the true answer sits at rank 2
+# -> reciprocal rank 0.5. The hub 94633d83 is just outside the top-3 here, so
+# an expansion leg that over-promoted it would push this answer out and trip
+# the recall floor.
+- query: only one notification per invoice
+  relevant: [9823d92d]

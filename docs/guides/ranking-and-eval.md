@@ -152,6 +152,29 @@ comemory eval --golden golden.yaml --golden-only --k 5 --json
 `--k` sets the recall cut (default `3`). This number is your baseline — write
 it down before you change anything.
 
+### Reading the confidence intervals
+
+Both metrics come with a 95% **percentile bootstrap** interval — the corpus is
+resampled with replacement 1000 times and the report keeps the 2.5th/97.5th
+percentiles of the resampled means:
+
+```
+recall@3: 0.960 [0.880, 1.000]  mrr: 0.913 [0.813, 1.000]  (25 queries)
+```
+
+`--json` carries the same numbers as `recall_ci` and `mrr_ci` two-element
+arrays, alongside the unchanged `recall_at_k` and `mrr` scalars.
+
+Read the brackets as "how much of this number is the corpus, and how much is
+which queries happen to be in it". A tune or bandit run whose winner sits well
+inside the baseline interval has not demonstrably beaten it — on a golden set
+of a couple of dozen pairs, a single query flipping from rank 1 to rank 2 moves
+MRR by `0.5/n`. Widen the golden set before trusting a difference that small.
+The bootstrap seed derives from the pair count, `--k`, and the schema version,
+so a rerun over an unchanged corpus reproduces the interval exactly; `tune` and
+`bandit` still compare point estimates, so the interval is context you read,
+not a gate they enforce.
+
 ---
 
 ## Mine reformulations
@@ -210,9 +233,35 @@ comemory bandit --golden golden.yaml --apply --json
 ```
 
 The search space is the `[tune]` grid in `config.toml`: `tune.rrf_k_grid`,
-`tune.decay_grid`, `tune.mmr_lambda_grid`, and `tune.bm25_grid`. These grid
-knobs are **file-only** — there is no environment override for them. The
-default grid is 81 configurations.
+`tune.decay_grid`, `tune.mmr_lambda_grid`, `tune.bm25_grid`,
+`tune.graph_hops_grid`, and `tune.graph_seeds_grid`. These grid knobs are
+**file-only** — there is no environment override for them. The full cartesian
+product of the defaults is 729 configurations (81 × 3 × 3).
+
+### Sampled search: `tune.samples` and `--seed`
+
+729 candidates × a golden set is a lot of pipeline replays, and every new
+dimension multiplies it. `tune.samples` (also file-only, default `64`) caps the
+work: instead of enumerating the grid, `tune` draws that many *distinct*
+candidates uniformly from the pools. Set `tune.samples = 0` to go back to the
+exhaustive cartesian sweep.
+
+Sampling is seeded, never random-per-run. Without a flag the seed derives from
+the golden-pair count, the pool shape, and the schema version, so the same
+corpus and the same grid reproduce the same report byte for byte; widen a grid
+or add golden pairs and the draw reshuffles. Pass `--seed` to pin it yourself —
+useful when you want two grids compared over the same draw, or want to re-run
+someone else's reported search:
+
+```bash
+comemory tune --golden golden.yaml --golden-only --seed 42 --json
+```
+
+The per-candidate TTY lines now include `graph_hops` and `graph_seeds`
+alongside the other knobs, so a winner is readable without cross-referencing
+the JSON. `comemory bandit` is unaffected by `tune.samples`: its arms remain
+the full cartesian grid, and its arm identity now hashes the two graph knobs
+too, so arms recorded before this change are simply ignored and re-seeded.
 
 `--apply` re-renders `config.toml` from parsed TOML via an atomic rename, so any
 comments in the existing file are dropped. Commit the result so the tuned blend
@@ -236,8 +285,8 @@ live in the [configuration env table](../configuration.md)):
 | Code BM25 weights | `COMEMORY_RETRIEVAL_CODE_BM25_WEIGHTS` | — | `symbol,snippet,path_tokens` column weights |
 | Memory cosine floor | `COMEMORY_RETRIEVAL_MEMORY_THRESHOLD` | — | min similarity for the memory vector leg |
 | Code cosine floor | `COMEMORY_RETRIEVAL_CODE_THRESHOLD` | — | min similarity for the code vector leg |
-| Graph walk depth | `COMEMORY_RETRIEVAL_GRAPH_HOPS` | — | hops the graph-expansion leg walks (`0` disables it) |
-| Graph seed count | `COMEMORY_RETRIEVAL_GRAPH_SEEDS` | — | how many top hits seed that walk |
+| Graph walk depth | `COMEMORY_RETRIEVAL_GRAPH_HOPS` | `tune.graph_hops_grid` | hops the graph-expansion leg walks (`0` disables it) |
+| Graph seed count | `COMEMORY_RETRIEVAL_GRAPH_SEEDS` | `tune.graph_seeds_grid` | how many top hits seed that walk |
 
 The `[tune]` grid knobs are file-only (no env override); the env variables let
 you probe a single setting by hand before committing it to the grid.
@@ -251,7 +300,10 @@ query but already linked to something that matched. Those hits come back
 labeled `"source": "graph"` with `"tier": 0`, so `--json` tells you which
 results only the graph found.
 
-The two knobs are **not** in the `[tune]` grid. Probe them by hand:
+Both knobs are searched by `comemory tune` (`tune.graph_hops_grid`,
+`tune.graph_seeds_grid`), so you no longer have to hand-probe them to find a
+setting. What tune *can't* tell you is how much of a score change the leg is
+responsible for — for that, the A/B is still the right tool:
 
 ```bash
 comemory --json search "sqlite-vec ANN" | jq '[.hits[] | {memory_id, source}]'
@@ -259,10 +311,20 @@ COMEMORY_RETRIEVAL_GRAPH_HOPS=0 comemory --json search "sqlite-vec ANN"   # leg 
 ```
 
 `COMEMORY_RETRIEVAL_GRAPH_HOPS=0` short-circuits the leg entirely and takes
-the legacy two-leg path, which is the clean A/B when you are attributing a
-recall or ranking change. Widening `graph_seeds` expands from further down
+the legacy two-leg path. Widening `graph_seeds` expands from further down
 the provisional ranking; raising `graph_hops` reaches further from each seed
 (and pulls in looser associations).
+
+Tuning either knob only means something on a corpus whose `edges` the walk can
+actually traverse. On an edge-free corpus the leg returns nothing, every
+candidate scores identically, and the search reports an arbitrary winner. The
+same applies to the golden set: `tests/golden/memory.yml` carries a pair whose
+relevant memory shares no vocabulary with its query and is reachable only
+through a `derived_from` edge, so `scripts/eval-check.sh` scores below its
+floor when the leg is disabled. If you add graph-sensitive pairs of your own,
+keep the dark target's wording clear of *every other* query in the set — one
+shared stem is enough for the tier-2 word-OR rung to seed the walk from that
+memory on an unrelated query and drag its neighbors into that query's top-3.
 
 ### Time scoping vs. the ranking priors
 

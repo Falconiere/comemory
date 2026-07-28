@@ -413,6 +413,32 @@ Examples:
 
 ---
 
+## comemory bandit
+
+```
+Thompson-sample blend knobs against the golden set (report only; `--apply` writes when the sample beats baseline)
+
+Usage: comemory bandit [OPTIONS]
+
+Options:
+      --golden <GOLDEN>      Path to a YAML golden file (`- query: ...` / `  relevant: [..]`)
+      --json                 Emit machine-readable JSON instead of a human TTY view
+      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+      --golden-only          Skip the feedback harvest; use only the --golden file
+      --k <K>                recall@k cut (defaults to 3) [default: 3]
+      --apply                Rewrite config.toml when the sampled arm strictly beats baseline
+  -h, --help                 Print help
+
+Examples:
+  # Thompson-sample one arm, confirm vs baseline (report only)
+  comemory bandit
+
+  # Write knobs into config.toml when the sample beats baseline
+  comemory bandit --golden golden.yaml --apply --json
+```
+
+---
+
 ## comemory doctor
 
 ```
