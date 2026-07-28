@@ -11,7 +11,10 @@ impl SplitMix64 {
         Self { state: seed }
     }
 
-    fn next_u64(&mut self) -> u64 {
+    /// Next raw 64-bit draw. `pub(crate)` for the eval siblings that need
+    /// integer draws (`tune_sample`'s pool indices); `next_f64` covers the
+    /// unit-interval callers.
+    pub(crate) fn next_u64(&mut self) -> u64 {
         self.state = self.state.wrapping_add(0x9e3779b97f4a7c15);
         let mut z = self.state;
         z = (z ^ (z >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);

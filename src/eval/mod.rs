@@ -8,3 +8,4 @@ pub mod metrics;
 pub mod mine;
 pub mod runner;
 pub mod tune;
+pub mod tune_sample;

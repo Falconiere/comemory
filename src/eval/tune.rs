@@ -1,5 +1,7 @@
-//! Deterministic grid search over blend weights, scored by eval MRR
-//! (recall@k tie-break) on the merged golden set.
+//! Deterministic search over blend weights, scored by eval MRR (recall@k
+//! tie-break) on the merged golden set — the exhaustive `[tune]` grid, or a
+//! seeded uniform sample of it when `tune.samples > 0` (the sampler itself
+//! lives in [`crate::eval::tune_sample`]).
 
 use std::path::Path;
 
@@ -10,6 +12,7 @@ use crate::config::Config;
 use crate::config::TuneConfig;
 use crate::eval::golden::GoldenPair;
 use crate::eval::runner::{self, EvalReport};
+use crate::eval::tune_sample;
 use crate::prelude::*;
 
 /// Minimum golden pairs before tuning is statistically honest.
@@ -28,6 +31,10 @@ pub struct TuneCandidate {
     pub mmr_lambda: f64,
     /// BM25 (body, tags) weights.
     pub bm25_weights: (f32, f32),
+    /// Graph-expansion hop depth (`0` disables the leg).
+    pub graph_hops: u32,
+    /// Provisional top hits seeding the graph-expansion walk.
+    pub graph_seeds: usize,
 }
 
 /// One scored grid point.
@@ -104,22 +111,39 @@ pub fn resolve_min_pairs() -> Result<usize> {
 }
 
 /// The cartesian product of the configured grid lists (`[tune]` in
-/// config.toml). The defaults reproduce the M1 3×3×3×3 = 81-point grid;
-/// `Config::validate` guarantees every list is non-empty and every value
-/// passes its scalar knob's bounds, so the product is never empty.
+/// config.toml). The defaults reproduce the M1 3×3×3×3 grid widened by the
+/// two graph knobs — 3^6 = 729 points; `Config::validate` guarantees every
+/// list is non-empty and every value passes its scalar knob's bounds, so
+/// the product is never empty.
+///
+/// The two graph dimensions are the OUTERMOST loops, so within each
+/// `(graph_hops, graph_seeds)` block the legacy four enumerate in exactly
+/// their pre-F5 order: singleton graph grids reproduce the historical
+/// 81-candidate sequence projected onto the legacy fields.
 pub fn grid(t: &TuneConfig) -> Vec<TuneCandidate> {
-    let cap = t.rrf_k_grid.len() * t.decay_grid.len() * t.mmr_lambda_grid.len() * t.bm25_grid.len();
+    let cap = t.graph_hops_grid.len()
+        * t.graph_seeds_grid.len()
+        * t.rrf_k_grid.len()
+        * t.decay_grid.len()
+        * t.mmr_lambda_grid.len()
+        * t.bm25_grid.len();
     let mut out = Vec::with_capacity(cap);
-    for &rrf_k in &t.rrf_k_grid {
-        for &decay in &t.decay_grid {
-            for &mmr_lambda in &t.mmr_lambda_grid {
-                for &bm25_weights in &t.bm25_grid {
-                    out.push(TuneCandidate {
-                        rrf_k,
-                        decay,
-                        mmr_lambda,
-                        bm25_weights,
-                    });
+    for &graph_hops in &t.graph_hops_grid {
+        for &graph_seeds in &t.graph_seeds_grid {
+            for &rrf_k in &t.rrf_k_grid {
+                for &decay in &t.decay_grid {
+                    for &mmr_lambda in &t.mmr_lambda_grid {
+                        for &bm25_weights in &t.bm25_grid {
+                            out.push(TuneCandidate {
+                                rrf_k,
+                                decay,
+                                mmr_lambda,
+                                bm25_weights,
+                                graph_hops,
+                                graph_seeds,
+                            });
+                        }
+                    }
                 }
             }
         }
@@ -127,11 +151,13 @@ pub fn grid(t: &TuneConfig) -> Vec<TuneCandidate> {
     out
 }
 
-/// Clone `base` with the candidate's four knobs swapped in.
+/// Clone `base` with the candidate's six knobs swapped in.
 pub(crate) fn with_candidate(base: &Config, c: &TuneCandidate) -> Config {
     let mut cfg = base.clone();
     cfg.retrieval.rrf_k = c.rrf_k;
     cfg.retrieval.bm25_weights = c.bm25_weights;
+    cfg.retrieval.graph_hops = c.graph_hops;
+    cfg.retrieval.graph_seeds = c.graph_seeds;
     cfg.rank.decay = c.decay;
     cfg.rank.mmr_lambda = c.mmr_lambda;
     cfg
@@ -146,39 +172,42 @@ fn score(report: &EvalReport, c: TuneCandidate) -> ScoredCandidate {
     }
 }
 
-/// Run the full grid (plus the baseline) against the golden set.
-/// Refuses with [`Error::Unavailable`] below the honesty floor.
-pub fn run_tune(
+/// Candidates for one run: the exhaustive [`grid`] when `tune.samples` is
+/// `0`, else a seeded uniform sample of it. An explicit `seed` (from
+/// `tune --seed`) overrides the derived default, so a run is reproducible
+/// either way.
+fn candidates_for(t: &TuneConfig, pairs: usize, seed: Option<u64>) -> Vec<TuneCandidate> {
+    if t.samples == 0 {
+        return grid(t);
+    }
+    let sizes = tune_sample::pool_sizes(t);
+    let seed = seed.unwrap_or_else(|| tune_sample::sample_seed(pairs, &sizes));
+    tune_sample::sample_candidates(t, seed)
+}
+
+/// Memoization key for [`score_all`]: bit patterns of the six knobs that
+/// reach the lexical replay path, in candidate field order (`rrf_k`, dead
+/// there, is deliberately absent).
+type ScoreKey = (u64, u64, u32, u32, u32, u64);
+
+/// Score every candidate against the golden set.
+///
+/// `rrf_k` only feeds the hybrid fusion arm, and eval replay is
+/// lexical-only (BYO vectors cannot be replayed offline) — so two
+/// candidates differing only in rrf_k always score identically. Memoize on
+/// the six knobs that do reach the lexical path (the graph pair among them:
+/// `expand_and_fuse` runs unconditionally in `router::route`), which lets
+/// rrf_k-only variants reuse a cached `(mrr, recall@k)` pair instead of
+/// re-running the whole golden set.
+fn score_all(
     base: &Config,
     conn: &Connection,
     pairs: &[GoldenPair],
     k: usize,
-    min_pairs: usize,
-) -> Result<TuneReport> {
-    let candidates = grid(&base.tune);
-    if pairs.len() < min_pairs {
-        return Err(Error::Unavailable(format!(
-            "tune needs >= {min_pairs} golden pairs (have {}): grid-searching {} configs \
-             against a thin set is overfitting, not tuning",
-            pairs.len(),
-            candidates.len()
-        )));
-    }
-    let baseline_candidate = TuneCandidate {
-        rrf_k: base.retrieval.rrf_k,
-        decay: base.rank.decay,
-        mmr_lambda: base.rank.mmr_lambda,
-        bm25_weights: base.retrieval.bm25_weights,
-    };
-    let baseline = score(&runner::run_eval(base, conn, pairs, k)?, baseline_candidate);
+    candidates: Vec<TuneCandidate>,
+) -> Result<Vec<ScoredCandidate>> {
     let mut ranked = Vec::with_capacity(candidates.len());
-    // `rrf_k` only feeds the hybrid fusion arm, and eval replay is
-    // lexical-only (BYO vectors cannot be replayed offline) — so two grid
-    // points differing only in rrf_k always score identically. Memoize on
-    // the knobs that actually reach the lexical path; with the default
-    // grid, 54 of the 81 points reuse a cached (mrr, recall@k) pair
-    // instead of re-running the whole golden set.
-    let mut cache: std::collections::HashMap<(u64, u64, u32, u32), (f64, f64)> =
+    let mut cache: std::collections::HashMap<ScoreKey, (f64, f64)> =
         std::collections::HashMap::new();
     for c in candidates {
         let key = (
@@ -186,6 +215,8 @@ pub fn run_tune(
             c.mmr_lambda.to_bits(),
             c.bm25_weights.0.to_bits(),
             c.bm25_weights.1.to_bits(),
+            c.graph_hops,
+            c.graph_seeds as u64,
         );
         let (mrr, recall_at_k) = match cache.get(&key) {
             Some(&cached) => cached,
@@ -201,20 +232,56 @@ pub fn run_tune(
             recall_at_k,
         });
     }
+    Ok(ranked)
+}
+
+/// Best-first order, pinned to a total order over the scores and all seven
+/// knob fields so a ranking never depends on candidate arrival order.
+fn sort_ranked(ranked: &mut [ScoredCandidate]) {
     ranked.sort_by(|a, b| {
+        let (x, y) = (&a.candidate, &b.candidate);
         b.mrr
             .total_cmp(&a.mrr)
             .then_with(|| b.recall_at_k.total_cmp(&a.recall_at_k))
-            .then_with(|| a.candidate.rrf_k.total_cmp(&b.candidate.rrf_k))
-            .then_with(|| a.candidate.decay.total_cmp(&b.candidate.decay))
-            .then_with(|| a.candidate.mmr_lambda.total_cmp(&b.candidate.mmr_lambda))
-            .then_with(|| {
-                a.candidate
-                    .bm25_weights
-                    .0
-                    .total_cmp(&b.candidate.bm25_weights.0)
-            })
+            .then_with(|| x.rrf_k.total_cmp(&y.rrf_k))
+            .then_with(|| x.decay.total_cmp(&y.decay))
+            .then_with(|| x.mmr_lambda.total_cmp(&y.mmr_lambda))
+            .then_with(|| x.bm25_weights.0.total_cmp(&y.bm25_weights.0))
+            .then_with(|| x.graph_hops.cmp(&y.graph_hops))
+            .then_with(|| x.graph_seeds.cmp(&y.graph_seeds))
     });
+}
+
+/// Run the candidate set (plus the baseline) against the golden set.
+/// Refuses with [`Error::Unavailable`] below the honesty floor.
+pub fn run_tune(
+    base: &Config,
+    conn: &Connection,
+    pairs: &[GoldenPair],
+    k: usize,
+    min_pairs: usize,
+    seed: Option<u64>,
+) -> Result<TuneReport> {
+    let candidates = candidates_for(&base.tune, pairs.len(), seed);
+    if pairs.len() < min_pairs {
+        return Err(Error::Unavailable(format!(
+            "tune needs >= {min_pairs} golden pairs (have {}): searching {} configs \
+             against a thin set is overfitting, not tuning",
+            pairs.len(),
+            candidates.len()
+        )));
+    }
+    let baseline_candidate = TuneCandidate {
+        rrf_k: base.retrieval.rrf_k,
+        decay: base.rank.decay,
+        mmr_lambda: base.rank.mmr_lambda,
+        bm25_weights: base.retrieval.bm25_weights,
+        graph_hops: base.retrieval.graph_hops,
+        graph_seeds: base.retrieval.graph_seeds,
+    };
+    let baseline = score(&runner::run_eval(base, conn, pairs, k)?, baseline_candidate);
+    let mut ranked = score_all(base, conn, pairs, k, candidates)?;
+    sort_ranked(&mut ranked);
     Ok(TuneReport {
         k,
         golden_pairs: pairs.len(),
@@ -223,7 +290,7 @@ pub fn run_tune(
     })
 }
 
-/// Write the winner's four knobs into `config.toml`, preserving every
+/// Write the winner's six knobs into `config.toml`, preserving every
 /// other key. Atomic tmp + rename (same pattern as memory save).
 /// CAVEAT: round-trips through `toml::Value`, so comments in an
 /// existing file are lost — documented in the CLI help.
@@ -246,6 +313,14 @@ pub fn apply_to_config_file(path: &Path, w: &TuneCandidate) -> Result<()> {
                 toml::Value::Float(f64::from(w.bm25_weights.0)),
                 toml::Value::Float(f64::from(w.bm25_weights.1)),
             ]),
+        );
+        retrieval.insert(
+            "graph_hops".into(),
+            toml::Value::Integer(i64::from(w.graph_hops)),
+        );
+        retrieval.insert(
+            "graph_seeds".into(),
+            toml::Value::Integer(w.graph_seeds as i64),
         );
     }
     {

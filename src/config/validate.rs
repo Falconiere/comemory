@@ -238,6 +238,19 @@ impl Config {
         check_grid("tune.bm25_grid", &self.tune.bm25_grid, |(wb, wt)| {
             check_bm25_weights(&[wb, wt])
         })?;
+        check_grid(
+            "tune.graph_hops_grid",
+            &self.tune.graph_hops_grid,
+            check_graph_hops,
+        )?;
+        check_grid(
+            "tune.graph_seeds_grid",
+            &self.tune.graph_seeds_grid,
+            check_graph_seeds,
+        )?;
+        // `tune.samples` has no range arm: any usize is valid (0 means the
+        // exhaustive cartesian grid, and the sampler clamps a value above
+        // the pool product down to it).
         Ok(())
     }
 
