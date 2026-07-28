@@ -51,6 +51,7 @@ comemory edges "query"             # search the relation graph lexically
 comemory eval                      # score retrieval (recall@k, MRR) vs golden set
 comemory mine --apply              # distill query reformulations into expansions
 comemory tune --apply              # grid-search ranking knobs into config.toml
+comemory consolidate               # advisory near-duplicate cluster report
 ```
 
 ## Binding Rules (apply to every contribution)
@@ -113,6 +114,7 @@ enforced by `scripts/check-all.sh`. Every PR must satisfy all five.
 | `config/` | layered config (defaults → file → env) and `Paths` (data-dir layout) |
 | `output/` | TTY (`owo-colors`) and JSON (`serde_json`) emitters, shared between subcommands |
 | `prune/` | orphan / low-value / stale-code detection plus soft-delete & gc |
+| `consolidate/` | advisory near-duplicate cluster report (`comemory consolidate`) — `cluster` (transitive union-find over the stored SimHashes within a radius, unfingerprinted rows dropped and counted), `keeper` (member metadata plus the quality → access → recency → PageRank → id keeper order, and in-cluster supersede resolution), `mod` (`detect` + the `Member`/`Cluster`/`Scan` types). Read-only end to end; the merge stays a human `save --supersedes` |
 | `git_utils.rs` | repo + author auto-detection, blob OID lookup, git-hook installation helpers |
 | `errors.rs` | `thiserror`-derived `Error` enum and `Result<T>` alias |
 | `prelude.rs` | crate-internal prelude (`Error`, `Result`, common imports) |
