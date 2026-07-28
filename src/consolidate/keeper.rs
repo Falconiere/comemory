@@ -83,6 +83,12 @@ fn keeper_order(
 }
 
 /// Batch-load the keeper-order stats for exactly the clustered ids.
+///
+/// The `IN (…)` list is built with [`qmarks`], so the only thing `format!`
+/// ever interpolates is a run of `?` placeholders whose count comes from
+/// `ids.len()`. Every id travels as a bound parameter through
+/// `params_from_iter` — no value reaches the SQL text, so the dynamic length
+/// carries no injection surface.
 fn load_stats(conn: &Connection, ids: &[String]) -> Result<HashMap<String, Stats>> {
     if ids.is_empty() {
         return Ok(HashMap::new());
