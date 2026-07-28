@@ -185,7 +185,9 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::Context(a) => context::run(a, cli.json, cli.data_dir).await,
         Cmd::Completions(a) => completions::run(a, cli.json, cli.data_dir).await,
         Cmd::Prune(a) => prune::run(a, cli.json, cli.data_dir).await,
-        Cmd::Consolidate(a) => consolidate::run(a, cli.json, cli.data_dir).await,
+        // Not awaited: `consolidate` is a blocking-read report with no async
+        // work, so its handler is a plain fn.
+        Cmd::Consolidate(a) => consolidate::run(a, cli.json, cli.data_dir),
         Cmd::Rebuild(a) => rebuild::run(a, cli.json, cli.data_dir).await,
         Cmd::Gc => gc::run(cli.json, cli.data_dir).await,
         Cmd::InstallHooks(a) => install_hooks::run(a, cli.json, cli.data_dir).await,

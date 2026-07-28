@@ -76,7 +76,10 @@ pub struct Report {
 
 /// Run `comemory consolidate`: scan, cluster, page, emit. Exit code is 0
 /// whether or not duplication was found — the report is advisory, not a gate.
-pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
+///
+/// Synchronous on purpose: every step is a blocking SQLite read, so there is
+/// nothing to await and the dispatcher calls this arm without `.await`.
+pub fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
     let conn = connection::open(paths.db_path())?;
