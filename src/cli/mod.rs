@@ -8,34 +8,63 @@ use crate::config::Config;
 use crate::config::paths::Paths;
 use crate::prelude::*;
 
+/// `comemory ast`: user-facing ast-grep pattern search.
 pub mod ast;
+/// `comemory bandit`: Thompson sampling over the tune knobs.
 pub mod bandit;
+/// `comemory completions`: shell completion scripts.
 pub mod completions;
+/// `comemory consolidate`: advisory near-duplicate cluster report.
+pub mod consolidate;
+/// `comemory context`: headline memory + code bundle for a query.
 pub mod context;
+/// `comemory delete`: soft-delete one memory.
 pub mod delete;
+/// `comemory doctor`: runtime health check.
 pub mod doctor;
 /// `comemory edges`: lexical search over the relation graph.
 pub mod edges;
+/// Shared `--vector` / `--vector-stdin` parsing.
 pub(crate) mod embedding_input;
+/// `comemory eval`: score retrieval against a golden set.
 pub mod eval;
+/// `comemory feedback`: record which hits were used.
 pub mod feedback;
+/// `comemory gc`: retention sweep over the learning tables.
 pub mod gc;
+/// `comemory graph`: walk the relation graph by id.
 pub mod graph;
+/// `comemory index-code`: extract and index code symbols.
 pub mod index_code;
+/// `comemory ingest-code`: bulk code ingestion.
 pub mod ingest_code;
+/// `comemory install-hooks`: git-hook installation.
 pub mod install_hooks;
+/// Detached auto-reindex spawn behind `indexing.auto_reindex = lazy`.
 pub mod lazy_reindex;
+/// `comemory list`: page live memories.
 pub mod list;
+/// `comemory mine`: distill query reformulations into expansions.
 pub mod mine;
+/// Shared `--k` / `--offset` window resolution.
 pub mod pagination;
+/// `comemory prune`: orphan / low-value / stale-code candidates.
 pub mod prune;
+/// `comemory rebuild`: reconstruct the store from markdown.
 pub mod rebuild;
+/// Shared `--ref` / `--symbol` reference flags.
 pub mod ref_args;
+/// `comemory save`: write a memory (markdown + store mirror).
 pub mod save;
+/// `comemory search`: hybrid memory retrieval.
 pub mod search;
+/// `comemory search-code`: ranked code search.
 pub mod search_code;
+/// `comemory serve`: loopback web viewer.
 pub mod serve;
+/// `comemory tui`: interactive terminal explorer.
 pub mod tui;
+/// `comemory tune`: grid/sampled search over the ranking knobs.
 pub mod tune;
 /// `--since` / `--until` / `--as-of` value parsing.
 pub mod when;
@@ -60,6 +89,7 @@ pub struct Cli {
     #[arg(long, global = true, env = "COMEMORY_DATA_DIR")]
     pub data_dir: Option<std::path::PathBuf>,
 
+    /// The subcommand to run.
     #[command(subcommand)]
     pub cmd: Cmd,
 }
@@ -116,6 +146,8 @@ pub enum Cmd {
     Completions(completions::Args),
     /// Detect (and optionally soft-delete) stale memories.
     Prune(prune::Args),
+    /// Report near-duplicate memory clusters and the member worth keeping.
+    Consolidate(consolidate::Args),
     /// Drop `comemory.db` and repopulate it from the markdown source of truth.
     Rebuild(rebuild::Args),
     /// Purge old `memories/.trash/` entries and learning telemetry past
@@ -153,6 +185,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::Context(a) => context::run(a, cli.json, cli.data_dir).await,
         Cmd::Completions(a) => completions::run(a, cli.json, cli.data_dir).await,
         Cmd::Prune(a) => prune::run(a, cli.json, cli.data_dir).await,
+        Cmd::Consolidate(a) => consolidate::run(a, cli.json, cli.data_dir).await,
         Cmd::Rebuild(a) => rebuild::run(a, cli.json, cli.data_dir).await,
         Cmd::Gc => gc::run(cli.json, cli.data_dir).await,
         Cmd::InstallHooks(a) => install_hooks::run(a, cli.json, cli.data_dir).await,

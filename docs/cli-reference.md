@@ -45,6 +45,7 @@ Commands:
   context        Headline lookup: code symbol + memories matching a key
   completions    Emit a shell completion script for `bash`, `zsh`, `fish`, `powershell`, or `elvish`
   prune          Detect (and optionally soft-delete) stale memories
+  consolidate    Report near-duplicate memory clusters and the member worth keeping
   rebuild        Drop `comemory.db` and repopulate it from the markdown source of truth
   gc             Purge old `memories/.trash/` entries and learning telemetry past retention
   install-hooks  Install git hooks that trigger `comemory index-code` on `post-commit`, `post-merge`, and `post-checkout`
@@ -803,6 +804,44 @@ Examples:
   #   ghost_ref_memories: owners of a pinned --ref-symbol whose target is gone
   #     from a CURRENT index (advisory — never deleted by --apply).
   comemory prune --json
+```
+
+---
+
+## comemory consolidate
+
+```
+Report near-duplicate memory clusters and the member worth keeping
+
+Usage: comemory consolidate [OPTIONS]
+
+Options:
+      --json                 Emit machine-readable JSON instead of a human TTY view
+      --radius <RADIUS>      Hamming radius linking two fingerprints. Defaults to the configured `rank.near_dup_hamming`; SimHash is 64-bit, so 64 is the ceiling
+      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+      --repo <REPO>          Restrict the scan to one repo. Default: every repo
+      --all                  Include clusters already resolved by live supersede edges
+      --k <K>                Page size — overrides the configured `retrieval.top_k`. `--limit` is an accepted alias. `0` means "all remaining" [aliases: --limit]
+      --offset <OFFSET>      Number of leading clusters to skip (deep paging) [default: 0]
+  -h, --help                 Print help
+
+Examples:
+  # Which memories say nearly the same thing?
+  comemory consolidate
+
+  # Machine-readable clusters plus the page cursor
+  comemory consolidate --json
+
+  # Cast a wider net, one repo only
+  comemory consolidate --radius 12 --repo comemory
+
+  # Include clusters already settled with supersede edges
+  comemory consolidate --all
+
+Clusters are transitive: A near B and B near C puts all three together even
+when A and C are further apart than the radius, so `max_hamming` is reported
+per cluster. The keeper is the member the ranker already favours — highest
+quality, then most retrieved, then most recently used, then highest PageRank.
 ```
 
 ---
