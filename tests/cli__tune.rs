@@ -215,6 +215,41 @@ fn tag_discriminated_fixture(home: &TempDir) -> (std::path::PathBuf, std::path::
     (golden, config)
 }
 
+/// Reload the applied `config.toml` through the real parser and pin every
+/// written knob to its typed slot. Substring-matching the raw TOML would
+/// pass on a stray textual hit — a key in the wrong table, a comment, or a
+/// float where a u32 belongs; a structured reload cannot.
+fn assert_winner_landed_in_config(config: &std::path::Path, winner: &Value) {
+    let reloaded = comemory::config::Config::defaults()
+        .with_file(config)
+        .expect("applied config.toml reloads");
+    let r = &reloaded.retrieval;
+    assert_eq!(
+        u64::from(r.graph_hops),
+        winner["graph_hops"].as_u64().expect("winner graph_hops"),
+        "winner's graph_hops must land in retrieval.graph_hops as an integer"
+    );
+    assert_eq!(
+        r.graph_seeds as u64,
+        winner["graph_seeds"].as_u64().expect("winner graph_seeds"),
+        "winner's graph_seeds must land in retrieval.graph_seeds as an integer"
+    );
+    // The fixture starts at the deliberately-bad (1.0, 0.0), so reading the
+    // winner's pair back proves a rewrite rather than a no-op parse.
+    let w = &winner["bm25_weights"];
+    let weight = |i: usize| w[i].as_f64().expect("winner bm25 weight") as f32;
+    assert_eq!(
+        r.bm25_weights,
+        (weight(0), weight(1)),
+        "winner's bm25_weights must replace the fixture's (1.0, 0.0)"
+    );
+    assert_eq!(
+        reloaded.embed_hint.as_deref(),
+        Some("keep-me"),
+        "the unrelated top-level embed_hint must survive the rewrite"
+    );
+}
+
 #[test]
 fn tune_apply_writes_the_graph_knobs_and_keeps_unrelated_keys() {
     let home = TempDir::new().expect("tempdir");
@@ -235,30 +270,7 @@ fn tune_apply_writes_the_graph_knobs_and_keeps_unrelated_keys() {
         "a zero-weight tags column must be beatable, report: {v}"
     );
 
-    // Reload through the real parser rather than substring-matching the raw
-    // TOML: this pins the values to their typed slots in `[retrieval]`, so a
-    // key written into the wrong table — or a float where a u32 belongs —
-    // fails here instead of passing on a stray textual match.
-    let reloaded = comemory::config::Config::defaults()
-        .with_file(&config)
-        .expect("applied config.toml reloads");
-    let winner = &v["report"]["ranked"][0]["candidate"];
-    let hops = winner["graph_hops"].as_u64().expect("winner graph_hops");
-    let seeds = winner["graph_seeds"].as_u64().expect("winner graph_seeds");
-    assert_eq!(
-        u64::from(reloaded.retrieval.graph_hops),
-        hops,
-        "winner's graph_hops must land in retrieval.graph_hops as an integer"
-    );
-    assert_eq!(
-        reloaded.retrieval.graph_seeds as u64, seeds,
-        "winner's graph_seeds must land in retrieval.graph_seeds as an integer"
-    );
-    assert_eq!(
-        reloaded.embed_hint.as_deref(),
-        Some("keep-me"),
-        "the unrelated top-level embed_hint must survive the rewrite"
-    );
+    assert_winner_landed_in_config(&config, &v["report"]["ranked"][0]["candidate"]);
 
     // The rewritten file must reload and pass Config::validate — a float
     // where a u32 belongs, or an out-of-range hop count, would fail here.
