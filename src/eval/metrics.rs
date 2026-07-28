@@ -51,8 +51,11 @@ pub fn bootstrap_ci(scores: &[f64], iters: usize, rng: &mut SplitMix64) -> (f64,
     for _ in 0..iters {
         let mut sum = 0.0;
         for _ in 0..n {
+            // `% n` keeps `pick` inside `0..n`, so index directly: a
+            // defaulted miss would fold a silent 0.0 into the resampled
+            // mean and hide the broken invariant instead of surfacing it.
             let pick = (rng.next_u64() % n as u64) as usize;
-            sum += scores.get(pick).copied().unwrap_or(0.0);
+            sum += scores[pick];
         }
         means.push(sum / n as f64);
     }

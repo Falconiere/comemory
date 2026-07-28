@@ -122,12 +122,40 @@ fn a_singleton_surface_yields_its_one_point() {
 }
 
 #[test]
-fn an_empty_pool_yields_no_candidates() {
+fn an_empty_pool_in_any_dimension_yields_no_candidates() {
     // `Config::validate` rejects empty pools, so this is the sampler's own
-    // guard: it must return empty rather than divide by a zero pool size.
-    let t = TuneConfig {
-        graph_hops_grid: vec![],
-        ..pools(64)
-    };
-    assert!(sample_candidates(&t, 42).is_empty());
+    // guard, and it belongs to every dimension: one empty pool zeroes the
+    // product, and the draw would take a modulo by that zero pool size.
+    let variants = [
+        TuneConfig {
+            rrf_k_grid: vec![],
+            ..pools(64)
+        },
+        TuneConfig {
+            decay_grid: vec![],
+            ..pools(64)
+        },
+        TuneConfig {
+            mmr_lambda_grid: vec![],
+            ..pools(64)
+        },
+        TuneConfig {
+            bm25_grid: vec![],
+            ..pools(64)
+        },
+        TuneConfig {
+            graph_hops_grid: vec![],
+            ..pools(64)
+        },
+        TuneConfig {
+            graph_seeds_grid: vec![],
+            ..pools(64)
+        },
+    ];
+    for (dim, t) in variants.iter().enumerate() {
+        assert!(
+            sample_candidates(t, 42).is_empty(),
+            "an empty pool in dimension {dim} must yield no candidates"
+        );
+    }
 }
