@@ -2,10 +2,18 @@
 # Computed deterministically over tests/golden/corpus/*.md +
 # tests/golden/memory.yml with `comemory eval --golden-only --k 3`.
 # Measured 2026-07-28: recall@3 = 0.9600, mrr = 0.9133 (25 pairs, 32 memories).
-# Floors sit just below the measured values to absorb trivial reordering;
-# a real regression in ranking trips the gate. With the graph-expansion leg
-# disabled (COMEMORY_RETRIEVAL_GRAPH_HOPS=0) the same set scores
-# recall@3 = 0.9200 / mrr = 0.8800 — under both floors, which is how the gate
-# now proves the leg is actually measured.
+# With the graph-expansion leg disabled (COMEMORY_RETRIEVAL_GRAPH_HOPS=0)
+# the same set scores recall@3 = 0.9200 / mrr = 0.8800, so each floor is
+# picked inside the band between that leg-disabled score and the measured
+# one: low enough to absorb trivial reordering, high enough that a run
+# without the leg still trips the gate — which is how the gate proves the
+# leg is actually measured. The absolute margins differ because the bands
+# do: recall has 0.9200..0.9600 to work with (floor 0.95, 0.01 under the
+# measurement, 0.03 over the leg-disabled score), mrr only
+# 0.8800..0.9133 (floor 0.90, 0.0133 under, 0.02 over). The mrr band is
+# only 0.0333 wide, so its floor cannot be both leg-proving and slack: at
+# 25 pairs one query slipping from rank 1 to rank 2 costs 0.02 mrr and
+# does trip it, while a deeper shuffle (rank 2 to 3, 0.0067) does not.
+# That sensitivity is the point — mrr is the metric the graph leg moves.
 recall_at_k = 0.95
 mrr = 0.90
