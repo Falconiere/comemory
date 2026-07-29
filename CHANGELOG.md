@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-07-29
+
+### Added
+
+- advisory near-duplicate cluster report
+- bootstrap CIs + edge-linked golden corpus + preflight guard
+- widened tune pools + seeded sampled search + bandit arm-id v2
+- comemory edges — lexical search over the relation graph
+- edge_fts triplet index + unified derived-artifact refresh
+- memory PageRank as fifth rerank prior + refresh triggers
+- memory PageRank — migration 0011 + memory_rank module + shared boost helpers
+- --since/--until/--as-of on search and context + docs
+- created-date scoping across all legs + as-of supersede semantics
+- graph-expansion candidate leg (third RRF leg)
+- graph-leg retrieval knobs + sub-50-line helper split
+
+### Changed
+
+- drop the unused async and record the SQL audit note
+- split memory FTS ladder into fts_memory + scope/when modules
+
+### Fixed
+
+- index the bootstrap resample and widen the empty-pool test
+- address PR review feedback
+
+### Internal
+
+- prove read-only per row and per file
+- explain how the golden floors are chosen
+- pin bm25 weights and extract the applied-config assertion
+- assert applied tune config through the real parser
+- tighten ScoreKey and sample_seed doc comments
+- address PR review feedback — injection invariant + benign-race note
+- pin iso_format <-> datetime() contract in live_superseder doc
+- address PR review feedback — error echo + Copy invariant
+- address PR review feedback — SQL-safety invariants
+- graph-leg e2e coverage + docs sync
+- baseline SMOKE_QUERIES ids+order snapshot
+
 ## [0.12.1] - 2026-07-21
 
 ### Internal
