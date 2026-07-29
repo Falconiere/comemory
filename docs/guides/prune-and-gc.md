@@ -6,9 +6,10 @@ without losing anything you meant to keep.
 
 comemory accumulates three kinds of cruft over time: edges that point at
 deleted rows, memories that have decayed below usefulness, and code symbols for
-files that no longer exist. `comemory prune` finds them, `comemory rebuild`
-reconstructs the database from the markdown source of truth, and `comemory gc`
-trims the learning telemetry to its retention window.
+files that no longer exist. `comemory prune` finds them, `comemory consolidate`
+reports the near-duplicates worth merging, `comemory rebuild` reconstructs the
+database from the markdown source of truth, and `comemory gc` trims the
+learning telemetry to its retention window.
 
 ## Preview prune candidates
 
@@ -83,6 +84,53 @@ The grace window protects freshly-rebuilt databases, whose supersede edges all
 carry rebuild-time timestamps. See the [CLI reference](../cli-reference.md) for
 the full `prune` flag list and JSON report fields.
 
+## Find near-duplicate memories
+
+`prune` drops memories that decayed; `comemory consolidate` finds the opposite
+problem — several memories saying nearly the same thing. It is **advisory and
+read-only**: it never writes an edge, never soft-deletes, never touches the
+markdown. Merging stays your call.
+
+```bash
+comemory consolidate
+```
+
+```
+clusters : 1  (412 memories scanned, radius 8)
+
+cluster 1  (3 members, max hamming 11)
+  a1b2c3d4  quality 4  accessed 12  ← keeper
+  9f8e7d6c  quality 3  accessed 2   hamming 7
+  4c5d6e7f  quality 2  accessed 0   hamming 11
+
+  merge with: comemory save "<merged body>" --supersedes 9f8e7d6c --supersedes 4c5d6e7f
+```
+
+Clusters come from the same 64-bit SimHash the save-time near-duplicate warning
+uses, grouped **transitively**: A near B and B near C puts all three together
+even when A and C sit further apart than the radius, which is why each cluster
+reports its widest distance as `max hamming`. A wide `max hamming` on a big
+cluster means the group chained together — read it before merging.
+
+The **keeper** is the member comemory's own ranker already favours: highest
+`quality`, then most retrieved, then most recently used, then highest PageRank,
+with the id as a final tiebreak. It is a suggestion; the `merge with:` line
+spells out the exact `--supersedes` flags to retire the rest.
+
+| Flag | Effect |
+|------|--------|
+| `--radius <0..=64>` | Hamming radius. Defaults to `rank.near_dup_hamming` (8); `0` reports only identical fingerprints. |
+| `--repo <name>` | Scan one repo instead of the whole corpus. |
+| `--all` | Include clusters you already settled with supersede edges. |
+| `--k`, `--offset` | Page the cluster list. |
+
+Clusters where every member but one is already superseded from inside the
+cluster are hidden by default — you handled them, so re-reporting them is
+noise. `--all` brings them back, labelled `resolved`.
+
+If the header notes memories with no fingerprint yet, the store predates the
+simhash backfill: run `comemory rebuild` and re-run the report.
+
 ## Rebuild from markdown
 
 Markdown under `~/.comemory/memories/` is the source of truth;
@@ -120,7 +168,8 @@ purge.
 
 ## See also
 
-- [CLI reference](../cli-reference.md) — full `prune`, `rebuild`, and `gc` flags.
+- [CLI reference](../cli-reference.md) — full `prune`, `consolidate`, `rebuild`,
+  and `gc` flags.
 - [Configuration](../configuration.md) — the `COMEMORY_PRUNE_*` floors and the
   `COMEMORY_LEARNING_RETENTION_DAYS` window.
 - [Getting started](../getting-started.md) — the save / index / search loop.

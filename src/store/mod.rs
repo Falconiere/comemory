@@ -1,37 +1,36 @@
-//! Single-file SQLite-backed storage for comemory v0.2.
-//!
-//! Replaces the v0.1 fan-out across kuzu (graph), lancedb (vectors),
-//! and a manual FTS layer with one `comemory.db` SQLite file. The
-//! `sqlite-vec` extension is loaded on every connection for ANN
-//! queries; FTS5 is bundled into rusqlite.
-//!
-//! Module layout matches Task 2.3 of the v0.2 plan:
-//! `connection` (open + PRAGMAs + sqlite-vec auto-extension),
-//! `embed` (f32 ↔ vec0 BLOB encoding + dim guards),
-//! `fts` (FTS5 insert/search helpers for memory/code),
-//! `migrate` (versioned schema migrations + `schema_meta`),
-//! `schema` (DDL strings for tables/vec0/fts5 vtabs),
-//! `vector` (insert/select against `memory_vec` and `code_vec`).
-//!
-//! Tasks 3–6 of the v0.2 plan flesh out the bodies; Task 2 publishes
-//! the skeleton so downstream tasks have stable import paths.
+//! Single-file SQLite storage: one `comemory.db` holding memories, code
+//! rows, edges, FTS5 indexes and `sqlite-vec` vtabs. The extension is loaded
+//! on every connection; FTS5 is bundled into rusqlite.
 
 /// `code_ref` side table: version-anchor store for explicit code references.
 pub mod code_ref;
+/// `code_symbols` row upserts (insert, refresh, delete-by-file).
 pub mod code_row;
+/// Connection open: PRAGMAs, migrations, `sqlite-vec` auto-extension.
 pub mod connection;
 /// FTS5 triplet index over `edges` (rendering + refresh + lexical ladder).
 pub mod edge_fts;
+/// f32 ↔ `vec0` BLOB encoding plus the per-table dim guards.
 pub mod embed;
+/// FTS5 insert/search helpers for the code leg.
 pub mod fts;
 /// Memory-leg FTS5 ladder (strict → relaxed → subtoken → expanded).
 pub mod fts_memory;
+/// Paginated listing of live memories.
 pub mod memory_list;
+/// Batched per-memory metadata (path, repo, kind, tags, references).
 pub mod memory_meta;
+/// `memories` row upserts and their edge materialization.
 pub mod memory_row;
+/// Versioned, idempotent schema migrations plus `schema_meta`.
 pub mod migrate;
+/// DDL strings for the tables, `vec0` vtabs and FTS5 indexes.
 pub mod schema;
+/// Bulk `(id, simhash)` scan over live memories, shared by save + consolidate.
+pub mod simhash_scan;
+/// Custom FTS5 identifier tokenizer (camelCase/snake_case split + FFI).
 pub mod tokenizer;
+/// `vec0` insert and KNN against `memory_vec` / `code_vec`.
 pub mod vector;
 
 /// `?,?,...,?` — `n` comma-joined SQL placeholders for one `IN (...)` clause.

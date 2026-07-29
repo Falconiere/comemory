@@ -283,17 +283,14 @@ fn near_duplicate_inner(
     self_id: &str,
     radius: u32,
 ) -> Result<Option<String>> {
-    let mut stmt =
-        conn.prepare("SELECT id, simhash FROM memories WHERE deleted_at IS NULL AND id <> ?1")?;
-    let rows: Vec<(String, i64)> = stmt
-        .query_map([self_id], |r| Ok((r.get(0)?, r.get(1)?)))?
-        .collect::<std::result::Result<_, _>>()?;
-    Ok(rows
-        .into_iter()
-        .map(|(id, h)| (id, crate::simhash::hamming64(hash, h as u64)))
-        .filter(|(_, d)| *d <= radius)
-        .min_by_key(|(_, d)| *d)
-        .map(|(id, _)| id))
+    Ok(
+        crate::store::simhash_scan::live_simhashes(conn, None, Some(self_id))?
+            .into_iter()
+            .map(|row| (row.id, crate::simhash::hamming64(hash, row.simhash as u64)))
+            .filter(|(_, d)| *d <= radius)
+            .min_by_key(|(_, d)| *d)
+            .map(|(id, _)| id),
+    )
 }
 
 /// Mirror the markdown record into `comemory.db` in a single transaction:
