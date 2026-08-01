@@ -185,6 +185,7 @@ fn reconcile_source(
             entry.id.as_str(),
             entry.repo.as_deref(),
             c,
+            &entry.canonical_path,
             max_file_bytes,
         )?;
         record_outcome(&mut report, c, outcome);

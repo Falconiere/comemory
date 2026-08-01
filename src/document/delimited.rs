@@ -43,16 +43,16 @@ pub fn extract(content: &[u8], file_stem: &str) -> Result<ExtractedDocument> {
 
 /// Render every data row as `header: value, header: value, …`, one row
 /// per line, each row followed by a blank line so it stands as its own
-/// paragraph for [`chunk::split`] to pack.
+/// paragraph for [`chunk::split`] to pack. `flexible(true)` lets the
+/// reader accept ragged rows rather than erroring; a row whose field
+/// count doesn't match the header count logs a warning so a malformed
+/// source row isn't silently invisible.
 fn render_rows(reader: &mut csv::Reader<&[u8]>, headers: &[String]) -> Result<String> {
     let mut rendered = String::new();
-    for result in reader.records() {
+    for (row_no, result) in reader.records().enumerate() {
         let record = result.map_err(|e| Error::Document(format!("csv row: {e}")))?;
-        let fields: Vec<String> = headers
-            .iter()
-            .zip(record.iter())
-            .map(|(h, v)| format!("{h}: {v}"))
-            .collect();
+        warn_if_ragged(row_no + 1, headers.len(), record.len());
+        let fields = render_fields(headers, &record);
         if fields.is_empty() {
             continue;
         }
@@ -60,6 +60,37 @@ fn render_rows(reader: &mut csv::Reader<&[u8]>, headers: &[String]) -> Result<St
         rendered.push_str("\n\n");
     }
     Ok(rendered)
+}
+
+/// Render one row's fields as `header: value` pairs. A field beyond the
+/// header list's length — a ragged row with MORE fields than headers —
+/// falls back to a positional `field_N` (1-based column) label instead
+/// of being silently dropped by a header-length-bounded zip.
+fn render_fields(headers: &[String], record: &csv::StringRecord) -> Vec<String> {
+    record
+        .iter()
+        .enumerate()
+        .map(|(i, v)| match headers.get(i) {
+            Some(h) => format!("{h}: {v}"),
+            None => format!("field_{}: {v}", i + 1),
+        })
+        .collect()
+}
+
+/// Warn when a data row's field count doesn't match the header count —
+/// `flexible(true)` accepts both a short row (missing trailing fields)
+/// and a long row (extra fields, rendered under `field_N` fallback
+/// labels) without erroring, so this is the only signal either case
+/// leaves behind.
+fn warn_if_ragged(row_no: usize, header_count: usize, field_count: usize) {
+    if field_count != header_count {
+        tracing::warn!(
+            row = row_no,
+            header_count,
+            field_count,
+            "delimited: ragged row — field count does not match header count",
+        );
+    }
 }
 
 /// Sniff comma vs. tab delimiter from the first line: whichever

@@ -149,6 +149,43 @@ fn strict_exits_65_when_a_file_exceeds_max_file_bytes() {
     assert!(s.errors.iter().all(|e| e.kind == "too_large"));
 }
 
+/// Regression: a too_large fingerprint (size+mtime) is unchanged between
+/// two runs against the same untouched files. Without the fingerprint's
+/// `existing.status` guard, the second run's exact-match skip would
+/// report `Unchanged` and silently drop the failure from `--strict`.
+#[test]
+fn strict_still_exits_65_on_a_second_run_against_the_same_too_large_files() {
+    let home = tempdir().expect("home");
+    let workspace = tempdir().expect("workspace");
+    let docs = docs_fixtures::seed(workspace.path());
+    let args = ["index", docs.to_str().unwrap(), "--strict", "--json"];
+
+    run_with_ceiling(home.path(), &args).failure().code(65);
+
+    let out = run_with_ceiling(home.path(), &args)
+        .failure()
+        .code(65)
+        .get_output()
+        .stdout
+        .clone();
+    let report = parse_json(&out);
+    let s = &report.sources[0];
+    assert_eq!(
+        s.too_large, 3,
+        "second run must still count all 3 too_large files, not report them Unchanged"
+    );
+    assert_eq!(s.errors.len(), 3);
+}
+
+fn run_with_ceiling(home: &std::path::Path, args: &[&str]) -> assert_cmd::assert::Assert {
+    Command::cargo_bin("comemory")
+        .expect("bin")
+        .env("COMEMORY_DATA_DIR", home)
+        .env("COMEMORY_INDEXING_MAX_FILE_BYTES", "1000")
+        .args(args)
+        .assert()
+}
+
 #[test]
 fn without_strict_the_same_partial_failure_exits_zero() {
     let home = tempdir().expect("home");

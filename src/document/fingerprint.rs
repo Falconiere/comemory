@@ -25,14 +25,21 @@ pub(super) struct FileStat<'a> {
 }
 
 /// Fast pre-read checks: exact-fingerprint skip, then the size ceiling.
-/// `Ok(None)` means "proceed to read + hash the content".
+/// `Ok(None)` means "proceed to read + hash the content". The exact-match
+/// skip only fires when `existing.status` was a successfully-processed
+/// outcome last run ([`was_successfully_processed`]) — a fingerprint
+/// match on a row still carrying `error`/`too_large` must re-attempt
+/// instead, else a persistent per-file failure would report `Unchanged`
+/// forever and `--strict` would never see it again after its first run.
 pub(super) fn fingerprint_shortcut(
     conn: &Connection,
     stat: &FileStat<'_>,
     existing: Option<&SourceFileRow>,
     max_file_bytes: u64,
 ) -> Result<Option<UpdateOutcome>> {
-    if existing.is_some_and(|r| r.size == stat.size && r.mtime == stat.mtime) {
+    if existing.is_some_and(|r| {
+        r.size == stat.size && r.mtime == stat.mtime && was_successfully_processed(&r.status)
+    }) {
         return Ok(Some(UpdateOutcome::Unchanged));
     }
     if stat.size as u64 > max_file_bytes {
@@ -40,6 +47,19 @@ pub(super) fn fingerprint_shortcut(
         return Ok(Some(UpdateOutcome::TooLarge));
     }
     Ok(None)
+}
+
+/// Whether `status` reflects a candidate that was fully, successfully
+/// processed last run — the only statuses the fingerprint fast paths
+/// (this module's exact-match skip, and `writer::update_document`'s
+/// content-hash skip) may report as [`UpdateOutcome::Unchanged`] without
+/// re-attempting. Any other status (`error`, `too_large`, `pending`,
+/// `stale`) must fall through and re-attempt: a fingerprint match alone
+/// doesn't mean today's outcome would still be a failure — permissions
+/// can be restored, extractors can be fixed — and reporting `Unchanged`
+/// would silently hide a persistent failure from `--strict`.
+pub(super) fn was_successfully_processed(status: &str) -> bool {
+    matches!(status, "indexed" | "unsupported" | "ignored")
 }
 
 /// Upsert a `source_files` row for `stat` with the given

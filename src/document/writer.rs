@@ -58,14 +58,21 @@ pub fn update_file(
     source_id: &str,
     repo: Option<&str>,
     candidate: &Candidate,
+    source_root: &Path,
     max_file_bytes: u64,
 ) -> Result<UpdateOutcome> {
     match candidate.classification {
         Classification::Ignored => Ok(UpdateOutcome::Ignored),
         Classification::Unsupported => record_unsupported(conn, source_id, candidate),
-        Classification::Document(format) => {
-            update_document(conn, source_id, repo, candidate, format, max_file_bytes)
-        }
+        Classification::Document(format) => update_document(
+            conn,
+            source_id,
+            repo,
+            candidate,
+            format,
+            source_root,
+            max_file_bytes,
+        ),
     }
 }
 
@@ -103,6 +110,7 @@ fn update_document(
     repo: Option<&str>,
     candidate: &Candidate,
     format: DocumentFormat,
+    source_root: &Path,
     max_file_bytes: u64,
 ) -> Result<UpdateOutcome> {
     let relative_path = candidate.relative_path.to_string_lossy().into_owned();
@@ -124,7 +132,7 @@ fn update_document(
     {
         return Ok(outcome);
     }
-    let bytes = match fs::read(&candidate.absolute_path) {
+    let bytes = match read_within_boundary(&candidate.absolute_path, source_root) {
         Ok(b) => b,
         Err(e) => {
             let msg = format!("read: {e}");
@@ -133,11 +141,35 @@ fn update_document(
         }
     };
     let hash = fingerprint::content_hash(&bytes);
-    if existing.is_some_and(|r| r.sha256.as_deref() == Some(hash.as_str())) {
+    if existing.is_some_and(|r| {
+        r.sha256.as_deref() == Some(hash.as_str())
+            && fingerprint::was_successfully_processed(&r.status)
+    }) {
         sources::touch_file(conn, stat.file_id, stat.size, stat.mtime, &iso_now()?)?;
         return Ok(UpdateOutcome::Unchanged);
     }
     extract_and_write(conn, repo, &stat, format, &bytes, &hash)
+}
+
+/// Re-resolve `absolute_path` and read it only if the resolved target
+/// still lives inside `source_root` — closes the TOCTOU window between
+/// `source::discover`'s walk-time symlink validation and this later
+/// read: a symlink repointed after discovery (or between two `comemory
+/// index` runs) would otherwise let the writer read arbitrary
+/// out-of-boundary content into the index. Reads through the resolved
+/// path itself, not `absolute_path`, so the final read doesn't
+/// re-traverse the symlink a second time. Any canonicalize/read
+/// failure, or the boundary violation itself, surfaces through the same
+/// `io::Error` the caller already handles as a read failure.
+fn read_within_boundary(absolute_path: &Path, source_root: &Path) -> std::io::Result<Vec<u8>> {
+    let resolved = fs::canonicalize(absolute_path)?;
+    if !resolved.starts_with(source_root) {
+        return Err(std::io::Error::other(format!(
+            "resolved target escaped source root: {}",
+            resolved.display()
+        )));
+    }
+    fs::read(&resolved)
 }
 
 /// Extract `bytes` and, on success, replace the document's rows in one

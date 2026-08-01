@@ -97,9 +97,11 @@ fn oversized_file_is_recorded_too_large_without_extraction() {
     let tmp = TempDir::new().expect("tempdir");
     let mut conn = open_db(&tmp);
     let path = write_fixture(&tmp, "changelog.txt", CHANGELOG_TXT);
+    let root = fs::canonicalize(tmp.path()).expect("canonicalize root");
 
     let c = candidate("changelog.txt", &path, DocumentFormat::Txt);
-    let outcome = writer::update_file(&mut conn, SOURCE_ID, None, &c, 4).expect("update_file");
+    let outcome =
+        writer::update_file(&mut conn, SOURCE_ID, None, &c, &root, 4).expect("update_file");
     assert_eq!(outcome, UpdateOutcome::TooLarge);
 
     let files = sources::list_files_by_source(&conn, SOURCE_ID).expect("list");
@@ -114,4 +116,71 @@ fn oversized_file_is_recorded_too_large_without_extraction() {
         .query_row("SELECT COUNT(*) FROM documents", [], |r| r.get(0))
         .expect("count documents");
     assert_eq!(doc_count, 0, "no documents row for a too-large file");
+}
+
+/// Regression: without the `existing.status` guard, an unchanged
+/// (still-oversized) fingerprint on the second run would short-circuit
+/// straight to `Unchanged` — silently hiding a persistent `--strict`
+/// failure after its first report.
+#[test]
+fn oversized_file_is_still_reported_too_large_on_an_unchanged_second_run() {
+    let tmp = TempDir::new().expect("tempdir");
+    let mut conn = open_db(&tmp);
+    let path = write_fixture(&tmp, "changelog.txt", CHANGELOG_TXT);
+    let root = fs::canonicalize(tmp.path()).expect("canonicalize root");
+    let c = candidate("changelog.txt", &path, DocumentFormat::Txt);
+
+    let first = writer::update_file(&mut conn, SOURCE_ID, None, &c, &root, 4).expect("first run");
+    assert_eq!(first, UpdateOutcome::TooLarge);
+
+    // Same file, untouched: size and mtime are byte-identical to what
+    // was just recorded.
+    let second = writer::update_file(&mut conn, SOURCE_ID, None, &c, &root, 4).expect("second run");
+    assert_eq!(
+        second,
+        UpdateOutcome::TooLarge,
+        "an unchanged fingerprint on a too_large row must re-report TooLarge, not Unchanged"
+    );
+    assert_eq!(
+        sources::list_files_by_source(&conn, SOURCE_ID).expect("list")[0].status,
+        "too_large"
+    );
+}
+
+/// Regression: same bug as the too_large case above, for a file that
+/// fails to *read* (permission denied) rather than one that's oversized
+/// — the persistent read failure must keep being reported on every run.
+#[cfg(unix)]
+#[test]
+fn unreadable_file_is_still_reported_as_error_on_an_unchanged_second_run() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let tmp = TempDir::new().expect("tempdir");
+    let mut conn = open_db(&tmp);
+    let path = write_fixture(&tmp, "changelog.txt", CHANGELOG_TXT);
+    let root = fs::canonicalize(tmp.path()).expect("canonicalize root");
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).expect("chmod 000");
+    let c = candidate("changelog.txt", &path, DocumentFormat::Txt);
+
+    let first =
+        writer::update_file(&mut conn, SOURCE_ID, None, &c, &root, MAX_BYTES).expect("first run");
+    assert!(
+        matches!(first, UpdateOutcome::Error(_)),
+        "unreadable file must report Error, got {first:?}"
+    );
+
+    // Same file, still chmod 000: size and mtime are unchanged from
+    // what was just recorded with status "error".
+    let second =
+        writer::update_file(&mut conn, SOURCE_ID, None, &c, &root, MAX_BYTES).expect("second run");
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).expect("restore perms");
+    assert!(
+        matches!(second, UpdateOutcome::Error(_)),
+        "an unchanged fingerprint on an error row must re-attempt and report Error again, \
+         not Unchanged; got {second:?}"
+    );
+    assert_eq!(
+        sources::list_files_by_source(&conn, SOURCE_ID).expect("list")[0].status,
+        "error"
+    );
 }

@@ -72,5 +72,16 @@ pub fn index(
     format: DocumentFormat,
 ) -> UpdateOutcome {
     let c = candidate(relative, path, format);
-    writer::update_file(conn, SOURCE_ID, None, &c, MAX_BYTES).expect("update_file")
+    let source_root = canonical_parent(path);
+    writer::update_file(conn, SOURCE_ID, None, &c, &source_root, MAX_BYTES).expect("update_file")
+}
+
+/// Canonicalize `path`'s parent directory — every fixture here is
+/// written flat directly under the tempdir root via [`write_fixture`],
+/// so this IS that root, resolved the same way `cli::index` resolves a
+/// registered source root before handing it to the writer as its TOCTOU
+/// boundary.
+fn canonical_parent(path: &Path) -> PathBuf {
+    fs::canonicalize(path.parent().expect("candidate path has a parent"))
+        .expect("canonicalize source root")
 }

@@ -54,7 +54,8 @@ fn index_markdown(
 ) -> String {
     // Namespaced by `source_id` so two sources can each claim the same
     // `relative` path without colliding on disk.
-    let absolute = tmp.path().join(source_id).join(relative);
+    let source_root = tmp.path().join(source_id);
+    let absolute = source_root.join(relative);
     if let Some(parent) = absolute.parent() {
         fs::create_dir_all(parent).expect("create parent dirs");
     }
@@ -64,8 +65,20 @@ fn index_markdown(
         absolute_path: absolute,
         classification: Classification::Document(DocumentFormat::Markdown),
     };
-    let outcome =
-        writer::update_file(conn, source_id, repo, &candidate, MAX_BYTES).expect("update_file");
+    // `source_root` itself (not `absolute`'s parent) is the writer's
+    // TOCTOU boundary — `relative` may nest under a subdirectory
+    // (e.g. `sub/guide.md`), which is still inside the source, not the
+    // whole boundary.
+    let canonical_root = fs::canonicalize(&source_root).expect("canonicalize source root");
+    let outcome = writer::update_file(
+        conn,
+        source_id,
+        repo,
+        &candidate,
+        &canonical_root,
+        MAX_BYTES,
+    )
+    .expect("update_file");
     match outcome {
         writer::UpdateOutcome::Indexed { document_id } => document_id,
         other => panic!("expected Indexed, got {other:?}"),

@@ -70,3 +70,33 @@ fn header_only_csv_yields_no_chunks() {
     let doc = extract(b"a,b,c\n", "empty").expect("csv extract");
     assert!(doc.chunks.is_empty());
 }
+
+/// Regression: `flexible(true)` accepts a ragged row rather than
+/// erroring, but the old `headers.iter().zip(record.iter())` transform
+/// silently dropped any field beyond the header count. Extra fields
+/// must now render under positional `field_N` fallback labels instead
+/// of vanishing.
+#[test]
+fn ragged_row_with_extra_fields_uses_positional_fallback_labels() {
+    let doc = extract(b"a,b,c\n1,2,3,4,5\n", "ragged").expect("csv extract");
+    let text = full_text(&doc);
+    assert!(
+        text.contains("a: 1, b: 2, c: 3, field_4: 4, field_5: 5"),
+        "extra fields beyond the header count must render under field_N \
+         labels, not be silently dropped: {text}"
+    );
+}
+
+#[test]
+fn ragged_row_with_missing_fields_still_renders_the_present_ones() {
+    let doc = extract(b"a,b,c\n1,2\n", "ragged").expect("csv extract");
+    let text = full_text(&doc);
+    assert!(
+        text.contains("a: 1, b: 2"),
+        "present fields of a short row must still render: {text}"
+    );
+    assert!(
+        !text.contains("c:"),
+        "a short row must not fabricate a value for its missing trailing header"
+    );
+}

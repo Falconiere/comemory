@@ -6,6 +6,7 @@
 
 use std::collections::HashSet;
 use std::fs;
+use std::path::PathBuf;
 
 use comemory::document::DocumentFormat;
 use comemory::document::writer::{self, UpdateOutcome};
@@ -269,5 +270,86 @@ fn fts_match_finds_a_guide_phrase_and_ranks_it_first() {
     assert_eq!(
         hits[0].document_id, guide_id,
         "on-topic chunk must rank first"
+    );
+}
+
+/// Create `tmp/root` (a real file plus a symlink pointing at it) and
+/// `tmp/outside`, returning the canonicalized root and the symlink's
+/// own path — the fixture the TOCTOU regression test below repoints.
+#[cfg(unix)]
+fn seed_symlinked_source(tmp: &TempDir) -> (PathBuf, PathBuf) {
+    use std::os::unix::fs::symlink;
+
+    let root = tmp.path().join("root");
+    fs::create_dir_all(&root).expect("create root");
+    fs::create_dir_all(tmp.path().join("outside")).expect("create outside");
+    let inside_target = root.join("real.txt");
+    fs::write(&inside_target, "legit content\n").expect("write inside target");
+    let link = root.join("link.txt");
+    symlink(&inside_target, &link).expect("create symlink");
+    (fs::canonicalize(&root).expect("canonicalize root"), link)
+}
+
+/// Every `document_chunks.text` value currently in the DB.
+fn all_chunk_texts(conn: &Connection) -> Vec<String> {
+    let mut stmt = conn
+        .prepare("SELECT text FROM document_chunks")
+        .expect("prepare");
+    stmt.query_map([], |r| r.get(0))
+        .expect("query")
+        .collect::<std::result::Result<_, _>>()
+        .expect("rows")
+}
+
+/// TOCTOU regression: `source::discover` validates a symlink's target
+/// once, at walk time. If the link is repointed OUTSIDE the source root
+/// before the writer later reads it (a second `comemory index` run, or
+/// even just a slow first one), the writer must re-validate at read
+/// time and reject it — never index the foreign content.
+#[cfg(unix)]
+#[test]
+fn symlink_repointed_outside_the_root_after_validation_is_rejected_not_indexed() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = TempDir::new().expect("tempdir");
+    let (source_root, link) = seed_symlinked_source(&tmp);
+    let mut conn = open_db(&tmp);
+    let c = candidate("link.txt", &link, DocumentFormat::Txt);
+    let first = writer::update_file(&mut conn, SOURCE_ID, None, &c, &source_root, MAX_BYTES)
+        .expect("update_file");
+    assert!(
+        matches!(first, UpdateOutcome::Indexed { .. }),
+        "first run must index the in-boundary target, got {first:?}"
+    );
+
+    // Repoint the symlink to a file OUTSIDE the source root (differing
+    // size forces past the fingerprint's exact-match skip).
+    let secret = tmp.path().join("outside").join("secret.txt");
+    fs::write(&secret, "top secret out-of-boundary content\n").expect("write secret");
+    fs::remove_file(&link).expect("remove old link");
+    symlink(&secret, &link).expect("repoint symlink outside root");
+
+    let second = writer::update_file(&mut conn, SOURCE_ID, None, &c, &source_root, MAX_BYTES)
+        .expect("update_file");
+    assert!(
+        matches!(second, UpdateOutcome::Error(_)),
+        "a symlink repointed outside the root must be rejected, got {second:?}"
+    );
+    let files = sources::list_files_by_source(&conn, SOURCE_ID).expect("list");
+    assert_eq!(files[0].status, "error");
+    assert!(
+        files[0].error.as_deref().unwrap_or("").contains("escaped"),
+        "error diagnostic must name the boundary violation, got {:?}",
+        files[0].error
+    );
+
+    let texts = all_chunk_texts(&conn);
+    assert!(
+        texts.iter().any(|t| t.contains("legit content")),
+        "prior legitimate revision must remain indexed"
+    );
+    assert!(
+        !texts.iter().any(|t| t.contains("top secret")),
+        "foreign out-of-boundary content must never be indexed"
     );
 }

@@ -59,7 +59,12 @@ fn index(
         absolute_path: path.to_path_buf(),
         classification: Classification::Document(format),
     };
-    writer::update_file(conn, SOURCE_ID, repo, &c, MAX_BYTES).expect("update_file")
+    // Every fixture here is written flat directly under the tempdir
+    // root via `write_fixture`, so that root is the writer's TOCTOU
+    // boundary.
+    let source_root = std::fs::canonicalize(path.parent().expect("candidate path has a parent"))
+        .expect("canonicalize source root");
+    writer::update_file(conn, SOURCE_ID, repo, &c, &source_root, MAX_BYTES).expect("update_file")
 }
 
 #[test]
