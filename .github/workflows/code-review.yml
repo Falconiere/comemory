@@ -8,6 +8,7 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
+  security-events: write # upload the gitleaks/opengrep SARIF to the Code Scanning tab
 
 concurrency:
   group: code-review-${{ github.ref }}
@@ -21,7 +22,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: falconiere/toolu-ghactions/code-review@v3
+      # v4 replaced the PROVIDERS JSON array with the flat
+      # PROVIDER / MODEL_ID / API_KEY contract. v5 made FAIL_ON default to
+      # "changes", so this job now goes red on a request-changes verdict
+      # (set FAIL_ON: none to return to advisory-only).
+      - uses: falconiere/toolu-ghactions/code-review@v6
         with:
-          PROVIDERS: |
-            [{"provider": "openrouter", "model": "deepseek/deepseek-v4-pro", "api_key": "${{ secrets.OPENROUTER_API_KEY }}"}]
+          PROVIDER: openrouter
+          MODEL_ID: deepseek/deepseek-v4-pro
+          API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
