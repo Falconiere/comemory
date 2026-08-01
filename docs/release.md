@@ -14,8 +14,9 @@
 
 The release-plz bot (`.github/workflows/release-plz.yml`, config
 `release-plz.toml`) owns **version + CHANGELOG + tag**. cargo-dist owns
-everything after the tag: push `vX.Y.Z` → `release.yml` builds the single
-`aarch64-apple-darwin` target → uploads the tarball + shell installer to GitHub
+everything after the tag: push `vX.Y.Z` → `release.yml` builds the
+`aarch64-apple-darwin`, `x86_64-unknown-linux-gnu`, and
+`aarch64-unknown-linux-gnu` targets → uploads the tarballs + shell installer to GitHub
 Releases → pushes the formula to `Falconiere/homebrew-tap` (stable tags only).
 A second hand-maintained workflow, `release-finalize.yml`, runs after the
 release is published to smoke-test the artifact, curate the release body from
@@ -144,8 +145,9 @@ CHANGELOG edit didn't save — `git restore` and redo step 3.
 ### Step 6 — `dist plan` dry-run
 
 `just release-dry-run vX.Y.Z`. Read the printed plan: it should show
-**one** local build job (`aarch64-apple-darwin`), one global job, and
-the version matches. Reject and fix if anything is off (e.g.
+**three** local build jobs (`aarch64-apple-darwin`,
+`x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`), one global job,
+and the version matches. Reject and fix if anything is off (e.g.
 `Cargo.toml` version drifted, target list regressed).
 
 ### Step 7 — Tag + push
@@ -183,8 +185,8 @@ treats the RC tarball identically to a stable one.
 ## 4. Post-tag verification
 
 - [ ] `release.yml` is green: plan → build → host (the dist-generated
-  workflow). 1 build job, 1 global job, 1 host job for a single-target
-  release.
+  workflow). 3 local build jobs (macOS aarch64, Linux x86_64, Linux
+  aarch64), 1 global job, 1 host job.
   `https://github.com/Falconiere/comemory/actions?query=workflow%3ARelease`
 - [ ] `release-finalize.yml` is green: smoke test + curated notes + (if
   configured) signature.
@@ -246,11 +248,13 @@ re-tag once `main` is fixed.
 
 ## 6. Platform support
 
-macOS aarch64 is the only prebuilt target by design — see
-[README § Platform support](../README.md#platform-support). Linux and
-Windows users fork the repo and `cargo install --path .`. The
-single-target build keeps the release CI matrix to one job, which is
-the reason for the choice; pre-built Linux/Windows artifacts can be
-re-enabled in a fork by editing `targets = [...]` in
-`[workspace.metadata.dist]` and the corresponding GitHub runner
-matrix.
+macOS aarch64 and Linux (`x86_64-unknown-linux-gnu`,
+`aarch64-unknown-linux-gnu`) are prebuilt — see
+[README § Platform support](../README.md#platform-support). `dist plan`
+picks native GitHub runners for each (`macos-14`, `ubuntu-22.04`,
+`ubuntu-22.04-arm`), so no cross-compilation or container is involved;
+`release.yml` itself needs no per-target edits since its build matrix is
+computed at CI runtime from `[workspace.metadata.dist].targets`. Windows
+users still fork the repo and `cargo install --path .`. To add or drop a
+target, edit `targets = [...]` in `Cargo.toml`'s
+`[workspace.metadata.dist]` — no other file needs to change.
