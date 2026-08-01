@@ -50,8 +50,8 @@ fn seed_relation(conn: &Connection, src: &str, rel: &str, dst: &str) {
 fn seed_source_root(conn: &Connection, id: &str, canonical_path: &str) {
     conn.execute(
         "INSERT INTO source_roots(id, canonical_path, kind, repo, status, created_at, updated_at)
-         VALUES(?1, ?2, 'dir', NULL, 'active', '2026-07-01T00:00:00Z', '2026-07-01T00:00:00Z')",
-        params![id, canonical_path],
+         VALUES(?1, ?2, ?3, NULL, ?4, '2026-07-01T00:00:00Z', '2026-07-01T00:00:00Z')",
+        params![id, canonical_path, "dir", "active"],
     )
     .expect("seed source_roots");
 }
@@ -61,9 +61,9 @@ fn seed_source_file(conn: &Connection, id: &str, source_id: &str, relative_path:
     conn.execute(
         "INSERT INTO source_files(id, source_id, relative_path, classification, size, mtime,
                                    sha256, status, error, created_at, updated_at)
-         VALUES(?1, ?2, ?3, 'document', 10, 0, 'h', 'indexed', NULL,
+         VALUES(?1, ?2, ?3, ?4, 10, 0, ?5, ?6, NULL,
                 '2026-07-01T00:00:00Z', '2026-07-01T00:00:00Z')",
-        params![id, source_id, relative_path],
+        params![id, source_id, relative_path, "document", "h", "indexed"],
     )
     .expect("seed source_files");
 }
@@ -79,8 +79,16 @@ fn seed_document(
     conn.execute(
         "INSERT INTO documents(id, source_file_id, title, repo, revision_hash,
                                 created_at, updated_at)
-         VALUES(?1, ?2, ?3, ?4, 'h', '2026-07-01T00:00:00Z', '2026-07-01T00:00:00Z')",
-        params![id, source_file_id, title, repo],
+         VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![
+            id,
+            source_file_id,
+            title,
+            repo,
+            "h",
+            "2026-07-01T00:00:00Z",
+            "2026-07-01T00:00:00Z"
+        ],
     )
     .expect("seed documents");
 }

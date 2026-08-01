@@ -243,8 +243,8 @@ fn replace_chunks_deletes_previous_set_and_inserts_new_one() {
 
     let guide_chunk_count: i64 = conn
         .query_row(
-            "SELECT COUNT(*) FROM document_chunks WHERE document_id = 'doc-a'",
-            [],
+            "SELECT COUNT(*) FROM document_chunks WHERE document_id = ?1",
+            ["doc-a"],
             |r| r.get(0),
         )
         .expect("count");
@@ -257,8 +257,8 @@ fn replace_chunks_deletes_previous_set_and_inserts_new_one() {
 
     let after_count: i64 = conn
         .query_row(
-            "SELECT COUNT(*) FROM document_chunks WHERE document_id = 'doc-a'",
-            [],
+            "SELECT COUNT(*) FROM document_chunks WHERE document_id = ?1",
+            ["doc-a"],
             |r| r.get(0),
         )
         .expect("count");

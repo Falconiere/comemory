@@ -185,9 +185,9 @@ impl Config {
             )));
         }
         let dw = self.retrieval.document_leg_weight;
-        if let Err(why) = check_document_leg_weight(dw) {
+        if let Err(reason) = check_document_leg_weight(dw) {
             return Err(Error::Config(format!(
-                "invalid retrieval.document_leg_weight={dw} (env COMEMORY_RETRIEVAL_DOCUMENT_LEG_WEIGHT): {why}"
+                "invalid retrieval.document_leg_weight={dw} (env COMEMORY_RETRIEVAL_DOCUMENT_LEG_WEIGHT): {reason}"
             )));
         }
         Ok(())

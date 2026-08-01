@@ -52,8 +52,7 @@ pub fn rrf_k(a: &[RankedHit], b: &[RankedHit], top_k: usize, k: f32) -> Vec<Rank
 /// slice, or legs that are all empty, yields an empty vector. Delegates to
 /// [`rrf_multi_weighted`] at weight `1.0` per leg.
 pub fn rrf_multi(legs: &[&[RankedHit]], top_k: usize, k: f32) -> Vec<RankedHit> {
-    let weighted: Vec<(&[RankedHit], f32)> = legs.iter().map(|leg| (*leg, 1.0)).collect();
-    rrf_multi_weighted(&weighted, top_k, k)
+    accumulate(legs.iter().map(|leg| (*leg, 1.0)), top_k, k)
 }
 
 /// Fuse any number of *weighted* ranked lists, returning the top-`top_k`
@@ -64,6 +63,19 @@ pub fn rrf_multi(legs: &[&[RankedHit]], top_k: usize, k: f32) -> Vec<RankedHit> 
 /// An empty `legs` slice, or legs that are all empty, yields an empty
 /// vector.
 pub fn rrf_multi_weighted(legs: &[(&[RankedHit], f32)], top_k: usize, k: f32) -> Vec<RankedHit> {
+    accumulate(legs.iter().copied(), top_k, k)
+}
+
+/// Shared RRF accumulation core: sums `weight / (k + rank + 1.0)` per leg
+/// into a per-id map, then sorts by score descending with ascending id as
+/// the tie-break and truncates to `top_k`. Takes an iterator rather than a
+/// slice so [`rrf_multi`] can feed it an unweighted leg list without first
+/// collecting an intermediate `Vec`.
+fn accumulate<'a>(
+    legs: impl Iterator<Item = (&'a [RankedHit], f32)>,
+    top_k: usize,
+    k: f32,
+) -> Vec<RankedHit> {
     let mut acc: HashMap<String, f32> = HashMap::new();
     for (leg, weight) in legs {
         for (rank, h) in leg.iter().enumerate() {

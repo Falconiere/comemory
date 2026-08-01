@@ -134,7 +134,7 @@ pub enum Domain {
 
 impl Domain {
     /// This domain's bit within a [`Domains`] mask.
-    fn bit(self) -> u8 {
+    const fn bit(self) -> u8 {
         match self {
             Domain::Memory => 0b001,
             Domain::Document => 0b010,
