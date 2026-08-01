@@ -3,6 +3,8 @@
 #[path = "common/docs_fixtures.rs"]
 mod docs_fixtures;
 
+use std::path::Path;
+
 use assert_cmd::Command;
 use serde::Deserialize;
 use tempfile::tempdir;
@@ -78,5 +80,9 @@ fn sources_lists_registered_source_with_counts() {
     assert_eq!(r.indexed, docs_fixtures::FIXTURE_COUNT);
     assert_eq!(r.error, 0);
     assert_eq!(r.stale, 0);
-    assert!(r.canonical_path.ends_with("docs"));
+    assert!(
+        Path::new(&r.canonical_path).ends_with("docs"),
+        "canonical_path's final component must be exactly `docs`, got: {}",
+        r.canonical_path
+    );
 }

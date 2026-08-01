@@ -73,16 +73,19 @@ fn snapshot(docs: &Path) -> Vec<(String, Vec<u8>)> {
 }
 
 fn empty_db_counts(conn: &rusqlite::Connection) -> (i64, i64, i64, i64, i64) {
-    let count = |table: &str| -> i64 {
-        conn.query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0))
-            .unwrap_or_else(|_| panic!("count {table}"))
+    // Table names can't be bound as parameters, so each is a complete
+    // literal SQL string rather than format!-spliced (same spirit as
+    // the store/sources.rs const-SQL fix).
+    let count = |sql: &str| -> i64 {
+        conn.query_row(sql, [], |r| r.get(0))
+            .unwrap_or_else(|_| panic!("count via: {sql}"))
     };
     (
-        count("source_roots"),
-        count("source_files"),
-        count("documents"),
-        count("document_chunks"),
-        count("document_fts"),
+        count("SELECT count(*) FROM source_roots"),
+        count("SELECT count(*) FROM source_files"),
+        count("SELECT count(*) FROM documents"),
+        count("SELECT count(*) FROM document_chunks"),
+        count("SELECT count(*) FROM document_fts"),
     )
 }
 

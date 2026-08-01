@@ -295,6 +295,14 @@ fn get_chunk_returns_citation_fields_and_none_for_missing_ordinal() {
             .expect("get_chunk")
             .is_none()
     );
+}
+
+#[test]
+fn get_chunk_returns_none_for_missing_document() {
+    let (conn, _tmp) = open_db();
+    seed_document(&conn, "src-a", "file-a", "guide.md", "doc-a");
+    documents::replace_chunks(&conn, "doc-a", &to_chunk_rows(&guide())).expect("replace");
+
     assert!(
         documents::get_chunk(&conn, "no-such-doc", 0)
             .expect("get_chunk")
