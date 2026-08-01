@@ -60,6 +60,46 @@ fn days_since_treats_malformed_timestamp_as_fresh() {
     assert_eq!(days_since("not-a-timestamp", now), 0.0);
 }
 
+/// Two rows written a fraction of a second apart must keep the SAME age gap
+/// no matter which sub-second instant the query runs at. Truncating the
+/// elapsed delta instead of each timestamp made that gap flip between 0 and
+/// 1 second with the query's phase, so their ACT-R activations tied under
+/// one phase and not another — reordering two calls over an unchanged
+/// corpus (the `context` / `search-code` pagination-stability flakes).
+#[test]
+fn days_since_gap_is_independent_of_the_sub_second_query_phase() {
+    let earlier = "2026-06-09T00:00:00.900Z";
+    let later = "2026-06-09T00:00:01.100Z";
+    // Straddling a second boundary: one whole second apart, every phase.
+    let expected = 1.0 / 86_400.0;
+
+    for millis in [0u32, 50, 200, 400, 700, 950] {
+        let now = time::macros::datetime!(2026-06-09 00:00:10 UTC)
+            + time::Duration::milliseconds(i64::from(millis));
+        let gap = days_since(earlier, now) - days_since(later, now);
+        assert!(
+            (gap - expected).abs() < 1e-12,
+            "phase {millis}ms: gap {gap} != {expected}"
+        );
+    }
+}
+
+/// The flip side of the phase-independence rule: rows sharing a second are
+/// exactly equal in age at every phase, so ranking falls through to the
+/// deterministic id tie-break instead of splitting on float noise.
+#[test]
+fn days_since_ties_exactly_within_one_second() {
+    for millis in [0u32, 120, 500, 880] {
+        let now = time::macros::datetime!(2026-06-09 00:00:10 UTC)
+            + time::Duration::milliseconds(i64::from(millis));
+        assert_eq!(
+            days_since("2026-06-09T00:00:01.100Z", now),
+            days_since("2026-06-09T00:00:01.800Z", now),
+            "phase {millis}ms: same-second rows must tie"
+        );
+    }
+}
+
 #[test]
 fn min_max_normalize_maps_pool_to_unit_interval() {
     assert_eq!(min_max_normalize(&[2.0, 4.0, 3.0]), vec![0.0, 1.0, 0.5]);
