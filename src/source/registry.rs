@@ -90,6 +90,13 @@ impl Registry {
     /// when nothing matched. Held under the registry lock for the whole
     /// read-modify-write.
     pub fn unregister(&self, id_or_path: &str) -> Result<Option<SourceEntry>> {
+        // `.ok()`: a canonicalize failure (path no longer exists, or
+        // `id_or_path` is a SourceId hex string rather than a path at
+        // all) just makes `target` `None`, so the path-match arm below
+        // never matches — the id-match arm still works unconditionally.
+        // Intended: only unregistering by a since-deleted path is
+        // affected, and that falls through to "not found" rather than
+        // erroring.
         let target = fs::canonicalize(id_or_path).ok();
         let _guard = RegistryLock::acquire(&self.paths.sources_lock_file())?;
         let mut entries = self.load()?;

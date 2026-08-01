@@ -81,7 +81,13 @@ fn walk_dir(root: &Path, memories_dir: &Path) -> Vec<Candidate> {
     walker.filter_entry(move |entry| !entry.path().starts_with(&pruned));
 
     let mut out = Vec::new();
-    for entry in walker.build().filter_map(std::result::Result::ok) {
+    for entry in walker.build().filter_map(|r| match r {
+        Ok(e) => Some(e),
+        Err(e) => {
+            tracing::warn!(error = %e, "discover: walk entry error; skipping");
+            None
+        }
+    }) {
         let path = entry.path();
         if entry.path_is_symlink() {
             if let Some(target) = resolve_symlink_file(path, root) {

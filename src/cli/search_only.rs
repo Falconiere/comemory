@@ -49,16 +49,12 @@ impl From<OnlyDomain> for Domain {
 }
 
 /// Resolve `--only` (raw clap values) plus `--kind` into the [`Domains`]
-/// mask a search run should use.
-///
-/// - `--only` unset: `--kind` implies memory scope (a kind filter means
-///   nothing on document/code rows), narrowing the default
-///   [`Domains::all`] down to [`Domains::memory_only`]; without `--kind`
-///   the full default stands, unchanged from before `--only` existed.
-/// - `--only` set: parsed verbatim into a mask. If that mask excludes
-///   memory while `--kind` is also set, the two flags contradict (a kind
-///   filter with no memory leg to apply it to) and the run is rejected as
-///   a usage error rather than silently returning nothing.
+/// mask a search run should use. `--only` unset: `--kind` narrows the
+/// default to memory-only, else the full default stands. `--only` set:
+/// parsed verbatim, rejected as a usage error if it excludes memory
+/// while `--kind` is set (nothing to apply the filter to), or if it
+/// includes [`Domain::Code`] — no leg here searches code yet, so it
+/// would otherwise silently drop code results instead of finding any.
 pub fn resolve_domains(only: &[OnlyDomain], kind: Option<&str>) -> Result<Domains> {
     if only.is_empty() {
         return Ok(if kind.is_some() {
@@ -73,6 +69,13 @@ pub fn resolve_domains(only: &[OnlyDomain], kind: Option<&str>) -> Result<Domain
     {
         return Err(Error::Usage(format!(
             "--kind {k} requires memory in --only (got: {})",
+            only_label(only)
+        )));
+    }
+    if domains.contains(Domain::Code) {
+        return Err(Error::Usage(format!(
+            "code domain joins unified search in a later release; use `comemory search-code` \
+             instead (got: --only {})",
             only_label(only)
         )));
     }

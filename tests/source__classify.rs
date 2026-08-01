@@ -75,13 +75,11 @@ fn binary_content_under_allowlisted_extension_is_unsupported() {
 }
 
 #[test]
-fn nul_beyond_sniff_window_is_not_inspected() {
-    // classify only inspects up to SNIFF_WINDOW bytes of what it is
-    // given -- the caller (discover) is responsible for bounding the
-    // read, so a NUL sitting past that bound must not flip a real text
-    // file to Unsupported.
-    let mut head = vec![b'a'; SNIFF_WINDOW];
-    head.push(0);
-    let got = classify(Path::new("notes.txt"), &head);
-    assert_eq!(got, Classification::Document(DocumentFormat::Txt));
+#[should_panic(expected = "classify's contract")]
+fn content_head_longer_than_sniff_window_violates_the_debug_assert() {
+    // classify's contract requires the caller (discover::read_head) to
+    // already bound content_head to SNIFF_WINDOW; debug_assert! catches
+    // a caller that doesn't, rather than silently clamping forever.
+    let head = vec![b'a'; SNIFF_WINDOW + 1];
+    let _ = classify(Path::new("notes.txt"), &head);
 }

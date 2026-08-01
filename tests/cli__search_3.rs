@@ -86,25 +86,43 @@ fn only_document_returns_document_hits_from_the_indexed_corpus() {
 }
 
 #[test]
-fn only_memory_comma_code_excludes_documents_and_keeps_the_memory_shape() {
+fn only_memory_comma_code_is_a_usage_error() {
+    // Code doesn't join unified search yet — before this fix, `--only
+    // memory,code` silently ran the memory-only leg and dropped the
+    // `code` half of the request without a word. Any --only scope that
+    // names `code` must now be rejected instead.
     let home = tempdir().expect("home");
-    let workspace = tempdir().expect("workspace");
-    index_docs_fixtures(home.path(), workspace.path());
-    save_memory(home.path(), "comemory advisory lock design note");
+    let (code, stderr) = reject(home.path(), "comemory", &["--only", "memory,code"]);
+    assert_eq!(code, Some(64), "must exit EX_USAGE: {stderr}");
+    assert!(
+        stderr.contains("search-code"),
+        "error must point at search-code: {stderr}"
+    );
+}
 
-    let v = search_json(home.path(), "comemory", &["--only", "memory,code"]);
-    let hits = v["hits"].as_array().expect("memory-shaped hits array");
-    assert!(!hits.is_empty(), "the memory hit must still surface: {v}");
-    for hit in hits {
-        assert!(
-            hit.get("memory_id").is_some(),
-            "every row must be a memory row: {hit}"
-        );
-        assert!(
-            hit.get("document_id").is_none() && hit.get("citation").is_none(),
-            "no document row may leak into a memory,code scope: {hit}"
-        );
-    }
+#[test]
+fn only_code_alone_is_a_usage_error_not_a_silent_empty_result() {
+    // Before this fix, `--only code` alone routed to the document-only
+    // path, which excludes the code domain too and just returns an
+    // empty page with exit 0 — no signal that code was never searched.
+    let home = tempdir().expect("home");
+    let (code, stderr) = reject(home.path(), "comemory", &["--only", "code"]);
+    assert_eq!(code, Some(64), "must exit EX_USAGE: {stderr}");
+    assert!(
+        stderr.contains("search-code"),
+        "error must point at search-code: {stderr}"
+    );
+}
+
+#[test]
+fn only_code_comma_document_is_a_usage_error() {
+    let home = tempdir().expect("home");
+    let (code, stderr) = reject(home.path(), "comemory", &["--only", "code,document"]);
+    assert_eq!(code, Some(64), "must exit EX_USAGE: {stderr}");
+    assert!(
+        stderr.contains("search-code"),
+        "error must point at search-code: {stderr}"
+    );
 }
 
 #[test]

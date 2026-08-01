@@ -454,14 +454,14 @@ const PRE_V13_REL_KINDS: [&str; 12] = [
 
 /// Insert one probe `edges` row using `kind` as both `rel` and the
 /// src/dst id — `rel` is part of the primary key, so distinct kinds never
-/// collide even against the same fixed 'probe'/'dst' pair.
+/// collide even against the same fixed 'probe'/'dst' pair. `kind` is
+/// bound via `?1` (reused for both occurrences) rather than interpolated
+/// into the SQL text.
 fn insert_edge_kind(conn: &Connection, kind: &str) -> rusqlite::Result<usize> {
     conn.execute(
-        &format!(
-            "INSERT INTO edges(src_kind,src_id,dst_kind,dst_id,rel,created_at)
-             VALUES('probe','{kind}','probe','dst','{kind}','2026-01-01T00:00:00Z')"
-        ),
-        [],
+        "INSERT INTO edges(src_kind,src_id,dst_kind,dst_id,rel,created_at) \
+         VALUES('probe',?1,'probe','dst',?1,'2026-01-01T00:00:00Z')",
+        [kind],
     )
 }
 

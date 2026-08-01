@@ -189,8 +189,13 @@ const FILE_UPSERT_SQL: &str = "INSERT INTO source_files(\
      status = excluded.status, error = excluded.error, \
      updated_at = excluded.updated_at";
 
-const FILE_SELECT_COLUMNS: &str = "id, source_id, relative_path, classification, \
-     size, mtime, sha256, status, error, created_at, updated_at";
+const FILE_GET_SQL: &str = "SELECT id, source_id, relative_path, classification, \
+     size, mtime, sha256, status, error, created_at, updated_at \
+     FROM source_files WHERE id = ?1";
+
+const FILE_LIST_BY_SOURCE_SQL: &str = "SELECT id, source_id, relative_path, classification, \
+     size, mtime, sha256, status, error, created_at, updated_at \
+     FROM source_files WHERE source_id = ?1 ORDER BY relative_path";
 
 /// Insert a fresh `source_files` row, or overwrite an existing one's
 /// mutable fields (everything but `id`/`source_id`/`relative_path`/
@@ -246,8 +251,7 @@ pub fn mark_deleted(conn: &Connection, id: &str, updated_at: &str) -> Result<()>
 
 /// Fetch one `source_files` row by id, or `None` if it does not exist.
 pub fn get_file(conn: &Connection, id: &str) -> Result<Option<SourceFileRow>> {
-    let sql = format!("SELECT {FILE_SELECT_COLUMNS} FROM source_files WHERE id = ?1");
-    conn.query_row(&sql, params![id], file_row_from_sql)
+    conn.query_row(FILE_GET_SQL, params![id], file_row_from_sql)
         .optional()
         .map_err(Error::from)
 }
@@ -257,10 +261,7 @@ pub fn get_file(conn: &Connection, id: &str) -> Result<Option<SourceFileRow>> {
 /// reconciliation in [`crate::document::writer::reconcile_deletions`]
 /// diffs this against a fresh discovery walk.
 pub fn list_files_by_source(conn: &Connection, source_id: &str) -> Result<Vec<SourceFileRow>> {
-    let sql = format!(
-        "SELECT {FILE_SELECT_COLUMNS} FROM source_files WHERE source_id = ?1 ORDER BY relative_path"
-    );
-    let mut stmt = conn.prepare(&sql)?;
+    let mut stmt = conn.prepare(FILE_LIST_BY_SOURCE_SQL)?;
     let rows = stmt
         .query_map(params![source_id], file_row_from_sql)?
         .collect::<std::result::Result<Vec<_>, _>>()?;

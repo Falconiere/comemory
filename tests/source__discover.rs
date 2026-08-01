@@ -40,12 +40,32 @@ fn rel_names(found: &[comemory::source::discover::Candidate]) -> Vec<String> {
         .collect()
 }
 
+/// `(fixture name, expected classification)` pairs this test copies AND
+/// checks — a single source of truth so covering a fixture added later
+/// to `tests/common/fixtures/docs/` is a one-line change here, never two
+/// independently-maintained lists drifting apart.
+const ALLOWLISTED_FIXTURES: &[(&str, Classification)] = &[
+    (
+        "changelog.txt",
+        Classification::Document(DocumentFormat::Txt),
+    ),
+    (
+        "data.csv",
+        Classification::Document(DocumentFormat::Delimited),
+    ),
+    (
+        "guide.md",
+        Classification::Document(DocumentFormat::Markdown),
+    ),
+    ("page.html", Classification::Document(DocumentFormat::Html)),
+];
+
 #[test]
 fn each_allowlisted_fixture_classifies_correctly() {
     let (tmp, memories_dir) = sandbox();
     let root = tmp.path().join("docs");
     fs::create_dir_all(&root).expect("mkdir root");
-    for name in ["guide.md", "changelog.txt", "page.html", "data.csv"] {
+    for (name, _) in ALLOWLISTED_FIXTURES {
         fs::copy(fixture(name), root.join(name)).expect("copy fixture");
     }
     let root = root.canonicalize().expect("canonicalize root");
@@ -62,27 +82,13 @@ fn each_allowlisted_fixture_classifies_correctly() {
         })
         .collect();
 
-    assert_eq!(
-        got,
-        vec![
-            (
-                "changelog.txt".to_string(),
-                Classification::Document(DocumentFormat::Txt)
-            ),
-            (
-                "data.csv".to_string(),
-                Classification::Document(DocumentFormat::Delimited)
-            ),
-            (
-                "guide.md".to_string(),
-                Classification::Document(DocumentFormat::Markdown)
-            ),
-            (
-                "page.html".to_string(),
-                Classification::Document(DocumentFormat::Html)
-            ),
-        ]
-    );
+    let mut expected: Vec<(String, Classification)> = ALLOWLISTED_FIXTURES
+        .iter()
+        .map(|(name, cls)| (name.to_string(), *cls))
+        .collect();
+    expected.sort_by(|a, b| a.0.cmp(&b.0));
+
+    assert_eq!(got, expected);
 }
 
 #[test]

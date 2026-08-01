@@ -37,17 +37,20 @@ pub const SNIFF_WINDOW: usize = 8192;
 /// Classify `path` by its extension against the v1 allowlist (TXT,
 /// Markdown, HTML/XHTML, CSV/TSV — spec rule 4), downgrading to
 /// [`Classification::Unsupported`] when `content_head` — the file's
-/// first bytes, read by the caller — contains a NUL byte, the quick
-/// binary sniff that catches a misnamed binary even under an
+/// first bytes, read and already bounded to at most [`SNIFF_WINDOW`] by
+/// the caller (`source::discover::read_head`) — contains a NUL byte,
+/// the quick binary sniff that catches a misnamed binary even under an
 /// allowlisted extension. `content_head` may be shorter than
-/// [`SNIFF_WINDOW`] (a small file); only the bytes given, up to that
-/// bound, are inspected.
+/// [`SNIFF_WINDOW`] (a small file); every byte given is inspected.
 pub fn classify(path: &Path, content_head: &[u8]) -> Classification {
+    debug_assert!(
+        content_head.len() <= SNIFF_WINDOW,
+        "classify's contract requires the caller to bound content_head to SNIFF_WINDOW"
+    );
     let Some(format) = format_of_extension(path) else {
         return Classification::Unsupported;
     };
-    let window = &content_head[..content_head.len().min(SNIFF_WINDOW)];
-    if window.contains(&0u8) {
+    if content_head.contains(&0u8) {
         return Classification::Unsupported;
     }
     Classification::Document(format)

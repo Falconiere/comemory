@@ -40,12 +40,10 @@ fn concurrent_read_modify_write_both_survive() {
     t2.join().expect("thread b");
 
     let contents = fs::read_to_string(&*data_path).expect("read result");
-    assert!(contents.contains("source-a"), "lost write a: {contents}");
-    assert!(contents.contains("source-b"), "lost write b: {contents}");
-    assert_eq!(
-        contents.lines().count(),
-        2,
-        "one write must have clobbered the other under a broken lock: {contents}"
+    assert!(
+        contents == "source-a\nsource-b\n" || contents == "source-b\nsource-a\n",
+        "serialized read-modify-write must produce exactly two full lines, in either \
+         order, with no interleaving or clobbering: {contents:?}"
     );
 }
 
