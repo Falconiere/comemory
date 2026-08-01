@@ -4,7 +4,8 @@
 //!
 //! - 0  — success
 //! - 64 — `EX_USAGE` (`NotFound`, `Usage`)
-//! - 65 — `EX_DATAERR` (`Yaml`, `Json`, `Toml`, `Frontmatter`, `VecDimMismatch`)
+//! - 65 — `EX_DATAERR` (`Yaml`, `Json`, `Toml`, `Frontmatter`, `VecDimMismatch`,
+//!   `Document`)
 //! - 69 — `EX_UNAVAILABLE` (`Unavailable`)
 //! - 70 — `EX_SOFTWARE` (`Sqlite`, `Migration`, `Ast`, `Git`, `Forbidden`,
 //!   `BadRequest`, `Other`)
@@ -55,7 +56,8 @@ fn exit_code(err: &Error) -> i32 {
         | Error::Json(_)
         | Error::Toml(_)
         | Error::VecDimMismatch { .. }
-        | Error::Frontmatter(_) => 65,
+        | Error::Frontmatter(_)
+        | Error::Document(_) => 65,
         Error::Sqlite(_)
         | Error::Ast(_)
         | Error::Git(_)

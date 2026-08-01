@@ -1,0 +1,22 @@
+Changelog
+=========
+
+v0.13.0 - 2026-07-24
+- Added the advisory near-duplicate consolidation report.
+- Dropped the unused async path from consolidate scanning.
+- Documented the SQL audit trail for cluster detection.
+
+v0.12.0 - 2026-06-30
+- Added memory PageRank via co-citation edges.
+- Wired rank_score into rerank as a fifth multiplicative prior.
+- Fixed a race in the derived-refresh best-effort pass.
+
+v0.11.0 - 2026-06-02
+- Introduced the edge_fts triplet index for `comemory edges`.
+- Self-heals an empty index on first use.
+
+v0.10.0 - 2026-05-10
+- Added co-change and imports edges to the code graph.
+- Materialized PageRank onto code_symbols.rank_score.
+
+Earlier releases are summarized in the GitHub Releases page.

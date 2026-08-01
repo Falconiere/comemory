@@ -12,6 +12,7 @@ use time::OffsetDateTime;
 use time::format_description::well_known::Iso8601;
 
 use crate::graph::cross_link;
+use crate::graph::doc_link;
 use crate::graph::edges::{self, EdgeKey};
 use crate::memory::Frontmatter;
 use crate::prelude::*;
@@ -163,6 +164,20 @@ fn insert_edges(
     body: &str,
     relation_stamps: &std::collections::HashMap<(String, String), String>,
 ) -> Result<()> {
+    insert_scope_edges(conn, fm, tags)?;
+    insert_relation_edges(conn, fm, relation_stamps)?;
+    cross_link::extract_and_emit(conn, &fm.id, body)?;
+    // Resolve any `<repo>:<path>` mention that already has a `documents`
+    // row into a typed `references_document` edge (design spec's "both
+    // seams" resolver; the document-index seam is `doc_link::
+    // derive_after_document`).
+    let refs = cross_link::extract_refs(body);
+    doc_link::derive_after_memory_save(conn, &fm.id, &refs.files)?;
+    Ok(())
+}
+
+/// Insert the `in_repo` / `authored_by` / `tagged` edges for one memory.
+fn insert_scope_edges(conn: &Connection, fm: &Frontmatter, tags: &[&str]) -> Result<()> {
     if !fm.repo.is_empty() {
         edges::insert(
             conn,
@@ -199,8 +214,6 @@ fn insert_edges(
             },
         )?;
     }
-    insert_relation_edges(conn, fm, relation_stamps)?;
-    cross_link::extract_and_emit(conn, &fm.id, body)?;
     Ok(())
 }
 

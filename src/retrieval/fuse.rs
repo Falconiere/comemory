@@ -1,12 +1,13 @@
 //! Reciprocal Rank Fusion across ranked memory lists.
 //!
-//! Each input is ranked best-first. The fused score for a memory id is
-//! the sum of `1 / (rrf_k + rank + 1)` across every list it appears in.
+//! Each input is ranked best-first. The fused score for a memory id is the
+//! sum of `weight / (rrf_k + rank + 1)` across every list it appears in.
 //! Output is sorted by score descending and truncated to `top_k`.
 //!
-//! [`rrf_multi`] is the N-ary core; the two-list [`rrf`] / [`rrf_k`] entry
-//! points delegate to it so every caller shares one accumulation and one
-//! tie-break rule.
+//! [`rrf_multi_weighted`] is the accumulation core; [`rrf_multi`] delegates
+//! to it at weight `1.0` per leg (bit-identical to the old unweighted term),
+//! and [`rrf`] / [`rrf_k`] delegate to [`rrf_multi`] — one core, one
+//! tie-break rule, shared by every caller.
 
 use std::collections::HashMap;
 
@@ -48,12 +49,25 @@ pub fn rrf_k(a: &[RankedHit], b: &[RankedHit], top_k: usize, k: f32) -> Vec<Rank
 /// so every id's contributions are summed in exactly the sequence a
 /// hand-written two-list fusion would use: `rrf_multi(&[a, b], top_k, k)` is
 /// [`rrf_k`]`(a, b, top_k, k)` — same order, same float bits. An empty `legs`
-/// slice, or legs that are all empty, yields an empty vector.
+/// slice, or legs that are all empty, yields an empty vector. Delegates to
+/// [`rrf_multi_weighted`] at weight `1.0` per leg.
 pub fn rrf_multi(legs: &[&[RankedHit]], top_k: usize, k: f32) -> Vec<RankedHit> {
+    let weighted: Vec<(&[RankedHit], f32)> = legs.iter().map(|leg| (*leg, 1.0)).collect();
+    rrf_multi_weighted(&weighted, top_k, k)
+}
+
+/// Fuse any number of *weighted* ranked lists, returning the top-`top_k`
+/// rows sorted by fused score descending with ascending memory id as the
+/// tie-break. Each leg's contribution is `weight / (k + rank + 1.0)`; a
+/// weight of `1.0` computes the exact same expression [`rrf_multi`] always
+/// used, so its delegation here is bit-identical, not just IEEE-754-equal.
+/// An empty `legs` slice, or legs that are all empty, yields an empty
+/// vector.
+pub fn rrf_multi_weighted(legs: &[(&[RankedHit], f32)], top_k: usize, k: f32) -> Vec<RankedHit> {
     let mut acc: HashMap<String, f32> = HashMap::new();
-    for leg in legs {
+    for (leg, weight) in legs {
         for (rank, h) in leg.iter().enumerate() {
-            *acc.entry(h.memory_id.clone()).or_default() += 1.0 / (k + rank as f32 + 1.0);
+            *acc.entry(h.memory_id.clone()).or_default() += weight / (k + rank as f32 + 1.0);
         }
     }
     let mut merged: Vec<RankedHit> = acc

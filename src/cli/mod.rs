@@ -34,6 +34,8 @@ pub mod feedback;
 pub mod gc;
 /// `comemory graph`: walk the relation graph by id.
 pub mod graph;
+/// `comemory index`: register document sources and reconcile them.
+pub mod index;
 /// `comemory index-code`: extract and index code symbols.
 pub mod index_code;
 /// `comemory ingest-code`: bulk code ingestion.
@@ -60,12 +62,20 @@ pub mod save;
 pub mod search;
 /// `comemory search-code`: ranked code search.
 pub mod search_code;
+/// `--only`/`--path` domain-scope resolution + the interim
+/// `--only document` search path, shared by `search`.
+pub(crate) mod search_only;
 /// `comemory serve`: loopback web viewer.
 pub mod serve;
+/// `comemory sources`: list registered document sources.
+pub mod sources;
 /// `comemory tui`: interactive terminal explorer.
 pub mod tui;
 /// `comemory tune`: grid/sampled search over the ranking knobs.
 pub mod tune;
+/// `comemory unindex`: unregister a document source and remove its
+/// derived rows.
+pub mod unindex;
 /// `--since` / `--until` / `--as-of` value parsing.
 pub mod when;
 
@@ -129,6 +139,12 @@ pub enum Cmd {
     /// Read pre-embedded JSONL rows from stdin and ingest them into the code
     /// index (`code_symbols` + `code_fts` + `code_vec`).
     IngestCode(ingest_code::Args),
+    /// Register one or more paths as document sources and reconcile them.
+    Index(index::Args),
+    /// List registered document sources with per-status counts.
+    Sources(sources::Args),
+    /// Unregister a document source and remove its derived rows.
+    Unindex(unindex::Args),
     /// Run an ast-grep pattern against a single source file.
     Ast(ast::Args),
     /// Export the file-level code-connection graph (imports + co-change)
@@ -177,6 +193,9 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::Doctor(a) => doctor::run(a, cli.json, cli.data_dir).await,
         Cmd::IndexCode(a) => index_code::run(a, cli.json, cli.data_dir).await,
         Cmd::IngestCode(a) => ingest_code::run(a, cli.json, cli.data_dir).await,
+        Cmd::Index(a) => index::run(a, cli.json, cli.data_dir).await,
+        Cmd::Sources(a) => sources::run(a, cli.json, cli.data_dir).await,
+        Cmd::Unindex(a) => unindex::run(a, cli.json, cli.data_dir).await,
         Cmd::Ast(a) => ast::run(a, cli.json, cli.data_dir).await,
         Cmd::Graph(a) => graph::run(a, cli.json, cli.data_dir).await,
         Cmd::Edges(a) => edges::run(a, cli.json, cli.data_dir).await,

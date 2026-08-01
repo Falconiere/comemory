@@ -21,6 +21,8 @@ pub mod cochange;
 pub mod cross_link;
 /// Unified best-effort refresh of every derived artifact.
 pub mod derived;
+/// Deterministic `member_of_source` / `references_document` link deriver.
+pub mod doc_link;
 pub mod edges;
 pub mod imports;
 pub mod materialize;

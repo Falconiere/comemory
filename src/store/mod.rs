@@ -8,6 +8,10 @@ pub mod code_ref;
 pub mod code_row;
 /// Connection open: PRAGMAs, migrations, `sqlite-vec` auto-extension.
 pub mod connection;
+/// `document_fts` insert/delete helpers + the BM25 MATCH query leg.
+pub mod document_fts;
+/// `documents` + `document_chunks` row CRUD.
+pub mod documents;
 /// FTS5 triplet index over `edges` (rendering + refresh + lexical ladder).
 pub mod edge_fts;
 /// f32 ↔ `vec0` BLOB encoding plus the per-table dim guards.
@@ -28,6 +32,8 @@ pub mod migrate;
 pub mod schema;
 /// Bulk `(id, simhash)` scan over live memories, shared by save + consolidate.
 pub mod simhash_scan;
+/// `source_roots` row CRUD — the SQLite mirror of `sources.toml`.
+pub mod sources;
 /// Custom FTS5 identifier tokenizer (camelCase/snake_case split + FFI).
 pub mod tokenizer;
 /// `vec0` insert and KNN against `memory_vec` / `code_vec`.

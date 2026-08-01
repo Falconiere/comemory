@@ -53,3 +53,16 @@ pub(crate) fn default_near_dup_hamming() -> u32 {
 pub(crate) fn default_superseded_grace_days() -> u32 {
     crate::prune::low_value::SUPERSEDED_GRACE_DAYS
 }
+
+/// Default ceiling (bytes) above which a candidate document file is
+/// recorded `too_large` and skipped by the index writer — see
+/// [`super::file::IndexingConfig::max_file_bytes`].
+pub(crate) fn default_max_file_bytes() -> u64 {
+    16_777_216
+}
+
+/// Default weighted-RRF contribution weight for the document retrieval
+/// leg — see [`super::retrieval::RetrievalConfig::document_leg_weight`].
+pub(crate) fn default_document_leg_weight() -> f32 {
+    0.5
+}

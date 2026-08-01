@@ -128,7 +128,9 @@ pub fn current_branch(repo_root: &Path) -> Result<Option<String>> {
     if !head.is_branch() {
         return Ok(None);
     }
-    Ok(head.shorthand().map(|s| s.to_string()))
+    // git2 0.21: `shorthand()` returns `Result` (errors only on invalid
+    // UTF-8); treat that the same as the prior `None` case.
+    Ok(head.shorthand().ok().map(|s| s.to_string()))
 }
 
 /// Return the set of paths whose new-side tree entry changed between two

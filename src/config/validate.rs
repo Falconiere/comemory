@@ -65,6 +65,26 @@ fn check_bm25_weights(ws: &[f32]) -> std::result::Result<(), &'static str> {
     Ok(())
 }
 
+/// Bounds for `retrieval.document_leg_weight`: the weighted-RRF
+/// contribution weight for the document leg must be a finite, strictly
+/// positive multiplier — `0.0` would silently disable the leg via a
+/// dedicated knob instead of the documented `--only` scope filter.
+fn check_document_leg_weight(v: f32) -> std::result::Result<(), &'static str> {
+    if !v.is_finite() || v <= 0.0 || v > 10.0 {
+        return Err("must be a finite value in (0.0, 10.0]");
+    }
+    Ok(())
+}
+
+/// Bounds for `indexing.max_file_bytes`: the document writer's
+/// too-large ceiling must be a positive byte count.
+fn check_max_file_bytes(v: u64) -> std::result::Result<(), &'static str> {
+    if v == 0 {
+        return Err("must be > 0");
+    }
+    Ok(())
+}
+
 /// Validate one `[tune]` grid: non-empty, and every value passes the same
 /// `check` its scalar knob uses. The field is named in every message;
 /// grids are file-only, so no env var is cited.
@@ -104,6 +124,7 @@ impl Config {
         self.check_prune_knobs()?;
         self.check_tune_grids()?;
         self.check_reinforce_knobs()?;
+        self.check_indexing_knobs()?;
         Ok(self)
     }
 
@@ -161,6 +182,23 @@ impl Config {
         if let Err(why) = check_unit_interval(f64::from(ct)) {
             return Err(Error::Config(format!(
                 "invalid retrieval.code_threshold={ct} (env COMEMORY_RETRIEVAL_CODE_THRESHOLD): {why}"
+            )));
+        }
+        let dw = self.retrieval.document_leg_weight;
+        if let Err(why) = check_document_leg_weight(dw) {
+            return Err(Error::Config(format!(
+                "invalid retrieval.document_leg_weight={dw} (env COMEMORY_RETRIEVAL_DOCUMENT_LEG_WEIGHT): {why}"
+            )));
+        }
+        Ok(())
+    }
+
+    /// Document-source indexing knobs consumed by `comemory index`.
+    fn check_indexing_knobs(&self) -> Result<()> {
+        let m = self.indexing.max_file_bytes;
+        if let Err(why) = check_max_file_bytes(m) {
+            return Err(Error::Config(format!(
+                "invalid indexing.max_file_bytes={m} (env COMEMORY_INDEXING_MAX_FILE_BYTES): {why}"
             )));
         }
         Ok(())

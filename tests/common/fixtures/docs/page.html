@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Comemory — Local-First Dev Memory</title>
+<style>
+  body { font-family: sans-serif; margin: 0; }
+  .hero { background: #111; color: #fff; }
+</style>
+<script>
+  console.log("analytics stub");
+  function trackClick(id) { return id; }
+</script>
+</head>
+<body>
+<header>
+<h1>Comemory</h1>
+<p>Agentic dev memory, semantic code search, and AST patterns in one binary.</p>
+</header>
+<nav>
+<ul>
+<li><a href="#install">Install</a></li>
+<li><a href="#usage">Usage</a></li>
+</ul>
+</nav>
+<main>
+<section id="install">
+<h2>Installation</h2>
+<p>Install via Homebrew or build from source.</p>
+<h3>Homebrew</h3>
+<pre><code>brew install Falconiere/tap/comemory</code></pre>
+<h3>From source</h3>
+<pre><code>cargo install --path .</code></pre>
+</section>
+<section id="usage">
+<h2>Usage</h2>
+<p>Index a repository, then search it.</p>
+<h3>Indexing</h3>
+<p>Run <code>comemory index-code</code> inside a git repository.</p>
+<h3>Searching</h3>
+<p>Run <code>comemory search-code "query"</code> to rank symbols.</p>
+</section>
+</main>
+<footer>
+<p>&copy; 2026 Falconiere. All rights reserved.</p>
+</footer>
+</body>
+</html>

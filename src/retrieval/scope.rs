@@ -76,9 +76,10 @@ impl TimeScope {
 }
 
 /// Everything one retrieval run narrows candidates by: `repo` / `kind` +
-/// the [`TimeScope`], one value per leg instead of three parameters.
-/// `Copy` is load-bearing — call sites pass by value, then keep reading
-/// fields; removing the derive is a breaking refactor, not a cleanup.
+/// the [`TimeScope`] + the domain scope, one value per leg instead of
+/// four parameters. `Copy` is load-bearing — call sites pass by value,
+/// then keep reading fields; removing the derive is a breaking refactor,
+/// not a cleanup.
 #[derive(Debug, Clone, Copy)]
 pub struct Filters<'a> {
     /// Repo filter, or `None` to search every repo.
@@ -88,17 +89,24 @@ pub struct Filters<'a> {
     pub kind: Option<&'a str>,
     /// Created-date window plus its `--as-of` semantics.
     pub scope: &'a TimeScope,
+    /// Which of memory/document/code this run is scoped to. The field
+    /// exists and every caller states it explicitly; nothing dispatches
+    /// on it yet (each leg still runs unconditionally except
+    /// [`crate::retrieval::doc_route`], which already checks it) — the
+    /// pipeline wiring lands in a later step.
+    pub domains: Domains,
 }
 
 impl<'a> Filters<'a> {
-    /// Filter nothing: no repo, no kind, unbounded scope. Callers that
-    /// narrow only some dimensions build on it with struct update syntax
-    /// (`Filters { repo, ..Filters::none() }`).
+    /// Filter nothing: no repo, no kind, unbounded scope, every domain.
+    /// Callers that narrow only some dimensions build on it with struct
+    /// update syntax (`Filters { repo, ..Filters::none() }`).
     pub fn none() -> Self {
         Filters {
             repo: None,
             kind: None,
             scope: &UNBOUNDED,
+            domains: Domains::all(),
         }
     }
 
@@ -106,5 +114,69 @@ impl<'a> Filters<'a> {
     /// at the SQL call sites.
     pub fn window(&self) -> CreatedWindow<'a> {
         self.scope.window()
+    }
+}
+
+/// One of the three domains a retrieval run can be scoped to. See
+/// [`Domains`] for the bitmask that records "which of these are in
+/// scope" on [`Filters`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Domain {
+    /// Hand-authored markdown memories (`memories` / `memory_fts` /
+    /// `memory_vec`).
+    Memory,
+    /// Indexed external documents (`documents` / `document_chunks` /
+    /// `document_fts`).
+    Document,
+    /// Extracted code symbols (`code_symbols` / `code_fts` / `code_vec`).
+    Code,
+}
+
+impl Domain {
+    /// This domain's bit within a [`Domains`] mask.
+    fn bit(self) -> u8 {
+        match self {
+            Domain::Memory => 0b001,
+            Domain::Document => 0b010,
+            Domain::Code => 0b100,
+        }
+    }
+}
+
+/// A `Copy` `u8`-bitmask over the three [`Domain`]s, not a `HashSet` —
+/// [`Filters`] is deliberately `Copy` (see its doc comment), so every
+/// field it carries must be too.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Domains(u8);
+
+impl Domains {
+    /// Every domain in scope — the `search`/`context` CLI default.
+    pub fn all() -> Self {
+        Domains::of(&[Domain::Memory, Domain::Document, Domain::Code])
+    }
+
+    /// Memory only — pinned by `eval`/`tune`/`bandit`/feedback harvesting
+    /// (matching their memory-id golden pairs) and the TUI memory worker
+    /// (preserving byte-identical legacy output).
+    pub fn memory_only() -> Self {
+        Domains::of(&[Domain::Memory])
+    }
+
+    /// Build a mask from an explicit list of domains, e.g. for the CLI
+    /// `--only` flag. Duplicates are harmless (`|` is idempotent).
+    pub fn of(domains: &[Domain]) -> Self {
+        Domains(domains.iter().fold(0, |acc, d| acc | d.bit()))
+    }
+
+    /// Whether `domain` is set in this mask.
+    pub fn contains(self, domain: Domain) -> bool {
+        self.0 & domain.bit() != 0
+    }
+}
+
+impl Default for Domains {
+    /// Unscoped defaults to every domain, matching [`Filters::none`].
+    fn default() -> Self {
+        Domains::all()
     }
 }

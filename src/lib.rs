@@ -59,3 +59,11 @@ pub mod tui;
 
 /// 64-bit SimHash and Hamming distance over tokenized memory bodies.
 pub mod simhash;
+
+/// Pure in-process document extraction (TXT/Markdown/HTML/CSV) and
+/// chunking, independent of the store.
+pub mod document;
+
+/// Durable source registry (`sources.toml`), its exclusive-flock guard,
+/// and the reconciler mirroring it into SQLite's `source_roots`.
+pub mod source;

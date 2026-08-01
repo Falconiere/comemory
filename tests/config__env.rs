@@ -197,6 +197,74 @@ fn env_bm25_weights_zero_pair_is_an_error() {
 }
 
 #[test]
+fn env_document_leg_weight_override_applies() {
+    // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
+    unsafe { std::env::set_var("COMEMORY_RETRIEVAL_DOCUMENT_LEG_WEIGHT", "0.8") };
+    let result = Config::defaults().with_env();
+    // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
+    unsafe { std::env::remove_var("COMEMORY_RETRIEVAL_DOCUMENT_LEG_WEIGHT") };
+    let cfg = result.expect("valid document_leg_weight override must succeed");
+    assert!((cfg.retrieval.document_leg_weight - 0.8).abs() < 1e-6);
+}
+
+#[test]
+fn env_document_leg_weight_invalid_is_an_error() {
+    // 0.0 would silently disable the document leg via a knob instead of the
+    // documented `--only` scope filter; negative/non-finite/over-ceiling
+    // values must all be rejected the same way.
+    for bad in ["0", "-1", "nan", "inf", "10.1"] {
+        // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
+        unsafe { std::env::set_var("COMEMORY_RETRIEVAL_DOCUMENT_LEG_WEIGHT", bad) };
+        let result = Config::defaults().with_env();
+        // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
+        unsafe { std::env::remove_var("COMEMORY_RETRIEVAL_DOCUMENT_LEG_WEIGHT") };
+        let err = result.expect_err(&format!("'{bad}' must error"));
+        let msg = err.to_string();
+        assert!(
+            msg.contains("COMEMORY_RETRIEVAL_DOCUMENT_LEG_WEIGHT"),
+            "error must name the offending var for '{bad}', got: {msg}"
+        );
+    }
+    // Boundary values pass: 10.0 is the inclusive ceiling.
+    // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
+    unsafe { std::env::set_var("COMEMORY_RETRIEVAL_DOCUMENT_LEG_WEIGHT", "10.0") };
+    let result = Config::defaults().with_env();
+    // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
+    unsafe { std::env::remove_var("COMEMORY_RETRIEVAL_DOCUMENT_LEG_WEIGHT") };
+    result.expect("boundary document_leg_weight must be accepted");
+}
+
+#[test]
+fn env_max_file_bytes_override_applies() {
+    // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
+    unsafe { std::env::set_var("COMEMORY_INDEXING_MAX_FILE_BYTES", "1048576") };
+    let result = Config::defaults().with_env();
+    // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
+    unsafe { std::env::remove_var("COMEMORY_INDEXING_MAX_FILE_BYTES") };
+    let cfg = result.expect("valid max_file_bytes override must succeed");
+    assert_eq!(cfg.indexing.max_file_bytes, 1_048_576);
+}
+
+#[test]
+fn env_max_file_bytes_zero_is_an_error() {
+    // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
+    unsafe { std::env::set_var("COMEMORY_INDEXING_MAX_FILE_BYTES", "0") };
+    let result = Config::defaults().with_env();
+    // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
+    unsafe { std::env::remove_var("COMEMORY_INDEXING_MAX_FILE_BYTES") };
+    let err = result.expect_err("max_file_bytes=0 must error");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("COMEMORY_INDEXING_MAX_FILE_BYTES"),
+        "error must name the offending var, got: {msg}"
+    );
+    assert!(
+        msg.contains("indexing.max_file_bytes"),
+        "error must name the config key, got: {msg}"
+    );
+}
+
+#[test]
 fn env_rejects_invalid_top_k() {
     // Non-numeric top_k must surface as Err instead of silently keeping the
     // default; otherwise typos go unnoticed until retrieval misbehaves.

@@ -31,6 +31,9 @@ pub mod code_rerank;
 pub mod code_route;
 pub mod code_search;
 pub mod diversify;
+/// The document retrieval leg: BM25 over `document_fts`, chunk hits
+/// coalesced to their parent document.
+pub mod doc_route;
 pub mod fuse;
 pub mod graph_route;
 pub mod pipeline;

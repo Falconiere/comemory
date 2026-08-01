@@ -23,7 +23,7 @@ use crate::config::paths::Paths;
 use crate::output;
 use crate::prelude::*;
 use crate::retrieval::code_rerank::WorkingSet;
-use crate::retrieval::scope::Filters;
+use crate::retrieval::scope::{Domains, Filters};
 use crate::retrieval::{bundle, pipeline};
 use crate::store::{code_row, connection};
 
@@ -133,6 +133,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         repo: a.repo.as_deref(),
         kind: None,
         scope: &scope,
+        domains: Domains::all(),
     };
     let run = pipeline::search(&cfg, &conn, &a.query, vec.as_deref(), filters, opts)?;
     let meta = page_meta(window, run.has_more, run.total);

@@ -212,7 +212,10 @@ fn collect_working_paths(repo: &git2::Repository) -> Result<BTreeSet<String>> {
     let mut opts = git2::StatusOptions::new();
     opts.include_untracked(true).recurse_untracked_dirs(true);
     for entry in repo.statuses(Some(&mut opts)).map_err(map_git_err)?.iter() {
-        if let Some(path) = entry.path() {
+        // git2 0.21: `path()` returns `Result` (errors only on invalid
+        // UTF-8); a non-UTF-8 path is skipped, matching the prior
+        // `Option`-returning behavior.
+        if let Ok(path) = entry.path() {
             out.insert(path.to_string());
         }
     }

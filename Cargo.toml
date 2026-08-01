@@ -37,8 +37,14 @@ axum = "0.8"
 clap = { version = "4", features = ["derive", "env"] }
 clap_complete = "4"
 crossterm = { version = "0.28", features = ["event-stream"] }
+# Delimited-text (CSV/TSV) document extraction (src/document/delimited.rs).
+csv = "1"
 futures = "0.3"
-git2 = { version = "0.19", default-features = false, features = ["vendored-libgit2"] }
+git2 = { version = "0.21", default-features = false, features = ["vendored-libgit2"] }
+# Git-style glob matching for `search --path` (src/retrieval/doc_route.rs).
+# Already resolved transitively via `ignore`; promoted to a direct dep so
+# the version is pinned explicitly rather than riding `ignore`'s choice.
+globset = "0.4"
 ignore = "0.4"
 # Direct dep on the raw SQLite bindings for the FTS5 tokenizer FFI in
 # src/store/tokenizer/ffi.rs. Already transitive via rusqlite's `bundled`
@@ -58,6 +64,8 @@ siphasher = "1"
 sqlite-vec = "0.1"
 thiserror = "1"
 time = { version = "0.3", features = ["serde", "formatting", "parsing", "macros"] }
+# Pure-Rust HTML/XHTML tag-stripping (src/document/html.rs); MIT, zero deps.
+tl = "0.7"
 tokio = { version = "1", features = ["full"] }
 toml = "0.8"
 tracing = "0.1"

@@ -1,7 +1,9 @@
 use thiserror::Error;
 
+/// Crate-wide `Result` alias, defaulting the error type to [`Error`].
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
+/// The crate-wide error enum every fallible operation returns through.
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("io: {0}")]
@@ -33,6 +35,11 @@ pub enum Error {
 
     #[error("invalid frontmatter: {0}")]
     Frontmatter(String),
+
+    /// A document (TXT/Markdown/HTML/CSV) failed to extract — malformed
+    /// input the in-process extractor could not parse.
+    #[error("document extract: {0}")]
+    Document(String),
 
     #[error("memory not found: {0}")]
     NotFound(String),

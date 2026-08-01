@@ -1,0 +1,21 @@
+command,description,category,since
+search,ranked memory search,retrieval,0.1.0
+search-code,ranked code search over BM25 and graph priors,retrieval,0.3.0
+context,context bundle lookup,retrieval,0.2.0
+edges,lexical search over the relation graph,retrieval,0.9.0
+save,write a memory to the store,memory,0.1.0
+index-code,extract and index code symbols,code,0.1.0
+doctor,runtime health check,diagnostics,0.1.0
+eval,score retrieval against a golden set,learning,0.4.0
+mine,distill query reformulations,learning,0.5.0
+tune,grid-search ranking knobs,learning,0.5.0
+bandit,bandit search over the tune grids,learning,0.8.0
+prune,detect orphan and low-value memories,maintenance,0.4.0
+gc,purge expired telemetry,maintenance,0.6.0
+consolidate,advisory near-duplicate cluster report,maintenance,0.13.0
+rebuild,reconstruct comemory.db from markdown,maintenance,0.2.0
+serve,loopback web viewer,interface,0.7.0
+tui,interactive terminal explorer,interface,0.6.0
+feedback,record explicit result feedback,learning,0.4.0
+ast,user-facing ast-grep pattern search,code,0.3.0
+config,print the resolved layered config,diagnostics,0.2.0

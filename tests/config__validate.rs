@@ -90,6 +90,62 @@ fn near_dup_hamming_rejects_over_64() {
 }
 
 #[test]
+fn document_leg_weight_rejects_non_finite_and_out_of_range() {
+    for bad in ["nan", "inf", "0.0", "-1.0", "10.1"] {
+        assert_rejected(
+            &format!("[retrieval]\ndocument_leg_weight = {bad}\n"),
+            "retrieval.document_leg_weight",
+        );
+    }
+    for ok in ["0.1", "0.5", "10.0"] {
+        load(&format!("[retrieval]\ndocument_leg_weight = {ok}\n"))
+            .expect("boundary document_leg_weight must be accepted");
+    }
+}
+
+#[test]
+fn document_leg_weight_env_var_is_named_in_the_error() {
+    let err = load("[retrieval]\ndocument_leg_weight = 0.0\n")
+        .expect_err("document_leg_weight=0.0 must be rejected");
+    assert!(
+        err.to_string()
+            .contains("COMEMORY_RETRIEVAL_DOCUMENT_LEG_WEIGHT"),
+        "error must name the env var, got: {err}"
+    );
+}
+
+#[test]
+fn max_file_bytes_rejects_zero() {
+    assert_rejected(
+        "[indexing]\nmax_file_bytes = 0\n",
+        "indexing.max_file_bytes",
+    );
+    let cfg = load("[indexing]\nmax_file_bytes = 1\n").expect("1 byte must be accepted");
+    assert_eq!(cfg.indexing.max_file_bytes, 1);
+}
+
+#[test]
+fn max_file_bytes_env_var_is_named_in_the_error() {
+    let err =
+        load("[indexing]\nmax_file_bytes = 0\n").expect_err("max_file_bytes=0 must be rejected");
+    assert!(
+        err.to_string().contains("COMEMORY_INDEXING_MAX_FILE_BYTES"),
+        "error must name the env var, got: {err}"
+    );
+}
+
+#[test]
+fn indexing_overlay_applies_only_present_keys_and_rejects_unknown() {
+    let cfg = load("[indexing]\nmax_file_bytes = 2048\n").expect("valid [indexing] key");
+    assert_eq!(cfg.indexing.max_file_bytes, 2048);
+    // Absent keys keep their defaults.
+    assert_eq!(cfg.indexing.auto_reindex_threshold_ms, 200);
+    assert_eq!(cfg.indexing.incremental_batch_size, 50);
+
+    assert_rejected("[indexing]\nnonexistent_key = 1\n", "nonexistent_key");
+}
+
+#[test]
 fn graph_hops_rejects_over_four() {
     // The edge walk is bounded: past 4 hops a recursive CTE over a dense
     // `edges` table stops being a cheap expansion.

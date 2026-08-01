@@ -99,7 +99,7 @@ impl Config {
         self.validate()
     }
 
-    /// `COMEMORY_INDEXING_AUTO_REINDEX` → [`Config::indexing`].
+    /// `COMEMORY_INDEXING_*` → [`Config::indexing`].
     fn apply_indexing_env(&mut self) -> Result<()> {
         if let Ok(v) = std::env::var("COMEMORY_INDEXING_AUTO_REINDEX") {
             self.indexing.auto_reindex = match v.as_str() {
@@ -112,6 +112,9 @@ impl Config {
                     )));
                 }
             };
+        }
+        if let Some(v) = env_parse::<u64>("COMEMORY_INDEXING_MAX_FILE_BYTES")? {
+            self.indexing.max_file_bytes = v;
         }
         Ok(())
     }
@@ -146,6 +149,9 @@ impl Config {
         }
         if let Some(v) = env_triple::<f32>("COMEMORY_RETRIEVAL_CODE_BM25_WEIGHTS")? {
             self.retrieval.code_bm25_weights = v;
+        }
+        if let Some(v) = env_parse::<f32>("COMEMORY_RETRIEVAL_DOCUMENT_LEG_WEIGHT")? {
+            self.retrieval.document_leg_weight = v;
         }
         Ok(())
     }

@@ -37,6 +37,9 @@ Commands:
   doctor         Report on the data directory and SQLite mirror health
   index-code     Walk a repo, extract symbols, and upsert into the code index
   ingest-code    Read pre-embedded JSONL rows from stdin and ingest them into the code index (`code_symbols` + `code_fts` + `code_vec`)
+  index          Register one or more paths as document sources and reconcile them
+  sources        List registered document sources with per-status counts
+  unindex        Unregister a document source and remove its derived rows
   ast            Run an ast-grep pattern against a single source file
   graph          Export the file-level code-connection graph (imports + co-change) as JSON, Graphviz DOT, or an interactive HTML page
   edges          Search the relation graph lexically (supersedes, imports, references)
@@ -118,21 +121,64 @@ Search the memory index by natural-language query
 Usage: comemory search [OPTIONS] <QUERY>
 
 Arguments:
-  <QUERY>  Natural-language query string
+  <QUERY>
+          Natural-language query string
 
 Options:
-      --json                 Emit machine-readable JSON instead of a human TTY view
-      --k <K>                Page size — overrides the configured `retrieval.top_k`. `--limit` is an accepted alias. `0` means "all remaining within the `max_page_window`" [aliases: --limit]
-      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
-      --offset <OFFSET>      Number of leading ranked results to skip (deep paging). Bounded by `retrieval.max_page_window`; once the window ceiling is reached `has_more` is false and deeper results require refining the query [default: 0]
-      --repo <REPO>          Optional repo filter forwarded to the vector branch
-      --kind <KIND>          Filter results to one memory kind [possible values: decision, bug, convention, discovery, pattern, note]
-      --vector <VECTOR>      Caller-supplied dense vector as a comma-separated float list
-      --vector-stdin         Read a JSON `{ "embedding": [..] }` payload from stdin and use it as the dense vector for the query
-      --since <WHEN>         Only search memories created at or after this instant. Accepts an RFC3339 timestamp or a bare `YYYY-MM-DD` date (start of that UTC day)
-      --until <WHEN>         Only search memories created at or before this instant. Accepts an RFC3339 timestamp or a bare `YYYY-MM-DD` date (end of that UTC day). Filters candidates only — the supersede penalty stays present-day
-      --as-of <WHEN>         Search the corpus as it stood at this instant: `--until` plus supersede-penalty scoping, so a hit counts as superseded only by a memory that already existed then. Same value grammar as `--until`
-  -h, --help                 Print help
+      --json
+          Emit machine-readable JSON instead of a human TTY view
+
+      --k <K>
+          Page size — overrides the configured `retrieval.top_k`. `--limit` is an accepted alias. `0` means "all remaining within the `max_page_window`"
+          
+          [aliases: --limit]
+
+      --data-dir <DATA_DIR>
+          Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable
+          
+          [env: COMEMORY_DATA_DIR=]
+
+      --offset <OFFSET>
+          Number of leading ranked results to skip (deep paging). Bounded by `retrieval.max_page_window`; once the window ceiling is reached `has_more` is false and deeper results require refining the query
+          
+          [default: 0]
+
+      --repo <REPO>
+          Optional repo filter forwarded to the vector branch
+
+      --kind <KIND>
+          Filter results to one memory kind
+          
+          [possible values: decision, bug, convention, discovery, pattern, note]
+
+      --vector <VECTOR>
+          Caller-supplied dense vector as a comma-separated float list
+
+      --vector-stdin
+          Read a JSON `{ "embedding": [..] }` payload from stdin and use it as the dense vector for the query
+
+      --since <WHEN>
+          Only search memories created at or after this instant. Accepts an RFC3339 timestamp or a bare `YYYY-MM-DD` date (start of that UTC day)
+
+      --until <WHEN>
+          Only search memories created at or before this instant. Accepts an RFC3339 timestamp or a bare `YYYY-MM-DD` date (end of that UTC day). Filters candidates only — the supersede penalty stays present-day
+
+      --as-of <WHEN>
+          Search the corpus as it stood at this instant: `--until` plus supersede-penalty scoping, so a hit counts as superseded only by a memory that already existed then. Same value grammar as `--until`
+
+      --only <ONLY>
+          Restrict the query to these domains (repeatable and/or comma-separated, e.g. `--only memory,document`). Defaults to every domain. `--kind` implies memory scope; combining it with a memory-excluding `--only` is a usage error
+
+          Possible values:
+          - memory:   Hand-authored markdown memories
+          - document: Indexed external documents
+          - code:     Extracted code symbols
+
+      --path <GLOB>
+          Restrict document results to paths matching this Git-style glob (repeatable; entries are OR'd together). Document-domain only in v1 — has no effect on memory or code results
+
+  -h, --help
+          Print help (see a summary with '-h')
 
 Examples:
   # Natural-language query, top 12 hits (default); weighted BM25 + priors
@@ -504,6 +550,83 @@ Examples:
   comemory index-code --repo myrepo --path . --extract \
     | embed-snippets \
     | comemory ingest-code
+```
+
+---
+
+## comemory index
+
+```
+Register one or more paths as document sources and reconcile them
+
+Usage: comemory index [OPTIONS] <PATH>...
+
+Arguments:
+  <PATH>...  One or more files or directories to register as document sources
+
+Options:
+      --json                 Emit machine-readable JSON instead of a human TTY view
+      --repo <REPO>          Repository label attached to every document under each registered source. Defaults to the basename of the nearest enclosing git worktree, when one exists
+      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+      --strict               Exit `65` (`EX_DATAERR`) when any per-file error (corrupt/unreadable/ oversized) occurred, after every file has been attempted. Without this flag a partial-success reconcile still exits `0`
+  -h, --help                 Print help
+
+Examples:
+  # Register and index a directory of notes
+  comemory index ~/notes
+
+  # Register a single file with an explicit repo label
+  comemory index README.md --repo comemory
+
+  # Register two sources in one run, failing loudly on any per-file error
+  comemory index ~/notes ~/docs --strict
+```
+
+---
+
+## comemory sources
+
+```
+List registered document sources with per-status counts
+
+Usage: comemory sources [OPTIONS]
+
+Options:
+      --json                 Emit machine-readable JSON instead of a human TTY view
+      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+  -h, --help                 Print help
+
+Examples:
+  # Human-readable table
+  comemory sources
+
+  # Machine-readable, for scripting
+  comemory sources --json
+```
+
+---
+
+## comemory unindex
+
+```
+Unregister a document source and remove its derived rows
+
+Usage: comemory unindex [OPTIONS] <TARGET>
+
+Arguments:
+  <TARGET>  The source id (see `comemory sources`) or the path it was registered under
+
+Options:
+      --json                 Emit machine-readable JSON instead of a human TTY view
+      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+  -h, --help                 Print help
+
+Examples:
+  # Unregister by source id (see `comemory sources`)
+  comemory unindex 3f9c2a1b4e5d6f708192a3b4c5d6e7f8
+
+  # Unregister by the path it was registered under
+  comemory unindex ~/notes
 ```
 
 ---

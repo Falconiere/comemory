@@ -25,6 +25,16 @@ pub(crate) const REFERENCES_FILE: &str = "references_file";
 /// and the navigation-metadata reader bind the same literal.
 pub(crate) const REFERENCES_SYMBOL: &str = "references_symbol";
 
+/// `file → source` edge (bare `source_files.id` → bare `source_roots.id`),
+/// written by [`crate::graph::doc_link`]. Filtering/explain only —
+/// deliberately excluded from `retrieval::graph_route::ALLOWED_RELS`.
+pub(crate) const MEMBER_OF_SOURCE: &str = "member_of_source";
+
+/// Resolved `<repo>:<path>` reference to a `documents` row: `memory →
+/// document` for a backtick mention, `document → document` for a resolved
+/// Markdown link. Bare ids on both sides. See [`crate::graph::doc_link`].
+pub(crate) const REFERENCES_DOCUMENT: &str = "references_document";
+
 /// Addressing tuple for a single directed edge.
 ///
 /// Node identifiers follow the v0.2 convention documented in
