@@ -98,9 +98,17 @@ git clone https://github.com/Falconiere/comemory && cd comemory
 cargo install --path .
 ```
 
-Then verify: `comemory doctor`. Prebuilt binaries for **macOS aarch64** are
-attached to every [GitHub Release](https://github.com/Falconiere/comemory/releases).
-Linux and Windows users fork the repo and run `cargo install --path .` — see
+Then verify: `comemory doctor`. Prebuilt binaries for **macOS aarch64** and
+**Linux** (x86_64 + aarch64, gnu) are attached to every
+[GitHub Release](https://github.com/Falconiere/comemory/releases), along with
+a shell installer:
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/Falconiere/comemory/releases/latest/download/comemory-installer.sh | sh
+```
+
+Windows users fork the repo and run `cargo install --path .` — see
 [Platform support](#platform-support) below.
 
 Full install details — Homebrew taps and shell completions — are in
@@ -111,16 +119,16 @@ lives in **[docs/build-perf.md](docs/build-perf.md)**.
 
 | Platform | Install |
 |---|---|
-| **macOS aarch64** (Apple Silicon) | Prebuilt: `brew install Falconiere/tap/comemory` or download from the latest [GitHub Release](https://github.com/Falconiere/comemory/releases) |
-| **Linux** (any arch) | Fork the repo and `cargo install --path .` (single-target build, ~10 MB binary) |
+| **macOS aarch64** (Apple Silicon) | Prebuilt: `brew install Falconiere/tap/comemory`, the shell installer above, or download from the latest [GitHub Release](https://github.com/Falconiere/comemory/releases) |
+| **Linux x86_64 / aarch64** (gnu) | Prebuilt: the shell installer above, `brew install Falconiere/tap/comemory` (Linuxbrew), or download from the latest [GitHub Release](https://github.com/Falconiere/comemory/releases) |
+| **Linux (other arch/libc, e.g. musl)** | Fork the repo and `cargo install --path .` |
 | **Windows** | Fork the repo and `cargo install --path .` |
 
-macOS aarch64 is the only prebuilt target by design. The single-target release
-build keeps the CI matrix to one job, which halves the release budget versus
-the previous aarch64-apple-darwin + 2× Linux gnu matrix. If you need a prebuilt
-for another platform, run `cargo dist build --target <triple>` from a fork —
-cargo-dist is already wired up; only the published `targets` list is
-narrowed.
+The release CI matrix builds `aarch64-apple-darwin`,
+`x86_64-unknown-linux-gnu`, and `aarch64-unknown-linux-gnu`. If you need a
+prebuilt for another platform, run `cargo dist build --target <triple>` from
+a fork — cargo-dist is already wired up; only the published `targets` list
+is narrowed.
 
 ### Verifying releases
 
