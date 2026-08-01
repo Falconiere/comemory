@@ -10,12 +10,11 @@
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
-use std::time::UNIX_EPOCH;
 
 use rusqlite::Connection;
-use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 
+use super::fingerprint::{self, FileStat};
 use super::{DocumentFormat, ExtractedDocument, extract};
 use crate::graph::doc_link;
 use crate::graph::edges;
@@ -49,17 +48,6 @@ pub enum UpdateOutcome {
     /// intact; a bare stat failure (the file vanished between
     /// discovery and now) writes nothing at all.
     Error(String),
-}
-
-/// Common identity + freshly-taken fingerprint for one candidate,
-/// bundled so the write-path helpers below don't each carry a long
-/// argument list.
-struct FileStat<'a> {
-    source_id: &'a str,
-    relative_path: &'a str,
-    file_id: &'a str,
-    size: i64,
-    mtime: i64,
 }
 
 /// Update one discovered candidate's derived rows under `source_id`.
@@ -98,11 +86,11 @@ fn record_unsupported(
     let stat = FileStat {
         source_id,
         relative_path: &relative_path,
-        file_id: &file_id(source_id, &relative_path),
+        file_id: &fingerprint::file_id(source_id, &relative_path),
         size: meta.len() as i64,
-        mtime: mtime_nanos(&meta)?,
+        mtime: fingerprint::mtime_nanos(&meta)?,
     };
-    upsert_stat(conn, &stat, "unsupported", "unsupported", None, None)?;
+    fingerprint::upsert_stat(conn, &stat, "unsupported", "unsupported", None, None)?;
     Ok(UpdateOutcome::Unsupported)
 }
 
@@ -118,7 +106,7 @@ fn update_document(
     max_file_bytes: u64,
 ) -> Result<UpdateOutcome> {
     let relative_path = candidate.relative_path.to_string_lossy().into_owned();
-    let owned_file_id = file_id(source_id, &relative_path);
+    let owned_file_id = fingerprint::file_id(source_id, &relative_path);
     let meta = match fs::metadata(&candidate.absolute_path) {
         Ok(m) => m,
         Err(e) => return Ok(UpdateOutcome::Error(format!("stat: {e}"))),
@@ -128,44 +116,28 @@ fn update_document(
         relative_path: &relative_path,
         file_id: &owned_file_id,
         size: meta.len() as i64,
-        mtime: mtime_nanos(&meta)?,
+        mtime: fingerprint::mtime_nanos(&meta)?,
     };
     let existing = sources::get_file(conn, stat.file_id)?;
-    if let Some(outcome) = fingerprint_shortcut(conn, &stat, existing.as_ref(), max_file_bytes)? {
+    if let Some(outcome) =
+        fingerprint::fingerprint_shortcut(conn, &stat, existing.as_ref(), max_file_bytes)?
+    {
         return Ok(outcome);
     }
     let bytes = match fs::read(&candidate.absolute_path) {
         Ok(b) => b,
         Err(e) => {
             let msg = format!("read: {e}");
-            upsert_stat(conn, &stat, "document", "error", None, Some(&msg))?;
+            fingerprint::upsert_stat(conn, &stat, "document", "error", None, Some(&msg))?;
             return Ok(UpdateOutcome::Error(msg));
         }
     };
-    let hash = content_hash(&bytes);
+    let hash = fingerprint::content_hash(&bytes);
     if existing.is_some_and(|r| r.sha256.as_deref() == Some(hash.as_str())) {
         sources::touch_file(conn, stat.file_id, stat.size, stat.mtime, &iso_now()?)?;
         return Ok(UpdateOutcome::Unchanged);
     }
     extract_and_write(conn, repo, &stat, format, &bytes, &hash)
-}
-
-/// Fast pre-read checks: exact-fingerprint skip, then the size ceiling.
-/// `Ok(None)` means "proceed to read + hash the content".
-fn fingerprint_shortcut(
-    conn: &Connection,
-    stat: &FileStat<'_>,
-    existing: Option<&SourceFileRow>,
-    max_file_bytes: u64,
-) -> Result<Option<UpdateOutcome>> {
-    if existing.is_some_and(|r| r.size == stat.size && r.mtime == stat.mtime) {
-        return Ok(Some(UpdateOutcome::Unchanged));
-    }
-    if stat.size as u64 > max_file_bytes {
-        upsert_stat(conn, stat, "document", "too_large", None, None)?;
-        return Ok(Some(UpdateOutcome::TooLarge));
-    }
-    Ok(None)
 }
 
 /// Extract `bytes` and, on success, replace the document's rows in one
@@ -185,7 +157,7 @@ fn extract_and_write(
     let extracted = match extract::extract(format, bytes, &file_stem) {
         Ok(d) => d,
         Err(e) => {
-            upsert_stat(
+            fingerprint::upsert_stat(
                 conn,
                 stat,
                 "document",
@@ -196,7 +168,7 @@ fn extract_and_write(
             return Ok(UpdateOutcome::Error(e.to_string()));
         }
     };
-    let document_id = document_id_of(stat.file_id);
+    let document_id = fingerprint::document_id_of(stat.file_id);
     write_indexed(conn, repo, stat, &document_id, hash, &extracted)?;
     // Design spec: "After a file's transaction commits, the link deriver
     // writes edges" — deliberately AFTER `write_indexed`'s own transaction,
@@ -301,37 +273,6 @@ fn write_chunks(
     Ok(())
 }
 
-/// Upsert a `source_files` row for `stat` with the given
-/// `classification`/`status`/`sha256`/`error`. Shared by every
-/// `source_files`-only write path (`unsupported`, `too_large`,
-/// `error`).
-fn upsert_stat(
-    conn: &Connection,
-    stat: &FileStat<'_>,
-    classification: &str,
-    status: &str,
-    sha256: Option<&str>,
-    error: Option<&str>,
-) -> Result<()> {
-    let now = iso_now()?;
-    sources::upsert_file(
-        conn,
-        SourceFileUpsert {
-            id: stat.file_id,
-            source_id: stat.source_id,
-            relative_path: stat.relative_path,
-            classification,
-            size: stat.size,
-            mtime: stat.mtime,
-            sha256,
-            status,
-            error,
-            created_at: &now,
-            updated_at: &now,
-        },
-    )
-}
-
 /// Given the FULL set of relative paths an authoritative discovery walk
 /// of `source_id` just saw, tombstone every `source_files` row for that
 /// source NOT in `seen`: its `documents`/`document_chunks`/
@@ -359,7 +300,7 @@ pub fn reconcile_deletions(
 /// delete must purge them explicitly) and flip it to `deleted`, all in
 /// one transaction.
 fn tombstone(conn: &mut Connection, row: &SourceFileRow) -> Result<()> {
-    let document_id = document_id_of(&row.id);
+    let document_id = fingerprint::document_id_of(&row.id);
     let now = iso_now()?;
     let tx = conn.transaction()?;
     documents::delete_document(&tx, &document_id)?;
@@ -369,18 +310,6 @@ fn tombstone(conn: &mut Connection, row: &SourceFileRow) -> Result<()> {
     sources::mark_deleted(&tx, &row.id, &now)?;
     tx.commit()?;
     Ok(())
-}
-
-/// Nanoseconds since the Unix epoch for `meta`'s modification time —
-/// the `source_files.mtime` fast-fingerprint column (pinned as
-/// nanoseconds by the design plan).
-fn mtime_nanos(meta: &fs::Metadata) -> Result<i64> {
-    let modified = meta.modified()?;
-    let nanos = modified
-        .duration_since(UNIX_EPOCH)
-        .map_err(|e| Error::Other(format!("mtime before unix epoch: {e}")))?
-        .as_nanos();
-    Ok(nanos as i64)
 }
 
 /// The file stem of `relative_path` (its own file name for a
@@ -396,49 +325,8 @@ fn file_stem_of(relative_path: &str) -> String {
 
 /// Current wall-clock time as the RFC3339/ISO8601 string every
 /// `created_at`/`updated_at` column stores (`store::memory_row`'s
-/// house format).
-fn iso_now() -> Result<String> {
+/// house format). `pub(super)` so [`super::fingerprint::upsert_stat`]
+/// shares this one house-format implementation rather than its own.
+pub(super) fn iso_now() -> Result<String> {
     iso_format(OffsetDateTime::now_utc())
-}
-
-/// Full 64-hex-char SHA-256 of `bytes` — the writer's SHA-256 confirm
-/// step, and the value stored as both `source_files.sha256` and
-/// `documents.revision_hash`.
-fn content_hash(bytes: &[u8]) -> String {
-    hex_of(&Sha256::digest(bytes))
-}
-
-/// Deterministic 32-hex-char (128-bit) id for one candidate file within
-/// a source: the first 16 bytes of `SHA-256(source_id ++ NUL ++
-/// relative_path)`, hex-encoded — the same "hash the identity" idiom
-/// [`crate::source::SourceId::from_canonical_path`] uses. Stable across
-/// re-index runs of the same file, which is what lets
-/// [`sources::upsert_file`]'s `ON CONFLICT(id)` update-not-duplicate
-/// the row. `pub(crate)` so a later CLI step can pre-derive it (e.g.
-/// for `comemory unindex`).
-pub(crate) fn file_id(source_id: &str, relative_path: &str) -> String {
-    let digest = Sha256::digest(format!("{source_id}\u{0}{relative_path}").as_bytes());
-    hex_of(&digest[..16])
-}
-
-/// Deterministic 32-hex-char document id, derived from its owning
-/// [`file_id`] so the id survives a content edit at the same path
-/// (spec: "ID survives content edits at the same path") without a row
-/// lookup — `file_id` is itself invariant across a content edit. A path
-/// RENAME therefore mints a new document id; full rename detection via
-/// a cross-file content-hash match (the spec's "otherwise delete+create"
-/// clause) is deferred past this writer.
-pub(crate) fn document_id_of(file_id: &str) -> String {
-    let digest = Sha256::digest(file_id.as_bytes());
-    hex_of(&digest[..16])
-}
-
-/// Lowercase-hex encode `bytes`.
-fn hex_of(bytes: &[u8]) -> String {
-    use std::fmt::Write as _;
-    let mut hex = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        let _ = write!(hex, "{byte:02x}");
-    }
-    hex
 }

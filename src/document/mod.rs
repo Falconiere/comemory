@@ -14,6 +14,9 @@ pub mod chunk;
 pub mod delimited;
 /// Format dispatch plus the TXT/Markdown extractors.
 pub mod extract;
+/// Per-candidate fingerprint bundle, the size+mtime skip check, SHA-256
+/// identity hashing, and the `source_files` fingerprint upsert.
+pub mod fingerprint;
 /// HTML/XHTML extraction via the `tl` crate.
 pub mod html;
 /// Per-file index writer: fingerprint skip, extraction, and the
