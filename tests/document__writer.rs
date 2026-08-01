@@ -353,3 +353,33 @@ fn symlink_repointed_outside_the_root_after_validation_is_rejected_not_indexed()
         "foreign out-of-boundary content must never be indexed"
     );
 }
+
+/// The boundary check canonicalizes `source_root` itself rather than
+/// trusting the caller to have already resolved it: a symlinked
+/// (non-canonical) ALIAS of the real root must still index its in-
+/// boundary content successfully, not get rejected as "escaped" merely
+/// because the alias path string doesn't literally prefix-match the
+/// resolved target.
+#[cfg(unix)]
+#[test]
+fn non_canonical_symlink_alias_of_the_source_root_still_indexes() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = TempDir::new().expect("tempdir");
+    let real_root = tmp.path().join("real_root");
+    fs::create_dir_all(&real_root).expect("create real root");
+    let file_path = real_root.join("notes.txt");
+    fs::write(&file_path, "hello from the real root\n").expect("write fixture");
+    let alias_root = tmp.path().join("alias_root");
+    symlink(&real_root, &alias_root).expect("symlink alias root");
+
+    let mut conn = open_db(&tmp);
+    let c = candidate("notes.txt", &file_path, DocumentFormat::Txt);
+    // `alias_root`, not canonicalized here — the writer must resolve it.
+    let outcome = writer::update_file(&mut conn, SOURCE_ID, None, &c, &alias_root, MAX_BYTES)
+        .expect("update_file");
+    assert!(
+        matches!(outcome, UpdateOutcome::Indexed { .. }),
+        "a non-canonical source_root alias must still resolve and index, got {outcome:?}"
+    );
+}

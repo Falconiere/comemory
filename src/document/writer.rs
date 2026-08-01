@@ -154,16 +154,16 @@ fn update_document(
 /// Re-resolve `absolute_path` and read it only if the resolved target
 /// still lives inside `source_root` — closes the TOCTOU window between
 /// `source::discover`'s walk-time symlink validation and this later
-/// read: a symlink repointed after discovery (or between two `comemory
-/// index` runs) would otherwise let the writer read arbitrary
-/// out-of-boundary content into the index. Reads through the resolved
-/// path itself, not `absolute_path`, so the final read doesn't
-/// re-traverse the symlink a second time. Any canonicalize/read
-/// failure, or the boundary violation itself, surfaces through the same
-/// `io::Error` the caller already handles as a read failure.
+/// read. Reads through the resolved path, not `absolute_path`, so the
+/// read itself doesn't re-traverse the symlink. `source_root` is also
+/// re-canonicalized here rather than trusted from the caller, so a
+/// future non-canonical root can't weaken or falsely trip the boundary.
+/// Any canonicalize/read failure, or the boundary violation itself,
+/// surfaces as the same `io::Error` the caller treats as a read failure.
 fn read_within_boundary(absolute_path: &Path, source_root: &Path) -> std::io::Result<Vec<u8>> {
     let resolved = fs::canonicalize(absolute_path)?;
-    if !resolved.starts_with(source_root) {
+    let root = fs::canonicalize(source_root)?;
+    if !resolved.starts_with(&root) {
         return Err(std::io::Error::other(format!(
             "resolved target escaped source root: {}",
             resolved.display()
