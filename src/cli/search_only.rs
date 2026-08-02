@@ -52,9 +52,13 @@ impl From<OnlyDomain> for Domain {
 /// mask a search run should use. `--only` unset: `--kind` narrows the
 /// default to memory-only, else the full default stands. `--only` set:
 /// parsed verbatim, rejected as a usage error if it excludes memory
-/// while `--kind` is set (nothing to apply the filter to), or if it
+/// while `--kind` is set (nothing to apply the filter to), if it
 /// includes [`Domain::Code`] — no leg here searches code yet, so it
-/// would otherwise silently drop code results instead of finding any.
+/// would otherwise silently drop code results instead of finding any —
+/// or if it includes both [`Domain::Memory`] and [`Domain::Document`]:
+/// `cli::search::run` routes on `Memory` alone (memory present ->
+/// `run_memory`, which never reads `Filters.domains` and would silently
+/// drop the document half of the request).
 pub fn resolve_domains(only: &[OnlyDomain], kind: Option<&str>) -> Result<Domains> {
     if only.is_empty() {
         return Ok(if kind.is_some() {
@@ -76,6 +80,13 @@ pub fn resolve_domains(only: &[OnlyDomain], kind: Option<&str>) -> Result<Domain
         return Err(Error::Usage(format!(
             "code domain joins unified search in a later release; use `comemory search-code` \
              instead (got: --only {})",
+            only_label(only)
+        )));
+    }
+    if domains.contains(Domain::Memory) && domains.contains(Domain::Document) {
+        return Err(Error::Usage(format!(
+            "memory and document can't be combined yet — search unifies them in a later \
+             release; run them separately (got: --only {})",
             only_label(only)
         )));
     }

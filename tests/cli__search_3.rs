@@ -101,6 +101,22 @@ fn only_memory_comma_code_is_a_usage_error() {
 }
 
 #[test]
+fn only_memory_comma_document_is_a_usage_error() {
+    // Before this fix, `--only memory,document` routed through
+    // `run_memory` (triggered by the Memory bit alone), which never reads
+    // `Filters.domains` — the document half of the request silently
+    // vanished with no error and no partial results. Any --only scope
+    // naming both memory and document must now be rejected instead.
+    let home = tempdir().expect("home");
+    let (code, stderr) = reject(home.path(), "comemory", &["--only", "memory,document"]);
+    assert_eq!(code, Some(64), "must exit EX_USAGE: {stderr}");
+    assert!(
+        stderr.contains("memory") && stderr.contains("document"),
+        "error must name both domains: {stderr}"
+    );
+}
+
+#[test]
 fn only_code_alone_is_a_usage_error_not_a_silent_empty_result() {
     // Before this fix, `--only code` alone routed to the document-only
     // path, which excludes the code domain too and just returns an
