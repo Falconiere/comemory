@@ -1,6 +1,6 @@
 //! Test mirror for `src/retrieval/scope.rs`.
 
-use comemory::retrieval::scope::{Filters, TimeScope};
+use comemory::retrieval::scope::{Domain, Domains, Filters, TimeScope};
 
 #[test]
 fn none_is_the_unbounded_scope() {
@@ -118,5 +118,67 @@ fn filters_none_constrains_nothing_and_extends_by_field() {
         scoped.window().cutoff,
         Some("2026-04-01T00:00:00Z"),
         "Filters::window forwards the scope's bounds to the store layer"
+    );
+}
+
+#[test]
+fn domains_all_contains_every_domain() {
+    let all = Domains::all();
+    assert!(all.contains(Domain::Memory));
+    assert!(all.contains(Domain::Document));
+    assert!(all.contains(Domain::Code));
+}
+
+#[test]
+fn domains_memory_only_excludes_the_other_two() {
+    let memory = Domains::memory_only();
+    assert!(memory.contains(Domain::Memory));
+    assert!(!memory.contains(Domain::Document));
+    assert!(!memory.contains(Domain::Code));
+}
+
+#[test]
+fn domains_of_builds_an_arbitrary_subset() {
+    let doc_and_code = Domains::of(&[Domain::Document, Domain::Code]);
+    assert!(!doc_and_code.contains(Domain::Memory));
+    assert!(doc_and_code.contains(Domain::Document));
+    assert!(doc_and_code.contains(Domain::Code));
+
+    let single = Domains::of(&[Domain::Document]);
+    assert!(single.contains(Domain::Document));
+    assert!(!single.contains(Domain::Memory));
+    assert!(!single.contains(Domain::Code));
+
+    let empty = Domains::of(&[]);
+    assert!(!empty.contains(Domain::Memory));
+    assert!(!empty.contains(Domain::Document));
+    assert!(!empty.contains(Domain::Code));
+}
+
+#[test]
+fn domains_is_copy_and_defaults_to_all() {
+    // `Domains` must stay `Copy` — it lives on `Filters`, which is
+    // deliberately `Copy` itself (see `scope.rs`'s doc comment on why
+    // that derive is load-bearing). Using `mask` again after the "move"
+    // below is itself the compile-time proof; the assertions confirm the
+    // copy carries the same bits.
+    let mask = Domains::of(&[Domain::Memory, Domain::Code]);
+    let copied = mask;
+    assert_eq!(mask, copied);
+    assert!(mask.contains(Domain::Memory));
+
+    assert_eq!(
+        Domains::default(),
+        Domains::all(),
+        "default is every domain"
+    );
+}
+
+#[test]
+fn filters_none_defaults_domains_to_all() {
+    assert_eq!(
+        Filters::none().domains,
+        Domains::all(),
+        "an unscoped Filters must not silently exclude a domain"
     );
 }

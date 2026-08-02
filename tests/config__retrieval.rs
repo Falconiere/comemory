@@ -20,6 +20,7 @@ fn retrieval_defaults_match_spec() {
     assert_eq!(r.code_bm25_weights, (2.0, 1.0, 1.5));
     assert_eq!(r.memory_vector_dim, 1024);
     assert_eq!(r.code_vector_dim, 768);
+    assert_eq!(r.document_leg_weight, 0.5);
 }
 
 #[test]
@@ -63,6 +64,20 @@ fn retrieval_overlay_applies_only_present_keys() {
     assert_eq!(r.graph_seeds, 8);
     assert_eq!(r.hybrid_weight, 0.65);
     assert_eq!(r.memory_vector_dim, 1024);
+    // document_leg_weight is absent from this file, so it keeps its default.
+    assert_eq!(r.document_leg_weight, 0.5);
+}
+
+#[test]
+fn retrieval_overlay_applies_document_leg_weight() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "[retrieval]\ndocument_leg_weight = 0.9\n").expect("write config.toml");
+    let r = Config::defaults()
+        .with_file(&path)
+        .expect("valid document_leg_weight must parse and apply")
+        .retrieval;
+    assert_eq!(r.document_leg_weight, 0.9);
 }
 
 #[test]

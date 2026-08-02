@@ -13,7 +13,7 @@ use crate::prelude::*;
 
 /// Highest schema version known to this build. Bumped each time a new
 /// migration file is added under `src/store/sql/`.
-pub const CURRENT_VERSION: &str = "12";
+pub const CURRENT_VERSION: &str = "13";
 
 /// 0001 bootstrap SQL (`schema_meta` table). Public so tests can replay
 /// historical schema states exactly as an old binary created them.
@@ -66,6 +66,13 @@ pub const M_V11: &str = include_str!("./sql/0011_v11_memory_rank.sql");
 /// self-heal on the first `comemory edges` run. Public so tests can replay
 /// historical schema states.
 pub const M_V12: &str = include_str!("./sql/0012_v12_edge_fts.sql");
+/// 0013 SQL: unified document indexing — `source_roots`, `source_files`,
+/// `documents`, `document_chunks`, and the `document_fts` FTS5 lexical
+/// index, plus an `edges` rebuild (create-copy-drop-rename, same precedent
+/// as 0008) extending the `rel` CHECK with `member_of_source` and
+/// `references_document`. Public so tests can replay historical schema
+/// states.
+pub const M_V13: &str = include_str!("./sql/0013_v13_documents.sql");
 
 /// Apply all pending migrations. Safe to re-run; each migration is
 /// only applied if its key is absent from `schema_meta`.
@@ -84,6 +91,7 @@ pub fn run(conn: &mut Connection) -> Result<()> {
     apply(conn, "0010_v10_bandit", M_V10)?;
     apply(conn, "0011_v11_memory_rank", M_V11)?;
     apply(conn, "0012_v12_edge_fts", M_V12)?;
+    apply(conn, "0013_v13_documents", M_V13)?;
     set_version(conn, CURRENT_VERSION)?;
     Ok(())
 }

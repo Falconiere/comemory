@@ -92,6 +92,10 @@ fn run_memory(cfg: &Config, conn: &Connection, req: &Request) -> Result<Hits> {
         owned.as_deref(),
         Filters {
             repo: req.repo.as_deref(),
+            // The memory worker's output must stay byte-identical to
+            // today's — pin memory-only regardless of the field's future
+            // default.
+            domains: crate::retrieval::scope::Domains::memory_only(),
             ..Filters::none()
         },
         SearchOptions {

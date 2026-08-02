@@ -1,7 +1,8 @@
 //! Behavior tests for `crate::store::migrate` (part 2 — the v6 migration
 //! and v5→v6 upgrade path, the v11 `memories.rank_score` migration and its
-//! v10→v11 upgrade path, and the v12 `edge_fts` triplet index with its
-//! v11→v12 upgrade path).
+//! v10→v11 upgrade path, the v12 `edge_fts` triplet index with its
+//! v11→v12 upgrade path, and the v13 unified-document-indexing tables with
+//! their v12→v13 upgrade path).
 
 use comemory::store::{connection, migrate};
 use rusqlite::Connection;
@@ -241,6 +242,7 @@ fn migration_chain() -> Vec<(&'static str, &'static str)> {
         ("0009_v9_code_refs", migrate::M_V9),
         ("0010_v10_bandit", migrate::M_V10),
         ("0011_v11_memory_rank", migrate::M_V11),
+        ("0012_v12_edge_fts", migrate::M_V12),
     ]
 }
 
@@ -404,5 +406,204 @@ fn v12_migration_is_idempotent() {
     migrate::run(&mut conn).expect("second migrate run is a no-op");
 
     assert_eq!(edge_fts_rows(&conn), 1);
+    assert_eq!(schema_meta(&conn, "version"), migrate::CURRENT_VERSION);
+}
+
+/// True when `name` exists in `sqlite_master` (any object type).
+fn table_exists(conn: &Connection, name: &str) -> bool {
+    let n: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM sqlite_master WHERE name = ?1",
+            [name],
+            |r| r.get(0),
+        )
+        .expect("table probe");
+    n == 1
+}
+
+/// Both `edges` lookup indexes exist — the invariant every `edges` rebuild
+/// (0006, 0008, 0013, ...) must preserve.
+fn assert_edge_indexes_exist(conn: &Connection) {
+    let idx: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM sqlite_master WHERE type='index'
+              AND name IN ('idx_edges_src','idx_edges_dst')",
+            [],
+            |r| r.get(0),
+        )
+        .expect("index probe");
+    assert_eq!(idx, 2, "edge indexes missing");
+}
+
+/// Every rel kind the `edges` CHECK accepted before v13, verbatim from the
+/// 0008 rebuild (the last migration to touch the CHECK before this one).
+const PRE_V13_REL_KINDS: [&str; 12] = [
+    "in_repo",
+    "authored_by",
+    "tagged",
+    "references_file",
+    "references_symbol",
+    "relates_to",
+    "supersedes",
+    "conflicts_with",
+    "derived_from",
+    "co_changed",
+    "imports",
+    "co_activated",
+];
+
+/// Insert one probe `edges` row using `kind` as both `rel` and the
+/// src/dst id — `rel` is part of the primary key, so distinct kinds never
+/// collide even against the same fixed 'probe'/'dst' pair. `kind` is
+/// bound via `?1` (reused for both occurrences) rather than interpolated
+/// into the SQL text.
+fn insert_edge_kind(conn: &Connection, kind: &str) -> rusqlite::Result<usize> {
+    conn.execute(
+        "INSERT INTO edges(src_kind,src_id,dst_kind,dst_id,rel,created_at) \
+         VALUES('probe',?1,'probe','dst',?1,'2026-01-01T00:00:00Z')",
+        [kind],
+    )
+}
+
+/// Every rel kind allowed before v13 still inserts, both new v13 kinds
+/// insert, and an unknown kind is still rejected by the CHECK.
+fn assert_v13_edges_rel_kinds(conn: &Connection) {
+    for kind in PRE_V13_REL_KINDS {
+        insert_edge_kind(conn, kind)
+            .unwrap_or_else(|e| panic!("legacy rel kind {kind} should still insert: {e}"));
+    }
+    for kind in ["member_of_source", "references_document"] {
+        insert_edge_kind(conn, kind)
+            .unwrap_or_else(|e| panic!("new rel kind {kind} should insert: {e}"));
+    }
+    assert!(insert_edge_kind(conn, "bogus").is_err());
+}
+
+#[test]
+fn v13_creates_document_tables_and_extends_edges_rel() {
+    let dir = tempdir().expect("tempdir");
+    let db = dir.path().join("comemory.db");
+    let conn = connection::open(&db).expect("open migrates to v13");
+
+    for table in [
+        "source_roots",
+        "source_files",
+        "documents",
+        "document_chunks",
+        "document_fts",
+    ] {
+        assert!(table_exists(&conn, table), "{table} missing after v13");
+    }
+
+    assert_v13_edges_rel_kinds(&conn);
+    assert_edge_indexes_exist(&conn);
+
+    assert_eq!(schema_meta(&conn, "version"), migrate::CURRENT_VERSION);
+    // Pin: bump this when CURRENT_VERSION advances past v13.
+    assert_eq!(migrate::CURRENT_VERSION, "13");
+}
+
+/// The `document_fts` DDL uses the same per-connection `identifier`
+/// tokenizer as `code_fts` (since 0004) and `edge_fts` (since 0012): a
+/// hyphenated `path_tokens` value must split so a bare sub-word matches.
+#[test]
+fn v13_document_fts_uses_identifier_tokenizer() {
+    let dir = tempdir().expect("tempdir");
+    let db = dir.path().join("comemory.db");
+    let conn = connection::open(&db).expect("open migrates to v13");
+
+    conn.execute(
+        "INSERT INTO document_fts(document_id, ordinal, title, headings, passage, path_tokens)
+         VALUES('doc1', 0, 'Queue Design', '', 'a passage', 'docs/queue-design-v2.md')",
+        [],
+    )
+    .expect("seed document_fts row");
+
+    let hits: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM document_fts WHERE document_fts MATCH '\"design\"'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("match probe");
+    assert_eq!(hits, 1, "identifier tokenizer not applied to document_fts");
+}
+
+/// Seed two pre-v13 `edges` rows directly against the raw db at `path` —
+/// the v13 create-copy-drop-rename rebuild must carry both forward
+/// verbatim. Opened and dropped eagerly so the caller reopens through the
+/// real `connection::open` migration path afterward.
+fn seed_pre_v13_edges(path: &std::path::Path) {
+    let raw = Connection::open(path).expect("open raw v12 db");
+    raw.execute_batch(
+        "INSERT INTO edges(src_kind,src_id,dst_kind,dst_id,rel,weight,created_at)
+         VALUES('memory','ffff6666','repo','demo','in_repo',1,'2026-03-01T00:00:00Z');
+         INSERT INTO edges(src_kind,src_id,dst_kind,dst_id,rel,weight,created_at)
+         VALUES('file','file:r:a.rs','file','file:r:b.rs','co_changed',5,
+                '2026-03-01T00:00:00Z');",
+    )
+    .expect("seed pre-v13 edges");
+}
+
+/// `(src_kind, src_id, dst_kind, dst_id, rel, weight)` for every `edges`
+/// row, ordered by `rel` for a stable comparison.
+fn edges_snapshot(conn: &Connection) -> Vec<(String, String, String, String, String, i64)> {
+    conn.prepare("SELECT src_kind, src_id, dst_kind, dst_id, rel, weight FROM edges ORDER BY rel")
+        .expect("prepare")
+        .query_map([], |r| {
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+            ))
+        })
+        .expect("query")
+        .collect::<Result<_, _>>()
+        .expect("rows")
+}
+
+#[test]
+fn open_migrates_v12_db_to_v13_preserving_edges_losslessly() {
+    let dir = tempdir().expect("tempdir");
+    let db = dir.path().join("comemory.db");
+    build_legacy_db(&db, 12, "12", "ffff6666");
+    seed_pre_v13_edges(&db);
+
+    // Pre-upgrade, none of the new tables exist yet.
+    let before = Connection::open(&db).expect("open raw before upgrade");
+    assert!(
+        !table_exists(&before, "source_roots"),
+        "v12 replay should not have source_roots yet"
+    );
+    drop(before);
+
+    let conn = connection::open(&db).expect("open migrates v12 -> v13");
+
+    assert_eq!(
+        edges_snapshot(&conn),
+        vec![
+            (
+                "file".to_string(),
+                "file:r:a.rs".to_string(),
+                "file".to_string(),
+                "file:r:b.rs".to_string(),
+                "co_changed".to_string(),
+                5
+            ),
+            (
+                "memory".to_string(),
+                "ffff6666".to_string(),
+                "repo".to_string(),
+                "demo".to_string(),
+                "in_repo".to_string(),
+                1
+            ),
+        ]
+    );
+
+    assert_edge_indexes_exist(&conn);
     assert_eq!(schema_meta(&conn, "version"), migrate::CURRENT_VERSION);
 }

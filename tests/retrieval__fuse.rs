@@ -1,4 +1,4 @@
-use comemory::retrieval::fuse::{RankedHit, rrf, rrf_k, rrf_multi};
+use comemory::retrieval::fuse::{RankedHit, rrf, rrf_k, rrf_multi, rrf_multi_weighted};
 use proptest::prelude::*;
 
 /// Build a ranked list from ids in rank order; `score` is unused by RRF.
@@ -183,4 +183,70 @@ proptest! {
             );
         }
     }
+}
+
+#[test]
+fn rrf_multi_weighted_thin_leg_demoted_below_tie() {
+    let memory = hits(&["m0", "m1", "m2", "m3", "m4"]);
+    let document = hits(&["doc1"]);
+
+    // At weight 1.0 each, the document's rank-0 hit ties the memory leg's
+    // rank-0 hit exactly: both contribute 1/(k+1).
+    let tied = rrf_multi_weighted(&[(&memory, 1.0), (&document, 1.0)], 10, 60.0);
+    let m0 = tied.iter().find(|h| h.memory_id == "m0").unwrap().score;
+    let doc1 = tied.iter().find(|h| h.memory_id == "doc1").unwrap().score;
+    assert_eq!(
+        m0.to_bits(),
+        doc1.to_bits(),
+        "expected an exact tie at weight 1.0"
+    );
+
+    // At the document leg's real weight (0.5) the tie breaks: "m0" strictly
+    // outscores "doc1", not merely wins on the id tie-break.
+    let weighted = rrf_multi_weighted(&[(&memory, 1.0), (&document, 0.5)], 10, 60.0);
+    assert_eq!(weighted[0].memory_id, "m0");
+    let m0 = weighted.iter().find(|h| h.memory_id == "m0").unwrap().score;
+    let doc1 = weighted
+        .iter()
+        .find(|h| h.memory_id == "doc1")
+        .unwrap()
+        .score;
+    assert!(m0 > doc1, "expected strict demotion: m0={m0} doc1={doc1}");
+}
+
+#[test]
+fn rrf_multi_weighted_weight_one_is_bit_identical_to_rrf_multi() {
+    let a = hits(&["a", "b", "c", "d"]);
+    let b = hits(&["b", "e", "a"]);
+    let c = hits(&["f", "a", "e", "c"]);
+    let legs: Vec<&[RankedHit]> = vec![&a, &b, &c];
+    let plain = rrf_multi(&legs, 10, 37.0);
+    let weighted = rrf_multi_weighted(&[(&a, 1.0), (&b, 1.0), (&c, 1.0)], 10, 37.0);
+    assert_eq!(ids(&plain), ids(&weighted));
+    for (x, y) in plain.iter().zip(weighted.iter()) {
+        assert_eq!(x.score.to_bits(), y.score.to_bits(), "{x:?} vs {y:?}");
+    }
+}
+
+#[test]
+fn rrf_multi_weighted_empty_leg_contributes_nothing() {
+    let a = hits(&["a", "b"]);
+    let empty: Vec<RankedHit> = vec![];
+    let with_empty = rrf_multi_weighted(&[(&a, 1.0), (&empty, 0.9)], 10, 60.0);
+    let without = rrf_multi_weighted(&[(&a, 1.0)], 10, 60.0);
+    assert_eq!(ids(&with_empty), ids(&without));
+    for (x, y) in with_empty.iter().zip(without.iter()) {
+        assert_eq!(x.score.to_bits(), y.score.to_bits(), "{x:?} vs {y:?}");
+    }
+}
+
+#[test]
+fn rrf_multi_weighted_tie_break_is_ascending_id() {
+    // Two disjoint single-item legs of equal weight tie in score; the
+    // ascending memory-id tie-break decides the order.
+    let a = hits(&["zeta"]);
+    let b = hits(&["alpha"]);
+    let merged = rrf_multi_weighted(&[(&a, 0.5), (&b, 0.5)], 10, 60.0);
+    assert_eq!(ids(&merged), ["alpha", "zeta"]);
+    assert_eq!(merged[0].score.to_bits(), merged[1].score.to_bits());
 }

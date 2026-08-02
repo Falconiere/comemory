@@ -127,6 +127,10 @@ fn score_pair(cfg: &Config, conn: &Connection, pair: &GoldenPair, k: usize) -> R
         Filters {
             repo: pair.repo.as_deref(),
             kind: pair.kind.as_deref(),
+            // Golden pairs are memory ids: eval/tune/bandit all funnel
+            // through this one Filters construction site, so pinning it
+            // here pins all three.
+            domains: crate::retrieval::scope::Domains::memory_only(),
             ..Filters::none()
         },
         SearchOptions {

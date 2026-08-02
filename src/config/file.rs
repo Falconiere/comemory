@@ -2,7 +2,9 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use super::defaults::{default_near_dup_hamming, default_superseded_grace_days};
+use super::defaults::{
+    default_max_file_bytes, default_near_dup_hamming, default_superseded_grace_days,
+};
 use super::learning::{
     BanditConfig, PartialBanditConfig, PartialReinforceConfig, PartialTuneConfig, ReinforceConfig,
 };
@@ -46,6 +48,22 @@ struct PartialConfig {
     reinforce: Option<PartialReinforceConfig>,
     /// Bandit apply gate. Absent keys leave defaults.
     bandit: Option<PartialBanditConfig>,
+    /// Optional file-overlay for document-source indexing knobs. Absent
+    /// keys leave defaults.
+    indexing: Option<PartialIndexingConfig>,
+}
+
+/// File-overlay partial for [`IndexingConfig`]. Carries every field (not
+/// just the new `max_file_bytes` key) so `deny_unknown_fields` cannot
+/// hard-error on a legitimate `[indexing]` key once the section is
+/// overlayable at all — same rationale as [`PartialPruneConfig`].
+#[derive(Debug, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct PartialIndexingConfig {
+    auto_reindex: Option<AutoReindexMode>,
+    auto_reindex_threshold_ms: Option<u64>,
+    incremental_batch_size: Option<usize>,
+    max_file_bytes: Option<u64>,
 }
 
 /// File-overlay partial for [`RankConfig`]. All fields optional.
@@ -134,6 +152,32 @@ pub struct IndexingConfig {
     /// invocation. Kept as an honest reserved knob (rather than wired to a
     /// fake consumer) for a future chunked-commit indexing path. Default `50`.
     pub incremental_batch_size: usize,
+    /// Ceiling (bytes) above which a candidate document file is recorded
+    /// `too_large` and skipped by the document index writer
+    /// (`comemory index`) instead of extracted — plain-text formats past
+    /// this size are logs, not documents. Must be > 0. Default
+    /// `16_777_216` (16 MiB). Env: `COMEMORY_INDEXING_MAX_FILE_BYTES`.
+    #[serde(default = "default_max_file_bytes")]
+    pub max_file_bytes: u64,
+}
+
+impl IndexingConfig {
+    /// Overlay the file's `[indexing]` keys; absent keys leave `self`
+    /// untouched.
+    fn apply(&mut self, p: PartialIndexingConfig) {
+        if let Some(v) = p.auto_reindex {
+            self.auto_reindex = v;
+        }
+        if let Some(v) = p.auto_reindex_threshold_ms {
+            self.auto_reindex_threshold_ms = v;
+        }
+        if let Some(v) = p.incremental_batch_size {
+            self.incremental_batch_size = v;
+        }
+        if let Some(v) = p.max_file_bytes {
+            self.max_file_bytes = v;
+        }
+    }
 }
 
 /// Ranking knobs for the rerank/diversify pipeline (M1).
@@ -301,6 +345,7 @@ impl Config {
                 auto_reindex: AutoReindexMode::Lazy,
                 auto_reindex_threshold_ms: 200,
                 incremental_batch_size: 50,
+                max_file_bytes: default_max_file_bytes(),
             },
             retrieval: RetrievalConfig::defaults(),
             rank: RankConfig {
@@ -368,6 +413,9 @@ impl Config {
             && let Some(v) = pb.enabled
         {
             self.bandit.enabled = v;
+        }
+        if let Some(pi) = partial.indexing {
+            self.indexing.apply(pi);
         }
         self.validate()
     }

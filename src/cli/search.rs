@@ -11,6 +11,7 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
+use crate::cli::search_only::{self, OnlyDomain};
 use crate::cli::{
     embedding_input, load_config, page_meta, page_window, resolve_data_dir, track_searches, when,
 };
@@ -19,7 +20,7 @@ use crate::memory::Kind;
 use crate::output;
 use crate::prelude::*;
 use crate::retrieval::pipeline;
-use crate::retrieval::scope::Filters;
+use crate::retrieval::scope::{Domain, Filters};
 use crate::store::{connection, memory_meta};
 
 const EXAMPLES: &str = "\
@@ -104,31 +105,75 @@ pub struct Args {
     /// memory that already existed then. Same value grammar as `--until`.
     #[arg(long = "as-of", value_name = "WHEN", conflicts_with = "until")]
     pub as_of: Option<String>,
+    /// Restrict the query to these domains (repeatable and/or
+    /// comma-separated, e.g. `--only memory,document`). Defaults to every
+    /// domain. `--kind` implies memory scope; combining it with a
+    /// memory-excluding `--only` is a usage error.
+    #[arg(long, value_delimiter = ',')]
+    pub only: Vec<OnlyDomain>,
+    /// Restrict document results to paths matching this Git-style glob
+    /// (repeatable; entries are OR'd together). Document-domain only in
+    /// v1 — has no effect on memory or code results.
+    #[arg(long = "path", value_name = "GLOB")]
+    pub path: Vec<String>,
 }
 
-/// Run `comemory search`. Opens the DB, resolves the vector input (if any),
-/// runs the full retrieval pipeline, and emits results in either TTY or
-/// JSON form. The `--k` flag overrides `retrieval.top_k`, which the
-/// pipeline uses for the final cut.
+/// Run `comemory search`. Opens the DB, resolves the domain scope, and
+/// dispatches to the memory pipeline or — for a scope that excludes
+/// memory — the interim document-only path (see [`run_memory`] /
+/// `cli::search_only`). The `--k` flag overrides `retrieval.top_k`.
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
     let conn = connection::open(paths.db_path())?;
 
-    let vec = embedding_input::read_optional(a.vector_stdin, a.vector.as_deref())?;
     let cfg = load_config(&paths)?;
     let window = page_window(&cfg, a.k, a.offset);
     let scope = when::scope_from_flags(a.since.as_deref(), a.until.as_deref(), a.as_of.as_deref())?;
+    let kind = a.kind.map(Kind::as_str);
+    let domains = search_only::resolve_domains(&a.only, kind)?;
+    let filters = Filters {
+        repo: a.repo.as_deref(),
+        kind,
+        scope: &scope,
+        domains,
+    };
+    // s9 fuses the document leg into `pipeline::search`; until then a
+    // scope excluding memory (chiefly `--only document`) cannot go
+    // through it — that pipeline always runs the full memory leg
+    // regardless of `Filters.domains`. That case takes the interim direct
+    // `doc_route` path instead; every other scope (the default, `--only
+    // memory`, or any combination that still includes memory) runs
+    // unchanged via [`run_memory`].
+    if !domains.contains(Domain::Memory) {
+        return search_only::run_document_only(
+            &conn, &cfg, &a.query, filters, &a.path, window, json_flag,
+        );
+    }
+    run_memory(&a, json_flag, &paths, &conn, &cfg, filters, window).await
+}
+
+/// The pre-`--only` memory search path, unchanged: route → rerank →
+/// diversify → top-k through `pipeline::search`, then emit the memory
+/// `Row` envelope. Split out of [`run`] to keep it under the function
+/// length gate. `filters.scope` carries the time-scope both for the
+/// pipeline call and the emitted `ScopeEcho`.
+async fn run_memory(
+    a: &Args,
+    json_flag: bool,
+    paths: &Paths,
+    conn: &rusqlite::Connection,
+    cfg: &crate::config::Config,
+    filters: Filters<'_>,
+    window: pipeline::PageWindow,
+) -> Result<()> {
+    let vec = embedding_input::read_optional(a.vector_stdin, a.vector.as_deref())?;
     let run = pipeline::search(
-        &cfg,
-        &conn,
+        cfg,
+        conn,
         &a.query,
         vec.as_deref(),
-        Filters {
-            repo: a.repo.as_deref(),
-            kind: a.kind.map(Kind::as_str),
-            scope: &scope,
-        },
+        filters,
         pipeline::SearchOptions {
             track: track_searches()?,
             source: crate::stats::source::SEARCH,
@@ -139,7 +184,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     // Batch-fetch navigation metadata (path/repo/kind/tags/references) for
     // this page's hits so each result is navigable without a per-hit query.
     let ids: Vec<&str> = run.hits.iter().map(|h| h.memory_id.as_str()).collect();
-    let nav = memory_meta::fetch_meta(&conn, &ids)?;
+    let nav = memory_meta::fetch_meta(conn, &ids)?;
     output::search::emit(
         &run.hits,
         run.query_id.as_deref(),
@@ -147,6 +192,6 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         json_flag,
         &nav,
         paths.data_dir(),
-        output::search::ScopeEcho::of(&scope),
+        output::search::ScopeEcho::of(filters.scope),
     )
 }

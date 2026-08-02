@@ -46,6 +46,53 @@ fn seed_relation(conn: &Connection, src: &str, rel: &str, dst: &str) {
     seed_edge(conn, "memory", src, rel, "memory", dst);
 }
 
+/// Insert one `source_roots` row.
+fn seed_source_root(conn: &Connection, id: &str, canonical_path: &str) {
+    conn.execute(
+        "INSERT INTO source_roots(id, canonical_path, kind, repo, status, created_at, updated_at)
+         VALUES(?1, ?2, ?3, NULL, ?4, '2026-07-01T00:00:00Z', '2026-07-01T00:00:00Z')",
+        params![id, canonical_path, "dir", "active"],
+    )
+    .expect("seed source_roots");
+}
+
+/// Insert one `source_files` row owned by `source_id`.
+fn seed_source_file(conn: &Connection, id: &str, source_id: &str, relative_path: &str) {
+    conn.execute(
+        "INSERT INTO source_files(id, source_id, relative_path, classification, size, mtime,
+                                   sha256, status, error, created_at, updated_at)
+         VALUES(?1, ?2, ?3, ?4, 10, 0, ?5, ?6, NULL,
+                '2026-07-01T00:00:00Z', '2026-07-01T00:00:00Z')",
+        params![id, source_id, relative_path, "document", "h", "indexed"],
+    )
+    .expect("seed source_files");
+}
+
+/// Insert one `documents` row owned by `source_file_id`, `repo` optional.
+fn seed_document(
+    conn: &Connection,
+    id: &str,
+    source_file_id: &str,
+    title: &str,
+    repo: Option<&str>,
+) {
+    conn.execute(
+        "INSERT INTO documents(id, source_file_id, title, repo, revision_hash,
+                                created_at, updated_at)
+         VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![
+            id,
+            source_file_id,
+            title,
+            repo,
+            "h",
+            "2026-07-01T00:00:00Z",
+            "2026-07-01T00:00:00Z"
+        ],
+    )
+    .expect("seed documents");
+}
+
 /// Every indexed triplet, one `|`-joined line per row in rowid order —
 /// the full observable content of the index, for identity comparisons.
 fn dump(conn: &Connection) -> Vec<String> {
@@ -167,6 +214,105 @@ fn co_activated_file_target_is_stripped_to_its_path_terms() {
     assert!(
         hits(&conn, "file").is_empty(),
         "stripped prefix should not be indexed as a term"
+    );
+}
+
+#[test]
+fn document_endpoint_renders_as_identity_path_and_title() {
+    let (_dir, mut conn) = open_db();
+    seed_memory(&conn, "aaaa1111", "decision", "queue-design-v2");
+    seed_source_root(&conn, "src1", "/tmp/src1");
+    seed_source_file(&conn, "file1", "src1", "guide.md");
+    seed_document(
+        &conn,
+        "doc111100000000000000000000",
+        "file1",
+        "Comemory Guide",
+        Some("demo"),
+    );
+    seed_edge(
+        &conn,
+        "memory",
+        "aaaa1111",
+        "references_document",
+        "document",
+        "doc111100000000000000000000",
+    );
+    edge_fts::refresh(&mut conn).expect("refresh");
+
+    let found = hits(&conn, "guide");
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].dst_text, "demo:guide.md \u{2014} Comemory Guide");
+    assert_eq!(found[0].dst_kind, "document");
+    assert_eq!(found[0].dst_id, "doc111100000000000000000000");
+    assert!(
+        hits(&conn, "doc111100000000000000000000").is_empty(),
+        "the raw 128-bit hex id must never be indexed as a term"
+    );
+}
+
+#[test]
+fn document_endpoint_without_repo_renders_path_and_title_only() {
+    let (_dir, mut conn) = open_db();
+    seed_memory(&conn, "aaaa1111", "decision", "queue-design-v2");
+    seed_source_root(&conn, "src2", "/tmp/src2");
+    seed_source_file(&conn, "file2", "src2", "notes/todo.md");
+    seed_document(
+        &conn,
+        "doc22220000000000000000000",
+        "file2",
+        "Todo List",
+        None,
+    );
+    seed_edge(
+        &conn,
+        "memory",
+        "aaaa1111",
+        "references_document",
+        "document",
+        "doc22220000000000000000000",
+    );
+    edge_fts::refresh(&mut conn).expect("refresh");
+
+    let found = hits(&conn, "todo");
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].dst_text, "notes/todo.md \u{2014} Todo List");
+}
+
+#[test]
+fn source_endpoint_renders_as_its_canonical_path() {
+    let (_dir, mut conn) = open_db();
+    seed_source_root(&conn, "src3", "/home/user/notes");
+    seed_source_file(&conn, "file3", "src3", "guide.md");
+    seed_edge(&conn, "file", "file3", "member_of_source", "source", "src3");
+    edge_fts::refresh(&mut conn).expect("refresh");
+
+    let found = hits(&conn, "notes");
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].dst_text, "/home/user/notes");
+    assert_eq!(found[0].dst_kind, "source");
+    assert_eq!(found[0].dst_id, "src3");
+}
+
+#[test]
+fn dangling_document_endpoint_falls_back_to_its_bare_id() {
+    let (_dir, mut conn) = open_db();
+    seed_memory(&conn, "aaaa1111", "decision", "queue-design-v2");
+    seed_edge(
+        &conn,
+        "memory",
+        "aaaa1111",
+        "references_document",
+        "document",
+        "ghostdoc00",
+    );
+    edge_fts::refresh(&mut conn).expect("refresh");
+
+    let found = hits(&conn, "ghostdoc00");
+    assert_eq!(found.len(), 1);
+    assert_eq!(
+        found[0].dst_text, "ghostdoc00",
+        "a document with no live row must fall back to its bare id"
     );
 }
 

@@ -19,7 +19,7 @@ BIN="$PROJECT_ROOT/target/release-quick/comemory"
 
 SUBCOMMANDS=(
   save search search-code list delete feedback eval mine tune bandit doctor
-  index-code ingest-code ast graph edges serve tui context
+  index-code ingest-code index sources unindex ast graph edges serve tui context
   prune consolidate rebuild gc install-hooks completions
 )
 

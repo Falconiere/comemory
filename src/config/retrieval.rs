@@ -9,7 +9,8 @@ use serde::{Deserialize, Serialize};
 
 use super::defaults::{
     default_bm25_weights, default_code_bm25_weights, default_code_threshold,
-    default_code_vector_dim, default_max_page_window, default_memory_vector_dim,
+    default_code_vector_dim, default_document_leg_weight, default_max_page_window,
+    default_memory_vector_dim,
 };
 
 /// Hybrid-retrieval knobs consumed by `retrieval::{router,fuse,code_route}`.
@@ -83,6 +84,15 @@ pub struct RetrievalConfig {
     /// (jina-embeddings-v2-base-code).
     #[serde(default = "default_code_vector_dim")]
     pub code_vector_dim: usize,
+    /// Weighted-RRF contribution weight for the document retrieval leg
+    /// (BM25 over `document_fts`), fused alongside the memory and code
+    /// legs (both weight `1.0`) into the default `search` order. Must be
+    /// finite and in `(0.0, 10.0]`. Deliberately absent from the
+    /// `[tune]` grids: `tune`/`bandit` pin memory-only scope, so a
+    /// memory-only metric would drive a cross-domain knob toward zero.
+    /// Default `0.5`. Env: `COMEMORY_RETRIEVAL_DOCUMENT_LEG_WEIGHT`.
+    #[serde(default = "default_document_leg_weight")]
+    pub document_leg_weight: f32,
 }
 
 /// File-overlay partial for [`RetrievalConfig`]. Only the M2-tunable
@@ -100,6 +110,7 @@ pub(crate) struct PartialRetrievalConfig {
     code_bm25_weights: Option<(f32, f32, f32)>,
     graph_hops: Option<u32>,
     graph_seeds: Option<usize>,
+    document_leg_weight: Option<f32>,
 }
 
 impl RetrievalConfig {
@@ -119,6 +130,7 @@ impl RetrievalConfig {
             code_bm25_weights: default_code_bm25_weights(),
             memory_vector_dim: default_memory_vector_dim(),
             code_vector_dim: default_code_vector_dim(),
+            document_leg_weight: default_document_leg_weight(),
         }
     }
 
@@ -151,6 +163,9 @@ impl RetrievalConfig {
         }
         if let Some(v) = p.graph_seeds {
             self.graph_seeds = v;
+        }
+        if let Some(v) = p.document_leg_weight {
+            self.document_leg_weight = v;
         }
     }
 }

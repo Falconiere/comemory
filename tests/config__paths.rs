@@ -18,6 +18,11 @@ fn paths_resolves_subdirs_relative_to_data_dir() {
     // stats_db() is now an alias for db_path() — both land in comemory.db.
     assert_eq!(paths.stats_db(), paths.db_path());
     assert_eq!(paths.config_file(), sb.data_dir().join("config.toml"));
+    assert_eq!(paths.sources_file(), sb.data_dir().join("sources.toml"));
+    assert_eq!(
+        paths.sources_lock_file(),
+        sb.data_dir().join("sources.toml.lock")
+    );
 }
 
 #[test]

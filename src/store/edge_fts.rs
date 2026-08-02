@@ -44,10 +44,21 @@ pub struct EdgeFtsHit {
 /// in the text would only plant `file`/`symbol`/`repo` as a high-frequency
 /// term in nearly every triplet. Bare `references_*` targets
 /// (`<repo>:<path>[:<symbol>]`) carry no prefix and fall through unchanged.
+/// `document:`/`source:` are defensive, matching the file/symbol precedent,
+/// even though today's writer stores bare document/source ids — see
+/// [`endpoint_text_expr`] for how those two kinds actually render.
 /// INVARIANT: compile-time constants only — entries are interpolated into
 /// SQL text by [`strip_prefix_expr`]; a runtime- or user-supplied entry
 /// would be a SQL injection vector.
-const KIND_PREFIXES: [&str; 5] = ["file:", "symbol:", "repo:", "author:", "tag:"];
+const KIND_PREFIXES: [&str; 7] = [
+    "file:",
+    "symbol:",
+    "repo:",
+    "author:",
+    "tag:",
+    "document:",
+    "source:",
+];
 
 /// A SQLite expression rendering `col` with any leading [`KIND_PREFIXES`]
 /// entry removed. `substr` is 1-based, so the surviving suffix starts one
@@ -64,21 +75,51 @@ fn strip_prefix_expr(col: &str) -> String {
     expr
 }
 
+/// LEFT JOIN aliases [`endpoint_text_expr`] renders through for one
+/// endpoint column — the same shape serves both `src_*` and `dst_*` since
+/// each alias's `ON` clause already scopes it to that side.
+struct Endpoint<'a> {
+    memory: &'a str,
+    document: &'a str,
+    source: &'a str,
+}
+
 /// The indexed-text expression for one endpoint. A live memory renders as
-/// `kind || ' ' || slug` from the left-joined row under `alias`
-/// ("decision queue-design-v1" — human-searchable); a dangling or
-/// soft-deleted memory endpoint falls back to its bare id. Every other node
-/// kind goes through [`strip_prefix_expr`], and the identifier tokenizer
-/// then splits the remaining `:` / `/` / `.` / camelCase boundaries into
-/// path and symbol terms.
-fn endpoint_text_expr(kind_col: &str, id_col: &str, alias: &str) -> String {
+/// `kind || ' ' || slug`; a live document as `<repo>:<path> — <title>` (or
+/// just `<path> — <title>` when the document carries no repo label); a
+/// live source as its canonical filesystem path — never the raw 128-bit
+/// hex id, which would plant an opaque, high-frequency term in every
+/// triplet touching it. A dangling/soft-deleted endpoint of any of these
+/// three kinds falls back to [`strip_prefix_expr`]; every other kind goes
+/// straight there, and the identifier tokenizer then splits the remaining
+/// `:` / `/` / `.` / camelCase boundaries into path and symbol terms.
+fn endpoint_text_expr(kind_col: &str, id_col: &str, ep: Endpoint<'_>) -> String {
+    let Endpoint {
+        memory,
+        document,
+        source,
+    } = ep;
+    let stripped = strip_prefix_expr(id_col);
     format!(
-        "CASE WHEN {kind_col} = 'memory' \
-              THEN COALESCE({alias}.kind || ' ' || {alias}.slug, {id_col}) \
-              ELSE {stripped} END",
-        stripped = strip_prefix_expr(id_col)
+        "CASE \
+           WHEN {kind_col} = 'memory' THEN COALESCE({memory}.kind || ' ' || {memory}.slug, {id_col}) \
+           WHEN {kind_col} = 'document' THEN COALESCE( \
+               CASE WHEN {document}.repo IS NOT NULL \
+                    THEN {document}.repo || ':' || {document}.relative_path || ' \u{2014} ' || {document}.title \
+                    ELSE {document}.relative_path || ' \u{2014} ' || {document}.title END, \
+               {stripped}) \
+           WHEN {kind_col} = 'source' THEN COALESCE({source}.canonical_path, {stripped}) \
+           ELSE {stripped} END"
     )
 }
+
+/// `documents` joined to its owning `source_files` row for the relative
+/// path — the two columns [`endpoint_text_expr`]'s document branch needs
+/// alongside `title`/`repo`. A CTE so [`insert_sql`] can join it twice
+/// (once per endpoint side) without repeating the join.
+const DOCUMENT_IDENTITY_CTE: &str = "document_identity AS ( \
+    SELECT d.id, d.title, d.repo, sf.relative_path \
+      FROM documents d JOIN source_files sf ON sf.id = d.source_file_id)";
 
 /// The whole-table INSERT: one `edge_fts` row per `edges` row, rendered in
 /// a single deterministic statement. `ORDER BY` pins the insertion order —
@@ -87,7 +128,8 @@ fn endpoint_text_expr(kind_col: &str, id_col: &str, alias: &str) -> String {
 /// edges index identically.
 fn insert_sql() -> String {
     format!(
-        "INSERT INTO edge_fts(src_text, rel_text, dst_text, \
+        "WITH {cte} \
+         INSERT INTO edge_fts(src_text, rel_text, dst_text, \
                               src_kind, src_id, rel, dst_kind, dst_id, weight) \
          SELECT {src_text}, e.rel, {dst_text}, \
                 e.src_kind, e.src_id, e.rel, e.dst_kind, e.dst_id, e.weight \
@@ -96,9 +138,30 @@ fn insert_sql() -> String {
                   ON e.src_kind = 'memory' AND ms.id = e.src_id AND ms.deleted_at IS NULL \
            LEFT JOIN memories md \
                   ON e.dst_kind = 'memory' AND md.id = e.dst_id AND md.deleted_at IS NULL \
+           LEFT JOIN document_identity ds ON e.src_kind = 'document' AND ds.id = e.src_id \
+           LEFT JOIN document_identity dd ON e.dst_kind = 'document' AND dd.id = e.dst_id \
+           LEFT JOIN source_roots ss ON e.src_kind = 'source' AND ss.id = e.src_id \
+           LEFT JOIN source_roots sd ON e.dst_kind = 'source' AND sd.id = e.dst_id \
           ORDER BY e.src_kind, e.src_id, e.rel, e.dst_kind, e.dst_id",
-        src_text = endpoint_text_expr("e.src_kind", "e.src_id", "ms"),
-        dst_text = endpoint_text_expr("e.dst_kind", "e.dst_id", "md"),
+        cte = DOCUMENT_IDENTITY_CTE,
+        src_text = endpoint_text_expr(
+            "e.src_kind",
+            "e.src_id",
+            Endpoint {
+                memory: "ms",
+                document: "ds",
+                source: "ss"
+            }
+        ),
+        dst_text = endpoint_text_expr(
+            "e.dst_kind",
+            "e.dst_id",
+            Endpoint {
+                memory: "md",
+                document: "dd",
+                source: "sd"
+            }
+        ),
     )
 }
 
