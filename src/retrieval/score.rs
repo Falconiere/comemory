@@ -108,18 +108,23 @@ pub fn rank_boost(raw: f64, median: f64, scale: f64, clamp: (f64, f64)) -> f64 {
 /// than any prior and must NOT be run through `bounded_boost()`.
 pub const SUPERSEDE_PENALTY: f64 = 0.2;
 
-/// Whole days elapsed between an RFC 3339 timestamp and `now`, floored at
-/// zero. All timestamp writers (`memory_row::iso_format` — shared by save,
-/// rebuild, and `pipeline::record_access` — plus the SQLite
-/// `strftime('%Y-%m-%dT%H:%M:%fZ', ...)` upsert arm) emit RFC 3339-parseable
-/// strings. An unparsable timestamp is treated as fresh — never punish a
-/// memory for a malformed clock value — but it is logged: a value that
-/// fails to parse means a writer bug or row corruption, and silently
-/// scoring it as fresh would mask that. Shared by `retrieval::rerank` and
-/// `prune::low_value` so the two consumers cannot drift on day math.
+/// Whole-second days elapsed between an RFC 3339 timestamp and `now`, floored
+/// at zero. Shared by `retrieval::rerank`, `retrieval::code_prior`, and
+/// `prune::low_value` so the consumers cannot drift on day math. An
+/// unparsable timestamp scores as fresh — never punish a memory for a
+/// malformed clock — but is logged: it means a writer bug or row corruption.
+///
+/// Each side is truncated to its own second before subtracting, so the gap
+/// between two rows is phase-independent. Truncating the *elapsed delta*
+/// instead let that gap flip between 0 and 1 with the query's sub-second
+/// phase, reordering two calls over an unchanged corpus; rows sharing a
+/// second still tie exactly, leaving the id tie-break in charge.
 pub fn days_since(rfc3339: &str, now: OffsetDateTime) -> f64 {
     match OffsetDateTime::parse(rfc3339, &Rfc3339) {
-        Ok(then) => ((now - then).whole_seconds() as f64 / 86_400.0).max(0.0),
+        Ok(then) => {
+            let secs = now.unix_timestamp() - then.unix_timestamp();
+            (secs as f64 / 86_400.0).max(0.0)
+        }
         Err(e) => {
             tracing::warn!(
                 timestamp = rfc3339,
