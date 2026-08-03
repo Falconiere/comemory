@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-08-02
+
+### Added
+
+- lexical document domain — registry, extraction, unified search (increment 1) ([#59](https://github.com/Falconiere/comemory/pull/59))
+
 ## [0.13.2] - 2026-08-01
 
 ### Internal
