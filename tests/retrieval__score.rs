@@ -100,6 +100,22 @@ fn days_since_ties_exactly_within_one_second() {
     }
 }
 
+/// The same-second case measured as a *gap*, the way the straddling-boundary
+/// test above measures `1/86400`: two rows inside one second are `0.0` apart,
+/// not one quantum apart, at every phase.
+#[test]
+fn days_since_gap_is_zero_within_one_second() {
+    let earlier = "2026-06-09T00:00:00.100Z";
+    let later = "2026-06-09T00:00:00.900Z";
+
+    for millis in [0u32, 120, 500, 880] {
+        let now = time::macros::datetime!(2026-06-09 00:00:10 UTC)
+            + time::Duration::milliseconds(i64::from(millis));
+        let gap = days_since(earlier, now) - days_since(later, now);
+        assert_eq!(gap, 0.0, "phase {millis}ms: same-second gap must be zero");
+    }
+}
+
 #[test]
 fn min_max_normalize_maps_pool_to_unit_interval() {
     assert_eq!(min_max_normalize(&[2.0, 4.0, 3.0]), vec![0.0, 1.0, 0.5]);
