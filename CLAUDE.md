@@ -306,10 +306,12 @@ the version + rewrites `CHANGELOG.md` from conventional commits; merging it push
 `vX.Y.Z` tag, which fires `release.yml`. release-plz owns version + changelog + tag;
 cargo-dist owns build + GitHub Release + Homebrew (`git_release_enable=false`,
 `publish=false` — crates.io stays off). The bot is gated behind the
-`RELEASE_PLZ_ENABLED` repo variable and needs a fine-grained PAT
-(`RELEASE_PLZ_TOKEN`, Contents + Pull requests read/write) so the pushed tag
-triggers downstream workflows. The `just release` recipe remains a manual
-fallback. See `docs/release.md`.
+`RELEASE_PLZ_ENABLED` repo variable (a *variable*, not a secret — `vars` cannot
+read secrets, so a secret of that name leaves both jobs silently skipping) and
+mints a GitHub App installation token (`HOMEBREW_APP_ID` +
+`HOMEBREW_APP_PRIVATE_KEY`, Contents + Pull requests read/write, the App
+installed on this repo) so the pushed tag triggers downstream workflows. The
+`just release` recipe remains a manual fallback. See `docs/release.md`.
 
 ## Claude Code Hooks
 
