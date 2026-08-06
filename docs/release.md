@@ -34,25 +34,33 @@ push to main ──> release-plz ──> [release PR] ──merge──> push vX
 
 ## 1. One-time setup
 
-- [ ] **`RELEASE_PLZ_TOKEN` for release-plz (required).** A tag pushed with the
-  default `GITHUB_TOKEN` does **not** trigger downstream workflows, so the bot
-  must push the tag with its own token, or `release.yml` never fires. Create a
-  fine-grained PAT (`github.com/settings/tokens`) scoped to
-  `Falconiere/comemory` with **Contents: read and write** + **Pull requests:
-  read and write**, and set it as a repo secret:
-  ```bash
-  gh secret set RELEASE_PLZ_TOKEN --repo Falconiere/comemory   # paste the PAT
-  ```
-  If a `v*` tag-protection ruleset exists, add the PAT's account as a bypass
-  actor (branch protection on `main` does not cover tags).
-  - *GitHub App alternative:* a GitHub App token (`APP_ID` + `APP_PRIVATE_KEY`,
-    Contents + Pull requests read/write, installed on the repo) avoids
-    account-tied/expiring tokens. To use it, add a
-    `actions/create-github-app-token` step to the `release` job in
-    `release-plz.yml` and set that job's `GITHUB_TOKEN` to its output.
+- [ ] **The publish App is installed on `Falconiere/comemory` itself** with
+  **Contents: read and write** + **Pull requests: read and write**. A tag pushed
+  with the default `GITHUB_TOKEN` does **not** trigger downstream workflows, so
+  the bot must push the tag with its own token, or `release.yml` never fires.
+  Both release-plz jobs mint a short-lived installation token from
+  `HOMEBREW_APP_ID` + `HOMEBREW_APP_PRIVATE_KEY` — the same App the tap step
+  below uses, so this is the *same* installation with `comemory` added
+  alongside `homebrew-tap`, not a second one. Unlike the `RELEASE_PLZ_TOKEN` PAT
+  it replaces, an App key is not tied to a person's account and cannot silently
+  expire.
+
+  The mint steps pass no `owner`/`repositories`, unlike the tap step which has to
+  cross repos, so each token is scoped to `comemory` alone.
+
+  Note that a GitHub App has one installation per account with a single shared
+  permission grant, so adding **Pull requests: read and write** here also exposes
+  that permission on `homebrew-tap` and on git-better, which need only
+  `Contents`. Accepted knowingly: one already-synced key beats a second key to
+  install, sync and rotate.
+
+  If a `v*` tag-protection ruleset exists, add the App as a bypass actor (branch
+  protection on `main` does not cover tags).
 - [ ] **Enable the bot.** Set the repo **variable** `RELEASE_PLZ_ENABLED=true`
   (Actions → Variables). Both release-plz jobs are gated behind it so merging
-  the workflow doesn't start cutting releases before the token is in place.
+  the workflow doesn't start cutting releases before the App is installed. It
+  must be a variable, not a secret — the `vars` context cannot read secrets, so a
+  secret of the same name leaves both jobs silently skipping.
   ```bash
   gh variable set RELEASE_PLZ_ENABLED --body true --repo Falconiere/comemory
   ```
@@ -238,7 +246,9 @@ re-tag once `main` is fixed.
 | Symptom | Cause | Fix |
 |---|---|---|
 | release PR never opens | `RELEASE_PLZ_ENABLED` unset, or the `release-plz-pr` job failed | Check the variable is `true`; read the Release-plz workflow logs |
-| PR merged but `release.yml` never runs | tag was pushed with the default `GITHUB_TOKEN` (not the PAT) | Confirm `RELEASE_PLZ_TOKEN` is set and the `release` job uses it |
+| PR merged but `release.yml` never runs | tag was pushed with the default `GITHUB_TOKEN`, not the App token | Confirm the `release` job's `GITHUB_TOKEN` is `steps.app-token.outputs.token` |
+| release-plz jobs fail `403 Resource not accessible` | the App is not installed on this repo, or a permission is read-only | Install it here with Contents + Pull requests read/write; the secrets existing is not sufficient, the sync is repo-wide but the install is per-repo |
+| both release-plz jobs report `skipped` with no steps | `RELEASE_PLZ_ENABLED` was set as a *secret*, not a variable | `gh variable set RELEASE_PLZ_ENABLED --body true`; `vars` cannot read secrets |
 | `plan` job fails on "Validate release preflight" | One of the 4 hard checks failed | Read the `validate-release` step log; the failing check is named |
 | `host` job fails mid-upload | cargo-dist couldn't upload to the release (network, perms) | Retry the workflow run; if it persists, check the job's `GITHUB_TOKEN` permissions |
 | `release-finalize.yml` smoke test fails | The tarball is malformed (missing binary, too small) | Delete the release, investigate the build artifacts (downloaded to the `artifacts-*` workflow run artifacts) |

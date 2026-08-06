@@ -6,15 +6,27 @@
 #   release-plz-release — on the merged version-bump commit, pushes the vX.Y.Z
 #                         tag (which is what fires release.yml).
 #
-# Both jobs authenticate with RELEASE_PLZ_TOKEN, a fine-grained PAT with
-# Contents: read+write and Pull requests: read+write on this repo. The PAT is
-# REQUIRED on the release job: a tag pushed with the default GITHUB_TOKEN does
-# NOT trigger downstream workflows, so release.yml would never fire. Using the
-# PAT on the release-pr job too means the release PR also triggers CI checks.
+# Both jobs authenticate with a short-lived GitHub App installation token minted
+# from secrets.HOMEBREW_APP_ID / secrets.HOMEBREW_APP_PRIVATE_KEY — the same
+# publish App the release.yml tap step uses. (The HOMEBREW_ prefix is a misnomer
+# here: it is one App wearing two hats. The names are what Infisical syncs, so
+# they stay.) An App token is REQUIRED on the release job:
+# a tag pushed with the default GITHUB_TOKEN does NOT trigger downstream
+# workflows, so release.yml would never fire. Using it on the release-pr job too
+# means the release PR also triggers CI checks. Unlike a PAT it is not tied to a
+# person's account and cannot silently expire.
+#
+# The App must therefore be installed on Falconiere/comemory ITSELF with
+# Contents: read+write and Pull requests: read+write — not only on
+# Falconiere/homebrew-tap, which is all the tap step needs.
+#
+# Unlike that tap step, these mint steps pass no owner/repositories inputs: the
+# action then defaults to the current repository, so each token is scoped to
+# comemory alone even though the App can also reach the tap.
 #
 # Both jobs are gated behind the `RELEASE_PLZ_ENABLED` repo variable so merging
 # this file does not immediately start cutting releases. Flip it on (Actions →
-# Variables → RELEASE_PLZ_ENABLED=true) only AFTER RELEASE_PLZ_TOKEN exists.
+# Variables → RELEASE_PLZ_ENABLED=true) only AFTER the App is installed here.
 # See docs/release.md § one-time setup.
 #
 # config: release-plz.toml (git_release_enable=false, publish=false — cargo-dist
@@ -42,6 +54,12 @@ jobs:
       group: release-plz-pr-${{ github.ref }}
       cancel-in-progress: false
     steps:
+      - name: Mint release token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ secrets.HOMEBREW_APP_ID }}
+          private-key: ${{ secrets.HOMEBREW_APP_PRIVATE_KEY }}
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 0
@@ -56,10 +74,10 @@ jobs:
         with:
           command: release-pr
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
 
   # On the merged version bump, push the vX.Y.Z tag (which fires release.yml).
-  # The PAT is mandatory here — see the header note.
+  # The App token is mandatory here — see the header note.
   release-plz-release:
     name: Release-plz release
     if: ${{ vars.RELEASE_PLZ_ENABLED == 'true' }}
@@ -67,6 +85,12 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Mint release token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ secrets.HOMEBREW_APP_ID }}
+          private-key: ${{ secrets.HOMEBREW_APP_PRIVATE_KEY }}
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 0
@@ -81,4 +105,4 @@ jobs:
         with:
           command: release
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
