@@ -129,3 +129,24 @@ pub fn resolve_within(root: &Path, rel: &str) -> Result<PathBuf> {
     }
     Ok(canonical)
 }
+
+/// Canonicalize `p` and require it inside one of `roots`. Nonexistent path
+/// -> `BadRequest` (400); outside every root -> `Forbidden` (403); an empty
+/// `roots` slice always forbids (nothing is allowed).
+///
+/// Unlike [`resolve_within`], `p` may be absolute or cwd-relative — this is
+/// the containment check for the mutating routes that take a filesystem path
+/// directly (`index-code --path`, `ast --file`, `install-hooks --repo`, a
+/// `--golden` file), not a repo-relative `file:<repo>:<path>` id. Every entry
+/// in `roots` MUST already be canonical (the caller's job, e.g.
+/// `AppState::allowed_roots`); this function does not canonicalize them.
+pub fn contain_abs(roots: &[PathBuf], p: &Path) -> Result<PathBuf> {
+    let canonical = p
+        .canonicalize()
+        .map_err(|e| Error::BadRequest(format!("path `{}` is unusable: {e}", p.display())))?;
+    if roots.iter().any(|root| canonical.starts_with(root)) {
+        Ok(canonical)
+    } else {
+        Err(Error::Forbidden("path escapes every allowed root".into()))
+    }
+}

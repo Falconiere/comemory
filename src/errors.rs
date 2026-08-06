@@ -66,6 +66,16 @@ pub enum Error {
     #[error("bad request: {0}")]
     BadRequest(String),
 
+    /// A `comemory serve` confirm-gated mutating route (e.g. `DELETE
+    /// /memories/{id}`, `POST /rebuild`) was called without the required
+    /// `"confirm":true` body field / `?confirm=true` query param. Maps to
+    /// HTTP 400 `code:"confirmation_required"`; on the CLI path it maps to
+    /// EX_SOFTWARE. Distinct from [`Error::BadRequest`] so
+    /// `serve::envelope::status_and_code` can give it its own `code` slug
+    /// without sniffing message text.
+    #[error("confirmation required: {0}")]
+    ConfirmationRequired(String),
+
     /// Required learning data is absent (no golden pairs, not enough
     /// feedback). Maps to EX_UNAVAILABLE (69).
     #[error("unavailable: {0}")]

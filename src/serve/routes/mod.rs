@@ -116,6 +116,27 @@ where
         .map_err(|e| Error::Other(format!("blocking task panicked: {e}")))?
 }
 
+/// Gate a confirm-required mutating route: `Ok(())` when `confirmed`, else
+/// `Err(Error::ConfirmationRequired)` (`400 confirmation_required`).
+/// Transport-agnostic — POST routes source `confirmed` from `"confirm":
+/// true` on their own `Request` struct, DELETE routes from `?confirm=true`.
+///
+/// **Ordering (AC-19):** a `mutating` + confirm-gated route MUST check
+/// `state.read_only()` first (→ `405 read_only`) and only call this when
+/// not read-only — read-only outranks a missing confirm.
+///
+/// Reserved here for the confirm-gate-wiring step (s2.2+); not yet called by
+/// a handler.
+pub fn require_confirm(confirmed: bool) -> Result<()> {
+    if confirmed {
+        Ok(())
+    } else {
+        Err(Error::ConfirmationRequired(
+            "this operation requires explicit confirmation".into(),
+        ))
+    }
+}
+
 /// Whether a search-shaped route should record access counts /
 /// `retrieval_log` rows: never on a read-only server (§Security "Read-only
 /// side-effect degradation"), else the same `COMEMORY_DISABLE_ACCESS_TRACKING`

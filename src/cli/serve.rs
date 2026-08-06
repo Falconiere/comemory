@@ -28,7 +28,11 @@ Examples:
   comemory serve --read-only
 
   # Supply a repo root for repos indexed before the v7 schema captured it
-  comemory serve --root myrepo=/abs/path/to/repo";
+  comemory serve --root myrepo=/abs/path/to/repo
+
+  # Allow a mutating route to touch an extra filesystem path (e.g. eval's
+  # --golden file) outside any indexed repo root
+  comemory serve --allow-path /abs/path/to/golden-dir";
 
 /// Arguments to `comemory serve`.
 #[derive(ClapArgs, Debug)]
@@ -60,6 +64,12 @@ pub struct Args {
     /// COMEMORY_EMBED_CMD.
     #[arg(long, value_name = "CMD", env = "COMEMORY_EMBED_CMD")]
     pub embed_cmd: Option<String>,
+    /// Allow a path-taking mutating route (`index-code`, `ast --file`,
+    /// `install-hooks --repo`, `eval`/`tune`/`bandit --golden`) to touch a
+    /// filesystem path under this directory, on top of `--root` overrides
+    /// and the stored `repo_marker` roots (repeatable).
+    #[arg(long = "allow-path", value_name = "DIR")]
+    pub allow_path: Vec<PathBuf>,
 }
 
 /// Parse, validate, and launch the server. Blocks until interrupted.
@@ -70,6 +80,7 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     // itself tolerates a missing config file/dir.
     let cfg = load_config(&paths)?;
     let roots = parse_roots(&a.root)?;
+    let allow_path = parse_allow_paths(&a.allow_path)?;
     let opts = ServeOptions {
         repo: a.repo,
         port: a.port,
@@ -78,8 +89,24 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
         open: a.open,
         cfg,
         embed_cmd: a.embed_cmd,
+        allow_path,
     };
     serve::serve(&paths, opts, json).await
+}
+
+/// Canonicalize each `--allow-path <dir>` entry. A non-existent or
+/// inaccessible entry fails startup with `Error::Config` — unlike
+/// `repo_marker_roots::all_roots`'s best-effort skip, this is explicit
+/// user-supplied config, so a typo must surface loudly rather than being
+/// silently dropped from the allowed-roots set.
+fn parse_allow_paths(raw: &[PathBuf]) -> Result<Vec<PathBuf>> {
+    raw.iter()
+        .map(|p| {
+            p.canonicalize().map_err(|e| {
+                Error::Config(format!("--allow-path `{}` is unusable: {e}", p.display()))
+            })
+        })
+        .collect()
 }
 
 /// Parse `--root <repo>=<path>` flags into a [`RootOverrides`] map. Splits on

@@ -9,6 +9,9 @@ use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
 
 use assert_cmd::cargo::cargo_bin;
+use axum::http::StatusCode;
+use comemory::serve::envelope;
+use comemory::serve::routes::require_confirm;
 use tempfile::TempDir;
 
 /// Kills the spawned server on drop so a panicking assertion cannot leak it.
@@ -128,4 +131,17 @@ fn legacy_health_with_token_stays_a_bare_unenveloped_payload() {
     assert_eq!(body["read_only"], serde_json::json!(false));
     assert!(body["version"].is_string());
     assert!(body.get("ok").is_none() && body.get("meta").is_none());
+}
+
+#[test]
+fn require_confirm_true_is_ok() {
+    assert!(require_confirm(true).is_ok());
+}
+
+#[test]
+fn require_confirm_false_maps_to_400_confirmation_required() {
+    let err = require_confirm(false).expect_err("false must be gated");
+    let (status, code) = envelope::status_and_code(&err);
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(code, "confirmation_required");
 }

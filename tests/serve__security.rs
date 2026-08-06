@@ -4,7 +4,9 @@
 //! NUL, and symlink-escape cases are all asserted.
 
 use comemory::errors::Error;
-use comemory::serve::security::{generate_token, host_is_loopback, resolve_within, token_matches};
+use comemory::serve::security::{
+    contain_abs, generate_token, host_is_loopback, resolve_within, token_matches,
+};
 use tempfile::TempDir;
 
 #[test]
@@ -105,5 +107,75 @@ fn resolve_within_rejects_symlink_escape() {
     // A symlink inside the root pointing at a file outside it.
     std::os::unix::fs::symlink(outside.path().join("secret"), root.join("link")).unwrap();
     let err = resolve_within(&root, "link").unwrap_err();
+    assert!(matches!(err, Error::Forbidden(_)), "got {err:?}");
+}
+
+#[test]
+fn contain_abs_accepts_path_inside_a_root() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    std::fs::write(root.join("a.rs"), "fn a() {}\n").unwrap();
+
+    let abs = contain_abs(std::slice::from_ref(&root), &root.join("a.rs")).expect("contained");
+    assert_eq!(abs, root.join("a.rs"));
+}
+
+#[test]
+fn contain_abs_rejects_path_outside_every_root() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let outside = TempDir::new().unwrap();
+    let target = outside.path().join("secret");
+    std::fs::write(&target, "s").unwrap();
+
+    let err = contain_abs(&[root], &target).unwrap_err();
+    assert!(matches!(err, Error::Forbidden(_)), "got {err:?}");
+}
+
+#[test]
+fn contain_abs_rejects_nonexistent_path() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+
+    let err = contain_abs(std::slice::from_ref(&root), &root.join("does-not-exist")).unwrap_err();
+    assert!(matches!(err, Error::BadRequest(_)), "got {err:?}");
+}
+
+#[cfg(unix)]
+#[test]
+fn contain_abs_rejects_symlink_escape() {
+    let outside = TempDir::new().unwrap();
+    std::fs::write(outside.path().join("secret"), "s").unwrap();
+    let dir = TempDir::new().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    std::os::unix::fs::symlink(outside.path().join("secret"), root.join("link")).unwrap();
+
+    let err = contain_abs(std::slice::from_ref(&root), &root.join("link")).unwrap_err();
+    assert!(matches!(err, Error::Forbidden(_)), "got {err:?}");
+}
+
+#[test]
+fn contain_abs_accepts_path_inside_the_second_of_several_roots() {
+    let first = TempDir::new().unwrap();
+    let first_root = first.path().canonicalize().unwrap();
+    let second = TempDir::new().unwrap();
+    let second_root = second.path().canonicalize().unwrap();
+    std::fs::write(second_root.join("b.rs"), "fn b() {}\n").unwrap();
+
+    let abs = contain_abs(
+        &[first_root, second_root.clone()],
+        &second_root.join("b.rs"),
+    )
+    .expect("contained in the second root");
+    assert_eq!(abs, second_root.join("b.rs"));
+}
+
+#[test]
+fn contain_abs_with_empty_roots_always_forbids() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    std::fs::write(root.join("a.rs"), "fn a() {}\n").unwrap();
+
+    let err = contain_abs(&[], &root.join("a.rs")).unwrap_err();
     assert!(matches!(err, Error::Forbidden(_)), "got {err:?}");
 }

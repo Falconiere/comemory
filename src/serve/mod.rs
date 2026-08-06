@@ -9,7 +9,9 @@
 //! `cli::graph::build_code_graph` the static `--format html` export uses, so
 //! the two renderers never drift.
 
+use std::collections::HashSet;
 use std::net::Ipv4Addr;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use rusqlite::Connection;
@@ -18,7 +20,7 @@ use serde::Serialize;
 use crate::config::Config;
 use crate::config::paths::Paths;
 use crate::prelude::*;
-use crate::store::connection;
+use crate::store::{connection, repo_marker_roots};
 
 pub mod assets;
 pub mod envelope;
@@ -50,6 +52,11 @@ pub struct ServeOptions {
     /// Embed command for semantic web search (`--embed-cmd` /
     /// `COMEMORY_EMBED_CMD`). Unset → `/api/search` stays lexical.
     pub embed_cmd: Option<String>,
+    /// `--allow-path <dir>` entries, already canonicalized by the CLI layer
+    /// (a bad entry fails startup rather than being silently dropped — see
+    /// `cli::serve::parse_allow_paths`). One source of the `contain_abs`
+    /// allowed-roots set.
+    pub allow_path: Vec<PathBuf>,
 }
 
 /// Shared, cheaply-cloneable handler state. The SQLite connection is wrapped
@@ -73,6 +80,18 @@ pub struct AppState {
     /// long-lived reference.
     cfg: Arc<Mutex<Arc<Config>>>,
     embed_cmd: Option<Arc<str>>,
+    /// Single write permit (§Concurrency) — held for the duration of every
+    /// mutating job and, via `try_acquire`, every synchronous mutating
+    /// request. Not yet wired to a handler (a later step); constructed here
+    /// so it is available.
+    write_permit: Arc<tokio::sync::Semaphore>,
+    /// Canonicalized `--allow-path <dir>` entries — one source feeding the
+    /// `contain_abs` allowed-roots set (§Security "Path containment").
+    allow_path: Arc<Vec<PathBuf>>,
+    /// The server process's own git work-tree root (canonicalized), when its
+    /// cwd is inside one — the bootstrap case for a fresh install with no
+    /// `repo_marker` rows yet.
+    bootstrap_root: Option<Arc<PathBuf>>,
 }
 
 impl AppState {
@@ -125,6 +144,40 @@ impl AppState {
     pub(crate) fn embed_cmd(&self) -> Option<&str> {
         self.embed_cmd.as_deref()
     }
+
+    /// The single write permit (§Concurrency): mutating handlers/jobs
+    /// `try_acquire`/`acquire` this before touching the store. Reserved here
+    /// for the write-permit-wiring step (s2.2+); not yet called by a
+    /// handler.
+    pub fn write_permit(&self) -> &Arc<tokio::sync::Semaphore> {
+        &self.write_permit
+    }
+
+    /// The full allowed-roots set for `security::contain_abs`: `--root`
+    /// override paths (canonicalized here — the map's values are not
+    /// guaranteed pre-canonical) ∪ every stored `repo_marker.root_path` ∪
+    /// the server-cwd bootstrap root, if any ∪ `--allow-path` entries.
+    /// Deduplicated. Best-effort against `conn`: a `repo_marker` read
+    /// failure is logged and drops only that source, not the other three —
+    /// it is an enrichment, not a hard requirement. Reserved here for the
+    /// path-containment-wiring step (s2.2+); not yet called by a handler.
+    pub fn allowed_roots(&self, conn: &Connection) -> Vec<PathBuf> {
+        let mut set: HashSet<PathBuf> = HashSet::new();
+        for p in self.roots.values() {
+            if let Ok(canonical) = p.canonicalize() {
+                set.insert(canonical);
+            }
+        }
+        match repo_marker_roots::all_roots(conn) {
+            Ok(roots) => set.extend(roots),
+            Err(e) => tracing::warn!(error = %e, "allowed_roots: repo_marker read failed"),
+        }
+        if let Some(root) = &self.bootstrap_root {
+            set.insert(root.as_ref().clone());
+        }
+        set.extend(self.allow_path.iter().cloned());
+        set.into_iter().collect()
+    }
 }
 
 /// What the startup banner reports (also the `--json` payload).
@@ -155,6 +208,9 @@ pub async fn serve(paths: &Paths, opts: ServeOptions, json: bool) -> Result<()> 
         repo: opts.repo,
         cfg: Arc::new(Mutex::new(Arc::new(opts.cfg))),
         embed_cmd: opts.embed_cmd.map(Arc::from),
+        write_permit: Arc::new(tokio::sync::Semaphore::new(1)),
+        allow_path: Arc::new(opts.allow_path),
+        bootstrap_root: discover_bootstrap_root().map(Arc::new),
     };
 
     let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, opts.port))
@@ -197,4 +253,15 @@ fn open_browser(url: &str) {
         "xdg-open"
     };
     let _ = std::process::Command::new(opener).arg(url).spawn();
+}
+
+/// Best-effort: when the server process's own cwd sits inside a git work
+/// tree, that tree's canonicalized root — the bootstrap case for a fresh
+/// install with no `repo_marker` rows yet. `None` on any failure (no cwd, no
+/// repo, bare repo, uncanonicalizable workdir) — this is enrichment, not a
+/// requirement, so a non-git cwd never blocks startup.
+fn discover_bootstrap_root() -> Option<PathBuf> {
+    let cwd = std::env::current_dir().ok()?;
+    let repo = git2::Repository::discover(&cwd).ok()?;
+    repo.workdir()?.canonicalize().ok()
 }

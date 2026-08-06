@@ -787,6 +787,7 @@ Options:
       --root <REPO=PATH>     Override a repo's working-tree root as `<repo>=<abs-path>` (repeatable). Required for repos indexed before the v7 schema captured the root
       --open                 Open the printed URL in the default browser after binding. The URL carries the session token and is passed as an argument to the system opener, so it is briefly visible to other local users (e.g. via `/proc/<pid>/cmdline` or `ps`)
       --embed-cmd <CMD>      Embed command for semantic web search; run as sh -c, reads query on stdin, emits {"embedding":[..]}. Unset → lexical only. Mirrors COMEMORY_EMBED_CMD [env: COMEMORY_EMBED_CMD=]
+      --allow-path <DIR>     Allow a path-taking mutating route (`index-code`, `ast --file`, `install-hooks --repo`, `eval`/`tune`/`bandit --golden`) to touch a filesystem path under this directory, on top of `--root` overrides and the stored `repo_marker` roots (repeatable)
   -h, --help                 Print help
 
 Examples:
@@ -801,6 +802,10 @@ Examples:
 
   # Supply a repo root for repos indexed before the v7 schema captured it
   comemory serve --root myrepo=/abs/path/to/repo
+
+  # Allow a mutating route to touch an extra filesystem path (e.g. eval's
+  # --golden file) outside any indexed repo root
+  comemory serve --allow-path /abs/path/to/golden-dir
 ```
 
 ---

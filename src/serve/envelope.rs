@@ -114,6 +114,7 @@ pub fn status_and_code(e: &Error) -> (StatusCode, &'static str) {
         Error::NotFound(_) => (StatusCode::NOT_FOUND, "not_found"),
         Error::Forbidden(_) => (StatusCode::FORBIDDEN, "forbidden"),
         Error::BadRequest(_) => (StatusCode::BAD_REQUEST, "bad_request"),
+        Error::ConfirmationRequired(_) => (StatusCode::BAD_REQUEST, CODE_CONFIRMATION_REQUIRED),
         Error::Usage(_) => (StatusCode::BAD_REQUEST, "usage"),
         Error::Config(_) => (StatusCode::BAD_REQUEST, "config"),
         Error::Frontmatter(_) => (StatusCode::BAD_REQUEST, "frontmatter"),

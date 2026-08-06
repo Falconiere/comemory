@@ -28,6 +28,8 @@ pub mod memory_meta;
 pub mod memory_row;
 /// Versioned, idempotent schema migrations plus `schema_meta`.
 pub mod migrate;
+/// Enumerate distinct, canonicalized `repo_marker.root_path` values.
+pub mod repo_marker_roots;
 /// DDL strings for the tables, `vec0` vtabs and FTS5 indexes.
 pub mod schema;
 /// Bulk `(id, simhash)` scan over live memories, shared by save + consolidate.
