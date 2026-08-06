@@ -1,23 +1,15 @@
-//! `comemory install-hooks` — drop git hooks into a repo so commits/merges/
-//! checkouts kick off `comemory index-code` in the
-//! background.
-//!
-//! The hooks are intentionally minimal (`exec comemory … &`) so they don't slow
-//! down interactive git operations. If `comemory` isn't on `$PATH` the hook
-//! fails silently — git treats a missing executable as a hook error but the
-//! `&` detaches before the exit code reaches git, so the commit still
-//! completes cleanly.
-//!
-//! By default the command refuses to overwrite an existing hook file; pass
-//! `--force` to replace whatever is there. This guards against trampling a
-//! user's hand-written hook on first install.
+//! `comemory install-hooks` — drop git hooks into a repo so
+//! commits/merges/checkouts kick off `comemory index-code` in the
+//! background. The hook-writing middle lives in `api::install_hooks`
+//! (Binding Rule 1).
 
 use std::io::Write as _;
 use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::git_utils::install_hook;
+use crate::api::{self, Ctx};
+use crate::config::Config;
 use crate::output::json;
 use crate::prelude::*;
 
@@ -47,64 +39,30 @@ pub struct Args {
     pub force: bool,
 }
 
-/// Body written to each hook file. The trailing `&` detaches the indexer so
-/// git's hook runner returns immediately.
-///
-/// `--repo` and `--path` are required by `comemory index-code`; we derive the
-/// repo label from the working-tree directory name and the path from the repo
-/// root via `git rev-parse --show-toplevel`. The `index-code` walker uses each
-/// file's blob OID as the cursor, so re-running it on an unchanged tree is a
-/// cheap no-op (the v0.2 replacement for the old `--incremental` flag).
-const SCRIPT: &str = "#!/usr/bin/env bash\n\
-                      ROOT=\"$(git rev-parse --show-toplevel 2>/dev/null)\"\n\
-                      [ -z \"$ROOT\" ] && exit 0\n\
-                      REPO=\"$(basename \"$ROOT\")\"\n\
-                      ( comemory index-code --repo \"$REPO\" --path \"$ROOT\" >/dev/null 2>&1 & )\n\
-                      exit 0\n";
-
-/// Hooks we install. All three trigger an incremental reindex because each
-/// can leave the working tree at a new HEAD: `post-commit` for new commits,
-/// `post-merge` for fast-forward/merge updates, `post-checkout` for branch
-/// switches and `git checkout <file>` (which can also touch working-tree
-/// files we may want to re-embed).
-const HOOKS: &[&str] = &["post-commit", "post-merge", "post-checkout"];
-
-/// Install (or, with `--force`, overwrite) the three reindex hooks. On
-/// success the human-readable line lists the hooks that were written; under
-/// `--json` we emit a small object so callers can detect success
-/// programmatically.
-pub async fn run(a: Args, json_flag: bool, _data_dir: Option<PathBuf>) -> Result<()> {
-    // Pre-flight: verify every target hook either doesn't exist or `--force`
-    // is set BEFORE we start writing. The naive per-iteration check used to
-    // bail mid-loop, leaving the repo with a partial install — e.g. a fresh
-    // `post-commit` next to an unchanged pre-existing `post-merge` — which
-    // confuses both the operator and a follow-up `--force` rerun.
-    if !a.force {
-        for hook in HOOKS {
-            let target = a.repo.join(".git").join("hooks").join(hook);
-            if target.exists() {
-                return Err(Error::Other(format!(
-                    "{} already exists; pass --force to overwrite",
-                    target.display()
-                )));
-            }
-        }
-    }
-    for hook in HOOKS {
-        install_hook(&a.repo, hook, SCRIPT)?;
-    }
+/// Install (or, with `--force`, overwrite) the three reindex hooks via
+/// `api::install_hooks::run`. On success the human-readable line lists the
+/// hooks that were written; under `--json` we emit a small object so callers
+/// can detect success programmatically. `install-hooks` has no `Paths`/db
+/// dependency, so `data_dir` resolves a throwaway `Ctx::lazy` that is never
+/// opened.
+pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
+    let paths = crate::config::Paths::new(crate::cli::resolve_data_dir(data_dir));
+    let cfg = Config::defaults();
+    let req = api::install_hooks::Request {
+        repo: a.repo.display().to_string(),
+        force: a.force,
+    };
+    let mut ctx = Ctx::lazy(&paths, &cfg);
+    let resp = api::install_hooks::run(&mut ctx, req)?;
     if json_flag {
-        json::write(&serde_json::json!({
-            "installed": HOOKS,
-            "repo": a.repo.display().to_string(),
-        }))?;
+        json::write(&resp)?;
     } else {
         let mut out = std::io::stdout().lock();
         writeln!(
             out,
             "installed {} hooks in {}",
-            HOOKS.join(", "),
-            a.repo.display()
+            resp.installed.join(", "),
+            resp.repo
         )?;
     }
     Ok(())

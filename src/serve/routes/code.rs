@@ -5,12 +5,17 @@
 //! byte-identical to the CLI `--json` shape (nested one level deeper). No
 //! lazy-reindex trigger over HTTP (spec Non-Goal 8) — `cli::lazy_reindex`
 //! never runs on this path.
+//!
+//! `POST /api/v1/code/ast` (`api::ast`) also lives here: a read, not
+//! confirm-gated, but its `req.file` still needs containment before
+//! `api::ast::run` touches the filesystem.
 
+use std::path::Path;
 use std::time::Instant;
 
 use axum::extract::{Query, State};
 use axum::response::Response;
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde_json::Value;
 
@@ -19,6 +24,7 @@ use crate::output::search_code;
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::routes::{RouteEntry, respond, run_blocking, track_for};
+use crate::serve::security;
 
 /// This resource's route-table entries, appended onto [`super::table`].
 pub fn table_entries() -> &'static [RouteEntry] {
@@ -35,15 +41,23 @@ pub fn table_entries() -> &'static [RouteEntry] {
             command: "search-code",
             mutating: false,
         },
+        RouteEntry {
+            method: "POST",
+            path: "/code/ast",
+            command: "ast",
+            mutating: false,
+        },
     ]
 }
 
 /// This resource's routes, mounted under `/api/v1`.
 pub fn router(_state: AppState) -> Router<AppState> {
-    Router::new().route(
-        "/api/v1/code/search",
-        get(code_search_get).post(code_search_post),
-    )
+    Router::new()
+        .route(
+            "/api/v1/code/search",
+            get(code_search_get).post(code_search_post),
+        )
+        .route("/api/v1/code/ast", post(code_ast))
 }
 
 async fn code_search_get(
@@ -75,4 +89,23 @@ fn run(state: AppState, req: api::search_code::Request) -> Result<Value> {
     let result = api::search_code::run(&mut ctx, req, track)?;
     let envelope = search_code::envelope(&result.hits, result.query_id.as_deref(), result.meta);
     serde_json::to_value(envelope).map_err(Error::Json)
+}
+
+/// `POST /api/v1/code/ast` — run an ast-grep pattern against a file
+/// (`api::ast`), read-only but requiring `req.file` inside an allowed root
+/// before the filesystem read (§Security "Path containment"). Nonexistent
+/// path -> `400`; outside every root -> `403`.
+async fn code_ast(State(state): State<AppState>, Json(req): Json<api::ast::Request>) -> Response {
+    let started = Instant::now();
+    let result = run_blocking(move || {
+        let conn = state.conn()?;
+        let roots = state.allowed_roots(&conn);
+        drop(conn);
+        security::contain_abs(&roots, Path::new(&req.file))?;
+        let cfg = state.cfg();
+        let mut ctx = Ctx::lazy(state.paths(), &cfg);
+        api::ast::run(&mut ctx, req)
+    })
+    .await;
+    respond("code.ast", result, started)
 }

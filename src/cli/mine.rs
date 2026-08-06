@@ -6,14 +6,13 @@ use std::io::Write as _;
 use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
-use time::OffsetDateTime;
 
+use crate::api::{self, Ctx};
 use crate::cli::resolve_data_dir;
-use crate::config::paths::Paths;
-use crate::eval::mine;
+use crate::config::{Config, paths::Paths};
 use crate::output::json;
 use crate::prelude::*;
-use crate::store::{connection, memory_row};
+use crate::store::connection;
 
 const EXAMPLES: &str = "\
 Examples:
@@ -43,23 +42,20 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
     let mut conn = connection::open(paths.db_path())?;
+    let cfg = Config::defaults();
 
-    let mappings = mine::mine(&conn)?;
-    if a.apply {
-        let now_iso = memory_row::iso_format(OffsetDateTime::now_utc())?;
-        mine::apply(&mut conn, &mappings, &now_iso)?;
-    }
+    let req = api::mine::Request { apply: a.apply };
+    let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+    let resp = api::mine::run(&mut ctx, req)?;
+
     if json_flag {
-        json::write(&serde_json::json!({
-            "mappings": mappings,
-            "applied": a.apply,
-        }))?;
+        json::write(&resp)?;
     } else {
         let mut out = std::io::stdout().lock();
-        for m in &mappings {
+        for m in &resp.mappings {
             writeln!(out, "{} -> {} (support {})", m.term, m.expansion, m.support)?;
         }
-        if a.apply {
+        if resp.applied {
             writeln!(out, "(applied)")?;
         } else {
             writeln!(out, "(report only — use --apply)")?;

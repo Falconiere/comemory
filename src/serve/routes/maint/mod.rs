@@ -1,8 +1,7 @@
 //! `GET /api/v1/doctor` (`api::doctor`) and `GET /api/v1/consolidate`
-//! (`api::consolidate`). `GET /api/v1/prune` (`api::prune`, report path)
-//! lives in [`prune`], merged into this resource's [`router`]. The
-//! mutating maintenance routes (`POST /prune|/gc|/mine`, `POST
-//! /hooks/install`) join `prune`/a new `admin` sibling in a later step.
+//! (`api::consolidate`). `GET|POST /api/v1/prune` and `POST /api/v1/gc`
+//! live in [`prune`]; `POST /api/v1/mine` and `POST /api/v1/hooks/install`
+//! live in [`admin`] — both merged into this resource's [`router`].
 
 use std::time::Instant;
 
@@ -15,7 +14,9 @@ use crate::api::{self, Ctx};
 use crate::serve::AppState;
 use crate::serve::routes::{RouteEntry, respond, run_blocking};
 
-/// `GET /api/v1/prune` (`api::prune`, report path).
+/// `POST /api/v1/mine`, `POST /api/v1/hooks/install`.
+pub mod admin;
+/// `GET|POST /api/v1/prune`, `POST /api/v1/gc`.
 pub mod prune;
 
 /// This resource's route-table entries, appended onto [`super::table`].
@@ -41,7 +42,8 @@ pub fn router(state: AppState) -> Router<AppState> {
     Router::new()
         .route("/api/v1/doctor", get(doctor))
         .route("/api/v1/consolidate", get(consolidate))
-        .merge(prune::router(state))
+        .merge(prune::router(state.clone()))
+        .merge(admin::router(state))
 }
 
 /// `GET /api/v1/doctor` — data-dir + DB health probe (`api::doctor`). Uses

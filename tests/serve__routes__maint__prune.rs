@@ -1,9 +1,10 @@
-//! End-to-end coverage of `GET /api/v1/prune` (`src/serve/routes/maint/prune.rs`)
-//! against a real bound server. The critical behavior under test: the route
-//! forces `apply = false` unconditionally, so a `GET` — even one carrying
-//! `?apply=true` in the query string — must never soft-delete anything
-//! (`api::prune::run` itself, including the `apply: true` path, is covered
-//! directly in `tests/api__prune.rs`).
+//! End-to-end coverage of `GET|POST /api/v1/prune` and `POST /api/v1/gc`
+//! (`src/serve/routes/maint/prune.rs`) against a real bound server. The
+//! critical `GET` behavior under test: the route forces `apply = false`
+//! unconditionally, so a `GET` — even one carrying `?apply=true` in the
+//! query string — must never soft-delete anything (`api::prune::run` itself,
+//! including the `apply: true` path, is covered directly in
+//! `tests/api__prune.rs`; `api::gc::run` in `tests/api__gc.rs`).
 
 #[path = "common/cli_prune_support.rs"]
 mod support;
@@ -25,11 +26,13 @@ impl Drop for ServerGuard {
 }
 
 /// Spawn `comemory serve` on an ephemeral port, returning the base URL, the
-/// session token, and the kill-on-drop guard.
-fn spawn_serve(home: &TempDir) -> (String, String, ServerGuard) {
+/// session token, and the kill-on-drop guard. `extra_args` is appended after
+/// `serve --port 0` (e.g. `&["--read-only"]`).
+fn spawn_serve(home: &TempDir, extra_args: &[&str]) -> (String, String, ServerGuard) {
     let mut child = Command::new(cargo_bin("comemory"))
         .env("COMEMORY_DATA_DIR", home.path().join(".comemory"))
         .args(["--json", "serve", "--port", "0"])
+        .args(extra_args)
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
@@ -51,7 +54,7 @@ fn v1_prune_returns_the_dry_run_report_envelope() {
     let home = TempDir::new().expect("home");
     let id = save_memory(&home, "stale prune candidate body via http");
     make_prune_eligible(&home, &id);
-    let (base, token, _guard) = spawn_serve(&home);
+    let (base, token, _guard) = spawn_serve(&home, &[]);
     let client = reqwest::blocking::Client::new();
 
     let res = client
@@ -81,7 +84,7 @@ fn v1_prune_ignores_apply_true_in_the_query_string() {
     let home = TempDir::new().expect("home");
     let id = save_memory(&home, "doomed-looking but must survive the GET");
     make_prune_eligible(&home, &id);
-    let (base, token, _guard) = spawn_serve(&home);
+    let (base, token, _guard) = spawn_serve(&home, &[]);
     let client = reqwest::blocking::Client::new();
 
     let res = client
@@ -115,4 +118,135 @@ fn v1_prune_ignores_apply_true_in_the_query_string() {
         .filter(|e| e.file_name().to_string_lossy().starts_with(id.as_str()))
         .count();
     assert_eq!(still_live, 1, "{id} must remain in memories/, not .trash/");
+}
+
+#[test]
+fn v1_prune_post_without_confirm_is_400_confirmation_required() {
+    let home = TempDir::new().expect("home");
+    let id = save_memory(&home, "must survive an unconfirmed POST /prune");
+    make_prune_eligible(&home, &id);
+    let (base, token, _guard) = spawn_serve(&home, &[]);
+    let client = reqwest::blocking::Client::new();
+
+    let res = client
+        .post(format!("{base}/api/v1/prune"))
+        .header("X-Comemory-Token", &token)
+        .json(&serde_json::json!({ "apply": true }))
+        .send()
+        .expect("v1 prune post no confirm");
+    assert_eq!(res.status().as_u16(), 400);
+    let body: serde_json::Value = res.json().expect("json");
+    assert_eq!(body["error"]["code"], "confirmation_required");
+
+    let memories_dir = home.path().join(".comemory").join("memories");
+    let still_live = std::fs::read_dir(&memories_dir)
+        .expect("read memories dir")
+        .filter_map(std::result::Result::ok)
+        .filter(|e| e.file_name().to_string_lossy().starts_with(id.as_str()))
+        .count();
+    assert_eq!(still_live, 1, "{id} must survive a missing-confirm POST");
+}
+
+#[test]
+fn v1_prune_post_on_a_read_only_server_is_405_before_confirm_is_checked() {
+    let home = TempDir::new().expect("home");
+    let id = save_memory(&home, "read-only server must 405 before confirm");
+    make_prune_eligible(&home, &id);
+    let (base, token, _guard) = spawn_serve(&home, &["--read-only"]);
+    let client = reqwest::blocking::Client::new();
+
+    // No `confirm` in the body either — read-only must still win (AC-19).
+    let res = client
+        .post(format!("{base}/api/v1/prune"))
+        .header("X-Comemory-Token", &token)
+        .json(&serde_json::json!({ "apply": true }))
+        .send()
+        .expect("v1 prune post read-only");
+    assert_eq!(res.status().as_u16(), 405);
+    let body: serde_json::Value = res.json().expect("json");
+    assert_eq!(body["error"]["code"], "read_only");
+}
+
+#[test]
+fn v1_prune_post_confirmed_applies_the_cleanup() {
+    let home = TempDir::new().expect("home");
+    let id = save_memory(&home, "doomed via a confirmed POST /prune");
+    make_prune_eligible(&home, &id);
+    let (base, token, _guard) = spawn_serve(&home, &[]);
+    let client = reqwest::blocking::Client::new();
+
+    let res = client
+        .post(format!("{base}/api/v1/prune"))
+        .header("X-Comemory-Token", &token)
+        .json(&serde_json::json!({ "apply": true, "confirm": true }))
+        .send()
+        .expect("v1 prune post confirmed");
+    assert_eq!(res.status().as_u16(), 200);
+    let body: serde_json::Value = res.json().expect("json");
+    assert_eq!(body["ok"], serde_json::json!(true));
+
+    let memories_dir = home.path().join(".comemory").join("memories");
+    let still_live = std::fs::read_dir(&memories_dir)
+        .expect("read memories dir")
+        .filter_map(std::result::Result::ok)
+        .filter(|e| e.file_name().to_string_lossy().starts_with(id.as_str()))
+        .count();
+    assert_eq!(still_live, 0, "{id} must have moved to .trash/");
+    let trashed = std::fs::read_dir(memories_dir.join(".trash"))
+        .expect("read .trash")
+        .count();
+    assert_eq!(trashed, 1);
+}
+
+#[test]
+fn v1_gc_post_without_confirm_is_400_confirmation_required() {
+    let home = TempDir::new().expect("home");
+    let (base, token, _guard) = spawn_serve(&home, &[]);
+    let client = reqwest::blocking::Client::new();
+
+    let res = client
+        .post(format!("{base}/api/v1/gc"))
+        .header("X-Comemory-Token", &token)
+        .json(&serde_json::json!({}))
+        .send()
+        .expect("v1 gc post no confirm");
+    assert_eq!(res.status().as_u16(), 400);
+    let body: serde_json::Value = res.json().expect("json");
+    assert_eq!(body["error"]["code"], "confirmation_required");
+}
+
+#[test]
+fn v1_gc_post_on_a_read_only_server_is_405() {
+    let home = TempDir::new().expect("home");
+    let (base, token, _guard) = spawn_serve(&home, &["--read-only"]);
+    let client = reqwest::blocking::Client::new();
+
+    let res = client
+        .post(format!("{base}/api/v1/gc"))
+        .header("X-Comemory-Token", &token)
+        .json(&serde_json::json!({ "confirm": true }))
+        .send()
+        .expect("v1 gc post read-only");
+    assert_eq!(res.status().as_u16(), 405);
+    let body: serde_json::Value = res.json().expect("json");
+    assert_eq!(body["error"]["code"], "read_only");
+}
+
+#[test]
+fn v1_gc_post_confirmed_returns_the_removal_envelope() {
+    let home = TempDir::new().expect("home");
+    let (base, token, _guard) = spawn_serve(&home, &[]);
+    let client = reqwest::blocking::Client::new();
+
+    let res = client
+        .post(format!("{base}/api/v1/gc"))
+        .header("X-Comemory-Token", &token)
+        .json(&serde_json::json!({ "confirm": true }))
+        .send()
+        .expect("v1 gc post confirmed");
+    assert_eq!(res.status().as_u16(), 200);
+    let body: serde_json::Value = res.json().expect("json");
+    assert_eq!(body["ok"], serde_json::json!(true));
+    assert_eq!(body["meta"]["command"], "gc");
+    assert!(body["data"]["removed"].is_u64(), "body: {body}");
 }

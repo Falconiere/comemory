@@ -13,6 +13,8 @@ use rusqlite::Connection;
 use crate::config::{Config, Paths};
 use crate::prelude::*;
 
+/// `comemory ast`: run an ast-grep pattern against one file, paged.
+pub mod ast;
 /// `comemory completions`: shell completion script generation.
 pub mod completions;
 /// `comemory consolidate`: advisory near-duplicate cluster report.
@@ -27,10 +29,16 @@ pub mod doctor;
 pub mod edges;
 /// `comemory feedback`: record which hits were used.
 pub mod feedback;
+/// `comemory gc`: trash sweep + learning-telemetry retention purge.
+pub mod gc;
 /// `comemory graph`: the file-level code-connection graph, full or paged.
 pub mod graph;
+/// `comemory install-hooks`: install git hooks for background reindexing.
+pub mod install_hooks;
 /// `comemory list`: page live memories.
 pub mod list;
+/// `comemory mine`: distill query-reformulation term mappings.
+pub mod mine;
 /// `comemory prune`: orphan / low-value / stale-code candidates, dry-run
 /// report plus (CLI-driven) apply.
 pub mod prune;
@@ -43,6 +51,8 @@ pub mod search_code;
 /// `comemory sources`: list registered document sources, with a skippable
 /// reconcile side effect.
 pub mod sources;
+/// `comemory unindex`: unregister a document source and its derived rows.
+pub mod unindex;
 
 /// Borrowed execution context passed to every `api::<cmd>::run`.
 ///

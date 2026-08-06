@@ -181,3 +181,74 @@ fn v1_code_search_records_telemetry_like_the_cli() {
         .expect("retrieval_log row");
     assert_eq!(source, "search-code");
 }
+
+#[test]
+fn v1_code_ast_matches_inside_an_allowed_root() {
+    let (home, workspace) = seeded_home();
+    let (base, token, _guard) = spawn_serve(&home);
+    let client = reqwest::blocking::Client::new();
+    let file = workspace.path().join("code-repo").join("alpha.rs");
+
+    let res = client
+        .post(format!("{base}/api/v1/code/ast"))
+        .header("X-Comemory-Token", &token)
+        .json(&serde_json::json!({
+            "pattern": "fn $NAME() {}",
+            "lang": "rs",
+            "file": file.to_str().expect("utf8 path"),
+        }))
+        .send()
+        .expect("v1 code ast");
+    assert_eq!(res.status().as_u16(), 200);
+    let body: serde_json::Value = res.json().expect("json");
+    assert_eq!(body["ok"], serde_json::json!(true));
+    assert_eq!(body["meta"]["command"], "code.ast");
+    let items = body["data"]["items"].as_array().expect("items array");
+    assert_eq!(items.len(), 2, "body: {body}");
+}
+
+#[test]
+fn v1_code_ast_outside_every_allowed_root_is_403_forbidden() {
+    let (home, _workspace) = seeded_home();
+    let (base, token, _guard) = spawn_serve(&home);
+    let client = reqwest::blocking::Client::new();
+    let outside = TempDir::new().expect("outside dir");
+    let file = outside.path().join("outside.rs");
+    std::fs::write(&file, "fn outside() {}\n").expect("write outside file");
+
+    let res = client
+        .post(format!("{base}/api/v1/code/ast"))
+        .header("X-Comemory-Token", &token)
+        .json(&serde_json::json!({
+            "pattern": "fn $NAME() {}",
+            "lang": "rs",
+            "file": file.to_str().expect("utf8 path"),
+        }))
+        .send()
+        .expect("v1 code ast outside root");
+    assert_eq!(res.status().as_u16(), 403);
+    let body: serde_json::Value = res.json().expect("json");
+    assert_eq!(body["error"]["code"], "forbidden");
+}
+
+#[test]
+fn v1_code_ast_nonexistent_file_is_400_bad_request() {
+    let (home, workspace) = seeded_home();
+    let (base, token, _guard) = spawn_serve(&home);
+    let client = reqwest::blocking::Client::new();
+    let file = workspace.path().join("code-repo").join("nope.rs");
+
+    let res = client
+        .post(format!("{base}/api/v1/code/ast"))
+        .header("X-Comemory-Token", &token)
+        .json(&serde_json::json!({
+            "pattern": "fn $NAME() {}",
+            "lang": "rs",
+            "file": file.to_str().expect("utf8 path"),
+        }))
+        .send()
+        .expect("v1 code ast nonexistent file");
+    assert_eq!(res.status().as_u16(), 400);
+    let body: serde_json::Value = res.json().expect("json");
+    assert_eq!(body["error"]["code"], "bad_request");
+}

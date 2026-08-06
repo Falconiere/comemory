@@ -71,6 +71,7 @@ pub fn table() -> Vec<RouteEntry> {
     entries.extend_from_slice(graph::table_entries());
     entries.extend_from_slice(maint::table_entries());
     entries.extend_from_slice(maint::prune::table_entries());
+    entries.extend_from_slice(maint::admin::table_entries());
     entries.extend_from_slice(sources::table_entries());
     entries.extend_from_slice(meta::table_entries());
     entries

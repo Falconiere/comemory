@@ -8,12 +8,10 @@ use std::io::Write as _;
 use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
-use serde::Serialize;
 
-use crate::ast::languages::{self, Lang};
-use crate::ast::pattern::find;
+use crate::api::{self, Ctx};
 use crate::cli::pagination::PaginationArgs;
-use crate::output::page::Page;
+use crate::config::Config;
 use crate::output::{json, tty};
 use crate::prelude::*;
 
@@ -46,30 +44,21 @@ pub struct Args {
     pub page: PaginationArgs,
 }
 
-/// One row of `comemory ast` output (mirrors the `(line, text)` shape returned
-/// by `ast::pattern::find`).
-#[derive(Serialize)]
-struct Row {
-    line: usize,
-    text: String,
-}
-
-/// Read the file, run the pattern, and print matches.
-pub async fn run(a: Args, json_flag: bool, _data_dir: Option<PathBuf>) -> Result<()> {
-    let lang = Lang::parse(&a.lang).ok_or_else(|| {
-        Error::Config(format!(
-            "unsupported --lang {:?}; supported: {}",
-            a.lang,
-            languages::supported().join(", ")
-        ))
-    })?;
-    let src = std::fs::read_to_string(&a.file)?;
-    let hits = find(lang, &src, &a.pattern)?;
-    let rows: Vec<Row> = hits
-        .into_iter()
-        .map(|(line, text)| Row { line, text })
-        .collect();
-    let page = Page::from_slice(rows, a.page.limit, a.page.offset);
+/// Read the file, run the pattern, and print matches. `ast` has no
+/// `Paths`/db dependency, so `data_dir` resolves a throwaway `Ctx::lazy` that
+/// is never opened.
+pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
+    let cfg = Config::defaults();
+    let paths = crate::config::Paths::new(crate::cli::resolve_data_dir(data_dir));
+    let mut ctx = Ctx::lazy(&paths, &cfg);
+    let req = api::ast::Request {
+        pattern: a.pattern,
+        lang: a.lang,
+        file: a.file.display().to_string(),
+        limit: a.page.limit,
+        offset: a.page.offset,
+    };
+    let page = api::ast::run(&mut ctx, req)?;
 
     if json_flag {
         json::write(&page)?;

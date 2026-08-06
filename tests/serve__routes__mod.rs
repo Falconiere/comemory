@@ -11,7 +11,7 @@ use std::process::{Child, Command, Stdio};
 use assert_cmd::cargo::cargo_bin;
 use axum::http::StatusCode;
 use comemory::serve::envelope;
-use comemory::serve::routes::require_confirm;
+use comemory::serve::routes::{RouteEntry, require_confirm, table};
 use tempfile::TempDir;
 
 /// Kills the spawned server on drop so a panicking assertion cannot leak it.
@@ -24,11 +24,13 @@ impl Drop for ServerGuard {
 }
 
 /// Spawn `comemory serve` on an ephemeral port, returning the base URL, the
-/// session token, and the kill-on-drop guard.
-fn spawn_serve(home: &TempDir) -> (String, String, ServerGuard) {
+/// session token, and the kill-on-drop guard. `extra_args` is appended after
+/// `serve --port 0` (e.g. `&["--read-only"]`).
+fn spawn_serve(home: &TempDir, extra_args: &[&str]) -> (String, String, ServerGuard) {
     let mut child = Command::new(cargo_bin("comemory"))
         .env("COMEMORY_DATA_DIR", home.path().join(".comemory"))
         .args(["--json", "serve", "--port", "0"])
+        .args(extra_args)
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
@@ -48,7 +50,7 @@ fn spawn_serve(home: &TempDir) -> (String, String, ServerGuard) {
 #[test]
 fn v1_health_with_token_returns_the_envelope() {
     let home = TempDir::new().expect("home");
-    let (base, token, _guard) = spawn_serve(&home);
+    let (base, token, _guard) = spawn_serve(&home, &[]);
     let client = reqwest::blocking::Client::new();
 
     let res = client
@@ -75,7 +77,7 @@ fn v1_health_with_token_returns_the_envelope() {
 #[test]
 fn v1_health_without_token_is_an_enveloped_401() {
     let home = TempDir::new().expect("home");
-    let (base, _token, _guard) = spawn_serve(&home);
+    let (base, _token, _guard) = spawn_serve(&home, &[]);
     let client = reqwest::blocking::Client::new();
 
     let res = client
@@ -95,7 +97,7 @@ fn v1_health_without_token_is_an_enveloped_401() {
 #[test]
 fn legacy_health_without_token_stays_plain_text_401() {
     let home = TempDir::new().expect("home");
-    let (base, _token, _guard) = spawn_serve(&home);
+    let (base, _token, _guard) = spawn_serve(&home, &[]);
     let client = reqwest::blocking::Client::new();
 
     // `/api/health` is gated by the same `guard` (any `/api/*` path), but
@@ -116,7 +118,7 @@ fn legacy_health_without_token_stays_plain_text_401() {
 #[test]
 fn legacy_health_with_token_stays_a_bare_unenveloped_payload() {
     let home = TempDir::new().expect("home");
-    let (base, token, _guard) = spawn_serve(&home);
+    let (base, token, _guard) = spawn_serve(&home, &[]);
     let client = reqwest::blocking::Client::new();
 
     let res = client
@@ -144,4 +146,146 @@ fn require_confirm_false_maps_to_400_confirmation_required() {
     let (status, code) = envelope::status_and_code(&err);
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(code, "confirmation_required");
+}
+
+/// A minimal, syntactically-complete JSON body (and, for routes whose
+/// extractor needs a required query param, extra `(key, value)` pairs) for
+/// one `mutating` route — just enough to satisfy the route's `Json`/`Query`
+/// extractor so the request reaches the handler body and its read-only
+/// gate, without asserting anything about the operation's actual outcome
+/// (AC-4 only cares whether the gate fires). Every `mutating` command must
+/// be listed here — an unmapped command panics rather than being silently
+/// skipped, so a newly added mutating route is forced to extend this table.
+fn minimal_request(entry: &RouteEntry) -> (serde_json::Value, Vec<(&'static str, &'static str)>) {
+    match entry.command {
+        "save" => (
+            serde_json::json!({"body": "AC-4 sweep test memory"}),
+            vec![],
+        ),
+        "delete" => (serde_json::json!({}), vec![]),
+        "feedback" => (serde_json::json!({"query_id": "q-sweep-deadbeef"}), vec![]),
+        "prune" => (serde_json::json!({}), vec![]),
+        "gc" => (serde_json::json!({}), vec![]),
+        "mine" => (serde_json::json!({}), vec![]),
+        "install-hooks" => (serde_json::json!({}), vec![]),
+        "unindex" => (
+            serde_json::json!({}),
+            vec![("target", "ac4-sweep-nonexistent")],
+        ),
+        other => panic!(
+            "minimal_request: no minimal body/query wired for mutating command {other:?} — \
+             add one so the AC-4 read-only sweep stays exhaustive"
+        ),
+    }
+}
+
+/// Send one `entry` request against `base`, filling in a dummy `{id}` path
+/// segment where the route needs one.
+fn send_mutating(
+    client: &reqwest::blocking::Client,
+    base: &str,
+    token: &str,
+    entry: &RouteEntry,
+) -> reqwest::blocking::Response {
+    let path = entry.path.replace("{id}", "deadbeef");
+    let (body, query) = minimal_request(entry);
+    let req = match entry.method {
+        "POST" => client.post(format!("{base}/api/v1{path}")),
+        "DELETE" => client.delete(format!("{base}/api/v1{path}")),
+        other => panic!("send_mutating: unhandled HTTP method {other:?} for {entry:?}"),
+    };
+    req.header("X-Comemory-Token", token)
+        .query(&query)
+        .json(&body)
+        .send()
+        .unwrap_or_else(|e| panic!("request for {entry:?} failed: {e}"))
+}
+
+#[test]
+fn ac4_every_mutating_route_405s_on_a_read_only_server() {
+    let home = TempDir::new().expect("home");
+    let (base, token, _guard) = spawn_serve(&home, &["--read-only"]);
+    let client = reqwest::blocking::Client::new();
+
+    for entry in table().into_iter().filter(|e| e.mutating) {
+        let res = send_mutating(&client, &base, &token, &entry);
+        assert_eq!(
+            res.status().as_u16(),
+            405,
+            "{} {} must 405 on a read-only server",
+            entry.method,
+            entry.path
+        );
+        let body: serde_json::Value = res.json().unwrap_or_else(|e| {
+            panic!(
+                "{} {} 405 body must be JSON envelope: {e}",
+                entry.method, entry.path
+            )
+        });
+        assert_eq!(
+            body["error"]["code"],
+            serde_json::json!("read_only"),
+            "{} {} body: {body}",
+            entry.method,
+            entry.path
+        );
+    }
+}
+
+#[test]
+fn ac4_no_mutating_route_405s_on_a_normal_server() {
+    let home = TempDir::new().expect("home");
+    let (base, token, _guard) = spawn_serve(&home, &[]);
+    let client = reqwest::blocking::Client::new();
+
+    for entry in table().into_iter().filter(|e| e.mutating) {
+        let res = send_mutating(&client, &base, &token, &entry);
+        assert_ne!(
+            res.status().as_u16(),
+            405,
+            "{} {} must not 405 without --read-only",
+            entry.method,
+            entry.path
+        );
+    }
+}
+
+#[test]
+fn ac4_read_routes_stay_functional_on_a_read_only_server() {
+    let home = TempDir::new().expect("home");
+    let (base, token, _guard) = spawn_serve(&home, &["--read-only"]);
+    let client = reqwest::blocking::Client::new();
+
+    for path in [
+        "/api/v1/sources",
+        "/api/v1/doctor",
+        "/api/v1/memories/search?query=x",
+    ] {
+        let res = client
+            .get(format!("{base}{path}"))
+            .header("X-Comemory-Token", &token)
+            .send()
+            .unwrap_or_else(|e| panic!("read route {path} failed: {e}"));
+        assert_ne!(
+            res.status().as_u16(),
+            405,
+            "read route {path} must survive read-only"
+        );
+    }
+
+    let ast_res = client
+        .post(format!("{base}/api/v1/code/ast"))
+        .header("X-Comemory-Token", &token)
+        .json(&serde_json::json!({
+            "pattern": "fn $NAME()",
+            "lang": "rs",
+            "file": "/nonexistent-for-ac4",
+        }))
+        .send()
+        .expect("post /code/ast");
+    assert_ne!(
+        ast_res.status().as_u16(),
+        405,
+        "POST /code/ast must survive read-only (it is not `mutating`)"
+    );
 }

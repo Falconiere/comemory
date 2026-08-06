@@ -2,7 +2,8 @@
 //! against a real bound server, including the read-only reconcile gate: the
 //! route computes `reconcile` from `--read-only` server-side, never from the
 //! query string (mirrors `tests/api__sources.rs`, which exercises
-//! `api::sources::run` directly without HTTP).
+//! `api::sources::run` directly without HTTP). `DELETE
+//! /sources?target=&confirm=true` (`api::unindex`) coverage lives here too.
 
 #[path = "common/docs_fixtures.rs"]
 mod docs_fixtures;
@@ -48,8 +49,9 @@ fn spawn_serve(home: &TempDir, extra_args: &[&str]) -> (String, String, ServerGu
 }
 
 /// Register one real docs fixture directory as a source in `home`; returns
-/// the fixture workspace kept alive for the duration of the test.
-fn seeded_home() -> (TempDir, TempDir) {
+/// the fixture workspace kept alive for the duration of the test plus the
+/// docs directory's canonical path (a valid `unindex` target).
+fn seeded_home() -> (TempDir, TempDir, std::path::PathBuf) {
     let home = TempDir::new().expect("home");
     let workspace = TempDir::new().expect("workspace");
     let docs = docs_fixtures::seed(workspace.path());
@@ -64,7 +66,7 @@ fn seeded_home() -> (TempDir, TempDir) {
         ])
         .assert()
         .success();
-    (home, workspace)
+    (home, workspace, docs)
 }
 
 /// Drop every entry from `sources.toml`, simulating an out-of-band edit that
@@ -79,7 +81,7 @@ fn clear_registry(home: &TempDir) {
 
 #[test]
 fn v1_sources_returns_the_registered_source_envelope() {
-    let (home, _workspace) = seeded_home();
+    let (home, _workspace, _docs) = seeded_home();
     let (base, token, _guard) = spawn_serve(&home, &[]);
     let client = reqwest::blocking::Client::new();
 
@@ -104,7 +106,7 @@ fn v1_sources_returns_the_registered_source_envelope() {
 
 #[test]
 fn v1_sources_read_only_server_skips_the_mirror_reconcile() {
-    let (home, _workspace) = seeded_home();
+    let (home, _workspace, _docs) = seeded_home();
     clear_registry(&home);
     let (base, token, _guard) = spawn_serve(&home, &["--read-only"]);
     let client = reqwest::blocking::Client::new();
@@ -122,4 +124,83 @@ fn v1_sources_read_only_server_skips_the_mirror_reconcile() {
         1,
         "a read-only server must not reconcile away the now-unregistered row"
     );
+}
+
+#[test]
+fn v1_unindex_without_confirm_is_400_confirmation_required() {
+    let (home, _workspace, docs) = seeded_home();
+    let (base, token, _guard) = spawn_serve(&home, &[]);
+    let client = reqwest::blocking::Client::new();
+
+    let res = client
+        .delete(format!("{base}/api/v1/sources"))
+        .header("X-Comemory-Token", &token)
+        .query(&[("target", docs.to_str().expect("utf8 path"))])
+        .send()
+        .expect("v1 unindex no confirm");
+    assert_eq!(res.status().as_u16(), 400);
+    let body: serde_json::Value = res.json().expect("json");
+    assert_eq!(body["error"]["code"], "confirmation_required");
+
+    // The source must survive an unconfirmed DELETE.
+    let follow_up = client
+        .get(format!("{base}/api/v1/sources"))
+        .header("X-Comemory-Token", &token)
+        .send()
+        .expect("v1 sources follow-up");
+    let follow_up_body: serde_json::Value = follow_up.json().expect("json");
+    assert_eq!(follow_up_body["data"].as_array().map(Vec::len), Some(1));
+}
+
+#[test]
+fn v1_unindex_on_a_read_only_server_is_405() {
+    let (home, _workspace, docs) = seeded_home();
+    let (base, token, _guard) = spawn_serve(&home, &["--read-only"]);
+    let client = reqwest::blocking::Client::new();
+
+    let res = client
+        .delete(format!("{base}/api/v1/sources"))
+        .header("X-Comemory-Token", &token)
+        .query(&[
+            ("target", docs.to_str().expect("utf8 path")),
+            ("confirm", "true"),
+        ])
+        .send()
+        .expect("v1 unindex read-only");
+    assert_eq!(res.status().as_u16(), 405);
+    let body: serde_json::Value = res.json().expect("json");
+    assert_eq!(body["error"]["code"], "read_only");
+}
+
+#[test]
+fn v1_unindex_confirmed_removes_the_registered_source() {
+    let (home, _workspace, docs) = seeded_home();
+    let (base, token, _guard) = spawn_serve(&home, &[]);
+    let client = reqwest::blocking::Client::new();
+
+    let res = client
+        .delete(format!("{base}/api/v1/sources"))
+        .header("X-Comemory-Token", &token)
+        .query(&[
+            ("target", docs.to_str().expect("utf8 path")),
+            ("confirm", "true"),
+        ])
+        .send()
+        .expect("v1 unindex confirmed");
+    assert_eq!(res.status().as_u16(), 200);
+    let body: serde_json::Value = res.json().expect("json");
+    assert_eq!(body["ok"], serde_json::json!(true));
+    assert_eq!(body["meta"]["command"], "unindex");
+    assert_eq!(
+        body["data"]["documents_removed"].as_u64(),
+        Some(docs_fixtures::FIXTURE_COUNT as u64)
+    );
+
+    let follow_up = client
+        .get(format!("{base}/api/v1/sources"))
+        .header("X-Comemory-Token", &token)
+        .send()
+        .expect("v1 sources follow-up");
+    let follow_up_body: serde_json::Value = follow_up.json().expect("json");
+    assert_eq!(follow_up_body["data"].as_array().map(Vec::len), Some(0));
 }
