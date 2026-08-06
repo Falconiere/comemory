@@ -65,7 +65,9 @@ pub struct Args {
 /// Parse, validate, and launch the server. Blocks until interrupted.
 pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
-    paths.ensure_dirs()?;
+    // `serve::serve` hoists `ensure_dirs()` to its own startup (so it also
+    // covers callers that invoke it directly, e.g. tests) — `load_config`
+    // itself tolerates a missing config file/dir.
     let cfg = load_config(&paths)?;
     let roots = parse_roots(&a.root)?;
     let opts = ServeOptions {

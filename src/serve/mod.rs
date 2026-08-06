@@ -21,11 +21,13 @@ use crate::prelude::*;
 use crate::store::connection;
 
 pub mod assets;
+pub mod envelope;
 pub mod error;
 pub mod fileio;
 pub mod handlers;
 pub mod repo_root;
 pub mod router;
+pub mod routes;
 pub mod search;
 pub mod security;
 
@@ -57,11 +59,19 @@ pub struct ServeOptions {
 #[derive(Clone)]
 pub struct AppState {
     conn: Arc<Mutex<Connection>>,
+    /// The data-dir layout this session was started with. `api::Ctx`
+    /// (`src/api/mod.rs`) needs it for the commands whose middle touches
+    /// the filesystem directly (`rebuild`'s atomic swap, `ast`, …).
+    paths: Arc<Paths>,
     roots: Arc<RootOverrides>,
     token: Arc<str>,
     read_only: bool,
     repo: Option<String>,
-    cfg: Arc<Config>,
+    /// Swappable so a `tune`/`bandit --apply` job (later step) can replace
+    /// the inner `Arc` after rewriting `config.toml`; every request clones
+    /// out the current value via [`AppState::cfg`] rather than holding a
+    /// long-lived reference.
+    cfg: Arc<Mutex<Arc<Config>>>,
     embed_cmd: Option<Arc<str>>,
 }
 
@@ -73,6 +83,11 @@ impl AppState {
         self.conn
             .lock()
             .map_err(|_| Error::Other("serve: database lock poisoned".into()))
+    }
+
+    /// The data-dir layout (`Paths`) this session was started with.
+    pub fn paths(&self) -> &Paths {
+        &self.paths
     }
 
     /// The `--root` overrides for this session.
@@ -95,9 +110,15 @@ impl AppState {
         self.repo.as_deref()
     }
 
-    /// The layered config for this session (ranking knobs, page size).
-    pub(crate) fn cfg(&self) -> &Config {
-        &self.cfg
+    /// The current layered config, cloned out of the swappable slot. A
+    /// poisoned lock (a panic in another handler mid-swap) is recovered
+    /// rather than propagated: the only mutation is a single `Arc` pointer
+    /// swap, so a poisoned guard's inner value is never torn.
+    pub(crate) fn cfg(&self) -> Arc<Config> {
+        self.cfg
+            .lock()
+            .map(|g| Arc::clone(&g))
+            .unwrap_or_else(|poisoned| Arc::clone(&poisoned.into_inner()))
     }
 
     /// The embed command for semantic web search, if configured.
@@ -119,15 +140,20 @@ struct ServeInfo<'a> {
 /// listener, print the access URL (carrying the token), and serve until the
 /// process is interrupted.
 pub async fn serve(paths: &Paths, opts: ServeOptions, json: bool) -> Result<()> {
+    // Hoisted here (rather than left to the CLI caller) so every route —
+    // including read-only ones like `GET /doctor` — can rely on the data-dir
+    // tree already existing, with no per-request side effect.
+    paths.ensure_dirs()?;
     let conn = connection::open(paths.db_path())?;
     let token = security::generate_token()?;
     let state = AppState {
         conn: Arc::new(Mutex::new(conn)),
+        paths: Arc::new(paths.clone()),
         roots: Arc::new(opts.roots),
         token: Arc::from(token.as_str()),
         read_only: opts.read_only,
         repo: opts.repo,
-        cfg: Arc::new(opts.cfg),
+        cfg: Arc::new(Mutex::new(Arc::new(opts.cfg))),
         embed_cmd: opts.embed_cmd.map(Arc::from),
     };
 
