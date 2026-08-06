@@ -1,15 +1,44 @@
 //! Output helpers for `comemory prune`. JSON mode serialises the
-//! [`crate::cli::prune::Report`] struct directly (each list as a `Page`
-//! envelope); TTY mode prints the orphan-edge count then each list's
-//! windowed entries followed by a shared pagination footer carrying the
-//! list's full total.
+//! [`Report`] struct directly (each list as a `Page` envelope); TTY mode
+//! prints the orphan-edge count then each list's windowed entries followed
+//! by a shared pagination footer carrying the list's full total. `Report`
+//! also doubles as `api::prune::run`'s return type — the CLI's `--json`
+//! stdout and the `/api/v1/prune` response `data` field build from the
+//! same owned value.
 
 use std::io::Write as _;
 
-use crate::cli::prune::Report;
+use serde::Serialize;
+
 use crate::output::page::Page;
 use crate::output::{json, tty};
 use crate::prelude::*;
+
+/// Output schema for both JSON and TTY rendering.
+#[derive(Serialize, Debug)]
+pub struct Report {
+    /// Count of `edges` rows whose source memory is missing or
+    /// soft-deleted. A bare count (already a number, not a list), so it
+    /// is never paginated.
+    pub orphan_edges: i64,
+    /// Paginated `<repo>:<path>` values whose corresponding `indexed_files`
+    /// row has been removed. The repo prefix disambiguates identical paths
+    /// across different repos (e.g. `src/main.rs` in two checkouts). The
+    /// shared `--limit` / `--offset` window applies to the dry-run display
+    /// only.
+    pub stale_code_files: Page<String>,
+    /// Paginated memory ids flagged by [`crate::prune::low_value::detect`]
+    /// — soft-delete candidates (applied to the FULL set, not the page,
+    /// when `apply` is set). The window applies to the dry-run display
+    /// only.
+    pub low_value_memories: Page<String>,
+    /// Paginated memory ids flagged by [`crate::prune::stale_code::detect`]
+    /// — owners of a pinned `references_symbol` whose target is a `ghost`
+    /// (gone from a current index). Advisory: surfaced for the operator,
+    /// never deleted by `apply` (spec Non-Goal 5). The window applies to
+    /// display only.
+    pub ghost_ref_memories: Page<String>,
+}
 
 /// Render `report` to stdout in either JSON or TTY mode.
 pub fn emit(report: &Report, json_flag: bool) -> Result<()> {

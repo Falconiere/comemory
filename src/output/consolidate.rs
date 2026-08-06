@@ -1,14 +1,33 @@
 //! Output helpers for `comemory consolidate`. JSON mode serializes the
-//! [`crate::cli::consolidate::Report`] directly; TTY mode prints a scan
-//! header, one block per cluster with the keeper marked, and the shared
-//! pagination footer.
+//! [`Report`] directly; TTY mode prints a scan header, one block per
+//! cluster with the keeper marked, and the shared pagination footer.
+//! `Report` also doubles as `api::consolidate::run`'s return type — the
+//! CLI's `--json` stdout and the `/api/v1/consolidate` response `data`
+//! field build from the same owned value.
 
 use std::io::Write as _;
 
-use crate::cli::consolidate::Report;
+use serde::Serialize;
+
 use crate::consolidate::{Cluster, Member};
+use crate::output::page::Page;
 use crate::output::{json, tty};
 use crate::prelude::*;
+
+/// The report `comemory consolidate` emits, in JSON and TTY alike.
+#[derive(Debug, Serialize)]
+pub struct Report {
+    /// Radius the clusters were built at.
+    pub radius: u32,
+    /// Live memories carrying a real fingerprint that were compared.
+    pub scanned: usize,
+    /// Live rows skipped because their `simhash` was never backfilled.
+    pub skipped_unhashed: usize,
+    /// Memories that landed in a reported cluster.
+    pub clustered: usize,
+    /// The windowed clusters.
+    pub clusters: Page<Cluster>,
+}
 
 /// Members rendered per cluster before the tail takes over. A wide `--radius`
 /// legitimately unions most of the corpus into one cluster, and paging is

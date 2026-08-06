@@ -9,11 +9,10 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::cli::{load_config, page_window, resolve_data_dir};
+use crate::api::{self, Ctx};
+use crate::cli::{load_config, resolve_data_dir};
 use crate::config::paths::Paths;
-use crate::consolidate::{self, Options};
 use crate::output;
-use crate::output::page::Page;
 use crate::prelude::*;
 use crate::store::connection;
 
@@ -59,49 +58,26 @@ pub struct Args {
     pub offset: usize,
 }
 
-/// The report `comemory consolidate` emits, in JSON and TTY alike.
-#[derive(Debug, serde::Serialize)]
-pub struct Report {
-    /// Radius the clusters were built at.
-    pub radius: u32,
-    /// Live memories carrying a real fingerprint that were compared.
-    pub scanned: usize,
-    /// Live rows skipped because their `simhash` was never backfilled.
-    pub skipped_unhashed: usize,
-    /// Memories that landed in a reported cluster.
-    pub clustered: usize,
-    /// The windowed clusters.
-    pub clusters: Page<consolidate::Cluster>,
-}
-
-/// Run `comemory consolidate`: scan, cluster, page, emit. Exit code is 0
-/// whether or not duplication was found — the report is advisory, not a gate.
+/// Run `comemory consolidate`: scan, cluster, page (`api::consolidate::run`),
+/// then emit. Exit code is 0 whether or not duplication was found — the
+/// report is advisory, not a gate.
 ///
 /// Synchronous on purpose: every step is a blocking SQLite read, so there is
 /// nothing to await and the dispatcher calls this arm without `.await`.
 pub fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
-    let conn = connection::open(paths.db_path())?;
+    let mut conn = connection::open(paths.db_path())?;
     let cfg = load_config(&paths)?;
 
-    let radius = a.radius.unwrap_or(cfg.rank.near_dup_hamming);
-    let scan = consolidate::detect(
-        &conn,
-        &Options {
-            radius,
-            repo: a.repo.clone(),
-            include_resolved: a.all,
-        },
-    )?;
-
-    let window = page_window(&cfg, a.k, a.offset);
-    let report = Report {
-        radius,
-        scanned: scan.scanned,
-        skipped_unhashed: scan.skipped_unhashed,
-        clustered: scan.clustered(),
-        clusters: Page::from_slice(scan.clusters, window.limit, window.offset),
+    let req = api::consolidate::Request {
+        radius: a.radius,
+        repo: a.repo,
+        all: a.all,
+        k: a.k,
+        offset: a.offset,
     };
+    let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+    let report = api::consolidate::run(&mut ctx, req)?;
     output::consolidate::emit(&report, json_flag)
 }

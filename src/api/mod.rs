@@ -13,18 +13,30 @@ use rusqlite::Connection;
 use crate::config::{Config, Paths};
 use crate::prelude::*;
 
+/// `comemory completions`: shell completion script generation.
+pub mod completions;
+/// `comemory consolidate`: advisory near-duplicate cluster report.
+pub mod consolidate;
 /// `comemory context`: headline memory + code bundle for a query.
 pub mod context;
+/// `comemory doctor`: runtime health check.
+pub mod doctor;
 /// `comemory edges`: lexical search over the relation graph.
 pub mod edges;
 /// `comemory graph`: the file-level code-connection graph, full or paged.
 pub mod graph;
 /// `comemory list`: page live memories.
 pub mod list;
+/// `comemory prune`: orphan / low-value / stale-code candidates, dry-run
+/// report plus (CLI-driven) apply.
+pub mod prune;
 /// `comemory search`: hybrid memory retrieval.
 pub mod search;
 /// `comemory search-code`: ranked code search.
 pub mod search_code;
+/// `comemory sources`: list registered document sources, with a skippable
+/// reconcile side effect.
+pub mod sources;
 
 /// Borrowed execution context passed to every `api::<cmd>::run`.
 ///

@@ -23,8 +23,14 @@ use crate::serve::envelope::Envelope;
 pub mod code;
 /// `GET /graph`, `GET /edges`.
 pub mod graph;
+/// `GET /doctor`, `GET /consolidate`, `GET /prune`.
+pub mod maint;
 /// `GET /memories`, `GET /memories/{id}`, `GET|POST /memories/search`.
 pub mod memories;
+/// `GET /completions`, `GET /commands`.
+pub mod meta;
+/// `GET /sources`.
+pub mod sources;
 
 /// One `/api/v1` route's static metadata.
 #[derive(Debug, Clone, Copy)]
@@ -59,6 +65,10 @@ pub fn table() -> Vec<RouteEntry> {
     entries.extend_from_slice(memories::table_entries());
     entries.extend_from_slice(code::table_entries());
     entries.extend_from_slice(graph::table_entries());
+    entries.extend_from_slice(maint::table_entries());
+    entries.extend_from_slice(maint::prune::table_entries());
+    entries.extend_from_slice(sources::table_entries());
+    entries.extend_from_slice(meta::table_entries());
     entries
 }
 
@@ -70,7 +80,10 @@ pub fn v1_router(state: AppState) -> Router<AppState> {
         .route("/api/v1/health", get(health))
         .merge(memories::router(state.clone()))
         .merge(code::router(state.clone()))
-        .merge(graph::router(state))
+        .merge(graph::router(state.clone()))
+        .merge(maint::router(state.clone()))
+        .merge(sources::router(state.clone()))
+        .merge(meta::router(state))
 }
 
 /// `GET /api/v1/health` — the same capability-probe payload as legacy `GET

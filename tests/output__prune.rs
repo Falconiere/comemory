@@ -4,9 +4,9 @@
 //! that `output::prune::emit` accepts an empty report and a populated
 //! `Page`-wrapped report in both render modes without panicking.
 
-use comemory::cli::prune::Report;
 use comemory::output::page::Page;
 use comemory::output::prune;
+use comemory::output::prune::Report;
 
 #[test]
 fn emit_accepts_empty_report_in_json_mode() {
