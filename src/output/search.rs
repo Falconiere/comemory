@@ -20,6 +20,23 @@ use crate::retrieval::router::{Source, TIER_EXPANDED};
 use crate::retrieval::scope::TimeScope;
 use crate::store::memory_meta::MemoryMeta;
 
+/// Everything `comemory search`'s render layer needs: `api::search::run`
+/// returns this so the CLI and the HTTP handler can each build their own
+/// envelope (`--json` stdout vs the `/api/v1` response `data` field) from
+/// one owned value instead of five loose parameters.
+pub struct SearchResult {
+    /// Reranked + diversified hits for the requested page.
+    pub hits: Vec<Reranked>,
+    /// Id of the retrieval_log row for this run.
+    pub query_id: Option<String>,
+    /// Pagination cursor for the returned page.
+    pub meta: PageMeta,
+    /// Batched navigation metadata for `hits`, keyed by memory id.
+    pub nav: HashMap<String, MemoryMeta>,
+    /// The run's time-scoping flags.
+    pub scope: TimeScope,
+}
+
 /// One search hit as emitted to the user. `score` duplicates
 /// `score_parts.final_score` so simple consumers never need to descend
 /// into the parts object.
@@ -167,29 +184,26 @@ pub fn envelope<'a>(
     }
 }
 
-/// Render `hits` to stdout in either JSON or TTY mode. `query_id` is the
-/// retrieval_log id for this run (JSON field / TTY footer); `None` skips
-/// it. `page` carries the pagination cursor for the JSON envelope. `meta`
-/// holds the per-hit navigation metadata and `data_dir` resolves each
-/// markdown path to an absolute one. `scope` is echoed in the JSON
-/// envelope only; the TTY view is unchanged by time scoping.
-pub fn emit(
-    hits: &[Reranked],
-    query_id: Option<&str>,
-    page: PageMeta,
-    json_flag: bool,
-    meta: &HashMap<String, MemoryMeta>,
-    data_dir: &Path,
-    scope: ScopeEcho<'_>,
-) -> Result<()> {
+/// Render `result` to stdout in either JSON or TTY mode. `data_dir` resolves
+/// each markdown path to an absolute one. `result.scope` is echoed in the
+/// JSON envelope only; the TTY view is unchanged by time scoping.
+pub fn emit(result: &SearchResult, json_flag: bool, data_dir: &Path) -> Result<()> {
+    let query_id = result.query_id.as_deref();
     if json_flag {
-        return json::write(&envelope(hits, query_id, page, meta, data_dir, scope));
+        return json::write(&envelope(
+            &result.hits,
+            query_id,
+            result.meta,
+            &result.nav,
+            data_dir,
+            ScopeEcho::of(&result.scope),
+        ));
     }
     write_tty(
         &mut std::io::stdout().lock(),
-        hits,
+        &result.hits,
         query_id,
-        meta,
+        &result.nav,
         data_dir,
     )
 }
@@ -264,8 +278,10 @@ fn row_from<'a>(h: &'a Reranked, meta: &HashMap<String, MemoryMeta>, data_dir: &
 /// Resolve a memory's stored `md_path` against `data_dir` into an absolute
 /// path string. Returns an empty string when the metadata is absent.
 /// `Path::join` returns an absolute `md_path` unchanged and joins a relative
-/// one, so this is correct whichever form the writer stored.
-fn abs_path(entry: Option<&MemoryMeta>, data_dir: &Path) -> String {
+/// one, so this is correct whichever form the writer stored. `pub(crate)`
+/// so `serve::routes::memories`'s single-row lookup can resolve the same
+/// path without duplicating the join logic.
+pub(crate) fn abs_path(entry: Option<&MemoryMeta>, data_dir: &Path) -> String {
     match entry {
         Some(m) => PathBuf::from(data_dir)
             .join(&m.md_path)

@@ -13,6 +13,13 @@ use rusqlite::Connection;
 use crate::config::{Config, Paths};
 use crate::prelude::*;
 
+/// `comemory context`: headline memory + code bundle for a query.
+pub mod context;
+/// `comemory list`: page live memories.
+pub mod list;
+/// `comemory search`: hybrid memory retrieval.
+pub mod search;
+
 /// Borrowed execution context passed to every `api::<cmd>::run`.
 ///
 /// Construct via [`Ctx::borrowed`] or [`Ctx::lazy`]; reach the connection

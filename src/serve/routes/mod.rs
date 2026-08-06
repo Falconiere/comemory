@@ -1,22 +1,26 @@
-//! The versioned `/api/v1` REST surface. One file per resource
-//! (`memories`, `code`, `sources`, `graph`, `learning`, `maint`, `jobs`,
-//! `meta`, …, added by later steps); this module owns the route table and
-//! the top-level `v1_router` assembly `serve::router::build_router` merges
-//! in.
-//!
-//! The route [`table`] is the single source of truth for which routes exist
-//! and whether each one mutates — consumed by the read-only gate (a later
-//! step, keyed on `mutating`, **not** the HTTP method: a `POST
-//! /memories/search` is a read) and by `GET /commands` (also later).
+//! The versioned `/api/v1` REST surface: one file per resource, merged by
+//! this module's route [`table`] (source of truth for the read-only gate's
+//! `mutating` flag and `GET /commands`, both later steps) and `v1_router`
+//! assembly. Also owns two handler-layer helpers every resource reuses:
+//! [`run_blocking`] (run `api::<cmd>::run` — and the connection lock it
+//! takes — on a blocking-pool thread, never across an `.await`) and
+//! [`respond`] (envelope the result).
+
+use std::time::Instant;
 
 use axum::Router;
 use axum::extract::State;
 use axum::response::Response;
 use axum::routing::get;
+use serde::Serialize;
 use serde_json::json;
 
+use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::envelope::Envelope;
+
+/// `GET /memories`, `GET /memories/{id}`, `GET|POST /memories/search`.
+pub mod memories;
 
 /// One `/api/v1` route's static metadata.
 #[derive(Debug, Clone, Copy)]
@@ -33,23 +37,32 @@ pub struct RouteEntry {
     pub mutating: bool,
 }
 
-/// The static `/api/v1` route table, growing one entry per route as each
-/// later step mounts it.
-pub fn table() -> &'static [RouteEntry] {
-    &[RouteEntry {
-        method: "GET",
-        path: "/health",
-        command: "health",
-        mutating: false,
-    }]
+/// This module's own routes, prepended to every resource's `table_entries`.
+const BASE: &[RouteEntry] = &[RouteEntry {
+    method: "GET",
+    path: "/health",
+    command: "health",
+    mutating: false,
+}];
+
+/// The full `/api/v1` route table: this module's own entries plus every
+/// resource module's, growing one entry per route as each later step mounts
+/// one. A fresh `Vec` per call (not a `'static` slice) since it is a small,
+/// infrequent aggregation over per-resource `const` arrays — concatenating
+/// `const` slices at compile time buys nothing here.
+pub fn table() -> Vec<RouteEntry> {
+    let mut entries: Vec<RouteEntry> = BASE.to_vec();
+    entries.extend_from_slice(memories::table_entries());
+    entries
 }
 
-/// Mount the `/api/v1` surface. `state` is threaded through for later steps
-/// whose route construction depends on it (e.g. conditionally mounting
-/// mutating routes); today only `GET /api/v1/health` is mounted, so it is
-/// unused for now.
-pub fn v1_router(_state: AppState) -> Router<AppState> {
-    Router::new().route("/api/v1/health", get(health))
+/// Mount the `/api/v1` surface. `state` is threaded through so per-resource
+/// route construction can depend on it (e.g. conditionally mounting
+/// mutating routes in a later step).
+pub fn v1_router(state: AppState) -> Router<AppState> {
+    Router::new()
+        .route("/api/v1/health", get(health))
+        .merge(memories::router(state))
 }
 
 /// `GET /api/v1/health` — the same capability-probe payload as legacy `GET
@@ -63,4 +76,36 @@ async fn health(State(state): State<AppState>) -> Response {
         }),
         0,
     )
+}
+
+/// Run `f` on the blocking-thread-pool, flattening a `JoinError` (task
+/// panic) into the crate `Error` so callers can just `?` through it. Shared
+/// by every `/api/v1` route: `api::<cmd>::run`'s DB work — and the
+/// `MutexGuard` it takes on `AppState`'s shared connection — must never run
+/// on (or cross an `.await` on) the async runtime's own worker threads;
+/// running the whole closure, guard included, inside the blocking task
+/// satisfies both.
+pub(crate) async fn run_blocking<T, F>(f: F) -> Result<T>
+where
+    F: FnOnce() -> Result<T> + Send + 'static,
+    T: Send + 'static,
+{
+    tokio::task::spawn_blocking(f)
+        .await
+        .map_err(|e| Error::Other(format!("blocking task panicked: {e}")))?
+}
+
+/// Envelope a blocking route's result: [`Envelope::ok`] on success,
+/// [`Envelope::err`] (status/code derived from the crate `Error`)
+/// otherwise. `started` feeds `meta.elapsed_ms`.
+pub(crate) fn respond<T: Serialize>(
+    command: &str,
+    result: Result<T>,
+    started: Instant,
+) -> Response {
+    let elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+    match result {
+        Ok(data) => Envelope::ok(command, data, elapsed_ms),
+        Err(e) => Envelope::err(command, &e, elapsed_ms),
+    }
 }
