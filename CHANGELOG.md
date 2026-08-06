@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.3] - 2026-08-06
+
+### Internal
+
+- mint release-plz tokens from the publish App ([#69](https://github.com/Falconiere/comemory/pull/69))
+
 ## [0.14.2] - 2026-08-06
 
 ### Internal
