@@ -6,13 +6,12 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::cli::{parse_id_csv, parse_symbol_id_csv, resolve_data_dir};
+use crate::api;
+use crate::cli::{csv_unique, resolve_data_dir};
+use crate::config::Config;
 use crate::config::paths::Paths;
 use crate::output::json;
 use crate::prelude::*;
-use crate::stats::code_feedback::record_code_with_provenance;
-use crate::stats::feedback::{is_valid_query_id, record_with_provenance};
-use crate::stats::sqlite::StatsDb;
 
 const EXAMPLES: &str = "\
 Examples:
@@ -55,74 +54,50 @@ pub struct Args {
     pub irrelevant_code: String,
 }
 
-/// Record feedback for each id provided and emit a one-line ack (or a JSON
-/// envelope with the recorded counts when `json` is set).
+/// Parse `Args` into an [`api::feedback::Request`], run the shared middle
+/// (Binding Rule 1 — shared with `POST /api/v1/feedback`), and emit a
+/// one-line ack (or a JSON envelope with the recorded counts under
+/// `--json`).
 ///
-/// `query_id` must match the `q-<yyyymmdd>-<8hex>` shape printed by
-/// `comemory search` — a typo'd id errors loudly instead of writing
-/// provenance rows no `retrieval_log` join will ever find. A valid-shaped
-/// id that is *absent* from `retrieval_log` (evicted by gc, or replayed
-/// feedback) only warns: the verdicts are still recorded.
-///
-/// The memory id lists go through the shared [`parse_id_csv`]: entries are
-/// trimmed, de-duplicated (so `--used a,a` cannot double-count and skew
-/// the Beta-feedback posterior), and validated as 8-hex memory ids (so a
-/// typo'd id errors loudly instead of writing an orphan feedback row that
-/// no ranking lookup will ever join). The code id lists go through
-/// [`parse_symbol_id_csv`] with the same trim/dedup/validate-loudly
-/// semantics, but for positive integers (`code_symbols` rowids).
-///
-/// Memory and code verdicts are recorded as two separate transactions
-/// (one per `record_*_with_provenance` call). That is deliberate, not a
-/// shortcut: the two provenance/counter pairs are independent — a code
-/// write failing after the memory tx committed leaves the memory verdicts
-/// valid and fully consistent (events + counters move together inside each
-/// tx), and the surfaced error tells the caller exactly which half to
-/// retry. Wrapping both in an outer tx would require threading a
-/// transaction through both record fns for no consistency gain.
+/// Uses a lazy `Ctx` (no `config.toml` read, no data-dir/DB touch) so
+/// `api::feedback::run`'s validation runs first, exactly as
+/// `cli::feedback::run` did pre-extraction (AC-13: a malformed query id or
+/// id list must not create the data dir or `comemory.db`).
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
-    if !is_valid_query_id(&a.query_id) {
-        return Err(Error::Config(format!(
-            "invalid query id `{}` (expected q-<yyyymmdd>-<8hex>, as printed by comemory search)",
-            a.query_id
-        )));
-    }
-    // Validate ALL FOUR lists before the db opens so a bad id in any flag
-    // cannot leave another flag's half already committed.
-    let used_ids = parse_id_csv(&a.used, "--used")?;
-    let irrelevant_ids = parse_id_csv(&a.irrelevant, "--irrelevant")?;
-    let used_code_ids = parse_symbol_id_csv(&a.used_code, "--used-code")?;
-    let irrelevant_code_ids = parse_symbol_id_csv(&a.irrelevant_code, "--irrelevant-code")?;
-
     let paths = Paths::new(resolve_data_dir(data_dir));
-    paths.ensure_dirs()?;
-    let mut db = StatsDb::open(paths.stats_db())?;
-    let known: bool = db.conn().query_row(
-        "SELECT EXISTS(SELECT 1 FROM retrieval_log WHERE query_id = ?1)",
-        [&a.query_id],
-        |r| r.get(0),
-    )?;
-    if !known {
-        tracing::warn!(query_id = %a.query_id,
-            "query id not found in retrieval_log (evicted or never logged); recording anyway");
-    }
-    record_with_provenance(&mut db, &a.query_id, &used_ids, &irrelevant_ids)?;
-    record_code_with_provenance(&mut db, &a.query_id, &used_code_ids, &irrelevant_code_ids)?;
+    let cfg = Config::defaults();
+    let mut ctx = api::Ctx::lazy(&paths, &cfg);
+
+    let req = api::feedback::Request {
+        query_id: a.query_id,
+        used: csv_unique(&a.used),
+        irrelevant: csv_unique(&a.irrelevant),
+        used_code: csv_unique(&a.used_code),
+        irrelevant_code: csv_unique(&a.irrelevant_code),
+    };
+    let output = api::feedback::run(&mut ctx, req)?;
+    emit(json_flag, &output)
+}
+
+/// Emit the feedback ack: a JSON object under `--json` (byte-identical to
+/// the pre-extraction shape, including the ad-hoc `"ok"` field the
+/// `/api/v1` envelope's own `ok` makes redundant over HTTP), else a TTY
+/// line that surfaces the orphan-query-id notice (invisible at the default
+/// `tracing` `EnvFilter` level).
+fn emit(json_flag: bool, output: &api::feedback::Response) -> Result<()> {
     if json_flag {
         json::write(&serde_json::json!({
             "ok": true,
-            "used": used_ids.len(),
-            "irrelevant": irrelevant_ids.len(),
-            "used_code": used_code_ids.len(),
-            "irrelevant_code": irrelevant_code_ids.len(),
-            "query_id": a.query_id,
-            "known_query": known,
+            "used": output.used,
+            "irrelevant": output.irrelevant,
+            "used_code": output.used_code,
+            "irrelevant_code": output.irrelevant_code,
+            "query_id": output.query_id,
+            "known_query": output.known_query,
         }))?;
     } else {
         let mut out = std::io::stdout().lock();
-        // The tracing::warn above is invisible at the default EnvFilter
-        // level, so the TTY ack itself must carry the orphan notice.
-        if known {
+        if output.known_query {
             writeln!(out, "ok")?;
         } else {
             writeln!(

@@ -1,11 +1,13 @@
 //! The versioned `/api/v1` REST surface: one file per resource, merged by
 //! this module's route [`table`] (source of truth for the read-only gate's
 //! `mutating` flag and `GET /commands`, both later steps) and `v1_router`
-//! assembly. Also owns two handler-layer helpers every resource reuses:
+//! assembly. Also owns the handler-layer helpers every resource reuses:
 //! [`run_blocking`] (run `api::<cmd>::run` — and the connection lock it
-//! takes — on a blocking-pool thread, never across an `.await`) and
-//! [`respond`] (envelope the result).
+//! takes — on a blocking-pool thread, never across an `.await`),
+//! [`respond`] (envelope the result), and [`guard_mutating`] (the
+//! read-only/write-permit gate every mutating route calls first).
 
+use std::sync::Arc;
 use std::time::Instant;
 
 use axum::Router;
@@ -14,6 +16,7 @@ use axum::response::Response;
 use axum::routing::get;
 use serde::Serialize;
 use serde_json::json;
+use tokio::sync::OwnedSemaphorePermit;
 
 use crate::prelude::*;
 use crate::serve::AppState;
@@ -63,6 +66,7 @@ const BASE: &[RouteEntry] = &[RouteEntry {
 pub fn table() -> Vec<RouteEntry> {
     let mut entries: Vec<RouteEntry> = BASE.to_vec();
     entries.extend_from_slice(memories::table_entries());
+    entries.extend_from_slice(memories::write::table_entries());
     entries.extend_from_slice(code::table_entries());
     entries.extend_from_slice(graph::table_entries());
     entries.extend_from_slice(maint::table_entries());
@@ -124,9 +128,6 @@ where
 /// **Ordering (AC-19):** a `mutating` + confirm-gated route MUST check
 /// `state.read_only()` first (→ `405 read_only`) and only call this when
 /// not read-only — read-only outranks a missing confirm.
-///
-/// Reserved here for the confirm-gate-wiring step (s2.2+); not yet called by
-/// a handler.
 pub fn require_confirm(confirmed: bool) -> Result<()> {
     if confirmed {
         Ok(())
@@ -135,6 +136,30 @@ pub fn require_confirm(confirmed: bool) -> Result<()> {
             "this operation requires explicit confirmation".into(),
         ))
     }
+}
+
+/// Guard a mutating route before the write: `405 read_only` on a
+/// `--read-only` server (checked FIRST — AC-19, read-only outranks a
+/// missing confirm and outranks the write permit too), else a
+/// `try_acquire` on the single write permit (§Concurrency), `503 busy` with
+/// a `Retry-After` header on contention (AC-17). `Ok(permit)` must be held
+/// for the duration of the blocking write — move it into the
+/// `run_blocking` closure; dropping it releases the permit to the next
+/// queued request/job.
+///
+/// Every mutating route calls this first, so both gates live in one place
+/// (Binding Rule 1) rather than each handler re-deriving the read-only/busy
+/// envelope on its own.
+pub(crate) fn guard_mutating(
+    command: &str,
+    state: &AppState,
+) -> std::result::Result<OwnedSemaphorePermit, Box<Response>> {
+    if state.read_only() {
+        return Err(Box::new(Envelope::read_only(command)));
+    }
+    Arc::clone(state.write_permit())
+        .try_acquire_owned()
+        .map_err(|_| Box::new(Envelope::busy(command)))
 }
 
 /// Whether a search-shaped route should record access counts /

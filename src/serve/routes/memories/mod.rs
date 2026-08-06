@@ -1,7 +1,11 @@
 //! `GET /api/v1/memories` (`api::list`) and `GET /api/v1/memories/{id}`
 //! (new: a trivial single-row lookup via `store::memory_meta::fetch_meta`).
 //! `GET|POST /api/v1/memories/search` and `GET|POST /api/v1/context` live
-//! in [`search`], merged into this resource's [`router`].
+//! in [`search`]; the mutating routes (`POST /memories`, `DELETE
+//! /memories/{id}`, `POST /feedback`) live in [`write`] — both merged into
+//! this resource's [`router`], `write`'s own route-table entries appended
+//! at [`super::table`] alongside this module's (the `maint`/`prune`
+//! sibling-module pattern).
 
 use std::time::Instant;
 
@@ -22,6 +26,9 @@ use crate::store::memory_meta;
 /// `GET|POST /memories/search` (`api::search`) and `GET|POST /context`
 /// (`api::context`).
 pub mod search;
+/// `POST /memories`, `DELETE /memories/{id}`, `POST /feedback` — the
+/// mutating routes (`api::{save,delete,feedback}`).
+pub mod write;
 
 /// This resource's route-table entries, appended onto [`super::table`].
 pub fn table_entries() -> &'static [RouteEntry] {
@@ -70,7 +77,8 @@ pub fn router(state: AppState) -> Router<AppState> {
     Router::new()
         .route("/api/v1/memories", get(list))
         .route("/api/v1/memories/{id}", get(get_one))
-        .merge(search::router(state))
+        .merge(search::router(state.clone()))
+        .merge(write::router(state))
 }
 
 /// `GET /api/v1/memories` — page live memories (`api::list`).

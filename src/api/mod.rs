@@ -19,10 +19,14 @@ pub mod completions;
 pub mod consolidate;
 /// `comemory context`: headline memory + code bundle for a query.
 pub mod context;
+/// `comemory delete`: soft-delete one memory.
+pub mod delete;
 /// `comemory doctor`: runtime health check.
 pub mod doctor;
 /// `comemory edges`: lexical search over the relation graph.
 pub mod edges;
+/// `comemory feedback`: record which hits were used.
+pub mod feedback;
 /// `comemory graph`: the file-level code-connection graph, full or paged.
 pub mod graph;
 /// `comemory list`: page live memories.
@@ -30,6 +34,8 @@ pub mod list;
 /// `comemory prune`: orphan / low-value / stale-code candidates, dry-run
 /// report plus (CLI-driven) apply.
 pub mod prune;
+/// `comemory save`: write a memory (markdown + store mirror).
+pub mod save;
 /// `comemory search`: hybrid memory retrieval.
 pub mod search;
 /// `comemory search-code`: ranked code search.
