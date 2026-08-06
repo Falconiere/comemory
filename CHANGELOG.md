@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.2] - 2026-08-06
+
+### Internal
+
+- read the tap App credentials from HOMEBREW_APP_* secrets ([#67](https://github.com/Falconiere/comemory/pull/67))
+
 ## [0.14.1] - 2026-08-03
 
 ### Fixed
