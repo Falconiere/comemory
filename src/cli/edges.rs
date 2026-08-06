@@ -15,12 +15,12 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::cli::{load_config, page_window, resolve_data_dir};
-use crate::config::Config;
+use crate::api::{self, Ctx};
+use crate::cli::{load_config, resolve_data_dir};
 use crate::config::paths::Paths;
 use crate::output;
 use crate::prelude::*;
-use crate::store::{connection, edge_fts};
+use crate::store::connection;
 
 const EXAMPLES: &str = "\
 Examples:
@@ -55,43 +55,34 @@ pub struct Args {
     pub offset: usize,
 }
 
-/// Run `comemory edges`: open the store, heal an upgraded index if needed,
-/// then page the triplet search.
+/// Run `comemory edges`: open the store, then delegate the shared middle
+/// (self-heal + triplet paging) to `api::edges::run`.
 ///
 /// Migration 0012 creates `edge_fts` empty on purpose — the rendering lives
 /// in Rust and only there — so a database upgraded from an earlier version
-/// arrives with edges but no triplets. The first query materializes them,
-/// which makes the upgrade heal in the same run with no flag and no
-/// migration backfill. A refresh failure is propagated rather than swallowed:
-/// answering an empty page from a stale index would be a lie, not a
-/// degradation.
+/// arrives with edges but no triplets. The CLI always allows the self-heal
+/// (`allow_self_heal: true`), so the first query materializes them, healing
+/// the upgrade in the same run with no flag and no migration backfill. A
+/// refresh failure is propagated rather than swallowed: answering an empty
+/// page from a stale index would be a lie, not a degradation.
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
     let mut conn = connection::open(paths.db_path())?;
-    if edge_fts::needs_refresh(&conn)? {
-        edge_fts::refresh(&mut conn)?;
-    }
-
     let cfg = load_config(&paths)?;
-    let window = page_window(&cfg, a.k, a.offset);
-    let (hits, has_more) = edge_fts::search_edges(
-        &conn,
-        &a.query,
-        fetch_size(&cfg, window.limit),
-        window.offset,
-    )?;
-    output::edges::emit(&hits, window.limit, window.offset, has_more, json_flag)
-}
 
-/// How many rows to actually fetch for a requested page size. `--k 0` is the
-/// shared "all remaining" sentinel; for a SQL-sliced command that means the
-/// configured `max_page_window` ceiling rather than an unbounded scan, which
-/// is the same bound the retrieval pipeline applies to its own deep pages.
-fn fetch_size(cfg: &Config, limit: usize) -> usize {
-    if limit == 0 {
-        cfg.retrieval.max_page_window
-    } else {
-        limit
-    }
+    let req = api::edges::Request {
+        query: a.query,
+        k: a.k,
+        offset: a.offset,
+    };
+    let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+    let result = api::edges::run(&mut ctx, req, true)?;
+    output::edges::emit(
+        &result.hits,
+        result.limit,
+        result.offset,
+        result.has_more,
+        json_flag,
+    )
 }

@@ -19,7 +19,7 @@ use crate::output::search::ScopeEcho;
 use crate::output::{context, search};
 use crate::prelude::*;
 use crate::serve::AppState;
-use crate::serve::routes::{respond, run_blocking};
+use crate::serve::routes::{respond, run_blocking, track_for};
 
 /// This module's routes, merged into the `memories` resource router.
 pub fn router(_state: AppState) -> Router<AppState> {
@@ -67,14 +67,6 @@ where
     let started = Instant::now();
     let result = run_blocking(move || f(state)).await;
     respond(command, result, started)
-}
-
-/// `track` mirrors §Security's read-only side-effect degradation: a
-/// read-only server never writes access counts / `retrieval_log`, on top of
-/// the same `COMEMORY_DISABLE_ACCESS_TRACKING` test hook the CLI honors (so
-/// AC-2's cross-surface comparison stays reorder-free on both sides).
-fn track_for(state: &AppState) -> Result<bool> {
-    Ok(!state.read_only() && crate::cli::track_searches()?)
 }
 
 fn run_search(state: AppState, req: api::search::Request) -> Result<Value> {

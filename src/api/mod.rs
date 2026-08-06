@@ -15,10 +15,16 @@ use crate::prelude::*;
 
 /// `comemory context`: headline memory + code bundle for a query.
 pub mod context;
+/// `comemory edges`: lexical search over the relation graph.
+pub mod edges;
+/// `comemory graph`: the file-level code-connection graph, full or paged.
+pub mod graph;
 /// `comemory list`: page live memories.
 pub mod list;
 /// `comemory search`: hybrid memory retrieval.
 pub mod search;
+/// `comemory search-code`: ranked code search.
+pub mod search_code;
 
 /// Borrowed execution context passed to every `api::<cmd>::run`.
 ///

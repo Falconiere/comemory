@@ -19,6 +19,10 @@ use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::envelope::Envelope;
 
+/// `GET|POST /code/search`.
+pub mod code;
+/// `GET /graph`, `GET /edges`.
+pub mod graph;
 /// `GET /memories`, `GET /memories/{id}`, `GET|POST /memories/search`.
 pub mod memories;
 
@@ -53,6 +57,8 @@ const BASE: &[RouteEntry] = &[RouteEntry {
 pub fn table() -> Vec<RouteEntry> {
     let mut entries: Vec<RouteEntry> = BASE.to_vec();
     entries.extend_from_slice(memories::table_entries());
+    entries.extend_from_slice(code::table_entries());
+    entries.extend_from_slice(graph::table_entries());
     entries
 }
 
@@ -62,7 +68,9 @@ pub fn table() -> Vec<RouteEntry> {
 pub fn v1_router(state: AppState) -> Router<AppState> {
     Router::new()
         .route("/api/v1/health", get(health))
-        .merge(memories::router(state))
+        .merge(memories::router(state.clone()))
+        .merge(code::router(state.clone()))
+        .merge(graph::router(state))
 }
 
 /// `GET /api/v1/health` — the same capability-probe payload as legacy `GET
@@ -93,6 +101,15 @@ where
     tokio::task::spawn_blocking(f)
         .await
         .map_err(|e| Error::Other(format!("blocking task panicked: {e}")))?
+}
+
+/// Whether a search-shaped route should record access counts /
+/// `retrieval_log` rows: never on a read-only server (§Security "Read-only
+/// side-effect degradation"), else the same `COMEMORY_DISABLE_ACCESS_TRACKING`
+/// test hook the CLI honors — shared by `search`, `search-code`, and
+/// `context` so the three cannot drift.
+pub(crate) fn track_for(state: &AppState) -> Result<bool> {
+    Ok(!state.read_only() && crate::cli::track_searches()?)
 }
 
 /// Envelope a blocking route's result: [`Envelope::ok`] on success,

@@ -206,13 +206,8 @@ fn map_edge(r: &rusqlite::Row<'_>) -> rusqlite::Result<Edge> {
 /// relations, scoped to one repo's source side and dropping low-weight
 /// `co_changed` links, plus the `total` count of edges matching those same
 /// scope filters (pre-window) so the caller can compute an exact `has_more`.
-///
-/// Edges sort by the stable `weight DESC, rel ASC, src_id ASC, dst_id ASC`:
-/// weight-desc is primary so a bounded export keeps the strongest links, with
-/// the legacy `(rel, src, dst)` tiebreak making the window deterministic across
-/// pages. `limit == 0` is the shared "all" sentinel — the `LIMIT` is dropped.
-/// The `rels` values are fixed crate constants, never user input, so inlining
-/// them in the `IN (...)` list is injection-safe.
+/// Edges sort by the stable `weight DESC, rel ASC, src_id ASC, dst_id ASC`
+/// order, so a bounded export keeps the strongest links deterministically.
 fn fetch_edges(
     conn: &Connection,
     repo: Option<&str>,
@@ -221,40 +216,17 @@ fn fetch_edges(
     limit: usize,
     offset: usize,
 ) -> Result<(Vec<Edge>, usize)> {
-    let in_list = rels
-        .iter()
-        .map(|r| format!("'{r}'"))
-        .collect::<Vec<_>>()
-        .join(",");
-    let mut where_clause = format!(
-        " WHERE rel IN ({in_list}) \
-            AND (rel <> 'co_changed' OR weight >= ?1)"
-    );
-    let mut binds: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(min_weight)];
-    if let Some(r) = repo {
-        // Gate both endpoints by the `file:<repo>:` prefix so SQLite rejects
-        // cross-repo edges directly — no Rust-side post-filter, and same index.
-        where_clause.push_str(
-            " AND substr(src_id, 1, length(?2)) = ?2 AND substr(dst_id, 1, length(?2)) = ?2",
-        );
-        binds.push(Box::new(file_node_prefix(r)));
-    }
+    let (where_clause, mut binds) = where_clause_and_binds(rels, repo, min_weight);
+    // The COUNT carries only the filter params — never the window.
+    let count_sql = format!("SELECT count(*) FROM edges{where_clause}");
+    let mut count_stmt = conn.prepare(&count_sql)?;
+    let count: i64 = count_stmt.query_row(
+        rusqlite::params_from_iter(binds.iter().map(|b| b.as_ref())),
+        |r| r.get(0),
+    )?;
+    let total = usize::try_from(count).unwrap_or(0);
 
-    let total: usize = {
-        // The COUNT carries only the filter params (`min_weight`/`repo`) — never
-        // the window.
-        let count_sql = format!("SELECT count(*) FROM edges{where_clause}");
-        let mut stmt = conn.prepare(&count_sql)?;
-        let n: i64 = stmt.query_row(
-            rusqlite::params_from_iter(binds.iter().map(|b| b.as_ref())),
-            |r| r.get(0),
-        )?;
-        usize::try_from(n).unwrap_or(0)
-    };
-
-    // SQLite forbids a bare `OFFSET`, so `limit == 0` ("all") uses its
-    // `LIMIT -1` ("no limit") idiom while still honoring `offset`. Both are
-    // bound params appended after the filter params.
+    // SQLite forbids a bare `OFFSET`, so `limit == 0` ("all") uses `LIMIT -1`.
     let limit_param: i64 = if limit == 0 {
         -1
     } else {
@@ -274,6 +246,34 @@ fn fetch_edges(
         )?
         .collect::<std::result::Result<Vec<_>, _>>()?;
     Ok((rows, total))
+}
+
+/// The `WHERE` clause (relation set + weight floor + optional repo scope)
+/// and its bound params, `min_weight` as `?1` and `repo` as `?2`.
+fn where_clause_and_binds(
+    rels: &[&str],
+    repo: Option<&str>,
+    min_weight: i64,
+) -> (String, Vec<Box<dyn rusqlite::ToSql>>) {
+    let in_list = rels
+        .iter()
+        .map(|r| format!("'{r}'"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let mut where_clause = format!(
+        " WHERE rel IN ({in_list}) \
+            AND (rel <> 'co_changed' OR weight >= ?1)"
+    );
+    let mut binds: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(min_weight)];
+    if let Some(r) = repo {
+        // Both endpoints share the `file:<repo>:` prefix gate, so SQLite
+        // rejects cross-repo edges directly.
+        where_clause.push_str(
+            " AND substr(src_id, 1, length(?2)) = ?2 AND substr(dst_id, 1, length(?2)) = ?2",
+        );
+        binds.push(Box::new(file_node_prefix(r)));
+    }
+    (where_clause, binds)
 }
 
 /// Fetch one [`NodeRow`] per distinct endpoint file referenced by `edges`, so
