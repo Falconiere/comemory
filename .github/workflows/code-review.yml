@@ -25,8 +25,13 @@ jobs:
       # v4 replaced the PROVIDERS JSON array with the flat
       # PROVIDER / MODEL_ID / API_KEY contract. v5 made FAIL_ON default to
       # "changes", so this job now goes red on a request-changes verdict
-      # (set FAIL_ON: none to return to advisory-only).
-      - uses: falconiere/toolu-ghactions/code-review@v6
+      # (set FAIL_ON: none to return to advisory-only). v7 changed MAX_CHUNKS
+      # to default 0 (unlimited) from 20 — a large PR is now reviewed whole
+      # rather than truncated, at unbounded model-call cost; pin
+      # MAX_CHUNKS: 20 to restore the old cap. v7 also dropped file-level
+      # fallback comments (unanchorable findings now land in the sticky
+      # comment only) and changed that comment's layout.
+      - uses: falconiere/toolu-ghactions/code-review@v7
         with:
           PROVIDER: openrouter
           MODEL_ID: deepseek/deepseek-v4-pro
