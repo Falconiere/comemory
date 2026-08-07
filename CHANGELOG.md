@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-08-07
+
+### Added
+
+- HTTP API parity for comemory serve — every CLI subcommand as /api/v1 ([#71](https://github.com/Falconiere/comemory/pull/71))
+
+### Changed
+
+- adopt the toolu-conventions Rust stack (colocated tests, no mod.rs barrels, vendored guardrails) ([#72](https://github.com/Falconiere/comemory/pull/72))
+
 ## [0.14.3] - 2026-08-06
 
 ### Internal
