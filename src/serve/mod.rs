@@ -27,6 +27,7 @@ pub mod envelope;
 pub mod error;
 pub mod fileio;
 pub mod handlers;
+pub mod jobs;
 pub mod repo_root;
 pub mod router;
 pub mod routes;
@@ -85,6 +86,9 @@ pub struct AppState {
     /// request. Not yet wired to a handler (a later step); constructed here
     /// so it is available.
     write_permit: Arc<tokio::sync::Semaphore>,
+    /// The in-process background-job table (§3 `serve/jobs/`), read by the
+    /// `/api/v1/jobs*` routes and written by every job worker.
+    jobs: Arc<jobs::Registry>,
     /// Canonicalized `--allow-path <dir>` entries — one source feeding the
     /// `contain_abs` allowed-roots set (§Security "Path containment").
     allow_path: Arc<Vec<PathBuf>>,
@@ -153,6 +157,13 @@ impl AppState {
         &self.write_permit
     }
 
+    /// The background-job registry: the `/api/v1/jobs*` routes read it, and
+    /// `jobs::spawn_job` takes it (with [`AppState::write_permit`]) to run a
+    /// long command off the request path.
+    pub fn jobs(&self) -> &Arc<jobs::Registry> {
+        &self.jobs
+    }
+
     /// The full allowed-roots set for `security::contain_abs`: `--root`
     /// override paths (canonicalized here — the map's values are not
     /// guaranteed pre-canonical) ∪ every stored `repo_marker.root_path` ∪
@@ -209,6 +220,7 @@ pub async fn serve(paths: &Paths, opts: ServeOptions, json: bool) -> Result<()> 
         cfg: Arc::new(Mutex::new(Arc::new(opts.cfg))),
         embed_cmd: opts.embed_cmd.map(Arc::from),
         write_permit: Arc::new(tokio::sync::Semaphore::new(1)),
+        jobs: Arc::new(jobs::Registry::new()),
         allow_path: Arc::new(opts.allow_path),
         bootstrap_root: discover_bootstrap_root().map(Arc::new),
     };

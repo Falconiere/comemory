@@ -26,6 +26,8 @@ use crate::serve::envelope::Envelope;
 pub mod code;
 /// `GET /graph`, `GET /edges`.
 pub mod graph;
+/// `GET /jobs`, `GET /jobs/{id}`, `GET /jobs/{id}/events` (SSE).
+pub mod jobs;
 /// `GET /doctor`, `GET /consolidate`, `GET /prune`.
 pub mod maint;
 /// `GET /memories`, `GET /memories/{id}`, `GET|POST /memories/search`.
@@ -69,6 +71,7 @@ pub fn table() -> Vec<RouteEntry> {
     entries.extend_from_slice(memories::write::table_entries());
     entries.extend_from_slice(code::table_entries());
     entries.extend_from_slice(graph::table_entries());
+    entries.extend_from_slice(jobs::table_entries());
     entries.extend_from_slice(maint::table_entries());
     entries.extend_from_slice(maint::prune::table_entries());
     entries.extend_from_slice(maint::admin::table_entries());
@@ -86,6 +89,7 @@ pub fn v1_router(state: AppState) -> Router<AppState> {
         .merge(memories::router(state.clone()))
         .merge(code::router(state.clone()))
         .merge(graph::router(state.clone()))
+        .merge(jobs::router(state.clone()))
         .merge(maint::router(state.clone()))
         .merge(sources::router(state.clone()))
         .merge(meta::router(state))
