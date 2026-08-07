@@ -19,7 +19,7 @@ worker's own dedicated connection). Conn-free commands (`doctor`, `rebuild`,
 `ast`, `install-hooks`, `completions`) never open one at all.
 
 Every `Request` derives `#[serde(deny_unknown_fields)]`, enforced by the
-clap-introspection walk in `src/api/tests/parity.rs`.
+clap-introspection walk in `tests/api__parity.rs`.
 
 ## Contents
 

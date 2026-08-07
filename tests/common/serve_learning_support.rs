@@ -5,8 +5,8 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Shared server-spawn + HTTP helpers for `tests/serve__routes__learning.rs`
-//! and `tests/serve__routes__learning_2.rs`.
+//! Shared server-spawn + HTTP helpers for `src/serve/routes/tests/learning.rs`
+//! and `src/serve/routes/tests/learning_2.rs`.
 
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};

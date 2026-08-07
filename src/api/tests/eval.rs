@@ -8,7 +8,7 @@
 //! Mirror test for `src/api/eval.rs`. Seeds a real corpus + golden file via
 //! the binary, then calls `api::eval::run` directly against a `Ctx` opened
 //! on the same data-dir (the HTTP route — `POST /eval`, job, read-only
-//! containment — lives in `tests/serve__routes__learning.rs`).
+//! containment — lives in `src/serve/routes/tests/learning.rs`).
 
 use crate::test_common::cli_eval_support as support;
 

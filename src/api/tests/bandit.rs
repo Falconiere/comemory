@@ -8,7 +8,7 @@
 //! Mirror test for `src/api/bandit.rs`. Seeds a real corpus + golden file
 //! via the binary, then calls `api::bandit::run` directly against a `Ctx`
 //! opened on the same data-dir (the HTTP route — job, confirm-when-apply,
-//! `AppState.cfg` reload — lives in `tests/serve__routes__learning.rs`).
+//! `AppState.cfg` reload — lives in `src/serve/routes/tests/learning.rs`).
 
 use crate::test_common::cli_eval_support as support;
 

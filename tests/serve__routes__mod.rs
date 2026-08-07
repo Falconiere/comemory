@@ -5,7 +5,7 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! End-to-end coverage of the `/api/v1` route mount (`src/serve/routes/mod.rs`)
+//! End-to-end coverage of the `/api/v1` route mount (`src/serve/routes.rs`)
 //! against a real bound server: `GET /api/v1/health`'s envelope shape, the
 //! path-aware 401 the router `guard` now returns on `/api/v1/*` (AC-11), and
 //! that the legacy, unversioned `GET /api/health` keeps its plain-text 401 and

@@ -6,7 +6,7 @@
     clippy::too_many_lines
 )]
 //! End-to-end coverage of `GET /api/v1/memories` and
-//! `GET /api/v1/memories/{id}` (`src/serve/routes/memories/mod.rs`) against
+//! `GET /api/v1/memories/{id}` (`src/serve/routes/memories.rs`) against
 //! a real bound server, seeded via real `comemory save` calls. Mirrors the
 //! `serve__routes__mod.rs` / `cli__serve.rs` spawn/banner/authed-request
 //! harness.

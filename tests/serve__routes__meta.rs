@@ -7,7 +7,7 @@
 )]
 //! End-to-end coverage of `GET /api/v1/completions` and `GET /api/v1/commands`
 //! (`src/serve/routes/meta.rs`) against a real bound server (mirrors
-//! `tests/api__completions.rs`, which exercises `api::completions::run`
+//! `src/api/tests/completions.rs`, which exercises `api::completions::run`
 //! directly without HTTP).
 
 use std::io::{BufRead, BufReader};

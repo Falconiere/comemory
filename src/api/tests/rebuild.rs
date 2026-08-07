@@ -5,7 +5,7 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror test for `src/api/rebuild/mod.rs`. `api::rebuild::run` is called
+//! Mirror test for `src/api/rebuild.rs`. `api::rebuild::run` is called
 //! directly (no CLI process) against real temp data-dirs seeded by real
 //! `comemory save` runs: the markdown replay, the atomic swap's sidecar
 //! cleanup, and the leave-the-live-DB-alone error path. The preservation

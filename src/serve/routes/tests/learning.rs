@@ -10,7 +10,7 @@
 //! (`apply:false` needs no confirm; `apply:true` without confirm is `400`
 //! and creates no job; `bandit --apply` refused when `[bandit] enabled =
 //! false`). Read-only-outranks-confirm (AC-19) and the `AppState.cfg`
-//! reload proof live in `tests/serve__routes__learning_2.rs`.
+//! reload proof live in `src/serve/routes/tests/learning_2.rs`.
 
 use crate::test_common::serve_learning_support as support;
 

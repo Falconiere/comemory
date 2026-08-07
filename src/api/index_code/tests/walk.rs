@@ -21,7 +21,7 @@ use comemory::store::connection;
 use tempfile::tempdir;
 
 /// Real oversized function fixture, shared with `tests/cli__index_code_2.rs`
-/// and `tests/ast__chunk.rs` so every consumer chunks the same corpus.
+/// and `src/ast/tests/chunk.rs` so every consumer chunks the same corpus.
 const OVERSIZED_SRC: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/ast/fixtures/oversized_fn.rs"

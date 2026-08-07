@@ -68,7 +68,7 @@ pub struct ServeOptions {
 pub struct AppState {
     conn: Arc<Mutex<Connection>>,
     /// The data-dir layout this session was started with. `api::Ctx`
-    /// (`src/api/mod.rs`) needs it for the commands whose middle touches
+    /// (`src/api.rs`) needs it for the commands whose middle touches
     /// the filesystem directly (`rebuild`'s atomic swap, `ast`, …).
     paths: Arc<Paths>,
     roots: Arc<RootOverrides>,

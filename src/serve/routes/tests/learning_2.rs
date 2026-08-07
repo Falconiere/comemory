@@ -9,7 +9,7 @@
 //! `POST /api/v1/bandit` (AC-19), plus the discriminating proof that a
 //! successful `tune --apply` job reloads `AppState.cfg` in-memory without a
 //! server restart. Confirm-when-apply shape and `POST /api/v1/eval` live in
-//! `tests/serve__routes__learning.rs`.
+//! `src/serve/routes/tests/learning.rs`.
 
 use crate::test_common::serve_learning_support as support;
 

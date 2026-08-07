@@ -5,7 +5,7 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror test for `src/api/index_code/mod.rs`. Real temp git repos built
+//! Mirror test for `src/api/index_code.rs`. Real temp git repos built
 //! via the shared `common/git_*` helpers; `api::index_code::run` is called
 //! directly against a `Ctx::borrowed` connection (no CLI process spawned).
 //! `cli::index_code::run` stays byte-compat tested against CLI stdout in

@@ -5,7 +5,7 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror test for `src/api/mod.rs`.
+//! Mirror test for `src/api.rs`.
 //!
 //! Proves the two `Ctx` constructors keep their contract: [`Ctx::lazy`]
 //! never opens `comemory.db` until [`Ctx::conn`] is first called, and

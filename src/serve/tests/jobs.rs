@@ -5,7 +5,7 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror test for `src/serve/jobs/mod.rs` — the job lifecycle types.
+//! Mirror test for `src/serve/jobs.rs` — the job lifecycle types.
 //!
 //! Proves the wire shapes the `/api/v1/jobs*` routes and the SSE stream
 //! depend on: `JobStatus` serializes as a bare slug string, a failed job's

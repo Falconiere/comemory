@@ -11,7 +11,7 @@
 //! unconditionally, so a `GET` — even one carrying `?apply=true` in the
 //! query string — must never soft-delete anything (`api::prune::run` itself,
 //! including the `apply: true` path, is covered directly in
-//! `tests/api__prune.rs`; `api::gc::run` in `tests/api__gc.rs`).
+//! `src/api/tests/prune.rs`; `api::gc::run` in `src/api/tests/gc.rs`).
 
 #[path = "common/cli_prune_support.rs"]
 mod support;
