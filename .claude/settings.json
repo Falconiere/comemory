@@ -49,9 +49,5 @@
         ]
       }
     ]
-  },
-  "enabledPlugins": {
-    "claudness@falconiere": true,
-    "code-simplifier@claude-plugins-official": true
   }
 }

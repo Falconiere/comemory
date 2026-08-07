@@ -342,6 +342,57 @@ the 300-line ceiling, so splitting is a readability choice, not an obligation.
 Measured today: 147 colocated `src/**/tests/*.rs` files, 81 crate-root
 `tests/*.rs` surfaces (45 CLI, 32 `assert_cmd`, 4 `insta`).
 
+### Why crate-root `tests/` cannot be deleted
+
+Rules 1 and 2 above are not stylistic preferences, and the question "why not
+colocate *everything* and drop `tests/`?" recurs. It was measured on
+2026-08-07; the answer is that three separate things anchor the directory.
+
+**1. `CARGO_BIN_EXE_comemory` (the binding constraint).** `assert_cmd`'s
+`Command::cargo_bin("comemory")` reads the `CARGO_BIN_EXE_comemory` env var,
+which Cargo publishes **only to integration-test and bench targets**. From a
+lib unittest it is unset and assert_cmd panics outright — its own help text
+says *"if this is running within a unit test, move it to an integration test
+to gain access to `CARGO_BIN_EXE_comemory`."*
+
+There is a trap here worth knowing about. If `target/debug/comemory` already
+exists, `cargo-nextest` sets the variable at runtime and a colocated
+`assert_cmd` test passes — so on a warm target dir the constraint looks
+absent. It is not. Delete the binary, or run `cargo nextest run --lib`, and
+the same test panics. Verified both ways, and separately on a scratch crate
+with no `tests/` directory at all, where `cargo nextest run` never built the
+binary.
+
+The consequence of removing the last integration target is therefore worse
+than a build error: nothing would make Cargo rebuild the binary during a test
+run, so the 32 `assert_cmd` surfaces would silently exercise **whatever stale
+binary was left in `target/`** and report green against source you had already
+changed. A false green is a worse failure mode than a red build, which is why
+this is a rule rather than a preference.
+
+If the directory is ever collapsed anyway, the cheapest way to keep the
+guarantee is to leave exactly one integration target whose only job is to
+force the binary build — not to drop to `cargo build --bin comemory && cargo
+nextest run`, which fixes only the sanctioned entry points and leaves a bare
+`cargo nextest run` silently stale.
+
+**2. insta snapshot resolution.** insta derives its snapshot directory from
+the test file's own location, so colocating the 4 snapshot owners would
+scatter `snapshots/` directories under `src/` — which the `folder-tree`
+guardrail rejects (`src.nested` allows only `tests` and
+`proptest-regressions`). It would need either a new allowlist entry or a
+redirected `Settings::set_snapshot_path`, and `tests/snapshots/` stays the one
+reviewed home instead.
+
+**3. Fixture and data files.** `tests/common/` holds the single copy of every
+shared fixture (D9), and `tests/golden/`, `tests/ast/fixtures/` and
+`tests/common/fixtures/` hold data addressed through
+`concat!(env!("CARGO_MANIFEST_DIR"), "/tests/...")`. These are the movable
+part — `tests/common/*.rs` could become `src/test_common/*.rs` and the data
+could move to a top-level `fixtures/` — but only in a world where constraint 1
+is already solved, because `#[cfg(test)]` items in `src/` are invisible to an
+integration-test binary.
+
 ### Conventions inside a test file
 
 - First line, always:
@@ -567,7 +618,9 @@ local rule strictly stronger than the one it replaces.
 - **D11 — 81 of 228 test files remain crate-root integration tests**
   (45 CLI surfaces, 32 driving the real binary via `assert_cmd`, 4 owning an
   `insta` snapshot) — the kit's own "one file per public surface" category,
-  not an exception, at a ratio high enough to declare.
+  not an exception, at a ratio high enough to declare. The ratio is a hard
+  floor, not inertia: see "Why crate-root `tests/` cannot be deleted" under
+  Testing for the `CARGO_BIN_EXE_comemory` constraint that pins it.
 - **D12 — `.claude/settings.json` is merged, not replaced.** comemory's
   `pre-tools`/`post-tools`/`session-end` dispatchers stay; the kit's two
   guardrails entries are added beside them as their own top-level hook
