@@ -502,51 +502,42 @@ installed on this repo) so the pushed tag triggers downstream workflows. The
 
 ## Claude Code Hooks
 
-`.claude/settings.json` merges two independent layers: comemory's own
-dispatcher-based hooks (adapted from `qwick-business-app`) and the
-toolu-conventions kit's two guardrails entries. They are **separate hook
-entries, not one dispatcher call**: `.claude/hooks/pre-tools/mod.sh` and
-`post-tools/mod.sh` run every module with `2>/dev/null`, forward only stdout,
-and always exit 0 — whereas the guardrails hook's contract is that it writes
-to stderr and exits **2** (Claude Code ignores a `1` from a hook; only `2`
-surfaces on `PostToolUse` or blocks on `Stop`). Routed through the dispatcher,
-the guardrails layer would be inert while looking correctly wired, so
-`bash scripts/guardrails/run.sh --hook` (`PostToolUse`) and `--stop`
-(`Stop`) are their own top-level entries beside the dispatcher ones.
+`.claude/settings.json` wires **only** the toolu-conventions guardrails
+entries. comemory's own dispatcher layer (`.claude/hooks/`, adapted from
+`qwick-business-app`) is **retired** — one enforcement surface, not two:
 
-- **PreTool hooks** (`pre-tools/modules/`):
-  - `bash-commands.sh` blocks `npm`/`bun`/`yarn`/`pnpm`/`pip`/`uv`/`poetry`
-    (this is a Rust project), destructive commands
-    (`rm -rf`, `git push --force`, `git reset --hard`, `git checkout .`,
-    `chmod -R 777`), bypass flags (`--no-verify`, `--no-gpg-sign`), and
-    direct `rustfmt` / `cargo fmt` / `cargo clippy` invocation outside
-    `scripts/` or `just`.
-  - `protected-files.sh` guards generated artifacts and config the agent
-    must not edit casually, including `scripts/guardrails/**` — that folder
-    is copied verbatim from the kit and must never be hand-edited;
-    `guardrails.config.json` and the two project-local pattern files under
-    `scripts/guardrails/patterns/rust/` are the sanctioned knobs and stay
-    editable.
-  - `code-edit-rules.sh` is **deleted**. Every one of its checks now has a
-    single better enforcer: `Cargo.toml [lints]` for
-    unwrap/expect/panic/todo/unimplemented/print_stdout/print_stderr,
-    `no-allow-attribute.yml` for `#[allow(...)]`, `no-inline-test-module.yml`
-    for an inline `#[cfg(test)] mod tests { ... }`, `no-unsafe-without-safety.yml`
-    for `unsafe`. Keeping a grep copy alongside those would be the exact
-    two-enforcers drift the migration exists to prevent — and the copy would
-    be actively wrong, rejecting the canonical `#![allow(...)]` header every
-    test file under `src/**/tests/` must carry.
-- **PostTool hooks** (`post-tools/modules/`):
-  - `auto-format.sh` re-runs `rustfmt` on touched files.
-  - `gate-status.sh` records which gates are currently green for the
-    session.
-  - `bash scripts/guardrails/run.sh --hook` (kit entry, `Edit|Write` matcher)
-    — file-addressable structure checks on the just-edited path(s).
-- **Stop hook** (`session-end.sh`) runs `fmt-check`, `guardrails-check`, and
-  `typos-check` at end-of-conversation so regressions surface immediately
-  (`test-placement-check`, `no-bypass-check`, and `module-size-check` are
-  retired — see Quality Gates). `bash scripts/guardrails/run.sh --stop` (kit
-  entry) runs the full repo-mode guardrails sweep behind two early-outs.
+- **PostToolUse** (`Edit|Write` matcher) — `bash scripts/guardrails/run.sh --hook`,
+  file-addressable structure checks on the just-edited path(s).
+- **Stop** — `bash scripts/guardrails/run.sh --stop`, the full repo-mode
+  guardrails sweep behind two early-outs.
+
+The guardrails hook writes to stderr and exits **2** (Claude Code ignores a
+`1` from a hook; only `2` surfaces on `PostToolUse` or blocks on `Stop`).
+That contract is why it was never routed through the old dispatcher, which
+swallowed stderr and always exited 0 — the layer would have been inert while
+looking correctly wired. It is now the only entry, so the question is moot.
+
+### What retiring the dispatcher gave up, and what covers it now
+
+The dispatcher was a *tool-call interceptor*; guardrails is a *repo-state
+checker*. They never overlapped, so this is a real reduction rather than a
+consolidation — recorded here so nobody assumes guardrails absorbed it:
+
+| Retired check | What covers it now |
+| --- | --- |
+| `npm`/`bun`/`pip`/`uv` blocked (Rust project) | Nothing. Convention only. |
+| `rm -rf`, `git reset --hard`, `git checkout .`, `chmod -R 777` blocked | The harness's own confirmation on destructive commands. |
+| `git push --force` blocked | Nothing — and note the old rule also caught `--force-with-lease`, the *safe* variant, so a rebased branch had no sanctioned way to publish. |
+| `--no-verify` / `--no-gpg-sign` blocked | `lefthook.yml` still runs on commit/push, and CI re-runs `scripts/check-all.sh` regardless — a local bypass cannot land. |
+| Direct `rustfmt` / `cargo clippy` blocked outside `scripts/` | Nothing. `scripts/fmt-check.sh` and `scripts/lint-check.sh` remain the canonical invocations. |
+| `protected-files.sh` (build artifacts, `scripts/guardrails/**`) | Convention only — `scripts/guardrails/` is still copied verbatim from the kit and must not be hand-edited; `guardrails.config.json` and `scripts/guardrails/patterns/rust/` remain the sanctioned knobs. |
+| `auto-format.sh` re-ran `rustfmt` on touched files | Deliberately gone. It invoked `rustfmt` without the project's edition, so it reordered imports into a form `scripts/fmt-check.sh` then rejected — it manufactured the drift it existed to prevent. |
+| `gate-status.sh` session gate tracking | Nothing. `bash scripts/check-all.sh` on demand. |
+| `session-end.sh` ran `fmt-check` + `typos-check` at Stop | The guardrails `--stop` sweep, plus lefthook's pre-commit `fmt`/`typos` jobs. |
+
+The load-bearing gates were never in this layer: `lefthook.yml` runs `fmt`,
+`guardrails` and `typos` pre-commit and `check_all` pre-push, and CI runs
+`scripts/check-all.sh` on every PR. Those are unchanged.
 
 User-facing docs live under `docs/`, organized in Diátaxis tiers and indexed by
 `docs/README.md`: the `docs/getting-started.md` tutorial, the task-oriented
@@ -621,11 +612,14 @@ local rule strictly stronger than the one it replaces.
   not an exception, at a ratio high enough to declare. The ratio is a hard
   floor, not inertia: see "Why crate-root `tests/` cannot be deleted" under
   Testing for the `CARGO_BIN_EXE_comemory` constraint that pins it.
-- **D12 — `.claude/settings.json` is merged, not replaced.** comemory's
-  `pre-tools`/`post-tools`/`session-end` dispatchers stay; the kit's two
-  guardrails entries are added beside them as their own top-level hook
-  entries (see "Claude Code Hooks" above for why they cannot be spliced into
-  the dispatcher).
+- **D12 — RESOLVED, no longer a deviation.** `.claude/settings.json` was
+  briefly a *merge* of comemory's `pre-tools`/`post-tools`/`session-end`
+  dispatchers and the kit's two guardrails entries. The dispatcher layer is
+  now retired and the file wires the kit's entries alone, so this file matches
+  the kit and there is nothing left to declare. See "Claude Code Hooks" above
+  for what the dispatcher used to catch and what covers each item now — the
+  reduction is real, and the load-bearing gates (`lefthook.yml`, CI's
+  `scripts/check-all.sh`) were never in that layer.
 - **D13 — `benches/` is untouched.** The kit's STRUCTURE.md is silent on
   benches; Criterion harnesses have their own cargo semantics and are neither
   `src/` nor `tests/`. They carry only the canonical test/bench lint header.
