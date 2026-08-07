@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Mirror test for `src/api/rebuild/mod.rs`. `api::rebuild::run` is called
 //! directly (no CLI process) against real temp data-dirs seeded by real
 //! `comemory save` runs: the markdown replay, the atomic swap's sidecar
@@ -7,8 +14,7 @@
 //! `tests/cli__rebuild_2.rs`, and the HTTP job route in
 //! `tests/serve__routes__maint__admin.rs`.
 
-#[path = "common/cli_rebuild_support.rs"]
-pub mod support;
+use crate::test_common::cli_rebuild_support as support;
 
 use comemory::api::{self, Ctx};
 use comemory::config::{Config, Paths};

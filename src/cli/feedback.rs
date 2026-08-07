@@ -7,9 +7,9 @@ use std::path::PathBuf;
 use clap::Args as ClapArgs;
 
 use crate::api;
-use crate::cli::{csv_unique, resolve_data_dir};
+use crate::cli::csv_unique;
 use crate::config::Config;
-use crate::config::paths::Paths;
+use crate::config::paths::{Paths, resolve_data_dir};
 use crate::output::json;
 use crate::prelude::*;
 

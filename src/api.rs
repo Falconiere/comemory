@@ -124,3 +124,7 @@ impl<'a> Ctx<'a> {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "tests/api.rs"]
+mod tests;

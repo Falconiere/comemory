@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Mirror test for `src/api/edges.rs`. Seeds a real supersede relation via
 //! the `comemory` binary, then calls `api::edges::run` directly against a
 //! `Ctx` opened on the same data-dir — proving the extracted command core
@@ -13,12 +20,12 @@ use comemory::store::connection;
 use serde_json::Value;
 
 fn save_id(home: &tempfile::TempDir, args: &[&str]) -> String {
-    let mut argv = vec!["--json", "save"];
-    argv.extend_from_slice(args);
+    let mut full = vec!["--json", "save"];
+    full.extend_from_slice(args);
     let out = Command::cargo_bin("comemory")
         .expect("bin")
         .env("COMEMORY_DATA_DIR", home.path())
-        .args(&argv)
+        .args(&full)
         .assert()
         .success();
     let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();

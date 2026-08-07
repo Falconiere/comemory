@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Shared in-process `comemory serve` router harness.
 //!
 //! Every subprocess-based `serve` test (`spawn_serve` + `child.kill()`)

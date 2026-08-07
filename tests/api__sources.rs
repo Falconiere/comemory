@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Mirror test for `src/api/sources.rs`. Registers a real document source
 //! via `comemory index`, then edits `sources.toml` out from under the
 //! mirror to prove `Request::reconcile` gates the `source_roots` write:

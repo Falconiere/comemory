@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Mirror test for `src/api/search_code.rs`. Indexes a real git fixture repo
 //! via `comemory index-code`, then calls `api::search_code::run` directly
 //! against a `Ctx` opened on the same data-dir — proving the extracted

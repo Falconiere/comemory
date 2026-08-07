@@ -1,10 +1,16 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Mirror test for `src/api/eval.rs`. Seeds a real corpus + golden file via
 //! the binary, then calls `api::eval::run` directly against a `Ctx` opened
 //! on the same data-dir (the HTTP route — `POST /eval`, job, read-only
 //! containment — lives in `tests/serve__routes__learning.rs`).
 
-#[path = "common/cli_eval_support.rs"]
-mod support;
+use crate::test_common::cli_eval_support as support;
 
 use comemory::api::{self, Ctx};
 use comemory::config::{Config, Paths};

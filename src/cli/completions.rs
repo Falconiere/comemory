@@ -14,7 +14,7 @@ use clap::Args as ClapArgs;
 use clap_complete::Shell;
 
 use crate::api::{self, Ctx};
-use crate::cli::resolve_data_dir;
+use crate::config::paths::resolve_data_dir;
 use crate::config::{Config, Paths};
 use crate::prelude::*;
 

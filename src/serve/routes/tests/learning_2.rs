@@ -1,11 +1,17 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Read-only-outranks-confirm coverage for `POST /api/v1/tune` and
 //! `POST /api/v1/bandit` (AC-19), plus the discriminating proof that a
 //! successful `tune --apply` job reloads `AppState.cfg` in-memory without a
 //! server restart. Confirm-when-apply shape and `POST /api/v1/eval` live in
 //! `tests/serve__routes__learning.rs`.
 
-#[path = "common/serve_learning_support.rs"]
-mod support;
+use crate::test_common::serve_learning_support as support;
 
 use serde_json::Value;
 use support::{jobs_total, poll_job_terminal, post, save, spawn_serve, spawn_serve_with};

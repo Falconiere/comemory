@@ -115,3 +115,7 @@ fn writable_report(ctx: &mut Ctx<'_>, embed_hint: Option<String>) -> Result<Repo
         embed_hint,
     })
 }
+
+#[cfg(test)]
+#[path = "tests/doctor.rs"]
+mod tests;

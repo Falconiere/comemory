@@ -1,10 +1,17 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Mirror test for `src/api/tune.rs`. Seeds a real corpus + golden file via
 //! the binary, then calls `api::tune::run` directly against a `Ctx` opened
 //! on the same data-dir (the HTTP route — job, confirm-when-apply,
 //! `AppState.cfg` reload — lives in `tests/serve__routes__learning.rs`).
 
-#[path = "common/cli_eval_support.rs"]
-mod support;
+use crate::test_common::cli_eval_support as support;
+use std::fmt::Write as _;
 
 use comemory::api::{self, Ctx};
 use comemory::config::{Config, Paths};
@@ -90,7 +97,7 @@ fn tag_discriminated_fixture(home: &TempDir) -> std::path::PathBuf {
         .expect("id")
         .to_string();
     let mut yaml = std::fs::read_to_string(&golden).expect("read golden file");
-    yaml.push_str(&format!("- query: postgres\n  relevant: [{tagged}]\n"));
+    let _ = writeln!(yaml, "- query: postgres\n  relevant: [{tagged}]");
     std::fs::write(&golden, yaml).expect("append tag-discriminated pair");
     let config = home.path().join(".comemory").join("config.toml");
     std::fs::write(&config, "[retrieval]\nbm25_weights = [1.0, 0.0]\n")

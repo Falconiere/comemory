@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Test mirror for `src/store/repo_marker_roots.rs`.
 
 use comemory::store::{code_row, connection, repo_marker_roots};

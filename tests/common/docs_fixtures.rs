@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Shared helper: copy the real document fixtures
 //! (`tests/common/fixtures/docs/`) into a fresh directory so `comemory
 //! index`/`sources`/`unindex` integration tests never point at — and can

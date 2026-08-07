@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Mirror test for `src/api/index_code/mod.rs`. Real temp git repos built
 //! via the shared `common/git_*` helpers; `api::index_code::run` is called
 //! directly against a `Ctx::borrowed` connection (no CLI process spawned).
@@ -5,12 +12,7 @@
 //! `tests/cli__index_code.rs` / `tests/cli__index_code_2.rs`; the HTTP job
 //! route (`POST /api/v1/code/index`) lives in `tests/serve__routes__code.rs`.
 
-#[path = "common/git_commit.rs"]
-mod git_commit;
-#[path = "common/git_repo.rs"]
-mod git_repo;
-#[path = "common/git_sample.rs"]
-mod git_sample;
+use crate::test_common::git_sample;
 
 use comemory::api::{self, Ctx};
 use comemory::config::{Config, Paths};

@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Mirror test for `src/api/mod.rs`.
 //!
 //! Proves the two `Ctx` constructors keep their contract: [`Ctx::lazy`]
@@ -9,8 +16,7 @@ use comemory::api::Ctx;
 use comemory::config::{Config, Paths};
 use rusqlite::Connection;
 
-#[path = "common/mod.rs"]
-mod common;
+use crate::test_common as common;
 
 #[test]
 fn lazy_ctx_opens_the_db_only_on_first_conn_call() {

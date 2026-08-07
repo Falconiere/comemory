@@ -142,7 +142,6 @@ narrative; the folder `README.md` is the authoritative file-by-file list.
 
 | Module | Responsibility |
 |--------|---------------|
-<<<<<<< HEAD
 | `cli/` | clap subcommand entry points + the top-level dispatcher in `cli.rs`, plus `when` — the shared date-flag layer (`parse_when` for one `--since`/`--until`/`--as-of` value, `scope_from_flags` for the whole trio → a validated `TimeScope`), used by both `search` and `context`; `edges` is the fourth free-text surface (`comemory edges <query>` — lexical search over `edge_fts`, self-healing an empty index on first use) |
 | `tui/` | read-only interactive terminal explorer (`comemory tui`): ratatui front end + async `EventStream`/`tokio::select!` loop (`tui.rs`), pure state (`app`) + key map (`event`), a dedicated-thread DB-worker that owns the connection (`worker`), the lexical/semantic request bridge (`search`), preview text (`preview`), RAII terminal guard (`terminal`), and pure ratatui widgets (`view/`). Embed shell-out lives in the shared `embed.rs` module |
 | `embed.rs` | shared embed-command shell-out (single-file module, no children) — runs `COMEMORY_EMBED_CMD` / `--embed-cmd` as `sh -c <cmd>`, feeds the query on stdin, parses `{"embedding":[..]}`. Consumed by `tui` (Ctrl-S semantic enrich) and `serve` (the `/api/search` hybrid leg) |
@@ -340,8 +339,8 @@ Keep each `tests/` tree **flat**. A suite that outgrows one file splits into
 production file gains a second include (`mod tests_2;`). Tests are exempt from
 the 300-line ceiling, so splitting is a readability choice, not an obligation.
 
-Measured today: 125 colocated `src/**/tests/*.rs` files, 53 crate-root
-`tests/*.rs` surfaces (45 CLI, 5 `assert_cmd`, 3 `insta`).
+Measured today: 147 colocated `src/**/tests/*.rs` files, 81 crate-root
+`tests/*.rs` surfaces (45 CLI, 32 `assert_cmd`, 4 `insta`).
 
 ### Conventions inside a test file
 
@@ -565,8 +564,8 @@ local rule strictly stronger than the one it replaces.
 - **D10 — `extern crate self as comemory;` is added to `src/lib.rs`.** This
   lets every colocated test file keep `use comemory::...` imports identical
   to the crate-root suite's, so a test reads the same wherever it lives.
-- **D11 — 53 of 178 test files remain crate-root integration tests**
-  (45 CLI surfaces, 5 driving the real binary via `assert_cmd`, 3 owning an
+- **D11 — 81 of 228 test files remain crate-root integration tests**
+  (45 CLI surfaces, 32 driving the real binary via `assert_cmd`, 4 owning an
   `insta` snapshot) — the kit's own "one file per public surface" category,
   not an exception, at a ratio high enough to declare.
 - **D12 — `.claude/settings.json` is merged, not replaced.** comemory's

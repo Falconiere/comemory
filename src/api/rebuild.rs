@@ -191,3 +191,7 @@ fn build_new_db(old_db: &Path, tmp_path: &Path, paths: &crate::config::paths::Pa
     drop(conn);
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "tests/rebuild.rs"]
+mod tests;

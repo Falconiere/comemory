@@ -16,8 +16,8 @@ use std::path::PathBuf;
 use clap::Args as ClapArgs;
 
 use crate::api::{self, Ctx};
-use crate::cli::{embedding_input, lazy_reindex, load_config, resolve_data_dir, track_searches};
-use crate::config::paths::Paths;
+use crate::cli::{embedding_input, lazy_reindex, load_config, track_searches};
+use crate::config::paths::{Paths, resolve_data_dir};
 use crate::output;
 use crate::prelude::*;
 use crate::store::connection;

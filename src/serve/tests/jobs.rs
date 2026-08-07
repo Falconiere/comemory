@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Mirror test for `src/serve/jobs/mod.rs` — the job lifecycle types.
 //!
 //! Proves the wire shapes the `/api/v1/jobs*` routes and the SSE stream

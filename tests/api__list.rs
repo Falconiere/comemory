@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Mirror test for `src/api/list.rs`. Seeds real memories via the
 //! `comemory` binary (markdown + SQLite mirror), then calls
 //! `api::list::run` directly against a `Ctx` opened on the same data-dir —

@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Shared helpers for `tests/retrieval__code_rerank*.rs`.
 
 use comemory::retrieval::code_route::CodeRoutedHit;

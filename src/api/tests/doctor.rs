@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Mirror test for `src/api/doctor.rs`. Calls `api::doctor::run` directly
 //! against a `Ctx::lazy` opened on a temp data-dir — proving the report
 //! shape and that a writable, never-touched data dir gets its DB created

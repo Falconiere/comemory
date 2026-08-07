@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! End-to-end coverage of `GET|POST /api/v1/prune` and `POST /api/v1/gc`
 //! (`src/serve/routes/maint/prune.rs`) against a real bound server. The
 //! critical `GET` behavior under test: the route forces `apply = false`

@@ -100,3 +100,7 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
         files_indexed,
     })
 }
+
+#[cfg(test)]
+#[path = "tests/index_code.rs"]
+mod tests;

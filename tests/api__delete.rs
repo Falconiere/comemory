@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Mirror test for `src/api/delete.rs`. Seeds a real memory via the
 //! `comemory` binary, then calls `api::delete::run` directly against a
 //! `Ctx` opened on the same data-dir — proving the extracted command core
@@ -49,7 +56,7 @@ fn run_soft_deletes_a_live_memory() {
     let trash = paths.memories_dir().join(".trash");
     let moved = std::fs::read_dir(&trash)
         .expect("read trash dir")
-        .filter_map(|e| e.ok())
+        .filter_map(Result::ok)
         .any(|e| e.file_name().to_string_lossy().starts_with(&id));
     assert!(moved, "markdown file should have moved into .trash/");
 }

@@ -81,7 +81,7 @@ pub fn run(_ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
         install_hook(&repo, hook, SCRIPT)?;
     }
     Ok(Response {
-        installed: HOOKS.iter().map(|h| h.to_string()).collect(),
+        installed: HOOKS.iter().map(ToString::to_string).collect(),
         repo: req.repo,
     })
 }

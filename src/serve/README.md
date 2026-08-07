@@ -17,11 +17,14 @@ One line per file, named after its primary item:
 | File | Primary item | Purpose |
 | --- | --- | --- |
 | `assets.rs` | `WebAssets` | Embedded React/Vite frontend assets |
-| `error.rs` | `ApiError` | Map the crate `Error` to an HTTP response |
+| `envelope.rs` | `Envelope` | The `{ok,data,meta}` / `{ok,error,meta}` `/api/v1` response envelope and the one `Error → (StatusCode, code)` mapping table both surfaces read from |
+| `error.rs` | `ApiError` | Map the crate `Error` to an HTTP response, delegating its status to `envelope::status_and_code` |
+| `jobs.rs` | `Registry` | The background job model for long-running commands; the table and spawner live in `jobs/` |
 | `fileio.rs` | `MAX_FILE_BYTES` | Read and write indexed source files for the editor (`PUT /api/file`, `--read-only` → 405) |
 | `handlers.rs` | `FileQuery` | Async request handlers for the `comemory serve` API |
 | `repo_root.rs` | `resolve_root` | Resolve a `file:<repo>:<path>` graph node id to an absolute file on disk |
-| `router.rs` | `build_router` | axum router assembly + request-gating middleware |
+| `router.rs` | `build_router` | axum router assembly + the path-aware request-gating middleware |
+| `routes.rs` | `v1_router` | The versioned `/api/v1` surface: the aggregated route table and the handler-layer helpers every resource shares; per-resource files live in `routes/` |
 | `search.rs` | `FileHit` | `GET /api/search?q=<phrase>&k=<n>` — ranked file hits for the web viewer |
 | `security.rs` | `generate_token` | Per-session bearer token, loopback Host-header guard, path containment |
 

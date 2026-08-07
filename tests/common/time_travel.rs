@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Shared corpus for the time-travel CLI tests (`--since` / `--until` /
 //! `--as-of` on `comemory search` and `comemory context`).
 //!

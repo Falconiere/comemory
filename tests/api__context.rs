@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Mirror test for `src/api/context.rs`. Seeds a real memory via the
 //! `comemory` binary, then calls `api::context::run` directly against a
 //! `Ctx` opened on the same data-dir — proving the extracted command core

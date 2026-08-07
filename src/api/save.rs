@@ -167,11 +167,7 @@ fn collect_refs(req: &Request) -> Result<(References, Vec<String>)> {
 }
 
 /// Assemble the [`SaveParams`] the store layer expects.
-fn build_params<'a>(
-    req: &'a Request,
-    supersedes: Vec<String>,
-    references: References,
-) -> SaveParams<'a> {
+fn build_params(req: &Request, supersedes: Vec<String>, references: References) -> SaveParams<'_> {
     SaveParams {
         body: &req.body,
         kind: req.kind,
@@ -318,3 +314,7 @@ fn validate_supersedes(raw: &[String], self_id: &str) -> Result<Vec<String>> {
     }
     Ok(ids)
 }
+
+#[cfg(test)]
+#[path = "tests/save.rs"]
+mod tests;

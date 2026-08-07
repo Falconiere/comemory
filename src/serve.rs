@@ -209,10 +209,10 @@ impl AppState {
     /// rather than propagated: the only mutation is a single `Arc` pointer
     /// swap, so a poisoned guard's inner value is never torn.
     pub(crate) fn cfg(&self) -> Arc<Config> {
-        self.cfg
-            .lock()
-            .map(|g| Arc::clone(&g))
-            .unwrap_or_else(|poisoned| Arc::clone(&poisoned.into_inner()))
+        self.cfg.lock().map_or_else(
+            |poisoned| Arc::clone(&poisoned.into_inner()),
+            |g| Arc::clone(&g),
+        )
     }
 
     /// The embed command for semantic web search, if configured.

@@ -199,3 +199,11 @@ async fn bandit(State(state): State<AppState>, Json(body): Json<Value>) -> Respo
     );
     accepted("bandit", job, started)
 }
+
+#[cfg(test)]
+#[path = "tests/learning.rs"]
+mod tests;
+
+#[cfg(test)]
+#[path = "tests/learning_2.rs"]
+mod tests_2;

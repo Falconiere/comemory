@@ -46,7 +46,7 @@ pub struct Args {
 /// dependency, so `data_dir` resolves a throwaway `Ctx::lazy` that is never
 /// opened.
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
-    let paths = crate::config::Paths::new(crate::cli::resolve_data_dir(data_dir));
+    let paths = crate::config::Paths::new(crate::config::paths::resolve_data_dir(data_dir));
     let cfg = Config::defaults();
     let req = api::install_hooks::Request {
         repo: a.repo.display().to_string(),

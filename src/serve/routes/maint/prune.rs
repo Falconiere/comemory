@@ -129,9 +129,8 @@ async fn gc(State(state): State<AppState>, Json(body): Json<ConfirmBody>) -> Res
 /// `confirm`). Shared by every route whose confirm gate must not leak into
 /// the corresponding `api::` `Request` type (see [`prune_apply`]'s doc).
 pub(crate) fn split_confirm<T: serde::de::DeserializeOwned>(body: Value) -> Result<(T, bool)> {
-    let mut obj = match body {
-        Value::Object(m) => m,
-        _ => return Err(Error::BadRequest("expected a JSON object body".into())),
+    let Value::Object(mut obj) = body else {
+        return Err(Error::BadRequest("expected a JSON object body".into()));
     };
     let confirmed = obj
         .remove("confirm")

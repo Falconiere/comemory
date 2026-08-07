@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Mirror test for `src/api/mine.rs`. Seeds a real failed → reworded search
 //! pair with used feedback via the real binary, then calls `api::mine::run`
 //! directly against a `Ctx` opened on the same data-dir

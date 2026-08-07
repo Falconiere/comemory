@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Mirror test for `src/api/index_code/walk.rs`. Every function in that
 //! file is `pub(crate)` (shared with `cli::index_code`'s `--extract`
 //! path), so it is exercised indirectly through the public
@@ -5,10 +12,8 @@
 //! chunk-child naming, the parent-snippet headline, and the repo-root
 //! stamp are all walk-internal behavior.
 
-#[path = "common/git_commit.rs"]
-mod git_commit;
-#[path = "common/git_repo.rs"]
-mod git_repo;
+use crate::test_common::git_commit;
+use crate::test_common::git_repo;
 
 use comemory::api::{self, Ctx};
 use comemory::config::{Config, Paths};
@@ -17,7 +22,10 @@ use tempfile::tempdir;
 
 /// Real oversized function fixture, shared with `tests/cli__index_code_2.rs`
 /// and `tests/ast__chunk.rs` so every consumer chunks the same corpus.
-const OVERSIZED_SRC: &str = include_str!("ast/fixtures/oversized_fn.rs");
+const OVERSIZED_SRC: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/ast/fixtures/oversized_fn.rs"
+));
 
 fn build_oversized_repo(root: &std::path::Path) -> std::path::PathBuf {
     let repo = root.join("oversized-repo");

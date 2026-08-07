@@ -28,9 +28,7 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status, _code) = status_and_code(&self.0);
         let message = match &self.0 {
-            Error::NotFound(m) => m.clone(),
-            Error::Forbidden(m) => m.clone(),
-            Error::BadRequest(m) => m.clone(),
+            Error::NotFound(m) | Error::Forbidden(m) | Error::BadRequest(m) => m.clone(),
             // A missing file on disk is a 404, not a 500.
             Error::Io(e) if e.kind() == std::io::ErrorKind::NotFound => e.to_string(),
             other => other.to_string(),

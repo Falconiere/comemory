@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Shared helpers for `tests/cli__feedback.rs` and
 //! `tests/cli__feedback_2.rs`.
 

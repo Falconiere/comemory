@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Mirror test for `src/api/ast.rs`. Calls `api::ast::run` directly against
 //! a `Ctx::lazy` (conn-free) over a real source file — proving matches,
 //! paging, the default `--limit` (50), and the unsupported-lang error

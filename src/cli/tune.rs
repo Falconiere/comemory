@@ -15,8 +15,8 @@ use clap::Args as ClapArgs;
 
 use crate::api::{self, Ctx};
 use crate::cli::eval::GoldenSetArgs;
-use crate::cli::{load_config, resolve_data_dir};
-use crate::config::paths::Paths;
+use crate::cli::load_config;
+use crate::config::paths::{Paths, resolve_data_dir};
 use crate::eval::tune::{self, TuneCandidate};
 use crate::output::json;
 use crate::prelude::*;

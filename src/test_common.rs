@@ -8,21 +8,31 @@
 //! (`src/`), so `../tests/common/x.rs` is the crate-root fixture.
 #![allow(dead_code)] // shared with the crate-root suite; not all helpers are used here
 
+#[path = "../tests/common/cli_eval_support.rs"]
+pub(crate) mod cli_eval_support;
+#[path = "../tests/common/cli_prune_support.rs"]
+pub(crate) mod cli_prune_support;
+#[path = "../tests/common/cli_rebuild_support.rs"]
+pub(crate) mod cli_rebuild_support;
 #[path = "../tests/common/code_rerank_support.rs"]
-pub mod code_rerank_support;
+pub(crate) mod code_rerank_support;
 #[path = "../tests/common/code_seed.rs"]
-pub mod code_seed;
+pub(crate) mod code_seed;
+#[path = "../tests/common/docs_fixtures.rs"]
+pub(crate) mod docs_fixtures;
 #[path = "../tests/common/document_writer_support.rs"]
-pub mod document_writer_support;
+pub(crate) mod document_writer_support;
 #[path = "../tests/common/git_commit.rs"]
-pub mod git_commit;
+pub(crate) mod git_commit;
 #[path = "../tests/common/git_repo.rs"]
-pub mod git_repo;
+pub(crate) mod git_repo;
 #[path = "../tests/common/git_sample.rs"]
-pub mod git_sample;
+pub(crate) mod git_sample;
 #[path = "../tests/common/runner.rs"]
-pub mod runner;
+pub(crate) mod runner;
+#[path = "../tests/common/serve_learning_support.rs"]
+pub(crate) mod serve_learning_support;
 #[path = "../tests/common/serve_state.rs"]
-pub mod serve_state;
+pub(crate) mod serve_state;
 #[path = "../tests/common/vectors.rs"]
-pub mod vectors;
+pub(crate) mod vectors;

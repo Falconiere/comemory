@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Mirror test for `src/api/ingest_code.rs`. `api::ingest_code::run` is
 //! called directly with a real NDJSON `&str` body — no stdin, no CLI
 //! process. `cli::ingest_code::run` stays byte-compat tested against CLI
@@ -5,8 +12,7 @@
 //! the HTTP job route (`POST /api/v1/code/ingest`) lives in
 //! `tests/serve__routes__code.rs`.
 
-#[path = "common/vectors.rs"]
-mod vectors;
+use crate::test_common::vectors;
 
 use comemory::api::{self, Ctx};
 use comemory::config::{Config, Paths};

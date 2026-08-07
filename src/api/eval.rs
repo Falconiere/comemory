@@ -53,3 +53,7 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<EvalReport> {
     )?;
     runner::run_eval(cfg, &*conn, &pairs, req.k)
 }
+
+#[cfg(test)]
+#[path = "tests/eval.rs"]
+mod tests;

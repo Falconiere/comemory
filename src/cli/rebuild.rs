@@ -11,9 +11,8 @@ use std::path::PathBuf;
 use clap::Args as ClapArgs;
 
 use crate::api::{self, Ctx};
-use crate::cli::resolve_data_dir;
 use crate::config::Config;
-use crate::config::paths::Paths;
+use crate::config::paths::{Paths, resolve_data_dir};
 use crate::prelude::*;
 
 /// Arguments to `comemory rebuild`. Currently no flags — the command always

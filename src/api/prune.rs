@@ -261,3 +261,7 @@ fn drop_orphan_code_refs(tx: &rusqlite::Transaction<'_>) -> Result<()> {
     )?;
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "tests/prune.rs"]
+mod tests;

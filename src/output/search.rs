@@ -165,11 +165,11 @@ pub struct Envelope<'a> {
 /// row's stored `md_path` into an absolute path. `scope` echoes the
 /// time-scoping flags for this run ([`ScopeEcho::default`] for an
 /// unscoped one).
-pub fn envelope<'a>(
+pub fn envelope<'a, S: ::std::hash::BuildHasher>(
     hits: &'a [Reranked],
     query_id: Option<&'a str>,
     page: PageMeta,
-    meta: &HashMap<String, MemoryMeta>,
+    meta: &HashMap<String, MemoryMeta, S>,
     data_dir: &Path,
     scope: ScopeEcho<'a>,
 ) -> Envelope<'a> {
@@ -213,11 +213,11 @@ pub fn emit(result: &SearchResult, json_flag: bool, data_dir: &Path) -> Result<(
 /// line followed by a dim navigation line carrying the markdown path (and
 /// title when present). The `query: <qid>` footer semantics live in
 /// [`tty::write_query_footer`], shared with `comemory context`.
-pub fn write_tty(
+pub fn write_tty<S: ::std::hash::BuildHasher>(
     out: &mut impl Write,
     hits: &[Reranked],
     query_id: Option<&str>,
-    meta: &HashMap<String, MemoryMeta>,
+    meta: &HashMap<String, MemoryMeta, S>,
     data_dir: &Path,
 ) -> Result<()> {
     for hit in hits {
@@ -257,7 +257,11 @@ pub fn write_tty(
 /// `meta` (keyed by memory id). A missing entry (raced soft-delete / rebuild)
 /// degrades to empty path/kind/tags and an absent repo; `title` always comes
 /// from the body, which the rerank stage carries inline.
-fn row_from<'a>(h: &'a Reranked, meta: &HashMap<String, MemoryMeta>, data_dir: &Path) -> Row<'a> {
+fn row_from<'a, S: ::std::hash::BuildHasher>(
+    h: &'a Reranked,
+    meta: &HashMap<String, MemoryMeta, S>,
+    data_dir: &Path,
+) -> Row<'a> {
     let entry = meta.get(&h.memory_id);
     Row {
         memory_id: h.memory_id.as_str(),

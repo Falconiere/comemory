@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! `POST /api/v1/eval` end-to-end (golden containment, AC-7; survives
 //! `--read-only`, AC-4) plus the `tune`/`bandit` confirm-when-apply shape
 //! (`apply:false` needs no confirm; `apply:true` without confirm is `400`
@@ -5,8 +12,7 @@
 //! false`). Read-only-outranks-confirm (AC-19) and the `AppState.cfg`
 //! reload proof live in `tests/serve__routes__learning_2.rs`.
 
-#[path = "common/serve_learning_support.rs"]
-mod support;
+use crate::test_common::serve_learning_support as support;
 
 use serde_json::Value;
 use support::{jobs_total, poll_job_terminal, post, save, spawn_serve, spawn_serve_with};

@@ -8,8 +8,8 @@ use std::io::Write as _;
 use std::path::PathBuf;
 
 use crate::api::{self, Ctx};
-use crate::cli::{load_config, resolve_data_dir};
-use crate::config::paths::Paths;
+use crate::cli::load_config;
+use crate::config::paths::{Paths, resolve_data_dir};
 use crate::output::json;
 use crate::prelude::*;
 

@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Mirror test for `src/api/prune.rs`. Seeds prune-eligible memories via the
 //! real binary plus the shared `cli_prune_support` doctoring helper, then
 //! calls `api::prune::run` directly against a `Ctx` opened on the same
@@ -7,8 +14,7 @@
 //! `tests/cli__prune.rs`; the HTTP route — `GET`, `apply` always forced
 //! `false` — lives in `tests/serve__routes__maint__prune.rs`).
 
-#[path = "common/cli_prune_support.rs"]
-mod support;
+use crate::test_common::cli_prune_support as support;
 
 use comemory::api::{self, Ctx};
 use comemory::config::{Config, Paths};
@@ -45,7 +51,7 @@ fn run_reports_low_value_memory_without_deleting() {
 
     let trash = data_dir(&home).join("memories").join(".trash");
     let trashed = std::fs::read_dir(&trash)
-        .map(|d| d.count())
+        .map(std::iter::Iterator::count)
         .unwrap_or_default();
     assert_eq!(trashed, 0, "dry-run must not move files to .trash");
 }

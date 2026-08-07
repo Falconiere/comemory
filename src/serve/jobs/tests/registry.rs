@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Mirror test for `src/serve/jobs/registry.rs`, driven directly (no HTTP):
 //! id generation, status transitions and timestamps, newest-first listing,
 //! the bounded finished-job retention, and — the mechanism AC-8's SSE

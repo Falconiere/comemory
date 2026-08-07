@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Mirror test for `src/api/graph/mod.rs`. Indexes a real git fixture repo
 //! (import edge) via `comemory index-code`, then calls `api::graph::run`
 //! directly against a `Ctx` opened on the same data-dir — proving the

@@ -13,12 +13,33 @@
         "view",
         "tests"
       ],
+      "api": [
+        "index_code",
+        "rebuild",
+        "tests",
+        "proptest-regressions"
+      ],
+      "serve": [
+        "routes",
+        "jobs",
+        "tests",
+        "proptest-regressions"
+      ],
+      "serve/routes": [
+        "memories",
+        "maint",
+        "tests",
+        "proptest-regressions"
+      ],
       "*": [
         "tests",
         "proptest-regressions"
       ]
     },
     "requireReadme": [
+      "api",
+      "api/index_code",
+      "api/rebuild",
       "ast",
       "cli",
       "config",
@@ -31,6 +52,10 @@
       "prune",
       "retrieval",
       "serve",
+      "serve/jobs",
+      "serve/routes",
+      "serve/routes/maint",
+      "serve/routes/memories",
       "source",
       "stats",
       "store",

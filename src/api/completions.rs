@@ -40,3 +40,7 @@ pub fn run(_ctx: &mut Ctx<'_>, req: Request) -> Result<String> {
     generate(shell, &mut cmd, bin_name, &mut buf);
     String::from_utf8(buf).map_err(|e| Error::Other(format!("completion script not utf-8: {e}")))
 }
+
+#[cfg(test)]
+#[path = "tests/completions.rs"]
+mod tests;

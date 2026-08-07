@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Mirror test for `src/api/save.rs`. Calls `api::save::run` directly
 //! against a `Ctx` opened on a fresh temp data-dir — proving the extracted
 //! command core writes the markdown file + SQLite mirror the same way

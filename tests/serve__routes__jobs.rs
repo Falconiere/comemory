@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! End-to-end coverage of `GET /api/v1/jobs`, `GET /api/v1/jobs/{id}` and
 //! `GET /api/v1/jobs/{id}/events` (`src/serve/routes/jobs.rs`) against a
 //! real bound server.

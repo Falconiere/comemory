@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Deterministic float32 vectors for tests. Never call random; the
 //! seed is derived from the input so order-asserting tests stay
 //! stable across CI runs.

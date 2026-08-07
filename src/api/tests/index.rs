@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Mirror test for `src/api/index.rs`. Real document fixtures (`common
 //! /docs_fixtures.rs`, matching `tests/api__sources.rs`); `api::index::run`
 //! is called directly against a `Ctx::borrowed` connection. `cli::index::run`
@@ -5,8 +12,7 @@
 //! the HTTP job route (`POST /api/v1/sources`) lives in
 //! `tests/serve__routes__sources.rs`.
 
-#[path = "common/docs_fixtures.rs"]
-mod docs_fixtures;
+use crate::test_common::docs_fixtures;
 
 use comemory::api::{self, Ctx};
 use comemory::config::{Config, Paths};

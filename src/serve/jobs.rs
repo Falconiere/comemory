@@ -227,3 +227,7 @@ impl<'a> JobEvent<'a> {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "tests/jobs.rs"]
+mod tests;

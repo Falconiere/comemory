@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Shared code-symbol seeding fixture for retrieval-layer tests.
 //!
 //! Rows go through the production writer (`store::code_row::insert`) — no

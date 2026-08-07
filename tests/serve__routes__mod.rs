@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! End-to-end coverage of the `/api/v1` route mount (`src/serve/routes/mod.rs`)
 //! against a real bound server: `GET /api/v1/health`'s envelope shape, the
 //! path-aware 401 the router `guard` now returns on `/api/v1/*` (AC-11), and
@@ -166,17 +173,14 @@ fn minimal_request(entry: &RouteEntry) -> (serde_json::Value, Vec<(&'static str,
             serde_json::json!({"body": "AC-4 sweep test memory"}),
             vec![],
         ),
-        "delete" => (serde_json::json!({}), vec![]),
         "feedback" => (serde_json::json!({"query_id": "q-sweep-deadbeef"}), vec![]),
-        "prune" => (serde_json::json!({}), vec![]),
-        "gc" => (serde_json::json!({}), vec![]),
-        "mine" => (serde_json::json!({}), vec![]),
-        "install-hooks" => (serde_json::json!({}), vec![]),
-        // No `confirm`: on a normal server this stops at the confirm gate
-        // (`400`), so the sweep never actually rebuilds the DB — exactly
-        // what AC-4 wants, since it only asserts whether the read-only gate
-        // fired.
-        "rebuild" => (serde_json::json!({}), vec![]),
+        // An empty body is enough for every command below. `rebuild`, `tune`
+        // and `bandit` carry no `confirm`/`apply`, so on a normal server they
+        // stop at the confirm gate (`400`) and the sweep never actually
+        // rebuilds or retunes — exactly what AC-4 wants, since it only
+        // asserts whether the read-only gate fired.
+        "delete" | "prune" | "gc" | "mine" | "install-hooks" | "rebuild" | "ingest-code"
+        | "tune" | "bandit" => (serde_json::json!({}), vec![]),
         "unindex" => (
             serde_json::json!({}),
             vec![("target", "ac4-sweep-nonexistent")],
@@ -185,16 +189,10 @@ fn minimal_request(entry: &RouteEntry) -> (serde_json::Value, Vec<(&'static str,
             serde_json::json!({"repo": "sweep", "path": "/nonexistent/ac4-sweep"}),
             vec![],
         ),
-        "ingest-code" => (serde_json::json!({}), vec![]),
         "index" => (
             serde_json::json!({"path": ["/nonexistent/ac4-sweep"]}),
             vec![],
         ),
-        // No `apply`: `tune`/`bandit` are mutating regardless, but an
-        // absent `apply` (defaults false) never reaches the confirm gate,
-        // so the sweep only observes the read-only gate, same as `rebuild`.
-        "tune" => (serde_json::json!({}), vec![]),
-        "bandit" => (serde_json::json!({}), vec![]),
         other => panic!(
             "minimal_request: no minimal body/query wired for mutating command {other:?} — \
              add one so the AC-4 read-only sweep stays exhaustive"

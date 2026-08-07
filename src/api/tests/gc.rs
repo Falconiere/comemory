@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Mirror test for `src/api/gc.rs`. Calls `api::gc::run` directly against a
 //! `Ctx::lazy` opened on a temp data-dir, proving the trash sweep,
 //! telemetry retention purge, and — critically — that a fresh data dir with
@@ -92,7 +99,7 @@ fn run_sweeps_trash_entries_older_than_thirty_days() {
         .write(true)
         .open(&old)
         .expect("reopen old trash entry");
-    f.set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(31 * 86_400))
+    f.set_modified(std::time::SystemTime::now() - std::time::Duration::from_hours(31 * 24))
         .expect("backdate mtime");
 
     let cfg = Config::defaults();

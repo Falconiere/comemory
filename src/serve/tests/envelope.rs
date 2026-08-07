@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Coverage for `src/serve/envelope.rs`: the full `Error → (StatusCode,
 //! code)` table (§Interfaces "Response envelope") and the `{ok,data,meta}` /
 //! `{ok,error,meta}` JSON shapes each constructor produces, asserted by

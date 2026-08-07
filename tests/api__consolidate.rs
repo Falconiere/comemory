@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Mirror test for `src/api/consolidate.rs`. Seeds near-duplicate memories
 //! via the real binary, then calls `api::consolidate::run` directly against
 //! a `Ctx` opened on the same data-dir — proving the scan/cluster/page

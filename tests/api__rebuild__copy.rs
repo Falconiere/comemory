@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Mirror test for `src/api/rebuild/copy.rs`. Every function in that file is
 //! private to `api::rebuild`, so the preservation copy is exercised through
 //! the public `api::rebuild::run` entry point: seed a real DB with a real

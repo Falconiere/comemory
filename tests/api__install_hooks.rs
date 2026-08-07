@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Mirror test for `src/api/install_hooks.rs`. Calls `api::install_hooks::run`
 //! directly against a `Ctx::lazy` (conn-free) — proving the three hooks are
 //! written, the pre-flight refuses to clobber an existing hook without

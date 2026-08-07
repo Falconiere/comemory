@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! End-to-end coverage of `GET|POST /api/v1/code/search`
 //! (`src/serve/routes/code.rs`) against a real bound server, seeded via a
 //! real `comemory index-code` run over a temp git fixture repo.

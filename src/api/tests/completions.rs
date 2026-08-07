@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Mirror test for `src/api/completions.rs`. Calls `api::completions::run`
 //! directly — no data-dir, no DB — proving the generated script is
 //! byte-identical to what `clap_complete::generate` writes straight to
