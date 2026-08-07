@@ -40,7 +40,7 @@ pub fn register(conn: &Connection) -> Result<()> {
             api,
             TOKENIZER_NAME.as_ptr(),
             ptr::null_mut(),
-            &tokenizer as *const ffi::fts5_tokenizer as *mut ffi::fts5_tokenizer,
+            (&raw const tokenizer).cast_mut(),
             None,
         )
     };
@@ -62,7 +62,7 @@ fn fts5_api_ptr(conn: &Connection) -> Result<*mut ffi::fts5_api> {
         let db = conn.handle();
         let mut stmt: *mut ffi::sqlite3_stmt = ptr::null_mut();
         let sql = c"SELECT fts5(?1)";
-        let rc = ffi::sqlite3_prepare_v2(db, sql.as_ptr(), -1, &mut stmt, ptr::null_mut());
+        let rc = ffi::sqlite3_prepare_v2(db, sql.as_ptr(), -1, &raw mut stmt, ptr::null_mut());
         if rc != ffi::SQLITE_OK {
             return Err(Error::Other(format!(
                 "fts5 api probe prepare failed: rc={rc}"
@@ -71,7 +71,7 @@ fn fts5_api_ptr(conn: &Connection) -> Result<*mut ffi::fts5_api> {
         let rc = ffi::sqlite3_bind_pointer(
             stmt,
             1,
-            &mut api as *mut *mut ffi::fts5_api as *mut c_void,
+            (&raw mut api).cast::<c_void>(),
             c"fts5_api_ptr".as_ptr(),
             None,
         );
@@ -94,6 +94,11 @@ fn fts5_api_ptr(conn: &Connection) -> Result<*mut ffi::fts5_api> {
 }
 
 /// FTS5 `xCreate` callback: allocate one tokenizer instance.
+// SAFETY: SQLite invokes this exactly once per prepared statement that
+// references the tokenizer, through the `fts5_tokenizer.xCreate` function
+// pointer it owns; `pp_out` is a non-null out-pointer valid for exactly one
+// write for the duration of this call, and `_ctx`/`_args` are only read
+// (never here) under the same per-call validity guarantee.
 unsafe extern "C" fn x_create(
     _ctx: *mut c_void,
     _args: *mut *const c_char,
@@ -107,6 +112,12 @@ unsafe extern "C" fn x_create(
 }
 
 /// FTS5 `xDelete` callback: free a tokenizer instance.
+// SAFETY: SQLite calls this at most once per handle previously returned
+// by `x_create`, through the `fts5_tokenizer.xDelete` function pointer,
+// and never touches `_t` again afterward; because `x_create` never
+// allocates (the tokenizer is stateless), there is no memory to release
+// and no aliasing/use-after-free hazard from `_t` being a dangling
+// sentinel.
 unsafe extern "C" fn x_delete(_t: *mut ffi::Fts5Tokenizer) {
     // Stateless: nothing to free.
 }
@@ -116,6 +127,13 @@ type XToken = unsafe extern "C" fn(*mut c_void, c_int, *const c_char, c_int, c_i
 
 /// FTS5 `xTokenize` callback: split `text` and emit each token through
 /// `x_token`. Must never panic — errors flow back as SQLite rc codes.
+// SAFETY: SQLite invokes this through `fts5_tokenizer.xTokenize` with a
+// `text` pointer valid for exactly `n_text` readable bytes (not
+// NUL-terminated, not guaranteed valid UTF-8) for the duration of this
+// call, a `ctx` opaque pointer that is only ever forwarded (never
+// dereferenced here), and, when `x_token` is `Some`, a callback SQLite
+// guarantees is safe to invoke any number of times with byte-offset
+// arguments clamped into `[0, n_text]`.
 unsafe extern "C" fn x_tokenize(
     _t: *mut ffi::Fts5Tokenizer,
     ctx: *mut c_void,
@@ -162,3 +180,7 @@ unsafe extern "C" fn x_tokenize(
     }
     ffi::SQLITE_OK
 }
+
+#[cfg(test)]
+#[path = "tests/ffi.rs"]
+mod tests;

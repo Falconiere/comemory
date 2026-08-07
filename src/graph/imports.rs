@@ -154,7 +154,6 @@ impl PathIndex {
         let fragment = normalize(module)?;
         match self.by_suffix.get(&fragment) {
             Some(Candidate::Unique(p)) => Some(p.clone()),
-            Some(Candidate::Ambiguous) => None,
             // Go module-prefix tolerance (rule 4): retry once without the
             // leading segment, only when at least two segments remain.
             None if module.contains('/') && !module.starts_with('.') => {
@@ -167,7 +166,9 @@ impl PathIndex {
                     _ => None,
                 }
             }
-            None => None,
+            // `Some(Candidate::Ambiguous)` and an unguarded `None` both mean
+            // "no unique match".
+            _ => None,
         }
     }
 
@@ -242,7 +243,7 @@ fn rust_imports(source: &str) -> Result<Vec<String>> {
         } else {
             text
         });
-    })?;
+    });
     Ok(out)
 }
 
@@ -284,7 +285,7 @@ fn ts_js_imports<L: LanguageExt + Clone>(
     language: L,
     source: &str,
     patterns: &[(&'static str, Pattern)],
-) -> Result<Vec<String>> {
+) -> Vec<String> {
     let mut out = Vec::new();
     for_each_match(language, source, patterns, |var, matched| {
         let Some(node) = matched.get_env().get_match(var) else {
@@ -299,8 +300,8 @@ fn ts_js_imports<L: LanguageExt + Clone>(
         } else {
             out.push(text);
         }
-    })?;
-    Ok(out)
+    });
+    out
 }
 
 /// Raw TypeScript / JavaScript import pattern rows, shared by both grammar
@@ -320,14 +321,14 @@ fn ts_js_import_patterns() -> &'static [(&'static str, &'static str)] {
 fn ts_imports(source: &str) -> Result<Vec<String>> {
     static CELL: OnceLock<std::result::Result<CompiledPatterns, String>> = OnceLock::new();
     let patterns = pattern_cache::cached(&CELL, Tsx, ts_js_import_patterns())?;
-    ts_js_imports(Tsx, source, patterns)
+    Ok(ts_js_imports(Tsx, source, patterns))
 }
 
 /// JavaScript import extraction, patterns compiled once.
 fn js_imports(source: &str) -> Result<Vec<String>> {
     static CELL: OnceLock<std::result::Result<CompiledPatterns, String>> = OnceLock::new();
     let patterns = pattern_cache::cached(&CELL, JavaScript, ts_js_import_patterns())?;
-    ts_js_imports(JavaScript, source, patterns)
+    Ok(ts_js_imports(JavaScript, source, patterns))
 }
 
 /// Python extraction by line parsing: `import a[, b][ as c]` and
@@ -443,3 +444,7 @@ fn strip_extension(path: &str) -> &str {
         _ => path,
     }
 }
+
+#[cfg(test)]
+#[path = "tests/imports.rs"]
+mod tests;

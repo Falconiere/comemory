@@ -58,3 +58,7 @@ pub fn live_simhashes(
         .collect::<std::result::Result<Vec<_>, _>>()?;
     Ok(rows)
 }
+
+#[cfg(test)]
+#[path = "tests/simhash_scan.rs"]
+mod tests;

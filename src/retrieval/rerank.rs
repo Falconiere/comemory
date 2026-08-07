@@ -263,3 +263,7 @@ fn live_superseder(
         .optional()
         .map_err(Error::from)
 }
+
+#[cfg(test)]
+#[path = "tests/rerank.rs"]
+mod tests;

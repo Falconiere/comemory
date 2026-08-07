@@ -420,3 +420,11 @@ impl Config {
         self.validate()
     }
 }
+
+#[cfg(test)]
+#[path = "tests/file.rs"]
+mod tests;
+
+#[cfg(test)]
+#[path = "tests/file_2.rs"]
+mod tests_2;

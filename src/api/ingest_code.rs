@@ -175,8 +175,8 @@ fn insert_row(conn: &Connection, row: &Row, parent_id: Option<i64>) -> Result<i6
             symbol: &row.symbol,
             kind: &row.kind,
             lang: &row.lang,
-            line_start: row.line_start as i64,
-            line_end: row.line_end as i64,
+            line_start: i64::from(row.line_start),
+            line_end: i64::from(row.line_end),
             snippet: &row.snippet,
             simhash: row.simhash,
             parent_id,
@@ -186,3 +186,7 @@ fn insert_row(conn: &Connection, row: &Row, parent_id: Option<i64>) -> Result<i6
     vector::insert_code(conn, sid, &row.embedding)?;
     Ok(sid)
 }
+
+#[cfg(test)]
+#[path = "tests/ingest_code.rs"]
+mod tests;

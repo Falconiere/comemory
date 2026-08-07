@@ -129,3 +129,7 @@ fn evict_finished(jobs: &mut HashMap<JobId, Job>) {
         jobs.remove(&id);
     }
 }
+
+#[cfg(test)]
+#[path = "tests/registry.rs"]
+mod tests;

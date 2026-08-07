@@ -159,3 +159,7 @@ pub fn spawn(
         }
     })
 }
+
+#[cfg(test)]
+#[path = "tests/worker.rs"]
+mod tests;

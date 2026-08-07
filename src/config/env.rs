@@ -234,3 +234,11 @@ impl Config {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "tests/env.rs"]
+mod tests;
+
+#[cfg(test)]
+#[path = "tests/env_2.rs"]
+mod tests_2;

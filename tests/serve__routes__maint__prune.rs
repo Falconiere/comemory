@@ -1,10 +1,17 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! End-to-end coverage of `GET|POST /api/v1/prune` and `POST /api/v1/gc`
 //! (`src/serve/routes/maint/prune.rs`) against a real bound server. The
 //! critical `GET` behavior under test: the route forces `apply = false`
 //! unconditionally, so a `GET` — even one carrying `?apply=true` in the
 //! query string — must never soft-delete anything (`api::prune::run` itself,
 //! including the `apply: true` path, is covered directly in
-//! `tests/api__prune.rs`; `api::gc::run` in `tests/api__gc.rs`).
+//! `src/api/tests/prune.rs`; `api::gc::run` in `src/api/tests/gc.rs`).
 
 #[path = "common/cli_prune_support.rs"]
 mod support;

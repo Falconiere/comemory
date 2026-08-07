@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Sample-repo builder for the git-repo test fixtures.
 //!
 //! Pairs with `git_repo.rs` + `git_commit.rs`: a binary that
@@ -13,8 +20,8 @@ use std::path::{Path, PathBuf};
 /// initial tree. Returns the working tree root.
 pub fn build_sample_repo(root: &Path) -> PathBuf {
     let repo = root.join("sample-repo");
-    crate::git_repo::init_repo(&repo);
-    crate::git_commit::commit_files(
+    super::git_repo::init_repo(&repo);
+    super::git_commit::commit_files(
         &repo,
         &[("src.rs", "fn main() {}\nfn helper() {}\n")],
         "init",

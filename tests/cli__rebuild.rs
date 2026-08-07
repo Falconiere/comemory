@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Task 14: `comemory rebuild` drops `comemory.db` and repopulates the
 //! SQLite mirror from the on-disk markdown files. Markdown remains the
 //! source of truth; the DB is a rebuildable derived cache.

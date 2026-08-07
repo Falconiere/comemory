@@ -6,3 +6,7 @@
 //! can import `crate::store::schema`. Task 4 fills the full DDL in the
 //! sibling `sql/` directory; this module re-exports the SQL via
 //! `include_str!` once those files exist.
+
+#[cfg(test)]
+#[path = "tests/schema.rs"]
+mod tests;

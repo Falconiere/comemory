@@ -86,9 +86,9 @@ pub struct MineOutcome {
 ///   mining pass as best-effort and skip it.
 /// * Any underlying `git2` failure, flattened via
 ///   [`crate::git_utils::map_git_err`].
-pub fn mine_cochange(
+pub fn mine_cochange<S: ::std::hash::BuildHasher>(
     repo_root: &Path,
-    known_files: &HashSet<String>,
+    known_files: &HashSet<String, S>,
     since: Option<&str>,
 ) -> Result<MineOutcome> {
     let repo = Repository::open(repo_root).map_err(map_git_err)?;
@@ -101,19 +101,18 @@ pub fn mine_cochange(
 
     let mut cursor_lost = false;
     if let Some(stop) = since {
-        match Oid::from_str(stop)
+        if let Some(oid) = Oid::from_str(stop)
             .ok()
             .filter(|oid| repo.find_commit(*oid).is_ok())
         {
-            Some(oid) => walk.hide(oid).map_err(map_git_err)?,
-            None => {
-                tracing::warn!(
-                    cursor = %stop,
-                    "cochange: stored cursor unresolvable (history rewrite?); \
-                     re-mining bounded history and signaling a weight reset",
-                );
-                cursor_lost = true;
-            }
+            walk.hide(oid).map_err(map_git_err)?;
+        } else {
+            tracing::warn!(
+                cursor = %stop,
+                "cochange: stored cursor unresolvable (history rewrite?); \
+                 re-mining bounded history and signaling a weight reset",
+            );
+            cursor_lost = true;
         }
     }
     // The first-run cap also applies when the cursor was lost — without
@@ -186,3 +185,7 @@ pub(crate) fn commit_changed_paths(repo: &Repository, commit: &Commit<'_>) -> Re
     };
     crate::git_utils::collect_diff_paths(repo, parent_tree.as_ref(), &tree)
 }
+
+#[cfg(test)]
+#[path = "tests/cochange.rs"]
+mod tests;

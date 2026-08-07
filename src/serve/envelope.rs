@@ -181,3 +181,7 @@ fn error_response(
 fn respond(status: StatusCode, body: Value) -> Response {
     (status, Json(body)).into_response()
 }
+
+#[cfg(test)]
+#[path = "tests/envelope.rs"]
+mod tests;

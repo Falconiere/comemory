@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Pagination behaviour for `comemory prune` (split from `cli__prune.rs`).
 //!
 //! Covers the windowed dry-run display of `low_value_memories` and the
@@ -22,16 +29,14 @@ fn seed_low_value(home: &TempDir, body: &str) -> String {
 /// `ids` — i.e. how many of the seeded candidates were soft-deleted.
 fn count_trashed(home: &TempDir, ids: &[String]) -> usize {
     let trash = home.path().join(".comemory/memories/.trash");
-    std::fs::read_dir(&trash)
-        .map(|d| {
-            d.filter_map(std::result::Result::ok)
-                .filter(|e| {
-                    let name = e.file_name().to_string_lossy().to_string();
-                    ids.iter().any(|id| name.starts_with(id))
-                })
-                .count()
-        })
-        .unwrap_or(0)
+    std::fs::read_dir(&trash).map_or(0, |d| {
+        d.filter_map(std::result::Result::ok)
+            .filter(|e| {
+                let name = e.file_name().to_string_lossy().to_string();
+                ids.iter().any(|id| name.starts_with(id))
+            })
+            .count()
+    })
 }
 
 #[test]

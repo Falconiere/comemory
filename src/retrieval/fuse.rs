@@ -95,3 +95,7 @@ fn accumulate<'a>(
     merged.truncate(top_k);
     merged
 }
+
+#[cfg(test)]
+#[path = "tests/fuse.rs"]
+mod tests;

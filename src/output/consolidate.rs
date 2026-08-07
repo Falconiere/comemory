@@ -5,6 +5,7 @@
 //! CLI's `--json` stdout and the `/api/v1/consolidate` response `data`
 //! field build from the same owned value.
 
+use std::fmt::Write as _;
 use std::io::Write as _;
 
 use serde::Serialize;
@@ -95,10 +96,10 @@ fn write_member(out: &mut impl std::io::Write, member: &Member, is_keeper: bool)
     if is_keeper {
         line.push_str("  ← keeper");
     } else {
-        line.push_str(&format!("  hamming {}", member.hamming_to_keeper));
+        let _ = write!(line, "  hamming {}", member.hamming_to_keeper);
     }
     if let Some(by) = &member.superseded_by {
-        line.push_str(&format!("  superseded by {by}"));
+        let _ = write!(line, "  superseded by {by}");
     }
     writeln!(out, "{line}")?;
     Ok(())

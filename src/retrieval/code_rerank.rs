@@ -133,17 +133,16 @@ impl WorkingSet {
             );
             return WorkingSet::default();
         };
-        let label = match repo_filter {
-            Some(r) => r.to_string(),
-            None => {
-                let basename = git
-                    .workdir()
-                    .and_then(Path::file_name)
-                    .and_then(|n| n.to_str());
-                match basename {
-                    Some(n) => n.to_string(),
-                    None => return WorkingSet::default(),
-                }
+        let label = if let Some(r) = repo_filter {
+            r.to_string()
+        } else {
+            let basename = git
+                .workdir()
+                .and_then(Path::file_name)
+                .and_then(|n| n.to_str());
+            match basename {
+                Some(n) => n.to_string(),
+                None => return WorkingSet::default(),
             }
         };
         let ws = from_repo(&git, &label);
@@ -403,3 +402,11 @@ fn parent_identity(conn: &Connection, parent_id: i64) -> Result<Option<(String, 
         .optional()
         .map_err(Error::from)
 }
+
+#[cfg(test)]
+#[path = "tests/code_rerank.rs"]
+mod tests;
+
+#[cfg(test)]
+#[path = "tests/code_rerank_2.rs"]
+mod tests_2;

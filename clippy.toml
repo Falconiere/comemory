@@ -1,1 +1,20 @@
+# Clippy configuration.
+#
+# The function-length ceiling is DECLARED in guardrails.config.json
+# (functionSize.max) and enforced here — one number, one enforcer. Keep the two
+# in sync by hand; the kit's validate-templates.sh is not vendored.
+too-many-lines-threshold = 100
+
+# Test code legitimately unwraps/expects/panics: a failed assertion IS the
+# reporting mechanism. Belt-and-braces with the per-file `#![allow(...)]` header
+# every test and bench file carries (see CLAUDE.md "Testing"), because clippy's
+# in-test detection does not reliably cover helper fns in crate-root
+# integration binaries.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-dbg-in-tests = true
+
+# comemory's public API is internal-only (no crates.io publish), so a breaking
+# signature change is never a downstream event.
 avoid-breaking-exported-api = false

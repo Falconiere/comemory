@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Golden-pair builder over the shared smoke corpus.
 //!
 //! Split out of `corpus.rs` so binaries that only need the corpus data

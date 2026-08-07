@@ -71,3 +71,7 @@ fn lookback_cutoff(at: &str, lookback_days: u32) -> Result<String> {
         .map_err(|e| Error::Other(format!("search-edit lookback: cannot parse at={at}: {e}")))?;
     memory_row::iso_format(parsed - Duration::days(i64::from(lookback_days)))
 }
+
+#[cfg(test)]
+#[path = "tests/search_edit.rs"]
+mod tests;

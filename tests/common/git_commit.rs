@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Commit builder for the git-repo test fixtures.
 //!
 //! Pairs with `git_repo.rs`: a binary that `#[path]`-includes this file as
@@ -16,6 +23,6 @@ pub fn commit_files(repo: &Path, files: &[(&str, &str)], msg: &str) {
         }
         std::fs::write(&full, content).expect("write file");
     }
-    crate::git_repo::run_git(repo, &["add", "-A"]);
-    crate::git_repo::run_git(repo, &["commit", "-q", "-m", msg]);
+    super::git_repo::run_git(repo, &["add", "-A"]);
+    super::git_repo::run_git(repo, &["commit", "-q", "-m", msg]);
 }

@@ -75,3 +75,7 @@ fn upsert_entry(conn: &Connection, entry: &SourceEntry) -> Result<()> {
         },
     )
 }
+
+#[cfg(test)]
+#[path = "tests/mirror.rs"]
+mod tests;

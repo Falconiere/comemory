@@ -104,8 +104,7 @@ fn normalize_path(path: &str, repo_root: Option<&Path>) -> String {
         .strip_prefix(root)
         .ok()
         .and_then(Path::to_str)
-        .map(str::to_string)
-        .unwrap_or_else(|| path.to_string())
+        .map_or_else(|| path.to_string(), str::to_string)
 }
 
 /// Capture the committed-state anchor for an anchorable ref, or return an
@@ -132,17 +131,16 @@ fn capture_anchor(
         ));
         return Ok(Ref::new(id));
     };
-    match git_utils::blob_oid_at_head(root, &q.path)? {
-        Some(blob) => Ok(Ref {
+    if let Some(blob) = git_utils::blob_oid_at_head(root, &q.path)? {
+        Ok(Ref {
             commit: Some(git_utils::current_head(root)?),
             branch: git_utils::current_branch(root)?,
             blob: Some(blob),
             id,
-        }),
-        None => {
-            warnings.push(format!("{id} is untracked or missing — saved unpinned"));
-            Ok(Ref::new(id))
-        }
+        })
+    } else {
+        warnings.push(format!("{id} is untracked or missing — saved unpinned"));
+        Ok(Ref::new(id))
     }
 }
 

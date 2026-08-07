@@ -49,8 +49,9 @@ pub fn run(ctx: &mut Ctx<'_>, _req: Request) -> Result<Response> {
                 .and_then(|m| m.modified())
                 .ok()
                 .and_then(|t| t.elapsed().ok())
-                .map(|d| d > std::time::Duration::from_secs((RETENTION_DAYS as u64) * 86_400))
-                .unwrap_or(false);
+                .is_some_and(|d| {
+                    d > std::time::Duration::from_secs((RETENTION_DAYS as u64) * 86_400)
+                });
             if too_old && std::fs::remove_file(entry.path()).is_ok() {
                 removed += 1;
             }
@@ -93,3 +94,7 @@ fn sweep_learning(
     let events = conn.execute("DELETE FROM feedback_events WHERE at < ?1", [&cutoff])? as u64;
     Ok((logs, events))
 }
+
+#[cfg(test)]
+#[path = "tests/gc.rs"]
+mod tests;

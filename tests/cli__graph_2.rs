@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Pagination coverage for `comemory graph` (continuation of
 //! `cli__graph.rs`, split to stay within the per-file size budget). Exercises
 //! the `--limit` / `--offset` edge window: the stable `weight DESC` order, an

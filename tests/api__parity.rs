@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! AC-12 parity test — the single most important test in the whole
 //! `serve-http-api-parity` plan (spec §Architecture: "the parity guarantee
 //! is bought back explicitly with a clap-introspection test... That test is

@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Test mirror for `src/cli/when.rs` — the `--since` / `--until` /
 //! `--as-of` value parser and the [`TimeScope`] both `search` and
 //! `context` build from those flags.

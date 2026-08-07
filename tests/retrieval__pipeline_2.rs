@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Pagination and ranking-parity tests for
 //! [`comemory::retrieval::pipeline`] — split from `retrieval__pipeline.rs`
 //! to keep each test binary under the size cap.

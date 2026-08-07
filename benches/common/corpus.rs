@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Synthesized bench corpus rooted in a tempdir: a migrated `comemory.db`
 //! seeded with N memory rows and M code-symbol rows (each with a vector)
 //! through the real public store API — no mocks, so the retrieval and

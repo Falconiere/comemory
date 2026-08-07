@@ -72,3 +72,7 @@ pub fn detect(path: &Path) -> Option<Lang> {
         _ => None,
     }
 }
+
+#[cfg(test)]
+#[path = "tests/languages.rs"]
+mod tests;

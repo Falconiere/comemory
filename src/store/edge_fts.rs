@@ -10,6 +10,8 @@
 //! `graph::materialize`, and per-site hooks would rot the moment the next
 //! writer forgot one.
 
+use std::fmt::Write as _;
+
 use rusqlite::{Connection, params};
 
 use crate::prelude::*;
@@ -67,11 +69,12 @@ fn strip_prefix_expr(col: &str) -> String {
     let mut expr = String::from("CASE");
     for prefix in KIND_PREFIXES {
         let rest = prefix.len() + 1;
-        expr.push_str(&format!(
+        let _ = write!(
+            expr,
             " WHEN instr({col}, '{prefix}') = 1 THEN substr({col}, {rest})"
-        ));
+        );
     }
-    expr.push_str(&format!(" ELSE {col} END"));
+    let _ = write!(expr, " ELSE {col} END");
     expr
 }
 
@@ -284,3 +287,7 @@ fn run_match(
         },
     )
 }
+
+#[cfg(test)]
+#[path = "tests/edge_fts.rs"]
+mod tests;

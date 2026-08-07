@@ -264,3 +264,7 @@ fn project_pagerank(tx: &Transaction<'_>, repo: &str, known: &[String]) -> Resul
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "tests/materialize.rs"]
+mod tests;

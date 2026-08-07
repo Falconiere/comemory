@@ -181,7 +181,9 @@ pub fn supersedes_chain(conn: &Connection, start: &str, max_depth: u32) -> Resul
          SELECT id FROM walk WHERE depth > 0 ORDER BY depth",
     )?;
     let rows = stmt
-        .query_map(params![start, max_depth as i64], |r| r.get::<_, String>(0))?
+        .query_map(params![start, i64::from(max_depth)], |r| {
+            r.get::<_, String>(0)
+        })?
         .collect::<std::result::Result<Vec<_>, _>>()?;
     Ok(rows)
 }
@@ -209,3 +211,7 @@ pub fn delete_touching(conn: &Connection, kind: &str, id: &str) -> Result<()> {
     )?;
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "tests/edges.rs"]
+mod tests;

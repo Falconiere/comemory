@@ -78,3 +78,7 @@ pub fn search(conn: &Connection, query: &str, k: usize) -> Result<Vec<DocumentFt
         })
     })
 }
+
+#[cfg(test)]
+#[path = "tests/document_fts.rs"]
+mod tests;

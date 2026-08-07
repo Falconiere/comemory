@@ -79,3 +79,7 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
 
     Ok(Response { report, applied })
 }
+
+#[cfg(test)]
+#[path = "tests/tune.rs"]
+mod tests;

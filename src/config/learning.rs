@@ -135,3 +135,7 @@ pub(crate) struct PartialReinforceConfig {
 pub(crate) struct PartialBanditConfig {
     pub(crate) enabled: Option<bool>,
 }
+
+#[cfg(test)]
+#[path = "tests/learning.rs"]
+mod tests;

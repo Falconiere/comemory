@@ -39,7 +39,7 @@ pub(crate) fn index_file(
     let Some(oid) = blob_oid(git_repo, path) else {
         return Ok(false);
     };
-    if oid_is_indexed(tx, repo, &rel, &oid)? {
+    if oid_is_indexed(tx, repo, &rel, &oid) {
         return Ok(false);
     }
     // Drop any prior `code_symbols`/`code_vec`/`code_fts` rows for this
@@ -164,7 +164,7 @@ pub(crate) fn simhash_of(text: &str) -> i64 {
 
 /// Returns true when `indexed_files` already records `oid` for
 /// `repo + path` — the working-tree blob hasn't changed since the last run.
-fn oid_is_indexed(conn: &Connection, repo: &str, path: &str, oid: &str) -> Result<bool> {
+fn oid_is_indexed(conn: &Connection, repo: &str, path: &str, oid: &str) -> bool {
     let row: Option<String> = conn
         .query_row(
             "SELECT blob_oid FROM indexed_files WHERE repo = ?1 AND path = ?2",
@@ -172,7 +172,7 @@ fn oid_is_indexed(conn: &Connection, repo: &str, path: &str, oid: &str) -> Resul
             |r| r.get(0),
         )
         .ok();
-    Ok(matches!(row, Some(v) if v == oid))
+    matches!(row, Some(v) if v == oid)
 }
 
 /// Look up the working-tree blob OID for `file` via the repo index. Files
@@ -219,3 +219,7 @@ pub(crate) fn relative(root: &Path, file: &Path) -> String {
         .to_string_lossy()
         .to_string()
 }
+
+#[cfg(test)]
+#[path = "tests/walk.rs"]
+mod tests;

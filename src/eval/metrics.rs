@@ -78,3 +78,7 @@ fn percentile(sorted: &[f64], p: f64) -> f64 {
     let idx = ((p / 100.0) * last as f64).round() as usize;
     sorted.get(idx.min(last)).copied().unwrap_or(0.0)
 }
+
+#[cfg(test)]
+#[path = "tests/metrics.rs"]
+mod tests;

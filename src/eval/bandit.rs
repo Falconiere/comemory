@@ -72,6 +72,7 @@ pub struct BanditReport {
 /// stale rows are inert, and re-seeding starts the widened arms at
 /// Beta(1,1).
 pub fn arm_id(c: &TuneCandidate) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut h = Sha256::new();
     h.update(c.rrf_k.to_bits().to_le_bytes());
     h.update(c.decay.to_bits().to_le_bytes());
@@ -82,7 +83,6 @@ pub fn arm_id(c: &TuneCandidate) -> String {
     h.update((c.graph_seeds as u64).to_le_bytes());
     let dig = h.finalize();
     let mut out = String::with_capacity(16);
-    const HEX: &[u8; 16] = b"0123456789abcdef";
     for &b in &dig[..8] {
         out.push(HEX[(b >> 4) as usize] as char);
         out.push(HEX[(b & 0xf) as usize] as char);
@@ -178,7 +178,7 @@ pub fn thompson_sample(arms: &[Arm], seed: u64) -> Result<&Arm> {
         // sample_beta guarantees a finite draw in [0,1] (0.5 = Beta(1,1) mean).
         let s = sample_beta(&mut rng, arm.alpha, arm.beta);
         if s > best_s
-            || (s == best_s
+            || (s.total_cmp(&best_s) == std::cmp::Ordering::Equal
                 && arm.candidate.rrf_k.total_cmp(&arms[best_i].candidate.rrf_k)
                     == std::cmp::Ordering::Less)
         {
@@ -260,3 +260,7 @@ pub fn run_bandit(
         applied,
     })
 }
+
+#[cfg(test)]
+#[path = "tests/bandit.rs"]
+mod tests;

@@ -124,7 +124,7 @@ pub fn sample_candidates(t: &TuneConfig, seed: u64) -> Vec<TuneCandidate> {
     let target = t.samples.min(pool_product(&sizes));
     let max_draws = t.samples.saturating_mul(MAX_DRAW_FACTOR);
     let mut rng = SplitMix64::new(seed);
-    let mut seen: HashSet<[usize; 6]> = HashSet::with_capacity(target);
+    let mut visited: HashSet<[usize; 6]> = HashSet::with_capacity(target);
     let mut out = Vec::with_capacity(target);
     let mut draws = 0usize;
     while out.len() < target && draws < max_draws {
@@ -133,10 +133,10 @@ pub fn sample_candidates(t: &TuneConfig, seed: u64) -> Vec<TuneCandidate> {
         for (slot, &n) in idx.iter_mut().zip(sizes.iter()) {
             *slot = (rng.next_u64() % n as u64) as usize;
         }
-        push_unseen(t, idx, &mut seen, &mut out);
+        push_unseen(t, idx, &mut visited, &mut out);
     }
     if out.len() < target {
-        fill_in_grid_order(t, &sizes, &mut seen, &mut out, target);
+        fill_in_grid_order(t, &sizes, &mut visited, &mut out, target);
     }
     out
 }
@@ -162,3 +162,7 @@ pub(crate) fn sample_seed(pairs: usize, pool_sizes: &[usize]) -> u64 {
     buf.copy_from_slice(&dig[..8]);
     u64::from_le_bytes(buf)
 }
+
+#[cfg(test)]
+#[path = "tests/tune_sample.rs"]
+mod tests;

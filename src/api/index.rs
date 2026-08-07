@@ -213,3 +213,7 @@ fn record_outcome(report: &mut SourceReport, c: &Candidate, outcome: UpdateOutco
         }
     }
 }
+
+#[cfg(test)]
+#[path = "tests/index.rs"]
+mod tests;

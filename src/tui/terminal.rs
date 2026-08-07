@@ -88,3 +88,7 @@ impl Drop for TerminalGuard {
         let _ = io::stderr().flush();
     }
 }
+
+#[cfg(test)]
+#[path = "tests/terminal.rs"]
+mod tests;

@@ -1,3 +1,15 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
+// `criterion_group!` expands to an undocumented `pub fn benches()`; the macro
+// body is out of our control, so `missing_docs` is allowed for this whole
+// bench binary rather than the single generated item (attributes placed
+// directly on a function-like macro invocation are ignored by rustc).
+#![allow(missing_docs)]
 //! Store-primitive micro-benches over a ≥1k-row corpus with vectors seeded:
 //! vec0 KNN (`knn_memory` / `knn_code`), FTS5 BM25 (`search_memory` /
 //! `search_code`), and the recursive-CTE supersedes walk

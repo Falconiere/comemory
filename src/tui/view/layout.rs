@@ -47,3 +47,7 @@ fn render_status(frame: &mut Frame, app: &App, area: Rect) {
     let line = format!("{} hit(s){}{} · {}", app.active_len(), more, sem, hint);
     frame.render_widget(Paragraph::new(line), area);
 }
+
+#[cfg(test)]
+#[path = "tests/layout.rs"]
+mod tests;

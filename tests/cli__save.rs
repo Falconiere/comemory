@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Task 9: `comemory save` must write through the v0.2 store layer —
 //! atomic markdown plus a SQLite mirror that includes FTS5 (always) and
 //! `memory_vec` (only when a caller-supplied vector is provided).
@@ -118,7 +125,7 @@ fn save_with_vector_csv_flag_writes_memory_vec_row() {
     let vector = vectors::vector("csv-seed", 1024);
     let csv = vector
         .iter()
-        .map(|f| f.to_string())
+        .map(std::string::ToString::to_string)
         .collect::<Vec<_>>()
         .join(",");
 
@@ -236,10 +243,12 @@ fn read_only_memory(home: &std::path::Path) -> String {
         .expect("memories dir")
         .flatten()
         .find(|e| {
-            e.file_name()
-                .to_str()
-                .map(|n| n.ends_with(".md") && !n.starts_with('.'))
-                .unwrap_or(false)
+            e.file_name().to_str().is_some_and(|n| {
+                std::path::Path::new(n)
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
+                    && !n.starts_with('.')
+            })
         })
         .expect("one saved markdown");
     std::fs::read_to_string(entry.path()).expect("read md")
@@ -356,8 +365,7 @@ fn save_untracked_ref_exits_0_with_json_warning() {
     assert!(
         warnings[0]
             .as_str()
-            .map(|w| w.contains("zzz.nope") || w.contains("untracked"))
-            .unwrap_or(false),
+            .is_some_and(|w| w.contains("zzz.nope") || w.contains("untracked")),
         "warning should describe the unpinned ref: {out}",
     );
 }

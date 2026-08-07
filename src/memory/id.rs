@@ -10,7 +10,7 @@ pub fn memory_id(body: &str) -> String {
     let mut hex = String::with_capacity(8);
     for byte in &digest[..4] {
         use std::fmt::Write as _;
-        let _ = write!(hex, "{:02x}", byte);
+        let _ = write!(hex, "{byte:02x}");
     }
     hex
 }
@@ -36,7 +36,11 @@ pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
     let digest = Sha256::digest(bytes);
     let mut hex = String::with_capacity(64);
     for byte in digest {
-        let _ = write!(hex, "{:02x}", byte);
+        let _ = write!(hex, "{byte:02x}");
     }
     hex
 }
+
+#[cfg(test)]
+#[path = "tests/id.rs"]
+mod tests;

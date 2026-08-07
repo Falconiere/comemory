@@ -351,3 +351,11 @@ pub fn search_code(
         },
     )
 }
+
+#[cfg(test)]
+#[path = "tests/fts.rs"]
+mod tests;
+
+#[cfg(test)]
+#[path = "tests/fts_2.rs"]
+mod tests_2;

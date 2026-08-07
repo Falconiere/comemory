@@ -1,8 +1,16 @@
-//! Shared corpus + golden-file builder for `tests/api__eval.rs`,
-//! `tests/api__tune.rs`, and `tests/api__bandit.rs`.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
+//! Shared corpus + golden-file builder for `src/api/tests/eval.rs`,
+//! `src/api/tests/tune.rs`, and `src/api/tests/bandit.rs`.
 
 use assert_cmd::Command;
 use serde_json::Value;
+use std::fmt::Write as _;
 use tempfile::TempDir;
 
 /// Lexically distinct memory bodies; each doubles as its own golden query
@@ -44,7 +52,7 @@ pub fn corpus_with_golden(home: &TempDir, n: usize) -> std::path::PathBuf {
     for topic in &TOPICS[..n] {
         let save = run_json(home, &["save", topic, "--kind", "note"]);
         let id = save["id"].as_str().expect("save id").to_string();
-        yaml.push_str(&format!("- query: {topic}\n  relevant: [{id}]\n"));
+        let _ = writeln!(yaml, "- query: {topic}\n  relevant: [{id}]");
     }
     let golden = home.path().join("golden.yaml");
     std::fs::write(&golden, yaml).expect("write golden file");

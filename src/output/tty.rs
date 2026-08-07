@@ -35,7 +35,7 @@ pub fn warning(msg: &str) -> Result<()> {
 /// three fractional digits. Returned `String` is meant to be embedded inside
 /// a larger `writeln!`.
 pub fn score(v: f32) -> String {
-    format!("{:.3}", v).yellow().to_string()
+    format!("{v:.3}").yellow().to_string()
 }
 
 /// Wrap `s` in the dim ANSI style. Returned `String` is meant to be embedded
@@ -118,3 +118,7 @@ pub fn write_query_footer(
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "tests/tty.rs"]
+mod tests;

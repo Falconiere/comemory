@@ -95,7 +95,7 @@ async fn index_sources(
         let conn = contain_state.conn()?;
         let roots = contain_state.allowed_roots(&conn);
         drop(conn);
-        for p in req.path.iter_mut() {
+        for p in &mut req.path {
             let canonical = security::contain_abs(&roots, Path::new(p.as_str()))?;
             *p = canonical.to_string_lossy().into_owned();
         }

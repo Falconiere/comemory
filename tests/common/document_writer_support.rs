@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Shared support for the `src/document/writer.rs` and
 //! `src/document/fingerprint.rs` test mirrors: only the pieces BOTH
 //! consuming binaries actually call — opening a disposable

@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! End-to-end tests for `comemory edges` against the real binary.
 //!
 //! Every edge these tests query is written by a production path — `comemory
@@ -33,17 +40,17 @@ fn run(home: &TempDir, args: &[&str]) -> String {
 
 /// Save a memory via the real binary and return its id.
 fn save_id(home: &TempDir, args: &[&str]) -> String {
-    let mut argv = vec!["--json", "save"];
-    argv.extend_from_slice(args);
-    let v: Value = serde_json::from_str(&run(home, &argv)).expect("save emits json");
+    let mut full_args = vec!["--json", "save"];
+    full_args.extend_from_slice(args);
+    let v: Value = serde_json::from_str(&run(home, &full_args)).expect("save emits json");
     v["id"].as_str().expect("save emits an id").to_string()
 }
 
 /// Run `comemory edges --json <args…>` and parse the envelope.
 fn edges_json(home: &TempDir, args: &[&str]) -> Value {
-    let mut argv = vec!["--json", "edges"];
-    argv.extend_from_slice(args);
-    serde_json::from_str(&run(home, &argv)).expect("edges emits json")
+    let mut full_args = vec!["--json", "edges"];
+    full_args.extend_from_slice(args);
+    serde_json::from_str(&run(home, &full_args)).expect("edges emits json")
 }
 
 /// One row's string field, naming the row when it is missing.

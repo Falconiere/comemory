@@ -185,3 +185,7 @@ fn bump_activation(conn: &Connection, ids: &[String], at: &str) -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "tests/coactivate.rs"]
+mod tests;

@@ -114,3 +114,7 @@ pub fn write_tty(out: &mut impl Write, hits: &[EdgeFtsHit], offset: usize) -> Re
     }
     tty::write_page_footer(out, hits.len(), offset, None)
 }
+
+#[cfg(test)]
+#[path = "tests/edges.rs"]
+mod tests;

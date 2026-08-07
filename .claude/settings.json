@@ -1,23 +1,12 @@
 {
   "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Edit|Write|MultiEdit|Bash|Shell",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pre-tools/mod.sh"
-          }
-        ]
-      }
-    ],
     "PostToolUse": [
       {
-        "matcher": "Edit|Write|MultiEdit|Bash|Shell",
+        "matcher": "Edit|Write",
         "hooks": [
           {
             "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post-tools/mod.sh"
+            "command": "bash scripts/guardrails/run.sh --hook"
           }
         ]
       }
@@ -27,14 +16,10 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session-end.sh"
+            "command": "bash scripts/guardrails/run.sh --stop"
           }
         ]
       }
     ]
-  },
-  "enabledPlugins": {
-    "claudness@falconiere": true,
-    "code-simplifier@claude-plugins-official": true
   }
 }

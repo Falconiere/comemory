@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Mirror tests for `src/output/search.rs`. Pins the `comemory search
 //! --json` envelope contract (`score_parts` is a stable, documented
 //! surface — M2 tuning reads it) via an insta snapshot, and locks in that

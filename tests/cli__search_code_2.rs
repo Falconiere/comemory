@@ -1,9 +1,18 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Pagination tests for `comemory search-code` — split from
 //! `cli__search_code.rs` to keep each test binary small. Indexes a real
 //! Rust fixture with many functions, then pages through the ranked window
 //! and asserts stability (no overlap, no gap, single-shot order) plus the
 //! envelope cursor (`limit`/`offset`/`has_more`/`total`) and the
 //! `--limit` alias.
+
+use std::fmt::Write as _;
 
 use assert_cmd::Command;
 use serde_json::Value;
@@ -21,7 +30,7 @@ fn build_many_fn_repo(root: &std::path::Path, n: usize) -> std::path::PathBuf {
     git_repo::init_repo(&repo);
     let mut src = String::new();
     for i in 0..n {
-        src.push_str(&format!("fn handle_request_{i}() {{}}\n"));
+        let _ = writeln!(src, "fn handle_request_{i}() {{}}");
     }
     git_commit::commit_files(&repo, &[("lib.rs", &src)], "init");
     repo

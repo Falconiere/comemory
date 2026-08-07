@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Integration test for the rewired `comemory search` subcommand.
 //!
 //! Asserts that after saving a memory through the CLI the lexical FTS path

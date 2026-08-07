@@ -41,3 +41,7 @@ pub fn slug_from_body(body: &str) -> String {
         trimmed
     }
 }
+
+#[cfg(test)]
+#[path = "tests/slug.rs"]
+mod tests;

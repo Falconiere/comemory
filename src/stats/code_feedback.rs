@@ -187,3 +187,7 @@ pub fn record_code_with_provenance(
     tx.commit()?;
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "tests/code_feedback.rs"]
+mod tests;

@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Ranking smoke tests through the real `comemory` binary: a recall@3 floor
 //! over a 20-memory corpus (scored by `comemory eval` against a golden YAML
 //! generated from the corpus), feedback-driven reordering, and rebuild
@@ -156,7 +163,7 @@ fn missed_queries(results: &[Value], bodies: &HashMap<String, String>) -> Vec<St
                 .take(3)
                 .map(|id| {
                     let id = id.as_str().expect("returned id");
-                    let body = bodies.get(id).map(String::as_str).unwrap_or("<unknown id>");
+                    let body = bodies.get(id).map_or("<unknown id>", String::as_str);
                     format!("{id}: {body}")
                 })
                 .collect();

@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Build minimal real git repos in tempdirs for integration tests.
 //!
 //! Everything shells out to the real `git` binary (rather than driving

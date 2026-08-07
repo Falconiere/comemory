@@ -1,3 +1,12 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
+//! Smoke test: the real `comemory` binary runs and prints its version.
+
 use assert_cmd::Command;
 
 #[test]

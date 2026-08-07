@@ -1,3 +1,15 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
+// `criterion_group!` expands to an undocumented `pub fn benches()`; the macro
+// body is out of our control, so `missing_docs` is allowed for this whole
+// bench binary rather than the single generated item (attributes placed
+// directly on a function-like macro invocation are ignored by rustc).
+#![allow(missing_docs)]
 //! Indexing hot-path bench: `ast::extract` (extract + cAST chunk) over a
 //! real comemory source file, then the per-symbol write fan-out
 //! (`code_row::insert` + `fts::index_code` + `vector::insert_code`) into a

@@ -151,3 +151,7 @@ fn write_code_ref<W: std::io::Write>(
     )?;
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "tests/context.rs"]
+mod tests;

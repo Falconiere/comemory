@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! End-to-end coverage of `GET|POST /api/v1/memories/search` and
 //! `GET|POST /api/v1/context` (`src/serve/routes/memories/search.rs`)
 //! against a real bound server, seeded via real `comemory save` calls.

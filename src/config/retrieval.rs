@@ -27,7 +27,13 @@ pub struct RetrievalConfig {
     /// the M3 code-search wiring. Default `0.50`.
     #[serde(default = "default_code_threshold")]
     pub code_threshold: f32,
+    /// Reserved lexical/semantic blend weight; not read by the current
+    /// RRF-fusion pipeline, kept for config-schema stability. Default
+    /// `0.65`.
     pub hybrid_weight: f32,
+    /// Number of results the hybrid router returns. Also the default page
+    /// size for `search` / `search-code` / `context` when `--k`/`--limit`
+    /// is omitted. Default `12`. Env: `COMEMORY_RETRIEVAL_TOP_K`.
     pub top_k: usize,
     /// Maximum depth a paginated retrieval (`search`, `search-code`,
     /// `context`) can page into the ranked result list. A request for
@@ -39,6 +45,9 @@ pub struct RetrievalConfig {
     /// Default `200`.
     #[serde(default = "default_max_page_window")]
     pub max_page_window: usize,
+    /// Reserved corrective-retrieval confidence floor; not read by the
+    /// current pipeline, kept for config-schema stability. Default
+    /// `0.15`.
     pub corrective_min_confidence: f32,
     /// RRF constant for sparse/dense fusion. Default 60.0 matches the original
     /// Cormack/Clarke/Buettcher RRF paper.
@@ -169,3 +178,7 @@ impl RetrievalConfig {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "tests/retrieval.rs"]
+mod tests;

@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Task 14: `comemory rebuild` — part 2.
 //!
 //! Covers: learning-state preservation, v6 code-graph state preservation,

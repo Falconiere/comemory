@@ -1,5 +1,12 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! End-to-end coverage of `GET /api/v1/doctor` and `GET /api/v1/consolidate`
-//! (`src/serve/routes/maint/mod.rs`) against a real bound server.
+//! (`src/serve/routes/maint.rs`) against a real bound server.
 
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};

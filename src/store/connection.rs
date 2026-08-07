@@ -77,3 +77,7 @@ fn register_sqlite_vec() -> std::result::Result<(), String> {
         register_auto_extension(raw).map_err(|e| format!("register sqlite-vec: {e}"))
     }
 }
+
+#[cfg(test)]
+#[path = "tests/connection.rs"]
+mod tests;

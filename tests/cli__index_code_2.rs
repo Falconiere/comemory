@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Task 12: `comemory index-code` — part 2.
 //!
 //! Covers: the blob-OID cursor short-circuit on re-run, cAST chunk-child

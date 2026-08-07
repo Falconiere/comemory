@@ -66,3 +66,7 @@ pub(crate) fn default_max_file_bytes() -> u64 {
 pub(crate) fn default_document_leg_weight() -> f32 {
     0.5
 }
+
+#[cfg(test)]
+#[path = "tests/defaults.rs"]
+mod tests;

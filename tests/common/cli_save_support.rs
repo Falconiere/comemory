@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Shared helpers for `tests/cli__save.rs` and `tests/cli__save_2.rs`.
 
 use assert_cmd::Command;
@@ -27,10 +34,12 @@ pub fn count_md_files(data_dir: &std::path::Path) -> usize {
     };
     read.flatten()
         .filter(|e| {
-            e.file_name()
-                .to_str()
-                .map(|n| n.ends_with(".md") && !n.starts_with('.'))
-                .unwrap_or(false)
+            e.file_name().to_str().is_some_and(|n| {
+                std::path::Path::new(n)
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
+                    && !n.starts_with('.')
+            })
         })
         .count()
 }

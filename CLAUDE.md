@@ -44,6 +44,9 @@ just test                       # cargo nextest run --all-features
 just qa                         # check-all + cargo-deny + dup-check + machete
 just e2e                        # real-binary end-to-end harness
 bash scripts/check-all.sh       # the umbrella gate (CI parity)
+bash scripts/guardrails/run.sh  # structure gate alone (file size, folder tree,
+                                 # no mod.rs barrels, filenames, secrets, the
+                                 # ast-grep pattern rules, folder READMEs)
 cargo nextest run --all-features
 comemory doctor                    # runtime health check
 comemory search-code "query"       # ranked code search (BM25 + graph priors)
@@ -56,72 +59,115 @@ comemory consolidate               # advisory near-duplicate cluster report
 
 ## Binding Rules (apply to every contribution)
 
-These are reproduced verbatim from the implementation plan header and are
-enforced by `scripts/check-all.sh`. Every PR must satisfy all five.
+comemory follows the toolu-conventions Rust stack
+(`github.com/Falconiere/toolu-conventions`). These rules are that kit's, plus
+comemory's stricter local ceilings. Deviations are enumerated under
+"Deviations from toolu-conventions" — nowhere else.
 
 1. **No duplication / redundancy.** Shared logic is extracted into a helper.
-   Enforced by `scripts/dup-check.sh` and reviewer scrutiny.
-2. **Very modular modules.** Each `src/<module>/` directory contains
-   narrow, single-purpose files. Files that change together live together.
-3. **≤300 code lines per file in `src/` (blanks/comments excluded).**
-   Enforced by `scripts/module-size-check.sh`.
-4. **Zero errors, zero warnings.** No `#[allow(...)]` overrides, no
-   `// clippy::allow`, no `.unwrap()` outside `tests/`, no `.expect(...)`
-   (any, with or without a message) in `src/`, no `println!` / `eprintln!` /
-   `todo!()` / `unimplemented!()` / `panic!` in `src/`, no `unsafe { … }`
-   without an adjacent `// SAFETY:` comment within 3 lines above. Enforced by
-   `scripts/no-bypass-check.sh`.
-5. **Tests strictly in `tests/` mirroring `src/` 1:1, FLAT.** No
-   `#[cfg(test)] mod tests { … }` block ever appears inside any file in
-   `src/`. Items needing tests are exposed via `pub(crate)`. The mirror is
-   flat and dunder-joined: `src/<path>.rs` maps to a single
-   `tests/<dunder-path>.rs` (e.g. `src/store/tokenizer/split.rs` ↔
-   `tests/store__tokenizer__split.rs`). Each flat file is its own
-   integration-test binary — there are no `tests/<module>.rs` shims and no
-   nested `tests/<module>/` submodule directories. An oversized test file is
-   split into `<base>.rs` + `<base>_2.rs`. Shared helpers/fixtures live in
-   `tests/common/`. Enforced by `scripts/test-placement-check.sh` and
-   `scripts/tests-mirror-check.sh`.
+   Enforced by `scripts/dup-check.sh` (which excludes test trees) and review.
+2. **No barrels — no `mod.rs`.** A module that grows into a folder keeps its
+   file beside it: `src/store.rs` declares `mod migrate;`, `src/store/migrate.rs`
+   holds it. A file whose only content is `pub use` re-exports is a barrel and
+   is banned; `pub use` is legitimate only in `src/lib.rs`, to shape the crate's
+   public API. Enforced by the `no-barrels` guardrails check
+   (`barrelNames: ["mod.rs"]`).
+3. **One responsibility per file; filename matches content.** `snake_case`,
+   named after the file's primary item (`code_row.rs` holds
+   `struct CodeSymbolRow` and its writers). Enforced by the `filename-case`
+   guardrails check.
+4. **Size ceilings.** 300 code lines per file in `src/` (blanks and comments
+   excluded; tests exempt) — stricter than the kit's 500 by choice, because
+   comemory's module decomposition is built around it. 100 lines per function.
+   Both are DECLARED in `guardrails.config.json` (`fileSize.max`,
+   `functionSize.max`) and enforced by the `file-size` guardrails check and
+   `clippy::too_many_lines = "deny"` respectively.
+5. **Zero errors, zero warnings, no silencing.** Clippy over all targets and all
+   features with `-D warnings` must be clean. No `#[allow(...)]` in production
+   code — a lint is either the house policy (declared once in
+   `Cargo.toml [lints]`) or it is fixed. No `.unwrap()` / `.expect(...)` /
+   `panic!` / `todo!` / `unimplemented!` / `println!` / `eprintln!` / `dbg!`
+   outside tests and benches — return `Result` and propagate with `?`, and route
+   diagnostics through `tracing`. Every `unsafe` block and every `unsafe fn`
+   carries a `// SAFETY:` line in the comment block directly above it. Enforced
+   by `Cargo.toml [lints]` plus the two project-local ast-grep rules in
+   `scripts/guardrails/patterns/rust/`.
+6. **Tests never share a file with production logic, and colocate by default.**
+   No `#[cfg(test)] mod tests { ... }` body ever appears in a `src/` file. See
+   "Testing" for the placement rule. Enforced by the `no-inline-test-module`
+   ast-grep rule.
+7. **Doc line on every module and public item.** `//!` at the top of every
+   module, `///` on every `pub` item. Enforced by `missing_docs = "warn"` under
+   `-D warnings`.
+8. **Docs in sync.** A change to a user-facing surface (CLI flags, public API,
+   config, env vars) updates `README.md`, `CLAUDE.md`, `docs/` and the module's
+   own `src/<module>/README.md` in the same change.
+   `scripts/cli-docs-check.sh` enforces the `docs/cli-reference.md` half
+   mechanically.
+9. **Real data, no mock-data tests.** A test that only proves a mock returns
+   what the mock was told to return is banned — it hides integration breakage.
+
+The one command that must be green before every push:
+
+    bash scripts/check-all.sh      # or: just check
 
 ## Code Style
 
-- `rustfmt` defaults — **4-space indent**, 100-column line length
-  (`rustfmt.toml`).
+- `rustfmt` stable-only options — **4-space indent**, 100-column line length,
+  edition 2024 (`rustfmt.toml`). Nightly-gated knobs (`imports_granularity`,
+  `group_imports`, `wrap_comments`, ...) are deliberately omitted so `cargo
+  fmt` is deterministic on the stable toolchain CI uses.
 - **≤300 code lines per `src/` file** (blanks/comments excluded; see
-  Binding Rule 3) — split into submodules before crossing it.
-- `cargo clippy --all-targets --all-features -- -D warnings`.
-- Doc comments (`///`) on every public item.
+  Binding Rule 4) — split into submodules before crossing it.
+- **No `mod.rs`.** A module that outgrows one file is `src/<name>.rs` beside
+  `src/<name>/`, never `src/<name>/mod.rs`.
+- **One primary item per file, filename matches content.** A file named after
+  a type or function holds that item and its direct helpers, not an unrelated
+  second concern.
+- Lint policy is declared once, in `Cargo.toml [lints.rust]` / `[lints.clippy]`
+  plus `clippy.toml` — never a per-call-site `#[allow(...)]`. Run it with
+  `cargo clippy --all-targets --all-features -- -D warnings`
+  (`scripts/lint-check.sh`).
+- Doc comments (`///`) on every public item, `//!` at the top of every module.
 - `Result<T>` alias from `crate::prelude::*`; errors flow through the
   `Error` enum in `src/errors.rs`.
 - Use `tracing` for diagnostics, never `println!` / `eprintln!`.
 
 ## Module Map
 
+Every folder listed with a trailing `/` below carries its own
+`src/<module>/README.md` — the per-file index for that folder, kept current by
+whoever last touched a file there. The table below is the cross-module
+narrative; the folder `README.md` is the authoritative file-by-file list.
+
 | Module | Responsibility |
 |--------|---------------|
-| `cli/` | clap subcommand entry points + the top-level dispatcher in `mod.rs`, plus `when` — the shared date-flag layer (`parse_when` for one `--since`/`--until`/`--as-of` value, `scope_from_flags` for the whole trio → a validated `TimeScope`), used by both `search` and `context`; `edges` is the fourth free-text surface (`comemory edges <query>` — lexical search over `edge_fts`, self-healing an empty index on first use) |
-| `tui/` | read-only interactive terminal explorer (`comemory tui`): ratatui front end + async `EventStream`/`tokio::select!` loop (`mod.rs`), pure state (`app`) + key map (`event`), a dedicated-thread DB-worker that owns the connection (`worker`), the lexical/semantic request bridge (`search`), preview text (`preview`), RAII terminal guard (`terminal`), and pure ratatui widgets (`view/`). Embed shell-out lives in the shared `embed/` module |
-| `embed/` | shared embed-command shell-out (`mod.rs`) — runs `COMEMORY_EMBED_CMD` / `--embed-cmd` as `sh -c <cmd>`, feeds the query on stdin, parses `{"embedding":[..]}`. Consumed by `tui` (Ctrl-S semantic enrich) and `serve` (the `/api/search` hybrid leg). Moved here out of `tui` |
+| `cli/` | clap subcommand entry points + the top-level dispatcher in `cli.rs`, plus `when` — the shared date-flag layer (`parse_when` for one `--since`/`--until`/`--as-of` value, `scope_from_flags` for the whole trio → a validated `TimeScope`), used by both `search` and `context`; `edges` is the fourth free-text surface (`comemory edges <query>` — lexical search over `edge_fts`, self-healing an empty index on first use) |
+| `tui/` | read-only interactive terminal explorer (`comemory tui`): ratatui front end + async `EventStream`/`tokio::select!` loop (`tui.rs`), pure state (`app`) + key map (`event`), a dedicated-thread DB-worker that owns the connection (`worker`), the lexical/semantic request bridge (`search`), preview text (`preview`), RAII terminal guard (`terminal`), and pure ratatui widgets (`view/`). Embed shell-out lives in the shared `embed.rs` module |
+| `embed.rs` | shared embed-command shell-out (single-file module, no children) — runs `COMEMORY_EMBED_CMD` / `--embed-cmd` as `sh -c <cmd>`, feeds the query on stdin, parses `{"embedding":[..]}`. Consumed by `tui` (Ctrl-S semantic enrich) and `serve` (the `/api/search` hybrid leg) |
 | `api/` | shared command core between `cli::` and `serve::routes::`: `api::<cmd>::run(&mut Ctx, Request)` holds each subcommand's logic — a *move* of each `cli::<cmd>::run`'s middle (arg-parsing and TTY/`--json` rendering stay in `cli::`), so neither surface duplicates it (reuse precedent: `retrieval::code_search::search_code_hits`, generalized here to every command). Every `Request` derives `#[serde(deny_unknown_fields)]`, enforced by `tests/api__parity.rs`'s clap-introspection walk. `Ctx` bundles `Paths` + `Config` with a connection that is either `Borrowed` (the CLI's own connection, or the server's shared per-request one) or `Lazy` (opened on first `Ctx::conn()` call — a job worker's own dedicated connection; conn-free commands like `doctor`, `rebuild`, `ast`, `install-hooks`, `completions` never open one at all). One file per subcommand (`api::save`, `api::search`, `api::list`, …) plus three directory modules whose donor CLI files already sat near the 300-line ceiling: `graph/`, `index_code/` (+ `walk`), `rebuild/` (+ `copy`, the code-index/learning-state ATTACH-copy run before the atomic DB swap). cwd-dependent middles (`save --ref-*` anchoring, the code rerank's working-set prior) resolve against the *calling process's* cwd — the server's cwd over HTTP, not the HTTP client's, documented behavior rather than a bug |
 | `serve/` | loopback web viewer (`comemory serve`): axum `router` (mounts the legacy handlers plus the versioned `/api/v1` surface via `routes::v1_router`, and the path-aware `guard` middleware — enveloped `401`/`403` JSON on `/api/v1/*`, today's plain text everywhere else) + `handlers`, embedded SPA `assets`, on-disk `fileio` (`PUT /api/file`, gated by `--read-only` → 405), `search` (the `GET /api/search` handler — calls `retrieval::code_search` and coalesces symbol hits to file-level `{node_id, repo, path, score, top_symbol}`), `repo_root` resolution, `security` (session token generation/matching, the loopback Host guard, `resolve_within` for repo-relative ids, and `contain_abs` — canonicalize-and-contain for the `/api/v1` mutating routes that take a raw filesystem path), `error` (legacy `ApiError`, delegating its status to `envelope::status_and_code` so the two surfaces cannot drift), `envelope` (the `{ok,data,meta}` / `{ok,error,meta}` `/api/v1` response envelope plus the one `Error → (StatusCode, code)` mapping table both surfaces read from). `routes/` and `jobs/` are documented in their own rows below |
-| `serve/routes/` | the versioned `/api/v1` REST surface: `mod.rs` aggregates every resource's `table_entries()` into one route table (method/path/CLI-command/`mutating` flag — the source of truth for the read-only gate, `GET /commands`, and `tests/api__parity.rs`) and owns the handler-layer helpers every resource shares — `run_blocking` (runs `api::<cmd>::run`, and the connection-mutex guard it takes, entirely inside one `spawn_blocking` closure, never across an `.await`), `respond`/`accepted` (envelope a result / a job-acceptance), `guard_mutating` (read-only-then-write-permit gate for a synchronous mutating route: `405 read_only`, else `503 busy` + `Retry-After` on permit contention), `guard_job` (read-only-only gate for a job-creating route — it always answers `202` immediately, permit contention only delays the job itself), `require_confirm` (the `confirmation_required` gate; its doc comment states the read-only-outranks-confirm ordering, AC-19), `track_for` (shared access-tracking suppression for `search`/`search-code`/`context`). Per-resource files: `memories/` (`mod.rs` — `GET /memories`, `GET /memories/{id}`; `search.rs` — `GET|POST /memories/search`, `GET|POST /context`; `write.rs` — `POST /memories`, `DELETE /memories/{id}?confirm`, `POST /feedback`), `code.rs` (`GET|POST /code/search`, `POST /code/ast` with pre-run containment, job-backed `POST /code/index` and `POST /code/ingest` under its own 64 MiB body-limit layer), `graph.rs` (`GET /graph`/`GET /edges`, reusing the legacy `build_code_graph`/`build_graph_page` pair — no second query path), `sources.rs` (`GET /sources`, job-backed `POST /sources`, `DELETE /sources?target=&confirm=`), `learning.rs` (job-backed `POST /eval` read-class, `POST /tune`/`POST /bandit` confirm-gated only when `apply`, `golden` containment before every other check), `maint/` (`mod.rs` — `GET /doctor`, `GET /consolidate`; `prune.rs` — `GET|POST /prune`, `POST /gc`, plus `split_confirm` — the shared raw-body confirm-field extractor every confirm-gated route with a real `Request` type reuses; `admin.rs` — `POST /mine`, `POST /hooks/install`, job-backed `POST /rebuild` + the shared-connection swap), `meta.rs` (`GET /completions`, `GET /commands` — the clap-introspected route/command inventory), `jobs.rs` (`GET /jobs`, `GET /jobs/{id}`, `GET /jobs/{id}/events` SSE) |
+| `serve/routes/` | the versioned `/api/v1` REST surface: `routes.rs` aggregates every resource's `table_entries()` into one route table (method/path/CLI-command/`mutating` flag — the source of truth for the read-only gate, `GET /commands`, and `tests/api__parity.rs`) and owns the handler-layer helpers every resource shares — `run_blocking` (runs `api::<cmd>::run`, and the connection-mutex guard it takes, entirely inside one `spawn_blocking` closure, never across an `.await`), `respond`/`accepted` (envelope a result / a job-acceptance), `guard_mutating` (read-only-then-write-permit gate for a synchronous mutating route: `405 read_only`, else `503 busy` + `Retry-After` on permit contention), `guard_job` (read-only-only gate for a job-creating route — it always answers `202` immediately, permit contention only delays the job itself), `require_confirm` (the `confirmation_required` gate; its doc comment states the read-only-outranks-confirm ordering, AC-19), `track_for` (shared access-tracking suppression for `search`/`search-code`/`context`). Per-resource files: `memories/` (`memories.rs` — `GET /memories`, `GET /memories/{id}`; `search.rs` — `GET|POST /memories/search`, `GET|POST /context`; `write.rs` — `POST /memories`, `DELETE /memories/{id}?confirm`, `POST /feedback`), `code.rs` (`GET|POST /code/search`, `POST /code/ast` with pre-run containment, job-backed `POST /code/index` and `POST /code/ingest` under its own 64 MiB body-limit layer), `graph.rs` (`GET /graph`/`GET /edges`, reusing the legacy `build_code_graph`/`build_graph_page` pair — no second query path), `sources.rs` (`GET /sources`, job-backed `POST /sources`, `DELETE /sources?target=&confirm=`), `learning.rs` (job-backed `POST /eval` read-class, `POST /tune`/`POST /bandit` confirm-gated only when `apply`, `golden` containment before every other check), `maint/` (`maint.rs` — `GET /doctor`, `GET /consolidate`; `prune.rs` — `GET|POST /prune`, `POST /gc`, plus `split_confirm` — the shared raw-body confirm-field extractor every confirm-gated route with a real `Request` type reuses; `admin.rs` — `POST /mine`, `POST /hooks/install`, job-backed `POST /rebuild` + the shared-connection swap), `meta.rs` (`GET /completions`, `GET /commands` — the clap-introspected route/command inventory), `jobs.rs` (`GET /jobs`, `GET /jobs/{id}`, `GET /jobs/{id}/events` SSE) |
 | `serve/jobs/` | the background job model for long-running commands (`index-code`, `ingest-code`, `index`, `rebuild`, `eval`, `tune`, `bandit`): `registry` (`Arc<Mutex<HashMap<JobId, Job>>>` plus one retained `watch::Sender<JobStatus>` per job, so a late SSE subscriber's `borrow_and_update()` still replays a terminal status; finished jobs beyond the 100 most recent are evicted on every insertion; job ids are 8 random `/dev/urandom` bytes, the same entropy source as the session token at a shorter width), `worker` (`spawn_job` — registers the job `Queued`, then on its own `tokio::spawn` task awaits the single write permit FIFO for `mutating` jobs only (a read-class job like `eval` never touches it), marks `Running`, runs the caller's closure — typically `api::<cmd>::run` over `Ctx::lazy`, the job's own connection — on `spawn_blocking`, and records the terminal `Done`/`Error` status). Lifecycle is `Queued → Running → Done \| Error`, not persisted: a server restart forgets every unfinished job, and there is no cancellation in v1 |
 | `memory/` | markdown I/O, `Frontmatter`, slug, id (8-hex SHA-256), atomic save / load / soft-delete / list |
-| `store/` | central SQLite layer — `connection` (pooled rusqlite + `sqlite-vec` loader), `schema`, `migrate` (versioned + idempotent), `vector` (`vec0` insert/KNN with dim guard), `fts` (FTS5 helpers, code leg), `fts_memory` (the memory FTS ladder behind one `run_memory_match` choke-point — every tier inherits the same filters), `CreatedWindow` in `mod.rs` (the borrow-only `{since, cutoff}` pair each SQL predicate takes, compared via `datetime()`; keeps `store/` free of `retrieval/` types), `embed` (`to_vec_blob`, dim helpers), `edge_fts` (FTS5 triplet index over `edges` — per-kind `src —rel→ dst` rendering, wholesale refresh-materialize in one tx, `needs_refresh` for the upgrade self-heal, and the two-tier strict→word-OR ladder behind `comemory edges`), `memory_meta` (`fetch_meta` — batched per-memory metadata: path/repo/kind/tags/references backing the enriched `search --json` rows), `tokenizer` (custom FTS5 identifier tokenizer: camelCase/snake_case split + FFI registration) |
+| `document/` | pure, in-process document extraction (TXT/Markdown/HTML/CSV) and size-bounded chunking, independent of the store — `extract`/`html`/`delimited` (format-specific extractors), `chunk` (the shared paragraph-boundary splitter), `fingerprint` (size+mtime skip check, SHA-256 identity), `writer` (the per-file index writer: fingerprint skip → extract → one-transaction row replacement) |
+| `source/` | durable source registry (`sources.toml`): `registry` (load/save, overlap validation, atomic durability), `lock` (exclusive flock guard over concurrent read-modify-write), `discover` (the boundary/ignore-rule walk over a registered root), `classify` (extension allowlist + binary sniff), `mirror` (reconciles the TOML registry into SQLite's `source_roots`) |
+| `store/` | central SQLite layer — `connection` (pooled rusqlite + `sqlite-vec` loader), `schema`, `migrate` (versioned + idempotent, DDL text in `sql/`), `vector` (`vec0` insert/KNN with dim guard), `fts` (FTS5 helpers, code leg), `fts_memory` (the memory FTS ladder behind one `run_memory_match` choke-point — every tier inherits the same filters), `CreatedWindow` in `store.rs` (the borrow-only `{since, cutoff}` pair each SQL predicate takes, compared via `datetime()`; keeps `store/` free of `retrieval/` types), `embed` (`to_vec_blob`, dim helpers), `edge_fts` (FTS5 triplet index over `edges` — per-kind `src —rel→ dst` rendering, wholesale refresh-materialize in one tx, `needs_refresh` for the upgrade self-heal, and the two-tier strict→word-OR ladder behind `comemory edges`), `memory_meta` (`fetch_meta` — batched per-memory metadata: path/repo/kind/tags/references backing the enriched `search --json` rows), `memory_row`/`code_row` (the per-table mirror-row upserts), `memory_list` (paginated memory listing), `code_ref` (the version-anchor side table for explicit code references), `documents`/`document_fts` (the document/chunk mirror + its BM25 leg), `sources` (the SQLite mirror of `source::registry`), `simhash_scan` (bulk fingerprint scan shared by save + consolidate), `tokenizer/` (custom FTS5 identifier tokenizer: camelCase/snake_case split + FFI registration) |
 | `simhash.rs` | 64-bit SimHash + Hamming distance over tokenized memory bodies (siphasher-based) |
-| `graph/` | SQL-backed `edges` table upserts, recursive-CTE walks, `cross_link` reference extraction, `cochange` (git-history co-change mining), `imports` (per-language import edges), `pagerank` (deterministic weighted PageRank), `materialize` (writes `rank_score` onto `code_symbols`), `memory_rank` (the same PageRank over the memory graph — direct memory→memory relations plus in-memory co-citation edges, hub rels excluded — written onto `memories.rank_score`), `derived` (`refresh_derived_best_effort` — the single post-write pass that refreshes *both* derived artifacts, `memories.rank_score` and the `edge_fts` triplet index, independently best-effort; called at the four seams `save`, `delete`, `rebuild`, and `index-code`) |
-| `retrieval/` | `router` (candidates + 4-tier lexical ladder: strict → word-OR → subtoken-OR → tier-4 learned expansion from mined `query_expansions`), `scope` (`TimeScope` — the `--since`/`--until`/`--as-of` created-date window plus its as-of supersede semantics — and `Filters`, the `{repo, kind, scope}` bundle every leg narrows candidates by), `score` (ACT-R/Beta scoring primitives), `rerank` (five multiplicative priors over the max-normalized relevance: activation × feedback × quality × supersede × rank, the last being the pool-median-relative `memories.rank_score` boost), `diversify` (SimHash near-dup collapse + MMR), `pipeline` (orchestration + access tracking), `fuse` (RRF: pairwise `rrf_k` + N-ary `rrf_multi`), `graph_route` (graph-expansion leg — one undirected recursive-CTE walk over `edges` from the provisional top hits, fused in as a third RRF list; `graph_hops = 0` or an empty expansion returns the provisional ranking untouched), `bundle` (context lookup with graph-prior-ranked code refs), `code_route` (code candidates: BM25 + thresholded ANN + RRF, chunk→parent coalesce), `code_rerank` (four-prior code rerank), `code_prior` (PageRank / recency / working-set affinity / feedback priors), `code_search` (`search_code_hits` — the shared code-search entry point used by both the `search-code` CLI and the `serve` `/api/search` handler) |
-| `eval/` | learning loop — `golden` (YAML golden sets + feedback harvest), `metrics` (recall@k, MRR), `runner` (eval over the real pipeline, tracking off), `mine` (reformulation mining → `query_expansions`), `tune` (deterministic grid search over the blend knobs) |
-| `ast/` | `extractor` (symbol enumeration via tree-sitter through ast-grep — rust/ts/js/py/go only), `chunk` (cAST split of oversized symbols into child rows at AST boundaries), `pattern` (user-facing `comemory ast`), per-language wiring |
-| `stats/` | usage / feedback / `code_feedback` (per-symbol counters) / repo-marker tables (lives inside `comemory.db`) |
-| `config/` | layered config (defaults → file → env) and `Paths` (data-dir layout) |
-| `output/` | TTY (`owo-colors`) and JSON (`serde_json`) emitters, shared between subcommands |
+| `index.rs` | intentionally empty placeholder — v0.1's LanceDB/fastembed/tantivy indexing lived here; v0.2 moved it into `store::vector`/`store::fts`, and the module stays so `comemory::index` remains a stable path for any future re-introduction |
+| `graph/` | SQL-backed `edges` table upserts, recursive-CTE walks, `cross_link` reference extraction, `cochange` (git-history co-change mining), `imports` (per-language import edges), `pagerank` (deterministic weighted PageRank), `materialize` (writes `rank_score` onto `code_symbols`), `memory_rank` (the same PageRank over the memory graph — direct memory→memory relations plus in-memory co-citation edges, hub rels excluded — written onto `memories.rank_score`), `coactivate` (commit co-activation reward: a commit touching a memory's referenced files reinforces it), `doc_link` (deterministic `member_of_source`/`references_document` link deriver), `search_edit` (search→edit lookback feeding `auto_search_edit` provenance), `derived` (`refresh_derived_best_effort` — the single post-write pass that refreshes *both* derived artifacts, `memories.rank_score` and the `edge_fts` triplet index, independently best-effort; called at the four seams `save`, `delete`, `rebuild`, and `index-code`) |
+| `retrieval/` | `router` (candidates + 4-tier lexical ladder: strict → word-OR → subtoken-OR → tier-4 learned expansion from mined `query_expansions`), `doc_route` (the document-search leg: BM25 over `document_fts`, chunk→parent coalesce), `scope` (`TimeScope` — the `--since`/`--until`/`--as-of` created-date window plus its as-of supersede semantics — and `Filters`, the `{repo, kind, scope}` bundle every leg narrows candidates by), `score` (ACT-R/Beta scoring primitives), `rerank` (five multiplicative priors over the max-normalized relevance: activation × feedback × quality × supersede × rank, the last being the pool-median-relative `memories.rank_score` boost), `diversify` (SimHash near-dup collapse + MMR), `pipeline` (orchestration + access tracking), `fuse` (RRF: pairwise `rrf_k` + N-ary `rrf_multi`), `graph_route` (graph-expansion leg — one undirected recursive-CTE walk over `edges` from the provisional top hits, fused in as a third RRF list; `graph_hops = 0` or an empty expansion returns the provisional ranking untouched), `bundle` (context lookup with graph-prior-ranked code refs), `code_route` (code candidates: BM25 + thresholded ANN + RRF, chunk→parent coalesce), `code_rerank` (four-prior code rerank), `code_prior` (PageRank / recency / working-set affinity / feedback priors), `code_search` (`search_code_hits` — the shared code-search entry point used by both the `search-code` CLI and the `serve` `/api/search` handler), `code_ref_collect`/`code_ref_fetch`/`code_ref_status` (pinned code-reference freshness: collect a memory's walked ref edges, fetch per-repo current state, classify `fresh|stale|ghost|unpinned|unknown`) |
+| `eval/` | learning loop — `golden` (YAML golden sets + feedback harvest), `metrics` (recall@k, MRR), `runner` (eval over the real pipeline, tracking off), `mine` (reformulation mining → `query_expansions`), `tune`/`tune_sample` (deterministic or seeded-sampled grid search over the blend knobs), `bandit`/`bandit_rng` (eval-gated Thompson-sampling bandit over the same `[tune]` grid, with a dependency-free SplitMix64 + Beta/Gamma sampler) |
+| `ast/` | `extractor` (symbol enumeration via tree-sitter through ast-grep — rust/ts/js/py/go only), `chunk` (cAST split of oversized symbols into child rows at AST boundaries), `pattern` (user-facing `comemory ast`), `languages`/`pattern_cache` (per-language wiring and the process-global compiled-pattern cache) |
+| `stats/` | usage / feedback / `code_feedback` (per-symbol counters) / repo-marker tables (lives inside `comemory.db`), plus `sqlite` (`StatsDb`, opened via the shared `store::connection`) |
+| `config/` | layered config (defaults → `file` → `env`) and `paths::Paths` (data-dir layout), the `learning` section (`[tune]` grids, `[reinforce]`, `[bandit]`), the `retrieval` section (the `[retrieval]` knobs), and `validate` (the shared invariant pass run after every layer is applied) |
+| `output/` | TTY (`owo-colors`) and JSON (`serde_json`) emitters, shared between subcommands, plus `page` (the generic `Page<T>` pagination envelope every paged command serializes) |
 | `prune/` | orphan / low-value / stale-code detection plus soft-delete & gc |
-| `consolidate/` | advisory near-duplicate cluster report (`comemory consolidate`) — `cluster` (transitive union-find over the stored SimHashes within a radius, unfingerprinted rows dropped and counted), `keeper` (member metadata plus the quality → access → recency → PageRank → id keeper order, and in-cluster supersede resolution), `mod` (`detect` + the `Member`/`Cluster`/`Scan` types). Read-only end to end; the merge stays a human `save --supersedes` |
+| `consolidate/` | advisory near-duplicate cluster report (`comemory consolidate`) — `cluster` (transitive union-find over the stored SimHashes within a radius, unfingerprinted rows dropped and counted), `keeper` (member metadata plus the quality → access → recency → PageRank → id keeper order, and in-cluster supersede resolution); `detect` + the `Member`/`Cluster`/`Scan` types live in `consolidate.rs`. Read-only end to end; the merge stays a human `save --supersedes` |
 | `git_utils.rs` | repo + author auto-detection, blob OID lookup, git-hook installation helpers |
 | `errors.rs` | `thiserror`-derived `Error` enum and `Result<T>` alias |
 | `prelude.rs` | crate-internal prelude (`Error`, `Result`, common imports) |
-| `lib.rs` / `main.rs` | library surface + binary entry that parses `Cli` and calls `cli::run` |
+| `lib.rs` / `main.rs` | library surface (carries `extern crate self as comemory;`, see Testing) + binary entry that parses `Cli` and calls `cli::run` |
 
 ## Environment Variables
 
@@ -141,6 +187,8 @@ environment (`Config::with_env`, in `src/config/env.rs`).
 | `COMEMORY_RETRIEVAL_GRAPH_SEEDS` | How many provisional top hits seed that walk. Validated `≥ 1` | `8` |
 | `COMEMORY_RETRIEVAL_BM25_WEIGHTS` | `"body,tags"` BM25 column weights for `memory_fts` (both finite ≥ 0, at least one > 0) | `1.0,3.0` |
 | `COMEMORY_RETRIEVAL_CODE_BM25_WEIGHTS` | `"symbol,snippet,path_tokens"` BM25 column weights for `code_fts` (all finite ≥ 0, at least one > 0) | `2.0,1.0,1.5` |
+| `COMEMORY_RETRIEVAL_DOCUMENT_LEG_WEIGHT` | Weighted-RRF contribution of the document leg, relative to the memory and code legs (both fixed at `1.0`), in the default `search` order. Finite, in `(0.0, 10.0]`. Deliberately absent from the `[tune]` grids — `tune`/`bandit` pin memory-only scope, so a memory-only metric would drive this cross-domain knob toward zero | `0.5` |
+| `COMEMORY_INDEXING_MAX_FILE_BYTES` | Ceiling (bytes) above which a candidate document file is recorded `too_large` and skipped by the `comemory index` document writer rather than extracted — plain-text formats past this size are logs, not documents. Must be > 0 | `16777216` (16 MiB) |
 | `COMEMORY_LEARNING_RETENTION_DAYS` | `comemory gc` retention window (days) for raw `retrieval_log` + `feedback_events` rows; aggregated `feedback` counters and mined `query_expansions` never expire | `90` |
 | `COMEMORY_TUNE_MIN_GOLDEN` | Test hook lowering `comemory tune` / `comemory bandit`'s minimum-golden-pairs floor; not a tuning knob | `10` |
 | `COMEMORY_REINFORCE_SEARCH_EDIT_DAYS` | Lookback days for search→edit auto-reinforcement provenance (`auto_search_edit`). Validated `≥ 1` | `7` |
@@ -255,20 +303,130 @@ recommended caller pattern.
 ## Testing
 
 - Runner: `cargo nextest run --all-features` (alias `just test`).
-- `tests/` mirrors `src/` 1:1 with a **flat, dunder-joined** layout:
-  `src/<path>.rs` ↔ `tests/<dunder-path>.rs` (e.g.
-  `src/store/tokenizer/split.rs` ↔ `tests/store__tokenizer__split.rs`).
-  Each flat file is its own integration-test binary — there are no
-  `tests/<module>.rs` shims and no nested `tests/<module>/` directories. An
-  oversized test file is split into `<base>.rs` + `<base>_2.rs`.
-- `tests/common/` carries shared fixtures (temp data-dir builders, gold
-  memory samples).
-- CLI integration tests use `assert_cmd` against the real `comemory` binary.
-- Snapshot tests use `insta` (`tests/snapshots/`).
-- Property tests use `proptest`.
-- `.config/nextest.toml` serializes the `embedder` test group
-  (`embedder|memory_index|code_index`) to `max-threads = 1` so the fastembed
-  model download cannot race.
+- **Test code never lives in a production file.** No `#[cfg(test)] mod tests { ... }`
+  body in any `src/` file, ever.
+
+### Where a test goes
+
+Two homes, and one rule decides between them. Applied in order, first match
+wins:
+
+1. **It drives the real `comemory` binary** (`assert_cmd`) -> crate-root
+   `tests/`. A subprocess consumer is the most real consumer there is, and
+   `cargo_bin` resolution is only reliable for an integration target.
+2. **It owns an `insta` snapshot** -> crate-root `tests/`. insta derives its
+   snapshot directory from the test file's location; `tests/snapshots/` is the
+   one reviewed home.
+3. **It exercises the CLI surface** (`tests/cli*.rs`) -> crate-root `tests/`.
+   The CLI is one public surface; its suite stays in one place.
+4. **Otherwise** -> colocated, in a sibling `tests/` folder beside the module
+   under test:
+
+       src/store/migrate.rs          production module
+       src/store/tests/migrate.rs    its tests
+       src/simhash.rs                a crate-root module
+       src/tests/simhash.rs          its tests
+
+   The production file names its test files with a one-line include, which makes
+   it the index of its own suite:
+
+       #[cfg(test)]
+       #[path = "tests/migrate.rs"]
+       mod tests;
+
+Keep each `tests/` tree **flat**. A suite that outgrows one file splits into
+`<name>_2.rs` (or `<name>_v4.rs` for a version-scoped suite) beside it, and the
+production file gains a second include (`mod tests_2;`). Tests are exempt from
+the 300-line ceiling, so splitting is a readability choice, not an obligation.
+
+Measured today: 147 colocated `src/**/tests/*.rs` files, 81 crate-root
+`tests/*.rs` surfaces (45 CLI, 32 `assert_cmd`, 4 `insta`).
+
+### Why crate-root `tests/` cannot be deleted
+
+Rules 1 and 2 above are not stylistic preferences, and the question "why not
+colocate *everything* and drop `tests/`?" recurs. It was measured on
+2026-08-07; the answer is that three separate things anchor the directory.
+
+**1. `CARGO_BIN_EXE_comemory` (the binding constraint).** `assert_cmd`'s
+`Command::cargo_bin("comemory")` reads the `CARGO_BIN_EXE_comemory` env var,
+which Cargo publishes **only to integration-test and bench targets**. From a
+lib unittest it is unset and assert_cmd panics outright — its own help text
+says *"if this is running within a unit test, move it to an integration test
+to gain access to `CARGO_BIN_EXE_comemory`."*
+
+There is a trap here worth knowing about. If `target/debug/comemory` already
+exists, `cargo-nextest` sets the variable at runtime and a colocated
+`assert_cmd` test passes — so on a warm target dir the constraint looks
+absent. It is not. Delete the binary, or run `cargo nextest run --lib`, and
+the same test panics. Verified both ways, and separately on a scratch crate
+with no `tests/` directory at all, where `cargo nextest run` never built the
+binary.
+
+The consequence of removing the last integration target is therefore worse
+than a build error: nothing would make Cargo rebuild the binary during a test
+run, so the 32 `assert_cmd` surfaces would silently exercise **whatever stale
+binary was left in `target/`** and report green against source you had already
+changed. A false green is a worse failure mode than a red build, which is why
+this is a rule rather than a preference.
+
+If the directory is ever collapsed anyway, the cheapest way to keep the
+guarantee is to leave exactly one integration target whose only job is to
+force the binary build — not to drop to `cargo build --bin comemory && cargo
+nextest run`, which fixes only the sanctioned entry points and leaves a bare
+`cargo nextest run` silently stale.
+
+**2. insta snapshot resolution.** insta derives its snapshot directory from
+the test file's own location, so colocating the 4 snapshot owners would
+scatter `snapshots/` directories under `src/` — which the `folder-tree`
+guardrail rejects (`src.nested` allows only `tests` and
+`proptest-regressions`). It would need either a new allowlist entry or a
+redirected `Settings::set_snapshot_path`, and `tests/snapshots/` stays the one
+reviewed home instead.
+
+**3. Fixture and data files.** `tests/common/` holds the single copy of every
+shared fixture (D9), and `tests/golden/`, `tests/ast/fixtures/` and
+`tests/common/fixtures/` hold data addressed through
+`concat!(env!("CARGO_MANIFEST_DIR"), "/tests/...")`. These are the movable
+part — `tests/common/*.rs` could become `src/test_common/*.rs` and the data
+could move to a top-level `fixtures/` — but only in a world where constraint 1
+is already solved, because `#[cfg(test)]` items in `src/` are invisible to an
+integration-test binary.
+
+### Conventions inside a test file
+
+- First line, always:
+
+      #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::float_cmp, clippy::too_many_lines)]
+
+  A failed assertion is how a test reports; unwrapping is the reporting
+  mechanism, not a bug. This is the toolu Rust template's own header plus the
+  three lints that only ever fire in test code here.
+- Import through the crate name — `use comemory::store::migrate::{...};` — in
+  **both** homes. `src/lib.rs` carries `extern crate self as comemory;` so a
+  test file reads identically wherever it lives, and tests keep exercising the
+  public surface rather than ossifying internals. Reach for `use super::*;` only
+  when a test genuinely needs a private item.
+- Shared fixtures live in `tests/common/` and are reached from a colocated test
+  through the bridge module: `use crate::test_common::git_repo;`. Crate-root
+  tests keep including them directly with `#[path = "common/git_repo.rs"]`.
+  There is exactly one copy of each fixture. The bridge itself is
+  `src/test_common.rs` — a `#[cfg(test)]`-only module declared from
+  `src/lib.rs` that re-`#[path]`s the eight fixtures colocated tests actually
+  use; it is the migration's one sanctioned `#![allow(dead_code)]` under
+  `src/`, exempted by name in `no-allow-attribute.yml`.
+- Data files (`tests/golden/`, `tests/common/fixtures/`, `tests/ast/fixtures/`)
+  stay at the crate root and are addressed with
+  `concat!(env!("CARGO_MANIFEST_DIR"), "/...")`, which is stable no matter where
+  the test file lives. Never a `../../..` relative path.
+- Real data, real integration paths. No mock-data tests.
+
+`.config/nextest.toml` serializes two groups: `embedder`
+(`embedder|memory_index|code_index`), so the fastembed model download cannot
+race, and `config::env::tests*`, because those tests mutate process-global env
+vars and colocation put them in the crate's single lib-unittest binary
+alongside every other colocated test (a `binary(...)` filter no longer
+isolates them; a name filter does).
 
 ## Quality Gates
 
@@ -278,17 +436,43 @@ recommended caller pattern.
 scripts/fmt-check.sh             # cargo fmt --check
 scripts/type-check.sh            # cargo check --all-targets --all-features
 scripts/lint-check.sh            # cargo clippy --all-targets --all-features -- -D warnings
-scripts/test-placement-check.sh  # no #[cfg(test)] mod tests in src/
-scripts/no-bypass-check.sh       # no allow/unwrap/println!/unsafe-without-SAFETY/etc.
-scripts/module-size-check.sh     # no src/ file > 300 code lines (blanks/comments excluded)
-scripts/tests-mirror-check.sh    # every src/ file has a mirror in tests/
+scripts/guardrails-check.sh      # scripts/guardrails/run.sh (see below)
 scripts/typos-check.sh           # typos
+scripts/cli-docs-check.sh        # docs/cli-reference.md vs the real --help output
 ```
 
+Retired in the toolu-conventions migration, folded into the two gates above:
+`test-placement-check`, `no-bypass-check`, `module-size-check`,
+`tests-mirror-check`.
+
+Gate ownership — one rule, one enforcer. `guardrails.config.json` is the
+single declaration of every structural ceiling (file size, function size, the
+nested-folder allowlist, required per-folder READMEs); nothing else declares
+a competing number.
+
+| Rule | Owner |
+| --- | --- |
+| `rustfmt` formatting | `rustfmt.toml`, `scripts/fmt-check.sh` |
+| Type/borrow-check | `cargo check`, `scripts/type-check.sh` |
+| unwrap/expect/panic/todo/unimplemented/print_*/`too_many_lines`/pedantic | `Cargo.toml [lints]` + `clippy.toml`, `scripts/lint-check.sh` |
+| File size (300 code lines), function size (100 lines) | `guardrails.config.json` (`fileSize.max`, `functionSize.max`), the `file-size` guardrails check and `clippy::too_many_lines = "deny"` |
+| No `mod.rs` barrels | `guardrails.config.json` (`barrelNames`), the `no-barrels` guardrails check |
+| Folder tree shape (which subfolders each module may have) | `guardrails.config.json` (`src.nested`), the `folder-tree` guardrails check |
+| `snake_case` filenames | `guardrails.config.json` (`filenameCase`), the `filename-case` guardrails check |
+| Required per-folder `README.md` | `guardrails.config.json` (`src.requireReadme`, `src.nested "x/*"`), the `folder-readmes` guardrails check |
+| No inline `#[cfg(test)] mod tests { ... }` | `scripts/guardrails/patterns/rust/no-inline-test-module.yml` |
+| No direct `std::env::var` outside `config/`/`tests/` | `scripts/guardrails/patterns/rust/no-direct-env-var.yml` |
+| No `unsafe` without a `// SAFETY:` comment | `scripts/guardrails/patterns/rust/no-unsafe-without-safety.yml` (project-local, D1) |
+| No `#[allow(...)]` in production code | `scripts/guardrails/patterns/rust/no-allow-attribute.yml` (project-local, D6) |
+| Committed secrets, shadow configs (`lefthook.yaml` vs `.yml`) | `guardrails.config.json` (`secrets`, `shadowConfigs`), the `secrets`/`shadow-configs` guardrails checks |
+| Typos | `typos.toml`, `scripts/typos-check.sh` |
+| `docs/cli-reference.md` drift | `scripts/cli-docs-check.sh` vs the real `--help` output |
+| Duplication ratchet | `scripts/dup-check.sh` against `dup-baseline.txt` (see `docs/dup-debt.md`) |
+
 Additional gates wired into `just qa`: `scripts/deny-check.sh`
-(`cargo deny check`) and `scripts/dup-check.sh`. `scripts/test-run.sh`
-runs the nextest suite. A task is not "done" until `scripts/check-all.sh`
-exits 0.
+(`cargo deny check`), `scripts/dup-check.sh`, and `scripts/machete-check.sh`
+(unused dependencies). `scripts/test-run.sh` runs the nextest suite. A task is
+not "done" until `scripts/check-all.sh` exits 0.
 
 ## Distribution
 
@@ -318,31 +502,42 @@ installed on this repo) so the pushed tag triggers downstream workflows. The
 
 ## Claude Code Hooks
 
-`.claude/hooks/` is adapted from `qwick-business-app` and delegates rule
-logic to the same gate scripts.
+`.claude/settings.json` wires **only** the toolu-conventions guardrails
+entries. comemory's own dispatcher layer (`.claude/hooks/`, adapted from
+`qwick-business-app`) is **retired** — one enforcement surface, not two:
 
-- **PreTool hooks** (`pre-tools/modules/`):
-  - `bash-commands.sh` blocks `npm`/`bun`/`yarn`/`pnpm`/`pip`/`uv`/`poetry`
-    (this is a Rust project), destructive commands
-    (`rm -rf`, `git push --force`, `git reset --hard`, `git checkout .`,
-    `chmod -R 777`), bypass flags (`--no-verify`, `--no-gpg-sign`), and
-    direct `rustfmt` / `cargo fmt` / `cargo clippy` invocation outside
-    `scripts/` or `just`.
-  - `code-edit-rules.sh` rejects edits to `src/*.rs` that introduce
-    forbidden patterns: `#[allow(...)]`, `// clippy::allow`,
-    `#[cfg(test)] mod tests`, `.unwrap()`, `.expect(...)` (any, with or
-    without a message), `println!`/`eprintln!`, `todo!()`/`unimplemented!()`,
-    `panic!()`, or `unsafe { … }` without a nearby `// SAFETY:` comment.
-    Mirrors `scripts/no-bypass-check.sh`.
-  - `protected-files.sh` guards generated artifacts and config the agent
-    must not edit casually.
-- **PostTool hooks** (`post-tools/modules/`):
-  - `auto-format.sh` re-runs `rustfmt` on touched files.
-  - `gate-status.sh` records which gates are currently green for the
-    session.
-- **Stop hook** (`session-end.sh`) runs `fmt-check`,
-  `test-placement-check`, `no-bypass-check`, and `module-size-check` at
-  end-of-conversation so regressions surface immediately.
+- **PostToolUse** (`Edit|Write` matcher) — `bash scripts/guardrails/run.sh --hook`,
+  file-addressable structure checks on the just-edited path(s).
+- **Stop** — `bash scripts/guardrails/run.sh --stop`, the full repo-mode
+  guardrails sweep behind two early-outs.
+
+The guardrails hook writes to stderr and exits **2** (Claude Code ignores a
+`1` from a hook; only `2` surfaces on `PostToolUse` or blocks on `Stop`).
+That contract is why it was never routed through the old dispatcher, which
+swallowed stderr and always exited 0 — the layer would have been inert while
+looking correctly wired. It is now the only entry, so the question is moot.
+
+### What retiring the dispatcher gave up, and what covers it now
+
+The dispatcher was a *tool-call interceptor*; guardrails is a *repo-state
+checker*. They never overlapped, so this is a real reduction rather than a
+consolidation — recorded here so nobody assumes guardrails absorbed it:
+
+| Retired check | What covers it now |
+| --- | --- |
+| `npm`/`bun`/`pip`/`uv` blocked (Rust project) | Nothing. Convention only. |
+| `rm -rf`, `git reset --hard`, `git checkout .`, `chmod -R 777` blocked | The harness's own confirmation on destructive commands. |
+| `git push --force` blocked | Nothing — and note the old rule also caught `--force-with-lease`, the *safe* variant, so a rebased branch had no sanctioned way to publish. |
+| `--no-verify` / `--no-gpg-sign` blocked | `lefthook.yml` still runs on commit/push, and CI re-runs `scripts/check-all.sh` regardless — a local bypass cannot land. |
+| Direct `rustfmt` / `cargo clippy` blocked outside `scripts/` | Nothing. `scripts/fmt-check.sh` and `scripts/lint-check.sh` remain the canonical invocations. |
+| `protected-files.sh` (build artifacts, `scripts/guardrails/**`) | Convention only — `scripts/guardrails/` is still copied verbatim from the kit and must not be hand-edited; `guardrails.config.json` and `scripts/guardrails/patterns/rust/` remain the sanctioned knobs. |
+| `auto-format.sh` re-ran `rustfmt` on touched files | Deliberately gone. It invoked `rustfmt` without the project's edition, so it reordered imports into a form `scripts/fmt-check.sh` then rejected — it manufactured the drift it existed to prevent. |
+| `gate-status.sh` session gate tracking | Nothing. `bash scripts/check-all.sh` on demand. |
+| `session-end.sh` ran `fmt-check` + `typos-check` at Stop | The guardrails `--stop` sweep, plus lefthook's pre-commit `fmt`/`typos` jobs. |
+
+The load-bearing gates were never in this layer: `lefthook.yml` runs `fmt`,
+`guardrails` and `typos` pre-commit and `check_all` pre-push, and CI runs
+`scripts/check-all.sh` on every PR. Those are unchanged.
 
 User-facing docs live under `docs/`, organized in Diátaxis tiers and indexed by
 `docs/README.md`: the `docs/getting-started.md` tutorial, the task-oriented
@@ -350,3 +545,85 @@ User-facing docs live under `docs/`, organized in Diátaxis tiers and indexed by
 prune-and-gc), the `docs/cli-reference.md` reference (every subcommand, flag, and
 env var), and the `docs/architecture.md` explanation. The README is a front door
 that links into them.
+
+## Deviations from toolu-conventions
+
+Every deviation below is deliberate and restated here per CORE's rule that
+"deviating is allowed — documenting the deviation in the project's
+`CLAUDE.md` is not optional." None weakens the kit's intent; several make the
+local rule strictly stronger than the one it replaces.
+
+- **D1 — `unsafe_code = "forbid"` is NOT set.** The crate has 7 FFI-necessary
+  `unsafe` blocks and 3 `unsafe extern "C" fn` items, all in
+  `src/store/tokenizer/ffi.rs` and `src/store/connection.rs`: registering a
+  custom FTS5 tokenizer through `libsqlite3-sys`'s C ABI and registering
+  `sqlite-vec` as a SQLite auto-extension have no safe wrapper in the
+  ecosystem. `forbid` is a hard rustc error with no local override, so it
+  cannot be applied. The key is omitted (rustc's default is `allow`) and
+  replaced with a stronger, machine-enforced rule instead:
+  `scripts/guardrails/patterns/rust/no-unsafe-without-safety.yml` fails the
+  gate on any `unsafe` block or `unsafe fn` lacking a `// SAFETY:` line in the
+  comment block directly above it — strictly stronger than the bash check it
+  replaced, which never inspected an `unsafe fn` signature at all.
+- **D2 — `fileSize.max` is 300, not the kit's 500.** comemory's module
+  decomposition is designed around 300 code lines. CORE permits a stack to
+  add rules but never relax one; 300 is stricter, so this is compliant.
+- **D3 — `barrelNames: ["mod.rs"]`** (the kit ships `[]`, which leaves
+  `no-barrels` inert for Rust). Declaring `mod.rs` a barrel name makes the
+  `<dir>.rs` beside `<dir>/` layout permanent and machine-checked.
+- **D4 — `src.nested` is extended** beyond the kit's `{"*": ["tests"]}` to
+  allow `src/store/sql/`, `src/store/tokenizer/`, `src/tui/view/`, and a
+  universal `proptest-regressions` allowlist entry (proptest creates that
+  directory itself on a failing property test; a gate that fails on a tool's
+  own artifact is a gate people route around).
+- **D5 — `src.requireReadme` is added** (the kit ships nothing). All 19 of
+  comemory's grown module folders carry a `README.md`; the source material was
+  already this file's Module Map, transformed rather than newly written.
+- **D6 — two project-local ast-grep pattern rules**
+  (`no-unsafe-without-safety.yml` for D1, `no-allow-attribute.yml` for Binding
+  Rule 5's `#[allow]` ban) are **additions** to `scripts/guardrails/patterns/rust/`;
+  no kit file is modified, so a future `cp -R` re-copy of the kit merges
+  rather than clobbers them.
+- **D7 — eight `clippy::pedantic` lints start at `allow` with a counted
+  burn-down**, each line in `Cargo.toml [lints.clippy]` carrying the measured
+  count at migration time. `-D warnings` with hundreds of pre-existing
+  warnings is not a gate, it is a red build; adopting `pedantic` while
+  explicitly listing what is not yet met is honest and burnable. This is a
+  declared crate policy in `Cargo.toml`, not an `#[allow]` bypass in code —
+  the ban on in-code `#[allow]` is retained and machine-enforced by D6. See
+  `docs/lint-debt.md` for the full list and burn-down order.
+- **D8 — extra quality gates are retained** beyond the kit's four-step
+  command (`fmt && clippy && guardrails && test`): `typos-check`,
+  `cli-docs-check`, `coverage-check`, `eval-check`, `dup-check`,
+  `machete-check`, `deny-check`, and the mutation job. None has a kit
+  equivalent; all guard comemory-specific failure modes. They layer around
+  the guardrails step, not in place of it.
+- **D9 — `tests/common/` stays at the crate root** and is bridged into the lib
+  test crate via `src/test_common.rs`, so colocated unit tests and crate-root
+  integration tests share one copy of every fixture (Binding Rule 1). Its
+  `#![allow(dead_code)]` is the migration's one sanctioned exception,
+  exempted by filename in `no-allow-attribute.yml`.
+- **D10 — `extern crate self as comemory;` is added to `src/lib.rs`.** This
+  lets every colocated test file keep `use comemory::...` imports identical
+  to the crate-root suite's, so a test reads the same wherever it lives.
+- **D11 — 81 of 228 test files remain crate-root integration tests**
+  (45 CLI surfaces, 32 driving the real binary via `assert_cmd`, 4 owning an
+  `insta` snapshot) — the kit's own "one file per public surface" category,
+  not an exception, at a ratio high enough to declare. The ratio is a hard
+  floor, not inertia: see "Why crate-root `tests/` cannot be deleted" under
+  Testing for the `CARGO_BIN_EXE_comemory` constraint that pins it.
+- **D12 — RESOLVED, no longer a deviation.** `.claude/settings.json` was
+  briefly a *merge* of comemory's `pre-tools`/`post-tools`/`session-end`
+  dispatchers and the kit's two guardrails entries. The dispatcher layer is
+  now retired and the file wires the kit's entries alone, so this file matches
+  the kit and there is nothing left to declare. See "Claude Code Hooks" above
+  for what the dispatcher used to catch and what covers each item now — the
+  reduction is real, and the load-bearing gates (`lefthook.yml`, CI's
+  `scripts/check-all.sh`) were never in that layer.
+- **D13 — `benches/` is untouched.** The kit's STRUCTURE.md is silent on
+  benches; Criterion harnesses have their own cargo semantics and are neither
+  `src/` nor `tests/`. They carry only the canonical test/bench lint header.
+- **D14 — the `[workspace] members = ["."]` stanza stays**, required by
+  `cargo-dist`. The guardrails module keys workspace mode on the presence of
+  `guardrails.workspace.json`, not on Cargo metadata, so this repo takes the
+  single-repo path regardless.

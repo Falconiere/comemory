@@ -68,3 +68,7 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<BanditReport> {
         &paths.config_file(),
     )
 }
+
+#[cfg(test)]
+#[path = "tests/bandit.rs"]
+mod tests;

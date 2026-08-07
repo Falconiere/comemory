@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Integration tests for `comemory feedback`: query-id validation, the
 //! provenance write into `feedback_events`, and the legacy counter table.
 //!

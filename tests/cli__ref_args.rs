@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Integration tests for `comemory::cli::ref_args::collect`. Exercised against
 //! the REAL comemory git repo (`CARGO_MANIFEST_DIR` is the crate root, a git
 //! checkout with committed files) so anchor capture hits the same on-disk

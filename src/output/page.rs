@@ -80,3 +80,7 @@ impl<T> Page<T> {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "tests/page.rs"]
+mod tests;

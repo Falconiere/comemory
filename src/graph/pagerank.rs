@@ -48,7 +48,7 @@ pub fn pagerank(n: usize, edges: &[(u32, u32, f64)]) -> Vec<f64> {
             .map(|i| rank[i])
             .sum();
         let base = teleport + DAMPING * dangling / n as f64;
-        next.iter_mut().for_each(|v| *v = base);
+        next.fill(base);
         for &(s, d, w) in &valid {
             if out_weight[s] > 0.0 {
                 next[d] += DAMPING * rank[s] * w / out_weight[s];
@@ -62,3 +62,7 @@ pub fn pagerank(n: usize, edges: &[(u32, u32, f64)]) -> Vec<f64> {
     }
     rank
 }
+
+#[cfg(test)]
+#[path = "tests/pagerank.rs"]
+mod tests;

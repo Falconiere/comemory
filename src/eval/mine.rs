@@ -128,3 +128,7 @@ pub fn apply(conn: &mut Connection, mappings: &[MinedMapping], now_iso: &str) ->
     tx.commit()?;
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "tests/mine.rs"]
+mod tests;

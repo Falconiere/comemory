@@ -1,5 +1,12 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! End-to-end coverage of `GET /api/v1/memories` and
-//! `GET /api/v1/memories/{id}` (`src/serve/routes/memories/mod.rs`) against
+//! `GET /api/v1/memories/{id}` (`src/serve/routes/memories.rs`) against
 //! a real bound server, seeded via real `comemory save` calls. Mirrors the
 //! `serve__routes__mod.rs` / `cli__serve.rs` spawn/banner/authed-request
 //! harness.
@@ -123,10 +130,9 @@ fn v1_memories_get_returns_the_matching_row() {
     assert_eq!(body["data"]["repo"], "demo");
     assert_eq!(body["data"]["kind"], "decision");
     assert!(
-        body["data"]["path"]
-            .as_str()
-            .expect("path")
-            .ends_with(".md"),
+        std::path::Path::new(body["data"]["path"].as_str().expect("path"))
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("md")),
         "body: {body}"
     );
     assert_eq!(body["meta"]["command"], "memories.get");

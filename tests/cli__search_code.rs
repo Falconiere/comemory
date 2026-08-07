@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Task 13: `comemory search-code` — ranked code search over the indexed
 //! `code_symbols` table, with telemetry (access bump + `retrieval_log`
 //! row tagged `source='search-code'`) and a feedback-ready `query_id`.

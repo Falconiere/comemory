@@ -115,3 +115,7 @@ fn superseded_rule(conn: &Connection, grace_days: u32, now: OffsetDateTime) -> R
         .collect::<std::result::Result<Vec<String>, _>>()?;
     Ok(ids)
 }
+
+#[cfg(test)]
+#[path = "tests/low_value.rs"]
+mod tests;

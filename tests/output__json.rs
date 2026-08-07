@@ -1,6 +1,12 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Mirror tests for `src/output/json.rs`. The stable JSON snapshot covering
-//! the public `write` path is locked in by `json_round_trip_is_stable` below;
-//! this module also satisfies the tests-mirror gate.
+//! the public `write` path is locked in by `json_round_trip_is_stable` below.
 
 use comemory::output::json;
 use serde::Serialize;

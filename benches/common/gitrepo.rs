@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Real on-disk git repo + matching `code_symbols` rows for the graph
 //! benches. Shells out to the real `git` binary (mirroring
 //! `tests/common/git_repo.rs`) so `mine_cochange` / `materialize` walk the
@@ -101,7 +108,7 @@ fn sorted_repo_files(repo_root: &Path) -> Vec<String> {
     let src = repo_root.join("src");
     let mut out: Vec<String> = std::fs::read_dir(&src)
         .unwrap()
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
         .map(|e| format!("src/{}", e.file_name().to_string_lossy()))
         .collect();
     out.sort();

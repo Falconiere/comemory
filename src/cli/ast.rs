@@ -49,7 +49,7 @@ pub struct Args {
 /// is never opened.
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let cfg = Config::defaults();
-    let paths = crate::config::Paths::new(crate::cli::resolve_data_dir(data_dir));
+    let paths = crate::config::Paths::new(crate::config::paths::resolve_data_dir(data_dir));
     let mut ctx = Ctx::lazy(&paths, &cfg);
     let req = api::ast::Request {
         pattern: a.pattern,

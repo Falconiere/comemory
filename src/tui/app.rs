@@ -21,6 +21,7 @@ pub enum Tab {
 
 impl Tab {
     /// The other tab.
+    #[must_use]
     pub fn toggled(self) -> Tab {
         match self {
             Tab::Memory => Tab::Code,
@@ -304,3 +305,7 @@ impl App {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "tests/app.rs"]
+mod tests;

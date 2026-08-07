@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Mirror tests for `src/store/memory_meta.rs`. Drives the real `comemory
 //! save` binary to populate `comemory.db` (markdown + SQLite mirror + edges),
 //! then asserts [`fetch_meta`] returns the navigation metadata each hit
@@ -78,7 +85,10 @@ fn assert_ref_memory(a: &comemory::store::memory_meta::MemoryMeta, id_a: &str) {
     assert_eq!(a.repo.as_deref(), Some("qwick-backend"));
     assert_eq!(a.kind, "decision");
     assert!(
-        a.md_path.contains(id_a) && a.md_path.ends_with(".md"),
+        a.md_path.contains(id_a)
+            && std::path::Path::new(&a.md_path)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("md")),
         "md_path must point at the markdown file: {}",
         a.md_path
     );

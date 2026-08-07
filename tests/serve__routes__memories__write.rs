@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! End-to-end coverage of the mutating memory routes
 //! (`src/serve/routes/memories/write.rs`) against a real bound server:
 //! `POST /api/v1/memories` (AC-1), `DELETE /api/v1/memories/{id}?confirm=`
@@ -155,7 +162,7 @@ fn v1_delete_memories_id_requires_confirm_then_soft_deletes_ac5() {
     let trash = home.path().join(".comemory/memories/.trash");
     let moved = std::fs::read_dir(&trash)
         .expect("read trash dir")
-        .filter_map(|e| e.ok())
+        .filter_map(Result::ok)
         .any(|e| e.file_name().to_string_lossy().starts_with(&id));
     assert!(moved, "markdown file should have moved into .trash/");
 
@@ -333,7 +340,7 @@ fn poll_for_busy_save(
         let status_body: serde_json::Value = status_res.json().expect("json");
         if matches!(
             status_body["data"]["status"].as_str(),
-            Some("done") | Some("error")
+            Some("done" | "error")
         ) {
             return false;
         }

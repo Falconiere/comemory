@@ -136,3 +136,7 @@ fn lex_to_hit(h: fts::CodeFtsHit) -> CodeRoutedHit {
         source: Source::Lexical,
     }
 }
+
+#[cfg(test)]
+#[path = "tests/code_route.rs"]
+mod tests;

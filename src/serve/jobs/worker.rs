@@ -90,3 +90,7 @@ fn set_status(registry: &Registry, id: &str, status: JobStatus) {
         tracing::warn!(job_id = id, error = %e, "job status update failed");
     }
 }
+
+#[cfg(test)]
+#[path = "tests/worker.rs"]
+mod tests;

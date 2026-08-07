@@ -93,7 +93,7 @@ pub async fn graph(
     let rel = match q.rel.as_deref() {
         None | Some("all") => Rel::All,
         Some("imports") => Rel::Imports,
-        Some("co_changed") | Some("co-changed") => Rel::CoChanged,
+        Some("co_changed" | "co-changed") => Rel::CoChanged,
         Some(other) => return Err(Error::BadRequest(format!("unknown rel: {other}")).into()),
     };
     let min_weight = q.min_weight.unwrap_or(1).max(1);
@@ -185,3 +185,7 @@ pub async fn static_asset(uri: Uri) -> Response {
         None => (StatusCode::NOT_FOUND, "not found").into_response(),
     }
 }
+
+#[cfg(test)]
+#[path = "tests/handlers.rs"]
+mod tests;

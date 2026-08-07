@@ -41,3 +41,7 @@ impl Drop for RegistryLock {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "tests/lock.rs"]
+mod tests;

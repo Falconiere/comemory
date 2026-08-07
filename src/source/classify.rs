@@ -68,3 +68,7 @@ fn format_of_extension(path: &Path) -> Option<DocumentFormat> {
         _ => None,
     }
 }
+
+#[cfg(test)]
+#[path = "tests/classify.rs"]
+mod tests;

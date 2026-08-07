@@ -13,10 +13,8 @@ use clap::Args as ClapArgs;
 
 use crate::api::{self, Ctx};
 use crate::cli::search_only::{self, OnlyDomain};
-use crate::cli::{
-    embedding_input, load_config, page_window, resolve_data_dir, track_searches, when,
-};
-use crate::config::paths::Paths;
+use crate::cli::{embedding_input, load_config, page_window, track_searches, when};
+use crate::config::paths::{Paths, resolve_data_dir};
 use crate::memory::Kind;
 use crate::output;
 use crate::prelude::*;

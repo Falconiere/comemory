@@ -222,13 +222,12 @@ fn score_all(
             c.graph_hops,
             c.graph_seeds as u64,
         );
-        let (mrr, recall_at_k) = match cache.get(&key) {
-            Some(&cached) => cached,
-            None => {
-                let report = runner::run_eval(&with_candidate(base, &c), conn, pairs, k)?;
-                cache.insert(key, (report.mrr, report.recall_at_k));
-                (report.mrr, report.recall_at_k)
-            }
+        let (mrr, recall_at_k) = if let Some(&cached) = cache.get(&key) {
+            cached
+        } else {
+            let report = runner::run_eval(&with_candidate(base, &c), conn, pairs, k)?;
+            cache.insert(key, (report.mrr, report.recall_at_k));
+            (report.mrr, report.recall_at_k)
         };
         ranked.push(ScoredCandidate {
             candidate: c,
@@ -353,3 +352,7 @@ fn section<'t>(
         .as_table_mut()
         .ok_or_else(|| Error::Config(format!("config.toml: [{name}] is not a table")))
 }
+
+#[cfg(test)]
+#[path = "tests/tune.rs"]
+mod tests;

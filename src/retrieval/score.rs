@@ -81,7 +81,7 @@ pub fn median_rank(values: &mut [f64]) -> f64 {
     if n % 2 == 1 {
         values[n / 2]
     } else {
-        (values[n / 2 - 1] + values[n / 2]) / 2.0
+        f64::midpoint(values[n / 2 - 1], values[n / 2])
     }
 }
 
@@ -201,3 +201,7 @@ pub fn bounded_boost(v: f64, (lo, hi): (f64, f64)) -> f64 {
     }
     v.max(lo).min(hi)
 }
+
+#[cfg(test)]
+#[path = "tests/score.rs"]
+mod tests;

@@ -1,3 +1,15 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
+// `criterion_group!` expands to an undocumented `pub fn benches()`; the macro
+// body is out of our control, so `missing_docs` is allowed for this whole
+// bench binary rather than the single generated item (attributes placed
+// directly on a function-like macro invocation are ignored by rustc).
+#![allow(missing_docs)]
 //! Graph-layer benches: pure kernels (`pagerank` over a synthetic edge
 //! list, `extract_imports` + `PathIndex::resolve` over real source) and the
 //! git-backed miners (`mine_cochange`, `materialize`) over a real on-disk
@@ -23,7 +35,7 @@ const PAGERANK_SWEEP: [usize; 3] = [100, 1_000, 10_000];
 const COMMITS: usize = 60;
 
 /// A real comemory source file with imports, embedded at compile time.
-const IMPORTS_SRC: &str = include_str!("../src/cli/mod.rs");
+const IMPORTS_SRC: &str = include_str!("../src/cli.rs");
 
 /// Deterministic edge list over `n` nodes: each node points at `(i*7+3) % n`.
 fn synthetic_edges(n: usize) -> Vec<(u32, u32, f64)> {

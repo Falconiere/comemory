@@ -120,19 +120,18 @@ pub fn resolve_within(root: &Path, rel: &str) -> Result<PathBuf> {
         }
     }
     let candidate = root.join(rel_path);
-    let canonical = match candidate.canonicalize() {
-        Ok(c) => c,
-        Err(_) => {
-            // Not-yet-existing file: canonicalize the parent, re-append name.
-            let parent = candidate
-                .parent()
-                .ok_or_else(|| Error::BadRequest("path has no parent".into()))?;
-            let name = candidate
-                .file_name()
-                .ok_or_else(|| Error::BadRequest("path has no file name".into()))?;
-            let parent_canon = parent.canonicalize().map_err(Error::Io)?;
-            parent_canon.join(name)
-        }
+    let canonical = if let Ok(c) = candidate.canonicalize() {
+        c
+    } else {
+        // Not-yet-existing file: canonicalize the parent, re-append name.
+        let parent = candidate
+            .parent()
+            .ok_or_else(|| Error::BadRequest("path has no parent".into()))?;
+        let name = candidate
+            .file_name()
+            .ok_or_else(|| Error::BadRequest("path has no file name".into()))?;
+        let parent_canon = parent.canonicalize().map_err(Error::Io)?;
+        parent_canon.join(name)
     };
     if !canonical.starts_with(root) {
         return Err(Error::Forbidden("path escapes repo root".into()));
@@ -160,3 +159,7 @@ pub fn contain_abs(roots: &[PathBuf], p: &Path) -> Result<PathBuf> {
         Err(Error::Forbidden("path escapes every allowed root".into()))
     }
 }
+
+#[cfg(test)]
+#[path = "tests/security.rs"]
+mod tests;

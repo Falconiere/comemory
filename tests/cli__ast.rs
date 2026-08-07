@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! `comemory ast` integration tests: `--lang` gating (only the five
 //! compiled-in languages are accepted) plus the pagination contract — the
 //! `--json` output is now the shared `Page` envelope (not a bare array), and
@@ -55,7 +62,7 @@ fn ast_json_is_page_envelope_not_bare_array() {
     let v = run_ast_json(&file, &[]);
     // The new contract is an object with the Page fields, not a bare array.
     assert!(v.is_object(), "ast --json must be a Page object, got: {v}");
-    assert!(v.get("items").map(|i| i.is_array()).unwrap_or(false));
+    assert!(v.get("items").is_some_and(serde_json::Value::is_array));
     assert_eq!(v["items"].as_array().expect("items array").len(), 3);
     assert_eq!(v["total"], serde_json::json!(3));
     // Default limit (50) > 3 matches, so no further pages.

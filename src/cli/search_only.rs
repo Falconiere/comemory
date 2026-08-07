@@ -97,7 +97,7 @@ pub fn resolve_domains(only: &[OnlyDomain], kind: Option<&str>) -> Result<Domain
 /// contradiction error in [`resolve_domains`].
 fn only_label(only: &[OnlyDomain]) -> String {
     only.iter()
-        .filter_map(|d| d.to_possible_value())
+        .filter_map(clap::ValueEnum::to_possible_value)
         .map(|v| v.get_name().to_string())
         .collect::<Vec<_>>()
         .join(",")

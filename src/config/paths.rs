@@ -10,6 +10,15 @@ pub struct Paths {
     data_dir: PathBuf,
 }
 
+/// Resolve the effective data directory. Caller passes the CLI flag (which
+/// also reads `COMEMORY_DATA_DIR`); on `None` we fall back to `$HOME/.comemory`.
+pub fn resolve_data_dir(opt: Option<PathBuf>) -> PathBuf {
+    opt.unwrap_or_else(|| {
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+        PathBuf::from(home).join(".comemory")
+    })
+}
+
 impl Paths {
     /// Root the layout at `data_dir`.
     pub fn new(data_dir: impl Into<PathBuf>) -> Self {
@@ -81,3 +90,7 @@ impl Paths {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "tests/paths.rs"]
+mod tests;

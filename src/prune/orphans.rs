@@ -22,13 +22,15 @@ pub fn detect(paths: &Paths) -> Result<Vec<String>> {
         .collect();
 
     let mut orphans = Vec::new();
-    let rd = match std::fs::read_dir(paths.trash_dir()) {
-        Ok(rd) => rd,
-        Err(_) => return Ok(orphans),
+    let Ok(rd) = std::fs::read_dir(paths.trash_dir()) else {
+        return Ok(orphans);
     };
     for entry in rd.flatten() {
         let name = entry.file_name().into_string().unwrap_or_default();
-        if !name.ends_with(".md") || name.starts_with('.') {
+        let is_md = std::path::Path::new(&name)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("md"));
+        if !is_md || name.starts_with('.') {
             continue;
         }
         if let Some(id_part) = name.split('-').next()
@@ -39,3 +41,7 @@ pub fn detect(paths: &Paths) -> Result<Vec<String>> {
     }
     Ok(orphans)
 }
+
+#[cfg(test)]
+#[path = "tests/orphans.rs"]
+mod tests;

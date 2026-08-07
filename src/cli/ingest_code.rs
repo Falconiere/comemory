@@ -12,8 +12,8 @@ use std::path::PathBuf;
 use clap::Args as ClapArgs;
 
 use crate::api::{self, Ctx};
-use crate::cli::{load_config, resolve_data_dir};
-use crate::config::paths::Paths;
+use crate::cli::load_config;
+use crate::config::paths::{Paths, resolve_data_dir};
 use crate::prelude::*;
 use crate::store::connection;
 

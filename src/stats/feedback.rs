@@ -177,3 +177,7 @@ pub fn record_with_provenance(
     tx.commit()?;
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "tests/feedback.rs"]
+mod tests;

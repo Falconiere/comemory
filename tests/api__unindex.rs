@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Mirror test for `src/api/unindex.rs`. Registers a real docs fixture
 //! source via `comemory index`, then calls `api::unindex::run` directly
 //! against a `Ctx` opened on the same data-dir (`cli::unindex::run` is

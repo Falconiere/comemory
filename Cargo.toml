@@ -116,6 +116,70 @@ features = [
 [build-dependencies]
 cc = "1"
 
+# House lints (toolu-conventions Rust stack). `scripts/lint-check.sh` runs
+# `cargo clippy --all-targets --all-features -- -D warnings`, so every `warn`
+# below is a hard CI failure.
+#
+# DEVIATION D1: `unsafe_code = "forbid"` is deliberately NOT set. The crate has
+# 7 FFI-necessary `unsafe` blocks (FTS5 tokenizer registration in
+# src/store/tokenizer/ffi.rs, sqlite-vec auto-extension registration in
+# src/store/connection.rs). `forbid` is a hard rustc error with no local
+# override, so it cannot be applied here. The SAFETY-comment discipline is
+# enforced instead by
+# scripts/guardrails/patterns/rust/no-unsafe-without-safety.yml.
+[lints.rust]
+missing_docs = "warn"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+
+# CORE rule 10 (Rust half): no unwrap()/expect() outside tests and bootstrap.
+unwrap_used = "warn"
+expect_used = "warn"
+# The function-length ceiling. DECLARED in guardrails.config.json
+# (functionSize.max = 100), thresholded in clippy.toml, denied here.
+# Measured: zero violations in src/ today, so `deny` lands clean.
+too_many_lines = "deny"
+# comemory-specific: diagnostics go through `tracing`, never stdio; a stub is
+# never committed. Measured: zero violations outside tests.
+print_stdout = "warn"
+print_stderr = "warn"
+dbg_macro = "warn"
+panic = "warn"
+todo = "warn"
+unimplemented = "warn"
+
+# Practical relaxations of the two noisiest pedantic lints (kit template).
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+
+# ---------------------------------------------------------------------------
+# DEVIATION D7 — declared lint debt. Each line carries the measured count on
+# `cargo clippy --lib` at migration time. Burn one down, delete its line, and
+# the lint is live again. Do NOT add to this list without the same treatment.
+# Tracking doc: docs/lint-debt.md
+# ---------------------------------------------------------------------------
+missing_errors_doc = "allow"        # 202 — needs a `# Errors` section per fallible fn
+doc_markdown = "allow"              # 145 — un-backticked identifiers in doc comments
+cast_possible_wrap = "allow"        #  37 — usize/u64 -> i64 at SQLite boundaries
+unused_async = "allow"              #  25 — async CLI handlers kept uniform for dispatch
+cast_precision_loss = "allow"       #  23 — deliberate in ranking math (u64/usize -> f64)
+cast_sign_loss = "allow"            #  21 — SQLite returns i64 for non-negative counts
+cast_possible_truncation = "allow"  #  18 — bounded by construction at each site
+needless_pass_by_value = "allow"    #  16
+
+# ---------------------------------------------------------------------------
+# Phase 4b escape hatch (not part of the original D7 debt above): one
+# genuinely-stuck singleton, added only after the direct fix proved to carry
+# real blast radius.
+# ---------------------------------------------------------------------------
+struct_field_names = "allow"  # 1 — `eval::bandit::Arm::arm_id`; the field is
+# a serialized `comemory bandit --json` output key plus a Rust field name
+# read directly by ~10 assertions across tests/eval__bandit.rs and
+# tests/eval__bandit_rng.rs. Renaming to drop the struct-name prefix is a
+# CLI-output/test-file change, not a lint fix, so it stays out of scope here.
+
 [dev-dependencies]
 assert_cmd = "2"
 criterion = { version = "0.5", default-features = false, features = ["html_reports", "async_tokio"] }

@@ -89,15 +89,25 @@ pub(crate) fn stamp_repo_format(conn: &Connection, repo: &str) -> Result<()> {
 /// from cloning when they already hold borrowed data; the helper passes them
 /// straight through to `rusqlite::params!`.
 pub struct CodeSymbolRow<'a> {
+    /// Repo the symbol belongs to.
     pub repo: &'a str,
+    /// Path to the source file, relative to the repo root.
     pub path: &'a str,
+    /// Git blob OID of the file's current content.
     pub blob_oid: &'a str,
+    /// Symbol name (`<parent>#<n>` for a cAST chunk child).
     pub symbol: &'a str,
+    /// AST symbol kind (function, struct, etc.) as reported by the extractor.
     pub kind: &'a str,
+    /// Source language, as detected by `ast::languages::Lang`.
     pub lang: &'a str,
+    /// 1-based start line of the symbol in `path`.
     pub line_start: i64,
+    /// 1-based end line of the symbol in `path`.
     pub line_end: i64,
+    /// The symbol's source text.
     pub snippet: &'a str,
+    /// 64-bit SimHash of `snippet`, used for near-duplicate detection.
     pub simhash: i64,
     /// Rowid of the parent symbol when this row is a cAST chunk child
     /// (`symbol` is then `<parent>#<n>`); `None` for whole symbols and
@@ -229,3 +239,7 @@ pub fn record_access(conn: &Connection, ids: &[i64]) {
         tracing::warn!(error = %e, hit_count = ids.len(), "code access tracking update failed");
     }
 }
+
+#[cfg(test)]
+#[path = "tests/code_row.rs"]
+mod tests;

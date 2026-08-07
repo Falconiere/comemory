@@ -46,7 +46,7 @@ pub fn extract(content: &[u8], file_stem: &str) -> Result<ExtractedDocument> {
 
     let mut w = Walker::new();
     for handle in dom.children() {
-        walk(handle, parser, &mut w);
+        walk(*handle, parser, &mut w);
     }
     w.flush_block();
 
@@ -86,7 +86,7 @@ fn collapse_whitespace(s: &str) -> String {
 /// short-circuits (its full nested text becomes the heading itself, never
 /// body text); every other tag recurses into its direct children and, for
 /// [`BOUNDARY_TAGS`], appends a paragraph break on the way out.
-fn walk(handle: &tl::NodeHandle, parser: &tl::Parser<'_>, w: &mut Walker) {
+fn walk(handle: tl::NodeHandle, parser: &tl::Parser<'_>, w: &mut Walker) {
     let Some(node) = handle.get(parser) else {
         return;
     };
@@ -113,7 +113,7 @@ fn walk(handle: &tl::NodeHandle, parser: &tl::Parser<'_>, w: &mut Walker) {
                 return;
             }
             for child in tag.children().top().iter() {
-                walk(child, parser, w);
+                walk(*child, parser, w);
             }
             if BOUNDARY_TAGS.contains(&name.as_str()) {
                 w.push_text("\n\n");
@@ -199,3 +199,7 @@ impl Walker {
         });
     }
 }
+
+#[cfg(test)]
+#[path = "tests/html.rs"]
+mod tests;

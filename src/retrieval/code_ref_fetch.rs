@@ -72,8 +72,7 @@ fn repo_state_uncached(conn: &Connection, repo: &str) -> RepoState {
     let root = resolve_root(conn, repo, &HashMap::new()).ok();
     let index_current = root
         .as_deref()
-        .map(|r| index_is_current(conn, repo, r))
-        .unwrap_or(false);
+        .is_some_and(|r| index_is_current(conn, repo, r));
     RepoState {
         root,
         index_current,
@@ -113,3 +112,7 @@ fn index_is_current(conn: &Connection, repo: &str, root: &Path) -> bool {
         .flatten();
     last.as_deref() == Some(head.as_str())
 }
+
+#[cfg(test)]
+#[path = "tests/code_ref_fetch.rs"]
+mod tests;

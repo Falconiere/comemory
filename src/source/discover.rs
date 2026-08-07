@@ -53,8 +53,7 @@ pub fn discover(root: &Path, kind: SourceKind, memories_dir: &Path) -> Vec<Candi
 fn single_file_candidate(root: &Path, memories_dir: &Path) -> Candidate {
     let relative_path = root
         .file_name()
-        .map(PathBuf::from)
-        .unwrap_or_else(|| root.to_path_buf());
+        .map_or_else(|| root.to_path_buf(), PathBuf::from);
     let classification = if is_within(root, memories_dir) {
         Classification::Ignored
     } else {
@@ -157,3 +156,7 @@ fn read_head(path: &Path) -> std::io::Result<Vec<u8>> {
 fn is_within(path: &Path, memories_dir: &Path) -> bool {
     path.starts_with(memories_dir)
 }
+
+#[cfg(test)]
+#[path = "tests/discover.rs"]
+mod tests;

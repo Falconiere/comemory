@@ -1,6 +1,8 @@
-edition = "2021"
+# Stable-only rustfmt options (toolu-conventions Rust stack). Nightly-gated
+# knobs (imports_granularity, group_imports, wrap_comments, ...) are omitted so
+# `cargo fmt` is deterministic on the stable toolchain CI uses.
+edition = "2024"
 max_width = 100
-use_field_init_shorthand = true
-use_try_shorthand = true
-imports_granularity = "Module"
-group_imports = "StdExternalCrate"
+tab_spaces = 4
+newline_style = "Unix"
+use_small_heuristics = "Default"

@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Task 9: `comemory save` — part 2.
 //!
 //! Covers: the TTY near-dup warning lines, identical-resave second-closest

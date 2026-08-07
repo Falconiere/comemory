@@ -150,3 +150,7 @@ fn first_id(group: &Group) -> &str {
         .first()
         .map_or("", |row: &SimhashRow| row.id.as_str())
 }
+
+#[cfg(test)]
+#[path = "tests/cluster.rs"]
+mod tests;

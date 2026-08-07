@@ -18,8 +18,7 @@ use rusqlite::Connection;
 use std::collections::BTreeSet;
 
 use crate::cli::pagination::PaginationArgs;
-use crate::cli::resolve_data_dir;
-use crate::config::paths::Paths;
+use crate::config::paths::{Paths, resolve_data_dir};
 use crate::graph::edges::{file_node_id, file_node_prefix};
 use crate::output::graph as render;
 use crate::output::graph::{CodeGraph, Edge, GraphPage, Node};
@@ -221,7 +220,7 @@ fn fetch_edges(
     let count_sql = format!("SELECT count(*) FROM edges{where_clause}");
     let mut count_stmt = conn.prepare(&count_sql)?;
     let count: i64 = count_stmt.query_row(
-        rusqlite::params_from_iter(binds.iter().map(|b| b.as_ref())),
+        rusqlite::params_from_iter(binds.iter().map(std::convert::AsRef::as_ref)),
         |r| r.get(0),
     )?;
     let total = usize::try_from(count).unwrap_or(0);
@@ -241,7 +240,7 @@ fn fetch_edges(
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt
         .query_map(
-            rusqlite::params_from_iter(binds.iter().map(|b| b.as_ref())),
+            rusqlite::params_from_iter(binds.iter().map(std::convert::AsRef::as_ref)),
             map_edge,
         )?
         .collect::<std::result::Result<Vec<_>, _>>()?;

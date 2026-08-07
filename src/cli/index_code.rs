@@ -21,8 +21,8 @@ use crate::api::index_code::walk::{
 use crate::api::{self, Ctx};
 use crate::ast::extractor::ExtractedSymbol;
 use crate::ast::{self, languages};
-use crate::cli::{load_config, resolve_data_dir};
-use crate::config::paths::Paths;
+use crate::cli::load_config;
+use crate::config::paths::{Paths, resolve_data_dir};
 use crate::git_utils::map_git_err;
 use crate::prelude::*;
 

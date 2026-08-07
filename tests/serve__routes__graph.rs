@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! End-to-end coverage of `GET /api/v1/graph` and `GET /api/v1/edges`
 //! (`src/serve/routes/graph.rs`) against a real bound server, plus a legacy
 //! `GET /api/graph` byte-compat check proving the v1 route added no second

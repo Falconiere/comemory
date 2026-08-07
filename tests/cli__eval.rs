@@ -1,5 +1,14 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Integration tests for `comemory eval`: a real save → search → feedback
 //! harvest scored through the real binary, plus the empty-set failure mode.
+
+use std::fmt::Write as _;
 
 use assert_cmd::Command;
 use serde_json::Value;
@@ -146,7 +155,7 @@ fn mixed_golden_home() -> (TempDir, std::path::PathBuf) {
         ("zebra quantum nonsense", &ids[2]),
         ("entirely unrelated gibberish phrase", &ids[3]),
     ] {
-        yaml.push_str(&format!("- query: {query}\n  relevant: [{id}]\n"));
+        let _ = writeln!(yaml, "- query: {query}\n  relevant: [{id}]");
     }
     std::fs::write(&golden, yaml).expect("write golden file");
     (home, golden)

@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Shared ranking smoke corpus: 20 realistic engineering memories plus the
 //! recall@3 query set asserted by `tests/cli_rank_smoke.rs`.
 //!

@@ -249,3 +249,7 @@ fn routed_to_ranked(h: &RoutedHit) -> RankedHit {
         score: h.score,
     }
 }
+
+#[cfg(test)]
+#[path = "tests/graph_route.rs"]
+mod tests;

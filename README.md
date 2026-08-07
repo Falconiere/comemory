@@ -277,23 +277,30 @@ tier directly:
 ## Contributing
 
 Read **[CLAUDE.md](CLAUDE.md)** first — it documents the architecture, the
-module map, the frontmatter schema, and the **five binding rules** every
-contribution must satisfy:
+module map, the frontmatter schema, and the **binding rules** every
+contribution must satisfy (comemory follows the
+[toolu-conventions](https://github.com/Falconiere/toolu-conventions) Rust
+stack, plus its own stricter local ceilings):
 
 1. No duplication — shared logic is extracted.
-2. Very modular modules — narrow, single-purpose files.
-3. ≤ 300 code lines per file in `src/` (blanks/comments excluded).
-4. Zero errors, zero warnings — no `#[allow]`, no bare `.unwrap()`, no
-   `println!` in `src/`.
-5. Tests strictly in `tests/`, mirroring `src/` 1:1 (flat, dunder-joined).
+2. No barrels — no `mod.rs`; a grown module is `src/<name>.rs` beside
+   `src/<name>/`.
+3. One responsibility per file, filename matches content.
+4. ≤ 300 code lines per file in `src/` (blanks/comments excluded), ≤ 100
+   lines per function.
+5. Zero errors, zero warnings — no `#[allow]`, no bare `.unwrap()`, no
+   `println!` in `src/`, every `unsafe` carries a `// SAFETY:` comment.
+6. Tests never share a file with production logic — colocated by default in
+   a sibling `src/<module>/tests/` folder, with the CLI surface, `assert_cmd`,
+   and `insta`-snapshot suites staying at crate-root `tests/`.
 
 The umbrella quality gate is one command — CI runs the same scripts:
 
 ```bash
-bash scripts/check-all.sh     # fmt · type · lint · placement · bypass · size · mirror · typos
+bash scripts/check-all.sh     # fmt · type · lint · guardrails · typos · cli-docs
 just check                    # alias of the above
 just test                     # cargo nextest run --all-features
-just qa                       # check-all + cargo-deny + dup-check
+just qa                       # check-all + cargo-deny + dup-check + machete
 just e2e                      # real-binary end-to-end harness
 ```
 

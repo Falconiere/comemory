@@ -25,7 +25,7 @@ pub enum RefStatus {
 
 impl RefStatus {
     /// Stable serialization token (`"fresh"`/`"stale"`/`"ghost"`/`"unpinned"`/`"unknown"`).
-    pub fn as_str(&self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             RefStatus::Fresh => "fresh",
             RefStatus::Stale => "stale",
@@ -88,3 +88,7 @@ fn classify_symbol(pinned: &str, cur: &CurrentRef<'_>) -> RefStatus {
         },
     }
 }
+
+#[cfg(test)]
+#[path = "tests/code_ref_status.rs"]
+mod tests;

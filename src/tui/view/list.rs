@@ -44,3 +44,7 @@ fn memory_row(h: &Reranked) -> String {
 fn code_row(h: &CodeReranked) -> String {
     format!("{}  {}:{}", h.symbol, h.path, h.line_start)
 }
+
+#[cfg(test)]
+#[path = "tests/list.rs"]
+mod tests;

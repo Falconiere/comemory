@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Deterministic float32 vectors for benches. Mirrors
 //! `tests/common/vectors.rs::vector` (benches are a separate compilation
 //! unit and cannot import `tests/common/`). The seed drives the bytes so

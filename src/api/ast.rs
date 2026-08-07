@@ -73,3 +73,7 @@ pub fn run(_ctx: &mut Ctx<'_>, req: Request) -> Result<Page<Row>> {
         .collect();
     Ok(Page::from_slice(rows, req.limit, req.offset))
 }
+
+#[cfg(test)]
+#[path = "tests/ast.rs"]
+mod tests;

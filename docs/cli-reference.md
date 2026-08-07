@@ -76,22 +76,70 @@ Save a memory (body via arg, `-`, or stdin)
 Usage: comemory save [OPTIONS] [BODY]
 
 Arguments:
-  [BODY]  Memory body. Use `-` (or omit) to read from stdin
+  [BODY]
+          Memory body. Use `-` (or omit) to read from stdin
 
 Options:
-      --json                     Emit machine-readable JSON instead of a human TTY view
-      --kind <KIND>              Memory kind: decision|bug|convention|discovery|pattern|note [default: note] [possible values: decision, bug, convention, discovery, pattern, note]
-      --data-dir <DATA_DIR>      Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
-      --repo <REPO>              Repo name attached to the memory (free-form string) [default: ""]
-      --tags <TAGS>              Comma-separated tag list (e.g. `database,postgres`) [default: ""]
-      --author <AUTHOR>          Author identifier. Defaults to empty so callers may omit [default: ""]
-      --quality <QUALITY>        Quality rating 1..=5. Defaults to 3 [default: 3]
-      --supersedes <SUPERSEDES>  Comma-separated 8-hex memory ids this memory replaces (e.g. `a1b2c3d4,e5f6a7b8`). Recorded in the frontmatter `relations.supersedes` list and materialized as `supersedes` edges, so the older memories are demoted in ranking and annotated `superseded_by` in search results [default: ""]
-      --vector <VECTOR>          Caller-supplied dense vector as a comma-separated float list. Length must equal the configured memory vector dim or the save fails with `vector dim mismatch`
-      --vector-stdin             Read a JSON `{ "embedding": [..] }` payload from stdin and use it as the dense vector for the saved memory. Mutually exclusive with body being read from stdin (the body must be supplied as a positional arg when `--vector-stdin` is set)
-      --ref-file <REF_FILE>      Version-anchored file reference `[repo:]path` (repeatable; comma-splittable). Pins the HEAD-tree blob + commit + branch when the path is tracked in the cwd repo; untracked/cross-repo refs save unpinned with an advisory warning
-      --ref-symbol <REF_SYMBOL>  Version-anchored symbol reference `[repo:]path:symbol` (repeatable; comma-splittable). A value without a trailing `:symbol` is a usage error (exit 64). Anchoring matches `--ref-file`
-  -h, --help                     Print help
+      --json
+          Emit machine-readable JSON instead of a human TTY view
+
+      --kind <KIND>
+          Memory kind: decision|bug|convention|discovery|pattern|note
+
+          Possible values:
+          - decision:   A choice made and its rationale
+          - bug:        A defect and how it was diagnosed or fixed
+          - convention: A team or codebase convention to follow going forward
+          - discovery:  An observation worth remembering that isn't a decision or bug
+          - pattern:    A reusable approach or idiom
+          - note:       A catch-all memory kind not covered by the others
+          
+          [default: note]
+
+      --data-dir <DATA_DIR>
+          Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable
+          
+          [env: COMEMORY_DATA_DIR=]
+
+      --repo <REPO>
+          Repo name attached to the memory (free-form string)
+          
+          [default: ""]
+
+      --tags <TAGS>
+          Comma-separated tag list (e.g. `database,postgres`)
+          
+          [default: ""]
+
+      --author <AUTHOR>
+          Author identifier. Defaults to empty so callers may omit
+          
+          [default: ""]
+
+      --quality <QUALITY>
+          Quality rating 1..=5. Defaults to 3
+          
+          [default: 3]
+
+      --supersedes <SUPERSEDES>
+          Comma-separated 8-hex memory ids this memory replaces (e.g. `a1b2c3d4,e5f6a7b8`). Recorded in the frontmatter `relations.supersedes` list and materialized as `supersedes` edges, so the older memories are demoted in ranking and annotated `superseded_by` in search results
+          
+          [default: ""]
+
+      --vector <VECTOR>
+          Caller-supplied dense vector as a comma-separated float list. Length must equal the configured memory vector dim or the save fails with `vector dim mismatch`
+
+      --vector-stdin
+          Read a JSON `{ "embedding": [..] }` payload from stdin and use it as the dense vector for the saved memory. Mutually exclusive with body being read from stdin (the body must be supplied as a positional arg when `--vector-stdin` is set)
+
+      --ref-file <REF_FILE>
+          Version-anchored file reference `[repo:]path` (repeatable; comma-splittable). Pins the HEAD-tree blob + commit + branch when the path is tracked in the cwd repo; untracked/cross-repo refs save unpinned with an advisory warning
+
+      --ref-symbol <REF_SYMBOL>
+          Version-anchored symbol reference `[repo:]path:symbol` (repeatable; comma-splittable). A value without a trailing `:symbol` is a usage error (exit 64). Anchoring matches `--ref-file`
+
+  -h, --help
+          Print help (see a summary with '-h')
 
 Examples:
   # Save a decision with tags and elevated quality
@@ -153,8 +201,14 @@ Options:
 
       --kind <KIND>
           Filter results to one memory kind
-          
-          [possible values: decision, bug, convention, discovery, pattern, note]
+
+          Possible values:
+          - decision:   A choice made and its rationale
+          - bug:        A defect and how it was diagnosed or fixed
+          - convention: A team or codebase convention to follow going forward
+          - discovery:  An observation worth remembering that isn't a decision or bug
+          - pattern:    A reusable approach or idiom
+          - note:       A catch-all memory kind not covered by the others
 
       --vector <VECTOR>
           Caller-supplied dense vector as a comma-separated float list

@@ -71,3 +71,7 @@ pub fn tokens(snippet: &str) -> Vec<String> {
         .filter(|s| !s.is_empty())
         .collect()
 }
+
+#[cfg(test)]
+#[path = "tests/simhash.rs"]
+mod tests;

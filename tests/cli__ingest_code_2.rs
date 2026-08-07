@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Task 12: `comemory ingest-code` — part 2.
 //!
 //! Covers: rollback on malformed mid-stream rows, conflicting blob_oid
@@ -12,6 +19,8 @@ mod git_repo;
 mod support;
 #[path = "common/vectors.rs"]
 mod vectors;
+
+use std::fmt::Write as _;
 
 use assert_cmd::Command;
 use comemory::store::connection;
@@ -171,15 +180,16 @@ fn ingest_then_index_code_honors_blob_gate_and_keeps_embeddings() {
         !jsonl.trim().is_empty(),
         "extract must emit at least one row"
     );
-    let embedded: String = jsonl
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .map(|l| {
-            let mut row: serde_json::Value = serde_json::from_str(l).expect("row json");
-            row["embedding"] = serde_json::json!(vectors::vector(l, 768));
-            format!("{row}\n")
-        })
-        .collect();
+    let embedded: String =
+        jsonl
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .fold(String::new(), |mut acc, l| {
+                let mut row: serde_json::Value = serde_json::from_str(l).expect("row json");
+                row["embedding"] = serde_json::json!(vectors::vector(l, 768));
+                let _ = writeln!(acc, "{row}");
+                acc
+            });
     Command::cargo_bin("comemory")
         .expect("bin")
         .env("COMEMORY_DATA_DIR", home.path())

@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Mirror tests for `src/cli/pagination.rs`. `PaginationArgs` is flatten-only,
 //! so we parse it through the real `Cli` clap parser via the `ast` subcommand
 //! (its first consumer) to pin the defaults (`--limit 50`, `--offset 0`) and

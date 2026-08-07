@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! End-to-end coverage of the job-creating code routes
 //! (`src/serve/routes/code.rs`): `POST /api/v1/code/index` (AC-6, AC-7,
 //! AC-20) and `POST /api/v1/code/ingest` (happy path, AC-18). Split out of
@@ -96,7 +103,7 @@ fn poll_job_terminal(
             .expect("poll job");
         let body: serde_json::Value = res.json().expect("json");
         let data = body["data"].clone();
-        if matches!(data["status"].as_str(), Some("done") | Some("error")) {
+        if matches!(data["status"].as_str(), Some("done" | "error")) {
             return data;
         }
         assert!(

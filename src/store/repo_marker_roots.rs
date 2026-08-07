@@ -35,3 +35,7 @@ pub fn all_roots(conn: &Connection) -> Result<Vec<PathBuf>> {
     }
     Ok(roots)
 }
+
+#[cfg(test)]
+#[path = "tests/repo_marker_roots.rs"]
+mod tests;

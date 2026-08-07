@@ -89,3 +89,7 @@ impl StatsDb {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "tests/sqlite.rs"]
+mod tests;

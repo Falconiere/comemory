@@ -305,3 +305,7 @@ pub(crate) fn log_retrieval(
         }
     }
 }
+
+#[cfg(test)]
+#[path = "tests/pipeline.rs"]
+mod tests;

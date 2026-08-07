@@ -147,16 +147,15 @@ fn push_co_citation_edges(
 /// live memory — a dangling relation target (frontmatter may name an id
 /// that was never saved) or a soft-deleted endpoint.
 fn resolve(index: &BTreeMap<&str, u32>, src: &str, dst: &str) -> Option<(u32, u32)> {
-    match (index.get(src), index.get(dst)) {
-        (Some(&s), Some(&d)) => Some((s, d)),
-        _ => {
-            tracing::debug!(
-                src,
-                dst,
-                "memory_rank: endpoint is not a live memory; skipping edge"
-            );
-            None
-        }
+    if let (Some(&s), Some(&d)) = (index.get(src), index.get(dst)) {
+        Some((s, d))
+    } else {
+        tracing::debug!(
+            src,
+            dst,
+            "memory_rank: endpoint is not a live memory; skipping edge"
+        );
+        None
     }
 }
 
@@ -170,3 +169,7 @@ fn write_scores(tx: &Transaction<'_>, nodes: &[String], scores: &[f64]) -> Resul
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "tests/memory_rank.rs"]
+mod tests;

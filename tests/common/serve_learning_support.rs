@@ -1,5 +1,12 @@
-//! Shared server-spawn + HTTP helpers for `tests/serve__routes__learning.rs`
-//! and `tests/serve__routes__learning_2.rs`.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
+//! Shared server-spawn + HTTP helpers for `src/serve/routes/tests/learning.rs`
+//! and `src/serve/routes/tests/learning_2.rs`.
 
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
@@ -101,7 +108,7 @@ pub fn poll_job_terminal(
             .expect("poll job");
         let body: Value = res.json().expect("json");
         let data = body["data"].clone();
-        if matches!(data["status"].as_str(), Some("done") | Some("error")) {
+        if matches!(data["status"].as_str(), Some("done" | "error")) {
             return data;
         }
         assert!(

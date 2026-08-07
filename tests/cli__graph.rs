@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Integration tests for `comemory graph`. An empty index must still
 //! render a well-formed (empty) graph in every output format — the command
 //! is a pure read over `comemory.db` and never indexes.
