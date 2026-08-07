@@ -17,6 +17,21 @@ use crate::output::search::{PageMeta, ScopeEcho};
 use crate::output::{json, tty};
 use crate::prelude::*;
 use crate::retrieval::bundle::Bundle;
+use crate::retrieval::scope::TimeScope;
+
+/// Everything `comemory context`'s render layer needs: `api::context::run`
+/// returns this so the CLI and the HTTP handler can each build their own
+/// envelope from one owned value instead of four loose parameters.
+pub struct ContextResult {
+    /// The assembled context bundle.
+    pub bundle: Bundle,
+    /// Id of the retrieval_log row for this lookup.
+    pub query_id: Option<String>,
+    /// Memory-list pagination cursor.
+    pub meta: PageMeta,
+    /// The lookup's time-scoping flags.
+    pub scope: TimeScope,
+}
 
 /// JSON envelope returned to `--json` callers. The bundle fields stay at the
 /// top level (flattened) so existing consumers keep reading `query` /
@@ -30,7 +45,7 @@ use crate::retrieval::bundle::Bundle;
 pub struct Envelope<'a> {
     /// The assembled context bundle, flattened into the envelope root.
     #[serde(flatten)]
-    pub bundle: &'a Bundle<'a>,
+    pub bundle: &'a Bundle,
     /// Id of the retrieval_log row for this lookup; absent when logging
     /// was off or failed. Feed it back via `comemory feedback <id>`.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -55,7 +70,7 @@ pub struct Envelope<'a> {
 /// contract without going through stdout. `scope` echoes the time-scoping
 /// flags for this lookup ([`ScopeEcho::default`] for an unscoped one).
 pub fn envelope<'a>(
-    bundle: &'a Bundle<'a>,
+    bundle: &'a Bundle,
     query_id: Option<&'a str>,
     page: PageMeta,
     scope: ScopeEcho<'a>,
@@ -71,22 +86,21 @@ pub fn envelope<'a>(
     }
 }
 
-/// Render `bundle` to stdout in either JSON or TTY mode. `query_id` is the
-/// retrieval_log id for this lookup (JSON field / TTY footer); `None` skips
-/// it. `page` carries the memory-list pagination cursor for the JSON
-/// envelope. Footer semantics are shared with `comemory search` via
-/// [`tty::write_query_footer`]: the feedback hint only appears when the
-/// bundle actually surfaced memories. `scope` is echoed in the JSON
-/// envelope only; the TTY view is unchanged by time scoping.
-pub fn emit<'a>(
-    bundle: &'a Bundle<'a>,
-    query_id: Option<&'a str>,
-    page: PageMeta,
-    json_flag: bool,
-    scope: ScopeEcho<'a>,
-) -> Result<()> {
+/// Render `result` to stdout in either JSON or TTY mode. Footer semantics
+/// are shared with `comemory search` via [`tty::write_query_footer`]: the
+/// feedback hint only appears when the bundle actually surfaced memories.
+/// The time scope is echoed in the JSON envelope only; the TTY view is
+/// unchanged by time scoping.
+pub fn emit(result: &ContextResult, json_flag: bool) -> Result<()> {
+    let ContextResult {
+        bundle,
+        query_id,
+        meta,
+        scope,
+    } = result;
+    let query_id = query_id.as_deref();
     if json_flag {
-        return json::write(&envelope(bundle, query_id, page, scope));
+        return json::write(&envelope(bundle, query_id, *meta, ScopeEcho::of(scope)));
     }
     tty::header(&format!("context: {}", bundle.query))?;
     let mut out = std::io::stdout().lock();

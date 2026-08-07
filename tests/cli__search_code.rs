@@ -6,6 +6,7 @@
 //! was indexed with the real `comemory index-code` — no mock data.
 
 use assert_cmd::Command;
+use rusqlite::OptionalExtension;
 use serde_json::Value;
 use tempfile::tempdir;
 
@@ -65,29 +66,22 @@ fn open_db(home: &tempfile::TempDir) -> rusqlite::Connection {
     .expect("open db read-only")
 }
 
-#[test]
-fn search_code_json_contract_telemetry_and_access_bump() {
-    let home = tempdir().expect("tempdir");
-    let workspace = tempdir().expect("workspace");
-    let repo = build_code_repo(workspace.path());
-    index_repo(&home, &repo);
+/// Fresh index: no symbol has been accessed yet.
+fn assert_no_symbols_accessed_yet(home: &tempfile::TempDir) {
+    let db = open_db(home);
+    let touched: i64 = db
+        .query_row(
+            "SELECT count(*) FROM code_symbols WHERE access_count > 0",
+            [],
+            |r| r.get(0),
+        )
+        .expect("count accessed");
+    assert_eq!(touched, 0, "fresh index must have zero accessed symbols");
+}
 
-    // Fresh index: no symbol has been accessed yet.
-    {
-        let db = open_db(&home);
-        let touched: i64 = db
-            .query_row(
-                "SELECT count(*) FROM code_symbols WHERE access_count > 0",
-                [],
-                |r| r.get(0),
-            )
-            .expect("count accessed");
-        assert_eq!(touched, 0, "fresh index must have zero accessed symbols");
-    }
-
-    let v = search_code_json(&home, &["alpha_router"]);
-    let hits = v.get("hits").and_then(Value::as_array).expect("hits array");
-    assert!(!hits.is_empty(), "expected hits for alpha_router: {v}");
+/// Asserts the full `search-code` hit-envelope shape: the id/repo/path/
+/// symbol/kind/lang/lines/score/source fields plus every `score_parts` key.
+fn assert_hit_shape(hits: &[Value]) {
     for hit in hits {
         assert!(hit["symbol_id"].is_i64(), "symbol_id: {hit}");
         assert_eq!(hit["repo"].as_str(), Some("r"), "repo: {hit}");
@@ -112,23 +106,17 @@ fn search_code_json_contract_telemetry_and_access_bump() {
             assert!(parts[key].is_number(), "score_parts.{key}: {hit}");
         }
     }
+}
 
-    // query_id shape + a retrieval_log row tagged source='search-code'
-    // with NULL repo/kind columns (no filters were passed).
-    let qid = v
-        .get("query_id")
-        .and_then(Value::as_str)
-        .expect("query_id in envelope")
-        .to_string();
-    assert!(
-        comemory::stats::feedback::is_valid_query_id(&qid),
-        "query_id shape, got: {qid}"
-    );
-    let db = open_db(&home);
+/// Asserts the `retrieval_log` row for `qid`: tagged `source='search-code'`,
+/// NULL `repo`/`kind` (no filters passed), and `returned_ids` matching
+/// `hit_ids` exactly.
+fn assert_retrieval_log_row(home: &tempfile::TempDir, qid: &str, hit_ids: &[String]) {
+    let db = open_db(home);
     let (source, repo_col, kind_col, returned): (String, Option<String>, Option<String>, String) =
         db.query_row(
             "SELECT source, repo, kind, returned_ids FROM retrieval_log WHERE query_id = ?1",
-            [&qid],
+            [qid],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
         )
         .expect("retrieval_log row for emitted query_id");
@@ -138,14 +126,13 @@ fn search_code_json_contract_telemetry_and_access_bump() {
 
     // returned_ids is a JSON array of symbol-id strings matching the hits.
     let logged_ids: Vec<String> = serde_json::from_str(&returned).expect("returned_ids json");
-    let hit_ids: Vec<String> = hits
-        .iter()
-        .map(|h| h["symbol_id"].as_i64().expect("symbol_id i64").to_string())
-        .collect();
     assert_eq!(logged_ids, hit_ids, "logged ids must match emitted hits");
+}
 
-    // access_count bumped exactly once on every returned symbol.
-    for id in &hit_ids {
+/// Asserts `access_count` was bumped to exactly 1 on every id in `hit_ids`.
+fn assert_access_bumped(home: &tempfile::TempDir, hit_ids: &[String]) {
+    let db = open_db(home);
+    for id in hit_ids {
         let count: i64 = db
             .query_row(
                 "SELECT access_count FROM code_symbols WHERE id = ?1",
@@ -155,6 +142,36 @@ fn search_code_json_contract_telemetry_and_access_bump() {
             .expect("access_count for returned id");
         assert_eq!(count, 1, "returned symbol {id} must be bumped to 1");
     }
+}
+
+#[test]
+fn search_code_json_contract_telemetry_and_access_bump() {
+    let home = tempdir().expect("tempdir");
+    let workspace = tempdir().expect("workspace");
+    let repo = build_code_repo(workspace.path());
+    index_repo(&home, &repo);
+    assert_no_symbols_accessed_yet(&home);
+
+    let v = search_code_json(&home, &["alpha_router"]);
+    let hits = v.get("hits").and_then(Value::as_array).expect("hits array");
+    assert!(!hits.is_empty(), "expected hits for alpha_router: {v}");
+    assert_hit_shape(hits);
+
+    let qid = v
+        .get("query_id")
+        .and_then(Value::as_str)
+        .expect("query_id in envelope")
+        .to_string();
+    assert!(
+        comemory::stats::feedback::is_valid_query_id(&qid),
+        "query_id shape, got: {qid}"
+    );
+    let hit_ids: Vec<String> = hits
+        .iter()
+        .map(|h| h["symbol_id"].as_i64().expect("symbol_id i64").to_string())
+        .collect();
+    assert_retrieval_log_row(&home, &qid, &hit_ids);
+    assert_access_bumped(&home, &hit_ids);
 }
 
 #[test]
@@ -312,5 +329,59 @@ fn tty_mode_shows_score_path_lines_symbol_kind_and_footer() {
     assert!(
         out.contains("--used-code"),
         "code feedback hint must reference --used-code: {out}"
+    );
+}
+
+/// The persisted `lazy_reindex_head:<repo>` debounce marker, or `None` when
+/// absent — mirrors `cli__lazy_reindex.rs::trigger_marker`.
+fn lazy_reindex_marker(home: &tempfile::TempDir, repo: &str) -> Option<String> {
+    open_db(home)
+        .query_row(
+            "SELECT value FROM schema_meta WHERE key = ?1",
+            [format!("lazy_reindex_head:{repo}")],
+            |r| r.get(0),
+        )
+        .optional()
+        .expect("query schema_meta")
+}
+
+#[test]
+fn bad_lang_fails_before_the_lazy_reindex_side_effect() {
+    // `--lang` validation must be the very first thing `cli::search_code`
+    // does — before the lazy auto-reindex trigger opens the DB / spawns a
+    // background `index-code` / writes the `schema_meta` debounce marker.
+    // Move HEAD after indexing so the index is stale (the trigger WOULD
+    // fire under `lazy` mode if validation ran late), then assert the bad
+    // `--lang` still fails with zero reindex side effects.
+    let home = tempdir().expect("tempdir");
+    let workspace = tempdir().expect("workspace");
+    let repo = build_code_repo(workspace.path());
+    index_repo(&home, &repo);
+    git_commit::commit_files(&repo, &[("gamma.rs", "fn gamma_router() {}\n")], "second");
+
+    let assert = Command::cargo_bin("comemory")
+        .expect("bin")
+        .env("COMEMORY_DATA_DIR", home.path())
+        .env("COMEMORY_INDEXING_AUTO_REINDEX", "lazy")
+        .current_dir(&repo)
+        .args([
+            "search-code",
+            "alpha router",
+            "--repo",
+            "r",
+            "--lang",
+            "bogus",
+        ])
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    assert!(
+        stderr.contains("unsupported lang"),
+        "expected an unsupported-lang error: {stderr}"
+    );
+    assert!(
+        lazy_reindex_marker(&home, "r").is_none(),
+        "a bad --lang must fail before the lazy-reindex trigger runs; \
+         no debounce marker may be written"
     );
 }

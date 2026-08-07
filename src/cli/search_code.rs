@@ -24,18 +24,13 @@
 use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
-use rusqlite::Connection;
 
-use crate::ast::languages::{self, Lang};
-use crate::cli::{
-    embedding_input, lazy_reindex, load_config, page_meta, page_window, resolve_data_dir,
-};
+use crate::api::{self, Ctx};
+use crate::cli::{embedding_input, lazy_reindex, load_config, resolve_data_dir, track_searches};
 use crate::config::paths::Paths;
 use crate::output;
 use crate::prelude::*;
-use crate::retrieval::code_rerank::CodeReranked;
-use crate::retrieval::{code_search, pipeline};
-use crate::store::{code_row, connection};
+use crate::store::connection;
 
 // The closing working-set caveat paragraph is intentionally duplicated in
 // `cli::context::EXAMPLES` (same semantics; only the command name and the
@@ -98,17 +93,21 @@ pub struct Args {
     pub vector_stdin: bool,
 }
 
-/// Run `comemory search-code`. Opens the DB, resolves the vector input
-/// (if any), routes + reranks + cuts to `top_k`, records best-effort
-/// telemetry (access bump + `retrieval_log` row, `source='search-code'`),
-/// and emits results in either TTY or JSON form.
+/// Run `comemory search-code`. Validates `--lang` first, so an unsupported
+/// value fails with zero side effects; only then opens the DB, fires the
+/// lazy auto-reindex trigger (a CLI-only affordance — see
+/// `api::search_code`'s doc), resolves the vector input (if any), and
+/// delegates the shared middle to `api::search_code::run` before emitting
+/// results in either TTY or JSON form.
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
-    let lang = canonical_lang(a.lang.as_deref())?;
+    // Validate `--lang` before any I/O — an unsupported value must fail
+    // instantly with zero side effects (no db open, no lazy-reindex
+    // trigger). `api::search_code::run` re-validates internally too
+    // (defense-in-depth for the HTTP path).
+    api::search_code::canonical_lang(a.lang.as_deref())?;
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
-    let conn = connection::open(paths.db_path())?;
-
-    let vec = embedding_input::read_optional(a.vector_stdin, a.vector.as_deref())?;
+    let mut conn = connection::open(paths.db_path())?;
     let cfg = load_config(&paths)?;
     // Non-blocking lazy auto-reindex: under `auto_reindex = lazy`, fire a
     // detached `index-code` when this repo's HEAD has moved since the last
@@ -116,128 +115,23 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     // for `hook`/`off`, off-repo, or a fresh index. Never blocks or fails the
     // search (see `cli::lazy_reindex`).
     lazy_reindex::maybe_trigger(&conn, &cfg, &paths, a.repo.as_deref());
-    let window = page_window(&cfg, a.k, a.offset);
-    let max_window = cfg.retrieval.max_page_window;
-    let pool = pipeline::pool_size(window.offset, window.limit, max_window);
-    let started = std::time::Instant::now();
-    // Route + (zero-candidate-aware) working set + rerank, shared with any
-    // programmatic caller via `code_search::search_code_hits`. It produces
-    // the full ranked (post-coalesce) window; the page is sliced from it
-    // via the shared paginator so search-code, search, and context agree on
-    // window semantics.
-    let ranked = code_search::search_code_hits(
-        &cfg,
-        &conn,
-        &a.query,
-        vec.as_deref(),
-        a.repo.as_deref(),
-        lang,
-        pool,
-    )?;
-    let (hits, has_more, total) = pipeline::paginate(ranked, window, max_window);
-    // Telemetry reflects the RETURNED page only (consistent with `search`):
-    // the access bump + retrieval_log row cover the sliced ids.
-    let query_id = record_code_telemetry(
-        &conn,
-        &a.query,
-        a.repo.as_deref(),
-        lang,
-        &hits,
-        started.elapsed(),
-    );
-    // The empty-index probe only matters for the zero-hit TTY hint, so it
-    // is skipped entirely whenever there are hits.
-    let index_empty = hits.is_empty() && !code_index_populated(&conn)?;
-    let meta = page_meta(window, has_more, total);
-    output::search_code::emit(&hits, query_id.as_deref(), meta, index_empty, json_flag)
-}
 
-/// Validate and canonicalize the `--lang` flag through
-/// [`Lang::parse`], so aliases (`rs`, `py`, ...) match the canonical
-/// names stored in `code_symbols.lang` instead of silently filtering
-/// everything out. The canonical form is also what lands in
-/// `retrieval_log.kind`. Mirrors the gate in `cli::ast`.
-fn canonical_lang(raw: Option<&str>) -> Result<Option<&'static str>> {
-    match raw {
-        None => Ok(None),
-        Some(s) => Lang::parse(s).map(|l| Some(l.as_str())).ok_or_else(|| {
-            Error::Config(format!(
-                "unsupported --lang {:?}; supported: {}",
-                s,
-                languages::supported().join(", ")
-            ))
-        }),
-    }
-}
-
-/// `true` when at least one `code_symbols` row exists — distinguishes
-/// "query missed" from "nothing was ever indexed" for the TTY hint.
-fn code_index_populated(conn: &Connection) -> Result<bool> {
-    conn.query_row("SELECT EXISTS(SELECT 1 FROM code_symbols)", [], |r| {
-        r.get(0)
-    })
-    .map_err(Error::from)
-}
-
-/// Best-effort telemetry for one tracked code search, the code-side
-/// sibling of `retrieval::pipeline::record_telemetry` (same one-tx /
-/// fall-back-to-autocommit / never-fail contract; the tx scaffold is
-/// deliberately a thin local twin rather than a shared closure-taking
-/// helper — the two access-bump + log sequences differ in target table
-/// and id mapping, and a generic scaffold would contort both callers):
-/// bump `access_count`/`last_accessed` on the returned (parent) symbol
-/// ids and insert the `retrieval_log` row in a single transaction via the
-/// shared [`pipeline::log_retrieval`] writer, with the symbol ids
-/// text-encoded so the `returned_ids` column shape matches the memory
-/// rows and the `repo`/`kind` columns carrying the `--repo`/`--lang`
-/// filters verbatim. Returns the logged query id, or `None` when logging
-/// failed.
-fn record_code_telemetry(
-    conn: &Connection,
-    query: &str,
-    repo: Option<&str>,
-    lang: Option<&str>,
-    hits: &[CodeReranked],
-    elapsed: std::time::Duration,
-) -> Option<String> {
-    let ids: Vec<String> = hits.iter().map(|h| h.symbol_id.to_string()).collect();
-    let log = |conn: &Connection| {
-        pipeline::log_retrieval(
-            conn,
-            query,
-            &ids,
-            elapsed,
-            repo,
-            lang,
-            crate::stats::source::SEARCH_CODE,
-        )
+    let vector = embedding_input::read_optional(a.vector_stdin, a.vector.as_deref())?;
+    let req = api::search_code::Request {
+        query: a.query,
+        k: a.k,
+        offset: a.offset,
+        repo: a.repo,
+        lang: a.lang,
+        vector,
     };
-    match conn.unchecked_transaction() {
-        Ok(tx) => {
-            record_code_access(&tx, hits);
-            let query_id = log(&tx);
-            match tx.commit() {
-                Ok(()) => query_id,
-                Err(e) => {
-                    tracing::warn!(error = %e, "code telemetry commit failed; access counts and query log dropped");
-                    None
-                }
-            }
-        }
-        Err(e) => {
-            tracing::warn!(error = %e, "code telemetry transaction unavailable; falling back to direct writes");
-            record_code_access(conn, hits);
-            log(conn)
-        }
-    }
-}
-
-/// Bump `code_symbols.access_count`/`last_accessed` for the returned
-/// symbol ids (the coalesced parent ids — the feedback-able identities)
-/// via the shared [`code_row::record_access`] writer, so `search-code`
-/// and `context` cannot drift on the bump SQL or its best-effort
-/// contract.
-fn record_code_access(conn: &Connection, hits: &[CodeReranked]) {
-    let ids: Vec<i64> = hits.iter().map(|h| h.symbol_id).collect();
-    code_row::record_access(conn, &ids);
+    let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+    let result = api::search_code::run(&mut ctx, req, track_searches()?)?;
+    output::search_code::emit(
+        &result.hits,
+        result.query_id.as_deref(),
+        result.meta,
+        result.index_empty,
+        json_flag,
+    )
 }

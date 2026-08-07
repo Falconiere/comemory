@@ -1,30 +1,24 @@
 //! `comemory save` — atomic markdown write + SQLite-mirror upsert.
 //!
-//! v0.2 collapses the v0.1 fan-out (markdown + kuzu + lancedb + sqlite FTS)
-//! into a single transaction against `comemory.db`. Markdown stays the
-//! source of truth: it is written first via [`MemoryStore::save`], then the
-//! SQLite mirror is upserted in one transaction (memories + memory_tags +
-//! memory_fts + optional memory_vec + edges).
-//!
-//! Embeddings are caller-supplied (BYO-vector). A vector may be passed as a
-//! comma-separated list via `--vector` or as a JSON object on stdin via
-//! `--vector-stdin`. The dim is validated against `schema_meta` before any
-//! INSERT runs so wrong-dim payloads fail loudly.
+//! Clap `Args` parsing plus the stdin body read (the only place stdin
+//! exists — spec §Architecture) live here. The raw `--vector`/
+//! `--vector-stdin` flags pass through unparsed to
+//! [`crate::api::save::run`] (Binding Rule 1, shared with `POST
+//! /api/v1/memories`), which parses (and reads stdin for) them AFTER its
+//! own `supersedes`/`ref_*` validation — see that function's doc.
 
 use std::io::Read;
 use std::io::Write as _;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
-use serde::Serialize;
 
-use crate::cli::embedding_input;
-use crate::cli::{csv_unique, load_config, parse_id_csv, ref_args, resolve_data_dir};
+use crate::api;
+use crate::cli::{csv_unique, load_config, resolve_data_dir};
 use crate::config::paths::Paths;
-use crate::memory::{Kind, MemoryStore, Relations, SaveParams, id};
+use crate::memory::Kind;
 use crate::output::tty;
 use crate::prelude::*;
-use crate::store::{connection, embed, memory_row, vector};
 
 const EXAMPLES: &str = "\
 Examples:
@@ -102,105 +96,35 @@ pub struct Args {
     pub ref_symbol: Vec<String>,
 }
 
-/// JSON shape emitted under `--json`. `duplicate_of` is present only when a
-/// live memory with a near-identical body (SimHash Hamming distance within
-/// `cfg.rank.near_dup_hamming`) already exists — the save still
-/// proceeds; the caller decides whether to mark it `supersedes`.
-///
-/// `warnings` collects the version-pointer ref advisories (untracked /
-/// cross-repo refs saved unpinned); it is omitted from `--json` output when
-/// empty, mirroring the `duplicate_of` advisory convention.
-#[derive(Serialize)]
-struct Output {
-    id: String,
-    path: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    duplicate_of: Option<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    warnings: Vec<String>,
-}
-
 /// Save the body and emit the new memory id + on-disk path.
+///
+/// Uses a lazy `Ctx` (no data-dir/DB touch up front) and passes the raw
+/// `--vector`/`--vector-stdin` flags straight through to `api::save::run`
+/// unparsed, so its `supersedes`/`ref_*` validation runs (and can fail)
+/// before the vector is parsed, the data dir is created, the DB is opened,
+/// or stdin is read — exactly as `cli::save::run` did pre-extraction
+/// (AC-13).
 pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let body = read_body(&a)?;
-    let tags = csv_unique(&a.tags);
-    // Content-derived id is known before any write, so `--supersedes` and the
-    // near-dup scan can use it up front.
-    let new_id = id::memory_id(&body);
-    // Validate `--supersedes` and `--ref-*` BEFORE touching disk: a malformed
-    // value aborts with no markdown file and no DB rows.
-    let supersedes = parse_supersedes(&a.supersedes, &new_id)?;
-    let repo_root = resolve_repo_root();
-    let (references, ref_warnings) =
-        ref_args::collect(&a.ref_file, &a.ref_symbol, &a.repo, repo_root.as_deref())?;
 
     let paths = Paths::new(resolve_data_dir(data_dir));
-    paths.ensure_dirs()?;
     let cfg = load_config(&paths)?;
+    let mut ctx = api::Ctx::lazy(&paths, &cfg);
 
-    // Validate the caller-supplied vector's dim before the write, reusing the
-    // connection for the transactional mirror upsert below.
-    let vector_opt = embedding_input::read_optional(a.vector_stdin, a.vector.as_deref())?;
-    let mut conn = connection::open(paths.db_path())?;
-    if let Some(v) = vector_opt.as_deref() {
-        let dim = vector::dim_memory(&conn)?;
-        embed::guard_dim(v, dim)?;
-    }
-    let duplicate_of = near_duplicate(&conn, &body, &new_id, cfg.rank.near_dup_hamming);
-
-    let params = SaveParams {
-        body: &body,
+    let req = api::save::Request {
+        body,
         kind: a.kind,
-        repo: &a.repo,
-        tags: &tags,
-        author: &a.author,
+        repo: a.repo,
+        tags: csv_unique(&a.tags),
+        author: a.author,
         quality: a.quality,
-        relations: Relations {
-            supersedes,
-            ..Relations::default()
-        },
-        references,
+        supersedes: csv_unique(&a.supersedes),
+        vector: None,
+        ref_file: a.ref_file,
+        ref_symbol: a.ref_symbol,
     };
-    let rec = persist(&mut conn, &paths, params, vector_opt.as_deref())?;
-
-    let output = Output {
-        id: rec.frontmatter.id.clone(),
-        path: rec.path.to_string_lossy().into_owned(),
-        duplicate_of,
-        warnings: ref_warnings,
-    };
+    let output = api::save::run(&mut ctx, req, a.vector_stdin, a.vector.as_deref())?;
     emit(json, &output)
-}
-
-/// Write the markdown record (source of truth, surviving `rebuild` because
-/// `--supersedes` ids and `--ref-*` anchors live in the frontmatter), then
-/// mirror it into `comemory.db` in one transaction. A mirror failure keeps
-/// the markdown and names it plus the `rebuild` recovery path.
-///
-/// Once the mirror has committed, the memory-graph PageRank is refreshed
-/// best-effort: the new memory's relations and references reshape the graph,
-/// and the save is already durable, so a failed refresh costs rank freshness
-/// and nothing else.
-fn persist(
-    conn: &mut rusqlite::Connection,
-    paths: &Paths,
-    params: SaveParams<'_>,
-    vector_opt: Option<&[f32]>,
-) -> Result<crate::memory::MemoryRecord> {
-    let tags = params.tags.to_vec();
-    let store = MemoryStore::new(paths.clone());
-    let rec = store.save(params)?;
-    let md_path = rec.path.clone();
-    write_sqlite_mirror(conn, &rec, &tags, vector_opt).map_err(|e| {
-        Error::Other(format!(
-            "save: markdown at {} was written but SQLite mirror failed: {}; \
-             run `comemory rebuild` to reconcile",
-            md_path.display(),
-            e
-        ))
-    })?;
-    crate::graph::derived::refresh_derived_best_effort(conn);
-    Ok(rec)
 }
 
 /// Resolve the body from the positional arg or stdin, rejecting the
@@ -219,18 +143,9 @@ fn read_body(a: &Args) -> Result<String> {
     }
 }
 
-/// Discover the git working-tree root containing the process cwd, or `None`
-/// when the save is not run inside a repo. Used to make `--ref-*` paths
-/// repo-root-relative and to capture anchors.
-fn resolve_repo_root() -> Option<PathBuf> {
-    let cwd = std::env::current_dir().ok()?;
-    let repo = git2::Repository::discover(&cwd).ok()?;
-    repo.workdir().map(Path::to_path_buf)
-}
-
 /// Emit the save result: a single JSON object under `--json`, else a TTY
 /// summary with the near-dup advisory and each ref warning on stderr.
-fn emit(json: bool, output: &Output) -> Result<()> {
+fn emit(json: bool, output: &api::save::Response) -> Result<()> {
     let mut out = std::io::stdout().lock();
     if json {
         writeln!(out, "{}", serde_json::to_string(output)?)?;
@@ -247,105 +162,6 @@ fn emit(json: bool, output: &Output) -> Result<()> {
         tty::warning(w)?;
     }
     Ok(())
-}
-
-/// Find a live memory whose body simhash is within `radius` Hamming bits
-/// of `body` (callers pass `cfg.rank.near_dup_hamming`, which defaults to
-/// [`crate::simhash::NEAR_DUP_HAMMING`]), returning the closest hit's id.
-/// `self_id` (the body's own content-derived id) is excluded before the
-/// closest-hit selection so an identical re-save still surfaces the
-/// second-closest live near-dup instead of matching itself. Best-effort:
-/// any DB error is logged and treated as "no duplicate" so the check can
-/// never block a save. A full scan over live rows is fine at
-/// personal-memory scale.
-fn near_duplicate(
-    conn: &rusqlite::Connection,
-    body: &str,
-    self_id: &str,
-    radius: u32,
-) -> Option<String> {
-    let hash = crate::simhash::of_body(body);
-    match near_duplicate_inner(conn, hash, self_id, radius) {
-        Ok(hit) => hit,
-        Err(e) => {
-            tracing::warn!(error = %e, "duplicate check skipped");
-            None // dup check is best-effort: never blocks a save
-        }
-    }
-}
-
-/// Fallible core of [`near_duplicate`]: scan live `memories` rows (minus
-/// the body's own `self_id` row) and return the id of the closest simhash
-/// neighbor within `radius` Hamming bits, if any.
-fn near_duplicate_inner(
-    conn: &rusqlite::Connection,
-    hash: u64,
-    self_id: &str,
-    radius: u32,
-) -> Result<Option<String>> {
-    Ok(
-        crate::store::simhash_scan::live_simhashes(conn, None, Some(self_id))?
-            .into_iter()
-            .map(|row| (row.id, crate::simhash::hamming64(hash, row.simhash as u64)))
-            .filter(|(_, d)| *d <= radius)
-            .min_by_key(|(_, d)| *d)
-            .map(|(id, _)| id),
-    )
-}
-
-/// Mirror the markdown record into `comemory.db` in a single transaction:
-/// `memories`, `memory_tags`, `memory_fts`, optional `memory_vec`, and the
-/// graph `edges` table (in_repo/authored_by/tagged plus cross-link
-/// references parsed from the body). The caller-owned connection is passed
-/// in so `run` can share the same handle used for the up-front
-/// `vector::dim_memory` guard.
-///
-/// The non-vector branch is delegated to [`memory_row::insert`] so save and
-/// `comemory rebuild` cannot drift on the row, tag, FTS, or edge SQL.
-fn write_sqlite_mirror(
-    conn: &mut rusqlite::Connection,
-    rec: &crate::memory::MemoryRecord,
-    tags: &[String],
-    vector_opt: Option<&[f32]>,
-) -> Result<()> {
-    let tx = conn.transaction()?;
-    let fm = &rec.frontmatter;
-    let md_path = rec.path.to_string_lossy();
-    memory_row::insert(&tx, fm, &rec.body, rec.slug.as_str(), &md_path, tags)?;
-    if let Some(v) = vector_opt {
-        // memory_vec is a vec0 vtab — its PK is `memory_id` but it does not
-        // participate in SQLite's FK cascade, so a re-save of the same id
-        // must drop any prior vector row before re-inserting or vec0 will
-        // reject the second INSERT with a PK constraint failure.
-        tx.execute(
-            "DELETE FROM memory_vec WHERE memory_id = ?1",
-            rusqlite::params![&fm.id],
-        )?;
-        vector::insert_memory(&tx, &fm.id, v)?;
-    }
-    tx.commit()?;
-    Ok(())
-}
-
-/// Parse and validate the `--supersedes` CSV via the shared
-/// [`parse_id_csv`]: every entry must be a well-formed 8-hex-lowercase
-/// memory id and must not equal `self_id` (the content-derived id of the
-/// body being saved) — a memory cannot supersede itself, and a self-edge
-/// would permanently penalize the memory in ranking and flag it for
-/// prune. The target memory is *not* required to exist — edges may dangle
-/// (same stance as cross-link refs) and every consumer JOINs on live
-/// `memories` rows.
-fn parse_supersedes(raw: &str, self_id: &str) -> Result<Vec<String>> {
-    let ids = parse_id_csv(raw, "--supersedes")?;
-    for entry in &ids {
-        if entry == self_id {
-            return Err(Error::Config(format!(
-                "--supersedes: a memory cannot supersede itself (`{entry}` is the id of the \
-                 body being saved)"
-            )));
-        }
-    }
-    Ok(ids)
 }
 
 fn read_stdin() -> Result<String> {

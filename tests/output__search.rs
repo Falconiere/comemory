@@ -7,9 +7,10 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use comemory::memory::{Ref, References};
-use comemory::output::search::{self, PageMeta, ScopeEcho};
+use comemory::output::search::{self, PageMeta, ScopeEcho, SearchResult};
 use comemory::retrieval::rerank::{Reranked, ScoreParts};
 use comemory::retrieval::router::Source;
+use comemory::retrieval::scope::TimeScope;
 use comemory::store::memory_meta::MemoryMeta;
 
 /// Empty navigation map: hits degrade to empty path/kind/tags. Used by the
@@ -80,17 +81,14 @@ fn sample_meta() -> HashMap<String, MemoryMeta> {
 fn emit_accepts_empty_hits_in_json_mode() {
     // Smoke test: emitting zero hits in JSON mode must succeed. The full
     // JSON envelope shape is pinned by `search_json_envelope_contract`.
-    let hits: Vec<Reranked> = Vec::new();
-    search::emit(
-        &hits,
-        None,
-        meta(),
-        true,
-        &no_meta(),
-        data_dir(),
-        ScopeEcho::default(),
-    )
-    .expect("emit must succeed for empty hits");
+    let result = SearchResult {
+        hits: Vec::new(),
+        query_id: None,
+        meta: meta(),
+        nav: no_meta(),
+        scope: TimeScope::none(),
+    };
+    search::emit(&result, true, data_dir()).expect("emit must succeed for empty hits");
 }
 
 #[test]

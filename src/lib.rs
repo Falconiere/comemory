@@ -30,6 +30,10 @@ pub mod retrieval;
 /// Single-file SQLite layer backing memories, code rows, FTS and vectors.
 pub mod store;
 
+/// Shared command core: `Ctx` + `api::<cmd>::run`, called by both `cli::`
+/// and `serve::routes::` so neither surface duplicates subcommand logic.
+pub mod api;
+
 /// Symbol extraction and AST patterns via ast-grep.
 pub mod ast;
 

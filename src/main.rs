@@ -8,7 +8,7 @@
 //!   `Document`)
 //! - 69 — `EX_UNAVAILABLE` (`Unavailable`)
 //! - 70 — `EX_SOFTWARE` (`Sqlite`, `Migration`, `Ast`, `Git`, `Forbidden`,
-//!   `BadRequest`, `Other`)
+//!   `BadRequest`, `ConfirmationRequired`, `Other`)
 //! - 74 — `EX_IOERR` (`Io`)
 //! - 78 — `EX_CONFIG` (`Config`)
 
@@ -64,6 +64,7 @@ fn exit_code(err: &Error) -> i32 {
         | Error::Migration(_)
         | Error::Forbidden(_)
         | Error::BadRequest(_)
+        | Error::ConfirmationRequired(_)
         | Error::Other(_) => 70,
     }
 }

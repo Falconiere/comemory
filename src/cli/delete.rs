@@ -6,10 +6,10 @@ use std::io::Write as _;
 use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
-use serde::Serialize;
 use time::OffsetDateTime;
 
-use crate::cli::resolve_data_dir;
+use crate::api;
+use crate::cli::{load_config, resolve_data_dir};
 use crate::config::paths::Paths;
 use crate::graph::edges;
 use crate::memory::MemoryStore;
@@ -32,19 +32,14 @@ pub struct Args {
     pub id: String,
 }
 
-/// JSON shape emitted under `--json`.
-#[derive(Serialize)]
-struct Output {
-    deleted: String,
-}
-
 /// Soft-delete one memory: move the markdown file into `memories/.trash/`
 /// (source of truth), then mirror the delete into `comemory.db` via
 /// [`mirror_soft_delete`]. Returns the canonical id from the removed
 /// record's frontmatter.
 ///
-/// Shared by `comemory delete` and `comemory prune` (low-value apply) so
-/// the two soft-delete surfaces cannot drift.
+/// Shared by `comemory delete` (via `api::delete::run`) and `comemory
+/// prune` (low-value apply path) so the two soft-delete surfaces cannot
+/// drift.
 pub(crate) fn soft_delete(
     paths: &Paths,
     conn: &mut rusqlite::Connection,
@@ -92,12 +87,9 @@ pub(crate) fn mirror_soft_delete(conn: &mut rusqlite::Connection, id: &str) -> R
     Ok(())
 }
 
-/// Soft-delete the memory and report the affected id.
-///
-/// Steps:
-/// 1. Move the markdown file into `memories/.trash/` (source of truth).
-/// 2. In `comemory.db`, set `memories.deleted_at` and remove the
-///    `memory_fts` row and all touching edges — wrapped in one transaction.
+/// Soft-delete the memory and report the affected id. Parses `Args`, opens
+/// the store, and delegates to [`api::delete::run`] (Binding Rule 1) —
+/// shared with `DELETE /api/v1/memories/{id}`.
 pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     // `ensure_dirs` guarantees `memories/` exists before the store enumerates
@@ -105,17 +97,16 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     // intended "memory not found" message from `MemoryStore::delete`.
     paths.ensure_dirs()?;
 
+    let cfg = load_config(&paths)?;
     let mut conn = connection::open(paths.db_path())?;
-    let id = &soft_delete(&paths, &mut conn, &a.id)?;
+    let mut ctx = api::Ctx::borrowed(&paths, &cfg, &mut conn);
+    let output = api::delete::run(&mut ctx, &a.id)?;
 
     let mut out = std::io::stdout().lock();
     if json {
-        let output = Output {
-            deleted: id.clone(),
-        };
         writeln!(out, "{}", serde_json::to_string(&output)?)?;
     } else {
-        writeln!(out, "deleted {id}")?;
+        writeln!(out, "deleted {}", output.deleted)?;
     }
     Ok(())
 }

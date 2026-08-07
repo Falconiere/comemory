@@ -263,6 +263,7 @@ tier directly:
   [auto-reindex](docs/guides/auto-reindex.md) ·
   [ranking-and-eval](docs/guides/ranking-and-eval.md) ·
   [serve-web](docs/guides/serve-web.md) ·
+  [http-api](docs/guides/http-api.md) ·
   [prune-and-gc](docs/guides/prune-and-gc.md).
 - **Reference** — [docs/cli-reference.md](docs/cli-reference.md): every
   subcommand and flag · [docs/configuration.md](docs/configuration.md): every

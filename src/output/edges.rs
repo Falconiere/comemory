@@ -17,6 +17,20 @@ use crate::output::{json, tty};
 use crate::prelude::*;
 use crate::store::edge_fts::EdgeFtsHit;
 
+/// Everything `comemory edges`'s render layer needs: `api::edges::run`
+/// returns this so the CLI and the HTTP handler can each build their own
+/// envelope from one owned value instead of four loose parameters.
+pub struct EdgesResult {
+    /// Matched triplet rows for the requested page.
+    pub hits: Vec<EdgeFtsHit>,
+    /// Requested page size.
+    pub limit: usize,
+    /// Number of leading ranked relations skipped.
+    pub offset: usize,
+    /// Whether more in-window ranked relations exist beyond this page.
+    pub has_more: bool,
+}
+
 /// One matched relation as emitted under `--json`.
 #[derive(Serialize)]
 pub struct Row<'a> {

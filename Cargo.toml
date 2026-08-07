@@ -127,6 +127,14 @@ tempfile = "3"
 # Tests construct `OffsetDateTime` values to drive the query-id round-trip
 # (`stats::feedback::generate_query_id`); same version line as the main dep.
 time = { version = "0.3", features = ["macros"] }
+# In-process `serve` router tests (tests/serve__*.rs) need an async runtime
+# to drive `tower::ServiceExt::oneshot`; tokio is already a main dep with
+# `full`, pinned explicitly here for the features the tests actually use.
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+# `ServiceExt::oneshot` drives the axum router in-process (no socket bind),
+# so `serve`'s coverage is recorded instead of lost to a SIGKILLed
+# subprocess. Already transitive via axum.
+tower = { version = "0.5", features = ["util"] }
 
 [target.'cfg(unix)'.dev-dependencies]
 libc = "0.2"

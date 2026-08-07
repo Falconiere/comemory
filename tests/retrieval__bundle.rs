@@ -14,7 +14,7 @@ use comemory::retrieval::code_rerank::WorkingSet;
 
 /// Assemble with the default config and an empty working set — the
 /// fixed-arg shape every test here wants.
-fn assemble(conn: &rusqlite::Connection, query: &'static str, ids: &[String]) -> Bundle<'static> {
+fn assemble(conn: &rusqlite::Connection, query: &str, ids: &[String]) -> Bundle {
     bundle::assemble(
         conn,
         &Config::defaults(),
@@ -135,15 +135,14 @@ fn assemble_walks_relates_to_edges() {
     );
 }
 
-#[test]
-fn code_refs_rank_by_prior_product() {
-    let (_d, conn) = code_seed::open_db();
-    seed_memory(&conn, "m1");
-    // `aaa_run` wins every lexical tie-break (its path and symbol both sort
-    // first), so only the rank_score + recent-access priors on `zzz_run`
-    // can put it on top.
-    let cold = code_seed::seed_symbol(&conn, "demo", "aaa.rs", "aaa_run");
-    let hot = code_seed::seed_symbol(&conn, "demo", "zzz.rs", "zzz_run");
+/// Seed two competing symbol refs on `m1`: a boosted "hot" one (`zzz_run`,
+/// high rank_score + recent access) and a cold one (`aaa_run`) that would
+/// otherwise win every lexical tie-break (its path and symbol both sort
+/// first) — isolating the rank_score + recent-access priors as the only
+/// thing that can put the hot ref on top.
+fn seed_hot_and_cold_refs(conn: &rusqlite::Connection) {
+    let cold = code_seed::seed_symbol(conn, "demo", "aaa.rs", "aaa_run");
+    let hot = code_seed::seed_symbol(conn, "demo", "zzz.rs", "zzz_run");
     conn.execute(
         "UPDATE code_symbols SET rank_score = 0.9, access_count = 40 WHERE id = ?1",
         [hot],
@@ -154,8 +153,15 @@ fn code_refs_rank_by_prior_product() {
         [cold],
     )
     .expect("set cold");
-    seed_symbol_edge(&conn, "m1", "demo:aaa.rs:aaa_run");
-    seed_symbol_edge(&conn, "m1", "demo:zzz.rs:zzz_run");
+    seed_symbol_edge(conn, "m1", "demo:aaa.rs:aaa_run");
+    seed_symbol_edge(conn, "m1", "demo:zzz.rs:zzz_run");
+}
+
+#[test]
+fn code_refs_rank_by_prior_product() {
+    let (_d, conn) = code_seed::open_db();
+    seed_memory(&conn, "m1");
+    seed_hot_and_cold_refs(&conn);
 
     let b = assemble(&conn, "q", &["m1".to_string()]);
     assert_eq!(b.code_refs.len(), 2);

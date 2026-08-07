@@ -35,10 +35,13 @@ struct ContextEdge {
 }
 
 /// JSON-serializable retrieval bundle returned to `comemory context`.
+///
+/// Owns `query` so `api::context::run` can return it independently of the
+/// `Request` it was built from.
 #[derive(Serialize)]
-pub struct Bundle<'a> {
+pub struct Bundle {
     /// Original query string.
-    pub query: &'a str,
+    pub query: String,
     /// Memory rows surfaced by the router.
     pub memories: Vec<MemoryBundleRow>,
     /// Code-symbol rows reached by walking `references_symbol` edges,
@@ -119,13 +122,13 @@ pub struct RelationRow {
 /// every `references_symbol` destination that resolves in `code_symbols`,
 /// and the resulting refs are prior-ranked against `working_set` (see
 /// [`rank_code_refs`]).
-pub fn assemble<'a>(
+pub fn assemble(
     conn: &Connection,
     cfg: &Config,
-    query: &'a str,
+    query: &str,
     memory_ids: &[String],
     working_set: &WorkingSet,
-) -> Result<Bundle<'a>> {
+) -> Result<Bundle> {
     let mut memories = Vec::new();
     let mut relations = Vec::new();
     let mut raw_refs = Vec::new();
@@ -138,7 +141,7 @@ pub fn assemble<'a>(
     let resolved_code_ids: Vec<i64> = raw_refs.iter().filter_map(|r| r.symbol_id).collect();
     let code_refs = rank_code_refs(conn, cfg, raw_refs, working_set)?;
     Ok(Bundle {
-        query,
+        query: query.to_string(),
         memories,
         code_refs,
         relations,

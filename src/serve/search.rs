@@ -89,7 +89,7 @@ pub async fn search(
 
     let conn = state.conn()?;
     let ranked = match search_code_hits(
-        cfg,
+        &cfg,
         &conn,
         &query,
         vector.as_deref(),
@@ -107,7 +107,7 @@ pub async fn search(
         Err(e @ crate::errors::Error::VecDimMismatch { .. }) if vector.is_some() => {
             tracing::warn!(error = %e, "serve search: embedding dim mismatch; retrying lexical");
             mode = "lexical";
-            search_code_hits(cfg, &conn, &query, None, state.repo(), None, pool)?
+            search_code_hits(&cfg, &conn, &query, None, state.repo(), None, pool)?
         }
         Err(e) => return Err(e.into()),
     };

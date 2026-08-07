@@ -15,17 +15,12 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::cli::{
-    embedding_input, lazy_reindex, load_config, page_meta, page_window, resolve_data_dir,
-    track_searches, when,
-};
+use crate::api::{self, Ctx};
+use crate::cli::{embedding_input, lazy_reindex, load_config, resolve_data_dir, track_searches};
 use crate::config::paths::Paths;
 use crate::output;
 use crate::prelude::*;
-use crate::retrieval::code_rerank::WorkingSet;
-use crate::retrieval::scope::{Domains, Filters};
-use crate::retrieval::{bundle, pipeline};
-use crate::store::{code_row, connection};
+use crate::store::connection;
 
 // The closing working-set caveat sentence is intentionally duplicated in
 // `cli::search_code::EXAMPLES` (same semantics; only the command name and
@@ -99,69 +94,35 @@ pub struct Args {
     pub as_of: Option<String>,
 }
 
-/// Run `comemory context`. Opens the DB, routes the query (with optional
-/// vector), then assembles a bundle covering each matched memory plus all
-/// cross-link edges walked to depth ≤ 2. The lookup is tracked like a
+/// Run `comemory context`. Opens the DB, fires the lazy auto-reindex trigger
+/// (a CLI-only affordance — see `api::context`'s doc), then delegates the
+/// shared middle to `api::context::run`. The lookup is tracked like a
 /// search, and the resulting `query_id` is surfaced (JSON field / TTY
 /// footer) so context lookups can receive `comemory feedback` instead of
 /// polluting reformulation mining as permanently-failed queries.
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
-    let conn = connection::open(paths.db_path())?;
-
-    let vec = embedding_input::read_optional(a.vector_stdin, a.vector.as_deref())?;
+    let mut conn = connection::open(paths.db_path())?;
     let cfg = load_config(&paths)?;
     // Non-blocking lazy auto-reindex (see `cli::lazy_reindex`): fire a
     // detached `index-code` when this repo's HEAD moved since the last index,
     // then proceed against the current index. No-op for `hook`/`off`,
     // off-repo, or a fresh index; never blocks or fails the lookup.
     lazy_reindex::maybe_trigger(&conn, &cfg, &paths, a.repo.as_deref());
-    let window = page_window(&cfg, a.k, a.offset);
-    // A user-facing lookup tracks by default (the `COMEMORY_DISABLE_ACCESS_TRACKING`
-    // test hook can lower it — see `track_searches`). The flag is carried on
-    // `SearchOptions` so the memory access bump (inside `pipeline::search`)
-    // and the code-ref bump below share one gate: an eval/tune caller that
-    // ever runs `context` with `track = false` suppresses both signals.
-    let opts = pipeline::SearchOptions {
-        track: track_searches()?,
-        source: crate::stats::source::CONTEXT,
-        window,
-    };
-    let scope = when::scope_from_flags(a.since.as_deref(), a.until.as_deref(), a.as_of.as_deref())?;
-    let filters = Filters {
-        repo: a.repo.as_deref(),
-        kind: None,
-        scope: &scope,
-        domains: Domains::all(),
-    };
-    let run = pipeline::search(&cfg, &conn, &a.query, vec.as_deref(), filters, opts)?;
-    let meta = page_meta(window, run.has_more, run.total);
-    let query_id = run.query_id.clone();
-    let ids: Vec<String> = run.hits.into_iter().map(|h| h.memory_id).collect();
-    // Zero hits → no edges to walk, hence no code refs for the affinity
-    // prior to boost, so the git discovery + status walk behind
-    // `WorkingSet::from_cwd` is skipped (mirrors the `search-code` guard).
-    let ws = working_set_for(&ids, a.repo.as_deref());
-    let bundle = bundle::assemble(&conn, &cfg, &a.query, &ids, &ws)?;
-    // Self-reinforce the code refs the bundle actually surfaced (resolved
-    // to an indexed `code_symbols` row), the code-side twin of the memory
-    // access bump `pipeline::search` already applied — gated by the same
-    // `opts.track` flag and best-effort via the shared writer.
-    if opts.track {
-        code_row::record_access(&conn, &bundle.resolved_code_ids);
-    }
-    let echo = output::search::ScopeEcho::of(&scope);
-    output::context::emit(&bundle, query_id.as_deref(), meta, json_flag, echo)
-}
 
-/// The working set for the bundle's affinity prior: empty when there are no
-/// hits (no edges to walk → skip the git discovery), else discovered from the
-/// CWD. Extracted from [`run`] to keep that function focused.
-fn working_set_for(ids: &[String], repo: Option<&str>) -> WorkingSet {
-    if ids.is_empty() {
-        WorkingSet::default()
-    } else {
-        WorkingSet::from_cwd(repo)
-    }
+    let vector = embedding_input::read_optional(a.vector_stdin, a.vector.as_deref())?;
+    let req = api::context::Request {
+        query: a.query,
+        k: a.k,
+        offset: a.offset,
+        repo: a.repo,
+        vector,
+        since: a.since,
+        until: a.until,
+        as_of: a.as_of,
+    };
+    let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+    let result = api::context::run(&mut ctx, req, track_searches()?)?;
+    output::context::emit(&result, json_flag)
 }

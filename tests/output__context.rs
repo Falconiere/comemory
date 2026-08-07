@@ -4,10 +4,11 @@
 //! bundle + optional `query_id`) and locks in that `output::context::emit`
 //! accepts an empty bundle without panicking.
 
-use comemory::output::context;
+use comemory::output::context::{self, ContextResult};
 use comemory::output::search::{PageMeta, ScopeEcho};
 use comemory::retrieval::bundle::{Bundle, CodeRow};
 use comemory::retrieval::code_prior::CodePriorParts;
+use comemory::retrieval::scope::TimeScope;
 
 /// Representative memory-list pagination cursor for the unpaginated first
 /// page (page size 12, no offset, empty in-window list).
@@ -20,9 +21,9 @@ fn meta() -> PageMeta {
     }
 }
 
-fn empty_bundle() -> Bundle<'static> {
+fn empty_bundle() -> Bundle {
     Bundle {
-        query: "smoke",
+        query: "smoke".to_string(),
         memories: Vec::new(),
         code_refs: Vec::new(),
         relations: Vec::new(),
@@ -35,9 +36,13 @@ fn emit_accepts_empty_bundle_in_json_mode() {
     // Smoke test: emitting an empty bundle in JSON mode must succeed. The
     // full envelope shape is asserted end-to-end in `tests/cli/context.rs`
     // (`context_returns_bundle_for_seeded_memory`).
-    let bundle = empty_bundle();
-    context::emit(&bundle, None, meta(), true, ScopeEcho::default())
-        .expect("emit must succeed for empty bundle");
+    let result = ContextResult {
+        bundle: empty_bundle(),
+        query_id: None,
+        meta: meta(),
+        scope: TimeScope::none(),
+    };
+    context::emit(&result, true).expect("emit must succeed for empty bundle");
 }
 
 #[test]
@@ -104,7 +109,7 @@ fn unresolved_ref() -> CodeRow {
 #[test]
 fn code_ref_rank_parts_serialize_when_present_and_skip_when_none() {
     let bundle = Bundle {
-        query: "q",
+        query: "q".to_string(),
         memories: Vec::new(),
         code_refs: vec![resolved_ref(), unresolved_ref()],
         relations: Vec::new(),

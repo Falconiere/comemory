@@ -13,16 +13,14 @@ use std::io::Write as _;
 use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
-use serde::Serialize;
 
+use crate::api::{self, Ctx};
 use crate::cli::pagination::PaginationArgs;
-use crate::cli::resolve_data_dir;
+use crate::cli::{load_config, resolve_data_dir};
 use crate::config::paths::Paths;
-use crate::output::page::Page;
 use crate::output::{json, tty};
 use crate::prelude::*;
 use crate::store::connection;
-use crate::store::memory_list::{self, ListRow};
 
 const EXAMPLES: &str = "\
 Examples:
@@ -53,48 +51,21 @@ pub struct Args {
     pub page: PaginationArgs,
 }
 
-/// One row of `comemory list` output.
-#[derive(Serialize)]
-struct Row {
-    id: String,
-    kind: String,
-    repo: String,
-    slug: String,
-}
-
-impl From<ListRow> for Row {
-    fn from(r: ListRow) -> Self {
-        Self {
-            id: r.id,
-            kind: r.kind,
-            repo: r.repo,
-            slug: r.slug,
-        }
-    }
-}
-
 /// List filtered memories from the SQLite mirror as a paginated `Page<Row>`.
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
-    let conn = connection::open(paths.db_path())?;
+    let mut conn = connection::open(paths.db_path())?;
+    let cfg = load_config(&paths)?;
 
-    // Kind is matched case-insensitively against the canonical lowercase
-    // `memories.kind` values, mirroring the legacy `eq_ignore_ascii_case`
-    // filter so `--kind Decision` and `--kind decision` behave identically.
-    let kind = a.kind.as_deref().map(str::to_ascii_lowercase);
-    let listed = memory_list::list_memories(
-        &conn,
-        a.repo.as_deref(),
-        kind.as_deref(),
-        a.page.limit,
-        a.page.offset,
-    )?;
-
-    let rows: Vec<Row> = listed.rows.into_iter().map(Row::from).collect();
-    let offset = a.page.offset;
-    let has_more = offset + rows.len() < listed.total;
-    let page = Page::new(rows, a.page.limit, offset, Some(listed.total), has_more);
+    let req = api::list::Request {
+        repo: a.repo,
+        kind: a.kind,
+        limit: a.page.limit,
+        offset: a.page.offset,
+    };
+    let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+    let page = api::list::run(&mut ctx, req)?;
 
     if json_flag {
         json::write(&page)?;

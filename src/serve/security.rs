@@ -24,10 +24,20 @@ const TOKEN_BYTES: usize = 32;
 /// hex-encoding them. Returns an error rather than falling back to weak
 /// entropy: a server that cannot authenticate must not start.
 pub fn generate_token() -> Result<String> {
+    random_hex(TOKEN_BYTES)
+}
+
+/// Read `bytes` bytes from `/dev/urandom` and hex-encode them (lowercase,
+/// `2 * bytes` chars). The one entropy source the server uses: the session
+/// token ([`generate_token`], 32 bytes) and job ids
+/// (`serve::jobs::registry`, 8 bytes) are the same draw at different widths,
+/// so neither can silently fall back to weaker randomness. An unreadable
+/// `/dev/urandom` is an error, never a degraded default.
+pub fn random_hex(bytes: usize) -> Result<String> {
     let mut f = std::fs::File::open("/dev/urandom").map_err(Error::Io)?;
-    let mut buf = [0u8; TOKEN_BYTES];
+    let mut buf = vec![0u8; bytes];
     f.read_exact(&mut buf).map_err(Error::Io)?;
-    let mut hex = String::with_capacity(TOKEN_BYTES * 2);
+    let mut hex = String::with_capacity(bytes * 2);
     for b in buf {
         // Infallible: writing to a String never errors.
         let _ = write!(hex, "{b:02x}");
@@ -128,4 +138,25 @@ pub fn resolve_within(root: &Path, rel: &str) -> Result<PathBuf> {
         return Err(Error::Forbidden("path escapes repo root".into()));
     }
     Ok(canonical)
+}
+
+/// Canonicalize `p` and require it inside one of `roots`. Nonexistent path
+/// -> `BadRequest` (400); outside every root -> `Forbidden` (403); an empty
+/// `roots` slice always forbids (nothing is allowed).
+///
+/// Unlike [`resolve_within`], `p` may be absolute or cwd-relative — this is
+/// the containment check for the mutating routes that take a filesystem path
+/// directly (`index-code --path`, `ast --file`, `install-hooks --repo`, a
+/// `--golden` file), not a repo-relative `file:<repo>:<path>` id. Every entry
+/// in `roots` MUST already be canonical (the caller's job, e.g.
+/// `AppState::allowed_roots`); this function does not canonicalize them.
+pub fn contain_abs(roots: &[PathBuf], p: &Path) -> Result<PathBuf> {
+    let canonical = p
+        .canonicalize()
+        .map_err(|e| Error::BadRequest(format!("path `{}` is unusable: {e}", p.display())))?;
+    if roots.iter().any(|root| canonical.starts_with(root)) {
+        Ok(canonical)
+    } else {
+        Err(Error::Forbidden("path escapes every allowed root".into()))
+    }
 }

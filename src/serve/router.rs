@@ -4,7 +4,10 @@
 //! headers (DNS-rebinding defense) and requires the session token on `/` and
 //! `/api/*` (via the `X-Comemory-Token` header or a `?token=` query param).
 //! Static frontend assets stay ungated — they carry no secrets. No CORS layer
-//! is added, so the default is deny (no `Access-Control-Allow-Origin`).
+//! is added, so the default is deny (no `Access-Control-Allow-Origin`). The
+//! guard's rejection body is path-aware: `/api/v1/*` gets the enveloped JSON
+//! form (`command: "auth"`, AC-11), every other gated path keeps today's
+//! plain text.
 
 use axum::Router;
 use axum::extract::{DefaultBodyLimit, Request, State};
@@ -13,7 +16,9 @@ use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 
-use crate::serve::{AppState, fileio, handlers, search, security};
+use crate::errors::Error;
+use crate::serve::envelope::Envelope;
+use crate::serve::{AppState, fileio, handlers, routes, search, security};
 
 /// Build the application router with the security middleware layered on.
 pub fn build_router(state: AppState) -> Router {
@@ -23,6 +28,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/graph", get(handlers::graph))
         .route("/api/search", get(search::search))
         .route("/api/file", get(handlers::get_file).put(handlers::put_file))
+        .merge(routes::v1_router(state.clone()))
         .fallback(handlers::static_asset)
         // Lift axum's 2 MiB default body limit to the editor's own cap so a
         // save between 2 MiB and `MAX_FILE_BYTES` reaches the handler (and its
@@ -34,22 +40,45 @@ pub fn build_router(state: AppState) -> Router {
 
 /// Reject non-loopback hosts; require the token on `/` and `/api/*`.
 async fn guard(State(state): State<AppState>, req: Request, next: Next) -> Response {
+    let is_v1 = req.uri().path().starts_with("/api/v1/");
     let host = req
         .headers()
         .get(header::HOST)
         .and_then(|h| h.to_str().ok())
         .unwrap_or("");
     if !security::host_is_loopback(host) {
-        return (StatusCode::FORBIDDEN, "non-loopback Host header rejected").into_response();
+        return forbidden_response(is_v1);
     }
     let path = req.uri().path();
     if path == "/" || path.starts_with("/api/") {
         let provided = token_from_request(&req);
         if !security::token_matches(provided.as_deref(), state.token()) {
-            return (StatusCode::UNAUTHORIZED, "missing or invalid token").into_response();
+            return unauthorized_response(is_v1);
         }
     }
     next.run(req).await
+}
+
+/// `403` for a non-loopback `Host` header: enveloped JSON on `/api/v1/*`,
+/// today's plain text everywhere else.
+fn forbidden_response(enveloped: bool) -> Response {
+    if enveloped {
+        return Envelope::err(
+            "auth",
+            &Error::Forbidden("non-loopback Host header rejected".into()),
+            0,
+        );
+    }
+    (StatusCode::FORBIDDEN, "non-loopback Host header rejected").into_response()
+}
+
+/// `401` for a missing/invalid session token: enveloped JSON on
+/// `/api/v1/*`, today's plain text everywhere else.
+fn unauthorized_response(enveloped: bool) -> Response {
+    if enveloped {
+        return Envelope::unauthorized("auth");
+    }
+    (StatusCode::UNAUTHORIZED, "missing or invalid token").into_response()
 }
 
 /// Extract the token from (in order) the `X-Comemory-Token` header, a `?token=`

@@ -1,19 +1,18 @@
 //! `comemory sources` — list registered document sources with per-status
-//! file counts.
+//! file counts. The reconcile-then-list middle lives in `api::sources`
+//! (Binding Rule 1); the CLI always reconciles (`reconcile: true`).
 
 use std::io::Write as _;
 use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
-use serde::Serialize;
 
-use crate::cli::resolve_data_dir;
+use crate::api::{self, Ctx};
+use crate::cli::{load_config, resolve_data_dir};
 use crate::config::paths::Paths;
 use crate::output::json;
 use crate::prelude::*;
-use crate::source::mirror;
-use crate::source::registry::Registry;
-use crate::store::{connection, sources};
+use crate::store::connection;
 
 const EXAMPLES: &str = "\
 Examples:
@@ -30,52 +29,23 @@ Examples:
 #[command(after_help = EXAMPLES)]
 pub struct Args;
 
-/// One `comemory sources` row.
-#[derive(Serialize, Debug)]
-struct Row {
-    id: String,
-    canonical_path: String,
-    kind: String,
-    repo: Option<String>,
-    status: String,
-    indexed: usize,
-    error: usize,
-    stale: usize,
-    last_checked: String,
-}
-
-/// List every registered source, reconciling the SQLite mirror against
-/// `sources.toml` first so the report reflects the durable source of
-/// truth even when the mirror fell behind (e.g. a `sources.toml` edited
-/// by hand, or a run of `comemory index`/`unindex` from another process).
+/// List every registered source, delegating the reconcile-then-list middle
+/// to `api::sources::run`.
 pub async fn run(_a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
-    let registry = Registry::new(paths.clone());
-    let conn = connection::open(paths.db_path())?;
-    mirror::reconcile(&conn, &registry.load()?)?;
+    let mut conn = connection::open(paths.db_path())?;
+    let cfg = load_config(&paths)?;
 
-    let mut rows = Vec::new();
-    for root in sources::list(&conn)? {
-        let counts = sources::file_status_counts(&conn, &root.id)?;
-        rows.push(Row {
-            id: root.id,
-            canonical_path: root.canonical_path,
-            kind: root.kind,
-            repo: root.repo,
-            status: root.status,
-            indexed: counts.indexed,
-            error: counts.error,
-            stale: counts.stale,
-            last_checked: root.updated_at,
-        });
-    }
+    let req = api::sources::Request { reconcile: true };
+    let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+    let rows = api::sources::run(&mut ctx, req)?;
     emit(json_flag, &rows)
 }
 
 /// Emit the source listing: a JSON array under `--json`, else one line
 /// per source (or an explicit empty-state line).
-fn emit(json_flag: bool, rows: &[Row]) -> Result<()> {
+fn emit(json_flag: bool, rows: &[api::sources::Row]) -> Result<()> {
     if json_flag {
         json::write(&rows)?;
         return Ok(());

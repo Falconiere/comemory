@@ -1,17 +1,16 @@
 //! `comemory bandit` — Thompson sample over the `[tune]` grid, confirm with
 //! offline eval, optionally `--apply` when the sample beats baseline.
 
-use std::io::Write as _;
 use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
+use crate::api::{self, Ctx};
 use crate::cli::eval::GoldenSetArgs;
 use crate::cli::{load_config, resolve_data_dir};
 use crate::config::paths::Paths;
-use crate::eval::bandit;
-use crate::eval::golden;
-use crate::eval::tune::{self, TuneCandidate};
+use crate::eval::bandit::BanditReport;
+use crate::eval::tune::TuneCandidate;
 use crate::output::json;
 use crate::prelude::*;
 use crate::store::connection;
@@ -43,38 +42,8 @@ fn fmt_candidate(c: &TuneCandidate) -> String {
     )
 }
 
-/// Run `comemory bandit`.
-pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
-    let paths = Paths::new(resolve_data_dir(data_dir));
-    paths.ensure_dirs()?;
-    let mut conn = connection::open(paths.db_path())?;
-    let cfg = load_config(&paths)?;
-
-    if a.apply && !cfg.bandit.enabled {
-        return Err(Error::Config(
-            "bandit --apply refused: [bandit] enabled = false in config.toml".into(),
-        ));
-    }
-
-    let g = &a.golden_set;
-    let pairs = golden::resolve(&conn, g.golden.as_deref(), g.golden_only)?;
-    let min_pairs = tune::resolve_min_pairs()?;
-    let report = bandit::run_bandit(
-        &cfg,
-        &mut conn,
-        &pairs,
-        g.k,
-        min_pairs,
-        a.apply,
-        &paths.config_file(),
-    )?;
-
-    if json_flag {
-        json::write(&serde_json::json!({ "report": report }))?;
-        return Ok(());
-    }
-
-    let mut out = std::io::stdout().lock();
+/// TTY view: baseline, proposed arm, and the top posterior mean.
+fn render(out: &mut impl std::io::Write, report: &BanditReport) -> Result<()> {
     writeln!(
         out,
         "baseline: mrr {:.3} recall@{} {:.3}",
@@ -95,5 +64,34 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
             top.pulls
         )?;
     }
+    Ok(())
+}
+
+/// Run `comemory bandit`: build the merged golden set, Thompson-sample and
+/// confirm one arm through the real pipeline (tracking off), and — with
+/// `--apply` — persist a winning arm into `config.toml`.
+pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
+    let paths = Paths::new(resolve_data_dir(data_dir));
+    paths.ensure_dirs()?;
+    let mut conn = connection::open(paths.db_path())?;
+    let cfg = load_config(&paths)?;
+
+    let g = &a.golden_set;
+    let req = api::bandit::Request {
+        golden: g.golden.as_ref().map(|p| p.to_string_lossy().into_owned()),
+        golden_only: g.golden_only,
+        k: g.k,
+        apply: a.apply,
+    };
+    let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+    let report = api::bandit::run(&mut ctx, req)?;
+
+    if json_flag {
+        json::write(&serde_json::json!({ "report": report }))?;
+        return Ok(());
+    }
+
+    let mut out = std::io::stdout().lock();
+    render(&mut out, &report)?;
     Ok(())
 }

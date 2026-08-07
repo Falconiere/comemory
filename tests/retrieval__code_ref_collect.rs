@@ -44,7 +44,7 @@ fn seed_anchor(conn: &rusqlite::Connection, memory_id: &str, rel: &str, dst: &st
     .expect("seed anchor");
 }
 
-fn assemble<'a>(conn: &rusqlite::Connection, ids: &[String]) -> bundle::Bundle<'a> {
+fn assemble(conn: &rusqlite::Connection, ids: &[String]) -> bundle::Bundle {
     bundle::assemble(conn, &Config::defaults(), "q", ids, &WorkingSet::default()).expect("assemble")
 }
 
