@@ -126,6 +126,26 @@ impl AppState {
         Ok(())
     }
 
+    /// Reload `config.toml` and swap it into the shared `cfg` slot — called
+    /// by a `tune`/`bandit` apply job immediately after it rewrites the
+    /// file (§Route-map Notes). Every later [`AppState::cfg`] call sees the
+    /// new knobs without a restart. A reload failure is propagated as-is
+    /// and the slot keeps the PRIOR config (documented: HTTP ranking then
+    /// keeps using the pre-apply knobs until the next successful reload or
+    /// a restart — it never panics). Goes through the same layered
+    /// defaults→file→env resolution as a fresh process start
+    /// ([`crate::cli::load_config`]), not a hand-rolled TOML read.
+    pub(crate) fn reload_cfg(&self, paths: &Paths) -> Result<()> {
+        // Load first, lock second: a failed reload must leave the shared
+        // config exactly as it was, still usable by later requests.
+        let fresh = crate::cli::load_config(paths)?;
+        *self
+            .cfg
+            .lock()
+            .map_err(|_| Error::Other("serve: config lock poisoned".into()))? = Arc::new(fresh);
+        Ok(())
+    }
+
     /// The data-dir layout (`Paths`) this session was started with.
     pub fn paths(&self) -> &Paths {
         &self.paths

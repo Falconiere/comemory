@@ -6,9 +6,9 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
+use crate::api::{self, Ctx};
 use crate::cli::{load_config, resolve_data_dir};
 use crate::config::paths::Paths;
-use crate::eval::{golden, runner};
 use crate::output::json;
 use crate::prelude::*;
 use crate::store::connection;
@@ -55,12 +55,17 @@ pub struct Args {
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
-    let conn = connection::open(paths.db_path())?;
+    let mut conn = connection::open(paths.db_path())?;
     let cfg = load_config(&paths)?;
 
     let g = &a.golden_set;
-    let pairs = golden::resolve(&conn, g.golden.as_deref(), g.golden_only)?;
-    let report = runner::run_eval(&cfg, &conn, &pairs, g.k)?;
+    let req = api::eval::Request {
+        golden: g.golden.as_ref().map(|p| p.to_string_lossy().into_owned()),
+        golden_only: g.golden_only,
+        k: g.k,
+    };
+    let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+    let report = api::eval::run(&mut ctx, req)?;
     if json_flag {
         json::write(&report)?;
     } else {

@@ -15,6 +15,8 @@ use crate::prelude::*;
 
 /// `comemory ast`: run an ast-grep pattern against one file, paged.
 pub mod ast;
+/// `comemory bandit`: Thompson-sample the `[tune]` grid, confirm, apply.
+pub mod bandit;
 /// `comemory completions`: shell completion script generation.
 pub mod completions;
 /// `comemory consolidate`: advisory near-duplicate cluster report.
@@ -27,6 +29,8 @@ pub mod delete;
 pub mod doctor;
 /// `comemory edges`: lexical search over the relation graph.
 pub mod edges;
+/// `comemory eval`: score retrieval quality against a golden set.
+pub mod eval;
 /// `comemory feedback`: record which hits were used.
 pub mod feedback;
 /// `comemory gc`: trash sweep + learning-telemetry retention purge.
@@ -59,6 +63,8 @@ pub mod search_code;
 /// `comemory sources`: list registered document sources, with a skippable
 /// reconcile side effect.
 pub mod sources;
+/// `comemory tune`: grid-search the blend knobs, confirm, apply.
+pub mod tune;
 /// `comemory unindex`: unregister a document source and its derived rows.
 pub mod unindex;
 

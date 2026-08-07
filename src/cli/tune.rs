@@ -13,10 +13,10 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
+use crate::api::{self, Ctx};
 use crate::cli::eval::GoldenSetArgs;
 use crate::cli::{load_config, resolve_data_dir};
 use crate::config::paths::Paths;
-use crate::eval::golden;
 use crate::eval::tune::{self, TuneCandidate};
 use crate::output::json;
 use crate::prelude::*;
@@ -119,32 +119,29 @@ fn render(out: &mut impl Write, report: &tune::TuneReport) -> Result<()> {
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
-    let conn = connection::open(paths.db_path())?;
+    let mut conn = connection::open(paths.db_path())?;
     let cfg = load_config(&paths)?;
 
     let g = &a.golden_set;
-    let pairs = golden::resolve(&conn, g.golden.as_deref(), g.golden_only)?;
-    let min_pairs = tune::resolve_min_pairs()?;
-    let report = tune::run_tune(&cfg, &conn, &pairs, g.k, min_pairs, a.seed)?;
-    let winner = report.winner()?;
-
-    let improved = report.improves_baseline();
-    let applied = a.apply && improved;
-    if applied {
-        tune::apply_to_config_file(&paths.config_file(), &winner.candidate)?;
-    }
+    let req = api::tune::Request {
+        golden: g.golden.as_ref().map(|p| p.to_string_lossy().into_owned()),
+        golden_only: g.golden_only,
+        k: g.k,
+        apply: a.apply,
+        seed: a.seed,
+    };
+    let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+    let resp = api::tune::run(&mut ctx, req)?;
+    let improved = resp.report.improves_baseline();
 
     if json_flag {
-        json::write(&serde_json::json!({
-            "report": report,
-            "applied": applied,
-        }))?;
+        json::write(&resp)?;
         return Ok(());
     }
 
     let mut out = std::io::stdout().lock();
-    render(&mut out, &report)?;
-    if applied {
+    render(&mut out, &resp.report)?;
+    if resp.applied {
         writeln!(out, "(applied to {})", paths.config_file().display())?;
     } else if !improved {
         writeln!(out, "current config already optimal; nothing applied")?;

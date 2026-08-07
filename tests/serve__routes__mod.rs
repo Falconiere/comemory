@@ -186,6 +186,11 @@ fn minimal_request(entry: &RouteEntry) -> (serde_json::Value, Vec<(&'static str,
             serde_json::json!({"path": ["/nonexistent/ac4-sweep"]}),
             vec![],
         ),
+        // No `apply`: `tune`/`bandit` are mutating regardless, but an
+        // absent `apply` (defaults false) never reaches the confirm gate,
+        // so the sweep only observes the read-only gate, same as `rebuild`.
+        "tune" => (serde_json::json!({}), vec![]),
+        "bandit" => (serde_json::json!({}), vec![]),
         other => panic!(
             "minimal_request: no minimal body/query wired for mutating command {other:?} — \
              add one so the AC-4 read-only sweep stays exhaustive"
