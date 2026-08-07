@@ -21,7 +21,9 @@
   },
   "fileSize": {
     "max": 300,
-    "skipExtensions": []
+    "skipExtensions": [
+      ".md"
+    ]
   },
   "functionSize": {
     "max": 100
