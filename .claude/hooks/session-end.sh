@@ -6,7 +6,7 @@ PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$PROJECT_ROOT" || exit 0
 
 failed=()
-for gate in fmt-check test-placement-check no-bypass-check module-size-check; do
+for gate in fmt-check guardrails-check typos-check; do
   if ! out=$(bash "scripts/$gate.sh" 2>&1); then
     failed+=("$gate")
     echo "[session-end] FAIL $gate"
