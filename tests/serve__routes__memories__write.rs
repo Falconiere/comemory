@@ -274,7 +274,12 @@ fn poll_job_done(
             .send()
             .expect("poll job");
         let body: serde_json::Value = res.json().expect("json");
-        let status = body["data"]["status"].as_str().unwrap_or_default();
+        // `.expect`, not `.unwrap_or_default()`: a missing `status` means a
+        // malformed job response, which should fail here rather than spin
+        // the loop to its deadline with an empty status.
+        let status = body["data"]["status"]
+            .as_str()
+            .unwrap_or_else(|| panic!("job {job_id} response has no data.status: {body}"));
         if status == "done" || status == "error" {
             return;
         }

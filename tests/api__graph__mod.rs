@@ -104,14 +104,32 @@ fn rel_filters_to_the_selected_relation() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
+    // Unfiltered first, so the filtered assertion below cannot pass
+    // vacuously: this proves the fixture really does carry an `imports`
+    // edge for `rel=co-changed` to remove.
+    let unfiltered = match api::graph::run(&mut ctx, request()).expect("graph run") {
+        api::graph::Response::Full(graph) => graph,
+        api::graph::Response::Paged(_) => panic!("unreachable: no window requested"),
+    };
+    assert!(
+        unfiltered.edges.iter().any(|e| e.rel == "imports"),
+        "fixture must carry an imports edge to filter out: {:?}",
+        unfiltered.edges
+    );
+
     let mut req = request();
     req.rel = Some("co-changed".to_string());
     let response = api::graph::run(&mut ctx, req).expect("graph run");
     match response {
         api::graph::Response::Full(graph) => {
             assert!(
-                graph.edges.iter().all(|e| e.rel == "co_changed"),
+                !graph.edges.iter().any(|e| e.rel == "imports"),
                 "rel=co-changed must exclude the imports edge: {:?}",
+                graph.edges
+            );
+            assert!(
+                graph.edges.iter().all(|e| e.rel == "co_changed"),
+                "rel=co-changed must yield only co_changed edges: {:?}",
                 graph.edges
             );
         }

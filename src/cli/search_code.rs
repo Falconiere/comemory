@@ -93,11 +93,12 @@ pub struct Args {
     pub vector_stdin: bool,
 }
 
-/// Run `comemory search-code`. Opens the DB, fires the lazy auto-reindex
-/// trigger (a CLI-only affordance — see `api::search_code`'s doc),
-/// resolves the vector input (if any), then delegates the shared middle to
-/// `api::search_code::run` before emitting results in either TTY or JSON
-/// form.
+/// Run `comemory search-code`. Validates `--lang` first, so an unsupported
+/// value fails with zero side effects; only then opens the DB, fires the
+/// lazy auto-reindex trigger (a CLI-only affordance — see
+/// `api::search_code`'s doc), resolves the vector input (if any), and
+/// delegates the shared middle to `api::search_code::run` before emitting
+/// results in either TTY or JSON form.
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     // Validate `--lang` before any I/O — an unsupported value must fail
     // instantly with zero side effects (no db open, no lazy-reindex

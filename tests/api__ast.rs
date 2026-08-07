@@ -38,6 +38,7 @@ fn run_finds_every_matching_function() {
     let page = api::ast::run(&mut ctx, req).expect("ast run");
     assert_eq!(page.items.len(), 2, "alpha + beta match, gamma does not");
     assert_eq!(page.items[0].line, 1);
+    assert_eq!(page.items[1].line, 2);
 }
 
 #[test]
