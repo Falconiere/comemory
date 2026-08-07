@@ -67,6 +67,12 @@ jobs:
           components: rustfmt, clippy
       - name: Install typos-cli
         run: cargo install typos-cli --version 1.32.0 --locked
+      # NOTE: hand-maintained, like the `validate` step below. release.yml is
+      # the second workflow that runs check-all.sh, so it needs ast-grep on
+      # PATH exactly as test.yml does — scripts/guardrails-check.sh exits 3
+      # without it, which fails this job at the guardrails gate.
+      - name: Install ast-grep
+        run: cargo install ast-grep --locked
       - name: Run check-all gate
         run: bash scripts/check-all.sh
       # NOTE: this `validate` step is hand-maintained (the rest of the file is
