@@ -23,18 +23,26 @@ async fn api_health_reports_read_only_and_version() {
 }
 
 #[tokio::test]
-async fn api_graph_returns_the_full_nodes_edges_shape() {
+async fn api_graph_on_an_unindexed_dir_is_an_empty_code_graph() {
     let session = serve_state::session(false);
-    serve_state::save(
-        &session,
-        "graph handler coverage memory",
-        Kind::Note,
-        "demo",
-    );
+    // `/api/graph` is the *code* graph (`build_code_graph` over
+    // `code_symbols` + `edges`), so a saved memory contributes nothing —
+    // with no `index-code` run, both collections are exactly empty.
+    serve_state::save(&session, "not a code symbol", Kind::Note, "demo");
     let resp = serve_state::send(&session, "GET", "/api/graph", None).await;
     assert_eq!(resp.status, 200, "body: {}", resp.text);
-    assert!(resp.json["nodes"].is_array(), "body: {}", resp.text);
-    assert!(resp.json["edges"].is_array(), "body: {}", resp.text);
+    assert_eq!(
+        resp.json["nodes"].as_array().map(Vec::len),
+        Some(0),
+        "body: {}",
+        resp.text
+    );
+    assert_eq!(
+        resp.json["edges"].as_array().map(Vec::len),
+        Some(0),
+        "body: {}",
+        resp.text
+    );
 }
 
 #[tokio::test]

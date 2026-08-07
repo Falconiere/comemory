@@ -165,6 +165,10 @@ async fn static_asset_path_is_ungated_by_the_token_check() {
         None,
     )
     .await;
-    assert_ne!(resp.status, 401, "static assets must not require a token");
-    assert_eq!(resp.status, 404, "body: {}", resp.text);
+    // 404 (not 401): the fallback ran, so the token gate never applied.
+    assert_eq!(
+        resp.status, 404,
+        "static assets must not require a token; body: {}",
+        resp.text
+    );
 }
