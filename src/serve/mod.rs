@@ -108,6 +108,24 @@ impl AppState {
             .map_err(|_| Error::Other("serve: database lock poisoned".into()))
     }
 
+    /// Reopen `comemory.db` at `paths` and swap it into the shared
+    /// connection in place — called by the rebuild job right after it
+    /// renames a freshly built DB over the live path (§Concurrency "Rebuild
+    /// connection swap", AC-16). In-flight requests holding the OLD guard
+    /// finish on the old (now-unlinked) inode; every later
+    /// [`AppState::conn`] call sees the new DB.
+    ///
+    /// A reopen failure is propagated as-is and the mutex keeps the stale
+    /// connection: the server then serves stale reads until restart — it
+    /// never panics, never retries, and never poisons the lock.
+    pub(crate) fn swap_conn(&self, paths: &Paths) -> Result<()> {
+        // Open first, lock second: a failed open must leave the shared
+        // connection exactly as it was, still usable by later requests.
+        let fresh = connection::open(paths.db_path())?;
+        *self.conn()? = fresh;
+        Ok(())
+    }
+
     /// The data-dir layout (`Paths`) this session was started with.
     pub fn paths(&self) -> &Paths {
         &self.paths

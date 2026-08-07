@@ -168,6 +168,11 @@ fn minimal_request(entry: &RouteEntry) -> (serde_json::Value, Vec<(&'static str,
         "gc" => (serde_json::json!({}), vec![]),
         "mine" => (serde_json::json!({}), vec![]),
         "install-hooks" => (serde_json::json!({}), vec![]),
+        // No `confirm`: on a normal server this stops at the confirm gate
+        // (`400`), so the sweep never actually rebuilds the DB — exactly
+        // what AC-4 wants, since it only asserts whether the read-only gate
+        // fired.
+        "rebuild" => (serde_json::json!({}), vec![]),
         "unindex" => (
             serde_json::json!({}),
             vec![("target", "ac4-sweep-nonexistent")],

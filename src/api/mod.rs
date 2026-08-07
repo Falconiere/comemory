@@ -48,6 +48,8 @@ pub mod mine;
 /// `comemory prune`: orphan / low-value / stale-code candidates, dry-run
 /// report plus (CLI-driven) apply.
 pub mod prune;
+/// `comemory rebuild`: atomically rebuild the SQLite mirror from markdown.
+pub mod rebuild;
 /// `comemory save`: write a memory (markdown + store mirror).
 pub mod save;
 /// `comemory search`: hybrid memory retrieval.
