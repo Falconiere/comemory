@@ -17,7 +17,28 @@
         "tests",
         "proptest-regressions"
       ]
-    }
+    },
+    "requireReadme": [
+      "ast",
+      "cli",
+      "config",
+      "consolidate",
+      "document",
+      "eval",
+      "graph",
+      "memory",
+      "output",
+      "prune",
+      "retrieval",
+      "serve",
+      "source",
+      "stats",
+      "store",
+      "store/sql",
+      "store/tokenizer",
+      "tui",
+      "tui/view"
+    ]
   },
   "fileSize": {
     "max": 300,

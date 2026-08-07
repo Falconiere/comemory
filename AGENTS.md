@@ -17,8 +17,8 @@ cargo install --path .          # build + install binary locally
 ## Where to start reading
 
 - `src/main.rs` / `src/lib.rs` — binary entry + library surface
-- `src/cli/mod.rs` — subcommand dispatcher
+- `src/cli.rs` — subcommand dispatcher
 - `src/cli/save.rs` — the save flow (markdown → SQLite transaction)
 - `src/retrieval/pipeline.rs` — search orchestration
-- `src/store/mod.rs` — SQLite connection management
+- `src/store.rs` — SQLite connection management
 - `docs/architecture.md` — full architecture explanation
