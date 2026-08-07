@@ -1,0 +1,23 @@
+# PROJECT-LOCAL RULE (not part of the toolu kit).
+#
+# comemory Binding Rule: a lint is either the house policy (declared once in
+# Cargo.toml `[lints]`) or it is fixed — never silenced at the call site.
+# `#[cfg_attr(...)]` is intentionally NOT matched: it is conditional and
+# reviewable, and the migration uses none.
+#
+# Exempt: every `tests/` tree (colocated and crate-root) and `benches/`, which
+# carry the canonical `#![allow(clippy::unwrap_used, ...)]` header the toolu
+# Rust template itself ships; and src/test_common.rs, the single
+# `#![allow(dead_code)]` bridge to the shared fixtures.
+id: no-allow-attribute
+language: rust
+severity: error
+message: "`#[allow(...)]` in production code — fix the root cause, or change the crate-wide policy in Cargo.toml `[lints]`"
+ignores:
+  - "**/tests/**"
+  - "**/benches/**"
+  - "**/test_common.rs"
+rule:
+  any:
+    - all: [ { kind: attribute_item },       { regex: '^#\[\s*allow\s*\(' } ]
+    - all: [ { kind: inner_attribute_item }, { regex: '^#!\[\s*allow\s*\(' } ]

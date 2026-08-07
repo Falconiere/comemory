@@ -1,0 +1,34 @@
+# PROJECT-LOCAL RULE (not part of the toolu kit).
+#
+# comemory cannot set `unsafe_code = "forbid"` (7 FFI-necessary unsafe blocks —
+# see CLAUDE.md deviation D1), so the SAFETY-comment discipline is enforced
+# here instead. This is strictly stronger than the bash gate it replaced:
+# scripts/no-bypass-check.sh only ever looked at `unsafe {` blocks and never at
+# an `unsafe fn` signature.
+#
+# Accepts a MULTI-LINE comment block: `stopBy: { not: { kind: line_comment } }`
+# walks back through contiguous `//` lines, so the `// SAFETY:` line may be any
+# line of the comment paragraph directly above.
+id: no-unsafe-without-safety
+language: rust
+severity: error
+message: "unsafe without a `// SAFETY:` line in the comment block directly above — state the invariant that makes it sound"
+rule:
+  any:
+    - all:
+        - kind: unsafe_block
+        - not:
+            inside:
+              stopBy: { kind: block }
+              follows:
+                kind: line_comment
+                regex: 'SAFETY:'
+                stopBy: { not: { kind: line_comment } }
+    - all:
+        - kind: function_item
+        - regex: '^(pub(\([a-z]+\))?\s+)?unsafe\s'
+        - not:
+            follows:
+              kind: line_comment
+              regex: 'SAFETY:'
+              stopBy: { not: { kind: line_comment } }
