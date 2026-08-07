@@ -23,7 +23,7 @@ fn seed_expansion(conn: &rusqlite::Connection, term: &str, expansion: &str, supp
 
 #[test]
 fn empty_and_quote_only_queries_return_empty_without_error() {
-    /// Default `code_fts` BM25 weights `(symbol, snippet, path_tokens)`.
+    // Default `code_fts` BM25 weights `(symbol, snippet, path_tokens)`.
     const CODE_WEIGHTS: (f32, f32, f32) = (2.0, 1.0, 1.5);
 
     let dir = tempdir().expect("tempdir");
