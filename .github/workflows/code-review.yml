@@ -31,3 +31,10 @@ jobs:
           PROVIDER: openrouter
           MODEL_ID: deepseek/deepseek-v4-pro
           API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          # CLAUDE.md is already covered by the action's default Tier-1 convention
+          # files; guardrails.config.json (the toolu-conventions structure gate
+          # config) is not, so it is added explicitly. RULES_REF stays "base"
+          # (the action's default) so a PR cannot rewrite the rules it is judged
+          # by.
+          RULES_GLOB: guardrails.config.json
+          RULES_REF: base

@@ -29,6 +29,11 @@ jobs:
         uses: taiki-e/install-action@7a79fe8c3a13344501c80d99cae481c1c9085912 # v2.81.10
         with:
           tool: cargo-nextest,cargo-llvm-cov,typos-cli@1.32.0
+      - name: Install ast-grep
+        # ast-grep is not in taiki-e/install-action's supported-tools manifest
+        # (TOOLS.md), so it is installed directly. scripts/guardrails-check.sh
+        # (part of scripts/check-all.sh) exits 3 without it on PATH.
+        run: cargo install ast-grep --locked
       - name: Run check-all gate
         run: bash scripts/check-all.sh
       - name: Run coverage gate
