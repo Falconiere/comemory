@@ -25,7 +25,6 @@ use crate::cli::{load_config, resolve_data_dir};
 use crate::config::paths::Paths;
 use crate::git_utils::map_git_err;
 use crate::prelude::*;
-use crate::store::connection;
 
 const EXAMPLES: &str = "\
 Examples:
@@ -62,8 +61,7 @@ pub async fn run(args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<(
         return run_extract(&args, &repo);
     }
     let cfg = load_config(&paths)?;
-    let mut conn = connection::open(paths.db_path())?;
-    let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+    let mut ctx = Ctx::lazy(&paths, &cfg);
     api::index_code::run(
         &mut ctx,
         api::index_code::Request {

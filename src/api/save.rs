@@ -91,7 +91,19 @@ pub struct Response {
 
 /// Save the body and return the new memory id + on-disk path. See the
 /// module doc for the HTTP cwd-anchoring caveat.
-pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
+///
+/// `cli_vector_stdin`/`cli_vector_csv` are `cli::save::run`'s raw, unparsed
+/// `--vector`/`--vector-stdin` flags (mirroring
+/// `embedding_input::read_optional`'s params) — parsed only after the
+/// `supersedes`/`ref_*` validation below, matching `main`'s original
+/// ordering (AC-13). HTTP callers always pass `(false, None)`: `req.vector`
+/// is already a parsed vector off the JSON body.
+pub fn run(
+    ctx: &mut Ctx<'_>,
+    mut req: Request,
+    cli_vector_stdin: bool,
+    cli_vector_csv: Option<&str>,
+) -> Result<Response> {
     validate_quality(req.quality)?;
     let cfg = ctx.cfg;
     let paths = ctx.paths;
@@ -103,19 +115,24 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
     let supersedes = validate_supersedes(&req.supersedes, &new_id)?;
     let (references, ref_warnings) = collect_refs(&req)?;
 
-    // Validation is now behind us — safe to touch the filesystem/DB. Mirrors
-    // `cli::save::run`'s original ordering exactly (AC-13): a malformed
-    // `supersedes`/`ref_*` value never creates the data dir or opens the DB.
+    // Validation is now behind us — safe to touch the filesystem/DB/stdin.
+    // Mirrors `cli::save::run`'s original ordering exactly (AC-13): a
+    // malformed `supersedes`/`ref_*` value never creates the data dir,
+    // opens the DB, or reads stdin.
+    let vector = match req.vector.take() {
+        Some(v) => Some(v),
+        None => crate::cli::embedding_input::read_optional(cli_vector_stdin, cli_vector_csv)?,
+    };
     paths.ensure_dirs()?;
     let conn = ctx.conn()?;
-    if let Some(v) = req.vector.as_deref() {
+    if let Some(v) = vector.as_deref() {
         let dim = vector::dim_memory(conn)?;
         embed::guard_dim(v, dim)?;
     }
     let duplicate_of = near_duplicate(conn, &req.body, &new_id, cfg.rank.near_dup_hamming);
 
     let params = build_params(&req, supersedes, references);
-    let rec = persist(conn, paths, params, req.vector.as_deref())?;
+    let rec = persist(conn, paths, params, vector.as_deref())?;
 
     Ok(Response {
         id: rec.frontmatter.id.clone(),

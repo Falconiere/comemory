@@ -1,9 +1,11 @@
 //! `comemory save` — atomic markdown write + SQLite-mirror upsert.
 //!
-//! Clap `Args` parsing plus the stdin body/`--vector-stdin` reads (the only
-//! place stdin exists — spec §Architecture) live here. Everything between
-//! arg-parsing and output rendering is [`crate::api::save::run`] (Binding
-//! Rule 1), shared with `POST /api/v1/memories`.
+//! Clap `Args` parsing plus the stdin body read (the only place stdin
+//! exists — spec §Architecture) live here. The raw `--vector`/
+//! `--vector-stdin` flags pass through unparsed to
+//! [`crate::api::save::run`] (Binding Rule 1, shared with `POST
+//! /api/v1/memories`), which parses (and reads stdin for) them AFTER its
+//! own `supersedes`/`ref_*` validation — see that function's doc.
 
 use std::io::Read;
 use std::io::Write as _;
@@ -12,7 +14,6 @@ use std::path::PathBuf;
 use clap::Args as ClapArgs;
 
 use crate::api;
-use crate::cli::embedding_input;
 use crate::cli::{csv_unique, load_config, resolve_data_dir};
 use crate::config::paths::Paths;
 use crate::memory::Kind;
@@ -97,13 +98,14 @@ pub struct Args {
 
 /// Save the body and emit the new memory id + on-disk path.
 ///
-/// Uses a lazy `Ctx` (no data-dir/DB touch up front) so
-/// `api::save::run`'s validation (`supersedes`, `ref_*`) runs before the
-/// data dir is created or the DB is opened — exactly as `cli::save::run`
-/// did pre-extraction (AC-13).
+/// Uses a lazy `Ctx` (no data-dir/DB touch up front) and passes the raw
+/// `--vector`/`--vector-stdin` flags straight through to `api::save::run`
+/// unparsed, so its `supersedes`/`ref_*` validation runs (and can fail)
+/// before the vector is parsed, the data dir is created, the DB is opened,
+/// or stdin is read — exactly as `cli::save::run` did pre-extraction
+/// (AC-13).
 pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let body = read_body(&a)?;
-    let vector = embedding_input::read_optional(a.vector_stdin, a.vector.as_deref())?;
 
     let paths = Paths::new(resolve_data_dir(data_dir));
     let cfg = load_config(&paths)?;
@@ -117,11 +119,11 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
         author: a.author,
         quality: a.quality,
         supersedes: csv_unique(&a.supersedes),
-        vector,
+        vector: None,
         ref_file: a.ref_file,
         ref_symbol: a.ref_symbol,
     };
-    let output = api::save::run(&mut ctx, req)?;
+    let output = api::save::run(&mut ctx, req, a.vector_stdin, a.vector.as_deref())?;
     emit(json, &output)
 }
 

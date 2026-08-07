@@ -60,7 +60,9 @@ async fn save(State(state): State<AppState>, Json(req): Json<api::save::Request>
         let cfg = state.cfg();
         let mut conn = state.conn()?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        api::save::run(&mut ctx, req)
+        // No CLI stdin-vs-flag ambiguity over HTTP: `req.vector` is already
+        // a parsed vector off the JSON body (see `api::save::run`'s doc).
+        api::save::run(&mut ctx, req, false, None)
     })
     .await;
     respond("save", result, started)

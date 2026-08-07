@@ -99,6 +99,11 @@ pub struct Args {
 /// `api::search_code::run` before emitting results in either TTY or JSON
 /// form.
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
+    // Validate `--lang` before any I/O — an unsupported value must fail
+    // instantly with zero side effects (no db open, no lazy-reindex
+    // trigger). `api::search_code::run` re-validates internally too
+    // (defense-in-depth for the HTTP path).
+    api::search_code::canonical_lang(a.lang.as_deref())?;
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
     let mut conn = connection::open(paths.db_path())?;

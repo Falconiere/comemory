@@ -345,3 +345,40 @@ fn save_rejects_malformed_supersedes_id() {
         "invalid --supersedes must not leave a markdown file",
     );
 }
+
+#[test]
+fn malformed_supersedes_wins_over_unparsable_vector_stdin() {
+    // AC-13 regression check: `main`'s `cli::save::run` validated
+    // `--supersedes` BEFORE ever parsing `--vector-stdin` (see
+    // `git show main:src/cli/save.rs`'s `run` — `parse_supersedes` runs
+    // first, `embedding_input::read_optional` runs afterward, stdin
+    // untouched until then). So when BOTH are malformed simultaneously, the
+    // `--supersedes` error (`Error::Config`, exit 78 `EX_CONFIG`) must win
+    // over the vector-stdin JSON parse error (`Error::Json`, exit 65
+    // `EX_DATAERR`) — stdin is never even read. No stdin is piped here, so
+    // `--vector-stdin` would read an empty payload and fail JSON parsing if
+    // it were ever reached.
+    let home = tempdir().expect("tempdir");
+    let assertion = Command::cargo_bin("comemory")
+        .expect("bin")
+        .env("COMEMORY_DATA_DIR", home.path())
+        .args([
+            "save",
+            "--supersedes",
+            "not-8-hex",
+            "--vector-stdin",
+            "body with two simultaneously-malformed inputs",
+        ])
+        .assert()
+        .code(78);
+    let stderr = String::from_utf8_lossy(&assertion.get_output().stderr).to_string();
+    assert!(
+        stderr.contains("--supersedes"),
+        "the supersedes error must win, got: {stderr}",
+    );
+    assert_eq!(
+        count_md_files(home.path()),
+        0,
+        "the rejected save must not leave a markdown file",
+    );
+}

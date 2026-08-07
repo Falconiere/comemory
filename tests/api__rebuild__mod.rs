@@ -144,7 +144,19 @@ fn run_leaves_the_live_db_intact_when_the_tmp_path_is_blocked() {
     std::fs::create_dir_all(&tmp_path).expect("create dir at tmp path");
 
     let err = run_rebuild_api(&home).expect_err("blocked tmp path must error");
-    assert!(!err.to_string().is_empty());
+    // `connection::open(tmp_path)` calls `rusqlite::Connection::open` on a
+    // path that is a directory — SQLite refuses with `SQLITE_CANTOPEN`,
+    // rendered by rusqlite's `Display` as "unable to open database file:
+    // <path>" and wrapped verbatim into `Error::Sqlite`'s "sqlite: {0}".
+    let msg = err.to_string();
+    assert!(
+        msg.contains("unable to open database file"),
+        "expected the real SQLite cannot-open failure, got: {msg}"
+    );
+    assert!(
+        msg.contains(tmp_path.to_string_lossy().as_ref()),
+        "expected the blocked tmp path in the error, got: {msg}"
+    );
 
     let conn = open_db(&home);
     assert_eq!(

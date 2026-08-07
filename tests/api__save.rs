@@ -10,6 +10,15 @@ use comemory::config::{Config, Paths};
 use comemory::memory::Kind;
 use comemory::store::connection;
 
+/// `api::save::run` with no CLI raw-vector input (HTTP-shaped call), since
+/// none of these tests exercise the `--vector`/`--vector-stdin` CLI flags.
+fn run(
+    ctx: &mut Ctx<'_>,
+    req: api::save::Request,
+) -> comemory::errors::Result<api::save::Response> {
+    api::save::run(ctx, req, false, None)
+}
+
 fn request(body: &str) -> api::save::Request {
     api::save::Request {
         body: body.to_string(),
@@ -34,8 +43,7 @@ fn run_writes_markdown_and_sqlite_mirror() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let resp =
-        api::save::run(&mut ctx, request("use pgbouncer in transaction mode")).expect("save run");
+    let resp = run(&mut ctx, request("use pgbouncer in transaction mode")).expect("save run");
 
     assert_eq!(resp.id.len(), 8);
     assert!(resp.duplicate_of.is_none());
@@ -72,7 +80,7 @@ fn run_rejects_self_supersede() {
         ..request(body)
     };
 
-    let err = api::save::run(&mut ctx, req).expect_err("self-supersede must be rejected");
+    let err = run(&mut ctx, req).expect_err("self-supersede must be rejected");
     assert!(
         err.to_string().contains("cannot supersede itself"),
         "unexpected error: {err}"
@@ -98,7 +106,7 @@ fn run_rejects_quality_out_of_range() {
         ..request("a memory with an invalid quality rating")
     };
 
-    let err = api::save::run(&mut ctx, req).expect_err("out-of-range quality must be rejected");
+    let err = run(&mut ctx, req).expect_err("out-of-range quality must be rejected");
     assert!(
         err.to_string().contains("quality"),
         "unexpected error: {err}"
@@ -116,10 +124,10 @@ fn run_flags_a_near_duplicate() {
     let body = "postgres advisory lock ordering fix for the migration runner";
     {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        api::save::run(&mut ctx, request(body)).expect("first save");
+        run(&mut ctx, request(body)).expect("first save");
     }
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
     let near_dup_body = "postgres advisory lock ordering fix for the migration runners";
-    let resp = api::save::run(&mut ctx, request(near_dup_body)).expect("second save");
+    let resp = run(&mut ctx, request(near_dup_body)).expect("second save");
     assert!(resp.duplicate_of.is_some(), "expected a near-dup hit");
 }

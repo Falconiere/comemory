@@ -101,7 +101,12 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<SearchCodeRes
 /// `code_symbols.lang` instead of silently filtering everything out. The
 /// canonical form is also what lands in `retrieval_log.kind`. Moved
 /// verbatim from `cli::search_code` (Binding Rule 1).
-fn canonical_lang(raw: Option<&str>) -> Result<Option<&'static str>> {
+///
+/// `pub(crate)` (not just `run`-internal) so `cli::search_code::run` can
+/// run this same validation as its own first statement, before the
+/// lazy-reindex side effect — matching `main`'s original ordering where
+/// an unsupported `--lang` failed instantly with zero side effects.
+pub(crate) fn canonical_lang(raw: Option<&str>) -> Result<Option<&'static str>> {
     match raw {
         None => Ok(None),
         Some(s) => Lang::parse(s).map(|l| Some(l.as_str())).ok_or_else(|| {
