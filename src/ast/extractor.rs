@@ -54,14 +54,14 @@ pub struct ExtractedSymbol {
 /// walk pays the compile cost once per language rather than once per file.
 pub fn extract(lang: Lang, source: &str) -> Result<Vec<ExtractedSymbol>> {
     match lang {
-        Lang::Rust => extract_with(Rust, lang, source, rust_compiled()?),
+        Lang::Rust => Ok(extract_with(Rust, lang, source, rust_compiled()?)),
         // Tsx is a superset of the plain TypeScript grammar — it parses
         // JSX-bearing source as well as pure TS, so we route both `.ts` and
         // `.tsx` through it.
-        Lang::Typescript => extract_with(Tsx, lang, source, ts_compiled()?),
-        Lang::Javascript => extract_with(JavaScript, lang, source, js_compiled()?),
-        Lang::Python => extract_with(Python, lang, source, python_compiled()?),
-        Lang::Go => extract_with(Go, lang, source, go_compiled()?),
+        Lang::Typescript => Ok(extract_with(Tsx, lang, source, ts_compiled()?)),
+        Lang::Javascript => Ok(extract_with(JavaScript, lang, source, js_compiled()?)),
+        Lang::Python => Ok(extract_with(Python, lang, source, python_compiled()?)),
+        Lang::Go => Ok(extract_with(Go, lang, source, go_compiled()?)),
     }
 }
 
@@ -198,8 +198,7 @@ pub(crate) fn for_each_match<L, F>(
     source: &str,
     patterns: &[(&'static str, Pattern)],
     mut on_match: F,
-) -> Result<()>
-where
+) where
     L: LanguageExt + Clone,
     F: FnMut(&str, &NodeMatch<StrDoc<L>>),
 {
@@ -210,7 +209,6 @@ where
             on_match(tag, &matched);
         }
     }
-    Ok(())
 }
 
 fn extract_with<L: LanguageExt + Clone>(
@@ -218,7 +216,7 @@ fn extract_with<L: LanguageExt + Clone>(
     lang: Lang,
     source: &str,
     patterns: &[(&'static str, Pattern)],
-) -> Result<Vec<ExtractedSymbol>> {
+) -> Vec<ExtractedSymbol> {
     let mut out = Vec::new();
     for_each_match(language, source, patterns, |kind, m| {
         let Some(name_node) = m.get_env().get_match("NAME") else {
@@ -246,7 +244,7 @@ fn extract_with<L: LanguageExt + Clone>(
             line_end,
             chunks,
         });
-    })?;
+    });
     // Collapse symbols that share an identifier *and* a start line: they are
     // indistinguishable under the `code_symbols` UNIQUE(repo, path, symbol,
     // line_start) key, so a later duplicate insert would abort the whole
@@ -255,5 +253,9 @@ fn extract_with<L: LanguageExt + Clone>(
     // line. Keep the first occurrence and drop the rest.
     let mut seen = HashSet::new();
     out.retain(|s| seen.insert((s.name.clone(), s.line)));
-    Ok(out)
+    out
 }
+
+#[cfg(test)]
+#[path = "tests/extractor.rs"]
+mod tests;

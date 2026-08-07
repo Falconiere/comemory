@@ -282,3 +282,7 @@ fn co_change_weight(conn: &Connection, fid: &str, ws_files: &[String]) -> Result
     let w: i64 = stmt.query_row(params, |r| r.get(0))?;
     Ok(w.max(0) as f64)
 }
+
+#[cfg(test)]
+#[path = "tests/code_prior.rs"]
+mod tests;

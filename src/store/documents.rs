@@ -223,3 +223,7 @@ fn document_row_from_sql(r: &rusqlite::Row<'_>) -> rusqlite::Result<DocumentRow>
         updated_at: r.get(6)?,
     })
 }
+
+#[cfg(test)]
+#[path = "tests/documents.rs"]
+mod tests;

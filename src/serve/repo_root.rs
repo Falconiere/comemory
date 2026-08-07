@@ -68,3 +68,7 @@ pub fn id_to_abs_path(conn: &Connection, id: &str, overrides: &RootOverrides) ->
 pub fn rel_of(id: &str) -> Option<&str> {
     parse_id(id).map(|(_, rel)| rel)
 }
+
+#[cfg(test)]
+#[path = "tests/repo_root.rs"]
+mod tests;

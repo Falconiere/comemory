@@ -63,8 +63,11 @@ impl<'a> SaveParams<'a> {
 /// it lives at on disk, and the slug derived from the body.
 #[derive(Debug, Clone)]
 pub struct MemoryRecord {
+    /// Parsed YAML frontmatter block.
     pub frontmatter: Frontmatter,
+    /// Markdown body (frontmatter stripped).
     pub body: String,
+    /// Absolute path to the memory file on disk.
     pub path: PathBuf,
     /// Filename-safe slug derived from the body's first non-empty line.
     /// Cached on the record so callers (notably the SQLite mirror in
@@ -209,7 +212,10 @@ impl MemoryStore {
         for entry in fs::read_dir(self.paths.memories_dir())? {
             let entry = entry?;
             let name = entry.file_name().into_string().unwrap_or_default();
-            if !name.ends_with(".md") || name.starts_with('.') {
+            let is_md = std::path::Path::new(&name)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("md"));
+            if !is_md || name.starts_with('.') {
                 continue;
             }
             let raw = match fs::read_to_string(entry.path()) {
@@ -257,7 +263,10 @@ impl MemoryStore {
         for entry in fs::read_dir(self.paths.memories_dir())? {
             let entry = entry?;
             let name = entry.file_name().into_string().unwrap_or_default();
-            if name.starts_with(&prefix) && name.ends_with(".md") {
+            let is_md = std::path::Path::new(&name)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("md"));
+            if name.starts_with(&prefix) && is_md {
                 let path = entry.path();
                 self.id_to_path
                     .borrow_mut()
@@ -268,3 +277,7 @@ impl MemoryStore {
         Err(Error::NotFound(id.to_string()))
     }
 }
+
+#[cfg(test)]
+#[path = "tests/store.rs"]
+mod tests;

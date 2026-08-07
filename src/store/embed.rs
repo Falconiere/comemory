@@ -50,3 +50,7 @@ pub fn guard_dim(vector: &[f32], expected_dim: usize) -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "tests/embed.rs"]
+mod tests;

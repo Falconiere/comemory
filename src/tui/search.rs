@@ -60,3 +60,7 @@ pub fn apply_response(app: &mut App, resp: Response) {
         Err(msg) => app.status = msg,
     }
 }
+
+#[cfg(test)]
+#[path = "tests/search.rs"]
+mod tests;

@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! `comemory consolidate` through the real binary: the JSON envelope, the
 //! read-only invariant, flag validation, paging, and the empty corpus.
 

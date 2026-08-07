@@ -238,3 +238,7 @@ fn normalize_components(path: &Path) -> String {
         .collect::<Vec<_>>()
         .join("/")
 }
+
+#[cfg(test)]
+#[path = "tests/doc_link.rs"]
+mod tests;

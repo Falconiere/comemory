@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Task 12: `comemory ingest-code` reads pre-embedded JSONL rows on stdin
 //! and inserts them into `code_symbols` + `code_fts` + `code_vec`. The
 //! caller-supplied embedding's dim must match `schema_meta.code_vector_dim`

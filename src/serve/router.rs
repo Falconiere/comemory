@@ -112,3 +112,7 @@ fn token_from_request(req: &Request) -> Option<String> {
         .find_map(|c| c.trim().strip_prefix("comemory_token="))
         .map(str::to_string)
 }
+
+#[cfg(test)]
+#[path = "tests/router.rs"]
+mod tests;

@@ -297,7 +297,7 @@ fn build_code_row(
         .next()
         .filter(|s| !s.is_empty())
         .map(str::to_string);
-    let score = rank_parts.as_ref().map(|p| p.final_score).unwrap_or(0.0);
+    let score = rank_parts.as_ref().map_or(0.0, |p| p.final_score);
     CodeRow {
         id: r.id,
         repo: r.repo,
@@ -338,7 +338,7 @@ fn walk_context_edges(
           ORDER BY rel, src_kind, src_id, dst_kind, dst_id",
     )?;
     let rows = stmt
-        .query_map(rusqlite::params![start_id, max_depth as i64], |r| {
+        .query_map(rusqlite::params![start_id, i64::from(max_depth)], |r| {
             Ok(ContextEdge {
                 src_kind: r.get(0)?,
                 src_id: r.get(1)?,
@@ -350,3 +350,7 @@ fn walk_context_edges(
         .collect::<std::result::Result<Vec<_>, _>>()?;
     Ok(rows)
 }
+
+#[cfg(test)]
+#[path = "tests/bundle.rs"]
+mod tests;

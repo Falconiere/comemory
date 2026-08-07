@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! `comemory prune` operates against the v0.2 SQLite mirror
 //! (`comemory.db`). It reports orphan edges (memory→… edges whose
 //! source memory is missing or soft-deleted), stale code files (paths
@@ -67,7 +74,7 @@ fn prune_dry_run_reports_low_value_memory_without_deleting() {
     // Dry run must not touch the markdown source of truth.
     let trash = home.path().join(".comemory/memories/.trash");
     let trashed = std::fs::read_dir(&trash)
-        .map(|d| d.count())
+        .map(std::iter::Iterator::count)
         .unwrap_or_default();
     assert_eq!(trashed, 0, "default dry-run must not move files to .trash");
 }

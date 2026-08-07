@@ -47,3 +47,7 @@ fn find_with<L: LanguageExt + Clone>(
     }
     Ok(out)
 }
+
+#[cfg(test)]
+#[path = "tests/pattern.rs"]
+mod tests;

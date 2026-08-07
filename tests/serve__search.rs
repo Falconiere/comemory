@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! End-to-end coverage of `GET /api/search` against a real bound server over a
 //! real temp `index-code` index: a lexical query returns file hits whose
 //! `node_id`s intersect `GET /api/graph`'s node ids (`mode == "lexical"`), a

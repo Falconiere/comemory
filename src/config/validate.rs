@@ -303,3 +303,7 @@ impl Config {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "tests/validate.rs"]
+mod tests;

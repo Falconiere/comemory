@@ -1,3 +1,15 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
+// `criterion_group!` expands to an undocumented `pub fn benches()`; the macro
+// body is out of our control, so `missing_docs` is allowed for this whole
+// bench binary rather than the single generated item (attributes placed
+// directly on a function-like macro invocation are ignored by rustc).
+#![allow(missing_docs)]
 //! Retrieval hot-path benches: the full memory pipeline (`pipeline::search`)
 //! and the code route (`route_code` -> `rerank_code`), swept over corpus
 //! sizes 100 / 1 000 / 10 000. The corpus is built once per size outside the

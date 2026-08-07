@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! End-to-end coverage of `comemory serve` against a real bound server: the
 //! `--json` startup banner, token enforcement (401), path-traversal rejection
 //! (403), and a full `GET`→`PUT`→`GET` edit round trip with stale-`If-Match`

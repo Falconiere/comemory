@@ -1,9 +1,19 @@
 //! comemory — agentic dev memory + code-aware semantic search.
 
+/// Crate-internal prelude: the `Error`/`Result` alias and common imports.
 pub mod prelude;
 
+// DEVIATION D10: lets colocated unit tests under `src/**/tests/` and the shared
+// fixtures in `tests/common/` name this crate as `comemory::...` exactly as the
+// crate-root integration tests do, so a test file reads the same wherever it
+// lives. Zero cost — a self-alias, not a dependency.
+extern crate self as comemory;
+
+/// Shared test fixtures (`tests/common/`), reachable from colocated unit tests.
+#[cfg(test)]
+mod test_common;
+
 /// `thiserror` error enum and the crate-wide `Result` alias.
-#[path = "errors.rs"]
 pub mod errors;
 
 /// Layered configuration (defaults → file → env) and the data-dir layout.

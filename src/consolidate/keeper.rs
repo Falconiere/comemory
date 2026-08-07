@@ -136,7 +136,7 @@ fn in_cluster_superseders(conn: &Connection, ids: &[String]) -> Result<HashMap<S
             out.entry(dst)
                 .and_modify(|cur| {
                     if src < cur {
-                        *cur = src.clone();
+                        cur.clone_from(src);
                     }
                 })
                 .or_insert_with(|| src.clone());
@@ -144,3 +144,7 @@ fn in_cluster_superseders(conn: &Connection, ids: &[String]) -> Result<HashMap<S
     }
     Ok(out)
 }
+
+#[cfg(test)]
+#[path = "tests/keeper.rs"]
+mod tests;

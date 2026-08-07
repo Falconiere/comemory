@@ -102,3 +102,7 @@ fn sniff_delimiter(text: &str) -> u8 {
     let tabs = first_line.matches('\t').count();
     if tabs > commas { b'\t' } else { b',' }
 }
+
+#[cfg(test)]
+#[path = "tests/delimited.rs"]
+mod tests;

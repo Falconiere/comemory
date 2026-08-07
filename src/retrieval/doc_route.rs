@@ -167,3 +167,7 @@ fn build_hit(
         bm25_rank,
     }))
 }
+
+#[cfg(test)]
+#[path = "tests/doc_route.rs"]
+mod tests;

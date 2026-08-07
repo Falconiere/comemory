@@ -92,8 +92,8 @@ fn insert_memories_row(
             fm.kind.as_str(),
             repo_opt,
             author_opt,
-            fm.quality as i64,
-            fm.schema as i64,
+            i64::from(fm.quality),
+            i64::from(fm.schema),
             &fm.content_hash,
             body,
             created_iso,
@@ -117,7 +117,7 @@ fn insert_tags<'a>(conn: &Connection, memory_id: &str, tags: &'a [String]) -> Re
     let mut seen = std::collections::HashSet::new();
     let unique_tags: Vec<&str> = tags
         .iter()
-        .map(|t| t.as_str())
+        .map(std::string::String::as_str)
         .filter(|t| !t.is_empty() && seen.insert(*t))
         .collect();
     for tag in &unique_tags {
@@ -266,3 +266,7 @@ pub fn iso_format(t: OffsetDateTime) -> Result<String> {
     t.format(&Iso8601::DEFAULT)
         .map_err(|e| Error::Other(format!("iso8601 format: {e}")))
 }
+
+#[cfg(test)]
+#[path = "tests/memory_row.rs"]
+mod tests;

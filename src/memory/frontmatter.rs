@@ -16,11 +16,17 @@ use crate::prelude::*;
 #[serde(rename_all = "lowercase")]
 #[clap(rename_all = "lowercase")]
 pub enum Kind {
+    /// A choice made and its rationale.
     Decision,
+    /// A defect and how it was diagnosed or fixed.
     Bug,
+    /// A team or codebase convention to follow going forward.
     Convention,
+    /// An observation worth remembering that isn't a decision or bug.
     Discovery,
+    /// A reusable approach or idiom.
     Pattern,
+    /// A catch-all memory kind not covered by the others.
     Note,
 }
 
@@ -57,8 +63,10 @@ impl Kind {
 /// External symbol / file references attached to a memory.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct References {
+    /// Qualified symbol ids (`<repo>:<path>:<name>`) the memory mentions.
     #[serde(default)]
     pub symbols: Vec<Ref>,
+    /// Qualified file paths (`<repo>:<path>`) the memory mentions.
     #[serde(default)]
     pub files: Vec<Ref>,
 }
@@ -66,10 +74,13 @@ pub struct References {
 /// Cross-memory relationships used by the property graph.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Relations {
+    /// Memory ids this one replaces.
     #[serde(default)]
     pub supersedes: Vec<String>,
+    /// Memory ids this one contradicts.
     #[serde(default)]
     pub conflicts_with: Vec<String>,
+    /// Memory ids this one builds on.
     #[serde(default)]
     pub derived_from: Vec<String>,
 }
@@ -77,19 +88,31 @@ pub struct Relations {
 /// YAML frontmatter block at the top of every memory file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Frontmatter {
+    /// 8-hex prefix of `SHA-256(body.trim_end())`.
     pub id: String,
+    /// Memory taxonomy (`decision`/`bug`/`convention`/`discovery`/`pattern`/`note`).
     pub kind: Kind,
+    /// Single repo string this memory belongs to (not a list).
     pub repo: String,
+    /// Free-form tags used by BM25 tag-column search and filtering.
     #[serde(default)]
     pub tags: Vec<String>,
+    /// The memory's author, defaulted from git config when unset.
     pub author: String,
+    /// Creation timestamp, serialized as ISO-8601.
     #[serde(with = "iso8601_serde")]
     pub created: OffsetDateTime,
+    /// Author-assigned quality rating, `1..=5` (default `3`).
     pub quality: u8,
+    /// Frontmatter schema version (`1` today).
     pub schema: u32,
+    /// 64-hex `SHA-256` of `body.trim_end()`, used for id derivation and
+    /// change detection.
     pub content_hash: String,
+    /// Symbol/file references extracted from the body.
     #[serde(default)]
     pub references: References,
+    /// Cross-memory relationships (`supersedes`/`conflicts_with`/`derived_from`).
     #[serde(default)]
     pub relations: Relations,
 }
@@ -122,15 +145,16 @@ impl Frontmatter {
     /// Render frontmatter + body as a complete markdown file.
     pub fn render(&self, body: &str) -> Result<String> {
         let yaml = self.to_yaml()?;
-        Ok(format!("---\n{}---\n{}", yaml, body))
+        Ok(format!("---\n{yaml}---\n{body}"))
     }
 }
 
 mod iso8601_serde {
-    use super::*;
+    use super::{Iso8601, OffsetDateTime};
     use serde::Deserializer;
     use serde::Serializer;
 
+    /// Serialize an `OffsetDateTime` as an ISO-8601 string.
     pub fn serialize<S: Serializer>(
         t: &OffsetDateTime,
         s: S,
@@ -141,6 +165,7 @@ mod iso8601_serde {
         s.serialize_str(&formatted)
     }
 
+    /// Parse an ISO-8601 string into an `OffsetDateTime`.
     pub fn deserialize<'de, D: Deserializer<'de>>(
         d: D,
     ) -> std::result::Result<OffsetDateTime, D::Error> {
@@ -148,3 +173,7 @@ mod iso8601_serde {
         OffsetDateTime::parse(&s, &Iso8601::DEFAULT).map_err(serde::de::Error::custom)
     }
 }
+
+#[cfg(test)]
+#[path = "tests/frontmatter.rs"]
+mod tests;

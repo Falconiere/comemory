@@ -16,6 +16,6 @@ pub fn commit_files(repo: &Path, files: &[(&str, &str)], msg: &str) {
         }
         std::fs::write(&full, content).expect("write file");
     }
-    crate::git_repo::run_git(repo, &["add", "-A"]);
-    crate::git_repo::run_git(repo, &["commit", "-q", "-m", msg]);
+    super::git_repo::run_git(repo, &["add", "-A"]);
+    super::git_repo::run_git(repo, &["commit", "-q", "-m", msg]);
 }

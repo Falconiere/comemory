@@ -41,3 +41,7 @@ pub fn search_code_hits(
     };
     code_rerank::rerank_code(conn, cfg, &candidates, &ws)
 }
+
+#[cfg(test)]
+#[path = "tests/code_search.rs"]
+mod tests;

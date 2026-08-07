@@ -25,3 +25,7 @@ pub fn refresh_derived_best_effort(conn: &mut Connection) {
         tracing::warn!(error = %e, "edge_fts: refresh failed; triplet index left stale");
     }
 }
+
+#[cfg(test)]
+#[path = "tests/derived.rs"]
+mod tests;

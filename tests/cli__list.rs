@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! `comemory list` integration tests against the real binary: the `--json`
 //! output is now the shared `Page` envelope (not a bare array), `--limit` /
 //! `--offset` page correctly with exact `total` / `has_more`, `--repo` /

@@ -228,3 +228,7 @@ fn part_ranges(run: &str) -> Vec<(usize, usize)> {
     }
     ranges
 }
+
+#[cfg(test)]
+#[path = "tests/split.rs"]
+mod tests;

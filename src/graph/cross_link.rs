@@ -6,7 +6,6 @@
 //! deduplication so a body that mentions the same file twice produces a single
 //! edge.
 
-use once_cell::sync::Lazy;
 use regex::Regex;
 use rusqlite::Connection;
 
@@ -29,7 +28,7 @@ pub struct Refs {
 /// `Regex::new` cannot fail in practice; `.ok()` keeps the type panic-free
 /// (no `expect` / `unwrap` calls) and [`extract_refs`] treats an (impossible)
 /// `None` as "no references".
-static REF_RE: Lazy<Option<Regex>> = Lazy::new(|| {
+static REF_RE: std::sync::LazyLock<Option<Regex>> = std::sync::LazyLock::new(|| {
     Regex::new(r"\b([a-z0-9_-]+):([A-Za-z0-9_./\-]+\.[a-zA-Z]+)(?::([A-Za-z_][A-Za-z0-9_]*))?\b")
         .ok()
 });
@@ -70,9 +69,8 @@ pub fn extract_refs(body: &str) -> Refs {
         // a URL, not a comemory ref.
         let prefix_start = bytes[..start]
             .iter()
-            .rposition(|b| b.is_ascii_whitespace())
-            .map(|i| i + 1)
-            .unwrap_or(0);
+            .rposition(u8::is_ascii_whitespace)
+            .map_or(0, |i| i + 1);
         let prefix = &bytes[prefix_start..start];
         if prefix.windows(3).any(|w| w == b"://") || prefix.contains(&b'@') {
             continue;
@@ -125,3 +123,7 @@ pub fn extract_and_emit(conn: &Connection, memory_id: &str, body: &str) -> Resul
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "tests/cross_link.rs"]
+mod tests;

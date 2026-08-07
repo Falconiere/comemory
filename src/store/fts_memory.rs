@@ -182,3 +182,7 @@ fn run_memory_match(
         },
     )
 }
+
+#[cfg(test)]
+#[path = "tests/fts_memory.rs"]
+mod tests;

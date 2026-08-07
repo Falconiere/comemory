@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Integration tests for `comemory gc`: the `.trash/` sweep plus learning
 //! telemetry retention. Old `retrieval_log` / `feedback_events` rows are
 //! evicted past `prune.learning_retention_days`; aggregated `feedback`
@@ -131,7 +138,7 @@ fn gc_sweeps_old_trash_and_keeps_fresh_trash() {
         .write(true)
         .open(&old)
         .expect("reopen old trash entry");
-    f.set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(31 * 86_400))
+    f.set_modified(std::time::SystemTime::now() - std::time::Duration::from_hours(744))
         .expect("backdate mtime");
 
     let assert = bin(&home).args(["--json", "gc"]).assert().success();

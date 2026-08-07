@@ -55,3 +55,7 @@ pub fn mime_for(path: &str) -> &'static str {
         _ => "application/octet-stream",
     }
 }
+
+#[cfg(test)]
+#[path = "tests/assets.rs"]
+mod tests;

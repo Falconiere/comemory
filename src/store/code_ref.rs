@@ -130,3 +130,7 @@ pub fn for_memory(conn: &Connection, memory_id: &str) -> Result<Vec<CodeRefRow>>
     }
     Ok(out)
 }
+
+#[cfg(test)]
+#[path = "tests/code_ref.rs"]
+mod tests;

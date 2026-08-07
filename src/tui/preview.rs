@@ -37,3 +37,7 @@ fn code_preview(app: &App) -> String {
         None => String::new(),
     }
 }
+
+#[cfg(test)]
+#[path = "tests/preview.rs"]
+mod tests;

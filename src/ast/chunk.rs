@@ -223,3 +223,7 @@ fn make_chunk(lines: &[&str], s: usize, e: usize, single_node: bool) -> Chunk {
         single_node,
     }
 }
+
+#[cfg(test)]
+#[path = "tests/chunk.rs"]
+mod tests;

@@ -321,3 +321,7 @@ fn file_row_from_sql(r: &rusqlite::Row<'_>) -> rusqlite::Result<SourceFileRow> {
         updated_at: r.get(10)?,
     })
 }
+
+#[cfg(test)]
+#[path = "tests/sources.rs"]
+mod tests;

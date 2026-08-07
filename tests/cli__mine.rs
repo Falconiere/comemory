@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Integration tests for `comemory mine`: a real failed → reworded search
 //! pair with used feedback drives mining through the real binary, and
 //! `--apply` rebuilds `query_expansions` in the on-disk db.

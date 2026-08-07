@@ -311,10 +311,10 @@ fn write_chunks(
 /// `document_fts` rows are removed and its own row flips to `deleted`
 /// (spec step 5). A row already `deleted` is left alone — idempotent.
 /// Returns the number of rows newly tombstoned.
-pub fn reconcile_deletions(
+pub fn reconcile_deletions<S: ::std::hash::BuildHasher>(
     conn: &mut Connection,
     source_id: &str,
-    seen: &HashSet<String>,
+    seen: &HashSet<String, S>,
 ) -> Result<usize> {
     let mut removed = 0usize;
     for row in sources::list_files_by_source(conn, source_id)? {
@@ -362,3 +362,7 @@ fn file_stem_of(relative_path: &str) -> String {
 pub(super) fn iso_now() -> Result<String> {
     iso_format(OffsetDateTime::now_utc())
 }
+
+#[cfg(test)]
+#[path = "tests/writer.rs"]
+mod tests;

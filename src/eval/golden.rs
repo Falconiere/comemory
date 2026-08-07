@@ -138,3 +138,7 @@ pub fn resolve(
     }
     Ok(pairs)
 }
+
+#[cfg(test)]
+#[path = "tests/golden.rs"]
+mod tests;

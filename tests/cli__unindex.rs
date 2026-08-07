@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Test mirror for `src/cli/unindex.rs`.
 
 #[path = "common/docs_fixtures.rs"]

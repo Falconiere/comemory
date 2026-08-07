@@ -133,3 +133,7 @@ fn file_ref(dst_id: &str, pinned_blob: Option<String>) -> RawRef {
         pinned_blob,
     }
 }
+
+#[cfg(test)]
+#[path = "tests/code_ref_collect.rs"]
+mod tests;

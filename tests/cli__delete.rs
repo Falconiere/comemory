@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Integration tests for `comemory delete`.
 //!
 //! Verifies that a soft-deleted memory is excluded from `search`, `list`,
@@ -85,8 +92,7 @@ fn delete_redistributes_memory_rank_to_survivors() {
     let hub_rank = rank_score(&data_dir, &hub);
     assert!(
         hub_rank > before[0],
-        "the hub holding both inlinks must lead: {hub_rank} vs {:?}",
-        before
+        "the hub holding both inlinks must lead: {hub_rank} vs {before:?}"
     );
 
     bin(&home).args(["delete", &hub]).assert().success();

@@ -151,3 +151,7 @@ fn score_pair(cfg: &Config, conn: &Connection, pair: &GoldenPair, k: usize) -> R
         recall,
     })
 }
+
+#[cfg(test)]
+#[path = "tests/runner.rs"]
+mod tests;

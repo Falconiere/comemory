@@ -146,3 +146,7 @@ fn hex_of(bytes: &[u8]) -> String {
     }
     hex
 }
+
+#[cfg(test)]
+#[path = "tests/fingerprint.rs"]
+mod tests;

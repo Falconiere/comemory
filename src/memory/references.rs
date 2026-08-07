@@ -116,3 +116,7 @@ impl<'de> Visitor<'de> for RefVisitor {
         Ok(r)
     }
 }
+
+#[cfg(test)]
+#[path = "tests/references.rs"]
+mod tests;

@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Task 12: `comemory index-code` now walks a real git repo and uses each
 //! file's blob OID as the indexing cursor.
 //!

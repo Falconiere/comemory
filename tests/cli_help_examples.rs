@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Asserts that every `comemory <subcommand> --help` ends with an
 //! `Examples:` block containing at least one `comemory` invocation.
 

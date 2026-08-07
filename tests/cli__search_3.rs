@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! `--only` / `--path` domain-scope tests for `comemory search` — split
 //! from `cli__search.rs`/`cli__search_2.rs` (same precedent: a cohesive
 //! flag family gets its own mirror file). Real fixtures throughout: the

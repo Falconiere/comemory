@@ -66,3 +66,7 @@ fn write_list(out: &mut impl std::io::Write, label: &str, page: &Page<String>) -
     }
     tty::write_page_footer(out, page.items.len(), page.offset, page.total)
 }
+
+#[cfg(test)]
+#[path = "tests/prune.rs"]
+mod tests;

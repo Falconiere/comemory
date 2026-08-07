@@ -53,3 +53,7 @@ fn compile_patterns<L: LanguageExt + Clone>(
         })
         .collect()
 }
+
+#[cfg(test)]
+#[path = "tests/pattern_cache.rs"]
+mod tests;

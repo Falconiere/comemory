@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Integration tests for `comemory` memory-only subcommands.
 //!
 //! Each test isolates state by pointing `COMEMORY_DATA_DIR` at a fresh
@@ -100,7 +107,9 @@ fn save_json_emits_id_and_path() {
     let path = v["path"].as_str().expect("path field is a string");
     assert_eq!(id.len(), 8, "id should be 8 hex chars");
     assert!(
-        path.ends_with(".md"),
+        std::path::Path::new(path)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("md")),
         "path should point at a .md file: {path}"
     );
 }
@@ -221,7 +230,7 @@ fn save_rejects_out_of_range_quality() {
         .failure();
     let stderr = String::from_utf8(assertion.get_output().stderr.clone()).expect("utf8 stderr");
     assert!(
-        stderr.contains("5"),
+        stderr.contains('5'),
         "stderr should mention upper bound 5, got: {stderr:?}"
     );
     let code = assertion.get_output().status.code().expect("exit code");
@@ -323,7 +332,7 @@ fn ast_finds_rust_function_pattern() {
 /// embedder models, so the test is `#[ignore]`d by default. Run explicitly
 /// with `cargo test -- --ignored index_code_and_context_run`.
 #[test]
-#[ignore]
+#[ignore = "downloads ~430 MB of embedder models on first run"]
 fn index_code_and_context_run() {
     let home = TempDir::new().expect("tempdir");
     let repo_dir = home.path().join("myrepo");

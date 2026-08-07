@@ -113,3 +113,7 @@ fn paragraph_boundaries(text: &str) -> Vec<usize> {
 fn newline_count(chars: &[char], upto: usize) -> usize {
     chars[..upto].iter().filter(|&&c| c == '\n').count()
 }
+
+#[cfg(test)]
+#[path = "tests/chunk.rs"]
+mod tests;

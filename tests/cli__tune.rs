@@ -1,6 +1,15 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Integration tests for `comemory tune`: a real corpus saved through the
 //! binary, grid-search determinism, the min-golden floor (and its env
 //! hook), and the opt-in `--apply` write.
+
+use std::fmt::Write as _;
 
 use assert_cmd::Command;
 use serde_json::Value;
@@ -43,7 +52,7 @@ fn corpus_with_golden(home: &TempDir, n: usize) -> std::path::PathBuf {
     for topic in &TOPICS[..n] {
         let save = run_json(home, &["save", topic, "--kind", "note"]);
         let id = save["id"].as_str().expect("save id").to_string();
-        yaml.push_str(&format!("- query: {topic}\n  relevant: [{id}]\n"));
+        let _ = writeln!(yaml, "- query: {topic}\n  relevant: [{id}]");
     }
     let golden = home.path().join("golden.yaml");
     std::fs::write(&golden, yaml).expect("write golden file");

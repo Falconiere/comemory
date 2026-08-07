@@ -238,3 +238,19 @@ fn set_version(conn: &Connection, version: &str) -> Result<()> {
     )?;
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "tests/migrate.rs"]
+mod tests;
+
+#[cfg(test)]
+#[path = "tests/migrate_2.rs"]
+mod tests_2;
+
+#[cfg(test)]
+#[path = "tests/migrate_v4.rs"]
+mod tests_v4;
+
+#[cfg(test)]
+#[path = "tests/migrate_v8.rs"]
+mod tests_v8;

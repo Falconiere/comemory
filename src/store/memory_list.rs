@@ -76,7 +76,7 @@ pub fn list_memories(
         let count_sql = format!("SELECT count(*) FROM memories WHERE deleted_at IS NULL{filters}");
         let mut stmt = conn.prepare(&count_sql)?;
         let n: i64 = stmt.query_row(
-            rusqlite::params_from_iter(binds.iter().map(|b| b.as_ref())),
+            rusqlite::params_from_iter(binds.iter().map(std::convert::AsRef::as_ref)),
             |r| r.get(0),
         )?;
         usize::try_from(n).unwrap_or(0)
@@ -100,7 +100,7 @@ pub fn list_memories(
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt
         .query_map(
-            rusqlite::params_from_iter(binds.iter().map(|b| b.as_ref())),
+            rusqlite::params_from_iter(binds.iter().map(std::convert::AsRef::as_ref)),
             |r| {
                 let id: String = r.get(0)?;
                 let kind: String = r.get(1)?;
@@ -129,3 +129,7 @@ fn file_stem(md_path: &str) -> String {
         _ => name.to_string(),
     }
 }
+
+#[cfg(test)]
+#[path = "tests/memory_list.rs"]
+mod tests;

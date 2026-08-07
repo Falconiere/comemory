@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Mirror tests for `src/output/search_code.rs`. Pins the `comemory
 //! search-code --json` envelope contract (`lines` is a 2-element
 //! `[start, end]` array; `score_parts` is the stable explainability

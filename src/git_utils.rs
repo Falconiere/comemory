@@ -91,20 +91,17 @@ pub fn current_head(repo_root: &Path) -> Result<String> {
 /// no repo, unborn HEAD, path absent from the HEAD tree (untracked), or the
 /// entry is a directory. Other git2 failures (corrupt store, I/O) propagate.
 pub fn blob_oid_at_head(repo_root: &Path, rel_path: &str) -> Result<Option<String>> {
-    let repo = match Repository::discover(repo_root) {
-        Ok(repo) => repo,
-        Err(_) => return Ok(None),
+    let Ok(repo) = Repository::discover(repo_root) else {
+        return Ok(None);
     };
-    let head = match repo.head() {
-        Ok(head) => head,
-        // Unborn HEAD (no commits yet) surfaces as an error from `head()`.
-        Err(_) => return Ok(None),
+    // Unborn HEAD (no commits yet) surfaces as an error from `head()`.
+    let Ok(head) = repo.head() else {
+        return Ok(None);
     };
     let tree = head.peel_to_tree().map_err(map_git_err)?;
-    let entry = match tree.get_path(Path::new(rel_path)) {
-        Ok(entry) => entry,
-        // `GIT_ENOTFOUND`: the path is not in the HEAD tree.
-        Err(_) => return Ok(None),
+    // `GIT_ENOTFOUND`: the path is not in the HEAD tree.
+    let Ok(entry) = tree.get_path(Path::new(rel_path)) else {
+        return Ok(None);
     };
     if entry.kind() != Some(git2::ObjectType::Blob) {
         return Ok(None);
@@ -120,17 +117,16 @@ pub fn blob_oid_at_head(repo_root: &Path, rel_path: &str) -> Result<Option<Strin
 /// * No git repo is found by walking up from `repo_root`.
 pub fn current_branch(repo_root: &Path) -> Result<Option<String>> {
     let repo = Repository::discover(repo_root).map_err(map_git_err)?;
-    let head = match repo.head() {
-        Ok(head) => head,
-        // Unborn HEAD has no resolvable branch yet.
-        Err(_) => return Ok(None),
+    // Unborn HEAD has no resolvable branch yet.
+    let Ok(head) = repo.head() else {
+        return Ok(None);
     };
     if !head.is_branch() {
         return Ok(None);
     }
     // git2 0.21: `shorthand()` returns `Result` (errors only on invalid
     // UTF-8); treat that the same as the prior `None` case.
-    Ok(head.shorthand().ok().map(|s| s.to_string()))
+    Ok(head.shorthand().ok().map(std::string::ToString::to_string))
 }
 
 /// Return the set of paths whose new-side tree entry changed between two
@@ -180,3 +176,7 @@ pub fn install_hook(repo_root: &Path, hook: &str, body: &str) -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "tests/git_utils.rs"]
+mod tests;

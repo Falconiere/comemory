@@ -39,10 +39,16 @@ pub struct FileView {
 #[derive(Debug)]
 pub enum WriteOutcome {
     /// The file was written; carries the new blob OID.
-    Written { blob_oid: String },
+    Written {
+        /// The new git blob OID after the write.
+        blob_oid: String,
+    },
     /// The on-disk bytes no longer match the client's `If-Match`; carries the
     /// current blob OID so the client can reload before retrying.
-    Conflict { current_oid: String },
+    Conflict {
+        /// The blob OID currently on disk.
+        current_oid: String,
+    },
 }
 
 /// git blob OID of `bytes` — the hash git would store, computed without
@@ -64,9 +70,7 @@ pub fn read_file(abs: &Path, display: &str) -> Result<FileView> {
     let bytes = std::fs::read(abs).map_err(Error::Io)?;
     let contents = String::from_utf8(bytes)
         .map_err(|_| Error::BadRequest("file is not valid UTF-8 text".into()))?;
-    let lang = languages::detect(abs)
-        .map(|l| l.as_str().to_string())
-        .unwrap_or_else(|| "text".into());
+    let lang = languages::detect(abs).map_or_else(|| "text".into(), |l| l.as_str().to_string());
     let blob_oid = blob_oid_of(contents.as_bytes())?;
     Ok(FileView {
         path: display.to_string(),
@@ -133,3 +137,7 @@ pub fn write_file(abs: &Path, contents: &str, if_match: Option<&str>) -> Result<
         blob_oid: blob_oid_of(contents.as_bytes())?,
     })
 }
+
+#[cfg(test)]
+#[path = "tests/fileio.rs"]
+mod tests;

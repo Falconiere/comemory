@@ -115,3 +115,7 @@ fn mmr(items: Vec<Reranked>, lambda: f64, top_k: usize) -> Vec<Reranked> {
         .filter_map(|i| slots[i].take())
         .collect()
 }
+
+#[cfg(test)]
+#[path = "tests/diversify.rs"]
+mod tests;

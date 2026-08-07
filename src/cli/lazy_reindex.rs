@@ -260,8 +260,7 @@ fn trigger_key(repo: &str) -> String {
 fn now_millis() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0)
+        .map_or(0, |d| d.as_millis())
 }
 
 /// Spawn a DETACHED `comemory index-code --repo <repo> --path <root>

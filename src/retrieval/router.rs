@@ -420,3 +420,11 @@ fn lex_to_ranked(h: fts::MemoryFtsHit) -> RankedHit {
         score: -h.score,
     }
 }
+
+#[cfg(test)]
+#[path = "tests/router.rs"]
+mod tests;
+
+#[cfg(test)]
+#[path = "tests/router_2.rs"]
+mod tests_2;

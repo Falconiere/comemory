@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
 //! Test mirror for `src/cli/index.rs`, driven against the real binary
 //! with `assert_cmd`. Real fixture files (never mocks) are copied into a
 //! disposable temp source root per `common::docs_fixtures::seed`.

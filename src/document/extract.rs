@@ -3,7 +3,6 @@
 //! detection — skipped inside fenced code blocks — building the
 //! heading-path breadcrumb, then delegation to [`chunk::split`].
 
-use once_cell::sync::Lazy;
 use regex::Regex;
 
 use super::{Block, DocumentFormat, ExtractedDocument, chunk, delimited, html};
@@ -30,8 +29,8 @@ pub fn extract(
 /// with the leading `!` captured so [`extract_markdown_links`] can
 /// recognize (and skip) image syntax. `.ok()` keeps the type panic-free,
 /// matching `graph::cross_link::REF_RE`.
-static MD_LINK_RE: Lazy<Option<Regex>> =
-    Lazy::new(|| Regex::new(r#"(!)?\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)"#).ok());
+static MD_LINK_RE: std::sync::LazyLock<Option<Regex>> =
+    std::sync::LazyLock::new(|| Regex::new(r#"(!)?\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)"#).ok());
 
 /// Scan `text` for inline Markdown links and return every non-image
 /// target, first-mention order, deduplicated. `#fragment` suffixes are
@@ -223,3 +222,7 @@ fn parse_atx_heading(line: &str) -> Option<(usize, String)> {
         Some((hashes, text))
     }
 }
+
+#[cfg(test)]
+#[path = "tests/extract.rs"]
+mod tests;

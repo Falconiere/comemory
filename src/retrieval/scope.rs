@@ -180,3 +180,7 @@ impl Default for Domains {
         Domains::all()
     }
 }
+
+#[cfg(test)]
+#[path = "tests/scope.rs"]
+mod tests;

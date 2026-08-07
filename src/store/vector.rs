@@ -18,7 +18,9 @@ use crate::store::embed;
 
 /// Result row from a KNN query.
 pub struct MemoryHit {
+    /// The matched memory's id.
     pub memory_id: String,
+    /// Cosine distance to the query vector (lower is closer).
     pub distance: f32,
 }
 
@@ -130,7 +132,9 @@ pub fn knn_memory(
 
 /// Result row from a code KNN query.
 pub struct CodeHit {
+    /// The matched `code_symbols` rowid.
     pub symbol_id: i64,
+    /// Cosine distance to the query vector (lower is closer).
     pub distance: f32,
 }
 
@@ -183,3 +187,7 @@ pub fn knn_code(
         .collect::<std::result::Result<Vec<_>, _>>()?;
     Ok(rows)
 }
+
+#[cfg(test)]
+#[path = "tests/vector.rs"]
+mod tests;

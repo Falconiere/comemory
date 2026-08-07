@@ -7,6 +7,7 @@
 //! `crate::cli::graph` and consumed here; keeping the structs in `output`
 //! lets the integration tests render without a database.
 
+use std::fmt::Write as _;
 use std::io::Write as _;
 
 use serde::Serialize;
@@ -139,11 +140,12 @@ pub fn to_dot(g: &CodeGraph) -> String {
             0.0
         };
         let width = 0.6 + scale * 2.0;
-        s.push_str(&format!(
-            "  \"{}\" [label=\"{}\", width={width:.2}];\n",
+        let _ = writeln!(
+            s,
+            "  \"{}\" [label=\"{}\", width={width:.2}];",
             dot_escape(&n.id),
             dot_escape(&n.label),
-        ));
+        );
     }
     for e in &g.edges {
         let (color, style, dir) = match e.rel.as_str() {
@@ -152,12 +154,13 @@ pub fn to_dot(g: &CodeGraph) -> String {
             // Defensive default; `rels_of` only ever emits the two arms above.
             _ => ("#888888", "solid", "forward"),
         };
-        s.push_str(&format!(
-            "  \"{}\" -> \"{}\" [color=\"{color}\", style={style}, dir={dir}, label=\"{}\"];\n",
+        let _ = writeln!(
+            s,
+            "  \"{}\" -> \"{}\" [color=\"{color}\", style={style}, dir={dir}, label=\"{}\"];",
             dot_escape(&e.src),
             dot_escape(&e.dst),
             e.weight,
-        ));
+        );
     }
     s.push_str("}\n");
     s
@@ -187,3 +190,7 @@ fn dot_escape(s: &str) -> String {
         .replace('\n', "\\n")
         .replace('\r', "\\r")
 }
+
+#[cfg(test)]
+#[path = "tests/graph.rs"]
+mod tests;

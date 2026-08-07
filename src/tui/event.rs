@@ -16,7 +16,6 @@ use crate::tui::app::Action;
 pub fn map_key(key: KeyEvent) -> Action {
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
     match (key.code, ctrl) {
-        (KeyCode::Char('c'), true) => Action::Quit,
         (KeyCode::Char('s'), true) => Action::Semantic,
         (KeyCode::Char('y'), true) => Action::CopyId,
         (KeyCode::Char('u'), true) => Action::ClearQuery,
@@ -28,7 +27,11 @@ pub fn map_key(key: KeyEvent) -> Action {
         (KeyCode::PageUp, _) => Action::PagePrev,
         (KeyCode::Tab, _) => Action::SwitchTab,
         (KeyCode::Enter, _) => Action::Accept,
-        (KeyCode::Esc, _) => Action::Quit,
+        (KeyCode::Char('c'), true) | (KeyCode::Esc, _) => Action::Quit,
         _ => Action::Noop,
     }
 }
+
+#[cfg(test)]
+#[path = "tests/event.rs"]
+mod tests;

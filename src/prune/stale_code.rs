@@ -103,3 +103,7 @@ fn symbol_resolves(conn: &Connection, repo: &str, path: &str, symbol: &str) -> R
     )?;
     Ok(n > 0)
 }
+
+#[cfg(test)]
+#[path = "tests/stale_code.rs"]
+mod tests;

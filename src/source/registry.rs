@@ -168,3 +168,7 @@ fn validate_no_overlap(entries: &[SourceEntry], candidate: &Path) -> Result<()> 
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "tests/registry.rs"]
+mod tests;

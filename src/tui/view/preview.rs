@@ -15,3 +15,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
         .wrap(Wrap { trim: false });
     frame.render_widget(para, area);
 }
+
+#[cfg(test)]
+#[path = "tests/preview.rs"]
+mod tests;
