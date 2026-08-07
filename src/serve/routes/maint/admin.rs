@@ -89,8 +89,9 @@ async fn hooks_install(State(state): State<AppState>, Json(body): Json<Value>) -
     };
     let result = run_blocking(move || {
         let _permit = permit;
-        let (req, confirmed) = split_confirm::<api::install_hooks::Request>(body)?;
-        contain_repo(&state, &req.repo)?;
+        let (mut req, confirmed) = split_confirm::<api::install_hooks::Request>(body)?;
+        let canonical = contain_repo(&state, &req.repo)?;
+        req.repo = canonical.to_string_lossy().into_owned();
         require_confirm(confirmed)?;
         let cfg = state.cfg();
         let mut ctx = Ctx::lazy(state.paths(), &cfg);

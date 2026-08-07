@@ -172,6 +172,53 @@ fn v1_hooks_install_confirmed_inside_an_allow_path_root_installs_hooks() {
     }
 }
 
+/// TOCTOU regression: `req.repo` is overwritten with the SAME canonicalized
+/// path `contain_abs` just verified, before `api::install_hooks::run` sees
+/// it — not re-resolved from the raw (symlink) string. `Response.repo`
+/// echoes `req.repo` verbatim (no internal re-canonicalization in
+/// `api::install_hooks::run`), so it directly discriminates: had the
+/// handler passed the raw symlink path through, `data.repo` would equal the
+/// symlink path, not its resolved target.
+#[test]
+fn v1_hooks_install_through_a_symlink_operates_on_the_resolved_target() {
+    let home = TempDir::new().expect("home");
+    let allowed = TempDir::new().expect("allowed dir");
+    let real_repo = allowed.path().join("real-repo");
+    std::fs::create_dir_all(real_repo.join(".git")).expect("fake .git dir");
+    let link = allowed.path().join("link-to-repo");
+    std::os::unix::fs::symlink(&real_repo, &link).expect("create symlink");
+    let canonical_real_repo = real_repo.canonicalize().expect("canonicalize real repo");
+    let (base, token, _guard) = spawn_serve(
+        &home,
+        &["--allow-path", allowed.path().to_str().expect("utf8 path")],
+    );
+    let client = reqwest::blocking::Client::new();
+
+    let res = client
+        .post(format!("{base}/api/v1/hooks/install"))
+        .header("X-Comemory-Token", &token)
+        .json(&serde_json::json!({
+            "repo": link.to_str().expect("utf8 path"),
+            "confirm": true,
+        }))
+        .send()
+        .expect("v1 hooks/install via symlink");
+    assert_eq!(res.status().as_u16(), 200);
+    let body: serde_json::Value = res.json().expect("json");
+    assert_eq!(
+        body["data"]["repo"],
+        serde_json::json!(canonical_real_repo.to_str().expect("utf8 path")),
+        "the resolved (canonicalized) target must reach api::install_hooks::run, \
+         not the raw symlink path: {body}"
+    );
+    for hook in ["post-commit", "post-merge", "post-checkout"] {
+        assert!(
+            real_repo.join(".git").join("hooks").join(hook).exists(),
+            "hooks must land in the symlink's resolved target"
+        );
+    }
+}
+
 // ── POST /api/v1/rebuild ────────────────────────────────────────────────
 
 /// `GET /jobs`'s reported total — used to prove a rejected `POST /rebuild`

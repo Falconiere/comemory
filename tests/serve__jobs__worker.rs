@@ -283,6 +283,54 @@ async fn a_second_mutating_job_queues_behind_the_first() {
     assert_eq!(permit.available_permits(), 1);
 }
 
+/// A job body panic (only unwinds in a dev/test build — the shipped
+/// release/dist binary sets `panic = "abort"`, see `worker::run`'s doc
+/// comment) must still land the job in `JobStatus::Error` with a
+/// panic-indicating message, and the write permit must genuinely be
+/// released afterward — proven by a subsequent job acquiring it and
+/// running to completion.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_panicking_job_lands_in_error_and_releases_the_permit() {
+    let registry = Arc::new(Registry::new());
+    let permit = Arc::new(Semaphore::new(1));
+
+    let id = spawn_job(&registry, Arc::clone(&permit), "rebuild", true, || {
+        panic!("boom: simulated job panic");
+    })
+    .expect("spawn");
+
+    assert_eq!(
+        await_terminal(&registry, &id, Duration::from_secs(10)).await,
+        "error"
+    );
+    let view = registry.get(&id).expect("lock").expect("job");
+    assert!(view.result.is_none(), "a panicked job carries no result");
+    let error = view.error.expect("error object");
+    assert_eq!(error.code, "internal");
+    assert!(
+        error.message.contains("panicked"),
+        "message must indicate a panic: {}",
+        error.message
+    );
+    assert_eq!(
+        permit.available_permits(),
+        1,
+        "the write permit must be released after a panicking job"
+    );
+
+    // Prove the permit is genuinely usable again: a second job acquires it
+    // and runs to completion.
+    let second = spawn_job(&registry, Arc::clone(&permit), "rebuild", true, || {
+        Ok(serde_json::json!({"second": true}))
+    })
+    .expect("spawn second");
+    assert_eq!(
+        await_terminal(&registry, &second, Duration::from_secs(10)).await,
+        "done",
+        "a subsequent job must acquire the permit released by the panicked job"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn spawn_registers_the_job_before_returning() {
     let registry = Arc::new(Registry::new());

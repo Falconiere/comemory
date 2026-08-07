@@ -62,18 +62,20 @@ pub fn router(_state: AppState) -> Router<AppState> {
 }
 
 /// Canonicalize `golden` (when present) and require it inside one of this
-/// session's allowed roots (§Security "Path containment"). `None` is a
-/// no-op — nothing to contain when the run is feedback-harvest-only.
-/// Nonexistent path -> `400`; outside every root -> `403`.
-fn contain_golden(state: &AppState, golden: Option<&str>) -> Result<()> {
+/// session's allowed roots (§Security "Path containment"), returning the
+/// canonicalized path so the caller can overwrite the request field with it
+/// rather than re-resolving the raw input downstream. `None` is a no-op —
+/// nothing to contain when the run is feedback-harvest-only. Nonexistent
+/// path -> `400`; outside every root -> `403`.
+fn contain_golden(state: &AppState, golden: Option<&str>) -> Result<Option<String>> {
     let Some(golden) = golden else {
-        return Ok(());
+        return Ok(None);
     };
     let conn = state.conn()?;
     let roots = state.allowed_roots(&conn);
     drop(conn);
-    security::contain_abs(&roots, Path::new(golden))?;
-    Ok(())
+    let canonical = security::contain_abs(&roots, Path::new(golden))?;
+    Ok(Some(canonical.to_string_lossy().into_owned()))
 }
 
 /// `POST /api/v1/eval` — start an `eval` job (`api::eval`). Read class
@@ -81,13 +83,14 @@ fn contain_golden(state: &AppState, golden: Option<&str>) -> Result<()> {
 /// AC-4 — no read-only gate either, so it stays functional on a
 /// `--read-only` server. `req.golden`, when present, is contained to an
 /// allowed root before the job is created (AC-7's golden-file half).
-async fn eval(State(state): State<AppState>, Json(req): Json<api::eval::Request>) -> Response {
+async fn eval(State(state): State<AppState>, Json(mut req): Json<api::eval::Request>) -> Response {
     let started = Instant::now();
     let contain_state = state.clone();
     let golden = req.golden.clone();
     let contained = run_blocking(move || contain_golden(&contain_state, golden.as_deref())).await;
-    if let Err(e) = contained {
-        return Envelope::err("eval", &e, 0);
+    match contained {
+        Ok(canonical) => req.golden = canonical,
+        Err(e) => return Envelope::err("eval", &e, 0),
     }
     let job_state = state.clone();
     let job = jobs::spawn_job(
@@ -114,15 +117,16 @@ async fn eval(State(state): State<AppState>, Json(req): Json<api::eval::Request>
 /// confirm gate (AC-19: read-only still outranks confirm).
 async fn tune(State(state): State<AppState>, Json(body): Json<Value>) -> Response {
     let started = Instant::now();
-    let (req, confirmed) = match split_confirm::<api::tune::Request>(body) {
+    let (mut req, confirmed) = match split_confirm::<api::tune::Request>(body) {
         Ok(v) => v,
         Err(e) => return Envelope::err("tune", &e, 0),
     };
     let contain_state = state.clone();
     let golden = req.golden.clone();
     let contained = run_blocking(move || contain_golden(&contain_state, golden.as_deref())).await;
-    if let Err(e) = contained {
-        return Envelope::err("tune", &e, 0);
+    match contained {
+        Ok(canonical) => req.golden = canonical,
+        Err(e) => return Envelope::err("tune", &e, 0),
     }
     if let Err(resp) = guard_job("tune", &state) {
         return *resp;
@@ -158,15 +162,16 @@ async fn tune(State(state): State<AppState>, Json(body): Json<Value>) -> Respons
 /// `req.apply`.
 async fn bandit(State(state): State<AppState>, Json(body): Json<Value>) -> Response {
     let started = Instant::now();
-    let (req, confirmed) = match split_confirm::<api::bandit::Request>(body) {
+    let (mut req, confirmed) = match split_confirm::<api::bandit::Request>(body) {
         Ok(v) => v,
         Err(e) => return Envelope::err("bandit", &e, 0),
     };
     let contain_state = state.clone();
     let golden = req.golden.clone();
     let contained = run_blocking(move || contain_golden(&contain_state, golden.as_deref())).await;
-    if let Err(e) = contained {
-        return Envelope::err("bandit", &e, 0);
+    match contained {
+        Ok(canonical) => req.golden = canonical,
+        Err(e) => return Envelope::err("bandit", &e, 0),
     }
     if let Err(resp) = guard_job("bandit", &state) {
         return *resp;

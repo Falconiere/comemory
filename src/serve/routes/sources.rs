@@ -84,27 +84,28 @@ async fn sources(State(state): State<AppState>) -> Response {
 /// root before the job is created.
 async fn index_sources(
     State(state): State<AppState>,
-    Json(req): Json<api::index::Request>,
+    Json(mut req): Json<api::index::Request>,
 ) -> Response {
     let started = Instant::now();
     if let Err(resp) = guard_job("index", &state) {
         return *resp;
     }
     let contain_state = state.clone();
-    let candidates = req.path.clone();
-    let contained = run_blocking(move || -> Result<()> {
+    let contained = run_blocking(move || -> Result<api::index::Request> {
         let conn = contain_state.conn()?;
         let roots = contain_state.allowed_roots(&conn);
         drop(conn);
-        for p in &candidates {
-            security::contain_abs(&roots, Path::new(p))?;
+        for p in req.path.iter_mut() {
+            let canonical = security::contain_abs(&roots, Path::new(p.as_str()))?;
+            *p = canonical.to_string_lossy().into_owned();
         }
-        Ok(())
+        Ok(req)
     })
     .await;
-    if let Err(e) = contained {
-        return Envelope::err("index", &e, 0);
-    }
+    let req = match contained {
+        Ok(req) => req,
+        Err(e) => return Envelope::err("index", &e, 0),
+    };
     let job_state = state.clone();
     let job = jobs::spawn_job(
         state.jobs(),

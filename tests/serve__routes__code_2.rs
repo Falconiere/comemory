@@ -222,6 +222,40 @@ fn assert_symbols_at_least(home: &TempDir, repo: &str, min: i64) {
     assert!(symbols >= min, "symbols: {symbols}");
 }
 
+/// TOCTOU regression: `req.file` is overwritten with the SAME canonicalized
+/// path `contain_abs` just verified before `api::ast::run` reads it
+/// (§Security "Path containment") — a file reached only through a symlink
+/// inside the allowed root must still be found and searched.
+#[test]
+fn v1_code_ast_through_a_symlink_inside_the_allowed_root_finds_matches() {
+    let home = TempDir::new().expect("home");
+    let workspace = TempDir::new().expect("workspace");
+    let real_file = workspace.path().join("real.rs");
+    std::fs::write(&real_file, "fn alpha_router() {}\n").expect("write file");
+    let link = workspace.path().join("link.rs");
+    std::os::unix::fs::symlink(&real_file, &link).expect("create symlink");
+    let (base, token, _guard) = spawn_serve(
+        &home,
+        &["--allow-path", workspace.path().to_str().expect("utf8")],
+    );
+    let client = reqwest::blocking::Client::new();
+
+    let res = client
+        .post(format!("{base}/api/v1/code/ast"))
+        .header("X-Comemory-Token", &token)
+        .json(&serde_json::json!({
+            "pattern": "fn $NAME() {}",
+            "lang": "rust",
+            "file": link.to_str().expect("utf8 path"),
+        }))
+        .send()
+        .expect("post code/ast via symlink");
+    assert_eq!(res.status().as_u16(), 200);
+    let body: serde_json::Value = res.json().expect("json");
+    let items = body["data"]["items"].as_array().expect("items array");
+    assert_eq!(items.len(), 1, "body: {body}");
+}
+
 /// AC-7: a path outside every allowed root is `403` and creates no job.
 #[test]
 fn v1_code_index_outside_every_allowed_root_is_403_and_creates_no_job_ac7() {
@@ -273,6 +307,55 @@ fn v1_code_index_symlink_escaping_path_is_403_ac7() {
     let res = post_code_index(&client, &base, &token, "escape", &link);
     assert_eq!(res.status().as_u16(), 403);
     assert_eq!(jobs_total(&client, &base, &token), before);
+}
+
+/// TOCTOU regression: `req.path` is overwritten with the SAME canonicalized
+/// path `contain_abs` just verified before the job body walks it (§Security
+/// "Path containment") — indexing through a symlink inside the allowed root
+/// must succeed and record the resolved (canonical) root, not the symlink
+/// path.
+#[test]
+fn v1_code_index_through_a_symlink_records_the_resolved_root() {
+    let (home, workspace) = seeded_home();
+    let (base, token, _guard) = spawn_serve(&home, &[]);
+    let client = reqwest::blocking::Client::new();
+
+    let real_repo = workspace.path().join("code-repo");
+    let canonical_repo = real_repo.canonicalize().expect("canonicalize code-repo");
+    let link = workspace.path().join("repo-link");
+    std::os::unix::fs::symlink(&real_repo, &link).expect("create symlink");
+
+    let post = post_code_index(&client, &base, &token, "linked", &link);
+    assert_eq!(post.status().as_u16(), 202);
+    let post_body: serde_json::Value = post.json().expect("json");
+    let job_id = post_body["data"]["job_id"]
+        .as_str()
+        .expect("job_id")
+        .to_string();
+    let job = poll_job_terminal(&client, &base, &token, &job_id, Duration::from_secs(20));
+    assert_eq!(job["status"], "done", "job body: {job}");
+
+    let stored_root = repo_marker_root_path(&home, "linked");
+    assert_eq!(
+        stored_root.as_deref(),
+        Some(canonical_repo.to_str().expect("utf8 path")),
+        "repo_marker.root_path must be the symlink's resolved target, not the symlink itself"
+    );
+}
+
+/// `repo_marker.root_path` for `repo`, or `None` when absent/NULL.
+fn repo_marker_root_path(home: &TempDir, repo: &str) -> Option<String> {
+    let db = rusqlite::Connection::open_with_flags(
+        home.path().join(".comemory").join("comemory.db"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .expect("open db read-only");
+    db.query_row(
+        "SELECT root_path FROM repo_marker WHERE repo = ?1",
+        [repo],
+        |r| r.get(0),
+    )
+    .expect("query repo_marker")
 }
 
 /// AC-7: a nonexistent path is `400`, no job created.

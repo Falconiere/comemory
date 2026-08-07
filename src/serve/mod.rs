@@ -83,8 +83,9 @@ pub struct AppState {
     embed_cmd: Option<Arc<str>>,
     /// Single write permit (§Concurrency) — held for the duration of every
     /// mutating job and, via `try_acquire`, every synchronous mutating
-    /// request. Not yet wired to a handler (a later step); constructed here
-    /// so it is available.
+    /// request. Consumed by [`crate::serve::routes::guard_mutating`] (the
+    /// synchronous `try_acquire` gate) and `crate::serve::jobs::spawn_job`
+    /// (the FIFO `acquire` a job awaits once running).
     write_permit: Arc<tokio::sync::Semaphore>,
     /// The in-process background-job table (§3 `serve/jobs/`), read by the
     /// `/api/v1/jobs*` routes and written by every job worker.
@@ -208,8 +209,9 @@ impl AppState {
     /// the server-cwd bootstrap root, if any ∪ `--allow-path` entries.
     /// Deduplicated. Best-effort against `conn`: a `repo_marker` read
     /// failure is logged and drops only that source, not the other three —
-    /// it is an enrichment, not a hard requirement. Reserved here for the
-    /// path-containment-wiring step (s2.2+); not yet called by a handler.
+    /// it is an enrichment, not a hard requirement. Called from
+    /// `serve::routes::code`, `sources`, `learning`, and `maint::admin`
+    /// before every containment check ahead of a mutating filesystem op.
     pub fn allowed_roots(&self, conn: &Connection) -> Vec<PathBuf> {
         let mut set: HashSet<PathBuf> = HashSet::new();
         for p in self.roots.values() {

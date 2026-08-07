@@ -120,6 +120,11 @@ async fn health(State(state): State<AppState>) -> Response {
 /// on (or cross an `.await` on) the async runtime's own worker threads;
 /// running the whole closure, guard included, inside the blocking task
 /// satisfies both.
+///
+/// The flattening only fires under `panic = "unwind"` (dev/test default).
+/// This crate's `[profile.release]`/`[profile.dist]` — every shipped
+/// binary — set `panic = "abort"`, under which a panic here aborts the
+/// whole process for every connected client before this branch can run.
 pub(crate) async fn run_blocking<T, F>(f: F) -> Result<T>
 where
     F: FnOnce() -> Result<T> + Send + 'static,

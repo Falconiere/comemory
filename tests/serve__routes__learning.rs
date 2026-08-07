@@ -129,6 +129,46 @@ fn v1_eval_golden_nonexistent_is_400_and_creates_no_job() {
     assert_eq!(jobs_total(&client, &base, &token), before);
 }
 
+/// TOCTOU regression: `req.golden` is overwritten with the SAME
+/// canonicalized path `contain_abs` just verified before the job body reads
+/// it (§Security "Path containment") — a golden file reached only through a
+/// symlink inside the allowed root must still be found, read, and scored.
+#[test]
+fn v1_eval_golden_through_a_symlink_inside_the_allowed_root_still_runs() {
+    let home = TempDir::new().expect("home");
+    let id = save(&home, "kafka consumer group rebalance strategy", &[]);
+    let real_golden = home.path().join("real-golden.yaml");
+    std::fs::write(
+        &real_golden,
+        format!("- query: kafka consumer group rebalance strategy\n  relevant: [{id}]\n"),
+    )
+    .expect("write golden");
+    let golden_link = home.path().join("golden-link.yaml");
+    std::os::unix::fs::symlink(&real_golden, &golden_link).expect("create symlink");
+    let allowed = home.path().to_str().expect("utf8 path").to_string();
+    let (base, token, _guard) = spawn_serve(&home, &["--allow-path", &allowed]);
+    let client = reqwest::blocking::Client::new();
+
+    let res = post(
+        &client,
+        &base,
+        &token,
+        "eval",
+        &serde_json::json!({
+            "golden": golden_link.to_str().expect("utf8 path"),
+            "golden_only": true,
+            "k": 1,
+        }),
+    );
+    assert_eq!(res.status().as_u16(), 202);
+    let body: Value = res.json().expect("json");
+    let job_id = body["data"]["job_id"].as_str().expect("job_id").to_string();
+
+    let job = poll_job_terminal(&client, &base, &token, &job_id);
+    assert_eq!(job["status"], "done", "job body: {job}");
+    assert_eq!(job["result"]["queries"].as_u64(), Some(1));
+}
+
 // ── POST /api/v1/tune, POST /api/v1/bandit — confirm-when-apply shape ──
 
 #[test]

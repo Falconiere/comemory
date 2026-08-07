@@ -309,6 +309,55 @@ fn v1_post_sources_outside_every_allowed_root_is_403_and_creates_no_job() {
     );
 }
 
+/// TOCTOU regression: `req.path` entries are overwritten with the SAME
+/// canonicalized path `contain_abs` just verified before `api::index::run`
+/// sees them (§Security "Path containment"). Registering through a symlink
+/// inside the allowed root must succeed and land the source at its resolved
+/// (canonical) target, not the symlink path.
+#[test]
+fn v1_post_sources_through_a_symlink_registers_the_resolved_target() {
+    let home = TempDir::new().expect("home");
+    let workspace = TempDir::new().expect("workspace");
+    let docs = docs_fixtures::seed(workspace.path());
+    let canonical_docs = docs.canonicalize().expect("canonicalize docs dir");
+    let link = workspace.path().join("docs-link");
+    std::os::unix::fs::symlink(&docs, &link).expect("create symlink");
+    let (base, token, _guard) = spawn_serve(
+        &home,
+        &["--allow-path", workspace.path().to_str().expect("utf8")],
+    );
+    let client = reqwest::blocking::Client::new();
+
+    let job_id = post_sources_expect_202(
+        &client,
+        &base,
+        &token,
+        &serde_json::json!({
+            "path": [link.to_str().expect("utf8 path")],
+            "repo": "docs-corpus",
+        }),
+    );
+    let job = poll_job_terminal(
+        &client,
+        &base,
+        &token,
+        &job_id,
+        std::time::Duration::from_secs(20),
+    );
+    assert_eq!(job["status"], "done", "job body: {job}");
+    let sources = job["result"]["sources"].as_array().expect("sources array");
+    assert_eq!(sources.len(), 1);
+    assert_eq!(
+        sources[0]["canonical_path"],
+        serde_json::json!(canonical_docs.to_str().expect("utf8 path")),
+        "the registered source must resolve to the symlink's target, not the symlink itself: {job}"
+    );
+    assert_eq!(
+        sources[0]["indexed"].as_u64(),
+        Some(docs_fixtures::FIXTURE_COUNT as u64)
+    );
+}
+
 #[test]
 fn v1_unindex_confirmed_removes_the_registered_source() {
     let (home, _workspace, docs) = seeded_home();

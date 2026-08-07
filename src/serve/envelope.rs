@@ -65,8 +65,8 @@ impl Envelope {
 
     /// `503`, `code:"busy"`, `Retry-After: 5` — the single write permit
     /// (§Concurrency) is held elsewhere; a synchronous mutating request never
-    /// stalls into `SQLITE_BUSY` (AC-17). Reserved here for the write-permit
-    /// step; not yet wired to a caller.
+    /// stalls into `SQLITE_BUSY` (AC-17). Called from
+    /// `serve::routes::guard_mutating` on a failed `try_acquire`.
     pub fn busy(command: &str) -> Response {
         let mut res = error_response(
             command,
@@ -81,8 +81,8 @@ impl Envelope {
     }
 
     /// `405`, `code:"read_only"` — a `mutating` route rejected on a
-    /// `--read-only` server. Reserved here for the read-only gate step; not
-    /// yet wired to a caller.
+    /// `--read-only` server. Called from `serve::routes::guard_mutating` and
+    /// `serve::routes::guard_job`.
     pub fn read_only(command: &str) -> Response {
         error_response(
             command,
@@ -95,7 +95,11 @@ impl Envelope {
 
     /// `400`, `code:"confirmation_required"` — a confirm-gated route called
     /// without `"confirm":true` (POST body) / `?confirm=true` (DELETE).
-    /// Reserved here for the confirm-gate step; not yet wired to a caller.
+    /// `serve::routes::require_confirm` produces the same status/code by
+    /// returning `Error::ConfirmationRequired` through the generic
+    /// [`status_and_code`] mapping rather than calling this constructor
+    /// directly; kept as a standalone builder for tests exercising the
+    /// envelope shape in isolation.
     pub fn confirmation_required(command: &str) -> Response {
         error_response(
             command,

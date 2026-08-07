@@ -114,13 +114,17 @@ fn run(state: AppState, req: api::search_code::Request) -> Result<Value> {
 /// (`api::ast`), read-only but requiring `req.file` inside an allowed root
 /// before the filesystem read (§Security "Path containment"). Nonexistent
 /// path -> `400`; outside every root -> `403`.
-async fn code_ast(State(state): State<AppState>, Json(req): Json<api::ast::Request>) -> Response {
+async fn code_ast(
+    State(state): State<AppState>,
+    Json(mut req): Json<api::ast::Request>,
+) -> Response {
     let started = Instant::now();
     let result = run_blocking(move || {
         let conn = state.conn()?;
         let roots = state.allowed_roots(&conn);
         drop(conn);
-        security::contain_abs(&roots, Path::new(&req.file))?;
+        let canonical = security::contain_abs(&roots, Path::new(&req.file))?;
+        req.file = canonical.to_string_lossy().into_owned();
         let cfg = state.cfg();
         let mut ctx = Ctx::lazy(state.paths(), &cfg);
         api::ast::run(&mut ctx, req)
@@ -136,25 +140,26 @@ async fn code_ast(State(state): State<AppState>, Json(req): Json<api::ast::Reque
 /// job-creating `POST` always answers `202` immediately ([`guard_job`]).
 async fn code_index(
     State(state): State<AppState>,
-    Json(req): Json<api::index_code::Request>,
+    Json(mut req): Json<api::index_code::Request>,
 ) -> Response {
     let started = Instant::now();
     if let Err(resp) = guard_job("index-code", &state) {
         return *resp;
     }
     let contain_state = state.clone();
-    let path = req.path.clone();
-    let contained = run_blocking(move || -> Result<()> {
+    let contained = run_blocking(move || -> Result<api::index_code::Request> {
         let conn = contain_state.conn()?;
         let roots = contain_state.allowed_roots(&conn);
         drop(conn);
-        security::contain_abs(&roots, Path::new(&path))?;
-        Ok(())
+        let canonical = security::contain_abs(&roots, Path::new(&req.path))?;
+        req.path = canonical.to_string_lossy().into_owned();
+        Ok(req)
     })
     .await;
-    if let Err(e) = contained {
-        return Envelope::err("index-code", &e, 0);
-    }
+    let req = match contained {
+        Ok(req) => req,
+        Err(e) => return Envelope::err("index-code", &e, 0),
+    };
     let job_state = state.clone();
     let job = jobs::spawn_job(
         state.jobs(),

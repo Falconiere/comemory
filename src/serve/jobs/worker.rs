@@ -45,6 +45,12 @@ where
 /// permit is dropped when this function returns — after the blocking work
 /// and after the terminal status is recorded, so the next queued writer
 /// cannot start early.
+///
+/// The `job task panicked` branch below only fires under `panic = "unwind"`
+/// (dev/test default). This crate's `[profile.release]`/`[profile.dist]` —
+/// every shipped binary — set `panic = "abort"`, under which a panic in
+/// `body` aborts the whole process for every connected client instead of
+/// landing this job in `JobStatus::Error`.
 async fn run<F>(
     registry: Arc<Registry>,
     write_permit: Arc<Semaphore>,
