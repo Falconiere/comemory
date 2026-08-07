@@ -1,14 +1,23 @@
+# Lefthook — fast local git gates. The full quality gate is `just check`
+# (scripts/check-all.sh) and CI; hooks stay fast so commits don't stall.
+#
+# Install after editing:  lefthook install
+#
+# type-check and clippy deliberately do NOT run pre-commit: they compile the
+# crate (bundled SQLite + vendored libgit2 + 5 tree-sitter parsers) and stall a
+# commit for minutes. They run pre-push, inside check-all.
+
 pre-commit:
   parallel: true
   commands:
-    fmt:               { run: bash scripts/fmt-check.sh }
-    type_check:        { run: bash scripts/type-check.sh }
-    lint:              { run: bash scripts/lint-check.sh }
-    test_placement:    { run: bash scripts/test-placement-check.sh }
-    no_bypass:         { run: bash scripts/no-bypass-check.sh }
-    module_size:       { run: bash scripts/module-size-check.sh }
-    tests_mirror:      { run: bash scripts/tests-mirror-check.sh }
-    typos:             { run: bash scripts/typos-check.sh }
+    fmt:
+      glob: "*.rs"
+      run: bash scripts/fmt-check.sh
+    guardrails:
+      glob: "*"
+      run: bash scripts/guardrails/run.sh --file {staged_files}
+    typos:
+      run: bash scripts/typos-check.sh
 
 pre-push:
   commands:

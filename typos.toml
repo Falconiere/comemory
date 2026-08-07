@@ -4,7 +4,10 @@
 # tests/golden/ is benchmark fixture data: content-derived 8-hex ids and slugs
 # (file names + memory.yml id refs) spuriously trip the dictionary — data, not
 # prose, so never spell-check it.
-extend-exclude = ["web/dist/", "web/package-lock.json", "tests/golden/"]
+# scripts/guardrails/ is vendored verbatim from toolu-conventions upstream and
+# must never be hand-edited (see .claude/hooks/pre-tools/modules/protected-files.sh)
+# — typos in it are upstream's to fix, not ours to silently rewrite.
+extend-exclude = ["web/dist/", "web/package-lock.json", "tests/golden/", "scripts/guardrails/"]
 
 [default]
 extend-ignore-identifiers-re = ["nomic", "kuzu", "qwick", "cose", "ratatui"]
