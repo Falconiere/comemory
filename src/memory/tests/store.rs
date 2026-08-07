@@ -210,3 +210,36 @@ fn list_skips_dot_prefix_md_and_non_md_files() {
     );
     assert_eq!(list[0].frontmatter.id, good.frontmatter.id);
 }
+
+/// Extension matching is case-insensitive: the `.md` suffix test is an
+/// `eq_ignore_ascii_case` comparison on `Path::extension`, so a file renamed
+/// to `.MD` out of band stays a live memory rather than silently dropping out
+/// of `list` / `find_by_id`. Renames a really-saved file instead of writing a
+/// hand-built fixture, so the frontmatter under test is the real thing.
+#[test]
+fn list_and_find_by_id_match_the_md_extension_case_insensitively() {
+    let sb = common::runner::Sandbox::new();
+    let paths = Paths::new(sb.data_dir());
+    paths.ensure_dirs().unwrap();
+    let store = MemoryStore::new(paths.clone());
+
+    let saved = store.save(quick("uppercase extension memory")).unwrap();
+    let lower = saved.path.clone();
+    let upper = lower.with_extension("MD");
+    std::fs::rename(&lower, &upper).unwrap();
+    assert!(upper.exists(), "renamed fixture must exist at {upper:?}");
+
+    // A fresh store, so nothing is served out of the id -> path cache.
+    let store = MemoryStore::new(paths.clone());
+    let list = store.list().unwrap();
+    assert_eq!(
+        list.len(),
+        1,
+        "a .MD file must still be listed as a memory, got {list:?}"
+    );
+    assert_eq!(list[0].frontmatter.id, saved.frontmatter.id);
+
+    let found = store.load(&saved.frontmatter.id).unwrap();
+    assert_eq!(found.frontmatter.id, saved.frontmatter.id);
+    assert_eq!(found.body.trim(), "uppercase extension memory");
+}

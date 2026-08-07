@@ -20,6 +20,10 @@ case "$file_path" in
   */deny.toml|deny.toml|*/lefthook.yml|lefthook.yml|*/rustfmt.toml|rustfmt.toml|*/clippy.toml|clippy.toml|*/typos.toml|typos.toml|*/.github/workflows/ci.yml|.github/workflows/ci.yml)
     deny_pre "$file_path is a protected config — requires explicit user request to edit."
     exit 0 ;;
+  # D6: the project-local ast-grep rules are additions to the kit, not kit files,
+  # and stay editable. Must precede the kit-wide arm - case takes the first match.
+  */scripts/guardrails/patterns/rust/*|scripts/guardrails/patterns/rust/*)
+    exit 0 ;;
   */scripts/guardrails/*|scripts/guardrails/*)
     deny_pre "$file_path is copied verbatim from toolu-conventions — edit guardrails.config.json or scripts/guardrails/patterns/rust/ instead, never scripts/guardrails/ itself."
     exit 0 ;;

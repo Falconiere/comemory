@@ -18,7 +18,7 @@ mkdir -p "$GATE_DIR"
 command=$(echo "$input" | jq -r '.tool_input.command // ""' 2>/dev/null || echo "")
 exit_code=$(echo "$input" | jq -r '.tool_response.metadata.exit_code // .tool_response.exit_code // empty' 2>/dev/null || echo "")
 
-if ! echo "$command" | grep -qE '(bash[[:space:]]+scripts/(check-all|fmt-check|type-check|lint-check|test-run|test-placement-check|tests-mirror-check|no-bypass-check|module-size-check|typos-check|deny-check|dup-check|e2e)\.sh|just[[:space:]]+(check|qa|test|e2e))'; then
+if ! echo "$command" | grep -qE '(bash[[:space:]]+scripts/(check-all|fmt-check|type-check|lint-check|test-run|guardrails-check|cli-docs-check|typos-check|deny-check|dup-check|e2e)\.sh|just[[:space:]]+(check|qa|test|e2e))'; then
   exit 0
 fi
 

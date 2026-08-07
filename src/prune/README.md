@@ -18,7 +18,7 @@ One line per file, named after its primary item:
 | --- | --- | --- |
 | `low_value.rs` | `detect` | Low-value memory detection: activation, Beta feedback, quality, graph degree |
 | `orphans.rs` | `detect` | Orphan detection: trash entries whose live counterpart is gone |
-| `stale_code.rs` | `detect` | Ghost code-reference detection: pinned `references_symbol`/`references_file` edges gone stale |
+| `stale_code.rs` | `detect` | Ghost code-reference detection: pinned `references_symbol` edges gone stale |
 
 When you add a file here, add its row above so the index stays current. No
 `mod.rs` barrel — submodules are declared from `src/prune.rs` (`pub mod

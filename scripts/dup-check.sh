@@ -54,7 +54,8 @@ mapfile -t targets < <(
 set +e
 scan_output="$(similarity-rs --threshold 0.85 --fail-on-duplicates "${targets[@]}" 2>&1)"
 set -e
-printf '%s\n' "$scan_output" > /tmp/comemory-dup.txt
+scan_log="$(mktemp -t comemory-dup.XXXXXX)"
+printf '%s\n' "$scan_output" > "$scan_log"
 
 if printf '%s\n' "$scan_output" | grep -q '^No duplicate functions found!$'; then
   current_count=0
@@ -62,14 +63,14 @@ else
   current_count="$(printf '%s\n' "$scan_output" \
     | awk -F': ' '/^Total duplicate pairs found:/ { print $2 }')"
   if [[ -z "$current_count" ]]; then
-    log_err "dup-check" "could not parse similarity-rs output; see /tmp/comemory-dup.txt"
+    log_err "dup-check" "could not parse similarity-rs output; see $scan_log"
     exit 1
   fi
 fi
 
 if (( current_count > baseline_count )); then
   log_err "dup-check" \
-    "near-duplicate count $current_count exceeds baseline $baseline_count (docs/dup-debt.md); see /tmp/comemory-dup.txt"
+    "near-duplicate count $current_count exceeds baseline $baseline_count (docs/dup-debt.md); see $scan_log"
   exit 1
 fi
 if (( current_count < baseline_count )); then

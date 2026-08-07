@@ -12,7 +12,7 @@ preview-text formatting (`preview`), and the RAII terminal lifecycle guard
 the sibling `view/` module (`view::layout`/`view::list`/`view::preview`), kept
 separate so layout is snapshot-testable against a `TestBackend` independent of
 state and IO. The `COMEMORY_EMBED_CMD` shell-out also lives outside this
-folder, in the shared `embed/` module, since `serve` consumes it too.
+folder, in the shared single-file `embed.rs` module, since `serve` consumes it too.
 
 ## Contents
 
