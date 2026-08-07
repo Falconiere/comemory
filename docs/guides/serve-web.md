@@ -14,6 +14,13 @@ comemory serve --open
 This binds an ephemeral loopback port, prints the URL (with a session
 token), and opens it in your default browser. Stop the server with Ctrl-C.
 
+Besides the SPA and the handful of unversioned routes documented below
+(`/api/search`, `/api/graph`, `/api/file`, `/api/health` — unchanged, SPA-only),
+the same server also mounts a versioned `/api/v1` REST surface covering
+almost every CLI subcommand (`save`, `search-code`, `index-code`, `eval`, …),
+sharing one command core with the CLI. See
+[The HTTP API](http-api.md) for the full route map, auth, jobs, and gating.
+
 To pin a port and scope to one repo:
 
 ```bash

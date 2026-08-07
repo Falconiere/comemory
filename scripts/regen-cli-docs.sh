@@ -43,6 +43,11 @@ Every subcommand inherits two global flags:
 Exit codes follow `sysexits.h`: `0` success, non-zero for usage / I/O /
 data errors.
 
+`comemory serve` also exposes almost every subcommand below as a versioned
+JSON endpoint under `/api/v1` — see
+[docs/guides/http-api.md](guides/http-api.md) for the route map, auth, and
+job model.
+
 ## Top-level help
 
 ```
