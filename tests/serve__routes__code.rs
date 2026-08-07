@@ -57,9 +57,16 @@ fn seeded_home() -> (TempDir, TempDir) {
 /// Spawn `comemory serve` on an ephemeral port, returning the base URL, the
 /// session token, and the kill-on-drop guard.
 fn spawn_serve(home: &TempDir) -> (String, String, ServerGuard) {
+    spawn_serve_ext(home, &[])
+}
+
+/// Same as [`spawn_serve`], with extra CLI args appended after
+/// `serve --port 0` (e.g. `&["--allow-path", dir]`).
+fn spawn_serve_ext(home: &TempDir, extra_args: &[&str]) -> (String, String, ServerGuard) {
     let mut child = Command::new(cargo_bin("comemory"))
         .env("COMEMORY_DATA_DIR", home.path().join(".comemory"))
         .args(["--json", "serve", "--port", "0"])
+        .args(extra_args)
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()

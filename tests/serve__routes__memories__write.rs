@@ -5,6 +5,9 @@
 //! the `ServerGuard`/`spawn_serve` harness in
 //! `tests/serve__routes__maint__mod.rs`.
 
+#[path = "common/vectors.rs"]
+mod vectors;
+
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
 
@@ -227,4 +230,173 @@ fn v1_read_only_server_405s_every_mutating_memory_route() {
         .send()
         .expect("post feedback read-only");
     assert_eq!(feedback_res.status().as_u16(), 405);
+}
+
+/// A real, valid NDJSON ingest-code row body big enough to hold the write
+/// permit for a measurable window — deterministic vectors via `vectors`.
+fn bulk_ingest_body(rows: usize) -> String {
+    let mut body = String::new();
+    for i in 0..rows {
+        let seed = format!("ac17-{i}");
+        let embedding = vectors::vector(&seed, 768);
+        let row = serde_json::json!({
+            "repo": "bulk",
+            "path": format!("src/f{i}.rs"),
+            "blob_oid": format!("{i:040x}"),
+            "symbol": format!("sym_{i}"),
+            "kind": "function",
+            "lang": "rust",
+            "line_start": 1_u32,
+            "line_end": 3_u32,
+            "snippet": format!("fn sym_{i}() {{}}"),
+            "simhash": 0_i64,
+            "embedding": embedding,
+        });
+        body.push_str(&row.to_string());
+        body.push('\n');
+    }
+    body
+}
+
+/// Poll `GET /jobs/{id}` until it reports a terminal status.
+fn poll_job_done(
+    client: &reqwest::blocking::Client,
+    base: &str,
+    token: &str,
+    job_id: &str,
+    timeout: std::time::Duration,
+) {
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        let res = client
+            .get(format!("{base}/api/v1/jobs/{job_id}"))
+            .header("X-Comemory-Token", token)
+            .send()
+            .expect("poll job");
+        let body: serde_json::Value = res.json().expect("json");
+        let status = body["data"]["status"].as_str().unwrap_or_default();
+        if status == "done" || status == "error" {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "job {job_id} never reached a terminal status (stuck in {status})"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+}
+
+/// AC-17: while a real `ingest-code` job holds the single write permit,
+/// `POST /api/v1/memories` returns `503 busy` with a `Retry-After` header —
+/// no 5s stall; once the job finishes, the same save succeeds. A large
+/// real NDJSON batch gives the job a measurable duration; the assertion
+/// polls a tight loop (not a single well-timed shot) so the test is not a
+/// race against job scheduling.
+/// Loop `POST /memories` against a still-running job, returning `true` the
+/// moment a `503 busy` (with its `Retry-After` header) is observed, or
+/// `false` once the job reaches a terminal status without ever producing
+/// one.
+fn poll_for_busy_save(
+    client: &reqwest::blocking::Client,
+    base: &str,
+    token: &str,
+    job_id: &str,
+    save_payload: &serde_json::Value,
+) -> bool {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    while std::time::Instant::now() < deadline {
+        let res = client
+            .post(format!("{base}/api/v1/memories"))
+            .header("X-Comemory-Token", token)
+            .json(save_payload)
+            .send()
+            .expect("post memories during job");
+        if res.status().as_u16() == 503 {
+            assert!(
+                res.headers().get("retry-after").is_some(),
+                "503 busy must carry a Retry-After header"
+            );
+            let body: serde_json::Value = res.json().expect("json");
+            assert_eq!(body["error"]["code"], "busy");
+            return true;
+        }
+        let status_res = client
+            .get(format!("{base}/api/v1/jobs/{job_id}"))
+            .header("X-Comemory-Token", token)
+            .send()
+            .expect("poll job status");
+        let status_body: serde_json::Value = status_res.json().expect("json");
+        if matches!(
+            status_body["data"]["status"].as_str(),
+            Some("done") | Some("error")
+        ) {
+            return false;
+        }
+    }
+    false
+}
+
+#[test]
+fn v1_post_memories_returns_503_busy_while_a_job_holds_the_write_permit_ac17() {
+    let home = TempDir::new().expect("home");
+    let (base, token, _guard) = spawn_serve(&home, &[]);
+    let client = reqwest::blocking::Client::new();
+
+    let ingest_res = client
+        .post(format!("{base}/api/v1/code/ingest"))
+        .header("X-Comemory-Token", &token)
+        .body(bulk_ingest_body(4000))
+        .send()
+        .expect("post ingest");
+    assert_eq!(ingest_res.status().as_u16(), 202);
+    let ingest_body: serde_json::Value = ingest_res.json().expect("json");
+    let job_id = ingest_body["data"]["job_id"]
+        .as_str()
+        .expect("job_id")
+        .to_string();
+
+    let save_payload = serde_json::json!({
+        "body": "a memory saved over http while an ingest-code job holds the write permit",
+    });
+    let saw_busy = poll_for_busy_save(&client, &base, &token, &job_id, &save_payload);
+    assert!(
+        saw_busy,
+        "must observe 503 busy at least once while the ingest job holds the write permit"
+    );
+
+    poll_job_done(
+        &client,
+        &base,
+        &token,
+        &job_id,
+        std::time::Duration::from_secs(20),
+    );
+    let final_res = client
+        .post(format!("{base}/api/v1/memories"))
+        .header("X-Comemory-Token", &token)
+        .json(&save_payload)
+        .send()
+        .expect("post memories after job finished");
+    assert_eq!(final_res.status().as_u16(), 200);
+}
+
+/// AC-18: a `POST /api/v1/memories` body over the global 5 MiB limit is
+/// rejected by axum's own `DefaultBodyLimit` before the handler ever runs —
+/// a plain `413`, not the JSON envelope (spec: "AC-18 asserts the status,
+/// not an envelope").
+#[test]
+fn v1_post_memories_over_5mib_is_a_plain_413_ac18() {
+    let home = TempDir::new().expect("home");
+    let (base, token, _guard) = spawn_serve(&home, &[]);
+    let client = reqwest::blocking::Client::new();
+
+    let oversized = "a".repeat(6 * 1024 * 1024);
+    let payload = serde_json::json!({ "body": oversized });
+    let res = client
+        .post(format!("{base}/api/v1/memories"))
+        .header("X-Comemory-Token", &token)
+        .json(&payload)
+        .send()
+        .expect("oversized post memories");
+    assert_eq!(res.status().as_u16(), 413);
 }

@@ -1,19 +1,14 @@
-//! `GET|POST /api/v1/code/search` (`api::search_code`). `GET` takes query
-//! params (no vector — a 768-float embedding does not fit in a query
-//! string); `POST` takes a JSON body and is vector-capable. Reuses
-//! `output::search_code::envelope` so the HTTP `data` payload is
-//! byte-identical to the CLI `--json` shape (nested one level deeper). No
-//! lazy-reindex trigger over HTTP (spec Non-Goal 8) — `cli::lazy_reindex`
-//! never runs on this path.
-//!
-//! `POST /api/v1/code/ast` (`api::ast`) also lives here: a read, not
-//! confirm-gated, but its `req.file` still needs containment before
-//! `api::ast::run` touches the filesystem.
+//! `GET|POST /api/v1/code/search` (`api::search_code`, `GET` no vector,
+//! `POST` vector-capable; no lazy-reindex over HTTP, spec Non-Goal 8).
+//! `POST /api/v1/code/ast` (`api::ast`): a read, but `req.file` needs
+//! containment first. `POST /api/v1/code/index` (`api::index_code`, job)
+//! and `POST /api/v1/code/ingest` (`api::ingest_code`, job, NDJSON body,
+//! its own 64 MiB per-route limit) round out this resource.
 
 use std::path::Path;
 use std::time::Instant;
 
-use axum::extract::{Query, State};
+use axum::extract::{DefaultBodyLimit, Query, State};
 use axum::response::Response;
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -23,8 +18,15 @@ use crate::api::{self, Ctx};
 use crate::output::search_code;
 use crate::prelude::*;
 use crate::serve::AppState;
-use crate::serve::routes::{RouteEntry, respond, run_blocking, track_for};
+use crate::serve::envelope::Envelope;
+use crate::serve::jobs;
+use crate::serve::routes::{RouteEntry, accepted, guard_job, respond, run_blocking, track_for};
 use crate::serve::security;
+
+/// The per-route body limit `POST /api/v1/code/ingest` carries — well above
+/// the 5 MiB global default (`fileio::MAX_FILE_BYTES`), since a real NDJSON
+/// batch of embedded symbol rows runs large (§Security "Body limits").
+const INGEST_BODY_LIMIT: usize = 64 * 1024 * 1024;
 
 /// This resource's route-table entries, appended onto [`super::table`].
 pub fn table_entries() -> &'static [RouteEntry] {
@@ -47,6 +49,18 @@ pub fn table_entries() -> &'static [RouteEntry] {
             command: "ast",
             mutating: false,
         },
+        RouteEntry {
+            method: "POST",
+            path: "/code/index",
+            command: "index-code",
+            mutating: true,
+        },
+        RouteEntry {
+            method: "POST",
+            path: "/code/ingest",
+            command: "ingest-code",
+            mutating: true,
+        },
     ]
 }
 
@@ -58,6 +72,11 @@ pub fn router(_state: AppState) -> Router<AppState> {
             get(code_search_get).post(code_search_post),
         )
         .route("/api/v1/code/ast", post(code_ast))
+        .route("/api/v1/code/index", post(code_index))
+        .route(
+            "/api/v1/code/ingest",
+            post(code_ingest).layer(DefaultBodyLimit::max(INGEST_BODY_LIMIT)),
+        )
 }
 
 async fn code_search_get(
@@ -108,4 +127,70 @@ async fn code_ast(State(state): State<AppState>, Json(req): Json<api::ast::Reque
     })
     .await;
     respond("code.ast", result, started)
+}
+
+/// `POST /api/v1/code/index` — start an `index-code` job (`api::index_code`)
+/// over `req.path`, contained to an allowed root BEFORE the job is created
+/// (AC-7: an out-of-root or nonexistent path never spawns a job).
+/// `405 read_only` on a `--read-only` server; never `503 busy` — a
+/// job-creating `POST` always answers `202` immediately ([`guard_job`]).
+async fn code_index(
+    State(state): State<AppState>,
+    Json(req): Json<api::index_code::Request>,
+) -> Response {
+    let started = Instant::now();
+    if let Err(resp) = guard_job("index-code", &state) {
+        return *resp;
+    }
+    let contain_state = state.clone();
+    let path = req.path.clone();
+    let contained = run_blocking(move || -> Result<()> {
+        let conn = contain_state.conn()?;
+        let roots = contain_state.allowed_roots(&conn);
+        drop(conn);
+        security::contain_abs(&roots, Path::new(&path))?;
+        Ok(())
+    })
+    .await;
+    if let Err(e) = contained {
+        return Envelope::err("index-code", &e, 0);
+    }
+    let job_state = state.clone();
+    let job = jobs::spawn_job(
+        state.jobs(),
+        state.write_permit().clone(),
+        "index-code",
+        true,
+        move || {
+            let cfg = job_state.cfg();
+            let mut ctx = Ctx::lazy(job_state.paths(), &cfg);
+            let resp = api::index_code::run(&mut ctx, req)?;
+            serde_json::to_value(resp).map_err(Error::Json)
+        },
+    );
+    accepted("index-code", job, started)
+}
+
+/// `POST /api/v1/code/ingest` — start an `ingest-code` job (`api::ingest_code`)
+/// over the raw NDJSON request body (bounded by [`INGEST_BODY_LIMIT`], not
+/// the global 5 MiB default). `405 read_only` on a `--read-only` server.
+async fn code_ingest(State(state): State<AppState>, body: String) -> Response {
+    let started = Instant::now();
+    if let Err(resp) = guard_job("ingest-code", &state) {
+        return *resp;
+    }
+    let job_state = state.clone();
+    let job = jobs::spawn_job(
+        state.jobs(),
+        state.write_permit().clone(),
+        "ingest-code",
+        true,
+        move || {
+            let cfg = job_state.cfg();
+            let mut ctx = Ctx::lazy(job_state.paths(), &cfg);
+            let resp = api::ingest_code::run(&mut ctx, &body)?;
+            serde_json::to_value(resp).map_err(Error::Json)
+        },
+    );
+    accepted("ingest-code", job, started)
 }

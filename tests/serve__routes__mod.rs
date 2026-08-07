@@ -172,6 +172,15 @@ fn minimal_request(entry: &RouteEntry) -> (serde_json::Value, Vec<(&'static str,
             serde_json::json!({}),
             vec![("target", "ac4-sweep-nonexistent")],
         ),
+        "index-code" => (
+            serde_json::json!({"repo": "sweep", "path": "/nonexistent/ac4-sweep"}),
+            vec![],
+        ),
+        "ingest-code" => (serde_json::json!({}), vec![]),
+        "index" => (
+            serde_json::json!({"path": ["/nonexistent/ac4-sweep"]}),
+            vec![],
+        ),
         other => panic!(
             "minimal_request: no minimal body/query wired for mutating command {other:?} — \
              add one so the AC-4 read-only sweep stays exhaustive"

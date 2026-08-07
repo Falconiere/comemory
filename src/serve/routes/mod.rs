@@ -21,6 +21,7 @@ use tokio::sync::OwnedSemaphorePermit;
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::envelope::Envelope;
+use crate::serve::jobs::JobId;
 
 /// `GET|POST /code/search`.
 pub mod code;
@@ -167,6 +168,18 @@ pub(crate) fn guard_mutating(
         .map_err(|_| Box::new(Envelope::busy(command)))
 }
 
+/// Guard a job-creating mutating route: `405 read_only` on a `--read-only`
+/// server — but, unlike [`guard_mutating`], never touches the write permit.
+/// A job-creating `POST` always answers `202` immediately regardless of
+/// permit contention; contention only delays when the job itself starts
+/// (`serve::jobs::spawn_job` awaits the permit FIFO once running).
+pub(crate) fn guard_job(command: &str, state: &AppState) -> std::result::Result<(), Box<Response>> {
+    if state.read_only() {
+        return Err(Box::new(Envelope::read_only(command)));
+    }
+    Ok(())
+}
+
 /// Whether a search-shaped route should record access counts /
 /// `retrieval_log` rows: never on a read-only server (§Security "Read-only
 /// side-effect degradation"), else the same `COMEMORY_DISABLE_ACCESS_TRACKING`
@@ -184,9 +197,24 @@ pub(crate) fn respond<T: Serialize>(
     result: Result<T>,
     started: Instant,
 ) -> Response {
-    let elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
     match result {
-        Ok(data) => Envelope::ok(command, data, elapsed_ms),
-        Err(e) => Envelope::err(command, &e, elapsed_ms),
+        Ok(data) => Envelope::ok(command, data, elapsed_ms(started)),
+        Err(e) => Envelope::err(command, &e, elapsed_ms(started)),
     }
+}
+
+/// Envelope a job-creating route's result: [`Envelope::accepted`] (`202`)
+/// on success, [`Envelope::err`] otherwise — the shape every job-creating
+/// `POST` handler (`serve::jobs::spawn_job`'s `Result<JobId>`) reduces to.
+pub(crate) fn accepted(command: &str, job: Result<JobId>, started: Instant) -> Response {
+    match job {
+        Ok(id) => Envelope::accepted(command, &id, elapsed_ms(started)),
+        Err(e) => Envelope::err(command, &e, elapsed_ms(started)),
+    }
+}
+
+/// Milliseconds elapsed since `started`, saturating rather than
+/// overflowing/panicking on an implausibly long request.
+fn elapsed_ms(started: Instant) -> u64 {
+    u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
 }

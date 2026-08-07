@@ -105,6 +105,24 @@ impl Envelope {
             0,
         )
     }
+
+    /// `202 Accepted`, `Location: /api/v1/jobs/{job_id}` — a job-creating
+    /// `POST` route accepted the request; `data: {job_id, status:"queued"}`
+    /// (§Jobs).
+    pub fn accepted(command: &str, job_id: &str, elapsed_ms: u64) -> Response {
+        let mut res = respond(
+            StatusCode::ACCEPTED,
+            json!({
+                "ok": true,
+                "data": {"job_id": job_id, "status": "queued"},
+                "meta": meta(command, elapsed_ms),
+            }),
+        );
+        if let Ok(loc) = HeaderValue::from_str(&format!("/api/v1/jobs/{job_id}")) {
+            res.headers_mut().insert(header::LOCATION, loc);
+        }
+        res
+    }
 }
 
 /// Map a crate [`Error`] to its `/api/v1` HTTP status and machine-readable

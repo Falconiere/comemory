@@ -172,6 +172,143 @@ fn v1_unindex_on_a_read_only_server_is_405() {
     assert_eq!(body["error"]["code"], "read_only");
 }
 
+/// Poll `GET /jobs/{id}` until it reports a terminal status, returning the
+/// envelope's `data` object.
+fn poll_job_terminal(
+    client: &reqwest::blocking::Client,
+    base: &str,
+    token: &str,
+    job_id: &str,
+    timeout: std::time::Duration,
+) -> serde_json::Value {
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        let res = client
+            .get(format!("{base}/api/v1/jobs/{job_id}"))
+            .header("X-Comemory-Token", token)
+            .send()
+            .expect("poll job");
+        let body: serde_json::Value = res.json().expect("json");
+        let data = body["data"].clone();
+        if matches!(data["status"].as_str(), Some("done") | Some("error")) {
+            return data;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "job {job_id} never reached a terminal status"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+}
+
+/// `GET /jobs`'s reported total, for the containment-rejection check.
+fn jobs_total(client: &reqwest::blocking::Client, base: &str, token: &str) -> u64 {
+    let res = client
+        .get(format!("{base}/api/v1/jobs"))
+        .header("X-Comemory-Token", token)
+        .send()
+        .expect("jobs list");
+    let body: serde_json::Value = res.json().expect("json");
+    body["data"]["total"].as_u64().expect("total")
+}
+
+/// `POST /api/v1/sources {path, repo?}`: asserts the `202` shape (status,
+/// `Location` header) and returns the new job id.
+fn post_sources_expect_202(
+    client: &reqwest::blocking::Client,
+    base: &str,
+    token: &str,
+    payload: &serde_json::Value,
+) -> String {
+    let post = client
+        .post(format!("{base}/api/v1/sources"))
+        .header("X-Comemory-Token", token)
+        .json(payload)
+        .send()
+        .expect("post sources");
+    assert_eq!(post.status().as_u16(), 202);
+    assert!(
+        post.headers().get("location").is_some(),
+        "202 must carry a Location header"
+    );
+    let body: serde_json::Value = post.json().expect("json");
+    body["data"]["job_id"].as_str().expect("job_id").to_string()
+}
+
+/// `POST /api/v1/sources` — job-creating registration, real fixtures.
+#[test]
+fn v1_post_sources_job_registers_and_indexes_real_fixtures() {
+    let home = TempDir::new().expect("home");
+    let workspace = TempDir::new().expect("workspace");
+    let docs = docs_fixtures::seed(workspace.path());
+    let (base, token, _guard) = spawn_serve(
+        &home,
+        &["--allow-path", workspace.path().to_str().expect("utf8")],
+    );
+    let client = reqwest::blocking::Client::new();
+
+    let job_id = post_sources_expect_202(
+        &client,
+        &base,
+        &token,
+        &serde_json::json!({
+            "path": [docs.to_str().expect("utf8 path")],
+            "repo": "docs-corpus",
+        }),
+    );
+    let job = poll_job_terminal(
+        &client,
+        &base,
+        &token,
+        &job_id,
+        std::time::Duration::from_secs(20),
+    );
+    assert_eq!(job["status"], "done", "job body: {job}");
+    let sources = job["result"]["sources"].as_array().expect("sources array");
+    assert_eq!(sources.len(), 1);
+    assert_eq!(
+        sources[0]["indexed"].as_u64(),
+        Some(docs_fixtures::FIXTURE_COUNT as u64)
+    );
+
+    let get_res = client
+        .get(format!("{base}/api/v1/sources"))
+        .header("X-Comemory-Token", &token)
+        .send()
+        .expect("get sources after job");
+    let get_body: serde_json::Value = get_res.json().expect("json");
+    assert_eq!(get_body["data"].as_array().map(Vec::len), Some(1));
+}
+
+/// `POST /api/v1/sources` — a path outside every allowed root is `403` and
+/// creates no job.
+#[test]
+fn v1_post_sources_outside_every_allowed_root_is_403_and_creates_no_job() {
+    let home = TempDir::new().expect("home");
+    let (base, token, _guard) = spawn_serve(&home, &[]);
+    let client = reqwest::blocking::Client::new();
+    let outside = TempDir::new().expect("outside dir");
+    std::fs::write(outside.path().join("f.md"), "hi\n").expect("write file");
+    let before = jobs_total(&client, &base, &token);
+
+    let res = client
+        .post(format!("{base}/api/v1/sources"))
+        .header("X-Comemory-Token", &token)
+        .json(&serde_json::json!({
+            "path": [outside.path().to_str().expect("utf8 path")],
+        }))
+        .send()
+        .expect("post sources outside root");
+    assert_eq!(res.status().as_u16(), 403);
+    let body: serde_json::Value = res.json().expect("json");
+    assert_eq!(body["error"]["code"], "forbidden");
+    assert_eq!(
+        jobs_total(&client, &base, &token),
+        before,
+        "no job must be created"
+    );
+}
+
 #[test]
 fn v1_unindex_confirmed_removes_the_registered_source() {
     let (home, _workspace, docs) = seeded_home();

@@ -3,21 +3,32 @@
 //! query string, so a client cannot force a mirror write on a read-only
 //! server (§Security "Read-only side-effect degradation").
 //!
+//! `POST /api/v1/sources` (`api::index`, job) registers + reconciles one or
+//! more sources, every `req.path` entry contained to an allowed root
+//! BEFORE the job is created (AC-7).
+//!
 //! `DELETE /api/v1/sources?target=<id|path>&confirm=true` (`api::unindex`)
 //! also lives here — the query form expresses both the id and the
 //! registered-path target, mirroring `comemory unindex <SOURCE_ID|PATH>`.
 
+use std::path::Path;
 use std::time::Instant;
 
-use axum::Router;
 use axum::extract::{Query, State};
 use axum::response::Response;
 use axum::routing::get;
+use axum::{Json, Router};
 use serde::Deserialize;
 
 use crate::api::{self, Ctx};
+use crate::prelude::*;
 use crate::serve::AppState;
-use crate::serve::routes::{RouteEntry, guard_mutating, require_confirm, respond, run_blocking};
+use crate::serve::envelope::Envelope;
+use crate::serve::jobs;
+use crate::serve::routes::{
+    RouteEntry, accepted, guard_job, guard_mutating, require_confirm, respond, run_blocking,
+};
+use crate::serve::security;
 
 /// This resource's route-table entries, appended onto [`super::table`].
 pub fn table_entries() -> &'static [RouteEntry] {
@@ -27,6 +38,12 @@ pub fn table_entries() -> &'static [RouteEntry] {
             path: "/sources",
             command: "sources",
             mutating: false,
+        },
+        RouteEntry {
+            method: "POST",
+            path: "/sources",
+            command: "index",
+            mutating: true,
         },
         RouteEntry {
             method: "DELETE",
@@ -39,7 +56,10 @@ pub fn table_entries() -> &'static [RouteEntry] {
 
 /// This resource's routes, mounted under `/api/v1`.
 pub fn router(_state: AppState) -> Router<AppState> {
-    Router::new().route("/api/v1/sources", get(sources).delete(unindex))
+    Router::new().route(
+        "/api/v1/sources",
+        get(sources).post(index_sources).delete(unindex),
+    )
 }
 
 /// `GET /api/v1/sources` — list registered sources (`api::sources`). The
@@ -57,6 +77,48 @@ async fn sources(State(state): State<AppState>) -> Response {
     })
     .await;
     respond("sources", result, started)
+}
+
+/// `POST /api/v1/sources` — start an `index` job (`api::index`) registering
+/// and reconciling every `req.path` entry, each contained to an allowed
+/// root before the job is created.
+async fn index_sources(
+    State(state): State<AppState>,
+    Json(req): Json<api::index::Request>,
+) -> Response {
+    let started = Instant::now();
+    if let Err(resp) = guard_job("index", &state) {
+        return *resp;
+    }
+    let contain_state = state.clone();
+    let candidates = req.path.clone();
+    let contained = run_blocking(move || -> Result<()> {
+        let conn = contain_state.conn()?;
+        let roots = contain_state.allowed_roots(&conn);
+        drop(conn);
+        for p in &candidates {
+            security::contain_abs(&roots, Path::new(p))?;
+        }
+        Ok(())
+    })
+    .await;
+    if let Err(e) = contained {
+        return Envelope::err("index", &e, 0);
+    }
+    let job_state = state.clone();
+    let job = jobs::spawn_job(
+        state.jobs(),
+        state.write_permit().clone(),
+        "index",
+        true,
+        move || {
+            let cfg = job_state.cfg();
+            let mut ctx = Ctx::lazy(job_state.paths(), &cfg);
+            let resp = api::index::run(&mut ctx, req)?;
+            serde_json::to_value(resp).map_err(Error::Json)
+        },
+    );
+    accepted("index", job, started)
 }
 
 /// `?target=&confirm=true` on `DELETE /sources` — transport-level; not part

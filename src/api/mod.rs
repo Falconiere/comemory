@@ -33,6 +33,12 @@ pub mod feedback;
 pub mod gc;
 /// `comemory graph`: the file-level code-connection graph, full or paged.
 pub mod graph;
+/// `comemory index`: register document sources and reconcile them.
+pub mod index;
+/// `comemory index-code` (DB-write path): mirror a repo's symbols.
+pub mod index_code;
+/// `comemory ingest-code`: mirror pre-embedded NDJSON symbol rows.
+pub mod ingest_code;
 /// `comemory install-hooks`: install git hooks for background reindexing.
 pub mod install_hooks;
 /// `comemory list`: page live memories.
