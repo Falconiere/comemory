@@ -100,6 +100,33 @@ pub struct AppState {
 }
 
 impl AppState {
+    /// Open `comemory.db` at `paths`, mint a fresh per-session bearer token,
+    /// and assemble the shared handler state for one serve session.
+    /// Ensures the data-dir tree exists first (`Paths::ensure_dirs`) so
+    /// every route — including read-only ones — can rely on it existing.
+    /// [`serve`] calls this to build its live state; an in-process test
+    /// harness (`tests/common/serve_state.rs`) calls it directly and hands
+    /// the result to [`router::build_router`], skipping the socket bind.
+    pub fn new(paths: &Paths, opts: ServeOptions) -> Result<Self> {
+        paths.ensure_dirs()?;
+        let conn = connection::open(paths.db_path())?;
+        let token = security::generate_token()?;
+        Ok(Self {
+            conn: Arc::new(Mutex::new(conn)),
+            paths: Arc::new(paths.clone()),
+            roots: Arc::new(opts.roots),
+            token: Arc::from(token.as_str()),
+            read_only: opts.read_only,
+            repo: opts.repo,
+            cfg: Arc::new(Mutex::new(Arc::new(opts.cfg))),
+            embed_cmd: opts.embed_cmd.map(Arc::from),
+            write_permit: Arc::new(tokio::sync::Semaphore::new(1)),
+            jobs: Arc::new(jobs::Registry::new()),
+            allow_path: Arc::new(opts.allow_path),
+            bootstrap_root: discover_bootstrap_root().map(Arc::new),
+        })
+    }
+
     /// Lock the shared connection. Maps lock poisoning (a panic in another
     /// handler while holding the guard) to an internal error rather than
     /// propagating the panic.
@@ -157,8 +184,13 @@ impl AppState {
         &self.roots
     }
 
-    /// The per-session bearer token.
-    pub(crate) fn token(&self) -> &str {
+    /// The per-session bearer token, required on `/` and every `/api/*`
+    /// request (`X-Comemory-Token` header, `?token=` query, or the
+    /// `comemory_token` cookie the `/` handler sets). Exposed so [`serve`]
+    /// can print it in the startup banner and an in-process test harness
+    /// (`tests/common/serve_state.rs`) can authenticate requests driven
+    /// straight through [`router::build_router`] without binding a socket.
+    pub fn token(&self) -> &str {
         &self.token
     }
 
@@ -244,34 +276,23 @@ struct ServeInfo<'a> {
 /// listener, print the access URL (carrying the token), and serve until the
 /// process is interrupted.
 pub async fn serve(paths: &Paths, opts: ServeOptions, json: bool) -> Result<()> {
-    // Hoisted here (rather than left to the CLI caller) so every route —
-    // including read-only ones like `GET /doctor` — can rely on the data-dir
-    // tree already existing, with no per-request side effect.
-    paths.ensure_dirs()?;
-    let conn = connection::open(paths.db_path())?;
-    let token = security::generate_token()?;
-    let state = AppState {
-        conn: Arc::new(Mutex::new(conn)),
-        paths: Arc::new(paths.clone()),
-        roots: Arc::new(opts.roots),
-        token: Arc::from(token.as_str()),
-        read_only: opts.read_only,
-        repo: opts.repo,
-        cfg: Arc::new(Mutex::new(Arc::new(opts.cfg))),
-        embed_cmd: opts.embed_cmd.map(Arc::from),
-        write_permit: Arc::new(tokio::sync::Semaphore::new(1)),
-        jobs: Arc::new(jobs::Registry::new()),
-        allow_path: Arc::new(opts.allow_path),
-        bootstrap_root: discover_bootstrap_root().map(Arc::new),
-    };
+    // `port`/`open` are read off `opts` before it moves into `AppState::new`
+    // (which also hoists `ensure_dirs()` — so every route, including
+    // read-only ones like `GET /doctor`, can rely on the data-dir tree
+    // already existing, with no per-request side effect).
+    let port = opts.port;
+    let open = opts.open;
+    let read_only = opts.read_only;
+    let state = AppState::new(paths, opts)?;
+    let token = state.token().to_string();
 
-    let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, opts.port))
+    let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, port))
         .await
         .map_err(Error::Io)?;
     let port = listener.local_addr().map_err(Error::Io)?.port();
     let url = format!("http://127.0.0.1:{port}/?token={token}");
-    emit_banner(&url, port, &token, opts.read_only, json)?;
-    if opts.open {
+    emit_banner(&url, port, &token, read_only, json)?;
+    if open {
         open_browser(&url);
     }
 

@@ -452,6 +452,7 @@ dependencies = [
  "tl",
  "tokio",
  "toml",
+ "tower",
  "tracing",
  "tracing-subscriber",
  "unicode-normalization",

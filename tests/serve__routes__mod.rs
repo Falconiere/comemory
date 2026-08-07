@@ -10,9 +10,13 @@ use std::process::{Child, Command, Stdio};
 
 use assert_cmd::cargo::cargo_bin;
 use axum::http::StatusCode;
+use comemory::memory::Kind;
 use comemory::serve::envelope;
 use comemory::serve::routes::{RouteEntry, require_confirm, table};
 use tempfile::TempDir;
+
+#[path = "common/serve_state.rs"]
+mod serve_state;
 
 /// Kills the spawned server on drop so a panicking assertion cannot leak it.
 struct ServerGuard(Child);
@@ -307,4 +311,118 @@ fn ac4_read_routes_stay_functional_on_a_read_only_server() {
         405,
         "POST /code/ast must survive read-only (it is not `mutating`)"
     );
+}
+
+/// In-process (`tower::ServiceExt::oneshot`, no subprocess) sweep of every
+/// read-only `/api/v1` GET route this step targets for coverage: each must
+/// answer `200` with `ok:true`. Complements the subprocess-based tests
+/// above rather than replacing them — this is what actually gets recorded
+/// by `cargo llvm-cov` (a SIGKILLed subprocess loses its `.profraw`).
+#[tokio::test]
+async fn v1_get_routes_all_return_200_ok_envelopes() {
+    let session = serve_state::session(false);
+    serve_state::save(
+        &session,
+        "postgres pool exhausted under load spikes",
+        Kind::Bug,
+        "demo",
+    );
+
+    for path in [
+        "/api/v1/health",
+        "/api/v1/commands",
+        "/api/v1/completions?shell=bash",
+        "/api/v1/memories",
+        "/api/v1/doctor",
+        "/api/v1/consolidate",
+        "/api/v1/prune",
+        "/api/v1/graph",
+        "/api/v1/edges?query=postgres",
+        "/api/v1/jobs",
+        "/api/v1/code/search?query=postgres",
+        "/api/v1/memories/search?query=postgres",
+        "/api/v1/context?query=postgres",
+    ] {
+        let resp = serve_state::send(&session, "GET", path, None).await;
+        assert_eq!(resp.status, 200, "{path} body: {}", resp.text);
+        assert_eq!(
+            resp.json["ok"],
+            serde_json::json!(true),
+            "{path} body: {}",
+            resp.text
+        );
+    }
+}
+
+/// `GET /api/v1/commands` (`meta::commands`) — every real clap subcommand
+/// mapped onto its `/api/v1` routes; `search` must resolve to a non-empty
+/// route list.
+#[tokio::test]
+async fn v1_commands_maps_search_to_its_http_routes() {
+    let session = serve_state::session(false);
+    let resp = serve_state::send(&session, "GET", "/api/v1/commands", None).await;
+    assert_eq!(resp.status, 200, "body: {}", resp.text);
+    let commands = resp.json["data"]["commands"]
+        .as_array()
+        .expect("commands array");
+    let search = commands
+        .iter()
+        .find(|c| c["name"] == "search")
+        .unwrap_or_else(|| panic!("no `search` entry in {commands:?}"));
+    assert_eq!(search["transport"], "http");
+    assert!(
+        search["routes"].as_array().is_some_and(|r| !r.is_empty()),
+        "search: {search}"
+    );
+}
+
+/// `GET /api/v1/memories/{id}` — 200 for a real id, 404 `not_found` for an
+/// unknown one.
+#[tokio::test]
+async fn v1_memories_get_one_found_and_not_found() {
+    let session = serve_state::session(false);
+    serve_state::save(
+        &session,
+        "advisory lock guards the migration runner",
+        Kind::Pattern,
+        "demo",
+    );
+    let list = serve_state::send(&session, "GET", "/api/v1/memories", None).await;
+    let id = list.json["data"]["items"][0]["id"]
+        .as_str()
+        .expect("seeded id")
+        .to_string();
+
+    let found = serve_state::send(&session, "GET", &format!("/api/v1/memories/{id}"), None).await;
+    assert_eq!(found.status, 200, "body: {}", found.text);
+    assert_eq!(found.json["data"]["id"], id);
+    let content_type = found
+        .headers
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default();
+    assert!(
+        content_type.starts_with("application/json"),
+        "content-type: {content_type}"
+    );
+
+    let missing = serve_state::send(&session, "GET", "/api/v1/memories/deadbeef", None).await;
+    assert_eq!(missing.status, 404, "body: {}", missing.text);
+    assert_eq!(missing.json["error"]["code"], "not_found");
+}
+
+/// AC-4 (in-process form): `POST /api/v1/memories` on a `--read-only`
+/// session is `405 read_only`, not the confirm/validation path.
+#[tokio::test]
+async fn v1_save_405s_on_a_read_only_session_in_process() {
+    let session = serve_state::session(true);
+    let resp = serve_state::send(
+        &session,
+        "POST",
+        "/api/v1/memories",
+        Some(serde_json::json!({"body": "read-only gate coverage"})),
+    )
+    .await;
+    assert_eq!(resp.status, 405, "body: {}", resp.text);
+    assert_eq!(resp.json["error"]["code"], "read_only");
 }
