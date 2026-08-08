@@ -153,13 +153,18 @@ pub fn run(ctx: &mut Ctx<'_>, _req: Request) -> Result<()> {
 /// a database about to be deleted.
 ///
 /// `rebuild_backup()` is a single fixed path, unlike the migration backups'
-/// per-version names, and `VACUUM INTO` errors rather than overwriting, so
-/// any snapshot left by a prior rebuild is removed first — otherwise a
-/// second rebuild would either fail outright or silently keep the first
-/// run's now-stale snapshot. Any failure — clearing the stale destination or
-/// the snapshot itself — is wrapped with the destination path, since the
-/// bare underlying error (an `io::Error` or a generic SQLite failure) does
-/// not otherwise name what it was trying to write.
+/// per-version names, so a second rebuild would otherwise either fail
+/// outright (`VACUUM INTO` errors rather than overwriting) or, if the prior
+/// `.bak` were unlinked up front, leave the operator with NEITHER the prior
+/// backup nor a new one when the new snapshot then failed for a
+/// non-blocking reason (e.g. `SQLITE_FULL`). [`snapshot_before_swap_inner`]
+/// avoids that by `VACUUM INTO`-ing to a sibling staging path first and
+/// `fs::rename`-ing it over `dest` only once that has actually succeeded, so
+/// a prior good `.bak` survives a failed attempt at a new one. Any failure —
+/// the staging snapshot or the final rename — is wrapped with the
+/// destination path, since the bare underlying error (an `io::Error` or a
+/// generic SQLite failure) does not otherwise name what it was trying to
+/// write.
 fn snapshot_before_swap(db: &Path, paths: &crate::config::paths::Paths) -> Result<()> {
     let dest = paths.rebuild_backup();
     snapshot_before_swap_inner(db, &dest).map_err(|e| {
@@ -171,13 +176,31 @@ fn snapshot_before_swap(db: &Path, paths: &crate::config::paths::Paths) -> Resul
 }
 
 /// The body of [`snapshot_before_swap`], separated so the caller can wrap
-/// every error path (stale-`.bak` removal or the snapshot itself) with one
-/// destination-naming context.
+/// every error path (the staging snapshot or the final rename) with one
+/// destination-naming context. `VACUUM INTO`s to a sibling `.tmp` staging
+/// path, then renames it over `dest` only on success — a failed `VACUUM
+/// INTO` never touches `dest` itself, so a prior good backup there is never
+/// destroyed by a failed attempt at a new one.
 fn snapshot_before_swap_inner(db: &Path, dest: &Path) -> Result<()> {
-    if dest.exists() {
-        std::fs::remove_file(dest)?;
+    let staging = staging_dest(dest);
+    if staging.exists() {
+        // Best-effort cleanup of a stale staging file left by a previous
+        // attempt that crashed between the VACUUM INTO succeeding and the
+        // rename below.
+        std::fs::remove_file(&staging)?;
     }
-    backup::snapshot_path(db, dest)
+    backup::snapshot_path(db, &staging)?;
+    std::fs::rename(&staging, dest)?;
+    Ok(())
+}
+
+/// Sibling staging path `dest` is snapshotted into first, so a failed
+/// `VACUUM INTO` never touches `dest` (an existing, still-good `.bak`)
+/// before the new snapshot is known to have succeeded.
+fn staging_dest(dest: &Path) -> PathBuf {
+    let mut p = dest.as_os_str().to_os_string();
+    p.push(".tmp");
+    PathBuf::from(p)
 }
 
 /// Atomic swap: rename the freshly built tmp DB over the live path, then

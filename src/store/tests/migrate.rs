@@ -25,6 +25,10 @@ use tempfile::tempdir;
 // through `migrate::run`) so its monotonicity guard is asserted against
 // itself, per the Testing convention for a colocated private-item test.
 use super::set_version;
+// `apply` is private; reached directly below so a broken migration's
+// rendered error message can be asserted without needing an actual shipped
+// migration to fail (F7).
+use super::apply;
 
 #[test]
 fn fresh_db_runs_all_migrations_to_current_version() {
@@ -323,6 +327,40 @@ fn stored_version(conn: &Connection) -> String {
         |r| r.get(0),
     )
     .expect("stored version")
+}
+
+/// F7 regression: a broken migration's `Error::Migration` message must stay
+/// compact, not embed rusqlite's `SqlInputError` Display — which
+/// interpolates the ENTIRE SQL batch verbatim (`"{msg} in {sql} at offset
+/// {offset}"`) — now that `doctor` propagates this error to the operator
+/// instead of swallowing it. The padded, invalid SQL below mimics a real
+/// migration file's size (~200 lines for the larger migrations).
+#[test]
+fn a_broken_migration_batch_reports_a_compact_message_not_the_whole_sql_text() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("comemory.db");
+    let mut conn = connection::open(&path).expect("open");
+
+    let padding = "-- padding comment line\n".repeat(60);
+    let bogus_sql = format!("{padding}CREATE TABLE this is not valid sql;");
+
+    let err = apply(&mut conn, "9999_bogus_migration", &bogus_sql)
+        .expect_err("invalid SQL must fail to apply");
+    let msg = err.to_string();
+
+    assert!(
+        msg.len() < 300,
+        "error message must stay compact even for a large migration batch, got {} bytes: {msg}",
+        msg.len()
+    );
+    assert!(
+        !msg.contains("padding comment line"),
+        "error message must not embed the migration's SQL text, got: {msg}"
+    );
+    assert!(
+        msg.contains("9999_bogus_migration"),
+        "error must still name the failing migration's key, got: {msg}"
+    );
 }
 
 #[test]

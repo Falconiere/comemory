@@ -118,11 +118,24 @@ const DESTRUCTIVE_PATTERNS: &[&str] = &[
     "INSERT OR REPLACE",
 ];
 
-/// True when `sql` contains any [`DESTRUCTIVE_PATTERNS`] shape.
+/// Uppercase `sql` and collapse every run of whitespace (spaces, tabs,
+/// newlines) to a single space, so [`DESTRUCTIVE_PATTERNS`] matching cannot
+/// be evaded by case (`delete from`) or by an incidental line break /
+/// extra space splitting a keyword pair (`DROP\n  COLUMN`, `DELETE  FROM`).
+fn normalize_for_pattern_match(sql: &str) -> String {
+    sql.to_ascii_uppercase()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// True when `sql` contains any [`DESTRUCTIVE_PATTERNS`] shape, matched
+/// case- and whitespace-insensitively — see [`normalize_for_pattern_match`].
 fn sql_demands_destructive(sql: &str) -> bool {
+    let normalized = normalize_for_pattern_match(sql);
     DESTRUCTIVE_PATTERNS
         .iter()
-        .any(|pattern| sql.contains(pattern))
+        .any(|pattern| normalized.contains(pattern))
 }
 
 /// Any migration whose SQL text matches [`DESTRUCTIVE_PATTERNS`] must be
@@ -160,6 +173,53 @@ fn migration_integrity_destructive_sql_is_classed_destructive() {
                 migration.key
             );
         }
+    }
+}
+
+/// Direct coverage of [`sql_demands_destructive`]'s matching itself,
+/// decoupled from what any *shipped* migration's SQL happens to contain —
+/// none of them exercises `DELETE FROM`/`DROP COLUMN`/`INSERT OR REPLACE`
+/// (F3: those three patterns were asserted by nothing), and the original
+/// matcher was a case- and whitespace-sensitive substring match that a
+/// lowercase or reformatted variant (`delete from`, `DELETE  FROM`,
+/// `Drop Column`, a newline between keywords) would silently evade.
+#[test]
+fn migration_integrity_destructive_matcher_is_case_and_whitespace_insensitive() {
+    let positive = [
+        "DROP TABLE memories;",
+        "drop table memories;",
+        "Drop\n  Table memories;",
+        "UPDATE memories SET x = 1;",
+        "update memories set x = 1;",
+        "DELETE FROM memories;",
+        "delete   from memories;",
+        "DELETE\nFROM memories;",
+        "ALTER TABLE memories DROP COLUMN x;",
+        "alter table memories drop column x;",
+        "Drop  Column x;",
+        "INSERT OR REPLACE INTO memories VALUES (1);",
+        "insert or replace into memories values (1);",
+        "INSERT\n  OR\n  REPLACE INTO memories VALUES (1);",
+    ];
+    for sql in positive {
+        assert!(
+            sql_demands_destructive(sql),
+            "expected {sql:?} to be classed destructive"
+        );
+    }
+
+    let negative = [
+        "CREATE TABLE memories (id TEXT);",
+        "ALTER TABLE memories ADD COLUMN x TEXT;",
+        "SELECT * FROM memories;",
+        "INSERT INTO memories VALUES (1);",
+        "CREATE INDEX idx ON memories(id);",
+    ];
+    for sql in negative {
+        assert!(
+            !sql_demands_destructive(sql),
+            "expected {sql:?} to NOT be classed destructive"
+        );
     }
 }
 

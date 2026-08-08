@@ -105,6 +105,27 @@ fn status_and_code_covers_io_and_the_fallback_row() {
     );
 }
 
+/// The explicit `Error::Migration(_) | Error::SchemaTooNew(_)` arm (F8): a
+/// broken migration chain and a database written by a newer comemory are
+/// both server-side schema problems, mapped to `500`/`"internal"` — the
+/// same bucket `main.rs::exit_code` puts them in. Listed explicitly in
+/// `status_and_code` rather than left to the `_` fallback, so this row is
+/// asserted directly instead of only incidentally by the fallback's own
+/// coverage.
+#[test]
+fn status_and_code_covers_the_explicit_migration_and_schema_too_new_row() {
+    assert_row(
+        &Error::Migration("x".into()),
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "internal",
+    );
+    assert_row(
+        &Error::SchemaTooNew("x".into()),
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "internal",
+    );
+}
+
 #[tokio::test]
 async fn ok_envelope_has_the_data_and_meta_shape() {
     let res = Envelope::ok("search", serde_json::json!({"hits": []}), 12);

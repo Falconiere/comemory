@@ -185,6 +185,18 @@ fn run_on_a_fresh_data_dir_with_no_memories_builds_an_empty_mirror() {
 /// [`api::rebuild::snapshot_before_swap`]'s whole reason to exist: the live
 /// `comemory.db` — as it stood BEFORE this rebuild rewrote it — must be
 /// recoverable from `comemory.db.pre-rebuild.bak` immediately after.
+///
+/// The memory's markdown file is removed BEFORE the rebuild runs, so the
+/// rebuild's markdown replay can no longer reconstruct that row and the
+/// pre-/post-rebuild database states are genuinely different: the still-live
+/// db `snapshot_before_swap` captures still has the row (deleting the `.md`
+/// file never touched `comemory.db`), while the freshly rebuilt db does not
+/// (there is no markdown left to replay it from). Without this the row would
+/// land in BOTH databases via the replay, and the assertions below would
+/// pass even if the snapshot ran AFTER the swap instead of before it —
+/// mutation-tested by moving the `snapshot_before_swap` call to after
+/// `swap_into_place` in `src/api/rebuild.rs::run`, which turns the
+/// `n_in_live` assertion red.
 #[test]
 fn run_snapshots_the_pre_rebuild_db_before_the_swap() {
     let home = tempdir().expect("tempdir");
@@ -196,6 +208,9 @@ fn run_snapshots_the_pre_rebuild_db_before_the_swap() {
             .expect("pre-rebuild memory id")
     };
 
+    let md_file = only_markdown_file(&home);
+    std::fs::remove_file(&md_file).expect("remove the memory's markdown file");
+
     run_rebuild_api(&home).expect("rebuild");
 
     let bak = home.path().join("comemory.db.pre-rebuild.bak");
@@ -205,7 +220,7 @@ fn run_snapshots_the_pre_rebuild_db_before_the_swap() {
     );
 
     let snap = Connection::open(&bak).expect("open pre-rebuild snapshot");
-    let n: i64 = snap
+    let n_in_snapshot: i64 = snap
         .query_row(
             "SELECT count(*) FROM memories WHERE id = ?1",
             [&before_id],
@@ -213,8 +228,94 @@ fn run_snapshots_the_pre_rebuild_db_before_the_swap() {
         )
         .expect("count memories in snapshot");
     assert_eq!(
-        n, 1,
-        "pre-rebuild snapshot must contain the row that existed before the rebuild"
+        n_in_snapshot, 1,
+        "pre-rebuild snapshot must contain the row that existed before the rebuild, even \
+         though its markdown file was removed before the rebuild ran"
+    );
+
+    let live = open_db(&home);
+    let n_in_live: i64 = live
+        .query_row(
+            "SELECT count(*) FROM memories WHERE id = ?1",
+            [&before_id],
+            |r| r.get(0),
+        )
+        .expect("count memories in the post-rebuild live db");
+    assert_eq!(
+        n_in_live, 0,
+        "the post-rebuild live db must NOT contain a row whose markdown file was removed \
+         before the rebuild ran — this is what proves the snapshot captured the state \
+         BEFORE the swap, not the state after it"
+    );
+}
+
+/// The single `*.md` memory file under `home`'s `memories/` directory.
+///
+/// # Panics
+///
+/// Panics if the directory cannot be read or does not hold exactly one
+/// `.md` file.
+fn only_markdown_file(home: &TempDir) -> std::path::PathBuf {
+    let dir = home.path().join("memories");
+    let mut matches: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
+        .expect("read memories dir")
+        .filter_map(std::result::Result::ok)
+        .map(|entry| entry.path())
+        .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("md"))
+        .collect();
+    assert_eq!(
+        matches.len(),
+        1,
+        "expected exactly one markdown file under memories/, found {matches:?}"
+    );
+    matches.remove(0)
+}
+
+/// [`api::rebuild::snapshot_before_swap_inner`] snapshots to a sibling
+/// staging path and renames it over `.bak` only on success, so a failed
+/// attempt at a NEW snapshot must never destroy a prior GOOD one. Blocks the
+/// staging path (`comemory.db.pre-rebuild.bak.tmp`), not `.bak` itself, so
+/// the failure happens before anything ever touches the existing backup.
+#[test]
+fn run_preserves_the_prior_pre_rebuild_backup_when_the_new_snapshot_fails() {
+    let home = tempdir().expect("tempdir");
+    run_save(&home, &["--kind", "note", "first body"]);
+
+    // First rebuild succeeds and snapshots the then-live db (one memory).
+    run_rebuild_api(&home).expect("first rebuild");
+    let bak = home.path().join("comemory.db.pre-rebuild.bak");
+    assert!(
+        bak.exists(),
+        "first rebuild must write the pre-rebuild backup"
+    );
+    let before_count: i64 = {
+        let snap = Connection::open(&bak).expect("open first backup");
+        count(&snap, "SELECT count(*) FROM memories")
+    };
+    assert_eq!(before_count, 1);
+
+    // A second save grows the live db, so a fresh snapshot would differ
+    // from the first one if the second rebuild's snapshot succeeded.
+    run_save(&home, &["--kind", "note", "second body"]);
+
+    let staging = home.path().join("comemory.db.pre-rebuild.bak.tmp");
+    std::fs::create_dir_all(&staging).expect("block the staging path with a directory");
+
+    let err =
+        run_rebuild_api(&home).expect_err("a blocked staging path must fail the second rebuild");
+    let msg = err.to_string();
+    assert!(
+        msg.contains(&bak.to_string_lossy().to_string()),
+        "the wrapped error must name the pre-rebuild backup destination, got: {msg}"
+    );
+
+    let after_count: i64 = {
+        let snap = Connection::open(&bak).expect("open backup after the failed rebuild");
+        count(&snap, "SELECT count(*) FROM memories")
+    };
+    assert_eq!(
+        after_count, before_count,
+        "a failed new snapshot must not disturb the prior good .bak"
     );
 }
 

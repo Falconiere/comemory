@@ -54,7 +54,15 @@ pub struct Report {
     pub data_dir: String,
     /// `true` when `comemory.db` exists and is writable.
     pub db_writable: bool,
-    /// Applied schema version from `schema_meta.version`.
+    /// Applied schema version from `schema_meta.version` — but NOT always:
+    /// this is the literal string `"unknown"` (not a real version) both
+    /// when `comemory.db` is not writable (no connection was ever opened
+    /// to read it, see [`unwritable_report`]) and, on the forward-compat
+    /// fallback path (see the module doc), when the stored value cannot be
+    /// read at all or reads back as this build's own [`migrate::CURRENT_VERSION`]
+    /// despite an unknown marker being present — a value that would
+    /// otherwise misleadingly claim the database matches this build's
+    /// schema (see [`stored_schema_version`]).
     pub schema_version: String,
     /// `true` when `vec_version()` returns a string, i.e. the
     /// sqlite-vec extension was loaded into this connection.
