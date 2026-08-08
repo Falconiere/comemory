@@ -1,6 +1,6 @@
 [package]
 name = "comemory"
-version = "0.15.0"
+version = "0.16.0"
 edition = "2024"
 description = "Agentic dev memory + code-aware semantic search via a two-layer property graph."
 license = "MIT"
