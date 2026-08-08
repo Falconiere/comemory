@@ -6,9 +6,12 @@
     clippy::too_many_lines
 )]
 //! Integrity tests for [`crate::store::migrate::list`] — the checks that
-//! stop the classes of drift this whole feature exists to prevent (see
-//! `docs/toolu/specs/2026-08-08-schema-migration-safety-design.md` §"Gate
-//! split by capability"). All fns are prefixed `migration_integrity_`: the
+//! stop the classes of drift this whole feature exists to prevent: a
+//! `MIGRATIONS` entry silently missing its SQL file, a hand-labeled
+//! `Class` rotting out of sync with what the SQL actually does, a declared
+//! `markers` set that no longer matches what a real migrated database
+//! holds (see `docs/architecture.md`'s schema-migration section). All fns
+//! are prefixed `migration_integrity_`: the
 //! project-wide `cargo nextest run -E 'test(migration_integrity)'` filter
 //! selects exactly this suite plus `api::rebuild::tests::coverage`, and a
 //! zero-match filter run exits 4 — a misnamed fn here turns that check red
@@ -98,18 +101,40 @@ fn migration_integrity_current_version_agrees_with_migrations_len() {
     );
 }
 
-/// Any migration whose SQL text contains `DROP TABLE` or `UPDATE ` must be
-/// classed `Destructive` — a hand-maintained class label rots exactly like
-/// the old hand-written migration list did, so it is verified against the
-/// SQL rather than trusted. Expected membership per the design doc: 0004
-/// (drops `memory_fts`/`code_fts`, `UPDATE`s `memories`/`code_symbols`),
+/// Every SQL shape that can destroy or silently overwrite existing rows —
+/// checked against every migration's SQL text so a hand-maintained `Class`
+/// label cannot rot the way the old hand-written migration list did.
+/// `DELETE FROM` and `ALTER TABLE … DROP COLUMN` destroy data outright;
+/// `INSERT OR REPLACE` silently overwrites an existing row rather than
+/// erroring or skipping it — all three are as data-destroying as `DROP
+/// TABLE`/`UPDATE ` and must gate the same mandatory-snapshot behavior, or a
+/// failed snapshot downgrades from "refuse" to "warn" on exactly the
+/// migration that most needs "refuse".
+const DESTRUCTIVE_PATTERNS: &[&str] = &[
+    "DROP TABLE",
+    "UPDATE ",
+    "DELETE FROM",
+    "DROP COLUMN",
+    "INSERT OR REPLACE",
+];
+
+/// True when `sql` contains any [`DESTRUCTIVE_PATTERNS`] shape.
+fn sql_demands_destructive(sql: &str) -> bool {
+    DESTRUCTIVE_PATTERNS
+        .iter()
+        .any(|pattern| sql.contains(pattern))
+}
+
+/// Any migration whose SQL text matches [`DESTRUCTIVE_PATTERNS`] must be
+/// classed `Destructive`. Expected membership per the migration SQL itself:
+/// 0004 (drops `memory_fts`/`code_fts`, `UPDATE`s `memories`/`code_symbols`),
 /// 0005 (drops `search_stats`), 0006/0008/0013 (each rebuild `edges` via
 /// create-copy-drop-rename).
 #[test]
 fn migration_integrity_destructive_sql_is_classed_destructive() {
-    let sql_demands_destructive: BTreeSet<&str> = list::MIGRATIONS
+    let destructive_keys: BTreeSet<&str> = list::MIGRATIONS
         .iter()
-        .filter(|m| m.sql.contains("DROP TABLE") || m.sql.contains("UPDATE "))
+        .filter(|m| sql_demands_destructive(m.sql))
         .map(|m| m.key)
         .collect();
     let expected: BTreeSet<&str> = [
@@ -122,16 +147,16 @@ fn migration_integrity_destructive_sql_is_classed_destructive() {
     .into_iter()
     .collect();
     assert_eq!(
-        sql_demands_destructive, expected,
-        "the set of migrations whose SQL contains DROP TABLE/UPDATE has changed; \
+        destructive_keys, expected,
+        "the set of migrations whose SQL matches a destructive pattern has changed; \
          update this list only alongside a deliberate schema change"
     );
     for migration in list::MIGRATIONS {
-        if migration.sql.contains("DROP TABLE") || migration.sql.contains("UPDATE ") {
+        if sql_demands_destructive(migration.sql) {
             assert_eq!(
                 migration.class,
                 Class::Destructive,
-                "{}'s SQL contains DROP TABLE or UPDATE but is classed Additive",
+                "{}'s SQL matches a destructive pattern but is classed Additive",
                 migration.key
             );
         }

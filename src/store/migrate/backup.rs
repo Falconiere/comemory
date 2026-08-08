@@ -39,10 +39,17 @@ pub(crate) fn snapshot(conn: &Connection, dest: &Path) -> Result<()> {
     if reuse_existing(dest)? {
         return Ok(());
     }
-    conn.execute(
-        "VACUUM INTO ?1",
-        rusqlite::params![dest.to_string_lossy().as_ref()],
-    )?;
+    // `to_str`, not `to_string_lossy`: a lossily-mangled destination would
+    // make `VACUUM INTO` silently write to a *different* path than `dest`,
+    // and every subsequent snapshot attempt would then fail "output file
+    // already exists" against the path nothing ever actually wrote to.
+    let dest_str = dest.to_str().ok_or_else(|| {
+        Error::Other(format!(
+            "snapshot destination is not valid UTF-8: {}",
+            dest.display()
+        ))
+    })?;
+    conn.execute("VACUUM INTO ?1", rusqlite::params![dest_str])?;
     Ok(())
 }
 

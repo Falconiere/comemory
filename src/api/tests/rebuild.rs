@@ -181,3 +181,78 @@ fn run_on_a_fresh_data_dir_with_no_memories_builds_an_empty_mirror() {
     let conn = open_db(&home);
     assert_eq!(count(&conn, "SELECT count(*) FROM memories"), 0);
 }
+
+/// [`api::rebuild::snapshot_before_swap`]'s whole reason to exist: the live
+/// `comemory.db` — as it stood BEFORE this rebuild rewrote it — must be
+/// recoverable from `comemory.db.pre-rebuild.bak` immediately after.
+#[test]
+fn run_snapshots_the_pre_rebuild_db_before_the_swap() {
+    let home = tempdir().expect("tempdir");
+    run_save(&home, &["--kind", "note", "pre-rebuild snapshot body"]);
+
+    let before_id: String = {
+        let conn = open_db(&home);
+        conn.query_row("SELECT id FROM memories LIMIT 1", [], |r| r.get(0))
+            .expect("pre-rebuild memory id")
+    };
+
+    run_rebuild_api(&home).expect("rebuild");
+
+    let bak = home.path().join("comemory.db.pre-rebuild.bak");
+    assert!(
+        bak.exists(),
+        "rebuild must snapshot the live db to comemory.db.pre-rebuild.bak before the swap"
+    );
+
+    let snap = Connection::open(&bak).expect("open pre-rebuild snapshot");
+    let n: i64 = snap
+        .query_row(
+            "SELECT count(*) FROM memories WHERE id = ?1",
+            [&before_id],
+            |r| r.get(0),
+        )
+        .expect("count memories in snapshot");
+    assert_eq!(
+        n, 1,
+        "pre-rebuild snapshot must contain the row that existed before the rebuild"
+    );
+}
+
+/// A blocked `.bak` destination must abort the whole rebuild — not silently
+/// skip the snapshot and swap in the new DB anyway — and leave the live DB
+/// fully usable. Pre-creating the path as a DIRECTORY blocks it
+/// deterministically: `fs::remove_file` refuses to unlink a directory
+/// regardless of uid (this sandbox runs as uid 0, so a chmod-based block
+/// would be inert — directory mode bits are ignored for root).
+#[test]
+fn run_aborts_when_the_rebuild_backup_path_is_blocked_and_leaves_the_live_db_intact() {
+    let home = tempdir().expect("tempdir");
+    run_save(&home, &["--kind", "note", "blocked backup body"]);
+    let original = {
+        let conn = open_db(&home);
+        count(&conn, "SELECT count(*) FROM memories")
+    };
+
+    let bak = home.path().join("comemory.db.pre-rebuild.bak");
+    std::fs::create_dir_all(&bak).expect("block the bak path with a directory");
+
+    let err = run_rebuild_api(&home).expect_err("a blocked backup path must abort the rebuild");
+    let msg = err.to_string();
+    assert!(
+        msg.contains(&bak.to_string_lossy().to_string()),
+        "the wrapped error must name the blocked destination, got: {msg}"
+    );
+
+    let tmp = home.path().join("comemory.db.rebuild.tmp");
+    assert!(
+        !tmp.exists(),
+        "an aborted rebuild must not leave the tmp db behind"
+    );
+
+    let conn = open_db(&home);
+    assert_eq!(
+        count(&conn, "SELECT count(*) FROM memories"),
+        original,
+        "the live db must remain fully usable after an aborted rebuild"
+    );
+}

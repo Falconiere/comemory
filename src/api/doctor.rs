@@ -13,15 +13,23 @@
 //! `doctor` is the one command whose job is to explain a broken state, so
 //! unlike every other command it does not let a database written by a
 //! *newer* comemory (refused by `store::migrate::preflight` with
-//! `Error::Migration`) bubble up as a bare exit-70 failure. [`run`] tries
+//! `Error::SchemaTooNew`) bubble up as a bare exit-70 failure. [`run`] tries
 //! [`Ctx::conn`] **first** — that ordering is load-bearing, not incidental:
 //! a read-only open can never `CREATE` a database, so making it the primary
 //! path would break every one of this module's own fresh-dir tests (see
 //! `tests/doctor.rs` and the crate-root `cli__doctor` suite). Only on
-//! `Err(Error::Migration(_))` does it open a **second**, read-only
+//! `Err(Error::SchemaTooNew(_))` does it open a **second**, read-only
 //! connection and report the unknown `schema_meta` marker keys as a field
 //! instead of propagating the error. That second connection never runs
 //! `preflight` or `migrate::run` — it is a plain read-only `rusqlite::Connection`.
+//!
+//! This fallback is deliberately narrow: a *genuinely* broken migration
+//! (its SQL fails to re-apply, or a mandatory pre-upgrade snapshot fails
+//! ahead of a `Destructive` migration) surfaces as `Error::Migration`, a
+//! distinct variant `run` does **not** catch here — it propagates through
+//! the final `Err(e) => Err(e)` arm like it does for every other command.
+//! Swallowing `Error::Migration` here too once reported a clean bill of
+//! health on a database `comemory list` itself refused to open.
 
 use serde::{Deserialize, Serialize};
 
@@ -57,9 +65,9 @@ pub struct Report {
     pub embed_hint: Option<String>,
     /// `schema_meta` marker keys found in the database that this build does
     /// not recognize. Empty in the normal case; non-empty only when
-    /// `Ctx::conn` was refused with `Error::Migration` (typically: the
-    /// database was written by a newer comemory) and `run` fell back to a
-    /// read-only probe — see the module doc's "Forward-compat fallback".
+    /// `Ctx::conn` was refused with `Error::SchemaTooNew` (the database was
+    /// written by a newer comemory) and `run` fell back to a read-only
+    /// probe — see the module doc's "Forward-compat fallback".
     pub unknown_migration_keys: Vec<String>,
 }
 
@@ -81,10 +89,13 @@ pub fn run(ctx: &mut Ctx<'_>, _req: Request) -> Result<Report> {
             )))
         }
         Ok(report) => Ok(report),
-        // The primary path already ran (see above) and was refused. Fall
-        // back to a read-only probe rather than propagating the failure —
-        // see the module doc's "Forward-compat fallback".
-        Err(Error::Migration(_)) => forward_compat_report(paths, embed_hint),
+        // The primary path already ran (see above) and was refused for the
+        // forward-compat reason specifically. Fall back to a read-only
+        // probe rather than propagating the failure — see the module doc's
+        // "Forward-compat fallback". Every other error (including a
+        // genuinely broken `Error::Migration`) falls through to the arm
+        // below and propagates.
+        Err(Error::SchemaTooNew(_)) => forward_compat_report(paths, embed_hint),
         Err(e) => Err(e),
     }
 }
@@ -147,7 +158,7 @@ fn writable_report(ctx: &mut Ctx<'_>, embed_hint: Option<String>) -> Result<Repo
 }
 
 /// The fallback report built when [`Ctx::conn`] was refused with
-/// `Error::Migration` — see the module doc's "Forward-compat fallback".
+/// `Error::SchemaTooNew` — see the module doc's "Forward-compat fallback".
 /// Opens a **second**, plain `rusqlite::Connection` in
 /// [`rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY`] mode: never `preflight`,
 /// never `migrate::run`, and (being read-only) incapable of creating a
@@ -165,17 +176,11 @@ fn forward_compat_report(paths: &Paths, embed_hint: Option<String>) -> Result<Re
         paths.db_path(),
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
     )?;
-    let schema_version = conn
-        .query_row(
-            "SELECT value FROM schema_meta WHERE key = 'version'",
-            [],
-            |r| r.get::<_, String>(0),
-        )
-        .unwrap_or_else(|_| "unknown".to_string());
     let sqlite_vec_loaded = conn
         .query_row("SELECT vec_version()", [], |r| r.get::<_, String>(0))
         .is_ok();
     let unknown_migration_keys = unknown_keys(&conn)?;
+    let schema_version = stored_schema_version(&conn, migrate::CURRENT_VERSION);
     Ok(Report {
         data_dir,
         db_writable: true,
@@ -184,6 +189,32 @@ fn forward_compat_report(paths: &Paths, embed_hint: Option<String>) -> Result<Re
         embed_hint,
         unknown_migration_keys,
     })
+}
+
+/// The raw `schema_meta.version` string, unless it equals `current` — this
+/// function is only ever called from the forward-compat path (see
+/// [`forward_compat_report`]), where an unknown marker is already known to
+/// exist, so a stored version that still reads `current` cannot actually
+/// describe a database at *this* build's current schema. Applies the same
+/// "the reported version must reflect what was really applied" invariant
+/// [`run`]'s primary path enforces (its own `schema_version !=
+/// migrate::CURRENT_VERSION` guard), rather than trusting a value that
+/// would otherwise print as deceptively up to date. Falls back to the same
+/// `"unknown"` sentinel [`unwritable_report`] uses when the version cannot
+/// be read at all, or cannot be trusted here.
+fn stored_schema_version(conn: &rusqlite::Connection, current: &str) -> String {
+    let stored = conn
+        .query_row(
+            "SELECT value FROM schema_meta WHERE key = 'version'",
+            [],
+            |r| r.get::<_, String>(0),
+        )
+        .unwrap_or_else(|_| "unknown".to_string());
+    if stored == current {
+        "unknown".to_string()
+    } else {
+        stored
+    }
 }
 
 /// `applied_keys(conn) \ expected_markers()` — the `schema_meta` marker

@@ -42,10 +42,15 @@ pub fn open<P: AsRef<Path>>(path: P) -> Result<Connection> {
     // Must precede migrate::run: bundled SQLite 3.46 resolves
     // `tokenize = 'identifier'` eagerly when FTS DDL is prepared.
     crate::store::tokenizer::ffi::register(&conn)?;
-    // Must also precede migrate::run, and must follow the tokenizer
-    // registration above: the snapshot's `VACUUM INTO` prepares the source
-    // schema, which instantiates every FTS5 virtual table, and any v4+
-    // database carries `tokenize = 'identifier'` columns.
+    // Must precede migrate::run, whose FTS5 DDL genuinely does need the
+    // tokenizer. Preflight itself has no tokenizer dependency of its own —
+    // its queries touch only `schema_meta` / `sqlite_master`, and its
+    // pre-upgrade `VACUUM INTO` snapshot succeeds on a connection with no
+    // tokenizer registered at all (verified against a real v13 database).
+    // It simply sits between the two calls it must run between; see
+    // `store::migrate::preflight`'s module doc for the full explanation,
+    // including why `PRAGMA quick_check` — not `VACUUM INTO` — is the part
+    // that actually needs a tokenizer, and registers its own.
     crate::store::migrate::preflight::preflight(&conn, path)?;
     crate::store::migrate::run(&mut conn)?;
     Ok(conn)

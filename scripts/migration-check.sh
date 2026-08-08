@@ -36,7 +36,28 @@ fi
 
 mapfile -t SQL_FILES < <(git ls-files 'src/store/sql/*.sql' | sort)
 
-failed=0
+# `git ls-files` only walks paths that still exist, so DELETING a shipped
+# migration file passes the loop below vacuously — nothing left to compare
+# it against. That breaks a live user's database exactly as much as editing
+# one does (their `schema_meta` marker still names the deleted file's key,
+# and `store::migrate::list::MIGRATIONS` would fail to compile or the
+# migration-integrity tests would fail first, but this immutability gate
+# should catch the deletion directly rather than relying on those to notice
+# it). Enumerate the newest tag's `src/store/sql/*.sql` set and fail on any
+# entry missing from the working tree.
+newest_tag="${TAGS[-1]}"
+mapfile -t TAGGED_SQL_FILES < <(git ls-tree -r --name-only "$newest_tag" -- src/store/sql \
+  | grep '\.sql$' | sort)
+for f in "${TAGGED_SQL_FILES[@]}"; do
+  if [[ ! -f "$f" ]]; then
+    log_err "$STEP" \
+      "$f was shipped in $newest_tag but is missing from the working tree — migrations are \
+append-only and never deleted once released"
+    failed=1
+  fi
+done
+
+failed=${failed:-0}
 for f in "${SQL_FILES[@]}"; do
   first_tag=""
   for t in "${TAGS[@]}"; do

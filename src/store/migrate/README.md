@@ -18,6 +18,6 @@ One line per file, named after its primary item:
 | --- | --- | --- |
 | `backup.rs` | `snapshot` | `pub(crate)` `VACUUM INTO` snapshot helpers: `snapshot` (through a live connection), `snapshot_path` (opens its own plain connection — used by `comemory rebuild`'s pre-swap snapshot, `src/api/rebuild.rs`), `prune` (prefix-scoped `KEEP = 2` budget), and stale-`.bak` `PRAGMA quick_check` validation before trusting an existing snapshot |
 | `list.rs` | `MIGRATIONS` | `Class` + `Migration` + the 13-entry `MIGRATIONS` const — the single source `run()` iterates, the replay test helpers slice, and the migration-integrity tests classify against |
-| `preflight.rs` | `preflight` | `pub(crate)` guard run from `connection::open` before `migrate::run`: refuses a database written by a newer comemory (unknown applied marker), and snapshots via `backup` before any pending `Destructive` migration — mandatory on failure; advisory (warn + proceed) when every pending migration is `Additive` |
+| `preflight.rs` | `preflight` | `pub(crate)` guard run from `connection::open` before `migrate::run`: refuses a database written by a newer comemory (unknown applied marker, `Error::SchemaTooNew`) and snapshots via `backup` before any pending migration at all — a snapshot failure is mandatory-refuse (`Error::Migration`) only when the pending set includes a `Destructive` migration, advisory (warn + proceed) when every pending migration is `Additive` |
 
 When you add a file here, add its row above so the index stays current.

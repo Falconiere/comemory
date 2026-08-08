@@ -204,7 +204,7 @@ environment (`Config::with_env`, in `src/config/env.rs`).
 | `COMEMORY_PRUNE_MIN_FEEDBACK` | Beta-feedback ceiling (range `[0.0, 1.0]`) at or below which a memory is prune-eligible. | `0.25` |
 | `COMEMORY_PRUNE_BELOW_QUALITY` | Quality threshold (1..=5); memories at or below this value are prune candidates (used together with activation + feedback floors). | `2` |
 | `COMEMORY_PRUNE_SUPERSEDED_GRACE_DAYS` | Grace window (days) before a superseded-and-never-accessed memory becomes prune-eligible; protects freshly-rebuilt DBs whose supersede edges all carry rebuild-time timestamps. | `7` |
-| `COMEMORY_SKIP_MIGRATION_BACKUP` | Truthy (`1`/`true`) skips the pre-migration `VACUUM INTO` snapshot (`comemory.db.pre-v{N}.bak`) that `store::migrate::preflight` otherwise takes before a schema upgrade that includes a destructive migration. See `docs/guides/upgrading.md`. | `false` |
+| `COMEMORY_SKIP_MIGRATION_BACKUP` | Truthy (`1`/`true`) skips the pre-migration `VACUUM INTO` snapshot (`comemory.db.pre-v{N}.bak`) that `store::migrate::preflight` otherwise takes before ANY pending schema migration — a failed snapshot only refuses the upgrade when a pending migration is destructive, and merely warns otherwise. See `docs/guides/upgrading.md`. | `false` |
 
 The `[tune]` knobs are file-only — set them in `config.toml`; they have no
 env override. Six grids (`tune.rrf_k_grid`, `tune.decay_grid`,
