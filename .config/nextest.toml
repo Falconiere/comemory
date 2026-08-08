@@ -1,23 +1,27 @@
 [test-groups]
 embedder = { max-threads = 1 }
-# The config env tests mutate process-global env vars (std::env::set_var /
+# Every test in this group mutates process-global env vars (std::env::set_var /
 # remove_var). Under nextest each test already runs in its own process, so this
 # group is defense-in-depth and documentation; plain `cargo test` still needs
 # `--test-threads=1`, which this file cannot enforce.
 #
-# Colocation moved these out of their own `config__env` / `config__env_2`
-# binaries and into the crate's single lib-unittest binary alongside every
-# other colocated test, so a `binary(...)` filter no longer isolates them. The
-# name filter below does: `src/config/env.rs` declares `mod tests;` (from
-# tests/env.rs) and `mod tests_2;` (from tests/env_2.rs), giving the test paths
-# `config::env::tests::*` and `config::env::tests_2::*` — both matched by the
-# `^config::env::tests` prefix.
-config-env = { max-threads = 1 }
+# Colocation moved these out of their own dedicated binaries and into the
+# crate's single lib-unittest binary alongside every other colocated test, so
+# a `binary(...)` filter no longer isolates them. The name filter below does.
+# `src/config/env.rs` declares `mod tests;` (from tests/env.rs) and
+# `mod tests_2;` (from tests/env_2.rs) — the latter now also holding the
+# `COMEMORY_SKIP_MIGRATION_BACKUP` tests — giving test paths
+# `config::env::tests::*` / `config::env::tests_2::*`, both matched by the
+# `^config::env::tests` prefix. `store::migrate::backup::tests` and
+# `store::migrate::preflight::tests` (added by a later migration-safety step)
+# set the same env var from a different module path, so they get their own
+# alternation branch rather than a rename of this group.
+env-mutating = { max-threads = 1 }
 
 [[profile.default.overrides]]
 filter = 'test(/embedder|memory_index|code_index/)'
 test-group = 'embedder'
 
 [[profile.default.overrides]]
-filter = 'test(/^config::env::tests/)'
-test-group = 'config-env'
+filter = 'test(/^(config::env::tests|store::migrate::backup::tests|store::migrate::preflight::tests)/)'
+test-group = 'env-mutating'

@@ -7,6 +7,7 @@
       "store": [
         "sql",
         "tokenizer",
+        "migrate",
         "tests"
       ],
       "tui": [
@@ -59,6 +60,7 @@
       "source",
       "stats",
       "store",
+      "store/migrate",
       "store/sql",
       "store/tokenizer",
       "tui",

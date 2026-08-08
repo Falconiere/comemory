@@ -1,6 +1,6 @@
 //! `sources.toml` load/save: the durable, authoritative record of
 //! registered document roots. Mutations run under an exclusive
-//! [`crate::source::lock::RegistryLock`] for their whole
+//! [`crate::source::lock::FileLock`] for their whole
 //! read-modify-write cycle (spec: "Concurrent registrations").
 
 use std::fs;
@@ -11,7 +11,7 @@ use time::OffsetDateTime;
 
 use crate::config::paths::Paths;
 use crate::prelude::*;
-use crate::source::lock::RegistryLock;
+use crate::source::lock::FileLock;
 use crate::source::{SourceEntry, SourceId, SourceKind};
 
 /// On-disk shape of `sources.toml`: a format tag plus the `[[source]]`
@@ -57,7 +57,7 @@ impl Registry {
     pub fn register(&self, path: &Path, repo: Option<String>) -> Result<SourceEntry> {
         let canonical = fs::canonicalize(path)?;
         let kind = kind_of(&canonical)?;
-        let _guard = RegistryLock::acquire(&self.paths.sources_lock_file())?;
+        let _guard = FileLock::acquire(&self.paths.sources_lock_file(), "registry")?;
         let mut entries = self.load()?;
         let now = OffsetDateTime::now_utc();
 
@@ -98,7 +98,7 @@ impl Registry {
         // affected, and that falls through to "not found" rather than
         // erroring.
         let target = fs::canonicalize(id_or_path).ok();
-        let _guard = RegistryLock::acquire(&self.paths.sources_lock_file())?;
+        let _guard = FileLock::acquire(&self.paths.sources_lock_file(), "registry")?;
         let mut entries = self.load()?;
         let pos = entries.iter().position(|e| {
             e.id.as_str() == id_or_path || Some(e.canonical_path.as_path()) == target.as_deref()

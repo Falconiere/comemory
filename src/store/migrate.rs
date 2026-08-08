@@ -11,9 +11,32 @@ use rusqlite::Connection;
 
 use crate::prelude::*;
 
+/// Pre-migration / pre-rebuild snapshots (`VACUUM INTO`, prune, stale-`.bak`
+/// validation). `pub(crate)` — an internal implementation detail of
+/// [`preflight::preflight`] and `comemory rebuild`, not part of the public
+/// API.
+pub(crate) mod backup;
+/// The `MIGRATIONS` slice — key, SQL, destructiveness class, optional
+/// post-apply Rust pass, and `schema_meta` markers for every migration.
+/// [`run`] iterates it; the replay test helpers slice it too.
+pub mod list;
+/// Migration preflight: forward-compat refusal against a newer database,
+/// and the pre-upgrade snapshot. `pub(crate)` — called once from
+/// [`crate::store::connection::open`], not part of the public API.
+pub(crate) mod preflight;
+
 /// Highest schema version known to this build. Bumped each time a new
-/// migration file is added under `src/store/sql/`.
+/// migration file is added under `src/store/sql/`. Stays a string literal —
+/// it is what `schema_meta` stores and what several eval modules hash via
+/// `.as_bytes()` — not derived from [`CURRENT_VERSION_NUM`]: on the pinned
+/// stable toolchain `const … = &N.to_string()` fails with `E0015`.
 pub const CURRENT_VERSION: &str = "13";
+
+/// The same value numerically as [`CURRENT_VERSION`], for callers that need
+/// to compare or count migrations. Agreement between the two is asserted by
+/// a colocated test rather than derived, since [`CURRENT_VERSION`] cannot
+/// be computed from this value on stable (see its doc).
+pub const CURRENT_VERSION_NUM: u32 = list::MIGRATIONS.len() as u32;
 
 /// 0001 bootstrap SQL (`schema_meta` table). Public so tests can replay
 /// historical schema states exactly as an old binary created them.
@@ -74,24 +97,18 @@ pub const M_V12: &str = include_str!("./sql/0012_v12_edge_fts.sql");
 /// states.
 pub const M_V13: &str = include_str!("./sql/0013_v13_documents.sql");
 
-/// Apply all pending migrations. Safe to re-run; each migration is
-/// only applied if its key is absent from `schema_meta`.
+/// Apply all pending migrations. Safe to re-run; each migration is only
+/// applied if its key is absent from `schema_meta`, and each post-apply
+/// pass only runs if its own marker is absent. Loops over [`list::MIGRATIONS`]
+/// rather than hand-listing each `apply` call, so the run order and the
+/// replay test helpers can never drift apart again.
 pub fn run(conn: &mut Connection) -> Result<()> {
-    apply(conn, "0001_schema_meta", M_BOOTSTRAP)?;
-    apply(conn, "0002_v2_tables", M_V2)?;
-    apply(conn, "0003_stats_tables", M_V3)?;
-    apply(conn, "0004_v4_rank", M_V4)?;
-    backfill_memory_simhash(conn)?;
-    apply(conn, "0005_v5_learning", M_V5)?;
-    rehash_simhashes(conn)?;
-    apply(conn, "0006_v6_code_graph", M_V6)?;
-    apply(conn, "0007_v7_repo_root", M_V7)?;
-    apply(conn, "0008_v8_reinforcement", M_V8)?;
-    apply(conn, "0009_v9_code_refs", M_V9)?;
-    apply(conn, "0010_v10_bandit", M_V10)?;
-    apply(conn, "0011_v11_memory_rank", M_V11)?;
-    apply(conn, "0012_v12_edge_fts", M_V12)?;
-    apply(conn, "0013_v13_documents", M_V13)?;
+    for migration in list::MIGRATIONS {
+        apply(conn, migration.key, migration.sql)?;
+        if let Some(post) = migration.post {
+            post(conn)?;
+        }
+    }
     set_version(conn, CURRENT_VERSION)?;
     Ok(())
 }
@@ -144,7 +161,7 @@ fn insert_marker(tx: &rusqlite::Transaction<'_>, key: &str) -> Result<()> {
 /// the v4 apply and the backfill (or mid-backfill) heals on the next
 /// open: the marker is absent and the whole pass re-runs. Once the
 /// marker is committed, opens skip the `memories` table scan entirely.
-fn backfill_memory_simhash(conn: &mut Connection) -> Result<()> {
+pub(crate) fn backfill_memory_simhash(conn: &mut Connection) -> Result<()> {
     if marker_done(conn, "0004_simhash_backfill") {
         return Ok(());
     }
@@ -165,7 +182,7 @@ fn backfill_memory_simhash(conn: &mut Connection) -> Result<()> {
 /// the same transaction as the updates so a crash mid-rehash re-runs
 /// the whole pass on the next open (idempotent — the recompute is a
 /// pure function of the stored body/snippet).
-fn rehash_simhashes(conn: &mut Connection) -> Result<()> {
+pub(crate) fn rehash_simhashes(conn: &mut Connection) -> Result<()> {
     if marker_done(conn, "0005_simhash_rehash") {
         return Ok(());
     }
@@ -220,6 +237,14 @@ fn recompute_simhashes(
 /// on a command the user issued as a pure read. With every other migration
 /// step gated behind its `schema_meta` marker, this guard makes an open on
 /// a current schema perform zero writes.
+///
+/// Also refuses to lower a stored version: a database written by a newer
+/// comemory must not have its `schema_meta.version` stomped downward by an
+/// older binary that no-ops through every marker it recognizes. Both sides
+/// are parsed to `u32` before comparing — the values are `&str`, and
+/// lexicographically `"13" < "9"`, so a naive string comparison would
+/// refuse every v9 (or any single-digit-version) database's upgrade. A
+/// stored value that fails to parse is treated as lower and overwritten.
 fn set_version(conn: &Connection, version: &str) -> Result<()> {
     let current = conn
         .query_row(
@@ -229,6 +254,16 @@ fn set_version(conn: &Connection, version: &str) -> Result<()> {
         )
         .ok();
     if current.as_deref() == Some(version) {
+        return Ok(());
+    }
+    let stored_is_newer = match (
+        current.as_deref().and_then(|c| c.parse::<u32>().ok()),
+        version.parse::<u32>(),
+    ) {
+        (Some(stored), Ok(incoming)) => stored > incoming,
+        _ => false,
+    };
+    if stored_is_newer {
         return Ok(());
     }
     conn.execute(
@@ -254,3 +289,7 @@ mod tests_v4;
 #[cfg(test)]
 #[path = "tests/migrate_v8.rs"]
 mod tests_v8;
+
+#[cfg(test)]
+#[path = "tests/matrix.rs"]
+mod tests_matrix;

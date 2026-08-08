@@ -9,7 +9,10 @@ stamped into `schema_meta`.
 shipped migration file. Every schema change is a *new* numbered file appended
 to this directory — migrations are immutable once released, because
 `store::migrate` is idempotent and re-applies only what a given database
-hasn't seen yet.
+hasn't seen yet. This is machine-enforced, not just convention:
+`scripts/migration-check.sh` (wired into `check-all.sh`) diffs every
+already-released file here against its content at the first release tag
+that shipped it and fails the build on any drift.
 
 ## Contents
 

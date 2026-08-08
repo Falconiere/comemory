@@ -7,6 +7,21 @@
 //! so an unwritable data dir never reaches `store::connection::open`'s own
 //! `CREATE`+migrate path; once writable, `Ctx::conn` opens (and may create)
 //! the DB exactly as the original CLI's direct `connection::open` call did.
+//!
+//! ## Forward-compat fallback
+//!
+//! `doctor` is the one command whose job is to explain a broken state, so
+//! unlike every other command it does not let a database written by a
+//! *newer* comemory (refused by `store::migrate::preflight` with
+//! `Error::Migration`) bubble up as a bare exit-70 failure. [`run`] tries
+//! [`Ctx::conn`] **first** — that ordering is load-bearing, not incidental:
+//! a read-only open can never `CREATE` a database, so making it the primary
+//! path would break every one of this module's own fresh-dir tests (see
+//! `tests/doctor.rs` and the crate-root `cli__doctor` suite). Only on
+//! `Err(Error::Migration(_))` does it open a **second**, read-only
+//! connection and report the unknown `schema_meta` marker keys as a field
+//! instead of propagating the error. That second connection never runs
+//! `preflight` or `migrate::run` — it is a plain read-only `rusqlite::Connection`.
 
 use serde::{Deserialize, Serialize};
 
@@ -14,6 +29,7 @@ use crate::api::Ctx;
 use crate::config::Paths;
 use crate::prelude::*;
 use crate::store::migrate;
+use crate::store::migrate::preflight;
 
 /// `comemory doctor` / `GET /api/v1/doctor` request. No fields — `doctor`
 /// takes no arguments; the empty struct still derives `Deserialize` +
@@ -39,26 +55,38 @@ pub struct Report {
     /// (e.g. `ollama:nomic-embed-text`). `None` when `COMEMORY_EMBED_HINT`
     /// is not set.
     pub embed_hint: Option<String>,
+    /// `schema_meta` marker keys found in the database that this build does
+    /// not recognize. Empty in the normal case; non-empty only when
+    /// `Ctx::conn` was refused with `Error::Migration` (typically: the
+    /// database was written by a newer comemory) and `run` fell back to a
+    /// read-only probe — see the module doc's "Forward-compat fallback".
+    pub unknown_migration_keys: Vec<String>,
 }
 
 /// Build the doctor report. See the module doc for the writability-probe
 /// ordering that keeps this from ever creating a DB in an unwritable
-/// location.
+/// location, and for the read-only forward-compat fallback below.
 pub fn run(ctx: &mut Ctx<'_>, _req: Request) -> Result<Report> {
     let paths = ctx.paths;
     let embed_hint = ctx.cfg.embed_hint.clone();
     if !probe_writable(paths) {
         return Ok(unwritable_report(paths, embed_hint));
     }
-    let report = writable_report(ctx, embed_hint)?;
-    if report.schema_version != migrate::CURRENT_VERSION {
-        return Err(Error::Migration(format!(
-            "schema version {} != expected {}",
-            report.schema_version,
-            migrate::CURRENT_VERSION
-        )));
+    match writable_report(ctx, embed_hint.clone()) {
+        Ok(report) if report.schema_version != migrate::CURRENT_VERSION => {
+            Err(Error::Migration(format!(
+                "schema version {} != expected {}",
+                report.schema_version,
+                migrate::CURRENT_VERSION
+            )))
+        }
+        Ok(report) => Ok(report),
+        // The primary path already ran (see above) and was refused. Fall
+        // back to a read-only probe rather than propagating the failure —
+        // see the module doc's "Forward-compat fallback".
+        Err(Error::Migration(_)) => forward_compat_report(paths, embed_hint),
+        Err(e) => Err(e),
     }
-    Ok(report)
 }
 
 /// `true` when `comemory.db` is writable. An existing DB is probed with a
@@ -91,6 +119,7 @@ fn unwritable_report(paths: &Paths, embed_hint: Option<String>) -> Report {
         schema_version: "unknown".into(),
         sqlite_vec_loaded: false,
         embed_hint,
+        unknown_migration_keys: Vec::new(),
     }
 }
 
@@ -113,7 +142,62 @@ fn writable_report(ctx: &mut Ctx<'_>, embed_hint: Option<String>) -> Result<Repo
         schema_version,
         sqlite_vec_loaded,
         embed_hint,
+        unknown_migration_keys: Vec::new(),
     })
+}
+
+/// The fallback report built when [`Ctx::conn`] was refused with
+/// `Error::Migration` — see the module doc's "Forward-compat fallback".
+/// Opens a **second**, plain `rusqlite::Connection` in
+/// [`rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY`] mode: never `preflight`,
+/// never `migrate::run`, and (being read-only) incapable of creating a
+/// database even by accident.
+///
+/// `sqlite-vec`'s `vec_version()` is still reachable here even though this
+/// connection never goes through `store::connection::open`: it is
+/// registered once per process as a SQLite auto-extension by the primary
+/// `Ctx::conn` attempt that already ran (and failed only once past that
+/// registration, inside `preflight`), so every subsequent connection in
+/// this process — including this one — inherits it.
+fn forward_compat_report(paths: &Paths, embed_hint: Option<String>) -> Result<Report> {
+    let data_dir = paths.data_dir().to_string_lossy().into_owned();
+    let conn = rusqlite::Connection::open_with_flags(
+        paths.db_path(),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )?;
+    let schema_version = conn
+        .query_row(
+            "SELECT value FROM schema_meta WHERE key = 'version'",
+            [],
+            |r| r.get::<_, String>(0),
+        )
+        .unwrap_or_else(|_| "unknown".to_string());
+    let sqlite_vec_loaded = conn
+        .query_row("SELECT vec_version()", [], |r| r.get::<_, String>(0))
+        .is_ok();
+    let unknown_migration_keys = unknown_keys(&conn)?;
+    Ok(Report {
+        data_dir,
+        db_writable: true,
+        schema_version,
+        sqlite_vec_loaded,
+        embed_hint,
+        unknown_migration_keys,
+    })
+}
+
+/// `applied_keys(conn) \ expected_markers()` — the `schema_meta` marker
+/// keys this build does not recognize. Reuses
+/// `store::migrate::preflight`'s own set-derivation rather than
+/// re-deriving it, so the two can never disagree about what "unknown"
+/// means.
+fn unknown_keys(conn: &rusqlite::Connection) -> Result<Vec<String>> {
+    let applied = preflight::applied_keys(conn)?;
+    let expected = preflight::expected_markers();
+    Ok(applied
+        .into_iter()
+        .filter(|k| !expected.contains(k.as_str()))
+        .collect())
 }
 
 #[cfg(test)]

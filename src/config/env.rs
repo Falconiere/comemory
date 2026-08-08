@@ -235,6 +235,23 @@ impl Config {
     }
 }
 
+/// True when `COMEMORY_SKIP_MIGRATION_BACKUP` is truthy (`"1"` or
+/// `"true"`). Unset, empty, or any other value is `false` — a test/escape
+/// hatch hook (mirrors `COMEMORY_DISABLE_ACCESS_TRACKING`, `cli.rs`'s
+/// `track_searches`), not a validated user knob, so an unrecognized value
+/// degrades to the safer default (take the backup) rather than erroring.
+///
+/// Lives here, not in `store::migrate`, because the `no-direct-env-var`
+/// guardrail forbids reading env anywhere outside `config/`/`tests/`, and
+/// `connection::open` (the migration preflight's call site) has no
+/// `Config` to thread the value through.
+pub fn skip_migration_backup() -> bool {
+    matches!(
+        std::env::var("COMEMORY_SKIP_MIGRATION_BACKUP").as_deref(),
+        Ok("1" | "true")
+    )
+}
+
 #[cfg(test)]
 #[path = "tests/env.rs"]
 mod tests;

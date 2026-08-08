@@ -29,15 +29,16 @@ One line per file, named after its primary item:
 | `memory_list.rs` | `ListRow` | Paginated listing of live memories |
 | `memory_meta.rs` | `MemoryMeta` | Batched per-memory metadata: path, repo, kind, tags, references |
 | `memory_row.rs` | `insert` | `memories` row upserts and their edge materialization |
-| `migrate.rs` | `CURRENT_VERSION` | Versioned, idempotent schema migrations plus `schema_meta` |
+| `migrate.rs` | `CURRENT_VERSION` | Versioned, idempotent schema migrations plus `schema_meta`; loops over the `MIGRATIONS` slice declared in `migrate/list.rs` |
 | `schema.rs` | — | Module-doc placeholder for the v0.2 schema; DDL text lives in `sql/` |
 | `simhash_scan.rs` | `SimhashRow` | Bulk `(id, simhash)` scan over live memories, shared by save + consolidate |
 | `sources.rs` | `SourceRootUpsert` | `source_roots` row CRUD — the SQLite mirror of `sources.toml` |
 | `tokenizer.rs` | — | Parent declaration for the `tokenizer/` folder (see `store/tokenizer/README.md`) |
 | `vector.rs` | `MemoryHit` | `vec0` insert and KNN against `memory_vec` / `code_vec` |
 
-`sql/` (migration DDL) and `tokenizer/` (FTS5 tokenizer FFI) are documented in
-their own `README.md` per the guardrails nested-folder rule.
+`sql/` (migration DDL), `tokenizer/` (FTS5 tokenizer FFI), and `migrate/`
+(the `MIGRATIONS` slice plus the migration preflight/snapshot safety net) are
+documented in their own `README.md` per the guardrails nested-folder rule.
 
 When you add a file here, add its row above so the index stays current. No
 `mod.rs` barrel — submodules are declared from `src/store.rs` (`pub mod

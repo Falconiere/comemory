@@ -236,21 +236,16 @@ fn v11_adds_memories_rank_score_defaulting_to_zero() {
 
 /// Every migration in apply order as `(schema_meta marker, SQL)` — the
 /// replay source [`build_legacy_db`] slices to reconstruct an older schema.
-fn migration_chain() -> Vec<(&'static str, &'static str)> {
-    vec![
-        ("0001_schema_meta", migrate::M_BOOTSTRAP),
-        ("0002_v2_tables", migrate::M_V2),
-        ("0003_stats_tables", migrate::M_V3),
-        ("0004_v4_rank", migrate::M_V4),
-        ("0005_v5_learning", migrate::M_V5),
-        ("0006_v6_code_graph", migrate::M_V6),
-        ("0007_v7_repo_root", migrate::M_V7),
-        ("0008_v8_reinforcement", migrate::M_V8),
-        ("0009_v9_code_refs", migrate::M_V9),
-        ("0010_v10_bandit", migrate::M_V10),
-        ("0011_v11_memory_rank", migrate::M_V11),
-        ("0012_v12_edge_fts", migrate::M_V12),
-    ]
+/// Sourced from [`migrate::list::MIGRATIONS`] rather than hand-listed, so
+/// this replay harness cannot fall a migration behind `run()` again.
+/// `pub(crate)` so `store::migrate::backup`/`preflight`'s own colocated
+/// tests can reuse it too, rather than hand-copying the replay logic
+/// (Binding Rule 1).
+pub(crate) fn migration_chain() -> Vec<(&'static str, &'static str)> {
+    migrate::list::MIGRATIONS
+        .iter()
+        .map(|m| (m.key, m.sql))
+        .collect()
 }
 
 /// Build a genuine pre-upgrade database by replaying the first `through`
@@ -261,8 +256,20 @@ fn migration_chain() -> Vec<(&'static str, &'static str)> {
 /// memory row so the additive v11 column has something to backfill.
 ///
 /// 0001 is replayed but records no marker: `migrate::apply` special-cases
-/// the bootstrap migration, whose SQL is `CREATE TABLE IF NOT EXISTS`.
-fn build_legacy_db(path: &std::path::Path, through: usize, version: &str, memory_id: &str) {
+/// the bootstrap migration, whose SQL is `CREATE TABLE IF NOT EXISTS`. The
+/// two simhash post-pass markers are seeded only when their migration was
+/// actually replayed (`through >= 4` / `>= 5`) — seeding them unconditionally
+/// would fabricate a state no binary ever wrote and suppress the
+/// corresponding Rust post-pass on the next real `connection::open`.
+///
+/// `pub(crate)` so `store::migrate::backup`/`preflight`'s own colocated
+/// tests can build the same historical fixtures (Binding Rule 1).
+pub(crate) fn build_legacy_db(
+    path: &std::path::Path,
+    through: usize,
+    version: &str,
+    memory_id: &str,
+) {
     let scratch = path.with_file_name("scratch-vec-register.db");
     drop(connection::open(&scratch).expect("register sqlite-vec"));
 
@@ -280,17 +287,53 @@ fn build_legacy_db(path: &std::path::Path, through: usize, version: &str, memory
         )
         .expect("seed migration marker");
     }
-    conn.execute_batch(
-        "INSERT INTO schema_meta(key, value) VALUES
-            ('0004_simhash_backfill','1'), ('0005_simhash_rehash','1');",
-    )
-    .expect("seed simhash run-once markers");
+    if through >= 4 {
+        conn.execute(
+            "INSERT INTO schema_meta(key, value) VALUES('0004_simhash_backfill','1')",
+            [],
+        )
+        .expect("seed 0004 simhash backfill marker");
+    }
+    if through >= 5 {
+        conn.execute(
+            "INSERT INTO schema_meta(key, value) VALUES('0005_simhash_rehash','1')",
+            [],
+        )
+        .expect("seed 0005 simhash rehash marker");
+    }
     conn.execute(
         "INSERT INTO schema_meta(key, value) VALUES('version', ?1)",
         [version],
     )
     .expect("seed version");
     seed_memory(&conn, memory_id);
+    if through >= 4 {
+        // The 0004/0005 markers seeded above say the two simhash post-passes
+        // already ran against every pre-existing row at this vintage — so a
+        // real `comemory save` writing this row afterward would already
+        // compute and store a genuine simhash, not the v4 `DEFAULT 0`
+        // seed_memory's bare INSERT leaves behind. Overwrite it here so the
+        // fixture matches what a real vintage database actually holds.
+        seed_real_simhash(&conn, memory_id);
+    }
+}
+
+/// Overwrite `memories.simhash` for `id` with a real value computed from its
+/// stored body, the same way `store::memory_row::insert` would at save
+/// time. Only meaningful once the column exists (v4+); [`build_legacy_db`]
+/// is the sole caller and only calls it under that guard.
+fn seed_real_simhash(conn: &Connection, id: &str) {
+    let body: String = conn
+        .query_row("SELECT body FROM memories WHERE id = ?1", [id], |r| {
+            r.get(0)
+        })
+        .expect("seeded row body");
+    let hash = comemory::simhash::of_body(&body) as i64;
+    conn.execute(
+        "UPDATE memories SET simhash = ?1 WHERE id = ?2",
+        rusqlite::params![hash, id],
+    )
+    .expect("seed a real simhash");
 }
 
 #[test]

@@ -113,6 +113,72 @@ fn doctor_embed_hint_round_trips_via_config_file() {
     );
 }
 
+/// Insert a bogus `0014_future` marker directly into a real, fully-migrated
+/// v13 database — simulating a database written by a newer comemory. A
+/// plain `rusqlite::Connection::open` is used rather than
+/// `comemory::store::connection::open`, since the latter would itself run
+/// `preflight`/`migrate::run` again on the very database this test is
+/// about to make forward-incompatible.
+fn inject_future_marker(db_path: &std::path::Path) {
+    let conn = rusqlite::Connection::open(db_path).expect("open db to inject marker");
+    conn.execute(
+        "INSERT INTO schema_meta(key, value) VALUES('0014_future', '1')",
+        [],
+    )
+    .expect("seed future marker");
+}
+
+/// `doctor` is the one command whose job is to explain a broken state: on a
+/// database written by a newer comemory it must fall back to a read-only
+/// probe and report the unknown key (exit 0), while every other command is
+/// refused identically to `Error::Migration`'s AC-12 exit-70 contract.
+#[test]
+fn doctor_falls_back_on_a_newer_db_while_every_other_command_still_exits_70() {
+    let home = TempDir::new().expect("tempdir");
+    // Bootstrap a real, fully-migrated v13 database.
+    bin(&home).arg("doctor").assert().success();
+    let db_path = home.path().join(".comemory").join("comemory.db");
+    inject_future_marker(&db_path);
+
+    // `doctor` (TTY) must exit 0 and name the unknown key.
+    let assertion = bin(&home).arg("doctor").assert().success();
+    let out = String::from_utf8(assertion.get_output().stdout.clone()).expect("utf8 stdout");
+    assert!(
+        out.contains("0014_future"),
+        "doctor TTY output must name the unknown key, got: {out:?}"
+    );
+
+    // `doctor --json` must exit 0 and carry the key in the JSON report.
+    let assertion = bin(&home).args(["--json", "doctor"]).assert().success();
+    let stdout = String::from_utf8(assertion.get_output().stdout.clone()).expect("utf8 stdout");
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
+    assert_eq!(
+        v["unknown_migration_keys"].as_array().map(Vec::len),
+        Some(1),
+        "unknown_migration_keys must carry exactly one entry, got: {v}"
+    );
+    assert_eq!(
+        v["unknown_migration_keys"][0].as_str(),
+        Some("0014_future"),
+        "unknown_migration_keys must name the exact unknown key, got: {v}"
+    );
+    assert_eq!(v["db_writable"].as_bool(), Some(true));
+
+    // Every other command against the same DB must still exit 70, per AC-12.
+    for args in [
+        vec!["list"],
+        vec!["search", "anything"],
+        vec!["save", "body", "--kind", "note"],
+    ] {
+        let assertion = bin(&home).args(&args).assert().code(70);
+        let stderr = String::from_utf8(assertion.get_output().stderr.clone()).expect("utf8");
+        assert!(
+            stderr.contains("0014_future"),
+            "{args:?} must surface the same forward-compat refusal, got: {stderr:?}"
+        );
+    }
+}
+
 /// Env var must override config.toml when both are set (env wins in the
 /// defaults → file → env layering order).
 #[test]

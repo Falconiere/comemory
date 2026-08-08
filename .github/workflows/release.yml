@@ -60,6 +60,12 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+          # Full history + tags: this job runs scripts/check-all.sh, whose
+          # migration-check gate compares each src/store/sql/*.sql against the
+          # first release tag containing it. checkout defaults to depth 1 with
+          # tags off, and the gate fails loudly on zero tags by design, so
+          # without this the release build breaks.
+          fetch-depth: 0
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
         with:
