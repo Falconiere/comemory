@@ -83,6 +83,12 @@ pub(crate) fn copy_preserved_tables_from_old(
     conn: &mut rusqlite::Connection,
     old_db: &Path,
 ) -> Result<()> {
+    // Debug-only, and deliberately so: the authoritative check is
+    // `migration_integrity_every_live_table_is_covered_exactly_once` in
+    // `tests/coverage.rs`, which also proves the union covers the live set.
+    // This assertion is not a runtime guard — it is what gives both consts a
+    // real consumer in the non-test build, so neither can drift into
+    // dead code while the coverage test still appears to pass.
     debug_assert!(
         COPIED_TABLES
             .iter()

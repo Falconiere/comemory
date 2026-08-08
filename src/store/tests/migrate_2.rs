@@ -234,10 +234,12 @@ fn v11_adds_memories_rank_score_defaulting_to_zero() {
     assert_eq!(schema_meta(&conn, "version"), migrate::CURRENT_VERSION);
 }
 
-/// Every migration in apply order as `(schema_meta marker, SQL)` — the
-/// replay source [`build_legacy_db`] slices to reconstruct an older schema.
-/// Sourced from [`migrate::list::MIGRATIONS`] rather than hand-listed, so
-/// this replay harness cannot fall a migration behind `run()` again.
+/// Every migration in apply order, each [`migrate::list::Migration`] projected
+/// to its `(key, sql)` pair — the replay source [`build_legacy_db`] slices to
+/// reconstruct an older schema. Only those two fields are needed here: replay
+/// re-runs the SQL and writes the marker, while `class`/`post`/`markers` are
+/// the runtime concern of `run()` and `preflight`. Sourced from `MIGRATIONS`
+/// rather than hand-listed, so this harness cannot fall behind `run()` again.
 /// `pub(crate)` so `store::migrate::backup`/`preflight`'s own colocated
 /// tests can reuse it too, rather than hand-copying the replay logic
 /// (Binding Rule 1).
