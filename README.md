@@ -251,6 +251,19 @@ Full recipe, including the sample Ollama wrapper
 
 ---
 
+## Upgrading
+
+Point a newer `comemory` binary at an existing `~/.comemory` and the schema
+migrates automatically on your next command — there is no `comemory migrate`
+step to remember. Before a migration that could destroy data, comemory
+snapshots `comemory.db` to `comemory.db.pre-v<N>.bak` first (skip with
+`COMEMORY_SKIP_MIGRATION_BACKUP=1`); an older binary opening a database
+written by a newer one refuses cleanly instead of corrupting it. Full story,
+including how to restore a snapshot and the `comemory serve` restart caveat:
+**[docs/guides/upgrading.md](docs/guides/upgrading.md)**.
+
+---
+
 ## Documentation
 
 Start at the docs index — **[docs/README.md](docs/README.md)** — or jump to a
@@ -264,7 +277,8 @@ tier directly:
   [ranking-and-eval](docs/guides/ranking-and-eval.md) ·
   [serve-web](docs/guides/serve-web.md) ·
   [http-api](docs/guides/http-api.md) ·
-  [prune-and-gc](docs/guides/prune-and-gc.md).
+  [prune-and-gc](docs/guides/prune-and-gc.md) ·
+  [upgrading](docs/guides/upgrading.md).
 - **Reference** — [docs/cli-reference.md](docs/cli-reference.md): every
   subcommand and flag · [docs/configuration.md](docs/configuration.md): every
   environment variable and config knob.
@@ -297,7 +311,7 @@ stack, plus its own stricter local ceilings):
 The umbrella quality gate is one command — CI runs the same scripts:
 
 ```bash
-bash scripts/check-all.sh     # fmt · type · lint · guardrails · typos · cli-docs
+bash scripts/check-all.sh     # fmt · type · lint · guardrails · typos · cli-docs · migration-check
 just check                    # alias of the above
 just test                     # cargo nextest run --all-features
 just qa                       # check-all + cargo-deny + dup-check + machete

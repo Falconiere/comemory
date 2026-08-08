@@ -44,7 +44,9 @@ pub async fn run(_args: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Res
 }
 
 /// Write the doctor report to stdout. JSON mode serialises the
-/// `Report` struct verbatim; TTY mode renders a 4-line summary.
+/// `Report` struct verbatim; TTY mode renders a summary, plus one extra
+/// line naming any unknown schema-migration keys (see `api::doctor`'s
+/// "Forward-compat fallback").
 fn emit(report: &api::doctor::Report, json_flag: bool) -> Result<()> {
     if json_flag {
         json::write(report)?;
@@ -60,5 +62,12 @@ fn emit(report: &api::doctor::Report, json_flag: bool) -> Result<()> {
         "embed_hint        : {}",
         report.embed_hint.as_deref().unwrap_or("(none)")
     )?;
+    if !report.unknown_migration_keys.is_empty() {
+        writeln!(
+            out,
+            "unknown_migration_keys : {}",
+            report.unknown_migration_keys.join(", ")
+        )?;
+    }
     Ok(())
 }

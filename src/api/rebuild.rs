@@ -29,16 +29,27 @@
 //!
 //! Everything that exists only in SQLite — the code index (`code_symbols`,
 //! `code_vec`, `code_fts`, `indexed_files`), the mined/earned code-graph
-//! edges plus their `repo_marker` cursors, and the five learning-loop
-//! tables — is copied from the old DB via `ATTACH DATABASE` before the
-//! swap. Markdown cannot rebuild any of it, so dropping it would force a
-//! full re-index and silently reset the feedback rerank priors. See
-//! [`copy`] for the per-table details.
+//! edges plus their `repo_marker` cursors, the five learning-loop tables,
+//! and (via [`documents`]) the document-domain tables (`source_files`,
+//! `documents`, `document_chunks`, `document_fts`) — is copied from the old
+//! DB via `ATTACH DATABASE` before the swap. Markdown cannot rebuild any of
+//! it, so dropping it would force a full re-index and silently reset the
+//! feedback rerank priors. See [`copy`] for the per-table details. The
+//! fifth v13 table, `source_roots`, is reconciled fresh from `sources.toml`
+//! (`source::mirror::reconcile`) rather than copied — see [`build_new_db`].
 //!
 //! Memory-side vectors are intentionally *not* repopulated: the v0.2
 //! contract is BYO-vector, so re-embedding means re-running the caller's
 //! embedder through `comemory save` / `ingest-code`. The lexical path
 //! (`memory_fts`) is fully restored.
+//!
+//! ## Pre-swap snapshot
+//!
+//! Immediately before [`swap_into_place`] replaces the live `comemory.db`,
+//! [`snapshot_before_swap`] `VACUUM INTO`s it to
+//! [`crate::config::paths::Paths::rebuild_backup`] — the exact operation
+//! that once discarded a full release's document index with no recovery
+//! path at all.
 
 use std::path::{Path, PathBuf};
 
@@ -47,11 +58,17 @@ use serde::Deserialize;
 use crate::api::Ctx;
 use crate::memory::MemoryStore;
 use crate::prelude::*;
+use crate::source::mirror;
+use crate::source::registry::Registry;
+use crate::store::migrate::backup;
 use crate::store::{connection, memory_row};
 
-/// `ATTACH`-based preservation copy of the code-index, code-graph, and
-/// learning-loop tables from the pre-rebuild DB.
+/// `ATTACH`-based preservation copy of the code-index, code-graph,
+/// learning-loop, and document-domain tables from the pre-rebuild DB.
 pub mod copy;
+/// The document-domain half of [`copy`]'s preservation copy —
+/// `source_files`, `documents`, `document_chunks`, `document_fts`.
+pub mod documents;
 
 /// `comemory rebuild` / `POST /api/v1/rebuild` request. The command has no
 /// flags today — it always rebuilds the entire memory layer of the SQLite
@@ -73,10 +90,13 @@ pub struct Request {}
 ///    code-graph edges + `repo_marker` cursors and the five learning tables
 ///    (`feedback`, `code_feedback`, `feedback_events`, `retrieval_log`,
 ///    `query_expansions`) so feedback counters and mined expansions do too.
-/// 4. Close the temp connection then `fs::rename` it over the live path
+/// 4. Snapshot the still-live `comemory.db` to
+///    [`crate::config::paths::Paths::rebuild_backup`] (see
+///    [`snapshot_before_swap`]).
+/// 5. Close the temp connection then `fs::rename` it over the live path
 ///    (atomic on POSIX; on Windows this may fail if the DB is held open by
 ///    another process).
-/// 5. Remove stale WAL/SHM sidecars from the original path so the next open
+/// 6. Remove stale WAL/SHM sidecars from the original path so the next open
 ///    starts clean.
 ///
 /// On any error the original DB is left untouched and the tmp file is
@@ -101,13 +121,40 @@ pub fn run(ctx: &mut Ctx<'_>, _req: Request) -> Result<()> {
     remove_db_and_sidecars(&tmp_path);
 
     match build_new_db(&db, &tmp_path, paths) {
-        Ok(()) => swap_into_place(&tmp_path, &db),
+        Ok(()) => {
+            if db.exists() {
+                snapshot_before_swap(&db, paths)?;
+            }
+            swap_into_place(&tmp_path, &db)
+        }
         Err(e) => {
             // Remove the partial tmp + sidecars so the caller can retry cleanly.
             remove_db_and_sidecars(&tmp_path);
             Err(e)
         }
     }
+}
+
+/// Snapshot the live `comemory.db` at `db` to
+/// [`crate::config::paths::Paths::rebuild_backup`] before [`swap_into_place`]
+/// replaces it — the very operation that once silently discarded a full
+/// release's document index. Uses [`backup::snapshot_path`], not
+/// [`backup::snapshot`]: by this point [`build_new_db`] has already dropped
+/// its connection, so nothing holds `db` open, and opening it via
+/// `connection::open` would run preflight and the whole migration chain on
+/// a database about to be deleted.
+///
+/// `rebuild_backup()` is a single fixed path, unlike the migration backups'
+/// per-version names, and `VACUUM INTO` errors rather than overwriting, so
+/// any snapshot left by a prior rebuild is removed first — otherwise a
+/// second rebuild would either fail outright or silently keep the first
+/// run's now-stale snapshot.
+fn snapshot_before_swap(db: &Path, paths: &crate::config::paths::Paths) -> Result<()> {
+    let dest = paths.rebuild_backup();
+    if dest.exists() {
+        std::fs::remove_file(&dest)?;
+    }
+    backup::snapshot_path(db, &dest)
 }
 
 /// Atomic swap: rename the freshly built tmp DB over the live path, then
@@ -153,9 +200,10 @@ fn remove_sidecars(path: &Path) {
     }
 }
 
-/// Build the fresh DB at `tmp_path`, populate it from markdown, then copy the
-/// code index tables from `old_db` if it exists. Extracted so the error path
-/// in [`run`] can clean up the tmp file unconditionally.
+/// Build the fresh DB at `tmp_path`, populate it from markdown, reconcile
+/// `source_roots` from `sources.toml`, then copy the code index +
+/// document-domain tables from `old_db` if it exists. Extracted so the
+/// error path in [`run`] can clean up the tmp file unconditionally.
 fn build_new_db(old_db: &Path, tmp_path: &Path, paths: &crate::config::paths::Paths) -> Result<()> {
     let mut conn = connection::open(tmp_path)?;
     let tx = conn.transaction()?;
@@ -174,10 +222,19 @@ fn build_new_db(old_db: &Path, tmp_path: &Path, paths: &crate::config::paths::Pa
     }
     tx.commit()?;
 
-    // Copy the code index + learning tables from the old DB if it exists.
-    // A copy failure aborts the whole rebuild (tmp removed, live DB never
-    // renamed over): learning state must not be silently dropped, and the
-    // operator can retry once the source DB is readable again.
+    // Reconstruct `source_roots` fresh from `sources.toml` rather than
+    // copying it from the old DB: it is the durable source of truth
+    // (`RECONSTRUCTABLE_TABLES`), and its rows must exist before the copy
+    // below, since `source_files.source_id` is a foreign key under
+    // `PRAGMA foreign_keys=ON`.
+    let registry = Registry::new(paths.clone());
+    mirror::reconcile(&conn, &registry.load()?)?;
+
+    // Copy the code index + learning + document-domain tables from the old
+    // DB if it exists. A copy failure aborts the whole rebuild (tmp
+    // removed, live DB never renamed over): learning state must not be
+    // silently dropped, and the operator can retry once the source DB is
+    // readable again.
     if old_db.exists() {
         copy::copy_preserved_tables_from_old(&mut conn, old_db)?;
     }

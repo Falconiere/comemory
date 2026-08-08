@@ -28,6 +28,7 @@ use crate::prelude::*;
 /// applied.
 pub fn open<P: AsRef<Path>>(path: P) -> Result<Connection> {
     ensure_sqlite_vec_registered()?;
+    let path = path.as_ref();
     let mut conn = Connection::open(path)?;
     // Set busy_timeout FIRST: it defaults to 0 on a fresh connection, so any
     // later lock-taking statement run before it would fail instantly with
@@ -41,6 +42,11 @@ pub fn open<P: AsRef<Path>>(path: P) -> Result<Connection> {
     // Must precede migrate::run: bundled SQLite 3.46 resolves
     // `tokenize = 'identifier'` eagerly when FTS DDL is prepared.
     crate::store::tokenizer::ffi::register(&conn)?;
+    // Must also precede migrate::run, and must follow the tokenizer
+    // registration above: the snapshot's `VACUUM INTO` prepares the source
+    // schema, which instantiates every FTS5 virtual table, and any v4+
+    // database carries `tokenize = 'identifier'` columns.
+    crate::store::migrate::preflight::preflight(&conn, path)?;
     crate::store::migrate::run(&mut conn)?;
     Ok(conn)
 }

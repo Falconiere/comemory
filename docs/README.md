@@ -27,6 +27,8 @@ Task-oriented recipes for a specific job:
   `--ref-file` / `--ref-symbol` references and read fresh/stale/ghost status.
 - **[Prune, rebuild, and gc](guides/prune-and-gc.md)** — maintenance: trim
   low-value memories, rebuild the DB from markdown, garbage-collect logs.
+- **[Upgrading comemory](guides/upgrading.md)** — what a schema upgrade does,
+  where snapshots go, how to restore one, and the `serve`-restart caveat.
 
 ## Reference
 

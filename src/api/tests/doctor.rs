@@ -67,4 +67,42 @@ fn run_reuses_an_already_migrated_db() {
     assert!(report.db_writable);
     assert_eq!(report.schema_version, CURRENT_VERSION);
     assert!(report.embed_hint.is_none());
+    assert!(
+        report.unknown_migration_keys.is_empty(),
+        "a real current db must report no unknown migration keys"
+    );
+}
+
+/// Regression test for the fallback itself: on a database written by a
+/// newer comemory, every other command is refused with `Error::Migration`
+/// (exit 70 on the CLI), but `doctor` must instead fall back to a
+/// read-only probe and report the unknown key rather than propagating the
+/// error — see `api::doctor`'s "Forward-compat fallback".
+#[test]
+fn run_falls_back_to_a_read_only_probe_and_names_the_unknown_key() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let paths = Paths::new(home.path());
+    paths.ensure_dirs().expect("ensure dirs");
+    {
+        let conn = comemory::store::connection::open(paths.db_path()).expect("build a real db");
+        conn.execute(
+            "INSERT INTO schema_meta(key, value) VALUES('0014_future', '1')",
+            [],
+        )
+        .expect("seed an unknown marker, simulating a newer comemory");
+    }
+
+    // A fresh Ctx, mirroring a real second invocation: the primary
+    // Ctx::conn attempt must run and be refused before the fallback
+    // triggers, not skip straight to the read-only path.
+    let cfg = Config::defaults();
+    let mut ctx = Ctx::lazy(&paths, &cfg);
+    let report = api::doctor::run(&mut ctx, api::doctor::Request {})
+        .expect("doctor must not propagate Error::Migration");
+    assert!(report.db_writable);
+    assert_eq!(
+        report.unknown_migration_keys,
+        vec!["0014_future".to_string()],
+        "must name the exact unknown key"
+    );
 }

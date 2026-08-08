@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use comemory::source::lock::RegistryLock;
+use comemory::source::lock::FileLock;
 use tempfile::TempDir;
 
 /// Acquire the lock, read `data_path`, sleep to widen the race window,
@@ -22,7 +22,7 @@ use tempfile::TempDir;
 /// each other's write; under the lock, the second thread's read only
 /// happens after the first's write completes.
 fn read_modify_write(lock_path: &std::path::Path, data_path: &std::path::Path, marker: &str) {
-    let _guard = RegistryLock::acquire(lock_path).expect("acquire lock");
+    let _guard = FileLock::acquire(lock_path, "registry").expect("acquire lock");
     let existing = fs::read_to_string(data_path).unwrap_or_default();
     thread::sleep(Duration::from_millis(20));
     fs::write(data_path, format!("{existing}{marker}\n")).expect("write data");
@@ -61,10 +61,10 @@ fn acquire_creates_missing_lock_file_and_releases_on_drop() {
     assert!(!lock_path.exists());
 
     {
-        let _guard = RegistryLock::acquire(&lock_path).expect("acquire");
+        let _guard = FileLock::acquire(&lock_path, "registry").expect("acquire");
         assert!(lock_path.exists(), "acquire must create the lock file");
     }
 
     // A second acquire after the guard dropped must not block forever.
-    let _guard2 = RegistryLock::acquire(&lock_path).expect("re-acquire after drop");
+    let _guard2 = FileLock::acquire(&lock_path, "registry").expect("re-acquire after drop");
 }

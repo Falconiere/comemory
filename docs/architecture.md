@@ -82,9 +82,13 @@ authoritative architecture reference; pair it with the
 └── config.toml                  ← per-user configuration
 ```
 
-Markdown is the single source of truth. `comemory.db` is fully rebuildable
-from `memories/*.md` (plus a re-walk of indexed repos) via
-`comemory rebuild`.
+Markdown is the single source of truth. `comemory.db` is a rebuildable
+mirror: `comemory rebuild` reconstructs the memory layer (rows, `memory_fts`,
+edges) from `memories/*.md`, and carries everything markdown cannot rebuild
+— the code index, the document index, and the learning-loop tables — across
+from the pre-rebuild database rather than re-walking indexed repos (§6). It
+also snapshots the still-live database before the swap; see §3.2 for the
+snapshot mechanism it shares with schema migration.
 
 ### 3.1 Inside `comemory.db`
 
@@ -110,6 +114,61 @@ Every dense lookup goes through `sqlite-vec`'s `vec0` virtual table with a
 dimension guard so a mismatched embedder fails fast (`VecDimMismatch`)
 instead of corrupting the index. FTS5 hits and vector hits are fused via
 Reciprocal Rank Fusion (RRF, `k = 60` by default).
+
+### 3.2 Schema migration & upgrade safety
+
+`store::migrate::run` has exactly one production call site,
+`store::connection::open`, so an upgraded binary migrates a user's
+`comemory.db` automatically on the very next command — there is no
+`comemory migrate` command and no way to skip it. The chain itself is a
+single source of truth, `store::migrate::list::MIGRATIONS`: each entry
+carries its key, SQL, a `Class` (`Additive` or `Destructive`, verified
+against the migration SQL rather than hand-labeled), an optional post-apply
+Rust pass (the two simhash backfills), and the `schema_meta` marker keys it
+writes.
+
+Immediately before the chain runs, `store::migrate::preflight` guards two
+things:
+
+- **Forward-compat refusal.** It compares the `schema_meta` marker keys the
+  database has applied against the set every migration in `MIGRATIONS` is
+  known to write. A key outside that set means the database was written by
+  a *newer* comemory; the open is refused with `Error::Migration` (exit
+  `70`) naming the unknown key, and `schema_meta` is left untouched. Every
+  command except `doctor` surfaces that refusal as-is; `doctor` falls back
+  to a second, read-only connection and reports the unknown keys as the
+  `unknown_migration_keys` field instead, since explaining a broken state
+  is its job.
+- **Pre-upgrade snapshot.** When migrations are pending and any of them is
+  `Destructive`, `store::migrate::backup::snapshot` `VACUUM INTO`s the
+  database to `comemory.db.pre-v{N}.bak` (`{N}` = the version being left)
+  before the chain touches it — `VACUUM INTO` is used instead of a raw file
+  copy because it captures committed-but-not-yet-checkpointed WAL frames
+  that a bare copy would miss. Snapshotting is mandatory (a failure refuses
+  the upgrade) ahead of a destructive migration and advisory (a failure
+  only warns) when every pending migration is additive; either way it is
+  skippable via `COMEMORY_SKIP_MIGRATION_BACKUP=1`. The newest two
+  snapshots per database file are kept, pruned before each new one is
+  taken; an existing `.bak` is `PRAGMA quick_check`ed before being trusted,
+  so a truncated file left by a killed process is replaced rather than
+  relied on. `comemory rebuild` reuses the same snapshot mechanism —
+  `comemory.db.pre-rebuild.bak` — immediately before its atomic swap.
+
+`store::migrate::set_version` additionally refuses to write a version lower
+than the one already stored (compared numerically, not lexically), so an
+older binary opening a newer database cannot stomp `schema_meta.version`
+downward even if it no-ops through every migration it recognizes.
+
+`scripts/migration-check.sh` closes the loop at the source level: every
+already-released `src/store/sql/*.sql` file must stay byte-identical to its
+content at the first release tag that shipped it, because the runner is
+marker-keyed and idempotent — editing a shipped migration changes what a
+live user's database already applied without anything re-running it. New
+schema changes are always a new, appended, numbered file.
+
+See [Upgrading comemory](guides/upgrading.md) for the user-facing walkthrough
+— including how to restore a snapshot and the `comemory serve` restart
+caveat.
 
 ## 4. Data model snapshot
 
@@ -372,7 +431,9 @@ comemory save "..." --kind=decision [--vector ... | --vector-stdin]
 Markdown is always the source of truth. If the SQLite mirror transaction
 fails, the markdown file is **kept** (it was already written as the source
 of truth) and the error names the markdown path with a hint to run
-`comemory rebuild`, which reconstructs the DB from `memories/*.md`.
+`comemory rebuild`, which reconstructs the memory layer from `memories/*.md`
+and — via a pre-swap snapshot plus an `ATTACH`-based copy — preserves
+everything else already in `comemory.db` (§3.2, §7).
 
 ## 7. Code indexing flow
 
@@ -439,9 +500,10 @@ edge kind and the `feedback_events.provenance` column; `0010` adds
 resolved refs (parity with `search-code`'s existing access tracking), so the
 recency/activation priors stay honest across both read paths.
 
-`comemory rebuild` drops `comemory.db` and reruns step 4 of "save" for every
-markdown file. Use it after upgrading from v0.1 or after editing the DB by
-hand.
+`comemory rebuild` builds a fresh `comemory.db.rebuild.tmp`, replays step 4
+of "save" for every markdown file into it, copies in everything markdown
+cannot rebuild (§6), snapshots the live DB, then atomically swaps the tmp
+file over it. Use it after the DB is corrupted, deleted, or edited by hand.
 
 ### 7.2 Versioned-pointer code references
 
@@ -568,4 +630,6 @@ does not replace — `comemory serve`'s in-browser viewer.
 ## Where to go next
 
 - [CLI reference](cli-reference.md) — every command with worked examples.
+- [Upgrading comemory](guides/upgrading.md) — the schema-migration snapshot
+  and forward-compat guard (§3.2), user-facing.
 - [README](../README.md) — install, quickstart, and the feature tour.

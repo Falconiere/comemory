@@ -11,6 +11,7 @@
 //! test runs in its own process; under plain `cargo test` this binary
 //! must run with `--test-threads=1` (see `.config/nextest.toml`).
 
+use comemory::config::env::skip_migration_backup;
 use comemory::config::file::Config;
 
 #[test]
@@ -260,4 +261,41 @@ fn env_zero_max_page_window_returns_err() {
             .contains("COMEMORY_RETRIEVAL_MAX_PAGE_WINDOW"),
         "error must name the offending var, got: {err}"
     );
+}
+
+#[test]
+fn skip_migration_backup_is_false_when_unset() {
+    // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
+    unsafe { std::env::remove_var("COMEMORY_SKIP_MIGRATION_BACKUP") };
+    assert!(!skip_migration_backup());
+}
+
+#[test]
+fn skip_migration_backup_recognizes_1_and_true() {
+    for truthy in ["1", "true"] {
+        // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
+        unsafe { std::env::set_var("COMEMORY_SKIP_MIGRATION_BACKUP", truthy) };
+        assert!(
+            skip_migration_backup(),
+            "'{truthy}' must be treated as truthy"
+        );
+    }
+    // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
+    unsafe { std::env::remove_var("COMEMORY_SKIP_MIGRATION_BACKUP") };
+}
+
+#[test]
+fn skip_migration_backup_treats_unrecognized_values_as_false() {
+    // Not a validated user knob: an unrecognized value degrades to the
+    // safer default (take the backup) rather than erroring.
+    for other in ["0", "false", "yes", "TRUE", ""] {
+        // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
+        unsafe { std::env::set_var("COMEMORY_SKIP_MIGRATION_BACKUP", other) };
+        assert!(
+            !skip_migration_backup(),
+            "'{other}' must not be treated as truthy"
+        );
+    }
+    // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
+    unsafe { std::env::remove_var("COMEMORY_SKIP_MIGRATION_BACKUP") };
 }

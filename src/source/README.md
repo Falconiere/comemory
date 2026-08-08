@@ -19,7 +19,7 @@ One line per file, named after its primary item:
 | --- | --- | --- |
 | `classify.rs` | `Classification` | v1 extension allowlist + binary-content sniff, managed-directory exclusion |
 | `discover.rs` | `Candidate` | Discovery walk over a registered source root: boundary/ignore/exclusion rules |
-| `lock.rs` | `RegistryLock` | Exclusive advisory lock over the `sources.toml.lock` sibling file |
+| `lock.rs` | `FileLock` | Exclusive advisory lock over a sibling lock file (generalized from `sources.toml.lock`; also consumed by `store::migrate`'s preflight snapshot) |
 | `mirror.rs` | `MirrorReport` | Reconciles the TOML registry into the SQLite `source_roots` mirror |
 | `registry.rs` | `Registry` | `sources.toml` load/save, overlap validation, atomic durability |
 

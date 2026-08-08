@@ -13,6 +13,9 @@
 #                    no #[allow])
 #   typos-check      typos.toml
 #   cli-docs-check   docs/cli-reference.md vs the real --help output
+#   migration-check  every already-released src/store/sql/*.sql file is
+#                    byte-identical to its content at the first release tag
+#                    that shipped it (git-dependent, requires unshallow tags)
 #
 # Retired in the toolu migration (folded into guardrails-check + lint-check):
 #   test-placement-check  no-bypass-check  module-size-check  tests-mirror-check
@@ -28,6 +31,7 @@ GATES=(
   guardrails-check
   typos-check
   cli-docs-check
+  migration-check
 )
 
 failed=()

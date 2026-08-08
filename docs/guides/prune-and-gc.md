@@ -141,9 +141,17 @@ half-failed and left the database behind its markdown — drop and repopulate it
 comemory rebuild
 ```
 
-`rebuild` reconstructs the entire database from the markdown: every memory row,
-its FTS5 and vector entries, and the re-materialized `relations`, `references`,
-and edges. This is the recovery path whenever a command points you at it.
+`rebuild` replays every memory row and its FTS5 entry from the markdown, along
+with the re-materialized `relations`, `references`, and edges. What markdown
+cannot supply — the code index, the document index, the mined code-graph edges,
+and the learning-loop counters — is copied across from the previous database, and
+`source_roots` is reconciled from `sources.toml`. Memory **vectors are not
+repopulated**: the BYO-vector contract means re-embedding is the caller's job
+(see the [BYO-vectors guide](byo-vectors.md)).
+
+Before it swaps the new database into place, `rebuild` snapshots the live one to
+`comemory.db.pre-rebuild.bak`, so a rebuild that turns out wrong is recoverable.
+This is the recovery path whenever a command points you at it.
 
 ## Garbage-collect logs
 

@@ -100,8 +100,11 @@ at the fix:
 comemory rebuild
 ```
 
-`rebuild` drops `comemory.db` and repopulates it from `memories/*.md`, so no
-saved memory is lost.
+`rebuild` rebuilds `comemory.db` from `memories/*.md` (snapshotting the old one
+to `comemory.db.pre-rebuild.bak` first), so no saved memory is lost. Note that
+memory **vectors are not restored** — `memory_vec` is deliberately left empty,
+because re-embedding means re-running your embedder. Re-save with `--vector` /
+`--vector-stdin` to repopulate them; the lexical path works in the meantime.
 
 ## See also
 

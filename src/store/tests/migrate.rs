@@ -21,6 +21,11 @@ use comemory::store::{connection, migrate};
 use rusqlite::Connection;
 use tempfile::tempdir;
 
+// `set_version` is private; reached directly (rather than only indirectly
+// through `migrate::run`) so its monotonicity guard is asserted against
+// itself, per the Testing convention for a colocated private-item test.
+use super::set_version;
+
 #[test]
 fn fresh_db_runs_all_migrations_to_current_version() {
     let dir = tempdir().expect("tempdir");
@@ -308,4 +313,61 @@ fn open_migrates_v4_db_to_v5() {
     // `connection::open` always migrates to the latest schema, so a
     // v4 db lands on CURRENT_VERSION (v5 + every later migration).
     assert_version_current(&conn);
+}
+
+/// The `schema_meta.version` value stored under key `'version'`.
+fn stored_version(conn: &Connection) -> String {
+    conn.query_row(
+        "SELECT value FROM schema_meta WHERE key = 'version'",
+        [],
+        |r| r.get(0),
+    )
+    .expect("stored version")
+}
+
+#[test]
+fn set_version_refuses_to_lower_a_stored_version() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("comemory.db");
+    let conn = connection::open(&path).expect("open");
+
+    // A crash-after-a-newer-migration (or a peer newer binary) left "14"
+    // stored; this build only knows CURRENT_VERSION ("13").
+    conn.execute(
+        "UPDATE schema_meta SET value = '14' WHERE key = 'version'",
+        [],
+    )
+    .expect("seed a newer stored version");
+
+    set_version(&conn, migrate::CURRENT_VERSION).expect("set_version must not error");
+
+    assert_eq!(
+        stored_version(&conn),
+        "14",
+        "a newer stored version must not be stomped downward"
+    );
+}
+
+#[test]
+fn set_version_raises_an_older_stored_version() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("comemory.db");
+    let conn = connection::open(&path).expect("open");
+
+    // A pre-v0.11 (version "9") database's stored value predates
+    // CURRENT_VERSION's two-digit width; the numeric compare, not a
+    // lexical one, must still raise it.
+    conn.execute(
+        "UPDATE schema_meta SET value = '9' WHERE key = 'version'",
+        [],
+    )
+    .expect("seed an older stored version");
+
+    set_version(&conn, migrate::CURRENT_VERSION).expect("set_version must not error");
+
+    assert_eq!(
+        stored_version(&conn),
+        migrate::CURRENT_VERSION,
+        "an older stored version must be raised to current"
+    );
 }
