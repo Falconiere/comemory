@@ -102,6 +102,11 @@ fn derive_live_tables() -> BTreeSet<String> {
     live
 }
 
+/// The literal `25` is a deliberate canary, not an incidental constant: a
+/// migration that adds or drops a table is *expected* to fail this test, and
+/// the failure is the prompt to decide whether the new table belongs in
+/// `COPIED_TABLES` or `RECONSTRUCTABLE_TABLES`. Bump the number in the same
+/// change that answers that question — never to make the test pass again.
 #[test]
 fn migration_integrity_derived_live_set_has_exactly_twenty_five_tables() {
     let live = derive_live_tables();

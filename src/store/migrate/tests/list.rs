@@ -236,14 +236,10 @@ fn migration_integrity_declared_markers_match_a_real_migrated_db() {
     let db = dir.path().join("comemory.db");
     let conn = connection::open(&db).expect("build a real, fully-migrated db");
 
-    let mut stmt = conn
-        .prepare("SELECT key FROM schema_meta WHERE key LIKE '0%'")
-        .expect("prepare");
-    let applied: BTreeSet<String> = stmt
-        .query_map([], |row| row.get::<_, String>(0))
-        .expect("query")
-        .collect::<Result<_, _>>()
-        .expect("rows");
+    // Read through `preflight::applied_keys` rather than a raw `LIKE '0%'`
+    // scan, so this exercises the same `NNNN_` shape filter production uses.
+    // A looser SQL filter here would pass while the real guard diverged.
+    let applied: BTreeSet<String> = preflight::applied_keys(&conn).expect("applied keys");
 
     let expected: BTreeSet<String> = preflight::expected_markers()
         .into_iter()
