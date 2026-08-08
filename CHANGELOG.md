@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-08-08
+
+### Added
+
+- guarantee data survives a schema change across releases
+
+### Fixed
+
+- address PR review feedback
+- resolve 8 re-review findings on migration safety
+- resolve 14 pre-push review findings on migration safety
+
 ## [0.15.0] - 2026-08-07
 
 ### Added
