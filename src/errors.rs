@@ -37,9 +37,23 @@ pub enum Error {
     #[error("git: {0}")]
     Git(#[from] git2::Error),
 
-    /// A versioned SQLite schema migration failed to apply.
+    /// A versioned SQLite schema migration failed to apply, or a
+    /// pre-migration snapshot failed ahead of a `Destructive` migration.
+    /// Distinct from [`Error::SchemaTooNew`]: this variant means the
+    /// migration chain itself could not proceed, not that the database is
+    /// simply ahead of this build.
     #[error("schema migration failed: {0}")]
     Migration(String),
+
+    /// `store::migrate::preflight` refused to open a database because it
+    /// carries an applied migration marker this build does not recognize —
+    /// the database was written by a *newer* comemory. Maps to
+    /// `EX_SOFTWARE` (exit 70), same as [`Error::Migration`]. Kept distinct
+    /// so `api::doctor`'s forward-compat fallback can catch exactly this
+    /// refusal and fall back to a read-only report, while a genuinely
+    /// broken migration ([`Error::Migration`]) still propagates.
+    #[error("schema too new: {0}")]
+    SchemaTooNew(String),
 
     /// A supplied vector's dimensionality does not match the `vec0` column
     /// baked into the schema at migration time.

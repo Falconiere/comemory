@@ -133,26 +133,32 @@ things:
 - **Forward-compat refusal.** It compares the `schema_meta` marker keys the
   database has applied against the set every migration in `MIGRATIONS` is
   known to write. A key outside that set means the database was written by
-  a *newer* comemory; the open is refused with `Error::Migration` (exit
+  a *newer* comemory; the open is refused with `Error::SchemaTooNew` (exit
   `70`) naming the unknown key, and `schema_meta` is left untouched. Every
   command except `doctor` surfaces that refusal as-is; `doctor` falls back
   to a second, read-only connection and reports the unknown keys as the
   `unknown_migration_keys` field instead, since explaining a broken state
-  is its job.
-- **Pre-upgrade snapshot.** When migrations are pending and any of them is
-  `Destructive`, `store::migrate::backup::snapshot` `VACUUM INTO`s the
+  is its job. A genuinely broken migration (its SQL fails to apply, or a
+  *mandatory* pre-upgrade snapshot fails ahead of a `Destructive`
+  migration) surfaces as `Error::Migration` instead, and `doctor` propagates
+  that like every other command — the fallback is scoped to the
+  forward-compat refusal alone.
+- **Pre-upgrade snapshot.** Whenever any migration is pending — additive or
+  destructive — `store::migrate::backup::snapshot` `VACUUM INTO`s the
   database to `comemory.db.pre-v{N}.bak` (`{N}` = the version being left)
   before the chain touches it — `VACUUM INTO` is used instead of a raw file
   copy because it captures committed-but-not-yet-checkpointed WAL frames
-  that a bare copy would miss. Snapshotting is mandatory (a failure refuses
-  the upgrade) ahead of a destructive migration and advisory (a failure
-  only warns) when every pending migration is additive; either way it is
-  skippable via `COMEMORY_SKIP_MIGRATION_BACKUP=1`. The newest two
-  snapshots per database file are kept, pruned before each new one is
-  taken; an existing `.bak` is `PRAGMA quick_check`ed before being trusted,
-  so a truncated file left by a killed process is replaced rather than
-  relied on. `comemory rebuild` reuses the same snapshot mechanism —
-  `comemory.db.pre-rebuild.bak` — immediately before its atomic swap.
+  that a bare copy would miss. Only the *consequence of a snapshot failure*
+  depends on destructiveness, not whether the snapshot is attempted:
+  mandatory (a failure refuses the upgrade) ahead of a `Destructive`
+  migration, advisory (a failure only warns) when every pending migration is
+  `Additive`; either way the snapshot attempt itself is skippable via
+  `COMEMORY_SKIP_MIGRATION_BACKUP=1`. The newest two snapshots per database
+  file are kept, pruned before each new one is taken; an existing `.bak` is
+  `PRAGMA quick_check`ed before being trusted, so a truncated file left by a
+  killed process is replaced rather than relied on. `comemory rebuild`
+  reuses the same snapshot mechanism — `comemory.db.pre-rebuild.bak` —
+  immediately before its atomic swap.
 
 `store::migrate::set_version` additionally refuses to write a version lower
 than the one already stored (compared numerically, not lexically), so an

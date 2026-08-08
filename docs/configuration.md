@@ -32,7 +32,7 @@ comemory's settings are layered: built-in defaults → an optional `config.toml`
 | `COMEMORY_PRUNE_MIN_FEEDBACK` | Beta-feedback ceiling (range `[0.0, 1.0]`) at or below which a memory is prune-eligible. | `0.25` |
 | `COMEMORY_PRUNE_BELOW_QUALITY` | Quality threshold (1..=5); memories at or below this value are prune candidates. | `2` |
 | `COMEMORY_PRUNE_SUPERSEDED_GRACE_DAYS` | Grace window (days) before a superseded-and-never-accessed memory becomes prune-eligible. | `7` |
-| `COMEMORY_SKIP_MIGRATION_BACKUP` | Truthy (`1`/`true`) skips the automatic pre-migration `VACUUM INTO` snapshot taken before a schema upgrade that includes a destructive migration. | `false` |
+| `COMEMORY_SKIP_MIGRATION_BACKUP` | Truthy (`1`/`true`) skips the automatic pre-migration `VACUUM INTO` snapshot taken before any pending schema migration — a failed snapshot only refuses the upgrade when a pending migration is destructive, and merely warns otherwise. | `false` |
 
 The ranking knobs (`COMEMORY_RANK_*`, `COMEMORY_RETRIEVAL_*`) are explained in
 [Measure and tune ranking](guides/ranking-and-eval.md); the `COMEMORY_PRUNE_*`

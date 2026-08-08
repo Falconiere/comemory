@@ -7,8 +7,8 @@
 //! - 65 — `EX_DATAERR` (`Yaml`, `Json`, `Toml`, `Frontmatter`, `VecDimMismatch`,
 //!   `Document`)
 //! - 69 — `EX_UNAVAILABLE` (`Unavailable`)
-//! - 70 — `EX_SOFTWARE` (`Sqlite`, `Migration`, `Ast`, `Git`, `Forbidden`,
-//!   `BadRequest`, `ConfirmationRequired`, `Other`)
+//! - 70 — `EX_SOFTWARE` (`Sqlite`, `Migration`, `SchemaTooNew`, `Ast`, `Git`,
+//!   `Forbidden`, `BadRequest`, `ConfirmationRequired`, `Other`)
 //! - 74 — `EX_IOERR` (`Io`)
 //! - 78 — `EX_CONFIG` (`Config`)
 
@@ -62,6 +62,7 @@ fn exit_code(err: &Error) -> i32 {
         | Error::Ast(_)
         | Error::Git(_)
         | Error::Migration(_)
+        | Error::SchemaTooNew(_)
         | Error::Forbidden(_)
         | Error::BadRequest(_)
         | Error::ConfirmationRequired(_)

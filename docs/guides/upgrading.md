@@ -31,12 +31,12 @@ Before the migration chain touches your database, a preflight guard runs:
    error and exits `70`, and nothing is written. Point `COMEMORY_DATA_DIR` at
    a different directory, or install a comemory at least as new as the one
    that last touched this database.
-2. **If migrations are pending and any of them could destroy data**
-   (dropping a table, or rewriting rows in place), comemory snapshots the
-   whole database first with SQLite's `VACUUM INTO` — safer than a raw file
-   copy, since it captures committed writes still sitting in the WAL file
-   rather than only what's been checkpointed to the main file. You see one
-   line on stderr before it starts:
+2. **If any migration is pending — additive or destructive — comemory
+   snapshots the whole database first**, with SQLite's `VACUUM INTO` —
+   safer than a raw file copy, since it captures committed writes still
+   sitting in the WAL file rather than only what's been checkpointed to the
+   main file. You see one line on stderr before it starts, whether the
+   pending migration merely adds a column or drops a table:
 
    ```
    comemory: snapshotting database to /home/you/.comemory/comemory.db.pre-v12.bak before migrating (set COMEMORY_SKIP_MIGRATION_BACKUP=1 to skip)
@@ -44,11 +44,13 @@ Before the migration chain touches your database, a preflight guard runs:
 
    Only then does the migration chain run.
 
-An upgrade with only additive migrations pending (adding a column or table,
-nothing dropped or rewritten) skips the snapshot notice entirely and migrates
-silently — the safety net only announces itself when it's actually needed.
-An already-current database costs one marker read and one version read, both
-against `schema_meta`, and nothing else: no snapshot, no write.
+Destructiveness decides what happens if that snapshot *fails*, not whether
+it's attempted: when the pending upgrade includes a migration that could
+destroy data (dropping a table, or rewriting rows in place), a failed
+snapshot refuses the upgrade outright rather than risk it unrecoverably. When
+every pending migration is purely additive, a failed snapshot only warns on
+stderr and the upgrade proceeds anyway. An already-current database costs no
+extra writes at all — the fast path only reads `schema_meta`.
 
 ## Where snapshots go, and how to restore one
 
@@ -110,8 +112,10 @@ someone who already knows the cost and wants the speed.
 comemory has no down migrations — a schema upgrade is one-way, and the
 pre-migration snapshot (or your own backup) is the recovery path, not a
 reversible migration graph. If you point an *older* `comemory` at a database
-a *newer* one already migrated, every command refuses with `Error::Migration`
-and exits `70`, same as the forward-compat guard above.
+a *newer* one already migrated, every command refuses with
+`Error::SchemaTooNew` and exits `70` — this *is* the forward-compat guard
+above, triggered in the direction of an older binary meeting a newer
+database.
 
 `comemory doctor` is the one exception: since its whole job is explaining a
 broken state, it doesn't also fail closed. It falls back to a read-only

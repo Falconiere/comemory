@@ -145,6 +145,15 @@ pub fn status_and_code(e: &Error) -> (StatusCode, &'static str) {
         Error::Json(_) => (StatusCode::BAD_REQUEST, "json"),
         Error::VecDimMismatch { .. } => (StatusCode::UNPROCESSABLE_ENTITY, "vec_dim_mismatch"),
         Error::Unavailable(_) => (StatusCode::SERVICE_UNAVAILABLE, "unavailable"),
+        // Both a broken migration chain and a database written by a newer
+        // comemory (`SchemaTooNew`) are server-side schema problems the
+        // caller cannot fix by retrying or rephrasing the request — same
+        // bucket `main.rs::exit_code` puts them in (EX_SOFTWARE, 70).
+        // Listed explicitly, not left to the `_` fallback below, so the two
+        // surfaces' mappings cannot silently drift apart.
+        Error::Migration(_) | Error::SchemaTooNew(_) => {
+            (StatusCode::INTERNAL_SERVER_ERROR, "internal")
+        }
         // A missing file on disk is a 404, not a 500.
         Error::Io(io) if io.kind() == std::io::ErrorKind::NotFound => {
             (StatusCode::NOT_FOUND, "not_found")

@@ -120,13 +120,21 @@ pub fn run(ctx: &mut Ctx<'_>, _req: Request) -> Result<()> {
     // the next rebuild reuses stale WALs.
     remove_db_and_sidecars(&tmp_path);
 
-    match build_new_db(&db, &tmp_path, paths) {
-        Ok(()) => {
-            if db.exists() {
-                snapshot_before_swap(&db, paths)?;
-            }
-            swap_into_place(&tmp_path, &db)
+    // Both failure sources — building the new DB, and (only once that
+    // succeeded) snapshotting the still-live one before the swap — must
+    // reach the SAME cleanup arm below. Chaining them with `and_then` keeps
+    // that true structurally: neither can early-return past the match and
+    // leave the tmp DB behind, the way a bare `?` inside the `Ok` arm once
+    // did.
+    let prepared = build_new_db(&db, &tmp_path, paths).and_then(|()| {
+        if db.exists() {
+            snapshot_before_swap(&db, paths)?;
         }
+        Ok(())
+    });
+
+    match prepared {
+        Ok(()) => swap_into_place(&tmp_path, &db),
         Err(e) => {
             // Remove the partial tmp + sidecars so the caller can retry cleanly.
             remove_db_and_sidecars(&tmp_path);
@@ -148,13 +156,28 @@ pub fn run(ctx: &mut Ctx<'_>, _req: Request) -> Result<()> {
 /// per-version names, and `VACUUM INTO` errors rather than overwriting, so
 /// any snapshot left by a prior rebuild is removed first — otherwise a
 /// second rebuild would either fail outright or silently keep the first
-/// run's now-stale snapshot.
+/// run's now-stale snapshot. Any failure — clearing the stale destination or
+/// the snapshot itself — is wrapped with the destination path, since the
+/// bare underlying error (an `io::Error` or a generic SQLite failure) does
+/// not otherwise name what it was trying to write.
 fn snapshot_before_swap(db: &Path, paths: &crate::config::paths::Paths) -> Result<()> {
     let dest = paths.rebuild_backup();
+    snapshot_before_swap_inner(db, &dest).map_err(|e| {
+        Error::Other(format!(
+            "pre-rebuild snapshot to {} failed: {e}",
+            dest.display()
+        ))
+    })
+}
+
+/// The body of [`snapshot_before_swap`], separated so the caller can wrap
+/// every error path (stale-`.bak` removal or the snapshot itself) with one
+/// destination-naming context.
+fn snapshot_before_swap_inner(db: &Path, dest: &Path) -> Result<()> {
     if dest.exists() {
-        std::fs::remove_file(&dest)?;
+        std::fs::remove_file(dest)?;
     }
-    backup::snapshot_path(db, &dest)
+    backup::snapshot_path(db, dest)
 }
 
 /// Atomic swap: rename the freshly built tmp DB over the live path, then

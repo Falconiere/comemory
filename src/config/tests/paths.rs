@@ -30,10 +30,6 @@ fn paths_resolves_subdirs_relative_to_data_dir() {
         sb.data_dir().join("sources.toml.lock")
     );
     assert_eq!(
-        paths.migration_backup(12),
-        sb.data_dir().join("comemory.db.pre-v12.bak")
-    );
-    assert_eq!(
         paths.migration_lock_file(),
         sb.data_dir().join("comemory.db.migrate.lock")
     );

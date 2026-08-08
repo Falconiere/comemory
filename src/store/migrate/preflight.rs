@@ -1,16 +1,22 @@
 //! Migration preflight: refuse a database written by a newer comemory, and
-//! take a pre-upgrade snapshot before any pending migration that would
-//! destroy data.
+//! take a pre-upgrade snapshot before any pending migration.
 //!
 //! Runs once, from [`crate::store::connection::open`], **after** the
-//! identifier tokenizer is registered and **before** [`super::run`] — that
-//! ordering is load-bearing, not incidental: [`snapshot`](super::backup::snapshot)
-//! (`VACUUM INTO`) prepares the source schema, which instantiates every
-//! FTS5 virtual table, and any v4+ database carries `tokenize =
-//! 'identifier'` columns (`memory_fts`, `code_fts`, and later `edge_fts` /
-//! `document_fts`). A preflight run above the tokenizer registration fails
-//! with "unknown tokenizer: identifier" on exactly the databases it exists
-//! to protect.
+//! identifier tokenizer is registered and **before** [`super::run`]. That
+//! ordering is *not* because preflight's own queries need the tokenizer —
+//! they touch only `schema_meta` / `sqlite_master`, and
+//! [`snapshot`](super::backup::snapshot)'s `VACUUM INTO` succeeds on a
+//! connection with no tokenizer registered at all (verified against a real
+//! v13 database: `VACUUM INTO` copies the schema and pages without eagerly
+//! resolving each FTS5 table's tokenizer). What actually needs the
+//! tokenizer is snapshot **validation**: `PRAGMA quick_check` walks every
+//! table including FTS5 shadow tables, so `backup::is_valid_sqlite`
+//! registers its own tokenizer on its own throwaway connection before
+//! running it — do not delete that registration as redundant with the one
+//! below; it guards a different connection entirely. Preflight simply sits
+//! between the two calls it must run between: after tokenizer registration
+//! (which [`super::run`]'s migration DDL genuinely does need) and before
+//! that call.
 //!
 //! Gates on the **applied-marker set** recorded in `schema_meta`, not the
 //! `version` string: `set_version` is written once, at the very end of the
@@ -58,7 +64,8 @@ pub(crate) fn preflight(conn: &Connection, db_path: &Path) -> Result<()> {
         // `applied` was just shown to be a subset of `expected` (the find
         // above found no counterexample); equal cardinality then means the
         // sets are equal — the fully-migrated state every read-only
-        // command hits, at zero extra I/O.
+        // command hits, at zero extra writes (the marker read above, plus
+        // `schema_meta_exists`'s `sqlite_master` probe, are still real reads).
         return Ok(());
     }
 
@@ -70,12 +77,35 @@ pub(crate) fn preflight(conn: &Connection, db_path: &Path) -> Result<()> {
 /// `0004_simhash_backfill`, ...). Only called once `schema_meta` is known
 /// to exist. `pub(crate)`: [`crate::api::doctor`] reuses this against its
 /// own read-only fallback connection rather than re-querying by hand.
+///
+/// Fetches every `schema_meta` row and filters in Rust with
+/// [`is_migration_marker`] rather than a `WHERE key LIKE '0%'` SQL
+/// predicate: `schema_meta` also holds non-migration rows (`version`,
+/// `memory_vector_dim`, `code_vector_dim`, `code_format:<repo>`,
+/// `lazy_reindex:<repo>`), and a future key that merely *starts* with `0`
+/// without being `NNNN_`-shaped would otherwise be misread as an unknown
+/// migration marker and refuse an entirely legitimate database. The stored
+/// key format itself is unchanged — only the filter moved.
 pub(crate) fn applied_keys(conn: &Connection) -> Result<BTreeSet<String>> {
-    let mut stmt = conn.prepare("SELECT key FROM schema_meta WHERE key LIKE '0%'")?;
+    let mut stmt = conn.prepare("SELECT key FROM schema_meta")?;
     let keys = stmt
         .query_map([], |row| row.get::<_, String>(0))?
-        .collect::<std::result::Result<BTreeSet<String>, rusqlite::Error>>()?;
-    Ok(keys)
+        .collect::<std::result::Result<Vec<String>, rusqlite::Error>>()?;
+    Ok(keys
+        .into_iter()
+        .filter(|k| is_migration_marker(k))
+        .collect())
+}
+
+/// True when `key` has the shape every migration marker takes: exactly
+/// four ASCII digits followed by `_` (e.g. `0004_simhash_backfill`,
+/// `0013_v13_documents`). See [`applied_keys`] for why this is a Rust
+/// shape check rather than a SQL `LIKE` prefix match.
+fn is_migration_marker(key: &str) -> bool {
+    let Some((digits, rest)) = key.split_once('_') else {
+        return false;
+    };
+    !rest.is_empty() && digits.len() == 4 && digits.bytes().all(|b| b.is_ascii_digit())
 }
 
 /// Union of every [`list::Migration::markers`] entry across
@@ -130,9 +160,11 @@ fn table_exists(conn: &Connection, name: &str) -> Result<bool> {
 /// Build the forward-compat refusal: `applied` holds a key `unknown` to
 /// this build, meaning the database was written by a newer comemory.
 /// `schema_meta` is left untouched — this returns before anything is
-/// written.
+/// written. Returns [`Error::SchemaTooNew`], not [`Error::Migration`]: this
+/// is the one refusal `api::doctor` catches and falls back on, so it must
+/// stay distinguishable from every other way the migration chain can fail.
 fn forward_compat_error(db_path: &Path, unknown: &str) -> Error {
-    Error::Migration(format!(
+    Error::SchemaTooNew(format!(
         "database at {} was written by a newer comemory (applied migration {unknown} is unknown \
          to this build, which supports through {highest}). Upgrade comemory, or point \
          COMEMORY_DATA_DIR elsewhere.",

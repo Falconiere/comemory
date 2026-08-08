@@ -255,11 +255,13 @@ Full recipe, including the sample Ollama wrapper
 
 Point a newer `comemory` binary at an existing `~/.comemory` and the schema
 migrates automatically on your next command — there is no `comemory migrate`
-step to remember. Before a migration that could destroy data, comemory
-snapshots `comemory.db` to `comemory.db.pre-v<N>.bak` first (skip with
-`COMEMORY_SKIP_MIGRATION_BACKUP=1`); an older binary opening a database
-written by a newer one refuses cleanly instead of corrupting it. Full story,
-including how to restore a snapshot and the `comemory serve` restart caveat:
+step to remember. Before any pending migration, comemory snapshots
+`comemory.db` to `comemory.db.pre-v<N>.bak` first (skip with
+`COMEMORY_SKIP_MIGRATION_BACKUP=1`); a snapshot *failure* only refuses the
+upgrade when a pending migration could destroy data, and merely warns
+otherwise. An older binary opening a database written by a newer one refuses
+cleanly instead of corrupting it. Full story, including how to restore a
+snapshot and the `comemory serve` restart caveat:
 **[docs/guides/upgrading.md](docs/guides/upgrading.md)**.
 
 ---

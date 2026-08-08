@@ -77,10 +77,30 @@ fn snapshot_is_idempotent_against_its_own_valid_output() {
 
     let dest = dir.path().join("comemory.db.pre-v12.bak");
     snapshot(&conn, &dest).expect("first snapshot");
+
+    // A row inserted BETWEEN the two snapshot calls is the property that
+    // actually matters: a crash-and-retry that re-runs `snapshot` against
+    // its own still-valid prior output must keep the ORIGINAL pre-migration
+    // snapshot, not silently re-capture whatever the source looks like now.
+    // Without this row the test would pass vacuously even if `snapshot`
+    // stopped reusing the existing file and just re-`VACUUM INTO`'d it —
+    // the `.bak` would still (coincidentally) contain "aaaa1111" either way.
+    seed_memory(&conn, "bbbb2222");
+
     // VACUUM INTO errors on an existing destination; a second call must
     // detect the valid prior snapshot and skip rather than propagate that
     // error.
     snapshot(&conn, &dest).expect("second snapshot must skip, not error");
+
+    let snap = Connection::open(&dest).expect("open snapshot as sqlite");
+    assert!(
+        has_memory(&snap, "aaaa1111"),
+        "the reused snapshot must still contain the original pre-migration row"
+    );
+    assert!(
+        !has_memory(&snap, "bbbb2222"),
+        "a skipped (reused) snapshot must NOT pick up a row written after the first snapshot"
+    );
 }
 
 #[test]

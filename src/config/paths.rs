@@ -82,18 +82,6 @@ impl Paths {
         self.data_dir.join("sources.toml.lock")
     }
 
-    /// Pre-migration snapshot of `comemory.db`, written by the migration
-    /// preflight (`src/store/migrate/preflight.rs`) just before a
-    /// destructive upgrade runs. `from` is the version being left, so the
-    /// filename names the state the snapshot preserves. Rooted at
-    /// `data_dir` directly, matching `db_path()` — callers migrating a
-    /// database outside the data dir (e.g. `connection::open` on
-    /// `comemory.db.rebuild.tmp`) derive their own backup name from that
-    /// file's stem instead of going through this method.
-    pub fn migration_backup(&self, from: u32) -> PathBuf {
-        self.data_dir.join(format!("comemory.db.pre-v{from}.bak"))
-    }
-
     /// Sibling exclusive-flock file guarding the migration preflight's
     /// `VACUUM INTO` snapshot, since SQLite will not serialize that
     /// statement itself (`src/store/migrate/preflight.rs`, generalized

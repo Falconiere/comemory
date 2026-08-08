@@ -371,3 +371,27 @@ fn set_version_raises_an_older_stored_version() {
         "an older stored version must be raised to current"
     );
 }
+
+#[test]
+fn set_version_raises_an_unparsable_stored_version() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("comemory.db");
+    let conn = connection::open(&path).expect("open");
+
+    // A stored value that fails to parse as u32 (corrupt row, or a
+    // pre-numeric-version schema_meta layout) is treated as lower than any
+    // real version and overwritten — per set_version's own doc comment.
+    conn.execute(
+        "UPDATE schema_meta SET value = 'unknown' WHERE key = 'version'",
+        [],
+    )
+    .expect("seed an unparsable stored version");
+
+    set_version(&conn, migrate::CURRENT_VERSION).expect("set_version must not error");
+
+    assert_eq!(
+        stored_version(&conn),
+        migrate::CURRENT_VERSION,
+        "an unparsable stored version must be raised to current, not left in place"
+    );
+}
