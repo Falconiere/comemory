@@ -121,7 +121,7 @@ pub fn run(conn: &mut Connection) -> Result<()> {
 fn apply(conn: &mut Connection, key: &str, sql: &str) -> Result<()> {
     if key == "0001_schema_meta" {
         conn.execute_batch(sql)
-            .map_err(|e| Error::Migration(format!("{key}: {e}")))?;
+            .map_err(|e| describe_migration_failure(key, &e))?;
         return Ok(());
     }
     if marker_done(conn, key) {
@@ -129,10 +129,30 @@ fn apply(conn: &mut Connection, key: &str, sql: &str) -> Result<()> {
     }
     let tx = conn.transaction()?;
     tx.execute_batch(sql)
-        .map_err(|e| Error::Migration(format!("{key}: {e}")))?;
+        .map_err(|e| describe_migration_failure(key, &e))?;
     insert_marker(&tx, key)?;
     tx.commit()?;
     Ok(())
+}
+
+/// Render an `execute_batch` failure into [`Error::Migration`] without
+/// embedding the full migration batch text (~200 lines for the larger
+/// migrations). `rusqlite::Error::SqlInputError`'s own `Display` interpolates
+/// its entire `sql` field verbatim (`"{msg} in {sql} at offset {offset}"`),
+/// which is unusable as a diagnostic once `doctor` propagates this error
+/// instead of swallowing it — the command whose whole job is explaining a
+/// broken state would otherwise dump the offending migration's source back
+/// at the operator. Every other `rusqlite::Error` variant's `Display` is
+/// already compact (a plain SQLite message, no embedded SQL) and is passed
+/// through unchanged.
+fn describe_migration_failure(key: &str, e: &rusqlite::Error) -> Error {
+    let detail = match e {
+        rusqlite::Error::SqlInputError { msg, offset, .. } => {
+            format!("{msg} (at offset {offset})")
+        }
+        other => other.to_string(),
+    };
+    Error::Migration(format!("{key}: {detail}"))
 }
 
 /// True when the run-once marker `key` is already recorded in

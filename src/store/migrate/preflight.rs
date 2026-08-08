@@ -81,11 +81,12 @@ pub(crate) fn preflight(conn: &Connection, db_path: &Path) -> Result<()> {
 /// Fetches every `schema_meta` row and filters in Rust with
 /// [`is_migration_marker`] rather than a `WHERE key LIKE '0%'` SQL
 /// predicate: `schema_meta` also holds non-migration rows (`version`,
-/// `memory_vector_dim`, `code_vector_dim`, `code_format:<repo>`,
-/// `lazy_reindex:<repo>`), and a future key that merely *starts* with `0`
-/// without being `NNNN_`-shaped would otherwise be misread as an unknown
-/// migration marker and refuse an entirely legitimate database. The stored
-/// key format itself is unchanged — only the filter moved.
+/// `memory_vector_dim`, `code_vector_dim`, `code_format_version`,
+/// `code_format:<repo>`, `lazy_reindex_head:<repo>`), and a future key that
+/// merely *starts* with `0` without being `NNNN_`-shaped would otherwise be
+/// misread as an unknown migration marker and refuse an entirely legitimate
+/// database. The stored key format itself is unchanged — only the filter
+/// moved.
 pub(crate) fn applied_keys(conn: &Connection) -> Result<BTreeSet<String>> {
     let mut stmt = conn.prepare("SELECT key FROM schema_meta")?;
     let keys = stmt
