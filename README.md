@@ -101,6 +101,10 @@ curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL \
 # cargo-dist generates that script for /bin/sh (dash/ash), so `| sh` works
 # just as well — use it on an image that ships no bash.
 
+# Piping into a shell runs whatever the URL serves. To read it first — or for
+# a scripted install — see "Scripting the install" below, or take the
+# checksum-verified archive route under "Verifying releases".
+
 # Homebrew (macOS + Linuxbrew)
 brew install Falconiere/tap/comemory
 
@@ -169,7 +173,8 @@ curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fL -O "$base/sha256.sum"
 # Verify that archive's line — `sha256.sum` lists every platform. Match the
 # whole name field (`<hash> *<name>`), not a substring, and the `-s` guard makes
 # a name that is not in the file fail instead of verifying nothing.
-awk -v a="*$archive" '$2 == a' sha256.sum > line.sum && [ -s line.sum ] \
+awk -v a="$archive" '$2 == "*" a || $2 == a' sha256.sum > line.sum \
+  && [ -s line.sum ] \
   && sha256sum -c line.sum   # macOS: shasum -a 256 -c line.sum
 ```
 
