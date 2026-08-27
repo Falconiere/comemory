@@ -394,3 +394,28 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+
+  # NOTE: hand-maintained, like the `validate` and check-all steps in `plan`.
+  # `post-announce-jobs = ["./release-finalize"]` in Cargo.toml declares this
+  # job so a future `dist generate` emits it, but `allow-dirty = ["ci"]` keeps
+  # dist from rewriting this file (it would drop the pinned action SHAs, the
+  # fetch-depth needed by migration-check, and the preflight). So the call lives
+  # here explicitly. On a future `cargo dist init`, re-apply this block.
+  #
+  # Called rather than triggered: release-finalize used to sit on
+  # `on: release: [published]` and never ran once, because `host` below creates
+  # the release with GITHUB_TOKEN and GitHub does not dispatch workflows from
+  # events that token raises.
+  custom-release-finalize:
+    needs:
+      - plan
+      - host
+      - publish-homebrew-formula
+      - announce
+    if: ${{ always() && needs.announce.result == 'success' }}
+    uses: ./.github/workflows/release-finalize.yml
+    with:
+      plan: ${{ needs.plan.outputs.val }}
+    # MINISIGN_KEY / MINISIGN_PASSPHRASE reach the signing step this way; a
+    # called workflow gets none of the caller's secrets otherwise.
+    secrets: inherit

@@ -269,6 +269,13 @@ installers = ["shell", "homebrew"]
 tap = "Falconiere/homebrew-tap"
 # Publish jobs to run in CI
 publish-jobs = ["homebrew"]
+# Custom job run after `announce`, i.e. after the release exists and every
+# artifact is on it. This is how release-finalize gets invoked: an
+# `on: release` trigger can never fire, because the release is created by the
+# generated `host` job using GITHUB_TOKEN and GitHub does not dispatch
+# workflows from events that token raises. Declared here rather than by editing
+# release.yml, which dist regenerates.
+post-announce-jobs = ["./release-finalize"]
 # Target platforms to build apps for (Rust target-triple syntax)
 targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"]
 # Where to host releases

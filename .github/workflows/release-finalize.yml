@@ -32,9 +32,25 @@
 name: Release Finalize
 
 on:
-  workflow_run:
-    workflows: [Release]
-    types: [completed]
+  # Called by the dist-generated release.yml as a post-announce job (declared
+  # in Cargo.toml's [workspace.metadata.dist] post-announce-jobs), so it runs
+  # once the release exists with every artifact on it.
+  #
+  # NOT `on: release`. This file sat on that trigger from the day it was added
+  # and never ran once — 0 runs against 202 for release.yml — because
+  # release.yml's `host` job creates the release with `secrets.GITHUB_TOKEN`,
+  # and GitHub does not dispatch workflows from events a GITHUB_TOKEN raises.
+  # The event fired into the void, so neither the curated-notes step nor the
+  # signing step below has ever executed. That is why every release body up to
+  # v0.16.0 is cargo-dist's auto-generated one.
+  workflow_call:
+    inputs:
+      plan:
+        description: The dist plan, as JSON. Passed by release.yml; unused here.
+        required: false
+        type: string
+  # Lets this be exercised against an existing tag without cutting a release —
+  # worth having for a workflow with no run history.
   workflow_dispatch:
     inputs:
       tag:
@@ -46,18 +62,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-finalize-${{ github.event.workflow_run.head_branch || inputs.tag }}
+  group: release-finalize-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
   smoke-test:
     name: verify release artifacts
     runs-on: ubuntu-22.04
-    # `workflow_run` fires on failure too, so the conclusion must be read. A
-    # manual dispatch has no such event — the operator is the gate.
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success'
     # `gh release edit` (curated notes) and `gh release upload` (the signature)
     # both write to the release. The workflow-level default is `contents: read`
     # (line 22), so this is a deliberate elevation for this job only, not a
@@ -71,16 +82,12 @@ jobs:
       - name: Resolve the tag
         id: tag
         env:
-          EVENT: ${{ github.event_name }}
-          # For a tag-triggered run, `head_branch` is the tag name.
-          WR_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          # Under workflow_call the github context is the CALLER's, so ref_name
+          # is the tag release.yml was triggered by. A dispatch supplies its own.
           INPUT_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          if [[ "$EVENT" == workflow_dispatch ]]; then
-            tag="$INPUT_TAG"
-          else
-            tag="$WR_BRANCH"
-          fi
+          tag="${INPUT_TAG:-$REF_NAME}"
           # release.yml also runs on non-tag refs in some dist configurations;
           # finalizing one of those would edit a release that does not exist.
           if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
