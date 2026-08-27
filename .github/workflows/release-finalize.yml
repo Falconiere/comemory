@@ -62,6 +62,14 @@ permissions:
   contents: read
 
 concurrency:
+  # Under workflow_call `github.ref_name` is the CALLER's ref. release.yml
+  # triggers only on `pull_request` and on a version tag push (no
+  # workflow_dispatch), and on a pull_request `pr-run-mode = "plan"` stops
+  # before `announce`, so the only run that reaches this workflow is a tag
+  # push — where ref_name IS the tag. A branch ref therefore cannot produce two
+  # tags sharing one group. If release.yml ever gains a branch trigger, this
+  # needs the tag threaded through as a `with:` input instead, because
+  # concurrency is evaluated before any step can resolve it.
   group: release-finalize-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
@@ -87,6 +95,11 @@ jobs:
           INPUT_TAG: ${{ inputs.tag }}
           REF_NAME: ${{ github.ref_name }}
         run: |
+          # Both sources are interpolated via env: rather than inlined into the
+          # command line, and everything downstream uses the validated
+          # steps.tag.outputs.tag — never these raw values. `workflow_dispatch`
+          # is restricted to accounts with write access, and the pattern below
+          # admits no shell metacharacters, no path separators, and no `..`.
           tag="${INPUT_TAG:-$REF_NAME}"
           # release.yml also runs on non-tag refs in some dist configurations;
           # finalizing one of those would edit a release that does not exist.
