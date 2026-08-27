@@ -118,12 +118,15 @@ if [[ -n "${MINISIGN_PASSPHRASE:-}" ]]; then
   fi
 else
   # No passphrase to feed. A password-protected key — which keys/README.md's
-  # setup always produces — reads EOF here and fails, and failing the release
-  # over half-finished signing config contradicts this script's own contract.
-  if ! minisign -S -s "$key_path" -m "$work/sha256.sum" </dev/null >/dev/null 2>&1; then
-    log_info "$step" "minisign could not sign without MINISIGN_PASSPHRASE — skipping"
-    log_ok "$step" "skipped (key needs a passphrase)"
-    exit 0
+  # setup always produces — reads EOF here and fails. So can a corrupt key or a
+  # minisign too old for these flags, and those must not be silently swallowed:
+  # report what minisign actually said rather than assuming the benign case.
+  # The release itself is not at risk — this step is advisory in
+  # release-finalize.yml.
+  if ! sign_err=$(minisign -S -s "$key_path" -m "$work/sha256.sum" </dev/null 2>&1); then
+    log_err "$step" "minisign failed: ${sign_err:-no output}"
+    log_err "$step" "likely a passphrase-protected key with MINISIGN_PASSPHRASE unset; a corrupt key or an incompatible minisign are the other candidates"
+    exit 1
   fi
 fi
 

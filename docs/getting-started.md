@@ -34,6 +34,11 @@ curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL \
   https://get.comemory.io/pkg/comemory/install | bash
 ```
 
+Piping into a shell runs whatever the URL serves, sight unseen. The two-step
+form below lets you read the script first, and it is the one to use in anything
+scripted; the checksum-verified archive route lives in README § Verifying
+releases.
+
 That installer runs under `/bin/sh` — cargo-dist generates it with a
 `#!/bin/sh` shebang and targets dash/ash (it uses `local`, which POSIX does not
 define) — so `| sh` is equally correct and is the one to use on a glibc image

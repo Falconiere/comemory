@@ -41,7 +41,8 @@ archive=comemory-x86_64-unknown-linux-gnu.tar.xz   # swap for your platform
 # Checksums — this part works today.
 curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fL -O "$base/$archive"
 curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fL -O "$base/sha256.sum"
-awk -v a="*$archive" '$2 == a' sha256.sum > line.sum && [ -s line.sum ] \
+awk -v a="$archive" '$2 == "*" a || $2 == a' sha256.sum > line.sum \
+  && [ -s line.sum ] \
   && sha256sum -c line.sum   # macOS: shasum -a 256 -c line.sum
 
 # Signature — only once a release carries one and comemory.pub is committed.
