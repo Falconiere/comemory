@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-08-27
+
+### Fixed
+
+- document why the concurrency group and raw tag inputs are safe
+- address PR review feedback
+- call release-finalize from release.yml instead of on:release
+- trigger release-finalize on the Release workflow, not on:release
+- address PR review feedback (round 2)
+- address PR review feedback
+
+### Internal
+
+- add the get.comemory.io one-liner, fix the checksum asset name
+
 ## [0.16.0] - 2026-08-08
 
 ### Added
