@@ -29,6 +29,13 @@ jobs:
   smoke-test:
     name: verify release artifacts
     runs-on: ubuntu-22.04
+    # `gh release edit` (curated notes) and `gh release upload` (the signature)
+    # both write to the release; the workflow-level default above is read-only.
+    # The notes step is not guarded by continue-on-error, so this job fails on
+    # that 403 rather than skipping quietly — see keys/README.md for the rest of
+    # what stands between here and a signed release.
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
@@ -107,7 +114,7 @@ jobs:
         run: |
           gh release edit "$TAG" --notes-file "$RUNNER_TEMP/notes.md"
 
-      - name: Sign SHA256SUMS (optional, opt-in)
+      - name: Sign sha256.sum (optional, opt-in)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.release.tag_name }}

@@ -8,7 +8,9 @@
 # must never be hand-edited (see "Claude Code Hooks" in CLAUDE.md; the hook that
 # used to enforce this is retired, so it is convention now)
 # — typos in it are upstream's to fix, not ours to silently rewrite.
-extend-exclude = ["web/dist/", "web/package-lock.json", "tests/golden/", "scripts/guardrails/"]
+# comemory.io/ is a SEPARATE git repo (CodaSignal/comemory.io, the platform
+# monorepo) that gets cloned inside this checkout; it owns its own gates.
+extend-exclude = ["web/dist/", "web/package-lock.json", "tests/golden/", "scripts/guardrails/", "comemory.io/"]
 
 [default]
 extend-ignore-identifiers-re = ["nomic", "kuzu", "qwick", "cose", "ratatui"]

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# scripts/sign-release.sh — opt-in minisign signature for the SHA256SUMS
+# scripts/sign-release.sh — opt-in minisign signature for the sha256.sum
 # attached to a GitHub release. Used by .github/workflows/release-finalize.yml.
 #
 # Behaviour:
-#   - If `minisign` is on PATH: download SHA256SUMS, sign it with the
+#   - If `minisign` is on PATH: download sha256.sum, sign it with the
 #     secret key, and upload the .sig back to the release with
 #     `gh release upload`.
 #   - If `minisign` is absent OR the key is missing: print a yellow
@@ -40,7 +40,7 @@ fi
 
 # Soft skip: no minisign installed.
 if ! command -v minisign >/dev/null 2>&1; then
-  log_info "$step" "minisign not installed — skipping SHA256SUMS signature"
+  log_info "$step" "minisign not installed — skipping sha256.sum signature"
   log_ok "$step" "skipped (no minisign)"
   exit 0
 fi
@@ -49,7 +49,7 @@ fi
 # release-finalize.yml, where gh is preinstalled on the runner; if it
 # isn't, we still don't want to fail the release).
 if ! command -v gh >/dev/null 2>&1; then
-  log_info "$step" "gh not installed — skipping SHA256SUMS signature"
+  log_info "$step" "gh not installed — skipping sha256.sum signature"
   log_ok "$step" "skipped (no gh)"
   exit 0
 fi
@@ -83,16 +83,18 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Download SHA256SUMS from the release.
-if ! gh release download "$ver" --pattern SHA256SUMS --dir "$work" >/dev/null 2>&1; then
-  log_info "$step" "no SHA256SUMS artifact on release $ver — skipping"
-  log_ok "$step" "skipped (no SHA256SUMS)"
+# Download sha256.sum from the release — cargo-dist's name for it. This
+# script looked for `SHA256SUMS`, which cargo-dist has never published, so
+# the download never matched and every run soft-skipped.
+if ! gh release download "$ver" --pattern sha256.sum --dir "$work" >/dev/null 2>&1; then
+  log_info "$step" "no sha256.sum artifact on release $ver — skipping"
+  log_ok "$step" "skipped (no sha256.sum)"
   exit 0
 fi
 
-if [[ ! -s "$work/SHA256SUMS" ]]; then
-  log_info "$step" "empty SHA256SUMS — skipping"
-  log_ok "$step" "skipped (empty SHA256SUMS)"
+if [[ ! -s "$work/sha256.sum" ]]; then
+  log_info "$step" "empty sha256.sum — skipping"
+  log_ok "$step" "skipped (empty sha256.sum)"
   exit 0
 fi
 
@@ -103,18 +105,22 @@ fi
 # required: minisign uses fgets() and trims it.
 if [[ -n "${MINISIGN_PASSPHRASE:-}" ]]; then
   if ! printf '%s\n' "$MINISIGN_PASSPHRASE" \
-      | minisign -W -s "$key_path" -m "$work/SHA256SUMS" >/dev/null 2>&1; then
+      | minisign -S -s "$key_path" -m "$work/sha256.sum" >/dev/null 2>&1; then
     log_err "$step" "minisign failed (bad passphrase, corrupt key, or wrong version)"
     exit 1
   fi
 else
-  if ! minisign -W -s "$key_path" -m "$work/SHA256SUMS" >/dev/null 2>&1; then
-    log_err "$step" "minisign failed (corrupt key or wrong version)"
-    exit 1
+  # No passphrase to feed. A password-protected key — which keys/README.md's
+  # setup always produces — reads EOF here and fails, and failing the release
+  # over half-finished signing config contradicts this script's own contract.
+  if ! minisign -S -s "$key_path" -m "$work/sha256.sum" </dev/null >/dev/null 2>&1; then
+    log_info "$step" "minisign could not sign without MINISIGN_PASSPHRASE — skipping"
+    log_ok "$step" "skipped (key needs a passphrase)"
+    exit 0
   fi
 fi
 
 # Upload the signature back to the release.
-gh release upload "$ver" "$work/SHA256SUMS.minisig" --clobber
+gh release upload "$ver" "$work/sha256.sum.minisig" --clobber
 
-log_ok "$step" "uploaded SHA256SUMS.minisig to release $ver"
+log_ok "$step" "uploaded sha256.sum.minisig to release $ver"

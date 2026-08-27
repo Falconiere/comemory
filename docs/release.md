@@ -20,7 +20,7 @@ everything after the tag: push `vX.Y.Z` → `release.yml` builds the
 Releases → pushes the formula to `Falconiere/homebrew-tap` (stable tags only).
 A second hand-maintained workflow, `release-finalize.yml`, runs after the
 release is published to smoke-test the artifact, curate the release body from
-`CHANGELOG.md`, and (optionally) sign the `SHA256SUMS`.
+`CHANGELOG.md`, and (optionally) sign the `sha256.sum`.
 
 ```
 push to main ──> release-plz ──> [release PR] ──merge──> push vX.Y.Z tag
@@ -203,8 +203,11 @@ treats the RC tarball identically to a stable one.
 - [ ] The GitHub Release body matches the curated `## [X.Y.Z]` section
   from `CHANGELOG.md` (not cargo-dist's auto-blob).
   `https://github.com/Falconiere/comemory/releases/tag/vX.Y.Z`
-- [ ] `SHA256SUMS` is attached. If minisign is configured,
-  `SHA256SUMS.minisig` is also attached.
+- [ ] `sha256.sum` is attached (cargo-dist's name — there is no `SHA256SUMS`),
+  along with a `<archive>.sha256` beside each tarball. Only the archives and
+  `source.tar.gz` get one; `comemory-installer.sh`, `comemory.rb` and
+  `dist-manifest.json` are unchecksummed. If minisign is configured,
+  `sha256.sum.minisig` is also attached.
 - [ ] `Falconiere/homebrew-tap` formula updated (skipped for RC).
   `https://github.com/Falconiere/homebrew-tap/commits/main`
 - [ ] Smoke test on a clean machine:

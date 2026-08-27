@@ -90,6 +90,17 @@ layout, and edge graph.
 ## Install
 
 ```bash
+# One-liner (macOS aarch64 + Linux gnu, glibc >= 2.35 — the only prebuilt
+# targets; anything else needs the source install below).
+# Resolves to the latest release's installer.
+# `--proto '=https'` binds the redirect too — curl(1) on --proto-redir:
+# "Protocols denied by --proto are not overridden by this option" — so the hop
+# to GitHub cannot be downgraded to plaintext before the body reaches a shell.
+curl --proto '=https' --tlsv1.2 -fsSL \
+  https://get.comemory.io/pkg/comemory/install | bash
+# cargo-dist generates that script for /bin/sh (dash/ash), so `| sh` works
+# just as well — use it on an image that ships no bash.
+
 # Homebrew (macOS + Linuxbrew)
 brew install Falconiere/tap/comemory
 
@@ -98,10 +109,23 @@ git clone https://github.com/Falconiere/comemory && cd comemory
 cargo install --path .
 ```
 
+Scripting the install — a Dockerfile `RUN`, or any CI whose shell lacks
+`pipefail` — download and run in two steps instead: a pipeline reports only the
+shell's exit status, so a failed fetch leaves `curl … | bash` exiting 0 with
+nothing installed. See [docs/getting-started.md](docs/getting-started.md#1-install).
+
+What the one-liner verifies: the installer checks the archive it downloads
+against a SHA-256 baked into itself, but **skips that check on stock macOS**,
+which ships `shasum` rather than the `sha256sum` it needs. The installer script
+itself is unsigned and unchecksummed, and is reached through a redirect served
+from a separate repo.
+
 Then verify: `comemory doctor`. Prebuilt binaries for **macOS aarch64** and
 **Linux** (x86_64 + aarch64, gnu) are attached to every
 [GitHub Release](https://github.com/Falconiere/comemory/releases), along with
-a shell installer:
+a shell installer — the same script the one-liner above redirects to, fetched
+without the redirect, so everything said about what it verifies applies here
+too:
 
 ```bash
 curl --proto '=https' --tlsv1.2 -LsSf \
@@ -111,7 +135,7 @@ curl --proto '=https' --tlsv1.2 -LsSf \
 Windows users fork the repo and run `cargo install --path .` — see
 [Platform support](#platform-support) below.
 
-Full install details — Homebrew taps and shell completions — are in
+Full install details — every channel, and generating shell completions — are in
 **[docs/getting-started.md](docs/getting-started.md)**; the binary-size history
 lives in **[docs/build-perf.md](docs/build-perf.md)**.
 
@@ -120,7 +144,7 @@ lives in **[docs/build-perf.md](docs/build-perf.md)**.
 | Platform | Install |
 |---|---|
 | **macOS aarch64** (Apple Silicon) | Prebuilt: `brew install Falconiere/tap/comemory`, the shell installer above, or download from the latest [GitHub Release](https://github.com/Falconiere/comemory/releases) |
-| **Linux x86_64 / aarch64** (gnu) | Prebuilt: the shell installer above, `brew install Falconiere/tap/comemory` (Linuxbrew), or download from the latest [GitHub Release](https://github.com/Falconiere/comemory/releases) |
+| **Linux x86_64 / aarch64** (gnu, **glibc ≥ 2.35**) | Prebuilt: the shell installer above, `brew install Falconiere/tap/comemory` (Linuxbrew), or download from the latest [GitHub Release](https://github.com/Falconiere/comemory/releases) |
 | **Linux (other arch/libc, e.g. musl)** | Fork the repo and `cargo install --path .` |
 | **Windows** | Fork the repo and `cargo install --path .` |
 
@@ -132,27 +156,25 @@ is narrowed.
 
 ### Verifying releases
 
-Every release publishes a `SHA256SUMS` file alongside the tarball. Releases
-may also carry a minisign signature when the maintainer has configured
-`MINISIGN_KEY` + `MINISIGN_PASSPHRASE` on the CI side (opt-in).
+Every release publishes `sha256.sum` — one line per tarball (each platform
+archive plus `source.tar.gz`) — with a per-archive `<archive>.sha256` beside it.
 
 ```bash
-# 1. Download the artifacts.
-curl -L -O https://github.com/Falconiere/comemory/releases/latest/download/SHA256SUMS
-curl -L -O https://github.com/Falconiere/comemory/releases/latest/download/SHA256SUMS.minisig
-curl -L -O https://raw.githubusercontent.com/Falconiere/comemory/main/keys/comemory.pub
-curl -L -O https://github.com/Falconiere/comemory/releases/latest/download/comemory-aarch64-apple-darwin.tar.xz
+base=https://github.com/Falconiere/comemory/releases/latest/download
+archive=comemory-x86_64-unknown-linux-gnu.tar.xz   # swap for your platform
 
-# 2. Verify the signature (skip step 2 if no .minisig is attached).
-minisign -V -p comemory.pub -m SHA256SUMS
+curl --proto '=https' --tlsv1.2 -fL -O "$base/$archive"
+curl --proto '=https' --tlsv1.2 -fL -O "$base/sha256.sum"
 
-# 3. Verify the checksum.
-sha256sum -c SHA256SUMS
+# Verify that archive's line — `sha256.sum` lists every platform. The `-s`
+# guard is what makes a mistyped name fail instead of verifying nothing.
+grep -F "$archive" sha256.sum > line.sum && [ -s line.sum ] \
+  && sha256sum -c line.sum   # macOS: shasum -a 256 -c line.sum
 ```
 
-The public key is committed at `keys/comemory.pub`; the private key is held
-out-of-band (1Password) and never enters git. See `keys/README.md` for the
-maintainer-side setup + rotation procedure.
+No release carries a minisign signature today, and `keys/comemory.pub` is not
+committed, so signature verification is not available; the checksum above is the
+whole of it.
 
 ---
 

@@ -23,3 +23,13 @@
 
 # Serena MCP local project cache — not committed
 /.serena/
+
+# The platform monorepo (CodaSignal/comemory.io) is a separate git repo that
+# gets cloned inside this checkout — never a directory of this one.
+/comemory.io/
+
+# The release installer, which docs/getting-started.md tells you to download
+# into the working directory, and the one-line checksum file the verification
+# recipe writes. Never committed.
+/install.sh
+/line.sum
