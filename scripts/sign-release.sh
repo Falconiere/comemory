@@ -98,7 +98,14 @@ if [[ ! -s "$work/sha256.sum" ]]; then
   exit 0
 fi
 
-# Sign. Pass the passphrase via stdin (not -P) so the secret never
+# Sign. `-S` is the sign action — upstream minisign(1) usage is
+#   minisign -S [-l] [-x sig] [-s seckey] [-c comment] [-t trusted] -m file
+# and `-W` is NOT an action, it means "do not encrypt/decrypt the secret key
+# with a password" (`-V` is verify). An earlier version of this script passed
+# `-W` with no action flag, so minisign printed usage and exited non-zero; it
+# never signed anything. Do not "simplify" this back to -W.
+#
+# Pass the passphrase via stdin (not -P) so the secret never
 # appears in argv, which is visible in `ps` / /proc/*/cmdline for the
 # duration of the call. minisign reads the passphrase from stdin when
 # stdin is not a TTY — true on a CI runner. The trailing newline is

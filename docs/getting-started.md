@@ -30,7 +30,7 @@ gnu triple but fails the gate and gets `no compatible downloads were found for
 your platform <triple>` instead. Both need the source install below.
 
 ```bash
-curl --proto '=https' --tlsv1.2 -fsSL \
+curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL \
   https://get.comemory.io/pkg/comemory/install | bash
 ```
 
@@ -49,7 +49,7 @@ explicit `shell: bash` — the implicit default is `bash -e`, no pipefail — an
 `/bin/sh -c` in a Dockerfile never does):
 
 ```bash
-curl --proto '=https' --tlsv1.2 -fsSL \
+curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL \
   https://get.comemory.io/pkg/comemory/install -o install.sh && sh install.sh
 ```
 
@@ -90,7 +90,7 @@ one and drops it in `$CARGO_HOME/bin` (or `$HOME/.cargo/bin`). It installs no
 shell completions:
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf \
+curl --proto '=https' --proto-redir '=https' --tlsv1.2 -LsSf \
   https://github.com/Falconiere/comemory/releases/latest/download/comemory-installer.sh \
   | sh
 ```

@@ -30,7 +30,9 @@ jobs:
     name: verify release artifacts
     runs-on: ubuntu-22.04
     # `gh release edit` (curated notes) and `gh release upload` (the signature)
-    # both write to the release; the workflow-level default above is read-only.
+    # both write to the release. The workflow-level default is `contents: read`
+    # (line 22), so this is a deliberate elevation for this job only, not a
+    # redundant restatement of an already-write baseline.
     # The notes step is not guarded by continue-on-error, so this job fails on
     # that 403 rather than skipping quietly — see keys/README.md for the rest of
     # what stands between here and a signed release.

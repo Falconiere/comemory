@@ -39,14 +39,14 @@ base=https://github.com/Falconiere/comemory/releases/latest/download
 archive=comemory-x86_64-unknown-linux-gnu.tar.xz   # swap for your platform
 
 # Checksums — this part works today.
-curl --proto '=https' --tlsv1.2 -fL -O "$base/$archive"
-curl --proto '=https' --tlsv1.2 -fL -O "$base/sha256.sum"
-grep -F "$archive" sha256.sum > line.sum && [ -s line.sum ] \
+curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fL -O "$base/$archive"
+curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fL -O "$base/sha256.sum"
+awk -v a="*$archive" '$2 == a' sha256.sum > line.sum && [ -s line.sum ] \
   && sha256sum -c line.sum   # macOS: shasum -a 256 -c line.sum
 
 # Signature — only once a release carries one and comemory.pub is committed.
-curl --proto '=https' --tlsv1.2 -fL -O "$base/sha256.sum.minisig" \
-  && curl --proto '=https' --tlsv1.2 -fL -O \
+curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fL -O "$base/sha256.sum.minisig" \
+  && curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fL -O \
        https://raw.githubusercontent.com/Falconiere/comemory/main/keys/comemory.pub \
   && minisign -V -p comemory.pub -m sha256.sum
 ```

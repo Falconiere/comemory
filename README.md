@@ -96,7 +96,7 @@ layout, and edge graph.
 # `--proto '=https'` binds the redirect too — curl(1) on --proto-redir:
 # "Protocols denied by --proto are not overridden by this option" — so the hop
 # to GitHub cannot be downgraded to plaintext before the body reaches a shell.
-curl --proto '=https' --tlsv1.2 -fsSL \
+curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL \
   https://get.comemory.io/pkg/comemory/install | bash
 # cargo-dist generates that script for /bin/sh (dash/ash), so `| sh` works
 # just as well — use it on an image that ships no bash.
@@ -128,7 +128,7 @@ without the redirect, so everything said about what it verifies applies here
 too:
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf \
+curl --proto '=https' --proto-redir '=https' --tlsv1.2 -LsSf \
   https://github.com/Falconiere/comemory/releases/latest/download/comemory-installer.sh | sh
 ```
 
@@ -163,12 +163,13 @@ archive plus `source.tar.gz`) — with a per-archive `<archive>.sha256` beside i
 base=https://github.com/Falconiere/comemory/releases/latest/download
 archive=comemory-x86_64-unknown-linux-gnu.tar.xz   # swap for your platform
 
-curl --proto '=https' --tlsv1.2 -fL -O "$base/$archive"
-curl --proto '=https' --tlsv1.2 -fL -O "$base/sha256.sum"
+curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fL -O "$base/$archive"
+curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fL -O "$base/sha256.sum"
 
-# Verify that archive's line — `sha256.sum` lists every platform. The `-s`
-# guard is what makes a mistyped name fail instead of verifying nothing.
-grep -F "$archive" sha256.sum > line.sum && [ -s line.sum ] \
+# Verify that archive's line — `sha256.sum` lists every platform. Match the
+# whole name field (`<hash> *<name>`), not a substring, and the `-s` guard makes
+# a name that is not in the file fail instead of verifying nothing.
+awk -v a="*$archive" '$2 == a' sha256.sum > line.sum && [ -s line.sum ] \
   && sha256sum -c line.sum   # macOS: shasum -a 256 -c line.sum
 ```
 
