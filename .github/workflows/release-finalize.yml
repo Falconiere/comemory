@@ -90,7 +90,7 @@ jobs:
           tag="${INPUT_TAG:-$REF_NAME}"
           # release.yml also runs on non-tag refs in some dist configurations;
           # finalizing one of those would edit a release that does not exist.
-          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
             echo "::notice::not a version tag ($tag) — nothing to finalize"
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
@@ -119,47 +119,45 @@ jobs:
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
           mkdir -p artifacts
+          # Every archive, not one hardcoded triple: a target added to
+          # `targets` in Cargo.toml would otherwise ship unverified while this
+          # step still reported success.
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
-            --pattern 'comemory-aarch64-apple-darwin.tar.xz' --dir artifacts
-
-      - name: Locate macOS tarball
-        id: locate
-        if: steps.tag.outputs.skip != 'true'
-        run: |
-          # Single target from Cargo.toml: aarch64-apple-darwin.
-          # On a Linux runner, the tarball is here but the binary is macOS-only.
-          # We only verify its contents (manifest + tar layout + size sanity) —
-          # we can't execute it on Linux. The dist-generated release.yml already
-          # proved it builds + links.
-          tarball="$(ls artifacts/comemory-aarch64-apple-darwin.tar.xz 2>/dev/null \
-            | head -1 || true)"
-          if [[ -z "$tarball" ]]; then
-            echo "::error::no comemory-aarch64-apple-darwin.tar.xz artifact found"
-            ls -la artifacts/ || true
+            --pattern 'comemory-*.tar.xz' --dir artifacts
+          if [[ -z "$(ls -A artifacts 2>/dev/null)" ]]; then
+            echo "::error::release $TAG has no comemory-*.tar.xz assets"
             exit 1
           fi
-          echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
 
-      - name: Verify tarball layout + size
+      - name: Verify every archive's layout + size
         if: steps.tag.outputs.skip != 'true'
-        env:
-          # Same defense-in-depth as the curate step above: route the step
-          # output through env: rather than inlining ${{ ... }} into the
-          # shell command line.
-          TARBALL: ${{ steps.locate.outputs.tarball }}
         run: |
-          # Confirm the tarball is a valid archive with the expected binary
-          # path and a sane size (> 1 MB — the binary alone is ~10 MB).
-          size="$(stat -c%s "$TARBALL" 2>/dev/null \
-            || stat -f%z "$TARBALL")"
-          if (( size < 1048576 )); then
-            echo "::error::tarball is suspiciously small: ${size} bytes"
+          # These are release binaries for other platforms — a Linux runner
+          # cannot execute them, so this checks what it can: that each archive
+          # is a valid xz tarball, carries the binary at the layout install.sh
+          # expects, and is not implausibly small (the binary alone is ~10 MB).
+          # release.yml already proved each one builds and links.
+          shopt -s nullglob
+          checked=0
+          for tarball in artifacts/comemory-*.tar.xz; do
+            name="$(basename "$tarball" .tar.xz)"
+            size="$(stat -c%s "$tarball" 2>/dev/null || stat -f%z "$tarball")"
+            if (( size < 1048576 )); then
+              echo "::error::$name is suspiciously small: ${size} bytes"
+              exit 1
+            fi
+            if ! tar -tJf "$tarball" | grep -q "^${name}/comemory$"; then
+              echo "::error::$name does not contain ${name}/comemory"
+              exit 1
+            fi
+            echo "::notice::$name OK (${size} bytes)"
+            checked=$(( checked + 1 ))
+          done
+          if (( checked == 0 )); then
+            echo "::error::no archives to verify"
             exit 1
           fi
-          tar -tJf "$TARBALL" \
-            | grep -q '^comemory-aarch64-apple-darwin/comemory$' \
-            || { echo "::error::expected binary not in tarball"; exit 1; }
-          echo "::notice::tarball layout OK (${size} bytes)"
+          echo "::notice::verified ${checked} archive(s)"
 
       - name: Curate release notes from CHANGELOG.md
         id: notes
@@ -178,7 +176,8 @@ jobs:
           # The release event supplied `previous_tag_name`; workflow_run does
           # not, so derive it. Empty on the very first tag — a compare link with
           # no left side 404s, so fall back to the tag's own page there.
-          prev_tag="$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)"
+          prev_tag="$(git describe --tags --abbrev=0 --match 'v[0-9]*' \
+            "${TAG}^" 2>/dev/null || true)"
           bash scripts/curate-release-notes.sh "$ver" > "$RUNNER_TEMP/notes.md"
           if [[ ! -s "$RUNNER_TEMP/notes.md" ]]; then
             echo "::warning::curate-release-notes.sh produced empty output; falling back to default"

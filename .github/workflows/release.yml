@@ -412,7 +412,13 @@ jobs:
       - host
       - publish-homebrew-formula
       - announce
-    if: ${{ always() && needs.announce.result == 'success' }}
+    # Not `always()`: that also runs this on a cancelled workflow and opts out
+    # of the implicit needs-succeeded gate. `!cancelled()` keeps the only reason
+    # a condition is needed at all — publish-homebrew-formula is SKIPPED on a
+    # prerelease, and a skipped need would otherwise skip this job too — while
+    # still refusing to finalize when announce did not succeed (which itself
+    # cannot succeed unless host did).
+    if: ${{ !cancelled() && needs.announce.result == 'success' }}
     uses: ./.github/workflows/release-finalize.yml
     with:
       plan: ${{ needs.plan.outputs.val }}
