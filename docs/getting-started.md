@@ -20,8 +20,55 @@ step has variations, this guide picks one happy path and links out.
 
 ## 1. Install
 
-Pick whichever channel fits your machine. Homebrew is the quickest on macOS and
-Linuxbrew:
+Pick whichever channel fits your machine. The one-liner is the shortest path on
+Apple Silicon macOS and glibc ≥ 2.35 Linux — it redirects to the latest release's
+shell installer. Those are the only prebuilt targets, and the glibc floor is
+enforced by the installer itself. An Intel Mac or a musl distro gets
+`there isn't a download for your platform <triple>`; an older glibc (Debian
+bullseye 2.31, Ubuntu 20.04 2.31, RHEL 9 / Amazon Linux 2023 2.34) matches the
+gnu triple but fails the gate and gets `no compatible downloads were found for
+your platform <triple>` instead. Both need the source install below.
+
+```bash
+curl --proto '=https' --tlsv1.2 -fsSL \
+  https://get.comemory.io/pkg/comemory/install | bash
+```
+
+That installer runs under `/bin/sh` — cargo-dist generates it with a
+`#!/bin/sh` shebang and targets dash/ash (it uses `local`, which POSIX does not
+define) — so `| sh` is equally correct and is the one to use on a glibc image
+that ships no bash. (Only gnu targets are published and only for glibc ≥ 2.35, so
+Alpine or an older-glibc base image needs the source install either way.)
+
+Scripting the install — a Dockerfile `RUN`, or any CI whose shell lacks
+`pipefail` — download and run in two steps instead. A pipeline reports only the
+shell's exit status, so if the fetch ever 404s, `curl … | sh` still exits 0 and
+the build carries on with nothing installed, surfacing much later as
+`comemory: command not found` (a GitHub Actions step catches this only with an
+explicit `shell: bash` — the implicit default is `bash -e`, no pipefail — and
+`/bin/sh -c` in a Dockerfile never does):
+
+```bash
+curl --proto '=https' --tlsv1.2 -fsSL \
+  https://get.comemory.io/pkg/comemory/install -o install.sh && sh install.sh
+```
+
+In a **Dockerfile** add `COMEMORY_INSTALL_DIR=/usr/local` to that second command
+as well (`… && COMEMORY_INSTALL_DIR=/usr/local sh install.sh`). Only there —
+elsewhere it needs write access to `/usr/local`, which a non-root CI user does
+not have. By default the installer puts the binary in `$CARGO_HOME/bin`
+(`$HOME/.cargo/bin` when `CARGO_HOME` is unset, which is the usual case in a base
+image) and makes it reachable by editing rc files. It appends `. "…/env"` to
+**every** one of `~/.profile`, `~/.bashrc`, `~/.bash_profile`, `~/.bash_login`
+that exists (not just the first), to whichever of `~/.zshrc`, `~/.zshenv` comes
+first, and `source …/env.fish` to fish's `conf.d/comemory.env.fish`. Where none
+of a list exists it creates the first entry, so a bare image ends up with new rc
+files rather than none — worth knowing if you ever need to undo it. That is the default path's problem, and the reason for
+`COMEMORY_INSTALL_DIR` above: a later `RUN` and the container entrypoint read
+none of those rc files, so without the flag `comemory` ends up installed and
+still not on `PATH`.
+
+Homebrew is as quick, on macOS and Linuxbrew:
 
 ```bash
 brew install Falconiere/tap/comemory
@@ -38,8 +85,9 @@ cargo install --path .
 Prefer a prebuilt binary? Tarballs for macOS (aarch64) and Linux (aarch64,
 x86_64) are attached to every
 [GitHub Release](https://github.com/Falconiere/comemory/releases). The curl
-installer fetches the right one, drops it in `$CARGO_HOME/bin` (or
-`~/.local/bin`), and installs shell completions:
+installer — the same script the one-liner above redirects to — fetches the right
+one and drops it in `$CARGO_HOME/bin` (or `$HOME/.cargo/bin`). It installs no
+shell completions:
 
 ```bash
 curl --proto '=https' --tlsv1.2 -LsSf \
@@ -47,7 +95,8 @@ curl --proto '=https' --tlsv1.2 -LsSf \
   | sh
 ```
 
-If you installed another way, generate completions yourself with
+No install channel sets up shell completions — Homebrew, the curl installer and
+`cargo install` alike. Generate them yourself with
 `comemory completions <bash|zsh|fish|powershell>`.
 
 Verify the install — `comemory doctor` checks the data directory and the SQLite
