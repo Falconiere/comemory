@@ -8,27 +8,56 @@
 # added to the dist-generated release.yml will be clobbered on the next
 # dist regeneration; the additions here live in a separate file.
 #
-# Trigger: a release is published (stable or prerelease) on GitHub.
+# Trigger: the completion of the dist-generated `Release` workflow — NOT
+# `on: release`.
+#
+# This file sat on `on: release: [published, prereleased]` from the day it was
+# added and never ran once: 0 runs against 202 for release.yml. release.yml's
+# `host` job creates the release with `secrets.GITHUB_TOKEN`, and GitHub does
+# not dispatch workflows from events a GITHUB_TOKEN created — the documented
+# recursion guard. So the release event fired into the void, and both the
+# curated-notes step and the signing step below have never executed. That is
+# why every release body is still cargo-dist's auto-generated one.
+#
+# `workflow_run` is not subject to that guard: it keys off the workflow
+# finishing rather than the release being published. The tag comes from the
+# triggering run's `head_branch`, which for a tag push IS the tag name.
+#
+# workflow_dispatch is here so this can be exercised against an existing tag
+# without cutting a release — worth having for a workflow with no run history.
+#
 # Concurrency: per-tag so a fast re-tag doesn't collide with the previous
 # run for the same tag.
 
 name: Release Finalize
 
 on:
-  release:
-    types: [published, prereleased]
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The release tag to finalize (e.g. v0.16.0)
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-finalize-${{ github.event.release.tag_name }}
+  group: release-finalize-${{ github.event.workflow_run.head_branch || inputs.tag }}
   cancel-in-progress: false
 
 jobs:
   smoke-test:
     name: verify release artifacts
     runs-on: ubuntu-22.04
+    # `workflow_run` fires on failure too, so the conclusion must be read. A
+    # manual dispatch has no such event — the operator is the gate.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
     # `gh release edit` (curated notes) and `gh release upload` (the signature)
     # both write to the release. The workflow-level default is `contents: read`
     # (line 22), so this is a deliberate elevation for this job only, not a
@@ -39,27 +68,63 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Resolve the tag
+        id: tag
+        env:
+          EVENT: ${{ github.event_name }}
+          # For a tag-triggered run, `head_branch` is the tag name.
+          WR_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          if [[ "$EVENT" == workflow_dispatch ]]; then
+            tag="$INPUT_TAG"
+          else
+            tag="$WR_BRANCH"
+          fi
+          # release.yml also runs on non-tag refs in some dist configurations;
+          # finalizing one of those would edit a release that does not exist.
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "::notice::not a version tag ($tag) — nothing to finalize"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
       - name: Checkout
+        if: steps.tag.outputs.skip != 'true'
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
+          # The tag's own tree, not the default branch — `curate-release-notes.sh`
+          # reads the CHANGELOG as it was at the release. Full history + tags so
+          # the previous tag can be derived (the release event used to supply it).
+          ref: ${{ steps.tag.outputs.tag }}
+          fetch-depth: 0
 
-      - name: Download build artifacts
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
-        with:
-          pattern: artifacts-*
-          path: artifacts
-          merge-multiple: true
+      - name: Download the release archive
+        if: steps.tag.outputs.skip != 'true'
+        # `actions/download-artifact` cannot see another workflow run's
+        # artifacts, and on this trigger the run owns none — it would fail
+        # before any step below. The archive is already on the release by the
+        # time release.yml has finished, so take it from there.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          mkdir -p artifacts
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern 'comemory-aarch64-apple-darwin.tar.xz' --dir artifacts
 
       - name: Locate macOS tarball
         id: locate
+        if: steps.tag.outputs.skip != 'true'
         run: |
           # Single target from Cargo.toml: aarch64-apple-darwin.
           # On a Linux runner, the tarball is here but the binary is macOS-only.
           # We only verify its contents (manifest + tar layout + size sanity) —
           # we can't execute it on Linux. The dist-generated release.yml already
           # proved it builds + links.
-          tarball="$(ls artifacts/*/comemory-aarch64-apple-darwin.tar.xz 2>/dev/null \
+          tarball="$(ls artifacts/comemory-aarch64-apple-darwin.tar.xz 2>/dev/null \
             | head -1 || true)"
           if [[ -z "$tarball" ]]; then
             echo "::error::no comemory-aarch64-apple-darwin.tar.xz artifact found"
@@ -69,6 +134,7 @@ jobs:
           echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
 
       - name: Verify tarball layout + size
+        if: steps.tag.outputs.skip != 'true'
         env:
           # Same defense-in-depth as the curate step above: route the step
           # output through env: rather than inlining ${{ ... }} into the
@@ -90,36 +156,46 @@ jobs:
 
       - name: Curate release notes from CHANGELOG.md
         id: notes
+        if: steps.tag.outputs.skip != 'true'
         env:
-          TAG: ${{ github.event.release.tag_name }}
+          TAG: ${{ steps.tag.outputs.tag }}
           # Route all interpolated GitHub contexts through env: rather than
           # inlining ${{ ... }} into the shell command. Tag names are
           # user-controllable, and Actions expands ${{ ... }} before bash
           # parses the line — so an inlined tag like `$(rm -rf /)` would
           # execute in the runner. Variable expansion inside a quoted string
           # is safe; command substitution is not.
-          PREV_TAG: ${{ github.event.release.previous_tag_name }}
           REPO: ${{ github.repository }}
         run: |
           ver="${TAG#v}"
+          # The release event supplied `previous_tag_name`; workflow_run does
+          # not, so derive it. Empty on the very first tag — a compare link with
+          # no left side 404s, so fall back to the tag's own page there.
+          prev_tag="$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)"
           bash scripts/curate-release-notes.sh "$ver" > "$RUNNER_TEMP/notes.md"
           if [[ ! -s "$RUNNER_TEMP/notes.md" ]]; then
             echo "::warning::curate-release-notes.sh produced empty output; falling back to default"
-            echo "See the commit log at https://github.com/${REPO}/compare/${PREV_TAG}...${TAG}" > "$RUNNER_TEMP/notes.md"
+            if [[ -n "$prev_tag" ]]; then
+              echo "See the commit log at https://github.com/${REPO}/compare/${prev_tag}...${TAG}" > "$RUNNER_TEMP/notes.md"
+            else
+              echo "See https://github.com/${REPO}/releases/tag/${TAG}" > "$RUNNER_TEMP/notes.md"
+            fi
           fi
           echo "notes-bytes=$(wc -c < "$RUNNER_TEMP/notes.md" | tr -d ' ')" >> "$GITHUB_OUTPUT"
 
       - name: Edit release with curated notes
+        if: steps.tag.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.event.release.tag_name }}
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
           gh release edit "$TAG" --notes-file "$RUNNER_TEMP/notes.md"
 
       - name: Sign sha256.sum (optional, opt-in)
+        if: steps.tag.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.event.release.tag_name }}
+          TAG: ${{ steps.tag.outputs.tag }}
           MINISIGN_KEY: ${{ secrets.MINISIGN_KEY }}
           MINISIGN_PASSPHRASE: ${{ secrets.MINISIGN_PASSPHRASE }}
         continue-on-error: true
