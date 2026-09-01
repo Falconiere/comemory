@@ -135,7 +135,12 @@ fn v1_memories_get_returns_the_matching_row() {
             .is_some_and(|e| e.eq_ignore_ascii_case("md")),
         "body: {body}"
     );
-    assert_eq!(body["meta"]["command"], "memories.get");
+    // `show`, not the old synthetic `memories.get`: this route now runs
+    // `api::show::run`, and the /api/v1 route table names it `show` so the
+    // parity walk sees the subcommand as routed. The envelope's `meta.command`
+    // must agree with that table — a client comparing the two (or reading
+    // `GET /commands`) would otherwise see a name that matches nothing.
+    assert_eq!(body["meta"]["command"], "show");
 }
 
 /// AC-9: `GET /api/v1/memories/{id}` (`api::show`) returns exactly the same

@@ -88,7 +88,14 @@ pub fn run_with_progress(
 ) -> Result<Response> {
     let root = PathBuf::from(&req.path);
     let git_repo = Repository::open(&root).map_err(map_git_err)?;
-    let lookback_days = ctx.cfg.reinforce.search_edit_days;
+    // `None` when the operator turned search→edit reinforcement off
+    // (`comemory hooks --disable search-edit-reinforcement`), which is what
+    // makes that toggle actually gate the behavior rather than only report it.
+    let lookback_days = ctx
+        .cfg
+        .reinforce
+        .enabled
+        .then_some(ctx.cfg.reinforce.search_edit_days);
     let conn = ctx.conn()?;
     let mut imports_by_file: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let tx = conn.transaction()?;
