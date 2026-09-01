@@ -82,6 +82,11 @@ pub fn find(
     } else {
         Vec::new()
     };
+    // The document leg guards ITSELF: `route_documents` returns empty without
+    // touching the database when `filters.domains` excludes `Document` (see its
+    // early return). Written this way rather than with a call-site `if` to
+    // avoid double-checking the same condition — noted because the asymmetry
+    // with the two legs above reads like a missing guard.
     let documents =
         doc_route::route_documents(conn, query, filters, domain_filters.path_globs, pool)?;
 
