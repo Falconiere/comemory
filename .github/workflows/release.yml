@@ -50,6 +50,15 @@ on:
     tags:
       - '**[0-9]+.[0-9]+.[0-9]+*'
 
+# Hand-maintained (re-apply on a future `cargo dist init`). Supersede an
+# in-flight PR run when the branch moves — the `plan` job runs the whole
+# check-all gate, so a stale one is minutes of spend on a commit nobody is
+# looking at. NEVER cancels a tag run: that one publishes artifacts, and
+# half a release is worse than a slow one.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   # Cross-workflow gate (hand-maintained; re-apply on a future `cargo dist
   # init`). GitHub has no `needs:` across workflows, so this waits on the

@@ -11,6 +11,14 @@ permissions:
   checks: read
   pull-requests: read
 
+# One live run per ref. Pushing three times in a row used to leave three
+# full suites running against commits already superseded; now only the
+# newest survives. `main` is included deliberately — the last push wins
+# there too, and nothing downstream reads an intermediate run.
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # Cross-workflow gate: GitHub has no `needs:` across workflows, so this job
   # waits on the Code Review check for the same commit and fails unless it
