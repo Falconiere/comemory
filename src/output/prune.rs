@@ -27,17 +27,40 @@ pub struct Report {
     /// shared `--limit` / `--offset` window applies to the dry-run display
     /// only.
     pub stale_code_files: Page<String>,
-    /// Paginated memory ids flagged by [`crate::prune::low_value::detect`]
-    /// — soft-delete candidates (applied to the FULL set, not the page,
-    /// when `apply` is set). The window applies to the dry-run display
-    /// only.
-    pub low_value_memories: Page<String>,
-    /// Paginated memory ids flagged by [`crate::prune::stale_code::detect`]
-    /// — owners of a pinned `references_symbol` whose target is a `ghost`
+    /// Paginated rows flagged by [`crate::prune::low_value::detect_with_reasons`]
+    /// — soft-delete candidates (applied to the FULL set, not the page, when
+    /// `apply` is set). The window applies to the dry-run display only.
+    pub low_value_memories: Page<PruneRow>,
+    /// Paginated rows flagged by [`crate::prune::stale_code::detect`] —
+    /// owners of a pinned `references_symbol` whose target is a `ghost`
     /// (gone from a current index). Advisory: surfaced for the operator,
     /// never deleted by `apply` (spec Non-Goal 5). The window applies to
     /// display only.
-    pub ghost_ref_memories: Page<String>,
+    pub ghost_ref_memories: Page<PruneRow>,
+    /// Count of files under `memories/.trash/` right now (corpus-level,
+    /// unwindowed — every trashed file, not just this page's candidates).
+    pub trash_count: u64,
+    /// Summed size, in bytes, of every file under `memories/.trash/` —
+    /// what a `comemory gc` run right now would be able to reclaim.
+    pub reclaimable_bytes: u64,
+}
+
+/// One prune candidate, enriched for the console: which memory, why it was
+/// flagged, and the two signals an operator uses to judge the call.
+#[derive(Serialize, Debug)]
+pub struct PruneRow {
+    /// The flagged memory's id.
+    pub id: String,
+    /// First non-empty trimmed line of the body ([`crate::output::search::title_of`]).
+    pub title: String,
+    /// Which detector flagged this row: `"low value"`, `"orphan"`, or
+    /// `"stale code"`.
+    pub reason: String,
+    /// ACT-R activation ([`crate::retrieval::score::activation`]) at scan
+    /// time, using the configured decay.
+    pub activation: f64,
+    /// Whole days since the memory was created.
+    pub age_days: u64,
 }
 
 /// Render `report` to stdout in either JSON or TTY mode.
@@ -48,9 +71,11 @@ pub fn emit(report: &Report, json_flag: bool) -> Result<()> {
     }
     let mut out = std::io::stdout().lock();
     writeln!(out, "orphan_edges       : {}", report.orphan_edges)?;
+    writeln!(out, "trash_count        : {}", report.trash_count)?;
+    writeln!(out, "reclaimable_bytes  : {}", report.reclaimable_bytes)?;
     write_list(&mut out, "stale_code_files", &report.stale_code_files)?;
-    write_list(&mut out, "low_value_memories", &report.low_value_memories)?;
-    write_list(&mut out, "ghost_ref_memories", &report.ghost_ref_memories)?;
+    write_rows(&mut out, "low_value_memories", &report.low_value_memories)?;
+    write_rows(&mut out, "ghost_ref_memories", &report.ghost_ref_memories)?;
     Ok(())
 }
 
@@ -63,6 +88,23 @@ fn write_list(out: &mut impl std::io::Write, label: &str, page: &Page<String>) -
     writeln!(out, "{label:<18} : {total}")?;
     for entry in &page.items {
         writeln!(out, "  - {entry}")?;
+    }
+    tty::write_page_footer(out, page.items.len(), page.offset, page.total)
+}
+
+/// Write one labelled [`PruneRow`] list section: a `label : <total>` header,
+/// each row's id/reason/activation/age_days/title indented below it, then
+/// the shared [`tty::write_page_footer`]. Mirrors [`write_list`] for the two
+/// row-shaped lists (Binding Rule 1: one rendering rule per list shape).
+fn write_rows(out: &mut impl std::io::Write, label: &str, page: &Page<PruneRow>) -> Result<()> {
+    let total = page.total.unwrap_or(page.items.len());
+    writeln!(out, "{label:<18} : {total}")?;
+    for row in &page.items {
+        writeln!(
+            out,
+            "  - {} [{}] activation={:.2} age_days={} {}",
+            row.id, row.reason, row.activation, row.age_days, row.title
+        )?;
     }
     tty::write_page_footer(out, page.items.len(), page.offset, page.total)
 }

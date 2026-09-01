@@ -46,6 +46,74 @@ fn run_without_apply_reports_and_writes_nothing() {
 }
 
 #[test]
+fn run_writes_one_eval_runs_row_carrying_the_winner() {
+    let home = TempDir::new().expect("tempdir");
+    let golden = corpus_with_golden(&home, TOPICS.len());
+
+    let paths = Paths::new(data_dir(&home));
+    let mut conn = comemory::store::connection::open(paths.db_path()).expect("open db");
+    let cfg = Config::defaults();
+    let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+
+    let req = api::tune::Request {
+        golden: Some(golden.to_string_lossy().into_owned()),
+        golden_only: true,
+        k: 3,
+        apply: false,
+        seed: Some(42),
+    };
+    let resp = api::tune::run(&mut ctx, req).expect("tune run");
+    let winner = resp.report.winner().expect("winner");
+
+    let rows = comemory::store::eval_runs::list(&conn, 10).expect("list eval_runs");
+    assert_eq!(rows.len(), 1, "one row per run, never per scored candidate");
+    let row = &rows[0];
+    assert_eq!(row.kind, "tune");
+    assert_eq!(row.golden_pairs, resp.report.golden_pairs as u64);
+    assert_eq!(
+        row.recall, winner.recall_at_k,
+        "row must carry the winner's recall"
+    );
+    assert_eq!(row.mrr, winner.mrr, "row must carry the winner's mrr");
+    assert!(!row.applied, "req.apply == false must record applied == 0");
+    assert_eq!(
+        row.knobs["rrf_k"].as_f64(),
+        Some(f64::from(winner.candidate.rrf_k)),
+        "knobs JSON must carry the winning candidate, not the baseline"
+    );
+}
+
+#[test]
+fn run_apply_writes_the_eval_runs_row_with_applied_true() {
+    let home = TempDir::new().expect("tempdir");
+    let golden = tag_discriminated_fixture(&home);
+
+    let paths = Paths::new(data_dir(&home));
+    let cfg = Config::defaults()
+        .with_file(paths.config_file().as_path())
+        .expect("load starting config");
+    let mut conn = comemory::store::connection::open(paths.db_path()).expect("open db");
+    let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+    let req = api::tune::Request {
+        golden: Some(golden.to_string_lossy().into_owned()),
+        golden_only: true,
+        k: 3,
+        apply: true,
+        seed: Some(42),
+    };
+    let resp = api::tune::run(&mut ctx, req).expect("tune run");
+    assert!(resp.applied, "the zero-weight tags column must be beatable");
+
+    let rows = comemory::store::eval_runs::list(&conn, 10).expect("list eval_runs");
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].kind, "tune");
+    assert!(
+        rows[0].applied,
+        "--apply actually rewriting config.toml must set applied == 1"
+    );
+}
+
+#[test]
 fn run_is_deterministic_for_a_pinned_seed() {
     let home = TempDir::new().expect("tempdir");
     let golden = corpus_with_golden(&home, TOPICS.len());

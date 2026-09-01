@@ -9,19 +9,20 @@
 //! populated. Nodes are files (`file:<repo>:<path>`); edge endpoints that
 //! have no `code_symbols` rows (stale edges) still appear, with rank `0`.
 
-use std::collections::BTreeMap;
+/// Node assembly: the `code_symbols` aggregate and `build_graph`.
+pub mod nodes;
+
 use std::path::PathBuf;
 
 use clap::{Args as ClapArgs, ValueEnum};
 use rusqlite::Connection;
 
-use std::collections::BTreeSet;
-
+use crate::cli::graph::nodes::{build_graph, fetch_nodes, fetch_nodes_for_edges};
 use crate::cli::pagination::PaginationArgs;
 use crate::config::paths::{Paths, resolve_data_dir};
-use crate::graph::edges::{file_node_id, file_node_prefix};
+use crate::graph::edges::file_node_prefix;
 use crate::output::graph as render;
-use crate::output::graph::{CodeGraph, Edge, GraphPage, Node};
+use crate::output::graph::{CodeGraph, Edge, GraphPage};
 use crate::output::tty;
 use crate::prelude::*;
 use crate::store::connection;
@@ -273,160 +274,4 @@ fn where_clause_and_binds(
         binds.push(Box::new(file_node_prefix(r)));
     }
     (where_clause, binds)
-}
-
-/// Fetch one [`NodeRow`] per distinct endpoint file referenced by `edges`, so
-/// a paged subgraph carries exactly the nodes its windowed edges touch (and no
-/// others). Endpoints whose ids don't parse, or that have no `code_symbols`
-/// rows (stale edges), simply produce no row here — [`build_graph`] then
-/// materializes them as zero-rank nodes so the edge is never orphaned.
-///
-/// All distinct `(repo, path)` endpoints are aggregated in ONE chunked query
-/// (a `(repo, path)` `VALUES`-join), not one query per endpoint, so a page of
-/// many edges costs a bounded number of round-trips. The per-pair
-/// `MAX(rank_score)` + `COUNT(*)` aggregation and the `parent_id IS NULL`
-/// filter are preserved exactly; a pair with no parent rows yields no row.
-fn fetch_nodes_for_edges(conn: &Connection, edges: &[Edge]) -> Result<Vec<NodeRow>> {
-    // Dedup endpoints into a stable set so each file is fetched once and the
-    // node list is deterministic.
-    let pairs: BTreeSet<(String, String)> = edges
-        .iter()
-        .flat_map(|e| [e.src.as_str(), e.dst.as_str()])
-        .filter_map(|id| parse_id(id).map(|(r, p)| (r.to_string(), p.to_string())))
-        .collect();
-    let pairs: Vec<(String, String)> = pairs.into_iter().collect();
-    let mut rows = Vec::with_capacity(pairs.len());
-    // Two host params per pair; stay well under SQLite's variable cap.
-    for chunk in pairs.chunks(NODE_PAIR_CHUNK) {
-        fetch_node_chunk(conn, chunk, &mut rows)?;
-    }
-    Ok(rows)
-}
-
-/// Max `(repo, path)` pairs per batched node fetch. Each pair binds two host
-/// params, so `500 × 2 = 1000` stays far under bundled SQLite's
-/// `SQLITE_MAX_VARIABLE_NUMBER` (32766).
-const NODE_PAIR_CHUNK: usize = 500;
-
-/// Aggregate one chunk of distinct `(repo, path)` endpoints in a single query.
-/// Restricting to the wanted pairs with a row-value `(repo, path) IN (VALUES …)`
-/// keeps the `parent_id IS NULL` filter and the per-pair `MAX(rank_score)` +
-/// `COUNT(*)` aggregation identical to the old per-endpoint loop; pairs with no
-/// `parent_id IS NULL` rows simply produce no group, matching its "no row"
-/// behavior. Endpoint order is preserved (`ORDER BY repo, path` over the
-/// already-sorted input).
-fn fetch_node_chunk(
-    conn: &Connection,
-    chunk: &[(String, String)],
-    rows: &mut Vec<NodeRow>,
-) -> Result<()> {
-    if chunk.is_empty() {
-        return Ok(());
-    }
-    // One `(?,?)` tuple per wanted pair, fed to a row-value `IN (VALUES …)`.
-    let values = std::iter::repeat_n("(?,?)", chunk.len())
-        .collect::<Vec<_>>()
-        .join(",");
-    let sql = format!(
-        "SELECT c.repo, c.path, MAX(c.rank_score), COUNT(*) FROM code_symbols c \
-          WHERE c.parent_id IS NULL \
-            AND (c.repo, c.path) IN (VALUES {values}) \
-          GROUP BY c.repo, c.path \
-          ORDER BY c.repo, c.path"
-    );
-    let mut stmt = conn.prepare(&sql)?;
-    let params = chunk
-        .iter()
-        .flat_map(|(repo, path)| [repo.as_str(), path.as_str()]);
-    let chunk_rows = stmt
-        .query_map(rusqlite::params_from_iter(params), map_node_row)?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    rows.extend(chunk_rows);
-    Ok(())
-}
-
-/// A raw per-file node row: `(repo, path, rank, symbol_count)`.
-pub type NodeRow = (String, String, f64, u32);
-
-/// Map one `code_symbols` aggregate row into a [`NodeRow`].
-fn map_node_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<NodeRow> {
-    Ok((
-        r.get::<_, String>(0)?,
-        r.get::<_, String>(1)?,
-        r.get::<_, f64>(2)?,
-        // Saturate rather than wrap: a `COUNT(*)` over a file's symbols is
-        // always small and non-negative, so the fallback never actually
-        // fires — but any out-of-range i64 (negative or > u32::MAX) maps to
-        // u32::MAX instead of a silent truncating `as` cast that would lie.
-        u32::try_from(r.get::<_, i64>(3)?).unwrap_or(u32::MAX),
-    ))
-}
-
-/// Fetch one node row per indexed file, with its PageRank and top-level
-/// symbol count. Only parent rows (`parent_id IS NULL`) are counted so AST
-/// chunk children do not inflate the symbol tally.
-fn fetch_nodes(conn: &Connection, repo: Option<&str>) -> Result<Vec<NodeRow>> {
-    // MAX(rank_score) projects the file's most important symbol's PageRank
-    // onto the file node (rather than SUM/AVG), so a file is sized by its
-    // single most central symbol.
-    let mut sql = String::from(
-        "SELECT repo, path, MAX(rank_score), COUNT(*) FROM code_symbols \
-          WHERE parent_id IS NULL",
-    );
-    // Borrow `repo` (the parameter, which outlives `binds`) rather than the
-    // if-let local, so the `&&str` pushed here lives until `query_map`.
-    let mut binds: Vec<&dyn rusqlite::ToSql> = Vec::new();
-    if let Some(r) = &repo {
-        sql.push_str(" AND repo = ?1");
-        binds.push(r);
-    }
-    sql.push_str(" GROUP BY repo, path ORDER BY repo, path");
-    let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt
-        .query_map(rusqlite::params_from_iter(binds), map_node_row)?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    Ok(rows)
-}
-
-/// Assemble the [`CodeGraph`] from node rows and edges. Edge endpoints that
-/// have no `code_symbols` row (e.g. a stale co-change link to a deleted file)
-/// are still materialized as zero-rank nodes so the edge is not orphaned.
-pub fn build_graph(node_rows: Vec<NodeRow>, edges: Vec<Edge>) -> CodeGraph {
-    let mut nodes: BTreeMap<String, Node> = BTreeMap::new();
-    for (repo, path, rank, symbols) in node_rows {
-        let id = file_node_id(&repo, &path);
-        nodes.insert(
-            id.clone(),
-            Node {
-                id,
-                label: path,
-                repo,
-                rank,
-                symbols,
-            },
-        );
-    }
-    for e in &edges {
-        for id in [&e.src, &e.dst] {
-            if nodes.contains_key(id) {
-                continue;
-            }
-            if let Some((repo, path)) = parse_id(id) {
-                nodes.insert(
-                    id.clone(),
-                    Node {
-                        id: id.clone(),
-                        label: path.to_string(),
-                        repo: repo.to_string(),
-                        rank: 0.0,
-                        symbols: 0,
-                    },
-                );
-            }
-        }
-    }
-    CodeGraph {
-        nodes: nodes.into_values().collect(),
-        edges,
-    }
 }

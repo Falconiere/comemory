@@ -33,10 +33,14 @@ pub mod edges;
 pub mod eval;
 /// `comemory feedback`: record which hits were used.
 pub mod feedback;
+/// `comemory find`: one ranked list across memory, code, and documents.
+pub mod find;
 /// `comemory gc`: trash sweep + learning-telemetry retention purge.
 pub mod gc;
 /// `comemory graph`: the file-level code-connection graph, full or paged.
 pub mod graph;
+/// `comemory hooks`: read and toggle the git reindex hooks.
+pub mod hooks;
 /// `comemory index`: register document sources and reconcile them.
 pub mod index;
 /// `comemory index-code` (DB-write path): mirror a repo's symbols.
@@ -54,15 +58,21 @@ pub mod mine;
 pub mod prune;
 /// `comemory rebuild`: atomically rebuild the SQLite mirror from markdown.
 pub mod rebuild;
+/// `comemory repos`: the indexed code-repository inventory.
+pub mod repos;
 /// `comemory save`: write a memory (markdown + store mirror).
 pub mod save;
 /// `comemory search`: hybrid memory retrieval.
 pub mod search;
 /// `comemory search-code`: ranked code search.
 pub mod search_code;
+/// `comemory show`: one memory in full.
+pub mod show;
 /// `comemory sources`: list registered document sources, with a skippable
 /// reconcile side effect.
 pub mod sources;
+/// `comemory stats`: corpus counters and database size.
+pub mod stats;
 /// `comemory tune`: grid-search the blend knobs, confirm, apply.
 pub mod tune;
 /// `comemory unindex`: unregister a document source and its derived rows.

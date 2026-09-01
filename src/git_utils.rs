@@ -129,6 +129,19 @@ pub fn current_branch(repo_root: &Path) -> Result<Option<String>> {
     Ok(head.shorthand().ok().map(std::string::ToString::to_string))
 }
 
+/// Return the URL configured for `name` remote (e.g. `"origin"`) in the repo
+/// containing `repo_root`, or `None` when the repo cannot be discovered,
+/// carries no such remote, or the URL is not valid UTF-8. Every failure mode
+/// here is benign — resolving a repo's remote is advisory (`api::repos`'s
+/// inventory row), never a hard requirement of any caller — so this returns
+/// a plain `Option` rather than propagating, mirroring [`current_branch`]'s
+/// contract one step further.
+pub fn remote_url(repo_root: &Path, name: &str) -> Option<String> {
+    let repo = Repository::discover(repo_root).ok()?;
+    let remote = repo.find_remote(name).ok()?;
+    remote.url().ok().map(std::string::ToString::to_string)
+}
+
 /// Return the set of paths whose new-side tree entry changed between two
 /// commits. Both `from_sha` and `to_sha` are resolved with `revparse_single`,
 /// so callers may pass full OIDs, abbreviated OIDs, refs, or `HEAD~1`-style
@@ -174,6 +187,56 @@ pub fn install_hook(repo_root: &Path, hook: &str, body: &str) -> Result<()> {
         perm.set_mode(0o755);
         std::fs::set_permissions(&path, perm)?;
     }
+    Ok(())
+}
+
+/// Substring every hook script [`install_hook`] writes contains — the
+/// backgrounded `index-code` invocation line shared (by hand — the two
+/// literals are kept in sync manually, there is no single source) with
+/// `api::install_hooks::SCRIPT`. [`hook_installed`] looks for this
+/// substring rather than requiring a byte-identical body, so a hook written
+/// by an older or newer revision of the reindex script is still recognized
+/// as comemory-managed, while a hand-written third-party hook (which won't
+/// contain it) is not.
+pub(crate) const HOOK_MARKER: &str = "comemory index-code";
+
+/// The reindex hook body written into `.git/hooks/<hook>`. The single
+/// definition shared by `api::install_hooks` (which writes all three hooks
+/// at once) and `api::hooks`'s per-hook `--enable`, so the two cannot drift
+/// (Binding Rule 1). Must always contain [`HOOK_MARKER`], which is how
+/// [`hook_installed`] recognizes a comemory-written hook. The trailing `&`
+/// detaches the indexer so git's hook runner returns immediately.
+pub(crate) const REINDEX_HOOK_SCRIPT: &str = "#!/usr/bin/env bash\n\
+                      ROOT=\"$(git rev-parse --show-toplevel 2>/dev/null)\"\n\
+                      [ -z \"$ROOT\" ] && exit 0\n\
+                      REPO=\"$(basename \"$ROOT\")\"\n\
+                      ( comemory index-code --repo \"$REPO\" --path \"$ROOT\" >/dev/null 2>&1 & )\n\
+                      exit 0\n";
+
+/// Whether `.git/hooks/<hook>` exists under `repo_root` and carries
+/// [`HOOK_MARKER`] — the on-disk state `comemory hooks` reports (no DB
+/// table involved). A read-side probe: any I/O failure (missing file,
+/// unreadable, non-UTF8 content) reports `false` rather than erroring,
+/// matching [`current_branch`]/[`remote_url`]'s degrade-to-`None` contract
+/// one step further — listing hook state is inherently best-effort.
+pub fn hook_installed(repo_root: &Path, hook: &str) -> bool {
+    let path = repo_root.join(".git").join("hooks").join(hook);
+    std::fs::read_to_string(path).is_ok_and(|body| body.contains(HOOK_MARKER))
+}
+
+/// Remove `.git/hooks/<hook>` under `repo_root`, if present.
+///
+/// Idempotent — `Ok(())` whether or not the file existed — so `comemory
+/// hooks --disable` is safe to call repeatedly (spec: "idempotent and
+/// reversible"). Unlike [`hook_installed`]'s read-side degrade, this is a
+/// caller-requested write: any I/O failure other than the file already
+/// being gone propagates as [`Error::Io`] rather than being silenced.
+pub fn remove_hook(repo_root: &Path, hook: &str) -> Result<()> {
+    let path = repo_root.join(".git").join("hooks").join(hook);
+    if !path.exists() {
+        return Ok(());
+    }
+    std::fs::remove_file(&path)?;
     Ok(())
 }
 

@@ -11,7 +11,7 @@
 //! valid two-hop path — bounded by `cfg.retrieval.graph_hops` and
 //! restricted to [`ALLOWED_RELS`].
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use rusqlite::{Connection, named_params};
 
@@ -20,6 +20,7 @@ use crate::prelude::*;
 use crate::retrieval::fuse::{self, RankedHit};
 use crate::retrieval::router::{RoutedHit, Source};
 use crate::retrieval::scope::Filters;
+use crate::retrieval::score::LegScores;
 
 /// Relation labels the expansion walk may traverse.
 ///
@@ -167,6 +168,9 @@ fn to_routed((memory_id, hops): (String, i64)) -> RoutedHit {
         score: 1.0 / (1.0 + hops as f32),
         source: Source::Graph,
         tier: GRAPH_TIER,
+        // A walk-only candidate never went through a lexical or vector
+        // leg — that absence IS the signal, not a gap.
+        legs: LegScores::none(),
     }
 }
 
@@ -182,6 +186,11 @@ pub struct GraphFuse<'a> {
     pub source: Source,
     /// [`RoutedHit::tier`] every id already present in `legs` keeps.
     pub tier: u8,
+    /// Raw per-leg scores by memory id, so a hit the base legs produced
+    /// keeps them across the graph re-fusion. An id only the walk found is
+    /// absent here and reports [`LegScores::none`] — which is exactly the
+    /// "lexically dark" signal the graph leg exists to surface.
+    pub leg_scores: &'a HashMap<String, LegScores>,
     /// Repo / kind / created-date filters, applied to the expansion
     /// exactly as to the other legs.
     pub filters: Filters<'a>,
@@ -232,11 +241,17 @@ fn fuse_graph_leg(f: &GraphFuse<'_>, graph: &[RoutedHit], rrf_k: f32) -> Vec<Rou
         .into_iter()
         .map(|h| {
             let seen = known.contains(h.memory_id.as_str());
+            let legs = f
+                .leg_scores
+                .get(&h.memory_id)
+                .copied()
+                .unwrap_or_else(LegScores::none);
             RoutedHit {
                 source: if seen { f.source } else { Source::Graph },
                 tier: if seen { f.tier } else { GRAPH_TIER },
                 memory_id: h.memory_id,
                 score: h.score,
+                legs,
             }
         })
         .collect()

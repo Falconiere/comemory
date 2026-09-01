@@ -42,3 +42,5 @@ pub mod router;
 /// Created-date window (`--since` / `--until` / `--as-of`) shared by every leg.
 pub mod scope;
 pub mod score;
+/// Unified retrieval across memory, code, and documents (`comemory find`).
+pub mod unified;

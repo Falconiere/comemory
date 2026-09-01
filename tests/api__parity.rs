@@ -62,8 +62,9 @@ const EXCLUSIONS: &[(&str, &str)] = &[
     // "every `--vector-stdin`" — the stdin-body convenience collapses into
     // one JSON `"vector"` field shared with `--vector`; `--vector-stdin`
     // itself never gets a JSON counterpart. Appears on save/search/
-    // search-code/context (the four subcommands with a `--vector` flag).
+    // search-code/context/find (the subcommands with a `--vector` flag).
     ("save", "vector_stdin"),
+    ("find", "vector_stdin"),
     ("search", "vector_stdin"),
     ("search-code", "vector_stdin"),
     ("context", "vector_stdin"),
@@ -159,6 +160,11 @@ probe_fn!(probe_save, api::save::Request);
 probe_fn!(probe_search, api::search::Request);
 probe_fn!(probe_search_code, api::search_code::Request);
 probe_fn!(probe_sources, api::sources::Request);
+probe_fn!(probe_find, api::find::Request);
+probe_fn!(probe_hooks, api::hooks::Request);
+probe_fn!(probe_repos, api::repos::Request);
+probe_fn!(probe_show, api::show::Request);
+probe_fn!(probe_stats, api::stats::Request);
 probe_fn!(probe_tune, api::tune::Request);
 probe_fn!(probe_unindex, api::unindex::Request);
 
@@ -197,7 +203,12 @@ const PROBES: &[(&str, ProbeFn)] = &[
     ("save", probe_save),
     ("search", probe_search),
     ("search-code", probe_search_code),
+    ("find", probe_find),
+    ("hooks", probe_hooks),
+    ("repos", probe_repos),
+    ("show", probe_show),
     ("sources", probe_sources),
+    ("stats", probe_stats),
     ("tune", probe_tune),
     ("unindex", probe_unindex),
 ];

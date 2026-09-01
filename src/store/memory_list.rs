@@ -6,16 +6,50 @@
 //! Markdown stays the source of truth: this reads the mirror `cli::save` keeps
 //! in sync and `comemory rebuild` reconstructs from `memories/*.md`.
 
+use std::collections::HashMap;
+
 use rusqlite::Connection;
 
 use crate::prelude::*;
+use crate::store::qmarks;
+
+/// Sort order for [`list_memories`]'s window over the filtered set.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SortBy {
+    /// `created_at DESC, id ASC` — newest created first. Today's default,
+    /// unchanged by the addition of the other two orders.
+    Created,
+    /// `quality DESC`, ties broken by `created_at DESC, id ASC`.
+    Quality,
+    /// `last_accessed DESC, id ASC`. SQLite orders `NULL` as smaller than any
+    /// other value, so a plain `DESC` sort already trails every
+    /// never-accessed (`last_accessed IS NULL`) row without a separate
+    /// `NULLS LAST` clause.
+    Accessed,
+}
+
+impl SortBy {
+    /// The `ORDER BY` clause body (without the `ORDER BY` keywords) for this
+    /// sort.
+    fn order_by(self) -> &'static str {
+        match self {
+            Self::Created => "created_at DESC, id ASC",
+            Self::Quality => "quality DESC, created_at DESC, id ASC",
+            Self::Accessed => "last_accessed DESC, id ASC",
+        }
+    }
+}
 
 /// One listed memory, carrying exactly the fields `comemory list` renders.
 ///
 /// `slug` is the on-disk file stem (`{id}-{slug}`, derived from `md_path`) so
 /// the value matches the legacy markdown-scan output byte-for-byte; `repo`
 /// coalesces the nullable `memories.repo` column to an empty string for the
-/// same reason.
+/// same reason. `body` is carried verbatim rather than a derived `title` so
+/// the title stays a one-rule concept: the caller (`api::list::Row::from`)
+/// derives it through `output::search::title_of`, the same helper
+/// `comemory search`/`comemory show` already use, instead of the store layer
+/// depending on `output` to compute it here (Binding Rule 1).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListRow {
     /// 8-hex memory id (`memories.id`).
@@ -26,6 +60,17 @@ pub struct ListRow {
     pub repo: String,
     /// On-disk file stem `{id}-{slug}` derived from `memories.md_path`.
     pub slug: String,
+    /// Full memory body, verbatim (`memories.body`).
+    pub body: String,
+    /// Tag list from `memory_tags`, in row order.
+    pub tags: Vec<String>,
+    /// Frontmatter quality (1..=5).
+    pub quality: u8,
+    /// RFC 3339 creation timestamp (`memories.created_at`).
+    pub created: String,
+    /// Total number of times this memory has been returned by a tracked
+    /// `search` / `context` run.
+    pub access_count: u64,
 }
 
 /// Page of live memories plus the total count matching the same filters.
@@ -35,7 +80,7 @@ pub struct ListRow {
 /// `Page.total` and compute an exact `has_more`.
 #[derive(Debug, Clone)]
 pub struct ListPage {
-    /// The windowed rows, in `created_at DESC, id ASC` order.
+    /// The windowed rows, in the requested [`SortBy`] order.
     pub rows: Vec<ListRow>,
     /// Count of all rows matching the filters (pre-window).
     pub total: usize,
@@ -44,18 +89,20 @@ pub struct ListPage {
 /// List live (`deleted_at IS NULL`) memories, applying optional exact
 /// `repo`/`kind` filters and a `LIMIT`/`OFFSET` window.
 ///
-/// Order is `created_at DESC, id ASC`, replicating the legacy markdown-scan
-/// sort; the fixed-width ISO-8601 `created_at` sorts lexicographically and the
-/// `id` tiebreak keeps the window stable across pages. `limit == 0` is the
-/// shared "all" sentinel ([`crate::output::page::Page::from_slice`]) — the
-/// `LIMIT` clause is dropped. [`ListPage::total`] counts the filtered set
-/// before the window so `has_more` is exact.
+/// `sort` selects the `ORDER BY` ([`SortBy::order_by`]); [`SortBy::Created`]
+/// replicates the legacy markdown-scan sort — the fixed-width ISO-8601
+/// `created_at` sorts lexicographically and the `id` tiebreak keeps the
+/// window stable across pages. `limit == 0` is the shared "all" sentinel
+/// ([`crate::output::page::Page::from_slice`]) — the `LIMIT` clause is
+/// dropped. [`ListPage::total`] counts the filtered set before the window so
+/// `has_more` is exact.
 pub fn list_memories(
     conn: &Connection,
     repo: Option<&str>,
     kind: Option<&str>,
     limit: usize,
     offset: usize,
+    sort: SortBy,
 ) -> Result<ListPage> {
     let mut filters = String::new();
     // Filter params (`repo`/`kind`) come first; the windowed query appends the
@@ -92,30 +139,79 @@ pub fn list_memories(
     };
     binds.push(Box::new(limit_param));
     binds.push(Box::new(i64::try_from(offset).unwrap_or(i64::MAX)));
+    let order = sort.order_by();
     let sql = format!(
-        "SELECT id, kind, repo, md_path FROM memories \
-          WHERE deleted_at IS NULL{filters} \
-          ORDER BY created_at DESC, id ASC LIMIT ? OFFSET ?"
+        "SELECT id, kind, repo, md_path, body, quality, created_at, access_count \
+           FROM memories WHERE deleted_at IS NULL{filters} \
+          ORDER BY {order} LIMIT ? OFFSET ?"
     );
     let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt
+    let mut rows = stmt
         .query_map(
             rusqlite::params_from_iter(binds.iter().map(std::convert::AsRef::as_ref)),
-            |r| {
-                let id: String = r.get(0)?;
-                let kind: String = r.get(1)?;
-                let repo: Option<String> = r.get(2)?;
-                let md_path: String = r.get(3)?;
-                Ok(ListRow {
-                    slug: file_stem(&md_path),
-                    repo: repo.unwrap_or_default(),
-                    id,
-                    kind,
-                })
-            },
+            row_from_query,
         )?
         .collect::<std::result::Result<Vec<_>, _>>()?;
+    attach_tags(conn, &mut rows)?;
     Ok(ListPage { rows, total })
+}
+
+/// Build one [`ListRow`] from a `SELECT id, kind, repo, md_path, body,
+/// quality, created_at, access_count` row. `tags` starts empty; the caller
+/// fills it in via [`attach_tags`] once the page's ids are known.
+fn row_from_query(r: &rusqlite::Row<'_>) -> rusqlite::Result<ListRow> {
+    let id: String = r.get(0)?;
+    let kind: String = r.get(1)?;
+    let repo: Option<String> = r.get(2)?;
+    let md_path: String = r.get(3)?;
+    let body: String = r.get(4)?;
+    let quality: u8 = r.get(5)?;
+    let created: String = r.get(6)?;
+    let access_count = r.get::<_, i64>(7)?.max(0) as u64;
+    Ok(ListRow {
+        slug: file_stem(&md_path),
+        repo: repo.unwrap_or_default(),
+        id,
+        kind,
+        body,
+        tags: Vec::new(),
+        quality,
+        created,
+        access_count,
+    })
+}
+
+/// Batch-fetch `memory_tags` rows for this page's ids and attach them to the
+/// matching [`ListRow`], preserving `memory_tags` insertion order per id.
+/// Scoped to the already-windowed page (not the full filtered set) so cost
+/// stays proportional to the page, matching this module's `LIMIT`/`OFFSET`
+/// push-down.
+fn attach_tags(conn: &Connection, rows: &mut [ListRow]) -> Result<()> {
+    if rows.is_empty() {
+        return Ok(());
+    }
+    let ids: Vec<&str> = rows.iter().map(|r| r.id.as_str()).collect();
+    let sql = format!(
+        "SELECT memory_id, tag FROM memory_tags WHERE memory_id IN ({})",
+        qmarks(ids.len())
+    );
+    let params: Vec<&dyn rusqlite::ToSql> =
+        ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
+    let mut stmt = conn.prepare(&sql)?;
+    let mut by_id: HashMap<String, Vec<String>> = HashMap::new();
+    let tag_rows = stmt.query_map(params.as_slice(), |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+    })?;
+    for row in tag_rows {
+        let (id, tag) = row?;
+        by_id.entry(id).or_default().push(tag);
+    }
+    for row in rows.iter_mut() {
+        if let Some(tags) = by_id.remove(&row.id) {
+            row.tags = tags;
+        }
+    }
+    Ok(())
 }
 
 /// Extract the file stem (`{id}-{slug}`) from a stored `md_path`, matching the

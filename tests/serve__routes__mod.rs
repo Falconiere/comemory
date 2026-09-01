@@ -181,6 +181,14 @@ fn minimal_request(entry: &RouteEntry) -> (serde_json::Value, Vec<(&'static str,
         // asserts whether the read-only gate fired.
         "delete" | "prune" | "gc" | "mine" | "install-hooks" | "rebuild" | "ingest-code"
         | "tune" | "bandit" => (serde_json::json!({}), vec![]),
+        // `hooks` needs a repo to act on. A nonexistent path is right for the
+        // sweep: on a read-only server the gate must fire BEFORE any git-hook
+        // file is touched, and on a normal server the request gets past the
+        // gate (which is all AC-4 asserts) and then fails on the missing repo.
+        "hooks" => (
+            serde_json::json!({"repo": "/nonexistent/ac4-sweep", "enable": "post-commit"}),
+            vec![],
+        ),
         "unindex" => (
             serde_json::json!({}),
             vec![("target", "ac4-sweep-nonexistent")],

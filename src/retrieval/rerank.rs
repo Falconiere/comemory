@@ -13,7 +13,7 @@ use time::OffsetDateTime;
 use crate::config::Config;
 use crate::prelude::*;
 use crate::retrieval::router::{RoutedHit, Source};
-use crate::retrieval::score;
+use crate::retrieval::score::{self, LegScores};
 
 /// Scale for the memory PageRank boost: `1 + MEMORY_RANK_SCALE·ln(1 +
 /// raw/median)`. A memory at the pool median maps to `1 + 0.2·ln 2 ≈ 1.14`
@@ -49,6 +49,10 @@ pub struct ScoreParts {
     pub rank: f64,
     /// Product of all factors.
     pub final_score: f64,
+    /// The raw per-leg signals fusion consumed, carried through from the
+    /// router. Additive: no factor above depends on it, and `final_score`
+    /// is unchanged by its presence.
+    pub legs: LegScores,
 }
 
 /// A reranked hit, ready for the diversity stage.
@@ -183,6 +187,7 @@ fn score_hit(
             supersede,
             rank,
             final_score,
+            legs: hit.legs,
         },
         superseded_by,
         body: row.body,
@@ -244,7 +249,10 @@ fn memory_signals(conn: &Connection, id: &str) -> Result<Option<Signals>> {
 /// formatter ↔ SQLite `datetime()` contract is pinned by the
 /// mixed-precision store tests and the `--as-of` CLI e2e, so a format
 /// drift fails loudly, not silently.
-fn live_superseder(
+///
+/// `pub(crate)` so `api::show` reuses the exact same join for its
+/// `superseded_by` field instead of re-deriving it (Binding Rule 1).
+pub(crate) fn live_superseder(
     conn: &Connection,
     id: &str,
     as_of_cutoff: Option<&str>,

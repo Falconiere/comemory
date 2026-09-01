@@ -138,6 +138,9 @@ async fn code_ast(
 /// (AC-7: an out-of-root or nonexistent path never spawns a job).
 /// `405 read_only` on a `--read-only` server; never `503 busy` — a
 /// job-creating `POST` always answers `202` immediately ([`guard_job`]).
+/// The job reports progress and a log tail into the registry via
+/// `jobs::worker::RegistryProgressSink` (AC-33), streamed as the SSE
+/// `progress` event alongside the unchanged `status` events (AC-34).
 async fn code_index(
     State(state): State<AppState>,
     Json(mut req): Json<api::index_code::Request>,
@@ -161,15 +164,16 @@ async fn code_index(
         Err(e) => return Envelope::err("index-code", &e, 0),
     };
     let job_state = state.clone();
-    let job = jobs::spawn_job(
+    let job = jobs::spawn_job_with_id(
         state.jobs(),
         state.write_permit().clone(),
         "index-code",
         true,
-        move || {
+        move |job_id| {
             let cfg = job_state.cfg();
             let mut ctx = Ctx::lazy(job_state.paths(), &cfg);
-            let resp = api::index_code::run(&mut ctx, req)?;
+            let sink = jobs::worker::RegistryProgressSink::new(job_state.jobs().clone(), job_id);
+            let resp = api::index_code::run_with_progress(&mut ctx, req, Some(&sink))?;
             serde_json::to_value(resp).map_err(Error::Json)
         },
     );

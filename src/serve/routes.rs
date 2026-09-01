@@ -25,8 +25,12 @@ use crate::serve::jobs::JobId;
 
 /// `GET|POST /code/search`.
 pub mod code;
+/// `GET|POST /find`.
+pub mod find;
 /// `GET /graph`, `GET /edges`.
 pub mod graph;
+/// `GET|POST /hooks`.
+pub mod hooks;
 /// `GET /jobs`, `GET /jobs/{id}`, `GET /jobs/{id}/events` (SSE).
 pub mod jobs;
 /// `POST /eval`, `POST /tune`, `POST /bandit`.
@@ -37,8 +41,12 @@ pub mod maint;
 pub mod memories;
 /// `GET /completions`, `GET /commands`.
 pub mod meta;
+/// `GET /repos`.
+pub mod repos;
 /// `GET /sources`.
 pub mod sources;
+/// `GET /stats`.
+pub mod stats;
 
 /// One `/api/v1` route's static metadata.
 #[derive(Debug, Clone, Copy)]
@@ -80,6 +88,10 @@ pub fn table() -> Vec<RouteEntry> {
     entries.extend_from_slice(maint::prune::table_entries());
     entries.extend_from_slice(maint::admin::table_entries());
     entries.extend_from_slice(sources::table_entries());
+    entries.extend_from_slice(stats::table_entries());
+    entries.extend_from_slice(repos::table_entries());
+    entries.extend_from_slice(find::table_entries());
+    entries.extend_from_slice(hooks::table_entries());
     entries.extend_from_slice(meta::table_entries());
     entries
 }
@@ -97,6 +109,10 @@ pub fn v1_router(state: AppState) -> Router<AppState> {
         .merge(learning::router(state.clone()))
         .merge(maint::router(state.clone()))
         .merge(sources::router(state.clone()))
+        .merge(stats::router(state.clone()))
+        .merge(repos::router(state.clone()))
+        .merge(find::router(state.clone()))
+        .merge(hooks::router(state.clone()))
         .merge(meta::router(state))
 }
 

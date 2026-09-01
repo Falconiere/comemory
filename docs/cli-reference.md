@@ -44,6 +44,11 @@ Commands:
   ingest-code    Read pre-embedded JSONL rows from stdin and ingest them into the code index (`code_symbols` + `code_fts` + `code_vec`)
   index          Register one or more paths as document sources and reconcile them
   sources        List registered document sources with per-status counts
+  stats          Report corpus counters and the size of `comemory.db`
+  repos          List indexed code repositories with their index freshness
+  show           Show one memory in full: body, frontmatter, activation, references
+  find           Search memories, code, and documents as one ranked list
+  hooks          Report and toggle the git hooks that trigger background reindexing
   unindex        Unregister a document source and remove its derived rows
   ast            Run an ast-grep pattern against a single source file
   graph          Export the file-level code-connection graph (imports + co-change) as JSON, Graphviz DOT, or an interactive HTML page
@@ -334,13 +339,42 @@ List memories with optional repo/kind filters
 Usage: comemory list [OPTIONS]
 
 Options:
-      --json                 Emit machine-readable JSON instead of a human TTY view
-      --repo <REPO>          Filter to memories whose `repo` matches exactly
-      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
-      --kind <KIND>          Filter by kind (case-insensitive): decision|bug|convention|discovery|pattern|note
-      --limit <LIMIT>        Maximum number of results to return. `0` means "all" (no limit) [default: 50]
-      --offset <OFFSET>      Number of leading results to skip before the window starts [default: 0]
-  -h, --help                 Print help
+      --json
+          Emit machine-readable JSON instead of a human TTY view
+
+      --repo <REPO>
+          Filter to memories whose `repo` matches exactly
+
+      --data-dir <DATA_DIR>
+          Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable
+          
+          [env: COMEMORY_DATA_DIR=]
+
+      --kind <KIND>
+          Filter by kind (case-insensitive): decision|bug|convention|discovery|pattern|note
+
+      --sort <SORT>
+          Sort order: `created` (default, newest first) | `quality` (descending) | `accessed` (most-recently-accessed first)
+
+          Possible values:
+          - created:  Newest created first (default)
+          - quality:  Descending quality
+          - accessed: Most-recently-accessed first; never-accessed rows sort last
+          
+          [default: created]
+
+      --limit <LIMIT>
+          Maximum number of results to return. `0` means "all" (no limit)
+          
+          [default: 50]
+
+      --offset <OFFSET>
+          Number of leading results to skip before the window starts
+          
+          [default: 0]
+
+  -h, --help
+          Print help (see a summary with '-h')
 
 Examples:
   # All decisions in a single repo
@@ -441,6 +475,8 @@ Options:
       --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
       --golden-only          Skip the feedback harvest; use only the --golden file
       --k <K>                recall@k cut (defaults to 3) [default: 3]
+      --history              Show past `eval`/`tune`/`bandit` runs instead of scoring a new one. A clap conflict, not a silent precedence rule: `--history` and a scoring run are two different modes of this command and cannot combine with the golden-set flags
+      --limit <LIMIT>        Max rows to return with `--history`, newest-first [default: 20]
   -h, --help                 Print help
 
 Examples:
@@ -452,6 +488,9 @@ Examples:
 
   # File only, recall@5, JSON report
   comemory eval --golden golden.yaml --golden-only --k 5 --json
+
+  # Past eval/tune/bandit runs, newest-first
+  comemory eval --history --limit 20 --json
 ```
 
 ---

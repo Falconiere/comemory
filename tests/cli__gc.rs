@@ -150,6 +150,84 @@ fn gc_sweeps_old_trash_and_keeps_fresh_trash() {
 }
 
 #[test]
+fn gc_reports_bytes_freed_and_writes_a_gc_runs_row() {
+    // AC-32: `comemory gc --json` reports `bytes_freed` equal to the size of
+    // the files it actually removed, and writes one `gc_runs` row whose `at`
+    // is readable — driven through real soft-deletes (`comemory delete`),
+    // aged past the 30-day trash retention with a real mtime rewrite, no
+    // faked clock.
+    let home = TempDir::new().expect("tempdir");
+    let assert = bin(&home)
+        .args([
+            "--json",
+            "save",
+            "will be deleted then gc'd",
+            "--kind",
+            "note",
+        ])
+        .assert()
+        .success();
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).expect("utf8 stdout");
+    let saved: Value = serde_json::from_str(stdout.trim()).expect("parse save JSON");
+    let id = saved["id"].as_str().expect("save emits id").to_string();
+
+    bin(&home).args(["delete", &id]).assert().success();
+
+    let trash_dir = home
+        .path()
+        .join(".comemory")
+        .join("memories")
+        .join(".trash");
+    let trashed: Vec<std::path::PathBuf> = std::fs::read_dir(&trash_dir)
+        .expect("read .trash")
+        .filter_map(std::result::Result::ok)
+        .map(|e| e.path())
+        .collect();
+    assert_eq!(trashed.len(), 1, "one real soft-delete in .trash/");
+    let expected_bytes: u64 = std::fs::metadata(&trashed[0])
+        .expect("stat trashed file")
+        .len();
+
+    // Age the trash file past the 30-day retention with a real mtime
+    // rewrite — never a faked clock.
+    let f = std::fs::OpenOptions::new()
+        .write(true)
+        .open(&trashed[0])
+        .expect("reopen trashed file");
+    f.set_modified(std::time::SystemTime::now() - std::time::Duration::from_hours(31 * 24))
+        .expect("backdate mtime");
+    drop(f);
+
+    let assert = bin(&home).args(["--json", "gc"]).assert().success();
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).expect("utf8 stdout");
+    let v: Value = serde_json::from_str(stdout.trim()).expect("parse JSON envelope");
+    assert_eq!(v["removed"].as_u64(), Some(1));
+    assert_eq!(
+        v["bytes_freed"].as_u64(),
+        Some(expected_bytes),
+        "bytes_freed must equal the real trashed file's size: {v}"
+    );
+    assert!(!trashed[0].exists(), "aged trash entry must be removed");
+
+    let conn = open_db_readonly(&home);
+    let (at, removed, bytes_freed): (String, i64, i64) = conn
+        .query_row(
+            "SELECT at, removed, bytes_freed FROM gc_runs ORDER BY at DESC LIMIT 1",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .expect("gc_runs row written by this run");
+    assert!(!at.is_empty(), "at must be a readable timestamp");
+    time::OffsetDateTime::parse(&at, &time::format_description::well_known::Rfc3339)
+        .expect("at must parse as RFC 3339");
+    assert_eq!(removed, 1);
+    assert_eq!(
+        bytes_freed,
+        i64::try_from(expected_bytes).expect("fits i64")
+    );
+}
+
+#[test]
 fn gc_on_fresh_dir_does_not_create_db() {
     let home = TempDir::new().expect("tempdir");
     let assert = bin(&home).args(["--json", "gc"]).assert().success();

@@ -21,6 +21,7 @@ fn mem_hit(id: &str) -> Reranked {
         source: Source::Lexical,
         tier: 1,
         parts: ScoreParts {
+            legs: comemory::retrieval::score::LegScores::none(),
             rrf: 1.0,
             activation: 1.0,
             feedback: 1.0,

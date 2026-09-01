@@ -8,9 +8,10 @@
 //! Tests for [`comemory::retrieval::bundle::assemble`].
 //!
 //! Covers: empty bundle, single memory pull, multi-rel depth-2 edge walk
-//! (references_symbol, relates_to, supersedes), and prior-ranked code refs:
+//! (references_symbol, relates_to, supersedes), prior-ranked code refs:
 //! resolved refs sorted by the four-prior product (with serialized
-//! `rank_parts`), unresolved refs trailing without them.
+//! `rank_parts`), unresolved refs trailing without them, and the
+//! `neighbors` one-hop `imports`/`co_changed` file-graph walk.
 
 use crate::test_common::code_seed;
 use comemory::config::Config;
@@ -232,4 +233,161 @@ fn unresolved_code_refs_sort_after_ranked_without_rank_parts() {
         v["code_refs"][1].get("rank_parts").is_none(),
         "rank_parts must be skipped when None: {v}"
     );
+}
+
+/// Insert a `references_file` edge from `memory_id` to the bare
+/// `<repo>:<path>` destination `dst` — the shape `cross_link` writes for a
+/// plain `<repo>:<path>` mention, resolved with no `code_symbols` lookup at
+/// all ([`comemory::retrieval::code_ref_collect::file_ref`]).
+fn seed_file_ref_edge(conn: &rusqlite::Connection, memory_id: &str, dst: &str) {
+    conn.execute(
+        "INSERT INTO edges(src_kind,src_id,dst_kind,dst_id,rel,created_at) \
+         VALUES('memory',?1,'file',?2,'references_file','t')",
+        rusqlite::params![memory_id, dst],
+    )
+    .expect("seed references_file edge");
+}
+
+/// Insert a real `file`→`file` `imports`/`co_changed` edge, the shape
+/// [`comemory::graph::materialize`] writes.
+fn seed_file_edge(conn: &rusqlite::Connection, src: &str, dst: &str, rel: &str, weight: i64) {
+    conn.execute(
+        "INSERT INTO edges(src_kind,src_id,dst_kind,dst_id,rel,weight,created_at) \
+         VALUES('file',?1,'file',?2,?3,?4,'t')",
+        rusqlite::params![src, dst, rel, weight],
+    )
+    .expect("seed file edge");
+}
+
+#[test]
+fn neighbors_are_empty_when_bundle_has_no_code_refs() {
+    let (_d, conn) = code_seed::open_db();
+    seed_memory(&conn, "m1");
+
+    let b = assemble(&conn, "q", &["m1".to_string()]);
+    assert!(b.code_refs.is_empty());
+    assert!(b.neighbors.is_empty(), "no seed files → no neighborhood");
+}
+
+/// End-to-end over a real (SQL-seeded) `imports` + `co_changed` graph: the
+/// cited file's one-hop neighborhood surfaces both relations to the same
+/// neighbor with their real weights, reached from EITHER edge direction
+/// (undirected walk), a two-hop-only file is excluded, and rows sort
+/// `weight DESC, rel ASC, path ASC`.
+#[test]
+fn neighbors_include_real_imports_and_co_changed_edges_ordered() {
+    let (_d, conn) = code_seed::open_db();
+    seed_memory(&conn, "m1");
+    seed_file_ref_edge(&conn, "m1", "demo:seed.rs");
+
+    // seed.rs -> neighbor.rs on both rels, distinct weights.
+    seed_file_edge(
+        &conn,
+        "file:demo:seed.rs",
+        "file:demo:neighbor.rs",
+        "imports",
+        1,
+    );
+    seed_file_edge(
+        &conn,
+        "file:demo:seed.rs",
+        "file:demo:neighbor.rs",
+        "co_changed",
+        3,
+    );
+    // Reverse direction: another.rs imports seed.rs — the undirected walk
+    // must still surface `another.rs` as a neighbor of seed.rs.
+    seed_file_edge(
+        &conn,
+        "file:demo:another.rs",
+        "file:demo:seed.rs",
+        "imports",
+        1,
+    );
+    // Two hops away (neighbor.rs -> faraway.rs): must NOT surface.
+    seed_file_edge(
+        &conn,
+        "file:demo:neighbor.rs",
+        "file:demo:faraway.rs",
+        "imports",
+        9,
+    );
+
+    let b = assemble(&conn, "q", &["m1".to_string()]);
+    assert_eq!(b.code_refs.len(), 1, "one file ref seeded");
+    let rows: Vec<(&str, &str, &str, i64)> = b
+        .neighbors
+        .iter()
+        .map(|n| (n.repo.as_str(), n.path.as_str(), n.rel.as_str(), n.weight))
+        .collect();
+    assert_eq!(
+        rows,
+        vec![
+            ("demo", "neighbor.rs", "co_changed", 3),
+            ("demo", "another.rs", "imports", 1),
+            ("demo", "neighbor.rs", "imports", 1),
+        ],
+        "weight DESC, then rel ASC, then path ASC: {rows:?}"
+    );
+    assert!(
+        b.neighbors.iter().all(|n| n.path != "faraway.rs"),
+        "a two-hop-only file must not surface: {rows:?}"
+    );
+
+    // Additive guarantee: the memory's own `relations` walk is untouched by
+    // the code-graph neighborhood — it never carries imports/co_changed.
+    assert!(
+        b.relations
+            .iter()
+            .all(|r| r.rel != "imports" && r.rel != "co_changed"),
+        "relations must stay the memory reference-edge walk: {:?}",
+        b.relations.iter().map(|r| &r.rel).collect::<Vec<_>>()
+    );
+}
+
+/// A seed file must never appear in its own neighborhood, even when it is
+/// directly edge-connected to another seed file.
+#[test]
+fn neighbors_exclude_seed_files_from_each_other() {
+    let (_d, conn) = code_seed::open_db();
+    seed_memory(&conn, "m1");
+    seed_file_ref_edge(&conn, "m1", "demo:a.rs");
+    seed_file_ref_edge(&conn, "m1", "demo:b.rs");
+    seed_file_edge(&conn, "file:demo:a.rs", "file:demo:b.rs", "co_changed", 5);
+
+    let b = assemble(&conn, "q", &["m1".to_string()]);
+    assert_eq!(b.code_refs.len(), 2, "two seed file refs");
+    assert!(
+        b.neighbors.is_empty(),
+        "two seeds linked only to each other must yield no neighbors: {:?}",
+        b.neighbors
+            .iter()
+            .map(|n| (&n.repo, &n.path, &n.rel))
+            .collect::<Vec<_>>()
+    );
+}
+
+/// The `neighbors` field must be present and serialize as an array
+/// alongside the pre-existing bundle fields.
+#[test]
+fn neighbors_serialize_as_a_json_array() {
+    let (_d, conn) = code_seed::open_db();
+    seed_memory(&conn, "m1");
+    seed_file_ref_edge(&conn, "m1", "demo:seed.rs");
+    seed_file_edge(&conn, "file:demo:seed.rs", "file:demo:n.rs", "imports", 1);
+
+    let b = assemble(&conn, "q", &["m1".to_string()]);
+    let v: serde_json::Value = serde_json::to_value(&b).expect("json");
+    let neighbors = v["neighbors"].as_array().expect("neighbors array");
+    assert_eq!(neighbors.len(), 1);
+    assert_eq!(neighbors[0]["path"], "n.rs");
+    assert_eq!(neighbors[0]["repo"], "demo");
+    assert_eq!(neighbors[0]["rel"], "imports");
+    assert_eq!(neighbors[0]["weight"], 1);
+    // Pre-existing fields are unaffected by the new field: the memory row
+    // and its own `references_file` relation are exactly what they were.
+    assert_eq!(v["memories"][0]["id"], "m1");
+    let rels = v["relations"].as_array().expect("relations array");
+    assert_eq!(rels.len(), 1);
+    assert_eq!(rels[0]["rel"], "references_file");
 }

@@ -202,6 +202,36 @@ pub fn bounded_boost(v: f64, (lo, hi): (f64, f64)) -> f64 {
     v.max(lo).min(hi)
 }
 
+/// The raw per-leg signals that fusion consumed for one hit, carried
+/// through to `score_parts` for explainability.
+///
+/// Both fields are **carried, never recomputed**: `bm25` is exactly the
+/// value the lexical leg already put on its `RankedHit` (FTS5 BM25 negated
+/// to higher-is-better), and `ann` is exactly the value the vector leg
+/// already put on its own (`1.0 - distance`, i.e. cosine similarity). That
+/// is what makes exposing them incapable of moving a ranking.
+///
+/// `None` means the leg never produced this hit, which is itself the
+/// signal a caller wants: both `None` on a memory hit marks it lexically
+/// and semantically dark — reached only by the graph-expansion leg.
+///
+/// The lexical ladder tier is deliberately NOT duplicated here; it is
+/// already exposed once, at the hit level, as `tier`.
+#[derive(Debug, Clone, Copy, Default, serde::Serialize)]
+pub struct LegScores {
+    /// Lexical leg score (negated FTS5 BM25, higher is better).
+    pub bm25: Option<f32>,
+    /// Vector leg cosine similarity in `[0, 1]` (`1.0 - distance`).
+    pub ann: Option<f32>,
+}
+
+impl LegScores {
+    /// Neither leg produced this hit.
+    pub fn none() -> Self {
+        Self::default()
+    }
+}
+
 #[cfg(test)]
 #[path = "tests/score.rs"]
 mod tests;

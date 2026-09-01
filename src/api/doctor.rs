@@ -39,6 +39,10 @@ use crate::prelude::*;
 use crate::store::migrate;
 use crate::store::migrate::preflight;
 
+/// The individual health probes making up [`Report::checks`], plus the
+/// [`checks::run_all`] pass that runs every one of them.
+pub mod checks;
+
 /// `comemory doctor` / `GET /api/v1/doctor` request. No fields — `doctor`
 /// takes no arguments; the empty struct still derives `Deserialize` +
 /// `deny_unknown_fields` so it fits the uniform `api::<cmd>::Request` shape.
@@ -77,6 +81,42 @@ pub struct Report {
     /// written by a newer comemory) and `run` fell back to a read-only
     /// probe — see the module doc's "Forward-compat fallback".
     pub unknown_migration_keys: Vec<String>,
+    /// Every individual health probe [`checks::run_all`] ran, in a fixed
+    /// order (at least 10 on the writable path). `status` is `"ok"` |
+    /// `"warn"` | `"fail"`; a `"warn"` never fails the command — `doctor`'s
+    /// job is to report a broken state, not become one.
+    pub checks: Vec<checks::Check>,
+    /// `comemory.db`'s file size in bytes. `0` when the DB was never opened
+    /// (the unwritable path).
+    pub db_bytes: u64,
+    /// Live (non-trashed) markdown files under `memories/`.
+    pub markdown_files: u64,
+    /// Markdown files whose `sha256(body.trim_end())` disagrees with (or
+    /// has no) `memories.content_hash` row — see the "mirror parity" check.
+    pub mirror_drift: u64,
+    /// `memory_vec`'s configured dimension, read from `schema_meta` (not
+    /// hardcoded).
+    pub memory_vec_dim: Option<u32>,
+    /// `code_vec`'s configured dimension, read from `schema_meta`.
+    pub code_vec_dim: Option<u32>,
+    /// Path to the newest `comemory.db.pre-v{N}.bak` migration snapshot
+    /// beside the live db, if any.
+    pub backup_path: Option<String>,
+    /// That snapshot's file size in bytes.
+    pub backup_bytes: Option<u64>,
+    /// Whether the FTS5 `identifier` tokenizer (`src/store/tokenizer/`)
+    /// registered on the connection this report was built from.
+    pub tokenizer_registered: bool,
+    /// `repo_marker.root_path` entries that still exist on disk.
+    pub repo_roots_ok: u32,
+    /// `repo_marker.root_path` entries recorded at all (non-`NULL`).
+    pub repo_roots_total: u32,
+    /// The configured `COMEMORY_EMBED_CMD`, if set.
+    pub embed_cmd: Option<String>,
+    /// How long the embed probe took, in milliseconds, when it succeeded.
+    /// `None` when `embed_cmd` is unset or the probe failed — a failure
+    /// never propagates as an error (spec "Doctor" ACs).
+    pub embed_probe_ms: Option<u64>,
 }
 
 /// Build the doctor report. See the module doc for the writability-probe
@@ -128,24 +168,65 @@ fn probe_writable(paths: &Paths) -> bool {
     ok
 }
 
+/// The six pre-console-compat scalar fields (spec Non-Goal 4), bundled only
+/// so [`unwritable_report`], [`writable_report`], and
+/// [`forward_compat_report`] can hand off to [`assemble`] instead of each
+/// repeating the full [`Report`] literal.
+struct CoreFields {
+    data_dir: String,
+    db_writable: bool,
+    schema_version: String,
+    sqlite_vec_loaded: bool,
+    embed_hint: Option<String>,
+    unknown_migration_keys: Vec<String>,
+}
+
+/// Combine [`CoreFields`] with the check-derived [`checks::Extras`] into a
+/// [`Report`].
+fn assemble(core: CoreFields, extras: checks::Extras) -> Report {
+    Report {
+        data_dir: core.data_dir,
+        db_writable: core.db_writable,
+        schema_version: core.schema_version,
+        sqlite_vec_loaded: core.sqlite_vec_loaded,
+        embed_hint: core.embed_hint,
+        unknown_migration_keys: core.unknown_migration_keys,
+        checks: extras.checks,
+        db_bytes: extras.db_bytes,
+        markdown_files: extras.markdown_files,
+        mirror_drift: extras.mirror_drift,
+        memory_vec_dim: extras.memory_vec_dim,
+        code_vec_dim: extras.code_vec_dim,
+        backup_path: extras.backup_path,
+        backup_bytes: extras.backup_bytes,
+        tokenizer_registered: extras.tokenizer_registered,
+        repo_roots_ok: extras.repo_roots_ok,
+        repo_roots_total: extras.repo_roots_total,
+        embed_cmd: extras.embed_cmd,
+        embed_probe_ms: extras.embed_probe_ms,
+    }
+}
+
 /// The partial report emitted when `comemory.db` is not writable — no
 /// connection was opened, so schema/vec fields report their "unknown"
 /// defaults rather than lying about a DB that was never probed.
 fn unwritable_report(paths: &Paths, embed_hint: Option<String>) -> Report {
-    Report {
+    let core = CoreFields {
         data_dir: paths.data_dir().to_string_lossy().into_owned(),
         db_writable: false,
         schema_version: "unknown".into(),
         sqlite_vec_loaded: false,
         embed_hint,
         unknown_migration_keys: Vec::new(),
-    }
+    };
+    assemble(core, checks::Extras::unwritable())
 }
 
 /// The full report, opening the connection (and, on a brand-new writable
 /// data dir, creating + migrating the DB) via [`Ctx::conn`].
 fn writable_report(ctx: &mut Ctx<'_>, embed_hint: Option<String>) -> Result<Report> {
-    let data_dir = ctx.paths.data_dir().to_string_lossy().into_owned();
+    let paths = ctx.paths;
+    let data_dir = paths.data_dir().to_string_lossy().into_owned();
     let conn = ctx.conn()?;
     let schema_version: String = conn.query_row(
         "SELECT value FROM schema_meta WHERE key = 'version'",
@@ -155,14 +236,16 @@ fn writable_report(ctx: &mut Ctx<'_>, embed_hint: Option<String>) -> Result<Repo
     let sqlite_vec_loaded = conn
         .query_row("SELECT vec_version()", [], |r| r.get::<_, String>(0))
         .is_ok();
-    Ok(Report {
+    let extras = checks::run_all(conn, paths, &schema_version)?;
+    let core = CoreFields {
         data_dir,
         db_writable: true,
         schema_version,
         sqlite_vec_loaded,
         embed_hint,
         unknown_migration_keys: Vec::new(),
-    })
+    };
+    Ok(assemble(core, extras))
 }
 
 /// The fallback report built when [`Ctx::conn`] was refused with
@@ -189,14 +272,16 @@ fn forward_compat_report(paths: &Paths, embed_hint: Option<String>) -> Result<Re
         .is_ok();
     let unknown_migration_keys = unknown_keys(&conn)?;
     let schema_version = stored_schema_version(&conn, migrate::CURRENT_VERSION);
-    Ok(Report {
+    let extras = checks::run_all(&conn, paths, &schema_version)?;
+    let core = CoreFields {
         data_dir,
         db_writable: true,
         schema_version,
         sqlite_vec_loaded,
         embed_hint,
         unknown_migration_keys,
-    })
+    };
+    Ok(assemble(core, extras))
 }
 
 /// The raw `schema_meta.version` string, unless it equals `current` — this

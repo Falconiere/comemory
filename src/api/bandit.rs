@@ -14,9 +14,10 @@ use rusqlite::Connection;
 use serde::Deserialize;
 
 use crate::api::Ctx;
-use crate::api::eval::default_k;
+use crate::api::eval::{RunOutcome, default_k, record_run};
 use crate::eval::bandit::{self, BanditReport};
 use crate::eval::golden;
+use crate::eval::runner;
 use crate::eval::tune;
 use crate::prelude::*;
 
@@ -43,6 +44,8 @@ pub struct Request {
 /// golden set, and — with `req.apply` and a win — persist it into
 /// `config.toml`. Refuses `req.apply` up front when `[bandit] enabled =
 /// false` in the effective config (same pre-flight refusal as the CLI).
+/// Records this run (the confirmed arm's knobs + score, `applied`) in
+/// `eval_runs` via [`record_run`] (`kind = "bandit"`).
 pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<BanditReport> {
     let cfg = ctx.cfg;
     if req.apply && !cfg.bandit.enabled {
@@ -58,7 +61,7 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<BanditReport> {
         req.golden_only,
     )?;
     let min_pairs = tune::resolve_min_pairs()?;
-    bandit::run_bandit(
+    let report = bandit::run_bandit(
         cfg,
         conn,
         &pairs,
@@ -66,7 +69,35 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<BanditReport> {
         min_pairs,
         req.apply,
         &paths.config_file(),
-    )
+    )?;
+
+    // `BanditReport` carries the confirmed candidate's knobs and `applied`
+    // but not its recall/MRR (only `baseline_*` and each arm's `last_mrr`
+    // are persisted); replay it once more (same pipeline, same golden
+    // pairs, tracking off) to get the real pair for this run's `eval_runs`
+    // row — deterministic, so it reproduces exactly what `run_bandit`
+    // already scored internally.
+    let confirmed = runner::run_eval(
+        &tune::with_candidate(cfg, &report.proposed),
+        &*conn,
+        &pairs,
+        req.k,
+    )?;
+    let knobs_json = serde_json::to_string(&report.proposed).map_err(Error::Json)?;
+    record_run(
+        conn,
+        RunOutcome {
+            kind: "bandit",
+            golden_pairs: report.golden_pairs,
+            k: report.k,
+            recall: confirmed.recall_at_k,
+            mrr: confirmed.mrr,
+            knobs_json,
+            applied: report.applied,
+        },
+    )?;
+
+    Ok(report)
 }
 
 #[cfg(test)]

@@ -15,8 +15,20 @@
         "tests"
       ],
       "api": [
+        "doctor",
         "index_code",
         "rebuild",
+        "repos",
+        "tests",
+        "proptest-regressions"
+      ],
+      "cli": [
+        "graph",
+        "tests",
+        "proptest-regressions"
+      ],
+      "retrieval": [
+        "unified",
         "tests",
         "proptest-regressions"
       ],
@@ -39,10 +51,13 @@
     },
     "requireReadme": [
       "api",
+      "api/doctor",
       "api/index_code",
       "api/rebuild",
+      "api/repos",
       "ast",
       "cli",
+      "cli/graph",
       "config",
       "consolidate",
       "document",
@@ -52,6 +67,7 @@
       "output",
       "prune",
       "retrieval",
+      "retrieval/unified",
       "serve",
       "serve/jobs",
       "serve/routes",

@@ -12,7 +12,7 @@
 use std::io::Write as _;
 use std::path::PathBuf;
 
-use clap::Args as ClapArgs;
+use clap::{Args as ClapArgs, ValueEnum};
 
 use crate::api::{self, Ctx};
 use crate::cli::load_config;
@@ -36,6 +36,18 @@ Examples:
   # Second page of 20 memories
   comemory list --limit 20 --offset 20";
 
+/// Sort order for `comemory list`'s rows.
+#[derive(Copy, Clone, Debug, ValueEnum)]
+#[clap(rename_all = "lowercase")]
+pub enum Sort {
+    /// Newest created first (default).
+    Created,
+    /// Descending quality.
+    Quality,
+    /// Most-recently-accessed first; never-accessed rows sort last.
+    Accessed,
+}
+
 /// Arguments to `comemory list`.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES)]
@@ -46,6 +58,10 @@ pub struct Args {
     /// Filter by kind (case-insensitive): decision|bug|convention|discovery|pattern|note.
     #[arg(long)]
     pub kind: Option<String>,
+    /// Sort order: `created` (default, newest first) | `quality`
+    /// (descending) | `accessed` (most-recently-accessed first).
+    #[arg(long, value_enum, default_value_t = Sort::Created)]
+    pub sort: Sort,
     /// `--limit` / `--offset` window over the listed memories.
     #[command(flatten)]
     pub page: PaginationArgs,
@@ -63,6 +79,11 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         kind: a.kind,
         limit: a.page.limit,
         offset: a.page.offset,
+        sort: match a.sort {
+            Sort::Created => api::list::Sort::Created,
+            Sort::Quality => api::list::Sort::Quality,
+            Sort::Accessed => api::list::Sort::Accessed,
+        },
     };
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
     let page = api::list::run(&mut ctx, req)?;

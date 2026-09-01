@@ -296,8 +296,10 @@ pub(crate) fn abs_path(entry: Option<&MemoryMeta>, data_dir: &Path) -> String {
 }
 
 /// First non-empty trimmed line of `body` — a human-readable title. Empty
-/// when the body has no non-blank line.
-fn title_of(body: &str) -> String {
+/// when the body has no non-blank line. `pub(crate)` so `api::show` shares
+/// this one rule with `comemory search`'s title column instead of
+/// re-deriving it (Binding Rule 1).
+pub(crate) fn title_of(body: &str) -> String {
     body.lines()
         .map(str::trim)
         .find(|l| !l.is_empty())

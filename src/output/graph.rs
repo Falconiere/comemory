@@ -31,6 +31,14 @@ pub struct Node {
     pub rank: f64,
     /// Count of top-level symbols indexed in this file.
     pub symbols: u32,
+    /// Distinct live memories referencing this file — by a `references_file`
+    /// edge, or by a `references_symbol` edge pointing at one of its
+    /// symbols. `0` for a file the code index has never seen.
+    pub memories: u64,
+    /// Blob OID recorded for this file at index time (`indexed_files`).
+    /// `None` for an unindexed edge endpoint, or a file indexed before blob
+    /// pinning.
+    pub blob: Option<String>,
 }
 
 /// One directed graph edge between two file nodes.

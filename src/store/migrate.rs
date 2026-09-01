@@ -30,7 +30,7 @@ pub(crate) mod preflight;
 /// it is what `schema_meta` stores and what several eval modules hash via
 /// `.as_bytes()` — not derived from [`CURRENT_VERSION_NUM`]: on the pinned
 /// stable toolchain `const … = &N.to_string()` fails with `E0015`.
-pub const CURRENT_VERSION: &str = "13";
+pub const CURRENT_VERSION: &str = "14";
 
 /// The same value numerically as [`CURRENT_VERSION`], for callers that need
 /// to compare or count migrations. Agreement between the two is asserted by
@@ -96,6 +96,12 @@ pub const M_V12: &str = include_str!("./sql/0012_v12_edge_fts.sql");
 /// `references_document`. Public so tests can replay historical schema
 /// states.
 pub const M_V13: &str = include_str!("./sql/0013_v13_documents.sql");
+
+/// 0014 SQL: console-compatibility history tables (`eval_runs`, `gc_runs`)
+/// — one row per eval/tune/bandit run and per gc run, so the learning-loop
+/// and maintenance surfaces can report a history instead of only the
+/// current run.
+pub const M_V14: &str = include_str!("./sql/0014_v14_console.sql");
 
 /// Apply all pending migrations. Safe to re-run; each migration is only
 /// applied if its key is absent from `schema_meta`, and each post-apply
@@ -309,6 +315,10 @@ mod tests_v4;
 #[cfg(test)]
 #[path = "tests/migrate_v8.rs"]
 mod tests_v8;
+
+#[cfg(test)]
+#[path = "tests/migrate_v14.rs"]
+mod tests_v14;
 
 #[cfg(test)]
 #[path = "tests/matrix.rs"]

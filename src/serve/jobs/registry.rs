@@ -1,11 +1,14 @@
 //! The in-process job table: one [`Job`] record per accepted job, each with
-//! a retained `watch::Sender<JobStatus>` so a status stream can attach (or
+//! a retained `watch::Sender<JobStatus>` (and a second, progress-only
+//! `watch::Sender<Option<Progress>>`) so a status stream can attach (or
 //! re-attach) at any time and immediately read the current value.
 //!
-//! Memory is bounded by evicting finished jobs beyond the
-//! [`MAX_FINISHED`] most recent on every insertion; queued and running jobs
-//! are never evicted. The `Mutex` is held only for the short synchronous
-//! map mutations — never across an `.await`.
+//! Memory is bounded two ways: finished jobs beyond [`MAX_FINISHED`] are
+//! evicted on every insertion (queued and running jobs are never evicted),
+//! and each job's own [`crate::serve::jobs::LOG_TAIL_CAP`]-bounded log tail
+//! is capped independent of the job's own runtime. The `Mutex` is held
+//! only for the short synchronous map mutations — never across an
+//! `.await`.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -15,7 +18,7 @@ use time::OffsetDateTime;
 use tokio::sync::watch;
 
 use crate::prelude::*;
-use crate::serve::jobs::{Job, JobId, JobStatus, JobView};
+use crate::serve::jobs::{Job, JobId, JobStatus, JobView, Progress};
 use crate::serve::security;
 use crate::store::memory_row;
 
@@ -48,12 +51,47 @@ impl Registry {
         let id = security::random_hex(JOB_ID_BYTES)?;
         let started_at = memory_row::iso_format(OffsetDateTime::now_utc())?;
         let (tx, rx) = watch::channel(JobStatus::Queued);
+        let (progress_tx, _progress_rx) = watch::channel(None);
         let seq = self.next_seq.fetch_add(1, Ordering::Relaxed);
-        let job = Job::new(id.clone(), command.to_string(), started_at, seq, tx);
+        let job = Job::new(
+            id.clone(),
+            command.to_string(),
+            started_at,
+            seq,
+            tx,
+            progress_tx,
+        );
         let mut jobs = self.lock()?;
         jobs.insert(id.clone(), job);
         evict_finished(&mut jobs);
         Ok((id, rx))
+    }
+
+    /// Record a progress report for job `id`: update the stored snapshot
+    /// (`JobView::progress`) and publish it on the job's progress `watch`
+    /// channel (the SSE `progress` event). `NotFound` when the id is
+    /// unknown — a [`crate::api::index_code::ProgressSink`] implementation
+    /// treats that as best-effort and only warns; see that trait's doc.
+    pub fn set_progress(&self, id: &str, progress: Progress) -> Result<()> {
+        let mut jobs = self.lock()?;
+        let job = jobs
+            .get_mut(id)
+            .ok_or_else(|| Error::NotFound(format!("job not found: {id}")))?;
+        job.progress = Some(progress.clone());
+        job.progress_tx.send_replace(Some(progress));
+        Ok(())
+    }
+
+    /// Append one log line to job `id`'s bounded tail (`JobView::log_tail`).
+    /// `NotFound` when the id is unknown, handled the same best-effort way
+    /// as [`Registry::set_progress`].
+    pub fn push_log(&self, id: &str, line: String) -> Result<()> {
+        let mut jobs = self.lock()?;
+        let job = jobs
+            .get_mut(id)
+            .ok_or_else(|| Error::NotFound(format!("job not found: {id}")))?;
+        job.push_log(line);
+        Ok(())
     }
 
     /// Record a job's transition: update the stored record (stamping
@@ -92,6 +130,15 @@ impl Registry {
     /// finished before the subscriber attached (AC-8).
     pub fn subscribe(&self, id: &str) -> Result<Option<watch::Receiver<JobStatus>>> {
         Ok(self.lock()?.get(id).map(|job| job.tx.subscribe()))
+    }
+
+    /// A fresh receiver on job `id`'s progress channel — the SSE
+    /// `progress` event's source, mirroring [`Registry::subscribe`].
+    pub fn subscribe_progress(
+        &self,
+        id: &str,
+    ) -> Result<Option<watch::Receiver<Option<Progress>>>> {
+        Ok(self.lock()?.get(id).map(|job| job.progress_tx.subscribe()))
     }
 
     /// Every retained job, newest first.

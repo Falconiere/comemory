@@ -551,8 +551,8 @@ fn v13_creates_document_tables_and_extends_edges_rel() {
     assert_edge_indexes_exist(&conn);
 
     assert_eq!(schema_meta(&conn, "version"), migrate::CURRENT_VERSION);
-    // Pin: bump this when CURRENT_VERSION advances past v13.
-    assert_eq!(migrate::CURRENT_VERSION, "13");
+    // Pin: bump this when CURRENT_VERSION advances past v14.
+    assert_eq!(migrate::CURRENT_VERSION, "14");
 }
 
 /// The `document_fts` DDL uses the same per-connection `identifier`

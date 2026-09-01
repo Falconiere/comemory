@@ -8,7 +8,7 @@
 use rusqlite::Connection;
 
 use super::{
-    M_BOOTSTRAP, M_V2, M_V3, M_V4, M_V5, M_V6, M_V7, M_V8, M_V9, M_V10, M_V11, M_V12, M_V13,
+    M_BOOTSTRAP, M_V2, M_V3, M_V4, M_V5, M_V6, M_V7, M_V8, M_V9, M_V10, M_V11, M_V12, M_V13, M_V14,
     backfill_memory_simhash, rehash_simhashes,
 };
 use crate::prelude::*;
@@ -150,6 +150,13 @@ pub const MIGRATIONS: &[Migration] = &[
         class: Class::Destructive,
         post: None,
         markers: &["0013_v13_documents"],
+    },
+    Migration {
+        key: "0014_v14_console",
+        sql: M_V14,
+        class: Class::Additive,
+        post: None,
+        markers: &["0014_v14_console"],
     },
 ];
 

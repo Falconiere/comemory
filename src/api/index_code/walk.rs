@@ -11,6 +11,7 @@ use std::path::Path;
 use git2::Repository;
 use rusqlite::Connection;
 
+use super::ProgressSink;
 use crate::ast::extractor::ExtractedSymbol;
 use crate::ast::{self, languages};
 use crate::graph::imports;
@@ -24,6 +25,8 @@ use crate::store::fts;
 /// no language detected, no blob OID (untracked, or a canonicalisation
 /// failure already logged inside [`blob_oid`]), or an already-current OID.
 /// Errors abort the whole walk, so the caller's transaction rolls back.
+/// `sink`, when given, gets one [`ProgressSink::on_log`] line (the file's
+/// relative path) for each file actually (re)indexed — not for a skip.
 pub(crate) fn index_file(
     tx: &Connection,
     repo: &str,
@@ -31,6 +34,7 @@ pub(crate) fn index_file(
     git_repo: &Repository,
     path: &Path,
     imports_by_file: &mut BTreeMap<String, Vec<String>>,
+    sink: Option<&dyn ProgressSink>,
 ) -> Result<bool> {
     let Some(lang) = languages::detect(path) else {
         return Ok(false);
@@ -63,6 +67,9 @@ pub(crate) fn index_file(
         }
     }
     code_row::upsert_indexed_file(tx, repo, &rel, &oid)?;
+    if let Some(sink) = sink {
+        sink.on_log(&rel);
+    }
     Ok(true)
 }
 

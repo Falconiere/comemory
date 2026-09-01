@@ -228,11 +228,15 @@ Full data model, save flow, retrieval pipeline, and graph mechanics:
 | `comemory save` | Save a memory (body via arg, `-`, or stdin; optional `--vector` / `--vector-stdin`) |
 | `comemory search` | Search memories — lexical by default, hybrid when a vector is supplied |
 | `comemory search-code` | Search the code index (BM25 + optional ANN, reranked by graph priors) |
+| `comemory find` | One ranked list across memories, code, and documents (`--domain` narrows it) |
 | `comemory context` | One-shot bundle for a key: code symbol + related memories + neighborhood |
-| `comemory list` | List memories with optional repo/kind filters |
+| `comemory list` | List memories with optional repo/kind filters (`--sort created\|quality\|accessed`) |
+| `comemory show` | Show one memory in full: body, frontmatter, activation, reference freshness |
+| `comemory stats` | Corpus counters (memories, symbols, edges, documents) and database size |
+| `comemory repos` | Indexed code repositories with their index freshness and changed-file count |
 | `comemory delete` | Soft-delete a memory by id (moves to `.trash/`) |
 | `comemory feedback` | Record per-hit feedback against a `query_id` (`--used` / `--used-code` …) |
-| `comemory eval` | Score retrieval quality (recall@k, MRR) against a golden set |
+| `comemory eval` | Score retrieval quality (recall@k, MRR) against a golden set (`--history` reads past runs) |
 | `comemory mine` | Distill failed→successful query rewordings into expansions (`--apply`) |
 | `comemory tune` | Grid-search ranking knobs against the golden set (`--apply` writes `config.toml`) |
 | `comemory bandit` | Thompson-sample ranking knobs (`--apply` writes when the sample beats baseline) |
@@ -247,6 +251,7 @@ Full data model, save flow, retrieval pipeline, and graph mechanics:
 | `comemory gc` | Purge old entries from `memories/.trash/` and aged telemetry |
 | `comemory completions` | Generate shell completions |
 | `comemory install-hooks` | Install git hooks that reindex code on commit/merge/checkout |
+| `comemory hooks` | Report and toggle those hooks individually, plus search→edit reinforcement |
 
 Every command accepts `--json`; the data root defaults to `~/.comemory`
 (overridable with `--data-dir` or `COMEMORY_DATA_DIR`). Full per-command docs

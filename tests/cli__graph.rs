@@ -10,7 +10,8 @@
 //! is a pure read over `comemory.db` and never indexes.
 
 use assert_cmd::Command;
-use comemory::cli::graph::{build_graph, parse_id};
+use comemory::cli::graph::nodes::{NodeRow, build_graph};
+use comemory::cli::graph::parse_id;
 use comemory::output::graph::Edge;
 use tempfile::TempDir;
 
@@ -139,7 +140,14 @@ fn build_graph_materializes_dangling_edge_endpoints() {
     // A `co_changed` edge to a file with no `code_symbols` row (e.g. a
     // deleted file) must still yield a zero-rank node so the edge is not
     // orphaned. Only the source node is backed by a real row here.
-    let nodes = vec![("demo".into(), "src/a.rs".into(), 0.7, 2)];
+    let nodes = vec![NodeRow {
+        repo: "demo".into(),
+        path: "src/a.rs".into(),
+        rank: 0.7,
+        symbols: 2,
+        memories: 0,
+        blob: None,
+    }];
     let edges = vec![Edge {
         src: "file:demo:src/a.rs".into(),
         dst: "file:demo:src/gone.rs".into(),
@@ -158,6 +166,11 @@ fn build_graph_materializes_dangling_edge_endpoints() {
     assert_eq!(dangling.symbols, 0, "dangling node has no symbols");
     assert_eq!(dangling.label, "src/gone.rs");
     assert_eq!(dangling.repo, "demo");
+    assert_eq!(
+        dangling.memories, 0,
+        "a file the index has never seen cites no memories"
+    );
+    assert_eq!(dangling.blob, None, "and has no pinned blob");
 }
 
 #[test]

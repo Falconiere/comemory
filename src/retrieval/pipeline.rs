@@ -194,7 +194,7 @@ fn record_telemetry(
 ) -> Option<String> {
     match conn.unchecked_transaction() {
         Ok(tx) => {
-            record_access(&tx, hits);
+            record_access(&tx, &ids_of(hits));
             let query_id = record_query(&tx, query, repo, kind, source, hits, elapsed);
             match tx.commit() {
                 Ok(()) => query_id,
@@ -206,10 +206,15 @@ fn record_telemetry(
         }
         Err(e) => {
             tracing::warn!(error = %e, "telemetry transaction unavailable; falling back to direct writes");
-            record_access(conn, hits);
+            record_access(conn, &ids_of(hits));
             record_query(conn, query, repo, kind, source, hits, elapsed)
         }
     }
+}
+
+/// Borrow every hit's id, for the id-based [`record_access`] writer.
+fn ids_of(hits: &[Reranked]) -> Vec<&str> {
+    hits.iter().map(|h| h.memory_id.as_str()).collect()
 }
 
 /// Bump access tracking for returned hits. Best-effort: a failure must
@@ -222,8 +227,8 @@ fn record_telemetry(
 /// transaction. The timestamp goes through [`memory_row::iso_format`] so
 /// every `last_accessed` writer emits the same string format as
 /// `created_at` / `updated_at`.
-fn record_access(conn: &Connection, hits: &[Reranked]) {
-    if hits.is_empty() {
+pub(crate) fn record_access(conn: &Connection, ids: &[&str]) {
+    if ids.is_empty() {
         return;
     }
     let now = match memory_row::iso_format(OffsetDateTime::now_utc()) {
@@ -233,14 +238,14 @@ fn record_access(conn: &Connection, hits: &[Reranked]) {
             return;
         }
     };
-    let qmarks = crate::store::qmarks(hits.len());
+    let qmarks = crate::store::qmarks(ids.len());
     let sql = format!(
         "UPDATE memories SET access_count = access_count + 1, last_accessed = ? \
          WHERE id IN ({qmarks})"
     );
-    let params = std::iter::once(now.as_str()).chain(hits.iter().map(|h| h.memory_id.as_str()));
+    let params = std::iter::once(now.as_str()).chain(ids.iter().copied());
     if let Err(e) = conn.execute(&sql, rusqlite::params_from_iter(params)) {
-        tracing::warn!(error = %e, hit_count = hits.len(), "access tracking update failed");
+        tracing::warn!(error = %e, hit_count = ids.len(), "access tracking update failed");
     }
 }
 

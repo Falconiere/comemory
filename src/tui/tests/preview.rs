@@ -19,6 +19,7 @@ fn mem_hit(id: &str, body: &str) -> Reranked {
         source: Source::Lexical,
         tier: 1,
         parts: ScoreParts {
+            legs: comemory::retrieval::score::LegScores::none(),
             rrf: 1.0,
             activation: 1.0,
             feedback: 1.0,
@@ -45,6 +46,7 @@ fn code_hit() -> CodeReranked {
         line_end: 9,
         source: Source::Lexical,
         parts: CodeScoreParts {
+            legs: comemory::retrieval::score::LegScores::none(),
             relevance: 1.0,
             rank: 1.0,
             activation: 1.0,

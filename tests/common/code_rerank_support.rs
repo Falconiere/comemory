@@ -51,6 +51,7 @@ pub fn seed(
 
 pub fn hit(symbol_id: i64, score: f32) -> CodeRoutedHit {
     CodeRoutedHit {
+        legs: comemory::retrieval::score::LegScores::none(),
         symbol_id,
         score,
         source: Source::Lexical,

@@ -239,6 +239,40 @@ fn eval_tty_brackets_widen_on_a_mixed_hit_miss_set() {
 }
 
 #[test]
+fn eval_run_writes_an_eval_runs_row_readable_via_history() {
+    let home = TempDir::new().expect("tempdir");
+    let save = run_json(
+        &home,
+        &[
+            "save",
+            "postgres advisory locks for migration ordering",
+            "--kind",
+            "decision",
+        ],
+    );
+    let memory_id = json_str(&save, "id");
+    let search = run_json(&home, &["search", "advisory lock"]);
+    let query_id = json_str(&search, "query_id");
+    run_json(&home, &["feedback", &query_id, "--used", &memory_id]);
+
+    let report = run_json(&home, &["eval"]);
+    let history = run_json(&home, &["eval", "--history"]);
+    let rows = history.as_array().expect("history is an array");
+    assert_eq!(rows.len(), 1, "one eval run must write one eval_runs row");
+    assert_eq!(rows[0]["kind"].as_str(), Some("eval"));
+    assert_eq!(rows[0]["recall"].as_f64(), report["recall_at_k"].as_f64());
+    assert_eq!(rows[0]["mrr"].as_f64(), report["mrr"].as_f64());
+    assert_eq!(rows[0]["applied"].as_bool(), Some(false));
+}
+
+#[test]
+fn eval_history_on_a_fresh_data_dir_is_an_empty_array() {
+    let home = TempDir::new().expect("tempdir");
+    let history = run_json(&home, &["eval", "--history"]);
+    assert_eq!(history.as_array().expect("array").len(), 0);
+}
+
+#[test]
 fn eval_reruns_are_byte_identical() {
     let (home, golden) = mixed_golden_home();
     let golden_arg = golden.to_string_lossy().to_string();

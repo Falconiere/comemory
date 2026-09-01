@@ -50,6 +50,8 @@ fn prune_dry_run_on_clean_db_emits_zero_counts() {
     );
     assert_eq!(v["low_value_memories"]["total"].as_u64(), Some(0));
     assert_eq!(v["low_value_memories"]["has_more"].as_bool(), Some(false));
+    assert_eq!(v["trash_count"].as_u64(), Some(0));
+    assert_eq!(v["reclaimable_bytes"].as_u64(), Some(0));
 }
 
 #[test]
@@ -62,13 +64,18 @@ fn prune_dry_run_reports_low_value_memory_without_deleting() {
     let assertion = bin(&home).args(["--json", "prune"]).assert().success();
     let stdout = String::from_utf8(assertion.get_output().stdout.clone()).expect("utf8 stdout");
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
-    let flagged: Vec<&str> = v["low_value_memories"]["items"]
+    let items = v["low_value_memories"]["items"]
         .as_array()
-        .expect("low_value_memories.items is array")
-        .iter()
-        .map(|x| x.as_str().expect("string entry"))
-        .collect();
-    assert_eq!(flagged, vec![id.as_str()]);
+        .expect("low_value_memories.items is array");
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["id"].as_str(), Some(id.as_str()));
+    assert_eq!(items[0]["reason"].as_str(), Some("low value"));
+    assert!(items[0]["activation"].is_number(), "row: {:?}", items[0]);
+    assert!(items[0]["age_days"].is_u64(), "row: {:?}", items[0]);
+    assert_eq!(
+        items[0]["title"].as_str(),
+        Some("stale prune candidate body")
+    );
     assert_eq!(v["low_value_memories"]["total"].as_u64(), Some(1));
 
     // Dry run must not touch the markdown source of truth.
@@ -92,7 +99,7 @@ fn prune_apply_soft_deletes_low_value_memory() {
     let stdout = String::from_utf8(assertion.get_output().stdout.clone()).expect("utf8 stdout");
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
     assert_eq!(
-        v["low_value_memories"]["items"][0].as_str(),
+        v["low_value_memories"]["items"][0]["id"].as_str(),
         Some(id.as_str()),
         "apply-mode report must still list the flagged id"
     );
@@ -169,7 +176,7 @@ fn prune_apply_heals_half_deleted_memory_instead_of_wedging() {
         .as_array()
         .expect("low_value_memories.items is array")
         .iter()
-        .map(|x| x.as_str().expect("string entry"))
+        .map(|x| x["id"].as_str().expect("id field"))
         .collect();
     flagged.sort_unstable();
     let mut expected = vec![wedged.as_str(), normal.as_str()];
@@ -233,6 +240,54 @@ fn prune_dry_run_after_save_is_idempotent() {
     let stdout = String::from_utf8(assertion.get_output().stdout.clone()).expect("utf8 stdout");
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
     assert_eq!(v["orphan_edges"].as_i64(), Some(0));
+}
+
+#[test]
+fn prune_reports_trash_count_and_reclaimable_bytes_from_real_deletes() {
+    // AC-31: trash_count / reclaimable_bytes are corpus-level totals over
+    // memories/.trash/, driven here by a REAL `comemory delete` soft-delete
+    // (not a hand-written trash file) — stat the trash directory ourselves
+    // and compare against the report.
+    let home = TempDir::new().expect("tempdir");
+    let deleted = save_memory(&home, "will be soft-deleted via comemory delete");
+    let kept = save_memory(&home, "stays live prune candidate body");
+    make_prune_eligible(&home, &kept);
+
+    bin(&home).args(["delete", &deleted]).assert().success();
+
+    let trash = home.path().join(".comemory/memories/.trash");
+    let real_files: Vec<std::path::PathBuf> = std::fs::read_dir(&trash)
+        .expect("read .trash")
+        .filter_map(std::result::Result::ok)
+        .map(|e| e.path())
+        .collect();
+    let real_count = real_files.len() as u64;
+    let real_bytes: u64 = real_files
+        .iter()
+        .map(|p| std::fs::metadata(p).expect("stat trash file").len())
+        .sum();
+    assert!(
+        real_count >= 1,
+        "expected the soft-deleted file in .trash/: {real_files:?}"
+    );
+
+    let assertion = bin(&home).args(["--json", "prune"]).assert().success();
+    let stdout = String::from_utf8(assertion.get_output().stdout.clone()).expect("utf8 stdout");
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
+
+    assert_eq!(v["trash_count"].as_u64(), Some(real_count));
+    assert_eq!(v["reclaimable_bytes"].as_u64(), Some(real_bytes));
+
+    // The still-live prune candidate is unaffected by the unrelated delete.
+    let items = v["low_value_memories"]["items"]
+        .as_array()
+        .expect("items array");
+    assert!(
+        items
+            .iter()
+            .any(|row| row["id"].as_str() == Some(kept.as_str())),
+        "expected {kept} among low_value_memories: {items:?}"
+    );
 }
 
 #[test]
