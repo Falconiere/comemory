@@ -172,7 +172,7 @@ pub enum Cmd {
     Graph(graph::Args),
     /// Search the relation graph lexically (supersedes, imports, references).
     Edges(edges::Args),
-    /// Launch the local web viewer + in-browser code editor (loopback HTTP).
+    /// Serve the loopback HTTP API (`/api/v1`) for consoles, agents, and scripts.
     Serve(serve::Args),
     /// Launch the read-only interactive terminal explorer.
     Tui(tui::Args),

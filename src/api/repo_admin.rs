@@ -9,7 +9,9 @@
 //! console the same lifecycle explicitly — connect (register the root
 //! before anything is indexed), patch (move the root), archive (stop
 //! indexing, keep the memories), disconnect (drop the code index, keep the
-//! memories).
+//! memories). Only archive actually STOPS indexing: disconnect removes the
+//! `repo_marker` row, so under the default lazy auto-reindex the next
+//! `search-code` / `context` run from that checkout rebuilds the index.
 //!
 //! Path containment is the caller's job: every route contains `root`
 //! against `AppState::allowed_roots` BEFORE calling in here (§Security
@@ -190,7 +192,8 @@ pub fn patch(ctx: &mut Ctx<'_>, name: &str, req: PatchRequest) -> Result<PatchRe
 
 /// Set `repo_marker.archived` for `name`. An archived repo refuses
 /// `POST /api/v1/index/runs` and is skipped by lazy reindex; nothing is
-/// deleted and its memories stay searchable.
+/// deleted and its memories stay searchable. This — not [`disconnect`] —
+/// is the "stop indexing, keep the memories" action.
 pub fn archive(ctx: &mut Ctx<'_>, name: &str, req: ArchiveRequest) -> Result<ArchiveResponse> {
     let conn = ctx.conn()?;
     let updated = conn.execute(
@@ -208,6 +211,13 @@ pub fn archive(ctx: &mut Ctx<'_>, name: &str, req: ArchiveRequest) -> Result<Arc
 
 /// Drop `name`'s whole code index (`store::repo_drop`), keeping its
 /// memories. Unknown label → `404`.
+///
+/// Not a "stop indexing" action: the `repo_marker` row is dropped with the
+/// index, so under `COMEMORY_INDEXING_AUTO_REINDEX=lazy` (the default) the
+/// next `search-code` / `context` run from that checkout treats the repo
+/// as never indexed and spawns a background `index-code` that rebuilds it.
+/// Only `hook` / `off` leave a disconnected repo un-indexed; use
+/// [`archive`] to keep the memories and stop indexing under every mode.
 pub fn disconnect(ctx: &mut Ctx<'_>, name: &str) -> Result<DisconnectResponse> {
     let conn = ctx.conn()?;
     require_marker(conn, name)?;

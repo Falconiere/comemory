@@ -354,3 +354,43 @@ async fn sync_on_a_read_only_server_is_405_read_only() {
     assert_eq!(resp.status, 405, "body: {}", resp.text);
     assert_eq!(resp.json["error"]["code"], json!("read_only"));
 }
+
+/// The PATCH body is rendered from the RELOADED config, not from the
+/// file-only view the patch itself computed: with `COMEMORY_GIT_AUTO_SYNC`
+/// set, the reload re-applies the env layer, and the body must agree with
+/// the next `GET` — which is what the console renders after the toggle.
+#[tokio::test]
+async fn patch_answers_from_the_reloaded_config_so_an_env_override_wins() {
+    // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
+    unsafe { std::env::set_var("COMEMORY_GIT_AUTO_SYNC", "true") };
+    let session = serve_state::session(false);
+    let patched = serve_state::send(
+        &session,
+        "PATCH",
+        "/api/v1/memory-stores/default",
+        Some(json!({"push_on_save": false})),
+    )
+    .await;
+    let after = serve_state::send(&session, "GET", "/api/v1/memory-stores/default", None).await;
+    // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
+    unsafe { std::env::remove_var("COMEMORY_GIT_AUTO_SYNC") };
+
+    assert_eq!(patched.status, 200, "body: {}", patched.text);
+    let text =
+        std::fs::read_to_string(session.home.path().join("config.toml")).expect("config.toml");
+    assert!(
+        text.contains("auto_sync = false"),
+        "the file records the request:\n{text}"
+    );
+    assert_eq!(
+        patched.json["data"]["push_on_save"],
+        json!(true),
+        "the env override wins in the body, as it does on reload: {}",
+        patched.text
+    );
+    assert_eq!(
+        patched.json["data"]["push_on_save"], after.json["data"]["push_on_save"],
+        "PATCH body and the next GET must agree: {} vs {}",
+        patched.text, after.text
+    );
+}

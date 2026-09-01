@@ -53,7 +53,7 @@ Commands:
   ast            Run an ast-grep pattern against a single source file
   graph          Export the file-level code-connection graph (imports + co-change) as JSON, Graphviz DOT, or an interactive HTML page
   edges          Search the relation graph lexically (supersedes, imports, references)
-  serve          Launch the local web viewer + in-browser code editor (loopback HTTP)
+  serve          Serve the loopback HTTP API (`/api/v1`) for consoles, agents, and scripts
   tui            Launch the read-only interactive terminal explorer
   context        Headline lookup: code symbol + memories matching a key
   completions    Emit a shell completion script for `bash`, `zsh`, `fish`, `powershell`, or `elvish`
@@ -644,11 +644,11 @@ Options:
           Emit JSONL on stdout instead of inserting rows. Suitable for piping into an external embedder + `comemory ingest-code`
 
       --mode <MODE>
-          `incremental` (default) re-extracts only files whose blob OID moved since the last run; `full` clears the repo's indexed-file cursor first so every file re-extracts
+          `incremental` (default) re-extracts only files whose blob OID moved since the last run; `full` clears the repo's indexed-file cursor first so every file re-extracts. `full` is lossy: re-extracting a file replaces its symbol rows, which drops the repo's BYO code vectors (`code_vec`) and resets per-symbol access counters — re-run `ingest-code` afterwards to restore the semantic leg
 
           Possible values:
           - incremental: Only files changed since the last run
-          - full:        Every file
+          - full:        Every file; drops BYO code vectors (re-run `ingest-code` afterwards)
           
           [default: incremental]
 
@@ -659,7 +659,8 @@ Examples:
   # Index the current working directory with explicit repo label
   comemory index-code --repo myrepo --path .
 
-  # Re-extract every file, not just the ones whose blob changed
+  # Re-extract every file, not just the ones whose blob changed (drops the
+  # repo's BYO code vectors — re-run `comemory ingest-code` afterwards)
   comemory index-code --repo myrepo --path . --mode full
 
   # Emit one JSONL row per symbol on stdout (skips DB writes)
@@ -909,7 +910,7 @@ the tier is chosen once per query, so paging never switches ladders midway.
 ## comemory serve
 
 ```
-Launch the local web viewer + in-browser code editor (loopback HTTP)
+Serve the loopback HTTP API (`/api/v1`) for consoles, agents, and scripts
 
 Usage: comemory serve [OPTIONS]
 

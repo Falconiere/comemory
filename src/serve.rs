@@ -196,6 +196,14 @@ impl AppState {
         self.repo.as_deref()
     }
 
+    /// The `--root <repo>=<path>` overrides, for the routes that resolve a
+    /// repo label to a working-tree root on the server's behalf (`POST
+    /// /memories/{id}/references/refresh`) — the same map
+    /// [`AppState::allowed_roots`] folds into the containment set.
+    pub(crate) fn roots(&self) -> &RootOverrides {
+        &self.roots
+    }
+
     /// The current layered config, cloned out of the swappable slot. A
     /// poisoned lock (a panic in another handler mid-swap) is recovered
     /// rather than propagated: the only mutation is a single `Arc` pointer

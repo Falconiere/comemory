@@ -7,9 +7,12 @@
 //! Two invariants make it a facts read rather than a second doctor:
 //!
 //! 1. **It never runs the embed command** (AC-15). `embed_cmd` is reported
-//!    verbatim as the configured string; nothing spawns it. A console
-//!    polling this endpoint must not pay an embedder round-trip — and must
-//!    not keep an embedder warm as a side effect of being open.
+//!    verbatim as the string the caller hands in — the server's own
+//!    configured command (`serve --embed-cmd` / `COMEMORY_EMBED_CMD`, the one
+//!    `POST /doctor/reembed` and `/health` answer for), never a second read
+//!    of the process env that could disagree with it; nothing spawns it. A
+//!    console polling this endpoint must not pay an embedder round-trip —
+//!    and must not keep an embedder warm as a side effect of being open.
 //! 2. **It never creates `comemory.db`.** Every DB-derived field is read
 //!    only when the file already exists; on a fresh data dir
 //!    `schema_version` is `None` and the vector dims fall back to the
@@ -21,7 +24,6 @@ use serde::Serialize;
 use crate::api::Ctx;
 use crate::api::doctor::checks;
 use crate::config::Paths;
-use crate::config::env::env_parse;
 use crate::prelude::*;
 use crate::store::{migrate, vector};
 
@@ -50,7 +52,8 @@ pub struct System {
     pub backup_path: Option<String>,
     /// That snapshot's size in bytes.
     pub backup_bytes: Option<u64>,
-    /// The configured `COMEMORY_EMBED_CMD`, reported but NEVER run.
+    /// The server's configured embed command (`serve --embed-cmd` /
+    /// `COMEMORY_EMBED_CMD`), reported but NEVER run.
     pub embed_cmd: Option<String>,
     /// The operator's free-form embedder identifier (`embed_hint`).
     pub embed_hint: Option<String>,
@@ -62,9 +65,9 @@ pub struct System {
 }
 
 /// Build the system facts report. Opens `comemory.db` only when it already
-/// exists (module doc, invariant 2) and never shells out to the embed
-/// command (invariant 1).
-pub fn run(ctx: &mut Ctx<'_>) -> Result<System> {
+/// exists (module doc, invariant 2) and never shells out to `embed_cmd` —
+/// the caller's configured embed command, echoed verbatim (invariant 1).
+pub fn run(ctx: &mut Ctx<'_>, embed_cmd: Option<&str>) -> Result<System> {
     let paths = ctx.paths;
     let (backup_path, backup_bytes) = newest_backup(paths)?;
     let mut system = System {
@@ -78,7 +81,7 @@ pub fn run(ctx: &mut Ctx<'_>) -> Result<System> {
         trash_files: count_files(&paths.trash_dir(), None),
         backup_path,
         backup_bytes,
-        embed_cmd: env_parse::<String>("COMEMORY_EMBED_CMD")?,
+        embed_cmd: embed_cmd.map(str::to_string),
         embed_hint: ctx.cfg.embed_hint.clone(),
         memory_vec_dim: ctx.cfg.retrieval.memory_vector_dim,
         code_vec_dim: ctx.cfg.retrieval.code_vector_dim,

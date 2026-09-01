@@ -7,7 +7,10 @@
 )]
 //! Test mirror for `src/memory/store.rs` — filesystem-backed memory CRUD.
 
+use std::time::{Duration, SystemTime};
+
 use comemory::config::paths::Paths;
+use comemory::errors::Error;
 use comemory::memory::{Kind, MemoryStore, Relations, SaveParams};
 
 use crate::test_common as common;
@@ -242,4 +245,141 @@ fn list_and_find_by_id_match_the_md_extension_case_insensitively() {
     let found = store.load(&saved.frontmatter.id).unwrap();
     assert_eq!(found.frontmatter.id, saved.frontmatter.id);
     assert_eq!(found.body.trim(), "uppercase extension memory");
+}
+
+/// Rewind `path`'s mtime by `days` — the same `File::set_modified` the
+/// production stamp uses, so the test measures the real syscall pair.
+fn backdate(path: &std::path::Path, days: u64) {
+    std::fs::File::options()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_modified(SystemTime::now() - Duration::from_hours(days * 24))
+        .unwrap();
+}
+
+fn mtime(path: &std::path::Path) -> SystemTime {
+    std::fs::metadata(path).unwrap().modified().unwrap()
+}
+
+#[test]
+fn delete_stamps_the_trashed_file_mtime_as_the_deletion_instant() {
+    // `fs::rename` keeps the mtime, and gc / `days_until_gc` read a trashed
+    // file's mtime as "time since deletion": an old memory deleted today
+    // must NOT be immediately reapable under the retention window.
+    let sb = common::runner::Sandbox::new();
+    let paths = Paths::new(sb.data_dir());
+    paths.ensure_dirs().unwrap();
+    let store = MemoryStore::new(paths.clone());
+    let rec = store
+        .save(quick("written long ago, deleted today"))
+        .unwrap();
+    backdate(&rec.path, 45);
+    assert!(
+        mtime(&rec.path) < SystemTime::now() - Duration::from_hours(44 * 24),
+        "fixture must start with a 45-day-old mtime"
+    );
+
+    let before = SystemTime::now();
+    store.delete(&rec.frontmatter.id).unwrap();
+
+    let trashed = paths.trash_dir().join(rec.path.file_name().unwrap());
+    assert!(trashed.exists(), "delete must move the file into .trash/");
+    // Two seconds of slack for coarse-grained filesystem timestamps.
+    assert!(
+        mtime(&trashed) + Duration::from_secs(2) >= before,
+        "trashed mtime must be the deletion instant, got {:?} vs {before:?}",
+        mtime(&trashed)
+    );
+}
+
+#[test]
+fn restore_refuses_to_clobber_a_live_re_save_of_the_same_body() {
+    // save → delete → save the same body (same content-hash id, new
+    // frontmatter) → restore must be BadRequest and leave the live file —
+    // and its newer tags/quality — exactly as the re-save wrote them.
+    let sb = common::runner::Sandbox::new();
+    let paths = Paths::new(sb.data_dir());
+    paths.ensure_dirs().unwrap();
+    let store = MemoryStore::new(paths.clone());
+    let first = store.save(quick("same body, saved twice")).unwrap();
+    let id = first.frontmatter.id.clone();
+    store.delete(&id).unwrap();
+
+    let tags = vec!["fresh".to_string()];
+    let second = store
+        .save(SaveParams {
+            tags: &tags,
+            quality: 5,
+            ..quick("same body, saved twice")
+        })
+        .unwrap();
+    assert_eq!(second.frontmatter.id, id, "same body ⇒ same id");
+    let live_bytes = std::fs::read_to_string(&second.path).unwrap();
+
+    let err = store.restore(&id).unwrap_err();
+    assert!(matches!(err, Error::BadRequest(_)), "got {err:?}");
+    assert_eq!(
+        std::fs::read_to_string(&second.path).unwrap(),
+        live_bytes,
+        "restore must not touch the live file"
+    );
+    let loaded = store.load(&id).unwrap();
+    assert_eq!(loaded.frontmatter.tags, tags);
+    assert_eq!(loaded.frontmatter.quality, 5);
+}
+
+#[test]
+fn re_save_of_a_deleted_body_purges_its_trash_copy() {
+    let sb = common::runner::Sandbox::new();
+    let paths = Paths::new(sb.data_dir());
+    paths.ensure_dirs().unwrap();
+    let store = MemoryStore::new(paths.clone());
+    let rec = store.save(quick("deleted then re-saved")).unwrap();
+    let file_name = rec.path.file_name().unwrap().to_owned();
+    store.delete(&rec.frontmatter.id).unwrap();
+    let trashed = paths.trash_dir().join(&file_name);
+    assert!(trashed.exists(), "delete must move the file into .trash/");
+
+    store.save(quick("deleted then re-saved")).unwrap();
+
+    assert!(
+        !trashed.exists(),
+        "a re-saved memory is no longer in the trash: {trashed:?}"
+    );
+    assert!(rec.path.exists(), "the live file is the re-save's");
+}
+
+#[test]
+fn restore_checks_the_live_tree_before_the_trash() {
+    const STALE: &str = "---\nid: stale\n---\nstale copy\n";
+
+    // A stale trash copy alongside a live file of the same name (the state
+    // the save-time purge exists to prevent, planted by hand here) must not
+    // be renamed over the live file — the live tree wins, the stale copy
+    // stays put.
+    let sb = common::runner::Sandbox::new();
+    let paths = Paths::new(sb.data_dir());
+    paths.ensure_dirs().unwrap();
+    let store = MemoryStore::new(paths.clone());
+    let rec = store.save(quick("live wins over trash")).unwrap();
+    let live_bytes = std::fs::read_to_string(&rec.path).unwrap();
+    let stale = paths.trash_dir().join(rec.path.file_name().unwrap());
+    std::fs::write(&stale, STALE).unwrap();
+
+    // A fresh store, so nothing is served out of the id -> path cache.
+    let err = MemoryStore::new(paths.clone())
+        .restore(&rec.frontmatter.id)
+        .unwrap_err();
+    match err {
+        Error::BadRequest(msg) => assert!(msg.contains("not in the trash"), "{msg}"),
+        other => panic!("expected BadRequest, got {other:?}"),
+    }
+    assert_eq!(std::fs::read_to_string(&rec.path).unwrap(), live_bytes);
+    assert_eq!(
+        std::fs::read_to_string(&stale).unwrap(),
+        STALE,
+        "stale copy untouched"
+    );
+    assert!(stale.exists(), "the stale trash copy is left where it was");
 }

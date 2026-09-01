@@ -12,6 +12,7 @@
 //! `eval --history` is a plain `SELECT`, so its route runs synchronously
 //! instead.
 
+use std::borrow::Cow;
 use std::path::Path;
 
 use rusqlite::Connection;
@@ -19,9 +20,10 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::api::Ctx;
+use crate::config::Config;
 use crate::eval::golden;
 use crate::eval::runner::{self, EvalReport};
-use crate::eval::tune;
+use crate::eval::tune::{self, TuneCandidate};
 use crate::prelude::*;
 use crate::store::{eval_runs, memory_row, random_id};
 
@@ -64,9 +66,11 @@ pub struct Request {
     /// /api/v1/learning/evals`). The recorded `eval_runs.knobs` is then the
     /// override, not the live config, so the run row says what was actually
     /// measured. No CLI counterpart: `comemory tune` is the CLI's way to
-    /// score a knob set.
+    /// score a knob set. Held to the same `Config::validate` bounds as
+    /// `PUT /config/retrieval` (see [`effective_config`]) — an out-of-range
+    /// set is a `400`, never a scored and recorded run.
     #[serde(default)]
-    pub knobs: Option<crate::eval::tune::TuneCandidate>,
+    pub knobs: Option<TuneCandidate>,
 }
 
 /// The default `limit` for `eval --history` / `GET /api/v1/eval/history`.
@@ -81,24 +85,40 @@ pub(crate) fn default_k() -> usize {
     3
 }
 
+/// The config a run scores: the live one, or — with a `knobs` override — a
+/// clone with the six blend knobs swapped in and re-validated, so an
+/// out-of-range override is an [`Error::BadRequest`] and never reaches the
+/// pipeline or `eval_runs` (a garbage row there would become the
+/// `best_delta` baseline and a sparkline point in `api::learning`).
+/// Everything else (data dir, thresholds, …) stays as configured. `pub` so
+/// the HTTP route can refuse the override synchronously, before a job is
+/// created; [`run`] calls it again itself, so the core holds the rule no
+/// matter who calls it.
+pub fn effective_config<'a>(
+    base: &'a Config,
+    knobs: Option<&TuneCandidate>,
+) -> Result<Cow<'a, Config>> {
+    match knobs {
+        None => Ok(Cow::Borrowed(base)),
+        Some(k) => tune::validated_with_candidate(base, k).map(Cow::Owned),
+    }
+}
+
 /// Build the merged golden set and score the real pipeline against it
 /// (tracking off — measurement must not feed the signals it measures),
 /// then record this run in `eval_runs` (`kind = "eval"`).
 pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<EvalReport> {
-    // `req.knobs` swaps the six blend knobs into a clone of the live
-    // config; everything else (data dir, thresholds, …) stays as
-    // configured. `current_knobs_json` then reads back the EFFECTIVE
-    // config, so the recorded row carries the override verbatim.
-    let overridden = req.knobs.map(|k| tune::with_candidate(ctx.cfg, &k));
-    let cfg = overridden.as_ref().unwrap_or(ctx.cfg);
-    let knobs_json = current_knobs_json(cfg)?;
+    // `current_knobs_json` reads back the EFFECTIVE config, so the recorded
+    // row carries the override verbatim.
+    let cfg = effective_config(ctx.cfg, req.knobs.as_ref())?;
+    let knobs_json = current_knobs_json(&cfg)?;
     let conn = ctx.conn()?;
     let pairs = golden::resolve(
         &*conn,
         req.golden.as_deref().map(Path::new),
         req.golden_only,
     )?;
-    let report = runner::run_eval(cfg, &*conn, &pairs, req.k)?;
+    let report = runner::run_eval(&cfg, &*conn, &pairs, req.k)?;
     record_run(
         conn,
         RunOutcome {
@@ -177,7 +197,7 @@ pub(crate) fn record_run(conn: &Connection, outcome: RunOutcome<'_>) -> Result<(
 /// [`crate::eval::tune::TuneCandidate`] carries. Kept as its own local
 /// struct rather than building a `TuneCandidate`: this is a projection OF a
 /// `Config`, and the two would have to be kept in sync either way.
-fn current_knobs_json(cfg: &crate::config::Config) -> Result<String> {
+fn current_knobs_json(cfg: &Config) -> Result<String> {
     #[derive(Serialize)]
     struct LiveKnobs {
         rrf_k: f32,

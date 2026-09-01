@@ -106,16 +106,23 @@ pub fn list(ctx: &mut Ctx<'_>) -> Result<Vec<Proposal>> {
 
 /// Write one proposal's knobs into `config.toml` and stamp the run
 /// `applied`. Refuses an unknown id (`404`), a run that is not an open
-/// knob search (`400`: already applied, discarded, or a plain `eval`), and
-/// a run whose stored `knobs` is not a full knob set (`400`).
+/// knob search (`400`: already applied, discarded, or a plain `eval`), a
+/// run whose stored `knobs` is not a full knob set (`400`), and a knob set
+/// that fails `Config::validate` against the live config (`400`, before
+/// the file or the row is touched — validate-then-write, the rule
+/// `api::config_retrieval` keeps: a row an older binary with wider grids
+/// recorded, or a hand-edited one, must not leave a `config.toml` every
+/// later `comemory` start refuses to load).
 ///
 /// The caller reloads the server's in-memory config afterwards; this
 /// function only owns the file and the row.
 pub fn apply(ctx: &mut Ctx<'_>, id: &str) -> Result<ApplyResponse> {
     let config_file = ctx.paths.config_file();
+    let cfg = ctx.cfg;
     let conn = ctx.conn()?;
     let row = fetch_open(conn, id)?;
     let candidate = require_knobs(&row)?;
+    tune::validated_with_candidate(cfg, &candidate)?;
     tune::apply_to_config_file(&config_file, &candidate)?;
     eval_runs::set_applied(conn, id)?;
     Ok(ApplyResponse {

@@ -180,9 +180,12 @@ pub fn golden_set(ctx: &mut Ctx<'_>, golden: Option<&str>) -> Result<GoldenSet> 
     })
 }
 
-/// One page of mined expansions, strongest support first (`term` breaks the
-/// tie, so the order is total and a page boundary is stable). `limit == 0`
-/// is [`Page`]'s "all" sentinel.
+/// One page of mined expansions, strongest support first. `term` then
+/// `expansion` break the tie — `(term, expansion)` is the table's primary
+/// key, so the order is total and a page boundary is stable (two mappings
+/// for one term with equal support would otherwise be free to swap between
+/// pages); the same order `api::suggest` reads with. `limit == 0` is
+/// [`Page`]'s "all" sentinel.
 pub fn expansions(ctx: &mut Ctx<'_>, limit: usize, offset: usize) -> Result<Page<Expansion>> {
     if !ctx.paths.db_path().exists() {
         return Ok(Page::new(Vec::new(), limit, offset, Some(0), false));
@@ -191,7 +194,7 @@ pub fn expansions(ctx: &mut Ctx<'_>, limit: usize, offset: usize) -> Result<Page
     let total = count(conn, "SELECT COUNT(*) FROM query_expansions")? as usize;
     let mut stmt = conn.prepare(
         "SELECT term, expansion, support, last_mined FROM query_expansions \
-         ORDER BY support DESC, term LIMIT ?1 OFFSET ?2",
+         ORDER BY support DESC, term ASC, expansion ASC LIMIT ?1 OFFSET ?2",
     )?;
     // SQLite reads a negative LIMIT as "no limit", which is exactly what
     // `Page`'s `limit == 0` sentinel means.

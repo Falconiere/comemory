@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 use git2::Repository;
 use ignore::WalkBuilder;
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
@@ -37,7 +37,13 @@ pub enum IndexMode {
     #[default]
     Incremental,
     /// Every file: the repo's `indexed_files` cursor is cleared first so
-    /// the blob-OID gate re-extracts everything.
+    /// the blob-OID gate re-extracts everything. Lossy by construction —
+    /// re-extracting a file goes through `code_row::purge_file_symbols`,
+    /// which deletes that file's `code_vec` rows (BYO vectors only the
+    /// caller's embedder can recreate; re-run `ingest-code` afterwards) and
+    /// replaces its `code_symbols` rows, resetting per-symbol
+    /// `access_count` / `last_accessed`. `code_feedback` (keyed by
+    /// `(repo, path, symbol)`, not by row id) survives.
     Full,
 }
 
@@ -76,7 +82,9 @@ pub struct Response {
     /// Files actually (re)indexed — those skipped by the blob-OID gate
     /// (no language, untracked, unchanged since the last run) don't count.
     pub files_indexed: usize,
-    /// The mode this run used.
+    /// The mode this run used. `full` means every file was re-extracted, so
+    /// the repo's `code_vec` rows are gone until the caller re-runs
+    /// `ingest-code` (see [`IndexMode::Full`]).
     pub mode: IndexMode,
 }
 
@@ -143,9 +151,32 @@ pub fn run_with_progress(
         .enabled
         .then_some(ctx.cfg.reinforce.search_edit_days);
     let conn = ctx.conn()?;
+    refuse_if_archived(conn, &req.repo)?;
     let outcome = index_repo(conn, &req, &root, &git_repo, lookback_days, sink);
     record_run(conn, &req, &root, &started_at, started.elapsed(), &outcome);
     outcome
+}
+
+/// `Err(Error::BadRequest)` when `repo` carries `repo_marker.archived = 1`
+/// (`POST /api/v1/repos/{name}/archive`): an archived repo keeps its
+/// memories searchable but is never re-indexed, by any entry point — the
+/// HTTP routes pre-check this for a fast `400`, and [`run_with_progress`]
+/// re-checks it so the CLI and a job body honor the flag too. An unknown
+/// repo is fine — the first run for a label is how it becomes known.
+pub fn refuse_if_archived(conn: &Connection, repo: &str) -> Result<()> {
+    let archived: Option<i64> = conn
+        .query_row(
+            "SELECT archived FROM repo_marker WHERE repo = ?1",
+            [repo],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if archived.is_some_and(|flag| flag != 0) {
+        return Err(Error::BadRequest(format!(
+            "repo {repo} is archived; un-archive it before indexing"
+        )));
+    }
+    Ok(())
 }
 
 /// The walk proper: mirror the repo's symbols in one transaction, then run
@@ -163,7 +194,14 @@ fn index_repo(
     code_row::ensure_repo_format(&tx, &req.repo)?;
     if req.mode == IndexMode::Full {
         // Forget every blob-OID cursor so `walk::index_file` re-extracts
-        // each file; the per-file purge inside it replaces the old rows.
+        // each file; the per-file purge inside it replaces the old rows —
+        // and with them the repo's BYO `code_vec` rows, which nothing here
+        // can recreate (see `IndexMode::Full`).
+        tracing::warn!(
+            repo = %req.repo,
+            "index-code --mode full: re-extracting every file drops the repo's BYO code \
+             vectors and per-symbol access counters; re-run `ingest-code` afterwards",
+        );
         tx.execute("DELETE FROM indexed_files WHERE repo = ?1", [&req.repo])?;
     }
     let files_indexed = walk_repo(&tx, &req.repo, root, git_repo, &mut imports_by_file, sink)?;

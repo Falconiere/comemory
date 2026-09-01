@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 use crate::api::Ctx;
 use crate::prelude::*;
 use crate::stats::source::SEARCH_CODE;
+use crate::store::memory_list::like_escape;
 use crate::store::tokenizer::split::query_tokens;
 
 /// Rows returned per list when the request omits `limit`.
@@ -162,24 +163,12 @@ fn recent(conn: &Connection, q: &str, limit: usize) -> Result<Vec<RecentQuery>> 
     Ok(out)
 }
 
-/// `LIKE` prefix pattern for a user-supplied string, with the wildcard
-/// characters escaped so they match literally (the query pairs it with
-/// `ESCAPE '\'`).
-///
-/// The sibling of `store::memory_list`'s `like_literal`, which wraps the
-/// same escaping in `%…%` for a substring match. This one anchors at the
-/// start — a completion palette must not offer a query the typed text sits
-/// in the middle of.
+/// `LIKE` prefix pattern for a user-supplied string, built on the shared
+/// [`like_escape`] so the wildcard set lives in one place (the query pairs
+/// it with `ESCAPE '\'`). Anchored at the start — a completion palette
+/// must not offer a query the typed text sits in the middle of.
 fn like_prefix(q: &str) -> String {
-    let mut out = String::with_capacity(q.len() + 1);
-    for c in q.chars() {
-        if matches!(c, '%' | '_' | '\\') {
-            out.push('\\');
-        }
-        out.push(c);
-    }
-    out.push('%');
-    out
+    format!("{}%", like_escape(q))
 }
 
 #[cfg(test)]

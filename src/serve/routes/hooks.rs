@@ -14,7 +14,13 @@
 //! (`maint::admin`), which stays confirm-gated as the install-all
 //! shorthand. `POST` still goes through [`guard_mutating`] — `405
 //! read_only` on a `--read-only` server, `503 busy` on write-permit
-//! contention.
+//! contention — and, like `hooks/install`, contains an explicit `repo`
+//! to the session's allowed roots before a hook file is written.
+//!
+//! The `search-edit-reinforcement` row lives in `config.toml`, so both
+//! writers reload `AppState.cfg` after toggling it and answer from the
+//! reloaded config — the same read the next `GET /hooks` (and the index
+//! jobs that consult `[reinforce] enabled`) will make.
 
 use std::time::Instant;
 
@@ -25,7 +31,9 @@ use axum::{Json, Router};
 use serde::Deserialize;
 
 use crate::api::{self, Ctx};
+use crate::prelude::*;
 use crate::serve::AppState;
+use crate::serve::routes::maint::admin::contain_repo;
 use crate::serve::routes::{RouteEntry, guard_mutating, respond, run_blocking};
 
 /// This resource's route-table entries, appended onto [`super::table`].
@@ -103,12 +111,53 @@ async fn toggle_hooks(
     };
     let result = run_blocking(move || {
         let _permit = permit;
-        let cfg = state.cfg();
-        let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        api::hooks::run(&mut ctx, req)
+        apply_and_report(&state, req)
     })
     .await;
     respond("hooks", result, started)
+}
+
+/// The shared middle of both writers: contain an explicit `repo` (a hook
+/// file is written under it — the same [`contain_repo`] gate `POST
+/// /hooks/install` runs; `400` when it does not exist, `403` outside every
+/// allowed root), apply the toggle through `api::hooks::run`, reload the
+/// server's config when the config-backed row was written, and only then
+/// report all four rows — read back through the reloaded config, so the
+/// answer is exactly what the next `GET /hooks` will say rather than an
+/// echo of the write. An implicit `repo` (the server's own cwd) is not
+/// contained: that is the process's own directory, the same cwd
+/// `save --ref-*` anchors against.
+fn apply_and_report(
+    state: &AppState,
+    mut req: api::hooks::Request,
+) -> Result<api::hooks::Response> {
+    if let Some(repo) = req.repo.as_deref() {
+        let canonical = contain_repo(state, repo)?;
+        req.repo = Some(canonical.to_string_lossy().into_owned());
+    }
+    let repo = req.repo.clone();
+    let wrote_config =
+        [req.enable.as_deref(), req.disable.as_deref()].contains(&Some(api::hooks::REINFORCE_HOOK));
+    {
+        let cfg = state.cfg();
+        let mut ctx = Ctx::lazy(state.paths(), &cfg);
+        api::hooks::run(&mut ctx, req)?;
+    }
+    if wrote_config {
+        // Only after the file is written: a failed write must not swap in
+        // a config the file does not back (the `config.rs` `PUT` ordering).
+        state.reload_cfg(state.paths())?;
+    }
+    let cfg = state.cfg();
+    let mut ctx = Ctx::lazy(state.paths(), &cfg);
+    api::hooks::run(
+        &mut ctx,
+        api::hooks::Request {
+            repo,
+            enable: None,
+            disable: None,
+        },
+    )
 }
 
 /// `PUT /api/v1/hooks/{name}` body: the desired state of that one hook.
@@ -124,8 +173,9 @@ struct SetBody {
 /// spelling the console might send: `post_commit` and `post-commit` both
 /// resolve to the git hook `post-commit` (an unknown name after that
 /// normalization is `api::hooks`' own `400 usage`). Read-only-gated via
-/// [`guard_mutating`]; idempotent, so not confirm-gated — the same rule the
-/// `POST` form follows.
+/// [`guard_mutating`], `repo` contained, config reloaded after a
+/// `search-edit-reinforcement` write ([`apply_and_report`]); idempotent, so
+/// not confirm-gated — the same rules the `POST` form follows.
 async fn set_hook(
     State(state): State<AppState>,
     Path(name): Path<String>,
@@ -145,10 +195,8 @@ async fn set_hook(
         } else {
             (None, Some(hook))
         };
-        let cfg = state.cfg();
-        let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        api::hooks::run(
-            &mut ctx,
+        apply_and_report(
+            &state,
             api::hooks::Request {
                 repo: q.repo,
                 enable,

@@ -1,8 +1,8 @@
 # The `/api/v1` HTTP API
 
 **Goal:** drive every `comemory` subcommand over HTTP — from a local agent, an
-editor extension, or a script — through the same server `comemory serve`
-already starts for the web viewer, with no second copy of any command's logic.
+editor extension, a console, or a script — through the loopback server
+`comemory serve` starts, with no second copy of any command's logic.
 
 ## What it is
 
@@ -25,12 +25,12 @@ silently omitted.
 ## Start a server
 
 ```bash
-comemory serve --port 8787 --open
+comemory serve --port 8787
 ```
 
-prints the loopback URL with a session token, same as for the web viewer.
-Everything below assumes `$TOKEN` holds that token and the server is
-reachable at `$BASE` (e.g. `http://127.0.0.1:8787`).
+prints the `/api/v1` base URL and a per-session token (with `--json`, a
+one-line object carrying both). Everything below assumes `$TOKEN` holds that
+token and the server is reachable at `$BASE` (e.g. `http://127.0.0.1:8787`).
 
 ## Auth
 
@@ -95,9 +95,9 @@ Every `/api/v1/*` response — success and error alike — is one shape:
   [Jobs](#jobs)).
 
 One place owns the `Error → (HTTP status, code slug)` mapping —
-`src/serve/envelope.rs::status_and_code` — and the legacy surface's
-`serve::error::ApiError` delegates its status to the same table, so the two
-surfaces cannot drift. The current table:
+`src/serve/envelope.rs::status_and_code` — and every `/api/v1` handler
+answers through the envelope, so there is no second mapping to drift from
+it. The current table:
 
 | `Error` variant / condition | HTTP status | `code` |
 |---|---|---|
@@ -204,7 +204,7 @@ disagree, trust the running server.
 | ○ `GET /jobs` | *(new)* | every retained job, newest first, paged |
 | ○ `GET /jobs/{id}` | *(new)* | one job's record |
 | ○ `GET /jobs/{id}/events` | *(new)* | SSE lifecycle stream |
-| ○ `GET /health` | *(new)* | capability probe, enveloped form of `/api/health` |
+| ○ `GET /health` | *(new)* | capability probe: `{read_only, version, embed_cmd_configured}` — no DB access |
 
 **Console additions** (console-api spec, 2026-09-01 — every route is a
 view over the same cores; ◇ = a job-creating route)
@@ -221,9 +221,9 @@ view over the same cores; ◇ = a job-creating route)
 | ○ `GET /trash` | soft-deleted memories with `days_until_gc` |
 | ○ `GET /graph/nodes?sort=pagerank\|path`, `GET /graph/nodes/{id}`, `GET /graph/nodes/{id}/neighbors?min_weight=`, `GET /graph/snapshot?edge_kinds=&min_weight=` | `{id}` is `file:<repo>:<path>` or `<repo>:<path>`, percent-encoded; the snapshot caps at 20 000 edges (`truncated`) |
 | ●◇ `POST /graph/recompute` | job `graph-recompute`: PageRank re-projection + memory rank |
-| ○ `GET /index/runs?repo=`, ●◇ `POST /index/runs` | history from `index_runs`; `{repo, path\|root, mode: incremental\|full}` → the `index-code` job, `409 index_running` while the repo has a live one, `400` when archived |
+| ○ `GET /index/runs?repo=`, ●◇ `POST /index/runs` | history from `index_runs`; `{repo, path\|root, mode: incremental\|full}` → the `index-code` job, `409 index_running` while the repo has a live one, `400` when archived. `full` re-extracts every file and is lossy: it drops the repo's BYO `code_vec` rows and resets per-symbol access counters — re-run `ingest-code` afterwards |
 | ● `POST /jobs/{id}/cancel` | cooperative cancel (see Jobs) |
-| ● `PUT /hooks/{name}?repo=` | `{enabled}`; `post_commit` and `post-commit` both accepted |
+| ● `PUT /hooks/{name}?repo=` | `{enabled}`; `post_commit` and `post-commit` both accepted; `repo` is contained like `POST /hooks/install`'s (`403` outside every allowed root) |
 | ●✓ `DELETE /sources/{target}?confirm=true` | path form of `DELETE /sources?target=` |
 | ○ `GET /learning/summary`, `GET /learning/evals?limit=`, `GET /learning/golden-set?golden=`, `GET /learning/proposals`, `GET /learning/expansions` | learning-loop reads; `evals` rows carry derived `delta`/`is_baseline`/`is_best` |
 | ◇ `POST /learning/evals` | alias of the `eval` job; `golden_set` alias, optional `knobs` override |
@@ -231,11 +231,11 @@ view over the same cores; ◇ = a job-creating route)
 | ○ `GET /config/retrieval`, ● `PUT /config/retrieval` | live ranking knobs with ranges; a partial update is validated before the file is touched (`400` on an out-of-range knob) |
 | ○ `GET /doctor/system` | schema/backup/data-dir/embedder facts — never runs the embed command |
 | ●◇✓ `POST /doctor/rebuild` | alias of the `rebuild` job (`scope` must be `all`) |
-| ●◇ `POST /doctor/reembed` | `{target: memories\|code\|both}`; `503 embedder_unavailable` without an embed command |
+| ●◇ `POST /doctor/reembed` | `{target: memories\|code\|both}`; `503 embedder_unavailable` without an embed command. The embed command is probed once for its vector width before any row is written: an explicit leg that does not match its table's dim is `422 vec_dim_mismatch` with nothing written, while `both` re-embeds only the leg(s) that fit and names the rest in `skipped_legs` (neither fits → `400`) |
 | ○ `GET /prune/candidates` | alias of `GET /prune`; `POST /prune` also takes `ids[]` and `dry_run` |
 | ○ `GET /gc/policy`, ● `PUT /gc/policy`, ●◇✓ `POST /gc/run` | `trash_retention_days` / `telemetry_retention_days` / `last_run`; the job form of `gc` |
 | ● `POST /repos`, ● `PATCH /repos/{name}`, ● `POST /repos/{name}/archive`, ●✓ `DELETE /repos/{name}` | connect a (contained) root, re-point its root, archive (stops indexing, keeps memories), disconnect (drops code rows, keeps memories) |
-| ○ `GET /memory-stores`, ○ `GET /memory-stores/{id}`, ● `POST /memory-stores` (`501`), ● `PATCH /memory-stores/{id}`, ●◇ `POST /memory-stores/{id}/sync` | the one store (`default`): path, remote, `push_on_save`, git sync state; `PATCH` writes `[git] auto_sync` / `[git] remote` into `config.toml` and reloads; the sync job pulls (`--rebase --autostash`), commits `memories/`, pushes |
+| ○ `GET /memory-stores`, ○ `GET /memory-stores/{id}`, ● `POST /memory-stores` (`501`), ● `PATCH /memory-stores/{id}`, ●◇ `POST /memory-stores/{id}/sync` | the one store (`default`): path, remote, `push_on_save`, git sync state; `PATCH` writes `[git] auto_sync` / `[git] remote` into `config.toml`, reloads, and answers from the reloaded config; the sync job commits `memories/` (pathspec-limited), pulls (`--rebase --autostash`; either conflict shape is reported by path, nothing is pushed), then pushes — `git push <remote> HEAD` when `[git] remote` is set, else a bare `git push` to the upstream |
 
 ### Request field mapping
 
@@ -305,7 +305,7 @@ no confirmation.
 
 Several routes accept a filesystem path directly (not a repo-relative
 `file:<repo>:<path>` id): `index-code`'s `path`, `index`'s `path` entries,
-`ast`'s `file`, `install-hooks`'s `repo`, and the `golden` file of
+`ast`'s `file`, `install-hooks`'s and `PUT /hooks/{name}`'s `repo`, and the `golden` file of
 `eval`/`tune`/`bandit`. `serve::security::contain_abs(roots, p)`
 canonicalizes `p` and requires it inside one of `roots`:
 
@@ -334,11 +334,26 @@ so a rejected path never produces a `202`.
 comemory serve --root myrepo=/abs/path/to/repo
 ```
 
-Repeatable. Overrides a repo's working-tree root as `<repo>=<abs-path>` —
-required for repos indexed before the v7 schema captured the root, so a
-`file:<repo>:<path>` node id can still be resolved on disk (`GET
-/memories/{id}`'s reference freshness, `POST /code/ast`) and the root can
-join the allowed-roots set above.
+Repeatable. Names a repo's working-tree root as `<repo>=<abs-path>`. Today
+it does exactly two things:
+
+1. **Containment allowlist.** The path (canonicalized) joins the
+   allowed-roots set above, so a path-taking mutating route may touch files
+   under it even when no `repo_marker.root_path` row names that root yet.
+2. **Root resolution for `POST /memories/{id}/references/refresh`.** That
+   route re-pins a memory's code references against the repo's HEAD, and an
+   override wins over the stored `repo_marker.root_path` when it resolves
+   the `<repo>` label to a checkout. A repo whose root resolves neither way
+   is reported in the response's `skipped` list rather than failing the
+   call.
+
+It is **not** a general "resolve `<repo>` to a directory" switch: the read
+routes (`GET /memories/{id}`'s reference freshness, `GET /repos`, the graph
+routes) resolve through `repo_marker.root_path` alone, and `POST /code/ast`
+takes an absolute `file` and only contains it. A repo indexed before the v7
+schema captured its root gains a stored root the next time `index-code` (or
+`POST /repos`) runs against it; `--root` is the stopgap for the refresh
+route until then.
 
 ### `--allow-path`
 
@@ -478,11 +493,11 @@ knobs without a restart.
 
 ## Body limits
 
-The global request-body cap is 5 MiB (`fileio::MAX_FILE_BYTES`, shared with
-the legacy `PUT /api/file`). `POST /api/v1/code/ingest` carries its own
-64 MiB `DefaultBodyLimit` layer for real NDJSON symbol batches
-(`application/x-ndjson`). An over-limit body is axum's own framework `413`
-— plain text, not an envelope.
+The global request-body cap is 5 MiB (`router::BODY_LIMIT`, above axum's
+2 MiB default so a large `POST /api/v1/memories` body reaches the handler).
+`POST /api/v1/code/ingest` carries its own 64 MiB `DefaultBodyLimit` layer
+for real NDJSON symbol batches (`application/x-ndjson`). An over-limit body
+is axum's own framework `413` — plain text, not an envelope.
 
 ## `GET /api/v1/commands`
 
@@ -511,7 +526,7 @@ Save a memory, search for it, then run a background reindex job and poll it
 to completion:
 
 ```bash
-comemory serve --port 8787 --open &
+comemory serve --port 8787 &
 BASE="http://127.0.0.1:8787"
 TOKEN="<paste the token printed at startup>"
 

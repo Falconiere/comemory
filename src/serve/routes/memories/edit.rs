@@ -100,7 +100,8 @@ async fn restore(State(state): State<AppState>, Path(id): Path<String>) -> Respo
 
 /// `POST /api/v1/memories/{id}/references/refresh` — re-pin the memory's
 /// code references to the current HEAD (`api::refresh_refs`) and answer with
-/// the re-classified `code_refs`.
+/// the re-classified `code_refs`. Repo roots resolve through this server's
+/// `--root <repo>=<path>` overrides first, then `repo_marker.root_path`.
 async fn refresh_refs(State(state): State<AppState>, Path(id): Path<String>) -> Response {
     let started = Instant::now();
     let permit = match guard_mutating("memories.refresh-refs", &state) {
@@ -112,7 +113,7 @@ async fn refresh_refs(State(state): State<AppState>, Path(id): Path<String>) -> 
         let cfg = state.cfg();
         let mut conn = state.conn()?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        api::refresh_refs::run(&mut ctx, &id)
+        api::refresh_refs::run(&mut ctx, &id, state.roots())
     })
     .await;
     respond("memories.refresh-refs", result, started)

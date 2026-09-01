@@ -16,6 +16,8 @@
 //! test binary and drives requests through `tower::ServiceExt::oneshot` —
 //! no socket bind, no subprocess, real coverage.
 
+use std::path::{Path, PathBuf};
+
 use axum::Router;
 use axum::body::Body;
 use axum::http::{HeaderMap, Request as HttpRequest, StatusCode};
@@ -66,7 +68,23 @@ pub fn session(read_only: bool) -> Session {
 /// `--root` overrides, and `repo` the server-wide default scope
 /// (`comemory serve --repo <repo>`).
 pub fn session_with(read_only: bool, roots: RootOverrides, repo: Option<String>) -> Session {
-    build(read_only, roots, repo, None)
+    build(read_only, roots, repo, None, Vec::new())
+}
+
+/// A session whose server was started with `--allow-path <dir>` for each of
+/// `dirs` (canonicalized here, as `cli::serve::parse_allow_paths` does) —
+/// what a test needs to drive a path-taking mutating route (`PUT
+/// /hooks/{name}?repo=`, `POST /hooks`) against a temp repo that sits under
+/// none of the roots `AppState::allowed_roots` would otherwise know.
+// Used only by the colocated suites; this file is also `#[path]`-included
+// by the crate-root `serve__routes__mod` target, where nothing calls it.
+#[allow(dead_code)]
+pub fn session_allowing(read_only: bool, dirs: &[&Path]) -> Session {
+    let allow_path: Vec<PathBuf> = dirs
+        .iter()
+        .map(|d| d.canonicalize().expect("canonicalize allow-path"))
+        .collect();
+    build(read_only, RootOverrides::new(), None, None, allow_path)
 }
 
 /// A read-write session whose server carries `embed_cmd` — the equivalent
@@ -83,15 +101,18 @@ pub fn session_with_embed(embed_cmd: &str) -> Session {
         RootOverrides::new(),
         None,
         Some(embed_cmd.to_string()),
+        Vec::new(),
     )
 }
 
-/// Shared constructor behind [`session_with`] and [`session_with_embed`].
+/// Shared constructor behind [`session_with`], [`session_allowing`], and
+/// [`session_with_embed`].
 fn build(
     read_only: bool,
     roots: RootOverrides,
     repo: Option<String>,
     embed_cmd: Option<String>,
+    allow_path: Vec<PathBuf>,
 ) -> Session {
     let home = TempDir::new().expect("tempdir");
     let paths = Paths::new(home.path());
@@ -102,7 +123,7 @@ fn build(
         roots,
         cfg: Config::defaults(),
         embed_cmd,
-        allow_path: Vec::new(),
+        allow_path,
     };
     let state = AppState::new(&paths, opts).expect("AppState::new");
     let token = state.token().to_string();

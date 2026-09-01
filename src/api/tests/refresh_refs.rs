@@ -21,6 +21,7 @@ use comemory::api::{self, Ctx};
 use comemory::config::{Config, Paths};
 use comemory::errors::Error;
 use comemory::memory::Kind;
+use comemory::serve::RootOverrides;
 use comemory::store::connection;
 
 use crate::test_common::{git_commit, git_repo};
@@ -106,7 +107,7 @@ fn ac8_a_stale_reference_is_re_pinned_fresh_at_the_current_head() {
     // Pin #1: the first refresh anchors the (unpinned) ref at HEAD.
     let first = {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        api::refresh_refs::run(&mut ctx, &saved.id).expect("first refresh")
+        api::refresh_refs::run(&mut ctx, &saved.id, &RootOverrides::new()).expect("first refresh")
     };
     assert_eq!(first.refreshed, 1, "one anchorable reference");
     assert!(first.skipped.is_empty(), "got {:?}", first.skipped);
@@ -156,7 +157,7 @@ fn ac8_a_stale_reference_is_re_pinned_fresh_at_the_current_head() {
     // Pin #2: the refresh moves the anchor forward, and the ref is fresh.
     let second = {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        api::refresh_refs::run(&mut ctx, &saved.id).expect("second refresh")
+        api::refresh_refs::run(&mut ctx, &saved.id, &RootOverrides::new()).expect("second refresh")
     };
     assert_eq!(second.refreshed, 1);
     assert_eq!(second.code_refs[0].status, "fresh");
@@ -192,7 +193,8 @@ fn a_reference_whose_repo_root_is_unknown_is_skipped_not_an_error() {
     };
 
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-    let resp = api::refresh_refs::run(&mut ctx, &saved.id).expect("refresh must not error");
+    let resp = api::refresh_refs::run(&mut ctx, &saved.id, &RootOverrides::new())
+        .expect("refresh must not error");
     assert_eq!(resp.refreshed, 0);
     assert_eq!(resp.skipped, vec![anchor]);
 }
@@ -213,7 +215,7 @@ fn a_memory_with_no_references_refreshes_to_zero() {
     };
 
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-    let resp = api::refresh_refs::run(&mut ctx, &saved.id).expect("refresh");
+    let resp = api::refresh_refs::run(&mut ctx, &saved.id, &RootOverrides::new()).expect("refresh");
     assert_eq!(resp.id, saved.id);
     assert_eq!(resp.refreshed, 0);
     assert!(resp.skipped.is_empty());
@@ -226,6 +228,7 @@ fn unknown_id_is_not_found() {
     let (paths, cfg, mut conn) = open_ctx(home.path());
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let err = api::refresh_refs::run(&mut ctx, "deadbeef").expect_err("unknown id is NotFound");
+    let err = api::refresh_refs::run(&mut ctx, "deadbeef", &RootOverrides::new())
+        .expect_err("unknown id is NotFound");
     assert!(matches!(err, Error::NotFound(_)), "got {err:?}");
 }

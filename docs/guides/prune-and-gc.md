@@ -155,8 +155,9 @@ This is the recovery path whenever a command points you at it.
 
 ## Garbage-collect logs
 
-`comemory gc` does two things: hard-deletes `memories/.trash/` entries, and
-purges learning telemetry past its retention window.
+`comemory gc` does two things: hard-deletes `memories/.trash/` entries — the
+markdown file **and** the memory's rows in `comemory.db` — and purges learning
+telemetry past its retention window.
 
 ```bash
 comemory gc
@@ -164,9 +165,19 @@ comemory gc
 
 Trashed markdown is reaped once older than `prune.trash_retention_days`
 (default `30`, a file-only `[prune]` key in `config.toml`; the console edits
-it through `PUT /api/v1/gc/policy`). The telemetry window is
-`COMEMORY_LEARNING_RETENTION_DAYS` (default `90`). It applies to **raw**
-rows only — `retrieval_log` and `feedback_events`:
+it through `PUT /api/v1/gc/policy`). Each reaped file takes its mirror rows
+with it in one transaction: the `memories` row, its tags, FTS and vector
+rows, every edge touching it, its pinned code references, and the `feedback`
+counter and events keyed by its id. Nothing is left for `GET /api/v1/trash`
+or `stats.trashed` to keep counting, and a live memory is never touched — the
+row delete is guarded on `deleted_at`. The sweep also purges any soft-deleted
+row past the window whose trash file is already gone, so a store swept by an
+older `gc` (which unlinked files but left their rows behind) heals itself on
+the next run. `--json` reports the row count as `purged_rows`, next to the
+file count in `removed`.
+
+The telemetry window is `COMEMORY_LEARNING_RETENTION_DAYS` (default `90`). It
+applies to **raw** rows only — `retrieval_log` and `feedback_events`:
 
 ```bash
 # tighten the telemetry window to a week
@@ -175,7 +186,11 @@ COMEMORY_LEARNING_RETENTION_DAYS=7 comemory gc
 
 Aggregated `feedback` counters and mined `query_expansions` **never expire** —
 `gc` keeps them no matter how old, so your learned ranking signal survives the
-purge.
+purge. The one exception is the counter row of a memory `gc` has hard-deleted:
+it goes with the memory (a memory id is only ever reused by a byte-identical
+re-save, which should not inherit the verdicts of a memory you deliberately
+deleted). `retrieval_log` rows are never touched by a purge — a row is one
+query, and `returned_ids` is a list, not a key.
 
 ## See also
 

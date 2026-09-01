@@ -46,12 +46,15 @@ pub fn router(_state: AppState) -> Router<AppState> {
 /// console can link the row straight to `GET /jobs/{id}`. The registry is a
 /// server-process concept the CLI has no access to, which is why it is an
 /// overlay here rather than a field `api::repos` could fill in.
-async fn repos(
-    State(state): State<AppState>,
-    scope: crate::serve::scope::RepoScope,
-    Query(mut req): Query<api::repos::Request>,
-) -> Response {
-    scope.apply(&mut req.repo);
+///
+/// Deliberately the one repo-bearing read OUTSIDE the default repo scope
+/// (`X-Comemory-Repo` / `serve --repo`, `crate::serve::scope::RepoScope`):
+/// the inventory is how a client discovers which scopes exist, and the
+/// scope cannot be cleared from the client side (an empty header reads as
+/// absent and falls back to `--repo`), so applying it here would leave a
+/// `--repo alpha` console unable to ever list — or switch to — another
+/// repo. Only an explicit `?repo=` narrows it.
+async fn repos(State(state): State<AppState>, Query(req): Query<api::repos::Request>) -> Response {
     let started = Instant::now();
     let result = run_blocking(move || {
         let cfg = state.cfg();
@@ -65,6 +68,10 @@ async fn repos(
     .await;
     respond("repos", result, started)
 }
+
+#[cfg(test)]
+#[path = "tests/repos.rs"]
+mod tests;
 
 /// Mark every row whose repo has a live `index-code` job `"indexing"` and
 /// record that job's id. An archived repo cannot have one (indexing is

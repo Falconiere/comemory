@@ -76,7 +76,12 @@ async fn policy(State(state): State<AppState>) -> Response {
 
 /// `PUT /api/v1/gc/policy` — patch one or both windows into `config.toml`
 /// (`api::gc_policy::update`), then reload the server's shared config so
-/// the new windows take effect immediately (module doc).
+/// the new windows take effect immediately (module doc), and answer with
+/// the RELOADED policy (`api::gc_policy::get`) rather than the in-memory
+/// patch: the reload re-applies the same defaults → file → env layering a
+/// restart would, so a window an env override pins
+/// (`COMEMORY_LEARNING_RETENTION_DAYS`) shows up in the `200` body exactly
+/// as the next `GET` will report it — the `config.rs` `PUT` ordering.
 ///
 /// Not confirm-gated: it writes two integers into `config.toml`, reversibly
 /// and idempotently — the same reasoning that leaves `POST /hooks`
@@ -93,13 +98,17 @@ async fn update_policy(
     };
     let result = run_blocking(move || {
         let _permit = permit;
-        let cfg = state.cfg();
-        let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        let policy = api::gc_policy::update(&mut ctx, req)?;
+        {
+            let cfg = state.cfg();
+            let mut ctx = Ctx::lazy(state.paths(), &cfg);
+            api::gc_policy::update(&mut ctx, req)?;
+        }
         // Only after the file is written: a failed write must not swap in a
         // config the file does not back.
         state.reload_cfg(state.paths())?;
-        Ok(policy)
+        let cfg = state.cfg();
+        let mut ctx = Ctx::lazy(state.paths(), &cfg);
+        api::gc_policy::get(&mut ctx)
     })
     .await;
     respond("gc.policy.update", result, started)

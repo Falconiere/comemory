@@ -13,7 +13,7 @@ use time::format_description::well_known::Iso8601;
 
 use crate::graph::cross_link;
 use crate::graph::doc_link;
-use crate::graph::edges::{self, EdgeKey};
+use crate::graph::edges::{self, CO_ACTIVATED, EdgeKey};
 use crate::memory::Frontmatter;
 use crate::prelude::*;
 use crate::store::fts;
@@ -56,12 +56,16 @@ pub fn insert(
     // re-arm the rule on every re-save of the superseder. The wipe itself only
     // clears *outgoing* edges — incoming edges (e.g. a newer memory's
     // `supersedes` pointing here) belong to their source memory and must
-    // survive a re-save and a rebuild.
+    // survive a re-save and a rebuild. The mined `co_activated` edges are the
+    // one outgoing kind the markdown cannot re-derive, so they are captured
+    // the same way and put back after the re-materialization.
     let relation_stamps = relation_edge_stamps(conn, &fm.id)?;
+    let mined = mined_edges(conn, &fm.id)?;
     insert_memories_row(conn, fm, body, slug, md_path, &created_iso)?;
     let unique_tags = insert_tags(conn, &fm.id, tags)?;
     fts::index_memory(conn, &fm.id, body, &unique_tags.join(","))?;
     insert_edges(conn, fm, &unique_tags, body, &relation_stamps)?;
+    restore_mined_edges(conn, &fm.id, &mined)?;
     crate::store::code_ref::materialize(conn, &fm.id, &fm.references, &created_iso)?;
     Ok(())
 }
@@ -148,6 +152,66 @@ fn relation_edge_stamps(
         })?
         .collect::<std::result::Result<_, _>>()?;
     Ok(rows)
+}
+
+/// One earned edge carried across the outgoing wipe: a `co_activated` row
+/// (memory → file, weight accumulated by [`crate::graph::coactivate`]) — the
+/// only memory-sourced edge kind with no markdown source. `co_changed` /
+/// `imports` are file- and symbol-sourced, and `auto_search_edit` is a
+/// feedback provenance rather than an edge, so today this is the whole list;
+/// widen the `rel` filter in [`mined_edges`] if another mined memory-sourced
+/// kind lands.
+struct MinedEdge {
+    dst_kind: String,
+    dst_id: String,
+    weight: i64,
+    created_at: String,
+}
+
+/// Capture the memory's mined outgoing edges before [`insert_memories_row`]
+/// wipes every outgoing row. `rebuild` re-copies them from the pre-rebuild
+/// database afterwards (`api::rebuild::copy`), but the in-place re-mirror
+/// seams (`api::update::mirror_record` — metadata PATCH, references refresh,
+/// restore) have no such re-copy, so without this capture every one of them
+/// would silently drop the reward.
+fn mined_edges(conn: &Connection, memory_id: &str) -> Result<Vec<MinedEdge>> {
+    let mut stmt = conn.prepare(
+        "SELECT dst_kind, dst_id, weight, created_at FROM edges \
+          WHERE src_kind = 'memory' AND src_id = ?1 AND rel = ?2",
+    )?;
+    let rows = stmt
+        .query_map(rusqlite::params![memory_id, CO_ACTIVATED], |r| {
+            Ok(MinedEdge {
+                dst_kind: r.get(0)?,
+                dst_id: r.get(1)?,
+                weight: r.get(2)?,
+                created_at: r.get(3)?,
+            })
+        })?
+        .collect::<std::result::Result<_, _>>()?;
+    Ok(rows)
+}
+
+/// Put the captured mined edges back — weight and `created_at` intact — once
+/// the markdown-derived edges have been re-emitted. `OR IGNORE` because the
+/// wipe leaves nothing to collide with; it only guards a future writer that
+/// re-emits the same key during the re-materialization.
+fn restore_mined_edges(conn: &Connection, memory_id: &str, mined: &[MinedEdge]) -> Result<()> {
+    for e in mined {
+        conn.execute(
+            "INSERT OR IGNORE INTO edges(src_kind,src_id,dst_kind,dst_id,rel,weight,created_at) \
+             VALUES('memory',?1,?2,?3,?4,?5,?6)",
+            rusqlite::params![
+                memory_id,
+                e.dst_kind,
+                e.dst_id,
+                CO_ACTIVATED,
+                e.weight,
+                e.created_at
+            ],
+        )?;
+    }
+    Ok(())
 }
 
 /// Insert the v0.2 graph edges that accompany a saved or rebuilt memory:
