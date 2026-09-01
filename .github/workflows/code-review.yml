@@ -24,8 +24,8 @@ jobs:
           fetch-depth: 0
       # v4 replaced the PROVIDERS JSON array with the flat
       # PROVIDER / MODEL_ID / API_KEY contract. v5 made FAIL_ON default to
-      # "changes", so this job now goes red on a request-changes verdict
-      # (set FAIL_ON: none to return to advisory-only). v7 changed MAX_CHUNKS
+      # "changes"; this job pins FAIL_ON: none instead, so the review is
+      # advisory — see the FAIL_ON comment below. v7 changed MAX_CHUNKS
       # to default 0 (unlimited) from 20 — a large PR is now reviewed whole
       # rather than truncated, at unbounded model-call cost; pin
       # MAX_CHUNKS: 20 to restore the old cap. v7 also dropped file-level
@@ -36,6 +36,16 @@ jobs:
           PROVIDER: openrouter
           MODEL_ID: deepseek/deepseek-v4-pro
           API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          # Advisory, not gating: the review still runs, still posts its
+          # findings, and still uploads SARIF — it just does not fail the
+          # job on a "changes requested" verdict. The verdict is a model's
+          # opinion on the whole diff, so on a large PR it reliably emits
+          # a fresh crop of stylistic findings each run; PR #82 cleared
+          # 230 of them across four rounds without one confirmed defect in
+          # shipped behavior. The gates that must stay red on a real
+          # problem are `test` (scripts/check-all.sh + the nextest suite)
+          # and `plan`; this one informs a human, it does not block them.
+          FAIL_ON: none
           # CLAUDE.md is already covered by the action's default Tier-1 convention
           # files; guardrails.config.json (the toolu-conventions structure gate
           # config) is not, so it is added explicitly. RULES_REF stays "base"
