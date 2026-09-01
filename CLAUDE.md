@@ -105,6 +105,13 @@ comemory's stricter local ceilings. Deviations are enumerated under
 7. **Doc line on every module and public item.** `//!` at the top of every
    module, `///` on every `pub` item. Enforced by `missing_docs = "warn"` under
    `-D warnings`.
+   A **folder** README is a separate rule and applies to folders only:
+   `src/<module>/README.md` indexes the files inside `src/<module>/`. A
+   single-file module — `src/store/memory_purge.rs`, `src/config/patch.rs`,
+   `src/graph/neighbors.rs` — has no folder and therefore needs no README of
+   its own; it is listed in its parent folder's README, and its `//!` doc is
+   its documentation. `guardrails.config.json`'s `src.requireReadme` names
+   the folders, and `scripts/guardrails/run.sh` is what enforces it.
 8. **Docs in sync.** A change to a user-facing surface (CLI flags, public API,
    config, env vars) updates `README.md`, `CLAUDE.md`, `docs/` and the module's
    own `src/<module>/README.md` in the same change.

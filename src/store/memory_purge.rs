@@ -54,8 +54,15 @@ const DEPENDENT_DELETES: &[&str] = &[
 /// Takes the connection, not a `Transaction`, and opens its own: the
 /// all-or-nothing purge IS the unit of work, and the caller (`api::gc`)
 /// loops over many ids, each independently durable. It must therefore be
-/// called OUTSIDE an open transaction — `rusqlite` refuses to nest one.
+/// called OUTSIDE an open transaction, which it checks rather than assumes:
+/// a connection already in one is refused with a named error instead of the
+/// opaque failure `rusqlite` would raise on the nested `BEGIN`.
 pub fn purge_memory(conn: &mut Connection, id: &str) -> Result<bool> {
+    if !conn.is_autocommit() {
+        return Err(Error::Other(
+            "purge_memory opens its own transaction and cannot run inside one".to_string(),
+        ));
+    }
     let tx = conn.transaction()?;
     let matched = tx.execute(
         "DELETE FROM memories WHERE id = ?1 AND deleted_at IS NOT NULL",

@@ -66,6 +66,17 @@ async fn policy_reports_the_shipped_windows_on_a_fresh_server() {
     let data = &res.json["data"];
     assert_eq!(data["trash_retention_days"].as_u64(), Some(30));
     assert_eq!(data["telemetry_retention_days"].as_u64(), Some(90));
+    // Same two numbers, read from the config the route serves them from:
+    // the literals pin what ships, this pins that the route reports it.
+    let defaults = comemory::config::Config::defaults();
+    assert_eq!(
+        data["trash_retention_days"].as_u64(),
+        Some(u64::from(defaults.prune.trash_retention_days))
+    );
+    assert_eq!(
+        data["telemetry_retention_days"].as_u64(),
+        Some(u64::from(defaults.prune.learning_retention_days))
+    );
     assert!(data["last_run"].is_null());
     assert!(data["last_run_at"].is_null());
 }

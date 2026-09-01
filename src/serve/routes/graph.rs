@@ -53,7 +53,7 @@ async fn graph(
     scope: crate::serve::scope::RepoScope,
     Query(mut req): Query<api::graph::Request>,
 ) -> Response {
-    scope.apply(&mut req.repo);
+    scope.fill_if_absent(&mut req.repo);
     let started = Instant::now();
     let result = run_blocking(move || {
         let cfg = state.cfg();

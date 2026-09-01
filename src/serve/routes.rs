@@ -81,6 +81,13 @@ pub struct RouteEntry {
     pub command: &'static str,
     /// Whether the read-only gate (§Security) rejects this route with
     /// `405 read_only` on a `--read-only` server.
+    ///
+    /// It is a statement about the STORE, not about the HTTP verb: a
+    /// `POST` that writes nothing durable is `false` and keeps working on
+    /// a read-only server. `POST /jobs/{id}/cancel` is the one to check
+    /// this against — it stops an in-flight job, which writes nothing, so
+    /// gating it would take away the only way to stop a job on exactly the
+    /// server where a runaway one is least welcome.
     pub mutating: bool,
 }
 

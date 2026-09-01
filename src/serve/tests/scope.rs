@@ -20,13 +20,13 @@ use crate::test_common::serve_state;
 fn apply_fills_only_an_absent_repo() {
     let scope = RepoScope(Some("a".into()));
     let mut absent = None;
-    scope.apply(&mut absent);
+    scope.fill_if_absent(&mut absent);
     assert_eq!(absent.as_deref(), Some("a"));
     let mut explicit = Some("b".to_string());
-    scope.apply(&mut explicit);
+    scope.fill_if_absent(&mut explicit);
     assert_eq!(explicit.as_deref(), Some("b"));
     let mut untouched = None;
-    RepoScope(None).apply(&mut untouched);
+    RepoScope(None).fill_if_absent(&mut untouched);
     assert_eq!(untouched, None);
 }
 

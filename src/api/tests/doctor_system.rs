@@ -93,8 +93,13 @@ fn run_reports_the_current_schema_on_a_real_store() {
     assert!(system.db_bytes > 0, "a migrated db is not empty");
     assert_eq!(system.markdown_files, 1);
     assert_eq!(system.trash_files, 0);
+    // The literal pins the width the crate SHIPS; the cross-check pins it
+    // against the config, so the DDL and `Config::defaults` cannot drift
+    // apart with either assertion still passing.
     assert_eq!(system.memory_vec_dim, 1024);
     assert_eq!(system.code_vec_dim, 768);
+    assert_eq!(system.memory_vec_dim, cfg.retrieval.memory_vector_dim);
+    assert_eq!(system.code_vec_dim, cfg.retrieval.code_vector_dim);
     assert_eq!(
         system.embed_hint.as_deref(),
         Some("ollama:nomic-embed-text")

@@ -24,6 +24,18 @@ async fn get_reports_the_live_knobs_and_their_ranges() {
     assert_eq!(resp.status, 200, "body: {}", resp.text);
     assert_eq!(resp.json["meta"]["command"], "config.retrieval");
     let data = &resp.json["data"];
+    // The literals below pin the shipped defaults; this pins that the
+    // route reports the config rather than a constant of its own.
+    let defaults = comemory::config::Config::defaults();
+    assert_eq!(
+        data["rrf_k"].as_f64(),
+        Some(f64::from(defaults.retrieval.rrf_k))
+    );
+    assert_eq!(data["decay"].as_f64(), Some(defaults.rank.decay));
+    assert_eq!(
+        data["top_k"].as_u64(),
+        Some(defaults.retrieval.top_k as u64)
+    );
     assert_eq!(data["rrf_k"].as_f64(), Some(60.0));
     assert_eq!(data["decay"].as_f64(), Some(0.5));
     assert_eq!(data["mmr_lambda"].as_f64(), Some(0.7));

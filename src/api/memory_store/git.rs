@@ -68,7 +68,28 @@ impl GitRun {
 /// waiting: `.output()` runs the child to completion, so a step cannot
 /// outlive the job that started it. See the module doc for the prompt
 /// hardening applied to every child.
+///
+/// `args` is `&[&'static str]`: every subcommand this module runs is
+/// spelled out in the source, and the type says so, so a future caller
+/// cannot reach argv with a runtime string through this door. The one
+/// argument that is genuinely dynamic — the configured push remote — goes
+/// through [`run_argv`], whose doc explains why it is safe there.
 pub(super) fn run(
+    root: &Path,
+    args: &[&'static str],
+    path: Option<&Path>,
+    log: &impl Fn(&str),
+) -> Result<GitRun> {
+    run_argv(root, args, path, log)
+}
+
+/// [`run`] without the `'static` bound, for the single call that needs a
+/// configured value in argv (`git push <remote> HEAD`). `Command::args`
+/// passes each element to `execve` as one argument and never through a
+/// shell, so a remote containing spaces, quotes or `;` is one argument,
+/// not a second command — the reason this is a narrower door rather than a
+/// hole in the one above.
+fn run_argv(
     root: &Path,
     args: &[&str],
     path: Option<&Path>,
@@ -180,6 +201,6 @@ pub(super) fn push(root: &Path, remote: &str, log: &impl Fn(&str)) -> Result<()>
     } else {
         &["push", remote, "HEAD"]
     };
-    run(root, args, None, log)?.require("git push")?;
+    run_argv(root, args, None, log)?.require("git push")?;
     Ok(())
 }

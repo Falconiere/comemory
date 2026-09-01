@@ -9,6 +9,20 @@ use serde::Serialize;
 
 use crate::prelude::*;
 
+/// The projected column list every reader shares, in [`row_from_query`]'s
+/// index order.
+///
+/// A macro rather than a `const` so the readers can splice it with
+/// [`concat!`], which takes literals only: every SELECT below is then a
+/// compile-time `&'static str` with no runtime string building at all, and
+/// the list still has exactly one definition.
+macro_rules! columns {
+    () => {
+        "id, repo, root_path, mode, started_at, finished_at, duration_ms, \
+         files_indexed, symbols, outcome, error"
+    };
+}
+
 /// Insert parameters for one completed run, bundled into a struct rather
 /// than eleven positional arguments (`clippy::too_many_arguments`).
 pub struct NewIndexRun<'a> {
@@ -107,8 +121,10 @@ pub fn list(
     } else {
         i64::try_from(limit).unwrap_or(i64::MAX)
     };
-    let mut stmt = conn.prepare(&format!(
-        "SELECT {COLUMNS} FROM index_runs WHERE (?1 IS NULL OR repo = ?1) \
+    let mut stmt = conn.prepare(concat!(
+        "SELECT ",
+        columns!(),
+        " FROM index_runs WHERE (?1 IS NULL OR repo = ?1) \
           ORDER BY started_at DESC, id ASC LIMIT ?2 OFFSET ?3"
     ))?;
     let rows = stmt
@@ -124,7 +140,11 @@ pub fn list(
 /// table.
 pub fn newest(conn: &Connection) -> Result<Option<IndexRunRow>> {
     conn.query_row(
-        &format!("SELECT {COLUMNS} FROM index_runs ORDER BY started_at DESC, id ASC LIMIT 1"),
+        concat!(
+            "SELECT ",
+            columns!(),
+            " FROM index_runs ORDER BY started_at DESC, id ASC LIMIT 1"
+        ),
         [],
         row_from_query,
     )
@@ -132,12 +152,7 @@ pub fn newest(conn: &Connection) -> Result<Option<IndexRunRow>> {
     .map_err(Error::from)
 }
 
-/// The projected column list every reader shares, in [`row_from_query`]'s
-/// index order.
-const COLUMNS: &str = "id, repo, root_path, mode, started_at, finished_at, duration_ms, \
-                       files_indexed, symbols, outcome, error";
-
-/// Map one [`COLUMNS`] row into an [`IndexRunRow`].
+/// Map one [`columns!`] row into an [`IndexRunRow`].
 fn row_from_query(r: &rusqlite::Row<'_>) -> rusqlite::Result<IndexRunRow> {
     Ok(IndexRunRow {
         id: r.get(0)?,
