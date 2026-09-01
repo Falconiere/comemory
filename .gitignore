@@ -1,8 +1,6 @@
 /target
-/web/node_modules
-/web/.vite
-/.claude/tmp/*
-!/.claude/tmp/.gitkeep
+/.claude/tmp/
+/.claude/settings.local.json
 /.fastembed_cache/
 # cargo-mutants scratch output — never committed
 /mutants.out/
