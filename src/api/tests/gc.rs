@@ -226,6 +226,15 @@ fn trash_ids(paths: &Paths, cfg: &Config, conn: &mut rusqlite::Connection) -> Ve
     .collect()
 }
 
+/// Write a `memory_vec` row for `id` through the real vector writer. The
+/// soft delete drops any vector the save wrote, so a purge assertion is
+/// only meaningful against a row that exists at purge time — this is the
+/// caller re-embedding a trashed id, which `reembed` can genuinely do.
+fn seed_vector(conn: &rusqlite::Connection, id: &str) {
+    let dim = comemory::store::vector::dim_memory(conn).expect("memory dim");
+    comemory::store::vector::insert_memory(conn, id, &vec![0.25; dim]).expect("insert vec row");
+}
+
 fn count_by_id(conn: &rusqlite::Connection, sql: &str, id: &str) -> i64 {
     conn.query_row(sql, [id], |r| r.get(0)).expect("count")
 }
@@ -237,6 +246,7 @@ fn run_purges_the_mirror_rows_behind_a_reaped_trash_file() {
     let id = save_note(&paths, &cfg, &mut conn, "reaped together with its rows");
     let trashed = soft_delete(&paths, &cfg, &mut conn, &id);
     backdate(&trashed);
+    seed_vector(&conn, &id);
     assert_eq!(
         count_by_id(&conn, "SELECT COUNT(*) FROM memories WHERE id = ?1", &id),
         1,
@@ -262,6 +272,10 @@ fn run_purges_the_mirror_rows_behind_a_reaped_trash_file() {
             "edges",
             "SELECT COUNT(*) FROM edges WHERE (src_kind = 'memory' AND src_id = ?1) \
              OR (dst_kind = 'memory' AND dst_id = ?1)",
+        ),
+        (
+            "memory_vec",
+            "SELECT COUNT(*) FROM memory_vec WHERE memory_id = ?1",
         ),
     ] {
         assert_eq!(
@@ -296,6 +310,7 @@ fn run_purges_a_zombie_row_whose_trash_file_is_already_gone() {
     let id = save_note(&paths, &cfg, &mut conn, "zombie left by an older gc");
     let trashed = soft_delete(&paths, &cfg, &mut conn, &id);
     std::fs::remove_file(&trashed).expect("simulate the earlier sweep's unlink");
+    seed_vector(&conn, &id);
     let old =
         comemory::store::memory_row::iso_format(OffsetDateTime::now_utc() - Duration::days(45))
             .expect("old stamp");
@@ -319,6 +334,15 @@ fn run_purges_a_zombie_row_whose_trash_file_is_already_gone() {
         count_by_id(&conn, "SELECT COUNT(*) FROM memories WHERE id = ?1", &id),
         0
     );
+    assert_eq!(
+        count_by_id(
+            &conn,
+            "SELECT COUNT(*) FROM memory_vec WHERE memory_id = ?1",
+            &id
+        ),
+        0,
+        "the zombie's vector row goes with it"
+    );
     assert!(trash_ids(&paths, &cfg, &mut conn).is_empty());
 }
 
@@ -329,6 +353,7 @@ fn run_leaves_live_memories_and_fresh_trash_entries_alone() {
     let live = save_note(&paths, &cfg, &mut conn, "a live memory gc must never touch");
     let fresh = save_note(&paths, &cfg, &mut conn, "deleted today, inside the window");
     let fresh_path = soft_delete(&paths, &cfg, &mut conn, &fresh);
+    seed_vector(&conn, &live);
     // An old `deleted_at` on a row whose trash file is still on disk is not
     // a zombie: the file's mtime is the clock, and it is fresh.
     let old =
@@ -361,6 +386,15 @@ fn run_leaves_live_memories_and_fresh_trash_entries_alone() {
         ),
         1,
         "live FTS row untouched"
+    );
+    assert_eq!(
+        count_by_id(
+            &conn,
+            "SELECT COUNT(*) FROM memory_vec WHERE memory_id = ?1",
+            &live
+        ),
+        1,
+        "live vector row untouched"
     );
     assert_eq!(trash_ids(&paths, &cfg, &mut conn), vec![fresh]);
 }

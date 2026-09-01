@@ -114,11 +114,14 @@ async fn the_path_form_accepts_a_percent_encoded_registered_path() {
     .await;
 
     assert_eq!(resp.status, 200, "body: {}", resp.text);
-    assert!(
-        resp.json["data"]["canonical_path"]
-            .as_str()
-            .unwrap_or_default()
-            .ends_with("docs"),
+    let expected = docs
+        .canonicalize()
+        .expect("canonicalize the fixture root")
+        .to_string_lossy()
+        .into_owned();
+    assert_eq!(
+        resp.json["data"]["canonical_path"].as_str(),
+        Some(expected.as_str()),
         "body: {}",
         resp.text
     );

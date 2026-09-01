@@ -123,11 +123,15 @@ async fn run(State(state): State<AppState>, Json(body): Json<Value>) -> Response
     if let Err(resp) = guard_job("gc.run", &state) {
         return *resp;
     }
-    if let Err(e) = split_confirm::<api::gc::Request>(body)
-        .and_then(|(_req, confirmed)| require_confirm(confirmed))
+    // The parsed request is carried into the job rather than dropped and
+    // rebuilt: `api::gc::Request` is empty today, and rebuilding it here
+    // would silently ignore any field it gains later.
+    let req = match split_confirm::<api::gc::Request>(body)
+        .and_then(|(req, confirmed)| require_confirm(confirmed).map(|()| req))
     {
-        return Envelope::err("gc.run", &e, 0);
-    }
+        Ok(req) => req,
+        Err(e) => return Envelope::err("gc.run", &e, 0),
+    };
     let job_state = state.clone();
     let job = jobs::spawn_job(
         state.jobs(),
@@ -137,7 +141,7 @@ async fn run(State(state): State<AppState>, Json(body): Json<Value>) -> Response
         move || {
             let cfg = job_state.cfg();
             let mut ctx = Ctx::lazy(job_state.paths(), &cfg);
-            let resp = api::gc::run(&mut ctx, api::gc::Request {})?;
+            let resp = api::gc::run(&mut ctx, req)?;
             serde_json::to_value(resp).map_err(Error::Json)
         },
     );

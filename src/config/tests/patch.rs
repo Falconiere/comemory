@@ -22,7 +22,11 @@ fn creates_the_file_when_absent_and_preserves_unrelated_keys_afterwards() {
     })
     .unwrap();
     let first: Value = toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(first["reinforce"]["enabled"], Value::Boolean(false));
+    // The WHOLE document, not just the key that was written: a patch that
+    // also added a stray table or dropped the section header would still
+    // satisfy a single-key assertion.
+    let expected: Value = toml::from_str("[reinforce]\nenabled = false\n").unwrap();
+    assert_eq!(first, expected, "a fresh file holds exactly the patch");
     assert!(
         !path.with_extension("toml.tmp").exists(),
         "tmp file cleaned up"

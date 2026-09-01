@@ -95,7 +95,7 @@ async fn prune_apply(State(state): State<AppState>, Json(body): Json<Value>) -> 
     };
     let result = run_blocking(move || {
         let _permit = permit;
-        let (body, dry_run) = split_dry_run(body);
+        let (body, dry_run) = split_dry_run(body)?;
         let (mut req, confirmed) = split_confirm::<api::prune::Request>(body)?;
         if let Some(dry_run) = dry_run {
             req.apply = !dry_run;
@@ -116,15 +116,25 @@ async fn prune_apply(State(state): State<AppState>, Json(body): Json<Value>) -> 
 /// spells this as the absence of `--apply`, and adding a second name for it
 /// to the shared `Request` would break the clap↔HTTP field parity walk.
 ///
-/// A present-but-non-boolean value reads as `true` — the safe direction,
-/// since `dry_run: true` scans without deleting. `None` (key absent) leaves
-/// `apply` exactly as the body spelled it.
-fn split_dry_run(mut body: Value) -> (Value, Option<bool>) {
-    let dry_run = body
-        .as_object_mut()
-        .and_then(|obj| obj.remove("dry_run"))
-        .map(|v| v.as_bool().unwrap_or(true));
-    (body, dry_run)
+/// A present-but-non-boolean value is a `400 bad_request`: `"dry_run":
+/// "yes"` almost always means the caller meant `true` and typed a string,
+/// but `"dry_run": "false"` means the opposite and would silently delete —
+/// or silently not — under any coercion rule we could pick. Rejecting is
+/// the only reading that cannot surprise. `None` (key absent) leaves
+/// `apply` exactly as the body spelled it, and when both keys are present
+/// `dry_run` wins, since it is the safer of the two.
+fn split_dry_run(mut body: Value) -> Result<(Value, Option<bool>)> {
+    let raw = body.as_object_mut().and_then(|obj| obj.remove("dry_run"));
+    let dry_run = match raw {
+        None => None,
+        Some(Value::Bool(b)) => Some(b),
+        Some(other) => {
+            return Err(Error::BadRequest(format!(
+                "'dry_run' must be a boolean, got {other}"
+            )));
+        }
+    };
+    Ok((body, dry_run))
 }
 
 /// `?confirm=true`-equivalent body for `POST /api/v1/gc`: `api::gc::Request`
