@@ -172,13 +172,24 @@ fn serve_read_only_refuses_a_mutating_route_with_405() {
     assert_eq!(res.status().as_u16(), 405);
     let body: serde_json::Value = res.json().expect("json");
     assert_eq!(body["error"]["code"], "read_only");
+    // Not "the directory is absent OR holds nothing": the server calls
+    // `ensure_dirs` at startup, so an absent directory would mean the
+    // server never came up and the assertion would pass for the wrong
+    // reason. It must exist, and it must hold no memory file.
+    let memories = home.path().join(".comemory").join("memories");
     assert!(
-        !home.path().join(".comemory").join("memories").exists()
-            || std::fs::read_dir(home.path().join(".comemory").join("memories"))
-                .expect("read memories dir")
-                .filter_map(std::result::Result::ok)
-                .all(|e| e.file_name().to_string_lossy().starts_with('.')),
-        "a read-only server must write no memory file"
+        memories.is_dir(),
+        "the server creates its data dirs at startup, read-only or not"
+    );
+    let written: Vec<String> = std::fs::read_dir(&memories)
+        .expect("read memories dir")
+        .filter_map(std::result::Result::ok)
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|name| !name.starts_with('.'))
+        .collect();
+    assert!(
+        written.is_empty(),
+        "a read-only server must write no memory file, found {written:?}"
     );
 
     let health: serde_json::Value = client
