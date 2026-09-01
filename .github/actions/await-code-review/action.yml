@@ -1,0 +1,80 @@
+name: Await code review
+description: >-
+  Block until this commit's Code Review check has concluded, and fail unless
+  it succeeded. Lets a workflow depend on another workflow's result, which
+  GitHub Actions has no native `needs:` for.
+
+inputs:
+  sha:
+    description: Commit whose check runs are polled. Defaults to this run's SHA.
+    required: false
+    default: ""
+  timeout-minutes:
+    description: >-
+      How long to wait for the review to conclude. Must exceed the review
+      workflow's own `timeout-minutes`, or this gate reports a timeout for a
+      review that was about to finish.
+    required: false
+    default: "20"
+  check-name:
+    description: Name of the check run to wait on.
+    required: false
+    default: review
+  github-token:
+    description: "Token used to read check runs. Needs the `checks: read` permission."
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Wait for the code review to conclude
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        REPO: ${{ github.repository }}
+        SHA: ${{ inputs.sha || github.sha }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        CHECK: ${{ inputs.check-name }}
+        TIMEOUT_MINUTES: ${{ inputs.timeout-minutes }}
+      run: |
+        set -euo pipefail
+
+        # The review workflow and this one are triggered by the same event, so
+        # they share `github.sha`; the head SHA is polled as a fallback for the
+        # case where the check landed on the branch tip instead.
+        conclusion_of() {
+          for candidate in "$SHA" "$HEAD_SHA"; do
+            [ -n "$candidate" ] || continue
+            gh api "repos/$REPO/commits/$candidate/check-runs?per_page=100" \
+              --jq "[.check_runs[] | select(.name == \"$CHECK\")] | last
+                    | if . == null then \"\" else .status + \":\" + (.conclusion // \"\") end" \
+              2>/dev/null | grep -v '^$' && return 0
+          done
+          echo ""
+        }
+
+        deadline=$(( SECONDS + TIMEOUT_MINUTES * 60 ))
+        state=""
+        while :; do
+          state="$(conclusion_of || true)"
+          case "$state" in
+            completed:*) break ;;
+          esac
+          if [ "$SECONDS" -ge "$deadline" ]; then
+            echo "::error::'$CHECK' did not conclude within ${TIMEOUT_MINUTES}m (last seen: '${state:-not started}')."
+            exit 1
+          fi
+          sleep 15
+        done
+
+        conclusion="${state#completed:}"
+        echo "'$CHECK' concluded: $conclusion"
+        case "$conclusion" in
+          success|neutral|skipped)
+            echo "::notice::'$CHECK' passed ($conclusion) — continuing."
+            ;;
+          *)
+            echo "::error::'$CHECK' concluded '$conclusion'; this workflow only runs after a successful review."
+            exit 1
+            ;;
+        esac
