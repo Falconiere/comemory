@@ -72,10 +72,13 @@ fn a_tracked_run_writes_exactly_one_retrieval_log_row_attributed_to_find() {
         find::run(&mut ctx, request("frontmatter", None), true).unwrap()
     };
 
-    assert!(
-        !result.hits.is_empty(),
-        "the seeded memory must be findable"
+    assert_eq!(
+        result.hits.len(),
+        1,
+        "the one seeded memory is the whole corpus"
     );
+    assert_eq!(result.hits[0].id, "aaaa1111", "and it is the hit");
+    assert_eq!(result.hits[0].domain, "memory");
     let query_id = result.query_id.expect("a tracked run reports its query_id");
     assert_eq!(log_rows(&conn), 1, "one row per RUN, not one per leg");
 
@@ -105,7 +108,12 @@ fn an_untracked_run_writes_nothing_and_reports_no_query_id() {
         find::run(&mut ctx, request("frontmatter", None), false).unwrap()
     };
 
-    assert!(!result.hits.is_empty(), "results are returned either way");
+    assert_eq!(
+        result.hits.len(),
+        1,
+        "results are returned either way — tracking governs side effects, not output"
+    );
+    assert_eq!(result.hits[0].id, "aaaa1111");
     assert!(
         result.query_id.is_none(),
         "an untracked run has no logged row to point at"
