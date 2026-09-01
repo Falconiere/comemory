@@ -32,6 +32,7 @@ One line per file, named after its primary item:
 | `doc_route.rs` | `DocHit` | Document retrieval leg: BM25 over `document_fts`, chunk→parent coalesce |
 | `fuse.rs` | `RankedHit` | Reciprocal Rank Fusion across ranked lists |
 | `graph_route.rs` | `ALLOWED_RELS` | Graph-expansion leg: recursive-CTE walk from provisional top hits, fused as a third RRF list |
+| `unified.rs` | `find` | `comemory find`'s entry point and the one-pool/one-paginate rule; weighted fusion lives in `unified/fuse_domains.rs` |
 | `pipeline.rs` | `SearchOptions` | End-to-end memory search: route → rerank → diversify → top-k + access tracking |
 | `rerank.rs` | `MEMORY_RANK_SCALE` | Multiply fused relevance by activation × feedback × quality × supersede × rank priors |
 | `router.rs` | `CANDIDATE_POOL` | Route to vector, lexical, or hybrid path; the 4-tier lexical fallback ladder |

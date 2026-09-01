@@ -9,6 +9,14 @@
 //! Nothing here knows about `api::` or `Ctx` — the caller builds the
 //! closure, this layer only tracks it. Not persisted (Non-Goal 4): a
 //! restart forgets every job, and there is no cancellation.
+//!
+//! [`Progress`] (`JobView.progress`/`log_tail`, and the additive SSE
+//! `progress` event `serve::routes::jobs` streams) is a second, parallel
+//! channel per job — deliberately NOT a [`JobStatus`] variant, so today's
+//! `status` SSE payload stays byte-identical for a client that ignores the
+//! new event type.
+
+use std::collections::VecDeque;
 
 use serde::Serialize;
 use serde_json::Value;
@@ -23,7 +31,7 @@ pub mod registry;
 pub mod worker;
 
 pub use registry::Registry;
-pub use worker::spawn_job;
+pub use worker::{spawn_job, spawn_job_with_id};
 
 /// A job's identifier: 8 random bytes hex-encoded (16 lowercase-hex chars),
 /// drawn from the same `/dev/urandom` source as the session token. A bare
@@ -31,11 +39,18 @@ pub use worker::spawn_job;
 /// id-shaped strings (`memory::id`).
 pub type JobId = String;
 
+/// Bound on [`Job::log_tail`] — only the last N log lines are kept, oldest
+/// dropped first, so a long-running job cannot grow the registry's memory
+/// use without limit.
+pub const LOG_TAIL_CAP: usize = 20;
+
 /// Where a job is in its lifecycle, and what it produced. `Clone` because
 /// it is the `watch` channel's value type; serializes as its
 /// [`JobStatus::slug`] string (`"queued"`, `"running"`, `"done"`,
 /// `"error"`) so the `status` field of a job payload is a plain slug and the
-/// payload/error ride alongside it in their own fields.
+/// payload/error ride alongside it in their own fields. Deliberately never
+/// gains a payload-carrying variant for progress — see [`Progress`] and the
+/// module doc.
 #[derive(Clone, Debug)]
 pub enum JobStatus {
     /// Registered, not started — waiting for the write permit (mutating
@@ -124,9 +139,26 @@ impl JobError {
     }
 }
 
-/// One job's record in the [`Registry`]. Holds the retained
-/// `watch::Sender`, which is why the channel never closes on its own and a
-/// late SSE subscriber can still replay the terminal status.
+/// A job's fractional progress, mirrored into [`JobView::progress`] and
+/// streamed as the SSE `progress` event's payload
+/// (`GET /api/v1/jobs/{id}/events`). Deliberately not a [`JobStatus`]
+/// variant — see that enum's doc and the module doc — so a client that
+/// ignores the `progress` event type sees today's `status` payload
+/// unchanged.
+#[derive(Clone, Debug, Serialize)]
+pub struct Progress {
+    /// Units completed so far.
+    pub done: u64,
+    /// Total units this run will process.
+    pub total: u64,
+    /// What `done`/`total` count (e.g. `"files"`).
+    pub unit: String,
+}
+
+/// One job's record in the [`Registry`]. Holds two retained
+/// `watch::Sender`s (status and progress), which is why neither channel
+/// closes on its own and a late SSE subscriber can still replay the
+/// terminal status.
 pub struct Job {
     /// This job's 16-hex id.
     pub id: JobId,
@@ -144,16 +176,25 @@ pub struct Job {
     pub(crate) seq: u64,
     /// Retained sender — see the struct doc.
     pub(crate) tx: watch::Sender<JobStatus>,
+    /// Retained sender for the SSE `progress` event — see the struct doc.
+    pub(crate) progress_tx: watch::Sender<Option<Progress>>,
+    /// Current progress snapshot, or `None` before the first report.
+    pub(crate) progress: Option<Progress>,
+    /// Bounded ring buffer of the job's most recent log lines (newest
+    /// last) — see [`LOG_TAIL_CAP`].
+    pub(crate) log_tail: VecDeque<String>,
 }
 
 impl Job {
-    /// A freshly accepted job in [`JobStatus::Queued`].
+    /// A freshly accepted job in [`JobStatus::Queued`], with no progress
+    /// reported yet.
     pub(crate) fn new(
         id: JobId,
         command: String,
         started_at: String,
         seq: u64,
         tx: watch::Sender<JobStatus>,
+        progress_tx: watch::Sender<Option<Progress>>,
     ) -> Self {
         Self {
             id,
@@ -163,7 +204,20 @@ impl Job {
             finished_at: None,
             seq,
             tx,
+            progress_tx,
+            progress: None,
+            log_tail: VecDeque::new(),
         }
+    }
+
+    /// Append `line` to the bounded log tail, dropping the oldest entry
+    /// once [`LOG_TAIL_CAP`] is reached — unbounded growth on a long index
+    /// would leak memory for the life of the server.
+    pub(crate) fn push_log(&mut self, line: String) {
+        if self.log_tail.len() >= LOG_TAIL_CAP {
+            self.log_tail.pop_front();
+        }
+        self.log_tail.push_back(line);
     }
 
     /// The serializable snapshot handed to `GET /jobs` / `GET /jobs/{id}`.
@@ -176,6 +230,8 @@ impl Job {
             finished_at: self.finished_at.clone(),
             result: self.status.result().cloned(),
             error: self.status.error().cloned(),
+            progress: self.progress.clone(),
+            log_tail: self.log_tail.iter().cloned().collect(),
         }
     }
 }
@@ -198,6 +254,11 @@ pub struct JobView {
     pub result: Option<Value>,
     /// The envelope-shaped error object, or `null`.
     pub error: Option<JobError>,
+    /// The most recent progress report, or `null` before the first one.
+    pub progress: Option<Progress>,
+    /// The job's most recent log lines (newest last), bounded to
+    /// [`LOG_TAIL_CAP`] entries.
+    pub log_tail: Vec<String>,
 }
 
 /// The `data` of one SSE lifecycle event on
@@ -224,6 +285,35 @@ impl<'a> JobEvent<'a> {
             status: status.slug(),
             result: status.result(),
             error: status.error(),
+        }
+    }
+}
+
+/// The `data` of one SSE `progress` event on
+/// `GET /api/v1/jobs/{id}/events` — a second, additive event type
+/// alongside `status`'s `queued`/`running`/`done`/`error` events: a client
+/// that only handles those four event names sees byte-identical behavior
+/// to before this event type existed.
+#[derive(Serialize)]
+pub struct ProgressEvent<'a> {
+    /// The job's 16-hex id.
+    pub job_id: &'a str,
+    /// Units completed so far.
+    pub done: u64,
+    /// Total units this run will process.
+    pub total: u64,
+    /// What `done`/`total` count.
+    pub unit: &'a str,
+}
+
+impl<'a> ProgressEvent<'a> {
+    /// Build the event payload for `progress` on job `job_id`.
+    pub fn new(job_id: &'a str, progress: &'a Progress) -> Self {
+        Self {
+            job_id,
+            done: progress.done,
+            total: progress.total,
+            unit: &progress.unit,
         }
     }
 }

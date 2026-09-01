@@ -33,7 +33,9 @@ One line per file, named after its primary item:
 | `consolidate.rs` | `Request` | Shared middle of `comemory consolidate` / `GET /api/v1/consolidate` |
 | `context.rs` | `Request` | Shared middle of `comemory context` / `GET\|POST /api/v1/context` |
 | `delete.rs` | `Response` | Shared middle of `comemory delete` / `DELETE /api/v1/memories/{id}` |
-| `doctor.rs` | `Request` | Shared middle of `comemory doctor` / `GET /api/v1/doctor` |
+| `doctor.rs` | `Request` | Shared middle of `comemory doctor` / `GET /api/v1/doctor`; the individual health probes live in `doctor/checks.rs` |
+| `find.rs` | `Request` | Shared middle of `comemory find` / `GET\|POST /api/v1/find` — the unified memory + code + document ranking |
+| `hooks.rs` | `Request` | Shared middle of `comemory hooks` / `GET\|POST /api/v1/hooks` — per-hook read and toggle, state read from `.git/hooks` |
 | `edges.rs` | `Request` | Shared middle of `comemory edges` / `GET /api/v1/edges` |
 | `eval.rs` | `Request` | Shared middle of `comemory eval` / `POST /api/v1/eval` |
 | `feedback.rs` | `Request` | Shared middle of `comemory feedback` / `POST /api/v1/feedback` |
@@ -50,7 +52,10 @@ One line per file, named after its primary item:
 | `save.rs` | `Request` | Shared middle of `comemory save` / `POST /api/v1/memories` |
 | `search.rs` | `Request` | Shared middle of `comemory search` / `GET\|POST /api/v1/memories/search` |
 | `search_code.rs` | `Request` | Shared middle of `comemory search-code` / `GET\|POST /api/v1/code/search` |
+| `repos.rs` | `Request` | Shared middle of `comemory repos` / `GET /api/v1/repos`; the git probes live in `repos/git_state.rs` |
+| `show.rs` | `Request` | Shared middle of `comemory show` / `GET /api/v1/memories/{id}` — one memory in full |
 | `sources.rs` | `Request` | Shared middle of `comemory sources` / the `/api/v1/sources` routes |
+| `stats.rs` | `Request` | Shared middle of `comemory stats` / `GET /api/v1/stats` — corpus counters and database size |
 | `tune.rs` | `Request` | Shared middle of `comemory tune` / `POST /api/v1/tune` |
 | `unindex.rs` | `Request` | Shared middle of `comemory unindex` / the document-unindex route |
 

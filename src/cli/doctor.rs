@@ -69,5 +69,9 @@ fn emit(report: &api::doctor::Report, json_flag: bool) -> Result<()> {
             report.unknown_migration_keys.join(", ")
         )?;
     }
+    writeln!(out, "checks:")?;
+    for c in &report.checks {
+        writeln!(out, "  [{}] {} — {}", c.status, c.name, c.detail)?;
+    }
     Ok(())
 }

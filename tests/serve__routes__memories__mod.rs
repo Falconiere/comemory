@@ -138,6 +138,50 @@ fn v1_memories_get_returns_the_matching_row() {
     assert_eq!(body["meta"]["command"], "memories.get");
 }
 
+/// AC-9: `GET /api/v1/memories/{id}` (`api::show`) returns exactly the same
+/// object `comemory show --json` prints, and that object still carries all
+/// seven of today's pre-existing `MemoryDetail` fields.
+#[test]
+fn v1_memories_get_matches_comemory_show_json() {
+    let home = TempDir::new().expect("home");
+    let id = save(
+        &home,
+        "the ranker reads frontmatter, never the body",
+        "decision",
+        "demo",
+    );
+    let (base, token, _guard) = spawn_serve(&home);
+    let client = reqwest::blocking::Client::new();
+
+    let res = client
+        .get(format!("{base}/api/v1/memories/{id}"))
+        .header("X-Comemory-Token", &token)
+        .send()
+        .expect("v1 memories get");
+    let envelope: serde_json::Value = res.json().expect("json");
+    let via_http = &envelope["data"];
+
+    let out = AssertCommand::cargo_bin("comemory")
+        .expect("bin")
+        .env("COMEMORY_DATA_DIR", home.path().join(".comemory"))
+        .args(["show", &id, "--json"])
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    let via_cli: serde_json::Value = serde_json::from_str(stdout.trim()).expect("show --json");
+
+    assert_eq!(
+        via_http, &via_cli,
+        "HTTP and CLI must answer with the identical object"
+    );
+    for field in ["id", "kind", "repo", "slug", "tags", "references", "path"] {
+        assert!(
+            via_http.get(field).is_some(),
+            "MemoryDetail field {field:?} missing from GET /memories/{{id}}: {via_http}"
+        );
+    }
+}
+
 #[test]
 fn v1_memories_get_unknown_id_is_a_404_not_found() {
     let home = TempDir::new().expect("home");

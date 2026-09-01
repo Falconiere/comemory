@@ -8,17 +8,70 @@
 //! Integration tests for `comemory doctor`.
 //!
 //! Covers schema_version (pinned to `migrate::CURRENT_VERSION`), embed_hint
-//! round-trip via COMEMORY_EMBED_HINT, and the v0.2 JSON report shape
-//! (data_dir, db_writable, sqlite_vec_loaded).
+//! round-trip via COMEMORY_EMBED_HINT, the v0.2 JSON report shape
+//! (data_dir, db_writable, sqlite_vec_loaded), and the console-compat
+//! `checks: Vec<Check>` array (spec AC-24..AC-28) — every scenario below
+//! drives the real binary against a real markdown + SQLite corpus, a real
+//! git repo indexed through `comemory index-code`, and a real
+//! `printf`-backed `COMEMORY_EMBED_CMD` (no mocks, Binding Rule 9).
+
+#[path = "common/git_commit.rs"]
+mod git_commit;
+#[path = "common/git_repo.rs"]
+mod git_repo;
+
+use std::path::{Path, PathBuf};
 
 use assert_cmd::Command;
 use comemory::store::migrate::CURRENT_VERSION;
 use tempfile::TempDir;
 
+/// A real `sh -c`-executable command that emits a valid
+/// `{"embedding":[..]}` payload. Drains stdin with `cat >/dev/null` first
+/// (rather than a bare `printf`, which never reads its stdin at all) so the
+/// parent's query write cannot race the child's exit and surface a spurious
+/// broken-pipe failure under load.
+const REAL_EMBED_CMD: &str = r#"cat >/dev/null; printf '{"embedding":[0.1,0.2,0.3]}'"#;
+
 fn bin(home: &TempDir) -> Command {
     let mut c = Command::cargo_bin("comemory").expect("cargo_bin comemory");
     c.env("COMEMORY_DATA_DIR", home.path().join(".comemory"));
     c
+}
+
+/// Run `doctor --json` and parse its stdout, asserting the process exits 0
+/// — every scenario below (mirror drift, an unset embed command, a missing
+/// repo root) is a `"warn"`, never a hard failure.
+fn doctor_json(home: &TempDir) -> serde_json::Value {
+    let assertion = bin(home).args(["--json", "doctor"]).assert().success();
+    let stdout = String::from_utf8(assertion.get_output().stdout.clone()).expect("utf8 stdout");
+    serde_json::from_str(stdout.trim()).expect("doctor --json parses")
+}
+
+/// The single check named `name` in a `doctor --json` report, panicking
+/// (with the full array) if it is missing.
+fn find_check<'a>(report: &'a serde_json::Value, name: &str) -> &'a serde_json::Value {
+    report["checks"]
+        .as_array()
+        .expect("checks array")
+        .iter()
+        .find(|c| c["name"].as_str() == Some(name))
+        .unwrap_or_else(|| panic!("no check named {name:?} in {report}"))
+}
+
+/// The one live (non-hidden) markdown file under `<data_dir>/memories/`.
+fn find_memory_md(data_dir: &Path) -> PathBuf {
+    std::fs::read_dir(data_dir.join("memories"))
+        .expect("read memories dir")
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .find(|p| {
+            p.extension().is_some_and(|ext| ext == "md")
+                && !p
+                    .file_name()
+                    .is_some_and(|n| n.to_string_lossy().starts_with('.'))
+        })
+        .expect("exactly one memory markdown file")
 }
 
 #[test]
@@ -202,5 +255,170 @@ fn doctor_embed_hint_env_overrides_config_file() {
         v["embed_hint"].as_str(),
         Some("env-value"),
         "env var must override config.toml embed_hint; got: {v}"
+    );
+}
+
+/// AC-24: on a healthy real data dir (two real `comemory save`s, a real
+/// embed command configured), `doctor --json` returns at least 10 checks,
+/// every one `"ok"`, and every original scalar field is still present.
+#[test]
+fn doctor_reports_at_least_ten_healthy_checks_on_a_real_corpus() {
+    let home = TempDir::new().expect("tempdir");
+    bin(&home)
+        .args(["save", "doctor healthy corpus body one", "--kind", "note"])
+        .assert()
+        .success();
+    bin(&home)
+        .args(["save", "doctor healthy corpus body two", "--kind", "note"])
+        .assert()
+        .success();
+
+    let mut c = bin(&home);
+    c.env("COMEMORY_EMBED_CMD", REAL_EMBED_CMD);
+    let assertion = c.args(["--json", "doctor"]).assert().success();
+    let stdout = String::from_utf8(assertion.get_output().stdout.clone()).expect("utf8 stdout");
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
+
+    for field in [
+        "data_dir",
+        "db_writable",
+        "schema_version",
+        "sqlite_vec_loaded",
+        "embed_hint",
+        "unknown_migration_keys",
+    ] {
+        assert!(
+            v.get(field).is_some(),
+            "missing original field {field}: {v}"
+        );
+    }
+
+    let checks = v["checks"].as_array().expect("checks array");
+    assert!(
+        checks.len() >= 10,
+        "expected at least 10 checks, got {}: {checks:?}",
+        checks.len()
+    );
+    for c in checks {
+        assert_eq!(
+            c["status"].as_str(),
+            Some("ok"),
+            "every check must be ok on a healthy corpus: {c}"
+        );
+    }
+}
+
+/// AC-25: editing a saved memory's markdown body so its
+/// `sha256(body.trim_end())` no longer matches its `memories.content_hash`
+/// row makes the mirror-parity check `"warn"` with `mirror_drift == 1`, and
+/// the process still exits 0.
+#[test]
+fn doctor_mirror_drift_warns_and_still_exits_zero() {
+    let home = TempDir::new().expect("tempdir");
+    bin(&home)
+        .args(["save", "doctor mirror parity body", "--kind", "note"])
+        .assert()
+        .success();
+
+    let data_dir = home.path().join(".comemory");
+    let md_path = find_memory_md(&data_dir);
+    let mut body = std::fs::read_to_string(&md_path).expect("read markdown");
+    body.push_str("\nan edit that changes the body hash\n");
+    std::fs::write(&md_path, body).expect("rewrite markdown");
+
+    let v = doctor_json(&home);
+    assert_eq!(v["mirror_drift"].as_u64(), Some(1), "report: {v}");
+    assert_eq!(
+        find_check(&v, "mirror parity")["status"].as_str(),
+        Some("warn")
+    );
+}
+
+/// AC-26: a real `COMEMORY_EMBED_CMD` makes the embed check `"ok"` with a
+/// non-null `embed_probe_ms`; unset, it is `"warn"` with a null
+/// `embed_probe_ms` — and the command exits 0 either way.
+#[test]
+fn doctor_embed_probe_ok_when_set_warn_when_unset() {
+    let home = TempDir::new().expect("tempdir");
+
+    let mut c = bin(&home);
+    c.env("COMEMORY_EMBED_CMD", REAL_EMBED_CMD);
+    let assertion = c.args(["--json", "doctor"]).assert().success();
+    let stdout = String::from_utf8(assertion.get_output().stdout.clone()).expect("utf8 stdout");
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
+    assert!(
+        v["embed_probe_ms"].is_number(),
+        "embed_probe_ms must be non-null when the probe succeeds: {v}"
+    );
+    assert_eq!(
+        find_check(&v, "embed command")["status"].as_str(),
+        Some("ok")
+    );
+
+    let v_unset = doctor_json(&home);
+    assert!(
+        v_unset["embed_probe_ms"].is_null(),
+        "embed_probe_ms must be null when COMEMORY_EMBED_CMD is unset: {v_unset}"
+    );
+    assert_eq!(
+        find_check(&v_unset, "embed command")["status"].as_str(),
+        Some("warn")
+    );
+}
+
+/// AC-27: the tokenizer check is `"ok"` on a database opened through
+/// `store::connection::open`, and the vec-dimension check reports the real
+/// `memory_vec` / `code_vec` dims (1024 / 768) read from `schema_meta`.
+#[test]
+fn doctor_tokenizer_ok_and_vec_dims_are_1024_and_768() {
+    let home = TempDir::new().expect("tempdir");
+    let v = doctor_json(&home);
+    assert_eq!(
+        v["tokenizer_registered"].as_bool(),
+        Some(true),
+        "report: {v}"
+    );
+    assert_eq!(v["memory_vec_dim"].as_u64(), Some(1024), "report: {v}");
+    assert_eq!(v["code_vec_dim"].as_u64(), Some(768), "report: {v}");
+    assert_eq!(
+        find_check(&v, "fts5 tokenizer")["status"].as_str(),
+        Some("ok")
+    );
+    assert_eq!(find_check(&v, "sqlite-vec")["status"].as_str(), Some("ok"));
+}
+
+/// AC-28: a `repo_marker.root_path` whose directory no longer exists on
+/// disk makes the repo-roots check `"warn"` with
+/// `repo_roots_ok < repo_roots_total`.
+#[test]
+fn doctor_repo_roots_warns_when_a_root_no_longer_exists() {
+    let home = TempDir::new().expect("tempdir");
+    let repo = home.path().join("sample-repo");
+    git_repo::init_repo(&repo);
+    git_commit::commit_files(&repo, &[("src.rs", "fn main() {}\n")], "init");
+
+    bin(&home)
+        .args([
+            "index-code",
+            "--repo",
+            "sample",
+            "--path",
+            repo.to_str().expect("utf8 repo path"),
+        ])
+        .assert()
+        .success();
+
+    std::fs::remove_dir_all(&repo).expect("remove indexed repo's working tree");
+
+    let v = doctor_json(&home);
+    let ok_count = v["repo_roots_ok"].as_u64().expect("repo_roots_ok");
+    let total = v["repo_roots_total"].as_u64().expect("repo_roots_total");
+    assert!(
+        ok_count < total,
+        "expected repo_roots_ok < repo_roots_total, got {ok_count}/{total}: {v}"
+    );
+    assert_eq!(
+        find_check(&v, "repo roots")["status"].as_str(),
+        Some("warn")
     );
 }

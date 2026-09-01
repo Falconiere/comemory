@@ -11,14 +11,17 @@
 //! /api/v1/prune` route lands in a later step.
 
 use serde::Deserialize;
+use time::OffsetDateTime;
 
 use crate::api::Ctx;
 use crate::cli::delete;
 use crate::config::{Config, Paths};
 use crate::output::page::Page;
-use crate::output::prune::Report;
+use crate::output::prune::{PruneRow, Report};
+use crate::output::search::title_of;
 use crate::prelude::*;
 use crate::prune::{low_value, stale_code};
+use crate::retrieval::score;
 
 /// `comemory prune` / `GET /api/v1/prune` request.
 #[derive(Deserialize, Debug)]
@@ -55,7 +58,7 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Report> {
     let cfg = ctx.cfg;
     let paths = ctx.paths;
     let conn = ctx.conn()?;
-    let scanned = scan(&*conn, cfg, req.limit, req.offset)?;
+    let scanned = scan(&*conn, paths, cfg, req.limit, req.offset)?;
     if req.apply {
         apply(conn, paths, &scanned.full_low_value)?;
     }
@@ -74,7 +77,13 @@ struct Scan {
 /// Read-only candidate scan. Builds the windowed display [`Report`] AND
 /// captures the full low-value candidate list (so `apply` acts on every
 /// id, never just the page). `limit == 0` is the shared "all" sentinel.
-fn scan(conn: &rusqlite::Connection, cfg: &Config, limit: usize, offset: usize) -> Result<Scan> {
+fn scan(
+    conn: &rusqlite::Connection,
+    paths: &Paths,
+    cfg: &Config,
+    limit: usize,
+    offset: usize,
+) -> Result<Scan> {
     let orphan_edges: i64 = conn.query_row(
         "SELECT count(*) FROM edges e \
           WHERE e.src_kind = 'memory' \
@@ -98,22 +107,115 @@ fn scan(conn: &rusqlite::Connection, cfg: &Config, limit: usize, offset: usize) 
         })?
         .filter_map(std::result::Result::ok)
         .collect();
-    // Detect the full candidate set once: window a clone for the report,
-    // keep the full list for `apply`.
-    let full_low_value = low_value::detect(conn, cfg)?;
+    // Detect the full candidate set once, each id paired with the rule
+    // label that flagged it: keep the bare id list for `apply`, enrich only
+    // the display-windowed slice into full `PruneRow`s (see [`row_page`]).
+    let low_pairs = low_value::detect_with_reasons(conn, cfg)?;
+    let full_low_value: Vec<String> = low_pairs.iter().map(|(id, _)| id.clone()).collect();
     // Ghost code-refs are advisory (spec Non-Goal 5): detected and reported,
     // never fed to `apply`.
-    let ghost_refs = stale_code::detect(conn)?;
+    let ghost_pairs: Vec<(String, &'static str)> = stale_code::detect(conn)?
+        .into_iter()
+        .map(|id| (id, "stale code"))
+        .collect();
+
+    let now = OffsetDateTime::now_utc();
+    let low_value_memories = row_page(conn, cfg, low_pairs, limit, offset, now)?;
+    let ghost_ref_memories = row_page(conn, cfg, ghost_pairs, limit, offset, now)?;
+    let (trash_count, reclaimable_bytes) = trash_stats(paths);
+
     let report = Report {
         orphan_edges,
         stale_code_files: Page::from_slice(stale, limit, offset),
-        low_value_memories: Page::from_slice(full_low_value.clone(), limit, offset),
-        ghost_ref_memories: Page::from_slice(ghost_refs, limit, offset),
+        low_value_memories,
+        ghost_ref_memories,
+        trash_count,
+        reclaimable_bytes,
     };
     Ok(Scan {
         report,
         full_low_value,
     })
+}
+
+/// Window `(id, reason)` pairs to `(limit, offset)`, then enrich ONLY the
+/// windowed slice into full [`PruneRow`]s. Each row read costs one query
+/// against the memory's body — bounded by the display window (see the
+/// module-level cost note on [`build_row`]), never the full candidate set.
+fn row_page(
+    conn: &rusqlite::Connection,
+    cfg: &Config,
+    pairs: Vec<(String, &'static str)>,
+    limit: usize,
+    offset: usize,
+    now: OffsetDateTime,
+) -> Result<Page<PruneRow>> {
+    let windowed = Page::from_slice(pairs, limit, offset);
+    let mut rows = Vec::with_capacity(windowed.items.len());
+    for (id, reason) in &windowed.items {
+        rows.push(build_row(conn, cfg, id, reason, now)?);
+    }
+    Ok(Page::new(
+        rows,
+        windowed.limit,
+        windowed.offset,
+        windowed.total,
+        windowed.has_more,
+    ))
+}
+
+/// Build one [`PruneRow`]: title from the stored body
+/// ([`crate::output::search::title_of`]), activation via
+/// [`score::activation`] (using `last_accessed`, falling back to
+/// `created_at`, and the configured decay), and whole days since creation.
+fn build_row(
+    conn: &rusqlite::Connection,
+    cfg: &Config,
+    id: &str,
+    reason: &str,
+    now: OffsetDateTime,
+) -> Result<PruneRow> {
+    let (body, created_at, access_count, last_accessed): (String, String, i64, Option<String>) =
+        conn.query_row(
+            "SELECT body, created_at, access_count, last_accessed FROM memories WHERE id = ?1",
+            [id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )?;
+    let last = last_accessed.as_deref().unwrap_or(&created_at);
+    let activation = score::activation(
+        access_count.max(0) as u64,
+        score::days_since(last, now),
+        cfg.rank.decay,
+    );
+    let age_days = score::days_since(&created_at, now).floor().max(0.0) as u64;
+    Ok(PruneRow {
+        id: id.to_string(),
+        title: title_of(&body),
+        reason: reason.to_string(),
+        activation,
+        age_days,
+    })
+}
+
+/// Count and summed size, in bytes, of every regular file directly under
+/// `memories/.trash/`. Missing trash directory (no soft-delete has run yet)
+/// yields `(0, 0)` rather than an error.
+fn trash_stats(paths: &Paths) -> (u64, u64) {
+    let mut count = 0u64;
+    let mut bytes = 0u64;
+    let Ok(rd) = std::fs::read_dir(paths.trash_dir()) else {
+        return (0, 0);
+    };
+    for entry in rd.flatten() {
+        let Ok(meta) = entry.metadata() else {
+            continue;
+        };
+        if meta.is_file() {
+            count += 1;
+            bytes += meta.len();
+        }
+    }
+    (count, bytes)
 }
 
 /// Apply the cleanup reported by [`scan`]: soft-delete low-value memories

@@ -2,15 +2,18 @@
 //! routes hand it a closure (typically `api::<cmd>::run` over a
 //! `Ctx::lazy`, i.e. the job's **own** connection) and get back a job id to
 //! put in their `202 Accepted` body; everything after that is this module's
-//! bookkeeping.
+//! bookkeeping. [`spawn_job_with_id`] is the same thing for a caller whose
+//! closure needs its own job id — `POST /api/v1/code/index` uses it to
+//! build a [`RegistryProgressSink`].
 
 use std::sync::Arc;
 
 use serde_json::Value;
 use tokio::sync::Semaphore;
 
+use crate::api::index_code::ProgressSink;
 use crate::prelude::*;
-use crate::serve::jobs::{JobError, JobId, JobStatus, Registry};
+use crate::serve::jobs::{JobError, JobId, JobStatus, Progress, Registry};
 
 /// Spawn `body` as a background job named `command`: register it
 /// [`JobStatus::Queued`], then run it to completion on the blocking pool,
@@ -34,10 +37,47 @@ where
     F: FnOnce() -> Result<Value> + Send + 'static,
 {
     let (id, _rx) = registry.insert(command)?;
-    let registry = Arc::clone(registry);
-    let job_id = id.clone();
-    tokio::spawn(async move { run(registry, write_permit, job_id, mutating, body).await });
+    spawn_registered(registry, write_permit, id.clone(), mutating, body);
     Ok(id)
+}
+
+/// Like [`spawn_job`], but for a caller whose closure needs the job id
+/// before it runs — `POST /api/v1/code/index` uses it to build a
+/// [`RegistryProgressSink`] so `api::index_code::run_with_progress` can
+/// report progress into the very job it is running as. Otherwise
+/// identical: the job is registered [`JobStatus::Queued`] first, then
+/// `body` (handed its own id) runs exactly as [`spawn_job`]'s would.
+pub fn spawn_job_with_id<F>(
+    registry: &Arc<Registry>,
+    write_permit: Arc<Semaphore>,
+    command: &str,
+    mutating: bool,
+    body: F,
+) -> Result<JobId>
+where
+    F: FnOnce(JobId) -> Result<Value> + Send + 'static,
+{
+    let (id, _rx) = registry.insert(command)?;
+    let body_id = id.clone();
+    spawn_registered(registry, write_permit, id.clone(), mutating, move || {
+        body(body_id)
+    });
+    Ok(id)
+}
+
+/// Shared tail of [`spawn_job`] / [`spawn_job_with_id`]: schedule the
+/// already-registered job `id` to run on its own `tokio::spawn`ed task.
+fn spawn_registered<F>(
+    registry: &Arc<Registry>,
+    write_permit: Arc<Semaphore>,
+    id: JobId,
+    mutating: bool,
+    body: F,
+) where
+    F: FnOnce() -> Result<Value> + Send + 'static,
+{
+    let registry = Arc::clone(registry);
+    tokio::spawn(async move { run(registry, write_permit, id, mutating, body).await });
 }
 
 /// The spawned task: acquire the permit (mutating only), mark `Running`,
@@ -88,6 +128,44 @@ async fn run<F>(
 fn set_status(registry: &Registry, id: &str, status: JobStatus) {
     if let Err(e) = registry.set_status(id, status) {
         tracing::warn!(job_id = id, error = %e, "job status update failed");
+    }
+}
+
+/// Concrete [`ProgressSink`] that writes into the job [`Registry`] — what
+/// `POST /api/v1/code/index` hands `api::index_code::run_with_progress` via
+/// [`spawn_job_with_id`], so a real index-code job's progress and log
+/// lines land in `JobView.progress`/`log_tail` and stream out as the SSE
+/// `progress` event. A failed registry write only warns (§Error handling
+/// "Progress sink" in the console-compat plan): this sink can never fail
+/// the job it instruments.
+pub struct RegistryProgressSink {
+    registry: Arc<Registry>,
+    id: JobId,
+}
+
+impl RegistryProgressSink {
+    /// A sink reporting into `registry` for job `id`.
+    pub fn new(registry: Arc<Registry>, id: JobId) -> Self {
+        Self { registry, id }
+    }
+}
+
+impl ProgressSink for RegistryProgressSink {
+    fn on_progress(&self, done: u64, total: u64) {
+        let progress = Progress {
+            done,
+            total,
+            unit: "files".to_string(),
+        };
+        if let Err(e) = self.registry.set_progress(&self.id, progress) {
+            tracing::warn!(job_id = %self.id, error = %e, "job progress update failed");
+        }
+    }
+
+    fn on_log(&self, line: &str) {
+        if let Err(e) = self.registry.push_log(&self.id, line.to_string()) {
+            tracing::warn!(job_id = %self.id, error = %e, "job log update failed");
+        }
     }
 }
 

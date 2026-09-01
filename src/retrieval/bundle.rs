@@ -11,10 +11,17 @@
 //! affinity, feedback). There is no relevance term: refs are
 //! address-resolved by the graph walk — every one is "fully relevant" to
 //! the memory that cites it — so only the priors can order them.
+//!
+//! [`Bundle::neighbors`] adds the console's file-neighborhood panel: a
+//! one-hop, undirected `imports`/`co_changed` walk from the distinct files
+//! `code_refs` resolve to. It is additive and orthogonal to
+//! [`Bundle::relations`], which stays exactly the memory's own reference-edge
+//! walk (`references_file` / `references_symbol` / `relates_to` /
+//! `supersedes`) unchanged.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use rusqlite::Connection;
+use rusqlite::{Connection, named_params};
 use serde::Serialize;
 use time::OffsetDateTime;
 
@@ -51,6 +58,12 @@ pub struct Bundle {
     pub code_refs: Vec<CodeRow>,
     /// Flat list of relation triples for downstream UIs.
     pub relations: Vec<RelationRow>,
+    /// The one-hop `imports`/`co_changed` graph neighborhood of the distinct
+    /// files `code_refs` resolve to (see [`file_neighbors`]) — the console's
+    /// file-neighborhood panel. Additive: empty when `code_refs` is empty,
+    /// and does not change [`Bundle::relations`], which stays the memory's
+    /// own reference-edge walk.
+    pub neighbors: Vec<NeighborRow>,
     /// `code_symbols` rowids of the code refs that resolved to an indexed
     /// row — the access-trackable identities `comemory context` bumps
     /// under its tracking flag (the code-side twin of the memory access
@@ -116,6 +129,25 @@ pub struct RelationRow {
     pub to: String,
 }
 
+/// One file reached from a bundle's `code_refs` by a one-hop `imports` or
+/// `co_changed` edge — the console's file-neighborhood panel. Distinct from
+/// [`RelationRow`]: `relations` walks the MEMORY's own reference edges,
+/// while a `NeighborRow` walks the CODE graph outward from the files those
+/// refs resolve to.
+#[derive(Serialize)]
+pub struct NeighborRow {
+    /// Repo-relative path of the neighboring file.
+    pub path: String,
+    /// Repo the neighboring file lives in.
+    pub repo: String,
+    /// Relation that reached it: `imports` or `co_changed`.
+    pub rel: String,
+    /// Edge weight (accumulated co-change count; `1` for imports); the
+    /// strongest of possibly several contributing edges when more than one
+    /// seed file reaches the same neighbor via the same relation.
+    pub weight: i64,
+}
+
 /// Assemble a [`Bundle`] for `query`, expanding each memory id by walking
 /// `references_file`, `references_symbol`, `relates_to`, and `supersedes`
 /// edges up to depth 2 via a recursive CTE. Code snippets are pulled for
@@ -140,13 +172,83 @@ pub fn assemble(
     // refs — these are the rows `context` self-reinforces under tracking.
     let resolved_code_ids: Vec<i64> = raw_refs.iter().filter_map(|r| r.symbol_id).collect();
     let code_refs = rank_code_refs(conn, cfg, raw_refs, working_set)?;
+    let neighbors = file_neighbors(conn, &code_refs)?;
     Ok(Bundle {
         query: query.to_string(),
         memories,
         code_refs,
         relations,
+        neighbors,
         resolved_code_ids,
     })
+}
+
+/// One-hop, undirected `imports`/`co_changed` graph query seeded from the
+/// distinct `file:<repo>:<path>` ids `code_refs` resolve to. Not recursive —
+/// a single query, self-joined against both edge orientations (the same
+/// undirected-walk idiom [`crate::retrieval::graph_route`] and
+/// [`crate::retrieval::code_prior::priors`]'s affinity lookup use) so a file
+/// that imports a seed is found exactly as one a seed imports.
+///
+/// `:seeds` is a JSON array BOUND as a named parameter (never interpolated),
+/// matching [`crate::retrieval::graph_route::expand_memory_seeds`]'s own
+/// `json_each`-over-a-bound-string pattern.
+///
+/// Multiple contributions to the same `(repo, path, rel)` neighbor (more than
+/// one seed file reaching it via the same relation) collapse to one row
+/// carrying the strongest (`MAX`) weight, so the output stays one row per
+/// `(file, rel)` as the module doc promises.
+const NEIGHBOR_SQL: &str = "\
+    WITH seeds(id) AS (SELECT value FROM json_each(:seeds)),
+    one_hop(rest, rel, weight) AS (
+      SELECT substr(e.dst_id, 6), e.rel, e.weight FROM edges e JOIN seeds s ON s.id = e.src_id
+       WHERE e.src_kind='file' AND e.dst_kind='file' AND e.rel IN ('imports','co_changed')
+         AND e.dst_id NOT IN (SELECT id FROM seeds)
+      UNION ALL
+      SELECT substr(e.src_id, 6), e.rel, e.weight FROM edges e JOIN seeds s ON s.id = e.dst_id
+       WHERE e.src_kind='file' AND e.dst_kind='file' AND e.rel IN ('imports','co_changed')
+         AND e.src_id NOT IN (SELECT id FROM seeds)
+    )
+    SELECT substr(rest,1,instr(rest,':')-1) AS repo, substr(rest,instr(rest,':')+1) AS path,
+           rel, MAX(weight) AS weight
+      FROM one_hop WHERE instr(rest,':') > 0
+     GROUP BY repo, path, rel ORDER BY weight DESC, rel ASC, path ASC";
+
+/// Query the [`NEIGHBOR_SQL`] one-hop neighborhood of the distinct
+/// `(repo, path)` files `code_refs` resolve to. Returns `Ok(vec![])` without
+/// touching the database when `code_refs` is empty (an empty seed set has no
+/// neighborhood, and `json_each` over an empty array yields no rows anyway).
+///
+/// Node-id note: `imports`/`co_changed` file nodes are addressed
+/// `file:<repo>:<path>` ([`crate::graph::edges::file_node_id`]) — the BARE
+/// `<repo>:<path>` form is what `references_file` memory edges use instead
+/// (see that function's divergence doc). The seed ids built here use the
+/// `file:` form to match the code-graph convention.
+fn file_neighbors(conn: &Connection, code_refs: &[CodeRow]) -> Result<Vec<NeighborRow>> {
+    let seed_files: BTreeSet<(&str, &str)> = code_refs
+        .iter()
+        .map(|c| (c.repo.as_str(), c.path.as_str()))
+        .collect();
+    if seed_files.is_empty() {
+        return Ok(Vec::new());
+    }
+    let seed_ids: Vec<String> = seed_files
+        .into_iter()
+        .map(|(repo, path)| crate::graph::edges::file_node_id(repo, path))
+        .collect();
+    let seeds = serde_json::to_string(&seed_ids)?;
+    let mut stmt = conn.prepare(NEIGHBOR_SQL)?;
+    let rows = stmt
+        .query_map(named_params! { ":seeds": seeds }, |r| {
+            Ok(NeighborRow {
+                repo: r.get(0)?,
+                path: r.get(1)?,
+                rel: r.get(2)?,
+                weight: r.get(3)?,
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(rows)
 }
 
 /// Load one memory row and append its bundle row, walked relations, and any

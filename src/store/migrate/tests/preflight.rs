@@ -75,7 +75,7 @@ fn real_current_database_is_not_refused() {
     assert_eq!(bak_count, 0, "an already-current DB must create no .bak");
 }
 
-/// Insert a bogus `0014_future` marker directly, simulating a database
+/// Insert a bogus `0015_future` marker directly, simulating a database
 /// written by a newer comemory. `version_value` lets the caller pin
 /// `schema_meta.version` at either `"14"` (a completed future upgrade) or
 /// `"13"` (a crash between the last migration and the version write) —
@@ -83,7 +83,7 @@ fn real_current_database_is_not_refused() {
 /// `version` at all.
 fn inject_future_marker(conn: &Connection, version_value: &str) {
     conn.execute(
-        "INSERT INTO schema_meta(key, value) VALUES('0014_future', '1')",
+        "INSERT INTO schema_meta(key, value) VALUES('0015_future', '1')",
         [],
     )
     .expect("seed future marker");
@@ -101,7 +101,7 @@ fn assert_future_marker_is_refused(version_value: &str) {
     let dir = tempdir().expect("tempdir");
     let db = dir.path().join("comemory.db");
     {
-        let conn = connection::open(&db).expect("build a real v13 db");
+        let conn = connection::open(&db).expect("build a real v14 db");
         inject_future_marker(&conn, version_value);
     }
 
@@ -118,11 +118,11 @@ fn assert_future_marker_is_refused(version_value: &str) {
     );
     let msg = err.to_string();
     assert!(
-        msg.contains("0014_future"),
+        msg.contains("0015_future"),
         "error must name the unknown key, got: {msg}"
     );
     assert!(
-        msg.contains("0013_v13_documents"),
+        msg.contains("0014_v14_console"),
         "error must name the highest key this build supports, got: {msg}"
     );
 
@@ -137,13 +137,13 @@ fn assert_future_marker_is_refused(version_value: &str) {
 }
 
 #[test]
-fn unknown_marker_is_refused_when_version_already_says_fourteen() {
-    assert_future_marker_is_refused("14");
+fn unknown_marker_is_refused_when_version_already_says_fifteen() {
+    assert_future_marker_is_refused("15");
 }
 
 #[test]
-fn unknown_marker_is_refused_when_version_still_says_thirteen_crash_before_set_version() {
-    assert_future_marker_is_refused("13");
+fn unknown_marker_is_refused_when_version_still_says_fourteen_crash_before_set_version() {
+    assert_future_marker_is_refused("14");
 }
 
 #[test]
@@ -225,7 +225,7 @@ fn destructive_upgrade_refuses_when_snapshot_is_blocked_and_leaves_db_unchanged(
 fn additive_only_pending_proceeds_when_snapshot_is_blocked() {
     let dir = tempdir().expect("tempdir");
     let db = dir.path().join("comemory.db");
-    let conn = connection::open(&db).expect("build a real v13 db");
+    let conn = connection::open(&db).expect("build a real v14 db");
 
     // Delete a single Additive migration's marker (0011_v11_memory_rank),
     // simulating "only additive work pending" — the only way to reach that

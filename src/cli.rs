@@ -30,10 +30,15 @@ pub(crate) mod embedding_input;
 pub mod eval;
 /// `comemory feedback`: record which hits were used.
 pub mod feedback;
+/// `comemory sources`: list registered document sources.
+/// `comemory find` — one ranked list across memory, code, and documents.
+pub mod find;
 /// `comemory gc`: retention sweep over the learning tables.
 pub mod gc;
 /// `comemory graph`: walk the relation graph by id.
 pub mod graph;
+/// `comemory hooks` — read and toggle the git reindex hooks.
+pub mod hooks;
 /// `comemory index`: register document sources and reconcile them.
 pub mod index;
 /// `comemory index-code`: extract and index code symbols.
@@ -56,6 +61,8 @@ pub mod prune;
 pub mod rebuild;
 /// Shared `--ref` / `--symbol` reference flags.
 pub mod ref_args;
+/// `comemory repos` — the indexed code-repository inventory.
+pub mod repos;
 /// `comemory save`: write a memory (markdown + store mirror).
 pub mod save;
 /// `comemory search`: hybrid memory retrieval.
@@ -67,8 +74,11 @@ pub mod search_code;
 pub(crate) mod search_only;
 /// `comemory serve`: loopback web viewer.
 pub mod serve;
-/// `comemory sources`: list registered document sources.
+/// `comemory show` — one memory in full.
+pub mod show;
 pub mod sources;
+/// `comemory stats` — corpus counters and database size.
+pub mod stats;
 /// `comemory tui`: interactive terminal explorer.
 pub mod tui;
 /// `comemory tune`: grid/sampled search over the ranking knobs.
@@ -143,6 +153,16 @@ pub enum Cmd {
     Index(index::Args),
     /// List registered document sources with per-status counts.
     Sources(sources::Args),
+    /// Report corpus counters and the size of `comemory.db`.
+    Stats(stats::Args),
+    /// List indexed code repositories with their index freshness.
+    Repos(repos::Args),
+    /// Show one memory in full: body, frontmatter, activation, references.
+    Show(show::Args),
+    /// Search memories, code, and documents as one ranked list.
+    Find(find::Args),
+    /// Report and toggle the git hooks that trigger background reindexing.
+    Hooks(hooks::Args),
     /// Unregister a document source and remove its derived rows.
     Unindex(unindex::Args),
     /// Run an ast-grep pattern against a single source file.
@@ -195,6 +215,11 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::IngestCode(a) => ingest_code::run(a, cli.json, cli.data_dir).await,
         Cmd::Index(a) => index::run(a, cli.json, cli.data_dir).await,
         Cmd::Sources(a) => sources::run(a, cli.json, cli.data_dir).await,
+        Cmd::Stats(a) => stats::run(a, cli.json, cli.data_dir).await,
+        Cmd::Repos(a) => repos::run(a, cli.json, cli.data_dir).await,
+        Cmd::Show(a) => show::run(a, cli.json, cli.data_dir).await,
+        Cmd::Find(a) => find::run(a, cli.json, cli.data_dir).await,
+        Cmd::Hooks(a) => hooks::run(a, cli.json, cli.data_dir).await,
         Cmd::Unindex(a) => unindex::run(a, cli.json, cli.data_dir).await,
         Cmd::Ast(a) => ast::run(a, cli.json, cli.data_dir).await,
         Cmd::Graph(a) => graph::run(a, cli.json, cli.data_dir).await,

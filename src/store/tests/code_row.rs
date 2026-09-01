@@ -215,3 +215,64 @@ fn insert_persists_parent_id_for_chunk_children() {
         .expect("child row exists");
     assert_eq!(stored, Some(parent));
 }
+
+/// Read `(last_head, last_indexed_at)` for a `repo_marker` row.
+fn marker_row(conn: &rusqlite::Connection, repo: &str) -> (Option<String>, Option<String>) {
+    conn.query_row(
+        "SELECT last_head, last_indexed_at FROM repo_marker WHERE repo = ?1",
+        rusqlite::params![repo],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )
+    .expect("repo_marker row")
+}
+
+#[test]
+fn upsert_last_indexed_creates_the_marker_row_and_stamps_both_columns() {
+    let tmp = TempDir::new().expect("tempdir");
+    let conn = connection::open(tmp.path().join("comemory.db")).expect("open db");
+
+    code_row::upsert_last_indexed(&conn, "fresh-repo", "deadbeef").expect("upsert_last_indexed");
+
+    let (head, indexed_at) = marker_row(&conn, "fresh-repo");
+    assert_eq!(head, Some("deadbeef".to_string()));
+    assert!(
+        indexed_at.is_some(),
+        "last_indexed_at must be stamped, got {indexed_at:?}"
+    );
+}
+
+#[test]
+fn upsert_last_indexed_updates_an_existing_marker_without_disturbing_root_path() {
+    let tmp = TempDir::new().expect("tempdir");
+    let conn = connection::open(tmp.path().join("comemory.db")).expect("open db");
+    code_row::upsert_repo_root(&conn, "myrepo", "/repos/myrepo").expect("upsert_repo_root");
+
+    code_row::upsert_last_indexed(&conn, "myrepo", "aaaa1111").expect("first stamp");
+    let (first_head, first_indexed_at) = marker_row(&conn, "myrepo");
+    assert_eq!(first_head, Some("aaaa1111".to_string()));
+
+    code_row::upsert_last_indexed(&conn, "myrepo", "bbbb2222").expect("second stamp");
+    let (second_head, second_indexed_at) = marker_row(&conn, "myrepo");
+    assert_eq!(
+        second_head,
+        Some("bbbb2222".to_string()),
+        "a second stamp must overwrite last_head"
+    );
+    assert!(
+        second_indexed_at >= first_indexed_at,
+        "the second stamp's timestamp must not go backwards"
+    );
+
+    let root_path: Option<String> = conn
+        .query_row(
+            "SELECT root_path FROM repo_marker WHERE repo = 'myrepo'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("root_path survives");
+    assert_eq!(
+        root_path,
+        Some("/repos/myrepo".to_string()),
+        "stamping last_head must not clobber a previously-set root_path"
+    );
+}

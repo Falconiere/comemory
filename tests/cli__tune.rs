@@ -260,6 +260,37 @@ fn assert_winner_landed_in_config(config: &std::path::Path, winner: &Value) {
 }
 
 #[test]
+fn tune_writes_an_eval_runs_row_readable_via_eval_history() {
+    let home = TempDir::new().expect("tempdir");
+    let golden = corpus_with_golden(&home, TOPICS.len());
+
+    let stdout = tune_stdout(&home, &golden, &["--apply"]);
+    let v: Value = serde_json::from_str(stdout.trim()).expect("parse tune JSON");
+    let applied = v["applied"].as_bool().expect("applied bool");
+
+    let history = bin(&home)
+        .args(["--json", "eval", "--history"])
+        .assert()
+        .success();
+    let out = String::from_utf8(history.get_output().stdout.clone()).expect("utf8 stdout");
+    let rows: Value = serde_json::from_str(out.trim()).expect("parse history JSON");
+    let rows = rows.as_array().expect("history is an array");
+    assert_eq!(rows.len(), 1, "one tune run must write one eval_runs row");
+    assert_eq!(rows[0]["kind"].as_str(), Some("tune"));
+    assert_eq!(
+        rows[0]["applied"].as_bool(),
+        Some(applied),
+        "row's applied must mirror whether --apply actually rewrote config.toml"
+    );
+    let winner = &v["report"]["ranked"][0]["candidate"];
+    assert_eq!(
+        rows[0]["knobs"]["rrf_k"].as_f64(),
+        winner["rrf_k"].as_f64(),
+        "row's knobs JSON must carry the winning candidate: {rows:?}"
+    );
+}
+
+#[test]
 fn tune_apply_writes_the_graph_knobs_and_keeps_unrelated_keys() {
     let home = TempDir::new().expect("tempdir");
     let (golden, config) = tag_discriminated_fixture(&home);

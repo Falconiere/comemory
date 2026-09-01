@@ -15,7 +15,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::api::Ctx;
-use crate::api::eval::default_k;
+use crate::api::eval::{RunOutcome, default_k, record_run};
 use crate::eval::golden;
 use crate::eval::tune::{self, TuneReport};
 use crate::prelude::*;
@@ -58,7 +58,9 @@ pub struct Response {
 
 /// Build the merged golden set, search the blend knobs through the real
 /// pipeline (tracking off), and — when `req.apply` and the winner strictly
-/// beats the baseline — persist the winner into `config.toml`.
+/// beats the baseline — persist the winner into `config.toml`. Records this
+/// run (the winner's knobs + score, `applied`) in `eval_runs` via
+/// [`record_run`] (`kind = "tune"`).
 pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
     let cfg = ctx.cfg;
     let paths = ctx.paths;
@@ -76,6 +78,20 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
     if applied {
         tune::apply_to_config_file(&paths.config_file(), &winner.candidate)?;
     }
+
+    let knobs_json = serde_json::to_string(&winner.candidate).map_err(Error::Json)?;
+    record_run(
+        conn,
+        RunOutcome {
+            kind: "tune",
+            golden_pairs: report.golden_pairs,
+            k: report.k,
+            recall: winner.recall_at_k,
+            mrr: winner.mrr,
+            knobs_json,
+            applied,
+        },
+    )?;
 
     Ok(Response { report, applied })
 }

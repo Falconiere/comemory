@@ -9,8 +9,6 @@
 //! attacker's domain; the containment check ensures a crafted `file:<repo>:…`
 //! id can never escape the repo root, even through `..` or a symlink.
 
-use std::fmt::Write as _;
-use std::io::Read as _;
 use std::path::{Component, Path, PathBuf};
 
 use crate::prelude::*;
@@ -33,16 +31,12 @@ pub fn generate_token() -> Result<String> {
 /// (`serve::jobs::registry`, 8 bytes) are the same draw at different widths,
 /// so neither can silently fall back to weaker randomness. An unreadable
 /// `/dev/urandom` is an error, never a degraded default.
+///
+/// Delegates to [`crate::store::random_id::random_hex`] — the neutral home
+/// shared with `api::gc`'s `gc_runs` row ids, so `api::` never has to depend
+/// on `serve::` for the same primitive (Binding Rule 1).
 pub fn random_hex(bytes: usize) -> Result<String> {
-    let mut f = std::fs::File::open("/dev/urandom").map_err(Error::Io)?;
-    let mut buf = vec![0u8; bytes];
-    f.read_exact(&mut buf).map_err(Error::Io)?;
-    let mut hex = String::with_capacity(bytes * 2);
-    for b in buf {
-        // Infallible: writing to a String never errors.
-        let _ = write!(hex, "{b:02x}");
-    }
-    Ok(hex)
+    crate::store::random_id::random_hex(bytes)
 }
 
 /// True when `provided` equals the session token. Absent token → false.

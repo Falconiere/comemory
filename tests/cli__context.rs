@@ -593,3 +593,118 @@ fn context_symbol_ref_status_unknown_when_repo_not_on_disk() {
         "pinned ref in an off-disk repo must be unknown: {v}"
     );
 }
+
+/// Index a fixture repo at `<workspace>/neighbor-repo` containing `a.rs`
+/// (`mod b;\nfn alpha() {}\n`, a real Rust import of `b.rs`) and `b.rs`
+/// (`fn beta() {}\n`), committed together in ONE commit so the real
+/// co-change miner records a real `co_changed` edge alongside the real
+/// `imports` edge `index-code` resolves from `mod b;`. Indexed under repo
+/// label `n`.
+fn index_neighbor_repo(home: &TempDir, workspace: &TempDir) -> std::path::PathBuf {
+    let repo = workspace.path().join("neighbor-repo");
+    git_repo::init_repo(&repo);
+    git_commit::commit_files(
+        &repo,
+        &[
+            ("a.rs", "mod b;\nfn alpha() {}\n"),
+            ("b.rs", "fn beta() {}\n"),
+        ],
+        "init",
+    );
+    bin(home)
+        .args(["index-code", "--repo", "n", "--path"])
+        .arg(&repo)
+        .assert()
+        .success();
+    repo
+}
+
+/// AC-30: `comemory context <query> --json` returns a `neighbors` array
+/// carrying the file's REAL `imports` and `co_changed` counterparts — mined
+/// and materialized by the REAL `comemory index-code` over a real git repo
+/// — while the pre-existing `memories`, `code_refs`, and `relations` fields
+/// keep working exactly as before (the additive guarantee).
+#[test]
+fn context_neighbors_include_real_imports_and_co_changed_edges() {
+    let home = TempDir::new().expect("tempdir");
+    let workspace = TempDir::new().expect("workspace");
+    index_neighbor_repo(&home, &workspace);
+
+    save_memory(
+        &home,
+        "neighbor decision cites n:a.rs:alpha for dispatch",
+        "decision",
+    );
+
+    let v = context_json(&home, "neighbor decision dispatch", &[]);
+
+    // Pre-existing fields: unchanged shape and values.
+    let mems = v["memories"].as_array().expect("memories array");
+    assert_eq!(mems.len(), 1, "one memory matched: {v}");
+    let code_refs = v["code_refs"].as_array().expect("code_refs array");
+    assert!(
+        code_refs.iter().any(|r| r["id"] == "n:a.rs:alpha"),
+        "the cited symbol must still resolve as a code ref: {v}"
+    );
+    // The pre-existing `relations` field stays exactly what it always was —
+    // the MEMORY's own reference-edge walk (here, the two `references_*`
+    // edges the cross-link save wrote) — and never gains an `imports` /
+    // `co_changed` row: that walk lives entirely in the new `neighbors`
+    // field instead.
+    let relations = v["relations"].as_array().expect("relations array");
+    assert_eq!(
+        relations
+            .iter()
+            .map(|r| r["rel"].as_str())
+            .collect::<Vec<_>>(),
+        vec![Some("references_file"), Some("references_symbol")],
+        "relations must stay the memory's own reference-edge walk: {v}"
+    );
+    assert!(
+        relations
+            .iter()
+            .all(|r| r["rel"] != "imports" && r["rel"] != "co_changed"),
+        "relations must never carry the code-graph walk: {v}"
+    );
+
+    // The new field: a.rs's real one-hop neighborhood.
+    let neighbors = v["neighbors"].as_array().expect("neighbors array");
+    assert_eq!(
+        neighbors.len(),
+        2,
+        "exactly the imports + co_changed edge to b.rs: {v}"
+    );
+    for rel in ["imports", "co_changed"] {
+        let n = neighbors
+            .iter()
+            .find(|n| n["rel"] == rel)
+            .unwrap_or_else(|| panic!("{rel} neighbor missing: {v}"));
+        assert_eq!(n["repo"], "n", "{rel} neighbor repo: {v}");
+        assert_eq!(n["path"], "b.rs", "{rel} neighbor path: {v}");
+        assert_eq!(n["weight"], 1, "{rel} neighbor weight: {v}");
+    }
+}
+
+/// A bundle whose code refs are empty (no cross-links in the body) returns
+/// an empty `neighbors` array and the command still exits 0.
+#[test]
+fn context_neighbors_empty_when_bundle_has_no_code_refs() {
+    let home = TempDir::new().expect("tempdir");
+    save_memory(&home, "plain body with no code references at all", "note");
+
+    let v = context_json(&home, "plain body code references", &[]);
+    assert!(
+        v["code_refs"]
+            .as_array()
+            .expect("code_refs array")
+            .is_empty(),
+        "no cross-links in body: {v}"
+    );
+    assert!(
+        v["neighbors"]
+            .as_array()
+            .expect("neighbors array")
+            .is_empty(),
+        "no code refs must yield an empty neighborhood: {v}"
+    );
+}

@@ -77,7 +77,7 @@ fn v1_prune_returns_the_dry_run_report_envelope() {
         .as_array()
         .expect("items array");
     assert!(
-        items.iter().any(|v| v == &serde_json::json!(id)),
+        items.iter().any(|v| v["id"].as_str() == Some(id.as_str())),
         "expected {id} in low_value_memories items: {items:?}"
     );
     assert_eq!(

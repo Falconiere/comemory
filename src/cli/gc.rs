@@ -43,8 +43,8 @@ pub async fn run(json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
         let mut out = std::io::stdout().lock();
         writeln!(
             out,
-            "gc removed {} trashed memories, {} log rows, {} feedback events",
-            resp.removed, resp.log_rows, resp.event_rows
+            "gc removed {} trashed memories ({} bytes freed), {} log rows, {} feedback events",
+            resp.removed, resp.bytes_freed, resp.log_rows, resp.event_rows
         )?;
     }
     Ok(())

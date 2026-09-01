@@ -48,6 +48,7 @@ fn sample_hits() -> Vec<Reranked> {
         source: Source::Hybrid,
         tier: 1,
         parts: ScoreParts {
+            legs: comemory::retrieval::score::LegScores::none(),
             rrf: 0.016,
             activation: 1.0,
             feedback: 1.0,
@@ -184,6 +185,7 @@ fn make_hit(memory_id: &str, tier: u8, final_score: f64) -> Reranked {
         source: Source::Lexical,
         tier,
         parts: ScoreParts {
+            legs: comemory::retrieval::score::LegScores::none(),
             rrf: final_score as f32,
             activation: 1.0,
             feedback: 1.0,

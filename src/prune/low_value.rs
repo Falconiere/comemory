@@ -28,14 +28,30 @@ use crate::retrieval::score;
 /// in Rust with the shared [`score`] primitives so prune and rerank cannot
 /// drift on what "cold" means.
 pub fn detect(conn: &Connection, cfg: &Config) -> Result<Vec<String>> {
+    Ok(detect_with_reasons(conn, cfg)?
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect())
+}
+
+/// Same candidate set as [`detect`], each id paired with the rule label that
+/// flagged it: `"low value"` for [`signal_rule`] (cold/unloved/low-quality/
+/// unreferenced), `"orphan"` for [`superseded_rule`] (superseded by a live
+/// memory and never revisited since). An id matching both rules keeps its
+/// `"low value"` label — [`signal_rule`] runs first — mirroring [`detect`]'s
+/// existing not-already-flagged dedup exactly, so the two functions can
+/// never disagree on which ids are candidates.
+pub fn detect_with_reasons(conn: &Connection, cfg: &Config) -> Result<Vec<(String, &'static str)>> {
     let now = OffsetDateTime::now_utc();
-    let mut flagged = signal_rule(conn, cfg, now)?;
+    let signal = signal_rule(conn, cfg, now)?;
+    let mut flagged: Vec<(String, &'static str)> =
+        signal.into_iter().map(|id| (id, "low value")).collect();
     for id in superseded_rule(conn, cfg.prune.superseded_grace_days, now)? {
-        if !flagged.contains(&id) {
-            flagged.push(id);
+        if !flagged.iter().any(|(existing, _)| existing == &id) {
+            flagged.push((id, "orphan"));
         }
     }
-    flagged.sort();
+    flagged.sort_by(|a, b| a.0.cmp(&b.0));
     Ok(flagged)
 }
 

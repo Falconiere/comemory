@@ -5,12 +5,15 @@
 //! relaxation ladder — the identifier tokenizer already splits code
 //! tokens, so the strict tier reaches subtoken matches directly.
 
+use std::collections::HashMap;
+
 use rusqlite::Connection;
 
 use crate::config::Config;
 use crate::prelude::*;
 use crate::retrieval::fuse::{self, RankedHit};
 use crate::retrieval::router::{Source, above_similarity_threshold};
+use crate::retrieval::score::LegScores;
 use crate::store::{fts, vector};
 
 /// One unified code-retrieval hit, regardless of which branch produced it.
@@ -24,6 +27,8 @@ pub struct CodeRoutedHit {
     pub score: f32,
     /// Which branch produced the hit.
     pub source: Source,
+    /// Raw per-leg scores fusion consumed, carried through unchanged.
+    pub legs: LegScores,
 }
 
 /// Route a code query: lexical BM25 (whenever the query is non-empty),
@@ -100,6 +105,16 @@ fn fuse_legs(
             score: -h.score,
         })
         .collect();
+    // Index both legs by id so a fused hit can report what each leg
+    // contributed. Values are copied off the `RankedHit`s built directly
+    // above — nothing is recomputed, so this cannot move a score.
+    let mut leg_scores: HashMap<String, LegScores> = HashMap::new();
+    for h in &lex_ranked {
+        leg_scores.entry(h.memory_id.clone()).or_default().bm25 = Some(h.score);
+    }
+    for h in &ann_ranked {
+        leg_scores.entry(h.memory_id.clone()).or_default().ann = Some(h.score);
+    }
     fuse::rrf_k(&ann_ranked, &lex_ranked, k, rrf_k)
         .into_iter()
         .filter_map(|h| match h.memory_id.parse::<i64>() {
@@ -107,6 +122,10 @@ fn fuse_legs(
                 symbol_id,
                 score: h.score,
                 source: Source::Hybrid,
+                legs: leg_scores
+                    .get(&h.memory_id)
+                    .copied()
+                    .unwrap_or_else(LegScores::none),
             }),
             Err(e) => {
                 tracing::warn!(id = %h.memory_id, error = %e, "skipping non-numeric fused code id");
@@ -120,20 +139,30 @@ fn fuse_legs(
 /// [`Source::Vector`]; distance becomes the higher-is-better
 /// `1.0 - distance` cosine similarity.
 fn ann_to_hit(h: vector::CodeHit) -> CodeRoutedHit {
+    let ann = 1.0 - h.distance;
     CodeRoutedHit {
         symbol_id: h.symbol_id,
-        score: 1.0 - h.distance,
+        score: ann,
         source: Source::Vector,
+        legs: LegScores {
+            ann: Some(ann),
+            bm25: None,
+        },
     }
 }
 
 /// Map an [`fts::CodeFtsHit`] to a [`CodeRoutedHit`] tagged
 /// [`Source::Lexical`]; BM25 is lower-is-better, so it is negated.
 fn lex_to_hit(h: fts::CodeFtsHit) -> CodeRoutedHit {
+    let bm25 = -h.score;
     CodeRoutedHit {
         symbol_id: h.symbol_id,
-        score: -h.score,
+        score: bm25,
         source: Source::Lexical,
+        legs: LegScores {
+            ann: None,
+            bm25: Some(bm25),
+        },
     }
 }
 

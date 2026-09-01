@@ -21,6 +21,8 @@ fn sample() -> CodeGraph {
                 repo: "demo".into(),
                 rank: 0.8,
                 symbols: 3,
+                memories: 0,
+                blob: None,
             },
             Node {
                 id: "file:demo:src/b.rs".into(),
@@ -28,6 +30,8 @@ fn sample() -> CodeGraph {
                 repo: "demo".into(),
                 rank: 0.2,
                 symbols: 1,
+                memories: 0,
+                blob: None,
             },
         ],
         edges: vec![
@@ -85,6 +89,8 @@ fn html_escapes_closing_script_sequence() {
             repo: "demo".into(),
             rank: 0.0,
             symbols: 0,
+            memories: 0,
+            blob: None,
         }],
         edges: vec![],
     };
@@ -106,6 +112,8 @@ fn dot_escapes_newlines_in_labels() {
             repo: "demo".into(),
             rank: 0.5,
             symbols: 1,
+            memories: 0,
+            blob: None,
         }],
         edges: vec![],
     };
@@ -132,6 +140,8 @@ fn dot_zero_rank_nodes_get_minimum_width() {
                 repo: "demo".into(),
                 rank: 0.0,
                 symbols: 0,
+                memories: 0,
+                blob: None,
             },
             Node {
                 id: "file:demo:src/y.rs".into(),
@@ -139,6 +149,8 @@ fn dot_zero_rank_nodes_get_minimum_width() {
                 repo: "demo".into(),
                 rank: 0.0,
                 symbols: 0,
+                memories: 0,
+                blob: None,
             },
         ],
         edges: vec![],

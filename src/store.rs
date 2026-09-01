@@ -16,10 +16,15 @@ pub mod documents;
 pub mod edge_fts;
 /// f32 ↔ `vec0` BLOB encoding plus the per-table dim guards.
 pub mod embed;
+/// `eval_runs` row insert + newest-first read — one row per `comemory
+/// eval`/`tune`/`bandit` run.
+pub mod eval_runs;
 /// FTS5 insert/search helpers for the code leg.
 pub mod fts;
 /// Memory-leg FTS5 ladder (strict → relaxed → subtoken → expanded).
 pub mod fts_memory;
+/// `gc_runs` row insert — one row per `comemory gc` sweep.
+pub mod gc_runs;
 /// Paginated listing of live memories.
 pub mod memory_list;
 /// Batched per-memory metadata (path, repo, kind, tags, references).
@@ -28,6 +33,9 @@ pub mod memory_meta;
 pub mod memory_row;
 /// Versioned, idempotent schema migrations plus `schema_meta`.
 pub mod migrate;
+/// Shared random-hex id generation (`/dev/urandom`), the neutral home for
+/// both `serve::security` and `api::gc`.
+pub mod random_id;
 /// Enumerate distinct, canonicalized `repo_marker.root_path` values.
 pub mod repo_marker_roots;
 /// DDL strings for the tables, `vec0` vtabs and FTS5 indexes.

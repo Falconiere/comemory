@@ -22,6 +22,11 @@ pub(crate) mod source {
     /// mining and golden-set harvesting — these rows can only earn
     /// code-target feedback.
     pub(crate) const SEARCH_CODE: &str = "search-code";
+    /// `comemory find` (unified memory + code + document search). Unlike
+    /// [`SEARCH_CODE`] this IS mined and harvested: a `find` run can earn
+    /// memory-target feedback, so its reformulations carry the same signal
+    /// a `search` run's do.
+    pub(crate) const FIND: &str = "find";
 }
 
 /// The `feedback_events.target_kind` vocabulary: what kind of id the

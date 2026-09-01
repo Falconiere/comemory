@@ -15,7 +15,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::api::Ctx;
-use crate::git_utils::install_hook;
+use crate::git_utils::{self, install_hook};
 use crate::prelude::*;
 
 /// `comemory install-hooks` / `POST /api/v1/hooks/install` request.
@@ -35,15 +35,6 @@ pub struct Request {
 fn default_repo() -> String {
     ".".to_string()
 }
-
-/// Body written to each hook file. The trailing `&` detaches the indexer so
-/// git's hook runner returns immediately.
-const SCRIPT: &str = "#!/usr/bin/env bash\n\
-                      ROOT=\"$(git rev-parse --show-toplevel 2>/dev/null)\"\n\
-                      [ -z \"$ROOT\" ] && exit 0\n\
-                      REPO=\"$(basename \"$ROOT\")\"\n\
-                      ( comemory index-code --repo \"$REPO\" --path \"$ROOT\" >/dev/null 2>&1 & )\n\
-                      exit 0\n";
 
 /// Hooks installed on every call: `post-commit`, `post-merge`,
 /// `post-checkout`.
@@ -78,7 +69,7 @@ pub fn run(_ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
         }
     }
     for hook in HOOKS {
-        install_hook(&repo, hook, SCRIPT)?;
+        install_hook(&repo, hook, git_utils::REINDEX_HOOK_SCRIPT)?;
     }
     Ok(Response {
         installed: HOOKS.iter().map(ToString::to_string).collect(),

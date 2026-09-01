@@ -404,10 +404,13 @@ impl Config {
         if let Some(pt) = partial.tune {
             self.tune.apply(pt);
         }
-        if let Some(pr) = partial.reinforce
-            && let Some(v) = pr.search_edit_days
-        {
-            self.reinforce.search_edit_days = v;
+        if let Some(pr) = partial.reinforce {
+            if let Some(v) = pr.search_edit_days {
+                self.reinforce.search_edit_days = v;
+            }
+            if let Some(v) = pr.enabled {
+                self.reinforce.enabled = v;
+            }
         }
         if let Some(pb) = partial.bandit
             && let Some(v) = pb.enabled

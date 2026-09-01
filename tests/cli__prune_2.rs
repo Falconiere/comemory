@@ -60,7 +60,7 @@ fn prune_dry_run_low_value_pagination_window_is_correct() {
         .as_array()
         .expect("items array")
         .iter()
-        .map(|x| x.as_str().expect("string"))
+        .map(|x| x["id"].as_str().expect("row.id"))
         .collect();
     assert_eq!(items, vec![ids[0].as_str(), ids[1].as_str()]);
     assert_eq!(page["total"].as_u64(), Some(5));
@@ -80,7 +80,7 @@ fn prune_dry_run_low_value_pagination_window_is_correct() {
         .as_array()
         .expect("items array")
         .iter()
-        .map(|x| x.as_str().expect("string"))
+        .map(|x| x["id"].as_str().expect("row.id"))
         .collect();
     assert_eq!(items, vec![ids[4].as_str()]);
     assert_eq!(page["total"].as_u64(), Some(5));
@@ -98,7 +98,7 @@ fn prune_dry_run_low_value_pagination_window_is_correct() {
         .as_array()
         .expect("items array")
         .iter()
-        .map(|x| x.as_str().expect("string"))
+        .map(|x| x["id"].as_str().expect("row.id"))
         .collect();
     let expected: Vec<&str> = ids.iter().map(String::as_str).collect();
     assert_eq!(items, expected, "--limit 0 must return every candidate");

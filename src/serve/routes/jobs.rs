@@ -1,13 +1,15 @@
 //! `GET /api/v1/jobs`, `GET /api/v1/jobs/{id}` and the
-//! `GET /api/v1/jobs/{id}/events` SSE stream over `serve::jobs`. All three
-//! are reads — they observe the job registry, they never start a job (the
-//! job-creating `POST`s live with their own resources).
+//! `GET /api/v1/jobs/{id}/events` SSE stream over `serve::jobs`. Reads
+//! only — job-creating `POST`s live with their own resources.
 //!
-//! An unknown id is a `404 not_found` **enveloped JSON** response on all
-//! three, the SSE route included: the stream is only opened for a job that
-//! exists, so a client cannot mistake "no such job" for "a job that never
-//! emits". Auth is the router `guard`'s, which already accepts `?token=` —
-//! the form `EventSource` needs, since it cannot send headers (AC-11).
+//! An unknown id is a `404 not_found` enveloped JSON response on all three,
+//! the SSE route included (a client cannot mistake "no such job" for "a
+//! job that never emits"). Auth accepts `?token=` too — `EventSource`
+//! cannot send headers (AC-11).
+//!
+//! The stream interleaves two event types: `status`
+//! (`queued`/`running`/`done`/`error`, unchanged) and an additive
+//! `progress` — see [`status_stream`].
 
 use std::convert::Infallible;
 use std::time::Instant;
@@ -25,7 +27,7 @@ use crate::output::page::Page;
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::envelope::Envelope;
-use crate::serve::jobs::{JobEvent, JobStatus};
+use crate::serve::jobs::{JobEvent, JobStatus, Progress, ProgressEvent};
 use crate::serve::routes::{RouteEntry, respond};
 
 /// Emitted (and the stream ended) when a status payload cannot be
@@ -110,21 +112,42 @@ async fn get_one(State(state): State<AppState>, Path(id): Path<String>) -> Respo
 ///
 /// The first event is an explicit read of the current status, so a client
 /// attaching after the job finished immediately gets the terminal event
-/// (AC-8). Later events are the `watch` channel's transitions —
+/// (AC-8). Later events are the two `watch` channels' transitions —
 /// best-effort, since `watch` keeps only the latest value and fast
 /// transitions coalesce. The handler ends the stream itself once a terminal
-/// status is emitted (the registry retains the sender, so the channel never
+/// status is emitted (the registry retains both senders, so neither channel
 /// closes on its own).
 async fn events(State(state): State<AppState>, Path(id): Path<String>) -> Response {
-    let receiver = match state.jobs().subscribe(&id) {
-        Ok(Some(rx)) => rx,
-        Ok(None) => {
-            let e = Error::NotFound(format!("job not found: {id}"));
-            return Envelope::err("jobs.events", &e, 0);
-        }
-        Err(e) => return Envelope::err("jobs.events", &e, 0),
+    let status_rx = match subscribed_or_err(state.jobs().subscribe(&id), &id) {
+        Ok(rx) => rx,
+        Err(resp) => return *resp,
     };
-    Sse::new(status_stream(id, receiver)).into_response()
+    let progress_rx = match subscribed_or_err(state.jobs().subscribe_progress(&id), &id) {
+        Ok(rx) => rx,
+        Err(resp) => return *resp,
+    };
+    Sse::new(status_stream(id, status_rx, progress_rx)).into_response()
+}
+
+/// Unwrap one `Registry::subscribe*` result into its channel, or the same
+/// enveloped `404`/error [`events`] otherwise returns.
+///
+/// The error side is boxed because an axum `Response` is large (>=128 bytes)
+/// and this `Result` is returned by value on every subscribe — `clippy::
+/// result_large_err` rejects the unboxed form.
+fn subscribed_or_err<T>(
+    result: Result<Option<T>>,
+    id: &str,
+) -> std::result::Result<T, Box<Response>> {
+    match result {
+        Ok(Some(v)) => Ok(v),
+        Ok(None) => Err(Box::new(Envelope::err(
+            "jobs.events",
+            &Error::NotFound(format!("job not found: {id}")),
+            0,
+        ))),
+        Err(e) => Err(Box::new(Envelope::err("jobs.events", &e, 0))),
+    }
 }
 
 /// The unfold cursor: `None` state ends the stream.
@@ -132,49 +155,94 @@ struct Cursor {
     /// Job id, echoed into every event payload.
     id: String,
     /// The job's status channel.
-    receiver: watch::Receiver<JobStatus>,
+    status_rx: watch::Receiver<JobStatus>,
+    /// The job's progress channel — see the module doc's `progress` event.
+    progress_rx: watch::Receiver<Option<Progress>>,
     /// Whether the next poll is the initial current-state emission.
     first: bool,
 }
 
-/// Build the SSE event stream described on [`events`].
+/// Build the SSE event stream described on [`events`]: the first item is
+/// always the job's current status (AC-8, unchanged); afterward, whichever
+/// of `status_rx` / `progress_rx` changes first is emitted, until a
+/// terminal status ends the stream — so `progress` events can interleave
+/// with `status` events but never delay or replace one (AC-34).
 fn status_stream(
     id: String,
-    receiver: watch::Receiver<JobStatus>,
+    status_rx: watch::Receiver<JobStatus>,
+    progress_rx: watch::Receiver<Option<Progress>>,
 ) -> impl Stream<Item = std::result::Result<Event, Infallible>> {
     let cursor = Cursor {
         id,
-        receiver,
+        status_rx,
+        progress_rx,
         first: true,
     };
     futures::stream::unfold(Some(cursor), |state| async move {
         let mut cursor = state?;
         if cursor.first {
             cursor.first = false;
-        } else if cursor.receiver.changed().await.is_err() {
-            // The registry dropped the sender (the job was evicted): there
-            // is nothing further to report, so end the stream.
-            return None;
+            let status = cursor.status_rx.borrow_and_update().clone();
+            return Some(finish_on_status(cursor, &status));
         }
-        let status = cursor.receiver.borrow_and_update().clone();
-        let (event, encoded) = encode(&cursor.id, &status);
-        let next = if status.is_terminal() || !encoded {
-            None
-        } else {
-            Some(cursor)
-        };
-        Some((Ok(event), next))
+        loop {
+            tokio::select! {
+                changed = cursor.status_rx.changed() => {
+                    if changed.is_err() { return None; }
+                    let status = cursor.status_rx.borrow_and_update().clone();
+                    return Some(finish_on_status(cursor, &status));
+                }
+                changed = cursor.progress_rx.changed() => {
+                    if changed.is_err() { return None; }
+                    let progress = cursor.progress_rx.borrow_and_update().clone();
+                    if let Some(p) = progress {
+                        let (event, ok) = encode_progress(&cursor.id, &p);
+                        return Some((Ok(event), if ok { Some(cursor) } else { None }));
+                    }
+                    // A spurious `None` change cannot happen once
+                    // `set_progress` has published at least once — keep
+                    // polling either channel.
+                }
+            }
+        }
     })
+}
+
+/// Encode a status transition and decide whether the stream ends: on a
+/// terminal status, or when serialization itself failed.
+fn finish_on_status(
+    cursor: Cursor,
+    status: &JobStatus,
+) -> (std::result::Result<Event, Infallible>, Option<Cursor>) {
+    let (event, ok) = encode_status(&cursor.id, status);
+    let next = if status.is_terminal() || !ok {
+        None
+    } else {
+        Some(cursor)
+    };
+    (Ok(event), next)
 }
 
 /// Render one status as an SSE event named after the status slug. Returns
 /// `false` alongside the fallback event when the payload could not be
 /// serialized, which ends the stream.
-fn encode(id: &str, status: &JobStatus) -> (Event, bool) {
+fn encode_status(id: &str, status: &JobStatus) -> (Event, bool) {
     match serde_json::to_string(&JobEvent::new(id, status)) {
         Ok(json) => (Event::default().event(status.slug()).data(json), true),
         Err(e) => {
             tracing::warn!(job_id = id, error = %e, "job event serialization failed");
+            (Event::default().event("error").data(ENCODE_FAILED), false)
+        }
+    }
+}
+
+/// Render one progress report as the SSE `progress` event. Same failure
+/// contract as [`encode_status`].
+fn encode_progress(id: &str, progress: &Progress) -> (Event, bool) {
+    match serde_json::to_string(&ProgressEvent::new(id, progress)) {
+        Ok(json) => (Event::default().event("progress").data(json), true),
+        Err(e) => {
+            tracing::warn!(job_id = id, error = %e, "job progress event serialization failed");
             (Event::default().event("error").data(ENCODE_FAILED), false)
         }
     }

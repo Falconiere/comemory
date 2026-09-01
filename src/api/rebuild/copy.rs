@@ -39,6 +39,8 @@ pub(crate) const COPIED_TABLES: &[&str] = &[
     "feedback_events",
     "query_expansions",
     "bandit_arms",
+    "eval_runs",
+    "gc_runs",
     "source_files",
     "documents",
     "document_chunks",
@@ -343,6 +345,22 @@ fn copy_event_and_mined_tables(conn: &rusqlite::Connection) -> Result<()> {
                  term, expansion, support, last_mined) \
              SELECT term, expansion, support, last_mined \
              FROM old.query_expansions;",
+        )?;
+    }
+    if old_table_exists(conn, "eval_runs")? {
+        conn.execute_batch(
+            "INSERT OR IGNORE INTO main.eval_runs(\
+                 id, kind, at, golden_pairs, k, recall, mrr, knobs, applied) \
+             SELECT id, kind, at, golden_pairs, k, recall, mrr, knobs, applied \
+             FROM old.eval_runs;",
+        )?;
+    }
+    if old_table_exists(conn, "gc_runs")? {
+        conn.execute_batch(
+            "INSERT OR IGNORE INTO main.gc_runs(\
+                 id, at, removed, log_rows, event_rows, bytes_freed) \
+             SELECT id, at, removed, log_rows, event_rows, bytes_freed \
+             FROM old.gc_runs;",
         )?;
     }
     if old_table_exists(conn, "bandit_arms")? {

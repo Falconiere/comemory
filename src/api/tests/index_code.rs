@@ -135,3 +135,57 @@ fn run_on_a_non_git_directory_never_creates_the_db() {
         "index-code on an invalid --path must not create comemory.db"
     );
 }
+
+/// A [`api::index_code::ProgressSink`] that just records every call, for
+/// asserting the seam `serve::jobs::worker::RegistryProgressSink` uses in
+/// production — proven end-to-end over real HTTP in
+/// `tests/serve__jobs_progress.rs`; this proves the plain function contract.
+#[derive(Default)]
+struct RecordingSink {
+    progress: std::sync::Mutex<Vec<(u64, u64)>>,
+    logs: std::sync::Mutex<Vec<String>>,
+}
+
+impl api::index_code::ProgressSink for RecordingSink {
+    fn on_progress(&self, done: u64, total: u64) {
+        self.progress.lock().expect("lock").push((done, total));
+    }
+
+    fn on_log(&self, line: &str) {
+        self.logs.lock().expect("lock").push(line.to_string());
+    }
+}
+
+#[test]
+fn run_with_progress_reports_on_progress_and_on_log_for_the_indexed_file() {
+    let home = tempdir().expect("tempdir");
+    let workspace = tempdir().expect("workspace");
+    let repo = git_sample::build_sample_repo(workspace.path());
+    let (paths, cfg, mut conn) = ctx_over(home.path());
+    let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+    let sink = RecordingSink::default();
+
+    let resp = api::index_code::run_with_progress(
+        &mut ctx,
+        api::index_code::Request {
+            repo: "sample".into(),
+            path: repo.to_str().expect("utf8 path").to_string(),
+        },
+        Some(&sink),
+    )
+    .expect("index_code run_with_progress");
+
+    assert_eq!(resp.files_indexed, 1);
+    let progress = sink.progress.lock().expect("lock");
+    assert_eq!(
+        progress.as_slice(),
+        [(1, 1)],
+        "the one-file fixture repo reports a single done==total report"
+    );
+    let logs = sink.logs.lock().expect("lock");
+    assert_eq!(
+        logs.as_slice(),
+        ["src.rs"],
+        "the one indexed file's relative path must be logged"
+    );
+}

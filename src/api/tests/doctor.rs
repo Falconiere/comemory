@@ -34,6 +34,19 @@ fn run_reports_current_schema_and_embed_hint_on_a_fresh_writable_dir() {
         Some("ollama:nomic-embed-text")
     );
     assert_eq!(report.data_dir, home.path().to_string_lossy());
+
+    // Console-compat: at least 10 named checks, the real memory/code vec
+    // dims (1024/768), and the tokenizer registered on this fresh db.
+    assert!(
+        report.checks.len() >= 10,
+        "expected at least 10 checks, got {}",
+        report.checks.len()
+    );
+    assert_eq!(report.memory_vec_dim, Some(1024));
+    assert_eq!(report.code_vec_dim, Some(768));
+    assert!(report.tokenizer_registered);
+    assert_eq!(report.markdown_files, 0);
+    assert_eq!(report.mirror_drift, 0);
 }
 
 #[test]

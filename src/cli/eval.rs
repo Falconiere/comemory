@@ -22,7 +22,10 @@ Examples:
   comemory eval --golden golden.yaml
 
   # File only, recall@5, JSON report
-  comemory eval --golden golden.yaml --golden-only --k 5 --json";
+  comemory eval --golden golden.yaml --golden-only --k 5 --json
+
+  # Past eval/tune/bandit runs, newest-first
+  comemory eval --history --limit 20 --json";
 
 /// Golden-set selection flags shared by `comemory eval` and
 /// `comemory tune` (via `#[command(flatten)]`), so the two subcommands
@@ -48,23 +51,40 @@ pub struct Args {
     /// Golden-set selection (`--golden`, `--golden-only`, `--k`).
     #[command(flatten)]
     pub golden_set: GoldenSetArgs,
+    /// Show past `eval`/`tune`/`bandit` runs instead of scoring a new one.
+    /// A clap conflict, not a silent precedence rule: `--history` and a
+    /// scoring run are two different modes of this command and cannot
+    /// combine with the golden-set flags.
+    #[arg(long, conflicts_with_all = ["golden", "golden_only", "k"])]
+    pub history: bool,
+    /// Max rows to return with `--history`, newest-first.
+    #[arg(long, requires = "history", default_value_t = 20)]
+    pub limit: u32,
 }
 
 /// Run `comemory eval`: build the merged golden set, drive the real
-/// pipeline with tracking off, and emit the report.
+/// pipeline with tracking off, and emit the report — or, under
+/// `--history`, read back past runs instead.
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
     let mut conn = connection::open(paths.db_path())?;
     let cfg = load_config(&paths)?;
+    let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
     let g = &a.golden_set;
     let req = api::eval::Request {
         golden: g.golden.as_ref().map(|p| p.to_string_lossy().into_owned()),
         golden_only: g.golden_only,
         k: g.k,
+        history: a.history,
+        limit: a.limit,
     };
-    let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+    if a.history {
+        let rows = api::eval::history(&mut ctx, &req)?;
+        return emit_history(json_flag, &rows);
+    }
+
     let report = api::eval::run(&mut ctx, req)?;
     if json_flag {
         json::write(&report)?;
@@ -93,6 +113,34 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
                 r.rank_of_first_hit.map_or("miss".into(), |x| x.to_string())
             )?;
         }
+    }
+    Ok(())
+}
+
+/// Emit `eval --history`'s rows: the raw `Vec<EvalRunRow>` under `--json`,
+/// else an aligned table (kind, timestamp, golden pairs, recall, mrr,
+/// applied). An empty history prints one line and still exits 0 (AC-39).
+fn emit_history(json_flag: bool, rows: &[crate::store::eval_runs::EvalRunRow]) -> Result<()> {
+    if json_flag {
+        json::write(&rows)?;
+        return Ok(());
+    }
+    let mut out = std::io::stdout().lock();
+    if rows.is_empty() {
+        writeln!(out, "no eval runs recorded yet")?;
+        return Ok(());
+    }
+    writeln!(
+        out,
+        "{:<7}  {:<30}  {:>6}  {:>4}  {:>7}  {:>7}  applied",
+        "kind", "at", "golden", "k", "recall", "mrr"
+    )?;
+    for r in rows {
+        writeln!(
+            out,
+            "{:<7}  {:<30}  {:>6}  {:>4}  {:>7.3}  {:>7.3}  {}",
+            r.kind, r.at, r.golden_pairs, r.k, r.recall, r.mrr, r.applied
+        )?;
     }
     Ok(())
 }

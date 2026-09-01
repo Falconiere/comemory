@@ -13,7 +13,7 @@ use time::OffsetDateTime;
 
 use crate::api::Ctx;
 use crate::prelude::*;
-use crate::store::memory_row;
+use crate::store::{gc_runs, memory_row, random_id};
 
 /// `comemory gc` / `POST /api/v1/gc` request. No CLI args today.
 #[derive(Deserialize, Debug)]
@@ -29,39 +29,35 @@ pub struct Response {
     pub log_rows: u64,
     /// `feedback_events` rows evicted past the configured retention window.
     pub event_rows: u64,
+    /// Summed size, in bytes, of the trashed files this run actually
+    /// removed (stat'd before the unlink, never estimated after).
+    pub bytes_freed: u64,
 }
 
 /// Trash retention window, in days. Intentionally fixed in v1 (see module
 /// doc on `cli::gc`).
 const RETENTION_DAYS: i64 = 30;
 
+/// Random bytes behind a `gc_runs` row id — 8 bytes, rendered as 16
+/// lowercase-hex chars (the same width as a job id).
+const RUN_ID_BYTES: usize = 8;
+
 /// Remove every file in the trash directory whose mtime is older than
 /// [`RETENTION_DAYS`], then — only when `comemory.db` already exists — evict
-/// learning telemetry older than `prune.learning_retention_days`. Missing
-/// trash directory is a no-op.
+/// learning telemetry older than `prune.learning_retention_days` AND record
+/// this run in `gc_runs`. Missing trash directory is a no-op. The
+/// must-not-create-the-db invariant means a fresh data dir writes no
+/// `gc_runs` row either — there is nowhere to write it.
 pub fn run(ctx: &mut Ctx<'_>, _req: Request) -> Result<Response> {
-    let mut removed = 0u64;
-
-    if let Ok(rd) = std::fs::read_dir(ctx.paths.trash_dir()) {
-        for entry in rd.flatten() {
-            let too_old = entry
-                .metadata()
-                .and_then(|m| m.modified())
-                .ok()
-                .and_then(|t| t.elapsed().ok())
-                .is_some_and(|d| {
-                    d > std::time::Duration::from_secs((RETENTION_DAYS as u64) * 86_400)
-                });
-            if too_old && std::fs::remove_file(entry.path()).is_ok() {
-                removed += 1;
-            }
-        }
-    }
+    let (removed, bytes_freed) = sweep_trash(&ctx.paths.trash_dir(), RETENTION_DAYS);
 
     let (log_rows, event_rows) = if ctx.paths.db_path().exists() {
         let retention_days = ctx.cfg.prune.learning_retention_days;
         let conn = ctx.conn()?;
-        sweep_learning(conn, retention_days, OffsetDateTime::now_utc())?
+        let now = OffsetDateTime::now_utc();
+        let counts = sweep_learning(conn, retention_days, now)?;
+        record_run(conn, removed, counts.0, counts.1, bytes_freed, now)?;
+        counts
     } else {
         (0, 0)
     };
@@ -70,7 +66,51 @@ pub fn run(ctx: &mut Ctx<'_>, _req: Request) -> Result<Response> {
         removed,
         log_rows,
         event_rows,
+        bytes_freed,
     })
+}
+
+/// Remove every file directly under `trash_dir` whose mtime is older than
+/// `retention_days`, returning `(files_removed, bytes_freed)`. Each file's
+/// size is stat'd BEFORE the unlink, so a failed `remove_file` never counts
+/// toward `bytes_freed`. Missing trash directory yields `(0, 0)`.
+fn sweep_trash(trash_dir: &std::path::Path, retention_days: i64) -> (u64, u64) {
+    let mut removed = 0u64;
+    let mut bytes_freed = 0u64;
+    let Ok(rd) = std::fs::read_dir(trash_dir) else {
+        return (0, 0);
+    };
+    for entry in rd.flatten() {
+        let Ok(meta) = entry.metadata() else {
+            continue;
+        };
+        let too_old = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|d| d > std::time::Duration::from_secs((retention_days as u64) * 86_400));
+        if too_old && std::fs::remove_file(entry.path()).is_ok() {
+            removed += 1;
+            bytes_freed += meta.len();
+        }
+    }
+    (removed, bytes_freed)
+}
+
+/// Insert one `gc_runs` row for this completed sweep. Only reached when
+/// `comemory.db` already exists (the caller's `conn` came from [`Ctx::conn`]
+/// after that check).
+fn record_run(
+    conn: &Connection,
+    removed: u64,
+    log_rows: u64,
+    event_rows: u64,
+    bytes_freed: u64,
+    now: OffsetDateTime,
+) -> Result<()> {
+    let id = random_id::random_hex(RUN_ID_BYTES)?;
+    let at = memory_row::iso_format(now)?;
+    gc_runs::insert(conn, &id, &at, removed, log_rows, event_rows, bytes_freed)
 }
 
 /// Evict learning telemetry older than the retention window. Counters in

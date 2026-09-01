@@ -75,6 +75,105 @@ fn list_json_is_page_envelope_not_bare_array() {
     }
 }
 
+/// AC-11: rows also carry `title`, `tags`, `quality`, `created`,
+/// `access_count`, alongside the unchanged legacy fields.
+#[test]
+fn list_json_rows_carry_new_fields() {
+    let home = tempfile::tempdir().expect("tempdir");
+    Command::cargo_bin("comemory")
+        .expect("bin")
+        .env("COMEMORY_DATA_DIR", home.path())
+        .args([
+            "save",
+            "Title line here\n\nSecond paragraph of the body.",
+            "--kind",
+            "decision",
+            "--repo",
+            "gamma",
+            "--tags",
+            "alpha,beta",
+            "--quality",
+            "5",
+        ])
+        .assert()
+        .success();
+
+    let v = list_json(&home, &[]);
+    let row = &v["items"][0];
+    assert_eq!(row["title"], serde_json::json!("Title line here"));
+    assert_eq!(row["tags"], serde_json::json!(["alpha", "beta"]));
+    assert_eq!(row["quality"], serde_json::json!(5));
+    assert!(row["created"].as_str().is_some_and(|s| !s.is_empty()));
+    assert_eq!(row["access_count"], serde_json::json!(0));
+    // Legacy fields are untouched.
+    for field in ["id", "kind", "repo", "slug"] {
+        assert!(row.get(field).is_some(), "row must carry `{field}`: {row}");
+    }
+}
+
+/// AC-12: `--sort quality` orders rows by descending quality.
+#[test]
+fn list_json_sort_quality_orders_descending() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let save_quality = |body: &str, quality: &str| {
+        Command::cargo_bin("comemory")
+            .expect("bin")
+            .env("COMEMORY_DATA_DIR", home.path())
+            .args(["save", body, "--quality", quality])
+            .assert()
+            .success();
+    };
+    save_quality("middling note", "3");
+    save_quality("top note", "5");
+    save_quality("weak note", "1");
+
+    let v = list_json(&home, &["--sort", "quality"]);
+    let qualities: Vec<i64> = v["items"]
+        .as_array()
+        .expect("items")
+        .iter()
+        .map(|r| r["quality"].as_i64().expect("quality"))
+        .collect();
+    assert_eq!(qualities, vec![5, 3, 1]);
+}
+
+/// AC-12: `--sort accessed` puts the most-recently-searched memory first.
+/// Bodies use disjoint vocabulary and distinct repos so a real `comemory
+/// search` for a term unique to one body hits that memory alone (the strict
+/// lexical tier short-circuits) rather than every memory.
+#[test]
+fn list_json_sort_accessed_puts_most_recently_searched_first() {
+    let home = tempfile::tempdir().expect("tempdir");
+    save(&home, "keyboard maintenance checklist", "note", "repo-a");
+    save(&home, "umbrella storage guidelines", "note", "repo-b");
+    save(&home, "lighthouse inspection log", "note", "repo-c");
+
+    Command::cargo_bin("comemory")
+        .expect("bin")
+        .env("COMEMORY_DATA_DIR", home.path())
+        .args(["search", "keyboard"])
+        .assert()
+        .success();
+
+    let v = list_json(&home, &["--sort", "accessed"]);
+    let first = &v["items"][0];
+    assert!(
+        first["title"]
+            .as_str()
+            .is_some_and(|t| t.starts_with("keyboard")),
+        "most-recently-accessed row must lead: {v}"
+    );
+    assert_eq!(first["access_count"], serde_json::json!(1));
+}
+
+/// AC-12: the default (no `--sort`) stays newest-created-first.
+#[test]
+fn list_json_default_sort_is_newest_created_first() {
+    let home = seeded_home();
+    let v = list_json(&home, &[]);
+    assert_eq!(v["items"][0]["title"], serde_json::json!("beta bug six"));
+}
+
 #[test]
 fn list_json_limit_and_offset_page_correctly() {
     let home = seeded_home();

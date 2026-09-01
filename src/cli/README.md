@@ -31,7 +31,9 @@ One line per file, named after its primary item:
 | `eval.rs` | `GoldenSetArgs` | `comemory eval` — score retrieval quality (recall@k, MRR) against a golden set |
 | `feedback.rs` | `Args` | `comemory feedback` — record used/irrelevant feedback into the stats DB |
 | `gc.rs` | `run` | `comemory gc` — purge `.trash/` and evict expired learning telemetry |
-| `graph.rs` | `Format` | `comemory graph` — export the file-level code-connection graph |
+| `find.rs` | `Args` | `comemory find` — one ranked list over memories, code, and documents |
+| `graph.rs` | `Format` | `comemory graph` — export the file-level code-connection graph; node assembly lives in `graph/nodes.rs` |
+| `hooks.rs` | `Args` | `comemory hooks` — report and toggle the git reindex hooks individually |
 | `index.rs` | `Args` | `comemory index <PATH>...` — register document sources and reconcile them |
 | `index_code.rs` | `Args` | `comemory index-code` — incremental symbol extraction over a git repo |
 | `ingest_code.rs` | `Args` | `comemory ingest-code` — bulk pre-embedded code-symbol ingestion from stdin |
@@ -48,7 +50,10 @@ One line per file, named after its primary item:
 | `search_code.rs` | `Args` | `comemory search-code` — ranked search over indexed `code_symbols` |
 | `search_only.rs` | `OnlyDomain` | `--only`/`--path` domain-scope resolution shared by `search` |
 | `serve.rs` | `Args` | `comemory serve` — launch the local web viewer + in-browser code editor |
+| `repos.rs` | `Args` | `comemory repos` — indexed code repositories and their index freshness |
+| `show.rs` | `Args` | `comemory show` — one memory in full: body, frontmatter, activation, refs |
 | `sources.rs` | `Args` | `comemory sources` — list registered document sources with status counts |
+| `stats.rs` | `Args` | `comemory stats` — corpus counters and `comemory.db` size |
 | `tui.rs` | `Args` | `comemory tui` — launch the read-only interactive terminal explorer |
 | `tune.rs` | `Args` | `comemory tune` — deterministic/sampled search over the blend knobs |
 | `unindex.rs` | `Args` | `comemory unindex <SOURCE_ID\|PATH>` — unregister a document source |

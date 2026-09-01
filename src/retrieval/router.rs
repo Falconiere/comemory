@@ -12,6 +12,8 @@
 //!   a non-empty `query` so the hybrid arm is taken.
 //! - vec = None → **pure lexical**: FTS5 BM25 only.
 
+use std::collections::HashMap;
+
 use rusqlite::Connection;
 
 use crate::config::Config;
@@ -19,6 +21,7 @@ use crate::prelude::*;
 use crate::retrieval::fuse::{self, RankedHit};
 use crate::retrieval::graph_route::{self, GraphFuse};
 use crate::retrieval::scope::Filters;
+use crate::retrieval::score::LegScores;
 use crate::store::{fts, vector};
 
 /// Candidate pool fed to the rerank stage; the pipeline cuts to top_k
@@ -46,6 +49,9 @@ pub struct RoutedHit {
     /// 4 learned expansion. Hybrid fused hits carry the lexical leg's
     /// ladder tier when the ladder fired.
     pub tier: u8,
+    /// The raw per-leg scores fusion consumed for this hit, carried through
+    /// unchanged for explainability. Both `None` for a graph-expansion hit.
+    pub legs: LegScores,
 }
 
 /// Which retrieval branch produced a [`RoutedHit`].
@@ -119,6 +125,7 @@ pub fn route(
         legs,
         source,
         tier,
+        leg_scores,
     } = match vec {
         Some(v) if lex_meaningful => route_hybrid(cfg, conn, query, v, k, filters)?,
         Some(v) => route_vector_only(cfg, conn, v, k, filters)?,
@@ -133,6 +140,7 @@ pub fn route(
             legs: &legs,
             source,
             tier,
+            leg_scores: &leg_scores,
             filters,
             pool: k,
         },
@@ -147,13 +155,23 @@ struct Provisional {
     legs: Vec<Vec<RankedHit>>,
     source: Source,
     tier: u8,
+    /// Per-id raw leg scores, keyed by memory id. Built by the arm that
+    /// knows which leg is which — `legs` above is positional and cannot
+    /// tell an ANN list from a lexical one.
+    leg_scores: HashMap<String, LegScores>,
 }
 
 impl Provisional {
     /// Build an arm's output from its already-ranked `legs`, labeling
     /// `base` — the list `ranked` — with `(source, tier)`. Single-leg arms
     /// pass their one leg as `ranked`; the hybrid arm passes the RRF fusion.
-    fn new(ranked: &[RankedHit], legs: Vec<Vec<RankedHit>>, source: Source, tier: u8) -> Self {
+    fn new(
+        ranked: &[RankedHit],
+        legs: Vec<Vec<RankedHit>>,
+        source: Source,
+        tier: u8,
+        leg_scores: HashMap<String, LegScores>,
+    ) -> Self {
         let base = ranked
             .iter()
             .map(|h| RoutedHit {
@@ -161,6 +179,10 @@ impl Provisional {
                 score: h.score,
                 source,
                 tier,
+                legs: leg_scores
+                    .get(&h.memory_id)
+                    .copied()
+                    .unwrap_or_else(LegScores::none),
             })
             .collect();
         Provisional {
@@ -168,6 +190,7 @@ impl Provisional {
             legs,
             source,
             tier,
+            leg_scores,
         }
     }
 }
@@ -200,20 +223,24 @@ fn route_hybrid(
     let (lex, lex_tier) = strict_then_ladder(conn, query, k, filters, weights)?;
     let lex_ranked: Vec<RankedHit> = lex.into_iter().map(lex_to_ranked).collect();
     if ann.is_empty() {
+        let scores = collect_leg_scores(None, Some(&lex_ranked));
         return Ok(Provisional::new(
             &lex_ranked,
             vec![lex_ranked.clone()],
             Source::Lexical,
             lex_tier,
+            scores,
         ));
     }
     let ann_ranked: Vec<RankedHit> = ann.into_iter().map(ann_to_ranked).collect();
     let fused = fuse::rrf_k(&ann_ranked, &lex_ranked, k, cfg.retrieval.rrf_k);
+    let scores = collect_leg_scores(Some(&ann_ranked), Some(&lex_ranked));
     Ok(Provisional::new(
         &fused,
         vec![ann_ranked, lex_ranked],
         Source::Hybrid,
         lex_tier,
+        scores,
     ))
 }
 
@@ -234,11 +261,13 @@ fn route_vector_only(
 ) -> Result<Provisional> {
     let ann = ann_leg(cfg, conn, vec, k, filters)?;
     let ann_ranked: Vec<RankedHit> = ann.into_iter().map(ann_to_ranked).collect();
+    let scores = collect_leg_scores(Some(&ann_ranked), None);
     Ok(Provisional::new(
         &ann_ranked,
         vec![ann_ranked.clone()],
         Source::Vector,
         1,
+        scores,
     ))
 }
 
@@ -321,11 +350,13 @@ fn route_lexical(
     let weights = cfg.retrieval.bm25_weights;
     let (lex, tier) = strict_then_ladder(conn, query, k, filters, weights)?;
     let lex_ranked: Vec<RankedHit> = lex.into_iter().map(lex_to_ranked).collect();
+    let scores = collect_leg_scores(None, Some(&lex_ranked));
     Ok(Provisional::new(
         &lex_ranked,
         vec![lex_ranked.clone()],
         Source::Lexical,
         tier,
+        scores,
     ))
 }
 
@@ -401,6 +432,28 @@ fn lexical_ladder(
         return Ok((lex, TIER_EXPANDED));
     }
     Ok((Vec::new(), 1))
+}
+
+/// Index the raw leg scores by memory id so a fused hit can carry what
+/// each leg contributed. Positional `Vec<Vec<RankedHit>>` cannot express
+/// this — only the arm that built the lists knows which is which — so each
+/// arm calls this with its own legs named.
+///
+/// The values are copied verbatim off the `RankedHit`s the legs already
+/// produced (`-bm25` and `1.0 - distance`); nothing is recomputed here, so
+/// this cannot perturb a score.
+fn collect_leg_scores(
+    ann: Option<&[RankedHit]>,
+    lex: Option<&[RankedHit]>,
+) -> HashMap<String, LegScores> {
+    let mut out: HashMap<String, LegScores> = HashMap::new();
+    for h in lex.unwrap_or_default() {
+        out.entry(h.memory_id.clone()).or_default().bm25 = Some(h.score);
+    }
+    for h in ann.unwrap_or_default() {
+        out.entry(h.memory_id.clone()).or_default().ann = Some(h.score);
+    }
+    out
 }
 
 /// Map a `vector::MemoryHit` to a [`RankedHit`] for RRF fusion. Vector

@@ -46,8 +46,13 @@ fn run_reports_low_value_memory_without_deleting() {
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
     let report = api::prune::run(&mut ctx, request()).expect("prune run");
-    assert_eq!(report.low_value_memories.items, vec![id.clone()]);
+    assert_eq!(report.low_value_memories.items.len(), 1);
+    let row = &report.low_value_memories.items[0];
+    assert_eq!(row.id, id);
+    assert_eq!(row.reason, "low value");
     assert_eq!(report.low_value_memories.total, Some(1));
+    assert_eq!(report.trash_count, 0);
+    assert_eq!(report.reclaimable_bytes, 0);
 
     let trash = data_dir(&home).join("memories").join(".trash");
     let trashed = std::fs::read_dir(&trash)

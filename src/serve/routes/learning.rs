@@ -1,22 +1,24 @@
 //! `POST /api/v1/eval` (`api::eval`, **job**, read class — no confirm gate,
-//! not read-only-gated, AC-4), `POST /api/v1/tune` (`api::tune`, **job**,
-//! mutating, confirm only when `req.apply`), and `POST /api/v1/bandit`
-//! (`api::bandit`, **job**, always mutating — it upserts `bandit_arms`
-//! regardless of `apply` — confirm only when `req.apply`). `POST
-//! /api/v1/feedback` stays in `memories/write.rs`.
+//! not read-only-gated, AC-4), `GET /api/v1/eval/history` (`api::eval`'s
+//! `history`, synchronous — a `SELECT`, not worth a job), `POST
+//! /api/v1/tune` (`api::tune`, **job**, mutating, confirm only when
+//! `req.apply`), and `POST /api/v1/bandit` (`api::bandit`, **job**, always
+//! mutating — it upserts `bandit_arms` regardless of `apply` — confirm
+//! only when `req.apply`). `POST /api/v1/feedback` stays in
+//! `memories/write.rs`.
 //!
-//! All three contain an optional `golden` file to an allowed root BEFORE
-//! any other check (AC-7). A successful `tune`/`bandit` apply job reloads
-//! `AppState.cfg` from the rewritten `config.toml` so HTTP ranking picks up
-//! the new knobs without a restart (§Route map Notes); a reload failure
-//! becomes the job's own error.
+//! `eval`/`tune`/`bandit` each contain an optional `golden` file to an
+//! allowed root BEFORE any other check (AC-7). A successful `tune`/`bandit`
+//! apply job reloads `AppState.cfg` from the rewritten `config.toml` so
+//! HTTP ranking picks up the new knobs without a restart (§Route map
+//! Notes); a reload failure becomes the job's own error.
 
 use std::path::Path;
 use std::time::Instant;
 
-use axum::extract::State;
+use axum::extract::{Query, State};
 use axum::response::Response;
-use axum::routing::post;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde_json::Value;
 
@@ -26,7 +28,9 @@ use crate::serve::AppState;
 use crate::serve::envelope::Envelope;
 use crate::serve::jobs;
 use crate::serve::routes::maint::prune::split_confirm;
-use crate::serve::routes::{RouteEntry, accepted, guard_job, require_confirm, run_blocking};
+use crate::serve::routes::{
+    RouteEntry, accepted, guard_job, require_confirm, respond, run_blocking,
+};
 use crate::serve::security;
 
 /// This resource's route-table entries, appended onto [`super::table`].
@@ -36,6 +40,12 @@ pub fn table_entries() -> &'static [RouteEntry] {
             method: "POST",
             path: "/eval",
             command: "eval",
+            mutating: false,
+        },
+        RouteEntry {
+            method: "GET",
+            path: "/eval/history",
+            command: "eval.history",
             mutating: false,
         },
         RouteEntry {
@@ -57,6 +67,7 @@ pub fn table_entries() -> &'static [RouteEntry] {
 pub fn router(_state: AppState) -> Router<AppState> {
     Router::new()
         .route("/api/v1/eval", post(eval))
+        .route("/api/v1/eval/history", get(eval_history))
         .route("/api/v1/tune", post(tune))
         .route("/api/v1/bandit", post(bandit))
 }
@@ -106,6 +117,27 @@ async fn eval(State(state): State<AppState>, Json(mut req): Json<api::eval::Requ
         },
     );
     accepted("eval", job, started)
+}
+
+/// `GET /api/v1/eval/history` — read back up to `?limit=` past `eval`/
+/// `tune`/`bandit` runs, newest-first (`api::eval::history`). Query-decoded
+/// as the same [`api::eval::Request`] `POST /eval` uses (AC-41 parity probes
+/// one `Request` type per subcommand); `history` only ever reads `limit`
+/// from it. A plain `SELECT` against `eval_runs`, so it runs synchronously
+/// (`run_blocking`) rather than as a job, matching `GET /memories`'s shape.
+async fn eval_history(
+    State(state): State<AppState>,
+    Query(req): Query<api::eval::Request>,
+) -> Response {
+    let started = Instant::now();
+    let result = run_blocking(move || {
+        let cfg = state.cfg();
+        let mut conn = state.conn()?;
+        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
+        api::eval::history(&mut ctx, &req)
+    })
+    .await;
+    respond("eval.history", result, started)
 }
 
 /// `POST /api/v1/tune` — start a `tune` job (`api::tune`). The body is a

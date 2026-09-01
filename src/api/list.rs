@@ -7,8 +7,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::api::Ctx;
 use crate::output::page::Page;
+use crate::output::search::title_of;
 use crate::prelude::*;
-use crate::store::memory_list::{self, ListRow};
+use crate::store::memory_list::{self, ListRow, SortBy};
 
 /// `comemory list` / `GET /api/v1/memories` request. Every field is
 /// optional — an empty request lists every live memory, newest first.
@@ -27,12 +28,43 @@ pub struct Request {
     /// Number of leading results to skip before the window starts.
     #[serde(default)]
     pub offset: usize,
+    /// Sort order: `created` (default, newest first) | `quality`
+    /// (descending) | `accessed` (most-recently-accessed first).
+    #[serde(default)]
+    pub sort: Sort,
 }
 
 /// `PaginationArgs`' CLI default (`--limit`, unset = 50), reused here so an
 /// HTTP request omitting `limit` pages identically to the CLI.
 fn default_limit() -> usize {
     50
+}
+
+/// Sort order for `comemory list` / `GET /api/v1/memories` rows. Mirrors
+/// `cli::list::Sort`'s three values as a serde enum (rather than a shared
+/// type) so the CLI keeps its `clap::ValueEnum` derive and the HTTP surface
+/// keeps a plain `Deserialize` one; [`SortBy`] is the store-layer type both
+/// map onto via [`From`].
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Sort {
+    /// Newest created first — today's default ordering, unchanged.
+    #[default]
+    Created,
+    /// Descending quality.
+    Quality,
+    /// Most-recently-accessed first; never-accessed rows sort last.
+    Accessed,
+}
+
+impl From<Sort> for SortBy {
+    fn from(s: Sort) -> Self {
+        match s {
+            Sort::Created => Self::Created,
+            Sort::Quality => Self::Quality,
+            Sort::Accessed => Self::Accessed,
+        }
+    }
 }
 
 /// One row of `comemory list` / `GET /api/v1/memories` output.
@@ -46,15 +78,31 @@ pub struct Row {
     pub repo: String,
     /// On-disk file stem `{id}-{slug}`.
     pub slug: String,
+    /// First non-empty trimmed line of the body.
+    pub title: String,
+    /// Tag list from `memory_tags`.
+    pub tags: Vec<String>,
+    /// Frontmatter quality (1..=5).
+    pub quality: u8,
+    /// RFC 3339 creation timestamp.
+    pub created: String,
+    /// Total number of times this memory has been returned by a tracked
+    /// `search` / `context` run.
+    pub access_count: u64,
 }
 
 impl From<ListRow> for Row {
     fn from(r: ListRow) -> Self {
         Self {
+            title: title_of(&r.body),
             id: r.id,
             kind: r.kind,
             repo: r.repo,
             slug: r.slug,
+            tags: r.tags,
+            quality: r.quality,
+            created: r.created,
+            access_count: r.access_count,
         }
     }
 }
@@ -71,6 +119,7 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Page<Row>> {
         kind.as_deref(),
         req.limit,
         req.offset,
+        req.sort.into(),
     )?;
     let rows: Vec<Row> = listed.rows.into_iter().map(Row::from).collect();
     let has_more = req.offset + rows.len() < listed.total;

@@ -199,8 +199,8 @@ fn v10_creates_bandit_arms_table() {
         )
         .expect("schema version");
     assert_eq!(v, migrate::CURRENT_VERSION);
-    // Pin: bump this when CURRENT_VERSION advances past v13.
-    assert_eq!(migrate::CURRENT_VERSION, "13");
+    // Pin: bump this when CURRENT_VERSION advances past v14.
+    assert_eq!(migrate::CURRENT_VERSION, "14");
 }
 
 #[test]

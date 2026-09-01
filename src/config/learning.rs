@@ -54,12 +54,23 @@ pub struct ReinforceConfig {
     /// Days of `retrieval_log` lookback for search→edit provenance.
     /// Validated `≥ 1`. Env: `COMEMORY_REINFORCE_SEARCH_EDIT_DAYS`.
     pub search_edit_days: u32,
+    /// Whether search→edit auto-reinforcement runs at all. File-only (no
+    /// env override — same convention as [`BanditConfig::enabled`]),
+    /// toggled by `comemory hooks --enable/--disable search-edit-reinforcement`
+    /// (`api::hooks`), which reports this row alongside the three git hooks.
+    #[serde(default = "default_reinforce_enabled")]
+    pub enabled: bool,
+}
+
+fn default_reinforce_enabled() -> bool {
+    true
 }
 
 impl Default for ReinforceConfig {
     fn default() -> Self {
         Self {
             search_edit_days: 7,
+            enabled: true,
         }
     }
 }
@@ -127,6 +138,7 @@ impl TuneConfig {
 #[serde(deny_unknown_fields)]
 pub(crate) struct PartialReinforceConfig {
     pub(crate) search_edit_days: Option<u32>,
+    pub(crate) enabled: Option<bool>,
 }
 
 /// File-overlay partial for [`BanditConfig`].

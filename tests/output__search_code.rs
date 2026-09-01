@@ -40,6 +40,7 @@ fn sample_hits() -> Vec<CodeReranked> {
         line_end: 9,
         source: Source::Lexical,
         parts: CodeScoreParts {
+            legs: comemory::retrieval::score::LegScores::none(),
             relevance: 1.0,
             rank: 1.0,
             activation: 1.0,

@@ -34,6 +34,7 @@ fn empty_bundle() -> Bundle {
         memories: Vec::new(),
         code_refs: Vec::new(),
         relations: Vec::new(),
+        neighbors: Vec::new(),
         resolved_code_ids: Vec::new(),
     }
 }
@@ -120,6 +121,7 @@ fn code_ref_rank_parts_serialize_when_present_and_skip_when_none() {
         memories: Vec::new(),
         code_refs: vec![resolved_ref(), unresolved_ref()],
         relations: Vec::new(),
+        neighbors: Vec::new(),
         resolved_code_ids: Vec::new(),
     };
     let v = serde_json::to_value(context::envelope(

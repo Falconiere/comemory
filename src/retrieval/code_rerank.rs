@@ -24,7 +24,7 @@ use crate::prelude::*;
 use crate::retrieval::code_prior::{self, Signals};
 use crate::retrieval::code_route::CodeRoutedHit;
 use crate::retrieval::router::Source;
-use crate::retrieval::score;
+use crate::retrieval::score::{self, LegScores};
 
 /// Number of most-recent first-parent commits whose changed files are
 /// folded into the working set alongside the dirty/staged paths. Five
@@ -53,6 +53,9 @@ pub struct CodeScoreParts {
     pub feedback: f64,
     /// Product of all factors.
     pub final_score: f64,
+    /// Raw per-leg signals fusion consumed, carried through from
+    /// `code_route`. Additive: `final_score` does not depend on it.
+    pub legs: LegScores,
 }
 
 /// A reranked code hit with its full identity row, ready for the final
@@ -327,6 +330,7 @@ fn score_pool(
                     affinity: pri.affinity,
                     feedback: pri.feedback,
                     final_score,
+                    legs: hit.legs,
                 },
             },
         });

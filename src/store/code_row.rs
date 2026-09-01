@@ -173,6 +173,26 @@ pub fn upsert_repo_root(conn: &Connection, repo: &str, root: &str) -> Result<()>
     Ok(())
 }
 
+/// Upsert `repo_marker.last_head`/`last_indexed_at` for `repo` after a
+/// successful `index-code` walk, creating the marker row if `index-code` is
+/// the first writer to touch this repo (mirrors [`upsert_repo_root`]'s
+/// creates-the-row contract). `head` is the working tree's current git HEAD
+/// oid at the moment the walk completed; `api::repos`'s freshness
+/// comparison (`repo_marker.last_head` vs. a fresh
+/// `git_utils::current_head` read) has nothing to compare against until
+/// this is stamped.
+pub fn upsert_last_indexed(conn: &Connection, repo: &str, head: &str) -> Result<()> {
+    conn.execute(
+        "INSERT INTO repo_marker(repo, last_head, last_indexed_at) \
+         VALUES(?1, ?2, strftime('%Y-%m-%dT%H:%M:%fZ','now')) \
+         ON CONFLICT(repo) DO UPDATE \
+           SET last_head = excluded.last_head, \
+               last_indexed_at = excluded.last_indexed_at",
+        rusqlite::params![repo, head],
+    )?;
+    Ok(())
+}
+
 /// Insert one `code_symbols` row and return its newly-assigned primary key.
 /// The `indexed_at` column is stamped server-side via `strftime` so callers
 /// don't need to format the timestamp themselves.

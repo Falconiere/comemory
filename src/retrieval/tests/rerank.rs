@@ -39,6 +39,7 @@ fn open_seeded() -> (tempfile::TempDir, rusqlite::Connection) {
 
 fn hit(id: &str, score: f32) -> RoutedHit {
     RoutedHit {
+        legs: comemory::retrieval::score::LegScores::none(),
         memory_id: id.into(),
         score,
         source: Source::Lexical,

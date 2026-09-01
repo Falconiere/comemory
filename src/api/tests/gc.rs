@@ -52,6 +52,7 @@ fn run_on_a_fresh_data_dir_never_creates_the_db() {
     assert_eq!(resp.removed, 0);
     assert_eq!(resp.log_rows, 0);
     assert_eq!(resp.event_rows, 0);
+    assert_eq!(resp.bytes_freed, 0);
     assert!(
         !db_path(&home).exists(),
         "gc on a fresh dir must not create comemory.db"
@@ -72,6 +73,7 @@ fn run_sweeps_old_telemetry_when_the_db_already_exists() {
     assert_eq!(resp.removed, 0);
     assert_eq!(resp.log_rows, 1, "one old retrieval_log row swept");
     assert_eq!(resp.event_rows, 0);
+    assert_eq!(resp.bytes_freed, 0, "no trash swept in this run");
 
     let conn = rusqlite::Connection::open_with_flags(
         db_path(&home),
@@ -82,6 +84,17 @@ fn run_sweeps_old_telemetry_when_the_db_already_exists() {
         .query_row("SELECT COUNT(*) FROM retrieval_log", [], |r| r.get(0))
         .expect("count retrieval_log");
     assert_eq!(remaining, 1, "fresh row must survive");
+
+    let (removed, log_rows, bytes_freed): (i64, i64, i64) = conn
+        .query_row(
+            "SELECT removed, log_rows, bytes_freed FROM gc_runs",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .expect("gc_runs row written when the db already exists");
+    assert_eq!(removed, 0);
+    assert_eq!(log_rows, 1);
+    assert_eq!(bytes_freed, 0);
 }
 
 #[test]
@@ -107,6 +120,11 @@ fn run_sweeps_trash_entries_older_than_thirty_days() {
     let resp = api::gc::run(&mut ctx, api::gc::Request {}).expect("gc run");
 
     assert_eq!(resp.removed, 1);
+    assert_eq!(resp.bytes_freed, 3, "the removed \"old\" file is 3 bytes");
     assert!(!old.exists(), "old trash entry must be deleted");
     assert!(fresh.exists(), "fresh trash entry must be kept");
+    assert!(
+        !db_path(&home).exists(),
+        "sweeping trash alone (no seeded db) must not create comemory.db"
+    );
 }
