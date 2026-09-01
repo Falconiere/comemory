@@ -8,21 +8,41 @@
 //! embedder_unavailable` when they did not, so [`run`] can take the command
 //! as a plain `&str` and never has to reason about its absence.
 //!
+//! ## The width probe
+//!
+//! One embed command yields one vector width, but `memory_vec` and
+//! `code_vec` are different widths (1024 and 768 by default — the vec0 DDL
+//! in `0002_v2_tables.sql`, read back through `store::vector::dim_*`). So
+//! before any row is touched the embedder is called ONCE on a short fixed
+//! text and the width it produces is compared with each requested leg's
+//! dim: an explicit `memories`/`code` leg that does not fit is refused
+//! outright (`Error::VecDimMismatch`, nothing deleted or written), while
+//! `both` re-embeds only the leg(s) the width fits, names the other in
+//! [`Response::skipped_legs`] and the job log, and errors only when neither
+//! fits. Without the probe, `both` could never complete on a store with
+//! both tables populated: a 1024-dim embedder rewrote every memory and then
+//! died on code row 1. A store with nothing to embed skips the probe too —
+//! the embedder is never invoked for a no-op run.
+//!
 //! ## Failure model
 //!
-//! Three failure classes, deliberately handled differently:
+//! Four failure classes, deliberately handled differently:
 //!
-//! - **Dim mismatch** — the embedder returns a vector of the wrong width,
-//!   so *every* row would fail identically. Hard error naming both dims
-//!   (`Error::VecDimMismatch`), run aborts.
-//! - **Embed command fails on the FIRST row** — the command is broken (bad
-//!   path, no such model). Nothing has been written yet, so the whole run
-//!   fails with `Error::Embedder` rather than reporting a "success" that
-//!   re-embedded nothing.
+//! - **Dim mismatch** — the probe (or, defensively, a row's own
+//!   `guard_dim`) finds the wrong width, so *every* row would fail
+//!   identically. Hard error naming both dims (`Error::VecDimMismatch`),
+//!   run aborts before any write.
+//! - **Embed command fails on the probe or the FIRST row** — the command
+//!   is broken (bad path, no such model). Nothing has been written yet, so
+//!   the whole run fails with `Error::Embedder` rather than reporting a
+//!   "success" that re-embedded nothing.
 //! - **Embed command fails on a LATER row** — a flaky embedder. The rows
 //!   already re-embedded are durable (one transaction per row), so the run
 //!   continues and the failure is counted in [`Response::failed`]. Losing
 //!   thousands of good rows to one timeout is the worse outcome.
+//! - **`both` fits neither leg** — `Error::BadRequest` naming the probed
+//!   width and both table dims, so the caller can pick the leg (or the
+//!   embedder) that matches.
 //!
 //! Cancellation ([`ProgressSink::is_cancelled`]) is checked per row and
 //! returns `Error::Cancelled`, which the job worker records as
@@ -43,15 +63,33 @@ use crate::store::{embed as store_embed, vector};
 /// to see a long run moving without flooding the bounded 20-line tail.
 const LOG_EVERY: u64 = 50;
 
-/// Which side of the store `POST /doctor/reembed` re-vectorizes.
+/// The short fixed text the embedder is probed with once, before any row is
+/// touched, to learn the width it produces (module doc, "The width probe").
+const PROBE_TEXT: &str = "comemory reembed width probe";
+
+/// One memory row queued for re-embedding: `(id, body)`.
+type MemoryRow = (String, String);
+
+/// One parent code symbol queued for re-embedding: `(id, snippet)`.
+type CodeRow = (i64, String);
+
+/// Both legs' row sets, as the width probe leaves them: a leg the probed
+/// width does not fit comes back empty.
+type Legs = (Vec<MemoryRow>, Vec<CodeRow>);
+
+/// Which side of the store `POST /doctor/reembed` re-vectorizes. The dim
+/// rule (module doc): an explicit leg whose `vec0` width differs from what
+/// the embed command produces is refused before any write; `both` runs only
+/// the leg(s) that fit and reports the rest in [`Response::skipped_legs`].
 #[derive(Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum Target {
-    /// Live `memories` rows only.
+    /// Live `memories` rows only (`memory_vec`, 1024-dim by default).
     Memories,
-    /// Parent `code_symbols` rows only.
+    /// Parent `code_symbols` rows only (`code_vec`, 768-dim by default).
     Code,
-    /// Both, memories first (the default).
+    /// Both, memories first (the default) — in practice whichever ONE of
+    /// the two the embed command's width fits, since the two tables differ.
     #[default]
     Both,
 }
@@ -94,6 +132,13 @@ pub struct Response {
     pub failed: u64,
     /// Rows with nothing to embed (empty body / empty snippet).
     pub skipped: u64,
+    /// The legs a `both` run left untouched because the embed command's
+    /// probed width does not fit their table (module doc, "The width
+    /// probe"): `"memories"` and/or `"code"`. Always empty for an explicit
+    /// leg — a mismatch there is the run's error instead. Omitted from the
+    /// JSON when empty.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub skipped_legs: Vec<&'static str>,
 }
 
 /// Re-vectorize every row `req.target` selects through `embed_cmd`. See the
@@ -116,8 +161,28 @@ pub fn run(
     } else {
         Vec::new()
     };
+    if memories.is_empty() && code.is_empty() {
+        // Nothing to embed — the probe is skipped too, so a no-op run
+        // never invokes the embedder (module doc).
+        if let Some(sink) = sink {
+            sink.on_log("reembed: nothing to embed");
+        }
+        return Ok(Response::default());
+    }
+    let width = probe_width(embed_cmd)?;
+    let mut skipped_legs = Vec::new();
+    let (memories, code) = fit_legs(
+        conn,
+        req.target,
+        memories,
+        code,
+        width,
+        &mut skipped_legs,
+        sink,
+    )?;
     let total = (memories.len() + code.len()) as u64;
     let mut state = RunState::new(embed_cmd, sink, total);
+    state.response.skipped_legs = skipped_legs;
     reembed_memories(conn, &memories, &mut state)?;
     reembed_code(conn, &code, &mut state)?;
     if let Some(sink) = sink {
@@ -126,8 +191,94 @@ pub fn run(
     Ok(state.response)
 }
 
+/// Run the embedder once on [`PROBE_TEXT`] and report the vector width it
+/// produces (module doc, "The width probe"). A probe failure is
+/// [`Error::Embedder`] — the command is broken, and nothing has been
+/// touched yet.
+fn probe_width(cmd: &str) -> Result<usize> {
+    match embed::embed_query(cmd, PROBE_TEXT) {
+        Ok(vector) => Ok(vector.len()),
+        Err(e) => Err(Error::Embedder(e.to_string())),
+    }
+}
+
+/// Apply the probed `width` to the requested legs (module doc): an explicit
+/// leg that does not fit is refused outright (`Error::VecDimMismatch`,
+/// nothing written); a `both` leg that does not fit is dropped and recorded
+/// in `skipped_legs`; when nothing runnable remains, the run is a
+/// `BadRequest` naming the width and both table dims. A leg with no rows
+/// never consults its dim — there is nothing it could mismatch against.
+fn fit_legs(
+    conn: &Connection,
+    target: Target,
+    mut memories: Vec<MemoryRow>,
+    mut code: Vec<CodeRow>,
+    width: usize,
+    skipped_legs: &mut Vec<&'static str>,
+    sink: Option<&dyn ProgressSink>,
+) -> Result<Legs> {
+    if !memories.is_empty() {
+        let dim = vector::dim_memory(conn)?;
+        if width != dim {
+            if target == Target::Memories {
+                return Err(Error::VecDimMismatch {
+                    expected: dim,
+                    got: width,
+                });
+            }
+            skip_leg("memories", dim, width, skipped_legs, sink);
+            memories = Vec::new();
+        }
+    }
+    if !code.is_empty() {
+        let dim = vector::dim_code(conn)?;
+        if width != dim {
+            if target == Target::Code {
+                return Err(Error::VecDimMismatch {
+                    expected: dim,
+                    got: width,
+                });
+            }
+            skip_leg("code", dim, width, skipped_legs, sink);
+            code = Vec::new();
+        }
+    }
+    if memories.is_empty() && code.is_empty() {
+        let mdim = vector::dim_memory(conn)?;
+        let cdim = vector::dim_code(conn)?;
+        return Err(Error::BadRequest(format!(
+            "embed command produces {width}-dim vectors; memory_vec is {mdim}-dim and \
+             code_vec is {cdim}-dim — no requested leg fits"
+        )));
+    }
+    Ok((memories, code))
+}
+
+/// Record one `both` leg dropped by the width probe, in the job log and the
+/// response alike.
+fn skip_leg(
+    leg: &'static str,
+    dim: usize,
+    width: usize,
+    skipped_legs: &mut Vec<&'static str>,
+    sink: Option<&dyn ProgressSink>,
+) {
+    if let Some(sink) = sink {
+        sink.on_log(&format!(
+            "reembed: skipping {leg} ({dim}-dim table, {width}-dim embedder)"
+        ));
+    }
+    tracing::warn!(
+        leg,
+        table_dim = dim,
+        embedder_dim = width,
+        "reembed: leg skipped by the width probe",
+    );
+    skipped_legs.push(leg);
+}
+
 /// Every live memory's `(id, body)`, ordered so a run is reproducible.
-fn memory_rows(conn: &Connection) -> Result<Vec<(String, String)>> {
+fn memory_rows(conn: &Connection) -> Result<Vec<MemoryRow>> {
     let mut stmt =
         conn.prepare("SELECT id, body FROM memories WHERE deleted_at IS NULL ORDER BY id")?;
     let rows = stmt
@@ -140,7 +291,7 @@ fn memory_rows(conn: &Connection) -> Result<Vec<(String, String)>> {
 /// (`parent_id IS NOT NULL`) carry no `code_vec` row of their own — the
 /// parent's vector represents the symbol — so re-embedding them would write
 /// rows the retrieval path never reads.
-fn code_rows(conn: &Connection) -> Result<Vec<(i64, String)>> {
+fn code_rows(conn: &Connection) -> Result<Vec<CodeRow>> {
     let mut stmt =
         conn.prepare("SELECT id, snippet FROM code_symbols WHERE parent_id IS NULL ORDER BY id")?;
     let rows = stmt
@@ -154,7 +305,7 @@ fn code_rows(conn: &Connection) -> Result<Vec<(i64, String)>> {
 /// written durable (module doc).
 fn reembed_memories(
     conn: &mut Connection,
-    rows: &[(String, String)],
+    rows: &[MemoryRow],
     state: &mut RunState<'_>,
 ) -> Result<()> {
     if rows.is_empty() {
@@ -177,11 +328,7 @@ fn reembed_memories(
 
 /// Re-embed every parent code symbol, replacing its `code_vec` row in its
 /// own transaction (see [`reembed_memories`]).
-fn reembed_code(
-    conn: &mut Connection,
-    rows: &[(i64, String)],
-    state: &mut RunState<'_>,
-) -> Result<()> {
+fn reembed_code(conn: &mut Connection, rows: &[CodeRow], state: &mut RunState<'_>) -> Result<()> {
     if rows.is_empty() {
         return Ok(());
     }

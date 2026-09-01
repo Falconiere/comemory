@@ -18,12 +18,16 @@ use tempfile::TempDir;
 use crate::test_common::git_repo;
 use crate::test_common::serve_state::{self, Session};
 
-/// A real git repo to install hooks into, plus a session to drive.
+/// A real git repo to install hooks into, plus a session to drive. The
+/// session is started with `--allow-path <repo>`: this route writes into a
+/// caller-supplied working tree, so its path goes through the same
+/// containment gate as `POST /sources` and `POST /code/index`, and a temp
+/// repo under no configured root would otherwise be refused `403`.
 fn repo_and_session(read_only: bool) -> (TempDir, PathBuf, Session) {
     let workspace = TempDir::new().expect("workspace");
     let repo = workspace.path().join("hooked");
     git_repo::init_repo(&repo);
-    let session = serve_state::session(read_only);
+    let session = serve_state::session_allowing(read_only, &[&repo]);
     (workspace, repo, session)
 }
 

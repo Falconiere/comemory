@@ -96,8 +96,9 @@ impl JobStatus {
         }
     }
 
-    /// Whether this is a final status — no further transition follows, so
-    /// the SSE handler ends its stream after emitting it.
+    /// Whether this is a final status — no further transition follows
+    /// (`Registry::set_status` ignores any attempt to leave one), so the
+    /// SSE handler ends its stream after emitting it.
     pub fn is_terminal(&self) -> bool {
         matches!(self, Self::Done(_) | Self::Error(_) | Self::Cancelled)
     }

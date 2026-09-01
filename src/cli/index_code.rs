@@ -31,7 +31,8 @@ Examples:
   # Index the current working directory with explicit repo label
   comemory index-code --repo myrepo --path .
 
-  # Re-extract every file, not just the ones whose blob changed
+  # Re-extract every file, not just the ones whose blob changed (drops the
+  # repo's BYO code vectors — re-run `comemory ingest-code` afterwards)
   comemory index-code --repo myrepo --path . --mode full
 
   # Emit one JSONL row per symbol on stdout (skips DB writes)
@@ -54,7 +55,10 @@ pub struct Args {
     pub extract: bool,
     /// `incremental` (default) re-extracts only files whose blob OID moved
     /// since the last run; `full` clears the repo's indexed-file cursor first
-    /// so every file re-extracts.
+    /// so every file re-extracts. `full` is lossy: re-extracting a file
+    /// replaces its symbol rows, which drops the repo's BYO code vectors
+    /// (`code_vec`) and resets per-symbol access counters — re-run
+    /// `ingest-code` afterwards to restore the semantic leg.
     #[arg(long, value_enum, default_value_t = Mode::Incremental)]
     pub mode: Mode,
 }
@@ -66,7 +70,7 @@ pub struct Args {
 pub enum Mode {
     /// Only files changed since the last run.
     Incremental,
-    /// Every file.
+    /// Every file; drops BYO code vectors (re-run `ingest-code` afterwards).
     Full,
 }
 

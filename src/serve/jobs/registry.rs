@@ -9,10 +9,17 @@
 //! is capped independent of the job's own runtime. The `Mutex` is held
 //! only for the short synchronous map mutations — never across an
 //! `.await`.
+//!
+//! Two transitions are check-and-act pairs that MUST happen under one lock
+//! hold, and do: [`Registry::try_start`] (still `Queued` and not cancelled
+//! → `Running`) and [`Registry::insert_for_unless_active`] (no live job for
+//! this repo → insert). Terminal statuses are sticky — [`Registry::set_status`]
+//! never moves a job out of `Done`/`Error`/`Cancelled` — so a late
+//! transition from a worker can never overwrite a cancel that beat it.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use time::OffsetDateTime;
 use tokio::sync::{broadcast, watch};
@@ -32,6 +39,21 @@ pub enum CancelOutcome {
     /// in `Cancelled` at its next boundary (or `Done` if it finishes
     /// first).
     Requested,
+}
+
+/// A freshly registered job, as [`Registry::insert`] and
+/// [`Registry::insert_for_unless_active`] hand it back.
+pub struct Accepted {
+    /// The new job's id (the `202` body's `job_id`).
+    pub id: JobId,
+    /// A status receiver already positioned on [`JobStatus::Queued`].
+    pub status: watch::Receiver<JobStatus>,
+    /// The job's own cancel flag — the same `Arc` its record holds. The
+    /// worker keeps this clone so its pre-body cancel check never depends
+    /// on the record still being in the table: a job cancelled while
+    /// queued is terminal, and [`evict_finished`] may drop it before its
+    /// worker wakes (see that function's doc).
+    pub cancel: Arc<AtomicBool>,
 }
 
 /// Random bytes behind a job id — 8 bytes, rendered as 16 lowercase-hex
@@ -57,22 +79,37 @@ impl Registry {
     }
 
     /// Register a new job for `command` as [`JobStatus::Queued`], returning
-    /// its fresh id and a receiver already positioned on that initial
-    /// status. Also runs the finished-job eviction sweep.
-    pub fn insert(&self, command: &str) -> Result<(JobId, watch::Receiver<JobStatus>)> {
-        self.insert_for(command, None)
+    /// its [`Accepted`] handle. Also runs the finished-job eviction sweep.
+    pub fn insert(&self, command: &str) -> Result<Accepted> {
+        let (job, accepted) = self.new_job(command, None)?;
+        let mut jobs = self.lock()?;
+        jobs.insert(accepted.id.clone(), job);
+        evict_finished(&mut jobs);
+        Ok(accepted)
     }
 
-    /// [`Registry::insert`] with a repo label, so [`Registry::active_for`]
-    /// can later find this job by `(command, repo)`.
-    pub fn insert_for(
-        &self,
-        command: &str,
-        repo: Option<&str>,
-    ) -> Result<(JobId, watch::Receiver<JobStatus>)> {
+    /// [`Registry::insert`] with a repo label, refusing — under the SAME
+    /// lock hold the insertion takes — when `(command, repo)` already has a
+    /// queued or running job: `Err(Error::IndexRunning { repo, job_id })`,
+    /// the `409 index_running` the routes report, naming the live job. A
+    /// separate [`Registry::refuse_if_active`] pre-check followed by an
+    /// insert would let two concurrent requests both pass the check and
+    /// both queue; this is the check that counts.
+    pub fn insert_for_unless_active(&self, command: &str, repo: &str) -> Result<Accepted> {
+        let (job, accepted) = self.new_job(command, Some(repo))?;
+        let mut jobs = self.lock()?;
+        refuse_active(&jobs, command, repo)?;
+        jobs.insert(accepted.id.clone(), job);
+        evict_finished(&mut jobs);
+        Ok(accepted)
+    }
+
+    /// Mint a fresh `Queued` record plus its [`Accepted`] handle; the caller
+    /// inserts the record under the lock.
+    fn new_job(&self, command: &str, repo: Option<&str>) -> Result<(Job, Accepted)> {
         let id = security::random_hex(JOB_ID_BYTES)?;
         let started_at = memory_row::iso_format(OffsetDateTime::now_utc())?;
-        let (tx, rx) = watch::channel(JobStatus::Queued);
+        let (tx, status) = watch::channel(JobStatus::Queued);
         let (progress_tx, _progress_rx) = watch::channel(None);
         let seq = self.next_seq.fetch_add(1, Ordering::Relaxed);
         let job = Job::new(
@@ -84,33 +121,35 @@ impl Registry {
             tx,
             progress_tx,
         );
-        let mut jobs = self.lock()?;
-        jobs.insert(id.clone(), job);
-        evict_finished(&mut jobs);
-        Ok((id, rx))
+        let cancel = Arc::clone(&job.cancel);
+        Ok((job, Accepted { id, status, cancel }))
     }
 
     /// The id of a queued or running job for `(command, repo)`, if any —
-    /// the check behind `409 index_running`. Lowest `seq` wins when several
-    /// are live (they cannot be, in practice: the route refuses the second).
+    /// what `GET /repos` overlays as `indexing`. Lowest `seq` wins when
+    /// several are live (they cannot be, in practice:
+    /// [`Registry::insert_for_unless_active`] refuses the second).
     pub fn active_for(&self, command: &str, repo: &str) -> Result<Option<JobId>> {
         let jobs = self.lock()?;
-        Ok(jobs
-            .values()
-            .filter(|job| {
-                job.command == command
-                    && job.repo.as_deref() == Some(repo)
-                    && !job.status.is_terminal()
-            })
-            .min_by_key(|job| job.seq)
-            .map(|job| job.id.clone()))
+        Ok(active_in(&jobs, command, repo))
+    }
+
+    /// `Err(Error::IndexRunning)` when `(command, repo)` already has a
+    /// queued or running job — the fast-path pre-check a route runs before
+    /// the rest of its planning, so a doomed request fails before any
+    /// containment work. Not the gate itself: that is
+    /// [`Registry::insert_for_unless_active`], which repeats this check
+    /// atomically at insertion.
+    pub fn refuse_if_active(&self, command: &str, repo: &str) -> Result<()> {
+        let jobs = self.lock()?;
+        refuse_active(&jobs, command, repo)
     }
 
     /// Request cancellation of job `id`. A queued job becomes `Cancelled`
-    /// right away (its body never runs — the worker re-checks the flag
-    /// before starting it); a running job only has its flag set and stops
-    /// at its next cooperative boundary. `NotFound` for an unknown id;
-    /// `BadRequest` for a job that already reached a terminal status.
+    /// right away (its body never runs — [`Registry::try_start`] refuses
+    /// it); a running job only has its flag set and stops at its next
+    /// cooperative boundary. `NotFound` for an unknown id; `BadRequest` for
+    /// a job that already reached a terminal status.
     pub fn cancel(&self, id: &str) -> Result<CancelOutcome> {
         let mut jobs = self.lock()?;
         let job = jobs
@@ -130,6 +169,29 @@ impl Registry {
             return Ok(CancelOutcome::Cancelled);
         }
         Ok(CancelOutcome::Requested)
+    }
+
+    /// Atomically take job `id` from `Queued` to `Running`, returning
+    /// whether that happened. `false` — and no change — when the job is
+    /// no longer `Queued` (cancelled while queued, so already terminal),
+    /// carries the cancel flag, or is unknown (never registered, or
+    /// evicted); in every one of those cases the worker must not run the
+    /// body. One lock hold, so a [`Registry::cancel`] either lands before
+    /// this (and is honored) or after it (and only sets the flag on a job
+    /// that really is running) — never in between.
+    pub fn try_start(&self, id: &str) -> bool {
+        let Ok(mut jobs) = self.lock() else {
+            return false;
+        };
+        let Some(job) = jobs.get_mut(id) else {
+            return false;
+        };
+        if !matches!(job.status, JobStatus::Queued) || job.cancel_requested() {
+            return false;
+        }
+        job.status = JobStatus::Running;
+        job.tx.send_replace(JobStatus::Running);
+        true
     }
 
     /// Whether a cancel has been requested for job `id`. An unknown id reads
@@ -177,11 +239,14 @@ impl Registry {
     }
 
     /// Record a job's transition: update the stored record (stamping
-    /// `finished_at` on the first terminal status) and publish the new
-    /// value on the job's `watch` channel. `NotFound` when the id is
-    /// unknown. A job already `Cancelled` while queued ([`Registry::cancel`])
-    /// ignores a late `Running` from its worker, so the terminal status is
-    /// never overwritten by the transition it superseded.
+    /// `finished_at` on a terminal status) and publish the new value on the
+    /// job's `watch` channel. `NotFound` when the id is unknown.
+    ///
+    /// Terminal statuses are sticky: once a job is `Done`, `Error`, or
+    /// `Cancelled`, every further transition — terminal or not — is
+    /// ignored (logged at debug, `Ok(())`). That is what keeps a cancel that
+    /// landed while the job was queued from being overwritten by the
+    /// worker's own `Running`/`Done` afterwards.
     pub fn set_status(&self, id: &str, status: JobStatus) -> Result<()> {
         let finished_at = if status.is_terminal() {
             Some(memory_row::iso_format(OffsetDateTime::now_utc())?)
@@ -192,12 +257,16 @@ impl Registry {
         let job = jobs
             .get_mut(id)
             .ok_or_else(|| Error::NotFound(format!("job not found: {id}")))?;
-        if job.status.is_terminal() && !status.is_terminal() {
+        if job.status.is_terminal() {
+            tracing::debug!(
+                job_id = id,
+                from = job.status.slug(),
+                to = status.slug(),
+                "job status transition out of a terminal state ignored",
+            );
             return Ok(());
         }
-        if job.finished_at.is_none() {
-            job.finished_at = finished_at;
-        }
+        job.finished_at = finished_at;
         job.status = status.clone();
         // `send_replace` (not `send`) because a job with no subscriber is
         // normal: the value must still be stored for a later subscriber.
@@ -245,9 +314,43 @@ impl Registry {
     }
 }
 
+/// The lowest-`seq` queued or running job for `(command, repo)` in an
+/// already-locked table — the one query behind [`Registry::active_for`],
+/// [`Registry::refuse_if_active`], and [`Registry::insert_for_unless_active`].
+fn active_in(jobs: &HashMap<JobId, Job>, command: &str, repo: &str) -> Option<JobId> {
+    jobs.values()
+        .filter(|job| {
+            job.command == command && job.repo.as_deref() == Some(repo) && !job.status.is_terminal()
+        })
+        .min_by_key(|job| job.seq)
+        .map(|job| job.id.clone())
+}
+
+/// [`active_in`] as the `409 index_running` refusal — the one place that
+/// error is built, so the route pre-check and the atomic insert gate
+/// report the identical `{repo, job_id}`.
+fn refuse_active(jobs: &HashMap<JobId, Job>, command: &str, repo: &str) -> Result<()> {
+    match active_in(jobs, command, repo) {
+        Some(job_id) => Err(Error::IndexRunning {
+            repo: repo.to_string(),
+            job_id,
+        }),
+        None => Ok(()),
+    }
+}
+
 /// Drop the oldest finished jobs (by insertion order) until at most
 /// [`MAX_FINISHED`] remain. Queued and running jobs are never counted and
 /// never evicted — losing one would strand its worker's status updates.
+///
+/// A job cancelled while queued is terminal and so IS evictable, possibly
+/// before its worker task wakes from the write-permit wait. That is safe
+/// without tracking the worker here: the worker holds its own clone of the
+/// job's cancel flag ([`Accepted::cancel`]), and [`Registry::try_start`]
+/// answers `false` for an unknown id — so an evicted, cancelled job's body
+/// never runs, whether the worker consults the flag or the table. Keeping
+/// such a record until its worker acknowledged the cancel would need a
+/// second worker→registry call on every exit path for no observable gain.
 fn evict_finished(jobs: &mut HashMap<JobId, Job>) {
     let mut finished: Vec<(u64, JobId)> = jobs
         .values()

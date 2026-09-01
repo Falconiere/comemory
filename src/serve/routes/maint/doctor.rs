@@ -66,23 +66,31 @@ pub fn router(_state: AppState) -> Router<AppState> {
 /// `GET /api/v1/doctor/system` — the probe-free facts read
 /// (`api::doctor::system`). Uses `Ctx::lazy`, and the core itself opens the
 /// DB only when it already exists, so polling this endpoint on a fresh data
-/// dir never creates one.
+/// dir never creates one. `embed_cmd` is this server's own configured
+/// command ([`AppState::embed_cmd`]) — the one `/health` and
+/// `POST /doctor/reembed` act on — so the two can never disagree.
 async fn system(State(state): State<AppState>) -> Response {
     let started = Instant::now();
     let result = run_blocking(move || {
         let cfg = state.cfg();
         let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        api::doctor::system::run(&mut ctx)
+        api::doctor::system::run(&mut ctx, state.embed_cmd())
     })
     .await;
     respond("doctor.system", result, started)
 }
 
 /// `POST /api/v1/doctor/rebuild` — the draft's spelling of `POST
-/// /api/v1/rebuild`. Strips the two draft-only keys (see [`strip_scope`])
-/// and delegates; every gate (read-only, then confirm) and the job itself
-/// live in [`super::admin::rebuild`].
+/// /api/v1/rebuild`. Runs the read-only gate FIRST (AC-19: read-only
+/// outranks every other refusal, so a `--read-only` server answers `405`
+/// even to a body whose `scope` would otherwise be a `400`), then strips
+/// the two draft-only keys (see [`strip_scope`]) and delegates; the confirm
+/// gate and the job itself live in [`super::admin::rebuild`], which
+/// re-checks read-only harmlessly.
 async fn rebuild(State(state): State<AppState>, Json(body): Json<Value>) -> Response {
+    if let Err(resp) = guard_job("rebuild", &state) {
+        return *resp;
+    }
     let body = match strip_scope(body) {
         Ok(body) => body,
         Err(e) => return Envelope::err("rebuild", &e, 0),

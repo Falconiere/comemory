@@ -396,6 +396,14 @@ fn v1_post_memories_returns_503_busy_while_a_job_holds_the_write_permit_ac17() {
 /// rejected by axum's own `DefaultBodyLimit` before the handler ever runs —
 /// a plain `413`, not the JSON envelope (spec: "AC-18 asserts the status,
 /// not an envelope").
+///
+/// The rejection races the upload: the server answers and closes the
+/// connection as soon as the limit is crossed, so on a loaded machine the
+/// client can hit `ConnectionReset` on its own body write before it ever
+/// reads the response. That IS the limit being enforced, from the write
+/// side, so it is accepted here — and then pinned down, because a crashed
+/// server resets connections too: whichever way the request ended, the
+/// server must still be serving and the oversized memory must not exist.
 #[test]
 fn v1_post_memories_over_5mib_is_a_plain_413_ac18() {
     let home = TempDir::new().expect("home");
@@ -404,11 +412,30 @@ fn v1_post_memories_over_5mib_is_a_plain_413_ac18() {
 
     let oversized = "a".repeat(6 * 1024 * 1024);
     let payload = serde_json::json!({ "body": oversized });
-    let res = client
+    let result = client
         .post(format!("{base}/api/v1/memories"))
         .header("X-Comemory-Token", &token)
         .json(&payload)
+        .send();
+    match result {
+        Ok(res) => assert_eq!(res.status().as_u16(), 413),
+        Err(e) => assert!(
+            e.is_request(),
+            "the only tolerated failure is the server closing the connection \
+             mid-upload after rejecting it: {e:?}"
+        ),
+    }
+
+    let listed = client
+        .get(format!("{base}/api/v1/memories"))
+        .header("X-Comemory-Token", &token)
         .send()
-        .expect("oversized post memories");
-    assert_eq!(res.status().as_u16(), 413);
+        .expect("the server survives an oversized body");
+    assert_eq!(listed.status().as_u16(), 200);
+    let body: serde_json::Value = listed.json().expect("memories list json");
+    assert_eq!(
+        body["data"]["items"].as_array().map(Vec::len),
+        Some(0),
+        "nothing over the limit was stored: {body}"
+    );
 }

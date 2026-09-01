@@ -59,6 +59,26 @@ first lazy reindex runs from the current directory. It is best-effort
 throughout: if a reindex cannot start, the search still succeeds against the
 current index.
 
+### Archived and disconnected repos
+
+The console (`comemory serve`'s `/api/v1/repos` routes) offers two ways to
+retire a repo, and only one of them stops lazy reindex:
+
+- **Archive** (`POST /api/v1/repos/{name}/archive`) sets
+  `repo_marker.archived`. Lazy reindex skips an archived repo, `POST
+  /api/v1/index/runs` refuses it, and nothing is deleted — its code index and
+  memories stay searchable. This is the "stop indexing, keep the memories"
+  action.
+- **Disconnect** (`DELETE /api/v1/repos/{name}`) drops the repo's code index
+  *and* its `repo_marker` row. Its memories are kept — but with no marker
+  left, the repo looks never-indexed, so under the default `lazy` mode the
+  next `search-code` / `context` run from that checkout spawns a background
+  `index-code` and rebuilds the index. Only `hook` or `off` leave a
+  disconnected repo un-indexed.
+
+If you want a repo to stay out of the index while its memories remain,
+archive it rather than disconnecting it.
+
 ## Hook mode
 
 In `hook` mode comemory does nothing at query time; instead git hooks run the

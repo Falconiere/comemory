@@ -17,6 +17,7 @@
       "api": [
         "doctor",
         "index_code",
+        "memory_store",
         "rebuild",
         "repos",
         "tests",
@@ -53,6 +54,7 @@
       "api",
       "api/doctor",
       "api/index_code",
+      "api/memory_store",
       "api/rebuild",
       "api/repos",
       "ast",

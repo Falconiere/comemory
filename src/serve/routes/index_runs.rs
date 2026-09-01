@@ -1,11 +1,13 @@
 //! `POST /api/v1/index/runs`, `GET /api/v1/index/runs` (console-api spec §6).
 //!
 //! `POST` is the console's own index-run entry point: the same `index-code`
-//! job `POST /api/v1/code/index` starts, plus the two gates the console
-//! surface needs — an archived repo is refused (`400`) and a repo that
-//! already has a live run is refused (`409 index_running`, AC-10). Both
-//! entry points share [`spawn_index_job`] and [`refuse_if_running`], so the
-//! job they create and the conflict they report cannot drift.
+//! job `POST /api/v1/code/index` and `POST /api/v1/repos {index_now}`
+//! start, with the two gates every one of them applies — an archived repo
+//! is refused (`400`, `api::index_code::refuse_if_archived`, which the core
+//! run re-checks itself) and a repo that already has a live run is refused
+//! (`409 index_running`, AC-10). All three entry points share
+//! [`spawn_index_job`] and [`refuse_if_running`], so the job they create and
+//! the conflict they report cannot drift.
 //!
 //! `GET` pages `index_runs` (`api::index_runs`), the history every run —
 //! CLI, `POST /code/index`, or `POST /index/runs` — writes one row into.
@@ -17,7 +19,6 @@ use axum::extract::{Query, State};
 use axum::response::Response;
 use axum::routing::get;
 use axum::{Json, Router};
-use rusqlite::{Connection, OptionalExtension};
 use serde::Deserialize;
 
 use crate::api::index_code::IndexMode;
@@ -137,7 +138,7 @@ async fn start_run(State(state): State<AppState>, Json(req): Json<StartRequest>)
 fn plan_run(state: &AppState, req: StartRequest) -> Result<IndexPlan> {
     let path = resolve_path(&req)?;
     let conn = state.conn()?;
-    refuse_if_archived(&conn, &req.repo)?;
+    api::index_code::refuse_if_archived(&conn, &req.repo)?;
     let roots = state.allowed_roots(&conn);
     drop(conn);
     refuse_if_running(state, &req.repo)?;
@@ -175,25 +176,6 @@ fn resolve_path(req: &StartRequest) -> Result<String> {
 fn contained(roots: &[PathBuf], path: &str) -> Result<String> {
     let canonical = security::contain_abs(roots, Path::new(path))?;
     Ok(canonical.to_string_lossy().into_owned())
-}
-
-/// `Err(Error::BadRequest)` when `repo` carries `repo_marker.archived = 1`.
-/// An unknown repo is fine — the first run for a label is how it becomes
-/// known.
-fn refuse_if_archived(conn: &Connection, repo: &str) -> Result<()> {
-    let archived: Option<i64> = conn
-        .query_row(
-            "SELECT archived FROM repo_marker WHERE repo = ?1",
-            [repo],
-            |r| r.get(0),
-        )
-        .optional()?;
-    if archived.is_some_and(|flag| flag != 0) {
-        return Err(Error::BadRequest(format!(
-            "repo {repo} is archived; un-archive it before indexing"
-        )));
-    }
-    Ok(())
 }
 
 /// `Err(Error::IndexRunning)` (→ `409` with `details.job_id`) when `repo`

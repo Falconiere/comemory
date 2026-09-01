@@ -13,6 +13,7 @@ use axum::routing::get;
 use crate::api::{self, Ctx};
 use crate::serve::AppState;
 use crate::serve::routes::{RouteEntry, respond, run_blocking};
+use crate::serve::scope::RepoScope;
 
 /// `POST /api/v1/mine`, `POST /api/v1/hooks/install`.
 pub mod admin;
@@ -67,11 +68,15 @@ async fn doctor(State(state): State<AppState>) -> Response {
 }
 
 /// `GET /api/v1/consolidate` — advisory near-duplicate cluster report
-/// (`api::consolidate`).
+/// (`api::consolidate`). The `repo` filter defaults from the request scope
+/// when the query omits one ([`RepoScope`]), like every other repo-bearing
+/// read.
 async fn consolidate(
     State(state): State<AppState>,
-    Query(req): Query<api::consolidate::Request>,
+    scope: RepoScope,
+    Query(mut req): Query<api::consolidate::Request>,
 ) -> Response {
+    scope.apply(&mut req.repo);
     let started = Instant::now();
     let result = run_blocking(move || {
         let cfg = state.cfg();
@@ -82,3 +87,7 @@ async fn consolidate(
     .await;
     respond("consolidate", result, started)
 }
+
+#[cfg(test)]
+#[path = "tests/consolidate.rs"]
+mod tests;

@@ -83,7 +83,7 @@ fn run_reports_the_current_schema_on_a_real_store() {
     let mut cfg = Config::defaults();
     cfg.embed_hint = Some("ollama:nomic-embed-text".to_string());
     let mut ctx = Ctx::lazy(&paths, &cfg);
-    let system = api::doctor::system::run(&mut ctx).expect("system run");
+    let system = api::doctor::system::run(&mut ctx, None).expect("system run");
 
     assert_eq!(system.version, env!("CARGO_PKG_VERSION"));
     assert_eq!(system.current_schema_version, CURRENT_VERSION);
@@ -121,7 +121,7 @@ fn run_never_executes_the_embed_command_ac15() {
 
     let cfg = Config::defaults();
     let mut ctx = Ctx::lazy(&paths, &cfg);
-    let system = api::doctor::system::run(&mut ctx).expect("system run");
+    let system = api::doctor::system::run(&mut ctx, None).expect("system run");
     assert_eq!(system.markdown_files, 1);
     assert!(
         !sentinel.exists(),
@@ -138,7 +138,7 @@ fn run_on_a_fresh_data_dir_never_creates_the_db() {
 
     let cfg = Config::defaults();
     let mut ctx = Ctx::lazy(&paths, &cfg);
-    let system = api::doctor::system::run(&mut ctx).expect("system run");
+    let system = api::doctor::system::run(&mut ctx, None).expect("system run");
 
     assert!(
         !paths.db_path().exists(),
@@ -176,7 +176,7 @@ fn run_counts_trashed_files_and_names_a_migration_snapshot() {
 
     let cfg = Config::defaults();
     let mut ctx = Ctx::lazy(&paths, &cfg);
-    let system = api::doctor::system::run(&mut ctx).expect("system run");
+    let system = api::doctor::system::run(&mut ctx, None).expect("system run");
 
     assert_eq!(system.markdown_files, 0, "the file moved to .trash/");
     assert_eq!(system.trash_files, 1);

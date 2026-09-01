@@ -10,12 +10,15 @@
 //! on disk re-read with `Frontmatter::split` to prove the file (the source
 //! of truth) actually changed. Covers console-api spec AC-6 — a tags patch
 //! keeps the id and rewrites the frontmatter, a body patch mints a new id
-//! that supersedes the old — plus the 400/404 paths and the no-op patch.
+//! that supersedes the old — plus the 400/404 paths and the no-op patch,
+//! the title-fold equality rule, what a re-save carries verbatim, and the
+//! derived-refresh skip on a `quality`-only patch.
 
+use comemory::api::save::Verbatim;
 use comemory::api::{self, Ctx};
 use comemory::config::{Config, Paths};
 use comemory::errors::Error;
-use comemory::memory::{Frontmatter, Kind};
+use comemory::memory::{Frontmatter, Kind, Ref, References};
 use comemory::store::connection;
 
 /// A fresh `Ctx::borrowed` over a temp data dir with a migrated database.
@@ -344,4 +347,136 @@ fn soft_deleted_id_is_not_found() {
     )
     .expect_err("a trashed memory cannot be patched");
     assert!(matches!(err, Error::NotFound(_)), "got {err:?}");
+}
+
+/// A body patch's re-save carries the old frontmatter's relations and its
+/// anchored references BYTE-FOR-BYTE (`save::Verbatim`) — ids *and* blob
+/// anchors — never re-qualified against the calling process's cwd. The old
+/// memory is built through `save::run_with` with a verbatim reference the
+/// cwd could not produce, exactly as `comemory rebuild` replays hand-edited
+/// markdown.
+#[test]
+fn a_resave_carries_relations_and_anchored_references_verbatim() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let (paths, cfg, mut conn) = open_ctx(home.path());
+    let anchored = Ref {
+        id: "otherrepo:src/lib.rs:parse_frontmatter".to_string(),
+        blob: Some("aaaabbbbccccddddaaaabbbbccccddddaaaabbbb".to_string()),
+        commit: Some("ddddccccbbbbaaaaddddccccbbbbaaaaddddcccc".to_string()),
+        branch: Some("main".to_string()),
+    };
+    let old = {
+        let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+        let verbatim = Verbatim {
+            conflicts_with: vec!["11112222".to_string()],
+            derived_from: vec!["33334444".to_string()],
+            references: References {
+                files: vec![Ref::new("otherrepo:src/lib.rs")],
+                symbols: vec![anchored.clone()],
+            },
+        };
+        api::save::run_with(
+            &mut ctx,
+            save_request("frontmatter is the contract, not the body"),
+            verbatim,
+            false,
+            None,
+        )
+        .expect("save with verbatim frontmatter")
+    };
+
+    let resp = {
+        let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+        api::update::run(
+            &mut ctx,
+            &old.id,
+            api::update::Request {
+                body: Some("frontmatter is the contract, body is prose".into()),
+                ..api::update::Request::default()
+            },
+        )
+        .expect("body patch")
+    };
+    assert_eq!(resp.superseded, Some(old.id.clone()));
+
+    // The NEW file on disk — the source of truth — carries everything.
+    let (fm, _body) = read_back(&resp.path);
+    assert_eq!(fm.relations.supersedes, vec![old.id.clone()]);
+    assert_eq!(fm.relations.conflicts_with, vec!["11112222".to_string()]);
+    assert_eq!(fm.relations.derived_from, vec!["33334444".to_string()]);
+    assert_eq!(fm.references.files, vec![Ref::new("otherrepo:src/lib.rs")]);
+    assert_eq!(
+        fm.references.symbols,
+        vec![anchored],
+        "the blob/commit/branch anchor must survive the re-save untouched"
+    );
+}
+
+/// A `quality`-only patch lands in the file and the mirror row — and in
+/// ranking, where `retrieval::rerank` reads the column at query time — while
+/// leaving the memory's outgoing edge set exactly as it was (the
+/// derived-refresh skip is sound because the re-mirror reproduces the
+/// edges; this asserts that reproduction on real rows).
+#[test]
+fn a_quality_only_patch_updates_the_row_and_reproduces_the_edges() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let (paths, cfg, mut conn) = open_ctx(home.path());
+    let saved = {
+        let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+        let req = api::save::Request {
+            tags: vec!["locks".into()],
+            ..save_request("advisory locks serialize the migration runner")
+        };
+        api::save::run(&mut ctx, req, false, None).expect("save")
+    };
+    let edges_before: Vec<(String, String)> = {
+        let mut stmt = conn
+            .prepare("SELECT rel, dst_id FROM edges WHERE src_kind='memory' AND src_id=?1 ORDER BY rel, dst_id")
+            .expect("prepare");
+        stmt.query_map([&saved.id], |r| Ok((r.get(0)?, r.get(1)?)))
+            .expect("query")
+            .collect::<Result<_, _>>()
+            .expect("rows")
+    };
+    assert!(!edges_before.is_empty(), "a tagged memory emits edges");
+
+    let resp = {
+        let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+        api::update::run(
+            &mut ctx,
+            &saved.id,
+            api::update::Request {
+                quality: Some(5),
+                ..api::update::Request::default()
+            },
+        )
+        .expect("quality patch")
+    };
+    assert_eq!(resp.changed, vec!["quality"]);
+    assert_eq!(resp.id, saved.id, "quality does not move the content hash");
+
+    let (fm, _body) = read_back(&resp.path);
+    assert_eq!(fm.quality, 5, "the file carries the new quality");
+    let row_quality: i64 = conn
+        .query_row(
+            "SELECT quality FROM memories WHERE id=?1",
+            [&saved.id],
+            |r| r.get(0),
+        )
+        .expect("row");
+    assert_eq!(row_quality, 5, "the mirror carries the new quality");
+
+    let edges_after: Vec<(String, String)> = {
+        let mut stmt = conn
+            .prepare("SELECT rel, dst_id FROM edges WHERE src_kind='memory' AND src_id=?1 ORDER BY rel, dst_id")
+            .expect("prepare");
+        stmt.query_map([&saved.id], |r| Ok((r.get(0)?, r.get(1)?)))
+            .expect("query")
+            .collect::<Result<_, _>>()
+            .expect("rows")
+    };
+    assert_eq!(
+        edges_before, edges_after,
+        "the edge set is reproduced exactly"
+    );
 }

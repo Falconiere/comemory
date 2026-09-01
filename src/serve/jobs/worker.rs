@@ -7,12 +7,14 @@
 //! build a [`RegistryProgressSink`].
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde_json::Value;
 use tokio::sync::Semaphore;
 
 use crate::api::index_code::ProgressSink;
 use crate::prelude::*;
+use crate::serve::jobs::registry::Accepted;
 use crate::serve::jobs::{JobError, JobId, JobStatus, Progress, Registry};
 
 /// Spawn `body` as a background job named `command`: register it
@@ -36,8 +38,9 @@ pub fn spawn_job<F>(
 where
     F: FnOnce() -> Result<Value> + Send + 'static,
 {
-    let (id, _rx) = registry.insert(command)?;
-    spawn_registered(registry, write_permit, id.clone(), mutating, body);
+    let accepted = registry.insert(command)?;
+    let id = accepted.id.clone();
+    spawn_registered(registry, write_permit, accepted, mutating, body);
     Ok(id)
 }
 
@@ -60,9 +63,13 @@ where
     spawn_job_for(registry, write_permit, command, None, mutating, body)
 }
 
-/// [`spawn_job_with_id`] with a repo label recorded on the job
-/// (`Registry::insert_for`), so `Registry::active_for` can refuse a
-/// second `index-code` for the same repo with `409 index_running`.
+/// [`spawn_job_with_id`] with a repo label recorded on the job. With
+/// `Some(repo)` the registration is `Registry::insert_for_unless_active`:
+/// a second `index-code` for a repo that already has a queued or running
+/// one is refused with `Error::IndexRunning` (→ `409 index_running`)
+/// atomically at insertion, so two concurrent requests for one repo can
+/// never both queue — whatever pre-check the route ran before calling
+/// this is only the fast path.
 pub fn spawn_job_for<F>(
     registry: &Arc<Registry>,
     write_permit: Arc<Semaphore>,
@@ -74,34 +81,48 @@ pub fn spawn_job_for<F>(
 where
     F: FnOnce(JobId) -> Result<Value> + Send + 'static,
 {
-    let (id, _rx) = registry.insert_for(command, repo)?;
+    let accepted = match repo {
+        Some(repo) => registry.insert_for_unless_active(command, repo)?,
+        None => registry.insert(command)?,
+    };
+    let id = accepted.id.clone();
     let body_id = id.clone();
-    spawn_registered(registry, write_permit, id.clone(), mutating, move || {
+    spawn_registered(registry, write_permit, accepted, mutating, move || {
         body(body_id)
     });
     Ok(id)
 }
 
-/// Shared tail of [`spawn_job`] / [`spawn_job_with_id`]: schedule the
-/// already-registered job `id` to run on its own `tokio::spawn`ed task.
+/// Shared tail of [`spawn_job`] / [`spawn_job_for`]: schedule the
+/// already-registered job to run on its own `tokio::spawn`ed task, handing
+/// it the job's own cancel flag alongside the id.
 fn spawn_registered<F>(
     registry: &Arc<Registry>,
     write_permit: Arc<Semaphore>,
-    id: JobId,
+    accepted: Accepted,
     mutating: bool,
     body: F,
 ) where
     F: FnOnce() -> Result<Value> + Send + 'static,
 {
     let registry = Arc::clone(registry);
-    tokio::spawn(async move { run(registry, write_permit, id, mutating, body).await });
+    let Accepted { id, cancel, .. } = accepted;
+    tokio::spawn(async move { run(registry, write_permit, id, cancel, mutating, body).await });
 }
 
-/// The spawned task: acquire the permit (mutating only), mark `Running`,
-/// run `body` on the blocking pool, then record the terminal status. The
-/// permit is dropped when this function returns — after the blocking work
-/// and after the terminal status is recorded, so the next queued writer
-/// cannot start early.
+/// The spawned task: acquire the permit (mutating only), flip `Queued` →
+/// `Running` atomically, run `body` on the blocking pool, then record the
+/// terminal status. The permit is dropped when this function returns —
+/// after the blocking work and after the terminal status is recorded, so
+/// the next queued writer cannot start early.
+///
+/// The pre-body cancel check is two-fold and registry-independent: the
+/// task's own `cancel` clone catches a cancel that landed while the job was
+/// queued even if the record has since been evicted (`registry::evict_finished`),
+/// and `Registry::try_start` is the atomic check-and-flip for a record
+/// that is still there — a cancel cannot slip in between a separate
+/// "is it cancelled?" read and a "mark running" write, because there is no
+/// such gap.
 ///
 /// The `job task panicked` branch below only fires under `panic = "unwind"`
 /// (dev/test default). This crate's `[profile.release]`/`[profile.dist]` —
@@ -112,6 +133,7 @@ async fn run<F>(
     registry: Arc<Registry>,
     write_permit: Arc<Semaphore>,
     id: JobId,
+    cancel: Arc<AtomicBool>,
     mutating: bool,
     body: F,
 ) where
@@ -129,13 +151,12 @@ async fn run<F>(
     } else {
         None
     };
-    // A cancel that landed while this job was queued (waiting for the
-    // permit) already recorded `Cancelled`; the body must not run.
-    if registry.is_cancelled(&id) {
-        set_status(&registry, &id, JobStatus::Cancelled);
+    if cancel.load(Ordering::Relaxed) || !registry.try_start(&id) {
+        // Already `Cancelled` (recorded by `Registry::cancel`) or gone;
+        // there is no status left to publish and the body must not run.
+        tracing::debug!(job_id = %id, "job cancelled or evicted before it started; body skipped");
         return;
     }
-    set_status(&registry, &id, JobStatus::Running);
     let status = match tokio::task::spawn_blocking(body).await {
         Ok(Ok(value)) => JobStatus::Done(value),
         Ok(Err(Error::Cancelled)) => JobStatus::Cancelled,

@@ -631,7 +631,9 @@ results of a superseded query. Every query sets `track = false`, so browsing
 never writes `retrieval_log` or bumps `access_count`. The UI draws to stderr
 and reserves stdout for the Enter-selected id (`id=$(comemory tui)`); the
 terminal is restored by an RAII guard on every exit path. It complements — it
-does not replace — `comemory serve`'s in-browser viewer.
+does not replace — `comemory serve`'s `/api/v1` HTTP surface, which ships no
+web page of its own: the TUI is the bundled interactive front end, the server
+is for consoles, agents, and scripts.
 
 ## Where to go next
 

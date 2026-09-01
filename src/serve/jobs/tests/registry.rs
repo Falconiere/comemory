@@ -18,7 +18,9 @@ use serde_json::json;
 #[test]
 fn insert_mints_a_16_hex_id_and_a_queued_record() {
     let registry = Registry::new();
-    let (id, mut rx) = registry.insert("index-code").expect("insert");
+    let accepted = registry.insert("index-code").expect("insert");
+    let id = accepted.id.clone();
+    let mut rx = accepted.status;
 
     assert_eq!(id.len(), 16, "job id is 8 urandom bytes hex-encoded: {id}");
     assert!(
@@ -46,7 +48,7 @@ fn ids_are_distinct_across_insertions() {
     let registry = Registry::new();
     let mut ids = std::collections::HashSet::new();
     for _ in 0..32 {
-        let (id, _rx) = registry.insert("eval").expect("insert");
+        let id = registry.insert("eval").expect("insert").id;
         assert!(ids.insert(id), "job ids must not repeat");
     }
 }
@@ -54,7 +56,9 @@ fn ids_are_distinct_across_insertions() {
 #[test]
 fn set_status_publishes_transitions_and_stamps_the_finish() {
     let registry = Registry::new();
-    let (id, mut rx) = registry.insert("rebuild").expect("insert");
+    let accepted = registry.insert("rebuild").expect("insert");
+    let id = accepted.id.clone();
+    let mut rx = accepted.status;
 
     registry
         .set_status(&id, JobStatus::Running)
@@ -81,7 +85,7 @@ fn set_status_publishes_transitions_and_stamps_the_finish() {
 #[test]
 fn an_error_status_carries_the_envelope_error_object() {
     let registry = Registry::new();
-    let (id, _rx) = registry.insert("index-code").expect("insert");
+    let id = registry.insert("index-code").expect("insert").id;
     let err = JobError::from_error(&comemory::errors::Error::BadRequest("no repo here".into()));
 
     registry
@@ -116,7 +120,9 @@ fn set_status_on_an_unknown_id_is_not_found() {
 #[test]
 fn a_receiver_subscribed_after_completion_replays_the_terminal_status() {
     let registry = Registry::new();
-    let (id, first_rx) = registry.insert("eval").expect("insert");
+    let accepted = registry.insert("eval").expect("insert");
+    let id = accepted.id.clone();
+    let first_rx = accepted.status;
     registry
         .set_status(&id, JobStatus::Running)
         .expect("mark running");
@@ -150,9 +156,9 @@ fn subscribe_on_an_unknown_id_yields_none() {
 #[test]
 fn list_returns_jobs_newest_first() {
     let registry = Registry::new();
-    let (first, _a) = registry.insert("index-code").expect("insert");
-    let (second, _b) = registry.insert("eval").expect("insert");
-    let (third, _c) = registry.insert("rebuild").expect("insert");
+    let first = registry.insert("index-code").expect("insert").id;
+    let second = registry.insert("eval").expect("insert").id;
+    let third = registry.insert("rebuild").expect("insert").id;
 
     let ids: Vec<String> = registry
         .list()
@@ -167,14 +173,14 @@ fn list_returns_jobs_newest_first() {
 #[test]
 fn finished_jobs_are_evicted_beyond_the_retention_window() {
     let registry = Registry::new();
-    let (running, _rx) = registry.insert("index-code").expect("insert");
+    let running = registry.insert("index-code").expect("insert").id;
     registry
         .set_status(&running, JobStatus::Running)
         .expect("mark running");
 
     let mut finished = Vec::new();
     for _ in 0..(MAX_FINISHED + 5) {
-        let (id, _rx) = registry.insert("eval").expect("insert");
+        let id = registry.insert("eval").expect("insert").id;
         registry
             .set_status(&id, JobStatus::Done(json!(null)))
             .expect("mark done");

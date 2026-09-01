@@ -149,8 +149,9 @@ pub(crate) async fn rebuild(State(state): State<AppState>, Json(body): Json<Valu
 
 /// Canonicalize `repo` and require it inside one of this session's allowed
 /// roots (§Security "Path containment"). Nonexistent -> `400`; outside every
-/// root -> `403`.
-fn contain_repo(state: &AppState, repo: &str) -> Result<PathBuf> {
+/// root -> `403`. Shared with `routes::hooks` (`POST /hooks`, `PUT
+/// /hooks/{name}`), which writes the same `.git/hooks/` files one at a time.
+pub(crate) fn contain_repo(state: &AppState, repo: &str) -> Result<PathBuf> {
     let conn = state.conn()?;
     let roots = state.allowed_roots(&conn);
     drop(conn);

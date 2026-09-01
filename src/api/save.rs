@@ -7,7 +7,10 @@
 //! working-tree root via `git2::Repository::discover(cwd)`. Over HTTP this
 //! is the **server process's** cwd, not the client's — documented API
 //! behavior (spec §Architecture); deterministic anchoring needs explicit
-//! `repo:`-qualified `ref_file`/`ref_symbol` values.
+//! `repo:`-qualified `ref_file`/`ref_symbol` values. An in-process caller
+//! that already holds qualified references — `api::update`'s superseding
+//! re-save — hands them to [`run_with`] as [`Verbatim`] instead, which never
+//! re-qualifies them.
 
 use std::path::{Path, PathBuf};
 
@@ -29,9 +32,10 @@ pub struct Request {
     /// Optional title. A memory's title is by definition the first
     /// non-empty line of its body (`output::search::title_of`), so a
     /// supplied title is prepended as that first line (followed by a blank
-    /// line) before the content hash is taken — unless the body already
-    /// starts with it. HTTP-only convenience for the console's save form;
-    /// the CLI passes the title inside the body.
+    /// line) before the content hash is taken — unless the body's first
+    /// non-empty line already *equals* it (see [`fold_title`]). HTTP-only
+    /// convenience for the console's save form; the CLI passes the title
+    /// inside the body.
     #[serde(default)]
     pub title: Option<String>,
     /// Memory kind: decision|bug|convention|discovery|pattern|note.
@@ -78,6 +82,28 @@ fn default_quality() -> u8 {
     3
 }
 
+/// Frontmatter an in-process caller carries onto the saved memory
+/// VERBATIM, bypassing the [`Request`]-level derivations: the two relation
+/// lists the CLI has no flag for, and references that are already qualified
+/// (`<repo>:<path>[:<symbol>]` ids, anchors included) and so must NOT go
+/// through `ref_args::qualify`'s cwd-relative path rewrite. Not a JSON
+/// surface — it is the contract `api::update`'s re-save uses to move an old
+/// memory's frontmatter onto its successor byte-for-byte. Nothing here is
+/// validated or de-duplicated, exactly as `comemory rebuild` carries
+/// hand-edited markdown: `store::memory_row` skips a self-referential
+/// relation edge, and every relation consumer joins on live `memories`
+/// rows, so a dangling id is inert.
+#[derive(Debug, Default)]
+pub struct Verbatim {
+    /// Memory ids this memory contradicts (`conflicts_with` edges).
+    pub conflicts_with: Vec<String>,
+    /// Memory ids this memory builds on (`derived_from` edges).
+    pub derived_from: Vec<String>,
+    /// Pre-qualified references, placed ahead of whatever `ref_file` /
+    /// `ref_symbol` collect.
+    pub references: References,
+}
+
 /// `comemory save` / `POST /api/v1/memories` response.
 #[derive(Serialize, Debug)]
 pub struct Response {
@@ -108,12 +134,31 @@ pub struct Response {
 /// is already a parsed vector off the JSON body.
 pub fn run(
     ctx: &mut Ctx<'_>,
+    req: Request,
+    cli_vector_stdin: bool,
+    cli_vector_csv: Option<&str>,
+) -> Result<Response> {
+    run_with(
+        ctx,
+        req,
+        Verbatim::default(),
+        cli_vector_stdin,
+        cli_vector_csv,
+    )
+}
+
+/// [`run`] with frontmatter carried over as [`Verbatim`] — the entry point
+/// `api::update`'s re-save uses. Every other caller goes through [`run`].
+pub fn run_with(
+    ctx: &mut Ctx<'_>,
     mut req: Request,
+    verbatim: Verbatim,
     cli_vector_stdin: bool,
     cli_vector_csv: Option<&str>,
 ) -> Result<Response> {
     validate_quality(req.quality)?;
-    prepend_title(&mut req);
+    let title = req.title.take();
+    req.body = fold_title(title.as_deref(), &req.body);
     let cfg = ctx.cfg;
     let paths = ctx.paths;
     // Content-derived id is known before any write, so `supersedes` and the
@@ -121,8 +166,12 @@ pub fn run(
     let new_id = id::memory_id(&req.body);
     // Validate `supersedes` and `ref_*` BEFORE touching disk: a malformed
     // value aborts with no markdown file and no DB rows.
-    let supersedes = validate_supersedes(&req.supersedes, &new_id)?;
-    let (references, ref_warnings) = collect_refs(&req)?;
+    let relations = Relations {
+        supersedes: validate_supersedes(&req.supersedes, &new_id)?,
+        conflicts_with: verbatim.conflicts_with,
+        derived_from: verbatim.derived_from,
+    };
+    let (references, ref_warnings) = collect_refs(&req, verbatim.references)?;
 
     // Validation is now behind us — safe to touch the filesystem/DB/stdin.
     // Mirrors `cli::save::run`'s original ordering exactly (AC-13): a
@@ -140,7 +189,7 @@ pub fn run(
     }
     let duplicate_of = near_duplicate(conn, &req.body, &new_id, cfg.rank.near_dup_hamming);
 
-    let params = build_params(&req, supersedes, references);
+    let params = build_params(&req, relations, references);
     let rec = persist(conn, paths, params, vector.as_deref())?;
 
     Ok(Response {
@@ -151,23 +200,28 @@ pub fn run(
     })
 }
 
-/// Fold `req.title` into the body as its first line (see
-/// [`Request::title`]). A blank title is ignored; a body that already
-/// starts with the title is left alone so a round-tripped save stays
-/// idempotent.
-fn prepend_title(req: &mut Request) {
-    let Some(title) = req.title.take().map(|t| t.trim().to_string()) else {
-        return;
+/// Fold `title` into `body` as its first line (see [`Request::title`]). A
+/// blank title is ignored. A body whose title — its first non-empty trimmed
+/// line, `output::search::title_of`'s definition — already equals the
+/// trimmed title is returned unchanged, so a round-tripped save stays
+/// idempotent. That is an equality test, not a prefix test: `"Pool"` on a
+/// body opening `"Pooling connections…"` is still prepended. `pub(crate)`
+/// because `api::update` must apply the same rule *before* calling [`run`]
+/// to tell whether a patch changes the content hash.
+pub(crate) fn fold_title(title: Option<&str>, body: &str) -> String {
+    let Some(title) = title.map(str::trim).filter(|t| !t.is_empty()) else {
+        return body.to_string();
     };
-    if title.is_empty() || req.body.trim_start().starts_with(&title) {
-        return;
+    if crate::output::search::title_of(body) == title {
+        return body.to_string();
     }
-    req.body = format!("{title}\n\n{}", req.body.trim_start());
+    format!("{title}\n\n{}", body.trim_start())
 }
 
 /// `1..=5`, matching the CLI's clap range validator (HTTP has no clap, so
-/// this must be enforced explicitly).
-fn validate_quality(quality: u8) -> Result<()> {
+/// this must be enforced explicitly). Shared with `api::update`, whose
+/// `quality` field has no clap validator either.
+pub(crate) fn validate_quality(quality: u8) -> Result<()> {
     if (1..=5).contains(&quality) {
         Ok(())
     } else {
@@ -177,20 +231,25 @@ fn validate_quality(quality: u8) -> Result<()> {
     }
 }
 
-/// Collect `ref_file`/`ref_symbol` against the discovered repo root. See the
-/// module doc for the HTTP cwd caveat.
-fn collect_refs(req: &Request) -> Result<(References, Vec<String>)> {
+/// Collect `ref_file`/`ref_symbol` against the discovered repo root (see
+/// the module doc for the HTTP cwd caveat), placed after `carried` — the
+/// [`Verbatim`] references, which skip that qualification entirely.
+fn collect_refs(req: &Request, carried: References) -> Result<(References, Vec<String>)> {
     let repo_root = resolve_repo_root();
-    ref_args::collect(
+    let (collected, warnings) = ref_args::collect(
         &req.ref_file,
         &req.ref_symbol,
         &req.repo,
         repo_root.as_deref(),
-    )
+    )?;
+    let mut references = carried;
+    references.files.extend(collected.files);
+    references.symbols.extend(collected.symbols);
+    Ok((references, warnings))
 }
 
 /// Assemble the [`SaveParams`] the store layer expects.
-fn build_params(req: &Request, supersedes: Vec<String>, references: References) -> SaveParams<'_> {
+fn build_params(req: &Request, relations: Relations, references: References) -> SaveParams<'_> {
     SaveParams {
         body: &req.body,
         kind: req.kind,
@@ -198,10 +257,7 @@ fn build_params(req: &Request, supersedes: Vec<String>, references: References) 
         tags: &req.tags,
         author: &req.author,
         quality: req.quality,
-        relations: Relations {
-            supersedes,
-            ..Relations::default()
-        },
+        relations,
         references,
     }
 }

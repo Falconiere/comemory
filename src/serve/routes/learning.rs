@@ -95,7 +95,10 @@ pub(crate) fn contain_golden(state: &AppState, golden: Option<&str>) -> Result<O
 /// through and through (§Route map Notes): no confirm gate, and — per
 /// AC-4 — no read-only gate either, so it stays functional on a
 /// `--read-only` server. `req.golden`, when present, is contained to an
-/// allowed root before the job is created (AC-7's golden-file half).
+/// allowed root before the job is created (AC-7's golden-file half), and a
+/// `knobs` override is validated against the live config next — a `400`
+/// here, before any job exists, rather than a job that ends `error`
+/// (`api::eval::run` re-checks; this is the synchronous answer).
 ///
 /// `pub(crate)` because `POST /api/v1/learning/evals` (console-api spec §7)
 /// is an ALIAS onto this same handler, not a second implementation.
@@ -110,6 +113,9 @@ pub(crate) async fn eval(
     match contained {
         Ok(canonical) => req.golden = canonical,
         Err(e) => return Envelope::err("eval", &e, 0),
+    }
+    if let Err(e) = api::eval::effective_config(&state.cfg(), req.knobs.as_ref()) {
+        return Envelope::err("eval", &e, 0);
     }
     let job_state = state.clone();
     let job = jobs::spawn_job(

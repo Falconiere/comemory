@@ -12,9 +12,17 @@
 //! under the label, and the memory→code reference edges those memories own
 //! (`references_file` / `references_symbol`, whose `dst_id` is the bare
 //! `<repo>:<path>[:<symbol>]` form, not a `file:` node). Disconnecting a
-//! repo stops indexing it; it does not delete what was written about it.
+//! repo drops its code index; it does not delete what was written about it.
 //! Re-indexing the same label re-materializes the code rows those edges
 //! point at.
+//!
+//! Disconnecting does NOT stop future indexing: the `repo_marker` row goes
+//! too, so under the default `COMEMORY_INDEXING_AUTO_REINDEX=lazy` the next
+//! `search-code` / `context` run from that checkout sees a never-indexed
+//! repo and spawns a background `index-code` that rebuilds the index (only
+//! `hook` / `off` leave it alone). To stop indexing while keeping the
+//! memories, archive the repo instead (`api::repo_admin::archive`), which
+//! lazy reindex skips.
 
 use rusqlite::Connection;
 use serde::Serialize;

@@ -7,17 +7,17 @@
 //! therefore a NEW memory that `supersedes` the old one — comemory's native
 //! edit — and the response reports both ids.
 //!
-//! **Reference caveat.** The re-save path re-supplies the old frontmatter's
-//! `references` as `ref_file`/`ref_symbol` values, which `api::save`
-//! re-anchors against the *calling process's* cwd repo (its documented cwd
-//! semantics). Over HTTP that is the server's cwd, so a ref pinned at the
-//! original save may come back unpinned on the new id;
-//! `POST /memories/{id}/references/refresh` re-pins it against the repo's
-//! recorded root.
+//! **What a re-save carries.** The new memory takes the old frontmatter's
+//! `conflicts_with` / `derived_from` relations and its `references` — ids
+//! *and* anchors — byte-for-byte through [`save::Verbatim`], never
+//! re-qualified against the server process's cwd; only `supersedes` is
+//! replaced, by the old id. It does NOT take the old `memory_vec` row:
+//! vectors are BYO, so the new id starts lexical-only until re-embedded
+//! (`POST /doctor/reembed`, or a `POST /memories` carrying `vector`).
 
 use serde::{Deserialize, Serialize};
 
-use crate::api::Ctx;
+use crate::api::{Ctx, save};
 use crate::memory::{Frontmatter, Kind, MemoryRecord, MemoryStore, id};
 use crate::prelude::*;
 use crate::store::memory_row;
@@ -59,13 +59,28 @@ pub struct Response {
     pub changed: Vec<&'static str>,
 }
 
+/// The patchable fields that feed neither derived artifact, so an in-place
+/// patch touching only these skips `graph::derived::refresh_derived_best_effort`
+/// (a full memory PageRank plus a wholesale `edge_fts` rebuild, run inside
+/// the write permit). `quality` is a `memories` column `retrieval::rerank`
+/// reads at query time: it emits no edge (`store::memory_row` derives
+/// `in_repo` / `authored_by` / `tagged` from `repo` / `author` / `tags`),
+/// appears in no `edge_fts` triplet text (a memory endpoint renders as
+/// `kind || ' ' || slug`), and is no PageRank input (`graph::memory_rank`
+/// derives its graph from `edges` alone). `kind` is deliberately NOT here —
+/// it is in that rendered text — and `repo` / `tags` change the edge set
+/// itself. The row re-mirror still runs, and it reproduces the memory's
+/// outgoing edges exactly (relations keep their stamps, mined `co_activated`
+/// rows are carried across), which is what makes the skip sound.
+const DERIVED_INERT_FIELDS: &[&str] = &["quality"];
+
 /// Apply a patch to memory `id`. Unknown or soft-deleted ids are
 /// `Error::NotFound` (a soft-deleted memory's markdown lives in `.trash/`,
 /// which `MemoryStore::load` does not scan); an out-of-range `quality` is
 /// `Error::BadRequest` before anything is touched.
 pub fn run(ctx: &mut Ctx<'_>, id: &str, req: Request) -> Result<Response> {
     if let Some(quality) = req.quality {
-        validate_quality(quality)?;
+        save::validate_quality(quality)?;
     }
     let store = MemoryStore::new(ctx.paths.clone());
     let mut record = store.load(id)?;
@@ -75,57 +90,35 @@ pub fn run(ctx: &mut Ctx<'_>, id: &str, req: Request) -> Result<Response> {
     }
 }
 
-/// `1..=5`, mirroring `api::save::run`'s check (HTTP has no clap validator).
-fn validate_quality(quality: u8) -> Result<()> {
-    if (1..=5).contains(&quality) {
-        Ok(())
-    } else {
-        Err(Error::BadRequest(format!(
-            "quality must be in 1..=5, got {quality}"
-        )))
-    }
-}
-
 /// The body this patch would write, or `None` when the content is unchanged.
 ///
 /// `None` covers both "no `body`/`title` field at all" and "a `body`/`title`
 /// that folds back to the same bytes" — the latter matters because the id is
-/// the content hash, so a re-save would try to supersede itself.
+/// the content hash, so a re-save would try to supersede itself. The title
+/// is folded here, by save's own [`save::fold_title`], so this module can
+/// tell *before* calling save whether the patch changes the hash; the folded
+/// body is then handed to save with `title: None`, so the rule is applied
+/// exactly once per patch.
 fn patched_body(req: &Request, record: &MemoryRecord) -> Option<String> {
     if req.body.is_none() && req.title.is_none() {
         return None;
     }
     let base = req.body.as_deref().unwrap_or(&record.body);
-    let folded = fold_title(req.title.as_deref(), base);
+    let folded = save::fold_title(req.title.as_deref(), base);
     (id::memory_id(&folded) != record.frontmatter.id).then_some(folded)
 }
 
-/// Fold `title` into `body` as its first line, mirroring
-/// `api::save::run`'s title rule so this module can tell — *before* calling
-/// save — whether the patch changes the content hash. The folded body is
-/// then handed to save with `title: None`, so the rule is applied exactly
-/// once per patch.
-fn fold_title(title: Option<&str>, body: &str) -> String {
-    let Some(title) = title.map(str::trim).filter(|t| !t.is_empty()) else {
-        return body.to_string();
-    };
-    if body.trim_start().starts_with(title) {
-        return body.to_string();
-    }
-    format!("{title}\n\n{}", body.trim_start())
-}
-
 /// Body patch: save `body` as a new memory carrying the old frontmatter's
-/// metadata (overridden by any patched field) and `supersedes: [old id]`.
-/// The old memory stays on disk and in the mirror, demoted by the supersede
-/// edge exactly as a hand-run `comemory save --supersedes` would leave it.
+/// metadata (overridden by any patched field), its relations and references
+/// verbatim (see the module doc), and `supersedes: [old id]`. The old memory
+/// stays on disk and in the mirror, demoted by the supersede edge exactly as
+/// a hand-run `comemory save --supersedes` would leave it.
 fn resave(ctx: &mut Ctx<'_>, old: &MemoryRecord, req: &Request, body: String) -> Result<Response> {
     let fm = &old.frontmatter;
     let changed = changed_fields(req, fm, true);
-    let save_req = crate::api::save::Request {
+    let save_req = save::Request {
         body,
-        // Already folded by `patched_body`; folding again would be a no-op
-        // but re-derives the rule at a second site.
+        // Already folded by `patched_body`.
         title: None,
         kind: req.kind.unwrap_or(fm.kind),
         repo: req.repo.clone().unwrap_or_else(|| fm.repo.clone()),
@@ -134,10 +127,17 @@ fn resave(ctx: &mut Ctx<'_>, old: &MemoryRecord, req: &Request, body: String) ->
         quality: req.quality.unwrap_or(fm.quality),
         supersedes: vec![fm.id.clone()],
         vector: None,
-        ref_file: fm.references.files.iter().map(|r| r.id.clone()).collect(),
-        ref_symbol: fm.references.symbols.iter().map(|r| r.id.clone()).collect(),
+        // The stored refs are already qualified; `ref_file`/`ref_symbol`
+        // would re-anchor them against the server's cwd.
+        ref_file: Vec::new(),
+        ref_symbol: Vec::new(),
     };
-    let saved = crate::api::save::run(ctx, save_req, false, None)?;
+    let verbatim = save::Verbatim {
+        conflicts_with: fm.relations.conflicts_with.clone(),
+        derived_from: fm.relations.derived_from.clone(),
+        references: fm.references.clone(),
+    };
+    let saved = save::run_with(ctx, save_req, verbatim, false, None)?;
     Ok(Response {
         id: saved.id,
         path: saved.path,
@@ -148,8 +148,9 @@ fn resave(ctx: &mut Ctx<'_>, old: &MemoryRecord, req: &Request, body: String) ->
 
 /// Frontmatter-only patch: rewrite the markdown in place under the same id
 /// (the slug derives from the body, so the filename is unchanged), then
-/// re-mirror. A patch that changes nothing skips both writes and still
-/// answers `200` with an empty `changed`.
+/// re-mirror — with the derived refresh only when a changed field feeds it
+/// (see [`DERIVED_INERT_FIELDS`]). A patch that changes nothing skips both
+/// writes and still answers `200` with an empty `changed`.
 fn patch_in_place(
     ctx: &mut Ctx<'_>,
     store: &MemoryStore,
@@ -169,13 +170,26 @@ fn patch_in_place(
     }
     apply(&mut record.frontmatter, req);
     store.rewrite(record)?;
-    mirror_record(ctx, record)?;
+    if needs_derived_refresh(&changed) {
+        mirror_record(ctx, record)?;
+    } else {
+        mirror_row(ctx, record)?;
+    }
     Ok(Response {
         id,
         path,
         superseded: None,
         changed,
     })
+}
+
+/// Whether an in-place patch touching exactly `changed` must refresh the
+/// derived artifacts: true unless every changed field is in
+/// [`DERIVED_INERT_FIELDS`].
+fn needs_derived_refresh(changed: &[&str]) -> bool {
+    changed
+        .iter()
+        .any(|field| !DERIVED_INERT_FIELDS.contains(field))
 }
 
 /// Overwrite the patched frontmatter fields. `id`, `created`,
@@ -239,6 +253,15 @@ fn dedup(tags: &[String]) -> Vec<String> {
 /// [`crate::api::restore`] and [`crate::api::refresh_refs`] rather than
 /// re-derived in each.
 pub(crate) fn mirror_record(ctx: &mut Ctx<'_>, record: &MemoryRecord) -> Result<()> {
+    mirror_row(ctx, record)?;
+    crate::graph::derived::refresh_derived_best_effort(ctx.conn()?);
+    Ok(())
+}
+
+/// The transaction half of [`mirror_record`], without the derived refresh.
+/// Only for a write that provably leaves both derived artifacts unchanged —
+/// see [`DERIVED_INERT_FIELDS`].
+fn mirror_row(ctx: &mut Ctx<'_>, record: &MemoryRecord) -> Result<()> {
     let conn = ctx.conn()?;
     let fm = &record.frontmatter;
     let md_path = record.path.to_string_lossy().into_owned();
@@ -252,7 +275,6 @@ pub(crate) fn mirror_record(ctx: &mut Ctx<'_>, record: &MemoryRecord) -> Result<
         &fm.tags,
     )?;
     tx.commit()?;
-    crate::graph::derived::refresh_derived_best_effort(conn);
     Ok(())
 }
 

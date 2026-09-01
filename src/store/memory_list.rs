@@ -103,19 +103,25 @@ pub struct ListFilter<'a> {
     pub q: Option<&'a str>,
 }
 
-/// Escape `LIKE`'s wildcard characters in a user-supplied substring so it
-/// matches literally; the query pairs it with `ESCAPE '\'`.
-fn like_literal(q: &str) -> String {
-    let mut out = String::with_capacity(q.len() + 2);
-    out.push('%');
+/// Escape `LIKE`'s wildcard characters (`%`, `_`, and the escape character
+/// `\` itself) in a user-supplied string so it matches literally. Every
+/// caller pairs the result with `ESCAPE '\'`; this is the one place the
+/// escape set is defined — `like_literal` (substring) and
+/// `api::suggest`'s prefix pattern both build on it.
+pub(crate) fn like_escape(q: &str) -> String {
+    let mut out = String::with_capacity(q.len());
     for c in q.chars() {
         if matches!(c, '%' | '_' | '\\') {
             out.push('\\');
         }
         out.push(c);
     }
-    out.push('%');
     out
+}
+
+/// `%…%` substring pattern over [`like_escape`].
+fn like_literal(q: &str) -> String {
+    format!("%{}%", like_escape(q))
 }
 
 /// List live (`deleted_at IS NULL`) memories, applying the optional

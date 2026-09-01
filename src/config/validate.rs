@@ -36,6 +36,17 @@ fn check_graph_seeds(v: usize) -> std::result::Result<(), &'static str> {
     Ok(())
 }
 
+/// Bounds for `retrieval.top_k`: the router must return at least one hit.
+/// `0` is `retrieval::pipeline`'s "no limit" page sentinel, so a persisted
+/// `0` would silently turn every `search` without an explicit `--k` into a
+/// `max_page_window`-deep page.
+fn check_top_k(v: usize) -> std::result::Result<(), &'static str> {
+    if v < 1 {
+        return Err("must be >= 1");
+    }
+    Ok(())
+}
+
 /// Bounds for `rank.decay` and every `tune.decay_grid` entry.
 fn check_decay(v: f64) -> std::result::Result<(), &'static str> {
     if !v.is_finite() || v < 0.0 {
@@ -146,12 +157,18 @@ impl Config {
     }
 
     /// Scalar retrieval knobs: fusion constant, graph-walk bounds, page
-    /// window, and the two ANN similarity floors.
+    /// size and window, and the two ANN similarity floors.
     fn check_retrieval_knobs(&self) -> Result<()> {
         let k = self.retrieval.rrf_k;
         if let Err(why) = check_rrf_k(k) {
             return Err(Error::Config(format!(
                 "invalid retrieval.rrf_k={k} (env COMEMORY_RETRIEVAL_RRF_K): {why}"
+            )));
+        }
+        let tk = self.retrieval.top_k;
+        if let Err(why) = check_top_k(tk) {
+            return Err(Error::Config(format!(
+                "invalid retrieval.top_k={tk} (env COMEMORY_RETRIEVAL_TOP_K): {why}"
             )));
         }
         let gh = self.retrieval.graph_hops;

@@ -10,6 +10,7 @@
 //! v0.2 edges (in_repo / authored_by / tagged plus cross-link references)
 //! that both `cli::save` and `cli::rebuild` depend on.
 
+use comemory::graph::edges::{self, EdgeKey};
 use comemory::memory::{Frontmatter, Kind, Ref, References, Relations};
 use comemory::store::{code_ref, connection, memory_row};
 use rusqlite::Connection;
@@ -17,6 +18,11 @@ use tempfile::tempdir;
 use time::OffsetDateTime;
 
 const ID: &str = "abc12345";
+
+/// The body `assert_all_edges` is written against: one backticked symbol
+/// mention, which mints BOTH the `references_symbol` edge and the
+/// `references_file` edge for its path.
+const CROSS_LINK_BODY: &str = "use `qwick:src/lib.rs:start` for bootstrap";
 
 fn sample_fm() -> Frontmatter {
     Frontmatter {
@@ -221,7 +227,7 @@ fn inserts_row_tags_fts_and_edges() {
     let mut conn = connection::open(dir.path().join("comemory.db")).expect("open");
     let tx = conn.transaction().expect("tx");
     let fm = sample_fm();
-    let body = "use `qwick:src/lib.rs:start` for bootstrap";
+    let body = CROSS_LINK_BODY;
     memory_row::insert(&tx, &fm, body, "slug-x", "/abs/path.md", &fm.tags).expect("insert");
     tx.commit().expect("commit");
 
@@ -278,4 +284,56 @@ fn anchored_frontmatter_refs_materialize_edges_and_code_ref() {
     assert_eq!(rows[1].pinned_blob.as_deref(), Some("blobsym000"));
     assert_eq!(rows[1].pinned_commit.as_deref(), Some("commitsym0"));
     assert_eq!(rows[1].branch.as_deref(), Some("dev"));
+}
+
+#[test]
+fn re_mirror_preserves_mined_co_activated_edges() {
+    // `co_activated` is earned by the commit co-activation reward and has no
+    // markdown source. Every in-place re-mirror (metadata PATCH, references
+    // refresh, restore) wipes the memory's outgoing edges; the reward must
+    // come back with its weight AND its original `created_at`.
+    let dir = tempdir().expect("tempdir");
+    let mut conn = connection::open(dir.path().join("comemory.db")).expect("open");
+    let fm = sample_fm();
+    insert_body(&mut conn, &fm, CROSS_LINK_BODY);
+    edges::insert_weighted(
+        &conn,
+        EdgeKey {
+            src_kind: "memory",
+            src_id: ID,
+            dst_kind: "file",
+            dst_id: "file:qwick:src/lib.rs",
+            rel: "co_activated",
+        },
+        3,
+    )
+    .expect("mint the reward edge");
+    conn.execute(
+        "UPDATE edges SET created_at = '2025-01-01T00:00:00Z' \
+          WHERE rel = 'co_activated' AND src_id = ?1",
+        [ID],
+    )
+    .expect("backdate edge");
+
+    insert_body(&mut conn, &fm, CROSS_LINK_BODY);
+
+    let (weight, stamp): (i64, String) = conn
+        .query_row(
+            "SELECT weight, created_at FROM edges \
+              WHERE src_kind = 'memory' AND src_id = ?1 AND rel = 'co_activated' \
+                AND dst_kind = 'file' AND dst_id = 'file:qwick:src/lib.rs'",
+            [ID],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .expect("the co_activated edge must survive the re-mirror");
+    assert_eq!(
+        weight, 3,
+        "weight must be carried across, not reset or doubled"
+    );
+    assert_eq!(
+        stamp, "2025-01-01T00:00:00Z",
+        "created_at must be preserved"
+    );
+    // The markdown-derived edges were still refreshed as before.
+    assert_all_edges(&conn);
 }

@@ -18,7 +18,7 @@ use axum::Router;
 use axum::extract::{Json, Path, Query, State};
 use axum::response::Response;
 use axum::routing::{get, post};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::api::{self, Ctx};
 use crate::memory::Kind;
@@ -91,8 +91,9 @@ struct ConsoleSearch {
     repo: Option<String>,
     /// Memory-kind filter. At most one (spec Non-Goal 5) — the pipeline's
     /// `Filters.kind` is a single value, and pretending otherwise would
-    /// silently drop the rest.
-    #[serde(default)]
+    /// silently drop the rest. A JSON array on `POST`, or a comma-separated
+    /// string on either form (`GET ?kinds=bug` — see [`kinds_field`]).
+    #[serde(default, deserialize_with = "kinds_field")]
     kinds: Vec<String>,
     /// Page size (`api::find`'s `k`).
     #[serde(default)]
@@ -113,6 +114,30 @@ struct ConsoleSearch {
 /// `explain` defaults to on.
 fn explain_default() -> bool {
     true
+}
+
+/// `kinds` in either spelling a client can send: a JSON sequence
+/// (`{"kinds":["bug"]}`) or a comma-separated string (`?kinds=bug,decision`).
+/// A query string has no sequence syntax `serde_urlencoded` can decode, so
+/// without the string form every `GET ?kinds=` was a plain-text `400` while
+/// the docs promised a `GET|POST` filter. Blank entries are dropped, so
+/// `?kinds=` reads as no filter.
+fn kinds_field<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<Vec<String>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Kinds {
+        List(Vec<String>),
+        Csv(String),
+    }
+    Ok(match Kinds::deserialize(d)? {
+        Kinds::List(list) => list,
+        Kinds::Csv(csv) => csv
+            .split(',')
+            .map(str::trim)
+            .filter(|k| !k.is_empty())
+            .map(str::to_string)
+            .collect(),
+    })
 }
 
 /// One hit as the console reads it: the unified hit's fields plus `type`

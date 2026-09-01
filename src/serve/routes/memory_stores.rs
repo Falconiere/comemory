@@ -105,8 +105,12 @@ async fn get_one(State(state): State<AppState>, Path(id): Path<String>) -> Respo
 /// Read-only-gated via [`guard_mutating`]; NOT confirm-gated: the write is two
 /// scalar knobs in a config file, reversible by the inverse PATCH, unlike the
 /// confirm-gated routes that destroy data. `AppState.cfg` is reloaded inside
-/// the same blocking closure so the very next request already sees the new
-/// value — the response body and the server's live config cannot disagree.
+/// the same blocking closure, and the body is then rendered from the RELOADED
+/// config through `api::memory_store::get` (the same shape `routes::config`
+/// uses) rather than from the patch's own file-only view — so an env override
+/// the reload re-applies (`COMEMORY_GIT_AUTO_SYNC`) shows in the response
+/// exactly as the very next `GET` reports it; the body and the server's live
+/// config cannot disagree.
 async fn patch(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -119,11 +123,15 @@ async fn patch(
     };
     let result = run_blocking(move || {
         let _permit = permit;
+        {
+            let cfg = state.cfg();
+            let mut ctx = Ctx::lazy(state.paths(), &cfg);
+            api::memory_store::patch(&mut ctx, &id, &req)?;
+        }
+        state.reload_cfg(state.paths())?;
         let cfg = state.cfg();
         let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        let store = api::memory_store::patch(&mut ctx, &id, &req)?;
-        state.reload_cfg(state.paths())?;
-        Ok(store)
+        api::memory_store::get(&mut ctx, &id)
     })
     .await;
     respond("memory-stores.patch", result, started)

@@ -14,14 +14,16 @@
 //! must-not-create-the-db invariant `api::stats` documents).
 //!
 //! **`git` is the only subprocess.** [`sync`] shells out to `git` — and to
-//! nothing else — always through [`git_run`], which captures output with
-//! `.output()` (never a detached `.spawn()`), so every step's stdout/stderr is
-//! available for the job log and for the error message. The read-side probes
-//! ([`list`]/[`get`]) use in-process `git2` instead, since they must be cheap
-//! enough to run on every console poll.
+//! nothing else — always through the child module's `git::run`, which
+//! captures output with `.output()` (never a detached `.spawn()`), so every
+//! step's stdout/stderr is available for the job log and for the error
+//! message, and which hardens each child against blocking on a credential
+//! prompt. The read-side probes ([`list`]/[`get`]) use in-process `git2`
+//! instead, since they must be cheap enough to run on every console poll.
+
+mod git;
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use git2::{BranchType, Oid, Repository, StatusOptions};
 use serde::{Deserialize, Serialize};
@@ -37,10 +39,6 @@ use crate::prelude::*;
 /// URL shape survives a future multi-store model, but today anything other
 /// than this value is an honest `404`.
 pub const STORE_ID: &str = "default";
-
-/// The commit message every [`sync`] run writes. A fixed string: the job is
-/// a mirror push of `memories/`, not an authored change.
-const COMMIT_MESSAGE: &str = "comemory: sync memories";
 
 /// Git state of the work tree the memory store lives in — the console's
 /// "in sync / N ahead / dirty" strip. [`SyncState::default`] is exactly the
@@ -112,7 +110,9 @@ pub struct PatchRequest {
     /// New `[git] auto_sync`.
     #[serde(default)]
     pub push_on_save: Option<bool>,
-    /// New `[git] remote`. An empty string restores the git default (push to
+    /// New `[git] remote`. A non-empty name is what [`sync`] pushes to, as
+    /// `git push <remote> HEAD`, whether or not the branch has an upstream.
+    /// An empty string restores the git default (a bare `git push` to
     /// whatever the branch's upstream is), which is what `[git] remote = ""`
     /// already means.
     #[serde(default)]
@@ -138,9 +138,13 @@ pub struct SyncResponse {
     pub pulled: bool,
     /// Whether anything under `memories/` was staged and committed.
     pub committed: bool,
-    /// Whether `git push` ran.
+    /// Whether the push ran: `git push <remote> HEAD` when `[git] remote` is
+    /// set, else a bare `git push` to the upstream — skipped when there is
+    /// neither.
     pub pushed: bool,
-    /// HEAD after the commit, when one was made.
+    /// HEAD after the run, when a commit was made — the sync commit as it
+    /// stands AFTER the pull's rebase (the id that was pushed), which is why
+    /// it can differ from the id `git commit` first minted.
     pub commit: Option<String>,
     /// Always empty on success: a conflicting rebase is aborted and reported
     /// as an error naming the paths, never as a partial success.
@@ -159,11 +163,14 @@ pub fn get(ctx: &mut Ctx<'_>, id: &str) -> Result<Store> {
 }
 
 /// Write the supplied `[git]` keys into `config.toml` and answer the store as
-/// it now stands. Only the keys present in `req` are touched, through the one
-/// shared [`patch_config_file`] primitive (so the atomic tmp+rename and the
-/// "key exists but is not a table" refusal cannot drift), and the returned
+/// the file now says. Only the keys present in `req` are touched, through the
+/// one shared [`patch_config_file`] primitive (so the atomic tmp+rename and
+/// the "key exists but is not a table" refusal cannot drift), and the returned
 /// [`Store`] is rendered from a clone of the live config with those values
-/// applied — the HTTP caller reloads `AppState.cfg` right after.
+/// applied. The HTTP route does not answer with it: it reloads `AppState.cfg`
+/// and re-reads through [`get`], so an env override the reload re-applies
+/// (`COMEMORY_GIT_AUTO_SYNC`) shows in the body exactly as the next `GET`
+/// would report it.
 pub fn patch(ctx: &mut Ctx<'_>, id: &str, req: &PatchRequest) -> Result<Store> {
     ensure_id(id)?;
     let mut cfg = ctx.cfg.clone();
@@ -196,7 +203,18 @@ pub fn create(_req: CreateRequest) -> Result<Store> {
     ))
 }
 
-/// Pull, commit, and (optionally) push `memories/` — the `store-sync` job.
+/// Commit, pull, and (optionally) push `memories/` — the `store-sync` job.
+///
+/// The order is commit → pull → push, deliberately. `git pull --rebase
+/// --autostash` stashes TRACKED changes only, so pulling first with an
+/// untracked new memory whose path also arrives from upstream fails with
+/// "untracked working tree files would be overwritten" — no `CONFLICT`
+/// marker, so a generic pull error, on every retry. Committing `memories/`
+/// first turns that case into either a clean rebase (an identical file is
+/// skipped as already upstream) or a real `CONFLICT`, which `git::pull`
+/// aborts and reports by path. The response fields keep their meaning:
+/// `committed`/`commit` describe the sync commit, `pulled` whether the
+/// rebase ran, `pushed` whether the push ran.
 ///
 /// `log` receives one line per `git` invocation and per skipped step; the HTTP
 /// route feeds it into the job's log tail / SSE `log` stream.
@@ -210,21 +228,26 @@ pub fn sync(
     let root = work_tree(ctx.paths.data_dir())?;
     let memories = ctx.paths.memories_dir();
     let upstream = upstream_target(&Repository::open(&root)?)?.is_some();
+    let committed = git::commit_memories(&root, &memories, &log)?;
     // Both skipped steps are visible in the response (`pulled`/`pushed`) and
     // in the absence of their `git …` log line, so neither logs a skip.
     let pulled = upstream;
     if pulled {
-        pull(&root, &log)?;
+        git::pull(&root, &log)?;
     }
-    git_run(&root, &["add", "-A"], Some(&memories), &log)?.require("git add")?;
-    let commit = commit_staged(&root, &memories, &log)?;
-    let pushed = req.push.unwrap_or(ctx.cfg.git.auto_sync) && upstream;
+    let commit = if committed {
+        Some(git::head(&root, &log)?)
+    } else {
+        None
+    };
+    let remote = ctx.cfg.git.remote.trim();
+    let pushed = req.push.unwrap_or(ctx.cfg.git.auto_sync) && (upstream || !remote.is_empty());
     if pushed {
-        git_run(&root, &["push"], None, &log)?.require("git push")?;
+        git::push(&root, remote, &log)?;
     }
     Ok(SyncResponse {
         pulled,
-        committed: commit.is_some(),
+        committed,
         pushed,
         commit,
         conflicts: Vec::new(),
@@ -352,108 +375,6 @@ fn work_tree(data_dir: &Path) -> Result<PathBuf> {
     repo.workdir()
         .map(Path::to_path_buf)
         .ok_or_else(|| Error::BadRequest("memory store is not a git repository".into()))
-}
-
-/// One captured `git` invocation.
-struct GitRun {
-    /// Whether git exited zero.
-    ok: bool,
-    /// Captured stdout, lossily decoded.
-    stdout: String,
-    /// Captured stderr, lossily decoded.
-    stderr: String,
-}
-
-impl GitRun {
-    /// The most useful half of the output for an error message: stderr when
-    /// git wrote any, else stdout (`git pull` reports conflicts on stdout).
-    fn detail(&self) -> &str {
-        let stderr = self.stderr.trim();
-        if stderr.is_empty() {
-            self.stdout.trim()
-        } else {
-            stderr
-        }
-    }
-
-    /// This run when git exited zero, else an error naming the step — the
-    /// shared "a failed git step fails the job" rule, in one place.
-    fn require(self, step: &str) -> Result<Self> {
-        if self.ok {
-            Ok(self)
-        } else {
-            Err(Error::Other(format!("{step} failed: {}", self.detail())))
-        }
-    }
-}
-
-/// Run one `git` subcommand in `root` with its output captured, logging the
-/// command line first. `path`, when given, is appended as `-- <path>` so a
-/// pathspec cannot be confused with a revision. Never `.spawn()`s without
-/// waiting: `.output()` runs the child to completion, so a step cannot
-/// outlive the job that started it.
-fn git_run(root: &Path, args: &[&str], path: Option<&Path>, log: &impl Fn(&str)) -> Result<GitRun> {
-    let mut cmd = Command::new("git");
-    cmd.current_dir(root).args(args);
-    if let Some(path) = path {
-        cmd.arg("--").arg(path);
-    }
-    let target = path.map(|p| format!(" -- {}", p.display()));
-    log(&format!(
-        "git {}{}",
-        args.join(" "),
-        target.unwrap_or_default()
-    ));
-    let out = cmd.output()?;
-    Ok(GitRun {
-        ok: out.status.success(),
-        stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
-    })
-}
-
-/// `git pull --rebase --autostash`. A conflicting rebase is aborted (so the
-/// work tree is left as it was found) and reported as an error naming every
-/// conflicting path.
-fn pull(root: &Path, log: &impl Fn(&str)) -> Result<()> {
-    let run = git_run(root, &["pull", "--rebase", "--autostash"], None, log)?;
-    if run.ok {
-        return Ok(());
-    }
-    if !run.stdout.contains("CONFLICT") && !run.stderr.contains("CONFLICT") {
-        return Err(Error::Other(format!("git pull failed: {}", run.detail())));
-    }
-    let unmerged = git_run(root, &["diff", "--name-only", "--diff-filter=U"], None, log)?
-        .require("git diff --diff-filter=U")?;
-    let abort = git_run(root, &["rebase", "--abort"], None, log)?;
-    if !abort.ok {
-        log(&format!("git rebase --abort failed: {}", abort.detail()));
-    }
-    let conflicts: Vec<&str> = unmerged
-        .stdout
-        .lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty())
-        .collect();
-    Err(Error::Other(format!(
-        "sync conflict in: {}",
-        conflicts.join(", ")
-    )))
-}
-
-/// Commit the staged `memories/` changes, if there are any. `Ok(None)` when
-/// `git status --porcelain -- <memories>` is empty — an already-synced store
-/// is a successful no-op, not an error.
-fn commit_staged(root: &Path, memories: &Path, log: &impl Fn(&str)) -> Result<Option<String>> {
-    let status = git_run(root, &["status", "--porcelain"], Some(memories), log)?
-        .require("git status --porcelain")?;
-    if status.stdout.trim().is_empty() {
-        log("skip: nothing to commit under memories/");
-        return Ok(None);
-    }
-    git_run(root, &["commit", "-m", COMMIT_MESSAGE], None, log)?.require("git commit")?;
-    let head = git_run(root, &["rev-parse", "HEAD"], None, log)?.require("git rev-parse HEAD")?;
-    Ok(Some(head.stdout.trim().to_string()))
 }
 
 #[cfg(test)]

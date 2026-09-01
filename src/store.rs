@@ -31,6 +31,8 @@ pub mod index_runs;
 pub mod memory_list;
 /// Batched per-memory metadata (path, repo, kind, tags, references).
 pub mod memory_meta;
+/// Hard-delete of one soft-deleted memory's mirror rows (`comemory gc`).
+pub mod memory_purge;
 /// `memories` row upserts and their edge materialization.
 pub mod memory_row;
 /// Versioned, idempotent schema migrations plus `schema_meta`.

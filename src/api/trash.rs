@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::api::Ctx;
+use crate::memory::id::is_valid_memory_id;
 use crate::output::page::Page;
 use crate::output::search::title_of;
 use crate::prelude::*;
@@ -124,6 +125,19 @@ fn deleted_rows(conn: &Connection) -> Result<Vec<RawRow>> {
     Ok(out)
 }
 
+/// The memory id a `memories/.trash/` entry name carries: the `{id}-`
+/// prefix of an `{id}-{slug}.md` file, validated as an 8-hex memory id.
+/// `None` for anything else in the directory. Shared by this listing and
+/// `api::gc`'s sweep so the two cannot disagree on which files are
+/// memories.
+pub fn trash_entry_id(name: &str) -> Option<&str> {
+    let is_md = Path::new(name)
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("md"));
+    let (id, _) = name.split_once('-')?;
+    (is_md && is_valid_memory_id(id)).then_some(id)
+}
+
 /// Index `memories/.trash/` by memory id (`{id}-{slug}.md`). A missing or
 /// unreadable trash directory yields an empty map — every row then falls
 /// back to its `deleted_at` stamp.
@@ -133,13 +147,8 @@ fn trash_files(trash_dir: &Path) -> HashMap<String, PathBuf> {
         return out;
     };
     for entry in entries.flatten() {
-        let name = entry.file_name().into_string().unwrap_or_default();
-        let is_md = Path::new(&name)
-            .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("md"));
-        if let Some((id, _)) = name.split_once('-')
-            && is_md
-        {
+        let name = entry.file_name();
+        if let Some(id) = trash_entry_id(&name.to_string_lossy()) {
             out.insert(id.to_string(), entry.path());
         }
     }

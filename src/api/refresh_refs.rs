@@ -6,16 +6,18 @@
 //! commit + branch); `retrieval::code_ref_status` later compares that anchor
 //! against the live repo to report `fresh|stale|ghost|unpinned|unknown`. This
 //! surface moves the anchor forward: for every ref whose repo root resolves
-//! (`repo_marker.root_path`, via `serve::repo_root::resolve_root`) it
-//! re-reads the HEAD-tree blob, HEAD commit and branch, rewrites the
-//! frontmatter in place, and re-mirrors — so a `stale` ref the user has
-//! reviewed becomes `fresh` again without re-saving the memory under a new
-//! id.
+//! (a `--root <repo>=<path>` override first, then `repo_marker.root_path`,
+//! via `serve::repo_root::resolve_root`) it re-reads the HEAD-tree blob,
+//! HEAD commit and branch, rewrites the frontmatter in place, and re-mirrors
+//! — so a `stale` ref the user has reviewed becomes `fresh` again without
+//! re-saving the memory under a new id.
 //!
-//! Two deliberate degradations, neither an error: a repo whose root cannot
-//! be resolved is skipped and named in `skipped`, and a file missing from the
-//! HEAD tree keeps its old blob (so it still classifies `ghost` rather than
-//! silently becoming `unpinned`).
+//! Three deliberate degradations, none an error: a repo whose root cannot
+//! be resolved is skipped and named in `skipped`; so is one whose root has
+//! no HEAD commit to pin to (an unborn branch, or a directory that is no
+//! longer a git work tree — there is no anchor to move forward to); and a
+//! file missing from the HEAD tree keeps its old blob (so it still
+//! classifies `ghost` rather than silently becoming `unpinned`).
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -40,7 +42,8 @@ pub struct Response {
     /// (its commit/branch move forward, its blob is kept).
     pub refreshed: usize,
     /// Reference ids left untouched because their repo root could not be
-    /// resolved (never indexed, or the working tree is gone).
+    /// resolved (never indexed, or the working tree is gone) or has no HEAD
+    /// commit to pin to (unborn branch, or no longer a git work tree).
     pub skipped: Vec<String>,
     /// The memory's code references after the refresh, re-classified — the
     /// same rows `GET /api/v1/memories/{id}` reports.
@@ -51,10 +54,13 @@ pub struct Response {
 /// whose root did not resolve so a second ref into it does not re-query.
 type RootCache = HashMap<String, Option<PathBuf>>;
 
-/// Re-pin memory `id`'s references. `Error::NotFound` for an unknown or
-/// soft-deleted id (its markdown is in `.trash/`, which `MemoryStore::load`
-/// does not scan).
-pub fn run(ctx: &mut Ctx<'_>, id: &str) -> Result<Response> {
+/// Re-pin memory `id`'s references, resolving each repo's root through
+/// `overrides` (the server's `--root <repo>=<path>` map) before the stored
+/// `repo_marker.root_path` — the only way a repo indexed before the v7
+/// schema captured its root can be refreshed at all. `Error::NotFound` for
+/// an unknown or soft-deleted id (its markdown is in `.trash/`, which
+/// `MemoryStore::load` does not scan).
+pub fn run(ctx: &mut Ctx<'_>, id: &str, overrides: &RootOverrides) -> Result<Response> {
     let store = MemoryStore::new(ctx.paths.clone());
     let mut record = store.load(id)?;
     let id = record.frontmatter.id.clone();
@@ -64,8 +70,10 @@ pub fn run(ctx: &mut Ctx<'_>, id: &str) -> Result<Response> {
     let refreshed = {
         let conn = ctx.conn()?;
         let refs = &mut record.frontmatter.references;
-        repin_all(conn, &mut refs.files, false, &mut roots, &mut skipped)?
-            + repin_all(conn, &mut refs.symbols, true, &mut roots, &mut skipped)?
+        let mut repin = |refs: &mut [Ref], is_symbol: bool| {
+            repin_all(conn, refs, is_symbol, overrides, &mut roots, &mut skipped)
+        };
+        repin(&mut refs.files, false)? + repin(&mut refs.symbols, true)?
     };
     if refreshed > 0 {
         store.rewrite(&record)?;
@@ -84,11 +92,13 @@ pub fn run(ctx: &mut Ctx<'_>, id: &str) -> Result<Response> {
 }
 
 /// Re-anchor every ref in `refs`, returning how many were re-anchored and
-/// pushing the ids of the rest onto `skipped`.
+/// pushing the ids of the rest onto `skipped`. The HEAD commit is resolved
+/// BEFORE the ref is touched, so a skipped ref is never left half-updated.
 fn repin_all(
     conn: &Connection,
     refs: &mut [Ref],
     is_symbol: bool,
+    overrides: &RootOverrides,
     roots: &mut RootCache,
     skipped: &mut Vec<String>,
 ) -> Result<usize> {
@@ -98,7 +108,14 @@ fn repin_all(
             skipped.push(r.id.clone());
             continue;
         };
-        let Some(root) = root_for(conn, repo, roots) else {
+        let Some(root) = root_for(conn, repo, overrides, roots) else {
+            skipped.push(r.id.clone());
+            continue;
+        };
+        // No HEAD commit (unborn branch, or the root is no longer a git
+        // work tree) means nothing to pin to: degrade to `skipped` like an
+        // unresolvable root rather than failing the whole request.
+        let Ok(commit) = git_utils::current_head(&root) else {
             skipped.push(r.id.clone());
             continue;
         };
@@ -108,21 +125,26 @@ fn repin_all(
         if let Some(blob) = git_utils::blob_oid_at_head(&root, path)? {
             r.blob = Some(blob);
         }
-        r.commit = Some(git_utils::current_head(&root)?);
+        r.commit = Some(commit);
         r.branch = git_utils::current_branch(&root)?;
         refreshed += 1;
     }
     Ok(refreshed)
 }
 
-/// The working-tree root for `repo`, resolved through the same
-/// `repo_marker.root_path` lookup `retrieval::code_ref_fetch` classifies
-/// against, and cached per repo. `None` when the repo has no usable root —
-/// the caller degrades that ref to `skipped`.
-fn root_for(conn: &Connection, repo: &str, roots: &mut RootCache) -> Option<PathBuf> {
+/// The working-tree root for `repo`: a `--root` override first, then the
+/// same `repo_marker.root_path` lookup `retrieval::code_ref_fetch`
+/// classifies against, cached per repo. `None` when the repo has no usable
+/// root — the caller degrades that ref to `skipped`.
+fn root_for(
+    conn: &Connection,
+    repo: &str,
+    overrides: &RootOverrides,
+    roots: &mut RootCache,
+) -> Option<PathBuf> {
     roots
         .entry(repo.to_string())
-        .or_insert_with(|| resolve_root(conn, repo, &RootOverrides::new()).ok())
+        .or_insert_with(|| resolve_root(conn, repo, overrides).ok())
         .clone()
 }
 

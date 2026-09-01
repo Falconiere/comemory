@@ -23,8 +23,13 @@ pub const MIN_GOLDEN_PAIRS: usize = 10;
 /// One grid point. `Deserialize` as well as `Serialize` because a stored
 /// `eval_runs.knobs` JSON object is read back into this type by the
 /// console's proposal routes (`api::learning_proposals`) and by
-/// `api::eval::Request`'s `knobs` override.
+/// `api::eval::Request`'s `knobs` override. `deny_unknown_fields` on both:
+/// an HTTP override with a misspelled knob is a `400` rather than a run
+/// scored against the live value, and a row a future binary recorded with
+/// a seventh knob is not offered as a six-knob proposal (every writer —
+/// `api::eval`, `api::tune`, `api::bandit` — emits exactly these six).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct TuneCandidate {
     /// RRF fusion constant.
     pub rrf_k: f32,
@@ -164,6 +169,20 @@ pub(crate) fn with_candidate(base: &Config, c: &TuneCandidate) -> Config {
     cfg.rank.decay = c.decay;
     cfg.rank.mmr_lambda = c.mmr_lambda;
     cfg
+}
+
+/// [`with_candidate`], then `Config::validate` — the guard for a knob set
+/// that did NOT come out of the validated `[tune]` grid: an HTTP `knobs`
+/// override (`api::eval`), or a stored `eval_runs.knobs` row an older binary
+/// with wider grids or a hand edit produced (`api::learning_proposals`).
+/// The validator's own message is re-classed as [`Error::BadRequest`] so
+/// the HTTP surface answers `400`, and nothing downstream ever scores,
+/// records, or writes to `config.toml` a set the next `comemory` start
+/// would refuse to load.
+pub(crate) fn validated_with_candidate(base: &Config, c: &TuneCandidate) -> Result<Config> {
+    with_candidate(base, c)
+        .validate()
+        .map_err(|e| Error::BadRequest(e.to_string()))
 }
 
 /// Lift the aggregate metrics out of an [`EvalReport`] for one candidate.
