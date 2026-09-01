@@ -3,8 +3,9 @@
 //! --apply` (`eval::tune::apply_to_config_file`), the `[reinforce]` toggle
 //! behind `comemory hooks` (`api::hooks`), and the console-api routes
 //! (`PUT /config/retrieval`, `PUT /gc/policy`, `PATCH /memory-stores/{id}`).
-//! One home so the atomic tmp+rename, the missing-file bootstrap, and the
-//! "key exists but is not a table" refusal cannot drift between callers
+//! One home so the atomic tmp+rename (fsynced before the rename, so a
+//! crash cannot publish a truncated file), the missing-file bootstrap, and
+//! the "key exists but is not a table" refusal cannot drift between callers
 //! (Binding Rule 1).
 //!
 //! The file round-trips through `toml::Value`, so comments in an existing
@@ -41,9 +42,37 @@ pub fn patch_config_file(path: &Path, edit: impl FnOnce(&mut Table) -> Result<()
     let rendered = toml::to_string_pretty(&root)
         .map_err(|e| Error::Config(format!("config.toml render: {e}")))?;
     let tmp = path.with_extension("toml.tmp");
-    std::fs::write(&tmp, rendered).map_err(Error::Io)?;
+    write_synced(&tmp, rendered.as_bytes())?;
     std::fs::rename(&tmp, path).map_err(Error::Io)?;
+    sync_parent_dir(path);
     Ok(())
+}
+
+/// Write `bytes` to `path` and fsync the handle before returning, so the
+/// rename that follows publishes durable content. Without the fsync a crash
+/// right after the rename can leave a zero-length `config.toml` on a
+/// delayed-allocation filesystem: the rename is durable, the data is not.
+fn write_synced(path: &Path, bytes: &[u8]) -> Result<()> {
+    use std::io::Write as _;
+
+    let mut file = std::fs::File::create(path).map_err(Error::Io)?;
+    file.write_all(bytes).map_err(Error::Io)?;
+    file.sync_all().map_err(Error::Io)?;
+    Ok(())
+}
+
+/// Best-effort fsync of the directory holding `path`, which is what makes
+/// the rename itself durable. Failure is logged, not propagated: the new
+/// config is already visible to every reader, and refusing a completed
+/// write because its directory entry is not yet on disk would be worse than
+/// the crash window it closes.
+fn sync_parent_dir(path: &Path) {
+    let Some(dir) = path.parent() else {
+        return;
+    };
+    if let Err(e) = std::fs::File::open(dir).and_then(|d| d.sync_all()) {
+        tracing::debug!(dir = %dir.display(), error = %e, "config.toml: directory fsync failed");
+    }
 }
 
 /// Fetch-or-create the named sub-table of `table`. Errors when the key

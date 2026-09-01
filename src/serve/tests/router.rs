@@ -219,3 +219,41 @@ async fn health_reports_the_embed_command_capability() {
     );
     assert_eq!(resp.json["data"]["read_only"], serde_json::json!(false));
 }
+
+/// AC-18, deterministically: a request body over [`BODY_LIMIT`] is refused
+/// `413` by the `DefaultBodyLimit` layer before any handler runs, and the
+/// body is plain text, not the `/api/v1` envelope (the layer sits outside
+/// the route, so no command name exists to envelope it under). Asserted
+/// in-process, where the whole request is handed to the router at once —
+/// the real-binary counterpart in `tests/serve__routes__memories__write.rs`
+/// cannot pin the status as tightly, because over a socket the rejection
+/// races the client's own upload.
+#[tokio::test]
+async fn a_body_over_the_limit_is_refused_413_before_the_handler() {
+    let session = serve_state::session(false);
+    let oversized = "a".repeat(comemory::serve::router::BODY_LIMIT + 1);
+    let resp = serve_state::send(
+        &session,
+        "POST",
+        "/api/v1/memories",
+        Some(serde_json::json!({ "body": oversized })),
+    )
+    .await;
+
+    assert_eq!(resp.status, 413, "body: {}", resp.text);
+    assert_eq!(
+        resp.json,
+        serde_json::Value::Null,
+        "the limit layer answers before the envelope exists: {}",
+        resp.text
+    );
+
+    let listed = serve_state::send(&session, "GET", "/api/v1/memories", None).await;
+    assert_eq!(listed.status, 200, "body: {}", listed.text);
+    assert_eq!(
+        listed.json["data"]["items"].as_array().map(Vec::len),
+        Some(0),
+        "nothing over the limit was stored: {}",
+        listed.text
+    );
+}

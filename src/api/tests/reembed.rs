@@ -443,11 +443,48 @@ fn a_both_run_whose_width_fits_neither_leg_is_a_bad_request() {
     match err {
         comemory::errors::Error::BadRequest(msg) => {
             assert!(msg.contains("16-dim"), "the probed width is named: {msg}");
-            assert!(msg.contains("1024"), "memory_vec's dim is named: {msg}");
-            assert!(msg.contains("768"), "code_vec's dim is named: {msg}");
+            assert!(msg.contains("memory_vec is 1024-dim"), "{msg}");
+            assert!(msg.contains("code_vec is 768-dim"), "{msg}");
         }
         other => panic!("expected BadRequest, got {other:?}"),
     }
     assert_eq!(count(&paths, "memory_vec"), 0);
+    assert_eq!(count(&paths, "code_vec"), 0);
+}
+
+#[test]
+fn an_empty_leg_is_never_named_as_a_width_mismatch() {
+    let home = TempDir::new().expect("tempdir");
+    let paths = Paths::new(home.path());
+    paths.ensure_dirs().expect("ensure dirs");
+    // Code only — no memories at all. `memory_vec` is 1024-dim, which the
+    // embedder matches exactly; it simply has nothing to embed, so the
+    // failure must be about the code leg alone.
+    seed_code(&paths, "only_code_here");
+
+    let cmd = embed_script(&home, "embed-1024.sh", 1024);
+    let cfg = Config::defaults();
+    let mut ctx = Ctx::lazy(&paths, &cfg);
+    let err = api::reembed::run(
+        &mut ctx,
+        api::reembed::Request {
+            target: api::reembed::Target::Both,
+            batch: None,
+        },
+        &cmd,
+        None,
+    )
+    .expect_err("the only leg with rows does not fit");
+
+    match err {
+        comemory::errors::Error::BadRequest(msg) => {
+            assert!(msg.contains("code_vec is 768-dim"), "{msg}");
+            assert!(
+                !msg.contains("memory_vec"),
+                "an empty leg must not be reported as a mismatch: {msg}"
+            );
+        }
+        other => panic!("expected BadRequest, got {other:?}"),
+    }
     assert_eq!(count(&paths, "code_vec"), 0);
 }
