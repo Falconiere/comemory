@@ -202,7 +202,6 @@ fn a_path_containing_an_underscore_does_not_match_a_sibling_file() {
     // inflating one file's count with another file's citations.
     let home = TempDir::new().unwrap();
     let workspace = TempDir::new().unwrap();
-    let data_dir = home.path().join(".comemory");
 
     let repo = workspace.path().join("demo");
     git_repo::init_repo(&repo);
@@ -243,5 +242,4 @@ fn a_path_containing_an_underscore_does_not_match_a_sibling_file() {
         "the underscore file was never cited — a LIKE wildcard must not \
          borrow its sibling's citation"
     );
-    let _ = data_dir;
 }
