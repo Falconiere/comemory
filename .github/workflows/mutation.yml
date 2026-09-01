@@ -8,26 +8,19 @@ on:
 
 permissions:
   contents: read
-  checks: read
-  pull-requests: read
+
+# Supersede an in-flight run when the branch moves: a mutation run on a
+# commit nobody is looking at any more is pure spend.
+concurrency:
+  group: mutation-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  # Cross-workflow gate, as in `test.yml`. Pull requests only — the nightly
-  # `mutants-full` run has no review to wait for.
-  await-review:
-    if: ${{ github.event_name == 'pull_request' }}
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-        with:
-          persist-credentials: false
-          sparse-checkout: .github/actions/await-code-review
-      - uses: ./.github/actions/await-code-review
-        with:
-          github-token: ${{ github.token }}
-
+  # No `await-review` gate here, unlike `test.yml` and `release.yml`: the
+  # only PR-triggered job below is disabled, and the nightly `mutants-full`
+  # run has no review to wait for — a gate job would start a runner on
+  # every push to guard nothing. Re-add it with `mutants-diff`.
   mutants-diff:
-    needs: [await-review]
     # TEMPORARILY DISABLED — diff-scoped mutation testing is too costly on large
     # PRs (one rebuild+test per mutant over the whole diff → 20-40 min). The
     # nightly `mutants-full` run still provides coverage. Re-enable by restoring:
