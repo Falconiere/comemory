@@ -55,7 +55,7 @@ fn build_repo(root: &std::path::Path) -> std::path::PathBuf {
 }
 
 #[test]
-fn v1_get_hooks_reports_the_four_rows_uninstalled_by_default() {
+fn v1_get_hooks_reports_three_uninstalled_git_hooks_and_the_config_backed_row() {
     let home = TempDir::new().expect("home");
     let allowed = TempDir::new().expect("allowed dir");
     let repo = build_repo(allowed.path());
@@ -78,6 +78,9 @@ fn v1_get_hooks_reports_the_four_rows_uninstalled_by_default() {
     assert_eq!(hooks.len(), 4);
     assert_eq!(hooks[0]["name"], "post-commit");
     assert_eq!(hooks[0]["installed"], serde_json::json!(false));
+    // The fourth row is config-backed, not a file in .git/hooks, and
+    // `[reinforce] enabled` defaults to true — so it reads installed on a
+    // fresh repo while the three git hooks do not.
     assert_eq!(hooks[3]["name"], "search-edit-reinforcement");
     assert_eq!(hooks[3]["installed"], serde_json::json!(true));
     assert_eq!(hooks[3]["source"], "config");
