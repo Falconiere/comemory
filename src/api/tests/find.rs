@@ -79,6 +79,11 @@ fn a_tracked_run_writes_exactly_one_retrieval_log_row_attributed_to_find() {
     );
     assert_eq!(result.hits[0].id, "aaaa1111", "and it is the hit");
     assert_eq!(result.hits[0].domain, "memory");
+    assert_eq!(
+        result.hits[0].tier,
+        Some(1),
+        "a memory hit carries its lexical ladder tier — a strict match here"
+    );
     let query_id = result.query_id.expect("a tracked run reports its query_id");
     assert_eq!(log_rows(&conn), 1, "one row per RUN, not one per leg");
 

@@ -38,12 +38,14 @@ fn creates_the_file_when_absent_and_preserves_unrelated_keys_afterwards() {
     })
     .unwrap();
     let second: Value = toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    // Again the WHOLE document: the point of the second patch is that it
+    // ADDS a section without disturbing the first one.
+    let expected: Value =
+        toml::from_str("[reinforce]\nenabled = false\n\n[retrieval]\nrrf_k = 30.0\n").unwrap();
     assert_eq!(
-        second["reinforce"]["enabled"],
-        Value::Boolean(false),
-        "kept"
+        second, expected,
+        "the second patch adds, it does not replace"
     );
-    assert_eq!(second["retrieval"]["rrf_k"], Value::Float(30.0));
 }
 
 #[test]
