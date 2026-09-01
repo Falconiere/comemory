@@ -14,6 +14,7 @@
 
 use crate::test_common::git_sample;
 
+use comemory::api::index_code::IndexMode;
 use comemory::api::{self, Ctx};
 use comemory::config::{Config, Paths};
 use comemory::store::connection;
@@ -81,6 +82,63 @@ fn run_second_run_reports_zero_files_indexed_when_unchanged() {
     assert_eq!(
         second.files_indexed, 0,
         "unchanged blob OID must skip re-indexing"
+    );
+}
+
+#[test]
+fn full_mode_re_extracts_an_unchanged_file_and_drops_its_code_vectors() {
+    // The documented cost of `--mode full`: it clears the indexed-file
+    // cursor so every file is extracted again, and re-extraction replaces
+    // the repo's symbol rows — taking the BYO `code_vec` rows with them.
+    let home = tempdir().expect("tempdir");
+    let workspace = tempdir().expect("workspace");
+    let repo = git_sample::build_sample_repo(workspace.path());
+    let (paths, cfg, mut conn) = ctx_over(home.path());
+
+    let req = |mode| api::index_code::Request {
+        repo: "sample".into(),
+        path: repo.to_str().expect("utf8 path").to_string(),
+        mode,
+    };
+    {
+        let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+        let first = api::index_code::run(&mut ctx, req(IndexMode::Incremental)).expect("first run");
+        assert_eq!(first.files_indexed, 1);
+    }
+
+    // A vector a caller embedded against one of those symbols, exactly as
+    // `ingest-code` writes it.
+    let symbol_id: i64 = conn
+        .query_row(
+            "SELECT id FROM code_symbols WHERE repo = 'sample' AND parent_id IS NULL \
+             ORDER BY id LIMIT 1",
+            [],
+            |r| r.get(0),
+        )
+        .expect("a parent symbol to embed");
+    let dim = comemory::store::vector::dim_code(&conn).expect("code dim");
+    comemory::store::vector::insert_code(&conn, symbol_id, &vec![0.5; dim]).expect("insert vec");
+    let vectors = |conn: &rusqlite::Connection| -> i64 {
+        conn.query_row("SELECT COUNT(*) FROM code_vec", [], |r| r.get(0))
+            .expect("count code_vec")
+    };
+    assert_eq!(vectors(&conn), 1, "the seeded vector is there to lose");
+
+    let full = {
+        let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+        api::index_code::run(&mut ctx, req(IndexMode::Full)).expect("full run")
+    };
+
+    assert_eq!(
+        full.files_indexed, 1,
+        "full re-extracts the unchanged file that incremental skipped"
+    );
+    assert_eq!(full.mode, IndexMode::Full, "the response echoes the mode");
+    assert_eq!(
+        vectors(&conn),
+        0,
+        "re-extraction replaced the symbol rows, so the BYO vector is gone — \
+         the loss `--mode full`'s help text warns about"
     );
 }
 

@@ -174,8 +174,9 @@ async fn unindex_path(
 }
 
 /// The shared body of both `unindex` forms: [`guard_mutating`]
-/// (read-only/busy) first, then [`require_confirm`] (AC-19), then
-/// `api::unindex::run`.
+/// (read-only/busy) first, on the async task, then — inside the blocking
+/// closure, where the permit is held — [`require_confirm`] (AC-19) and
+/// finally `api::unindex::run`.
 async fn unindex_target(state: AppState, target: String, confirm: bool) -> Response {
     let started = Instant::now();
     let permit = match guard_mutating("unindex", &state) {
