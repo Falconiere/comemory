@@ -62,6 +62,7 @@ pub struct Request {
 }
 
 /// Everything the render layer needs from one `find` run.
+#[derive(Debug)]
 pub struct FindResult {
     /// The fused page.
     pub hits: Vec<UnifiedHit>,
@@ -178,3 +179,7 @@ fn track_run(
         crate::stats::source::FIND,
     )
 }
+
+#[cfg(test)]
+#[path = "tests/find.rs"]
+mod tests;
