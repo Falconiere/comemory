@@ -443,3 +443,67 @@ fn lang_actually_narrows_the_code_leg() {
         all["hits"].as_array().unwrap().len()
     );
 }
+
+#[test]
+fn a_domain_exclusion_holds_against_a_non_empty_corpus_of_that_domain() {
+    // Coverage gap noted in review: every existing exclusion test proves a leg
+    // returns nothing when its corpus is EMPTY, which a broken guard would also
+    // satisfy. This seeds a real document, confirms `--domain document` finds
+    // it, then asserts the other two domains exclude it — the only shape that
+    // actually distinguishes "guard works" from "corpus happens to be empty".
+    let home = TempDir::new().unwrap();
+    let docs = TempDir::new().unwrap();
+    let data_dir = home.path().join(".comemory");
+
+    std::fs::write(
+        docs.path().join("upgrade.md"),
+        "# Upgrade guide\n\nThe migration snapshot is taken before any \
+         destructive step runs.\n",
+    )
+    .unwrap();
+    run(
+        &data_dir,
+        &["index", docs.path().to_str().unwrap(), "--json"],
+    );
+    run(
+        &data_dir,
+        &[
+            "save",
+            "an unrelated memory about snapshots",
+            "--kind",
+            "note",
+        ],
+    );
+
+    let doc_only = json(
+        &data_dir,
+        &[
+            "find",
+            "migration snapshot",
+            "--domain",
+            "document",
+            "--json",
+        ],
+    );
+    let doc_hits = doc_only["hits"].as_array().unwrap();
+    assert!(
+        doc_hits.iter().any(|h| h["domain"] == "document"),
+        "the document corpus is non-empty and must be findable: {doc_only}"
+    );
+
+    for excluded in ["memory", "code"] {
+        let other = json(
+            &data_dir,
+            &["find", "migration snapshot", "--domain", excluded, "--json"],
+        );
+        assert!(
+            !other["hits"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|h| h["domain"] == "document"),
+            "--domain {excluded} must exclude the document leg even though \
+             documents exist and match: {other}"
+        );
+    }
+}
