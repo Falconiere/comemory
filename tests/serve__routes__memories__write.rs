@@ -408,7 +408,16 @@ fn v1_post_memories_returns_503_busy_while_a_job_holds_the_write_permit_ac17() {
 fn v1_post_memories_over_5mib_is_refused_and_stores_nothing_ac18() {
     let home = TempDir::new().expect("home");
     let (base, token, _guard) = spawn_serve(&home, &[]);
-    let client = reqwest::blocking::Client::new();
+    // Connection pooling OFF for this test only. The server closes the
+    // connection as soon as it refuses the oversized body, and a pooled
+    // client hands that same half-closed connection to the follow-up
+    // request, which then fails with `IncompleteMessage` — a client-side
+    // artifact of the refusal, not a server that stopped serving. A fresh
+    // connection per request keeps the survival check honest.
+    let client = reqwest::blocking::Client::builder()
+        .pool_max_idle_per_host(0)
+        .build()
+        .expect("build client");
 
     let oversized = "a".repeat(6 * 1024 * 1024);
     let payload = serde_json::json!({ "body": oversized });
