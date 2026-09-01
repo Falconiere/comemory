@@ -41,7 +41,11 @@ pub struct NodeRow {
 /// differently: `references_file` stores the BARE `<repo>:<path>` (no
 /// `file:` prefix — see `graph::edges::file_node_id`), while
 /// `references_symbol` stores `<repo>:<path>:<symbol>`, so a symbol
-/// reference is matched by prefix. `COUNT(DISTINCT src_id)` over both keeps
+/// reference is matched by prefix — with `substr(...) = ...`, NOT `LIKE`.
+/// A path is full of `_`, which LIKE reads as "any single character"
+/// (`src/memory_list.rs` would also match `src/memoryXlist.rs`); the
+/// substr form has no metacharacters to escape. Same technique as
+/// `graph::edges::file_node_prefix`. `COUNT(DISTINCT src_id)` over both keeps
 /// a memory that cites three symbols in one file counting once, and the
 /// `memories` join drops soft-deleted rows.
 const EXTRA_COLUMNS: &str = "\
@@ -52,7 +56,8 @@ const EXTRA_COLUMNS: &str = "\
       WHERE m.deleted_at IS NULL AND e.src_kind = 'memory' \
         AND ((e.rel = 'references_file' AND e.dst_id = c.repo || ':' || c.path) \
           OR (e.rel = 'references_symbol' \
-              AND e.dst_id LIKE c.repo || ':' || c.path || ':%')))";
+              AND substr(e.dst_id, 1, length(c.repo || ':' || c.path || ':')) \
+                  = c.repo || ':' || c.path || ':')))";
 
 /// Max `(repo, path)` pairs per batched node fetch. Each pair binds two host
 /// params, so `500 × 2 = 1000` stays far under bundled SQLite's

@@ -192,3 +192,56 @@ fn the_pre_existing_node_fields_are_unchanged() {
         "symbols still counts top-level symbols"
     );
 }
+
+#[test]
+fn a_path_containing_an_underscore_does_not_match_a_sibling_file() {
+    // Regression: the memory count matched symbol refs with
+    // `dst_id LIKE '<repo>:<path>:%'`. In LIKE, `_` means "any single
+    // character" — and Rust paths are full of underscores — so
+    // `demo:memory_list.rs:%` also matched `demo:memoryXlist.rs:...`,
+    // inflating one file's count with another file's citations.
+    let home = TempDir::new().unwrap();
+    let workspace = TempDir::new().unwrap();
+    let data_dir = home.path().join(".comemory");
+
+    let repo = workspace.path().join("demo");
+    git_repo::init_repo(&repo);
+    git_commit::commit_files(
+        &repo,
+        &[
+            ("memory_list.rs", "fn list_memories() {}\n"),
+            ("memoryXlist.rs", "fn decoy() {}\n"),
+        ],
+        "two files one underscore apart",
+    );
+    bin(&home)
+        .args(["index-code", "--repo", "demo", "--path"])
+        .arg(repo.as_os_str())
+        .assert()
+        .success();
+
+    // Cite ONLY the decoy's symbol.
+    bin(&home)
+        .args([
+            "save",
+            "the decoy entry point is `demo:memoryXlist.rs:decoy`",
+            "--kind",
+            "note",
+        ])
+        .assert()
+        .success();
+
+    let graph = graph_json(&home);
+    assert_eq!(
+        node(&graph, "file:demo:memoryXlist.rs")["memories"],
+        1,
+        "the cited file counts its one memory"
+    );
+    assert_eq!(
+        node(&graph, "file:demo:memory_list.rs")["memories"],
+        0,
+        "the underscore file was never cited — a LIKE wildcard must not \
+         borrow its sibling's citation"
+    );
+    let _ = data_dir;
+}
