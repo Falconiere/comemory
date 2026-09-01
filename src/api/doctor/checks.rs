@@ -371,7 +371,14 @@ fn embed_probe(cmd: Option<&str>) -> (Check, Option<u64>) {
 
 /// Check 9: markdown file count vs `memories` row count.
 fn markdown_db_counts(conn: &Connection, markdown_files: u64) -> Result<Check> {
-    let db_rows: u64 = conn.query_row("SELECT COUNT(*) FROM memories", [], |r| r.get(0))?;
+    // LIVE rows only: `markdown_files` comes from `MemoryStore::list()`, which
+    // never walks `.trash/`, so counting soft-deleted rows here would report a
+    // permanent spurious warn on any corpus that has ever had a memory pruned.
+    let db_rows: u64 = conn.query_row(
+        "SELECT COUNT(*) FROM memories WHERE deleted_at IS NULL",
+        [],
+        |r| r.get(0),
+    )?;
     let detail = format!("{markdown_files} markdown file(s), {db_rows} memories row(s)");
     Ok(if markdown_files == db_rows {
         ok("markdown/db counts", detail)

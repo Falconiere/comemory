@@ -367,3 +367,79 @@ fn the_document_leg_weight_is_actually_read() {
         "AC-16: the knob is validated (0 is outside the allowed range)"
     );
 }
+
+#[test]
+fn lang_actually_narrows_the_code_leg() {
+    // Regression: `--lang` was parsed, documented as "Narrows the code leg
+    // only", and forwarded into `api::find::Request` — but `run` never read
+    // it and the code leg was invoked with a hardcoded `None`. The flag was
+    // inert, and the older test only checked that both domains were present,
+    // which passes either way. This asserts the narrowing itself.
+    let home = TempDir::new().unwrap();
+    let workspace = TempDir::new().unwrap();
+    let data_dir = home.path().join(".comemory");
+
+    let repo = workspace.path().join("demo");
+    git_repo::init_repo(&repo);
+    git_commit::commit_files(
+        &repo,
+        &[
+            ("frontmatter.rs", "fn parse_frontmatter() {}\n"),
+            ("frontmatter.py", "def parse_frontmatter():\n    pass\n"),
+        ],
+        "same symbol in two languages",
+    );
+    bin(&data_dir)
+        .args(["index-code", "--repo", "demo", "--path"])
+        .arg(repo.as_os_str())
+        .assert()
+        .success();
+
+    let all = json(
+        &data_dir,
+        &["find", "parse_frontmatter", "--domain", "code", "--json"],
+    );
+    let langs: std::collections::HashSet<String> = all["hits"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|h| h["subtitle"].as_str())
+        .map(|s| s.rsplit(" · ").next().unwrap_or_default().to_string())
+        .collect();
+    assert!(
+        langs.len() >= 2,
+        "the fixture must produce hits in more than one language, got {langs:?}"
+    );
+
+    let rust_only = json(
+        &data_dir,
+        &[
+            "find",
+            "parse_frontmatter",
+            "--domain",
+            "code",
+            "--lang",
+            "rust",
+            "--json",
+        ],
+    );
+    let hits = rust_only["hits"].as_array().unwrap();
+    assert!(
+        !hits.is_empty(),
+        "--lang rust must still match the Rust symbol"
+    );
+    for h in hits {
+        assert!(
+            std::path::Path::new(h["path"].as_str().unwrap_or_default())
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("rs")),
+            "--lang rust must drop non-Rust hits, got {h}"
+        );
+    }
+    assert!(
+        hits.len() < all["hits"].as_array().unwrap().len(),
+        "--lang must actually narrow: {} filtered vs {} unfiltered",
+        hits.len(),
+        all["hits"].as_array().unwrap().len()
+    );
+}

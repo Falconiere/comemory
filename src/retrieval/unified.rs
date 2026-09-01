@@ -30,6 +30,17 @@ use crate::store::memory_meta;
 /// Weighted fusion and the domain-tagged hit shape.
 pub mod fuse_domains;
 
+/// The per-domain filters, which narrow exactly one leg each and mean
+/// nothing to the others — which is why they are grouped here rather than
+/// added as fields on the shared [`Filters`].
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DomainFilters<'a> {
+    /// Source language; narrows the CODE leg only.
+    pub lang: Option<&'a str>,
+    /// Git-style path globs; narrow the DOCUMENT leg only.
+    pub path_globs: &'a [String],
+}
+
 /// One unified run's outcome.
 pub struct UnifiedRun {
     /// The requested page of the fused ranking.
@@ -42,13 +53,16 @@ pub struct UnifiedRun {
 
 /// Run every in-scope leg and fuse. `filters.domains` selects the legs; a
 /// domain left out is skipped entirely rather than run and discarded.
+///
+/// [`DomainFilters`] carries the per-leg narrowing (`lang` for code,
+/// `path_globs` for documents) that the shared [`Filters`] has no place for.
 pub fn find(
     cfg: &Config,
     conn: &Connection,
     query: &str,
     vec: Option<&[f32]>,
     filters: Filters<'_>,
-    path_globs: &[String],
+    domain_filters: DomainFilters<'_>,
     window: PageWindow,
 ) -> Result<UnifiedRun> {
     let max_window = cfg.retrieval.max_page_window;
@@ -56,11 +70,20 @@ pub fn find(
 
     let memory = memory_leg(cfg, conn, query, vec, filters, pool)?;
     let code = if filters.domains.contains(Domain::Code) {
-        code_search::search_code_hits(cfg, conn, query, vec, filters.repo, None, pool)?
+        code_search::search_code_hits(
+            cfg,
+            conn,
+            query,
+            vec,
+            filters.repo,
+            domain_filters.lang,
+            pool,
+        )?
     } else {
         Vec::new()
     };
-    let documents = doc_route::route_documents(conn, query, filters, path_globs, pool)?;
+    let documents =
+        doc_route::route_documents(conn, query, filters, domain_filters.path_globs, pool)?;
 
     let ids: Vec<&str> = memory.iter().map(|h| h.memory_id.as_str()).collect();
     let meta = memory_meta::fetch_meta(conn, &ids)?;
