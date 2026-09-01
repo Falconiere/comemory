@@ -334,6 +334,18 @@ fn re_mirror_preserves_mined_co_activated_edges() {
         stamp, "2025-01-01T00:00:00Z",
         "created_at must be preserved"
     );
+    // Exactly one, not two: the re-mirror wipes the outgoing edges and
+    // puts the reward back, so a restore that appended instead of
+    // replacing would still satisfy the weight and stamp assertions above.
+    let co_activated: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM edges WHERE src_kind = 'memory' AND src_id = ?1 \
+               AND rel = 'co_activated'",
+            [ID],
+            |r| r.get(0),
+        )
+        .expect("count co_activated");
+    assert_eq!(co_activated, 1, "the reward survives once, not twice");
     // The markdown-derived edges were still refreshed as before.
     assert_all_edges(&conn);
 }
