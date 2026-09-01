@@ -147,10 +147,20 @@ fn track_run(
         .filter(|h| h.domain == unified::fuse_domains::DOMAIN_MEMORY)
         .map(|h| h.id.clone())
         .collect();
+    // A code hit's id is a `code_symbols` rowid that `fuse_domains` stringified,
+    // so this parse cannot fail in practice — but a silent drop here would mean
+    // access tracking quietly skipping a hit, so it warns like the identical
+    // spot in `code_route::fuse_legs` does.
     let code_ids: Vec<i64> = hits
         .iter()
         .filter(|h| h.domain == unified::fuse_domains::DOMAIN_CODE)
-        .filter_map(|h| h.id.parse().ok())
+        .filter_map(|h| match h.id.parse() {
+            Ok(id) => Some(id),
+            Err(e) => {
+                tracing::warn!(id = %h.id, error = %e, "skipping non-numeric code hit id");
+                None
+            }
+        })
         .collect();
     let memory_refs: Vec<&str> = memory_ids.iter().map(String::as_str).collect();
     pipeline::record_access(conn, &memory_refs);
