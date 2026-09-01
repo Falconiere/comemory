@@ -123,6 +123,21 @@ fn migration_integrity_derived_live_set_has_exactly_twenty_eight_tables() {
         "expected exactly 28 live tables, got {}: {live:?}",
         live.len()
     );
+    // The count alone would still pass if a history table were added to
+    // the schema and then filed under the wrong allowlist, so name the
+    // three the bumps above were about.
+    for table in ["eval_runs", "gc_runs", "index_runs"] {
+        assert!(
+            COPIED_TABLES.contains(&table),
+            "{table} is run history markdown cannot reconstruct — it must be COPIED"
+        );
+        assert!(
+            !RECONSTRUCTABLE_TABLES
+                .iter()
+                .any(|(name, _)| *name == table),
+            "{table} must not also be listed as reconstructable"
+        );
+    }
     assert!(
         live.contains("edges"),
         "edges must survive the RENAME rewrite (0006/0008/0013 each drop and \
