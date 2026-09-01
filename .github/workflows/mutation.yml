@@ -9,6 +9,7 @@ on:
 permissions:
   contents: read
   checks: read
+  pull-requests: read
 
 jobs:
   # Cross-workflow gate, as in `test.yml`. Pull requests only — the nightly

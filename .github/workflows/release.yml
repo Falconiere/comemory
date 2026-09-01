@@ -16,7 +16,9 @@
 name: Release
 permissions:
   "contents": "write"
-  # Read the Code Review check the `await-review` gate below waits on.
+  # Read the Code Review check the `await-review` gate below waits on,
+  # and the reviewer comment it reads the finding count from.
+  "pull-requests": "read"
   # Hand-maintained, like the `await-review` job and the `check-all` /
   # `validate` steps in `plan`; re-apply on a future `cargo dist init`.
   "checks": "read"

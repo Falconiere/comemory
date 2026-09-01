@@ -9,6 +9,7 @@ on:
 permissions:
   contents: read
   checks: read
+  pull-requests: read
 
 jobs:
   # Cross-workflow gate: GitHub has no `needs:` across workflows, so this job

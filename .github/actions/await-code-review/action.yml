@@ -1,8 +1,9 @@
 name: Await code review
 description: >-
-  Block until this commit's Code Review check has concluded, and fail unless
-  it succeeded. Lets a workflow depend on another workflow's result, which
-  GitHub Actions has no native `needs:` for.
+  Block until this commit's Code Review check has concluded, then fail
+  unless it succeeded AND reported zero findings. Lets a workflow depend on
+  another workflow's result, which GitHub Actions has no native `needs:`
+  for.
 
 inputs:
   sha:
@@ -21,7 +22,9 @@ inputs:
     required: false
     default: review
   github-token:
-    description: "Token used to read check runs. Needs the `checks: read` permission."
+    description: >-
+      Token used to read the check run and the reviewer's comment. Needs the
+      `checks: read` and `pull-requests: read` permissions.
     required: true
 
 runs:
@@ -78,3 +81,51 @@ runs:
             exit 1
             ;;
         esac
+
+    - name: Require a review with no findings
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        REPO: ${{ github.repository }}
+        PR: ${{ github.event.pull_request.number }}
+      run: |
+        set -euo pipefail
+
+        # The reviewer edits ONE sticky comment per PR, so the last comment
+        # it authored is this run's report. Its shape (observed across the
+        # rounds on PR #82):
+        #   **Verdict:** ⚠️ Changes requested   🟠 2 high 🟡 36 medium 🔵 40 low
+        #   ### Findings (78)
+        # An approved run carries no severity counts.
+        body="$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" \
+          --jq '[.[] | select(.user.login == "github-actions[bot]" or .user.login == "claude[bot]")]
+                | last | .body // ""')"
+
+        if [ -z "$body" ]; then
+          echo "::error::No review comment found on PR #$PR; cannot prove the review is clean."
+          exit 1
+        fi
+
+        # `### Findings (N)` is the authoritative count when present.
+        findings="$(printf '%s\n' "$body" | sed -n 's/^### Findings (\([0-9][0-9]*\)).*/\1/p' | head -1)"
+
+        # Otherwise sum the severity counts on the verdict line.
+        if [ -z "$findings" ]; then
+          verdict_line="$(printf '%s\n' "$body" | grep -m1 '^\*\*Verdict:\*\*' || true)"
+          findings="$(printf '%s\n' "$verdict_line" \
+            | grep -o '[0-9][0-9]* \(high\|medium\|low\|nit\)' \
+            | awk '{ total += $1 } END { print total + 0 }')"
+          # A verdict that names no severities and reads as approved is zero.
+          if [ "$findings" = "0" ] && ! printf '%s' "$verdict_line" | grep -qi 'approv'; then
+            echo "::error::Could not read a finding count from the review comment; refusing to assume it is clean."
+            echo "Verdict line was: ${verdict_line:-<none>}"
+            exit 1
+          fi
+        fi
+
+        echo "Review reported $findings finding(s)."
+        if [ "$findings" -ne 0 ]; then
+          echo "::error::The review reported $findings finding(s); this workflow runs only on a clean review."
+          exit 1
+        fi
+        echo "::notice::Review is green with no findings — continuing."
