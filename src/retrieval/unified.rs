@@ -68,7 +68,16 @@ pub fn find(
     let max_window = cfg.retrieval.max_page_window;
     let pool = pipeline::pool_size(window.offset, window.limit, max_window);
 
-    let memory = memory_leg(cfg, conn, query, vec, filters, pool)?;
+    // Every leg is gated HERE, uniformly. `memory_leg` and `route_documents`
+    // also refuse their own excluded domain internally — `route_documents` is
+    // shared with the document-only search path and has to — but relying on
+    // that made this read like a missing guard to three separate reviewers.
+    // One visible shape for all three is worth the duplicated condition.
+    let memory = if filters.domains.contains(Domain::Memory) {
+        memory_leg(cfg, conn, query, vec, filters, pool)?
+    } else {
+        Vec::new()
+    };
     let code = if filters.domains.contains(Domain::Code) {
         code_search::search_code_hits(
             cfg,
@@ -82,16 +91,21 @@ pub fn find(
     } else {
         Vec::new()
     };
-    // The document leg guards ITSELF: `route_documents` returns empty without
-    // touching the database when `filters.domains` excludes `Document` (see its
-    // early return). Written this way rather than with a call-site `if` to
-    // avoid double-checking the same condition — noted because the asymmetry
-    // with the two legs above reads like a missing guard.
-    let documents =
-        doc_route::route_documents(conn, query, filters, domain_filters.path_globs, pool)?;
+    let documents = if filters.domains.contains(Domain::Document) {
+        doc_route::route_documents(conn, query, filters, domain_filters.path_globs, pool)?
+    } else {
+        Vec::new()
+    };
 
-    let ids: Vec<&str> = memory.iter().map(|h| h.memory_id.as_str()).collect();
-    let meta = memory_meta::fetch_meta(conn, &ids)?;
+    // Skipped outright on an empty memory leg. `fetch_meta` already returns an
+    // empty map for an empty id list, so this is about saying so at the call
+    // site rather than about the round trip.
+    let meta = if memory.is_empty() {
+        std::collections::HashMap::new()
+    } else {
+        let ids: Vec<&str> = memory.iter().map(|h| h.memory_id.as_str()).collect();
+        memory_meta::fetch_meta(conn, &ids)?
+    };
 
     let ranked = fuse_domains::fuse(
         fuse_domains::Legs {

@@ -162,8 +162,13 @@ fn track_run(
             }
         })
         .collect();
+    // Two shapes, one collection each, because the two consumers genuinely
+    // differ: `record_access` takes `&[&str]` (it binds ids into an `IN` list)
+    // while `log_retrieval` takes `&[String]` (it serializes them to JSON).
+    // `as_slice()` rather than `&memory_refs` so the slice type is explicit at
+    // the call site instead of resting on deref coercion.
     let memory_refs: Vec<&str> = memory_ids.iter().map(String::as_str).collect();
-    pipeline::record_access(conn, &memory_refs);
+    pipeline::record_access(conn, memory_refs.as_slice());
     crate::store::code_row::record_access(conn, &code_ids);
     pipeline::log_retrieval(
         conn,
