@@ -42,13 +42,20 @@ fn put_path(repo: &Path, name: &str) -> String {
     )
 }
 
-/// The reported row for `name`, as `(installed, source)`.
+/// The reported row for `name`, as `(installed, source)`. The row's own
+/// `name` field is asserted here rather than trusted: the lookup is by
+/// name, so a response that renamed the row would otherwise be invisible.
 fn row(body: &serde_json::Value, name: &str) -> (bool, String) {
     let hooks = body["data"]["hooks"].as_array().expect("hooks array");
     let found = hooks
         .iter()
         .find(|row| row["name"] == name)
         .unwrap_or_else(|| panic!("no row for {name} in {body}"));
+    assert_eq!(
+        found["name"].as_str(),
+        Some(name),
+        "the reported row carries the requested hook's canonical name"
+    );
     (
         found["installed"].as_bool().unwrap_or(false),
         found["source"].as_str().unwrap_or_default().to_string(),

@@ -233,29 +233,104 @@ fn rebuild_preserves_run_history_and_the_v15_flags() {
     run_rebuild_api(&home);
 
     let conn = open_db_with_vec(&home);
-    let (files, outcome): (i64, String) = conn
+    // Every column each row was seeded with, not just the flag under test:
+    // the copy is a hand-written column list, so a swapped or dropped
+    // column is exactly the regression worth catching.
+    let run: (
+        String,
+        String,
+        String,
+        String,
+        String,
+        i64,
+        i64,
+        i64,
+        String,
+    ) = conn
         .query_row(
-            "SELECT files_indexed, outcome FROM index_runs WHERE id = '0f1e2d3c4b5a6978'",
+            "SELECT repo, root_path, mode, started_at, finished_at, duration_ms, \
+             files_indexed, symbols, outcome FROM index_runs WHERE id = '0f1e2d3c4b5a6978'",
             [],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+            |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get(4)?,
+                    r.get(5)?,
+                    r.get(6)?,
+                    r.get(7)?,
+                    r.get(8)?,
+                ))
+            },
         )
         .expect("index_runs row must survive the rebuild");
-    assert_eq!((files, outcome.as_str()), (12, "ok"));
-    let discarded: i64 = conn
+    assert_eq!(
+        run,
+        (
+            "myrepo".to_string(),
+            "/tmp/myrepo".to_string(),
+            "full".to_string(),
+            "2026-09-01T10:00:00.000000000Z".to_string(),
+            "2026-09-01T10:00:02.000000000Z".to_string(),
+            2_000,
+            12,
+            340,
+            "ok".to_string(),
+        )
+    );
+    let eval: (String, String, i64, i64, f64, f64, String, i64, i64) = conn
         .query_row(
-            "SELECT discarded FROM eval_runs WHERE id = 'a1b2c3d4e5f60718'",
+            "SELECT kind, at, golden_pairs, k, recall, mrr, knobs, applied, discarded \
+             FROM eval_runs WHERE id = 'a1b2c3d4e5f60718'",
             [],
-            |r| r.get(0),
+            |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get(4)?,
+                    r.get(5)?,
+                    r.get(6)?,
+                    r.get(7)?,
+                    r.get(8)?,
+                ))
+            },
         )
         .expect("eval_runs row must survive the rebuild");
-    assert_eq!(discarded, 1, "a discarded proposal must stay discarded");
-    let (root, archived): (String, i64) = conn
+    assert_eq!(
+        eval,
+        (
+            "tune".to_string(),
+            "2026-08-31T10:00:00.000000000Z".to_string(),
+            96,
+            10,
+            0.78,
+            0.61,
+            "{\"rrf_k\":60.0}".to_string(),
+            0,
+            1,
+        ),
+        "a discarded proposal must stay discarded, with its metrics intact"
+    );
+    let marker: (String, String, String, i64) = conn
         .query_row(
-            "SELECT root_path, archived FROM repo_marker WHERE repo = 'myrepo'",
+            "SELECT last_head, last_indexed_at, root_path, archived \
+             FROM repo_marker WHERE repo = 'myrepo'",
             [],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
         )
         .expect("repo_marker row must survive the rebuild");
-    assert_eq!(root, "/tmp/myrepo", "root_path must be carried over");
-    assert_eq!(archived, 1, "archived must be carried over");
+    assert_eq!(
+        marker,
+        (
+            "abc123".to_string(),
+            "2026-09-01T10:00:00.000000000Z".to_string(),
+            "/tmp/myrepo".to_string(),
+            1,
+        ),
+        "last_head drives incremental indexing, so it must be carried over too"
+    );
 }

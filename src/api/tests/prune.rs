@@ -143,9 +143,26 @@ fn run_apply_with_ids_touches_only_the_listed_candidate() {
             .filter(|e| e.file_name().to_string_lossy().starts_with(id))
             .count()
     };
+    // The exact path of the survivor, not just "a file whose name starts
+    // with the id": a rename would otherwise read as a survival.
+    let path_of = |id: &str| -> Option<std::path::PathBuf> {
+        std::fs::read_dir(&memories)
+            .expect("read memories dir")
+            .filter_map(std::result::Result::ok)
+            .map(|e| e.path())
+            .find(|p| {
+                p.file_name()
+                    .is_some_and(|n| n.to_string_lossy().starts_with(id))
+            })
+    };
+    let healthy_path = path_of(&healthy).expect("the non-candidate file must still be live");
     assert_eq!(live(&doomed), 0, "the listed candidate must be pruned");
     assert_eq!(live(&spared), 1, "an unlisted candidate must survive");
     assert_eq!(live(&healthy), 1, "a non-candidate id must be ignored");
+    assert!(
+        healthy_path.starts_with(&memories) && healthy_path.is_file(),
+        "the non-candidate stays exactly where it was: {healthy_path:?}"
+    );
     let trashed = std::fs::read_dir(memories.join(".trash"))
         .expect("read .trash")
         .count();
