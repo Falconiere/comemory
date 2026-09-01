@@ -105,5 +105,5 @@ async fn get_one(State(state): State<AppState>, Path(id): Path<String>) -> Respo
         api::show::run(&mut ctx, api::show::Request { id })
     })
     .await;
-    respond("memories.get", result, started)
+    respond("show", result, started)
 }

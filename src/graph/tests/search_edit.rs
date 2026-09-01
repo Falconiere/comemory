@@ -116,7 +116,7 @@ fn search_hit_upgrades_provenance_while_miss_stays_coactivation() {
     seed_memory_referencing(&conn, "aaaaaaa2", "docs/guide.md");
     seed_search_hit(&conn, "aaaaaaa1");
 
-    materialize(&mut conn, &repo_root, REPO, &BTreeMap::new(), 7).expect("materialize");
+    materialize(&mut conn, &repo_root, REPO, &BTreeMap::new(), Some(7)).expect("materialize");
 
     let (prov1, qid1) = used_event(&conn, "aaaaaaa1").expect("search-edit used event");
     assert_eq!(prov1, "auto_search_edit");
@@ -130,5 +130,34 @@ fn search_hit_upgrades_provenance_while_miss_stays_coactivation() {
     assert!(
         pairs.is_empty(),
         "auto provenance rows must not mint golden pairs, got {pairs:?}"
+    );
+}
+
+/// `Config.reinforce.enabled = false` — surfaced to the user as
+/// `comemory hooks --disable search-edit-reinforcement` — must actually STOP
+/// the harvest, not merely report itself off. Passing `None` for the lookback
+/// window is how `api::index_code` expresses that, and this test is the one
+/// that fails if the toggle ever goes back to being cosmetic.
+#[test]
+fn a_disabled_reinforcement_window_harvests_nothing() {
+    let workspace = TempDir::new().expect("workspace");
+    let home = TempDir::new().expect("home");
+    let repo_root = build_repo(workspace.path());
+    let mut conn = open_db_with_symbols(&home);
+
+    // Exactly the corpus that DOES produce two used events when enabled.
+    seed_memory_referencing(&conn, "aaaaaaa1", "docs/guide.md");
+    seed_memory_referencing(&conn, "aaaaaaa2", "docs/guide.md");
+    seed_search_hit(&conn, "aaaaaaa1");
+
+    materialize(&mut conn, &repo_root, REPO, &BTreeMap::new(), None).expect("materialize");
+
+    assert!(
+        used_event(&conn, "aaaaaaa1").is_none(),
+        "a disabled window must not write a search-edit reward"
+    );
+    assert!(
+        used_event(&conn, "aaaaaaa2").is_none(),
+        "a disabled window must not write a co-activation reward either"
     );
 }
