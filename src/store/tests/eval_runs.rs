@@ -111,13 +111,19 @@ fn set_applied_and_set_discarded_flip_exactly_their_own_flag() {
 #[test]
 fn setting_a_flag_on_an_unknown_id_is_not_found() {
     let conn = open();
+    // The id must be IN the message: it is what tells a console operator
+    // which run they mistyped, and a variant-only assertion would not
+    // notice it disappearing.
     let err = eval_runs::set_applied(&conn, "missing0000000000").expect_err("unknown id");
     assert!(
-        matches!(err, comemory::errors::Error::NotFound(_)),
-        "expected NotFound, got {err:?}"
+        matches!(&err, comemory::errors::Error::NotFound(msg) if msg.contains("missing0000000000")),
+        "expected NotFound naming the id, got {err:?}"
     );
     let err = eval_runs::set_discarded(&conn, "missing0000000000").expect_err("unknown id");
-    assert!(matches!(err, comemory::errors::Error::NotFound(_)));
+    assert!(
+        matches!(&err, comemory::errors::Error::NotFound(msg) if msg.contains("missing0000000000")),
+        "expected NotFound naming the id, got {err:?}"
+    );
 }
 
 #[test]
