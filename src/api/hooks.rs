@@ -21,6 +21,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::api::Ctx;
+use crate::config::patch::{patch_config_file, section};
 use crate::git_utils;
 use crate::prelude::*;
 
@@ -133,34 +134,16 @@ fn known_hook(name: &str) -> Result<()> {
 }
 
 /// Toggle `[reinforce] enabled` in `config.toml`, preserving every other
-/// key — a raw `toml::Value` patch (same technique as
-/// `eval::tune::apply_to_config_file`, scoped to the one boolean this
-/// command owns) rather than a full typed round-trip, so an operator's
-/// hand-edited comments and unrelated sections survive. Creates the file
-/// (and its `[reinforce]` table) if missing, so the very first
-/// `--disable`/`--enable` on a fresh install still round-trips.
+/// key, through the shared [`patch_config_file`] primitive (the same one
+/// `eval::tune::apply_to_config_file` uses), scoped to the one boolean
+/// this command owns. Creates the file (and its `[reinforce]` table) if
+/// missing, so the very first `--disable`/`--enable` on a fresh install
+/// still round-trips.
 fn set_reinforce_enabled(path: &Path, enabled: bool) -> Result<()> {
-    let mut root: toml::Value = if path.exists() {
-        let raw = std::fs::read_to_string(path)?;
-        toml::from_str(&raw).map_err(|e| Error::Config(format!("config.toml: {e}")))?
-    } else {
-        toml::Value::Table(toml::map::Map::new())
-    };
-    let table = root
-        .as_table_mut()
-        .ok_or_else(|| Error::Config("config.toml: root is not a table".into()))?;
-    let reinforce = table
-        .entry("reinforce")
-        .or_insert_with(|| toml::Value::Table(toml::map::Map::new()))
-        .as_table_mut()
-        .ok_or_else(|| Error::Config("config.toml: [reinforce] is not a table".into()))?;
-    reinforce.insert("enabled".into(), toml::Value::Boolean(enabled));
-    let rendered = toml::to_string_pretty(&root)
-        .map_err(|e| Error::Config(format!("config.toml render: {e}")))?;
-    let tmp = path.with_extension("toml.tmp");
-    std::fs::write(&tmp, rendered)?;
-    std::fs::rename(&tmp, path)?;
-    Ok(())
+    patch_config_file(path, |root| {
+        section(root, "reinforce")?.insert("enabled".into(), toml::Value::Boolean(enabled));
+        Ok(())
+    })
 }
 
 #[cfg(test)]

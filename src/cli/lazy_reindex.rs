@@ -108,6 +108,13 @@ pub(crate) fn maybe_trigger(
         }
     };
     let marker = read_repo_marker(conn, &ctx.repo);
+    // Archived (`repo_marker.archived`, the console's archive action): the
+    // repo stays searchable but is deliberately no longer indexed, so a
+    // stale HEAD must not fire a background reindex behind the user's back.
+    if marker.as_ref().is_some_and(|m| m.archived) {
+        tracing::debug!(repo = %ctx.repo, "lazy reindex: repo is archived; skipping");
+        return;
+    }
     // Label/checkout collision guard: when the repo was already indexed from
     // a DIFFERENT working-tree root, the CWD is not that checkout (it just
     // reuses the label), so reindexing it would corrupt the foreign repo's
@@ -160,11 +167,13 @@ pub(crate) fn repo_context(repo_filter: Option<&str>) -> Option<RepoContext> {
 }
 
 /// The `repo_marker` columns the lazy probe needs: the HEAD at last index
-/// (`last_mined_commit`) and the absolute working-tree root captured at
-/// index time (`root_path`, NULL for never-indexed / pre-v7 repos).
+/// (`last_mined_commit`), the absolute working-tree root captured at index
+/// time (`root_path`, NULL for never-indexed / pre-v7 repos), and the
+/// `archived` flag (v15) that suppresses the trigger entirely.
 struct RepoMarker {
     last_mined_commit: Option<String>,
     root_path: Option<String>,
+    archived: bool,
 }
 
 /// Read the `repo_marker` row for `repo` (`last_mined_commit` + `root_path`)
@@ -172,12 +181,13 @@ struct RepoMarker {
 /// errors also degrade to `None`.
 fn read_repo_marker(conn: &Connection, repo: &str) -> Option<RepoMarker> {
     conn.query_row(
-        "SELECT last_mined_commit, root_path FROM repo_marker WHERE repo = ?1",
+        "SELECT last_mined_commit, root_path, archived FROM repo_marker WHERE repo = ?1",
         [repo],
         |r| {
             Ok(RepoMarker {
                 last_mined_commit: r.get::<_, Option<String>>(0)?,
                 root_path: r.get::<_, Option<String>>(1)?,
+                archived: r.get::<_, i64>(2)? != 0,
             })
         },
     )

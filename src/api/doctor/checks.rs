@@ -26,6 +26,21 @@ pub struct Check {
     pub status: String,
     /// One-line explanation of the result.
     pub detail: String,
+    /// The `/api/v1` route a console can call to fix a `warn`/`fail`
+    /// (e.g. `"POST /api/v1/rebuild"`), or `None` when the remedy is not
+    /// an API call (upgrade the binary, set an env var).
+    pub remedy: Option<String>,
+}
+
+impl Check {
+    /// Attach the remedy route for a non-`ok` result; an `ok` check keeps
+    /// `None` — there is nothing to fix.
+    fn with_remedy(mut self, remedy: &str) -> Self {
+        if self.status != "ok" {
+            self.remedy = Some(remedy.to_string());
+        }
+        self
+    }
 }
 
 /// Build a [`Check`] with the given `status`.
@@ -34,11 +49,12 @@ fn check(name: &str, status: &str, detail: impl Into<String>) -> Check {
         name: name.to_string(),
         status: status.to_string(),
         detail: detail.into(),
+        remedy: None,
     }
 }
 
 /// Build a passing [`Check`].
-fn ok(name: &str, detail: impl Into<String>) -> Check {
+pub(crate) fn ok(name: &str, detail: impl Into<String>) -> Check {
     check(name, "ok", detail)
 }
 
@@ -112,7 +128,7 @@ pub(crate) fn run_all(conn: &Connection, paths: &Paths, schema_version: &str) ->
         crate::store::migrate::CURRENT_VERSION,
     ));
 
-    let (backup_check, backup_path, backup_bytes) = migration_backup(paths)?;
+    let (backup_check, backup_path, backup_bytes) = super::backup::migration_backup(paths)?;
     checks.push(backup_check);
 
     let (tokenizer_check, tokenizer_registered) = tokenizer(conn);
@@ -168,7 +184,7 @@ fn push_embed_and_counts(
 /// `comemory.db`'s file size in bytes, or `0` if it vanished between the
 /// caller opening it and this read — not worth failing the whole doctor run
 /// over a size we can live without.
-fn db_file_size(paths: &Paths) -> u64 {
+pub(crate) fn db_file_size(paths: &Paths) -> u64 {
     std::fs::metadata(paths.db_path()).map_or(0, |m| m.len())
 }
 
@@ -216,6 +232,7 @@ fn mirror_parity(conn: &Connection, paths: &Paths) -> Result<(Check, u64, u64)> 
             "mirror parity",
             format!("{drift} markdown file(s) disagree with (or have no) memories row"),
         )
+        .with_remedy("POST /api/v1/rebuild")
     };
     Ok((result, markdown_files, drift))
 }
@@ -226,40 +243,13 @@ fn schema_version_check(version: &str, current: &str) -> Check {
         ok("schema version", format!("at current version {current}"))
     } else {
         fail("schema version", format!("{version} != {current}"))
+            .with_remedy("POST /api/v1/rebuild")
     }
-}
-
-/// Check 4: the newest `comemory.db.pre-v{N}.bak` snapshot beside the live
-/// db, if any. Absent is `"ok"` with a detail saying so, not a failure —
-/// see the module doc.
-fn migration_backup(paths: &Paths) -> Result<(Check, Option<String>, Option<u64>)> {
-    let db_path = paths.db_path();
-    let Some(db_name) = db_path.file_name().and_then(|n| n.to_str()) else {
-        return Ok((
-            ok("migration backup", "db path has no file name"),
-            None,
-            None,
-        ));
-    };
-    let prefix = format!("{db_name}.pre-v");
-    let newest = newest_matching(paths.data_dir(), &prefix)?;
-    Ok(match newest {
-        Some((path, size)) => (
-            ok("migration backup", format!("found {}", path.display())),
-            Some(path.to_string_lossy().into_owned()),
-            Some(size),
-        ),
-        None => (
-            ok("migration backup", "no pre-migration backup present"),
-            None,
-            None,
-        ),
-    })
 }
 
 /// The most-recently-modified file directly under `dir` whose name starts
 /// with `prefix`, with its size.
-fn newest_matching(
+pub(crate) fn newest_matching(
     dir: &std::path::Path,
     prefix: &str,
 ) -> Result<Option<(std::path::PathBuf, u64)>> {
@@ -340,7 +330,7 @@ fn repo_roots(conn: &Connection) -> Result<(Check, u32, u32)> {
     let result = if ok_count == total {
         ok("repo roots", detail)
     } else {
-        warn("repo roots", detail)
+        warn("repo roots", detail).with_remedy("POST /api/v1/repos/{name}/archive")
     };
     Ok((result, ok_count, total))
 }

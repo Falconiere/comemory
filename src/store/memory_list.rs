@@ -86,8 +86,40 @@ pub struct ListPage {
     pub total: usize,
 }
 
-/// List live (`deleted_at IS NULL`) memories, applying optional exact
-/// `repo`/`kind` filters and a `LIMIT`/`OFFSET` window.
+/// The optional narrowing filters for [`list_memories`], every one `AND`ed
+/// into the `WHERE` clause and bound as a parameter (never interpolated).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ListFilter<'a> {
+    /// Exact `memories.repo` match.
+    pub repo: Option<&'a str>,
+    /// Exact `memories.kind` match (already lowercased by the caller).
+    pub kind: Option<&'a str>,
+    /// Rows carrying this exact tag in `memory_tags`.
+    pub tag: Option<&'a str>,
+    /// Rows whose `quality` is at least this.
+    pub min_quality: Option<u8>,
+    /// Case-insensitive body substring (`LIKE`, with `%`/`_`/`\` escaped so
+    /// the user's text is matched literally).
+    pub q: Option<&'a str>,
+}
+
+/// Escape `LIKE`'s wildcard characters in a user-supplied substring so it
+/// matches literally; the query pairs it with `ESCAPE '\'`.
+fn like_literal(q: &str) -> String {
+    let mut out = String::with_capacity(q.len() + 2);
+    out.push('%');
+    for c in q.chars() {
+        if matches!(c, '%' | '_' | '\\') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out.push('%');
+    out
+}
+
+/// List live (`deleted_at IS NULL`) memories, applying the optional
+/// [`ListFilter`] narrowing and a `LIMIT`/`OFFSET` window.
 ///
 /// `sort` selects the `ORDER BY` ([`SortBy::order_by`]); [`SortBy::Created`]
 /// replicates the legacy markdown-scan sort — the fixed-width ISO-8601
@@ -98,24 +130,35 @@ pub struct ListPage {
 /// `has_more` is exact.
 pub fn list_memories(
     conn: &Connection,
-    repo: Option<&str>,
-    kind: Option<&str>,
+    filter: &ListFilter<'_>,
     limit: usize,
     offset: usize,
     sort: SortBy,
 ) -> Result<ListPage> {
     let mut filters = String::new();
-    // Filter params (`repo`/`kind`) come first; the windowed query appends the
-    // bound `LIMIT`/`OFFSET` after them. Boxed so the string filters and the
+    // Filter params come first; the windowed query appends the bound
+    // `LIMIT`/`OFFSET` after them. Boxed so the string filters and the
     // integer window can share one `ToSql` list.
     let mut binds: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
-    if let Some(r) = repo {
+    if let Some(r) = filter.repo {
         filters.push_str(" AND repo = ?");
         binds.push(Box::new(r.to_string()));
     }
-    if let Some(k) = kind {
+    if let Some(k) = filter.kind {
         filters.push_str(" AND kind = ?");
         binds.push(Box::new(k.to_string()));
+    }
+    if let Some(t) = filter.tag {
+        filters.push_str(" AND id IN (SELECT memory_id FROM memory_tags WHERE tag = ?)");
+        binds.push(Box::new(t.to_string()));
+    }
+    if let Some(min) = filter.min_quality {
+        filters.push_str(" AND quality >= ?");
+        binds.push(Box::new(i64::from(min)));
+    }
+    if let Some(q) = filter.q.map(str::trim).filter(|q| !q.is_empty()) {
+        filters.push_str(" AND body LIKE ? ESCAPE '\\'");
+        binds.push(Box::new(like_literal(q)));
     }
 
     let total: usize = {

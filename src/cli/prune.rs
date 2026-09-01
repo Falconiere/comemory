@@ -57,6 +57,11 @@ pub struct Args {
     /// reports.
     #[arg(long, default_value_t = false)]
     pub apply: bool,
+    /// Restrict --apply to these memory ids (comma-separated 8-hex ids).
+    /// Ids that are not prune candidates are ignored. Without this flag
+    /// --apply acts on every low-value candidate.
+    #[arg(long, value_delimiter = ',')]
+    pub ids: Vec<String>,
     /// `--limit` / `--offset` window over the dry-run `stale_code_files`
     /// and `low_value_memories` lists. The same window applies to BOTH.
     /// It windows DISPLAY ONLY: `--apply` always acts on the full
@@ -78,6 +83,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         apply: a.apply,
         limit: a.page.limit,
         offset: a.page.offset,
+        ids: a.ids,
     };
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
     let report = api::prune::run(&mut ctx, req)?;

@@ -48,6 +48,27 @@ pub mod sources;
 /// `GET /stats`.
 pub mod stats;
 
+// Console-api spec (2026-09-01) resources.
+
+/// `GET|PUT /config/retrieval`.
+pub mod config;
+/// `GET /graph/nodes*`, `GET /graph/snapshot`, `POST /graph/recompute`.
+pub mod graph_nodes;
+/// `GET|POST /index/runs`.
+pub mod index_runs;
+/// `GET /learning/*`, `POST /learning/evals`, proposals.
+pub mod learning_console;
+/// `GET|POST|PATCH /memory-stores*`.
+pub mod memory_stores;
+/// `GET /overview`, `GET /overview/eval-series`.
+pub mod overview;
+/// `POST /repos`, `PATCH|DELETE /repos/{name}`, `POST /repos/{name}/archive`.
+pub mod repos_admin;
+/// `GET|POST /search`, `GET /search/suggest`, `POST /search/{query_id}/feedback`.
+pub mod search;
+/// `GET /trash`, `POST /trash/{id}/restore`.
+pub mod trash;
+
 /// One `/api/v1` route's static metadata.
 #[derive(Debug, Clone, Copy)]
 pub struct RouteEntry {
@@ -93,6 +114,18 @@ pub fn table() -> Vec<RouteEntry> {
     entries.extend_from_slice(find::table_entries());
     entries.extend_from_slice(hooks::table_entries());
     entries.extend_from_slice(meta::table_entries());
+    entries.extend_from_slice(memories::edit::table_entries());
+    entries.extend_from_slice(maint::doctor::table_entries());
+    entries.extend_from_slice(maint::gc::table_entries());
+    entries.extend_from_slice(config::table_entries());
+    entries.extend_from_slice(graph_nodes::table_entries());
+    entries.extend_from_slice(index_runs::table_entries());
+    entries.extend_from_slice(learning_console::table_entries());
+    entries.extend_from_slice(memory_stores::table_entries());
+    entries.extend_from_slice(overview::table_entries());
+    entries.extend_from_slice(repos_admin::table_entries());
+    entries.extend_from_slice(search::table_entries());
+    entries.extend_from_slice(trash::table_entries());
     entries
 }
 
@@ -113,17 +146,28 @@ pub fn v1_router(state: AppState) -> Router<AppState> {
         .merge(repos::router(state.clone()))
         .merge(find::router(state.clone()))
         .merge(hooks::router(state.clone()))
-        .merge(meta::router(state))
+        .merge(meta::router(state.clone()))
+        .merge(config::router(state.clone()))
+        .merge(graph_nodes::router(state.clone()))
+        .merge(index_runs::router(state.clone()))
+        .merge(learning_console::router(state.clone()))
+        .merge(memory_stores::router(state.clone()))
+        .merge(overview::router(state.clone()))
+        .merge(repos_admin::router(state.clone()))
+        .merge(search::router(state.clone()))
+        .merge(trash::router(state))
 }
 
-/// `GET /api/v1/health` — the same capability-probe payload as legacy `GET
-/// /api/health`, wrapped in the envelope's `data` field.
+/// `GET /api/v1/health` — the capability probe: read-only mode, the binary
+/// version, and whether an embed command is configured (so a console can
+/// tell up front whether `POST /doctor/reembed` will answer `503`).
 async fn health(State(state): State<AppState>) -> Response {
     Envelope::ok(
         "health",
         json!({
             "read_only": state.read_only(),
             "version": env!("CARGO_PKG_VERSION"),
+            "embed_cmd_configured": state.embed_cmd().is_some(),
         }),
         0,
     )

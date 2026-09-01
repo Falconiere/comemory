@@ -61,13 +61,28 @@ pub struct Row {
     pub last_head: Option<String>,
     /// Timestamp of the last successful `index-code` run.
     pub last_indexed_at: Option<String>,
+    /// `"archived"` when [`Row::archived`] is set (it outranks every git
+    /// state — an archived repo is not being indexed at all), else
     /// `"fresh"` (HEAD unchanged since the last index), `"stale"` (HEAD
     /// moved), or `"unknown"` (no root, no last index, or the working tree
-    /// / git itself is unreadable).
+    /// / git itself is unreadable). `GET /api/v1/repos` overlays a fourth
+    /// value, `"indexing"`, when the job registry has a live run for this
+    /// repo — see [`Row::indexing_job`].
     pub status: String,
     /// `git diff --name-only <last_head>..HEAD` count when `status ==
     /// "stale"`; `None` otherwise, and `None` on any git failure.
     pub changed_files: Option<u64>,
+    /// `repo_marker.archived` — the console's "archive" action: stop
+    /// indexing this repo, keep its memories searchable, delete nothing.
+    /// `POST /api/v1/index/runs` refuses an archived repo and
+    /// `cli::lazy_reindex` skips it.
+    pub archived: bool,
+    /// The id of the live `index-code` job for this repo, when one is
+    /// queued or running. Only `GET /api/v1/repos` fills this in (from the
+    /// server's job registry); the CLI has no job registry, so its rows
+    /// omit the field entirely.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub indexing_job: Option<String>,
 }
 
 /// The indexed-repository inventory as emitted under `--json` and in the
@@ -99,12 +114,13 @@ struct Marker {
     files: u64,
     symbols: u64,
     memories: u64,
+    archived: bool,
 }
 
 /// Join `repo_marker` against the per-repo counters, narrowed to `repo`
 /// when one was requested, ordered by repo label for deterministic output.
 fn fetch_markers(conn: &Connection, repo: Option<&str>) -> Result<Vec<Marker>> {
-    let sql = "SELECT rm.repo, rm.root_path, rm.last_head, rm.last_indexed_at, \
+    let sql = "SELECT rm.repo, rm.root_path, rm.last_head, rm.last_indexed_at, rm.archived, \
                       (SELECT COUNT(DISTINCT path) FROM indexed_files WHERE repo = rm.repo), \
                       (SELECT COUNT(*) FROM code_symbols WHERE repo = rm.repo), \
                       (SELECT COUNT(*) FROM memories WHERE repo = rm.repo AND deleted_at IS NULL) \
@@ -118,9 +134,10 @@ fn fetch_markers(conn: &Connection, repo: Option<&str>) -> Result<Vec<Marker>> {
             root_path: r.get(1)?,
             last_head: r.get(2)?,
             last_indexed_at: r.get(3)?,
-            files: r.get::<_, i64>(4)? as u64,
-            symbols: r.get::<_, i64>(5)? as u64,
-            memories: r.get::<_, i64>(6)? as u64,
+            archived: r.get::<_, i64>(4)? != 0,
+            files: r.get::<_, i64>(5)? as u64,
+            symbols: r.get::<_, i64>(6)? as u64,
+            memories: r.get::<_, i64>(7)? as u64,
         })
     })?;
     let mut out = Vec::new();
@@ -144,8 +161,14 @@ fn build_row(m: Marker) -> Row {
         memories: m.memories,
         last_head: m.last_head,
         last_indexed_at: m.last_indexed_at,
-        status: git.status.to_string(),
+        status: if m.archived {
+            "archived".to_string()
+        } else {
+            git.status.to_string()
+        },
         changed_files: git.changed_files,
+        archived: m.archived,
+        indexing_job: None,
     }
 }
 

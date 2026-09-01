@@ -7,9 +7,9 @@
 )]
 //! In-process coverage of the `guard` middleware assembled by
 //! `src/serve/router.rs` (`build_router`): the loopback `Host` check, the
-//! token gate on `/` and `/api/*` (header, query, and cookie forms), the
-//! `/api/v1/*` enveloped-vs-plain-text rejection split, and the ungated
-//! static-asset path. Driven straight through the router via
+//! token gate on `/api/*` (header, bearer, query, and cookie forms), the
+//! `/api/v1/*` enveloped-vs-plain-text rejection split, and the unrouted,
+//! ungated `/`. Driven straight through the router via
 //! `tower::ServiceExt::oneshot` (`tests/common/serve_state.rs`) so this
 //! coverage is actually recorded — the subprocess-based `serve` tests
 //! elsewhere in this suite lose it to a SIGKILLed `.profraw`.
@@ -37,11 +37,19 @@ async fn authenticated_v1_memories_list_returns_a_seeded_memory_as_json() {
     assert_eq!(items.len(), 1, "body: {}", resp.text);
 }
 
+/// An unversioned `/api/*` path (nothing is mounted there any more) is still
+/// token-gated, with the plain-text rejection body.
 #[tokio::test]
-async fn missing_token_on_root_is_401_plain_text() {
+async fn missing_token_on_a_legacy_api_path_is_401_plain_text() {
     let session = serve_state::session(false);
-    let resp =
-        serve_state::send_headers(&session, "GET", "/", &[("Host", "127.0.0.1")], None).await;
+    let resp = serve_state::send_headers(
+        &session,
+        "GET",
+        "/api/graph",
+        &[("Host", "127.0.0.1")],
+        None,
+    )
+    .await;
     assert_eq!(resp.status, 401);
     assert_eq!(resp.json, serde_json::Value::Null, "body: {}", resp.text);
     assert!(
@@ -49,6 +57,16 @@ async fn missing_token_on_root_is_401_plain_text() {
         "body: {}",
         resp.text
     );
+}
+
+/// With the web viewer gone, `/` is neither routed nor token-gated: a bare
+/// request is a plain `404`, never a `401`.
+#[tokio::test]
+async fn root_is_unrouted_and_ungated() {
+    let session = serve_state::session(false);
+    let resp =
+        serve_state::send_headers(&session, "GET", "/", &[("Host", "127.0.0.1")], None).await;
+    assert_eq!(resp.status, 404, "body: {}", resp.text);
 }
 
 #[tokio::test]
@@ -74,12 +92,12 @@ async fn missing_token_on_v1_health_is_401_enveloped_json() {
 }
 
 #[tokio::test]
-async fn non_loopback_host_on_root_is_403_plain_text() {
+async fn non_loopback_host_on_a_legacy_api_path_is_403_plain_text() {
     let session = serve_state::session(false);
     let resp = serve_state::send_headers(
         &session,
         "GET",
-        "/",
+        "/api/graph",
         &[
             ("Host", "evil.example"),
             ("X-Comemory-Token", &session.token),
@@ -143,6 +161,35 @@ async fn token_accepted_via_query_param() {
     assert_eq!(resp.json["ok"], serde_json::json!(true));
 }
 
+/// Console-api spec §1 (AC-1): `Authorization: Bearer <token>` authenticates
+/// the versioned surface; a wrong bearer is the enveloped `401`.
+#[tokio::test]
+async fn token_accepted_via_authorization_bearer() {
+    let session = serve_state::session(false);
+    let bearer = format!("Bearer {}", session.token);
+    let resp = serve_state::send_headers(
+        &session,
+        "GET",
+        "/api/v1/health",
+        &[("Host", "127.0.0.1"), ("Authorization", &bearer)],
+        None,
+    )
+    .await;
+    assert_eq!(resp.status, 200, "body: {}", resp.text);
+    assert_eq!(resp.json["ok"], serde_json::json!(true));
+
+    let wrong = serve_state::send_headers(
+        &session,
+        "GET",
+        "/api/v1/health",
+        &[("Host", "127.0.0.1"), ("Authorization", "Bearer nope")],
+        None,
+    )
+    .await;
+    assert_eq!(wrong.status, 401, "body: {}", wrong.text);
+    assert_eq!(wrong.json["error"]["code"], "unauthorized");
+}
+
 #[tokio::test]
 async fn token_accepted_via_cookie() {
     let session = serve_state::session(false);
@@ -159,22 +206,16 @@ async fn token_accepted_via_cookie() {
     assert_eq!(resp.json["ok"], serde_json::json!(true));
 }
 
+/// Health reports whether an embed command is configured, so a console can
+/// tell up front whether `POST /doctor/reembed` will answer `503`.
 #[tokio::test]
-async fn static_asset_path_is_ungated_by_the_token_check() {
+async fn health_reports_the_embed_command_capability() {
     let session = serve_state::session(false);
-    // No token header at all — a gated path (`/`, `/api/*`) would 401 here.
-    let resp = serve_state::send_headers(
-        &session,
-        "GET",
-        "/no-such-asset.js",
-        &[("Host", "127.0.0.1")],
-        None,
-    )
-    .await;
-    // 404 (not 401): the fallback ran, so the token gate never applied.
+    let resp = serve_state::send(&session, "GET", "/api/v1/health", None).await;
+    assert_eq!(resp.status, 200, "body: {}", resp.text);
     assert_eq!(
-        resp.status, 404,
-        "static assets must not require a token; body: {}",
-        resp.text
+        resp.json["data"]["embed_cmd_configured"],
+        serde_json::json!(false)
     );
+    assert_eq!(resp.json["data"]["read_only"], serde_json::json!(false));
 }

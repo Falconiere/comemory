@@ -1,7 +1,9 @@
 //! `api::gc::{Request, run}` — the shared middle of `comemory gc` / `POST
-//! /api/v1/gc`: purge entries in `memories/.trash/` older than 30 days and
-//! evict learning telemetry (`retrieval_log`, `feedback_events`) past the
-//! configured retention window. Moved out of `cli::gc::run` (Binding Rule 1).
+//! /api/v1/gc`: purge entries in `memories/.trash/` older than
+//! `prune.trash_retention_days` (30 by default) and evict learning
+//! telemetry (`retrieval_log`, `feedback_events`) past
+//! `prune.learning_retention_days`. Moved out of `cli::gc::run` (Binding
+//! Rule 1). Both windows are the `GET|PUT /api/v1/gc/policy` knobs.
 //!
 //! **Must-not-create-the-db invariant:** `run` calls [`Ctx::conn`] only when
 //! `comemory.db` already exists on disk — `gc` on a fresh data dir must never
@@ -23,7 +25,8 @@ pub struct Request {}
 /// Removal counts from one `gc` run.
 #[derive(Serialize, Debug)]
 pub struct Response {
-    /// Trashed memories hard-deleted (mtime past [`RETENTION_DAYS`]).
+    /// Trashed memories hard-deleted (mtime past
+    /// `prune.trash_retention_days`).
     pub removed: u64,
     /// `retrieval_log` rows evicted past the configured retention window.
     pub log_rows: u64,
@@ -34,22 +37,20 @@ pub struct Response {
     pub bytes_freed: u64,
 }
 
-/// Trash retention window, in days. Intentionally fixed in v1 (see module
-/// doc on `cli::gc`).
-const RETENTION_DAYS: i64 = 30;
-
 /// Random bytes behind a `gc_runs` row id — 8 bytes, rendered as 16
 /// lowercase-hex chars (the same width as a job id).
 const RUN_ID_BYTES: usize = 8;
 
 /// Remove every file in the trash directory whose mtime is older than
-/// [`RETENTION_DAYS`], then — only when `comemory.db` already exists — evict
-/// learning telemetry older than `prune.learning_retention_days` AND record
-/// this run in `gc_runs`. Missing trash directory is a no-op. The
-/// must-not-create-the-db invariant means a fresh data dir writes no
-/// `gc_runs` row either — there is nowhere to write it.
+/// `prune.trash_retention_days`, then — only when `comemory.db` already
+/// exists — evict learning telemetry older than
+/// `prune.learning_retention_days` AND record this run in `gc_runs`.
+/// Missing trash directory is a no-op. The must-not-create-the-db invariant
+/// means a fresh data dir writes no `gc_runs` row either — there is nowhere
+/// to write it.
 pub fn run(ctx: &mut Ctx<'_>, _req: Request) -> Result<Response> {
-    let (removed, bytes_freed) = sweep_trash(&ctx.paths.trash_dir(), RETENTION_DAYS);
+    let trash_days = i64::from(ctx.cfg.prune.trash_retention_days);
+    let (removed, bytes_freed) = sweep_trash(&ctx.paths.trash_dir(), trash_days);
 
     let (log_rows, event_rows) = if ctx.paths.db_path().exists() {
         let retention_days = ctx.cfg.prune.learning_retention_days;

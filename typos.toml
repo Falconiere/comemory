@@ -1,6 +1,4 @@
 [files]
-# The committed Vite build output is minified and hash-named; never spell-check
-# it (or the lockfile). The frontend source under web/src is still checked.
 # tests/golden/ is benchmark fixture data: content-derived 8-hex ids and slugs
 # (file names + memory.yml id refs) spuriously trip the dictionary — data, not
 # prose, so never spell-check it.
@@ -10,7 +8,7 @@
 # — typos in it are upstream's to fix, not ours to silently rewrite.
 # comemory.io/ is a SEPARATE git repo (CodaSignal/comemory.io, the platform
 # monorepo) that gets cloned inside this checkout; it owns its own gates.
-extend-exclude = ["web/dist/", "web/package-lock.json", "tests/golden/", "scripts/guardrails/", "comemory.io/"]
+extend-exclude = ["tests/golden/", "scripts/guardrails/", "comemory.io/"]
 
 [default]
 extend-ignore-identifiers-re = ["nomic", "kuzu", "qwick", "cose", "ratatui"]

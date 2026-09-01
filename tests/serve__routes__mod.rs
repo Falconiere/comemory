@@ -127,26 +127,6 @@ fn legacy_health_without_token_stays_plain_text_401() {
 }
 
 #[test]
-fn legacy_health_with_token_stays_a_bare_unenveloped_payload() {
-    let home = TempDir::new().expect("home");
-    let (base, token, _guard) = spawn_serve(&home, &[]);
-    let client = reqwest::blocking::Client::new();
-
-    let res = client
-        .get(format!("{base}/api/health"))
-        .header("X-Comemory-Token", &token)
-        .send()
-        .expect("legacy health");
-    assert_eq!(res.status().as_u16(), 200);
-    let body: serde_json::Value = res.json().expect("legacy health json");
-
-    // Bare `{read_only, version}` — no `ok`/`data`/`meta` envelope wrapper.
-    assert_eq!(body["read_only"], serde_json::json!(false));
-    assert!(body["version"].is_string());
-    assert!(body.get("ok").is_none() && body.get("meta").is_none());
-}
-
-#[test]
 fn require_confirm_true_is_ok() {
     assert!(require_confirm(true).is_ok());
 }
@@ -179,8 +159,61 @@ fn minimal_request(entry: &RouteEntry) -> (serde_json::Value, Vec<(&'static str,
         // stop at the confirm gate (`400`) and the sweep never actually
         // rebuilds or retunes — exactly what AC-4 wants, since it only
         // asserts whether the read-only gate fired.
-        "delete" | "prune" | "gc" | "mine" | "install-hooks" | "rebuild" | "ingest-code"
-        | "tune" | "bandit" => (serde_json::json!({}), vec![]),
+        // `gc.run` stops at its own confirm gate and `doctor.reembed` at the
+        // `503 embedder_unavailable` check (this sweep's server has no embed
+        // command), so neither actually sweeps or re-embeds; `gc.policy.update`
+        // with no fields patches nothing. All three still reach their
+        // read-only gate, which is all AC-4 asserts.
+        // The console-api routes (2026-09-01 spec) follow the same rule: an
+        // empty body reaches each handler's read-only gate, and on a normal
+        // server every one then stops at its own confirm gate, a `404` for
+        // the dummy id, a `400` for the missing field, or the `501` a
+        // deliberately unmodelled action answers — never a `405`.
+        "delete"
+        | "prune"
+        | "gc"
+        | "mine"
+        | "install-hooks"
+        | "rebuild"
+        | "ingest-code"
+        | "tune"
+        | "bandit"
+        | "gc.run"
+        | "gc.policy.update"
+        | "doctor.reembed"
+        | "memories.update"
+        | "memories.restore"
+        | "memories.refresh-refs"
+        | "trash.restore"
+        | "repos.patch"
+        | "repos.archive"
+        | "repos.disconnect"
+        | "graph.recompute"
+        | "learning.proposals.apply"
+        | "learning.proposals.discard"
+        | "config.retrieval.update"
+        | "memory-stores.patch"
+        | "memory-stores.sync" => (serde_json::json!({}), vec![]),
+        // `PUT /hooks/{name}` needs a body and, like `hooks`, a repo path the
+        // gate is checked before touching.
+        "hooks.set" => (
+            serde_json::json!({"enabled": true}),
+            vec![("repo", "/nonexistent/ac4-sweep")],
+        ),
+        // A connect contains its root BEFORE anything is written, so a
+        // nonexistent one is a `400` on a normal server.
+        "repos.connect" => (
+            serde_json::json!({"root": "/nonexistent/ac4-sweep"}),
+            vec![],
+        ),
+        "search.feedback" => (
+            serde_json::json!({"hit_id": "deadbeef", "signal": "used"}),
+            vec![],
+        ),
+        "memory-stores.create" => (
+            serde_json::json!({"path": "/nonexistent/ac4-sweep"}),
+            vec![],
+        ),
         // `hooks` needs a repo to act on. A nonexistent path is right for the
         // sweep: on a read-only server the gate must fire BEFORE any git-hook
         // file is touched, and on a normal server the request gets past the
@@ -193,7 +226,9 @@ fn minimal_request(entry: &RouteEntry) -> (serde_json::Value, Vec<(&'static str,
             serde_json::json!({}),
             vec![("target", "ac4-sweep-nonexistent")],
         ),
-        "index-code" => (
+        // `POST /code/index` and `POST /index/runs` share one gate and one
+        // job spawner, so they share one sweep body too.
+        "index-code" | "index.run" => (
             serde_json::json!({"repo": "sweep", "path": "/nonexistent/ac4-sweep"}),
             vec![],
         ),
@@ -216,10 +251,16 @@ fn send_mutating(
     token: &str,
     entry: &RouteEntry,
 ) -> reqwest::blocking::Response {
-    let path = entry.path.replace("{id}", "deadbeef");
+    let path = entry
+        .path
+        .replace("{id}", "deadbeef")
+        .replace("{name}", "ac4-sweep")
+        .replace("{query_id}", "q-20260901-deadbeef");
     let (body, query) = minimal_request(entry);
     let req = match entry.method {
         "POST" => client.post(format!("{base}/api/v1{path}")),
+        "PUT" => client.put(format!("{base}/api/v1{path}")),
+        "PATCH" => client.patch(format!("{base}/api/v1{path}")),
         "DELETE" => client.delete(format!("{base}/api/v1{path}")),
         other => panic!("send_mutating: unhandled HTTP method {other:?} for {entry:?}"),
     };

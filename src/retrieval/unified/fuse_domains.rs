@@ -78,6 +78,12 @@ pub struct UnifiedHit {
     /// 1-based position within this hit's OWN domain, before fusion. Lets a
     /// caller filter to one domain and still see that domain's true order.
     pub rank_in_domain: usize,
+    /// Lexical ladder tier of the underlying memory candidate (1 strict,
+    /// 2 word-OR, 3 subtoken-OR, 4 learned expansion), carried through from
+    /// [`Reranked::tier`]. `None` for a code or document hit: neither leg
+    /// runs the memory ladder, so there is no tier to report and reporting
+    /// `1` would claim a strict match they never made.
+    pub tier: Option<u8>,
     /// The domain's own score breakdown, verbatim.
     pub score_parts: HitParts,
 }
@@ -183,6 +189,7 @@ fn memory_hit(h: Reranked, rank: usize, meta: &HashMap<String, MemoryMeta>) -> U
     let kind = entry.map(|m| m.kind.as_str()).unwrap_or_default();
     let repo = entry.and_then(|m| m.repo.clone());
     let refs = entry.map_or(0, |m| m.references.files.len() + m.references.symbols.len());
+    let tier = h.tier;
     let title = crate::output::search::title_of(&h.body);
     let subtitle = match &repo {
         Some(r) => format!("{} · {kind} · {r} · {refs} refs", h.memory_id),
@@ -197,6 +204,7 @@ fn memory_hit(h: Reranked, rank: usize, meta: &HashMap<String, MemoryMeta>) -> U
         path: entry.map(|m| m.md_path.clone()),
         score: 0.0,
         rank_in_domain: rank,
+        tier: Some(tier),
         score_parts: HitParts::Memory(Box::new(h.parts)),
     }
 }
@@ -212,6 +220,7 @@ fn code_hit(h: CodeReranked, rank: usize) -> UnifiedHit {
         path: Some(h.path),
         score: 0.0,
         rank_in_domain: rank,
+        tier: None,
         score_parts: HitParts::Code(Box::new(h.parts)),
     }
 }
@@ -231,6 +240,7 @@ fn doc_hit(h: DocHit, rank: usize) -> UnifiedHit {
         path: Some(h.path),
         score: 0.0,
         rank_in_domain: rank,
+        tier: None,
         score_parts: HitParts::Document(DocParts {
             bm25_rank: h.bm25_rank,
         }),

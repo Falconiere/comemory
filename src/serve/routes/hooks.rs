@@ -3,6 +3,12 @@
 //! readable, per-hook-controllable surface over `install-hooks`'s three git
 //! hooks plus the config-backed search→edit auto-reinforcement row.
 //!
+//! `PUT /api/v1/hooks/{name}?repo=<path>` (console-api spec §6) is the
+//! per-hook, idempotent form of the same write: `{enabled: true|false}`
+//! against one hook named in the URL. It shares `api::hooks::run` with the
+//! `POST` body form — the only difference is where the hook name and the
+//! desired state come from.
+//!
 //! Not confirm-gated (spec AC-33b): installing or removing a hook file is
 //! idempotent and reversible, unlike `POST /api/v1/hooks/install`
 //! (`maint::admin`), which stays confirm-gated as the install-all
@@ -12,9 +18,9 @@
 
 use std::time::Instant;
 
-use axum::extract::{Query, State};
+use axum::extract::{Path, Query, State};
 use axum::response::Response;
-use axum::routing::get;
+use axum::routing::{get, put};
 use axum::{Json, Router};
 use serde::Deserialize;
 
@@ -37,12 +43,20 @@ pub fn table_entries() -> &'static [RouteEntry] {
             command: "hooks",
             mutating: true,
         },
+        RouteEntry {
+            method: "PUT",
+            path: "/hooks/{name}",
+            command: "hooks.set",
+            mutating: true,
+        },
     ]
 }
 
 /// This resource's routes, mounted under `/api/v1`.
 pub fn router(_state: AppState) -> Router<AppState> {
-    Router::new().route("/api/v1/hooks", get(list_hooks).post(toggle_hooks))
+    Router::new()
+        .route("/api/v1/hooks", get(list_hooks).post(toggle_hooks))
+        .route("/api/v1/hooks/{name}", put(set_hook))
 }
 
 /// The only query parameter `GET /api/v1/hooks` reads. Deliberately narrower
@@ -96,3 +110,56 @@ async fn toggle_hooks(
     .await;
     respond("hooks", result, started)
 }
+
+/// `PUT /api/v1/hooks/{name}` body: the desired state of that one hook.
+#[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+struct SetBody {
+    /// `true` installs/enables the hook, `false` removes/disables it.
+    enabled: bool,
+}
+
+/// `PUT /api/v1/hooks/{name}?repo=<path>` — set one hook's state
+/// (`api::hooks`), then report all four rows. `name` is accepted in either
+/// spelling the console might send: `post_commit` and `post-commit` both
+/// resolve to the git hook `post-commit` (an unknown name after that
+/// normalization is `api::hooks`' own `400 usage`). Read-only-gated via
+/// [`guard_mutating`]; idempotent, so not confirm-gated — the same rule the
+/// `POST` form follows.
+async fn set_hook(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+    Query(q): Query<ListQuery>,
+    Json(body): Json<SetBody>,
+) -> Response {
+    let started = Instant::now();
+    let permit = match guard_mutating("hooks.set", &state) {
+        Ok(permit) => permit,
+        Err(resp) => return *resp,
+    };
+    let result = run_blocking(move || {
+        let _permit = permit;
+        let hook = name.replace('_', "-");
+        let (enable, disable) = if body.enabled {
+            (Some(hook), None)
+        } else {
+            (None, Some(hook))
+        };
+        let cfg = state.cfg();
+        let mut ctx = Ctx::lazy(state.paths(), &cfg);
+        api::hooks::run(
+            &mut ctx,
+            api::hooks::Request {
+                repo: q.repo,
+                enable,
+                disable,
+            },
+        )
+    })
+    .await;
+    respond("hooks.set", result, started)
+}
+
+#[cfg(test)]
+#[path = "tests/hooks_put.rs"]
+mod tests;

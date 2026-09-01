@@ -79,6 +79,9 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         k: g.k,
         history: a.history,
         limit: a.limit,
+        // HTTP-only (`POST /api/v1/learning/evals`): the CLI's way to score
+        // a specific knob set is `comemory tune`.
+        knobs: None,
     };
     if a.history {
         let rows = api::eval::history(&mut ctx, &req)?;

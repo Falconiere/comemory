@@ -75,10 +75,12 @@ pub fn router(_state: AppState) -> Router<AppState> {
 /// Canonicalize `golden` (when present) and require it inside one of this
 /// session's allowed roots (§Security "Path containment"), returning the
 /// canonicalized path so the caller can overwrite the request field with it
-/// rather than re-resolving the raw input downstream. `None` is a no-op —
+/// rather than re-resolving the raw input downstream. `pub(crate)` because
+/// `GET /learning/golden-set` (`routes::learning_console`) contains its own
+/// `?golden=` through this exact check rather than a second copy of it. `None` is a no-op —
 /// nothing to contain when the run is feedback-harvest-only. Nonexistent
 /// path -> `400`; outside every root -> `403`.
-fn contain_golden(state: &AppState, golden: Option<&str>) -> Result<Option<String>> {
+pub(crate) fn contain_golden(state: &AppState, golden: Option<&str>) -> Result<Option<String>> {
     let Some(golden) = golden else {
         return Ok(None);
     };
@@ -94,7 +96,13 @@ fn contain_golden(state: &AppState, golden: Option<&str>) -> Result<Option<Strin
 /// AC-4 — no read-only gate either, so it stays functional on a
 /// `--read-only` server. `req.golden`, when present, is contained to an
 /// allowed root before the job is created (AC-7's golden-file half).
-async fn eval(State(state): State<AppState>, Json(mut req): Json<api::eval::Request>) -> Response {
+///
+/// `pub(crate)` because `POST /api/v1/learning/evals` (console-api spec §7)
+/// is an ALIAS onto this same handler, not a second implementation.
+pub(crate) async fn eval(
+    State(state): State<AppState>,
+    Json(mut req): Json<api::eval::Request>,
+) -> Response {
     let started = Instant::now();
     let contain_state = state.clone();
     let golden = req.golden.clone();

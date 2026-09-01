@@ -5,6 +5,8 @@ pub mod env;
 pub mod file;
 /// Learning-loop sections: `[tune]` grids, `[reinforce]`, `[bandit]`.
 pub mod learning;
+/// The one read-patch-write primitive over `config.toml`.
+pub mod patch;
 /// Data-directory layout resolution.
 pub mod paths;
 /// The `[retrieval]` section and its file overlay.

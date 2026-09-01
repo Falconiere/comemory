@@ -60,7 +60,7 @@ SQLite file is the rebuildable index.
 | 🔗 **Versioned code references** | `save --ref-file` / `--ref-symbol` pin a memory to code at a git anchor (blob + commit); `context` flags each link `fresh` / `stale` / `ghost`. See [linking code to memories](docs/guides/linking-code-to-memories.md). |
 | 🧠 **Memory that decays** | ACT-R activation (recency × access count) and Beta-smoothed feedback rerank results the way human memory actually surfaces things. |
 | 📈 **A real learning loop** | Record which hits helped → score recall@k / MRR → mine reformulations → grid-search (`tune`) or Thompson-sample (`bandit`) the ranking knobs. Auto search→edit reinforcement on `index-code`. All offline, all deterministic. |
-| 🌐 **Interactive web viewer** | `comemory serve` ships a loopback-only React SPA (embedded in the binary): orbit a 3D code graph, run natural-language file search, and read source in a browser pane — no Node toolchain at runtime. |
+| 🌐 **Local HTTP API** | `comemory serve` exposes every command as a loopback-only, token-gated `/api/v1` REST surface — the same cores the CLI runs, plus jobs with progress/log streaming — for the console and any local agent or script. |
 | 🌳 **AST patterns** | `comemory ast` runs ast-grep structural patterns over Rust, TypeScript, JavaScript, Python, and Go. |
 | 🔌 **Machine-friendly** | `--json` on every command, `score_parts` explainability contract, exit codes per `sysexits.h`. |
 | 📦 **One binary, fully local** | One SQLite file backs FTS5 + `sqlite-vec` + edges. Rebuildable from markdown at any time with `comemory rebuild`. |
@@ -193,7 +193,7 @@ comemory index-code --repo myrepo --path .           # symbols + graph + PageRan
 comemory search "what database do we use"            # recall memories (lexical)
 comemory search-code "connection pool retry" --repo myrepo   # ranked code search
 comemory context run_migration --json                # source + memories + neighbors
-comemory serve --open                                # explore it in the browser
+comemory serve                                       # the same, over HTTP (/api/v1)
 ```
 
 That's the whole loop: **capture → index → recall** — zero configuration. Dense/
@@ -243,7 +243,7 @@ Full data model, save flow, retrieval pipeline, and graph mechanics:
 | `comemory index-code` | Walk a repo, extract symbols, mine the co-change/import graph, run PageRank |
 | `comemory ingest-code` | Read pre-embedded JSONL from stdin into the code index |
 | `comemory graph` | Export the code-connection graph as JSON, Graphviz DOT, or interactive HTML |
-| `comemory serve` | Loopback web viewer: 3D code graph, natural-language file search, read-only source pane |
+| `comemory serve` | Loopback `/api/v1` HTTP server: every command over REST, background jobs with SSE progress |
 | `comemory ast` | Run an ast-grep structural pattern against a source file |
 | `comemory doctor` | Report on data-directory and SQLite-mirror health |
 | `comemory prune` | Detect (and optionally soft-delete) stale memories |
@@ -310,7 +310,6 @@ tier directly:
   [byo-vectors](docs/guides/byo-vectors.md) ·
   [auto-reindex](docs/guides/auto-reindex.md) ·
   [ranking-and-eval](docs/guides/ranking-and-eval.md) ·
-  [serve-web](docs/guides/serve-web.md) ·
   [http-api](docs/guides/http-api.md) ·
   [prune-and-gc](docs/guides/prune-and-gc.md) ·
   [upgrading](docs/guides/upgrading.md).

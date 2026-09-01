@@ -33,6 +33,9 @@ Examples:
   # Filter by kind only
   comemory list --kind bug
 
+  # Tagged `postgres`, quality 4+, mentioning \"pool\" anywhere in the body
+  comemory list --tag postgres --min-quality 4 --query pool
+
   # Second page of 20 memories
   comemory list --limit 20 --offset 20";
 
@@ -58,6 +61,16 @@ pub struct Args {
     /// Filter by kind (case-insensitive): decision|bug|convention|discovery|pattern|note.
     #[arg(long)]
     pub kind: Option<String>,
+    /// Filter to memories carrying this exact tag.
+    #[arg(long)]
+    pub tag: Option<String>,
+    /// Filter to memories whose quality is at least this (1..=5).
+    #[arg(long, value_parser = clap::value_parser!(u8).range(1..=5))]
+    pub min_quality: Option<u8>,
+    /// Filter to memories whose body contains this text (case-insensitive,
+    /// matched literally).
+    #[arg(long)]
+    pub query: Option<String>,
     /// Sort order: `created` (default, newest first) | `quality`
     /// (descending) | `accessed` (most-recently-accessed first).
     #[arg(long, value_enum, default_value_t = Sort::Created)]
@@ -77,6 +90,9 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     let req = api::list::Request {
         repo: a.repo,
         kind: a.kind,
+        tag: a.tag,
+        min_quality: a.min_quality,
+        q: a.query,
         limit: a.page.limit,
         offset: a.page.offset,
         sort: match a.sort {

@@ -39,6 +39,7 @@ fn run_indexes_symbols_and_reports_files_indexed() {
         api::index_code::Request {
             repo: "sample".into(),
             path: repo.to_str().expect("utf8 path").to_string(),
+            mode: comemory::api::index_code::IndexMode::Incremental,
         },
     )
     .expect("index_code run");
@@ -68,6 +69,7 @@ fn run_second_run_reports_zero_files_indexed_when_unchanged() {
     let req = || api::index_code::Request {
         repo: "sample".into(),
         path: repo.to_str().expect("utf8 path").to_string(),
+        mode: comemory::api::index_code::IndexMode::Incremental,
     };
     {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
@@ -96,6 +98,7 @@ fn run_on_a_non_git_directory_errors() {
         api::index_code::Request {
             repo: "x".into(),
             path: not_a_repo.to_str().expect("utf8 path").to_string(),
+            mode: comemory::api::index_code::IndexMode::Incremental,
         },
     )
     .expect_err("must error on a non-git path");
@@ -126,6 +129,7 @@ fn run_on_a_non_git_directory_never_creates_the_db() {
         api::index_code::Request {
             repo: "x".into(),
             path: not_a_repo.to_str().expect("utf8 path").to_string(),
+            mode: comemory::api::index_code::IndexMode::Incremental,
         },
     )
     .expect_err("must error on a non-git path");
@@ -170,6 +174,7 @@ fn run_with_progress_reports_on_progress_and_on_log_for_the_indexed_file() {
         api::index_code::Request {
             repo: "sample".into(),
             path: repo.to_str().expect("utf8 path").to_string(),
+            mode: comemory::api::index_code::IndexMode::Incremental,
         },
         Some(&sink),
     )

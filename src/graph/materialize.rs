@@ -65,7 +65,7 @@ pub fn materialize(
     // the per-call rescan of every known path.
     let index = imports::PathIndex::new(&known);
     refresh_import_edges(&tx, repo, &index, imports_by_file)?;
-    project_pagerank(&tx, repo, &known)?;
+    recompute_rank(&tx, repo)?;
     // Co-activation reward: AFTER pagerank, BEFORE the cursor advances —
     // so the reinforcement is atomic with the cursor (a crash can't
     // half-apply it, and the cursor still reflects only-harvested-once).
@@ -208,13 +208,30 @@ fn refresh_import_edges(
     Ok(())
 }
 
+/// Recompute PageRank for `repo` over the edges ALREADY stored (no mining,
+/// no import refresh) and re-project it onto `code_symbols.rank_score`,
+/// returning the number of `code_symbols` rows written.
+///
+/// The tail of [`materialize`], factored out so `POST /api/v1/graph/recompute`
+/// can re-derive the ranks of every repo from the existing graph without
+/// touching git history — both callers therefore run the identical
+/// projection (Binding Rule 1). A repo with no indexed files is a no-op.
+pub(crate) fn recompute_rank(tx: &Transaction<'_>, repo: &str) -> Result<u64> {
+    let known = known_paths(tx, repo)?;
+    if known.is_empty() {
+        return Ok(0);
+    }
+    project_pagerank(tx, repo, &known)
+}
+
 /// Recompute PageRank over the repo's union graph (`co_changed` +
 /// `imports`) and project each file's score onto every `code_symbols`
 /// row sharing its path. `co_changed` edges are undirected in storage
 /// (one canonical row) and expand to two directed edges here; `imports`
 /// edges stay directed as stored. Edges referencing paths no longer in
-/// `code_symbols` (deleted files) are skipped.
-fn project_pagerank(tx: &Transaction<'_>, repo: &str, known: &[String]) -> Result<()> {
+/// `code_symbols` (deleted files) are skipped. Returns the number of rows
+/// the projection updated.
+fn project_pagerank(tx: &Transaction<'_>, repo: &str, known: &[String]) -> Result<u64> {
     let index: BTreeMap<&str, u32> = known
         .iter()
         .enumerate()
@@ -265,10 +282,12 @@ fn project_pagerank(tx: &Transaction<'_>, repo: &str, known: &[String]) -> Resul
     let scores = pagerank::pagerank(known.len(), &graph);
     let mut update =
         tx.prepare("UPDATE code_symbols SET rank_score = ?1 WHERE repo = ?2 AND path = ?3")?;
+    let mut written: u64 = 0;
     for (path, score) in known.iter().zip(&scores) {
-        update.execute(params![score, repo, path])?;
+        let rows = update.execute(params![score, repo, path])?;
+        written = written.saturating_add(u64::try_from(rows).unwrap_or(0));
     }
-    Ok(())
+    Ok(written)
 }
 
 #[cfg(test)]

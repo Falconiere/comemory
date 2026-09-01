@@ -113,6 +113,7 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
 
     let req = api::save::Request {
         body,
+        title: None,
         kind: a.kind,
         repo: a.repo,
         tags: csv_unique(&a.tags),

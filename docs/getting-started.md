@@ -215,8 +215,8 @@ You're productive. Branch out as needed:
   via lazy refresh or git hooks.
 - [Ranking and eval](guides/ranking-and-eval.md) — score retrieval, mine
   expansions, and tune the blend.
-- [Serve the web viewer](guides/serve-web.md) — explore the graph and edit code
-  in the browser.
+- [The HTTP API](guides/http-api.md) — drive every command over `comemory
+  serve`'s loopback `/api/v1` surface.
 - [Prune and gc](guides/prune-and-gc.md) — retire stale memories and purge
   telemetry.
 - [CLI reference](cli-reference.md) — every subcommand and flag.

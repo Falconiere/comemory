@@ -31,6 +31,7 @@ fn request() -> api::prune::Request {
         apply: false,
         limit: 50,
         offset: 0,
+        ids: Vec::new(),
     }
 }
 
@@ -79,6 +80,7 @@ fn run_apply_soft_deletes_the_full_low_value_set_even_with_a_narrow_window() {
         apply: true,
         limit: 1,
         offset: 0,
+        ids: Vec::new(),
     };
     let report = api::prune::run(&mut ctx, req).expect("prune run");
     assert_eq!(
@@ -105,4 +107,77 @@ fn run_apply_soft_deletes_the_full_low_value_set_even_with_a_narrow_window() {
         .expect("read .trash")
         .count();
     assert_eq!(trashed, 2, "both flagged ids must land in .trash/");
+}
+
+/// `ids` narrows `apply` to the intersection with the scan's candidates:
+/// the listed candidate is soft-deleted, the unlisted one survives, and an
+/// id that is not a candidate at all is ignored rather than deleted.
+#[test]
+fn run_apply_with_ids_touches_only_the_listed_candidate() {
+    let home = TempDir::new().expect("tempdir");
+    let doomed = save_memory(&home, "ids-scoped prune candidate one");
+    let spared = save_memory(&home, "ids-scoped prune candidate two");
+    let healthy = save_memory(&home, "a perfectly healthy memory nobody flagged");
+    make_prune_eligible(&home, &doomed);
+    make_prune_eligible(&home, &spared);
+
+    let paths = Paths::new(data_dir(&home));
+    let mut conn = connection::open(paths.db_path()).expect("open db");
+    let cfg = Config::defaults();
+    let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+
+    let req = api::prune::Request {
+        apply: true,
+        limit: 50,
+        offset: 0,
+        // `healthy` is NOT a candidate — it must be ignored, not deleted.
+        ids: vec![doomed.clone(), healthy.clone()],
+    };
+    api::prune::run(&mut ctx, req).expect("prune run");
+
+    let memories = data_dir(&home).join("memories");
+    let live = |id: &str| {
+        std::fs::read_dir(&memories)
+            .expect("read memories dir")
+            .filter_map(std::result::Result::ok)
+            .filter(|e| e.file_name().to_string_lossy().starts_with(id))
+            .count()
+    };
+    assert_eq!(live(&doomed), 0, "the listed candidate must be pruned");
+    assert_eq!(live(&spared), 1, "an unlisted candidate must survive");
+    assert_eq!(live(&healthy), 1, "a non-candidate id must be ignored");
+    let trashed = std::fs::read_dir(memories.join(".trash"))
+        .expect("read .trash")
+        .count();
+    assert_eq!(trashed, 1, "exactly one file may reach .trash/");
+}
+
+/// A malformed `ids` entry is a hard error naming the flag — the same
+/// 8-hex validation `save --supersedes` applies — not a silently dropped
+/// entry that would make `apply` act on the full candidate set instead.
+#[test]
+fn run_apply_rejects_a_malformed_id() {
+    let home = TempDir::new().expect("tempdir");
+    let id = save_memory(&home, "prune candidate guarded by id validation");
+    make_prune_eligible(&home, &id);
+
+    let paths = Paths::new(data_dir(&home));
+    let mut conn = connection::open(paths.db_path()).expect("open db");
+    let cfg = Config::defaults();
+    let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+
+    let req = api::prune::Request {
+        apply: true,
+        limit: 50,
+        offset: 0,
+        ids: vec!["not-an-id".to_string()],
+    };
+    let err = api::prune::run(&mut ctx, req).expect_err("malformed id must fail");
+    assert!(err.to_string().contains("--ids"), "error was: {err}");
+
+    let memories = data_dir(&home).join("memories");
+    let trashed = std::fs::read_dir(memories.join(".trash"))
+        .map(std::iter::Iterator::count)
+        .unwrap_or_default();
+    assert_eq!(trashed, 0, "a rejected request must delete nothing");
 }

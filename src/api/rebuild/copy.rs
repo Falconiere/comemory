@@ -41,6 +41,7 @@ pub(crate) const COPIED_TABLES: &[&str] = &[
     "bandit_arms",
     "eval_runs",
     "gc_runs",
+    "index_runs",
     "source_files",
     "documents",
     "document_chunks",
@@ -216,10 +217,23 @@ fn copy_code_markers(conn: &rusqlite::Connection) -> Result<()> {
         } else {
             "NULL"
         };
+        // `root_path` (v7) and `archived` (v15) are probed the same way:
+        // dropping either would make a rebuilt store forget where a repo
+        // lives (containment, freshness) or that it was archived.
+        let root_expr = if old_column_exists(conn, "repo_marker", "root_path")? {
+            "root_path"
+        } else {
+            "NULL"
+        };
+        let archived_expr = if old_column_exists(conn, "repo_marker", "archived")? {
+            "archived"
+        } else {
+            "0"
+        };
         conn.execute_batch(&format!(
             "INSERT OR IGNORE INTO main.repo_marker(\
-                 repo, last_head, last_indexed_at, last_mined_commit) \
-             SELECT repo, last_head, last_indexed_at, {mined_expr} \
+                 repo, last_head, last_indexed_at, last_mined_commit, root_path, archived) \
+             SELECT repo, last_head, last_indexed_at, {mined_expr}, {root_expr}, {archived_expr} \
              FROM old.repo_marker;"
         ))?;
     }
@@ -257,7 +271,8 @@ fn copy_code_virtual_tables(conn: &rusqlite::Connection) -> Result<()> {
 fn copy_learning_tables_inner(conn: &rusqlite::Connection) -> Result<()> {
     copy_feedback_tables(conn)?;
     copy_retrieval_log(conn)?;
-    copy_event_and_mined_tables(conn)
+    copy_event_and_mined_tables(conn)?;
+    super::history::copy_history_tables(conn)
 }
 
 /// Copy the aggregated feedback counters: memory-side `feedback` (v2) and
@@ -315,7 +330,8 @@ fn copy_retrieval_log(conn: &rusqlite::Connection) -> Result<()> {
 }
 
 /// Copy the `feedback_events` verdict log (v5), the mined
-/// `query_expansions` (v5), and the `bandit_arms` state. On pre-migration
+/// `query_expansions` (v5), and the `bandit_arms` state (the run-history
+/// tables live in [`super::history`]). On pre-migration
 /// sources `target_kind` (v6) defaults to `'memory'` and `provenance` (v8)
 /// to `'manual'`, the same values those migrations backfill — dropping
 /// either would let code verdicts masquerade as memory verdicts in the
@@ -345,22 +361,6 @@ fn copy_event_and_mined_tables(conn: &rusqlite::Connection) -> Result<()> {
                  term, expansion, support, last_mined) \
              SELECT term, expansion, support, last_mined \
              FROM old.query_expansions;",
-        )?;
-    }
-    if old_table_exists(conn, "eval_runs")? {
-        conn.execute_batch(
-            "INSERT OR IGNORE INTO main.eval_runs(\
-                 id, kind, at, golden_pairs, k, recall, mrr, knobs, applied) \
-             SELECT id, kind, at, golden_pairs, k, recall, mrr, knobs, applied \
-             FROM old.eval_runs;",
-        )?;
-    }
-    if old_table_exists(conn, "gc_runs")? {
-        conn.execute_batch(
-            "INSERT OR IGNORE INTO main.gc_runs(\
-                 id, at, removed, log_rows, event_rows, bytes_freed) \
-             SELECT id, at, removed, log_rows, event_rows, bytes_freed \
-             FROM old.gc_runs;",
         )?;
     }
     if old_table_exists(conn, "bandit_arms")? {
@@ -393,7 +393,11 @@ pub(super) fn old_table_exists(conn: &rusqlite::Connection, name: &str) -> Resul
 /// Lets [`copy_code_tables_inner`] and [`copy_learning_tables_inner`] adapt
 /// their SELECT lists to the attached DB's schema version instead of
 /// assuming the current one.
-fn old_column_exists(conn: &rusqlite::Connection, table: &str, column: &str) -> Result<bool> {
+pub(super) fn old_column_exists(
+    conn: &rusqlite::Connection,
+    table: &str,
+    column: &str,
+) -> Result<bool> {
     let n: i64 = conn.query_row(
         "SELECT count(*) FROM pragma_table_info(?1, 'old') WHERE name = ?2",
         rusqlite::params![table, column],

@@ -18,7 +18,11 @@ use axum::routing::get;
 use crate::api::{self, Ctx};
 use crate::serve::AppState;
 use crate::serve::routes::{RouteEntry, respond, run_blocking};
+use crate::serve::scope::RepoScope;
 
+/// `PATCH /memories/{id}`, `POST /memories/{id}/restore`,
+/// `POST /memories/{id}/references/refresh` (`api::{update,restore,refresh_refs}`).
+pub mod edit;
 /// `GET|POST /memories/search` (`api::search`) and `GET|POST /context`
 /// (`api::context`).
 pub mod search;
@@ -77,11 +81,19 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/api/v1/memories", get(list))
         .route("/api/v1/memories/{id}", get(get_one))
         .merge(search::router(state.clone()))
-        .merge(write::router(state))
+        .merge(write::router(state.clone()))
+        .merge(edit::router(state))
 }
 
-/// `GET /api/v1/memories` — page live memories (`api::list`).
-async fn list(State(state): State<AppState>, Query(req): Query<api::list::Request>) -> Response {
+/// `GET /api/v1/memories` — page live memories (`api::list`). An
+/// `X-Comemory-Repo` header is the default `repo` filter when the query
+/// omits one ([`RepoScope`]).
+async fn list(
+    State(state): State<AppState>,
+    scope: RepoScope,
+    Query(mut req): Query<api::list::Request>,
+) -> Response {
+    scope.apply(&mut req.repo);
     let started = Instant::now();
     let result = run_blocking(move || {
         let cfg = state.cfg();

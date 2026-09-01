@@ -10,11 +10,15 @@
 //! `DELETE /api/v1/sources?target=<id|path>&confirm=true` (`api::unindex`)
 //! also lives here — the query form expresses both the id and the
 //! registered-path target, mirroring `comemory unindex <SOURCE_ID|PATH>`.
+//! `DELETE /api/v1/sources/{target}?confirm=true` (console-api spec §6) is
+//! the REST path form of exactly that call: same gates, same core, one
+//! shared [`unindex_target`] body — a percent-encoded filesystem path is a
+//! valid `{target}` segment, which is why both forms exist.
 
 use std::path::Path;
 use std::time::Instant;
 
-use axum::extract::{Query, State};
+use axum::extract::{Path as AxumPath, Query, State};
 use axum::response::Response;
 use axum::routing::get;
 use axum::{Json, Router};
@@ -51,15 +55,26 @@ pub fn table_entries() -> &'static [RouteEntry] {
             command: "unindex",
             mutating: true,
         },
+        RouteEntry {
+            method: "DELETE",
+            path: "/sources/{target}",
+            command: "unindex",
+            mutating: true,
+        },
     ]
 }
 
 /// This resource's routes, mounted under `/api/v1`.
 pub fn router(_state: AppState) -> Router<AppState> {
-    Router::new().route(
-        "/api/v1/sources",
-        get(sources).post(index_sources).delete(unindex),
-    )
+    Router::new()
+        .route(
+            "/api/v1/sources",
+            get(sources).post(index_sources).delete(unindex),
+        )
+        .route(
+            "/api/v1/sources/{target}",
+            axum::routing::delete(unindex_path),
+        )
 }
 
 /// `GET /api/v1/sources` — list registered sources (`api::sources`). The
@@ -136,6 +151,32 @@ struct UnindexQuery {
 /// before [`require_confirm`] so a read-only server rejects with `405` even
 /// without `?confirm=true` (AC-19).
 async fn unindex(State(state): State<AppState>, Query(query): Query<UnindexQuery>) -> Response {
+    unindex_target(state, query.target, query.confirm).await
+}
+
+/// `?confirm=true` on the path form — the target itself comes from the URL.
+#[derive(Deserialize)]
+struct ConfirmQuery {
+    #[serde(default)]
+    confirm: bool,
+}
+
+/// `DELETE /api/v1/sources/{target}?confirm=true` — the path form of
+/// [`unindex`]. `{target}` is the same `<source id | registered path>` the
+/// query form takes (percent-encode a path's separators); both delegate to
+/// [`unindex_target`], so the two spellings cannot behave differently.
+async fn unindex_path(
+    State(state): State<AppState>,
+    AxumPath(target): AxumPath<String>,
+    Query(query): Query<ConfirmQuery>,
+) -> Response {
+    unindex_target(state, target, query.confirm).await
+}
+
+/// The shared body of both `unindex` forms: [`guard_mutating`]
+/// (read-only/busy) first, then [`require_confirm`] (AC-19), then
+/// `api::unindex::run`.
+async fn unindex_target(state: AppState, target: String, confirm: bool) -> Response {
     let started = Instant::now();
     let permit = match guard_mutating("unindex", &state) {
         Ok(permit) => permit,
@@ -143,17 +184,16 @@ async fn unindex(State(state): State<AppState>, Query(query): Query<UnindexQuery
     };
     let result = run_blocking(move || {
         let _permit = permit;
-        require_confirm(query.confirm)?;
+        require_confirm(confirm)?;
         let cfg = state.cfg();
         let mut conn = state.conn()?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        api::unindex::run(
-            &mut ctx,
-            api::unindex::Request {
-                target: query.target,
-            },
-        )
+        api::unindex::run(&mut ctx, api::unindex::Request { target })
     })
     .await;
     respond("unindex", result, started)
 }
+
+#[cfg(test)]
+#[path = "tests/sources_path.rs"]
+mod tests;

@@ -38,3 +38,48 @@ fn insert_writes_a_readable_row() {
     assert_eq!(event_rows, 12);
     assert_eq!(bytes_freed, 4096);
 }
+
+#[test]
+fn newest_on_an_empty_table_is_none() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let conn = connection::open(dir.path().join("comemory.db")).expect("open + migrate");
+
+    assert_eq!(gc_runs::newest(&conn).expect("newest"), None);
+}
+
+#[test]
+fn newest_returns_the_most_recent_row() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let conn = connection::open(dir.path().join("comemory.db")).expect("open + migrate");
+
+    // Inserted oldest-last on purpose: `newest` must order by `at`, not by
+    // insertion order or rowid.
+    gc_runs::insert(
+        &conn,
+        "bbbbbbbbbbbbbbbb",
+        "2026-08-30T12:00:00Z",
+        7,
+        70,
+        17,
+        2048,
+    )
+    .expect("insert newer");
+    gc_runs::insert(
+        &conn,
+        "aaaaaaaaaaaaaaaa",
+        "2026-08-01T00:00:00Z",
+        1,
+        2,
+        3,
+        4,
+    )
+    .expect("insert older");
+
+    let row = gc_runs::newest(&conn).expect("newest").expect("a row");
+    assert_eq!(row.id, "bbbbbbbbbbbbbbbb");
+    assert_eq!(row.at, "2026-08-30T12:00:00Z");
+    assert_eq!(row.removed, 7);
+    assert_eq!(row.log_rows, 70);
+    assert_eq!(row.event_rows, 17);
+    assert_eq!(row.bytes_freed, 2048);
+}

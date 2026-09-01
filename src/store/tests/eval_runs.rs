@@ -44,6 +44,80 @@ fn insert_writes_a_readable_row() {
     assert_eq!(row.mrr, 0.6);
     assert_eq!(row.knobs["rrf_k"].as_f64(), Some(60.0));
     assert!(!row.applied);
+    assert!(!row.discarded, "a fresh row defaults to not discarded");
+}
+
+/// Seed one row and hand back its id, so the flag tests below stay short.
+fn seed(conn: &rusqlite::Connection, id: &str) {
+    eval_runs::insert(
+        conn,
+        &eval_runs::NewRun {
+            id,
+            kind: "tune",
+            at: "2026-09-01T09:00:00.000000000Z",
+            golden_pairs: 12,
+            k: 3,
+            recall: 0.7,
+            mrr: 0.55,
+            knobs: "{\"rrf_k\":45.0}",
+            applied: false,
+        },
+    )
+    .expect("insert eval_runs row");
+}
+
+#[test]
+fn get_reads_one_row_and_reports_an_unknown_id_as_none() {
+    let conn = open();
+    seed(&conn, "0123456789abcdef");
+
+    let row = eval_runs::get(&conn, "0123456789abcdef")
+        .expect("get row")
+        .expect("row exists");
+    assert_eq!(row.kind, "tune");
+    assert_eq!(row.knobs["rrf_k"].as_f64(), Some(45.0));
+    assert!(!row.applied);
+    assert!(!row.discarded);
+
+    assert!(
+        eval_runs::get(&conn, "nosuchrun00000000")
+            .expect("get missing")
+            .is_none()
+    );
+}
+
+#[test]
+fn set_applied_and_set_discarded_flip_exactly_their_own_flag() {
+    let conn = open();
+    seed(&conn, "aaaa000000000000");
+    seed(&conn, "bbbb000000000000");
+
+    eval_runs::set_applied(&conn, "aaaa000000000000").expect("set applied");
+    eval_runs::set_discarded(&conn, "bbbb000000000000").expect("set discarded");
+
+    let applied = eval_runs::get(&conn, "aaaa000000000000")
+        .expect("get")
+        .expect("row");
+    assert!(applied.applied);
+    assert!(!applied.discarded, "apply must not also discard");
+
+    let discarded = eval_runs::get(&conn, "bbbb000000000000")
+        .expect("get")
+        .expect("row");
+    assert!(discarded.discarded);
+    assert!(!discarded.applied, "discard must not also apply");
+}
+
+#[test]
+fn setting_a_flag_on_an_unknown_id_is_not_found() {
+    let conn = open();
+    let err = eval_runs::set_applied(&conn, "missing0000000000").expect_err("unknown id");
+    assert!(
+        matches!(err, comemory::errors::Error::NotFound(_)),
+        "expected NotFound, got {err:?}"
+    );
+    let err = eval_runs::set_discarded(&conn, "missing0000000000").expect_err("unknown id");
+    assert!(matches!(err, comemory::errors::Error::NotFound(_)));
 }
 
 #[test]

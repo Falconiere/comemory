@@ -29,6 +29,7 @@ fn run(
 fn request(body: &str) -> api::save::Request {
     api::save::Request {
         body: body.to_string(),
+        title: None,
         kind: Kind::Note,
         repo: "demo".to_string(),
         tags: vec!["db".to_string(), "postgres".to_string()],

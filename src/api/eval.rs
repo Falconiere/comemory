@@ -21,6 +21,7 @@ use time::OffsetDateTime;
 use crate::api::Ctx;
 use crate::eval::golden;
 use crate::eval::runner::{self, EvalReport};
+use crate::eval::tune;
 use crate::prelude::*;
 use crate::store::{eval_runs, memory_row, random_id};
 
@@ -39,8 +40,10 @@ pub struct Request {
     /// Path to a YAML golden file (`- query: ...` / `  relevant: [..]`).
     /// Over HTTP, filesystem containment is enforced by the route handler
     /// BEFORE this runs (§Security "Path containment") — `run` treats it
-    /// as an already-safe path.
-    #[serde(default)]
+    /// as an already-safe path. The console draft (§7) names this field
+    /// `golden_set`, accepted here as an alias so one `Request` serves
+    /// both spellings.
+    #[serde(default, alias = "golden_set")]
     pub golden: Option<String>,
     /// Skip the feedback harvest; use only `golden`.
     #[serde(default)]
@@ -56,6 +59,14 @@ pub struct Request {
     /// Max rows [`history`] returns, newest-first.
     #[serde(default = "default_history_limit")]
     pub limit: u32,
+    /// Score this knob set instead of the live config's — the console's
+    /// "what would these knobs have scored?" run (`POST
+    /// /api/v1/learning/evals`). The recorded `eval_runs.knobs` is then the
+    /// override, not the live config, so the run row says what was actually
+    /// measured. No CLI counterpart: `comemory tune` is the CLI's way to
+    /// score a knob set.
+    #[serde(default)]
+    pub knobs: Option<crate::eval::tune::TuneCandidate>,
 }
 
 /// The default `limit` for `eval --history` / `GET /api/v1/eval/history`.
@@ -74,7 +85,13 @@ pub(crate) fn default_k() -> usize {
 /// (tracking off — measurement must not feed the signals it measures),
 /// then record this run in `eval_runs` (`kind = "eval"`).
 pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<EvalReport> {
-    let cfg = ctx.cfg;
+    // `req.knobs` swaps the six blend knobs into a clone of the live
+    // config; everything else (data dir, thresholds, …) stays as
+    // configured. `current_knobs_json` then reads back the EFFECTIVE
+    // config, so the recorded row carries the override verbatim.
+    let overridden = req.knobs.map(|k| tune::with_candidate(ctx.cfg, &k));
+    let cfg = overridden.as_ref().unwrap_or(ctx.cfg);
+    let knobs_json = current_knobs_json(cfg)?;
     let conn = ctx.conn()?;
     let pairs = golden::resolve(
         &*conn,
@@ -91,10 +108,11 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<EvalReport> {
             recall: report.recall_at_k,
             mrr: report.mrr,
             // `eval` scores no candidate grid — the "knobs" scored are the
-            // live config's six blend knobs, in the same shape
+            // effective config's six blend knobs (the live ones, or
+            // `req.knobs` when the caller overrode them), in the same shape
             // `tune`/`bandit` snapshot for their winner, so the console's
             // per-row knob display is uniform across all three `kind`s.
-            knobs_json: current_knobs_json(cfg)?,
+            knobs_json,
             applied: false,
         },
     )?;
@@ -155,9 +173,10 @@ pub(crate) fn record_run(conn: &Connection, outcome: RunOutcome<'_>) -> Result<(
     )
 }
 
-/// Serialize the live config's six blend knobs into the same field shape
-/// [`crate::eval::tune::TuneCandidate`] carries, without depending on that
-/// type (`eval::tune` is not this step's — F16 — surface).
+/// Serialize a config's six blend knobs into the same field shape
+/// [`crate::eval::tune::TuneCandidate`] carries. Kept as its own local
+/// struct rather than building a `TuneCandidate`: this is a projection OF a
+/// `Config`, and the two would have to be kept in sync either way.
 fn current_knobs_json(cfg: &crate::config::Config) -> Result<String> {
     #[derive(Serialize)]
     struct LiveKnobs {

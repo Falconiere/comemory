@@ -9,9 +9,9 @@
 //!
 //! Every subprocess-based `serve` test (`spawn_serve` + `child.kill()`)
 //! loses coverage: a SIGKILLed process never flushes its `.profraw`, so
-//! `serve/router.rs`, `serve/handlers.rs`, and the `/api/v1` route modules
-//! record 0% under `cargo llvm-cov` regardless of how thoroughly they are
-//! exercised. This module builds the real [`comemory::serve::AppState`] and
+//! `serve/router.rs` and the `/api/v1` route modules record 0% under
+//! `cargo llvm-cov` regardless of how thoroughly they are exercised. This
+//! module builds the real [`comemory::serve::AppState`] and
 //! [`comemory::serve::router::build_router`] router directly inside the
 //! test binary and drives requests through `tower::ServiceExt::oneshot` —
 //! no socket bind, no subprocess, real coverage.
@@ -59,23 +59,49 @@ pub struct Resp {
 /// Build a fresh in-process session over an empty temp data-dir.
 /// `read_only` mirrors `comemory serve --read-only`.
 pub fn session(read_only: bool) -> Session {
-    session_with_roots(read_only, RootOverrides::new())
+    session_with(read_only, RootOverrides::new(), None)
 }
 
-/// Build a fresh in-process session with explicit `--root` overrides — the
-/// `GET /api/file` containment tests need a resolvable repo root without
-/// registering a real `repo_marker` row.
-pub fn session_with_roots(read_only: bool, roots: RootOverrides) -> Session {
+/// The full constructor: `read_only` mirrors `--read-only`, `roots` the
+/// `--root` overrides, and `repo` the server-wide default scope
+/// (`comemory serve --repo <repo>`).
+pub fn session_with(read_only: bool, roots: RootOverrides, repo: Option<String>) -> Session {
+    build(read_only, roots, repo, None)
+}
+
+/// A read-write session whose server carries `embed_cmd` — the equivalent
+/// of `comemory serve --embed-cmd <cmd>`, which the routes that vectorize
+/// on the server's behalf (`POST /doctor/reembed`) need to do anything but
+/// answer `503 embedder_unavailable`.
+// Used only by the colocated suite (`src/serve/routes/tests/maint_doctor.rs`);
+// this file is also `#[path]`-included by the crate-root `serve__routes__mod`
+// target, where nothing calls it.
+#[allow(dead_code)]
+pub fn session_with_embed(embed_cmd: &str) -> Session {
+    build(
+        false,
+        RootOverrides::new(),
+        None,
+        Some(embed_cmd.to_string()),
+    )
+}
+
+/// Shared constructor behind [`session_with`] and [`session_with_embed`].
+fn build(
+    read_only: bool,
+    roots: RootOverrides,
+    repo: Option<String>,
+    embed_cmd: Option<String>,
+) -> Session {
     let home = TempDir::new().expect("tempdir");
     let paths = Paths::new(home.path());
     let opts = ServeOptions {
-        repo: None,
+        repo,
         port: 0,
         read_only,
         roots,
-        open: false,
         cfg: Config::defaults(),
-        embed_cmd: None,
+        embed_cmd,
         allow_path: Vec::new(),
     };
     let state = AppState::new(&paths, opts).expect("AppState::new");
@@ -99,6 +125,7 @@ pub fn save(session: &Session, body: &str, kind: Kind, repo: &str) {
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
     let req = api::save::Request {
         body: body.to_string(),
+        title: None,
         kind,
         repo: repo.to_string(),
         tags: Vec::new(),

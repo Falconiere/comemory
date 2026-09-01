@@ -69,6 +69,8 @@ pub mod copy;
 /// The document-domain half of [`copy`]'s preservation copy —
 /// `source_files`, `documents`, `document_chunks`, `document_fts`.
 pub mod documents;
+/// The run-history half of the preservation copy (`eval_runs`, `gc_runs`, `index_runs`).
+pub mod history;
 
 /// `comemory rebuild` / `POST /api/v1/rebuild` request. The command has no
 /// flags today — it always rebuilds the entire memory layer of the SQLite

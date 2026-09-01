@@ -108,18 +108,19 @@ fn derive_live_tables() -> BTreeSet<String> {
 /// `COPIED_TABLES` or `RECONSTRUCTABLE_TABLES`. Bump the number in the same
 /// change that answers that question — never to make the test pass again.
 ///
-/// Last bumped 25 -> 27 by the v14 console migration, which added
-/// `eval_runs` and `gc_runs`. Both went into `COPIED_TABLES`: they are run
+/// Bumped 25 -> 27 by the v14 console migration, which added `eval_runs`
+/// and `gc_runs`, and 27 -> 28 by the v15 console-API migration, which
+/// added `index_runs`. All three went into `COPIED_TABLES`: they are run
 /// history, and markdown cannot reconstruct history. Without that answer a
-/// rebuild would have silently discarded every recorded eval and gc run —
-/// which is exactly what this canary exists to prevent.
+/// rebuild would have silently discarded every recorded eval, gc, and
+/// index run — which is exactly what this canary exists to prevent.
 #[test]
-fn migration_integrity_derived_live_set_has_exactly_twenty_seven_tables() {
+fn migration_integrity_derived_live_set_has_exactly_twenty_eight_tables() {
     let live = derive_live_tables();
     assert_eq!(
         live.len(),
-        27,
-        "expected exactly 27 live tables, got {}: {live:?}",
+        28,
+        "expected exactly 28 live tables, got {}: {live:?}",
         live.len()
     );
     assert!(

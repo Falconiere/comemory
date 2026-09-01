@@ -1,8 +1,8 @@
 //! The `{ok, data, meta}` / `{ok, error, meta}` response envelope wrapping
 //! every `/api/v1/*` response, and the one `Error → (StatusCode, code-slug)`
-//! mapping every surface (this module's own [`Envelope::err`] and the legacy
-//! [`crate::serve::error::ApiError`]) derives its status from — so the two
-//! surfaces cannot drift (Binding Rule 1).
+//! mapping ([`status_and_code`]) every HTTP error derives its status from —
+//! including a failed job's `{code, message}` object
+//! (`serve::jobs::JobError`) — so no surface can drift (Binding Rule 1).
 
 use axum::Json;
 use axum::http::{HeaderValue, StatusCode, header};
@@ -44,10 +44,22 @@ impl Envelope {
     }
 
     /// Error envelope built from a crate [`Error`]; status and `code` come
-    /// from [`status_and_code`].
+    /// from [`status_and_code`], and the optional structured `details`
+    /// member from [`error_details`].
     pub fn err(command: &str, e: &Error, elapsed_ms: u64) -> Response {
         let (status, code) = status_and_code(e);
-        error_response(command, status, code, e.to_string(), elapsed_ms)
+        let mut error = json!({ "code": code, "message": e.to_string() });
+        if let (Some(details), Some(obj)) = (error_details(e), error.as_object_mut()) {
+            obj.insert("details".into(), details);
+        }
+        respond(
+            status,
+            json!({
+                "ok": false,
+                "error": error,
+                "meta": meta(command, elapsed_ms),
+            }),
+        )
     }
 
     /// `401`, `code:"unauthorized"` — the versioned surface's enveloped form
@@ -145,21 +157,54 @@ pub fn status_and_code(e: &Error) -> (StatusCode, &'static str) {
         Error::Json(_) => (StatusCode::BAD_REQUEST, "json"),
         Error::VecDimMismatch { .. } => (StatusCode::UNPROCESSABLE_ENTITY, "vec_dim_mismatch"),
         Error::Unavailable(_) => (StatusCode::SERVICE_UNAVAILABLE, "unavailable"),
-        // Both a broken migration chain and a database written by a newer
-        // comemory (`SchemaTooNew`) are server-side schema problems the
-        // caller cannot fix by retrying or rephrasing the request — same
-        // bucket `main.rs::exit_code` puts them in (EX_SOFTWARE, 70).
-        // Listed explicitly, not left to the `_` fallback below, so the two
-        // surfaces' mappings cannot silently drift apart.
-        Error::Migration(_) | Error::SchemaTooNew(_) => {
-            (StatusCode::INTERNAL_SERVER_ERROR, "internal")
-        }
+        Error::Embedder(_) => (StatusCode::SERVICE_UNAVAILABLE, "embedder_unavailable"),
+        Error::IndexRunning { .. } => (StatusCode::CONFLICT, "index_running"),
+        // Only a job body ever produces `Cancelled`, and the worker turns it
+        // into `JobStatus::Cancelled` before any envelope is built — listed
+        // so the mapping stays total rather than falling through to 500.
+        Error::Cancelled => (StatusCode::CONFLICT, "cancelled"),
+        Error::Unsupported(_) => (StatusCode::NOT_IMPLEMENTED, "unsupported"),
+        // A database written by a NEWER comemory: the binary is older than
+        // the on-disk schema. Not the caller's fault and not retryable, but
+        // distinct from a broken migration — the console renders it as an
+        // upgrade prompt, so it gets its own code (spec §1 `schema_mismatch`).
+        Error::SchemaTooNew(_) => (StatusCode::UNPROCESSABLE_ENTITY, "schema_mismatch"),
+        // SQLite's write lock is held by another connection (a concurrent
+        // CLI run): transient, retry with backoff (spec §1 `store_locked`).
+        Error::Sqlite(e) if sqlite_is_locked(e) => (StatusCode::LOCKED, "store_locked"),
         // A missing file on disk is a 404, not a 500.
         Error::Io(io) if io.kind() == std::io::ErrorKind::NotFound => {
             (StatusCode::NOT_FOUND, "not_found")
         }
+        // Everything else — including a broken migration chain
+        // (`Error::Migration`), a server-side schema problem the caller
+        // cannot fix by retrying or rephrasing the request, the same
+        // bucket `main.rs::exit_code` puts it in (EX_SOFTWARE, 70).
         _ => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
     }
+}
+
+/// The structured `error.details` object for the variants that carry one;
+/// `None` for every other error, in which case the member is omitted
+/// entirely (the error object stays `{code, message}` byte-for-byte).
+pub fn error_details(e: &Error) -> Option<Value> {
+    match e {
+        Error::IndexRunning { repo, job_id } => Some(json!({ "repo": repo, "job_id": job_id })),
+        _ => None,
+    }
+}
+
+/// Whether a `rusqlite` error is SQLite's `SQLITE_BUSY` / `SQLITE_LOCKED`
+/// — the write lock is held elsewhere and the statement can be retried.
+fn sqlite_is_locked(e: &rusqlite::Error) -> bool {
+    matches!(
+        e,
+        rusqlite::Error::SqliteFailure(ffi, _)
+            if matches!(
+                ffi.code,
+                rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
+            )
+    )
 }
 
 /// `{command, elapsed_ms}` shared by every envelope shape.

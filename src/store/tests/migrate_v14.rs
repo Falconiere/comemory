@@ -93,7 +93,8 @@ fn v14_creates_both_history_tables_on_a_fresh_database() {
         )
         .unwrap();
     assert_eq!(
-        version, "14",
+        version,
+        migrate::CURRENT_VERSION,
         "fresh DB reports this build's schema version"
     );
 
@@ -182,7 +183,7 @@ fn v14_upgrades_a_real_v13_database_without_losing_rows() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(version, "14");
+    assert_eq!(version, migrate::CURRENT_VERSION);
 }
 
 #[test]

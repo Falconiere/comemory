@@ -39,6 +39,7 @@ fn run_scores_the_real_pipeline_against_the_golden_file() {
         k: 3,
         history: false,
         limit: 20,
+        knobs: None,
     };
     let report = api::eval::run(&mut ctx, req).expect("eval run");
     assert_eq!(report.queries, 10);
@@ -71,6 +72,7 @@ fn golden_only_false_merges_an_empty_feedback_harvest_without_erroring() {
         k: 3,
         history: false,
         limit: 20,
+        knobs: None,
     };
     let report = api::eval::run(&mut ctx, req).expect("eval run");
     assert_eq!(report.queries, 5);
@@ -92,6 +94,7 @@ fn run_writes_one_eval_runs_row_matching_the_report() {
         k: 3,
         history: false,
         limit: 20,
+        knobs: None,
     };
     let report = api::eval::run(&mut ctx, req).expect("eval run");
 
@@ -125,6 +128,7 @@ fn running_eval_twice_writes_two_rows_newest_first() {
         k: 3,
         history: false,
         limit: 20,
+        knobs: None,
     };
     api::eval::run(&mut ctx, req()).expect("first eval run");
     api::eval::run(&mut ctx, req()).expect("second eval run");
@@ -158,6 +162,7 @@ fn history_on_an_empty_table_returns_an_empty_vec_not_an_error() {
         k: 3,
         history: true,
         limit: 20,
+        knobs: None,
     };
     let rows = api::eval::history(&mut ctx, &history_req).expect("history read on empty table");
     assert!(rows.is_empty());
@@ -179,6 +184,7 @@ fn history_limit_caps_the_row_count() {
             k: 3,
             history: false,
             limit: 20,
+            knobs: None,
         };
         api::eval::run(&mut ctx, req).expect("eval run");
     }
@@ -189,6 +195,7 @@ fn history_limit_caps_the_row_count() {
         k: 3,
         history: true,
         limit: 2,
+        knobs: None,
     };
     let rows = api::eval::history(&mut ctx, &history_req).expect("history");
     assert_eq!(rows.len(), 2, "--limit must cap the returned rows");
@@ -209,6 +216,7 @@ fn missing_golden_and_no_feedback_is_unavailable() {
         k: 3,
         history: false,
         limit: 20,
+        knobs: None,
     };
     let err = api::eval::run(&mut ctx, req).expect_err("no golden pairs at all");
     assert!(

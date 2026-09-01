@@ -42,7 +42,7 @@ One line per file, named after its primary item:
 | `gc.rs` | `Request` | Shared middle of `comemory gc` / `POST /api/v1/gc` |
 | `graph.rs` | `Request` | Shared middle behind `comemory graph` / `GET /api/v1/graph` |
 | `index.rs` | `Request` | Shared middle of `comemory index` / `POST /api/v1/index` |
-| `index_code.rs` | `Request` | Shared middle of `comemory index-code` / `POST /api/v1/code/index`; the walk internals live in `index_code/` |
+| `index_code.rs` | `Request` | Shared middle of `comemory index-code` / `POST /api/v1/code/index` (+ `POST /index/runs`), incl. the `mode` (incremental\|full) switch and the `index_runs` row every run records; the walk internals live in `index_code/` |
 | `ingest_code.rs` | `Response` | Shared middle of `comemory ingest-code` / `POST /api/v1/code/ingest` |
 | `install_hooks.rs` | `Request` | Shared middle of `comemory install-hooks` / `POST /api/v1/hooks/install` |
 | `list.rs` | `Request` | Shared middle of `comemory list` / `GET /api/v1/memories` |
@@ -58,6 +58,22 @@ One line per file, named after its primary item:
 | `stats.rs` | `Request` | Shared middle of `comemory stats` / `GET /api/v1/stats` — corpus counters and database size |
 | `tune.rs` | `Request` | Shared middle of `comemory tune` / `POST /api/v1/tune` |
 | `unindex.rs` | `Request` | Shared middle of `comemory unindex` / the document-unindex route |
+| `config_retrieval.rs` | `RetrievalKnobs` | Console-only: `GET\|PUT /api/v1/config/retrieval` — the live ranking knobs with their ranges, and the validated partial update |
+| `gc_policy.rs` | `Policy` | Console-only: `GET\|PUT /api/v1/gc/policy` — trash + telemetry retention windows and the last gc run |
+| `graph_nodes.rs` | `NodeDetail` | Console-only: `GET /api/v1/graph/nodes`, `/graph/nodes/{id}`, `/graph/nodes/{id}/neighbors`, `/graph/snapshot` |
+| `graph_recompute.rs` | `Response` | Console-only: `POST /api/v1/graph/recompute` — PageRank re-projection for every repo, then the memory rank |
+| `index_runs.rs` | `Request` | Console-only: `GET /api/v1/index/runs` — the paged `index_runs` history |
+| `learning.rs` | `Summary` | Console-only: `GET /api/v1/learning/{summary,evals,golden-set,expansions}` |
+| `learning_proposals.rs` | `Proposal` | Console-only: knob proposals derived from unapplied `tune`/`bandit` runs — list, apply (writes `config.toml`), discard |
+| `memory_store.rs` | `Store` | Console-only: the one memory store's view, its `[git]` patch, and the `store-sync` job |
+| `overview.rs` | `Response` | Console-only: `GET /api/v1/overview` (+ `/overview/eval-series`) — counters, index state, last run, metrics, recent memories |
+| `reembed.rs` | `Request` | Console-only: `POST /api/v1/doctor/reembed` — re-vectorize memories and/or code through the embed command, cancellable |
+| `refresh_refs.rs` | `Response` | Console-only: `POST /api/v1/memories/{id}/references/refresh` — re-pin anchored code references to the current HEAD |
+| `repo_admin.rs` | `ConnectRequest` | Console-only: `POST /api/v1/repos`, `PATCH /repos/{name}`, `POST /repos/{name}/archive`, `DELETE /repos/{name}` |
+| `restore.rs` | `Response` | Console-only: `POST /api/v1/memories/{id}/restore` / `POST /trash/{id}/restore` — bring a soft-deleted memory back from `.trash/` |
+| `suggest.rs` | `Request` | Console-only: `GET /api/v1/search/suggest` — mined expansions + recent queries for the ⌘K palette |
+| `trash.rs` | `TrashRow` | Console-only: `GET /api/v1/trash` — soft-deleted memories with their days until gc |
+| `update.rs` | `Request` | Console-only: `PATCH /api/v1/memories/{id}` — frontmatter patch in place, body patch as a superseding re-save |
 
 When you add a file here, add its row above so the index stays current. No
 `mod.rs` barrel — submodules are declared from `src/api.rs` (`pub mod

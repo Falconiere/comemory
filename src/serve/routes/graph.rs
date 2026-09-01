@@ -48,7 +48,12 @@ pub fn router(_state: AppState) -> Router<AppState> {
 }
 
 /// `GET /api/v1/graph` — the full graph or a windowed page (`api::graph`).
-async fn graph(State(state): State<AppState>, Query(req): Query<api::graph::Request>) -> Response {
+async fn graph(
+    State(state): State<AppState>,
+    scope: crate::serve::scope::RepoScope,
+    Query(mut req): Query<api::graph::Request>,
+) -> Response {
+    scope.apply(&mut req.repo);
     let started = Instant::now();
     let result = run_blocking(move || {
         let cfg = state.cfg();

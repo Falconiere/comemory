@@ -50,8 +50,9 @@ fn exit_code(err: &Error) -> i32 {
     match err {
         Error::Io(_) => 74,
         Error::Config(_) => 78,
-        Error::Unavailable(_) => 69,
-        Error::NotFound(_) | Error::Usage(_) => 64,
+        Error::Unavailable(_) | Error::Embedder(_) => 69,
+        Error::IndexRunning { .. } => 75,
+        Error::NotFound(_) | Error::Usage(_) | Error::Unsupported(_) => 64,
         Error::Yaml(_)
         | Error::Json(_)
         | Error::Toml(_)
@@ -66,6 +67,7 @@ fn exit_code(err: &Error) -> i32 {
         | Error::Forbidden(_)
         | Error::BadRequest(_)
         | Error::ConfirmationRequired(_)
+        | Error::Cancelled
         | Error::Other(_) => 70,
     }
 }

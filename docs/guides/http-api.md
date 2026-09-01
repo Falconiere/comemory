@@ -6,9 +6,8 @@ already starts for the web viewer, with no second copy of any command's logic.
 
 ## What it is
 
-`comemory serve` mounts a versioned REST surface at `/api/v1` alongside the
-existing SPA routes (`/`, `/api/search`, `/api/graph`, `/api/file`,
-`/api/health` — see [Serve the web viewer](serve-web.md), unchanged). Almost
+`comemory serve` is a loopback-only HTTP server whose whole surface is the
+versioned REST API at `/api/v1` — there is no bundled web page. Almost
 every CLI subcommand — `save`, `search`, `search-code`, `index-code`,
 `eval`, `rebuild`, and 20-odd more — gets a `/api/v1` route. Both surfaces
 share one command core, `src/api/`: each `api::<cmd>::run(&mut Ctx, Request)`
@@ -39,9 +38,10 @@ Every `/api/v1/*` request needs the session token, checked in this order
 (`src/serve/router.rs::token_from_request`):
 
 1. `X-Comemory-Token: <token>` header,
-2. `?token=<token>` query parameter (the form a browser `EventSource` can
+2. `Authorization: Bearer <token>` header (the console-api spec's form),
+3. `?token=<token>` query parameter (the form a browser `EventSource` can
    send, since it cannot set custom headers),
-3. a `comemory_token` cookie.
+4. a `comemory_token` cookie.
 
 The server also rejects any request whose `Host` header does not name a
 loopback host (DNS-rebinding defense) — this is not disableable, the
@@ -49,11 +49,23 @@ transport is loopback-only.
 
 A missing/invalid token is `401`; a non-loopback `Host` is `403`. On
 `/api/v1/*` both come back **enveloped JSON** (`code: "unauthorized"` /
-`"forbidden"`, `meta.command: "auth"`); the legacy unversioned routes keep
-today's plain-text body for the same failures.
+`"forbidden"`, `meta.command: "auth"`); any other `/api/*` path (nothing is
+mounted there any more) gets a plain-text body for the same failures.
 
 ```bash
 curl -s -H "X-Comemory-Token: $TOKEN" "$BASE/api/v1/memories?limit=5"
+```
+
+### Repo scope
+
+Every read that accepts a `repo` filter resolves a default when the request
+omits it: the `X-Comemory-Repo: <label>` header first, then the server's own
+`comemory serve --repo <label>`. An explicit `repo` parameter always wins
+(`src/serve/scope.rs::RepoScope`). A client that sends neither sees no
+change.
+
+```bash
+curl -s -H "X-Comemory-Token: $TOKEN" -H "X-Comemory-Repo: myrepo" "$BASE/api/v1/memories"
 ```
 
 ## The response envelope
@@ -100,17 +112,23 @@ surfaces cannot drift. The current table:
 | `Ast` (bad ast-grep pattern via `POST /code/ast`) | 400 | `ast` |
 | `Json` (malformed payload, e.g. a bad vector) | 400 | `json` |
 | `VecDimMismatch` | 422 | `vec_dim_mismatch` |
+| `SchemaTooNew` (the binary is older than the on-disk schema) | 422 | `schema_mismatch` |
 | `Unavailable` | 503 | `unavailable` |
+| `Embedder` (embed command missing, failing, or timing out) | 503 | `embedder_unavailable` |
+| `IndexRunning` (a queued/running `index-code` job holds the repo; `error.details = {repo, job_id}`) | 409 | `index_running` |
+| `Unsupported` (a capability this build deliberately does not model) | 501 | `unsupported` |
+| `Sqlite` with `SQLITE_BUSY` / `SQLITE_LOCKED` (retry with backoff) | 423 | `store_locked` |
 | `Io` with `ErrorKind::NotFound` | 404 | `not_found` |
 | write permit held by another mutating request/job (§Concurrency) | 503 | `busy` |
 | `mutating` route on a `--read-only` server | 405 | `read_only` |
 | missing session token / bad `Host` (router guard) | 401 / 403 | `unauthorized` / `forbidden` |
 | anything else | 500 | `internal` |
 
-Two exemptions, documented rather than papered over: axum's own `413` for an
-over-limit body stays plain text (framework-level, before any handler runs);
-the legacy unversioned routes keep their existing bare payloads and
-plain-text errors — they are unchanged by this feature.
+The error object is `{code, message}`, plus a structured `details` member
+for the variants that carry one (today: `index_running`).
+
+One exemption, documented rather than papered over: axum's own `413` for an
+over-limit body stays plain text (framework-level, before any handler runs).
 
 ## Route map
 
@@ -187,6 +205,37 @@ disagree, trust the running server.
 | ○ `GET /jobs/{id}` | *(new)* | one job's record |
 | ○ `GET /jobs/{id}/events` | *(new)* | SSE lifecycle stream |
 | ○ `GET /health` | *(new)* | capability probe, enveloped form of `/api/health` |
+
+**Console additions** (console-api spec, 2026-09-01 — every route is a
+view over the same cores; ◇ = a job-creating route)
+
+| Method + path | Notes |
+|---|---|
+| ○ `GET /overview`, `GET /overview/eval-series?limit=` | counters, index state, last index run, latest eval metrics, recall series, 4 recent memories |
+| ○ `GET\|POST /search` | the console view over `find`: `q`, `scope` (`all\|memories\|code`), `kinds[]` (≤ 1), `limit`, `explain`; hits carry `type` and a derived `score_parts[]` explain strip |
+| ○ `GET /search/suggest?q=` | mined expansions matching a query token + recent queries by prefix |
+| ● `POST /search/{query_id}/feedback` | `{hit_id, type?, signal: used\|opened\|ignored, source?}` → the `feedback` core |
+| ● `PATCH /memories/{id}` | frontmatter patch in place (same id); a `body`/`title` change mints a new id that `supersedes` the old |
+| ● `POST /memories/{id}/restore`, `POST /trash/{id}/restore` | move the `.trash/` file back and re-mirror |
+| ● `POST /memories/{id}/references/refresh` | re-pin anchored refs to the current HEAD, return the re-classified `code_refs` |
+| ○ `GET /trash` | soft-deleted memories with `days_until_gc` |
+| ○ `GET /graph/nodes?sort=pagerank\|path`, `GET /graph/nodes/{id}`, `GET /graph/nodes/{id}/neighbors?min_weight=`, `GET /graph/snapshot?edge_kinds=&min_weight=` | `{id}` is `file:<repo>:<path>` or `<repo>:<path>`, percent-encoded; the snapshot caps at 20 000 edges (`truncated`) |
+| ●◇ `POST /graph/recompute` | job `graph-recompute`: PageRank re-projection + memory rank |
+| ○ `GET /index/runs?repo=`, ●◇ `POST /index/runs` | history from `index_runs`; `{repo, path\|root, mode: incremental\|full}` → the `index-code` job, `409 index_running` while the repo has a live one, `400` when archived |
+| ● `POST /jobs/{id}/cancel` | cooperative cancel (see Jobs) |
+| ● `PUT /hooks/{name}?repo=` | `{enabled}`; `post_commit` and `post-commit` both accepted |
+| ●✓ `DELETE /sources/{target}?confirm=true` | path form of `DELETE /sources?target=` |
+| ○ `GET /learning/summary`, `GET /learning/evals?limit=`, `GET /learning/golden-set?golden=`, `GET /learning/proposals`, `GET /learning/expansions` | learning-loop reads; `evals` rows carry derived `delta`/`is_baseline`/`is_best` |
+| ◇ `POST /learning/evals` | alias of the `eval` job; `golden_set` alias, optional `knobs` override |
+| ●✓ `POST /learning/proposals/{id}/apply`, ● `POST /learning/proposals/{id}/discard` | write the proposal's knobs into `config.toml` (and reload) / dismiss it |
+| ○ `GET /config/retrieval`, ● `PUT /config/retrieval` | live ranking knobs with ranges; a partial update is validated before the file is touched (`400` on an out-of-range knob) |
+| ○ `GET /doctor/system` | schema/backup/data-dir/embedder facts — never runs the embed command |
+| ●◇✓ `POST /doctor/rebuild` | alias of the `rebuild` job (`scope` must be `all`) |
+| ●◇ `POST /doctor/reembed` | `{target: memories\|code\|both}`; `503 embedder_unavailable` without an embed command |
+| ○ `GET /prune/candidates` | alias of `GET /prune`; `POST /prune` also takes `ids[]` and `dry_run` |
+| ○ `GET /gc/policy`, ● `PUT /gc/policy`, ●◇✓ `POST /gc/run` | `trash_retention_days` / `telemetry_retention_days` / `last_run`; the job form of `gc` |
+| ● `POST /repos`, ● `PATCH /repos/{name}`, ● `POST /repos/{name}/archive`, ●✓ `DELETE /repos/{name}` | connect a (contained) root, re-point its root, archive (stops indexing, keeps memories), disconnect (drops code rows, keeps memories) |
+| ○ `GET /memory-stores`, ○ `GET /memory-stores/{id}`, ● `POST /memory-stores` (`501`), ● `PATCH /memory-stores/{id}`, ●◇ `POST /memory-stores/{id}/sync` | the one store (`default`): path, remote, `push_on_save`, git sync state; `PATCH` writes `[git] auto_sync` / `[git] remote` into `config.toml` and reloads; the sync job pulls (`--rebase --autostash`), commits `memories/`, pushes |
 
 ### Request field mapping
 
@@ -279,6 +328,18 @@ unrestricted as the CLI (which already trusts the local filesystem).
 Containment for a job-creating route runs before the job is even created,
 so a rejected path never produces a `202`.
 
+### `--root`
+
+```bash
+comemory serve --root myrepo=/abs/path/to/repo
+```
+
+Repeatable. Overrides a repo's working-tree root as `<repo>=<abs-path>` —
+required for repos indexed before the v7 schema captured the root, so a
+`file:<repo>:<path>` node id can still be resolved on disk (`GET
+/memories/{id}`'s reference freshness, `POST /code/ast`) and the root can
+join the allowed-roots set above.
+
 ### `--allow-path`
 
 ```bash
@@ -292,8 +353,9 @@ fails server startup outright rather than being silently dropped.
 
 ## Jobs
 
-`index-code`, `ingest-code`, `index`, `rebuild`, `eval`, `tune`, and
-`bandit` run as background jobs: the `POST` returns immediately and the
+`index-code`, `ingest-code`, `index`, `rebuild`, `eval`, `tune`, `bandit`,
+`graph-recompute`, `reembed`, `gc` (the `POST /gc/run` form), and
+`store-sync` run as background jobs: the `POST` returns immediately and the
 work continues on a blocking-pool thread.
 
 ```json
@@ -325,8 +387,20 @@ curl -s -H "X-Comemory-Token: $TOKEN" "$BASE/api/v1/jobs/3f9a1c2b7e0d5a41"
 }
 ```
 
-`status` is one of `queued | running | done | error`. `GET /api/v1/jobs`
-lists every retained job, newest first, paged (`?limit=&offset=`).
+`status` is one of `queued | running | done | error | cancelled`; `repo`
+names the repo label a job works on (`null` for the others). `GET
+/api/v1/jobs` lists every retained job, newest first, paged
+(`?limit=&offset=`).
+
+### Cancel: `POST /jobs/{id}/cancel`
+
+Cooperative. A queued job becomes `cancelled` immediately (its body never
+runs); a running job has its cancel flag set and stops at its next boundary
+— `index-code` checks between files and rolls its one transaction back, so
+nothing is half-written; `reembed` checks between rows. Every other job kind
+cancels only while queued. `data` reports `{job_id, outcome: "cancelled" |
+"requested"}`; an unknown id is `404`, a finished job `400`. Not
+read-only-gated: stopping a job never writes to the store.
 
 ### SSE: `GET /jobs/{id}/events`
 
@@ -357,6 +431,13 @@ data: {"job_id":"3f9a1c2b7e0d5a41","status":"done","result":{...},"error":null}
 
 `?token=` auth (rather than the header) is what makes this reachable from a
 browser `EventSource`, which cannot set custom headers.
+
+Two additive event types interleave with the lifecycle events: `progress`
+(`{job_id, done, total, unit}`, one per unit of work) and `log`
+(`{job_id, line}`, one per log line — best-effort: a subscriber more than
+256 lines behind loses the oldest; `GET /jobs/{id}` carries the durable
+20-line `log_tail`). A client that only handles the lifecycle event names
+sees exactly the sequence it saw before either existed.
 
 ### Write-permit FIFO
 
@@ -452,8 +533,7 @@ curl -s -H "X-Comemory-Token: $TOKEN" "$BASE/api/v1/jobs/$JOB"
 
 ## See also
 
-- [Serve the web viewer](serve-web.md) — the SPA and its legacy unversioned
-  routes.
+- [Getting started](../getting-started.md) — the CLI loop the API mirrors.
 - [CLI reference](../cli-reference.md) — every subcommand's flags, which
   `/api/v1` field-maps onto.
 - [Architecture](../architecture.md) — storage layout and the retrieval

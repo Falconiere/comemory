@@ -353,6 +353,15 @@ Options:
       --kind <KIND>
           Filter by kind (case-insensitive): decision|bug|convention|discovery|pattern|note
 
+      --tag <TAG>
+          Filter to memories carrying this exact tag
+
+      --min-quality <MIN_QUALITY>
+          Filter to memories whose quality is at least this (1..=5)
+
+      --query <QUERY>
+          Filter to memories whose body contains this text (case-insensitive, matched literally)
+
       --sort <SORT>
           Sort order: `created` (default, newest first) | `quality` (descending) | `accessed` (most-recently-accessed first)
 
@@ -385,6 +394,9 @@ Examples:
 
   # Filter by kind only
   comemory list --kind bug
+
+  # Tagged `postgres`, quality 4+, mentioning "pool" anywhere in the body
+  comemory list --tag postgres --min-quality 4 --query pool
 
   # Second page of 20 memories
   comemory list --limit 20 --offset 20
@@ -614,16 +626,41 @@ Walk a repo, extract symbols, and upsert into the code index
 Usage: comemory index-code [OPTIONS] --repo <REPO> --path <PATH>
 
 Options:
-      --json                 Emit machine-readable JSON instead of a human TTY view
-      --repo <REPO>          Repo label stored alongside each symbol row
-      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
-      --path <PATH>          Root of the working tree to walk. Must live inside a git repo so blob OIDs are available for the incremental skip path
-      --extract              Emit JSONL on stdout instead of inserting rows. Suitable for piping into an external embedder + `comemory ingest-code`
-  -h, --help                 Print help
+      --json
+          Emit machine-readable JSON instead of a human TTY view
+
+      --repo <REPO>
+          Repo label stored alongside each symbol row
+
+      --data-dir <DATA_DIR>
+          Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable
+          
+          [env: COMEMORY_DATA_DIR=]
+
+      --path <PATH>
+          Root of the working tree to walk. Must live inside a git repo so blob OIDs are available for the incremental skip path
+
+      --extract
+          Emit JSONL on stdout instead of inserting rows. Suitable for piping into an external embedder + `comemory ingest-code`
+
+      --mode <MODE>
+          `incremental` (default) re-extracts only files whose blob OID moved since the last run; `full` clears the repo's indexed-file cursor first so every file re-extracts
+
+          Possible values:
+          - incremental: Only files changed since the last run
+          - full:        Every file
+          
+          [default: incremental]
+
+  -h, --help
+          Print help (see a summary with '-h')
 
 Examples:
   # Index the current working directory with explicit repo label
   comemory index-code --repo myrepo --path .
+
+  # Re-extract every file, not just the ones whose blob changed
+  comemory index-code --repo myrepo --path . --mode full
 
   # Emit one JSONL row per symbol on stdout (skips DB writes)
   comemory index-code --repo myrepo --path ./src --extract
@@ -878,24 +915,23 @@ Usage: comemory serve [OPTIONS]
 
 Options:
       --json                 Emit machine-readable JSON instead of a human TTY view
-      --repo <REPO>          Restrict the graph to one repo label (as passed to `index-code --repo`)
+      --repo <REPO>          Default repo label (as passed to `index-code --repo`) for every read that accepts a `repo` filter. An explicit `repo` parameter or an `X-Comemory-Repo` header on the request overrides it
       --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
       --port <PORT>          Loopback port to bind. `0` (default) selects an ephemeral port whose URL is printed at startup [default: 0]
-      --read-only            Disable backend writes: `PUT /api/file` returns 405. The source panel is read-only regardless of this flag (it has no Save action)
+      --read-only            Refuse every mutating /api/v1 route with 405 read_only
       --root <REPO=PATH>     Override a repo's working-tree root as `<repo>=<abs-path>` (repeatable). Required for repos indexed before the v7 schema captured the root
-      --open                 Open the printed URL in the default browser after binding. The URL carries the session token and is passed as an argument to the system opener, so it is briefly visible to other local users (e.g. via `/proc/<pid>/cmdline` or `ps`)
-      --embed-cmd <CMD>      Embed command for semantic web search; run as sh -c, reads query on stdin, emits {"embedding":[..]}. Unset → lexical only. Mirrors COMEMORY_EMBED_CMD [env: COMEMORY_EMBED_CMD=]
+      --embed-cmd <CMD>      Embed command for the routes that vectorize on the server's behalf (POST /api/v1/doctor/reembed); run as sh -c, reads text on stdin, emits {"embedding":[..]}. Unset → those routes answer 503. Mirrors COMEMORY_EMBED_CMD [env: COMEMORY_EMBED_CMD=]
       --allow-path <DIR>     Allow a path-taking mutating route (`index-code`, `ast --file`, `install-hooks --repo`, `eval`/`tune`/`bandit --golden`) to touch a filesystem path under this directory, on top of `--root` overrides and the stored `repo_marker` roots (repeatable)
   -h, --help                 Print help
 
 Examples:
-  # Serve the graph + editor for every indexed repo on an ephemeral port
+  # Serve the /api/v1 surface for every indexed repo on an ephemeral port
   comemory serve
 
-  # One repo, fixed port, opened in the browser
-  comemory serve --repo myrepo --port 8787 --open
+  # Default every read to one repo, on a fixed port
+  comemory serve --repo myrepo --port 8787
 
-  # Read-only exploration (no writes to disk)
+  # Read-only: every mutating route answers 405
   comemory serve --read-only
 
   # Supply a repo root for repos indexed before the v7 schema captured it
@@ -1004,6 +1040,7 @@ Options:
       --apply                Execute the cleanup (soft-delete low-value memories, drop orphan edges + stale code symbols). Without this flag prune only scans and reports
       --json                 Emit machine-readable JSON instead of a human TTY view
       --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+      --ids <IDS>            Restrict --apply to these memory ids (comma-separated 8-hex ids). Ids that are not prune candidates are ignored. Without this flag --apply acts on every low-value candidate
       --limit <LIMIT>        Maximum number of results to return. `0` means "all" (no limit) [default: 50]
       --offset <OFFSET>      Number of leading results to skip before the window starts [default: 0]
   -h, --help                 Print help

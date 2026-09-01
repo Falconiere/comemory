@@ -33,31 +33,50 @@ pub struct NodeRow {
     pub blob: Option<String>,
 }
 
+/// The `edges` predicate matching every memory citation of ONE file, over
+/// an `edges e` row aliased `e`.
+///
+/// The two reference shapes address the file differently: `references_file`
+/// stores the BARE `<repo>:<path>` (no `file:` prefix — see
+/// `graph::edges::file_node_id`), while `references_symbol` stores
+/// `<repo>:<path>:<symbol>`, so a symbol reference is matched by prefix —
+/// with `substr(...) = ...`, NOT `LIKE`. A path is full of `_`, which LIKE
+/// reads as "any single character" (`src/memory_list.rs` would also match
+/// `src/memoryXlist.rs`); the substr form has no metacharacters to escape.
+/// Same technique as `graph::edges::file_node_prefix`.
+///
+/// `file_expr` is a SQL EXPRESSION spliced into the predicate, never user
+/// data: [`extra_columns`] passes the correlated `c.repo || ':' || c.path`,
+/// while `api::graph_nodes`'s `cited_by` lookup passes a bound `?1`. Sharing
+/// one predicate is what keeps a node's `memories` COUNT and its `cited_by`
+/// list answering about the same set of memories (Binding Rule 1).
+pub(crate) fn cites_file_predicate(file_expr: &str) -> String {
+    format!(
+        "e.src_kind = 'memory' \
+         AND ((e.rel = 'references_file' AND e.dst_id = {file_expr}) \
+           OR (e.rel = 'references_symbol' \
+               AND substr(e.dst_id, 1, length({file_expr} || ':')) = {file_expr} || ':'))"
+    )
+}
+
 /// The two columns added for the console's selected-node panel, expressed
 /// once so the windowed and unwindowed queries cannot drift.
 ///
 /// `blob` is a plain lookup. The memory count is a correlated subquery
-/// rather than a join because the two reference shapes address the file
-/// differently: `references_file` stores the BARE `<repo>:<path>` (no
-/// `file:` prefix — see `graph::edges::file_node_id`), while
-/// `references_symbol` stores `<repo>:<path>:<symbol>`, so a symbol
-/// reference is matched by prefix — with `substr(...) = ...`, NOT `LIKE`.
-/// A path is full of `_`, which LIKE reads as "any single character"
-/// (`src/memory_list.rs` would also match `src/memoryXlist.rs`); the
-/// substr form has no metacharacters to escape. Same technique as
-/// `graph::edges::file_node_prefix`. `COUNT(DISTINCT src_id)` over both keeps
-/// a memory that cites three symbols in one file counting once, and the
-/// `memories` join drops soft-deleted rows.
-const EXTRA_COLUMNS: &str = "\
-    (SELECT f.blob_oid FROM indexed_files f \
-      WHERE f.repo = c.repo AND f.path = c.path), \
-    (SELECT COUNT(DISTINCT e.src_id) FROM edges e \
-       JOIN memories m ON m.id = e.src_id \
-      WHERE m.deleted_at IS NULL AND e.src_kind = 'memory' \
-        AND ((e.rel = 'references_file' AND e.dst_id = c.repo || ':' || c.path) \
-          OR (e.rel = 'references_symbol' \
-              AND substr(e.dst_id, 1, length(c.repo || ':' || c.path || ':')) \
-                  = c.repo || ':' || c.path || ':')))";
+/// rather than a join, built from [`cites_file_predicate`];
+/// `COUNT(DISTINCT src_id)` over both reference shapes keeps a memory that
+/// cites three symbols in one file counting once, and the `memories` join
+/// drops soft-deleted rows.
+fn extra_columns() -> String {
+    format!(
+        "(SELECT f.blob_oid FROM indexed_files f \
+          WHERE f.repo = c.repo AND f.path = c.path), \
+        (SELECT COUNT(DISTINCT e.src_id) FROM edges e \
+           JOIN memories m ON m.id = e.src_id \
+          WHERE m.deleted_at IS NULL AND {})",
+        cites_file_predicate("c.repo || ':' || c.path")
+    )
+}
 
 /// Max `(repo, path)` pairs per batched node fetch. Each pair binds two host
 /// params, so `500 × 2 = 1000` stays far under bundled SQLite's
@@ -89,8 +108,9 @@ pub fn fetch_nodes(conn: &Connection, repo: Option<&str>) -> Result<Vec<NodeRow>
     // onto the file node (rather than SUM/AVG), so a file is sized by its
     // single most central symbol.
     let mut sql = format!(
-        "SELECT c.repo, c.path, MAX(c.rank_score), COUNT(*), {EXTRA_COLUMNS} \
-           FROM code_symbols c WHERE c.parent_id IS NULL"
+        "SELECT c.repo, c.path, MAX(c.rank_score), COUNT(*), {} \
+           FROM code_symbols c WHERE c.parent_id IS NULL",
+        extra_columns()
     );
     // Borrow `repo` (the parameter, which outlives `binds`) rather than the
     // if-let local, so the `&&str` pushed here lives until `query_map`.
@@ -152,12 +172,13 @@ fn fetch_node_chunk(
         .collect::<Vec<_>>()
         .join(",");
     let sql = format!(
-        "SELECT c.repo, c.path, MAX(c.rank_score), COUNT(*), {EXTRA_COLUMNS} \
+        "SELECT c.repo, c.path, MAX(c.rank_score), COUNT(*), {} \
            FROM code_symbols c \
           WHERE c.parent_id IS NULL \
             AND (c.repo, c.path) IN (VALUES {values}) \
           GROUP BY c.repo, c.path \
-          ORDER BY c.repo, c.path"
+          ORDER BY c.repo, c.path",
+        extra_columns()
     );
     let mut stmt = conn.prepare(&sql)?;
     let params = chunk
@@ -168,6 +189,17 @@ fn fetch_node_chunk(
         .collect::<std::result::Result<Vec<_>, _>>()?;
     rows.extend(chunk_rows);
     Ok(())
+}
+
+/// Fetch the single [`NodeRow`] for one indexed file, or `None` when the
+/// file has no top-level `code_symbols` rows (never indexed, or indexed only
+/// as AST chunk children). Runs [`fetch_node_chunk`] over a one-pair chunk so
+/// the console's node-detail lookup and the graph's node list report the same
+/// aggregate — rank, symbol count, citing-memory count, blob (Binding Rule 1).
+pub fn fetch_node(conn: &Connection, repo: &str, path: &str) -> Result<Option<NodeRow>> {
+    let mut rows = Vec::with_capacity(1);
+    fetch_node_chunk(conn, &[(repo.to_string(), path.to_string())], &mut rows)?;
+    Ok(rows.into_iter().next())
 }
 
 /// Assemble the [`CodeGraph`] from node rows and edges. Edge endpoints that

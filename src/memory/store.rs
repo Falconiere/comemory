@@ -3,7 +3,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use time::OffsetDateTime;
 
@@ -142,15 +142,7 @@ impl MemoryStore {
         };
 
         let rendered = fm.render(body.trim_end())?;
-        if let Err(e) = fs::write(&tmp_path, rendered) {
-            let _ = fs::remove_file(&tmp_path);
-            return Err(e.into());
-        }
-
-        if let Err(e) = fs::rename(&tmp_path, &final_path) {
-            let _ = fs::remove_file(&tmp_path);
-            return Err(e.into());
-        }
+        write_atomic(&tmp_path, &final_path, &rendered)?;
 
         // Warm the cache so a follow-up `load` for the same id hits without
         // a `read_dir` scan.
@@ -176,6 +168,81 @@ impl MemoryStore {
             path,
             slug,
         })
+    }
+
+    /// Rewrite an already-loaded record in place: re-render its frontmatter +
+    /// body and atomically replace the file at `record.path` (stage to
+    /// `.{id}.tmp`, then rename), exactly as [`MemoryStore::save`] writes a
+    /// new one.
+    ///
+    /// The filename is `{id}-{slug}.md` and both halves derive from the body,
+    /// so a metadata-only edit (`PATCH /api/v1/memories/{id}`, the
+    /// reference-refresh re-pin) keeps the same path — this never renames and
+    /// never re-derives the id. A caller changing the *body* must go through
+    /// `save` instead, which mints the new content-derived id.
+    pub fn rewrite(&self, record: &MemoryRecord) -> Result<()> {
+        let tmp_path = self
+            .paths
+            .memories_dir()
+            .join(format!(".{}.tmp", record.frontmatter.id));
+        let rendered = record.frontmatter.render(record.body.trim_end())?;
+        write_atomic(&tmp_path, &record.path, &rendered)
+    }
+
+    /// Bring a soft-deleted memory back: move `.trash/{id}-{slug}.md` back
+    /// into `memories/` and return the record parsed from the restored file.
+    /// The exact reverse of [`MemoryStore::delete`]'s file move; the SQLite
+    /// mirror is the caller's half (`api::restore`).
+    ///
+    /// `Error::BadRequest` when `id` names a live memory (there is nothing to
+    /// restore), `Error::NotFound` when it is in neither place.
+    pub fn restore(&self, id: &str) -> Result<MemoryRecord> {
+        let trash_path = self.find_in_trash(id)?;
+        let file_name = trash_path
+            .file_name()
+            .ok_or_else(|| {
+                Error::Other(format!(
+                    "trashed memory path has no file name: {}",
+                    trash_path.display()
+                ))
+            })?
+            .to_owned();
+        let live_path = self.paths.memories_dir().join(file_name);
+        fs::rename(&trash_path, &live_path)?;
+        // Warm the cache at the restored path — `delete` evicted it.
+        self.id_to_path
+            .borrow_mut()
+            .insert(id.to_string(), live_path.clone());
+        let raw = fs::read_to_string(&live_path)?;
+        let (fm, body) = Frontmatter::split(&raw)?;
+        let slug = slug_from_body(&body);
+        Ok(MemoryRecord {
+            frontmatter: fm,
+            body,
+            path: live_path,
+            slug,
+        })
+    }
+
+    /// Locate `.trash/{id}-*.md`. Distinguishes the two miss cases the
+    /// restore surface reports differently: a live id is `BadRequest` (it was
+    /// never deleted), an id in neither tree is `NotFound`.
+    fn find_in_trash(&self, id: &str) -> Result<PathBuf> {
+        let prefix = format!("{id}-");
+        if let Ok(entries) = fs::read_dir(self.paths.trash_dir()) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().into_string().unwrap_or_default();
+                if matches_prefix(&name, &prefix) {
+                    return Ok(entry.path());
+                }
+            }
+        }
+        if self.find_by_id(id).is_ok() {
+            return Err(Error::BadRequest(format!(
+                "memory {id} is not in the trash"
+            )));
+        }
+        Err(Error::NotFound(id.to_string()))
     }
 
     /// Soft-delete a memory by moving it into `memories/.trash/`. Returns the
@@ -263,10 +330,7 @@ impl MemoryStore {
         for entry in fs::read_dir(self.paths.memories_dir())? {
             let entry = entry?;
             let name = entry.file_name().into_string().unwrap_or_default();
-            let is_md = std::path::Path::new(&name)
-                .extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("md"));
-            if name.starts_with(&prefix) && is_md {
+            if matches_prefix(&name, &prefix) {
                 let path = entry.path();
                 self.id_to_path
                     .borrow_mut()
@@ -276,6 +340,34 @@ impl MemoryStore {
         }
         Err(Error::NotFound(id.to_string()))
     }
+}
+
+/// Whether directory entry `name` is the markdown file behind a memory id,
+/// given that id's `{id}-` filename prefix. Shared by the live lookup
+/// ([`MemoryStore::find_by_id`]) and the trash lookup
+/// ([`MemoryStore::find_in_trash`]) so the two cannot disagree on what counts
+/// as a memory file.
+fn matches_prefix(name: &str, prefix: &str) -> bool {
+    let is_md = Path::new(name)
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("md"));
+    is_md && name.starts_with(prefix)
+}
+
+/// Stage `contents` at `tmp_path`, then `fs::rename` it onto `final_path`.
+/// On either failure the staged file is removed, so no orphaned `.tmp` is
+/// left behind. The one write path shared by [`MemoryStore::save`] (new file)
+/// and [`MemoryStore::rewrite`] (in-place replacement).
+fn write_atomic(tmp_path: &Path, final_path: &Path, contents: &str) -> Result<()> {
+    if let Err(e) = fs::write(tmp_path, contents) {
+        let _ = fs::remove_file(tmp_path);
+        return Err(e.into());
+    }
+    if let Err(e) = fs::rename(tmp_path, final_path) {
+        let _ = fs::remove_file(tmp_path);
+        return Err(e.into());
+    }
+    Ok(())
 }
 
 #[cfg(test)]

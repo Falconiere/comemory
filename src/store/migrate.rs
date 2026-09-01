@@ -30,7 +30,7 @@ pub(crate) mod preflight;
 /// it is what `schema_meta` stores and what several eval modules hash via
 /// `.as_bytes()` — not derived from [`CURRENT_VERSION_NUM`]: on the pinned
 /// stable toolchain `const … = &N.to_string()` fails with `E0015`.
-pub const CURRENT_VERSION: &str = "14";
+pub const CURRENT_VERSION: &str = "15";
 
 /// The same value numerically as [`CURRENT_VERSION`], for callers that need
 /// to compare or count migrations. Agreement between the two is asserted by
@@ -102,6 +102,12 @@ pub const M_V13: &str = include_str!("./sql/0013_v13_documents.sql");
 /// and maintenance surfaces can report a history instead of only the
 /// current run.
 pub const M_V14: &str = include_str!("./sql/0014_v14_console.sql");
+
+/// 0015 SQL: console-API additions — the `index_runs` history table (one
+/// row per `index-code` run, outcomes included), `eval_runs.discarded`
+/// (a dismissed knob proposal), and `repo_marker.archived` (a repo the
+/// console stopped indexing without deleting anything).
+pub const M_V15: &str = include_str!("./sql/0015_v15_console_api.sql");
 
 /// Apply all pending migrations. Safe to re-run; each migration is only
 /// applied if its key is absent from `schema_meta`, and each post-apply
@@ -319,6 +325,10 @@ mod tests_v8;
 #[cfg(test)]
 #[path = "tests/migrate_v14.rs"]
 mod tests_v14;
+
+#[cfg(test)]
+#[path = "tests/migrate_v15.rs"]
+mod tests_v15;
 
 #[cfg(test)]
 #[path = "tests/matrix.rs"]

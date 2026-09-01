@@ -65,6 +65,9 @@ fn request() -> api::list::Request {
     api::list::Request {
         repo: None,
         kind: None,
+        tag: None,
+        min_quality: None,
+        q: None,
         limit: 50,
         offset: 0,
         sort: api::list::Sort::Created,
@@ -100,6 +103,9 @@ fn run_applies_repo_and_kind_filters() {
     let req = api::list::Request {
         repo: Some("alpha".to_string()),
         kind: Some("Decision".to_string()),
+        tag: None,
+        min_quality: None,
+        q: None,
         ..request()
     };
     let page = api::list::run(&mut ctx, req).expect("list run");

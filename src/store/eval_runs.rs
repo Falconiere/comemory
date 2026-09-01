@@ -4,8 +4,13 @@
 //! `tune`/`bandit`, the winning candidate — is what the console's run table
 //! and recall sparkline show), backing the v14 console-history table
 //! (`src/store/sql/0014_v14_console.sql`).
+//!
+//! v15 adds the two flag writers the console's knob proposals need:
+//! [`set_applied`] (the run's knobs were written into `config.toml`) and
+//! [`set_discarded`] (the run was dismissed without applying), plus
+//! [`get`] for the single-row read those routes do first.
 
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 use serde::Serialize;
 
 use crate::prelude::*;
@@ -54,6 +59,63 @@ pub struct EvalRunRow {
     pub knobs: serde_json::Value,
     /// Whether this run rewrote `config.toml`.
     pub applied: bool,
+    /// Whether this run's knobs were dismissed as a proposal (v15's
+    /// `eval_runs.discarded`) — the one proposal state that cannot be
+    /// derived from anything else already stored.
+    pub discarded: bool,
+}
+
+/// The column list every reader selects, in the order [`read_row`] expects.
+const COLUMNS: &str = "id, kind, at, golden_pairs, k, recall, mrr, knobs, applied, discarded";
+
+/// One row exactly as SQLite hands it over: `knobs` still TEXT, the two
+/// flags still integers. Split from [`EvalRunRow`] because the JSON parse
+/// of `knobs` can fail with a crate `Error`, which a `rusqlite` row mapper
+/// cannot return — [`finish`] does that half.
+struct RawRow {
+    id: String,
+    kind: String,
+    at: String,
+    golden_pairs: i64,
+    k: i64,
+    recall: f64,
+    mrr: f64,
+    knobs: String,
+    applied: i64,
+    discarded: i64,
+}
+
+/// Map one [`COLUMNS`]-shaped result row into a [`RawRow`]. Shared by
+/// [`list`] and [`get`] so the two readers cannot drift on column order.
+fn read_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<RawRow> {
+    Ok(RawRow {
+        id: r.get(0)?,
+        kind: r.get(1)?,
+        at: r.get(2)?,
+        golden_pairs: r.get(3)?,
+        k: r.get(4)?,
+        recall: r.get(5)?,
+        mrr: r.get(6)?,
+        knobs: r.get(7)?,
+        applied: r.get(8)?,
+        discarded: r.get(9)?,
+    })
+}
+
+/// Parse a [`RawRow`]'s `knobs` TEXT into JSON and widen its counters.
+fn finish(raw: RawRow) -> Result<EvalRunRow> {
+    Ok(EvalRunRow {
+        id: raw.id,
+        kind: raw.kind,
+        at: raw.at,
+        golden_pairs: raw.golden_pairs.try_into().unwrap_or(0),
+        k: raw.k.try_into().unwrap_or(0),
+        recall: raw.recall,
+        mrr: raw.mrr,
+        knobs: serde_json::from_str(&raw.knobs)?,
+        applied: raw.applied != 0,
+        discarded: raw.discarded != 0,
+    })
 }
 
 /// Insert one `eval_runs` row. A single `INSERT` with no read-modify-write
@@ -81,44 +143,51 @@ pub fn insert(conn: &Connection, row: &NewRun<'_>) -> Result<()> {
 /// `idx_eval_runs_at`). An empty table returns an empty `Vec`, never an
 /// error.
 pub fn list(conn: &Connection, limit: u32) -> Result<Vec<EvalRunRow>> {
-    let mut stmt = conn.prepare(
-        "SELECT id, kind, at, golden_pairs, k, recall, mrr, knobs, applied \
-         FROM eval_runs ORDER BY at DESC LIMIT ?1",
-    )?;
-    let rows = stmt.query_map(rusqlite::params![limit], |r| {
-        let golden_pairs: i64 = r.get(3)?;
-        let k: i64 = r.get(4)?;
-        let knobs_text: String = r.get(7)?;
-        let applied: i64 = r.get(8)?;
-        Ok((
-            r.get::<_, String>(0)?,
-            r.get::<_, String>(1)?,
-            r.get::<_, String>(2)?,
-            golden_pairs,
-            k,
-            r.get::<_, f64>(5)?,
-            r.get::<_, f64>(6)?,
-            knobs_text,
-            applied,
-        ))
-    })?;
+    let sql = format!("SELECT {COLUMNS} FROM eval_runs ORDER BY at DESC LIMIT ?1");
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(rusqlite::params![limit], read_row)?;
     let mut out = Vec::new();
     for row in rows {
-        let (id, kind, at, golden_pairs, k, recall, mrr, knobs_text, applied) = row?;
-        let knobs = serde_json::from_str(&knobs_text)?;
-        out.push(EvalRunRow {
-            id,
-            kind,
-            at,
-            golden_pairs: golden_pairs.try_into().unwrap_or(0),
-            k: k.try_into().unwrap_or(0),
-            recall,
-            mrr,
-            knobs,
-            applied: applied != 0,
-        });
+        out.push(finish(row?)?);
     }
     Ok(out)
+}
+
+/// Read one row by id. `Ok(None)` when no such run exists — an unknown id
+/// is a caller-visible outcome (the console's proposal routes turn it into
+/// a `404`), not an error this layer decides.
+pub fn get(conn: &Connection, id: &str) -> Result<Option<EvalRunRow>> {
+    let sql = format!("SELECT {COLUMNS} FROM eval_runs WHERE id = ?1");
+    let raw = conn
+        .query_row(&sql, rusqlite::params![id], read_row)
+        .optional()?;
+    raw.map(finish).transpose()
+}
+
+/// Set one flag column on one row, erroring with [`Error::NotFound`] when
+/// the id matched nothing — a silent zero-row `UPDATE` would report success
+/// for a run that does not exist. `column` is `&'static str` because it is
+/// interpolated into the SQL: only a compile-time literal type-checks, so
+/// no caller-influenced string can reach it.
+fn set_flag(conn: &Connection, id: &str, column: &'static str) -> Result<()> {
+    let sql = format!("UPDATE eval_runs SET {column} = 1 WHERE id = ?1");
+    let changed = conn.execute(&sql, rusqlite::params![id])?;
+    if changed == 0 {
+        return Err(Error::NotFound(format!("eval run {id}")));
+    }
+    Ok(())
+}
+
+/// Stamp a run as applied (`applied = 1`) — the console's
+/// `POST /learning/proposals/{id}/apply` after it rewrites `config.toml`.
+pub fn set_applied(conn: &Connection, id: &str) -> Result<()> {
+    set_flag(conn, id, "applied")
+}
+
+/// Stamp a run as discarded (`discarded = 1`) — the console's
+/// `POST /learning/proposals/{id}/discard`, which touches no config file.
+pub fn set_discarded(conn: &Connection, id: &str) -> Result<()> {
+    set_flag(conn, id, "discarded")
 }
 
 #[cfg(test)]

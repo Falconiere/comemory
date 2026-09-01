@@ -202,3 +202,31 @@ fn rank_and_prune_file_overlay_applies_scoring_knobs() {
     assert!((cfg.prune.min_activation - (-3.0)).abs() < f64::EPSILON);
     assert!((cfg.prune.min_feedback - 0.1).abs() < f64::EPSILON);
 }
+
+/// `[git]` is file-overlayable (console-api spec §10: `PATCH
+/// /api/v1/memory-stores/{id}` writes `git.auto_sync` / `git.remote`), and
+/// a partial section leaves the other key at its default.
+#[test]
+fn git_file_overlay_applies_auto_sync_and_remote() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "[git]\nauto_sync = true\n").expect("write config");
+    let cfg = Config::defaults()
+        .with_file(&path)
+        .expect("a [git] section must load");
+    assert!(cfg.git.auto_sync);
+    assert_eq!(cfg.git.remote, "", "an absent key keeps its default");
+
+    std::fs::write(&path, "[git]\nremote = \"backup\"\n").expect("write config");
+    let cfg = Config::defaults()
+        .with_file(&path)
+        .expect("a [git] section must load");
+    assert!(!cfg.git.auto_sync);
+    assert_eq!(cfg.git.remote, "backup");
+
+    std::fs::write(&path, "[git]\npush = true\n").expect("write config");
+    assert!(
+        Config::defaults().with_file(&path).is_err(),
+        "an unknown [git] key is still a hard error"
+    );
+}

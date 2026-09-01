@@ -18,7 +18,7 @@ One line per file, named after its primary item:
 | `id.rs` | `memory_id` | Deterministic 8-hex memory id derived from the body content hash |
 | `references.rs` | `Ref` | Versioned code reference (file/symbol pointer + captured anchor), string-or-struct serde |
 | `slug.rs` | `slug_from_body` | Filesystem-safe slug derivation for memory filenames |
-| `store.rs` | `SaveParams` | Markdown-backed memory store: atomic save / load / list / soft-delete |
+| `store.rs` | `SaveParams` | Markdown-backed memory store: atomic save / rewrite-in-place / load / list / soft-delete / restore-from-trash |
 
 When you add a file here, add its row above so the index stays current. No
 `mod.rs` barrel — submodules are declared from `src/memory.rs` (`pub mod
