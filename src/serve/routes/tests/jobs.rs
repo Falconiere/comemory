@@ -151,6 +151,13 @@ async fn a_job_cancelled_while_queued_streams_one_cancelled_event() {
         "one terminal cancelled event:\n{body}"
     );
     assert!(
+        body.contains(&format!(
+            r#"data: {{"job_id":"{id}","status":"cancelled","result":null,"error":null}}"#
+        )),
+        "the terminal event carries the whole payload — this job's id, the \
+         status, and the two empty outcome fields:\n{body}"
+    );
+    assert!(
         !body.contains("event: running") && !body.contains("event: done"),
         "a job cancelled while queued never ran:\n{body}"
     );
