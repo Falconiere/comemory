@@ -91,7 +91,8 @@ fn v15_creates_index_runs_and_the_flag_columns_on_a_fresh_database() {
         )
         .unwrap();
     assert_eq!(
-        version, "15",
+        version,
+        migrate::CURRENT_VERSION,
         "fresh DB reports this build's schema version"
     );
 
@@ -199,7 +200,7 @@ fn v15_upgrades_a_real_v14_database_without_losing_rows() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(version, "15");
+    assert_eq!(version, migrate::CURRENT_VERSION);
 }
 
 #[test]

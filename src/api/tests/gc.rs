@@ -354,6 +354,7 @@ fn run_leaves_live_memories_and_fresh_trash_entries_alone() {
     let fresh = save_note(&paths, &cfg, &mut conn, "deleted today, inside the window");
     let fresh_path = soft_delete(&paths, &cfg, &mut conn, &fresh);
     seed_vector(&conn, &live);
+    seed_vector(&conn, &fresh);
     // An old `deleted_at` on a row whose trash file is still on disk is not
     // a zombie: the file's mtime is the clock, and it is fresh.
     let old =
@@ -395,6 +396,15 @@ fn run_leaves_live_memories_and_fresh_trash_entries_alone() {
         ),
         1,
         "live vector row untouched"
+    );
+    assert_eq!(
+        count_by_id(
+            &conn,
+            "SELECT COUNT(*) FROM memory_vec WHERE memory_id = ?1",
+            &fresh
+        ),
+        1,
+        "a trash entry inside the window keeps its vector row too"
     );
     assert_eq!(trash_ids(&paths, &cfg, &mut conn), vec![fresh]);
 }
