@@ -44,12 +44,18 @@ fn make_prune_eligible(session: &Session, id: &str) {
     .expect("doctor row");
 }
 
-/// Live markdown files whose name starts with `id`.
+/// Live markdown files for `id` — the `{id}-{slug}.md` shape only, so a
+/// file merely sharing the id prefix (or a stray tmp file) cannot read as
+/// a surviving memory.
 fn live_files(session: &Session, id: &str) -> usize {
     std::fs::read_dir(session.home.path().join("memories"))
         .expect("read memories dir")
         .filter_map(std::result::Result::ok)
-        .filter(|e| e.file_name().to_string_lossy().starts_with(id))
+        .filter(|e| {
+            let path = e.path();
+            let name = e.file_name().to_string_lossy().into_owned();
+            name.starts_with(&format!("{id}-")) && path.extension().is_some_and(|ext| ext == "md")
+        })
         .count()
 }
 

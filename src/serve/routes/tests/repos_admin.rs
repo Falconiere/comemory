@@ -197,11 +197,14 @@ async fn patch_moves_the_root_and_refuses_a_rename_with_501() {
     )
     .await;
     assert_eq!(patched.status, 200, "body: {}", patched.text);
-    assert!(
-        patched.json["data"]["root_path"]
-            .as_str()
-            .unwrap_or_default()
-            .ends_with("sample-repo"),
+    let expected_root = moved
+        .canonicalize()
+        .expect("canonicalize the moved checkout")
+        .to_string_lossy()
+        .into_owned();
+    assert_eq!(
+        patched.json["data"]["root_path"].as_str(),
+        Some(expected_root.as_str()),
         "body: {}",
         patched.text
     );

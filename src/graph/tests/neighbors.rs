@@ -95,10 +95,15 @@ fn the_walk_is_undirected_so_the_imported_file_sees_its_importer() {
 
     let rows =
         file_neighbors(&conn, &[(REPO, "src/b.rs")], DEFAULT_MIN_WEIGHT).expect("file_neighbors");
-    assert!(
-        rows.iter()
-            .any(|r| r.rel == "imports" && r.path == "src/a.rs"),
-        "b.rs must see its importer a.rs across the undirected walk: {rows:?}"
+    let imports: Vec<(&str, &str, i64)> = rows
+        .iter()
+        .filter(|r| r.rel == "imports")
+        .map(|r| (r.repo.as_str(), r.path.as_str(), r.weight))
+        .collect();
+    assert_eq!(
+        imports,
+        vec![(REPO, "src/a.rs", 1)],
+        "b.rs sees exactly its importer a.rs across the undirected walk: {rows:?}"
     );
 }
 
