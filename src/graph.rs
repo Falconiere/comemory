@@ -28,5 +28,7 @@ pub mod imports;
 pub mod materialize;
 /// PageRank over the derived memory graph → `memories.rank_score`.
 pub mod memory_rank;
+/// One-hop undirected file neighborhood over `imports`/`co_changed`.
+pub mod neighbors;
 pub mod pagerank;
 pub(crate) mod search_edit;

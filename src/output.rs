@@ -9,6 +9,8 @@ pub mod consolidate;
 pub mod context;
 /// Rendering for `comemory edges` (triplet rows + the shared page envelope).
 pub mod edges;
+/// The console explain strip derived from a hit's `score_parts`.
+pub mod explain;
 /// Rendering for `comemory graph` (relation walks).
 pub mod graph;
 /// Single-line JSON writer shared by every `--json` surface.

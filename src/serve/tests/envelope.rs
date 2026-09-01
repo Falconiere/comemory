@@ -14,7 +14,7 @@ use axum::body::to_bytes;
 use axum::http::{StatusCode, header};
 use axum::response::Response;
 use comemory::errors::Error;
-use comemory::serve::envelope::{self, Envelope};
+use comemory::serve::envelope::{self, Envelope, error_details};
 
 /// Collect a response body into a `serde_json::Value`.
 async fn json_body(res: Response) -> serde_json::Value {
@@ -105,13 +105,14 @@ fn status_and_code_covers_io_and_the_fallback_row() {
     );
 }
 
-/// The explicit `Error::Migration(_) | Error::SchemaTooNew(_)` arm (F8): a
-/// broken migration chain and a database written by a newer comemory are
-/// both server-side schema problems, mapped to `500`/`"internal"` — the
-/// same bucket `main.rs::exit_code` puts them in. Listed explicitly in
-/// `status_and_code` rather than left to the `_` fallback, so this row is
-/// asserted directly instead of only incidentally by the fallback's own
-/// coverage.
+/// The explicit `Error::Migration(_)` arm (F8): a broken migration chain is
+/// a server-side schema problem mapped to `500`/`"internal"` — the same
+/// bucket `main.rs::exit_code` puts it in. A database written by a NEWER
+/// comemory (`SchemaTooNew`) is the console-api spec's `422
+/// schema_mismatch` row instead: the binary is older than the on-disk
+/// schema, which the console renders as an upgrade prompt rather than a
+/// server fault. Both listed explicitly in `status_and_code` rather than
+/// left to the `_` fallback, so each row is asserted directly.
 #[test]
 fn status_and_code_covers_the_explicit_migration_and_schema_too_new_row() {
     assert_row(
@@ -121,9 +122,63 @@ fn status_and_code_covers_the_explicit_migration_and_schema_too_new_row() {
     );
     assert_row(
         &Error::SchemaTooNew("x".into()),
-        StatusCode::INTERNAL_SERVER_ERROR,
-        "internal",
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "schema_mismatch",
     );
+}
+
+/// The console-api spec's §1 error rows: `index_running` (409, with a
+/// structured `details`), `store_locked` (423, a real `SQLITE_BUSY`
+/// failure), `embedder_unavailable` (503) and `unsupported` (501).
+#[test]
+fn status_and_code_covers_the_console_api_rows() {
+    let running = Error::IndexRunning {
+        repo: "demo".into(),
+        job_id: "0123456789abcdef".into(),
+    };
+    assert_row(&running, StatusCode::CONFLICT, "index_running");
+    assert_eq!(
+        error_details(&running),
+        Some(serde_json::json!({ "repo": "demo", "job_id": "0123456789abcdef" }))
+    );
+    assert_eq!(error_details(&Error::Other("x".into())), None);
+    assert_row(
+        &Error::Embedder("x".into()),
+        StatusCode::SERVICE_UNAVAILABLE,
+        "embedder_unavailable",
+    );
+    assert_row(
+        &Error::Unsupported("x".into()),
+        StatusCode::NOT_IMPLEMENTED,
+        "unsupported",
+    );
+    assert_row(&Error::Cancelled, StatusCode::CONFLICT, "cancelled");
+    let busy = Error::Sqlite(rusqlite::Error::SqliteFailure(
+        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
+        Some("database is locked".into()),
+    ));
+    assert_row(&busy, StatusCode::LOCKED, "store_locked");
+    // Any other SQLite failure stays in the 500 bucket.
+    let other = Error::Sqlite(rusqlite::Error::SqliteFailure(
+        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CONSTRAINT),
+        None,
+    ));
+    assert_row(&other, StatusCode::INTERNAL_SERVER_ERROR, "internal");
+}
+
+/// `Envelope::err` carries `error.details` for a detail-bearing variant and
+/// omits the member entirely for every other one.
+#[tokio::test]
+async fn err_envelope_carries_details_only_when_the_variant_has_them() {
+    let running = Error::IndexRunning {
+        repo: "demo".into(),
+        job_id: "0123456789abcdef".into(),
+    };
+    let body = json_body(Envelope::err("index", &running, 1)).await;
+    assert_eq!(body["error"]["code"], "index_running");
+    assert_eq!(body["error"]["details"]["job_id"], "0123456789abcdef");
+    let plain = json_body(Envelope::err("x", &Error::Other("boom".into()), 1)).await;
+    assert!(plain["error"].get("details").is_none(), "body: {plain}");
 }
 
 #[tokio::test]

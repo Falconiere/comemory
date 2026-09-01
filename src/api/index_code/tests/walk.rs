@@ -47,6 +47,7 @@ fn index_big_repo(home: &std::path::Path, repo: &std::path::Path) -> rusqlite::C
         api::index_code::Request {
             repo: "big".into(),
             path: repo.to_str().expect("utf8 path").to_string(),
+            mode: comemory::api::index_code::IndexMode::Incremental,
         },
     )
     .expect("index_code run");

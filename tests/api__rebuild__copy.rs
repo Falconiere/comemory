@@ -193,3 +193,69 @@ fn rebuild_with_no_pre_existing_db_skips_the_copy_entirely() {
         "nothing to preserve when the old DB is gone"
     );
 }
+
+/// v15 preservation: the `index_runs` history, an `eval_runs` row's
+/// `discarded` flag, and a `repo_marker`'s `root_path` + `archived` all
+/// survive a rebuild — none of them is reconstructable from markdown, and a
+/// rebuild that dropped them would erase the run history, re-offer every
+/// discarded proposal, and forget where (and whether) a repo is indexed.
+#[test]
+fn rebuild_preserves_run_history_and_the_v15_flags() {
+    let home = tempdir().expect("tempdir");
+    run_save(&home, &["--kind", "note", "history preservation body"]);
+    {
+        let conn = open_db_with_vec(&home);
+        conn.execute(
+            "INSERT INTO index_runs(id, repo, root_path, mode, started_at, finished_at, \
+                                    duration_ms, files_indexed, symbols, outcome, error) \
+             VALUES ('0f1e2d3c4b5a6978', 'myrepo', '/tmp/myrepo', 'full', \
+                     '2026-09-01T10:00:00.000000000Z', '2026-09-01T10:00:02.000000000Z', \
+                     2000, 12, 340, 'ok', NULL)",
+            [],
+        )
+        .expect("insert index_runs");
+        conn.execute(
+            "INSERT INTO eval_runs(id, kind, at, golden_pairs, k, recall, mrr, knobs, \
+                                   applied, discarded) \
+             VALUES ('a1b2c3d4e5f60718', 'tune', '2026-08-31T10:00:00.000000000Z', 96, 10, \
+                     0.78, 0.61, '{\"rrf_k\":60.0}', 0, 1)",
+            [],
+        )
+        .expect("insert eval_runs");
+        conn.execute(
+            "INSERT INTO repo_marker(repo, last_head, last_indexed_at, root_path, archived) \
+             VALUES ('myrepo', 'abc123', '2026-09-01T10:00:00.000000000Z', '/tmp/myrepo', 1)",
+            [],
+        )
+        .expect("insert repo_marker");
+    }
+
+    run_rebuild_api(&home);
+
+    let conn = open_db_with_vec(&home);
+    let (files, outcome): (i64, String) = conn
+        .query_row(
+            "SELECT files_indexed, outcome FROM index_runs WHERE id = '0f1e2d3c4b5a6978'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .expect("index_runs row must survive the rebuild");
+    assert_eq!((files, outcome.as_str()), (12, "ok"));
+    let discarded: i64 = conn
+        .query_row(
+            "SELECT discarded FROM eval_runs WHERE id = 'a1b2c3d4e5f60718'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("eval_runs row must survive the rebuild");
+    assert_eq!(discarded, 1, "a discarded proposal must stay discarded");
+    let (root, archived): (String, i64) = conn
+        .query_row(
+            "SELECT root_path, archived FROM repo_marker WHERE repo = 'myrepo'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .expect("repo_marker row must survive the rebuild");
+    assert_eq!(root, "/tmp/myrepo", "root_path must be carried over");
+    assert_eq!(archived, 1, "archived must be carried over");
+}

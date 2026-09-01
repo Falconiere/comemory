@@ -15,6 +15,8 @@ One line per file, named after its primary item:
 
 | File | Primary item | Purpose |
 | --- | --- | --- |
+| `system.rs` | `System` | `GET /api/v1/doctor/system` — schema/backup/data-dir/embedder facts, read without ever running the embed probe |
+| `backup.rs` | `migration_backup` | Check 4 — the newest `comemory.db.pre-v{N}.bak` snapshot beside the live db, split out for the size ceiling |
 | `checks.rs` | `run_all` | ten named probes (`data dir writable`, `mirror parity`, `schema version`, `migration backup`, `fts5 tokenizer`, `sqlite-vec`, `repo roots`, `embed command`, `markdown/db counts`, `data dir layout`) plus `Check` (the `{name, status, detail}` row shape) and `Extras` (every scalar the probes derive, merged onto `Report`'s original six fields by `doctor.rs`'s `assemble`). Every probe only reads its connection, so the same pass runs against the primary read-write connection or the forward-compat read-only fallback |
 
 When you add a file here, add its row above so the index stays current. No

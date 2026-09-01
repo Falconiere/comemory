@@ -19,8 +19,6 @@ Task-oriented recipes for a specific job:
   `hook`, and `off` auto-reindex modes and how the wired lazy trigger works.
 - **[Measure and tune ranking](guides/ranking-and-eval.md)** — the
   `eval → mine → tune` learning loop and the ranking knobs.
-- **[Serve the web viewer](guides/serve-web.md)** — `comemory serve` and the
-  `/api/graph` endpoint.
 - **[The HTTP API](guides/http-api.md)** — the versioned `/api/v1` REST
   surface mirroring the CLI: envelope, auth, route map, jobs, and gating.
 - **[Link code to memories](guides/linking-code-to-memories.md)** — pin

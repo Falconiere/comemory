@@ -6,10 +6,10 @@
 use std::path::Path;
 
 use rusqlite::Connection;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-use crate::config::Config;
-use crate::config::TuneConfig;
+use crate::config::patch::{Table, patch_config_file, section};
+use crate::config::{Config, TuneConfig};
 use crate::eval::golden::GoldenPair;
 use crate::eval::runner::{self, EvalReport};
 use crate::eval::tune_sample;
@@ -20,8 +20,11 @@ use crate::prelude::*;
 /// as such — not a tuning knob).
 pub const MIN_GOLDEN_PAIRS: usize = 10;
 
-/// One grid point.
-#[derive(Debug, Clone, Copy, Serialize, PartialEq)]
+/// One grid point. `Deserialize` as well as `Serialize` because a stored
+/// `eval_runs.knobs` JSON object is read back into this type by the
+/// console's proposal routes (`api::learning_proposals`) and by
+/// `api::eval::Request`'s `knobs` override.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct TuneCandidate {
     /// RRF fusion constant.
     pub rrf_k: f32,
@@ -294,19 +297,17 @@ pub fn run_tune(
 }
 
 /// Write the winner's six knobs into `config.toml`, preserving every
-/// other key. Atomic tmp + rename (same pattern as memory save).
-/// CAVEAT: round-trips through `toml::Value`, so comments in an
-/// existing file are lost — documented in the CLI help.
+/// other key, through the shared [`patch_config_file`] primitive (atomic
+/// tmp + rename). CAVEAT: round-trips through `toml::Value`, so comments
+/// in an existing file are lost — documented in the CLI help.
 pub fn apply_to_config_file(path: &Path, w: &TuneCandidate) -> Result<()> {
-    let mut root: toml::Value = if path.exists() {
-        let raw = std::fs::read_to_string(path).map_err(Error::Io)?;
-        toml::from_str(&raw).map_err(|e| Error::Config(format!("config.toml: {e}")))?
-    } else {
-        toml::Value::Table(toml::map::Map::new())
-    };
-    let table = root
-        .as_table_mut()
-        .ok_or_else(|| Error::Config("config.toml: root is not a table".into()))?;
+    patch_config_file(path, |table| write_candidate(table, w))
+}
+
+/// Write `w`'s six knobs into the root `table`'s `[retrieval]` and `[rank]`
+/// sections — the patch body [`apply_to_config_file`] applies, also reused
+/// by the console's proposal-apply route through that same function.
+pub fn write_candidate(table: &mut Table, w: &TuneCandidate) -> Result<()> {
     {
         let retrieval = section(table, "retrieval")?;
         retrieval.insert("rrf_k".into(), toml::Value::Float(f64::from(w.rrf_k)));
@@ -326,31 +327,10 @@ pub fn apply_to_config_file(path: &Path, w: &TuneCandidate) -> Result<()> {
             toml::Value::Integer(w.graph_seeds as i64),
         );
     }
-    {
-        let rank = section(table, "rank")?;
-        rank.insert("decay".into(), toml::Value::Float(w.decay));
-        rank.insert("mmr_lambda".into(), toml::Value::Float(w.mmr_lambda));
-    }
-    let rendered = toml::to_string_pretty(&root)
-        .map_err(|e| Error::Config(format!("config.toml render: {e}")))?;
-    let tmp = path.with_extension("toml.tmp");
-    std::fs::write(&tmp, rendered).map_err(Error::Io)?;
-    std::fs::rename(&tmp, path).map_err(Error::Io)?;
+    let rank = section(table, "rank")?;
+    rank.insert("decay".into(), toml::Value::Float(w.decay));
+    rank.insert("mmr_lambda".into(), toml::Value::Float(w.mmr_lambda));
     Ok(())
-}
-
-/// Fetch-or-create a named sub-table of `table`. Errors when the key
-/// exists but is not a table (a malformed config must not be silently
-/// overwritten).
-fn section<'t>(
-    table: &'t mut toml::map::Map<String, toml::Value>,
-    name: &str,
-) -> Result<&'t mut toml::map::Map<String, toml::Value>> {
-    table
-        .entry(name)
-        .or_insert_with(|| toml::Value::Table(toml::map::Map::new()))
-        .as_table_mut()
-        .ok_or_else(|| Error::Config(format!("config.toml: [{name}] is not a table")))
 }
 
 #[cfg(test)]

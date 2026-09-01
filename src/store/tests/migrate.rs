@@ -199,8 +199,8 @@ fn v10_creates_bandit_arms_table() {
         )
         .expect("schema version");
     assert_eq!(v, migrate::CURRENT_VERSION);
-    // Pin: bump this when CURRENT_VERSION advances past v14.
-    assert_eq!(migrate::CURRENT_VERSION, "14");
+    // Pin: bump this when CURRENT_VERSION advances past v15.
+    assert_eq!(migrate::CURRENT_VERSION, "15");
 }
 
 #[test]
@@ -369,10 +369,10 @@ fn set_version_refuses_to_lower_a_stored_version() {
     let path = dir.path().join("comemory.db");
     let conn = connection::open(&path).expect("open");
 
-    // A crash-after-a-newer-migration (or a peer newer binary) left "14"
-    // stored; this build only knows CURRENT_VERSION ("13").
+    // A crash-after-a-newer-migration (or a peer newer binary) left "99"
+    // stored — newer than any CURRENT_VERSION this build will ever carry.
     conn.execute(
-        "UPDATE schema_meta SET value = '14' WHERE key = 'version'",
+        "UPDATE schema_meta SET value = '99' WHERE key = 'version'",
         [],
     )
     .expect("seed a newer stored version");
@@ -381,7 +381,7 @@ fn set_version_refuses_to_lower_a_stored_version() {
 
     assert_eq!(
         stored_version(&conn),
-        "14",
+        "99",
         "a newer stored version must not be stomped downward"
     );
 }

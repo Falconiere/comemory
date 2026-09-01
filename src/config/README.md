@@ -20,6 +20,7 @@ One line per file, named after its primary item:
 | `env.rs` | `with_env` | `COMEMORY_*` env-var overrides — the outermost config layer |
 | `file.rs` | `AutoReindexMode` | `Config` struct definitions, shipped defaults, and the `config.toml` overlay |
 | `learning.rs` | `TuneConfig` | Learning-loop sections: `[tune]` grids, `[reinforce]`, `[bandit]` |
+| `patch.rs` | `patch_config_file` | The one read-patch-atomically-write primitive over `config.toml`, shared by `tune --apply`, the `hooks` reinforce toggle, and the console-api config routes |
 | `paths.rs` | `Paths` | Data-directory layout resolution (`resolve_data_dir` plus every derived path) |
 | `retrieval.rs` | `RetrievalConfig` | The `[retrieval]` section and its file overlay |
 | `validate.rs` | `validate` | Shared invariant pass over the fully layered config |

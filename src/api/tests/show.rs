@@ -27,6 +27,7 @@ fn save(ctx: &mut Ctx<'_>, req: api::save::Request) -> api::save::Response {
 fn save_request(body: &str) -> api::save::Request {
     api::save::Request {
         body: body.to_string(),
+        title: None,
         kind: Kind::Note,
         repo: "demo".to_string(),
         tags: Vec::new(),

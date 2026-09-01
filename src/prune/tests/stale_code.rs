@@ -182,6 +182,7 @@ async fn prune_apply_removes_ghost_code_ref_and_stops_reflagging() {
     prune::run(
         prune::Args {
             apply: true,
+            ids: Vec::new(),
             page: PaginationArgs {
                 limit: 50,
                 offset: 0,

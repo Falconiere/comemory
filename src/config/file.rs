@@ -51,6 +51,18 @@ struct PartialConfig {
     /// Optional file-overlay for document-source indexing knobs. Absent
     /// keys leave defaults.
     indexing: Option<PartialIndexingConfig>,
+    /// Optional file-overlay for the git auto-sync knobs. Absent keys leave
+    /// defaults; `COMEMORY_GIT_AUTO_SYNC` still overrides `auto_sync`.
+    git: Option<PartialGitConfig>,
+}
+
+/// File-overlay partial for [`GitConfig`]. Both keys optional — the console's
+/// `PATCH /api/v1/memory-stores/{id}` writes them one at a time.
+#[derive(Debug, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct PartialGitConfig {
+    auto_sync: Option<bool>,
+    remote: Option<String>,
 }
 
 /// File-overlay partial for [`IndexingConfig`]. Carries every field (not
@@ -419,6 +431,14 @@ impl Config {
         }
         if let Some(pi) = partial.indexing {
             self.indexing.apply(pi);
+        }
+        if let Some(pg) = partial.git {
+            if let Some(v) = pg.auto_sync {
+                self.git.auto_sync = v;
+            }
+            if let Some(v) = pg.remote {
+                self.git.remote = v;
+            }
         }
         self.validate()
     }

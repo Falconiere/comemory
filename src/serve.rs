@@ -1,13 +1,13 @@
-//! `comemory serve` — a loopback-only HTTP server backing the interactive web
-//! viewer + in-browser code editor.
+//! `comemory serve` — a loopback-only HTTP server exposing the versioned
+//! `/api/v1` REST surface (`routes`) over `comemory.db` and the indexed
+//! source tree, for the console and any local agent or script.
 //!
-//! The server (axum, bound to `127.0.0.1`) hands out an embedded React/Vite
-//! single-page app and a small JSON/file API over `comemory.db` and the
-//! indexed source tree. Every file read and write is gated by a per-session
-//! token, a loopback Host-header guard, and a canonicalize-and-contain path
-//! check (see [`security`]). The graph payload is built by the same
-//! `cli::graph::build_code_graph` the static `--format html` export uses, so
-//! the two renderers never drift.
+//! The server (axum, bound to `127.0.0.1`) runs every request through a
+//! per-session token check and a loopback Host-header guard, and every
+//! mutating route that takes a filesystem path through a
+//! canonicalize-and-contain check (see [`security`]). Command logic lives in
+//! `api::` — the same cores the CLI calls — so the two surfaces cannot
+//! drift.
 
 use std::collections::HashSet;
 use std::net::Ipv4Addr;
@@ -22,36 +22,33 @@ use crate::config::paths::Paths;
 use crate::prelude::*;
 use crate::store::{connection, repo_marker_roots};
 
-pub mod assets;
 pub mod envelope;
-pub mod error;
-pub mod fileio;
-pub mod handlers;
 pub mod jobs;
 pub mod repo_root;
 pub mod router;
 pub mod routes;
-pub mod search;
+pub mod scope;
 pub mod security;
 
 pub use repo_root::RootOverrides;
 
 /// Caller-supplied configuration for one `comemory serve` session.
 pub struct ServeOptions {
-    /// Restrict the graph to one repo label (as `graph --repo` does).
+    /// Default repo scope for every read that accepts a `repo` filter —
+    /// the last fallback behind an explicit `repo` parameter and the
+    /// `X-Comemory-Repo` header (see `serve::scope::RepoScope`).
     pub repo: Option<String>,
     /// TCP port to bind on loopback; `0` selects an ephemeral port.
     pub port: u16,
-    /// Refuse all writes (`PUT /api/file` → 405) when true.
+    /// Refuse every `mutating` `/api/v1` route (`405 read_only`) when true.
     pub read_only: bool,
     /// `--root <repo>=<path>` overrides for repo-root resolution.
     pub roots: RootOverrides,
-    /// Best-effort open the printed URL in the user's browser.
-    pub open: bool,
-    /// Layered config, threaded to the search helper's ranking knobs.
+    /// Layered config, threaded to every route's ranking knobs.
     pub cfg: Config,
-    /// Embed command for semantic web search (`--embed-cmd` /
-    /// `COMEMORY_EMBED_CMD`). Unset → `/api/search` stays lexical.
+    /// Embed command (`--embed-cmd` / `COMEMORY_EMBED_CMD`) for the routes
+    /// that vectorize on the server's behalf (`POST /doctor/reembed`).
+    /// Unset → those routes answer `503 embedder_unavailable`.
     pub embed_cmd: Option<String>,
     /// `--allow-path <dir>` entries, already canonicalized by the CLI layer
     /// (a bad entry fails startup rather than being silently dropped — see
@@ -179,15 +176,10 @@ impl AppState {
         &self.paths
     }
 
-    /// The `--root` overrides for this session.
-    pub(crate) fn roots(&self) -> &RootOverrides {
-        &self.roots
-    }
-
-    /// The per-session bearer token, required on `/` and every `/api/*`
-    /// request (`X-Comemory-Token` header, `?token=` query, or the
-    /// `comemory_token` cookie the `/` handler sets). Exposed so [`serve`]
-    /// can print it in the startup banner and an in-process test harness
+    /// The per-session bearer token, required on every `/api/*` request
+    /// (`X-Comemory-Token` or `Authorization: Bearer` header, `?token=`
+    /// query, or a `comemory_token` cookie). Exposed so [`serve`] can print
+    /// it in the startup banner and an in-process test harness
     /// (`tests/common/serve_state.rs`) can authenticate requests driven
     /// straight through [`router::build_router`] without binding a socket.
     pub fn token(&self) -> &str {
@@ -199,7 +191,7 @@ impl AppState {
         self.read_only
     }
 
-    /// The repo-label graph filter, if any.
+    /// The session-wide default repo scope (`--repo`), if any.
     pub(crate) fn repo(&self) -> Option<&str> {
         self.repo.as_deref()
     }
@@ -215,7 +207,8 @@ impl AppState {
         )
     }
 
-    /// The embed command for semantic web search, if configured.
+    /// The embed command for the server-side vectorizing routes, if
+    /// configured.
     pub(crate) fn embed_cmd(&self) -> Option<&str> {
         self.embed_cmd.as_deref()
     }
@@ -273,15 +266,14 @@ struct ServeInfo<'a> {
 }
 
 /// Open `comemory.db`, build the handler state + router, bind a loopback
-/// listener, print the access URL (carrying the token), and serve until the
+/// listener, print the base URL and the session token, and serve until the
 /// process is interrupted.
 pub async fn serve(paths: &Paths, opts: ServeOptions, json: bool) -> Result<()> {
-    // `port`/`open` are read off `opts` before it moves into `AppState::new`
-    // (which also hoists `ensure_dirs()` — so every route, including
-    // read-only ones like `GET /doctor`, can rely on the data-dir tree
-    // already existing, with no per-request side effect).
+    // `port` is read off `opts` before it moves into `AppState::new` (which
+    // also hoists `ensure_dirs()` — so every route, including read-only
+    // ones like `GET /doctor`, can rely on the data-dir tree already
+    // existing, with no per-request side effect).
     let port = opts.port;
-    let open = opts.open;
     let read_only = opts.read_only;
     let state = AppState::new(paths, opts)?;
     let token = state.token().to_string();
@@ -290,20 +282,17 @@ pub async fn serve(paths: &Paths, opts: ServeOptions, json: bool) -> Result<()> 
         .await
         .map_err(Error::Io)?;
     let port = listener.local_addr().map_err(Error::Io)?.port();
-    let url = format!("http://127.0.0.1:{port}/?token={token}");
+    let url = format!("http://127.0.0.1:{port}/api/v1");
     emit_banner(&url, port, &token, read_only, json)?;
-    if open {
-        open_browser(&url);
-    }
 
     let app = router::build_router(state);
     axum::serve(listener, app).await.map_err(Error::Io)?;
     Ok(())
 }
 
-/// Print the access URL to stdout. Uses the `output` module (not `tracing`,
-/// which is silent without `RUST_LOG`) so the URL+token is always visible and
-/// machine-readable under `--json`.
+/// Print the base URL and token to stdout. Uses the `output` module (not
+/// `tracing`, which is silent without `RUST_LOG`) so both are always visible
+/// and machine-readable under `--json`.
 fn emit_banner(url: &str, port: u16, token: &str, read_only: bool, json: bool) -> Result<()> {
     if json {
         return crate::output::json::write(&ServeInfo {
@@ -314,18 +303,7 @@ fn emit_banner(url: &str, port: u16, token: &str, read_only: bool, json: bool) -
         });
     }
     let mode = if read_only { " (read-only)" } else { "" };
-    crate::output::tty::header(&format!("comemory serve{mode} → {url}"))
-}
-
-/// Best-effort: hand the URL to the platform browser opener. Failures are
-/// swallowed — the URL is already printed, so the user can open it manually.
-fn open_browser(url: &str) {
-    let opener = if cfg!(target_os = "macos") {
-        "open"
-    } else {
-        "xdg-open"
-    };
-    let _ = std::process::Command::new(opener).arg(url).spawn();
+    crate::output::tty::header(&format!("comemory serve{mode} → {url}  token={token}"))
 }
 
 /// Best-effort: when the server process's own cwd sits inside a git work

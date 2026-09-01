@@ -8,30 +8,43 @@
 //! `watch::Sender`s) and [`worker::spawn_job`] (run-this-closure-as-a-job).
 //! Nothing here knows about `api::` or `Ctx` — the caller builds the
 //! closure, this layer only tracks it. Not persisted (Non-Goal 4): a
-//! restart forgets every job, and there is no cancellation.
+//! restart forgets every job.
 //!
 //! [`Progress`] (`JobView.progress`/`log_tail`, and the additive SSE
 //! `progress` event `serve::routes::jobs` streams) is a second, parallel
 //! channel per job — deliberately NOT a [`JobStatus`] variant, so today's
 //! `status` SSE payload stays byte-identical for a client that ignores the
-//! new event type.
+//! new event type. Log lines are a third channel (`broadcast`, the SSE
+//! `log` event), and cancellation (`POST /jobs/{id}/cancel`) is a per-job
+//! flag a cooperating core polls at its next boundary — see
+//! [`Registry::cancel`] and `api::index_code::ProgressSink::is_cancelled`.
 
 use std::collections::VecDeque;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::Serialize;
 use serde_json::Value;
-use tokio::sync::watch;
+use tokio::sync::{broadcast, watch};
 
 use crate::prelude::*;
 use crate::serve::envelope;
 
+/// The SSE event payload types (`status`, `progress`, `log`).
+pub mod events;
 /// The job table: records, `watch` senders, and the finished-job eviction.
 pub mod registry;
 /// [`worker::spawn_job`] — the generic job-execution entry point.
 pub mod worker;
 
+pub use events::{JobEvent, LogEvent, ProgressEvent};
 pub use registry::Registry;
-pub use worker::{spawn_job, spawn_job_with_id};
+pub use worker::{spawn_job, spawn_job_for, spawn_job_with_id};
+
+/// Capacity of each job's log `broadcast` channel. A subscriber slower
+/// than this many lines behind lags and loses the oldest — acceptable for
+/// a live stream; `JobView.log_tail` is the durable form.
+pub const LOG_CHANNEL_CAP: usize = 256;
 
 /// A job's identifier: 8 random bytes hex-encoded (16 lowercase-hex chars),
 /// drawn from the same `/dev/urandom` source as the session token. A bare
@@ -63,6 +76,11 @@ pub enum JobStatus {
     Done(Value),
     /// Finished with an error, carrying the envelope's `{code, message}`.
     Error(JobError),
+    /// Stopped at the caller's request (`POST /jobs/{id}/cancel`) — either
+    /// before its body ever ran (cancelled while queued) or at the first
+    /// boundary a cooperating core checked (`Error::Cancelled` unwound its
+    /// transaction, so nothing was half-written).
+    Cancelled,
 }
 
 impl JobStatus {
@@ -74,13 +92,14 @@ impl JobStatus {
             Self::Running => "running",
             Self::Done(_) => "done",
             Self::Error(_) => "error",
+            Self::Cancelled => "cancelled",
         }
     }
 
     /// Whether this is a final status — no further transition follows, so
     /// the SSE handler ends its stream after emitting it.
     pub fn is_terminal(&self) -> bool {
-        matches!(self, Self::Done(_) | Self::Error(_))
+        matches!(self, Self::Done(_) | Self::Error(_) | Self::Cancelled)
     }
 
     /// The success payload, when finished successfully.
@@ -164,6 +183,10 @@ pub struct Job {
     pub id: JobId,
     /// The CLI subcommand name this job runs (`"index-code"`, …).
     pub command: String,
+    /// The repo label this job works on, when it has one — what
+    /// [`Registry::active_for`] matches so a second `index-code` for the
+    /// same repo can be refused with `409 index_running`.
+    pub repo: Option<String>,
     /// Current lifecycle status, mirrored into the `watch` channel.
     pub status: JobStatus,
     /// When the job was accepted (ISO-8601 UTC, `memory_row::iso_format`).
@@ -183,6 +206,13 @@ pub struct Job {
     /// Bounded ring buffer of the job's most recent log lines (newest
     /// last) — see [`LOG_TAIL_CAP`].
     pub(crate) log_tail: VecDeque<String>,
+    /// Live log-line fan-out for the SSE `log` event; retained like the
+    /// `watch` senders so a subscriber can attach at any time.
+    pub(crate) log_tx: broadcast::Sender<String>,
+    /// The cooperative cancel flag — set by [`Registry::cancel`], read by
+    /// the worker before the body runs and by a cooperating core's
+    /// `ProgressSink::is_cancelled` at each boundary.
+    pub(crate) cancel: Arc<AtomicBool>,
 }
 
 impl Job {
@@ -191,14 +221,17 @@ impl Job {
     pub(crate) fn new(
         id: JobId,
         command: String,
+        repo: Option<String>,
         started_at: String,
         seq: u64,
         tx: watch::Sender<JobStatus>,
         progress_tx: watch::Sender<Option<Progress>>,
     ) -> Self {
+        let (log_tx, _log_rx) = broadcast::channel(LOG_CHANNEL_CAP);
         Self {
             id,
             command,
+            repo,
             status: JobStatus::Queued,
             started_at,
             finished_at: None,
@@ -207,17 +240,27 @@ impl Job {
             progress_tx,
             progress: None,
             log_tail: VecDeque::new(),
+            log_tx,
+            cancel: Arc::new(AtomicBool::new(false)),
         }
     }
 
     /// Append `line` to the bounded log tail, dropping the oldest entry
     /// once [`LOG_TAIL_CAP`] is reached — unbounded growth on a long index
-    /// would leak memory for the life of the server.
+    /// would leak memory for the life of the server — and fan it out to
+    /// any live `log` subscriber (a send with no receiver is not an error:
+    /// the tail is the durable record).
     pub(crate) fn push_log(&mut self, line: String) {
         if self.log_tail.len() >= LOG_TAIL_CAP {
             self.log_tail.pop_front();
         }
+        let _ = self.log_tx.send(line.clone());
         self.log_tail.push_back(line);
+    }
+
+    /// Whether a cancel has been requested for this job.
+    pub(crate) fn cancel_requested(&self) -> bool {
+        self.cancel.load(Ordering::Relaxed)
     }
 
     /// The serializable snapshot handed to `GET /jobs` / `GET /jobs/{id}`.
@@ -225,6 +268,7 @@ impl Job {
         JobView {
             job_id: self.id.clone(),
             command: self.command.clone(),
+            repo: self.repo.clone(),
             status: self.status.slug(),
             started_at: self.started_at.clone(),
             finished_at: self.finished_at.clone(),
@@ -244,7 +288,9 @@ pub struct JobView {
     pub job_id: String,
     /// The CLI subcommand this job runs.
     pub command: String,
-    /// `"queued" | "running" | "done" | "error"`.
+    /// The repo label this job works on, or `null`.
+    pub repo: Option<String>,
+    /// `"queued" | "running" | "done" | "error" | "cancelled"`.
     pub status: &'static str,
     /// Acceptance timestamp (ISO-8601 UTC).
     pub started_at: String,
@@ -259,63 +305,6 @@ pub struct JobView {
     /// The job's most recent log lines (newest last), bounded to
     /// [`LOG_TAIL_CAP`] entries.
     pub log_tail: Vec<String>,
-}
-
-/// The `data` of one SSE lifecycle event on
-/// `GET /api/v1/jobs/{id}/events`. Borrowed (not cloned) from the status
-/// the stream just read — timestamps are omitted; poll `GET /jobs/{id}` for
-/// the full record.
-#[derive(Serialize)]
-pub struct JobEvent<'a> {
-    /// The job's 16-hex id.
-    pub job_id: &'a str,
-    /// `"queued" | "running" | "done" | "error"` (also the SSE event name).
-    pub status: &'static str,
-    /// The success payload on a `done` event, else `null`.
-    pub result: Option<&'a Value>,
-    /// The error object on an `error` event, else `null`.
-    pub error: Option<&'a JobError>,
-}
-
-impl<'a> JobEvent<'a> {
-    /// Build the event payload for `status` on job `job_id`.
-    pub fn new(job_id: &'a str, status: &'a JobStatus) -> Self {
-        Self {
-            job_id,
-            status: status.slug(),
-            result: status.result(),
-            error: status.error(),
-        }
-    }
-}
-
-/// The `data` of one SSE `progress` event on
-/// `GET /api/v1/jobs/{id}/events` — a second, additive event type
-/// alongside `status`'s `queued`/`running`/`done`/`error` events: a client
-/// that only handles those four event names sees byte-identical behavior
-/// to before this event type existed.
-#[derive(Serialize)]
-pub struct ProgressEvent<'a> {
-    /// The job's 16-hex id.
-    pub job_id: &'a str,
-    /// Units completed so far.
-    pub done: u64,
-    /// Total units this run will process.
-    pub total: u64,
-    /// What `done`/`total` count.
-    pub unit: &'a str,
-}
-
-impl<'a> ProgressEvent<'a> {
-    /// Build the event payload for `progress` on job `job_id`.
-    pub fn new(job_id: &'a str, progress: &'a Progress) -> Self {
-        Self {
-            job_id,
-            done: progress.done,
-            total: progress.total,
-            unit: &progress.unit,
-        }
-    }
 }
 
 #[cfg(test)]

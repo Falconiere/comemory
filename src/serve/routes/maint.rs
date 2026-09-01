@@ -16,6 +16,10 @@ use crate::serve::routes::{RouteEntry, respond, run_blocking};
 
 /// `POST /api/v1/mine`, `POST /api/v1/hooks/install`.
 pub mod admin;
+/// `GET /api/v1/doctor/system`, `POST /api/v1/doctor/rebuild`, `POST /api/v1/doctor/reembed`.
+pub mod doctor;
+/// `GET|PUT /api/v1/gc/policy`, `POST /api/v1/gc/run`.
+pub mod gc;
 /// `GET|POST /api/v1/prune`, `POST /api/v1/gc`.
 pub mod prune;
 
@@ -43,7 +47,9 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/api/v1/doctor", get(doctor))
         .route("/api/v1/consolidate", get(consolidate))
         .merge(prune::router(state.clone()))
-        .merge(admin::router(state))
+        .merge(admin::router(state.clone()))
+        .merge(doctor::router(state.clone()))
+        .merge(gc::router(state))
 }
 
 /// `GET /api/v1/doctor` — data-dir + DB health probe (`api::doctor`). Uses

@@ -69,7 +69,7 @@ authoritative architecture reference; pair it with the
 | `config` | Layered config: built-in defaults → `config.toml` → env → CLI flags |
 | `output` | TTY rendering (owo-colors) + JSON serializers (serde_json) |
 | `prune` | Orphan, stale-code, low-value detection and (soft) deletion |
-| `serve` | Loopback-only axum web server behind the `comemory serve` command (256-bit per-session token, Host-header guard, default-deny CORS, path-containment chokepoint) hosting the embedded React SPA: WebGL code-graph viewer + in-browser source editor with `If-Match` optimistic concurrency. The `comemory graph` command exports the same code graph as JSON / DOT / static HTML |
+| `serve` | Loopback-only axum HTTP server behind the `comemory serve` command (256-bit per-session token, Host-header guard, default-deny CORS, path-containment chokepoint) exposing the versioned `/api/v1` REST surface — every command core, background jobs with SSE progress/log streaming, and the console-facing aggregates (overview, graph nodes, learning loop, trash, gc policy). The `comemory graph` command exports the same code graph as JSON / DOT / static HTML |
 | `git_utils` | Repo/author detection, blob OID lookup, hook installation |
 
 ## 3. Storage layout

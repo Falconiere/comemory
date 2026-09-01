@@ -26,6 +26,14 @@ use crate::store::{embed, memory_row, vector};
 pub struct Request {
     /// Memory body (markdown).
     pub body: String,
+    /// Optional title. A memory's title is by definition the first
+    /// non-empty line of its body (`output::search::title_of`), so a
+    /// supplied title is prepended as that first line (followed by a blank
+    /// line) before the content hash is taken — unless the body already
+    /// starts with it. HTTP-only convenience for the console's save form;
+    /// the CLI passes the title inside the body.
+    #[serde(default)]
+    pub title: Option<String>,
     /// Memory kind: decision|bug|convention|discovery|pattern|note.
     #[serde(default = "default_kind")]
     pub kind: Kind,
@@ -105,6 +113,7 @@ pub fn run(
     cli_vector_csv: Option<&str>,
 ) -> Result<Response> {
     validate_quality(req.quality)?;
+    prepend_title(&mut req);
     let cfg = ctx.cfg;
     let paths = ctx.paths;
     // Content-derived id is known before any write, so `supersedes` and the
@@ -140,6 +149,20 @@ pub fn run(
         duplicate_of,
         warnings: ref_warnings,
     })
+}
+
+/// Fold `req.title` into the body as its first line (see
+/// [`Request::title`]). A blank title is ignored; a body that already
+/// starts with the title is left alone so a round-tripped save stays
+/// idempotent.
+fn prepend_title(req: &mut Request) {
+    let Some(title) = req.title.take().map(|t| t.trim().to_string()) else {
+        return;
+    };
+    if title.is_empty() || req.body.trim_start().starts_with(&title) {
+        return;
+    }
+    req.body = format!("{title}\n\n{}", req.body.trim_start());
 }
 
 /// `1..=5`, matching the CLI's clap range validator (HTTP has no clap, so

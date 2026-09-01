@@ -28,6 +28,12 @@ pub fn table_entries() -> &'static [RouteEntry] {
             mutating: false,
         },
         RouteEntry {
+            method: "GET",
+            path: "/prune/candidates",
+            command: "prune",
+            mutating: false,
+        },
+        RouteEntry {
             method: "POST",
             path: "/prune",
             command: "prune",
@@ -46,6 +52,10 @@ pub fn table_entries() -> &'static [RouteEntry] {
 pub fn router(_state: AppState) -> Router<AppState> {
     Router::new()
         .route("/api/v1/prune", get(prune).post(prune_apply))
+        // Console-api spec §9: `GET /prune/candidates` is an ALIAS onto the
+        // same handler, not a second query path — the two answers cannot
+        // drift because there is only one of them.
+        .route("/api/v1/prune/candidates", get(prune))
         .route("/api/v1/gc", post(gc))
 }
 
@@ -85,7 +95,11 @@ async fn prune_apply(State(state): State<AppState>, Json(body): Json<Value>) -> 
     };
     let result = run_blocking(move || {
         let _permit = permit;
-        let (req, confirmed) = split_confirm::<api::prune::Request>(body)?;
+        let (body, dry_run) = split_dry_run(body);
+        let (mut req, confirmed) = split_confirm::<api::prune::Request>(body)?;
+        if let Some(dry_run) = dry_run {
+            req.apply = !dry_run;
+        }
         require_confirm(confirmed)?;
         let cfg = state.cfg();
         let mut conn = state.conn()?;
@@ -94,6 +108,23 @@ async fn prune_apply(State(state): State<AppState>, Json(body): Json<Value>) -> 
     })
     .await;
     respond("prune", result, started)
+}
+
+/// Extract and remove the HTTP-only `"dry_run"` field from a raw JSON body
+/// (console-api spec §9). It is the *inverse* of `api::prune::Request`'s
+/// `apply`, and HTTP-only for the same reason `confirm` is: the CLI already
+/// spells this as the absence of `--apply`, and adding a second name for it
+/// to the shared `Request` would break the clap↔HTTP field parity walk.
+///
+/// A present-but-non-boolean value reads as `true` — the safe direction,
+/// since `dry_run: true` scans without deleting. `None` (key absent) leaves
+/// `apply` exactly as the body spelled it.
+fn split_dry_run(mut body: Value) -> (Value, Option<bool>) {
+    let dry_run = body
+        .as_object_mut()
+        .and_then(|obj| obj.remove("dry_run"))
+        .map(|v| v.as_bool().unwrap_or(true));
+    (body, dry_run)
 }
 
 /// `?confirm=true`-equivalent body for `POST /api/v1/gc`: `api::gc::Request`
@@ -139,3 +170,7 @@ pub(crate) fn split_confirm<T: serde::de::DeserializeOwned>(body: Value) -> Resu
     let req = serde_json::from_value(Value::Object(obj)).map_err(Error::Json)?;
     Ok((req, confirmed))
 }
+
+#[cfg(test)]
+#[path = "../tests/prune_ids.rs"]
+mod tests;

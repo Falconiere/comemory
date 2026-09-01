@@ -40,6 +40,9 @@ pub struct CodeRefRow {
     pub path: String,
     /// Qualified address `<repo>:<path>[:<symbol>]` this reference resolves.
     pub anchor: String,
+    /// The git blob OID the reference was pinned at, when it was pinned
+    /// (`None` for a bare backtick mention with no version anchor).
+    pub blob: Option<String>,
     /// Freshness verdict (`fresh|stale|ghost|unpinned|unknown`).
     pub status: String,
 }
@@ -226,6 +229,7 @@ fn code_refs_for(conn: &Connection, id: &str) -> Result<Vec<CodeRefRow>> {
         out.push(CodeRefRow {
             path: raw.path,
             anchor: raw.id,
+            blob: raw.pinned_blob,
             status: status.as_str().to_string(),
         });
     }

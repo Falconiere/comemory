@@ -23,12 +23,10 @@ pub fn from_vec_blob(blob: &[u8], expected_dim: usize) -> Result<Vec<f32>> {
         });
     }
     let mut out = Vec::with_capacity(expected_dim);
-    for chunk in blob.chunks_exact(4) {
-        let bytes: [u8; 4] = chunk.try_into().map_err(|_| Error::VecDimMismatch {
-            expected: expected_dim,
-            got: out.len(),
-        })?;
-        out.push(f32::from_le_bytes(bytes));
+    // The length check above guarantees an empty remainder.
+    let (chunks, _remainder) = blob.as_chunks::<4>();
+    for bytes in chunks {
+        out.push(f32::from_le_bytes(*bytes));
     }
     Ok(out)
 }

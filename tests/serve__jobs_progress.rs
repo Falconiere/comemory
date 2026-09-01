@@ -75,7 +75,6 @@ fn build_state(home: &TempDir, repo: &Path) -> AppState {
         port: 0,
         read_only: false,
         roots,
-        open: false,
         cfg: Config::defaults(),
         embed_cmd: None,
         allow_path: Vec::new(),
@@ -244,9 +243,9 @@ async fn ac33_job_emits_mid_run_progress_and_a_nonempty_log_tail() {
     );
 }
 
-/// AC-34: an SSE client that ignores `progress` events observes the exact
-/// `queued -> running -> done` status sequence it observed before the
-/// `progress` event type existed — the compatibility guarantee.
+/// AC-34: an SSE client that ignores the additive `progress` and `log`
+/// event types observes the exact `queued -> running -> done` status
+/// sequence it observed before either existed — the compatibility guarantee.
 #[tokio::test]
 async fn ac34_a_client_ignoring_progress_sees_the_unchanged_status_sequence() {
     let home = TempDir::new().expect("home");
@@ -260,7 +259,7 @@ async fn ac34_a_client_ignoring_progress_sees_the_unchanged_status_sequence() {
 
     let statuses: Vec<&str> = events
         .iter()
-        .filter(|(name, _)| name != "progress")
+        .filter(|(name, _)| name != "progress" && name != "log")
         .map(|(name, _)| name.as_str())
         .collect();
     assert_eq!(

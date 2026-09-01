@@ -1,8 +1,9 @@
-//! `comemory gc` — purge entries in `memories/.trash/` older than 30 days
-//! and evict learning telemetry (`retrieval_log`, `feedback_events`) past
-//! the configured retention window (`prune.learning_retention_days`). The
-//! sweep itself lives in `api::gc` (Binding Rule 1), including the
-//! must-not-create-the-db-on-a-fresh-dir invariant.
+//! `comemory gc` — purge entries in `memories/.trash/` older than
+//! `prune.trash_retention_days` (30 by default) and evict learning
+//! telemetry (`retrieval_log`, `feedback_events`) past
+//! `prune.learning_retention_days`. The sweep itself lives in `api::gc`
+//! (Binding Rule 1), including the must-not-create-the-db-on-a-fresh-dir
+//! invariant.
 
 use std::io::Write as _;
 use std::path::PathBuf;

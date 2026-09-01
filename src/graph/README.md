@@ -29,8 +29,9 @@ One line per file, named after its primary item:
 | `doc_link.rs` | `derive_after_document` | Deterministic `member_of_source` / `references_document` link deriver |
 | `edges.rs` | `insert` | SQLite-backed edge store (replaces the v0.1 kuzu writer) |
 | `imports.rs` | `extract_imports` | Per-language import extraction and conservative module-to-path resolution |
-| `materialize.rs` | `materialize` | `index-code` post-pass: mined pairs + resolved imports → edges + projected PageRank |
+| `materialize.rs` | `materialize` | `index-code` post-pass: mined pairs + resolved imports → edges + projected PageRank; `recompute_rank(tx, repo)` is the PageRank + projection tail, shared with `api::graph_recompute` |
 | `memory_rank.rs` | `materialize_memory_rank` | PageRank over the derived memory graph → `memories.rank_score` |
+| `neighbors.rs` | `file_neighbors` | One-hop undirected `imports`/`co_changed` file neighborhood, shared by `retrieval::bundle` and `GET /api/v1/graph/nodes/{id}/neighbors` |
 | `pagerank.rs` | `pagerank` | Deterministic PageRank over a weighted directed graph |
 | `search_edit.rs` | `memories_seen_recently` | Which memories appeared on a recent search/context page, for `auto_search_edit` provenance |
 

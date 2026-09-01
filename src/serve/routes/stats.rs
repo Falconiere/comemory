@@ -36,7 +36,12 @@ pub fn router(_state: AppState) -> Router<AppState> {
 /// invariant holds here exactly as it does on the CLI: a server pointed at
 /// an empty data dir answers with zeros instead of materializing a
 /// database.
-async fn stats(State(state): State<AppState>, Query(req): Query<api::stats::Request>) -> Response {
+async fn stats(
+    State(state): State<AppState>,
+    scope: crate::serve::scope::RepoScope,
+    Query(mut req): Query<api::stats::Request>,
+) -> Response {
+    scope.apply(&mut req.repo);
     let started = Instant::now();
     let result = run_blocking(move || {
         let cfg = state.cfg();

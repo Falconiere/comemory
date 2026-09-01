@@ -57,7 +57,24 @@ pub fn spawn_job_with_id<F>(
 where
     F: FnOnce(JobId) -> Result<Value> + Send + 'static,
 {
-    let (id, _rx) = registry.insert(command)?;
+    spawn_job_for(registry, write_permit, command, None, mutating, body)
+}
+
+/// [`spawn_job_with_id`] with a repo label recorded on the job
+/// (`Registry::insert_for`), so `Registry::active_for` can refuse a
+/// second `index-code` for the same repo with `409 index_running`.
+pub fn spawn_job_for<F>(
+    registry: &Arc<Registry>,
+    write_permit: Arc<Semaphore>,
+    command: &str,
+    repo: Option<&str>,
+    mutating: bool,
+    body: F,
+) -> Result<JobId>
+where
+    F: FnOnce(JobId) -> Result<Value> + Send + 'static,
+{
+    let (id, _rx) = registry.insert_for(command, repo)?;
     let body_id = id.clone();
     spawn_registered(registry, write_permit, id.clone(), mutating, move || {
         body(body_id)
@@ -112,9 +129,16 @@ async fn run<F>(
     } else {
         None
     };
+    // A cancel that landed while this job was queued (waiting for the
+    // permit) already recorded `Cancelled`; the body must not run.
+    if registry.is_cancelled(&id) {
+        set_status(&registry, &id, JobStatus::Cancelled);
+        return;
+    }
     set_status(&registry, &id, JobStatus::Running);
     let status = match tokio::task::spawn_blocking(body).await {
         Ok(Ok(value)) => JobStatus::Done(value),
+        Ok(Err(Error::Cancelled)) => JobStatus::Cancelled,
         Ok(Err(e)) => JobStatus::Error(JobError::from_error(&e)),
         Err(e) => JobStatus::Error(JobError::internal(format!("job task panicked: {e}"))),
     };
@@ -166,6 +190,10 @@ impl ProgressSink for RegistryProgressSink {
         if let Err(e) = self.registry.push_log(&self.id, line.to_string()) {
             tracing::warn!(job_id = %self.id, error = %e, "job log update failed");
         }
+    }
+
+    fn is_cancelled(&self) -> bool {
+        self.registry.is_cancelled(&self.id)
     }
 }
 

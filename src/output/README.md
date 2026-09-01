@@ -18,6 +18,7 @@ One line per file, named after its primary item:
 | `consolidate.rs` | `emit` | Rendering for `comemory consolidate` (cluster blocks + keeper marker) |
 | `context.rs` | `Envelope` | Rendering for `comemory context` (headline bundle) |
 | `edges.rs` | `Row` | Rendering for `comemory edges` (triplet rows + shared page envelope) |
+| `explain.rs` | `ExplainPart` | The console's explain strip: a hit's `score_parts` as `{name, value, share, note}` rows (`share` = log-magnitude partition of the priors) |
 | `graph.rs` | `Node` | Rendering for `comemory graph` (JSON / DOT / HTML relation-graph export) |
 | `graph_template.html` | — | HTML template the `graph.rs` HTML renderer fills in |
 | `json.rs` | `write` | Single-line JSON writer shared by every `--json` surface |

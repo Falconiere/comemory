@@ -39,9 +39,14 @@ use crate::prelude::*;
 use crate::store::migrate;
 use crate::store::migrate::preflight;
 
+/// Check 4 — the migration-backup snapshot probe.
+pub mod backup;
 /// The individual health probes making up [`Report::checks`], plus the
 /// [`checks::run_all`] pass that runs every one of them.
 pub mod checks;
+/// `GET /doctor/system`: the probe-free facts read (versions, paths, file
+/// counts, vector dims) — never runs the embed command.
+pub mod system;
 
 /// `comemory doctor` / `GET /api/v1/doctor` request. No fields — `doctor`
 /// takes no arguments; the empty struct still derives `Deserialize` +

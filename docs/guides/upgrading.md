@@ -142,7 +142,7 @@ upgrading so it opens a fresh connection against the now-migrated schema:
 ```bash
 # after installing the new binary
 pkill -f 'comemory serve' || true
-comemory serve --open
+comemory serve
 ```
 
 This is the one case cross-process coordination is genuinely out of scope

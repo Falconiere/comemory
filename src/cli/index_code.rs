@@ -11,7 +11,7 @@
 use std::io::Write as _;
 use std::path::PathBuf;
 
-use clap::Args as ClapArgs;
+use clap::{Args as ClapArgs, ValueEnum};
 use git2::Repository;
 use ignore::WalkBuilder;
 
@@ -31,6 +31,9 @@ Examples:
   # Index the current working directory with explicit repo label
   comemory index-code --repo myrepo --path .
 
+  # Re-extract every file, not just the ones whose blob changed
+  comemory index-code --repo myrepo --path . --mode full
+
   # Emit one JSONL row per symbol on stdout (skips DB writes)
   comemory index-code --repo myrepo --path ./src --extract";
 
@@ -49,6 +52,31 @@ pub struct Args {
     /// into an external embedder + `comemory ingest-code`.
     #[arg(long, default_value_t = false)]
     pub extract: bool,
+    /// `incremental` (default) re-extracts only files whose blob OID moved
+    /// since the last run; `full` clears the repo's indexed-file cursor first
+    /// so every file re-extracts.
+    #[arg(long, value_enum, default_value_t = Mode::Incremental)]
+    pub mode: Mode,
+}
+
+/// `--mode` values, mirrored onto [`api::index_code::IndexMode`] (the CLI
+/// keeps its `ValueEnum` derive, the HTTP surface a plain `Deserialize`).
+#[derive(Copy, Clone, Debug, ValueEnum)]
+#[clap(rename_all = "lowercase")]
+pub enum Mode {
+    /// Only files changed since the last run.
+    Incremental,
+    /// Every file.
+    Full,
+}
+
+impl From<Mode> for api::index_code::IndexMode {
+    fn from(m: Mode) -> Self {
+        match m {
+            Mode::Incremental => Self::Incremental,
+            Mode::Full => Self::Full,
+        }
+    }
 }
 
 /// `--extract` streams JSONL to stdout; otherwise delegates the DB-write
@@ -67,6 +95,7 @@ pub async fn run(args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<(
         api::index_code::Request {
             repo: args.repo.clone(),
             path: args.path.to_string_lossy().into_owned(),
+            mode: args.mode.into(),
         },
     )?;
     Ok(())

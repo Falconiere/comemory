@@ -116,6 +116,39 @@ pub enum Error {
     #[error("unavailable: {0}")]
     Unavailable(String),
 
+    /// A `comemory serve` index run was requested for a repo that already
+    /// has a queued or running `index-code` job. Maps to HTTP `409
+    /// index_running` with `details: {repo, job_id}`; on the CLI path it
+    /// maps to EX_TEMPFAIL (75) — retry once the other run finishes.
+    #[error("index-code is already running for repo {repo} (job {job_id})")]
+    IndexRunning {
+        /// The repo label the live job is indexing.
+        repo: String,
+        /// The live job's id, so the caller can poll or cancel it.
+        job_id: String,
+    },
+
+    /// A cooperative job cancellation was honored at the next boundary
+    /// (`POST /api/v1/jobs/{id}/cancel`). Never reaches an HTTP response
+    /// directly — `serve::jobs::worker` records it as `JobStatus::Cancelled`
+    /// — but is a real `Error` so a cancellable core (`index-code`,
+    /// `reembed`) can unwind its transaction through `?` like any failure.
+    #[error("cancelled")]
+    Cancelled,
+
+    /// The request names a capability this build deliberately does not
+    /// model (a second memory store, a repo rename). Maps to HTTP `501
+    /// unsupported`; on the CLI path it maps to EX_USAGE (64).
+    #[error("unsupported: {0}")]
+    Unsupported(String),
+
+    /// The configured embed command (`COMEMORY_EMBED_CMD` / `--embed-cmd`)
+    /// is missing, exited non-zero, timed out, or produced an unparsable
+    /// payload. Maps to HTTP `503 embedder_unavailable`; on the CLI path
+    /// it maps to EX_UNAVAILABLE (69).
+    #[error("embedder unavailable: {0}")]
+    Embedder(String),
+
     /// A catch-all for failures that don't fit another variant.
     #[error("other: {0}")]
     Other(String),

@@ -171,25 +171,3 @@ fn v1_edges_returns_the_matched_triplet_page() {
     assert_eq!(items.len(), 1, "body: {body}");
     assert_eq!(items[0]["rel"], "supersedes");
 }
-
-#[test]
-fn legacy_api_graph_stays_byte_compatible_with_no_params() {
-    let (home, _workspace) = seeded_home();
-    let (base, token, _guard) = spawn_serve(&home);
-    let client = reqwest::blocking::Client::new();
-
-    let res = client
-        .get(format!("{base}/api/graph"))
-        .header("X-Comemory-Token", &token)
-        .send()
-        .expect("legacy graph");
-    assert_eq!(res.status().as_u16(), 200);
-    let body: serde_json::Value = res.json().expect("json");
-    // Legacy shape: bare `{nodes, edges}`, no envelope wrapper.
-    assert!(
-        body.get("ok").is_none(),
-        "legacy body must be unenveloped: {body}"
-    );
-    assert!(body["nodes"].is_array(), "body: {body}");
-    assert!(body["edges"].is_array(), "body: {body}");
-}

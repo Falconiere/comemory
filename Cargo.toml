@@ -55,7 +55,6 @@ owo-colors = "4"
 ratatui = "0.29"
 regex = "1"
 rusqlite = { version = "0.32", features = ["bundled", "load_extension", "vtab", "blob"] }
-rust-embed = { version = "8", features = ["compression"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"

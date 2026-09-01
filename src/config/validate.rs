@@ -253,6 +253,12 @@ impl Config {
                 "invalid prune.learning_retention_days={r} (env COMEMORY_LEARNING_RETENTION_DAYS): must be >= 1"
             )));
         }
+        let trash_days = self.prune.trash_retention_days;
+        if trash_days < 1 {
+            return Err(Error::Config(format!(
+                "invalid prune.trash_retention_days={trash_days} (file-only [prune] key): must be >= 1"
+            )));
+        }
         let q = self.prune.low_value_default_below_quality;
         if !(1..=5).contains(&q) {
             return Err(Error::Config(format!(

@@ -117,7 +117,10 @@ async fn hooks_install(State(state): State<AppState>, Json(body): Json<Value>) -
 /// the DB was rebuilt but this server would keep reading the unlinked
 /// pre-rebuild inode until restart (spec §3 "Rebuild connection swap").
 /// `result` is `null` on success, matching the CLI's silent success.
-async fn rebuild(State(state): State<AppState>, Json(body): Json<Value>) -> Response {
+/// `pub(crate)` so `maint::doctor`'s `POST /doctor/rebuild` alias can
+/// delegate to this exact handler instead of restating the gates and the
+/// job (console-api spec §8: "alias + adapt, never duplicate").
+pub(crate) async fn rebuild(State(state): State<AppState>, Json(body): Json<Value>) -> Response {
     let started = Instant::now();
     if let Err(resp) = guard_job("rebuild", &state) {
         return *resp;

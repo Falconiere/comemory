@@ -15,12 +15,24 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
 use time::OffsetDateTime;
-use tokio::sync::watch;
+use tokio::sync::{broadcast, watch};
 
 use crate::prelude::*;
 use crate::serve::jobs::{Job, JobId, JobStatus, JobView, Progress};
 use crate::serve::security;
 use crate::store::memory_row;
+
+/// What [`Registry::cancel`] did for a job that had not yet finished.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CancelOutcome {
+    /// The job was still queued: it is now `Cancelled` and its body will
+    /// never run.
+    Cancelled,
+    /// The job was running: the cooperative flag is set, and the job lands
+    /// in `Cancelled` at its next boundary (or `Done` if it finishes
+    /// first).
+    Requested,
+}
 
 /// Random bytes behind a job id — 8 bytes, rendered as 16 lowercase-hex
 /// chars (the session token's source, at a shorter width).
@@ -48,6 +60,16 @@ impl Registry {
     /// its fresh id and a receiver already positioned on that initial
     /// status. Also runs the finished-job eviction sweep.
     pub fn insert(&self, command: &str) -> Result<(JobId, watch::Receiver<JobStatus>)> {
+        self.insert_for(command, None)
+    }
+
+    /// [`Registry::insert`] with a repo label, so [`Registry::active_for`]
+    /// can later find this job by `(command, repo)`.
+    pub fn insert_for(
+        &self,
+        command: &str,
+        repo: Option<&str>,
+    ) -> Result<(JobId, watch::Receiver<JobStatus>)> {
         let id = security::random_hex(JOB_ID_BYTES)?;
         let started_at = memory_row::iso_format(OffsetDateTime::now_utc())?;
         let (tx, rx) = watch::channel(JobStatus::Queued);
@@ -56,6 +78,7 @@ impl Registry {
         let job = Job::new(
             id.clone(),
             command.to_string(),
+            repo.map(str::to_string),
             started_at,
             seq,
             tx,
@@ -65,6 +88,65 @@ impl Registry {
         jobs.insert(id.clone(), job);
         evict_finished(&mut jobs);
         Ok((id, rx))
+    }
+
+    /// The id of a queued or running job for `(command, repo)`, if any —
+    /// the check behind `409 index_running`. Lowest `seq` wins when several
+    /// are live (they cannot be, in practice: the route refuses the second).
+    pub fn active_for(&self, command: &str, repo: &str) -> Result<Option<JobId>> {
+        let jobs = self.lock()?;
+        Ok(jobs
+            .values()
+            .filter(|job| {
+                job.command == command
+                    && job.repo.as_deref() == Some(repo)
+                    && !job.status.is_terminal()
+            })
+            .min_by_key(|job| job.seq)
+            .map(|job| job.id.clone()))
+    }
+
+    /// Request cancellation of job `id`. A queued job becomes `Cancelled`
+    /// right away (its body never runs — the worker re-checks the flag
+    /// before starting it); a running job only has its flag set and stops
+    /// at its next cooperative boundary. `NotFound` for an unknown id;
+    /// `BadRequest` for a job that already reached a terminal status.
+    pub fn cancel(&self, id: &str) -> Result<CancelOutcome> {
+        let mut jobs = self.lock()?;
+        let job = jobs
+            .get_mut(id)
+            .ok_or_else(|| Error::NotFound(format!("job not found: {id}")))?;
+        if job.status.is_terminal() {
+            return Err(Error::BadRequest(format!(
+                "job {id} already finished ({})",
+                job.status.slug()
+            )));
+        }
+        job.cancel.store(true, Ordering::Relaxed);
+        if matches!(job.status, JobStatus::Queued) {
+            job.finished_at = Some(memory_row::iso_format(OffsetDateTime::now_utc())?);
+            job.status = JobStatus::Cancelled;
+            job.tx.send_replace(JobStatus::Cancelled);
+            return Ok(CancelOutcome::Cancelled);
+        }
+        Ok(CancelOutcome::Requested)
+    }
+
+    /// Whether a cancel has been requested for job `id`. An unknown id reads
+    /// as `false` — the flag is advisory, and a missing record is already a
+    /// stronger signal the worker handles on its own.
+    pub fn is_cancelled(&self, id: &str) -> bool {
+        self.lock()
+            .ok()
+            .and_then(|jobs| jobs.get(id).map(Job::cancel_requested))
+            .unwrap_or(false)
+    }
+
+    /// A fresh receiver on job `id`'s log-line channel — the SSE `log`
+    /// event's source. Lines pushed before subscribing are not replayed
+    /// (`JobView.log_tail` carries those).
+    pub fn subscribe_log(&self, id: &str) -> Result<Option<broadcast::Receiver<String>>> {
+        Ok(self.lock()?.get(id).map(|job| job.log_tx.subscribe()))
     }
 
     /// Record a progress report for job `id`: update the stored snapshot
@@ -97,7 +179,9 @@ impl Registry {
     /// Record a job's transition: update the stored record (stamping
     /// `finished_at` on the first terminal status) and publish the new
     /// value on the job's `watch` channel. `NotFound` when the id is
-    /// unknown.
+    /// unknown. A job already `Cancelled` while queued ([`Registry::cancel`])
+    /// ignores a late `Running` from its worker, so the terminal status is
+    /// never overwritten by the transition it superseded.
     pub fn set_status(&self, id: &str, status: JobStatus) -> Result<()> {
         let finished_at = if status.is_terminal() {
             Some(memory_row::iso_format(OffsetDateTime::now_utc())?)
@@ -108,6 +192,9 @@ impl Registry {
         let job = jobs
             .get_mut(id)
             .ok_or_else(|| Error::NotFound(format!("job not found: {id}")))?;
+        if job.status.is_terminal() && !status.is_terminal() {
+            return Ok(());
+        }
         if job.finished_at.is_none() {
             job.finished_at = finished_at;
         }

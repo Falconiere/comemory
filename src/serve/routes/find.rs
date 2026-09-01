@@ -18,6 +18,7 @@ use axum::routing::get;
 use crate::api::{self, Ctx};
 use crate::serve::AppState;
 use crate::serve::routes::{RouteEntry, respond, run_blocking, track_for};
+use crate::serve::scope::RepoScope;
 
 /// This resource's route-table entries, appended onto [`super::table`].
 pub fn table_entries() -> &'static [RouteEntry] {
@@ -42,16 +43,24 @@ pub fn router(_state: AppState) -> Router<AppState> {
     Router::new().route("/api/v1/find", get(find_get).post(find_post))
 }
 
-/// `GET /api/v1/find` — query-string form, no vector.
+/// `GET /api/v1/find` — query-string form, no vector. An `X-Comemory-Repo`
+/// header is the default `repo` filter when the query omits one.
 async fn find_get(
     State(state): State<AppState>,
-    Query(req): Query<api::find::Request>,
+    scope: RepoScope,
+    Query(mut req): Query<api::find::Request>,
 ) -> Response {
+    scope.apply(&mut req.repo);
     execute(state, req).await
 }
 
 /// `POST /api/v1/find` — body form, vector-capable.
-async fn find_post(State(state): State<AppState>, Json(req): Json<api::find::Request>) -> Response {
+async fn find_post(
+    State(state): State<AppState>,
+    scope: RepoScope,
+    Json(mut req): Json<api::find::Request>,
+) -> Response {
+    scope.apply(&mut req.repo);
     execute(state, req).await
 }
 

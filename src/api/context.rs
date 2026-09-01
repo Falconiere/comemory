@@ -21,7 +21,9 @@ use crate::store::code_row;
 #[derive(Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct Request {
-    /// Free-form query — symbol name, file path fragment, or phrase.
+    /// Free-form query — symbol name, file path fragment, or phrase. `key`
+    /// is accepted as an alias (the console-api spec's `GET /context?key=`).
+    #[serde(alias = "key")]
     pub query: String,
     /// Page size for the bundle's memory list — overrides the configured
     /// `retrieval.top_k`. `0` means "all remaining within the window".

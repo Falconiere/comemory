@@ -49,6 +49,7 @@ fn index_sample(ctx: &mut Ctx<'_>, repo: &str, path: &std::path::Path) {
         api::index_code::Request {
             repo: repo.into(),
             path: path.to_str().expect("utf8 path").to_string(),
+            mode: comemory::api::index_code::IndexMode::Incremental,
         },
     )
     .expect("index_code run");

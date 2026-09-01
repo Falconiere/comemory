@@ -1,11 +1,11 @@
-//! `comemory serve` — launch the local web viewer + in-browser code editor.
+//! `comemory serve` — launch the loopback `/api/v1` HTTP server.
 //!
 //! Binds an axum server to `127.0.0.1` (ephemeral port by default), serving
-//! the embedded React/Vite SPA and a small JSON/file API over `comemory.db`
-//! and the indexed source tree. Reads and writes are gated by a per-session
-//! token, a loopback Host guard, and a path-containment check; `--read-only`
-//! disables writes entirely. This complements — it does not replace — the
-//! static `comemory graph --format html` export.
+//! the versioned REST surface over `comemory.db` and the indexed source
+//! tree for the console and any local agent or script. Every request is
+//! gated by a per-session token and a loopback Host guard, and every
+//! path-taking mutating route by a containment check; `--read-only`
+//! refuses every mutating route.
 
 use std::path::PathBuf;
 
@@ -18,13 +18,13 @@ use crate::serve::{self, RootOverrides, ServeOptions};
 
 const EXAMPLES: &str = "\
 Examples:
-  # Serve the graph + editor for every indexed repo on an ephemeral port
+  # Serve the /api/v1 surface for every indexed repo on an ephemeral port
   comemory serve
 
-  # One repo, fixed port, opened in the browser
-  comemory serve --repo myrepo --port 8787 --open
+  # Default every read to one repo, on a fixed port
+  comemory serve --repo myrepo --port 8787
 
-  # Read-only exploration (no writes to disk)
+  # Read-only: every mutating route answers 405
   comemory serve --read-only
 
   # Supply a repo root for repos indexed before the v7 schema captured it
@@ -38,29 +38,25 @@ Examples:
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES)]
 pub struct Args {
-    /// Restrict the graph to one repo label (as passed to `index-code --repo`).
+    /// Default repo label (as passed to `index-code --repo`) for every read
+    /// that accepts a `repo` filter. An explicit `repo` parameter or an
+    /// `X-Comemory-Repo` header on the request overrides it.
     #[arg(long)]
     pub repo: Option<String>,
     /// Loopback port to bind. `0` (default) selects an ephemeral port whose
     /// URL is printed at startup.
     #[arg(long, default_value_t = 0)]
     pub port: u16,
-    /// Disable backend writes: `PUT /api/file` returns 405. The source panel
-    /// is read-only regardless of this flag (it has no Save action).
+    /// Refuse every mutating /api/v1 route with 405 read_only.
     #[arg(long, default_value_t = false)]
     pub read_only: bool,
     /// Override a repo's working-tree root as `<repo>=<abs-path>` (repeatable).
     /// Required for repos indexed before the v7 schema captured the root.
     #[arg(long = "root", value_name = "REPO=PATH")]
     pub root: Vec<String>,
-    /// Open the printed URL in the default browser after binding. The URL
-    /// carries the session token and is passed as an argument to the system
-    /// opener, so it is briefly visible to other local users (e.g. via
-    /// `/proc/<pid>/cmdline` or `ps`).
-    #[arg(long, default_value_t = false)]
-    pub open: bool,
-    /// Embed command for semantic web search; run as sh -c, reads query on
-    /// stdin, emits {"embedding":[..]}. Unset → lexical only. Mirrors
+    /// Embed command for the routes that vectorize on the server's behalf
+    /// (POST /api/v1/doctor/reembed); run as sh -c, reads text on stdin,
+    /// emits {"embedding":[..]}. Unset → those routes answer 503. Mirrors
     /// COMEMORY_EMBED_CMD.
     #[arg(long, value_name = "CMD", env = "COMEMORY_EMBED_CMD")]
     pub embed_cmd: Option<String>,
@@ -86,7 +82,6 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
         port: a.port,
         read_only: a.read_only,
         roots,
-        open: a.open,
         cfg,
         embed_cmd: a.embed_cmd,
         allow_path,

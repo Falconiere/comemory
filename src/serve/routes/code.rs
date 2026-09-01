@@ -20,11 +20,14 @@ use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::envelope::Envelope;
 use crate::serve::jobs;
-use crate::serve::routes::{RouteEntry, accepted, guard_job, respond, run_blocking, track_for};
+use crate::serve::routes::{
+    RouteEntry, accepted, guard_job, index_runs, respond, run_blocking, track_for,
+};
+use crate::serve::scope::RepoScope;
 use crate::serve::security;
 
 /// The per-route body limit `POST /api/v1/code/ingest` carries — well above
-/// the 5 MiB global default (`fileio::MAX_FILE_BYTES`), since a real NDJSON
+/// the 5 MiB global default (`router::BODY_LIMIT`), since a real NDJSON
 /// batch of embedded symbol rows runs large (§Security "Body limits").
 const INGEST_BODY_LIMIT: usize = 64 * 1024 * 1024;
 
@@ -79,17 +82,23 @@ pub fn router(_state: AppState) -> Router<AppState> {
         )
 }
 
+/// Both forms fold an `X-Comemory-Repo` header into `req.repo` when the
+/// query/body omits one ([`RepoScope`]).
 async fn code_search_get(
     State(state): State<AppState>,
-    Query(req): Query<api::search_code::Request>,
+    scope: RepoScope,
+    Query(mut req): Query<api::search_code::Request>,
 ) -> Response {
+    scope.apply(&mut req.repo);
     handle(state, req).await
 }
 
 async fn code_search_post(
     State(state): State<AppState>,
-    Json(req): Json<api::search_code::Request>,
+    scope: RepoScope,
+    Json(mut req): Json<api::search_code::Request>,
 ) -> Response {
+    scope.apply(&mut req.repo);
     handle(state, req).await
 }
 
@@ -138,6 +147,10 @@ async fn code_ast(
 /// (AC-7: an out-of-root or nonexistent path never spawns a job).
 /// `405 read_only` on a `--read-only` server; never `503 busy` — a
 /// job-creating `POST` always answers `202` immediately ([`guard_job`]).
+/// A repo that already has a live `index-code` job is `409 index_running`
+/// (`index_runs::refuse_if_running`), the same refusal `POST
+/// /api/v1/index/runs` gives — the two entry points share one gate and one
+/// [`index_runs::spawn_index_job`], so they cannot drift (AC-10).
 /// The job reports progress and a log tail into the registry via
 /// `jobs::worker::RegistryProgressSink` (AC-33), streamed as the SSE
 /// `progress` event alongside the unchanged `status` events (AC-34).
@@ -151,6 +164,7 @@ async fn code_index(
     }
     let contain_state = state.clone();
     let contained = run_blocking(move || -> Result<api::index_code::Request> {
+        index_runs::refuse_if_running(&contain_state, &req.repo)?;
         let conn = contain_state.conn()?;
         let roots = contain_state.allowed_roots(&conn);
         drop(conn);
@@ -163,20 +177,7 @@ async fn code_index(
         Ok(req) => req,
         Err(e) => return Envelope::err("index-code", &e, 0),
     };
-    let job_state = state.clone();
-    let job = jobs::spawn_job_with_id(
-        state.jobs(),
-        state.write_permit().clone(),
-        "index-code",
-        true,
-        move |job_id| {
-            let cfg = job_state.cfg();
-            let mut ctx = Ctx::lazy(job_state.paths(), &cfg);
-            let sink = jobs::worker::RegistryProgressSink::new(job_state.jobs().clone(), job_id);
-            let resp = api::index_code::run_with_progress(&mut ctx, req, Some(&sink))?;
-            serde_json::to_value(resp).map_err(Error::Json)
-        },
-    );
+    let job = index_runs::spawn_index_job(&state, req.repo, req.path, req.mode);
     accepted("index-code", job, started)
 }
 

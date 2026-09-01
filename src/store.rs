@@ -25,6 +25,8 @@ pub mod fts;
 pub mod fts_memory;
 /// `gc_runs` row insert — one row per `comemory gc` sweep.
 pub mod gc_runs;
+/// `index_runs` writer + readers — one row per `index-code` run.
+pub mod index_runs;
 /// Paginated listing of live memories.
 pub mod memory_list;
 /// Batched per-memory metadata (path, repo, kind, tags, references).
@@ -36,6 +38,8 @@ pub mod migrate;
 /// Shared random-hex id generation (`/dev/urandom`), the neutral home for
 /// both `serve::security` and `api::gc`.
 pub mod random_id;
+/// Drop every code-index row and edge for one repo label.
+pub mod repo_drop;
 /// Enumerate distinct, canonicalized `repo_marker.root_path` values.
 pub mod repo_marker_roots;
 /// DDL strings for the tables, `vec0` vtabs and FTS5 indexes.

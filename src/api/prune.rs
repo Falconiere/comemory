@@ -39,6 +39,14 @@ pub struct Request {
     /// Number of leading results to skip before the display window starts.
     #[serde(default)]
     pub offset: usize,
+    /// Restrict `apply` to these memory ids (CLI `--ids`, HTTP `ids[]`).
+    /// Empty — the default — means "every low-value candidate", today's
+    /// behavior. When non-empty, `apply` acts on the INTERSECTION with the
+    /// scan's candidates: an id that is not a candidate is ignored rather
+    /// than deleted, so a stale console selection can never soft-delete a
+    /// memory the scan did not flag.
+    #[serde(default)]
+    pub ids: Vec<String>,
 }
 
 /// `PaginationArgs`' CLI default (`--limit`, unset = 50), reused here so an
@@ -60,9 +68,31 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Report> {
     let conn = ctx.conn()?;
     let scanned = scan(&*conn, paths, cfg, req.limit, req.offset)?;
     if req.apply {
-        apply(conn, paths, &scanned.full_low_value)?;
+        let selected = select_ids(&scanned.full_low_value, &req.ids)?;
+        apply(conn, paths, &selected)?;
     }
     Ok(scanned.report)
+}
+
+/// The ids `apply` acts on: every candidate when `requested` is empty, else
+/// the candidates that were also requested. Order follows `candidates` (the
+/// scan's), so the deletion sequence does not depend on how the caller
+/// sorted its selection.
+///
+/// Every requested id is validated through [`crate::cli::parse_id_csv`] —
+/// the same 8-hex check `save --supersedes` and `feedback` use — so a
+/// malformed id is a hard error naming the flag, not a silently ignored
+/// entry.
+fn select_ids(candidates: &[String], requested: &[String]) -> Result<Vec<String>> {
+    if requested.is_empty() {
+        return Ok(candidates.to_vec());
+    }
+    let wanted = crate::cli::parse_id_csv(&requested.join(","), "--ids")?;
+    Ok(candidates
+        .iter()
+        .filter(|id| wanted.contains(id))
+        .cloned()
+        .collect())
 }
 
 /// A completed scan: the windowed [`Report`] for display plus the FULL

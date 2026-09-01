@@ -20,6 +20,7 @@ use crate::output::{context, search};
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::routes::{respond, run_blocking, track_for};
+use crate::serve::scope::RepoScope;
 
 /// This module's routes, merged into the `memories` resource router.
 pub fn router(_state: AppState) -> Router<AppState> {
@@ -31,31 +32,41 @@ pub fn router(_state: AppState) -> Router<AppState> {
         .route("/api/v1/context", get(context_get).post(context_post))
 }
 
+/// Every handler below folds an `X-Comemory-Repo` header into the request's
+/// own `repo` filter when the query/body omits one ([`RepoScope`]).
 async fn memories_search_get(
     State(state): State<AppState>,
-    Query(req): Query<api::search::Request>,
+    scope: RepoScope,
+    Query(mut req): Query<api::search::Request>,
 ) -> Response {
+    scope.apply(&mut req.repo);
     handle("search", state, move |state| run_search(state, req)).await
 }
 
 async fn memories_search_post(
     State(state): State<AppState>,
-    Json(req): Json<api::search::Request>,
+    scope: RepoScope,
+    Json(mut req): Json<api::search::Request>,
 ) -> Response {
+    scope.apply(&mut req.repo);
     handle("search", state, move |state| run_search(state, req)).await
 }
 
 async fn context_get(
     State(state): State<AppState>,
-    Query(req): Query<api::context::Request>,
+    scope: RepoScope,
+    Query(mut req): Query<api::context::Request>,
 ) -> Response {
+    scope.apply(&mut req.repo);
     handle("context", state, move |state| run_context(state, req)).await
 }
 
 async fn context_post(
     State(state): State<AppState>,
-    Json(req): Json<api::context::Request>,
+    scope: RepoScope,
+    Json(mut req): Json<api::context::Request>,
 ) -> Response {
+    scope.apply(&mut req.repo);
     handle("context", state, move |state| run_context(state, req)).await
 }
 

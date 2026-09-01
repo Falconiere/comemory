@@ -11,7 +11,7 @@
 //! `memories` rows through the shared `memory_row::insert` path (no mocks).
 
 use comemory::memory::{Frontmatter, Kind, References, Relations};
-use comemory::store::memory_list::{self, ListRow, SortBy};
+use comemory::store::memory_list::{self, ListFilter, ListRow, SortBy};
 use comemory::store::{connection, memory_row};
 use rusqlite::Connection;
 use time::OffsetDateTime;
@@ -57,6 +57,15 @@ fn ids(rows: &[ListRow]) -> Vec<&str> {
     rows.iter().map(|r| r.id.as_str()).collect()
 }
 
+/// A `repo`/`kind`-only filter — the pre-`ListFilter` call shape.
+fn filt<'a>(repo: Option<&'a str>, kind: Option<&'a str>) -> ListFilter<'a> {
+    ListFilter {
+        repo,
+        kind,
+        ..ListFilter::default()
+    }
+}
+
 /// Eight rows across two repos and two kinds, with distinct created days so
 /// the expected `created_at DESC, id ASC` order is unambiguous. Day grows with
 /// the id suffix, so newest-first is `…8, …7, …6, …`.
@@ -77,7 +86,8 @@ fn seeded_db() -> (tempfile::TempDir, Connection) {
 #[test]
 fn lists_all_in_stable_created_desc_id_asc_order() {
     let (_dir, conn) = seeded_db();
-    let page = memory_list::list_memories(&conn, None, None, 0, 0, SortBy::Created).expect("list");
+    let page =
+        memory_list::list_memories(&conn, &filt(None, None), 0, 0, SortBy::Created).expect("list");
     assert_eq!(page.total, 8);
     assert_eq!(page.rows.len(), 8);
     // Newest day first (day 8 == aaaa0008), oldest last.
@@ -99,14 +109,16 @@ fn id_tiebreak_orders_equal_timestamps_ascending() {
     seed(&mut conn, "bbbb0003", Kind::Note, "alpha", 9);
     seed(&mut conn, "bbbb0001", Kind::Note, "alpha", 9);
     seed(&mut conn, "bbbb0002", Kind::Note, "alpha", 9);
-    let page = memory_list::list_memories(&conn, None, None, 0, 0, SortBy::Created).expect("list");
+    let page =
+        memory_list::list_memories(&conn, &filt(None, None), 0, 0, SortBy::Created).expect("list");
     assert_eq!(ids(&page.rows), vec!["bbbb0001", "bbbb0002", "bbbb0003"]);
 }
 
 #[test]
 fn limit_and_offset_window_the_middle_page() {
     let (_dir, conn) = seeded_db();
-    let page = memory_list::list_memories(&conn, None, None, 3, 2, SortBy::Created).expect("list");
+    let page =
+        memory_list::list_memories(&conn, &filt(None, None), 3, 2, SortBy::Created).expect("list");
     // Total is the full filtered set, independent of the window.
     assert_eq!(page.total, 8);
     // Skip the two newest (0008, 0007), take the next three.
@@ -116,8 +128,8 @@ fn limit_and_offset_window_the_middle_page() {
 #[test]
 fn offset_past_end_returns_empty_with_full_total() {
     let (_dir, conn) = seeded_db();
-    let page =
-        memory_list::list_memories(&conn, None, None, 5, 100, SortBy::Created).expect("list");
+    let page = memory_list::list_memories(&conn, &filt(None, None), 5, 100, SortBy::Created)
+        .expect("list");
     assert_eq!(page.total, 8);
     assert!(page.rows.is_empty());
 }
@@ -125,8 +137,8 @@ fn offset_past_end_returns_empty_with_full_total() {
 #[test]
 fn repo_filter_restricts_total_and_rows() {
     let (_dir, conn) = seeded_db();
-    let page =
-        memory_list::list_memories(&conn, Some("beta"), None, 0, 0, SortBy::Created).expect("list");
+    let page = memory_list::list_memories(&conn, &filt(Some("beta"), None), 0, 0, SortBy::Created)
+        .expect("list");
     assert_eq!(page.total, 4);
     assert_eq!(
         ids(&page.rows),
@@ -137,8 +149,9 @@ fn repo_filter_restricts_total_and_rows() {
 #[test]
 fn kind_filter_restricts_total_and_rows() {
     let (_dir, conn) = seeded_db();
-    let page = memory_list::list_memories(&conn, None, Some("decision"), 0, 0, SortBy::Created)
-        .expect("list");
+    let page =
+        memory_list::list_memories(&conn, &filt(None, Some("decision")), 0, 0, SortBy::Created)
+            .expect("list");
     assert_eq!(page.total, 4);
     assert_eq!(
         ids(&page.rows),
@@ -149,8 +162,14 @@ fn kind_filter_restricts_total_and_rows() {
 #[test]
 fn repo_and_kind_filters_combine() {
     let (_dir, conn) = seeded_db();
-    let page = memory_list::list_memories(&conn, Some("alpha"), Some("bug"), 0, 0, SortBy::Created)
-        .expect("list");
+    let page = memory_list::list_memories(
+        &conn,
+        &filt(Some("alpha"), Some("bug")),
+        0,
+        0,
+        SortBy::Created,
+    )
+    .expect("list");
     assert_eq!(page.total, 2);
     assert_eq!(ids(&page.rows), vec!["aaaa0006", "aaaa0002"]);
 }
@@ -160,7 +179,8 @@ fn soft_deleted_rows_are_excluded() {
     let (_dir, conn) = seeded_db();
     soft_delete(&conn, "aaaa0008");
     soft_delete(&conn, "aaaa0001");
-    let page = memory_list::list_memories(&conn, None, None, 0, 0, SortBy::Created).expect("list");
+    let page =
+        memory_list::list_memories(&conn, &filt(None, None), 0, 0, SortBy::Created).expect("list");
     assert_eq!(page.total, 6);
     let listed = ids(&page.rows);
     assert!(!listed.contains(&"aaaa0008"));
@@ -170,7 +190,8 @@ fn soft_deleted_rows_are_excluded() {
 #[test]
 fn limit_zero_returns_all_rows() {
     let (_dir, conn) = seeded_db();
-    let all = memory_list::list_memories(&conn, None, None, 0, 0, SortBy::Created).expect("list");
+    let all =
+        memory_list::list_memories(&conn, &filt(None, None), 0, 0, SortBy::Created).expect("list");
     assert_eq!(all.rows.len(), 8);
     assert_eq!(all.total, 8);
 }
@@ -178,7 +199,8 @@ fn limit_zero_returns_all_rows() {
 #[test]
 fn slug_is_file_stem_id_dash_slug() {
     let (_dir, conn) = seeded_db();
-    let page = memory_list::list_memories(&conn, None, None, 1, 0, SortBy::Created).expect("list");
+    let page =
+        memory_list::list_memories(&conn, &filt(None, None), 1, 0, SortBy::Created).expect("list");
     let row = &page.rows[0];
     // `md_path` was `…/aaaa0008-note-aaaa0008.md`; the slug field is the file
     // stem `{id}-{slug}`, matching the legacy markdown-scan output.

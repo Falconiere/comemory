@@ -78,6 +78,42 @@ pub mod tune;
 /// `comemory unindex`: unregister a document source and its derived rows.
 pub mod unindex;
 
+// Console-only cores (console-api spec, 2026-09-01): no CLI subcommand of
+// their own, reached through `serve::routes`.
+
+/// `GET|PUT /config/retrieval`: live ranking knobs.
+pub mod config_retrieval;
+/// `GET|PUT /gc/policy`: retention windows + last gc run.
+pub mod gc_policy;
+/// `GET /graph/nodes*`, `GET /graph/snapshot`: node listing, detail, neighbors.
+pub mod graph_nodes;
+/// `POST /graph/recompute`: PageRank re-projection job.
+pub mod graph_recompute;
+/// `GET /index/runs`: the `index_runs` history.
+pub mod index_runs;
+/// `GET /learning/{summary,evals,golden-set,expansions}`.
+pub mod learning;
+/// `GET /learning/proposals`, `POST /learning/proposals/{id}/{apply,discard}`.
+pub mod learning_proposals;
+/// `GET|PATCH /memory-stores`, `POST /memory-stores/{id}/sync`.
+pub mod memory_store;
+/// `GET /overview`, `GET /overview/eval-series`.
+pub mod overview;
+/// `POST /doctor/reembed`: re-vectorize through the embed command.
+pub mod reembed;
+/// `POST /memories/{id}/references/refresh`: re-pin code references.
+pub mod refresh_refs;
+/// `POST /repos`, `PATCH /repos/{name}`, `POST /repos/{name}/archive`, `DELETE /repos/{name}`.
+pub mod repo_admin;
+/// `POST /memories/{id}/restore`, `POST /trash/{id}/restore`.
+pub mod restore;
+/// `GET /search/suggest`: mined expansions + recent queries.
+pub mod suggest;
+/// `GET /trash`: soft-deleted memories.
+pub mod trash;
+/// `PATCH /memories/{id}`: frontmatter/body update.
+pub mod update;
+
 /// Borrowed execution context passed to every `api::<cmd>::run`.
 ///
 /// Construct via [`Ctx::borrowed`] or [`Ctx::lazy`]; reach the connection

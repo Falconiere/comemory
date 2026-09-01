@@ -162,8 +162,11 @@ purges learning telemetry past its retention window.
 comemory gc
 ```
 
-The retention window is `COMEMORY_LEARNING_RETENTION_DAYS` (default `90`). It
-applies to **raw** rows only — `retrieval_log` and `feedback_events`:
+Trashed markdown is reaped once older than `prune.trash_retention_days`
+(default `30`, a file-only `[prune]` key in `config.toml`; the console edits
+it through `PUT /api/v1/gc/policy`). The telemetry window is
+`COMEMORY_LEARNING_RETENTION_DAYS` (default `90`). It applies to **raw**
+rows only — `retrieval_log` and `feedback_events`:
 
 ```bash
 # tighten the telemetry window to a week
