@@ -20,7 +20,7 @@ use serde_json::{Value, json};
 
 /// Poll `GET /jobs/{id}` until the job reaches a terminal status.
 async fn wait_for_job(session: &Session, job_id: &str) -> Value {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_mins(1);
     loop {
         let res = serve_state::send(session, "GET", &format!("/api/v1/jobs/{job_id}"), None).await;
         let data = res.json["data"].clone();

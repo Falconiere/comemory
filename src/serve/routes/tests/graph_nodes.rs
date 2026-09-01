@@ -93,7 +93,7 @@ fn ranks(session: &Session) -> Vec<(String, String, f64)> {
 /// Poll `GET /api/v1/jobs/{id}` until it reports a terminal status,
 /// returning the envelope's `data` object.
 async fn poll_job_terminal(session: &Session, job_id: &str) -> Value {
-    let deadline = Instant::now() + Duration::from_secs(60);
+    let deadline = Instant::now() + Duration::from_mins(1);
     loop {
         let res = serve_state::send(session, "GET", &format!("/api/v1/jobs/{job_id}"), None).await;
         let data = res.json["data"].clone();
