@@ -189,6 +189,11 @@ async fn set_hook(
     };
     let result = run_blocking(move || {
         let _permit = permit;
+        // Unconditional, for every name: `_` is not part of any hook's
+        // spelling, so a console may send either `post_commit` or
+        // `post-commit` (and either `search_edit_reinforcement` or its
+        // hyphenated form). Anything that does not match a known hook
+        // after this is rejected by `api::hooks` as a usage error.
         let hook = name.replace('_', "-");
         let (enable, disable) = if body.enabled {
             (Some(hook), None)

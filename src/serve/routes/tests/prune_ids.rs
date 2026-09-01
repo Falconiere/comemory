@@ -162,3 +162,34 @@ async fn post_prune_with_ids_still_requires_confirm() {
     assert_eq!(res.json["error"]["code"], "confirmation_required");
     assert_eq!(live_files(&session, &id), 1);
 }
+
+#[tokio::test]
+async fn a_non_boolean_dry_run_is_a_400_and_deletes_nothing() {
+    let session = serve_state::session(false);
+    let id = save(&session, "a candidate a typo must never delete");
+    make_prune_eligible(&session, &id);
+
+    let res = serve_state::send(
+        &session,
+        "POST",
+        "/api/v1/prune",
+        Some(json!({ "apply": true, "confirm": true, "dry_run": "false", "ids": [id.clone()] })),
+    )
+    .await;
+
+    assert_eq!(res.status.as_u16(), 400, "body: {}", res.text);
+    assert_eq!(res.json["error"]["code"], "bad_request");
+    assert!(
+        res.json["error"]["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("'dry_run' must be a boolean"),
+        "body: {}",
+        res.text
+    );
+    assert_eq!(
+        live_files(&session, &id),
+        1,
+        "a rejected request deletes nothing"
+    );
+}

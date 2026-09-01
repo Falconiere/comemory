@@ -285,11 +285,12 @@ fn delete_stamps_the_trashed_file_mtime_as_the_deletion_instant() {
 
     let trashed = paths.trash_dir().join(rec.path.file_name().unwrap());
     assert!(trashed.exists(), "delete must move the file into .trash/");
-    // Two seconds of slack for coarse-grained filesystem timestamps.
+    // Two seconds of slack for coarse-grained filesystem timestamps, on
+    // both sides: a far-future mtime is as wrong as a stale one.
+    let mt = mtime(&trashed);
     assert!(
-        mtime(&trashed) + Duration::from_secs(2) >= before,
-        "trashed mtime must be the deletion instant, got {:?} vs {before:?}",
-        mtime(&trashed)
+        mt + Duration::from_secs(2) >= before && mt <= before + Duration::from_secs(2),
+        "trashed mtime must be the deletion instant, got {mt:?} vs {before:?}"
     );
 }
 

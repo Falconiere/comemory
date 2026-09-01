@@ -38,17 +38,25 @@ fn embed_script(dir: &TempDir, dim: usize) -> String {
     path.to_string_lossy().into_owned()
 }
 
-/// Poll `GET /jobs/{id}` until the job reaches a terminal status.
+/// Poll `GET /jobs/{id}` until the job reaches a terminal status. Bounded
+/// by wall-clock, not by iteration count, so a slow runner cannot turn a
+/// still-running job into a failure at a different real duration than the
+/// sibling helper in `maint_gc.rs` allows.
 async fn wait_for_job(session: &Session, job_id: &str) -> Value {
-    for _ in 0..600 {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_mins(1);
+    loop {
         let res = serve_state::send(session, "GET", &format!("/api/v1/jobs/{job_id}"), None).await;
         let status = res.json["data"]["status"].as_str().unwrap_or_default();
         if matches!(status, "done" | "error" | "cancelled") {
             return res.json["data"].clone();
         }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "job {job_id} never reached a terminal status: {}",
+            res.text
+        );
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
-    panic!("job {job_id} never reached a terminal status");
 }
 
 /// `SELECT COUNT(*)` over `table` in the session's own database.
