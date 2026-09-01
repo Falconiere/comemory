@@ -392,20 +392,20 @@ fn v1_post_memories_returns_503_busy_while_a_job_holds_the_write_permit_ac17() {
     assert_eq!(final_res.status().as_u16(), 200);
 }
 
-/// AC-18: a `POST /api/v1/memories` body over the global 5 MiB limit is
-/// rejected by axum's own `DefaultBodyLimit` before the handler ever runs —
-/// a plain `413`, not the JSON envelope (spec: "AC-18 asserts the status,
-/// not an envelope").
+/// AC-18 against the real bound server: a `POST /api/v1/memories` body over
+/// the global 5 MiB limit is refused by axum's own `DefaultBodyLimit`
+/// before the handler runs, and nothing is stored.
 ///
-/// The rejection races the upload: the server answers and closes the
-/// connection as soon as the limit is crossed, so on a loaded machine the
-/// client can hit `ConnectionReset` on its own body write before it ever
-/// reads the response. That IS the limit being enforced, from the write
-/// side, so it is accepted here — and then pinned down, because a crashed
-/// server resets connections too: whichever way the request ended, the
-/// server must still be serving and the oversized memory must not exist.
+/// Over a socket the rejection races the upload — the server answers and
+/// closes as soon as the limit is crossed, so a loaded machine can surface
+/// a write reset to the client instead of the response. Both endings prove
+/// the same refusal, so both are accepted here, and the exact `413` is
+/// pinned in-process instead (`src/serve/tests/router.rs`), where the whole
+/// request is delivered at once and no race exists. What this test adds is
+/// what only a real server can show: it is still serving afterwards, and
+/// the oversized memory does not exist.
 #[test]
-fn v1_post_memories_over_5mib_is_a_plain_413_ac18() {
+fn v1_post_memories_over_5mib_is_refused_and_stores_nothing_ac18() {
     let home = TempDir::new().expect("home");
     let (base, token, _guard) = spawn_serve(&home, &[]);
     let client = reqwest::blocking::Client::new();
@@ -418,11 +418,11 @@ fn v1_post_memories_over_5mib_is_a_plain_413_ac18() {
         .json(&payload)
         .send();
     match result {
-        Ok(res) => assert_eq!(res.status().as_u16(), 413),
+        Ok(res) => assert_eq!(res.status().as_u16(), 413, "body: {:?}", res.text()),
         Err(e) => assert!(
             e.is_request(),
             "the only tolerated failure is the server closing the connection \
-             mid-upload after rejecting it: {e:?}"
+             mid-upload after refusing it: {e:?}"
         ),
     }
 
@@ -430,7 +430,7 @@ fn v1_post_memories_over_5mib_is_a_plain_413_ac18() {
         .get(format!("{base}/api/v1/memories"))
         .header("X-Comemory-Token", &token)
         .send()
-        .expect("the server survives an oversized body");
+        .expect("the server survives an oversized request");
     assert_eq!(listed.status().as_u16(), 200);
     let body: serde_json::Value = listed.json().expect("memories list json");
     assert_eq!(

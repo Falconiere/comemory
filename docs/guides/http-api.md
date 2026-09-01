@@ -222,7 +222,7 @@ view over the same cores; ◇ = a job-creating route)
 | ○ `GET /graph/nodes?sort=pagerank\|path`, `GET /graph/nodes/{id}`, `GET /graph/nodes/{id}/neighbors?min_weight=`, `GET /graph/snapshot?edge_kinds=&min_weight=` | `{id}` is `file:<repo>:<path>` or `<repo>:<path>`, percent-encoded; the snapshot caps at 20 000 edges (`truncated`) |
 | ●◇ `POST /graph/recompute` | job `graph-recompute`: PageRank re-projection + memory rank |
 | ○ `GET /index/runs?repo=`, ●◇ `POST /index/runs` | history from `index_runs`; `{repo, path\|root, mode: incremental\|full}` → the `index-code` job, `409 index_running` while the repo has a live one, `400` when archived. `full` re-extracts every file and is lossy: it drops the repo's BYO `code_vec` rows and resets per-symbol access counters — re-run `ingest-code` afterwards |
-| ● `POST /jobs/{id}/cancel` | cooperative cancel (see Jobs) |
+| ○ `POST /jobs/{id}/cancel` | cooperative cancel (see Jobs). Read-class despite the `POST`: its route-table entry is `mutating: false`, because stopping a job writes nothing to the store — so it works on a `--read-only` server |
 | ● `PUT /hooks/{name}?repo=` | `{enabled}`; `post_commit` and `post-commit` both accepted; `repo` is contained like `POST /hooks/install`'s (`403` outside every allowed root) |
 | ●✓ `DELETE /sources/{target}?confirm=true` | path form of `DELETE /sources?target=` |
 | ○ `GET /learning/summary`, `GET /learning/evals?limit=`, `GET /learning/golden-set?golden=`, `GET /learning/proposals`, `GET /learning/expansions` | learning-loop reads; `evals` rows carry derived `delta`/`is_baseline`/`is_best` |

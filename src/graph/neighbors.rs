@@ -49,6 +49,15 @@ pub struct NeighborRow {
     pub weight: i64,
 }
 
+/// The prefix every file node id carries, mirrored from
+/// [`crate::graph::edges::file_node_id`].
+const FILE_PREFIX: &str = "file:";
+
+/// 1-based `substr` start that strips [`FILE_PREFIX`] off a file node id,
+/// derived from the prefix itself rather than written out as a literal
+/// offset that would silently rot if the id grammar changed.
+const ID_BODY_START: usize = FILE_PREFIX.len() + 1;
+
 /// One-hop, undirected `imports`/`co_changed` graph query seeded from a set
 /// of `file:<repo>:<path>` ids. Not recursive — a single query, self-joined
 /// against both edge orientations (the same undirected-walk idiom
@@ -64,16 +73,19 @@ pub struct NeighborRow {
 /// Multiple contributions to the same `(repo, path, rel)` neighbor (more than
 /// one seed file reaching it via the same relation) collapse to one row
 /// carrying the strongest (`MAX`) weight, so the output stays one row per
-/// `(file, rel)`.
-const NEIGHBOR_SQL: &str = "\
+/// `(file, rel)`. Built once at first use, since [`ID_BODY_START`] is
+/// computed rather than literal.
+static NEIGHBOR_SQL: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    format!(
+        "\
     WITH seeds(id) AS (SELECT value FROM json_each(:seeds)),
     one_hop(rest, rel, weight) AS (
-      SELECT substr(e.dst_id, 6), e.rel, e.weight FROM edges e JOIN seeds s ON s.id = e.src_id
+      SELECT substr(e.dst_id, {ID_BODY_START}), e.rel, e.weight FROM edges e JOIN seeds s ON s.id = e.src_id
        WHERE e.src_kind='file' AND e.dst_kind='file' AND e.rel IN ('imports','co_changed')
          AND e.weight >= :min_weight
          AND e.dst_id NOT IN (SELECT id FROM seeds)
       UNION ALL
-      SELECT substr(e.src_id, 6), e.rel, e.weight FROM edges e JOIN seeds s ON s.id = e.dst_id
+      SELECT substr(e.src_id, {ID_BODY_START}), e.rel, e.weight FROM edges e JOIN seeds s ON s.id = e.dst_id
        WHERE e.src_kind='file' AND e.dst_kind='file' AND e.rel IN ('imports','co_changed')
          AND e.weight >= :min_weight
          AND e.src_id NOT IN (SELECT id FROM seeds)
@@ -81,7 +93,9 @@ const NEIGHBOR_SQL: &str = "\
     SELECT substr(rest,1,instr(rest,':')-1) AS repo, substr(rest,instr(rest,':')+1) AS path,
            rel, MAX(weight) AS weight
       FROM one_hop WHERE instr(rest,':') > 0
-     GROUP BY repo, path, rel ORDER BY weight DESC, rel ASC, path ASC";
+     GROUP BY repo, path, rel ORDER BY weight DESC, rel ASC, path ASC"
+    )
+});
 
 /// Query the [`NEIGHBOR_SQL`] one-hop neighborhood of `seeds`, a list of
 /// `(repo, path)` pairs that is deduplicated here (callers may pass the
@@ -106,7 +120,7 @@ pub fn file_neighbors(
         .map(|(repo, path)| file_node_id(repo, path))
         .collect();
     let seeds_json = serde_json::to_string(&seed_ids)?;
-    let mut stmt = conn.prepare(NEIGHBOR_SQL)?;
+    let mut stmt = conn.prepare(&NEIGHBOR_SQL)?;
     let rows = stmt
         .query_map(
             named_params! { ":seeds": seeds_json, ":min_weight": min_weight },

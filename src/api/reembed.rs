@@ -206,8 +206,10 @@ fn probe_width(cmd: &str) -> Result<usize> {
 /// leg that does not fit is refused outright (`Error::VecDimMismatch`,
 /// nothing written); a `both` leg that does not fit is dropped and recorded
 /// in `skipped_legs`; when nothing runnable remains, the run is a
-/// `BadRequest` naming the width and both table dims. A leg with no rows
-/// never consults its dim — there is nothing it could mismatch against.
+/// `BadRequest` naming the width and the dim of every leg that was actually
+/// rejected. A leg with no rows never consults its dim — there is nothing
+/// it could mismatch against, and it is never named in that error either
+/// (its width may match perfectly; it simply had nothing to embed).
 fn fit_legs(
     conn: &Connection,
     target: Target,
@@ -217,6 +219,7 @@ fn fit_legs(
     skipped_legs: &mut Vec<&'static str>,
     sink: Option<&dyn ProgressSink>,
 ) -> Result<Legs> {
+    let mut rejected: Vec<String> = Vec::new();
     if !memories.is_empty() {
         let dim = vector::dim_memory(conn)?;
         if width != dim {
@@ -227,6 +230,7 @@ fn fit_legs(
                 });
             }
             skip_leg("memories", dim, width, skipped_legs, sink);
+            rejected.push(format!("memory_vec is {dim}-dim"));
             memories = Vec::new();
         }
     }
@@ -240,15 +244,16 @@ fn fit_legs(
                 });
             }
             skip_leg("code", dim, width, skipped_legs, sink);
+            rejected.push(format!("code_vec is {dim}-dim"));
             code = Vec::new();
         }
     }
     if memories.is_empty() && code.is_empty() {
-        let mdim = vector::dim_memory(conn)?;
-        let cdim = vector::dim_code(conn)?;
+        // At least one leg had rows (the caller returned early otherwise),
+        // so `rejected` is never empty here.
         return Err(Error::BadRequest(format!(
-            "embed command produces {width}-dim vectors; memory_vec is {mdim}-dim and \
-             code_vec is {cdim}-dim — no requested leg fits"
+            "embed command produces {width}-dim vectors; {} — no requested leg with rows fits",
+            rejected.join(" and ")
         )));
     }
     Ok((memories, code))
