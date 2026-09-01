@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-09-01
+
+### Added
+
+- close the CLI/API gaps behind the comemory.io console design
+
+### Changed
+
+- gate every retrieval leg at the call site, uniformly
+
+### Fixed
+
+- make --lang actually narrow the code leg
+- make the reinforcement toggle actually gate reinforcement
+- address the CI review's actionable findings
+
+### Internal
+
+- assert the seeded id, not just a non-empty result
+- add the colocated api-layer suite
+- prove domain exclusion against a NON-EMPTY corpus
+- trim an over-explained comment on the two id shapes
+- make the document leg's domain guard visible at the call site
+- drop a leftover unused binding in the underscore regression test
+- name the serve hooks test for what it actually asserts
+
 ## [0.16.1] - 2026-08-27
 
 ### Fixed
