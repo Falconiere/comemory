@@ -16,6 +16,10 @@
 name: Release
 permissions:
   "contents": "write"
+  # Read the Code Review check the `await-review` gate below waits on.
+  # Hand-maintained, like the `await-review` job and the `check-all` /
+  # `validate` steps in `plan`; re-apply on a future `cargo dist init`.
+  "checks": "read"
 
 # This task will run whenever you push a git tag that looks like a version
 # like "1.0.0", "v0.1.0-prerelease.1", "my-app/0.1.0", "releases/v1.0.0", etc.
@@ -45,8 +49,30 @@ on:
       - '**[0-9]+.[0-9]+.[0-9]+*'
 
 jobs:
+  # Cross-workflow gate (hand-maintained; re-apply on a future `cargo dist
+  # init`). GitHub has no `needs:` across workflows, so this waits on the
+  # Code Review check for the same commit and fails unless it succeeded.
+  # Pull requests only: a release tag push runs no review, and waiting for a
+  # check that will never appear would stall the release for the full
+  # timeout and then fail it.
+  await-review:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: "ubuntu-22.04"
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/actions/await-code-review
+      - uses: ./.github/actions/await-code-review
+        with:
+          github-token: ${{ github.token }}
+
   # Run 'dist plan' (or host) to determine what tasks we need to do
   plan:
+    needs: [await-review]
+    # A skipped `needs` skips the dependent, so the tag-push path (where
+    # `await-review` does not run) has to opt back in explicitly.
+    if: ${{ always() && (needs.await-review.result == 'success' || github.event_name != 'pull_request') }}
     runs-on: "ubuntu-22.04"
     outputs:
       val: ${{ steps.plan.outputs.manifest }}

@@ -8,9 +8,31 @@ on:
 
 permissions:
   contents: read
+  checks: read
 
 jobs:
+  # Cross-workflow gate: GitHub has no `needs:` across workflows, so this job
+  # waits on the Code Review check for the same commit and fails unless it
+  # succeeded. Pull requests only — `Code Review` does not run on a push to
+  # `main`, and waiting for a check that will never appear would burn the
+  # whole timeout before failing a push that nothing was wrong with.
+  await-review:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/actions/await-code-review
+      - uses: ./.github/actions/await-code-review
+        with:
+          github-token: ${{ github.token }}
+
   test:
+    needs: [await-review]
+    # `needs` on a skipped job skips the dependent too, so a push to `main`
+    # (where `await-review` does not run) needs this to say so explicitly.
+    if: ${{ always() && (needs.await-review.result == 'success' || github.event_name != 'pull_request') }}
     runs-on: ubuntu-22.04
     env:
       COMEMORY_INDEXING_AUTO_REINDEX: "off"
