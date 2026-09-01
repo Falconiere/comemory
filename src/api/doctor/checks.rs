@@ -6,7 +6,7 @@
 //! pass works whether it is the primary read-write connection or the
 //! forward-compat read-only fallback (see the parent module doc).
 
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::Connection;
 
 use crate::config::Paths;
 use crate::config::env::env_parse;
@@ -193,17 +193,19 @@ fn mirror_parity(conn: &Connection, paths: &Paths) -> Result<(Check, u64, u64)> 
     let store = MemoryStore::new(paths.clone());
     let records = store.list()?;
     let markdown_files = records.len() as u64;
+    // ONE query for every stored hash, not one per markdown file: a corpus
+    // is thousands of files and `doctor` runs on demand. The map is keyed by
+    // memory id, so a file with no row at all reads as `None` and counts as
+    // drift exactly like a mismatching hash does.
+    let mut stmt =
+        conn.prepare("SELECT id, content_hash FROM memories WHERE deleted_at IS NULL")?;
+    let stored: std::collections::HashMap<String, String> = stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<std::result::Result<_, _>>()?;
     let mut drift = 0u64;
     for rec in &records {
         let hash = sha256_hex(rec.body.trim_end().as_bytes());
-        let stored: Option<String> = conn
-            .query_row(
-                "SELECT content_hash FROM memories WHERE id = ?1",
-                [&rec.frontmatter.id],
-                |r| r.get(0),
-            )
-            .optional()?;
-        if stored.as_deref() != Some(hash.as_str()) {
+        if stored.get(&rec.frontmatter.id).map(String::as_str) != Some(hash.as_str()) {
             drift += 1;
         }
     }

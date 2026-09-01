@@ -112,10 +112,16 @@ fn count_markdown(paths: &Paths) -> u64 {
 /// was requested. Every table this is called with carries a nullable `repo`
 /// column, so the filter is one shared `AND repo = ?` rather than three
 /// hand-written queries that could drift.
+///
+/// `table` and `predicate` are `&'static str` on purpose: they are
+/// interpolated into the SQL, so the type makes it impossible to reach them
+/// with a runtime-built (and therefore possibly caller-influenced) string —
+/// only a compile-time literal type-checks. `repo`, the one genuinely
+/// dynamic value, is bound as a parameter.
 fn scoped_count(
     conn: &Connection,
-    table: &str,
-    predicate: &str,
+    table: &'static str,
+    predicate: &'static str,
     repo: Option<&str>,
 ) -> Result<u64> {
     if let Some(repo) = repo {
