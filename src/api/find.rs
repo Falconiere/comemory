@@ -111,7 +111,10 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<FindResult> {
         &req.query,
         req.vector.as_deref(),
         filters,
-        &req.path,
+        unified::DomainFilters {
+            lang: req.lang.as_deref(),
+            path_globs: &req.path,
+        },
         window,
     )?;
     let query_id = if track {

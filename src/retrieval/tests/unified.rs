@@ -71,7 +71,7 @@ fn a_memory_only_run_preserves_the_memory_legs_own_order() {
         "frontmatter",
         None,
         filters(&scope, Domains::of(&[Domain::Memory])),
-        &[],
+        unified::DomainFilters::default(),
         PageWindow::top_k(&cfg),
     )
     .unwrap();
@@ -137,7 +137,7 @@ fn rank_in_domain_is_one_based_and_dense_within_a_domain() {
         "frontmatter",
         None,
         filters(&scope, Domains::all()),
-        &[],
+        unified::DomainFilters::default(),
         PageWindow::top_k(&cfg),
     )
     .unwrap();
@@ -171,7 +171,7 @@ fn an_empty_corpus_returns_an_empty_ranking_rather_than_an_error() {
         "nothing here",
         None,
         filters(&scope, Domains::all()),
-        &[],
+        unified::DomainFilters::default(),
         PageWindow::top_k(&cfg),
     )
     .unwrap();
@@ -194,7 +194,7 @@ fn excluding_a_domain_skips_its_leg_entirely() {
         "frontmatter",
         None,
         filters(&scope, Domains::of(&[Domain::Code])),
-        &[],
+        unified::DomainFilters::default(),
         PageWindow::top_k(&cfg),
     )
     .unwrap();
