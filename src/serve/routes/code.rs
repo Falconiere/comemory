@@ -89,7 +89,7 @@ async fn code_search_get(
     scope: RepoScope,
     Query(mut req): Query<api::search_code::Request>,
 ) -> Response {
-    scope.apply(&mut req.repo);
+    scope.fill_if_absent(&mut req.repo);
     handle(state, req).await
 }
 
@@ -98,7 +98,7 @@ async fn code_search_post(
     scope: RepoScope,
     Json(mut req): Json<api::search_code::Request>,
 ) -> Response {
-    scope.apply(&mut req.repo);
+    scope.fill_if_absent(&mut req.repo);
     handle(state, req).await
 }
 

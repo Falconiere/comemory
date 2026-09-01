@@ -45,18 +45,41 @@ pub struct NodeRow {
 /// `src/memoryXlist.rs`); the substr form has no metacharacters to escape.
 /// Same technique as `graph::edges::file_node_prefix`.
 ///
-/// `file_expr` is a SQL EXPRESSION spliced into the predicate, never user
-/// data: [`extra_columns`] passes the correlated `c.repo || ':' || c.path`,
-/// while `api::graph_nodes`'s `cited_by` lookup passes a bound `?1`. Sharing
-/// one predicate is what keeps a node's `memories` COUNT and its `cited_by`
+/// The file the predicate is about, as [`FileExpr`] — a closed set of two
+/// SQL expressions rather than a `&str`, so no caller can splice text of
+/// its own into the predicate whatever its provenance. Sharing one
+/// predicate is what keeps a node's `memories` COUNT and its `cited_by`
 /// list answering about the same set of memories (Binding Rule 1).
-pub(crate) fn cites_file_predicate(file_expr: &str) -> String {
+pub(crate) fn cites_file_predicate(file: FileExpr) -> String {
+    let file_expr = file.sql();
     format!(
         "e.src_kind = 'memory' \
          AND ((e.rel = 'references_file' AND e.dst_id = {file_expr}) \
            OR (e.rel = 'references_symbol' \
                AND substr(e.dst_id, 1, length({file_expr} || ':')) = {file_expr} || ':'))"
     )
+}
+
+/// How [`cites_file_predicate`] names the file it is asking about. Both
+/// variants are compile-time SQL: there is no third, caller-supplied one.
+#[derive(Clone, Copy)]
+pub(crate) enum FileExpr {
+    /// The row of the enclosing query — a correlated subquery's view of
+    /// `code_symbols` ([`extra_columns`]).
+    CorrelatedRow,
+    /// The first bound parameter, for a standalone query that binds the
+    /// `<repo>:<path>` value itself (`api::graph_nodes`'s `cited_by`).
+    FirstParam,
+}
+
+impl FileExpr {
+    /// This variant's SQL expression.
+    const fn sql(self) -> &'static str {
+        match self {
+            Self::CorrelatedRow => "c.repo || ':' || c.path",
+            Self::FirstParam => "?1",
+        }
+    }
 }
 
 /// The two columns added for the console's selected-node panel, expressed
@@ -74,7 +97,7 @@ fn extra_columns() -> String {
         (SELECT COUNT(DISTINCT e.src_id) FROM edges e \
            JOIN memories m ON m.id = e.src_id \
           WHERE m.deleted_at IS NULL AND {})",
-        cites_file_predicate("c.repo || ':' || c.path")
+        cites_file_predicate(FileExpr::CorrelatedRow)
     )
 }
 

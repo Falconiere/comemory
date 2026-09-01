@@ -15,6 +15,18 @@ use serde::Serialize;
 
 use crate::prelude::*;
 
+/// The column list every reader selects, in the order [`read_row`] expects.
+///
+/// A macro rather than a `const` so it can be spliced with [`concat!`],
+/// which takes literals only: both SELECT statements below are then compile-time
+/// `&'static str`s with no runtime string building, and the list still has
+/// exactly one definition.
+macro_rules! columns {
+    () => {
+        "id, kind, at, golden_pairs, k, recall, mrr, knobs, applied, discarded"
+    };
+}
+
 /// Insert parameters for one completed run, bundled into a struct rather
 /// than nine positional arguments (`clippy::too_many_arguments`).
 pub struct NewRun<'a> {
@@ -65,9 +77,6 @@ pub struct EvalRunRow {
     pub discarded: bool,
 }
 
-/// The column list every reader selects, in the order [`read_row`] expects.
-const COLUMNS: &str = "id, kind, at, golden_pairs, k, recall, mrr, knobs, applied, discarded";
-
 /// One row exactly as SQLite hands it over: `knobs` still TEXT, the two
 /// flags still integers. Split from [`EvalRunRow`] because the JSON parse
 /// of `knobs` can fail with a crate `Error`, which a `rusqlite` row mapper
@@ -85,7 +94,7 @@ struct RawRow {
     discarded: i64,
 }
 
-/// Map one [`COLUMNS`]-shaped result row into a [`RawRow`]. Shared by
+/// Map one [`columns!`]-shaped result row into a [`RawRow`]. Shared by
 /// [`list`] and [`get`] so the two readers cannot drift on column order.
 fn read_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<RawRow> {
     Ok(RawRow {
@@ -143,8 +152,11 @@ pub fn insert(conn: &Connection, row: &NewRun<'_>) -> Result<()> {
 /// `idx_eval_runs_at`). An empty table returns an empty `Vec`, never an
 /// error.
 pub fn list(conn: &Connection, limit: u32) -> Result<Vec<EvalRunRow>> {
-    let sql = format!("SELECT {COLUMNS} FROM eval_runs ORDER BY at DESC LIMIT ?1");
-    let mut stmt = conn.prepare(&sql)?;
+    let mut stmt = conn.prepare(concat!(
+        "SELECT ",
+        columns!(),
+        " FROM eval_runs ORDER BY at DESC LIMIT ?1"
+    ))?;
     let rows = stmt.query_map(rusqlite::params![limit], read_row)?;
     let mut out = Vec::new();
     for row in rows {
@@ -157,21 +169,42 @@ pub fn list(conn: &Connection, limit: u32) -> Result<Vec<EvalRunRow>> {
 /// is a caller-visible outcome (the console's proposal routes turn it into
 /// a `404`), not an error this layer decides.
 pub fn get(conn: &Connection, id: &str) -> Result<Option<EvalRunRow>> {
-    let sql = format!("SELECT {COLUMNS} FROM eval_runs WHERE id = ?1");
     let raw = conn
-        .query_row(&sql, rusqlite::params![id], read_row)
+        .query_row(
+            concat!("SELECT ", columns!(), " FROM eval_runs WHERE id = ?1"),
+            rusqlite::params![id],
+            read_row,
+        )
         .optional()?;
     raw.map(finish).transpose()
 }
 
-/// Set one flag column on one row, erroring with [`Error::NotFound`] when
-/// the id matched nothing — a silent zero-row `UPDATE` would report success
-/// for a run that does not exist. `column` is `&'static str` because it is
-/// interpolated into the SQL: only a compile-time literal type-checks, so
-/// no caller-influenced string can reach it.
-fn set_flag(conn: &Connection, id: &str, column: &'static str) -> Result<()> {
-    let sql = format!("UPDATE eval_runs SET {column} = 1 WHERE id = ?1");
-    let changed = conn.execute(&sql, rusqlite::params![id])?;
+/// Which proposal flag [`set_flag`] stamps. An enum rather than a column
+/// name: each variant maps to one whole literal `UPDATE`, so there is no
+/// column identifier to build at runtime and no caller-supplied string that
+/// could reach the SQL, whatever its type.
+enum Flag {
+    /// `applied = 1`.
+    Applied,
+    /// `discarded = 1`.
+    Discarded,
+}
+
+impl Flag {
+    /// The complete statement for this flag.
+    const fn sql(&self) -> &'static str {
+        match self {
+            Self::Applied => "UPDATE eval_runs SET applied = 1 WHERE id = ?1",
+            Self::Discarded => "UPDATE eval_runs SET discarded = 1 WHERE id = ?1",
+        }
+    }
+}
+
+/// Set one flag on one row, erroring with [`Error::NotFound`] when the id
+/// matched nothing — a silent zero-row `UPDATE` would report success for a
+/// run that does not exist.
+fn set_flag(conn: &Connection, id: &str, flag: &Flag) -> Result<()> {
+    let changed = conn.execute(flag.sql(), rusqlite::params![id])?;
     if changed == 0 {
         return Err(Error::NotFound(format!("eval run {id}")));
     }
@@ -181,13 +214,13 @@ fn set_flag(conn: &Connection, id: &str, column: &'static str) -> Result<()> {
 /// Stamp a run as applied (`applied = 1`) — the console's
 /// `POST /learning/proposals/{id}/apply` after it rewrites `config.toml`.
 pub fn set_applied(conn: &Connection, id: &str) -> Result<()> {
-    set_flag(conn, id, "applied")
+    set_flag(conn, id, &Flag::Applied)
 }
 
 /// Stamp a run as discarded (`discarded = 1`) — the console's
 /// `POST /learning/proposals/{id}/discard`, which touches no config file.
 pub fn set_discarded(conn: &Connection, id: &str) -> Result<()> {
-    set_flag(conn, id, "discarded")
+    set_flag(conn, id, &Flag::Discarded)
 }
 
 #[cfg(test)]

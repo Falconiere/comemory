@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::api::Ctx;
 use crate::cli::graph::nodes::{
-    NodeRow, build_graph, cites_file_predicate, fetch_node, fetch_nodes,
+    FileExpr, NodeRow, build_graph, cites_file_predicate, fetch_node, fetch_nodes,
 };
 use crate::cli::graph::{Rel, build_graph_page, parse_id};
 use crate::graph::neighbors::{self, DEFAULT_MIN_WEIGHT, NeighborRow};
@@ -336,7 +336,7 @@ fn fetch_cited_by(conn: &Connection, repo: &str, path: &str) -> Result<Vec<Cited
     let sql = format!(
         "SELECT DISTINCT m.id, m.body FROM edges e JOIN memories m ON m.id = e.src_id \
           WHERE m.deleted_at IS NULL AND {} ORDER BY m.id",
-        cites_file_predicate("?1")
+        cites_file_predicate(FileExpr::FirstParam)
     );
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt
