@@ -153,6 +153,11 @@ fn status_and_code_covers_the_console_api_rows() {
         "unsupported",
     );
     assert_row(&Error::Cancelled, StatusCode::CONFLICT, "cancelled");
+    assert_eq!(
+        error_details(&Error::Cancelled),
+        None,
+        "a variant with no structured payload carries no `details`"
+    );
     let busy = Error::Sqlite(rusqlite::Error::SqliteFailure(
         rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
         Some("database is locked".into()),

@@ -50,6 +50,11 @@ const DEPENDENT_DELETES: &[&str] = &[
 /// transaction (see the module doc for the table list). Returns `true`
 /// when a soft-deleted row was found and purged, `false` — with nothing
 /// written — when `id` is unknown or names a **live** memory.
+///
+/// Takes the connection, not a `Transaction`, and opens its own: the
+/// all-or-nothing purge IS the unit of work, and the caller (`api::gc`)
+/// loops over many ids, each independently durable. It must therefore be
+/// called OUTSIDE an open transaction — `rusqlite` refuses to nest one.
 pub fn purge_memory(conn: &mut Connection, id: &str) -> Result<bool> {
     let tx = conn.transaction()?;
     let matched = tx.execute(
