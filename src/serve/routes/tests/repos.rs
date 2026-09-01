@@ -23,6 +23,9 @@ use comemory::store::{code_row, connection};
 
 use crate::test_common::serve_state::{self, Session};
 
+/// The HEAD oid [`mark_repo`] records, asserted back out of `GET /repos`.
+const MARKED_HEAD: &str = "0000000000000000000000000000000000000000";
+
 /// Record `repo` in `repo_marker` exactly as an `index-code` run does —
 /// its working-tree root, then its last-indexed HEAD.
 fn mark_repo(session: &Session, repo: &str) {
@@ -30,8 +33,7 @@ fn mark_repo(session: &Session, repo: &str) {
     let conn = connection::open(paths.db_path()).expect("open db");
     let root = session.home.path().join(repo);
     code_row::upsert_repo_root(&conn, repo, &root.to_string_lossy()).expect("upsert repo root");
-    code_row::upsert_last_indexed(&conn, repo, "0000000000000000000000000000000000000000")
-        .expect("upsert last indexed");
+    code_row::upsert_last_indexed(&conn, repo, MARKED_HEAD).expect("upsert last indexed");
 }
 
 /// The repo labels `GET /repos` reported, in response order.
@@ -72,6 +74,17 @@ async fn repos_lists_every_indexed_repo_with_its_counters() {
         vec!["alpha".to_string(), "beta".to_string()]
     );
     let alpha = &res.json["data"]["repos"][0];
+    assert_eq!(
+        alpha["last_head"].as_str(),
+        Some(MARKED_HEAD),
+        "the seeded HEAD is reported back verbatim: {}",
+        res.text
+    );
+    assert!(
+        alpha["last_indexed_at"].as_str().is_some(),
+        "the marker's index stamp is reported: {}",
+        res.text
+    );
     assert_eq!(alpha["memories"], 1, "the memory counter is a real join");
     assert_eq!(alpha["symbols"], 0, "nothing was indexed, only marked");
     assert_eq!(alpha["archived"], false);
