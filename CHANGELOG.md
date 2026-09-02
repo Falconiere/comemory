@@ -7,6 +7,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-09-02
+
+### BREAKING
+
+- remove the interactive terminal explorer
+- implement the console API spec and drop the embedded web viewer
+
+### Changed
+
+- read the marker join by column name
+- make the repo scope's precedence the expression itself
+- make the reviewer's recurring findings structurally impossible
+
+### Fixed
+
+- state the EPIPE mechanism exactly, close stdin explicitly in the test
+- tolerate a command that never reads its stdin
+- address PR review feedback, round 2
+- address PR review feedback
+- run the index-running pre-check on the async side
+- address PR review feedback
+- do not let a failed symbol count look like an empty repo
+- report the stale index from update and restore too
+- carry the derived-staleness signal through apply
+- keep the repos inventory when its overlay fails
+- report the delete's stale index, and pin the canonical hook name
+- act on the five findings from the last round
+- clear the last of the review's real findings
+- address the PR #82 review round 2
+- address the PR #82 review round
+- use Duration::from_mins for the two job-poll deadlines
+- finish the console-api review fixes and their tests
+
+### Internal
+
+- plan the agent token-efficiency benchmark
+- scenario catalog with CLI and HTTP journeys; drop pointless tests
+- switch the PR reviewer to MiniMax-M3
+- update every dependency to its latest release
+- keep agent scratch out of the reviewed diff
+- state the two rules the reviewer keeps misreading
+- refuse a review that did not finish
+- say what the `/api/*` guard actually does
+- stop paying for runs nobody will read
+- gate the other workflows on a review with zero findings
+- run the other workflows only after the code review succeeds
+- cover what `--mode full` actually costs
+- assert the NotFound id and the single co_activated edge
+- make the read-only "no memory written" check non-vacuous
+- pin the ladder tier, the history allowlist, and the patch document
+- pin the SSE terminal payload and the detail-less error
+- swap the reviewer to x-ai/grok-4.3
+- stop AC-18's survival check riding a poisoned connection
+- make the code review advisory (FAIL_ON: none)
+- tighten four more assertions from the round-4 review
+- tighten the assertions the round-3 review named
+- ignore .claude local files
+
 ## [0.17.0] - 2026-09-01
 
 ### Added
