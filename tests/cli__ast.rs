@@ -66,6 +66,7 @@ fn ast_json_is_page_envelope_not_bare_array() {
     assert_eq!(v["items"].as_array().expect("items array").len(), 3);
     assert_eq!(v["total"], serde_json::json!(3));
     // Default limit (50) > 3 matches, so no further pages.
+    assert_eq!(v["limit"], serde_json::json!(50));
     assert_eq!(v["has_more"], serde_json::json!(false));
     // Each item carries the (line, text) row shape.
     let first = &v["items"][0];

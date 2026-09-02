@@ -34,6 +34,9 @@ Look-it-up material:
 
 - **[CLI reference](cli-reference.md)** — every subcommand and flag, with the
   `--json` pagination envelope (generated from `--help`).
+- **[CLI + HTTP scenario catalog](scenarios/README.md)** — the human-readable
+  test plan: every subcommand, every flag, its `/api/v1` twin, and the test
+  that covers it.
 - **[Configuration](configuration.md)** — every environment variable, the
   config-file-only knobs, and the pagination envelope shape.
 - **[Release process](release.md)** — how releases are cut and published.

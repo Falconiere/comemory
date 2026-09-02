@@ -252,3 +252,24 @@ fn deleted_memory_excluded_from_search() {
         "deleted memory must be excluded from search; got: {after:?}"
     );
 }
+
+#[test]
+fn delete_missing_id_fails_without_enoent() {
+    // Fresh data dir: `delete` must call `ensure_dirs` before opening the
+    // store so the missing-id case surfaces "memory not found" instead of an
+    // ENOENT on `memories/`.
+    let home = TempDir::new().expect("tempdir");
+    let assertion = bin(&home)
+        .args(["delete", "deadbeef0000"])
+        .assert()
+        .failure();
+    let stderr = String::from_utf8(assertion.get_output().stderr.clone()).expect("utf8 stderr");
+    assert!(
+        stderr.contains("memory not found"),
+        "stderr should mention 'memory not found', got: {stderr:?}"
+    );
+    assert!(
+        !stderr.contains("No such file or directory"),
+        "stderr should not surface raw ENOENT, got: {stderr:?}"
+    );
+}

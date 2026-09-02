@@ -341,6 +341,9 @@ stack, plus its own stricter local ceilings):
 6. Tests never share a file with production logic — colocated by default in
    a sibling `src/<module>/tests/` folder, with the CLI surface, `assert_cmd`,
    and `insta`-snapshot suites staying at crate-root `tests/`.
+7. Every CLI flag and every `/api/v1` route has a scenario in
+   [`docs/scenarios/`](docs/scenarios/README.md) that names the test covering
+   it; `tests/cli_scenario_catalog.rs` fails when one goes missing.
 
 The umbrella quality gate is one command — CI runs the same scripts:
 

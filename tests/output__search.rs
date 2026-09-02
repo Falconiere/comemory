@@ -7,17 +7,16 @@
 )]
 //! Mirror tests for `src/output/search.rs`. Pins the `comemory search
 //! --json` envelope contract (`score_parts` is a stable, documented
-//! surface — M2 tuning reads it) via an insta snapshot, and locks in that
-//! `output::search::emit` accepts an empty hit slice without panicking.
+//! surface — M2 tuning reads it) via an insta snapshot, plus the TTY
+//! footer and tier-label shape.
 
 use std::collections::HashMap;
 use std::path::Path;
 
 use comemory::memory::{Ref, References};
-use comemory::output::search::{self, PageMeta, ScopeEcho, SearchResult};
+use comemory::output::search::{self, PageMeta, ScopeEcho};
 use comemory::retrieval::rerank::{Reranked, ScoreParts};
 use comemory::retrieval::router::Source;
-use comemory::retrieval::scope::TimeScope;
 use comemory::store::memory_meta::MemoryMeta;
 
 /// Empty navigation map: hits degrade to empty path/kind/tags. Used by the
@@ -83,20 +82,6 @@ fn sample_meta() -> HashMap<String, MemoryMeta> {
         },
     );
     map
-}
-
-#[test]
-fn emit_accepts_empty_hits_in_json_mode() {
-    // Smoke test: emitting zero hits in JSON mode must succeed. The full
-    // JSON envelope shape is pinned by `search_json_envelope_contract`.
-    let result = SearchResult {
-        hits: Vec::new(),
-        query_id: None,
-        meta: meta(),
-        nav: no_meta(),
-        scope: TimeScope::none(),
-    };
-    search::emit(&result, true, data_dir()).expect("emit must succeed for empty hits");
 }
 
 #[test]

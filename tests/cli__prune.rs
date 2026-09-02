@@ -20,7 +20,6 @@
 #[path = "common/cli_prune_support.rs"]
 mod support;
 
-use assert_cmd::Command;
 use support::{bin, make_prune_eligible, save_memory};
 use tempfile::TempDir;
 
@@ -287,25 +286,5 @@ fn prune_reports_trash_count_and_reclaimable_bytes_from_real_deletes() {
             .iter()
             .any(|row| row["id"].as_str() == Some(kept.as_str())),
         "expected {kept} among low_value_memories: {items:?}"
-    );
-}
-
-#[test]
-fn prune_examples_block_present() {
-    // The shared `cli_help_examples` test expects every subcommand --help
-    // to ship an `Examples:` block. Asserted directly here as a guard
-    // against future EXAMPLES drift inside this command specifically.
-    let help = Command::cargo_bin("comemory")
-        .expect("bin")
-        .args(["prune", "--help"])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    let text = String::from_utf8(help).expect("utf8");
-    assert!(
-        text.contains("Examples:"),
-        "prune --help must contain Examples block: {text:?}"
     );
 }

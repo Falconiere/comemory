@@ -152,6 +152,12 @@ fn unreadable_file_after_a_good_index_records_error_and_keeps_prior_rows() {
     fs::write(&path, &resized).expect("resize");
     fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).expect("chmod 000");
 
+    if fs::read(&path).is_ok() {
+        // uid 0 bypasses mode bits, so the "unreadable" precondition cannot
+        // be staged under root; there is nothing to assert in that case.
+        return;
+    }
+
     let second = index(&mut conn, &path, "guide.md", DocumentFormat::Markdown);
     fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).expect("restore perms");
 

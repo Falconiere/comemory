@@ -11,6 +11,11 @@ containment).
 `api::<cmd>::run` core — the same one the CLI calls — and never reimplements
 ranking, indexing, or storage itself.
 
+HTTP integration tests stay at crate-root: `tests/serve__routes__*.rs` per
+resource, `tests/serve_scenario_*.rs` for multi-route journeys over a real
+`comemory serve` (sharing `tests/common/serve_bin.rs`), catalogued in
+`docs/scenarios/` — never under `src/serve/`.
+
 ## Contents
 
 One line per file, named after its primary item:

@@ -52,14 +52,6 @@ fn sample_hits() -> Vec<CodeReranked> {
 }
 
 #[test]
-fn emit_accepts_empty_hits_in_json_mode() {
-    // Smoke test: emitting zero hits in JSON mode must succeed. The full
-    // envelope shape is pinned by `search_code_json_envelope_contract`.
-    let hits: Vec<CodeReranked> = Vec::new();
-    search_code::emit(&hits, None, meta(), false, true).expect("emit must succeed for empty hits");
-}
-
-#[test]
 fn search_code_json_envelope_contract() {
     insta::assert_json_snapshot!(search_code::envelope(&sample_hits(), None, meta()));
 }

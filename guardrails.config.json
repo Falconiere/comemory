@@ -82,7 +82,8 @@
   "fileSize": {
     "max": 300,
     "skipExtensions": [
-      ".md"
+      ".md",
+      ".lock"
     ]
   },
   "functionSize": {

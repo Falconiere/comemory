@@ -17,10 +17,9 @@ arg-parsing and TTY/`--json` rendering) and by the matching HTTP handler
 behavior, two transports — a save over HTTP and a save from the CLI write the
 exact same markdown file and SQLite rows.
 
-`tui` and `serve` itself have no HTTP mapping — one owns a terminal, the
-other *is* the server — and are listed as `"transport":"cli-only"` in the
-route inventory (see [`GET /commands`](#get-apiv1commands)) rather than
-silently omitted.
+`serve` itself has no HTTP mapping — it *is* the server — and is listed as
+`"transport":"cli-only"` in the route inventory (see
+[`GET /commands`](#get-apiv1commands)) rather than silently omitted.
 
 ## Start a server
 
@@ -514,7 +513,6 @@ curl -s -H "X-Comemory-Token: $TOKEN" "$BASE/api/v1/commands" | jq .
   "commands": [
     { "name": "search", "transport": "http", "routes": ["GET|POST /api/v1/memories/search"] },
     { "name": "index-code", "transport": "http", "routes": ["POST /api/v1/code/index"] },
-    { "name": "tui", "transport": "cli-only", "routes": [] },
     { "name": "serve", "transport": "cli-only", "routes": [] }
   ]
 }
@@ -553,3 +551,5 @@ curl -s -H "X-Comemory-Token: $TOKEN" "$BASE/api/v1/jobs/$JOB"
   `/api/v1` field-maps onto.
 - [Architecture](../architecture.md) — storage layout and the retrieval
   pipeline both surfaces share.
+- [Scenario catalog](../scenarios/README.md) — every command's `/api/v1`
+  route and the `tests/serve_scenario_*.rs` journey that drives it.
