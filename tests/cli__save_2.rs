@@ -399,10 +399,23 @@ fn save_rejects_out_of_range_quality() {
         .args(["save", "body", "--kind", "note", "--quality", "99"])
         .assert()
         .failure();
+    // Structural, not a loose substring: exit 2 is clap's usage-error path
+    // (the `value_parser!(u8).range(1..=5)` validator, never the save
+    // handler), the flag is named, and the validator's own sentence carries
+    // both the rejected value and the bound.
+    assert_eq!(
+        assertion.get_output().status.code(),
+        Some(2),
+        "a range violation is a clap usage error"
+    );
     let stderr = String::from_utf8(assertion.get_output().stderr.clone()).expect("utf8 stderr");
     assert!(
-        stderr.contains("1..=5"),
-        "stderr should name the accepted range 1..=5, got: {stderr:?}"
+        stderr.contains("invalid value '99' for '--quality <QUALITY>'"),
+        "stderr must name the flag and the rejected value, got: {stderr:?}"
+    );
+    assert!(
+        stderr.contains("99 is not in 1..=5"),
+        "stderr must carry the validator's bound sentence, got: {stderr:?}"
     );
 }
 

@@ -113,6 +113,12 @@ fn save_list_show_supersede_delete_round_trip() {
         "replacement must not be annotated: {search}"
     );
 
+    // Count the trash before the delete so the assertion below proves THIS
+    // delete moved a file, not some earlier step.
+    let trash = home.data_dir().join("memories").join(".trash");
+    let trash_count = || std::fs::read_dir(&trash).map_or(0, |d| d.filter_map(Result::ok).count());
+    let before = trash_count();
+
     home.run_ok(&["delete", first_id]);
     let after = home.run_json(&["list"]);
     let remaining: Vec<&str> = after["items"]
@@ -126,12 +132,11 @@ fn save_list_show_supersede_delete_round_trip() {
         "deleted id in list"
     );
 
-    let trash = home.data_dir().join("memories").join(".trash");
-    let trashed = std::fs::read_dir(&trash)
-        .expect("read .trash")
-        .filter_map(Result::ok)
-        .count();
-    assert!(trashed >= 1, "delete must leave a file in {trash:?}");
+    assert_eq!(
+        trash_count(),
+        before + 1,
+        "delete must add exactly one file to {trash:?}"
+    );
 
     let doctor = home.run_json(&["doctor"]);
     assert_eq!(doctor["db_writable"].as_bool(), Some(true), "{doctor}");
