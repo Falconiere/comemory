@@ -389,3 +389,32 @@ fn malformed_supersedes_wins_over_unparsable_vector_stdin() {
         "the rejected save must not leave a markdown file",
     );
 }
+
+#[test]
+fn save_rejects_out_of_range_quality() {
+    let home = tempdir().expect("tempdir");
+    let assertion = Command::cargo_bin("comemory")
+        .expect("bin")
+        .env("COMEMORY_DATA_DIR", home.path())
+        .args(["save", "body", "--kind", "note", "--quality", "99"])
+        .assert()
+        .failure();
+    let stderr = String::from_utf8(assertion.get_output().stderr.clone()).expect("utf8 stderr");
+    assert!(
+        stderr.contains('5'),
+        "stderr should mention upper bound 5, got: {stderr:?}"
+    );
+}
+
+#[test]
+fn save_rejects_unknown_kind() {
+    let home = tempdir().expect("tempdir");
+    let assertion = Command::cargo_bin("comemory")
+        .expect("bin")
+        .env("COMEMORY_DATA_DIR", home.path())
+        .args(["save", "body", "--kind", "banana"])
+        .assert()
+        .failure();
+    let code = assertion.get_output().status.code().expect("exit code");
+    assert_ne!(code, 0, "unknown --kind should fail");
+}

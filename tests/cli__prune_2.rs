@@ -252,3 +252,43 @@ fn prune_apply_drops_dangling_co_activated_but_keeps_live_one() {
         "dangling co_activated edge must be pruned, live one kept"
     );
 }
+
+/// `--apply --ids a,b` soft-deletes only the listed candidates: the
+/// comma-split reaches the store and the unlisted candidate stays live.
+#[test]
+fn prune_apply_ids_restricts_the_delete_set() {
+    let home = TempDir::new().expect("tempdir");
+    let dropped = vec![
+        seed_low_value(&home, "ids-scoped candidate dropped first"),
+        seed_low_value(&home, "ids-scoped candidate dropped second"),
+    ];
+    let kept = seed_low_value(&home, "ids-scoped candidate kept");
+    let ids_arg = dropped.join(",");
+
+    bin(&home)
+        .args(["--json", "prune", "--apply", "--ids", &ids_arg])
+        .assert()
+        .success();
+
+    assert_eq!(count_trashed(&home, &dropped), 2, "both listed ids trashed");
+    assert_eq!(
+        count_trashed(&home, std::slice::from_ref(&kept)),
+        0,
+        "unlisted candidate must stay live"
+    );
+
+    let assertion = bin(&home).args(["--json", "prune"]).assert().success();
+    let stdout = String::from_utf8(assertion.get_output().stdout.clone()).expect("utf8 stdout");
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse JSON");
+    let remaining: Vec<&str> = v["low_value_memories"]["items"]
+        .as_array()
+        .expect("items")
+        .iter()
+        .filter_map(|r| r["id"].as_str())
+        .collect();
+    assert_eq!(
+        remaining,
+        vec![kept.as_str()],
+        "dry run after --ids apply: {v}"
+    );
+}

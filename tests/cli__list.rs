@@ -269,3 +269,62 @@ fn list_tty_prints_pagination_footer() {
         "TTY footer missing; got: {stdout:?}"
     );
 }
+
+/// `--tag`, `--min-quality`, and `--query` each narrow the listing on their
+/// own and combine with AND. Every filter is checked against a row that
+/// fails only that filter, so none of the three can silently be a no-op.
+#[test]
+fn list_json_tag_min_quality_and_query_filters() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let save_with = |body: &str, tags: &str, quality: &str| {
+        Command::cargo_bin("comemory")
+            .expect("bin")
+            .env("COMEMORY_DATA_DIR", home.path())
+            .args([
+                "save",
+                body,
+                "--kind",
+                "note",
+                "--tags",
+                tags,
+                "--quality",
+                quality,
+            ])
+            .assert()
+            .success();
+    };
+    save_with(
+        "zebra crossing rules for the api gateway",
+        "zebra,infra",
+        "5",
+    );
+    save_with("zebra pattern in the rate limiter", "infra", "5"); // no zebra tag
+    save_with("zebra crossing rules draft", "zebra", "1"); // low quality
+    save_with("giraffe crossing rules", "zebra", "5"); // body lacks zebra
+
+    assert_eq!(
+        list_json(&home, &["--tag", "zebra"])["total"],
+        serde_json::json!(3),
+        "--tag must drop the untagged row"
+    );
+    assert_eq!(
+        list_json(&home, &["--min-quality", "5"])["total"],
+        serde_json::json!(3),
+        "--min-quality must drop the quality-1 row"
+    );
+    let by_query = list_json(&home, &["--query", "ZEBRA CROSSING"]);
+    assert_eq!(
+        by_query["total"],
+        serde_json::json!(2),
+        "--query is a case-insensitive literal body match: {by_query}"
+    );
+
+    let combined = list_json(
+        &home,
+        &["--tag", "zebra", "--min-quality", "5", "--query", "zebra"],
+    );
+    assert_eq!(combined["total"], serde_json::json!(1), "{combined}");
+    let row = &combined["items"][0];
+    assert_eq!(row["quality"], serde_json::json!(5), "{row}");
+    assert_eq!(row["tags"], serde_json::json!(["infra", "zebra"]), "{row}");
+}

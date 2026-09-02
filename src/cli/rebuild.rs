@@ -15,12 +15,21 @@ use crate::config::Config;
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::prelude::*;
 
+const EXAMPLES: &str = "\
+Examples:
+  # Rebuild the SQLite mirror from memories/*.md (code index is preserved)
+  comemory rebuild
+
+  # Same under --json (rebuild emits no payload; the flag is still accepted)
+  comemory rebuild --json";
+
 /// Arguments to `comemory rebuild`. Currently no flags — the command always
 /// rebuilds the entire memory layer of the SQLite mirror from `memories/`
 /// while preserving the code index. Wrapped in a struct so future opt-in
 /// flags (e.g. `--keep-stats`, `--dry-run`) can land without breaking the
 /// dispatcher signature.
 #[derive(ClapArgs, Debug)]
+#[command(after_help = EXAMPLES)]
 pub struct Args;
 
 /// Atomically rebuild the memory layer of `comemory.db` from markdown files

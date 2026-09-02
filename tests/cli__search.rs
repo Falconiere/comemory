@@ -167,6 +167,34 @@ fn kind_filter_limits_hits_to_matching_kind() {
     assert_eq!(hits.len(), 2, "unfiltered search must keep both: {out}");
 }
 
+/// `--repo` narrows hits to one label: two memories share the query token
+/// but live in different repos, and only the filtered one comes back.
+#[test]
+fn repo_filter_limits_hits_to_matching_repo() {
+    let home = tempdir().expect("tempdir");
+    for (repo, body) in [
+        ("alpha", "repofilter token lives in alpha"),
+        ("beta", "repofilter token lives in beta"),
+    ] {
+        Command::cargo_bin("comemory")
+            .expect("bin")
+            .env("COMEMORY_DATA_DIR", home.path())
+            .args(["save", body, "--kind", "note", "--repo", repo])
+            .assert()
+            .success();
+    }
+    let out = Command::cargo_bin("comemory")
+        .expect("bin")
+        .env("COMEMORY_DATA_DIR", home.path())
+        .args(["--json", "search", "repofilter", "--repo", "beta"])
+        .assert()
+        .success();
+    let v: Value = serde_json::from_slice(&out.get_output().stdout).expect("search json");
+    let hits = v["hits"].as_array().expect("hits array");
+    assert_eq!(hits.len(), 1, "only the beta memory may match: {v}");
+    assert_eq!(hits[0]["repo"].as_str(), Some("beta"), "{v}");
+}
+
 #[test]
 fn identifier_query_finds_prose_only_memory_in_top_3() {
     // Spec promise: searching the identifier `VecDimMismatch` must surface

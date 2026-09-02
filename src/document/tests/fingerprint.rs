@@ -166,6 +166,11 @@ fn unreadable_file_is_still_reported_as_error_on_an_unchanged_second_run() {
     let path = write_fixture(&tmp, "changelog.txt", CHANGELOG_TXT);
     let root = fs::canonicalize(tmp.path()).expect("canonicalize root");
     fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).expect("chmod 000");
+    if fs::read(&path).is_ok() {
+        // uid 0 bypasses mode bits, so the "unreadable" precondition cannot
+        // be staged under root; there is nothing to assert in that case.
+        return;
+    }
     let c = candidate("changelog.txt", &path, DocumentFormat::Txt);
 
     let first =

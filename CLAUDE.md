@@ -17,14 +17,14 @@ is the source of truth and one SQLite file (`comemory.db`) backs FTS5 +
 - **Single SQLite file:** `~/.comemory/comemory.db` with `memories`,
   `memory_fts` (FTS5), `memory_vec` (`sqlite-vec` `vec0`), `code_symbols`,
   `code_fts`, `code_vec`, `edges`, `schema_meta`, plus stats / repo-marker
-  tables. `rusqlite 0.32` with `bundled` + `load_extension` features.
+  tables. `rusqlite 0.40` with `bundled` + `load_extension` features.
 - **Edges:** flat `(src_kind, src_id, edge_kind, dst_kind, dst_id)` rows
   (plus an integer `weight`) in the `edges` table replace the v0.1 kuzu
   graph. v6 adds code-graph kinds: `co_changed` (mined from git history)
   and `imports` (per-language import resolution), feeding a materialized
   PageRank on `code_symbols.rank_score`. Recursive CTEs handle multi-hop
   traversal.
-- **AST extraction:** `ast-grep-core 0.38` + `ast-grep-language 0.38` (rust,
+- **AST extraction:** `ast-grep-core 0.45` + `ast-grep-language 0.45` (rust,
   typescript, javascript, python, go only).
 - **Vectors are BYO.** No in-process embedder. Callers pass vectors via
   `--vector` (CSV) or `--vector-stdin` (JSON `{"embedding":[..]}`). A sample
@@ -157,8 +157,7 @@ narrative; the folder `README.md` is the authoritative file-by-file list.
 |--------|---------------|
 | `cli/` | clap subcommand entry points + the top-level dispatcher in `cli.rs`, plus `when` — the shared date-flag layer (`parse_when` for one `--since`/`--until`/`--as-of` value, `scope_from_flags` for the whole trio → a validated `TimeScope`), used by both `search` and `context`; `edges` is the fourth free-text surface (`comemory edges <query>` — lexical search over `edge_fts`, self-healing an empty index on first use) |
 | `cli/graph/` | node assembly for `comemory graph`: `nodes` owns `NodeRow`, the `code_symbols` aggregate (including the `memories` citation count and the `blob` OID the console's selected-node panel shows), and `build_graph`. Split out when the donor `cli/graph.rs` hit the 300-line ceiling |
-| `tui/` | read-only interactive terminal explorer (`comemory tui`): ratatui front end + async `EventStream`/`tokio::select!` loop (`tui.rs`), pure state (`app`) + key map (`event`), a dedicated-thread DB-worker that owns the connection (`worker`), the lexical/semantic request bridge (`search`), preview text (`preview`), RAII terminal guard (`terminal`), and pure ratatui widgets (`view/`). Embed shell-out lives in the shared `embed.rs` module |
-| `embed.rs` | shared embed-command shell-out (single-file module, no children) — runs `COMEMORY_EMBED_CMD` / `--embed-cmd` as `sh -c <cmd>`, feeds the query on stdin, parses `{"embedding":[..]}`. Consumed by `tui` (Ctrl-S semantic enrich) and `serve` (`POST /api/v1/doctor/reembed`, the server-side re-vectorizing job; `GET /health` reports `embed_cmd_configured`) |
+| `embed.rs` | shared embed-command shell-out (single-file module, no children) — runs `COMEMORY_EMBED_CMD` / `--embed-cmd` as `sh -c <cmd>`, feeds the query on stdin, parses `{"embedding":[..]}`. Consumed by `serve` (`POST /api/v1/doctor/reembed`, the server-side re-vectorizing job; `GET /health` reports `embed_cmd_configured`) |
 | `api/` | shared command core between `cli::` and `serve::routes::`: `api::<cmd>::run(&mut Ctx, Request)` holds each subcommand's logic — a *move* of each `cli::<cmd>::run`'s middle (arg-parsing and TTY/`--json` rendering stay in `cli::`), so neither surface duplicates it (reuse precedent: `retrieval::code_search::search_code_hits`, generalized here to every command). Every `Request` derives `#[serde(deny_unknown_fields)]`, enforced by `tests/api__parity.rs`'s clap-introspection walk. `Ctx` bundles `Paths` + `Config` with a connection that is either `Borrowed` (the CLI's own connection, or the server's shared per-request one) or `Lazy` (opened on first `Ctx::conn()` call — a job worker's own dedicated connection; conn-free commands like `doctor`, `rebuild`, `ast`, `install-hooks`, `completions` never open one at all). One file per subcommand (`api::save`, `api::search`, `api::list`, …) plus the console-compat surfaces `api::stats` / `api::repos` / `api::show` / `api::find` / `api::hooks`, plus five directory modules whose donor files sat near the 300-line ceiling: `graph/`, `index_code/` (+ `walk`), `doctor/` (+ `checks`, one function per health probe), `repos/` (+ `git_state`, the HEAD/remote/branch/changed-file probes, which DEGRADE to `status: "unknown"` and never propagate a git failure), `rebuild/` (+ `copy` and `documents`, the code-index/learning-state/document-domain ATTACH-copy run before the atomic DB swap, which itself snapshots the still-live DB to `comemory.db.pre-rebuild.bak` first). cwd-dependent middles (`save --ref-*` anchoring, the code rerank's working-set prior) resolve against the *calling process's* cwd — the server's cwd over HTTP, not the HTTP client's, documented behavior rather than a bug. The console-only cores (no CLI subcommand of their own, reached only through `serve::routes`) sit beside them: `overview`, `suggest`, `update`, `restore`, `refresh_refs`, `trash`, `graph_nodes`, `graph_recompute`, `index_runs`, `repo_admin`, `learning`, `learning_proposals`, `config_retrieval`, `reembed`, `gc_policy`, `memory_store` |
 | `serve/` | loopback `/api/v1` HTTP server (`comemory serve`, API-only — the embedded web viewer was removed): axum `router` (mounts `routes::v1_router` behind the path-aware `guard` middleware — enveloped `401`/`403` JSON on `/api/v1/*`, plain text on any other `/api/*` path — and the 5 MiB `BODY_LIMIT`), `scope` (`RepoScope` — the per-request default `repo` filter: `X-Comemory-Repo` header first, the server's `--repo` second, never overriding an explicit parameter), `repo_root` resolution (also used by `retrieval::code_ref_fetch`), `security` (session token generation/matching, the loopback Host guard, `resolve_within` for repo-relative ids, and `contain_abs` — canonicalize-and-contain for the `/api/v1` mutating routes that take a raw filesystem path), `envelope` (the `{ok,data,meta}` / `{ok,error,meta}` `/api/v1` response envelope plus the one `Error → (StatusCode, code)` mapping table every HTTP error and every failed job's `{code, message}` derives from, with an optional structured `error.details`). `routes/` and `jobs/` are documented in their own rows below |
 | `serve/routes/` | the versioned `/api/v1` REST surface: `routes.rs` aggregates every resource's `table_entries()` into one route table (method/path/CLI-command/`mutating` flag — the source of truth for the read-only gate, `GET /commands`, and `tests/api__parity.rs`) and owns the handler-layer helpers every resource shares — `run_blocking` (runs `api::<cmd>::run`, and the connection-mutex guard it takes, entirely inside one `spawn_blocking` closure, never across an `.await`), `respond`/`accepted` (envelope a result / a job-acceptance), `guard_mutating` (read-only-then-write-permit gate for a synchronous mutating route: `405 read_only`, else `503 busy` + `Retry-After` on permit contention), `guard_job` (read-only-only gate for a job-creating route — it always answers `202` immediately, permit contention only delays the job itself), `require_confirm` (the `confirmation_required` gate; its doc comment states the read-only-outranks-confirm ordering, AC-19), `track_for` (shared access-tracking suppression for `search`/`search-code`/`context`). Per-resource files: `memories/` (`memories.rs` — `GET /memories`, `GET /memories/{id}`; `search.rs` — `GET|POST /memories/search`, `GET|POST /context`; `write.rs` — `POST /memories`, `DELETE /memories/{id}?confirm`, `POST /feedback`), `code.rs` (`GET|POST /code/search`, `POST /code/ast` with pre-run containment, job-backed `POST /code/index` and `POST /code/ingest` under its own 64 MiB body-limit layer), `graph.rs` (`GET /graph`/`GET /edges`, reusing the legacy `build_code_graph`/`build_graph_page` pair — no second query path), `sources.rs` (`GET /sources`, job-backed `POST /sources`, `DELETE /sources?target=&confirm=`), `learning.rs` (job-backed `POST /eval` read-class, `POST /tune`/`POST /bandit` confirm-gated only when `apply`, `golden` containment before every other check), `maint/` (`maint.rs` — `GET /doctor`, `GET /consolidate`; `prune.rs` — `GET|POST /prune`, `POST /gc`, plus `split_confirm` — the shared raw-body confirm-field extractor every confirm-gated route with a real `Request` type reuses; `admin.rs` — `POST /mine`, `POST /hooks/install`, job-backed `POST /rebuild` + the shared-connection swap), `meta.rs` (`GET /completions`, `GET /commands` — the clap-introspected route/command inventory), `stats.rs` (`GET /stats`), `repos.rs` (`GET /repos`), `find.rs` (`GET|POST /find` — its own resource because it is cross-domain, not a memories sub-resource), `hooks.rs` (`GET /hooks` read, `POST /hooks` per-hook toggle behind the read-only gate; NOT confirm-gated, since writing a hook file is idempotent and reversible), `jobs.rs` (`GET /jobs`, `GET /jobs/{id}`, `GET /jobs/{id}/events` SSE with `status`/`progress`/`log` events, `POST /jobs/{id}/cancel`). The console-api spec (2026-09-01, `docs/toolu/specs/2026-09-01-console-api-design.md`) added, as additional flat resource files: `overview.rs`, `search.rs` (the console view over `find` + suggest + per-hit feedback), `trash.rs`, `graph_nodes.rs`, `index_runs.rs`, `repos_admin.rs`, `learning_console.rs`, `config.rs`, `memory_stores.rs`, plus `memories/edit.rs` (PATCH/restore/refresh) and `maint/{doctor,gc}.rs` — see `src/serve/routes/README.md` for the per-file route list |
@@ -210,7 +209,7 @@ environment (`Config::with_env`, in `src/config/env.rs`).
 | `COMEMORY_DISABLE_ACCESS_TRACKING` | Test hook (truthy) disabling `search` / `context` access tracking + `retrieval_log` writes for one run, so a stability harness can drive the binary repeatedly without each query mutating `access_count` / `last_accessed` (which feeds ACT-R activation and reorders ranking between calls); not a user knob | `false` |
 | `COMEMORY_GIT_AUTO_SYNC` | `true`/`1` to enable best-effort git commit + push after a save. Also a file key: `[git] auto_sync` / `[git] remote` in `config.toml` (written by `PATCH /api/v1/memory-stores/default`); env wins over file | `false` |
 | `COMEMORY_EMBED_HINT` | Free-form identifier of the embedder you used (e.g. `ollama:nomic-embed-text`). Surfaced by `comemory doctor`; never consumed as a switch. | unset |
-| `COMEMORY_EMBED_CMD` | Embed command used by `comemory tui`'s Memory-tab semantic enrich (Ctrl-S) **and** by `comemory serve`'s `POST /api/v1/doctor/reembed` (re-vectorize memories/code server-side). Run as `sh -c <cmd>`; reads the text on stdin, must emit `{"embedding":[..]}` on stdout. The per-command `--embed-cmd` flag (on `tui` and `serve`) overrides it. Unset → semantic enrich is a no-op / reembed answers `503 embedder_unavailable`; lexical search always works. | unset |
+| `COMEMORY_EMBED_CMD` | Embed command used by `comemory serve`'s `POST /api/v1/doctor/reembed` (re-vectorize memories/code server-side). Run as `sh -c <cmd>`; reads the text on stdin, must emit `{"embedding":[..]}` on stdout. `serve --embed-cmd` overrides it. Unset → reembed answers `503 embedder_unavailable`; lexical search always works. | unset |
 | `COMEMORY_RANK_DECAY` | ACT-R decay exponent `d` in `ln(n) − d·ln(days+1)`. Must be ≥ 0. Higher → older memories decay faster. | `0.5` |
 | `COMEMORY_RANK_PRIOR_CLAMP` | `"lo,hi"` bounds applied to the activation, feedback, quality, and PageRank boost multipliers (the fixed `0.2` supersede penalty intentionally bypasses the clamp). Both finite; lo > 0, lo ≤ hi. | `0.5,2.0` |
 | `COMEMORY_RANK_MMR_LAMBDA` | MMR relevance-vs-diversity trade-off in `[0.0, 1.0]`. `1.0` = pure relevance; `0.0` = pure diversity. | `0.7` |
@@ -350,6 +349,17 @@ wins:
    one reviewed home.
 3. **It exercises the CLI surface** (`tests/cli*.rs`) -> crate-root `tests/`.
    The CLI is one public surface; its suite stays in one place.
+   Per-command contracts live in `tests/cli__<cmd>.rs`. Multi-command
+   user journeys live in `tests/cli_scenario_*.rs` and share
+   `tests/common/cli_bin.rs`; each journey has an `/api/v1` twin in
+   `tests/serve_scenario_*.rs` over a real `comemory serve`, sharing
+   `tests/common/serve_bin.rs`. `docs/scenarios/` is the human-readable
+   test plan (one file per subcommand, every flag, its HTTP route, which
+   test covers it); `tests/cli_scenario_catalog.rs` walks the built
+   `Cli::command()` plus the live `GET /api/v1/commands` and fails when a
+   subcommand, flag, positional, or route is missing from its file, when a
+   flag has no scenario citing a test, or when a cited `tests/…rs::fn`
+   does not exist.
 4. **Otherwise** -> colocated, in a sibling `tests/` folder beside the module
    under test:
 
@@ -370,8 +380,8 @@ Keep each `tests/` tree **flat**. A suite that outgrows one file splits into
 production file gains a second include (`mod tests_2;`). Tests are exempt from
 the 300-line ceiling, so splitting is a readability choice, not an obligation.
 
-Measured today (2026-09-01): 199 colocated `src/**/tests/*.rs` files, 92
-crate-root `tests/*.rs` surfaces (54 CLI, 33 `assert_cmd`, 4 `insta`).
+Measured today (2026-09-02): 194 colocated `src/**/tests/*.rs` files, 106
+crate-root `tests/*.rs` surfaces (61 CLI, 8 HTTP journeys, 80 `assert_cmd`, 3 `insta`).
 
 ### Why crate-root `tests/` cannot be deleted
 
@@ -612,7 +622,7 @@ local rule strictly stronger than the one it replaces.
   `<dir>.rs` beside `<dir>/` layout permanent and machine-checked.
 - **D4 — `src.nested` is extended** beyond the kit's `{"*": ["tests"]}` to
   allow `src/store/sql/`, `src/store/tokenizer/`, `src/store/migrate/`,
-  `src/tui/view/`, and a universal `proptest-regressions` allowlist entry
+  and a universal `proptest-regressions` allowlist entry
   (proptest creates that directory itself on a failing property test; a gate
   that fails on a tool's own artifact is a gate people route around).
 - **D5 — `src.requireReadme` is added** (the kit ships nothing). All 20 of
@@ -645,8 +655,8 @@ local rule strictly stronger than the one it replaces.
 - **D10 — `extern crate self as comemory;` is added to `src/lib.rs`.** This
   lets every colocated test file keep `use comemory::...` imports identical
   to the crate-root suite's, so a test reads the same wherever it lives.
-- **D11 — 92 of 291 test files remain crate-root integration tests**
-  (54 CLI surfaces, 33 driving the real binary via `assert_cmd`, 4 owning an
+- **D11 — 106 of 300 test files remain crate-root integration tests**
+  (61 CLI surfaces, 80 driving the real binary via `assert_cmd`, 3 owning an
   `insta` snapshot) — the kit's own "one file per public surface" category,
   not an exception, at a ratio high enough to declare. The ratio is a hard
   floor, not inertia: see "Why crate-root `tests/` cannot be deleted" under

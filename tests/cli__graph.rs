@@ -100,6 +100,44 @@ fn graph_emits_indexed_edges_and_gates_co_changed_weight() {
     );
 }
 
+/// `--rel` narrows the edge kinds: `imports` drops the co-change pair,
+/// `co-changed` drops the static import, and the default keeps both. The
+/// fixture carries exactly one edge of each kind, so each filter is checked
+/// against an edge that survives only under the other one.
+#[test]
+fn graph_rel_filters_edge_kinds() {
+    let home = TempDir::new().expect("tempdir");
+    let ws = TempDir::new().expect("workspace");
+    index_repo(&home, ws.path(), "r");
+
+    let rels = |extra: &[&str]| -> Vec<String> {
+        graph_json(&home, extra)["edges"]
+            .as_array()
+            .expect("edges array")
+            .iter()
+            .map(|e| e["rel"].as_str().expect("rel").to_string())
+            .collect()
+    };
+
+    let imports_only = rels(&["--repo", "r", "--rel", "imports"]);
+    assert!(
+        !imports_only.is_empty() && imports_only.iter().all(|r| r == "imports"),
+        "--rel imports must keep only import edges: {imports_only:?}"
+    );
+
+    let co_only = rels(&["--repo", "r", "--rel", "co-changed"]);
+    assert!(
+        !co_only.is_empty() && co_only.iter().all(|r| r == "co_changed"),
+        "--rel co-changed must keep only co-change edges: {co_only:?}"
+    );
+
+    let both = rels(&["--repo", "r", "--rel", "all"]);
+    assert!(
+        both.iter().any(|r| r == "imports") && both.iter().any(|r| r == "co_changed"),
+        "--rel all must keep both kinds: {both:?}"
+    );
+}
+
 #[test]
 fn graph_repo_filter_excludes_other_repos() {
     let home = TempDir::new().expect("tempdir");
