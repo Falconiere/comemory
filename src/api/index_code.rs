@@ -243,13 +243,24 @@ fn record_run(
         Err(Error::Cancelled) => ("cancelled", None, 0),
         Err(e) => ("error", Some(e.to_string()), 0),
     };
+    // A failed count is recorded as 0, but never silently: without the log
+    // an `index_runs` row saying `symbols: 0` is indistinguishable from a
+    // repo that genuinely has none. The run itself is not failed for it —
+    // the symbols are already written; this number is history.
     let symbols: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM code_symbols WHERE repo = ?1",
             [&req.repo],
             |r| r.get(0),
         )
-        .unwrap_or(0);
+        .unwrap_or_else(|e| {
+            tracing::warn!(
+                repo = %req.repo,
+                error = %e,
+                "index-code: symbol count failed; recording 0 in index_runs"
+            );
+            0
+        });
     let root_path = root.canonicalize().ok();
     let written = random_id::random_hex(8).and_then(|id| {
         let finished_at = memory_row::iso_format(OffsetDateTime::now_utc())?;

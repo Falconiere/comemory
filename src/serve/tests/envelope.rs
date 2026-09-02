@@ -31,6 +31,16 @@ fn assert_row(err: &Error, expected_status: StatusCode, expected_code: &str) {
     let (status, code) = envelope::status_and_code(err);
     assert_eq!(status, expected_status, "status for {err:?}");
     assert_eq!(code, expected_code, "code for {err:?}");
+
+    // And the response the table produces, not only the table: a mapping
+    // that `Envelope::err` failed to apply would satisfy the two asserts
+    // above while every caller still saw the wrong status.
+    let response = Envelope::err("test", err, 0);
+    assert_eq!(
+        response.status(),
+        expected_status,
+        "enveloped status for {err:?}"
+    );
 }
 
 #[test]
