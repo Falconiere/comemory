@@ -114,14 +114,19 @@ struct IndexPlan {
 }
 
 /// `POST /api/v1/index/runs` — start an `index-code` job. Gate order:
-/// read-only ([`guard_job`] → `405`), then archived (`400`), then a live
-/// run for the same repo (`409 index_running`, AC-10), then containment of
-/// the root to an allowed root (`403`/`400`) — every one of them BEFORE a
-/// job exists, so a refused request never leaves a job behind.
+/// read-only ([`guard_job`] → `405`), then a live run for the same repo
+/// (`409 index_running`, AC-10 — the fast-path pre-check, applied here on
+/// the async side before any blocking planning), then archived (`400`),
+/// then containment of the root to an allowed root (`403`/`400`) — every
+/// one of them BEFORE a job exists, so a refused request never leaves a
+/// job behind.
 async fn start_run(State(state): State<AppState>, Json(req): Json<StartRequest>) -> Response {
     let started = Instant::now();
     if let Err(resp) = guard_job(RUN_COMMAND, &state) {
         return *resp;
+    }
+    if let Err(e) = refuse_if_running(&state, &req.repo) {
+        return Envelope::err(RUN_COMMAND, &e, 0);
     }
     let plan_state = state.clone();
     let planned = run_blocking(move || plan_run(&plan_state, req)).await;
@@ -134,14 +139,14 @@ async fn start_run(State(state): State<AppState>, Json(req): Json<StartRequest>)
 }
 
 /// The blocking half of [`start_run`]: resolve the root, run the archived
-/// and already-running gates, and contain the root.
+/// gate, and contain the root. The running gate is not here — it takes the
+/// registry lock, and [`start_run`] applies it before this closure spawns.
 fn plan_run(state: &AppState, req: StartRequest) -> Result<IndexPlan> {
     let path = resolve_path(&req)?;
     let conn = state.conn()?;
     api::index_code::refuse_if_archived(&conn, &req.repo)?;
     let roots = state.allowed_roots(&conn);
     drop(conn);
-    refuse_if_running(state, &req.repo)?;
     let canonical = contained(&roots, &path)?;
     Ok(IndexPlan {
         repo: req.repo,
@@ -183,11 +188,11 @@ fn contained(roots: &[PathBuf], path: &str) -> Result<String> {
 /// `POST /api/v1/code/index` and `POST /api/v1/repos {index_now}` so the
 /// three entry points agree (AC-10).
 ///
-/// Safe from a `spawn_blocking` closure ([`plan_run`], `POST /code/index`)
-/// and from an async handler alike: `Registry::active_for` holds the job
-/// map's `std::sync::Mutex` for one synchronous scan, nothing in `serve`
-/// holds that guard across an `.await`, and callers never hold the
-/// shared-connection guard at the same time ([`plan_run`] drops it first).
+/// Every caller runs it on the async side — before its blocking planning
+/// closure, never inside one, and never while holding the shared-connection
+/// guard. The one lock it takes is the registry's `std::sync::Mutex`, held
+/// by `Registry::active_for` for a single synchronous scan and never across
+/// an `.await`, so there is nothing for it to deadlock against.
 pub(crate) fn refuse_if_running(state: &AppState, repo: &str) -> Result<()> {
     if let Some(job_id) = state.jobs().active_for(INDEX_JOB_COMMAND, repo)? {
         return Err(Error::IndexRunning {
