@@ -64,11 +64,13 @@ fn slow_command_times_out_promptly_and_reaps() {
 
 #[test]
 fn command_that_never_reads_stdin_still_yields_vector() {
-    // A query larger than the pipe buffer, to a command that never reads
-    // stdin: the write cannot complete before the child exits, so it fails
-    // with EPIPE deterministically. That is the command's choice, not an
-    // error — the vector it printed must still come back.
-    let cmd = r#"printf '{"embedding":[4.0,5.0]}'"#;
+    // The child closes its stdin explicitly (`exec <&-`, POSIX sh) before
+    // printing, and the query is larger than any pipe buffer (1 MiB against
+    // 64 KiB on Linux, 16 KiB on macOS), so the parent's write cannot
+    // complete and fails with EPIPE deterministically. That is the
+    // command's choice, not an error — the vector it printed must still
+    // come back.
+    let cmd = r#"exec <&-; printf '{"embedding":[4.0,5.0]}'"#;
     let big_query = "q".repeat(1 << 20);
     let v = embed_query(cmd, &big_query).expect("EPIPE on stdin must be tolerated");
     assert_eq!(v, vec![4.0_f32, 5.0]);

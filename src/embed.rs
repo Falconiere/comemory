@@ -50,11 +50,15 @@ fn spawn(cmd: &str) -> Result<Child> {
 
 /// Write `query` to the child's stdin and close it (signals EOF on drop).
 ///
-/// A command that never reads its stdin (a `printf` of a canned payload,
-/// a script that embeds from an argument) may exit, or close the pipe,
-/// before the write finishes; the write then fails with `EPIPE`. That is
-/// the command's choice, not a failure: its exit status and stdout still
-/// decide the outcome, so a broken pipe is swallowed here.
+/// A command may close its end of the pipe, or exit, before the whole
+/// query has been written — whether it never reads stdin at all (a
+/// `printf` of a canned payload, a script that embeds from an argument)
+/// or stops after consuming part of it. `write_all` loops over write
+/// syscalls, and the first one to hit the closed read end fails with
+/// `EPIPE`, which surfaces here as `ErrorKind::BrokenPipe` no matter how
+/// many bytes went through first. That is the command's choice, not a
+/// failure: its exit status and stdout still decide the outcome, so a
+/// broken pipe is swallowed and every other write error propagates.
 fn write_stdin(child: &mut Child, query: &str) -> Result<()> {
     let mut stdin = child
         .stdin
