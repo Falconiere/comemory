@@ -49,14 +49,22 @@ fn spawn(cmd: &str) -> Result<Child> {
 }
 
 /// Write `query` to the child's stdin and close it (signals EOF on drop).
+///
+/// A command that never reads its stdin (a `printf` of a canned payload,
+/// a script that embeds from an argument) may exit, or close the pipe,
+/// before the write finishes; the write then fails with `EPIPE`. That is
+/// the command's choice, not a failure: its exit status and stdout still
+/// decide the outcome, so a broken pipe is swallowed here.
 fn write_stdin(child: &mut Child, query: &str) -> Result<()> {
     let mut stdin = child
         .stdin
         .take()
         .ok_or_else(|| Error::Config("embed-cmd stdin unavailable".into()))?;
-    stdin
-        .write_all(query.as_bytes())
-        .map_err(|e| fail("stdin write", e))
+    match stdin.write_all(query.as_bytes()) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+        Err(e) => Err(fail("stdin write", e)),
+    }
 }
 
 /// Read the child's stdout to EOF on a helper thread, bounded by
