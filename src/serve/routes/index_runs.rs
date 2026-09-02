@@ -180,7 +180,14 @@ fn contained(roots: &[PathBuf], path: &str) -> Result<String> {
 
 /// `Err(Error::IndexRunning)` (→ `409` with `details.job_id`) when `repo`
 /// already has a queued or running `index-code` job. Shared with
-/// `POST /api/v1/code/index` so the two entry points agree (AC-10).
+/// `POST /api/v1/code/index` and `POST /api/v1/repos {index_now}` so the
+/// three entry points agree (AC-10).
+///
+/// Safe from a `spawn_blocking` closure ([`plan_run`], `POST /code/index`)
+/// and from an async handler alike: `Registry::active_for` holds the job
+/// map's `std::sync::Mutex` for one synchronous scan, nothing in `serve`
+/// holds that guard across an `.await`, and callers never hold the
+/// shared-connection guard at the same time ([`plan_run`] drops it first).
 pub(crate) fn refuse_if_running(state: &AppState, repo: &str) -> Result<()> {
     if let Some(job_id) = state.jobs().active_for(INDEX_JOB_COMMAND, repo)? {
         return Err(Error::IndexRunning {

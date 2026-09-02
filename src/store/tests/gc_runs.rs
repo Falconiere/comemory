@@ -7,6 +7,7 @@
 )]
 //! [`insert`] against a real migrated `comemory.db`.
 
+use comemory::store::gc_runs::GcRunRow;
 use comemory::store::{connection, gc_runs};
 
 #[test]
@@ -76,10 +77,18 @@ fn newest_returns_the_most_recent_row() {
     .expect("insert older");
 
     let row = gc_runs::newest(&conn).expect("newest").expect("a row");
-    assert_eq!(row.id, "bbbbbbbbbbbbbbbb");
-    assert_eq!(row.at, "2026-08-30T12:00:00Z");
-    assert_eq!(row.removed, 7);
-    assert_eq!(row.log_rows, 70);
-    assert_eq!(row.event_rows, 17);
-    assert_eq!(row.bytes_freed, 2048);
+    // The whole row, not a field at a time: a column added to `GcRunRow`
+    // without a matching value here is then a compile error rather than a
+    // silently unasserted field.
+    assert_eq!(
+        row,
+        GcRunRow {
+            id: "bbbbbbbbbbbbbbbb".to_string(),
+            at: "2026-08-30T12:00:00Z".to_string(),
+            removed: 7,
+            log_rows: 70,
+            event_rows: 17,
+            bytes_freed: 2048,
+        }
+    );
 }
