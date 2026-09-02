@@ -62,7 +62,12 @@ async fn repos(State(state): State<AppState>, Query(req): Query<api::repos::Requ
             let mut ctx = Ctx::lazy(state.paths(), &cfg);
             api::repos::run(&mut ctx, req)?
         };
-        overlay_indexing(&state, &mut response)?;
+        // Best-effort: the inventory is the answer, the overlay is a
+        // decoration on it. A poisoned registry lock must not turn a
+        // successful read of every repo into a 500.
+        if let Err(e) = overlay_indexing(&state, &mut response) {
+            tracing::warn!(error = %e, "repos: indexing overlay skipped");
+        }
         Ok(response)
     })
     .await;
@@ -76,6 +81,10 @@ mod tests;
 /// Mark every row whose repo has a live `index-code` job `"indexing"` and
 /// record that job's id. An archived repo cannot have one (indexing is
 /// refused for it), so the two statuses cannot collide.
+///
+/// Its error is logged and swallowed by the caller: the only way this
+/// fails is a poisoned registry mutex, and losing the whole inventory over
+/// a missing decoration would be the worse outcome.
 fn overlay_indexing(state: &AppState, response: &mut api::repos::Response) -> Result<()> {
     for row in &mut response.repos {
         if let Some(job_id) = state.jobs().active_for(INDEX_JOB_COMMAND, &row.repo)? {

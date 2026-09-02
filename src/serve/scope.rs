@@ -27,13 +27,21 @@ pub const REPO_HEADER: &str = "x-comemory-repo";
 pub struct RepoScope(pub Option<String>);
 
 impl RepoScope {
-    /// The repo filter to use, given what the request asked for: `explicit`
-    /// when it named one, the resolved scope otherwise.
+    /// The repo filter to use, given what the request asked for.
     ///
-    /// Takes the request's value and returns the answer rather than filling
-    /// a `&mut`, so the precedence is the expression itself — `explicit.or(
-    /// scope)` — instead of a guard a reader has to go and check. The header
-    /// and `--repo` are defaults; an explicit `?repo=` always wins.
+    /// ```text
+    /// explicit = Some("a"), scope = Some("b")  ->  Some("a")   // request wins
+    /// explicit = None,      scope = Some("b")  ->  Some("b")   // scope fills in
+    /// explicit = Some("a"), scope = None       ->  Some("a")
+    /// explicit = None,      scope = None       ->  None        // no filter
+    /// ```
+    ///
+    /// The scope is a DEFAULT, never an override: an explicit `?repo=` (or
+    /// a `repo` field in a POST body) is returned unchanged, and the header
+    /// or `serve --repo` is consulted only when the request named none.
+    /// Returning the answer rather than filling a `&mut` is what puts that
+    /// precedence in the expression instead of in a guard a reader has to
+    /// go and check.
     pub fn resolve(&self, explicit: Option<String>) -> Option<String> {
         explicit.or_else(|| self.0.clone())
     }
