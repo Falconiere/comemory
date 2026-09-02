@@ -58,16 +58,18 @@ pub struct GcRunRow {
 
 /// The most recent `gc_runs` row, or `None` when `gc` has never run.
 ///
-/// Ordered by `at DESC, id DESC`: every `at` is written through
+/// Ordered by `at DESC, rowid DESC`: every `at` is written through
 /// `store::memory_row::iso_format`, whose fixed-width rendering makes
 /// lexicographic order chronological (see `api::gc::sweep_learning`'s doc),
-/// and the `id` tie-break keeps the answer deterministic when two sweeps
-/// land in the same nanosecond.
+/// and the `rowid` tie-break returns the LATER-INSERTED row when two sweeps
+/// land in the same nanosecond. Ids are random hex, so ordering by id would
+/// be deterministic but arbitrary — it would sometimes answer with the
+/// earlier sweep.
 pub fn newest(conn: &Connection) -> Result<Option<GcRunRow>> {
     let row = conn
         .query_row(
             "SELECT id, at, removed, log_rows, event_rows, bytes_freed FROM gc_runs \
-              ORDER BY at DESC, id DESC LIMIT 1",
+              ORDER BY at DESC, rowid DESC LIMIT 1",
             [],
             |r| {
                 Ok(GcRunRow {
