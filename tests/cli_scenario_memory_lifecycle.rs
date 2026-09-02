@@ -28,10 +28,15 @@ fn save_list_show_supersede_delete_round_trip() {
     home.run_ok(&["doctor"]);
 
     let mut ids = Vec::new();
+    let mut note_id = None;
     for kind in KINDS {
         let body = format!("{kind} body unique token {kind}lifecycle");
         let saved = home.run_json(&["save", &body, "--kind", kind, "--repo", "alpha"]);
-        ids.push(saved["id"].as_str().expect("id").to_string());
+        let id = saved["id"].as_str().expect("id").to_string();
+        if kind == "note" {
+            note_id = Some(id.clone());
+        }
+        ids.push(id);
     }
 
     let piped = home
@@ -78,7 +83,7 @@ fn save_list_show_supersede_delete_round_trip() {
     // The replacement shares only the search token with the original, so
     // the near-duplicate collapse cannot fold one into the other and BOTH
     // must come back — the old one annotated, the new one not.
-    let old_id = ids[5].clone();
+    let old_id = note_id.expect("the note-kind save");
     let replacement = home.run_json(&[
         "save",
         "rewritten guidance on notelifecycle handling after the incident review",

@@ -3,7 +3,8 @@
     clippy::expect_used,
     clippy::panic,
     clippy::float_cmp,
-    clippy::too_many_lines
+    clippy::too_many_lines,
+    clippy::print_stderr
 )]
 //! Test mirror for `src/document/writer.rs`: the full extract →
 //! one-transaction write path plus tombstone reconciliation. The
@@ -154,7 +155,12 @@ fn unreadable_file_after_a_good_index_records_error_and_keeps_prior_rows() {
 
     if fs::read(&path).is_ok() {
         // uid 0 bypasses mode bits, so the "unreadable" precondition cannot
-        // be staged under root; there is nothing to assert in that case.
+        // be staged under root. Say so on stderr (visible with --nocapture
+        // and in every failure report) instead of passing silently.
+        eprintln!(
+            "SKIPPED: chmod 000 left {} readable (running as root?)",
+            path.display()
+        );
         return;
     }
 

@@ -100,10 +100,12 @@ fn graph_emits_indexed_edges_and_gates_co_changed_weight() {
     );
 }
 
-/// `--rel` narrows the edge kinds: `imports` drops the co-change pair,
-/// `co-changed` drops the static import, and the default keeps both. The
-/// fixture carries exactly one edge of each kind, so each filter is checked
-/// against an edge that survives only under the other one.
+/// `--rel` narrows the edge kinds. The stored `rel` keys are the literal
+/// strings `imports` and `co_changed` (`graph::edges`); the flag values are
+/// `imports`, `co-changed`, and `all`. The fixture carries exactly one edge
+/// of each kind, so each filter is checked against an edge that survives
+/// only under the other one, and the non-empty guard keeps an empty result
+/// from passing vacuously.
 #[test]
 fn graph_rel_filters_edge_kinds() {
     let home = TempDir::new().expect("tempdir");

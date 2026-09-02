@@ -255,9 +255,9 @@ fn deleted_memory_excluded_from_search() {
 
 #[test]
 fn delete_missing_id_fails_without_enoent() {
-    // Fresh data dir: `delete` must call `ensure_dirs` before opening the
-    // store so the missing-id case surfaces "memory not found" instead of an
-    // ENOENT on `memories/`.
+    // Fresh data dir with no `memories/` yet: the missing-id case must
+    // surface "memory not found", never a raw ENOENT from the data-dir
+    // layout — whichever way the command chooses to create the layout first.
     let home = TempDir::new().expect("tempdir");
     let assertion = bin(&home)
         .args(["delete", "deadbeef0000"])
