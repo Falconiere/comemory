@@ -14,6 +14,13 @@ use crate::prelude::*;
 pub struct Response {
     /// Canonical id of the soft-deleted memory.
     pub deleted: String,
+    /// The delete left the derived artifacts stale: `edge_fts` could not be
+    /// rebuilt after the memory's edges went. The delete itself committed —
+    /// this is a freshness warning, not a failure — but relation search is
+    /// behind until the next write refreshes it. Omitted from the JSON when
+    /// false, as in `gc`'s report.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub derived_stale: bool,
 }
 
 /// Soft-delete one memory: move the markdown file into `memories/.trash/`
@@ -23,6 +30,9 @@ pub struct Response {
 pub fn run(ctx: &mut Ctx<'_>, id: &str) -> Result<Response> {
     let paths = ctx.paths;
     let conn = ctx.conn()?;
-    let deleted = crate::cli::delete::soft_delete(paths, conn, id)?;
-    Ok(Response { deleted })
+    let (deleted, derived_stale) = crate::cli::delete::soft_delete(paths, conn, id)?;
+    Ok(Response {
+        deleted,
+        derived_stale,
+    })
 }

@@ -42,24 +42,34 @@ fn put_path(repo: &Path, name: &str) -> String {
     )
 }
 
-/// The reported row for `name`, as `(installed, source)`. The row's own
-/// `name` field is asserted here rather than trusted: the lookup is by
-/// name, so a response that renamed the row would otherwise be invisible.
+/// The reported row for `name`, as `(installed, source)`. The lookup is by
+/// name, so asserting the found row's own name would assert the lookup;
+/// what the response has to get right — that the CANONICAL spelling is
+/// what comes back, whatever the request used — is checked by
+/// [`assert_canonical_names`] instead.
 fn row(body: &serde_json::Value, name: &str) -> (bool, String) {
     let hooks = body["data"]["hooks"].as_array().expect("hooks array");
     let found = hooks
         .iter()
         .find(|row| row["name"] == name)
         .unwrap_or_else(|| panic!("no row for {name} in {body}"));
-    assert_eq!(
-        found["name"].as_str(),
-        Some(name),
-        "the reported row carries the requested hook's canonical name"
-    );
     (
         found["installed"].as_bool().unwrap_or(false),
         found["source"].as_str().unwrap_or_default().to_string(),
     )
+}
+
+/// Every reported row is named in the canonical, hyphenated spelling — no
+/// row echoes the underscore form a caller may have sent.
+fn assert_canonical_names(body: &serde_json::Value) {
+    let hooks = body["data"]["hooks"].as_array().expect("hooks array");
+    for row in hooks {
+        let name = row["name"].as_str().unwrap_or_default();
+        assert!(
+            !name.contains('_'),
+            "hook rows report the canonical hyphenated name, got {name:?} in {body}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -75,6 +85,8 @@ async fn put_enables_exactly_one_hook_and_the_underscore_spelling_is_accepted() 
     .await;
 
     assert_eq!(resp.status, 200, "body: {}", resp.text);
+    // The request spelled it `post_commit`; the response must not.
+    assert_canonical_names(&resp.json);
     assert_eq!(row(&resp.json, "post-commit"), (true, "git".to_string()));
     assert!(!row(&resp.json, "post-merge").0);
     assert!(!row(&resp.json, "post-checkout").0);

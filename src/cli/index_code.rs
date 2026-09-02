@@ -70,7 +70,10 @@ pub struct Args {
 pub enum Mode {
     /// Only files changed since the last run.
     Incremental,
-    /// Every file; drops BYO code vectors (re-run `ingest-code` afterwards).
+    /// Every file. Lossy: re-extraction replaces each file's symbol rows,
+    /// which drops the repo's BYO `code_vec` rows and resets its per-symbol
+    /// access counters — re-run `ingest-code` afterwards to restore the
+    /// semantic leg.
     Full,
 }
 
