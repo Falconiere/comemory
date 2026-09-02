@@ -7,7 +7,6 @@
 )]
 //! [`insert`] against a real migrated `comemory.db`.
 
-use comemory::store::gc_runs::GcRunRow;
 use comemory::store::{connection, gc_runs};
 
 #[test]
@@ -82,7 +81,7 @@ fn newest_returns_the_most_recent_row() {
     // silently unasserted field.
     assert_eq!(
         row,
-        GcRunRow {
+        gc_runs::GcRunRow {
             id: "bbbbbbbbbbbbbbbb".to_string(),
             at: "2026-08-30T12:00:00Z".to_string(),
             removed: 7,

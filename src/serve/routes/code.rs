@@ -162,9 +162,11 @@ async fn code_index(
     if let Err(resp) = guard_job("index-code", &state) {
         return *resp;
     }
+    if let Err(e) = index_runs::refuse_if_running(&state, &req.repo) {
+        return Envelope::err("index-code", &e, 0);
+    }
     let contain_state = state.clone();
     let contained = run_blocking(move || -> Result<api::index_code::Request> {
-        index_runs::refuse_if_running(&contain_state, &req.repo)?;
         let conn = contain_state.conn()?;
         let roots = contain_state.allowed_roots(&conn);
         drop(conn);
