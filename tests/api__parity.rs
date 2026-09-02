@@ -17,10 +17,10 @@
 //! actually carries them):
 //!
 //! 1. **Route registration** — every non-`cli-only` subcommand has ≥1
-//!    registered `/api/v1` route; `tui`/`serve` (spec Non-Goal 3: one owns a
-//!    terminal, the other IS the server) assert the *inverse* shape —
-//!    `transport:"cli-only"` and an EMPTY `routes` array — so an accidental
-//!    future HTTP mapping of either fails just as loudly as a missing one.
+//!    registered `/api/v1` route; `serve` (spec Non-Goal 3: it IS the
+//!    server) asserts the *inverse* shape — `transport:"cli-only"` and an
+//!    EMPTY `routes` array — so an accidental future HTTP mapping of it
+//!    fails just as loudly as a missing one.
 //!    This spawns a real `comemory serve` and hits the real
 //!    `GET /api/v1/commands` (`src/serve/routes/meta.rs`), which is itself
 //!    clap-introspection-driven — end-to-end proof that endpoint is correct
@@ -43,13 +43,13 @@ use comemory::cli::Cli;
 use serde_json::json;
 use tempfile::TempDir;
 
-/// Real subcommands with no HTTP mapping at all (spec Non-Goal 3): `tui`
-/// owns a terminal, `serve` IS the server. A local, hardcoded mirror of
+/// Real subcommands with no HTTP mapping at all (spec Non-Goal 3): `serve`
+/// IS the server. A local, hardcoded mirror of
 /// `serve::routes::meta::CLI_ONLY` (private to that module) — deliberate:
 /// this test proves the *real* `GET /api/v1/commands` endpoint against an
 /// independently-stated expectation, not against whatever that endpoint's
 /// own internal constant happens to say today.
-const CLI_ONLY: &[&str] = &["tui", "serve"];
+const CLI_ONLY: &[&str] = &["serve"];
 
 // ---------------------------------------------------------------------
 // Documented per-(command, arg id) exclusions from the HTTP field mapping.
@@ -303,7 +303,7 @@ fn spawn_serve(home: &TempDir) -> (String, String, ServerGuard) {
 /// Assert one `GET /api/v1/commands` entry has the shape [`CLI_ONLY`]
 /// membership predicts: cli-only names get `transport:"cli-only"` + empty
 /// `routes` (asserted, not skipped — an accidental future HTTP mapping of
-/// `tui`/`serve` must fail this too); every other real subcommand gets
+/// `serve` must fail this too); every other real subcommand gets
 /// `transport:"http"` + a non-empty `routes` array (AC-12).
 fn assert_command_entry(name: &str, commands: &[serde_json::Value]) {
     let entry = commands

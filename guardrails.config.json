@@ -10,10 +10,6 @@
         "migrate",
         "tests"
       ],
-      "tui": [
-        "view",
-        "tests"
-      ],
       "api": [
         "doctor",
         "index_code",
@@ -80,9 +76,7 @@
       "store",
       "store/migrate",
       "store/sql",
-      "store/tokenizer",
-      "tui",
-      "tui/view"
+      "store/tokenizer"
     ]
   },
   "fileSize": {

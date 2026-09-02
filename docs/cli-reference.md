@@ -54,7 +54,6 @@ Commands:
   graph          Export the file-level code-connection graph (imports + co-change) as JSON, Graphviz DOT, or an interactive HTML page
   edges          Search the relation graph lexically (supersedes, imports, references)
   serve          Serve the loopback HTTP API (`/api/v1`) for consoles, agents, and scripts
-  tui            Launch the read-only interactive terminal explorer
   context        Headline lookup: code symbol + memories matching a key
   completions    Emit a shell completion script for `bash`, `zsh`, `fish`, `powershell`, or `elvish`
   prune          Detect (and optionally soft-delete) stale memories
@@ -189,7 +188,7 @@ Options:
       --k <K>
           Page size — overrides the configured `retrieval.top_k`. `--limit` is an accepted alias. `0` means "all remaining within the `max_page_window`"
           
-          [aliases: --limit]
+          [alias: --limit]
 
       --data-dir <DATA_DIR>
           Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable
@@ -297,7 +296,7 @@ Arguments:
 
 Options:
       --json                 Emit machine-readable JSON instead of a human TTY view
-      --k <K>                Page size — overrides the configured `retrieval.top_k`. `--limit` is an accepted alias. `0` means "all remaining within the `max_page_window`" [aliases: --limit]
+      --k <K>                Page size — overrides the configured `retrieval.top_k`. `--limit` is an accepted alias. `0` means "all remaining within the `max_page_window`" [alias: --limit]
       --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
       --offset <OFFSET>      Number of leading ranked results to skip (deep paging). Bounded by `retrieval.max_page_window`; once the window ceiling is reached `has_more` is false and deeper results require refining the query [default: 0]
       --repo <REPO>          Restrict hits to one repo label (as passed to `index-code --repo`)
@@ -884,7 +883,7 @@ Arguments:
 
 Options:
       --json                 Emit machine-readable JSON instead of a human TTY view
-      --k <K>                Page size — overrides the configured `retrieval.top_k`. `--limit` is an accepted alias. `0` means "all remaining within the `max_page_window`" [aliases: --limit]
+      --k <K>                Page size — overrides the configured `retrieval.top_k`. `--limit` is an accepted alias. `0` means "all remaining within the `max_page_window`" [alias: --limit]
       --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
       --offset <OFFSET>      Number of leading ranked relations to skip (deep paging) [default: 0]
   -h, --help                 Print help
@@ -945,47 +944,6 @@ Examples:
 
 ---
 
-## comemory tui
-
-```
-Launch the read-only interactive terminal explorer
-
-Usage: comemory tui [OPTIONS]
-
-Options:
-      --json                   Emit machine-readable JSON instead of a human TTY view
-      --repo <REPO>            Restrict search to one repo label (forwarded to both retrieval legs)
-      --data-dir <DATA_DIR>    Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
-      --query <QUERY>          Seed the search box with an initial query on launch
-      --embed-cmd <EMBED_CMD>  External command to vectorize a query for Memory-tab semantic search. Reads the query string on stdin, must emit `{"embedding":[<f32>,..]}` (1024-dim) on stdout. Falls back to `COMEMORY_EMBED_CMD`. Unset → `Ctrl-S` is a no-op (lexical search still works) [env: COMEMORY_EMBED_CMD=]
-  -h, --help                   Print help
-
-Examples:
-  # Browse every indexed repo, Memory + Code tabs, lexical live search
-  comemory tui
-
-  # Seed the search box and restrict to one repo
-  comemory tui --repo myrepo --query "postgres pool"
-
-  # Memory-tab semantic enrich (Ctrl-S) via an external embedder
-  comemory tui --embed-cmd 'comemory-embed.sh'
-
-  # Capture the Enter-selected id in a shell variable (stdout is reserved)
-  id=$(comemory tui)
-
-Keys:
-  type / Backspace   edit the query (Ctrl-U clears it)
-  Up / Down          move the selection
-  PageUp / PageDown  previous / next page
-  Tab                switch the Memory / Code tab
-  Ctrl-S             Memory-tab semantic enrich (needs an embed command)
-  Ctrl-Y             show the selected id on the status line
-  Enter              quit and print the selected id to stdout
-  Esc / Ctrl-C       quit (prints nothing)
-```
-
----
-
 ## comemory context
 
 ```
@@ -998,7 +956,7 @@ Arguments:
 
 Options:
       --json                 Emit machine-readable JSON instead of a human TTY view
-      --k <K>                Page size for the bundle's memory list — overrides the configured `retrieval.top_k`. `--limit` is an accepted alias. `0` means "all remaining within the `max_page_window`" [aliases: --limit]
+      --k <K>                Page size for the bundle's memory list — overrides the configured `retrieval.top_k`. `--limit` is an accepted alias. `0` means "all remaining within the `max_page_window`" [alias: --limit]
       --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
       --offset <OFFSET>      Number of leading ranked memories to skip (deep paging of the bundle's memory list). Bounded by `retrieval.max_page_window`. Per- memory code refs are not paginated — each surfaced memory keeps its full ref set [default: 0]
       --repo <REPO>          Optional repo filter forwarded to the router
@@ -1085,7 +1043,7 @@ Options:
       --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
       --repo <REPO>          Restrict the scan to one repo. Default: every repo
       --all                  Include clusters already resolved by live supersede edges
-      --k <K>                Page size — overrides the configured `retrieval.top_k`. `--limit` is an accepted alias. `0` means "all remaining" [aliases: --limit]
+      --k <K>                Page size — overrides the configured `retrieval.top_k`. `--limit` is an accepted alias. `0` means "all remaining" [alias: --limit]
       --offset <OFFSET>      Number of leading clusters to skip (deep paging) [default: 0]
   -h, --help                 Print help
 
@@ -1121,6 +1079,13 @@ Options:
       --json                 Emit machine-readable JSON instead of a human TTY view
       --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
   -h, --help                 Print help
+
+Examples:
+  # Rebuild the SQLite mirror from memories/*.md (code index is preserved)
+  comemory rebuild
+
+  # Same under --json (rebuild emits no payload; the flag is still accepted)
+  comemory rebuild --json
 ```
 
 ---

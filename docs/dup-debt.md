@@ -215,19 +215,6 @@ ratchet re-scans fresh each run, it does not pin line numbers).
 | `src/store/documents.rs:73-82` function `get_document` | `src/store/documents.rs:90-93` function `delete_document` | 86.53% | parallel single-row-by-id fetch/delete helpers on the documents table |
 | `src/store/code_ref.rs:39-52` function `materialize` | `src/store/code_ref.rs:78-92` function `upsert` | 89.56% | parallel edge-row upsert/materialize helpers, same shape |
 
-### `src/tui/`
-
-| Pair A | Pair B | Similarity | Why it's debt, not urgent |
-| --- | --- | --- | --- |
-| `src/tui/preview.rs:20-28` function `memory_preview` | `src/tui/preview.rs:31-39` function `code_preview` | 91.13% | parallel truncate-and-format preview helpers for memory vs. code hits |
-| `src/tui/preview.rs:12-17` function `preview_text` | `src/tui/preview.rs:31-39` function `code_preview` | 87.88% | parallel truncate-and-format preview helpers for memory vs. code hits |
-| `src/tui/preview.rs:12-17` function `preview_text` | `src/tui/preview.rs:20-28` function `memory_preview` | 87.02% | parallel truncate-and-format preview helpers for memory vs. code hits |
-| `src/tui/app.rs:178-203` method `apply` | `src/tui/app.rs:253-269` method `semantic` | 86.48% | parallel state-mutation methods on `App`, one pair per feature (paging, hit-setters, semantic/copy actions) |
-| `src/tui/app.rs:253-269` method `semantic` | `src/tui/app.rs:272-278` method `copy_id` | 88.25% | parallel state-mutation methods on `App`, one pair per feature (paging, hit-setters, semantic/copy actions) |
-| `src/tui/app.rs:221-229` method `page_next` | `src/tui/app.rs:232-240` method `page_prev` | 91.04% | parallel state-mutation methods on `App`, one pair per feature (paging, hit-setters, semantic/copy actions) |
-| `src/tui/app.rs:164-168` method `set_memory_hits` | `src/tui/app.rs:171-175` method `set_code_hits` | 89.68% | parallel state-mutation methods on `App`, one pair per feature (paging, hit-setters, semantic/copy actions) |
-| `src/tui/view/layout.rs:31-36` function `render_search` | `src/tui/view/layout.rs:39-49` function `render_status` | 88.18% | parallel ratatui layout-chunk-and-draw helpers for two panes |
-
 
 ## Why none of this is urgent
 

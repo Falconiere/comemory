@@ -79,8 +79,6 @@ pub mod show;
 pub mod sources;
 /// `comemory stats` — corpus counters and database size.
 pub mod stats;
-/// `comemory tui`: interactive terminal explorer.
-pub mod tui;
 /// `comemory tune`: grid/sampled search over the ranking knobs.
 pub mod tune;
 /// `comemory unindex`: unregister a document source and remove its
@@ -174,8 +172,6 @@ pub enum Cmd {
     Edges(edges::Args),
     /// Serve the loopback HTTP API (`/api/v1`) for consoles, agents, and scripts.
     Serve(serve::Args),
-    /// Launch the read-only interactive terminal explorer.
-    Tui(tui::Args),
     /// Headline lookup: code symbol + memories matching a key.
     Context(context::Args),
     /// Emit a shell completion script for `bash`, `zsh`, `fish`, `powershell`, or `elvish`.
@@ -225,7 +221,6 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::Graph(a) => graph::run(a, cli.json, cli.data_dir).await,
         Cmd::Edges(a) => edges::run(a, cli.json, cli.data_dir).await,
         Cmd::Serve(a) => serve::run(a, cli.json, cli.data_dir).await,
-        Cmd::Tui(a) => tui::run(a, cli.json, cli.data_dir).await,
         Cmd::Context(a) => context::run(a, cli.json, cli.data_dir).await,
         Cmd::Completions(a) => completions::run(a, cli.json, cli.data_dir).await,
         Cmd::Prune(a) => prune::run(a, cli.json, cli.data_dir).await,

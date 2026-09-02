@@ -19,9 +19,9 @@ use crate::cli::Cli;
 use crate::serve::AppState;
 use crate::serve::routes::{self, RouteEntry, respond, run_blocking};
 
-/// Real subcommands with no HTTP mapping: `tui` owns a terminal, `serve` IS
-/// the server (spec Non-Goal 3).
-const CLI_ONLY: &[&str] = &["tui", "serve"];
+/// Real subcommands with no HTTP mapping: `serve` IS the server (spec
+/// Non-Goal 3).
+const CLI_ONLY: &[&str] = &["serve"];
 
 /// This resource's route-table entries, appended onto [`super::table`].
 pub fn table_entries() -> &'static [RouteEntry] {
@@ -70,7 +70,7 @@ struct CommandInfo {
     /// Kebab-case clap subcommand name.
     name: String,
     /// `"http"` for every subcommand with an `/api/v1` mapping, else
-    /// `"cli-only"` (`tui`, `serve`).
+    /// `"cli-only"` (`serve`).
     transport: &'static str,
     /// `"METHOD[|METHOD] /api/v1/<path>"` entries for this command, one per
     /// distinct path. Empty for a real subcommand this step hasn't wired a

@@ -68,9 +68,6 @@ pub mod serve;
 /// clap subcommand entry points and the top-level dispatcher.
 pub mod cli;
 
-/// Read-only interactive terminal explorer (`comemory tui`).
-pub mod tui;
-
 /// 64-bit SimHash and Hamming distance over tokenized memory bodies.
 pub mod simhash;
 

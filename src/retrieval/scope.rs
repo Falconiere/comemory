@@ -156,8 +156,7 @@ impl Domains {
     }
 
     /// Memory only — pinned by `eval`/`tune`/`bandit`/feedback harvesting
-    /// (matching their memory-id golden pairs) and the TUI memory worker
-    /// (preserving byte-identical legacy output).
+    /// (matching their memory-id golden pairs).
     pub fn memory_only() -> Self {
         Domains::of(&[Domain::Memory])
     }
