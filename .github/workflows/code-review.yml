@@ -33,22 +33,9 @@ jobs:
       # comment only) and changed that comment's layout.
       - uses: falconiere/toolu-ghactions/code-review@v7
         with:
-          PROVIDER: openrouter
-          # Swapped from deepseek/deepseek-v4-pro, which kept hitting this
-          # job's 15-minute timeout on a large diff: it streams ~30 tok/s
-          # with multi-second TTFT, and three runs on PR #82 were cancelled
-          # mid-review. Grok 4.3 is the same tier at ~3x the throughput —
-          # 1M context (same chunking behaviour), $1.25/$2.50 per Mtok vs
-          # $1.02/$2.05, Intelligence 53.2 vs 51.5, GPQA 90.1 vs 88.8, and
-          # IFBench 81.3 vs 76.5. That last one is the reason to prefer it
-          # here specifically: this action drops findings that do not match
-          # its required shape, and PR #82 lost some to that in three of
-          # four rounds. The trade is code GENERATION strength (coding
-          # index 41.0 vs 47.5), which a diff reviewer does not use.
-          # If review depth ever matters more than wall-clock, z-ai/glm-5.2
-          # leads SWE-bench Pro (62.1 vs 55.4) at ~1.8x the output cost.
-          MODEL_ID: x-ai/grok-4.3
-          API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          PROVIDER: minimax
+          MODEL_ID: MiniMax-M3
+          API_KEY: ${{ secrets.MINIMAX_API_KEY }}
           # Advisory, not gating: the review still runs, still posts its
           # findings, and still uploads SARIF — it just does not fail the
           # job on a "changes requested" verdict. The verdict is a model's
