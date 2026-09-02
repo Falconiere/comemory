@@ -37,8 +37,12 @@ async fn authenticated_v1_memories_list_returns_a_seeded_memory_as_json() {
     assert_eq!(items.len(), 1, "body: {}", resp.text);
 }
 
-/// An unversioned `/api/*` path (nothing is mounted there any more) is still
-/// token-gated, with the plain-text rejection body.
+/// An unversioned `/api/*` path is still token-gated, with the plain-text
+/// rejection body. The guard matches the whole `/api/*` prefix, not just
+/// `/api/v1/*`, and no route is mounted outside the versioned surface — so
+/// a request like this one reaches the guard and stops there, answering
+/// `401` rather than `404`. That is deliberate: it keeps an unversioned
+/// path from ever being an unauthenticated 404 probe.
 #[tokio::test]
 async fn missing_token_on_a_legacy_api_path_is_401_plain_text() {
     let session = serve_state::session(false);
