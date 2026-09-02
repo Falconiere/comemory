@@ -80,16 +80,17 @@ pub(super) fn run(
     path: Option<&Path>,
     log: &impl Fn(&str),
 ) -> Result<GitRun> {
-    run_argv(root, args, path, log)
+    run_inner(root, args, path, log)
 }
 
-/// [`run`] without the `'static` bound, for the single call that needs a
-/// configured value in argv (`git push <remote> HEAD`). `Command::args`
-/// passes each element to `execve` as one argument and never through a
-/// shell, so a remote containing spaces, quotes or `;` is one argument,
-/// not a second command — the reason this is a narrower door rather than a
-/// hole in the one above.
-fn run_argv(
+/// The one implementation both entry points share. Private and not
+/// callable with an arbitrary argv from outside this module: [`run`] takes
+/// `&[&'static str]`, and the only dynamic argument in the module — the
+/// configured push remote — reaches this through [`push`], which builds
+/// the argv itself. `Command::args` passes each element to `execve` as one
+/// argument and never through a shell, so a remote containing spaces,
+/// quotes or `;` is one argument, not a second command.
+fn run_inner(
     root: &Path,
     args: &[&str],
     path: Option<&Path>,
@@ -195,12 +196,16 @@ pub(super) fn head(root: &Path, log: &impl Fn(&str)) -> Result<String> {
 /// Push HEAD: `git push <remote> HEAD` when `remote` (the trimmed `[git]
 /// remote`) is non-empty, so a configured target is honored even on a
 /// branch with no upstream; else a bare `git push` to the upstream.
+///
+/// The argv is built HERE rather than by the caller, so `remote` — the one
+/// value in this module that comes from configuration instead of source —
+/// can only ever land in the slot this function puts it in.
 pub(super) fn push(root: &Path, remote: &str, log: &impl Fn(&str)) -> Result<()> {
     let args: &[&str] = if remote.is_empty() {
         &["push"]
     } else {
         &["push", remote, "HEAD"]
     };
-    run_argv(root, args, None, log)?.require("git push")?;
+    run_inner(root, args, None, log)?.require("git push")?;
     Ok(())
 }
