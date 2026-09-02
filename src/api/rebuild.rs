@@ -290,7 +290,7 @@ fn build_new_db(old_db: &Path, tmp_path: &Path, paths: &crate::config::paths::Pa
     // Derived artifacts last: the replay supplies the memory→memory
     // relations and the copy above restores the mined code-graph edges, so
     // the graph is only whole now.
-    crate::graph::derived::refresh_derived_best_effort(&mut conn);
+    let _stale = crate::graph::derived::refresh_derived_best_effort(&mut conn);
 
     // Close the connection before rename by dropping it here.
     drop(conn);

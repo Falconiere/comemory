@@ -54,6 +54,13 @@ pub struct Response {
     /// (`deleted_at` past the window, trash file already gone). `0` when
     /// `comemory.db` does not exist.
     pub purged_rows: u64,
+    /// The purge left the derived artifacts stale: `edge_fts` could not be
+    /// rebuilt after the rows went. The purge itself committed — this is a
+    /// freshness warning, not a failure — but relation search is behind
+    /// until the next write refreshes it, and the operator reading a `gc`
+    /// report is who should know. Omitted from the JSON when false.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub derived_stale: bool,
 }
 
 /// Random bytes behind a `gc_runs` row id — 8 bytes, rendered as 16
@@ -85,16 +92,16 @@ pub fn run(ctx: &mut Ctx<'_>, _req: Request) -> Result<Response> {
     let trash_days = ctx.cfg.prune.trash_retention_days;
     let sweep = sweep_trash(&ctx.paths.trash_dir(), trash_days);
 
-    let (log_rows, event_rows, purged_rows) = if ctx.paths.db_path().exists() {
+    let (log_rows, event_rows, purge) = if ctx.paths.db_path().exists() {
         let retention_days = ctx.cfg.prune.learning_retention_days;
         let conn = ctx.conn()?;
         let now = OffsetDateTime::now_utc();
-        let purged = purge_rows(conn, &sweep, trash_days)?;
+        let purge = purge_rows(conn, &sweep, trash_days)?;
         let counts = sweep_learning(conn, retention_days, now)?;
         record_run(conn, &sweep, counts, now)?;
-        (counts.0, counts.1, purged)
+        (counts.0, counts.1, purge)
     } else {
-        (0, 0, 0)
+        (0, 0, Purge::default())
     };
 
     Ok(Response {
@@ -102,7 +109,8 @@ pub fn run(ctx: &mut Ctx<'_>, _req: Request) -> Result<Response> {
         log_rows,
         event_rows,
         bytes_freed: sweep.bytes_freed,
-        purged_rows,
+        purged_rows: purge.rows,
+        derived_stale: purge.derived_stale,
     })
 }
 
@@ -154,7 +162,12 @@ fn sweep_trash(trash_dir: &Path, retention_days: u32) -> Sweep {
 /// live, or already gone, counts nothing. The derived artifacts (memory
 /// rank, `edge_fts`) are refreshed once afterwards, since purged incoming
 /// edges leave the triplet index stale.
-fn purge_rows(conn: &mut Connection, sweep: &Sweep, trash_days: u32) -> Result<u64> {
+///
+/// That refresh runs AFTER the purge transactions commit — inside them a
+/// failure would roll back rows that were correctly removed — so it cannot
+/// fail the run. It is reported instead: [`Purge::derived_stale`] carries
+/// it into the response rather than leaving it in the log alone.
+fn purge_rows(conn: &mut Connection, sweep: &Sweep, trash_days: u32) -> Result<Purge> {
     let mut purged = 0u64;
     for id in &sweep.reaped {
         purged += u64::from(memory_purge::purge_memory(conn, id)?);
@@ -164,10 +177,22 @@ fn purge_rows(conn: &mut Connection, sweep: &Sweep, trash_days: u32) -> Result<u
             purged += u64::from(memory_purge::purge_memory(conn, &id)?);
         }
     }
-    if purged > 0 {
-        crate::graph::derived::refresh_derived_best_effort(conn);
-    }
-    Ok(purged)
+    let derived_stale = purged > 0 && !crate::graph::derived::refresh_derived_best_effort(conn);
+    Ok(Purge {
+        rows: purged,
+        derived_stale,
+    })
+}
+
+/// What [`purge_rows`] did: the rows it hard-deleted, and whether the
+/// derived-artifact refresh that follows them failed. `default()` is the
+/// no-database case — nothing purged, nothing to refresh.
+#[derive(Default)]
+struct Purge {
+    /// Mirror rows hard-deleted.
+    rows: u64,
+    /// The triplet index could not be rebuilt after the purge.
+    derived_stale: bool,
 }
 
 /// Insert one `gc_runs` row for this completed sweep. Only reached when

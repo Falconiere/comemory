@@ -160,6 +160,9 @@ fn serve_banner_token_gate_and_v1_graph_over_a_real_index() {
 #[test]
 fn serve_read_only_refuses_a_mutating_route_with_405() {
     let home = TempDir::new().expect("home");
+    // Recorded BEFORE the server starts: the emptiness check below is only
+    // meaningful if this directory is the server's own work.
+    let existed_before = home.path().join(".comemory").join("memories").exists();
     let (base, token, _guard) = spawn_serve(&home, &["--read-only"]);
     let client = reqwest::blocking::Client::new();
 
@@ -180,6 +183,11 @@ fn serve_read_only_refuses_a_mutating_route_with_405() {
     assert!(
         memories.is_dir(),
         "the server creates its data dirs at startup, read-only or not"
+    );
+    assert!(
+        !existed_before,
+        "the fixture must start with no data dir, or the assertion above \
+         proves nothing about who created it"
     );
     let written: Vec<String> = std::fs::read_dir(&memories)
         .expect("read memories dir")

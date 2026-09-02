@@ -81,7 +81,7 @@ pub fn drop_repo(conn: &mut Connection, repo: &str) -> Result<DropCounts> {
     tx.execute("DELETE FROM repo_marker WHERE repo = ?1", [repo])?;
     tx.commit()?;
 
-    derived::refresh_derived_best_effort(conn);
+    let _stale = derived::refresh_derived_best_effort(conn);
     Ok(DropCounts {
         symbols_removed: count(symbols_removed),
         files_removed: count(files_removed),

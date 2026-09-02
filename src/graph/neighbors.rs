@@ -97,6 +97,28 @@ static NEIGHBOR_SQL: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
     )
 });
 
+/// Serializes a set of `(repo, path)` pairs as the JSON array of
+/// `file:<repo>:<path>` ids that `json_each(:seeds)` reads, formatting each
+/// id into the output as it goes rather than collecting them first. Serde
+/// does the escaping, so a path containing a quote or a backslash stays
+/// valid JSON.
+struct SeedIds<'a>(&'a BTreeSet<(&'a str, &'a str)>);
+
+impl serde::Serialize for SeedIds<'_> {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq as _;
+
+        let mut seq = serializer.serialize_seq(Some(self.0.len()))?;
+        for (repo, path) in self.0 {
+            seq.serialize_element(&file_node_id(repo, path))?;
+        }
+        seq.end()
+    }
+}
+
 /// Query the [`NEIGHBOR_SQL`] one-hop neighborhood of `seeds`, a list of
 /// `(repo, path)` pairs that is deduplicated here (callers may pass the
 /// same file twice — a memory citing several symbols in one file does).
@@ -115,11 +137,10 @@ pub fn file_neighbors(
     if distinct.is_empty() {
         return Ok(Vec::new());
     }
-    let seed_ids: Vec<String> = distinct
-        .into_iter()
-        .map(|(repo, path)| file_node_id(repo, path))
-        .collect();
-    let seeds_json = serde_json::to_string(&seed_ids)?;
+    // Serialized straight from the iterator: the ids exist only inside the
+    // JSON string that `json_each(:seeds)` binds, so there is no
+    // `Vec<String>` of them to build and drop on a retrieval hot path.
+    let seeds_json = serde_json::to_string(&SeedIds(&distinct))?;
     let mut stmt = conn.prepare(&NEIGHBOR_SQL)?;
     let rows = stmt
         .query_map(

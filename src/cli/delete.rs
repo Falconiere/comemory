@@ -83,7 +83,8 @@ pub(crate) fn mirror_soft_delete(conn: &mut rusqlite::Connection, id: &str) -> R
     )?;
     edges::delete_touching(&tx, "memory", id)?;
     tx.commit()?;
-    crate::graph::derived::refresh_derived_best_effort(conn);
+    // Nothing to report it through: a delete's response is the id.
+    let _stale = crate::graph::derived::refresh_derived_best_effort(conn);
     Ok(())
 }
 
