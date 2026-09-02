@@ -79,7 +79,10 @@ pub fn run(ctx: &mut Ctx<'_>, id: &str, overrides: &RootOverrides) -> Result<Res
         store.rewrite(&record)?;
         // Re-mirroring re-materializes `code_ref` from the frontmatter, so
         // the freshness read below sees the new anchors.
-        crate::api::update::mirror_record(ctx, &record)?;
+        // The re-pin's own response reports the refreshed refs; a stale
+        // triplet index is not part of that answer, and the next write
+        // rebuilds it.
+        let _stale = crate::api::update::mirror_record(ctx, &record)?;
     }
 
     let shown = crate::api::show::run(ctx, crate::api::show::Request { id: id.clone() })?;
