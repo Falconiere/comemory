@@ -24,7 +24,7 @@ comemory's settings are layered: built-in defaults → an optional `config.toml`
 | `COMEMORY_REINFORCE_SEARCH_EDIT_DAYS` | Lookback (days) for search→edit auto-reinforcement: a memory that appeared on a recent `search`/`context` page earns `auto_search_edit` provenance when a referenced file is touched. Must be `≥ 1`. | `7` |
 | `COMEMORY_GIT_AUTO_SYNC` | `true`/`1` to enable best-effort git commit + push after a save. Also settable as `[git] auto_sync` (with `[git] remote`) in `config.toml` — the console's `PATCH /api/v1/memory-stores/default` writes those keys; the env var still wins. | `false` |
 | `COMEMORY_EMBED_HINT` | Free-form identifier of the embedder you used (e.g. `ollama:nomic-embed-text`). Surfaced by `comemory doctor`; never consumed as a switch. | unset |
-| `COMEMORY_EMBED_CMD` | Embed command (`sh -c <cmd>`, text on stdin, `{"embedding":[..]}` on stdout) used by `comemory tui`'s semantic enrich and by `comemory serve`'s `POST /api/v1/doctor/reembed`. The `--embed-cmd` flag on `tui`/`serve` overrides it. | unset |
+| `COMEMORY_EMBED_CMD` | Embed command (`sh -c <cmd>`, text on stdin, `{"embedding":[..]}` on stdout) used by `comemory serve`'s `POST /api/v1/doctor/reembed`. `serve --embed-cmd` overrides it. | unset |
 | `COMEMORY_RANK_DECAY` | ACT-R decay exponent `d` in `ln(n) − d·ln(days+1)`. Must be ≥ 0. Higher → older memories decay faster. | `0.5` |
 | `COMEMORY_RANK_PRIOR_CLAMP` | `"lo,hi"` bounds applied to the activation, feedback, and quality boost multipliers (the fixed `0.2` supersede penalty bypasses the clamp). Both finite; lo > 0, lo ≤ hi. | `0.5,2.0` |
 | `COMEMORY_RANK_MMR_LAMBDA` | MMR relevance-vs-diversity trade-off in `[0.0, 1.0]`. `1.0` = pure relevance; `0.0` = pure diversity. | `0.7` |

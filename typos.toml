@@ -11,7 +11,7 @@
 extend-exclude = ["tests/golden/", "scripts/guardrails/", "comemory.io/"]
 
 [default]
-extend-ignore-identifiers-re = ["nomic", "kuzu", "qwick", "cose", "ratatui"]
+extend-ignore-identifiers-re = ["nomic", "kuzu", "qwick", "cose", "ratatui"]  # ratatui: crate name kept in CHANGELOG history
 extend-ignore-re = [
   "serde::ser::",
   "cose-bilkent",

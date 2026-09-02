@@ -11,7 +11,9 @@ several subcommands (`when`, `pagination`, `ref_args`, `embedding_input`,
 loads `Config`, calls into `retrieval::`, `graph::`, `store::`, `memory::`, or
 `prune::` to do the real work, and hands the result to `output::` to render.
 Keeping the logic out of `cli/` is what lets `eval::runner` and tests exercise
-the same pipelines without going through argument parsing.
+the same pipelines without going through argument parsing. CLI integration
+tests stay at crate-root (`tests/cli__*.rs` per command, `tests/cli_scenario_*.rs`
+for multi-command journeys) — never under `src/cli/`.
 
 ## Contents
 
@@ -54,7 +56,6 @@ One line per file, named after its primary item:
 | `show.rs` | `Args` | `comemory show` — one memory in full: body, frontmatter, activation, refs |
 | `sources.rs` | `Args` | `comemory sources` — list registered document sources with status counts |
 | `stats.rs` | `Args` | `comemory stats` — corpus counters and `comemory.db` size |
-| `tui.rs` | `Args` | `comemory tui` — launch the read-only interactive terminal explorer |
 | `tune.rs` | `Args` | `comemory tune` — deterministic/sampled search over the blend knobs |
 | `unindex.rs` | `Args` | `comemory unindex <SOURCE_ID\|PATH>` — unregister a document source |
 | `when.rs` | `DayEdge` | `--since`/`--until`/`--as-of` value parsing shared by `search` and `context` |
