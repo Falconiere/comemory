@@ -35,6 +35,12 @@ pub struct Response {
     /// On-disk path the markdown file was restored to, back under
     /// `memories/`.
     pub path: String,
+    /// The restore left the derived artifacts stale: `edge_fts` could not be
+    /// rebuilt after the row and its incoming edges came back. The restore
+    /// itself committed — a freshness warning, not a failure. Omitted when
+    /// false, as in `gc`, `delete`, `prune` and `update`.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub derived_stale: bool,
 }
 
 /// Restore one soft-deleted memory. `Error::NotFound` when no `.trash/`
@@ -48,7 +54,7 @@ pub struct Response {
 pub fn run(ctx: &mut Ctx<'_>, id: &str) -> Result<Response> {
     let store = MemoryStore::new(ctx.paths.clone());
     let record = store.restore(id)?;
-    mirror(ctx, &store, &record).map_err(|e| {
+    let derived_stale = mirror(ctx, &store, &record).map_err(|e| {
         Error::Other(format!(
             "restore: markdown at {} is back under memories/ but the SQLite mirror failed: {}; \
              run `comemory rebuild` to reconcile",
@@ -59,6 +65,7 @@ pub fn run(ctx: &mut Ctx<'_>, id: &str) -> Result<Response> {
     Ok(Response {
         id: record.frontmatter.id.clone(),
         path: record.path.to_string_lossy().into_owned(),
+        derived_stale,
     })
 }
 
@@ -66,7 +73,8 @@ pub fn run(ctx: &mut Ctx<'_>, id: &str) -> Result<Response> {
 /// own transaction), then the row itself through the shared
 /// `api::update::mirror_record`, which also refreshes the derived artifacts
 /// — once, after both halves are in place.
-fn mirror(ctx: &mut Ctx<'_>, store: &MemoryStore, record: &MemoryRecord) -> Result<()> {
+/// Returns whether that refresh failed, so `run` can report it.
+fn mirror(ctx: &mut Ctx<'_>, store: &MemoryStore, record: &MemoryRecord) -> Result<bool> {
     let id = record.frontmatter.id.as_str();
     let live = store.list()?;
     let conn = ctx.conn()?;

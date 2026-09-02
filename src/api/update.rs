@@ -51,6 +51,12 @@ pub struct Response {
     pub id: String,
     /// On-disk path of the markdown file behind [`Response::id`].
     pub path: String,
+    /// The patch left the derived artifacts stale: `edge_fts` could not be
+    /// rebuilt after the re-mirror. The patch itself committed — a freshness
+    /// warning, not a failure — and a `quality`-only patch never sets it,
+    /// since that path skips the refresh by design. Omitted when false.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub derived_stale: bool,
     /// The old id, present only when the body changed and a new memory was
     /// minted to supersede it.
     pub superseded: Option<String>,
@@ -141,6 +147,10 @@ fn resave(ctx: &mut Ctx<'_>, old: &MemoryRecord, req: &Request, body: String) ->
     Ok(Response {
         id: saved.id,
         path: saved.path,
+        // The re-save runs the save path, which refreshes the derived
+        // artifacts itself and reports nothing back; a body patch has no
+        // staleness of its own to add.
+        derived_stale: false,
         superseded: Some(fm.id.clone()),
         changed,
     })
@@ -164,20 +174,25 @@ fn patch_in_place(
         return Ok(Response {
             id,
             path,
+            derived_stale: false,
             superseded: None,
             changed,
         });
     }
     apply(&mut record.frontmatter, req);
     store.rewrite(record)?;
-    if needs_derived_refresh(&changed) {
-        mirror_record(ctx, record)?;
+    let derived_stale = if needs_derived_refresh(&changed) {
+        mirror_record(ctx, record)?
     } else {
+        // The inert-field path skips the refresh entirely, so there is
+        // nothing that could have gone stale.
         mirror_row(ctx, record)?;
-    }
+        false
+    };
     Ok(Response {
         id,
         path,
+        derived_stale,
         superseded: None,
         changed,
     })
@@ -252,10 +267,13 @@ fn dedup(tags: &[String]) -> Vec<String> {
 /// exactly what a restore needs — hence `pub(crate)`, shared with
 /// [`crate::api::restore`] and [`crate::api::refresh_refs`] rather than
 /// re-derived in each.
-pub(crate) fn mirror_record(ctx: &mut Ctx<'_>, record: &MemoryRecord) -> Result<()> {
+/// Returns whether the derived refresh FAILED, so the caller can report a
+/// stale relation index the way `gc`, `delete` and `prune` do.
+pub(crate) fn mirror_record(ctx: &mut Ctx<'_>, record: &MemoryRecord) -> Result<bool> {
     mirror_row(ctx, record)?;
-    let _stale = crate::graph::derived::refresh_derived_best_effort(ctx.conn()?);
-    Ok(())
+    Ok(!crate::graph::derived::refresh_derived_best_effort(
+        ctx.conn()?,
+    ))
 }
 
 /// The transaction half of [`mirror_record`], without the derived refresh.

@@ -185,6 +185,12 @@ therefore cannot fail the run; when it does fail, `--json` says so with
 index anyway. Relation search (`comemory edges`) is the only thing behind
 until then.
 
+The same field appears on every response whose write can leave that index
+behind — `delete`, `prune --apply`, `PATCH /memories/{id}` and
+`POST /memories/{id}/restore` — always omitted when false. `rebuild` is the
+exception: it emits nothing on success by contract, so a failed refresh
+there is logged rather than reported.
+
 The telemetry window is `COMEMORY_LEARNING_RETENTION_DAYS` (default `90`). It
 applies to **raw** rows only — `retrieval_log` and `feedback_events`:
 

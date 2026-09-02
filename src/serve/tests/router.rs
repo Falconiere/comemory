@@ -270,8 +270,8 @@ async fn a_body_over_the_limit_is_refused_413_before_the_handler() {
     let listed = serve_state::send(&session, "GET", "/api/v1/memories", None).await;
     assert_eq!(listed.status, 200, "body: {}", listed.text);
     assert_eq!(
-        listed.json["data"]["items"].as_array().map(Vec::len),
-        Some(0),
+        listed.json["data"]["items"].as_array(),
+        Some(&vec![]),
         "nothing over the limit was stored: {}",
         listed.text
     );
