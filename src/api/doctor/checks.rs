@@ -394,11 +394,14 @@ fn markdown_db_counts(conn: &Connection, markdown_files: u64) -> Result<Check> {
     // LIVE rows only: `markdown_files` comes from `MemoryStore::list()`, which
     // never walks `.trash/`, so counting soft-deleted rows here would report a
     // permanent spurious warn on any corpus that has ever had a memory pruned.
-    let db_rows: u64 = conn.query_row(
+    // `COUNT(*)` is an i64 to SQLite (rusqlite 0.40 dropped `FromSql for
+    // u64`); it is never negative, so the fallback is unreachable.
+    let db_rows: i64 = conn.query_row(
         "SELECT COUNT(*) FROM memories WHERE deleted_at IS NULL",
         [],
         |r| r.get(0),
     )?;
+    let db_rows = u64::try_from(db_rows).unwrap_or(0);
     let detail = format!("{markdown_files} markdown file(s), {db_rows} memories row(s)");
     Ok(if markdown_files == db_rows {
         ok("markdown/db counts", detail)
