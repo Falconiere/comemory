@@ -251,6 +251,11 @@ async fn a_body_over_the_limit_is_refused_413_before_the_handler() {
         "the limit layer answers before the envelope exists: {}",
         resp.text
     );
+    assert_eq!(
+        resp.text, "Failed to buffer the request body: length limit exceeded",
+        "axum's own plain-text body, verbatim — this is the one response \
+         on `/api/v1` that is deliberately not an envelope"
+    );
 
     let listed = serve_state::send(&session, "GET", "/api/v1/memories", None).await;
     assert_eq!(listed.status, 200, "body: {}", listed.text);

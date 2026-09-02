@@ -290,6 +290,14 @@ fn build_new_db(old_db: &Path, tmp_path: &Path, paths: &crate::config::paths::Pa
     // Derived artifacts last: the replay supplies the memory→memory
     // relations and the copy above restores the mined code-graph edges, so
     // the graph is only whole now.
+    //
+    // Its outcome is bound and dropped rather than reported: `run` emits
+    // nothing on success by contract (the CLI is silent, the job's
+    // `result` is `null`), and a rebuild whose rows are all in place has
+    // not failed because a derived index needs another pass. The failure
+    // is logged by the refresh itself, and the next save, delete or
+    // index-code run rebuilds the index. `gc` and `delete` DO report it —
+    // they have a response with somewhere to put it.
     let _stale = crate::graph::derived::refresh_derived_best_effort(&mut conn);
 
     // Close the connection before rename by dropping it here.
