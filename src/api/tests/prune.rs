@@ -121,6 +121,41 @@ fn run_apply_with_ids_touches_only_the_listed_candidate() {
     make_prune_eligible(&home, &doomed);
     make_prune_eligible(&home, &spared);
 
+    let memories = data_dir(&home).join("memories");
+    let live = |id: &str| {
+        std::fs::read_dir(&memories)
+            .expect("read memories dir")
+            .filter_map(std::result::Result::ok)
+            .filter(|e| e.file_name().to_string_lossy().starts_with(id))
+            .count()
+    };
+    let path_of = |id: &str| -> Option<std::path::PathBuf> {
+        std::fs::read_dir(&memories)
+            .expect("read memories dir")
+            .filter_map(std::result::Result::ok)
+            .map(|e| e.path())
+            .find(|p| {
+                p.file_name()
+                    .is_some_and(|n| n.to_string_lossy().starts_with(id))
+            })
+    };
+    // The survivors' exact `{id}-{slug}.md` paths BEFORE the run. `live`
+    // only counts files whose name starts with the id, so a rename (or a
+    // re-save under a fresh slug) would otherwise still read as a survival;
+    // comparing the post-run path against this snapshot does not.
+    let spared_before = path_of(&spared).expect("the unlisted candidate is live before the run");
+    let healthy_before = path_of(&healthy).expect("the non-candidate is live before the run");
+    for (id, path) in [(&spared, &spared_before), (&healthy, &healthy_before)] {
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or_default();
+        assert!(
+            path.extension().is_some_and(|ext| ext == "md") && stem.starts_with(&format!("{id}-")),
+            "seeded file must be named `{id}-<slug>.md`, got {path:?}"
+        );
+    }
+
     let paths = Paths::new(data_dir(&home));
     let mut conn = connection::open(paths.db_path()).expect("open db");
     let cfg = Config::defaults();
@@ -135,33 +170,22 @@ fn run_apply_with_ids_touches_only_the_listed_candidate() {
     };
     api::prune::run(&mut ctx, req).expect("prune run");
 
-    let memories = data_dir(&home).join("memories");
-    let live = |id: &str| {
-        std::fs::read_dir(&memories)
-            .expect("read memories dir")
-            .filter_map(std::result::Result::ok)
-            .filter(|e| e.file_name().to_string_lossy().starts_with(id))
-            .count()
-    };
-    // The exact path of the survivor, not just "a file whose name starts
-    // with the id": a rename would otherwise read as a survival.
-    let path_of = |id: &str| -> Option<std::path::PathBuf> {
-        std::fs::read_dir(&memories)
-            .expect("read memories dir")
-            .filter_map(std::result::Result::ok)
-            .map(|e| e.path())
-            .find(|p| {
-                p.file_name()
-                    .is_some_and(|n| n.to_string_lossy().starts_with(id))
-            })
-    };
-    let healthy_path = path_of(&healthy).expect("the non-candidate file must still be live");
     assert_eq!(live(&doomed), 0, "the listed candidate must be pruned");
     assert_eq!(live(&spared), 1, "an unlisted candidate must survive");
     assert_eq!(live(&healthy), 1, "a non-candidate id must be ignored");
+    assert_eq!(
+        path_of(&spared).as_deref(),
+        Some(spared_before.as_path()),
+        "the unlisted candidate keeps its exact path"
+    );
+    assert_eq!(
+        path_of(&healthy).as_deref(),
+        Some(healthy_before.as_path()),
+        "the non-candidate keeps its exact path"
+    );
     assert!(
-        healthy_path.starts_with(&memories) && healthy_path.is_file(),
-        "the non-candidate stays exactly where it was: {healthy_path:?}"
+        spared_before.is_file() && healthy_before.is_file(),
+        "both survivors stay exactly where they were: {spared_before:?}, {healthy_before:?}"
     );
     let trashed = std::fs::read_dir(memories.join(".trash"))
         .expect("read .trash")
