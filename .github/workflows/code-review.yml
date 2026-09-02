@@ -66,3 +66,11 @@ jobs:
           # by.
           RULES_GLOB: guardrails.config.json
           RULES_REF: base
+          # `.claude/` is agent scratch, never shipped code, and this PR
+          # DELETES `.claude/tmp/.gitkeep` — the reviewer cannot fetch
+          # content that is not there, so it reported the file
+          # `unreviewed (not-attempted)` and downgraded its own verdict to
+          # "Review incomplete — provider error" on a diff it had no
+          # findings against. Excluded files are still committed and still
+          # gated by `test`; they are only kept out of the LLM's diff.
+          EXCLUDE_GLOBS: .claude/**
