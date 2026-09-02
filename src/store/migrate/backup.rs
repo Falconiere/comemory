@@ -10,7 +10,7 @@
 //! [`snapshot`] validates and clears a stale destination first.
 //!
 //! There is deliberately no free-space precheck: `std` exposes no such API
-//! and `libc`/`nix` are dev-dependencies only. `SQLITE_FULL` surfaces from
+//! and the crate carries no libc binding. `SQLITE_FULL` surfaces from
 //! `VACUUM INTO` like any other SQLite error and is handled by the caller's
 //! class-dependent warn-or-refuse branch.
 
