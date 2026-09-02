@@ -36,6 +36,7 @@ fn emit_accepts_empty_report_in_json_mode() {
         ghost_ref_memories: Page::from_slice(Vec::new(), 50, 0),
         trash_count: 0,
         reclaimable_bytes: 0,
+        derived_stale: false,
     };
     prune::emit(&report, true).expect("emit must succeed for empty report (JSON)");
 }
@@ -49,6 +50,7 @@ fn emit_accepts_empty_report_in_tty_mode() {
         ghost_ref_memories: Page::from_slice(Vec::new(), 50, 0),
         trash_count: 0,
         reclaimable_bytes: 0,
+        derived_stale: false,
     };
     prune::emit(&report, false).expect("emit must succeed for empty report (TTY)");
 }
@@ -66,6 +68,7 @@ fn emit_accepts_populated_low_value_list_in_tty_mode() {
         ghost_ref_memories: Page::from_slice(vec![row("aaaa0003", "stale code")], 50, 0),
         trash_count: 2,
         reclaimable_bytes: 4096,
+        derived_stale: false,
     };
     prune::emit(&report, false).expect("emit must succeed for populated report (TTY)");
 }
@@ -87,6 +90,7 @@ fn populated_ghost_ref_memories_appear_in_rendered_json() {
         ),
         trash_count: 0,
         reclaimable_bytes: 0,
+        derived_stale: false,
     };
     let rendered = serde_json::to_value(&report).expect("serialise report");
     let items = rendered["ghost_ref_memories"]["items"]

@@ -42,6 +42,23 @@ runs:
       run: |
         set -euo pipefail
 
+        # Both values come from the GitHub context, and both are interpolated
+        # into a URL path, so shape is checked before use rather than assumed:
+        # anything but `owner/name` and a 40-hex SHA is refused outright. The
+        # expansions are quoted too, so nothing reaches a second command
+        # either way — this is about not building a nonsense request.
+        case "$REPO" in
+          */*/*|"") echo "::error::unexpected repository '$REPO'"; exit 1 ;;
+          */*) ;;
+          *) echo "::error::unexpected repository '$REPO'"; exit 1 ;;
+        esac
+        for value in "$SHA" "$HEAD_SHA"; do
+          [ -z "$value" ] && continue
+          case "$value" in
+            *[!0-9a-fA-F]*|"") echo "::error::unexpected commit sha '$value'"; exit 1 ;;
+          esac
+        done
+
         # The review workflow and this one are triggered by the same event, so
         # they share `github.sha`; the head SHA is polled as a fallback for the
         # case where the check landed on the branch tip instead.
@@ -90,6 +107,17 @@ runs:
         PR: ${{ github.event.pull_request.number }}
       run: |
         set -euo pipefail
+
+        # Same shape check as the wait step: a PR number is digits, a repo is
+        # `owner/name`, and neither is trusted into a URL unchecked.
+        case "$PR" in
+          *[!0-9]*|"") echo "::error::unexpected pull request number '$PR'"; exit 1 ;;
+        esac
+        case "$REPO" in
+          */*/*|"") echo "::error::unexpected repository '$REPO'"; exit 1 ;;
+          */*) ;;
+          *) echo "::error::unexpected repository '$REPO'"; exit 1 ;;
+        esac
 
         # The reviewer edits ONE sticky comment per PR, so the last comment
         # it authored is this run's report. Its shape (observed across the

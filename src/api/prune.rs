@@ -66,10 +66,10 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Report> {
     let cfg = ctx.cfg;
     let paths = ctx.paths;
     let conn = ctx.conn()?;
-    let scanned = scan(&*conn, paths, cfg, req.limit, req.offset)?;
+    let mut scanned = scan(&*conn, paths, cfg, req.limit, req.offset)?;
     if req.apply {
         let selected = select_ids(&scanned.full_low_value, &req.ids)?;
-        apply(conn, paths, &selected)?;
+        scanned.report.derived_stale = apply(conn, paths, &selected)?;
     }
     Ok(scanned.report)
 }
@@ -161,6 +161,9 @@ fn scan(
         ghost_ref_memories,
         trash_count,
         reclaimable_bytes,
+        // A scan reports nothing about the graph; `apply` sets this when
+        // its soft deletes leave the triplet index behind.
+        derived_stale: false,
     };
     Ok(Scan {
         report,
@@ -252,9 +255,12 @@ fn trash_stats(paths: &Paths) -> (u64, u64) {
 /// ([`soft_delete_low_value`]) then drop orphan/stale rows in one transaction
 /// ([`cleanup_orphans`]). Safe on a clean DB — every `DELETE` is a no-op when
 /// no candidates exist.
-fn apply(conn: &mut rusqlite::Connection, paths: &Paths, low_value_ids: &[String]) -> Result<()> {
-    soft_delete_low_value(conn, paths, low_value_ids)?;
-    cleanup_orphans(conn)
+/// Returns whether the soft deletes left the derived artifacts stale — the
+/// same signal `delete` and `gc` report, carried up to the prune report.
+fn apply(conn: &mut rusqlite::Connection, paths: &Paths, low_value_ids: &[String]) -> Result<bool> {
+    let derived_stale = soft_delete_low_value(conn, paths, low_value_ids)?;
+    cleanup_orphans(conn)?;
+    Ok(derived_stale)
 }
 
 /// Soft-delete every flagged low-value id through [`delete::soft_delete`] (the
@@ -262,14 +268,18 @@ fn apply(conn: &mut rusqlite::Connection, paths: &Paths, low_value_ids: &[String
 /// memory's markdown is already gone so prune cannot wedge on a half-deleted
 /// row. Ghost-ref candidates are intentionally NOT deleted here: they are
 /// advisory (spec Non-Goal 5).
+/// Returns whether ANY of the deletes left the derived artifacts stale, so
+/// the caller can report it the way `delete` and `gc` do rather than let a
+/// stale relation index reach only the log.
 fn soft_delete_low_value(
     conn: &mut rusqlite::Connection,
     paths: &Paths,
     low_value_ids: &[String],
-) -> Result<()> {
+) -> Result<bool> {
+    let mut derived_stale = false;
     for id in low_value_ids {
         match delete::soft_delete(paths, conn, id) {
-            Ok(_) => {}
+            Ok((_id, stale)) => derived_stale |= stale,
             // Half-deleted state: live DB row, markdown already gone —
             // producible by a crash inside `delete` between its file move
             // and its DB transaction. The markdown (source of truth)
@@ -281,12 +291,12 @@ fn soft_delete_low_value(
                     id = %id,
                     "prune: markdown missing for flagged memory; healing DB mirror"
                 );
-                delete::mirror_soft_delete(conn, id)?;
+                derived_stale |= delete::mirror_soft_delete(conn, id)?;
             }
             Err(e) => return Err(e),
         }
     }
-    Ok(())
+    Ok(derived_stale)
 }
 
 /// Drop orphan/stale rows in a single transaction: orphan memory edges, the

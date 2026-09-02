@@ -43,6 +43,13 @@ pub struct Report {
     /// Summed size, in bytes, of every file under `memories/.trash/` —
     /// what a `comemory gc` run right now would be able to reclaim.
     pub reclaimable_bytes: u64,
+    /// An `--apply` run soft-deleted memories but could not rebuild
+    /// `edge_fts` afterwards, so relation search is behind until the next
+    /// write refreshes it. The deletes themselves committed — this is a
+    /// freshness warning, not a failure — and it is always false for a
+    /// dry run. Omitted from the JSON when false, as in `gc`'s report.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub derived_stale: bool,
 }
 
 /// One prune candidate, enriched for the console: which memory, why it was
