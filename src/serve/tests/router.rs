@@ -71,6 +71,16 @@ async fn root_is_unrouted_and_ungated() {
     let resp =
         serve_state::send_headers(&session, "GET", "/", &[("Host", "127.0.0.1")], None).await;
     assert_eq!(resp.status, 404, "body: {}", resp.text);
+    assert!(
+        resp.text.is_empty(),
+        "an unrouted path is axum's own empty 404 — no envelope, no body, \
+         and nothing that hints at what IS mounted: {}",
+        resp.text
+    );
+    assert!(
+        resp.headers.get("set-cookie").is_none(),
+        "an ungated path issues no session cookie"
+    );
 }
 
 #[tokio::test]

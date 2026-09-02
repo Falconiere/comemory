@@ -119,25 +119,30 @@ struct Marker {
 
 /// Join `repo_marker` against the per-repo counters, narrowed to `repo`
 /// when one was requested, ordered by repo label for deterministic output.
+///
+/// Every counter subquery carries an alias and the mapper reads BY NAME:
+/// adding a column, or moving one, then cannot silently shift what each
+/// field is filled from.
 fn fetch_markers(conn: &Connection, repo: Option<&str>) -> Result<Vec<Marker>> {
     let sql = "SELECT rm.repo, rm.root_path, rm.last_head, rm.last_indexed_at, rm.archived, \
-                      (SELECT COUNT(DISTINCT path) FROM indexed_files WHERE repo = rm.repo), \
-                      (SELECT COUNT(*) FROM code_symbols WHERE repo = rm.repo), \
+                      (SELECT COUNT(DISTINCT path) FROM indexed_files WHERE repo = rm.repo) AS files, \
+                      (SELECT COUNT(*) FROM code_symbols WHERE repo = rm.repo) AS symbols, \
                       (SELECT COUNT(*) FROM memories WHERE repo = rm.repo AND deleted_at IS NULL) \
+                        AS memories \
                FROM repo_marker rm \
                WHERE (?1 IS NULL OR rm.repo = ?1) \
                ORDER BY rm.repo";
     let mut stmt = conn.prepare(sql)?;
     let rows = stmt.query_map([repo], |r| {
         Ok(Marker {
-            repo: r.get(0)?,
-            root_path: r.get(1)?,
-            last_head: r.get(2)?,
-            last_indexed_at: r.get(3)?,
-            archived: r.get::<_, i64>(4)? != 0,
-            files: r.get::<_, i64>(5)? as u64,
-            symbols: r.get::<_, i64>(6)? as u64,
-            memories: r.get::<_, i64>(7)? as u64,
+            repo: r.get("repo")?,
+            root_path: r.get("root_path")?,
+            last_head: r.get("last_head")?,
+            last_indexed_at: r.get("last_indexed_at")?,
+            archived: r.get::<_, i64>("archived")? != 0,
+            files: r.get::<_, i64>("files")? as u64,
+            symbols: r.get::<_, i64>("symbols")? as u64,
+            memories: r.get::<_, i64>("memories")? as u64,
         })
     })?;
     let mut out = Vec::new();
