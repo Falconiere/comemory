@@ -3,7 +3,8 @@
     clippy::expect_used,
     clippy::panic,
     clippy::float_cmp,
-    clippy::too_many_lines
+    clippy::too_many_lines,
+    clippy::print_stderr
 )]
 //! Test mirror for `src/document/fingerprint.rs`. Its size+mtime skip,
 //! size-ceiling, and content-hash comparison are all private to the
@@ -168,7 +169,12 @@ fn unreadable_file_is_still_reported_as_error_on_an_unchanged_second_run() {
     fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).expect("chmod 000");
     if fs::read(&path).is_ok() {
         // uid 0 bypasses mode bits, so the "unreadable" precondition cannot
-        // be staged under root; there is nothing to assert in that case.
+        // be staged under root. Say so on stderr (visible with --nocapture
+        // and in every failure report) instead of passing silently.
+        eprintln!(
+            "SKIPPED: chmod 000 left {} readable (running as root?)",
+            path.display()
+        );
         return;
     }
     let c = candidate("changelog.txt", &path, DocumentFormat::Txt);

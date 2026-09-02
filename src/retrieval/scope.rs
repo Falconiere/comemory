@@ -155,8 +155,9 @@ impl Domains {
         Domains::of(&[Domain::Memory, Domain::Document, Domain::Code])
     }
 
-    /// Memory only — pinned by `eval`/`tune`/`bandit`/feedback harvesting
-    /// (matching their memory-id golden pairs).
+    /// Memory only — pinned by `eval::runner` (behind `eval`, `tune`, and
+    /// `bandit`, whose golden pairs are memory ids) and by
+    /// `cli::search_only` for a memory-only `--only`.
     pub fn memory_only() -> Self {
         Domains::of(&[Domain::Memory])
     }

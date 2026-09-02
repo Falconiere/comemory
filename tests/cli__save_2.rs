@@ -401,8 +401,8 @@ fn save_rejects_out_of_range_quality() {
         .failure();
     let stderr = String::from_utf8(assertion.get_output().stderr.clone()).expect("utf8 stderr");
     assert!(
-        stderr.contains('5'),
-        "stderr should mention upper bound 5, got: {stderr:?}"
+        stderr.contains("1..=5"),
+        "stderr should name the accepted range 1..=5, got: {stderr:?}"
     );
 }
 
