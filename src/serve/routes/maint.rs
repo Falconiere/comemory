@@ -76,7 +76,7 @@ async fn consolidate(
     scope: RepoScope,
     Query(mut req): Query<api::consolidate::Request>,
 ) -> Response {
-    scope.fill_if_absent(&mut req.repo);
+    req.repo = scope.resolve(req.repo);
     let started = Instant::now();
     let result = run_blocking(move || {
         let cfg = state.cfg();

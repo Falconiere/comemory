@@ -50,7 +50,7 @@ async fn find_get(
     scope: RepoScope,
     Query(mut req): Query<api::find::Request>,
 ) -> Response {
-    scope.fill_if_absent(&mut req.repo);
+    req.repo = scope.resolve(req.repo);
     execute(state, req).await
 }
 
@@ -60,7 +60,7 @@ async fn find_post(
     scope: RepoScope,
     Json(mut req): Json<api::find::Request>,
 ) -> Response {
-    scope.fill_if_absent(&mut req.repo);
+    req.repo = scope.resolve(req.repo);
     execute(state, req).await
 }
 

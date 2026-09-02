@@ -27,15 +27,15 @@ pub const REPO_HEADER: &str = "x-comemory-repo";
 pub struct RepoScope(pub Option<String>);
 
 impl RepoScope {
-    /// Fill `repo` from the resolved scope when the request left it unset —
-    /// and only then. Named for that guard rather than `apply`, because a
-    /// call site reading `scope.fill_if_absent(&mut req.repo)` looks like it might
-    /// overwrite an explicit `?repo=`, which is the one thing this must
-    /// never do: the header and `--repo` are defaults, not overrides.
-    pub fn fill_if_absent(&self, repo: &mut Option<String>) {
-        if repo.is_none() {
-            repo.clone_from(&self.0);
-        }
+    /// The repo filter to use, given what the request asked for: `explicit`
+    /// when it named one, the resolved scope otherwise.
+    ///
+    /// Takes the request's value and returns the answer rather than filling
+    /// a `&mut`, so the precedence is the expression itself — `explicit.or(
+    /// scope)` — instead of a guard a reader has to go and check. The header
+    /// and `--repo` are defaults; an explicit `?repo=` always wins.
+    pub fn resolve(&self, explicit: Option<String>) -> Option<String> {
+        explicit.or_else(|| self.0.clone())
     }
 }
 
