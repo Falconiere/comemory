@@ -40,15 +40,19 @@ pub struct Args {
 /// Shared by `comemory delete` (via `api::delete::run`) and `comemory
 /// prune` (low-value apply path) so the two soft-delete surfaces cannot
 /// drift.
+/// Returns the canonical id and whether the derived-artifact refresh that
+/// follows the mirror write FAILED, so the caller can report a stale
+/// relation index instead of leaving it in the log
+/// ([`crate::graph::derived::refresh_derived_best_effort`]).
 pub(crate) fn soft_delete(
     paths: &Paths,
     conn: &mut rusqlite::Connection,
     id: &str,
-) -> Result<String> {
+) -> Result<(String, bool)> {
     let removed = MemoryStore::new(paths.clone()).delete(id)?;
     let id = removed.frontmatter.id;
-    mirror_soft_delete(conn, &id)?;
-    Ok(id)
+    let derived_stale = mirror_soft_delete(conn, &id)?;
+    Ok((id, derived_stale))
 }
 
 /// Mirror a soft-delete into `comemory.db` in one transaction: stamp
@@ -63,7 +67,7 @@ pub(crate) fn soft_delete(
 /// [`crate::graph::derived`] refreshes both derived artifacts best-effort
 /// here, not at the [`soft_delete`] call site: every soft-delete surface
 /// (delete, prune apply, prune heal) then heals rank and triplets alike.
-pub(crate) fn mirror_soft_delete(conn: &mut rusqlite::Connection, id: &str) -> Result<()> {
+pub(crate) fn mirror_soft_delete(conn: &mut rusqlite::Connection, id: &str) -> Result<bool> {
     let now = memory_row::iso_format(OffsetDateTime::now_utc())?;
     let tx = conn.transaction()?;
     tx.execute(
@@ -83,9 +87,10 @@ pub(crate) fn mirror_soft_delete(conn: &mut rusqlite::Connection, id: &str) -> R
     )?;
     edges::delete_touching(&tx, "memory", id)?;
     tx.commit()?;
-    // Nothing to report it through: a delete's response is the id.
-    let _stale = crate::graph::derived::refresh_derived_best_effort(conn);
-    Ok(())
+    // After the commit, so a failed refresh cannot roll back a delete that
+    // succeeded — and reported rather than swallowed, since a stale
+    // relation index is something the caller can pass on.
+    Ok(!crate::graph::derived::refresh_derived_best_effort(conn))
 }
 
 /// Soft-delete the memory and report the affected id. Parses `Args`, opens
