@@ -337,24 +337,32 @@ fn repo_roots(conn: &Connection) -> Result<(Check, u32, u32)> {
     let result = if ok_count == total {
         ok("repo roots", detail)
     } else {
-        warn("repo roots", detail).with_remedy(&archive_remedy(&missing))
+        archive_remedy(&missing).map_or_else(
+            || warn("repo roots", detail.clone()),
+            |remedy| warn("repo roots", detail.clone()).with_remedy(&remedy),
+        )
     };
     Ok((result, ok_count, total))
 }
 
 /// The archive suggestion for every repo whose root has gone: one runnable
 /// route per label, joined, so nothing is left for the reader to fill in.
-/// Falls back to the route template only if the caller somehow has no
-/// labels, which the `ok_count < total` branch makes unreachable.
-fn archive_remedy(missing: &[String]) -> String {
+///
+/// Returns `None` for an empty list rather than a `{name}` template the
+/// console cannot invoke — and the caller only reaches this on the
+/// `ok_count < total` branch, where at least one label is missing by
+/// construction, so `None` never actually reaches a report.
+fn archive_remedy(missing: &[String]) -> Option<String> {
     if missing.is_empty() {
-        return "POST /api/v1/repos/{name}/archive".to_string();
+        return None;
     }
-    missing
-        .iter()
-        .map(|repo| format!("POST /api/v1/repos/{repo}/archive"))
-        .collect::<Vec<_>>()
-        .join("; ")
+    Some(
+        missing
+            .iter()
+            .map(|repo| format!("POST /api/v1/repos/{repo}/archive"))
+            .collect::<Vec<_>>()
+            .join("; "),
+    )
 }
 
 /// Check 8: run the configured `COMEMORY_EMBED_CMD` (`crate::embed`) and

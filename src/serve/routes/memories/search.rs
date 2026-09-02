@@ -39,7 +39,7 @@ async fn memories_search_get(
     scope: RepoScope,
     Query(mut req): Query<api::search::Request>,
 ) -> Response {
-    scope.fill_if_absent(&mut req.repo);
+    req.repo = scope.resolve(req.repo);
     handle("search", state, move |state| run_search(state, req)).await
 }
 
@@ -48,7 +48,7 @@ async fn memories_search_post(
     scope: RepoScope,
     Json(mut req): Json<api::search::Request>,
 ) -> Response {
-    scope.fill_if_absent(&mut req.repo);
+    req.repo = scope.resolve(req.repo);
     handle("search", state, move |state| run_search(state, req)).await
 }
 
@@ -57,7 +57,7 @@ async fn context_get(
     scope: RepoScope,
     Query(mut req): Query<api::context::Request>,
 ) -> Response {
-    scope.fill_if_absent(&mut req.repo);
+    req.repo = scope.resolve(req.repo);
     handle("context", state, move |state| run_context(state, req)).await
 }
 
@@ -66,7 +66,7 @@ async fn context_post(
     scope: RepoScope,
     Json(mut req): Json<api::context::Request>,
 ) -> Response {
-    scope.fill_if_absent(&mut req.repo);
+    req.repo = scope.resolve(req.repo);
     handle("context", state, move |state| run_context(state, req)).await
 }
 

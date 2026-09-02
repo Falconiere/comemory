@@ -175,7 +175,7 @@ async fn search_get(
     scope: RepoScope,
     Query(mut req): Query<ConsoleSearch>,
 ) -> Response {
-    scope.fill_if_absent(&mut req.repo);
+    req.repo = scope.resolve(req.repo);
     execute(state, req).await
 }
 
@@ -185,7 +185,7 @@ async fn search_post(
     scope: RepoScope,
     Json(mut req): Json<ConsoleSearch>,
 ) -> Response {
-    scope.fill_if_absent(&mut req.repo);
+    req.repo = scope.resolve(req.repo);
     execute(state, req).await
 }
 
