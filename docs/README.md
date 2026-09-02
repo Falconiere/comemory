@@ -48,3 +48,6 @@ Understanding-oriented background:
 
 - **[Architecture](architecture.md)** — the design: storage layout, the
   retrieval pipeline, the edge graph, auto-reinforcement, and pagination.
+- **[Benchmarking token efficiency](benchmark.md)** — what exists to measure
+  how many tokens and tool calls comemory saves an agent, and the first
+  experiment that would put a number on it.
