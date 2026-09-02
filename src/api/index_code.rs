@@ -219,7 +219,7 @@ fn index_repo(
             "index-code: graph materialization failed; symbol index kept",
         );
     }
-    derived::refresh_derived_best_effort(conn);
+    let _stale = derived::refresh_derived_best_effort(conn);
     Ok(Response {
         repo: req.repo.clone(),
         files_indexed,

@@ -48,7 +48,7 @@ pub fn run(ctx: &mut Ctx<'_>, _req: Request) -> Result<Response> {
     let conn = ctx.conn()?;
     let repos = known_repos(conn)?;
     let symbols_scored = recompute_repos(conn, &repos)?;
-    derived::refresh_derived_best_effort(conn);
+    let _stale = derived::refresh_derived_best_effort(conn);
     let memories_scored = live_memory_count(conn)?;
     Ok(Response {
         repos,

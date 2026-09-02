@@ -19,10 +19,19 @@ use crate::store::edge_fts;
 /// a failure warns and the other still runs. Callers invoke this *after*
 /// their own transaction has committed, so a failed refresh costs only
 /// freshness, never the primary write.
-pub fn refresh_derived_best_effort(conn: &mut Connection) {
+///
+/// Returns whether the triplet index refreshed, so a caller with somewhere
+/// to put it — `gc`'s report does — can tell an operator that the graph is
+/// stale rather than leaving the fact in the log alone. Callers with no
+/// such field ignore it explicitly.
+pub fn refresh_derived_best_effort(conn: &mut Connection) -> bool {
     memory_rank::refresh_best_effort(conn);
-    if let Err(e) = edge_fts::refresh(conn) {
-        tracing::warn!(error = %e, "edge_fts: refresh failed; triplet index left stale");
+    match edge_fts::refresh(conn) {
+        Ok(_rows) => true,
+        Err(e) => {
+            tracing::warn!(error = %e, "edge_fts: refresh failed; triplet index left stale");
+            false
+        }
     }
 }
 

@@ -87,6 +87,39 @@ fn save_writes_md_and_indexes_lexical_when_no_vector() {
 }
 
 #[test]
+fn save_without_title_keeps_the_body_verbatim() {
+    // `--title` folds a headline into the body (and so into the content
+    // hash). Without the flag the body must reach the file untouched —
+    // `api::save::Request` names `title: None` explicitly since the field
+    // was added, and this is the behavior that names it.
+    let home = tempdir().expect("tempdir");
+    let body = "advisory locks serialize the migration runner";
+
+    let mut cmd = Command::cargo_bin("comemory").expect("binary");
+    cmd.env("COMEMORY_DATA_DIR", home.path())
+        .args(["save", body, "--kind", "note", "--repo", "demo"]);
+    cmd.assert().success();
+
+    let dir = home.path().join("memories");
+    let file = std::fs::read_dir(&dir)
+        .expect("memories dir")
+        .filter_map(std::result::Result::ok)
+        .map(|e| e.path())
+        .find(|p| p.extension().is_some_and(|ext| ext == "md"))
+        .expect("one saved memory");
+    let text = std::fs::read_to_string(&file).expect("read memory");
+    let (_frontmatter, saved_body) = text
+        .split_once("---\n")
+        .and_then(|(_, rest)| rest.split_once("\n---\n"))
+        .expect("frontmatter delimiters");
+    assert_eq!(
+        saved_body.trim(),
+        body,
+        "a save with no --title stores the body exactly as given"
+    );
+}
+
+#[test]
 fn save_with_vector_stdin_writes_memory_vec_row() {
     let home = tempdir().expect("tempdir");
     let vector = vectors::vector("seed", 1024);

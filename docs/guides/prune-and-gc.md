@@ -176,6 +176,15 @@ older `gc` (which unlinked files but left their rows behind) heals itself on
 the next run. `--json` reports the row count as `purged_rows`, next to the
 file count in `removed`.
 
+Purging rows invalidates the relation index built from them, so `gc`
+refreshes the derived artifacts (`memories.rank_score`, `edge_fts`) once
+afterwards — after the purge transactions have committed, since a failure
+inside them would roll back rows that were correctly removed. That refresh
+therefore cannot fail the run; when it does fail, `--json` says so with
+`"derived_stale": true` (omitted otherwise) and the next write refreshes the
+index anyway. Relation search (`comemory edges`) is the only thing behind
+until then.
+
 The telemetry window is `COMEMORY_LEARNING_RETENTION_DAYS` (default `90`). It
 applies to **raw** rows only — `retrieval_log` and `feedback_events`:
 

@@ -177,6 +177,22 @@ fn v15_upgrades_a_real_v14_database_without_losing_rows() {
         (0, 0),
         "existing run gains discarded = 0"
     );
+    // And the column's own default, not just what this row ended up with:
+    // a migration that back-filled 0 while declaring a different DEFAULT
+    // would satisfy the assertion above and then diverge on the next
+    // insert that omits the column.
+    let default: Option<String> = conn
+        .query_row(
+            "SELECT dflt_value FROM pragma_table_info('eval_runs') WHERE name = 'discarded'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        default.as_deref(),
+        Some("0"),
+        "the added column declares DEFAULT 0, so a later insert that omits it agrees"
+    );
 
     let (root, archived): (String, i64) = conn
         .query_row(

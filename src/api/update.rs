@@ -254,7 +254,7 @@ fn dedup(tags: &[String]) -> Vec<String> {
 /// re-derived in each.
 pub(crate) fn mirror_record(ctx: &mut Ctx<'_>, record: &MemoryRecord) -> Result<()> {
     mirror_row(ctx, record)?;
-    crate::graph::derived::refresh_derived_best_effort(ctx.conn()?);
+    let _stale = crate::graph::derived::refresh_derived_best_effort(ctx.conn()?);
     Ok(())
 }
 
