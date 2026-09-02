@@ -31,7 +31,7 @@ One line per file, named after its primary item:
 | `bandit.rs` | `Request` | Shared middle of `comemory bandit` / `POST /api/v1/bandit` |
 | `completions.rs` | `Request` | Shared middle of `comemory completions` / `GET /api/v1/completions` |
 | `consolidate.rs` | `Request` | Shared middle of `comemory consolidate` / `GET /api/v1/consolidate` |
-| `context.rs` | `Request` | Shared middle of `comemory context` / `GET\|POST /api/v1/context` |
+| `context.rs` | `Request` | Shared middle of `comemory context` / `GET\|POST /api/v1/context`. `query` accepts `key` as a serde alias, the spelling the console-api spec's `GET /context?key=` uses |
 | `delete.rs` | `Response` | Shared middle of `comemory delete` / `DELETE /api/v1/memories/{id}` |
 | `doctor.rs` | `Request` | Shared middle of `comemory doctor` / `GET /api/v1/doctor`; the individual health probes live in `doctor/checks.rs` |
 | `find.rs` | `Request` | Shared middle of `comemory find` / `GET\|POST /api/v1/find` — the unified memory + code + document ranking |

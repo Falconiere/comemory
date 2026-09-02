@@ -313,26 +313,48 @@ fn vector_dims(conn: &Connection, sqlite_vec_loaded: bool) -> (Check, Option<u32
     (result, memory_dim, code_dim)
 }
 
-/// Check 7: `repo_marker.root_path` entries that still exist on disk.
+/// Check 7: `repo_marker.root_path` entries that still exist on disk. The
+/// remedy names the repos that failed rather than a `{name}` template: the
+/// operator reading a doctor report should be able to run the suggestion
+/// as-is, and this check already knows which labels are unresolvable.
 fn repo_roots(conn: &Connection) -> Result<(Check, u32, u32)> {
-    let mut stmt = conn.prepare("SELECT root_path FROM repo_marker WHERE root_path IS NOT NULL")?;
-    let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+    let mut stmt =
+        conn.prepare("SELECT repo, root_path FROM repo_marker WHERE root_path IS NOT NULL")?;
+    let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
     let mut ok_count = 0u32;
     let mut total = 0u32;
+    let mut missing: Vec<String> = Vec::new();
     for row in rows {
-        let root_path = row?;
+        let (repo, root_path) = row?;
         total += 1;
         if std::path::Path::new(&root_path).exists() {
             ok_count += 1;
+        } else {
+            missing.push(repo);
         }
     }
     let detail = format!("{ok_count}/{total} repo root(s) resolvable");
     let result = if ok_count == total {
         ok("repo roots", detail)
     } else {
-        warn("repo roots", detail).with_remedy("POST /api/v1/repos/{name}/archive")
+        warn("repo roots", detail).with_remedy(&archive_remedy(&missing))
     };
     Ok((result, ok_count, total))
+}
+
+/// The archive suggestion for every repo whose root has gone: one runnable
+/// route per label, joined, so nothing is left for the reader to fill in.
+/// Falls back to the route template only if the caller somehow has no
+/// labels, which the `ok_count < total` branch makes unreachable.
+fn archive_remedy(missing: &[String]) -> String {
+    if missing.is_empty() {
+        return "POST /api/v1/repos/{name}/archive".to_string();
+    }
+    missing
+        .iter()
+        .map(|repo| format!("POST /api/v1/repos/{repo}/archive"))
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 /// Check 8: run the configured `COMEMORY_EMBED_CMD` (`crate::embed`) and

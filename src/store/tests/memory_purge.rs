@@ -202,6 +202,29 @@ fn purge_clears_every_mirror_row_of_a_soft_deleted_memory() {
         1,
         "the superseder stays live"
     );
+    // And keeps its OWN graph: the edge that pointed at the purged memory
+    // goes (it names a row that no longer exists), while the edges that
+    // describe the superseder itself — repo, author, tags — must not be
+    // collateral damage of a purge on someone else's id.
+    assert_eq!(
+        count(
+            &conn,
+            "SELECT COUNT(*) FROM edges WHERE src_kind = 'memory' AND src_id = ?1 \
+               AND rel = 'supersedes'",
+            &superseder
+        ),
+        0,
+        "the supersedes edge went with the row it pointed at"
+    );
+    assert!(
+        count(
+            &conn,
+            "SELECT COUNT(*) FROM edges WHERE src_kind = 'memory' AND src_id = ?1 \
+               AND rel <> 'supersedes'",
+            &superseder
+        ) > 0,
+        "the superseder's own edges survive a purge of another memory"
+    );
     assert!(
         !purge_memory(&mut conn, &id).expect("second purge"),
         "a second purge of the same id finds nothing"
