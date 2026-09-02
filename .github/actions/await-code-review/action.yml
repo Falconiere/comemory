@@ -134,12 +134,24 @@ runs:
           exit 1
         fi
 
+        # A review that did not finish is not a clean review, whatever it
+        # counted. `### Findings (0)` is emitted by a provider-error run too
+        # — one such run on this PR reported zero findings over a file it
+        # never fetched — so the verdict is checked BEFORE the count.
+        verdict_line="$(printf '%s\n' "$body" | grep -m1 '^\*\*Verdict:\*\*' || true)"
+        case "$verdict_line" in
+          *incomplete*|*"provider error"*)
+            echo "::error::the review did not complete (${verdict_line:-no verdict line}); \
+        a zero-finding count from an unfinished review is not a clean review."
+            exit 1
+            ;;
+        esac
+
         # `### Findings (N)` is the authoritative count when present.
         findings="$(printf '%s\n' "$body" | sed -n 's/^### Findings (\([0-9][0-9]*\)).*/\1/p' | head -1)"
 
         # Otherwise sum the severity counts on the verdict line.
         if [ -z "$findings" ]; then
-          verdict_line="$(printf '%s\n' "$body" | grep -m1 '^\*\*Verdict:\*\*' || true)"
           findings="$(printf '%s\n' "$verdict_line" \
             | grep -o '[0-9][0-9]* \(high\|medium\|low\|nit\)' \
             | awk '{ total += $1 } END { print total + 0 }')"
