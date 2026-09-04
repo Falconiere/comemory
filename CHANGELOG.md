@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.1] - 2026-09-04
+
+### Added
+
+- publish a multi-arch container image to GHCR on every tag
+
+### Fixed
+
+- drop the unreachable leg-count guard in the manifest job
+- address PR review feedback on the container image
+
 ## [0.18.0] - 2026-09-02
 
 ### BREAKING
