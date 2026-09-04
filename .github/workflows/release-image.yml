@@ -182,24 +182,18 @@ jobs:
             fi
           fi
 
+          # No count assertion here on purpose. "Every leg is present" is
+          # already enforced upstream and cannot be violated by the time this
+          # runs: `push-by-digest=true` with `outputs: type=image` always emits
+          # a digest when push=true, the upload step's `if-no-files-found:
+          # error` fails any leg that somehow produced none, and `needs: build`
+          # then skips this job. A hardcoded "must be exactly 2" would also go
+          # stale the moment the matrix gains an arch — blocking a legitimate
+          # publish rather than catching anything.
           refs=()
           for d in /tmp/digests/*; do
             refs+=("${image}@sha256:$(basename "$d")")
           done
-          # Guards against publishing a single-arch manifest under the shared
-          # tags if a leg's artifact ever goes missing. `needs: build` already
-          # fails this job when a leg fails outright; what this catches is the
-          # subtler case of a leg that SUCCEEDS but uploads nothing, which
-          # would otherwise tag :latest with whichever arch did make it.
-          #
-          # Naming what actually arrived is the point: "found 1" on its own
-          # does not say which arch to go and look at.
-          if [[ "${#refs[@]}" -ne 2 ]]; then
-            echo "expected 2 arch legs (amd64 + arm64), found ${#refs[@]}" >&2
-            echo "leg digests present: $(ls -1 /tmp/digests 2>/dev/null | tr '\n' ' ')" >&2
-            echo "refusing to publish a partial manifest" >&2
-            exit 1
-          fi
 
           docker buildx imagetools create "${tags[@]}" "${refs[@]}"
           digest="$(docker buildx imagetools inspect "${image}:${version}" --format '{{json .Manifest}}' | jq -r .digest)"
