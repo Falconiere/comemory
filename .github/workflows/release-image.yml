@@ -83,17 +83,17 @@ jobs:
           # On a tag this is the released version and the Dockerfile asserts the
           # binary matches it. Off a tag it is empty, which the Dockerfile reads
           # as "skip the assertion" — a PR build has no version to check against.
-          if [[ "${GITHUB_REF_TYPE}" == tag ]]; then
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
             echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
           else
             echo "version=" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Log in to GHCR
         if: github.ref_type == 'tag'
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -101,7 +101,7 @@ jobs:
 
       - name: Build (and push by digest on tag)
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           platforms: ${{ matrix.platform }}
@@ -146,10 +146,10 @@ jobs:
           path: /tmp/digests
           merge-multiple: true
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -187,9 +187,17 @@ jobs:
             refs+=("${image}@sha256:$(basename "$d")")
           done
           # Guards against publishing a single-arch manifest under the shared
-          # tags if a leg's artifact ever goes missing.
+          # tags if a leg's artifact ever goes missing. `needs: build` already
+          # fails this job when a leg fails outright; what this catches is the
+          # subtler case of a leg that SUCCEEDS but uploads nothing, which
+          # would otherwise tag :latest with whichever arch did make it.
+          #
+          # Naming what actually arrived is the point: "found 1" on its own
+          # does not say which arch to go and look at.
           if [[ "${#refs[@]}" -ne 2 ]]; then
-            echo "expected 2 arch legs, found ${#refs[@]} — refusing to publish" >&2
+            echo "expected 2 arch legs (amd64 + arm64), found ${#refs[@]}" >&2
+            echo "leg digests present: $(ls -1 /tmp/digests 2>/dev/null | tr '\n' ' ')" >&2
+            echo "refusing to publish a partial manifest" >&2
             exit 1
           fi
 
