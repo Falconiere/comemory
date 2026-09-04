@@ -1,0 +1,22 @@
+# Deliberately small. The build runs `cargo build --locked`, and Cargo refuses
+# to parse Cargo.toml when a declared [[bench]] / [lib] / [[bin]] path is
+# missing, so pruning source trees here breaks the build rather than speeding
+# it up. Everything below is either enormous (target/, .git/) or has no bearing
+# on the compile.
+target/
+.git/
+.github/
+docs/
+proptest-regressions/
+coverage/
+
+# Local tooling and editor state.
+.claude/
+.codex/
+.vscode/
+.idea/
+.DS_Store
+
+# Anything already produced by a container build.
+Dockerfile
+.dockerignore
