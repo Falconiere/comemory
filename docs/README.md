@@ -40,6 +40,8 @@ Look-it-up material:
 - **[Configuration](configuration.md)** — every environment variable, the
   config-file-only knobs, and the pagination envelope shape.
 - **[Release process](release.md)** — how releases are cut and published.
+- **[Container image](container-image.md)** — the multi-arch image published to
+  GHCR on every tag: tags, mounts, and running as another user.
 - **[Build performance](build-perf.md)** — build-time notes.
 
 ## Explanation

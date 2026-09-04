@@ -1,0 +1,212 @@
+name: release-image
+
+# Tag-driven container publish: push vX.Y.Z -> build linux/amd64 + linux/arm64
+# legs on native runners -> push both by digest -> merge into one multi-arch
+# manifest at ghcr.io/<owner>/comemory -> print the digest-pinned ref.
+#
+# Each arch compiles on its native runner. This dependency tree is mostly C
+# built from source (`rusqlite` bundled SQLite, `sqlite-vec`, `git2`'s vendored
+# libgit2), and a QEMU-emulated release build of it is slow enough to be flaky.
+#
+# WHY THERE IS NO `verify` JOB. The sibling pattern this file follows
+# (toolu-ghrunner's release-image.yml) re-runs its repo gate before publishing,
+# on the reasoning that an image must never ship off a commit whose gate would
+# fail. That gate is cargo fmt + clippy + test. This repo's equivalent is
+# test.yml, which runs scripts/check-all.sh plus the coverage and eval gates and
+# builds ast-grep from source first — far too heavy to duplicate on every tag,
+# and it already ran on the commit the tag points at.
+#
+# What replaces it is specific to the artefact this workflow produces: the
+# Dockerfile asserts `comemory --version` equals COMEMORY_VERSION inside the
+# built image, so a tag can never publish a binary that disagrees with it. That
+# catches the failure this workflow could actually introduce; re-running unit
+# tests would not.
+#
+# PRs touching the image inputs build without pushing (catches Dockerfile rot);
+# workflow_dispatch does the same on demand.
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - .github/workflows/release-image.yml
+  workflow_dispatch:
+
+# One image per ref; never cancel a tag publish mid-flight.
+concurrency:
+  group: release-image-${{ github.ref_name }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+# Least privilege by default; only the pushing jobs get packages:write.
+permissions:
+  contents: read
+
+env:
+  # GHCR requires a lowercase namespace and the owner may not be, so every
+  # consumer below lowercases it in bash (`env:` values are verbatim).
+  #
+  # The namespace is ALWAYS this repository's owner: a workflow's ambient
+  # GITHUB_TOKEN grants `packages: write` for that owner and nobody else, so
+  # hardcoding a different account produces
+  #   denied: permission_denied: The requested installation does not exist.
+  # Publishing elsewhere would need a PAT, not this token.
+  IMAGE_BASENAME: comemory
+
+jobs:
+  # One leg per arch, compiled natively, pushed by digest only — tags are
+  # applied by `manifest` once both legs exist.
+  build:
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+            platform: linux/amd64
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write # push the per-arch leg to ghcr.io on tag
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Compute image name and version
+        id: meta
+        run: |
+          set -euo pipefail
+          echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${IMAGE_BASENAME}" >> "$GITHUB_OUTPUT"
+          # On a tag this is the released version and the Dockerfile asserts the
+          # binary matches it. Off a tag it is empty, which the Dockerfile reads
+          # as "skip the assertion" — a PR build has no version to check against.
+          if [[ "${GITHUB_REF_TYPE}" == tag ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.ref_type == 'tag'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Build (and push by digest on tag)
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          build-args: |
+            COMEMORY_VERSION=${{ steps.meta.outputs.version }}
+          outputs: type=image,name=${{ steps.meta.outputs.image }},push-by-digest=true,name-canonical=true,push=${{ github.ref_type == 'tag' }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ github.ref_name }}
+
+      - name: Export leg digest
+        if: github.ref_type == 'tag'
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload leg digest
+        if: github.ref_type == 'tag'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: digest-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+
+  # Merge the per-arch legs into one multi-arch manifest, tag it, and print the
+  # manifest-list digest.
+  manifest:
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write # push the merged manifest + tags
+    steps:
+      - name: Download leg digests
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          pattern: digest-*
+          path: /tmp/digests
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Create multi-arch manifest
+        id: merge
+        # `latest` and the `vN` compat line track stable tags only — a '-' in
+        # the tag marks a prerelease, the same rule release.yml applies.
+        #
+        # `vN` follows the semver compatibility boundary, which is the MINOR
+        # while the major is 0 (0.17.x -> :v17, 0.18.x -> :v18) and the MAJOR
+        # from 1.0 on (1.x -> :v1). The number therefore resets once at 1.0.0,
+        # so :v1 is NEWER than :v17. Pin by digest and it never matters.
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${IMAGE_BASENAME}"
+          version="${GITHUB_REF_NAME#v}"
+
+          tags=(-t "${image}:${version}")
+          if [[ "${GITHUB_REF_NAME}" != *-* ]]; then
+            tags+=(-t "${image}:latest")
+            major="${version%%.*}"
+            minor="${version#*.}"
+            minor="${minor%%.*}"
+            if [[ "${major}" == "0" ]]; then
+              tags+=(-t "${image}:v${minor}")
+            else
+              tags+=(-t "${image}:v${major}")
+            fi
+          fi
+
+          refs=()
+          for d in /tmp/digests/*; do
+            refs+=("${image}@sha256:$(basename "$d")")
+          done
+          # Guards against publishing a single-arch manifest under the shared
+          # tags if a leg's artifact ever goes missing.
+          if [[ "${#refs[@]}" -ne 2 ]]; then
+            echo "expected 2 arch legs, found ${#refs[@]} — refusing to publish" >&2
+            exit 1
+          fi
+
+          docker buildx imagetools create "${tags[@]}" "${refs[@]}"
+          digest="$(docker buildx imagetools inspect "${image}:${version}" --format '{{json .Manifest}}' | jq -r .digest)"
+          echo "ref=${image}@${digest}" >> "$GITHUB_OUTPUT"
+
+      - name: Print digest-pinned ref
+        env:
+          IMAGE_REF: ${{ steps.merge.outputs.ref }}
+        run: |
+          set -euo pipefail
+          echo "image ref: ${IMAGE_REF}"
+          {
+            echo "## comemory image"
+            echo '```'
+            echo "${IMAGE_REF}"
+            echo '```'
+            echo "Pin this digest in anything that consumes the image."
+          } >> "$GITHUB_STEP_SUMMARY"
