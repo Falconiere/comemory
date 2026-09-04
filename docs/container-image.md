@@ -5,6 +5,13 @@
 `.github/workflows/release-image.yml` from the `Dockerfile` at the repository
 root.
 
+That path is spelled out rather than written as `<owner>` because it is the one
+readers actually pull from. The workflow itself derives the namespace from
+`GITHUB_REPOSITORY_OWNER`, lowercased — a fork publishes under its own owner,
+and the paths below become that owner's instead. It cannot be anything else:
+a workflow's ambient `GITHUB_TOKEN` grants `packages: write` for the
+repository's owner and nobody else.
+
 The image is a convenience wrapper around the same binary the release tarballs
 carry — it is compiled from the tagged source with `--locked`, so it resolves
 the dependency graph in the committed `Cargo.lock`, and the build fails if

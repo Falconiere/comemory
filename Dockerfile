@@ -29,9 +29,12 @@ FROM debian:bookworm-slim AS runtime
 
 ARG COMEMORY_VERSION
 
+# No `org.opencontainers.image.source` here on purpose. release-image.yml sets
+# it from `github.repository`, so it stays correct on a fork or after a rename;
+# a literal here would either duplicate that or quietly contradict it, and it is
+# the label GHCR uses to link the package to a repository.
 LABEL org.opencontainers.image.title="comemory" \
   org.opencontainers.image.description="Agentic dev memory + code-aware semantic search via a two-layer property graph." \
-  org.opencontainers.image.source="https://github.com/Falconiere/comemory" \
   org.opencontainers.image.licenses="MIT"
 
 # ca-certificates only: `git2` is built with default-features off (no OpenSSL)
