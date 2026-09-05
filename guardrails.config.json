@@ -81,6 +81,9 @@
   },
   "fileSize": {
     "max": 300,
+    "overrides": {
+      ".github/workflows/release.yml": 400
+    },
     "skipExtensions": [
       ".md",
       ".lock"

@@ -66,24 +66,43 @@ jobs:
   # Pull requests only: a release tag push runs no review, and waiting for a
   # check that will never appear would stall the release for the full
   # timeout and then fail it.
+  #
+  # The gate is on the STEPS, never on the job. A skipped job propagates
+  # "skipped" transitively down the whole `needs` graph, and an `always()`
+  # rescues only the job that carries it — never its descendants.
+  #
+  # Measured on the v0.18.0 and v0.18.1 tag runs, where this job was gated
+  # `if: github.event_name == 'pull_request'` and therefore skipped. The
+  # jobs carrying their own `always()`/`!cancelled()` all ran — `plan`,
+  # `host`, `announce`, `custom-release-finalize`. The three carrying none
+  # were skipped: `build-local-artifacts`, `build-global-artifacts`,
+  # `publish-homebrew-formula`. Note `host` did NOT inherit the skip and is
+  # not rescuing anything downstream: its own `if` accepts
+  # `build-local-artifacts.result == 'skipped'`, so it went on to create a
+  # GitHub Release with zero binaries. Twice. The Homebrew tap stayed on
+  # v0.17.0 for the same reason.
+  #
+  # Running this job unconditionally and no-op'ing its steps keeps its
+  # result `success` (a job whose every step is skipped still concludes
+  # success), so no cascade can start.
   await-review:
-    if: ${{ github.event_name == 'pull_request' }}
     runs-on: "ubuntu-22.04"
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        if: ${{ github.event_name == 'pull_request' }}
         with:
           persist-credentials: false
           sparse-checkout: .github/actions/await-code-review
       - uses: ./.github/actions/await-code-review
+        if: ${{ github.event_name == 'pull_request' }}
         with:
           github-token: ${{ github.token }}
 
   # Run 'dist plan' (or host) to determine what tasks we need to do
   plan:
+    # No `if:` — `await-review` always runs, so it is `success` on a tag push
+    # and a failed review still skips this job (and, by cascade, the release).
     needs: [await-review]
-    # A skipped `needs` skips the dependent, so the tag-push path (where
-    # `await-review` does not run) has to opt back in explicitly.
-    if: ${{ always() && (needs.await-review.result == 'success' || github.event_name != 'pull_request') }}
     runs-on: "ubuntu-22.04"
     outputs:
       val: ${{ steps.plan.outputs.manifest }}
