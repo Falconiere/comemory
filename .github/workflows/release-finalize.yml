@@ -145,8 +145,14 @@ jobs:
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
             --pattern 'comemory-*.tar.xz' --dir artifacts || status=$?
           if [[ -z "$(ls -A artifacts 2>/dev/null)" ]]; then
-            echo "::error::release $TAG has no comemory-*.tar.xz assets" \
-              "(gh exit $status) — did release.yml's build-local-artifacts run?"
+            # `gh` exits 1 both when the release genuinely carries no matching
+            # asset and when the download itself failed (auth, network, no such
+            # release), so the exit code alone cannot tell those apart. Name
+            # both rather than assert the one that happens to be likelier.
+            echo "::error::no comemory-*.tar.xz assets downloaded for $TAG" \
+              "(gh exit $status). Either the release carries none — check that" \
+              "release.yml's build-local-artifacts ran — or the download" \
+              "failed; gh's own output is above."
             exit 1
           fi
           if (( status != 0 )); then
