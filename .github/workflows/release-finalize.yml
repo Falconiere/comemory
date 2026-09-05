@@ -135,10 +135,23 @@ jobs:
           # Every archive, not one hardcoded triple: a target added to
           # `targets` in Cargo.toml would otherwise ship unverified while this
           # step still reported success.
+          #
+          # `gh release download` exits 1 with a bare "no assets match the file
+          # pattern" when the pattern matches nothing, and under `bash -e` that
+          # killed the step before the guard below could name the tag or the
+          # likely cause. Let it fail soft and let the guard report; gh's own
+          # stderr still reaches the log for every other failure mode.
+          status=0
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
-            --pattern 'comemory-*.tar.xz' --dir artifacts
+            --pattern 'comemory-*.tar.xz' --dir artifacts || status=$?
           if [[ -z "$(ls -A artifacts 2>/dev/null)" ]]; then
-            echo "::error::release $TAG has no comemory-*.tar.xz assets"
+            echo "::error::release $TAG has no comemory-*.tar.xz assets" \
+              "(gh exit $status) — did release.yml's build-local-artifacts run?"
+            exit 1
+          fi
+          if (( status != 0 )); then
+            echo "::error::gh release download exited $status after writing a" \
+              "partial asset set for $TAG"
             exit 1
           fi
 
