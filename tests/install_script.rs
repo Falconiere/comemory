@@ -155,6 +155,45 @@ fn rerun_replaces_the_comemory_already_on_path() {
 }
 
 #[test]
+fn without_dir_it_falls_through_to_an_existing_cargo_bin() {
+    let Some(fx) = Fixture::new(&["v9.9.9"]) else {
+        return;
+    };
+    let cargo_home = fx.home.path().join("cargo");
+    std::fs::create_dir_all(cargo_home.join("bin")).unwrap();
+    let stdout = ok(&fx.run(
+        &["--no-modify-path"],
+        &[
+            ("CARGO_HOME", cargo_home.to_str().unwrap()),
+            ("PATH", "/usr/bin:/bin"),
+        ],
+    ));
+    assert!(stdout.contains("(cargo bin directory)"), "{stdout}");
+    assert_eq!(
+        version_of(&cargo_home.join("bin").join("comemory")),
+        "comemory 9.9.9"
+    );
+    assert!(
+        !fx.home.path().join(".local").exists(),
+        "not the last resort"
+    );
+}
+
+#[test]
+fn without_dir_or_cargo_bin_it_uses_local_bin() {
+    let Some(fx) = Fixture::new(&["v9.9.9"]) else {
+        return;
+    };
+    let mut cmd_env = vec![("PATH", "/usr/bin:/bin")];
+    let cargo_home = fx.home.path().join("no-such-cargo");
+    cmd_env.push(("CARGO_HOME", cargo_home.to_str().unwrap()));
+    let stdout = ok(&fx.run(&["--no-modify-path"], &cmd_env));
+    assert!(stdout.contains("(default)"), "{stdout}");
+    let bin = fx.home.path().join(".local").join("bin").join("comemory");
+    assert_eq!(version_of(&bin), "comemory 9.9.9");
+}
+
+#[test]
 fn checksum_mismatch_aborts_and_installs_nothing() {
     let Some(fx) = Fixture::new(&["v9.9.9"]) else {
         return;
