@@ -42,9 +42,21 @@ runs:
         #   **Verdict:** ⚠️ Changes requested   🟠 2 high 🟡 36 medium 🔵 40 low
         #   ### Findings (78)
         # An approved run carries no severity counts.
-        body="$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" \
-          --jq '[.[] | select(.user.login == "github-actions[bot]" or .user.login == "claude[bot]")]
-                | last | .body // ""')"
+        # Fetch and classify separately. Folding the API call into the `--jq`
+        # substitution made a token that cannot read pull requests and a pull
+        # request with no review comment fail identically — as a bare `gh`
+        # error under `set -e`, with the annotation naming neither cause. The
+        # gate runs on whatever `permissions` its calling workflow declares,
+        # so "the token is missing pull-requests scope" is a real thing to be
+        # told plainly rather than left to be inferred from a 403 in the log.
+        if ! comments="$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" 2>&1)"; then
+          echo "::error::Could not read the comments on PR #$PR. The workflow calling this gate must grant pull-requests read access (write also grants it). API said: $(printf '%s' "$comments" | head -1)"
+          exit 1
+        fi
+
+        body="$(printf '%s' "$comments" \
+          | jq -r '[.[] | select(.user.login == "github-actions[bot]" or .user.login == "claude[bot]")]
+                   | last | .body // ""')"
 
         if [ -z "$body" ]; then
           echo "::error::No review comment found on PR #$PR; cannot prove the review is clean."
