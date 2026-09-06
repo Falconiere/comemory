@@ -68,7 +68,13 @@ protect_breaking_commits = true
 # breaking change is never dropped no matter which rule would match it.
 commit_parsers = [
     { message = '^[a-z]+(\(.+\))?!:', group = "<!-- 0 -->BREAKING" },
-    { body = '.*BREAKING CHANGE', group = "<!-- 0 -->BREAKING" },
+    # Anchored to the start of a line and requiring the colon, because
+    # `BREAKING CHANGE` is a conventional-commit FOOTER, not a phrase. The
+    # unanchored `.*BREAKING CHANGE` this replaces matched any commit whose
+    # body merely mentioned the words — `ci: parse the severity gate with awk`
+    # discussed the footer in prose and was published under BREAKING in the
+    # v0.18.2 draft.
+    { body = '(?m)^BREAKING[ -]CHANGE:', group = "<!-- 0 -->BREAKING" },
     # A `BREAKING CHANGE:` trailer is a conventional-commit *footer*, and
     # git-cliff parses footers separately from the body — so the rule above
     # does not see it. Without this rule a breaking `docs:`/`ci:` commit whose
