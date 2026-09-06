@@ -65,6 +65,9 @@ pub mod embed;
 /// Loopback web viewer (`comemory serve`).
 pub mod serve;
 
+/// `comemory upgrade`: resolve the newest release and swap the binary.
+pub mod upgrade;
+
 /// clap subcommand entry points and the top-level dispatcher.
 pub mod cli;
 

@@ -21,29 +21,34 @@ step has variations, this guide picks one happy path and links out.
 ## 1. Install
 
 Pick whichever channel fits your machine. The one-liner is the shortest path on
-Apple Silicon macOS and glibc ≥ 2.35 Linux — it redirects to the latest release's
-shell installer. Those are the only prebuilt targets, and the glibc floor is
-enforced by the installer itself. An Intel Mac or a musl distro gets
-`there isn't a download for your platform <triple>`; an older glibc (Debian
-bullseye 2.31, Ubuntu 20.04 2.31, RHEL 9 / Amazon Linux 2023 2.34) matches the
-gnu triple but fails the gate and gets `no compatible downloads were found for
-your platform <triple>` instead. Both need the source install below.
+Apple Silicon macOS and glibc ≥ 2.35 Linux — `install.sh` is attached to every
+release, and `latest/download` resolves to the newest one. Those are the only
+prebuilt targets: an Intel Mac or a musl distro gets `no prebuilt comemory for
+…` with the source-install recipe; an older glibc (Debian bullseye 2.31, Ubuntu
+20.04 2.31, RHEL 9 / Amazon Linux 2023 2.34) downloads fine and then fails the
+installer's own `--version` run of the binary, with a message naming the glibc
+floor — before anything is installed. Both need the source install below.
 
 ```bash
 curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL \
-  https://get.comemory.io/pkg/comemory/install | bash
+  https://github.com/Falconiere/comemory/releases/latest/download/install.sh | sh
 ```
+
+What you see is a short step list — platform, version, install dir, download
+(with a progress bar on a terminal), checksum, installed — and a summary with
+the next commands. Every archive is verified against the SHA-256 sidecar the
+release ships, using `sha256sum`, `shasum -a 256`, or `openssl`; the installer
+refuses to continue without one of them rather than skipping the check.
 
 Piping into a shell runs whatever the URL serves, sight unseen. The two-step
 form below lets you read the script first, and it is the one to use in anything
 scripted; the checksum-verified archive route lives in README § Verifying
 releases.
 
-That installer runs under `/bin/sh` — cargo-dist generates it with a
-`#!/bin/sh` shebang and targets dash/ash (it uses `local`, which POSIX does not
-define) — so `| sh` is equally correct and is the one to use on a glibc image
-that ships no bash. (Only gnu targets are published and only for glibc ≥ 2.35, so
-Alpine or an older-glibc base image needs the source install either way.)
+The script is POSIX `sh` — it runs under dash, ash, bash, and zsh — so `| sh`
+is right on a glibc image that ships no bash. (Only gnu targets are published
+and only for glibc ≥ 2.35, so Alpine or an older-glibc base image needs the
+source install either way.)
 
 Scripting the install — a Dockerfile `RUN`, or any CI whose shell lacks
 `pipefail` — download and run in two steps instead. A pipeline reports only the
@@ -55,23 +60,22 @@ explicit `shell: bash` — the implicit default is `bash -e`, no pipefail — an
 
 ```bash
 curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL \
-  https://get.comemory.io/pkg/comemory/install -o install.sh && sh install.sh
+  https://github.com/Falconiere/comemory/releases/latest/download/install.sh \
+  -o install.sh && sh install.sh --dir /usr/local/bin --no-modify-path
 ```
 
-In a **Dockerfile** add `COMEMORY_INSTALL_DIR=/usr/local` to that second command
-as well (`… && COMEMORY_INSTALL_DIR=/usr/local sh install.sh`). Only there —
-elsewhere it needs write access to `/usr/local`, which a non-root CI user does
-not have. By default the installer puts the binary in `$CARGO_HOME/bin`
-(`$HOME/.cargo/bin` when `CARGO_HOME` is unset, which is the usual case in a base
-image) and makes it reachable by editing rc files. It appends `. "…/env"` to
-**every** one of `~/.profile`, `~/.bashrc`, `~/.bash_profile`, `~/.bash_login`
-that exists (not just the first), to whichever of `~/.zshrc`, `~/.zshenv` comes
-first, and `source …/env.fish` to fish's `conf.d/comemory.env.fish`. Where none
-of a list exists it creates the first entry, so a bare image ends up with new rc
-files rather than none — worth knowing if you ever need to undo it. That is the default path's problem, and the reason for
-`COMEMORY_INSTALL_DIR` above: a later `RUN` and the container entrypoint read
-none of those rc files, so without the flag `comemory` ends up installed and
-still not on `PATH`.
+`--dir` (or `COMEMORY_INSTALL_DIR`) names the directory the binary goes in;
+`--no-modify-path` (or `COMEMORY_NO_MODIFY_PATH=1`) keeps the script out of
+shell rc files — a later `RUN` and the container entrypoint read none of
+those, so without `--dir` a Dockerfile ends up with `comemory` installed and
+still not on `PATH`. Left to itself the installer picks the directory of the
+`comemory` already on `PATH` (so a re-run upgrades in place), else
+`$CARGO_HOME/bin` when that exists, else `~/.local/bin`, and — when that
+directory is not on `PATH` — appends one `export PATH=…` line to your shell's
+rc file (`~/.zshrc`, `~/.bashrc` / `~/.bash_profile` on macOS, or a fish
+`conf.d/comemory.fish` with `fish_add_path`), only once, and tells you which.
+`--version <tag>` (or `COMEMORY_VERSION`) pins a release instead of the
+latest.
 
 Homebrew is as quick, on macOS and Linuxbrew:
 
@@ -89,20 +93,17 @@ cargo install --path .
 
 Prefer a prebuilt binary? Tarballs for macOS (aarch64) and Linux (aarch64,
 x86_64) are attached to every
-[GitHub Release](https://github.com/Falconiere/comemory/releases). The curl
-installer — the same script the one-liner above redirects to — fetches the right
-one and drops it in `$CARGO_HOME/bin` (or `$HOME/.cargo/bin`). It installs no
-shell completions:
+[GitHub Release](https://github.com/Falconiere/comemory/releases), beside
+`install.sh` and cargo-dist's older `comemory-installer.sh` (still published;
+no pinning, no in-place upgrade, and it skips the checksum on stock macOS).
 
-```bash
-curl --proto '=https' --proto-redir '=https' --tlsv1.2 -LsSf \
-  https://github.com/Falconiere/comemory/releases/latest/download/comemory-installer.sh \
-  | sh
-```
-
-No install channel sets up shell completions — Homebrew, the curl installer and
+No install channel sets up shell completions — Homebrew, `install.sh` and
 `cargo install` alike. Generate them yourself with
 `comemory completions <bash|zsh|fish|powershell>`.
+
+Later, moving to the next release is one command — `comemory upgrade` (or
+`comemory upgrade --check` to only look); see
+[docs/guides/upgrading.md](guides/upgrading.md).
 
 Verify the install — `comemory doctor` checks the data directory and the SQLite
 mirror:

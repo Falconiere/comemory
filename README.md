@@ -91,15 +91,14 @@ layout, and edge graph.
 
 ```bash
 # One-liner (macOS aarch64 + Linux gnu, glibc >= 2.35 — the only prebuilt
-# targets; anything else needs the source install below).
-# Resolves to the latest release's installer.
+# targets; anything else needs the source install below). `install.sh` is
+# attached to every release; `latest/download` resolves to the newest one.
 # `--proto '=https'` binds the redirect too — curl(1) on --proto-redir:
 # "Protocols denied by --proto are not overridden by this option" — so the hop
-# to GitHub cannot be downgraded to plaintext before the body reaches a shell.
+# to the asset host cannot be downgraded to plaintext before the body reaches
+# a shell.
 curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL \
-  https://get.comemory.io/pkg/comemory/install | bash
-# cargo-dist generates that script for /bin/sh (dash/ash), so `| sh` works
-# just as well — use it on an image that ships no bash.
+  https://github.com/Falconiere/comemory/releases/latest/download/install.sh | sh
 
 # Piping into a shell runs whatever the URL serves. To read it first — or for
 # a scripted install — see "Scripting the install" below, or take the
@@ -113,28 +112,38 @@ git clone https://github.com/Falconiere/comemory && cd comemory
 cargo install --path .
 ```
 
+The installer detects the platform, resolves the newest release (or the one
+you pin with `--version`), downloads the archive with a progress bar,
+verifies it against the SHA-256 sidecar every release ships (`sha256sum`,
+`shasum -a 256`, or `openssl` — it refuses to install unverified), checks the
+binary actually runs on this machine (an old glibc fails here, with a
+message, not later), swaps it into place atomically, and adds the bin
+directory to your shell rc once, if it is not already on `PATH`. It re-runs
+cleanly: a `comemory` already on `PATH` is replaced where it is, which is how
+`comemory upgrade` moves you to the next release afterwards.
+
+| Flag / env | Effect |
+|---|---|
+| `--version <tag>` / `COMEMORY_VERSION` | Install this release (`0.19.0` or `v0.19.0`) instead of the latest |
+| `--dir <path>` / `COMEMORY_INSTALL_DIR` | Directory the binary goes in. Default: the existing `comemory`'s directory, else `$CARGO_HOME/bin` if it exists, else `~/.local/bin` |
+| `--no-modify-path` / `COMEMORY_NO_MODIFY_PATH` | Leave shell rc files alone (a Dockerfile `RUN`, or when `--dir` is already on `PATH`) |
+| `--quiet` | Only print errors |
+| `NO_COLOR` | Plain output |
+
 Scripting the install — a Dockerfile `RUN`, or any CI whose shell lacks
 `pipefail` — download and run in two steps instead: a pipeline reports only the
-shell's exit status, so a failed fetch leaves `curl … | bash` exiting 0 with
+shell's exit status, so a failed fetch leaves `curl … | sh` exiting 0 with
 nothing installed. See [docs/getting-started.md](docs/getting-started.md#1-install).
 
-What the one-liner verifies: the installer checks the archive it downloads
-against a SHA-256 baked into itself, but **skips that check on stock macOS**,
-which ships `shasum` rather than the `sha256sum` it needs. The installer script
-itself is unsigned and unchecksummed, and is reached through a redirect served
-from a separate repo.
+The script itself is unsigned and unchecksummed; what it verifies is the
+archive it downloads. `https://get.comemory.io/pkg/comemory/install` is the
+short, redirecting alias of the URL above, served from a separate repo.
 
 Then verify: `comemory doctor`. Prebuilt binaries for **macOS aarch64** and
 **Linux** (x86_64 + aarch64, gnu) are attached to every
-[GitHub Release](https://github.com/Falconiere/comemory/releases), along with
-a shell installer — the same script the one-liner above redirects to, fetched
-without the redirect, so everything said about what it verifies applies here
-too:
-
-```bash
-curl --proto '=https' --proto-redir '=https' --tlsv1.2 -LsSf \
-  https://github.com/Falconiere/comemory/releases/latest/download/comemory-installer.sh | sh
-```
+[GitHub Release](https://github.com/Falconiere/comemory/releases), beside
+`install.sh` and the cargo-dist generated `comemory-installer.sh` (the older
+installer; still published, no in-place upgrade, no checksum on stock macOS).
 
 Windows users fork the repo and run `cargo install --path .` — see
 [Platform support](#platform-support) below.
@@ -252,6 +261,7 @@ Full data model, save flow, retrieval pipeline, and graph mechanics:
 | `comemory completions` | Generate shell completions |
 | `comemory install-hooks` | Install git hooks that reindex code on commit/merge/checkout |
 | `comemory hooks` | Report and toggle those hooks individually, plus search→edit reinforcement |
+| `comemory upgrade` | Move this binary to the newest release (`--check` only reports; `--version` pins) |
 
 Every command accepts `--json`; the data root defaults to `~/.comemory`
 (overridable with `--data-dir` or `COMEMORY_DATA_DIR`). Full per-command docs
@@ -285,6 +295,18 @@ Full recipe, including the sample Ollama wrapper
 ---
 
 ## Upgrading
+
+```bash
+comemory upgrade --check   # running vs newest release, nothing installed
+comemory upgrade           # swap this binary for the newest release, in place
+```
+
+`upgrade` resolves the newest GitHub release, works out how this binary was
+installed, and hands the swap to that release's own `install.sh` (Homebrew
+installs go through `brew upgrade comemory`; a `cargo install` build is
+rebuilt, and the command prints the recipe instead). `--version` pins a
+release, `--force` allows a reinstall or downgrade, `--json` reports the
+outcome as an object.
 
 Point a newer `comemory` binary at an existing `~/.comemory` and the schema
 migrates automatically on your next command — there is no `comemory migrate`

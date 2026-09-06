@@ -61,6 +61,7 @@ comemory eval --history            # past eval/tune/bandit runs, newest first
 comemory mine --apply              # distill query reformulations into expansions
 comemory tune --apply              # grid-search ranking knobs into config.toml
 comemory consolidate               # advisory near-duplicate cluster report
+comemory upgrade                   # move this binary to the newest release (--check, --version, --force)
 ```
 
 ## Binding Rules (apply to every contribution)
@@ -167,6 +168,7 @@ narrative; the folder `README.md` is the authoritative file-by-file list.
 | `source/` | durable source registry (`sources.toml`): `registry` (load/save, overlap validation, atomic durability), `lock` (exclusive flock guard over concurrent read-modify-write), `discover` (the boundary/ignore-rule walk over a registered root), `classify` (extension allowlist + binary sniff), `mirror` (reconciles the TOML registry into SQLite's `source_roots`) |
 | `store/` | central SQLite layer — `connection` (pooled rusqlite + `sqlite-vec` loader), `schema`, `migrate` (versioned + idempotent, applying the `MIGRATIONS` slice declared in `migrate/list.rs`; DDL text in `sql/`; `migrate/preflight` + `migrate/backup` are the forward-compat guard and pre-upgrade `VACUUM INTO` snapshot run from `connection::open` before the chain — see `docs/guides/upgrading.md`), `vector` (`vec0` insert/KNN with dim guard), `fts` (FTS5 helpers, code leg), `fts_memory` (the memory FTS ladder behind one `run_memory_match` choke-point — every tier inherits the same filters), `CreatedWindow` in `store.rs` (the borrow-only `{since, cutoff}` pair each SQL predicate takes, compared via `datetime()`; keeps `store/` free of `retrieval/` types), `embed` (`to_vec_blob`, dim helpers), `edge_fts` (FTS5 triplet index over `edges` — per-kind `src —rel→ dst` rendering, wholesale refresh-materialize in one tx, `needs_refresh` for the upgrade self-heal, and the two-tier strict→word-OR ladder behind `comemory edges`), `memory_meta` (`fetch_meta` — batched per-memory metadata: path/repo/kind/tags/references backing the enriched `search --json` rows), `memory_row`/`code_row` (the per-table mirror-row upserts), `memory_list` (paginated memory listing, `--sort created|quality|accessed`), `eval_runs` / `gc_runs` / `index_runs` (the v14/v15 run-history writers + readers; all three are in `rebuild`'s `COPIED_TABLES` — history is not reconstructable from markdown), `repo_drop` (`DELETE /api/v1/repos/{name}`: drop every code-index row and file edge for one repo label in one transaction, memories kept), `random_id` (the shared random-hex id helper, moved out of `serve::security` so non-HTTP callers can use it), `code_ref` (the version-anchor side table for explicit code references), `documents`/`document_fts` (the document/chunk mirror + its BM25 leg), `sources` (the SQLite mirror of `source::registry`), `simhash_scan` (bulk fingerprint scan shared by save + consolidate), `tokenizer/` (custom FTS5 identifier tokenizer: camelCase/snake_case split + FFI registration) |
 | `retrieval/unified/` | `comemory find`'s core: the three legs (`router`, `code_route`, `doc_route`) run unchanged and their *reranked* orders fuse via the pre-existing `fuse::rrf_multi_weighted`, memory and code at weight 1.0 and documents at `retrieval.document_leg_weight` (declared and validated since the document domain landed; read by nothing until this module). One shared `pipeline::pool_size` across every leg and ONE `pipeline::paginate` over the fused list — RRF is prefix-stable, so divergent per-leg pools would let a deeper page reorder a shallower one. `fuse_domains` owns the weighted fusion and `UnifiedHit`/`HitParts`, the untagged enum carrying each domain's own `score_parts` verbatim |
+| `upgrade/` | `comemory upgrade`'s core — `version` (`MAJOR.MINOR.PATCH[-pre]` parse + ordering), `channel` (Homebrew / `cargo install` / standalone detection from the resolved `current_exe`; the `.crates.toml` branch is pure via `detect_with`), `release` (the `<releases>/latest` redirect → tag and one-asset `download`, shelling out to `curl`/`wget` — no HTTP client in the crate; `COMEMORY_RELEASES_URL` is the test hook), `installer` (fetch `<releases>/download/<tag>/install.sh` and run it `--version --dir --no-modify-path [--quiet]`, `brew upgrade`, and `installed_version` read back after the swap). `src/upgrade.rs` owns `Request`/`Report`/`Status` and `run` (resolve → compare → swap → verify). CLI-only: in `serve::routes::meta::CLI_ONLY` beside `serve`, since a server must never replace its own binary on request. The script it runs is the repo-root `install.sh`, uploaded to every release by `release-finalize.yml` |
 | `simhash.rs` | 64-bit SimHash + Hamming distance over tokenized memory bodies (siphasher-based) |
 | `index.rs` | intentionally empty placeholder — v0.1's LanceDB/fastembed/tantivy indexing lived here; v0.2 moved it into `store::vector`/`store::fts`, and the module stays so `comemory::index` remains a stable path for any future re-introduction |
 | `graph/` | SQL-backed `edges` table upserts, recursive-CTE walks, `cross_link` reference extraction, `cochange` (git-history co-change mining), `imports` (per-language import edges), `pagerank` (deterministic weighted PageRank), `materialize` (writes `rank_score` onto `code_symbols`), `memory_rank` (the same PageRank over the memory graph — direct memory→memory relations plus in-memory co-citation edges, hub rels excluded — written onto `memories.rank_score`), `coactivate` (commit co-activation reward: a commit touching a memory's referenced files reinforces it), `doc_link` (deterministic `member_of_source`/`references_document` link deriver), `search_edit` (search→edit lookback feeding `auto_search_edit` provenance), `derived` (`refresh_derived_best_effort` — the single post-write pass that refreshes *both* derived artifacts, `memories.rank_score` and the `edge_fts` triplet index, independently best-effort; called at the four seams `save`, `delete`, `rebuild`, and `index-code`), `neighbors` (the one-hop undirected `imports`/`co_changed` file neighborhood query shared by `retrieval::bundle` and `GET /api/v1/graph/nodes/{id}/neighbors`) |
@@ -218,6 +220,7 @@ environment (`Config::with_env`, in `src/config/env.rs`).
 | `COMEMORY_PRUNE_MIN_FEEDBACK` | Beta-feedback ceiling (range `[0.0, 1.0]`) at or below which a memory is prune-eligible. | `0.25` |
 | `COMEMORY_PRUNE_BELOW_QUALITY` | Quality threshold (1..=5); memories at or below this value are prune candidates (used together with activation + feedback floors). | `2` |
 | `COMEMORY_PRUNE_SUPERSEDED_GRACE_DAYS` | Grace window (days) before a superseded-and-never-accessed memory becomes prune-eligible; protects freshly-rebuilt DBs whose supersede edges all carry rebuild-time timestamps. | `7` |
+| `COMEMORY_RELEASES_URL` | Test hook: the release base `comemory upgrade` and `install.sh` resolve `latest` and download assets from (`<base>/latest`, `<base>/download/<tag>/<asset>`); the suite points it at a loopback stand-in (`tests/common/release_server.rs`). Not a user knob. | `https://github.com/Falconiere/comemory/releases` |
 | `COMEMORY_SKIP_MIGRATION_BACKUP` | Truthy (`1`/`true`) skips the pre-migration `VACUUM INTO` snapshot (`comemory.db.pre-v{N}.bak`) that `store::migrate::preflight` otherwise takes before ANY pending schema migration — a failed snapshot only refuses the upgrade when a pending migration is destructive, and merely warns otherwise. See `docs/guides/upgrading.md`. | `false` |
 
 `[reinforce] enabled` (default `true`) is file-only, with no env override:
@@ -520,11 +523,24 @@ not "done" until `scripts/check-all.sh` exits 0.
 
 ## Distribution
 
-- `curl … https://get.comemory.io/pkg/comemory/install | bash` — a 302 to the
-  release installer below, served by the `comemory-prod` Cloudflare Worker
-  (`apps/get` in the `CodaSignal/comemory.io` repo). The short URL is the stable
-  one; the script behind it is regenerated by cargo-dist every release. The
-  command with its hardening flags is spelled out in README § Install.
+- `curl … https://github.com/Falconiere/comemory/releases/latest/download/install.sh | sh`
+  — the repo-root `install.sh`, hand-written (POSIX sh, ≤ 300 code lines like
+  every other file), attached to every release by `release-finalize.yml`
+  (which also smoke-runs it against the fresh release on the Linux runner).
+  Platform detection, `latest` via the release redirect, SHA-256 sidecar
+  verification (never skipped), a `--version` run of the downloaded binary
+  before the atomic rename, in-place replacement of the `comemory` already on
+  `PATH`, once-only rc-file `PATH` line. Its `--version` / `--dir` /
+  `--no-modify-path` / `--quiet` flags are a contract: `comemory upgrade`
+  runs it with exactly those. The command with its hardening flags is spelled
+  out in README § Install.
+- `https://get.comemory.io/pkg/comemory/install` — a 302 served by the
+  `comemory-prod` Cloudflare Worker (`apps/get` in the `CodaSignal/comemory.io`
+  repo); it still points at cargo-dist's `comemory-installer.sh` until that
+  worker is repointed at the `install.sh` asset above.
+- `comemory-installer.sh` — the cargo-dist generated installer, still
+  published on every release (`installers = ["shell", …]`); no pinning, no
+  in-place upgrade, skips the checksum on stock macOS.
 - `cargo install --path .` (build from a local checkout; not published to
   crates.io).
 - `brew install Falconiere/tap/comemory` (Homebrew tap

@@ -19,8 +19,11 @@ everything after the tag: push `vX.Y.Z` → `release.yml` builds the
 `aarch64-unknown-linux-gnu` targets → uploads the tarballs + shell installer to GitHub
 Releases → pushes the formula to `Falconiere/homebrew-tap` (stable tags only).
 A second hand-maintained workflow, `release-finalize.yml`, runs after the
-release is published to smoke-test the artifact, curate the release body from
-`CHANGELOG.md`, and (optionally) sign the `sha256.sum`.
+release is published to smoke-test the artifact, attach the repo's `install.sh`
+to the release (the asset `latest/download/install.sh` and `comemory upgrade`
+fetch), run that script end to end against the fresh release on the Linux
+runner, curate the release body from `CHANGELOG.md`, and (optionally) sign the
+`sha256.sum`.
 
 ```
 push to main ──> release-plz ──> [release PR] ──merge──> push vX.Y.Z tag
