@@ -1,104 +1,21 @@
-name: Await code review
+name: Review severity gate
 description: >-
-  Block until this commit's Code Review check has concluded, then fail
-  unless it succeeded AND reported no high-or-worse findings. Lets a
-  workflow depend on another workflow's result, which GitHub Actions has no
-  native `needs:` for.
+  Fail the job when this pull request's Code Review comment reports a `high`
+  or `critical` finding. Runs as a step of the review workflow itself, so the
+  comment it reads is the one the preceding step has just posted — there is
+  no second workflow to poll and no verdict that can go stale behind a rerun.
+  Mark the `review` check Required in branch protection to make the red block
+  a merge.
 
 inputs:
-  sha:
-    description: Commit whose check runs are polled. Defaults to this run's SHA.
-    required: false
-    default: ""
-  timeout-minutes:
-    description: >-
-      How long to wait for the review to conclude. Must exceed the review
-      workflow's own `timeout-minutes`, or this gate reports a timeout for a
-      review that was about to finish.
-    required: false
-    default: "20"
-  check-name:
-    description: Name of the check run to wait on.
-    required: false
-    default: review
   github-token:
     description: >-
-      Token used to read the check run and the reviewer's comment. Needs the
-      `checks: read` and `pull-requests: read` permissions.
+      Token used to read the reviewer's comment. Needs `pull-requests: read`.
     required: true
 
 runs:
   using: composite
   steps:
-    - name: Wait for the code review to conclude
-      shell: bash
-      env:
-        GH_TOKEN: ${{ inputs.github-token }}
-        REPO: ${{ github.repository }}
-        SHA: ${{ inputs.sha || github.sha }}
-        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        CHECK: ${{ inputs.check-name }}
-        TIMEOUT_MINUTES: ${{ inputs.timeout-minutes }}
-      run: |
-        set -euo pipefail
-
-        # Both values come from the GitHub context, and both are interpolated
-        # into a URL path, so shape is checked before use rather than assumed:
-        # anything but `owner/name` and a 40-hex SHA is refused outright. The
-        # expansions are quoted too, so nothing reaches a second command
-        # either way — this is about not building a nonsense request.
-        case "$REPO" in
-          */*/*|"") echo "::error::unexpected repository '$REPO'"; exit 1 ;;
-          */*) ;;
-          *) echo "::error::unexpected repository '$REPO'"; exit 1 ;;
-        esac
-        for value in "$SHA" "$HEAD_SHA"; do
-          [ -z "$value" ] && continue
-          case "$value" in
-            *[!0-9a-fA-F]*|"") echo "::error::unexpected commit sha '$value'"; exit 1 ;;
-          esac
-        done
-
-        # The review workflow and this one are triggered by the same event, so
-        # they share `github.sha`; the head SHA is polled as a fallback for the
-        # case where the check landed on the branch tip instead.
-        conclusion_of() {
-          for candidate in "$SHA" "$HEAD_SHA"; do
-            [ -n "$candidate" ] || continue
-            gh api "repos/$REPO/commits/$candidate/check-runs?per_page=100" \
-              --jq "[.check_runs[] | select(.name == \"$CHECK\")] | last
-                    | if . == null then \"\" else .status + \":\" + (.conclusion // \"\") end" \
-              2>/dev/null | grep -v '^$' && return 0
-          done
-          echo ""
-        }
-
-        deadline=$(( SECONDS + TIMEOUT_MINUTES * 60 ))
-        state=""
-        while :; do
-          state="$(conclusion_of || true)"
-          case "$state" in
-            completed:*) break ;;
-          esac
-          if [ "$SECONDS" -ge "$deadline" ]; then
-            echo "::error::'$CHECK' did not conclude within ${TIMEOUT_MINUTES}m (last seen: '${state:-not started}')."
-            exit 1
-          fi
-          sleep 15
-        done
-
-        conclusion="${state#completed:}"
-        echo "'$CHECK' concluded: $conclusion"
-        case "$conclusion" in
-          success|neutral|skipped)
-            echo "::notice::'$CHECK' passed ($conclusion) — continuing."
-            ;;
-          *)
-            echo "::error::'$CHECK' concluded '$conclusion'; this workflow only runs after a successful review."
-            exit 1
-            ;;
-        esac
-
     - name: Require a review with no high-severity findings
       shell: bash
       env:
@@ -152,9 +69,9 @@ runs:
         # opinion on a whole diff reliably returns a fresh crop of stylistic
         # findings every pass: PR #82 cleared 230 across four rounds without one
         # confirmed defect in shipped behavior. A gate on "zero findings" is
-        # therefore a gate on model noise, and because a skipped `await-review`
-        # takes `test` and every build job down with it, one medium nit could
-        # empty a release.
+        # therefore a gate on model noise, and while this gate lived in a
+        # separate polling job that `test` and every build job hung off, one
+        # medium nit could empty a release.
         #
         # It also could not be satisfied on a release PR at all. release-plz
         # regenerates CHANGELOG.md from the same commit subjects on the next

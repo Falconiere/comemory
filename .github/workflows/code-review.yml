@@ -51,12 +51,11 @@ jobs:
           # problem are `test` (scripts/check-all.sh + the nextest suite)
           # and `plan`.
           #
-          # This job's own conclusion is therefore never the blocker. What
-          # reads the verdict is `await-review` in test.yml, via
-          # .github/actions/await-code-review, and it blocks on `high` and
-          # `critical` findings only — the severities the reviewer reserves
-          # for a defect. `medium`/`low`/`nit` stay informational, which is
-          # what keeps the 230-findings case above from emptying a release.
+          # `FAIL_ON` is verdict-driven — `changes` would fail on any
+          # request-changes verdict, which is precisely the noise above. The
+          # severity gate that follows this step fails the job instead, on
+          # `high` and `critical` only: the severities the reviewer reserves
+          # for a defect. `medium`/`low`/`nit` stay informational.
           FAIL_ON: none
           # CLAUDE.md is already covered by the action's default Tier-1 convention
           # files; guardrails.config.json (the toolu-conventions structure gate
@@ -73,3 +72,13 @@ jobs:
           # findings against. Excluded files are still committed and still
           # gated by `test`; they are only kept out of the LLM's diff.
           EXCLUDE_GLOBS: .claude/**
+
+      # The gate is a STEP of this job, not a job in another workflow. That is
+      # the whole design: `review` goes red on a high-or-critical finding, and
+      # branch protection blocks the merge on the red. Nothing `needs:` this,
+      # so nothing can be skipped by it — the cascade that shipped v0.18.0 and
+      # v0.18.1 with no binaries is not expressible any more. A rerun of this
+      # workflow re-evaluates its own check, so a verdict cannot go stale.
+      - uses: ./.github/actions/review-severity-gate
+        with:
+          github-token: ${{ github.token }}

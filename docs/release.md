@@ -127,24 +127,35 @@ Two classes of commit never reach the changelog, and both are dropped by a
   real change that merely mentions a review survives it.
 
 Both classes were flagged as changelog noise by the AI reviewer on the release
-PRs they appeared in (#88 and #83), which — before the severity gate below —
-took `test` and every build job down with them.
+PRs they appeared in (#88 and #83). Before the gate was rebuilt (see below),
+that took `test` and every build job down with them.
 
 ### What can block the release PR
 
-`.github/workflows/test.yml`'s `await-review` job waits on the `Code Review`
-check for the same commit (GitHub has no `needs:` across workflows) and fails
-unless the review concluded successfully **and** reported no `high` or
-`critical` findings. `test` and every build job hang off it, so a failure here
-skips the whole cascade.
+The `review` check is the gate, and **branch protection** is what enforces it.
+`code-review.yml` runs the reviewer, then runs
+`.github/actions/review-severity-gate` as a step of the same job; that step
+fails `review` when the report carries a `high` or `critical` finding. `review`
+is a required status check on `main`, so the red blocks the merge.
+
+Nothing `needs:` the gate. `test`, `plan` and every build job run
+unconditionally and in parallel with the review, so a red review still leaves
+you the test results — and a skipped or failed gate can no longer cascade into
+an empty release, which is how v0.18.0 and v0.18.1 shipped with no binaries.
+Rerunning the review re-evaluates its own check, so a verdict cannot go stale
+behind a rerun either.
 
 `medium`, `low` and `nit` findings do **not** block. The review is advisory by
-construction — `code-review.yml` pins `FAIL_ON: none` — and an LLM asked to
-opine on a whole diff returns a fresh crop of stylistic findings every pass
-(PR #82 cleared 230 across four rounds without one confirmed defect). Gating on
-a nonzero count gated on model noise. A report that names findings but no
-severity breakdown is still refused: an unclassified finding is not provably
-below the bar.
+construction — `code-review.yml` pins `FAIL_ON: none`, whose own gate is
+verdict-driven — and an LLM asked to opine on a whole diff returns a fresh crop
+of stylistic findings every pass (PR #82 cleared 230 across four rounds without
+one confirmed defect). Gating on a nonzero count gated on model noise. Two
+things are still refused outright: a review that did not finish, and a report
+that names findings but no severity breakdown — an unclassified finding is not
+provably below the bar.
+
+Required checks on `main` are `review` and `test`. If a check is renamed, add
+the new name in branch protection or the gate silently stops blocking.
 
 ---
 
