@@ -74,9 +74,11 @@ commit_parsers = [
     # body merely mentioned the words — `ci: parse the severity gate with awk`
     # discussed the footer in prose and was published under BREAKING in the
     # v0.18.2 draft.
-    # Both separators the conventional-commits spec defines for a footer:
-    # `: ` and ` #`. Matching only the colon would miss `BREAKING CHANGE #12`.
-    { body = '(?m)^BREAKING[ -]CHANGE(:| #)', group = "<!-- 0 -->BREAKING" },
+    # Both separators the conventional-commits spec defines for a footer,
+    # `: ` and ` #`, with the space before `#` optional so the `CHANGE#12`
+    # spelling some tools emit is caught too. Matching only the colon would
+    # miss `BREAKING CHANGE #12` entirely.
+    { body = '(?m)^BREAKING[ -]CHANGE ?(:|#)', group = "<!-- 0 -->BREAKING" },
     # A `BREAKING CHANGE:` trailer is a conventional-commit *footer*, and
     # git-cliff parses footers separately from the body — so the rule above
     # does not see it. Without this rule a breaking `docs:`/`ci:` commit whose
@@ -84,7 +86,7 @@ commit_parsers = [
     # where `protect_breaking_commits` correctly refuses to skip it but the
     # skip rule sets no group, leaving it grouped `None` and dropped by the
     # template's `group_by`. Catch it here, before any skip rule can see it.
-    { footer = '^BREAKING[ -]CHANGE(:| #)', group = "<!-- 0 -->BREAKING" },
+    { footer = '^BREAKING[ -]CHANGE ?(:|#)', group = "<!-- 0 -->BREAKING" },
     # Class 1. The verb list is deliberately closed: it matches a subject whose
     # whole point is "responded to the review", and leaves a real change that
     # merely happens to mention one. `fix(review): state the EPIPE mechanism

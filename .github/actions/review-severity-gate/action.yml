@@ -49,8 +49,15 @@ runs:
         # gate runs on whatever `permissions` its calling workflow declares,
         # so "the token is missing pull-requests scope" is a real thing to be
         # told plainly rather than left to be inferred from a 403 in the log.
-        if ! comments="$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" 2>&1)"; then
-          echo "::error::Could not read the comments on PR #$PR. The workflow calling this gate must grant pull-requests read access (write also grants it). API said: $(printf '%s' "$comments" | head -1)"
+        # stdout and stderr are kept apart. Folding them together with `2>&1`
+        # is wrong in a way the failure path hides: on a SUCCESSFUL call, any
+        # stderr `gh` writes — a deprecation notice, say — is prepended to the
+        # JSON and the `jq` below dies parsing it. Sending stderr to its own
+        # file keeps stdout parseable and still leaves the API's own message
+        # to report.
+        api_err="$(mktemp)"
+        if ! comments="$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" 2>"$api_err")"; then
+          echo "::error::Could not read the comments on PR #$PR. The workflow calling this gate must grant pull-requests read access (write also grants it). API said: $(head -1 "$api_err")"
           exit 1
         fi
 
