@@ -663,9 +663,14 @@ local rule strictly stronger than the one it replaces.
 - **D8 — extra quality gates are retained** beyond the kit's four-step
   command (`fmt && clippy && guardrails && test`): `typos-check`,
   `cli-docs-check`, `coverage-check`, `eval-check`, `dup-check`,
-  `machete-check`, `deny-check`, and the mutation job. None has a kit
-  equivalent; all guard comemory-specific failure modes. They layer around
-  the guardrails step, not in place of it.
+  `machete-check` and `deny-check`. None has a kit equivalent; all guard
+  comemory-specific failure modes. They layer around the guardrails step, not
+  in place of it. Mutation testing is no longer among them: its workflow ran
+  a nightly full sweep and a PR-scoped job that had been disabled, and it was
+  removed. `just mutation` still runs the full sweep locally through
+  `scripts/mutation-check.sh`, against `.cargo/mutants.toml` and the
+  `tests/golden/mutant-baseline.md` baseline — the tool stays, only the
+  scheduled CI job is gone.
 - **D9 — `tests/common/` stays at the crate root** and is bridged into the lib
   test crate via `src/test_common.rs`, so colocated unit tests and crate-root
   integration tests share one copy of every fixture (Binding Rule 1). Its
