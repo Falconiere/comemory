@@ -95,6 +95,11 @@ The normal path — no local commands:
 2. **release-plz opens/updates the release PR** (job `release-plz-pr`). It bumps
    `Cargo.toml` + `Cargo.lock` and rewrites the `CHANGELOG.md` section from the
    commits since the last tag. Each new push to `main` refreshes the same PR.
+   A push whose commits would all be skipped from the changelog (the two
+   classes below) opens no PR at all — `release_commits` in `release-plz.toml`
+   gates the PR on at least one commit the changelog would render. PR #91 is
+   why: five `ci:` commits produced a v0.18.3 bump with no changelog section.
+   Those commits are not lost; they ride along in the next release's diff.
 3. **Review the PR.** Confirm the computed version is what you expect (breaking
    `feat!:`/`fix!:` → major-ish bump, `feat:` → minor, `fix:` → patch) and the
    changelog reads well. **Do not hand-edit the PR branch to reword an
