@@ -20,7 +20,7 @@ qa:
 coverage:
     bash scripts/coverage-check.sh
 
-# Full-crate mutation run (slow; nightly CI job). Survivor => non-zero exit.
+# Full-crate mutation run (slow; local only — there is no CI job). Survivor => non-zero exit.
 mutation:
     bash scripts/mutation-check.sh full
 
