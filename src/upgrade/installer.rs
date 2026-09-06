@@ -35,16 +35,19 @@ pub fn run_script(base: &str, tag: &str, dir: &Path, quiet: bool) -> Result<()> 
         }
         run_tool(&mut cmd, SCRIPT_ASSET, quiet)
     });
-    let _ = std::fs::remove_dir_all(&workdir);
+    if let Err(e) = std::fs::remove_dir_all(&workdir) {
+        tracing::warn!(dir = %workdir.display(), error = %e, "could not remove the upgrade workdir");
+    }
     result
 }
 
 /// A fresh, owner-only (`0700`) directory under the system temp dir to
 /// download the script into. A predictable path in the shared temp dir
 /// would let another local user pre-plant a symlink for `curl -o` to follow
-/// (CWE-377); a random name plus `create`-not-`create_dir_all` (fails if the
-/// name is taken) plus the mode closes that. Unix-only mode bits — every
-/// published target is unix, and `sh` is required here anyway.
+/// (CWE-377); a 16-byte random name (128 bits, from `/dev/urandom`) plus
+/// `create`-not-`create_dir_all` (fails if the name is taken) plus the mode
+/// closes that. Unix-only mode bits — every published target is unix, and
+/// `sh` is required here anyway.
 fn private_workdir() -> Result<PathBuf> {
     let mut builder = std::fs::DirBuilder::new();
     #[cfg(unix)]
@@ -52,7 +55,7 @@ fn private_workdir() -> Result<PathBuf> {
         use std::os::unix::fs::DirBuilderExt as _;
         builder.mode(0o700);
     }
-    let dir = std::env::temp_dir().join(format!("comemory-upgrade-{}", random_hex(8)?));
+    let dir = std::env::temp_dir().join(format!("comemory-upgrade-{}", random_hex(16)?));
     builder.create(&dir)?;
     Ok(dir)
 }
