@@ -61,6 +61,7 @@ Commands:
   rebuild        Drop `comemory.db` and repopulate it from the markdown source of truth
   gc             Purge old `memories/.trash/` entries and learning telemetry past retention
   install-hooks  Install git hooks that trigger `comemory index-code` on `post-commit`, `post-merge`, and `post-checkout`
+  upgrade        Move this binary to the newest release (or a pinned one)
   help           Print this message or the help of the given subcommand(s)
 
 Options:
@@ -1168,5 +1169,37 @@ Examples:
   comemory completions bash > "$(brew --prefix)/etc/bash_completion.d/comemory"
 
   # NOTE: scripts/dev-install.sh writes these automatically by default.
+```
+
+---
+
+## comemory upgrade
+
+```
+Move this binary to the newest release (or a pinned one)
+
+Usage: comemory upgrade [OPTIONS]
+
+Options:
+      --check                Report the running and latest versions without installing anything
+      --json                 Emit machine-readable JSON instead of a human TTY view
+      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+      --version <VERSION>    Install this release instead of the latest (`0.19.0` or `v0.19.0`)
+      --force                Proceed even when the target is not newer than the running build (reinstall or downgrade)
+  -h, --help                 Print help
+
+Examples:
+  # Move to the newest release (a no-op when already there)
+  comemory upgrade
+
+  # Only report whether a newer release exists
+  comemory upgrade --check
+
+  # Pin a release; --force allows a reinstall or a downgrade
+  comemory upgrade --version 0.19.0
+  comemory upgrade --version 0.18.0 --force
+
+  # Machine-readable
+  comemory upgrade --check --json
 ```
 

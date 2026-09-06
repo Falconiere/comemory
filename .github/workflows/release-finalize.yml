@@ -191,6 +191,37 @@ jobs:
           fi
           echo "::notice::verified ${checked} archive(s)"
 
+      - name: Attach install.sh to the release
+        if: steps.tag.outputs.skip != 'true'
+        # The tag's own install.sh, as a release asset beside the tarballs:
+        # `releases/latest/download/install.sh` is the one-liner's target,
+        # and `comemory upgrade` fetches `releases/download/<tag>/install.sh`
+        # so the script it runs is the one that shipped with that release.
+        # `--clobber` makes a re-run of this workflow idempotent.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          gh release upload "$TAG" install.sh --clobber
+
+      - name: Smoke-test install.sh against the published release
+        if: steps.tag.outputs.skip != 'true'
+        # ubuntu-22.04 is x86_64 glibc 2.35 — a published target — so this
+        # runs the real installer end to end: latest-tag resolution is
+        # skipped (pinned to $TAG, since `latest` may still be the previous
+        # release for a pre-release tag), download, checksum, extract, the
+        # `--version` run, and the rename into place.
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          sh install.sh --version "$TAG" --dir "$RUNNER_TEMP/bin" --no-modify-path
+          got="$("$RUNNER_TEMP/bin/comemory" --version)"
+          if [[ "$got" != "comemory ${TAG#v}" ]]; then
+            echo "::error::installed binary reports '$got', expected 'comemory ${TAG#v}'"
+            exit 1
+          fi
+          echo "::notice::install.sh installed $got"
+
       - name: Curate release notes from CHANGELOG.md
         id: notes
         if: steps.tag.outputs.skip != 'true'

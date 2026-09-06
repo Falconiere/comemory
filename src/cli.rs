@@ -84,6 +84,8 @@ pub mod tune;
 /// `comemory unindex`: unregister a document source and remove its
 /// derived rows.
 pub mod unindex;
+/// `comemory upgrade`: move this binary to a newer release.
+pub mod upgrade;
 /// `--since` / `--until` / `--as-of` value parsing.
 pub mod when;
 
@@ -189,6 +191,8 @@ pub enum Cmd {
     /// Install git hooks that trigger `comemory index-code` on
     /// `post-commit`, `post-merge`, and `post-checkout`.
     InstallHooks(install_hooks::Args),
+    /// Move this binary to the newest release (or a pinned one).
+    Upgrade(upgrade::Args),
 }
 
 /// Dispatch the parsed `Cli` to its subcommand. The dispatcher is the single
@@ -230,6 +234,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::Rebuild(a) => rebuild::run(a, cli.json, cli.data_dir).await,
         Cmd::Gc => gc::run(cli.json, cli.data_dir).await,
         Cmd::InstallHooks(a) => install_hooks::run(a, cli.json, cli.data_dir).await,
+        Cmd::Upgrade(a) => upgrade::run(a, cli.json, cli.data_dir).await,
     }
 }
 

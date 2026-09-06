@@ -43,13 +43,14 @@ use comemory::cli::Cli;
 use serde_json::json;
 use tempfile::TempDir;
 
-/// Real subcommands with no HTTP mapping at all (spec Non-Goal 3): `serve`
-/// IS the server. A local, hardcoded mirror of
+/// Real subcommands with no HTTP mapping at all: `serve` IS the server
+/// (spec Non-Goal 3), and `upgrade` replaces the running binary — never on
+/// an HTTP request. A local, hardcoded mirror of
 /// `serve::routes::meta::CLI_ONLY` (private to that module) — deliberate:
 /// this test proves the *real* `GET /api/v1/commands` endpoint against an
 /// independently-stated expectation, not against whatever that endpoint's
 /// own internal constant happens to say today.
-const CLI_ONLY: &[&str] = &["serve"];
+const CLI_ONLY: &[&str] = &["serve", "upgrade"];
 
 // ---------------------------------------------------------------------
 // Documented per-(command, arg id) exclusions from the HTTP field mapping.

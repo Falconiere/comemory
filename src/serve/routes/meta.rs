@@ -20,8 +20,9 @@ use crate::serve::AppState;
 use crate::serve::routes::{self, RouteEntry, respond, run_blocking};
 
 /// Real subcommands with no HTTP mapping: `serve` IS the server (spec
-/// Non-Goal 3).
-const CLI_ONLY: &[&str] = &["serve"];
+/// Non-Goal 3), and `upgrade` replaces the running binary — a server must
+/// never do that to itself on request.
+const CLI_ONLY: &[&str] = &["serve", "upgrade"];
 
 /// This resource's route-table entries, appended onto [`super::table`].
 pub fn table_entries() -> &'static [RouteEntry] {
@@ -70,7 +71,7 @@ struct CommandInfo {
     /// Kebab-case clap subcommand name.
     name: String,
     /// `"http"` for every subcommand with an `/api/v1` mapping, else
-    /// `"cli-only"` (`serve`).
+    /// `"cli-only"` (`serve`, `upgrade`).
     transport: &'static str,
     /// `"METHOD[|METHOD] /api/v1/<path>"` entries for this command, one per
     /// distinct path. Empty for a real subcommand this step hasn't wired a

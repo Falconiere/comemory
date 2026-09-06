@@ -20,6 +20,7 @@ comemory's settings are layered: built-in defaults → an optional `config.toml`
 | `COMEMORY_RETRIEVAL_BM25_WEIGHTS` | `"body,tags"` BM25 column weights for `memory_fts` (both finite ≥ 0, at least one > 0). | `1.0,3.0` |
 | `COMEMORY_RETRIEVAL_CODE_BM25_WEIGHTS` | `"symbol,snippet,path_tokens"` BM25 column weights for `code_fts` (all finite ≥ 0, at least one > 0). | `2.0,1.0,1.5` |
 | `COMEMORY_LEARNING_RETENTION_DAYS` | `comemory gc` retention window (days) for raw `retrieval_log` + `feedback_events` rows; aggregated `feedback` counters and mined `query_expansions` never expire. | `90` |
+| `COMEMORY_RELEASES_URL` | Test hook: the release base `comemory upgrade` and `install.sh` resolve `latest` and download assets from; the suite points it at a loopback stand-in. Not a user knob. | `https://github.com/Falconiere/comemory/releases` |
 | `COMEMORY_TUNE_MIN_GOLDEN` | Test hook lowering `comemory tune` / `comemory bandit` minimum-golden-pairs floor; not a tuning knob. | `10` |
 | `COMEMORY_REINFORCE_SEARCH_EDIT_DAYS` | Lookback (days) for search→edit auto-reinforcement: a memory that appeared on a recent `search`/`context` page earns `auto_search_edit` provenance when a referenced file is touched. Must be `≥ 1`. | `7` |
 | `COMEMORY_GIT_AUTO_SYNC` | `true`/`1` to enable best-effort git commit + push after a save. Also settable as `[git] auto_sync` (with `[git] remote`) in `config.toml` — the console's `PATCH /api/v1/memory-stores/default` writes those keys; the env var still wins. | `false` |

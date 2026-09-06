@@ -4,14 +4,43 @@
 a newer `comemory`, where the safety net lives, and how to use it if something
 goes wrong.
 
-## Upgrades are automatic
+## Getting the newer binary: `comemory upgrade`
+
+```bash
+comemory upgrade --check   # "update available: 0.18.2 → 0.19.0", or "is up to date"
+comemory upgrade           # swap this binary for the newest release, in place
+```
+
+`upgrade` follows the GitHub release redirect to find the newest tag, works
+out how the running binary was installed, compares, and then:
+
+| Channel | What `upgrade` does |
+| --- | --- |
+| **Standalone** — `install.sh`, or a tarball you unpacked | Downloads that release's own `install.sh` and runs it pinned (`--version <tag> --dir <this binary's dir> --no-modify-path`). The script verifies the archive's SHA-256, runs the new binary's `--version` before touching anything, then renames it over the running one — an atomic swap, so the process you launched keeps executing the old inode until it exits |
+| **Homebrew** — under a `Cellar` / Homebrew prefix | Runs `brew upgrade comemory`. The tap can lag a GitHub release by a few minutes; the report says so instead of failing |
+| **`cargo install`** — listed in `$CARGO_HOME/.crates.toml` | Refuses (exit 64) and prints the rebuild recipe: `cargo install --git … --tag vX.Y.Z`, or `git pull && cargo install --path .` in that checkout |
+
+After the swap it runs the binary on disk with `--version` and fails loudly if
+that is not the release it asked for. Flags: `--version <v>` pins a release
+instead of the latest; `--force` allows a reinstall or a downgrade (without
+it, an older target is a usage error); `--json` runs the installer quietly and
+prints `{current, latest, target, channel, exe, status, hint}` with `status`
+one of `up_to_date` / `available` / `upgraded` / `installed`. Exit codes: `69`
+when the release host cannot be reached (the command needs `curl` or `wget`
+on `PATH`), `64` for a bad `--version` or an unforced downgrade, `70` when the
+installer itself failed — its last stderr lines are relayed.
+
+There is no HTTP twin: `comemory serve` never replaces its own binary on
+request (`transport: "cli-only"` in `GET /api/v1/commands`).
+
+## Schema upgrades are automatic
 
 There is no `comemory migrate` command. Install a newer binary, run any
 command, and the schema upgrades in place on that first call — `search`,
 `save`, `doctor`, whichever you happen to run next:
 
 ```bash
-brew upgrade comemory   # or: re-run the shell installer / cargo install --path .
+comemory upgrade        # or: brew upgrade comemory / cargo install --path .
 comemory doctor         # first command after the upgrade migrates the DB
 ```
 
