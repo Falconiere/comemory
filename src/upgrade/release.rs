@@ -86,14 +86,19 @@ fn final_url(url: &str) -> Result<String> {
             if !out.status.success() {
                 return Err(unreachable(url, text.trim()));
             }
-            let last = text
-                .lines()
-                .filter_map(|l| l.trim().strip_prefix("Location:"))
-                .next_back()
-                .map(|l| l.trim().to_string());
+            let last = text.lines().filter_map(location_header).next_back();
             Ok(last.unwrap_or_else(|| url.to_string()))
         }
     }
+}
+
+/// The URL out of a `Location:` header line, matched case-insensitively —
+/// RFC 9110 header names are, and a proxy may lowercase what GitHub sends.
+fn location_header(line: &str) -> Option<String> {
+    let line = line.trim();
+    let (name, value) = line.split_once(':')?;
+    name.eq_ignore_ascii_case("location")
+        .then(|| value.trim().to_string())
 }
 
 /// The TLS-hardening flags curl gets for an `https://` URL — the same set

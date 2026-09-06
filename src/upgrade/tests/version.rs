@@ -52,6 +52,25 @@ fn a_pre_release_sorts_below_its_final() {
 }
 
 #[test]
+fn pre_release_segments_compare_numerically_like_semver() {
+    assert!(v("1.0.0-rc.10") > v("1.0.0-rc.9"), "numeric, not lexical");
+    assert!(
+        v("1.0.0-rc") < v("1.0.0-rc.1"),
+        "a prefix sorts below its extension"
+    );
+    assert!(v("1.0.0-alpha") < v("1.0.0-beta"));
+    assert!(
+        v("1.0.0-1") < v("1.0.0-alpha"),
+        "numeric segments rank below alphanumeric"
+    );
+    assert!(v("1.0.0-alpha.1") < v("1.0.0-alpha.beta"));
+    assert_eq!(
+        v("1.0.0-rc.1").cmp(&v("1.0.0-rc.1")),
+        std::cmp::Ordering::Equal
+    );
+}
+
+#[test]
 fn rejects_malformed_input_as_a_usage_error() {
     for bad in ["", "1.2", "1.2.3.4", "a.b.c", "1.x.0", "1.2.3-", "latest"] {
         match Version::parse(bad) {

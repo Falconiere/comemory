@@ -10,7 +10,9 @@ use crate::prelude::*;
 
 /// A parsed release version. Ordered numerically on the triple; a
 /// pre-release (`0.19.0-rc.1`) sorts BELOW its final release, and two
-/// pre-releases of the same triple compare by their suffix text.
+/// pre-releases of the same triple compare segment by segment (`rc.10`
+/// above `rc.9`, numeric segments below alphabetic ones, as semver orders
+/// them).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Version {
     /// `MAJOR`.
@@ -79,8 +81,38 @@ impl Ord for Version {
                 (None, None) => Ordering::Equal,
                 (None, Some(_)) => Ordering::Greater,
                 (Some(_), None) => Ordering::Less,
-                (Some(a), Some(b)) => a.cmp(b),
+                (Some(a), Some(b)) => pre_cmp(a, b),
             })
+    }
+}
+
+/// Semver pre-release ordering: dot-separated segments, numeric ones
+/// compared as numbers and ranking below alphanumeric ones, a shorter
+/// prefix ranking below its extension (`rc` < `rc.1`).
+fn pre_cmp(left: &str, right: &str) -> Ordering {
+    let mut lhs = left.split('.');
+    let mut rhs = right.split('.');
+    loop {
+        let ord = match (lhs.next(), rhs.next()) {
+            (None, None) => return Ordering::Equal,
+            (None, Some(_)) => return Ordering::Less,
+            (Some(_), None) => return Ordering::Greater,
+            (Some(seg_l), Some(seg_r)) => segment_cmp(seg_l, seg_r),
+        };
+        if ord != Ordering::Equal {
+            return ord;
+        }
+    }
+}
+
+/// One pre-release segment against another: both numeric → by value; a
+/// numeric segment ranks below an alphanumeric one; else by text.
+fn segment_cmp(seg_l: &str, seg_r: &str) -> Ordering {
+    match (seg_l.parse::<u64>(), seg_r.parse::<u64>()) {
+        (Ok(num_l), Ok(num_r)) => num_l.cmp(&num_r),
+        (Ok(_), Err(_)) => Ordering::Less,
+        (Err(_), Ok(_)) => Ordering::Greater,
+        (Err(_), Err(_)) => seg_l.cmp(seg_r),
     }
 }
 

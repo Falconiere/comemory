@@ -3,12 +3,13 @@
 //! Homebrew one. `comemory upgrade` decides *whether* and *to what*; this
 //! module only runs the tool that does *how*.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use super::release;
 use super::version::Version;
 use crate::prelude::*;
+use crate::store::random_id::random_hex;
 
 /// The installer asset every release carries (uploaded by
 /// `.github/workflows/release-finalize.yml` from the tag's own tree).
@@ -21,19 +22,39 @@ pub const SCRIPT_ASSET: &str = "install.sh";
 /// it said.
 pub fn run_script(base: &str, tag: &str, dir: &Path, quiet: bool) -> Result<()> {
     let url = format!("{base}/download/{tag}/{SCRIPT_ASSET}");
-    let script = std::env::temp_dir().join(format!("comemory-install-{}.sh", std::process::id()));
-    release::download(&url, &script)?;
-    let mut cmd = Command::new("sh");
-    cmd.arg(&script)
-        .args(["--version", tag, "--dir"])
-        .arg(dir)
-        .arg("--no-modify-path");
-    if quiet {
-        cmd.arg("--quiet");
-    }
-    let result = run_tool(&mut cmd, SCRIPT_ASSET, quiet);
-    let _ = std::fs::remove_file(&script);
+    let workdir = private_workdir()?;
+    let script = workdir.join(SCRIPT_ASSET);
+    let result = release::download(&url, &script).and_then(|()| {
+        let mut cmd = Command::new("sh");
+        cmd.arg(&script)
+            .args(["--version", tag, "--dir"])
+            .arg(dir)
+            .arg("--no-modify-path");
+        if quiet {
+            cmd.arg("--quiet");
+        }
+        run_tool(&mut cmd, SCRIPT_ASSET, quiet)
+    });
+    let _ = std::fs::remove_dir_all(&workdir);
     result
+}
+
+/// A fresh, owner-only (`0700`) directory under the system temp dir to
+/// download the script into. A predictable path in the shared temp dir
+/// would let another local user pre-plant a symlink for `curl -o` to follow
+/// (CWE-377); a random name plus `create`-not-`create_dir_all` (fails if the
+/// name is taken) plus the mode closes that. Unix-only mode bits — every
+/// published target is unix, and `sh` is required here anyway.
+fn private_workdir() -> Result<PathBuf> {
+    let mut builder = std::fs::DirBuilder::new();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt as _;
+        builder.mode(0o700);
+    }
+    let dir = std::env::temp_dir().join(format!("comemory-upgrade-{}", random_hex(8)?));
+    builder.create(&dir)?;
+    Ok(dir)
 }
 
 /// `brew upgrade comemory`, with the same quiet/inherit split as
