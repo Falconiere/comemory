@@ -26,8 +26,8 @@
 # gets cloned inside this checkout — never a directory of this one.
 /comemory.io/
 
-# The release installer, which docs/getting-started.md tells you to download
-# into the working directory, and the one-line checksum file the verification
-# recipe writes. Never committed.
-/install.sh
+# The one-line checksum file README's verification recipe writes. Never
+# committed. (`/install.sh` used to be listed here too, back when it was the
+# cargo-dist download; the repo-root install.sh is now source — see
+# release-finalize.yml, which ships it.)
 /line.sum

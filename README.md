@@ -136,8 +136,9 @@ shell's exit status, so a failed fetch leaves `curl … | sh` exiting 0 with
 nothing installed. See [docs/getting-started.md](docs/getting-started.md#1-install).
 
 The script itself is unsigned and unchecksummed; what it verifies is the
-archive it downloads. `https://get.comemory.io/pkg/comemory/install` is the
-short, redirecting alias of the URL above, served from a separate repo.
+archive it downloads. The short URL `https://get.comemory.io/pkg/comemory/install`
+(a redirect served from a separate repo) still points at cargo-dist's older
+`comemory-installer.sh` until it is repointed at the asset above.
 
 Then verify: `comemory doctor`. Prebuilt binaries for **macOS aarch64** and
 **Linux** (x86_64 + aarch64, gnu) are attached to every

@@ -8,7 +8,9 @@
 # — typos in it are upstream's to fix, not ours to silently rewrite.
 # comemory.io/ is a SEPARATE git repo (CodaSignal/comemory.io, the platform
 # monorepo) that gets cloned inside this checkout; it owns its own gates.
-extend-exclude = ["tests/golden/", "scripts/guardrails/", "comemory.io/"]
+# ~/ is the same category: an Orca workspace clone that lands inside the
+# checkout under a literal `~` directory; never part of this repo.
+extend-exclude = ["tests/golden/", "scripts/guardrails/", "comemory.io/", "~/"]
 
 [default]
 extend-ignore-identifiers-re = ["nomic", "kuzu", "qwick", "cose", "ratatui"]  # ratatui: crate name kept in CHANGELOG history
