@@ -97,15 +97,54 @@ The normal path — no local commands:
    commits since the last tag. Each new push to `main` refreshes the same PR.
 3. **Review the PR.** Confirm the computed version is what you expect (breaking
    `feat!:`/`fix!:` → major-ish bump, `feat:` → minor, `fix:` → patch) and the
-   changelog reads well. Edit the PR branch directly if you want to reword.
+   changelog reads well. **Do not hand-edit the PR branch to reword an
+   entry** — release-plz regenerates `CHANGELOG.md` from the same commit
+   subjects on the next push to `main` and opens a *replacement* PR (the
+   closed #77/#79 and #51/#53 duplicate pairs are exactly this), so the edit
+   is lost. Fix the wording at its source: amend the commit subject before it
+   lands on `main`, or add a rule to `release-plz.toml`'s `commit_parsers`.
 4. **Merge it.** Job `release-plz-release` then pushes the `vX.Y.Z` annotated
    tag with the App token, which triggers `release.yml`. Proceed to §4.
 
 The changelog buckets (feat→Added, fix→Fixed, refactor/perf/style→Changed,
-revert→Removed, `!`→BREAKING, docs/chore/ci/test/build→Internal, security→
-Security) are defined in `release-plz.toml`'s `[changelog]` section. The heading
-date is stamped when the PR is (re)built, not at merge — that's why
-`validate-release.sh` accepts any ISO date.
+revert→Removed, `!`→BREAKING, security→Security) are defined in
+`release-plz.toml`'s `[changelog]` section. The heading date is stamped when the
+PR is (re)built, not at merge — that's why `validate-release.sh` accepts any ISO
+date.
+
+Two classes of commit never reach the changelog, and both are dropped by a
+`skip` rule in that same section rather than by anyone editing the file:
+
+- **Internal-only types** — `docs`, `chore`, `ci`, `test`, `build`. These used
+  to fill an `Internal` section; release notes are for people consuming the
+  release, and `git log` is still the complete record. A breaking change of one
+  of those types is still published (`protect_breaking_commits = true`
+  outranks every `skip`).
+- **Review-loop bookkeeping** — a subject whose whole point is that it
+  responded to a code review (`fix(ci): address PR review feedback`,
+  `fix(review): act on the five findings from the last round`). v0.18.0 shipped
+  eight of these into `Fixed`. The rule matches on a closed verb list, so a
+  real change that merely mentions a review survives it.
+
+Both classes were flagged as changelog noise by the AI reviewer on the release
+PRs they appeared in (#88 and #83), which — before the severity gate below —
+took `test` and every build job down with them.
+
+### What can block the release PR
+
+`.github/workflows/test.yml`'s `await-review` job waits on the `Code Review`
+check for the same commit (GitHub has no `needs:` across workflows) and fails
+unless the review concluded successfully **and** reported no `high` or
+`critical` findings. `test` and every build job hang off it, so a failure here
+skips the whole cascade.
+
+`medium`, `low` and `nit` findings do **not** block. The review is advisory by
+construction — `code-review.yml` pins `FAIL_ON: none` — and an LLM asked to
+opine on a whole diff returns a fresh crop of stylistic findings every pass
+(PR #82 cleared 230 across four rounds without one confirmed defect). Gating on
+a nonzero count gated on model noise. A report that names findings but no
+severity breakdown is still refused: an unclassified finding is not provably
+below the bar.
 
 ---
 
@@ -135,8 +174,9 @@ setup). Re-run preflight if you need to verify.
 ### Step 3 — Write the CHANGELOG section
 
 By hand, add a `## [X.Y.Z] - YYYY-MM-DD` heading under `## [Unreleased]`
-in `CHANGELOG.md`, bucketed Added / Changed / Fixed / Removed / Security /
-Internal. The recipe pauses for the edit (read the prompt). (The old
+in `CHANGELOG.md`, bucketed Added / Changed / Fixed / Removed / Security —
+the same buckets the bot writes, so a fallback release reads continuously with
+the rest of the file. The recipe pauses for the edit (read the prompt). (The old
 `just changelog` draft helper was retired when release-plz took over
 changelog generation.)
 

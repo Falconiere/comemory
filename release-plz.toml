@@ -35,16 +35,48 @@ git_release_enable = false
 publish = false
 
 # Changelog generation (git-cliff under the hood). The commit_parsers below
-# reproduce the buckets of the now-retired scripts/changelog-draft.sh so the
-# bot-authored sections are continuous with the hand-authored history.
+# carry forward the buckets of the now-retired scripts/changelog-draft.sh so the
+# bot-authored sections stay continuous with the hand-authored history — minus
+# its `Internal` section, which no longer reaches the public changelog (see the
+# skip rules and docs/release.md § "Cutting a release").
 [changelog]
 protect_breaking_commits = true
 
 # A hidden "<!-- N -->" sort-index prefixes each group so the sections render in
 # Keep-a-Changelog order; the body template strips it back off.
+#
+# Two classes of commit are dropped outright rather than bucketed. Both were
+# measured on the release PRs they broke:
+#
+#  1. Review-loop bookkeeping ("address PR review feedback", "act on the five
+#     findings from the last round"). The subject describes the code-review
+#     process, not a change, so the entry tells a reader nothing. v0.18.0
+#     shipped eight of them into `Fixed`.
+#  2. Internal-only types (docs/chore/ci/test/build). These used to fill an
+#     `Internal` section of the public changelog; release notes are for people
+#     consuming the release, and `git log` remains the record for everything
+#     else.
+#
+# This is not cosmetic. The AI reviewer flags both classes as non-user-facing
+# changelog noise (PR #88 on class 1, PR #83 on class 2), and a finding on a
+# release PR cannot be fixed by hand: release-plz regenerates the changelog
+# from these same subjects on the next push to `main` and opens a REPLACEMENT
+# PR (see the closed #77/#79 and #51/#53 duplicate pairs). The only durable
+# place to fix it is here.
+#
+# `protect_breaking_commits = true` above outranks every `skip` below, so a
+# breaking change is never dropped no matter which rule would match it.
 commit_parsers = [
     { message = '^[a-z]+(\(.+\))?!:', group = "<!-- 0 -->BREAKING" },
     { body = '.*BREAKING CHANGE', group = "<!-- 0 -->BREAKING" },
+    # Class 1. The verb list is deliberately closed: it matches a subject whose
+    # whole point is "responded to the review", and leaves a real change that
+    # merely happens to mention one. `fix(review): state the EPIPE mechanism
+    # exactly` and `test: tighten four more assertions from the round-4 review`
+    # both survive it; `fix(ci): address PR review feedback` does not.
+    { message = '(?i)^\w+(\(.+\))?!?: *(address|act on|clear|resolve|apply|finish)\b.*\b(review|reviewer|findings?)\b', skip = true },
+    # Class 2.
+    { message = '^(docs|chore|ci|test|build)(\(.+\))?:', skip = true },
     { message = '^feat', group = "<!-- 1 -->Added" },
     { message = '^refactor', group = "<!-- 2 -->Changed" },
     { message = '^perf', group = "<!-- 2 -->Changed" },
@@ -52,12 +84,11 @@ commit_parsers = [
     { message = '^fix', group = "<!-- 3 -->Fixed" },
     { message = '^revert', group = "<!-- 4 -->Removed" },
     { message = '^sec(urity)?', group = "<!-- 5 -->Security" },
-    { message = '^docs', group = "<!-- 6 -->Internal" },
-    { message = '^chore', group = "<!-- 6 -->Internal" },
-    { message = '^ci', group = "<!-- 6 -->Internal" },
-    { message = '^test', group = "<!-- 6 -->Internal" },
-    { message = '^build', group = "<!-- 6 -->Internal" },
-    { message = '.*', group = "<!-- 6 -->Internal" },
+    # A subject that matched no rule above is not a conventional commit, so its
+    # type is unknown and no section is right for it. Dropped rather than
+    # guessed at; `git log` still has it, and the reviewer never sees a line
+    # nobody can classify.
+    { message = '.*', skip = true },
 ]
 
 header = """

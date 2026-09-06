@@ -1,9 +1,9 @@
 name: Await code review
 description: >-
   Block until this commit's Code Review check has concluded, then fail
-  unless it succeeded AND reported zero findings. Lets a workflow depend on
-  another workflow's result, which GitHub Actions has no native `needs:`
-  for.
+  unless it succeeded AND reported no high-or-worse findings. Lets a
+  workflow depend on another workflow's result, which GitHub Actions has no
+  native `needs:` for.
 
 inputs:
   sha:
@@ -99,7 +99,7 @@ runs:
             ;;
         esac
 
-    - name: Require a review with no findings
+    - name: Require a review with no high-severity findings
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.github-token }}
@@ -147,25 +147,51 @@ runs:
             ;;
         esac
 
-        # `### Findings (N)` is the authoritative count when present.
-        findings="$(printf '%s\n' "$body" | sed -n 's/^### Findings (\([0-9][0-9]*\)).*/\1/p' | head -1)"
+        # Severity, not volume, decides. The review is advisory by construction
+        # — code-review.yml pins `FAIL_ON: none` — and an LLM asked for an
+        # opinion on a whole diff reliably returns a fresh crop of stylistic
+        # findings every pass: PR #82 cleared 230 across four rounds without one
+        # confirmed defect in shipped behavior. A gate on "zero findings" is
+        # therefore a gate on model noise, and because a skipped `await-review`
+        # takes `test` and every build job down with it, one medium nit could
+        # empty a release.
+        #
+        # It also could not be satisfied on a release PR at all. release-plz
+        # regenerates CHANGELOG.md from the same commit subjects on the next
+        # push to `main` and opens a REPLACEMENT PR (the closed #77/#79 and
+        # #51/#53 pairs), so a hand-fix to the branch does not survive. Those
+        # findings are fixed at the source instead, in release-plz.toml.
+        #
+        # `high` and `critical` still block. Those are the severities the
+        # reviewer reserves for a defect, and they are worth a human's
+        # attention before anything ships.
+        counts="$(printf '%s\n' "$verdict_line" \
+          | grep -o '[0-9][0-9]* \(critical\|high\|medium\|low\|nit\)' || true)"
+        blocking="$(printf '%s\n' "$counts" \
+          | grep -E ' (critical|high)$' \
+          | awk '{ total += $1 } END { print total + 0 }' || true)"
+        [ -n "$blocking" ] || blocking=0
 
-        # Otherwise sum the severity counts on the verdict line.
-        if [ -z "$findings" ]; then
-          findings="$(printf '%s\n' "$verdict_line" \
-            | grep -o '[0-9][0-9]* \(high\|medium\|low\|nit\)' \
-            | awk '{ total += $1 } END { print total + 0 }')"
-          # A verdict that names no severities and reads as approved is zero.
-          if [ "$findings" = "0" ] && ! printf '%s' "$verdict_line" | grep -qi 'approv'; then
-            echo "::error::Could not read a finding count from the review comment; refusing to assume it is clean."
-            echo "Verdict line was: ${verdict_line:-<none>}"
-            exit 1
-          fi
-        fi
+        # `### Findings (N)` is the authoritative total when present; it is
+        # reported, never gated on.
+        total="$(printf '%s\n' "$body" | sed -n 's/^### Findings (\([0-9][0-9]*\)).*/\1/p' | head -1)"
 
-        echo "Review reported $findings finding(s)."
-        if [ "$findings" -ne 0 ]; then
-          echo "::error::The review reported $findings finding(s); this workflow runs only on a clean review."
+        # A report that names findings but no severities cannot be classified,
+        # and an unclassified finding is not provably below the bar. The one
+        # exception is an explicitly approved verdict, which carries no counts
+        # because there is nothing to count.
+        if [ -z "$counts" ] && [ "${total:-0}" != "0" ] \
+           && ! printf '%s' "$verdict_line" | grep -qi 'approv'; then
+          echo "::error::Review reported ${total:-an unknown number of} finding(s) but no severity \
+        breakdown; refusing to assume none of them are high."
+          echo "Verdict line was: ${verdict_line:-<none>}"
           exit 1
         fi
-        echo "::notice::Review is green with no findings — continuing."
+
+        echo "Review reported ${total:-0} finding(s), $blocking of them high or critical."
+        if [ "$blocking" -ne 0 ]; then
+          echo "::error::The review reported $blocking high-or-critical finding(s); \
+        this workflow runs only once those are resolved."
+          exit 1
+        fi
+        echo "::notice::No high-or-critical findings — continuing."

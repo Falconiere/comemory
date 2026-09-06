@@ -33,9 +33,14 @@ jobs:
       # comment only) and changed that comment's layout.
       - uses: falconiere/toolu-ghactions/code-review@v7
         with:
-          PROVIDER: minimax
-          MODEL_ID: MiniMax-M3
-          API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+          # OpenRouter rather than a vendor's native API: one key and one
+          # billing account cover every model, so swapping the reviewer is a
+          # MODEL_ID edit and not a new secret to provision. `deepseek-v4-pro`
+          # is the action's own OpenRouter default, pinned explicitly here so
+          # an upstream default change cannot silently swap the reviewer.
+          PROVIDER: openrouter
+          MODEL_ID: deepseek/deepseek-v4-pro
+          API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           # Advisory, not gating: the review still runs, still posts its
           # findings, and still uploads SARIF — it just does not fail the
           # job on a "changes requested" verdict. The verdict is a model's
@@ -44,7 +49,14 @@ jobs:
           # 230 of them across four rounds without one confirmed defect in
           # shipped behavior. The gates that must stay red on a real
           # problem are `test` (scripts/check-all.sh + the nextest suite)
-          # and `plan`; this one informs a human, it does not block them.
+          # and `plan`.
+          #
+          # This job's own conclusion is therefore never the blocker. What
+          # reads the verdict is `await-review` in test.yml, via
+          # .github/actions/await-code-review, and it blocks on `high` and
+          # `critical` findings only — the severities the reviewer reserves
+          # for a defect. `medium`/`low`/`nit` stay informational, which is
+          # what keeps the 230-findings case above from emptying a release.
           FAIL_ON: none
           # CLAUDE.md is already covered by the action's default Tier-1 convention
           # files; guardrails.config.json (the toolu-conventions structure gate
