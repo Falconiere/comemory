@@ -16,10 +16,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # No `await-review` gate here, unlike `test.yml` and `release.yml`: the
-  # only PR-triggered job below is disabled, and the nightly `mutants-full`
-  # run has no review to wait for — a gate job would start a runner on
-  # every push to guard nothing. Re-add it with `mutants-diff`.
   mutants-diff:
     # TEMPORARILY DISABLED — diff-scoped mutation testing is too costly on large
     # PRs (one rebuild+test per mutant over the whole diff → 20-40 min). The

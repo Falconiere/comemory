@@ -8,8 +8,6 @@ on:
 
 permissions:
   contents: read
-  checks: read
-  pull-requests: read
 
 # One live run per ref. Pushing three times in a row used to leave three
 # full suites running against commits already superseded; now only the
@@ -20,38 +18,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Cross-workflow gate: GitHub has no `needs:` across workflows, so this job
-  # waits on the Code Review check for the same commit and fails unless it
-  # succeeded. Pull requests only — `Code Review` does not run on a push to
-  # `main`, and waiting for a check that will never appear would burn the
-  # whole timeout before failing a push that nothing was wrong with.
-  #
-  # The gate is on the STEPS, never on the job. A skipped job propagates
-  # "skipped" transitively down the whole `needs` graph, and an `always()`
-  # rescues only the job that carries it — never its descendants. `test` is
-  # a leaf today and rescued itself, so a job-level `if` here was
-  # survivable; the identical shape in release.yml was not, and shipped
-  # v0.18.0 and v0.18.1 as releases with no binaries (see the comment on
-  # that file's `await-review` for the measured job-by-job split). Running
-  # this job unconditionally and no-op'ing its steps keeps its result
-  # `success`, so nothing downstream can ever be skipped by it.
-  await-review:
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-        if: ${{ github.event_name == 'pull_request' }}
-        with:
-          persist-credentials: false
-          sparse-checkout: .github/actions/await-code-review
-      - uses: ./.github/actions/await-code-review
-        if: ${{ github.event_name == 'pull_request' }}
-        with:
-          github-token: ${{ github.token }}
-
+  # No review gate here. The Code Review workflow fails its own `review`
+  # check on a high-or-critical finding and branch protection blocks the
+  # merge; this suite is deterministic and runs regardless, so its result is
+  # available even when the review is red.
   test:
-    # No `if:` — `await-review` always runs, so it is `success` on a push to
-    # `main` and a failed review still skips this job.
-    needs: [await-review]
     runs-on: ubuntu-22.04
     env:
       COMEMORY_INDEXING_AUTO_REINDEX: "off"
