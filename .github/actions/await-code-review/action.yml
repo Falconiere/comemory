@@ -167,10 +167,14 @@ runs:
         # attention before anything ships.
         counts="$(printf '%s\n' "$verdict_line" \
           | grep -o '[0-9][0-9]* \(critical\|high\|medium\|low\|nit\)' || true)"
+        # One awk over the pairs rather than grep-then-awk. A `grep` that
+        # matches nothing exits 1, which under `pipefail` fails the whole
+        # substitution and aborts the step — on the *common* path, where there
+        # are no high findings to match. awk selects instead, always runs its
+        # END block, and always prints an integer, so `$blocking` needs no
+        # emptiness fallback before the `-ne` below.
         blocking="$(printf '%s\n' "$counts" \
-          | grep -E ' (critical|high)$' \
-          | awk '{ total += $1 } END { print total + 0 }' || true)"
-        [ -n "$blocking" ] || blocking=0
+          | awk '$2 == "critical" || $2 == "high" { total += $1 } END { print total + 0 }')"
 
         # `### Findings (N)` is the authoritative total when present; it is
         # reported, never gated on.
@@ -182,16 +186,14 @@ runs:
         # because there is nothing to count.
         if [ -z "$counts" ] && [ "${total:-0}" != "0" ] \
            && ! printf '%s' "$verdict_line" | grep -qi 'approv'; then
-          echo "::error::Review reported ${total:-an unknown number of} finding(s) but no severity \
-        breakdown; refusing to assume none of them are high."
+          echo "::error::Review reported ${total:-an unknown number of} finding(s) but no severity breakdown; refusing to assume none of them are high."
           echo "Verdict line was: ${verdict_line:-<none>}"
           exit 1
         fi
 
         echo "Review reported ${total:-0} finding(s), $blocking of them high or critical."
         if [ "$blocking" -ne 0 ]; then
-          echo "::error::The review reported $blocking high-or-critical finding(s); \
-        this workflow runs only once those are resolved."
+          echo "::error::The review reported $blocking high-or-critical finding(s); this workflow runs only once those are resolved."
           exit 1
         fi
         echo "::notice::No high-or-critical findings — continuing."
