@@ -69,6 +69,14 @@ protect_breaking_commits = true
 commit_parsers = [
     { message = '^[a-z]+(\(.+\))?!:', group = "<!-- 0 -->BREAKING" },
     { body = '.*BREAKING CHANGE', group = "<!-- 0 -->BREAKING" },
+    # A `BREAKING CHANGE:` trailer is a conventional-commit *footer*, and
+    # git-cliff parses footers separately from the body — so the rule above
+    # does not see it. Without this rule a breaking `docs:`/`ci:` commit whose
+    # only breaking marker is that footer would reach the type skip below,
+    # where `protect_breaking_commits` correctly refuses to skip it but the
+    # skip rule sets no group, leaving it grouped `None` and dropped by the
+    # template's `group_by`. Catch it here, before any skip rule can see it.
+    { footer = '^BREAKING[ -]CHANGE', group = "<!-- 0 -->BREAKING" },
     # Class 1. The verb list is deliberately closed: it matches a subject whose
     # whole point is "responded to the review", and leaves a real change that
     # merely happens to mention one. `fix(review): state the EPIPE mechanism
