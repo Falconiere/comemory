@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.2] - 2026-09-06
+
+### BREAKING
+
+- parse the severity gate with awk, and catch breaking footers
+
+### Fixed
+
+- stop the await-review gate from skipping every build job
+
 ## [0.18.1] - 2026-09-04
 
 ### Added
