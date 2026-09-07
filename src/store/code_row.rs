@@ -260,6 +260,39 @@ pub fn record_access(conn: &Connection, ids: &[i64]) {
     }
 }
 
+/// Every distinct `code_symbols.path` for `repo`, sorted ascending — the
+/// deterministic dense-index mapping `graph::pagerank` needs. See
+/// [`crate::graph::materialize::known_paths`].
+pub(crate) fn distinct_paths_for_repo(conn: &Connection, repo: &str) -> Result<Vec<String>> {
+    let mut stmt =
+        conn.prepare("SELECT DISTINCT path FROM code_symbols WHERE repo = ?1 ORDER BY path")?;
+    let rows = stmt
+        .query_map([repo], |r| r.get(0))?
+        .collect::<std::result::Result<Vec<String>, _>>()?;
+    Ok(rows)
+}
+
+/// Write one `rank_score` per `(repo, path)` pair, positionally aligned
+/// between `paths` and `scores`. Returns the total number of `code_symbols`
+/// rows updated — a path may back more than one row (chunk children share
+/// their parent's path). See
+/// [`crate::graph::materialize::project_pagerank`].
+pub(crate) fn update_rank_scores(
+    conn: &Connection,
+    repo: &str,
+    paths: &[String],
+    scores: &[f64],
+) -> Result<u64> {
+    let mut update =
+        conn.prepare("UPDATE code_symbols SET rank_score = ?1 WHERE repo = ?2 AND path = ?3")?;
+    let mut written: u64 = 0;
+    for (path, score) in paths.iter().zip(scores) {
+        let rows = update.execute(rusqlite::params![score, repo, path])?;
+        written = written.saturating_add(u64::try_from(rows).unwrap_or(0));
+    }
+    Ok(written)
+}
+
 #[cfg(test)]
 #[path = "tests/code_row.rs"]
 mod tests;

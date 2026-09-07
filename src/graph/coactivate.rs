@@ -16,12 +16,12 @@
 
 use std::collections::{HashMap, HashSet};
 
-use rusqlite::Connection;
-
 use crate::graph::search_edit;
 use crate::prelude::*;
 use crate::stats::feedback;
+use crate::store::Connection;
 use crate::store::edges::{self, EdgeKey, REFERENCES_FILE, file_node_id};
+use crate::store::memory_row;
 
 /// Max bound variables per `IN (...)` chunk — well under bundled SQLite's
 /// `SQLITE_MAX_VARIABLE_NUMBER` (32766 in 3.46), so a large touch set never
@@ -103,19 +103,8 @@ fn referencing_memories(
     let prefix = format!("{repo}:");
     let mut out: Vec<Pair> = Vec::new();
     for chunk in dst_ids.chunks(IN_CHUNK) {
-        let qmarks = crate::store::qmarks(chunk.len());
-        let sql = format!(
-            "SELECT src_id, dst_id FROM edges \
-              WHERE rel = ?1 AND dst_kind = 'file' AND dst_id IN ({qmarks}) \
-              ORDER BY dst_id, src_id"
-        );
-        let mut stmt = conn.prepare(&sql)?;
-        let params = std::iter::once(REFERENCES_FILE).chain(chunk.iter().map(String::as_str));
-        let rows = stmt
-            .query_map(rusqlite::params_from_iter(params), |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
-            })?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let chunk_refs: Vec<&str> = chunk.iter().map(String::as_str).collect();
+        let rows = edges::src_ids_for_dst_ids(conn, REFERENCES_FILE, &chunk_refs)?;
         for (memory_id, dst_id) in rows {
             let Some(path) = dst_id.strip_prefix(&prefix) else {
                 continue;
@@ -172,16 +161,7 @@ fn reward_pair(
 /// single chunked `UPDATE ... WHERE id IN (...)`. Empty input is a no-op.
 fn bump_activation(conn: &Connection, ids: &[String], at: &str) -> Result<()> {
     for chunk in ids.chunks(IN_CHUNK) {
-        if chunk.is_empty() {
-            continue;
-        }
-        let qmarks = crate::store::qmarks(chunk.len());
-        let sql = format!(
-            "UPDATE memories SET access_count = access_count + 1, last_accessed = ?1 \
-              WHERE id IN ({qmarks})"
-        );
-        let params = std::iter::once(at).chain(chunk.iter().map(String::as_str));
-        conn.execute(&sql, rusqlite::params_from_iter(params))?;
+        memory_row::bump_access(conn, chunk, at)?;
     }
     Ok(())
 }

@@ -212,6 +212,42 @@ pub fn document_ids_for_source(conn: &Connection, source_id: &str) -> Result<Vec
     Ok(ids)
 }
 
+/// Look up a document by relative path within one source — `source_files`
+/// carries `UNIQUE (source_id, relative_path)`, so this can never be
+/// ambiguous. See [`crate::graph::doc_link::derive_after_document`].
+pub(crate) fn document_id_in_source(
+    conn: &Connection,
+    source_id: &str,
+    relative_path: &str,
+) -> Result<Option<String>> {
+    conn.query_row(
+        "SELECT d.id FROM documents d JOIN source_files sf ON sf.id = d.source_file_id \
+          WHERE sf.source_id = ?1 AND sf.relative_path = ?2",
+        params![source_id, relative_path],
+        |r| r.get(0),
+    )
+    .optional()
+    .map_err(Error::from)
+}
+
+/// Every live document id at `(repo, relative_path)` across every indexed
+/// source — 0, 1 (resolves), or 2+ (ambiguous, caller's concern). See
+/// [`crate::graph::doc_link::derive_after_document`].
+pub(crate) fn document_ids_for_repo_path(
+    conn: &Connection,
+    repo: &str,
+    relative_path: &str,
+) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT d.id FROM documents d JOIN source_files sf ON sf.id = d.source_file_id \
+          WHERE d.repo = ?1 AND sf.relative_path = ?2",
+    )?;
+    let ids = stmt
+        .query_map(params![repo, relative_path], |r| r.get(0))?
+        .collect::<std::result::Result<_, _>>()?;
+    Ok(ids)
+}
+
 fn document_row_from_sql(r: &rusqlite::Row<'_>) -> rusqlite::Result<DocumentRow> {
     Ok(DocumentRow {
         id: r.get(0)?,
