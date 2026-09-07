@@ -68,3 +68,40 @@ fn all_roots_skips_a_row_whose_directory_no_longer_exists() {
     let roots = repo_marker_roots::all_roots(&conn).expect("all_roots");
     assert_eq!(roots, vec![root_live]);
 }
+
+#[test]
+fn root_path_is_none_with_no_repo_marker_row() {
+    let (conn, _tmp) = open_db();
+    assert_eq!(
+        repo_marker_roots::root_path(&conn, "no-such-repo").expect("root_path"),
+        None
+    );
+}
+
+#[test]
+fn root_path_returns_the_stored_path() {
+    let (conn, _tmp) = open_db();
+    let repo_dir = TempDir::new().expect("repo dir");
+    let root = repo_dir.path().to_string_lossy().to_string();
+    code_row::upsert_repo_root(&conn, "demo", &root).expect("upsert demo");
+
+    assert_eq!(
+        repo_marker_roots::root_path(&conn, "demo").expect("root_path"),
+        Some(root)
+    );
+}
+
+#[test]
+fn root_path_is_none_for_a_null_root_path_row() {
+    let (conn, _tmp) = open_db();
+    conn.execute(
+        "INSERT INTO repo_marker(repo, root_path) VALUES('null-root', NULL)",
+        [],
+    )
+    .expect("insert null-root marker");
+
+    assert_eq!(
+        repo_marker_roots::root_path(&conn, "null-root").expect("root_path"),
+        None
+    );
+}

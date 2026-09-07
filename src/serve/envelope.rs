@@ -171,7 +171,9 @@ pub fn status_and_code(e: &Error) -> (StatusCode, &'static str) {
         Error::SchemaTooNew(_) => (StatusCode::UNPROCESSABLE_ENTITY, "schema_mismatch"),
         // SQLite's write lock is held by another connection (a concurrent
         // CLI run): transient, retry with backoff (spec §1 `store_locked`).
-        Error::Sqlite(e) if sqlite_is_locked(e) => (StatusCode::LOCKED, "store_locked"),
+        Error::Sqlite(_) if crate::store::busy::is_locked(e) => {
+            (StatusCode::LOCKED, "store_locked")
+        }
         // A missing file on disk is a 404, not a 500.
         Error::Io(io) if io.kind() == std::io::ErrorKind::NotFound => {
             (StatusCode::NOT_FOUND, "not_found")
@@ -192,19 +194,6 @@ pub fn error_details(e: &Error) -> Option<Value> {
         Error::IndexRunning { repo, job_id } => Some(json!({ "repo": repo, "job_id": job_id })),
         _ => None,
     }
-}
-
-/// Whether a `rusqlite` error is SQLite's `SQLITE_BUSY` / `SQLITE_LOCKED`
-/// — the write lock is held elsewhere and the statement can be retried.
-fn sqlite_is_locked(e: &rusqlite::Error) -> bool {
-    matches!(
-        e,
-        rusqlite::Error::SqliteFailure(ffi, _)
-            if matches!(
-                ffi.code,
-                rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
-            )
-    )
 }
 
 /// `{command, elapsed_ms}` shared by every envelope shape.
