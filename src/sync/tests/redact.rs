@@ -10,7 +10,6 @@
 use comemory::sync::{scan, scan_with_override};
 use rusqlite::Connection;
 
-#[test]
 fn aws_example_key() -> String {
     // Split so repo secret-content does not flag the AWS example id literal.
     format!("AKIA{}{}", "IOSFODNN7", "EXAMPLE")
@@ -57,7 +56,7 @@ fn scan_with_override_skips_when_binding_present() {
     .expect("insert");
 
     let body = aws_example_key();
-    let hit = scan_with_override(&conn, "abc12345", body).expect("scan");
+    let hit = scan_with_override(&conn, "abc12345", &body).expect("scan");
     assert!(hit.is_none());
 }
 
@@ -75,6 +74,6 @@ fn scan_with_override_scans_without_binding() {
     .expect("schema");
 
     let body = aws_example_key();
-    let hit = scan_with_override(&conn, "missing", body).expect("scan");
+    let hit = scan_with_override(&conn, "missing", &body).expect("scan");
     assert_eq!(hit.as_deref(), Some("aws-access-key"));
 }
