@@ -105,12 +105,18 @@ The normal path — no local commands:
    Those commits are not lost; they ride along in the next release's diff.
 3. **Review the PR.** Confirm the computed version is what you expect (breaking
    `feat!:`/`fix!:` → major-ish bump, `feat:` → minor, `fix:` → patch) and the
-   changelog reads well. **Do not hand-edit the PR branch to reword an
-   entry** — release-plz regenerates `CHANGELOG.md` from the same commit
-   subjects on the next push to `main` and opens a *replacement* PR (the
-   closed #77/#79 and #51/#53 duplicate pairs are exactly this), so the edit
-   is lost. Fix the wording at its source: amend the commit subject before it
-   lands on `main`, or add a rule to `release-plz.toml`'s `commit_parsers`.
+   changelog reads well. A ⚠ **library API change** on the version line is
+   cargo-semver-checks, not a failed job: the crate's public Rust API changed
+   vs the previous tag (adding a clap subcommand is the usual case). The
+   changelog is the user-facing record, not that ⚠. **Do not hand-edit the
+   GitHub description or the PR branch to reword an entry** — release-plz
+   regenerates both from `pr_body` / `CHANGELOG.md` on the next push to `main`
+   and opens a *replacement* PR (the closed #77/#79 and #51/#53 duplicate
+   pairs are exactly this), so the edit is lost. Fix the wording at its
+   source: amend the commit subject before it lands on `main`, or add a rule
+   to `release-plz.toml`'s `commit_parsers`. The PR body template is `pr_body`
+   in that same file (PR #94 is why it no longer pastes the cargo-semver-checks
+   `--- failure ---` dump).
 4. **Merge it.** Job `release-plz-release` then pushes the `vX.Y.Z` annotated
    tag with the App token, which triggers `release.yml`. Proceed to §4.
 
@@ -308,6 +314,7 @@ re-tag once `main` is fixed.
 | Symptom | Cause | Fix |
 |---|---|---|
 | release PR never opens | `RELEASE_PLZ_ENABLED` unset, or the `release-plz-pr` job failed | Check the variable is `true`; read the Release-plz workflow logs |
+| release PR body looks like a cargo-semver-checks crash (`--- failure ---`, `/tmp/.tmp…`) | default `pr_body` pasted the lint stdout as the hero section (PR #94) | Already fixed: `pr_body` in `release-plz.toml` leads with the changelog. Do not hand-edit the GitHub description — the next push to `main` regenerates it |
 | PR merged but `release.yml` never runs | tag was pushed with the default `GITHUB_TOKEN`, not the App token | Confirm the `release` job's `GITHUB_TOKEN` is `steps.app-token.outputs.token` |
 | release-plz jobs fail `403 Resource not accessible` | the App is not installed on this repo, or a permission is read-only | Install it here with Contents + Pull requests read/write; the secrets existing is not sufficient, the sync is repo-wide but the install is per-repo |
 | both release-plz jobs report `skipped` with no steps | `RELEASE_PLZ_ENABLED` was set as a *secret*, not a variable | `gh variable set RELEASE_PLZ_ENABLED --body true`; `vars` cannot read secrets |
