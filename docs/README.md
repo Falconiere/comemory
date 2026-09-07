@@ -33,12 +33,15 @@ Task-oriented recipes for a specific job:
 Look-it-up material:
 
 - **[CLI reference](cli-reference.md)** — every subcommand and flag, with the
-  `--json` pagination envelope (generated from `--help`).
+  `--json` pagination envelope (generated from `--help`). Includes
+  [`comemory auth`](cli-reference.md#comemory-auth) (workspace-key device
+  login; CLI-only).
 - **[CLI + HTTP scenario catalog](scenarios/README.md)** — the human-readable
   test plan: every subcommand, every flag, its `/api/v1` twin, and the test
-  that covers it.
-- **[Configuration](configuration.md)** — every environment variable, the
-  config-file-only knobs, and the pagination envelope shape.
+  that covers it ([auth](scenarios/auth.md)).
+- **[Configuration](configuration.md)** — every environment variable (including
+  `COMEMORY_API` / `COMEMORY_API_KEY`), the config-file-only knobs, and the
+  pagination envelope shape.
 - **[Release process](release.md)** — how releases are cut and published.
 - **[Container image](container-image.md)** — the multi-arch image published to
   GHCR on every tag: tags, mounts, and running as another user.
