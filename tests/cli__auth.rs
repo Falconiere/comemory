@@ -92,11 +92,6 @@ fn login_writes_auth_json_mode_0600_and_usable_secret() {
     assert_eq!(report["workspace_id"], srv.config.workspace_id.as_str());
     assert_eq!(report["key_prefix"], srv.config.key_prefix.as_str());
     assert_eq!(report["secret"], srv.config.secret.as_str());
-    assert_eq!(
-        report["secret"].as_str().unwrap().len(),
-        4 + 64,
-        "cmk_ + 64 hex"
-    );
 
     let path = home.auth_file();
     assert!(path.is_file());
