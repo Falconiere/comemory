@@ -87,3 +87,7 @@ fn now_iso() -> Result<String> {
         .format(&Iso8601::DEFAULT)
         .map_err(|e| Error::Other(format!("timestamp: {e}")))
 }
+
+#[cfg(test)]
+#[path = "tests/pull.rs"]
+mod tests;
