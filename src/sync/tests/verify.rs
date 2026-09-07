@@ -32,9 +32,11 @@ fn seed_auth(paths: &Paths, api_url: &str, secret: &str) {
 
 #[test]
 fn matching_empty_manifests_need_no_repair() {
-    let mut state = SyncPlatformState::default();
-    state.buckets = Some(empty_manifest_buckets());
-    let server = SyncPlatformServer::start(state);
+    let platform = SyncPlatformState {
+        buckets: Some(empty_manifest_buckets()),
+        ..Default::default()
+    };
+    let server = SyncPlatformServer::start(platform);
     let secret = server.snapshot().secret;
 
     let home = tempfile::tempdir().expect("tempdir");
@@ -57,10 +59,12 @@ fn divergent_manifest_runs_repair_then_matches() {
     let mut once = empty_manifest_buckets();
     // First compare sees a flipped bucket; subsequent compares match empty.
     once[0] = "ff".repeat(32);
-    let mut state = SyncPlatformState::default();
-    state.buckets_once = Some(once);
-    state.buckets = Some(empty_manifest_buckets());
-    let server = SyncPlatformServer::start(state);
+    let platform = SyncPlatformState {
+        buckets_once: Some(once),
+        buckets: Some(empty_manifest_buckets()),
+        ..Default::default()
+    };
+    let server = SyncPlatformServer::start(platform);
     let secret = server.snapshot().secret;
 
     let home = tempfile::tempdir().expect("tempdir");
