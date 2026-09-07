@@ -1,6 +1,5 @@
 //! Drive the real retrieval pipeline over a golden set and score it.
 
-use rusqlite::Connection;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
@@ -11,6 +10,7 @@ use crate::eval::metrics;
 use crate::prelude::*;
 use crate::retrieval::pipeline::{self, SearchOptions};
 use crate::retrieval::scope::Filters;
+use crate::store::Connection;
 
 /// Per-query eval outcome, serialized into the `--json` report.
 #[derive(Debug, Serialize)]

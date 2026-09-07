@@ -10,9 +10,8 @@ pub mod cluster;
 /// Keeper ordering, member metadata, and in-cluster supersede resolution.
 pub mod keeper;
 
-use rusqlite::Connection;
-
 use crate::prelude::*;
+use crate::store::Connection;
 use crate::store::simhash_scan::live_simhashes;
 
 /// One member of a near-duplicate cluster, with the stats behind the order.

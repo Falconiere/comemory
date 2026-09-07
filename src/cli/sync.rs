@@ -10,6 +10,7 @@ use crate::config::paths::{Paths, resolve_data_dir};
 use crate::config::sync::apply_embed_model;
 use crate::output::json;
 use crate::prelude::*;
+use crate::store::Connection;
 use crate::store::connection::open;
 use crate::store::sync_state;
 use crate::sync::auth_file::AuthFile;
@@ -111,7 +112,7 @@ fn resolve_workspace(flag: Option<&str>, cfg: &crate::config::Config, auth: &Aut
         .unwrap_or_else(|| auth.personal_workspace_id.clone())
 }
 
-fn emit_status(json_flag: bool, conn: &mut rusqlite::Connection, workspace: &str) -> Result<()> {
+fn emit_status(json_flag: bool, conn: &mut Connection, workspace: &str) -> Result<()> {
     let row = sync_state::get(conn, workspace)?;
     let head = crate::store::sync_log::head_seq(conn)?;
     let (pushed, pulled, last_sync) = row.as_ref().map_or((0, 0, None), |r| {

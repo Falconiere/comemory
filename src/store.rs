@@ -2,6 +2,13 @@
 //! rows, edges, FTS5 indexes and `sqlite-vec` vtabs. The extension is loaded
 //! on every connection; FTS5 is bundled into rusqlite.
 
+/// The SQLite connection type every other module names.
+///
+/// Re-exported so `rusqlite` stays confined to this module: callers write
+/// `store::Connection`, and the single line below is what changes if the
+/// driver ever does.
+pub use rusqlite::Connection;
+
 /// `code_ref` side table: version-anchor store for explicit code references.
 pub mod code_ref;
 /// `code_symbols` row upserts (insert, refresh, delete-by-file).

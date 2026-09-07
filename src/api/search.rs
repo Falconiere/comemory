@@ -18,6 +18,7 @@ use crate::output::search::SearchResult;
 use crate::prelude::*;
 use crate::retrieval::pipeline::{self, SearchOptions};
 use crate::retrieval::scope::{Domains, Filters};
+use crate::store::Connection;
 use crate::store::memory_meta;
 
 /// `comemory search` / `GET|POST /api/v1/memories/search` request.
@@ -79,7 +80,7 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<SearchResult>
         scope: &scope,
         domains: Domains::all(),
     };
-    let conn: &rusqlite::Connection = ctx.conn()?;
+    let conn: &Connection = ctx.conn()?;
     let run = pipeline::search(
         cfg,
         conn,

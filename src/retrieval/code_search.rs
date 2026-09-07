@@ -7,12 +7,11 @@
 //! returns the full ranked (post-coalesce) window so each caller can
 //! slice/coalesce it on its own terms.
 
-use rusqlite::Connection;
-
 use crate::config::Config;
 use crate::prelude::*;
 use crate::retrieval::code_rerank::{self, CodeReranked, WorkingSet};
 use crate::retrieval::code_route;
+use crate::store::Connection;
 
 /// Route + rerank a code query into the full ranked window of
 /// [`CodeReranked`] hits, the shared core of `comemory search-code`.

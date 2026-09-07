@@ -15,7 +15,6 @@
 use std::borrow::Cow;
 use std::path::Path;
 
-use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
@@ -25,7 +24,7 @@ use crate::eval::golden;
 use crate::eval::runner::{self, EvalReport};
 use crate::eval::tune::{self, TuneCandidate};
 use crate::prelude::*;
-use crate::store::{eval_runs, memory_row, random_id};
+use crate::store::{Connection, eval_runs, memory_row, random_id};
 
 /// `comemory eval` / `POST /api/v1/eval` request — also, via its `history`/
 /// `limit` fields, `comemory eval --history` / `GET /api/v1/eval/history`'s

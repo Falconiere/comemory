@@ -19,6 +19,7 @@ use crate::memory::Kind;
 use crate::output;
 use crate::prelude::*;
 use crate::retrieval::scope::{Domain, Filters};
+use crate::store::Connection;
 use crate::store::connection;
 
 const EXAMPLES: &str = "\
@@ -162,7 +163,7 @@ async fn run_memory(
     a: &Args,
     json_flag: bool,
     paths: &Paths,
-    conn: &mut rusqlite::Connection,
+    conn: &mut Connection,
     cfg: &crate::config::Config,
 ) -> Result<()> {
     let vector = embedding_input::read_optional(a.vector_stdin, a.vector.as_deref())?;

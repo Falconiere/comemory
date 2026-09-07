@@ -7,10 +7,10 @@
 //! edge.
 
 use regex::Regex;
-use rusqlite::Connection;
 
 use crate::graph::edges::{self, EdgeKey, REFERENCES_FILE, REFERENCES_SYMBOL};
 use crate::prelude::*;
+use crate::store::Connection;
 
 /// Code-layer references harvested from a memory body.
 ///

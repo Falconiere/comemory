@@ -18,14 +18,13 @@
 //! only the caller's embedder can produce another (the BYO-vector contract),
 //! so a restored memory is lexical-only until it is re-saved with a vector.
 
-use rusqlite::Connection;
 use serde::Serialize;
 
 use crate::api::Ctx;
 use crate::graph::edges::{self, EdgeKey};
 use crate::memory::{MemoryRecord, MemoryStore};
 use crate::prelude::*;
-use crate::store::{memory_row, sync_log};
+use crate::store::{Connection, memory_row, sync_log};
 
 /// `POST /api/v1/memories/{id}/restore` / `POST /api/v1/trash/{id}/restore`
 /// response.

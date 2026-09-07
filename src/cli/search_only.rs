@@ -11,7 +11,6 @@
 //! loop (spec Non-Goal 9): no access tracking, no `retrieval_log` row.
 
 use clap::ValueEnum;
-use rusqlite::Connection;
 use serde::Serialize;
 
 use crate::config::Config;
@@ -21,6 +20,7 @@ use crate::prelude::*;
 use crate::retrieval::doc_route::{self, DocHit};
 use crate::retrieval::pipeline::{self, PageWindow};
 use crate::retrieval::scope::{Domain, Domains, Filters};
+use crate::store::Connection;
 
 /// One CLI-selectable retrieval domain for `--only`. Mirrors [`Domain`]'s
 /// three variants; kept as its own `clap::ValueEnum` so `--only`'s
