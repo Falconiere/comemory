@@ -4,11 +4,10 @@ Share org-workspace memories across machines through `api.comemory.io`. Local
 CLI stays the day-to-day engine; cloud sync is optional and **org-repo-only**
 in v1.
 
-Contract (platform + engine): the amended
-[memory-sync design](https://github.com/CodaSignal/comemory.io/blob/main/docs/toolu/specs/2026-09-02-memory-sync-design.md)
-and comemory.io [platform-api.md](https://github.com/CodaSignal/comemory.io/blob/main/docs/platform-api.md)
-§ Slice 2. If a CLI flag name drifts while wire seams settle, the **platform
-HTTP contract** is authoritative.
+Contract (platform + engine): the amended memory-sync design and the
+comemory.io platform API (§ Slice 2). If a CLI flag name drifts while wire
+seams settle, the **platform HTTP contract** at `api.comemory.io` is
+authoritative.
 
 ## One-time login
 
