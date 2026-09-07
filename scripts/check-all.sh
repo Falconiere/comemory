@@ -11,6 +11,10 @@
 #                    secrets, shadow configs, ast-grep patterns: no inline test
 #                    module, no direct env read, no unsafe without SAFETY,
 #                    no #[allow])
+#   store-chokepoint-check  store-leak-baseline.txt  (two-sided ratchet: no
+#                    production file outside src/store/ except src/errors.rs
+#                    may import rusqlite; no store/ function returns a driver
+#                    cursor type)
 #   typos-check      typos.toml
 #   cli-docs-check   docs/cli-reference.md vs the real --help output
 #   migration-check  every already-released src/store/sql/*.sql file is
@@ -29,6 +33,7 @@ GATES=(
   type-check
   lint-check
   guardrails-check
+  store-chokepoint-check
   typos-check
   cli-docs-check
   migration-check

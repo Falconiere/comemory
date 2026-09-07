@@ -486,6 +486,8 @@ scripts/fmt-check.sh             # cargo fmt --check
 scripts/type-check.sh            # cargo check --all-targets --all-features
 scripts/lint-check.sh            # cargo clippy --all-targets --all-features -- -D warnings
 scripts/guardrails-check.sh      # scripts/guardrails/run.sh (see below)
+scripts/store-chokepoint-check.sh # rusqlite confined to src/store/, ratcheted
+                                  # against store-leak-baseline.txt
 scripts/typos-check.sh           # typos
 scripts/cli-docs-check.sh        # docs/cli-reference.md vs the real --help output
 scripts/migration-check.sh       # shipped src/store/sql/*.sql is byte-identical
@@ -520,6 +522,7 @@ a competing number.
 | `docs/cli-reference.md` drift | `scripts/cli-docs-check.sh` vs the real `--help` output |
 | Shipped migration SQL is immutable | `scripts/migration-check.sh` (git-tag-dependent; compares each `src/store/sql/*.sql` against its first release tag) |
 | Duplication ratchet | `scripts/dup-check.sh` against `dup-baseline.txt` (see `docs/dup-debt.md`) |
+| rusqlite confined to `src/store/` | `store-leak-baseline.txt`, `scripts/store-chokepoint-check.sh` |
 
 Additional gates wired into `just qa`: `scripts/deny-check.sh`
 (`cargo deny check`), `scripts/dup-check.sh`, and `scripts/machete-check.sh`
