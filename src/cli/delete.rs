@@ -11,10 +11,9 @@ use time::OffsetDateTime;
 use crate::api;
 use crate::cli::load_config;
 use crate::config::paths::{Paths, resolve_data_dir};
-use crate::graph::edges;
 use crate::memory::MemoryStore;
 use crate::prelude::*;
-use crate::store::{connection, memory_row};
+use crate::store::{connection, edges, memory_row};
 
 const EXAMPLES: &str = "\
 Examples:

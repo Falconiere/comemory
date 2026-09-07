@@ -6,10 +6,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::api::Ctx;
-use crate::graph::edges;
 use crate::prelude::*;
 use crate::source::registry::Registry;
-use crate::store::{document_fts, documents, sources};
+use crate::store::{document_fts, documents, edges, sources};
 
 /// `comemory unindex` / `DELETE /api/v1/sources` request.
 #[derive(Deserialize, Debug)]

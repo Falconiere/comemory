@@ -9,7 +9,7 @@
 //! for the same file (console-api spec AC-9).
 //!
 //! Node-id note: `imports`/`co_changed` file nodes are addressed
-//! `file:<repo>:<path>` ([`crate::graph::edges::file_node_id`]) — the BARE
+//! `file:<repo>:<path>` ([`crate::store::edges::file_node_id`]) — the BARE
 //! `<repo>:<path>` form is what `references_file` memory edges use instead
 //! (see that function's divergence doc). The seed ids built here use the
 //! `file:` form to match the code-graph convention.
@@ -19,8 +19,8 @@ use std::collections::BTreeSet;
 use rusqlite::{Connection, named_params};
 use serde::Serialize;
 
-use crate::graph::edges::file_node_id;
 use crate::prelude::*;
+use crate::store::edges::file_node_id;
 
 /// The weight floor that keeps every edge: `imports` edges always carry
 /// weight `1`, so this is "no filtering". It is what `retrieval::bundle`
@@ -50,7 +50,7 @@ pub struct NeighborRow {
 }
 
 /// The prefix every file node id carries, mirrored from
-/// [`crate::graph::edges::file_node_id`].
+/// [`crate::store::edges::file_node_id`].
 const FILE_PREFIX: &str = "file:";
 
 /// 1-based `substr` start that strips [`FILE_PREFIX`] off a file node id,

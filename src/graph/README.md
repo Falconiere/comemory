@@ -1,20 +1,23 @@
 # graph/
 
-**What belongs here:** the SQL-backed `edges` relation graph — typed-edge
-upserts and recursive-CTE walks (`edges`), memory-body reference extraction
-(`cross_link`), git co-change mining (`cochange`), per-language import
-resolution (`imports`), deterministic weighted PageRank (`pagerank`), the
-`index-code` post-pass that materializes mined pairs/imports and projects
-PageRank onto `code_symbols.rank_score` (`materialize`), the same PageRank
-projected onto `memories.rank_score` (`memory_rank`), commit co-activation
-reinforcement (`coactivate`), markdown-link derivation (`doc_link`), the
-search→edit lookback (`search_edit`), and the single best-effort refresh
-entry point every write seam calls (`derived`).
+**What belongs here:** algorithms built on top of the `edges` relation graph
+— memory-body reference extraction (`cross_link`), git co-change mining
+(`cochange`), per-language import resolution (`imports`), deterministic
+weighted PageRank (`pagerank`), the `index-code` post-pass that materializes
+mined pairs/imports and projects PageRank onto `code_symbols.rank_score`
+(`materialize`), the same PageRank projected onto `memories.rank_score`
+(`memory_rank`), commit co-activation reinforcement (`coactivate`),
+markdown-link derivation (`doc_link`), the search→edit lookback
+(`search_edit`), and the single best-effort refresh entry point every write
+seam calls (`derived`). The typed-edge upsert/query CRUD over the `edges`
+table itself moved to `store::edges`; every algorithm here calls that instead
+of owning its own SQL.
 
 **What does NOT belong here:** consuming the graph to rank search results.
 `retrieval::graph_route` and `retrieval::code_prior` read `edges` /
 `code_symbols.rank_score` to build ranking priors; this module only writes and
-walks the graph, it never reranks.
+walks the graph, it never reranks. Nor does per-table CRUD over `edges`
+itself — see `store::edges`.
 
 ## Contents
 
@@ -27,7 +30,6 @@ One line per file, named after its primary item:
 | `cross_link.rs` | `Refs` | Extract `<repo>:<path>[:<symbol>]` references from a memory body |
 | `derived.rs` | `refresh_derived_best_effort` | Single post-write pass refreshing both `rank_score` and the `edge_fts` index |
 | `doc_link.rs` | `derive_after_document` | Deterministic `member_of_source` / `references_document` link deriver |
-| `edges.rs` | `insert` | SQLite-backed edge store (replaces the v0.1 kuzu writer) |
 | `imports.rs` | `extract_imports` | Per-language import extraction and conservative module-to-path resolution |
 | `materialize.rs` | `materialize` | `index-code` post-pass: mined pairs + resolved imports → edges + projected PageRank; `recompute_rank(tx, repo)` is the PageRank + projection tail, shared with `api::graph_recompute` |
 | `memory_rank.rs` | `materialize_memory_rank` | PageRank over the derived memory graph → `memories.rank_score` |

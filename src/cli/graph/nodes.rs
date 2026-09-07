@@ -13,9 +13,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use rusqlite::Connection;
 
 use crate::cli::graph::parse_id;
-use crate::graph::edges::file_node_id;
 use crate::output::graph::{CodeGraph, Edge, Node};
 use crate::prelude::*;
+use crate::store::edges::file_node_id;
 
 /// A raw per-file node row, straight off the aggregate query.
 pub struct NodeRow {
@@ -38,12 +38,12 @@ pub struct NodeRow {
 ///
 /// The two reference shapes address the file differently: `references_file`
 /// stores the BARE `<repo>:<path>` (no `file:` prefix — see
-/// `graph::edges::file_node_id`), while `references_symbol` stores
+/// `store::edges::file_node_id`), while `references_symbol` stores
 /// `<repo>:<path>:<symbol>`, so a symbol reference is matched by prefix —
 /// with `substr(...) = ...`, NOT `LIKE`. A path is full of `_`, which LIKE
 /// reads as "any single character" (`src/memory_list.rs` would also match
 /// `src/memoryXlist.rs`); the substr form has no metacharacters to escape.
-/// Same technique as `graph::edges::file_node_prefix`.
+/// Same technique as `store::edges::file_node_prefix`.
 ///
 /// The file the predicate is about, as [`FileExpr`] — a closed set of two
 /// SQL expressions rather than a `&str`, so no caller can splice text of

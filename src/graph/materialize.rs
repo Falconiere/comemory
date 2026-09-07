@@ -13,9 +13,9 @@ use std::path::Path;
 
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
-use crate::graph::edges::{self, EdgeKey, file_node_id, file_node_prefix};
 use crate::graph::{coactivate, cochange, imports, pagerank};
 use crate::prelude::*;
+use crate::store::edges::{self, EdgeKey, file_node_id, file_node_prefix};
 use crate::store::memory_row;
 use time::OffsetDateTime;
 

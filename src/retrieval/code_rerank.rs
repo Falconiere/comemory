@@ -19,12 +19,12 @@ use time::OffsetDateTime;
 
 use crate::config::Config;
 use crate::graph::cochange;
-use crate::graph::edges::file_node_id;
 use crate::prelude::*;
 use crate::retrieval::code_prior::{self, Signals};
 use crate::retrieval::code_route::CodeRoutedHit;
 use crate::retrieval::router::Source;
 use crate::retrieval::score::{self, LegScores};
+use crate::store::edges::file_node_id;
 
 /// Number of most-recent first-parent commits whose changed files are
 /// folded into the working set alongside the dirty/staged paths. Five

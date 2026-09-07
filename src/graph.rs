@@ -1,9 +1,11 @@
 //! SQLite-backed graph helpers for the memory layer.
 //!
-//! [`edges`] holds the typed-edge upsert/query API, [`cross_link`]
-//! extracts file/symbol references from memory bodies, [`pagerank`]
-//! computes deterministic node importance over weighted edges,
-//! [`cochange`] mines git history for files that change together,
+//! Typed-edge upsert/query CRUD over the `edges` table itself lives in
+//! [`crate::store::edges`]; this module holds the algorithms built on top
+//! of it. [`cross_link`] extracts file/symbol references from memory
+//! bodies, [`pagerank`] computes deterministic node importance over
+//! weighted edges, [`cochange`] mines git history for files that change
+//! together,
 //! [`imports`] extracts per-language import statements and resolves them
 //! to indexed file paths, [`coactivate`] applies the commit co-activation
 //! reward (commits touching a memory's referenced files reinforce it; a
@@ -23,7 +25,6 @@ pub mod cross_link;
 pub mod derived;
 /// Deterministic `member_of_source` / `references_document` link deriver.
 pub mod doc_link;
-pub mod edges;
 pub mod imports;
 pub mod materialize;
 /// PageRank over the derived memory graph → `memories.rank_score`.

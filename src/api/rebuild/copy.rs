@@ -12,9 +12,9 @@
 use std::path::Path;
 
 use super::documents;
-use crate::graph::edges::CO_ACTIVATED;
 use crate::prelude::*;
 use crate::store::code_row;
+use crate::store::edges::CO_ACTIVATED;
 
 /// Every live table this module (plus [`super::documents`]) copies from the
 /// pre-rebuild database. The single source both the copy passes and the

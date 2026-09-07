@@ -23,7 +23,7 @@ mod corpus;
 use corpus::vectors::vector;
 use corpus::{BenchCorpus, CODE_DIM, MEMORY_DIM, build_corpus};
 
-use comemory::graph::edges::{self, EdgeKey};
+use comemory::store::edges::{self, EdgeKey};
 use comemory::store::{CreatedWindow, fts, vector as store_vec};
 use criterion::{Criterion, criterion_group, criterion_main};
 

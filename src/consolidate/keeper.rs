@@ -129,7 +129,7 @@ fn in_cluster_superseders(conn: &Connection, ids: &[String]) -> Result<HashMap<S
     let depth = ids.len() as u32;
     let mut out: HashMap<String, String> = HashMap::new();
     for src in ids {
-        for dst in crate::graph::edges::supersedes_chain(conn, src, depth)? {
+        for dst in crate::store::edges::supersedes_chain(conn, src, depth)? {
             if dst == *src || !members.contains(dst.as_str()) {
                 continue;
             }

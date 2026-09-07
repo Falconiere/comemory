@@ -23,6 +23,9 @@ pub mod document_fts;
 pub mod documents;
 /// FTS5 triplet index over `edges` (rendering + refresh + lexical ladder).
 pub mod edge_fts;
+/// `edges` table CRUD: typed upserts, weighted accumulation, outgoing
+/// neighbors, the `supersedes_chain` recursive walk, and delete-by-node.
+pub mod edges;
 /// f32 ↔ `vec0` BLOB encoding plus the per-table dim guards.
 pub mod embed;
 /// `eval_runs` row insert + newest-first read — one row per `comemory

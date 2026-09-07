@@ -77,7 +77,7 @@ fn rel_list() -> String {
 /// candidates.
 ///
 /// `UNION` (not `UNION ALL`) makes the walk cycle-safe exactly as
-/// [`crate::graph::edges::supersedes_chain`] does. The inline `edges`
+/// [`crate::store::edges::supersedes_chain`] does. The inline `edges`
 /// union presents every row in both orientations, turning two forward
 /// `references_symbol` edges into one two-hop memory→memory path.
 /// `GROUP BY … MIN(depth)` collapses multi-path arrivals to one row at the

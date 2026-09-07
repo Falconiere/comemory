@@ -27,8 +27,9 @@
 use rusqlite::Connection;
 use serde::Serialize;
 
-use crate::graph::{derived, edges};
+use crate::graph::derived;
 use crate::prelude::*;
+use crate::store::edges;
 
 /// What [`drop_repo`] removed, per table group — the `DELETE
 /// /api/v1/repos/{name}` response body's counters.

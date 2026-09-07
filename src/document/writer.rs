@@ -16,13 +16,13 @@ use time::OffsetDateTime;
 use super::fingerprint::{self, FileStat};
 use super::{DocumentFormat, ExtractedDocument, extract};
 use crate::graph::doc_link;
-use crate::graph::edges;
 use crate::prelude::*;
 use crate::source::classify::Classification;
 use crate::source::discover::Candidate;
 use crate::store::Connection;
 use crate::store::document_fts;
 use crate::store::documents::{self, ChunkRow, DocumentUpsert};
+use crate::store::edges;
 use crate::store::memory_row::iso_format;
 use crate::store::sources::{self, SourceFileRow, SourceFileUpsert};
 
