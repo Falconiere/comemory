@@ -62,7 +62,7 @@ fn import_new_upsert_is_accepted() {
         &mut ctx,
         sync::ImportRequest {
             cursor: 0,
-            entries: vec![import_entry(body, SyncOp::Upsert)],
+            entries: vec![import_entry(&body, SyncOp::Upsert)],
         },
         Some("device-user"),
     )
@@ -167,7 +167,7 @@ fn secret_detected_blocks_upsert() {
         &mut ctx,
         sync::ImportRequest {
             cursor: 0,
-            entries: vec![import_entry(body, SyncOp::Upsert)],
+            entries: vec![import_entry(&body, SyncOp::Upsert)],
         },
         None,
     )

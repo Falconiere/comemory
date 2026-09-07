@@ -1243,6 +1243,7 @@ Examples:
   # Machine-readable
   comemory auth login --json
   comemory auth status --json
+```
 
 ---
 
@@ -1301,7 +1302,7 @@ Options:
           - run:    Push then pull (default)
           - push:   Push local changes only (`--push-only` alias)
           - pull:   Pull remote changes only (`--pull-only` alias)
-          - verify: Compare local/remote manifests (report only)
+          - verify: Compare local/remote manifests and repair differing buckets (AC-9)
           - status: Print sync cursors
           
           [default: run]
@@ -1330,6 +1331,5 @@ Examples:
   comemory sync --action status --json
   comemory sync --action verify
   comemory sync --allow-secret deadbeef
-
 ```
 
