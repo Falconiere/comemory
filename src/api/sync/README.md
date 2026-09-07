@@ -2,8 +2,8 @@
 
 **What belongs here:** the shared middle of the three cloud-sync routes —
 `GET /sync/changes`, `GET /sync/manifest`, and `POST /sync/import` — moved
-out of `serve::routes` so the HTTP surface and a future CLI `comemory sync
-push/pull` call one implementation (Binding Rule 1).
+out of `serve::routes` so the HTTP surface and the CLI `comemory sync
+push/pull` path call one implementation (Binding Rule 1).
 
 **What does NOT belong here:** rate limits, device-key auth, GitHub App
 allowlist enforcement (Worker rule 0), or cursor bookkeeping in

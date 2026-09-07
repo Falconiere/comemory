@@ -42,6 +42,7 @@ One line per file, named after its primary item:
 | `ingest_code.rs` | `Args` | `comemory ingest-code` — bulk pre-embedded code-symbol ingestion from stdin |
 | `install_hooks.rs` | `Args` | `comemory install-hooks` — install git hooks that trigger `index-code` |
 | `lazy_reindex.rs` | `RepoContext` | Detached, non-blocking auto-reindex trigger behind `indexing.auto_reindex = lazy` |
+| `link.rs` | `Args` | `comemory link` — bind this data-dir to a cloud workspace |
 | `list.rs` | `Args` | `comemory list` — page live memories with `--repo` / `--kind` filters |
 | `mine.rs` | `Args` | `comemory mine` — distill query reformulations from `retrieval_log` into expansions |
 | `pagination.rs` | `PaginationArgs` | Shared `--k` / `--offset` window flags, flattened into paginated commands |
@@ -57,10 +58,12 @@ One line per file, named after its primary item:
 | `show.rs` | `Args` | `comemory show` — one memory in full: body, frontmatter, activation, refs |
 | `sources.rs` | `Args` | `comemory sources` — list registered document sources with status counts |
 | `stats.rs` | `Args` | `comemory stats` — corpus counters and `comemory.db` size |
+| `sync.rs` | `Args` | `comemory sync` — nested `push` / `pull` / `status` / `verify` for cloud sync |
 | `tune.rs` | `Args` | `comemory tune` — deterministic/sampled search over the blend knobs |
 | `unindex.rs` | `Args` | `comemory unindex <SOURCE_ID\|PATH>` — unregister a document source |
 | `upgrade.rs` | `Args` | `comemory upgrade` — move this binary to the newest release (`--check`, `--version`, `--force`); core in `crate::upgrade`, CLI-only |
 | `when.rs` | `DayEdge` | `--since`/`--until`/`--as-of` value parsing shared by `search` and `context` |
+| `workspaces.rs` | `Args` | `comemory workspaces` — list cloud workspaces available to the signed-in key |
 
 When you add a file here, add its row above so the index stays current. No
 `mod.rs` barrel — submodules are declared from `src/cli.rs` (`pub mod <name>;`)

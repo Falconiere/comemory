@@ -117,7 +117,7 @@ fn apply_restore(
         out.reason = Some("restore target not in trash".into());
         return Ok(out);
     }
-    let _restored = crate::api::restore::run(ctx, &entry.id)?;
+    crate::api::restore::run(ctx, &entry.id)?;
     patch_frontmatter(ctx, entry, record, author_override)?;
     let conn = ctx.conn()?;
     let tx = conn.transaction()?;
@@ -181,9 +181,10 @@ fn apply_upsert(
         }
         return Ok(out);
     }
-    if trashed_with_hash(conn, &entry.content_hash)? || trash_file_exists(&paths, &entry.id) {
-        if trash_file_exists(&paths, &entry.id) {
-            let _ = crate::api::restore::run(ctx, &entry.id)?;
+    let in_trash = trash_file_exists(&paths, &entry.id);
+    if trashed_with_hash(conn, &entry.content_hash)? || in_trash {
+        if in_trash {
+            crate::api::restore::run(ctx, &entry.id)?;
             patch_frontmatter(ctx, entry, record, author_override)?;
             let conn = ctx.conn()?;
             let tx = conn.transaction()?;

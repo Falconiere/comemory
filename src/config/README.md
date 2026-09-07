@@ -23,6 +23,7 @@ One line per file, named after its primary item:
 | `patch.rs` | `patch_config_file` | The one read-patch-atomically-write primitive over `config.toml`, shared by `tune --apply`, the `hooks` reinforce toggle, and the console-api config routes |
 | `paths.rs` | `Paths` | Data-directory layout resolution (`resolve_data_dir` plus every derived path, including `auth_file`) |
 | `retrieval.rs` | `RetrievalConfig` | The `[retrieval]` section and its file overlay |
+| `sync.rs` | `SyncConfig` | The `[sync]` section — auto-pull/push intervals and related knobs |
 | `validate.rs` | `validate` | Shared invariant pass over the fully layered config |
 
 When you add a file here, add its row above so the index stays current. No

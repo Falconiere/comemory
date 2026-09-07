@@ -347,7 +347,7 @@ fn parse_envelope<T: for<'de> Deserialize<'de>>(
     let env: ApiEnvelope<T> = serde_json::from_str(&text)
         .map_err(|e| Error::Other(format!("{ctx}: envelope json: {e}; body: {text}")))?;
     if !env.ok {
-        let err = env.error.unwrap_or(ApiErrorBody {
+        let err = env.error.unwrap_or_else(|| ApiErrorBody {
             code: "unknown".into(),
             message: text.clone(),
         });

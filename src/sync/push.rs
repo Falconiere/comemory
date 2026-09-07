@@ -115,13 +115,17 @@ fn build_import_entry(
     workspace_id: &str,
     stats: &mut PushStats,
 ) -> Result<Option<ImportEntry>> {
+    let store = MemoryStore::new(paths.clone());
     if log_row.op != SyncOp::Tombstone {
-        let store = MemoryStore::new(paths.clone());
-        let repo = match store.load(&log_row.memory_id) {
-            Ok(rec) => rec.frontmatter.repo,
-            Err(Error::NotFound(_)) => String::new(),
+        let loaded = match store.load(&log_row.memory_id) {
+            Ok(rec) => Some(rec),
+            Err(Error::NotFound(_)) => None,
             Err(e) => return Err(e),
         };
+        let repo = loaded
+            .as_ref()
+            .map(|rec| rec.frontmatter.repo.clone())
+            .unwrap_or_default();
         match classify_repo(&repo, allowlist) {
             MatchOutcome::SkippedPersonal => {
                 stats.skipped_personal += 1;
@@ -138,7 +142,7 @@ fn build_import_entry(
             MatchOutcome::Allowed => {}
         }
         if matches!(log_row.op, SyncOp::Upsert | SyncOp::Restore)
-            && let Ok(rec) = store.load(&log_row.memory_id)
+            && let Some(rec) = loaded.as_ref()
             && redact::scan_with_override(conn, &log_row.memory_id, &rec.body)?.is_some()
         {
             stats.blocked_secrets += 1;
@@ -148,10 +152,7 @@ fn build_import_entry(
     sync_binding::bind_first(conn, &log_row.memory_id, workspace_id)?;
     let record = match log_row.op {
         SyncOp::Tombstone => None,
-        SyncOp::Upsert | SyncOp::Restore => {
-            let store = MemoryStore::new(paths.clone());
-            enrich_record(&store, conn, &log_row.memory_id)?
-        }
+        SyncOp::Upsert | SyncOp::Restore => enrich_record(&store, conn, &log_row.memory_id)?,
     };
     Ok(Some(ImportEntry {
         op: log_row.op,
