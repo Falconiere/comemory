@@ -13,9 +13,9 @@ use time::format_description::well_known::Iso8601;
 
 use crate::graph::cross_link;
 use crate::graph::doc_link;
-use crate::graph::edges::{self, CO_ACTIVATED, EdgeKey};
 use crate::memory::Frontmatter;
 use crate::prelude::*;
+use crate::store::edges::{self, CO_ACTIVATED, EdgeKey};
 use crate::store::fts;
 
 /// Upsert SQL for the `memories` row. `ON CONFLICT(id)` preserves `created_at`

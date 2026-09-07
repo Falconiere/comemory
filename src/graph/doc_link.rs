@@ -11,8 +11,8 @@ use std::path::{Component, Path, PathBuf};
 
 use rusqlite::{Connection, OptionalExtension, params};
 
-use crate::graph::edges::{self, EdgeKey, MEMBER_OF_SOURCE, REFERENCES_DOCUMENT, REFERENCES_FILE};
 use crate::prelude::*;
+use crate::store::edges::{self, EdgeKey, MEMBER_OF_SOURCE, REFERENCES_DOCUMENT, REFERENCES_FILE};
 
 /// Derive every deterministic edge owed by one just-committed document:
 /// its `member_of_source` row, any pre-existing memory `references_file`

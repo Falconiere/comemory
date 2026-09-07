@@ -14,7 +14,6 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::api::Ctx;
-use crate::graph::edges::{REFERENCES_FILE, REFERENCES_SYMBOL};
 use crate::memory::References;
 use crate::output::search::{abs_path, title_of};
 use crate::prelude::*;
@@ -22,6 +21,7 @@ use crate::retrieval::code_ref_collect;
 use crate::retrieval::code_ref_fetch::RefStatusCache;
 use crate::retrieval::rerank::live_superseder;
 use crate::retrieval::score;
+use crate::store::edges::{REFERENCES_FILE, REFERENCES_SYMBOL};
 use crate::store::memory_meta;
 
 /// `comemory show` / `GET /api/v1/memories/{id}` request.

@@ -243,7 +243,7 @@ fn file_affinity(
     if ws.files().is_empty() {
         return Ok(1.0);
     }
-    let fid = crate::graph::edges::file_node_id(repo, path);
+    let fid = crate::store::edges::file_node_id(repo, path);
     if let Some(boost) = cache.get(&fid) {
         return Ok(*boost);
     }

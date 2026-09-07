@@ -11,9 +11,9 @@ use std::collections::HashMap;
 
 use rusqlite::Connection;
 
-use crate::graph::edges::{REFERENCES_FILE, REFERENCES_SYMBOL};
 use crate::memory::{Ref, References};
 use crate::prelude::*;
+use crate::store::edges::{REFERENCES_FILE, REFERENCES_SYMBOL};
 use crate::store::qmarks;
 
 /// Navigation metadata for one memory row, keyed by memory id in the map

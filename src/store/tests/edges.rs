@@ -5,11 +5,11 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Test mirror for `src/graph/edges.rs` — edge upserts and recursive-CTE
+//! Test mirror for `src/store/edges.rs` — edge upserts and recursive-CTE
 //! walks over the `edges` table.
 
-use comemory::graph::edges::{self, EdgeKey};
 use comemory::store::connection;
+use comemory::store::edges::{self, EdgeKey};
 use tempfile::tempdir;
 
 fn seed_db() -> rusqlite::Connection {

@@ -10,8 +10,8 @@
 //! v0.2 edges (in_repo / authored_by / tagged plus cross-link references)
 //! that both `cli::save` and `cli::rebuild` depend on.
 
-use comemory::graph::edges::{self, EdgeKey};
 use comemory::memory::{Frontmatter, Kind, Ref, References, Relations};
+use comemory::store::edges::{self, EdgeKey};
 use comemory::store::{code_ref, connection, memory_row};
 use rusqlite::Connection;
 use tempfile::tempdir;

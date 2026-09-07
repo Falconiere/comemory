@@ -101,7 +101,7 @@ fn graph_emits_indexed_edges_and_gates_co_changed_weight() {
 }
 
 /// `--rel` narrows the edge kinds. The stored `rel` keys are the literal
-/// strings `imports` and `co_changed` (`graph::edges`); the flag values are
+/// strings `imports` and `co_changed` (`store::edges`); the flag values are
 /// `imports`, `co-changed`, and `all`. The fixture carries exactly one edge
 /// of each kind, so each filter is checked against an edge that survives
 /// only under the other one, and the non-empty guard keeps an empty result

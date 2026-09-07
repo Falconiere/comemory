@@ -30,8 +30,8 @@
 
 use rusqlite::{Connection, params};
 
-use crate::graph::edges;
 use crate::prelude::*;
+use crate::store::edges;
 
 /// The per-memory tables keyed by a bare memory id, each cleared with the
 /// id bound as `?1` once the guarded `memories` delete has matched.
