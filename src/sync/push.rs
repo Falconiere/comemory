@@ -56,6 +56,7 @@ pub fn run_push(
     let row = sync_state::get(conn, workspace_id)?
         .ok_or_else(|| Error::Other("sync_state missing after ensure".into()))?;
     let allowlist = refresh_allowlist(paths, cfg, auth, workspace_id)?;
+    let store = MemoryStore::new(paths.clone());
     let mut stats = PushStats::default();
     let mut since = row.pushed_seq;
     let cap = limit.min(MAX_BATCH * 4);
@@ -70,7 +71,7 @@ pub fn run_push(
         for log_row in rows {
             batch_high_seq = log_row.seq;
             if let Some(entry) =
-                build_import_entry(paths, conn, &log_row, &allowlist, workspace_id, &mut stats)?
+                build_import_entry(&store, conn, &log_row, &allowlist, workspace_id, &mut stats)?
             {
                 batch.push(entry);
             }
@@ -108,14 +109,13 @@ pub fn run_push(
 }
 
 fn build_import_entry(
-    paths: &Paths,
+    store: &MemoryStore,
     conn: &Connection,
     log_row: &sync_log::SyncLogRow,
     allowlist: &[crate::sync::match_key::AllowlistRepo],
     workspace_id: &str,
     stats: &mut PushStats,
 ) -> Result<Option<ImportEntry>> {
-    let store = MemoryStore::new(paths.clone());
     if log_row.op != SyncOp::Tombstone {
         let loaded = match store.load(&log_row.memory_id) {
             Ok(rec) => Some(rec),
@@ -152,7 +152,7 @@ fn build_import_entry(
     sync_binding::bind_first(conn, &log_row.memory_id, workspace_id)?;
     let record = match log_row.op {
         SyncOp::Tombstone => None,
-        SyncOp::Upsert | SyncOp::Restore => enrich_record(&store, conn, &log_row.memory_id)?,
+        SyncOp::Upsert | SyncOp::Restore => enrich_record(store, conn, &log_row.memory_id)?,
     };
     Ok(Some(ImportEntry {
         op: log_row.op,
