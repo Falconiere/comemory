@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-09-07
+
+### Added
+
+- add workspace-key device login CLI
+
+### Fixed
+
+- tighten auth asserts and header validation
+- drop redundant cmk_ length assert
+- harden fetch tempfile exclusivity
+- tighten fetch argv/headers per review
+- harden fetch tempfile and address review
+
 ## [0.19.0] - 2026-09-07
 
 ### Added
