@@ -18,6 +18,7 @@ One line per file, named after its primary item:
 | File | Primary item | Purpose |
 | --- | --- | --- |
 | `busy.rs` | `is_locked` | Whether an `Error` wraps SQLite's `SQLITE_BUSY` / `SQLITE_LOCKED` — the only place outside `errors.rs` that inspects a `rusqlite::Error` variant |
+| `code_feedback.rs` | `SymbolIdentity` | `code_feedback` row CRUD: `own_identity`/`parent_identity` lookups plus the `used`/`irrelevant` upserts and code-tagged `feedback_events` insert; moved out of `stats::code_feedback`, which still owns the chunk-to-parent resolution rule and the transaction boundary |
 | `code_ref.rs` | `CodeRefRow` | `code_ref` side table: version-anchor store for explicit code references |
 | `code_row.rs` | `CodeSymbolRow` | `code_symbols` row upserts (insert, refresh, delete-by-file), plus `distinct_paths_for_repo` and `update_rank_scores`, the `rank_score` bulk writer behind `graph::materialize` |
 | `connection.rs` | `open` | Connection open: PRAGMAs, migrations, `sqlite-vec` auto-extension registration |
@@ -36,11 +37,13 @@ One line per file, named after its primary item:
 | `schema.rs` | — | Module-doc placeholder for the v0.2 schema; DDL text lives in `sql/` |
 | `simhash_scan.rs` | `SimhashRow` | Bulk `(id, simhash)` scan over live memories, shared by save + consolidate |
 | `eval_runs.rs` | `insert` | `eval_runs` writer + newest-first reader — one row per eval/tune/bandit RUN, never per scored candidate |
+| `feedback.rs` | `upsert_used` | `feedback` row CRUD: `used`/`irrelevant` upserts plus memory-tagged `feedback_events` inserts; moved out of `stats::feedback`, which still owns the provenance vocabulary and the transaction boundary |
 | `gc_runs.rs` | `insert` | `gc_runs` writer — one row per completed `comemory gc` sweep, with bytes freed — plus `newest` (`GcRunRow`), the last-run read behind `GET /api/v1/gc/policy` |
 | `repo_drop.rs` | `drop_repo` | Drop every code-index row and file edge for one repo label in one transaction (`DELETE /api/v1/repos/{name}`), memories kept |
 | `repo_marker.rs` | `last_mined_commit` | `repo_marker.last_mined_commit` read + upsert — the co-change mining cursor behind `graph::materialize`, kept separate from `code_row.rs`'s index-code fields and `repo_marker_roots.rs`'s serve-side reads |
 | `repo_marker_roots.rs` | `all_roots` | Reads over `repo_marker.root_path`: `all_roots` enumerates every distinct working-tree root (the `serve` allowed-roots set), `root_path` looks up one repo's stored root, `Ok(None)` distinct from a genuine query `Err` |
 | `retrieval_log.rs` | `returned_ids_in_window` | Raw `retrieval_log.returned_ids` window query (source pair, `at` range, optional repo) behind `graph::search_edit`'s search→edit lookback |
+| `index_failures.rs` | `insert` | `index_failures` row CRUD: append + count + latest-row read, moved out of `stats::sqlite::StatsDb`, which still owns the ISO 8601 timestamp formatting and the `usize` clamp |
 | `index_runs.rs` | `insert` | `index_runs` writer + newest-first readers — one row per `index-code` run, outcomes (`ok`/`error`/`cancelled`) included |
 | `random_id.rs` | `random_hex` | Shared random-hex id helper, moved out of `serve::security` so non-HTTP callers can use it |
 | `sync_log.rs` | `append` | Append-only cloud-sync change journal (`upsert`/`tombstone`/`restore`, origin `local`/`sync`) |
