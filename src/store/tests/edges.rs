@@ -197,3 +197,313 @@ fn supersedes_chain_handles_cycle() {
         "expected 'b' in the chain; got {chain:?}"
     );
 }
+
+/// `co_changed_and_imports_edges` returns only the repo-prefixed rows, in
+/// `(rel, src_id, dst_id)` order — the shape `graph::materialize::
+/// project_pagerank` feeds straight into PageRank's accumulation.
+#[test]
+fn co_changed_and_imports_edges_filters_by_prefix_and_orders() {
+    let conn = seed_db();
+    edges::insert(
+        &conn,
+        EdgeKey {
+            src_kind: "file",
+            src_id: "file:r:b.rs",
+            dst_kind: "file",
+            dst_id: "file:r:a.rs",
+            rel: "imports",
+        },
+    )
+    .expect("insert imports r");
+    edges::insert_weighted(
+        &conn,
+        EdgeKey {
+            src_kind: "file",
+            src_id: "file:r:a.rs",
+            dst_kind: "file",
+            dst_id: "file:r:b.rs",
+            rel: "co_changed",
+        },
+        3,
+    )
+    .expect("insert co_changed r");
+    // A different repo's edge must not leak in even though it shares a rel.
+    edges::insert(
+        &conn,
+        EdgeKey {
+            src_kind: "file",
+            src_id: "file:other:x.rs",
+            dst_kind: "file",
+            dst_id: "file:other:y.rs",
+            rel: "imports",
+        },
+    )
+    .expect("insert imports other repo");
+
+    let rows = edges::co_changed_and_imports_edges(&conn, "file:r:").expect("query");
+    let shape: Vec<(&str, &str, &str, i64)> = rows
+        .iter()
+        .map(|r| {
+            (
+                r.src_id.as_str(),
+                r.dst_id.as_str(),
+                r.rel.as_str(),
+                r.weight,
+            )
+        })
+        .collect();
+    assert_eq!(
+        shape,
+        vec![
+            ("file:r:a.rs", "file:r:b.rs", "co_changed", 3),
+            ("file:r:b.rs", "file:r:a.rs", "imports", 1),
+        ]
+    );
+}
+
+/// `delete_co_changed_for_repo` removes only `co_changed` edges whose
+/// `src_id` carries the given prefix — an `imports` edge and another
+/// repo's `co_changed` edge both survive.
+#[test]
+fn delete_co_changed_for_repo_is_scoped() {
+    let conn = seed_db();
+    let key_co = EdgeKey {
+        src_kind: "file",
+        src_id: "file:r:a.rs",
+        dst_kind: "file",
+        dst_id: "file:r:b.rs",
+        rel: "co_changed",
+    };
+    edges::insert_weighted(&conn, key_co, 1).expect("insert co_changed");
+    edges::insert(
+        &conn,
+        EdgeKey {
+            src_kind: "file",
+            src_id: "file:r:a.rs",
+            dst_kind: "file",
+            dst_id: "file:r:b.rs",
+            rel: "imports",
+        },
+    )
+    .expect("insert imports");
+    let other_repo = EdgeKey {
+        src_kind: "file",
+        src_id: "file:other:a.rs",
+        dst_kind: "file",
+        dst_id: "file:other:b.rs",
+        rel: "co_changed",
+    };
+    edges::insert_weighted(&conn, other_repo, 1).expect("insert other repo co_changed");
+
+    edges::delete_co_changed_for_repo(&conn, "file:r:").expect("delete");
+
+    assert_eq!(edges::current_weight(&conn, key_co).expect("weight"), 0);
+    assert_eq!(
+        edges::outgoing(&conn, "file", "file:r:a.rs", "imports").expect("outgoing"),
+        vec![("file".to_string(), "file:r:b.rs".to_string())]
+    );
+    assert_eq!(
+        edges::current_weight(&conn, other_repo).expect("other weight"),
+        1
+    );
+}
+
+/// `delete_imports_from` removes only the `imports` edges sourced at the
+/// node, leaving a `co_changed` edge from the same source untouched —
+/// unlike `delete_outgoing`, which is rel-agnostic.
+#[test]
+fn delete_imports_from_is_rel_scoped() {
+    let conn = seed_db();
+    edges::insert(
+        &conn,
+        EdgeKey {
+            src_kind: "file",
+            src_id: "file:r:a.rs",
+            dst_kind: "file",
+            dst_id: "file:r:b.rs",
+            rel: "imports",
+        },
+    )
+    .expect("insert imports");
+    let co_key = EdgeKey {
+        src_kind: "file",
+        src_id: "file:r:a.rs",
+        dst_kind: "file",
+        dst_id: "file:r:c.rs",
+        rel: "co_changed",
+    };
+    edges::insert_weighted(&conn, co_key, 1).expect("insert co_changed");
+
+    edges::delete_imports_from(&conn, "file:r:a.rs").expect("delete imports");
+
+    assert!(
+        edges::outgoing(&conn, "file", "file:r:a.rs", "imports")
+            .expect("outgoing")
+            .is_empty()
+    );
+    assert_eq!(edges::current_weight(&conn, co_key).expect("weight"), 1);
+}
+
+/// `memory_direct_relation_edges` returns memory→memory relation rows, and
+/// excludes edges of an unlisted rel (e.g. `tagged`).
+#[test]
+fn memory_direct_relation_edges_excludes_other_rels() {
+    let conn = seed_db();
+    edges::insert(
+        &conn,
+        EdgeKey {
+            src_kind: "memory",
+            src_id: "new1",
+            dst_kind: "memory",
+            dst_id: "old1",
+            rel: "supersedes",
+        },
+    )
+    .expect("insert supersedes");
+    edges::insert(
+        &conn,
+        EdgeKey {
+            src_kind: "memory",
+            src_id: "new1",
+            dst_kind: "tag",
+            dst_id: "tag-x",
+            rel: "tagged",
+        },
+    )
+    .expect("insert tagged");
+
+    let rows = edges::memory_direct_relation_edges(&conn).expect("query");
+    assert_eq!(rows, vec![("new1".to_string(), "old1".to_string(), 1.0)]);
+}
+
+/// `memory_co_citation_edges` weights an unordered pair by the number of
+/// shared `references_file` targets.
+#[test]
+fn memory_co_citation_edges_counts_shared_targets() {
+    let conn = seed_db();
+    for (memory, file) in [
+        ("m1", "a.rs"),
+        ("m1", "b.rs"),
+        ("m2", "a.rs"),
+        ("m2", "b.rs"),
+    ] {
+        edges::insert(
+            &conn,
+            EdgeKey {
+                src_kind: "memory",
+                src_id: memory,
+                dst_kind: "file",
+                dst_id: &format!("r:{file}"),
+                rel: "references_file",
+            },
+        )
+        .expect("insert references_file");
+    }
+
+    let rows = edges::memory_co_citation_edges(&conn).expect("query");
+    assert_eq!(rows, vec![("m1".to_string(), "m2".to_string(), 2.0)]);
+}
+
+/// `memory_ids_referencing_file` matches only the given `rel` and
+/// `dst_id`, `src_kind='memory'`, `dst_kind='file'`.
+#[test]
+fn memory_ids_referencing_file_matches_rel_and_dst() {
+    let conn = seed_db();
+    edges::insert(
+        &conn,
+        EdgeKey {
+            src_kind: "memory",
+            src_id: "m1",
+            dst_kind: "file",
+            dst_id: "r:a.rs",
+            rel: "references_file",
+        },
+    )
+    .expect("insert m1");
+    edges::insert(
+        &conn,
+        EdgeKey {
+            src_kind: "memory",
+            src_id: "m2",
+            dst_kind: "file",
+            dst_id: "r:b.rs",
+            rel: "references_file",
+        },
+    )
+    .expect("insert m2");
+
+    let ids =
+        edges::memory_ids_referencing_file(&conn, "references_file", "r:a.rs").expect("query");
+    assert_eq!(ids, vec!["m1".to_string()]);
+}
+
+/// `src_ids_for_dst_ids` is the reverse batch lookup behind the
+/// co-activation harvest: given a set of touched-file dst ids, it returns
+/// every referencing memory, ordered `(dst_id, src_id)`.
+#[test]
+fn src_ids_for_dst_ids_batches_the_reverse_lookup() {
+    let conn = seed_db();
+    edges::insert(
+        &conn,
+        EdgeKey {
+            src_kind: "memory",
+            src_id: "m1",
+            dst_kind: "file",
+            dst_id: "r:a.rs",
+            rel: "references_file",
+        },
+    )
+    .expect("insert m1");
+    edges::insert(
+        &conn,
+        EdgeKey {
+            src_kind: "memory",
+            src_id: "m2",
+            dst_kind: "file",
+            dst_id: "r:b.rs",
+            rel: "references_file",
+        },
+    )
+    .expect("insert m2");
+
+    let rows =
+        edges::src_ids_for_dst_ids(&conn, "references_file", &["r:a.rs", "r:b.rs"]).expect("query");
+    assert_eq!(
+        rows,
+        vec![
+            ("m1".to_string(), "r:a.rs".to_string()),
+            ("m2".to_string(), "r:b.rs".to_string()),
+        ]
+    );
+}
+
+/// `file_neighbor_rows` is the raw one-hop query behind
+/// `graph::neighbors::file_neighbors`: seeded from a JSON array of one
+/// file id, it returns its `imports` neighbor.
+#[test]
+fn file_neighbor_rows_returns_the_one_hop_import_neighbor() {
+    let conn = seed_db();
+    edges::insert(
+        &conn,
+        EdgeKey {
+            src_kind: "file",
+            src_id: "file:r:a.rs",
+            dst_kind: "file",
+            dst_id: "file:r:b.rs",
+            rel: "imports",
+        },
+    )
+    .expect("insert imports");
+
+    let seeds_json = serde_json::to_string(&vec!["file:r:a.rs"]).expect("json");
+    let rows = edges::file_neighbor_rows(&conn, &seeds_json, 1).expect("query");
+    assert_eq!(
+        rows,
+        vec![(
+            "r".to_string(),
+            "b.rs".to_string(),
+            "imports".to_string(),
+            1
+        )]
+    );
+}
