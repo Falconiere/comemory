@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-09-07
+
+### Added
+
+- add a hand-written installer and `comemory upgrade`
+
+### Fixed
+
+- track install.sh and harden the upgrade download path
+
 ## [0.18.2] - 2026-09-06
 
 ### BREAKING
