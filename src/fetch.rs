@@ -92,6 +92,7 @@ pub fn final_url(url: &str) -> Result<String> {
 }
 
 fn exchange_curl(req: &Request<'_>) -> Result<Response> {
+    validate_headers(req.headers)?;
     let tmp = tempfile_path()?;
     let mut cmd = Command::new("curl");
     cmd.args(tls_args(req.url))
@@ -102,12 +103,14 @@ fn exchange_curl(req: &Request<'_>) -> Result<Response> {
         cmd.arg("-H").arg(format!("{name}: {value}"));
     }
     if let Some(body) = req.body {
-        cmd.args(["--data-binary", body]);
+        cmd.arg("--data-binary").arg(body);
     }
     cmd.arg(req.url);
     let status_text = run_ok(&mut cmd, req.url);
     let body = read_body_file(&tmp, req.url);
-    let _ = std::fs::remove_file(&tmp);
+    if let Err(e) = std::fs::remove_file(&tmp) {
+        tracing::debug!(error = %e, path = %tmp.display(), "fetch temp body cleanup failed");
+    }
     let status_text = status_text?;
     let body = body?;
     let status: u16 = status_text.trim().parse().map_err(|_| {
@@ -120,6 +123,7 @@ fn exchange_curl(req: &Request<'_>) -> Result<Response> {
 }
 
 fn exchange_wget(req: &Request<'_>) -> Result<Response> {
+    validate_headers(req.headers)?;
     let tmp = tempfile_path()?;
     let mut cmd = Command::new("wget");
     cmd.args(["-q", "-S", "-O"]).arg(&tmp);
@@ -129,10 +133,10 @@ fn exchange_wget(req: &Request<'_>) -> Result<Response> {
     match (req.method, req.body) {
         ("GET", None) => {}
         ("POST", Some(body)) => {
-            cmd.args(["--post-data", body]);
+            cmd.arg("--post-data").arg(body);
         }
         ("POST", None) => {
-            cmd.args(["--post-data", ""]);
+            cmd.arg("--post-data").arg("");
         }
         (method, _) => {
             return Err(Error::Unavailable(format!(
@@ -148,7 +152,9 @@ fn exchange_wget(req: &Request<'_>) -> Result<Response> {
         .map_err(|e| unreachable(req.url, &e.to_string()))?;
     let headers = String::from_utf8_lossy(&out.stderr);
     let body = read_body_file(&tmp, req.url);
-    let _ = std::fs::remove_file(&tmp);
+    if let Err(e) = std::fs::remove_file(&tmp) {
+        tracing::debug!(error = %e, path = %tmp.display(), "fetch temp body cleanup failed");
+    }
     let body = body?;
     let status = http_status_from_wget_headers(&headers).ok_or_else(|| {
         unreachable(
@@ -161,6 +167,20 @@ fn exchange_wget(req: &Request<'_>) -> Result<Response> {
         )
     })?;
     Ok(Response { status, body })
+}
+
+/// Reject header names/values that could inject additional HTTP headers.
+fn validate_headers(headers: &[(&str, &str)]) -> Result<()> {
+    for (name, value) in headers {
+        if name.bytes().any(|b| b == b'\r' || b == b'\n' || b == b':')
+            || value.bytes().any(|b| b == b'\r' || b == b'\n')
+        {
+            return Err(Error::Unavailable(
+                "HTTP header name/value must not contain CR, LF, or ':' in the name".into(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Last `HTTP/x.y NNN` status in wget `-S` stderr (redirects print several).

@@ -44,7 +44,13 @@ pub fn save(path: &Path, creds: &Credentials) -> Result<()> {
     let tmp = path.with_extension("json.tmp");
     write_mode_0600(&tmp, rendered.as_bytes())?;
     if let Err(e) = fs::rename(&tmp, path) {
-        let _ = fs::remove_file(&tmp);
+        if let Err(cleanup) = fs::remove_file(&tmp) {
+            tracing::debug!(
+                error = %cleanup,
+                path = %tmp.display(),
+                "auth.json.tmp cleanup failed after rename error"
+            );
+        }
         return Err(e.into());
     }
     // rename preserves the 0600 mode set on the tmp file at create time.
