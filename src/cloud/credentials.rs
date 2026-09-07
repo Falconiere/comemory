@@ -41,6 +41,7 @@ pub fn save(path: &Path, creds: &Credentials) -> Result<()> {
         fs::create_dir_all(parent)?;
     }
     let rendered = serde_json::to_string_pretty(creds)?;
+    // Same-directory sibling of `path` — rename stays on one filesystem (no EXDEV).
     let tmp = path.with_extension("json.tmp");
     write_mode_0600(&tmp, rendered.as_bytes())?;
     if let Err(e) = fs::rename(&tmp, path) {

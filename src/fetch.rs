@@ -170,13 +170,19 @@ fn exchange_wget(req: &Request<'_>) -> Result<Response> {
 }
 
 /// Reject header names/values that could inject additional HTTP headers.
+///
+/// Values reject CR and LF individually, which also blocks `"\r\n"` injection
+/// sequences passed through curl `-H` / wget `--header`.
 fn validate_headers(headers: &[(&str, &str)]) -> Result<()> {
     for (name, value) in headers {
-        if name.bytes().any(|b| b == b'\r' || b == b'\n' || b == b':')
-            || value.bytes().any(|b| b == b'\r' || b == b'\n')
-        {
+        if name.bytes().any(|b| b == b'\r' || b == b'\n' || b == b':') {
             return Err(Error::Unavailable(
-                "HTTP header name/value must not contain CR, LF, or ':' in the name".into(),
+                "HTTP header name must not contain CR, LF, or ':'".into(),
+            ));
+        }
+        if value.bytes().any(|b| b == b'\r' || b == b'\n') {
+            return Err(Error::Unavailable(
+                "HTTP header value must not contain CR or LF".into(),
             ));
         }
     }
@@ -273,6 +279,24 @@ fn read_body_file(path: &Path, url: &str) -> Result<String> {
 
 /// Unpredictable path under the process temp dir for curl/wget `-o` bodies
 /// (CWE-377 — avoid timestamp/PID-only names in a shared temp dir).
+///
+/// Creates the file with `create_new` (`O_CREAT|O_EXCL`) so a pre-planted
+/// symlink at the same path cannot redirect the write; curl/wget then
+/// overwrite the regular file.
 fn tempfile_path() -> Result<std::path::PathBuf> {
-    Ok(std::env::temp_dir().join(format!("comemory-fetch-{}", random_hex(16)?)))
+    let path = std::env::temp_dir().join(format!("comemory-fetch-{}", random_hex(16)?));
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    opts.open(&path).map_err(|e| {
+        Error::Unavailable(format!(
+            "could not create fetch temp body file {}: {e}",
+            path.display()
+        ))
+    })?;
+    Ok(path)
 }
