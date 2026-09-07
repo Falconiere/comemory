@@ -75,15 +75,15 @@ fn real_current_database_is_not_refused() {
     assert_eq!(bak_count, 0, "an already-current DB must create no .bak");
 }
 
-/// Insert a bogus `0016_future` marker directly, simulating a database
+/// Insert a bogus `0017_future` marker directly, simulating a database
 /// written by a newer comemory. `version_value` lets the caller pin
-/// `schema_meta.version` at either `"16"` (a completed future upgrade) or
-/// `"15"` (a crash between the last migration and the version write) —
+/// `schema_meta.version` at either `"17"` (a completed future upgrade) or
+/// `"16"` (a crash between the last migration and the version write) —
 /// both must be refused identically, since preflight never reads
 /// `version` at all.
 fn inject_future_marker(conn: &Connection, version_value: &str) {
     conn.execute(
-        "INSERT INTO schema_meta(key, value) VALUES('0016_future', '1')",
+        "INSERT INTO schema_meta(key, value) VALUES('0017_future', '1')",
         [],
     )
     .expect("seed future marker");
@@ -94,14 +94,14 @@ fn inject_future_marker(conn: &Connection, version_value: &str) {
     .expect("pin version");
 }
 
-/// Shared body for both crash-window variants: build a real v13 DB, inject
+/// Shared body for both crash-window variants: build a real current DB, inject
 /// the unknown marker, reopen, and assert the refusal plus the unchanged
 /// `schema_meta`.
 fn assert_future_marker_is_refused(version_value: &str) {
     let dir = tempdir().expect("tempdir");
     let db = dir.path().join("comemory.db");
     {
-        let conn = connection::open(&db).expect("build a real v15 db");
+        let conn = connection::open(&db).expect("build a real v16 db");
         inject_future_marker(&conn, version_value);
     }
 
@@ -118,11 +118,11 @@ fn assert_future_marker_is_refused(version_value: &str) {
     );
     let msg = err.to_string();
     assert!(
-        msg.contains("0016_future"),
+        msg.contains("0017_future"),
         "error must name the unknown key, got: {msg}"
     );
     assert!(
-        msg.contains("0015_v15_console_api"),
+        msg.contains("0016_v16_sync"),
         "error must name the highest key this build supports, got: {msg}"
     );
 
@@ -137,13 +137,13 @@ fn assert_future_marker_is_refused(version_value: &str) {
 }
 
 #[test]
-fn unknown_marker_is_refused_when_version_already_says_sixteen() {
-    assert_future_marker_is_refused("16");
+fn unknown_marker_is_refused_when_version_already_says_seventeen() {
+    assert_future_marker_is_refused("17");
 }
 
 #[test]
-fn unknown_marker_is_refused_when_version_still_says_fifteen_crash_before_set_version() {
-    assert_future_marker_is_refused("15");
+fn unknown_marker_is_refused_when_version_still_says_sixteen_crash_before_set_version() {
+    assert_future_marker_is_refused("16");
 }
 
 #[test]
