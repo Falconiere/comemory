@@ -47,6 +47,8 @@ pub struct SyncPlatformState {
     pub buckets_once: Option<Vec<String>>,
     /// Fixed import response `results` array.
     pub import_results: Value,
+    /// Last `POST /v1/sync/import` body (for test assertions).
+    pub last_import_body: Option<String>,
     /// Workspace list rows for `GET /v1/workspaces`.
     pub workspaces: Value,
 }
@@ -67,6 +69,7 @@ impl Default for SyncPlatformState {
             buckets: None,
             buckets_once: None,
             import_results: json!([]),
+            last_import_body: None,
             workspaces: json!([{
                 "workspace": {
                     "id": "ws-personal",
@@ -167,16 +170,31 @@ fn handle(mut stream: TcpStream, state: &Arc<Mutex<SyncPlatformState>>) -> std::
                 .unwrap_or_default();
         }
     }
-    let mut body = vec![0u8; content_length];
-    if content_length > 0 {
-        reader.read_exact(&mut body)?;
-    }
-    let body_str = String::from_utf8_lossy(&body);
-    let (status, resp) = route(&method, &path, &query, &body_str, &authorization, state);
+    // Cap body size so a buggy Content-Length cannot OOM the test process.
+    const MAX_BODY: usize = 10_000_000;
+    let (status, resp) = if content_length > MAX_BODY {
+        (
+            "413 Payload Too Large",
+            json!({"error": "body too large"}).to_string(),
+        )
+    } else {
+        let mut body = vec![0u8; content_length];
+        if content_length > 0 {
+            reader.read_exact(&mut body)?;
+        }
+        match String::from_utf8(body) {
+            Ok(body_str) => route(&method, &path, &query, &body_str, &authorization, state),
+            Err(_) => (
+                "400 Bad Request",
+                json!({"error": "body is not utf-8"}).to_string(),
+            ),
+        }
+    };
     let head = format!(
         "HTTP/1.1 {status}\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
         resp.len()
     );
+    // `try_clone` keeps `stream` for the response write; `BufReader` owns the clone.
     stream.write_all(head.as_bytes())?;
     if method != "HEAD" {
         stream.write_all(resp.as_bytes())?;
@@ -248,7 +266,7 @@ fn route(
         ("GET", "/v1/sync/status") => sync_status(&mut st, authorization),
         ("GET", "/v1/sync/changes") => sync_changes(&mut st, authorization, query),
         ("GET", "/v1/sync/manifest") => sync_manifest(&mut st, authorization),
-        ("POST", "/v1/sync/import") => sync_import(&st, authorization, body),
+        ("POST", "/v1/sync/import") => sync_import(&mut st, authorization, body),
         _ => ("404 Not Found", json!({"error":"not_found"}).to_string()),
     }
 }
@@ -306,17 +324,17 @@ fn sync_changes(
         .and_then(|a| a.last())
         .and_then(|e| e.get("seq"))
         .and_then(Value::as_i64);
+    let resp = envelope_ok(json!({
+        "entries": entries,
+        "next_seq": next_seq,
+        "head_seq": st.head_seq
+    }));
+    // Clear only after the response body is built so a panic cannot drop the
+    // fixture payload before the client sees it.
     if st.consume_changes {
         st.changes = json!([]);
     }
-    (
-        "200 OK",
-        envelope_ok(json!({
-            "entries": entries,
-            "next_seq": next_seq,
-            "head_seq": st.head_seq
-        })),
-    )
+    ("200 OK", resp)
 }
 
 fn sync_manifest(st: &mut SyncPlatformState, authorization: &str) -> (&'static str, String) {
@@ -337,10 +355,15 @@ fn sync_manifest(st: &mut SyncPlatformState, authorization: &str) -> (&'static s
     )
 }
 
-fn sync_import(st: &SyncPlatformState, authorization: &str, _body: &str) -> (&'static str, String) {
+fn sync_import(
+    st: &mut SyncPlatformState,
+    authorization: &str,
+    body: &str,
+) -> (&'static str, String) {
     if !auth_ok(authorization, &st.secret) {
         return ("401 Unauthorized", envelope_err("unauthorized", "bad key"));
     }
+    st.last_import_body = Some(body.to_string());
     (
         "200 OK",
         envelope_ok(json!({
