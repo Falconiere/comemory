@@ -50,6 +50,12 @@ pub mod schema;
 pub mod simhash_scan;
 /// `source_roots` row CRUD — the SQLite mirror of `sources.toml`.
 pub mod sources;
+/// First-push workspace binding + `--allow-secret` overrides.
+pub mod sync_binding;
+/// Append-only cloud-sync change journal.
+pub mod sync_log;
+/// Per-workspace pull/push cursors.
+pub mod sync_state;
 /// Custom FTS5 identifier tokenizer (camelCase/snake_case split + FFI).
 pub mod tokenizer;
 /// `vec0` insert and KNN against `memory_vec` / `code_vec`.

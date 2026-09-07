@@ -66,6 +66,8 @@ pub mod overview;
 pub mod repos_admin;
 /// `GET|POST /search`, `GET /search/suggest`, `POST /search/{query_id}/feedback`.
 pub mod search;
+/// `GET /sync/{changes,manifest}`, `POST /sync/import`.
+pub mod sync;
 /// `GET /trash`, `POST /trash/{id}/restore`.
 pub mod trash;
 
@@ -133,6 +135,7 @@ pub fn table() -> Vec<RouteEntry> {
     entries.extend_from_slice(repos_admin::table_entries());
     entries.extend_from_slice(search::table_entries());
     entries.extend_from_slice(trash::table_entries());
+    entries.extend_from_slice(sync::table_entries());
     entries
 }
 
@@ -162,7 +165,8 @@ pub fn v1_router(state: AppState) -> Router<AppState> {
         .merge(overview::router(state.clone()))
         .merge(repos_admin::router(state.clone()))
         .merge(search::router(state.clone()))
-        .merge(trash::router(state))
+        .merge(trash::router(state.clone()))
+        .merge(sync::router(state))
 }
 
 /// `GET /api/v1/health` — the capability probe: read-only mode, the binary

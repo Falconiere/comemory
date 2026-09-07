@@ -279,7 +279,7 @@ fn soft_delete_low_value(
     let mut derived_stale = false;
     for id in low_value_ids {
         match delete::soft_delete(paths, conn, id) {
-            Ok((_id, stale)) => derived_stale |= stale,
+            Ok((_id, _hash, stale)) => derived_stale |= stale,
             // Half-deleted state: live DB row, markdown already gone —
             // producible by a crash inside `delete` between its file move
             // and its DB transaction. The markdown (source of truth)

@@ -1,0 +1,42 @@
+# Curated secret-detection rules for sync push (subset of gitleaks catalogue).
+# Loaded at compile time via include_str! in redact.rs.
+
+[[rule]]
+name = "aws-access-key"
+pattern = '''AKIA[0-9A-Z]{16}'''
+
+[[rule]]
+name = "github-pat"
+pattern = '''ghp_[A-Za-z0-9]{20,}'''
+
+[[rule]]
+name = "gitlab-pat"
+pattern = '''glpat-[A-Za-z0-9\-_]{20,}'''
+
+[[rule]]
+name = "slack-token"
+pattern = '''xox[baprs]-[A-Za-z0-9\-]{10,}'''
+
+[[rule]]
+name = "stripe"
+pattern = '''sk_(live|test)_[A-Za-z0-9]{20,}'''
+
+[[rule]]
+name = "openai"
+pattern = '''sk-[A-Za-z0-9]{20,}'''
+
+[[rule]]
+name = "anthropic"
+pattern = '''sk-ant-[A-Za-z0-9\-_]{20,}'''
+
+[[rule]]
+name = "jwt"
+pattern = '''eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+'''
+
+[[rule]]
+name = "pem-private-key"
+pattern = '''-----BEGIN [A-Z ]*PRIVATE KEY-----'''
+
+[[rule]]
+name = "generic-high-entropy"
+pattern = '''(?i)(?:key|token|secret|password|passwd|pwd|api[_-]?key|auth)[\s]*[=:]\s*['"]?([A-Za-z0-9+/=_\-]{20,})'''

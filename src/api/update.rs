@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use crate::api::{Ctx, save};
 use crate::memory::{Frontmatter, Kind, MemoryRecord, MemoryStore, id};
 use crate::prelude::*;
-use crate::store::memory_row;
+use crate::store::{memory_row, sync_log};
 
 /// `PATCH /api/v1/memories/{id}` request. Every field is optional: an absent
 /// field is left untouched, and an empty object is a no-op patch that still
@@ -189,6 +189,7 @@ fn patch_in_place(
         mirror_row(ctx, record)?;
         false
     };
+    append_local_upsert(ctx, record)?;
     Ok(Response {
         id,
         path,
@@ -291,6 +292,24 @@ fn mirror_row(ctx: &mut Ctx<'_>, record: &MemoryRecord) -> Result<()> {
         record.slug.as_str(),
         &md_path,
         &fm.tags,
+    )?;
+    tx.commit()?;
+    Ok(())
+}
+
+/// Record a frontmatter-only patch in the sync log.
+fn append_local_upsert(ctx: &mut Ctx<'_>, record: &MemoryRecord) -> Result<()> {
+    let conn = ctx.conn()?;
+    let fm = &record.frontmatter;
+    let at = memory_row::iso_format(fm.created)?;
+    let tx = conn.transaction()?;
+    sync_log::append(
+        &tx,
+        sync_log::SyncOp::Upsert,
+        &fm.id,
+        &fm.content_hash,
+        &at,
+        sync_log::SyncOrigin::Local,
     )?;
     tx.commit()?;
     Ok(())

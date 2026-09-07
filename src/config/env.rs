@@ -235,6 +235,14 @@ impl Config {
     }
 }
 
+/// `COMEMORY_API_KEY` override for the device secret stored in `auth.json`.
+/// Unset → callers use the on-disk secret from [`crate::sync::AuthFile`].
+pub fn api_key_override() -> Option<String> {
+    std::env::var("COMEMORY_API_KEY")
+        .ok()
+        .filter(|v| !v.is_empty())
+}
+
 /// True when `COMEMORY_SKIP_MIGRATION_BACKUP` is truthy (`"1"` or
 /// `"true"`). Unset, empty, or any other value is `false` — a test/escape
 /// hatch hook (mirrors `COMEMORY_DISABLE_ACCESS_TRACKING`, `cli.rs`'s

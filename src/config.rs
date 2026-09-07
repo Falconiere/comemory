@@ -11,9 +11,12 @@ pub mod patch;
 pub mod paths;
 /// The `[retrieval]` section and its file overlay.
 pub mod retrieval;
+/// The `[sync]` and `[embed]` sections.
+pub mod sync;
 mod validate;
 
 pub use file::{AutoReindexMode, Config};
 pub use learning::{BanditConfig, ReinforceConfig, TuneConfig};
 pub use paths::Paths;
 pub use retrieval::RetrievalConfig;
+pub use sync::{EmbedConfig, SyncConfig};

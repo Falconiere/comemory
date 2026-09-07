@@ -9,6 +9,7 @@
 //! containing `rrf_k = 0.0` fails exactly like `retrieval.rrf_k = 0.0`.
 
 use super::file::Config;
+use super::sync::parse_duration;
 use crate::prelude::*;
 
 /// Bounds for `retrieval.rrf_k` and every `tune.rrf_k_grid` entry.
@@ -136,6 +137,7 @@ impl Config {
         self.check_tune_grids()?;
         self.check_reinforce_knobs()?;
         self.check_indexing_knobs()?;
+        self.check_sync_knobs()?;
         Ok(self)
     }
 
@@ -323,6 +325,29 @@ impl Config {
                 "invalid reinforce.search_edit_days={sed} (env COMEMORY_REINFORCE_SEARCH_EDIT_DAYS): must be >= 1"
             )));
         }
+        Ok(())
+    }
+
+    /// `[sync]` duration strings and `[embed].model` shape.
+    fn check_sync_knobs(&self) -> Result<()> {
+        parse_duration(&self.sync.pull_before_context_after).map_err(|e| {
+            Error::Config(format!(
+                "invalid sync.pull_before_context_after={}: {e}",
+                self.sync.pull_before_context_after
+            ))
+        })?;
+        parse_duration(&self.sync.verify_every).map_err(|e| {
+            Error::Config(format!(
+                "invalid sync.verify_every={}: {e}",
+                self.sync.verify_every
+            ))
+        })?;
+        parse_duration(&self.sync.allowlist_ttl).map_err(|e| {
+            Error::Config(format!(
+                "invalid sync.allowlist_ttl={}: {e}",
+                self.sync.allowlist_ttl
+            ))
+        })?;
         Ok(())
     }
 }

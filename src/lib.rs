@@ -87,3 +87,6 @@ pub mod document;
 /// Durable source registry (`sources.toml`), its exclusive-flock guard,
 /// and the reconciler mirroring it into SQLite's `source_roots`.
 pub mod source;
+
+/// Cloud-sync client helpers: match keys, redaction, auth file, allowlist cache.
+pub mod sync;

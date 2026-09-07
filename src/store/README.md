@@ -38,6 +38,9 @@ One line per file, named after its primary item:
 | `repo_drop.rs` | `drop_repo` | Drop every code-index row and file edge for one repo label in one transaction (`DELETE /api/v1/repos/{name}`), memories kept |
 | `index_runs.rs` | `insert` | `index_runs` writer + newest-first readers — one row per `index-code` run, outcomes (`ok`/`error`/`cancelled`) included |
 | `random_id.rs` | `random_hex` | Shared random-hex id helper, moved out of `serve::security` so non-HTTP callers can use it |
+| `sync_log.rs` | `append` | Append-only cloud-sync change journal (`upsert`/`tombstone`/`restore`, origin `local`/`sync`) |
+| `sync_state.rs` | `ensure` | Per-workspace pull/push cursors for cloud sync |
+| `sync_binding.rs` | `bind_first` | First-push workspace binding + `--allow-secret` overrides |
 | `sources.rs` | `SourceRootUpsert` | `source_roots` row CRUD — the SQLite mirror of `sources.toml` |
 | `tokenizer.rs` | — | Parent declaration for the `tokenizer/` folder (see `store/tokenizer/README.md`) |
 | `vector.rs` | `MemoryHit` | `vec0` insert and KNN against `memory_vec` / `code_vec` |

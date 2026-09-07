@@ -406,6 +406,7 @@ dependencies = [
  "ast-grep-core",
  "ast-grep-language",
  "axum",
+ "base64",
  "cc",
  "clap",
  "clap_complete",

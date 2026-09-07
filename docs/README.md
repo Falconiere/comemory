@@ -21,6 +21,8 @@ Task-oriented recipes for a specific job:
   `eval → mine → tune` learning loop and the ranking knobs.
 - **[The HTTP API](guides/http-api.md)** — the versioned `/api/v1` REST
   surface mirroring the CLI: envelope, auth, route map, jobs, and gating.
+- **[Cloud sync](guides/cloud-sync.md)** — `auth` / `workspaces` / `link` /
+  `sync` against comemory.io (org GitHub App allowlist; local-only personal repos).
 - **[Link code to memories](guides/linking-code-to-memories.md)** — pin
   `--ref-file` / `--ref-symbol` references and read fresh/stale/ghost status.
 - **[Prune, rebuild, and gc](guides/prune-and-gc.md)** — maintenance: trim

@@ -46,6 +46,9 @@ pub(crate) const COPIED_TABLES: &[&str] = &[
     "documents",
     "document_chunks",
     "document_fts",
+    "sync_log",
+    "sync_state",
+    "sync_binding",
 ];
 
 /// Live tables a rebuild deliberately does not copy, each with its reason.

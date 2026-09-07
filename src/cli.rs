@@ -51,6 +51,8 @@ pub mod ingest_code;
 pub mod install_hooks;
 /// Detached auto-reindex spawn behind `indexing.auto_reindex = lazy`.
 pub mod lazy_reindex;
+/// `comemory link`: cache repo → workspace overrides in config.toml.
+pub mod link;
 /// `comemory list`: page live memories.
 pub mod list;
 /// `comemory mine`: distill query reformulations into expansions.
@@ -81,6 +83,8 @@ pub mod show;
 pub mod sources;
 /// `comemory stats` — corpus counters and database size.
 pub mod stats;
+/// `comemory sync`: push/pull against the platform (CLI-only).
+pub mod sync;
 /// `comemory tune`: grid/sampled search over the ranking knobs.
 pub mod tune;
 /// `comemory unindex`: unregister a document source and remove its
@@ -90,6 +94,8 @@ pub mod unindex;
 pub mod upgrade;
 /// `--since` / `--until` / `--as-of` value parsing.
 pub mod when;
+/// `comemory workspaces`: list platform workspaces (CLI-only).
+pub mod workspaces;
 
 /// Top-level CLI. `comemory <subcommand> [--json] [--data-dir DIR]`. The `--json`
 /// and `--data-dir` flags are global so callers can place them either before
@@ -197,6 +203,12 @@ pub enum Cmd {
     Upgrade(upgrade::Args),
     /// Cloud workspace-key login / status / logout (device authorization).
     Auth(auth::Args),
+    /// Push/pull memories against the platform.
+    Sync(sync::Args),
+    /// List platform workspaces for the logged-in device.
+    Workspaces(workspaces::Args),
+    /// Cache repo-label → workspace overrides in `config.toml`.
+    Link(link::Args),
 }
 
 /// Dispatch the parsed `Cli` to its subcommand. The dispatcher is the single
@@ -240,6 +252,9 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::InstallHooks(a) => install_hooks::run(a, cli.json, cli.data_dir).await,
         Cmd::Upgrade(a) => upgrade::run(a, cli.json, cli.data_dir).await,
         Cmd::Auth(a) => auth::run(a, cli.json, cli.data_dir).await,
+        Cmd::Sync(a) => sync::run(a, cli.json, cli.data_dir).await,
+        Cmd::Workspaces(a) => workspaces::run(a, cli.json, cli.data_dir).await,
+        Cmd::Link(a) => link::run(a, cli.json, cli.data_dir).await,
     }
 }
 

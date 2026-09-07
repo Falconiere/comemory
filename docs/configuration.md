@@ -25,7 +25,8 @@ comemory's settings are layered: built-in defaults → an optional `config.toml`
 | `COMEMORY_RELEASES_URL` | Test hook: the release base `comemory upgrade` and `install.sh` resolve `latest` and download assets from; the suite points it at a loopback stand-in. Not a user knob. | `https://github.com/Falconiere/comemory/releases` |
 | `COMEMORY_TUNE_MIN_GOLDEN` | Test hook lowering `comemory tune` / `comemory bandit` minimum-golden-pairs floor; not a tuning knob. | `10` |
 | `COMEMORY_REINFORCE_SEARCH_EDIT_DAYS` | Lookback (days) for search→edit auto-reinforcement: a memory that appeared on a recent `search`/`context` page earns `auto_search_edit` provenance when a referenced file is touched. Must be `≥ 1`. | `7` |
-| `COMEMORY_GIT_AUTO_SYNC` | `true`/`1` to enable best-effort git commit + push after a save. Also settable as `[git] auto_sync` (with `[git] remote`) in `config.toml` — the console's `PATCH /api/v1/memory-stores/default` writes those keys; the env var still wins. | `false` |
+| `COMEMORY_GIT_AUTO_SYNC` | `true`/`1` to enable best-effort git commit + push after a save. Also settable as `[git] auto_sync` (with `[git] remote`) in `config.toml` — the console's `PATCH /api/v1/memory-stores/default` writes those keys; the env var still wins. Distinct from cloud `[sync]`. | `false` |
+| `COMEMORY_API_KEY` | Overrides the device secret in `$COMEMORY_DATA_DIR/auth.json` for platform sync/auth clients. | unset |
 | `COMEMORY_EMBED_HINT` | Free-form identifier of the embedder you used (e.g. `ollama:nomic-embed-text`). Surfaced by `comemory doctor`; never consumed as a switch. | unset |
 | `COMEMORY_EMBED_CMD` | Embed command (`sh -c <cmd>`, text on stdin, `{"embedding":[..]}` on stdout) used by `comemory serve`'s `POST /api/v1/doctor/reembed`. `serve --embed-cmd` overrides it. | unset |
 | `COMEMORY_RANK_DECAY` | ACT-R decay exponent `d` in `ln(n) − d·ln(days+1)`. Must be ≥ 0. Higher → older memories decay faster. | `0.5` |
@@ -56,6 +57,12 @@ Set these in `config.toml`; they have **no** environment override.
 | `tune.rrf_k_grid` / `tune.decay_grid` / `tune.mmr_lambda_grid` / `tune.bm25_grid` | The `[tune]` grid-search axes consumed by `comemory tune` and `comemory bandit`. | — |
 | `bandit.enabled` | When `false`, `comemory bandit --apply` refuses; report still works. | `true` |
 | `reinforce.search_edit_days` | File overlay for the search→edit lookback (same as `COMEMORY_REINFORCE_SEARCH_EDIT_DAYS`). | `7` |
+| `sync.after_save` | Best-effort push after each local save (never fails the save). | `true` |
+| `sync.pull_before_context_after` | Pull before `context` when last sync is older than this duration string. | `"5m"` |
+| `sync.verify_every` | Interval hint for `comemory sync --action verify`. | `"7d"` |
+| `sync.allowlist_ttl` | TTL for the cached org-repo allowlist. | `"1h"` |
+| `sync.repos` / `sync.default_workspace` | Optional local overrides (`comemory link`); **not** the allowlist SoT. | empty / unset |
+| `embed.model` | Model id recorded for sync vector import compatibility. | `""` |
 
 ## Vector dimensions (not configurable)
 

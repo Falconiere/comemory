@@ -17,11 +17,13 @@ arg-parsing and TTY/`--json` rendering) and by the matching HTTP handler
 behavior, two transports — a save over HTTP and a save from the CLI write the
 exact same markdown file and SQLite rows.
 
-Two subcommands have no HTTP mapping and are listed as
+Several subcommands have no HTTP mapping and are listed as
 `"transport":"cli-only"` in the route inventory (see
 [`GET /commands`](#get-apiv1commands)) rather than silently omitted: `serve`
-itself — it *is* the server — and `upgrade`, because a server must never
-replace its own binary on request.
+itself — it *is* the server — `upgrade`, because a server must never
+replace its own binary on request, and the platform cloud-sync verbs
+`auth` / `workspaces` / `link` / `sync` (they talk to `api.comemory.io`,
+not the local engine).
 
 ## Start a server
 
@@ -195,6 +197,22 @@ disagree, trust the running server.
 | ● `POST /mine` | `mine` | not confirm-gated — a bounded scan, mutates only with `"apply":true` |
 | ● `POST /hooks/install` | `install-hooks` | **confirm**; `repo` contained |
 | ● `POST /rebuild` | `rebuild` | **job**, **confirm**; swaps the server's shared DB connection on success |
+
+**Cloud sync** (`serve/routes/sync.rs`) — engine half of Slice 2; the
+platform Worker forwards `/v1/sync/*` here after device auth, rate limits, and
+the org-repo allowlist gate. Distinct from git `POST /memory-stores/{id}/sync`.
+CLI verbs `auth` / `workspaces` / `link` / `sync` are platform clients
+(cli-only); see [Cloud sync](cloud-sync.md).
+
+| Method + path | CLI command | Notes |
+|---|---|---|
+| ○ `GET /sync/changes?since=&limit=` | *(engine)* | append-only log page; empty → `{entries:[], next_seq:null, head_seq}` through the envelope |
+| ● `POST /sync/import` | *(engine)* | batch apply (import rules 1–10); optional `X-Comemory-Author` (Worker stamps user id). Per-entry `status`: `accepted` \| `exists` \| `stale` \| `deleted` \| `id_collision` \| `secret_detected` \| `invalid`. **`repo_not_allowed` is returned by the Worker gate** before forward (non-allowlisted / ambiguous / `isPersonal` target) — not minted by the engine path alone |
+| ○ `GET /sync/manifest` | *(engine)* | 256 bucket hashes over live content hashes + `head_seq` |
+
+Platform device keys, rate limits (`sync_pull` 120/min, `sync_import` 30/min,
+`sync_workspace` 600/min), and GitHub App allowlist SoT live in comemory.io
+`docs/platform-api.md` § Slice 2.
 
 **Meta / jobs**
 

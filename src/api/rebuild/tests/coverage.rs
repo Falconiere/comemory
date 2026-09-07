@@ -110,26 +110,35 @@ fn derive_live_tables() -> BTreeSet<String> {
 ///
 /// Bumped 25 -> 27 by the v14 console migration, which added `eval_runs`
 /// and `gc_runs`, and 27 -> 28 by the v15 console-API migration, which
-/// added `index_runs`. All three went into `COPIED_TABLES`: they are run
-/// history, and markdown cannot reconstruct history. Without that answer a
-/// rebuild would have silently discarded every recorded eval, gc, and
-/// index run — which is exactly what this canary exists to prevent.
+/// added `index_runs`, and 28 -> 31 by the v16 sync migration
+/// (`sync_log` / `sync_state` / `sync_binding`). All went into
+/// `COPIED_TABLES`: they are history / sync state markdown cannot
+/// reconstruct. Without that answer a rebuild would have silently
+/// discarded every recorded eval, gc, and index run — and reset sync
+/// cursors — which is exactly what this canary exists to prevent.
 #[test]
-fn migration_integrity_derived_live_set_has_exactly_twenty_eight_tables() {
+fn migration_integrity_derived_live_set_has_exactly_thirty_one_tables() {
     let live = derive_live_tables();
     assert_eq!(
         live.len(),
-        28,
-        "expected exactly 28 live tables, got {}: {live:?}",
+        31,
+        "expected exactly 31 live tables, got {}: {live:?}",
         live.len()
     );
     // The count alone would still pass if a history table were added to
     // the schema and then filed under the wrong allowlist, so name the
-    // three the bumps above were about.
-    for table in ["eval_runs", "gc_runs", "index_runs"] {
+    // tables the bumps above were about.
+    for table in [
+        "eval_runs",
+        "gc_runs",
+        "index_runs",
+        "sync_log",
+        "sync_state",
+        "sync_binding",
+    ] {
         assert!(
             COPIED_TABLES.contains(&table),
-            "{table} is run history markdown cannot reconstruct — it must be COPIED"
+            "{table} is history/sync state markdown cannot reconstruct — it must be COPIED"
         );
         assert!(
             !RECONSTRUCTABLE_TABLES
