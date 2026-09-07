@@ -16,6 +16,9 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::{Value, json};
 
+/// Hard ceiling for request bodies in the fixture (avoids OOM on bad Content-Length).
+const MAX_BODY: usize = 10_000_000;
+
 /// Mutable responses the fixture serves.
 #[derive(Debug, Clone)]
 pub struct SyncPlatformState {
@@ -47,7 +50,7 @@ pub struct SyncPlatformState {
     pub buckets_once: Option<Vec<String>>,
     /// Fixed import response `results` array.
     pub import_results: Value,
-    /// Last raw body accepted by `POST /v1/sync/import` (for assertions).
+    /// Last `POST /v1/sync/import` body (for test assertions).
     pub last_import_body: Option<String>,
     /// Workspace list rows for `GET /v1/workspaces`.
     pub workspaces: Value,
@@ -142,7 +145,6 @@ pub fn empty_manifest_buckets() -> Vec<String> {
 }
 
 fn handle(mut stream: TcpStream, state: &Arc<Mutex<SyncPlatformState>>) -> std::io::Result<()> {
-    const MAX_BODY: usize = 10_000_000;
     let mut reader = BufReader::new(stream.try_clone()?);
     let mut request_line = String::new();
     reader.read_line(&mut request_line)?;
@@ -171,35 +173,30 @@ fn handle(mut stream: TcpStream, state: &Arc<Mutex<SyncPlatformState>>) -> std::
                 .unwrap_or_default();
         }
     }
-    if content_length > MAX_BODY {
-        let resp = json!({"error":"payload_too_large"}).to_string();
-        let head = format!(
-            "HTTP/1.1 413 Payload Too Large\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
-            resp.len()
-        );
-        stream.write_all(head.as_bytes())?;
-        stream.write_all(resp.as_bytes())?;
-        return stream.flush();
-    }
-    let mut body = vec![0u8; content_length];
-    if content_length > 0 {
-        reader.read_exact(&mut body)?;
-    }
-    let Ok(body_str) = String::from_utf8(body) else {
-        let resp = json!({"error":"invalid_utf8"}).to_string();
-        let head = format!(
-            "HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
-            resp.len()
-        );
-        stream.write_all(head.as_bytes())?;
-        stream.write_all(resp.as_bytes())?;
-        return stream.flush();
+    // Cap body size so a buggy Content-Length cannot OOM the test process.
+    let (status, resp) = if content_length > MAX_BODY {
+        (
+            "413 Payload Too Large",
+            json!({"error": "body too large"}).to_string(),
+        )
+    } else {
+        let mut body = vec![0u8; content_length];
+        if content_length > 0 {
+            reader.read_exact(&mut body)?;
+        }
+        match String::from_utf8(body) {
+            Ok(body_str) => route(&method, &path, &query, &body_str, &authorization, state),
+            Err(_) => (
+                "400 Bad Request",
+                json!({"error": "body is not utf-8"}).to_string(),
+            ),
+        }
     };
-    let (status, resp) = route(&method, &path, &query, &body_str, &authorization, state);
     let head = format!(
         "HTTP/1.1 {status}\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
         resp.len()
     );
+    // `try_clone` keeps `stream` for the response write; `BufReader` owns the clone.
     stream.write_all(head.as_bytes())?;
     if method != "HEAD" {
         stream.write_all(resp.as_bytes())?;
@@ -334,6 +331,8 @@ fn sync_changes(
         "next_seq": next_seq,
         "head_seq": st.head_seq
     }));
+    // Clear only after the response body is built so a panic cannot drop the
+    // fixture payload before the client sees it.
     if st.consume_changes {
         st.changes = json!([]);
     }
