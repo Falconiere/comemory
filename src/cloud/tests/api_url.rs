@@ -15,15 +15,18 @@ use comemory::cloud::api_url::{DEFAULT_API_URL, resolve};
 
 #[test]
 fn resolve_defaults_to_production_api() {
+    let prev = std::env::var("COMEMORY_API").ok();
     // SAFETY: nextest serializes this suite — set_var/remove_var cannot race.
     unsafe {
         std::env::remove_var("COMEMORY_API");
     }
     assert_eq!(resolve(None).unwrap(), DEFAULT_API_URL);
+    restore_comemory_api(prev);
 }
 
 #[test]
 fn resolve_prefers_cli_over_env_and_strips_slash() {
+    let prev = std::env::var("COMEMORY_API").ok();
     // SAFETY: nextest serializes this suite — set_var/remove_var cannot race.
     unsafe {
         std::env::set_var("COMEMORY_API", "https://env.example/");
@@ -33,8 +36,15 @@ fn resolve_prefers_cli_over_env_and_strips_slash() {
         "https://cli.example"
     );
     assert_eq!(resolve(None).unwrap(), "https://env.example");
+    restore_comemory_api(prev);
+}
+
+fn restore_comemory_api(prev: Option<String>) {
     // SAFETY: nextest serializes this suite — set_var/remove_var cannot race.
     unsafe {
-        std::env::remove_var("COMEMORY_API");
+        match prev {
+            Some(v) => std::env::set_var("COMEMORY_API", v),
+            None => std::env::remove_var("COMEMORY_API"),
+        }
     }
 }

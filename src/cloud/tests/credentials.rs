@@ -40,16 +40,17 @@ fn save_load_round_trip_and_mode_0600() {
 
 #[test]
 fn comemory_api_key_overrides_file_secret() {
-    // SAFETY: nextest serializes this suite — set_var/remove_var cannot race.
-    unsafe {
-        std::env::set_var("COMEMORY_API_KEY", "cmk_from_env");
-    }
+    let prev = std::env::var("COMEMORY_API_KEY").ok();
     let creds = Credentials {
         api_url: "https://api.example".into(),
         secret: "cmk_from_file".into(),
         key_prefix: "cmk_file".into(),
         workspace_id: "ws-1".into(),
     };
+    // SAFETY: nextest serializes this suite — set_var/remove_var cannot race.
+    unsafe {
+        std::env::set_var("COMEMORY_API_KEY", "cmk_from_env");
+    }
     assert_eq!(
         effective_secret(Some(&creds)).unwrap().as_deref(),
         Some("cmk_from_env")
@@ -62,4 +63,11 @@ fn comemory_api_key_overrides_file_secret() {
         effective_secret(Some(&creds)).unwrap().as_deref(),
         Some("cmk_from_file")
     );
+    // SAFETY: restore whatever the process had when the test started.
+    unsafe {
+        match prev {
+            Some(v) => std::env::set_var("COMEMORY_API_KEY", v),
+            None => std::env::remove_var("COMEMORY_API_KEY"),
+        }
+    }
 }
