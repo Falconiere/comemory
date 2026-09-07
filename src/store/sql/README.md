@@ -35,6 +35,7 @@ One line per file:
 | `0013_v13_documents.sql` | v13: unified document indexing — source registry mirror, documents, chunks, BM25 index |
 | `0014_v14_console.sql` | v14: console history tables — `eval_runs` (one row per eval/tune/bandit run) and `gc_runs` |
 | `0015_v15_console_api.sql` | v15: console API — `index_runs` history, `eval_runs.discarded` (dismissed proposal), `repo_marker.archived` |
+| `0016_v16_sync.sql` | v16: cloud sync — `sync_log`, `sync_state`, `sync_binding`, `memory_vector_model` schema_meta key |
 
 When you add a migration, append the next-numbered file and add its row above
 — never edit an existing one.

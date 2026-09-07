@@ -9,6 +9,7 @@ use super::learning::{
     BanditConfig, PartialBanditConfig, PartialReinforceConfig, PartialTuneConfig, ReinforceConfig,
 };
 use super::retrieval::PartialRetrievalConfig;
+use super::sync::{EmbedConfig, PartialEmbedConfig, PartialSyncConfig, SyncConfig};
 use crate::prelude::*;
 
 /// Re-export: historical `config::file::TuneConfig` import path.
@@ -54,6 +55,10 @@ struct PartialConfig {
     /// Optional file-overlay for the git auto-sync knobs. Absent keys leave
     /// defaults; `COMEMORY_GIT_AUTO_SYNC` still overrides `auto_sync`.
     git: Option<PartialGitConfig>,
+    /// Optional file-overlay for cloud sync knobs.
+    sync: Option<PartialSyncConfig>,
+    /// Optional file-overlay for the embed model id.
+    embed: Option<PartialEmbedConfig>,
 }
 
 /// File-overlay partial for [`GitConfig`]. Both keys optional — the console's
@@ -339,6 +344,12 @@ pub struct Config {
     /// `comemory doctor`; comemory itself never reads it as a switch.
     #[serde(default)]
     pub embed_hint: Option<String>,
+    /// Cloud sync knobs — see [`SyncConfig`].
+    #[serde(default)]
+    pub sync: SyncConfig,
+    /// Embed model recorded in `schema_meta` — see [`EmbedConfig`].
+    #[serde(default)]
+    pub embed: EmbedConfig,
 }
 
 impl Config {
@@ -382,6 +393,8 @@ impl Config {
                 color: "auto".into(),
             },
             embed_hint: None,
+            sync: SyncConfig::defaults(),
+            embed: EmbedConfig::defaults(),
         }
     }
 
@@ -439,6 +452,12 @@ impl Config {
             if let Some(v) = pg.remote {
                 self.git.remote = v;
             }
+        }
+        if let Some(ps) = partial.sync {
+            self.sync.apply(ps);
+        }
+        if let Some(pe) = partial.embed {
+            self.embed.apply(pe);
         }
         self.validate()
     }

@@ -58,6 +58,12 @@ pub struct Request {
 /// code-ref self-reinforcement below) — see `api::search::run`'s doc for
 /// the CLI/HTTP split.
 pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<ContextResult> {
+    let paths = ctx.paths;
+    let cfg = ctx.cfg;
+    {
+        let conn = ctx.conn()?;
+        crate::sync::auto::pull_before_context_best_effort(paths, cfg, conn);
+    }
     // Copied out before `ctx.conn()` so the later mutable borrow of `ctx`
     // (for the connection) doesn't also lock out this field.
     let cfg = ctx.cfg;

@@ -40,6 +40,8 @@ pub struct SaveParams<'a> {
     /// written into the frontmatter and materialized to `edges` + `code_ref`
     /// rows by `store::memory_row::insert`.
     pub references: References,
+    /// Creation timestamp. When `None`, [`MemoryStore::save`] stamps `now_utc()`.
+    pub created: Option<OffsetDateTime>,
 }
 
 impl<'a> SaveParams<'a> {
@@ -56,6 +58,7 @@ impl<'a> SaveParams<'a> {
             quality: 3,
             relations: Relations::default(),
             references: References::default(),
+            created: None,
         }
     }
 }
@@ -134,7 +137,7 @@ impl MemoryStore {
             repo: p.repo.to_string(),
             tags: p.tags.to_vec(),
             author: p.author.to_string(),
-            created: OffsetDateTime::now_utc(),
+            created: p.created.unwrap_or_else(OffsetDateTime::now_utc),
             quality: p.quality,
             schema: 1,
             content_hash,

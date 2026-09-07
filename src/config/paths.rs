@@ -70,6 +70,12 @@ impl Paths {
         self.data_dir.join("config.toml")
     }
 
+    /// Device-login credentials written by `comemory auth login` (`auth.json`,
+    /// mode `0600` on unix).
+    pub fn auth_file(&self) -> PathBuf {
+        self.data_dir.join("auth.json")
+    }
+
     /// Durable source registry file (`src/source/registry.rs`), the
     /// authoritative record of registered document roots.
     pub fn sources_file(&self) -> PathBuf {
@@ -80,12 +86,6 @@ impl Paths {
     /// read-modify-write cycles (`src/source/lock.rs`).
     pub fn sources_lock_file(&self) -> PathBuf {
         self.data_dir.join("sources.toml.lock")
-    }
-
-    /// Cloud workspace-key credentials (`auth.json`) written by
-    /// `comemory auth login` (mode `0600`).
-    pub fn auth_file(&self) -> PathBuf {
-        self.data_dir.join("auth.json")
     }
 
     /// Sibling exclusive-flock file guarding the migration preflight's

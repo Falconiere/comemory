@@ -73,6 +73,7 @@ One line per file, named after its primary item:
 | `restore.rs` | `Response` | Console-only: `POST /api/v1/memories/{id}/restore` / `POST /trash/{id}/restore` — bring a soft-deleted memory back from `.trash/`, re-deriving the incoming relation edges soft-delete dropped from the live tree's frontmatter; a mirror failure names the path and the `rebuild` recovery |
 | `suggest.rs` | `Request` | Console-only: `GET /api/v1/search/suggest` — mined expansions + recent queries for the ⌘K palette |
 | `trash.rs` | `TrashRow` | Console-only: `GET /api/v1/trash` — soft-deleted memories with their days until gc |
+| `sync/` | `import::run` | Cloud sync: `changes` / `import` / `manifest` middles for `/api/v1/sync/*` |
 | `update.rs` | `Request` | Console-only: `PATCH /api/v1/memories/{id}` — frontmatter patch in place, body patch as a superseding re-save |
 
 When you add a file here, add its row above so the index stays current. No

@@ -48,11 +48,12 @@ pub(crate) fn soft_delete(
     paths: &Paths,
     conn: &mut rusqlite::Connection,
     id: &str,
-) -> Result<(String, bool)> {
+) -> Result<(String, String, bool)> {
     let removed = MemoryStore::new(paths.clone()).delete(id)?;
+    let content_hash = removed.frontmatter.content_hash.clone();
     let id = removed.frontmatter.id;
     let derived_stale = mirror_soft_delete(conn, &id)?;
-    Ok((id, derived_stale))
+    Ok((id, content_hash, derived_stale))
 }
 
 /// Mirror a soft-delete into `comemory.db` in one transaction: stamp

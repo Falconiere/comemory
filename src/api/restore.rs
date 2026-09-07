@@ -25,6 +25,7 @@ use crate::api::Ctx;
 use crate::graph::edges::{self, EdgeKey};
 use crate::memory::{MemoryRecord, MemoryStore};
 use crate::prelude::*;
+use crate::store::{memory_row, sync_log};
 
 /// `POST /api/v1/memories/{id}/restore` / `POST /api/v1/trash/{id}/restore`
 /// response.
@@ -62,6 +63,7 @@ pub fn run(ctx: &mut Ctx<'_>, id: &str) -> Result<Response> {
             e
         ))
     })?;
+    append_local_restore(ctx.conn()?, &record)?;
     Ok(Response {
         id: record.frontmatter.id.clone(),
         path: record.path.to_string_lossy().into_owned(),
@@ -126,6 +128,23 @@ fn relink_incoming(conn: &Connection, live: &[MemoryRecord], id: &str) -> Result
         }
     }
     Ok(emitted)
+}
+
+/// Append a local-origin restore row after the mirror succeeds.
+fn append_local_restore(conn: &mut Connection, record: &MemoryRecord) -> Result<()> {
+    let fm = &record.frontmatter;
+    let at = memory_row::iso_format(fm.created)?;
+    let tx = conn.transaction()?;
+    sync_log::append(
+        &tx,
+        sync_log::SyncOp::Restore,
+        &fm.id,
+        &fm.content_hash,
+        &at,
+        sync_log::SyncOrigin::Local,
+    )?;
+    tx.commit()?;
+    Ok(())
 }
 
 #[cfg(test)]

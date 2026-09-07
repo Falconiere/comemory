@@ -8,6 +8,8 @@ use serde::Serialize;
 
 use crate::api::Ctx;
 use crate::prelude::*;
+use crate::store::{memory_row, sync_log};
+use time::OffsetDateTime;
 
 /// `comemory delete` / `DELETE /api/v1/memories/{id}` response.
 #[derive(Serialize, Debug)]
@@ -30,9 +32,42 @@ pub struct Response {
 pub fn run(ctx: &mut Ctx<'_>, id: &str) -> Result<Response> {
     let paths = ctx.paths;
     let conn = ctx.conn()?;
-    let (deleted, derived_stale) = crate::cli::delete::soft_delete(paths, conn, id)?;
+    let (deleted, content_hash, derived_stale) = crate::cli::delete::soft_delete(paths, conn, id)?;
+    append_local_tombstone(conn, &deleted, &content_hash);
     Ok(Response {
         deleted,
         derived_stale,
     })
+}
+
+/// Best-effort sync-log row for a local delete — the delete itself already
+/// committed, so a failure here is logged rather than propagated.
+fn append_local_tombstone(conn: &mut rusqlite::Connection, memory_id: &str, content_hash: &str) {
+    let at = match memory_row::iso_format(OffsetDateTime::now_utc()) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!(error = %e, "sync_log tombstone skipped: timestamp format failed");
+            return;
+        }
+    };
+    let result = (|| -> Result<()> {
+        let tx = conn.transaction()?;
+        sync_log::append(
+            &tx,
+            sync_log::SyncOp::Tombstone,
+            memory_id,
+            content_hash,
+            &at,
+            sync_log::SyncOrigin::Local,
+        )?;
+        tx.commit()?;
+        Ok(())
+    })();
+    if let Err(e) = result {
+        tracing::warn!(
+            memory_id,
+            error = %e,
+            "sync_log tombstone append failed after delete"
+        );
+    }
 }

@@ -16,6 +16,7 @@
         "memory_store",
         "rebuild",
         "repos",
+        "sync",
         "tests",
         "proptest-regressions"
       ],
@@ -26,6 +27,14 @@
       ],
       "retrieval": [
         "unified",
+        "tests",
+        "proptest-regressions"
+      ],
+      "sync": [
+        "allowlist_cache",
+        "auth_file",
+        "match_key",
+        "redact",
         "tests",
         "proptest-regressions"
       ],
@@ -53,6 +62,7 @@
       "api/memory_store",
       "api/rebuild",
       "api/repos",
+      "api/sync",
       "ast",
       "cli",
       "cli/graph",
@@ -72,6 +82,7 @@
       "serve/routes/maint",
       "serve/routes/memories",
       "source",
+      "sync",
       "stats",
       "store",
       "store/migrate",

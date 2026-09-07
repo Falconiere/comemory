@@ -109,6 +109,8 @@ pub mod repo_admin;
 pub mod restore;
 /// `GET /search/suggest`: mined expansions + recent queries.
 pub mod suggest;
+/// `GET /sync/{changes,manifest}` and `POST /sync/import`.
+pub mod sync;
 /// `GET /trash`: soft-deleted memories.
 pub mod trash;
 /// `PATCH /memories/{id}`: frontmatter/body update.

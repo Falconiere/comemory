@@ -20,7 +20,7 @@ use crate::api::Ctx;
 use crate::cli::{parse_id_csv, ref_args};
 use crate::memory::{Kind, MemoryStore, References, Relations, SaveParams, id};
 use crate::prelude::*;
-use crate::store::{embed, memory_row, vector};
+use crate::store::{embed, memory_row, sync_log, vector};
 
 /// `comemory save` / `POST /api/v1/memories` request. The stdin/`-` body
 /// convenience is CLI-only — `body` is a required JSON field over HTTP.
@@ -191,6 +191,7 @@ pub fn run_with(
 
     let params = build_params(&req, relations, references);
     let rec = persist(conn, paths, params, vector.as_deref())?;
+    crate::sync::auto::after_save_best_effort(paths, cfg, conn);
 
     Ok(Response {
         id: rec.frontmatter.id.clone(),
@@ -259,6 +260,7 @@ fn build_params(req: &Request, relations: Relations, references: References) -> 
         quality: req.quality,
         relations,
         references,
+        created: None,
     }
 }
 
@@ -361,6 +363,15 @@ fn write_sqlite_mirror(
         )?;
         vector::insert_memory(&tx, &fm.id, v)?;
     }
+    let at = memory_row::iso_format(fm.created)?;
+    sync_log::append(
+        &tx,
+        sync_log::SyncOp::Upsert,
+        &fm.id,
+        &fm.content_hash,
+        &at,
+        sync_log::SyncOrigin::Local,
+    )?;
     tx.commit()?;
     Ok(())
 }
