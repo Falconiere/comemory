@@ -135,14 +135,16 @@ fn ac17_ambiguous_basename_skipped_without_network() {
 fn allowlisted_repo_pushes_over_loopback() {
     use crate::test_common::sync_platform_server::{SyncPlatformServer, SyncPlatformState};
 
-    let mut state = SyncPlatformState::default();
-    state.import_results = serde_json::json!([{
-        "id": "will-replace",
-        "content_hash": "aa".repeat(32),
-        "status": "accepted",
-        "seq": 1
-    }]);
-    let server = SyncPlatformServer::start(state);
+    let platform = SyncPlatformState {
+        import_results: serde_json::json!([{
+            "id": "will-replace",
+            "content_hash": "aa".repeat(32),
+            "status": "accepted",
+            "seq": 1
+        }]),
+        ..Default::default()
+    };
+    let server = SyncPlatformServer::start(platform);
     let secret = server.snapshot().secret;
 
     let home = tempfile::tempdir().expect("tempdir");
@@ -189,7 +191,8 @@ fn allowlisted_repo_pushes_over_loopback() {
     }
 
     let auth = AuthFile::load(&paths).expect("load").expect("auth");
-    let stats = push::run_push(&paths, &cfg, &mut conn, &auth, workspace, None, 100).expect("push");
-    assert_eq!(stats.pushed, 1);
-    assert!(stats.last_pushed_seq >= 1);
+    let push_stats =
+        push::run_push(&paths, &cfg, &mut conn, &auth, workspace, None, 100).expect("push");
+    assert_eq!(push_stats.pushed, 1);
+    assert!(push_stats.last_pushed_seq >= 1);
 }

@@ -71,10 +71,12 @@ fn seed_auth(paths: &Paths, api_url: &str, secret: &str, workspace: &str) {
 #[test]
 fn pull_applies_remote_upsert_and_advances_cursor() {
     let body = "remote upsert pulled into a fresh local store";
-    let mut state = SyncPlatformState::default();
-    state.head_seq = 7;
-    state.changes = serde_json::json!([upsert_wire_entry(body, 7)]);
-    let server = SyncPlatformServer::start(state);
+    let platform = SyncPlatformState {
+        head_seq: 7,
+        changes: serde_json::json!([upsert_wire_entry(body, 7)]),
+        ..Default::default()
+    };
+    let server = SyncPlatformServer::start(platform);
     let secret = server.snapshot().secret;
 
     let home = tempfile::tempdir().expect("tempdir");
@@ -86,9 +88,9 @@ fn pull_applies_remote_upsert_and_advances_cursor() {
     seed_auth(&paths, &server.base, &secret, workspace);
 
     let auth = AuthFile::load(&paths).expect("load").expect("auth");
-    let stats = pull::run_pull(&paths, &cfg, &mut conn, &auth, workspace, 100).expect("pull");
-    assert_eq!(stats.pulled, 1);
-    assert_eq!(stats.last_pulled_seq, 7);
+    let pull_stats = pull::run_pull(&paths, &cfg, &mut conn, &auth, workspace, 100).expect("pull");
+    assert_eq!(pull_stats.pulled, 1);
+    assert_eq!(pull_stats.last_pulled_seq, 7);
 
     let row = sync_state::get(&conn, workspace)
         .expect("get")
@@ -104,10 +106,12 @@ fn pull_applies_remote_upsert_and_advances_cursor() {
 
 #[test]
 fn empty_remote_changes_still_records_head() {
-    let mut state = SyncPlatformState::default();
-    state.head_seq = 42;
-    state.changes = serde_json::json!([]);
-    let server = SyncPlatformServer::start(state);
+    let platform = SyncPlatformState {
+        head_seq: 42,
+        changes: serde_json::json!([]),
+        ..Default::default()
+    };
+    let server = SyncPlatformServer::start(platform);
     let secret = server.snapshot().secret;
 
     let home = tempfile::tempdir().expect("tempdir");
@@ -119,7 +123,7 @@ fn empty_remote_changes_still_records_head() {
     seed_auth(&paths, &server.base, &secret, workspace);
 
     let auth = AuthFile::load(&paths).expect("load").expect("auth");
-    let stats = pull::run_pull(&paths, &cfg, &mut conn, &auth, workspace, 50).expect("pull");
-    assert_eq!(stats.pulled, 0);
-    assert_eq!(stats.last_pulled_seq, 42);
+    let pull_stats = pull::run_pull(&paths, &cfg, &mut conn, &auth, workspace, 50).expect("pull");
+    assert_eq!(pull_stats.pulled, 0);
+    assert_eq!(pull_stats.last_pulled_seq, 42);
 }

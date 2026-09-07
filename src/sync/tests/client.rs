@@ -60,9 +60,11 @@ fn list_workspaces_and_allowlist_paths() {
 
 #[test]
 fn fetch_allowlist_404_is_empty() {
-    let mut state = SyncPlatformState::default();
-    state.status_404 = true;
-    let server = SyncPlatformServer::start(state);
+    let platform = SyncPlatformState {
+        status_404: true,
+        ..Default::default()
+    };
+    let server = SyncPlatformServer::start(platform);
     let secret = server.snapshot().secret;
     let (repos, etag) =
         client::fetch_allowlist(&server.base, &secret, "ws", None).expect("404 status");
@@ -72,9 +74,11 @@ fn fetch_allowlist_404_is_empty() {
 
 #[test]
 fn fetch_allowlist_envelope_error_surfaces() {
-    let mut state = SyncPlatformState::default();
-    state.status_error = Some(("forbidden".into(), "no sync".into()));
-    let server = SyncPlatformServer::start(state);
+    let platform = SyncPlatformState {
+        status_error: Some(("forbidden".into(), "no sync".into())),
+        ..Default::default()
+    };
+    let server = SyncPlatformServer::start(platform);
     let secret = server.snapshot().secret;
     let err = client::fetch_allowlist(&server.base, &secret, "ws", None).expect_err("gate");
     let msg = err.to_string();
@@ -83,23 +87,25 @@ fn fetch_allowlist_envelope_error_surfaces() {
 
 #[test]
 fn pull_changes_push_import_and_manifest() {
-    let mut state = SyncPlatformState::default();
-    state.head_seq = 3;
-    state.changes = serde_json::json!([{
-        "seq": 3,
-        "op": "tombstone",
-        "id": "deadbeef",
-        "content_hash": "00".repeat(32),
-        "at": "2026-09-06T12:00:00Z",
-        "author": "peer",
-        "record": null
-    }]);
-    state.import_results = serde_json::json!([{
-        "id": "abcd1234",
-        "content_hash": "aa".repeat(32),
-        "status": "repo_not_allowed"
-    }]);
-    let server = SyncPlatformServer::start(state);
+    let platform = SyncPlatformState {
+        head_seq: 3,
+        changes: serde_json::json!([{
+            "seq": 3,
+            "op": "tombstone",
+            "id": "deadbeef",
+            "content_hash": "00".repeat(32),
+            "at": "2026-09-06T12:00:00Z",
+            "author": "peer",
+            "record": null
+        }]),
+        import_results: serde_json::json!([{
+            "id": "abcd1234",
+            "content_hash": "aa".repeat(32),
+            "status": "repo_not_allowed"
+        }]),
+        ..Default::default()
+    };
+    let server = SyncPlatformServer::start(platform);
     let secret = server.snapshot().secret;
 
     let changes = client::pull_changes(&server.base, &secret, "ws-org", 0, 50).expect("changes");
