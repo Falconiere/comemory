@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-09-07
+
+### Added
+
+- add Slice 2 cloud sync for org workspaces
+
+### Fixed
+
+- move fixture MAX_BODY to module scope
+- hoist MemoryStore and harden platform fixture
+- harden sync platform fixture per review
+- silence clippy on loopback platform tests
+- wire sync.import into AC-4 mutating sweep
+- bump schema version pins for v16 sync
+- clear clippy denials in Slice 2 tests
+- unbreak Slice 2 test compiles and CLI docs
+
 ## [0.20.0] - 2026-09-07
 
 ### Added
