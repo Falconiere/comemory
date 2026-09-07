@@ -42,6 +42,40 @@ publish = false
 # is not a release. The gate only delays: a `ci:` commit still lands in the
 # next release's diff, and a breaking one still renders under BREAKING there.
 release_commits = '^(feat|fix|perf|refactor|style|revert|sec(urity)?)(\(.+\))?!?:|^[a-z]+(\(.+\))?!:|(?m:^BREAKING[ -]CHANGE ?(:|#))'
+# Default `pr_body` pastes cargo-semver-checks stdout (`--- failure … ---`,
+# `/tmp/.tmp…` paths) as the hero section. That reads as a CI crash (PR #94)
+# even when the job is green. Lead with the changelog; keep a one-line ⚠ on
+# the version when the *library* API changed. Do not dump the lint report.
+pr_body = """
+{% set changes %}
+{%- for release in releases %}
+{%- if release.title and release.changelog %}{% if releases | length > 1 %}
+## `{{ release.package }}`
+{% endif %}
+<blockquote>
+
+## {{ release.title }}
+
+{{ release.changelog }}
+</blockquote>{% endif %}
+{% endfor %}
+{% endset %}
+
+## 🤖 New release
+{% for release in releases %}
+* `{{ release.package }}`: {% if release.previous_version and release.previous_version != release.next_version %}{{ release.previous_version }} -> {% endif %}{{ release.next_version }}{% if release.semver_check == "incompatible" %} (⚠ library API change){% elif release.semver_check == "compatible" %} (✓ API compatible){% endif %}
+{%- endfor %}
+{%- for release in releases %}{% if release.semver_check == "incompatible" %}
+
+> `{{ release.package }}`: cargo-semver-checks reported a public Rust API change vs the previous tag. On `0.x` that is a minor bump, not a patch. This is not a CI failure — user-facing changes are in the changelog.
+{% endif %}{% endfor %}
+{% if changes %}
+
+{{ changes }}
+{% endif %}
+---
+This PR was generated with [release-plz](https://github.com/release-plz/release-plz/).
+"""
 
 # Changelog generation (git-cliff under the hood). The commit_parsers below
 # carry forward the buckets of the now-retired scripts/changelog-draft.sh so the
