@@ -62,7 +62,7 @@ fn import_new_upsert_is_accepted() {
         &mut ctx,
         sync::ImportRequest {
             cursor: 0,
-            entries: vec![import_entry(&body, SyncOp::Upsert)],
+            entries: vec![import_entry(body, SyncOp::Upsert)],
         },
         Some("device-user"),
     )
@@ -159,10 +159,8 @@ fn secret_detected_blocks_upsert() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let body = format!(
-        "leaked {} key in body",
-        format!("AKIA{}{}", "IOSFODNN7", "EXAMPLE")
-    );
+    let aws_key = format!("AKIA{}{}", "IOSFODNN7", "EXAMPLE");
+    let body = format!("leaked {aws_key} key in body");
     let resp = sync::import::run(
         &mut ctx,
         sync::ImportRequest {

@@ -50,7 +50,7 @@ fn allowlist_cache_roundtrip_and_classify() {
 #[test]
 fn allowlist_cache_is_fresh_within_ttl() {
     let cache = sample_cache();
-    assert!(cache.is_fresh(Duration::from_secs(3600)));
+    assert!(cache.is_fresh(Duration::from_hours(1)));
 }
 
 #[test]
@@ -62,6 +62,6 @@ fn classify_with_cache_returns_none_when_stale() {
     cache.fetched_at = OffsetDateTime::now_utc() - time::Duration::hours(2);
     cache.save(&paths).expect("save");
 
-    let outcome = classify_with_cache(&paths, "foo", Duration::from_secs(60)).expect("classify");
+    let outcome = classify_with_cache(&paths, "foo", Duration::from_mins(1)).expect("classify");
     assert!(outcome.is_none());
 }

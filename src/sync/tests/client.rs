@@ -102,6 +102,20 @@ fn gated_import_envelope_parses_repo_not_allowed() {
 
 #[test]
 fn mint_and_workspace_list_shapes() {
+    #[derive(serde::Deserialize)]
+    struct Body {
+        workspaces: Vec<View>,
+    }
+    #[derive(serde::Deserialize)]
+    struct View {
+        workspace: Inner,
+    }
+    #[derive(serde::Deserialize)]
+    struct Inner {
+        id: String,
+        name: String,
+    }
+
     let mint = r#"{
       "secret": "cmk_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "keyPrefix": "cmk_aaaa",
@@ -120,19 +134,6 @@ fn mint_and_workspace_list_shapes() {
         }
       ]
     }"#;
-    #[derive(serde::Deserialize)]
-    struct Body {
-        workspaces: Vec<View>,
-    }
-    #[derive(serde::Deserialize)]
-    struct View {
-        workspace: Inner,
-    }
-    #[derive(serde::Deserialize)]
-    struct Inner {
-        id: String,
-        name: String,
-    }
     let body: Body = serde_json::from_str(list).expect("list");
     assert_eq!(body.workspaces[0].workspace.id, "ws-personal");
     assert_eq!(body.workspaces[0].workspace.name, "Personal");
