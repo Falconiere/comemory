@@ -74,18 +74,16 @@ impl Home {
     }
 }
 
-fn skip_without_http() -> bool {
-    if tooling_present() {
-        return false;
-    }
-    true
+fn require_http_tools() {
+    assert!(
+        tooling_present(),
+        "curl or wget required for auth integration tests"
+    );
 }
 
 #[test]
 fn login_writes_auth_json_mode_0600_and_usable_secret() {
-    if skip_without_http() {
-        return;
-    }
+    require_http_tools();
     let srv = DeviceAuthServer::start_default();
     let home = Home::new();
     let report = home.run_json(None, &["auth", "login", "--api-url", &srv.base]);
@@ -109,9 +107,7 @@ fn login_writes_auth_json_mode_0600_and_usable_secret() {
 
 #[test]
 fn status_reports_authenticated_after_login() {
-    if skip_without_http() {
-        return;
-    }
+    require_http_tools();
     let srv = DeviceAuthServer::start_default();
     let home = Home::new();
     home.run_json(None, &["auth", "login", "--api-url", &srv.base]);
@@ -128,9 +124,7 @@ fn status_reports_authenticated_after_login() {
 
 #[test]
 fn logout_removes_auth_json() {
-    if skip_without_http() {
-        return;
-    }
+    require_http_tools();
     let srv = DeviceAuthServer::start_default();
     let home = Home::new();
     home.run_json(None, &["auth", "login", "--api-url", &srv.base]);
@@ -150,9 +144,7 @@ fn logout_removes_auth_json() {
 
 #[test]
 fn wrong_client_or_expired_poll_surfaces_error() {
-    if skip_without_http() {
-        return;
-    }
+    require_http_tools();
     let home = Home::new();
 
     let reject = DeviceAuthServer::start(DeviceAuthConfig {
@@ -182,9 +174,7 @@ fn wrong_client_or_expired_poll_surfaces_error() {
 
 #[test]
 fn api_url_flag_and_comemory_api_override_default() {
-    if skip_without_http() {
-        return;
-    }
+    require_http_tools();
     let srv = DeviceAuthServer::start_default();
     let home = Home::new();
 

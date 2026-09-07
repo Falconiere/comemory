@@ -6,6 +6,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 
 use crate::prelude::*;
+use crate::store::random_id::random_hex;
 
 /// One outbound HTTP request. `body` is sent as-is when present (callers set
 /// `Content-Type` themselves).
@@ -91,7 +92,7 @@ pub fn final_url(url: &str) -> Result<String> {
 }
 
 fn exchange_curl(req: &Request<'_>) -> Result<Response> {
-    let tmp = tempfile_path();
+    let tmp = tempfile_path()?;
     let mut cmd = Command::new("curl");
     cmd.args(tls_args(req.url))
         .args(["-sS", "-X", req.method, "-o"])
@@ -105,9 +106,10 @@ fn exchange_curl(req: &Request<'_>) -> Result<Response> {
     }
     cmd.arg(req.url);
     let status_text = run_ok(&mut cmd, req.url);
-    let body = std::fs::read_to_string(&tmp).unwrap_or_default();
+    let body = read_body_file(&tmp, req.url);
     let _ = std::fs::remove_file(&tmp);
     let status_text = status_text?;
+    let body = body?;
     let status: u16 = status_text.trim().parse().map_err(|_| {
         Error::Unavailable(format!(
             "could not parse HTTP status from curl for {}: got {status_text:?}",
@@ -118,7 +120,7 @@ fn exchange_curl(req: &Request<'_>) -> Result<Response> {
 }
 
 fn exchange_wget(req: &Request<'_>) -> Result<Response> {
-    let tmp = tempfile_path();
+    let tmp = tempfile_path()?;
     let mut cmd = Command::new("wget");
     cmd.args(["-q", "-S", "-O"]).arg(&tmp);
     for (name, value) in req.headers {
@@ -145,8 +147,9 @@ fn exchange_wget(req: &Request<'_>) -> Result<Response> {
         .output()
         .map_err(|e| unreachable(req.url, &e.to_string()))?;
     let headers = String::from_utf8_lossy(&out.stderr);
-    let body = std::fs::read_to_string(&tmp).unwrap_or_default();
+    let body = read_body_file(&tmp, req.url);
     let _ = std::fs::remove_file(&tmp);
+    let body = body?;
     let status = http_status_from_wget_headers(&headers).ok_or_else(|| {
         unreachable(
             req.url,
@@ -237,10 +240,19 @@ fn probe(name: &str) -> bool {
         .is_ok_and(|s| s.success())
 }
 
-/// A unique path under the process temp dir for curl/wget `-o` bodies.
-fn tempfile_path() -> std::path::PathBuf {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_nanos());
-    std::env::temp_dir().join(format!("comemory-fetch-{nanos}-{}", std::process::id()))
+/// Read the curl/wget body file. Missing/unreadable after a spawn is an
+/// error (not a silent empty body).
+fn read_body_file(path: &Path, url: &str) -> Result<String> {
+    std::fs::read_to_string(path).map_err(|e| {
+        Error::Unavailable(format!(
+            "could not read HTTP body for {url} from {}: {e}",
+            path.display()
+        ))
+    })
+}
+
+/// Unpredictable path under the process temp dir for curl/wget `-o` bodies
+/// (CWE-377 — avoid timestamp/PID-only names in a shared temp dir).
+fn tempfile_path() -> Result<std::path::PathBuf> {
+    Ok(std::env::temp_dir().join(format!("comemory-fetch-{}", random_hex(16)?)))
 }

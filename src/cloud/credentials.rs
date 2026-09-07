@@ -47,7 +47,7 @@ pub fn save(path: &Path, creds: &Credentials) -> Result<()> {
         let _ = fs::remove_file(&tmp);
         return Err(e.into());
     }
-    set_mode_0600(path)?;
+    // rename preserves the 0600 mode set on the tmp file at create time.
     Ok(())
 }
 
@@ -88,21 +88,6 @@ fn write_mode_0600(path: &Path, bytes: &[u8]) -> Result<()> {
     let mut file = opts.open(path)?;
     file.write_all(bytes)?;
     file.sync_all()?;
-    Ok(())
-}
-
-fn set_mode_0600(path: &Path) -> Result<()> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = fs::metadata(path)?.permissions();
-        perms.set_mode(0o600);
-        fs::set_permissions(path, perms)?;
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = path;
-    }
     Ok(())
 }
 

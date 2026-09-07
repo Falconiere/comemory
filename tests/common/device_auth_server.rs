@@ -23,8 +23,6 @@ use std::sync::{Arc, Mutex};
 pub struct DeviceAuthConfig {
     /// How many token polls return `authorization_pending` before success.
     pub pending_polls: u32,
-    /// After pending polls, emit one `slow_down` before the access token.
-    pub emit_slow_down: bool,
     /// Reject every `/auth/device/code` with `invalid_client`.
     pub reject_client: bool,
     /// Every token poll returns `expired_token`.
@@ -45,7 +43,6 @@ impl Default for DeviceAuthConfig {
     fn default() -> Self {
         Self {
             pending_polls: 0,
-            emit_slow_down: false,
             reject_client: false,
             expire_token: false,
             access_token: "dev-access-token".into(),
@@ -69,7 +66,6 @@ struct Shared {
     config: DeviceAuthConfig,
     /// device_code → remaining pending polls (initialized from config).
     codes: Mutex<HashMap<String, u32>>,
-    token_hits: AtomicU32,
     next_code: AtomicU32,
 }
 
@@ -82,7 +78,6 @@ impl DeviceAuthServer {
         let shared = Arc::new(Shared {
             config: config.clone(),
             codes: Mutex::new(HashMap::new()),
-            token_hits: AtomicU32::new(0),
             next_code: AtomicU32::new(1),
         });
         let thread_shared = Arc::clone(&shared);
@@ -213,7 +208,6 @@ fn device_code(body: &str, shared: &Shared) -> (&'static str, &'static str, Stri
 }
 
 fn device_token(body: &str, shared: &Shared) -> (&'static str, &'static str, String) {
-    shared.token_hits.fetch_add(1, Ordering::SeqCst);
     if shared.config.expire_token {
         return (
             "400 Bad Request",
@@ -237,19 +231,6 @@ fn device_token(body: &str, shared: &Shared) -> (&'static str, &'static str, Str
             "application/json",
             r#"{"error":"authorization_pending"}"#.into(),
         );
-    }
-    if shared.config.emit_slow_down {
-        // One-shot: clear the flag via a sentinel remaining of u32::MAX → treat as done.
-        // Simpler: use token_hits == pending+1 for slow_down when configured.
-        let hits = shared.token_hits.load(Ordering::SeqCst);
-        let slow_at = shared.config.pending_polls + 1;
-        if hits == slow_at {
-            return (
-                "400 Bad Request",
-                "application/json",
-                r#"{"error":"slow_down"}"#.into(),
-            );
-        }
     }
     let token = &shared.config.access_token;
     let body = serde_json::json!({
