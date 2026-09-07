@@ -22,7 +22,7 @@
 # Serena MCP local project cache — not committed
 /.serena/
 
-# The platform monorepo (CodaSignal/comemory.io) is a separate git repo that
+# The comemory.io platform monorepo is a separate git repo that
 # gets cloned inside this checkout — never a directory of this one.
 /comemory.io/
 

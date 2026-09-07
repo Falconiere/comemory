@@ -540,9 +540,9 @@ not "done" until `scripts/check-all.sh` exits 0.
   runs it with exactly those. The command with its hardening flags is spelled
   out in README § Install.
 - `https://get.comemory.io/pkg/comemory/install` — a 302 served by the
-  `comemory-prod` Cloudflare Worker (`apps/get` in the `CodaSignal/comemory.io`
-  repo); it still points at cargo-dist's `comemory-installer.sh` until that
-  worker is repointed at the `install.sh` asset above.
+  `comemory-prod` Cloudflare Worker on the comemory.io platform; it still
+  points at cargo-dist's `comemory-installer.sh` until that worker is
+  repointed at the `install.sh` asset above.
 - `comemory-installer.sh` — the cargo-dist generated installer, still
   published on every release (`installers = ["shell", …]`); no pinning, no
   in-place upgrade, skips the checksum on stock macOS.
