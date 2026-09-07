@@ -9,6 +9,8 @@ comemory's settings are layered: built-in defaults → an optional `config.toml`
 | Variable | Purpose | Default |
 |----------|---------|---------|
 | `COMEMORY_DATA_DIR` | Root data directory (`memories/` + `comemory.db`). | `~/.comemory` |
+| `COMEMORY_API` | Platform API base for `comemory auth` (trailing slash stripped). Overridden by `auth login` / `auth status --api-url`. | `https://api.comemory.io` |
+| `COMEMORY_API_KEY` | Optional override of the `auth.json` workspace-key secret (CI / scripting without writing the file). | unset |
 | `COMEMORY_INDEXING_AUTO_REINDEX` | `lazy` \| `hook` \| `off` — automatic code-index refresh. See [Keep the code index fresh](guides/auto-reindex.md). | `lazy` |
 | `COMEMORY_RETRIEVAL_TOP_K` | Results returned by the hybrid router (also the default page size for `search` / `search-code` / `context`). | `12` |
 | `COMEMORY_RETRIEVAL_MAX_PAGE_WINDOW` | Maximum depth pagination can reach into the ranked list; `has_more` is forced false at this ceiling. Validated `> 0`. | `200` |
@@ -40,6 +42,8 @@ The ranking knobs (`COMEMORY_RANK_*`, `COMEMORY_RETRIEVAL_*`) are explained in
 [Measure and tune ranking](guides/ranking-and-eval.md); the `COMEMORY_PRUNE_*`
 floors in [Prune, rebuild, and gc](guides/prune-and-gc.md);
 `COMEMORY_SKIP_MIGRATION_BACKUP` in [Upgrading comemory](guides/upgrading.md).
+`COMEMORY_API` / `COMEMORY_API_KEY` back workspace-key device login — see
+[CLI reference: auth](cli-reference.md#comemory-auth) and README § Cloud auth.
 
 ## Config-file-only knobs
 
