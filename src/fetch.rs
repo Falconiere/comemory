@@ -171,18 +171,22 @@ fn exchange_wget(req: &Request<'_>) -> Result<Response> {
 
 /// Reject header names/values that could inject additional HTTP headers.
 ///
-/// Values reject CR and LF individually, which also blocks `"\r\n"` injection
-/// sequences passed through curl `-H` / wget `--header`.
+/// Names reject CR/LF/':'/whitespace; values reject CR/LF/NUL. Blocking CR and
+/// LF individually also blocks `"\r\n"` sequences passed through curl `-H` /
+/// wget `--header`.
 fn validate_headers(headers: &[(&str, &str)]) -> Result<()> {
     for (name, value) in headers {
-        if name.bytes().any(|b| b == b'\r' || b == b'\n' || b == b':') {
+        if name
+            .bytes()
+            .any(|b| matches!(b, b'\r' | b'\n' | b':' | b' ' | b'\t' | 0))
+        {
             return Err(Error::Unavailable(
-                "HTTP header name must not contain CR, LF, or ':'".into(),
+                "HTTP header name must not contain CR, LF, ':', whitespace, or NUL".into(),
             ));
         }
-        if value.bytes().any(|b| b == b'\r' || b == b'\n') {
+        if value.bytes().any(|b| matches!(b, b'\r' | b'\n' | 0)) {
             return Err(Error::Unavailable(
-                "HTTP header value must not contain CR or LF".into(),
+                "HTTP header value must not contain CR, LF, or NUL".into(),
             ));
         }
     }

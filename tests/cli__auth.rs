@@ -150,10 +150,7 @@ fn wrong_client_or_expired_poll_surfaces_error() {
     let out = home.run(None, &["auth", "login", "--api-url", &reject.base]);
     assert!(!out.status.success());
     let err = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        err.contains("invalid_client") || err.contains("HTTP 400"),
-        "stderr={err}"
-    );
+    assert!(err.contains("invalid_client"), "stderr={err}");
 
     let expired = DeviceAuthServer::start(DeviceAuthConfig {
         expire_token: true,
@@ -162,10 +159,7 @@ fn wrong_client_or_expired_poll_surfaces_error() {
     let out = home.run(None, &["auth", "login", "--api-url", &expired.base]);
     assert!(!out.status.success());
     let err = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        err.contains("expired_token") || err.contains("device authorization failed"),
-        "stderr={err}"
-    );
+    assert!(err.contains("expired_token"), "stderr={err}");
 }
 
 #[test]
