@@ -1,9 +1,9 @@
 # sync/
 
-**What belongs here:** cloud-sync client helpers used by forthcoming
-`comemory auth`, `link`, and `sync` commands — repo match-key classification
-against the GitHub App allowlist, secret redaction before push, device
-credential file I/O, and the cached allowlist bundle.
+**What belongs here:** cloud-sync client helpers used by `comemory auth`,
+`link`, and `sync` — repo match-key classification against the GitHub App
+allowlist, secret redaction before push, device credential file I/O, and the
+cached allowlist bundle.
 
 **What does NOT belong here:** sync log/state tables, HTTP routes, or import
 rules — those live in `store/`, `api/`, and `serve/` respectively.
