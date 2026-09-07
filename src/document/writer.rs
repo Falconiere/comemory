@@ -11,7 +11,6 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
-use rusqlite::Connection;
 use time::OffsetDateTime;
 
 use super::fingerprint::{self, FileStat};
@@ -21,6 +20,7 @@ use crate::graph::edges;
 use crate::prelude::*;
 use crate::source::classify::Classification;
 use crate::source::discover::Candidate;
+use crate::store::Connection;
 use crate::store::document_fts;
 use crate::store::documents::{self, ChunkRow, DocumentUpsert};
 use crate::store::memory_row::iso_format;

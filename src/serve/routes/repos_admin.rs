@@ -20,7 +20,6 @@ use axum::extract::{Path as UrlPath, Query, State};
 use axum::response::Response;
 use axum::routing::{delete, post};
 use axum::{Json, Router};
-use rusqlite::Connection;
 use serde::Deserialize;
 
 use crate::api::index_code::IndexMode;
@@ -32,6 +31,7 @@ use crate::serve::routes::{
     RouteEntry, guard_mutating, index_runs, require_confirm, respond, run_blocking,
 };
 use crate::serve::security;
+use crate::store::Connection;
 
 /// Envelope/route-table command for `POST /repos`.
 const CONNECT: &str = "repos.connect";

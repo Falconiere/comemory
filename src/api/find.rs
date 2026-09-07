@@ -17,6 +17,7 @@ use crate::prelude::*;
 use crate::retrieval::pipeline;
 use crate::retrieval::scope::{Domain, Domains, Filters};
 use crate::retrieval::unified::{self, fuse_domains::UnifiedHit};
+use crate::store::Connection;
 
 /// `comemory find` / `GET|POST /api/v1/find` request.
 #[derive(Deserialize, Debug)]
@@ -104,7 +105,7 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<FindResult> {
         scope: &scope,
         domains,
     };
-    let conn: &rusqlite::Connection = ctx.conn()?;
+    let conn: &Connection = ctx.conn()?;
     let started = std::time::Instant::now();
     let run = unified::find(
         cfg,
@@ -137,7 +138,7 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<FindResult> {
 /// memory hits, `code_feedback` for code hits, matching what `search` and
 /// `search-code` each already do for their own domain.
 fn track_run(
-    conn: &rusqlite::Connection,
+    conn: &Connection,
     query: &str,
     hits: &[UnifiedHit],
     filters: Filters<'_>,

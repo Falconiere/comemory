@@ -6,11 +6,11 @@
 use std::fs;
 use std::time::UNIX_EPOCH;
 
-use rusqlite::Connection;
 use sha2::{Digest, Sha256};
 
 use super::writer::UpdateOutcome;
 use crate::prelude::*;
+use crate::store::Connection;
 use crate::store::sources::{self, SourceFileRow, SourceFileUpsert};
 
 /// Common identity + freshly-taken fingerprint for one candidate,

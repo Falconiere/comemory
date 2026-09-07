@@ -7,14 +7,12 @@
 
 use std::collections::HashMap;
 
-use rusqlite::Connection;
-
 use crate::config::Config;
 use crate::prelude::*;
 use crate::retrieval::fuse::{self, RankedHit};
 use crate::retrieval::router::{Source, above_similarity_threshold};
 use crate::retrieval::score::LegScores;
-use crate::store::{fts, vector};
+use crate::store::{Connection, fts, vector};
 
 /// One unified code-retrieval hit, regardless of which branch produced it.
 #[derive(Debug, Clone)]

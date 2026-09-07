@@ -1,6 +1,5 @@
 //! Push local sync-log entries to the platform (allowlist + redaction filter).
 
-use rusqlite::Connection;
 use time::OffsetDateTime;
 use time::format_description::well_known::Iso8601;
 
@@ -9,7 +8,7 @@ use crate::api::sync::{ImportEntry, ImportRequest, ImportStatus, SyncOp};
 use crate::config::{Config, Paths};
 use crate::memory::MemoryStore;
 use crate::prelude::*;
-use crate::store::{sync_binding, sync_log, sync_state};
+use crate::store::{Connection, sync_binding, sync_log, sync_state};
 use crate::sync::AuthFile;
 use crate::sync::allowlist_cache::AllowlistCache;
 use crate::sync::client;

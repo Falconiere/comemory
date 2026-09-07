@@ -19,6 +19,7 @@ use crate::api::Ctx;
 use crate::config::Config;
 use crate::eval::tune::{self, TuneCandidate};
 use crate::prelude::*;
+use crate::store::Connection;
 use crate::store::eval_runs::{self, EvalRunRow};
 
 /// Read the whole run history: a proposal can be arbitrarily old, and the
@@ -157,7 +158,7 @@ fn is_open_search(row: &EvalRunRow) -> bool {
 }
 
 /// Read one row and require it to be an open knob search.
-fn fetch_open(conn: &rusqlite::Connection, id: &str) -> Result<EvalRunRow> {
+fn fetch_open(conn: &Connection, id: &str) -> Result<EvalRunRow> {
     let row = eval_runs::get(conn, id)?.ok_or_else(|| not_found(id))?;
     if !is_open_search(&row) {
         return Err(Error::BadRequest(format!(

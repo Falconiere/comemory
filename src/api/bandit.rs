@@ -10,7 +10,6 @@
 //! request only when `req.apply` is true, but the write permit + read-only
 //! gate always apply.
 
-use rusqlite::Connection;
 use serde::Deserialize;
 
 use crate::api::Ctx;
@@ -20,6 +19,7 @@ use crate::eval::golden;
 use crate::eval::runner;
 use crate::eval::tune;
 use crate::prelude::*;
+use crate::store::Connection;
 
 /// `comemory bandit` / `POST /api/v1/bandit` request.
 #[derive(Deserialize, Debug)]

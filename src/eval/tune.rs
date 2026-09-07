@@ -5,7 +5,6 @@
 
 use std::path::Path;
 
-use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
 use crate::config::patch::{Table, patch_config_file, section};
@@ -14,6 +13,7 @@ use crate::eval::golden::GoldenPair;
 use crate::eval::runner::{self, EvalReport};
 use crate::eval::tune_sample;
 use crate::prelude::*;
+use crate::store::Connection;
 
 /// Minimum golden pairs before tuning is statistically honest.
 /// Overridable via `COMEMORY_TUNE_MIN_GOLDEN` (a test hook, documented

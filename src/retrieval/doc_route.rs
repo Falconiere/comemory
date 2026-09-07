@@ -8,10 +8,10 @@
 //! `Copy` and a glob list is a `Vec`; this is the only v1 consumer.
 
 use globset::{Glob, GlobSet, GlobSetBuilder};
-use rusqlite::Connection;
 
 use crate::prelude::*;
 use crate::retrieval::scope::{Domain, Filters};
+use crate::store::Connection;
 use crate::store::document_fts::{self, DocumentFtsHit};
 use crate::store::documents;
 

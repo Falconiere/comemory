@@ -3,9 +3,9 @@
 use std::sync::LazyLock;
 
 use regex::Regex;
-use rusqlite::Connection;
 
 use crate::prelude::*;
+use crate::store::Connection;
 use crate::store::sync_binding;
 
 /// One compiled redaction rule from [`rules.toml`](rules.toml).

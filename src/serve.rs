@@ -14,13 +14,12 @@ use std::net::Ipv4Addr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use rusqlite::Connection;
 use serde::Serialize;
 
 use crate::config::Config;
 use crate::config::paths::Paths;
 use crate::prelude::*;
-use crate::store::{connection, repo_marker_roots};
+use crate::store::{Connection, connection, repo_marker_roots};
 
 pub mod envelope;
 pub mod jobs;
@@ -58,9 +57,9 @@ pub struct ServeOptions {
 }
 
 /// Shared, cheaply-cloneable handler state. The SQLite connection is wrapped
-/// in a `Mutex` (rusqlite `Connection` is `Send` but not `Sync`); handlers
-/// lock it only for the duration of a synchronous query and never hold the
-/// guard across an `.await`.
+/// in a `Mutex` (`Connection` is `Send` but not `Sync`); handlers lock it
+/// only for the duration of a synchronous query and never hold the guard
+/// across an `.await`.
 #[derive(Clone)]
 pub struct AppState {
     conn: Arc<Mutex<Connection>>,
