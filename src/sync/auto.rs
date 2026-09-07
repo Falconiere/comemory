@@ -86,3 +86,7 @@ fn resolve_default_workspace(cfg: &Config, auth: &AuthFile) -> String {
         .clone()
         .unwrap_or_else(|| auth.personal_workspace_id.clone())
 }
+
+#[cfg(test)]
+#[path = "tests/auto.rs"]
+mod tests;

@@ -40,3 +40,99 @@ fn append_local_upsert_assigns_seq() {
     .expect("append");
     assert_eq!(seq, 1);
 }
+
+#[test]
+fn empty_table_head_seq_is_zero() {
+    let conn = open_with_sync_log();
+    assert_eq!(sync_log::head_seq(&conn).expect("head"), 0);
+}
+
+#[test]
+fn head_seq_tracks_max_after_appends() {
+    let conn = open_with_sync_log();
+    sync_log::append(
+        &conn,
+        SyncOp::Upsert,
+        "aaaaaaaa",
+        "11",
+        "2026-01-01T00:00:00Z",
+        SyncOrigin::Local,
+    )
+    .expect("1");
+    sync_log::append(
+        &conn,
+        SyncOp::Tombstone,
+        "aaaaaaaa",
+        "11",
+        "2026-01-02T00:00:00Z",
+        SyncOrigin::Local,
+    )
+    .expect("2");
+    assert_eq!(sync_log::head_seq(&conn).expect("head"), 2);
+}
+
+#[test]
+fn latest_tombstone_seq_and_entries_since() {
+    let conn = open_with_sync_log();
+    sync_log::append(
+        &conn,
+        SyncOp::Upsert,
+        "abcd1234",
+        "aa",
+        "2026-01-01T00:00:00Z",
+        SyncOrigin::Local,
+    )
+    .expect("upsert");
+    let tomb = sync_log::append(
+        &conn,
+        SyncOp::Tombstone,
+        "abcd1234",
+        "aa",
+        "2026-01-02T00:00:00Z",
+        SyncOrigin::Sync,
+    )
+    .expect("tomb");
+    sync_log::append(
+        &conn,
+        SyncOp::Restore,
+        "abcd1234",
+        "bb",
+        "2026-01-03T00:00:00Z",
+        SyncOrigin::Local,
+    )
+    .expect("restore");
+
+    assert_eq!(
+        sync_log::latest_tombstone_seq(&conn, "abcd1234")
+            .expect("tomb")
+            .expect("some"),
+        tomb
+    );
+    assert!(
+        sync_log::latest_tombstone_seq(&conn, "missing")
+            .expect("none")
+            .is_none()
+    );
+
+    let since = sync_log::entries_since(&conn, 0, 10).expect("since");
+    assert_eq!(since.len(), 3);
+    assert_eq!(since[1].op, SyncOp::Tombstone);
+    assert_eq!(since[1].origin, SyncOrigin::Sync);
+
+    let local = sync_log::local_entries_since(&conn, 0, 10).expect("local");
+    assert_eq!(local.len(), 2);
+    assert!(local.iter().all(|r| r.origin == SyncOrigin::Local));
+}
+
+#[test]
+fn op_and_origin_parse_roundtrip() {
+    assert_eq!(SyncOp::parse("upsert").unwrap(), SyncOp::Upsert);
+    assert_eq!(SyncOp::parse("tombstone").unwrap(), SyncOp::Tombstone);
+    assert_eq!(SyncOp::parse("restore").unwrap(), SyncOp::Restore);
+    assert!(SyncOp::parse("nope").is_err());
+    assert_eq!(SyncOp::Upsert.as_str(), "upsert");
+
+    assert_eq!(SyncOrigin::parse("local").unwrap(), SyncOrigin::Local);
+    assert_eq!(SyncOrigin::parse("sync").unwrap(), SyncOrigin::Sync);
+    assert!(SyncOrigin::parse("nope").is_err());
+}

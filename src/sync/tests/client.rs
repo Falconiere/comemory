@@ -6,135 +6,136 @@
     clippy::too_many_lines
 )]
 
-//! Wire-shape fixtures matching the platform OpenAPI / sync envelopes
-//! (`2026-09-02-memory-sync-design.md` AC-14…17 client parse path).
+//! Real HTTP coverage of `comemory::sync::client` against the loopback
+//! platform fixture (`tests/common/sync_platform_server.rs`).
 
-use comemory::api::sync::{ImportResponse, ImportStatus};
-use comemory::sync::match_key::{AllowlistRepo, MatchOutcome, classify_repo};
+use comemory::api::sync::{ImportEntry, ImportRequest, ImportStatus, SyncOp};
+use comemory::sync::client;
+use comemory::sync::match_key::{MatchOutcome, classify_repo};
 
-/// Platform `GET /v1/sync/status` success body (allowlist on status, camelCase).
-const STATUS_ENVELOPE: &str = r#"{
-  "ok": true,
-  "data": {
-    "head_seq": 0,
-    "devices": [],
-    "allowlist": [
-      {"fullName": "codasignal/foo", "name": "foo"},
-      {"fullName": "org/cli", "name": "cli"},
-      {"fullName": "other/cli", "name": "cli"}
-    ],
-    "allowlist_etag": "codasignal/foo|org/cli|other/cli",
-    "personal_sync": false
-  },
-  "meta": {"command": "platform"}
-}"#;
+use crate::test_common::sync_platform_server::{SyncPlatformServer, SyncPlatformState};
 
-/// Worker gate rejection for a forged import (AC-16).
-const GATED_IMPORT: &str = r#"{
-  "ok": true,
-  "data": {
-    "results": [
-      {
+#[test]
+fn device_code_token_and_mint_roundtrip() {
+    let server = SyncPlatformServer::start_default();
+    let code = client::device_code(&server.base).expect("device code");
+    assert_eq!(code.device_code, "dc-1");
+    assert_eq!(code.interval, 1);
+
+    let token = client::poll_token(&server.base, &code.device_code).expect("token");
+    assert_eq!(token.access_token.as_deref(), Some("dev-access-token"));
+
+    let minted = client::mint_device_key(&server.base, "dev-access-token", "laptop").expect("mint");
+    assert!(minted.secret.starts_with("cmk_"));
+    assert_eq!(minted.personal_workspace_id, "ws-personal");
+    assert_eq!(minted.email.as_deref(), Some("dev@example.com"));
+}
+
+#[test]
+fn list_workspaces_and_allowlist_paths() {
+    let server = SyncPlatformServer::start_default();
+    let secret = server.snapshot().secret;
+
+    let rows = client::list_workspaces(&server.base, &secret).expect("workspaces");
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].id, "ws-personal");
+    assert_eq!(rows[0].name, "Personal");
+
+    let (repos, etag) =
+        client::fetch_allowlist(&server.base, &secret, "ws-org", None).expect("allowlist");
+    assert_eq!(repos.len(), 1);
+    assert_eq!(repos[0].full_name, "codasignal/foo");
+    assert_eq!(etag.as_deref(), Some("etag-1"));
+    assert_eq!(
+        classify_repo("codasignal/foo", &repos),
+        MatchOutcome::Allowed
+    );
+
+    // Matching etag → empty repos, same etag (cache keep).
+    let (again, etag2) =
+        client::fetch_allowlist(&server.base, &secret, "ws-org", Some("etag-1")).expect("etag");
+    assert!(again.is_empty());
+    assert_eq!(etag2.as_deref(), Some("etag-1"));
+}
+
+#[test]
+fn fetch_allowlist_404_is_empty() {
+    let mut state = SyncPlatformState::default();
+    state.status_404 = true;
+    let server = SyncPlatformServer::start(state);
+    let secret = server.snapshot().secret;
+    let (repos, etag) =
+        client::fetch_allowlist(&server.base, &secret, "ws", None).expect("404 status");
+    assert!(repos.is_empty());
+    assert!(etag.is_none());
+}
+
+#[test]
+fn fetch_allowlist_envelope_error_surfaces() {
+    let mut state = SyncPlatformState::default();
+    state.status_error = Some(("forbidden".into(), "no sync".into()));
+    let server = SyncPlatformServer::start(state);
+    let secret = server.snapshot().secret;
+    let err = client::fetch_allowlist(&server.base, &secret, "ws", None).expect_err("gate");
+    let msg = err.to_string();
+    assert!(msg.contains("forbidden"), "{msg}");
+}
+
+#[test]
+fn pull_changes_push_import_and_manifest() {
+    let mut state = SyncPlatformState::default();
+    state.head_seq = 3;
+    state.changes = serde_json::json!([{
+        "seq": 3,
+        "op": "tombstone",
+        "id": "deadbeef",
+        "content_hash": "00".repeat(32),
+        "at": "2026-09-06T12:00:00Z",
+        "author": "peer",
+        "record": null
+    }]);
+    state.import_results = serde_json::json!([{
         "id": "abcd1234",
-        "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "content_hash": "aa".repeat(32),
         "status": "repo_not_allowed"
-      }
-    ],
-    "head_seq": 0
-  },
-  "meta": {"command": "platform"}
-}"#;
+    }]);
+    let server = SyncPlatformServer::start(state);
+    let secret = server.snapshot().secret;
 
-#[derive(serde::Deserialize)]
-struct ApiEnvelope<T> {
-    ok: bool,
-    data: Option<T>,
-}
+    let changes = client::pull_changes(&server.base, &secret, "ws-org", 0, 50).expect("changes");
+    assert_eq!(changes.entries.len(), 1);
+    assert_eq!(changes.head_seq, 3);
+    assert_eq!(changes.entries[0].op, SyncOp::Tombstone);
 
-#[derive(serde::Deserialize)]
-struct SyncStatusData {
-    allowlist: Vec<AllowlistRepo>,
-    allowlist_etag: Option<String>,
-}
+    let import = client::push_import(
+        &server.base,
+        &secret,
+        "ws-org",
+        &ImportRequest {
+            cursor: 0,
+            entries: vec![ImportEntry {
+                op: SyncOp::Upsert,
+                id: "abcd1234".into(),
+                content_hash: "aa".repeat(32),
+                at: "2026-09-06T12:00:00Z".into(),
+                record: None,
+            }],
+        },
+    )
+    .expect("import");
+    assert_eq!(import.results.len(), 1);
+    assert_eq!(import.results[0].status, ImportStatus::RepoNotAllowed);
 
-#[test]
-fn status_envelope_allowlist_parses_camel_case() {
-    let env: ApiEnvelope<SyncStatusData> =
-        serde_json::from_str(STATUS_ENVELOPE).expect("status json");
-    assert!(env.ok);
-    let data = env.data.expect("data");
-    assert_eq!(data.allowlist.len(), 3);
-    assert_eq!(data.allowlist[0].full_name, "codasignal/foo");
-    assert_eq!(
-        data.allowlist_etag.as_deref(),
-        Some("codasignal/foo|org/cli|other/cli")
-    );
-
-    // AC-14: allowlisted label matches.
-    assert_eq!(
-        classify_repo("CodaSignal/foo", &data.allowlist),
-        MatchOutcome::Allowed
-    );
-    // AC-15: personal / unbound label skips.
-    assert_eq!(
-        classify_repo("my-dotfiles", &data.allowlist),
-        MatchOutcome::SkippedNotInOrg
-    );
-    // AC-17: ambiguous basename.
-    assert_eq!(
-        classify_repo("cli", &data.allowlist),
-        MatchOutcome::SkippedAmbiguous
-    );
-    assert_eq!(
-        classify_repo("org/cli", &data.allowlist),
-        MatchOutcome::Allowed
-    );
+    let manifest = client::fetch_manifest(&server.base, &secret, "ws-org").expect("manifest");
+    assert_eq!(manifest.buckets.len(), 256);
+    assert_eq!(manifest.head_seq, 3);
 }
 
 #[test]
-fn gated_import_envelope_parses_repo_not_allowed() {
-    let env: ApiEnvelope<ImportResponse> = serde_json::from_str(GATED_IMPORT).expect("import json");
-    assert!(env.ok);
-    let data = env.data.expect("data");
-    assert_eq!(data.results.len(), 1);
-    assert_eq!(data.results[0].status, ImportStatus::RepoNotAllowed);
-}
-
-#[test]
-fn mint_and_workspace_list_shapes() {
-    #[derive(serde::Deserialize)]
-    struct Body {
-        workspaces: Vec<View>,
-    }
-    #[derive(serde::Deserialize)]
-    struct View {
-        workspace: Inner,
-    }
-    #[derive(serde::Deserialize)]
-    struct Inner {
-        id: String,
-        name: String,
-    }
-
-    let mint = r#"{
-      "secret": "cmk_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "keyPrefix": "cmk_aaaa",
-      "personalWorkspaceId": "ws-personal",
-      "apiUrl": "http://127.0.0.1:8787"
-    }"#;
-    let parsed: comemory::sync::client::MintDeviceKeyResponse =
-        serde_json::from_str(mint).expect("mint");
-    assert_eq!(parsed.personal_workspace_id, "ws-personal");
-
-    let list = r#"{
-      "workspaces": [
-        {
-          "workspace": {"id": "ws-personal", "name": "Personal", "createdAt": "2026-09-06T00:00:00.000Z"},
-          "corpus": {"memoriesEnabled": true, "codeEnabled": true, "docsEnabled": false}
-        }
-      ]
-    }"#;
-    let body: Body = serde_json::from_str(list).expect("list");
-    assert_eq!(body.workspaces[0].workspace.id, "ws-personal");
-    assert_eq!(body.workspaces[0].workspace.name, "Personal");
+fn trailing_slash_base_url_normalizes() {
+    let server = SyncPlatformServer::start_default();
+    let secret = server.snapshot().secret;
+    let base = format!("{}/", server.base);
+    let (repos, _) = client::fetch_allowlist(&base, &secret, "ws", None).expect("slash");
+    assert_eq!(repos.len(), 1);
 }

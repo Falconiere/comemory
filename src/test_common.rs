@@ -34,5 +34,7 @@ pub(crate) mod runner;
 pub(crate) mod serve_learning_support;
 #[path = "../tests/common/serve_state.rs"]
 pub(crate) mod serve_state;
+#[path = "../tests/common/sync_platform_server.rs"]
+pub(crate) mod sync_platform_server;
 #[path = "../tests/common/vectors.rs"]
 pub(crate) mod vectors;

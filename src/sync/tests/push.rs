@@ -130,3 +130,66 @@ fn ac17_ambiguous_basename_skipped_without_network() {
     assert_eq!(stats.pushed, 0);
     assert_eq!(stats.skipped_ambiguous, 1);
 }
+
+#[test]
+fn allowlisted_repo_pushes_over_loopback() {
+    use crate::test_common::sync_platform_server::{SyncPlatformServer, SyncPlatformState};
+
+    let mut state = SyncPlatformState::default();
+    state.import_results = serde_json::json!([{
+        "id": "will-replace",
+        "content_hash": "aa".repeat(32),
+        "status": "accepted",
+        "seq": 1
+    }]);
+    let server = SyncPlatformServer::start(state);
+    let secret = server.snapshot().secret;
+
+    let home = tempfile::tempdir().expect("tempdir");
+    let paths = Paths::new(home.path());
+    paths.ensure_dirs().expect("dirs");
+    let mut conn = connection::open(paths.db_path()).expect("db");
+    let cfg = Config::defaults();
+    let workspace = "ws-org";
+
+    AuthFile {
+        secret: secret.clone(),
+        key_prefix: "cmk_bbbb".into(),
+        personal_workspace_id: "ws-personal".into(),
+        api_url: server.base.clone(),
+        device_name: "test".into(),
+        email: None,
+    }
+    .save(&paths)
+    .expect("auth");
+
+    // Stale allowlist cache forces a refresh hit against the platform status.
+    let cache = AllowlistCache {
+        etag: Some("stale".into()),
+        fetched_at: OffsetDateTime::now_utc() - time::Duration::hours(48),
+        repos: vec![],
+        workspace_id: workspace.to_string(),
+    };
+    cache.save(&paths).expect("allowlist");
+
+    let body = "allowlisted memory is pushed to the platform import route";
+    let id = comemory::memory::id::memory_id(body);
+    let content_hash = comemory::memory::id::sha256_hex(body.trim_end().as_bytes());
+    server.update(|st| {
+        st.import_results = serde_json::json!([{
+            "id": id,
+            "content_hash": content_hash,
+            "status": "accepted",
+            "seq": 1
+        }]);
+    });
+    {
+        let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+        save::run(&mut ctx, save_req(body, "codasignal/foo"), false, None).expect("save");
+    }
+
+    let auth = AuthFile::load(&paths).expect("load").expect("auth");
+    let stats = push::run_push(&paths, &cfg, &mut conn, &auth, workspace, None, 100).expect("push");
+    assert_eq!(stats.pushed, 1);
+    assert!(stats.last_pushed_seq >= 1);
+}
