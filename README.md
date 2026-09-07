@@ -263,6 +263,9 @@ Full data model, save flow, retrieval pipeline, and graph mechanics:
 | `comemory install-hooks` | Install git hooks that reindex code on commit/merge/checkout |
 | `comemory hooks` | Report and toggle those hooks individually, plus search→edit reinforcement |
 | `comemory upgrade` | Move this binary to the newest release (`--check` only reports; `--version` pins) |
+| `comemory auth login` | Device login; mint a workspace-bound `cmk_` into `auth.json` (`--api-url`) |
+| `comemory auth status` | Check whether local / `COMEMORY_API_KEY` credentials still authenticate |
+| `comemory auth logout` | Delete local `auth.json` (no remote revoke) |
 
 Every command accepts `--json`; the data root defaults to `~/.comemory`
 (overridable with `--data-dir` or `COMEMORY_DATA_DIR`). Full per-command docs
@@ -308,6 +311,19 @@ installs go through `brew upgrade comemory`; a `cargo install` build is
 rebuilt, and the command prints the recipe instead). `--version` pins a
 release, `--force` allows a reinstall or downgrade, `--json` reports the
 outcome as an object.
+
+## Cloud auth (workspace key)
+
+```bash
+comemory auth login                  # device code → console /device → cmk_ in auth.json
+comemory auth login --api-url URL    # or set COMEMORY_API (default https://api.comemory.io)
+comemory auth status                 # GET /v1/workspaces/current with the saved key
+comemory auth logout                 # delete local auth.json (no remote revoke)
+```
+
+Mints a **workspace-bound** `cmk_` (not a sync device key). Credentials live at
+`$COMEMORY_DATA_DIR/auth.json` (mode `0600`). `COMEMORY_API_KEY` overrides the
+file secret for scripting/CI.
 
 Point a newer `comemory` binary at an existing `~/.comemory` and the schema
 migrates automatically on your next command — there is no `comemory migrate`

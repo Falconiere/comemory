@@ -10,6 +10,8 @@ use crate::prelude::*;
 
 /// `comemory ast`: user-facing ast-grep pattern search.
 pub mod ast;
+/// `comemory auth`: cloud workspace-key login / status / logout.
+pub mod auth;
 /// `comemory bandit`: Thompson sampling over the tune knobs.
 pub mod bandit;
 /// `comemory completions`: shell completion scripts.
@@ -193,6 +195,8 @@ pub enum Cmd {
     InstallHooks(install_hooks::Args),
     /// Move this binary to the newest release (or a pinned one).
     Upgrade(upgrade::Args),
+    /// Cloud workspace-key login / status / logout (device authorization).
+    Auth(auth::Args),
 }
 
 /// Dispatch the parsed `Cli` to its subcommand. The dispatcher is the single
@@ -235,6 +239,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::Gc => gc::run(cli.json, cli.data_dir).await,
         Cmd::InstallHooks(a) => install_hooks::run(a, cli.json, cli.data_dir).await,
         Cmd::Upgrade(a) => upgrade::run(a, cli.json, cli.data_dir).await,
+        Cmd::Auth(a) => auth::run(a, cli.json, cli.data_dir).await,
     }
 }
 

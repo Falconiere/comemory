@@ -22,6 +22,7 @@ One line per file, named after its primary item:
 | File | Primary item | Purpose |
 | --- | --- | --- |
 | `ast.rs` | `Args` | `comemory ast` — run an ast-grep pattern against a source file |
+| `auth.rs` | `Args` | `comemory auth` — nested `login` / `status` / `logout` for cloud workspace keys (CLI-only) |
 | `bandit.rs` | `Args` | `comemory bandit` — Thompson-sample the `[tune]` grid, confirm with offline eval |
 | `completions.rs` | `Args` | `comemory completions <shell>` — emit a shell completion script |
 | `consolidate.rs` | `Args` | `comemory consolidate` — advisory near-duplicate cluster report |

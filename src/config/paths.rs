@@ -82,6 +82,12 @@ impl Paths {
         self.data_dir.join("sources.toml.lock")
     }
 
+    /// Cloud workspace-key credentials (`auth.json`) written by
+    /// `comemory auth login` (mode `0600`).
+    pub fn auth_file(&self) -> PathBuf {
+        self.data_dir.join("auth.json")
+    }
+
     /// Sibling exclusive-flock file guarding the migration preflight's
     /// `VACUUM INTO` snapshot, since SQLite will not serialize that
     /// statement itself (`src/store/migrate/preflight.rs`, generalized
