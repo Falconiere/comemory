@@ -62,6 +62,7 @@ Commands:
   gc             Purge old `memories/.trash/` entries and learning telemetry past retention
   install-hooks  Install git hooks that trigger `comemory index-code` on `post-commit`, `post-merge`, and `post-checkout`
   upgrade        Move this binary to the newest release (or a pinned one)
+  auth           Cloud workspace-key login / status / logout (device authorization)
   help           Print this message or the help of the given subcommand(s)
 
 Options:
@@ -1201,5 +1202,43 @@ Examples:
 
   # Machine-readable
   comemory upgrade --check --json
+```
+
+---
+
+## comemory auth
+
+```
+Cloud workspace-key login / status / logout (device authorization)
+
+Usage: comemory auth [OPTIONS] <COMMAND>
+
+Commands:
+  login   RFC 8628 device login; mint a workspace-bound `cmk_` into auth.json
+  status  Report whether local credentials still authenticate
+  logout  Delete local auth.json (no remote revoke)
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+      --json                 Emit machine-readable JSON instead of a human TTY view
+      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+  -h, --help                 Print help
+
+Examples:
+  # Device login (print code, approve in the console, mint cmk_)
+  comemory auth login
+
+  # Point at a non-prod API
+  comemory auth login --api-url https://dev-api.comemory.io
+
+  # Check the saved key against the platform
+  comemory auth status
+
+  # Forget local credentials (no remote revoke)
+  comemory auth logout
+
+  # Machine-readable
+  comemory auth login --json
+  comemory auth status --json
 ```
 

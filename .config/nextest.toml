@@ -23,5 +23,5 @@ filter = 'test(/embedder|memory_index|code_index/)'
 test-group = 'embedder'
 
 [[profile.default.overrides]]
-filter = 'test(/^(config::env::tests|store::migrate::backup::tests|store::migrate::preflight::tests)/)'
+filter = 'test(/^(config::env::tests|store::migrate::backup::tests|store::migrate::preflight::tests|cloud::api_url::tests|cloud::credentials::tests)/)'
 test-group = 'env-mutating'

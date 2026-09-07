@@ -68,6 +68,12 @@ pub mod serve;
 /// `comemory upgrade`: resolve the newest release and swap the binary.
 pub mod upgrade;
 
+/// Shared curl/wget HTTP (no in-process TLS stack).
+pub mod fetch;
+
+/// Cloud platform auth: device login and workspace-key credentials.
+pub mod cloud;
+
 /// clap subcommand entry points and the top-level dispatcher.
 pub mod cli;
 

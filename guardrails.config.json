@@ -77,7 +77,8 @@
       "store/migrate",
       "store/sql",
       "store/tokenizer",
-      "upgrade"
+      "upgrade",
+      "cloud"
     ]
   },
   "fileSize": {

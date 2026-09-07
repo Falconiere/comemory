@@ -37,6 +37,7 @@ fn paths_resolves_subdirs_relative_to_data_dir() {
         paths.rebuild_backup(),
         sb.data_dir().join("comemory.db.pre-rebuild.bak")
     );
+    assert_eq!(paths.auth_file(), sb.data_dir().join("auth.json"));
 }
 
 #[test]

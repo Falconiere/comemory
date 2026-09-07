@@ -20,7 +20,7 @@ One line per file, named after its primary item:
 | --- | --- | --- |
 | `channel.rs` | `Channel` | Homebrew / `cargo install` / standalone detection from the resolved `current_exe` path (`Cellar` component or Homebrew prefix; `$CARGO_HOME/.crates.toml` listing) |
 | `installer.rs` | `run_script` | Fetch `<releases>/download/<tag>/install.sh` and run it pinned (`--version --dir --no-modify-path [--quiet]`); `brew_upgrade`; `installed_version` reads `exe --version` back after the swap |
-| `release.rs` | `latest_tag` | The `<releases>/latest` redirect → tag, and `download` of one asset, via `curl`/`wget`; `COMEMORY_RELEASES_URL` (test hook) overrides the GitHub base |
+| `release.rs` | `latest_tag` | The `<releases>/latest` redirect → tag, and `download` of one asset, via [`crate::fetch`](../fetch.rs) (`curl`/`wget`); `COMEMORY_RELEASES_URL` (test hook) overrides the GitHub base |
 | `version.rs` | `Version` | `MAJOR.MINOR.PATCH[-pre]` parse, `Display`, `tag()`, and ordering (a pre-release sorts below its final) |
 
 Tests live beside the module under `tests/` (`version.rs`, `channel.rs`);
