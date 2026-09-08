@@ -54,6 +54,12 @@ One line per file, named after its primary item:
 | `index_failures.rs` | `insert` | `index_failures` row CRUD: append + count + latest-row read, moved out of `stats::sqlite::StatsDb`, which still owns the ISO 8601 timestamp formatting and the `usize` clamp |
 | `index_runs.rs` | `insert` | `index_runs` writer + newest-first readers — one row per `index-code` run, outcomes (`ok`/`error`/`cancelled`) included |
 | `random_id.rs` | `random_hex` | Shared random-hex id helper, moved out of `serve::security` so non-HTTP callers can use it |
+| `rebuild_copy.rs` | `copy_preserved_tables_from_old` | The `ATTACH`-based rebuild preservation copy's entry point: attach `old`, run the code-index/learning/document-domain copy passes, `DETACH` — always, even on a copy failure — as one lifecycle no caller can pair incorrectly; plus `old_table_exists`/`old_column_exists`, the attached-DB schema probes every pass shares |
+| `rebuild_copy_code.rs` | `copy_code_tables_inner` | Rebuild preservation copy: `code_symbols`, `indexed_files`, the mined `co_changed`/`imports`/`co_activated` edges, the per-repo `schema_meta`/`repo_marker` cursors, and the `code_fts`/`code_vec` virtual tables |
+| `rebuild_copy_documents.rs` | `copy_document_tables_inner` | Rebuild preservation copy: `source_files`, `documents`, `document_chunks`, `document_fts`, in FK/parent-before-child order; `source_roots` is reconciled from `sources.toml` instead, not copied here |
+| `rebuild_copy_history.rs` | `copy_history_tables` | Rebuild preservation copy: `eval_runs` (+ v15's `discarded`), `gc_runs`, `index_runs`, and the v16 `sync_log`/`sync_state`/`sync_binding` tables |
+| `rebuild_copy_learning.rs` | `copy_learning_tables_inner` | Rebuild preservation copy: the `feedback`/`code_feedback` counters and the `retrieval_log` telemetry, then (via `rebuild_copy_learning_events` and `rebuild_copy_history`) the event/mined and run-history tables |
+| `rebuild_copy_learning_events.rs` | `copy_event_and_mined_tables` | Rebuild preservation copy: `feedback_events`, `query_expansions`, `bandit_arms` — split out of `rebuild_copy_learning.rs` to stay under the 300-line ceiling |
 | `sync_log.rs` | `append` | Append-only cloud-sync change journal (`upsert`/`tombstone`/`restore`, origin `local`/`sync`) |
 | `sync_state.rs` | `ensure` | Per-workspace pull/push cursors for cloud sync |
 | `sync_binding.rs` | `bind_first` | First-push workspace binding + `--allow-secret` overrides |

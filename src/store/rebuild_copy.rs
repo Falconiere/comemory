@@ -1,0 +1,65 @@
+//! The `ATTACH`-based preservation copy lifecycle behind
+//! `api::rebuild::copy`: [`copy_preserved_tables_from_old`] owns attach,
+//! every per-table copy pass, and detach as ONE unit, so no caller can pair
+//! attach/detach incorrectly and leave a database attached to a live
+//! connection on an early return.
+//!
+//! The three copy passes — code-index (`rebuild_copy_code`), learning-loop
+//! (`rebuild_copy_learning`, which itself calls `rebuild_copy_history`), and
+//! document-domain (`rebuild_copy_documents`) — are split into sibling
+//! files so none crosses the 300-line ceiling; this file is the entry point
+//! plus the two schema-probe helpers every pass shares.
+
+use std::path::Path;
+
+use crate::prelude::*;
+use crate::store::{Connection, rebuild_copy_code, rebuild_copy_documents, rebuild_copy_learning};
+
+/// Attach `old_db` as `old` and copy the code-index, learning, and
+/// document-domain tables into `conn` (the freshly built tmp database).
+/// Each source table is copied only if it exists on the attached DB.
+///
+/// Caller must populate `main.source_roots` first
+/// (`source::mirror::reconcile`): `source_files.source_id` is a foreign
+/// key, so the document-domain copy fails outright if its parent is
+/// missing. `DETACH` always runs, even on a copy failure, so the
+/// connection stays reusable — its own result is discarded via `let _ =`.
+pub fn copy_preserved_tables_from_old(conn: &mut Connection, old_db: &Path) -> Result<()> {
+    conn.execute(
+        "ATTACH DATABASE ? AS old",
+        rusqlite::params![old_db.to_string_lossy().as_ref()],
+    )?;
+    let copy_result = rebuild_copy_code::copy_code_tables_inner(conn)
+        .and_then(|()| rebuild_copy_learning::copy_learning_tables_inner(conn))
+        .and_then(|()| rebuild_copy_documents::copy_document_tables_inner(conn));
+    // Always DETACH so the connection is reusable even if the copy failed.
+    let _ = conn.execute_batch("DETACH DATABASE old;");
+    copy_result
+}
+
+/// True when `name` exists as a table (regular or virtual) on the attached
+/// `old` database. Lets every copy pass skip tables that predate v0.2.
+pub(crate) fn old_table_exists(conn: &Connection, name: &str) -> Result<bool> {
+    let n: i64 = conn.query_row(
+        "SELECT count(*) FROM old.sqlite_master WHERE type = 'table' AND name = ?1",
+        rusqlite::params![name],
+        |r| r.get(0),
+    )?;
+    Ok(n > 0)
+}
+
+/// True when `column` exists on `table` in the attached `old` database.
+/// Lets a copy pass adapt its SELECT list to the attached DB's schema
+/// version instead of assuming the current one.
+pub(crate) fn old_column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool> {
+    let n: i64 = conn.query_row(
+        "SELECT count(*) FROM pragma_table_info(?1, 'old') WHERE name = ?2",
+        rusqlite::params![table, column],
+        |r| r.get(0),
+    )?;
+    Ok(n > 0)
+}
+
+#[cfg(test)]
+#[path = "tests/rebuild_copy.rs"]
+mod tests;
