@@ -296,3 +296,58 @@ fn symbol_row_exists_is_true_only_for_a_seeded_symbol() {
         "a different repo must not resolve"
     );
 }
+
+#[test]
+fn count_for_repo_counts_only_that_repos_rows() {
+    let dir = TempDir::new().expect("tempdir");
+    let conn = connection::open(dir.path().join("comemory.db")).expect("open db");
+    seed(&conn, "a");
+    seed(&conn, "b");
+
+    assert_eq!(code_row::count_for_repo(&conn, "r").expect("count"), 2);
+    assert_eq!(
+        code_row::count_for_repo(&conn, "other").expect("count"),
+        0,
+        "an unindexed repo counts zero, not an error"
+    );
+}
+
+#[test]
+fn any_indexed_reflects_whether_a_row_exists_anywhere() {
+    let dir = TempDir::new().expect("tempdir");
+    let conn = connection::open(dir.path().join("comemory.db")).expect("open db");
+    assert!(
+        !code_row::any_indexed(&conn).expect("query"),
+        "a fresh db has no code_symbols rows"
+    );
+    seed(&conn, "a");
+    assert!(code_row::any_indexed(&conn).expect("query"));
+}
+
+#[test]
+fn parent_snippets_orders_by_id_and_excludes_chunk_children() {
+    let dir = TempDir::new().expect("tempdir");
+    let conn = connection::open(dir.path().join("comemory.db")).expect("open db");
+    let parent_id = seed(&conn, "parent_fn");
+    code_row::insert(
+        &conn,
+        &CodeSymbolRow {
+            repo: "r",
+            path: "src/lib.rs",
+            blob_oid: "oid",
+            symbol: "parent_fn#1",
+            kind: "function",
+            lang: "rust",
+            line_start: 1,
+            line_end: 5,
+            snippet: "chunk body",
+            simhash: 0,
+            parent_id: Some(parent_id),
+        },
+    )
+    .expect("insert chunk child");
+
+    let rows = code_row::parent_snippets(&conn).expect("query");
+    assert_eq!(rows.len(), 1, "the chunk child must be excluded");
+    assert_eq!(rows[0], (parent_id, "fn body() {}".to_string()));
+}

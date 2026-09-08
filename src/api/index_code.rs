@@ -14,7 +14,6 @@ use std::time::{Duration, Instant};
 
 use git2::Repository;
 use ignore::WalkBuilder;
-use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
@@ -22,7 +21,7 @@ use crate::api::Ctx;
 use crate::git_utils::{self, map_git_err};
 use crate::graph::{derived, materialize};
 use crate::prelude::*;
-use crate::store::{code_row, index_runs, memory_row, random_id};
+use crate::store::{Connection, code_row, index_runs, memory_row, random_id, repo_marker};
 
 /// File-walk / symbol-write internals, shared (in part) with
 /// `cli::index_code`'s `--extract` path.
@@ -164,14 +163,7 @@ pub fn run_with_progress(
 /// re-checks it so the CLI and a job body honor the flag too. An unknown
 /// repo is fine — the first run for a label is how it becomes known.
 pub fn refuse_if_archived(conn: &Connection, repo: &str) -> Result<()> {
-    let archived: Option<i64> = conn
-        .query_row(
-            "SELECT archived FROM repo_marker WHERE repo = ?1",
-            [repo],
-            |r| r.get(0),
-        )
-        .optional()?;
-    if archived.is_some_and(|flag| flag != 0) {
+    if repo_marker::archived(conn, repo)?.unwrap_or(false) {
         return Err(Error::BadRequest(format!(
             "repo {repo} is archived; un-archive it before indexing"
         )));
@@ -202,7 +194,7 @@ fn index_repo(
             "index-code --mode full: re-extracting every file drops the repo's BYO code \
              vectors and per-symbol access counters; re-run `ingest-code` afterwards",
         );
-        tx.execute("DELETE FROM indexed_files WHERE repo = ?1", [&req.repo])?;
+        crate::store::indexed_files::delete_for_repo(&tx, &req.repo)?;
     }
     let files_indexed = walk_repo(&tx, &req.repo, root, git_repo, &mut imports_by_file, sink)?;
     code_row::stamp_repo_format(&tx, &req.repo)?;
@@ -247,20 +239,14 @@ fn record_run(
     // an `index_runs` row saying `symbols: 0` is indistinguishable from a
     // repo that genuinely has none. The run itself is not failed for it —
     // the symbols are already written; this number is history.
-    let symbols: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM code_symbols WHERE repo = ?1",
-            [&req.repo],
-            |r| r.get(0),
-        )
-        .unwrap_or_else(|e| {
-            tracing::warn!(
-                repo = %req.repo,
-                error = %e,
-                "index-code: symbol count failed; recording 0 in index_runs"
-            );
-            0
-        });
+    let symbols: i64 = code_row::count_for_repo(conn, &req.repo).unwrap_or_else(|e| {
+        tracing::warn!(
+            repo = %req.repo,
+            error = %e,
+            "index-code: symbol count failed; recording 0 in index_runs"
+        );
+        0
+    });
     let root_path = root.canonicalize().ok();
     let written = random_id::random_hex(8).and_then(|id| {
         let finished_at = memory_row::iso_format(OffsetDateTime::now_utc())?;

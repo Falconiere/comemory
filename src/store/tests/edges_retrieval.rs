@@ -12,9 +12,10 @@
 //! production query has an `ORDER BY`.
 
 use comemory::memory::{Frontmatter, Kind, References, Relations};
-use comemory::store::edges::{self, EdgeKey};
+use comemory::store::edges::{self, EdgeKey, REFERENCES_FILE, REFERENCES_SYMBOL};
 use comemory::store::edges_retrieval::{
-    SeedWalk, co_change_weight, expand_memory_seeds, live_superseder, walk_context_edges,
+    SeedWalk, co_change_weight, direct_reference_edges, expand_memory_seeds, live_superseder,
+    walk_context_edges,
 };
 use comemory::store::{connection, memory_row};
 use rusqlite::Connection;
@@ -265,5 +266,37 @@ fn live_superseder_none_when_unsuperseded() {
     assert_eq!(
         live_superseder(&conn, "aaaa0001", None).expect("query"),
         None
+    );
+}
+
+#[test]
+fn direct_reference_edges_orders_by_rel_then_dst_id_and_excludes_other_rels() {
+    let conn = seed_db();
+    seed_memory(&conn, "aaaa0001", 0);
+    edge(&conn, "aaaa0001", "demo:b.rs", REFERENCES_FILE);
+    edge(&conn, "aaaa0001", "demo:a.rs", REFERENCES_FILE);
+    edge(&conn, "aaaa0001", "demo:a.rs:foo", REFERENCES_SYMBOL);
+    // A non-reference relation must not surface.
+    edge(&conn, "aaaa0001", "some-other-memory", "relates_to");
+
+    let rows = direct_reference_edges(&conn, "aaaa0001").expect("query");
+    assert_eq!(
+        rows,
+        vec![
+            (REFERENCES_FILE.to_string(), "demo:a.rs".to_string()),
+            (REFERENCES_FILE.to_string(), "demo:b.rs".to_string()),
+            (REFERENCES_SYMBOL.to_string(), "demo:a.rs:foo".to_string()),
+        ]
+    );
+}
+
+#[test]
+fn direct_reference_edges_is_empty_for_a_memory_with_no_references() {
+    let conn = seed_db();
+    seed_memory(&conn, "aaaa0001", 0);
+    assert!(
+        direct_reference_edges(&conn, "aaaa0001")
+            .expect("query")
+            .is_empty()
     );
 }

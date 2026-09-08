@@ -9,7 +9,6 @@
 //! this module instead of duplicating the lookup (see the rewired handler in
 //! `src/serve/routes/memories.rs`). Everything after `path` is additive.
 
-use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
@@ -21,8 +20,7 @@ use crate::retrieval::code_ref_collect;
 use crate::retrieval::code_ref_fetch::RefStatusCache;
 use crate::retrieval::rerank::live_superseder;
 use crate::retrieval::score;
-use crate::store::edges::{REFERENCES_FILE, REFERENCES_SYMBOL};
-use crate::store::memory_meta;
+use crate::store::{Connection, edges_retrieval, memory_meta};
 
 /// `comemory show` / `GET /api/v1/memories/{id}` request.
 #[derive(Deserialize, Debug)]
@@ -96,17 +94,6 @@ pub struct Response {
     pub code_refs: Vec<CodeRefRow>,
 }
 
-/// Additional `memories` columns not carried by [`memory_meta::MemoryMeta`].
-struct ExtraFields {
-    body: String,
-    quality: u8,
-    created: String,
-    updated: String,
-    access_count: u64,
-    last_accessed: Option<String>,
-    rank_score: f64,
-}
-
 /// Show one memory in full. `Error::NotFound` for an unknown or
 /// soft-deleted id (`fetch_meta` and the extra-fields lookup both exclude
 /// `deleted_at IS NOT NULL` rows). A data dir with no `comemory.db` yet
@@ -126,7 +113,7 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
     let entry = meta
         .remove(&req.id)
         .ok_or_else(|| Error::NotFound(format!("memory not found: {}", req.id)))?;
-    let extra = fetch_extra(conn, &req.id)?
+    let extra = memory_meta::fetch_extra(conn, &req.id)?
         .ok_or_else(|| Error::NotFound(format!("memory not found: {}", req.id)))?;
 
     let path = abs_path(Some(&entry), data_dir);
@@ -159,29 +146,6 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
     })
 }
 
-/// Fetch the `memories` columns [`memory_meta::fetch_meta`] does not carry.
-/// `Ok(None)` for an unknown or soft-deleted id.
-fn fetch_extra(conn: &Connection, id: &str) -> Result<Option<ExtraFields>> {
-    conn.query_row(
-        "SELECT body, quality, created_at, updated_at, access_count, last_accessed, rank_score \
-           FROM memories WHERE id = ?1 AND deleted_at IS NULL",
-        [id],
-        |r| {
-            Ok(ExtraFields {
-                body: r.get(0)?,
-                quality: r.get(1)?,
-                created: r.get(2)?,
-                updated: r.get(3)?,
-                access_count: r.get::<_, i64>(4)?.max(0) as u64,
-                last_accessed: r.get(5)?,
-                rank_score: r.get(6)?,
-            })
-        },
-    )
-    .optional()
-    .map_err(Error::from)
-}
-
 /// Freshness-classify every direct `references_file` / `references_symbol`
 /// edge from `id`. Reuses [`code_ref_collect`] to resolve each edge into a
 /// `RawRef` and [`RefStatusCache`] to classify it — the same building
@@ -195,17 +159,7 @@ fn fetch_extra(conn: &Connection, id: &str) -> Result<Option<ExtraFields>> {
 /// memory citing one symbol reports one `code_refs` row (spec AC-6), not two.
 fn code_refs_for(conn: &Connection, id: &str) -> Result<Vec<CodeRefRow>> {
     let anchors = code_ref_collect::anchor_map(conn, id)?;
-    let mut stmt = conn.prepare(
-        "SELECT rel, dst_id FROM edges \
-          WHERE src_kind = 'memory' AND src_id = ?1 AND rel IN (?2, ?3) \
-          ORDER BY rel, dst_id",
-    )?;
-    let edges: Vec<(String, String)> = stmt
-        .query_map(
-            rusqlite::params![id, REFERENCES_FILE, REFERENCES_SYMBOL],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )?
-        .collect::<std::result::Result<_, _>>()?;
+    let edges = edges_retrieval::direct_reference_edges(conn, id)?;
 
     let mut resolved = Vec::with_capacity(edges.len());
     for (rel, dst_id) in edges {

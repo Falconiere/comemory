@@ -342,6 +342,17 @@ pub(crate) fn live_ids(conn: &Connection) -> Result<Vec<String>> {
     Ok(rows)
 }
 
+/// Every live memory's `(id, body)`, ordered by id so a re-embed run is
+/// reproducible. Behind `api::reembed`'s memory leg.
+pub fn live_bodies(conn: &Connection) -> Result<Vec<(String, String)>> {
+    let mut stmt =
+        conn.prepare("SELECT id, body FROM memories WHERE deleted_at IS NULL ORDER BY id")?;
+    let rows = stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
 /// Write one `rank_score` per memory id, positionally aligned with `scores`.
 /// See [`crate::graph::memory_rank::materialize_memory_rank`].
 pub(crate) fn update_rank_scores(conn: &Connection, ids: &[String], scores: &[f64]) -> Result<()> {

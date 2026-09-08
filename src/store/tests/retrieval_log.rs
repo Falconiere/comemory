@@ -12,7 +12,7 @@
 
 use comemory::store::connection;
 use comemory::store::retrieval_log::{
-    NewLogRow, insert, queries_excluding_source, returned_ids_in_window,
+    NewLogRow, insert, prefix_matches, queries_excluding_source, returned_ids_in_window,
 };
 use rusqlite::Connection;
 use tempfile::tempdir;
@@ -212,6 +212,52 @@ fn insert_with_no_repo_writes_null() {
         )
         .expect("row exists");
     assert_eq!(repo, None);
+}
+
+/// `prefix_matches` drops `search-code` rows, matches only the `LIKE`
+/// prefix, and orders newest first — the scan behind `api::suggest`'s
+/// "recent" list (dedup/limit stay a caller concern).
+#[test]
+fn prefix_matches_excludes_source_and_orders_newest_first() {
+    let conn = seed_db();
+    insert_row(&conn, "q-older", "[]", "2026-07-15T00:00:00Z", "search");
+    insert_row(&conn, "q-newer", "[]", "2026-07-16T00:00:00Z", "context");
+    insert_row(
+        &conn,
+        "q-excluded-source",
+        "[]",
+        "2026-07-17T00:00:00Z",
+        "search-code",
+    );
+    conn.execute(
+        "INSERT INTO retrieval_log(query_id, query, returned_ids, at, duration_ms, repo, source) \
+         VALUES ('q-no-match', 'unrelated', '[]', '2026-07-16T00:00:00Z', 1, ?1, 'search')",
+        rusqlite::params![REPO],
+    )
+    .expect("seed a non-matching query");
+    conn.execute(
+        "UPDATE retrieval_log SET query = 'front matter' WHERE query_id = 'q-older'",
+        [],
+    )
+    .expect("set query text");
+    conn.execute(
+        "UPDATE retrieval_log SET query = 'front rules' WHERE query_id = 'q-newer'",
+        [],
+    )
+    .expect("set query text");
+    conn.execute(
+        "UPDATE retrieval_log SET query = 'front code' WHERE query_id = 'q-excluded-source'",
+        [],
+    )
+    .expect("set query text");
+
+    let rows = prefix_matches(&conn, "search-code", "front%").expect("query");
+    let ids: Vec<&str> = rows.iter().map(|r| r.query_id.as_str()).collect();
+    assert_eq!(
+        ids,
+        vec!["q-newer", "q-older"],
+        "excludes the search-code source and orders newest first"
+    );
 }
 
 /// `queries_excluding_source` drops `search-code` rows and orders the rest

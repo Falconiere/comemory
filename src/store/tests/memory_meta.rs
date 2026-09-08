@@ -11,7 +11,9 @@
 //! mocks.
 
 use comemory::memory::{Frontmatter, Kind, References, Relations};
-use comemory::store::memory_meta::{ids_matching_kind, keeper_stats, kind_and_body, rank_signals};
+use comemory::store::memory_meta::{
+    fetch_extra, ids_matching_kind, keeper_stats, kind_and_body, rank_signals,
+};
 use comemory::store::{connection, memory_row};
 use rusqlite::Connection;
 use time::OffsetDateTime;
@@ -150,4 +152,34 @@ fn keeper_stats_with_empty_ids_is_empty() {
     let conn = seed_db();
     let rows = keeper_stats(&conn, &[]).expect("query");
     assert!(rows.is_empty());
+}
+
+#[test]
+fn fetch_extra_is_none_for_missing_or_soft_deleted() {
+    let conn = seed_db();
+    seed(&conn, "aaaa0001", Kind::Note, "r");
+    conn.execute(
+        "UPDATE memories SET deleted_at = '2026-01-01T00:00:00Z' WHERE id = 'aaaa0001'",
+        [],
+    )
+    .expect("soft delete");
+
+    assert!(fetch_extra(&conn, "aaaa0001").expect("query").is_none());
+    assert!(fetch_extra(&conn, "missing").expect("query").is_none());
+}
+
+#[test]
+fn fetch_extra_returns_the_live_row() {
+    let conn = seed_db();
+    seed(&conn, "aaaa0001", Kind::Decision, "r");
+
+    let extra = fetch_extra(&conn, "aaaa0001")
+        .expect("query")
+        .expect("row present");
+    assert_eq!(extra.body, "body text");
+    assert_eq!(extra.quality, 3);
+    assert_eq!(extra.access_count, 0);
+    assert!(extra.last_accessed.is_none());
+    assert!(!extra.created.is_empty());
+    assert!(!extra.updated.is_empty());
 }
