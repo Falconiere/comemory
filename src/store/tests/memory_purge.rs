@@ -5,16 +5,18 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! [`purge_memory`] / [`expired_deleted_ids`] against a real migrated
-//! `comemory.db`, populated through the real writers: `api::save::run`,
-//! `api::delete::run` (the soft delete), `api::feedback::run`,
+//! [`purge_memory`] / [`expired_deleted_ids`] / [`soft_delete`] against a
+//! real migrated `comemory.db`, populated through the real writers:
+//! `api::save::run`, `api::delete::run` (the soft delete), `api::feedback::run`,
 //! `store::code_ref::upsert`, `store::vector::insert_memory`.
 
 use comemory::api::{self, Ctx};
 use comemory::config::{Config, Paths};
 use comemory::memory::{Kind, Ref, References};
 use comemory::stats::feedback::generate_query_id;
-use comemory::store::memory_purge::{expired_deleted_ids, purge_memory};
+use comemory::store::memory_purge::{
+    expired_deleted_ids, purge_memory, soft_delete as store_soft_delete,
+};
 use comemory::store::{code_ref, connection, fts, memory_row, vector};
 use rusqlite::Connection;
 use time::{Duration, OffsetDateTime};
@@ -228,6 +230,55 @@ fn purge_clears_every_mirror_row_of_a_soft_deleted_memory() {
     assert!(
         !purge_memory(&mut conn, &id).expect("second purge"),
         "a second purge of the same id finds nothing"
+    );
+}
+
+#[test]
+fn soft_delete_stamps_deleted_at_drops_fts_vec_and_touching_edges() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let (paths, cfg, mut conn) = open(home.path());
+    let id = save(&paths, &cfg, &mut conn, "a soft-delete unit target", &[]);
+    let dim = vector::dim_memory(&conn).expect("dim");
+    vector::insert_memory(&conn, &id, &vec![0.5; dim]).expect("insert vec row");
+
+    let now = memory_row::iso_format(OffsetDateTime::now_utc()).expect("stamp");
+    let tx = conn.transaction().expect("begin");
+    store_soft_delete(&tx, &id, &now).expect("soft_delete");
+    tx.commit().expect("commit");
+
+    let deleted_at: Option<String> = conn
+        .query_row(
+            "SELECT deleted_at FROM memories WHERE id = ?1",
+            [&id],
+            |r| r.get(0),
+        )
+        .expect("row still present");
+    assert_eq!(deleted_at.as_deref(), Some(now.as_str()));
+    assert_eq!(
+        count(
+            &conn,
+            "SELECT COUNT(*) FROM memory_fts WHERE memory_id = ?1",
+            &id
+        ),
+        0
+    );
+    assert_eq!(
+        count(
+            &conn,
+            "SELECT COUNT(*) FROM memory_vec WHERE memory_id = ?1",
+            &id
+        ),
+        0
+    );
+    assert_eq!(
+        count(
+            &conn,
+            "SELECT COUNT(*) FROM edges WHERE (src_kind='memory' AND src_id=?1) \
+               OR (dst_kind='memory' AND dst_id=?1)",
+            &id
+        ),
+        0,
+        "every touching edge (e.g. tagged/in_repo) must be gone"
     );
 }
 

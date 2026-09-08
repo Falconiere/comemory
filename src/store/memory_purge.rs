@@ -33,6 +33,25 @@ use rusqlite::{Connection, params};
 use crate::prelude::*;
 use crate::store::edges;
 
+/// Mirror one soft-delete into `comemory.db`, inside the caller's already-open
+/// transaction: stamp `deleted_at`, drop the `memory_fts` + `memory_vec`
+/// rows (a `vec0` vtab has no FK cascade and no JOIN-side `deleted_at`
+/// filter, so a surviving `memory_vec` row would block a future re-save of
+/// the same body with a PK constraint failure), and delete every edge
+/// touching the memory. Caller commits; see
+/// [`crate::cli::delete::mirror_soft_delete`] for why the derived-artifact
+/// refresh runs after that commit rather than inside this helper.
+pub fn soft_delete(conn: &Connection, id: &str, now: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE memories SET deleted_at = ?1 WHERE id = ?2",
+        params![now, id],
+    )?;
+    conn.execute("DELETE FROM memory_fts WHERE memory_id = ?1", params![id])?;
+    conn.execute("DELETE FROM memory_vec WHERE memory_id = ?1", params![id])?;
+    edges::delete_touching(conn, "memory", id)?;
+    Ok(())
+}
+
 /// The per-memory tables keyed by a bare memory id, each cleared with the
 /// id bound as `?1` once the guarded `memories` delete has matched.
 /// `memory_tags` also cascades from the `memories` delete under

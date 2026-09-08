@@ -4,13 +4,14 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-use rusqlite::Connection;
 use serde::Serialize;
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
 use crate::prelude::*;
+use crate::store::query_expansions::{self, NewExpansion};
 use crate::store::tokenizer::split::query_tokens;
+use crate::store::{self, Connection};
 
 /// Reformulation window: a follow-up query counts as a rewording of a
 /// failed one only when it ran within this many minutes after it.
@@ -43,32 +44,22 @@ pub struct MinedMapping {
 /// expansions. `source = 'context'` rows still participate — context
 /// queries are first-class mining citizens since M2.
 pub fn mine(conn: &Connection) -> Result<Vec<MinedMapping>> {
-    let mut stmt = conn.prepare(
-        "SELECT query_id, query, at FROM retrieval_log
-         WHERE source != ?1 ORDER BY at, query_id",
-    )?;
-    let log: Vec<(String, String, String)> = stmt
-        .query_map([crate::stats::source::SEARCH_CODE], |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-        })?
-        .collect::<std::result::Result<_, _>>()?;
+    let log =
+        store::retrieval_log::queries_excluding_source(conn, crate::stats::source::SEARCH_CODE)?;
     // Only memory-target verdicts mark a query successful: a code verdict
     // (target_kind = 'code', written by `stats::code_feedback`) says
     // nothing about memory retrieval quality, so a follow-up whose only
     // used feedback is code-target must not read as a successful rewording.
-    let mut stmt = conn.prepare(
-        "SELECT DISTINCT query_id FROM feedback_events
-          WHERE verdict = 'used' AND target_kind = ?1",
-    )?;
-    let used: HashSet<String> = stmt
-        .query_map([crate::stats::target::MEMORY], |r| r.get(0))?
-        .collect::<std::result::Result<_, _>>()?;
+    let used: HashSet<String> =
+        store::feedback::used_query_ids(conn, crate::stats::target::MEMORY)?
+            .into_iter()
+            .collect();
 
     let parsed: Vec<(bool, BTreeSet<String>, OffsetDateTime)> = log
         .iter()
-        .filter_map(|(qid, query, at)| {
-            let t = OffsetDateTime::parse(at, &Rfc3339).ok()?;
-            Some((used.contains(qid), query_tokens(query), t))
+        .filter_map(|row| {
+            let t = OffsetDateTime::parse(&row.at, &Rfc3339).ok()?;
+            Some((used.contains(&row.query_id), query_tokens(&row.query), t))
         })
         .collect();
 
@@ -110,20 +101,17 @@ pub fn mine(conn: &Connection) -> Result<Vec<MinedMapping>> {
 /// mappings decay on re-mine.
 pub fn apply(conn: &mut Connection, mappings: &[MinedMapping], now_iso: &str) -> Result<()> {
     let tx = conn.transaction()?;
-    tx.execute("DELETE FROM query_expansions", [])?;
-    {
-        let mut stmt = tx.prepare(
-            "INSERT INTO query_expansions(term, expansion, support, last_mined)
-             VALUES (?1, ?2, ?3, ?4)",
+    query_expansions::delete_all(&tx)?;
+    for m in mappings {
+        query_expansions::insert(
+            &tx,
+            &NewExpansion {
+                term: &m.term,
+                expansion: &m.expansion,
+                support: m.support as i64,
+                last_mined: now_iso,
+            },
         )?;
-        for m in mappings {
-            stmt.execute(rusqlite::params![
-                m.term,
-                m.expansion,
-                m.support as i64,
-                now_iso
-            ])?;
-        }
     }
     tx.commit()?;
     Ok(())

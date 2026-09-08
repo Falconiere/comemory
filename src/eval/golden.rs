@@ -5,10 +5,11 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
 use crate::prelude::*;
+use crate::store::Connection;
+use crate::store::feedback;
 
 /// One golden evaluation pair: a query and the memory ids a correct
 /// retrieval should surface.
@@ -63,27 +64,17 @@ pub fn load_file(path: &Path) -> Result<Vec<GoldenPair>> {
 /// (`retrieval_log.kind` carries `--lang` for search-code rows), which
 /// eval would replay as a memory-kind filter and score garbage.
 pub fn harvest(conn: &Connection) -> Result<Vec<GoldenPair>> {
-    let mut stmt = conn.prepare(
-        "SELECT DISTINCT r.query, r.repo, r.kind, e.memory_id
-           FROM feedback_events e
-           JOIN retrieval_log r ON r.query_id = e.query_id
-           JOIN memories m ON m.id = e.memory_id AND m.deleted_at IS NULL
-          WHERE e.verdict = 'used' AND e.target_kind = ?1
-            AND r.source != ?2
-          ORDER BY r.query, r.repo, r.kind, e.memory_id",
+    let rows = feedback::used_events_for_golden(
+        conn,
+        crate::stats::target::MEMORY,
+        crate::stats::source::SEARCH_CODE,
     )?;
-    let rows: Vec<(PairKey, String)> = stmt
-        .query_map(
-            [
-                crate::stats::target::MEMORY,
-                crate::stats::source::SEARCH_CODE,
-            ],
-            |r| Ok(((r.get(0)?, r.get(1)?, r.get(2)?), r.get(3)?)),
-        )?
-        .collect::<std::result::Result<_, _>>()?;
     let mut by_key: BTreeMap<PairKey, Vec<String>> = BTreeMap::new();
-    for (key, id) in rows {
-        by_key.entry(key).or_default().push(id);
+    for row in rows {
+        by_key
+            .entry((row.query, row.repo, row.kind))
+            .or_default()
+            .push(row.memory_id);
     }
     Ok(by_key
         .into_iter()

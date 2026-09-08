@@ -7,7 +7,6 @@
 
 use std::path::Path;
 
-use rusqlite::Connection;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
@@ -18,7 +17,8 @@ use crate::eval::golden::GoldenPair;
 use crate::eval::runner;
 use crate::eval::tune::{self, TuneCandidate};
 use crate::prelude::*;
-use crate::store::memory_row;
+use crate::store::bandit_arms::{self, NewArm};
+use crate::store::{Connection, memory_row};
 
 /// One bandit arm with Beta posterior.
 #[derive(Debug, Clone, Serialize)]
@@ -94,20 +94,17 @@ pub fn arm_id(c: &TuneCandidate) -> String {
 pub fn seed_arms(conn: &Connection, cfg: &Config, at: &str) -> Result<()> {
     for c in tune::grid(&cfg.tune) {
         let id = arm_id(&c);
-        conn.execute(
-            "INSERT OR IGNORE INTO bandit_arms(\
-                 arm_id, rrf_k, decay, mmr_lambda, bm25_body, bm25_tags, \
-                 alpha, beta, pulls, last_mrr, updated_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1.0, 1.0, 0, NULL, ?7)",
-            rusqlite::params![
-                id,
-                f64::from(c.rrf_k),
-                c.decay,
-                c.mmr_lambda,
-                f64::from(c.bm25_weights.0),
-                f64::from(c.bm25_weights.1),
+        bandit_arms::seed(
+            conn,
+            &NewArm {
+                arm_id: &id,
+                rrf_k: f64::from(c.rrf_k),
+                decay: c.decay,
+                mmr_lambda: c.mmr_lambda,
+                bm25_body: f64::from(c.bm25_weights.0),
+                bm25_tags: f64::from(c.bm25_weights.1),
                 at,
-            ],
+            },
         )?;
     }
     Ok(())
@@ -119,23 +116,15 @@ pub fn load_ranked(conn: &Connection, cfg: &Config) -> Result<Vec<Arm>> {
     let mut out = Vec::with_capacity(grid.len());
     for c in &grid {
         let id = arm_id(c);
-        match conn.query_row(
-            "SELECT alpha, beta, pulls, last_mrr FROM bandit_arms WHERE arm_id = ?1",
-            [&id],
-            |r| {
-                Ok(Arm {
-                    arm_id: id.clone(),
-                    candidate: *c,
-                    alpha: r.get(0)?,
-                    beta: r.get(1)?,
-                    pulls: r.get(2)?,
-                    last_mrr: r.get(3)?,
-                })
-            },
-        ) {
-            Ok(arm) => out.push(arm),
-            Err(rusqlite::Error::QueryReturnedNoRows) => {}
-            Err(e) => return Err(Error::Sqlite(e)),
+        if let Some(state) = bandit_arms::load(conn, &id)? {
+            out.push(Arm {
+                arm_id: id,
+                candidate: *c,
+                alpha: state.alpha,
+                beta: state.beta,
+                pulls: state.pulls,
+                last_mrr: state.last_mrr,
+            });
         }
     }
     out.sort_by(|a, b| {
@@ -189,25 +178,6 @@ pub fn thompson_sample(arms: &[Arm], seed: u64) -> Result<&Arm> {
     Ok(&arms[best_i])
 }
 
-/// Update posterior after confirm; `won` is [`tune::beats_baseline`].
-pub fn record_outcome(
-    conn: &Connection,
-    arm_id: &str,
-    won: bool,
-    mrr: f64,
-    at: &str,
-) -> Result<()> {
-    let sql = if won {
-        "UPDATE bandit_arms SET alpha = alpha + 1.0, pulls = pulls + 1, \
-             last_mrr = ?2, updated_at = ?3 WHERE arm_id = ?1"
-    } else {
-        "UPDATE bandit_arms SET beta = beta + 1.0, pulls = pulls + 1, \
-             last_mrr = ?2, updated_at = ?3 WHERE arm_id = ?1"
-    };
-    conn.execute(sql, rusqlite::params![arm_id, mrr, at])?;
-    Ok(())
-}
-
 /// Seed, sample, confirm vs baseline; write `config_path` when `apply` and win.
 pub fn run_bandit(
     cfg: &Config,
@@ -242,7 +212,7 @@ pub fn run_bandit(
         baseline.mrr,
         baseline.recall_at_k,
     );
-    record_outcome(conn, &arm_id(&proposed), won, cand.mrr, &at)?;
+    bandit_arms::record_outcome(conn, &arm_id(&proposed), won, cand.mrr, &at)?;
 
     let applied = apply && won;
     if applied {

@@ -108,6 +108,41 @@ fn insert_row(
     Ok(())
 }
 
+/// One anchored `code_ref` row from a live memory, as read by the
+/// ghost-reference scan behind `prune::stale_code::detect`.
+pub struct LiveRefRow {
+    /// Owning (live) memory id.
+    pub memory_id: String,
+    /// Qualified target: `<repo>:<path>[:<symbol>]`.
+    pub dst_id: String,
+    /// Git blob OID captured at save time; `None` when unpinned.
+    pub pinned_blob: Option<String>,
+}
+
+/// Every `code_ref` row of relation `rel` attached to a LIVE
+/// (`deleted_at IS NULL`) memory, ordered `(memory_id, dst_id)`.
+pub fn for_rel_live(conn: &Connection, rel: &str) -> Result<Vec<LiveRefRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT cr.memory_id, cr.dst_id, cr.pinned_blob \
+           FROM code_ref cr \
+           JOIN memories m ON m.id = cr.memory_id AND m.deleted_at IS NULL \
+          WHERE cr.rel = ?1 \
+          ORDER BY cr.memory_id, cr.dst_id",
+    )?;
+    let rows = stmt.query_map([rel], |row| {
+        Ok(LiveRefRow {
+            memory_id: row.get(0)?,
+            dst_id: row.get(1)?,
+            pinned_blob: row.get(2)?,
+        })
+    })?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r?);
+    }
+    Ok(out)
+}
+
 /// Load every code reference attached to `memory_id`, ordered `rel, dst_id`.
 pub fn for_memory(conn: &Connection, memory_id: &str) -> Result<Vec<CodeRefRow>> {
     let mut stmt = conn.prepare(

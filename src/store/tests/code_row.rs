@@ -276,3 +276,23 @@ fn upsert_last_indexed_updates_an_existing_marker_without_disturbing_root_path()
         "stamping last_head must not clobber a previously-set root_path"
     );
 }
+
+#[test]
+fn symbol_row_exists_is_true_only_for_a_seeded_symbol() {
+    let dir = TempDir::new().expect("tempdir");
+    let conn = connection::open(dir.path().join("comemory.db")).expect("open db");
+    seed(&conn, "known_fn");
+
+    assert!(
+        code_row::symbol_row_exists(&conn, "r", "src/lib.rs", "known_fn").expect("query"),
+        "seeded symbol must resolve"
+    );
+    assert!(
+        !code_row::symbol_row_exists(&conn, "r", "src/lib.rs", "no_such_fn").expect("query"),
+        "unknown symbol must not resolve"
+    );
+    assert!(
+        !code_row::symbol_row_exists(&conn, "other", "src/lib.rs", "known_fn").expect("query"),
+        "a different repo must not resolve"
+    );
+}

@@ -13,7 +13,7 @@ use crate::cli::load_config;
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::memory::MemoryStore;
 use crate::prelude::*;
-use crate::store::{connection, edges, memory_row};
+use crate::store::{Connection, connection, memory_purge, memory_row};
 
 const EXAMPLES: &str = "\
 Examples:
@@ -45,7 +45,7 @@ pub struct Args {
 /// ([`crate::graph::derived::refresh_derived_best_effort`]).
 pub(crate) fn soft_delete(
     paths: &Paths,
-    conn: &mut rusqlite::Connection,
+    conn: &mut Connection,
     id: &str,
 ) -> Result<(String, String, bool)> {
     let removed = MemoryStore::new(paths.clone()).delete(id)?;
@@ -67,25 +67,10 @@ pub(crate) fn soft_delete(
 /// [`crate::graph::derived`] refreshes both derived artifacts best-effort
 /// here, not at the [`soft_delete`] call site: every soft-delete surface
 /// (delete, prune apply, prune heal) then heals rank and triplets alike.
-pub(crate) fn mirror_soft_delete(conn: &mut rusqlite::Connection, id: &str) -> Result<bool> {
+pub(crate) fn mirror_soft_delete(conn: &mut Connection, id: &str) -> Result<bool> {
     let now = memory_row::iso_format(OffsetDateTime::now_utc())?;
     let tx = conn.transaction()?;
-    tx.execute(
-        "UPDATE memories SET deleted_at = ?1 WHERE id = ?2",
-        rusqlite::params![now, id],
-    )?;
-    tx.execute(
-        "DELETE FROM memory_fts WHERE memory_id = ?1",
-        rusqlite::params![id],
-    )?;
-    // memory_vec is a vec0 vtab — no FK cascade and no JOIN-side filter on
-    // `deleted_at`, so the row would survive a soft-delete and block a
-    // future re-save of the same body with a PK constraint failure.
-    tx.execute(
-        "DELETE FROM memory_vec WHERE memory_id = ?1",
-        rusqlite::params![id],
-    )?;
-    edges::delete_touching(&tx, "memory", id)?;
+    memory_purge::soft_delete(&tx, id, &now)?;
     tx.commit()?;
     // After the commit, so a failed refresh cannot roll back a delete that
     // succeeded — and reported rather than swallowed, since a stale
