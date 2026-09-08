@@ -10,7 +10,7 @@
 //! yields cosine similarity in the range `[-1, 1]`, where `1.0` is
 //! identical and `-1.0` is opposite.
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::prelude::*;
 use crate::store::CreatedWindow;
@@ -79,6 +79,18 @@ pub fn replace_memory(conn: &Connection, memory_id: &str, vector: &[f32]) -> Res
         params![memory_id],
     )?;
     insert_memory(conn, memory_id, vector)
+}
+
+/// Raw `memory_vec.embedding` blob for `memory_id`, or `None` when it has no
+/// vector row — behind `comemory sync`'s wire vector encode.
+pub fn memory_embedding_blob(conn: &Connection, memory_id: &str) -> Result<Option<Vec<u8>>> {
+    conn.query_row(
+        "SELECT embedding FROM memory_vec WHERE memory_id = ?1",
+        [memory_id],
+        |r| r.get(0),
+    )
+    .optional()
+    .map_err(Error::from)
 }
 
 /// Oversample factor applied to the vec0 KNN candidate set when a scope

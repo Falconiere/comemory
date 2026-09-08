@@ -9,7 +9,9 @@
 
 use comemory::store::connection;
 use comemory::store::migrate;
-use comemory::store::schema_meta::{get, set_memory_vector_model, upsert, version};
+use comemory::store::schema_meta::{
+    get, memory_vector_model, set_memory_vector_model, upsert, version,
+};
 use tempfile::tempdir;
 
 #[test]
@@ -43,6 +45,23 @@ fn set_memory_vector_model_inserts_then_updates() {
         )
         .expect("row exists");
     assert_eq!(updated, "ollama:mxbai-embed-large");
+}
+
+#[test]
+fn memory_vector_model_defaults_empty_then_reads_back_what_was_set() {
+    let dir = tempdir().expect("tempdir");
+    let conn = connection::open(dir.path().join("comemory.db")).expect("open");
+    assert_eq!(
+        memory_vector_model(&conn).expect("model on a fresh db"),
+        String::new(),
+        "migration 0016 stamps an empty default"
+    );
+
+    set_memory_vector_model(&conn, "ollama:nomic-embed-text").expect("set");
+    assert_eq!(
+        memory_vector_model(&conn).expect("model after set"),
+        "ollama:nomic-embed-text"
+    );
 }
 
 #[test]

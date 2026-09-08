@@ -10,7 +10,8 @@
 
 use comemory::store::connection;
 use comemory::store::repo_marker::{
-    advance_mined_cursor, archived, last_mined_commit, read_for_lazy_reindex,
+    advance_mined_cursor, all_repos, archived, exists, last_mined_commit, read_for_lazy_reindex,
+    root_path, set_archived,
 };
 use rusqlite::Connection;
 use tempfile::TempDir;
@@ -118,4 +119,69 @@ fn archived_reports_the_stored_flag() {
 
     assert_eq!(archived(&conn, "r").expect("read"), Some(true));
     assert_eq!(archived(&conn, "other").expect("read"), Some(false));
+}
+
+#[test]
+fn all_repos_lists_every_label_ascending() {
+    let (conn, _tmp) = open_db();
+    conn.execute("INSERT INTO repo_marker(repo) VALUES('zeta')", [])
+        .expect("seed zeta");
+    conn.execute("INSERT INTO repo_marker(repo) VALUES('alpha')", [])
+        .expect("seed alpha");
+
+    assert_eq!(
+        all_repos(&conn).expect("all_repos"),
+        vec!["alpha".to_string(), "zeta".to_string()]
+    );
+}
+
+#[test]
+fn root_path_is_none_with_no_marker_row_or_a_null_root() {
+    let (conn, _tmp) = open_db();
+    assert_eq!(root_path(&conn, "no-such-repo").expect("read"), None);
+
+    conn.execute("INSERT INTO repo_marker(repo) VALUES('r')", [])
+        .expect("seed marker with no root");
+    assert_eq!(root_path(&conn, "r").expect("read"), None);
+}
+
+#[test]
+fn root_path_reports_the_stored_root() {
+    let (conn, _tmp) = open_db();
+    conn.execute(
+        "INSERT INTO repo_marker(repo, root_path) VALUES('r', '/some/root')",
+        [],
+    )
+    .expect("seed root_path");
+    assert_eq!(
+        root_path(&conn, "r").expect("read"),
+        Some("/some/root".to_string())
+    );
+}
+
+#[test]
+fn exists_reflects_marker_row_presence() {
+    let (conn, _tmp) = open_db();
+    assert!(!exists(&conn, "r").expect("exists"));
+    conn.execute("INSERT INTO repo_marker(repo) VALUES('r')", [])
+        .expect("seed marker");
+    assert!(exists(&conn, "r").expect("exists"));
+}
+
+#[test]
+fn set_archived_flips_the_flag_and_reports_zero_rows_for_an_unknown_repo() {
+    let (conn, _tmp) = open_db();
+    conn.execute("INSERT INTO repo_marker(repo) VALUES('r')", [])
+        .expect("seed marker");
+
+    let updated = set_archived(&conn, "r", true).expect("set archived");
+    assert_eq!(updated, 1);
+    assert_eq!(archived(&conn, "r").expect("read"), Some(true));
+
+    let updated = set_archived(&conn, "r", false).expect("set unarchived");
+    assert_eq!(updated, 1);
+    assert_eq!(archived(&conn, "r").expect("read"), Some(false));
+
+    let unknown = set_archived(&conn, "ghost", true).expect("set on unknown repo");
+    assert_eq!(unknown, 0);
 }

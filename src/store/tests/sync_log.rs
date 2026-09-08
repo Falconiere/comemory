@@ -124,6 +124,46 @@ fn latest_tombstone_seq_and_entries_since() {
     assert!(local.iter().all(|r| r.origin == SyncOrigin::Local));
 }
 
+/// Pins the `seq > since` (strict) cursor boundary both `entries_since`
+/// (pull) and `local_entries_since` (push) rely on: a row exactly AT the
+/// stored cursor must not be re-selected, only the row strictly after it.
+/// An off-by-one here would either re-push/re-pull an already-synced entry
+/// (`>=`) or silently drop the very next one (`>` seeded one too high).
+#[test]
+fn entries_since_excludes_the_cursor_and_includes_the_next_seq() {
+    let conn = open_with_sync_log();
+    let at_cursor = sync_log::append(
+        &conn,
+        SyncOp::Upsert,
+        "aaaaaaaa",
+        "11",
+        "2026-01-01T00:00:00Z",
+        SyncOrigin::Local,
+    )
+    .expect("seed at cursor");
+    let after_cursor = sync_log::append(
+        &conn,
+        SyncOp::Upsert,
+        "bbbbbbbb",
+        "22",
+        "2026-01-02T00:00:00Z",
+        SyncOrigin::Local,
+    )
+    .expect("seed after cursor");
+
+    let rows = sync_log::entries_since(&conn, at_cursor, 10).expect("entries_since");
+    assert_eq!(
+        rows.len(),
+        1,
+        "a row exactly at the cursor must not be re-selected"
+    );
+    assert_eq!(rows[0].seq, after_cursor);
+
+    let local = sync_log::local_entries_since(&conn, at_cursor, 10).expect("local_entries_since");
+    assert_eq!(local.len(), 1);
+    assert_eq!(local[0].seq, after_cursor);
+}
+
 #[test]
 fn op_and_origin_parse_roundtrip() {
     assert_eq!(SyncOp::parse("upsert").unwrap(), SyncOp::Upsert);
