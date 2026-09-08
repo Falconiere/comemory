@@ -16,7 +16,7 @@ use comemory::config::paths::Paths;
 use comemory::stats::feedback::record_with_provenance;
 use comemory::stats::sqlite::StatsDb;
 use comemory::store::connection;
-use comemory::store::feedback::{used_events_for_golden, used_query_ids};
+use comemory::store::feedback::{event_counts, used_events_for_golden, used_query_ids};
 use tempfile::TempDir;
 
 /// Open a [`StatsDb`] over a fresh `comemory.db` in a tempdir.
@@ -166,4 +166,29 @@ fn used_events_for_golden_excludes_source_and_dead_memories() {
     assert_eq!(rows[0].repo, Some("r".to_string()));
     assert_eq!(rows[0].kind, Some("note".to_string()));
     assert_eq!(rows[0].memory_id, "aaaaaaa1");
+}
+
+/// `event_counts` sums the whole `feedback_events` table and the
+/// `provenance != 'manual'` implicit-share numerator in one scan, reading
+/// the `NULL`-on-empty conditional sums back as `0` — behind
+/// `api::learning::summary`'s header tiles.
+#[test]
+fn event_counts_sums_verdicts_and_the_implicit_share_numerator() {
+    let dir = TempDir::new().expect("tempdir");
+    let conn = connection::open(dir.path().join("comemory.db")).expect("open");
+    assert_eq!(
+        event_counts(&conn).expect("event_counts on an empty table"),
+        (0, 0, 0, 0)
+    );
+
+    conn.execute_batch(
+        "INSERT INTO feedback_events(query_id, memory_id, verdict, at, target_kind, provenance) VALUES
+           ('q1', 'aaaaaaa1', 'used', '2026-07-15T00:00:00Z', 'memory', 'manual'),
+           ('q2', 'aaaaaaa2', 'used', '2026-07-15T00:00:00Z', 'memory', 'auto_search_edit'),
+           ('q3', 'aaaaaaa3', 'irrelevant', '2026-07-15T00:00:00Z', 'memory', 'manual');",
+    )
+    .expect("seed feedback_events");
+
+    let (total, implicit, used, irrelevant) = event_counts(&conn).expect("event_counts");
+    assert_eq!((total, implicit, used, irrelevant), (3, 1, 2, 1));
 }

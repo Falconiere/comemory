@@ -311,3 +311,32 @@ fn replace_code_swaps_the_row_rather_than_duplicating_it() {
         "the replaced vector must be the one stored"
     );
 }
+
+#[test]
+fn memory_embedding_blob_is_none_then_the_raw_row_after_insert() {
+    let dir = tempdir().expect("tempdir");
+    let conn = connection::open(dir.path().join("comemory.db")).expect("open");
+    conn.execute(
+        "INSERT INTO memories(id,slug,kind,content_hash,body,created_at,updated_at,md_path) \
+         VALUES('eeee5555','e','note','hash5','body','2026-06-08T00:00:00Z','2026-06-08T00:00:00Z','e.md')",
+        [],
+    )
+    .expect("seed memories");
+
+    assert!(
+        vector::memory_embedding_blob(&conn, "eeee5555")
+            .expect("blob before insert")
+            .is_none()
+    );
+
+    let v = vectors::vector("gamma", 1024);
+    vector::insert_memory(&conn, "eeee5555", &v).expect("insert");
+    let blob = vector::memory_embedding_blob(&conn, "eeee5555")
+        .expect("blob after insert")
+        .expect("row present");
+    assert_eq!(
+        blob,
+        comemory::store::embed::to_vec_blob(&v),
+        "the raw stored blob round-trips byte-identical"
+    );
+}

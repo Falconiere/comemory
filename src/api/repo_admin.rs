@@ -19,12 +19,11 @@
 
 use std::path::Path;
 
-use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 use crate::api::Ctx;
 use crate::prelude::*;
-use crate::store::{code_row, repo_drop};
+use crate::store::{Connection, code_row, repo_drop, repo_marker};
 
 /// `POST /api/v1/repos` request — register a working-tree root under a repo
 /// label.
@@ -196,10 +195,7 @@ pub fn patch(ctx: &mut Ctx<'_>, name: &str, req: PatchRequest) -> Result<PatchRe
 /// is the "stop indexing, keep the memories" action.
 pub fn archive(ctx: &mut Ctx<'_>, name: &str, req: ArchiveRequest) -> Result<ArchiveResponse> {
     let conn = ctx.conn()?;
-    let updated = conn.execute(
-        "UPDATE repo_marker SET archived = ?2 WHERE repo = ?1",
-        rusqlite::params![name, i64::from(req.archived)],
-    )?;
+    let updated = repo_marker::set_archived(conn, name, req.archived)?;
     if updated == 0 {
         return Err(not_found(name));
     }
@@ -252,24 +248,16 @@ fn basename(root: &str) -> Result<String> {
 /// `repo_marker.root_path` for `repo`, or `None` when there is no marker
 /// row (or its root is NULL).
 fn stored_root(conn: &Connection, repo: &str) -> Result<Option<String>> {
-    let root: Option<Option<String>> = conn
-        .query_row(
-            "SELECT root_path FROM repo_marker WHERE repo = ?1",
-            [repo],
-            |r| r.get(0),
-        )
-        .optional()?;
-    Ok(root.flatten())
+    repo_marker::root_path(conn, repo)
 }
 
 /// `Ok(())` when a `repo_marker` row exists for `repo`, else [`not_found`].
 fn require_marker(conn: &Connection, repo: &str) -> Result<()> {
-    let exists: bool = conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM repo_marker WHERE repo = ?1)",
-        [repo],
-        |r| r.get(0),
-    )?;
-    if exists { Ok(()) } else { Err(not_found(repo)) }
+    if repo_marker::exists(conn, repo)? {
+        Ok(())
+    } else {
+        Err(not_found(repo))
+    }
 }
 
 /// The shared `404` for an unknown repo label.

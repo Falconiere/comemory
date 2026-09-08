@@ -92,6 +92,50 @@ pub fn matching_terms(
         .map_err(Error::from)
 }
 
+/// Total `query_expansions` row count — behind `api::learning`'s summary
+/// tile and its paged `expansions` list.
+pub fn count(conn: &Connection) -> Result<u64> {
+    Ok(
+        conn.query_row("SELECT COUNT(*) FROM query_expansions", [], |r| {
+            r.get::<_, i64>(0)
+        })? as u64,
+    )
+}
+
+/// One `query_expansions` row as returned by [`page`].
+pub struct MinedRow {
+    /// Failed query term (`query_expansions.term`).
+    pub term: String,
+    /// Term from the successful rewording (`.expansion`).
+    pub expansion: String,
+    /// Observation count backing the mapping (`.support`).
+    pub support: i64,
+    /// ISO-8601 UTC timestamp of the mining run that wrote the row.
+    pub last_mined: String,
+}
+
+/// One page of mined expansions, strongest support first — `term` then
+/// `expansion` break the tie, matching `(term, expansion)`'s primary key so
+/// a page boundary is stable. `sql_limit` is a raw SQLite `LIMIT` value; a
+/// negative value means "no limit" (the caller's `Page`-"all" sentinel).
+pub fn page(conn: &Connection, sql_limit: i64, offset: i64) -> Result<Vec<MinedRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT term, expansion, support, last_mined FROM query_expansions \
+         ORDER BY support DESC, term ASC, expansion ASC LIMIT ?1 OFFSET ?2",
+    )?;
+    let items = stmt
+        .query_map(params![sql_limit, offset], |r| {
+            Ok(MinedRow {
+                term: r.get(0)?,
+                expansion: r.get(1)?,
+                support: r.get(2)?,
+                last_mined: r.get(3)?,
+            })
+        })?
+        .collect::<std::result::Result<_, _>>()?;
+    Ok(items)
+}
+
 #[cfg(test)]
 #[path = "tests/query_expansions.rs"]
 mod tests;

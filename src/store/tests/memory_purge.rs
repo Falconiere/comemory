@@ -15,7 +15,7 @@ use comemory::config::{Config, Paths};
 use comemory::memory::{Kind, Ref, References};
 use comemory::stats::feedback::generate_query_id;
 use comemory::store::memory_purge::{
-    expired_deleted_ids, purge_memory, soft_delete as store_soft_delete,
+    expired_deleted_ids, purge_memory, soft_delete as store_soft_delete, trashed_with_hash,
 };
 use comemory::store::{code_ref, connection, fts, memory_row, vector};
 use rusqlite::Connection;
@@ -341,5 +341,40 @@ fn expired_deleted_ids_reports_only_rows_past_the_window() {
             .expect("wider window")
             .is_empty(),
         "a 60-day window keeps the 40-day-old deletion"
+    );
+}
+
+#[test]
+fn trashed_with_hash_is_true_only_after_a_soft_delete_of_that_hash() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let (paths, cfg, mut conn) = open(home.path());
+    let id = save(
+        &paths,
+        &cfg,
+        &mut conn,
+        "a memory that will be trashed",
+        &[],
+    );
+    let hash: String = conn
+        .query_row(
+            "SELECT content_hash FROM memories WHERE id = ?1",
+            [&id],
+            |r| r.get(0),
+        )
+        .expect("read content_hash");
+
+    assert!(
+        !trashed_with_hash(&conn, &hash).expect("live row is not trashed"),
+        "a live memory must not read as trashed"
+    );
+
+    soft_delete(&paths, &cfg, &mut conn, &id);
+    assert!(
+        trashed_with_hash(&conn, &hash).expect("trashed row"),
+        "the soft-deleted row's hash must now match"
+    );
+    assert!(
+        !trashed_with_hash(&conn, "no-such-hash").expect("unknown hash"),
+        "an unrelated hash must not match"
     );
 }

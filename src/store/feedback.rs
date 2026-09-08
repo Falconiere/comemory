@@ -143,6 +143,34 @@ pub fn used_events_for_golden(
     Ok(rows)
 }
 
+/// `(total, implicit, used, irrelevant)` over `feedback_events` in one
+/// scan, behind `api::learning::summary`'s console header tiles. The three
+/// conditional sums are `NULL` on an empty table, read back as `0`.
+pub fn event_counts(conn: &Connection) -> Result<(u64, u64, u64, u64)> {
+    let row = conn.query_row(
+        "SELECT COUNT(*), \
+                SUM(CASE WHEN provenance != 'manual' THEN 1 ELSE 0 END), \
+                SUM(CASE WHEN verdict = 'used' THEN 1 ELSE 0 END), \
+                SUM(CASE WHEN verdict = 'irrelevant' THEN 1 ELSE 0 END) \
+           FROM feedback_events",
+        [],
+        |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, Option<i64>>(1)?,
+                r.get::<_, Option<i64>>(2)?,
+                r.get::<_, Option<i64>>(3)?,
+            ))
+        },
+    )?;
+    Ok((
+        row.0 as u64,
+        row.1.unwrap_or(0) as u64,
+        row.2.unwrap_or(0) as u64,
+        row.3.unwrap_or(0) as u64,
+    ))
+}
+
 #[cfg(test)]
 #[path = "tests/feedback.rs"]
 mod tests;

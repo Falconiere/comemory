@@ -1,7 +1,5 @@
 //! Import write path — markdown + SQLite mirror + sync log (rules 8–10).
 
-use rusqlite::Connection;
-
 use crate::api::Ctx;
 use crate::api::sync::{
     ImportEntry, ImportItemResult, ImportStatus, SyncOp, SyncRecord, SyncVector,
@@ -10,7 +8,7 @@ use crate::config::Config;
 use crate::memory::frontmatter::Frontmatter;
 use crate::memory::{MemoryStore, SaveParams};
 use crate::prelude::*;
-use crate::store::{embed, memory_row, simhash_scan, sync_log, vector};
+use crate::store::{Connection, embed, memory_row, schema_meta, simhash_scan, sync_log, vector};
 
 const MEMORY_DIM: usize = 1024;
 
@@ -52,11 +50,7 @@ pub(crate) fn write_new_memory(
         &rec.frontmatter.tags,
     )?;
     if let Some(v) = vector.as_deref() {
-        tx.execute(
-            "DELETE FROM memory_vec WHERE memory_id = ?1",
-            rusqlite::params![&rec.frontmatter.id],
-        )?;
-        vector::insert_memory(&tx, &rec.frontmatter.id, v)?;
+        vector::replace_memory(&tx, &rec.frontmatter.id, v)?;
     }
     let seq = log_sync_upsert(&tx, entry)?;
     tx.commit()?;
@@ -124,7 +118,7 @@ fn decode_vector(conn: &Connection, wire: Option<&SyncVector>) -> Result<Option<
     let Some(wire) = wire else {
         return Ok(None);
     };
-    let model = memory_vector_model(conn)?;
+    let model = schema_meta::memory_vector_model(conn)?;
     if wire.model != model || wire.dims as usize != MEMORY_DIM {
         return Ok(None);
     }
@@ -133,15 +127,6 @@ fn decode_vector(conn: &Connection, wire: Option<&SyncVector>) -> Result<Option<
     let values = embed::from_vec_blob(&bytes, MEMORY_DIM)?;
     embed::guard_dim(&values, MEMORY_DIM)?;
     Ok(Some(values))
-}
-
-fn memory_vector_model(conn: &Connection) -> Result<String> {
-    conn.query_row(
-        "SELECT value FROM schema_meta WHERE key = 'memory_vector_model'",
-        [],
-        |r| r.get(0),
-    )
-    .map_err(|e| Error::Config(format!("memory_vector_model: {e}")))
 }
 
 fn near_duplicate(conn: &Connection, body: &str, self_id: &str, radius: u32) -> Option<String> {

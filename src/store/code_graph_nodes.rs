@@ -219,6 +219,89 @@ pub fn fetch_node(conn: &Connection, repo: &str, path: &str) -> Result<Option<No
     Ok(rows.into_iter().next())
 }
 
+/// One row of a file's top-level symbols, strongest PageRank first —
+/// behind `api::graph_nodes`'s `top_symbols` list.
+pub struct TopSymbolRow {
+    /// `code_symbols` rowid.
+    pub id: i64,
+    /// Qualified symbol name.
+    pub symbol: String,
+    /// Symbol kind (`function`, `struct`, …).
+    pub kind: String,
+    /// Source language slug.
+    pub lang: String,
+    /// First source line.
+    pub line_start: i64,
+    /// Last source line.
+    pub line_end: i64,
+    /// Materialized PageRank for this symbol.
+    pub rank_score: f64,
+}
+
+/// The file's top-level symbols, strongest PageRank first. Chunk children
+/// (`parent_id IS NOT NULL`) are excluded so a split oversized symbol does
+/// not crowd out its siblings.
+pub fn top_symbols(
+    conn: &Connection,
+    repo: &str,
+    path: &str,
+    limit: usize,
+) -> Result<Vec<TopSymbolRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, symbol, kind, lang, line_start, line_end, rank_score \
+           FROM code_symbols \
+          WHERE repo = ?1 AND path = ?2 AND parent_id IS NULL \
+          ORDER BY rank_score DESC, symbol ASC, line_start ASC LIMIT ?3",
+    )?;
+    let rows = stmt
+        .query_map(
+            rusqlite::params![repo, path, i64::try_from(limit).unwrap_or(i64::MAX)],
+            |r| {
+                Ok(TopSymbolRow {
+                    id: r.get(0)?,
+                    symbol: r.get(1)?,
+                    kind: r.get(2)?,
+                    lang: r.get(3)?,
+                    line_start: r.get(4)?,
+                    line_end: r.get(5)?,
+                    rank_score: r.get(6)?,
+                })
+            },
+        )?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// One live memory citing a file — the raw `(id, body)` pair, before the
+/// caller derives a display title from `body`.
+pub struct CitingMemoryRow {
+    /// Memory id.
+    pub id: String,
+    /// The memory's full body, from which the caller derives a title.
+    pub body: String,
+}
+
+/// Live memories citing `(repo, path)`, through the same
+/// [`cites_file_predicate`] a node's `memories` count uses — so the count
+/// and this list can never disagree.
+pub fn citing_memories(conn: &Connection, repo: &str, path: &str) -> Result<Vec<CitingMemoryRow>> {
+    let sql = format!(
+        "SELECT DISTINCT m.id, m.body FROM edges e JOIN memories m ON m.id = e.src_id \
+          WHERE m.deleted_at IS NULL AND {} ORDER BY m.id",
+        cites_file_predicate(FileExpr::FirstParam)
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt
+        .query_map(rusqlite::params![format!("{repo}:{path}")], |r| {
+            Ok(CitingMemoryRow {
+                id: r.get(0)?,
+                body: r.get(1)?,
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
 #[cfg(test)]
 #[path = "tests/code_graph_nodes.rs"]
 mod tests;
