@@ -7,13 +7,14 @@
 //! diversify stage. All priors come from [`crate::retrieval::score`]; the
 //! clamp and decay knobs come from `cfg.rank`.
 
-use rusqlite::{Connection, OptionalExtension};
 use time::OffsetDateTime;
 
 use crate::config::Config;
 use crate::prelude::*;
 use crate::retrieval::router::{RoutedHit, Source};
 use crate::retrieval::score::{self, LegScores};
+use crate::store::Connection;
+use crate::store::memory_meta::RankSignals as Signals;
 
 /// Scale for the memory PageRank boost: `1 + MEMORY_RANK_SCALE·ln(1 +
 /// raw/median)`. A memory at the pool median maps to `1 + 0.2·ln 2 ≈ 1.14`
@@ -195,60 +196,15 @@ fn score_hit(
     })
 }
 
-/// Per-memory ranking signals pulled in one query: row metadata plus the
-/// (optional) feedback counters, with `COALESCE` neutralizing absent rows.
-struct Signals {
-    quality: u8,
-    access_count: u64,
-    last_accessed: String,
-    body: String,
-    simhash: u64,
-    used: u64,
-    irrelevant: u64,
-    rank_score: f64,
-}
-
 /// Fetch the ranking signals for one live memory. Returns `Ok(None)` when
-/// the row does not exist or is soft-deleted. The statement is
-/// `prepare_cached` so the per-hit loop in [`rerank`] reuses one prepared
-/// statement instead of re-parsing the SQL for every candidate.
+/// the row does not exist or is soft-deleted.
 fn memory_signals(conn: &Connection, id: &str) -> Result<Option<Signals>> {
-    let mut stmt = conn.prepare_cached(
-        "SELECT m.quality, m.access_count, COALESCE(m.last_accessed, m.created_at),
-                m.body, m.simhash,
-                COALESCE(f.used_count, 0), COALESCE(f.irrelevant_count, 0),
-                m.rank_score
-           FROM memories m
-           LEFT JOIN feedback f ON f.memory_id = m.id
-          WHERE m.id = ?1 AND m.deleted_at IS NULL",
-    )?;
-    stmt.query_row([id], |r| {
-        Ok(Signals {
-            quality: r.get(0)?,
-            access_count: r.get::<_, i64>(1)?.max(0) as u64,
-            last_accessed: r.get(2)?,
-            body: r.get(3)?,
-            simhash: r.get::<_, i64>(4)? as u64,
-            used: r.get::<_, i64>(5)?.max(0) as u64,
-            irrelevant: r.get::<_, i64>(6)?.max(0) as u64,
-            rank_score: r.get(7)?,
-        })
-    })
-    .optional()
-    .map_err(Error::from)
+    crate::store::memory_meta::rank_signals(conn, id)
 }
 
-/// Find the *live* memory that supersedes `id`, if any — earliest by
-/// `created_at` (ties on `id`) so repeated replacements report one stable
-/// superseder. Soft-deleted superseders don't count; self-edges ignored as
-/// defense-in-depth. `prepare_cached` per [`memory_signals`].
-///
-/// `as_of_cutoff` bounds the **superseder's own `created_at`**, never
-/// `edges.created_at` — rebuild re-stamps edges, frontmatter `created`
-/// survives. The cutoff is `memory_row::iso_format` output; that
-/// formatter ↔ SQLite `datetime()` contract is pinned by the
-/// mixed-precision store tests and the `--as-of` CLI e2e, so a format
-/// drift fails loudly, not silently.
+/// Find the *live* memory that supersedes `id`, if any. See
+/// [`crate::store::edges_retrieval::live_superseder`] for the join and the
+/// `as_of_cutoff` contract.
 ///
 /// `pub(crate)` so `api::show` reuses the exact same join for its
 /// `superseded_by` field instead of re-deriving it (Binding Rule 1).
@@ -257,19 +213,7 @@ pub(crate) fn live_superseder(
     id: &str,
     as_of_cutoff: Option<&str>,
 ) -> Result<Option<String>> {
-    let mut stmt = conn.prepare_cached(
-        "SELECT e.src_id FROM edges e
-           JOIN memories m ON m.id = e.src_id AND m.deleted_at IS NULL
-          WHERE e.rel = 'supersedes'
-            AND e.src_kind = 'memory' AND e.dst_kind = 'memory' AND e.dst_id = ?1
-            AND e.src_id <> e.dst_id
-            AND (?2 IS NULL OR datetime(m.created_at) <= datetime(?2))
-          ORDER BY datetime(m.created_at) ASC, m.id ASC
-          LIMIT 1",
-    )?;
-    stmt.query_row(rusqlite::params![id, as_of_cutoff], |r| r.get(0))
-        .optional()
-        .map_err(Error::from)
+    crate::store::edges_retrieval::live_superseder(conn, id, as_of_cutoff)
 }
 
 #[cfg(test)]

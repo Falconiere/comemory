@@ -13,14 +13,14 @@
 
 use std::collections::{HashMap, HashSet};
 
-use rusqlite::{Connection, named_params};
-
 use crate::config::Config;
 use crate::prelude::*;
 use crate::retrieval::fuse::{self, RankedHit};
 use crate::retrieval::router::{RoutedHit, Source};
 use crate::retrieval::scope::Filters;
 use crate::retrieval::score::LegScores;
+use crate::store::Connection;
+use crate::store::edges_retrieval::{self, SeedWalk};
 
 /// Relation labels the expansion walk may traverse.
 ///
@@ -72,47 +72,6 @@ fn rel_list() -> String {
         .join(",")
 }
 
-/// The expansion query: one recursive CTE walking outward from the seeds,
-/// then a live-`memories` join shaping the survivors into ranked
-/// candidates.
-///
-/// `UNION` (not `UNION ALL`) makes the walk cycle-safe exactly as
-/// [`crate::store::edges::supersedes_chain`] does. The inline `edges`
-/// union presents every row in both orientations, turning two forward
-/// `references_symbol` edges into one two-hop memory→memory path.
-/// `GROUP BY … MIN(depth)` collapses multi-path arrivals to one row at the
-/// *shortest* distance; the `memories` join drops dangling destinations.
-fn expansion_sql() -> String {
-    let rels = rel_list();
-    format!(
-        "WITH RECURSIVE walk(kind, id, depth) AS (
-             SELECT 'memory', value, 0 FROM json_each(:seeds)
-           UNION
-             SELECT n.dst_kind, n.dst_id, w.depth + 1
-               FROM walk w
-               JOIN (SELECT src_kind, src_id, dst_kind, dst_id, rel FROM edges
-                     UNION ALL
-                     SELECT dst_kind, dst_id, src_kind, src_id, rel FROM edges) n
-                 ON n.src_kind = w.kind AND n.src_id = w.id
-              WHERE w.depth < :hops AND n.rel IN ({rels})
-              LIMIT :max_walk
-         )
-         SELECT w.id, MIN(w.depth) AS hops
-           FROM walk w
-           JOIN memories m ON m.id = w.id
-          WHERE w.kind = 'memory' AND w.depth > 0
-            AND m.deleted_at IS NULL
-            AND (:repo IS NULL OR m.repo = :repo)
-            AND (:kind IS NULL OR m.kind = :kind)
-            AND (:since IS NULL OR datetime(m.created_at) >= datetime(:since))
-            AND (:cutoff IS NULL OR datetime(m.created_at) <= datetime(:cutoff))
-            AND w.id NOT IN (SELECT value FROM json_each(:seeds))
-          GROUP BY w.id
-          ORDER BY hops ASC, w.id ASC
-          LIMIT :cap"
-    )
-}
-
 /// Walk `edges` outward from `seed_ids` and return the memories reached,
 /// ranked `(hops ASC, memory_id ASC)`.
 ///
@@ -142,22 +101,21 @@ pub fn expand_memory_seeds(
     // ranking, not caller-supplied text.
     let seeds = serde_json::to_string(seed_ids)?;
     let window = filters.window();
-    let mut stmt = conn.prepare(&expansion_sql())?;
-    let rows = stmt
-        .query_map(
-            named_params! {
-                ":seeds": seeds,
-                ":hops": i64::from(cfg.retrieval.graph_hops),
-                ":max_walk": MAX_WALK,
-                ":repo": filters.repo,
-                ":kind": filters.kind,
-                ":since": window.since,
-                ":cutoff": window.cutoff,
-                ":cap": pool.min(MAX_EXPANDED) as i64,
-            },
-            |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)),
-        )?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let rels = rel_list();
+    let rows = edges_retrieval::expand_memory_seeds(
+        conn,
+        &SeedWalk {
+            rels_clause: &rels,
+            seeds_json: &seeds,
+            hops: i64::from(cfg.retrieval.graph_hops),
+            max_walk: MAX_WALK,
+            repo: filters.repo,
+            kind: filters.kind,
+            since: window.since,
+            cutoff: window.cutoff,
+            cap: pool.min(MAX_EXPANDED) as i64,
+        },
+    )?;
     Ok(rows.into_iter().map(to_routed).collect())
 }
 

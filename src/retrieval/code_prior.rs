@@ -11,15 +11,21 @@
 //! [`median_file_rank`], then score with [`priors`] under one shared clock
 //! and one shared affinity cache.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
-use rusqlite::{Connection, OptionalExtension};
 use time::OffsetDateTime;
 
 use crate::config::Config;
 use crate::prelude::*;
 use crate::retrieval::code_rerank::WorkingSet;
 use crate::retrieval::score;
+use crate::store::Connection;
+
+/// Per-symbol ranking signals, re-exported from [`crate::store::code_signals`]
+/// (which owns the `code_symbols` + `code_feedback` join SQL) so this
+/// module's own callers (`bundle`, `code_rerank`) need not know the query
+/// moved.
+pub use crate::store::code_signals::{Signals, signals, signals_batch};
 
 /// Scale for the PageRank boost: `1 + RANK_SCALE·ln(1 + raw/median)`.
 /// A file at the pool median maps to `1 + 0.2·ln 2 ≈ 1.14`; the clamp
@@ -49,131 +55,6 @@ pub struct CodePriorParts {
     pub feedback: f64,
     /// Product of the four priors.
     pub final_score: f64,
-}
-
-/// Per-symbol ranking signals pulled in one query: identity columns,
-/// rank/access counters, and the (optional) feedback counters with
-/// `COALESCE` neutralizing absent rows. `Clone` so [`signals_batch`]'s
-/// caller can map one fetched row onto several refs that share a `symbol_id`
-/// (the same symbol cited by two memories), matching the per-ref `signals`
-/// fetch's behavior of returning `Some` for every duplicate.
-#[derive(Clone)]
-pub struct Signals {
-    /// Repository the symbol was indexed from.
-    pub repo: String,
-    /// Repo-relative file path.
-    pub path: String,
-    /// Qualified symbol name.
-    pub symbol: String,
-    /// Symbol kind, e.g. `function`.
-    pub kind: String,
-    /// Source language, e.g. `rust`.
-    pub lang: String,
-    /// First line of the symbol.
-    pub line_start: i64,
-    /// Last line of the symbol.
-    pub line_end: i64,
-    /// Projected PageRank score of the symbol's file.
-    pub rank_score: f64,
-    /// Times the symbol was returned by a tracked search.
-    pub access_count: u64,
-    /// Last access timestamp (falls back to `indexed_at`).
-    pub last_accessed: String,
-    /// Parent `code_symbols` rowid for cAST chunk rows.
-    pub parent_id: Option<i64>,
-    /// `code_feedback.used_count` under the row's effective identity.
-    pub used: u64,
-    /// `code_feedback.irrelevant_count` under the row's effective identity.
-    pub irrelevant: u64,
-}
-
-/// Column projection + `code_feedback` join shared by [`signals`] and
-/// [`signals_batch`]. Prefixing with `c.id` lets the batch map rows back by
-/// id while the single-row form ignores column 0. `code_feedback` is keyed by
-/// stable (repo, path, symbol) identity (see `stats::code_feedback`), joined
-/// by the row's EFFECTIVE identity: the CLI feedback path records against the
-/// COALESCED parent id, so a cAST chunk row (`parent_id` NOT NULL, symbol
-/// `<name>#<n>`) never owns a feedback row of its own — it inherits the
-/// PARENT's counters via the `COALESCE(parent.symbol, c.symbol)` join so the
-/// parent's feedback influences its chunks while they are scored pre-coalesce.
-const SIGNALS_SELECT: &str =
-    "SELECT c.id, c.repo, c.path, c.symbol, c.kind, c.lang, c.line_start, c.line_end,
-            c.rank_score, c.access_count, COALESCE(c.last_accessed, c.indexed_at),
-            c.parent_id, COALESCE(f.used_count, 0), COALESCE(f.irrelevant_count, 0)
-       FROM code_symbols c
-       LEFT JOIN code_feedback f
-              ON f.repo = c.repo AND f.path = c.path
-             AND f.symbol = COALESCE(
-                   (SELECT p.symbol FROM code_symbols p WHERE p.id = c.parent_id),
-                   c.symbol)";
-
-/// Map one [`SIGNALS_SELECT`] row into `(id, Signals)`. Column 0 is the
-/// `code_symbols` rowid; the remaining columns are the signal fields.
-fn map_signals(r: &rusqlite::Row<'_>) -> rusqlite::Result<(i64, Signals)> {
-    Ok((
-        r.get(0)?,
-        Signals {
-            repo: r.get(1)?,
-            path: r.get(2)?,
-            symbol: r.get(3)?,
-            kind: r.get(4)?,
-            lang: r.get(5)?,
-            line_start: r.get(6)?,
-            line_end: r.get(7)?,
-            rank_score: r.get(8)?,
-            access_count: r.get::<_, i64>(9)?.max(0) as u64,
-            last_accessed: r.get(10)?,
-            parent_id: r.get(11)?,
-            used: r.get::<_, i64>(12)?.max(0) as u64,
-            irrelevant: r.get::<_, i64>(13)?.max(0) as u64,
-        },
-    ))
-}
-
-/// Fetch the ranking signals for one code symbol. Returns `Ok(None)` when
-/// the row vanished (raced re-index delete). `prepare_cached` so per-hit
-/// loops reuse one prepared statement. Shares [`SIGNALS_SELECT`] with
-/// [`signals_batch`] so the two cannot drift.
-pub fn signals(conn: &Connection, symbol_id: i64) -> Result<Option<Signals>> {
-    let sql = format!("{SIGNALS_SELECT} WHERE c.id = ?1");
-    let mut stmt = conn.prepare_cached(&sql)?;
-    stmt.query_row([symbol_id], map_signals)
-        .map(|(_, sig)| sig)
-        .optional()
-        .map_err(Error::from)
-}
-
-/// Max ids per batched [`signals_batch`] chunk — one host param each, well
-/// under bundled SQLite's `SQLITE_MAX_VARIABLE_NUMBER` (32766).
-const SIGNALS_ID_CHUNK: usize = 500;
-
-/// Fetch the ranking signals for many symbols in one chunked query, keyed by
-/// `code_symbols.id`. Runs the SAME [`SIGNALS_SELECT`] (identical projection,
-/// feedback join, and parent-symbol subquery) as [`signals`], so a row fetched
-/// in a batch is byte-identical to the same row fetched one-at-a-time. Ids that
-/// vanished (raced re-index delete) simply have no map entry — the caller
-/// treats a miss as the same `None` the single-row form returns. Duplicate ids
-/// in `ids` collapse to one entry. `prepare_cached` keys one statement per
-/// chunk arity.
-///
-/// `pub` (not `pub(crate)`) so the flat-mirror integration test — an external
-/// crate — can cover it directly, matching [`signals`]'s visibility.
-pub fn signals_batch(conn: &Connection, ids: &[i64]) -> Result<HashMap<i64, Signals>> {
-    let mut out: HashMap<i64, Signals> = HashMap::with_capacity(ids.len());
-    for chunk in ids.chunks(SIGNALS_ID_CHUNK) {
-        if chunk.is_empty() {
-            continue;
-        }
-        let marks = crate::store::qmarks(chunk.len());
-        let sql = format!("{SIGNALS_SELECT} WHERE c.id IN ({marks})");
-        let mut stmt = conn.prepare_cached(&sql)?;
-        let rows = stmt.query_map(rusqlite::params_from_iter(chunk.iter()), map_signals)?;
-        for row in rows {
-            let (id, sig) = row?;
-            out.insert(id, sig);
-        }
-    }
-    Ok(out)
 }
 
 /// Compute the four bounded priors for one signals row — the single home
@@ -247,40 +128,10 @@ fn file_affinity(
     if let Some(boost) = cache.get(&fid) {
         return Ok(*boost);
     }
-    let w_sum = co_change_weight(conn, &fid, ws.files())?;
+    let w_sum = crate::store::edges_retrieval::co_change_weight(conn, &fid, ws.files())?;
     let boost = score::bounded_boost(1.0 + AFFINITY_SCALE * (1.0 + w_sum).ln(), clamp);
     cache.insert(fid, boost);
     Ok(boost)
-}
-
-/// Total `co_changed` weight between `fid` and the working-set file
-/// ids, in either direction (the miner stores one canonical row per
-/// undirected pair). Numbered placeholders are reused across both `IN`
-/// lists so the parameter vector binds once; `prepare_cached` caches
-/// one statement per working-set arity.
-///
-/// Arity-keyed caching tradeoff: the SQL string (and thus the cache
-/// key) embeds the working-set length, so each distinct arity compiles
-/// its own statement, and rusqlite's default cache capacity of 16 means
-/// fluctuating arities can evict older entries (re-prepare churn, never
-/// wrong results). Fine unless affinity shows up in a profile — revisit
-/// with arity bucketing (pad the `IN` list to fixed sizes) if it does.
-fn co_change_weight(conn: &Connection, fid: &str, ws_files: &[String]) -> Result<f64> {
-    let marks = (0..ws_files.len())
-        .map(|i| format!("?{}", i + 2))
-        .collect::<Vec<_>>()
-        .join(",");
-    let sql = format!(
-        "SELECT COALESCE(SUM(weight), 0) FROM edges \
-          WHERE rel = 'co_changed' AND src_kind = 'file' AND dst_kind = 'file' \
-            AND ((src_id = ?1 AND dst_id IN ({marks})) \
-              OR (dst_id = ?1 AND src_id IN ({marks})))"
-    );
-    let mut stmt = conn.prepare_cached(&sql)?;
-    let params =
-        rusqlite::params_from_iter(std::iter::once(fid).chain(ws_files.iter().map(String::as_str)));
-    let w: i64 = stmt.query_row(params, |r| r.get(0))?;
-    Ok(w.max(0) as f64)
 }
 
 #[cfg(test)]

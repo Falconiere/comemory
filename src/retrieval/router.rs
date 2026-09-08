@@ -14,14 +14,13 @@
 
 use std::collections::HashMap;
 
-use rusqlite::Connection;
-
 use crate::config::Config;
 use crate::prelude::*;
 use crate::retrieval::fuse::{self, RankedHit};
 use crate::retrieval::graph_route::{self, GraphFuse};
 use crate::retrieval::scope::Filters;
 use crate::retrieval::score::LegScores;
+use crate::store::Connection;
 use crate::store::{fts, vector};
 
 /// Candidate pool fed to the rerank stage; the pipeline cuts to top_k
@@ -307,13 +306,11 @@ fn filter_kind(
     if hits.is_empty() {
         return Ok(hits);
     }
-    let qmarks = crate::store::qmarks(hits.len());
-    let sql = format!("SELECT id FROM memories WHERE kind = ? AND id IN ({qmarks})");
-    let mut stmt = conn.prepare(&sql)?;
-    let params = std::iter::once(kind).chain(hits.iter().map(|h| h.memory_id.as_str()));
-    let keep: std::collections::HashSet<String> = stmt
-        .query_map(rusqlite::params_from_iter(params), |r| r.get(0))?
-        .collect::<std::result::Result<_, _>>()?;
+    let ids: Vec<&str> = hits.iter().map(|h| h.memory_id.as_str()).collect();
+    let keep: std::collections::HashSet<String> =
+        crate::store::memory_meta::ids_matching_kind(conn, kind, &ids)?
+            .into_iter()
+            .collect();
     Ok(hits
         .into_iter()
         .filter(|h| keep.contains(&h.memory_id))

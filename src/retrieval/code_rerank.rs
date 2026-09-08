@@ -14,7 +14,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use rusqlite::{Connection, OptionalExtension};
 use time::OffsetDateTime;
 
 use crate::config::Config;
@@ -24,6 +23,7 @@ use crate::retrieval::code_prior::{self, Signals};
 use crate::retrieval::code_route::CodeRoutedHit;
 use crate::retrieval::router::Source;
 use crate::retrieval::score::{self, LegScores};
+use crate::store::Connection;
 use crate::store::edges::file_node_id;
 
 /// Number of most-recent first-parent commits whose changed files are
@@ -371,7 +371,7 @@ fn coalesce(conn: &Connection, scored: Vec<Scored>) -> Result<Vec<CodeReranked>>
     let mut out = Vec::with_capacity(groups.len());
     for (key, mut s) in groups {
         if s.parent_id.is_some()
-            && let Some((symbol, kind)) = parent_identity(conn, key)?
+            && let Some((symbol, kind)) = crate::store::code_row::parent_identity(conn, key)?
         {
             s.row.symbol_id = key;
             s.row.symbol = symbol;
@@ -395,16 +395,6 @@ fn wins_group(challenger: &Scored, incumbent: &Scored) -> bool {
         std::cmp::Ordering::Less => false,
         std::cmp::Ordering::Equal => challenger.row.line_start < incumbent.row.line_start,
     }
-}
-
-/// Fetch the identity columns of a chunk's parent row; `Ok(None)` when
-/// the parent vanished. `prepare_cached` for the per-group loop in
-/// [`coalesce`].
-fn parent_identity(conn: &Connection, parent_id: i64) -> Result<Option<(String, String)>> {
-    let mut stmt = conn.prepare_cached("SELECT symbol, kind FROM code_symbols WHERE id = ?1")?;
-    stmt.query_row([parent_id], |r| Ok((r.get(0)?, r.get(1)?)))
-        .optional()
-        .map_err(Error::from)
 }
 
 #[cfg(test)]
