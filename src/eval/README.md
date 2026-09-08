@@ -15,11 +15,11 @@ One line per file, named after its primary item:
 
 | File | Primary item | Purpose |
 | --- | --- | --- |
-| `bandit.rs` | `Arm` | Eval-gated Thompson bandit over the `[tune]` discrete grid |
+| `bandit.rs` | `Arm` | Eval-gated Thompson bandit over the `[tune]` discrete grid; the arm-state CRUD (`seed`/`load`/`record_outcome`) delegates to `store::bandit_arms` |
 | `bandit_rng.rs` | `SplitMix64` | Deterministic SplitMix64 + Beta/Gamma sampling for the bandit (no `rand`) |
-| `golden.rs` | `GoldenPair` | Golden-set model: hand-written YAML pairs merged with feedback-harvested pairs |
+| `golden.rs` | `GoldenPair` | Golden-set model: hand-written YAML pairs merged with feedback-harvested pairs; the harvest join delegates to `store::feedback::used_events_for_golden` |
 | `metrics.rs` | `recall_at_k` | Pure retrieval-quality metrics: recall@k, MRR, and percentile bootstrap CI |
-| `mine.rs` | `MinedMapping` | Reformulation mining: distill failed→fixed query pairs into expansions |
+| `mine.rs` | `MinedMapping` | Reformulation mining: distill failed→fixed query pairs into expansions; the `retrieval_log`/`feedback_events` scans delegate to `store::retrieval_log`/`store::feedback`, and `apply`'s replace-all delegates to `store::query_expansions` |
 | `runner.rs` | `QueryResult` | Drive the real retrieval pipeline over a golden set and score it |
 | `tune.rs` | `MIN_GOLDEN_PAIRS` | Deterministic/sampled search over blend weights, scored by eval MRR |
 | `tune_sample.rs` | `pool_sizes` | Seeded uniform sampling over the `[tune]` grid pools |

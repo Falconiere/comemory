@@ -15,6 +15,8 @@
 use comemory::config::paths::Paths;
 use comemory::stats::feedback::record_with_provenance;
 use comemory::stats::sqlite::StatsDb;
+use comemory::store::connection;
+use comemory::store::feedback::{used_events_for_golden, used_query_ids};
 use tempfile::TempDir;
 
 /// Open a [`StatsDb`] over a fresh `comemory.db` in a tempdir.
@@ -105,4 +107,63 @@ fn conflict_bumps_used_count_and_refreshes_last_used() {
         last.as_str() > "2000-01-01T00:00:00Z",
         "ON CONFLICT refreshes last_used, got {last}"
     );
+}
+
+/// `used_query_ids` returns only `used`-verdict, `target_kind`-matching
+/// query ids, deduplicated — the scan behind `eval::mine`.
+#[test]
+fn used_query_ids_filters_verdict_and_target_kind() {
+    let dir = TempDir::new().expect("tempdir");
+    let conn = connection::open(dir.path().join("comemory.db")).expect("open");
+    conn.execute_batch(
+        "INSERT INTO feedback_events(query_id, memory_id, verdict, at, target_kind) VALUES
+           ('q1', 'aaaaaaa1', 'used', '2026-07-15T00:00:00Z', 'memory'),
+           ('q1', 'aaaaaaa2', 'used', '2026-07-15T00:00:01Z', 'memory'),
+           ('q2', 'aaaaaaa3', 'irrelevant', '2026-07-15T00:00:00Z', 'memory'),
+           ('q3', '1', 'used', '2026-07-15T00:00:00Z', 'code');",
+    )
+    .expect("seed feedback_events");
+
+    let ids = used_query_ids(&conn, "memory").expect("query");
+    assert_eq!(
+        ids,
+        vec!["q1".to_string()],
+        "dedup + verdict + target_kind filter"
+    );
+}
+
+/// `used_events_for_golden` joins `feedback_events` to its originating
+/// `retrieval_log` row, drops the excluded source, and only counts live
+/// memories.
+#[test]
+fn used_events_for_golden_excludes_source_and_dead_memories() {
+    let dir = TempDir::new().expect("tempdir");
+    let conn = connection::open(dir.path().join("comemory.db")).expect("open");
+    conn.execute_batch(
+        "INSERT INTO memories(id, slug, kind, repo, author, quality, schema, content_hash,
+                              body, created_at, updated_at, md_path, simhash, deleted_at) VALUES
+           ('aaaaaaa1','a','note',NULL,'f',3,1,'h1','b','2026-07-15T00:00:00Z',
+            '2026-07-15T00:00:00Z','a',0,NULL),
+           ('aaaaaaa2','a','note',NULL,'f',3,1,'h2','b','2026-07-15T00:00:00Z',
+            '2026-07-15T00:00:00Z','a',0,'2026-07-16T00:00:00Z');
+         INSERT INTO retrieval_log(query_id, query, returned_ids, at, duration_ms, repo, kind, source) VALUES
+           ('q1', 'find x', '[]', '2026-07-15T00:00:00Z', 1, 'r', 'note', 'search'),
+           ('q2', 'find y', '[]', '2026-07-15T00:00:00Z', 1, 'r', 'note', 'search-code');
+         INSERT INTO feedback_events(query_id, memory_id, verdict, at, target_kind) VALUES
+           ('q1', 'aaaaaaa1', 'used', '2026-07-15T00:00:00Z', 'memory'),
+           ('q1', 'aaaaaaa2', 'used', '2026-07-15T00:00:00Z', 'memory'),
+           ('q2', 'aaaaaaa1', 'used', '2026-07-15T00:00:00Z', 'memory');",
+    )
+    .expect("seed rows");
+
+    let rows = used_events_for_golden(&conn, "memory", "search-code").expect("query");
+    assert_eq!(
+        rows.len(),
+        1,
+        "dead memory and excluded source both drop out"
+    );
+    assert_eq!(rows[0].query, "find x");
+    assert_eq!(rows[0].repo, Some("r".to_string()));
+    assert_eq!(rows[0].kind, Some("note".to_string()));
+    assert_eq!(rows[0].memory_id, "aaaaaaa1");
 }

@@ -3,8 +3,11 @@
 Node assembly for `comemory graph`. The parent `src/cli/graph.rs` owns the
 CLI surface (`Args`, `run`, the `--format` renderers), the edge fetch, and the
 two `build_code_graph` / `build_graph_page` entry points that `api::graph` and
-the `serve` graph handler both reuse. This folder owns everything that turns a
-`(repo, path)` pair into a graph node.
+the `serve` graph handler both reuse. This folder owns the pure `(repo, path)`
+dedup over a windowed edge set and the `build_graph` assembly; the SQL and its
+row mapping — `NodeRow`, `fetch_nodes`/`fetch_node`/`fetch_nodes_for_pairs`,
+`cites_file_predicate` — moved to `store::code_graph_nodes` (spec
+`docs/toolu/specs/2026-09-07-store-layer-chokepoint-design.md`).
 
 The split exists because the node query grew two columns for the console's
 selected-node panel — `memories` and `blob` — and the donor file was at the
@@ -12,4 +15,4 @@ selected-node panel — `memories` and `blob` — and the donor file was at the
 
 | File | Responsibility |
 | --- | --- |
-| `nodes.rs` | `NodeRow` and its aggregate query (`fetch_nodes` for the whole graph, `fetch_nodes_for_edges` + `fetch_node_chunk` for a windowed page), plus `build_graph`, which joins node rows to edges and materializes zero-rank placeholder nodes for endpoints the code index has never seen. `extra_columns()` builds the blob lookup and the referencing-memory count once, so the windowed and unwindowed queries cannot drift.; also `fetch_node` (one file's `NodeRow`, for `GET /api/v1/graph/nodes/{id}`) and `cites_file_predicate` (the shared "memory cites this file" `edges` predicate behind both the node `memories` count and `api::graph_nodes`'s `cited_by`) |
+| `nodes.rs` | `fetch_nodes_for_edges` — the `BTreeSet` dedup of a windowed edge list into distinct `(repo, path)` pairs, delegating the batched fetch to `store::code_graph_nodes::fetch_nodes_for_pairs` — plus `build_graph`, which joins node rows to edges and materializes zero-rank placeholder nodes for endpoints the code index has never seen |

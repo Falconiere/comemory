@@ -15,17 +15,17 @@ pub mod nodes;
 use std::path::PathBuf;
 
 use clap::{Args as ClapArgs, ValueEnum};
-use rusqlite::Connection;
 
-use crate::cli::graph::nodes::{build_graph, fetch_nodes, fetch_nodes_for_edges};
+use crate::cli::graph::nodes::{build_graph, fetch_nodes_for_edges};
 use crate::cli::pagination::PaginationArgs;
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::output::graph as render;
 use crate::output::graph::{CodeGraph, Edge, GraphPage};
 use crate::output::tty;
 use crate::prelude::*;
-use crate::store::connection;
-use crate::store::edges::file_node_prefix;
+use crate::store::code_graph_edges::{self, EdgeQuery};
+use crate::store::code_graph_nodes::fetch_nodes;
+use crate::store::{Connection, connection};
 
 const EXAMPLES: &str = "\
 Examples:
@@ -192,22 +192,12 @@ pub fn parse_id(id: &str) -> Option<(&str, &str)> {
     id.strip_prefix("file:")?.split_once(':')
 }
 
-/// Map one `edges` row into an [`Edge`].
-fn map_edge(r: &rusqlite::Row<'_>) -> rusqlite::Result<Edge> {
-    Ok(Edge {
-        src: r.get(0)?,
-        dst: r.get(1)?,
-        rel: r.get(2)?,
-        weight: r.get(3)?,
-    })
-}
-
 /// Fetch a `(limit, offset)` window of file→file edges for the selected
 /// relations, scoped to one repo's source side and dropping low-weight
 /// `co_changed` links, plus the `total` count of edges matching those same
 /// scope filters (pre-window) so the caller can compute an exact `has_more`.
-/// Edges sort by the stable `weight DESC, rel ASC, src_id ASC, dst_id ASC`
-/// order, so a bounded export keeps the strongest links deterministically.
+/// The SQL and its row mapping live in [`code_graph_edges::fetch_page`]; this
+/// just shapes the result into the CLI's [`Edge`] type.
 fn fetch_edges(
     conn: &Connection,
     repo: Option<&str>,
@@ -216,62 +206,24 @@ fn fetch_edges(
     limit: usize,
     offset: usize,
 ) -> Result<(Vec<Edge>, usize)> {
-    let (where_clause, mut binds) = where_clause_and_binds(rels, repo, min_weight);
-    // The COUNT carries only the filter params — never the window.
-    let count_sql = format!("SELECT count(*) FROM edges{where_clause}");
-    let mut count_stmt = conn.prepare(&count_sql)?;
-    let count: i64 = count_stmt.query_row(
-        rusqlite::params_from_iter(binds.iter().map(std::convert::AsRef::as_ref)),
-        |r| r.get(0),
+    let (rows, total) = code_graph_edges::fetch_page(
+        conn,
+        &EdgeQuery {
+            rels,
+            repo,
+            min_weight,
+            limit,
+            offset,
+        },
     )?;
-    let total = usize::try_from(count).unwrap_or(0);
-
-    // SQLite forbids a bare `OFFSET`, so `limit == 0` ("all") uses `LIMIT -1`.
-    let limit_param: i64 = if limit == 0 {
-        -1
-    } else {
-        i64::try_from(limit).unwrap_or(i64::MAX)
-    };
-    binds.push(Box::new(limit_param));
-    binds.push(Box::new(i64::try_from(offset).unwrap_or(i64::MAX)));
-    let sql = format!(
-        "SELECT src_id, dst_id, rel, weight FROM edges{where_clause} \
-          ORDER BY weight DESC, rel ASC, src_id ASC, dst_id ASC LIMIT ? OFFSET ?"
-    );
-    let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt
-        .query_map(
-            rusqlite::params_from_iter(binds.iter().map(std::convert::AsRef::as_ref)),
-            map_edge,
-        )?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    Ok((rows, total))
-}
-
-/// The `WHERE` clause (relation set + weight floor + optional repo scope)
-/// and its bound params, `min_weight` as `?1` and `repo` as `?2`.
-fn where_clause_and_binds(
-    rels: &[&str],
-    repo: Option<&str>,
-    min_weight: i64,
-) -> (String, Vec<Box<dyn rusqlite::ToSql>>) {
-    let in_list = rels
-        .iter()
-        .map(|r| format!("'{r}'"))
-        .collect::<Vec<_>>()
-        .join(",");
-    let mut where_clause = format!(
-        " WHERE rel IN ({in_list}) \
-            AND (rel <> 'co_changed' OR weight >= ?1)"
-    );
-    let mut binds: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(min_weight)];
-    if let Some(r) = repo {
-        // Both endpoints share the `file:<repo>:` prefix gate, so SQLite
-        // rejects cross-repo edges directly.
-        where_clause.push_str(
-            " AND substr(src_id, 1, length(?2)) = ?2 AND substr(dst_id, 1, length(?2)) = ?2",
-        );
-        binds.push(Box::new(file_node_prefix(r)));
-    }
-    (where_clause, binds)
+    let edges = rows
+        .into_iter()
+        .map(|r| Edge {
+            src: r.src_id,
+            dst: r.dst_id,
+            rel: r.rel,
+            weight: r.weight,
+        })
+        .collect();
+    Ok((edges, total))
 }

@@ -4,8 +4,8 @@
 //!
 //! Four read-only cores over the SAME file-level graph `comemory graph`
 //! already exports, reusing its query layer rather than growing a second
-//! one (Binding Rule 1): [`crate::cli::graph::nodes::fetch_nodes`] /
-//! [`crate::cli::graph::nodes::fetch_node`] for node rows,
+//! one (Binding Rule 1): [`crate::store::code_graph_nodes::fetch_nodes`] /
+//! [`crate::store::code_graph_nodes::fetch_node`] for node rows,
 //! [`crate::cli::graph::nodes::build_graph`] for the `NodeRow → Node`
 //! mapping, [`crate::cli::graph::build_graph_page`] for the snapshot, and
 //! [`crate::graph::neighbors::file_neighbors`] — the query `comemory
@@ -16,19 +16,20 @@
 //! are accepted too, so a console can pass through whichever id shape it
 //! holds. See [`resolve_node_id`].
 
-use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
 use crate::api::Ctx;
-use crate::cli::graph::nodes::{
-    FileExpr, NodeRow, build_graph, cites_file_predicate, fetch_node, fetch_nodes,
-};
+use crate::cli::graph::nodes::build_graph;
 use crate::cli::graph::{Rel, build_graph_page, parse_id};
 use crate::graph::neighbors::{self, DEFAULT_MIN_WEIGHT, NeighborRow};
 use crate::output::graph::{Edge, Node};
 use crate::output::page::Page;
 use crate::output::search::title_of;
 use crate::prelude::*;
+use crate::store::Connection;
+use crate::store::code_graph_nodes::{
+    FileExpr, NodeRow, cites_file_predicate, fetch_node, fetch_nodes,
+};
 
 /// Default page size for `GET /graph/nodes`, matching the `/api/v1`
 /// pagination convention (spec §1 "Pagination"). `0` still means "all".

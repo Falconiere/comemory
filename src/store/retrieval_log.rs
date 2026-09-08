@@ -86,6 +86,39 @@ pub fn returned_ids_in_window(
     Ok(rows)
 }
 
+/// One `(query_id, query, at)` row from the reformulation-mining scan.
+pub struct LogQueryRow {
+    /// Deterministic query id.
+    pub query_id: String,
+    /// The raw query text.
+    pub query: String,
+    /// ISO-8601 UTC timestamp the query ran at.
+    pub at: String,
+}
+
+/// Every `retrieval_log` row whose `source` is not `exclude_source`, ordered
+/// `(at, query_id)` — the raw log `eval::mine::mine` scans for (failed →
+/// fixed) reformulation pairs.
+pub fn queries_excluding_source(
+    conn: &Connection,
+    exclude_source: &str,
+) -> Result<Vec<LogQueryRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT query_id, query, at FROM retrieval_log
+         WHERE source != ?1 ORDER BY at, query_id",
+    )?;
+    let rows = stmt
+        .query_map([exclude_source], |r| {
+            Ok(LogQueryRow {
+                query_id: r.get(0)?,
+                query: r.get(1)?,
+                at: r.get(2)?,
+            })
+        })?
+        .collect::<std::result::Result<_, _>>()?;
+    Ok(rows)
+}
+
 #[cfg(test)]
 #[path = "tests/retrieval_log.rs"]
 mod tests;

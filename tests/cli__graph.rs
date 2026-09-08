@@ -10,9 +10,10 @@
 //! is a pure read over `comemory.db` and never indexes.
 
 use assert_cmd::Command;
-use comemory::cli::graph::nodes::{NodeRow, build_graph};
+use comemory::cli::graph::nodes::build_graph;
 use comemory::cli::graph::parse_id;
 use comemory::output::graph::Edge;
+use comemory::store::code_graph_nodes::NodeRow;
 use tempfile::TempDir;
 
 #[path = "common/git_commit.rs"]

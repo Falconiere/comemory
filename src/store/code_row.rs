@@ -329,6 +329,23 @@ pub(crate) fn find_by_address(
     .map_err(Error::from)
 }
 
+/// Whether a live `code_symbols` row exists for `(repo, path, symbol)` — the
+/// ghost-reference resolve check behind `prune::stale_code::detect`.
+pub(crate) fn symbol_row_exists(
+    conn: &Connection,
+    repo: &str,
+    path: &str,
+    symbol: &str,
+) -> Result<bool> {
+    let n: i64 = conn.query_row(
+        "SELECT count(*) FROM code_symbols \
+          WHERE repo = ?1 AND path = ?2 AND symbol = ?3",
+        rusqlite::params![repo, path, symbol],
+        |row| row.get(0),
+    )?;
+    Ok(n > 0)
+}
+
 /// Identity columns (`symbol`, `kind`) of one `code_symbols` row by id.
 /// `Ok(None)` when the row vanished (raced re-index delete). `prepare_cached`
 /// for a per-group chunk-coalescing loop.

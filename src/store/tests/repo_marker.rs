@@ -9,7 +9,9 @@
 //! cursor read/advance pair.
 
 use comemory::store::connection;
-use comemory::store::repo_marker::{advance_mined_cursor, last_mined_commit};
+use comemory::store::repo_marker::{
+    advance_mined_cursor, last_mined_commit, read_for_lazy_reindex,
+};
 use rusqlite::Connection;
 use tempfile::TempDir;
 
@@ -64,4 +66,32 @@ fn advance_preserves_other_repo_marker_columns() {
         )
         .expect("read root_path");
     assert_eq!(root_path, Some("/some/root".to_string()));
+}
+
+#[test]
+fn read_for_lazy_reindex_is_none_with_no_marker_row() {
+    let (conn, _tmp) = open_db();
+    assert!(
+        read_for_lazy_reindex(&conn, "no-such-repo")
+            .expect("read")
+            .is_none()
+    );
+}
+
+#[test]
+fn read_for_lazy_reindex_returns_all_three_columns() {
+    let (conn, _tmp) = open_db();
+    conn.execute(
+        "INSERT INTO repo_marker(repo, last_mined_commit, root_path, archived) \
+         VALUES ('r', 'abc123', '/some/root', 1)",
+        [],
+    )
+    .expect("seed marker");
+
+    let marker = read_for_lazy_reindex(&conn, "r")
+        .expect("read")
+        .expect("row present");
+    assert_eq!(marker.last_mined_commit, Some("abc123".to_string()));
+    assert_eq!(marker.root_path, Some("/some/root".to_string()));
+    assert!(marker.archived);
 }
