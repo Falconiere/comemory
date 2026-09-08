@@ -10,6 +10,7 @@
 use rusqlite::{Connection, OptionalExtension, named_params, params};
 
 use crate::prelude::*;
+use crate::store::edges::{REFERENCES_FILE, REFERENCES_SYMBOL};
 
 /// Bound parameters for [`expand_memory_seeds`], bundled into a struct
 /// rather than nine positional arguments (`clippy::too_many_arguments`).
@@ -204,6 +205,25 @@ pub fn live_superseder(
     stmt.query_row(params![id, as_of_cutoff], |r| r.get(0))
         .optional()
         .map_err(Error::from)
+}
+
+/// Every `(rel, dst_id)` reference edge directly off `memory_id`
+/// (`references_file` / `references_symbol` only), ordered `(rel, dst_id)`
+/// — `comemory show`'s depth-1 reference read. See [`walk_context_edges`]
+/// for the multi-hop version `comemory context` uses.
+pub fn direct_reference_edges(conn: &Connection, memory_id: &str) -> Result<Vec<(String, String)>> {
+    let mut stmt = conn.prepare(
+        "SELECT rel, dst_id FROM edges \
+          WHERE src_kind = 'memory' AND src_id = ?1 AND rel IN (?2, ?3) \
+          ORDER BY rel, dst_id",
+    )?;
+    let rows = stmt
+        .query_map(
+            params![memory_id, REFERENCES_FILE, REFERENCES_SYMBOL],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?
+        .collect::<std::result::Result<_, _>>()?;
+    Ok(rows)
 }
 
 #[cfg(test)]

@@ -252,3 +252,62 @@ fn is_loaded_is_true_on_a_real_connection() {
     let conn = connection::open(dir.path().join("comemory.db")).expect("open");
     assert!(vector::is_loaded(&conn));
 }
+
+#[test]
+fn replace_memory_swaps_the_row_rather_than_duplicating_it() {
+    let dir = tempdir().expect("tempdir");
+    let conn = connection::open(dir.path().join("comemory.db")).expect("open");
+    conn.execute(
+        "INSERT INTO memories(id,slug,kind,content_hash,body,created_at,updated_at,md_path) \
+         VALUES('dddd4444','d','note','hash4','body','2026-06-08T00:00:00Z','2026-06-08T00:00:00Z','d.md')",
+        [],
+    )
+    .expect("seed memories");
+
+    let v_a = vectors::vector("first", 1024);
+    let v_b = vectors::vector("second", 1024);
+    vector::insert_memory(&conn, "dddd4444", &v_a).expect("insert first");
+    vector::replace_memory(&conn, "dddd4444", &v_b).expect("replace");
+
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM memory_vec WHERE memory_id = 'dddd4444'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("count");
+    assert_eq!(count, 1, "replace must not leave a duplicate row behind");
+
+    let hits = vector::knn_memory(&conn, &v_b, 1, None, CreatedWindow::default()).expect("knn");
+    assert_eq!(hits[0].memory_id, "dddd4444");
+    assert!(
+        hits[0].distance < 1e-5,
+        "the replaced vector must be the one stored"
+    );
+}
+
+#[test]
+fn replace_code_swaps_the_row_rather_than_duplicating_it() {
+    let dir = tempdir().expect("tempdir");
+    let conn = connection::open(dir.path().join("comemory.db")).expect("open");
+    seed_code_symbol(&conn, 1, "webapp", "rust");
+
+    vector::insert_code(&conn, 1, &code_basis(0)).expect("insert first");
+    vector::replace_code(&conn, 1, &code_basis(1)).expect("replace");
+
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM code_vec WHERE symbol_id = 1",
+            [],
+            |r| r.get(0),
+        )
+        .expect("count");
+    assert_eq!(count, 1, "replace must not leave a duplicate row behind");
+
+    let hits = vector::knn_code(&conn, &code_basis(1), 1, None, None).expect("knn");
+    assert_eq!(hits[0].symbol_id, 1);
+    assert!(
+        hits[0].distance < 1e-5,
+        "the replaced vector must be the one stored"
+    );
+}

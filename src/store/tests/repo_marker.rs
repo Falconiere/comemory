@@ -10,7 +10,7 @@
 
 use comemory::store::connection;
 use comemory::store::repo_marker::{
-    advance_mined_cursor, last_mined_commit, read_for_lazy_reindex,
+    advance_mined_cursor, archived, last_mined_commit, read_for_lazy_reindex,
 };
 use rusqlite::Connection;
 use tempfile::TempDir;
@@ -94,4 +94,28 @@ fn read_for_lazy_reindex_returns_all_three_columns() {
     assert_eq!(marker.last_mined_commit, Some("abc123".to_string()));
     assert_eq!(marker.root_path, Some("/some/root".to_string()));
     assert!(marker.archived);
+}
+
+#[test]
+fn archived_is_none_with_no_marker_row() {
+    let (conn, _tmp) = open_db();
+    assert_eq!(archived(&conn, "no-such-repo").expect("read"), None);
+}
+
+#[test]
+fn archived_reports_the_stored_flag() {
+    let (conn, _tmp) = open_db();
+    conn.execute(
+        "INSERT INTO repo_marker(repo, archived) VALUES ('r', 1)",
+        [],
+    )
+    .expect("seed archived marker");
+    conn.execute(
+        "INSERT INTO repo_marker(repo, archived) VALUES ('other', 0)",
+        [],
+    )
+    .expect("seed unarchived marker");
+
+    assert_eq!(archived(&conn, "r").expect("read"), Some(true));
+    assert_eq!(archived(&conn, "other").expect("read"), Some(false));
 }

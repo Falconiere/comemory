@@ -74,6 +74,20 @@ pub(crate) fn advance_mined_cursor(conn: &Connection, repo: &str, cursor: &str) 
     Ok(())
 }
 
+/// Whether `repo`'s `repo_marker.archived` flag is set. `None` when the
+/// repo has no marker row yet (never indexed) — `api::index_code`'s
+/// archived-repo refusal treats an unknown repo as not archived.
+pub fn archived(conn: &Connection, repo: &str) -> Result<Option<bool>> {
+    let flag: Option<i64> = conn
+        .query_row(
+            "SELECT archived FROM repo_marker WHERE repo = ?1",
+            [repo],
+            |r| r.get(0),
+        )
+        .optional()?;
+    Ok(flag.map(|f| f != 0))
+}
+
 #[cfg(test)]
 #[path = "tests/repo_marker.rs"]
 mod tests;

@@ -66,6 +66,21 @@ pub fn insert_memory(conn: &Connection, memory_id: &str, vector: &[f32]) -> Resu
     Ok(())
 }
 
+/// Replace a memory's `memory_vec` row: drop any prior row for `memory_id`,
+/// then insert `vector` via [`insert_memory`] (dim validated there, same
+/// point it is today). `memory_vec` is a `vec0` virtual table whose primary
+/// key does not participate in SQLite's FK cascade, so a bare re-insert on
+/// an id that already has a row would leave two rows behind — every
+/// re-save (`api::save`) and re-embed (`api::reembed`) of the same memory
+/// must replace, not duplicate.
+pub fn replace_memory(conn: &Connection, memory_id: &str, vector: &[f32]) -> Result<()> {
+    conn.execute(
+        "DELETE FROM memory_vec WHERE memory_id = ?1",
+        params![memory_id],
+    )?;
+    insert_memory(conn, memory_id, vector)
+}
+
 /// Oversample factor applied to the vec0 KNN candidate set when a scope
 /// filter (memory `repo` / created-date window, code `repo`/`lang`) is in
 /// play. vec0 returns the global nearest-k by cosine distance and the
@@ -156,6 +171,16 @@ pub fn insert_code(conn: &Connection, symbol_id: i64, vector: &[f32]) -> Result<
         params![symbol_id, embed::to_vec_blob(vector)],
     )?;
     Ok(())
+}
+
+/// Replace a code symbol's `code_vec` row — the code-side twin of
+/// [`replace_memory`], used by `api::reembed`'s re-vectorize-in-place run.
+pub fn replace_code(conn: &Connection, symbol_id: i64, vector: &[f32]) -> Result<()> {
+    conn.execute(
+        "DELETE FROM code_vec WHERE symbol_id = ?1",
+        params![symbol_id],
+    )?;
+    insert_code(conn, symbol_id, vector)
 }
 
 /// Top-k nearest code symbols, optionally restricted to one `repo`

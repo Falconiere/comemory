@@ -14,7 +14,6 @@
 //!   reason mining excludes them (`stats::source::SEARCH_CODE`): they are a
 //!   different query vocabulary and can only ever earn code feedback.
 
-use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
 use crate::api::Ctx;
@@ -22,6 +21,7 @@ use crate::prelude::*;
 use crate::stats::source::SEARCH_CODE;
 use crate::store::memory_list::like_escape;
 use crate::store::tokenizer::split::query_tokens;
+use crate::store::{Connection, query_expansions, retrieval_log};
 
 /// Rows returned per list when the request omits `limit`.
 const DEFAULT_LIMIT: usize = 10;
@@ -91,42 +91,19 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
 ///
 /// The token set comes from the SAME splitter the FTS5 tokenizer and the
 /// mining pass use, so a suggestion is offered exactly when the ladder
-/// would have used it.
+/// would have used it. No fallback tier on purpose: an empty expansion
+/// list is the honest answer for a query the mining pass has never seen.
 fn expansions(conn: &Connection, q: &str, limit: usize) -> Result<Vec<Expansion>> {
     let terms: Vec<String> = query_tokens(q).into_iter().collect();
-    if terms.is_empty() {
-        return Ok(Vec::new());
-    }
-    let placeholders = (1..=terms.len())
-        .map(|i| format!("?{i}"))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let sql = format!(
-        "SELECT term, expansion, support FROM query_expansions \
-          WHERE term IN ({placeholders}) \
-          ORDER BY support DESC, term ASC, expansion ASC LIMIT ?{}",
-        terms.len() + 1
-    );
-    let mut binds: Vec<Box<dyn rusqlite::ToSql>> = terms
+    let rows = query_expansions::matching_terms(conn, &terms, limit)?;
+    Ok(rows
         .into_iter()
-        .map(|t| Box::new(t) as Box<dyn rusqlite::ToSql>)
-        .collect();
-    binds.push(Box::new(i64::try_from(limit).unwrap_or(i64::MAX)));
-    let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt.query_map(
-        rusqlite::params_from_iter(binds.iter().map(std::convert::AsRef::as_ref)),
-        |r| {
-            Ok(Expansion {
-                term: r.get(0)?,
-                expansion: r.get(1)?,
-                support: u64::try_from(r.get::<_, i64>(2)?).unwrap_or(0),
-            })
-        },
-    )?;
-    rows.collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(Error::from)
-    // No fallback tier here on purpose: an empty expansion list is the
-    // honest answer for a query the mining pass has never seen.
+        .map(|r| Expansion {
+            term: r.term,
+            expansion: r.expansion,
+            support: u64::try_from(r.support).unwrap_or(0),
+        })
+        .collect())
 }
 
 /// Distinct past queries starting with `q`, newest first.
@@ -137,27 +114,19 @@ fn expansions(conn: &Connection, q: &str, limit: usize) -> Result<Vec<Expansion>
 /// wanted *with its own* `query_id`, and a bare `GROUP BY` would pick an
 /// arbitrary row's id.
 fn recent(conn: &Connection, q: &str, limit: usize) -> Result<Vec<RecentQuery>> {
-    let mut stmt = conn.prepare(
-        "SELECT query, query_id, at FROM retrieval_log \
-          WHERE source != ?1 AND query LIKE ?2 ESCAPE '\\' \
-          ORDER BY at DESC, query_id DESC",
-    )?;
-    let rows = stmt.query_map(rusqlite::params![SEARCH_CODE, like_prefix(q)], |r| {
-        Ok(RecentQuery {
-            query: r.get(0)?,
-            query_id: r.get(1)?,
-            at: r.get(2)?,
-        })
-    })?;
+    let rows = retrieval_log::prefix_matches(conn, SEARCH_CODE, &like_prefix(q))?;
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut out = Vec::new();
     for row in rows {
-        let row = row?;
         if out.len() >= limit {
             break;
         }
         if seen.insert(row.query.to_lowercase()) {
-            out.push(row);
+            out.push(RecentQuery {
+                query: row.query,
+                query_id: row.query_id,
+                at: row.at,
+            });
         }
     }
     Ok(out)

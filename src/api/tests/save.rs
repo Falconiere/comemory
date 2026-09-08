@@ -121,6 +121,59 @@ fn run_rejects_quality_out_of_range() {
     );
 }
 
+/// A save that carries `--vector` writes exactly one `memory_vec` row, and
+/// a re-save of the same id (a new vector, matching `id::memory_id`'s
+/// content-hash unaffected fields) replaces rather than duplicates it — the
+/// `store::vector::replace_memory` path `write_sqlite_mirror` now calls.
+#[test]
+fn run_with_a_vector_writes_one_row_and_a_resave_replaces_it() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let paths = Paths::new(home.path());
+    paths.ensure_dirs().expect("ensure_dirs");
+    let mut conn = connection::open(paths.db_path()).expect("open db");
+    let cfg = Config::defaults();
+    let dim = comemory::store::vector::dim_memory(&conn).expect("dim");
+
+    let body = "use a fixed advisory lock key derived from the table name";
+    let first_vec = vec![0.25_f32; dim];
+    {
+        let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+        let req = api::save::Request {
+            vector: Some(first_vec),
+            ..request(body)
+        };
+        run(&mut ctx, req).expect("first save with vector");
+    }
+    let memory_id = comemory::memory::id::memory_id(body);
+    let count_rows = |conn: &rusqlite::Connection| -> i64 {
+        conn.query_row(
+            "SELECT COUNT(*) FROM memory_vec WHERE memory_id = ?1",
+            [&memory_id],
+            |r| r.get(0),
+        )
+        .expect("count memory_vec")
+    };
+    assert_eq!(count_rows(&conn), 1);
+
+    // Re-save the SAME body (a lexical-only re-save carries no vector by
+    // default; here the caller supplies a different one, e.g. a re-embed by
+    // hand) — same content hash, same memory id.
+    let second_vec = vec![0.75_f32; dim];
+    {
+        let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+        let req = api::save::Request {
+            vector: Some(second_vec),
+            ..request(body)
+        };
+        run(&mut ctx, req).expect("second save with vector");
+    }
+    assert_eq!(
+        count_rows(&conn),
+        1,
+        "a re-save must replace the memory_vec row, not duplicate it"
+    );
+}
+
 #[test]
 fn run_flags_a_near_duplicate() {
     let home = tempfile::tempdir().expect("tempdir");

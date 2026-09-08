@@ -119,6 +119,34 @@ pub fn queries_excluding_source(
     Ok(rows)
 }
 
+/// Every `retrieval_log` row whose `source` is not `exclude_source` and
+/// whose `query` matches `like_prefix` (an already-escaped `LIKE` pattern,
+/// paired with `ESCAPE '\'`), newest first — behind `api::suggest`'s
+/// "recent" list. The caller does the dedup-by-lowercased-text and the
+/// `limit` cut, since the newest row of each distinct text must keep its
+/// own `query_id`, which a bare `GROUP BY` cannot guarantee.
+pub fn prefix_matches(
+    conn: &Connection,
+    exclude_source: &str,
+    like_prefix: &str,
+) -> Result<Vec<LogQueryRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT query, query_id, at FROM retrieval_log \
+          WHERE source != ?1 AND query LIKE ?2 ESCAPE '\\' \
+          ORDER BY at DESC, query_id DESC",
+    )?;
+    let rows = stmt
+        .query_map(params![exclude_source, like_prefix], |r| {
+            Ok(LogQueryRow {
+                query: r.get(0)?,
+                query_id: r.get(1)?,
+                at: r.get(2)?,
+            })
+        })?
+        .collect::<std::result::Result<_, _>>()?;
+    Ok(rows)
+}
+
 #[cfg(test)]
 #[path = "tests/retrieval_log.rs"]
 mod tests;

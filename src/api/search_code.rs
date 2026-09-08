@@ -8,7 +8,6 @@
 //! here — it stays a CLI-only affordance (spec Non-Goal 8: HTTP callers
 //! reindex explicitly via `POST /api/v1/code/index`).
 
-use rusqlite::Connection;
 use serde::Deserialize;
 
 use crate::api::Ctx;
@@ -18,7 +17,7 @@ use crate::output::search_code::SearchCodeResult;
 use crate::prelude::*;
 use crate::retrieval::code_rerank::CodeReranked;
 use crate::retrieval::{code_search, pipeline};
-use crate::store::code_row;
+use crate::store::{Connection, code_row};
 
 /// `comemory search-code` / `GET|POST /api/v1/code/search` request.
 #[derive(Deserialize, Debug)]
@@ -122,10 +121,7 @@ pub(crate) fn canonical_lang(raw: Option<&str>) -> Result<Option<&'static str>> 
 /// `true` when at least one `code_symbols` row exists — distinguishes
 /// "query missed" from "nothing was ever indexed" for the TTY hint.
 fn code_index_populated(conn: &Connection) -> Result<bool> {
-    conn.query_row("SELECT EXISTS(SELECT 1 FROM code_symbols)", [], |r| {
-        r.get(0)
-    })
-    .map_err(Error::from)
+    code_row::any_indexed(conn)
 }
 
 /// Best-effort telemetry for one tracked code search, the code-side
