@@ -140,6 +140,16 @@ pub(crate) fn current_weight(conn: &Connection, e: EdgeKey<'_>) -> Result<i64> {
     Ok(w.unwrap_or(0))
 }
 
+/// `COUNT(*)` over `edges` for one relation kind. `rel` is bound as a
+/// parameter, never interpolated. Behind `api::overview`'s code-graph edge
+/// totals (`co_changed` / `imports`).
+pub fn count_by_rel(conn: &Connection, rel: &str) -> Result<u64> {
+    let n: i64 = conn.query_row("SELECT COUNT(*) FROM edges WHERE rel = ?1", [rel], |r| {
+        r.get(0)
+    })?;
+    Ok(u64::try_from(n).unwrap_or(0))
+}
+
 /// Outgoing neighbors of `(src_kind, src_id)` following `rel`.
 pub fn outgoing(
     conn: &Connection,

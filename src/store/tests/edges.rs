@@ -39,6 +39,37 @@ fn insert_edge_then_neighbors_returns_it() {
 }
 
 #[test]
+fn count_by_rel_counts_only_the_matching_relation() {
+    let conn = seed_db();
+    edges::insert(
+        &conn,
+        EdgeKey {
+            src_kind: "file",
+            src_id: "file:demo:a.rs",
+            dst_kind: "file",
+            dst_id: "file:demo:b.rs",
+            rel: "imports",
+        },
+    )
+    .expect("insert imports");
+    edges::insert(
+        &conn,
+        EdgeKey {
+            src_kind: "file",
+            src_id: "file:demo:a.rs",
+            dst_kind: "file",
+            dst_id: "file:demo:c.rs",
+            rel: "co_changed",
+        },
+    )
+    .expect("insert co_changed");
+
+    assert_eq!(edges::count_by_rel(&conn, "imports").expect("count"), 1);
+    assert_eq!(edges::count_by_rel(&conn, "co_changed").expect("count"), 1);
+    assert_eq!(edges::count_by_rel(&conn, "supersedes").expect("count"), 0);
+}
+
+#[test]
 fn supersedes_walk_is_transitive() {
     let conn = seed_db();
     edges::insert(

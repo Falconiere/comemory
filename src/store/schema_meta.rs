@@ -17,6 +17,20 @@ pub fn set_memory_vector_model(conn: &Connection, model: &str) -> Result<()> {
     upsert(conn, "memory_vector_model", model)
 }
 
+/// The stored `schema_meta.version` value. Errors (including a missing row)
+/// propagate via `?` exactly as the bare query did before this moved out of
+/// `api::doctor` — the key is written unconditionally by
+/// `store::migrate::set_version`, so a missing row means a database
+/// `migrate::run` never touched, not a normal "not found" a caller should
+/// branch on.
+pub fn version(conn: &Connection) -> Result<String> {
+    Ok(conn.query_row(
+        "SELECT value FROM schema_meta WHERE key = 'version'",
+        [],
+        |r| r.get(0),
+    )?)
+}
+
 /// Read the `schema_meta` value stored under `key`, or `None` when absent.
 pub(crate) fn get(conn: &Connection, key: &str) -> Result<Option<String>> {
     conn.query_row("SELECT value FROM schema_meta WHERE key = ?1", [key], |r| {

@@ -8,8 +8,16 @@
 //! Mirror test for `src/store/schema_meta.rs`.
 
 use comemory::store::connection;
-use comemory::store::schema_meta::{get, set_memory_vector_model, upsert};
+use comemory::store::migrate;
+use comemory::store::schema_meta::{get, set_memory_vector_model, upsert, version};
 use tempfile::tempdir;
+
+#[test]
+fn version_reads_the_applied_schema_version() {
+    let dir = tempdir().expect("tempdir");
+    let conn = connection::open(dir.path().join("comemory.db")).expect("open");
+    assert_eq!(version(&conn).expect("version"), migrate::CURRENT_VERSION);
+}
 
 #[test]
 fn set_memory_vector_model_inserts_then_updates() {

@@ -13,12 +13,12 @@
 //! from the filesystem, zeros for every SQL-backed counter, and
 //! `schema_version: "unknown"`.
 
-use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
 use crate::api::Ctx;
 use crate::config::Paths;
 use crate::prelude::*;
+use crate::store::{schema_meta, stats_counts};
 
 /// `comemory stats` / `GET /api/v1/stats` request.
 #[derive(Deserialize, Debug, Default)]
@@ -80,19 +80,15 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
     let repo = req.repo.as_deref();
     let conn = ctx.conn()?;
     Ok(Response {
-        memories: scoped_count(conn, "memories", "deleted_at IS NULL", repo)?,
-        trashed: scoped_count(conn, "memories", "deleted_at IS NOT NULL", repo)?,
+        memories: stats_counts::scoped_count(conn, "memories", "deleted_at IS NULL", repo)?,
+        trashed: stats_counts::scoped_count(conn, "memories", "deleted_at IS NOT NULL", repo)?,
         markdown_files,
-        code_symbols: scoped_count(conn, "code_symbols", "1 = 1", repo)?,
-        documents: scoped_count(conn, "documents", "1 = 1", repo)?,
-        edges: count(conn, "SELECT COUNT(*) FROM edges")?,
-        db_bytes: db_bytes(conn)?,
-        repos: count(conn, "SELECT COUNT(*) FROM repo_marker")?,
-        schema_version: conn.query_row(
-            "SELECT value FROM schema_meta WHERE key = 'version'",
-            [],
-            |r| r.get(0),
-        )?,
+        code_symbols: stats_counts::scoped_count(conn, "code_symbols", "1 = 1", repo)?,
+        documents: stats_counts::scoped_count(conn, "documents", "1 = 1", repo)?,
+        edges: stats_counts::count_table(conn, "edges")?,
+        db_bytes: stats_counts::db_bytes(conn)?,
+        repos: stats_counts::count_table(conn, "repo_marker")?,
+        schema_version: schema_meta::version(conn)?,
     })
 }
 
@@ -106,44 +102,6 @@ fn count_markdown(paths: &Paths) -> u64 {
     rd.flatten()
         .filter(|e| e.path().extension().is_some_and(|ext| ext == "md"))
         .count() as u64
-}
-
-/// `COUNT(*)` over `table` under `predicate`, narrowed to `repo` when one
-/// was requested. Every table this is called with carries a nullable `repo`
-/// column, so the filter is one shared `AND repo = ?` rather than three
-/// hand-written queries that could drift.
-///
-/// `table` and `predicate` are `&'static str` on purpose: they are
-/// interpolated into the SQL, so the type makes it impossible to reach them
-/// with a runtime-built (and therefore possibly caller-influenced) string —
-/// only a compile-time literal type-checks. `repo`, the one genuinely
-/// dynamic value, is bound as a parameter.
-fn scoped_count(
-    conn: &Connection,
-    table: &'static str,
-    predicate: &'static str,
-    repo: Option<&str>,
-) -> Result<u64> {
-    if let Some(repo) = repo {
-        let sql = format!("SELECT COUNT(*) FROM {table} WHERE {predicate} AND repo = ?1");
-        Ok(conn.query_row(&sql, [repo], |r| r.get::<_, i64>(0))? as u64)
-    } else {
-        let sql = format!("SELECT COUNT(*) FROM {table} WHERE {predicate}");
-        count(conn, &sql)
-    }
-}
-
-/// Run a parameterless `COUNT(*)` query.
-fn count(conn: &Connection, sql: &str) -> Result<u64> {
-    Ok(conn.query_row(sql, [], |r| r.get::<_, i64>(0))? as u64)
-}
-
-/// `page_count * page_size` — the logical size of the database, see
-/// [`Response::db_bytes`] for why this is not the file length.
-fn db_bytes(conn: &Connection) -> Result<u64> {
-    let pages: i64 = conn.query_row("PRAGMA page_count", [], |r| r.get(0))?;
-    let size: i64 = conn.query_row("PRAGMA page_size", [], |r| r.get(0))?;
-    Ok((pages.max(0) as u64).saturating_mul(size.max(0) as u64))
 }
 
 #[cfg(test)]

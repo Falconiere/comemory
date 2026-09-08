@@ -20,14 +20,13 @@
 use std::collections::HashSet;
 use std::path::Path;
 
-use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::api::Ctx;
 use crate::api::trash::trash_entry_id;
 use crate::prelude::*;
-use crate::store::{gc_runs, memory_purge, memory_row, random_id};
+use crate::store::{Connection, gc_learning, gc_runs, memory_purge, memory_row, random_id};
 
 /// `comemory gc` / `POST /api/v1/gc` request. No CLI args today.
 #[derive(Deserialize, Debug)]
@@ -234,9 +233,7 @@ fn sweep_learning(
     now: OffsetDateTime,
 ) -> Result<(u64, u64)> {
     let cutoff = memory_row::iso_format(now - time::Duration::days(i64::from(retention_days)))?;
-    let logs = conn.execute("DELETE FROM retrieval_log WHERE at < ?1", [&cutoff])? as u64;
-    let events = conn.execute("DELETE FROM feedback_events WHERE at < ?1", [&cutoff])? as u64;
-    Ok((logs, events))
+    gc_learning::evict_before(conn, &cutoff)
 }
 
 #[cfg(test)]

@@ -51,3 +51,23 @@ fn open_on_current_schema_performs_no_writes() {
         "open wrote rows on an already-current schema (write-on-open contends for the WAL lock)"
     );
 }
+
+/// `open_read_only` opens a genuinely writable-looking file but refuses
+/// every write — the read-only forward-compat fallback (`api::doctor`) must
+/// never be able to mutate a schema it does not understand.
+#[test]
+fn open_read_only_refuses_writes() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("comemory.db");
+    // Regular open first, so the file and schema already exist.
+    drop(connection::open(&path).expect("first open"));
+
+    let conn = connection::open_read_only(&path).expect("read-only open");
+    let err = conn
+        .execute("DELETE FROM memories", [])
+        .expect_err("a read-only connection must refuse a write");
+    assert!(
+        err.to_string().to_lowercase().contains("readonly"),
+        "unexpected error: {err}"
+    );
+}
