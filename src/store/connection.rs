@@ -56,6 +56,20 @@ pub fn open<P: AsRef<Path>>(path: P) -> Result<Connection> {
     Ok(conn)
 }
 
+/// Open `path` as a plain, read-only connection: no PRAGMAs, no migration,
+/// no tokenizer registration. Distinct from [`open`] on purpose — the one
+/// caller (`api::doctor`'s forward-compat fallback, see its module doc) has
+/// already been refused an [`open`] with `Error::SchemaTooNew` and reaches
+/// here specifically because a read-only handle can never `CREATE` (or
+/// migrate) a database it does not understand, whatever the schema turns
+/// out to hold.
+pub fn open_read_only<P: AsRef<Path>>(path: P) -> Result<Connection> {
+    Ok(Connection::open_with_flags(
+        path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )?)
+}
+
 /// Process-wide memo of whether the sqlite-vec auto-extension has been
 /// registered. SQLite's auto-extension list is global state; we register
 /// once and reuse the (cached) result on every subsequent `open`.

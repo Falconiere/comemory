@@ -24,6 +24,15 @@ pub struct MemoryHit {
     pub distance: f32,
 }
 
+/// Whether the `sqlite-vec` extension is loaded on `conn` — `SELECT
+/// vec_version()` succeeds only when the `vec_*` SQL functions and the
+/// `vec0` virtual-table module registered on this connection. Behind
+/// `comemory doctor`'s "sqlite-vec" check and its `sqlite_vec_loaded` field.
+pub fn is_loaded(conn: &Connection) -> bool {
+    conn.query_row("SELECT vec_version()", [], |r| r.get::<_, String>(0))
+        .is_ok()
+}
+
 /// Read the configured memory vector dim from schema_meta.
 pub fn dim_memory(conn: &Connection) -> Result<usize> {
     let v: String = conn.query_row(

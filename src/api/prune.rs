@@ -22,6 +22,7 @@ use crate::output::search::title_of;
 use crate::prelude::*;
 use crate::prune::{low_value, stale_code};
 use crate::retrieval::score;
+use crate::store::{Connection, prune_apply};
 
 /// `comemory prune` / `GET /api/v1/prune` request.
 #[derive(Deserialize, Debug)]
@@ -108,35 +109,14 @@ struct Scan {
 /// captures the full low-value candidate list (so `apply` acts on every
 /// id, never just the page). `limit == 0` is the shared "all" sentinel.
 fn scan(
-    conn: &rusqlite::Connection,
+    conn: &Connection,
     paths: &Paths,
     cfg: &Config,
     limit: usize,
     offset: usize,
 ) -> Result<Scan> {
-    let orphan_edges: i64 = conn.query_row(
-        "SELECT count(*) FROM edges e \
-          WHERE e.src_kind = 'memory' \
-            AND NOT EXISTS(SELECT 1 FROM memories m \
-                             WHERE m.id = e.src_id AND m.deleted_at IS NULL)",
-        [],
-        |r| r.get(0),
-    )?;
-    let mut stmt = conn.prepare(
-        "SELECT DISTINCT repo, path FROM code_symbols \
-          WHERE NOT EXISTS(SELECT 1 FROM indexed_files i \
-                             WHERE i.repo = code_symbols.repo \
-                               AND i.path = code_symbols.path) \
-          ORDER BY repo, path",
-    )?;
-    let stale: Vec<String> = stmt
-        .query_map([], |r| {
-            let repo: String = r.get(0)?;
-            let path: String = r.get(1)?;
-            Ok(format!("{repo}:{path}"))
-        })?
-        .filter_map(std::result::Result::ok)
-        .collect();
+    let orphan_edges = prune_apply::count_orphan_memory_edges(conn)?;
+    let stale: Vec<String> = prune_apply::stale_code_files(conn)?;
     // Detect the full candidate set once, each id paired with the rule
     // label that flagged it: keep the bare id list for `apply`, enrich only
     // the display-windowed slice into full `PruneRow`s (see [`row_page`]).
@@ -176,7 +156,7 @@ fn scan(
 /// against the memory's body — bounded by the display window (see the
 /// module-level cost note on [`build_row`]), never the full candidate set.
 fn row_page(
-    conn: &rusqlite::Connection,
+    conn: &Connection,
     cfg: &Config,
     pairs: Vec<(String, &'static str)>,
     limit: usize,
@@ -202,28 +182,23 @@ fn row_page(
 /// [`score::activation`] (using `last_accessed`, falling back to
 /// `created_at`, and the configured decay), and whole days since creation.
 fn build_row(
-    conn: &rusqlite::Connection,
+    conn: &Connection,
     cfg: &Config,
     id: &str,
     reason: &str,
     now: OffsetDateTime,
 ) -> Result<PruneRow> {
-    let (body, created_at, access_count, last_accessed): (String, String, i64, Option<String>) =
-        conn.query_row(
-            "SELECT body, created_at, access_count, last_accessed FROM memories WHERE id = ?1",
-            [id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
-        )?;
-    let last = last_accessed.as_deref().unwrap_or(&created_at);
+    let row = prune_apply::memory_for_prune(conn, id)?;
+    let last = row.last_accessed.as_deref().unwrap_or(&row.created_at);
     let activation = score::activation(
-        access_count.max(0) as u64,
+        row.access_count.max(0) as u64,
         score::days_since(last, now),
         cfg.rank.decay,
     );
-    let age_days = score::days_since(&created_at, now).floor().max(0.0) as u64;
+    let age_days = score::days_since(&row.created_at, now).floor().max(0.0) as u64;
     Ok(PruneRow {
         id: id.to_string(),
-        title: title_of(&body),
+        title: title_of(&row.body),
         reason: reason.to_string(),
         activation,
         age_days,
@@ -257,7 +232,7 @@ fn trash_stats(paths: &Paths) -> (u64, u64) {
 /// no candidates exist.
 /// Returns whether the soft deletes left the derived artifacts stale — the
 /// same signal `delete` and `gc` report, carried up to the prune report.
-fn apply(conn: &mut rusqlite::Connection, paths: &Paths, low_value_ids: &[String]) -> Result<bool> {
+fn apply(conn: &mut Connection, paths: &Paths, low_value_ids: &[String]) -> Result<bool> {
     let derived_stale = soft_delete_low_value(conn, paths, low_value_ids)?;
     cleanup_orphans(conn)?;
     Ok(derived_stale)
@@ -272,7 +247,7 @@ fn apply(conn: &mut rusqlite::Connection, paths: &Paths, low_value_ids: &[String
 /// the caller can report it the way `delete` and `gc` do rather than let a
 /// stale relation index reach only the log.
 fn soft_delete_low_value(
-    conn: &mut rusqlite::Connection,
+    conn: &mut Connection,
     paths: &Paths,
     low_value_ids: &[String],
 ) -> Result<bool> {
@@ -302,105 +277,13 @@ fn soft_delete_low_value(
 /// Drop orphan/stale rows in a single transaction: orphan memory edges, the
 /// `code_vec` / `code_fts` / `code_symbols` rows for files no longer in
 /// `indexed_files`, and the now-dangling `references_*` / `co_activated` edges.
-fn cleanup_orphans(conn: &mut rusqlite::Connection) -> Result<()> {
+fn cleanup_orphans(conn: &mut Connection) -> Result<()> {
     let tx = conn.transaction()?;
-    tx.execute(
-        "DELETE FROM edges WHERE src_kind = 'memory' \
-           AND NOT EXISTS(SELECT 1 FROM memories m \
-                            WHERE m.id = src_id AND m.deleted_at IS NULL)",
-        [],
-    )?;
-    purge_stale_code_rows(&tx)?;
-    drop_dangling_edges(&tx)?;
+    prune_apply::delete_orphan_memory_edges(&tx)?;
+    prune_apply::purge_stale_code_rows(&tx)?;
+    prune_apply::drop_dangling_edges(&tx)?;
+    prune_apply::drop_orphan_code_refs(&tx)?;
     tx.commit()?;
-    Ok(())
-}
-
-/// Delete the `code_vec` / `code_fts` / `code_symbols` rows for files no longer
-/// in `indexed_files`. The two virtual tables (vec0 / fts5) don't participate
-/// in the FK cascade, so their rows are dropped first by the about-to-be-removed
-/// `code_symbols.id`.
-fn purge_stale_code_rows(tx: &rusqlite::Transaction<'_>) -> Result<()> {
-    tx.execute(
-        "DELETE FROM code_vec WHERE symbol_id IN ( \
-             SELECT id FROM code_symbols \
-              WHERE NOT EXISTS(SELECT 1 FROM indexed_files i \
-                                 WHERE i.repo = code_symbols.repo \
-                                   AND i.path = code_symbols.path))",
-        [],
-    )?;
-    tx.execute(
-        "DELETE FROM code_fts WHERE symbol_id IN ( \
-             SELECT id FROM code_symbols \
-              WHERE NOT EXISTS(SELECT 1 FROM indexed_files i \
-                                 WHERE i.repo = code_symbols.repo \
-                                   AND i.path = code_symbols.path))",
-        [],
-    )?;
-    tx.execute(
-        "DELETE FROM code_symbols \
-          WHERE NOT EXISTS(SELECT 1 FROM indexed_files i \
-                             WHERE i.repo = code_symbols.repo \
-                               AND i.path = code_symbols.path)",
-        [],
-    )?;
-    Ok(())
-}
-
-/// Drop edges that dangle once a file's `code_symbols` rows are purged:
-/// `references_symbol` / `references_file` (bare qualified dst) and
-/// `co_activated` (the `file:`-prefixed node id from `store::edges`). The
-/// read path tolerates a dangling dst, but the count grows every prune cycle.
-fn drop_dangling_edges(tx: &rusqlite::Transaction<'_>) -> Result<()> {
-    tx.execute(
-        "DELETE FROM edges \
-          WHERE rel = 'references_symbol' \
-            AND NOT EXISTS( \
-                SELECT 1 FROM code_symbols cs \
-                 WHERE edges.dst_id = cs.repo || ':' || cs.path || ':' || cs.symbol \
-            )",
-        [],
-    )?;
-    tx.execute(
-        "DELETE FROM edges \
-          WHERE rel = 'references_file' \
-            AND NOT EXISTS( \
-                SELECT 1 FROM code_symbols cs \
-                 WHERE edges.dst_id = cs.repo || ':' || cs.path \
-            )",
-        [],
-    )?;
-    tx.execute(
-        "DELETE FROM edges \
-          WHERE rel = 'co_activated' \
-            AND NOT EXISTS( \
-                SELECT 1 FROM code_symbols cs \
-                 WHERE edges.dst_id = 'file:' || cs.repo || ':' || cs.path \
-            )",
-        [],
-    )?;
-    drop_orphan_code_refs(tx)?;
-    Ok(())
-}
-
-/// Drop `code_ref` rows left behind once their backing `references_file` /
-/// `references_symbol` edge is gone. `code_ref` and `edges` share the same
-/// `(memory_id, rel, dst_id)` key for these two relations, so a `code_ref`
-/// with no surviving edge is an orphan — exactly the rows
-/// [`drop_dangling_edges`] just purged (dangling dst) or that a deleted
-/// memory's edge sweep removed. Without this, `stale_code::detect` would keep
-/// re-flagging the memory and the side table would diverge from the read path.
-fn drop_orphan_code_refs(tx: &rusqlite::Transaction<'_>) -> Result<()> {
-    tx.execute(
-        "DELETE FROM code_ref \
-          WHERE NOT EXISTS( \
-              SELECT 1 FROM edges e \
-               WHERE e.rel = code_ref.rel \
-                 AND e.src_id = code_ref.memory_id \
-                 AND e.dst_id = code_ref.dst_id \
-          )",
-        [],
-    )?;
     Ok(())
 }
 
