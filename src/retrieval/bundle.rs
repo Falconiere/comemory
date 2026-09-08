@@ -21,7 +21,6 @@
 
 use std::collections::BTreeMap;
 
-use rusqlite::Connection;
 use serde::Serialize;
 use time::OffsetDateTime;
 
@@ -32,15 +31,8 @@ use crate::retrieval::code_prior::{self, CodePriorParts, Signals};
 use crate::retrieval::code_ref_collect::{self, RawRef};
 use crate::retrieval::code_ref_fetch::RefStatusCache;
 use crate::retrieval::code_rerank::WorkingSet;
-
-/// One row returned by [`walk_context_edges`]: a directed edge from the graph.
-struct ContextEdge {
-    src_kind: String,
-    src_id: String,
-    dst_kind: String,
-    dst_id: String,
-    rel: String,
-}
+use crate::store::Connection;
+use crate::store::edges_retrieval;
 
 /// JSON-serializable retrieval bundle returned to `comemory context`.
 ///
@@ -197,14 +189,9 @@ fn collect_memory(
     relations: &mut Vec<RelationRow>,
     raw_refs: &mut Vec<RawRef>,
 ) -> Result<()> {
-    let row = conn
-        .query_row(
-            "SELECT kind, body FROM memories \
-              WHERE id = ?1 AND deleted_at IS NULL",
-            [id],
-            |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
-        )
-        .ok();
+    let row = crate::store::memory_meta::kind_and_body(conn, id)
+        .ok()
+        .flatten();
     let Some((kind, body)) = row else {
         return Ok(());
     };
@@ -219,7 +206,7 @@ fn collect_memory(
     // reference edge can carry the blob captured at save.
     let anchors = code_ref_collect::anchor_map(conn, id)?;
     // Walk all four context rels at depth ≤ 2 from this memory node.
-    let walked = walk_context_edges(conn, id, 2)?;
+    let walked = edges_retrieval::walk_context_edges(conn, id, 2)?;
     for e in walked {
         relations.push(RelationRow {
             from: format!("{}:{}", e.src_kind, e.src_id),
@@ -345,45 +332,6 @@ fn build_code_row(
         score,
         rank_parts,
     }
-}
-
-/// Walk `references_file`, `references_symbol`, `relates_to`, and `supersedes`
-/// edges starting from `(memory, start_id)` up to `max_depth` hops using a
-/// recursive CTE. Returns one [`ContextEdge`] per traversed edge.
-fn walk_context_edges(
-    conn: &Connection,
-    start_id: &str,
-    max_depth: u32,
-) -> Result<Vec<ContextEdge>> {
-    let mut stmt = conn.prepare(
-        "WITH RECURSIVE walk(src_kind, src_id, dst_kind, dst_id, rel, depth) AS (
-             SELECT e.src_kind, e.src_id, e.dst_kind, e.dst_id, e.rel, 1
-               FROM edges e
-              WHERE e.src_kind = 'memory' AND e.src_id = ?1
-                AND e.rel IN ('references_file','references_symbol','relates_to','supersedes')
-             UNION
-             SELECT e.src_kind, e.src_id, e.dst_kind, e.dst_id, e.rel, w.depth + 1
-               FROM edges e
-               JOIN walk w ON e.src_kind = w.dst_kind AND e.src_id = w.dst_id
-              WHERE e.rel IN ('references_file','references_symbol','relates_to','supersedes')
-                AND w.depth < ?2
-         )
-         SELECT DISTINCT src_kind, src_id, dst_kind, dst_id, rel \
-           FROM walk \
-          ORDER BY rel, src_kind, src_id, dst_kind, dst_id",
-    )?;
-    let rows = stmt
-        .query_map(rusqlite::params![start_id, i64::from(max_depth)], |r| {
-            Ok(ContextEdge {
-                src_kind: r.get(0)?,
-                src_id: r.get(1)?,
-                dst_kind: r.get(2)?,
-                dst_id: r.get(3)?,
-                rel: r.get(4)?,
-            })
-        })?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    Ok(rows)
 }
 
 #[cfg(test)]

@@ -14,7 +14,7 @@
 //! collide on the `UNIQUE (repo, path, symbol, line_start)` constraint and so
 //! the `indexed_files` cursor reflects the most-recent ingest as well.
 
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 use time::OffsetDateTime;
 
 use crate::prelude::*;
@@ -291,6 +291,52 @@ pub(crate) fn update_rank_scores(
         written = written.saturating_add(u64::try_from(rows).unwrap_or(0));
     }
     Ok(written)
+}
+
+/// One `code_symbols` row resolved by [`find_by_address`]: the rowid, its
+/// snippet, and the symbol's first source line.
+pub(crate) struct SymbolLocation {
+    /// `code_symbols.id`.
+    pub id: i64,
+    /// Source snippet.
+    pub snippet: String,
+    /// First source line of the symbol.
+    pub line_start: i64,
+}
+
+/// Resolve a `(repo, path, symbol)` address to its `code_symbols` row.
+/// `Ok(None)` when no matching row exists yet (a memory may cite a symbol
+/// before `comemory index-code` has indexed it). `prepare_cached`: this
+/// lookup runs once per walked reference edge in a context-bundle loop.
+pub(crate) fn find_by_address(
+    conn: &Connection,
+    repo: &str,
+    path: &str,
+    symbol: &str,
+) -> Result<Option<SymbolLocation>> {
+    let mut stmt = conn.prepare_cached(
+        "SELECT id, snippet, line_start FROM code_symbols \
+          WHERE repo = ?1 AND path = ?2 AND symbol = ?3 LIMIT 1",
+    )?;
+    stmt.query_row(rusqlite::params![repo, path, symbol], |r| {
+        Ok(SymbolLocation {
+            id: r.get(0)?,
+            snippet: r.get(1)?,
+            line_start: r.get(2)?,
+        })
+    })
+    .optional()
+    .map_err(Error::from)
+}
+
+/// Identity columns (`symbol`, `kind`) of one `code_symbols` row by id.
+/// `Ok(None)` when the row vanished (raced re-index delete). `prepare_cached`
+/// for a per-group chunk-coalescing loop.
+pub(crate) fn parent_identity(conn: &Connection, id: i64) -> Result<Option<(String, String)>> {
+    let mut stmt = conn.prepare_cached("SELECT symbol, kind FROM code_symbols WHERE id = ?1")?;
+    stmt.query_row([id], |r| Ok((r.get(0)?, r.get(1)?)))
+        .optional()
+        .map_err(Error::from)
 }
 
 #[cfg(test)]

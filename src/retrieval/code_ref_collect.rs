@@ -8,9 +8,8 @@
 
 use std::collections::BTreeMap;
 
-use rusqlite::{Connection, OptionalExtension};
-
 use crate::prelude::*;
+use crate::store::Connection;
 
 /// One walked code reference before ranking: identity, the resolved
 /// `code_symbols` rowid and snippet when the address matched, plus the
@@ -83,23 +82,9 @@ fn symbol_ref(
         return Ok(None);
     }
     let (repo, path, symbol) = (parts[0], parts[1], parts[2]);
-    // `prepare_cached`: this lookup runs once per walked edge inside the
-    // assemble loop, so a fresh prepare per call would re-parse the SQL.
-    let mut stmt = conn.prepare_cached(
-        "SELECT id, snippet, line_start FROM code_symbols \
-          WHERE repo = ?1 AND path = ?2 AND symbol = ?3 LIMIT 1",
-    )?;
-    let row = stmt
-        .query_row(rusqlite::params![repo, path, symbol], |r| {
-            Ok((
-                r.get::<_, i64>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, i64>(2)?,
-            ))
-        })
-        .optional()?;
+    let row = crate::store::code_row::find_by_address(conn, repo, path, symbol)?;
     let (symbol_id, snippet, line_start) = match row {
-        Some((id, snippet, line)) => (Some(id), snippet, Some(line)),
+        Some(loc) => (Some(loc.id), loc.snippet, Some(loc.line_start)),
         None => (None, String::new(), None),
     };
     Ok(Some(RawRef {

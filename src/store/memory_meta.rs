@@ -1,15 +1,15 @@
-//! Batched navigation metadata for a set of memory ids.
+//! Batched and single-row `memories` metadata reads keyed by id.
 //!
 //! [`fetch_meta`] enriches a page of `comemory search --json` hits with the
 //! fields needed to navigate to each memory (path, repo, kind, slug, tags,
-//! code references) in three batched queries: `memories`, `memory_tags`, and
-//! the `references_file` / `references_symbol` rows in `edges`. Each
-//! reference `dst_id` is already the qualified `<repo>:<path>[:<symbol>]`
-//! string the frontmatter [`References`] type carries.
+//! code references). [`ids_matching_kind`], [`kind_and_body`],
+//! [`rank_signals`] and [`keeper_stats`] are smaller `memories`-table reads
+//! moved here from `retrieval`/`consolidate` call sites that had no other
+//! table to share a file with.
 
 use std::collections::HashMap;
 
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 
 use crate::memory::{Ref, References};
 use crate::prelude::*;
@@ -154,3 +154,138 @@ fn attach_references(
     }
     Ok(())
 }
+
+/// Every id in `ids` whose live `memories.kind` equals `kind`, in query
+/// (not caller) order — used to post-filter an ANN leg's hits, since vec0
+/// cannot filter by kind inside the KNN query itself. An empty `ids` slice
+/// short-circuits to an empty result.
+pub fn ids_matching_kind(conn: &Connection, kind: &str, ids: &[&str]) -> Result<Vec<String>> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let sql = format!(
+        "SELECT id FROM memories WHERE kind = ?1 AND id IN ({})",
+        qmarks(ids.len())
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let params = std::iter::once(kind).chain(ids.iter().copied());
+    let rows = stmt
+        .query_map(rusqlite::params_from_iter(params), |r| r.get(0))?
+        .collect::<std::result::Result<Vec<String>, _>>()?;
+    Ok(rows)
+}
+
+/// One live memory's `(kind, body)`, or `None` when the id is missing or
+/// soft-deleted. Used by `comemory context` to assemble a bundle row for
+/// each matched memory id.
+pub fn kind_and_body(conn: &Connection, id: &str) -> Result<Option<(String, String)>> {
+    conn.query_row(
+        "SELECT kind, body FROM memories WHERE id = ?1 AND deleted_at IS NULL",
+        [id],
+        |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+    )
+    .optional()
+    .map_err(Error::from)
+}
+
+/// Per-memory ranking signals pulled in one query behind
+/// `retrieval::rerank`: row metadata plus the (optional) `feedback`
+/// counters, `COALESCE`d to neutral when absent.
+pub struct RankSignals {
+    /// Frontmatter quality (1..=5).
+    pub quality: u8,
+    /// Times the memory was returned by a tracked search.
+    pub access_count: u64,
+    /// Last access timestamp (falls back to `created_at`).
+    pub last_accessed: String,
+    /// Full memory body.
+    pub body: String,
+    /// 64-bit SimHash of the body.
+    pub simhash: u64,
+    /// `feedback.used_count`, or `0` when no row exists.
+    pub used: u64,
+    /// `feedback.irrelevant_count`, or `0` when no row exists.
+    pub irrelevant: u64,
+    /// Projected memory-graph PageRank score.
+    pub rank_score: f64,
+}
+
+/// Fetch the ranking signals for one live memory. Returns `Ok(None)` when
+/// the row does not exist or is soft-deleted. `prepare_cached` so a
+/// per-candidate rerank loop reuses one prepared statement.
+pub fn rank_signals(conn: &Connection, id: &str) -> Result<Option<RankSignals>> {
+    let mut stmt = conn.prepare_cached(
+        "SELECT m.quality, m.access_count, COALESCE(m.last_accessed, m.created_at),
+                m.body, m.simhash,
+                COALESCE(f.used_count, 0), COALESCE(f.irrelevant_count, 0),
+                m.rank_score
+           FROM memories m
+           LEFT JOIN feedback f ON f.memory_id = m.id
+          WHERE m.id = ?1 AND m.deleted_at IS NULL",
+    )?;
+    stmt.query_row([id], |r| {
+        Ok(RankSignals {
+            quality: r.get(0)?,
+            access_count: r.get::<_, i64>(1)?.max(0) as u64,
+            last_accessed: r.get(2)?,
+            body: r.get(3)?,
+            simhash: r.get::<_, i64>(4)? as u64,
+            used: r.get::<_, i64>(5)?.max(0) as u64,
+            irrelevant: r.get::<_, i64>(6)?.max(0) as u64,
+            rank_score: r.get(7)?,
+        })
+    })
+    .optional()
+    .map_err(Error::from)
+}
+
+/// Per-memory stats behind `consolidate::keeper`'s best-keeper ordering.
+#[derive(Debug, Clone, Default)]
+pub struct KeeperStats {
+    /// Owning repo, or `None` when the memory has none.
+    pub repo: Option<String>,
+    /// Memory kind.
+    pub kind: String,
+    /// Frontmatter quality (1..=5).
+    pub quality: u8,
+    /// Times the memory was returned by a tracked search.
+    pub access_count: i64,
+    /// Last access timestamp, or `None` if never accessed.
+    pub last_accessed: Option<String>,
+    /// Projected memory-graph PageRank score.
+    pub rank_score: f64,
+}
+
+/// Batch-fetch [`KeeperStats`] for exactly `ids`, in query order. An empty
+/// `ids` slice short-circuits to an empty `Vec`.
+pub fn keeper_stats(conn: &Connection, ids: &[&str]) -> Result<Vec<(String, KeeperStats)>> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let sql = format!(
+        "SELECT id, repo, kind, quality, access_count, last_accessed, rank_score \
+         FROM memories WHERE id IN ({})",
+        qmarks(ids.len())
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt
+        .query_map(rusqlite::params_from_iter(ids.iter()), |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                KeeperStats {
+                    repo: r.get(1)?,
+                    kind: r.get(2)?,
+                    quality: r.get(3)?,
+                    access_count: r.get(4)?,
+                    last_accessed: r.get(5)?,
+                    rank_score: r.get(6)?,
+                },
+            ))
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+#[cfg(test)]
+#[path = "tests/memory_meta.rs"]
+mod tests;

@@ -6,24 +6,17 @@
 
 use std::collections::HashMap;
 
-use rusqlite::Connection;
-
 use super::{Cluster, Member};
 use crate::consolidate::cluster::Group;
 use crate::prelude::*;
 use crate::simhash::hamming64;
-use crate::store::qmarks;
+use crate::store::Connection;
 
-/// Per-memory stats behind the keeper order.
-#[derive(Debug, Clone, Default)]
-struct Stats {
-    repo: Option<String>,
-    kind: String,
-    quality: u8,
-    access_count: i64,
-    last_accessed: Option<String>,
-    rank_score: f64,
-}
+/// Per-memory stats behind the keeper order, re-exported from
+/// [`crate::store::memory_meta`] so this module's field accesses are
+/// unchanged. `Default` is derived there for [`keeper_order`]'s
+/// vanished-row fallback.
+type Stats = crate::store::memory_meta::KeeperStats;
 
 /// Assemble one reported cluster: order the members, mark the keeper, and
 /// resolve which of them are already superseded from inside the cluster.
@@ -83,38 +76,9 @@ fn keeper_order(
 }
 
 /// Batch-load the keeper-order stats for exactly the clustered ids.
-///
-/// The `IN (…)` list is built with [`qmarks`], so the only thing `format!`
-/// ever interpolates is a run of `?` placeholders whose count comes from
-/// `ids.len()`. Every id travels as a bound parameter through
-/// `params_from_iter` — no value reaches the SQL text, so the dynamic length
-/// carries no injection surface.
 fn load_stats(conn: &Connection, ids: &[String]) -> Result<HashMap<String, Stats>> {
-    if ids.is_empty() {
-        return Ok(HashMap::new());
-    }
-    let sql = format!(
-        "SELECT id, repo, kind, quality, access_count, last_accessed, rank_score \
-         FROM memories WHERE id IN ({})",
-        qmarks(ids.len())
-    );
-    let mut stmt = conn.prepare(&sql)?;
-    let params = rusqlite::params_from_iter(ids.iter());
-    let rows = stmt
-        .query_map(params, |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                Stats {
-                    repo: r.get(1)?,
-                    kind: r.get(2)?,
-                    quality: r.get(3)?,
-                    access_count: r.get(4)?,
-                    last_accessed: r.get(5)?,
-                    rank_score: r.get(6)?,
-                },
-            ))
-        })?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let borrowed: Vec<&str> = ids.iter().map(String::as_str).collect();
+    let rows = crate::store::memory_meta::keeper_stats(conn, &borrowed)?;
     Ok(rows.into_iter().collect())
 }
 

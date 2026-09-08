@@ -25,6 +25,9 @@ pub mod code_feedback;
 pub mod code_ref;
 /// `code_symbols` row upserts (insert, refresh, delete-by-file).
 pub mod code_row;
+/// Per-symbol ranking signals: the `code_symbols` + `code_feedback` join
+/// behind `retrieval::code_prior`'s four-prior scorer.
+pub mod code_signals;
 /// Connection open: PRAGMAs, migrations, `sqlite-vec` auto-extension.
 pub mod connection;
 /// `document_fts` insert/delete helpers + the BM25 MATCH query leg.
@@ -36,6 +39,10 @@ pub mod edge_fts;
 /// `edges` table CRUD: typed upserts, weighted accumulation, outgoing
 /// neighbors, the `supersedes_chain` recursive walk, and delete-by-node.
 pub mod edges;
+/// Retrieval-side `edges` reads: the memory graph-expansion walk, the
+/// context-bundle relation walk, working-set co-change affinity, and the
+/// live-supersede lookup.
+pub mod edges_retrieval;
 /// f32 ↔ `vec0` BLOB encoding plus the per-table dim guards.
 pub mod embed;
 /// `eval_runs` row insert + newest-first read — one row per `comemory
@@ -79,6 +86,9 @@ pub mod repo_marker_roots;
 pub mod retrieval_log;
 /// DDL strings for the tables, `vec0` vtabs and FTS5 indexes.
 pub mod schema;
+/// Single-key `schema_meta` writers that do not belong to `migrate` or
+/// `vector`'s dim guards.
+pub mod schema_meta;
 /// Bulk `(id, simhash)` scan over live memories, shared by save + consolidate.
 pub mod simhash_scan;
 /// `source_roots` row CRUD — the SQLite mirror of `sources.toml`.

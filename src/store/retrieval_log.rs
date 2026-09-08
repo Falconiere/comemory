@@ -1,11 +1,56 @@
-//! `retrieval_log` reads — the raw `returned_ids` provenance query behind
-//! [`crate::graph::search_edit`]'s search→edit lookback. `retrieval_log`
-//! rows are written by `retrieval::pipeline::log_retrieval`; this module
-//! only reads them back.
+//! `retrieval_log` insert + reads: the single write behind every tracked
+//! `search`/`context`/`search-code` run
+//! (`retrieval::pipeline::log_retrieval`), and the raw `returned_ids`
+//! provenance query behind [`crate::graph::search_edit`]'s search→edit
+//! lookback.
 
 use rusqlite::{Connection, params};
 
 use crate::prelude::*;
+
+/// Insert parameters for one `retrieval_log` row, bundled into a struct
+/// rather than eight positional arguments (`clippy::too_many_arguments`).
+pub struct NewLogRow<'a> {
+    /// Deterministic query id (`stats::feedback::generate_query_id`).
+    pub query_id: &'a str,
+    /// The raw query text.
+    pub query: &'a str,
+    /// Pre-serialized JSON array of returned ids.
+    pub returned_ids: &'a str,
+    /// Pre-rendered ISO-8601 UTC timestamp (`store::memory_row::iso_format`).
+    pub at: &'a str,
+    /// Wall-clock duration of the run, in milliseconds.
+    pub duration_ms: i64,
+    /// Repo filter the caller searched with, verbatim (`None` → NULL).
+    pub repo: Option<&'a str>,
+    /// Kind filter the caller searched with (`--lang` for code searches).
+    pub kind: Option<&'a str>,
+    /// Query origin (a [`crate::stats::source`] const).
+    pub source: &'a str,
+}
+
+/// Insert one `retrieval_log` row. The single write behind every tracked
+/// run — memory searches, `context`, and code searches (which text-encode
+/// their symbol ids so `returned_ids`'s column shape matches the memory
+/// rows).
+pub fn insert(conn: &Connection, row: &NewLogRow<'_>) -> Result<()> {
+    conn.execute(
+        "INSERT INTO retrieval_log(query_id, query, returned_ids, at, duration_ms,
+                                   repo, kind, source)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![
+            row.query_id,
+            row.query,
+            row.returned_ids,
+            row.at,
+            row.duration_ms,
+            row.repo,
+            row.kind,
+            row.source,
+        ],
+    )?;
+    Ok(())
+}
 
 /// Return the RAW `returned_ids` JSON strings from every `retrieval_log`
 /// row whose `source` is `source_a` or `source_b`, whose `at` falls in

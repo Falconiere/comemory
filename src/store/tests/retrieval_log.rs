@@ -6,11 +6,12 @@
     clippy::too_many_lines
 )]
 //! Test mirror for `src/store/retrieval_log.rs` — real `retrieval_log` rows
-//! seeded on a real `comemory.db`, asserting the window/source/repo filter
-//! and that a malformed `returned_ids` value is returned raw (unparsed).
+//! seeded on a real `comemory.db`, asserting the window/source/repo filter,
+//! that a malformed `returned_ids` value is returned raw (unparsed), and
+//! that [`insert`] writes every column back readably.
 
 use comemory::store::connection;
-use comemory::store::retrieval_log::returned_ids_in_window;
+use comemory::store::retrieval_log::{NewLogRow, insert, returned_ids_in_window};
 use rusqlite::Connection;
 use tempfile::tempdir;
 
@@ -137,4 +138,76 @@ fn unscoped_repo_row_matches_any_repo_filter() {
     .expect("query window");
 
     assert_eq!(raws, vec![r#"["aaaaaaa5"]"#.to_string()]);
+}
+
+/// [`insert`] writes every column, and the row is readable back through
+/// [`returned_ids_in_window`] with the exact JSON text supplied.
+#[test]
+fn insert_writes_a_row_readable_by_the_window_query() {
+    let conn = seed_db();
+    insert(
+        &conn,
+        &NewLogRow {
+            query_id: "q-insert",
+            query: "hello world",
+            returned_ids: r#"["aaaaaaa7"]"#,
+            at: "2026-07-15T00:00:00Z",
+            duration_ms: 42,
+            repo: Some(REPO),
+            kind: Some("decision"),
+            source: "search",
+        },
+    )
+    .expect("insert");
+
+    let raws = returned_ids_in_window(
+        &conn,
+        "search",
+        "context",
+        "2026-07-10T00:00:00Z",
+        "2026-07-20T00:00:00Z",
+        Some(REPO),
+    )
+    .expect("query window");
+    assert_eq!(raws, vec![r#"["aaaaaaa7"]"#.to_string()]);
+
+    let (query, dur, kind): (String, i64, Option<String>) = conn
+        .query_row(
+            "SELECT query, duration_ms, kind FROM retrieval_log WHERE query_id = 'q-insert'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .expect("row exists");
+    assert_eq!(query, "hello world");
+    assert_eq!(dur, 42);
+    assert_eq!(kind, Some("decision".to_string()));
+}
+
+/// `repo: None` writes a NULL `repo` column, matching an unscoped run.
+#[test]
+fn insert_with_no_repo_writes_null() {
+    let conn = seed_db();
+    insert(
+        &conn,
+        &NewLogRow {
+            query_id: "q-unscoped-insert",
+            query: "q",
+            returned_ids: "[]",
+            at: "2026-07-15T00:00:00Z",
+            duration_ms: 1,
+            repo: None,
+            kind: None,
+            source: "search",
+        },
+    )
+    .expect("insert");
+
+    let repo: Option<String> = conn
+        .query_row(
+            "SELECT repo FROM retrieval_log WHERE query_id = 'q-unscoped-insert'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("row exists");
+    assert_eq!(repo, None);
 }
