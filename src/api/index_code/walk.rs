@@ -9,7 +9,6 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use git2::Repository;
-use rusqlite::Connection;
 
 use super::ProgressSink;
 use crate::ast::extractor::ExtractedSymbol;
@@ -18,7 +17,7 @@ use crate::graph::imports;
 use crate::prelude::*;
 use crate::simhash;
 use crate::store::code_row::{self, CodeSymbolRow};
-use crate::store::fts;
+use crate::store::{Connection, fts, indexed_files};
 
 /// Index one walked file into the caller's open transaction, returning
 /// whether it was actually (re)indexed. `false` covers every skip reason:
@@ -172,13 +171,11 @@ pub(crate) fn simhash_of(text: &str) -> i64 {
 /// Returns true when `indexed_files` already records `oid` for
 /// `repo + path` — the working-tree blob hasn't changed since the last run.
 fn oid_is_indexed(conn: &Connection, repo: &str, path: &str, oid: &str) -> bool {
-    let row: Option<String> = conn
-        .query_row(
-            "SELECT blob_oid FROM indexed_files WHERE repo = ?1 AND path = ?2",
-            rusqlite::params![repo, path],
-            |r| r.get(0),
-        )
-        .ok();
+    // Any query failure (not just "no such cursor") is treated as
+    // "unindexed", exactly as before this SQL moved to `store::indexed_files`
+    // — a deliberately preserved blanket swallow (CLAUDE.md's "blanket .ok()
+    // swallows DB errors" note), not a new one.
+    let row = indexed_files::blob_oid_for(conn, repo, path).ok().flatten();
     matches!(row, Some(v) if v == oid)
 }
 

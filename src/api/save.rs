@@ -20,7 +20,7 @@ use crate::api::Ctx;
 use crate::cli::{parse_id_csv, ref_args};
 use crate::memory::{Kind, MemoryStore, References, Relations, SaveParams, id};
 use crate::prelude::*;
-use crate::store::{embed, memory_row, sync_log, vector};
+use crate::store::{Connection, embed, memory_row, sync_log, vector};
 
 /// `comemory save` / `POST /api/v1/memories` request. The stdin/`-` body
 /// convenience is CLI-only — `body` is a required JSON field over HTTP.
@@ -268,7 +268,7 @@ fn build_params(req: &Request, relations: Relations, references: References) -> 
 /// `comemory.db` in one transaction. A mirror failure keeps the markdown and
 /// names it plus the `rebuild` recovery path.
 fn persist(
-    conn: &mut rusqlite::Connection,
+    conn: &mut Connection,
     paths: &crate::config::Paths,
     params: SaveParams<'_>,
     vector_opt: Option<&[f32]>,
@@ -304,12 +304,7 @@ fn resolve_repo_root() -> Option<PathBuf> {
 /// surfaces the second-closest live near-dup instead of matching itself.
 /// Best-effort: any DB error is logged and treated as "no duplicate" so the
 /// check can never block a save.
-fn near_duplicate(
-    conn: &rusqlite::Connection,
-    body: &str,
-    self_id: &str,
-    radius: u32,
-) -> Option<String> {
+fn near_duplicate(conn: &Connection, body: &str, self_id: &str, radius: u32) -> Option<String> {
     let hash = crate::simhash::of_body(body);
     match near_duplicate_inner(conn, hash, self_id, radius) {
         Ok(hit) => hit,
@@ -324,7 +319,7 @@ fn near_duplicate(
 /// `self_id`) and return the id of the closest simhash neighbor within
 /// `radius` Hamming bits, if any.
 fn near_duplicate_inner(
-    conn: &rusqlite::Connection,
+    conn: &Connection,
     hash: u64,
     self_id: &str,
     radius: u32,
@@ -344,7 +339,7 @@ fn near_duplicate_inner(
 /// graph `edges` table. The non-vector branch is delegated to
 /// [`memory_row::insert`] so save and `comemory rebuild` cannot drift.
 fn write_sqlite_mirror(
-    conn: &mut rusqlite::Connection,
+    conn: &mut Connection,
     rec: &crate::memory::MemoryRecord,
     tags: &[String],
     vector_opt: Option<&[f32]>,
@@ -354,14 +349,9 @@ fn write_sqlite_mirror(
     let md_path = rec.path.to_string_lossy();
     memory_row::insert(&tx, fm, &rec.body, rec.slug.as_str(), &md_path, tags)?;
     if let Some(v) = vector_opt {
-        // memory_vec is a vec0 vtab whose PK does not participate in SQLite's
-        // FK cascade, so a re-save of the same id must drop any prior vector
-        // row before re-inserting.
-        tx.execute(
-            "DELETE FROM memory_vec WHERE memory_id = ?1",
-            rusqlite::params![&fm.id],
-        )?;
-        vector::insert_memory(&tx, &fm.id, v)?;
+        // A re-save of the same id must replace, not duplicate, its
+        // memory_vec row (see `store::vector::replace_memory`'s doc).
+        vector::replace_memory(&tx, &fm.id, v)?;
     }
     let at = memory_row::iso_format(fm.created)?;
     sync_log::append(

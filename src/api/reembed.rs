@@ -50,14 +50,13 @@
 //! there is no whole-run transaction to roll back, by design: progress must
 //! be durable for a run that can take minutes.
 
-use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
 use crate::api::Ctx;
 use crate::api::index_code::ProgressSink;
 use crate::embed;
 use crate::prelude::*;
-use crate::store::{embed as store_embed, vector};
+use crate::store::{Connection, embed as store_embed, vector};
 
 /// Emit one log line every this many processed rows — enough for a console
 /// to see a long run moving without flooding the bounded 20-line tail.
@@ -284,12 +283,7 @@ fn skip_leg(
 
 /// Every live memory's `(id, body)`, ordered so a run is reproducible.
 fn memory_rows(conn: &Connection) -> Result<Vec<MemoryRow>> {
-    let mut stmt =
-        conn.prepare("SELECT id, body FROM memories WHERE deleted_at IS NULL ORDER BY id")?;
-    let rows = stmt
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    Ok(rows)
+    crate::store::memory_row::live_bodies(conn)
 }
 
 /// Every PARENT `code_symbols` row's `(id, snippet)`. Child chunk rows
@@ -297,12 +291,7 @@ fn memory_rows(conn: &Connection) -> Result<Vec<MemoryRow>> {
 /// parent's vector represents the symbol — so re-embedding them would write
 /// rows the retrieval path never reads.
 fn code_rows(conn: &Connection) -> Result<Vec<CodeRow>> {
-    let mut stmt =
-        conn.prepare("SELECT id, snippet FROM code_symbols WHERE parent_id IS NULL ORDER BY id")?;
-    let rows = stmt
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    Ok(rows)
+    crate::store::code_row::parent_snippets(conn)
 }
 
 /// Re-embed every memory row, replacing its `memory_vec` row in its own
@@ -321,8 +310,7 @@ fn reembed_memories(
         state.guard_cancelled()?;
         if let Some(vec) = state.embed(body, dim)? {
             let tx = conn.transaction()?;
-            tx.execute("DELETE FROM memory_vec WHERE memory_id = ?1", [id])?;
-            vector::insert_memory(&tx, id, &vec)?;
+            vector::replace_memory(&tx, id, &vec)?;
             tx.commit()?;
             state.response.memories += 1;
         }
@@ -342,8 +330,7 @@ fn reembed_code(conn: &mut Connection, rows: &[CodeRow], state: &mut RunState<'_
         state.guard_cancelled()?;
         if let Some(vec) = state.embed(snippet, dim)? {
             let tx = conn.transaction()?;
-            tx.execute("DELETE FROM code_vec WHERE symbol_id = ?1", [id])?;
-            vector::insert_code(&tx, *id, &vec)?;
+            vector::replace_code(&tx, *id, &vec)?;
             tx.commit()?;
             state.response.code += 1;
         }

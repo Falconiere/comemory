@@ -188,6 +188,51 @@ pub fn kind_and_body(conn: &Connection, id: &str) -> Result<Option<(String, Stri
     .map_err(Error::from)
 }
 
+/// Single-row `memories` columns [`fetch_meta`] does not carry, behind
+/// `comemory show` — body, quality, timestamps, access tracking, and the
+/// projected memory-graph PageRank score.
+pub struct ExtraFields {
+    /// Full memory body, verbatim.
+    pub body: String,
+    /// Frontmatter quality (1..=5).
+    pub quality: u8,
+    /// RFC 3339 creation timestamp.
+    pub created: String,
+    /// RFC 3339 last-update timestamp.
+    pub updated: String,
+    /// Total number of times this memory has been returned by a tracked
+    /// `search` / `context` run.
+    pub access_count: u64,
+    /// RFC 3339 timestamp of the most recent tracked access; `None` when
+    /// the memory has never been accessed since it was saved.
+    pub last_accessed: Option<String>,
+    /// Memory-graph PageRank score (`memories.rank_score`).
+    pub rank_score: f64,
+}
+
+/// Fetch [`ExtraFields`] for one live memory. `Ok(None)` for an unknown or
+/// soft-deleted id.
+pub fn fetch_extra(conn: &Connection, id: &str) -> Result<Option<ExtraFields>> {
+    conn.query_row(
+        "SELECT body, quality, created_at, updated_at, access_count, last_accessed, rank_score \
+           FROM memories WHERE id = ?1 AND deleted_at IS NULL",
+        [id],
+        |r| {
+            Ok(ExtraFields {
+                body: r.get(0)?,
+                quality: r.get(1)?,
+                created: r.get(2)?,
+                updated: r.get(3)?,
+                access_count: r.get::<_, i64>(4)?.max(0) as u64,
+                last_accessed: r.get(5)?,
+                rank_score: r.get(6)?,
+            })
+        },
+    )
+    .optional()
+    .map_err(Error::from)
+}
+
 /// Per-memory ranking signals pulled in one query behind
 /// `retrieval::rerank`: row metadata plus the (optional) `feedback`
 /// counters, `COALESCE`d to neutral when absent.

@@ -77,6 +77,9 @@ pub mod gc_runs;
 pub mod index_failures;
 /// `index_runs` writer + readers — one row per `index-code` run.
 pub mod index_runs;
+/// `indexed_files` cursor reads not already owned by `code_row`'s upsert:
+/// the repo-wide cursor wipe and the per-`(repo, path)` blob-OID lookup.
+pub mod indexed_files;
 /// Paginated listing of live memories.
 pub mod memory_list;
 /// Batched per-memory metadata (path, repo, kind, tags, references).

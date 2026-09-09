@@ -64,7 +64,7 @@ pub(crate) fn ensure_repo_format(conn: &Connection, repo: &str) -> Result<()> {
         )
         .ok();
     if stamped.as_deref() != Some(CODE_FORMAT_VERSION) {
-        conn.execute("DELETE FROM indexed_files WHERE repo = ?1", [repo])?;
+        crate::store::indexed_files::delete_for_repo(conn, repo)?;
     }
     Ok(())
 }
@@ -260,6 +260,19 @@ pub fn record_access(conn: &Connection, ids: &[i64]) {
     }
 }
 
+/// Every PARENT `code_symbols` row's `(id, snippet)`, ordered by id so a
+/// re-embed run is reproducible. Child chunk rows (`parent_id IS NOT
+/// NULL`) carry no `code_vec` row of their own — the parent's vector
+/// represents the symbol. Behind `api::reembed`'s code leg.
+pub fn parent_snippets(conn: &Connection) -> Result<Vec<(i64, String)>> {
+    let mut stmt =
+        conn.prepare("SELECT id, snippet FROM code_symbols WHERE parent_id IS NULL ORDER BY id")?;
+    let rows = stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
 /// Every distinct `code_symbols.path` for `repo`, sorted ascending — the
 /// deterministic dense-index mapping `graph::pagerank` needs. See
 /// [`crate::graph::materialize::known_paths`].
@@ -354,6 +367,27 @@ pub(crate) fn parent_identity(conn: &Connection, id: i64) -> Result<Option<(Stri
     stmt.query_row([id], |r| Ok((r.get(0)?, r.get(1)?)))
         .optional()
         .map_err(Error::from)
+}
+
+/// Number of `code_symbols` rows for `repo` — the `index_runs.symbols`
+/// count behind `api::index_code::record_run`.
+pub fn count_for_repo(conn: &Connection, repo: &str) -> Result<i64> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM code_symbols WHERE repo = ?1",
+        [repo],
+        |r| r.get(0),
+    )
+    .map_err(Error::from)
+}
+
+/// Whether at least one `code_symbols` row exists anywhere — distinguishes
+/// "query missed" from "nothing was ever indexed" for `search-code`'s
+/// zero-hit TTY hint.
+pub fn any_indexed(conn: &Connection) -> Result<bool> {
+    conn.query_row("SELECT EXISTS(SELECT 1 FROM code_symbols)", [], |r| {
+        r.get(0)
+    })
+    .map_err(Error::from)
 }
 
 #[cfg(test)]

@@ -2,7 +2,7 @@
 //! `store::fts`'s tier-4 lexical ladder reads, rewritten wholesale by
 //! `comemory mine --apply` ([`crate::eval::mine::apply`]).
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, ToSql, params, params_from_iter};
 
 use crate::prelude::*;
 
@@ -34,6 +34,62 @@ pub fn insert(conn: &Connection, row: &NewExpansion<'_>) -> Result<()> {
         params![row.term, row.expansion, row.support, row.last_mined],
     )?;
     Ok(())
+}
+
+/// One `query_expansions` row matched by [`matching_terms`].
+pub struct MatchedExpansion {
+    /// The failed query term this row's `expansion` was mined for.
+    pub term: String,
+    /// The term the mining pass learned to add for it.
+    pub expansion: String,
+    /// How many reformulation pairs support the mapping.
+    pub support: i64,
+}
+
+/// Rows whose `term` is one of `terms`, strongest-support first (ties
+/// broken on `term`, then `expansion`), capped at `limit` — behind
+/// `api::suggest`'s "expansions" list. An empty `terms` slice short-circuits
+/// to an empty result rather than building an invalid `IN ()` clause.
+pub fn matching_terms(
+    conn: &Connection,
+    terms: &[String],
+    limit: usize,
+) -> Result<Vec<MatchedExpansion>> {
+    if terms.is_empty() {
+        return Ok(Vec::new());
+    }
+    let placeholders = (1..=terms.len())
+        .map(|i| format!("?{i}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!(
+        "SELECT term, expansion, support FROM query_expansions \
+          WHERE term IN ({placeholders}) \
+          ORDER BY support DESC, term ASC, expansion ASC LIMIT ?{}",
+        terms.len() + 1
+    );
+    let mut binds: Vec<Box<dyn ToSql>> = terms
+        .iter()
+        .map(|t| Box::new(t.clone()) as Box<dyn ToSql>)
+        .collect();
+    // A `limit` above i64::MAX cannot describe a reachable row count, so
+    // saturating is the only meaningful conversion; SQLite treats any such
+    // value as "no limit" regardless. Preserved from the api::suggest call
+    // site this moved from.
+    binds.push(Box::new(i64::try_from(limit).unwrap_or(i64::MAX)));
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(
+        params_from_iter(binds.iter().map(std::convert::AsRef::as_ref)),
+        |r| {
+            Ok(MatchedExpansion {
+                term: r.get(0)?,
+                expansion: r.get(1)?,
+                support: r.get(2)?,
+            })
+        },
+    )?;
+    rows.collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(Error::from)
 }
 
 #[cfg(test)]

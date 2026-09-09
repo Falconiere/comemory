@@ -92,3 +92,82 @@ fn replace_all_pattern_drops_stale_mappings() {
     let rows = stored_rows(&conn);
     assert_eq!(rows, vec![("fresh".to_string(), "new".to_string(), 2)]);
 }
+
+#[test]
+fn matching_terms_orders_by_support_desc_then_term_then_expansion() {
+    let (_d, conn) = seed_db();
+    query_expansions::insert(
+        &conn,
+        &NewExpansion {
+            term: "auth",
+            expansion: "oauth",
+            support: 2,
+            last_mined: "2026-08-01T00:00:00Z",
+        },
+    )
+    .expect("seed");
+    query_expansions::insert(
+        &conn,
+        &NewExpansion {
+            term: "auth",
+            expansion: "session",
+            support: 7,
+            last_mined: "2026-08-01T00:00:00Z",
+        },
+    )
+    .expect("seed");
+    query_expansions::insert(
+        &conn,
+        &NewExpansion {
+            term: "billing",
+            expansion: "invoice",
+            support: 9,
+            last_mined: "2026-08-01T00:00:00Z",
+        },
+    )
+    .expect("seed");
+
+    let terms = vec!["auth".to_string()];
+    let rows = query_expansions::matching_terms(&conn, &terms, 10).expect("query");
+    let pairs: Vec<(&str, &str, i64)> = rows
+        .iter()
+        .map(|r| (r.term.as_str(), r.expansion.as_str(), r.support))
+        .collect();
+    assert_eq!(
+        pairs,
+        vec![("auth", "session", 7), ("auth", "oauth", 2)],
+        "only the requested term, strongest support first"
+    );
+}
+
+#[test]
+fn matching_terms_respects_the_limit() {
+    let (_d, conn) = seed_db();
+    for (expansion, support) in [("a", 1), ("b", 2), ("c", 3)] {
+        query_expansions::insert(
+            &conn,
+            &NewExpansion {
+                term: "t",
+                expansion,
+                support,
+                last_mined: "2026-08-01T00:00:00Z",
+            },
+        )
+        .expect("seed");
+    }
+
+    let terms = vec!["t".to_string()];
+    let rows = query_expansions::matching_terms(&conn, &terms, 1).expect("query");
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        rows[0].expansion, "c",
+        "the strongest-support row wins the cap"
+    );
+}
+
+#[test]
+fn matching_terms_with_no_terms_never_queries_the_db() {
+    let (_d, conn) = seed_db();
+    let rows = query_expansions::matching_terms(&conn, &[], 10).expect("query");
+    assert!(rows.is_empty());
+}
