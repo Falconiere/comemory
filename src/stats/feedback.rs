@@ -5,11 +5,12 @@
 //! so callers do not need to seed rows. The query-id contract (generate +
 //! validate) lives here too so the writer and the checker cannot drift.
 
-use rusqlite::Connection;
 use time::OffsetDateTime;
 
 use crate::prelude::*;
 use crate::stats::sqlite::StatsDb;
+use crate::store::Connection;
+use crate::store::feedback as store_feedback;
 use crate::store::memory_row;
 
 /// `provenance` tag for implicit `used` feedback minted by the
@@ -69,66 +70,18 @@ pub fn is_valid_query_id(s: &str) -> bool {
         && crate::memory::id::is_valid_memory_id(&s[11..])
 }
 
-/// Upsert the `used` side of the per-memory counter row: insert with
-/// `used_count = 1` or bump the existing count, refreshing `last_used`
-/// to `now` either way. Composed by [`record_with_provenance`] so the
-/// UPSERT SQL exists exactly once. Accepts any [`Connection`] (a
-/// `rusqlite::Transaction` derefs to one).
-pub(crate) fn upsert_used(conn: &Connection, id: &str, now: &str) -> Result<()> {
-    conn.execute(
-        "INSERT INTO feedback(memory_id, used_count, irrelevant_count, last_used)
-             VALUES (?1, 1, 0, ?2)
-             ON CONFLICT(memory_id) DO UPDATE SET used_count = used_count + 1, last_used = ?2",
-        rusqlite::params![id, now],
-    )?;
-    Ok(())
-}
-
-/// Upsert the `irrelevant` side of the per-memory counter row: insert with
-/// `irrelevant_count = 1` or bump the existing count. `last_used` is left
-/// untouched — a dismissal is not a use. Composed by
-/// [`record_with_provenance`].
-pub(crate) fn upsert_irrelevant(conn: &Connection, id: &str) -> Result<()> {
-    conn.execute(
-        "INSERT INTO feedback(memory_id, used_count, irrelevant_count)
-             VALUES (?1, 0, 1)
-             ON CONFLICT(memory_id) DO UPDATE SET irrelevant_count = irrelevant_count + 1",
-        rusqlite::params![id],
-    )?;
-    Ok(())
-}
-
-/// Insert one memory-tagged `feedback_events` provenance row. Private
-/// helper so [`record_with_provenance`]'s used and irrelevant loops share
-/// the INSERT SQL. `target_kind` is written explicitly (not left to the
-/// column default) now that code-tagged rows exist too — see
-/// [`crate::stats::code_feedback`] for the code-side writer.
-fn insert_event(
-    conn: &Connection,
-    query_id: &str,
-    id: &str,
-    verdict: &str,
-    at: &str,
-) -> Result<()> {
-    conn.execute(
-        "INSERT INTO feedback_events(query_id, memory_id, verdict, at, target_kind)
-         VALUES (?1, ?2, ?3, ?4, ?5)",
-        rusqlite::params![query_id, id, verdict, at, crate::stats::target::MEMORY],
-    )?;
-    Ok(())
-}
-
 /// Mint one implicit `used` for `id` with caller-chosen `provenance` and
-/// sentinel `query_id`: bumps the `feedback` counter via [`upsert_used`] and
-/// writes a memory-target `feedback_events` row. Composes inside the
-/// caller's transaction (the co-activation reward runs within materialize's),
-/// so it takes a bare [`Connection`] rather than a [`StatsDb`].
+/// sentinel `query_id`: bumps the `feedback` counter and writes a
+/// memory-target `feedback_events` row. Composes inside the caller's
+/// transaction (the co-activation reward runs within materialize's), so it
+/// takes a bare [`Connection`] rather than a [`StatsDb`]. The SQL lives in
+/// [`store_feedback`].
 ///
 /// `at` is the run timestamp (already `iso_format`-shaped by the caller).
 /// Callers pass [`PROV_AUTO_COACTIVATION`] with [`COACTIVATION_QUERY_ID`] or
 /// [`PROV_AUTO_SEARCH_EDIT`] with [`SEARCH_EDIT_QUERY_ID`]. The manual
 /// `comemory feedback` path keeps writing the `'manual'` default via
-/// [`insert_event`].
+/// [`record_with_provenance`].
 pub(crate) fn record_implicit_used(
     conn: &Connection,
     id: &str,
@@ -136,12 +89,15 @@ pub(crate) fn record_implicit_used(
     provenance: &str,
     query_id: &str,
 ) -> Result<()> {
-    conn.execute(
-        "INSERT INTO feedback_events(query_id, memory_id, verdict, at, target_kind, provenance)
-         VALUES (?1, ?2, 'used', ?3, ?4, ?5)",
-        rusqlite::params![query_id, id, at, crate::stats::target::MEMORY, provenance],
+    store_feedback::insert_implicit_used_event(
+        conn,
+        query_id,
+        id,
+        at,
+        crate::stats::target::MEMORY,
+        provenance,
     )?;
-    upsert_used(conn, id, at)?;
+    store_feedback::upsert_used(conn, id, at)?;
     Ok(())
 }
 
@@ -167,12 +123,26 @@ pub fn record_with_provenance(
     let now = memory_row::iso_format(OffsetDateTime::now_utc())?;
     let tx = db.conn_mut().transaction()?;
     for id in used {
-        insert_event(&tx, query_id, id, "used", &now)?;
-        upsert_used(&tx, id, &now)?;
+        store_feedback::insert_event(
+            &tx,
+            query_id,
+            id,
+            "used",
+            &now,
+            crate::stats::target::MEMORY,
+        )?;
+        store_feedback::upsert_used(&tx, id, &now)?;
     }
     for id in irrelevant {
-        insert_event(&tx, query_id, id, "irrelevant", &now)?;
-        upsert_irrelevant(&tx, id)?;
+        store_feedback::insert_event(
+            &tx,
+            query_id,
+            id,
+            "irrelevant",
+            &now,
+            crate::stats::target::MEMORY,
+        )?;
+        store_feedback::upsert_irrelevant(&tx, id)?;
     }
     tx.commit()?;
     Ok(())

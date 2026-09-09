@@ -2,17 +2,20 @@
 //! [`crate::store::connection::open`] so all data lands in the single v0.2
 //! database (spec §4: one file).
 //!
-//! Three tables live here: `retrieval_log` (per-query log), `repo_marker`
-//! (per-repo last-indexed head), and `index_failures` (swallowed indexing
-//! errors). The `feedback` table was always in `0002_v2_tables.sql`; the
-//! remaining tables were added in migration `0003_stats_tables`.
+//! `StatsDb` is the shared connection handle the rest of `stats/` opens
+//! through — [`crate::stats::feedback::record_with_provenance`] and
+//! [`crate::stats::code_feedback::record_code_with_provenance`] borrow
+//! [`Self::conn_mut`] for their own transactions. Its own methods here own
+//! only `index_failures` (swallowed indexing errors); the SQL lives in
+//! [`crate::store::index_failures`].
 
-use rusqlite::Connection;
 use time::OffsetDateTime;
 use time::format_description::well_known::Iso8601;
 
 use crate::prelude::*;
+use crate::store::Connection;
 use crate::store::connection;
+use crate::store::index_failures;
 
 /// Owns a SQLite connection to `comemory.db` for stats operations.
 pub struct StatsDb {
@@ -56,20 +59,14 @@ impl StatsDb {
             .to_offset(time::UtcOffset::UTC)
             .format(&Iso8601::DEFAULT)
             .map_err(|e| Error::Other(e.to_string()))?;
-        self.conn.execute(
-            "INSERT INTO index_failures(ts, error) VALUES (?1, ?2)",
-            rusqlite::params![ts, error],
-        )?;
-        Ok(())
+        index_failures::insert(&self.conn, &ts, error)
     }
 
     /// Number of rows in `index_failures`. Surfaced by `comemory doctor` and
     /// tests; saturates at `usize::MAX` because the underlying count is
     /// signed in SQLite and we clamp to 0 on negative results.
     pub fn index_failure_count(&self) -> Result<usize> {
-        let n: i64 = self
-            .conn
-            .query_row("SELECT COUNT(*) FROM index_failures", [], |r| r.get(0))?;
+        let n = index_failures::count(&self.conn)?;
         Ok(n.max(0) as usize)
     }
 
@@ -78,15 +75,7 @@ impl StatsDb {
     /// [`Self::record_index_failure`]; the error is the original `Display`
     /// payload.
     pub fn last_index_failure(&self) -> Result<Option<(String, String)>> {
-        match self.conn.query_row(
-            "SELECT ts, error FROM index_failures ORDER BY id DESC LIMIT 1",
-            [],
-            |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
-        ) {
-            Ok(row) => Ok(Some(row)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(Error::Sqlite(e)),
-        }
+        index_failures::latest(&self.conn)
     }
 }
 
