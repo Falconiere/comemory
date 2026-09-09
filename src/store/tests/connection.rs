@@ -66,8 +66,20 @@ fn open_read_only_refuses_writes() {
     let err = conn
         .execute("DELETE FROM memories", [])
         .expect_err("a read-only connection must refuse a write");
+    // Assert the structured error CODE, not just the rendered text: SQLite's
+    // message wording is not a stability contract, and a substring match
+    // would also accept an unrelated error that happened to contain the word.
     assert!(
-        err.to_string().to_lowercase().contains("readonly"),
-        "unexpected error: {err}"
+        matches!(
+            err,
+            rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error {
+                    code: rusqlite::ErrorCode::ReadOnly,
+                    ..
+                },
+                _
+            )
+        ),
+        "expected SQLITE_READONLY, got: {err}"
     );
 }
