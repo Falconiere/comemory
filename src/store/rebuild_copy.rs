@@ -32,8 +32,14 @@ pub fn copy_preserved_tables_from_old(conn: &mut Connection, old_db: &Path) -> R
     let copy_result = rebuild_copy_code::copy_code_tables_inner(conn)
         .and_then(|()| rebuild_copy_learning::copy_learning_tables_inner(conn))
         .and_then(|()| rebuild_copy_documents::copy_document_tables_inner(conn));
-    // Always DETACH so the connection is reusable even if the copy failed.
-    let _ = conn.execute_batch("DETACH DATABASE old;");
+    // Always attempt DETACH so the connection is reusable even if the copy
+    // failed. A DETACH failure is logged, never propagated: the copy's own
+    // outcome is what the caller acts on, and turning a SUCCESSFUL copy into
+    // an error because the cleanup stumbled would abort a rebuild that had
+    // already done its work. Logging keeps it from being silent.
+    if let Err(e) = conn.execute_batch("DETACH DATABASE old;") {
+        tracing::warn!(error = %e, "DETACH DATABASE old failed after the preservation copy");
+    }
     copy_result
 }
 
