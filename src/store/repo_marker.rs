@@ -27,6 +27,25 @@ pub(crate) struct LazyReindexMarker {
     pub archived: bool,
 }
 
+/// `SELECT <column> FROM repo_marker WHERE repo = ?1`, as `Ok(None)` when the
+/// repo has no marker row at all.
+///
+/// `column` is `&'static str` and is interpolated into the SQL, so only a
+/// compile-time literal at a call site can reach it — `repo`, the one
+/// genuinely dynamic value, is bound. The three single-column readers below
+/// differ only in that literal and in how they interpret the value, which is
+/// why they share this body rather than repeating the query three times.
+fn column_for_repo<T: rusqlite::types::FromSql>(
+    conn: &Connection,
+    column: &'static str,
+    repo: &str,
+) -> Result<Option<T>> {
+    let sql = format!("SELECT {column} FROM repo_marker WHERE repo = ?1");
+    conn.query_row(&sql, [repo], |r| r.get::<_, T>(0))
+        .optional()
+        .map_err(Error::Sqlite)
+}
+
 /// The `repo_marker` row for `repo`, or `None` when there is no marker row
 /// (never indexed).
 pub(crate) fn read_for_lazy_reindex(
@@ -51,15 +70,7 @@ pub(crate) fn read_for_lazy_reindex(
 /// The stored `last_mined_commit` cursor for `repo`, or `None` when the repo
 /// has never been mined, or its marker row's cursor column is `NULL`.
 pub(crate) fn last_mined_commit(conn: &Connection, repo: &str) -> Result<Option<String>> {
-    let cursor = conn
-        .query_row(
-            "SELECT last_mined_commit FROM repo_marker WHERE repo = ?1",
-            [repo],
-            |r| r.get::<_, Option<String>>(0),
-        )
-        .optional()?
-        .flatten();
-    Ok(cursor)
+    Ok(column_for_repo::<Option<String>>(conn, "last_mined_commit", repo)?.flatten())
 }
 
 /// Advance `repo_marker.last_mined_commit` to `cursor`, creating the marker
@@ -78,14 +89,7 @@ pub(crate) fn advance_mined_cursor(conn: &Connection, repo: &str, cursor: &str) 
 /// repo has no marker row yet (never indexed) — `api::index_code`'s
 /// archived-repo refusal treats an unknown repo as not archived.
 pub fn archived(conn: &Connection, repo: &str) -> Result<Option<bool>> {
-    let flag: Option<i64> = conn
-        .query_row(
-            "SELECT archived FROM repo_marker WHERE repo = ?1",
-            [repo],
-            |r| r.get(0),
-        )
-        .optional()?;
-    Ok(flag.map(|f| f != 0))
+    Ok(column_for_repo::<i64>(conn, "archived", repo)?.map(|f| f != 0))
 }
 
 /// Every `repo_marker` label, ascending — the authoritative repo list
@@ -101,14 +105,7 @@ pub(crate) fn all_repos(conn: &Connection) -> Result<Vec<String>> {
 /// `repo_marker.root_path` for `repo`, or `None` when there is no marker
 /// row (or its root is `NULL`) — behind `api::repo_admin`'s connect/patch.
 pub(crate) fn root_path(conn: &Connection, repo: &str) -> Result<Option<String>> {
-    let root: Option<Option<String>> = conn
-        .query_row(
-            "SELECT root_path FROM repo_marker WHERE repo = ?1",
-            [repo],
-            |r| r.get(0),
-        )
-        .optional()?;
-    Ok(root.flatten())
+    Ok(column_for_repo::<Option<String>>(conn, "root_path", repo)?.flatten())
 }
 
 /// Whether a `repo_marker` row exists for `repo` — behind
