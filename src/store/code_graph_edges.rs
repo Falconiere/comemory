@@ -80,30 +80,48 @@ fn map_edge(r: &rusqlite::Row<'_>) -> rusqlite::Result<GraphEdgeRow> {
 }
 
 /// The `WHERE` clause (relation set + weight floor + optional repo scope)
-/// and its bound params, `min_weight` as `?1` and `repo` as `?2`.
+/// and its bound params, in placeholder order: the `rels` names occupy
+/// `?1..?N`, `min_weight` is `?{N+1}`, and `repo` — when present — is
+/// `?{N+2}`, reused by both endpoint prefix tests. The returned `binds`
+/// vector is pushed in exactly that order.
 fn where_clause_and_binds(
     rels: &[&str],
     repo: Option<&str>,
     min_weight: i64,
 ) -> (String, Vec<Box<dyn rusqlite::ToSql>>) {
-    let in_list = rels
-        .iter()
-        .map(|r| format!("'{r}'"))
+    // Relation names are BOUND, not spliced. Every caller passes `&'static`
+    // literals today (`rels_of` matches a closed `Rel` enum), so nothing
+    // hostile can reach this — but the parameter is `&[&str]`, which the
+    // type system lets any runtime string satisfy. Binding makes the
+    // guarantee structural instead of conventional.
+    let in_list = (1..=rels.len())
+        .map(|i| format!("?{i}"))
         .collect::<Vec<_>>()
         .join(",");
-    let mut where_clause = format!(
+    let weight_ph = rels.len() + 1;
+    let mut binds: Vec<Box<dyn rusqlite::ToSql>> = rels
+        .iter()
+        .map(|r| Box::new((*r).to_owned()) as Box<dyn rusqlite::ToSql>)
+        .collect();
+    binds.push(Box::new(min_weight));
+    // Both endpoints share the `file:<repo>:` prefix gate, so SQLite rejects
+    // cross-repo edges directly. Built as its own fragment rather than pushed
+    // onto the clause, so the whole WHERE is one `format!`.
+    let repo_clause = match repo {
+        Some(r) => {
+            let repo_ph = rels.len() + 2;
+            binds.push(Box::new(file_node_prefix(r)));
+            format!(
+                " AND substr(src_id, 1, length(?{repo_ph})) = ?{repo_ph} \
+                   AND substr(dst_id, 1, length(?{repo_ph})) = ?{repo_ph}"
+            )
+        }
+        None => String::new(),
+    };
+    let where_clause = format!(
         " WHERE rel IN ({in_list}) \
-            AND (rel <> 'co_changed' OR weight >= ?1)"
+            AND (rel <> 'co_changed' OR weight >= ?{weight_ph}){repo_clause}"
     );
-    let mut binds: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(min_weight)];
-    if let Some(r) = repo {
-        // Both endpoints share the `file:<repo>:` prefix gate, so SQLite
-        // rejects cross-repo edges directly.
-        where_clause.push_str(
-            " AND substr(src_id, 1, length(?2)) = ?2 AND substr(dst_id, 1, length(?2)) = ?2",
-        );
-        binds.push(Box::new(file_node_prefix(r)));
-    }
     (where_clause, binds)
 }
 
