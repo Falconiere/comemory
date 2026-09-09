@@ -2,7 +2,6 @@
 //! diversify (dedup + MMR) → top-k, plus best-effort access tracking
 //! and query logging (`retrieval_log`).
 
-use rusqlite::Connection;
 use time::OffsetDateTime;
 
 use crate::config::Config;
@@ -11,7 +10,9 @@ use crate::retrieval::rerank::Reranked;
 use crate::retrieval::router::CANDIDATE_POOL;
 use crate::retrieval::scope::Filters;
 use crate::retrieval::{diversify, rerank, router};
+use crate::store::Connection;
 use crate::store::memory_row;
+use crate::store::retrieval_log::{self, NewLogRow};
 
 /// Caller-facing knobs for one pipeline run.
 #[derive(Debug, Clone, Copy)]
@@ -238,13 +239,8 @@ pub(crate) fn record_access(conn: &Connection, ids: &[&str]) {
             return;
         }
     };
-    let qmarks = crate::store::qmarks(ids.len());
-    let sql = format!(
-        "UPDATE memories SET access_count = access_count + 1, last_accessed = ? \
-         WHERE id IN ({qmarks})"
-    );
-    let params = std::iter::once(now.as_str()).chain(ids.iter().copied());
-    if let Err(e) = conn.execute(&sql, rusqlite::params_from_iter(params)) {
+    let owned: Vec<String> = ids.iter().map(|id| (*id).to_string()).collect();
+    if let Err(e) = memory_row::bump_access(conn, &owned, &now) {
         tracing::warn!(error = %e, hit_count = ids.len(), "access tracking update failed");
     }
 }
@@ -297,13 +293,20 @@ pub(crate) fn log_retrieval(
         }
     };
     let dur = i64::try_from(elapsed.as_millis()).unwrap_or(i64::MAX);
-    match conn.execute(
-        "INSERT INTO retrieval_log(query_id, query, returned_ids, at, duration_ms,
-                                   repo, kind, source)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-        rusqlite::params![query_id, query, returned, at, dur, repo, kind, source],
+    match retrieval_log::insert(
+        conn,
+        &NewLogRow {
+            query_id: &query_id,
+            query,
+            returned_ids: &returned,
+            at: &at,
+            duration_ms: dur,
+            repo,
+            kind,
+            source,
+        },
     ) {
-        Ok(_) => Some(query_id),
+        Ok(()) => Some(query_id),
         Err(e) => {
             tracing::warn!(error = %e, "query logging failed");
             None

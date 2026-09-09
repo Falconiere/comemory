@@ -11,10 +11,9 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use rusqlite::{Connection, OptionalExtension};
-
 use crate::retrieval::code_ref_status::{CurrentRef, RefStatus, classify};
 use crate::serve::repo_root::resolve_root;
+use crate::store::Connection;
 
 /// Cached per-repo facts: the resolved working-tree root (`None` when the repo
 /// is not on disk) and whether the code index is current for it.
@@ -100,15 +99,8 @@ fn index_is_current(conn: &Connection, repo: &str, root: &Path) -> bool {
             return false;
         }
     };
-    let last: Option<String> = conn
-        .query_row(
-            "SELECT last_mined_commit FROM repo_marker WHERE repo = ?1",
-            [repo],
-            |r| r.get::<_, Option<String>>(0),
-        )
-        .optional()
+    let last = crate::store::repo_marker::last_mined_commit(conn, repo)
         .ok()
-        .flatten()
         .flatten();
     last.as_deref() == Some(head.as_str())
 }

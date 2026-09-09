@@ -3,10 +3,10 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
 use crate::prelude::*;
+use crate::store::Connection;
 
 /// Cloud-sync knobs — separate from `[git]` auto-commit of markdown.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -177,12 +177,7 @@ pub fn apply_embed_model(conn: &Connection, embed: &EmbedConfig) -> Result<()> {
     if embed.model.is_empty() {
         return Ok(());
     }
-    conn.execute(
-        "INSERT INTO schema_meta(key, value) VALUES('memory_vector_model', ?1) \
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        rusqlite::params![&embed.model],
-    )?;
-    Ok(())
+    crate::store::schema_meta::set_memory_vector_model(conn, &embed.model)
 }
 
 #[cfg(test)]
