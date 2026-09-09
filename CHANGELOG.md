@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-09-09
+
+### Changed
+
+- move the last api SQL behind store::, closing the leak ([#112](https://github.com/Falconiere/comemory/pull/112))
+- move api indexing and search SQL behind store:: ([#111](https://github.com/Falconiere/comemory/pull/111))
+- move api reporting and lifecycle SQL behind store:: ([#110](https://github.com/Falconiere/comemory/pull/110))
+- move rebuild's ATTACH copy and history reads behind store:: ([#109](https://github.com/Falconiere/comemory/pull/109))
+- move cli, prune and eval SQL behind store:: helpers ([#108](https://github.com/Falconiere/comemory/pull/108))
+- move retrieval SQL behind store:: helpers ([#107](https://github.com/Falconiere/comemory/pull/107))
+- move stats table CRUD behind store:: ([#106](https://github.com/Falconiere/comemory/pull/106))
+- move graph algorithm SQL behind store:: helpers ([#105](https://github.com/Falconiere/comemory/pull/105))
+- move the edges table CRUD into store::edges ([#104](https://github.com/Falconiere/comemory/pull/104))
+- move SQLITE_BUSY and repo_marker reads behind store:: ([#103](https://github.com/Falconiere/comemory/pull/103))
+- re-export Connection so callers stop naming rusqlite ([#102](https://github.com/Falconiere/comemory/pull/102))
+
 ## [0.21.0] - 2026-09-07
 
 ### Added
