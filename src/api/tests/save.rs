@@ -159,6 +159,7 @@ fn run_with_a_vector_writes_one_row_and_a_resave_replaces_it() {
     // default; here the caller supplies a different one, e.g. a re-embed by
     // hand) — same content hash, same memory id.
     let second_vec = vec![0.75_f32; dim];
+    let expected_blob = comemory::store::embed::to_vec_blob(&second_vec);
     {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
         let req = api::save::Request {
@@ -171,6 +172,20 @@ fn run_with_a_vector_writes_one_row_and_a_resave_replaces_it() {
         count_rows(&conn),
         1,
         "a re-save must replace the memory_vec row, not duplicate it"
+    );
+
+    // Row COUNT alone cannot tell a replace from a no-op that left the first
+    // vector in place. Assert the stored bytes are the SECOND vector's.
+    let stored: Vec<u8> = conn
+        .query_row(
+            "SELECT embedding FROM memory_vec WHERE memory_id = ?1",
+            [&memory_id],
+            |r| r.get(0),
+        )
+        .expect("read stored embedding");
+    assert_eq!(
+        stored, expected_blob,
+        "the re-saved vector must overwrite the first, not be discarded"
     );
 }
 

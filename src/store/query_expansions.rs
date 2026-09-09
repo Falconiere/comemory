@@ -72,6 +72,10 @@ pub fn matching_terms(
         .iter()
         .map(|t| Box::new(t.clone()) as Box<dyn ToSql>)
         .collect();
+    // A `limit` above i64::MAX cannot describe a reachable row count, so
+    // saturating is the only meaningful conversion; SQLite treats any such
+    // value as "no limit" regardless. Preserved from the api::suggest call
+    // site this moved from.
     binds.push(Box::new(i64::try_from(limit).unwrap_or(i64::MAX)));
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(
