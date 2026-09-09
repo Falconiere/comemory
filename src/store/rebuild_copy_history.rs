@@ -1,20 +1,21 @@
-//! The run-history half of the preservation copy — `eval_runs` (v14, plus
-//! v15's `discarded` flag), `gc_runs` (v14), `index_runs` (v15), and the
-//! v16 cloud-sync tables (`sync_log` / `sync_state` / `sync_binding`) —
-//! called from `copy.rs`'s learning-state pass. History is exactly what
-//! markdown cannot reconstruct: a rebuild that dropped it would erase every
-//! recorded eval, gc, and index run (and re-offer every discarded knob
-//! proposal), and would reset sync cursors / bindings.
+//! The run-history half of [`super::rebuild_copy`]'s preservation copy —
+//! `eval_runs` (v14, plus v15's `discarded` flag), `gc_runs` (v14),
+//! `index_runs` (v15), and the v16 cloud-sync tables (`sync_log` /
+//! `sync_state` / `sync_binding`). History is exactly what markdown cannot
+//! reconstruct: a rebuild that dropped it would erase every recorded eval,
+//! gc, and index run (and re-offer every discarded knob proposal), and
+//! would reset sync cursors / bindings.
 
-use super::copy::{old_column_exists, old_table_exists};
 use crate::prelude::*;
+use crate::store::Connection;
+use crate::store::rebuild_copy::{old_column_exists, old_table_exists};
 
 /// Copy the three run-history tables from the attached `old` database. A
 /// pre-v15 `eval_runs` has no `discarded` column, so it is synthesized as
 /// `0` (the migration's own default); a pre-v14 source has none of these
 /// tables and each block is skipped. Also copies the v16 sync tables when
 /// present.
-pub(super) fn copy_history_tables(conn: &rusqlite::Connection) -> Result<()> {
+pub(crate) fn copy_history_tables(conn: &Connection) -> Result<()> {
     if old_table_exists(conn, "eval_runs")? {
         let discarded_expr = if old_column_exists(conn, "eval_runs", "discarded")? {
             "discarded"
@@ -52,7 +53,7 @@ pub(super) fn copy_history_tables(conn: &rusqlite::Connection) -> Result<()> {
 
 /// Copy `sync_log` / `sync_state` / `sync_binding` when the attached DB has
 /// them (post-v16). Skipped on older sources.
-fn copy_sync_tables(conn: &rusqlite::Connection) -> Result<()> {
+fn copy_sync_tables(conn: &Connection) -> Result<()> {
     if old_table_exists(conn, "sync_log")? {
         conn.execute_batch(
             "INSERT OR IGNORE INTO main.sync_log(\

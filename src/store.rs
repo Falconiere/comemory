@@ -90,6 +90,20 @@ pub mod query_expansions;
 /// Shared random-hex id generation (`/dev/urandom`), the neutral home for
 /// both `serve::security` and `api::gc`.
 pub mod random_id;
+/// The `ATTACH`-based rebuild preservation copy: entry point, `DETACH`
+/// guarantee, and the two attached-DB schema-probe helpers.
+pub mod rebuild_copy;
+/// Rebuild preservation copy: the code-index/mined-edge/repo-marker tables.
+pub mod rebuild_copy_code;
+/// Rebuild preservation copy: the document-domain tables.
+pub mod rebuild_copy_documents;
+/// Rebuild preservation copy: the run-history and sync tables.
+pub mod rebuild_copy_history;
+/// Rebuild preservation copy: feedback counters and the retrieval log.
+pub mod rebuild_copy_learning;
+/// Rebuild preservation copy: `feedback_events`, `query_expansions`,
+/// `bandit_arms`.
+pub mod rebuild_copy_learning_events;
 /// Drop every code-index row and edge for one repo label.
 pub mod repo_drop;
 /// `repo_marker.last_mined_commit` — the co-change mining cursor, plus the

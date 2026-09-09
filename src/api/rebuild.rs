@@ -30,12 +30,13 @@
 //! Everything that exists only in SQLite — the code index (`code_symbols`,
 //! `code_vec`, `code_fts`, `indexed_files`), the mined/earned code-graph
 //! edges plus their `repo_marker` cursors, the five learning-loop tables,
-//! and (via [`documents`]) the document-domain tables (`source_files`,
-//! `documents`, `document_chunks`, `document_fts`) — is copied from the old
-//! DB via `ATTACH DATABASE` before the swap. Markdown cannot rebuild any of
-//! it, so dropping it would force a full re-index and silently reset the
-//! feedback rerank priors. See [`copy`] for the per-table details. The
-//! fifth v13 table, `source_roots`, is reconciled fresh from `sources.toml`
+//! and the document-domain tables (`source_files`, `documents`,
+//! `document_chunks`, `document_fts`) — is copied from the old DB via
+//! `ATTACH DATABASE` before the swap by [`crate::store::rebuild_copy`] and
+//! its siblings. Markdown cannot rebuild any of it, so dropping it would
+//! force a full re-index and silently reset the feedback rerank priors. See
+//! [`copy`] for the live-table allowlist. The fifth v13 table,
+//! `source_roots`, is reconciled fresh from `sources.toml`
 //! (`source::mirror::reconcile`) rather than copied — see [`build_new_db`].
 //!
 //! Memory-side vectors are intentionally *not* repopulated: the v0.2
@@ -63,14 +64,11 @@ use crate::source::registry::Registry;
 use crate::store::migrate::backup;
 use crate::store::{connection, memory_row};
 
-/// `ATTACH`-based preservation copy of the code-index, code-graph,
-/// learning-loop, and document-domain tables from the pre-rebuild DB.
+/// The live-table allowlist pair plus the thin delegate into
+/// `crate::store::rebuild_copy`, which owns the actual `ATTACH`-based
+/// preservation copy of the code-index, code-graph, learning-loop, and
+/// document-domain tables from the pre-rebuild DB.
 pub mod copy;
-/// The document-domain half of [`copy`]'s preservation copy —
-/// `source_files`, `documents`, `document_chunks`, `document_fts`.
-pub mod documents;
-/// The run-history half of the preservation copy (`eval_runs`, `gc_runs`, `index_runs`).
-pub mod history;
 
 /// `comemory rebuild` / `POST /api/v1/rebuild` request. The command has no
 /// flags today — it always rebuilds the entire memory layer of the SQLite

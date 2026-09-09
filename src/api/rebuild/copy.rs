@@ -1,31 +1,26 @@
-//! The `ATTACH`-based preservation copy behind [`super::run`]: everything a
-//! markdown replay cannot reconstruct is lifted out of the pre-rebuild DB
-//! into the freshly built one — the code index, the mined/earned code-graph
-//! edges plus their per-repo cursors, the learning-loop counters, and (via
-//! the sibling [`super::documents`]) the document-domain tables.
-//!
-//! Every copy lists its columns explicitly and probes the attached DB for
-//! columns added by later migrations: the old DB is attached raw and never
-//! migrated, so a `SELECT *` would break the moment the source predates a
-//! widening migration.
+//! The live-table allowlist pair behind [`super::run`]'s preservation copy,
+//! plus the thin delegate that runs the allowlist sanity check before
+//! handing off to [`crate::store::rebuild_copy`], which owns the actual
+//! `ATTACH`/copy/`DETACH` lifecycle: everything a markdown replay cannot
+//! reconstruct — the code index, the mined/earned code-graph edges plus
+//! their per-repo cursors, the learning-loop counters, and the
+//! document-domain tables.
 
 use std::path::Path;
 
-use super::documents;
 use crate::prelude::*;
-use crate::store::code_row;
-use crate::store::edges::CO_ACTIVATED;
+use crate::store::Connection;
 
-/// Every live table this module (plus [`super::documents`]) copies from the
-/// pre-rebuild database. The single source both the copy passes and the
-/// `api::rebuild::tests::coverage` integrity test read — never a regex over
-/// this file's SQL.
+/// Every live table the preservation copy carries from the pre-rebuild
+/// database. The single source both the copy passes (now in
+/// `crate::store::rebuild_copy` and its siblings) and the `api::rebuild`
+/// coverage integrity test read — never a regex over any copy module's SQL.
 ///
-/// `edges` is here, not in [`RECONSTRUCTABLE_TABLES`], because
-/// [`copy_mined_edges`] copies it — though only for the three mined rel
-/// kinds (`co_changed`, `imports`, `co_activated`); the memory-domain rels
-/// are replayed from markdown. That partial copy is exactly why the live
-/// table must not be silently dropped from either list.
+/// `edges` is here, not in [`RECONSTRUCTABLE_TABLES`], because the copy
+/// narrows it to the three mined rel kinds (`co_changed`, `imports`,
+/// `co_activated`); the memory-domain rels are replayed from markdown. That
+/// partial copy is exactly why the live table must not be silently dropped
+/// from either list.
 pub(crate) const COPIED_TABLES: &[&str] = &[
     "code_symbols",
     "indexed_files",
@@ -75,20 +70,12 @@ pub(crate) const RECONSTRUCTABLE_TABLES: &[(&str, &str)] = &[
     ("schema_meta", "owned by the migration runner"),
 ];
 
-/// Attach `old_db` as `old` and copy the code-index, learning, and (via
-/// [`super::documents`]) document-domain tables into `conn` (the tmp path).
-/// Each source table is copied only if it exists on the attached DB — a
-/// legacy `comemory.db` may predate some of them.
+/// Run the allowlist sanity check, then attach `old_db` and copy every
+/// preserved table into `conn` via [`crate::store::rebuild_copy`].
 ///
 /// Caller must populate `main.source_roots` first
-/// (`source::mirror::reconcile`, in [`super::build_new_db`]):
-/// `source_files.source_id` is a foreign key, so
-/// [`documents::copy_document_tables_inner`] fails outright if its parent
-/// row is missing.
-pub(crate) fn copy_preserved_tables_from_old(
-    conn: &mut rusqlite::Connection,
-    old_db: &Path,
-) -> Result<()> {
+/// (`source::mirror::reconcile`, in [`super::build_new_db`]).
+pub(crate) fn copy_preserved_tables_from_old(conn: &mut Connection, old_db: &Path) -> Result<()> {
     // Debug-only, and deliberately so: the authoritative check is
     // `migration_integrity_every_live_table_is_covered_exactly_once` in
     // `tests/coverage.rs`, which also proves the union covers the live set.
@@ -101,312 +88,7 @@ pub(crate) fn copy_preserved_tables_from_old(
             .all(|t| !RECONSTRUCTABLE_TABLES.iter().any(|(r, _)| r == t)),
         "a live table cannot appear in both COPIED_TABLES and RECONSTRUCTABLE_TABLES"
     );
-    conn.execute(
-        "ATTACH DATABASE ? AS old",
-        rusqlite::params![old_db.to_string_lossy().as_ref()],
-    )?;
-    let copy_result = copy_code_tables_inner(conn)
-        .and_then(|()| copy_learning_tables_inner(conn))
-        .and_then(|()| documents::copy_document_tables_inner(conn));
-    // Always DETACH so the connection is reusable even if the copy failed.
-    let _ = conn.execute_batch("DETACH DATABASE old;");
-    copy_result
-}
-
-/// Inner copy loop separated so [`copy_preserved_tables_from_old`] can
-/// guarantee `DETACH` runs even on error.
-///
-/// A pre-v4 `code_symbols` lacks the `access_count` / `last_accessed`
-/// columns added by migration 0004, so those two are sourced conditionally:
-/// carried over when the old table already has them, otherwise synthesized
-/// with the same defaults 0004's backfill applies (`0` / `indexed_at`). The
-/// v6 columns (`rank_score` / `parent_id`, added together by 0006) are
-/// probed the same way and synthesized with the 0006 defaults (`0.0` /
-/// NULL). `id` is carried verbatim so `parent_id` chunk → parent pointers
-/// stay valid in the copy.
-fn copy_code_tables_inner(conn: &rusqlite::Connection) -> Result<()> {
-    // Regular tables first, then the virtual ones (FTS5 + vec0):
-    // `code_symbols` must land before `code_vec` / `code_fts` because the
-    // latter reference `code_symbols.id` in their data streams.
-    copy_code_index_tables(conn)?;
-    copy_mined_edges(conn)?;
-    copy_code_markers(conn)?;
-    copy_code_virtual_tables(conn)
-}
-
-/// Copy the `code_symbols` rows and the `indexed_files` cursors.
-fn copy_code_index_tables(conn: &rusqlite::Connection) -> Result<()> {
-    if old_table_exists(conn, "code_symbols")? {
-        let (count_expr, last_expr) = if old_column_exists(conn, "code_symbols", "access_count")? {
-            ("access_count", "COALESCE(last_accessed, indexed_at)")
-        } else {
-            ("0", "indexed_at")
-        };
-        let (rank_expr, parent_expr) = if old_column_exists(conn, "code_symbols", "rank_score")? {
-            ("rank_score", "parent_id")
-        } else {
-            ("0.0", "NULL")
-        };
-        conn.execute_batch(&format!(
-            "INSERT OR IGNORE INTO main.code_symbols(\
-                 id, repo, path, blob_oid, symbol, kind, lang, line_start, line_end, \
-                 snippet, simhash, indexed_at, access_count, last_accessed, \
-                 rank_score, parent_id) \
-             SELECT id, repo, path, blob_oid, symbol, kind, lang, line_start, line_end, \
-                 snippet, simhash, indexed_at, {count_expr}, {last_expr}, \
-                 {rank_expr}, {parent_expr} \
-             FROM old.code_symbols;"
-        ))?;
-    }
-    if old_table_exists(conn, "indexed_files")? {
-        conn.execute_batch(
-            "INSERT OR IGNORE INTO main.indexed_files(repo, path, blob_oid, indexed_at) \
-             SELECT repo, path, blob_oid, indexed_at FROM old.indexed_files;",
-        )?;
-    }
-    Ok(())
-}
-
-/// Copy the mined/earned code-graph edges. The rel filter narrows to the
-/// three kinds the markdown replay cannot reproduce: the git-mined
-/// `co_changed` / `imports` edges plus the v8 `co_activated` edges earned by
-/// the co-activation reward (memory→file, weighted — earned state markdown
-/// has no source for, like the feedback counters). A pre-v6 source has no
-/// such rows (its rel CHECK predates the kinds) and no `weight` column,
-/// hence the probe defaulting to the pre-v6 implicit weight of 1. The
-/// [`CO_ACTIVATED`] const is bound rather than inlined so the filter cannot
-/// drift from the writer's literal; it is a crate-internal const with no SQL
-/// metacharacters, so interpolation is safe.
-fn copy_mined_edges(conn: &rusqlite::Connection) -> Result<()> {
-    if old_table_exists(conn, "edges")? {
-        let weight_expr = if old_column_exists(conn, "edges", "weight")? {
-            "weight"
-        } else {
-            "1"
-        };
-        conn.execute_batch(&format!(
-            "INSERT OR IGNORE INTO main.edges(\
-                 src_kind, src_id, dst_kind, dst_id, rel, weight, created_at) \
-             SELECT src_kind, src_id, dst_kind, dst_id, rel, {weight_expr}, created_at \
-             FROM old.edges WHERE rel IN ('co_changed', 'imports', '{CO_ACTIVATED}');"
-        ))?;
-    }
-    Ok(())
-}
-
-/// Copy the per-repo cursors an `index-code` pass reads before deciding what
-/// to re-walk: the `code_format:<repo>` stamps in `schema_meta` (matched on
-/// [`code_row::CODE_FORMAT_KEY_PREFIX`] — the global `code_format_version`
-/// key lacks the colon and does NOT match; without them the next index-code
-/// sees an unstamped repo, drops its `indexed_files` cursors, and the full
-/// re-walk purges the BYO `code_vec` rows), plus the `repo_marker` rows
-/// whose `last_mined_commit` bounds the next mining pass (dropping it would
-/// re-mine bounded history into the just-copied co_changed weights,
-/// double-counting every pair). Both prefixes are crate-internal consts with
-/// no SQL metacharacters, so the interpolation cannot break the statements.
-fn copy_code_markers(conn: &rusqlite::Connection) -> Result<()> {
-    if old_table_exists(conn, "schema_meta")? {
-        let prefix = code_row::CODE_FORMAT_KEY_PREFIX;
-        conn.execute_batch(&format!(
-            "INSERT OR IGNORE INTO main.schema_meta(key, value) \
-             SELECT key, value FROM old.schema_meta \
-              WHERE substr(key, 1, {len}) = '{prefix}';",
-            len = prefix.len(),
-        ))?;
-    }
-    if old_table_exists(conn, "repo_marker")? {
-        let mined_expr = if old_column_exists(conn, "repo_marker", "last_mined_commit")? {
-            "last_mined_commit"
-        } else {
-            "NULL"
-        };
-        // `root_path` (v7) and `archived` (v15) are probed the same way:
-        // dropping either would make a rebuilt store forget where a repo
-        // lives (containment, freshness) or that it was archived.
-        let root_expr = if old_column_exists(conn, "repo_marker", "root_path")? {
-            "root_path"
-        } else {
-            "NULL"
-        };
-        let archived_expr = if old_column_exists(conn, "repo_marker", "archived")? {
-            "archived"
-        } else {
-            "0"
-        };
-        conn.execute_batch(&format!(
-            "INSERT OR IGNORE INTO main.repo_marker(\
-                 repo, last_head, last_indexed_at, last_mined_commit, root_path, archived) \
-             SELECT repo, last_head, last_indexed_at, {mined_expr}, {root_expr}, {archived_expr} \
-             FROM old.repo_marker;"
-        ))?;
-    }
-    Ok(())
-}
-
-/// Copy the FTS5 + vec0 virtual tables. These may not support
-/// `INSERT INTO … SELECT *` from an attached DB in all sqlite-vec versions,
-/// so each row is copied via named columns: `code_fts` through the FTS5
-/// content-table shape, `code_vec` as blobs tied to `symbol_id`.
-fn copy_code_virtual_tables(conn: &rusqlite::Connection) -> Result<()> {
-    if old_table_exists(conn, "code_fts")? {
-        conn.execute_batch(
-            "INSERT OR IGNORE INTO main.code_fts(symbol_id, symbol, snippet, path_tokens) \
-             SELECT symbol_id, symbol, snippet, path_tokens FROM old.code_fts;",
-        )?;
-    }
-    if old_table_exists(conn, "code_vec")? {
-        conn.execute_batch(
-            "INSERT OR IGNORE INTO main.code_vec(symbol_id, embedding) \
-             SELECT symbol_id, embedding FROM old.code_vec;",
-        )?;
-    }
-    Ok(())
-}
-
-/// Inner copy loop for the learning-loop tables. These rows exist only in
-/// SQLite — there is no markdown to rebuild them from — so dropping them
-/// would silently reset the Beta feedback rerank priors to neutral and erase
-/// mined expansions, contradicting the documented never-expire contract.
-///
-/// Same schema-evolution guards as [`copy_code_tables_inner`]: each table is
-/// copied only when it exists on the attached DB, and columns added by later
-/// migrations are probed and defaulted per callee.
-fn copy_learning_tables_inner(conn: &rusqlite::Connection) -> Result<()> {
-    copy_feedback_tables(conn)?;
-    copy_retrieval_log(conn)?;
-    copy_event_and_mined_tables(conn)?;
-    super::history::copy_history_tables(conn)
-}
-
-/// Copy the aggregated feedback counters: memory-side `feedback` (v2) and
-/// symbol-side `code_feedback` (v6). The `repo` column probe also covers the
-/// brief dev-era rowid-keyed `code_feedback` shape (never released): skip
-/// rather than abort.
-fn copy_feedback_tables(conn: &rusqlite::Connection) -> Result<()> {
-    if old_table_exists(conn, "feedback")? {
-        conn.execute_batch(
-            "INSERT OR IGNORE INTO main.feedback(\
-                 memory_id, used_count, irrelevant_count, last_used) \
-             SELECT memory_id, used_count, irrelevant_count, last_used \
-             FROM old.feedback;",
-        )?;
-    }
-    if old_table_exists(conn, "code_feedback")? && old_column_exists(conn, "code_feedback", "repo")?
-    {
-        conn.execute_batch(
-            "INSERT OR IGNORE INTO main.code_feedback(\
-                 repo, path, symbol, used_count, irrelevant_count, last_used) \
-             SELECT repo, path, symbol, used_count, irrelevant_count, last_used \
-             FROM old.code_feedback;",
-        )?;
-    }
-    Ok(())
-}
-
-/// Copy the `retrieval_log` telemetry (v3). `duration_ms` (v5) and the
-/// `repo` / `kind` / `source` filter columns (v6, probed together via
-/// `source`) default to NULL / NULL / NULL / `'search'` when the source
-/// predates them — without that, old `search-code` rows would re-enter
-/// reformulation mining as memory queries.
-fn copy_retrieval_log(conn: &rusqlite::Connection) -> Result<()> {
-    if old_table_exists(conn, "retrieval_log")? {
-        let duration_expr = if old_column_exists(conn, "retrieval_log", "duration_ms")? {
-            "duration_ms"
-        } else {
-            "NULL"
-        };
-        let (repo_expr, kind_expr, source_expr) =
-            if old_column_exists(conn, "retrieval_log", "source")? {
-                ("repo", "kind", "source")
-            } else {
-                ("NULL", "NULL", "'search'")
-            };
-        conn.execute_batch(&format!(
-            "INSERT OR IGNORE INTO main.retrieval_log(\
-                 query_id, query, returned_ids, at, duration_ms, repo, kind, source) \
-             SELECT query_id, query, returned_ids, at, {duration_expr}, \
-                 {repo_expr}, {kind_expr}, {source_expr} \
-             FROM old.retrieval_log;"
-        ))?;
-    }
-    Ok(())
-}
-
-/// Copy the `feedback_events` verdict log (v5), the mined
-/// `query_expansions` (v5), and the `bandit_arms` state (the run-history
-/// tables live in [`super::history`]). On pre-migration
-/// sources `target_kind` (v6) defaults to `'memory'` and `provenance` (v8)
-/// to `'manual'`, the same values those migrations backfill — dropping
-/// either would let code verdicts masquerade as memory verdicts in the
-/// harvest, or relabel implicit reinforcement as a user verdict.
-fn copy_event_and_mined_tables(conn: &rusqlite::Connection) -> Result<()> {
-    if old_table_exists(conn, "feedback_events")? {
-        let target_expr = if old_column_exists(conn, "feedback_events", "target_kind")? {
-            "target_kind"
-        } else {
-            "'memory'"
-        };
-        let prov_expr = if old_column_exists(conn, "feedback_events", "provenance")? {
-            "provenance"
-        } else {
-            "'manual'"
-        };
-        conn.execute_batch(&format!(
-            "INSERT OR IGNORE INTO main.feedback_events(\
-                 id, query_id, memory_id, verdict, at, target_kind, provenance) \
-             SELECT id, query_id, memory_id, verdict, at, {target_expr}, {prov_expr} \
-             FROM old.feedback_events;"
-        ))?;
-    }
-    if old_table_exists(conn, "query_expansions")? {
-        conn.execute_batch(
-            "INSERT OR IGNORE INTO main.query_expansions(\
-                 term, expansion, support, last_mined) \
-             SELECT term, expansion, support, last_mined \
-             FROM old.query_expansions;",
-        )?;
-    }
-    if old_table_exists(conn, "bandit_arms")? {
-        conn.execute_batch(
-            "INSERT OR IGNORE INTO main.bandit_arms(\
-                 arm_id, rrf_k, decay, mmr_lambda, bm25_body, bm25_tags, \
-                 alpha, beta, pulls, last_mrr, updated_at) \
-             SELECT arm_id, rrf_k, decay, mmr_lambda, bm25_body, bm25_tags, \
-                 alpha, beta, pulls, last_mrr, updated_at \
-             FROM old.bandit_arms;",
-        )?;
-    }
-    Ok(())
-}
-
-/// True when `name` exists as a table (regular or virtual) on the attached
-/// `old` database. Lets the copy loop skip tables that predate v0.2.
-/// `pub(super)`: [`super::documents`]'s copy passes reuse this rather than
-/// duplicating it.
-pub(super) fn old_table_exists(conn: &rusqlite::Connection, name: &str) -> Result<bool> {
-    let n: i64 = conn.query_row(
-        "SELECT count(*) FROM old.sqlite_master WHERE type = 'table' AND name = ?1",
-        rusqlite::params![name],
-        |r| r.get(0),
-    )?;
-    Ok(n > 0)
-}
-
-/// True when `column` exists on `table` in the attached `old` database.
-/// Lets [`copy_code_tables_inner`] and [`copy_learning_tables_inner`] adapt
-/// their SELECT lists to the attached DB's schema version instead of
-/// assuming the current one.
-pub(super) fn old_column_exists(
-    conn: &rusqlite::Connection,
-    table: &str,
-    column: &str,
-) -> Result<bool> {
-    let n: i64 = conn.query_row(
-        "SELECT count(*) FROM pragma_table_info(?1, 'old') WHERE name = ?2",
-        rusqlite::params![table, column],
-        |r| r.get(0),
-    )?;
-    Ok(n > 0)
+    crate::store::rebuild_copy::copy_preserved_tables_from_old(conn, old_db)
 }
 
 #[cfg(test)]
