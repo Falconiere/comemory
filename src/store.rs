@@ -38,6 +38,9 @@ pub mod code_row;
 pub mod code_signals;
 /// Connection open: PRAGMAs, migrations, `sqlite-vec` auto-extension.
 pub mod connection;
+/// The remaining `comemory doctor` health-check SQL: mirror-parity hashes,
+/// the repo-root inventory, and the live memory count.
+pub mod doctor_probes;
 /// `document_fts` insert/delete helpers + the BM25 MATCH query leg.
 pub mod document_fts;
 /// `documents` + `document_chunks` row CRUD.
@@ -64,6 +67,9 @@ pub mod feedback;
 pub mod fts;
 /// Memory-leg FTS5 ladder (strict → relaxed → subtoken → expanded).
 pub mod fts_memory;
+/// `retrieval_log` / `feedback_events` eviction past the retention window,
+/// behind `comemory gc`.
+pub mod gc_learning;
 /// `gc_runs` row insert — one row per `comemory gc` sweep.
 pub mod gc_runs;
 /// `index_failures` row CRUD: append-only log of swallowed indexing
@@ -82,6 +88,9 @@ pub mod memory_purge;
 pub mod memory_row;
 /// Versioned, idempotent schema migrations plus `schema_meta`.
 pub mod migrate;
+/// `api::prune`'s own scan (orphan-edge count, stale-code-file list, one
+/// memory's display fields) and apply-time cleanup deletes.
+pub mod prune_apply;
 /// The low-quality/zero-incoming-edge and superseded-and-forgotten scans
 /// behind `prune::low_value`.
 pub mod prune_signals;
@@ -111,6 +120,9 @@ pub mod repo_drop;
 pub mod repo_marker;
 /// Enumerate distinct, canonicalized `repo_marker.root_path` values.
 pub mod repo_marker_roots;
+/// The `repo_marker` join behind `comemory repos`: one row per indexed repo
+/// plus its per-repo file/symbol/memory counters.
+pub mod repos_inventory;
 /// `retrieval_log` reads — the raw `returned_ids` window query behind the
 /// search→edit lookback, plus the `(query_id, query, at)` scan behind
 /// `eval::mine`.
@@ -125,6 +137,9 @@ pub mod schema_meta;
 pub mod simhash_scan;
 /// `source_roots` row CRUD — the SQLite mirror of `sources.toml`.
 pub mod sources;
+/// The corpus counters behind `comemory stats`: a generic scoped
+/// `COUNT(*)`, a table-wide `COUNT(*)`, and the logical database size.
+pub mod stats_counts;
 /// First-push workspace binding + `--allow-secret` overrides.
 pub mod sync_binding;
 /// Append-only cloud-sync change journal.
@@ -133,6 +148,9 @@ pub mod sync_log;
 pub mod sync_state;
 /// Custom FTS5 identifier tokenizer (camelCase/snake_case split + FFI).
 pub mod tokenizer;
+/// The `memories` scan behind `GET /api/v1/trash`: every soft-deleted row,
+/// newest deletion first.
+pub mod trash_list;
 /// `vec0` insert and KNN against `memory_vec` / `code_vec`.
 pub mod vector;
 

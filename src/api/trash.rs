@@ -14,7 +14,6 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
@@ -24,6 +23,7 @@ use crate::output::page::Page;
 use crate::output::search::title_of;
 use crate::prelude::*;
 use crate::retrieval::score;
+use crate::store::trash_list;
 
 /// `GET /api/v1/trash` request.
 #[derive(Deserialize, Debug)]
@@ -63,15 +63,6 @@ pub struct TrashRow {
     pub days_until_gc: i64,
 }
 
-/// The `memories` columns this listing reads, before the on-disk join.
-struct RawRow {
-    id: String,
-    body: String,
-    kind: String,
-    repo: Option<String>,
-    deleted_at: String,
-}
-
 /// List soft-deleted memories, newest deletion first. Never creates the
 /// database (see the module doc): a missing `comemory.db` answers an empty
 /// page rather than migrating one into existence for a read.
@@ -83,7 +74,7 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Page<TrashRow>> {
     let files = trash_files(&ctx.paths.trash_dir());
     let now = OffsetDateTime::now_utc();
     let conn = ctx.conn()?;
-    let rows: Vec<TrashRow> = deleted_rows(conn)?
+    let rows: Vec<TrashRow> = trash_list::deleted_memories(conn)?
         .into_iter()
         .map(|raw| {
             let path = files.get(&raw.id);
@@ -99,30 +90,6 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Page<TrashRow>> {
         })
         .collect();
     Ok(Page::from_slice(rows, req.limit, req.offset))
-}
-
-/// Every soft-deleted `memories` row, ordered newest deletion first with the
-/// id as a stable tie-breaker (so paging is deterministic when a batch of
-/// memories was deleted in the same run).
-fn deleted_rows(conn: &Connection) -> Result<Vec<RawRow>> {
-    let mut stmt = conn.prepare(
-        "SELECT id, body, kind, repo, deleted_at FROM memories \
-          WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC, id",
-    )?;
-    let rows = stmt.query_map([], |r| {
-        Ok(RawRow {
-            id: r.get(0)?,
-            body: r.get(1)?,
-            kind: r.get(2)?,
-            repo: r.get(3)?,
-            deleted_at: r.get(4)?,
-        })
-    })?;
-    let mut out = Vec::new();
-    for row in rows {
-        out.push(row?);
-    }
-    Ok(out)
 }
 
 /// The memory id a `memories/.trash/` entry name carries: the `{id}-`

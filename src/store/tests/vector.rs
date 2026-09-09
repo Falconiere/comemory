@@ -245,3 +245,10 @@ fn knn_memory_created_window_excludes_nearest_and_still_fills_k() {
         scoped.iter().map(|h| &h.memory_id).collect::<Vec<_>>()
     );
 }
+
+#[test]
+fn is_loaded_is_true_on_a_real_connection() {
+    let dir = tempdir().expect("tempdir");
+    let conn = connection::open(dir.path().join("comemory.db")).expect("open");
+    assert!(vector::is_loaded(&conn));
+}

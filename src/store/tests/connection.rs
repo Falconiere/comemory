@@ -51,3 +51,35 @@ fn open_on_current_schema_performs_no_writes() {
         "open wrote rows on an already-current schema (write-on-open contends for the WAL lock)"
     );
 }
+
+/// `open_read_only` opens a genuinely writable-looking file but refuses
+/// every write — the read-only forward-compat fallback (`api::doctor`) must
+/// never be able to mutate a schema it does not understand.
+#[test]
+fn open_read_only_refuses_writes() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("comemory.db");
+    // Regular open first, so the file and schema already exist.
+    drop(connection::open(&path).expect("first open"));
+
+    let conn = connection::open_read_only(&path).expect("read-only open");
+    let err = conn
+        .execute("DELETE FROM memories", [])
+        .expect_err("a read-only connection must refuse a write");
+    // Assert the structured error CODE, not just the rendered text: SQLite's
+    // message wording is not a stability contract, and a substring match
+    // would also accept an unrelated error that happened to contain the word.
+    assert!(
+        matches!(
+            err,
+            rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error {
+                    code: rusqlite::ErrorCode::ReadOnly,
+                    ..
+                },
+                _
+            )
+        ),
+        "expected SQLITE_READONLY, got: {err}"
+    );
+}

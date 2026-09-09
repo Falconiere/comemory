@@ -6,13 +6,12 @@
 //! pass works whether it is the primary read-write connection or the
 //! forward-compat read-only fallback (see the parent module doc).
 
-use rusqlite::Connection;
-
 use crate::config::Paths;
 use crate::config::env::env_parse;
 use crate::memory::MemoryStore;
 use crate::memory::id::sha256_hex;
 use crate::prelude::*;
+use crate::store::{Connection, doctor_probes, vector};
 
 /// One named health probe inside [`super::Report::checks`]. `status` is a
 /// plain string (`"ok"` | `"warn"` | `"fail"`) rather than an enum so the
@@ -134,9 +133,7 @@ pub(crate) fn run_all(conn: &Connection, paths: &Paths, schema_version: &str) ->
     let (tokenizer_check, tokenizer_registered) = tokenizer(conn);
     checks.push(tokenizer_check);
 
-    let sqlite_vec_loaded = conn
-        .query_row("SELECT vec_version()", [], |r| r.get::<_, String>(0))
-        .is_ok();
+    let sqlite_vec_loaded = vector::is_loaded(conn);
     let (vec_check, memory_vec_dim, code_vec_dim) = vector_dims(conn, sqlite_vec_loaded);
     checks.push(vec_check);
 
@@ -213,11 +210,7 @@ fn mirror_parity(conn: &Connection, paths: &Paths) -> Result<(Check, u64, u64)> 
     // is thousands of files and `doctor` runs on demand. The map is keyed by
     // memory id, so a file with no row at all reads as `None` and counts as
     // drift exactly like a mismatching hash does.
-    let mut stmt =
-        conn.prepare("SELECT id, content_hash FROM memories WHERE deleted_at IS NULL")?;
-    let stored: std::collections::HashMap<String, String> = stmt
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
-        .collect::<std::result::Result<_, _>>()?;
+    let stored = doctor_probes::live_memory_hashes(conn)?;
     let mut drift = 0u64;
     for rec in &records {
         let hash = sha256_hex(rec.body.trim_end().as_bytes());
@@ -318,14 +311,11 @@ fn vector_dims(conn: &Connection, sqlite_vec_loaded: bool) -> (Check, Option<u32
 /// operator reading a doctor report should be able to run the suggestion
 /// as-is, and this check already knows which labels are unresolvable.
 fn repo_roots(conn: &Connection) -> Result<(Check, u32, u32)> {
-    let mut stmt =
-        conn.prepare("SELECT repo, root_path FROM repo_marker WHERE root_path IS NOT NULL")?;
-    let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+    let rows = doctor_probes::repo_roots(conn)?;
     let mut ok_count = 0u32;
     let mut total = 0u32;
     let mut missing: Vec<String> = Vec::new();
-    for row in rows {
-        let (repo, root_path) = row?;
+    for (repo, root_path) in rows {
         total += 1;
         if std::path::Path::new(&root_path).exists() {
             ok_count += 1;
@@ -394,13 +384,8 @@ fn markdown_db_counts(conn: &Connection, markdown_files: u64) -> Result<Check> {
     // LIVE rows only: `markdown_files` comes from `MemoryStore::list()`, which
     // never walks `.trash/`, so counting soft-deleted rows here would report a
     // permanent spurious warn on any corpus that has ever had a memory pruned.
-    // `COUNT(*)` is an i64 to SQLite (rusqlite 0.40 dropped `FromSql for
-    // u64`); it is never negative, so the fallback is unreachable.
-    let db_rows: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM memories WHERE deleted_at IS NULL",
-        [],
-        |r| r.get(0),
-    )?;
+    // `live_memory_count` is never negative, so the fallback is unreachable.
+    let db_rows = doctor_probes::live_memory_count(conn)?;
     let db_rows = u64::try_from(db_rows).unwrap_or(0);
     let detail = format!("{markdown_files} markdown file(s), {db_rows} memories row(s)");
     Ok(if markdown_files == db_rows {

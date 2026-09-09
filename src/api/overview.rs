@@ -18,13 +18,12 @@
 //! that guard this themselves are still not enough: `api::list::run` opens
 //! a connection unconditionally, so the guard has to be here too.
 
-use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::api::{Ctx, list, repos, stats};
 use crate::prelude::*;
-use crate::store::{eval_runs, index_runs, memory_row};
+use crate::store::{Connection, edges, eval_runs, index_runs, memory_row};
 
 /// How many recent memories the Overview screen's list shows.
 const RECENT_MEMORIES: usize = 4;
@@ -335,19 +334,10 @@ fn last_run_of(conn: &Connection) -> Result<Option<LastRun>> {
         outcome: row.outcome,
         error: row.error,
         edges: EdgeCounts {
-            cochange: edge_count(conn, "co_changed")?,
-            imports: edge_count(conn, "imports")?,
+            cochange: edges::count_by_rel(conn, "co_changed")?,
+            imports: edges::count_by_rel(conn, "imports")?,
         },
     }))
-}
-
-/// `COUNT(*)` over one `edges` relation kind. `rel` is bound as a
-/// parameter, never interpolated.
-fn edge_count(conn: &Connection, rel: &str) -> Result<u64> {
-    let n: i64 = conn.query_row("SELECT COUNT(*) FROM edges WHERE rel = ?1", [rel], |r| {
-        r.get(0)
-    })?;
-    Ok(u64::try_from(n).unwrap_or(0))
 }
 
 /// The headline numbers of one eval run.

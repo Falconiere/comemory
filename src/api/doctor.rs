@@ -21,7 +21,8 @@
 //! `Err(Error::SchemaTooNew(_))` does it open a **second**, read-only
 //! connection and report the unknown `schema_meta` marker keys as a field
 //! instead of propagating the error. That second connection never runs
-//! `preflight` or `migrate::run` — it is a plain read-only `rusqlite::Connection`.
+//! `preflight` or `migrate::run` — it is a plain read-only connection opened
+//! via [`connection::open_read_only`].
 //!
 //! This fallback is deliberately narrow: a *genuinely* broken migration
 //! (its SQL fails to re-apply, or a mandatory pre-upgrade snapshot fails
@@ -38,6 +39,7 @@ use crate::config::Paths;
 use crate::prelude::*;
 use crate::store::migrate;
 use crate::store::migrate::preflight;
+use crate::store::{Connection, connection, schema_meta, vector};
 
 /// Check 4 — the migration-backup snapshot probe.
 pub mod backup;
@@ -233,14 +235,8 @@ fn writable_report(ctx: &mut Ctx<'_>, embed_hint: Option<String>) -> Result<Repo
     let paths = ctx.paths;
     let data_dir = paths.data_dir().to_string_lossy().into_owned();
     let conn = ctx.conn()?;
-    let schema_version: String = conn.query_row(
-        "SELECT value FROM schema_meta WHERE key = 'version'",
-        [],
-        |r| r.get(0),
-    )?;
-    let sqlite_vec_loaded = conn
-        .query_row("SELECT vec_version()", [], |r| r.get::<_, String>(0))
-        .is_ok();
+    let schema_version = schema_meta::version(conn)?;
+    let sqlite_vec_loaded = vector::is_loaded(conn);
     let extras = checks::run_all(conn, paths, &schema_version)?;
     let core = CoreFields {
         data_dir,
@@ -255,10 +251,9 @@ fn writable_report(ctx: &mut Ctx<'_>, embed_hint: Option<String>) -> Result<Repo
 
 /// The fallback report built when [`Ctx::conn`] was refused with
 /// `Error::SchemaTooNew` — see the module doc's "Forward-compat fallback".
-/// Opens a **second**, plain `rusqlite::Connection` in
-/// [`rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY`] mode: never `preflight`,
-/// never `migrate::run`, and (being read-only) incapable of creating a
-/// database even by accident.
+/// Opens a **second**, plain read-only connection via
+/// [`connection::open_read_only`]: never `preflight`, never `migrate::run`,
+/// and (being read-only) incapable of creating a database even by accident.
 ///
 /// `sqlite-vec`'s `vec_version()` is still reachable here even though this
 /// connection never goes through `store::connection::open`: it is
@@ -268,13 +263,8 @@ fn writable_report(ctx: &mut Ctx<'_>, embed_hint: Option<String>) -> Result<Repo
 /// this process — including this one — inherits it.
 fn forward_compat_report(paths: &Paths, embed_hint: Option<String>) -> Result<Report> {
     let data_dir = paths.data_dir().to_string_lossy().into_owned();
-    let conn = rusqlite::Connection::open_with_flags(
-        paths.db_path(),
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )?;
-    let sqlite_vec_loaded = conn
-        .query_row("SELECT vec_version()", [], |r| r.get::<_, String>(0))
-        .is_ok();
+    let conn = connection::open_read_only(paths.db_path())?;
+    let sqlite_vec_loaded = vector::is_loaded(&conn);
     let unknown_migration_keys = unknown_keys(&conn)?;
     let schema_version = stored_schema_version(&conn, migrate::CURRENT_VERSION);
     let extras = checks::run_all(&conn, paths, &schema_version)?;
@@ -300,14 +290,8 @@ fn forward_compat_report(paths: &Paths, embed_hint: Option<String>) -> Result<Re
 /// would otherwise print as deceptively up to date. Falls back to the same
 /// `"unknown"` sentinel [`unwritable_report`] uses when the version cannot
 /// be read at all, or cannot be trusted here.
-fn stored_schema_version(conn: &rusqlite::Connection, current: &str) -> String {
-    let stored = conn
-        .query_row(
-            "SELECT value FROM schema_meta WHERE key = 'version'",
-            [],
-            |r| r.get::<_, String>(0),
-        )
-        .unwrap_or_else(|_| "unknown".to_string());
+fn stored_schema_version(conn: &Connection, current: &str) -> String {
+    let stored = schema_meta::version(conn).unwrap_or_else(|_| "unknown".to_string());
     if stored == current {
         "unknown".to_string()
     } else {
@@ -320,7 +304,7 @@ fn stored_schema_version(conn: &rusqlite::Connection, current: &str) -> String {
 /// `store::migrate::preflight`'s own set-derivation rather than
 /// re-deriving it, so the two can never disagree about what "unknown"
 /// means.
-fn unknown_keys(conn: &rusqlite::Connection) -> Result<Vec<String>> {
+fn unknown_keys(conn: &Connection) -> Result<Vec<String>> {
     let applied = preflight::applied_keys(conn)?;
     let expected = preflight::expected_markers();
     Ok(applied
