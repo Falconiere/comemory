@@ -11,12 +11,13 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 
-use rusqlite::{Connection, OptionalExtension, Transaction, params};
-
 use crate::graph::{coactivate, cochange, imports, pagerank};
 use crate::prelude::*;
+use crate::store::code_row;
 use crate::store::edges::{self, EdgeKey, file_node_id, file_node_prefix};
 use crate::store::memory_row;
+use crate::store::repo_marker;
+use crate::store::{Connection, Transaction};
 use time::OffsetDateTime;
 
 /// Materialize the code graph for `repo`: mine new co-change pairs
@@ -80,12 +81,7 @@ pub fn materialize(
 
 /// Every distinct indexed path for `repo`, sorted ascending.
 fn known_paths(tx: &Transaction<'_>, repo: &str) -> Result<Vec<String>> {
-    let mut stmt =
-        tx.prepare("SELECT DISTINCT path FROM code_symbols WHERE repo = ?1 ORDER BY path")?;
-    let rows = stmt
-        .query_map([repo], |r| r.get(0))?
-        .collect::<std::result::Result<Vec<String>, _>>()?;
-    Ok(rows)
+    code_row::distinct_paths_for_repo(tx, repo)
 }
 
 /// Mine co-change pairs from commits newer than the stored cursor and
@@ -106,14 +102,7 @@ fn mine_into_edges(
     repo: &str,
     known: &[String],
 ) -> Result<(HashMap<String, u32>, String)> {
-    let cursor: Option<String> = tx
-        .query_row(
-            "SELECT last_mined_commit FROM repo_marker WHERE repo = ?1",
-            [repo],
-            |r| r.get::<_, Option<String>>(0),
-        )
-        .optional()?
-        .flatten();
+    let cursor = repo_marker::last_mined_commit(tx, repo)?;
     let known_set: HashSet<String> = known.iter().cloned().collect();
     let outcome = cochange::mine_cochange(repo_root, &known_set, cursor.as_deref())?;
     if outcome.cursor_lost {
@@ -121,12 +110,7 @@ fn mine_into_edges(
         // `%`/`_` cannot widen the delete. Both endpoints of a co_changed
         // edge live in the same repo, so matching src_id suffices.
         let prefix = file_node_prefix(repo);
-        tx.execute(
-            "DELETE FROM edges \
-              WHERE rel = 'co_changed' AND src_kind = 'file' \
-                AND substr(src_id, 1, length(?1)) = ?1",
-            [&prefix],
-        )?;
+        edges::delete_co_changed_for_repo(tx, &prefix)?;
     }
     for pair in &outcome.pairs {
         let src = file_node_id(repo, &pair.a);
@@ -158,12 +142,7 @@ fn mine_into_edges(
 /// even on a crash. The `repo_marker` row is created on first mine;
 /// `last_head` / `last_indexed_at` are preserved via the targeted update.
 fn advance_cursor(tx: &Transaction<'_>, repo: &str, cursor: &str) -> Result<()> {
-    tx.execute(
-        "INSERT INTO repo_marker(repo, last_mined_commit) VALUES(?1, ?2) \
-         ON CONFLICT(repo) DO UPDATE SET last_mined_commit = excluded.last_mined_commit",
-        params![repo, cursor],
-    )?;
-    Ok(())
+    repo_marker::advance_mined_cursor(tx, repo, cursor)
 }
 
 /// Replace the outgoing `imports` edges of every file (re)indexed this
@@ -181,10 +160,7 @@ fn refresh_import_edges(
 ) -> Result<()> {
     for (file, modules) in imports_by_file {
         let src = file_node_id(repo, file);
-        tx.execute(
-            "DELETE FROM edges WHERE src_kind='file' AND src_id = ?1 AND rel='imports'",
-            [&src],
-        )?;
+        edges::delete_imports_from(tx, &src)?;
         for module in modules {
             let Some(target) = index.resolve(module, Some(file)) else {
                 continue;
@@ -246,48 +222,32 @@ fn project_pagerank(tx: &Transaction<'_>, repo: &str, known: &[String]) -> Resul
     // [`mine_into_edges`]) keeps other repos' rows out of the fetch; the
     // Rust-side strip below still guards the dst side and yields the
     // repo-relative paths.
-    let mut stmt = tx.prepare(
-        "SELECT src_id, dst_id, rel, weight FROM edges \
-          WHERE rel IN ('co_changed','imports') \
-            AND substr(src_id, 1, length(?1)) = ?1 \
-          ORDER BY rel, src_id, dst_id",
-    )?;
-    let rows = stmt
-        .query_map([&prefix], |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, String>(2)?,
-                r.get::<_, i64>(3)?,
-            ))
-        })?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let rows = edges::co_changed_and_imports_edges(tx, &prefix)?;
     let mut graph: Vec<(u32, u32, f64)> = Vec::new();
-    for (src, dst, rel, weight) in &rows {
+    for row in &rows {
         // src is pre-filtered in SQL; the strip also re-checks dst (a
         // cross-repo edge must not slip in) and drops the prefix.
-        let (Some(s), Some(d)) = (src.strip_prefix(&prefix), dst.strip_prefix(&prefix)) else {
+        let (Some(s), Some(d)) = (
+            row.src_id.strip_prefix(&prefix),
+            row.dst_id.strip_prefix(&prefix),
+        ) else {
             continue;
         };
         let (Some(&si), Some(&di)) = (index.get(s), index.get(d)) else {
-            tracing::debug!(src = %src, dst = %dst, "materialize: edge references unindexed path; skipping");
+            tracing::debug!(
+                src = %row.src_id, dst = %row.dst_id,
+                "materialize: edge references unindexed path; skipping"
+            );
             continue;
         };
-        let w = *weight as f64;
+        let w = row.weight as f64;
         graph.push((si, di, w));
-        if rel == "co_changed" {
+        if row.rel == "co_changed" {
             graph.push((di, si, w));
         }
     }
     let scores = pagerank::pagerank(known.len(), &graph);
-    let mut update =
-        tx.prepare("UPDATE code_symbols SET rank_score = ?1 WHERE repo = ?2 AND path = ?3")?;
-    let mut written: u64 = 0;
-    for (path, score) in known.iter().zip(&scores) {
-        let rows = update.execute(params![score, repo, path])?;
-        written = written.saturating_add(u64::try_from(rows).unwrap_or(0));
-    }
-    Ok(written)
+    code_row::update_rank_scores(tx, repo, known, &scores)
 }
 
 #[cfg(test)]

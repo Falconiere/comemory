@@ -9,9 +9,9 @@
 
 use std::path::{Component, Path, PathBuf};
 
-use rusqlite::{Connection, OptionalExtension, params};
-
 use crate::prelude::*;
+use crate::store::Connection;
+use crate::store::documents;
 use crate::store::edges::{self, EdgeKey, MEMBER_OF_SOURCE, REFERENCES_DOCUMENT, REFERENCES_FILE};
 
 /// Derive every deterministic edge owed by one just-committed document:
@@ -82,13 +82,7 @@ fn resolve_memory_references(
     document_id: &str,
 ) -> Result<()> {
     let bare = format!("{repo}:{relative_path}");
-    let mut stmt = conn.prepare(
-        "SELECT src_id FROM edges \
-          WHERE rel = ?1 AND src_kind = 'memory' AND dst_kind = 'file' AND dst_id = ?2",
-    )?;
-    let memory_ids: Vec<String> = stmt
-        .query_map(params![REFERENCES_FILE, bare], |r| r.get(0))?
-        .collect::<std::result::Result<_, _>>()?;
+    let memory_ids = edges::memory_ids_referencing_file(conn, REFERENCES_FILE, &bare)?;
     for memory_id in memory_ids {
         edges::insert(
             conn,
@@ -157,14 +151,7 @@ fn same_source_document(
     source_id: &str,
     relative_path: &str,
 ) -> Result<Option<String>> {
-    conn.query_row(
-        "SELECT d.id FROM documents d JOIN source_files sf ON sf.id = d.source_file_id \
-          WHERE sf.source_id = ?1 AND sf.relative_path = ?2",
-        params![source_id, relative_path],
-        |r| r.get(0),
-    )
-    .optional()
-    .map_err(Error::from)
+    documents::document_id_in_source(conn, source_id, relative_path)
 }
 
 /// Look up a live document by `(repo, relative_path)` across every
@@ -176,13 +163,7 @@ fn resolve_document_id(
     repo: &str,
     relative_path: &str,
 ) -> Result<Option<String>> {
-    let mut stmt = conn.prepare(
-        "SELECT d.id FROM documents d JOIN source_files sf ON sf.id = d.source_file_id \
-          WHERE d.repo = ?1 AND sf.relative_path = ?2",
-    )?;
-    let ids: Vec<String> = stmt
-        .query_map(params![repo, relative_path], |r| r.get(0))?
-        .collect::<std::result::Result<_, _>>()?;
+    let ids = documents::document_ids_for_repo_path(conn, repo, relative_path)?;
     match ids.as_slice() {
         [] => Ok(None),
         [id] => Ok(Some(id.clone())),

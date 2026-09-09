@@ -8,12 +8,11 @@
 
 use std::collections::HashSet;
 
-use rusqlite::Connection;
 use time::{Duration, OffsetDateTime, format_description::well_known::Iso8601};
 
 use crate::prelude::*;
 use crate::stats::source;
-use crate::store::memory_row;
+use crate::store::{Connection, memory_row, retrieval_log};
 
 /// Return the subset of `candidates` that appear in any `retrieval_log` row
 /// with `source IN ('search','context')`, `at` in `[cutoff, at]`, and
@@ -32,19 +31,16 @@ pub(crate) fn memories_seen_recently(
         return Ok(HashSet::new());
     }
     let cutoff = lookback_cutoff(at, lookback_days)?;
-    let mut stmt = conn.prepare(
-        "SELECT returned_ids FROM retrieval_log \
-          WHERE source IN (?1, ?2) \
-            AND at >= ?3 AND at <= ?4 \
-            AND (repo IS NULL OR repo = ?5)",
-    )?;
-    let rows = stmt.query_map(
-        rusqlite::params![source::SEARCH, source::CONTEXT, cutoff, at, repo],
-        |r| r.get::<_, String>(0),
+    let raws = retrieval_log::returned_ids_in_window(
+        conn,
+        source::SEARCH,
+        source::CONTEXT,
+        &cutoff,
+        at,
+        Some(repo),
     )?;
     let mut hit: HashSet<String> = HashSet::new();
-    for row in rows {
-        let raw = row?;
+    for raw in raws {
         let ids: Vec<String> = match serde_json::from_str(&raw) {
             Ok(v) => v,
             Err(e) => {

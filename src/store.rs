@@ -9,6 +9,13 @@
 /// driver ever does.
 pub use rusqlite::Connection;
 
+/// The SQLite transaction handle a caller-owned `BEGIN`/`COMMIT` produces.
+/// Re-exported for the same reason as [`Connection`]: a `store::`-helper
+/// caller that opens its own transaction (`graph::materialize`,
+/// `graph::memory_rank`) names `store::Transaction` rather than importing
+/// `rusqlite` directly.
+pub use rusqlite::Transaction;
+
 /// Whether an `Error` wraps SQLite's `SQLITE_BUSY` / `SQLITE_LOCKED`.
 pub mod busy;
 /// `code_ref` side table: version-anchor store for explicit code references.
@@ -54,8 +61,13 @@ pub mod migrate;
 pub mod random_id;
 /// Drop every code-index row and edge for one repo label.
 pub mod repo_drop;
+/// `repo_marker.last_mined_commit` — the co-change mining cursor.
+pub mod repo_marker;
 /// Enumerate distinct, canonicalized `repo_marker.root_path` values.
 pub mod repo_marker_roots;
+/// `retrieval_log` reads — the raw `returned_ids` window query behind the
+/// search→edit lookback.
+pub mod retrieval_log;
 /// DDL strings for the tables, `vec0` vtabs and FTS5 indexes.
 pub mod schema;
 /// Bulk `(id, simhash)` scan over live memories, shared by save + consolidate.

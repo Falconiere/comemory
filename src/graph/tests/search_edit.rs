@@ -13,10 +13,11 @@
 use crate::test_common::git_commit;
 use crate::test_common::git_repo;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use comemory::graph::materialize::materialize;
+use comemory::graph::search_edit::memories_seen_recently;
 use comemory::store::code_row::{self, CodeSymbolRow};
 use comemory::store::connection;
 use comemory::store::memory_row;
@@ -159,5 +160,42 @@ fn a_disabled_reinforcement_window_harvests_nothing() {
     assert!(
         used_event(&conn, "aaaaaaa2").is_none(),
         "a disabled window must not write a co-activation reward either"
+    );
+}
+
+/// Direct coverage of `memories_seen_recently` (moved off the raw
+/// `conn.prepare` onto `store::retrieval_log::returned_ids_in_window`,
+/// docs/toolu/plans/2026-09-07-store-layer-chokepoint.md s4-graph-algos):
+/// a malformed `returned_ids` row is skipped rather than fatal, a matching
+/// row inside the lookback window is counted, and an empty `candidates` set
+/// short-circuits to an empty result.
+#[test]
+fn memories_seen_recently_skips_malformed_rows_and_short_circuits_on_empty_candidates() {
+    let home = TempDir::new().expect("home");
+    let conn = connection::open(home.path().join("comemory.db")).expect("open db");
+
+    seed_search_hit(&conn, "aaaaaaa1");
+    // Computed AFTER seeding: the window's upper bound must be at or after
+    // every row's own `at`, or a row seeded a few nanoseconds later than a
+    // pre-computed bound would fall just outside the window.
+    let at = memory_row::iso_format(OffsetDateTime::now_utc()).expect("iso now");
+    conn.execute(
+        "INSERT INTO retrieval_log(query_id, query, returned_ids, at, duration_ms, repo, source) \
+         VALUES ('q-malformed', 'guide docs', 'not-json', ?1, 1, ?2, 'search')",
+        rusqlite::params![at, REPO],
+    )
+    .expect("insert malformed retrieval_log row");
+
+    let mut candidates: HashSet<String> = HashSet::new();
+    candidates.insert("aaaaaaa1".to_string());
+    candidates.insert("aaaaaaa2".to_string());
+
+    let hit = memories_seen_recently(&conn, REPO, &candidates, &at, 7).expect("lookback");
+    assert_eq!(hit, HashSet::from(["aaaaaaa1".to_string()]));
+
+    let empty = memories_seen_recently(&conn, REPO, &HashSet::new(), &at, 7).expect("empty");
+    assert!(
+        empty.is_empty(),
+        "empty candidates must short-circuit to an empty set"
     );
 }

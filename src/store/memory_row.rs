@@ -331,6 +331,45 @@ pub fn iso_format(t: OffsetDateTime) -> Result<String> {
         .map_err(|e| Error::Other(format!("iso8601 format: {e}")))
 }
 
+/// Every live (`deleted_at IS NULL`) memory id, sorted ascending — the
+/// deterministic dense-index mapping `graph::pagerank` needs. See
+/// [`crate::graph::memory_rank::derive_memory_graph`].
+pub(crate) fn live_ids(conn: &Connection) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare("SELECT id FROM memories WHERE deleted_at IS NULL ORDER BY id")?;
+    let rows = stmt
+        .query_map([], |r| r.get(0))?
+        .collect::<std::result::Result<Vec<String>, _>>()?;
+    Ok(rows)
+}
+
+/// Write one `rank_score` per memory id, positionally aligned with `scores`.
+/// See [`crate::graph::memory_rank::materialize_memory_rank`].
+pub(crate) fn update_rank_scores(conn: &Connection, ids: &[String], scores: &[f64]) -> Result<()> {
+    let mut update = conn.prepare("UPDATE memories SET rank_score = ?1 WHERE id = ?2")?;
+    for (id, score) in ids.iter().zip(scores) {
+        update.execute(rusqlite::params![score, id])?;
+    }
+    Ok(())
+}
+
+/// Bump `access_count`/`last_accessed` for one chunk of memory ids in a
+/// single `UPDATE ... WHERE id IN (...)`. Caller chunks `ids` to stay under
+/// SQLite's bound-parameter limit. See
+/// [`crate::graph::coactivate::bump_activation`].
+pub(crate) fn bump_access(conn: &Connection, ids: &[String], at: &str) -> Result<()> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let qmarks = crate::store::qmarks(ids.len());
+    let sql = format!(
+        "UPDATE memories SET access_count = access_count + 1, last_accessed = ?1 \
+          WHERE id IN ({qmarks})"
+    );
+    let params = std::iter::once(at).chain(ids.iter().map(String::as_str));
+    conn.execute(&sql, rusqlite::params_from_iter(params))?;
+    Ok(())
+}
+
 #[cfg(test)]
 #[path = "tests/memory_row.rs"]
 mod tests;

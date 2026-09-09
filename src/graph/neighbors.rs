@@ -16,11 +16,11 @@
 
 use std::collections::BTreeSet;
 
-use rusqlite::{Connection, named_params};
 use serde::Serialize;
 
 use crate::prelude::*;
-use crate::store::edges::file_node_id;
+use crate::store::Connection;
+use crate::store::edges::{self, file_node_id};
 
 /// The weight floor that keeps every edge: `imports` edges always carry
 /// weight `1`, so this is "no filtering". It is what `retrieval::bundle`
@@ -49,54 +49,6 @@ pub struct NeighborRow {
     pub weight: i64,
 }
 
-/// The prefix every file node id carries, mirrored from
-/// [`crate::store::edges::file_node_id`].
-const FILE_PREFIX: &str = "file:";
-
-/// 1-based `substr` start that strips [`FILE_PREFIX`] off a file node id,
-/// derived from the prefix itself rather than written out as a literal
-/// offset that would silently rot if the id grammar changed.
-const ID_BODY_START: usize = FILE_PREFIX.len() + 1;
-
-/// One-hop, undirected `imports`/`co_changed` graph query seeded from a set
-/// of `file:<repo>:<path>` ids. Not recursive — a single query, self-joined
-/// against both edge orientations (the same undirected-walk idiom
-/// [`crate::retrieval::graph_route`] and
-/// [`crate::retrieval::code_prior::priors`]'s affinity lookup use) so a file
-/// that imports a seed is found exactly as one a seed imports.
-///
-/// `:seeds` is a JSON array BOUND as a named parameter (never interpolated),
-/// matching [`crate::retrieval::graph_route::expand_memory_seeds`]'s own
-/// `json_each`-over-a-bound-string pattern. `:min_weight` drops edges below
-/// the caller's floor on both orientations.
-///
-/// Multiple contributions to the same `(repo, path, rel)` neighbor (more than
-/// one seed file reaching it via the same relation) collapse to one row
-/// carrying the strongest (`MAX`) weight, so the output stays one row per
-/// `(file, rel)`. Built once at first use, since [`ID_BODY_START`] is
-/// computed rather than literal.
-static NEIGHBOR_SQL: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
-    format!(
-        "\
-    WITH seeds(id) AS (SELECT value FROM json_each(:seeds)),
-    one_hop(rest, rel, weight) AS (
-      SELECT substr(e.dst_id, {ID_BODY_START}), e.rel, e.weight FROM edges e JOIN seeds s ON s.id = e.src_id
-       WHERE e.src_kind='file' AND e.dst_kind='file' AND e.rel IN ('imports','co_changed')
-         AND e.weight >= :min_weight
-         AND e.dst_id NOT IN (SELECT id FROM seeds)
-      UNION ALL
-      SELECT substr(e.src_id, {ID_BODY_START}), e.rel, e.weight FROM edges e JOIN seeds s ON s.id = e.dst_id
-       WHERE e.src_kind='file' AND e.dst_kind='file' AND e.rel IN ('imports','co_changed')
-         AND e.weight >= :min_weight
-         AND e.src_id NOT IN (SELECT id FROM seeds)
-    )
-    SELECT substr(rest,1,instr(rest,':')-1) AS repo, substr(rest,instr(rest,':')+1) AS path,
-           rel, MAX(weight) AS weight
-      FROM one_hop WHERE instr(rest,':') > 0
-     GROUP BY repo, path, rel ORDER BY weight DESC, rel ASC, path ASC"
-    )
-});
-
 /// Serializes a set of `(repo, path)` pairs as the JSON array of
 /// `file:<repo>:<path>` ids that `json_each(:seeds)` reads, formatting each
 /// id into the output as it goes rather than collecting them first. Serde
@@ -119,12 +71,13 @@ impl serde::Serialize for SeedIds<'_> {
     }
 }
 
-/// Query the [`NEIGHBOR_SQL`] one-hop neighborhood of `seeds`, a list of
-/// `(repo, path)` pairs that is deduplicated here (callers may pass the
-/// same file twice — a memory citing several symbols in one file does).
-/// Returns `Ok(vec![])` without touching the database when `seeds` is empty:
-/// an empty seed set has no neighborhood, and `json_each` over an empty
-/// array yields no rows anyway.
+/// Query the one-hop neighborhood of `seeds`
+/// ([`crate::store::edges::file_neighbor_rows`]), a list of `(repo, path)`
+/// pairs that is deduplicated here (callers may pass the same file twice —
+/// a memory citing several symbols in one file does). Returns `Ok(vec![])`
+/// without touching the database when `seeds` is empty: an empty seed set
+/// has no neighborhood, and `json_each` over an empty array yields no rows
+/// anyway.
 ///
 /// `min_weight` drops edges whose accumulated weight is below the floor;
 /// pass [`DEFAULT_MIN_WEIGHT`] to keep every edge.
@@ -141,21 +94,16 @@ pub fn file_neighbors(
     // JSON string that `json_each(:seeds)` binds, so there is no
     // `Vec<String>` of them to build and drop on a retrieval hot path.
     let seeds_json = serde_json::to_string(&SeedIds(&distinct))?;
-    let mut stmt = conn.prepare(&NEIGHBOR_SQL)?;
-    let rows = stmt
-        .query_map(
-            named_params! { ":seeds": seeds_json, ":min_weight": min_weight },
-            |r| {
-                Ok(NeighborRow {
-                    repo: r.get(0)?,
-                    path: r.get(1)?,
-                    rel: r.get(2)?,
-                    weight: r.get(3)?,
-                })
-            },
-        )?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    Ok(rows)
+    let rows = edges::file_neighbor_rows(conn, &seeds_json, min_weight)?;
+    Ok(rows
+        .into_iter()
+        .map(|(repo, path, rel, weight)| NeighborRow {
+            path,
+            repo,
+            rel,
+            weight,
+        })
+        .collect())
 }
 
 #[cfg(test)]

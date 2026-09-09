@@ -13,38 +13,16 @@
 
 use std::collections::BTreeMap;
 
-use rusqlite::{Connection, Transaction, params};
-
 use crate::graph::pagerank;
 use crate::prelude::*;
+use crate::store::edges;
+use crate::store::memory_row;
+use crate::store::{Connection, Transaction};
 
 /// A derived memory graph: sorted live memory ids (the dense node index,
 /// by position) paired with weighted `(src, dst, weight)` edges over those
 /// indices — the exact shape [`pagerank::pagerank`] consumes.
 pub type MemoryGraph = (Vec<String>, Vec<(u32, u32, f64)>);
-
-/// Direct memory→memory relations, read in the direction they are stored
-/// (src = the newer/building memory) so PageRank mass flows to the
-/// referenced memory. The `ORDER BY` pins f64 accumulation order to the
-/// logical graph rather than rowid order — the `project_pagerank` rule.
-const DIRECT_EDGES_SQL: &str = "SELECT src_id, dst_id, weight FROM edges \
-      WHERE src_kind = 'memory' AND dst_kind = 'memory' \
-        AND rel IN ('supersedes','conflicts_with','derived_from','relates_to') \
-     ORDER BY rel, src_id, dst_id";
-
-/// Co-citation: one row per unordered memory pair that references the same
-/// target through the same rel, weighted by the number of shared targets.
-/// `a.src_id < b.src_id` drops self-pairs and yields each pair once; the
-/// per-rel join sidesteps the bare-vs-`file:`-prefixed dst id divergence,
-/// since ids from different rels never meet.
-const CO_CITATION_SQL: &str = "SELECT a.src_id, b.src_id, CAST(COUNT(*) AS REAL) AS w \
-       FROM edges a \
-       JOIN edges b ON a.rel = b.rel AND a.dst_kind = b.dst_kind \
-                   AND a.dst_id = b.dst_id AND a.src_id < b.src_id \
-      WHERE a.src_kind = 'memory' AND b.src_kind = 'memory' \
-        AND a.rel IN ('references_file','references_symbol','co_activated') \
-      GROUP BY a.src_id, b.src_id \
-      ORDER BY a.src_id, b.src_id";
 
 /// Recompute PageRank over the live-memory graph and write every
 /// `memories.rank_score` in one transaction. A corpus with no live
@@ -93,23 +71,7 @@ pub fn derive_memory_graph(conn: &Connection) -> Result<MemoryGraph> {
 /// mapping PageRank needs. Soft-deleted rows leave the node universe, so
 /// their mass redistributes on the next recompute.
 fn live_memory_ids(conn: &Connection) -> Result<Vec<String>> {
-    let mut stmt = conn.prepare("SELECT id FROM memories WHERE deleted_at IS NULL ORDER BY id")?;
-    let rows = stmt
-        .query_map([], |r| r.get(0))?
-        .collect::<std::result::Result<Vec<String>, _>>()?;
-    Ok(rows)
-}
-
-/// Fetch `(src_id, dst_id, weight)` triples for one edge query, with the
-/// weight already widened to f64 so both edge sources share one row shape.
-fn fetch_edges(conn: &Connection, sql: &str) -> Result<Vec<(String, String, f64)>> {
-    let mut stmt = conn.prepare(sql)?;
-    let rows = stmt
-        .query_map([], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get(2)?))
-        })?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    Ok(rows)
+    memory_row::live_ids(conn)
 }
 
 /// Append the directed memory→memory relation edges to `graph`.
@@ -118,7 +80,7 @@ fn push_direct_edges(
     index: &BTreeMap<&str, u32>,
     graph: &mut Vec<(u32, u32, f64)>,
 ) -> Result<()> {
-    for (src, dst, weight) in fetch_edges(conn, DIRECT_EDGES_SQL)? {
+    for (src, dst, weight) in edges::memory_direct_relation_edges(conn)? {
         if let Some((s, d)) = resolve(index, &src, &dst) {
             graph.push((s, d, weight));
         }
@@ -134,7 +96,7 @@ fn push_co_citation_edges(
     index: &BTreeMap<&str, u32>,
     graph: &mut Vec<(u32, u32, f64)>,
 ) -> Result<()> {
-    for (src, dst, weight) in fetch_edges(conn, CO_CITATION_SQL)? {
+    for (src, dst, weight) in edges::memory_co_citation_edges(conn)? {
         if let Some((s, d)) = resolve(index, &src, &dst) {
             graph.push((s, d, weight));
             graph.push((d, s, weight));
@@ -163,11 +125,7 @@ fn resolve(index: &BTreeMap<&str, u32>, src: &str, dst: &str) -> Option<(u32, u3
 /// from the same dense index). Split out of [`materialize_memory_rank`] so
 /// the prepared statement's borrow of `tx` ends before the commit.
 fn write_scores(tx: &Transaction<'_>, nodes: &[String], scores: &[f64]) -> Result<()> {
-    let mut update = tx.prepare("UPDATE memories SET rank_score = ?1 WHERE id = ?2")?;
-    for (id, score) in nodes.iter().zip(scores) {
-        update.execute(params![score, id])?;
-    }
-    Ok(())
+    memory_row::update_rank_scores(tx, nodes, scores)
 }
 
 #[cfg(test)]
