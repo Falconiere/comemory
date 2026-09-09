@@ -18,12 +18,12 @@
 //! halves are best-effort there by design, and a failure of either is
 //! logged rather than failing the job, exactly as at every other write seam.
 
-use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
 use crate::api::Ctx;
 use crate::graph::{derived, materialize};
 use crate::prelude::*;
+use crate::store::{Connection, doctor_probes, repo_marker};
 
 /// `POST /api/v1/graph/recompute` request. The recompute always covers
 /// every indexed repo — a per-repo variant would leave PageRank comparable
@@ -62,11 +62,7 @@ pub fn run(ctx: &mut Ctx<'_>, _req: Request) -> Result<Response> {
 /// authoritative repo list — a `code_symbols` scan would answer the same
 /// thing more expensively.
 fn known_repos(conn: &Connection) -> Result<Vec<String>> {
-    let mut stmt = conn.prepare("SELECT repo FROM repo_marker ORDER BY repo")?;
-    let rows = stmt
-        .query_map([], |r| r.get(0))?
-        .collect::<std::result::Result<Vec<String>, _>>()?;
-    Ok(rows)
+    repo_marker::all_repos(conn)
 }
 
 /// Rescore each repo in one shared transaction, returning the total number
@@ -87,11 +83,7 @@ fn recompute_repos(conn: &mut Connection, repos: &[String]) -> Result<u64> {
 /// [`derived::refresh_derived_best_effort`] just wrote, since the memory
 /// PageRank scores every live row and no other.
 fn live_memory_count(conn: &Connection) -> Result<u64> {
-    let count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM memories WHERE deleted_at IS NULL",
-        [],
-        |r| r.get(0),
-    )?;
+    let count = doctor_probes::live_memory_count(conn)?;
     Ok(u64::try_from(count).unwrap_or(0))
 }
 

@@ -171,3 +171,41 @@ fn matching_terms_with_no_terms_never_queries_the_db() {
     let rows = query_expansions::matching_terms(&conn, &[], 10).expect("query");
     assert!(rows.is_empty());
 }
+
+#[test]
+fn count_and_page_agree_with_the_table_and_page_ordering() {
+    let (_d, conn) = seed_db();
+    assert_eq!(query_expansions::count(&conn).expect("count on empty"), 0);
+
+    for (term, expansion, support) in [
+        ("lock", "advisory", 5_i64),
+        ("wal", "checkpoint", 9),
+        ("index", "btree", 1),
+    ] {
+        query_expansions::insert(
+            &conn,
+            &NewExpansion {
+                term,
+                expansion,
+                support,
+                last_mined: "2026-09-01T00:00:00Z",
+            },
+        )
+        .expect("seed");
+    }
+
+    assert_eq!(query_expansions::count(&conn).expect("count"), 3);
+
+    let first_page = query_expansions::page(&conn, 2, 0).expect("page 1");
+    assert_eq!(first_page.len(), 2);
+    assert_eq!(first_page[0].term, "wal", "strongest support first");
+    assert_eq!(first_page[1].term, "lock");
+
+    let second_page = query_expansions::page(&conn, 2, 2).expect("page 2");
+    assert_eq!(second_page.len(), 1);
+    assert_eq!(second_page[0].term, "index");
+
+    // A negative LIMIT means "no limit" — the `Page`-"all" sentinel.
+    let all = query_expansions::page(&conn, -1, 0).expect("all");
+    assert_eq!(all.len(), 3);
+}

@@ -28,7 +28,7 @@
 //! the call reports `false`, so a caller that wrongly derives an id from a
 //! filename cannot take a live memory with it.
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::prelude::*;
 use crate::store::edges;
@@ -123,6 +123,19 @@ pub fn expired_deleted_ids(conn: &Connection, retention_days: u32) -> Result<Vec
         .query_map([modifier], |r| r.get::<_, String>(0))?
         .collect::<std::result::Result<Vec<_>, _>>()?;
     Ok(ids)
+}
+
+/// Whether a soft-deleted `memories` row carries `content_hash` — behind
+/// `api::sync::import_state`'s "already trashed under this hash" check.
+pub fn trashed_with_hash(conn: &Connection, content_hash: &str) -> Result<bool> {
+    conn.query_row(
+        "SELECT 1 FROM memories WHERE content_hash = ?1 AND deleted_at IS NOT NULL",
+        [content_hash],
+        |r| r.get::<_, i64>(0),
+    )
+    .optional()
+    .map(|row| row.is_some())
+    .map_err(Into::into)
 }
 
 #[cfg(test)]

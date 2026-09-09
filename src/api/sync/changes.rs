@@ -1,14 +1,12 @@
 //! `GET /sync/changes` — pull log entries above a cursor.
 
-use rusqlite::OptionalExtension;
-
 use crate::api::Ctx;
 use crate::api::sync::{
     ChangesResponse, SyncEntry, SyncOp, SyncRecord, SyncVector, WireFrontmatter,
 };
 use crate::memory::{Frontmatter, MemoryStore};
 use crate::prelude::*;
-use crate::store::{embed, sync_log, vector};
+use crate::store::{Connection, embed, schema_meta, sync_log, vector};
 
 const MIN_LIMIT: usize = 1;
 const MAX_LIMIT: usize = 500;
@@ -53,7 +51,7 @@ fn author_for(store: &MemoryStore, id: &str) -> Option<String> {
 
 pub(crate) fn enrich_record(
     store: &MemoryStore,
-    conn: &rusqlite::Connection,
+    conn: &Connection,
     id: &str,
 ) -> Result<Option<SyncRecord>> {
     let rec = match store.load(id) {
@@ -95,23 +93,13 @@ pub(crate) fn wire_frontmatter(fm: &Frontmatter) -> WireFrontmatter {
 }
 
 /// Encode a memory vector row for the wire when a model is configured.
-pub(crate) fn vector_for_memory(
-    conn: &rusqlite::Connection,
-    memory_id: &str,
-) -> Result<Option<SyncVector>> {
-    let model = memory_vector_model(conn)?;
+pub(crate) fn vector_for_memory(conn: &Connection, memory_id: &str) -> Result<Option<SyncVector>> {
+    let model = schema_meta::memory_vector_model(conn)?;
     if model.is_empty() {
         return Ok(None);
     }
     let dim = vector::dim_memory(conn)?;
-    let blob: Option<Vec<u8>> = conn
-        .query_row(
-            "SELECT embedding FROM memory_vec WHERE memory_id = ?1",
-            [memory_id],
-            |r| r.get(0),
-        )
-        .optional()?;
-    let Some(blob) = blob else {
+    let Some(blob) = vector::memory_embedding_blob(conn, memory_id)? else {
         return Ok(None);
     };
     let values = embed::from_vec_blob(&blob, dim)?;
@@ -123,13 +111,4 @@ pub(crate) fn vector_for_memory(
             embed::to_vec_blob(&values),
         ),
     }))
-}
-
-fn memory_vector_model(conn: &rusqlite::Connection) -> Result<String> {
-    conn.query_row(
-        "SELECT value FROM schema_meta WHERE key = 'memory_vector_model'",
-        [],
-        |r| r.get(0),
-    )
-    .map_err(|e| Error::Config(format!("memory_vector_model: {e}")))
 }

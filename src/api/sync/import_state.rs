@@ -1,13 +1,11 @@
 //! Import validation and memory-state probes (rules 1–2, 6).
 
-use rusqlite::{Connection, OptionalExtension};
-
 use crate::api::sync::{ImportEntry, SyncRecord};
 use crate::memory::MemoryStore;
 use crate::memory::frontmatter::Frontmatter;
 use crate::memory::id::{is_valid_memory_id, memory_id, sha256_hex};
 use crate::prelude::*;
-use crate::store::sync_log;
+use crate::store::{Connection, memory_purge, sync_log};
 
 /// Rule 1 — schema/hash/id validation for upsert/restore payloads.
 pub(crate) fn validate_record(entry: &ImportEntry, record: &SyncRecord) -> Option<String> {
@@ -87,14 +85,7 @@ pub(crate) fn stale_for_cursor(conn: &Connection, memory_id: &str, cursor: i64) 
 
 /// Whether a soft-deleted mirror row carries `content_hash`.
 pub(crate) fn trashed_with_hash(conn: &Connection, content_hash: &str) -> Result<bool> {
-    conn.query_row(
-        "SELECT 1 FROM memories WHERE content_hash = ?1 AND deleted_at IS NOT NULL",
-        [content_hash],
-        |r| r.get::<_, i64>(0),
-    )
-    .optional()
-    .map(|row| row.is_some())
-    .map_err(Into::into)
+    memory_purge::trashed_with_hash(conn, content_hash)
 }
 
 /// True when `.trash/` holds a markdown file for `id`.

@@ -27,9 +27,7 @@ use crate::output::page::Page;
 use crate::output::search::title_of;
 use crate::prelude::*;
 use crate::store::Connection;
-use crate::store::code_graph_nodes::{
-    FileExpr, NodeRow, cites_file_predicate, fetch_node, fetch_nodes,
-};
+use crate::store::code_graph_nodes::{self, NodeRow, fetch_node, fetch_nodes};
 
 /// Default page size for `GET /graph/nodes`, matching the `/api/v1`
 /// pagination convention (spec §1 "Pagination"). `0` still means "all".
@@ -297,58 +295,35 @@ fn parse_edge_kinds(raw: Option<&str>) -> Result<Rel> {
     })
 }
 
-/// The file's top-level symbols, strongest PageRank first. Chunk children
-/// (`parent_id IS NOT NULL`) are excluded so a split oversized symbol does
-/// not crowd out its siblings.
+/// The file's top-level symbols, strongest PageRank first.
 fn fetch_top_symbols(conn: &Connection, repo: &str, path: &str) -> Result<Vec<TopSymbol>> {
-    let mut stmt = conn.prepare(
-        "SELECT id, symbol, kind, lang, line_start, line_end, rank_score \
-           FROM code_symbols \
-          WHERE repo = ?1 AND path = ?2 AND parent_id IS NULL \
-          ORDER BY rank_score DESC, symbol ASC, line_start ASC LIMIT ?3",
-    )?;
-    let rows = stmt
-        .query_map(
-            rusqlite::params![
-                repo,
-                path,
-                i64::try_from(TOP_SYMBOL_LIMIT).unwrap_or(i64::MAX)
-            ],
-            |r| {
-                Ok(TopSymbol {
-                    id: r.get(0)?,
-                    symbol: r.get(1)?,
-                    kind: r.get(2)?,
-                    lang: r.get(3)?,
-                    line_start: r.get(4)?,
-                    line_end: r.get(5)?,
-                    rank_score: r.get(6)?,
-                })
-            },
-        )?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    Ok(rows)
+    let rows = code_graph_nodes::top_symbols(conn, repo, path, TOP_SYMBOL_LIMIT)?;
+    Ok(rows
+        .into_iter()
+        .map(|r| TopSymbol {
+            id: r.id,
+            symbol: r.symbol,
+            kind: r.kind,
+            lang: r.lang,
+            line_start: r.line_start,
+            line_end: r.line_end,
+            rank_score: r.rank_score,
+        })
+        .collect())
 }
 
 /// Live memories citing this file, through the SAME predicate the node
-/// row's `memories` count uses ([`cites_file_predicate`]) — so the count
-/// and the list can never disagree.
+/// row's `memories` count uses — so the count and the list can never
+/// disagree.
 fn fetch_cited_by(conn: &Connection, repo: &str, path: &str) -> Result<Vec<CitedBy>> {
-    let sql = format!(
-        "SELECT DISTINCT m.id, m.body FROM edges e JOIN memories m ON m.id = e.src_id \
-          WHERE m.deleted_at IS NULL AND {} ORDER BY m.id",
-        cites_file_predicate(FileExpr::FirstParam)
-    );
-    let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt
-        .query_map(rusqlite::params![format!("{repo}:{path}")], |r| {
-            Ok(CitedBy {
-                id: r.get(0)?,
-                title: title_of(&r.get::<_, String>(1)?),
-            })
-        })?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    Ok(rows)
+    let rows = code_graph_nodes::citing_memories(conn, repo, path)?;
+    Ok(rows
+        .into_iter()
+        .map(|r| CitedBy {
+            id: r.id,
+            title: title_of(&r.body),
+        })
+        .collect())
 }
 
 #[cfg(test)]

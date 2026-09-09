@@ -14,7 +14,6 @@
 
 use std::path::Path;
 
-use rusqlite::Connection;
 use serde::Serialize;
 
 use crate::api::Ctx;
@@ -22,6 +21,7 @@ use crate::eval::golden::{self, GoldenPair};
 use crate::output::page::Page;
 use crate::prelude::*;
 use crate::store::eval_runs::{self, EvalRunRow};
+use crate::store::{feedback, query_expansions};
 
 /// Read every recorded run — the summary's `best_delta` pairs each
 /// `tune`/`bandit` row with the nearest EARLIER `eval` row, which can sit
@@ -123,8 +123,8 @@ pub fn summary(ctx: &mut Ctx<'_>) -> Result<Summary> {
         return Ok(Summary::default());
     }
     let conn = ctx.conn()?;
-    let (feedback_events, implicit, used, irrelevant) = feedback_counts(conn)?;
-    let expansions = count(conn, "SELECT COUNT(*) FROM query_expansions")?;
+    let (feedback_events, implicit, used, irrelevant) = feedback::event_counts(conn)?;
+    let expansions = query_expansions::count(conn)?;
     let rows = eval_runs::list(conn, ALL_RUNS)?;
     Ok(Summary {
         feedback_events,
@@ -191,59 +191,21 @@ pub fn expansions(ctx: &mut Ctx<'_>, limit: usize, offset: usize) -> Result<Page
         return Ok(Page::new(Vec::new(), limit, offset, Some(0), false));
     }
     let conn = ctx.conn()?;
-    let total = count(conn, "SELECT COUNT(*) FROM query_expansions")? as usize;
-    let mut stmt = conn.prepare(
-        "SELECT term, expansion, support, last_mined FROM query_expansions \
-         ORDER BY support DESC, term ASC, expansion ASC LIMIT ?1 OFFSET ?2",
-    )?;
+    let total = query_expansions::count(conn)? as usize;
     // SQLite reads a negative LIMIT as "no limit", which is exactly what
     // `Page`'s `limit == 0` sentinel means.
     let sql_limit: i64 = if limit == 0 { -1 } else { limit as i64 };
-    let items: Vec<Expansion> = stmt
-        .query_map(rusqlite::params![sql_limit, offset as i64], |r| {
-            Ok(Expansion {
-                from: r.get(0)?,
-                to: r.get(1)?,
-                count: r.get::<_, i64>(2)? as u64,
-                last_mined: r.get(3)?,
-            })
-        })?
-        .collect::<std::result::Result<_, _>>()?;
+    let items: Vec<Expansion> = query_expansions::page(conn, sql_limit, offset as i64)?
+        .into_iter()
+        .map(|r| Expansion {
+            from: r.term,
+            to: r.expansion,
+            count: r.support as u64,
+            last_mined: r.last_mined,
+        })
+        .collect();
     let has_more = offset + items.len() < total;
     Ok(Page::new(items, limit, offset, Some(total), has_more))
-}
-
-/// `(total, implicit, used, irrelevant)` over `feedback_events` in one
-/// scan. The three conditional sums are `NULL` on an empty table, read
-/// back as `0`.
-fn feedback_counts(conn: &Connection) -> Result<(u64, u64, u64, u64)> {
-    let row = conn.query_row(
-        "SELECT COUNT(*), \
-                SUM(CASE WHEN provenance != 'manual' THEN 1 ELSE 0 END), \
-                SUM(CASE WHEN verdict = 'used' THEN 1 ELSE 0 END), \
-                SUM(CASE WHEN verdict = 'irrelevant' THEN 1 ELSE 0 END) \
-           FROM feedback_events",
-        [],
-        |r| {
-            Ok((
-                r.get::<_, i64>(0)?,
-                r.get::<_, Option<i64>>(1)?,
-                r.get::<_, Option<i64>>(2)?,
-                r.get::<_, Option<i64>>(3)?,
-            ))
-        },
-    )?;
-    Ok((
-        row.0 as u64,
-        row.1.unwrap_or(0) as u64,
-        row.2.unwrap_or(0) as u64,
-        row.3.unwrap_or(0) as u64,
-    ))
-}
-
-/// Run a parameterless `COUNT(*)` query.
-fn count(conn: &Connection, sql: &str) -> Result<u64> {
-    Ok(conn.query_row(sql, [], |r| r.get::<_, i64>(0))? as u64)
 }
 
 /// Project the newest row onto [`LatestRun`].

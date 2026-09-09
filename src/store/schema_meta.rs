@@ -17,6 +17,18 @@ pub fn set_memory_vector_model(conn: &Connection, model: &str) -> Result<()> {
     upsert(conn, "memory_vector_model", model)
 }
 
+/// The configured embedder model id (`schema_meta.memory_vector_model`),
+/// behind `comemory sync`'s wire vector encode/decode. Missing row is a
+/// config error, not a `None` — every migrated database stamps this key.
+pub fn memory_vector_model(conn: &Connection) -> Result<String> {
+    conn.query_row(
+        "SELECT value FROM schema_meta WHERE key = 'memory_vector_model'",
+        [],
+        |r| r.get(0),
+    )
+    .map_err(|e| Error::Config(format!("memory_vector_model: {e}")))
+}
+
 /// The stored `schema_meta.version` value. Errors (including a missing row)
 /// propagate via `?` exactly as the bare query did before this moved out of
 /// `api::doctor` — the key is written unconditionally by
