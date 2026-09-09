@@ -11,11 +11,11 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use rusqlite::Connection;
-
 use crate::cli::graph::parse_id;
 use crate::prelude::*;
 use crate::serve::security;
+use crate::store::Connection;
+use crate::store::repo_marker_roots;
 
 /// `--root <repo>=<path>` overrides, keyed by repo label.
 pub type RootOverrides = HashMap<String, PathBuf>;
@@ -34,16 +34,7 @@ pub fn resolve_root(conn: &Connection, repo: &str, overrides: &RootOverrides) ->
     // Only "no such repo row" means "no stored root"; a real query error
     // (e.g. a half-applied v7 migration with no `root_path` column) must not be
     // disguised as the friendly "pass --root" hint.
-    let stored: Option<String> = match conn.query_row(
-        "SELECT root_path FROM repo_marker WHERE repo = ?1",
-        [repo],
-        |r| r.get::<_, Option<String>>(0),
-    ) {
-        Ok(v) => v,
-        Err(rusqlite::Error::QueryReturnedNoRows) => None,
-        Err(e) => return Err(Error::Sqlite(e)),
-    };
-    match stored {
+    match repo_marker_roots::root_path(conn, repo)? {
         Some(path) => PathBuf::from(&path)
             .canonicalize()
             .map_err(|e| Error::BadRequest(format!("stored root for `{repo}` is unusable: {e}"))),

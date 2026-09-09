@@ -9,6 +9,8 @@
 /// driver ever does.
 pub use rusqlite::Connection;
 
+/// Whether an `Error` wraps SQLite's `SQLITE_BUSY` / `SQLITE_LOCKED`.
+pub mod busy;
 /// `code_ref` side table: version-anchor store for explicit code references.
 pub mod code_ref;
 /// `code_symbols` row upserts (insert, refresh, delete-by-file).
