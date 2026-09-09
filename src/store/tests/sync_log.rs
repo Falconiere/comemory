@@ -151,6 +151,11 @@ fn entries_since_excludes_the_cursor_and_includes_the_next_seq() {
     )
     .expect("seed after cursor");
 
+    // From the origin both rows are visible, so the "1 row" below is a
+    // filter result rather than an artifact of only one row existing.
+    let all = sync_log::entries_since(&conn, 0, 10).expect("entries_since from origin");
+    assert_eq!(all.len(), 2, "both seeded rows must be visible from seq 0");
+
     let rows = sync_log::entries_since(&conn, at_cursor, 10).expect("entries_since");
     assert_eq!(
         rows.len(),
