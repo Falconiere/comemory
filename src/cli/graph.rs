@@ -20,12 +20,12 @@ use rusqlite::Connection;
 use crate::cli::graph::nodes::{build_graph, fetch_nodes, fetch_nodes_for_edges};
 use crate::cli::pagination::PaginationArgs;
 use crate::config::paths::{Paths, resolve_data_dir};
-use crate::graph::edges::file_node_prefix;
 use crate::output::graph as render;
 use crate::output::graph::{CodeGraph, Edge, GraphPage};
 use crate::output::tty;
 use crate::prelude::*;
 use crate::store::connection;
+use crate::store::edges::file_node_prefix;
 
 const EXAMPLES: &str = "\
 Examples:

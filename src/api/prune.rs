@@ -349,7 +349,7 @@ fn purge_stale_code_rows(tx: &rusqlite::Transaction<'_>) -> Result<()> {
 
 /// Drop edges that dangle once a file's `code_symbols` rows are purged:
 /// `references_symbol` / `references_file` (bare qualified dst) and
-/// `co_activated` (the `file:`-prefixed node id from `graph::edges`). The
+/// `co_activated` (the `file:`-prefixed node id from `store::edges`). The
 /// read path tolerates a dangling dst, but the count grows every prune cycle.
 fn drop_dangling_edges(tx: &rusqlite::Transaction<'_>) -> Result<()> {
     tx.execute(

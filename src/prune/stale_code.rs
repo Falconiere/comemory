@@ -9,10 +9,10 @@
 
 use rusqlite::Connection;
 
-use crate::graph::edges::REFERENCES_SYMBOL;
 use crate::prelude::*;
 use crate::retrieval::code_ref_fetch::RefStatusCache;
 use crate::retrieval::code_ref_status::RefStatus;
+use crate::store::edges::REFERENCES_SYMBOL;
 
 /// One memory's anchored symbol reference, as stored in `code_ref`.
 struct SymbolRef {

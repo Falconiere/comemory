@@ -22,9 +22,9 @@ use crate::test_common::git_repo;
 use comemory::cli::pagination::PaginationArgs;
 use comemory::cli::prune;
 use comemory::git_utils;
-use comemory::graph::edges::{self, EdgeKey};
 use comemory::prune::stale_code;
 use comemory::store::connection;
+use comemory::store::edges::{self, EdgeKey};
 
 /// Seed a minimal live `memories` row (mirrors `retrieval__code_ref_collect`).
 fn seed_memory(conn: &rusqlite::Connection, id: &str) {

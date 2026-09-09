@@ -8,9 +8,9 @@
 
 use regex::Regex;
 
-use crate::graph::edges::{self, EdgeKey, REFERENCES_FILE, REFERENCES_SYMBOL};
 use crate::prelude::*;
 use crate::store::Connection;
+use crate::store::edges::{self, EdgeKey, REFERENCES_FILE, REFERENCES_SYMBOL};
 
 /// Code-layer references harvested from a memory body.
 ///

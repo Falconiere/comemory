@@ -24,6 +24,7 @@ One line per file, named after its primary item:
 | `document_fts.rs` | `DocumentFtsHit` | `document_fts` insert/delete helpers + the BM25 MATCH query leg |
 | `documents.rs` | `DocumentUpsert` | `documents` + `document_chunks` row CRUD |
 | `edge_fts.rs` | `EdgeFtsHit` | FTS5 triplet index over `edges`: rendering, refresh, and the `comemory edges` lexical ladder |
+| `edges.rs` | `insert` | `edges` table CRUD: typed upserts, weighted accumulation, outgoing neighbors, the `supersedes_chain` recursive walk, and delete-by-node; every `graph/` algorithm calls this rather than owning its own SQL |
 | `embed.rs` | `to_vec_blob` | f32 ↔ `vec0` BLOB encoding plus the per-table dim guards |
 | `fts.rs` | `CodeFtsHit` | FTS5 insert/search helpers for the code leg |
 | `fts_memory.rs` | `MemoryFtsHit` | Memory-leg FTS5 ladder (strict → relaxed → subtoken → expanded) behind `run_memory_match` |

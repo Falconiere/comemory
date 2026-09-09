@@ -18,10 +18,10 @@ use std::collections::{HashMap, HashSet};
 
 use rusqlite::Connection;
 
-use crate::graph::edges::{self, EdgeKey, REFERENCES_FILE, file_node_id};
 use crate::graph::search_edit;
 use crate::prelude::*;
 use crate::stats::feedback;
+use crate::store::edges::{self, EdgeKey, REFERENCES_FILE, file_node_id};
 
 /// Max bound variables per `IN (...)` chunk — well under bundled SQLite's
 /// `SQLITE_MAX_VARIABLE_NUMBER` (32766 in 3.46), so a large touch set never
@@ -92,7 +92,7 @@ struct Pair {
 /// Reverse-resolve every memory whose `references_file` edge points at a
 /// touched file. The cross-link writer stores those dst_ids in the BARE
 /// `<repo>:<path>` form (no `file:` prefix — see
-/// [`crate::graph::edges::file_node_id`]), so the candidate dst_ids match.
+/// [`crate::store::edges::file_node_id`]), so the candidate dst_ids match.
 fn referencing_memories(
     conn: &Connection,
     repo: &str,
