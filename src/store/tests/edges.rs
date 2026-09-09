@@ -372,6 +372,17 @@ fn memory_direct_relation_edges_excludes_other_rels() {
     )
     .expect("insert tagged");
 
+    // Prove BOTH edges landed before asserting the query filters one out:
+    // without this, a bug that dropped every edge would leave the query
+    // returning the supersedes row only by accident of returning nothing.
+    let seeded: i64 = conn
+        .query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))
+        .expect("count seeded edges");
+    assert_eq!(
+        seeded, 2,
+        "expected the supersedes and tagged edges to be seeded"
+    );
+
     let rows = edges::memory_direct_relation_edges(&conn).expect("query");
     assert_eq!(rows, vec![("new1".to_string(), "old1".to_string(), 1.0)]);
 }
@@ -399,6 +410,17 @@ fn memory_co_citation_edges_counts_shared_targets() {
         )
         .expect("insert references_file");
     }
+
+    // Prove all four references_file edges landed, so the weight of 2.0 is a
+    // real count of shared targets rather than an artifact of a partial seed.
+    let seeded: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM edges WHERE rel = 'references_file'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("count seeded edges");
+    assert_eq!(seeded, 4, "expected two memories x two shared files");
 
     let rows = edges::memory_co_citation_edges(&conn).expect("query");
     assert_eq!(rows, vec![("m1".to_string(), "m2".to_string(), 2.0)]);

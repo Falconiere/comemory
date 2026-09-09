@@ -19,19 +19,19 @@ One line per file, named after its primary item:
 | --- | --- | --- |
 | `busy.rs` | `is_locked` | Whether an `Error` wraps SQLite's `SQLITE_BUSY` / `SQLITE_LOCKED` — the only place outside `errors.rs` that inspects a `rusqlite::Error` variant |
 | `code_ref.rs` | `CodeRefRow` | `code_ref` side table: version-anchor store for explicit code references |
-| `code_row.rs` | `CodeSymbolRow` | `code_symbols` row upserts (insert, refresh, delete-by-file), plus `distinct_paths_for_repo` and the `rank_score` bulk writer behind `graph::materialize` |
+| `code_row.rs` | `CodeSymbolRow` | `code_symbols` row upserts (insert, refresh, delete-by-file), plus `distinct_paths_for_repo` and `update_rank_scores`, the `rank_score` bulk writer behind `graph::materialize` |
 | `connection.rs` | `open` | Connection open: PRAGMAs, migrations, `sqlite-vec` auto-extension registration |
 | `document_fts.rs` | `DocumentFtsHit` | `document_fts` insert/delete helpers + the BM25 MATCH query leg |
-| `documents.rs` | `DocumentUpsert` | `documents` + `document_chunks` row CRUD, plus the `(source, path)` / `(repo, path)` document-id lookups behind `graph::doc_link` |
+| `documents.rs` | `DocumentUpsert` | `documents` + `document_chunks` row CRUD, plus `document_id_in_source` and `document_ids_for_repo_path`, the `(source, path)` / `(repo, path)` document-id lookups behind `graph::doc_link` |
 | `edge_fts.rs` | `EdgeFtsHit` | FTS5 triplet index over `edges`: rendering, refresh, and the `comemory edges` lexical ladder |
-| `edges.rs` | `insert` | `edges` table CRUD: typed upserts, weighted accumulation, outgoing neighbors, the `supersedes_chain` recursive walk, delete-by-node, the code-graph/`memory_rank` weighted-edge queries, `co_changed`/`imports` scoped deletes, and the `file_neighbor_rows` one-hop query; every `graph/` algorithm calls this rather than owning its own SQL |
+| `edges.rs` | `insert` | `edges` table CRUD: typed upserts, weighted accumulation, outgoing neighbors, the `supersedes_chain` recursive walk, delete-by-node, the code-graph/`memory_rank` weighted-edge queries, `co_changed`/`imports` scoped deletes, `memory_ids_referencing_file` and `src_ids_for_dst_ids` (the `references_file` lookups behind `graph::doc_link` and `graph::coactivate`), and the `file_neighbor_rows` one-hop query; every `graph/` algorithm calls this rather than owning its own SQL |
 | `embed.rs` | `to_vec_blob` | f32 ↔ `vec0` BLOB encoding plus the per-table dim guards |
 | `fts.rs` | `CodeFtsHit` | FTS5 insert/search helpers for the code leg |
 | `fts_memory.rs` | `MemoryFtsHit` | Memory-leg FTS5 ladder (strict → relaxed → subtoken → expanded) behind `run_memory_match` |
 | `memory_list.rs` | `ListRow` | Paginated listing of live memories |
 | `memory_meta.rs` | `MemoryMeta` | Batched per-memory metadata: path, repo, kind, tags, references |
 | `memory_purge.rs` | `purge_memory` | One-transaction hard delete of a **soft-deleted** memory's mirror rows (`memories`, tags, FTS, vec, touching edges, `code_ref`, `feedback` + memory-target `feedback_events`; a live row is refused), plus `expired_deleted_ids` — the `deleted_at`-past-retention scan behind `comemory gc`'s zombie-row pass |
-| `memory_row.rs` | `insert` | `memories` row upserts and their edge materialization; the outgoing-edge wipe carries relation-edge timestamps and the mined `co_activated` edges (the one memory-sourced kind with no markdown source) across every re-mirror; also `live_ids`, the `rank_score` bulk writer, and the chunked access-count bump behind `graph::memory_rank` / `graph::coactivate` |
+| `memory_row.rs` | `insert` | `memories` row upserts and their edge materialization; the outgoing-edge wipe carries relation-edge timestamps and the mined `co_activated` edges (the one memory-sourced kind with no markdown source) across every re-mirror; also `live_ids`, `update_rank_scores` (the `rank_score` bulk writer), and `bump_access`, the chunked access-count bump behind `graph::memory_rank` / `graph::coactivate` |
 | `migrate.rs` | `CURRENT_VERSION` | Versioned, idempotent schema migrations plus `schema_meta`; loops over the `MIGRATIONS` slice declared in `migrate/list.rs` |
 | `schema.rs` | — | Module-doc placeholder for the v0.2 schema; DDL text lives in `sql/` |
 | `simhash_scan.rs` | `SimhashRow` | Bulk `(id, simhash)` scan over live memories, shared by save + consolidate |
