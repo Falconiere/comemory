@@ -100,6 +100,13 @@ fn expand_memory_seeds_orders_by_hops_then_id_and_excludes_seeds() {
     )
     .expect("walk");
 
+    // Assert the seed's absence directly rather than inferring it from the
+    // expected vector: a regression that leaked the seed back in would fail
+    // the vector comparison with a confusing diff, where this names the rule.
+    assert!(
+        !rows.iter().any(|(id, _)| id == "aaaa0001"),
+        "the seed must never appear in its own expansion"
+    );
     assert_eq!(
         rows,
         vec![
