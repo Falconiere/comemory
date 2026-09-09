@@ -8,7 +8,7 @@ use serde::Serialize;
 
 use crate::api::Ctx;
 use crate::prelude::*;
-use crate::store::{memory_row, sync_log};
+use crate::store::{Connection, memory_row, sync_log};
 use time::OffsetDateTime;
 
 /// `comemory delete` / `DELETE /api/v1/memories/{id}` response.
@@ -42,7 +42,7 @@ pub fn run(ctx: &mut Ctx<'_>, id: &str) -> Result<Response> {
 
 /// Best-effort sync-log row for a local delete — the delete itself already
 /// committed, so a failure here is logged rather than propagated.
-fn append_local_tombstone(conn: &mut rusqlite::Connection, memory_id: &str, content_hash: &str) {
+fn append_local_tombstone(conn: &mut Connection, memory_id: &str, content_hash: &str) {
     let at = match memory_row::iso_format(OffsetDateTime::now_utc()) {
         Ok(v) => v,
         Err(e) => {

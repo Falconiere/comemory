@@ -15,6 +15,7 @@ use crate::prelude::*;
 use crate::retrieval::code_rerank::WorkingSet;
 use crate::retrieval::scope::{Domains, Filters};
 use crate::retrieval::{bundle, pipeline};
+use crate::store::Connection;
 use crate::store::code_row;
 
 /// `comemory context` / `GET|POST /api/v1/context` request.
@@ -84,7 +85,7 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<ContextResult
         scope: &scope,
         domains: Domains::all(),
     };
-    let conn: &rusqlite::Connection = ctx.conn()?;
+    let conn: &Connection = ctx.conn()?;
     let run = pipeline::search(cfg, conn, &req.query, req.vector.as_deref(), filters, opts)?;
     let meta = page_meta(window, run.has_more, run.total);
     let query_id = run.query_id;

@@ -8,10 +8,10 @@
 //! `rebuild`, `ast`, `install-hooks`, `completions`) never touch the DB.
 
 use once_cell::sync::OnceCell;
-use rusqlite::Connection;
 
 use crate::config::{Config, Paths};
 use crate::prelude::*;
+use crate::store::Connection;
 
 /// `comemory ast`: run an ast-grep pattern against one file, paged.
 pub mod ast;

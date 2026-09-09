@@ -12,7 +12,6 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
 use crate::api::Ctx;
@@ -22,6 +21,7 @@ use crate::source::SourceEntry;
 use crate::source::discover::{self, Candidate};
 use crate::source::mirror;
 use crate::source::registry::Registry;
+use crate::store::Connection;
 
 /// `comemory index <PATH>...` / `POST /api/v1/sources` request.
 #[derive(Deserialize, Debug)]

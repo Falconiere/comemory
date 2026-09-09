@@ -18,13 +18,12 @@
 //! same rule appends tail candidates without reordering the head, and
 //! divergent pools would let a deeper page reorder a shallower one.
 
-use rusqlite::Connection;
-
 use crate::config::Config;
 use crate::prelude::*;
 use crate::retrieval::pipeline::{self, PageWindow};
 use crate::retrieval::scope::{Domain, Filters};
 use crate::retrieval::{code_search, diversify, doc_route, rerank, router};
+use crate::store::Connection;
 use crate::store::memory_meta;
 
 /// Weighted fusion and the domain-tagged hit shape.

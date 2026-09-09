@@ -2,12 +2,12 @@
 
 use std::thread;
 
-use rusqlite::Connection;
 use time::OffsetDateTime;
 use time::format_description::well_known::Iso8601;
 
 use crate::config::{Config, Paths};
 use crate::prelude::*;
+use crate::store::Connection;
 use crate::sync::AuthFile;
 
 /// After a successful local save, optionally spawn a background push when

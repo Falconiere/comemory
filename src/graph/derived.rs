@@ -6,9 +6,8 @@
 //! one staleness window and one set of trigger seams, so they share one
 //! entry point — a new seam cannot refresh half the derived state.
 
-use rusqlite::Connection;
-
 use crate::graph::memory_rank;
+use crate::store::Connection;
 use crate::store::edge_fts;
 
 /// Refresh both derived artifacts after a write to `memories` or `edges`.

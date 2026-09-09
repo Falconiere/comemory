@@ -22,7 +22,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use rusqlite::Connection;
 use serde::Serialize;
 
 use crate::api::Ctx;
@@ -31,6 +30,7 @@ use crate::git_utils;
 use crate::memory::{MemoryStore, Ref};
 use crate::prelude::*;
 use crate::serve::repo_root::{RootOverrides, resolve_root};
+use crate::store::Connection;
 
 /// `POST /api/v1/memories/{id}/references/refresh` response.
 #[derive(Serialize, Debug)]

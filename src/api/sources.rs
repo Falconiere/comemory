@@ -15,6 +15,7 @@ use crate::api::Ctx;
 use crate::prelude::*;
 use crate::source::mirror;
 use crate::source::registry::Registry;
+use crate::store::Connection;
 use crate::store::sources;
 
 /// `comemory sources` / `GET /api/v1/sources` request.
@@ -60,7 +61,7 @@ pub struct Row {
 /// index`/`unindex` from another process).
 pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Vec<Row>> {
     let registry = Registry::new(ctx.paths.clone());
-    let conn: &rusqlite::Connection = ctx.conn()?;
+    let conn: &Connection = ctx.conn()?;
     if req.reconcile {
         mirror::reconcile(conn, &registry.load()?)?;
     }

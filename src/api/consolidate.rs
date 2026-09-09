@@ -12,6 +12,7 @@ use crate::consolidate::{self, Options};
 use crate::output::consolidate::Report;
 use crate::output::page::Page;
 use crate::prelude::*;
+use crate::store::Connection;
 
 /// `comemory consolidate` / `GET /api/v1/consolidate` request.
 #[derive(Deserialize, Debug)]
@@ -42,7 +43,7 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Report> {
     let cfg = ctx.cfg;
     let radius = req.radius.unwrap_or(cfg.rank.near_dup_hamming);
     let window = page_window(cfg, req.k, req.offset);
-    let conn: &rusqlite::Connection = ctx.conn()?;
+    let conn: &Connection = ctx.conn()?;
     let scan = consolidate::detect(
         conn,
         &Options {
