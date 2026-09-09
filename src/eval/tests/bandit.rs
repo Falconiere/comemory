@@ -152,42 +152,6 @@ fn thompson_sample_is_deterministic_for_same_seed() {
 }
 
 #[test]
-fn record_outcome_bumps_alpha_on_win_and_beta_on_loss() {
-    let dir = tempfile::tempdir().expect("tempdir");
-    let conn = connection::open(dir.path().join("c.db")).expect("open");
-    let cfg = tiny_cfg();
-    let at = "2026-07-20T12:00:00Z";
-    bandit::seed_arms(&conn, &cfg, at).expect("seed");
-    let id = bandit::arm_id(&cand());
-
-    bandit::record_outcome(&conn, &id, true, 0.9, at).expect("win");
-    let (alpha, beta, pulls, last): (f64, f64, i64, f64) = conn
-        .query_row(
-            "SELECT alpha, beta, pulls, last_mrr FROM bandit_arms WHERE arm_id=?1",
-            [&id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
-        )
-        .expect("after win");
-    assert!((alpha - 2.0).abs() < f64::EPSILON);
-    assert!((beta - 1.0).abs() < f64::EPSILON);
-    assert_eq!(pulls, 1);
-    assert!((last - 0.9).abs() < f64::EPSILON);
-
-    bandit::record_outcome(&conn, &id, false, 0.4, at).expect("loss");
-    let (alpha, beta, pulls, last): (f64, f64, i64, f64) = conn
-        .query_row(
-            "SELECT alpha, beta, pulls, last_mrr FROM bandit_arms WHERE arm_id=?1",
-            [&id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
-        )
-        .expect("after loss");
-    assert!((alpha - 2.0).abs() < f64::EPSILON);
-    assert!((beta - 2.0).abs() < f64::EPSILON);
-    assert_eq!(pulls, 2);
-    assert!((last - 0.4).abs() < f64::EPSILON);
-}
-
-#[test]
 fn graph_knobs_alone_produce_distinct_arm_ids() {
     // The graph pair joined the hash in F5: two candidates that differ
     // only there are different arms, not one arm double-counted.

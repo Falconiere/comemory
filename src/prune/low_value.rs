@@ -8,12 +8,13 @@
 //! and the activation decay from `cfg.rank.decay`, so prune and rerank
 //! can never disagree on what "cold" means.
 
-use rusqlite::Connection;
 use time::OffsetDateTime;
 
 use crate::config::Config;
 use crate::prelude::*;
 use crate::retrieval::score;
+use crate::store::Connection;
+use crate::store::prune_signals;
 
 /// Memories matching ALL of: activation below `cfg.prune.min_activation`,
 /// Beta feedback at/below `cfg.prune.min_feedback`, quality ≤
@@ -55,32 +56,25 @@ pub fn detect_with_reasons(conn: &Connection, cfg: &Config) -> Result<Vec<(Strin
     Ok(flagged)
 }
 
-/// Stale-signal rule: low quality + no incoming edges in SQL, then the
+/// Stale-signal rule: low quality + no incoming edges in SQL
+/// ([`prune_signals::quality_and_degree_candidates`]), then the
 /// activation/feedback floors evaluated in Rust with the exact scoring
 /// primitives the rerank stage uses.
 fn signal_rule(conn: &Connection, cfg: &Config, now: OffsetDateTime) -> Result<Vec<String>> {
-    let mut stmt = conn.prepare(
-        "SELECT m.id, m.access_count, COALESCE(m.last_accessed, m.created_at),
-                COALESCE(f.used_count, 0), COALESCE(f.irrelevant_count, 0)
-           FROM memories m
-           LEFT JOIN feedback f ON f.memory_id = m.id
-          WHERE m.deleted_at IS NULL
-            AND m.quality <= ?1
-            AND NOT EXISTS (SELECT 1 FROM edges e
-                             WHERE e.dst_kind = 'memory' AND e.dst_id = m.id)",
+    let rows = prune_signals::quality_and_degree_candidates(
+        conn,
+        cfg.prune.low_value_default_below_quality,
     )?;
-    let rows: Vec<(String, i64, String, i64, i64)> = stmt
-        .query_map([cfg.prune.low_value_default_below_quality], |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
-        })?
-        .collect::<std::result::Result<_, _>>()?;
     let mut out = Vec::new();
-    for (id, access, last, used, irrelevant) in rows {
-        let days = score::days_since(&last, now);
-        let act = score::activation(access.max(0) as u64, days, cfg.rank.decay);
-        let beta = score::beta_feedback(used.max(0) as u64, irrelevant.max(0) as u64);
+    for row in rows {
+        let days = score::days_since(&row.last_or_created, now);
+        let act = score::activation(row.access_count.max(0) as u64, days, cfg.rank.decay);
+        let beta = score::beta_feedback(
+            row.used_count.max(0) as u64,
+            row.irrelevant_count.max(0) as u64,
+        );
         if act < cfg.prune.min_activation && beta <= cfg.prune.min_feedback {
-            out.push(id);
+            out.push(row.id);
         }
     }
     Ok(out)
@@ -115,21 +109,7 @@ fn superseded_rule(conn: &Connection, grace_days: u32, now: OffsetDateTime) -> R
     // misorder, and this rule operates at days scale.
     let cutoff =
         crate::store::memory_row::iso_format(now - time::Duration::days(i64::from(grace_days)))?;
-    let mut stmt = conn.prepare(
-        "SELECT old.id FROM memories old
-           JOIN edges e ON e.rel = 'supersedes'
-                       AND e.src_kind = 'memory'
-                       AND e.dst_kind = 'memory' AND e.dst_id = old.id
-                       AND e.src_id <> e.dst_id
-           JOIN memories newer ON newer.id = e.src_id AND newer.deleted_at IS NULL
-          WHERE old.deleted_at IS NULL
-            AND COALESCE(old.last_accessed, old.created_at) < e.created_at
-            AND e.created_at < ?1",
-    )?;
-    let ids = stmt
-        .query_map([cutoff], |r| r.get(0))?
-        .collect::<std::result::Result<Vec<String>, _>>()?;
-    Ok(ids)
+    prune_signals::superseded_and_forgotten(conn, &cutoff)
 }
 
 #[cfg(test)]

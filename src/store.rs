@@ -16,14 +16,22 @@ pub use rusqlite::Connection;
 /// `rusqlite` directly.
 pub use rusqlite::Transaction;
 
+/// `bandit_arms` row CRUD: seed/load/record-outcome behind `eval::bandit`.
+pub mod bandit_arms;
 /// Whether an `Error` wraps SQLite's `SQLITE_BUSY` / `SQLITE_LOCKED`.
 pub mod busy;
 /// `code_feedback` row CRUD: per-symbol counter table + code-tagged
 /// `feedback_events` inserts.
 pub mod code_feedback;
-/// `code_ref` side table: version-anchor store for explicit code references.
+/// Dynamic, paginated file→file `edges` window behind `comemory graph`.
+pub mod code_graph_edges;
+/// `code_symbols` node aggregation behind `comemory graph`'s node assembly.
+pub mod code_graph_nodes;
+/// `code_ref` side table: version-anchor store for explicit code references,
+/// plus the live-symbol-ref scan behind `prune::stale_code`.
 pub mod code_ref;
-/// `code_symbols` row upserts (insert, refresh, delete-by-file).
+/// `code_symbols` row upserts (insert, refresh, delete-by-file), plus the
+/// `symbol_row_exists` ghost-reference resolve check.
 pub mod code_row;
 /// Per-symbol ranking signals: the `code_symbols` + `code_feedback` join
 /// behind `retrieval::code_prior`'s four-prior scorer.
@@ -49,7 +57,8 @@ pub mod embed;
 /// eval`/`tune`/`bandit` run.
 pub mod eval_runs;
 /// `feedback` row CRUD: per-memory counter table + memory-tagged
-/// `feedback_events` inserts.
+/// `feedback_events` inserts, plus the `eval::mine`/`eval::golden` reads over
+/// `feedback_events`.
 pub mod feedback;
 /// FTS5 insert/search helpers for the code leg.
 pub mod fts;
@@ -66,28 +75,37 @@ pub mod index_runs;
 pub mod memory_list;
 /// Batched per-memory metadata (path, repo, kind, tags, references).
 pub mod memory_meta;
-/// Hard-delete of one soft-deleted memory's mirror rows (`comemory gc`).
+/// Hard-delete of one soft-deleted memory's mirror rows (`comemory gc`),
+/// plus the soft-delete mirror write behind `comemory delete`.
 pub mod memory_purge;
 /// `memories` row upserts and their edge materialization.
 pub mod memory_row;
 /// Versioned, idempotent schema migrations plus `schema_meta`.
 pub mod migrate;
+/// The low-quality/zero-incoming-edge and superseded-and-forgotten scans
+/// behind `prune::low_value`.
+pub mod prune_signals;
+/// Mined `(term → expansion)` row CRUD behind `comemory mine --apply`.
+pub mod query_expansions;
 /// Shared random-hex id generation (`/dev/urandom`), the neutral home for
 /// both `serve::security` and `api::gc`.
 pub mod random_id;
 /// Drop every code-index row and edge for one repo label.
 pub mod repo_drop;
-/// `repo_marker.last_mined_commit` — the co-change mining cursor.
+/// `repo_marker.last_mined_commit` — the co-change mining cursor, plus the
+/// one-row lazy-reindex probe read.
 pub mod repo_marker;
 /// Enumerate distinct, canonicalized `repo_marker.root_path` values.
 pub mod repo_marker_roots;
 /// `retrieval_log` reads — the raw `returned_ids` window query behind the
-/// search→edit lookback.
+/// search→edit lookback, plus the `(query_id, query, at)` scan behind
+/// `eval::mine`.
 pub mod retrieval_log;
 /// DDL strings for the tables, `vec0` vtabs and FTS5 indexes.
 pub mod schema;
 /// Single-key `schema_meta` writers that do not belong to `migrate` or
-/// `vector`'s dim guards.
+/// `vector`'s dim guards, plus the generic keyed `get`/`upsert` behind
+/// `cli::lazy_reindex`'s debounce marker.
 pub mod schema_meta;
 /// Bulk `(id, simhash)` scan over live memories, shared by save + consolidate.
 pub mod simhash_scan;

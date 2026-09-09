@@ -10,10 +10,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rusqlite::{Connection, OptionalExtension};
-
 use crate::config::paths::Paths;
 use crate::config::{AutoReindexMode, Config};
+use crate::store::{self, Connection};
 
 /// `schema_meta` key prefix carrying the last lazy-reindex trigger marker
 /// per repo. The stored value is `"<head>|<unix_millis>"`.
@@ -166,34 +165,17 @@ pub(crate) fn repo_context(repo_filter: Option<&str>) -> Option<RepoContext> {
     Some(RepoContext { repo, root })
 }
 
-/// The `repo_marker` columns the lazy probe needs: the HEAD at last index
-/// (`last_mined_commit`), the absolute working-tree root captured at index
-/// time (`root_path`, NULL for never-indexed / pre-v7 repos), and the
-/// `archived` flag (v15) that suppresses the trigger entirely.
-struct RepoMarker {
-    last_mined_commit: Option<String>,
-    root_path: Option<String>,
-    archived: bool,
-}
-
-/// Read the `repo_marker` row for `repo` (`last_mined_commit` + `root_path`)
-/// in one query. `None` when there is no marker row (never indexed); read
-/// errors also degrade to `None`.
-fn read_repo_marker(conn: &Connection, repo: &str) -> Option<RepoMarker> {
-    conn.query_row(
-        "SELECT last_mined_commit, root_path, archived FROM repo_marker WHERE repo = ?1",
-        [repo],
-        |r| {
-            Ok(RepoMarker {
-                last_mined_commit: r.get::<_, Option<String>>(0)?,
-                root_path: r.get::<_, Option<String>>(1)?,
-                archived: r.get::<_, i64>(2)? != 0,
-            })
-        },
-    )
-    .optional()
-    .ok()
-    .flatten()
+/// Read the `repo_marker` row for `repo` (`last_mined_commit` + `root_path` +
+/// `archived`) in one query. `None` when there is no marker row (never
+/// indexed); read errors also degrade to `None` — best-effort, like every
+/// other probe in this module.
+fn read_repo_marker(
+    conn: &Connection,
+    repo: &str,
+) -> Option<store::repo_marker::LazyReindexMarker> {
+    store::repo_marker::read_for_lazy_reindex(conn, repo)
+        .ok()
+        .flatten()
 }
 
 /// Whether the stored `indexed_root` denotes the same working tree as `cwd`.
@@ -211,13 +193,7 @@ fn same_root(indexed_root: &str, cwd_root: &Path) -> bool {
 /// Read and parse the `lazy_reindex_head:<repo>` trigger marker. A missing
 /// or malformed marker yields `None` (treated as "never triggered").
 fn read_last_trigger(conn: &Connection, repo: &str) -> Option<LastTrigger> {
-    let raw: String = conn
-        .query_row(
-            "SELECT value FROM schema_meta WHERE key = ?1",
-            [trigger_key(repo)],
-            |r| r.get(0),
-        )
-        .optional()
+    let raw = store::schema_meta::get(conn, &trigger_key(repo))
         .ok()
         .flatten()?;
     parse_trigger(&raw)
@@ -250,11 +226,7 @@ pub fn encode_trigger(head: &str, at_millis: u128) -> String {
 /// the next search, never a broken read path).
 fn record_trigger(conn: &Connection, repo: &str, head: &str, now_millis: u128) {
     let value = encode_trigger(head, now_millis);
-    if let Err(e) = conn.execute(
-        "INSERT INTO schema_meta(key, value) VALUES(?1, ?2) \
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        rusqlite::params![trigger_key(repo), value],
-    ) {
+    if let Err(e) = store::schema_meta::upsert(conn, &trigger_key(repo), &value) {
         tracing::debug!(error = %e, repo = %repo, "lazy reindex: trigger marker write failed");
     }
 }

@@ -5,6 +5,10 @@
 //! every transaction boundary stay in [`crate::stats::feedback`] — this
 //! module owns only the SQL text and its parameter binding. See
 //! [`crate::store::code_feedback`] for the code-side sibling table.
+//!
+//! [`used_query_ids`] and [`used_events_for_golden`] are `feedback_events`
+//! reads behind `eval::mine`'s reformulation scan and `eval::golden`'s
+//! feedback-harvest, moved here alongside the writers of the same table.
 
 use rusqlite::{Connection, params};
 
@@ -77,6 +81,66 @@ pub(crate) fn insert_implicit_used_event(
         params![query_id, id, at, target_kind, provenance],
     )?;
     Ok(())
+}
+
+/// Distinct `query_id`s carrying at least one `used` verdict of `target_kind`
+/// — the "this query succeeded" set behind `eval::mine`'s reformulation scan.
+pub(crate) fn used_query_ids(conn: &Connection, target_kind: &str) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT query_id FROM feedback_events
+          WHERE verdict = 'used' AND target_kind = ?1",
+    )?;
+    let ids = stmt
+        .query_map([target_kind], |r| r.get(0))?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(ids)
+}
+
+/// One `(query, repo, kind, memory_id)` row from a `used`-verdict
+/// `feedback_events` row joined to its originating `retrieval_log` query and
+/// a still-live `memories` row — the raw material for `eval::golden`'s
+/// feedback harvest.
+pub struct GoldenFeedbackRow {
+    /// The originating query text.
+    pub query: String,
+    /// The originating search's repo filter, verbatim.
+    pub repo: Option<String>,
+    /// The originating search's kind filter, verbatim.
+    pub kind: Option<String>,
+    /// The memory id marked `used` for this query.
+    pub memory_id: String,
+}
+
+/// Every `(query, repo, kind, memory_id)` row for a `used` verdict of
+/// `target_kind`, excluding `retrieval_log` rows whose `source` is
+/// `exclude_source`, restricted to still-live memories. Ordered
+/// `(query, repo, kind, memory_id)`, `DISTINCT` (a query/memory pair can
+/// carry more than one verdict row across retries).
+pub fn used_events_for_golden(
+    conn: &Connection,
+    target_kind: &str,
+    exclude_source: &str,
+) -> Result<Vec<GoldenFeedbackRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT r.query, r.repo, r.kind, e.memory_id
+           FROM feedback_events e
+           JOIN retrieval_log r ON r.query_id = e.query_id
+           JOIN memories m ON m.id = e.memory_id AND m.deleted_at IS NULL
+          WHERE e.verdict = 'used' AND e.target_kind = ?1
+            AND r.source != ?2
+          ORDER BY r.query, r.repo, r.kind, e.memory_id",
+    )?;
+    let rows = stmt
+        .query_map([target_kind, exclude_source], |r| {
+            Ok(GoldenFeedbackRow {
+                query: r.get(0)?,
+                repo: r.get(1)?,
+                kind: r.get(2)?,
+                memory_id: r.get(3)?,
+            })
+        })?
+        .collect::<std::result::Result<_, _>>()?;
+    Ok(rows)
 }
 
 #[cfg(test)]

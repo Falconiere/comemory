@@ -212,9 +212,11 @@ pub fn delete_touching(conn: &Connection, kind: &str, id: &str) -> Result<()> {
     Ok(())
 }
 
-/// One raw `(src_id, dst_id, rel, weight)` row from the code-graph edge set
-/// PageRank projects. See [`crate::graph::materialize::project_pagerank`].
-pub(crate) struct GraphEdgeRow {
+/// One raw `(src_id, dst_id, rel, weight)` row from the code-graph edge set.
+/// Read by [`crate::graph::materialize::project_pagerank`] (PageRank input)
+/// and [`crate::store::code_graph_edges::fetch_page`] (`comemory graph`'s
+/// paginated edge window).
+pub struct GraphEdgeRow {
     /// Source node id (`file:<repo>:<path>`).
     pub src_id: String,
     /// Destination node id (`file:<repo>:<path>`).

@@ -124,3 +124,37 @@ fn materialize_writes_both_edges_and_code_ref() {
     assert_eq!(rows[0].pinned_blob.as_deref(), Some("blobfile00"));
     assert_eq!(rows[1].pinned_blob.as_deref(), Some("blobsym000"));
 }
+
+/// Insert a bare `memories` row so a `code_ref` anchor has a live owner for
+/// `for_rel_live`'s inner join.
+fn seed_memory(conn: &Connection, id: &str, deleted: bool) {
+    conn.execute(
+        "INSERT INTO memories(id, slug, kind, repo, author, quality, schema, content_hash,
+                              body, created_at, updated_at, md_path, simhash, deleted_at)
+         VALUES (?1, ?1, 'note', 'demo', 'f', 3, 1, ?1, 'body', '2026-06-19T00:00:00Z',
+                 '2026-06-19T00:00:00Z', ?1, 0, ?2)",
+        rusqlite::params![id, deleted.then_some("2026-07-01T00:00:00Z")],
+    )
+    .expect("seed memory");
+}
+
+#[test]
+fn for_rel_live_returns_only_live_memories_refs() {
+    let (_dir, conn) = open_db();
+    seed_memory(&conn, MEM, false);
+    seed_memory(&conn, "deadbeef", true);
+    code_ref::materialize(&conn, MEM, &anchored_refs(), "2026-06-19T00:00:00Z")
+        .expect("materialize live");
+    code_ref::materialize(&conn, "deadbeef", &anchored_refs(), "2026-06-19T00:00:00Z")
+        .expect("materialize dead");
+
+    let rows = code_ref::for_rel_live(&conn, "references_symbol").expect("for_rel_live");
+    assert_eq!(
+        rows.len(),
+        1,
+        "the soft-deleted memory's ref must be excluded"
+    );
+    assert_eq!(rows[0].memory_id, MEM);
+    assert_eq!(rows[0].dst_id, "qwick:src/db.rs:connect");
+    assert_eq!(rows[0].pinned_blob.as_deref(), Some("blobsym000"));
+}

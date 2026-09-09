@@ -11,7 +11,9 @@
 //! that [`insert`] writes every column back readably.
 
 use comemory::store::connection;
-use comemory::store::retrieval_log::{NewLogRow, insert, returned_ids_in_window};
+use comemory::store::retrieval_log::{
+    NewLogRow, insert, queries_excluding_source, returned_ids_in_window,
+};
 use rusqlite::Connection;
 use tempfile::tempdir;
 
@@ -210,4 +212,25 @@ fn insert_with_no_repo_writes_null() {
         )
         .expect("row exists");
     assert_eq!(repo, None);
+}
+
+/// `queries_excluding_source` drops `search-code` rows and orders the rest
+/// `(at, query_id)` — the scan behind `eval::mine`.
+#[test]
+fn queries_excluding_source_orders_by_at_then_query_id() {
+    let conn = seed_db();
+    insert_row(&conn, "q-b", "[]", "2026-07-15T00:00:01Z", "search");
+    insert_row(&conn, "q-a", "[]", "2026-07-15T00:00:01Z", "context");
+    insert_row(&conn, "q-earlier", "[]", "2026-07-15T00:00:00Z", "search");
+    insert_row(
+        &conn,
+        "q-excluded",
+        "[]",
+        "2026-07-15T00:00:00Z",
+        "search-code",
+    );
+
+    let rows = queries_excluding_source(&conn, "search-code").expect("query");
+    let ids: Vec<&str> = rows.iter().map(|r| r.query_id.as_str()).collect();
+    assert_eq!(ids, vec!["q-earlier", "q-a", "q-b"]);
 }
