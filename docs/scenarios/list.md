@@ -34,8 +34,9 @@ _None._
 - **Setup:** two saved memories
 - **Command:** `comemory list --json`
 - **Expect:** object `{items, limit, offset, total, has_more}` (not a bare
-  array). Each row carries `id`, `kind`, `repo`, `slug`, `title`, `tags`,
-  `quality`, `created`, `access_count`.
+  array). Each row carries `id`, `kind`, `repo`, `author`, `slug`, `title`,
+  `tags`, `quality`, `created`, `access_count`. `author` is a stable string
+  (`""` when unset — never JSON `null`).
 - **Covered by:** `tests/cli__list.rs::list_json_is_page_envelope_not_bare_array`
 
 ### list-02 Repo and kind

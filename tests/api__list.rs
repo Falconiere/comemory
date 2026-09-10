@@ -134,8 +134,9 @@ fn run_pages_with_limit_and_offset() {
 }
 
 /// AC-11: rows carry `title` (first non-empty trimmed body line), `tags`,
-/// `quality`, `created`, `access_count` — plus the legacy `id`/`kind`/
-/// `repo`/`slug` fields, unchanged.
+/// `quality`, `created`, `access_count`, `author` — plus the legacy `id`/`kind`/
+/// `repo`/`slug` fields, unchanged. `author` is a stable string: empty when
+/// unset (never JSON `null`).
 #[test]
 fn run_rows_carry_new_fields_and_keep_legacy_fields() {
     let home = tempfile::tempdir().expect("tempdir");
@@ -151,6 +152,8 @@ fn run_rows_carry_new_fields_and_keep_legacy_fields() {
             "gamma",
             "--tags",
             "alpha,beta",
+            "--author",
+            "alice",
             "--quality",
             "5",
         ])
@@ -168,12 +171,35 @@ fn run_rows_carry_new_fields_and_keep_legacy_fields() {
     assert!(!row.id.is_empty(), "id must still be populated");
     assert_eq!(row.kind, "decision");
     assert_eq!(row.repo, "gamma");
+    assert_eq!(row.author, "alice");
     assert!(!row.slug.is_empty(), "slug must still be populated");
     assert_eq!(row.title, "Title line here");
     assert_eq!(row.tags, vec!["alpha".to_string(), "beta".to_string()]);
     assert_eq!(row.quality, 5);
     assert!(!row.created.is_empty(), "created must be populated");
     assert_eq!(row.access_count, 0);
+}
+
+/// Unset author serializes as `""`, never JSON `null` — the contract the
+/// console branches on (issue #123).
+#[test]
+fn run_rows_author_empty_string_when_unset() {
+    let home = tempfile::tempdir().expect("tempdir");
+    Command::cargo_bin("comemory")
+        .expect("bin")
+        .env("COMEMORY_DATA_DIR", home.path())
+        .args(["save", "no author set", "--kind", "note", "--repo", "gamma"])
+        .assert()
+        .success();
+
+    let paths = Paths::new(home.path());
+    let mut conn = connection::open(paths.db_path()).expect("open db");
+    let cfg = Config::defaults();
+    let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+
+    let page = api::list::run(&mut ctx, request()).expect("list run");
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.items[0].author, "");
 }
 
 /// AC-12: `sort: Created` (the default) stays newest-created-first.

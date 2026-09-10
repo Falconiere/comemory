@@ -76,7 +76,7 @@ fn list_json_is_page_envelope_not_bare_array() {
 }
 
 /// AC-11: rows also carry `title`, `tags`, `quality`, `created`,
-/// `access_count`, alongside the unchanged legacy fields.
+/// `access_count`, `author`, alongside the unchanged legacy fields.
 #[test]
 fn list_json_rows_carry_new_fields() {
     let home = tempfile::tempdir().expect("tempdir");
@@ -92,6 +92,8 @@ fn list_json_rows_carry_new_fields() {
             "gamma",
             "--tags",
             "alpha,beta",
+            "--author",
+            "alice",
             "--quality",
             "5",
         ])
@@ -105,6 +107,7 @@ fn list_json_rows_carry_new_fields() {
     assert_eq!(row["quality"], serde_json::json!(5));
     assert!(row["created"].as_str().is_some_and(|s| !s.is_empty()));
     assert_eq!(row["access_count"], serde_json::json!(0));
+    assert_eq!(row["author"], serde_json::json!("alice"));
     // Legacy fields are untouched.
     for field in ["id", "kind", "repo", "slug"] {
         assert!(row.get(field).is_some(), "row must carry `{field}`: {row}");

@@ -189,11 +189,13 @@ pub fn kind_and_body(conn: &Connection, id: &str) -> Result<Option<(String, Stri
 }
 
 /// Single-row `memories` columns [`fetch_meta`] does not carry, behind
-/// `comemory show` — body, quality, timestamps, access tracking, and the
-/// projected memory-graph PageRank score.
+/// `comemory show` — body, author, quality, timestamps, access tracking, and
+/// the projected memory-graph PageRank score.
 pub struct ExtraFields {
     /// Full memory body, verbatim.
     pub body: String,
+    /// Frontmatter author, or empty string when unset / stored as SQL `NULL`.
+    pub author: String,
     /// Frontmatter quality (1..=5).
     pub quality: u8,
     /// RFC 3339 creation timestamp.
@@ -214,18 +216,21 @@ pub struct ExtraFields {
 /// soft-deleted id.
 pub fn fetch_extra(conn: &Connection, id: &str) -> Result<Option<ExtraFields>> {
     conn.query_row(
-        "SELECT body, quality, created_at, updated_at, access_count, last_accessed, rank_score \
+        "SELECT body, author, quality, created_at, updated_at, access_count, last_accessed, \
+                rank_score \
            FROM memories WHERE id = ?1 AND deleted_at IS NULL",
         [id],
         |r| {
+            let author: Option<String> = r.get(1)?;
             Ok(ExtraFields {
                 body: r.get(0)?,
-                quality: r.get(1)?,
-                created: r.get(2)?,
-                updated: r.get(3)?,
-                access_count: r.get::<_, i64>(4)?.max(0) as u64,
-                last_accessed: r.get(5)?,
-                rank_score: r.get(6)?,
+                author: author.unwrap_or_default(),
+                quality: r.get(2)?,
+                created: r.get(3)?,
+                updated: r.get(4)?,
+                access_count: r.get::<_, i64>(5)?.max(0) as u64,
+                last_accessed: r.get(6)?,
+                rank_score: r.get(7)?,
             })
         },
     )

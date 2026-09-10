@@ -97,6 +97,7 @@ fn full_shape_body_quality_tags_and_one_code_ref() {
         let req = api::save::Request {
             quality: 4,
             tags: vec!["ranking".to_string(), "frontmatter".to_string()],
+            author: "alice".to_string(),
             ..save_request(body)
         };
         save(&mut ctx, req).id
@@ -107,6 +108,7 @@ fn full_shape_body_quality_tags_and_one_code_ref() {
 
     assert_eq!(resp.id, id);
     assert_eq!(resp.body, body, "body must round-trip verbatim");
+    assert_eq!(resp.author, "alice");
     assert_eq!(resp.quality, 4);
     // `memory_tags` carries no ordering guarantee (no ORDER BY on the batched
     // fetch), so compare as a set rather than assuming insertion order.
@@ -134,6 +136,22 @@ fn full_shape_body_quality_tags_and_one_code_ref() {
     assert_eq!(r.anchor, "demo:src/lib.rs:foo_fn");
     assert_eq!(r.path, "src/lib.rs");
     assert_eq!(r.status, "unpinned", "no --ref-symbol anchor was captured");
+}
+
+/// Unset author surfaces as `""` on show — same stable-string contract as
+/// `list::Row` (issue #123).
+#[test]
+fn author_empty_string_when_unset() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let (paths, cfg, mut conn) = open_ctx(home.path());
+    let id = {
+        let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+        save(&mut ctx, save_request("no author on this memory")).id
+    };
+
+    let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+    let resp = api::show::run(&mut ctx, api::show::Request { id }).expect("show run");
+    assert_eq!(resp.author, "");
 }
 
 /// `superseded_by` reuses `retrieval::rerank::live_superseder`'s join: the

@@ -145,8 +145,8 @@ disagree, trust the running server.
 
 | Method + path | CLI command | Notes |
 |---|---|---|
-| ○ `GET /memories` | `list` | paged |
-| ○ `GET /memories/{id}` | *(new)* | single-row lookup via `memory_meta`; `404` when absent/soft-deleted |
+| ○ `GET /memories` | `list` | paged; each row includes `author` (stable string, `""` when unset) |
+| ○ `GET /memories/{id}` | *(new)* | single-row lookup via `memory_meta`; includes `author` (same empty-string contract); `404` when absent/soft-deleted |
 | ○ `GET\|POST /memories/search` | `search` | `GET` = no vector; `POST` = vector-capable |
 | ○ `GET\|POST /context` | `context` | same GET/POST split |
 | ● `POST /memories` | `save` | |

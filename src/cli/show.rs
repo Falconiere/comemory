@@ -55,6 +55,15 @@ fn render_tty(resp: &api::show::Response) -> Result<()> {
     writeln!(out, "id            {}", resp.id)?;
     writeln!(out, "kind          {}", resp.kind)?;
     writeln!(out, "repo          {}", resp.repo.as_deref().unwrap_or("-"))?;
+    writeln!(
+        out,
+        "author        {}",
+        if resp.author.is_empty() {
+            "-"
+        } else {
+            resp.author.as_str()
+        }
+    )?;
     writeln!(out, "slug          {}", resp.slug)?;
     writeln!(out, "tags          {}", tags_line(&resp.tags))?;
     writeln!(out, "quality       {}/5", resp.quality)?;
