@@ -43,6 +43,27 @@ pub fn copy_preserved_tables_from_old(conn: &mut Connection, old_db: &Path) -> R
     copy_result
 }
 
+/// Copy one table's rows wholesale from the attached `old` database, naming
+/// every column explicitly — `SELECT *` is not reliable for every FTS5 shape
+/// across an ATTACH. Skips silently when `old` predates the table, which is
+/// how a pre-v0.2 database is carried across.
+///
+/// `table` and `columns` are `&'static str`: interpolated into the SQL, so
+/// only a compile-time literal at a call site can reach them. There is no
+/// dynamic value in this statement to bind.
+pub(crate) fn copy_table(
+    conn: &Connection,
+    table: &'static str,
+    columns: &'static str,
+) -> Result<()> {
+    if old_table_exists(conn, table)? {
+        conn.execute_batch(&format!(
+            "INSERT OR IGNORE INTO main.{table}({columns}) SELECT {columns} FROM old.{table};"
+        ))?;
+    }
+    Ok(())
+}
+
 /// True when `name` exists as a table (regular or virtual) on the attached
 /// `old` database. Lets every copy pass skip tables that predate v0.2.
 pub(crate) fn old_table_exists(conn: &Connection, name: &str) -> Result<bool> {

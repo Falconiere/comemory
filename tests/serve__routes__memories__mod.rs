@@ -175,9 +175,29 @@ fn v1_memories_get_matches_comemory_show_json() {
     let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
     let via_cli: serde_json::Value = serde_json::from_str(stdout.trim()).expect("show --json");
 
+    // `activation` is ACT-R `ln(n) - d*ln(days+1)`, recomputed from the clock
+    // at read time — it is not stored. The CLI runs as a subprocess a few
+    // hundred milliseconds after the HTTP call, so for a just-created memory
+    // the two land microseconds apart on `days` and differ in the ~1e-6 range
+    // (observed: 0.0 vs -5.787e-6). Comparing the whole object exactly made
+    // this test fail whenever the two reads straddled a clock tick.
+    //
+    // The parity this test exists to prove is that both surfaces answer with
+    // the same MEMORY, so `activation` is compared with a tolerance and every
+    // other field exactly.
+    let http_activation = via_http["activation"].as_f64().expect("http activation");
+    let cli_activation = via_cli["activation"].as_f64().expect("cli activation");
+    assert!(
+        (http_activation - cli_activation).abs() < 1e-3,
+        "activation must agree within clock drift: http={http_activation} cli={cli_activation}"
+    );
+    let mut http_rest = via_http.clone();
+    let mut cli_rest = via_cli.clone();
+    http_rest["activation"] = serde_json::Value::Null;
+    cli_rest["activation"] = serde_json::Value::Null;
     assert_eq!(
-        via_http, &via_cli,
-        "HTTP and CLI must answer with the identical object"
+        http_rest, cli_rest,
+        "HTTP and CLI must answer with the identical object (activation aside)"
     );
     for field in ["id", "kind", "repo", "slug", "tags", "references", "path"] {
         assert!(
