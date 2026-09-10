@@ -11,12 +11,25 @@
 
 use comemory::api::sync::{ImportEntry, ImportRequest, ImportStatus, SyncOp};
 use comemory::sync::client;
-use comemory::sync::match_key::{MatchOutcome, classify_repo};
 
 use crate::test_common::sync_platform_server::{SyncPlatformServer, SyncPlatformState};
 
+/// One import entry, so the header assertions below exercise a real POST body.
+fn sample_entry() -> ImportRequest {
+    ImportRequest {
+        cursor: 0,
+        entries: vec![ImportEntry {
+            op: SyncOp::Upsert,
+            id: "abcd1234".into(),
+            content_hash: "aa".repeat(32),
+            at: "2026-09-06T12:00:00Z".into(),
+            record: None,
+        }],
+    }
+}
+
 #[test]
-fn device_code_token_and_mint_roundtrip() {
+fn device_code_and_token_roundtrip() {
     let server = SyncPlatformServer::start_default();
     let code = client::device_code(&server.base).expect("device code");
     assert_eq!(code.device_code, "dc-1");
@@ -24,65 +37,63 @@ fn device_code_token_and_mint_roundtrip() {
 
     let token = client::poll_token(&server.base, &code.device_code).expect("token");
     assert_eq!(token.access_token.as_deref(), Some("dev-access-token"));
-
-    let minted = client::mint_device_key(&server.base, "dev-access-token", "laptop").expect("mint");
-    assert!(minted.secret.starts_with("cmk_"));
-    assert_eq!(minted.personal_workspace_id, "ws-personal");
-    assert_eq!(minted.email.as_deref(), Some("dev@example.com"));
 }
 
 #[test]
-fn list_workspaces_and_allowlist_paths() {
+fn sends_no_workspace_header_on_any_sync_route() {
+    // The org key already names the workspace. If the header came back, a
+    // caller could ask for a workspace the key cannot reach — so this asserts
+    // on what the server actually received, not on the client's intent.
+    let platform = SyncPlatformState {
+        head_seq: 1,
+        ..Default::default()
+    };
+    let server = SyncPlatformServer::start(platform);
+    let secret = server.snapshot().secret;
+
+    client::pull_changes(&server.base, &secret, 0, 50).expect("changes");
+    client::push_import(&server.base, &secret, &sample_entry()).expect("import");
+    client::fetch_manifest(&server.base, &secret).expect("manifest");
+
+    let seen = server.requests();
+    assert_eq!(seen.len(), 3, "three sync calls, got: {seen:?}");
+    for request in &seen {
+        assert!(
+            request.workspace_header.is_empty(),
+            "{} {} still carried a workspace header: {:?}",
+            request.method,
+            request.path,
+            request.workspace_header
+        );
+        assert_eq!(
+            request.authorization,
+            format!("Bearer {secret}"),
+            "every sync call authenticates with the org key"
+        );
+    }
+}
+
+#[test]
+fn never_calls_the_removed_allowlist_route() {
+    // `/v1/sync/status` was the second source of truth beside org membership.
+    // A regression that reintroduced it would still pass a body-only
+    // assertion, so this checks the request log.
     let server = SyncPlatformServer::start_default();
     let secret = server.snapshot().secret;
 
-    let rows = client::list_workspaces(&server.base, &secret).expect("workspaces");
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].id, "ws-personal");
-    assert_eq!(rows[0].name, "Personal");
+    client::pull_changes(&server.base, &secret, 0, 50).expect("changes");
+    client::push_import(&server.base, &secret, &sample_entry()).expect("import");
 
-    let (repos, etag) =
-        client::fetch_allowlist(&server.base, &secret, "ws-org", None).expect("allowlist");
-    assert_eq!(repos.len(), 1);
-    assert_eq!(repos[0].full_name, "codasignal/foo");
-    assert_eq!(etag.as_deref(), Some("etag-1"));
-    assert_eq!(
-        classify_repo("codasignal/foo", &repos),
-        MatchOutcome::Allowed
+    assert!(
+        !server.saw_path("/v1/sync/status"),
+        "the allowlist route must never be reached, saw: {:?}",
+        server.paths()
     );
-
-    // Matching etag → empty repos, same etag (cache keep).
-    let (again, etag2) =
-        client::fetch_allowlist(&server.base, &secret, "ws-org", Some("etag-1")).expect("etag");
-    assert!(again.is_empty());
-    assert_eq!(etag2.as_deref(), Some("etag-1"));
-}
-
-#[test]
-fn fetch_allowlist_404_is_empty() {
-    let platform = SyncPlatformState {
-        status_404: true,
-        ..Default::default()
-    };
-    let server = SyncPlatformServer::start(platform);
-    let secret = server.snapshot().secret;
-    let (repos, etag) =
-        client::fetch_allowlist(&server.base, &secret, "ws", None).expect("404 status");
-    assert!(repos.is_empty());
-    assert!(etag.is_none());
-}
-
-#[test]
-fn fetch_allowlist_envelope_error_surfaces() {
-    let platform = SyncPlatformState {
-        status_error: Some(("forbidden".into(), "no sync".into())),
-        ..Default::default()
-    };
-    let server = SyncPlatformServer::start(platform);
-    let secret = server.snapshot().secret;
-    let err = client::fetch_allowlist(&server.base, &secret, "ws", None).expect_err("gate");
-    let msg = err.to_string();
-    assert!(msg.contains("forbidden"), "{msg}");
+    assert!(
+        !server.saw_path("/v1/workspaces"),
+        "an org key has no workspace list to fetch, saw: {:?}",
+        server.paths()
+    );
 }
 
 #[test]
@@ -101,40 +112,39 @@ fn pull_changes_push_import_and_manifest() {
         import_results: serde_json::json!([{
             "id": "abcd1234",
             "content_hash": "aa".repeat(32),
-            "status": "repo_not_allowed"
+            "status": "accepted"
         }]),
         ..Default::default()
     };
     let server = SyncPlatformServer::start(platform);
     let secret = server.snapshot().secret;
 
-    let changes = client::pull_changes(&server.base, &secret, "ws-org", 0, 50).expect("changes");
+    let changes = client::pull_changes(&server.base, &secret, 0, 50).expect("changes");
     assert_eq!(changes.entries.len(), 1);
     assert_eq!(changes.head_seq, 3);
     assert_eq!(changes.entries[0].op, SyncOp::Tombstone);
 
-    let import = client::push_import(
-        &server.base,
-        &secret,
-        "ws-org",
-        &ImportRequest {
-            cursor: 0,
-            entries: vec![ImportEntry {
-                op: SyncOp::Upsert,
-                id: "abcd1234".into(),
-                content_hash: "aa".repeat(32),
-                at: "2026-09-06T12:00:00Z".into(),
-                record: None,
-            }],
-        },
-    )
-    .expect("import");
+    let import = client::push_import(&server.base, &secret, &sample_entry()).expect("import");
     assert_eq!(import.results.len(), 1);
-    assert_eq!(import.results[0].status, ImportStatus::RepoNotAllowed);
+    assert_eq!(import.results[0].status, ImportStatus::Accepted);
 
-    let manifest = client::fetch_manifest(&server.base, &secret, "ws-org").expect("manifest");
+    let manifest = client::fetch_manifest(&server.base, &secret).expect("manifest");
     assert_eq!(manifest.buckets.len(), 256);
     assert_eq!(manifest.head_seq, 3);
+}
+
+#[test]
+fn envelope_error_surfaces_with_its_code() {
+    let platform = SyncPlatformState {
+        import_results: serde_json::json!([]),
+        ..Default::default()
+    };
+    let server = SyncPlatformServer::start(platform);
+    server.update(|st| st.sync_unavailable = true);
+    let secret = server.snapshot().secret;
+
+    let err = client::pull_changes(&server.base, &secret, 0, 50).expect_err("outage surfaces");
+    assert!(err.to_string().contains("500"), "got: {err}");
 }
 
 #[test]
@@ -142,6 +152,6 @@ fn trailing_slash_base_url_normalizes() {
     let server = SyncPlatformServer::start_default();
     let secret = server.snapshot().secret;
     let base = format!("{}/", server.base);
-    let (repos, _) = client::fetch_allowlist(&base, &secret, "ws", None).expect("slash");
-    assert_eq!(repos.len(), 1);
+    let manifest = client::fetch_manifest(&base, &secret).expect("slash");
+    assert_eq!(manifest.buckets.len(), 256);
 }

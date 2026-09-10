@@ -45,14 +45,14 @@ use tempfile::TempDir;
 
 /// Real subcommands with no HTTP mapping at all: `serve` IS the server
 /// (spec Non-Goal 3), `upgrade` replaces the running binary, and the
-/// platform cloud-sync verbs (`auth` / `workspaces` / `link` / `sync`)
+/// platform cloud-sync verbs (`auth` / `sync`)
 /// talk to the cloud platform — never on an HTTP request to this process.
 /// A local, hardcoded mirror of `serve::routes::meta::CLI_ONLY` (private to
 /// that module) — deliberate: this test proves the *real*
 /// `GET /api/v1/commands` endpoint against an independently-stated
 /// expectation, not against whatever that endpoint's own internal constant
 /// happens to say today.
-const CLI_ONLY: &[&str] = &["auth", "link", "serve", "sync", "upgrade", "workspaces"];
+const CLI_ONLY: &[&str] = &["auth", "serve", "sync", "upgrade"];
 
 // ---------------------------------------------------------------------
 // Documented per-(command, arg id) exclusions from the HTTP field mapping.

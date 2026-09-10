@@ -21,7 +21,7 @@ SUBCOMMANDS=(
   save search search-code list delete feedback eval mine tune bandit doctor
   index-code ingest-code index sources unindex ast graph edges serve context
   prune consolidate rebuild gc install-hooks completions upgrade
-  auth workspaces link sync
+  auth sync
 )
 
 {

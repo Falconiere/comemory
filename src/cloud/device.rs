@@ -1,10 +1,13 @@
-//! RFC 8628 device authorization + device-key mint against the platform.
+//! RFC 8628 device authorization + organization-key mint against the platform.
 //!
 //! Flow: `POST /auth/device/code` → print user code / URI → poll
-//! `POST /auth/device/token` → `POST /v1/device/mint-device-key` with
-//! `Authorization: Bearer <access_token>`. The minted key is the unbound
-//! device key `sync` uses; the workspace comes from `X-Comemory-Workspace`
-//! per call, never from the key.
+//! `POST /auth/device/token` → `POST /v1/device/mint-org-key` with
+//! `Authorization: Bearer <access_token>`. The device-code grant is only the
+//! approval channel; what it mints is scoped to the organization the user
+//! approved, so the workspace travels in the key and no call names one.
+//!
+//! Which organization is decided in the console at approval time, so the CLI
+//! never prompts and the mint returns exactly one.
 
 use std::io::Write;
 use std::thread;
@@ -40,36 +43,21 @@ pub struct DeviceCodeResponse {
     pub interval: Option<u64>,
 }
 
-/// One-shot mint payload from `POST /v1/device/mint-device-key`.
+/// One-shot mint payload from `POST /v1/device/mint-org-key`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MintResponse {
     secret: String,
     key_prefix: String,
-    personal_workspace_id: String,
+    organization_id: String,
+    #[serde(default)]
+    organization_slug: String,
+    #[serde(default)]
+    organization_name: String,
+    workspace_id: String,
     api_url: String,
     #[serde(default)]
     email: Option<String>,
-}
-
-/// `GET /v1/workspaces` rows (fields we surface).
-#[derive(Debug, Clone, Deserialize)]
-struct WorkspaceList {
-    workspaces: Vec<WorkspaceListRow>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct WorkspaceListRow {
-    workspace: WorkspaceInfo,
-}
-
-/// One workspace row from `GET /v1/workspaces`.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct WorkspaceInfo {
-    /// Workspace UUID.
-    pub id: String,
-    /// Display name.
-    pub name: String,
 }
 
 /// Outcome of a completed [`login`].
@@ -87,21 +75,28 @@ pub struct StatusReport {
     /// API base in use.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub api_url: Option<String>,
-    /// Personal workspace id echoed from `auth.json` when the key still works.
+    /// Organization the key is scoped to, echoed from `auth.json`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub organization_id: Option<String>,
+    /// Organization display name, echoed from `auth.json`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub organization_name: Option<String>,
+    /// The organization workspace the key can reach.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_id: Option<String>,
-    /// Personal workspace display name from the live `GET /v1/workspaces`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub workspace_name: Option<String>,
     /// Key prefix for display (never the full secret).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub key_prefix: Option<String>,
 }
 
-/// Run the full device login against `api_url` for `device_name`, printing
-/// the user code to `progress` (typically stderr). Returns minted device
-/// credentials (caller persists).
-pub fn login(api_url: &str, device_name: &str, progress: &mut impl Write) -> Result<LoginOutcome> {
+/// Run the full device login against `api_url`, printing the user code to
+/// `progress` (typically stderr). Returns the minted organization credentials
+/// for the caller to persist.
+///
+/// # Errors
+/// [`Error::Unavailable`] when the grant fails, times out, or the mint comes
+/// back without an organization scope.
+pub fn login(api_url: &str, progress: &mut impl Write) -> Result<LoginOutcome> {
     let code = request_device_code(api_url)?;
     let uri = code
         .verification_uri_complete
@@ -110,7 +105,14 @@ pub fn login(api_url: &str, device_name: &str, progress: &mut impl Write) -> Res
     writeln!(progress, "Visit {uri}\nand enter code: {}", code.user_code)?;
     let _ = progress.flush();
     let access_token = poll_access_token(api_url, &code)?;
-    let minted = mint_device_key(api_url, &access_token, device_name)?;
+    let minted = mint_org_key(api_url, &access_token)?;
+    // A key with no organization or no workspace can do nothing, so refuse it
+    // here rather than write a credential every later call would reject.
+    if minted.organization_id.trim().is_empty() || minted.workspace_id.trim().is_empty() {
+        return Err(Error::Unavailable(
+            "mint response missing organization scope (organizationId / workspaceId)".into(),
+        ));
+    }
     // The platform echoes its own canonical base; an empty one means the
     // deployment did not set `BETTER_AUTH_URL`, so keep the URL we dialed.
     let resolved_api_url = if minted.api_url.trim().is_empty() {
@@ -120,48 +122,36 @@ pub fn login(api_url: &str, device_name: &str, progress: &mut impl Write) -> Res
     };
     Ok(LoginOutcome {
         credentials: AuthFile {
+            version: crate::sync::auth_file::AUTH_SCHEMA_VERSION,
             secret: minted.secret,
             key_prefix: minted.key_prefix,
-            personal_workspace_id: minted.personal_workspace_id,
             api_url: resolved_api_url,
-            device_name: device_name.to_string(),
+            organization_id: minted.organization_id,
+            organization_slug: minted.organization_slug,
+            organization_name: minted.organization_name,
+            workspace_id: minted.workspace_id,
             email: minted.email,
         },
     })
 }
 
-/// Probe whether `secret` authenticates against `api_url`. `personal_id` is
-/// the workspace recorded at login, used to name the row in the report;
-/// device keys are unbound, so `GET /v1/workspaces` is the surface they may
-/// call (`/v1/workspaces/current` answers `403 device_key_scope`).
-pub fn workspace_status(
+/// Probe whether `secret` still authenticates against `api_url`, reporting the
+/// organization recorded in `auth.json`.
+///
+/// The probe is `GET /v1/sync/manifest`: an org key's own surface, and the
+/// cheapest call that proves the key is accepted for what it is actually used
+/// for. A `401`/`403` is reported as `authenticated: false` rather than raised
+/// — a revoked key is an answer, not a crash.
+///
+/// # Errors
+/// [`Error::Unavailable`] when the platform is unreachable or answers a status
+/// that is neither success nor an auth rejection.
+pub fn org_status(
     api_url: &str,
     secret: &str,
-    personal_id: Option<&str>,
+    recorded: Option<&AuthFile>,
 ) -> Result<StatusReport> {
-    let Some(rows) = list_workspaces(api_url, secret)? else {
-        return Ok(StatusReport {
-            authenticated: false,
-            api_url: Some(api_url.to_string()),
-            workspace_id: None,
-            workspace_name: None,
-            key_prefix: None,
-        });
-    };
-    let personal = personal_id.and_then(|id| rows.into_iter().find(|workspace| workspace.id == id));
-    Ok(StatusReport {
-        authenticated: true,
-        api_url: Some(api_url.to_string()),
-        workspace_id: personal_id.map(str::to_string),
-        workspace_name: personal.map(|info| info.name),
-        key_prefix: None,
-    })
-}
-
-/// `GET /v1/workspaces` with a device key. `Ok(None)` = the key no longer
-/// authenticates (401/403), which callers report rather than raise.
-pub fn list_workspaces(api_url: &str, secret: &str) -> Result<Option<Vec<WorkspaceInfo>>> {
-    let url = format!("{api_url}/v1/workspaces");
+    let url = format!("{api_url}/v1/sync/manifest");
     let auth = format!("Bearer {secret}");
     let resp = fetch::exchange(&Request {
         method: "GET",
@@ -170,18 +160,26 @@ pub fn list_workspaces(api_url: &str, secret: &str) -> Result<Option<Vec<Workspa
         body: None,
     })?;
     if resp.status == 401 || resp.status == 403 {
-        return Ok(None);
+        return Ok(StatusReport {
+            authenticated: false,
+            api_url: Some(api_url.to_string()),
+            organization_id: None,
+            organization_name: None,
+            workspace_id: None,
+            key_prefix: None,
+        });
     }
     if !(200..300).contains(&resp.status) {
         return Err(http_err(&url, resp.status, &resp.body));
     }
-    let view: WorkspaceList = serde_json::from_str(&resp.body)?;
-    Ok(Some(
-        view.workspaces
-            .into_iter()
-            .map(|row| row.workspace)
-            .collect(),
-    ))
+    Ok(StatusReport {
+        authenticated: true,
+        api_url: Some(api_url.to_string()),
+        organization_id: recorded.map(|a| a.organization_id.clone()),
+        organization_name: recorded.map(|a| a.organization_name.clone()),
+        workspace_id: recorded.map(|a| a.workspace_id.clone()),
+        key_prefix: recorded.map(|a| a.key_prefix.clone()),
+    })
 }
 
 fn request_device_code(api_url: &str) -> Result<DeviceCodeResponse> {
@@ -241,10 +239,10 @@ fn poll_access_token(api_url: &str, code: &DeviceCodeResponse) -> Result<String>
     }
 }
 
-fn mint_device_key(api_url: &str, access_token: &str, device_name: &str) -> Result<MintResponse> {
-    let url = format!("{api_url}/v1/device/mint-device-key");
+fn mint_org_key(api_url: &str, access_token: &str) -> Result<MintResponse> {
+    let url = format!("{api_url}/v1/device/mint-org-key");
     let auth = format!("Bearer {access_token}");
-    let body = serde_json::json!({ "deviceName": device_name }).to_string();
+    let body = "{}".to_string();
     let resp = fetch::exchange(&Request {
         method: "POST",
         url: &url,

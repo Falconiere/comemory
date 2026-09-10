@@ -3,12 +3,22 @@
     clippy::expect_used,
     clippy::panic,
     clippy::float_cmp,
-    clippy::too_many_lines
+    clippy::too_many_lines,
+    // Shared across several test binaries; each uses a different subset of the
+    // request-log helpers, so unused-here is the normal case for a fixture.
+    dead_code
 )]
-//! Loopback stand-in for the platform sync + device-key surface.
+//! Loopback stand-in for the platform sync + org-key surface.
 //!
 //! Speaks real HTTP so `comemory::sync::client` (reqwest) hits a real socket.
-//! Covers device code/token/mint, workspace list, and the four sync routes.
+//! Covers device code/token, the org-key mint, and the sync routes.
+//!
+//! Every request is appended to an ordered log ([`SyncPlatformServer::requests`])
+//! carrying method, path and both the `Authorization` and
+//! `X-Comemory-Workspace` headers. Tests assert on it directly: that pull
+//! precedes push at login, that no request carries a workspace header, and
+//! that `/v1/sync/status` is never reached — claims a response body alone
+//! cannot support.
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -54,6 +64,30 @@ pub struct SyncPlatformState {
     pub last_import_body: Option<String>,
     /// Workspace list rows for `GET /v1/workspaces`.
     pub workspaces: Value,
+    /// Org identity the mint returns.
+    pub organization_id: String,
+    /// Org slug the mint returns.
+    pub organization_slug: String,
+    /// Org display name the mint returns.
+    pub organization_name: String,
+    /// Org workspace id the mint returns and sync routes serve.
+    pub workspace_id: String,
+    /// When true, every sync route answers 500 (login-resilience path).
+    pub sync_unavailable: bool,
+}
+
+/// One request the fixture served, in receipt order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecordedRequest {
+    /// HTTP method as sent.
+    pub method: String,
+    /// Request path as sent, query string excluded.
+    pub path: String,
+    /// `Authorization` header value, empty when absent.
+    pub authorization: String,
+    /// `X-Comemory-Workspace` header value, empty when absent — which is what
+    /// the org-scoped key is supposed to make true for every request.
+    pub workspace_header: String,
 }
 
 impl Default for SyncPlatformState {
@@ -73,6 +107,11 @@ impl Default for SyncPlatformState {
             buckets_once: None,
             import_results: json!([]),
             last_import_body: None,
+            organization_id: "99999999-8888-7777-6666-555555555555".into(),
+            organization_slug: "acme".into(),
+            organization_name: "Acme, Inc.".into(),
+            workspace_id: "ws-org".into(),
+            sync_unavailable: false,
             workspaces: json!([{
                 "workspace": {
                     "id": "ws-personal",
@@ -95,6 +134,7 @@ pub struct SyncPlatformServer {
     pub base: String,
     /// Shared mutable state tests can tweak between calls.
     pub state: Arc<Mutex<SyncPlatformState>>,
+    requests: Arc<Mutex<Vec<RecordedRequest>>>,
 }
 
 impl SyncPlatformServer {
@@ -104,16 +144,34 @@ impl SyncPlatformServer {
         let port = listener.local_addr().expect("local addr").port();
         let base = format!("http://127.0.0.1:{port}");
         let shared = Arc::new(Mutex::new(state));
+        let requests = Arc::new(Mutex::new(Vec::new()));
         let thread_state = Arc::clone(&shared);
+        let thread_requests = Arc::clone(&requests);
         std::thread::spawn(move || {
             for stream in listener.incoming().flatten() {
-                let _ = handle(stream, &thread_state);
+                let _ = handle(stream, &thread_state, &thread_requests);
             }
         });
         Self {
             base,
             state: shared,
+            requests,
         }
+    }
+
+    /// Every request served so far, in receipt order.
+    pub fn requests(&self) -> Vec<RecordedRequest> {
+        self.requests.lock().expect("request log").clone()
+    }
+
+    /// Paths served so far, in receipt order.
+    pub fn paths(&self) -> Vec<String> {
+        self.requests().into_iter().map(|r| r.path).collect()
+    }
+
+    /// Whether any request reached `path`.
+    pub fn saw_path(&self, path: &str) -> bool {
+        self.requests().iter().any(|r| r.path == path)
     }
 
     /// Happy-path defaults.
@@ -144,7 +202,11 @@ pub fn empty_manifest_buckets() -> Vec<String> {
     vec![hex; 256]
 }
 
-fn handle(mut stream: TcpStream, state: &Arc<Mutex<SyncPlatformState>>) -> std::io::Result<()> {
+fn handle(
+    mut stream: TcpStream,
+    state: &Arc<Mutex<SyncPlatformState>>,
+    requests: &Arc<Mutex<Vec<RecordedRequest>>>,
+) -> std::io::Result<()> {
     let mut reader = BufReader::new(stream.try_clone()?);
     let mut request_line = String::new();
     reader.read_line(&mut request_line)?;
@@ -157,6 +219,7 @@ fn handle(mut stream: TcpStream, state: &Arc<Mutex<SyncPlatformState>>) -> std::
     };
     let mut content_length = 0usize;
     let mut authorization = String::new();
+    let mut workspace_header = String::new();
     loop {
         let mut header = String::new();
         if reader.read_line(&mut header)? == 0 || header == "\r\n" || header == "\n" {
@@ -172,7 +235,19 @@ fn handle(mut stream: TcpStream, state: &Arc<Mutex<SyncPlatformState>>) -> std::
                 .map(|(_, v)| v.trim().to_string())
                 .unwrap_or_default();
         }
+        if lower.starts_with("x-comemory-workspace:") {
+            workspace_header = header
+                .split_once(':')
+                .map(|(_, v)| v.trim().to_string())
+                .unwrap_or_default();
+        }
     }
+    requests.lock().expect("request log").push(RecordedRequest {
+        method: method.clone(),
+        path: path.clone(),
+        authorization: authorization.clone(),
+        workspace_header,
+    });
     // Cap body size so a buggy Content-Length cannot OOM the test process.
     let (status, resp) = if content_length > MAX_BODY {
         (
@@ -233,7 +308,7 @@ fn route(
             })
             .to_string(),
         ),
-        ("POST", "/v1/device/mint-device-key") => {
+        ("POST", "/v1/device/mint-org-key") => {
             let expected = format!("Bearer {}", st.access_token);
             if authorization != expected {
                 return (
@@ -242,35 +317,39 @@ fn route(
                 );
             }
             (
-                "200 OK",
+                "201 Created",
                 json!({
                     "secret": st.secret,
                     "keyPrefix": "cmk_bbbb",
-                    "personalWorkspaceId": st.personal_workspace_id,
-                    "apiUrl": "http://fixture.local",
+                    "organizationId": st.organization_id,
+                    "organizationSlug": st.organization_slug,
+                    "organizationName": st.organization_name,
+                    "workspaceId": st.workspace_id,
+                    "apiUrl": "",
                     "email": "dev@example.com",
                 })
                 .to_string(),
             )
         }
-        ("GET", "/v1/workspaces") => {
-            if !auth_ok(authorization, &st.secret) {
-                return (
-                    "401 Unauthorized",
-                    json!({"error":"unauthorized"}).to_string(),
-                );
-            }
-            (
-                "200 OK",
-                json!({ "workspaces": st.workspaces.clone() }).to_string(),
-            )
+        ("GET", "/v1/sync/changes" | "/v1/sync/manifest") | ("POST", "/v1/sync/import")
+            if st.sync_unavailable =>
+        {
+            unavailable()
         }
-        ("GET", "/v1/sync/status") => sync_status(&mut st, authorization),
         ("GET", "/v1/sync/changes") => sync_changes(&mut st, authorization, query),
         ("GET", "/v1/sync/manifest") => sync_manifest(&mut st, authorization),
         ("POST", "/v1/sync/import") => sync_import(&mut st, authorization, body),
         _ => ("404 Not Found", json!({"error":"not_found"}).to_string()),
     }
+}
+
+/// Every sync route's answer when `sync_unavailable` is set.
+fn unavailable() -> (&'static str, String) {
+    (
+        "500 Internal Server Error",
+        json!({"ok": false, "error": {"code": "server_error", "message": "fixture outage"}})
+            .to_string(),
+    )
 }
 
 fn auth_ok(authorization: &str, secret: &str) -> bool {

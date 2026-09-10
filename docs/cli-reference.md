@@ -64,8 +64,6 @@ Commands:
   upgrade        Move this binary to the newest release (or a pinned one)
   auth           Cloud workspace-key login / status / logout (device authorization)
   sync           Push/pull memories against the platform
-  workspaces     List platform workspaces for the logged-in device
-  link           Cache repo-label → workspace overrides in `config.toml`
   help           Print this message or the help of the given subcommand(s)
 
 Options:
@@ -1217,7 +1215,7 @@ Cloud workspace-key login / status / logout (device authorization)
 Usage: comemory auth [OPTIONS] <COMMAND>
 
 Commands:
-  login   RFC 8628 device login; mint a device `cmk_` into auth.json
+  login   RFC 8628 device login; mint an organization `cmk_` into auth.json and run the first sync
   status  Report whether local credentials still authenticate
   logout  Delete local auth.json (no remote revoke)
   help    Print this message or the help of the given subcommand(s)
@@ -1228,14 +1226,12 @@ Options:
   -h, --help                 Print help
 
 Examples:
-  # Device login (print code, approve in the console, mint cmk_)
+  # Log in (print code, approve in the console, mint an org cmk_)
+  # and run the first sync before returning
   comemory auth login
 
   # Point at a non-prod API
   comemory auth login --api-url https://dev-api.comemory.io
-
-  # Label this machine (default: hostname)
-  comemory auth login --device-name laptop
 
   # Check the saved key against the platform
   comemory auth status
@@ -1246,46 +1242,6 @@ Examples:
   # Machine-readable
   comemory auth login --json
   comemory auth status --json
-```
-
----
-
-## comemory workspaces
-
-```
-List platform workspaces for the logged-in device
-
-Usage: comemory workspaces [OPTIONS]
-
-Options:
-      --json                 Emit machine-readable JSON instead of a human TTY view
-      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
-  -h, --help                 Print help
-
-Examples:
-  comemory workspaces
-  comemory workspaces --json
-```
-
----
-
-## comemory link
-
-```
-Cache repo-label → workspace overrides in `config.toml`
-
-Usage: comemory link [OPTIONS]
-
-Options:
-      --json                   Emit machine-readable JSON instead of a human TTY view
-      --workspace <WORKSPACE>  Platform workspace id to bind repo labels to
-      --data-dir <DATA_DIR>    Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
-      --repo <REPO>            Repo label (basename or `owner/name`) to cache
-  -h, --help                   Print help
-
-Examples:
-  comemory link --workspace ws_abc --repo my-backend
-  comemory link --repo codasignal/foo --workspace ws_org
 ```
 
 ---
@@ -1313,16 +1269,13 @@ Options:
       --json
           Emit machine-readable JSON instead of a human TTY view
 
+      --allow-secret <ID>
+          Record a secret-scan override for one memory id before push
+
       --data-dir <DATA_DIR>
           Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable
           
           [env: COMEMORY_DATA_DIR=]
-
-      --workspace <WORKSPACE>
-          Platform workspace id (falls back to config default or personal workspace)
-
-      --allow-secret <ID>
-          Record a secret-scan override for one memory id before push
 
   -h, --help
           Print help (see a summary with '-h')
@@ -1330,7 +1283,6 @@ Options:
 Examples:
   comemory sync
   comemory sync --action push
-  comemory sync --action pull --workspace ws_abc
   comemory sync --action status --json
   comemory sync --action verify
   comemory sync --allow-secret deadbeef

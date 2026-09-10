@@ -13,21 +13,18 @@ use comemory::store::connection;
 use comemory::sync::AuthFile;
 use comemory::sync::verify;
 
+use crate::test_common as common;
 use crate::test_common::sync_platform_server::{
     SyncPlatformServer, SyncPlatformState, empty_manifest_buckets,
 };
 
 fn seed_auth(paths: &Paths, api_url: &str, secret: &str) {
-    AuthFile {
-        secret: secret.into(),
-        key_prefix: "cmk_bbbb".into(),
-        personal_workspace_id: "ws-personal".into(),
-        api_url: api_url.into(),
-        device_name: "test".into(),
-        email: None,
-    }
-    .save(paths)
-    .expect("auth");
+    common::auth_fixture::seed_org_auth(
+        paths,
+        api_url,
+        secret,
+        common::auth_fixture::FIXTURE_WORKSPACE,
+    );
 }
 
 #[test]
@@ -47,8 +44,7 @@ fn matching_empty_manifests_need_no_repair() {
     seed_auth(&paths, &server.base, &secret);
 
     let auth = AuthFile::load(&paths).expect("load").expect("auth");
-    let report =
-        verify::verify_manifests(&paths, &cfg, &mut conn, &auth, "ws-org").expect("verify");
+    let report = verify::verify_manifests(&paths, &cfg, &mut conn, &auth).expect("verify");
     assert_eq!(report.differing_buckets, 0);
     assert!(report.bucket_indices.is_empty());
     assert!(!report.repaired);
@@ -75,8 +71,7 @@ fn divergent_manifest_runs_repair_then_matches() {
     seed_auth(&paths, &server.base, &secret);
 
     let auth = AuthFile::load(&paths).expect("load").expect("auth");
-    let report =
-        verify::verify_manifests(&paths, &cfg, &mut conn, &auth, "ws-org").expect("verify");
+    let report = verify::verify_manifests(&paths, &cfg, &mut conn, &auth).expect("verify");
     assert!(report.repaired);
     assert_eq!(report.differing_buckets, 0);
 }

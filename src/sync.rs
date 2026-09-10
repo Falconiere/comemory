@@ -1,18 +1,16 @@
-//! Cloud-sync client helpers: match keys, redaction, auth file, allowlist cache.
+//! Cloud-sync client helpers: credentials, redaction, and the local skip filter.
 
-pub mod allowlist_cache;
 pub mod auth_file;
 pub mod auto;
 pub mod client;
-pub mod match_key;
+pub mod initial;
 pub mod pull;
 pub mod push;
 pub mod redact;
+pub mod skip_repos;
 pub mod verify;
 
-pub use allowlist_cache::{AllowlistCache, classify_with_cache};
 pub use auth_file::AuthFile;
-pub use match_key::{
-    AllowlistRepo, MatchOutcome, classify_repo, normalize_git_remote, normalize_repo_label,
-};
+pub use initial::{InitialSyncStats, run_initial_sync};
 pub use redact::{scan, scan_with_override};
+pub use skip_repos::{SkipMatcher, normalize_repo_label};

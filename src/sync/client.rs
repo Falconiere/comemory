@@ -3,10 +3,10 @@
 //! Wire assumptions (Better Auth device flow + v1 OpenAPI / sync surface):
 //! - `POST {api}/auth/device/code` with `{client_id:"comemory-cli"}` → device/user codes.
 //! - `POST {api}/auth/device/token` with OAuth device-code grant → session access token.
-//! - `POST {api}/v1/device/mint-device-key` with `{deviceName}` + Bearer session → `cmk_` secret.
-//! - Authenticated calls use `Authorization: Bearer {cmk_…}` and `X-Comemory-Workspace: {id}`.
-//! - `GET {api}/v1/workspaces` lists workspaces as `{ workspaces: [{ workspace: {id,name} }] }`.
-//! - Allowlist lives on `GET {api}/v1/sync/status` (`data.allowlist`, `data.allowlist_etag`).
+//! - `POST {api}/v1/device/mint-org-key` + Bearer session → an org-scoped `cmk_` secret.
+//! - Authenticated calls send `Authorization: Bearer {cmk_…}` and **nothing else**:
+//!   the key is scoped to one organization, so the platform derives the
+//!   workspace from it. No call names a workspace.
 //! - Sync routes wrap payloads in `{ok,data,meta}` (Worker status + engine forward).
 
 use std::time::Duration;
@@ -14,11 +14,9 @@ use std::time::Duration;
 use reqwest::blocking::Client;
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use serde::Deserialize;
-use serde::Serialize;
 
 use crate::api::sync::{ChangesResponse, ImportRequest, ImportResponse, ManifestResponse};
 use crate::prelude::*;
-use crate::sync::match_key::AllowlistRepo;
 
 const CLIENT_ID: &str = "comemory-cli";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(30);
@@ -55,37 +53,6 @@ pub struct TokenResponse {
     pub error: Option<String>,
 }
 
-/// Device key mint response from `POST /v1/device/mint-device-key`.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-pub struct MintDeviceKeyResponse {
-    /// Full device API secret (`cmk_…`).
-    pub secret: String,
-    /// Display prefix of the minted key.
-    #[serde(rename = "keyPrefix")]
-    pub key_prefix: String,
-    /// Personal workspace id returned at login.
-    #[serde(rename = "personalWorkspaceId")]
-    pub personal_workspace_id: String,
-    /// Platform API base URL (may differ from the login URL).
-    #[serde(rename = "apiUrl")]
-    pub api_url: String,
-    /// User email when the platform returns one.
-    #[serde(default)]
-    pub email: Option<String>,
-}
-
-/// One workspace row for CLI display.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-pub struct WorkspaceRow {
-    /// Workspace id.
-    pub id: String,
-    /// Display name.
-    pub name: String,
-    /// Whether this is the user's personal workspace (filled by the CLI).
-    #[serde(default)]
-    pub personal: bool,
-}
-
 /// Platform `{ok,data,meta}` / `{ok,error,meta}` envelope.
 #[derive(Debug, Deserialize)]
 struct ApiEnvelope<T> {
@@ -101,33 +68,6 @@ struct ApiErrorBody {
     code: String,
     #[serde(default)]
     message: String,
-}
-
-/// `GET /v1/sync/status` data payload (Worker-only).
-#[derive(Debug, Deserialize)]
-struct SyncStatusData {
-    #[serde(default)]
-    allowlist: Vec<AllowlistRepo>,
-    #[serde(default)]
-    allowlist_etag: Option<String>,
-}
-
-/// Nested workspace view from `GET /v1/workspaces`.
-#[derive(Debug, Deserialize)]
-struct WorkspaceListBody {
-    #[serde(default)]
-    workspaces: Vec<WorkspaceViewWire>,
-}
-
-#[derive(Debug, Deserialize)]
-struct WorkspaceViewWire {
-    workspace: WorkspaceInner,
-}
-
-#[derive(Debug, Deserialize)]
-struct WorkspaceInner {
-    id: String,
-    name: String,
 }
 
 /// Build a shared blocking client with a fixed timeout.
@@ -173,83 +113,10 @@ pub fn poll_token(api_url: &str, device_code: &str) -> Result<TokenResponse> {
     parse_json(resp, "device token")
 }
 
-/// Exchange a session bearer token for a long-lived device key.
-pub fn mint_device_key(
-    api_url: &str,
-    session_token: &str,
-    device_name: &str,
-) -> Result<MintDeviceKeyResponse> {
-    let base = normalize_api_url(api_url);
-    let url = format!("{base}/v1/device/mint-device-key");
-    let client = http_client()?;
-    let resp = client
-        .post(&url)
-        .header(AUTHORIZATION, bearer_value(session_token)?)
-        .json(&serde_json::json!({ "deviceName": device_name }))
-        .send()
-        .map_err(map_reqwest)?;
-    parse_json(resp, "mint device key")
-}
-
-/// List workspaces visible to the device key.
-pub fn list_workspaces(api_url: &str, device_key: &str) -> Result<Vec<WorkspaceRow>> {
-    let base = normalize_api_url(api_url);
-    let url = format!("{base}/v1/workspaces");
-    let client = http_client()?;
-    let resp = client
-        .get(&url)
-        .headers(auth_headers(device_key, None)?)
-        .send()
-        .map_err(map_reqwest)?;
-    let body: WorkspaceListBody = parse_json(resp, "list workspaces")?;
-    Ok(body
-        .workspaces
-        .into_iter()
-        .map(|row| WorkspaceRow {
-            id: row.workspace.id,
-            name: row.workspace.name,
-            personal: false,
-        })
-        .collect())
-}
-
-/// Fetch the org-repo allowlist from `GET /v1/sync/status`.
-///
-/// Personal / unbound workspaces yield an empty list. When `etag` matches the
-/// server's `allowlist_etag`, returns that etag with an empty repo vec so the
-/// caller can keep its cache.
-pub fn fetch_allowlist(
-    api_url: &str,
-    device_key: &str,
-    workspace_id: &str,
-    etag: Option<&str>,
-) -> Result<(Vec<AllowlistRepo>, Option<String>)> {
-    let base = normalize_api_url(api_url);
-    let url = format!("{base}/v1/sync/status");
-    let client = http_client()?;
-    let resp = client
-        .get(&url)
-        .headers(auth_headers(device_key, Some(workspace_id))?)
-        .send()
-        .map_err(map_reqwest)?;
-    if resp.status() == reqwest::StatusCode::NOT_FOUND {
-        return Ok((Vec::new(), None));
-    }
-    let body: SyncStatusData = parse_envelope(resp, "fetch sync status")?;
-    let new_etag = body.allowlist_etag;
-    if let (Some(prev), Some(next)) = (etag, new_etag.as_deref())
-        && prev == next
-    {
-        return Ok((Vec::new(), new_etag));
-    }
-    Ok((body.allowlist, new_etag))
-}
-
 /// Pull sync log entries above `since` from the platform.
 pub fn pull_changes(
     api_url: &str,
-    device_key: &str,
-    workspace_id: &str,
+    org_key: &str,
     since: i64,
     limit: usize,
 ) -> Result<ChangesResponse> {
@@ -259,25 +126,20 @@ pub fn pull_changes(
     let resp = client
         .get(&url)
         .query(&[("since", since.to_string()), ("limit", limit.to_string())])
-        .headers(auth_headers(device_key, Some(workspace_id))?)
+        .headers(auth_headers(org_key)?)
         .send()
         .map_err(map_reqwest)?;
     parse_envelope(resp, "pull changes")
 }
 
 /// Push a batch of local changes to the platform.
-pub fn push_import(
-    api_url: &str,
-    device_key: &str,
-    workspace_id: &str,
-    body: &ImportRequest,
-) -> Result<ImportResponse> {
+pub fn push_import(api_url: &str, org_key: &str, body: &ImportRequest) -> Result<ImportResponse> {
     let base = normalize_api_url(api_url);
     let url = format!("{base}/v1/sync/import");
     let client = http_client()?;
     let resp = client
         .post(&url)
-        .headers(auth_headers(device_key, Some(workspace_id))?)
+        .headers(auth_headers(org_key)?)
         .json(body)
         .send()
         .map_err(map_reqwest)?;
@@ -285,17 +147,13 @@ pub fn push_import(
 }
 
 /// Fetch the remote content-hash manifest for verify/repair.
-pub fn fetch_manifest(
-    api_url: &str,
-    device_key: &str,
-    workspace_id: &str,
-) -> Result<ManifestResponse> {
+pub fn fetch_manifest(api_url: &str, org_key: &str) -> Result<ManifestResponse> {
     let base = normalize_api_url(api_url);
     let url = format!("{base}/v1/sync/manifest");
     let client = http_client()?;
     let resp = client
         .get(&url)
-        .headers(auth_headers(device_key, Some(workspace_id))?)
+        .headers(auth_headers(org_key)?)
         .send()
         .map_err(map_reqwest)?;
     parse_envelope(resp, "fetch manifest")
@@ -306,16 +164,12 @@ fn bearer_value(token: &str) -> Result<HeaderValue> {
         .map_err(|e| Error::Other(format!("authorization header: {e}")))
 }
 
-fn auth_headers(device_key: &str, workspace_id: Option<&str>) -> Result<HeaderMap> {
+/// Authorization only. The org-scoped key already names the workspace, so
+/// sending `X-Comemory-Workspace` would let a caller ask for one the key
+/// cannot reach — the header is gone rather than ignored.
+fn auth_headers(org_key: &str) -> Result<HeaderMap> {
     let mut headers = HeaderMap::new();
-    headers.insert(AUTHORIZATION, bearer_value(device_key)?);
-    if let Some(ws) = workspace_id {
-        headers.insert(
-            "x-comemory-workspace",
-            HeaderValue::from_str(ws)
-                .map_err(|e| Error::Other(format!("workspace header: {e}")))?,
-        );
-    }
+    headers.insert(AUTHORIZATION, bearer_value(org_key)?);
     Ok(headers)
 }
 

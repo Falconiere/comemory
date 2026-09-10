@@ -1,4 +1,11 @@
-//! Push local sync-log entries to the platform (allowlist + redaction filter).
+//! Push local sync-log entries to the platform.
+//!
+//! Two client-side filters remain, in this order: a memory with no `repo`
+//! label never leaves the machine, and a label matching `[sync] skip_repos`
+//! is withheld by the operator's own choice. Everything else is offered to the
+//! organization, which decides — the per-repo GitHub App allowlist that used
+//! to gate this is gone, and with it the second source of truth beside org
+//! membership.
 
 use time::OffsetDateTime;
 use time::format_description::well_known::Iso8601;
@@ -10,10 +17,9 @@ use crate::memory::MemoryStore;
 use crate::prelude::*;
 use crate::store::{Connection, sync_binding, sync_log, sync_state};
 use crate::sync::AuthFile;
-use crate::sync::allowlist_cache::AllowlistCache;
 use crate::sync::client;
-use crate::sync::match_key::{MatchOutcome, classify_repo};
 use crate::sync::redact;
+use crate::sync::skip_repos::SkipMatcher;
 
 const MAX_BATCH: usize = 500;
 
@@ -22,28 +28,31 @@ const MAX_BATCH: usize = 500;
 pub struct PushStats {
     /// Entries accepted by the platform in this run.
     pub pushed: u32,
-    /// Skipped — empty/unbound repo label.
+    /// Skipped — empty/unbound repo label, which never leaves the machine.
     pub skipped_personal: u32,
-    /// Skipped — repo not on the org allowlist.
-    pub skipped_not_in_org: u32,
-    /// Skipped — ambiguous basename match.
-    pub skipped_ambiguous: u32,
+    /// Skipped — label matched `[sync] skip_repos`.
+    pub skipped_config: u32,
     /// Blocked — secret rule hit without override.
     pub blocked_secrets: u32,
     /// Highest local seq included in a successful batch.
     pub last_pushed_seq: i64,
 }
 
-/// Push local-origin log entries above `pushed_seq` for `workspace_id`.
+/// Push local-origin log entries above `pushed_seq` to the organization the
+/// key in `auth` is scoped to.
+///
+/// # Errors
+/// Propagates store, markdown and platform failures. An invalid
+/// `[sync] skip_repos` glob is [`Error::Config`].
 pub fn run_push(
     paths: &Paths,
     cfg: &Config,
     conn: &mut Connection,
     auth: &AuthFile,
-    workspace_id: &str,
     allow_secret_id: Option<&str>,
     limit: usize,
 ) -> Result<PushStats> {
+    let workspace_id = auth.workspace_id.as_str();
     if let Some(id) = allow_secret_id {
         let at = OffsetDateTime::now_utc()
             .format(&Iso8601::DEFAULT)
@@ -54,7 +63,7 @@ pub fn run_push(
     sync_state::ensure(conn, workspace_id, &auth.api_url)?;
     let row = sync_state::get(conn, workspace_id)?
         .ok_or_else(|| Error::Other("sync_state missing after ensure".into()))?;
-    let allowlist = refresh_allowlist(paths, cfg, auth, workspace_id)?;
+    let skip = cfg.sync.skip_matcher()?;
     let store = MemoryStore::new(paths.clone());
     let mut stats = PushStats::default();
     let mut since = row.pushed_seq;
@@ -70,7 +79,7 @@ pub fn run_push(
         for log_row in rows {
             batch_high_seq = log_row.seq;
             if let Some(entry) =
-                build_import_entry(&store, conn, &log_row, &allowlist, workspace_id, &mut stats)?
+                build_import_entry(&store, conn, &log_row, &skip, workspace_id, &mut stats)?
             {
                 batch.push(entry);
             }
@@ -87,7 +96,7 @@ pub fn run_push(
             entries: batch,
         };
         let secret = auth.effective_secret();
-        let resp = client::push_import(&auth.api_url, &secret, workspace_id, &req)?;
+        let resp = client::push_import(&auth.api_url, &secret, &req)?;
         stats.pushed += resp
             .results
             .iter()
@@ -111,7 +120,7 @@ fn build_import_entry(
     store: &MemoryStore,
     conn: &Connection,
     log_row: &sync_log::SyncLogRow,
-    allowlist: &[crate::sync::match_key::AllowlistRepo],
+    skip: &SkipMatcher,
     workspace_id: &str,
     stats: &mut PushStats,
 ) -> Result<Option<ImportEntry>> {
@@ -125,20 +134,15 @@ fn build_import_entry(
             .as_ref()
             .map(|rec| rec.frontmatter.repo.clone())
             .unwrap_or_default();
-        match classify_repo(&repo, allowlist) {
-            MatchOutcome::SkippedPersonal => {
-                stats.skipped_personal += 1;
-                return Ok(None);
-            }
-            MatchOutcome::SkippedNotInOrg => {
-                stats.skipped_not_in_org += 1;
-                return Ok(None);
-            }
-            MatchOutcome::SkippedAmbiguous => {
-                stats.skipped_ambiguous += 1;
-                return Ok(None);
-            }
-            MatchOutcome::Allowed => {}
+        // An unlabelled memory is personal and stays local. A labelled one is
+        // offered to the organization unless the operator withheld it.
+        if repo.trim().is_empty() {
+            stats.skipped_personal += 1;
+            return Ok(None);
+        }
+        if skip.is_skipped(&repo) {
+            stats.skipped_config += 1;
+            return Ok(None);
         }
         if matches!(log_row.op, SyncOp::Upsert | SyncOp::Restore)
             && let Some(rec) = loaded.as_ref()
@@ -160,43 +164,6 @@ fn build_import_entry(
         at: log_row.at.clone(),
         record,
     }))
-}
-
-fn refresh_allowlist(
-    paths: &Paths,
-    cfg: &Config,
-    auth: &AuthFile,
-    workspace_id: &str,
-) -> Result<Vec<crate::sync::match_key::AllowlistRepo>> {
-    let ttl = cfg.sync.allowlist_ttl_duration()?;
-    if let Some(cache) = AllowlistCache::load(paths)?
-        && cache.workspace_id == workspace_id
-        && cache.is_fresh(ttl)
-    {
-        return Ok(cache.repos);
-    }
-    let prior = AllowlistCache::load(paths)?;
-    let etag = prior.as_ref().and_then(|c| c.etag.clone());
-    let secret = auth.effective_secret();
-    let (repos, new_etag) =
-        client::fetch_allowlist(&auth.api_url, &secret, workspace_id, etag.as_deref())?;
-    // Empty repos + matching etag ⇒ keep prior cache; otherwise persist
-    // (including an empty allowlist for personal / unbound workspaces).
-    if repos.is_empty()
-        && new_etag.is_some()
-        && etag.as_deref() == new_etag.as_deref()
-        && let Some(cache) = prior.filter(|c| c.workspace_id == workspace_id)
-    {
-        return Ok(cache.repos);
-    }
-    let cache = AllowlistCache {
-        etag: new_etag.or(etag),
-        fetched_at: OffsetDateTime::now_utc(),
-        repos: repos.clone(),
-        workspace_id: workspace_id.to_string(),
-    };
-    let _ = cache.save(paths);
-    Ok(repos)
 }
 
 fn now_iso() -> Result<String> {

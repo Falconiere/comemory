@@ -28,9 +28,9 @@ pub fn run_pull(
     cfg: &Config,
     conn: &mut Connection,
     auth: &AuthFile,
-    workspace_id: &str,
     limit: usize,
 ) -> Result<PullStats> {
+    let workspace_id = auth.workspace_id.as_str();
     sync_state::ensure(conn, workspace_id, &auth.api_url)?;
     let row = sync_state::get(conn, workspace_id)?
         .ok_or_else(|| Error::Other("sync_state missing after ensure".into()))?;
@@ -40,7 +40,7 @@ pub fn run_pull(
     let cap = limit.min(MAX_BATCH * 4);
 
     loop {
-        let remote = client::pull_changes(&auth.api_url, &secret, workspace_id, since, MAX_BATCH)?;
+        let remote = client::pull_changes(&auth.api_url, &secret, since, MAX_BATCH)?;
         if remote.entries.is_empty() {
             stats.last_pulled_seq = remote.head_seq.max(since);
             break;

@@ -76,6 +76,14 @@ impl Paths {
         self.data_dir.join("auth.json")
     }
 
+    /// Cached org-repo allowlist left behind by releases before organization
+    /// scoping. Nothing reads it any more; `comemory auth login` and
+    /// `comemory auth logout` delete it so a stale copy cannot outlive the
+    /// credential it was fetched for.
+    pub fn allowlist_file(&self) -> PathBuf {
+        self.data_dir.join("allowlist.json")
+    }
+
     /// Durable source registry file (`src/source/registry.rs`), the
     /// authoritative record of registered document roots.
     pub fn sources_file(&self) -> PathBuf {

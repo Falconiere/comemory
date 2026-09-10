@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use clap::{Args as ClapArgs, ValueEnum};
 
 use crate::cli::load_config;
+use crate::cli::off_runtime::off_runtime;
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::config::sync::apply_embed_model;
 use crate::output::json;
@@ -20,7 +21,6 @@ const EXAMPLES: &str = "\
 Examples:
   comemory sync
   comemory sync --action push
-  comemory sync --action pull --workspace ws_abc
   comemory sync --action status --json
   comemory sync --action verify
   comemory sync --allow-secret deadbeef";
@@ -50,9 +50,6 @@ pub struct Args {
     /// Operation: `run` (default), `push`, `pull`, `verify`, or `status`.
     #[arg(long, value_enum, default_value_t = SyncAction::Run)]
     pub action: SyncAction,
-    /// Platform workspace id (falls back to config default or personal workspace).
-    #[arg(long)]
-    pub workspace: Option<String>,
     /// Record a secret-scan override for one memory id before push.
     #[arg(long, value_name = "ID")]
     pub allow_secret: Option<String>,
@@ -64,52 +61,50 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     let cfg = load_config(&paths)?;
     let auth = AuthFile::load(&paths)?
         .ok_or_else(|| Error::Usage("not logged in — run `comemory auth login`".into()))?;
-    let workspace = resolve_workspace(a.workspace.as_deref(), &cfg, &auth);
+    // The org-scoped key names its own workspace; there is nothing to resolve.
+    let workspace = auth.workspace_id.clone();
     let mut conn = open(paths.db_path())?;
     apply_embed_model(&conn, &cfg.embed)?;
 
     match a.action {
         SyncAction::Status => emit_status(json_flag, &mut conn, &workspace),
         SyncAction::Verify => {
-            let report = verify::verify_manifests(&paths, &cfg, &mut conn, &auth, &workspace)?;
+            let report = off_runtime(|| verify::verify_manifests(&paths, &cfg, &mut conn, &auth))?;
             emit_verify(json_flag, &report)
         }
         SyncAction::Push => {
-            let stats = push::run_push(
-                &paths,
-                &cfg,
-                &mut conn,
-                &auth,
-                &workspace,
-                a.allow_secret.as_deref(),
-                2000,
-            )?;
+            let stats = off_runtime(|| {
+                push::run_push(
+                    &paths,
+                    &cfg,
+                    &mut conn,
+                    &auth,
+                    a.allow_secret.as_deref(),
+                    2000,
+                )
+            })?;
             emit_run(json_flag, &workspace, None, Some(&stats))
         }
         SyncAction::Pull => {
-            let stats = pull::run_pull(&paths, &cfg, &mut conn, &auth, &workspace, 2000)?;
+            let stats = off_runtime(|| pull::run_pull(&paths, &cfg, &mut conn, &auth, 2000))?;
             emit_run(json_flag, &workspace, Some(&stats), None)
         }
         SyncAction::Run => {
-            let pull_stats = pull::run_pull(&paths, &cfg, &mut conn, &auth, &workspace, 2000)?;
-            let push_stats = push::run_push(
-                &paths,
-                &cfg,
-                &mut conn,
-                &auth,
-                &workspace,
-                a.allow_secret.as_deref(),
-                2000,
-            )?;
+            let (pull_stats, push_stats) = off_runtime(|| {
+                let pulled = pull::run_pull(&paths, &cfg, &mut conn, &auth, 2000)?;
+                let pushed = push::run_push(
+                    &paths,
+                    &cfg,
+                    &mut conn,
+                    &auth,
+                    a.allow_secret.as_deref(),
+                    2000,
+                )?;
+                Ok((pulled, pushed))
+            })?;
             emit_run(json_flag, &workspace, Some(&pull_stats), Some(&push_stats))
         }
     }
-}
-
-fn resolve_workspace(flag: Option<&str>, cfg: &crate::config::Config, auth: &AuthFile) -> String {
-    flag.map(str::to_owned)
-        .or_else(|| cfg.sync.default_workspace.clone())
-        .unwrap_or_else(|| auth.personal_workspace_id.clone())
 }
 
 fn emit_status(json_flag: bool, conn: &mut Connection, workspace: &str) -> Result<()> {
@@ -183,12 +178,8 @@ fn emit_run(
         if let Some(p) = push_stats {
             writeln!(
                 out,
-                "Pushed {} entries (skipped personal={}, not_in_org={}, ambiguous={}, blocked_secrets={})",
-                p.pushed,
-                p.skipped_personal,
-                p.skipped_not_in_org,
-                p.skipped_ambiguous,
-                p.blocked_secrets
+                "Pushed {} entries (skipped personal={}, skip_repos={}, blocked_secrets={})",
+                p.pushed, p.skipped_personal, p.skipped_config, p.blocked_secrets
             )?;
         }
     }
