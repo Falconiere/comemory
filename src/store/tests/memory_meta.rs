@@ -177,6 +177,7 @@ fn fetch_extra_returns_the_live_row() {
         .expect("query")
         .expect("row present");
     assert_eq!(extra.body, "body text");
+    assert_eq!(extra.author, "alice");
     assert_eq!(extra.quality, 3);
     assert_eq!(extra.access_count, 0);
     assert!(extra.last_accessed.is_none());

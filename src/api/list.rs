@@ -92,6 +92,10 @@ pub struct Row {
     pub kind: String,
     /// Owning repo, or empty string when the memory has none.
     pub repo: String,
+    /// Frontmatter author, or empty string when unset. Kept as a stable
+    /// `String` (never `null`) so consumers can branch on emptiness without
+    /// an optional type; mirrors how `repo` is serialized on this surface.
+    pub author: String,
     /// On-disk file stem `{id}-{slug}`.
     pub slug: String,
     /// First non-empty trimmed line of the body.
@@ -114,6 +118,7 @@ impl From<ListRow> for Row {
             id: r.id,
             kind: r.kind,
             repo: r.repo,
+            author: r.author,
             slug: r.slug,
             tags: r.tags,
             quality: r.quality,

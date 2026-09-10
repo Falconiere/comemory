@@ -48,7 +48,9 @@ pub struct CodeRefRow {
 /// One memory in full, as emitted under `--json` and the
 /// `/api/v1/memories/{id}` `data` field. Field order matters: the first
 /// seven are the pre-existing `MemoryDetail` contract (see the module doc)
-/// and must not be reordered, renamed, or retyped.
+/// and must not be reordered, renamed, or retyped. Fields after `path` are
+/// additive — including `author`, which serializes as a stable empty
+/// string when unset (never `null`), matching `list::Row`.
 #[derive(Serialize, Debug)]
 pub struct Response {
     /// 8-hex memory id.
@@ -65,6 +67,9 @@ pub struct Response {
     pub references: References,
     /// Absolute path to the memory's markdown file.
     pub path: String,
+    /// Frontmatter author, or empty string when unset. Stable string type
+    /// (never `null`) — same contract as [`crate::api::list::Row::author`].
+    pub author: String,
     /// First non-empty trimmed line of the body.
     pub title: String,
     /// Full memory body, verbatim.
@@ -132,6 +137,7 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
         tags: entry.tags,
         references: entry.references,
         path,
+        author: extra.author,
         title,
         body: extra.body,
         quality: extra.quality,

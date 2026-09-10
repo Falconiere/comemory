@@ -44,12 +44,14 @@ impl SortBy {
 ///
 /// `slug` is the on-disk file stem (`{id}-{slug}`, derived from `md_path`) so
 /// the value matches the legacy markdown-scan output byte-for-byte; `repo`
-/// coalesces the nullable `memories.repo` column to an empty string for the
-/// same reason. `body` is carried verbatim rather than a derived `title` so
-/// the title stays a one-rule concept: the caller (`api::list::Row::from`)
-/// derives it through `output::search::title_of`, the same helper
-/// `comemory search`/`comemory show` already use, instead of the store layer
-/// depending on `output` to compute it here (Binding Rule 1).
+/// and `author` coalesce their nullable columns to an empty string for the
+/// same reason (a missing frontmatter author is stored as SQL `NULL` and
+/// surfaces as `""` so the JSON type stays a stable string). `body` is
+/// carried verbatim rather than a derived `title` so the title stays a
+/// one-rule concept: the caller (`api::list::Row::from`) derives it through
+/// `output::search::title_of`, the same helper `comemory search`/`comemory
+/// show` already use, instead of the store layer depending on `output` to
+/// compute it here (Binding Rule 1).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListRow {
     /// 8-hex memory id (`memories.id`).
@@ -58,6 +60,8 @@ pub struct ListRow {
     pub kind: String,
     /// Owning repo, or empty string when the memory has none.
     pub repo: String,
+    /// Frontmatter author, or empty string when unset / stored as SQL `NULL`.
+    pub author: String,
     /// On-disk file stem `{id}-{slug}` derived from `memories.md_path`.
     pub slug: String,
     /// Full memory body, verbatim (`memories.body`).
@@ -190,7 +194,7 @@ pub fn list_memories(
     binds.push(Box::new(i64::try_from(offset).unwrap_or(i64::MAX)));
     let order = sort.order_by();
     let sql = format!(
-        "SELECT id, kind, repo, md_path, body, quality, created_at, access_count \
+        "SELECT id, kind, repo, author, md_path, body, quality, created_at, access_count \
            FROM memories WHERE deleted_at IS NULL{filters} \
           ORDER BY {order} LIMIT ? OFFSET ?"
     );
@@ -205,21 +209,23 @@ pub fn list_memories(
     Ok(ListPage { rows, total })
 }
 
-/// Build one [`ListRow`] from a `SELECT id, kind, repo, md_path, body,
+/// Build one [`ListRow`] from a `SELECT id, kind, repo, author, md_path, body,
 /// quality, created_at, access_count` row. `tags` starts empty; the caller
 /// fills it in via [`attach_tags`] once the page's ids are known.
 fn row_from_query(r: &rusqlite::Row<'_>) -> rusqlite::Result<ListRow> {
     let id: String = r.get(0)?;
     let kind: String = r.get(1)?;
     let repo: Option<String> = r.get(2)?;
-    let md_path: String = r.get(3)?;
-    let body: String = r.get(4)?;
-    let quality: u8 = r.get(5)?;
-    let created: String = r.get(6)?;
-    let access_count = r.get::<_, i64>(7)?.max(0) as u64;
+    let author: Option<String> = r.get(3)?;
+    let md_path: String = r.get(4)?;
+    let body: String = r.get(5)?;
+    let quality: u8 = r.get(6)?;
+    let created: String = r.get(7)?;
+    let access_count = r.get::<_, i64>(8)?.max(0) as u64;
     Ok(ListRow {
         slug: file_stem(&md_path),
         repo: repo.unwrap_or_default(),
+        author: author.unwrap_or_default(),
         id,
         kind,
         body,

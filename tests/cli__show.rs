@@ -66,6 +66,8 @@ fn show_returns_full_body_quality_tags_and_one_code_ref() {
             "demo",
             "--tags",
             "ranking,frontmatter",
+            "--author",
+            "alice",
             "--quality",
             "4",
         ],
@@ -75,6 +77,7 @@ fn show_returns_full_body_quality_tags_and_one_code_ref() {
     let v = show_json(&home, &id);
     assert_eq!(v["body"], body, "body must round-trip verbatim: {v}");
     assert_eq!(v["quality"], 4);
+    assert_eq!(v["author"], "alice");
     let tags: Vec<&str> = v["tags"]
         .as_array()
         .expect("tags array")

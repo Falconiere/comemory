@@ -22,11 +22,12 @@ _None besides globals._
 ### show-01 Full body and metadata
 
 - **Flags:** `--json`
-- **Setup:** a memory saved with tags, `--quality 4`, and a backtick
-  `repo:path:symbol` body reference
+- **Setup:** a memory saved with tags, `--quality 4`, `--author alice`, and a
+  backtick `repo:path:symbol` body reference
 - **Command:** `comemory show <id> --json`
 - **Expect:** `body` round-trips verbatim; `quality` is 4; `tags` match;
-  `code_refs` has the implied file/symbol ref.
+  `author` is `"alice"` (or `""` when `--author` was omitted); `code_refs`
+  has the implied file/symbol ref.
 - **Covered by:** `tests/cli__show.rs::show_returns_full_body_quality_tags_and_one_code_ref`
 
 ### show-02 After getting-started save

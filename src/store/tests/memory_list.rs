@@ -207,4 +207,5 @@ fn slug_is_file_stem_id_dash_slug() {
     assert_eq!(row.slug, "aaaa0008-note-aaaa0008");
     assert_eq!(row.repo, "beta");
     assert_eq!(row.kind, "bug");
+    assert_eq!(row.author, "alice");
 }
