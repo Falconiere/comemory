@@ -270,3 +270,47 @@ fn tune_samples_takes_any_usize() {
         assert_eq!(cfg.tune.samples.to_string(), n);
     }
 }
+
+#[test]
+fn rejects_invalid_skip_glob() {
+    // A malformed pattern must fail at config load, not silently compile to a
+    // matcher that withholds nothing — the failure mode would be a repo the
+    // operator meant to keep local being pushed to the organization.
+    assert_rejected("[sync]\nskip_repos = [\"acme/[\"]\n", "sync.skip_repos");
+}
+
+#[test]
+fn accepts_valid_skip_globs() {
+    let cfg = load("[sync]\nskip_repos = [\"acme/secret-*\", \"scratch\"]\n")
+        .expect("valid globs must load");
+    assert_eq!(cfg.sync.skip_repos, vec!["acme/secret-*", "scratch"]);
+    let matcher = cfg.sync.skip_matcher().expect("compiles");
+    assert!(matcher.is_skipped("acme/secret-thing"));
+    assert!(!matcher.is_skipped("acme/public-thing"));
+}
+
+#[test]
+fn accepts_deprecated_sync_keys_without_failing_the_load() {
+    // `PartialSyncConfig` is deny_unknown_fields, so a config written before
+    // organization scoping must still load — otherwise the upgrade bricks
+    // every existing installation that ran `comemory link`.
+    let cfg = load(concat!(
+        "[sync]\n",
+        "allowlist_ttl = \"2h\"\n",
+        "default_workspace = \"ws_old\"\n",
+        "skip_repos = [\"acme/secret-*\"]\n",
+        "\n",
+        "[sync.repos]\n",
+        "\"acme/backend\" = \"ws_old\"\n",
+    ))
+    .expect("a config carrying every deprecated key must still load");
+    assert_eq!(cfg.sync.skip_repos, vec!["acme/secret-*"]);
+    assert_eq!(cfg.sync.default_workspace.as_deref(), Some("ws_old"));
+}
+
+#[test]
+fn still_rejects_a_genuinely_unknown_sync_key() {
+    // Keeping the deprecated keys parseable must not turn the section into a
+    // free-for-all: a typo has to stay an error.
+    assert_rejected("[sync]\nnot_a_real_key = 1\n", "not_a_real_key");
+}

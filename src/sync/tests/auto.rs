@@ -13,10 +13,10 @@ use std::time::Duration;
 use time::OffsetDateTime;
 use time::format_description::well_known::Iso8601;
 
+use crate::test_common as common;
 use comemory::config::{Config, Paths};
 use comemory::store::connection;
 use comemory::store::sync_state;
-use comemory::sync::AuthFile;
 use comemory::sync::auto;
 
 #[test]
@@ -27,8 +27,27 @@ fn after_save_noop_when_disabled() {
     let conn = connection::open(paths.db_path()).expect("db");
     let mut cfg = Config::defaults();
     cfg.sync.after_save = false;
-    // Must not panic / spawn a failing push (no auth file).
-    auto::after_save_best_effort(&paths, &cfg, &conn);
+    // Must not panic / spawn a failing push (no auth file), and must hand
+    // back nothing to wait on when the knob is off.
+    auto::after_save_best_effort(&paths, &cfg, &conn).wait();
+}
+
+#[test]
+fn after_save_push_is_joinable_so_a_short_lived_process_cannot_lose_it() {
+    // `[sync] after_save` runs on its own thread because `reqwest::blocking`
+    // cannot run under tokio. A CLI process exits milliseconds after the save
+    // returns, so an un-joined handle used to make the push a race it usually
+    // lost. Waiting must return once the push finishes — here it fails fast
+    // against an unreachable base, which is still a completed push.
+    let home = tempfile::tempdir().expect("tempdir");
+    let paths = Paths::new(home.path());
+    paths.ensure_dirs().expect("dirs");
+    let conn = connection::open(paths.db_path()).expect("db");
+    let cfg = Config::defaults();
+    assert!(cfg.sync.after_save, "the shipped default is on");
+    common::auth_fixture::seed_org_auth(&paths, "http://127.0.0.1:9", "cmk_test", "ws-org");
+
+    auto::after_save_best_effort(&paths, &cfg, &conn).wait();
 }
 
 #[test]
@@ -50,16 +69,13 @@ fn pull_before_context_skips_fresh_last_sync() {
     let mut cfg = Config::defaults();
     cfg.sync.pull_before_context_after = "1h".into();
 
-    let auth = AuthFile {
-        secret: "cmk_test".into(),
-        key_prefix: "cmk_test".into(),
-        personal_workspace_id: "ws-personal".into(),
-        // Unreachable — must not be contacted when last_sync is fresh.
-        api_url: "http://127.0.0.1:9".into(),
-        device_name: "test".into(),
-        email: None,
-    };
-    auth.save(&paths).expect("auth");
+    // Unreachable base — must not be contacted when last_sync is fresh.
+    let auth = common::auth_fixture::seed_org_auth(
+        &paths,
+        "http://127.0.0.1:9",
+        "cmk_test",
+        "ws-personal",
+    );
 
     sync_state::ensure(&conn, "ws-personal", &auth.api_url).expect("ensure");
     let now = OffsetDateTime::now_utc()

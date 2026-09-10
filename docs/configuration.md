@@ -60,8 +60,8 @@ Set these in `config.toml`; they have **no** environment override.
 | `sync.after_save` | Best-effort push after each local save (never fails the save). | `true` |
 | `sync.pull_before_context_after` | Pull before `context` when last sync is older than this duration string. | `"5m"` |
 | `sync.verify_every` | Interval hint for `comemory sync --action verify`. | `"7d"` |
-| `sync.allowlist_ttl` | TTL for the cached org-repo allowlist. | `"1h"` |
-| `sync.repos` / `sync.default_workspace` | Optional local overrides (`comemory link`); **not** the allowlist SoT. | empty / unset |
+| `sync.skip_repos` | Globs over the trimmed, lowercased `repo` label; a match keeps that memory local. The only client-side sync filter besides the empty-label rule, now that organization membership is the platform's gate. An invalid glob fails at config load. | `[]` |
+| `sync.allowlist_ttl`, `sync.repos`, `sync.default_workspace` | **Deprecated, parsed and ignored**, each with a warning naming it. Kept declared for one release because `[sync]` is `deny_unknown_fields`, so deleting them outright would stop every existing `config.toml` that sets them from loading at all. Remove them. | — |
 | `embed.model` | Model id recorded for sync vector import compatibility. | `""` |
 
 ## Vector dimensions (not configurable)

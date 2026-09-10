@@ -1,12 +1,13 @@
 # `comemory auth`
 
-Cloud workspace-key device login against the platform API
-(`https://api.comemory.io` by default). Runs the RFC 8628 device flow
-(`client_id=comemory-cli`), waits for console approval + workspace bind, then
-`POST /v1/device/mint-workspace-key` with the device `access_token` as
-`Authorization: Bearer …`, and writes a workspace-bound `cmk_` into
-`$COMEMORY_DATA_DIR/auth.json` (mode `0600`). Nested: `login` / `status` /
-`logout`. No sync / device-key mint in this slice.
+Organization-scoped login against the platform API (`https://api.comemory.io`
+by default). Runs the RFC 8628 device flow (`client_id=comemory-cli`), waits
+for console approval — where the operator picks the organization — then
+`POST /v1/device/mint-org-key` with the device `access_token` as
+`Authorization: Bearer …`, and writes an org-scoped `cmk_` into
+`$COMEMORY_DATA_DIR/auth.json` (schema v2, mode `0600`). `login` then runs the
+first sync (pull, then push) before returning, best-effort: a platform outage
+warns on stderr and still exits 0. Nested: `login` / `status` / `logout`.
 
 **Runnable tests:** `tests/cli__auth.rs` (command; loopback fixture
 `tests/common/device_auth_server.rs`), colocated `src/cloud/tests/*`
@@ -33,23 +34,68 @@ _None at the `auth` level._ Nested subcommand required: `login` | `status` |
 
 ## Scenarios
 
-### auth-01 Login writes auth.json
+### auth-01 Login writes a v2 auth.json carrying the org scope
 
 - **Flags:** _(none)_
 - **Setup:** loopback device auth fixture; `COMEMORY_API` / `--api-url` pointed at it
 - **Command:** `comemory --json auth login --api-url http://127.0.0.1:<port>`
-- **Expect:** exit 0; `auth.json` mode `0600` with `secret` matching `cmk_` + 64 hex;
-  JSON includes `secret` once, `workspace_id`, `key_prefix`, `api_url`
-- **Covered by:** `tests/cli__auth.rs::login_writes_auth_json_mode_0600_and_usable_secret`
+- **Expect:** exit 0; `auth.json` mode `0600`, `version: 2`, carrying
+  `organization_id` / `organization_slug` / `workspace_id` and **not**
+  `device_name` or `personal_workspace_id`; JSON includes `secret` once;
+  `/v1/workspaces` is never called
+- **Covered by:** `tests/cli__auth.rs::login_writes_v2_auth_file`
 
-### auth-02 Status authenticated after login
+### auth-02 Status reports the bound organization
 
 - **Flags:** _(none)_
 - **Setup:** auth-01 credentials on disk
 - **Command:** `comemory --json auth status`
-- **Expect:** `{ "authenticated": true, "workspace_id", "workspace_name", … }`;
-  no full `secret` field
-- **Covered by:** `tests/cli__auth.rs::status_reports_authenticated_after_login`
+- **Expect:** `{ "authenticated": true, "organization_id", "organization_name",
+  "workspace_id", … }`; no full `secret` field
+- **Covered by:** `tests/cli__auth.rs::status_reports_the_bound_organization`
+
+### auth-06 Login runs the first sync before returning
+
+- **Flags:** _(none)_
+- **Setup:** loopback platform fixture serving both the device grant and the sync routes
+- **Command:** `comemory --json auth login --api-url http://127.0.0.1:<port>`
+- **Expect:** `initial_sync.ok = true` with `pulled` / `pushed` counts; the
+  fixture records `GET /v1/sync/changes` before any `POST /v1/sync/import`
+- **Covered by:** `tests/cli__auth.rs::login_runs_initial_sync_before_returning`
+
+### auth-07 A sync outage does not fail the login
+
+- **Flags:** _(none)_
+- **Setup:** platform fixture answering 500 on every sync route
+- **Command:** `comemory --json auth login --api-url http://127.0.0.1:<port>`
+- **Expect:** exit 0; `auth.json` written; `initial_sync.ok = false` with an
+  `error` string; a warning on stderr
+- **Covered by:** `tests/cli__auth.rs::login_survives_a_sync_outage`
+
+### auth-08 An unscoped mint leaves no credential behind
+
+- **Flags:** _(none)_
+- **Setup:** fixture minting an empty `workspaceId`
+- **Command:** `comemory auth login --api-url http://127.0.0.1:<port>`
+- **Expect:** non-zero exit naming the missing organization scope; no `auth.json`
+- **Covered by:** `tests/cli__auth.rs::unscoped_mint_leaves_no_credential_on_disk`
+
+### auth-09 Login and logout clear a stale allowlist
+
+- **Flags:** _(none)_
+- **Setup:** an `allowlist.json` left by a pre-org-scoping release
+- **Command:** `comemory auth login …`, then `comemory auth logout`
+- **Expect:** the file is gone after each; logout stays idempotent
+- **Covered by:** `tests/cli__auth.rs::login_and_logout_clear_a_stale_allowlist`
+
+### auth-10 A save reaches the organization with no further command
+
+- **Flags:** _(none)_
+- **Setup:** platform fixture; `comemory auth login` and nothing else
+- **Command:** `comemory save --repo acme/backend "<body>"`
+- **Expect:** a `POST /v1/sync/import` carrying that memory, driven only by the
+  shipped `[sync] after_save` default
+- **Covered by:** `tests/cli__auth.rs::after_save_reaches_the_org_workspace_with_no_further_command`
 
 ### auth-03 Logout removes auth.json
 

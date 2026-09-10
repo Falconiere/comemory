@@ -263,9 +263,10 @@ Full data model, save flow, retrieval pipeline, and graph mechanics:
 | `comemory install-hooks` | Install git hooks that reindex code on commit/merge/checkout |
 | `comemory hooks` | Report and toggle those hooks individually, plus search→edit reinforcement |
 | `comemory upgrade` | Move this binary to the newest release (`--check` only reports; `--version` pins) |
-| `comemory auth login` | Device login; mint a device `cmk_` into `auth.json` (`--api-url`, `--device-name`) |
+| `comemory auth login` | Log in; mint an organization `cmk_` into `auth.json` and run the first sync (`--api-url`) |
 | `comemory auth status` | Check whether local / `COMEMORY_API_KEY` credentials still authenticate |
 | `comemory auth logout` | Delete local `auth.json` (no remote revoke) |
+| `comemory sync` | Push/pull against the bound organization (`--action`, `--allow-secret`) |
 
 Every command accepts `--json`; the data root defaults to `~/.comemory`
 (overridable with `--data-dir` or `COMEMORY_DATA_DIR`). Full per-command docs

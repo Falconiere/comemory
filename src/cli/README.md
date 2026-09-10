@@ -22,7 +22,7 @@ One line per file, named after its primary item:
 | File | Primary item | Purpose |
 | --- | --- | --- |
 | `ast.rs` | `Args` | `comemory ast` — run an ast-grep pattern against a source file |
-| `auth.rs` | `Args` | `comemory auth` — nested `login` / `status` / `logout` for cloud workspace keys (CLI-only) |
+| `auth.rs` | `Args` | `comemory auth` — nested `login` / `status` / `logout` for the org-scoped key; `login` runs the first sync (CLI-only) |
 | `bandit.rs` | `Args` | `comemory bandit` — Thompson-sample the `[tune]` grid, confirm with offline eval |
 | `completions.rs` | `Args` | `comemory completions <shell>` — emit a shell completion script |
 | `consolidate.rs` | `Args` | `comemory consolidate` — advisory near-duplicate cluster report |
@@ -42,14 +42,14 @@ One line per file, named after its primary item:
 | `ingest_code.rs` | `Args` | `comemory ingest-code` — bulk pre-embedded code-symbol ingestion from stdin |
 | `install_hooks.rs` | `Args` | `comemory install-hooks` — install git hooks that trigger `index-code` |
 | `lazy_reindex.rs` | `RepoContext` | Detached, non-blocking auto-reindex trigger behind `indexing.auto_reindex = lazy` |
-| `link.rs` | `Args` | `comemory link` — bind this data-dir to a cloud workspace |
 | `list.rs` | `Args` | `comemory list` — page live memories with `--repo` / `--kind` filters |
+| `off_runtime.rs` | `off_runtime` | Run blocking platform I/O on a scoped thread, away from the tokio runtime |
 | `mine.rs` | `Args` | `comemory mine` — distill query reformulations from `retrieval_log` into expansions |
 | `pagination.rs` | `PaginationArgs` | Shared `--k` / `--offset` window flags, flattened into paginated commands |
 | `prune.rs` | `Args` | `comemory prune` — surface deletion candidates against the SQLite mirror |
 | `rebuild.rs` | `Args` | `comemory rebuild` — atomically rebuild the SQLite mirror from markdown |
 | `ref_args.rs` | `collect` | Parse `--ref-file` / `--ref-symbol` into a `References` block |
-| `save.rs` | `Args` | `comemory save` — atomic markdown write + SQLite-mirror upsert |
+| `save.rs` | `Args` | `comemory save` — atomic markdown write + SQLite-mirror upsert; waits on the after-save push |
 | `search.rs` | `Args` | `comemory search` — natural-language search over the memory store |
 | `search_code.rs` | `Args` | `comemory search-code` — ranked search over indexed `code_symbols` |
 | `search_only.rs` | `OnlyDomain` | `--only`/`--path` domain-scope resolution shared by `search` |
@@ -63,7 +63,6 @@ One line per file, named after its primary item:
 | `unindex.rs` | `Args` | `comemory unindex <SOURCE_ID\|PATH>` — unregister a document source |
 | `upgrade.rs` | `Args` | `comemory upgrade` — move this binary to the newest release (`--check`, `--version`, `--force`); core in `crate::upgrade`, CLI-only |
 | `when.rs` | `DayEdge` | `--since`/`--until`/`--as-of` value parsing shared by `search` and `context` |
-| `workspaces.rs` | `Args` | `comemory workspaces` — list cloud workspaces available to the signed-in key |
 
 When you add a file here, add its row above so the index stays current. No
 `mod.rs` barrel — submodules are declared from `src/cli.rs` (`pub mod <name>;`)

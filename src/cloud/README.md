@@ -1,9 +1,8 @@
 # cloud/
 
-**What belongs here:** the cloud-platform client for device login — API base
-URL resolution, RFC 8628 device code / token poll,
-`POST /v1/device/mint-device-key`, and the `GET /v1/workspaces` reads that
-`auth status` / `comemory workspaces` run with the minted key.
+**What belongs here:** the cloud-platform client for login — API base URL
+resolution, RFC 8628 device code / token poll, `POST /v1/device/mint-org-key`,
+and the key probe behind `comemory auth status`.
 `src/cloud.rs` beside this folder re-exports the public surface and the
 `comemory-cli` client id. HTTP shells out through
 [`crate::fetch`](../fetch.rs) (curl/wget); no TLS stack in the crate, which
@@ -14,14 +13,15 @@ TLS features and therefore loopback-only).
 [`sync::auth_file::AuthFile`](../sync/auth_file.rs), the one file both
 `auth login` and `sync` read. Nor opening a browser, remote key revoke on
 logout, or an `/api/v1` route — `auth` is CLI-only
-(`serve::routes::meta::CLI_ONLY`).
+(`serve::routes::meta::CLI_ONLY`). Nor the first sync that follows a
+successful login: that is [`sync::initial`](../sync/initial.rs).
 
 ## Contents
 
 | File | Primary item | Purpose |
 | --- | --- | --- |
 | `api_url.rs` | `resolve` | `--api-url` > `COMEMORY_API` > `https://api.comemory.io`; strip trailing slash |
-| `device.rs` | `login` | Device code → poll (pending / slow_down) → `mint-device-key` with Bearer access_token; `list_workspaces` / `workspace_status` |
+| `device.rs` | `login` | Device code → poll (pending / slow_down) → `mint-org-key` with Bearer access_token; `org_status` |
 
 Tests live beside the module under `tests/`. End-to-end CLI coverage is
 `tests/cli__auth.rs` against a loopback device-auth fixture.

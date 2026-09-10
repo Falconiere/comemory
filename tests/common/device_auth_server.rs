@@ -3,14 +3,23 @@
     clippy::expect_used,
     clippy::panic,
     clippy::float_cmp,
-    clippy::too_many_lines
+    clippy::too_many_lines,
+    // Shared across several test binaries; each uses a different subset of the
+    // request-log helpers, so unused-here is the normal case for a fixture.
+    dead_code
 )]
 //! Loopback stand-in for the platform device-auth + mint flow.
 //!
 //! Speaks real HTTP over a real socket so `comemory auth` still shells out
-//! to curl/wget. Covers `/auth/device/code`, `/auth/device/token`,
-//! `/v1/device/mint-device-key`, and `/v1/workspaces`. Each consuming
-//! binary `#[path]`-includes this file directly.
+//! to curl/wget. Covers `/auth/device/code`, `/auth/device/token`, and
+//! `/v1/device/mint-org-key`. Each consuming binary `#[path]`-includes this
+//! file directly.
+//!
+//! Every request is appended to an ordered log ([`DeviceAuthServer::requests`])
+//! carrying method, path and the `Authorization` header, so a test can assert
+//! not just the outcome but which routes were reached and in what order — that
+//! is how "the CLI no longer calls `/v1/workspaces`" is proven rather than
+//! assumed.
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -33,14 +42,32 @@ pub struct DeviceAuthConfig {
     pub secret: String,
     /// Display prefix for the minted key.
     pub key_prefix: String,
-    /// Personal workspace UUID returned by the mint.
+    /// Org workspace UUID returned by the mint.
     pub workspace_id: String,
-    /// Workspace display name.
+    /// Organization UUID returned by the mint.
+    pub organization_id: String,
+    /// Organization slug returned by the mint.
+    pub organization_slug: String,
+    /// Organization display name returned by the mint.
+    pub organization_name: String,
+    /// Workspace display name for the legacy `GET /v1/workspaces` route,
+    /// retained until `cli__auth` stops calling it.
     pub workspace_name: String,
+    /// Status the legacy `GET /v1/workspaces` answers with (200 → the list).
+    pub workspaces_status: u16,
     /// `apiUrl` the mint echoes back (blank → the CLI keeps the dialed URL).
     pub mint_api_url: String,
-    /// Status `GET /v1/workspaces` answers with (200 → the normal list).
-    pub workspaces_status: u16,
+}
+
+/// One request the fixture served, in receipt order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecordedRequest {
+    /// HTTP method as sent.
+    pub method: String,
+    /// Request path as sent.
+    pub path: String,
+    /// `Authorization` header value, empty when absent.
+    pub authorization: String,
 }
 
 impl Default for DeviceAuthConfig {
@@ -53,9 +80,12 @@ impl Default for DeviceAuthConfig {
             secret: "cmk_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
             key_prefix: "cmk_aaaa".into(),
             workspace_id: "11111111-2222-3333-4444-555555555555".into(),
+            organization_id: "99999999-8888-7777-6666-555555555555".into(),
+            organization_slug: "acme".into(),
+            organization_name: "Acme, Inc.".into(),
             workspace_name: "Fixture Workspace".into(),
-            mint_api_url: String::new(),
             workspaces_status: 200,
+            mint_api_url: String::new(),
         }
     }
 }
@@ -66,6 +96,19 @@ pub struct DeviceAuthServer {
     pub base: String,
     /// Shared config (tests may inspect minted values).
     pub config: Arc<DeviceAuthConfig>,
+    requests: Arc<Mutex<Vec<RecordedRequest>>>,
+}
+
+impl DeviceAuthServer {
+    /// Every request served so far, in receipt order.
+    pub fn requests(&self) -> Vec<RecordedRequest> {
+        self.requests.lock().expect("request log").clone()
+    }
+
+    /// Whether any request reached `path`.
+    pub fn saw_path(&self, path: &str) -> bool {
+        self.requests().iter().any(|r| r.path == path)
+    }
 }
 
 struct Shared {
@@ -73,6 +116,7 @@ struct Shared {
     /// device_code → remaining pending polls (initialized from config).
     codes: Mutex<HashMap<String, u32>>,
     next_code: AtomicU32,
+    requests: Arc<Mutex<Vec<RecordedRequest>>>,
 }
 
 impl DeviceAuthServer {
@@ -81,10 +125,12 @@ impl DeviceAuthServer {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback");
         let port = listener.local_addr().expect("local addr").port();
         let base = format!("http://127.0.0.1:{port}");
+        let requests = Arc::new(Mutex::new(Vec::new()));
         let shared = Arc::new(Shared {
             config: config.clone(),
             codes: Mutex::new(HashMap::new()),
             next_code: AtomicU32::new(1),
+            requests: Arc::clone(&requests),
         });
         let thread_shared = Arc::clone(&shared);
         std::thread::spawn(move || {
@@ -95,6 +141,7 @@ impl DeviceAuthServer {
         Self {
             base,
             config: Arc::new(config),
+            requests,
         }
     }
 
@@ -146,6 +193,15 @@ fn handle(mut stream: TcpStream, shared: &Shared) -> std::io::Result<()> {
         reader.read_exact(&mut body)?;
     }
     let body_str = String::from_utf8_lossy(&body);
+    shared
+        .requests
+        .lock()
+        .expect("request log")
+        .push(RecordedRequest {
+            method: method.clone(),
+            path: path.clone(),
+            authorization: authorization.clone(),
+        });
     let (status, content_type, resp) = route(&method, &path, &body_str, &authorization, shared);
     let head = format!(
         "HTTP/1.1 {status}\r\nConnection: close\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\n\r\n",
@@ -168,7 +224,7 @@ fn route(
     match (method, path) {
         ("POST", "/auth/device/code") => device_code(body, shared),
         ("POST", "/auth/device/token") => device_token(body, shared),
-        ("POST", "/v1/device/mint-device-key") => mint(body, authorization, shared),
+        ("POST", "/v1/device/mint-org-key") => mint(authorization, shared),
         ("GET", "/v1/workspaces") => workspaces_list(authorization, shared),
         _ => (
             "404 Not Found",
@@ -246,7 +302,7 @@ fn device_token(body: &str, shared: &Shared) -> (&'static str, &'static str, Str
     ("200 OK", "application/json", body.to_string())
 }
 
-fn mint(body: &str, authorization: &str, shared: &Shared) -> (&'static str, &'static str, String) {
+fn mint(authorization: &str, shared: &Shared) -> (&'static str, &'static str, String) {
     let expected = format!("Bearer {}", shared.config.access_token);
     if authorization != expected {
         return (
@@ -255,24 +311,23 @@ fn mint(body: &str, authorization: &str, shared: &Shared) -> (&'static str, &'st
             r#"{"error":"unauthorized"}"#.into(),
         );
     }
-    // The platform's zod input rejects a missing/blank deviceName with 400.
-    let device_name = json_str(body, "deviceName").unwrap_or_default();
-    if device_name.is_empty() {
-        return (
-            "400 Bad Request",
-            "application/json",
-            r#"{"error":"deviceName required"}"#.into(),
-        );
-    }
+    // No deviceName: the org key is not labelled per machine. An empty
+    // `workspace_id` / `organization_id` is served verbatim so a test can drive
+    // the unscoped-mint failure path.
     let body = serde_json::json!({
         "secret": shared.config.secret,
         "keyPrefix": shared.config.key_prefix,
-        "personalWorkspaceId": shared.config.workspace_id,
+        "organizationId": shared.config.organization_id,
+        "organizationSlug": shared.config.organization_slug,
+        "organizationName": shared.config.organization_name,
+        "workspaceId": shared.config.workspace_id,
         "apiUrl": shared.config.mint_api_url,
     });
     ("201 Created", "application/json", body.to_string())
 }
 
+/// Legacy `GET /v1/workspaces`. Retained only until `cli__auth` is rewritten
+/// against the org key; an org-scoped key has no workspace list to fetch.
 fn workspaces_list(authorization: &str, shared: &Shared) -> (&'static str, &'static str, String) {
     let expected = format!("Bearer {}", shared.config.secret);
     if authorization != expected {

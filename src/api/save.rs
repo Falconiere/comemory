@@ -107,6 +107,14 @@ pub struct Verbatim {
 /// `comemory save` / `POST /api/v1/memories` response.
 #[derive(Serialize, Debug)]
 pub struct Response {
+    /// The after-save push, still running. Not part of the wire response.
+    ///
+    /// It is handed back rather than detached inside `run` because only the
+    /// caller knows whether its process will outlive the push: `cli::save`
+    /// calls [`crate::sync::auto::AutoPush::wait`] because the binary exits
+    /// moments later, while `serve` drops it and lets it finish on its own.
+    #[serde(skip)]
+    pub auto_push: crate::sync::auto::AutoPush,
     /// 8-hex content-derived memory id.
     pub id: String,
     /// On-disk path of the written markdown file.
@@ -191,9 +199,13 @@ pub fn run_with(
 
     let params = build_params(&req, relations, references);
     let rec = persist(conn, paths, params, vector.as_deref())?;
-    crate::sync::auto::after_save_best_effort(paths, cfg, conn);
+    // Handed to the caller rather than detached here: a CLI process exits
+    // within milliseconds and would kill the push mid-flight, while `serve`
+    // is long-lived and can let it run on.
+    let auto_push = crate::sync::auto::after_save_best_effort(paths, cfg, conn);
 
     Ok(Response {
+        auto_push,
         id: rec.frontmatter.id.clone(),
         path: rec.path.to_string_lossy().into_owned(),
         duplicate_of,

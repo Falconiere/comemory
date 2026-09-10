@@ -342,12 +342,10 @@ impl Config {
                 self.sync.verify_every
             ))
         })?;
-        parse_duration(&self.sync.allowlist_ttl).map_err(|e| {
-            Error::Config(format!(
-                "invalid sync.allowlist_ttl={}: {e}",
-                self.sync.allowlist_ttl
-            ))
-        })?;
+        // `sync.allowlist_ttl` is deprecated and ignored, so its value is no
+        // longer validated: rejecting a config over a key nothing reads would
+        // block an upgrade for no gain.
+        self.sync.skip_matcher()?;
         Ok(())
     }
 }

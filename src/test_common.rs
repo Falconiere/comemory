@@ -8,6 +8,8 @@
 //! (`src/`), so `../tests/common/x.rs` is the crate-root fixture.
 #![allow(dead_code)] // shared with the crate-root suite; not all helpers are used here
 
+#[path = "../tests/common/auth_fixture.rs"]
+pub(crate) mod auth_fixture;
 #[path = "../tests/common/cli_eval_support.rs"]
 pub(crate) mod cli_eval_support;
 #[path = "../tests/common/cli_prune_support.rs"]
@@ -18,6 +20,8 @@ pub(crate) mod cli_rebuild_support;
 pub(crate) mod code_rerank_support;
 #[path = "../tests/common/code_seed.rs"]
 pub(crate) mod code_seed;
+#[path = "../tests/common/device_auth_server.rs"]
+pub(crate) mod device_auth_server;
 #[path = "../tests/common/docs_fixtures.rs"]
 pub(crate) mod docs_fixtures;
 #[path = "../tests/common/document_writer_support.rs"]

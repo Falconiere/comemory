@@ -37,17 +37,16 @@ pub fn verify_manifests(
     cfg: &Config,
     conn: &mut Connection,
     auth: &AuthFile,
-    workspace_id: &str,
 ) -> Result<VerifyReport> {
-    let first = compare_once(paths, cfg, conn, auth, workspace_id)?;
+    let first = compare_once(paths, cfg, conn, auth)?;
     if first.bucket_indices.is_empty() {
         return Ok(VerifyReport {
             repaired: false,
             ..first
         });
     }
-    repair_reconcile(paths, cfg, conn, auth, workspace_id)?;
-    let after = compare_once(paths, cfg, conn, auth, workspace_id)?;
+    repair_reconcile(paths, cfg, conn, auth)?;
+    let after = compare_once(paths, cfg, conn, auth)?;
     Ok(VerifyReport {
         repaired: after.bucket_indices.is_empty(),
         differing_buckets: after.differing_buckets,
@@ -62,12 +61,11 @@ fn compare_once(
     cfg: &Config,
     conn: &mut Connection,
     auth: &AuthFile,
-    workspace_id: &str,
 ) -> Result<VerifyReport> {
     let mut ctx = Ctx::borrowed(paths, cfg, conn);
     let local = api::sync::manifest::run(&mut ctx)?;
     let secret = auth.effective_secret();
-    let remote = client::fetch_manifest(&auth.api_url, &secret, workspace_id)?;
+    let remote = client::fetch_manifest(&auth.api_url, &secret)?;
     let indices = diff_buckets(&local, &remote);
     Ok(VerifyReport {
         differing_buckets: indices.len() as u32,
@@ -83,14 +81,14 @@ fn repair_reconcile(
     cfg: &Config,
     conn: &mut Connection,
     auth: &AuthFile,
-    workspace_id: &str,
 ) -> Result<()> {
     let at = now_iso()?;
+    let workspace_id = auth.workspace_id.as_str();
     sync_state::ensure(conn, workspace_id, &auth.api_url)?;
     sync_state::set_pulled(conn, workspace_id, 0, &at)?;
     sync_state::set_pushed(conn, workspace_id, 0, &at)?;
-    let _ = pull::run_pull(paths, cfg, conn, auth, workspace_id, 2000)?;
-    let _ = push::run_push(paths, cfg, conn, auth, workspace_id, None, 2000)?;
+    let _ = pull::run_pull(paths, cfg, conn, auth, 2000)?;
+    let _ = push::run_push(paths, cfg, conn, auth, None, 2000)?;
     Ok(())
 }
 

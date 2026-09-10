@@ -17,15 +17,42 @@ pub struct SyncConfig {
     pub pull_before_context_after: String,
     /// Interval hint for `comemory sync --verify` (e.g. `7d`).
     pub verify_every: String,
-    /// Optional repo-label → workspace-id override cache (not source of truth).
+    /// Repo labels withheld from push, as globs over the normalized label.
+    /// The only client-side sync filter left now that organization membership
+    /// is the platform's gate.
+    #[serde(default)]
+    pub skip_repos: Vec<String>,
+    /// Deprecated, parsed and ignored: repo-label → workspace-id cache. It was
+    /// written by the removed `comemory link` and read by nothing.
     #[serde(default)]
     pub repos: BTreeMap<String, String>,
-    /// Default workspace when `--workspace` is omitted.
+    /// Deprecated, parsed and ignored: the workspace now comes from the
+    /// org-scoped key in `auth.json`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_workspace: Option<String>,
-    /// TTL for the on-disk org-repo allowlist cache (e.g. `1h`).
+    /// Deprecated, parsed and ignored: there is no allowlist cache to expire.
     pub allowlist_ttl: String,
 }
+
+/// `[sync]` keys kept only so an existing `config.toml` still loads.
+///
+/// `PartialSyncConfig` is `deny_unknown_fields`, so deleting a key outright
+/// would turn every config that sets it into a hard load error. They are
+/// parsed, ignored, and warned about for one release.
+const DEPRECATED_KEYS: &[(&str, &str)] = &[
+    (
+        "sync.repos",
+        "the removed `comemory link` wrote it; nothing reads it",
+    ),
+    (
+        "sync.default_workspace",
+        "the workspace comes from the org-scoped key in auth.json",
+    ),
+    (
+        "sync.allowlist_ttl",
+        "organization membership replaced the per-repo allowlist",
+    ),
+];
 
 /// Embedder model id recorded in `schema_meta.memory_vector_model`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -42,6 +69,7 @@ pub struct PartialSyncConfig {
     after_save: Option<bool>,
     pull_before_context_after: Option<String>,
     verify_every: Option<String>,
+    skip_repos: Option<Vec<String>>,
     repos: Option<BTreeMap<String, String>>,
     default_workspace: Option<String>,
     allowlist_ttl: Option<String>,
@@ -61,6 +89,7 @@ impl SyncConfig {
             after_save: true,
             pull_before_context_after: "5m".into(),
             verify_every: "7d".into(),
+            skip_repos: Vec::new(),
             repos: BTreeMap::new(),
             default_workspace: None,
             allowlist_ttl: "1h".into(),
@@ -78,15 +107,29 @@ impl SyncConfig {
         if let Some(v) = partial.verify_every {
             self.verify_every = v;
         }
+        if let Some(v) = partial.skip_repos {
+            self.skip_repos = v;
+        }
         if let Some(v) = partial.repos {
             self.repos = v;
+            warn_deprecated("sync.repos");
         }
         if let Some(v) = partial.default_workspace {
             self.default_workspace = Some(v);
+            warn_deprecated("sync.default_workspace");
         }
         if let Some(v) = partial.allowlist_ttl {
             self.allowlist_ttl = v;
+            warn_deprecated("sync.allowlist_ttl");
         }
+    }
+
+    /// Compile [`Self::skip_repos`] into a matcher.
+    ///
+    /// # Errors
+    /// [`Error::Config`] when a pattern is not a valid glob.
+    pub fn skip_matcher(&self) -> Result<crate::sync::skip_repos::SkipMatcher> {
+        crate::sync::skip_repos::SkipMatcher::compile(&self.skip_repos)
     }
 
     /// Parse [`Self::allowlist_ttl`] as a [`Duration`].
@@ -131,6 +174,17 @@ impl Default for EmbedConfig {
     fn default() -> Self {
         Self::defaults()
     }
+}
+
+/// Warn once, on load, that `key` is set but no longer does anything.
+fn warn_deprecated(key: &str) {
+    let reason = DEPRECATED_KEYS
+        .iter()
+        .find(|(name, _)| *name == key)
+        .map_or("no longer used", |(_, reason)| *reason);
+    tracing::warn!(
+        "config.toml sets `{key}`, which is deprecated and ignored: {reason}. Remove it."
+    );
 }
 
 /// Parse a compact duration string: `<n><s|m|h|d>` (e.g. `5m`, `7d`, `1h`).

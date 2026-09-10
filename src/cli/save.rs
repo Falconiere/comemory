@@ -124,7 +124,9 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
         ref_file: a.ref_file,
         ref_symbol: a.ref_symbol,
     };
-    let output = api::save::run(&mut ctx, req, a.vector_stdin, a.vector.as_deref())?;
+    let mut output = api::save::run(&mut ctx, req, a.vector_stdin, a.vector.as_deref())?;
+    // This process exits moments from now; a detached push would die with it.
+    std::mem::take(&mut output.auto_push).wait();
     emit(json, &output)
 }
 

@@ -1,4 +1,15 @@
-//! Device-login credentials persisted at `$COMEMORY_DATA_DIR/auth.json`.
+//! Organization-scoped login credentials at `$COMEMORY_DATA_DIR/auth.json`.
+//!
+//! Schema v2. The key minted by `comemory auth login` is scoped to one
+//! organization and one workspace, so every sync call reads its target from
+//! here instead of naming a workspace per request.
+//!
+//! A v1 file — written before organization scoping, carrying `device_name`
+//! and `personal_workspace_id` — is **rejected, not migrated**. The secret it
+//! holds is an unbound device key the platform no longer accepts for sync, so
+//! defaulting the missing fields would produce a credential that parses
+//! cleanly and then fails on every call, with a worse message and further from
+//! the cause.
 
 use std::fs;
 use std::path::PathBuf;
@@ -9,34 +20,86 @@ use crate::config::env;
 use crate::config::paths::Paths;
 use crate::prelude::*;
 
-/// On-disk device key bundle written by `comemory auth login`.
+/// Schema version this build writes and is willing to read.
+pub const AUTH_SCHEMA_VERSION: u8 = 2;
+
+/// Version stamped on a file written before organization scoping.
+const LEGACY_SCHEMA_VERSION: u8 = 1;
+
+/// On-disk org-scoped key bundle written by `comemory auth login`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AuthFile {
-    /// Device API secret (`cmk_…`).
+    /// Schema version; absent on a pre-org-scoping file, which means v1.
+    #[serde(default = "legacy_version")]
+    pub version: u8,
+    /// Organization-scoped API secret (`cmk_…`).
     pub secret: String,
     /// Display prefix of the minted key.
     pub key_prefix: String,
-    /// Idempotent personal workspace returned at login (v1 sync off).
-    pub personal_workspace_id: String,
-    /// Platform API base URL the device authenticated against.
+    /// Platform API base URL the key authenticated against.
     pub api_url: String,
-    /// Human-readable device label from login.
-    pub device_name: String,
+    /// Organization the key is scoped to.
+    pub organization_id: String,
+    /// Organization slug, for display.
+    pub organization_slug: String,
+    /// Organization display name.
+    pub organization_name: String,
+    /// The organization's workspace — the only one this key can reach.
+    pub workspace_id: String,
     /// User email when the platform returned one (optional).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub email: Option<String>,
 }
 
+fn legacy_version() -> u8 {
+    LEGACY_SCHEMA_VERSION
+}
+
+/// Just enough of the file to decide whether the rest is worth parsing.
+#[derive(Deserialize)]
+struct VersionProbe {
+    #[serde(default = "legacy_version")]
+    version: u8,
+}
+
 impl AuthFile {
     /// Load `auth.json` when present; missing file → `Ok(None)`.
+    ///
+    /// # Errors
+    /// [`Error::Usage`] when the file predates organization scoping, naming
+    /// `comemory auth login` as the fix. Any other malformed file surfaces the
+    /// underlying `serde_json` error.
     pub fn load(paths: &Paths) -> Result<Option<Self>> {
         let path = paths.auth_file();
         if !path.exists() {
             return Ok(None);
         }
         let raw = fs::read_to_string(&path)?;
+        // Probe the version before the strict parse: a v1 file is missing
+        // every org field, so a direct parse would report a confusing
+        // "missing field `organization_id`" instead of "log in again".
+        let probe: VersionProbe = serde_json::from_str(&raw)?;
+        if probe.version < AUTH_SCHEMA_VERSION {
+            return Err(Error::Usage(format!(
+                "credentials at {} predate organization scoping — run `comemory auth login`",
+                path.display()
+            )));
+        }
         let file: Self = serde_json::from_str(&raw)?;
         Ok(Some(file))
+    }
+
+    /// Like [`Self::load`], but a credential too old to use reads as absent.
+    ///
+    /// Best-effort callers (`save`, `context`) use this: they already do
+    /// nothing when `auth.json` is missing, and turning every local save into
+    /// a warning about a stale credential would be noise. The commands the
+    /// user ran on purpose — `sync`, `auth status` — still report it.
+    pub fn load_usable(paths: &Paths) -> Result<Option<Self>> {
+        match Self::load(paths) {
+            Err(Error::Usage(_)) => Ok(None),
+            other => other,
+        }
     }
 
     /// Persist this bundle atomically with mode `0600` on unix.
@@ -66,14 +129,28 @@ impl AuthFile {
         env::api_key_override().unwrap_or_else(|| self.secret.clone())
     }
 
-    /// Delete `auth.json` when present. A missing file is success, so
-    /// `comemory auth logout` stays idempotent.
+    /// Delete `auth.json` and any stale `allowlist.json` beside it. A missing
+    /// file is success, so `comemory auth logout` stays idempotent.
     pub fn clear(paths: &Paths) -> Result<()> {
-        match fs::remove_file(paths.auth_file()) {
-            Ok(()) => Ok(()),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(e) => Err(e.into()),
-        }
+        remove_if_present(&paths.auth_file())?;
+        clear_stale_allowlist(paths)
+    }
+}
+
+/// Remove the `allowlist.json` left by releases before organization scoping.
+///
+/// Nothing reads it any more. It is deleted at both login and logout so a
+/// cached repo list cannot outlive the credential it was fetched for.
+pub fn clear_stale_allowlist(paths: &Paths) -> Result<()> {
+    remove_if_present(&paths.allowlist_file())
+}
+
+/// Delete `path`, treating "already gone" as success.
+fn remove_if_present(path: &std::path::Path) -> Result<()> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e.into()),
     }
 }
 

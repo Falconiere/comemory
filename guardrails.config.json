@@ -31,10 +31,9 @@
         "proptest-regressions"
       ],
       "sync": [
-        "allowlist_cache",
         "auth_file",
-        "match_key",
         "redact",
+        "skip_repos",
         "tests",
         "proptest-regressions"
       ],

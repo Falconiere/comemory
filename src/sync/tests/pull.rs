@@ -18,6 +18,7 @@ use comemory::store::sync_state;
 use comemory::sync::AuthFile;
 use comemory::sync::pull;
 
+use crate::test_common as common;
 use crate::test_common::sync_platform_server::{SyncPlatformServer, SyncPlatformState};
 
 fn upsert_wire_entry(body: &str, seq: i64) -> serde_json::Value {
@@ -56,16 +57,7 @@ fn upsert_wire_entry(body: &str, seq: i64) -> serde_json::Value {
 }
 
 fn seed_auth(paths: &Paths, api_url: &str, secret: &str, workspace: &str) {
-    AuthFile {
-        secret: secret.into(),
-        key_prefix: "cmk_bbbb".into(),
-        personal_workspace_id: workspace.into(),
-        api_url: api_url.into(),
-        device_name: "test".into(),
-        email: None,
-    }
-    .save(paths)
-    .expect("auth");
+    common::auth_fixture::seed_org_auth(paths, api_url, secret, workspace);
 }
 
 #[test]
@@ -88,7 +80,7 @@ fn pull_applies_remote_upsert_and_advances_cursor() {
     seed_auth(&paths, &server.base, &secret, workspace);
 
     let auth = AuthFile::load(&paths).expect("load").expect("auth");
-    let pull_stats = pull::run_pull(&paths, &cfg, &mut conn, &auth, workspace, 100).expect("pull");
+    let pull_stats = pull::run_pull(&paths, &cfg, &mut conn, &auth, 100).expect("pull");
     assert_eq!(pull_stats.pulled, 1);
     assert_eq!(pull_stats.last_pulled_seq, 7);
 
@@ -123,7 +115,7 @@ fn empty_remote_changes_still_records_head() {
     seed_auth(&paths, &server.base, &secret, workspace);
 
     let auth = AuthFile::load(&paths).expect("load").expect("auth");
-    let pull_stats = pull::run_pull(&paths, &cfg, &mut conn, &auth, workspace, 50).expect("pull");
+    let pull_stats = pull::run_pull(&paths, &cfg, &mut conn, &auth, 50).expect("pull");
     assert_eq!(pull_stats.pulled, 0);
     assert_eq!(pull_stats.last_pulled_seq, 42);
 }
