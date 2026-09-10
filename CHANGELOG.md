@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-09-10
+
+### Added
+
+- distill explicit saves into platform candidates ([#122](https://github.com/Falconiere/comemory/pull/122))
+- expose memory author on list and show ([#123](https://github.com/Falconiere/comemory/pull/123)) ([#125](https://github.com/Falconiere/comemory/pull/125))
+
 ## [0.24.0] - 2026-09-10
 
 ### BREAKING
