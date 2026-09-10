@@ -165,6 +165,56 @@ fn status_reports_authenticated_after_login() {
 }
 
 #[test]
+fn rejected_device_key_reports_unauthenticated_rather_than_erroring() {
+    require_http_tools();
+    let srv = DeviceAuthServer::start_default();
+    let home = Home::new();
+    home.run_json(None, &["auth", "login", "--api-url", &srv.base]);
+
+    // Revoke by making the stored secret stop matching the fixture's key: the
+    // 401 must read back as "not authenticated", not as a transport failure.
+    let path = home.auth_file();
+    let mut on_disk: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    on_disk["secret"] = Value::String(
+        "cmk_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into(),
+    );
+    fs::write(&path, serde_json::to_string_pretty(&on_disk).unwrap()).unwrap();
+
+    // `auth status` exits non-zero when unauthenticated, so read stdout directly.
+    let status = home.run(None, &["--json", "auth", "status"]);
+    assert!(!status.status.success());
+    let body: Value = serde_json::from_slice(&status.stdout).unwrap();
+    assert_eq!(body["authenticated"], false);
+
+    let out = home.run(None, &["workspaces"]);
+    assert!(
+        !out.status.success(),
+        "revoked key must not list workspaces"
+    );
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("device key rejected"), "stderr={err}");
+}
+
+#[test]
+fn workspaces_surfaces_a_server_error_instead_of_claiming_logged_out() {
+    require_http_tools();
+    let srv = DeviceAuthServer::start(DeviceAuthConfig {
+        workspaces_status: 500,
+        ..DeviceAuthConfig::default()
+    });
+    let home = Home::new();
+    home.run_json(None, &["auth", "login", "--api-url", &srv.base]);
+    let out = home.run(None, &["workspaces"]);
+    assert!(!out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("HTTP 500"), "stderr={err}");
+    assert!(
+        !err.contains("device key rejected"),
+        "a 500 is not a rejected key: {err}"
+    );
+}
+
+#[test]
 fn logout_removes_auth_json() {
     require_http_tools();
     let srv = DeviceAuthServer::start_default();

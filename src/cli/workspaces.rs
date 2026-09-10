@@ -38,8 +38,13 @@ pub async fn run(_a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result
     let auth = AuthFile::load(&paths)?
         .ok_or_else(|| Error::Usage("not logged in — run `comemory auth login`".into()))?;
     let secret = auth.effective_secret();
+    // 401/403 is also what a captive proxy or an expired session in front of
+    // the API returns, so name both causes rather than only the revoked key.
     let listed = cloud::list_workspaces(&auth.api_url, &secret)?.ok_or_else(|| {
-        Error::Usage("device key no longer authenticates — run `comemory auth login`".into())
+        Error::Usage(format!(
+            "device key rejected by {} — check network access, then run `comemory auth login` to mint a new key",
+            auth.api_url
+        ))
     })?;
     let rows: Vec<WorkspaceRow> = listed
         .into_iter()
