@@ -34,6 +34,7 @@ Commands:
   search-code    Search the code index by natural-language or identifier query
   list           List memories with optional repo/kind filters
   delete         Soft-delete a memory by id (moves to `.trash/`)
+  distill        Extract explicit `comemory save` claims from a transcript and propose them as platform candidate memories (CLI-only)
   feedback       Record per-memory feedback (used vs irrelevant)
   eval           Score retrieval quality against a golden set (recall@k, MRR)
   mine           Mine reformulation pairs from the query log into term-expansion mappings (report only; `--apply` rebuilds `query_expansions`)

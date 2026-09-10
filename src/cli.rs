@@ -22,6 +22,8 @@ pub mod consolidate;
 pub mod context;
 /// `comemory delete`: soft-delete one memory.
 pub mod delete;
+/// `comemory distill`: extract explicit saves and propose platform candidates.
+pub mod distill;
 /// `comemory doctor`: runtime health check.
 pub mod doctor;
 /// `comemory edges`: lexical search over the relation graph.
@@ -134,6 +136,9 @@ pub enum Cmd {
     List(list::Args),
     /// Soft-delete a memory by id (moves to `.trash/`).
     Delete(delete::Args),
+    /// Extract explicit `comemory save` claims from a transcript and propose
+    /// them as platform candidate memories (CLI-only).
+    Distill(distill::Args),
     /// Record per-memory feedback (used vs irrelevant).
     Feedback(feedback::Args),
     /// Score retrieval quality against a golden set (recall@k, MRR).
@@ -214,6 +219,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::SearchCode(a) => search_code::run(a, cli.json, cli.data_dir).await,
         Cmd::List(a) => list::run(a, cli.json, cli.data_dir).await,
         Cmd::Delete(a) => delete::run(a, cli.json, cli.data_dir).await,
+        Cmd::Distill(a) => distill::run(a, cli.json, cli.data_dir).await,
         Cmd::Feedback(a) => feedback::run(a, cli.json, cli.data_dir).await,
         Cmd::Eval(a) => eval::run(a, cli.json, cli.data_dir).await,
         Cmd::Mine(a) => mine::run(a, cli.json, cli.data_dir).await,

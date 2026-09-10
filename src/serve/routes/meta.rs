@@ -23,7 +23,7 @@ use crate::serve::routes::{self, RouteEntry, respond, run_blocking};
 /// Non-Goal 3), `upgrade` replaces the running binary, and the platform
 /// cloud verbs (`auth` / `sync`) talk to the cloud platform — none belong
 /// behind `/api/v1`.
-const CLI_ONLY: &[&str] = &["auth", "serve", "sync", "upgrade"];
+const CLI_ONLY: &[&str] = &["auth", "distill", "serve", "sync", "upgrade"];
 
 /// This resource's route-table entries, appended onto [`super::table`].
 pub fn table_entries() -> &'static [RouteEntry] {

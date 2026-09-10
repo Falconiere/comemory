@@ -79,6 +79,7 @@ Each journey has an HTTP twin over a real `comemory serve`, sharing
 | `search-code` | [search-code.md](search-code.md) |
 | `list` | [list.md](list.md) |
 | `delete` | [delete.md](delete.md) |
+| `distill` | [distill.md](distill.md) |
 | `show` | [show.md](show.md) |
 | `feedback` | [feedback.md](feedback.md) |
 | `eval` | [eval.md](eval.md) |
