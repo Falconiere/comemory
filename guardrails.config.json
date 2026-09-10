@@ -88,8 +88,8 @@
       "store/sql",
       "store/tokenizer",
       "upgrade",
-      "cloud",
-      "capture"
+      "capture",
+      "cloud"
     ]
   },
   "fileSize": {

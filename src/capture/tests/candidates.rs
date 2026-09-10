@@ -116,3 +116,14 @@ fn post_candidates_sends_authorization_only_and_returns_ordered_results() {
         assert_eq!(resp.results[1].state.as_deref(), Some("rejected"));
     });
 }
+
+#[test]
+fn post_candidates_rejects_path_like_session_ids() {
+    let batch = batch_from_extracted(&fixture_extracted()[..1]).unwrap();
+    let err = post_candidates("http://127.0.0.1:9", "cmk_test", "../evil", &batch).unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("session id") || msg.contains("alphanumeric"),
+        "msg={msg}"
+    );
+}

@@ -15,43 +15,56 @@ struct Rule {
     re: Regex,
 }
 
-static RULES: LazyLock<Vec<Rule>> = LazyLock::new(compile_rules);
+/// Compiled rules, or a load error retained for [`ensure_rules_loaded`].
+static RULES: LazyLock<Result<Vec<Rule>, String>> = LazyLock::new(compile_rules);
 
-/// Refuse to proceed when the baked-in rule table failed to load.
+/// Refuse to proceed when the baked-in rule table failed to load or is empty.
 pub fn ensure_rules_loaded() -> crate::prelude::Result<()> {
-    if RULES.is_empty() {
-        return Err(crate::prelude::Error::Other(
-            "capture redaction rules failed to load — refusing to attest an empty rule set".into(),
-        ));
+    match &*RULES {
+        Ok(rules) if !rules.is_empty() => Ok(()),
+        Ok(_) => Err(crate::prelude::Error::Other(
+            "capture redaction rules loaded empty — refusing to attest an empty rule set".into(),
+        )),
+        Err(e) => Err(crate::prelude::Error::Other(format!(
+            "capture redaction rules failed to load: {e}"
+        ))),
     }
-    Ok(())
 }
 
-fn compile_rules() -> Vec<Rule> {
+fn compiled_rules() -> &'static [Rule] {
+    match &*RULES {
+        Ok(rules) => rules.as_slice(),
+        Err(_) => &[],
+    }
+}
+
+fn compile_rules() -> Result<Vec<Rule>, String> {
+    // Co-located with this module: `src/capture/rules.toml` (not repo-root).
     let raw = include_str!("rules.toml");
-    let Ok(table) = raw.parse::<toml::Table>() else {
-        tracing::error!("capture rules.toml failed to parse");
-        return Vec::new();
-    };
+    let table = raw
+        .parse::<toml::Table>()
+        .map_err(|e| format!("rules.toml parse: {e}"))?;
     let Some(toml::Value::Array(rules)) = table.get("rule") else {
-        tracing::error!("capture rules.toml missing [[rule]] array");
-        return Vec::new();
+        return Err("rules.toml missing [[rule]] array".into());
     };
-    rules
-        .iter()
-        .filter_map(|entry| {
-            let table = entry.as_table()?;
-            let name = table.get("name")?.as_str()?.to_string();
-            let pattern = table.get("pattern")?.as_str()?;
-            match Regex::new(pattern) {
-                Ok(re) => Some(Rule { name, re }),
-                Err(e) => {
-                    tracing::error!(rule = %name, %e, "invalid capture redact rule");
-                    None
-                }
-            }
-        })
-        .collect()
+    let mut out = Vec::with_capacity(rules.len());
+    for entry in rules {
+        let Some(table) = entry.as_table() else {
+            return Err("rules.toml [[rule]] entry is not a table".into());
+        };
+        let name = table
+            .get("name")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "rules.toml [[rule]] missing name".to_string())?
+            .to_string();
+        let pattern = table
+            .get("pattern")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| format!("rules.toml rule {name} missing pattern"))?;
+        let re = Regex::new(pattern).map_err(|e| format!("rule {name}: {e}"))?;
+        out.push(Rule { name, re });
+    }
+    Ok(out)
 }
 
 /// One finding in a redaction attestation.
@@ -90,7 +103,7 @@ pub fn redact_text(input: &str) -> RedactOutcome {
     while cursor < input.len() {
         let rest = &input[cursor..];
         let mut best: Option<(usize, usize, &str)> = None;
-        for rule in RULES.iter() {
+        for rule in compiled_rules() {
             if let Some(m) = rule.re.find(rest) {
                 let start = m.start();
                 let end = m.end();

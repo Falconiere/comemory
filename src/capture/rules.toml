@@ -1,7 +1,7 @@
 # Client redaction rules for capture / distillation (rule-set version 1).
 # Wire `name` values match the platform backstop ids where the shapes align;
 # `generic-high-entropy` is client-only (server deliberately omits it).
-# Loaded at compile time via include_str! in redact.rs.
+# Path is intentional: src/capture/rules.toml beside redact.rs (include_str!).
 
 [[rule]]
 name = "aws-access-key-id"

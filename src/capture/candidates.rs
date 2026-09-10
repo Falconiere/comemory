@@ -190,6 +190,7 @@ pub fn post_candidates(
     batch: &CandidateBatch,
 ) -> Result<ProposeResponse> {
     crate::capture::redact::ensure_rules_loaded()?;
+    validate_session_id(session_id)?;
     let base = api_url.trim_end_matches('/');
     let url = format!("{base}/v1/sessions/{session_id}/candidates");
     let client = Client::builder()
@@ -211,6 +212,22 @@ fn auth_headers(org_key: &str) -> Result<HeaderMap> {
         .map_err(|e| Error::Other(format!("authorization header: {e}")))?;
     headers.insert(AUTHORIZATION, value);
     Ok(headers)
+}
+
+/// Session ids are path segments; reject empty, oversized, or traversal-ish values.
+fn validate_session_id(session_id: &str) -> Result<()> {
+    if session_id.is_empty() || session_id.len() > 128 {
+        return Err(Error::Usage("session id must be 1..=128 characters".into()));
+    }
+    let ok = session_id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    if !ok {
+        return Err(Error::Usage(
+            "session id must be alphanumeric, hyphen, or underscore".into(),
+        ));
+    }
+    Ok(())
 }
 
 fn parse_envelope<T: for<'de> Deserialize<'de>>(

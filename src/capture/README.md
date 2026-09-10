@@ -16,7 +16,7 @@ sync push/pull (`sync/`).
 | `claude_code.rs` | `bash_commands_from_jsonl` | Claude Code JSONL → Bash `tool_use` command lines with timestamps |
 | `explicit_save.rs` | `extract_explicit_saves` | Recover `comemory save` claims; map engine kinds → product kinds |
 | `redact.rs` | `redact_text` / `RedactionAttestation` | Client rule set v1: redact matches and attest `{version,findings}` |
-| `rules.toml` | `[[rule]]` | Compile-time patterns (platform wire ids + high-entropy heuristic) |
+| `rules.toml` | `[[rule]]` | Co-located with `redact.rs` for `include_str!("rules.toml")` (platform wire ids + high-entropy heuristic) |
 | `candidates.rs` | `post_candidates` | `POST /v1/sessions/{id}/candidates` batch types + HTTP |
 | `distill.rs` | `run` | Orchestrate extract → redact → cap-check → POST (or dry-run) |
 
