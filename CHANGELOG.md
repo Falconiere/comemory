@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.1] - 2026-09-10
+
+### Fixed
+
+- repair a clock-derived flake; refactor(store): extract chokepoint duplication ([#116](https://github.com/Falconiere/comemory/pull/116))
+
 ## [0.22.0] - 2026-09-09
 
 ### Changed
