@@ -32,3 +32,7 @@ where
     std::thread::scope(|scope| scope.spawn(f).join())
         .map_err(|_| Error::Other("platform request thread panicked".into()))?
 }
+
+#[cfg(test)]
+#[path = "tests/off_runtime.rs"]
+mod tests;
