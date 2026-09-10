@@ -1,0 +1,13 @@
+{
+  "slot": "Falconiere-comemory-126",
+  "owner": "Falconiere",
+  "repo": "comemory",
+  "number": 126,
+  "branch": "Falconiere/issue-122-distillation",
+  "headRefOid": "a58149a1cb0db223bd8ce5a8eac9e2baaa67d8c6",
+  "created_at": "2026-09-10T14:57:49Z",
+  "status": "active",
+  "consecutive_human_blockers": 2,
+  "blocker": "github_auth_unavailable",
+  "last_tick_at": "2026-09-10T15:00:36Z"
+}

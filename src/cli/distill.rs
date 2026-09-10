@@ -51,6 +51,8 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     } else {
         let auth = AuthFile::load(&paths)?
             .ok_or_else(|| Error::Usage("not logged in — run `comemory auth login`".into()))?;
+        // `off_runtime` is a scoped OS thread with no tokio handle — not
+        // `spawn_blocking` / `block_in_place` — so `reqwest::blocking` can drop.
         off_runtime(move || distill_run(Some(&auth), &req))?
     };
 

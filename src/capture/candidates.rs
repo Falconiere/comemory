@@ -11,7 +11,7 @@ use crate::capture::redact::{RedactionAttestation, RedactionFinding, merge_findi
 use crate::prelude::*;
 
 const HTTP_TIMEOUT: Duration = Duration::from_secs(30);
-/// Platform cap: aggregate free text across the batch.
+/// Platform cap: aggregate free-text **bytes** across the batch.
 pub const MAX_AGGREGATE_FREE_TEXT: usize = 131_072;
 /// Platform cap: candidates per request.
 pub const MAX_CANDIDATES: usize = 50;
@@ -98,6 +98,7 @@ struct ApiErrorBody {
 
 /// Build a redacted batch from extracted claims.
 pub fn batch_from_extracted(extracted: &[ExtractedCandidate]) -> Result<CandidateBatch> {
+    crate::capture::redact::ensure_rules_loaded()?;
     if extracted.len() > MAX_CANDIDATES {
         return Err(Error::Usage(format!(
             "distill produced {} candidates; platform cap is {MAX_CANDIDATES}",
@@ -112,6 +113,8 @@ pub fn batch_from_extracted(extracted: &[ExtractedCandidate]) -> Result<Candidat
     for claim in extracted {
         let title_out = redact_text(&claim.title);
         finding_parts.push(title_out.findings);
+        // Field caps are Unicode scalars (platform wire); the aggregate cap
+        // below is bytes (HTTP body budget). Keep them separate on purpose.
         let mut title = title_out.text;
         if title.chars().count() > 200 {
             title = title.chars().take(200).collect();

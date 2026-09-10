@@ -17,6 +17,16 @@ struct Rule {
 
 static RULES: LazyLock<Vec<Rule>> = LazyLock::new(compile_rules);
 
+/// Refuse to proceed when the baked-in rule table failed to load.
+pub fn ensure_rules_loaded() -> crate::prelude::Result<()> {
+    if RULES.is_empty() {
+        return Err(crate::prelude::Error::Other(
+            "capture redaction rules failed to load — refusing to attest an empty rule set".into(),
+        ));
+    }
+    Ok(())
+}
+
 fn compile_rules() -> Vec<Rule> {
     let raw = include_str!("rules.toml");
     let Ok(table) = raw.parse::<toml::Table>() else {

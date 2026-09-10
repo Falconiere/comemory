@@ -16,6 +16,7 @@ pub struct BashCommand {
 /// Walk a Claude Code JSONL transcript and collect Bash `tool_use` commands.
 ///
 /// Malformed lines and non-Bash records are skipped rather than failing the run.
+/// A missing `timestamp` yields an empty `saved_at` (best-effort provenance).
 pub fn bash_commands_from_jsonl(text: &str) -> Vec<BashCommand> {
     text.lines()
         .filter(|line| !line.is_empty())
