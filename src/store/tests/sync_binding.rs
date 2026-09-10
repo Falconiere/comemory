@@ -42,7 +42,7 @@ fn allow_secret_records_override() {
         &conn,
         "abc12345",
         "ws-1",
-        "aws-access-key",
+        "aws-access-key-id",
         "2026-01-01T00:00:00Z",
     )
     .expect("allow");

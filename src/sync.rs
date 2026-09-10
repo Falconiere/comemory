@@ -12,5 +12,5 @@ pub mod verify;
 
 pub use auth_file::AuthFile;
 pub use initial::{InitialSyncStats, run_initial_sync};
-pub use redact::{scan, scan_with_override};
+pub use redact::{Finding, RULE_SET_VERSION, findings, redact, scan, scan_with_override};
 pub use skip_repos::{SkipMatcher, normalize_repo_label};

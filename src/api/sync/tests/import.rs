@@ -172,7 +172,7 @@ fn secret_detected_blocks_upsert() {
     .expect("import");
 
     assert_eq!(resp.results[0].status, sync::ImportStatus::SecretDetected);
-    assert_eq!(resp.results[0].reason.as_deref(), Some("aws-access-key"));
+    assert_eq!(resp.results[0].reason.as_deref(), Some("aws-access-key-id"));
 }
 
 #[test]

@@ -267,6 +267,9 @@ Full data model, save flow, retrieval pipeline, and graph mechanics:
 | `comemory auth status` | Check whether local / `COMEMORY_API_KEY` credentials still authenticate |
 | `comemory auth logout` | Delete local `auth.json` (no remote revoke) |
 | `comemory sync` | Push/pull against the bound organization (`--action`, `--allow-secret`) |
+| `comemory capture session` | Redact a coding-tool transcript and POST a receipt (`--path` / `--session-id` / `--from-hook`, `--dry-run`, `--allow-secret`) |
+| `comemory capture sources` | List platform capture-consent rows (CLI cannot enable capture) |
+| `comemory capture install-hook` | Install Claude Code `SessionEnd` → `capture session --from-hook` |
 | `comemory distill` | Extract explicit `comemory save` claims from a transcript and propose platform candidates (`--session-id`, `--transcript`, `--dry-run`) |
 
 Every command accepts `--json`; the data root defaults to `~/.comemory`
