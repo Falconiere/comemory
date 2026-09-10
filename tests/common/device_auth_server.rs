@@ -39,6 +39,8 @@ pub struct DeviceAuthConfig {
     pub workspace_name: String,
     /// `apiUrl` the mint echoes back (blank → the CLI keeps the dialed URL).
     pub mint_api_url: String,
+    /// Status `GET /v1/workspaces` answers with (200 → the normal list).
+    pub workspaces_status: u16,
 }
 
 impl Default for DeviceAuthConfig {
@@ -53,6 +55,7 @@ impl Default for DeviceAuthConfig {
             workspace_id: "11111111-2222-3333-4444-555555555555".into(),
             workspace_name: "Fixture Workspace".into(),
             mint_api_url: String::new(),
+            workspaces_status: 200,
         }
     }
 }
@@ -277,6 +280,13 @@ fn workspaces_list(authorization: &str, shared: &Shared) -> (&'static str, &'sta
             "401 Unauthorized",
             "application/json",
             r#"{"error":"unauthorized"}"#.into(),
+        );
+    }
+    if shared.config.workspaces_status == 500 {
+        return (
+            "500 Internal Server Error",
+            "application/json",
+            r#"{"error":"server_error"}"#.into(),
         );
     }
     let body = serde_json::json!({
