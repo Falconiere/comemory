@@ -113,8 +113,7 @@ pub fn extract_from_command(command: &str, saved_at: &str) -> Option<ExtractedCa
     let engine_kind = kind_caps
         .as_ref()
         .and_then(|caps| caps.get(1).or_else(|| caps.get(2)))
-        .map(|m| m.as_str())
-        .unwrap_or("note");
+        .map_or("note", |m| m.as_str());
     let kind_quoted = kind_caps
         .as_ref()
         .and_then(|caps| caps.get(1).map(|m| m.as_str()));
