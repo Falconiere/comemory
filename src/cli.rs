@@ -14,6 +14,8 @@ pub mod ast;
 pub mod auth;
 /// `comemory bandit`: Thompson sampling over the tune knobs.
 pub mod bandit;
+/// `comemory capture`: session receipt + consent read (CLI-only).
+pub mod capture;
 /// `comemory completions`: shell completion scripts.
 pub mod completions;
 /// `comemory consolidate`: advisory near-duplicate cluster report.
@@ -207,6 +209,8 @@ pub enum Cmd {
     Auth(auth::Args),
     /// Push/pull memories against the platform.
     Sync(sync::Args),
+    /// Capture a coding-session receipt (redacted) to the platform.
+    Capture(capture::Args),
 }
 
 /// Dispatch the parsed `Cli` to its subcommand. The dispatcher is the single
@@ -252,6 +256,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::Upgrade(a) => upgrade::run(a, cli.json, cli.data_dir).await,
         Cmd::Auth(a) => auth::run(a, cli.json, cli.data_dir).await,
         Cmd::Sync(a) => sync::run(a, cli.json, cli.data_dir).await,
+        Cmd::Capture(a) => capture::run(a, cli.json, cli.data_dir).await,
     }
 }
 

@@ -64,6 +64,9 @@ comemory consolidate               # advisory near-duplicate cluster report
 comemory upgrade                   # move this binary to the newest release (--check, --version, --force)
 comemory auth login|status|logout  # org-scoped cloud login; `login` also runs the first sync
 comemory sync                      # manual push/pull against the bound organization
+comemory capture session --path F  # redact + POST a session receipt (or --dry-run)
+comemory capture sources           # show platform capture consent (CLI cannot grant)
+comemory capture install-hook      # Claude Code SessionEnd → capture session --from-hook
 comemory distill --session-id <id> --transcript <path>  # propose candidates from explicit saves
 ```
 

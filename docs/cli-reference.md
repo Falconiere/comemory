@@ -65,6 +65,7 @@ Commands:
   upgrade        Move this binary to the newest release (or a pinned one)
   auth           Cloud workspace-key login / status / logout (device authorization)
   sync           Push/pull memories against the platform
+  capture        Capture a coding-session receipt (redacted) to the platform
   help           Print this message or the help of the given subcommand(s)
 
 Options:
@@ -1287,5 +1288,32 @@ Examples:
   comemory sync --action status --json
   comemory sync --action verify
   comemory sync --allow-secret deadbeef
+```
+
+---
+
+## comemory capture
+
+```
+Capture a coding-session receipt (redacted) to the platform
+
+Usage: comemory capture [OPTIONS] <COMMAND>
+
+Commands:
+  session       Build (and optionally POST) one session receipt
+  sources       Show platform capture-consent rows (CLI cannot grant consent)
+  install-hook  Install a Claude Code SessionEnd hook that runs `comemory capture`
+  help          Print this message or the help of the given subcommand(s)
+
+Options:
+      --json                 Emit machine-readable JSON instead of a human TTY view
+      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+  -h, --help                 Print help
+
+Examples:
+  comemory capture session --path ~/.claude/projects/.../session.jsonl --dry-run
+  comemory capture session --session-id 8e9f54e3-a984-46ab-8403-135ee920cbca
+  comemory capture sources
+  comemory capture install-hook
 ```
 

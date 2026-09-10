@@ -24,6 +24,9 @@ Task-oriented recipes for a specific job:
 - **[Cloud sync](guides/cloud-sync.md)** — `auth` / `sync` against
   comemory.io: log in once and the first sync runs itself; organization
   membership decides what leaves the machine.
+- **[Session capture](guides/session-capture.md)** — redact a coding-tool
+  transcript locally and post a Slice 3 receipt (`capture session` /
+  `capture sources` / `capture install-hook`).
 - **[Link code to memories](guides/linking-code-to-memories.md)** — pin
   `--ref-file` / `--ref-symbol` references and read fresh/stale/ghost status.
 - **[Prune, rebuild, and gc](guides/prune-and-gc.md)** — maintenance: trim

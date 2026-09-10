@@ -21,9 +21,9 @@ use crate::serve::routes::{self, RouteEntry, respond, run_blocking};
 
 /// Real subcommands with no HTTP mapping: `serve` IS the server (spec
 /// Non-Goal 3), `upgrade` replaces the running binary, and the platform
-/// cloud verbs (`auth` / `sync`) talk to the cloud platform — none belong
-/// behind `/api/v1`.
-const CLI_ONLY: &[&str] = &["auth", "distill", "serve", "sync", "upgrade"];
+/// cloud verbs (`auth` / `sync` / `capture` / `distill`) talk to the cloud
+/// platform — none belong behind `/api/v1`.
+const CLI_ONLY: &[&str] = &["auth", "capture", "distill", "serve", "sync", "upgrade"];
 
 /// This resource's route-table entries, appended onto [`super::table`].
 pub fn table_entries() -> &'static [RouteEntry] {

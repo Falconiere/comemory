@@ -109,6 +109,8 @@ Each journey has an HTTP twin over a real `comemory serve`, sharing
 | `completions` | [completions.md](completions.md) |
 | `upgrade` | [upgrade.md](upgrade.md) |
 | `auth` | [auth.md](auth.md) |
+| `sync` | [sync.md](sync.md) |
+| `capture` | [capture.md](capture.md) |
 
 ## Running the catalog
 

@@ -37,6 +37,10 @@
         "tests",
         "proptest-regressions"
       ],
+      "capture": [
+        "tests",
+        "proptest-regressions"
+      ],
       "serve": [
         "routes",
         "jobs",
