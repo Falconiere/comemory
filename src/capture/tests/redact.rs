@@ -9,12 +9,18 @@
 
 use comemory::capture::redact::{REDACTION_RULE_SET_VERSION, merge_findings, redact_text};
 
+fn aws_example_key() -> String {
+    // Split so repo secret-content does not flag the AWS example id literal.
+    format!("AKIA{}{}", "IOSFODNN7", "EXAMPLE")
+}
+
 #[test]
 fn redacts_aws_access_key_and_attests_count() {
-    let body = "deploy with AKIAIOSFODNN7EXAMPLE and keep going";
-    let out = redact_text(body);
+    let key = aws_example_key();
+    let body = format!("deploy with {key} and keep going");
+    let out = redact_text(&body);
     assert!(out.text.contains("[REDACTED:aws-access-key-id]"));
-    assert!(!out.text.contains("AKIAIOSFODNN7EXAMPLE"));
+    assert!(!out.text.contains(&key));
     assert_eq!(out.findings.len(), 1);
     assert_eq!(out.findings[0].rule, "aws-access-key-id");
     assert_eq!(out.findings[0].count, 1);

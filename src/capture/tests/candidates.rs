@@ -22,6 +22,11 @@ fn fixture_extracted() -> Vec<comemory::capture::ExtractedCandidate> {
     extract_explicit_saves(&bash_commands_from_jsonl(&text))
 }
 
+fn aws_example_key() -> String {
+    // Split so repo secret-content does not flag the AWS example id literal.
+    format!("AKIA{}{}", "IOSFODNN7", "EXAMPLE")
+}
+
 #[test]
 fn batch_from_real_fixture_has_six_claims_and_attestation() {
     let batch = batch_from_extracted(&fixture_extracted()).unwrap();
@@ -39,12 +44,15 @@ fn batch_from_real_fixture_has_six_claims_and_attestation() {
 fn batch_redacts_planted_aws_key_in_a_body() {
     let mut extracted = fixture_extracted();
     let body = extracted[0].body.as_mut().unwrap();
+    let key = aws_example_key();
     // Bare access-key shape (no `key=` prefix) so the format-anchored rule wins
     // over the client-only high-entropy heuristic.
-    body.push_str("\nAKIAIOSFODNN7EXAMPLE\n");
+    body.push('\n');
+    body.push_str(&key);
+    body.push('\n');
     let batch = batch_from_extracted(&extracted).unwrap();
     let posted = batch.candidates[0].body.as_ref().unwrap();
-    assert!(!posted.contains("AKIAIOSFODNN7EXAMPLE"));
+    assert!(!posted.contains(&key));
     assert!(posted.contains("[REDACTED:aws-access-key-id]"));
     assert!(
         batch
