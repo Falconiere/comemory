@@ -1,4 +1,4 @@
-//! `comemory auth` — workspace-key device login against the cloud platform.
+//! `comemory auth` — device login against the cloud platform.
 //!
 //! Nested: `login` / `status` / `logout`. Logic lives in [`crate::cloud`];
 //! this module owns clap + TTY/JSON rendering. CLI-only (no `/api/v1` route).
@@ -11,9 +11,11 @@ use owo_colors::OwoColorize;
 use serde::Serialize;
 
 use crate::cloud::{self, StatusReport};
+use crate::config::env;
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::output::json;
 use crate::prelude::*;
+use crate::sync::auth_file::AuthFile;
 
 const EXAMPLES: &str = "\
 Examples:
@@ -22,6 +24,9 @@ Examples:
 
   # Point at a non-prod API
   comemory auth login --api-url https://dev-api.comemory.io
+
+  # Label this machine (default: hostname)
+  comemory auth login --device-name laptop
 
   # Check the saved key against the platform
   comemory auth status
@@ -45,7 +50,7 @@ pub struct Args {
 /// Nested `comemory auth <subcommand>`.
 #[derive(Subcommand, Debug)]
 pub enum AuthCmd {
-    /// RFC 8628 device login; mint a workspace-bound `cmk_` into auth.json.
+    /// RFC 8628 device login; mint a device `cmk_` into auth.json.
     Login(LoginArgs),
     /// Report whether local credentials still authenticate.
     Status(StatusArgs),
@@ -59,6 +64,9 @@ pub struct LoginArgs {
     /// Platform API base URL (overrides `COMEMORY_API` / default).
     #[arg(long, value_name = "URL")]
     pub api_url: Option<String>,
+    /// Label stored with the device key (default: this machine's hostname).
+    #[arg(long, value_name = "NAME")]
+    pub device_name: Option<String>,
 }
 
 /// Flags for `comemory auth status`.
@@ -74,7 +82,8 @@ pub struct StatusArgs {
 struct LoginJson<'a> {
     authenticated: bool,
     api_url: &'a str,
-    workspace_id: &'a str,
+    personal_workspace_id: &'a str,
+    device_name: &'a str,
     key_prefix: &'a str,
     secret: &'a str,
 }
@@ -97,15 +106,17 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
 
 fn run_login(paths: &Paths, a: LoginArgs, json_flag: bool) -> Result<()> {
     let api_url = cloud::resolve_api_url(a.api_url.as_deref())?;
+    let device_name = a.device_name.unwrap_or_else(default_device_name);
     let mut progress = std::io::stderr().lock();
-    let outcome = cloud::login(&api_url, &mut progress)?;
-    cloud::save(&paths.auth_file(), &outcome.credentials)?;
+    let outcome = cloud::login(&api_url, &device_name, &mut progress)?;
+    outcome.credentials.save(paths)?;
     let creds = &outcome.credentials;
     if json_flag {
         return json::write(&LoginJson {
             authenticated: true,
             api_url: &creds.api_url,
-            workspace_id: &creds.workspace_id,
+            personal_workspace_id: &creds.personal_workspace_id,
+            device_name: &creds.device_name,
             key_prefix: &creds.key_prefix,
             secret: &creds.secret,
         });
@@ -113,9 +124,9 @@ fn run_login(paths: &Paths, a: LoginArgs, json_flag: bool) -> Result<()> {
     let mut out = std::io::stdout().lock();
     writeln!(
         out,
-        "{} logged in to workspace {} ({})",
+        "{} logged in as device {} ({})",
         "\u{2713}".green(),
-        creds.workspace_id.bold(),
+        creds.device_name.bold(),
         creds.key_prefix.dimmed()
     )?;
     writeln!(
@@ -128,8 +139,11 @@ fn run_login(paths: &Paths, a: LoginArgs, json_flag: bool) -> Result<()> {
 }
 
 fn run_status(paths: &Paths, a: StatusArgs, json_flag: bool) -> Result<()> {
-    let file = cloud::load(&paths.auth_file())?;
-    let secret = cloud::effective_secret(file.as_ref())?;
+    let file = AuthFile::load(paths)?;
+    let secret = match &file {
+        Some(creds) => Some(creds.effective_secret()),
+        None => env::api_key_override(),
+    };
     let Some(secret) = secret else {
         return emit_logged_out(json_flag);
     };
@@ -140,18 +154,27 @@ fn run_status(paths: &Paths, a: StatusArgs, json_flag: bool) -> Result<()> {
     } else {
         cloud::resolve_api_url(None)?
     };
-    let mut report = cloud::workspace_status(&api_url, &secret)?;
+    let personal_id = file.as_ref().map(|c| c.personal_workspace_id.clone());
+    let mut report = cloud::workspace_status(&api_url, &secret, personal_id.as_deref())?;
     if report.key_prefix.is_none() {
         report.key_prefix = file.as_ref().map(|c| c.key_prefix.clone());
-    }
-    if report.workspace_id.is_none() {
-        report.workspace_id = file.as_ref().map(|c| c.workspace_id.clone());
     }
     emit_status(json_flag, &report)
 }
 
+/// Hostname when the platform exposes one, else a stable fallback label.
+fn default_device_name() -> String {
+    std::process::Command::new("hostname")
+        .output()
+        .ok()
+        .and_then(|out| String::from_utf8(out.stdout).ok())
+        .map(|name| name.trim().to_string())
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| "comemory-cli".to_string())
+}
+
 fn run_logout(paths: &Paths, json_flag: bool) -> Result<()> {
-    cloud::clear(&paths.auth_file())?;
+    AuthFile::clear(paths)?;
     if json_flag {
         return json::write(&LogoutJson { logged_out: true });
     }

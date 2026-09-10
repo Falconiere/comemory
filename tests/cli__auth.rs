@@ -86,10 +86,24 @@ fn login_writes_auth_json_mode_0600_and_usable_secret() {
     require_http_tools();
     let srv = DeviceAuthServer::start_default();
     let home = Home::new();
-    let report = home.run_json(None, &["auth", "login", "--api-url", &srv.base]);
+    let report = home.run_json(
+        None,
+        &[
+            "auth",
+            "login",
+            "--api-url",
+            &srv.base,
+            "--device-name",
+            "fixture-laptop",
+        ],
+    );
     assert_eq!(report["authenticated"], true);
     assert_eq!(report["api_url"], srv.base);
-    assert_eq!(report["workspace_id"], srv.config.workspace_id.as_str());
+    assert_eq!(
+        report["personal_workspace_id"],
+        srv.config.workspace_id.as_str()
+    );
+    assert_eq!(report["device_name"], "fixture-laptop");
     assert_eq!(report["key_prefix"], srv.config.key_prefix.as_str());
     assert_eq!(report["secret"], srv.config.secret.as_str());
 
@@ -99,6 +113,37 @@ fn login_writes_auth_json_mode_0600_and_usable_secret() {
     assert_eq!(mode, 0o600, "auth.json must be 0600, got {mode:#o}");
     let on_disk: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
     assert_eq!(on_disk["secret"], srv.config.secret.as_str());
+    // The file `sync` reads is the file `auth login` writes — same schema.
+    assert_eq!(
+        on_disk["personal_workspace_id"],
+        srv.config.workspace_id.as_str()
+    );
+    assert_eq!(on_disk["device_name"], "fixture-laptop");
+    assert_eq!(on_disk["api_url"], srv.base);
+    let listed = home.run_json(None, &["workspaces"]);
+    assert_eq!(
+        listed["workspaces"][0]["id"],
+        srv.config.workspace_id.as_str()
+    );
+    assert_eq!(listed["workspaces"][0]["personal"], true);
+}
+
+#[test]
+fn login_keeps_dialed_url_and_takes_platform_api_url_when_sent() {
+    require_http_tools();
+    let srv = DeviceAuthServer::start(DeviceAuthConfig {
+        mint_api_url: "https://api.example.test".into(),
+        ..DeviceAuthConfig::default()
+    });
+    let home = Home::new();
+    let report = home.run_json(None, &["auth", "login", "--api-url", &srv.base]);
+    assert_eq!(report["api_url"], "https://api.example.test");
+
+    // Blank `apiUrl` (deployment without BETTER_AUTH_URL) → keep what we dialed.
+    let plain = DeviceAuthServer::start_default();
+    let home2 = Home::new();
+    let report2 = home2.run_json(None, &["auth", "login", "--api-url", &plain.base]);
+    assert_eq!(report2["api_url"], plain.base);
 }
 
 #[test]
@@ -110,6 +155,7 @@ fn status_reports_authenticated_after_login() {
     let status = home.run_json(None, &["auth", "status"]);
     assert_eq!(status["authenticated"], true);
     assert_eq!(status["workspace_id"], srv.config.workspace_id.as_str());
+    assert_eq!(status["key_prefix"], srv.config.key_prefix.as_str());
     assert_eq!(status["workspace_name"], srv.config.workspace_name.as_str());
     assert_eq!(status["api_url"], srv.base);
     assert!(

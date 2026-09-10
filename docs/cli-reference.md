@@ -1217,7 +1217,7 @@ Cloud workspace-key login / status / logout (device authorization)
 Usage: comemory auth [OPTIONS] <COMMAND>
 
 Commands:
-  login   RFC 8628 device login; mint a workspace-bound `cmk_` into auth.json
+  login   RFC 8628 device login; mint a device `cmk_` into auth.json
   status  Report whether local credentials still authenticate
   logout  Delete local auth.json (no remote revoke)
   help    Print this message or the help of the given subcommand(s)
@@ -1233,6 +1233,9 @@ Examples:
 
   # Point at a non-prod API
   comemory auth login --api-url https://dev-api.comemory.io
+
+  # Label this machine (default: hostname)
+  comemory auth login --device-name laptop
 
   # Check the saved key against the platform
   comemory auth status

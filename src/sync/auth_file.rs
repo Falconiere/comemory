@@ -44,6 +44,9 @@ impl AuthFile {
         let rendered = serde_json::to_string_pretty(self)?;
         let final_path = paths.auth_file();
         let tmp_path: PathBuf = paths.data_dir().join(".auth.json.tmp");
+        // First login runs before any store exists, so the data dir may not
+        // be there yet; the tmp write below fails with ENOENT without this.
+        fs::create_dir_all(paths.data_dir())?;
 
         if let Err(e) = fs::write(&tmp_path, &rendered) {
             let _ = fs::remove_file(&tmp_path);
@@ -61,6 +64,16 @@ impl AuthFile {
     /// Effective API secret: `COMEMORY_API_KEY` env overrides the stored secret.
     pub fn effective_secret(&self) -> String {
         env::api_key_override().unwrap_or_else(|| self.secret.clone())
+    }
+
+    /// Delete `auth.json` when present. A missing file is success, so
+    /// `comemory auth logout` stays idempotent.
+    pub fn clear(paths: &Paths) -> Result<()> {
+        match fs::remove_file(paths.auth_file()) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(e.into()),
+        }
     }
 }
 

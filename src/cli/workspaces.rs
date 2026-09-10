@@ -6,11 +6,21 @@ use std::path::PathBuf;
 use clap::Args as ClapArgs;
 use owo_colors::OwoColorize;
 
+use serde::Serialize;
+
+use crate::cloud;
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::output::json;
 use crate::prelude::*;
 use crate::sync::auth_file::AuthFile;
-use crate::sync::client;
+
+/// One rendered workspace row (`personal` marks the login's own workspace).
+#[derive(Debug, Serialize)]
+struct WorkspaceRow {
+    id: String,
+    name: String,
+    personal: bool,
+}
 
 const EXAMPLES: &str = "\
 Examples:
@@ -28,10 +38,17 @@ pub async fn run(_a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result
     let auth = AuthFile::load(&paths)?
         .ok_or_else(|| Error::Usage("not logged in — run `comemory auth login`".into()))?;
     let secret = auth.effective_secret();
-    let mut rows = client::list_workspaces(&auth.api_url, &secret)?;
-    for row in &mut rows {
-        row.personal = row.id == auth.personal_workspace_id;
-    }
+    let listed = cloud::list_workspaces(&auth.api_url, &secret)?.ok_or_else(|| {
+        Error::Usage("device key no longer authenticates — run `comemory auth login`".into())
+    })?;
+    let rows: Vec<WorkspaceRow> = listed
+        .into_iter()
+        .map(|workspace| WorkspaceRow {
+            personal: workspace.id == auth.personal_workspace_id,
+            id: workspace.id,
+            name: workspace.name,
+        })
+        .collect();
     if json_flag {
         json::write(&serde_json::json!({ "workspaces": rows }))?;
         return Ok(());
