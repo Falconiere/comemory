@@ -22,7 +22,10 @@ sync push/pull (`sync/`).
 
 Tests live under `tests/`; the real six-save fixture is
 `tests/fixtures/claude-code-session-saves.jsonl` (crate-root; guardrails
-forbids a `fixtures/` nested folder under `src/`).
+forbids a `fixtures/` nested folder under `src/`). The colocated `tests/`
+directory is the suite home allowed by `src.nested["*"]` — it is **not** a
+module folder and must **not** appear in `requireReadme` (same as
+`sync/tests`, `api/*/tests`, …).
 
 When you add a file here, add its row above so the index stays current. No
 `mod.rs` barrel — submodules are declared from `src/capture.rs`.
