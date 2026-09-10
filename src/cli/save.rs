@@ -125,9 +125,14 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
         ref_symbol: a.ref_symbol,
     };
     let mut output = api::save::run(&mut ctx, req, a.vector_stdin, a.vector.as_deref())?;
-    // This process exits moments from now; a detached push would die with it.
-    std::mem::take(&mut output.auto_push).wait();
-    emit(json, &output)
+    let auto_push = std::mem::take(&mut output.auto_push);
+    // Report the save first: it already succeeded locally, and the push is a
+    // network round trip the user should not wait to *see* the result of.
+    let emitted = emit(json, &output);
+    // Then wait, because this process exits moments from now and a detached
+    // push would die with it.
+    auto_push.wait();
+    emitted
 }
 
 /// Resolve the body from the positional arg or stdin, rejecting the
