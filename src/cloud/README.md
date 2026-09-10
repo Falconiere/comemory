@@ -1,14 +1,19 @@
 # cloud/
 
-**What belongs here:** the cloud-platform client for workspace-key device
-login — API base URL resolution, RFC 8628 device code / token poll,
-`POST /v1/device/mint-workspace-key`, and durable `auth.json` credentials
-(mode `0600`). `src/cloud.rs` beside this folder re-exports the public
-surface and the `comemory-cli` client id. HTTP shells out through
-[`crate::fetch`](../fetch.rs) (curl/wget); no TLS stack in the crate.
+**What belongs here:** the cloud-platform client for device login — API base
+URL resolution, RFC 8628 device code / token poll,
+`POST /v1/device/mint-device-key`, and the `GET /v1/workspaces` reads that
+`auth status` / `comemory workspaces` run with the minted key.
+`src/cloud.rs` beside this folder re-exports the public surface and the
+`comemory-cli` client id. HTTP shells out through
+[`crate::fetch`](../fetch.rs) (curl/wget); no TLS stack in the crate, which
+is why these calls do not go through `sync::client` (reqwest, built without
+TLS features and therefore loopback-only).
 
-**What does NOT belong here:** sync / `mint-device-key`, opening a browser,
-remote key revoke on logout, or an `/api/v1` route — `auth` is CLI-only
+**What does NOT belong here:** the `auth.json` schema — that is
+[`sync::auth_file::AuthFile`](../sync/auth_file.rs), the one file both
+`auth login` and `sync` read. Nor opening a browser, remote key revoke on
+logout, or an `/api/v1` route — `auth` is CLI-only
 (`serve::routes::meta::CLI_ONLY`).
 
 ## Contents
@@ -16,8 +21,7 @@ remote key revoke on logout, or an `/api/v1` route — `auth` is CLI-only
 | File | Primary item | Purpose |
 | --- | --- | --- |
 | `api_url.rs` | `resolve` | `--api-url` > `COMEMORY_API` > `https://api.comemory.io`; strip trailing slash |
-| `credentials.rs` | `Credentials` | `auth.json` load / atomic save (0600) / clear; `COMEMORY_API_KEY` override |
-| `device.rs` | `login` | Device code → poll (pending / slow_down) → mint with Bearer access_token; `workspace_status` |
+| `device.rs` | `login` | Device code → poll (pending / slow_down) → `mint-device-key` with Bearer access_token; `list_workspaces` / `workspace_status` |
 
 Tests live beside the module under `tests/`. End-to-end CLI coverage is
 `tests/cli__auth.rs` against a loopback device-auth fixture.

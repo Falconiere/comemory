@@ -9,8 +9,8 @@
 //!
 //! Speaks real HTTP over a real socket so `comemory auth` still shells out
 //! to curl/wget. Covers `/auth/device/code`, `/auth/device/token`,
-//! `/v1/device/mint-workspace-key`, and `/v1/workspaces/current`. Each
-//! consuming binary `#[path]`-includes this file directly.
+//! `/v1/device/mint-device-key`, and `/v1/workspaces`. Each consuming
+//! binary `#[path]`-includes this file directly.
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -29,14 +29,16 @@ pub struct DeviceAuthConfig {
     pub expire_token: bool,
     /// Device `access_token` returned on success.
     pub access_token: String,
-    /// Minted workspace key secret (`cmk_` + 64 hex).
+    /// Minted device key secret (`cmk_` + 64 hex).
     pub secret: String,
     /// Display prefix for the minted key.
     pub key_prefix: String,
-    /// Workspace UUID.
+    /// Personal workspace UUID returned by the mint.
     pub workspace_id: String,
     /// Workspace display name.
     pub workspace_name: String,
+    /// `apiUrl` the mint echoes back (blank → the CLI keeps the dialed URL).
+    pub mint_api_url: String,
 }
 
 impl Default for DeviceAuthConfig {
@@ -50,6 +52,7 @@ impl Default for DeviceAuthConfig {
             key_prefix: "cmk_aaaa".into(),
             workspace_id: "11111111-2222-3333-4444-555555555555".into(),
             workspace_name: "Fixture Workspace".into(),
+            mint_api_url: String::new(),
         }
     }
 }
@@ -162,8 +165,8 @@ fn route(
     match (method, path) {
         ("POST", "/auth/device/code") => device_code(body, shared),
         ("POST", "/auth/device/token") => device_token(body, shared),
-        ("POST", "/v1/device/mint-workspace-key") => mint(authorization, shared),
-        ("GET", "/v1/workspaces/current") => workspaces_current(authorization, shared),
+        ("POST", "/v1/device/mint-device-key") => mint(body, authorization, shared),
+        ("GET", "/v1/workspaces") => workspaces_list(authorization, shared),
         _ => (
             "404 Not Found",
             "application/json",
@@ -240,7 +243,7 @@ fn device_token(body: &str, shared: &Shared) -> (&'static str, &'static str, Str
     ("200 OK", "application/json", body.to_string())
 }
 
-fn mint(authorization: &str, shared: &Shared) -> (&'static str, &'static str, String) {
+fn mint(body: &str, authorization: &str, shared: &Shared) -> (&'static str, &'static str, String) {
     let expected = format!("Bearer {}", shared.config.access_token);
     if authorization != expected {
         return (
@@ -249,18 +252,25 @@ fn mint(authorization: &str, shared: &Shared) -> (&'static str, &'static str, St
             r#"{"error":"unauthorized"}"#.into(),
         );
     }
+    // The platform's zod input rejects a missing/blank deviceName with 400.
+    let device_name = json_str(body, "deviceName").unwrap_or_default();
+    if device_name.is_empty() {
+        return (
+            "400 Bad Request",
+            "application/json",
+            r#"{"error":"deviceName required"}"#.into(),
+        );
+    }
     let body = serde_json::json!({
         "secret": shared.config.secret,
         "keyPrefix": shared.config.key_prefix,
-        "workspaceId": shared.config.workspace_id,
+        "personalWorkspaceId": shared.config.workspace_id,
+        "apiUrl": shared.config.mint_api_url,
     });
     ("201 Created", "application/json", body.to_string())
 }
 
-fn workspaces_current(
-    authorization: &str,
-    shared: &Shared,
-) -> (&'static str, &'static str, String) {
+fn workspaces_list(authorization: &str, shared: &Shared) -> (&'static str, &'static str, String) {
     let expected = format!("Bearer {}", shared.config.secret);
     if authorization != expected {
         return (
@@ -270,10 +280,12 @@ fn workspaces_current(
         );
     }
     let body = serde_json::json!({
-        "workspace": {
-            "id": shared.config.workspace_id,
-            "name": shared.config.workspace_name,
-        }
+        "workspaces": [{
+            "workspace": {
+                "id": shared.config.workspace_id,
+                "name": shared.config.workspace_name,
+            }
+        }]
     });
     ("200 OK", "application/json", body.to_string())
 }

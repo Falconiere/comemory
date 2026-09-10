@@ -36,7 +36,7 @@ Look-it-up material:
 
 - **[CLI reference](cli-reference.md)** — every subcommand and flag, with the
   `--json` pagination envelope (generated from `--help`). Includes
-  [`comemory auth`](cli-reference.md#comemory-auth) (workspace-key device
+  [`comemory auth`](cli-reference.md#comemory-auth) (device
   login; CLI-only).
 - **[CLI + HTTP scenario catalog](scenarios/README.md)** — the human-readable
   test plan: every subcommand, every flag, its `/api/v1` twin, and the test
