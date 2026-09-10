@@ -109,6 +109,14 @@ fn initial_sync_pulls_then_pushes_and_records_the_cursor() {
     assert_eq!(stats.pulled, 1, "the remote entry must be adopted");
     assert_eq!(stats.pushed, 1, "the local entry must be offered");
 
+    // A count alone would pass on any entry. Prove it is *this* one, on disk.
+    let remote_id = comemory::memory::id::memory_id(remote_body);
+    let adopted = comemory::memory::MemoryStore::new(paths.clone())
+        .load(&remote_id)
+        .expect("the pulled memory must be readable from the markdown store");
+    assert_eq!(adopted.body.trim_end(), remote_body);
+    assert_eq!(adopted.frontmatter.repo, "acme/backend");
+
     // Order matters: pushing first would let sync_binding claim a memory the
     // organization already holds.
     let paths_seen = server.paths();
@@ -129,9 +137,18 @@ fn initial_sync_pulls_then_pushes_and_records_the_cursor() {
     let row = sync_state::get(&conn, &auth.workspace_id)
         .unwrap()
         .expect("a cursor row for the org workspace");
+    let stamped = row
+        .last_sync_at
+        .expect("a successful first sync must stamp last_sync_at");
+    let parsed = time::OffsetDateTime::parse(
+        &stamped,
+        &time::format_description::well_known::Iso8601::DEFAULT,
+    )
+    .expect("last_sync_at must be ISO-8601");
+    let age = (time::OffsetDateTime::now_utc() - parsed).whole_seconds();
     assert!(
-        row.last_sync_at.is_some(),
-        "a successful first sync must stamp last_sync_at"
+        (0..60).contains(&age),
+        "the stamp must be from this run, not carried over: {stamped} ({age}s old)"
     );
 }
 

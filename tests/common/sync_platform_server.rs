@@ -85,9 +85,11 @@ pub struct RecordedRequest {
     pub path: String,
     /// `Authorization` header value, empty when absent.
     pub authorization: String,
-    /// `X-Comemory-Workspace` header value, empty when absent — which is what
-    /// the org-scoped key is supposed to make true for every request.
-    pub workspace_header: String,
+    /// `X-Comemory-Workspace` header, `None` when the request did not send
+    /// the header at all — which is what the org-scoped key is supposed to
+    /// make true for every request. `Some("")` would mean the header was sent
+    /// with an empty value, a regression an emptiness check would miss.
+    pub workspace_header: Option<String>,
 }
 
 impl Default for SyncPlatformState {
@@ -219,7 +221,7 @@ fn handle(
     };
     let mut content_length = 0usize;
     let mut authorization = String::new();
-    let mut workspace_header = String::new();
+    let mut workspace_header: Option<String> = None;
     loop {
         let mut header = String::new();
         if reader.read_line(&mut header)? == 0 || header == "\r\n" || header == "\n" {
@@ -236,10 +238,12 @@ fn handle(
                 .unwrap_or_default();
         }
         if lower.starts_with("x-comemory-workspace:") {
-            workspace_header = header
-                .split_once(':')
-                .map(|(_, v)| v.trim().to_string())
-                .unwrap_or_default();
+            workspace_header = Some(
+                header
+                    .split_once(':')
+                    .map(|(_, v)| v.trim().to_string())
+                    .unwrap_or_default(),
+            );
         }
     }
     requests.lock().expect("request log").push(RecordedRequest {
@@ -331,6 +335,9 @@ fn route(
                 .to_string(),
             )
         }
+        // One guard over every alternative: when `sync_unavailable` is set,
+        // all three sync routes answer 500. Written as a single arm because
+        // clippy::match_same_arms rejects three arms with identical bodies.
         ("GET", "/v1/sync/changes" | "/v1/sync/manifest") | ("POST", "/v1/sync/import")
             if st.sync_unavailable =>
         {

@@ -55,6 +55,40 @@ fn legacy_version() -> u8 {
     LEGACY_SCHEMA_VERSION
 }
 
+/// Read `path` when it exists; a missing file is `Ok(None)`.
+fn read_if_present(path: &std::path::Path) -> Result<Option<String>> {
+    if !path.exists() {
+        return Ok(None);
+    }
+    Ok(Some(fs::read_to_string(path)?))
+}
+
+/// The error for a credential this build cannot read, or `None` when the
+/// version matches.
+///
+/// The version is probed before the strict parse because a v1 file is missing
+/// every org field, so parsing it directly would report a confusing
+/// "missing field `organization_id`" instead of "log in again". A *newer*
+/// file gets its own message: telling someone their v3 credential predates
+/// organization scoping would send them to fix the wrong thing.
+fn schema_mismatch(raw: &str, path: &std::path::Path) -> Result<Option<Error>> {
+    let probe: VersionProbe = serde_json::from_str(raw)?;
+    if probe.version < AUTH_SCHEMA_VERSION {
+        return Ok(Some(Error::Usage(format!(
+            "credentials at {} predate organization scoping — run `comemory auth login`",
+            path.display()
+        ))));
+    }
+    if probe.version > AUTH_SCHEMA_VERSION {
+        return Ok(Some(Error::Usage(format!(
+            "credentials at {} were written by a newer comemory (schema v{}, this build reads v{AUTH_SCHEMA_VERSION}) — run `comemory upgrade`",
+            path.display(),
+            probe.version
+        ))));
+    }
+    Ok(None)
+}
+
 /// Just enough of the file to decide whether the rest is worth parsing.
 #[derive(Deserialize)]
 struct VersionProbe {
@@ -71,35 +105,46 @@ impl AuthFile {
     /// underlying `serde_json` error.
     pub fn load(paths: &Paths) -> Result<Option<Self>> {
         let path = paths.auth_file();
-        if !path.exists() {
+        let Some(raw) = read_if_present(&path)? else {
             return Ok(None);
+        };
+        if let Some(mismatch) = schema_mismatch(&raw, &path)? {
+            return Err(mismatch);
         }
-        let raw = fs::read_to_string(&path)?;
-        // Probe the version before the strict parse: a v1 file is missing
-        // every org field, so a direct parse would report a confusing
-        // "missing field `organization_id`" instead of "log in again".
-        let probe: VersionProbe = serde_json::from_str(&raw)?;
-        if probe.version < AUTH_SCHEMA_VERSION {
+        let file: Self = serde_json::from_str(&raw)?;
+        // A field the platform left blank is as unusable as one it omitted,
+        // and a hand-edited file can carry either. Refuse both here so no
+        // caller has to re-check before addressing a workspace.
+        if file.organization_id.trim().is_empty() || file.workspace_id.trim().is_empty() {
             return Err(Error::Usage(format!(
-                "credentials at {} predate organization scoping — run `comemory auth login`",
+                "credentials at {} carry no organization scope — run `comemory auth login`",
                 path.display()
             )));
         }
-        let file: Self = serde_json::from_str(&raw)?;
         Ok(Some(file))
     }
 
-    /// Like [`Self::load`], but a credential too old to use reads as absent.
+    /// Like [`Self::load`], but a credential this build cannot use reads as
+    /// absent instead of raising.
     ///
     /// Best-effort callers (`save`, `context`) use this: they already do
     /// nothing when `auth.json` is missing, and turning every local save into
     /// a warning about a stale credential would be noise. The commands the
     /// user ran on purpose — `sync`, `auth status` — still report it.
+    ///
+    /// It re-derives the version rather than catching [`Error::Usage`] from
+    /// [`Self::load`]: matching on the error variant would silently swallow
+    /// any *future* usage error `load` grows, turning a real misconfiguration
+    /// into a silent no-sync.
     pub fn load_usable(paths: &Paths) -> Result<Option<Self>> {
-        match Self::load(paths) {
-            Err(Error::Usage(_)) => Ok(None),
-            other => other,
+        let path = paths.auth_file();
+        let Some(raw) = read_if_present(&path)? else {
+            return Ok(None);
+        };
+        if schema_mismatch(&raw, &path)?.is_some() {
+            return Ok(None);
         }
+        Self::load(paths)
     }
 
     /// Persist this bundle atomically with mode `0600` on unix.
