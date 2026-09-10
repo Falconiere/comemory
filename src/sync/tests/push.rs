@@ -155,8 +155,8 @@ fn a_label_no_allowlist_would_have_carried_is_now_pushed() {
     );
     for request in server.requests() {
         assert!(
-            request.workspace_header.is_empty(),
-            "{} {} carried a workspace header",
+            request.workspace_header.is_none(),
+            "{} {} sent a workspace header",
             request.method,
             request.path
         );

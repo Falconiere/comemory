@@ -49,11 +49,16 @@ pub struct DeviceCodeResponse {
 struct MintResponse {
     secret: String,
     key_prefix: String,
+    // Every org field defaults: an *absent* `organizationId` / `workspaceId`
+    // must reach the scope guard in `login` and get its named error, not fail
+    // deserialization first with a serde message about a missing field.
+    #[serde(default)]
     organization_id: String,
     #[serde(default)]
     organization_slug: String,
     #[serde(default)]
     organization_name: String,
+    #[serde(default)]
     workspace_id: String,
     api_url: String,
     #[serde(default)]

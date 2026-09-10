@@ -20,7 +20,6 @@ pub fn normalize_repo_label(label: &str) -> String {
 #[derive(Debug, Clone)]
 pub struct SkipMatcher {
     set: GlobSet,
-    empty: bool,
 }
 
 impl SkipMatcher {
@@ -32,6 +31,13 @@ impl SkipMatcher {
     /// so a bad `config.toml` fails at load rather than silently syncing a
     /// repository the operator meant to withhold.
     pub fn compile(patterns: &[String]) -> Result<Self> {
+        // The overwhelmingly common case: no patterns configured. `GlobSet`
+        // has an explicit empty form, so there is nothing to build.
+        if patterns.is_empty() {
+            return Ok(Self {
+                set: GlobSet::empty(),
+            });
+        }
         let mut builder = GlobSetBuilder::new();
         for pattern in patterns {
             let normalized = normalize_repo_label(pattern);
@@ -43,19 +49,13 @@ impl SkipMatcher {
         let set = builder
             .build()
             .map_err(|e| Error::Config(format!("invalid sync.skip_repos: {e}")))?;
-        Ok(Self {
-            set,
-            empty: patterns.is_empty(),
-        })
+        Ok(Self { set })
     }
 
     /// True when `label` matches any pattern. An empty pattern list never
     /// matches, and an empty label is never skipped here — an unlabelled
     /// memory is already withheld by the push filter's own personal check.
     pub fn is_skipped(&self, label: &str) -> bool {
-        if self.empty {
-            return false;
-        }
         let normalized = normalize_repo_label(label);
         if normalized.is_empty() {
             return false;

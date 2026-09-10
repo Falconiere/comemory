@@ -59,8 +59,9 @@ fn sends_no_workspace_header_on_any_sync_route() {
     assert_eq!(seen.len(), 3, "three sync calls, got: {seen:?}");
     for request in &seen {
         assert!(
-            request.workspace_header.is_empty(),
-            "{} {} still carried a workspace header: {:?}",
+            request.workspace_header.is_none(),
+            "{} {} sent the header at all — absence is the contract, and an \
+             empty value would still be a regression: {:?}",
             request.method,
             request.path,
             request.workspace_header
@@ -143,8 +144,18 @@ fn envelope_error_surfaces_with_its_code() {
     server.update(|st| st.sync_unavailable = true);
     let secret = server.snapshot().secret;
 
+    // The fixture's `unavailable()` answers exactly `500 Internal Server
+    // Error`, so the status is pinned on both sides of this assertion.
     let err = client::pull_changes(&server.base, &secret, 0, 50).expect_err("outage surfaces");
-    assert!(err.to_string().contains("500"), "got: {err}");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("500"),
+        "the HTTP status must reach the caller: {msg}"
+    );
+    assert!(
+        msg.contains("pull changes"),
+        "and so must the operation that failed: {msg}"
+    );
 }
 
 #[test]

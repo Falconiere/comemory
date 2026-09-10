@@ -176,7 +176,12 @@ impl Default for EmbedConfig {
     }
 }
 
-/// Warn once, on load, that `key` is set but no longer does anything.
+/// Warn that `key` is set but no longer does anything.
+///
+/// Fires once per config load — so once per CLI invocation, and once at
+/// `serve` startup. It is deliberately not deduplicated across process runs:
+/// a warning the user sees once and forgets is worse than one that keeps
+/// pointing at a key they still have to remove.
 fn warn_deprecated(key: &str) {
     let reason = DEPRECATED_KEYS
         .iter()
