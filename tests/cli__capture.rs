@@ -70,8 +70,8 @@ fn session_dry_run_against_fixture() {
         .stdout
         .clone();
     let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
-    assert_eq!(v["dry_run"], true);
-    assert_eq!(v["posted"], false);
+    assert_eq!(v["dry_run"].as_bool(), Some(true));
+    assert_eq!(v["posted"].as_bool(), Some(false));
     assert_eq!(v["receipt"]["redaction"]["version"], 1);
     assert_eq!(v["receipt"]["turnCount"], 24);
 }
@@ -87,9 +87,12 @@ fn session_posts_to_loopback() {
         .success()
         .stdout(predicate::str::contains("\"posted\":true"));
     let reqs = server.requests();
-    assert_eq!(reqs[0].path, "/v1/sessions");
-    assert_eq!(reqs[0].workspace_header.as_deref(), Some("ws-org"));
-    assert!(reqs[0].authorization.starts_with("Bearer "));
+    let post = reqs
+        .iter()
+        .find(|r| r.method == "POST" && r.path == "/v1/sessions")
+        .expect("POST /v1/sessions");
+    assert_eq!(post.workspace_header.as_deref(), Some("ws-org"));
+    assert!(post.authorization.starts_with("Bearer "));
 }
 
 #[test]

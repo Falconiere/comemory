@@ -45,7 +45,7 @@ use tempfile::TempDir;
 
 /// Real subcommands with no HTTP mapping at all: `serve` IS the server
 /// (spec Non-Goal 3), `upgrade` replaces the running binary, and the
-/// platform cloud verbs (`auth` / `sync` / `capture` / `distill`)
+/// platform client verbs (`auth` / `sync` / `capture` / `distill`)
 /// talk to the cloud platform — never on an HTTP request to this process.
 /// A local, hardcoded mirror of `serve::routes::meta::CLI_ONLY` (private to
 /// that module) — deliberate: this test proves the *real*

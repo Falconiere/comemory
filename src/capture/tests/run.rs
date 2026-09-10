@@ -87,12 +87,19 @@ fn post_sends_receipt_and_workspace_header() {
     assert!(report.posted);
     assert!(report.response.as_ref().unwrap().created);
     let reqs = server.requests();
-    assert_eq!(reqs[0].path, "/v1/sessions");
-    assert_eq!(reqs[0].workspace_header.as_deref(), Some("ws-org"));
+    let post = reqs
+        .iter()
+        .find(|r| r.method == "POST" && r.path == "/v1/sessions")
+        .expect("POST /v1/sessions");
+    assert_eq!(post.workspace_header.as_deref(), Some("ws-org"));
     let body = server.last_receipt().unwrap();
-    assert!(body.contains("\"externalId\""));
-    assert!(body.contains("\"transcriptDigest\""));
-    assert!(body.contains("\"redaction\""));
+    let receipt: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(
+        receipt["externalId"],
+        "8e9f54e3-a984-46ab-8403-135ee920cbca"
+    );
+    assert!(receipt["transcriptDigest"].as_str().is_some_and(|s| s.len() == 64));
+    assert_eq!(receipt["redaction"]["version"], 1);
 }
 
 #[test]
