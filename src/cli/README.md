@@ -28,6 +28,7 @@ One line per file, named after its primary item:
 | `consolidate.rs` | `Args` | `comemory consolidate` — advisory near-duplicate cluster report |
 | `context.rs` | `Args` | `comemory context` — headline memory + code bundle lookup |
 | `delete.rs` | `Args` | `comemory delete` — soft-delete a memory by id |
+| `distill.rs` | `Args` | `comemory distill` — extract explicit saves and propose platform candidates (CLI-only) |
 | `doctor.rs` | `Args` | `comemory doctor` — runtime health check against the SQLite storage stack |
 | `edges.rs` | `Args` | `comemory edges` — lexical search over the relation graph |
 | `embedding_input.rs` | `EmbeddingPayload` | Shared `--vector` / `--vector-stdin` parsing for `save` and `search` |

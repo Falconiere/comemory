@@ -1,0 +1,48 @@
+# Client redaction rules for capture / distillation (rule-set version 1).
+# Wire `name` values match the platform backstop ids where the shapes align;
+# `generic-high-entropy` is client-only (server deliberately omits it).
+# Path is intentional: src/capture/rules.toml beside redact.rs (include_str!).
+
+[[rule]]
+name = "aws-access-key-id"
+pattern = '''\b(?:AKIA|ASIA|ABIA|ACCA)[0-9A-Z]{16}\b'''
+
+[[rule]]
+name = "aws-secret-access-key"
+pattern = '''(?i)aws_secret_access_key\s*[=:]\s*["']?[A-Za-z0-9/+]{40}'''
+
+[[rule]]
+name = "github-token"
+pattern = '''\bgh[pousr]_[A-Za-z0-9]{36}\b'''
+
+[[rule]]
+name = "gitlab-token"
+pattern = '''\bglpat-[A-Za-z0-9_-]{20}\b'''
+
+[[rule]]
+name = "slack-token"
+pattern = '''\bxox[baprs]-[A-Za-z0-9-]{10,60}\b'''
+
+[[rule]]
+name = "stripe-key"
+pattern = '''\b[sr]k_(?:live|test)_[A-Za-z0-9]{24,60}\b'''
+
+[[rule]]
+name = "anthropic-key"
+pattern = '''\bsk-ant-[A-Za-z0-9_-]{20,120}\b'''
+
+[[rule]]
+name = "openai-key"
+pattern = '''\bsk-(?:proj-)?[A-Za-z0-9_-]{32,80}\b'''
+
+[[rule]]
+name = "jwt"
+pattern = '''\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b'''
+
+[[rule]]
+name = "private-key-pem"
+pattern = '''-----BEGIN [A-Z0-9 ]{0,20}PRIVATE KEY(?: BLOCK)?-----'''
+
+[[rule]]
+name = "generic-high-entropy"
+pattern = '''(?i)(?:key|token|secret|password|passwd|pwd|api[_-]?key|auth)[\s]*[=:]\s*['"]?([A-Za-z0-9+/=_\-]{20,})'''

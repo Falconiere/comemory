@@ -74,6 +74,9 @@ pub mod fetch;
 /// Cloud platform auth: device login and workspace-key credentials.
 pub mod cloud;
 
+/// Client-side session capture and distillation (platform Slices 3–4).
+pub mod capture;
+
 /// clap subcommand entry points and the top-level dispatcher.
 pub mod cli;
 
