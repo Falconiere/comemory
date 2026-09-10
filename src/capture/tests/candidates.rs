@@ -86,15 +86,17 @@ fn post_candidates_sends_authorization_only_and_returns_ordered_results() {
             }
             let req = String::from_utf8_lossy(&buf);
             let lower = req.to_ascii_lowercase();
+            let request_line = lower.lines().next().unwrap_or("");
             assert!(
-                lower.contains("post /v1/sessions/sess-1/candidates"),
+                request_line.starts_with("post /v1/sessions/sess-1/candidates http/"),
                 "request={req}"
             );
             assert!(
-                lower.contains("authorization: bearer cmk_test"),
+                lower.contains("\r\nauthorization: bearer cmk_test\r\n")
+                    || lower.starts_with("authorization: bearer cmk_test\r\n"),
                 "request={req}"
             );
-            assert!(!lower.contains("x-comemory-workspace"));
+            assert!(!lower.contains("\r\nx-comemory-workspace:"));
             let json = r#"{"ok":true,"data":{"results":[{"status":"stored","candidateId":"c1","contentDigest":"d1","state":"pending"},{"status":"duplicate","candidateId":"c0","contentDigest":"d0","state":"rejected"}],"stored":1,"duplicates":1},"meta":{}}"#;
             let response = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",

@@ -189,6 +189,7 @@ pub fn post_candidates(
     session_id: &str,
     batch: &CandidateBatch,
 ) -> Result<ProposeResponse> {
+    crate::capture::redact::ensure_rules_loaded()?;
     let base = api_url.trim_end_matches('/');
     let url = format!("{base}/v1/sessions/{session_id}/candidates");
     let client = Client::builder()

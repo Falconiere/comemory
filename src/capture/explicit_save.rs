@@ -36,13 +36,23 @@ pub struct ExtractedCandidate {
 }
 
 static SAVE_INVOCATION: LazyLock<Option<Regex>> =
-    LazyLock::new(|| Regex::new(r"comemory(?:\.sh)?\s+save\s").ok());
+    LazyLock::new(|| compile_re("save invocation", r"comemory(?:\.sh)?\s+save\s"));
 static DOUBLE_QUOTED: LazyLock<Option<Regex>> =
-    LazyLock::new(|| Regex::new(r#""((?:[^"\\]|\\.)*)""#).ok());
+    LazyLock::new(|| compile_re("double-quoted", r#""((?:[^"\\]|\\.)*)""#));
 static KIND_FLAG: LazyLock<Option<Regex>> =
-    LazyLock::new(|| Regex::new(r#"--kind\s+(?:"([a-z-]+)"|([a-z-]+))"#).ok());
+    LazyLock::new(|| compile_re("kind flag", r#"--kind\s+(?:"([a-z-]+)"|([a-z-]+))"#));
 static TAGS_FLAG: LazyLock<Option<Regex>> =
-    LazyLock::new(|| Regex::new(r#"--tags\s+"((?:[^"\\]|\\.)*)""#).ok());
+    LazyLock::new(|| compile_re("tags flag", r#"--tags\s+"((?:[^"\\]|\\.)*)""#));
+
+fn compile_re(name: &str, pattern: &str) -> Option<Regex> {
+    match Regex::new(pattern) {
+        Ok(re) => Some(re),
+        Err(e) => {
+            tracing::error!(rule = name, %e, "invalid explicit-save regex");
+            None
+        }
+    }
+}
 
 fn unescape_shell_argument(raw: &str) -> String {
     let mut out = String::with_capacity(raw.len());
