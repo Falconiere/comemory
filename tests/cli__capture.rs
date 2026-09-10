@@ -70,14 +70,22 @@ fn session_dry_run_against_fixture() {
         .stdout
         .clone();
     let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
-    assert_eq!(v.get("dry_run").and_then(|x| x.as_bool()), Some(true));
-    assert_eq!(v.get("posted").and_then(|x| x.as_bool()), Some(false));
     assert_eq!(
-        v.pointer("/receipt/redaction/version").and_then(|x| x.as_u64()),
+        v.get("dry_run").and_then(serde_json::Value::as_bool),
+        Some(true)
+    );
+    assert_eq!(
+        v.get("posted").and_then(serde_json::Value::as_bool),
+        Some(false)
+    );
+    assert_eq!(
+        v.pointer("/receipt/redaction/version")
+            .and_then(serde_json::Value::as_u64),
         Some(1)
     );
     assert_eq!(
-        v.pointer("/receipt/turnCount").and_then(|x| x.as_u64()),
+        v.pointer("/receipt/turnCount")
+            .and_then(serde_json::Value::as_u64),
         Some(24)
     );
 }

@@ -95,11 +95,24 @@ fn post_sends_receipt_and_workspace_header() {
     let body = server.last_receipt().unwrap();
     let receipt: serde_json::Value = serde_json::from_str(&body).unwrap();
     assert_eq!(
-        receipt["externalId"],
-        "8e9f54e3-a984-46ab-8403-135ee920cbca"
+        receipt
+            .get("externalId")
+            .and_then(serde_json::Value::as_str),
+        Some("8e9f54e3-a984-46ab-8403-135ee920cbca")
     );
-    assert!(receipt["transcriptDigest"].as_str().is_some_and(|s| s.len() == 64));
-    assert_eq!(receipt["redaction"]["version"], 1);
+    assert_eq!(
+        receipt
+            .get("transcriptDigest")
+            .and_then(serde_json::Value::as_str)
+            .map(str::len),
+        Some(64)
+    );
+    assert_eq!(
+        receipt
+            .pointer("/redaction/version")
+            .and_then(serde_json::Value::as_u64),
+        Some(1)
+    );
 }
 
 #[test]
