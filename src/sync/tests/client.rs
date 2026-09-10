@@ -166,3 +166,73 @@ fn trailing_slash_base_url_normalizes() {
     let manifest = client::fetch_manifest(&base, &secret).expect("slash");
     assert_eq!(manifest.buckets.len(), 256);
 }
+
+/// Send `headers` verbatim over a raw socket and return what the fixture
+/// recorded for that request.
+///
+/// Raw bytes because the point is to control the exact header lines; a client
+/// library would normalize them out of existence.
+fn record_raw(server: &SyncPlatformServer, headers: &[&str]) -> Option<String> {
+    use std::io::{Read as _, Write as _};
+
+    let before = server.requests().len();
+    let addr = server.base.trim_start_matches("http://");
+    let mut stream = std::net::TcpStream::connect(addr).expect("connect to fixture");
+    let mut req = String::from("GET /v1/sync/manifest HTTP/1.1\r\nHost: fixture\r\n");
+    for header in headers {
+        req.push_str(header);
+        req.push_str("\r\n");
+    }
+    req.push_str("\r\n");
+    stream.write_all(req.as_bytes()).expect("write request");
+    let mut sink = Vec::new();
+    let _ = stream.read_to_end(&mut sink);
+
+    let seen = server.requests();
+    assert_eq!(
+        seen.len(),
+        before + 1,
+        "the fixture must log exactly this request"
+    );
+    seen[before].workspace_header.clone()
+}
+
+#[test]
+fn header_capture_matches_the_workspace_header_and_only_that_header() {
+    // This fixture's capture is what AC-11 rests on: if it silently failed to
+    // record a header that WAS sent, "no request carries a workspace header"
+    // would pass while the client regressed. So the capture itself is pinned
+    // here, including the near-miss name that shares its prefix.
+    let server = SyncPlatformServer::start(SyncPlatformState::default());
+    let secret = server.snapshot().secret;
+    let auth = format!("Authorization: Bearer {secret}");
+
+    // A different header whose name merely starts with the same text must not
+    // be mistaken for it — the prefix ends in `:`, so matching stops at the `-`.
+    assert_eq!(
+        record_raw(&server, &[&auth, "X-Comemory-Workspace-Extra: poison"]),
+        None,
+        "a longer header name sharing the prefix must not be captured"
+    );
+
+    // The real header is captured, with or without the optional space after
+    // the colon (RFC 9112 §5: `field-line = field-name \":\" OWS field-value OWS`).
+    assert_eq!(
+        record_raw(&server, &[&auth, "X-Comemory-Workspace: ws-spaced"]),
+        Some("ws-spaced".to_string())
+    );
+    assert_eq!(
+        record_raw(&server, &[&auth, "X-Comemory-Workspace:ws-tight"]),
+        Some("ws-tight".to_string()),
+        "the space after the colon is optional in HTTP and must not be required here"
+    );
+
+    // Case-insensitive on the name, value preserved verbatim.
+    assert_eq!(
+        record_raw(&server, &[&auth, "x-COMEMORY-workspace: WS-MixedCase"]),
+        Some("WS-MixedCase".to_string())
+    );
+
+    // And absence stays absence.
+    assert_eq!(record_raw(&server, &[&auth]), None);
+}
