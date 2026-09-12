@@ -1,6 +1,6 @@
 //! `index_runs` row insert + readers — one row per `comemory index-code`
 //! RUN, outcomes included (`ok` | `error` | `cancelled`), backing the v15
-//! console-API history table (`src/store/sql/0015_v15_console_api.sql`).
+//! console-API history table (`migrations/0015_v15_console_api.sql`).
 //! `GET /api/v1/index/runs` pages it; `GET /api/v1/overview` reads the
 //! newest row for its "last run" tile.
 

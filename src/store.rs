@@ -130,12 +130,32 @@ pub mod repos_inventory;
 /// search→edit lookback, plus the `(query_id, query, at)` scan behind
 /// `eval::mine`.
 pub mod retrieval_log;
-/// DDL strings for the tables, `vec0` vtabs and FTS5 indexes.
+/// The declared schema: `registry()` over the `#[table]` structs in the
+/// `schema_*` siblings, plus `DECLARED_TABLES`.
 pub mod schema;
+/// Declared code-index tables: `code_symbols`, `code_fts`, `code_vec`, `repo_marker`.
+pub mod schema_code;
+/// Declared tables no domain owns: `schema_meta`, `edge_fts`.
+pub mod schema_core;
+/// Declared document tables: `source_roots`, `source_files`, `documents`, `document_chunks`, `document_fts`.
+pub mod schema_documents;
+/// Declared graph tables: `edges`, `code_ref`.
+pub mod schema_graph;
+/// Declared run-history tables: `eval_runs`, `gc_runs`, `index_runs`.
+pub mod schema_history;
+/// `just migration-journal` / `just migration-adopt`: journal a hand-written
+/// migration, restate the newest snapshot from the registry.
+pub mod schema_journal;
+/// Declared learning-loop tables: `feedback`, `retrieval_log`, `bandit_arms`.
+pub mod schema_learning;
+/// Declared memory-leg virtual tables: `memory_fts`, `memory_vec`.
+pub mod schema_memory;
 /// Single-key `schema_meta` writers that do not belong to `migrate` or
 /// `vector`'s dim guards, plus the generic keyed `get`/`upsert` behind
 /// `cli::lazy_reindex`'s debounce marker.
 pub mod schema_meta;
+/// Declared cloud-sync tables: `sync_state`, `sync_binding`.
+pub mod schema_sync;
 /// Bulk `(id, simhash)` scan over live memories, shared by save + consolidate.
 pub mod simhash_scan;
 /// `source_roots` row CRUD — the SQLite mirror of `sources.toml`.

@@ -49,7 +49,7 @@ fn toml_round_trip() {
 
 #[test]
 fn default_vector_dims_match_ddl() {
-    // The authoritative dim lives in src/store/sql/0002_v2_tables.sql:
+    // The authoritative dim lives in migrations/0002_v2_tables.sql:
     // `memory_vec FLOAT[1024]` and `code_vec FLOAT[768]`. Config defaults
     // mirror those literals for `comemory doctor` reporting; they cannot
     // be overridden via env (a divergent env value would just surface as

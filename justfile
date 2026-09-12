@@ -38,6 +38,22 @@ build-release:
 e2e:
     bash scripts/e2e.sh
 
+# Generate migrations/NNNN_<name>.sql from the declared schema (src/store/schema*.rs):
+# diff against the newest snapshot, write SQL + snapshot + journal entry, or report
+# "no schema change". Then wire the file into store::migrate::list::MIGRATIONS.
+migration name:
+    cargo run -q --example migrations -- generate {{name}}
+
+# Journal a hand-written migrations/NNNN_<name>.sql (a table the registry does not
+# declare): records its SHA-256 and order in migrations/_journal.json.
+migration-journal file:
+    cargo run -q --example migrations -- journal {{file}}
+
+# Restate the newest snapshot from the declared schema without writing SQL — the
+# step after a hand-SQL table becomes a #[table] struct.
+migration-adopt:
+    cargo run -q --example migrations -- adopt
+
 perf:
     bash scripts/build-perf.sh
 

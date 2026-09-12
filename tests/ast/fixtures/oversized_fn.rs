@@ -51,7 +51,7 @@ fn with_env(mut self) -> Result<Self> {
     }
     // COMEMORY_VECTOR_DIM and COMEMORY_CODE_VECTOR_DIM are intentionally
     // not honoured here. The authoritative dim lives in the `memory_vec`
-    // / `code_vec` vec0 DDL (`src/store/sql/0002_v2_tables.sql`) and is
+    // / `code_vec` vec0 DDL (`migrations/0002_v2_tables.sql`) and is
     // baked in at migration time; an env override would silently disagree
     // with the vtab and surface as `VecDimMismatch` at first insert.
     if let Ok(v) = std::env::var("COMEMORY_EMBED_HINT") {

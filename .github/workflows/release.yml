@@ -70,7 +70,7 @@ jobs:
           persist-credentials: false
           submodules: recursive
           # Full history + tags: this job runs scripts/check-all.sh, whose
-          # migration-check gate compares each src/store/sql/*.sql against the
+          # migration-check gate compares each migrations/*.sql against the
           # first release tag containing it. checkout defaults to depth 1 with
           # tags off, and the gate fails loudly on zero tags by design, so
           # without this the release build breaks.

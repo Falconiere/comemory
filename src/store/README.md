@@ -2,7 +2,7 @@
 
 **What belongs here:** the central SQLite layer backing `comemory.db` —
 connection setup (PRAGMAs, migrations, `sqlite-vec` auto-extension), the
-versioned migration runner, FTS5 helpers for both the memory and code legs,
+versioned migration runner, the declared schema (`schema*.rs`), FTS5 helpers for both the memory and code legs,
 `vec0` insert/KNN with dim guards, the `edges` FTS triplet index, batched
 per-memory metadata, the identifier tokenizer, and row CRUD for memories,
 code symbols, code references, documents, and the source-registry mirror.
@@ -41,7 +41,16 @@ One line per file, named after its primary item:
 | `memory_purge.rs` | `purge_memory` | One-transaction hard delete of a **soft-deleted** memory's mirror rows (`memories`, tags, FTS, vec, touching edges, `code_ref`, `feedback` + memory-target `feedback_events`; a live row is refused), plus `expired_deleted_ids` — the `deleted_at`-past-retention scan behind `comemory gc`'s zombie-row pass — `soft_delete` — the `comemory delete` mirror write (stamp `deleted_at`, drop FTS/vec, delete touching edges) called inside `cli::delete::mirror_soft_delete`'s transaction — and `trashed_with_hash` — the "already trashed under this hash" probe behind `api::sync::import_state` |
 | `memory_row.rs` | `insert` | `memories` row upserts and their edge materialization; the outgoing-edge wipe carries relation-edge timestamps and the mined `co_activated` edges (the one memory-sourced kind with no markdown source) across every re-mirror; also `live_ids`, `live_bodies` (the re-embed scan behind `api::reembed`'s memory leg), the `rank_score` bulk writer, and the chunked access-count bump behind `graph::memory_rank` / `graph::coactivate` |
 | `migrate.rs` | `CURRENT_VERSION` | Versioned, idempotent schema migrations plus `schema_meta`; loops over the `MIGRATIONS` slice declared in `migrate/list.rs` |
-| `schema.rs` | — | Module-doc placeholder for the v0.2 schema; DDL text lives in `sql/` |
+| `schema.rs` | `registry` | The declared schema: `registry()` assembles the `#[table]` / `#[fts5_table]` / `#[vec0_table]` structs from the `schema_*.rs` siblings into a toolu-orm `SchemaRegistry` (what `examples/migrations.rs` diffs into the next `migrations/*.sql`), plus `DECLARED_TABLES`; the colocated fidelity test proves the registry identical to the database the frozen chain builds |
+| `schema_core.rs` | `SchemaMeta` | Declared `schema_meta` + `edge_fts` |
+| `schema_code.rs` | `CodeSymbols` | Declared `code_symbols`, `code_fts`, `code_vec`, `indexed_files`, `repo_marker` |
+| `schema_documents.rs` | `Documents` | Declared `source_roots`, `source_files`, `documents`, `document_chunks`, `document_fts` |
+| `schema_graph.rs` | `Edges` | Declared `edges`, `code_ref` (composite primary keys) |
+| `schema_history.rs` | `EvalRuns` | Declared `eval_runs`, `gc_runs`, `index_runs` (newest-first `DESC` indexes) and the `index_failures` log |
+| `schema_journal.rs` | `journal_file` | The `just migration-journal` / `just migration-adopt` operations over `migrations/_journal.json` and the newest snapshot (`adopt`), tested against copies of the shipped files; `examples/migrations.rs` delegates to them |
+| `schema_learning.rs` | `Feedback` | Declared `feedback`, `feedback_events`, `code_feedback`, `query_expansions`, `retrieval_log`, `bandit_arms` |
+| `schema_memory.rs` | `Memories` | Declared `memories`, `memory_tags`, `memory_fts`, `memory_vec` |
+| `schema_sync.rs` | `SyncState` | Declared `sync_log`, `sync_state`, `sync_binding` |
 | `prune_apply.rs` | `count_orphan_memory_edges` | `api::prune`'s own scan (orphan-edge count, correlated stale-code-file list, one memory's display fields) and apply-time cleanup deletes (orphan edges, stale `code_vec`/`code_fts`/`code_symbols` rows, dangling `references_*`/`co_activated` edges, orphan `code_ref` rows) — everything `prune_signals.rs` does not already own |
 | `prune_signals.rs` | `SignalCandidate` | The low-quality/zero-incoming-edge scan and the superseded-and-forgotten scan behind `prune::low_value`; every comparison operator is load-bearing — `prune --apply` deletes whatever these two queries return |
 | `query_expansions.rs` | `NewExpansion` | Mined `(term → expansion)` row CRUD: `delete_all` + `insert` behind `comemory mine --apply`'s replace-all, plus `matching_terms` — the `IN (...)`-list read behind `api::suggest`'s "expansions" list — and `count`/`page`, the console's `api::learning` summary tile and paged expansions list; the tier-4 lexical-ladder read lives in `fts.rs` |
@@ -74,9 +83,11 @@ One line per file, named after its primary item:
 | `trash_list.rs` | `DeletedMemoryRow` | The `memories` scan behind `GET /api/v1/trash`: every soft-deleted row, newest deletion first; the on-disk join and day-countdown math stay in `api::trash` |
 | `vector.rs` | `MemoryHit` | `vec0` insert and KNN against `memory_vec` / `code_vec`, plus `is_loaded` — whether `sqlite-vec` registered on a connection, behind `comemory doctor`'s check — `replace_memory`/`replace_code` — the delete-then-insert pair behind a re-save (`api::save`) or re-embed (`api::reembed`) of an id that may already have a vector row — and `memory_embedding_blob` — the raw `memory_vec.embedding` read behind `comemory sync`'s wire vector encode |
 
-`sql/` (migration DDL), `tokenizer/` (FTS5 tokenizer FFI), and `migrate/`
-(the `MIGRATIONS` slice plus the migration preflight/snapshot safety net) are
-documented in their own `README.md` per the guardrails nested-folder rule.
+`tokenizer/` (FTS5 tokenizer FFI) and `migrate/` (the `MIGRATIONS` slice plus
+the migration preflight/snapshot safety net) are documented in their own
+`README.md` per the guardrails nested-folder rule. The migration SQL itself
+lives at the crate root in `migrations/` (toolu-orm's `migrations_dir`, with
+its `_journal.json` and snapshot) — see `migrations/README.md`.
 
 When you add a file here, add its row above so the index stays current. No
 `mod.rs` barrel — submodules are declared from `src/store.rs` (`pub mod

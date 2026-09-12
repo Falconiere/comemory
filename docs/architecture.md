@@ -166,11 +166,40 @@ older binary opening a newer database cannot stomp `schema_meta.version`
 downward even if it no-ops through every migration it recognizes.
 
 `scripts/migration-check.sh` closes the loop at the source level: every
-already-released `src/store/sql/*.sql` file must stay byte-identical to its
+already-released `migrations/*.sql` file must stay byte-identical to its
 content at the first release tag that shipped it, because the runner is
 marker-keyed and idempotent — editing a shipped migration changes what a
 live user's database already applied without anything re-running it. New
 schema changes are always a new, appended, numbered file.
+
+### 3.3 Declared schema and the generate loop (toolu-orm)
+
+Since v0.29 the schema is *declared*, not only migrated: every table in
+`comemory.db` is a `#[table]` / `#[fts5_table]` / `#[vec0_table]` struct
+under `src/store/schema_*.rs` (toolu-orm 0.6), and
+`store::schema::registry()` assembles them into a `SchemaRegistry`.
+`examples/migrations.rs` (`just migration <name>`) diffs that registry
+against `migrations/<newest>.snapshot.json` and, when something changed,
+writes `migrations/NNNN_<name>.sql`, its snapshot, and a `_journal.json`
+entry carrying the file's SHA-256 — drizzle's generate step, in Rust. A
+change that is easier to write than to declare — a data backfill, a
+create-copy-drop-rename rebuild — is a hand-written file journaled with
+`just migration-journal` (`store::schema_journal`). Both kinds are then
+wired into `MIGRATIONS` the same way.
+
+Only the *generate* half is toolu-orm's. Apply stays `store::migrate`:
+`execute_batch` over each file (the `--> statement-breakpoint` lines a
+generated file carries are SQL comments), gated by `schema_meta` markers.
+Swapping in toolu-orm's runner is deliberately a separate decision: it
+would hand ownership of the connection `open` returns to
+`RusqliteConnection`, and the marker-keyed runner already gives the
+preflight snapshot and forward-compat refusal their applied-set. No
+`_migrations` table exists. Two colocated real-database tests hold the
+declaration honest: the fidelity suite renders the registry onto a second
+connection and compares `pragma_table_info`, unique column-sets, indexes and
+virtual-table module args against the database the frozen chain builds, and
+the drift suite runs `run_generate` over a copy of the shipped journal and
+expects nothing. See [Schema migrations](guides/schema-migrations.md).
 
 See [Upgrading comemory](guides/upgrading.md) for the user-facing walkthrough
 — including how to restore a snapshot and the `comemory serve` restart
@@ -219,7 +248,9 @@ The two `*_vec` tables hold caller-supplied vectors. `comemory` never
 embeds locally; pass vectors via `--vector` / `--vector-stdin` (see the
 "BYO-Vector workflow" section in the README). The dims (1024 for
 `memory_vec`, 768 for `code_vec`) are baked into the vec0 DDL in
-`src/store/sql/0002_v2_tables.sql` and are not env-configurable.
+`migrations/0002_v2_tables.sql` (and declared once more by the
+`#[vec0_table]` structs in `src/store/schema_memory.rs` /
+`schema_code.rs`) and are not env-configurable.
 `COMEMORY_EMBED_HINT` records (and surfaces in `comemory doctor`) the
 identifier of the embedder you used.
 

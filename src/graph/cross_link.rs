@@ -91,7 +91,7 @@ pub fn extract_refs(body: &str) -> Refs {
 
 /// Walk `body`, extract every `<repo>:<path>[:<symbol>]` reference, and
 /// insert `references_file` / `references_symbol` edges into the v0.2
-/// `edges` table. Node addressing matches `src/store/sql/0002_v2_tables.sql`:
+/// `edges` table. Node addressing matches `migrations/0002_v2_tables.sql`:
 /// `file:<repo>:<path>` and `symbol:<repo>:<path>:<symbol>`. Replaces the
 /// v0.1 kuzu writer; the file/symbol nodes themselves are populated later
 /// by `comemory index-code`.

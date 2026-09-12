@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "idx": 0,
+      "name": "0001_schema_meta.sql",
+      "hash": "sha256:570d63ee65d3d4c7e83e51547b157b3b8f77a33cf29065dc04f7b54eec4779de",
+      "created_at": 1789187920
+    },
+    {
+      "idx": 1,
+      "name": "0002_v2_tables.sql",
+      "hash": "sha256:ad72481d532d8e8792f8747f36a84715fdee437f4e9b0ffc19b3557570520df3",
+      "created_at": 1789187920
+    },
+    {
+      "idx": 2,
+      "name": "0003_stats_tables.sql",
+      "hash": "sha256:4341cf72f8044b1f5bc3e43a5c4089ef56ca0d8b059739280c6c8ce6255f8675",
+      "created_at": 1789187920
+    },
+    {
+      "idx": 3,
+      "name": "0004_v4_rank.sql",
+      "hash": "sha256:36e94c0507806606e58b2a7d83ab12c46398a982fb6ef8c8b4285e7cabf45091",
+      "created_at": 1789187921
+    },
+    {
+      "idx": 4,
+      "name": "0005_v5_learning.sql",
+      "hash": "sha256:95069d2285d27edeff56e5286f3e8c07f277796e2330e801a9e4e70bb886c838",
+      "created_at": 1789187921
+    },
+    {
+      "idx": 5,
+      "name": "0006_v6_code_graph.sql",
+      "hash": "sha256:2cc80114b05747b19ae5e973c56c9c38d578f38086f8968e2f97ef8fde1b61ba",
+      "created_at": 1789187921
+    },
+    {
+      "idx": 6,
+      "name": "0007_v7_repo_root.sql",
+      "hash": "sha256:c46b598e9f9cb8bf6d6cdfa9b70e5468d314c4e6b989bb29b4cd29b908b58711",
+      "created_at": 1789187922
+    },
+    {
+      "idx": 7,
+      "name": "0008_v8_reinforcement.sql",
+      "hash": "sha256:426f9f0059e4ee55862235eeee68612e1b7b7d0fb6e293dab5bc369b9e63a632",
+      "created_at": 1789187922
+    },
+    {
+      "idx": 8,
+      "name": "0009_v9_code_refs.sql",
+      "hash": "sha256:0cd2848146a6ef0a32edd6a6ec9cf36917b0974adbfb68bd68782e2cdb39e12d",
+      "created_at": 1789187922
+    },
+    {
+      "idx": 9,
+      "name": "0010_v10_bandit.sql",
+      "hash": "sha256:c09b92caffb1793b570b29143d46a541c236885b7db4ad365a9db971f9562db8",
+      "created_at": 1789187922
+    },
+    {
+      "idx": 10,
+      "name": "0011_v11_memory_rank.sql",
+      "hash": "sha256:7f2c263432dbaaf8ce8b0484e3eb0bd6b551bd18bb97e6c8f1d9ae90f6ba57d0",
+      "created_at": 1789187923
+    },
+    {
+      "idx": 11,
+      "name": "0012_v12_edge_fts.sql",
+      "hash": "sha256:c08411cec3f1dee63b7d8761ecb49eba067aec55a1ba1ccae3fa70cda204a5c0",
+      "created_at": 1789187923
+    },
+    {
+      "idx": 12,
+      "name": "0013_v13_documents.sql",
+      "hash": "sha256:5bc5934a89bffbc72cb095e55669d179569b9dcb13b5ac82a8204b148160d3db",
+      "created_at": 1789187923
+    },
+    {
+      "idx": 13,
+      "name": "0014_v14_console.sql",
+      "hash": "sha256:bcca581e6a390dd6386da5723f956dc3174970c8b5d37270bf84e04a18a6dd51",
+      "created_at": 1789187924
+    },
+    {
+      "idx": 14,
+      "name": "0015_v15_console_api.sql",
+      "hash": "sha256:35b998aec2fe90a28af54fe1ba372d2bd38f170aa556dda8362f1def4e5d7180",
+      "created_at": 1789187924
+    },
+    {
+      "idx": 15,
+      "name": "0016_v16_sync.sql",
+      "hash": "sha256:021b2cf2833ea7f52d5fb194b88047b50b83205325b728d9a087c86eef812efb",
+      "created_at": 1789187924
+    }
+  ]
+}

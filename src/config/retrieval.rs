@@ -76,7 +76,7 @@ pub struct RetrievalConfig {
     #[serde(default = "default_code_bm25_weights")]
     pub code_bm25_weights: (f32, f32, f32),
     /// Operator-visible record of the memory embedding dim. The authoritative
-    /// value is the literal in `src/store/sql/0002_v2_tables.sql` —
+    /// value is the literal in `migrations/0002_v2_tables.sql` —
     /// `memory_vec` is a vec0 vtab whose dim is baked into its `CREATE
     /// VIRTUAL TABLE` at migration time and cannot be changed afterwards.
     /// `vector::insert_memory` reads `schema_meta.memory_vector_dim` (seeded

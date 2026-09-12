@@ -5,7 +5,6 @@
   "src": {
     "nested": {
       "store": [
-        "sql",
         "tokenizer",
         "migrate",
         "tests"
@@ -89,7 +88,6 @@
       "stats",
       "store",
       "store/migrate",
-      "store/sql",
       "store/tokenizer",
       "upgrade",
       "capture",

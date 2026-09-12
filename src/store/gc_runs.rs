@@ -1,6 +1,6 @@
 //! `gc_runs` row insert plus the newest-row read — one row per `comemory
 //! gc` sweep, recording its removal counts and reclaimed bytes for the v14
-//! console-history table (`src/store/sql/0014_v14_console.sql`).
+//! console-history table (`migrations/0014_v14_console.sql`).
 //! [`newest`] backs `GET /api/v1/gc/policy`'s `last_run` / `last_run_at`.
 
 use rusqlite::{Connection, OptionalExtension};

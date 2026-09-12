@@ -26,7 +26,7 @@ pub mod list;
 pub(crate) mod preflight;
 
 /// Highest schema version known to this build. Bumped each time a new
-/// migration file is added under `src/store/sql/`. Stays a string literal —
+/// migration file is added under `migrations/`. Stays a string literal —
 /// it is what `schema_meta` stores and what several eval modules hash via
 /// `.as_bytes()` — not derived from [`CURRENT_VERSION_NUM`]: on the pinned
 /// stable toolchain `const … = &N.to_string()` fails with `E0015`.
@@ -40,77 +40,77 @@ pub const CURRENT_VERSION_NUM: u32 = list::MIGRATIONS.len() as u32;
 
 /// 0001 bootstrap SQL (`schema_meta` table). Public so tests can replay
 /// historical schema states exactly as an old binary created them.
-pub const M_BOOTSTRAP: &str = include_str!("./sql/0001_schema_meta.sql");
+pub const M_BOOTSTRAP: &str = include_str!("../../migrations/0001_schema_meta.sql");
 /// 0002 SQL (core v2 tables). Public so tests can replay historical
 /// schema states exactly as an old binary created them.
-pub const M_V2: &str = include_str!("./sql/0002_v2_tables.sql");
+pub const M_V2: &str = include_str!("../../migrations/0002_v2_tables.sql");
 /// 0003 SQL (stats tables). Public so tests can replay historical
 /// schema states exactly as an old binary created them.
-pub const M_V3: &str = include_str!("./sql/0003_stats_tables.sql");
+pub const M_V3: &str = include_str!("../../migrations/0003_stats_tables.sql");
 /// 0004 SQL: access-tracking columns, `memories.simhash` placeholder,
 /// and the identifier-tokenized FTS rebuild.
-pub const M_V4: &str = include_str!("./sql/0004_v4_rank.sql");
+pub const M_V4: &str = include_str!("../../migrations/0004_v4_rank.sql");
 /// 0005 SQL: learning-loop tables (feedback_events, query_expansions),
 /// retrieval_log.duration_ms, and the search_stats drop.
-pub const M_V5: &str = include_str!("./sql/0005_v5_learning.sql");
+pub const M_V5: &str = include_str!("../../migrations/0005_v5_learning.sql");
 /// 0006 SQL: code-graph edges rebuild (co_changed/imports rels +
 /// weight), code_symbols rank/chunk columns, retrieval_log search
 /// filters, feedback_events.target_kind, code_feedback table, and
 /// repo_marker.last_mined_commit.
-pub const M_V6: &str = include_str!("./sql/0006_v6_code_graph.sql");
+pub const M_V6: &str = include_str!("../../migrations/0006_v6_code_graph.sql");
 /// 0007 SQL: `repo_marker.root_path`, the absolute working-tree root
 /// captured at index time so `comemory serve` can resolve file-node ids
 /// back to real files on disk. Public so tests can replay historical
 /// schema states exactly as an old binary created them.
-pub const M_V7: &str = include_str!("./sql/0007_v7_repo_root.sql");
+pub const M_V7: &str = include_str!("../../migrations/0007_v7_repo_root.sql");
 /// 0008 SQL: auto-reinforcement schema — the `edges` table is rebuilt to
 /// add the `co_activated` rel kind to its `rel` CHECK (create-copy-drop-
 /// rename, both indexes recreated), and `feedback_events` gains a
 /// `provenance TEXT NOT NULL DEFAULT 'manual'` column. Public so tests
 /// can replay historical schema states exactly as an old binary created
 /// them.
-pub const M_V8: &str = include_str!("./sql/0008_v8_reinforcement.sql");
+pub const M_V8: &str = include_str!("../../migrations/0008_v8_reinforcement.sql");
 /// 0009 SQL: the `code_ref` side table (+ `idx_code_ref_dst`) storing the
 /// version anchor (blob OID + commit + branch) for versioned-pointer code
 /// references. Rebuilt from frontmatter by `memory_row::insert`, so it is
 /// not among the `copy_preserved_tables_from_old` set. Public so tests can
 /// replay historical schema states exactly as an old binary created them.
-pub const M_V9: &str = include_str!("./sql/0009_v9_code_refs.sql");
+pub const M_V9: &str = include_str!("../../migrations/0009_v9_code_refs.sql");
 /// 0010 SQL: `bandit_arms` table for the eval-gated online bandit over
 /// `[tune]` knobs. Public so tests can replay historical schema states.
-pub const M_V10: &str = include_str!("./sql/0010_v10_bandit.sql");
+pub const M_V10: &str = include_str!("../../migrations/0010_v10_bandit.sql");
 /// 0011 SQL: `memories.rank_score`, the materialized memory-graph PageRank
 /// read by the rerank stage's fifth prior. Additive defaulted column — no
 /// backfill; rows stay at the neutral 0.0 until the first recompute. Public
 /// so tests can replay historical schema states.
-pub const M_V11: &str = include_str!("./sql/0011_v11_memory_rank.sql");
+pub const M_V11: &str = include_str!("../../migrations/0011_v11_memory_rank.sql");
 /// 0012 SQL: the `edge_fts` FTS5 triplet index over `edges`, created empty
 /// — rendering lives in `store::edge_fts::refresh`, and upgraded databases
 /// self-heal on the first `comemory edges` run. Public so tests can replay
 /// historical schema states.
-pub const M_V12: &str = include_str!("./sql/0012_v12_edge_fts.sql");
+pub const M_V12: &str = include_str!("../../migrations/0012_v12_edge_fts.sql");
 /// 0013 SQL: unified document indexing — `source_roots`, `source_files`,
 /// `documents`, `document_chunks`, and the `document_fts` FTS5 lexical
 /// index, plus an `edges` rebuild (create-copy-drop-rename, same precedent
 /// as 0008) extending the `rel` CHECK with `member_of_source` and
 /// `references_document`. Public so tests can replay historical schema
 /// states.
-pub const M_V13: &str = include_str!("./sql/0013_v13_documents.sql");
+pub const M_V13: &str = include_str!("../../migrations/0013_v13_documents.sql");
 
 /// 0014 SQL: console-compatibility history tables (`eval_runs`, `gc_runs`)
 /// — one row per eval/tune/bandit run and per gc run, so the learning-loop
 /// and maintenance surfaces can report a history instead of only the
 /// current run.
-pub const M_V14: &str = include_str!("./sql/0014_v14_console.sql");
+pub const M_V14: &str = include_str!("../../migrations/0014_v14_console.sql");
 
 /// 0015 SQL: console-API additions — the `index_runs` history table (one
 /// row per `index-code` run, outcomes included), `eval_runs.discarded`
 /// (a dismissed knob proposal), and `repo_marker.archived` (a repo the
 /// console stopped indexing without deleting anything).
-pub const M_V15: &str = include_str!("./sql/0015_v15_console_api.sql");
+pub const M_V15: &str = include_str!("../../migrations/0015_v15_console_api.sql");
 /// 0016 SQL: cloud sync — `sync_log`, `sync_state`, `sync_binding`, plus
 /// the `memory_vector_model` schema_meta key.
-pub const M_V16: &str = include_str!("./sql/0016_v16_sync.sql");
+pub const M_V16: &str = include_str!("../../migrations/0016_v16_sync.sql");
 
 /// Apply all pending migrations. Safe to re-run; each migration is only
 /// applied if its key is absent from `schema_meta`, and each post-apply

@@ -29,12 +29,12 @@ use comemory::store::migrate::list::{self, Class};
 use comemory::store::migrate::preflight;
 use comemory::store::migrate::{self};
 
-/// `src/store/sql/*.sql` basenames (minus the `.sql` extension), read from
+/// `migrations/*.sql` basenames (minus the `.sql` extension), read from
 /// disk so this test cannot itself drift from the directory it checks.
 fn sql_basenames() -> BTreeSet<String> {
-    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/src/store/sql");
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/migrations");
     fs::read_dir(dir)
-        .expect("read src/store/sql")
+        .expect("read migrations")
         .map(|entry| entry.expect("dir entry"))
         .filter(|entry| entry.path().extension().and_then(|e| e.to_str()) == Some("sql"))
         .map(|entry| {
@@ -48,7 +48,7 @@ fn sql_basenames() -> BTreeSet<String> {
         .collect()
 }
 
-/// The leading `NNNN` version number parsed off every `src/store/sql/*.sql`
+/// The leading `NNNN` version number parsed off every `migrations/*.sql`
 /// basename, e.g. `13` for `0013_v13_documents`.
 fn highest_sql_file_number() -> u32 {
     sql_basenames()
@@ -63,7 +63,7 @@ fn highest_sql_file_number() -> u32 {
         .expect("at least one migration file exists")
 }
 
-/// `MIGRATIONS[].key` must be exactly the set of `src/store/sql/*.sql`
+/// `MIGRATIONS[].key` must be exactly the set of `migrations/*.sql`
 /// basenames — no file left unwired, no dangling key naming a file that
 /// does not exist.
 #[test]
@@ -73,7 +73,7 @@ fn migration_integrity_migrations_keys_match_the_sql_directory() {
     assert_eq!(
         migration_keys,
         sql_basenames(),
-        "MIGRATIONS[].key must equal the set of src/store/sql/*.sql basenames"
+        "MIGRATIONS[].key must equal the set of migrations/*.sql basenames"
     );
 }
 
@@ -97,7 +97,7 @@ fn migration_integrity_current_version_agrees_with_migrations_len() {
     assert_eq!(
         migrate::CURRENT_VERSION_NUM,
         highest_sql_file_number(),
-        "CURRENT_VERSION_NUM must equal the highest numbered .sql file in src/store/sql"
+        "CURRENT_VERSION_NUM must equal the highest numbered .sql file in migrations"
     );
 }
 
@@ -250,4 +250,46 @@ fn migration_integrity_declared_markers_match_a_real_migrated_db() {
         applied, expected,
         "Migration::markers (unioned) must equal the real schema_meta marker keys"
     );
+}
+
+/// `migrations/_journal.json` (toolu-orm's journal, written by
+/// `examples/migrations.rs`) must describe exactly `MIGRATIONS`, in order:
+/// entry `i` is `MIGRATIONS[i].key + ".sql"` at `idx == i`, and its `hash`
+/// is `compute_hash` of the very bytes `include_str!` baked in — so an
+/// edited shipped file, a re-ordered entry, or a migration wired into one
+/// but not the other all fail here, naming the entry.
+#[test]
+fn migration_integrity_journal_matches_migrations() {
+    use toolu_orm::core::journal::{Journal, compute_hash};
+
+    let journal = Journal::read_from_path(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/migrations/_journal.json"
+    ))
+    .expect("read migrations/_journal.json");
+    assert_eq!(
+        journal.entries.len(),
+        list::MIGRATIONS.len(),
+        "journal entry count must equal MIGRATIONS.len()"
+    );
+    for (i, (entry, migration)) in journal.entries.iter().zip(list::MIGRATIONS).enumerate() {
+        assert_eq!(
+            usize::try_from(entry.idx).expect("idx fits"),
+            i,
+            "{}: idx",
+            entry.name
+        );
+        assert_eq!(
+            entry.name,
+            format!("{}.sql", migration.key),
+            "entry {i}: name"
+        );
+        assert_eq!(
+            entry.hash,
+            compute_hash(migration.sql),
+            "{}: journal hash differs from the shipped SQL — a shipped migration was edited, or \
+             the journal entry was not regenerated",
+            entry.name
+        );
+    }
 }
