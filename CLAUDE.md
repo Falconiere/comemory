@@ -722,9 +722,9 @@ local rule strictly stronger than the one it replaces.
   `<dir>.rs` beside `<dir>/` layout permanent and machine-checked.
 - **D4 — `src.nested` is extended** beyond the kit's `{"*": ["tests"]}` to
   allow `src/store/tokenizer/`, `src/store/migrate/` (the migration SQL
-  itself moved out of `src/store/` to the crate-root `migrations/` in v0.29,
-  and `src/store/sql/` left both `src.nested.store` and `src.requireReadme`
-  in the same change),
+  itself moved out of `src/store/` to the crate-root `migrations/` in v0.29;
+  the former `sql` entry left `src.nested.store` and the `store/sql` README
+  requirement left `src.requireReadme` in the same change),
   and a universal `proptest-regressions` allowlist entry
   (proptest creates that directory itself on a failing property test; a gate
   that fails on a tool's own artifact is a gate people route around).
