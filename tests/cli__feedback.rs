@@ -57,6 +57,45 @@ fn feedback_json_emits_counts_and_query_provenance() {
     assert_eq!(v["irrelevant"].as_u64(), Some(1));
     assert_eq!(v["query_id"].as_str(), Some("q-20260610-aabbccdd"));
     assert_eq!(v["known_query"].as_bool(), Some(false));
+    // AC-9 (#130): the CLI has no `--source`; its ack keeps the
+    // pre-extraction key set (no `provenance`) while every row it wrote is
+    // `manual` — a typed verdict is a human one. `cli::feedback::emit`
+    // builds this object field by field; it never serializes
+    // `api::feedback::Response` itself, which is where `provenance` lives.
+    let mut keys: Vec<&str> = v
+        .as_object()
+        .expect("object")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    keys.sort_unstable();
+    assert_eq!(
+        keys,
+        [
+            "irrelevant",
+            "irrelevant_code",
+            "known_query",
+            "ok",
+            "query_id",
+            "used",
+            "used_code"
+        ],
+        "the --json ack must not grow a `provenance` key"
+    );
+    let conn = open_db_readonly(&home);
+    let (rows, manual): (i64, i64) = conn
+        .query_row(
+            "SELECT COUNT(*), SUM(provenance = 'manual') FROM feedback_events \
+              WHERE query_id = 'q-20260610-aabbccdd'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .expect("count rows");
+    assert_eq!(
+        (rows, manual),
+        (3, 3),
+        "every CLI verdict is provenance='manual'"
+    );
 }
 
 #[test]

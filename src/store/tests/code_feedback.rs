@@ -14,6 +14,7 @@
 
 use comemory::config::paths::Paths;
 use comemory::stats::code_feedback::record_code_with_provenance;
+use comemory::stats::feedback::PROV_MANUAL;
 use comemory::stats::sqlite::StatsDb;
 use comemory::store::code_row::{self, CodeSymbolRow};
 use tempfile::TempDir;
@@ -72,7 +73,8 @@ fn absent_code_feedback_row_precedes_first_record() {
 fn record_code_with_provenance_resolves_identity_and_writes_counter() {
     let (mut db, _tmp) = open_db();
     let id = seed_row(db.conn(), "demo", "a.rs", "alpha", None);
-    record_code_with_provenance(&mut db, "q-20260610-aabbccd1", &[id], &[]).expect("record");
+    record_code_with_provenance(&mut db, "q-20260610-aabbccd1", &[id], &[], PROV_MANUAL)
+        .expect("record");
 
     let conn = db.conn();
     let (used, _irrelevant): (i64, i64) = conn
@@ -101,8 +103,9 @@ fn unknown_symbol_id_errors_loudly_rather_than_defaulting() {
     // `code_symbols` row is NOT a default — resolve_identity must error
     // naming the id, since there is nothing to attribute the verdict to.
     let (mut db, _tmp) = open_db();
-    let err = record_code_with_provenance(&mut db, "q-20260610-aabbccd1", &[9_999], &[])
-        .expect_err("unknown id must error");
+    let err =
+        record_code_with_provenance(&mut db, "q-20260610-aabbccd1", &[9_999], &[], PROV_MANUAL)
+            .expect_err("unknown id must error");
     assert!(
         err.to_string().contains("9999"),
         "error names the id: {err}"
@@ -121,7 +124,7 @@ fn chunk_with_vanished_parent_falls_back_to_own_identity() {
         .execute("DELETE FROM code_symbols WHERE id = ?1", [parent])
         .expect("vanish parent row");
 
-    record_code_with_provenance(&mut db, "q-20260611-aabbccd1", &[chunk], &[])
+    record_code_with_provenance(&mut db, "q-20260611-aabbccd1", &[chunk], &[], PROV_MANUAL)
         .expect("record against orphaned chunk");
     let used: i64 = db
         .conn()

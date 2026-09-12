@@ -22,7 +22,7 @@ One line per file, named after its primary item:
 | File | Primary item | Purpose |
 | --- | --- | --- |
 | `code_feedback.rs` | `record_code_with_provenance` | Per-symbol code feedback counters: `used` and `irrelevant`. Owns the rowid→identity resolution (chunk-to-parent walk) and the transaction; the SQL is `store::code_feedback` |
-| `feedback.rs` | `PROV_AUTO_COACTIVATION` | Per-memory feedback counters: `used` and `irrelevant`, plus provenance constants. Owns the query-id contract and the transaction; the SQL is `store::feedback` |
+| `feedback.rs` | `PROV_AUTO_COACTIVATION` | Per-memory feedback counters: `used` and `irrelevant`, plus the provenance vocabulary — `PROV_MANUAL`, `PROV_IMPLICIT`, the two `PROV_AUTO_*` tags, and `Source` (the routes' `explicit\|implicit` request words with `parse` and the one `provenance()` mapping onto the stored value). Owns the query-id contract and the transaction; the SQL is `store::feedback` |
 | `sqlite.rs` | `StatsDb` | SQLite-backed stats store, opened via the shared connection helper; its `index_failures` methods delegate to `store::index_failures` |
 
 When you add a file here, add its row above so the index stays current. No

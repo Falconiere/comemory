@@ -333,6 +333,155 @@ async fn ignored_records_an_irrelevant_verdict_and_an_unknown_signal_is_rejected
     assert_eq!(bogus.json["error"]["code"], "bad_request");
 }
 
+/// Every `(memory_id, verdict, provenance)` event row for `query_id`, in
+/// insertion order, read with a second connection.
+fn events(session: &Session, query_id: &str) -> Vec<(String, String, String)> {
+    let db = conn(session);
+    let mut stmt = db
+        .prepare(
+            "SELECT memory_id, verdict, provenance FROM feedback_events \
+              WHERE query_id = ?1 ORDER BY id",
+        )
+        .expect("prepare");
+    stmt.query_map([query_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .expect("query")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("rows")
+}
+
+/// AC-5 (#130): the per-hit route's `source` is stored, not dropped —
+/// `used`/`opened` and `ignored` alike carry `implicit`, and an omitted
+/// `source` keeps today's `manual`.
+#[tokio::test]
+async fn per_hit_source_is_stored_as_provenance() {
+    let session = serve_state::session(false);
+    serve_state::save(
+        &session,
+        "caching invalidation happens on every write to the edge tier",
+        Kind::Note,
+        "app",
+    );
+    serve_state::save(
+        &session,
+        "caching saves a second round trip to postgres for hot rows",
+        Kind::Note,
+        "app",
+    );
+    let search = serve_state::send(
+        &session,
+        "POST",
+        "/api/v1/search",
+        Some(json!({ "q": "caching", "scope": "memories" })),
+    )
+    .await;
+    let query_id = search.json["data"]["query_id"]
+        .as_str()
+        .expect("query id")
+        .to_string();
+    let ids: Vec<String> = hits(&search.json)
+        .iter()
+        .filter_map(|h| h["id"].as_str().map(str::to_string))
+        .collect();
+    assert_eq!(ids.len(), 2, "both seeded memories matched");
+
+    let path = format!("/api/v1/search/{query_id}/feedback");
+    for (body, expected) in [
+        (
+            json!({ "hit_id": ids[0], "signal": "used", "source": "implicit" }),
+            "implicit",
+        ),
+        (
+            json!({ "hit_id": ids[1], "signal": "ignored", "source": "implicit" }),
+            "implicit",
+        ),
+        (json!({ "hit_id": ids[0], "signal": "opened" }), "manual"),
+        (
+            json!({ "hit_id": ids[1], "signal": "used", "source": "explicit" }),
+            "manual",
+        ),
+    ] {
+        let resp = serve_state::send(&session, "POST", &path, Some(body.clone())).await;
+        assert_eq!(resp.status, 200, "{body}: {}", resp.text);
+        assert_eq!(resp.json["data"]["provenance"], expected, "{body}");
+    }
+
+    assert_eq!(
+        events(&session, &query_id),
+        vec![
+            (ids[0].clone(), "used".to_string(), "implicit".to_string()),
+            (
+                ids[1].clone(),
+                "irrelevant".to_string(),
+                "implicit".to_string()
+            ),
+            (ids[0].clone(), "used".to_string(), "manual".to_string()),
+            (ids[1].clone(), "used".to_string(), "manual".to_string()),
+        ]
+    );
+    let db = conn(&session);
+    assert_eq!(
+        used_count(&db, &ids[0]),
+        2,
+        "implicit and manual bump one counter"
+    );
+}
+
+/// AC-6 (#130): an unknown `source` is a `400 bad_request` naming the value
+/// on BOTH routes — the per-hit adapter and the list form share the core's
+/// one validator — and nothing is written.
+#[tokio::test]
+async fn an_unknown_source_is_rejected_before_anything_is_written() {
+    let session = serve_state::session(false);
+    serve_state::save(&session, "retention policy notes", Kind::Note, "app");
+    let search = serve_state::send(
+        &session,
+        "POST",
+        "/api/v1/search",
+        Some(json!({ "q": "retention", "scope": "memories" })),
+    )
+    .await;
+    let query_id = search.json["data"]["query_id"]
+        .as_str()
+        .expect("query id")
+        .to_string();
+    let hit_id = hits(&search.json)[0]["id"].as_str().unwrap().to_string();
+
+    let per_hit = serve_state::send(
+        &session,
+        "POST",
+        &format!("/api/v1/search/{query_id}/feedback"),
+        Some(json!({ "hit_id": hit_id, "signal": "used", "source": "manual" })),
+    )
+    .await;
+    assert_eq!(per_hit.status, 400, "body: {}", per_hit.text);
+    assert_eq!(per_hit.json["error"]["code"], "bad_request");
+    assert_eq!(
+        per_hit.json["error"]["message"],
+        "bad request: unknown source `manual`: expected explicit or implicit",
+        "the envelope carries the `BadRequest` Display prefix, as for every 400"
+    );
+
+    let list_form = serve_state::send(
+        &session,
+        "POST",
+        "/api/v1/feedback",
+        Some(json!({ "query_id": query_id, "used": [hit_id], "source": "Implicit" })),
+    )
+    .await;
+    assert_eq!(list_form.status, 400, "body: {}", list_form.text);
+    assert_eq!(list_form.json["error"]["code"], "bad_request");
+    assert_eq!(
+        list_form.json["error"]["message"],
+        "bad request: unknown source `Implicit`: expected explicit or implicit",
+        "the envelope carries the `BadRequest` Display prefix, as for every 400"
+    );
+
+    let total: i64 = conn(&session)
+        .query_row("SELECT COUNT(*) FROM feedback_events", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(total, 0, "a rejected source writes no row");
+}
+
 #[tokio::test]
 async fn feedback_is_refused_on_a_read_only_server_but_search_still_answers() {
     let session = serve_state::session(true);

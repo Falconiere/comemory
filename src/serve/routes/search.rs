@@ -332,10 +332,10 @@ struct HitFeedback {
     hit_type: Option<String>,
     /// `used` | `opened` | `ignored`.
     signal: String,
-    /// `explicit` | `implicit`. Accepted and validated-by-shape only:
-    /// `feedback_events` records provenance per verdict, not per source,
-    /// so there is nowhere to store this yet. Documented as informational
-    /// rather than dropped from the schema, so a console can send it today.
+    /// `explicit` (default) | `implicit`, stored as the verdict's
+    /// `feedback_events.provenance` (`manual` / `implicit`). Passed through
+    /// to [`api::feedback::Request::source`] verbatim; the core validates
+    /// it and answers `400 bad_request` for anything else (#130).
     #[serde(default)]
     source: Option<String>,
 }
@@ -368,7 +368,8 @@ async fn feedback(
 /// Adapt one hit verdict onto the four-list request. `used` and `opened`
 /// both count as used — opening a hit is the weaker signal, but the
 /// aggregated `feedback` table has one positive counter, and inventing a
-/// third verdict here would change the ranking contract.
+/// third verdict here would change the ranking contract. `source` is not
+/// inspected here: the core owns its vocabulary.
 fn into_feedback(query_id: String, req: HitFeedback) -> Result<api::feedback::Request> {
     let positive = match req.signal.as_str() {
         "used" | "opened" => true,
@@ -379,19 +380,13 @@ fn into_feedback(query_id: String, req: HitFeedback) -> Result<api::feedback::Re
             )));
         }
     };
-    if let Some(source) = req.source.as_deref()
-        && !matches!(source, "explicit" | "implicit")
-    {
-        return Err(Error::BadRequest(format!(
-            "unknown source `{source}`: expected explicit or implicit"
-        )));
-    }
     let mut out = api::feedback::Request {
         query_id,
         used: Vec::new(),
         irrelevant: Vec::new(),
         used_code: Vec::new(),
         irrelevant_code: Vec::new(),
+        source: req.source,
     };
     match (req.hit_type.as_deref().unwrap_or("memory"), positive) {
         ("memory", true) => out.used.push(req.hit_id),

@@ -79,13 +79,15 @@ fn resolve_identity(conn: &Connection, id: i64) -> Result<SymbolIdentity> {
 /// All-or-nothing — a failure on any id leaves both tables untouched, so
 /// events and counters cannot drift. Mirrors
 /// [`crate::stats::feedback::record_with_provenance`], including the
-/// recorded-verbatim query-id contract and the
+/// recorded-verbatim query-id contract, the per-batch `provenance` stamp
+/// (`manual` / `implicit`, on both verdicts), and the
 /// [`memory_row::iso_format`] timestamp shared with `retrieval_log.at`.
 pub fn record_code_with_provenance(
     db: &mut StatsDb,
     query_id: &str,
     used: &[i64],
     irrelevant: &[i64],
+    provenance: &str,
 ) -> Result<()> {
     let now = memory_row::iso_format(OffsetDateTime::now_utc())?;
     let tx = db.conn_mut().transaction()?;
@@ -98,6 +100,7 @@ pub fn record_code_with_provenance(
             "used",
             &now,
             crate::stats::target::CODE,
+            provenance,
         )?;
         store_code_feedback::upsert_used(&tx, &sym, &now)?;
     }
@@ -110,6 +113,7 @@ pub fn record_code_with_provenance(
             "irrelevant",
             &now,
             crate::stats::target::CODE,
+            provenance,
         )?;
         store_code_feedback::upsert_irrelevant(&tx, &sym)?;
     }

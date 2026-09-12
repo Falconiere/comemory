@@ -41,7 +41,7 @@ One line per file, named after its primary item:
 | `memory_stores.rs` | `table_entries` | `GET /memory-stores` + `GET /memory-stores/{id}` (the one store, `default`), `POST /memory-stores` (`guard_mutating` then the always-`501 unsupported` refusal), `PATCH /memory-stores/{id}` (`[git] auto_sync`/`remote` into `config.toml`, no confirm, reloads `AppState.cfg`), job-backed `POST /memory-stores/{id}/sync` (`store-sync`: pull --rebase, commit `memories/`, push; steps streamed into the job log) |
 | `overview.rs` | `table_entries` | `GET /overview` and `GET /overview/eval-series` — the console landing aggregate |
 | `repos_admin.rs` | `table_entries` | `POST /repos` (connect, contained root), `PATCH /repos/{name}` (`root` only), `POST /repos/{name}/archive`, confirm-gated `DELETE /repos/{name}` |
-| `search.rs` | `table_entries` | `GET\|POST /search` (the console view over `find`, with the explain strip), `GET /search/suggest`, `POST /search/{query_id}/feedback` |
+| `search.rs` | `table_entries` | `GET\|POST /search` (the console view over `find`, with the explain strip), `GET /search/suggest`, `POST /search/{query_id}/feedback` (`source: explicit\|implicit` passes through to the `feedback` core, which stores it as the verdict's provenance) |
 | `trash.rs` | `table_entries` | `GET /trash` and `POST /trash/{id}/restore` |
 | `sync.rs` | `table_entries` | `GET /sync/changes`, `GET /sync/manifest`, `POST /sync/import` (author via `X-Comemory-Author`) |
 

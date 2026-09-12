@@ -131,6 +131,7 @@ fn purge_clears_every_mirror_row_of_a_soft_deleted_memory() {
                 irrelevant: Vec::new(),
                 used_code: Vec::new(),
                 irrelevant_code: Vec::new(),
+                source: None,
             },
         )
         .expect("record feedback");

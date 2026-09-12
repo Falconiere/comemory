@@ -123,9 +123,14 @@ You don't have to hand-write everything. `comemory` harvests golden pairs from
 your recorded feedback automatically: every `(query, repo, kind)` you marked
 with `comemory feedback <query_id> --used <ids>` becomes a pair. Hand-written
 file pairs and harvested pairs merge, and the file wins on a duplicate key.
-Implicit auto-reinforcement feedback (provenance `auto_coactivation`) is
-**excluded** from the harvest — only real queries with a `retrieval_log` row
-qualify, so the synthetic co-activation rewards never leak into ground truth.
+Only `manual` provenance is harvested — a verdict a human stated with
+`comemory feedback` or over HTTP without `source: implicit`. Every other
+provenance is **excluded**: the auto-reinforcement rewards
+(`auto_coactivation`, `auto_search_edit`) and any `POST /api/v1/feedback`
+or per-hit verdict sent with `source: implicit` (a model citing a memory is an
+observed use, not human confirmation). The same rule gates `comemory mine`:
+only a manual `used` marks a query as one that succeeded. Implicit verdicts
+still bump the ranking counters; they just never become ground truth.
 
 Use `--golden-only` to score a file in isolation and skip the harvest entirely.
 

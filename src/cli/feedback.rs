@@ -74,6 +74,9 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         irrelevant: csv_unique(&a.irrelevant),
         used_code: csv_unique(&a.used_code),
         irrelevant_code: csv_unique(&a.irrelevant_code),
+        // A typed verdict is a human one: the CLI has no `--source` flag and
+        // always records `manual`. Only the HTTP routes can say `implicit`.
+        source: None,
     };
     let output = api::feedback::run(&mut ctx, req)?;
     emit(json_flag, &output)

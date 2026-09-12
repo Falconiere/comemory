@@ -13,9 +13,24 @@ use crate::store::Connection;
 use crate::store::feedback as store_feedback;
 use crate::store::memory_row;
 
+/// `provenance` of a human-stated verdict; the column's own `DEFAULT`
+/// (`0008_v8_reinforcement.sql`). Written by `comemory feedback`, and by
+/// the two HTTP feedback routes when the wire field `source` is omitted or
+/// `"explicit"`. Every writer names it explicitly since #130, so no INSERT
+/// leans on the default.
+pub(crate) const PROV_MANUAL: &str = "manual";
+
+/// `provenance` of an observed verdict: an HTTP caller's
+/// `source: "implicit"`, such as an answer citing the memory. Counted in
+/// `learning/summary`'s `implicit_share` like the `auto_*` tags, and like
+/// them never harvested into the golden set nor used to mark a query
+/// succeeded for reformulation mining (`store::feedback`'s readers take
+/// [`PROV_MANUAL`]).
+pub(crate) const PROV_IMPLICIT: &str = "implicit";
+
 /// `provenance` tag for implicit `used` feedback minted by the
 /// co-activation reward (commits touching a memory's referenced files).
-/// Distinguishes auto-reinforcement rows from the `'manual'` default
+/// Distinguishes auto-reinforcement rows from the [`PROV_MANUAL`] rows
 /// written by `comemory feedback`. Matches the column added in
 /// `0008_v8_reinforcement.sql`.
 pub(crate) const PROV_AUTO_COACTIVATION: &str = "auto_coactivation";
@@ -35,6 +50,45 @@ pub(crate) const COACTIVATION_QUERY_ID: &str = "auto-coactivation";
 /// Sentinel `query_id` for search→edit implicit `used` rows. Same golden
 /// exclusion contract as [`COACTIVATION_QUERY_ID`].
 pub(crate) const SEARCH_EDIT_QUERY_ID: &str = "auto-search-edit";
+
+/// The caller-facing `source` vocabulary of `POST /api/v1/feedback` and
+/// `POST /api/v1/search/{query_id}/feedback`, and its one mapping onto the
+/// stored `feedback_events.provenance` value. Closed on purpose: a free
+/// string would let a client spell `manual` a second way and split the
+/// `= 'manual'` test every reader of the column keys on.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Source {
+    /// A human stated the verdict. Stored as [`PROV_MANUAL`].
+    #[default]
+    Explicit,
+    /// The verdict was observed, not stated. Stored as [`PROV_IMPLICIT`].
+    Implicit,
+}
+
+impl Source {
+    /// Parse the exact lowercase words `explicit` / `implicit`. Anything
+    /// else — `manual`, `Implicit`, an empty string — is an
+    /// [`Error::BadRequest`] naming the offender (HTTP `400 bad_request`),
+    /// the same shape the per-hit route answers for an unknown `signal`.
+    pub fn parse(s: &str) -> Result<Self> {
+        match s {
+            "explicit" => Ok(Self::Explicit),
+            "implicit" => Ok(Self::Implicit),
+            other => Err(Error::BadRequest(format!(
+                "unknown source `{other}`: expected explicit or implicit"
+            ))),
+        }
+    }
+
+    /// The `feedback_events.provenance` value verdicts of this source are
+    /// stored under.
+    pub fn provenance(self) -> &'static str {
+        match self {
+            Self::Explicit => PROV_MANUAL,
+            Self::Implicit => PROV_IMPLICIT,
+        }
+    }
+}
 
 /// `q-<yyyymmdd>-<8hex>`: day-sortable, collision-resistant query id
 /// derived from the query text and a nanosecond timestamp. Not a content
@@ -79,9 +133,10 @@ pub fn is_valid_query_id(s: &str) -> bool {
 ///
 /// `at` is the run timestamp (already `iso_format`-shaped by the caller).
 /// Callers pass [`PROV_AUTO_COACTIVATION`] with [`COACTIVATION_QUERY_ID`] or
-/// [`PROV_AUTO_SEARCH_EDIT`] with [`SEARCH_EDIT_QUERY_ID`]. The manual
-/// `comemory feedback` path keeps writing the `'manual'` default via
-/// [`record_with_provenance`].
+/// [`PROV_AUTO_SEARCH_EDIT`] with [`SEARCH_EDIT_QUERY_ID`]. The
+/// `comemory feedback` / HTTP path is [`record_with_provenance`], which
+/// writes [`PROV_MANUAL`] or [`PROV_IMPLICIT`] through the same
+/// [`store_feedback::insert_event`].
 pub(crate) fn record_implicit_used(
     conn: &Connection,
     id: &str,
@@ -89,10 +144,11 @@ pub(crate) fn record_implicit_used(
     provenance: &str,
     query_id: &str,
 ) -> Result<()> {
-    store_feedback::insert_implicit_used_event(
+    store_feedback::insert_event(
         conn,
         query_id,
         id,
+        "used",
         at,
         crate::stats::target::MEMORY,
         provenance,
@@ -107,6 +163,11 @@ pub(crate) fn record_implicit_used(
 /// on any id leaves both tables untouched, so events and counters
 /// cannot drift.
 ///
+/// `provenance` is stamped on every event row of the batch — a
+/// [`Source::provenance`] value ([`PROV_MANUAL`] / [`PROV_IMPLICIT`]) from
+/// `api::feedback::run`. Both verdicts carry it, so an implicit *negative*
+/// is storable, not only an implicit `used`.
+///
 /// The query id is recorded verbatim; it is not required to exist in
 /// `retrieval_log` (gc may have evicted the row, or the caller may be
 /// replaying feedback) — the caller decides whether to warn.
@@ -119,6 +180,7 @@ pub fn record_with_provenance(
     query_id: &str,
     used: &[String],
     irrelevant: &[String],
+    provenance: &str,
 ) -> Result<()> {
     let now = memory_row::iso_format(OffsetDateTime::now_utc())?;
     let tx = db.conn_mut().transaction()?;
@@ -130,6 +192,7 @@ pub fn record_with_provenance(
             "used",
             &now,
             crate::stats::target::MEMORY,
+            provenance,
         )?;
         store_feedback::upsert_used(&tx, id, &now)?;
     }
@@ -141,6 +204,7 @@ pub fn record_with_provenance(
             "irrelevant",
             &now,
             crate::stats::target::MEMORY,
+            provenance,
         )?;
         store_feedback::upsert_irrelevant(&tx, id)?;
     }
