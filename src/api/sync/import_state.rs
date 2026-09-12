@@ -2,7 +2,6 @@
 
 use crate::api::sync::{ImportEntry, SyncRecord};
 use crate::memory::MemoryStore;
-use crate::memory::frontmatter::Frontmatter;
 use crate::memory::id::{is_valid_memory_id, memory_id, sha256_hex};
 use crate::prelude::*;
 use crate::store::{Connection, memory_purge, sync_log};
@@ -46,7 +45,12 @@ pub(crate) fn frontmatter_equal(rec: &crate::memory::MemoryRecord, wire: &SyncRe
         && fm.relations == w.relations
 }
 
-/// Rule 2 — live or trashed id bound to a different content hash.
+/// Rule 2 — live or trashed id bound to a different content hash: the
+/// same 32-bit collision `api::save` refuses, answered by the same
+/// `MemoryStore::prior` lookup so the two rules cannot drift. One
+/// deliberate difference: a local copy that exists but cannot be parsed is
+/// logged and treated as *no* collision, so a pull can repair it —
+/// `api::save` is stricter and refuses to overwrite what it cannot read.
 pub(crate) fn id_collision(
     paths: &crate::config::Paths,
     id: &str,
@@ -67,15 +71,18 @@ pub(crate) fn id_collision_for_test(
 
 fn id_collision_inner(paths: &crate::config::Paths, id: &str, content_hash: &str) -> Result<bool> {
     let store = MemoryStore::new(paths.clone());
-    if let Ok(rec) = store.load(id) {
-        return Ok(rec.frontmatter.content_hash != content_hash);
+    match store.prior(id) {
+        Ok(prior) => Ok(prior.is_some_and(|prior| prior.collides_with(content_hash))),
+        Err(Error::Io(e)) => Err(Error::Io(e)),
+        Err(e) => {
+            tracing::warn!(
+                memory_id = id,
+                error = %e,
+                "unreadable local copy; the import treats it as no collision"
+            );
+            Ok(false)
+        }
     }
-    if let Some(path) = trash_path(paths, id) {
-        let raw = std::fs::read_to_string(path)?;
-        let (fm, _) = Frontmatter::split(&raw)?;
-        return Ok(fm.content_hash != content_hash);
-    }
-    Ok(false)
 }
 
 /// Rule 6 — pusher has not yet observed a newer tombstone.
@@ -88,16 +95,8 @@ pub(crate) fn trashed_with_hash(conn: &Connection, content_hash: &str) -> Result
     memory_purge::trashed_with_hash(conn, content_hash)
 }
 
-/// True when `.trash/` holds a markdown file for `id`.
+/// True when `.trash/` holds a markdown file for `id` — the store's own
+/// trash lookup, so this and the save-time purge agree on what counts.
 pub(crate) fn trash_file_exists(paths: &crate::config::Paths, id: &str) -> bool {
-    trash_path(paths, id).is_some()
-}
-
-fn trash_path(paths: &crate::config::Paths, id: &str) -> Option<std::path::PathBuf> {
-    let prefix = format!("{id}-");
-    std::fs::read_dir(paths.trash_dir())
-        .ok()?
-        .flatten()
-        .find(|entry| entry.file_name().to_string_lossy().starts_with(&prefix))
-        .map(|entry| entry.path())
+    MemoryStore::new(paths.clone()).trash_entry(id).is_some()
 }

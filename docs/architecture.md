@@ -201,6 +201,20 @@ relations:                           # indexer- and user-managed
 ---
 ```
 
+**What the id guarantees.** `id` is the first 4 bytes (8 hex characters)
+of `SHA-256(body.trim_end())` and `content_hash` is the full digest, so
+the id is a prefix of the hash and equal bodies can never disagree on
+either. Within one store the id is unique **by construction**: a save
+whose id matches an existing memory (live or trashed) with a different
+`content_hash` is a 32-bit collision and is refused before any write
+(`Error::IdCollision` → HTTP `409 id_collision`, CLI exit 65) rather than
+letting the `memories` upsert overwrite the first body. The birthday bound
+for 32 bits is roughly 1 % at ~9 000 memories and 50 % at ~77 000, which
+is why the collision is made loud instead of the id being widened —
+filenames, `edges`, `code_ref`, `sync_log` and every downstream back-link
+carry the 8-hex form. `comemory rebuild` walks markdown last-wins and does
+not re-run this check (an accepted gap).
+
 The two `*_vec` tables hold caller-supplied vectors. `comemory` never
 embeds locally; pass vectors via `--vector` / `--vector-stdin` (see the
 "BYO-Vector workflow" section in the README). The dims (1024 for
@@ -421,18 +435,33 @@ same run. No flag, no backfill, no separate upgrade step.
 ```
 comemory save "..." --kind=decision [--vector ... | --vector-stdin]
   1. Parse args; build Memory; assign id = sha256(body)[:8].
-  2. Validate vector dim (if supplied) against schema_meta — fails fast.
-  2a. Near-duplicate check (best-effort): scan live memories rows via SimHash
+  2. Prior lookup (MemoryStore::prior), before the DB is even opened: what
+     memories/{id}-*.md, else .trash/{id}-*.md, already holds for this id.
+     A prior with a DIFFERENT content_hash is a 32-bit collision →
+     Error::IdCollision, nothing written, no DB touched. A matching prior
+     contributes its `created` (so a replay never re-stamps the markdown)
+     and makes the response `created: false`.
+  2a. Validate vector dim (if supplied) against schema_meta — fails fast.
+  2b. Near-duplicate check (best-effort): scan live memories rows via SimHash
       Hamming distance. If a near-dup is found, record duplicate_of id.
       TTY: stderr warning. JSON: duplicate_of field. Save always proceeds.
   3. Atomic markdown write: memories/.{id}.tmp → memories/{id}-{slug}.md.
+     A same-body re-save lands on the same filename (idempotent replay);
+     a trashed copy of the id is purged (the memory is live again).
   4. SQLite upsert (inside one transaction):
        - memories row (+ simhash column)
        - memory_fts row
        - memory_vec row (only if a vector was supplied)
        - edges from cross_link::extract_refs (ReferencesFile / ReferencesSymbol)
   5. git add + commit + push (best-effort, only when COMEMORY_GIT_AUTO_SYNC is on).
+  6. Answer {id, path, created, duplicate_of?, warnings?} — `created` is
+     false on a replay (same body re-saved, metadata overwritten
+     last-writer-wins, or a trashed id revived). TTY: `saved <id>` vs
+     `updated <id>`.
 ```
+
+The replay rules above are a stated contract, not an emergent property —
+see the HTTP guide's "Save contract" section and `tests/cli__save_3.rs`.
 
 Markdown is always the source of truth. If the SQLite mirror transaction
 fails, the markdown file is **kept** (it was already written as the source

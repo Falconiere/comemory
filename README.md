@@ -219,7 +219,9 @@ Full walkthrough — sandbox tips, JSON pagination, scoping flags:
 A **memory** is a markdown file with YAML frontmatter (`id`, `kind`, `repo`,
 `tags`, `quality`, plus `references` into code and `relations` between memories).
 Backticked `<repo>:<path>:<symbol>` mentions in the body auto-link to the code
-layer; a SimHash near-dup check and `--supersedes` keep the store tidy.
+layer; a SimHash near-dup check and `--supersedes` keep the store tidy. Saves
+are content-addressed and idempotent: re-saving the same body returns the same
+id and creates no second memory (`created: false` in `--json`).
 **Code search** blends weighted BM25 over identifiers/snippets/paths with an
 optional BYO-vector ANN leg, reranked by four graph priors (PageRank, recency,
 working-set affinity, feedback), every hit carrying a `score_parts` breakdown.

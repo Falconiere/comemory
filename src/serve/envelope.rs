@@ -159,6 +159,10 @@ pub fn status_and_code(e: &Error) -> (StatusCode, &'static str) {
         Error::Unavailable(_) => (StatusCode::SERVICE_UNAVAILABLE, "unavailable"),
         Error::Embedder(_) => (StatusCode::SERVICE_UNAVAILABLE, "embedder_unavailable"),
         Error::IndexRunning { .. } => (StatusCode::CONFLICT, "index_running"),
+        // Two different bodies sharing one 8-hex id: the save refused to
+        // overwrite the first. Conflict, not bad request — the payload is
+        // fine, the store already holds that id.
+        Error::IdCollision { .. } => (StatusCode::CONFLICT, "id_collision"),
         // Only a job body ever produces `Cancelled`, and the worker turns it
         // into `JobStatus::Cancelled` before any envelope is built — listed
         // so the mapping stays total rather than falling through to 500.
@@ -192,6 +196,7 @@ pub fn status_and_code(e: &Error) -> (StatusCode, &'static str) {
 pub fn error_details(e: &Error) -> Option<Value> {
     match e {
         Error::IndexRunning { repo, job_id } => Some(json!({ "repo": repo, "job_id": job_id })),
+        Error::IdCollision { id } => Some(json!({ "id": id })),
         _ => None,
     }
 }

@@ -16,6 +16,7 @@ One line per file, named after its primary item:
 | --- | --- | --- |
 | `frontmatter.rs` | `Kind` | YAML frontmatter struct plus markdown split/render helpers |
 | `id.rs` | `memory_id` | Deterministic 8-hex memory id derived from the body content hash |
+| `prior.rs` | `Prior` | `MemoryStore::prior` — the frontmatter facts (`created`, `content_hash`, `trashed`) the live file or its `.trash/` copy already holds for an id, read before a save so `api::save` can refuse a same-id different-body collision, carry `created` across a replay, and report `created: bool`; also backs the sync import's collision rule |
 | `references.rs` | `Ref` | Versioned code reference (file/symbol pointer + captured anchor), string-or-struct serde |
 | `slug.rs` | `slug_from_body` | Filesystem-safe slug derivation for memory filenames |
 | `store.rs` | `SaveParams` | Markdown-backed memory store: atomic save (purges a same-id `.trash/` copy — a re-saved body is live again) / rewrite-in-place / load / list / soft-delete (stamps the trashed file's mtime as the deletion instant, the clock gc reads) / restore-from-trash (checks the live tree FIRST so a stale trash copy is never renamed over a live re-save) |

@@ -171,6 +171,15 @@ Examples:
   # printed to stderr and --json output includes a `duplicate_of` field with
   # the matching memory id. The save always proceeds — use `--supersedes` to
   # mark the relationship if the new memory replaces the old one.
+
+  # Saves are content-addressed and idempotent: re-saving a byte-identical
+  # body (trailing whitespace ignored) returns the same id and creates no
+  # second memory. --json reports `created: true` on the insert and
+  # `created: false` on the replay; the TTY line reads `updated <id>`.
+  # A different body that happens to hash to an existing id is refused
+  # (exit 65) rather than overwriting it.
+  comemory save "Use Postgres for analytics" --json   # {"id":"…","created":true,…}
+  comemory save "Use Postgres for analytics" --json   # {"id":"…","created":false,…}
 ```
 
 ---

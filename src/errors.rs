@@ -69,6 +69,22 @@ pub enum Error {
     #[error("invalid frontmatter: {0}")]
     Frontmatter(String),
 
+    /// `comemory save` / `POST /memories` found a memory whose 8-hex id
+    /// equals the incoming body's but whose `content_hash` does not: a
+    /// 32-bit content-address collision between two different bodies.
+    /// Refused before any write rather than letting the `memories` upsert
+    /// silently overwrite the first body's row. Maps to HTTP `409
+    /// id_collision` with `details: {id}`; on the CLI path it maps to
+    /// EX_DATAERR (65) beside [`Error::VecDimMismatch`].
+    #[error(
+        "memory id {id} already belongs to a different body (32-bit content-address \
+         collision); change the body to save it"
+    )]
+    IdCollision {
+        /// The contested 8-hex id.
+        id: String,
+    },
+
     /// A document (TXT/Markdown/HTML/CSV) failed to extract — malformed
     /// input the in-process extractor could not parse.
     #[error("document extract: {0}")]

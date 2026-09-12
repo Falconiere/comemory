@@ -57,6 +57,7 @@ fn exit_code(err: &Error) -> i32 {
         | Error::Json(_)
         | Error::Toml(_)
         | Error::VecDimMismatch { .. }
+        | Error::IdCollision { .. }
         | Error::Frontmatter(_)
         | Error::Document(_) => 65,
         Error::Sqlite(_)
