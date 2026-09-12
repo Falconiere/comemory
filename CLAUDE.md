@@ -544,7 +544,9 @@ scripts/store-chokepoint-check.sh # rusqlite confined to src/store/, ratcheted
 scripts/typos-check.sh           # typos
 scripts/cli-docs-check.sh        # docs/cli-reference.md vs the real --help output
 scripts/migration-check.sh       # shipped migrations/*.sql is byte-identical
-                                  # to its content at the first release tag
+                                  # to its content at the first release tag that
+                                  # carried it, under migrations/ or the pre-v0.29
+                                  # src/store/ location, matched by basename
 ```
 
 Retired in the toolu-conventions migration, folded into the two gates above:
