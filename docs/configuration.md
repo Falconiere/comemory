@@ -67,7 +67,7 @@ Set these in `config.toml`; they have **no** environment override.
 ## Vector dimensions (not configurable)
 
 The memory and code vector dims (`1024` and `768`) are baked into the
-`memory_vec` / `code_vec` `vec0` DDL (`src/store/sql/0002_v2_tables.sql`) at
+`memory_vec` / `code_vec` `vec0` DDL (`migrations/0002_v2_tables.sql`) at
 migration time and are **not** env-configurable: a divergent value would
 disagree with the vtab and surface as `VecDimMismatch` at first insert. Change
 the DDL literal if you need a different dim. See

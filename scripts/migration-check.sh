@@ -1,12 +1,19 @@
 #!/usr/bin/env bash
-# Immutability gate: every already-released src/store/sql/*.sql file must be
+# Immutability gate: every already-released migrations/*.sql file must be
 # byte-identical to its content at the first release tag that shipped it.
-# Migrations are append-only (see src/store/sql/README.md) — store::migrate
-# is marker-keyed and re-applies only what a given database has not yet seen,
+# Migrations are append-only (see migrations/README.md) — store::migrate is
+# marker-keyed and re-applies only what a given database has not yet seen,
 # so editing an already-shipped file changes what a live user's database
 # already applied without anything re-running it. A file in no tag yet is
 # still in development and is skipped — that is the legitimate case of an
 # unreleased migration.
+#
+# Two prefixes, one basename key. The directory moved from src/store/sql/ to
+# migrations/ in the toolu-orm schema adoption (v0.29), so every tag up to
+# v0.28.0 carries the files under LEGACY_DIR and every later tag under
+# CURRENT_DIR. The union of ever-shipped files and the first-tag lookup both
+# key on the basename and accept either prefix, so the move reads as a move,
+# not as sixteen deletions plus sixteen unreleased files.
 #
 # All tags are cut from main by release-plz (docs/release.md), so "first tag
 # containing the file" is well-defined. Tags are sorted by creatordate, NOT
@@ -18,6 +25,8 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 source "$HERE/lib/common.sh"
 
 STEP="migration-check"
+CURRENT_DIR="migrations"
+LEGACY_DIR="src/store/sql"
 cd "$PROJECT_ROOT"
 require_cmd git
 
@@ -34,7 +43,19 @@ if (( ${#TAGS[@]} == 0 )); then
   exit 1
 fi
 
-mapfile -t SQL_FILES < <(git ls-files 'src/store/sql/*.sql' | sort)
+mapfile -t SQL_FILES < <(git ls-files "$CURRENT_DIR/*.sql" | sort)
+
+# The path a basename lived at in tag $1, if any: CURRENT_DIR first (the
+# only place a post-move tag has it), then LEGACY_DIR. Prints nothing when
+# the tag predates the file.
+path_in_tag() {
+  local tag="$1" base="$2"
+  if git cat-file -e "$tag:$CURRENT_DIR/$base" 2>/dev/null; then
+    printf '%s\n' "$CURRENT_DIR/$base"
+  elif git cat-file -e "$tag:$LEGACY_DIR/$base" 2>/dev/null; then
+    printf '%s\n' "$LEGACY_DIR/$base"
+  fi
+}
 
 # `git ls-files` only walks paths that still exist, so DELETING a shipped
 # migration file passes the modification loop below vacuously — nothing
@@ -43,36 +64,39 @@ mapfile -t SQL_FILES < <(git ls-files 'src/store/sql/*.sql' | sort)
 # deleted file's key, and `store::migrate::list::MIGRATIONS` would fail to
 # compile or the migration-integrity tests would fail first, but this
 # immutability gate should catch the deletion directly rather than relying
-# on those to notice it). Enumerate the UNION of `src/store/sql/*.sql`
-# across EVERY tag — not just the newest one: anchoring on a single tag
-# heals itself the moment ANOTHER release is cut after a deletion lands,
-# since the deleted file drops out of every later tag's tree too, and the
-# gate would silently stop detecting the violation it exists to catch. Fail
-# on any entry, from any tag, missing from the working tree.
+# on those to notice it). Enumerate the UNION of shipped basenames across
+# EVERY tag and BOTH prefixes — not just the newest tag: anchoring on a
+# single tag heals itself the moment ANOTHER release is cut after a deletion
+# lands, since the deleted file drops out of every later tag's tree too, and
+# the gate would silently stop detecting the violation it exists to catch.
+# Fail on any basename, from any tag, missing from the working tree.
 declare -A EVER_SHIPPED=()
 for t in "${TAGS[@]}"; do
-  mapfile -t tagged_at_t < <(git ls-tree -r --name-only "$t" -- src/store/sql | grep '\.sql$' || true)
+  mapfile -t tagged_at_t < <(git ls-tree -r --name-only "$t" -- "$CURRENT_DIR" "$LEGACY_DIR" | grep '\.sql$' || true)
   for f in "${tagged_at_t[@]}"; do
-    EVER_SHIPPED["$f"]=1
+    EVER_SHIPPED["$(basename "$f")"]=1
   done
 done
 mapfile -t EVER_SHIPPED_FILES < <(printf '%s\n' "${!EVER_SHIPPED[@]}" | sort)
 
 deleted=0
-for f in "${EVER_SHIPPED_FILES[@]}"; do
-  if [[ ! -f "$f" ]]; then
+for base in "${EVER_SHIPPED_FILES[@]}"; do
+  if [[ ! -f "$CURRENT_DIR/$base" ]]; then
     log_err "$STEP" \
-      "$f was shipped in a prior release but is missing from the working tree — migrations are \
-append-only and never deleted once released"
+      "$CURRENT_DIR/$base was shipped in a prior release but is missing from the working tree — migrations \
+are append-only and never deleted once released"
     deleted=1
   fi
 done
 
 modified=0
 for f in "${SQL_FILES[@]}"; do
+  base="$(basename "$f")"
   first_tag=""
+  first_path=""
   for t in "${TAGS[@]}"; do
-    if git cat-file -e "$t:$f" 2>/dev/null; then
+    first_path="$(path_in_tag "$t" "$base")"
+    if [[ -n "$first_path" ]]; then
       first_tag="$t"
       break
     fi
@@ -84,16 +108,17 @@ for f in "${SQL_FILES[@]}"; do
   fi
 
   if [[ ! -f "$f" ]]; then
-    # Already reported as a deletion by the loop above — do not also
-    # mislabel a missing file "differs from its first release" here.
+    # `git ls-files` still lists a tracked file deleted from the working tree
+    # without `git rm`; the deletion loop above already reported it — do not
+    # also mislabel it "differs from its first release" here.
     continue
   fi
 
-  if diff -q <(git show "$first_tag:$f") "$f" >/dev/null 2>&1; then
-    log_info "$STEP" "$f: unchanged since $first_tag"
+  if diff -q <(git show "$first_tag:$first_path") "$f" >/dev/null 2>&1; then
+    log_info "$STEP" "$f: unchanged since $first_tag ($first_path)"
   else
     log_err "$STEP" \
-      "$f differs from its first release ($first_tag) — migrations are immutable once shipped; append a new numbered file instead"
+      "$f differs from its first release ($first_tag, $first_path) — migrations are immutable once shipped; append a new numbered file instead"
     modified=1
   fi
 done

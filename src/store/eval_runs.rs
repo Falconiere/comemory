@@ -3,7 +3,7 @@
 //! scores hundreds of configurations, and only the run's own outcome — for
 //! `tune`/`bandit`, the winning candidate — is what the console's run table
 //! and recall sparkline show), backing the v14 console-history table
-//! (`src/store/sql/0014_v14_console.sql`).
+//! (`migrations/0014_v14_console.sql`).
 //!
 //! v15 adds the two flag writers the console's knob proposals need:
 //! [`set_applied`] (the run's knobs were written into `config.toml`) and

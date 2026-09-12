@@ -5,7 +5,7 @@ outgrew `src/store/migrate.rs` itself — the single `MIGRATIONS` slice every
 consumer reads from, and the preflight/snapshot safety net that runs before
 it.
 
-**What does NOT belong here:** the migration SQL text (`src/store/sql/`),
+**What does NOT belong here:** the migration SQL text (`migrations/`),
 the runner (`run`, `apply`, `set_version`) or the `M_BOOTSTRAP..M_V13`
 replay consts, all of which stay in `src/store/migrate.rs` beside this
 folder — no `mod.rs` barrel.

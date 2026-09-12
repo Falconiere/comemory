@@ -46,6 +46,21 @@ fn fresh_db_runs_all_migrations_to_current_version() {
         )
         .expect("read schema version");
     assert_eq!(version, migrate::CURRENT_VERSION);
+
+    // toolu-orm supplies the schema declaration and the generate loop only;
+    // its `_migrations` bookkeeping table must never appear — `schema_meta`
+    // markers remain the one applied-set (spec AC-7).
+    let orm_tables: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM sqlite_master WHERE name = '_migrations'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("probe sqlite_master");
+    assert_eq!(
+        orm_tables, 0,
+        "no toolu-orm `_migrations` table on a fresh database"
+    );
 }
 
 #[test]

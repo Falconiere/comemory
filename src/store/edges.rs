@@ -38,7 +38,7 @@ pub(crate) const REFERENCES_DOCUMENT: &str = "references_document";
 /// Addressing tuple for a single directed edge.
 ///
 /// Node identifiers follow the v0.2 convention documented in
-/// `src/store/sql/0002_v2_tables.sql`:
+/// `migrations/0002_v2_tables.sql`:
 /// `memory:<id>`, `file:<repo>:<path>`, `symbol:<symbol_id>`,
 /// `repo:<repo>`, `author:<name>`, `tag:<name>`.
 #[derive(Clone, Copy)]
@@ -56,7 +56,7 @@ pub struct EdgeKey<'a> {
 }
 
 /// Graph node id for a file: `file:<repo>:<path>` — the addressing
-/// convention pinned in `src/store/sql/0002_v2_tables.sql` and used by
+/// convention pinned in `migrations/0002_v2_tables.sql` and used by
 /// every graph-side writer/reader (`materialize`, the working set, the
 /// affinity prior).
 ///

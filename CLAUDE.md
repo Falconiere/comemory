@@ -18,6 +18,19 @@ is the source of truth and one SQLite file (`comemory.db`) backs FTS5 +
   `memory_fts` (FTS5), `memory_vec` (`sqlite-vec` `vec0`), `code_symbols`,
   `code_fts`, `code_vec`, `edges`, `schema_meta`, plus stats / repo-marker
   tables. `rusqlite 0.40` with `bundled` + `load_extension` features.
+- **Declared schema (toolu-orm):** every table toolu-orm 0.5 can render
+  faithfully is a `#[table]` / `#[fts5_table]` / `#[vec0_table]` struct in
+  `src/store/schema_*.rs`, assembled by `store::schema::registry()`.
+  `just migration <name>` diffs the structs against
+  `migrations/<newest>.snapshot.json` and writes the next
+  `migrations/NNNN_<name>.sql` plus a SHA-256 journal entry; a table the
+  registry cannot yet express (composite primary key / `AUTOINCREMENT` —
+  upstream toolu-orm #65; `DESC` index column — #70, fixed upstream after
+  the pinned 0.5.0) gets a hand-written file and `just migration-journal`.
+  Runtime APPLY is
+  unchanged: `store::migrate` runs every file with `execute_batch`, keyed by
+  `schema_meta` markers; no `_migrations` table. See
+  `docs/guides/schema-migrations.md`.
 - **Edges:** flat `(src_kind, src_id, edge_kind, dst_kind, dst_id)` rows
   (plus an integer `weight`) in the `edges` table replace the v0.1 kuzu
   graph. v6 adds code-graph kinds: `co_changed` (mined from git history)
@@ -68,6 +81,9 @@ comemory capture session --path F  # redact + POST a session receipt (or --dry-r
 comemory capture sources           # show platform capture consent (CLI cannot grant)
 comemory capture install-hook      # Claude Code SessionEnd → capture session --from-hook
 comemory distill --session-id <id> --transcript <path>  # propose candidates from explicit saves
+just migration <name>              # struct diff → migrations/NNNN_<name>.sql (+ snapshot + journal)
+just migration-journal <file>      # journal a hand-written migrations/NNNN_<name>.sql
+just migration-adopt               # restate the newest snapshot from src/store/schema*.rs
 ```
 
 ## Binding Rules (apply to every contribution)
@@ -187,7 +203,7 @@ narrative; the folder `README.md` is the authoritative file-by-file list.
 | `memory/` | markdown I/O, `Frontmatter`, slug, id (8-hex SHA-256), atomic save / load / soft-delete / list, `prior` (what the live file or its trash copy already holds for an id — the save-time collision guard and `created` carry-over) |
 | `document/` | pure, in-process document extraction (TXT/Markdown/HTML/CSV) and size-bounded chunking, independent of the store — `extract`/`html`/`delimited` (format-specific extractors), `chunk` (the shared paragraph-boundary splitter), `fingerprint` (size+mtime skip check, SHA-256 identity), `writer` (the per-file index writer: fingerprint skip → extract → one-transaction row replacement) |
 | `source/` | durable source registry (`sources.toml`): `registry` (load/save, overlap validation, atomic durability), `lock` (exclusive flock guard over concurrent read-modify-write), `discover` (the boundary/ignore-rule walk over a registered root), `classify` (extension allowlist + binary sniff), `mirror` (reconciles the TOML registry into SQLite's `source_roots`) |
-| `store/` | **the SQLite chokepoint: the only production module that imports `rusqlite`** (`src/errors.rs` excepted, see Binding Rule 10), and the single home of every SQL string in the crate. `src/store.rs` re-exports `Connection` and `Transaction` so no other module names a driver type. 56 files, one per table or concern; families that outgrow 300 lines become flat siblings with a shared prefix (`rebuild_copy_*`, `code_graph_*`, `edges`/`edges_retrieval`) because guardrails' `src.nested` allows no new subfolder under `store/`. Core: `connection` (rusqlite open + PRAGMAs + `sqlite-vec` loader), `schema`, `migrate` (versioned + idempotent, applying the `MIGRATIONS` slice declared in `migrate/list.rs`; DDL text in `sql/`; `migrate/preflight` + `migrate/backup` are the forward-compat guard and pre-upgrade `VACUUM INTO` snapshot run from `connection::open` before the chain — see `docs/guides/upgrading.md`), `vector` (`vec0` insert/KNN with dim guard), `fts` (FTS5 helpers, code leg), `fts_memory` (the memory FTS ladder behind one `run_memory_match` choke-point — every tier inherits the same filters), `CreatedWindow` in `store.rs` (the borrow-only `{since, cutoff}` pair each SQL predicate takes, compared via `datetime()`; keeps `store/` free of `retrieval/` types), `embed` (`to_vec_blob`, dim helpers), `edge_fts` (FTS5 triplet index over `edges` — per-kind `src —rel→ dst` rendering, wholesale refresh-materialize in one tx, `needs_refresh` for the upgrade self-heal, and the two-tier strict→word-OR ladder behind `comemory edges`), `memory_meta` (`fetch_meta` — batched per-memory metadata: path/repo/kind/tags/references backing the enriched `search --json` rows), `memory_row`/`code_row` (the per-table mirror-row upserts), `memory_list` (paginated memory listing, `--sort created|quality|accessed`), `eval_runs` / `gc_runs` / `index_runs` (the v14/v15 run-history writers + readers; all three are in `rebuild`'s `COPIED_TABLES` — history is not reconstructable from markdown), `repo_drop` (`DELETE /api/v1/repos/{name}`: drop every code-index row and file edge for one repo label in one transaction, memories kept), `random_id` (the shared random-hex id helper, moved out of `serve::security` so non-HTTP callers can use it), `code_ref` (the version-anchor side table for explicit code references), `documents`/`document_fts` (the document/chunk mirror + its BM25 leg), `sources` (the SQLite mirror of `source::registry`), `simhash_scan` (bulk fingerprint scan shared by save + consolidate), `tokenizer/` (custom FTS5 identifier tokenizer: camelCase/snake_case split + FFI registration), `busy` (`is_locked` — answers "is this SQLite busy/locked?" from the crate's own `Error`, so `serve::envelope` maps 503 without inspecting driver variants), plus the per-table modules the 2026-09 chokepoint refactor moved in from `api/`, `cli/`, `graph/`, `stats/`, `retrieval/`, `prune/` and `eval/`: `edges`/`edges_retrieval`/`code_graph_nodes`/`code_graph_edges`, `retrieval_log`, `feedback`/`code_feedback`, `bandit_arms`, `query_expansions`, `indexed_files`, `index_failures`, `repo_marker`/`repo_marker_roots`, `prune_signals`/`prune_apply`, `gc_learning`, `doctor_probes`, `repos_inventory`, `stats_counts`, `trash_list`, `code_signals`, `schema_meta`, `sync_log`/`sync_state`/`sync_binding`, and `rebuild_copy*` (the ATTACH→copy→DETACH preservation unit, which owns its own lifecycle so no caller can leave a database attached) |
+| `store/` | **the SQLite chokepoint: the only production module that imports `rusqlite`** (`src/errors.rs` excepted, see Binding Rule 10), and the single home of every SQL string in the crate (migration DDL lives beside it in the crate-root `migrations/`). `src/store.rs` re-exports `Connection` and `Transaction` so no other module names a driver type. 56 files, one per table or concern; families that outgrow 300 lines become flat siblings with a shared prefix (`rebuild_copy_*`, `code_graph_*`, `edges`/`edges_retrieval`) because guardrails' `src.nested` allows no new subfolder under `store/`. Core: `connection` (rusqlite open + PRAGMAs + `sqlite-vec` loader), `schema`, `migrate` (versioned + idempotent, applying the `MIGRATIONS` slice declared in `migrate/list.rs`; DDL text in the crate-root `migrations/`, `include_str!`-baked; `schema` + `schema_*` (the declared toolu-orm schema — `registry()`, `DECLARED_TABLES`, and the `#[table]` structs) + `schema_journal` (the `just migration-journal` / `migration-adopt` operations, tested against the shipped journal); `migrate/preflight` + `migrate/backup` are the forward-compat guard and pre-upgrade `VACUUM INTO` snapshot run from `connection::open` before the chain — see `docs/guides/upgrading.md`), `vector` (`vec0` insert/KNN with dim guard), `fts` (FTS5 helpers, code leg), `fts_memory` (the memory FTS ladder behind one `run_memory_match` choke-point — every tier inherits the same filters), `CreatedWindow` in `store.rs` (the borrow-only `{since, cutoff}` pair each SQL predicate takes, compared via `datetime()`; keeps `store/` free of `retrieval/` types), `embed` (`to_vec_blob`, dim helpers), `edge_fts` (FTS5 triplet index over `edges` — per-kind `src —rel→ dst` rendering, wholesale refresh-materialize in one tx, `needs_refresh` for the upgrade self-heal, and the two-tier strict→word-OR ladder behind `comemory edges`), `memory_meta` (`fetch_meta` — batched per-memory metadata: path/repo/kind/tags/references backing the enriched `search --json` rows), `memory_row`/`code_row` (the per-table mirror-row upserts), `memory_list` (paginated memory listing, `--sort created|quality|accessed`), `eval_runs` / `gc_runs` / `index_runs` (the v14/v15 run-history writers + readers; all three are in `rebuild`'s `COPIED_TABLES` — history is not reconstructable from markdown), `repo_drop` (`DELETE /api/v1/repos/{name}`: drop every code-index row and file edge for one repo label in one transaction, memories kept), `random_id` (the shared random-hex id helper, moved out of `serve::security` so non-HTTP callers can use it), `code_ref` (the version-anchor side table for explicit code references), `documents`/`document_fts` (the document/chunk mirror + its BM25 leg), `sources` (the SQLite mirror of `source::registry`), `simhash_scan` (bulk fingerprint scan shared by save + consolidate), `tokenizer/` (custom FTS5 identifier tokenizer: camelCase/snake_case split + FFI registration), `busy` (`is_locked` — answers "is this SQLite busy/locked?" from the crate's own `Error`, so `serve::envelope` maps 503 without inspecting driver variants), plus the per-table modules the 2026-09 chokepoint refactor moved in from `api/`, `cli/`, `graph/`, `stats/`, `retrieval/`, `prune/` and `eval/`: `edges`/`edges_retrieval`/`code_graph_nodes`/`code_graph_edges`, `retrieval_log`, `feedback`/`code_feedback`, `bandit_arms`, `query_expansions`, `indexed_files`, `index_failures`, `repo_marker`/`repo_marker_roots`, `prune_signals`/`prune_apply`, `gc_learning`, `doctor_probes`, `repos_inventory`, `stats_counts`, `trash_list`, `code_signals`, `schema_meta`, `sync_log`/`sync_state`/`sync_binding`, and `rebuild_copy*` (the ATTACH→copy→DETACH preservation unit, which owns its own lifecycle so no caller can leave a database attached) |
 | `retrieval/unified/` | `comemory find`'s core: the three legs (`router`, `code_route`, `doc_route`) run unchanged and their *reranked* orders fuse via the pre-existing `fuse::rrf_multi_weighted`, memory and code at weight 1.0 and documents at `retrieval.document_leg_weight` (declared and validated since the document domain landed; read by nothing until this module). One shared `pipeline::pool_size` across every leg and ONE `pipeline::paginate` over the fused list — RRF is prefix-stable, so divergent per-leg pools would let a deeper page reorder a shallower one. `fuse_domains` owns the weighted fusion and `UnifiedHit`/`HitParts`, the untagged enum carrying each domain's own `score_parts` verbatim |
 | `upgrade/` | `comemory upgrade`'s core — `version` (`MAJOR.MINOR.PATCH[-pre]` parse + ordering), `channel` (Homebrew / `cargo install` / standalone detection from the resolved `current_exe`; the `.crates.toml` branch is pure via `detect_with`), `release` (the `<releases>/latest` redirect → tag and one-asset `download`, via `crate::fetch` curl/wget — no HTTP client in the crate; `COMEMORY_RELEASES_URL` is the test hook), `installer` (fetch `<releases>/download/<tag>/install.sh` and run it `--version --dir --no-modify-path [--quiet]`, `brew upgrade`, and `installed_version` read back after the swap). `src/upgrade.rs` owns `Request`/`Report`/`Status` and `run` (resolve → compare → swap → verify). CLI-only: in `serve::routes::meta::CLI_ONLY` beside `serve` / `auth`, since a server must never replace its own binary on request. The script it runs is the repo-root `install.sh`, uploaded to every release by `release-finalize.yml` |
 | `fetch.rs` | shared curl/wget HTTP helper (no in-process TLS stack) — `exchange` (status + body), `download`, `final_url`; used by `upgrade::release` and `cloud` |
@@ -267,7 +283,7 @@ cartesian sweep. `comemory bandit` ignores `tune.samples` — its arms stay the
 full grid.
 
 The memory and code vector dims (1024 and 768) are baked into the
-`memory_vec` / `code_vec` vec0 DDL (`src/store/sql/0002_v2_tables.sql`)
+`memory_vec` / `code_vec` vec0 DDL (`migrations/0002_v2_tables.sql`)
 at migration time and are not env-configurable: a divergent env value
 would silently disagree with the vtab and surface as `VecDimMismatch`
 at first insert. Change the literal in the DDL if you need a different
@@ -529,7 +545,7 @@ scripts/store-chokepoint-check.sh # rusqlite confined to src/store/, ratcheted
                                   # against store-leak-baseline.txt
 scripts/typos-check.sh           # typos
 scripts/cli-docs-check.sh        # docs/cli-reference.md vs the real --help output
-scripts/migration-check.sh       # shipped src/store/sql/*.sql is byte-identical
+scripts/migration-check.sh       # shipped migrations/*.sql is byte-identical
                                   # to its content at the first release tag
 ```
 
@@ -559,7 +575,7 @@ a competing number.
 | Committed secrets, shadow configs (`lefthook.yaml` vs `.yml`) | `guardrails.config.json` (`secrets`, `shadowConfigs`), the `secrets`/`shadow-configs` guardrails checks |
 | Typos | `typos.toml`, `scripts/typos-check.sh` |
 | `docs/cli-reference.md` drift | `scripts/cli-docs-check.sh` vs the real `--help` output |
-| Shipped migration SQL is immutable | `scripts/migration-check.sh` (git-tag-dependent; compares each `src/store/sql/*.sql` against its first release tag) |
+| Shipped migration SQL is immutable | `scripts/migration-check.sh` (git-tag-dependent; compares each `migrations/*.sql` against its first release tag, accepting the pre-v0.29 location under `src/store/` for the same basename) |
 | Duplication ratchet | `scripts/dup-check.sh` against `dup-baseline.txt` (see `docs/dup-debt.md`) |
 | rusqlite confined to `src/store/` | `store-leak-baseline.txt`, `scripts/store-chokepoint-check.sh` |
 
@@ -705,7 +721,8 @@ local rule strictly stronger than the one it replaces.
   `no-barrels` inert for Rust). Declaring `mod.rs` a barrel name makes the
   `<dir>.rs` beside `<dir>/` layout permanent and machine-checked.
 - **D4 — `src.nested` is extended** beyond the kit's `{"*": ["tests"]}` to
-  allow `src/store/sql/`, `src/store/tokenizer/`, `src/store/migrate/`,
+  allow `src/store/tokenizer/`, `src/store/migrate/` (the migration SQL
+  itself moved out of `src/store/` to the crate-root `migrations/` in v0.29),
   and a universal `proptest-regressions` allowlist entry
   (proptest creates that directory itself on a failing property test; a gate
   that fails on a tool's own artifact is a gate people route around).

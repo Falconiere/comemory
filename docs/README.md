@@ -33,6 +33,9 @@ Task-oriented recipes for a specific job:
   low-value memories, rebuild the DB from markdown, garbage-collect logs.
 - **[Upgrading comemory](guides/upgrading.md)** — what a schema upgrade does,
   where snapshots go, how to restore one, and the `serve`-restart caveat.
+- **[Schema migrations](guides/schema-migrations.md)** — for contributors:
+  the declared `#[table]` schema, `just migration <name>`, hand-SQL tables,
+  and the `migrations/` journal.
 
 ## Reference
 
