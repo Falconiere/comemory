@@ -13,7 +13,10 @@
 //! exercised through `record_with_provenance`, the only src/ writer.
 
 use comemory::config::paths::Paths;
-use comemory::stats::feedback::{generate_query_id, is_valid_query_id, record_with_provenance};
+use comemory::stats::feedback::{
+    PROV_IMPLICIT, PROV_MANUAL, Source, generate_query_id, is_valid_query_id,
+    record_with_provenance,
+};
 use comemory::stats::sqlite::StatsDb;
 
 use crate::test_common as common;
@@ -29,8 +32,14 @@ fn open_db() -> (common::runner::Sandbox, StatsDb) {
 #[test]
 fn used_counter_inserts_then_increments_and_refreshes_last_used() {
     let (_sb, mut db) = open_db();
-    record_with_provenance(&mut db, "q-20260610-aabbccd1", &["aaaaaaa1".into()], &[])
-        .expect("first record");
+    record_with_provenance(
+        &mut db,
+        "q-20260610-aabbccd1",
+        &["aaaaaaa1".into()],
+        &[],
+        PROV_MANUAL,
+    )
+    .expect("first record");
     let (used, last): (i64, String) = db
         .conn()
         .query_row(
@@ -50,8 +59,14 @@ fn used_counter_inserts_then_increments_and_refreshes_last_used() {
             [],
         )
         .expect("backdate last_used");
-    record_with_provenance(&mut db, "q-20260610-aabbccd2", &["aaaaaaa1".into()], &[])
-        .expect("second record");
+    record_with_provenance(
+        &mut db,
+        "q-20260610-aabbccd2",
+        &["aaaaaaa1".into()],
+        &[],
+        PROV_MANUAL,
+    )
+    .expect("second record");
     let (used, last): (i64, String) = db
         .conn()
         .query_row(
@@ -71,7 +86,8 @@ fn used_counter_inserts_then_increments_and_refreshes_last_used() {
 fn irrelevant_counter_inserts_then_increments_without_touching_last_used() {
     let (_sb, mut db) = open_db();
     for qid in ["q-20260610-aabbccd1", "q-20260610-aabbccd2"] {
-        record_with_provenance(&mut db, qid, &[], &["aaaaaaa2".into()]).expect("record");
+        record_with_provenance(&mut db, qid, &[], &["aaaaaaa2".into()], PROV_MANUAL)
+            .expect("record");
     }
     let (used, irrelevant, last): (i64, i64, Option<String>) = db
         .conn()
@@ -95,6 +111,7 @@ fn record_with_provenance_writes_events_and_counters_atomically() {
         "q-20260610-aabbccdd",
         &["aaaaaaa1".into()],
         &["aaaaaaa2".into()],
+        PROV_MANUAL,
     )
     .expect("record");
 
@@ -139,8 +156,14 @@ fn record_with_provenance_errors_on_schema_drift() {
         .execute("DROP TABLE feedback", [])
         .expect("drop feedback table");
 
-    let err = record_with_provenance(&mut db, "q-20260610-aabbccdd", &["aaaaaaa1".into()], &[])
-        .expect_err("record must error when feedback table is missing");
+    let err = record_with_provenance(
+        &mut db,
+        "q-20260610-aabbccdd",
+        &["aaaaaaa1".into()],
+        &[],
+        PROV_MANUAL,
+    )
+    .expect_err("record must error when feedback table is missing");
     let msg = err.to_string();
     assert!(
         msg.contains("feedback"),
@@ -151,6 +174,89 @@ fn record_with_provenance_errors_on_schema_drift() {
         .query_row("SELECT count(*) FROM feedback_events", [], |r| r.get(0))
         .expect("count events");
     assert_eq!(events, 0, "failed batch must not leave a partial event row");
+}
+
+/// The closed `source` vocabulary (#130): the two exact words map onto the
+/// two route-written provenance values; a spelling of the stored word, a
+/// case variant, or an empty string is a `BadRequest` naming the offender,
+/// never a silent fall-through to `manual`.
+#[test]
+fn source_parse_accepts_the_two_words_and_maps_provenance() {
+    assert_eq!(
+        Source::parse("explicit").expect("explicit"),
+        Source::Explicit
+    );
+    assert_eq!(
+        Source::parse("implicit").expect("implicit"),
+        Source::Implicit
+    );
+    assert_eq!(Source::Explicit.provenance(), PROV_MANUAL);
+    assert_eq!(Source::Implicit.provenance(), PROV_IMPLICIT);
+    assert_eq!(
+        Source::default(),
+        Source::Explicit,
+        "omitted source is explicit"
+    );
+    for bad in ["manual", "Implicit", "", "cited", " implicit"] {
+        let err = Source::parse(bad).expect_err(bad);
+        assert!(
+            matches!(err, comemory::errors::Error::BadRequest(_)),
+            "{bad:?} must be a BadRequest, got {err:?}"
+        );
+        assert_eq!(
+            err.to_string(),
+            format!("bad request: unknown source `{bad}`: expected explicit or implicit")
+        );
+    }
+}
+
+/// `record_with_provenance` stamps the caller's provenance on BOTH
+/// verdicts — an implicit negative is storable (#130) — and bumps the same
+/// counters a manual batch does.
+#[test]
+fn record_with_provenance_writes_the_callers_provenance_on_both_verdicts() {
+    let (_sb, mut db) = open_db();
+    record_with_provenance(
+        &mut db,
+        "q-20260912-aabbccdd",
+        &["aaaaaaa1".into()],
+        &["aaaaaaa2".into()],
+        PROV_IMPLICIT,
+    )
+    .expect("record implicit batch");
+
+    let conn = db.conn();
+    let mut stmt = conn
+        .prepare(
+            "SELECT memory_id, verdict, provenance FROM feedback_events \
+              WHERE query_id = 'q-20260912-aabbccdd' ORDER BY memory_id",
+        )
+        .expect("prepare");
+    let rows: Vec<(String, String, String)> = stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .expect("query")
+        .collect::<Result<_, _>>()
+        .expect("rows");
+    assert_eq!(
+        rows,
+        vec![
+            ("aaaaaaa1".into(), "used".into(), "implicit".into()),
+            ("aaaaaaa2".into(), "irrelevant".into(), "implicit".into()),
+        ]
+    );
+    let (used, irrelevant): (i64, i64) = conn
+        .query_row(
+            "SELECT (SELECT used_count FROM feedback WHERE memory_id = 'aaaaaaa1'), \
+                    (SELECT irrelevant_count FROM feedback WHERE memory_id = 'aaaaaaa2')",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .expect("counters");
+    assert_eq!(
+        (used, irrelevant),
+        (1, 1),
+        "implicit verdicts bump the same counters"
+    );
 }
 
 #[test]

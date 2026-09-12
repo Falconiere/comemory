@@ -92,10 +92,11 @@ pub(crate) fn upsert_irrelevant(conn: &Connection, sym: &SymbolIdentity) -> Resu
     Ok(())
 }
 
-/// Insert one code-tagged `feedback_events` provenance row, text-encoding
-/// the symbol rowid into the `memory_id` column (a memory-era column-name
-/// wart the reader must know about — see `crate::stats::code_feedback`'s
-/// module doc).
+/// Insert one code-tagged `feedback_events` row, text-encoding the symbol
+/// rowid into the `memory_id` column (a memory-era column-name wart the
+/// reader must know about — see `crate::stats::code_feedback`'s module
+/// doc). `provenance` is written explicitly, never left to the column
+/// default, mirroring [`crate::store::feedback::insert_event`].
 pub(crate) fn insert_event(
     conn: &Connection,
     query_id: &str,
@@ -103,11 +104,19 @@ pub(crate) fn insert_event(
     verdict: &str,
     at: &str,
     target_kind: &str,
+    provenance: &str,
 ) -> Result<()> {
     conn.execute(
-        "INSERT INTO feedback_events(query_id, memory_id, verdict, at, target_kind)
-         VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![query_id, id.to_string(), verdict, at, target_kind],
+        "INSERT INTO feedback_events(query_id, memory_id, verdict, at, target_kind, provenance)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![
+            query_id,
+            id.to_string(),
+            verdict,
+            at,
+            target_kind,
+            provenance
+        ],
     )?;
     Ok(())
 }

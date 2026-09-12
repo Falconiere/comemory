@@ -38,7 +38,7 @@ One line per file, named after its primary item:
 | `hooks.rs` | `Request` | Shared middle of `comemory hooks` / `GET\|POST /api/v1/hooks` — per-hook read and toggle, state read from `.git/hooks` |
 | `edges.rs` | `Request` | Shared middle of `comemory edges` / `GET /api/v1/edges` |
 | `eval.rs` | `Request` | Shared middle of `comemory eval` / `POST /api/v1/eval` |
-| `feedback.rs` | `Request` | Shared middle of `comemory feedback` / `POST /api/v1/feedback` |
+| `feedback.rs` | `Request` | Shared middle of `comemory feedback` / `POST /api/v1/feedback` (and the per-hit search route): validates the query id, the four id lists, and the optional `source` (`explicit` → `manual`, `implicit` → `implicit`) before the db opens; `Response.provenance` echoes what every verdict was stored under |
 | `gc.rs` | `Request` | Shared middle of `comemory gc` / `POST /api/v1/gc` — reaps aged `.trash/` files AND purges their mirror rows (`store::memory_purge`), healing zombie rows earlier sweeps left behind |
 | `graph.rs` | `Request` | Shared middle behind `comemory graph` / `GET /api/v1/graph` |
 | `index.rs` | `Request` | Shared middle of `comemory index` / `POST /api/v1/index` |

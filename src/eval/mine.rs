@@ -46,14 +46,19 @@ pub struct MinedMapping {
 pub fn mine(conn: &Connection) -> Result<Vec<MinedMapping>> {
     let log =
         store::retrieval_log::queries_excluding_source(conn, crate::stats::source::SEARCH_CODE)?;
-    // Only memory-target verdicts mark a query successful: a code verdict
-    // (target_kind = 'code', written by `stats::code_feedback`) says
-    // nothing about memory retrieval quality, so a follow-up whose only
-    // used feedback is code-target must not read as a successful rewording.
-    let used: HashSet<String> =
-        store::feedback::used_query_ids(conn, crate::stats::target::MEMORY)?
-            .into_iter()
-            .collect();
+    // Only MANUAL memory-target verdicts mark a query successful: a code
+    // verdict (target_kind = 'code', written by `stats::code_feedback`) says
+    // nothing about memory retrieval quality, and an HTTP-implicit verdict
+    // (#130) is a model's observation, not a human confirming the
+    // rewording worked — so a follow-up whose only used feedback is
+    // code-target or implicit must not read as a successful rewording.
+    let used: HashSet<String> = store::feedback::used_query_ids(
+        conn,
+        crate::stats::target::MEMORY,
+        crate::stats::feedback::PROV_MANUAL,
+    )?
+    .into_iter()
+    .collect();
 
     let parsed: Vec<(bool, BTreeSet<String>, OffsetDateTime)> = log
         .iter()

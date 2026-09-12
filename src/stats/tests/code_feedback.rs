@@ -19,6 +19,7 @@
 
 use comemory::config::paths::Paths;
 use comemory::stats::code_feedback::record_code_with_provenance;
+use comemory::stats::feedback::{PROV_IMPLICIT, PROV_MANUAL};
 use comemory::stats::sqlite::StatsDb;
 use comemory::store::code_row::{self, CodeSymbolRow};
 
@@ -87,7 +88,8 @@ fn counter_row(
 fn used_counter_inserts_then_increments_and_refreshes_last_used() {
     let (_sb, mut db) = open_db();
     let id = seed_symbol(db.conn(), "demo", "a.rs", "alpha");
-    record_code_with_provenance(&mut db, "q-20260610-aabbccd1", &[id], &[]).expect("first record");
+    record_code_with_provenance(&mut db, "q-20260610-aabbccd1", &[id], &[], PROV_MANUAL)
+        .expect("first record");
     let (used, _, last) = counter_row(db.conn(), "demo", "a.rs", "alpha").expect("row");
     assert_eq!(used, 1, "first insert seeds used_count = 1");
     assert!(last.is_some_and(|l| !l.is_empty()), "insert sets last_used");
@@ -101,7 +103,8 @@ fn used_counter_inserts_then_increments_and_refreshes_last_used() {
             [],
         )
         .expect("backdate last_used");
-    record_code_with_provenance(&mut db, "q-20260610-aabbccd2", &[id], &[]).expect("second record");
+    record_code_with_provenance(&mut db, "q-20260610-aabbccd2", &[id], &[], PROV_MANUAL)
+        .expect("second record");
     let (used, _, last) = counter_row(db.conn(), "demo", "a.rs", "alpha").expect("row");
     let last = last.expect("last_used set");
     assert_eq!(used, 2, "conflict bumps used_count");
@@ -116,7 +119,7 @@ fn irrelevant_counter_inserts_then_increments_without_touching_last_used() {
     let (_sb, mut db) = open_db();
     let id = seed_symbol(db.conn(), "demo", "b.rs", "beta");
     for qid in ["q-20260610-aabbccd1", "q-20260610-aabbccd2"] {
-        record_code_with_provenance(&mut db, qid, &[], &[id]).expect("record");
+        record_code_with_provenance(&mut db, qid, &[], &[id], PROV_MANUAL).expect("record");
     }
     let (used, irrelevant, last) = counter_row(db.conn(), "demo", "b.rs", "beta").expect("row");
     assert_eq!(used, 0);
@@ -129,8 +132,14 @@ fn record_code_with_provenance_writes_code_tagged_events_and_counters() {
     let (_sb, mut db) = open_db();
     let used_id = seed_symbol(db.conn(), "demo", "a.rs", "alpha");
     let irrelevant_id = seed_symbol(db.conn(), "demo", "b.rs", "beta");
-    record_code_with_provenance(&mut db, "q-20260610-aabbccdd", &[used_id], &[irrelevant_id])
-        .expect("record");
+    record_code_with_provenance(
+        &mut db,
+        "q-20260610-aabbccdd",
+        &[used_id],
+        &[irrelevant_id],
+        PROV_MANUAL,
+    )
+    .expect("record");
 
     let conn = db.conn();
     let events: i64 = conn
@@ -179,8 +188,14 @@ fn record_code_with_provenance_errors_loudly_on_unknown_symbol_id() {
     // the all-or-nothing transaction must leave no partial rows behind.
     let (_sb, mut db) = open_db();
     let live = seed_symbol(db.conn(), "demo", "a.rs", "alpha");
-    let err = record_code_with_provenance(&mut db, "q-20260610-aabbccdd", &[live, 9_999], &[])
-        .expect_err("unknown symbol id must error");
+    let err = record_code_with_provenance(
+        &mut db,
+        "q-20260610-aabbccdd",
+        &[live, 9_999],
+        &[],
+        PROV_MANUAL,
+    )
+    .expect_err("unknown symbol id must error");
     let msg = err.to_string();
     assert!(
         msg.contains("9999"),
@@ -213,7 +228,7 @@ fn record_code_with_provenance_errors_on_schema_drift() {
         .execute("DROP TABLE code_feedback", [])
         .expect("drop code_feedback table");
 
-    let err = record_code_with_provenance(&mut db, "q-20260610-aabbccdd", &[id], &[])
+    let err = record_code_with_provenance(&mut db, "q-20260610-aabbccdd", &[id], &[], PROV_MANUAL)
         .expect_err("record must error when code_feedback table is missing");
     let msg = err.to_string();
     assert!(
@@ -237,8 +252,9 @@ fn feedback_survives_reindex_rowid_recycling_without_misattribution() {
     let (_sb, mut db) = open_db();
     let _alpha = seed_symbol(db.conn(), "demo", "f.rs", "alpha");
     let beta = seed_symbol(db.conn(), "demo", "f.rs", "beta");
-    record_code_with_provenance(&mut db, "q-20260610-aabbccd1", &[beta], &[]).expect("record beta");
-    record_code_with_provenance(&mut db, "q-20260610-aabbccd2", &[beta], &[])
+    record_code_with_provenance(&mut db, "q-20260610-aabbccd1", &[beta], &[], PROV_MANUAL)
+        .expect("record beta");
+    record_code_with_provenance(&mut db, "q-20260610-aabbccd2", &[beta], &[], PROV_MANUAL)
         .expect("record beta again");
 
     // Re-index the file with a new symbol `gamma` inserted ABOVE the
@@ -273,8 +289,14 @@ fn feedback_survives_reindex_rowid_recycling_without_misattribution() {
 
     // New feedback against beta's NEW rowid accumulates onto the same
     // identity row.
-    record_code_with_provenance(&mut db, "q-20260610-aabbccd3", &[new_beta], &[])
-        .expect("record new beta");
+    record_code_with_provenance(
+        &mut db,
+        "q-20260610-aabbccd3",
+        &[new_beta],
+        &[],
+        PROV_MANUAL,
+    )
+    .expect("record new beta");
     let (used, _, _) = counter_row(db.conn(), "demo", "f.rs", "beta").expect("beta row");
     assert_eq!(used, 3, "post-re-index feedback joins the same identity");
 }
@@ -289,7 +311,7 @@ fn feedback_against_chunk_id_resolves_to_parent_identity() {
     let (_sb, mut db) = open_db();
     let parent = seed_symbol(db.conn(), "demo", "a.rs", "alpha");
     let chunk = seed_row(db.conn(), "demo", "a.rs", "alpha#1", Some(parent));
-    record_code_with_provenance(&mut db, "q-20260611-aabbccd1", &[chunk], &[])
+    record_code_with_provenance(&mut db, "q-20260611-aabbccd1", &[chunk], &[], PROV_MANUAL)
         .expect("record chunk verdict");
     let (used, _, _) = counter_row(db.conn(), "demo", "a.rs", "alpha").expect("parent-keyed row");
     assert_eq!(used, 1, "chunk verdict must land under the parent symbol");
@@ -310,7 +332,7 @@ fn feedback_against_chunk_id_resolves_to_parent_identity() {
     assert_eq!(event_target, chunk.to_string());
 
     // A verdict against the parent's own id increments the SAME row.
-    record_code_with_provenance(&mut db, "q-20260611-aabbccd2", &[parent], &[])
+    record_code_with_provenance(&mut db, "q-20260611-aabbccd2", &[parent], &[], PROV_MANUAL)
         .expect("record parent verdict");
     let (used, _, _) = counter_row(db.conn(), "demo", "a.rs", "alpha").expect("parent-keyed row");
     assert_eq!(used, 2, "parent and chunk verdicts share one identity row");
@@ -328,11 +350,84 @@ fn chunk_with_vanished_parent_falls_back_to_own_identity() {
     db.conn()
         .execute("DELETE FROM code_symbols WHERE id = ?1", [parent])
         .expect("vanish parent row");
-    record_code_with_provenance(&mut db, "q-20260611-aabbccd1", &[chunk], &[])
+    record_code_with_provenance(&mut db, "q-20260611-aabbccd1", &[chunk], &[], PROV_MANUAL)
         .expect("record against orphaned chunk");
     let (used, _, _) = counter_row(db.conn(), "demo", "a.rs", "alpha#1").expect("own-identity row");
     assert_eq!(
         used, 1,
         "dangling parent_id degrades to the chunk's own identity"
     );
+}
+
+/// AC-4 (#130): a code verdict carries the caller's provenance into its
+/// code-tagged `feedback_events` row while the identity-keyed counter bumps
+/// exactly as a manual verdict's would.
+#[test]
+fn record_code_with_provenance_writes_the_callers_provenance() {
+    let (_sb, mut db) = open_db();
+    let used = seed_symbol(db.conn(), "demo", "a.rs", "alpha");
+    let ignored = seed_symbol(db.conn(), "demo", "a.rs", "beta");
+    record_code_with_provenance(
+        &mut db,
+        "q-20260912-aabbccdd",
+        &[used],
+        &[ignored],
+        PROV_IMPLICIT,
+    )
+    .expect("record implicit code batch");
+
+    let rows: Vec<(String, String, String, String)> = {
+        let mut stmt = db
+            .conn()
+            .prepare(
+                "SELECT memory_id, verdict, target_kind, provenance FROM feedback_events \
+                  WHERE query_id = 'q-20260912-aabbccdd' ORDER BY memory_id",
+            )
+            .expect("prepare");
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            .expect("query")
+            .collect::<Result<_, _>>()
+            .expect("rows")
+    };
+    assert_eq!(
+        rows,
+        vec![
+            (
+                used.to_string(),
+                "used".into(),
+                "code".into(),
+                "implicit".into()
+            ),
+            (
+                ignored.to_string(),
+                "irrelevant".into(),
+                "code".into(),
+                "implicit".into()
+            ),
+        ]
+    );
+    let used_count: i64 = db
+        .conn()
+        .query_row(
+            "SELECT used_count FROM code_feedback \
+              WHERE repo = 'demo' AND path = 'a.rs' AND symbol = 'alpha'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("identity-keyed counter");
+    assert_eq!(used_count, 1);
+
+    // The default is written explicitly, not left to the column: a manual
+    // batch reads back `manual` by the same path.
+    record_code_with_provenance(&mut db, "q-20260912-aabbccde", &[used], &[], PROV_MANUAL)
+        .expect("record manual code batch");
+    let manual: String = db
+        .conn()
+        .query_row(
+            "SELECT provenance FROM feedback_events WHERE query_id = 'q-20260912-aabbccde'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("manual row");
+    assert_eq!(manual, "manual");
 }

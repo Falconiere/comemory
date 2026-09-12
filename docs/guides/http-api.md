@@ -151,7 +151,7 @@ disagree, trust the running server.
 | ○ `GET\|POST /context` | `context` | same GET/POST split |
 | ● `POST /memories` | `save` | content-addressed, idempotent replay; `created` in the response; `409 id_collision` — see [Save contract](#save-contract) |
 | ● `DELETE /memories/{id}?confirm=true` | `delete` | soft-delete, **confirm** |
-| ● `POST /feedback` | `feedback` | |
+| ● `POST /feedback` | `feedback` | `{query_id, used[], irrelevant[], used_code[], irrelevant_code[], source?}`; `source` is `explicit` (default) or `implicit` and is stored as every verdict's `feedback_events.provenance` (`manual` / `implicit`) — any other value is `400 bad_request`; `data.provenance` echoes what was stored |
 
 **Code** (`serve/routes/code.rs`)
 
@@ -233,7 +233,7 @@ view over the same cores; ◇ = a job-creating route)
 | ○ `GET /overview`, `GET /overview/eval-series?limit=` | counters, index state, last index run, latest eval metrics, recall series, 4 recent memories |
 | ○ `GET\|POST /search` | the console view over `find`: `q`, `scope` (`all\|memories\|code`), `kinds[]` (≤ 1), `limit`, `explain`; hits carry `type` and a derived `score_parts[]` explain strip |
 | ○ `GET /search/suggest?q=` | mined expansions matching a query token + recent queries by prefix |
-| ● `POST /search/{query_id}/feedback` | `{hit_id, type?, signal: used\|opened\|ignored, source?}` → the `feedback` core |
+| ● `POST /search/{query_id}/feedback` | `{hit_id, type?, signal: used\|opened\|ignored, source?}` → the `feedback` core; `source: explicit\|implicit` is stored as the verdict's provenance (`manual` / `implicit`), on `ignored` as much as on `used` |
 | ● `PATCH /memories/{id}` | frontmatter patch in place (same id); a `body`/`title` change mints a new id that `supersedes` the old |
 | ● `POST /memories/{id}/restore`, `POST /trash/{id}/restore` | move the `.trash/` file back and re-mirror |
 | ● `POST /memories/{id}/references/refresh` | re-pin anchored refs to the current HEAD, return the re-classified `code_refs` |
@@ -244,7 +244,7 @@ view over the same cores; ◇ = a job-creating route)
 | ○ `POST /jobs/{id}/cancel` | cooperative cancel (see Jobs). Read-class despite the `POST`: its route-table entry is `mutating: false`, because stopping a job writes nothing to the store — so it works on a `--read-only` server |
 | ● `PUT /hooks/{name}?repo=` | `{enabled}`; `post_commit` and `post-commit` both accepted; `repo` is contained like `POST /hooks/install`'s (`403` outside every allowed root) |
 | ●✓ `DELETE /sources/{target}?confirm=true` | path form of `DELETE /sources?target=` |
-| ○ `GET /learning/summary`, `GET /learning/evals?limit=`, `GET /learning/golden-set?golden=`, `GET /learning/proposals`, `GET /learning/expansions` | learning-loop reads; `evals` rows carry derived `delta`/`is_baseline`/`is_best` |
+| ○ `GET /learning/summary`, `GET /learning/evals?limit=`, `GET /learning/golden-set?golden=`, `GET /learning/proposals`, `GET /learning/expansions` | learning-loop reads; `summary.implicit_share` is the share of `feedback_events` whose provenance is not `manual` — the `auto_*` rewards and every route-written `source: implicit` verdict; `evals` rows carry derived `delta`/`is_baseline`/`is_best` |
 | ◇ `POST /learning/evals` | alias of the `eval` job; `golden_set` alias, optional `knobs` override |
 | ●✓ `POST /learning/proposals/{id}/apply`, ● `POST /learning/proposals/{id}/discard` | write the proposal's knobs into `config.toml` (and reload) / dismiss it |
 | ○ `GET /config/retrieval`, ● `PUT /config/retrieval` | live ranking knobs with ranges; a partial update is validated before the file is touched (`400` on an out-of-range knob) |

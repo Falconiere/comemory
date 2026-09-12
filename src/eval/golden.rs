@@ -63,11 +63,18 @@ pub fn load_file(path: &Path) -> Result<Vec<GoldenPair>> {
 /// otherwise mint a golden pair whose `kind` filter is a *language*
 /// (`retrieval_log.kind` carries `--lang` for search-code rows), which
 /// eval would replay as a memory-kind filter and score garbage.
+///
+/// Only `provenance = 'manual'` verdicts qualify. The internal implicit
+/// writers were already excluded by construction (their sentinel query ids
+/// have no `retrieval_log` row), but an HTTP `source: "implicit"` verdict
+/// (#130) carries a *real* query id and would otherwise turn a model's own
+/// citation into eval ground truth.
 pub fn harvest(conn: &Connection) -> Result<Vec<GoldenPair>> {
     let rows = feedback::used_events_for_golden(
         conn,
         crate::stats::target::MEMORY,
         crate::stats::source::SEARCH_CODE,
+        crate::stats::feedback::PROV_MANUAL,
     )?;
     let mut by_key: BTreeMap<PairKey, Vec<String>> = BTreeMap::new();
     for row in rows {

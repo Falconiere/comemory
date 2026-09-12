@@ -41,10 +41,14 @@ pub(crate) fn upsert_irrelevant(conn: &Connection, id: &str) -> Result<()> {
     Ok(())
 }
 
-/// Insert one memory-tagged `feedback_events` provenance row. `target_kind`
-/// is the caller's `crate::stats::target` vocabulary constant, passed
-/// explicitly rather than hardcoded so this helper stays table-shaped, not
-/// domain-shaped.
+/// Insert one memory-tagged `feedback_events` row. `target_kind` and
+/// `provenance` are the caller's `crate::stats::{target, feedback}`
+/// vocabulary constants, passed explicitly rather than hardcoded (or, for
+/// `provenance`, left to the column's `'manual'` default) so this helper
+/// stays table-shaped, not domain-shaped. The one INSERT behind every
+/// memory-target verdict: manual and HTTP-implicit
+/// (`stats::feedback::record_with_provenance`) and the co-activation /
+/// search→edit rewards (`stats::feedback::record_implicit_used`).
 pub(crate) fn insert_event(
     conn: &Connection,
     query_id: &str,
@@ -52,46 +56,32 @@ pub(crate) fn insert_event(
     verdict: &str,
     at: &str,
     target_kind: &str,
-) -> Result<()> {
-    conn.execute(
-        "INSERT INTO feedback_events(query_id, memory_id, verdict, at, target_kind)
-         VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![query_id, id, verdict, at, target_kind],
-    )?;
-    Ok(())
-}
-
-/// Insert one implicit-`used` `feedback_events` row carrying an explicit
-/// `provenance` tag (the co-activation reward / search→edit
-/// reinforcement writers). Kept separate from [`insert_event`] because the
-/// column list differs — an extra `provenance` column, `verdict` fixed to
-/// `'used'` — mirroring the two distinct INSERT statements the pre-move
-/// code ran.
-pub(crate) fn insert_implicit_used_event(
-    conn: &Connection,
-    query_id: &str,
-    id: &str,
-    at: &str,
-    target_kind: &str,
     provenance: &str,
 ) -> Result<()> {
     conn.execute(
         "INSERT INTO feedback_events(query_id, memory_id, verdict, at, target_kind, provenance)
-         VALUES (?1, ?2, 'used', ?3, ?4, ?5)",
-        params![query_id, id, at, target_kind, provenance],
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![query_id, id, verdict, at, target_kind, provenance],
     )?;
     Ok(())
 }
 
 /// Distinct `query_id`s carrying at least one `used` verdict of `target_kind`
-/// — the "this query succeeded" set behind `eval::mine`'s reformulation scan.
-pub(crate) fn used_query_ids(conn: &Connection, target_kind: &str) -> Result<Vec<String>> {
+/// and `provenance` — the "this query succeeded" set behind `eval::mine`'s
+/// reformulation scan, which passes `stats::feedback::PROV_MANUAL` so an
+/// HTTP-implicit `used` on a real query id never marks a rewording
+/// successful.
+pub(crate) fn used_query_ids(
+    conn: &Connection,
+    target_kind: &str,
+    provenance: &str,
+) -> Result<Vec<String>> {
     let mut stmt = conn.prepare(
         "SELECT DISTINCT query_id FROM feedback_events
-          WHERE verdict = 'used' AND target_kind = ?1",
+          WHERE verdict = 'used' AND target_kind = ?1 AND provenance = ?2",
     )?;
     let ids = stmt
-        .query_map([target_kind], |r| r.get(0))?
+        .query_map([target_kind, provenance], |r| r.get(0))?
         .collect::<std::result::Result<Vec<_>, _>>()?;
     Ok(ids)
 }
@@ -112,14 +102,18 @@ pub struct GoldenFeedbackRow {
 }
 
 /// Every `(query, repo, kind, memory_id)` row for a `used` verdict of
-/// `target_kind`, excluding `retrieval_log` rows whose `source` is
-/// `exclude_source`, restricted to still-live memories. Ordered
+/// `target_kind` and `provenance`, excluding `retrieval_log` rows whose
+/// `source` is `exclude_source`, restricted to still-live memories. Ordered
 /// `(query, repo, kind, memory_id)`, `DISTINCT` (a query/memory pair can
-/// carry more than one verdict row across retries).
+/// carry more than one verdict row across retries). `eval::golden::harvest`
+/// passes `stats::feedback::PROV_MANUAL`: only a human-stated verdict is
+/// ground truth, so an HTTP-implicit `used` with a real query id — which
+/// the JOIN would otherwise admit — never mints a golden pair.
 pub fn used_events_for_golden(
     conn: &Connection,
     target_kind: &str,
     exclude_source: &str,
+    provenance: &str,
 ) -> Result<Vec<GoldenFeedbackRow>> {
     let mut stmt = conn.prepare(
         "SELECT DISTINCT r.query, r.repo, r.kind, e.memory_id
@@ -128,10 +122,11 @@ pub fn used_events_for_golden(
            JOIN memories m ON m.id = e.memory_id AND m.deleted_at IS NULL
           WHERE e.verdict = 'used' AND e.target_kind = ?1
             AND r.source != ?2
+            AND e.provenance = ?3
           ORDER BY r.query, r.repo, r.kind, e.memory_id",
     )?;
     let rows = stmt
-        .query_map([target_kind, exclude_source], |r| {
+        .query_map([target_kind, exclude_source, provenance], |r| {
             Ok(GoldenFeedbackRow {
                 query: r.get(0)?,
                 repo: r.get(1)?,

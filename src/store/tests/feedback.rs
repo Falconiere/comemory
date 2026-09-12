@@ -13,7 +13,7 @@
 //! the test exercises the same integration path the pre-move code took.
 
 use comemory::config::paths::Paths;
-use comemory::stats::feedback::record_with_provenance;
+use comemory::stats::feedback::{PROV_MANUAL, record_with_provenance};
 use comemory::stats::sqlite::StatsDb;
 use comemory::store::connection;
 use comemory::store::feedback::{event_counts, used_events_for_golden, used_query_ids};
@@ -51,6 +51,7 @@ fn record_with_provenance_seeds_counters_and_tagged_events() {
         "q-20260610-aabbccdd",
         &["aaaaaaa1".into()],
         &["aaaaaaa2".into()],
+        PROV_MANUAL,
     )
     .expect("record");
 
@@ -64,24 +65,34 @@ fn record_with_provenance_seeds_counters_and_tagged_events() {
         .expect("used row");
     assert_eq!((used, irrelevant), (1, 0));
 
-    let target_kind: String = conn
+    let (target_kind, provenance): (String, String) = conn
         .query_row(
-            "SELECT target_kind FROM feedback_events WHERE memory_id = 'aaaaaaa2'",
+            "SELECT target_kind, provenance FROM feedback_events WHERE memory_id = 'aaaaaaa2'",
             [],
-            |r| r.get(0),
+            |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .expect("event row");
     assert_eq!(
         target_kind, "memory",
         "the store helper writes the caller's target_kind verbatim"
     );
+    assert_eq!(
+        provenance, PROV_MANUAL,
+        "the store helper writes the caller's provenance verbatim"
+    );
 }
 
 #[test]
 fn conflict_bumps_used_count_and_refreshes_last_used() {
     let (mut db, _tmp) = open_db();
-    record_with_provenance(&mut db, "q-20260610-aabbccd1", &["aaaaaaa1".into()], &[])
-        .expect("first record");
+    record_with_provenance(
+        &mut db,
+        "q-20260610-aabbccd1",
+        &["aaaaaaa1".into()],
+        &[],
+        PROV_MANUAL,
+    )
+    .expect("first record");
     db.conn()
         .execute(
             "UPDATE feedback SET last_used = '2000-01-01T00:00:00Z' WHERE memory_id = 'aaaaaaa1'",
@@ -89,8 +100,14 @@ fn conflict_bumps_used_count_and_refreshes_last_used() {
         )
         .expect("backdate last_used");
 
-    record_with_provenance(&mut db, "q-20260610-aabbccd2", &["aaaaaaa1".into()], &[])
-        .expect("second record");
+    record_with_provenance(
+        &mut db,
+        "q-20260610-aabbccd2",
+        &["aaaaaaa1".into()],
+        &[],
+        PROV_MANUAL,
+    )
+    .expect("second record");
     let (used, last): (i64, String) = db
         .conn()
         .query_row(
@@ -109,34 +126,43 @@ fn conflict_bumps_used_count_and_refreshes_last_used() {
     );
 }
 
-/// `used_query_ids` returns only `used`-verdict, `target_kind`-matching
-/// query ids, deduplicated — the scan behind `eval::mine`.
+/// `used_query_ids` returns only `used`-verdict, `target_kind`- and
+/// `provenance`-matching query ids, deduplicated — the scan behind
+/// `eval::mine`. `q4`'s only `used` is HTTP-implicit (#130) and must not
+/// mark that query succeeded.
 #[test]
-fn used_query_ids_filters_verdict_and_target_kind() {
+fn used_query_ids_filters_verdict_target_kind_and_provenance() {
     let dir = TempDir::new().expect("tempdir");
     let conn = connection::open(dir.path().join("comemory.db")).expect("open");
     conn.execute_batch(
-        "INSERT INTO feedback_events(query_id, memory_id, verdict, at, target_kind) VALUES
-           ('q1', 'aaaaaaa1', 'used', '2026-07-15T00:00:00Z', 'memory'),
-           ('q1', 'aaaaaaa2', 'used', '2026-07-15T00:00:01Z', 'memory'),
-           ('q2', 'aaaaaaa3', 'irrelevant', '2026-07-15T00:00:00Z', 'memory'),
-           ('q3', '1', 'used', '2026-07-15T00:00:00Z', 'code');",
+        "INSERT INTO feedback_events(query_id, memory_id, verdict, at, target_kind, provenance) VALUES
+           ('q1', 'aaaaaaa1', 'used', '2026-07-15T00:00:00Z', 'memory', 'manual'),
+           ('q1', 'aaaaaaa2', 'used', '2026-07-15T00:00:01Z', 'memory', 'manual'),
+           ('q2', 'aaaaaaa3', 'irrelevant', '2026-07-15T00:00:00Z', 'memory', 'manual'),
+           ('q3', '1', 'used', '2026-07-15T00:00:00Z', 'code', 'manual'),
+           ('q4', 'aaaaaaa4', 'used', '2026-07-15T00:00:00Z', 'memory', 'implicit');",
     )
     .expect("seed feedback_events");
 
-    let ids = used_query_ids(&conn, "memory").expect("query");
+    let ids = used_query_ids(&conn, "memory", PROV_MANUAL).expect("query");
     assert_eq!(
         ids,
         vec!["q1".to_string()],
-        "dedup + verdict + target_kind filter"
+        "dedup + verdict + target_kind + provenance filter"
+    );
+    assert_eq!(
+        used_query_ids(&conn, "memory", "implicit").expect("query"),
+        vec!["q4".to_string()],
+        "the provenance parameter is a filter, not a hardcoded 'manual'"
     );
 }
 
 /// `used_events_for_golden` joins `feedback_events` to its originating
-/// `retrieval_log` row, drops the excluded source, and only counts live
-/// memories.
+/// `retrieval_log` row, drops the excluded source, only counts live
+/// memories, and (#130) only the requested provenance — `aaaaaaa3` is a
+/// live memory marked `used` on the harvestable query, but implicitly.
 #[test]
-fn used_events_for_golden_excludes_source_and_dead_memories() {
+fn used_events_for_golden_excludes_source_dead_memories_and_other_provenance() {
     let dir = TempDir::new().expect("tempdir");
     let conn = connection::open(dir.path().join("comemory.db")).expect("open");
     conn.execute_batch(
@@ -145,22 +171,25 @@ fn used_events_for_golden_excludes_source_and_dead_memories() {
            ('aaaaaaa1','a','note',NULL,'f',3,1,'h1','b','2026-07-15T00:00:00Z',
             '2026-07-15T00:00:00Z','a',0,NULL),
            ('aaaaaaa2','a','note',NULL,'f',3,1,'h2','b','2026-07-15T00:00:00Z',
-            '2026-07-15T00:00:00Z','a',0,'2026-07-16T00:00:00Z');
+            '2026-07-15T00:00:00Z','a',0,'2026-07-16T00:00:00Z'),
+           ('aaaaaaa3','a','note',NULL,'f',3,1,'h3','b','2026-07-15T00:00:00Z',
+            '2026-07-15T00:00:00Z','a',0,NULL);
          INSERT INTO retrieval_log(query_id, query, returned_ids, at, duration_ms, repo, kind, source) VALUES
            ('q1', 'find x', '[]', '2026-07-15T00:00:00Z', 1, 'r', 'note', 'search'),
            ('q2', 'find y', '[]', '2026-07-15T00:00:00Z', 1, 'r', 'note', 'search-code');
-         INSERT INTO feedback_events(query_id, memory_id, verdict, at, target_kind) VALUES
-           ('q1', 'aaaaaaa1', 'used', '2026-07-15T00:00:00Z', 'memory'),
-           ('q1', 'aaaaaaa2', 'used', '2026-07-15T00:00:00Z', 'memory'),
-           ('q2', 'aaaaaaa1', 'used', '2026-07-15T00:00:00Z', 'memory');",
+         INSERT INTO feedback_events(query_id, memory_id, verdict, at, target_kind, provenance) VALUES
+           ('q1', 'aaaaaaa1', 'used', '2026-07-15T00:00:00Z', 'memory', 'manual'),
+           ('q1', 'aaaaaaa2', 'used', '2026-07-15T00:00:00Z', 'memory', 'manual'),
+           ('q1', 'aaaaaaa3', 'used', '2026-07-15T00:00:00Z', 'memory', 'implicit'),
+           ('q2', 'aaaaaaa1', 'used', '2026-07-15T00:00:00Z', 'memory', 'manual');",
     )
     .expect("seed rows");
 
-    let rows = used_events_for_golden(&conn, "memory", "search-code").expect("query");
+    let rows = used_events_for_golden(&conn, "memory", "search-code", PROV_MANUAL).expect("query");
     assert_eq!(
         rows.len(),
         1,
-        "dead memory and excluded source both drop out"
+        "dead memory, excluded source, and implicit provenance all drop out"
     );
     assert_eq!(rows[0].query, "find x");
     assert_eq!(rows[0].repo, Some("r".to_string()));

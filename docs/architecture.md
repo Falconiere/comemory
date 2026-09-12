@@ -523,6 +523,17 @@ pair that co-occurs in a commit:
      `repo IS NULL` rows still credit);
    - otherwise `auto_coactivation` / `auto-coactivation`.
 
+Two further provenance values are written by the feedback routes, never by
+the reward: `manual` (the column default — `comemory feedback`, and
+`POST /api/v1/feedback` / `POST /api/v1/search/{query_id}/feedback` when
+`source` is omitted or `explicit`) and `implicit` (those two routes with
+`source: implicit`, on `used` and `irrelevant` alike, so a model's citation
+or dismissal is stored as what it is). Every writer now names the column
+explicitly through one `store::feedback::insert_event`. The golden-set
+harvest and `mine` read `provenance = 'manual'` only, so no implicit value
+— rewarded or route-written — becomes eval ground truth, while
+`GET /api/v1/learning/summary`'s `implicit_share` counts all of them.
+
 The whole reward runs inside `materialize`'s transaction and is idempotent
 via the `repo_marker.last_mined_commit` cursor (read before, advanced after,
 in the same transaction), so reruns over already-mined commits make every

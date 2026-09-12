@@ -204,6 +204,84 @@ fn v1_post_feedback_records_against_an_unlogged_query_id() {
     assert_eq!(body["data"]["known_query"], serde_json::json!(false));
 }
 
+/// AC-1, AC-2, AC-7 (#130) over a real bound server: one manual and one
+/// implicit verdict on a query the server itself logged land as `manual` /
+/// `implicit`, each echoed in `data.provenance`, and
+/// `GET /learning/summary` reports the split with no change of its own.
+#[test]
+fn v1_post_feedback_stores_source_and_summary_reports_the_implicit_share() {
+    let home = TempDir::new().expect("home");
+    let id = save_id(&home, "sqlite wal checkpoint starvation under load");
+    let (base, token, _guard) = spawn_serve(&home, &[]);
+    let client = reqwest::blocking::Client::new();
+
+    let search = client
+        .get(format!("{base}/api/v1/memories/search"))
+        .query(&[("query", "sqlite wal checkpoint starvation")])
+        .header("X-Comemory-Token", &token)
+        .send()
+        .expect("search");
+    assert_eq!(search.status().as_u16(), 200);
+    let search: serde_json::Value = search.json().expect("json");
+    let query_id = search["data"]["query_id"]
+        .as_str()
+        .expect("a tracked search logs a query id")
+        .to_string();
+
+    for (source, expected) in [(None, "manual"), (Some("implicit"), "implicit")] {
+        let mut req = serde_json::json!({ "query_id": query_id, "used": [id] });
+        if let Some(source) = source {
+            req["source"] = serde_json::json!(source);
+        }
+        let res = client
+            .post(format!("{base}/api/v1/feedback"))
+            .header("X-Comemory-Token", &token)
+            .json(&req)
+            .send()
+            .expect("post feedback");
+        assert_eq!(res.status().as_u16(), 200, "{req}");
+        let body: serde_json::Value = res.json().expect("json");
+        assert_eq!(body["data"]["known_query"], serde_json::json!(true));
+        assert_eq!(body["data"]["used"].as_u64(), Some(1));
+        assert_eq!(body["data"]["provenance"], expected, "{req}");
+    }
+
+    let summary = client
+        .get(format!("{base}/api/v1/learning/summary"))
+        .header("X-Comemory-Token", &token)
+        .send()
+        .expect("summary");
+    assert_eq!(summary.status().as_u16(), 200);
+    let summary: serde_json::Value = summary.json().expect("json");
+    assert_eq!(summary["data"]["feedback_events"].as_u64(), Some(2));
+    assert_eq!(summary["data"]["implicit_share"].as_f64(), Some(0.5));
+
+    // The rows themselves, read from the shared store rather than trusted
+    // from the response.
+    let db = comemory::store::connection::open(
+        comemory::config::Paths::new(home.path().join(".comemory")).db_path(),
+    )
+    .expect("open db");
+    let mut stmt = db
+        .prepare(
+            "SELECT memory_id, verdict, provenance FROM feedback_events \
+              WHERE query_id = ?1 ORDER BY id",
+        )
+        .expect("prepare");
+    let rows: Vec<(String, String, String)> = stmt
+        .query_map([&query_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .expect("query")
+        .collect::<Result<_, _>>()
+        .expect("rows");
+    assert_eq!(
+        rows,
+        vec![
+            (id.clone(), "used".to_string(), "manual".to_string()),
+            (id, "used".to_string(), "implicit".to_string()),
+        ]
+    );
+}
+
 #[test]
 fn v1_read_only_server_405s_every_mutating_memory_route() {
     let home = TempDir::new().expect("home");

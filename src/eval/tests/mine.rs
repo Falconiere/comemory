@@ -44,6 +44,18 @@ fn mark_used(conn: &rusqlite::Connection, qid: &str) {
     .expect("insert feedback event");
 }
 
+/// Insert a `used` feedback event with `provenance='implicit'` for the given
+/// query id — what `POST /api/v1/feedback` writes for `source: "implicit"`
+/// (#130).
+fn mark_used_implicit(conn: &rusqlite::Connection, qid: &str) {
+    conn.execute(
+        "INSERT INTO feedback_events(query_id, memory_id, verdict, at, provenance) \
+         VALUES (?1, 'aaaa0001', 'used', '2026-06-09T10:30:00Z', 'implicit')",
+        [qid],
+    )
+    .expect("insert implicit feedback event");
+}
+
 /// Insert a `used` feedback event tagged `target_kind='code'` for the given
 /// query id (symbol id text-encoded into the memory_id column, as
 /// `stats::code_feedback` writes it).
@@ -113,6 +125,39 @@ fn mine_distills_term_diff_mappings_from_reformulation_pair() {
         mined, expected,
         "exactly the 6 failed x fix mappings, sorted"
     );
+}
+
+/// AC-8 (#130): the same reformulation pair as
+/// `mine_distills_term_diff_mappings_from_reformulation_pair`, but the
+/// follow-up's only `used` verdict is HTTP-implicit — a model's citation,
+/// not a human confirming the rewording worked — so it must not read as a
+/// successful rewording and nothing is mined.
+#[test]
+fn mine_ignores_implicit_used_when_marking_a_query_successful() {
+    let (_d, conn) = open_db();
+    log_query(
+        &conn,
+        "q-20260609-00000001",
+        "embedding size error",
+        "2026-06-09T10:00:00Z",
+    );
+    log_query(
+        &conn,
+        "q-20260609-00000002",
+        "VecDimMismatch error",
+        "2026-06-09T10:05:00Z",
+    );
+    mark_used_implicit(&conn, "q-20260609-00000002");
+
+    assert!(
+        mine(&conn).expect("mine").is_empty(),
+        "an implicit used must not mark q2 successful"
+    );
+
+    // The identical pair with a manual verdict mines as before — the
+    // difference is the provenance alone.
+    mark_used(&conn, "q-20260609-00000002");
+    assert_eq!(mine(&conn).expect("mine").len(), 6);
 }
 
 #[test]

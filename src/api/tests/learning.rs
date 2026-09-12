@@ -173,17 +173,15 @@ fn summary_counts_feedback_and_its_implicit_share_from_real_verdicts() {
 
     let id = save_note(&mut ctx, "sqlite wal checkpoint starvation under load");
     let query_id = search_query_id(&mut ctx, "sqlite wal checkpoint starvation under load");
-    api::feedback::run(
-        &mut ctx,
-        api::feedback::Request {
-            query_id,
-            used: vec![id],
-            irrelevant: Vec::new(),
-            used_code: Vec::new(),
-            irrelevant_code: Vec::new(),
-        },
-    )
-    .expect("record feedback");
+    let verdict = |source: Option<&str>| api::feedback::Request {
+        query_id: query_id.clone(),
+        used: vec![id.clone()],
+        irrelevant: Vec::new(),
+        used_code: Vec::new(),
+        irrelevant_code: Vec::new(),
+        source: source.map(str::to_string),
+    };
+    api::feedback::run(&mut ctx, verdict(None)).expect("record feedback");
 
     let summary = api::learning::summary(&mut ctx).expect("summary");
     assert_eq!(summary.feedback_events, 1);
@@ -193,6 +191,16 @@ fn summary_counts_feedback_and_its_implicit_share_from_real_verdicts() {
         summary.implicit_share, 0.0,
         "a `comemory feedback` verdict is provenance='manual'"
     );
+
+    // AC-7 (#130): one manual + one implicit verdict on the same logged
+    // query — `implicit_share` reads the route-written provenance with no
+    // change to its own definition.
+    let implicit = api::feedback::run(&mut ctx, verdict(Some("implicit"))).expect("implicit");
+    assert_eq!(implicit.provenance, "implicit");
+    let summary = api::learning::summary(&mut ctx).expect("summary");
+    assert_eq!(summary.feedback_events, 2);
+    assert_eq!(summary.used, 2);
+    assert_eq!(summary.implicit_share, 0.5);
 }
 
 #[test]
@@ -215,6 +223,7 @@ fn golden_set_merges_the_real_harvest_with_a_file() {
             irrelevant: Vec::new(),
             used_code: Vec::new(),
             irrelevant_code: Vec::new(),
+            source: None,
         },
     )
     .expect("record feedback");

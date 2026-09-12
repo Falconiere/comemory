@@ -154,6 +154,50 @@ fn harvest_drops_soft_deleted_and_missing_ids() {
     assert_eq!(pairs[0].relevant, vec!["aaaaaaa1"]);
 }
 
+/// AC-8 (#130): an HTTP `source: "implicit"` verdict carries a REAL logged
+/// query id, so the `retrieval_log` JOIN alone would admit it. The harvest
+/// filters on `provenance = 'manual'`: the manual verdict on the same query
+/// mints the pair, the implicit one does not, and a query whose only `used`
+/// is implicit yields no pair at all.
+#[test]
+fn harvest_excludes_implicit_provenance_even_on_a_logged_query() {
+    let (_d, conn) = open_db();
+    insert_memory(&conn, "aaaaaaa1", "postgres pool exhausted fix", None);
+    insert_memory(&conn, "aaaaaaa2", "postgres pool cited by the model", None);
+    insert_memory(&conn, "aaaaaaa3", "retry budget cited by the model", None);
+    mark_used(&conn, "q-20260912-aabbccdd", "postgres pool", "aaaaaaa1");
+    for (query_id, query, memory_id) in [
+        ("q-20260912-aabbccdd", "postgres pool", "aaaaaaa2"),
+        ("q-20260912-aabbccde", "retry budget", "aaaaaaa3"),
+    ] {
+        conn.execute(
+            "INSERT OR IGNORE INTO retrieval_log(query_id, query, returned_ids, at, duration_ms)
+             VALUES (?1, ?2, '[]', '2026-09-12T00:00:00Z', 1)",
+            rusqlite::params![query_id, query],
+        )
+        .expect("insert retrieval_log");
+        conn.execute(
+            "INSERT INTO feedback_events(query_id, memory_id, verdict, at, provenance)
+             VALUES (?1, ?2, 'used', '2026-09-12T00:00:00Z', 'implicit')",
+            rusqlite::params![query_id, memory_id],
+        )
+        .expect("insert implicit feedback_events");
+    }
+
+    let pairs = harvest(&conn).expect("harvest");
+    assert_eq!(
+        pairs.len(),
+        1,
+        "only the manually-confirmed query: {pairs:?}"
+    );
+    assert_eq!(pairs[0].query, "postgres pool");
+    assert_eq!(
+        pairs[0].relevant,
+        vec!["aaaaaaa1"],
+        "the implicit verdict on the same logged query is not ground truth"
+    );
+}
+
 #[test]
 fn harvest_deduplicates_repeated_verdicts() {
     let (_d, conn) = open_db();

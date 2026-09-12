@@ -7,7 +7,16 @@ and updates Beta counters.
 **Runnable tests:** `tests/cli__feedback.rs`, `tests/cli__feedback_2.rs`,
 `tests/cli_scenario_code.rs`, `tests/cli_scenario_learning.rs`
 
-**HTTP:** `POST /api/v1/feedback` — covered by `tests/serve_scenario_code.rs`, `tests/serve_scenario_learning.rs`
+**HTTP:** `POST /api/v1/feedback` — covered by `tests/serve_scenario_code.rs`, `tests/serve_scenario_learning.rs`.
+The body takes one field the CLI has no flag for: `source: explicit|implicit`
+(default `explicit`), stored as every verdict's `feedback_events.provenance`
+(`manual` / `implicit`) and echoed as `data.provenance`; any other value is
+`400 bad_request`. Covered by
+`tests/serve__routes__memories__write.rs::v1_post_feedback_stores_source_and_summary_reports_the_implicit_share`.
+The console's per-hit route `POST /api/v1/search/{query_id}/feedback` accepts
+the same `source` and reaches the same core — covered by
+`src/serve/routes/tests/search.rs::per_hit_source_is_stored_as_provenance` and
+`src/serve/routes/tests/search.rs::an_unknown_source_is_rejected_before_anything_is_written`.
 
 Global flags `--json` and `--data-dir` apply. See [globals.md](globals.md).
 
