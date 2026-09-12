@@ -49,7 +49,7 @@ One line per file, named after its primary item:
 | `mine.rs` | `Request` | Shared middle of `comemory mine` / `POST /api/v1/mine` |
 | `prune.rs` | `Request` | Shared middle of `comemory prune` / `GET\|POST /api/v1/prune` |
 | `rebuild.rs` | `Request` | Shared middle of `comemory rebuild` / `POST /api/v1/rebuild`; the preservation copy lives in `rebuild/` |
-| `save.rs` | `Request` | Shared middle of `comemory save` / `POST /api/v1/memories` |
+| `save.rs` | `Request` | Shared middle of `comemory save` / `POST /api/v1/memories`; owns the replay contract — a same-body re-save lands on the same id (`created: false`, prior `created` carried, metadata last-writer-wins), a same-id different-body save is refused as `IdCollision` before any write |
 | `search.rs` | `Request` | Shared middle of `comemory search` / `GET\|POST /api/v1/memories/search` |
 | `search_code.rs` | `Request` | Shared middle of `comemory search-code` / `GET\|POST /api/v1/code/search` |
 | `repos.rs` | `Request` | Shared middle of `comemory repos` / `GET /api/v1/repos`; the git probes live in `repos/git_state.rs` |

@@ -151,6 +151,27 @@ fn id_collision_rejects_live_hash_mismatch() {
 }
 
 #[test]
+fn id_collision_treats_an_unreadable_local_copy_as_repairable() {
+    // A hand-mangled live file under the id: not a collision the pull must
+    // stop for — the wire record is allowed to repair it (the CLI/HTTP save
+    // is stricter and refuses; see `MemoryStore::prior`).
+    let home = tempfile::tempdir().expect("tempdir");
+    let paths = Paths::new(home.path());
+    paths.ensure_dirs().expect("ensure_dirs");
+    std::fs::write(
+        paths.memories_dir().join("deadbeef-broken.md"),
+        "---\nid: [\n---\nbody\n",
+    )
+    .expect("plant broken file");
+
+    assert!(
+        !sync::import_state::id_collision_for_test(&paths, "deadbeef", &"ff".repeat(32))
+            .expect("an unparsable local copy is not an error for the import"),
+        "unreadable copy must not read as a collision"
+    );
+}
+
+#[test]
 fn secret_detected_blocks_upsert() {
     let home = tempfile::tempdir().expect("tempdir");
     let paths = Paths::new(home.path());

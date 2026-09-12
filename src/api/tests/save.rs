@@ -14,8 +14,10 @@
 
 use comemory::api::{self, Ctx};
 use comemory::config::{Config, Paths};
-use comemory::memory::Kind;
-use comemory::store::connection;
+use comemory::errors::Error;
+use comemory::memory::id::memory_id;
+use comemory::memory::{Frontmatter, Kind};
+use comemory::store::{connection, memory_row};
 
 /// `api::save::run` with no CLI raw-vector input (HTTP-shaped call), since
 /// none of these tests exercise the `--vector`/`--vector-stdin` CLI flags.
@@ -54,6 +56,7 @@ fn run_writes_markdown_and_sqlite_mirror() {
     let resp = run(&mut ctx, request("use pgbouncer in transaction mode")).expect("save run");
 
     assert_eq!(resp.id.len(), 8);
+    assert!(resp.created, "a first save is an insert");
     assert!(resp.duplicate_of.is_none());
     assert!(resp.warnings.is_empty());
     assert!(
@@ -206,4 +209,134 @@ fn run_flags_a_near_duplicate() {
     let near_dup_body = "postgres advisory lock ordering fix for the migration runners";
     let resp = run(&mut ctx, request(near_dup_body)).expect("second save");
     assert!(resp.duplicate_of.is_some(), "expected a near-dup hit");
+}
+
+/// Parse the frontmatter of the memory file at `path`.
+fn frontmatter_at(path: &str) -> Frontmatter {
+    let raw = std::fs::read_to_string(path).expect("read memory file");
+    Frontmatter::split(&raw).expect("split frontmatter").0
+}
+
+/// `.md` files at the top of `<data_dir>/memories/` plus any `.tmp` left
+/// behind, as `(md, tmp)` counts.
+fn memories_dir_counts(paths: &Paths) -> (usize, usize) {
+    let mut md = 0;
+    let mut tmp = 0;
+    for entry in std::fs::read_dir(paths.memories_dir()).expect("read memories dir") {
+        let name = entry.expect("entry").file_name();
+        let name = name.to_string_lossy();
+        if name.ends_with(".md") && !name.starts_with('.') {
+            md += 1;
+        } else if name.ends_with(".tmp") {
+            tmp += 1;
+        }
+    }
+    (md, tmp)
+}
+
+#[test]
+fn resave_preserves_markdown_created_and_reports_created_false() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let paths = Paths::new(home.path());
+    paths.ensure_dirs().expect("ensure_dirs");
+    let mut conn = connection::open(paths.db_path()).expect("open db");
+    let cfg = Config::defaults();
+    let body = "use a fixed advisory lock key derived from the table name";
+
+    let first = {
+        let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+        run(&mut ctx, request(body)).expect("first save")
+    };
+    assert!(first.created, "first save inserts");
+    let fm1 = frontmatter_at(&first.path);
+
+    // Replay the same body with different metadata: same id, same file,
+    // metadata overwritten last-writer-wins, `created` untouched. The
+    // rendered ISO-8601 carries nanosecond digits, so a re-stamp would be
+    // visible under exact equality without any sleep.
+    let second = {
+        let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+        let req = api::save::Request {
+            kind: Kind::Decision,
+            repo: "other".to_string(),
+            tags: vec!["x".to_string(), "y".to_string()],
+            quality: 5,
+            ..request(body)
+        };
+        run(&mut ctx, req).expect("replay")
+    };
+    assert!(!second.created, "a replay is not an insert");
+    assert_eq!(second.id, first.id);
+    assert_eq!(second.path, first.path);
+    let fm2 = frontmatter_at(&second.path);
+    assert_eq!(fm2.created, fm1.created, "replay must not re-stamp created");
+    assert_eq!(fm2.kind, Kind::Decision);
+    assert_eq!(fm2.repo, "other");
+    assert_eq!(fm2.tags, vec!["x".to_string(), "y".to_string()]);
+    assert_eq!(fm2.quality, 5);
+
+    let (count, created_at, kind): (i64, String, String) = conn
+        .query_row(
+            "SELECT count(*), min(created_at), min(kind) FROM memories WHERE id = ?1",
+            [&first.id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .expect("memories row");
+    assert_eq!(count, 1, "one memory, not two");
+    assert_eq!(kind, "decision", "mirror row follows the replay's metadata");
+    assert_eq!(
+        created_at,
+        memory_row::iso_format(fm1.created).expect("iso"),
+        "file and mirror agree on the original creation instant"
+    );
+    assert_eq!(memories_dir_counts(&paths), (1, 0));
+}
+
+#[test]
+fn colliding_body_is_refused_before_any_write() {
+    // Two real bodies whose SHA-256 digests share their first 4 bytes —
+    // the only way two different bodies can claim one 8-hex id.
+    const A: &str = "collision probe 14565";
+    const B: &str = "collision probe 24048";
+    assert_eq!(memory_id(A), "0adf80f7");
+    assert_eq!(memory_id(B), "0adf80f7");
+
+    let home = tempfile::tempdir().expect("tempdir");
+    let paths = Paths::new(home.path());
+    paths.ensure_dirs().expect("ensure_dirs");
+    let mut conn = connection::open(paths.db_path()).expect("open db");
+    let cfg = Config::defaults();
+
+    let first = {
+        let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+        run(&mut ctx, request(A)).expect("first save")
+    };
+    assert!(first.created);
+    let bytes_before = std::fs::read(&first.path).expect("read first file");
+
+    let err = {
+        let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+        run(&mut ctx, request(B)).expect_err("a colliding body must be refused")
+    };
+    assert!(
+        matches!(&err, Error::IdCollision { id } if id == "0adf80f7"),
+        "got {err:?}"
+    );
+    assert!(
+        err.to_string().contains("different body"),
+        "error names the cause: {err}"
+    );
+
+    // Nothing was written: one file, no staged tmp, first file byte-identical,
+    // and the mirror row still holds the FIRST body.
+    assert_eq!(memories_dir_counts(&paths), (1, 0));
+    assert_eq!(std::fs::read(&first.path).expect("re-read"), bytes_before);
+    let stored: String = conn
+        .query_row(
+            "SELECT body FROM memories WHERE id = ?1",
+            ["0adf80f7"],
+            |r| r.get(0),
+        )
+        .expect("row");
+    assert_eq!(stored, A);
 }

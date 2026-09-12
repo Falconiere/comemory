@@ -3,6 +3,17 @@
 //! Rule 1): id derivation, `supersedes` validation, `ref_*` collection,
 //! vector dim guard, near-dup check, atomic markdown write + SQLite mirror.
 //!
+//! **Replay contract.** The id is the 8-hex prefix of
+//! `SHA-256(body.trim_end())`, so a save whose body is byte-identical (after
+//! `trim_end`) to an existing memory — live, trashed, or superseded — lands
+//! on the same id, creates no second memory, overwrites its `kind` / `repo`
+//! / `tags` / `author` / `quality` last-writer-wins, keeps the markdown
+//! `created` (read back through [`MemoryStore::prior`]), and answers
+//! `created: false`. A trashed id is revived by the replay. A same-id
+//! *different*-body save is a 32-bit collision and is refused before any
+//! write ([`Error::IdCollision`]). Content-addressing is the idempotency
+//! key: it is caller-reproducible, which a server-minted key could never be.
+//!
 //! **cwd semantics.** `ref_file`/`ref_symbol` anchoring resolves the git
 //! working-tree root via `git2::Repository::discover(cwd)`. Over HTTP this
 //! is the **server process's** cwd, not the client's — documented API
@@ -18,7 +29,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::api::Ctx;
 use crate::cli::{parse_id_csv, ref_args};
-use crate::memory::{Kind, MemoryStore, References, Relations, SaveParams, id};
+use crate::memory::{Kind, MemoryStore, Prior, References, Relations, SaveParams, id};
 use crate::prelude::*;
 use crate::store::{Connection, embed, memory_row, sync_log, vector};
 
@@ -119,6 +130,12 @@ pub struct Response {
     pub id: String,
     /// On-disk path of the written markdown file.
     pub path: String,
+    /// `true` when no memory with this id existed before — live or trashed
+    /// — so the save inserted; `false` on a replay (same body re-saved,
+    /// metadata overwritten, or a trashed id revived). Lets a caller that
+    /// stores the id as a durable back-link tell "repaired a lost link"
+    /// from "the save had never happened". Always present.
+    pub created: bool,
     /// Present only when a live near-duplicate memory was found (SimHash
     /// Hamming distance within `cfg.rank.near_dup_hamming`). The save
     /// always proceeds; the caller decides whether to re-save with
@@ -190,6 +207,10 @@ pub fn run_with(
         None => crate::cli::embedding_input::read_optional(cli_vector_stdin, cli_vector_csv)?,
     };
     paths.ensure_dirs()?;
+    let store = MemoryStore::new(paths.clone());
+    // The replay contract (module doc): refuse a colliding body, carry the
+    // prior `created`, and remember whether this is an insert.
+    let prior = replay_prior(&store, &new_id, &req.body)?;
     let conn = ctx.conn()?;
     if let Some(v) = vector.as_deref() {
         let dim = vector::dim_memory(conn)?;
@@ -197,8 +218,8 @@ pub fn run_with(
     }
     let duplicate_of = near_duplicate(conn, &req.body, &new_id, cfg.rank.near_dup_hamming);
 
-    let params = build_params(&req, relations, references);
-    let rec = persist(conn, paths, params, vector.as_deref())?;
+    let params = build_params(&req, relations, references, prior.as_ref());
+    let rec = persist(conn, &store, params, vector.as_deref())?;
     // Handed to the caller rather than detached here: a CLI process exits
     // within milliseconds and would kill the push mid-flight, while `serve`
     // is long-lived and can let it run on.
@@ -208,9 +229,26 @@ pub fn run_with(
         auto_push,
         id: rec.frontmatter.id.clone(),
         path: rec.path.to_string_lossy().into_owned(),
+        created: prior.is_none(),
         duplicate_of,
         warnings: ref_warnings,
     })
+}
+
+/// What the store already holds for the body's id — `None` for a fresh
+/// insert — refused as [`Error::IdCollision`] when it is a *different* body
+/// under the same 8-hex id. Runs before the connection is opened, so a
+/// collision writes nothing at all.
+fn replay_prior(store: &MemoryStore, id: &str, body: &str) -> Result<Option<Prior>> {
+    let prior = store.prior(id)?;
+    let content_hash = id::sha256_hex(body.trim_end().as_bytes());
+    if prior
+        .as_ref()
+        .is_some_and(|p| p.collides_with(&content_hash))
+    {
+        return Err(Error::IdCollision { id: id.to_string() });
+    }
+    Ok(prior)
 }
 
 /// Fold `title` into `body` as its first line (see [`Request::title`]). A
@@ -261,8 +299,15 @@ fn collect_refs(req: &Request, carried: References) -> Result<(References, Vec<S
     Ok((references, warnings))
 }
 
-/// Assemble the [`SaveParams`] the store layer expects.
-fn build_params(req: &Request, relations: Relations, references: References) -> SaveParams<'_> {
+/// Assemble the [`SaveParams`] the store layer expects. A replay carries
+/// the prior file's `created` so the markdown never re-stamps it (the
+/// mirror row's `created_at` is preserved by its `ON CONFLICT` already).
+fn build_params<'a>(
+    req: &'a Request,
+    relations: Relations,
+    references: References,
+    prior: Option<&Prior>,
+) -> SaveParams<'a> {
     SaveParams {
         body: &req.body,
         kind: req.kind,
@@ -272,7 +317,7 @@ fn build_params(req: &Request, relations: Relations, references: References) -> 
         quality: req.quality,
         relations,
         references,
-        created: None,
+        created: prior.map(|p| p.created),
     }
 }
 
@@ -281,12 +326,11 @@ fn build_params(req: &Request, relations: Relations, references: References) -> 
 /// names it plus the `rebuild` recovery path.
 fn persist(
     conn: &mut Connection,
-    paths: &crate::config::Paths,
+    store: &MemoryStore,
     params: SaveParams<'_>,
     vector_opt: Option<&[f32]>,
 ) -> Result<crate::memory::MemoryRecord> {
     let tags = params.tags.to_vec();
-    let store = MemoryStore::new(paths.clone());
     let rec = store.save(params)?;
     let md_path = rec.path.clone();
     write_sqlite_mirror(conn, &rec, &tags, vector_opt).map_err(|e| {

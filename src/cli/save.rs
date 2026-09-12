@@ -41,7 +41,16 @@ Examples:
   # Near-duplicate detection: if a similar memory exists, a TTY warning is
   # printed to stderr and --json output includes a `duplicate_of` field with
   # the matching memory id. The save always proceeds — use `--supersedes` to
-  # mark the relationship if the new memory replaces the old one.";
+  # mark the relationship if the new memory replaces the old one.
+
+  # Saves are content-addressed and idempotent: re-saving a byte-identical
+  # body (trailing whitespace ignored) returns the same id and creates no
+  # second memory. --json reports `created: true` on the insert and
+  # `created: false` on the replay; the TTY line reads `updated <id>`.
+  # A different body that happens to hash to an existing id is refused
+  # (exit 65) rather than overwriting it.
+  comemory save \"Use Postgres for analytics\" --json   # {\"id\":\"…\",\"created\":true,…}
+  comemory save \"Use Postgres for analytics\" --json   # {\"id\":\"…\",\"created\":false,…}";
 
 /// Arguments to `comemory save`. The positional `body` is optional — if omitted
 /// or `-`, the body is read from stdin so callers can pipe content.
@@ -152,14 +161,17 @@ fn read_body(a: &Args) -> Result<String> {
 }
 
 /// Emit the save result: a single JSON object under `--json`, else a TTY
-/// summary with the near-dup advisory and each ref warning on stderr.
+/// summary — `saved <id>` for an insert, `updated <id>` for a replay of an
+/// existing body — with the near-dup advisory and each ref warning on
+/// stderr.
 fn emit(json: bool, output: &api::save::Response) -> Result<()> {
     let mut out = std::io::stdout().lock();
     if json {
         writeln!(out, "{}", serde_json::to_string(output)?)?;
         return Ok(());
     }
-    writeln!(out, "saved {}", output.id)?;
+    let verb = if output.created { "saved" } else { "updated" };
+    writeln!(out, "{verb} {}", output.id)?;
     writeln!(out, "  path: {}", output.path)?;
     if let Some(dup) = output.duplicate_of.as_deref() {
         tty::warning(&format!(

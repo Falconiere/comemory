@@ -149,7 +149,7 @@ disagree, trust the running server.
 | ○ `GET /memories/{id}` | *(new)* | single-row lookup via `memory_meta`; includes `author` (same empty-string contract); `404` when absent/soft-deleted |
 | ○ `GET\|POST /memories/search` | `search` | `GET` = no vector; `POST` = vector-capable |
 | ○ `GET\|POST /context` | `context` | same GET/POST split |
-| ● `POST /memories` | `save` | |
+| ● `POST /memories` | `save` | content-addressed, idempotent replay; `created` in the response; `409 id_collision` — see [Save contract](#save-contract) |
 | ● `DELETE /memories/{id}?confirm=true` | `delete` | soft-delete, **confirm** |
 | ● `POST /feedback` | `feedback` | |
 
@@ -279,6 +279,53 @@ lives entirely in `cli::search_only`), stdin-body conveniences like `save -`
 **DELETE routes carry `?confirm=true` as a query parameter** (DELETE bodies
 are unreliable across clients/proxies); POST routes carry `"confirm": true`
 in the JSON body instead.
+
+### Save contract
+
+`POST /memories` (and `comemory save`) is **content-addressed**: the memory
+id is the first 8 hex characters of `SHA-256(body.trim_end())`, computed
+before anything is written. That makes the save idempotent without any
+idempotency key — the body itself is the key, and a caller can reproduce
+it on a retry, which a server-minted token could never guarantee. The
+promise, with the tests that pin it (`tests/cli__save_3.rs`,
+`tests/serve__routes__memories__write.rs`):
+
+- **A replay creates no second memory.** A body byte-identical (after
+  `trim_end`) to an existing memory lands on the same id and the same
+  markdown file. The response reports which happened:
+
+  ```json
+  { "ok": true, "data": { "id": "faa80a60", "path": "/…/faa80a60-….md", "created": true } }
+  { "ok": true, "data": { "id": "faa80a60", "path": "/…/faa80a60-….md", "created": false } }
+  ```
+
+  `created: true` means no memory with that id existed — live or trashed —
+  before this call; `created: false` means the call overwrote one. A
+  downstream that stores the id as a durable back-link can tell "I
+  repaired a lost link" from "the save had never happened". `duplicate_of`
+  is a different signal (a SimHash *near*-duplicate of another memory) and
+  keeps its optional slot.
+- **Identity is the body alone.** `kind`, `repo`, `tags`, `author` and
+  `quality` are overwritten last-writer-wins on a replay; the
+  `updated_at` row column moves, `created_at` and the markdown `created`
+  do not.
+- **A trashed id is revived.** Replaying the body of a soft-deleted
+  memory moves it back out of `.trash/`, clears `deleted_at`, keeps its
+  original `created`, and answers `created: false`. The same holds for a
+  memory a later `PATCH /memories/{id}` superseded: it comes back live,
+  still annotated `superseded_by`.
+- **A collision is refused, never absorbed.** The id is 32 bits, so two
+  different bodies *can* share one (birthday bound: about 1 % odds at
+  ~9 000 memories in a store, 50 % at ~77 000). A save whose id matches an
+  existing memory — live or trashed — whose `content_hash` differs is
+  refused **before any write** with `409 {"code": "id_collision",
+  "details": {"id": "0adf80f7"}}` (CLI: exit 65). Change the body to save
+  it. The id is therefore unique per store by construction; no widening
+  is planned.
+- **Concurrency.** Over HTTP the write permit serializes saves, so the
+  second of two concurrent replays sees the first. Two CLI processes have
+  no shared lock and may both answer `created: true`; the atomic rename
+  and the row upsert still leave exactly one file and one row.
 
 ## Read-only mode
 

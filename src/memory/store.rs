@@ -40,7 +40,11 @@ pub struct SaveParams<'a> {
     /// written into the frontmatter and materialized to `edges` + `code_ref`
     /// rows by `store::memory_row::insert`.
     pub references: References,
-    /// Creation timestamp. When `None`, [`MemoryStore::save`] stamps `now_utc()`.
+    /// Creation timestamp. When `None`, [`MemoryStore::save`] stamps
+    /// `now_utc()`. A re-save of an existing id must pass the prior file's
+    /// value ([`MemoryStore::prior`]) so a replay never moves a memory's
+    /// creation instant forward; `api::save` does, `save` itself never
+    /// looks it up.
     pub created: Option<OffsetDateTime>,
 }
 
@@ -123,6 +127,12 @@ impl MemoryStore {
     /// `{id}-{slug}.md`. On any failure between staging and rename, the tmp
     /// file is removed so no orphaned `.tmp` files are left behind (both
     /// `fs::write` and `fs::rename` failure paths trigger cleanup).
+    ///
+    /// The id is content-derived, so a same-body re-save lands on the same
+    /// filename and overwrites it: this is the idempotent replay
+    /// `api::save` promises. The three replay rules — refuse a same-id
+    /// different-body collision, carry the prior `created`, report
+    /// `created: bool` — are the caller's, over [`MemoryStore::prior`].
     pub fn save(&self, p: SaveParams<'_>) -> Result<MemoryRecord> {
         let body = p.body;
         let id = memory_id(body);
@@ -252,9 +262,9 @@ impl MemoryStore {
     }
 
     /// `.trash/{id}-*.md` when a trashed copy of `id` exists. Shared by the
-    /// restore lookup and the save-time purge so both agree on what a
-    /// trashed copy is.
-    fn trash_entry(&self, id: &str) -> Option<PathBuf> {
+    /// restore lookup, the save-time purge and [`MemoryStore::prior`] (hence
+    /// `pub(crate)`) so all agree on what a trashed copy is.
+    pub(crate) fn trash_entry(&self, id: &str) -> Option<PathBuf> {
         let prefix = format!("{id}-");
         fs::read_dir(self.paths.trash_dir())
             .ok()?
@@ -357,8 +367,10 @@ impl MemoryStore {
 
     /// Look up the on-disk path for `id`. Cache-first: hits return without
     /// touching the filesystem; misses fall back to a `read_dir` scan and
-    /// insert the resolved entry so subsequent lookups are O(1).
-    fn find_by_id(&self, id: &str) -> Result<PathBuf> {
+    /// insert the resolved entry so subsequent lookups are O(1). A missing
+    /// `memories/` directory surfaces as the scan's `Error::Io(NotFound)`.
+    /// `pub(crate)` for [`MemoryStore::prior`]'s live-tree probe.
+    pub(crate) fn find_by_id(&self, id: &str) -> Result<PathBuf> {
         if let Some(p) = self.id_to_path.borrow().get(id) {
             // Cache hit. We don't re-validate that the file still exists on
             // disk — `delete` evicts entries and `load`'s subsequent

@@ -4,9 +4,10 @@ Write a memory as markdown (the source of truth) and upsert the SQLite
 mirror: FTS, optional vector, relation edges, and code refs.
 
 **Runnable tests:** `tests/cli__save.rs`, `tests/cli__save_2.rs`,
-`tests/cli__ref_args.rs`, `tests/cli_scenario_memory_lifecycle.rs`
+`tests/cli__save_3.rs`, `tests/cli__ref_args.rs`,
+`tests/cli_scenario_memory_lifecycle.rs`
 
-**HTTP:** `POST /api/v1/memories` — covered by `tests/serve_scenario_memory_lifecycle.rs`, `tests/serve_scenario_getting_started.rs`, `tests/serve_scenario_vectors.rs`
+**HTTP:** `POST /api/v1/memories` — covered by `tests/serve_scenario_memory_lifecycle.rs`, `tests/serve_scenario_getting_started.rs`, `tests/serve_scenario_vectors.rs`, `tests/serve__routes__memories__write.rs` (replay `created`, `409 id_collision`)
 
 Global flags `--json` and `--data-dir` apply. See [globals.md](globals.md).
 
@@ -137,3 +138,47 @@ echo '{"embedding":[...1024 floats...]}' | comemory save "body" --vector-stdin
 - **Command:** `comemory save body --ref-file untracked.txt`
 - **Expect:** exit 0, unpinned, advisory warning.
 - **Covered by:** `tests/cli__ref_args.rs::untracked_path_is_unpinned_with_warning`
+
+### save-12 Idempotent replay
+
+- **Flags:** `--json` (global), `--kind` `--repo` `--tags` on the replay
+- **Setup:** the same body saved once already
+- **Command:**
+
+```bash
+comemory save "advisory locks serialize migrations in postgres" --json
+comemory save "advisory locks serialize migrations in postgres" --json   # replay
+comemory save "advisory locks serialize migrations in postgres" --json \
+  --kind decision --repo other --tags x,y                                # metadata overwrite
+```
+
+- **Expect:** the same `id` every time; `created: true` on the first save
+  and `false` after; one `.md` file and one `memories` row; the third save
+  overwrites `kind` / `repo` / `tags` last-writer-wins in both the file and
+  the mirror; the frontmatter `created` never moves, and `rebuild` keeps
+  it. TTY prints `saved <id>` then `updated <id>`.
+- **Covered by:** `tests/cli__save_3.rs::identical_resave_reports_created_false_and_keeps_one_memory`,
+  `tests/cli__save_3.rs::replay_then_rebuild_keeps_the_original_created`,
+  `tests/cli__save_3.rs::resave_tty_says_updated`
+
+### save-13 Collision refused
+
+- **Flags:** `--json` (global)
+- **Setup:** `collision probe 14565` already saved (id `0adf80f7`)
+- **Command:** `comemory save "collision probe 24048" --json` — a different
+  body whose SHA-256 shares the same first 4 bytes.
+- **Expect:** exit 65; stderr names `0adf80f7` and `different body`; no
+  second file, no `.tmp`, the first file byte-identical, the mirror row
+  still holding the first body. HTTP: `409 id_collision` with
+  `details.id`.
+- **Covered by:** `tests/cli__save_3.rs::colliding_body_is_refused_before_any_write`
+
+### save-14 Trashed body replayed
+
+- **Flags:** `--json` (global)
+- **Setup:** a memory saved, then `comemory delete <id>`
+- **Command:** `comemory save "<the same body>" --json`
+- **Expect:** the file is back under `memories/` with no `.trash/` copy,
+  `deleted_at` is `NULL`, `created: false`, and the frontmatter `created`
+  equals the pre-delete value.
+- **Covered by:** `tests/cli__save_3.rs::replay_of_a_trashed_body_revives_it_and_reports_created_false`

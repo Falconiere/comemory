@@ -20,6 +20,7 @@ use std::process::{Child, Command, Stdio};
 
 use assert_cmd::Command as AssertCommand;
 use assert_cmd::cargo::cargo_bin;
+use comemory::memory::id::memory_id;
 use tempfile::TempDir;
 
 /// Kills the spawned server on drop so a panicking assertion cannot leak it.
@@ -447,4 +448,88 @@ fn v1_post_memories_over_5mib_is_refused_and_stores_nothing_ac18() {
         Some(0),
         "nothing over the limit was stored: {body}"
     );
+}
+
+/// `POST /api/v1/memories` with `body` as a `note`, returning the HTTP
+/// status and the decoded envelope.
+fn post_memory(
+    client: &reqwest::blocking::Client,
+    base: &str,
+    token: &str,
+    body: &str,
+) -> (u16, serde_json::Value) {
+    let res = client
+        .post(format!("{base}/api/v1/memories"))
+        .header("X-Comemory-Token", token)
+        .json(&serde_json::json!({ "body": body, "kind": "note" }))
+        .send()
+        .expect("post memories");
+    let status = res.status().as_u16();
+    (status, res.json().expect("json envelope"))
+}
+
+#[test]
+fn v1_post_memories_replay_reports_created_false() {
+    let home = TempDir::new().expect("home");
+    let (base, token, _guard) = spawn_serve(&home, &[]);
+    let client = reqwest::blocking::Client::new();
+    let body = "postgres advisory lock ordering fix for the migration runner";
+
+    let (status, first) = post_memory(&client, &base, &token, body);
+    assert_eq!(status, 200, "{first}");
+    assert_eq!(first["data"]["created"], serde_json::json!(true), "{first}");
+    let id = first["data"]["id"].as_str().expect("id").to_string();
+
+    let (status, replay) = post_memory(&client, &base, &token, body);
+    assert_eq!(status, 200, "a replay is not an error: {replay}");
+    assert_eq!(replay["ok"], serde_json::json!(true));
+    assert_eq!(replay["data"]["id"].as_str(), Some(id.as_str()));
+    assert_eq!(replay["data"]["path"], first["data"]["path"]);
+    assert_eq!(
+        replay["data"]["created"],
+        serde_json::json!(false),
+        "the second save of one body is an overwrite: {replay}"
+    );
+
+    let items = cli_list(&home);
+    assert_eq!(
+        items.iter().filter(|it| it["id"] == id).count(),
+        1,
+        "one memory, not two: {items:?}"
+    );
+}
+
+#[test]
+fn v1_post_memories_id_collision_is_409() {
+    // Two real bodies whose SHA-256 digests share their first 4 bytes.
+    const A: &str = "collision probe 14565";
+    const B: &str = "collision probe 24048";
+    assert_eq!(memory_id(A), "0adf80f7");
+    assert_eq!(memory_id(B), "0adf80f7");
+    let home = TempDir::new().expect("home");
+    let (base, token, _guard) = spawn_serve(&home, &[]);
+    let client = reqwest::blocking::Client::new();
+
+    let (status, first) = post_memory(&client, &base, &token, A);
+    assert_eq!(status, 200, "{first}");
+    let path = first["data"]["path"].as_str().expect("path").to_string();
+    let bytes_before = std::fs::read(&path).expect("read first file");
+
+    let (status, refused) = post_memory(&client, &base, &token, B);
+    assert_eq!(status, 409, "{refused}");
+    assert_eq!(refused["ok"], serde_json::json!(false));
+    assert_eq!(refused["error"]["code"], "id_collision", "{refused}");
+    assert_eq!(refused["error"]["details"]["id"], "0adf80f7", "{refused}");
+    assert!(
+        refused["error"]["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("different body")),
+        "{refused}"
+    );
+
+    // Nothing written: the first file is byte-identical and still the only
+    // memory under that id.
+    assert_eq!(std::fs::read(&path).expect("re-read"), bytes_before);
+    let items = cli_list(&home);
+    assert_eq!(items.iter().filter(|it| it["id"] == "0adf80f7").count(), 1);
 }
