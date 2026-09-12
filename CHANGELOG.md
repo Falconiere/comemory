@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-09-12
+
+### Added
+
+- state the content-addressed save contract and report insert vs overwrite ([#132](https://github.com/Falconiere/comemory/pull/132))
+
 ## [0.26.0] - 2026-09-10
 
 ### Added
