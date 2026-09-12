@@ -1,7 +1,6 @@
 //! Declared schema — the document domain: the `source_roots` /
-//! `source_files` registry mirror, the `documents` table, and its
-//! `document_fts` chunk index. `document_chunks` stays hand-SQL until
-//! toolu-orm can express a composite primary key (#65).
+//! `source_files` registry mirror, the `documents` table, its
+//! `document_chunks` passages, and the `document_fts` chunk index.
 
 use toolu_orm::core::column::{Integer, Text};
 use toolu_orm::{fts5_table, table};
@@ -39,7 +38,8 @@ pub struct SourceRoots {
 /// `source_files`: every file the discovery walk saw under a root, with
 /// its classification, fingerprint and indexing status. The live table's
 /// `UNIQUE (source_id, relative_path)` is declared as the equivalent unique
-/// index.
+/// index; as for `code_symbols`, the fidelity test proves the two forms
+/// yield the same unique column-set on the real database.
 #[table(name = "source_files")]
 #[index("idx_source_files_status", status)]
 #[unique_index("uq_source_files_path", source_id, relative_path)]
@@ -113,6 +113,40 @@ pub struct Documents {
     /// RFC3339 last update.
     #[column(not_null)]
     pub updated_at: Text,
+}
+
+/// `document_chunks`: the size-bounded passages a document was split
+/// into, in order.
+#[table(name = "document_chunks")]
+#[primary_key(document_id, ordinal)]
+pub struct DocumentChunks {
+    /// Owning document; rows go with it.
+    #[column(not_null, references = "documents(id)", on_delete = "cascade")]
+    pub document_id: Text,
+    /// 0-based order within the document.
+    #[column(not_null)]
+    pub ordinal: Integer,
+    /// Heading path of the passage.
+    #[column(not_null, default = "''")]
+    pub heading_path: Text,
+    /// Character offset where the passage starts.
+    #[column(not_null)]
+    pub char_start: Integer,
+    /// Character offset where it ends.
+    #[column(not_null)]
+    pub char_end: Integer,
+    /// First line (1-based).
+    #[column(not_null)]
+    pub line_start: Integer,
+    /// Last line (1-based).
+    #[column(not_null)]
+    pub line_end: Integer,
+    /// 64-bit SimHash bit pattern of the passage.
+    #[column(not_null)]
+    pub simhash: Integer,
+    /// The passage itself.
+    #[column(not_null)]
+    pub text: Text,
 }
 
 /// `document_fts`: BM25 index over document chunks.

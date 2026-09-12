@@ -1,7 +1,6 @@
 //! Declared schema — the code index: `code_symbols`, its `code_fts` /
-//! `code_vec` virtual tables, and the per-repo `repo_marker` cursor.
-//! `indexed_files`, `code_feedback` and `code_ref` stay hand-SQL until
-//! toolu-orm can express a composite primary key (#65).
+//! `code_vec` virtual tables, the per-file `indexed_files` cursor and the
+//! per-repo `repo_marker` cursor.
 
 use toolu_orm::core::column::{Integer, Real, Text, Vector};
 use toolu_orm::{fts5_table, table, vec0_table};
@@ -9,7 +8,10 @@ use toolu_orm::{fts5_table, table, vec0_table};
 /// `code_symbols`: one row per extracted symbol (or cAST chunk, via
 /// `parent_id`). The live table declares its uniqueness as a table-level
 /// `UNIQUE (repo, path, symbol, line_start)`; toolu-orm has no table-level
-/// constraint form, so it is declared as the equivalent unique index.
+/// constraint form, so it is declared as the equivalent unique index. The
+/// fidelity test (`schema_fidelity_ordinary_tables_match_the_live_database`)
+/// compares unique column-sets, which both forms produce, so the
+/// equivalence is proven against the real database, not assumed.
 #[table(name = "code_symbols")]
 #[index("idx_code_repo_path", repo, path)]
 #[index("idx_code_blob", blob_oid)]
@@ -88,6 +90,25 @@ pub struct CodeVec {
     /// Unit-length embedding.
     #[column(dim = 768, distance_metric = "cosine")]
     pub embedding: Vector,
+}
+
+/// `indexed_files`: the blob OID each indexed file was last extracted at,
+/// so an incremental `index-code` skips unchanged files.
+#[table(name = "indexed_files")]
+#[primary_key(repo, path)]
+pub struct IndexedFiles {
+    /// Repo label.
+    #[column(not_null)]
+    pub repo: Text,
+    /// Path relative to the repo root.
+    #[column(not_null)]
+    pub path: Text,
+    /// Git blob OID at index time.
+    #[column(not_null)]
+    pub blob_oid: Text,
+    /// RFC3339 index time.
+    #[column(not_null)]
+    pub indexed_at: Text,
 }
 
 /// `repo_marker`: one row per indexed repo — the HEAD the index was built

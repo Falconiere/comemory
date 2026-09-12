@@ -5,12 +5,11 @@
 //! The registry is what `examples/migrations.rs` diffs against
 //! `migrations/<newest>.snapshot.json` to generate the next migration, and
 //! what the colocated fidelity test proves identical to the database the
-//! frozen `migrations/*.sql` chain builds. Tables toolu-orm 0.5.0 cannot
-//! express faithfully (composite primary key / `AUTOINCREMENT` — upstream
-//! #65; `DESC` index column — #70, fixed upstream after 0.5.0) are
-//! deliberately absent: they are hand-SQL tables, listed in
-//! `docs/guides/schema-migrations.md`, and a struct for one of them would
-//! fail the fidelity test on exactly the shape toolu-orm cannot render.
+//! frozen `migrations/*.sql` chain builds. Since toolu-orm 0.6.0 every
+//! table in `comemory.db` is declared here — the six upstream gaps filed
+//! during the adoption (#64–#70) all shipped the same day; only
+//! `sqlite_sequence`, SQLite's own `AUTOINCREMENT` bookkeeping, is not a
+//! declaration.
 //!
 //! Runtime apply is unchanged and lives in `store::migrate` — this module
 //! never touches a connection.
@@ -18,35 +17,51 @@
 use toolu_orm::core::schema::SchemaRegistry;
 use toolu_orm::core::table::TableSchema;
 
-use super::schema_code::{CodeFts, CodeSymbols, CodeVec, RepoMarker};
+use super::schema_code::{CodeFts, CodeSymbols, CodeVec, IndexedFiles, RepoMarker};
 use super::schema_core::{EdgeFts, SchemaMeta};
-use super::schema_documents::{DocumentFts, Documents, SourceFiles, SourceRoots};
-use super::schema_learning::{BanditArms, Feedback, FeedbackEvents, RetrievalLog};
-use super::schema_memory::{Memories, MemoryFts, MemoryVec};
-use super::schema_sync::{SyncBinding, SyncState};
+use super::schema_documents::{DocumentChunks, DocumentFts, Documents, SourceFiles, SourceRoots};
+use super::schema_graph::{CodeRef, Edges};
+use super::schema_history::{EvalRuns, GcRuns, IndexFailures, IndexRuns};
+use super::schema_learning::{
+    BanditArms, CodeFeedback, Feedback, FeedbackEvents, QueryExpansions, RetrievalLog,
+};
+use super::schema_memory::{Memories, MemoryFts, MemoryTags, MemoryVec};
+use super::schema_sync::{SyncBinding, SyncLog, SyncState};
 
 /// Every table `registry()` declares, by name, sorted. The fidelity test
 /// asserts the registry equals this list, so adding a struct without
 /// listing it here (or vice versa) fails loudly.
 pub const DECLARED_TABLES: &[&str] = &[
     "bandit_arms",
+    "code_feedback",
     "code_fts",
+    "code_ref",
     "code_symbols",
     "code_vec",
+    "document_chunks",
     "document_fts",
     "documents",
     "edge_fts",
+    "edges",
+    "eval_runs",
     "feedback",
     "feedback_events",
+    "gc_runs",
+    "index_failures",
+    "index_runs",
+    "indexed_files",
     "memories",
     "memory_fts",
+    "memory_tags",
     "memory_vec",
+    "query_expansions",
     "repo_marker",
     "retrieval_log",
     "schema_meta",
     "source_files",
     "source_roots",
     "sync_binding",
+    "sync_log",
     "sync_state",
 ];
 
@@ -57,23 +72,35 @@ pub const DECLARED_TABLES: &[&str] = &[
 pub fn registry() -> SchemaRegistry {
     SchemaRegistry::from_tables(vec![
         BanditArms::table_def(),
+        CodeFeedback::table_def(),
         CodeFts::table_def(),
+        CodeRef::table_def(),
         CodeSymbols::table_def(),
         CodeVec::table_def(),
+        DocumentChunks::table_def(),
         DocumentFts::table_def(),
         Documents::table_def(),
         EdgeFts::table_def(),
+        Edges::table_def(),
+        EvalRuns::table_def(),
         Feedback::table_def(),
         FeedbackEvents::table_def(),
+        GcRuns::table_def(),
+        IndexFailures::table_def(),
+        IndexRuns::table_def(),
+        IndexedFiles::table_def(),
         Memories::table_def(),
         MemoryFts::table_def(),
+        MemoryTags::table_def(),
         MemoryVec::table_def(),
+        QueryExpansions::table_def(),
         RepoMarker::table_def(),
         RetrievalLog::table_def(),
         SchemaMeta::table_def(),
         SourceFiles::table_def(),
         SourceRoots::table_def(),
         SyncBinding::table_def(),
+        SyncLog::table_def(),
         SyncState::table_def(),
     ])
 }

@@ -1,8 +1,8 @@
 //! Declared schema — the learning loop's `feedback` counters, the
 //! `feedback_events` provenance log, the `retrieval_log` query log, and the
-//! `bandit_arms` posteriors. `query_expansions` (composite primary key, #65)
-//! and the `eval_runs` / `gc_runs` / `index_runs` history tables (`DESC`
-//! index column, #70) stay hand-SQL.
+//! `bandit_arms` posteriors, plus the per-symbol `code_feedback` counters
+//! and the mined `query_expansions`. The run-history tables live in
+//! `schema_history.rs`.
 
 use toolu_orm::core::column::{Integer, Real, Text};
 use toolu_orm::table;
@@ -21,6 +21,48 @@ pub struct Feedback {
     pub irrelevant_count: Integer,
     /// RFC3339 time of the last `used` verdict.
     pub last_used: Text,
+}
+
+/// `code_feedback`: aggregated per-symbol used / irrelevant counters.
+#[table(name = "code_feedback")]
+#[primary_key(repo, path, symbol)]
+pub struct CodeFeedback {
+    /// Repo label.
+    #[column(not_null)]
+    pub repo: Text,
+    /// Path relative to the repo root.
+    #[column(not_null)]
+    pub path: Text,
+    /// Qualified symbol name.
+    #[column(not_null)]
+    pub symbol: Text,
+    /// Times marked used.
+    #[column(not_null, default = "0")]
+    pub used_count: Integer,
+    /// Times marked irrelevant.
+    #[column(not_null, default = "0")]
+    pub irrelevant_count: Integer,
+    /// RFC3339 time of the last `used` verdict.
+    pub last_used: Text,
+}
+
+/// `query_expansions`: mined `term → expansion` pairs behind the tier-4
+/// lexical ladder.
+#[table(name = "query_expansions")]
+#[primary_key(term, expansion)]
+pub struct QueryExpansions {
+    /// Query term.
+    #[column(not_null)]
+    pub term: Text,
+    /// Learned expansion.
+    #[column(not_null)]
+    pub expansion: Text,
+    /// Reformulations supporting it.
+    #[column(not_null, default = "1")]
+    pub support: Integer,
+    /// RFC3339 time of the last `mine --apply`.
+    #[column(not_null)]
+    pub last_mined: Text,
 }
 
 /// `feedback_events`: one row per feedback verdict, memory- or code-tagged,

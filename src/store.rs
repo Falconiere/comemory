@@ -137,8 +137,12 @@ pub mod schema;
 pub mod schema_code;
 /// Declared tables no domain owns: `schema_meta`, `edge_fts`.
 pub mod schema_core;
-/// Declared document tables: `documents`, `document_fts`.
+/// Declared document tables: `source_roots`, `source_files`, `documents`, `document_chunks`, `document_fts`.
 pub mod schema_documents;
+/// Declared graph tables: `edges`, `code_ref`.
+pub mod schema_graph;
+/// Declared run-history tables: `eval_runs`, `gc_runs`, `index_runs`.
+pub mod schema_history;
 /// `just migration-journal` / `just migration-adopt`: journal a hand-written
 /// migration, restate the newest snapshot from the registry.
 pub mod schema_journal;

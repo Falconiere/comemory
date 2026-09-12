@@ -43,12 +43,14 @@ One line per file, named after its primary item:
 | `migrate.rs` | `CURRENT_VERSION` | Versioned, idempotent schema migrations plus `schema_meta`; loops over the `MIGRATIONS` slice declared in `migrate/list.rs` |
 | `schema.rs` | `registry` | The declared schema: `registry()` assembles the `#[table]` / `#[fts5_table]` / `#[vec0_table]` structs from the `schema_*.rs` siblings into a toolu-orm `SchemaRegistry` (what `examples/migrations.rs` diffs into the next `migrations/*.sql`), plus `DECLARED_TABLES`; the colocated fidelity test proves the registry identical to the database the frozen chain builds |
 | `schema_core.rs` | `SchemaMeta` | Declared `schema_meta` + `edge_fts` |
-| `schema_code.rs` | `CodeSymbols` | Declared `code_symbols`, `code_fts`, `code_vec`, `repo_marker` |
-| `schema_documents.rs` | `Documents` | Declared `source_roots`, `source_files`, `documents`, `document_fts` |
+| `schema_code.rs` | `CodeSymbols` | Declared `code_symbols`, `code_fts`, `code_vec`, `indexed_files`, `repo_marker` |
+| `schema_documents.rs` | `Documents` | Declared `source_roots`, `source_files`, `documents`, `document_chunks`, `document_fts` |
+| `schema_graph.rs` | `Edges` | Declared `edges`, `code_ref` (composite primary keys) |
+| `schema_history.rs` | `EvalRuns` | Declared `eval_runs`, `gc_runs`, `index_runs` (newest-first `DESC` indexes) and the `index_failures` log |
 | `schema_journal.rs` | `journal_file` | The `just migration-journal` / `just migration-adopt` operations over `migrations/_journal.json` and the newest snapshot (`adopt`), tested against copies of the shipped files; `examples/migrations.rs` delegates to them |
-| `schema_learning.rs` | `Feedback` | Declared `feedback`, `feedback_events`, `retrieval_log`, `bandit_arms` |
-| `schema_memory.rs` | `Memories` | Declared `memories`, `memory_fts`, `memory_vec` |
-| `schema_sync.rs` | `SyncState` | Declared `sync_state`, `sync_binding` |
+| `schema_learning.rs` | `Feedback` | Declared `feedback`, `feedback_events`, `code_feedback`, `query_expansions`, `retrieval_log`, `bandit_arms` |
+| `schema_memory.rs` | `Memories` | Declared `memories`, `memory_tags`, `memory_fts`, `memory_vec` |
+| `schema_sync.rs` | `SyncState` | Declared `sync_log`, `sync_state`, `sync_binding` |
 | `prune_apply.rs` | `count_orphan_memory_edges` | `api::prune`'s own scan (orphan-edge count, correlated stale-code-file list, one memory's display fields) and apply-time cleanup deletes (orphan edges, stale `code_vec`/`code_fts`/`code_symbols` rows, dangling `references_*`/`co_activated` edges, orphan `code_ref` rows) — everything `prune_signals.rs` does not already own |
 | `prune_signals.rs` | `SignalCandidate` | The low-quality/zero-incoming-edge scan and the superseded-and-forgotten scan behind `prune::low_value`; every comparison operator is load-bearing — `prune --apply` deletes whatever these two queries return |
 | `query_expansions.rs` | `NewExpansion` | Mined `(term → expansion)` row CRUD: `delete_all` + `insert` behind `comemory mine --apply`'s replace-all, plus `matching_terms` — the `IN (...)`-list read behind `api::suggest`'s "expansions" list — and `count`/`page`, the console's `api::learning` summary tile and paged expansions list; the tier-4 lexical-ladder read lives in `fts.rs` |

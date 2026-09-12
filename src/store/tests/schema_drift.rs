@@ -68,8 +68,9 @@ fn schema_drift_registry_matches_shipped_snapshot() {
 
     assert_eq!(
         written, None,
-        "the registry drifted from migrations/0016_v16_sync.snapshot.json — run `just migration \
-         <name>` and wire the result, or `just migration-adopt` if the change is a restatement"
+        "run_generate wrote {written:?}: the registry differs from \
+         migrations/0016_v16_sync.snapshot.json (a struct changed without `just migration <name>`, \
+         or a declared table was not re-adopted with `just migration-adopt`)"
     );
     assert_eq!(entries(&dir), before, "a no-op generate must write nothing");
 }
@@ -94,6 +95,7 @@ fn registry_with_feedback_probe() -> SchemaRegistry {
         on_update: None,
         check: None,
         unindexed: false,
+        autoincrement: false,
     });
     SchemaRegistry::from_tables(tables)
 }
@@ -112,9 +114,10 @@ fn schema_drift_generate_emits_an_applicable_alter_for_a_new_column() {
     assert_eq!(written.as_deref(), Some("0017_drift_probe.sql"));
 
     let sql = fs::read_to_string(dir.join("0017_drift_probe.sql")).unwrap();
-    assert!(
-        sql.contains("ALTER TABLE \"feedback\" ADD COLUMN \"probe\" INTEGER"),
-        "generated SQL:\n{sql}"
+    assert_eq!(
+        sql.trim(),
+        "ALTER TABLE \"feedback\" ADD COLUMN \"probe\" INTEGER;",
+        "the whole generated file is the one ALTER statement"
     );
     assert!(
         dir.join("0017_drift_probe.snapshot.json").exists(),

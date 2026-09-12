@@ -18,16 +18,14 @@ is the source of truth and one SQLite file (`comemory.db`) backs FTS5 +
   `memory_fts` (FTS5), `memory_vec` (`sqlite-vec` `vec0`), `code_symbols`,
   `code_fts`, `code_vec`, `edges`, `schema_meta`, plus stats / repo-marker
   tables. `rusqlite 0.40` with `bundled` + `load_extension` features.
-- **Declared schema (toolu-orm):** every table toolu-orm 0.5 can render
-  faithfully is a `#[table]` / `#[fts5_table]` / `#[vec0_table]` struct in
+- **Declared schema (toolu-orm 0.6):** every table in `comemory.db` is a
+  `#[table]` / `#[fts5_table]` / `#[vec0_table]` struct in
   `src/store/schema_*.rs`, assembled by `store::schema::registry()`.
   `just migration <name>` diffs the structs against
   `migrations/<newest>.snapshot.json` and writes the next
-  `migrations/NNNN_<name>.sql` plus a SHA-256 journal entry; a table the
-  registry cannot yet express (composite primary key / `AUTOINCREMENT` —
-  upstream toolu-orm #65; `DESC` index column — #70, fixed upstream after
-  the pinned 0.5.0) gets a hand-written file and `just migration-journal`.
-  Runtime APPLY is
+  `migrations/NNNN_<name>.sql` plus a SHA-256 journal entry;
+  `just migration-journal` journals a hand-written file when a change is
+  easier to write than to declare (data backfills, rebuilds). Runtime APPLY is
   unchanged: `store::migrate` runs every file with `execute_batch`, keyed by
   `schema_meta` markers; no `_migrations` table. See
   `docs/guides/schema-migrations.md`.
@@ -722,7 +720,9 @@ local rule strictly stronger than the one it replaces.
   `<dir>.rs` beside `<dir>/` layout permanent and machine-checked.
 - **D4 — `src.nested` is extended** beyond the kit's `{"*": ["tests"]}` to
   allow `src/store/tokenizer/`, `src/store/migrate/` (the migration SQL
-  itself moved out of `src/store/` to the crate-root `migrations/` in v0.29),
+  itself moved out of `src/store/` to the crate-root `migrations/` in v0.29,
+  and `src/store/sql/` left both `src.nested.store` and `src.requireReadme`
+  in the same change),
   and a universal `proptest-regressions` allowlist entry
   (proptest creates that directory itself on a failing property test; a gate
   that fails on a tool's own artifact is a gate people route around).

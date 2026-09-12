@@ -174,18 +174,16 @@ schema changes are always a new, appended, numbered file.
 
 ### 3.3 Declared schema and the generate loop (toolu-orm)
 
-Since v0.29 the schema is *declared*, not only migrated: every table
-toolu-orm 0.5 can render faithfully is a `#[table]` / `#[fts5_table]` /
-`#[vec0_table]` struct under `src/store/schema_*.rs`, and
+Since v0.29 the schema is *declared*, not only migrated: every table in
+`comemory.db` is a `#[table]` / `#[fts5_table]` / `#[vec0_table]` struct
+under `src/store/schema_*.rs` (toolu-orm 0.6), and
 `store::schema::registry()` assembles them into a `SchemaRegistry`.
 `examples/migrations.rs` (`just migration <name>`) diffs that registry
 against `migrations/<newest>.snapshot.json` and, when something changed,
 writes `migrations/NNNN_<name>.sql`, its snapshot, and a `_journal.json`
 entry carrying the file's SHA-256 — drizzle's generate step, in Rust. A
-table the registry cannot yet express (composite primary key /
-`AUTOINCREMENT` — toolu-orm #65; `DESC` index column — #70, fixed upstream
-after the pinned 0.5.0) is a
-hand-SQL table: its migration is hand-written and journaled with
+change that is easier to write than to declare — a data backfill, a
+create-copy-drop-rename rebuild — is a hand-written file journaled with
 `just migration-journal` (`store::schema_journal`). Both kinds are then
 wired into `MIGRATIONS` the same way.
 

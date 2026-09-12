@@ -1,8 +1,7 @@
-//! Declared schema — the memory leg: the `memories` mirror table and its
-//! virtual tables `memory_fts` (FTS5, `porter identifier` tokenizer since
-//! v4) and `memory_vec` (`vec0`, 1024 dims, cosine). `memory_tags` stays
-//! hand-SQL until toolu-orm can express a composite primary key (#65) — see
-//! `docs/guides/schema-migrations.md`.
+//! Declared schema — the memory leg: the `memories` mirror table, its
+//! `memory_tags` side table, and the virtual tables `memory_fts` (FTS5,
+//! `porter identifier` tokenizer since v4) and `memory_vec` (`vec0`, 1024
+//! dims, cosine).
 
 use toolu_orm::core::column::{Integer, Real, Text, Vector};
 use toolu_orm::{fts5_table, table, vec0_table};
@@ -66,6 +65,19 @@ pub struct Memories {
     /// Materialized memory-graph PageRank (v11).
     #[column(not_null, default = "0.0")]
     pub rank_score: Real,
+}
+
+/// `memory_tags`: one row per (memory, tag).
+#[table(name = "memory_tags")]
+#[primary_key(memory_id, tag)]
+#[index("idx_memory_tags_tag", tag)]
+pub struct MemoryTags {
+    /// Owning memory; rows go with it.
+    #[column(not_null, references = "memories(id)", on_delete = "cascade")]
+    pub memory_id: Text,
+    /// The tag.
+    #[column(not_null)]
+    pub tag: Text,
 }
 
 /// `memory_fts`: lexical index over memory body + tags. Not contentless —

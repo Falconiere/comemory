@@ -103,14 +103,24 @@ fn index_list(conn: &Connection, table: &str) -> Vec<(String, bool, String)> {
     .unwrap()
 }
 
+/// Key columns of `index` in position order, each suffixed ` desc` when the
+/// index sorts it descending (`pragma_index_xinfo.desc`).
 fn index_columns(conn: &Connection, index: &str) -> Vec<String> {
     let mut stmt = conn
-        .prepare("SELECT name FROM pragma_index_info(?1) ORDER BY seqno")
+        .prepare("SELECT name, \"desc\" FROM pragma_index_xinfo(?1) WHERE key = 1 ORDER BY seqno")
         .unwrap();
-    stmt.query_map([index], |r| r.get(0))
-        .unwrap()
-        .collect::<Result<_, _>>()
-        .unwrap()
+    stmt.query_map([index], |r| {
+        let name: String = r.get(0)?;
+        let desc: i64 = r.get(1)?;
+        Ok(if desc == 1 {
+            format!("{name} desc")
+        } else {
+            name
+        })
+    })
+    .unwrap()
+    .collect::<Result<_, _>>()
+    .unwrap()
 }
 
 /// Every unique column-list on `table`, whatever declared it (primary-key
@@ -322,6 +332,12 @@ fn schema_fidelity_check_and_partial_index_coverage_is_not_vacuous() {
         Some(None),
         "a full index has no predicate"
     );
+    let gc_runs = named_indexes(&live, "gc_runs");
+    assert_eq!(
+        gc_runs.get("idx_gc_runs_at").map(|(cols, _)| cols.clone()),
+        Some(vec!["at desc".to_owned()]),
+        "a DESC index column is read back with its direction"
+    );
 }
 
 #[test]
@@ -354,6 +370,19 @@ fn schema_fidelity_virtual_tables_match_the_live_database() {
             module_args(&rendered, table),
             module_args(&live, table),
             "{table}: module arguments differ (rendered vs live)"
+        );
+        // The module arguments already spell out every column, flag and
+        // dim; `pragma_table_info` is the module's own reading of them, so
+        // compare that too (FTS5 reports untyped columns, vec0 typed ones).
+        let live_columns = table_info(&live, table);
+        assert!(
+            !live_columns.is_empty(),
+            "{table} must expose columns on the live side"
+        );
+        assert_eq!(
+            table_info(&rendered, table),
+            live_columns,
+            "{table}: pragma_table_info differs (rendered vs live)"
         );
     }
 }

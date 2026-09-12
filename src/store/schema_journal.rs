@@ -36,13 +36,15 @@ fn dir_str(dir: &Path) -> Result<&str> {
         .ok_or_else(|| Error::Other(format!("{} is not valid UTF-8", dir.display())))
 }
 
-/// Append `migration` (a file inside or outside `dir` — only its basename
-/// and bytes matter) to `<dir>/_journal.json`, hashing the bytes exactly as
-/// `run_generate` would. A name already journaled is refused with
-/// [`Error::Usage`] and nothing is written: `run_generate` numbers the next
-/// file from `max(NNNN) + 1`, so a duplicate entry would be invisible until
-/// it collided.
+/// Append `migration` — a file that must already sit directly inside `dir`,
+/// since only a file there can be `include_str!`-wired into `MIGRATIONS` —
+/// to `<dir>/_journal.json`, hashing the bytes exactly as `run_generate`
+/// would. A path outside `dir` (after canonicalizing both) and a name
+/// already journaled are each refused with [`Error::Usage`] and nothing is
+/// written: `run_generate` numbers the next file from `max(NNNN) + 1`, so a
+/// duplicate entry would be invisible until it collided.
 pub fn journal_file(dir: &Path, migration: &Path) -> Result<Journaled> {
+    ensure_inside(dir, migration)?;
     let name = migration
         .file_name()
         .and_then(|n| n.to_str())
@@ -62,6 +64,25 @@ pub fn journal_file(dir: &Path, migration: &Path) -> Result<Journaled> {
         .write_to_path(&path)
         .map_err(|e| Error::Other(format!("journal: {e}")))?;
     Ok(Journaled { name, hash })
+}
+
+/// Refuse a `migration` whose canonical parent is not `dir` itself.
+fn ensure_inside(dir: &Path, migration: &Path) -> Result<()> {
+    let canonical_dir = dir
+        .canonicalize()
+        .map_err(|e| Error::Other(format!("{}: {e}", dir.display())))?;
+    let canonical_file = migration
+        .canonicalize()
+        .map_err(|e| Error::Other(format!("{}: {e}", migration.display())))?;
+    if canonical_file.parent() != Some(canonical_dir.as_path()) {
+        return Err(Error::Usage(format!(
+            "{} is not inside {} — a migration is journaled from the migrations directory it \
+             ships in",
+            migration.display(),
+            dir.display()
+        )));
+    }
+    Ok(())
 }
 
 /// Rewrite the newest journal entry's `<base>.snapshot.json` in `dir` from

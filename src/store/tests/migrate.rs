@@ -48,8 +48,11 @@ fn fresh_db_runs_all_migrations_to_current_version() {
     assert_eq!(version, migrate::CURRENT_VERSION);
 
     // toolu-orm supplies the schema declaration and the generate loop only;
-    // its `_migrations` bookkeeping table must never appear — `schema_meta`
-    // markers remain the one applied-set (spec AC-7).
+    // its runner is never called, so its `_migrations` bookkeeping table
+    // (the name `toolu_orm_cli::migrate::migrations_table_ddl` creates) must
+    // never appear — `schema_meta` markers remain the one applied-set. If
+    // upstream ever renames that table this assertion goes vacuous, which is
+    // why it is paired with the runner never being linked in the first place.
     let orm_tables: i64 = conn
         .query_row(
             "SELECT count(*) FROM sqlite_master WHERE name = '_migrations'",

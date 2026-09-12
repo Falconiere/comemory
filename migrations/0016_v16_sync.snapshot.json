@@ -105,6 +105,71 @@
       "check_constraints": {},
       "strict": false
     },
+    "code_feedback": {
+      "column_order": [
+        "repo",
+        "path",
+        "symbol",
+        "used_count",
+        "irrelevant_count",
+        "last_used"
+      ],
+      "columns": {
+        "irrelevant_count": {
+          "name": "irrelevant_count",
+          "column_type": "Integer",
+          "primary_key": false,
+          "not_null": true,
+          "default": "0",
+          "unique": false
+        },
+        "last_used": {
+          "name": "last_used",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": false,
+          "unique": false
+        },
+        "path": {
+          "name": "path",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "repo": {
+          "name": "repo",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "symbol": {
+          "name": "symbol",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "used_count": {
+          "name": "used_count",
+          "column_type": "Integer",
+          "primary_key": false,
+          "not_null": true,
+          "default": "0",
+          "unique": false
+        }
+      },
+      "indexes": {},
+      "foreign_keys": {},
+      "check_constraints": {},
+      "primary_key": [
+        "repo",
+        "path",
+        "symbol"
+      ],
+      "strict": false
+    },
     "code_fts": {
       "column_order": [
         "symbol_id",
@@ -159,6 +224,92 @@
           ]
         }
       }
+    },
+    "code_ref": {
+      "column_order": [
+        "memory_id",
+        "rel",
+        "dst_id",
+        "pinned_blob",
+        "pinned_commit",
+        "branch",
+        "created_at"
+      ],
+      "columns": {
+        "branch": {
+          "name": "branch",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": false,
+          "unique": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "dst_id": {
+          "name": "dst_id",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "memory_id": {
+          "name": "memory_id",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "pinned_blob": {
+          "name": "pinned_blob",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": false,
+          "unique": false
+        },
+        "pinned_commit": {
+          "name": "pinned_commit",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": false,
+          "unique": false
+        },
+        "rel": {
+          "name": "rel",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        }
+      },
+      "indexes": {
+        "idx_code_ref_dst": {
+          "name": "idx_code_ref_dst",
+          "columns": [
+            {
+              "name": "dst_id"
+            },
+            {
+              "name": "rel"
+            }
+          ],
+          "unique": false
+        }
+      },
+      "foreign_keys": {},
+      "check_constraints": {
+        "rel": "CHECK (rel IN ('references_file','references_symbol'))"
+      },
+      "primary_key": [
+        "memory_id",
+        "rel",
+        "dst_id"
+      ],
+      "strict": false
     },
     "code_symbols": {
       "column_order": [
@@ -299,32 +450,48 @@
         "idx_code_blob": {
           "name": "idx_code_blob",
           "columns": [
-            "blob_oid"
+            {
+              "name": "blob_oid"
+            }
           ],
           "unique": false
         },
         "idx_code_repo_path": {
           "name": "idx_code_repo_path",
           "columns": [
-            "repo",
-            "path"
+            {
+              "name": "repo"
+            },
+            {
+              "name": "path"
+            }
           ],
           "unique": false
         },
         "idx_code_simhash": {
           "name": "idx_code_simhash",
           "columns": [
-            "simhash"
+            {
+              "name": "simhash"
+            }
           ],
           "unique": false
         },
         "uq_code_symbols_location": {
           "name": "uq_code_symbols_location",
           "columns": [
-            "repo",
-            "path",
-            "symbol",
-            "line_start"
+            {
+              "name": "repo"
+            },
+            {
+              "name": "path"
+            },
+            {
+              "name": "symbol"
+            },
+            {
+              "name": "line_start"
+            }
           ],
           "unique": true
         }
@@ -372,6 +539,105 @@
           ]
         }
       }
+    },
+    "document_chunks": {
+      "column_order": [
+        "document_id",
+        "ordinal",
+        "heading_path",
+        "char_start",
+        "char_end",
+        "line_start",
+        "line_end",
+        "simhash",
+        "text"
+      ],
+      "columns": {
+        "char_end": {
+          "name": "char_end",
+          "column_type": "Integer",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "char_start": {
+          "name": "char_start",
+          "column_type": "Integer",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "document_id": {
+          "name": "document_id",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "heading_path": {
+          "name": "heading_path",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "default": "''",
+          "unique": false
+        },
+        "line_end": {
+          "name": "line_end",
+          "column_type": "Integer",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "line_start": {
+          "name": "line_start",
+          "column_type": "Integer",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "ordinal": {
+          "name": "ordinal",
+          "column_type": "Integer",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "simhash": {
+          "name": "simhash",
+          "column_type": "Integer",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "text": {
+          "name": "text",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        }
+      },
+      "indexes": {},
+      "foreign_keys": {
+        "fk_document_chunks_document_id": {
+          "name": "fk_document_chunks_document_id",
+          "columns": [
+            "document_id"
+          ],
+          "references_table": "documents",
+          "references_columns": [
+            "id"
+          ],
+          "on_delete": "Cascade"
+        }
+      },
+      "check_constraints": {},
+      "primary_key": [
+        "document_id",
+        "ordinal"
+      ],
+      "strict": false
     },
     "document_fts": {
       "column_order": [
@@ -630,6 +896,218 @@
         }
       }
     },
+    "edges": {
+      "column_order": [
+        "src_kind",
+        "src_id",
+        "dst_kind",
+        "dst_id",
+        "rel",
+        "weight",
+        "created_at"
+      ],
+      "columns": {
+        "created_at": {
+          "name": "created_at",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "dst_id": {
+          "name": "dst_id",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "dst_kind": {
+          "name": "dst_kind",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "rel": {
+          "name": "rel",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "src_id": {
+          "name": "src_id",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "src_kind": {
+          "name": "src_kind",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "weight": {
+          "name": "weight",
+          "column_type": "Integer",
+          "primary_key": false,
+          "not_null": true,
+          "default": "1",
+          "unique": false
+        }
+      },
+      "indexes": {
+        "idx_edges_dst": {
+          "name": "idx_edges_dst",
+          "columns": [
+            {
+              "name": "dst_kind"
+            },
+            {
+              "name": "dst_id"
+            },
+            {
+              "name": "rel"
+            }
+          ],
+          "unique": false
+        },
+        "idx_edges_src": {
+          "name": "idx_edges_src",
+          "columns": [
+            {
+              "name": "src_kind"
+            },
+            {
+              "name": "src_id"
+            },
+            {
+              "name": "rel"
+            }
+          ],
+          "unique": false
+        }
+      },
+      "foreign_keys": {},
+      "check_constraints": {
+        "rel": "CHECK (rel IN ('in_repo','authored_by','tagged','references_file','references_symbol','relates_to','supersedes','conflicts_with','derived_from','co_changed','imports','co_activated','member_of_source','references_document'))"
+      },
+      "primary_key": [
+        "src_kind",
+        "src_id",
+        "dst_kind",
+        "dst_id",
+        "rel"
+      ],
+      "strict": false
+    },
+    "eval_runs": {
+      "column_order": [
+        "id",
+        "kind",
+        "at",
+        "golden_pairs",
+        "k",
+        "recall",
+        "mrr",
+        "knobs",
+        "applied",
+        "discarded"
+      ],
+      "columns": {
+        "applied": {
+          "name": "applied",
+          "column_type": "Integer",
+          "primary_key": false,
+          "not_null": true,
+          "default": "0",
+          "unique": false
+        },
+        "at": {
+          "name": "at",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "discarded": {
+          "name": "discarded",
+          "column_type": "Integer",
+          "primary_key": false,
+          "not_null": true,
+          "default": "0",
+          "unique": false
+        },
+        "golden_pairs": {
+          "name": "golden_pairs",
+          "column_type": "Integer",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "id": {
+          "name": "id",
+          "column_type": "Text",
+          "primary_key": true,
+          "not_null": false,
+          "unique": false
+        },
+        "k": {
+          "name": "k",
+          "column_type": "Integer",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "kind": {
+          "name": "kind",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "knobs": {
+          "name": "knobs",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "mrr": {
+          "name": "mrr",
+          "column_type": "Real",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "recall": {
+          "name": "recall",
+          "column_type": "Real",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        }
+      },
+      "indexes": {
+        "idx_eval_runs_at": {
+          "name": "idx_eval_runs_at",
+          "columns": [
+            {
+              "name": "at",
+              "desc": true
+            }
+          ],
+          "unique": false
+        }
+      },
+      "foreign_keys": {},
+      "check_constraints": {
+        "kind": "CHECK (kind IN ('eval', 'tune', 'bandit'))"
+      },
+      "strict": false
+    },
     "feedback": {
       "column_order": [
         "memory_id",
@@ -741,7 +1219,9 @@
         "idx_feedback_events_query": {
           "name": "idx_feedback_events_query",
           "columns": [
-            "query_id"
+            {
+              "name": "query_id"
+            }
           ],
           "unique": false
         }
@@ -750,6 +1230,268 @@
       "check_constraints": {
         "verdict": "CHECK (verdict IN ('used','irrelevant'))"
       },
+      "strict": false
+    },
+    "gc_runs": {
+      "column_order": [
+        "id",
+        "at",
+        "removed",
+        "log_rows",
+        "event_rows",
+        "bytes_freed"
+      ],
+      "columns": {
+        "at": {
+          "name": "at",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "bytes_freed": {
+          "name": "bytes_freed",
+          "column_type": "Integer",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "event_rows": {
+          "name": "event_rows",
+          "column_type": "Integer",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "id": {
+          "name": "id",
+          "column_type": "Text",
+          "primary_key": true,
+          "not_null": false,
+          "unique": false
+        },
+        "log_rows": {
+          "name": "log_rows",
+          "column_type": "Integer",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "removed": {
+          "name": "removed",
+          "column_type": "Integer",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        }
+      },
+      "indexes": {
+        "idx_gc_runs_at": {
+          "name": "idx_gc_runs_at",
+          "columns": [
+            {
+              "name": "at",
+              "desc": true
+            }
+          ],
+          "unique": false
+        }
+      },
+      "foreign_keys": {},
+      "check_constraints": {},
+      "strict": false
+    },
+    "index_failures": {
+      "column_order": [
+        "id",
+        "ts",
+        "error"
+      ],
+      "columns": {
+        "error": {
+          "name": "error",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "id": {
+          "name": "id",
+          "column_type": "Integer",
+          "primary_key": true,
+          "not_null": false,
+          "unique": false,
+          "autoincrement": true
+        },
+        "ts": {
+          "name": "ts",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        }
+      },
+      "indexes": {},
+      "foreign_keys": {},
+      "check_constraints": {},
+      "strict": false
+    },
+    "index_runs": {
+      "column_order": [
+        "id",
+        "repo",
+        "root_path",
+        "mode",
+        "started_at",
+        "finished_at",
+        "duration_ms",
+        "files_indexed",
+        "symbols",
+        "outcome",
+        "error"
+      ],
+      "columns": {
+        "duration_ms": {
+          "name": "duration_ms",
+          "column_type": "Integer",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "error": {
+          "name": "error",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": false,
+          "unique": false
+        },
+        "files_indexed": {
+          "name": "files_indexed",
+          "column_type": "Integer",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "finished_at": {
+          "name": "finished_at",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "id": {
+          "name": "id",
+          "column_type": "Text",
+          "primary_key": true,
+          "not_null": false,
+          "unique": false
+        },
+        "mode": {
+          "name": "mode",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "outcome": {
+          "name": "outcome",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "repo": {
+          "name": "repo",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "root_path": {
+          "name": "root_path",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": false,
+          "unique": false
+        },
+        "started_at": {
+          "name": "started_at",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "symbols": {
+          "name": "symbols",
+          "column_type": "Integer",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        }
+      },
+      "indexes": {
+        "idx_index_runs_started": {
+          "name": "idx_index_runs_started",
+          "columns": [
+            {
+              "name": "started_at",
+              "desc": true
+            }
+          ],
+          "unique": false
+        }
+      },
+      "foreign_keys": {},
+      "check_constraints": {
+        "mode": "CHECK (mode IN ('full', 'incremental'))",
+        "outcome": "CHECK (outcome IN ('ok', 'error', 'cancelled'))"
+      },
+      "strict": false
+    },
+    "indexed_files": {
+      "column_order": [
+        "repo",
+        "path",
+        "blob_oid",
+        "indexed_at"
+      ],
+      "columns": {
+        "blob_oid": {
+          "name": "blob_oid",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "indexed_at": {
+          "name": "indexed_at",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "path": {
+          "name": "path",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "repo": {
+          "name": "repo",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        }
+      },
+      "indexes": {},
+      "foreign_keys": {},
+      "check_constraints": {},
+      "primary_key": [
+        "repo",
+        "path"
+      ],
       "strict": false
     },
     "memories": {
@@ -902,7 +1644,9 @@
         "idx_memories_kind": {
           "name": "idx_memories_kind",
           "columns": [
-            "kind"
+            {
+              "name": "kind"
+            }
           ],
           "unique": false,
           "where_clause": "deleted_at IS NULL"
@@ -910,7 +1654,9 @@
         "idx_memories_repo": {
           "name": "idx_memories_repo",
           "columns": [
-            "repo"
+            {
+              "name": "repo"
+            }
           ],
           "unique": false,
           "where_clause": "deleted_at IS NULL"
@@ -918,7 +1664,9 @@
         "idx_memories_updated": {
           "name": "idx_memories_updated",
           "columns": [
-            "updated_at"
+            {
+              "name": "updated_at"
+            }
           ],
           "unique": false
         }
@@ -976,6 +1724,58 @@
         }
       }
     },
+    "memory_tags": {
+      "column_order": [
+        "memory_id",
+        "tag"
+      ],
+      "columns": {
+        "memory_id": {
+          "name": "memory_id",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "tag": {
+          "name": "tag",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        }
+      },
+      "indexes": {
+        "idx_memory_tags_tag": {
+          "name": "idx_memory_tags_tag",
+          "columns": [
+            {
+              "name": "tag"
+            }
+          ],
+          "unique": false
+        }
+      },
+      "foreign_keys": {
+        "fk_memory_tags_memory_id": {
+          "name": "fk_memory_tags_memory_id",
+          "columns": [
+            "memory_id"
+          ],
+          "references_table": "memories",
+          "references_columns": [
+            "id"
+          ],
+          "on_delete": "Cascade"
+        }
+      },
+      "check_constraints": {},
+      "primary_key": [
+        "memory_id",
+        "tag"
+      ],
+      "strict": false
+    },
     "memory_vec": {
       "column_order": [
         "memory_id",
@@ -1015,6 +1815,53 @@
           ]
         }
       }
+    },
+    "query_expansions": {
+      "column_order": [
+        "term",
+        "expansion",
+        "support",
+        "last_mined"
+      ],
+      "columns": {
+        "expansion": {
+          "name": "expansion",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "last_mined": {
+          "name": "last_mined",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "support": {
+          "name": "support",
+          "column_type": "Integer",
+          "primary_key": false,
+          "not_null": true,
+          "default": "1",
+          "unique": false
+        },
+        "term": {
+          "name": "term",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        }
+      },
+      "indexes": {},
+      "foreign_keys": {},
+      "check_constraints": {},
+      "primary_key": [
+        "term",
+        "expansion"
+      ],
+      "strict": false
     },
     "repo_marker": {
       "column_order": [
@@ -1274,15 +2121,21 @@
         "idx_source_files_status": {
           "name": "idx_source_files_status",
           "columns": [
-            "status"
+            {
+              "name": "status"
+            }
           ],
           "unique": false
         },
         "uq_source_files_path": {
           "name": "uq_source_files_path",
           "columns": [
-            "source_id",
-            "relative_path"
+            {
+              "name": "source_id"
+            },
+            {
+              "name": "relative_path"
+            }
           ],
           "unique": true
         }
@@ -1416,6 +2269,90 @@
       "indexes": {},
       "foreign_keys": {},
       "check_constraints": {},
+      "strict": false
+    },
+    "sync_log": {
+      "column_order": [
+        "seq",
+        "op",
+        "memory_id",
+        "content_hash",
+        "at",
+        "origin"
+      ],
+      "columns": {
+        "at": {
+          "name": "at",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "content_hash": {
+          "name": "content_hash",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "memory_id": {
+          "name": "memory_id",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "op": {
+          "name": "op",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "origin": {
+          "name": "origin",
+          "column_type": "Text",
+          "primary_key": false,
+          "not_null": true,
+          "unique": false
+        },
+        "seq": {
+          "name": "seq",
+          "column_type": "Integer",
+          "primary_key": true,
+          "not_null": false,
+          "unique": false,
+          "autoincrement": true
+        }
+      },
+      "indexes": {
+        "idx_sync_log_memory": {
+          "name": "idx_sync_log_memory",
+          "columns": [
+            {
+              "name": "memory_id"
+            }
+          ],
+          "unique": false
+        },
+        "idx_sync_log_origin_seq": {
+          "name": "idx_sync_log_origin_seq",
+          "columns": [
+            {
+              "name": "origin"
+            },
+            {
+              "name": "seq"
+            }
+          ],
+          "unique": false
+        }
+      },
+      "foreign_keys": {},
+      "check_constraints": {
+        "op": "CHECK (op IN ('upsert', 'tombstone', 'restore'))",
+        "origin": "CHECK (origin IN ('local', 'sync'))"
+      },
       "strict": false
     },
     "sync_state": {

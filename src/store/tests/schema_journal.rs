@@ -61,10 +61,13 @@ fn journal_file_appends_the_basename_and_the_hash_of_the_bytes() {
 #[test]
 fn journal_file_refuses_a_name_already_journaled_and_writes_nothing() {
     let (_guard, dir) = shipped_copy();
+    // The shipped file, copied beside the journal so the containment rule
+    // passes and the duplicate-name rule is what fires.
+    let copy = dir.join("0016_v16_sync.sql");
+    fs::copy(Path::new(SHIPPED).join("0016_v16_sync.sql"), &copy).unwrap();
     let before = fs::read_to_string(dir.join("_journal.json")).unwrap();
 
-    let err = journal_file(&dir, Path::new(SHIPPED).join("0016_v16_sync.sql").as_path())
-        .expect_err("a journaled name is refused");
+    let err = journal_file(&dir, &copy).expect_err("a journaled name is refused");
 
     assert!(
         matches!(err, Error::Usage(ref m) if m == "0016_v16_sync.sql is already journaled"),
@@ -119,11 +122,39 @@ fn adopt_creates_the_snapshot_for_a_journal_that_has_none_yet() {
     let written = adopt(&dir).expect("adopt without an existing snapshot");
 
     assert_eq!(written, snapshot);
-    let text = fs::read_to_string(&snapshot).unwrap();
-    assert!(text.contains("\"prev_id\": \"00000000-0000-0000-0000-000000000000\""));
+    let json: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&snapshot).unwrap()).unwrap();
+    assert_eq!(
+        json["prev_id"].as_str(),
+        Some("00000000-0000-0000-0000-000000000000"),
+        "a snapshot created from nothing is a root"
+    );
+    let tables = json["tables"].as_object().expect("tables object");
+    assert_eq!(
+        tables.len(),
+        comemory::store::schema::DECLARED_TABLES.len(),
+        "every declared table is in it"
+    );
+    assert!(tables.contains_key("code_symbols"));
+}
+
+#[test]
+fn journal_file_refuses_a_migration_outside_the_migrations_directory() {
+    let (_guard, dir) = shipped_copy();
+    let elsewhere = tempdir().expect("tempdir");
+    let stray = elsewhere.path().join("0017_stray.sql");
+    fs::write(&stray, "SELECT 1;\n").unwrap();
+    let before = fs::read_to_string(dir.join("_journal.json")).unwrap();
+
+    let err = journal_file(&dir, &stray).expect_err("a file outside dir is refused");
+
     assert!(
-        text.contains("\"code_symbols\""),
-        "the registry's tables are in it"
+        matches!(err, Error::Usage(ref m) if m.contains("0017_stray.sql") && m.contains("not inside")),
+        "got {err:?}"
+    );
+    assert_eq!(
+        fs::read_to_string(dir.join("_journal.json")).unwrap(),
+        before
     );
 }
 

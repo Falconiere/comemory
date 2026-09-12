@@ -23,25 +23,27 @@ applies a hand-written one.
 
 ## Which tables are declared
 
-`store::schema::DECLARED_TABLES` is the authoritative list. As of v0.29, pinned to toolu-orm 0.5.0 (#70 below is fixed upstream after that release; bump and declare those tables when it ships):
+All of them. `store::schema::DECLARED_TABLES` is the authoritative list —
+31 tables as of v0.29 on toolu-orm 0.6.0, one struct per table across
+`src/store/schema_{core,memory,code,documents,graph,learning,history,sync}.rs`.
+The six gaps filed against toolu-orm while adopting it
+([#64](https://github.com/Falconiere/toolu-orm/issues/64) … [#70](https://github.com/Falconiere/toolu-orm/issues/70))
+all shipped the same day: composite primary keys and `AUTOINCREMENT`
+(`#[primary_key(a, b)]`, `#[column(primary_key, autoincrement)]`), raw
+`CHECK`s (`#[column(check = "…")]`), partial indexes
+(`#[index(…, where = "…")]`) and `DESC` index columns (`desc(col)`).
 
-| Declared (`registry()`) | Hand-SQL until toolu-orm can express it |
-| --- | --- |
-| `bandit_arms`, `code_symbols`, `code_fts`, `code_vec`, `document_fts`, `documents`, `edge_fts`, `feedback`, `feedback_events`, `memories`, `memory_fts`, `memory_vec`, `repo_marker`, `retrieval_log`, `schema_meta`, `source_files`, `source_roots`, `sync_binding`, `sync_state` | `memory_tags`, `indexed_files`, `code_feedback`, `query_expansions`, `document_chunks`, `edges`, `code_ref` (composite primary key [#65](https://github.com/Falconiere/toolu-orm/issues/65)); `index_failures`, `sync_log` (`AUTOINCREMENT`, #65); `eval_runs`, `index_runs`, `gc_runs` (`DESC` index column [#70](https://github.com/Falconiere/toolu-orm/issues/70), fixed upstream after 0.5.0) |
+Two shapes are stand-ins, proven equivalent by the fidelity test: a
+table-level `UNIQUE (…)` (`code_symbols`, `source_files`) is declared as
+`#[unique_index]`, a named index instead of an autoindex, and the test
+compares unique column-sets so both forms satisfy it. SQLite's own
+`sqlite_sequence` (AUTOINCREMENT bookkeeping) is not a declaration.
 
-`code_symbols` and `source_files` declare their table-level `UNIQUE (…)`
-as `#[unique_index]` — the same uniqueness, a named index instead of an
-autoindex; the fidelity test compares unique column-sets, so both forms
-satisfy it. `memories`, `feedback_events`, `source_roots` and `source_files`
-carry their `CHECK` constraints as `#[column(check = "…")]` and `memories`
-its soft-delete partial indexes as `#[index(…, where = "…")]`; the fidelity
-test compares normalized `CHECK` clauses and index predicates too.
-
-When an upstream fix is released, declaring a hand-SQL table is: write its struct
+Declaring a table that a future migration introduces is: write its struct
 in the matching `schema_*.rs`, add it to `registry()` and `DECLARED_TABLES`,
-run `just migration-adopt` (so the newest snapshot describes it and the next
-generate does not emit a `CREATE`), and let `schema_fidelity_*` prove the
-struct matches the live DDL.
+run `just migration <name>` — or, for a table created by a hand-written
+file, `just migration-adopt` so the snapshot describes it — and let
+`schema_fidelity_*` prove the struct matches the live DDL.
 
 ## Authoring a migration
 
@@ -54,7 +56,8 @@ struct matches the live DDL.
    Read the generated SQL. `no schema change` means the registry already
    matches the snapshot.
 
-   **Hand-SQL table:** write `migrations/0017_add_probe.sql` yourself, then
+   **Hand-written migration** (a backfill, a rebuild, anything easier to write
+   than to declare): write `migrations/0017_add_probe.sql` yourself, then
 
    ```bash
    just migration-journal migrations/0017_add_probe.sql
