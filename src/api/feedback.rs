@@ -95,9 +95,10 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
     let used_code_ids = parse_symbol_id_csv(&req.used_code.join(","), "--used-code")?;
     let irrelevant_code_ids =
         parse_symbol_id_csv(&req.irrelevant_code.join(","), "--irrelevant-code")?;
-    // `source` is validated LAST of the shape checks, so the query-id and
-    // id-list errors keep the precedence (and exit code) they had before
-    // the field existed — and still before the db opens.
+    // `source` is checked after the query-id and id-list shape checks, so
+    // their errors keep the precedence (and exit code) they had before the
+    // field existed, and before the db opens — a bad body creates no
+    // database (AC-6).
     let provenance = req
         .source
         .as_deref()

@@ -13,18 +13,19 @@ use crate::store::Connection;
 use crate::store::feedback as store_feedback;
 use crate::store::memory_row;
 
-/// `provenance` for a verdict a human stated: `comemory feedback`, and the
-/// two HTTP feedback routes when `source` is omitted or `"explicit"`. It is
-/// the column's own `DEFAULT` (`0008_v8_reinforcement.sql`), written
-/// explicitly by every writer since #130 so no INSERT leans on it.
+/// `provenance` of a human-stated verdict; the column's own `DEFAULT`
+/// (`0008_v8_reinforcement.sql`). Written by `comemory feedback`, and by
+/// the two HTTP feedback routes when the wire field `source` is omitted or
+/// `"explicit"`. Every writer names it explicitly since #130, so no INSERT
+/// leans on the default.
 pub(crate) const PROV_MANUAL: &str = "manual";
 
-/// `provenance` for a verdict an HTTP caller labelled `source: "implicit"`
-/// — an observed use (an answer citing the memory) rather than a stated
-/// one. Counted in `learning/summary`'s `implicit_share` like the `auto_*`
-/// tags, and like them never harvested into the golden set nor used to mark
-/// a query succeeded for reformulation mining (`store::feedback`'s readers
-/// take [`PROV_MANUAL`]).
+/// `provenance` of an observed verdict: an HTTP caller's
+/// `source: "implicit"`, such as an answer citing the memory. Counted in
+/// `learning/summary`'s `implicit_share` like the `auto_*` tags, and like
+/// them never harvested into the golden set nor used to mark a query
+/// succeeded for reformulation mining (`store::feedback`'s readers take
+/// [`PROV_MANUAL`]).
 pub(crate) const PROV_IMPLICIT: &str = "implicit";
 
 /// `provenance` tag for implicit `used` feedback minted by the

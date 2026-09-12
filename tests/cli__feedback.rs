@@ -59,7 +59,9 @@ fn feedback_json_emits_counts_and_query_provenance() {
     assert_eq!(v["known_query"].as_bool(), Some(false));
     // AC-9 (#130): the CLI has no `--source`; its ack keeps the
     // pre-extraction key set (no `provenance`) while every row it wrote is
-    // `manual` — a typed verdict is a human one.
+    // `manual` — a typed verdict is a human one. `cli::feedback::emit`
+    // builds this object field by field; it never serializes
+    // `api::feedback::Response` itself, which is where `provenance` lives.
     let mut keys: Vec<&str> = v
         .as_object()
         .expect("object")

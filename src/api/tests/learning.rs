@@ -201,6 +201,14 @@ fn summary_counts_feedback_and_its_implicit_share_from_real_verdicts() {
     assert_eq!(summary.feedback_events, 2);
     assert_eq!(summary.used, 2);
     assert_eq!(summary.implicit_share, 0.5);
+
+    // `source: "explicit"` is the same `manual` the omitted form writes, so
+    // it dilutes the share exactly as a CLI verdict would.
+    let explicit = api::feedback::run(&mut ctx, verdict(Some("explicit"))).expect("explicit");
+    assert_eq!(explicit.provenance, "manual");
+    let summary = api::learning::summary(&mut ctx).expect("summary");
+    assert_eq!(summary.feedback_events, 3);
+    assert_eq!(summary.implicit_share, 1.0 / 3.0);
 }
 
 #[test]
