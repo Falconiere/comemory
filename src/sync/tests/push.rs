@@ -254,13 +254,11 @@ fn repo_not_allowed_does_not_advance_pushed_seq() {
         sent.contains(&id),
         "import body must include the refused id so a retry can re-offer it: {sent}"
     );
-    let after = comemory::store::sync_state::get(
-        &seeded.conn,
-        common::auth_fixture::FIXTURE_WORKSPACE,
-    )
-    .expect("state")
-    .expect("row")
-    .pushed_seq;
+    let after =
+        comemory::store::sync_state::get(&seeded.conn, common::auth_fixture::FIXTURE_WORKSPACE)
+            .expect("state")
+            .expect("row")
+            .pushed_seq;
     assert_eq!(
         after, 0,
         "a hard-reject batch must not advance pushed_seq, got {after}"

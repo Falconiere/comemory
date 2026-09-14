@@ -120,14 +120,21 @@ pub fn run_push(
             .iter()
             .filter(|r| matches!(r.status, ImportStatus::RepoNotAllowed))
             .count();
-        stats.rejected_repo = stats
-            .rejected_repo
-            .saturating_add(u32::try_from(rejected_repo).map_err(|_| {
-                Error::Other(format!("rejected_repo count not representable as u32: {rejected_repo}"))
+        stats.rejected_repo =
+            stats
+                .rejected_repo
+                .saturating_add(u32::try_from(rejected_repo).map_err(|_| {
+                    Error::Other(format!(
+                        "rejected_repo count not representable as u32: {rejected_repo}"
+                    ))
+                })?);
+        stats.pushed = stats
+            .pushed
+            .saturating_add(u32::try_from(accepted).map_err(|_| {
+                Error::Other(format!(
+                    "accepted count not representable as u32: {accepted}"
+                ))
             })?);
-        stats.pushed = stats.pushed.saturating_add(u32::try_from(accepted).map_err(|_| {
-            Error::Other(format!("accepted count not representable as u32: {accepted}"))
-        })?);
         // Withhold `pushed_seq` whenever any result is `repo_not_allowed`
         // (including a hypothetical mixed batch). Other terminal statuses
         // (stale, collision, …) with zero gate rejects still advance so we

@@ -208,7 +208,8 @@ pub fn backfill_missing_local(conn: &Connection) -> Result<u32> {
            )",
         [],
     )?;
-    u32::try_from(n).map_err(|_| Error::Other(format!("backfill row count not representable as u32: {n}")))
+    u32::try_from(n)
+        .map_err(|_| Error::Other(format!("backfill row count not representable as u32: {n}")))
 }
 
 #[cfg(test)]

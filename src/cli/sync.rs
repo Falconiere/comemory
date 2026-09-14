@@ -310,11 +310,7 @@ fn emit_run(
             writeln!(
                 out,
                 "Pushed {} entries (skipped personal={}, skip_repos={}, blocked_secrets={}, rejected_repo={})",
-                p.pushed,
-                p.skipped_personal,
-                p.skipped_config,
-                p.blocked_secrets,
-                p.rejected_repo
+                p.pushed, p.skipped_personal, p.skipped_config, p.blocked_secrets, p.rejected_repo
             )?;
         }
     }
