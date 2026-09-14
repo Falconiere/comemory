@@ -67,7 +67,9 @@ pub(crate) fn org_label(creds: &AuthFile) -> &str {
     "unknown organization"
 }
 
-pub(crate) fn initial_sync_json(synced: &Result<crate::sync::InitialSyncStats>) -> InitialSyncJson {
+pub(crate) fn initial_sync_json(
+    synced: &Result<crate::sync::initial::InitialSyncStats>,
+) -> InitialSyncJson {
     match synced {
         Ok(s) => InitialSyncJson {
             ok: true,
@@ -103,10 +105,11 @@ pub(crate) fn emit_logged_out(json_flag: bool) -> Result<()> {
 }
 
 pub(crate) fn emit_status(json_flag: bool, report: &StatusReport) -> Result<()> {
-    let daemon_st = report
-        .authenticated
-        .then(|| daemon::status().ok())
-        .flatten();
+    let daemon_st = if report.authenticated {
+        daemon::status().ok()
+    } else {
+        None
+    };
     if json_flag {
         json::write(&serde_json::json!({
             "authenticated": report.authenticated,
