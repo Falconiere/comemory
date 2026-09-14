@@ -255,19 +255,31 @@ fn initial_sync_json(synced: &Result<crate::sync::InitialSyncStats>) -> InitialS
 }
 
 fn run_logout(paths: &Paths, json_flag: bool) -> Result<()> {
+    // Stop while credentials still exist so a failing stop does not leave the
+    // daemon racing against a deleted auth.json mid-clear.
     daemon::stop_best_effort();
+    let daemon_stopped = daemon::status().map_or(true, |s| !s.running);
     AuthFile::clear(paths)?;
     if json_flag {
         return json::write(&LogoutJson {
             logged_out: true,
-            daemon_stopped: true,
+            daemon_stopped,
         });
     }
-    writeln!(
-        std::io::stdout().lock(),
-        "{} logged out (local credentials removed; sync daemon stopped)",
-        "\u{2713}".green()
-    )?;
+    let mut out = std::io::stdout().lock();
+    if daemon_stopped {
+        writeln!(
+            out,
+            "{} logged out (local credentials removed; sync daemon stopped)",
+            "\u{2713}".green()
+        )?;
+    } else {
+        writeln!(
+            out,
+            "{} logged out (local credentials removed; sync daemon still running — run `comemory sync daemon stop`)",
+            "\u{2713}".green()
+        )?;
+    }
     Ok(())
 }
 

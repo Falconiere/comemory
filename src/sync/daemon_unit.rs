@@ -66,6 +66,20 @@ fn dirs_home() -> Result<PathBuf> {
         .ok_or_else(|| Error::Config("HOME is unset — cannot place the sync daemon unit".into()))
 }
 
+/// Run a supervisor CLI and warn on spawn/non-zero exit (best-effort path).
+fn run_supervisor(program: &str, args: &[&str]) {
+    match Command::new(program).args(args).status() {
+        Ok(status) if status.success() => {}
+        Ok(status) => tracing::warn!(
+            program,
+            ?args,
+            code = ?status.code(),
+            "supervisor command exited non-zero"
+        ),
+        Err(e) => tracing::warn!(program, ?args, error = %e, "supervisor command failed to spawn"),
+    }
+}
+
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn unsupported() -> Error {
     Error::Usage("comemory sync daemon is not supported on this OS (macOS and Linux only)".into())
@@ -93,12 +107,8 @@ pub fn install(paths: &Paths) -> Result<PathBuf> {
             fs::create_dir_all(parent)?;
         }
         fs::write(&unit, render_systemd_unit(&exe, data_dir))?;
-        let _ = Command::new("systemctl")
-            .args(["--user", "daemon-reload"])
-            .status();
-        let _ = Command::new("systemctl")
-            .args(["--user", "enable", SYSTEMD_UNIT])
-            .status();
+        run_supervisor("systemctl", &["--user", "daemon-reload"]);
+        run_supervisor("systemctl", &["--user", "enable", SYSTEMD_UNIT]);
         Ok(unit)
     }
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
@@ -121,16 +131,12 @@ pub fn uninstall() -> Result<()> {
     }
     #[cfg(target_os = "linux")]
     {
-        let _ = Command::new("systemctl")
-            .args(["--user", "disable", "--now", SYSTEMD_UNIT])
-            .status();
+        run_supervisor("systemctl", &["--user", "disable", "--now", SYSTEMD_UNIT]);
         let unit = systemd_user_unit()?;
         if unit.exists() {
             fs::remove_file(&unit)?;
         }
-        let _ = Command::new("systemctl")
-            .args(["--user", "daemon-reload"])
-            .status();
+        run_supervisor("systemctl", &["--user", "daemon-reload"]);
         Ok(())
     }
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
@@ -156,9 +162,14 @@ pub fn start() -> Result<()> {
             .status()
             .map_err(|e| Error::Other(format!("launchctl bootstrap: {e}")))?;
         if !status.success() {
-            let _ = Command::new("launchctl")
-                .args(["kickstart", "-k", &format!("{domain}/{DAEMON_LABEL}")])
-                .status();
+            tracing::warn!(
+                code = ?status.code(),
+                "launchctl bootstrap failed; trying kickstart of an already-loaded job"
+            );
+            run_supervisor(
+                "launchctl",
+                &["kickstart", "-k", &format!("{domain}/{DAEMON_LABEL}")],
+            );
         }
         Ok(())
     }
@@ -193,15 +204,11 @@ pub fn stop() {
     #[cfg(target_os = "macos")]
     {
         let target = format!("gui/{}/{DAEMON_LABEL}", users_uid());
-        let _ = Command::new("launchctl")
-            .args(["bootout", &target])
-            .status();
+        run_supervisor("launchctl", &["bootout", &target]);
     }
     #[cfg(target_os = "linux")]
     {
-        let _ = Command::new("systemctl")
-            .args(["--user", "stop", SYSTEMD_UNIT])
-            .status();
+        run_supervisor("systemctl", &["--user", "stop", SYSTEMD_UNIT]);
     }
 }
 
