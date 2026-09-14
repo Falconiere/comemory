@@ -20,6 +20,18 @@ fn parse_compact_durations() {
 #[test]
 fn defaults_round_trip() {
     let cfg = SyncConfig::defaults();
-    assert!(cfg.after_save);
+    assert!(!cfg.after_save);
+    assert!(cfg.pull_before_context_after.is_empty());
+    assert_eq!(cfg.daemon_interval, "60s");
+    assert!(cfg.daemon_interval_duration().is_ok());
     assert!(cfg.allowlist_ttl_duration().is_ok());
+}
+
+#[test]
+fn empty_pull_before_context_is_zero_duration() {
+    let cfg = SyncConfig::defaults();
+    assert_eq!(
+        cfg.pull_before_context_after_duration().unwrap(),
+        std::time::Duration::ZERO
+    );
 }

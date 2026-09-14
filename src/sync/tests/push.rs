@@ -43,10 +43,8 @@ fn save_req(body: &str, repo: &str) -> save::Request {
 /// A store with `memories` already saved, plus an org credential pointing at
 /// `api_url`. Returns the paths, connection and config for the push under test.
 fn seeded(api_url: &str, secret: &str, mut cfg: Config, memories: &[(&str, &str)]) -> Seeded {
-    // `save::run` fires `sync::auto::after_save_best_effort` on a detached
-    // thread, which would race this suite's explicit push for the same
-    // sync_log cursor and drain it first. These tests exercise `run_push`
-    // directly; the auto path has its own coverage at the CLI level.
+    // Keep after_save off even if a future default flips; these tests exercise
+    // `run_push` directly.
     cfg.sync.after_save = false;
     let home = tempfile::tempdir().expect("tempdir");
     let paths = Paths::new(home.path());

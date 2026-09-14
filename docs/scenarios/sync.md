@@ -7,8 +7,9 @@ platform's gate; on this side only two filters run — an empty `repo` label
 plus client-side redaction. Distinct from git `memory-stores` sync
 (`[git] auto_sync`).
 
-Most users never run this: `comemory auth login` performs the first sync, and
-`[sync] after_save` keeps up from there.
+Most users never run this: `comemory auth login` performs the first full sync
+and installs the user-level sync daemon, which keeps pull+push going on an
+interval. Manual `comemory sync` still works with the daemon stopped.
 
 **Runnable tests:** `tests/cli__sync.rs`
 
@@ -29,6 +30,9 @@ _None._
 | --- | --- | --- |
 | `--action` | `run` | `run` (push+pull), `push`/`push-only`, `pull`/`pull-only`, `verify`, `status` |
 | `--allow-secret` | unset | Record a secret-scan override for one memory id before push |
+
+Nested: `comemory sync daemon {install,uninstall,start,stop,status,run}` —
+see [cloud-sync.md](../guides/cloud-sync.md).
 
 There is no `--workspace`: the org-scoped key names the only workspace it can
 reach. Switching organization means running `comemory auth login` again.

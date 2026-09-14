@@ -14,7 +14,7 @@
 //! has no handle at all, so the blocking client builds and drops cleanly.
 //!
 //! Only the CLI needs this. `serve` already runs `api::` bodies inside
-//! `spawn_blocking`, and `sync::auto` already detaches its own thread.
+//! `spawn_blocking`. The sync daemon runs outside tokio entirely.
 
 use crate::prelude::*;
 

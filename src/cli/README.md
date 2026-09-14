@@ -23,6 +23,7 @@ One line per file, named after its primary item:
 | --- | --- | --- |
 | `ast.rs` | `Args` | `comemory ast` — run an ast-grep pattern against a source file |
 | `auth.rs` | `Args` | `comemory auth` — nested `login` / `status` / `logout` for the org-scoped key; `login` runs the first sync (CLI-only) |
+| `auth_render.rs` | `LoginJson` | JSON/TTY helpers for `comemory auth` login/status/logout |
 | `bandit.rs` | `Args` | `comemory bandit` — Thompson-sample the `[tune]` grid, confirm with offline eval |
 | `completions.rs` | `Args` | `comemory completions <shell>` — emit a shell completion script |
 | `consolidate.rs` | `Args` | `comemory consolidate` — advisory near-duplicate cluster report |

@@ -330,16 +330,25 @@ impl Config {
 
     /// `[sync]` duration strings and `[embed].model` shape.
     fn check_sync_knobs(&self) -> Result<()> {
-        parse_duration(&self.sync.pull_before_context_after).map_err(|e| {
-            Error::Config(format!(
-                "invalid sync.pull_before_context_after={}: {e}",
-                self.sync.pull_before_context_after
-            ))
-        })?;
+        // Empty / `"0"` means the deprecated pull-before-context hook is off.
+        self.sync
+            .pull_before_context_after_duration()
+            .map_err(|e| {
+                Error::Config(format!(
+                    "invalid sync.pull_before_context_after={}: {e}",
+                    self.sync.pull_before_context_after
+                ))
+            })?;
         parse_duration(&self.sync.verify_every).map_err(|e| {
             Error::Config(format!(
                 "invalid sync.verify_every={}: {e}",
                 self.sync.verify_every
+            ))
+        })?;
+        parse_duration(&self.sync.daemon_interval).map_err(|e| {
+            Error::Config(format!(
+                "invalid sync.daemon_interval={}: {e}",
+                self.sync.daemon_interval
             ))
         })?;
         // `sync.allowlist_ttl` is deprecated and ignored, so its value is no

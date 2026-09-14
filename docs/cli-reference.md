@@ -1226,9 +1226,9 @@ Cloud workspace-key login / status / logout (device authorization)
 Usage: comemory auth [OPTIONS] <COMMAND>
 
 Commands:
-  login   RFC 8628 device login; mint an organization `cmk_` into auth.json and run the first sync
+  login   Device login, mint org key, optional daemon install, full first sync
   status  Report whether local credentials still authenticate
-  logout  Delete local auth.json (no remote revoke)
+  logout  Delete local auth.json and stop the sync daemon (no remote revoke)
   help    Print this message or the help of the given subcommand(s)
 
 Options:
@@ -1237,22 +1237,11 @@ Options:
   -h, --help                 Print help
 
 Examples:
-  # Log in (print code, approve in the console, mint an org cmk_)
-  # and run the first sync before returning
   comemory auth login
-
-  # Point at a non-prod API
+  comemory auth login --no-daemon
   comemory auth login --api-url https://dev-api.comemory.io
-
-  # Check the saved key against the platform
   comemory auth status
-
-  # Forget local credentials (no remote revoke)
   comemory auth logout
-
-  # Machine-readable
-  comemory auth login --json
-  comemory auth status --json
 ```
 
 ---
@@ -1262,9 +1251,16 @@ Examples:
 ```
 Push/pull memories against the platform
 
-Usage: comemory sync [OPTIONS]
+Usage: comemory sync [OPTIONS] [COMMAND]
+
+Commands:
+  daemon  Manage the user-level auto-sync daemon (launchd / systemd --user)
+  help    Print this message or the help of the given subcommand(s)
 
 Options:
+      --json
+          Emit machine-readable JSON instead of a human TTY view
+
       --action <ACTION>
           Operation: `run` (default), `push`, `pull`, `verify`, or `status`
 
@@ -1277,16 +1273,13 @@ Options:
           
           [default: run]
 
-      --json
-          Emit machine-readable JSON instead of a human TTY view
-
-      --allow-secret <ID>
-          Record a secret-scan override for one memory id before push
-
       --data-dir <DATA_DIR>
           Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable
           
           [env: COMEMORY_DATA_DIR=]
+
+      --allow-secret <ID>
+          Record a secret-scan override for one memory id before push
 
   -h, --help
           Print help (see a summary with '-h')
@@ -1297,6 +1290,12 @@ Examples:
   comemory sync --action status --json
   comemory sync --action verify
   comemory sync --allow-secret deadbeef
+  comemory sync daemon status
+  comemory sync daemon install
+  comemory sync daemon start
+  comemory sync daemon stop
+  comemory sync daemon uninstall
+  comemory sync daemon run
 ```
 
 ---

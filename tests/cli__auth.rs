@@ -52,6 +52,7 @@ impl Home {
         let mut cmd = std::process::Command::new(cargo_bin("comemory"));
         cmd.env("COMEMORY_DATA_DIR", self.data_dir())
             .env("HOME", self.root.path())
+            .env("COMEMORY_SYNC_DAEMON", "0")
             .env_remove("COMEMORY_API")
             .env_remove("COMEMORY_API_KEY")
             .args(args);
@@ -371,17 +372,15 @@ fn api_url_flag_and_comemory_api_override_default() {
 }
 
 #[test]
-fn after_save_reaches_the_org_workspace_with_no_further_command() {
-    // The symptom this whole change exists to fix. `[sync] after_save` has
-    // always defaulted to true, but the workspace fell back to the personal
-    // one, which the platform rejects — so a fresh install pushed into a void
-    // until the user found `comemory workspaces` and `comemory link`.
-    //
-    // Nothing between login and save here: no --workspace, no link, no config.
+fn save_does_not_push_without_the_daemon() {
+    // AC-daemon-required: with no daemon cycle, a plain save stays local.
     require_http_tools();
     let srv = SyncPlatformServer::start(SyncPlatformState::default());
     let home = Home::new();
-    home.run_json(None, &["auth", "login", "--api-url", &srv.base]);
+    home.run_json(
+        None,
+        &["auth", "login", "--no-daemon", "--api-url", &srv.base],
+    );
 
     let before = srv
         .requests()
@@ -395,7 +394,7 @@ fn after_save_reaches_the_org_workspace_with_no_further_command() {
             "save",
             "--repo",
             "acme/backend",
-            "a decision worth sharing with the organization",
+            "a decision that must not auto-push without the daemon",
         ],
     );
     assert!(
@@ -404,29 +403,16 @@ fn after_save_reaches_the_org_workspace_with_no_further_command() {
         String::from_utf8_lossy(&out.stderr)
     );
 
-    // The auto-push is best-effort and detached, so poll rather than assume
-    // it already landed.
-    let mut imports = before;
-    for _ in 0..50 {
-        imports = srv
-            .requests()
-            .iter()
-            .filter(|r| r.path == "/v1/sync/import")
-            .count();
-        if imports > before {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(100));
-    }
-    assert!(
-        imports > before,
-        "after_save must reach the organization unaided; requests seen: {:?}",
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let after = srv
+        .requests()
+        .iter()
+        .filter(|r| r.path == "/v1/sync/import")
+        .count();
+    assert_eq!(
+        after,
+        before,
+        "save must not push when the daemon is not running; requests: {:?}",
         srv.requests().iter().map(|r| &r.path).collect::<Vec<_>>()
-    );
-
-    let body = srv.snapshot().last_import_body.expect("an import was sent");
-    assert!(
-        body.contains("acme/backend"),
-        "the org-labelled memory must be in the import body: {body}"
     );
 }
