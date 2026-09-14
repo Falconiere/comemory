@@ -12,6 +12,7 @@ use crate::prelude::*;
 pub mod ast;
 /// `comemory auth`: cloud workspace-key login / status / logout.
 pub mod auth;
+pub mod auth_render;
 /// `comemory bandit`: Thompson sampling over the tune knobs.
 pub mod bandit;
 /// `comemory capture`: session receipt + consent read (CLI-only).

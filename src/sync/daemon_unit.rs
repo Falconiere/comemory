@@ -155,7 +155,7 @@ pub fn start() -> Result<()> {
                 "sync daemon is not installed — run `comemory sync daemon install`".into(),
             ));
         }
-        let uid = users_uid();
+        let uid = users_uid()?;
         let domain = format!("gui/{uid}");
         let status = Command::new("launchctl")
             .args(["bootstrap", &domain, &plist.display().to_string()])
@@ -203,8 +203,13 @@ pub fn start() -> Result<()> {
 pub fn stop() {
     #[cfg(target_os = "macos")]
     {
-        let target = format!("gui/{}/{DAEMON_LABEL}", users_uid());
-        run_supervisor("launchctl", &["bootout", &target]);
+        match users_uid() {
+            Ok(uid) => {
+                let target = format!("gui/{uid}/{DAEMON_LABEL}");
+                run_supervisor("launchctl", &["bootout", &target]);
+            }
+            Err(e) => tracing::warn!(error = %e, "sync daemon stop skipped"),
+        }
     }
     #[cfg(target_os = "linux")]
     {
@@ -262,7 +267,10 @@ fn status_detail(installed: bool, running: bool) -> String {
 
 #[cfg(target_os = "macos")]
 fn launchd_running() -> bool {
-    let target = format!("gui/{}/{DAEMON_LABEL}", users_uid());
+    let Ok(uid) = users_uid() else {
+        return false;
+    };
+    let target = format!("gui/{uid}/{DAEMON_LABEL}");
     let Ok(out) = Command::new("launchctl").args(["print", &target]).output() else {
         return false;
     };
@@ -281,12 +289,27 @@ fn systemd_running() -> bool {
 }
 
 #[cfg(target_os = "macos")]
-fn users_uid() -> u32 {
-    Command::new("id")
+fn users_uid() -> Result<u32> {
+    let out = Command::new("id")
         .arg("-u")
         .output()
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .and_then(|s| s.trim().parse().ok())
-        .unwrap_or(0)
+        .map_err(|e| Error::Other(format!("id -u: {e}")))?;
+    if !out.status.success() {
+        return Err(Error::Other(format!(
+            "id -u exited {}",
+            out.status.code().unwrap_or(-1)
+        )));
+    }
+    let raw =
+        String::from_utf8(out.stdout).map_err(|e| Error::Other(format!("id -u stdout: {e}")))?;
+    let uid: u32 = raw
+        .trim()
+        .parse()
+        .map_err(|_| Error::Other(format!("id -u returned non-numeric uid: {raw:?}")))?;
+    if uid == 0 {
+        return Err(Error::Other(
+            "refusing to manage the sync daemon in the root GUI domain (uid 0)".into(),
+        ));
+    }
+    Ok(uid)
 }

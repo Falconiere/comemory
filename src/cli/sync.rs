@@ -155,7 +155,7 @@ fn run_daemon(paths: &Paths, cmd: DaemonCmd, json_flag: bool) -> Result<()> {
             emit_daemon_status(json_flag, &st)
         }
         DaemonCmd::Run => {
-            // Foreground — never returns Ok on the happy path.
+            // Foreground — never returns Ok on the happy path; Err propagates as the arm value.
             off_runtime(|| daemon::run_foreground(paths))
         }
     }
