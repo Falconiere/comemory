@@ -16,6 +16,12 @@ allow = [
   "Zlib",
   # BSL-1.0: Boost Software License, permissive (xxhash-rust)
   "BSL-1.0",
+  # ISC: rustls-webpki / ring / aws-lc-rs (reqwest `rustls` stack, #138)
+  "ISC",
+  # MIT-0: aws-lc-sys (zero-clause MIT, permissive)
+  "MIT-0",
+  # CDLA-Permissive-2.0: aws-lc-sys data files (permissive)
+  "CDLA-Permissive-2.0",
 ]
 confidence-threshold = 0.93
 

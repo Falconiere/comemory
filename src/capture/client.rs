@@ -114,7 +114,14 @@ fn auth_headers(secret: &str, workspace_id: &str) -> Result<HeaderMap> {
 }
 
 fn map_reqwest(e: reqwest::Error) -> Error {
-    Error::Other(format!("http: {e}"))
+    let mut msg = format!("http: {e}");
+    let mut src = std::error::Error::source(&e);
+    while let Some(cause) = src {
+        msg.push_str(": ");
+        msg.push_str(&cause.to_string());
+        src = std::error::Error::source(cause);
+    }
+    Error::Other(msg)
 }
 
 fn parse_envelope<T: for<'de> Deserialize<'de>>(

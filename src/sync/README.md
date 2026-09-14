@@ -18,7 +18,7 @@ platform's gate, and `skip_repos` is the only filter left on this side.
 | `redact.rs` | `scan` | Curated secret scan (`rules.toml`) before enqueueing a push |
 | `rules.toml` | — | Compile-time rule patterns (AWS, GitHub/GitLab/Slack tokens, JWT, PEM, …) |
 | `auth_file.rs` | `AuthFile` | Load/save `$COMEMORY_DATA_DIR/auth.json` v2 (0600 on unix); reject a v1 file |
-| `client.rs` | platform HTTP | Org-key mint (`/v1/device/…`) and enveloped sync I/O; sends no workspace header |
+| `client.rs` | platform HTTP | Enveloped sync I/O over reqwest+rustls; sends no workspace header |
 | `push.rs` / `pull.rs` | `run_push` / `run_pull` | Push filtered by label + `skip_repos`, and cursored pull |
 | `initial.rs` | `run_initial_sync` | The pull-then-push `comemory auth login` runs before returning |
 | `verify.rs` | `verify_manifests` | Manifest compare + pull/push repair (AC-9) |

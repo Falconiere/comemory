@@ -174,7 +174,14 @@ fn auth_headers(org_key: &str) -> Result<HeaderMap> {
 }
 
 fn map_reqwest(e: reqwest::Error) -> Error {
-    Error::Other(format!("http: {e}"))
+    let mut msg = format!("http: {e}");
+    let mut src = std::error::Error::source(&e);
+    while let Some(cause) = src {
+        msg.push_str(": ");
+        msg.push_str(&cause.to_string());
+        src = std::error::Error::source(cause);
+    }
+    Error::Other(msg)
 }
 
 fn parse_json<T: for<'de> Deserialize<'de>>(
@@ -217,3 +224,7 @@ fn parse_envelope<T: for<'de> Deserialize<'de>>(
 #[cfg(test)]
 #[path = "tests/client.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests/client_https.rs"]
+mod tests_https;

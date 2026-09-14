@@ -5,9 +5,9 @@ resolution, RFC 8628 device code / token poll, `POST /v1/device/mint-org-key`,
 and the key probe behind `comemory auth status`.
 `src/cloud.rs` beside this folder re-exports the public surface and the
 `comemory-cli` client id. HTTP shells out through
-[`crate::fetch`](../fetch.rs) (curl/wget); no TLS stack in the crate, which
-is why these calls do not go through `sync::client` (reqwest, built without
-TLS features and therefore loopback-only).
+[`crate::fetch`](../fetch.rs) (curl/wget) so device-auth needs no in-process
+TLS. Sync and capture instead use reqwest with the `rustls` feature so they
+can reach https platform origins (`api.comemory.io`).
 
 **What does NOT belong here:** the `auth.json` schema — that is
 [`sync::auth_file::AuthFile`](../sync/auth_file.rs), the one file both
