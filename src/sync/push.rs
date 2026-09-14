@@ -123,19 +123,17 @@ pub fn run_push(
         stats.rejected_repo = stats
             .rejected_repo
             .saturating_add(u32::try_from(rejected_repo).map_err(|_| {
-                Error::Other(format!("rejected_repo count exceeds u32::MAX: {rejected_repo}"))
+                Error::Other(format!("rejected_repo count not representable as u32: {rejected_repo}"))
             })?);
         stats.pushed = stats.pushed.saturating_add(u32::try_from(accepted).map_err(|_| {
-            Error::Other(format!("accepted count exceeds u32::MAX: {accepted}"))
+            Error::Other(format!("accepted count not representable as u32: {accepted}"))
         })?);
-        // Leave `pushed_seq` alone only when the platform returned a pure
-        // allowlist-gate refusal batch. Other terminal statuses (stale,
-        // collision, …) still advance so we do not retry forever. The Worker
-        // gate is all-or-nothing for `repo_not_allowed`, so a mixed
-        // accepted+gate-reject batch does not occur on the wire today.
-        let entirely_gate_rejected =
-            accepted == 0 && rejected_repo > 0 && rejected_repo == resp.results.len();
-        if !entirely_gate_rejected {
+        // Withhold `pushed_seq` whenever any result is `repo_not_allowed`
+        // (including a hypothetical mixed batch). Other terminal statuses
+        // (stale, collision, …) with zero gate rejects still advance so we
+        // do not retry forever. Retries of already-stored ids come back
+        // `exists`.
+        if rejected_repo == 0 {
             stats.last_pushed_seq = batch_high_seq;
             sync_state::set_pushed(conn, workspace_id, batch_high_seq, &now_iso()?)?;
         }

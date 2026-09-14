@@ -246,6 +246,14 @@ fn repo_not_allowed_does_not_advance_pushed_seq() {
     assert_eq!(stats.skipped_config, 0);
     assert_eq!(stats.blocked_secrets, 0);
     assert_eq!(stats.last_pushed_seq, 0);
+    let sent = server
+        .snapshot()
+        .last_import_body
+        .expect("the gate-rejected memory must still have been offered");
+    assert!(
+        sent.contains(&id),
+        "import body must include the refused id so a retry can re-offer it: {sent}"
+    );
     let after = comemory::store::sync_state::get(
         &seeded.conn,
         common::auth_fixture::FIXTURE_WORKSPACE,
