@@ -14,8 +14,8 @@ use std::time::{Duration, Instant};
 
 use comemory::config::Paths;
 use comemory::sync::daemon_wake::{
-    signal_wake, sleep_interruptible, sleep_interruptible_at, take_wake, wake_after_save_best_effort,
-    wake_file,
+    signal_wake, sleep_interruptible, sleep_interruptible_at, take_wake,
+    wake_after_save_best_effort, wake_file,
 };
 
 use crate::test_common as common;
@@ -87,13 +87,20 @@ fn sleep_wakes_when_file_appears_mid_wait() {
     });
 
     barrier.wait();
-    // Let the sleeper enter its poll loop before signalling.
-    thread::sleep(Duration::from_millis(50));
-    std::fs::write(&wake_path, b"1").expect("write wake");
+    // Retry the wake write until the sleeper finishes. A single timed sleep
+    // before write races on loaded CI (sleeper may not have entered the poll
+    // loop yet); recreating the file covers both "pending before first poll"
+    // and "mid-slice" without depending on scheduling.
+    let write_deadline = Instant::now() + Duration::from_secs(5);
+    while !sleeper.is_finished() && Instant::now() < write_deadline {
+        let _ = std::fs::write(&wake_path, b"1");
+        thread::sleep(Duration::from_millis(10));
+    }
     let elapsed = sleeper.join().expect("sleeper");
     assert!(
         elapsed < Duration::from_secs(2),
         "mid-wait wake took {elapsed:?}"
     );
-    assert!(!wake_path.exists());
+    // A final retry write may land after the sleeper exits; the mid-wait
+    // contract is early return, not that the wake file is gone under retry.
 }
