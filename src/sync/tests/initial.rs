@@ -77,7 +77,8 @@ fn initial_sync_pulls_then_pushes_and_records_the_cursor() {
     let paths = Paths::new(home.path());
     paths.ensure_dirs().unwrap();
     let mut cfg = Config::defaults();
-    // Isolate the explicit run from `save`'s detached auto-push.
+    // Defaults already leave after_save off; keep the explicit assignment so
+    // the test stays clear that save must not fire a detached push.
     cfg.sync.after_save = false;
     let mut conn = connection::open(paths.db_path()).unwrap();
 
@@ -171,6 +172,83 @@ fn initial_sync_on_an_empty_pair_succeeds_with_zero_counts() {
     let stats = run_initial_sync(&paths, &cfg, &auth).expect("empty first sync still succeeds");
     assert_eq!(stats.pulled, 0);
     assert_eq!(stats.pushed, 0);
+    assert_eq!(stats.skipped_personal, 0);
+}
+
+#[test]
+fn initial_sync_drains_multiple_remote_pages() {
+    // Fixture pages by since/limit; pull's MAX_BATCH is 500, so 501 remotes
+    // force more than one HTTP page inside the exhaustive initial loop.
+    let mut changes = Vec::new();
+    for seq in 1..=501i64 {
+        let body = format!("org memory page drain entry {seq}");
+        changes.push(remote_entry(seq, &body));
+    }
+    let platform = SyncPlatformState {
+        head_seq: 501,
+        changes: serde_json::Value::Array(changes),
+        consume_changes: false,
+        ..Default::default()
+    };
+    let server = SyncPlatformServer::start(platform);
+    let secret = server.snapshot().secret;
+
+    let home = tempfile::tempdir().unwrap();
+    let paths = Paths::new(home.path());
+    paths.ensure_dirs().unwrap();
+    let cfg = Config::defaults();
+    let auth = common::auth_fixture::seed_org_auth(
+        &paths,
+        &server.base,
+        &secret,
+        common::auth_fixture::FIXTURE_WORKSPACE,
+    );
+
+    let stats = run_initial_sync(&paths, &cfg, &auth).expect("exhaustive pull");
+    assert_eq!(stats.pulled, 501, "every remote page must be drained");
+    let changes_hits = server
+        .paths()
+        .into_iter()
+        .filter(|p| p == "/v1/sync/changes")
+        .count();
+    assert!(
+        changes_hits >= 2,
+        "expected multiple changes pages, saw {changes_hits}"
+    );
+}
+
+#[test]
+fn initial_sync_counts_skipped_personal() {
+    let server = SyncPlatformServer::start(SyncPlatformState::default());
+    let secret = server.snapshot().secret;
+
+    let home = tempfile::tempdir().unwrap();
+    let paths = Paths::new(home.path());
+    paths.ensure_dirs().unwrap();
+    let cfg = Config::defaults();
+    let mut conn = connection::open(paths.db_path()).unwrap();
+    {
+        let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+        // Empty repo label → stays local.
+        save::run(
+            &mut ctx,
+            save_req("a personal note that must not leave the machine", ""),
+            false,
+            None,
+        )
+        .unwrap();
+    }
+    drop(conn);
+
+    let auth = common::auth_fixture::seed_org_auth(
+        &paths,
+        &server.base,
+        &secret,
+        common::auth_fixture::FIXTURE_WORKSPACE,
+    );
+    let stats = run_initial_sync(&paths, &cfg, &auth).expect("initial sync");
+    assert_eq!(stats.pushed, 0);
+    assert_eq!(stats.skipped_personal, 1);
 }
 
 #[test]

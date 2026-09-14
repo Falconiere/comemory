@@ -20,18 +20,20 @@ comemory auth login --api-url https://api.comemory.io
 ```
 
 Login mints a key scoped to the organization you approved, writes it to
-`$COMEMORY_DATA_DIR/auth.json` (mode `0600`), and **runs the first sync before
-it returns** — pulling what the organization already holds, then pushing what
-this machine has:
+`$COMEMORY_DATA_DIR/auth.json` (mode `0600`), **installs and starts the
+user-level sync daemon** (unless `--no-daemon`), and **runs a full first sync
+before it returns** — pulling every remote page, then pushing every local page:
 
 ```text
 ✓ logged in to Acme, Inc. (cmk_abcd)
   api https://api.comemory.io · credentials ~/.comemory/auth.json
-  synced: pulled 12 · pushed 3
+  daemon: running
+  synced: pulled 12 · pushed 3 · skipped personal=1 · skip_repos=0
 ```
 
-There is no second step. No workspace id to look up, no per-repo linking. From
-here `[sync] after_save` keeps pushing as you save.
+There is no second step. No workspace id to look up, no per-repo linking.
+Continuous auto-sync is the **daemon** (`comemory sync daemon`), not an
+in-process after-save hook.
 
 If the platform is unreachable at that moment the login still succeeds — the
 key is already minted and useful — and says so on stderr:
@@ -40,9 +42,27 @@ key is already minted and useful — and says so on stderr:
 warning: first sync failed (…) — run `comemory sync` when the platform is reachable
 ```
 
-`comemory auth status` reports the bound organization. `comemory auth logout`
-deletes the local credential (no remote revoke). `COMEMORY_API_KEY` overrides
-the stored secret without writing the file.
+`comemory auth status` reports the bound organization and whether the daemon
+is running. `comemory auth logout` deletes the local credential and **stops**
+the daemon (the unit stays installed for the next login). `COMEMORY_API_KEY`
+overrides the stored secret without writing the file.
+
+## Sync daemon (required for auto-sync)
+
+| Command | Effect |
+|---------|--------|
+| `comemory sync daemon install` | Write LaunchAgent `io.comemory.sync` (macOS) or systemd `--user` `comemory-sync.service` (Linux) |
+| `comemory sync daemon start` / `stop` | Start or stop; stop leaves the unit installed |
+| `comemory sync daemon status` | installed / running |
+| `comemory sync daemon uninstall` | Remove the unit |
+| `comemory sync daemon run` | Foreground loop (what the supervisor runs) |
+
+Default interval: `[sync] daemon_interval = "60s"` — each cycle `pull` then
+`push`, with an occasional `verify` per `[sync] verify_every`. No filesystem
+watcher; the outbox drains on the interval. Windows is not supported.
+
+Escape hatches: `auth login --no-daemon`, or stop/uninstall the daemon and use
+manual `comemory sync`.
 
 ## What syncs
 
@@ -65,6 +85,8 @@ Two filters run on your machine first:
 ```toml
 [sync]
 skip_repos = ["acme/secret-*", "my-side-project"]
+daemon_interval = "60s"
+verify_every = "7d"
 ```
 
 Patterns are globs matched against the trimmed, lowercased label, so
@@ -79,20 +101,24 @@ comemory sync --action push       # or pull / verify / status
 comemory sync --allow-secret <id> # explicit secret-scan override
 ```
 
-There is no `--workspace`: the key names its own, and it is the only one that
-key can reach. Switching organization means `comemory auth login` again.
+Works with the daemon stopped. There is no `--workspace`: the key names its
+own, and it is the only one that key can reach. Switching organization means
+`comemory auth login` again.
 
-## Auto-sync (`config.toml`)
+## Config (`config.toml`)
 
 | Knob | Default | Behavior |
 |------|---------|----------|
-| `[sync] after_save` | `true` | Push after each save; a failure never fails the save |
-| `[sync] pull_before_context_after` | `"5m"` | Pull before `context` when the cursor is stale |
-| `[sync] verify_every` | `"7d"` | Hint for periodic `sync --action verify` |
+| `[sync] daemon_interval` | `"60s"` | Sleep between daemon pull+push cycles |
+| `[sync] verify_every` | `"7d"` | Hint / daemon interval for `sync --action verify` |
 | `[sync] skip_repos` | `[]` | Repo-label globs to keep local |
+| `[sync] after_save` | `false` | **Deprecated, ignored** — use the daemon |
+| `[sync] pull_before_context_after` | `""` (off) | **Deprecated, ignored** — use the daemon |
 | `[embed] model` | `""` | Recorded for vector import compatibility |
 
-Offline or 5xx → the outbox waits. Local verbs stay green.
+Offline or 5xx → the outbox waits. Local verbs stay green. `doctor`,
+`auth status`, and `sync --action status` warn when linked but the daemon is
+not running (“auto-sync inactive”).
 
 ## Upgrading from a device-key install
 
@@ -110,8 +136,9 @@ Three breaking changes, all resolved by logging in again:
 3. **`--device-name` and `--workspace` are gone**, along with `allowlist.json`
    (deleted at the next login or logout).
 
-`[sync] repos`, `[sync] allowlist_ttl` and `[sync] default_workspace` still
-parse for one release and are ignored, with a warning naming each. Remove them.
+`[sync] repos`, `[sync] allowlist_ttl`, `[sync] default_workspace`,
+`[sync] after_save`, and `[sync] pull_before_context_after` still parse for
+one release and are ignored, with a warning naming each. Remove them.
 
 ## Engine HTTP (loopback)
 

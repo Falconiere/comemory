@@ -1,8 +1,10 @@
 //! Cloud-sync client helpers: credentials, redaction, and the local skip filter.
 
 pub mod auth_file;
-pub mod auto;
 pub mod client;
+pub mod daemon;
+pub mod daemon_templates;
+pub mod daemon_unit;
 pub mod initial;
 pub mod pull;
 pub mod push;

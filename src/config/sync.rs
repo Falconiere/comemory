@@ -11,12 +11,17 @@ use crate::store::Connection;
 /// Cloud-sync knobs — separate from `[git]` auto-commit of markdown.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncConfig {
-    /// Best-effort push after each local save when true.
+    /// Deprecated: in-process push after save. Default off; the user daemon
+    /// owns continuous sync. Kept so existing `config.toml` still loads.
     pub after_save: bool,
-    /// Pull before `context` when last sync is older than this (e.g. `5m`).
+    /// Deprecated: in-process pull before `context`. Empty / `"0"` means off.
+    /// The user daemon owns continuous sync.
     pub pull_before_context_after: String,
-    /// Interval hint for `comemory sync --verify` (e.g. `7d`).
+    /// Interval hint for verify (`comemory sync --action verify` and the
+    /// daemon's occasional verify pass).
     pub verify_every: String,
+    /// Sleep between daemon pull+push cycles (e.g. `60s`).
+    pub daemon_interval: String,
     /// Repo labels withheld from push, as globs over the normalized label.
     /// The only client-side sync filter left now that organization membership
     /// is the platform's gate.
@@ -52,6 +57,14 @@ const DEPRECATED_KEYS: &[(&str, &str)] = &[
         "sync.allowlist_ttl",
         "organization membership replaced the per-repo allowlist",
     ),
+    (
+        "sync.after_save",
+        "continuous sync is the user daemon (`comemory sync daemon`); in-process after_save is no longer wired",
+    ),
+    (
+        "sync.pull_before_context_after",
+        "continuous sync is the user daemon (`comemory sync daemon`); in-process pull-before-context is no longer wired",
+    ),
 ];
 
 /// Embedder model id recorded in `schema_meta.memory_vector_model`.
@@ -69,6 +82,7 @@ pub struct PartialSyncConfig {
     after_save: Option<bool>,
     pull_before_context_after: Option<String>,
     verify_every: Option<String>,
+    daemon_interval: Option<String>,
     skip_repos: Option<Vec<String>>,
     repos: Option<BTreeMap<String, String>>,
     default_workspace: Option<String>,
@@ -86,9 +100,10 @@ impl SyncConfig {
     /// Shipped defaults for the `[sync]` section.
     pub fn defaults() -> Self {
         Self {
-            after_save: true,
-            pull_before_context_after: "5m".into(),
+            after_save: false,
+            pull_before_context_after: String::new(),
             verify_every: "7d".into(),
+            daemon_interval: "60s".into(),
             skip_repos: Vec::new(),
             repos: BTreeMap::new(),
             default_workspace: None,
@@ -100,12 +115,17 @@ impl SyncConfig {
     pub fn apply(&mut self, partial: PartialSyncConfig) {
         if let Some(v) = partial.after_save {
             self.after_save = v;
+            warn_deprecated("sync.after_save");
         }
         if let Some(v) = partial.pull_before_context_after {
             self.pull_before_context_after = v;
+            warn_deprecated("sync.pull_before_context_after");
         }
         if let Some(v) = partial.verify_every {
             self.verify_every = v;
+        }
+        if let Some(v) = partial.daemon_interval {
+            self.daemon_interval = v;
         }
         if let Some(v) = partial.skip_repos {
             self.skip_repos = v;
@@ -138,13 +158,24 @@ impl SyncConfig {
     }
 
     /// Parse [`Self::pull_before_context_after`] as a [`Duration`].
+    ///
+    /// Empty or `"0"` / `"0s"` means the hook is off.
     pub fn pull_before_context_after_duration(&self) -> Result<Duration> {
-        parse_duration(&self.pull_before_context_after)
+        let trimmed = self.pull_before_context_after.trim();
+        if trimmed.is_empty() || trimmed == "0" {
+            return Ok(Duration::ZERO);
+        }
+        parse_duration(trimmed)
     }
 
     /// Parse [`Self::verify_every`] as a [`Duration`].
     pub fn verify_every_duration(&self) -> Result<Duration> {
         parse_duration(&self.verify_every)
+    }
+
+    /// Parse [`Self::daemon_interval`] as a [`Duration`].
+    pub fn daemon_interval_duration(&self) -> Result<Duration> {
+        parse_duration(&self.daemon_interval)
     }
 }
 

@@ -401,28 +401,45 @@ fn sync_status(st: &mut SyncPlatformState, authorization: &str) -> (&'static str
 fn sync_changes(
     st: &mut SyncPlatformState,
     authorization: &str,
-    _query: &str,
+    query: &str,
 ) -> (&'static str, String) {
     if !auth_ok(authorization, &st.secret) {
         return ("401 Unauthorized", envelope_err("unauthorized", "bad key"));
     }
-    let entries = st.changes.clone();
-    let next_seq = entries
-        .as_array()
-        .and_then(|a| a.last())
+    let since = query_i64(query, "since").unwrap_or(0);
+    let limit = query_i64(query, "limit").unwrap_or(500).max(0) as usize;
+    let all = st.changes.as_array().cloned().unwrap_or_default();
+    let page: Vec<Value> = all
+        .into_iter()
+        .filter(|e| e.get("seq").and_then(Value::as_i64).unwrap_or(0) > since)
+        .take(if limit == 0 { usize::MAX } else { limit })
+        .collect();
+    let next_seq = page
+        .last()
         .and_then(|e| e.get("seq"))
         .and_then(Value::as_i64);
     let resp = envelope_ok(json!({
-        "entries": entries,
+        "entries": page,
         "next_seq": next_seq,
         "head_seq": st.head_seq
     }));
     // Clear only after the response body is built so a panic cannot drop the
-    // fixture payload before the client sees it.
+    // fixture payload before the client sees it. When paging, leave remaining
+    // entries so a later `since` can drain them (consume_changes=false).
     if st.consume_changes {
         st.changes = json!([]);
     }
     ("200 OK", resp)
+}
+
+fn query_i64(query: &str, key: &str) -> Option<i64> {
+    for pair in query.trim_start_matches('?').split('&') {
+        let (k, v) = pair.split_once('=')?;
+        if k == key {
+            return v.parse().ok();
+        }
+    }
+    None
 }
 
 fn sync_manifest(st: &mut SyncPlatformState, authorization: &str) -> (&'static str, String) {

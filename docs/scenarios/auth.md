@@ -88,14 +88,13 @@ _None at the `auth` level._ Nested subcommand required: `login` | `status` |
 - **Expect:** the file is gone after each; logout stays idempotent
 - **Covered by:** `tests/cli__auth.rs::login_and_logout_clear_a_stale_allowlist`
 
-### auth-10 A save reaches the organization with no further command
+### auth-10 A save does not push without the daemon
 
-- **Flags:** _(none)_
-- **Setup:** platform fixture; `comemory auth login` and nothing else
+- **Flags:** `--no-daemon`
+- **Setup:** platform fixture; `comemory auth login --no-daemon`
 - **Command:** `comemory save --repo acme/backend "<body>"`
-- **Expect:** a `POST /v1/sync/import` carrying that memory, driven only by the
-  shipped `[sync] after_save` default
-- **Covered by:** `tests/cli__auth.rs::after_save_reaches_the_org_workspace_with_no_further_command`
+- **Expect:** no additional `POST /v1/sync/import` after the login sync
+- **Covered by:** `tests/cli__auth.rs::save_does_not_push_without_the_daemon`
 
 ### auth-03 Logout removes auth.json
 

@@ -143,6 +143,8 @@ pub(crate) fn run_all(conn: &Connection, paths: &Paths, schema_version: &str) ->
     let (embed_cmd, embed_probe_ms) =
         push_embed_and_counts(conn, paths, markdown_files, &mut checks)?;
 
+    checks.push(sync_daemon_check(paths));
+
     Ok(Extras {
         checks,
         db_bytes: db_file_size(paths),
@@ -407,5 +409,20 @@ fn data_dir_layout(paths: &Paths) -> Check {
             "data dir layout",
             format!("memories_dir_present={memories_ok}, db_present={db_ok}"),
         )
+    }
+}
+
+/// Check 11: when org credentials exist, the sync daemon should be running.
+fn sync_daemon_check(paths: &Paths) -> Check {
+    if !matches!(crate::sync::AuthFile::load_usable(paths), Ok(Some(_))) {
+        return ok("sync daemon", "not linked — daemon not required");
+    }
+    match crate::sync::daemon::status() {
+        Ok(st) if st.running => ok("sync daemon", st.detail),
+        Ok(st) => warn(
+            "sync daemon",
+            format!("{} — run `comemory sync daemon start`", st.detail),
+        ),
+        Err(e) => warn("sync daemon", format!("status unavailable: {e}")),
     }
 }

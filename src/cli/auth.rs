@@ -19,25 +19,15 @@ use crate::config::paths::{Paths, resolve_data_dir};
 use crate::output::json;
 use crate::prelude::*;
 use crate::sync::auth_file::{self, AuthFile};
+use crate::sync::daemon;
 
 const EXAMPLES: &str = "\
 Examples:
-  # Log in (print code, approve in the console, mint an org cmk_)
-  # and run the first sync before returning
   comemory auth login
-
-  # Point at a non-prod API
+  comemory auth login --no-daemon
   comemory auth login --api-url https://dev-api.comemory.io
-
-  # Check the saved key against the platform
   comemory auth status
-
-  # Forget local credentials (no remote revoke)
-  comemory auth logout
-
-  # Machine-readable
-  comemory auth login --json
-  comemory auth status --json";
+  comemory auth logout";
 
 /// Arguments to `comemory auth` (nested subcommand required).
 #[derive(ClapArgs, Debug)]
@@ -51,12 +41,11 @@ pub struct Args {
 /// Nested `comemory auth <subcommand>`.
 #[derive(Subcommand, Debug)]
 pub enum AuthCmd {
-    /// RFC 8628 device login; mint an organization `cmk_` into auth.json and
-    /// run the first sync.
+    /// Device login, mint org key, optional daemon install, full first sync.
     Login(LoginArgs),
     /// Report whether local credentials still authenticate.
     Status(StatusArgs),
-    /// Delete local auth.json (no remote revoke).
+    /// Delete local auth.json and stop the sync daemon (no remote revoke).
     Logout,
 }
 
@@ -66,6 +55,9 @@ pub struct LoginArgs {
     /// Platform API base URL (overrides `COMEMORY_API` / default).
     #[arg(long, value_name = "URL")]
     pub api_url: Option<String>,
+    /// Do not install or start the user-level sync daemon.
+    #[arg(long, default_value_t = false)]
+    pub no_daemon: bool,
 }
 
 /// Flags for `comemory auth status`.
@@ -76,7 +68,6 @@ pub struct StatusArgs {
     pub api_url: Option<String>,
 }
 
-/// JSON envelope for a successful login (includes `secret` once for scripting).
 #[derive(Serialize)]
 struct LoginJson<'a> {
     authenticated: bool,
@@ -87,11 +78,17 @@ struct LoginJson<'a> {
     workspace_id: &'a str,
     key_prefix: &'a str,
     secret: &'a str,
+    daemon: DaemonLoginJson,
     initial_sync: InitialSyncJson,
 }
 
-/// Outcome of the login-time first sync. Reported either way: a login whose
-/// sync failed is still a usable login, and the user needs to know which.
+#[derive(Serialize)]
+struct DaemonLoginJson {
+    skipped: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    running: Option<bool>,
+}
+
 #[derive(Serialize)]
 struct InitialSyncJson {
     ok: bool,
@@ -100,13 +97,17 @@ struct InitialSyncJson {
     #[serde(skip_serializing_if = "Option::is_none")]
     pushed: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    skipped_personal: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    skipped_config: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
 }
 
-/// JSON envelope when logout succeeds.
 #[derive(Serialize)]
 struct LogoutJson {
     logged_out: bool,
+    daemon_stopped: bool,
 }
 
 /// Dispatch nested auth subcommands.
@@ -125,15 +126,23 @@ fn run_login(paths: &Paths, a: LoginArgs, json_flag: bool) -> Result<()> {
     let outcome = cloud::login(&api_url, &mut progress)?;
     drop(progress);
     outcome.credentials.save(paths)?;
-    // A cached repo allowlist from before organization scoping is dead weight
-    // and must not outlive the credential it was fetched for.
     auth_file::clear_stale_allowlist(paths)?;
     let creds = &outcome.credentials;
 
-    // Best-effort by design: the credential is already on disk and useful, so
-    // a network blip here must not leave the user logged out with no next
-    // step. It runs inline rather than detached because the counts belong in
-    // the report below, which a detached thread could not fill in.
+    let daemon_json = if a.no_daemon {
+        DaemonLoginJson {
+            skipped: true,
+            running: None,
+        }
+    } else {
+        daemon::install_and_start_best_effort(paths);
+        DaemonLoginJson {
+            skipped: false,
+            running: daemon::status().ok().map(|s| s.running),
+        }
+    };
+
+    // Best-effort: credential is already on disk; sync counts belong in the report.
     let cfg = load_config(paths)?;
     let synced = off_runtime(|| crate::sync::initial::run_initial_sync(paths, &cfg, creds));
     if let Err(e) = &synced {
@@ -150,20 +159,8 @@ fn run_login(paths: &Paths, a: LoginArgs, json_flag: bool) -> Result<()> {
             workspace_id: &creds.workspace_id,
             key_prefix: &creds.key_prefix,
             secret: &creds.secret,
-            initial_sync: match &synced {
-                Ok(stats) => InitialSyncJson {
-                    ok: true,
-                    pulled: Some(stats.pulled),
-                    pushed: Some(stats.pushed),
-                    error: None,
-                },
-                Err(e) => InitialSyncJson {
-                    ok: false,
-                    pulled: None,
-                    pushed: None,
-                    error: Some(e.to_string()),
-                },
-            },
+            daemon: daemon_json,
+            initial_sync: initial_sync_json(&synced),
         });
     }
     let mut out = std::io::stdout().lock();
@@ -180,19 +177,21 @@ fn run_login(paths: &Paths, a: LoginArgs, json_flag: bool) -> Result<()> {
         creds.api_url,
         paths.auth_file().display()
     )?;
+    if a.no_daemon {
+        writeln!(out, "  daemon: skipped (--no-daemon)")?;
+    } else if let Ok(st) = daemon::status() {
+        writeln!(out, "  daemon: {}", st.detail)?;
+    }
     match &synced {
         Ok(stats) => writeln!(
             out,
-            "  synced: pulled {} · pushed {}",
-            stats.pulled, stats.pushed
+            "  synced: pulled {} · pushed {} · skipped personal={} · skip_repos={}",
+            stats.pulled, stats.pushed, stats.skipped_personal, stats.skipped_config
         )?,
-        Err(e) => {
-            let mut err_out = std::io::stderr().lock();
-            writeln!(
-                err_out,
-                "warning: first sync failed ({e}) — run `comemory sync` when the platform is reachable"
-            )?;
-        }
+        Err(e) => writeln!(
+            std::io::stderr().lock(),
+            "warning: first sync failed ({e}) — run `comemory sync` when the platform is reachable"
+        )?,
     }
     Ok(())
 }
@@ -220,8 +219,7 @@ fn run_status(paths: &Paths, a: StatusArgs, json_flag: bool) -> Result<()> {
     emit_status(json_flag, &report)
 }
 
-/// Display label for the organization a credential is scoped to: its name when
-/// the platform supplied one, else the slug, else the raw id.
+/// Display label for the organization a credential is scoped to.
 fn org_label(creds: &AuthFile) -> &str {
     for candidate in [
         creds.organization_name.as_str(),
@@ -235,48 +233,86 @@ fn org_label(creds: &AuthFile) -> &str {
     "unknown organization"
 }
 
+fn initial_sync_json(synced: &Result<crate::sync::InitialSyncStats>) -> InitialSyncJson {
+    match synced {
+        Ok(s) => InitialSyncJson {
+            ok: true,
+            pulled: Some(s.pulled),
+            pushed: Some(s.pushed),
+            skipped_personal: Some(s.skipped_personal),
+            skipped_config: Some(s.skipped_config),
+            error: None,
+        },
+        Err(e) => InitialSyncJson {
+            ok: false,
+            pulled: None,
+            pushed: None,
+            skipped_personal: None,
+            skipped_config: None,
+            error: Some(e.to_string()),
+        },
+    }
+}
+
 fn run_logout(paths: &Paths, json_flag: bool) -> Result<()> {
+    daemon::stop_best_effort();
     AuthFile::clear(paths)?;
     if json_flag {
-        return json::write(&LogoutJson { logged_out: true });
+        return json::write(&LogoutJson {
+            logged_out: true,
+            daemon_stopped: true,
+        });
     }
-    let mut out = std::io::stdout().lock();
     writeln!(
-        out,
-        "{} logged out (local credentials removed)",
+        std::io::stdout().lock(),
+        "{} logged out (local credentials removed; sync daemon stopped)",
         "\u{2713}".green()
     )?;
     Ok(())
 }
 
 fn emit_logged_out(json_flag: bool) -> Result<()> {
-    let report = StatusReport {
-        authenticated: false,
-        api_url: None,
-        organization_id: None,
-        organization_name: None,
-        workspace_id: None,
-        key_prefix: None,
-    };
-    emit_status(json_flag, &report)
+    emit_status(
+        json_flag,
+        &StatusReport {
+            authenticated: false,
+            api_url: None,
+            organization_id: None,
+            organization_name: None,
+            workspace_id: None,
+            key_prefix: None,
+        },
+    )
 }
 
 fn emit_status(json_flag: bool, report: &StatusReport) -> Result<()> {
+    let daemon_st = report
+        .authenticated
+        .then(|| daemon::status().ok())
+        .flatten();
     if json_flag {
-        json::write(report)?;
+        json::write(&serde_json::json!({
+            "authenticated": report.authenticated,
+            "api_url": report.api_url,
+            "organization_id": report.organization_id,
+            "organization_name": report.organization_name,
+            "workspace_id": report.workspace_id,
+            "key_prefix": report.key_prefix,
+            "daemon": daemon_st,
+        }))?;
     } else if report.authenticated {
         let mut out = std::io::stdout().lock();
+        let org = report
+            .organization_name
+            .as_deref()
+            .filter(|n| !n.is_empty())
+            .or(report.organization_id.as_deref())
+            .unwrap_or("unknown");
         writeln!(
             out,
             "{} authenticated · organization {} ({})",
             "\u{2713}".green(),
-            report
-                .organization_name
-                .as_deref()
-                .filter(|name| !name.is_empty())
-                .or(report.organization_id.as_deref())
-                .unwrap_or("unknown")
-                .bold(),
+            org.bold(),
             report.key_prefix.as_deref().unwrap_or("cmk_????").dimmed()
         )?;
         if let Some(api) = &report.api_url {
@@ -285,9 +321,18 @@ fn emit_status(json_flag: bool, report: &StatusReport) -> Result<()> {
         if let Some(workspace) = &report.workspace_id {
             writeln!(out, "  workspace {workspace}")?;
         }
+        if let Some(st) = &daemon_st {
+            writeln!(
+                out,
+                "  daemon: installed={} running={}",
+                st.installed, st.running
+            )?;
+            if let Some(warn) = st.inactive_warning() {
+                writeln!(out, "  warning: {warn}")?;
+            }
+        }
     } else {
-        let mut out = std::io::stdout().lock();
-        writeln!(out, "not logged in")?;
+        writeln!(std::io::stdout().lock(), "not logged in")?;
     }
     if report.authenticated {
         Ok(())
