@@ -59,7 +59,7 @@ Set these in `config.toml`; they have **no** environment override.
 | `reinforce.search_edit_days` | File overlay for the search→edit lookback (same as `COMEMORY_REINFORCE_SEARCH_EDIT_DAYS`). | `7` |
 | `sync.after_save` | **Deprecated, ignored.** Continuous sync is the user daemon. | `false` |
 | `sync.pull_before_context_after` | **Deprecated, ignored.** Empty / `"0"` means off. | `""` |
-| `sync.daemon_interval` | Sleep between daemon pull+push cycles. | `"60s"` |
+| `sync.daemon_interval` | Sleep between daemon pull+push cycles. A labelled save touches `sync.wake` so sleep can end early. | `"5s"` |
 | `sync.verify_every` | Interval hint for `comemory sync --action verify` and the daemon. | `"7d"` |
 | `sync.skip_repos` | Globs over the trimmed, lowercased `repo` label; a match keeps that memory local. The only client-side sync filter besides the empty-label rule, now that organization membership is the platform's gate. An invalid glob fails at config load. | `[]` |
 | `sync.allowlist_ttl`, `sync.repos`, `sync.default_workspace` | **Deprecated, parsed and ignored**, each with a warning naming it. Kept declared for one release because `[sync]` is `deny_unknown_fields`, so deleting them outright would stop every existing `config.toml` that sets them from loading at all. Remove them. | — |

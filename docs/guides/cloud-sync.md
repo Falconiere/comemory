@@ -57,9 +57,13 @@ overrides the stored secret without writing the file.
 | `comemory sync daemon uninstall` | Remove the unit |
 | `comemory sync daemon run` | Foreground loop (what the supervisor runs) |
 
-Default interval: `[sync] daemon_interval = "60s"` — each cycle `pull` then
-`push`, with an occasional `verify` per `[sync] verify_every`. No filesystem
-watcher; the outbox drains on the interval. Windows is not supported.
+Default interval: `[sync] daemon_interval = "5s"` — each cycle `pull` then
+`push`, with an occasional `verify` per `[sync] verify_every`. Sleep is
+**interruptible**: a successful save of a sync-eligible (non-empty `repo`)
+memory touches `$DATA_DIR/sync.wake` so the daemon runs one cycle immediately
+instead of waiting out the full interval. That is local wake-on-save, not a
+platform broker and not a filesystem watcher on the memories tree. Windows is
+not supported.
 
 Escape hatches: `auth login --no-daemon`, or stop/uninstall the daemon and use
 manual `comemory sync`.
@@ -85,7 +89,7 @@ Two filters run on your machine first:
 ```toml
 [sync]
 skip_repos = ["acme/secret-*", "my-side-project"]
-daemon_interval = "60s"
+daemon_interval = "5s"
 verify_every = "7d"
 ```
 
@@ -109,7 +113,7 @@ own, and it is the only one that key can reach. Switching organization means
 
 | Knob | Default | Behavior |
 |------|---------|----------|
-| `[sync] daemon_interval` | `"60s"` | Sleep between daemon pull+push cycles |
+| `[sync] daemon_interval` | `"5s"` | Sleep between daemon pull+push cycles (wake-on-save can end early) |
 | `[sync] verify_every` | `"7d"` | Hint / daemon interval for `sync --action verify` |
 | `[sync] skip_repos` | `[]` | Repo-label globs to keep local |
 | `[sync] after_save` | `false` | **Deprecated, ignored** — use the daemon |

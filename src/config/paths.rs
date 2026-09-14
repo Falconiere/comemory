@@ -76,6 +76,13 @@ impl Paths {
         self.data_dir.join("auth.json")
     }
 
+    /// Wake file the sync daemon polls during interruptible sleep. A successful
+    /// save of a sync-eligible memory touches this so one pull→push runs before
+    /// the next `daemon_interval` elapses (`src/sync/daemon_wake.rs`).
+    pub fn sync_wake_file(&self) -> PathBuf {
+        self.data_dir.join("sync.wake")
+    }
+
     /// Cached org-repo allowlist left behind by releases before organization
     /// scoping. Nothing reads it any more; `comemory auth login` and
     /// `comemory auth logout` delete it so a stale copy cannot outlive the
