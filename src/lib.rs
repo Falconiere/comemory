@@ -71,6 +71,9 @@ pub mod upgrade;
 /// Shared curl/wget HTTP (no in-process TLS stack).
 pub mod fetch;
 
+/// Map reqwest transport errors into [`crate::Error`] (sync + capture).
+pub mod http_error;
+
 /// Cloud platform auth: device login and workspace-key credentials.
 pub mod cloud;
 

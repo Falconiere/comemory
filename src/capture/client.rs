@@ -6,6 +6,7 @@ use reqwest::blocking::Client;
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
 
+use crate::http_error::map_reqwest;
 use crate::prelude::*;
 
 use super::redact::RedactionAttestation;
@@ -111,10 +112,6 @@ fn auth_headers(secret: &str, workspace_id: &str) -> Result<HeaderMap> {
         .map_err(|_| Error::Other("workspace header: invalid workspace id".into()))?;
     headers.insert(HeaderName::from_static(WORKSPACE_HEADER), ws);
     Ok(headers)
-}
-
-fn map_reqwest(e: reqwest::Error) -> Error {
-    Error::Other(format!("http: {e}"))
 }
 
 fn parse_envelope<T: for<'de> Deserialize<'de>>(

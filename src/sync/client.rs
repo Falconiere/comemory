@@ -16,6 +16,7 @@ use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use serde::Deserialize;
 
 use crate::api::sync::{ChangesResponse, ImportRequest, ImportResponse, ManifestResponse};
+use crate::http_error::map_reqwest;
 use crate::prelude::*;
 
 const CLIENT_ID: &str = "comemory-cli";
@@ -173,10 +174,6 @@ fn auth_headers(org_key: &str) -> Result<HeaderMap> {
     Ok(headers)
 }
 
-fn map_reqwest(e: reqwest::Error) -> Error {
-    Error::Other(format!("http: {e}"))
-}
-
 fn parse_json<T: for<'de> Deserialize<'de>>(
     resp: reqwest::blocking::Response,
     ctx: &str,
@@ -217,3 +214,7 @@ fn parse_envelope<T: for<'de> Deserialize<'de>>(
 #[cfg(test)]
 #[path = "tests/client.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests/client_https.rs"]
+mod tests_https;
