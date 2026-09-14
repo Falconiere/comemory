@@ -16,6 +16,7 @@ use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use serde::Deserialize;
 
 use crate::api::sync::{ChangesResponse, ImportRequest, ImportResponse, ManifestResponse};
+use crate::http_error::map_reqwest;
 use crate::prelude::*;
 
 const CLIENT_ID: &str = "comemory-cli";
@@ -171,17 +172,6 @@ fn auth_headers(org_key: &str) -> Result<HeaderMap> {
     let mut headers = HeaderMap::new();
     headers.insert(AUTHORIZATION, bearer_value(org_key)?);
     Ok(headers)
-}
-
-fn map_reqwest(e: reqwest::Error) -> Error {
-    let mut msg = format!("http: {e}");
-    let mut src = std::error::Error::source(&e);
-    while let Some(cause) = src {
-        msg.push_str(": ");
-        msg.push_str(&cause.to_string());
-        src = std::error::Error::source(cause);
-    }
-    Error::Other(msg)
 }
 
 fn parse_json<T: for<'de> Deserialize<'de>>(

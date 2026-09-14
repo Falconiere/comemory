@@ -10,6 +10,9 @@
 //!
 //! The http fixture in `client.rs` never exercises TLS. These tests bind a
 //! real rustls listener so a missing reqwest TLS backend cannot regress.
+//!
+//! The module-level `#![allow(…)]` header is the crate's test-file
+//! convention (see CLAUDE.md Testing) — every colocated suite uses it.
 
 use std::io::{Read as _, Write as _};
 use std::net::TcpListener;
@@ -25,7 +28,16 @@ use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use rustls::{ServerConfig, ServerConnection, StreamOwned};
 use serde_json::Value;
 
-const SECRET: &str = "cmk_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+/// Same fixture secret shape as `tests/common/sync_platform_server.rs`.
+const SECRET: &str = "cmk_test_0000000000000000000000000000000000000000000000000000000000000000";
+
+/// `Error::Other` Display wraps the map_reqwest payload as `other: http: …`.
+fn assert_map_reqwest_prefix(msg: &str) {
+    assert!(
+        msg.starts_with("other: http: "),
+        "Error::Other must wrap the map_reqwest `http: ` prefix: {msg}"
+    );
+}
 
 /// Empty changes envelope matching [`comemory::api::sync::ChangesResponse`].
 fn changes_body() -> String {
@@ -34,6 +46,7 @@ fn changes_body() -> String {
 
 /// Loopback rustls server that answers `GET /v1/sync/changes` once per accept.
 fn start_https_changes_server(accepts: usize) -> String {
+    // Err means a provider is already installed (sibling test in this binary).
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
     let CertifiedKey { cert, signing_key } =
@@ -105,17 +118,15 @@ fn https_test_client_changes_roundtrip() {
 fn https_production_pull_fails_tls_verify() {
     let base = start_https_changes_server(1);
     let err = client::pull_changes(&base, SECRET, 0, 50).expect_err("self-signed must fail verify");
-    let msg = err.to_string().to_lowercase();
+    let msg = err.to_string();
+    assert_map_reqwest_prefix(&msg);
+    let lower = msg.to_lowercase();
     assert!(
-        msg.contains("http:"),
-        "production map_reqwest prefix must survive: {msg}"
-    );
-    assert!(
-        msg.contains("certificate")
-            || msg.contains("cert")
-            || msg.contains("tls")
-            || msg.contains("handshake")
-            || msg.contains("invalid"),
+        lower.contains("certificate")
+            || lower.contains("cert")
+            || lower.contains("tls")
+            || lower.contains("handshake")
+            || lower.contains("invalid"),
         "must be a TLS/cert failure, not a missing-backend connect drop: {msg}"
     );
 }
@@ -130,14 +141,12 @@ fn connection_refused_error_includes_source() {
     let err = client::pull_changes(&format!("http://127.0.0.1:{port}"), SECRET, 0, 50)
         .expect_err("refused");
     let msg = err.to_string();
-    assert!(
-        msg.contains("http:"),
-        "map_reqwest prefix must appear: {msg}"
-    );
-    // Display is `other: http: <top>: <source>: …`. Require a nested cause
-    // after the top-level reqwest line (Connection refused lives in source).
-    let http_idx = msg.find("http: ").expect("http: marker");
-    let after = &msg[http_idx + "http: ".len()..];
+    assert_map_reqwest_prefix(&msg);
+    // After `other: http: ` comes `<top>: <source>: …`. Connection refused
+    // lives in the source chain.
+    let after = msg
+        .strip_prefix("other: http: ")
+        .expect("assert_map_reqwest_prefix already checked");
     assert!(
         after.contains(": "),
         "source chain must appear as nested ': ' segments: {msg}"
