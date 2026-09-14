@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-09-14
+
+### Fixed
+
+- keep pushed_seq on gate rejects and backfill sync_log ([#144](https://github.com/Falconiere/comemory/pull/144))
+
 ## [0.29.0] - 2026-09-14
 
 ### Added
