@@ -6,7 +6,6 @@
 //!
 //! Unit install/start/stop/status live in [`crate::sync::daemon_unit`].
 
-use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::config::sync::apply_embed_model;
@@ -15,6 +14,7 @@ use crate::prelude::*;
 use crate::store::connection::open;
 use crate::sync::AuthFile;
 use crate::sync::daemon_unit;
+use crate::sync::daemon_wake;
 use crate::sync::{pull, push, verify};
 
 pub use daemon_unit::{
@@ -57,7 +57,9 @@ pub fn run_foreground(paths: &Paths) -> Result<()> {
         if let Err(e) = run_one_cycle(paths, &cfg, &mut last_verify, verify_every) {
             tracing::warn!(error = %e, "sync daemon cycle failed");
         }
-        thread::sleep(interval);
+        // Interruptible: a save touching sync.wake ends the sleep early so
+        // local writers see pull→push within wake latency, not a full interval.
+        daemon_wake::sleep_interruptible(interval, paths);
     }
 }
 

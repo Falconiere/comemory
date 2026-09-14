@@ -22,8 +22,11 @@ fn defaults_round_trip() {
     let cfg = SyncConfig::defaults();
     assert!(!cfg.after_save);
     assert!(cfg.pull_before_context_after.is_empty());
-    assert_eq!(cfg.daemon_interval, "60s");
-    assert!(cfg.daemon_interval_duration().is_ok());
+    assert_eq!(cfg.daemon_interval, "5s");
+    assert_eq!(
+        cfg.daemon_interval_duration().unwrap(),
+        std::time::Duration::from_secs(5)
+    );
     assert!(cfg.allowlist_ttl_duration().is_ok());
 }
 

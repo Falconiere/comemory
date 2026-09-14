@@ -5,6 +5,7 @@ pub mod client;
 pub mod daemon;
 pub mod daemon_templates;
 pub mod daemon_unit;
+pub mod daemon_wake;
 pub mod initial;
 pub mod pull;
 pub mod push;

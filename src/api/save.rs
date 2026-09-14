@@ -213,7 +213,9 @@ pub fn run_with(
     let params = build_params(&req, relations, references, prior.as_ref());
     let rec = persist(conn, &store, params, vector.as_deref())?;
     // Continuous sync is the user-level daemon (`comemory sync daemon`), not
-    // an in-process after-save push.
+    // an in-process after-save push. Touch sync.wake so a sleeping daemon
+    // drains the outbox immediately for sync-eligible (labelled) saves.
+    crate::sync::daemon_wake::wake_after_save_best_effort(paths, &rec.frontmatter.repo);
 
     Ok(Response {
         id: rec.frontmatter.id.clone(),

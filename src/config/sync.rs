@@ -20,7 +20,8 @@ pub struct SyncConfig {
     /// Interval hint for verify (`comemory sync --action verify` and the
     /// daemon's occasional verify pass).
     pub verify_every: String,
-    /// Sleep between daemon pull+push cycles (e.g. `60s`).
+    /// Sleep between daemon pull+push cycles (e.g. `5s`). Wake-on-save can
+    /// end the sleep early — see `daemon_wake`.
     pub daemon_interval: String,
     /// Repo labels withheld from push, as globs over the normalized label.
     /// The only client-side sync filter left now that organization membership
@@ -103,7 +104,7 @@ impl SyncConfig {
             after_save: false,
             pull_before_context_after: String::new(),
             verify_every: "7d".into(),
-            daemon_interval: "60s".into(),
+            daemon_interval: "5s".into(),
             skip_repos: Vec::new(),
             repos: BTreeMap::new(),
             default_workspace: None,
