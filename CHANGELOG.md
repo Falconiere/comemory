@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-09-14
+
+### Added
+
+- near-RT 5s poll + wake-on-save ([#142](https://github.com/Falconiere/comemory/pull/142))
+- require user-level OS daemon for auto-sync ([#141](https://github.com/Falconiere/comemory/pull/141))
+
 ## [0.28.2] - 2026-09-14
 
 ### Fixed
