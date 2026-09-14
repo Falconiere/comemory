@@ -75,7 +75,7 @@ One line per file, named after its primary item:
 | `rebuild_copy_history.rs` | `copy_history_tables` | Rebuild preservation copy: `eval_runs` (+ v15's `discarded`), `gc_runs`, `index_runs`, and the v16 `sync_log`/`sync_state`/`sync_binding` tables |
 | `rebuild_copy_learning.rs` | `copy_learning_tables_inner` | Rebuild preservation copy: the `feedback`/`code_feedback` counters and the `retrieval_log` telemetry, then (via `rebuild_copy_learning_events` and `rebuild_copy_history`) the event/mined and run-history tables |
 | `rebuild_copy_learning_events.rs` | `copy_event_and_mined_tables` | Rebuild preservation copy: `feedback_events`, `query_expansions`, `bandit_arms` — split out of `rebuild_copy_learning.rs` to stay under the 300-line ceiling |
-| `sync_log.rs` | `append` | Append-only cloud-sync change journal (`upsert`/`tombstone`/`restore`, origin `local`/`sync`) |
+| `sync_log.rs` | `append` | Append-only cloud-sync change journal (`upsert`/`tombstone`/`restore`, origin `local`/`sync`); also `backfill_missing_local` — mint local upserts for live memories that never got a log row |
 | `sync_state.rs` | `ensure` | Per-workspace pull/push cursors for cloud sync |
 | `sync_binding.rs` | `bind_first` | First-push workspace binding + `--allow-secret` overrides |
 | `sources.rs` | `SourceRootUpsert` | `source_roots` row CRUD — the SQLite mirror of `sources.toml` |

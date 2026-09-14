@@ -309,8 +309,12 @@ fn emit_run(
         if let Some(p) = push_stats {
             writeln!(
                 out,
-                "Pushed {} entries (skipped personal={}, skip_repos={}, blocked_secrets={})",
-                p.pushed, p.skipped_personal, p.skipped_config, p.blocked_secrets
+                "Pushed {} entries (skipped personal={}, skip_repos={}, blocked_secrets={}, rejected_repo={})",
+                p.pushed,
+                p.skipped_personal,
+                p.skipped_config,
+                p.blocked_secrets,
+                p.rejected_repo
             )?;
         }
     }

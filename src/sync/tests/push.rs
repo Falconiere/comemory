@@ -211,3 +211,47 @@ fn a_mixed_batch_reports_each_filter_separately() {
         "an unlabelled memory must never appear in an import body: {sent}"
     );
 }
+
+#[test]
+fn repo_not_allowed_does_not_advance_pushed_seq() {
+    // The cursor bug: advancing past a gate reject left those seqs never
+    // re-offered. An all-`repo_not_allowed` batch must leave `pushed_seq`
+    // at its prior value and surface `rejected_repo`.
+    let server = SyncPlatformServer::start(SyncPlatformState::default());
+    let secret = server.snapshot().secret;
+
+    let body = "memory the empty org allowlist refuses";
+    let id = comemory::memory::id::memory_id(body);
+    let content_hash = comemory::memory::id::sha256_hex(body.trim_end().as_bytes());
+    server.update(|st| {
+        st.import_results = serde_json::json!([{
+            "id": id,
+            "content_hash": content_hash,
+            "status": "repo_not_allowed",
+            "reason": "repo not in org allowlist"
+        }]);
+    });
+
+    let mut seeded = seeded(
+        &server.base,
+        &secret,
+        Config::defaults(),
+        &[(body, "acme/never-allowlisted")],
+    );
+    let stats = seeded.push();
+
+    assert_eq!(stats.pushed, 0);
+    assert_eq!(stats.rejected_repo, 1);
+    assert_eq!(stats.last_pushed_seq, 0);
+    let after = comemory::store::sync_state::get(
+        &seeded.conn,
+        common::auth_fixture::FIXTURE_WORKSPACE,
+    )
+    .expect("state")
+    .expect("row")
+    .pushed_seq;
+    assert_eq!(
+        after, 0,
+        "a hard-reject batch must not advance pushed_seq, got {after}"
+    );
+}
