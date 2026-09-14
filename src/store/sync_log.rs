@@ -208,7 +208,7 @@ pub fn backfill_missing_local(conn: &Connection) -> Result<u32> {
            )",
         [],
     )?;
-    u32::try_from(n).map_err(|_| Error::Other(format!("backfill row count overflow: {n}")))
+    u32::try_from(n).map_err(|_| Error::Other(format!("backfill row count exceeds u32::MAX: {n}")))
 }
 
 #[cfg(test)]

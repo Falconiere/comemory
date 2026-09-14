@@ -115,16 +115,27 @@ pub fn run_push(
                 )
             })
             .count();
-        stats.rejected_repo += resp
+        let rejected_repo = resp
             .results
             .iter()
             .filter(|r| matches!(r.status, ImportStatus::RepoNotAllowed))
-            .count() as u32;
-        stats.pushed += accepted as u32;
-        // Only advance the durable cursor when the platform stored something.
-        // An all-`repo_not_allowed` (or other hard-reject) batch must leave
-        // `pushed_seq` alone so the next push re-offers the same seqs.
-        if accepted > 0 {
+            .count();
+        stats.rejected_repo = stats
+            .rejected_repo
+            .saturating_add(u32::try_from(rejected_repo).map_err(|_| {
+                Error::Other(format!("rejected_repo count exceeds u32::MAX: {rejected_repo}"))
+            })?);
+        stats.pushed = stats.pushed.saturating_add(u32::try_from(accepted).map_err(|_| {
+            Error::Other(format!("accepted count exceeds u32::MAX: {accepted}"))
+        })?);
+        // Leave `pushed_seq` alone only when the platform returned a pure
+        // allowlist-gate refusal batch. Other terminal statuses (stale,
+        // collision, …) still advance so we do not retry forever. The Worker
+        // gate is all-or-nothing for `repo_not_allowed`, so a mixed
+        // accepted+gate-reject batch does not occur on the wire today.
+        let entirely_gate_rejected =
+            accepted == 0 && rejected_repo > 0 && rejected_repo == resp.results.len();
+        if !entirely_gate_rejected {
             stats.last_pushed_seq = batch_high_seq;
             sync_state::set_pushed(conn, workspace_id, batch_high_seq, &now_iso()?)?;
         }

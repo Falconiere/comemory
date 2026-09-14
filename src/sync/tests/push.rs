@@ -242,6 +242,9 @@ fn repo_not_allowed_does_not_advance_pushed_seq() {
 
     assert_eq!(stats.pushed, 0);
     assert_eq!(stats.rejected_repo, 1);
+    assert_eq!(stats.skipped_personal, 0);
+    assert_eq!(stats.skipped_config, 0);
+    assert_eq!(stats.blocked_secrets, 0);
     assert_eq!(stats.last_pushed_seq, 0);
     let after = comemory::store::sync_state::get(
         &seeded.conn,
