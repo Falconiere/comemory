@@ -181,3 +181,67 @@ fn op_and_origin_parse_roundtrip() {
     assert_eq!(SyncOrigin::parse("sync").unwrap(), SyncOrigin::Sync);
     assert!(SyncOrigin::parse("nope").is_err());
 }
+
+#[test]
+fn backfill_missing_local_appends_live_memories_with_no_log_row() {
+    // Real migrated DB + memory_row insert (no sync_log write) — the gap
+    // push sees on older corpora. Backfill must mint a local upsert so
+    // `local_entries_since` can drain it.
+    use comemory::memory::{Frontmatter, Kind, References, Relations};
+    use comemory::store::{connection, memory_row};
+    use tempfile::tempdir;
+    use time::OffsetDateTime;
+
+    let dir = tempdir().expect("tempdir");
+    let db = dir.path().join("comemory.db");
+    let mut conn = connection::open(&db).expect("open");
+
+    let id = "beefcafe";
+    let hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    let fm = Frontmatter {
+        id: id.to_string(),
+        kind: Kind::Note,
+        repo: "acme/app".to_string(),
+        tags: Vec::new(),
+        author: "tester".to_string(),
+        created: OffsetDateTime::now_utc(),
+        quality: 3,
+        schema: 1,
+        content_hash: hash.to_string(),
+        references: References::default(),
+        relations: Relations::default(),
+    };
+    let tx = conn.transaction().expect("tx");
+    memory_row::insert(
+        &tx,
+        &fm,
+        "body never logged to sync_log",
+        "gap-body",
+        "memories/beefcafe-gap-body.md",
+        &[],
+    )
+    .expect("insert");
+    tx.commit().expect("commit");
+
+    assert!(
+        sync_log::local_entries_since(&conn, 0, 10)
+            .expect("local")
+            .is_empty(),
+        "memory_row alone must not create a sync_log row"
+    );
+
+    let n = sync_log::backfill_missing_local(&conn).expect("backfill");
+    assert_eq!(n, 1);
+    assert_eq!(
+        sync_log::backfill_missing_local(&conn).expect("idempotent"),
+        0,
+        "a second backfill must insert nothing"
+    );
+
+    let rows = sync_log::local_entries_since(&conn, 0, 10).expect("local after");
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].memory_id, id);
+    assert_eq!(rows[0].op, SyncOp::Upsert);
+    assert_eq!(rows[0].origin, SyncOrigin::Local);
+    assert_eq!(rows[0].content_hash, hash);
+}

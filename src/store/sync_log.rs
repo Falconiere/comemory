@@ -187,6 +187,31 @@ pub fn latest_tombstone_seq(conn: &Connection, memory_id: &str) -> Result<Option
     Ok(seq)
 }
 
+/// Append local `upsert` rows for live memories that have no `sync_log`
+/// entry yet.
+///
+/// Push only drains `sync_log`. Memories saved before the sync seam (or
+/// restored from markdown without a log write) stay invisible until this
+/// backfill runs. Idempotent: a memory that already has any log row is
+/// left alone. Returns how many rows were inserted.
+///
+/// # Errors
+/// Propagates SQLite failures.
+pub fn backfill_missing_local(conn: &Connection) -> Result<u32> {
+    let n = conn.execute(
+        "INSERT INTO sync_log(op, memory_id, content_hash, at, origin) \
+         SELECT 'upsert', m.id, m.content_hash, m.updated_at, 'local' \
+         FROM memories m \
+         WHERE m.deleted_at IS NULL \
+           AND NOT EXISTS ( \
+             SELECT 1 FROM sync_log s WHERE s.memory_id = m.id \
+           )",
+        [],
+    )?;
+    u32::try_from(n)
+        .map_err(|_| Error::Other(format!("backfill row count not representable as u32: {n}")))
+}
+
 #[cfg(test)]
 #[path = "tests/sync_log.rs"]
 mod tests;

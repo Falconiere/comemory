@@ -34,6 +34,11 @@ pub struct PushStats {
     pub skipped_config: u32,
     /// Blocked — secret rule hit without override.
     pub blocked_secrets: u32,
+    /// Rejected by the platform allowlist gate (`repo_not_allowed`).
+    ///
+    /// These do **not** advance `pushed_seq` when they are the only outcomes
+    /// in a batch — otherwise retries would never re-offer the same seqs.
+    pub rejected_repo: u32,
     /// Highest local seq included in a successful batch.
     pub last_pushed_seq: i64,
 }
@@ -61,6 +66,9 @@ pub fn run_push(
     }
 
     sync_state::ensure(conn, workspace_id, &auth.api_url)?;
+    // Older corpora can have live memories never appended to `sync_log`
+    // (push only drains the log). Best-effort backfill before the outbox walk.
+    sync_log::backfill_missing_local(conn)?;
     let row = sync_state::get(conn, workspace_id)?
         .ok_or_else(|| Error::Other("sync_state missing after ensure".into()))?;
     let skip = cfg.sync.skip_matcher()?;
@@ -97,7 +105,7 @@ pub fn run_push(
         };
         let secret = auth.effective_secret();
         let resp = client::push_import(&auth.api_url, &secret, &req)?;
-        stats.pushed += resp
+        let accepted = resp
             .results
             .iter()
             .filter(|r| {
@@ -106,9 +114,36 @@ pub fn run_push(
                     ImportStatus::Accepted | ImportStatus::Exists | ImportStatus::Deleted
                 )
             })
-            .count() as u32;
-        stats.last_pushed_seq = batch_high_seq;
-        sync_state::set_pushed(conn, workspace_id, batch_high_seq, &now_iso()?)?;
+            .count();
+        let rejected_repo = resp
+            .results
+            .iter()
+            .filter(|r| matches!(r.status, ImportStatus::RepoNotAllowed))
+            .count();
+        stats.rejected_repo =
+            stats
+                .rejected_repo
+                .saturating_add(u32::try_from(rejected_repo).map_err(|_| {
+                    Error::Other(format!(
+                        "rejected_repo count not representable as u32: {rejected_repo}"
+                    ))
+                })?);
+        stats.pushed = stats
+            .pushed
+            .saturating_add(u32::try_from(accepted).map_err(|_| {
+                Error::Other(format!(
+                    "accepted count not representable as u32: {accepted}"
+                ))
+            })?);
+        // Withhold `pushed_seq` whenever any result is `repo_not_allowed`
+        // (including a hypothetical mixed batch). Other terminal statuses
+        // (stale, collision, …) with zero gate rejects still advance so we
+        // do not retry forever. Retries of already-stored ids come back
+        // `exists`.
+        if rejected_repo == 0 {
+            stats.last_pushed_seq = batch_high_seq;
+            sync_state::set_pushed(conn, workspace_id, batch_high_seq, &now_iso()?)?;
+        }
         if stats.pushed as usize >= cap {
             break;
         }
