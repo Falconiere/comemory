@@ -75,7 +75,7 @@ PYUPGRADE
       | "$plugin/hooks/scope.sh" | jq -e '.hookSpecificOutput.permissionDecision == "deny"' >/dev/null
   done
   # Concurrent badge refreshes publish valid JSON and clean their unique temps.
-  badge_repo="$TASK/badge \"quoted\""
+  badge_repo="$TASK/badge $host \"quoted\""
   mkdir -p "$badge_repo"
   git init -q "$badge_repo"
   (cd "$badge_repo" && "$wrapper" save "Badge lesson $host" "Verified badge fixture" --json) >/dev/null
@@ -84,8 +84,9 @@ PYUPGRADE
   badge_pid=$!
   printf '%s' "$badge_payload" | "$badge"
   wait "$badge_pid"
-  jq -e --arg repo "${badge_repo##*/}" '.repo == $repo and .count >= 1' "$cfg/comemory-status/${badge_repo##*/}.json" >/dev/null
-  [ -z "$(find "$cfg/comemory-status" -name '.count.*' -print)" ]
+  jq -e --arg repo "${badge_repo##*/}" '.repo == $repo and .count == 1' "$cfg/comemory-status/${badge_repo##*/}.json" >/dev/null
+  leftover=$(find "$cfg/comemory-status" -name '.count.*' -print)
+  [ -z "$leftover" ]
   printf blocked > "$TASK/blocked-config"
   printf '%s' "$badge_payload" | TOOLU_CONFIG_DIR="$TASK/blocked-config" "$badge"
   # Exact argv handling, explicit scope, real CLI failure, and disable controls.
