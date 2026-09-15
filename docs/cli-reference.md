@@ -62,6 +62,7 @@ Commands:
   rebuild        Drop `comemory.db` and repopulate it from the markdown source of truth
   gc             Purge old `memories/.trash/` entries and learning telemetry past retention
   install-hooks  Install git hooks that trigger `comemory index-code` on `post-commit`, `post-merge`, and `post-checkout`
+  install        Install bundled skills and hooks for Claude Code or Codex
   upgrade        Move this binary to the newest release (or a pinned one)
   auth           Cloud workspace-key login / status / logout (device authorization)
   sync           Push/pull memories against the platform
@@ -103,37 +104,37 @@ Options:
           - discovery:  An observation worth remembering that isn't a decision or bug
           - pattern:    A reusable approach or idiom
           - note:       A catch-all memory kind not covered by the others
-          
+
           [default: note]
 
       --data-dir <DATA_DIR>
           Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable
-          
+
           [env: COMEMORY_DATA_DIR=]
 
       --repo <REPO>
           Repo name attached to the memory (free-form string)
-          
+
           [default: ""]
 
       --tags <TAGS>
           Comma-separated tag list (e.g. `database,postgres`)
-          
+
           [default: ""]
 
       --author <AUTHOR>
           Author identifier. Defaults to empty so callers may omit
-          
+
           [default: ""]
 
       --quality <QUALITY>
           Quality rating 1..=5. Defaults to 3
-          
+
           [default: 3]
 
       --supersedes <SUPERSEDES>
           Comma-separated 8-hex memory ids this memory replaces (e.g. `a1b2c3d4,e5f6a7b8`). Recorded in the frontmatter `relations.supersedes` list and materialized as `supersedes` edges, so the older memories are demoted in ranking and annotated `superseded_by` in search results
-          
+
           [default: ""]
 
       --vector <VECTOR>
@@ -202,17 +203,17 @@ Options:
 
       --k <K>
           Page size — overrides the configured `retrieval.top_k`. `--limit` is an accepted alias. `0` means "all remaining within the `max_page_window`"
-          
+
           [alias: --limit]
 
       --data-dir <DATA_DIR>
           Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable
-          
+
           [env: COMEMORY_DATA_DIR=]
 
       --offset <OFFSET>
           Number of leading ranked results to skip (deep paging). Bounded by `retrieval.max_page_window`; once the window ceiling is reached `has_more` is false and deeper results require refining the query
-          
+
           [default: 0]
 
       --repo <REPO>
@@ -361,7 +362,7 @@ Options:
 
       --data-dir <DATA_DIR>
           Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable
-          
+
           [env: COMEMORY_DATA_DIR=]
 
       --kind <KIND>
@@ -383,17 +384,17 @@ Options:
           - created:  Newest created first (default)
           - quality:  Descending quality
           - accessed: Most-recently-accessed first; never-accessed rows sort last
-          
+
           [default: created]
 
       --limit <LIMIT>
           Maximum number of results to return. `0` means "all" (no limit)
-          
+
           [default: 50]
 
       --offset <OFFSET>
           Number of leading results to skip before the window starts
-          
+
           [default: 0]
 
   -h, --help
@@ -648,7 +649,7 @@ Options:
 
       --data-dir <DATA_DIR>
           Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable
-          
+
           [env: COMEMORY_DATA_DIR=]
 
       --path <PATH>
@@ -663,7 +664,7 @@ Options:
           Possible values:
           - incremental: Only files changed since the last run
           - full:        Every file. Lossy: re-extraction replaces each file's symbol rows, which drops the repo's BYO `code_vec` rows and resets its per-symbol access counters — re-run `ingest-code` afterwards to restore the semantic leg
-          
+
           [default: incremental]
 
   -h, --help
@@ -829,7 +830,7 @@ Options:
 
       --data-dir <DATA_DIR>
           Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable
-          
+
           [env: COMEMORY_DATA_DIR=]
 
       --format <FORMAT>
@@ -839,7 +840,7 @@ Options:
           - json: Machine-readable `{ nodes, edges }` JSON
           - dot:  Graphviz DOT source (pipe to `dot`)
           - html: Interactive HTML page (sigma.js, loaded from a CDN)
-          
+
           [default: json]
 
       --rel <REL>
@@ -849,22 +850,22 @@ Options:
           - all:        Both `imports` and `co_changed`
           - imports:    Static import edges only
           - co-changed: Git co-change edges only
-          
+
           [default: all]
 
       --min-weight <MIN_WEIGHT>
           Drop `co_changed` edges whose accumulated weight is below this floor (does not affect `imports`, which always carry weight 1). Must be >= 1
-          
+
           [default: 1]
 
       --limit <LIMIT>
           Maximum number of results to return. `0` means "all" (no limit)
-          
+
           [default: 50]
 
       --offset <OFFSET>
           Number of leading results to skip before the window starts
-          
+
           [default: 0]
 
   -h, --help
@@ -1130,6 +1131,47 @@ Examples:
 
 ---
 
+## comemory install
+
+```
+Install bundled skills and hooks for Claude Code or Codex
+
+Usage: comemory install [OPTIONS] <HOST>
+
+Arguments:
+  <HOST>
+          Agent host; installs both skills and lifecycle hooks
+
+          Possible values:
+          - claude: Claude Code skills and hooks
+          - codex:  Codex skills and hooks
+
+Options:
+      --dry-run
+          Preview the bundle destination without writing files
+
+      --json
+          Emit machine-readable JSON instead of a human TTY view
+
+      --config-dir <CONFIG_DIR>
+          Override the host's user configuration directory
+
+      --data-dir <DATA_DIR>
+          Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable
+
+          [env: COMEMORY_DATA_DIR=]
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+Examples:
+  comemory install claude
+  comemory install codex
+  comemory install claude --dry-run --config-dir /tmp/claude-preview
+```
+
+---
+
 ## comemory install-hooks
 
 ```
@@ -1271,12 +1313,12 @@ Options:
           - pull:   Pull remote changes only (`--pull-only` alias)
           - verify: Compare local/remote manifests and repair differing buckets (AC-9)
           - status: Print sync cursors
-          
+
           [default: run]
 
       --data-dir <DATA_DIR>
           Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable
-          
+
           [env: COMEMORY_DATA_DIR=]
 
       --allow-secret <ID>

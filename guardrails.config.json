@@ -21,6 +21,7 @@
       ],
       "cli": [
         "graph",
+        "install",
         "tests",
         "proptest-regressions"
       ],
@@ -68,6 +69,7 @@
       "ast",
       "cli",
       "cli/graph",
+      "cli/install",
       "config",
       "consolidate",
       "document",

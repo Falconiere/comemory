@@ -1,0 +1,10 @@
+{
+  "name": "comemory",
+  "version": "0.31.0",
+  "description": "Repo-scoped developer memory and project skills, owned by comemory.",
+  "author": {
+    "name": "Falconiere Barbosa"
+  },
+  "homepage": "https://github.com/Falconiere/comemory",
+  "license": "MIT"
+}

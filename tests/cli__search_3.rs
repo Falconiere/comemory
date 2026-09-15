@@ -238,8 +238,14 @@ fn path_flag_has_no_effect_on_memory_results() {
     let workspace = tempdir().expect("workspace");
     index_docs_fixtures(home.path(), workspace.path());
     save_memory(home.path(), "widget rollout advisory note");
+    // This compares path filtering, not aging. Disabling access tracking does
+    // not stop wall-clock activation decay; configure zero decay through the
+    // real config file so crossing a second cannot change otherwise equal hits.
+    std::fs::write(home.path().join("config.toml"), "[rank]\ndecay = 0.0\n")
+        .expect("disable time decay for the path comparison");
 
     let plain = search_json(home.path(), "widget", &[]);
+    std::thread::sleep(std::time::Duration::from_secs(1));
     let with_path = search_json(home.path(), "widget", &["--path", "docs/**"]);
     assert_eq!(
         plain["hits"], with_path["hits"],

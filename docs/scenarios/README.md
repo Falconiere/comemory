@@ -52,6 +52,7 @@ Per-command files do not replace the multi-command journeys:
 | Learning loop | `tests/cli_scenario_learning.rs` | save, search, feedback, mine, eval, tune, bandit |
 | Maintenance | `tests/cli_scenario_maintenance.rs` | save, consolidate, prune, rebuild, gc |
 | Hooks | `tests/cli_scenario_hooks.rs` | install-hooks, hooks, index-code, search-code |
+| Agent installation (CLI only) | `tests/cli_scenario_install.rs` | install --dry-run |
 | BYO-vector | `tests/cli_scenario_vectors.rs` | index-code --extract, ingest-code, search-code --vector-stdin, save --vector-stdin |
 | Globals | `tests/cli_scenario_globals.rs` | `--data-dir` vs env, `--json` placement, usage exits |
 
@@ -101,6 +102,7 @@ Each journey has an HTTP twin over a real `comemory serve`, sharing
 | `ast` | [ast.md](ast.md) |
 | `hooks` | [hooks.md](hooks.md) |
 | `install-hooks` | [install-hooks.md](install-hooks.md) |
+| `install` | [install.md](install.md) |
 | `prune` | [prune.md](prune.md) |
 | `consolidate` | [consolidate.md](consolidate.md) |
 | `rebuild` | [rebuild.md](rebuild.md) |

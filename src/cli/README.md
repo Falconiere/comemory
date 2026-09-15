@@ -70,3 +70,5 @@ One line per file, named after its primary item:
 When you add a file here, add its row above so the index stays current. No
 `mod.rs` barrel — submodules are declared from `src/cli.rs` (`pub mod <name>;`)
 and the dispatcher (`Cmd`) imports concrete paths.
+
+- `install.rs` / `install/`: installs embedded agent skills and hooks through the native Claude Code or Codex plugin manager.
