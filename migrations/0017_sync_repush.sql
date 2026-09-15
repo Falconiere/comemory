@@ -11,6 +11,12 @@
 -- bounded by the same batch loop a first login uses. `pulled_seq` is left
 -- alone — nothing was ever wrongly pulled.
 --
+-- Every row, deliberately. `sync_state` carries one row per workspace this
+-- device has ever synced against, and the filter this repairs applied to all of
+-- them equally — so a machine that has logged into two organizations has
+-- stranded memories in both, and rewinding only one would leave the other's
+-- hidden forever. Each workspace's re-walk is independent and idempotent.
+--
 -- Destructive class: it rewrites existing rows in place, so a failed
 -- pre-migration snapshot must refuse the upgrade rather than warn.
 

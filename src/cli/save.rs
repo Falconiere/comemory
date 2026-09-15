@@ -138,6 +138,10 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     // The write is committed; sync is now the writing command's own business
     // (`sync::push_on_save`). `off_runtime` because the platform client is
     // `reqwest::blocking`, which panics on drop inside this async fn's runtime.
+    //
+    // `ctx` is dropped rather than left to end of scope because it borrows
+    // `paths` and `cfg`, which the closure below needs, and because its lazy
+    // connection should be closed before the push opens its own.
     drop(ctx);
     off_runtime(|| {
         crate::sync::push_on_save::after_write_best_effort(&paths, &cfg);

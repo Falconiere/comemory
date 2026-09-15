@@ -102,16 +102,25 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     }
 }
 
-/// A fraction in `[0, 1)` from the OS, without pulling in an RNG crate.
+/// A fraction in `[0, 1)` for the backoff jitter, without an RNG dependency.
+///
+/// `/dev/urandom` is the preferred source and exists on both supported
+/// platforms (macOS, Linux). It is read rather than assumed: on any host
+/// without it the clock's sub-second remainder stands in, which is a weaker
+/// spread but still a spread — unlike a constant, which would line every
+/// client of a restarted platform up on the same reconnect instant.
 fn rand_fraction() -> f64 {
     let mut bytes = [0_u8; 2];
     if std::fs::File::open("/dev/urandom")
         .and_then(|mut f| std::io::Read::read_exact(&mut f, &mut bytes))
-        .is_err()
+        .is_ok()
     {
-        return 0.5;
+        return f64::from(u16::from_le_bytes(bytes)) / f64::from(u16::MAX);
     }
-    f64::from(u16::from_le_bytes(bytes)) / f64::from(u16::MAX)
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.subsec_nanos());
+    f64::from(nanos % 1_000) / 1_000.0
 }
 
 /// One connection's lifetime. `Ok(true)` means `--once` has been satisfied.

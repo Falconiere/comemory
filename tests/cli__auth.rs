@@ -15,71 +15,18 @@
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
-use std::process::Output;
 
-use assert_cmd::cargo::cargo_bin;
+use auth_home::Home;
 use device_auth_server::{DeviceAuthConfig, DeviceAuthServer, tooling_present};
 use serde_json::Value;
 use sync_platform_server::{SyncPlatformServer, SyncPlatformState};
-use tempfile::TempDir;
 
+#[path = "common/auth_home.rs"]
+mod auth_home;
 #[path = "common/device_auth_server.rs"]
 mod device_auth_server;
 #[path = "common/sync_platform_server.rs"]
 mod sync_platform_server;
-
-struct Home {
-    root: TempDir,
-}
-
-impl Home {
-    fn new() -> Self {
-        Self {
-            root: TempDir::new().unwrap(),
-        }
-    }
-
-    fn data_dir(&self) -> PathBuf {
-        self.root.path().join(".comemory")
-    }
-
-    fn auth_file(&self) -> PathBuf {
-        self.data_dir().join("auth.json")
-    }
-
-    fn run(&self, api: Option<&str>, args: &[&str]) -> Output {
-        let mut cmd = std::process::Command::new(cargo_bin("comemory"));
-        cmd.env("COMEMORY_DATA_DIR", self.data_dir())
-            .env("HOME", self.root.path())
-            .env("COMEMORY_SYNC_DAEMON", "0")
-            .env_remove("COMEMORY_API")
-            .env_remove("COMEMORY_API_KEY")
-            .args(args);
-        if let Some(url) = api {
-            cmd.env("COMEMORY_API", url);
-        }
-        cmd.output().expect("run comemory")
-    }
-
-    fn run_json(&self, api: Option<&str>, args: &[&str]) -> Value {
-        let mut full = vec!["--json"];
-        full.extend_from_slice(args);
-        let out = self.run(api, &full);
-        assert!(
-            out.status.success(),
-            "expected success {:?}: {}",
-            out.status.code(),
-            String::from_utf8_lossy(&out.stderr)
-        );
-        serde_json::from_slice(&out.stdout).unwrap_or_else(|e| {
-            panic!(
-                "stdout not JSON: {e}\n{}",
-                String::from_utf8_lossy(&out.stdout)
-            )
-        })
-    }
-}
 
 fn require_http_tools() {
     assert!(
@@ -344,15 +291,10 @@ fn api_url_flag_and_comemory_api_override_default() {
     let home = Home::new();
 
     // Flag wins: point env at a dead host; --api-url should still hit the fixture.
-    let mut cmd = std::process::Command::new(cargo_bin("comemory"));
-    let out = cmd
-        .env("COMEMORY_DATA_DIR", home.data_dir())
-        .env("HOME", home.root.path())
-        .env("COMEMORY_API", "http://127.0.0.1:1")
-        .env_remove("COMEMORY_API_KEY")
-        .args(["--json", "auth", "login", "--api-url", &srv.base])
-        .output()
-        .unwrap();
+    let out = home.run(
+        Some("http://127.0.0.1:1"),
+        &["--json", "auth", "login", "--api-url", &srv.base],
+    );
     assert!(
         out.status.success(),
         "flag should beat env: {}",

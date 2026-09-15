@@ -13,53 +13,19 @@
 //! path — ticket route, upgrade, frame, cursored pull, markdown write — runs
 //! for real. Nothing is stubbed but the platform itself.
 
-use std::path::PathBuf;
-use std::process::Output;
+use auth_home::Home;
+use sync_platform_server::{SyncPlatformServer, SyncPlatformState};
 
-use assert_cmd::cargo::cargo_bin;
-use tempfile::TempDir;
-
+#[path = "common/auth_home.rs"]
+mod auth_home;
+#[path = "common/device_auth_server.rs"]
+mod device_auth_server;
 #[path = "common/sync_platform_server.rs"]
 mod sync_platform_server;
 
-use sync_platform_server::{SyncPlatformServer, SyncPlatformState};
-
-/// A throwaway `$HOME` + data dir, as the auth suite uses.
-struct Home {
-    root: TempDir,
-}
-
-impl Home {
-    fn new() -> Self {
-        Self {
-            root: TempDir::new().unwrap(),
-        }
-    }
-
-    fn data_dir(&self) -> PathBuf {
-        self.root.path().join(".comemory")
-    }
-
-    fn run(&self, args: &[&str]) -> Output {
-        let mut cmd = std::process::Command::new(cargo_bin("comemory"));
-        cmd.env("COMEMORY_DATA_DIR", self.data_dir())
-            .env("HOME", self.root.path())
-            .env("COMEMORY_SYNC_DAEMON", "0")
-            .env_remove("COMEMORY_API")
-            .env_remove("COMEMORY_API_KEY")
-            .args(args);
-        cmd.output().expect("run comemory")
-    }
-}
-
 /// `curl`/`wget` are what the device-login path shells out to.
 fn require_http_tools() -> bool {
-    ["curl", "wget"].iter().any(|tool| {
-        std::process::Command::new(tool)
-            .arg("--version")
-            .output()
-            .is_ok_and(|o| o.status.success())
-    })
+    device_auth_server::tooling_present()
 }
 
 #[test]
@@ -111,14 +77,14 @@ fn watch_pulls_what_the_channel_announces() {
     });
 
     let home = Home::new();
-    let login = home.run(&["auth", "login", "--api-url", &srv.base, "--json"]);
+    let login = home.run(None, &["auth", "login", "--api-url", &srv.base, "--json"]);
     assert!(
         login.status.success(),
         "login failed: {}",
         String::from_utf8_lossy(&login.stderr)
     );
 
-    let out = home.run(&["watch", "--once", "--json"]);
+    let out = home.run(None, &["watch", "--once", "--json"]);
     assert!(
         out.status.success(),
         "watch failed: {} / {}",
@@ -143,8 +109,15 @@ fn watch_pulls_what_the_channel_announces() {
         .filter_map(std::result::Result::ok)
         .map(|e| e.file_name().to_string_lossy().into_owned())
         .collect::<Vec<_>>();
+    // Anchored at both ends: the store names a memory `{id}-{slug}.md`, so a
+    // bare `starts_with` would also accept `{id}_something_else`.
     assert!(
-        memories.iter().any(|name| name.starts_with(&id)),
+        memories.iter().any(|name| {
+            std::path::Path::new(name)
+                .extension()
+                .is_some_and(|ext| ext == "md")
+                && name.starts_with(&format!("{id}-"))
+        }),
         "the announced memory must be on disk after the triggered pull: {memories:?}"
     );
 }
@@ -152,7 +125,7 @@ fn watch_pulls_what_the_channel_announces() {
 #[test]
 fn watch_without_a_login_is_a_usage_error() {
     let home = Home::new();
-    let out = home.run(&["watch", "--once"]);
+    let out = home.run(None, &["watch", "--once"]);
     assert!(!out.status.success(), "watch must refuse without auth.json");
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
