@@ -20,7 +20,7 @@ BIN="$PROJECT_ROOT/target/release-quick/comemory"
 SUBCOMMANDS=(
   save search search-code list delete feedback eval mine tune bandit doctor
   index-code ingest-code index sources unindex ast graph edges serve context
-  prune consolidate rebuild gc install-hooks completions upgrade
+  prune consolidate rebuild gc install install-hooks completions upgrade
   auth sync capture
 )
 
@@ -69,6 +69,6 @@ HEADER
     echo '```'
     echo
   done
-} > "$OUT"
+} | awk '{ sub(/[ \t]+$/, ""); print }' > "$OUT"
 
 log_ok "$STEP" "wrote $OUT"

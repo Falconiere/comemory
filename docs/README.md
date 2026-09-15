@@ -13,6 +13,8 @@ organized by what you're trying to do.
 
 Task-oriented recipes for a specific job:
 
+- **[Agent skills and hooks](guides/agent-integration.md)** — install the Claude
+  Code or Codex integration and migrate from toolu.
 - **[Bring your own vectors](guides/byo-vectors.md)** — embed memories and code
   with your own model via `--vector` / `--vector-stdin` (dims 1024 / 768).
 - **[Keep the code index fresh](guides/auto-reindex.md)** — `lazy` (default),

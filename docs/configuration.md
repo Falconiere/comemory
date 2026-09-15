@@ -4,6 +4,15 @@ comemory's settings are layered: built-in defaults → an optional `config.toml`
 → environment variables (the last wins). The CLI also takes the global
 `--data-dir` and `--json` flags (see [CLI reference](cli-reference.md)).
 
+## Agent integration
+
+`comemory install claude|codex` honors `CLAUDE_CONFIG_DIR` or `CODEX_HOME`,
+respectively; `--config-dir` overrides that destination. Installed hooks read
+`comemory.json` in the host configuration directory and the repository's
+`.claude/` or `.codex/` directory, with project values taking precedence.
+See [Agent skills and hooks](guides/agent-integration.md) for the disable controls,
+project-skill settings, and migration from toolu.
+
 ## Environment variables
 
 | Variable | Purpose | Default |

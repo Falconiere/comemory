@@ -413,3 +413,10 @@ A task isn't done until `scripts/check-all.sh` exits 0.
 <div align="center">
 <sub>Built in Rust 🦀 · 100% local · one binary · markdown is the source of truth</sub>
 </div>
+
+## Agent integration
+
+`comemory install claude` and `comemory install codex` install the bundled skills
+and hooks through the host plugin manager. Use `--dry-run` to preview. The
+integration is owned here and requires no toolu plugin. See
+[installation and migration](docs/guides/agent-integration.md).

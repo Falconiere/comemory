@@ -1,0 +1,7 @@
+{
+  "name": "comemory",
+  "version": "0.31.0",
+  "description": "Repo-scoped developer memory and project skills, owned by comemory.",
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks.json"
+}

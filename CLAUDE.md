@@ -795,3 +795,10 @@ local rule strictly stronger than the one it replaces.
   `cargo-dist`. The guardrails module keys workspace mode on the presence of
   `guardrails.workspace.json`, not on Cargo metadata, so this repo takes the
   single-repo path regardless.
+
+## Agent integration
+
+`comemory install claude` and `comemory install codex` install the bundled skills
+and hooks through the host plugin manager. Use `--dry-run` to preview. The
+integration is owned here and requires no toolu plugin. See
+[installation and migration](docs/guides/agent-integration.md).

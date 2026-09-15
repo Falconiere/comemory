@@ -52,6 +52,8 @@ pub mod index;
 pub mod index_code;
 /// `comemory ingest-code`: bulk code ingestion.
 pub mod ingest_code;
+/// `comemory install`: standalone agent skills and hooks.
+pub mod install;
 /// `comemory install-hooks`: git-hook installation.
 pub mod install_hooks;
 /// Detached auto-reindex spawn behind `indexing.auto_reindex = lazy`.
@@ -205,6 +207,8 @@ pub enum Cmd {
     /// Install git hooks that trigger `comemory index-code` on
     /// `post-commit`, `post-merge`, and `post-checkout`.
     InstallHooks(install_hooks::Args),
+    /// Install bundled skills and hooks for Claude Code or Codex.
+    Install(install::Args),
     /// Move this binary to the newest release (or a pinned one).
     Upgrade(upgrade::Args),
     /// Cloud workspace-key login / status / logout (device authorization).
@@ -257,6 +261,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::Rebuild(a) => rebuild::run(a, cli.json, cli.data_dir).await,
         Cmd::Gc => gc::run(cli.json, cli.data_dir).await,
         Cmd::InstallHooks(a) => install_hooks::run(a, cli.json, cli.data_dir).await,
+        Cmd::Install(a) => install::run(a, cli.json, cli.data_dir),
         Cmd::Upgrade(a) => upgrade::run(a, cli.json, cli.data_dir).await,
         Cmd::Auth(a) => auth::run(a, cli.json, cli.data_dir).await,
         Cmd::Sync(a) => sync::run(a, cli.json, cli.data_dir).await,
