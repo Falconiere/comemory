@@ -94,8 +94,11 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
                 "the workspace channel never greeted us".into(),
             ));
         }
-        // Deterministic here, jittered in aggregate: every client picks its own
-        // fraction, so a platform restart does not bring them all back at once.
+        // Randomly jittered inside a bounded window, per client: a platform
+        // restart must not bring every watcher back on the same instant. The
+        // window doubles per attempt and caps at BACKOFF_MAX; `attempt` is
+        // incremented after the delay is computed, so the first retry waits
+        // the floor.
         let delay = backoff_delay(attempt, rand_fraction());
         attempt = attempt.saturating_add(1);
         tokio::time::sleep(delay).await;
