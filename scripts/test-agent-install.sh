@@ -3,6 +3,7 @@
 set -euo pipefail
 ROOT="$(cd "${BASH_SOURCE%/*}/.." && pwd)"
 BIN="${COMEMORY_BIN:-$ROOT/target/debug/comemory}"
+[ -x "$BIN" ] || { printf 'Missing executable comemory binary: %s\n' "$BIN" >&2; exit 1; }
 TASK=$(mktemp -d)
 trap 'rm -rf "$TASK"' EXIT
 mkdir -p "$TASK/bin"
@@ -97,6 +98,11 @@ PYUPGRADE
   if (cd "$TASK/repository" && "$wrapper" save invalid body --kind invalid) >"$TASK/failure-$host" 2>&1; then
     printf 'Expected invalid memory kind to fail\n' >&2; exit 1
   fi
+  python3 - "$TASK/failure-$host" <<'PYERROR'
+import pathlib, sys
+error = pathlib.Path(sys.argv[1]).read_text()
+assert "invalid value 'invalid' for '--kind <KIND>'" in error, error
+PYERROR
   printf '%s\n' '{"projectSkills":{"enabled":false}}' > "$cfg/comemory.json"
   jq -nc --arg cwd "$TASK/repository" '{cwd:$cwd}' | "$plugin/hooks/session-start.sh" \
     | jq -e '.hookSpecificOutput.additionalContext' >/dev/null
