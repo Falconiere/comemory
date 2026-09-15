@@ -60,7 +60,8 @@ One line per file, named after its primary item:
 | `show.rs` | `Args` | `comemory show` — one memory in full: body, frontmatter, activation, refs |
 | `sources.rs` | `Args` | `comemory sources` — list registered document sources with status counts |
 | `stats.rs` | `Args` | `comemory stats` — corpus counters and `comemory.db` size |
-| `sync.rs` | `Args` | `comemory sync` — nested `push` / `pull` / `status` / `verify` for cloud sync; `status` also reports `pending` |
+| `sync.rs` | `Args` | `comemory sync` — nested `push` / `pull` / `status` / `verify` for cloud sync; `run` and `push` push the code index after the memories |
+| `sync_render.rs` | `emit_run` | The TTY and `--json` shapes of `comemory sync`: the run counters (memories and code), `status`'s cursors plus one `code` row per indexed repo (`moved_since_push`), the verify report, the daemon status, and the login report's code line |
 | `watch.rs` | `Args` | `comemory watch` — the one long-lived command: holds the platform's workspace channel open and runs a cursored pull on every nudge, reconnecting with jittered backoff |
 | `tune.rs` | `Args` | `comemory tune` — deterministic/sampled search over the blend knobs |
 | `unindex.rs` | `Args` | `comemory unindex <SOURCE_ID\|PATH>` — unregister a document source |

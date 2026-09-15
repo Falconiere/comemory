@@ -168,11 +168,14 @@ impl Config {
         Ok(())
     }
 
-    /// `COMEMORY_SYNC_PUSH_ON_SAVE` / `COMEMORY_SYNC_PUSH_ON_SAVE_TIMEOUT` →
-    /// [`Config::sync`].
+    /// `COMEMORY_SYNC_PUSH_ON_SAVE` / `COMEMORY_SYNC_PUSH_ON_SAVE_TIMEOUT` /
+    /// `COMEMORY_SYNC_CODE_INDEX` → [`Config::sync`].
     fn apply_sync_env(&mut self) -> Result<()> {
         if let Ok(v) = std::env::var("COMEMORY_SYNC_PUSH_ON_SAVE") {
             self.sync.push_on_save = parse_bool_env("COMEMORY_SYNC_PUSH_ON_SAVE", &v)?;
+        }
+        if let Ok(v) = std::env::var("COMEMORY_SYNC_CODE_INDEX") {
+            self.sync.code_index = parse_bool_env("COMEMORY_SYNC_CODE_INDEX", &v)?;
         }
         if let Ok(v) = std::env::var("COMEMORY_SYNC_PUSH_ON_SAVE_TIMEOUT") {
             self.sync.push_on_save_timeout = v;

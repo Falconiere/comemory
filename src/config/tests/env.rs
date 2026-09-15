@@ -497,3 +497,22 @@ fn bad_prune_below_quality_out_of_range_is_an_error() {
         "error must name the offending var, got: {msg}"
     );
 }
+
+#[test]
+fn env_sync_code_index_override_applies() {
+    // `[sync] code_index` ships on; the env override is how a headless host
+    // keeps its index local without editing config.toml.
+    // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
+    unsafe { std::env::set_var("COMEMORY_SYNC_CODE_INDEX", "false") };
+    let c = Config::defaults().with_env();
+    // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
+    unsafe { std::env::remove_var("COMEMORY_SYNC_CODE_INDEX") };
+    assert!(!c.unwrap().sync.code_index);
+
+    // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
+    unsafe { std::env::set_var("COMEMORY_SYNC_CODE_INDEX", "sometimes") };
+    let bad = Config::defaults().with_env();
+    // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
+    unsafe { std::env::remove_var("COMEMORY_SYNC_CODE_INDEX") };
+    assert!(bad.is_err(), "a non-boolean must be refused, not defaulted");
+}

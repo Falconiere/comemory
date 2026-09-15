@@ -43,7 +43,7 @@ One line per file, named after its primary item:
 | `repos_admin.rs` | `table_entries` | `POST /repos` (connect, contained root), `PATCH /repos/{name}` (`root` only), `POST /repos/{name}/archive`, confirm-gated `DELETE /repos/{name}` |
 | `search.rs` | `table_entries` | `GET\|POST /search` (the console view over `find`, with the explain strip), `GET /search/suggest`, `POST /search/{query_id}/feedback` (`source: explicit\|implicit` passes through to the `feedback` core, which stores it as the verdict's provenance) |
 | `trash.rs` | `table_entries` | `GET /trash` and `POST /trash/{id}/restore` |
-| `sync.rs` | `table_entries` | `GET /sync/changes`, `GET /sync/manifest`, `POST /sync/import` (author via `X-Comemory-Author`) |
+| `sync.rs` | `table_entries` | `GET /sync/changes`, `GET /sync/manifest`, `POST /sync/import` (author via `X-Comemory-Author`), plus the code-index pair `GET /sync/code/manifest?repo=` and `POST /sync/code/import` (`guard_mutating`) |
 
 When you add a file here, add its row above so the index stays current. No
 `mod.rs` barrel — submodules are declared from `src/serve/routes.rs` (`pub

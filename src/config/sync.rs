@@ -35,9 +35,17 @@ pub struct SyncConfig {
     pub push_on_save_timeout: String,
     /// Repo labels withheld from push, as globs over the normalized label.
     /// The only client-side sync filter left now that organization membership
-    /// is the platform's gate.
+    /// is the platform's gate. Applies to memories and to the code index
+    /// alike.
     #[serde(default)]
     pub skip_repos: Vec<String>,
+    /// Push the code index (file paths, symbol names and line ranges, the
+    /// import and co-change edges — never source text) of every indexed repo
+    /// alongside memories. On by default so the console's code graph fills in
+    /// right after `comemory auth login`; `false` keeps every repo's index on
+    /// this machine.
+    #[serde(default = "default_true")]
+    pub code_index: bool,
     /// Deprecated, parsed and ignored: repo-label → workspace-id cache. It was
     /// written by the removed `comemory link` and read by nothing.
     #[serde(default)]
@@ -97,6 +105,7 @@ pub struct PartialSyncConfig {
     push_on_save: Option<bool>,
     push_on_save_timeout: Option<String>,
     skip_repos: Option<Vec<String>>,
+    code_index: Option<bool>,
     repos: Option<BTreeMap<String, String>>,
     default_workspace: Option<String>,
     allowlist_ttl: Option<String>,
@@ -120,6 +129,7 @@ impl SyncConfig {
             push_on_save: true,
             push_on_save_timeout: "2s".into(),
             skip_repos: Vec::new(),
+            code_index: true,
             repos: BTreeMap::new(),
             default_workspace: None,
             allowlist_ttl: "1h".into(),
@@ -150,6 +160,9 @@ impl SyncConfig {
         }
         if let Some(v) = partial.skip_repos {
             self.skip_repos = v;
+        }
+        if let Some(v) = partial.code_index {
+            self.code_index = v;
         }
         if let Some(v) = partial.repos {
             self.repos = v;
@@ -231,6 +244,11 @@ impl Default for EmbedConfig {
     fn default() -> Self {
         Self::defaults()
     }
+}
+
+/// serde default for the one `[sync]` bool that ships on.
+const fn default_true() -> bool {
+    true
 }
 
 /// Warn that `key` is set but no longer does anything.

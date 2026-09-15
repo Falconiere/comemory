@@ -91,6 +91,8 @@ pub mod sources;
 pub mod stats;
 /// `comemory sync`: push/pull against the platform (CLI-only).
 pub mod sync;
+/// Rendering for `comemory sync` (TTY + `--json` shapes).
+pub mod sync_render;
 /// `comemory tune`: grid/sampled search over the ranking knobs.
 pub mod tune;
 /// `comemory unindex`: unregister a document source and remove its

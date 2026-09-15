@@ -17,7 +17,7 @@ use crate::prelude::*;
 use crate::store::connection::open;
 use crate::sync::AuthFile;
 use crate::sync::daemon_unit;
-use crate::sync::{pull, push, verify};
+use crate::sync::{code, pull, push, verify};
 
 pub use daemon_unit::{
     DAEMON_LABEL, DaemonStatus, SYSTEMD_UNIT, install, launch_agent_plist,
@@ -84,6 +84,12 @@ fn run_one_cycle(
     }
     if let Err(e) = push::run_push(paths, cfg, &mut conn, &auth, None, CYCLE_LIMIT) {
         tracing::warn!(error = %e, "sync daemon push failed");
+    }
+    // Only repos whose index moved since their last push touch the network:
+    // a manifest read per repo per five-second cycle would eat the pull
+    // budget for nothing.
+    if let Err(e) = code::run_code_push_if_moved(cfg, &mut conn, &auth) {
+        tracing::warn!(error = %e, "sync daemon code push failed");
     }
     if last_verify.elapsed() >= verify_every {
         match verify::verify_manifests(paths, cfg, &mut conn, &auth) {

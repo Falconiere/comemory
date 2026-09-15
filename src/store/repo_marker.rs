@@ -85,6 +85,13 @@ pub(crate) fn advance_mined_cursor(conn: &Connection, repo: &str, cursor: &str) 
     Ok(())
 }
 
+/// The stored `last_head` for `repo`, or `None` when the repo has never
+/// been indexed (or the column is `NULL`) — the head a code push reports
+/// and a code manifest answers.
+pub(crate) fn last_head(conn: &Connection, repo: &str) -> Result<Option<String>> {
+    Ok(column_for_repo::<Option<String>>(conn, "last_head", repo)?.flatten())
+}
+
 /// Whether `repo`'s `repo_marker.archived` flag is set. `None` when the
 /// repo has no marker row yet (never indexed) — `api::index_code`'s
 /// archived-repo refusal treats an unknown repo as not archived.

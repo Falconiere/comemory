@@ -17,8 +17,8 @@ use time::format_description::well_known::Iso8601;
 use crate::test_common::serve_state;
 
 #[test]
-fn table_entries_has_three_routes() {
-    assert_eq!(comemory::serve::routes::sync::table_entries().len(), 3);
+fn table_entries_has_five_routes() {
+    assert_eq!(comemory::serve::routes::sync::table_entries().len(), 5);
 }
 
 #[tokio::test]

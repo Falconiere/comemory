@@ -1,7 +1,11 @@
-//! Cloud-sync client helpers: credentials, redaction, and the local skip filter.
+//! Cloud-sync client helpers: credentials, redaction, the local skip filter,
+//! and the two push paths — memories (`push`) and the code index (`code`).
 
 pub mod auth_file;
 pub mod client;
+pub mod client_code;
+pub mod code;
+pub mod code_plan;
 pub mod daemon;
 pub mod daemon_templates;
 pub mod daemon_unit;
