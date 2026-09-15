@@ -63,6 +63,7 @@ PYUPGRADE
     | bash -c "$(jq -r '.hooks.SessionStart[0].hooks[0].command' "$plugin/hooks/hooks.json")" > "$TASK/start-$host.json"
   jq -e '.hookSpecificOutput.additionalContext | contains("repo-scoped recall")' "$TASK/start-$host.json" >/dev/null
   wrapper="$cfg/comemory/comemory.sh"
+  badge="$plugin/hooks/comemory-status.sh"
   (cd "$TASK/repository" && "$wrapper" save "Worktree correction $host" 'Use the canonical repository scope; a worktree name splits retrieval. Verified by saving in the primary checkout and retrieving from its sibling.' --kind convention --json) > "$TASK/saved-$host.json"
   (cd "$TASK/worktree" && "$wrapper" search "Worktree correction $host" --json) > "$TASK/recalled-$host.json"
   jq -e --arg host "$host" 'tostring | contains("Worktree correction " + $host)' "$TASK/recalled-$host.json" >/dev/null
@@ -73,6 +74,20 @@ PYUPGRADE
     jq -nc --arg cwd "$TASK/worktree" --arg command "$invocation" '{cwd:$cwd,tool_name:"Bash",tool_input:{command:$command}}' \
       | "$plugin/hooks/scope.sh" | jq -e '.hookSpecificOutput.permissionDecision == "deny"' >/dev/null
   done
+  # Concurrent badge refreshes publish valid JSON and clean their unique temps.
+  badge_repo="$TASK/badge \"quoted\""
+  mkdir -p "$badge_repo"
+  git init -q "$badge_repo"
+  (cd "$badge_repo" && "$wrapper" save "Badge lesson $host" "Verified badge fixture" --json) >/dev/null
+  badge_payload=$(jq -nc --arg cwd "$badge_repo" '{cwd:$cwd}')
+  printf '%s' "$badge_payload" | "$badge" &
+  badge_pid=$!
+  printf '%s' "$badge_payload" | "$badge"
+  wait "$badge_pid"
+  jq -e --arg repo "${badge_repo##*/}" '.repo == $repo and .count >= 1' "$cfg/comemory-status/${badge_repo##*/}.json" >/dev/null
+  [ -z "$(find "$cfg/comemory-status" -name '.count.*' -print)" ]
+  printf blocked > "$TASK/blocked-config"
+  printf '%s' "$badge_payload" | TOOLU_CONFIG_DIR="$TASK/blocked-config" "$badge"
   # Exact argv handling, explicit scope, real CLI failure, and disable controls.
   body=$'User correction: "quoted" title\nEvidence: a real Git worktree shares its parent repository.'
   (cd "$TASK/worktree" && "$wrapper" save "Quoted lesson $host" "$body" --repo overridden --json) >/dev/null

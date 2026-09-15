@@ -59,11 +59,11 @@ ps_load_cfg() {
 ps_memory_enabled() { ps_load_cfg; command -v jq >/dev/null 2>&1 && jq -e '.skills.comemory != false' <<<"$PS_CFG_JSON" >/dev/null; }
 ps_loop_enabled() { ps_memory_enabled && jq -e '.projectSkills.enabled != false' <<<"$PS_CFG_JSON" >/dev/null; }
 ps_cfg_int() {
-  local path="$1" def="$2" typ val
+  local path="$1" def="$2" value_type val
   ps_load_cfg; command -v jq >/dev/null 2>&1 || { printf '%s' "$def"; return 0; }
-  typ=$(jq -r --arg p "$path" 'getpath($p | split(".")) | type' <<<"$PS_CFG_JSON" 2>/dev/null || echo "null")
+  value_type=$(jq -r --arg p "$path" 'getpath($p | split(".")) | type' <<<"$PS_CFG_JSON" 2>/dev/null || echo "null")
   val=$(jq -r --arg p "$path" 'getpath($p | split(".")) // empty' <<<"$PS_CFG_JSON" 2>/dev/null || true)
-  case "$typ" in number) case "$val" in ''|*[!0-9]*) printf '%s' "$def" ;; *) printf '%s' "$val" ;; esac ;; null) printf '%s' "$def" ;; *) printf 'project-skills: %s is not an integer; using %s\n' "$path" "$def" >&2; printf '%s' "$def" ;; esac
+  case "$value_type" in number) case "$val" in ''|*[!0-9]*) printf '%s' "$def" ;; *) printf '%s' "$val" ;; esac ;; null) printf '%s' "$def" ;; *) printf 'project-skills: %s is not an integer; using %s\n' "$path" "$def" >&2; printf '%s' "$def" ;; esac
 }
 ps_thresholds() {
   PS_STALE=$(ps_cfg_int projectSkills.staleAfterDays 30); PS_ARCHIVE=$(ps_cfg_int projectSkills.archiveAfterDays 90); PS_INDEX_CAP=$(ps_cfg_int projectSkills.indexCap 20)

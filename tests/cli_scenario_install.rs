@@ -28,3 +28,30 @@ fn project_skill_lifecycle_uses_real_repository_paths() {
         .assert()
         .success();
 }
+
+#[cfg(unix)]
+#[test]
+fn badge_hook_without_home_or_host_configuration_is_nonfatal() {
+    let binary = assert_cmd::cargo::cargo_bin!("comemory");
+    let mut paths = vec![binary.parent().unwrap().to_path_buf()];
+    paths.extend(std::env::split_paths(
+        &std::env::var_os("PATH").unwrap_or_default(),
+    ));
+    Command::new("bash")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/integrations/agent/hooks/comemory-status.sh"
+        ))
+        .env("PATH", std::env::join_paths(paths).unwrap())
+        .env_remove("HOME")
+        .env_remove("CODEX_HOME")
+        .env_remove("CLAUDE_CONFIG_DIR")
+        .env_remove("TOOLU_CONFIG_DIR")
+        .env_remove("TOOLU_HOST_OVERRIDE")
+        .env_remove("PLUGIN_ROOT")
+        .write_stdin("{}")
+        .assert()
+        .success()
+        .stdout("")
+        .stderr("");
+}
