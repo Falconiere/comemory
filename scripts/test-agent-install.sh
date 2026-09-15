@@ -8,7 +8,7 @@ trap 'rm -rf "$TASK"' EXIT
 mkdir -p "$TASK/bin"
 ln -s "$BIN" "$TASK/bin/comemory"
 export PATH="$TASK/bin:$PATH"
-export COMEMORY_DATA_DIR="$TASK/data"
+export COMEMORY_DATA_DIR="$TASK/data with spaces"
 unset TOOLU_CONFIG_DIR TOOLU_HOST_OVERRIDE PLUGIN_ROOT CLAUDE_PLUGIN_ROOT
 
 git init -q "$TASK/repository"
@@ -16,12 +16,12 @@ git -C "$TASK/repository" -c user.name=Comemory -c user.email=test@example.inval
 git -C "$TASK/repository" worktree add -q -b sibling "$TASK/worktree"
 for host in claude codex; do
   command -v "$host" >/dev/null
-  cfg="$TASK/$host"
+  cfg="$TASK/$host config"
   "$BIN" install "$host" --config-dir "$cfg" --json > "$TASK/install-$host.json"
   jq -e '.installed and .plugin == "comemory@comemory"' "$TASK/install-$host.json" >/dev/null
   plugin="$(jq -r .bundle "$TASK/install-$host.json")/plugins/comemory"
   # Host schema/install is exercised above; execute its shipped hook with real
-  # payload and native host environment to verify wrapper publication/delivery.
+  # payload and native host environment to verify wrapper publication.
   if [ "$host" = codex ]; then
     export CODEX_HOME="$cfg" PLUGIN_ROOT="$plugin"
     unset CLAUDE_CONFIG_DIR
@@ -60,7 +60,7 @@ PYUPGRADE
   "$host" plugin list --json > "$TASK/list-$host.json"
   jq -e --arg version "$($BIN --version | awk '{print $2}')" '.. | objects | select(.version? == $version)' "$TASK/list-$host.json" >/dev/null
   jq -nc --arg cwd "$TASK/repository" '{cwd:$cwd,session_id:"migration-integration",source:"startup",hook_event_name:"SessionStart"}' \
-    | "$plugin/hooks/session-start.sh" > "$TASK/start-$host.json"
+    | bash -c "$(jq -r '.hooks.SessionStart[0].hooks[0].command' "$plugin/hooks/hooks.json")" > "$TASK/start-$host.json"
   jq -e '.hookSpecificOutput.additionalContext | contains("repo-scoped recall")' "$TASK/start-$host.json" >/dev/null
   wrapper="$cfg/comemory/comemory.sh"
   (cd "$TASK/repository" && "$wrapper" save "Worktree correction $host" 'Use the canonical repository scope; a worktree name splits retrieval. Verified by saving in the primary checkout and retrieving from its sibling.' --kind convention --json) > "$TASK/saved-$host.json"

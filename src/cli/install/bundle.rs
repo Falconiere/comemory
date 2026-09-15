@@ -52,6 +52,18 @@ const FILES: &[(&str, &str)] = &[
         include_str!("../../../integrations/agent/lib/project-skills.sh"),
     ),
     (
+        "lib/project-skills-foundation.sh",
+        include_str!("../../../integrations/agent/lib/project-skills-foundation.sh"),
+    ),
+    (
+        "lib/project-skills-commands.sh",
+        include_str!("../../../integrations/agent/lib/project-skills-commands.sh"),
+    ),
+    (
+        "lib/project-skills-curation.sh",
+        include_str!("../../../integrations/agent/lib/project-skills-curation.sh"),
+    ),
+    (
         "lib/repo-scope.sh",
         include_str!("../../../integrations/agent/lib/repo-scope.sh"),
     ),

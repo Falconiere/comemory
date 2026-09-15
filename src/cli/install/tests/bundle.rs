@@ -9,7 +9,10 @@ fn bundle_reinstall_preserves_identical_assets_and_rejects_user_edits() {
     extract(&root).unwrap();
     let skill = root.join("plugins/comemory/skills/agent-memory/SKILL.md");
     let bundled = std::fs::read_to_string(&skill).unwrap();
-    assert!(bundled.contains("supersedes"));
+    assert_eq!(
+        bundled,
+        include_str!("../../../../integrations/agent/skills/agent-memory/SKILL.md")
+    );
     std::fs::write(&skill, "user's local edits").unwrap();
     assert!(extract(&root).is_err());
     assert_eq!(
