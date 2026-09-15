@@ -20,6 +20,8 @@ pub(crate) mod cli_rebuild_support;
 pub(crate) mod code_rerank_support;
 #[path = "../tests/common/code_seed.rs"]
 pub(crate) mod code_seed;
+#[path = "../tests/common/code_sync_fixture.rs"]
+pub(crate) mod code_sync_fixture;
 #[path = "../tests/common/device_auth_server.rs"]
 pub(crate) mod device_auth_server;
 #[path = "../tests/common/docs_fixtures.rs"]

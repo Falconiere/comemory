@@ -238,6 +238,12 @@ fn minimal_request(entry: &RouteEntry) -> (serde_json::Value, Vec<(&'static str,
         ),
         // Empty batch is enough: the read-only gate fires before import work.
         "sync.import" => (serde_json::json!({"cursor": 0, "entries": []}), vec![]),
+        // Same for the code half: a repo label and no files is a valid
+        // (empty) batch, so a normal server accepts it past the gate.
+        "sync.code.import" => (
+            serde_json::json!({"repo": "ac4-sweep", "files": []}),
+            vec![],
+        ),
         other => panic!(
             "minimal_request: no minimal body/query wired for mutating command {other:?} — \
              add one so the AC-4 read-only sweep stays exhaustive"

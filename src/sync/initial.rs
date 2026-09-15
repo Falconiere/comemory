@@ -11,11 +11,17 @@
 //! holds before offering its own copies — `sync_binding` pins a memory to the
 //! workspace that first accepted it, and pushing first would claim memories
 //! the organization already has.
+//!
+//! The code index goes last, after memories: it is the larger payload and the
+//! less urgent one, and a memory that cites a file is what makes the file's
+//! node on the workspace worth having. Its failure never fails the login —
+//! it is reported beside the memory counts and re-offered by the next sync.
 
 use crate::config::{Config, Paths};
 use crate::prelude::*;
 use crate::store::{connection, sync_state};
 use crate::sync::AuthFile;
+use crate::sync::code::{self, CodePushStats};
 use crate::sync::{pull, push};
 
 /// Page size for each `run_pull` / `run_push` call inside the exhaustive loop.
@@ -33,6 +39,13 @@ pub struct InitialSyncStats {
     pub pushed: u32,
     /// Local entries withheld by `[sync] skip_repos`.
     pub skipped_config: u32,
+    /// The code-index push that follows the memory push — every indexed
+    /// repo, so the console's graph fills in from this login on.
+    pub code: CodePushStats,
+    /// Why the code push could not run at all (store or config), when it
+    /// could not; per-repo transport failures are inside `code.errors`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code_error: Option<String>,
 }
 
 /// Pull, then push, against the organization `auth` is scoped to — looping
@@ -65,6 +78,13 @@ pub fn run_initial_sync(paths: &Paths, cfg: &Config, auth: &AuthFile) -> Result<
             // Skips are drained inside `run_push` without counting toward the
             // page cap; a zero-push page means the local log is exhausted.
             break;
+        }
+    }
+    match code::run_code_push(cfg, &mut conn, auth) {
+        Ok(code) => stats.code = code,
+        Err(e) => {
+            tracing::warn!(error = %e, "code index push at login failed");
+            stats.code_error = Some(e.to_string());
         }
     }
     Ok(stats)

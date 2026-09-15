@@ -83,7 +83,7 @@ struct ApiErrorBody {
 }
 
 /// Build a blocking client with the default timeout.
-fn http_client() -> Result<Client> {
+pub(crate) fn http_client() -> Result<Client> {
     http_client_with(HTTP_TIMEOUT)
 }
 
@@ -96,7 +96,7 @@ fn http_client_with(timeout: Duration) -> Result<Client> {
 }
 
 /// Normalize a platform base URL (trim trailing `/`).
-fn normalize_api_url(api_url: &str) -> String {
+pub(crate) fn normalize_api_url(api_url: &str) -> String {
     api_url.trim_end_matches('/').to_string()
 }
 
@@ -261,7 +261,7 @@ fn bearer_value(token: &str) -> Result<HeaderValue> {
 /// Authorization only. The org-scoped key already names the workspace, so
 /// sending `X-Comemory-Workspace` would let a caller ask for one the key
 /// cannot reach — the header is gone rather than ignored.
-fn auth_headers(org_key: &str) -> Result<HeaderMap> {
+pub(crate) fn auth_headers(org_key: &str) -> Result<HeaderMap> {
     let mut headers = HeaderMap::new();
     headers.insert(AUTHORIZATION, bearer_value(org_key)?);
     Ok(headers)
@@ -279,7 +279,7 @@ fn parse_json<T: for<'de> Deserialize<'de>>(
     serde_json::from_str(&text).map_err(|e| Error::Other(format!("{ctx}: json: {e}; body: {text}")))
 }
 
-fn parse_envelope<T: for<'de> Deserialize<'de>>(
+pub(crate) fn parse_envelope<T: for<'de> Deserialize<'de>>(
     resp: reqwest::blocking::Response,
     ctx: &str,
 ) -> Result<T> {

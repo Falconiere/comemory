@@ -31,6 +31,15 @@ fn defaults_round_trip() {
 }
 
 #[test]
+fn the_code_index_ships_on_by_default() {
+    let cfg = SyncConfig::defaults();
+    assert!(
+        cfg.code_index,
+        "the console's graph must fill in right after login"
+    );
+}
+
+#[test]
 fn empty_pull_before_context_is_zero_duration() {
     let cfg = SyncConfig::defaults();
     assert_eq!(

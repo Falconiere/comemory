@@ -153,11 +153,18 @@ fn run_login(paths: &Paths, a: LoginArgs, json_flag: bool) -> Result<()> {
         )?;
     }
     match &synced {
-        Ok(stats) => writeln!(
-            out,
-            "  synced: pulled {} · pushed {} · skip_repos={}",
-            stats.pulled, stats.pushed, stats.skipped_config
-        )?,
+        Ok(stats) => {
+            writeln!(
+                out,
+                "  synced: pulled {} · pushed {} · skip_repos={}",
+                stats.pulled, stats.pushed, stats.skipped_config
+            )?;
+            writeln!(
+                out,
+                "  {}",
+                crate::cli::sync_render::code_summary_line(stats)
+            )?;
+        }
         Err(e) => writeln!(
             std::io::stderr().lock(),
             "warning: first sync failed ({e}) — run `comemory sync` when the platform is reachable"

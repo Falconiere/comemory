@@ -198,9 +198,9 @@ disagree, trust the running server.
 | ● `POST /hooks/install` | `install-hooks` | **confirm**; `repo` contained |
 | ● `POST /rebuild` | `rebuild` | **job**, **confirm**; swaps the server's shared DB connection on success |
 
-**Cloud sync** (`serve/routes/sync.rs`) — engine half of Slice 2; the
-platform Worker forwards `/v1/sync/*` here after device auth, rate limits, and
-the org-repo allowlist gate. Distinct from git `POST /memory-stores/{id}/sync`.
+**Cloud sync** (`serve/routes/sync.rs`) — engine half of Slice 2, memories
+and the code index; the platform Worker forwards `/v1/sync/*` here after
+device auth, rate limits, and the org-repo allowlist gate. Distinct from git `POST /memory-stores/{id}/sync`.
 CLI verbs `auth` / `workspaces` / `link` / `sync` are platform clients
 (cli-only); see [Cloud sync](cloud-sync.md).
 
@@ -209,6 +209,8 @@ CLI verbs `auth` / `workspaces` / `link` / `sync` are platform clients
 | ○ `GET /sync/changes?since=&limit=` | *(engine)* | append-only log page; empty → `{entries:[], next_seq:null, head_seq}` through the envelope |
 | ● `POST /sync/import` | *(engine)* | batch apply (import rules 1–10); optional `X-Comemory-Author` (Worker stamps user id). Per-entry `status`: `accepted` \| `exists` \| `stale` \| `deleted` \| `id_collision` \| `secret_detected` \| `invalid`. **`repo_not_allowed` is returned by the Worker gate** before forward (non-allowlisted / ambiguous / `isPersonal` target) — not minted by the engine path alone |
 | ○ `GET /sync/manifest` | *(engine)* | 256 bucket hashes over live content hashes + `head_seq` |
+| ○ `GET /sync/code/manifest?repo=` | *(engine)* | the code-index half: `{repo, head, mined_commit, files:[{path, blob_oid}]}` — what the workspace holds for one label, empty for an unknown one |
+| ● `POST /sync/code/import` | *(engine)* | one batch of a repo's snippet-free projection (≤500 files): `{repo, head?, mined_commit?, files:[{path, blob_oid, symbols, imports}], removed:[path], cochange?:[{from,to,weight}]}` → `{applied, removed, rejected:[{path, reason}], head}`. Any rejection refuses the whole batch; rank is recomputed at the tail |
 
 Platform device keys, rate limits (`sync_pull` 120/min, `sync_import` 30/min,
 `sync_workspace` 600/min), and GitHub App allowlist SoT live in comemory.io

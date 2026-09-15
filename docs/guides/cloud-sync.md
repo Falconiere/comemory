@@ -94,7 +94,10 @@ is gone — it opted out of an install that no longer happens.)
 ## What syncs
 
 **Everything.** Every memory on the machine is offered to your organization,
-which accepts or rejects it on membership alone.
+which accepts or rejects it on membership alone — and so is the **code index**
+of every repo you have run `comemory index-code` over, so the console's Code
+graph and Repositories screens fill in from the first login with no further
+step.
 
 One filter runs on your machine first:
 
@@ -103,6 +106,36 @@ One filter runs on your machine first:
 | Label matches `[sync] skip_repos` | Stays local | `skipped_config` |
 | Body trips the secret scan | Withheld until `--allow-secret` | `blocked_secrets` |
 | Anything else | Offered to the organization | `pushed` |
+
+### The code index
+
+What leaves the machine for a repo is a **snippet-free projection**: file
+paths with their git blob OIDs, symbol names with their kinds, languages and
+line ranges, the resolved `imports` edges, and the mined `co_changed` pairs.
+**Never a line of source** — the workspace can draw the graph and list the
+repo, but code search and the Context screen's snippets stay on the machine
+that holds the checkout.
+
+The unit is the file and the blob OID is its digest, so a push is a diff:
+`comemory sync` reads the workspace's manifest for each repo and posts only
+the files whose blob differs, the paths the workspace still holds and you no
+longer index, and the co-change set when its cursor moved. A repeat push with
+nothing changed costs one manifest read per repo. The push runs:
+
+- at the end of `comemory auth login`'s first sync;
+- on every `comemory sync` (`run` or `push`);
+- at the tail of every `comemory index-code` on the CLI (the lazy background
+  reindex included) — for that repo, only when its index moved;
+- in the opt-in daemon's cycle, only for repos whose index moved.
+
+`comemory sync --action status` lists one `code:` row per indexed repo with
+its local head, the head last pushed, and `moved_since_push`.
+
+```toml
+[sync]
+code_index = false     # keep every code index on this machine
+skip_repos = ["acme/secret-*"]   # withholds that repo's memories AND its index
+```
 
 > **This is wider than before, twice over.** An empty `repo` label used to keep
 > a memory local forever. Because `repo` is filled in from the git repository

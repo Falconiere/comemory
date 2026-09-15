@@ -42,6 +42,10 @@ pub(crate) struct InitialSyncJson {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub skipped_config: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<crate::sync::code::CodePushStats>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code_error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
 
@@ -74,6 +78,8 @@ pub(crate) fn initial_sync_json(
             pulled: Some(s.pulled),
             pushed: Some(s.pushed),
             skipped_config: Some(s.skipped_config),
+            code: Some(s.code.clone()),
+            code_error: s.code_error.clone(),
             error: None,
         },
         Err(e) => InitialSyncJson {
@@ -81,6 +87,8 @@ pub(crate) fn initial_sync_json(
             pulled: None,
             pushed: None,
             skipped_config: None,
+            code: None,
+            code_error: None,
             error: Some(e.to_string()),
         },
     }

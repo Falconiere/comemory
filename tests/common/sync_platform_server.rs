@@ -20,6 +20,7 @@
 //! that `/v1/sync/status` is never reached — claims a response body alone
 //! cannot support.
 
+use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
@@ -74,6 +75,15 @@ pub struct SyncPlatformState {
     pub workspace_id: String,
     /// When true, every sync route answers 500 (login-resilience path).
     pub sync_unavailable: bool,
+    /// Per repo label, what the workspace holds for the code index:
+    /// `{ head, mined_commit, files: [{path, blob_oid}] }`. Imports update it
+    /// in place, so a second push sees what the first one left.
+    pub code_manifests: BTreeMap<String, Value>,
+    /// Every `POST /v1/sync/code/import` body, in receipt order.
+    pub code_import_bodies: Vec<String>,
+    /// When set, the next code import answers these `rejected` entries and
+    /// applies nothing.
+    pub code_import_rejections: Option<Value>,
 }
 
 /// One request the fixture served, in receipt order.
@@ -114,6 +124,9 @@ impl Default for SyncPlatformState {
             organization_name: "Acme, Inc.".into(),
             workspace_id: "ws-org".into(),
             sync_unavailable: false,
+            code_manifests: BTreeMap::new(),
+            code_import_bodies: Vec::new(),
+            code_import_rejections: None,
             workspaces: json!([{
                 "workspace": {
                     "id": "ws-personal",
@@ -415,6 +428,8 @@ fn route(
         ("GET", "/v1/sync/changes") => sync_changes(&mut st, authorization, query),
         ("GET", "/v1/sync/manifest") => sync_manifest(&mut st, authorization),
         ("POST", "/v1/sync/import") => sync_import(&mut st, authorization, body),
+        ("GET", "/v1/sync/code/manifest") => code_manifest(&st, authorization, query),
+        ("POST", "/v1/sync/code/import") => code_import(&mut st, authorization, body),
         _ => ("404 Not Found", json!({"error":"not_found"}).to_string()),
     }
 }
@@ -501,6 +516,37 @@ fn sync_changes(
     ("200 OK", resp)
 }
 
+/// The raw value of `key` in `query`, percent-decoded (reqwest encodes a
+/// repo label's `/` as `%2F`).
+fn query_str(query: &str, key: &str) -> Option<String> {
+    for pair in query.trim_start_matches('?').split('&') {
+        let (k, v) = pair.split_once('=')?;
+        if k == key {
+            return Some(percent_decode(v));
+        }
+    }
+    None
+}
+
+fn percent_decode(raw: &str) -> String {
+    let bytes = raw.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%'
+            && i + 2 < bytes.len()
+            && let Ok(v) = u8::from_str_radix(&raw[i + 1..i + 3], 16)
+        {
+            out.push(v);
+            i += 3;
+            continue;
+        }
+        out.push(if bytes[i] == b'+' { b' ' } else { bytes[i] });
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 fn query_i64(query: &str, key: &str) -> Option<i64> {
     for pair in query.trim_start_matches('?').split('&') {
         let (k, v) = pair.split_once('=')?;
@@ -543,6 +589,124 @@ fn sync_import(
         envelope_ok(json!({
             "results": st.import_results.clone(),
             "head_seq": st.head_seq
+        })),
+    )
+}
+
+/// The workspace's code manifest for one repo label — empty when it has
+/// never seen the label, exactly as the engine answers.
+fn code_manifest(
+    st: &SyncPlatformState,
+    authorization: &str,
+    query: &str,
+) -> (&'static str, String) {
+    if !auth_ok(authorization, &st.secret) {
+        return ("401 Unauthorized", envelope_err("unauthorized", "bad key"));
+    }
+    let Some(repo) = query_str(query, "repo") else {
+        return (
+            "400 Bad Request",
+            envelope_err("invalid_request", "repo is required"),
+        );
+    };
+    let held = st
+        .code_manifests
+        .get(&repo)
+        .cloned()
+        .unwrap_or_else(|| json!({ "head": null, "mined_commit": null, "files": [] }));
+    let mut files: Vec<Value> = held["files"].as_array().cloned().unwrap_or_default();
+    files.sort_by(|a, b| a["path"].as_str().cmp(&b["path"].as_str()));
+    (
+        "200 OK",
+        envelope_ok(json!({
+            "repo": repo,
+            "head": held["head"],
+            "mined_commit": held["mined_commit"],
+            "files": files,
+        })),
+    )
+}
+
+/// Apply one import batch onto the in-memory manifest and answer the way
+/// `api::sync::code_import` does.
+fn code_import(
+    st: &mut SyncPlatformState,
+    authorization: &str,
+    body: &str,
+) -> (&'static str, String) {
+    if !auth_ok(authorization, &st.secret) {
+        return ("401 Unauthorized", envelope_err("unauthorized", "bad key"));
+    }
+    st.code_import_bodies.push(body.to_string());
+    let req: Value = match serde_json::from_str(body) {
+        Ok(v) => v,
+        Err(e) => {
+            return (
+                "400 Bad Request",
+                envelope_err("invalid_request", &e.to_string()),
+            );
+        }
+    };
+    let repo = req["repo"].as_str().unwrap_or_default().to_string();
+    if let Some(rejected) = st.code_import_rejections.take() {
+        let head = st.code_manifests.get(&repo).map(|m| m["head"].clone());
+        return (
+            "200 OK",
+            envelope_ok(json!({
+                "applied": 0,
+                "removed": 0,
+                "rejected": rejected,
+                "head": head.unwrap_or(Value::Null),
+            })),
+        );
+    }
+    let entry = st
+        .code_manifests
+        .entry(repo)
+        .or_insert_with(|| json!({ "head": null, "mined_commit": null, "files": [] }));
+    let mut files: BTreeMap<String, String> = entry["files"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|f| {
+            Some((
+                f["path"].as_str()?.to_string(),
+                f["blob_oid"].as_str()?.to_string(),
+            ))
+        })
+        .collect();
+    let incoming = req["files"].as_array().cloned().unwrap_or_default();
+    for f in &incoming {
+        if let (Some(path), Some(oid)) = (f["path"].as_str(), f["blob_oid"].as_str()) {
+            files.insert(path.to_string(), oid.to_string());
+        }
+    }
+    let removed = req["removed"].as_array().cloned().unwrap_or_default();
+    for path in &removed {
+        if let Some(p) = path.as_str() {
+            files.remove(p);
+        }
+    }
+    entry["files"] = Value::Array(
+        files
+            .into_iter()
+            .map(|(path, blob_oid)| json!({ "path": path, "blob_oid": blob_oid }))
+            .collect(),
+    );
+    if !req["head"].is_null() {
+        entry["head"] = req["head"].clone();
+    }
+    if !req["cochange"].is_null() && !req["mined_commit"].is_null() {
+        entry["mined_commit"] = req["mined_commit"].clone();
+    }
+    (
+        "200 OK",
+        envelope_ok(json!({
+            "applied": incoming.len(),
+            "removed": removed.len(),
+            "rejected": [],
+            "head": entry["head"],
         })),
     )
 }

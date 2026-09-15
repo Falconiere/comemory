@@ -1,7 +1,9 @@
 //! `comemory sync` — push/pull against the platform. CLI-only.
 //!
 //! Nested `daemon {install,uninstall,start,stop,status,run}` owns continuous
-//! auto-sync. Flat `--action` still drives a one-shot manual sync.
+//! auto-sync. Flat `--action` still drives a one-shot manual sync. `run` and
+//! `push` push the code index after the memories (`sync::code`); rendering
+//! lives in `cli::sync_render`.
 
 use std::io::Write as _;
 use std::path::PathBuf;
@@ -10,16 +12,15 @@ use clap::{Args as ClapArgs, Subcommand, ValueEnum};
 
 use crate::cli::load_config;
 use crate::cli::off_runtime::off_runtime;
+use crate::cli::sync_render::{emit_daemon_status, emit_run, emit_status, emit_verify};
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::config::sync::apply_embed_model;
 use crate::output::json;
 use crate::prelude::*;
-use crate::store::Connection;
 use crate::store::connection::open;
-use crate::store::sync_state;
 use crate::sync::auth_file::AuthFile;
-use crate::sync::daemon::{self, DaemonStatus};
-use crate::sync::{pull, push, verify};
+use crate::sync::daemon;
+use crate::sync::{code, pull, push, verify};
 
 const EXAMPLES: &str = "\
 Examples:
@@ -181,141 +182,37 @@ fn run_sync(
             emit_verify(json_flag, &report)
         }
         SyncAction::Push => {
-            let stats =
-                off_runtime(|| push::run_push(paths, &cfg, &mut conn, &auth, allow_secret, 2000))?;
-            emit_run(json_flag, &workspace, None, Some(&stats))
+            let (push_stats, code_stats) = off_runtime(|| {
+                let pushed = push::run_push(paths, &cfg, &mut conn, &auth, allow_secret, 2000)?;
+                let code = code::run_code_push(&cfg, &mut conn, &auth)?;
+                Ok((pushed, code))
+            })?;
+            emit_run(
+                json_flag,
+                &workspace,
+                None,
+                Some(&push_stats),
+                Some(&code_stats),
+            )
         }
         SyncAction::Pull => {
             let stats = off_runtime(|| pull::run_pull(paths, &cfg, &mut conn, &auth, 2000))?;
-            emit_run(json_flag, &workspace, Some(&stats), None)
+            emit_run(json_flag, &workspace, Some(&stats), None, None)
         }
         SyncAction::Run => {
-            let (pull_stats, push_stats) = off_runtime(|| {
+            let (pull_stats, push_stats, code_stats) = off_runtime(|| {
                 let pulled = pull::run_pull(paths, &cfg, &mut conn, &auth, 2000)?;
                 let pushed = push::run_push(paths, &cfg, &mut conn, &auth, allow_secret, 2000)?;
-                Ok((pulled, pushed))
+                let code = code::run_code_push(&cfg, &mut conn, &auth)?;
+                Ok((pulled, pushed, code))
             })?;
-            emit_run(json_flag, &workspace, Some(&pull_stats), Some(&push_stats))
+            emit_run(
+                json_flag,
+                &workspace,
+                Some(&pull_stats),
+                Some(&push_stats),
+                Some(&code_stats),
+            )
         }
     }
-}
-
-fn emit_daemon_status(json_flag: bool, st: &DaemonStatus) -> Result<()> {
-    if json_flag {
-        json::write(st)?;
-    } else {
-        let mut out = std::io::stdout().lock();
-        writeln!(out, "platform: {}", st.platform)?;
-        if let Some(path) = &st.unit_path {
-            writeln!(out, "unit: {path}")?;
-        }
-        writeln!(out, "installed: {}", st.installed)?;
-        writeln!(out, "running: {}", st.running)?;
-        writeln!(out, "detail: {}", st.detail)?;
-        if let Some(warn) = st.inactive_warning() {
-            writeln!(out, "warning: {warn}")?;
-        }
-    }
-    Ok(())
-}
-
-fn emit_status(json_flag: bool, conn: &mut Connection, workspace: &str) -> Result<()> {
-    let row = sync_state::get(conn, workspace)?;
-    let head = crate::store::sync_log::head_seq(conn)?;
-    let (pushed, pulled, last_sync) = row.as_ref().map_or((0, 0, None), |r| {
-        (r.pushed_seq, r.pulled_seq, r.last_sync_at.clone())
-    });
-    let pending = crate::store::sync_log::pending_local(conn, pushed)?;
-    let daemon = match daemon::status() {
-        Ok(st) => st,
-        Err(_) => DaemonStatus {
-            platform: "unknown",
-            unit_path: None,
-            installed: false,
-            running: false,
-            detail: "daemon status unavailable".into(),
-        },
-    };
-    if json_flag {
-        json::write(&serde_json::json!({
-            "workspace": workspace,
-            "pushed_seq": pushed,
-            "pulled_seq": pulled,
-            "head_seq": head,
-            "pending": pending,
-            "last_sync_at": last_sync,
-            "daemon": daemon,
-        }))?;
-    } else {
-        let mut out = std::io::stdout().lock();
-        writeln!(out, "workspace: {workspace}")?;
-        writeln!(out, "pushed_seq: {pushed}")?;
-        writeln!(out, "pulled_seq: {pulled}")?;
-        writeln!(out, "head_seq: {head}")?;
-        writeln!(out, "pending: {pending}")?;
-        writeln!(
-            out,
-            "daemon: installed={} running={} ({})",
-            daemon.installed, daemon.running, daemon.detail
-        )?;
-        if let Some(warn) = daemon.inactive_warning() {
-            writeln!(out, "warning: {warn}")?;
-        }
-    }
-    Ok(())
-}
-
-fn emit_verify(json_flag: bool, report: &verify::VerifyReport) -> Result<()> {
-    if json_flag {
-        json::write(report)?;
-    } else {
-        let mut out = std::io::stdout().lock();
-        if report.differing_buckets == 0 {
-            let suffix = if report.repaired { " after repair" } else { "" };
-            writeln!(
-                out,
-                "Manifests match{suffix} (head local={}, remote={})",
-                report.local_head_seq, report.remote_head_seq
-            )?;
-        } else {
-            writeln!(
-                out,
-                "{} bucket(s) still differ after repair (local head={}, remote head={})",
-                report.differing_buckets, report.local_head_seq, report.remote_head_seq
-            )?;
-        }
-    }
-    Ok(())
-}
-
-fn emit_run(
-    json_flag: bool,
-    workspace: &str,
-    pull_stats: Option<&pull::PullStats>,
-    push_stats: Option<&push::PushStats>,
-) -> Result<()> {
-    if json_flag {
-        json::write(&serde_json::json!({
-            "workspace": workspace,
-            "push": push_stats,
-            "pull": pull_stats,
-        }))?;
-    } else {
-        let mut out = std::io::stdout().lock();
-        if let Some(p) = pull_stats {
-            writeln!(
-                out,
-                "Pulled {} entries (seq {})",
-                p.pulled, p.last_pulled_seq
-            )?;
-        }
-        if let Some(p) = push_stats {
-            writeln!(
-                out,
-                "Pushed {} entries (skip_repos={}, blocked_secrets={}, rejected_repo={})",
-                p.pushed, p.skipped_config, p.blocked_secrets, p.rejected_repo
-            )?;
-        }
-    }
-    Ok(())
 }

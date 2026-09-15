@@ -7,6 +7,12 @@ match (`skipped_config`) — plus client-side redaction. An empty `repo` label n
 longer withholds anything: a memory saved outside a git worktree syncs like any
 other. Distinct from git `memory-stores` sync (`[git] auto_sync`).
 
+`run` and `push` also push the **code index** of every indexed repo — a
+snippet-free projection (paths, blob OIDs, symbol names and line ranges, the
+`imports` / `co_changed` edges), diffed by blob OID against the workspace's
+manifest. `[sync] code_index = false` turns it off; `skip_repos` withholds a
+repo's index along with its memories.
+
 Most users never run this: `comemory auth login` performs the first full sync,
 `save` and `delete` push inline afterwards, and [`comemory watch`](watch.md)
 covers the pull direction. The user-level daemon is opt-in
@@ -16,8 +22,10 @@ covers the pull direction. The user-level daemon is opt-in
 
 **HTTP:** none — platform `/v1/sync/*` forwarder (`transport: "cli-only"`).
 Local engine also exposes `GET|POST /api/v1/sync/{changes,import,manifest}`
-for the host; those routes are covered by `src/serve/routes/tests/sync.rs`
-and `src/api/sync/tests/`.
+and the code-index pair `GET /api/v1/sync/code/manifest?repo=` /
+`POST /api/v1/sync/code/import` for the host; those routes are covered by
+`src/serve/routes/tests/sync.rs`, `src/serve/routes/tests/sync_code.rs` and
+`src/api/sync/tests/`.
 
 Global flags `--json` and `--data-dir` apply. See [globals.md](globals.md).
 
@@ -33,7 +41,8 @@ _None._
 | `--allow-secret` | unset | Record a secret-scan override for one memory id before push |
 
 `--action status` reports `pending` — how many local writes are still owed to
-the platform — beside the two cursors.
+the platform — beside the two cursors, and one `code` row per indexed repo
+(local head, last pushed head, `moved_since_push`).
 
 Nested: `comemory sync daemon {install,uninstall,start,stop,status,run}` —
 see [cloud-sync.md](../guides/cloud-sync.md).
@@ -81,3 +90,26 @@ reach. Switching organization means running `comemory auth login` again.
 - **Expect:** the config loads; the run reaches the login check rather than a
   config error.
 - **Covered by:** `tests/cli__sync.rs::sync_loads_a_config_carrying_every_deprecated_key`
+
+### sync-06 The code index is pushed after the memories, as a diff
+
+- **Flags:** `--action`
+- **Setup:** an org credential against the loopback platform fixture; a real
+  git repo indexed by `index-code`
+- **Command:** `comemory sync --action push` (twice)
+- **Expect:** the first run reads `GET /v1/sync/code/manifest` and posts one
+  `POST /v1/sync/code/import` carrying every file; the second run reads the
+  manifest and posts nothing. No request body carries source text.
+- **Covered by:** `src/sync/tests/code.rs::ac12_first_push_sends_every_file_and_the_second_only_reads_the_manifest`,
+  `src/sync/tests/code.rs::ac16_no_request_body_carries_source_text`
+
+### sync-07 `[sync] code_index = false` and `skip_repos` withhold the index
+
+- **Flags:** `--action`
+- **Setup:** as sync-06, with `code_index = false` (or `skip_repos` matching
+  the label)
+- **Command:** `comemory sync --action push`
+- **Expect:** no `/v1/sync/code/*` request at all; `skip_repos` counts the
+  repo under `skipped_config`.
+- **Covered by:** `src/sync/tests/code.rs::ac11_code_index_off_sends_nothing_even_with_an_index`,
+  `src/sync/tests/code.rs::skip_repos_withholds_the_index_too`

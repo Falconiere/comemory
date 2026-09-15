@@ -22,6 +22,7 @@ use crate::api::{self, Ctx};
 use crate::ast::extractor::ExtractedSymbol;
 use crate::ast::{self, languages};
 use crate::cli::load_config;
+use crate::cli::off_runtime::off_runtime;
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::git_utils::map_git_err;
 use crate::prelude::*;
@@ -96,16 +97,25 @@ pub async fn run(args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<(
         return run_extract(&args, &repo);
     }
     let cfg = load_config(&paths)?;
-    let mut ctx = Ctx::lazy(&paths, &cfg);
-    api::index_code::run(
-        &mut ctx,
-        api::index_code::Request {
-            repo: args.repo.clone(),
-            path: args.path.to_string_lossy().into_owned(),
-            mode: args.mode.into(),
-        },
-    )?;
-    Ok(())
+    {
+        let mut ctx = Ctx::lazy(&paths, &cfg);
+        api::index_code::run(
+            &mut ctx,
+            api::index_code::Request {
+                repo: args.repo.clone(),
+                path: args.path.to_string_lossy().into_owned(),
+                mode: args.mode.into(),
+            },
+        )?;
+    }
+    // The index is durable; offer it to the workspace, best-effort. Runs
+    // here and not in `api::index_code` because that core also runs inside
+    // `comemory serve`, where pushing a tenant's index outward would be wrong
+    // — the same split `sync::push_on_save` keeps for memories.
+    off_runtime(|| {
+        crate::sync::code::after_index_best_effort(&paths, &cfg, &args.repo);
+        Ok(())
+    })
 }
 
 /// `--extract` path. Walks the same files as the DB-write path but emits

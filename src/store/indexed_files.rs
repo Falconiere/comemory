@@ -31,6 +31,28 @@ pub fn blob_oid_for(conn: &Connection, repo: &str, path: &str) -> Result<Option<
     .map_err(Error::from)
 }
 
+/// Every `(path, blob_oid)` cursor row for `repo`, ascending by path — the
+/// manifest `GET /sync/code/manifest` answers and the local side the code
+/// push diffs it against.
+pub fn list_for_repo(conn: &Connection, repo: &str) -> Result<Vec<(String, String)>> {
+    let mut stmt =
+        conn.prepare("SELECT path, blob_oid FROM indexed_files WHERE repo = ?1 ORDER BY path")?;
+    let rows = stmt
+        .query_map([repo], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Drop the cursor row for one `(repo, path)` — the removal half of a code
+/// import; a path with no row is a no-op.
+pub fn delete_one(conn: &Connection, repo: &str, path: &str) -> Result<()> {
+    conn.execute(
+        "DELETE FROM indexed_files WHERE repo = ?1 AND path = ?2",
+        params![repo, path],
+    )?;
+    Ok(())
+}
+
 #[cfg(test)]
 #[path = "tests/indexed_files.rs"]
 mod tests;
