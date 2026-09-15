@@ -20,7 +20,12 @@ use crate::http_error::map_reqwest;
 use crate::prelude::*;
 
 const CLIENT_ID: &str = "comemory-cli";
-const HTTP_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Default per-request budget for every platform call.
+///
+/// Public so `push::run_push` can name it as the value its timed variant
+/// defaults to, rather than repeating the number.
+pub const HTTP_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Device authorization response from `POST /auth/device/code`.
 #[derive(Debug, Clone, Deserialize)]
@@ -54,6 +59,12 @@ pub struct TokenResponse {
     pub error: Option<String>,
 }
 
+/// `POST /v1/ws/ticket`'s `data`.
+#[derive(Debug, Deserialize)]
+struct WsTicket {
+    ticket: String,
+}
+
 /// Platform `{ok,data,meta}` / `{ok,error,meta}` envelope.
 #[derive(Debug, Deserialize)]
 struct ApiEnvelope<T> {
@@ -71,10 +82,15 @@ struct ApiErrorBody {
     message: String,
 }
 
-/// Build a shared blocking client with a fixed timeout.
+/// Build a blocking client with the default timeout.
 fn http_client() -> Result<Client> {
+    http_client_with(HTTP_TIMEOUT)
+}
+
+/// Build a blocking client with an explicit timeout.
+fn http_client_with(timeout: Duration) -> Result<Client> {
     Client::builder()
-        .timeout(HTTP_TIMEOUT)
+        .timeout(timeout)
         .build()
         .map_err(|e| Error::Other(format!("http client: {e}")))
 }
@@ -135,9 +151,27 @@ pub fn pull_changes(
 
 /// Push a batch of local changes to the platform.
 pub fn push_import(api_url: &str, org_key: &str, body: &ImportRequest) -> Result<ImportResponse> {
+    push_import_with(api_url, org_key, body, HTTP_TIMEOUT)
+}
+
+/// Push one import batch under an explicit timeout.
+///
+/// The inline push-on-save hook uses a far smaller budget than the 30 seconds
+/// every other call takes: a save must return even on a network that accepts
+/// the connection and then says nothing. Its entries stay in `sync_log`, so a
+/// timed-out push costs latency, not data.
+///
+/// # Errors
+/// Propagates transport and envelope failures, a timeout included.
+pub fn push_import_with(
+    api_url: &str,
+    org_key: &str,
+    body: &ImportRequest,
+    timeout: Duration,
+) -> Result<ImportResponse> {
     let base = normalize_api_url(api_url);
     let url = format!("{base}/v1/sync/import");
-    let client = http_client()?;
+    let client = http_client_with(timeout)?;
     let resp = client
         .post(&url)
         .headers(auth_headers(org_key)?)
@@ -145,6 +179,65 @@ pub fn push_import(api_url: &str, org_key: &str, body: &ImportRequest) -> Result
         .send()
         .map_err(map_reqwest)?;
     parse_envelope(resp, "push import")
+}
+
+/// Mint a workspace-channel ticket (`POST /v1/ws/ticket`).
+///
+/// The ticket is what `GET /v1/ws` takes instead of the bearer key: a socket
+/// cannot carry an `Authorization` header in every client, and a 60-second
+/// credential that only buys nudges is a smaller thing to put in a URL.
+///
+/// # Errors
+/// Propagates transport and envelope failures; a platform that does not serve
+/// the route yet surfaces as a non-success status.
+pub fn ws_ticket(api_url: &str, org_key: &str) -> Result<String> {
+    let base = normalize_api_url(api_url);
+    let url = format!("{base}/v1/ws/ticket");
+    let client = http_client()?;
+    let resp = client
+        .post(&url)
+        .headers(auth_headers(org_key)?)
+        .json(&serde_json::json!({}))
+        .send()
+        .map_err(map_reqwest)?;
+    let ticket: WsTicket = parse_envelope(resp, "ws ticket")?;
+    Ok(ticket.ticket)
+}
+
+/// The `wss://` (or `ws://`) URL a ticket opens, derived from the same base
+/// every other platform call uses.
+///
+/// # Errors
+/// [`Error::Other`] when the configured API base is not a URL.
+pub fn channel_url(api_url: &str, ticket: &str) -> Result<String> {
+    let base = normalize_api_url(api_url);
+    let (scheme, rest) = if let Some(rest) = base.strip_prefix("https://") {
+        ("wss://", rest)
+    } else if let Some(rest) = base.strip_prefix("http://") {
+        ("ws://", rest)
+    } else {
+        return Err(Error::Other(format!(
+            "platform base URL is not http(s): {api_url}"
+        )));
+    };
+    let encoded = urlencoding_lite(ticket);
+    Ok(format!("{scheme}{rest}/v1/ws?ticket={encoded}"))
+}
+
+/// Percent-encode the few characters a base64url ticket can never contain but
+/// a hostile value could. Deliberately not a dependency: the alphabet is
+/// `A-Za-z0-9-_.` plus the one separator we put there ourselves.
+fn urlencoding_lite(value: &str) -> String {
+    value
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '~') {
+                c.to_string()
+            } else {
+                format!("%{:02X}", c as u32 & 0xFF)
+            }
+        })
+        .collect()
 }
 
 /// Fetch the remote content-hash manifest for verify/repair.

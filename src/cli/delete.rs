@@ -10,6 +10,7 @@ use time::OffsetDateTime;
 
 use crate::api;
 use crate::cli::load_config;
+use crate::cli::off_runtime::off_runtime;
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::memory::MemoryStore;
 use crate::prelude::*;
@@ -92,6 +93,20 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let mut conn = connection::open(paths.db_path())?;
     let mut ctx = api::Ctx::borrowed(&paths, &cfg, &mut conn);
     let output = api::delete::run(&mut ctx, &a.id)?;
+    // A tombstone is a change like any other: push it inline so the console
+    // and every other device see the delete without waiting for a sync.
+    //
+    // Both drops are load-bearing and ordered: `ctx` borrows `conn` mutably,
+    // and `push_on_save` opens its own connection — so the borrow has to end
+    // before the connection does, and the connection before the push. The
+    // compiler enforces the first; the second is why `conn` is dropped early
+    // rather than at end of scope.
+    drop(ctx);
+    drop(conn);
+    off_runtime(|| {
+        crate::sync::push_on_save::after_write_best_effort(&paths, &cfg);
+        Ok(())
+    })?;
 
     let mut out = std::io::stdout().lock();
     if json {

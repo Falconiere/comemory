@@ -6,13 +6,12 @@
     clippy::too_many_lines
 )]
 
-//! Push filtering under organization enforcement (AC-5, AC-6, AC-7).
+//! Push filtering under organization enforcement.
 //!
-//! Two filters survive the removal of the per-repo allowlist: an unlabelled
-//! memory never leaves the machine, and a label matching `[sync] skip_repos`
-//! is withheld. Everything else is offered to the organization — including
-//! labels that no allowlist would ever have carried, which is the behaviour
-//! change this suite has to pin down.
+//! One filter survives: a label matching `[sync] skip_repos` is withheld by
+//! the operator's own choice. Everything else is offered to the organization —
+//! including labels no allowlist would ever have carried, and memories with no
+//! label at all, which is the behaviour change this suite pins down.
 
 use comemory::api::{Ctx, save};
 use comemory::config::{Config, Paths};
@@ -83,18 +82,38 @@ impl Seeded {
 }
 
 #[test]
-fn unlabelled_memory_is_withheld_without_touching_the_network() {
-    // Unreachable base: an unlabelled memory must be filtered before any call.
-    let mut seeded = seeded(
-        "http://127.0.0.1:9",
-        "cmk_test",
-        Config::defaults(),
-        &[("personal scratch note with no repo label", "")],
-    );
+fn an_unlabelled_memory_is_pushed_like_any_other() {
+    // The behaviour change (AC-10): `repo` is set from the cwd's git repo at
+    // save time, so withholding unlabelled memories made sync eligibility a
+    // function of which directory `comemory save` happened to run in.
+    let server = SyncPlatformServer::start(SyncPlatformState::default());
+    let secret = server.snapshot().secret;
+
+    let body = "a note saved in a directory that is not a git worktree";
+    let id = comemory::memory::id::memory_id(body);
+    let content_hash = comemory::memory::id::sha256_hex(body.trim_end().as_bytes());
+    server.update(|st| {
+        st.import_results = serde_json::json!([{
+            "id": id,
+            "content_hash": content_hash,
+            "status": "accepted",
+            "seq": 1
+        }]);
+    });
+
+    let mut seeded = seeded(&server.base, &secret, Config::defaults(), &[(body, "")]);
     let stats = seeded.push();
-    assert_eq!(stats.pushed, 0);
-    assert_eq!(stats.skipped_personal, 1);
+
+    assert_eq!(stats.pushed, 1);
     assert_eq!(stats.skipped_config, 0);
+    let sent = server
+        .snapshot()
+        .last_import_body
+        .expect("an import was sent");
+    assert!(
+        sent.contains(&id),
+        "the unlabelled memory must be in the import body: {sent}"
+    );
 }
 
 #[test]
@@ -113,7 +132,6 @@ fn skip_repos_withholds_a_label_the_operator_chose_to_keep_local() {
     let stats = seeded.push();
     assert_eq!(stats.pushed, 0);
     assert_eq!(stats.skipped_config, 1);
-    assert_eq!(stats.skipped_personal, 0);
 }
 
 #[test]
@@ -163,20 +181,32 @@ fn a_label_no_allowlist_would_have_carried_is_now_pushed() {
 
 #[test]
 fn a_mixed_batch_reports_each_filter_separately() {
-    // One push, three fates: withheld as personal, withheld by config, pushed.
+    // One push, two fates now: withheld by config, or offered. The unlabelled
+    // memory rides along with the labelled one.
     let server = SyncPlatformServer::start(SyncPlatformState::default());
     let secret = server.snapshot().secret;
 
-    let pushed_body = "the one memory in this batch the organization receives";
+    let pushed_body = "the labelled memory in this batch the organization receives";
+    let unlabelled_body = "an unlabelled note that now travels with it";
     let id = comemory::memory::id::memory_id(pushed_body);
     let content_hash = comemory::memory::id::sha256_hex(pushed_body.trim_end().as_bytes());
+    let unlabelled_id = comemory::memory::id::memory_id(unlabelled_body);
+    let unlabelled_hash = comemory::memory::id::sha256_hex(unlabelled_body.trim_end().as_bytes());
     server.update(|st| {
-        st.import_results = serde_json::json!([{
-            "id": id,
-            "content_hash": content_hash,
-            "status": "accepted",
-            "seq": 1
-        }]);
+        st.import_results = serde_json::json!([
+            {
+                "id": unlabelled_id,
+                "content_hash": unlabelled_hash,
+                "status": "accepted",
+                "seq": 1
+            },
+            {
+                "id": id,
+                "content_hash": content_hash,
+                "status": "accepted",
+                "seq": 2
+            }
+        ]);
     });
 
     let mut cfg = Config::defaults();
@@ -186,15 +216,14 @@ fn a_mixed_batch_reports_each_filter_separately() {
         &secret,
         cfg,
         &[
-            ("an unlabelled personal note", ""),
+            (unlabelled_body, ""),
             ("withheld client work", "acme/secret-thing"),
             (pushed_body, "acme/public-thing"),
         ],
     );
     let stats = seeded.push();
 
-    assert_eq!(stats.pushed, 1);
-    assert_eq!(stats.skipped_personal, 1);
+    assert_eq!(stats.pushed, 2);
     assert_eq!(stats.skipped_config, 1);
 
     let sent = server
@@ -207,8 +236,8 @@ fn a_mixed_batch_reports_each_filter_separately() {
         "a skip_repos match must never appear in an import body: {sent}"
     );
     assert!(
-        !sent.contains("unlabelled personal note"),
-        "an unlabelled memory must never appear in an import body: {sent}"
+        sent.contains(&unlabelled_id),
+        "the unlabelled memory must be offered too: {sent}"
     );
 }
 
@@ -242,7 +271,6 @@ fn repo_not_allowed_does_not_advance_pushed_seq() {
 
     assert_eq!(stats.pushed, 0);
     assert_eq!(stats.rejected_repo, 1);
-    assert_eq!(stats.skipped_personal, 0);
     assert_eq!(stats.skipped_config, 0);
     assert_eq!(stats.blocked_secrets, 0);
     assert_eq!(stats.last_pushed_seq, 0);

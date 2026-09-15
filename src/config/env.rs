@@ -58,6 +58,17 @@ where
 /// Read an env var as an `"a,b"` pair of numbers; `Ok(None)` when unset.
 /// Shared by `COMEMORY_RANK_PRIOR_CLAMP` (`f64`) and
 /// `COMEMORY_RETRIEVAL_BM25_WEIGHTS` (`f32`).
+/// Parse one of the boolean env vars, naming the variable when it is not one.
+fn parse_bool_env(name: &str, raw: &str) -> Result<bool> {
+    match raw {
+        "true" | "1" | "yes" | "on" => Ok(true),
+        "false" | "0" | "no" | "off" => Ok(false),
+        other => Err(Error::Other(format!(
+            "invalid env var {name}: '{other}' (expected true|1|yes|on or false|0|no|off)"
+        ))),
+    }
+}
+
 fn env_pair<T: std::str::FromStr + Copy>(name: &str) -> Result<Option<(T, T)>>
 where
     T::Err: std::fmt::Display,
@@ -87,6 +98,7 @@ impl Config {
     pub fn with_env(mut self) -> Result<Self> {
         self.apply_indexing_env()?;
         self.apply_retrieval_env()?;
+        self.apply_sync_env()?;
         self.apply_git_env()?;
         self.apply_embed_hint_env();
         self.apply_rank_env()?;
@@ -156,18 +168,22 @@ impl Config {
         Ok(())
     }
 
+    /// `COMEMORY_SYNC_PUSH_ON_SAVE` / `COMEMORY_SYNC_PUSH_ON_SAVE_TIMEOUT` →
+    /// [`Config::sync`].
+    fn apply_sync_env(&mut self) -> Result<()> {
+        if let Ok(v) = std::env::var("COMEMORY_SYNC_PUSH_ON_SAVE") {
+            self.sync.push_on_save = parse_bool_env("COMEMORY_SYNC_PUSH_ON_SAVE", &v)?;
+        }
+        if let Ok(v) = std::env::var("COMEMORY_SYNC_PUSH_ON_SAVE_TIMEOUT") {
+            self.sync.push_on_save_timeout = v;
+        }
+        Ok(())
+    }
+
     /// `COMEMORY_GIT_AUTO_SYNC` → [`Config::git`].
     fn apply_git_env(&mut self) -> Result<()> {
         if let Ok(v) = std::env::var("COMEMORY_GIT_AUTO_SYNC") {
-            self.git.auto_sync = match v.as_str() {
-                "true" | "1" | "yes" | "on" => true,
-                "false" | "0" | "no" | "off" => false,
-                other => {
-                    return Err(Error::Other(format!(
-                        "invalid env var COMEMORY_GIT_AUTO_SYNC: '{other}' (expected true|1|yes|on or false|0|no|off)"
-                    )));
-                }
-            };
+            self.git.auto_sync = parse_bool_env("COMEMORY_GIT_AUTO_SYNC", &v)?;
         }
         Ok(())
     }

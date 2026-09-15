@@ -245,3 +245,45 @@ fn backfill_missing_local_appends_live_memories_with_no_log_row() {
     assert_eq!(rows[0].origin, SyncOrigin::Local);
     assert_eq!(rows[0].content_hash, hash);
 }
+
+#[test]
+fn pending_local_counts_only_what_this_machine_still_owes() {
+    let conn = open_with_sync_log();
+    let at = "2026-09-14T00:00:00Z";
+    // Two local writes and one entry applied from a peer.
+    let first = sync_log::append(
+        &conn,
+        SyncOp::Upsert,
+        "aaaaaaaa",
+        &"a".repeat(64),
+        at,
+        SyncOrigin::Local,
+    )
+    .expect("append");
+    sync_log::append(
+        &conn,
+        SyncOp::Upsert,
+        "bbbbbbbb",
+        &"b".repeat(64),
+        at,
+        SyncOrigin::Local,
+    )
+    .expect("append");
+    sync_log::append(
+        &conn,
+        SyncOp::Upsert,
+        "cccccccc",
+        &"c".repeat(64),
+        at,
+        SyncOrigin::Sync,
+    )
+    .expect("append");
+
+    // Nothing pushed yet: both local entries are owed, the pulled one is not.
+    assert_eq!(sync_log::pending_local(&conn, 0).expect("pending"), 2);
+    // After the first is pushed, only the second is.
+    assert_eq!(sync_log::pending_local(&conn, first).expect("pending"), 1);
+    // A cursor at the head owes nothing.
+    let head = sync_log::head_seq(&conn).expect("head");
+    assert_eq!(sync_log::pending_local(&conn, head).expect("pending"), 0);
+}

@@ -20,20 +20,24 @@ comemory auth login --api-url https://api.comemory.io
 ```
 
 Login mints a key scoped to the organization you approved, writes it to
-`$COMEMORY_DATA_DIR/auth.json` (mode `0600`), **installs and starts the
-user-level sync daemon** (unless `--no-daemon`), and **runs a full first sync
+`$COMEMORY_DATA_DIR/auth.json` (mode `0600`), and **runs a full first sync
 before it returns** — pulling every remote page, then pushing every local page:
 
 ```text
 ✓ logged in to Acme, Inc. (cmk_abcd)
   api https://api.comemory.io · credentials ~/.comemory/auth.json
-  daemon: running
-  synced: pulled 12 · pushed 3 · skipped personal=1 · skip_repos=0
+  daemon: not installed (saves push inline; `comemory watch` for live pulls)
+  synced: pulled 12 · pushed 3 · skip_repos=0
 ```
 
-There is no second step. No workspace id to look up, no per-repo linking.
-Continuous auto-sync is the **daemon** (`comemory sync daemon`), not an
-in-process after-save hook.
+There is no second step, and nothing resident is installed. After login:
+
+- **Push is inline.** `comemory save` and `comemory delete` send the outbox
+  before they return, bounded by `[sync] push_on_save_timeout` (2s).
+- **Pull is on demand:** `comemory sync`, or [`comemory watch`](#watch) to
+  follow changes live.
+- **The daemon is opt-in** (`comemory auth login --daemon`) for headless hosts
+  that want pulls without either.
 
 If the platform is unreachable at that moment the login still succeeds — the
 key is already minted and useful — and says so on stderr:
@@ -43,11 +47,31 @@ warning: first sync failed (…) — run `comemory sync` when the platform is re
 ```
 
 `comemory auth status` reports the bound organization and whether the daemon
-is running. `comemory auth logout` deletes the local credential and **stops**
+is running (it usually is not, and that is fine). `comemory auth logout` deletes the local credential and **stops**
 the daemon (the unit stays installed for the next login). `COMEMORY_API_KEY`
 overrides the stored secret without writing the file.
 
-## Sync daemon (required for auto-sync)
+## `comemory watch` — live pulls, no daemon {#watch}
+
+```bash
+comemory watch            # follow until interrupted
+comemory watch --once     # pull once the channel greets, then exit
+```
+
+`watch` mints a 60-second ticket (`POST /v1/ws/ticket`), opens the workspace
+channel (`GET /v1/ws`), and pulls whenever a frame arrives — on connect
+(`hello`) and after anyone writes (`change`).
+
+The socket carries **nudges, never memories**: a frame names memory ids, ops
+and content hashes, and the pull it triggers is the same cursored
+`GET /v1/sync/changes` a manual sync runs, with your real credential. So a
+missed frame costs latency rather than data, a duplicate frame costs one empty
+pull, and a leaked ticket buys an id list rather than a corpus.
+
+A refused or dropped socket is not an error — `watch` reconnects with jittered
+backoff (1s → 30s) until you stop it.
+
+## Sync daemon (opt-in)
 
 | Command | Effect |
 |---------|--------|
@@ -58,33 +82,39 @@ overrides the stored secret without writing the file.
 | `comemory sync daemon run` | Foreground loop (what the supervisor runs) |
 
 Default interval: `[sync] daemon_interval = "5s"` — each cycle `pull` then
-`push`, with an occasional `verify` per `[sync] verify_every`. Sleep is
-**interruptible**: a successful save of a sync-eligible (non-empty `repo`)
-memory touches `$DATA_DIR/sync.wake` so the daemon runs one cycle immediately
-instead of waiting out the full interval. That is local wake-on-save, not a
-platform broker and not a filesystem watcher on the memories tree. Windows is
-not supported.
+`push`, with an occasional `verify` per `[sync] verify_every`. Windows is not
+supported.
 
-Escape hatches: `auth login --no-daemon`, or stop/uninstall the daemon and use
-manual `comemory sync`.
+You probably do not need it. A save pushes itself and `comemory watch` covers
+pulls; what is left for a daemon is a headless host that wants pulls without a
+foreground process. Install it with `comemory auth login --daemon`, or
+`comemory sync daemon install` at any time. (The old `auth login --no-daemon`
+is gone — it opted out of an install that no longer happens.)
 
 ## What syncs
 
-Every memory whose `repo` frontmatter is non-empty is offered to your
-organization, which accepts or rejects it on membership alone.
+**Everything.** Every memory on the machine is offered to your organization,
+which accepts or rejects it on membership alone.
 
-Two filters run on your machine first:
+One filter runs on your machine first:
 
 | Memory | Outcome | Counter |
 |--------|---------|---------|
-| Empty `repo` label | Stays local, always | `skipped_personal` |
 | Label matches `[sync] skip_repos` | Stays local | `skipped_config` |
+| Body trips the secret scan | Withheld until `--allow-secret` | `blocked_secrets` |
 | Anything else | Offered to the organization | `pushed` |
 
-> **This is wider than before.** Under the old per-repo GitHub App allowlist, a
-> memory labelled with a repo the App was not installed on stayed local. It is
-> now pushed. If you keep memories labelled for repositories that should not
-> reach your organization, set `skip_repos` before upgrading.
+> **This is wider than before, twice over.** An empty `repo` label used to keep
+> a memory local forever. Because `repo` is filled in from the git repository
+> of whatever directory `comemory save` ran in, that rule quietly meant *a note
+> taken outside a worktree could never sync* — which is why it is gone. The
+> per-repo GitHub App allowlist is gone too: a memory labelled with a repo the
+> App was never installed on is now pushed.
+>
+> **Everything already on your machine is re-offered once** after the upgrade
+> (migration `0017`), including memories saved long before this change. If you
+> keep memories that should not reach your organization, set `skip_repos`
+> **before** upgrading.
 
 ```toml
 [sync]
@@ -113,16 +143,19 @@ own, and it is the only one that key can reach. Switching organization means
 
 | Knob | Default | Behavior |
 |------|---------|----------|
-| `[sync] daemon_interval` | `"5s"` | Sleep between daemon pull+push cycles (wake-on-save can end early) |
+| `[sync] push_on_save` | `true` | Push the outbox inline after `save` / `delete` |
+| `[sync] push_on_save_timeout` | `"2s"` | Budget for that inline push (must be > 0; use `push_on_save = false` to disable) |
+| `[sync] daemon_interval` | `"5s"` | Sleep between daemon pull+push cycles |
 | `[sync] verify_every` | `"7d"` | Hint / daemon interval for `sync --action verify` |
 | `[sync] skip_repos` | `[]` | Repo-label globs to keep local |
-| `[sync] after_save` | `false` | **Deprecated, ignored** — use the daemon |
-| `[sync] pull_before_context_after` | `""` (off) | **Deprecated, ignored** — use the daemon |
+| `[sync] after_save` | `false` | **Deprecated, ignored** — superseded by `push_on_save` |
+| `[sync] pull_before_context_after` | `""` (off) | **Deprecated, ignored** — use `comemory watch` |
 | `[embed] model` | `""` | Recorded for vector import compatibility |
 
-Offline or 5xx → the outbox waits. Local verbs stay green. `doctor`,
-`auth status`, and `sync --action status` warn when linked but the daemon is
-not running (“auto-sync inactive”).
+Offline or 5xx → the outbox waits and the write still succeeds. Local verbs
+stay green. `comemory sync --action status` reports `pending` — how many local
+writes are still owed to the platform — which is the number to watch after a
+spell offline.
 
 ## Upgrading from a device-key install
 

@@ -172,7 +172,6 @@ fn initial_sync_on_an_empty_pair_succeeds_with_zero_counts() {
     let stats = run_initial_sync(&paths, &cfg, &auth).expect("empty first sync still succeeds");
     assert_eq!(stats.pulled, 0);
     assert_eq!(stats.pushed, 0);
-    assert_eq!(stats.skipped_personal, 0);
 }
 
 #[test]
@@ -218,7 +217,7 @@ fn initial_sync_drains_multiple_remote_pages() {
 }
 
 #[test]
-fn initial_sync_counts_skipped_personal() {
+fn initial_sync_pushes_an_unlabelled_memory() {
     let server = SyncPlatformServer::start(SyncPlatformState::default());
     let secret = server.snapshot().secret;
 
@@ -227,16 +226,21 @@ fn initial_sync_counts_skipped_personal() {
     paths.ensure_dirs().unwrap();
     let cfg = Config::defaults();
     let mut conn = connection::open(paths.db_path()).unwrap();
+    let body = "a note saved outside any git worktree";
+    let id = comemory::memory::id::memory_id(body);
+    let content_hash = comemory::memory::id::sha256_hex(body.trim_end().as_bytes());
+    server.update(|st| {
+        st.import_results = serde_json::json!([{
+            "id": id,
+            "content_hash": content_hash,
+            "status": "accepted",
+            "seq": 1
+        }]);
+    });
     {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        // Empty repo label → stays local.
-        save::run(
-            &mut ctx,
-            save_req("a personal note that must not leave the machine", ""),
-            false,
-            None,
-        )
-        .unwrap();
+        // No repo label at all — it still reaches the organization.
+        save::run(&mut ctx, save_req(body, ""), false, None).unwrap();
     }
     drop(conn);
 
@@ -247,8 +251,8 @@ fn initial_sync_counts_skipped_personal() {
         common::auth_fixture::FIXTURE_WORKSPACE,
     );
     let stats = run_initial_sync(&paths, &cfg, &auth).expect("initial sync");
-    assert_eq!(stats.pushed, 0);
-    assert_eq!(stats.skipped_personal, 1);
+    assert_eq!(stats.pushed, 1);
+    assert_eq!(stats.skipped_config, 0);
 }
 
 #[test]

@@ -220,6 +220,8 @@ fn handle(
         None => (path_q, String::new()),
     };
     let mut content_length = 0usize;
+    let mut upgrade = String::new();
+    let mut websocket_key = String::new();
     let mut authorization = String::new();
     let mut workspace_header: Option<String> = None;
     loop {
@@ -233,6 +235,18 @@ fn handle(
         }
         if lower.starts_with("authorization:") {
             authorization = header
+                .split_once(':')
+                .map(|(_, v)| v.trim().to_string())
+                .unwrap_or_default();
+        }
+        if lower.starts_with("upgrade:") {
+            upgrade = header
+                .split_once(':')
+                .map(|(_, v)| v.trim().to_ascii_lowercase())
+                .unwrap_or_default();
+        }
+        if lower.starts_with("sec-websocket-key:") {
+            websocket_key = header
                 .split_once(':')
                 .map(|(_, v)| v.trim().to_string())
                 .unwrap_or_default();
@@ -252,6 +266,9 @@ fn handle(
         authorization: authorization.clone(),
         workspace_header,
     });
+    if path == "/v1/ws" && upgrade == "websocket" {
+        return serve_channel(stream, &websocket_key, &query);
+    }
     // Cap body size so a buggy Content-Length cannot OOM the test process.
     let (status, resp) = if content_length > MAX_BODY {
         (
@@ -283,6 +300,50 @@ fn handle(
     stream.flush()
 }
 
+/// Complete a WebSocket upgrade and play the channel's script: `hello`, one
+/// `change`, then a close — enough for a client to prove it pulls on both and
+/// reconnects after the socket goes away.
+fn serve_channel(stream: TcpStream, key: &str, query: &str) -> std::io::Result<()> {
+    use tokio_tungstenite::tungstenite::Message;
+    use tokio_tungstenite::tungstenite::handshake::derive_accept_key;
+    use tokio_tungstenite::tungstenite::protocol::{Role, WebSocket};
+
+    let mut stream = stream;
+    // A ticket is required, exactly as the real route requires one.
+    if !query.contains("ticket=") {
+        let body = json!({"ok": false, "error": {"code": "unauthorized"}}).to_string();
+        let head = format!(
+            "HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
+            body.len()
+        );
+        stream.write_all(head.as_bytes())?;
+        stream.write_all(body.as_bytes())?;
+        return stream.flush();
+    }
+    let accept = derive_accept_key(key.as_bytes());
+    stream.write_all(
+        format!(
+            "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {accept}\r\n\r\n"
+        )
+        .as_bytes(),
+    )?;
+    stream.flush()?;
+
+    let mut socket = WebSocket::from_raw_socket(stream, Role::Server, None);
+    let hello = json!({"type": "hello", "workspace_id": "ws-org"}).to_string();
+    let change = json!({
+        "type": "change",
+        "workspace_id": "ws-org",
+        "ops": [{"id": "a1b2c3d4", "op": "upsert", "content_hash": "a".repeat(64)}],
+    })
+    .to_string();
+    let _ = socket.send(Message::Text(hello.into()));
+    let _ = socket.send(Message::Text(change.into()));
+    let _ = socket.close(None);
+    let _ = socket.flush();
+    Ok(())
+}
+
 fn route(
     method: &str,
     path: &str,
@@ -293,6 +354,14 @@ fn route(
 ) -> (&'static str, String) {
     let mut st = state.lock().expect("state");
     match (method, path) {
+        ("POST", "/v1/ws/ticket") => (
+            "200 OK",
+            json!({
+                "ok": true,
+                "data": { "ticket": "fixture-ticket.sig", "expires_in": 60 }
+            })
+            .to_string(),
+        ),
         ("POST", "/auth/device/code") => (
             "200 OK",
             json!({

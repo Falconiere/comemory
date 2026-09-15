@@ -110,6 +110,20 @@ pub fn head_seq(conn: &Connection) -> Result<i64> {
     Ok(seq.unwrap_or(0))
 }
 
+/// How many local-origin entries sit above `since` — what a push still owes
+/// the platform.
+///
+/// Counts `origin = 'local'` only: a pulled entry is journalled too, and
+/// counting it would report work that was never this machine's to do.
+pub fn pending_local(conn: &Connection, since: i64) -> Result<i64> {
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM sync_log WHERE seq > ?1 AND origin = 'local'",
+        rusqlite::params![since],
+        |r| r.get(0),
+    )?;
+    Ok(count)
+}
+
 /// Entries with `seq > since`, ordered ascending, capped at `limit`.
 ///
 /// Ignores `origin` — pullers need every entry above the cursor, including

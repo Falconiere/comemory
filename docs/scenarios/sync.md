@@ -2,14 +2,15 @@
 
 Push/pull memories against the organization the key from `comemory auth login`
 is scoped to, through `api.comemory.io`. Organization membership is the
-platform's gate; on this side only two filters run — an empty `repo` label
-(`skipped_personal`) and a `[sync] skip_repos` glob match (`skipped_config`) —
-plus client-side redaction. Distinct from git `memory-stores` sync
-(`[git] auto_sync`).
+platform's gate; on this side one filter runs — a `[sync] skip_repos` glob
+match (`skipped_config`) — plus client-side redaction. An empty `repo` label no
+longer withholds anything: a memory saved outside a git worktree syncs like any
+other. Distinct from git `memory-stores` sync (`[git] auto_sync`).
 
-Most users never run this: `comemory auth login` performs the first full sync
-and installs the user-level sync daemon, which keeps pull+push going on an
-interval. Manual `comemory sync` still works with the daemon stopped.
+Most users never run this: `comemory auth login` performs the first full sync,
+`save` and `delete` push inline afterwards, and [`comemory watch`](watch.md)
+covers the pull direction. The user-level daemon is opt-in
+(`comemory auth login --daemon`) for headless hosts.
 
 **Runnable tests:** `tests/cli__sync.rs`
 
@@ -30,6 +31,9 @@ _None._
 | --- | --- | --- |
 | `--action` | `run` | `run` (push+pull), `push`/`push-only`, `pull`/`pull-only`, `verify`, `status` |
 | `--allow-secret` | unset | Record a secret-scan override for one memory id before push |
+
+`--action status` reports `pending` — how many local writes are still owed to
+the platform — beside the two cursors.
 
 Nested: `comemory sync daemon {install,uninstall,start,stop,status,run}` —
 see [cloud-sync.md](../guides/cloud-sync.md).

@@ -40,8 +40,6 @@ pub(crate) struct InitialSyncJson {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pushed: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub skipped_personal: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub skipped_config: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
@@ -75,7 +73,6 @@ pub(crate) fn initial_sync_json(
             ok: true,
             pulled: Some(s.pulled),
             pushed: Some(s.pushed),
-            skipped_personal: Some(s.skipped_personal),
             skipped_config: Some(s.skipped_config),
             error: None,
         },
@@ -83,7 +80,6 @@ pub(crate) fn initial_sync_json(
             ok: false,
             pulled: None,
             pushed: None,
-            skipped_personal: None,
             skipped_config: None,
             error: Some(e.to_string()),
         },

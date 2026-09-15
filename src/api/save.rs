@@ -212,10 +212,10 @@ pub fn run_with(
 
     let params = build_params(&req, relations, references, prior.as_ref());
     let rec = persist(conn, &store, params, vector.as_deref())?;
-    // Continuous sync is the user-level daemon (`comemory sync daemon`), not
-    // an in-process after-save push. Touch sync.wake so a sleeping daemon
-    // drains the outbox immediately for sync-eligible (labelled) saves.
-    crate::sync::daemon_wake::wake_after_save_best_effort(paths, &rec.frontmatter.repo);
+    // No sync hook here on purpose: this function also runs inside `comemory
+    // serve`, where `reqwest::blocking` panics on drop and where pushing a
+    // tenant's memories outward would be wrong. The CLI pushes in `cli::save`
+    // instead (`sync::push_on_save`).
 
     Ok(Response {
         id: rec.frontmatter.id.clone(),

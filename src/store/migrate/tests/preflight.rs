@@ -83,7 +83,7 @@ fn real_current_database_is_not_refused() {
 /// `version` at all.
 fn inject_future_marker(conn: &Connection, version_value: &str) {
     conn.execute(
-        "INSERT INTO schema_meta(key, value) VALUES('0017_future', '1')",
+        "INSERT INTO schema_meta(key, value) VALUES('0018_future', '1')",
         [],
     )
     .expect("seed future marker");
@@ -101,7 +101,7 @@ fn assert_future_marker_is_refused(version_value: &str) {
     let dir = tempdir().expect("tempdir");
     let db = dir.path().join("comemory.db");
     {
-        let conn = connection::open(&db).expect("build a real v16 db");
+        let conn = connection::open(&db).expect("build a database at this build's version");
         inject_future_marker(&conn, version_value);
     }
 
@@ -118,11 +118,11 @@ fn assert_future_marker_is_refused(version_value: &str) {
     );
     let msg = err.to_string();
     assert!(
-        msg.contains("0017_future"),
+        msg.contains("0018_future"),
         "error must name the unknown key, got: {msg}"
     );
     assert!(
-        msg.contains("0016_v16_sync"),
+        msg.contains("0017_sync_repush"),
         "error must name the highest key this build supports, got: {msg}"
     );
 
@@ -137,13 +137,13 @@ fn assert_future_marker_is_refused(version_value: &str) {
 }
 
 #[test]
-fn unknown_marker_is_refused_when_version_already_says_seventeen() {
-    assert_future_marker_is_refused("17");
+fn unknown_marker_is_refused_when_version_already_says_eighteen() {
+    assert_future_marker_is_refused("18");
 }
 
 #[test]
-fn unknown_marker_is_refused_when_version_still_says_sixteen_crash_before_set_version() {
-    assert_future_marker_is_refused("16");
+fn unknown_marker_is_refused_when_version_still_says_seventeen_crash_before_set_version() {
+    assert_future_marker_is_refused("17");
 }
 
 #[test]

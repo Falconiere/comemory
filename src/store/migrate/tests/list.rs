@@ -142,7 +142,7 @@ fn sql_demands_destructive(sql: &str) -> bool {
 /// classed `Destructive`. Expected membership per the migration SQL itself:
 /// 0004 (drops `memory_fts`/`code_fts`, `UPDATE`s `memories`/`code_symbols`),
 /// 0005 (drops `search_stats`), 0006/0008/0013 (each rebuild `edges` via
-/// create-copy-drop-rename).
+/// create-copy-drop-rename), 0017 (`UPDATE`s every `sync_state` cursor).
 #[test]
 fn migration_integrity_destructive_sql_is_classed_destructive() {
     let destructive_keys: BTreeSet<&str> = list::MIGRATIONS
@@ -156,6 +156,7 @@ fn migration_integrity_destructive_sql_is_classed_destructive() {
         "0006_v6_code_graph",
         "0008_v8_reinforcement",
         "0013_v13_documents",
+        "0017_sync_repush",
     ]
     .into_iter()
     .collect();

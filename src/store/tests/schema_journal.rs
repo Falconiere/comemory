@@ -38,8 +38,11 @@ fn read_journal(dir: &Path) -> Journal {
 #[test]
 fn journal_file_appends_the_basename_and_the_hash_of_the_bytes() {
     let (_guard, dir) = shipped_copy();
+    let before = read_journal(&dir).entries.len();
     let sql = "CREATE TABLE probe (id INTEGER PRIMARY KEY);\n";
-    let file = dir.join("0017_probe.sql");
+    // Numbered far past the shipped set so adding a real migration cannot
+    // collide with this fixture's name.
+    let file = dir.join("0099_probe.sql");
     fs::write(&file, sql).unwrap();
 
     let journaled = journal_file(&dir, &file).expect("journal a new file");
@@ -47,15 +50,30 @@ fn journal_file_appends_the_basename_and_the_hash_of_the_bytes() {
     assert_eq!(
         journaled,
         Journaled {
-            name: "0017_probe.sql".to_owned(),
+            name: "0099_probe.sql".to_owned(),
             hash: compute_hash(sql),
         }
     );
     let journal = read_journal(&dir);
-    assert_eq!(journal.entries.len(), 17);
+    assert_eq!(journal.entries.len(), before + 1);
     let last = journal.entries.last().unwrap();
-    assert_eq!((last.idx, last.name.as_str()), (16, "0017_probe.sql"));
+    assert_eq!(
+        (last.idx as usize, last.name.as_str()),
+        (before, "0099_probe.sql")
+    );
     assert_eq!(last.hash, compute_hash(sql));
+}
+
+/// The snapshot file `adopt` will write: the newest journal entry's name with
+/// `.sql` swapped for `.snapshot.json`. Derived rather than hardcoded so a new
+/// hand-written migration does not silently retarget these tests.
+fn latest_snapshot_path(dir: &Path) -> PathBuf {
+    let journal: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(dir.join("_journal.json")).unwrap()).unwrap();
+    let entries = journal["entries"].as_array().expect("entries");
+    let newest = entries.last().expect("a non-empty journal");
+    let name = newest["name"].as_str().expect("entry name");
+    dir.join(name.replace(".sql", ".snapshot.json"))
 }
 
 #[test]
@@ -93,7 +111,13 @@ fn journal_file_reports_a_missing_migration() {
 #[test]
 fn adopt_is_byte_identical_the_second_time_and_keeps_the_snapshot_identity() {
     let (_guard, dir) = shipped_copy();
-    let snapshot = dir.join("0016_v16_sync.snapshot.json");
+    // `adopt` restates the newest journal entry's snapshot. A hand-written
+    // migration is journaled without one, so create it first — this test is
+    // about idempotency, not about the create path (the next test owns that).
+    let snapshot = latest_snapshot_path(&dir);
+    if !snapshot.exists() {
+        adopt(&dir).expect("seed the snapshot for the newest entry");
+    }
     let shipped = fs::read(&snapshot).unwrap();
 
     let first = adopt(&dir).expect("first adopt");
@@ -116,8 +140,10 @@ fn adopt_is_byte_identical_the_second_time_and_keeps_the_snapshot_identity() {
 #[test]
 fn adopt_creates_the_snapshot_for_a_journal_that_has_none_yet() {
     let (_guard, dir) = shipped_copy();
-    let snapshot = dir.join("0016_v16_sync.snapshot.json");
-    fs::remove_file(&snapshot).unwrap();
+    let snapshot = latest_snapshot_path(&dir);
+    if snapshot.exists() {
+        fs::remove_file(&snapshot).unwrap();
+    }
 
     let written = adopt(&dir).expect("adopt without an existing snapshot");
 

@@ -30,7 +30,7 @@ pub(crate) mod preflight;
 /// it is what `schema_meta` stores and what several eval modules hash via
 /// `.as_bytes()` — not derived from [`CURRENT_VERSION_NUM`]: on the pinned
 /// stable toolchain `const … = &N.to_string()` fails with `E0015`.
-pub const CURRENT_VERSION: &str = "16";
+pub const CURRENT_VERSION: &str = "17";
 
 /// The same value numerically as [`CURRENT_VERSION`], for callers that need
 /// to compare or count migrations. Agreement between the two is asserted by
@@ -111,6 +111,9 @@ pub const M_V15: &str = include_str!("../../migrations/0015_v15_console_api.sql"
 /// 0016 SQL: cloud sync — `sync_log`, `sync_state`, `sync_binding`, plus
 /// the `memory_vector_model` schema_meta key.
 pub const M_V16: &str = include_str!("../../migrations/0016_v16_sync.sql");
+/// v17: re-offer the whole outbox once, after the push filter that stranded
+/// unlabelled memories was removed.
+pub const M_V17: &str = include_str!("../../migrations/0017_sync_repush.sql");
 
 /// Apply all pending migrations. Safe to re-run; each migration is only
 /// applied if its key is absent from `schema_meta`, and each post-apply

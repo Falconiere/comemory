@@ -1,8 +1,11 @@
-//! User-level OS daemon that periodically pull+push syncs.
+//! Optional user-level OS daemon that periodically pull+push syncs.
 //!
-//! Continuous auto-sync lives here — not in `save` / `context`. Login installs
-//! and starts the unit by default; logout stops it (unit stays installed).
-//! Manual `comemory sync` still works with the daemon stopped.
+//! Opt-in since the 2026-09-14 sync design: `comemory auth login --daemon`
+//! installs and starts it, logout stops it (the unit stays installed). A plain
+//! login installs nothing, because a save pushes inline (`sync::push_on_save`)
+//! and `comemory watch` covers the pull direction from the foreground. What is
+//! left for a daemon is a headless host that wants pulls without either.
+//! Manual `comemory sync` works with the daemon stopped, as it always did.
 //!
 //! Unit install/start/stop/status live in [`crate::sync::daemon_unit`].
 
@@ -14,7 +17,6 @@ use crate::prelude::*;
 use crate::store::connection::open;
 use crate::sync::AuthFile;
 use crate::sync::daemon_unit;
-use crate::sync::daemon_wake;
 use crate::sync::{pull, push, verify};
 
 pub use daemon_unit::{
@@ -57,9 +59,11 @@ pub fn run_foreground(paths: &Paths) -> Result<()> {
         if let Err(e) = run_one_cycle(paths, &cfg, &mut last_verify, verify_every) {
             tracing::warn!(error = %e, "sync daemon cycle failed");
         }
-        // Interruptible: a save touching sync.wake ends the sleep early so
-        // local writers see pull→push within wake latency, not a full interval.
-        daemon_wake::sleep_interruptible(interval, paths);
+        // A plain sleep: the wake file is gone with the 2026-09-14 sync
+        // design, because a local save now pushes itself rather than nudging a
+        // daemon to do it. This loop exists for the pull direction and for
+        // headless hosts.
+        std::thread::sleep(interval);
     }
 }
 

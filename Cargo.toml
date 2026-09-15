@@ -88,6 +88,12 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # compile under recent rustc; pin transitive dep to last good release.
 url = "=2.5.7"
 unicode-normalization = "0.1"
+# `comemory watch`'s socket. `rustls-tls-native-roots` matches the TLS backend
+# `reqwest` already uses above, so no second TLS stack enters the build.
+tokio-tungstenite = { version = "0.30", default-features = false, features = [
+    "connect",
+    "rustls-tls-native-roots",
+] }
 
 [dependencies.ast-grep-core]
 version = "0.45"

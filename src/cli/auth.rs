@@ -26,7 +26,7 @@ use owo_colors::OwoColorize;
 const EXAMPLES: &str = "\
 Examples:
   comemory auth login
-  comemory auth login --no-daemon
+  comemory auth login --daemon
   comemory auth login --api-url https://dev-api.comemory.io
   comemory auth status
   comemory auth logout";
@@ -57,9 +57,14 @@ pub struct LoginArgs {
     /// Platform API base URL (overrides `COMEMORY_API` / default).
     #[arg(long, value_name = "URL")]
     pub api_url: Option<String>,
-    /// Do not install or start the user-level sync daemon.
+    /// Also install and start the user-level sync daemon.
+    ///
+    /// Off by default since the 2026-09-14 sync design: a save pushes inline
+    /// and `comemory watch` covers the pull direction, so a resident process
+    /// is for headless hosts rather than the common case. Replaces the old
+    /// `--no-daemon`, which opted out of an install that no longer happens.
     #[arg(long, default_value_t = false)]
-    pub no_daemon: bool,
+    pub daemon: bool,
 }
 
 /// Flags for `comemory auth status`.
@@ -89,16 +94,16 @@ fn run_login(paths: &Paths, a: LoginArgs, json_flag: bool) -> Result<()> {
     auth_file::clear_stale_allowlist(paths)?;
     let creds = &outcome.credentials;
 
-    let daemon_json = if a.no_daemon {
-        DaemonLoginJson {
-            skipped: true,
-            running: None,
-        }
-    } else {
+    let daemon_json = if a.daemon {
         daemon::install_and_start_best_effort(paths);
         DaemonLoginJson {
             skipped: false,
             running: daemon::status().ok().map(|s| s.running),
+        }
+    } else {
+        DaemonLoginJson {
+            skipped: true,
+            running: None,
         }
     };
 
@@ -137,16 +142,21 @@ fn run_login(paths: &Paths, a: LoginArgs, json_flag: bool) -> Result<()> {
         creds.api_url,
         paths.auth_file().display()
     )?;
-    if a.no_daemon {
-        writeln!(out, "  daemon: skipped (--no-daemon)")?;
-    } else if let Ok(st) = daemon::status() {
-        writeln!(out, "  daemon: {}", st.detail)?;
+    if a.daemon {
+        if let Ok(st) = daemon::status() {
+            writeln!(out, "  daemon: {}", st.detail)?;
+        }
+    } else {
+        writeln!(
+            out,
+            "  daemon: not installed (saves push inline; `comemory watch` for live pulls)"
+        )?;
     }
     match &synced {
         Ok(stats) => writeln!(
             out,
-            "  synced: pulled {} · pushed {} · skipped personal={} · skip_repos={}",
-            stats.pulled, stats.pushed, stats.skipped_personal, stats.skipped_config
+            "  synced: pulled {} · pushed {} · skip_repos={}",
+            stats.pulled, stats.pushed, stats.skipped_config
         )?,
         Err(e) => writeln!(
             std::io::stderr().lock(),

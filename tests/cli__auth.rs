@@ -15,71 +15,18 @@
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
-use std::process::Output;
 
-use assert_cmd::cargo::cargo_bin;
+use auth_home::Home;
 use device_auth_server::{DeviceAuthConfig, DeviceAuthServer, tooling_present};
 use serde_json::Value;
 use sync_platform_server::{SyncPlatformServer, SyncPlatformState};
-use tempfile::TempDir;
 
+#[path = "common/auth_home.rs"]
+mod auth_home;
 #[path = "common/device_auth_server.rs"]
 mod device_auth_server;
 #[path = "common/sync_platform_server.rs"]
 mod sync_platform_server;
-
-struct Home {
-    root: TempDir,
-}
-
-impl Home {
-    fn new() -> Self {
-        Self {
-            root: TempDir::new().unwrap(),
-        }
-    }
-
-    fn data_dir(&self) -> PathBuf {
-        self.root.path().join(".comemory")
-    }
-
-    fn auth_file(&self) -> PathBuf {
-        self.data_dir().join("auth.json")
-    }
-
-    fn run(&self, api: Option<&str>, args: &[&str]) -> Output {
-        let mut cmd = std::process::Command::new(cargo_bin("comemory"));
-        cmd.env("COMEMORY_DATA_DIR", self.data_dir())
-            .env("HOME", self.root.path())
-            .env("COMEMORY_SYNC_DAEMON", "0")
-            .env_remove("COMEMORY_API")
-            .env_remove("COMEMORY_API_KEY")
-            .args(args);
-        if let Some(url) = api {
-            cmd.env("COMEMORY_API", url);
-        }
-        cmd.output().expect("run comemory")
-    }
-
-    fn run_json(&self, api: Option<&str>, args: &[&str]) -> Value {
-        let mut full = vec!["--json"];
-        full.extend_from_slice(args);
-        let out = self.run(api, &full);
-        assert!(
-            out.status.success(),
-            "expected success {:?}: {}",
-            out.status.code(),
-            String::from_utf8_lossy(&out.stderr)
-        );
-        serde_json::from_slice(&out.stdout).unwrap_or_else(|e| {
-            panic!(
-                "stdout not JSON: {e}\n{}",
-                String::from_utf8_lossy(&out.stdout)
-            )
-        })
-    }
-}
 
 fn require_http_tools() {
     assert!(
@@ -344,15 +291,10 @@ fn api_url_flag_and_comemory_api_override_default() {
     let home = Home::new();
 
     // Flag wins: point env at a dead host; --api-url should still hit the fixture.
-    let mut cmd = std::process::Command::new(cargo_bin("comemory"));
-    let out = cmd
-        .env("COMEMORY_DATA_DIR", home.data_dir())
-        .env("HOME", home.root.path())
-        .env("COMEMORY_API", "http://127.0.0.1:1")
-        .env_remove("COMEMORY_API_KEY")
-        .args(["--json", "auth", "login", "--api-url", &srv.base])
-        .output()
-        .unwrap();
+    let out = home.run(
+        Some("http://127.0.0.1:1"),
+        &["--json", "auth", "login", "--api-url", &srv.base],
+    );
     assert!(
         out.status.success(),
         "flag should beat env: {}",
@@ -372,15 +314,13 @@ fn api_url_flag_and_comemory_api_override_default() {
 }
 
 #[test]
-fn save_does_not_push_without_the_daemon() {
-    // AC-daemon-required: with no daemon cycle, a plain save stays local.
+fn a_save_pushes_inline_without_any_daemon() {
+    // AC-12: the inline push is what makes continuous sync stop depending on
+    // a resident process. One save, one import, before the process exits.
     require_http_tools();
     let srv = SyncPlatformServer::start(SyncPlatformState::default());
     let home = Home::new();
-    home.run_json(
-        None,
-        &["auth", "login", "--no-daemon", "--api-url", &srv.base],
-    );
+    home.run_json(None, &["auth", "login", "--api-url", &srv.base]);
 
     let before = srv
         .requests()
@@ -388,22 +328,15 @@ fn save_does_not_push_without_the_daemon() {
         .filter(|r| r.path == "/v1/sync/import")
         .count();
 
-    let out = home.run(
-        None,
-        &[
-            "save",
-            "--repo",
-            "acme/backend",
-            "a decision that must not auto-push without the daemon",
-        ],
-    );
+    let body = "a decision that reaches the organization without a daemon";
+    let out = home.run(None, &["save", "--repo", "acme/backend", body]);
     assert!(
         out.status.success(),
         "save failed: {}",
         String::from_utf8_lossy(&out.stderr)
     );
 
-    std::thread::sleep(std::time::Duration::from_millis(300));
+    // No sleep: the push happens before `save` returns, which is the point.
     let after = srv
         .requests()
         .iter()
@@ -411,8 +344,97 @@ fn save_does_not_push_without_the_daemon() {
         .count();
     assert_eq!(
         after,
-        before,
-        "save must not push when the daemon is not running; requests: {:?}",
+        before + 1,
+        "save must push exactly once inline; requests: {:?}",
         srv.requests().iter().map(|r| &r.path).collect::<Vec<_>>()
+    );
+    let sent = srv
+        .snapshot()
+        .last_import_body
+        .expect("an import body was sent");
+    assert!(
+        sent.contains(body),
+        "the import must carry the saved body: {sent}"
+    );
+}
+
+#[test]
+fn a_save_still_succeeds_when_the_platform_is_unreachable() {
+    // AC-13: the write is already on disk; the network must not be able to
+    // turn a successful save into a failed command.
+    require_http_tools();
+    let srv = SyncPlatformServer::start(SyncPlatformState::default());
+    let home = Home::new();
+    home.run_json(None, &["auth", "login", "--api-url", &srv.base]);
+    // Point the stored credential at a closed port rather than dropping the
+    // fixture: its listener thread outlives the value, so a dropped server is
+    // still a reachable one.
+    let auth_path = home.auth_file();
+    let raw = std::fs::read_to_string(&auth_path).expect("auth.json");
+    std::fs::write(&auth_path, raw.replace(&srv.base, "http://127.0.0.1:9"))
+        .expect("rewrite auth.json");
+
+    let out = home.run(
+        None,
+        &["save", "--repo", "acme/backend", "saved while offline"],
+    );
+    assert!(
+        out.status.success(),
+        "an unreachable platform must not fail a save: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // And the entry is still owed: `pending` is what says so.
+    let status = home.run_json(None, &["sync", "--action", "status"]);
+    assert!(
+        status["pending"].as_i64().unwrap_or(0) >= 1,
+        "the unsent write must still be pending: {status}"
+    );
+}
+
+#[test]
+fn a_plain_login_installs_no_daemon_and_the_old_opt_out_is_gone() {
+    // AC-15/AC-20: the unit is opt-in now, so `--no-daemon` opts out of
+    // something that no longer happens and is refused rather than ignored.
+    require_http_tools();
+    let srv = SyncPlatformServer::start(SyncPlatformState::default());
+    let home = Home::new();
+
+    let plain = home.run_json(None, &["auth", "login", "--api-url", &srv.base]);
+    assert_eq!(
+        plain["daemon"]["skipped"], true,
+        "a plain login must not install the daemon: {plain}"
+    );
+
+    let refused = home.run(
+        None,
+        &["auth", "login", "--no-daemon", "--api-url", &srv.base],
+    );
+    assert_eq!(
+        refused.status.code(),
+        Some(2),
+        "--no-daemon must be refused as an unknown argument, not ignored"
+    );
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert!(
+        stderr.contains("--no-daemon"),
+        "the error must name the removed flag: {stderr}"
+    );
+}
+
+#[test]
+fn login_with_the_daemon_flag_asks_for_the_unit() {
+    // The escape hatch for a headless host. `COMEMORY_SYNC_DAEMON=0` (set by
+    // this fixture) stops the install from touching the host's launchd, so the
+    // observable is the report: this login chose to install, the plain one did
+    // not.
+    require_http_tools();
+    let srv = SyncPlatformServer::start(SyncPlatformState::default());
+    let home = Home::new();
+
+    let out = home.run_json(None, &["auth", "login", "--daemon", "--api-url", &srv.base]);
+    assert_eq!(
+        out["daemon"]["skipped"], false,
+        "--daemon must take the install path: {out}"
     );
 }
