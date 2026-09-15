@@ -88,13 +88,37 @@ _None at the `auth` level._ Nested subcommand required: `login` | `status` |
 - **Expect:** the file is gone after each; logout stays idempotent
 - **Covered by:** `tests/cli__auth.rs::login_and_logout_clear_a_stale_allowlist`
 
-### auth-10 A save does not push without the daemon
+### auth-10 A save pushes inline, with no daemon anywhere
 
-- **Flags:** `--no-daemon`
-- **Setup:** platform fixture; `comemory auth login --no-daemon`
+- **Flags:** _(none)_
+- **Setup:** platform fixture; a plain `comemory auth login`
 - **Command:** `comemory save --repo acme/backend "<body>"`
-- **Expect:** no additional `POST /v1/sync/import` after the login sync
-- **Covered by:** `tests/cli__auth.rs::save_does_not_push_without_the_daemon`
+- **Expect:** exactly one more `POST /v1/sync/import`, before the process
+  exits, carrying the saved body.
+- **Covered by:** `tests/cli__auth.rs::a_save_pushes_inline_without_any_daemon`
+
+### auth-11 An unreachable platform cannot fail a save
+
+- **Flags:** _(none)_
+- **Setup:** logged in, then the stored `api_url` pointed at a closed port
+- **Command:** `comemory save --repo acme/backend "saved while offline"`
+- **Expect:** exit 0, and `comemory sync --action status` reports `pending ≥ 1`
+- **Covered by:** `tests/cli__auth.rs::a_save_still_succeeds_when_the_platform_is_unreachable`
+
+### auth-12 The daemon is opt-in and the old opt-out is gone
+
+- **Flags:** `--daemon`
+- **Command:** `comemory auth login`, then `comemory auth login --no-daemon`
+- **Expect:** the plain login reports `daemon.skipped: true`; `--no-daemon`
+  exits 2 as an unknown argument.
+- **Covered by:** `tests/cli__auth.rs::a_plain_login_installs_no_daemon_and_the_old_opt_out_is_gone`
+
+### auth-13 `--daemon` takes the install path
+
+- **Flags:** `--daemon`
+- **Command:** `comemory auth login --daemon`
+- **Expect:** the report says `daemon.skipped: false`
+- **Covered by:** `tests/cli__auth.rs::login_with_the_daemon_flag_asks_for_the_unit`
 
 ### auth-03 Logout removes auth.json
 

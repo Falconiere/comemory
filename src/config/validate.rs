@@ -351,6 +351,20 @@ impl Config {
                 self.sync.daemon_interval
             ))
         })?;
+        let push_timeout = self.sync.push_on_save_timeout_duration().map_err(|e| {
+            Error::Config(format!(
+                "invalid sync.push_on_save_timeout={}: {e}",
+                self.sync.push_on_save_timeout
+            ))
+        })?;
+        // A zero timeout is a parseable duration that would make every inline
+        // push fail instantly — indistinguishable from "offline" forever. The
+        // way to turn the hook off is `push_on_save = false`, which says so.
+        if push_timeout.is_zero() {
+            return Err(Error::Config(
+                "sync.push_on_save_timeout must be greater than zero (use sync.push_on_save = false to disable the inline push)".into(),
+            ));
+        }
         // `sync.allowlist_ttl` is deprecated and ignored, so its value is no
         // longer validated: rejecting a config over a key nothing reads would
         // block an upgrade for no gain.

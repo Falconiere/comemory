@@ -57,11 +57,13 @@ Set these in `config.toml`; they have **no** environment override.
 | `tune.rrf_k_grid` / `tune.decay_grid` / `tune.mmr_lambda_grid` / `tune.bm25_grid` | The `[tune]` grid-search axes consumed by `comemory tune` and `comemory bandit`. | — |
 | `bandit.enabled` | When `false`, `comemory bandit --apply` refuses; report still works. | `true` |
 | `reinforce.search_edit_days` | File overlay for the search→edit lookback (same as `COMEMORY_REINFORCE_SEARCH_EDIT_DAYS`). | `7` |
-| `sync.after_save` | **Deprecated, ignored.** Continuous sync is the user daemon. | `false` |
-| `sync.pull_before_context_after` | **Deprecated, ignored.** Empty / `"0"` means off. | `""` |
-| `sync.daemon_interval` | Sleep between daemon pull+push cycles. A labelled save touches `sync.wake` so sleep can end early. | `"5s"` |
+| `sync.push_on_save` | Push the outbox inline after `save` / `delete`, so continuous sync needs no resident process. Env: `COMEMORY_SYNC_PUSH_ON_SAVE`. | `true` |
+| `sync.push_on_save_timeout` | Budget for that inline push only — far below the 30s every other platform call takes, because a save must return on a captive-portal network. Validated `> 0`; disable the hook with `push_on_save = false` rather than a zero budget. Env: `COMEMORY_SYNC_PUSH_ON_SAVE_TIMEOUT`. | `"2s"` |
+| `sync.after_save` | **Deprecated, ignored.** Superseded by `sync.push_on_save`. | `false` |
+| `sync.pull_before_context_after` | **Deprecated, ignored.** Use `comemory watch` for live pulls. | `""` |
+| `sync.daemon_interval` | Sleep between cycles of the opt-in daemon (`comemory auth login --daemon`). | `"5s"` |
 | `sync.verify_every` | Interval hint for `comemory sync --action verify` and the daemon. | `"7d"` |
-| `sync.skip_repos` | Globs over the trimmed, lowercased `repo` label; a match keeps that memory local. The only client-side sync filter besides the empty-label rule, now that organization membership is the platform's gate. An invalid glob fails at config load. | `[]` |
+| `sync.skip_repos` | Globs over the trimmed, lowercased `repo` label; a match keeps that memory local. The **only** client-side sync filter — an empty label no longer withholds anything, and organization membership is the platform's gate. An invalid glob fails at config load. | `[]` |
 | `sync.allowlist_ttl`, `sync.repos`, `sync.default_workspace` | **Deprecated, parsed and ignored**, each with a warning naming it. Kept declared for one release because `[sync]` is `deny_unknown_fields`, so deleting them outright would stop every existing `config.toml` that sets them from loading at all. Remove them. | — |
 | `embed.model` | Model id recorded for sync vector import compatibility. | `""` |
 

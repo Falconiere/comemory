@@ -217,8 +217,8 @@ fn v10_creates_bandit_arms_table() {
         )
         .expect("schema version");
     assert_eq!(v, migrate::CURRENT_VERSION);
-    // Pin: bump this when CURRENT_VERSION advances past v16.
-    assert_eq!(migrate::CURRENT_VERSION, "16");
+    // Pin: bump this when CURRENT_VERSION advances past v17.
+    assert_eq!(migrate::CURRENT_VERSION, "17");
 }
 
 #[test]
@@ -449,5 +449,42 @@ fn set_version_raises_an_unparsable_stored_version() {
         stored_version(&conn),
         migrate::CURRENT_VERSION,
         "an unparsable stored version must be raised to current, not left in place"
+    );
+}
+
+#[test]
+fn the_repush_migration_rewinds_the_push_cursor_exactly_once() {
+    // AC-16: every memory the old push filter skipped sits BEHIND `pushed_seq`
+    // (the empty-batch branch advanced past it), so removing the filter alone
+    // would never re-offer it. The reset runs once and is then inert.
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("comemory.db");
+    let mut conn = connection::open(&path).expect("open");
+
+    comemory::store::sync_state::ensure(&conn, "ws-1", "https://api.example").expect("ensure");
+    comemory::store::sync_state::set_pushed(&conn, "ws-1", 42, "2026-09-14T00:00:00Z")
+        .expect("set");
+
+    // Stand in for a database written before v17: the cursor is where the old
+    // push left it and the migration has not been applied.
+    conn.execute("DELETE FROM schema_meta WHERE key='0017_sync_repush'", [])
+        .expect("clear marker");
+    migrate::run(&mut conn).expect("upgrade");
+
+    let row = comemory::store::sync_state::get(&conn, "ws-1")
+        .expect("get")
+        .expect("row");
+    assert_eq!(row.pushed_seq, 0, "the cursor must be rewound once");
+
+    // A device that has since pushed again keeps its new cursor: the marker is
+    // set, so a later run is a no-op rather than a second rewind.
+    comemory::store::sync_state::set_pushed(&conn, "ws-1", 7, "2026-09-14T01:00:00Z").expect("set");
+    migrate::run(&mut conn).expect("re-run");
+    let row = comemory::store::sync_state::get(&conn, "ws-1")
+        .expect("get")
+        .expect("row");
+    assert_eq!(
+        row.pushed_seq, 7,
+        "a second migration run must not rewind the cursor again"
     );
 }

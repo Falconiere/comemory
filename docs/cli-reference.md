@@ -65,6 +65,7 @@ Commands:
   upgrade        Move this binary to the newest release (or a pinned one)
   auth           Cloud workspace-key login / status / logout (device authorization)
   sync           Push/pull memories against the platform
+  watch          Follow the organization's changes over the workspace channel
   capture        Capture a coding-session receipt (redacted) to the platform
   help           Print this message or the help of the given subcommand(s)
 
@@ -1238,7 +1239,7 @@ Options:
 
 Examples:
   comemory auth login
-  comemory auth login --no-daemon
+  comemory auth login --daemon
   comemory auth login --api-url https://dev-api.comemory.io
   comemory auth status
   comemory auth logout

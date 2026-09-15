@@ -100,9 +100,24 @@ fn registry_with_feedback_probe() -> SchemaRegistry {
     SchemaRegistry::from_tables(tables)
 }
 
+/// How many migrations the journal already carries — the generator numbers the
+/// next file from it, so a test can name the expected file without pinning
+/// today's count.
+fn journaled_count(dir: &std::path::Path) -> usize {
+    let journal: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(dir.join("_journal.json")).unwrap()).unwrap();
+    journal["entries"]
+        .as_array()
+        .expect("journal entries")
+        .len()
+}
+
 #[test]
 fn schema_drift_generate_emits_an_applicable_alter_for_a_new_column() {
     let (_guard, dir) = shipped_copy();
+    // Computed before the generate call: `run_generate` journals the file it
+    // writes, so reading afterwards counts one entry too many.
+    let expected = format!("{:04}_drift_probe.sql", journaled_count(&dir) + 1);
 
     let written = run_generate(
         &registry_with_feedback_probe(),
@@ -111,23 +126,21 @@ fn schema_drift_generate_emits_an_applicable_alter_for_a_new_column() {
         Dialect::Sqlite,
     )
     .expect("run_generate");
-    assert_eq!(written.as_deref(), Some("0017_drift_probe.sql"));
+    assert_eq!(written.as_deref(), Some(expected.as_str()));
 
-    let sql = fs::read_to_string(dir.join("0017_drift_probe.sql")).unwrap();
+    let sql = fs::read_to_string(dir.join(&expected)).unwrap();
     assert_eq!(
         sql.trim(),
         "ALTER TABLE \"feedback\" ADD COLUMN \"probe\" INTEGER;",
         "the whole generated file is the one ALTER statement"
     );
     assert!(
-        dir.join("0017_drift_probe.snapshot.json").exists(),
+        dir.join(expected.replace(".sql", ".snapshot.json"))
+            .exists(),
         "a snapshot accompanies the migration"
     );
     let journal = fs::read_to_string(dir.join("_journal.json")).unwrap();
-    assert!(
-        journal.contains("0017_drift_probe.sql"),
-        "journal gained the entry"
-    );
+    assert!(journal.contains(&expected), "journal gained the entry");
 
     // The runtime runner applies generated SQL verbatim: breakpoint lines are
     // SQL comments to `execute_batch`.

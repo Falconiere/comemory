@@ -1,11 +1,17 @@
 //! Push local sync-log entries to the platform.
 //!
-//! Two client-side filters remain, in this order: a memory with no `repo`
-//! label never leaves the machine, and a label matching `[sync] skip_repos`
-//! is withheld by the operator's own choice. Everything else is offered to the
-//! organization, which decides — the per-repo GitHub App allowlist that used
-//! to gate this is gone, and with it the second source of truth beside org
-//! membership.
+//! One client-side filter remains: a label matching `[sync] skip_repos` is
+//! withheld by the operator's own choice. Everything else is offered to the
+//! organization, which decides.
+//!
+//! The rule that an unlabelled memory never left the machine is gone
+//! (`2026-09-14-sync-everything-realtime-design.md`). `repo` comes from
+//! `git2::Repository::discover` at save time, so that rule silently made sync
+//! eligibility depend on which directory `comemory save` ran in: the same note
+//! synced from inside a worktree and was stranded forever from anywhere else.
+//! A label is metadata about where work happened, not a permission.
+
+use std::time::Duration;
 
 use time::OffsetDateTime;
 use time::format_description::well_known::Iso8601;
@@ -28,8 +34,6 @@ const MAX_BATCH: usize = 500;
 pub struct PushStats {
     /// Entries accepted by the platform in this run.
     pub pushed: u32,
-    /// Skipped — empty/unbound repo label, which never leaves the machine.
-    pub skipped_personal: u32,
     /// Skipped — label matched `[sync] skip_repos`.
     pub skipped_config: u32,
     /// Blocked — secret rule hit without override.
@@ -56,6 +60,35 @@ pub fn run_push(
     auth: &AuthFile,
     allow_secret_id: Option<&str>,
     limit: usize,
+) -> Result<PushStats> {
+    run_push_with_timeout(
+        paths,
+        cfg,
+        conn,
+        auth,
+        allow_secret_id,
+        limit,
+        client::HTTP_TIMEOUT,
+    )
+}
+
+/// Same as [`run_push`] under an explicit per-request timeout.
+///
+/// The inline push-on-save hook runs on a far smaller budget than a manual
+/// sync: a save must return even when the network accepts the connection and
+/// then says nothing.
+///
+/// # Errors
+/// Propagates store, markdown and platform failures. An invalid
+/// `[sync] skip_repos` glob is [`Error::Config`].
+pub fn run_push_with_timeout(
+    paths: &Paths,
+    cfg: &Config,
+    conn: &mut Connection,
+    auth: &AuthFile,
+    allow_secret_id: Option<&str>,
+    limit: usize,
+    timeout: Duration,
 ) -> Result<PushStats> {
     let workspace_id = auth.workspace_id.as_str();
     if let Some(id) = allow_secret_id {
@@ -104,7 +137,7 @@ pub fn run_push(
             entries: batch,
         };
         let secret = auth.effective_secret();
-        let resp = client::push_import(&auth.api_url, &secret, &req)?;
+        let resp = client::push_import_with(&auth.api_url, &secret, &req, timeout)?;
         let accepted = resp
             .results
             .iter()
@@ -169,12 +202,9 @@ fn build_import_entry(
             .as_ref()
             .map(|rec| rec.frontmatter.repo.clone())
             .unwrap_or_default();
-        // An unlabelled memory is personal and stays local. A labelled one is
-        // offered to the organization unless the operator withheld it.
-        if repo.trim().is_empty() {
-            stats.skipped_personal += 1;
-            return Ok(None);
-        }
+        // Every memory is offered to the organization unless the operator
+        // withheld its label. An empty label matches nothing, so a memory
+        // saved outside a worktree is offered like any other.
         if skip.is_skipped(&repo) {
             stats.skipped_config += 1;
             return Ok(None);

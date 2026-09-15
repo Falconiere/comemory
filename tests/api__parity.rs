@@ -52,7 +52,9 @@ use tempfile::TempDir;
 /// `GET /api/v1/commands` endpoint against an independently-stated
 /// expectation, not against whatever that endpoint's own internal constant
 /// happens to say today.
-const CLI_ONLY: &[&str] = &["auth", "capture", "distill", "serve", "sync", "upgrade"];
+const CLI_ONLY: &[&str] = &[
+    "auth", "capture", "distill", "serve", "sync", "upgrade", "watch",
+];
 
 // ---------------------------------------------------------------------
 // Documented per-(command, arg id) exclusions from the HTTP field mapping.
@@ -93,6 +95,10 @@ const EXCLUSIONS: &[(&str, &str)] = &[
     // against; excluding `id` here makes that mapping explicit rather than
     // silently skipping `delete` from the field check.
     ("delete", "id"),
+    // `comemory watch --once` — `watch` is CLI-only (it holds a socket open
+    // until interrupted, which is not a request-response shape), so there is
+    // no `api::watch::Request` for its one flag to map onto.
+    ("watch", "once"),
 ];
 
 /// Whether `(command, arg_id)` is a documented exclusion (see

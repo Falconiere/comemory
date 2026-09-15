@@ -20,9 +20,19 @@ pub struct SyncConfig {
     /// Interval hint for verify (`comemory sync --action verify` and the
     /// daemon's occasional verify pass).
     pub verify_every: String,
-    /// Sleep between daemon pull+push cycles (e.g. `5s`). Wake-on-save can
-    /// end the sleep early — see `daemon_wake`.
+    /// Sleep between daemon pull+push cycles (e.g. `5s`).
     pub daemon_interval: String,
+    /// Push the outbox inline after a local write (`save`, `delete`).
+    ///
+    /// This is what makes continuous sync stop depending on a resident
+    /// process: push is event-driven, so the writing command pays for it.
+    pub push_on_save: bool,
+    /// HTTP timeout for that inline push only (e.g. `2s`).
+    ///
+    /// Deliberately far below the 30s every other platform call uses: a save
+    /// on a captive-portal network must return, not hang. The entry stays in
+    /// `sync_log` and the next push drains it.
+    pub push_on_save_timeout: String,
     /// Repo labels withheld from push, as globs over the normalized label.
     /// The only client-side sync filter left now that organization membership
     /// is the platform's gate.
@@ -84,6 +94,8 @@ pub struct PartialSyncConfig {
     pull_before_context_after: Option<String>,
     verify_every: Option<String>,
     daemon_interval: Option<String>,
+    push_on_save: Option<bool>,
+    push_on_save_timeout: Option<String>,
     skip_repos: Option<Vec<String>>,
     repos: Option<BTreeMap<String, String>>,
     default_workspace: Option<String>,
@@ -105,6 +117,8 @@ impl SyncConfig {
             pull_before_context_after: String::new(),
             verify_every: "7d".into(),
             daemon_interval: "5s".into(),
+            push_on_save: true,
+            push_on_save_timeout: "2s".into(),
             skip_repos: Vec::new(),
             repos: BTreeMap::new(),
             default_workspace: None,
@@ -127,6 +141,12 @@ impl SyncConfig {
         }
         if let Some(v) = partial.daemon_interval {
             self.daemon_interval = v;
+        }
+        if let Some(v) = partial.push_on_save {
+            self.push_on_save = v;
+        }
+        if let Some(v) = partial.push_on_save_timeout {
+            self.push_on_save_timeout = v;
         }
         if let Some(v) = partial.skip_repos {
             self.skip_repos = v;
@@ -177,6 +197,11 @@ impl SyncConfig {
     /// Parse [`Self::daemon_interval`] as a [`Duration`].
     pub fn daemon_interval_duration(&self) -> Result<Duration> {
         parse_duration(&self.daemon_interval)
+    }
+
+    /// Parse [`Self::push_on_save_timeout`] as a [`Duration`].
+    pub fn push_on_save_timeout_duration(&self) -> Result<Duration> {
+        parse_duration(&self.push_on_save_timeout)
     }
 }
 

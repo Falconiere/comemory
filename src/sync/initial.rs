@@ -31,8 +31,6 @@ pub struct InitialSyncStats {
     pub pulled: u32,
     /// Local entries accepted by the organization.
     pub pushed: u32,
-    /// Local entries withheld because they carry no repo label.
-    pub skipped_personal: u32,
     /// Local entries withheld by `[sync] skip_repos`.
     pub skipped_config: u32,
 }
@@ -62,7 +60,6 @@ pub fn run_initial_sync(paths: &Paths, cfg: &Config, auth: &AuthFile) -> Result<
     loop {
         let page = push::run_push(paths, cfg, &mut conn, auth, None, PAGE_LIMIT)?;
         stats.pushed = stats.pushed.saturating_add(page.pushed);
-        stats.skipped_personal = stats.skipped_personal.saturating_add(page.skipped_personal);
         stats.skipped_config = stats.skipped_config.saturating_add(page.skipped_config);
         if page.pushed == 0 {
             // Skips are drained inside `run_push` without counting toward the

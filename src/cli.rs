@@ -96,6 +96,7 @@ pub mod tune;
 pub mod unindex;
 /// `comemory upgrade`: move this binary to a newer release.
 pub mod upgrade;
+pub mod watch;
 /// `--since` / `--until` / `--as-of` value parsing.
 pub mod when;
 
@@ -210,6 +211,8 @@ pub enum Cmd {
     Auth(auth::Args),
     /// Push/pull memories against the platform.
     Sync(sync::Args),
+    /// Follow the organization's changes over the workspace channel.
+    Watch(watch::Args),
     /// Capture a coding-session receipt (redacted) to the platform.
     Capture(capture::Args),
 }
@@ -257,6 +260,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::Upgrade(a) => upgrade::run(a, cli.json, cli.data_dir).await,
         Cmd::Auth(a) => auth::run(a, cli.json, cli.data_dir).await,
         Cmd::Sync(a) => sync::run(a, cli.json, cli.data_dir).await,
+        Cmd::Watch(a) => watch::run(a, cli.json, cli.data_dir).await,
         Cmd::Capture(a) => capture::run(a, cli.json, cli.data_dir).await,
     }
 }

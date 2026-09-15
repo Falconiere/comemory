@@ -14,6 +14,7 @@ use std::path::PathBuf;
 use clap::Args as ClapArgs;
 
 use crate::api;
+use crate::cli::off_runtime::off_runtime;
 use crate::cli::{csv_unique, load_config};
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::memory::Kind;
@@ -134,6 +135,14 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
         ref_symbol: a.ref_symbol,
     };
     let output = api::save::run(&mut ctx, req, a.vector_stdin, a.vector.as_deref())?;
+    // The write is committed; sync is now the writing command's own business
+    // (`sync::push_on_save`). `off_runtime` because the platform client is
+    // `reqwest::blocking`, which panics on drop inside this async fn's runtime.
+    drop(ctx);
+    off_runtime(|| {
+        crate::sync::push_on_save::after_write_best_effort(&paths, &cfg);
+        Ok(())
+    })?;
     emit(json, &output)
 }
 

@@ -225,6 +225,7 @@ fn emit_status(json_flag: bool, conn: &mut Connection, workspace: &str) -> Resul
     let (pushed, pulled, last_sync) = row.as_ref().map_or((0, 0, None), |r| {
         (r.pushed_seq, r.pulled_seq, r.last_sync_at.clone())
     });
+    let pending = crate::store::sync_log::pending_local(conn, pushed)?;
     let daemon = match daemon::status() {
         Ok(st) => st,
         Err(_) => DaemonStatus {
@@ -241,6 +242,7 @@ fn emit_status(json_flag: bool, conn: &mut Connection, workspace: &str) -> Resul
             "pushed_seq": pushed,
             "pulled_seq": pulled,
             "head_seq": head,
+            "pending": pending,
             "last_sync_at": last_sync,
             "daemon": daemon,
         }))?;
@@ -250,6 +252,7 @@ fn emit_status(json_flag: bool, conn: &mut Connection, workspace: &str) -> Resul
         writeln!(out, "pushed_seq: {pushed}")?;
         writeln!(out, "pulled_seq: {pulled}")?;
         writeln!(out, "head_seq: {head}")?;
+        writeln!(out, "pending: {pending}")?;
         writeln!(
             out,
             "daemon: installed={} running={} ({})",
@@ -309,8 +312,8 @@ fn emit_run(
         if let Some(p) = push_stats {
             writeln!(
                 out,
-                "Pushed {} entries (skipped personal={}, skip_repos={}, blocked_secrets={}, rejected_repo={})",
-                p.pushed, p.skipped_personal, p.skipped_config, p.blocked_secrets, p.rejected_repo
+                "Pushed {} entries (skip_repos={}, blocked_secrets={}, rejected_repo={})",
+                p.pushed, p.skipped_config, p.blocked_secrets, p.rejected_repo
             )?;
         }
     }
