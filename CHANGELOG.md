@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-09-15
+
+### Added
+
+- push the code index to the workspace, right after login ([#150](https://github.com/Falconiere/comemory/pull/150))
+- install standalone Claude Code and Codex integrations ([#148](https://github.com/Falconiere/comemory/pull/148))
+
 ## [0.31.0] - 2026-09-15
 
 ### Added
