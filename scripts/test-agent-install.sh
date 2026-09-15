@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "${BASH_SOURCE%/*}/.." && pwd)"
 BIN="${COMEMORY_BIN:-$ROOT/target/debug/comemory}"
 [ -x "$BIN" ] || { printf 'Missing executable comemory binary: %s\n' "$BIN" >&2; exit 1; }
-TASK=$(mktemp -d)
+TASK=$(mktemp -d "${TMPDIR:-/tmp}/comemory-test.XXXXXX")
 trap 'rm -rf "$TASK"' EXIT
 mkdir -p "$TASK/bin"
 ln -s "$BIN" "$TASK/bin/comemory"
