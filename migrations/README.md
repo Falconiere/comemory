@@ -58,6 +58,8 @@ One line per file:
 | `0014_v14_console.sql` | v14: console history tables — `eval_runs` (one row per eval/tune/bandit run) and `gc_runs` |
 | `0015_v15_console_api.sql` | v15: console API — `index_runs` history, `eval_runs.discarded` (dismissed proposal), `repo_marker.archived` |
 | `0016_v16_sync.sql` | v16: cloud sync — `sync_log`, `sync_state`, `sync_binding`, `memory_vector_model` schema_meta key |
+| `0017_sync_repush.sql` | v17: rewind every `sync_state.pushed_seq` once, so memories the old push filter stranded behind the cursor are re-offered |
+| `0018_scheme_path_refs.sql` | v18: delete the `references_*` edges, `code_ref` anchors and `edge_fts` triplets minted from `file:/…`, `./…`, `../…` path expressions (#153) |
 
 When you add a migration, append the next-numbered file and add its row above
 — never edit an existing one.

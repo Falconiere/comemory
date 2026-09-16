@@ -285,6 +285,37 @@ fn unresolved_code_refs_sort_after_ranked_without_rank_parts() {
     );
 }
 
+/// Issue #153 (ordering): a body citing `repo:path:symbol` yields both a
+/// symbol ref and a file ref. While the symbol is not indexed yet both are
+/// unresolved, and the file ref's empty symbol used to sort ahead of the
+/// symbol's own name — so the bare path was what a consumer saw first. The
+/// symbol ref must lead its own file ref; `path` still orders first.
+#[test]
+fn unresolved_symbol_ref_leads_the_bare_file_ref_of_its_path() {
+    let (_d, conn) = code_seed::open_db();
+    seed_memory(&conn, "m1");
+    seed_file_ref_edge(&conn, "m1", "demo:src/db.rs");
+    seed_symbol_edge(&conn, "m1", "demo:src/db.rs:run_migration");
+    seed_file_ref_edge(&conn, "m1", "demo:src/aa.rs");
+
+    let b = assemble(&conn, "q", &["m1".to_string()]);
+    let order: Vec<(&str, &str)> = b
+        .code_refs
+        .iter()
+        .map(|c| (c.path.as_str(), c.symbol.as_str()))
+        .collect();
+    assert_eq!(
+        order,
+        [
+            ("src/aa.rs", ""),
+            ("src/db.rs", "run_migration"),
+            ("src/db.rs", ""),
+        ],
+        "path first; within a path the symbol ref precedes the bare file ref"
+    );
+    assert!(b.code_refs.iter().all(|c| c.rank_parts.is_none()));
+}
+
 /// Insert a `references_file` edge from `memory_id` to the bare
 /// `<repo>:<path>` destination `dst` — the shape `cross_link` writes for a
 /// plain `<repo>:<path>` mention, resolved with no `code_symbols` lookup at

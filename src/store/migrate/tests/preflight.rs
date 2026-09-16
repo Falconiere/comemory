@@ -75,15 +75,15 @@ fn real_current_database_is_not_refused() {
     assert_eq!(bak_count, 0, "an already-current DB must create no .bak");
 }
 
-/// Insert a bogus `0017_future` marker directly, simulating a database
+/// Insert a bogus `0019_future` marker directly, simulating a database
 /// written by a newer comemory. `version_value` lets the caller pin
-/// `schema_meta.version` at either `"17"` (a completed future upgrade) or
-/// `"16"` (a crash between the last migration and the version write) —
+/// `schema_meta.version` at either `"19"` (a completed future upgrade) or
+/// `"18"` (a crash between the last migration and the version write) —
 /// both must be refused identically, since preflight never reads
 /// `version` at all.
 fn inject_future_marker(conn: &Connection, version_value: &str) {
     conn.execute(
-        "INSERT INTO schema_meta(key, value) VALUES('0018_future', '1')",
+        "INSERT INTO schema_meta(key, value) VALUES('0019_future', '1')",
         [],
     )
     .expect("seed future marker");
@@ -118,11 +118,11 @@ fn assert_future_marker_is_refused(version_value: &str) {
     );
     let msg = err.to_string();
     assert!(
-        msg.contains("0018_future"),
+        msg.contains("0019_future"),
         "error must name the unknown key, got: {msg}"
     );
     assert!(
-        msg.contains("0017_sync_repush"),
+        msg.contains("0018_scheme_path_refs"),
         "error must name the highest key this build supports, got: {msg}"
     );
 
@@ -137,13 +137,13 @@ fn assert_future_marker_is_refused(version_value: &str) {
 }
 
 #[test]
-fn unknown_marker_is_refused_when_version_already_says_eighteen() {
-    assert_future_marker_is_refused("18");
+fn unknown_marker_is_refused_when_version_already_says_nineteen() {
+    assert_future_marker_is_refused("19");
 }
 
 #[test]
-fn unknown_marker_is_refused_when_version_still_says_seventeen_crash_before_set_version() {
-    assert_future_marker_is_refused("17");
+fn unknown_marker_is_refused_when_version_still_says_eighteen_crash_before_set_version() {
+    assert_future_marker_is_refused("18");
 }
 
 #[test]

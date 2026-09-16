@@ -89,6 +89,40 @@ fn context_json(home: &TempDir, query: &str, extra_args: &[&str]) -> Value {
     serde_json::from_str(&stdout).expect("json")
 }
 
+/// Issue #153, end to end: a `file:` URL in a memory body used to become a
+/// `references_file` edge to a pseudo-repo named `file`, and the bundle
+/// then cited `/tmp/check.db` as an unresolvable `unpinned` code ref with
+/// a relation to `file:file:/tmp/check.db`. Neither may exist.
+#[test]
+fn context_does_not_cite_a_file_url_as_a_code_reference() {
+    let home = TempDir::new().expect("tempdir");
+    bin(&home)
+        .args([
+            "save",
+            "--kind",
+            "pattern",
+            "--repo",
+            "comemory.io",
+            r#"Run the gate with TURSO_DATABASE_URL="file:/tmp/check.db" so knip can load drizzle.config.ts."#,
+        ])
+        .assert()
+        .success();
+
+    let v = context_json(&home, "gate", &["--repo", "comemory.io"]);
+    let mems = v["memories"].as_array().expect("memories");
+    assert_eq!(mems.len(), 1, "the memory itself is surfaced: {v}");
+    assert_eq!(
+        v["code_refs"].as_array().map(Vec::len),
+        Some(0),
+        "a file: URL is not a code reference: {v}"
+    );
+    assert_eq!(
+        v["relations"].as_array().map(Vec::len),
+        Some(0),
+        "no references_file edge was minted for it: {v}"
+    );
+}
+
 #[test]
 fn context_returns_bundle_for_seeded_memory() {
     let home = TempDir::new().expect("tempdir");

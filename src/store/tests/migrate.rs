@@ -217,8 +217,8 @@ fn v10_creates_bandit_arms_table() {
         )
         .expect("schema version");
     assert_eq!(v, migrate::CURRENT_VERSION);
-    // Pin: bump this when CURRENT_VERSION advances past v17.
-    assert_eq!(migrate::CURRENT_VERSION, "17");
+    // Pin: bump this when CURRENT_VERSION advances past v18.
+    assert_eq!(migrate::CURRENT_VERSION, "18");
 }
 
 #[test]
@@ -487,4 +487,145 @@ fn the_repush_migration_rewinds_the_push_cursor_exactly_once() {
         row.pushed_seq, 7,
         "a second migration run must not rewind the cursor again"
     );
+}
+
+/// Seed one `edges` row with an explicit rel and endpoint kinds.
+fn seed_edge(conn: &Connection, src_kind: &str, src: &str, dst_kind: &str, dst: &str, rel: &str) {
+    conn.execute(
+        "INSERT INTO edges(src_kind,src_id,dst_kind,dst_id,rel,created_at) \
+         VALUES(?1,?2,?3,?4,?5,'t')",
+        rusqlite::params![src_kind, src, dst_kind, dst, rel],
+    )
+    .expect("seed edge");
+}
+
+/// Every `dst_id` in `table` (ordered), for the before/after comparison.
+fn dst_ids(conn: &Connection, table: &str) -> Vec<String> {
+    conn.prepare(&format!("SELECT dst_id FROM {table} ORDER BY dst_id"))
+        .expect("prepare")
+        .query_map([], |r| r.get(0))
+        .expect("query")
+        .collect::<std::result::Result<Vec<String>, _>>()
+        .expect("rows")
+}
+
+/// Issue #153: until v18, `cross_link` minted `references_*` edges from
+/// `file:/…`, `./…` and `../…` path expressions — a pseudo-repo named after
+/// the scheme that no store can resolve. The migration removes them from
+/// all three places a reference lives (`edges`, its `code_ref` anchor, its
+/// `edge_fts` triplet), keeps every repo-relative citation and every
+/// non-reference edge, and is inert on a second run.
+#[test]
+fn the_scheme_path_migration_drops_junk_refs_and_keeps_real_ones() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("comemory.db");
+    let mut conn = connection::open(&path).expect("open");
+
+    // Junk: the three shapes the old guard let through.
+    seed_edge(
+        &conn,
+        "memory",
+        "m1",
+        "file",
+        "file:/tmp/check.db",
+        "references_file",
+    );
+    seed_edge(
+        &conn,
+        "memory",
+        "m1",
+        "file",
+        "sqlite:./data/local.db",
+        "references_file",
+    );
+    seed_edge(
+        &conn,
+        "memory",
+        "m1",
+        "symbol",
+        "file:../x/local.db:main",
+        "references_symbol",
+    );
+    // Real: repo-relative citations, plus a code-graph edge that is not a
+    // memory reference at all and must never be touched.
+    seed_edge(
+        &conn,
+        "memory",
+        "m1",
+        "file",
+        "demo:src/db.rs",
+        "references_file",
+    );
+    seed_edge(
+        &conn,
+        "memory",
+        "m1",
+        "symbol",
+        "demo:src/db.rs:run_migration",
+        "references_symbol",
+    );
+    seed_edge(
+        &conn,
+        "file",
+        "demo:src/a.rs",
+        "file",
+        "demo:src/b.rs",
+        "imports",
+    );
+    // A colon-less destination is not the `<repo>:<path>` shape at all; the
+    // migration requires the colon rather than judging the id's own first
+    // character, so this row survives even though it starts with `/`.
+    seed_edge(
+        &conn,
+        "memory",
+        "m1",
+        "file",
+        "/no/colon/at/all.db",
+        "references_file",
+    );
+    for dst in ["file:/tmp/check.db", "demo:src/db.rs"] {
+        conn.execute(
+            "INSERT INTO code_ref(memory_id, rel, dst_id, pinned_blob, created_at) \
+             VALUES('m1', 'references_file', ?1, 'blob', 't')",
+            [dst],
+        )
+        .expect("seed anchor");
+    }
+    let triplets = comemory::store::edge_fts::refresh(&mut conn).expect("materialize edge_fts");
+    assert_eq!(
+        triplets, 7,
+        "every seeded edge is indexed before the migration"
+    );
+
+    // Stand in for a database written before v18: rows exist and the
+    // migration has not been applied.
+    conn.execute(
+        "DELETE FROM schema_meta WHERE key='0018_scheme_path_refs'",
+        [],
+    )
+    .expect("clear marker");
+    migrate::run(&mut conn).expect("upgrade");
+
+    let kept = [
+        "/no/colon/at/all.db",
+        "demo:src/b.rs",
+        "demo:src/db.rs",
+        "demo:src/db.rs:run_migration",
+    ];
+    assert_eq!(dst_ids(&conn, "edges"), kept, "only the junk references go");
+    assert_eq!(
+        dst_ids(&conn, "code_ref"),
+        ["demo:src/db.rs"],
+        "the junk anchor goes with it"
+    );
+    assert_eq!(
+        dst_ids(&conn, "edge_fts"),
+        kept,
+        "the triplet index mirrors the edges"
+    );
+
+    // Marker set → a second run changes nothing.
+    migrate::run(&mut conn).expect("re-run");
+    assert_eq!(dst_ids(&conn, "edges"), kept);
+    assert_eq!(dst_ids(&conn, "edge_fts"), kept);
 }
