@@ -59,7 +59,7 @@ pub fn run(_ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
     let repo = PathBuf::from(&req.repo);
     if !req.force {
         for hook in HOOKS {
-            let target = repo.join(".git").join("hooks").join(hook);
+            let target = git_utils::hooks_dir(&repo).join(hook);
             if target.exists() {
                 return Err(Error::Other(format!(
                     "{} already exists; pass --force to overwrite",

@@ -340,8 +340,8 @@ Examples:
 The working-set affinity boost applies only when search-code runs inside
 the indexed repo's checkout (the CWD is used to detect dirty/recent files)
 AND the repo label used at index time (`index-code --repo`) matches the
---repo flag — or, when --repo is omitted, the checkout directory's
-basename.
+--repo flag — or, when --repo is omitted, the label every linked worktree
+shares with its main working tree: that tree's basename.
 ```
 
 ---
@@ -717,7 +717,7 @@ Arguments:
 
 Options:
       --json                 Emit machine-readable JSON instead of a human TTY view
-      --repo <REPO>          Repository label attached to every document under each registered source. Defaults to the basename of the nearest enclosing git worktree, when one exists
+      --repo <REPO>          Repository label attached to every document under each registered source. Defaults to the basename of the enclosing git repository's main working tree (linked worktrees share it), when one exists
       --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
       --strict               Exit `65` (`EX_DATAERR`) when any per-file error (corrupt/unreadable/ oversized) occurred, after every file has been attempted. Without this flag a partial-success reconcile still exits `0`
   -h, --help                 Print help
@@ -999,7 +999,8 @@ breakdown in --json mode. The working-set affinity boost applies only
 when context runs inside the referenced repo's checkout (the CWD is used
 to detect dirty/recent files) AND the repo label used at index time
 (`index-code --repo`) matches the --repo flag — or, when --repo is
-omitted, the checkout directory's basename.
+omitted, the label every linked worktree shares with its main working
+tree: that tree's basename.
 ```
 
 ---

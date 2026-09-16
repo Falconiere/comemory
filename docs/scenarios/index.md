@@ -17,7 +17,7 @@ Global flags `--json` and `--data-dir` apply. See [globals.md](globals.md).
 
 | Flag | Default | Effect |
 | --- | --- | --- |
-| `--repo` | git worktree basename, if any | Label attached to every document under each source |
+| `--repo` | main git worktree basename (shared by linked worktrees), if any | Label attached to every document under each source |
 | `--strict` | off | Exit 65 after the run if any per-file error occurred. Partial success still attempts every file |
 
 ## Scenarios

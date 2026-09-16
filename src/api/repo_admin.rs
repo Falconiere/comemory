@@ -136,8 +136,11 @@ pub struct DisconnectResponse {
     pub edges_removed: u64,
 }
 
-/// Register `req.root` under `req.repo` (default: the root's basename) by
-/// upserting `repo_marker.root_path`.
+/// Register `req.root` under `req.repo` (default: the label
+/// [`crate::git_utils::repo_label`] derives for the root — its main
+/// worktree's basename, so connecting a linked worktree lands under the
+/// main repo's name — or the root's own basename off-git) by upserting
+/// `repo_marker.root_path`.
 ///
 /// A label already registered under a DIFFERENT root is a `400`: reusing it
 /// would silently repoint an existing code index at a foreign checkout (the
@@ -147,7 +150,7 @@ pub fn connect(ctx: &mut Ctx<'_>, req: ConnectRequest) -> Result<ConnectResponse
     let root = canonical_root(&req.root)?;
     let repo = match req.repo {
         Some(label) => label,
-        None => basename(&root)?,
+        None => default_label(&root)?,
     };
     let conn = ctx.conn()?;
     if let Some(existing) = stored_root(conn, &repo)?
@@ -236,8 +239,12 @@ fn canonical_root(root: &str) -> Result<String> {
     Ok(canonical.to_string_lossy().into_owned())
 }
 
-/// The default repo label: `root`'s last path component.
-fn basename(root: &str) -> Result<String> {
+/// The default repo label: [`crate::git_utils::repo_label`] for the
+/// repository at `root`, else `root`'s last path component.
+fn default_label(root: &str) -> Result<String> {
+    if let Some(label) = crate::git_utils::repo_label_at(Path::new(root)) {
+        return Ok(label);
+    }
     Path::new(root)
         .file_name()
         .and_then(|n| n.to_str())

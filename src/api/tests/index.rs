@@ -13,6 +13,8 @@
 //! `tests/serve__routes__sources.rs`.
 
 use crate::test_common::docs_fixtures;
+use crate::test_common::git_sample;
+use crate::test_common::git_worktree::add_worktree;
 
 use comemory::api::{self, Ctx};
 use comemory::config::{Config, Paths};
@@ -75,6 +77,33 @@ fn run_never_fails_on_strict_leaving_the_error_check_to_the_caller() {
     let s = &output.sources[0];
     assert_eq!(s.indexed, docs_fixtures::FIXTURE_COUNT);
     assert!(s.errors.is_empty());
+}
+
+#[test]
+fn run_labels_a_source_inside_a_linked_worktree_with_the_main_repo_name() {
+    let home = TempDir::new().expect("home");
+    let workspace = TempDir::new().expect("workspace");
+    let repo = git_sample::build_sample_repo(workspace.path());
+    let worktree = workspace.path().join("sample-repo-docs-wt");
+    add_worktree(&repo, &worktree, "docs-wt");
+    let docs = docs_fixtures::seed(&worktree);
+    let (paths, cfg, mut conn) = ctx_over(&home);
+    let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+
+    let output = api::index::run(
+        &mut ctx,
+        api::index::Request {
+            path: vec![docs.to_str().expect("utf8 path").to_string()],
+            repo: None,
+            strict: false,
+        },
+    )
+    .expect("index from a worktree");
+    assert_eq!(
+        output.sources[0].repo.as_deref(),
+        Some("sample-repo"),
+        "the inferred label is the main worktree's, not the linked worktree's"
+    );
 }
 
 #[test]
