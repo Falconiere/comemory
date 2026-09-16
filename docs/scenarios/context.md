@@ -59,6 +59,20 @@ Global flags `--json` and `--data-dir` apply. See [globals.md](globals.md).
 - **Expect:** same grammar as `search`.
 - **Covered by:** `tests/cli__context_2.rs`
 
+### context-06 A `file:` URL is not a code reference
+
+- **Flags:** `--repo` `--json`
+- **Setup:** a memory whose body records a database location as a bare-scheme
+  URL (`file:/tmp/check.db`, `sqlite:./data.db`, `file:../../local.db`)
+- **Command:** `comemory context gate --repo comemory.io --json`
+- **Expect:** the memory is surfaced; `code_refs` and `relations` are empty —
+  `cross_link` refuses a captured path that starts with `/`, `./` or `../`,
+  so no `references_file` edge to a pseudo-repo named after the scheme exists
+  (issue #153). Migration `0018` removes the ones an older binary wrote.
+- **Covered by:** `tests/cli__context.rs::context_does_not_cite_a_file_url_as_a_code_reference`,
+  `src/graph/tests/cross_link.rs::scheme_prefixed_path_expressions_are_not_refs`,
+  `src/store/tests/migrate.rs::the_scheme_path_migration_drops_junk_refs_and_keeps_real_ones`
+
 ### context-05 Vector CSV
 
 - **Flags:** `--vector`

@@ -370,7 +370,10 @@ Markdown body lives here.
      `<repo>:<path>` / `<repo>:<path>:<symbol>` mentions and writes
      `ReferencesFile` / `ReferencesSymbol` rows into `edges`. Missing
      `code_symbols` rows are tolerated — `comemory index-code` fills them
-     in later.
+     in later. URLs (`://`, `git@host:`) and path expressions behind a bare
+     scheme (`file:/tmp/x.db`, `sqlite:./x.db`, `file:../x.db` — any
+     captured path starting with `/`, `./` or `../`) are never references;
+     migration `0018` deletes the ones older binaries minted.
 5. Best-effort git auto-sync via `git_utils`, only when
    `COMEMORY_GIT_AUTO_SYNC` is enabled.
 5a. **Inline cloud push** (`cli::save` only, not `api::save`): when

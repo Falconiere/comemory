@@ -40,14 +40,17 @@ static REF_RE: std::sync::LazyLock<Option<Regex>> = std::sync::LazyLock::new(|| 
 /// first-mention order.
 ///
 /// URL-like patterns (`https://github.com/foo/bar.rs`,
-/// `git@github.com:foo/bar.rs`) are rejected so cross-link extraction doesn't
-/// invent bogus `<repo>:<path>` candidates from prose that just happens to
-/// contain a link or scp-style git URL.
+/// `git@github.com:foo/bar.rs`) and path expressions behind a bare scheme
+/// (`file:/tmp/check.db`, `sqlite:./data.db`, `file:../../local.db`) are
+/// rejected so cross-link extraction doesn't invent bogus `<repo>:<path>`
+/// candidates from prose that just happens to contain a link, an scp-style
+/// git URL, or a database location.
 ///
 /// The filter is post-extraction — Rust's `regex` crate has no lookbehind, so
 /// after a match we re-inspect the non-whitespace prefix immediately preceding
-/// it. Any of `://`, `@`, or a `//` prefix on the captured path is enough to
-/// classify the surrounding token as a URL, in which case the match is dropped.
+/// it. Either `://` or `@` in that prefix classifies the surrounding token as
+/// a URL, and a captured path that [`is_path_expression`] classifies the token
+/// as a path rather than a repo-relative citation; both drop the match.
 pub fn extract_refs(body: &str) -> Refs {
     let Some(re) = REF_RE.as_ref() else {
         return Refs::default();
@@ -59,8 +62,9 @@ pub fn extract_refs(body: &str) -> Refs {
         let start = whole.start();
         let Some(repo) = cap.get(1) else { continue };
         let Some(path) = cap.get(2) else { continue };
-        // `https://github.com/foo.rs` → captured path begins with `//`.
-        if path.as_str().starts_with("//") {
+        // `https://github.com/foo.rs` → captured path begins with `//`;
+        // `file:/tmp/check.db` / `sqlite:./data.db` → `/` or a dot segment.
+        if is_path_expression(path.as_str()) {
             continue;
         }
         // Walk back to the start of the contiguous non-whitespace run that
@@ -87,6 +91,18 @@ pub fn extract_refs(body: &str) -> Refs {
         }
     }
     refs
+}
+
+/// True when a captured `<path>` is a filesystem or URL path expression
+/// rather than a repo-relative citation: absolute (`/tmp/check.db`, and the
+/// `//host/…` of a schemed URL) or dot-relative (`./data.db`,
+/// `../../local.db`). A `<repo>:<path>` reference is always relative to the
+/// repo root, so none of these shapes can be one — they are the `file:` /
+/// `sqlite:` URLs prose records a database location with, which the
+/// `://`/`@` prefix guard alone let through as a pseudo-repo named after
+/// the scheme (issue #153).
+fn is_path_expression(path: &str) -> bool {
+    path.starts_with('/') || path.starts_with("./") || path.starts_with("../")
 }
 
 /// Walk `body`, extract every `<repo>:<path>[:<symbol>]` reference, and
