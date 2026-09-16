@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.32.2] - 2026-09-16
+
+### Fixed
+
+- carry the pipeline score onto every bundled memory row ([#155](https://github.com/Falconiere/comemory/pull/155))
+- never cite a file: URL or dot-relative path as a code reference ([#156](https://github.com/Falconiere/comemory/pull/156))
+
 ## [0.32.1] - 2026-09-16
 
 ### Fixed
