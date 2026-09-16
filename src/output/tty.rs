@@ -31,10 +31,11 @@ pub fn warning(msg: &str) -> Result<()> {
     Ok(())
 }
 
-/// Format a similarity score (`0.0..=1.0`) as a yellow `0.xxx` string with
-/// three fractional digits. Returned `String` is meant to be embedded inside
-/// a larger `writeln!`.
-pub fn score(v: f32) -> String {
+/// Format a ranking score (`0.0..=1.0`) as a yellow `0.xxx` string with
+/// three fractional digits. Takes the pipeline's `f64` `final_score` as is,
+/// so neither `search` nor `context` casts before rendering. Returned
+/// `String` is meant to be embedded inside a larger `writeln!`.
+pub fn score(v: f64) -> String {
     format!("{v:.3}").yellow().to_string()
 }
 

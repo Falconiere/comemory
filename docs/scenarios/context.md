@@ -34,8 +34,13 @@ Global flags `--json` and `--data-dir` apply. See [globals.md](globals.md).
 - **Flags:** `--json`
 - **Setup:** a saved memory matching the key
 - **Command:** `comemory context "advisory lock" --json`
-- **Expect:** `query` echoes the key; `memories` non-empty.
-- **Covered by:** `tests/cli__context.rs::context_returns_bundle_for_seeded_memory`
+- **Expect:** `query` echoes the key; `memories` non-empty. Each memory row's
+  `score` is the pipeline's `final_score` for that memory — the same number
+  `comemory search --json` reports — in ranked (non-increasing) order, never a
+  `0.0` placeholder.
+- **Covered by:** `tests/cli__context.rs::context_returns_bundle_for_seeded_memory`,
+  `tests/cli__context.rs::context_memory_rows_carry_the_pipeline_score`,
+  `tests/api__context.rs::run_carries_the_search_pipeline_score_onto_each_memory_row`
 
 ### context-02 With code
 

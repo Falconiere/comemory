@@ -12,6 +12,7 @@ use crate::api::Ctx;
 use crate::cli::{page_meta, page_window, when};
 use crate::output::context::ContextResult;
 use crate::prelude::*;
+use crate::retrieval::bundle::RankedMemory;
 use crate::retrieval::code_rerank::WorkingSet;
 use crate::retrieval::scope::{Domains, Filters};
 use crate::retrieval::{bundle, pipeline};
@@ -82,11 +83,14 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<ContextResult
     let run = pipeline::search(cfg, conn, &req.query, req.vector.as_deref(), filters, opts)?;
     let meta = page_meta(window, run.has_more, run.total);
     let query_id = run.query_id;
-    let ids: Vec<String> = run.hits.into_iter().map(|h| h.memory_id).collect();
+    // Carry each hit's `final_score` into the bundle: the memory rows keep
+    // the pipeline's ranked order AND its number, so a consumer can tell
+    // the top-ranked memory from the last one.
+    let ranked: Vec<RankedMemory> = run.hits.into_iter().map(RankedMemory::from).collect();
     // Zero hits → no edges to walk, so the git discovery + status walk
     // behind `WorkingSet::from_cwd` is skipped.
-    let ws = working_set_for(&ids, req.repo.as_deref());
-    let bundle = bundle::assemble(conn, cfg, &req.query, &ids, &ws)?;
+    let ws = working_set_for(&ranked, req.repo.as_deref());
+    let bundle = bundle::assemble(conn, cfg, &req.query, &ranked, &ws)?;
     // Self-reinforce the code refs the bundle actually surfaced, the
     // code-side twin of the memory access bump `pipeline::search` already
     // applied — gated by the same `track` flag.
@@ -104,8 +108,8 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<ContextResult
 /// The working set for the bundle's affinity prior: empty when there are no
 /// hits (no edges to walk → skip the git discovery), else discovered from
 /// the process cwd (see the module doc for the HTTP cwd caveat).
-fn working_set_for(ids: &[String], repo: Option<&str>) -> WorkingSet {
-    if ids.is_empty() {
+fn working_set_for(ranked: &[RankedMemory], repo: Option<&str>) -> WorkingSet {
+    if ranked.is_empty() {
         WorkingSet::default()
     } else {
         WorkingSet::from_cwd(repo)

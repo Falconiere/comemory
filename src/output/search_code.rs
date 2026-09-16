@@ -140,7 +140,7 @@ pub fn write_tty(
         writeln!(
             out,
             "{}  {}:{}-{}  {}  ({})  {}",
-            tty::score(hit.parts.final_score as f32),
+            tty::score(hit.parts.final_score),
             hit.path,
             hit.line_start,
             hit.line_end,

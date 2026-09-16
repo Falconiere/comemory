@@ -16,7 +16,7 @@
 
 use crate::test_common::code_seed;
 use comemory::config::Config;
-use comemory::retrieval::bundle;
+use comemory::retrieval::bundle::{self, RankedMemory};
 use comemory::retrieval::code_rerank::WorkingSet;
 
 /// Seed a minimal live `memories` row.
@@ -50,7 +50,21 @@ fn seed_anchor(conn: &rusqlite::Connection, memory_id: &str, rel: &str, dst: &st
 }
 
 fn assemble(conn: &rusqlite::Connection, ids: &[String]) -> bundle::Bundle {
-    bundle::assemble(conn, &Config::defaults(), "q", ids, &WorkingSet::default()).expect("assemble")
+    let ranked: Vec<RankedMemory> = ids
+        .iter()
+        .map(|id| RankedMemory {
+            id: id.clone(),
+            score: 0.0,
+        })
+        .collect();
+    bundle::assemble(
+        conn,
+        &Config::defaults(),
+        "q",
+        &ranked,
+        &WorkingSet::default(),
+    )
+    .expect("assemble")
 }
 
 #[test]
