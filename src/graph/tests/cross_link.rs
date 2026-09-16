@@ -231,3 +231,46 @@ fn non_url_three_byte_prefix_keeps_the_ref() {
         r.symbols
     );
 }
+
+/// Issue #153: a `file:` URL — SQLite/libSQL's single-slash scheme — is how
+/// prose records a database path. It matched `<repo>:<path>` with the
+/// scheme as the repo (`repo = "file"`, `path = "/tmp/check.db"`) and slipped
+/// past the `://`/`@` guard, minting a `references_file` edge to a
+/// pseudo-repo that no store can ever resolve. An absolute or dot-relative
+/// captured path is never a repo-relative citation, so all three shapes
+/// must yield nothing.
+#[test]
+fn scheme_prefixed_path_expressions_are_not_refs() {
+    for body in [
+        r#"Run the gate with TURSO_DATABASE_URL="file:/tmp/check.db" so knip can load drizzle.config.ts."#,
+        "DATABASE_URL=file:../../packages/database/.data/local.db for the local build",
+        "point libsql at sqlite:./data/local.db for the smoke run",
+        "a triple-slash file:///var/lib/app/state.db is a URL too",
+    ] {
+        let r = extract_refs(body);
+        assert!(
+            r.files.is_empty(),
+            "a scheme-prefixed path must not become a file ref: {body:?} → {:?}",
+            r.files,
+        );
+        assert!(
+            r.symbols.is_empty(),
+            "a scheme-prefixed path must not become a symbol ref: {body:?} → {:?}",
+            r.symbols,
+        );
+    }
+}
+
+/// The guard keys on the captured path's shape, not on the word before the
+/// colon: a real repo-relative citation in the same body as a `file:` URL
+/// survives, symbol suffix included.
+#[test]
+fn a_real_citation_beside_a_file_url_is_kept() {
+    let r =
+        extract_refs("set DB=file:/tmp/check.db, then read qwick-backend:src/db.rs:run_migration");
+    assert_eq!(r.files, vec!["qwick-backend:src/db.rs".to_string()]);
+    assert_eq!(
+        r.symbols,
+        vec!["qwick-backend:src/db.rs:run_migration".to_string()],
+    );
+}

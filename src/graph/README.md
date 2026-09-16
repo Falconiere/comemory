@@ -27,7 +27,7 @@ One line per file, named after its primary item:
 | --- | --- | --- |
 | `coactivate.rs` | `harvest` | Commit co-activation reward: commits touching a memory's referenced files reinforce it |
 | `cochange.rs` | `CoChange` | Git co-change mining: files that change together in bounded history, weighted pairs |
-| `cross_link.rs` | `Refs` | Extract `<repo>:<path>[:<symbol>]` references from a memory body |
+| `cross_link.rs` | `Refs` | Extract `<repo>:<path>[:<symbol>]` references from a memory body; URLs and bare-scheme path expressions (`file:/…`, `./…`, `../…`) are refused |
 | `derived.rs` | `refresh_derived_best_effort` | Single post-write pass refreshing both `rank_score` and the `edge_fts` index |
 | `doc_link.rs` | `derive_after_document` | Deterministic `member_of_source` / `references_document` link deriver |
 | `imports.rs` | `extract_imports` | Per-language import extraction and conservative module-to-path resolution |

@@ -47,7 +47,8 @@ pub struct Bundle {
     /// Code-symbol rows reached by walking `references_symbol` edges,
     /// prior-ranked (see the module doc): resolved refs first by
     /// descending `rank_parts.final_score`, then unresolved refs, each
-    /// group tie-broken by `(path, symbol)`.
+    /// group tie-broken by [`address_order`] — `path`, then a symbol ref
+    /// ahead of the bare file ref of the same path, then `symbol`.
     pub code_refs: Vec<CodeRow>,
     /// Flat list of relation triples for downstream UIs.
     pub relations: Vec<RelationRow>,
@@ -222,8 +223,8 @@ fn collect_memory(
 
 /// Score every resolved ref with the four-prior product (no relevance
 /// term — see the module doc) and sort: resolved refs by descending
-/// `final_score`, ties on `(path, symbol)`; unresolved refs after them,
-/// also `(path, symbol)`-ordered. Follows the same pooled discipline as
+/// `final_score`, ties by [`address_order`]; unresolved refs after them,
+/// also [`address_order`]ed. Follows the same pooled discipline as
 /// `rerank_code`: each ref's [`code_prior::signals`] row is fetched once,
 /// the rank-prior median is derived from those rows via
 /// [`code_prior::median_file_rank`], and the whole pool is scored under
@@ -256,13 +257,24 @@ fn rank_code_refs(
         (Some(x), Some(y)) => y
             .final_score
             .total_cmp(&x.final_score)
-            .then_with(|| a.path.cmp(&b.path))
-            .then_with(|| a.symbol.cmp(&b.symbol)),
+            .then_with(|| address_order(a, b)),
         (Some(_), None) => std::cmp::Ordering::Less,
         (None, Some(_)) => std::cmp::Ordering::Greater,
-        (None, None) => a.path.cmp(&b.path).then_with(|| a.symbol.cmp(&b.symbol)),
+        (None, None) => address_order(a, b),
     });
     Ok(out)
+}
+
+/// The address tie-break: `path` first; within one path a symbol ref
+/// before the bare file ref (a body citing `repo:path:symbol` yields both,
+/// and the symbol is the more specific pointer — while it is not indexed
+/// yet, both are unresolved, and an empty symbol sorting first would put
+/// the bare path in front of the symbol's own name); then `symbol`.
+fn address_order(a: &CodeRow, b: &CodeRow) -> std::cmp::Ordering {
+    a.path
+        .cmp(&b.path)
+        .then_with(|| a.symbol.is_empty().cmp(&b.symbol.is_empty()))
+        .then_with(|| a.symbol.cmp(&b.symbol))
 }
 
 /// Score each ref against its (possibly `None`) signals row, building the
