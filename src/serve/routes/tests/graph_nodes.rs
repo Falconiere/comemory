@@ -223,6 +223,37 @@ async fn graph_node_source_explains_a_synced_projection_without_a_root() {
     assert_eq!(res.json["data"]["reason"], "no_local_worktree");
 }
 
+#[tokio::test]
+async fn graph_node_source_distinguishes_a_directory_from_a_large_file() {
+    let session = serve_state::session(false);
+    let workspace = seed_indexed_repo(&session);
+    let indexed_file = workspace.path().join("import-repo/src/a.rs");
+
+    std::fs::remove_file(&indexed_file).expect("remove indexed file");
+    std::fs::create_dir(&indexed_file).expect("replace indexed file with directory");
+    let directory = serve_state::send(
+        &session,
+        "GET",
+        &format!("/api/v1/graph/nodes/{NODE_A}/source"),
+        None,
+    )
+    .await;
+    assert_eq!(directory.status, 200, "body: {}", directory.text);
+    assert_eq!(directory.json["data"]["reason"], "not_a_file");
+
+    std::fs::remove_dir(&indexed_file).expect("remove directory");
+    std::fs::write(&indexed_file, "x".repeat(1024 * 1024 + 1)).expect("write oversized file");
+    let large = serve_state::send(
+        &session,
+        "GET",
+        &format!("/api/v1/graph/nodes/{NODE_A}/source"),
+        None,
+    )
+    .await;
+    assert_eq!(large.status, 200, "body: {}", large.text);
+    assert_eq!(large.json["data"]["reason"], "file_too_large");
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn graph_node_source_refuses_a_symlink_outside_the_repo() {

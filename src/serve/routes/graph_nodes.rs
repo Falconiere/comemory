@@ -199,10 +199,16 @@ fn read_node_source(ctx: &mut Ctx<'_>, id: &str, scope: Option<&str>) -> Result<
             reason: Some("file_missing"),
         });
     };
-    if !metadata.is_file() || metadata.len() > SOURCE_LIMIT_BYTES {
+    if !metadata.is_file() {
         return Ok(NodeSource {
             content: None,
-            reason: Some("file_unreadable"),
+            reason: Some("not_a_file"),
+        });
+    }
+    if metadata.len() > SOURCE_LIMIT_BYTES {
+        return Ok(NodeSource {
+            content: None,
+            reason: Some("file_too_large"),
         });
     }
     let Ok(content) = std::fs::read_to_string(file) else {
