@@ -12,7 +12,8 @@
 
 use comemory::store::connection;
 use comemory::store::retrieval_log::{
-    NewLogRow, insert, prefix_matches, queries_excluding_source, returned_ids_in_window,
+    NewLogRow, distinct_prefix_matches, insert, prefix_matches, queries_excluding_source,
+    returned_ids_in_window,
 };
 use rusqlite::Connection;
 use tempfile::tempdir;
@@ -258,6 +259,103 @@ fn prefix_matches_excludes_source_and_orders_newest_first() {
         vec!["q-newer", "q-older"],
         "excludes the search-code source and orders newest first"
     );
+}
+
+#[test]
+fn distinct_prefix_matches_keeps_newest_id_and_unicode_case_dedup() {
+    let conn = seed_db();
+    for (id, query, at, source) in [
+        ("a-old", "Draft Ä", "2026-07-15T00:00:00Z", "search"),
+        ("b-new", "draft ä", "2026-07-16T00:00:00Z", "context"),
+        ("c-next", "draft beta", "2026-07-16T00:00:00Z", "search"),
+        (
+            "d-code",
+            "draft code",
+            "2026-07-17T00:00:00Z",
+            "search-code",
+        ),
+    ] {
+        conn.execute(
+            "INSERT INTO retrieval_log(query_id, query, returned_ids, at, duration_ms, source) \
+             VALUES (?1, ?2, '[]', ?3, 1, ?4)",
+            rusqlite::params![id, query, at, source],
+        )
+        .unwrap();
+    }
+
+    let rows = distinct_prefix_matches(&conn, "search-code", "DRAFT%", 2).unwrap();
+    assert_eq!(
+        rows.iter().map(|r| r.query_id.as_str()).collect::<Vec<_>>(),
+        ["c-next", "b-new"],
+        "same-time rows use descending id, and the newer Unicode variant wins"
+    );
+    assert_eq!(rows[1].query, "draft ä");
+    assert_eq!(
+        distinct_prefix_matches(&conn, "search-code", "DRAFT%", 10)
+            .unwrap()
+            .len(),
+        2,
+        "the older Unicode case variant is deduplicated"
+    );
+    assert!(
+        distinct_prefix_matches(&conn, "search-code", "DRAFT%", 0)
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn retrieval_log_reads_use_the_time_indexes() {
+    let conn = seed_db();
+    let recent_plan: String = conn
+        .query_row(
+            "EXPLAIN QUERY PLAN SELECT query, query_id, at FROM retrieval_log \
+             WHERE source != ?1 AND query LIKE ?2 ESCAPE '\\' \
+             ORDER BY at DESC, query_id DESC",
+            rusqlite::params!["search-code", "draft%"],
+            |r| r.get(3),
+        )
+        .unwrap();
+    assert!(
+        recent_plan.contains("idx_retrieval_log_recent"),
+        "{recent_plan}"
+    );
+
+    let window_plan: String = conn
+        .query_row(
+            "EXPLAIN QUERY PLAN SELECT returned_ids FROM retrieval_log \
+             WHERE source IN (?1, ?2) AND at >= ?3 AND at <= ?4 \
+             AND (repo IS NULL OR repo = ?5)",
+            rusqlite::params!["search", "context", "2026-07-01", "2026-07-31", REPO],
+            |r| r.get(3),
+        )
+        .unwrap();
+    assert!(
+        window_plan.contains("idx_retrieval_log_source_at"),
+        "{window_plan}"
+    );
+}
+
+#[test]
+fn prefix_scans_propagate_row_decoding_errors() {
+    let conn = seed_db();
+    insert_row(&conn, "bad-time", "[]", "2026-07-15T00:00:00Z", "search");
+    conn.execute(
+        "UPDATE retrieval_log SET at = X'00' WHERE query_id = 'bad-time'",
+        [],
+    )
+    .unwrap();
+    for result in [
+        prefix_matches(&conn, "search-code", "q%"),
+        distinct_prefix_matches(&conn, "search-code", "q%", 1),
+    ] {
+        assert!(matches!(
+            result,
+            Err(comemory::errors::Error::Sqlite(
+                rusqlite::Error::InvalidColumnType(2, _, rusqlite::types::Type::Blob)
+            ))
+        ));
+    }
 }
 
 /// `queries_excluding_source` drops `search-code` rows and orders the rest

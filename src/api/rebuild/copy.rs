@@ -53,6 +53,10 @@ pub(crate) const RECONSTRUCTABLE_TABLES: &[(&str, &str)] = &[
     ("memories", "replayed from memories/*.md"),
     ("memory_tags", "replayed from frontmatter"),
     ("memory_fts", "rebuilt by memory_row::insert"),
+    (
+        "memory_substring",
+        "rebuilt by triggers during memory replay",
+    ),
     ("memory_vec", "BYO-vector contract: caller re-embeds"),
     ("code_ref", "materialized from frontmatter references"),
     (

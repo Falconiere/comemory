@@ -111,28 +111,42 @@ pub fn list(
     limit: usize,
     offset: usize,
 ) -> Result<(Vec<IndexRunRow>, usize)> {
-    let total: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM index_runs WHERE (?1 IS NULL OR repo = ?1)",
-        [repo],
-        |r| r.get(0),
-    )?;
+    let total: i64 = if let Some(repo) = repo {
+        conn.query_row(
+            "SELECT COUNT(*) FROM index_runs WHERE repo = ?1",
+            [repo],
+            |r| r.get(0),
+        )?
+    } else {
+        conn.query_row("SELECT COUNT(*) FROM index_runs", [], |r| r.get(0))?
+    };
     let limit_param: i64 = if limit == 0 {
         -1
     } else {
         i64::try_from(limit).unwrap_or(i64::MAX)
     };
-    let mut stmt = conn.prepare(concat!(
-        "SELECT ",
-        columns!(),
-        " FROM index_runs WHERE (?1 IS NULL OR repo = ?1) \
-          ORDER BY started_at DESC, id ASC LIMIT ?2 OFFSET ?3"
-    ))?;
-    let rows = stmt
-        .query_map(
-            rusqlite::params![repo, limit_param, i64::try_from(offset).unwrap_or(i64::MAX)],
+    let offset_param = i64::try_from(offset).unwrap_or(i64::MAX);
+    let rows = if let Some(repo) = repo {
+        let mut stmt = conn.prepare(concat!(
+            "SELECT ",
+            columns!(),
+            " FROM index_runs WHERE repo = ?1 \
+              ORDER BY started_at DESC, id ASC LIMIT ?2 OFFSET ?3"
+        ))?;
+        stmt.query_map(
+            rusqlite::params![repo, limit_param, offset_param],
             row_from_query,
         )?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
+        .collect::<std::result::Result<Vec<_>, _>>()?
+    } else {
+        let mut stmt = conn.prepare(concat!(
+            "SELECT ",
+            columns!(),
+            " FROM index_runs ORDER BY started_at DESC, id ASC LIMIT ?1 OFFSET ?2"
+        ))?;
+        stmt.query_map(rusqlite::params![limit_param, offset_param], row_from_query)?
+            .collect::<std::result::Result<Vec<_>, _>>()?
+    };
     Ok((rows, usize::try_from(total).unwrap_or(0)))
 }
 

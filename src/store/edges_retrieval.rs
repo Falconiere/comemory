@@ -50,13 +50,15 @@ pub fn expand_memory_seeds(conn: &Connection, w: &SeedWalk<'_>) -> Result<Vec<(S
         "WITH RECURSIVE walk(kind, id, depth) AS (
              SELECT 'memory', value, 0 FROM json_each(:seeds)
            UNION
-             SELECT n.dst_kind, n.dst_id, w.depth + 1
+             SELECT e.dst_kind, e.dst_id, w.depth + 1
                FROM walk w
-               JOIN (SELECT src_kind, src_id, dst_kind, dst_id, rel FROM edges
-                     UNION ALL
-                     SELECT dst_kind, dst_id, src_kind, src_id, rel FROM edges) n
-                 ON n.src_kind = w.kind AND n.src_id = w.id
-              WHERE w.depth < :hops AND n.rel IN ({rels})
+               JOIN edges e ON e.src_kind = w.kind AND e.src_id = w.id
+              WHERE w.depth < :hops AND e.rel IN ({rels})
+           UNION
+             SELECT e.src_kind, e.src_id, w.depth + 1
+               FROM walk w
+               JOIN edges e ON e.dst_kind = w.kind AND e.dst_id = w.id
+              WHERE w.depth < :hops AND e.rel IN ({rels})
               LIMIT :max_walk
          )
          SELECT w.id, MIN(w.depth) AS hops

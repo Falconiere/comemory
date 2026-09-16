@@ -15,7 +15,9 @@ pre-commit:
       run: bash scripts/fmt-check.sh
     guardrails:
       glob: "*"
-      run: bash scripts/guardrails/run.sh --file {staged_files}
+      # Use CI's scope: source ceilings do not apply to generated schema snapshots.
+      # Both secret checks enumerate git-tracked files, excluding untracked secrets.
+      run: bash scripts/guardrails/run.sh
     typos:
       run: bash scripts/typos-check.sh
 

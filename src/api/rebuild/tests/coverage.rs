@@ -102,27 +102,15 @@ fn derive_live_tables() -> BTreeSet<String> {
     live
 }
 
-/// The literal `27` is a deliberate canary, not an incidental constant: a
-/// migration that adds or drops a table is *expected* to fail this test, and
-/// the failure is the prompt to decide whether the new table belongs in
-/// `COPIED_TABLES` or `RECONSTRUCTABLE_TABLES`. Bump the number in the same
-/// change that answers that question — never to make the test pass again.
-///
-/// Bumped 25 -> 27 by the v14 console migration, which added `eval_runs`
-/// and `gc_runs`, and 27 -> 28 by the v15 console-API migration, which
-/// added `index_runs`, and 28 -> 31 by the v16 sync migration
-/// (`sync_log` / `sync_state` / `sync_binding`). All went into
-/// `COPIED_TABLES`: they are history / sync state markdown cannot
-/// reconstruct. Without that answer a rebuild would have silently
-/// discarded every recorded eval, gc, and index run — and reset sync
-/// cursors — which is exactly what this canary exists to prevent.
+/// Every table addition must choose a rebuild policy. History and sync tables
+/// are copied; v19's trigram index is reconstructed by memory-write triggers.
 #[test]
-fn migration_integrity_derived_live_set_has_exactly_thirty_one_tables() {
+fn migration_integrity_derived_live_set_has_exactly_thirty_two_tables() {
     let live = derive_live_tables();
     assert_eq!(
         live.len(),
-        31,
-        "expected exactly 31 live tables, got {}: {live:?}",
+        32,
+        "expected exactly 32 live tables, got {}: {live:?}",
         live.len()
     );
     // The count alone would still pass if a history table were added to
@@ -147,6 +135,11 @@ fn migration_integrity_derived_live_set_has_exactly_thirty_one_tables() {
             "{table} must not also be listed as reconstructable"
         );
     }
+    assert!(
+        RECONSTRUCTABLE_TABLES
+            .iter()
+            .any(|(name, _)| *name == "memory_substring")
+    );
     assert!(
         live.contains("edges"),
         "edges must survive the RENAME rewrite (0006/0008/0013 each drop and \

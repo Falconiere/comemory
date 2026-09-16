@@ -1,19 +1,44 @@
 //! Declared schema — the memory leg: the `memories` mirror table, its
 //! `memory_tags` side table, and the virtual tables `memory_fts` (FTS5,
-//! `porter identifier` tokenizer since v4) and `memory_vec` (`vec0`, 1024
-//! dims, cosine).
+//! `porter identifier` tokenizer since v4), `memory_substring` (trigrams),
+//! and `memory_vec` (`vec0`, 1024 dims, cosine).
 
 use toolu_orm::core::column::{Integer, Real, Text, Vector};
 use toolu_orm::{fts5_table, table, vec0_table};
 
-/// `memories`: frontmatter + body mirror keyed by memory id, plus the
-/// access-tracking, SimHash and PageRank columns later migrations appended.
-/// The two `WHERE deleted_at IS NULL` indexes are the soft-delete filter
-/// every live-memory scan leans on.
 #[table(name = "memories")]
 #[index("idx_memories_repo", repo, where = "deleted_at IS NULL")]
 #[index("idx_memories_kind", kind, where = "deleted_at IS NULL")]
 #[index("idx_memories_updated", updated_at)]
+#[index(
+    "idx_memories_created",
+    desc(created_at),
+    id,
+    where = "deleted_at IS NULL"
+)]
+#[index(
+    "idx_memories_repo_created",
+    repo,
+    desc(created_at),
+    id,
+    where = "deleted_at IS NULL"
+)]
+#[index(
+    "idx_memories_kind_created",
+    kind,
+    desc(created_at),
+    id,
+    where = "deleted_at IS NULL"
+)]
+#[index(
+    "idx_memories_repo_kind_created",
+    repo,
+    kind,
+    desc(created_at),
+    id,
+    where = "deleted_at IS NULL"
+)]
+/// Memory mirror with ranking metadata and indexes for filters and creation order.
 pub struct Memories {
     /// 8-hex prefix of `sha256(body)`.
     #[column(primary_key)]
@@ -91,6 +116,19 @@ pub struct MemoryFts {
     pub body: Text,
     /// Space-joined tags.
     pub tags: Text,
+}
+
+#[fts5_table(
+    name = "memory_substring",
+    tokenize = "trigram",
+    content = "memories",
+    content_rowid = "rowid",
+    columnsize = 0
+)]
+/// Trigram postings maintained by triggers; body text is read from `memories.body`.
+pub struct MemorySubstring {
+    /// External `memories.body` text, indexed without storing a second body copy.
+    pub body: Text,
 }
 
 /// `memory_vec`: BYO memory embeddings. The `1024` literal is the

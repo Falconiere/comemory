@@ -108,6 +108,12 @@
       "name": "0018_scheme_path_refs.sql",
       "hash": "sha256:13d2258fa90314f9bb9dca9d3dd73ce6eca0206a33a04b9f31828de4b270ae3b",
       "created_at": 1789535130
+    },
+    {
+      "idx": 18,
+      "name": "0019_query_performance.sql",
+      "hash": "sha256:fa69cdd8988a1edc9ea2fa6f32b9f1830dfb0d28acf427b48a89d0bcc6a629ce",
+      "created_at": 1789593668
     }
   ]
 }

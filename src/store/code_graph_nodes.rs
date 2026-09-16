@@ -30,30 +30,24 @@ pub struct NodeRow {
     pub blob: Option<String>,
 }
 
-/// The `edges` predicate matching every memory citation of ONE file, over
-/// an `edges e` row aliased `e`.
-///
-/// The two reference shapes address the file differently: `references_file`
-/// stores the BARE `<repo>:<path>` (no `file:` prefix — see
-/// `store::edges::file_node_id`), while `references_symbol` stores
-/// `<repo>:<path>:<symbol>`, so a symbol reference is matched by prefix —
-/// with `substr(...) = ...`, NOT `LIKE`. A path is full of `_`, which LIKE
-/// reads as "any single character" (`src/memory_list.rs` would also match
-/// `src/memoryXlist.rs`); the substr form has no metacharacters to escape.
-/// Same technique as `store::edges::file_node_prefix`.
-///
-/// The file the predicate is about, as [`FileExpr`] — a closed set of two
-/// SQL expressions rather than a `&str`, so no caller can splice text of
-/// its own into the predicate whatever its provenance. Sharing one
-/// predicate is what keeps a node's `memories` COUNT and its `cited_by`
-/// list answering about the same set of memories (Binding Rule 1).
+/// Match file and symbol citations of one file on an `edges e` row.
+/// File IDs are bare `<repo>:<path>`; symbol IDs add `:<symbol>`. The
+/// symbol range `[file || ':', file || ';')` matches literal prefixes,
+/// including paths with SQL wildcard characters. The two `rowid` branches
+/// make SQLite seek the citation index for each relation; a combined `OR`
+/// instead scans the primary key by `src_kind`. [`FileExpr`] restricts the
+/// interpolated SQL to two compile-time expressions.
 pub fn cites_file_predicate(file: FileExpr) -> String {
     let file_expr = file.sql();
     format!(
-        "e.src_kind = 'memory' \
-         AND ((e.rel = 'references_file' AND e.dst_id = {file_expr}) \
-           OR (e.rel = 'references_symbol' \
-               AND substr(e.dst_id, 1, length({file_expr} || ':')) = {file_expr} || ':'))"
+        "e.rowid IN (SELECT f.rowid FROM edges f \
+                       WHERE f.src_kind = 'memory' AND f.rel = 'references_file' \
+                         AND f.dst_id = {file_expr} \
+                     UNION ALL \
+                     SELECT s.rowid FROM edges s \
+                       WHERE s.src_kind = 'memory' AND s.rel = 'references_symbol' \
+                         AND s.dst_id >= {file_expr} || ':' \
+                         AND s.dst_id < {file_expr} || ';')"
     )
 }
 

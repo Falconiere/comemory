@@ -282,6 +282,10 @@ with flags and worked examples:
 
 ---
 
+Memory listing uses ordered indexes and trigram candidates for literal substring
+queries of at least three characters, with exact scan behavior for shorter queries.
+Existing databases gain these indexes automatically; see [storage architecture](docs/architecture.md).
+
 ## Configuration
 
 Config is layered: built-in defaults → `~/.comemory/config.toml` → environment →

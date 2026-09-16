@@ -13,6 +13,13 @@ use toolu_orm::table;
 #[primary_key(src_kind, src_id, dst_kind, dst_id, rel)]
 #[index("idx_edges_src", src_kind, src_id, rel)]
 #[index("idx_edges_dst", dst_kind, dst_id, rel)]
+#[index(
+    "idx_edges_citation",
+    rel,
+    dst_id,
+    src_id,
+    where = "src_kind = 'memory'"
+)]
 pub struct Edges {
     /// Source node kind (`memory`, `file`, `symbol`, …).
     #[column(not_null)]
