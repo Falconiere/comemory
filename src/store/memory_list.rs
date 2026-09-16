@@ -196,12 +196,13 @@ fn append_filters(
         binds.push(Box::new(i64::from(min)));
     }
     if let Some(q) = filter.q.map(str::trim).filter(|q| !q.is_empty()) {
-        // Trigrams narrow candidates; LIKE retains ASCII case folding and
-        // literal wildcard semantics. Short/NUL queries need the original scan.
+        // MATCH folds Unicode case, while LIKE folds only ASCII: the residual
+        // rejects candidates such as CAFÉ for café. Short/NUL queries need a scan.
         if q.chars().count() >= 3 && !q.contains('\0') {
             filters.push_str(
                 " AND rowid IN (SELECT rowid FROM memory_substring WHERE memory_substring MATCH ?)",
             );
+            // One bound FTS5 phrase: doubled quotes escape its only delimiter.
             binds.push(Box::new(format!("\"{}\"", q.replace('"', "\"\""))));
         }
         filters.push_str(" AND body LIKE ? ESCAPE '\\'");

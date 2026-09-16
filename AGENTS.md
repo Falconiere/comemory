@@ -71,6 +71,8 @@ is the source of truth and one SQLite file (`comemory.db`) backs FTS5 +
 Migration 19 adds graph/history/listing indexes and `memory_substring`. Its
 triggers maintain the substring index for every memory write; listing retains
 literal `LIKE` verification and a scan fallback for queries under three characters.
+The external-content FTS5 table stores trigram postings and reads body text from
+`memories.body`, without storing another body copy.
 
 ## Key Commands
 

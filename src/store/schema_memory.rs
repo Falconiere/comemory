@@ -125,9 +125,9 @@ pub struct MemoryFts {
     content_rowid = "rowid",
     columnsize = 0
 )]
-/// Literal substring candidates, maintained by triggers over external memory content.
+/// Trigram postings maintained by triggers; body text is read from `memories.body`.
 pub struct MemorySubstring {
-    /// Overlapping three-character tokens from the memory body.
+    /// External `memories.body` text, indexed without storing a second body copy.
     pub body: Text,
 }
 

@@ -215,7 +215,7 @@ fn substring_listing_matches_literal_like_across_unicode_and_punctuation() {
     let (_dir, conn) = seeded_db();
     let bodies = [
         include_str!("../memory_list.rs"),
-        "SQLite query: 100% literal_under_score \\ escaped \"quotes\" café CAFÉ 日本語",
+        "SQLite query: 100% literal_under_score \\ escaped \"quotes\" café CAFÉ 日本語 \" OR body:* --",
         "sqlite QUERY: 100 percent literalXunderXscore café café",
     ];
     for (id, body) in ["aaaa0001", "aaaa0002", "aaaa0003"].into_iter().zip(bodies) {
@@ -228,6 +228,9 @@ fn substring_listing_matches_literal_like_across_unicode_and_punctuation() {
         "_under_",
         "\\",
         "\"quotes\"",
+        "\" OR body:* --",
+        "query: 100%",
+        "'); DROP TABLE memories; --",
         "café",
         "CAFÉ",
         "日本語",
@@ -256,6 +259,33 @@ fn substring_listing_matches_literal_like_across_unicode_and_punctuation() {
         assert_eq!(ids(&page.rows), expected, "query {q:?}");
         assert_eq!(page.total, expected.len(), "query {q:?}");
     }
+}
+
+#[test]
+fn nul_query_is_bound_in_full_and_keeps_sqlite_like_semantics() {
+    let (_dir, conn) = seeded_db();
+    conn.execute(
+        "UPDATE memories SET body = 'prefix body' WHERE id = 'aaaa0001'",
+        [],
+    )
+    .unwrap();
+    let query = "body\0ignored";
+    let round_trip: String = conn.query_row("SELECT ?1", [query], |r| r.get(0)).unwrap();
+    assert_eq!(round_trip.as_bytes(), query.as_bytes());
+    let page = memory_list::list_memories(
+        &conn,
+        &ListFilter {
+            q: Some(query),
+            ..ListFilter::default()
+        },
+        0,
+        0,
+        SortBy::Created,
+    )
+    .unwrap();
+    // LIKE sees `%body`: the trailing wildcard after NUL is not part of its pattern.
+    assert_eq!(page.total, 1);
+    assert_eq!(ids(&page.rows), ["aaaa0001"]);
 }
 
 #[test]

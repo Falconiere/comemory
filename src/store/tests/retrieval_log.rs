@@ -336,6 +336,28 @@ fn retrieval_log_reads_use_the_time_indexes() {
     );
 }
 
+#[test]
+fn prefix_scans_propagate_row_decoding_errors() {
+    let conn = seed_db();
+    insert_row(&conn, "bad-time", "[]", "2026-07-15T00:00:00Z", "search");
+    conn.execute(
+        "UPDATE retrieval_log SET at = X'00' WHERE query_id = 'bad-time'",
+        [],
+    )
+    .unwrap();
+    for result in [
+        prefix_matches(&conn, "search-code", "q%"),
+        distinct_prefix_matches(&conn, "search-code", "q%", 1),
+    ] {
+        assert!(matches!(
+            result,
+            Err(comemory::errors::Error::Sqlite(
+                rusqlite::Error::InvalidColumnType(2, _, rusqlite::types::Type::Blob)
+            ))
+        ));
+    }
+}
+
 /// `queries_excluding_source` drops `search-code` rows and orders the rest
 /// `(at, query_id)` — the scan behind `eval::mine`.
 #[test]
