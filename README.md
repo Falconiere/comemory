@@ -371,7 +371,7 @@ tier directly:
 
 ## Contributing
 
-Read **[CLAUDE.md](CLAUDE.md)** first — it documents the architecture, the
+Read **[AGENTS.md](AGENTS.md)** first — it documents the architecture, the
 module map, the frontmatter schema, and the **binding rules** every
 contribution must satisfy (comemory follows the
 [toolu-conventions](https://github.com/Falconiere/toolu-conventions) Rust

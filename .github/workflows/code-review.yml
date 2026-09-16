@@ -57,12 +57,10 @@ jobs:
           # `high` and `critical` only: the severities the reviewer reserves
           # for a defect. `medium`/`low`/`nit` stay informational.
           FAIL_ON: none
-          # CLAUDE.md is already covered by the action's default Tier-1 convention
-          # files; guardrails.config.json (the toolu-conventions structure gate
-          # config) is not, so it is added explicitly. RULES_REF stays "base"
-          # (the action's default) so a PR cannot rewrite the rules it is judged
-          # by.
-          RULES_GLOB: guardrails.config.json
+          # CLAUDE.md is only a pointer. Include the canonical AGENTS.md and
+          # guardrails.config.json explicitly so the reviewer reads the rules.
+          # RULES_REF stays "base" so a PR cannot rewrite its review rules.
+          RULES_GLOB: AGENTS.md,guardrails.config.json
           RULES_REF: base
           # `.claude/` is agent scratch, never shipped code, and this PR
           # DELETES `.claude/tmp/.gitkeep` — the reviewer cannot fetch
