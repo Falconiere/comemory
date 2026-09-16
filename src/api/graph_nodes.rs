@@ -240,7 +240,7 @@ fn nodes_from(rows: Vec<NodeRow>) -> Vec<Node> {
 /// store; and — only when a repo scope is in force and neither of the above
 /// parsed — the whole id read as a repo-relative path under that scope.
 /// Anything else is [`Error::BadRequest`].
-fn resolve_node_id(id: &str, repo_scope: Option<&str>) -> Result<(String, String)> {
+pub(crate) fn resolve_node_id(id: &str, repo_scope: Option<&str>) -> Result<(String, String)> {
     if let Some((repo, path)) = parse_id(id) {
         return Ok((repo.to_string(), path.to_string()));
     }

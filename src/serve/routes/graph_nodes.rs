@@ -13,12 +13,14 @@
 //! console pass a bare repo-relative path as the id — see
 //! `api::graph_nodes::resolve_node_id`.
 
+use std::path::Path as FsPath;
 use std::time::Instant;
 
 use axum::Router;
 use axum::extract::{Path, Query, State};
 use axum::response::Response;
 use axum::routing::{get, post};
+use serde::Serialize;
 
 use crate::api::{self, Ctx};
 use crate::prelude::*;
@@ -26,6 +28,18 @@ use crate::serve::AppState;
 use crate::serve::jobs;
 use crate::serve::routes::{RouteEntry, accepted, guard_job, respond, run_blocking};
 use crate::serve::scope::RepoScope;
+use crate::serve::security;
+use crate::store::{code_graph_nodes, repo_marker_roots};
+
+/// The largest file the console reads in one response.
+const SOURCE_LIMIT_BYTES: u64 = 1024 * 1024;
+
+/// Source from an indexed local worktree, or an explicit unavailable state.
+#[derive(Serialize)]
+struct NodeSource {
+    content: Option<String>,
+    reason: Option<&'static str>,
+}
 
 /// This resource's route-table entries, appended onto [`super::table`].
 pub fn table_entries() -> &'static [RouteEntry] {
@@ -55,6 +69,12 @@ pub fn table_entries() -> &'static [RouteEntry] {
             mutating: false,
         },
         RouteEntry {
+            method: "GET",
+            path: "/graph/nodes/{id}/source",
+            command: "graph.source",
+            mutating: false,
+        },
+        RouteEntry {
             method: "POST",
             path: "/graph/recompute",
             command: "graph.recompute",
@@ -72,6 +92,7 @@ pub fn router(_state: AppState) -> Router<AppState> {
         .route("/api/v1/graph/snapshot", get(snapshot))
         .route("/api/v1/graph/nodes/{id}", get(node_detail))
         .route("/api/v1/graph/nodes/{id}/neighbors", get(node_neighbors))
+        .route("/api/v1/graph/nodes/{id}/source", get(node_source))
         .route("/api/v1/graph/recompute", post(recompute))
 }
 
@@ -149,6 +170,69 @@ async fn node_neighbors(
     })
     .await;
     respond("graph.neighbors", result, started)
+}
+
+/// Resolve one indexed node against its local worktree, with containment and
+/// a response size limit. A synced cloud projection has no local root.
+fn read_node_source(ctx: &mut Ctx<'_>, id: &str, scope: Option<&str>) -> Result<NodeSource> {
+    let (repo, path) = api::graph_nodes::resolve_node_id(id, scope)?;
+    let conn = ctx.conn()?;
+    if code_graph_nodes::fetch_node(conn, &repo, &path)?.is_none() {
+        return Err(Error::NotFound(format!("graph node {id}")));
+    }
+    let Some(raw_root) = repo_marker_roots::root_path(conn, &repo)? else {
+        return Ok(NodeSource {
+            content: None,
+            reason: Some("no_local_worktree"),
+        });
+    };
+    let Ok(root) = FsPath::new(&raw_root).canonicalize() else {
+        return Ok(NodeSource {
+            content: None,
+            reason: Some("worktree_missing"),
+        });
+    };
+    let file = security::resolve_within(&root, &path)?;
+    let Ok(metadata) = file.metadata() else {
+        return Ok(NodeSource {
+            content: None,
+            reason: Some("file_missing"),
+        });
+    };
+    if !metadata.is_file() || metadata.len() > SOURCE_LIMIT_BYTES {
+        return Ok(NodeSource {
+            content: None,
+            reason: Some("file_unreadable"),
+        });
+    }
+    let Ok(content) = std::fs::read_to_string(file) else {
+        return Ok(NodeSource {
+            content: None,
+            reason: Some("file_unreadable"),
+        });
+    };
+    Ok(NodeSource {
+        content: Some(content),
+        reason: None,
+    })
+}
+
+/// `GET /graph/nodes/{id}/source` — read one indexed file from its local
+/// worktree. Cloud-only synced repos answer a clear unavailable state.
+async fn node_source(
+    State(state): State<AppState>,
+    scope: RepoScope,
+    Path(id): Path<String>,
+) -> Response {
+    let started = Instant::now();
+    let result = run_blocking(move || {
+        let cfg = state.cfg();
+        let mut conn = state.conn()?;
+        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
+        read_node_source(&mut ctx, &id, scope.0.as_deref())
+    })
+    .await;
+    respond("graph.source", result, started)
 }
 
 /// `POST /api/v1/graph/recompute` — start a `graph-recompute` job

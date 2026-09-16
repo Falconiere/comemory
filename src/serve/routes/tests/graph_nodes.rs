@@ -162,6 +162,91 @@ async fn graph_node_detail_takes_one_percent_encoded_segment() {
 }
 
 #[tokio::test]
+async fn graph_node_source_reads_the_indexed_worktree_file() {
+    let session = serve_state::session(true);
+    let _workspace = seed_indexed_repo(&session);
+
+    let res = serve_state::send(
+        &session,
+        "GET",
+        &format!("/api/v1/graph/nodes/{NODE_A}/source"),
+        None,
+    )
+    .await;
+    assert_eq!(res.status, 200, "body: {}", res.text);
+    assert_eq!(
+        res.json["data"]["content"],
+        "mod b;\n\npub fn alpha() {\n    b::beta();\n}\n"
+    );
+    assert!(res.json["data"]["reason"].is_null());
+}
+
+#[tokio::test]
+async fn graph_node_source_explains_a_missing_worktree() {
+    let session = serve_state::session(false);
+    let workspace = seed_indexed_repo(&session);
+    std::fs::remove_dir_all(workspace.path().join("import-repo")).expect("remove checkout");
+
+    let res = serve_state::send(
+        &session,
+        "GET",
+        &format!("/api/v1/graph/nodes/{NODE_A}/source"),
+        None,
+    )
+    .await;
+    assert_eq!(res.status, 200, "body: {}", res.text);
+    assert!(res.json["data"]["content"].is_null());
+    assert_eq!(res.json["data"]["reason"], "worktree_missing");
+}
+
+#[tokio::test]
+async fn graph_node_source_explains_a_synced_projection_without_a_root() {
+    let session = serve_state::session(false);
+    let _workspace = seed_indexed_repo(&session);
+    let paths = Paths::new(session.home.path());
+    let conn = connection::open(paths.db_path()).expect("open db");
+    conn.execute(
+        "UPDATE repo_marker SET root_path = NULL WHERE repo = ?1",
+        [REPO],
+    )
+    .expect("remove local root from projection");
+
+    let res = serve_state::send(
+        &session,
+        "GET",
+        &format!("/api/v1/graph/nodes/{NODE_A}/source"),
+        None,
+    )
+    .await;
+    assert_eq!(res.status, 200, "body: {}", res.text);
+    assert!(res.json["data"]["content"].is_null());
+    assert_eq!(res.json["data"]["reason"], "no_local_worktree");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn graph_node_source_refuses_a_symlink_outside_the_repo() {
+    let session = serve_state::session(false);
+    let workspace = seed_indexed_repo(&session);
+    let indexed_file = workspace.path().join("import-repo/src/a.rs");
+    let outside = workspace.path().join("outside.rs");
+    std::fs::write(&outside, "private source").expect("write outside file");
+    std::fs::remove_file(&indexed_file).expect("remove indexed file");
+    std::os::unix::fs::symlink(&outside, &indexed_file).expect("replace with escaping symlink");
+
+    let res = serve_state::send(
+        &session,
+        "GET",
+        &format!("/api/v1/graph/nodes/{NODE_A}/source"),
+        None,
+    )
+    .await;
+    assert_eq!(res.status, 403, "body: {}", res.text);
+    assert_eq!(res.json["error"]["code"], "forbidden");
+    assert!(!res.text.contains("private source"));
+}
+
+#[tokio::test]
 async fn graph_node_detail_is_404_for_an_unindexed_file() {
     let session = serve_state::session(false);
     let _workspace = seed_indexed_repo(&session);
