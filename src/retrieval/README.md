@@ -20,7 +20,7 @@ One line per file, named after its primary item:
 
 | File | Primary item | Purpose |
 | --- | --- | --- |
-| `bundle.rs` | `Bundle` | Build the JSON shape emitted by `comemory context` |
+| `bundle.rs` | `Bundle` | Build the JSON shape emitted by `comemory context`; `assemble` takes `RankedMemory` (id + the pipeline's `final_score`) so each memory row's `score` is the real ranking number |
 | `code_prior.rs` | `RANK_SCALE` | The four bounded code priors: PageRank, ACT-R activation, working-set affinity, Beta feedback |
 | `code_ref_collect.rs` | `RawRef` | Collect a memory's walked code-reference edges into resolved refs |
 | `code_ref_fetch.rs` | `RefStatusCache` | Per-repo current-state lookups behind code-ref freshness |

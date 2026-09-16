@@ -15,8 +15,19 @@
 
 use crate::test_common::code_seed;
 use comemory::config::Config;
-use comemory::retrieval::bundle::{self, Bundle};
+use comemory::retrieval::bundle::{self, Bundle, RankedMemory};
 use comemory::retrieval::code_rerank::WorkingSet;
+
+/// Wrap bare ids as zero-scored [`RankedMemory`]s — the shape `assemble`
+/// takes, for tests that care about refs and edges rather than scores.
+fn ranked(ids: &[String]) -> Vec<RankedMemory> {
+    ids.iter()
+        .map(|id| RankedMemory {
+            id: id.clone(),
+            score: 0.0,
+        })
+        .collect()
+}
 
 /// Assemble with the default config and an empty working set — the
 /// fixed-arg shape every test here wants.
@@ -25,7 +36,7 @@ fn assemble(conn: &rusqlite::Connection, query: &str, ids: &[String]) -> Bundle 
         conn,
         &Config::defaults(),
         query,
-        ids,
+        &ranked(ids),
         &WorkingSet::default(),
     )
     .expect("assemble")
@@ -61,6 +72,45 @@ fn assemble_returns_empty_bundle_when_no_ids() {
     assert!(b.memories.is_empty());
     assert!(b.code_refs.is_empty());
     assert!(b.relations.is_empty());
+}
+
+/// Issue #152: every memory row used to report `score: 0.0` because
+/// `assemble` took bare ids. The score each [`RankedMemory`] carries must
+/// land on its row, in the caller's order, and reach the JSON verbatim.
+#[test]
+fn memory_rows_carry_the_ranked_score_in_caller_order() {
+    let (_d, conn) = code_seed::open_db();
+    seed_memory(&conn, "m1");
+    seed_memory(&conn, "m2");
+    let hits = vec![
+        RankedMemory {
+            id: "m1".to_string(),
+            score: 0.92,
+        },
+        RankedMemory {
+            id: "m2".to_string(),
+            score: 0.41,
+        },
+    ];
+
+    let b = bundle::assemble(
+        &conn,
+        &Config::defaults(),
+        "q",
+        &hits,
+        &WorkingSet::default(),
+    )
+    .expect("assemble");
+    let rows: Vec<(&str, f64)> = b
+        .memories
+        .iter()
+        .map(|m| (m.id.as_str(), m.score))
+        .collect();
+    assert_eq!(rows, [("m1", 0.92), ("m2", 0.41)]);
+
+    let v: serde_json::Value = serde_json::to_value(&b).expect("json");
+    assert_eq!(v["memories"][0]["score"], 0.92);
+    assert_eq!(v["memories"][1]["score"], 0.41);
 }
 
 #[test]

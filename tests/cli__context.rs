@@ -116,6 +116,79 @@ fn context_returns_bundle_for_seeded_memory() {
     assert!(!mems.is_empty());
 }
 
+/// Issue #152: every memory row in a bundle reported `score: 0.0`, so a
+/// consumer could not tell the top-ranked memory from the last one. The
+/// rows must carry the pipeline's `final_score`, non-increasing down the
+/// list, exactly as `comemory search --json` ranks the same query.
+#[test]
+fn context_memory_rows_carry_the_pipeline_score() {
+    let home = TempDir::new().expect("tempdir");
+    for body in [
+        "postgres advisory locks serialize migration ordering across workers",
+        "advisory note: the redis lock keeps the session cache warm",
+    ] {
+        bin(&home)
+            .args(["save", "--kind", "decision", "--repo", "foo", body])
+            .assert()
+            .success();
+    }
+
+    // Tracking off on both calls, so the first lookup's access bump cannot
+    // move the second one's activation prior.
+    let out = bin(&home)
+        .env("COMEMORY_DISABLE_ACCESS_TRACKING", "true")
+        .args(["context", "advisory lock", "--json"])
+        .assert()
+        .success();
+    let v: Value = serde_json::from_slice(&out.get_output().stdout).expect("context json");
+    let mems = v
+        .get("memories")
+        .and_then(Value::as_array)
+        .expect("memories");
+    assert_eq!(mems.len(), 2, "both memories match lexically: {v}");
+    let scores: Vec<f64> = mems
+        .iter()
+        .map(|m| m["score"].as_f64().expect("score is a number"))
+        .collect();
+    assert!(
+        scores.iter().all(|s| *s > 0.0),
+        "every surfaced memory carries a real score, got {scores:?}"
+    );
+    assert!(
+        scores.windows(2).all(|w| w[0] >= w[1]),
+        "scores follow the ranked order, got {scores:?}"
+    );
+
+    // The bundle's number is the search pipeline's number for the same
+    // query — one ranking, two surfaces.
+    let out = bin(&home)
+        .env("COMEMORY_DISABLE_ACCESS_TRACKING", "true")
+        .args(["search", "advisory lock", "--json"])
+        .assert()
+        .success();
+    let search: Value = serde_json::from_slice(&out.get_output().stdout).expect("search json");
+    let search_scores: Vec<f64> = search["hits"]
+        .as_array()
+        .expect("hits")
+        .iter()
+        .map(|h| h["score"].as_f64().expect("score"))
+        .collect();
+    assert_eq!(
+        scores.len(),
+        search_scores.len(),
+        "context: {v}\nsearch: {search}"
+    );
+    // The activation prior reads the clock, so two runs milliseconds apart
+    // agree to well under 1e-6 rather than bit-for-bit.
+    assert!(
+        scores
+            .iter()
+            .zip(&search_scores)
+            .all(|(a, b)| (a - b).abs() < 1e-6),
+        "context scores {scores:?} must match search's {search_scores:?}"
+    );
+}
+
 /// Lexical-only (no --vector): bundle must come back without error.
 #[test]
 fn context_lexical_path_no_vector() {

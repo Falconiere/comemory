@@ -31,6 +31,7 @@ use crate::retrieval::code_prior::{self, CodePriorParts, Signals};
 use crate::retrieval::code_ref_collect::{self, RawRef};
 use crate::retrieval::code_ref_fetch::RefStatusCache;
 use crate::retrieval::code_rerank::WorkingSet;
+use crate::retrieval::rerank::Reranked;
 use crate::store::Connection;
 use crate::store::edges_retrieval;
 
@@ -76,8 +77,32 @@ pub struct MemoryBundleRow {
     pub kind: String,
     /// Full memory body.
     pub body: String,
-    /// Caller-supplied score (defaults to `0.0` when assembling).
-    pub score: f32,
+    /// The pipeline's `final_score` for this memory — the same number
+    /// `comemory search --json` reports as each hit's `score` — carried in
+    /// through [`RankedMemory::score`]. Rows keep the caller's ranked
+    /// order, so scores are non-increasing down the list.
+    pub score: f64,
+}
+
+/// One ranked memory a bundle is assembled from: the id the pipeline
+/// surfaced and the `final_score` it ranked it with. [`assemble`] takes
+/// these rather than bare ids so [`MemoryBundleRow::score`] carries the
+/// real ranking number instead of a placeholder.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RankedMemory {
+    /// Memory id (8-hex prefix of `sha256(body.trim_end())`).
+    pub id: String,
+    /// The pipeline's `final_score` for this memory.
+    pub score: f64,
+}
+
+impl From<Reranked> for RankedMemory {
+    fn from(hit: Reranked) -> Self {
+        Self {
+            id: hit.memory_id,
+            score: hit.parts.final_score,
+        }
+    }
 }
 
 /// One code-symbol row inside a [`Bundle`].
@@ -135,25 +160,26 @@ pub struct RelationRow {
 /// path `comemory context`'s JSON contract was written against.
 pub use crate::graph::neighbors::NeighborRow;
 
-/// Assemble a [`Bundle`] for `query`, expanding each memory id by walking
-/// `references_file`, `references_symbol`, `relates_to`, and `supersedes`
-/// edges up to depth 2 via a recursive CTE. Code snippets are pulled for
-/// every `references_symbol` destination that resolves in `code_symbols`,
-/// and the resulting refs are prior-ranked against `working_set` (see
-/// [`rank_code_refs`]).
+/// Assemble a [`Bundle`] for `query`, expanding each ranked memory by
+/// walking `references_file`, `references_symbol`, `relates_to`, and
+/// `supersedes` edges up to depth 2 via a recursive CTE. Memory rows are
+/// emitted in `ranked` order, each carrying its [`RankedMemory::score`].
+/// Code snippets are pulled for every `references_symbol` destination that
+/// resolves in `code_symbols`, and the resulting refs are prior-ranked
+/// against `working_set` (see [`rank_code_refs`]).
 pub fn assemble(
     conn: &Connection,
     cfg: &Config,
     query: &str,
-    memory_ids: &[String],
+    ranked: &[RankedMemory],
     working_set: &WorkingSet,
 ) -> Result<Bundle> {
     let mut memories = Vec::new();
     let mut relations = Vec::new();
     let mut raw_refs = Vec::new();
 
-    for id in memory_ids {
-        collect_memory(conn, id, &mut memories, &mut relations, &mut raw_refs)?;
+    for hit in ranked {
+        collect_memory(conn, hit, &mut memories, &mut relations, &mut raw_refs)?;
     }
     // Snapshot the resolved ids before `rank_code_refs` consumes the raw
     // refs — these are the rows `context` self-reinforces under tracking.
@@ -184,11 +210,12 @@ pub fn assemble(
 /// rebuild, and a stale id should skip cleanly rather than abort the bundle.
 fn collect_memory(
     conn: &Connection,
-    id: &str,
+    hit: &RankedMemory,
     memories: &mut Vec<MemoryBundleRow>,
     relations: &mut Vec<RelationRow>,
     raw_refs: &mut Vec<RawRef>,
 ) -> Result<()> {
+    let id = hit.id.as_str();
     let row = crate::store::memory_meta::kind_and_body(conn, id)
         .ok()
         .flatten();
@@ -199,7 +226,7 @@ fn collect_memory(
         id: id.to_string(),
         kind,
         body,
-        score: 0.0,
+        score: hit.score,
     });
 
     // Pinned anchors for this memory, keyed by `(rel, dst_id)`, so each walked

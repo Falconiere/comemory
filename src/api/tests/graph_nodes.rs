@@ -22,7 +22,7 @@ use comemory::api::{self, Ctx};
 use comemory::config::{Config, Paths};
 use comemory::memory::Kind;
 use comemory::prelude::Error;
-use comemory::retrieval::bundle;
+use comemory::retrieval::bundle::{self, RankedMemory};
 use comemory::retrieval::code_rerank::WorkingSet;
 use comemory::store::connection;
 use tempfile::TempDir;
@@ -284,7 +284,10 @@ fn neighbors_match_the_context_bundle_for_a_memory_citing_the_file_ac9() {
             &store.conn,
             &cfg,
             "alpha entry point",
-            &[memory_id],
+            &[RankedMemory {
+                id: memory_id,
+                score: 1.0,
+            }],
             &WorkingSet::default(),
         )
         .expect("assemble");

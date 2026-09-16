@@ -235,7 +235,7 @@ pub fn write_tty<S: ::std::hash::BuildHasher>(
         writeln!(
             out,
             "{}  {}  {}{}{}",
-            tty::score(hit.parts.final_score as f32),
+            tty::score(hit.parts.final_score),
             source_label(hit.source),
             hit.memory_id,
             suffix,
