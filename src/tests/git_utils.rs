@@ -13,15 +13,24 @@
 use std::process::Command;
 
 use comemory::git_utils::{
-    blob_oid_at_head, changed_files, current_branch, current_head, install_hook,
+    REINDEX_HOOK_SCRIPT, blob_oid_at_head, changed_files, current_branch, current_head,
+    hook_installed, hooks_dir, install_hook, remove_hook, repo_label, repo_label_at,
 };
 use tempfile::TempDir;
+
+use crate::test_common::git_worktree::add_worktree;
 
 /// Build a git repo in `dir` with a single commit. Returns the path so the
 /// caller can keep the `TempDir` alive. Panics on any git failure because the
 /// test environment is broken if `git init`/`git commit` can't succeed.
 fn make_repo_with_one_commit(dir: &TempDir) {
-    let p = dir.path();
+    make_repo_at(dir.path());
+}
+
+/// [`make_repo_with_one_commit`] at an arbitrary (created) path, for the
+/// worktree tests that need the main repo to carry a meaningful basename.
+fn make_repo_at(p: &std::path::Path) {
+    std::fs::create_dir_all(p).expect("create repo dir");
     run_git(p, &["init", "--quiet"]);
     // Configure identity locally so the commit succeeds even on CI hosts where
     // no global git identity is set.
@@ -110,6 +119,156 @@ fn install_hook_writes_executable_script() {
         // Lower 9 bits = rwx triples; we wrote 0o755.
         assert_eq!(mode & 0o777, 0o755, "expected 0755, got {:o}", mode & 0o777);
     }
+}
+
+/// `<tmp>/parent-repo` (one commit) plus a linked worktree at
+/// `<tmp>/parent-repo-feature-42` on branch `feature-42`.
+fn main_and_linked_worktree(tmp: &TempDir) -> (std::path::PathBuf, std::path::PathBuf) {
+    let main = tmp.path().join("parent-repo");
+    make_repo_at(&main);
+    let wt = tmp.path().join("parent-repo-feature-42");
+    add_worktree(&main, &wt, "feature-42");
+    assert!(
+        wt.join(".git").is_file(),
+        "a linked worktree's .git is a file, not a directory"
+    );
+    (main, wt)
+}
+
+#[test]
+fn repo_label_is_the_main_worktree_basename_from_every_checkout() {
+    let tmp = TempDir::new().expect("tempdir");
+    let (main, wt) = main_and_linked_worktree(&tmp);
+    let nested = wt.join("src").join("deep");
+    std::fs::create_dir_all(&nested).expect("nested dir");
+
+    assert_eq!(repo_label_at(&main).as_deref(), Some("parent-repo"));
+    assert_eq!(
+        repo_label_at(&wt).as_deref(),
+        Some("parent-repo"),
+        "a linked worktree must not mint its own directory name as the label"
+    );
+    assert_eq!(repo_label_at(&nested).as_deref(), Some("parent-repo"));
+    assert_eq!(
+        repo_label_at(tmp.path()),
+        None,
+        "outside any repository there is no label"
+    );
+}
+
+#[test]
+fn repo_label_is_none_for_a_bare_repository() {
+    let tmp = TempDir::new().expect("tempdir");
+    let bare = tmp.path().join("bare.git");
+    std::fs::create_dir_all(&bare).expect("bare dir");
+    run_git(&bare, &["init", "--quiet", "--bare"]);
+    let repo = git2::Repository::open(&bare).expect("open bare");
+    assert_eq!(repo_label(&repo), None);
+}
+
+#[test]
+fn hooks_of_a_linked_worktree_live_in_the_shared_common_dir() {
+    let tmp = TempDir::new().expect("tempdir");
+    let (main, wt) = main_and_linked_worktree(&tmp);
+
+    install_hook(&wt, "post-commit", REINDEX_HOOK_SCRIPT).expect("install from worktree");
+
+    let shared = main.join(".git").join("hooks");
+    assert_eq!(
+        hooks_dir(&wt)
+            .canonicalize()
+            .expect("canonical wt hooks dir"),
+        shared.canonicalize().expect("canonical shared hooks dir")
+    );
+    assert!(shared.join("post-commit").is_file());
+    assert!(hook_installed(&wt, "post-commit"));
+    assert!(
+        hook_installed(&main, "post-commit"),
+        "the main worktree sees the hook the linked worktree installed"
+    );
+
+    remove_hook(&wt, "post-commit").expect("remove from worktree");
+    assert!(!hook_installed(&main, "post-commit"));
+    assert!(!shared.join("post-commit").exists());
+}
+
+#[test]
+fn hooks_dir_falls_back_to_dot_git_hooks_outside_a_repository() {
+    let tmp = TempDir::new().expect("tempdir");
+    assert_eq!(hooks_dir(tmp.path()), tmp.path().join(".git").join("hooks"));
+}
+
+/// The shipped hook, run by git itself on a commit inside a linked worktree,
+/// must invoke `index-code` with the MAIN worktree's basename — the bug this
+/// pins was every worktree showing up as its own repo in the console. A stub
+/// `comemory` on `PATH` records its argv; the hook backgrounds the call, so
+/// the assertion polls for the file.
+#[test]
+fn reindex_hook_labels_a_linked_worktree_commit_with_the_main_repo_name() {
+    let tmp = TempDir::new().expect("tempdir");
+    let (_main, wt) = main_and_linked_worktree(&tmp);
+    install_hook(&wt, "post-commit", REINDEX_HOOK_SCRIPT).expect("install hook");
+
+    let bin = tmp.path().join("bin");
+    std::fs::create_dir_all(&bin).expect("bin dir");
+    let stub = bin.join("comemory");
+    std::fs::write(
+        &stub,
+        "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$COMEMORY_TEST_ARGV\"\n",
+    )
+    .expect("write stub");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    }
+    let argv_out = tmp.path().join("argv.txt");
+    let path = format!(
+        "{}:{}",
+        bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+
+    std::fs::write(wt.join("b.txt"), "worktree change").expect("write b.txt");
+    run_git(&wt, &["add", "b.txt"]);
+    let out = Command::new("git")
+        .args(["commit", "-q", "-m", "from the worktree"])
+        .current_dir(&wt)
+        .env("PATH", path)
+        .env("COMEMORY_TEST_ARGV", &argv_out)
+        .output()
+        .expect("spawn git commit");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let argv = loop {
+        if let Ok(s) = std::fs::read_to_string(&argv_out)
+            && !s.is_empty()
+        {
+            break s;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the backgrounded hook never ran the comemory stub"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    };
+    let argv: Vec<&str> = argv.lines().collect();
+    assert_eq!(
+        &argv[..3],
+        ["index-code", "--repo", "parent-repo"],
+        "{argv:?}"
+    );
+    assert_eq!(argv[3], "--path", "{argv:?}");
+    assert_eq!(
+        std::path::PathBuf::from(argv[4]),
+        wt.canonicalize().expect("canonical worktree"),
+        "the walked path is still the worktree the commit happened in"
+    );
 }
 
 /// Path to the real comemory checkout this test crate lives in — a genuine git

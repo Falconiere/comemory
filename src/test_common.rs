@@ -34,6 +34,8 @@ pub(crate) mod git_commit;
 pub(crate) mod git_repo;
 #[path = "../tests/common/git_sample.rs"]
 pub(crate) mod git_sample;
+#[path = "../tests/common/git_worktree.rs"]
+pub(crate) mod git_worktree;
 #[path = "../tests/common/runner.rs"]
 pub(crate) mod runner;
 #[path = "../tests/common/serve_learning_support.rs"]

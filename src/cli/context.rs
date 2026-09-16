@@ -45,7 +45,8 @@ breakdown in --json mode. The working-set affinity boost applies only
 when context runs inside the referenced repo's checkout (the CWD is used
 to detect dirty/recent files) AND the repo label used at index time
 (`index-code --repo`) matches the --repo flag — or, when --repo is
-omitted, the checkout directory's basename.";
+omitted, the label every linked worktree shares with its main working
+tree: that tree's basename.";
 
 /// Arguments to `comemory context`.
 #[derive(ClapArgs, Debug)]

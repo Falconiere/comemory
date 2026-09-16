@@ -136,17 +136,15 @@ impl WorkingSet {
             );
             return WorkingSet::default();
         };
-        let label = if let Some(r) = repo_filter {
-            r.to_string()
-        } else {
-            let basename = git
-                .workdir()
-                .and_then(Path::file_name)
-                .and_then(|n| n.to_str());
-            match basename {
-                Some(n) => n.to_string(),
+        let label = match repo_filter {
+            Some(r) => r.to_string(),
+            // The main worktree's basename (`git_utils::repo_label`), so a
+            // search from a linked worktree still matches the label the
+            // repo was indexed under.
+            None => match crate::git_utils::repo_label(&git) {
+                Some(n) => n,
                 None => return WorkingSet::default(),
-            }
+            },
         };
         let ws = from_repo(&git, &label);
         tracing::debug!(

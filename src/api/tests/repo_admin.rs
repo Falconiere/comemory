@@ -11,6 +11,7 @@
 //! AC-18's "every code row goes, no memory row does".
 
 use crate::test_common::git_sample;
+use crate::test_common::git_worktree::add_worktree;
 
 use comemory::api::index_code::IndexMode;
 use comemory::api::repo_admin::{ArchiveRequest, ConnectRequest, PatchRequest};
@@ -103,6 +104,24 @@ fn connect_registers_the_root_and_defaults_the_label_to_the_basename() {
     assert_eq!(inventory.repos.len(), 1);
     assert_eq!(inventory.repos[0].repo, "sample-repo");
     assert!(!inventory.repos[0].archived);
+}
+
+#[test]
+fn connect_from_a_linked_worktree_defaults_the_label_to_the_main_worktree() {
+    let home = TempDir::new().expect("home");
+    let workspace = TempDir::new().expect("workspace");
+    let repo = git_sample::build_sample_repo(workspace.path());
+    let worktree = workspace.path().join("sample-repo-pr-7");
+    add_worktree(&repo, &worktree, "pr-7");
+    let (paths, cfg, mut conn) = ctx_over(&home);
+    let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+
+    let resp = connect_root(&mut ctx, &worktree, None).expect("connect");
+    assert_eq!(
+        resp.repo, "sample-repo",
+        "a worktree connects under the main repo's name, not its own directory"
+    );
+    assert_eq!(resp.root_path, canonical(&worktree));
 }
 
 #[test]

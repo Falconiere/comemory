@@ -22,7 +22,8 @@ const TRIGGER_KEY_PREFIX: &str = "lazy_reindex_head:";
 /// label `index-code` will be invoked with and the absolute working-tree
 /// root it will walk.
 pub(crate) struct RepoContext {
-    /// Repo label (the `--repo` filter, else the working-tree basename).
+    /// Repo label (the `--repo` filter, else the main worktree's basename
+    /// via `git_utils::repo_label`).
     pub repo: String,
     /// Absolute working-tree root (the `index-code --path` argument).
     pub root: PathBuf,
@@ -151,16 +152,20 @@ pub(crate) fn maybe_trigger(
 
 /// Resolve the repo label + working-tree root from the process CWD, using
 /// the same policy as [`crate::retrieval::code_rerank::WorkingSet::from_cwd`]:
-/// discover the repo from the CWD, take the `--repo` filter as the label
-/// (else the working-tree directory basename). Returns `None` off-repo, on
-/// a bare repo (no workdir), or when the basename is not valid UTF-8.
+/// discover the repo from the CWD, take the `--repo` filter as the label,
+/// else [`crate::git_utils::repo_label`] — the main worktree's basename, so
+/// a search from a linked worktree refreshes the main repo's index instead
+/// of spawning an `index-code` under the worktree's directory name. `root`
+/// stays the current checkout's working tree: that is where the files are.
+/// Returns `None` off-repo, on a bare repo (no workdir), or when the
+/// basename is not valid UTF-8.
 pub(crate) fn repo_context(repo_filter: Option<&str>) -> Option<RepoContext> {
     let cwd = std::env::current_dir().ok()?;
     let git = git2::Repository::discover(&cwd).ok()?;
     let root = git.workdir()?.to_path_buf();
     let repo = match repo_filter {
         Some(r) => r.to_string(),
-        None => root.file_name().and_then(|n| n.to_str())?.to_string(),
+        None => crate::git_utils::repo_label(&git)?,
     };
     Some(RepoContext { repo, root })
 }

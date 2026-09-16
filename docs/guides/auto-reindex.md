@@ -59,6 +59,19 @@ first lazy reindex runs from the current directory. It is best-effort
 throughout: if a reindex cannot start, the search still succeeds against the
 current index.
 
+### Worktrees
+
+A linked `git worktree` is the same repository, so it files under the same
+label: the basename of the **main** working tree (`~/src/comemory` and its
+worktree `~/src/comemory-pr-42` are both `comemory`), never the worktree's own
+directory name. That is the rule every inferred label follows — lazy reindex,
+the git hooks below, the working-set affinity prior, `comemory index`'s
+document sources, and the console's connect-repository default — and the same
+one the agent plugin's wrapper derives from `git rev-parse --git-common-dir`.
+Because one label has one recorded root, a search from a linked worktree does
+not reindex (the rule above); the index keeps following the checkout that
+first indexed it, and `--repo` still overrides the label explicitly.
+
 ### Archived and disconnected repos
 
 The console (`comemory serve`'s `/api/v1/repos` routes) offers two ways to
@@ -90,7 +103,10 @@ comemory install-hooks
 
 This installs `post-commit`, `post-merge`, and `post-checkout` hooks that
 trigger `comemory index-code`, so the index refreshes whenever your HEAD moves
-through git. Re-run with `--force` to overwrite existing hooks.
+through git. Re-run with `--force` to overwrite existing hooks. The hooks are
+written where git runs them — the shared `.git/hooks` of the main worktree, even
+when you install from a linked worktree — and a commit made in a linked worktree
+refreshes the main repo's label (see *Worktrees* above).
 
 ## Off / manual
 

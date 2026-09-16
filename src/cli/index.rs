@@ -36,8 +36,8 @@ pub struct Args {
     #[arg(required = true, value_name = "PATH")]
     pub path: Vec<PathBuf>,
     /// Repository label attached to every document under each registered
-    /// source. Defaults to the basename of the nearest enclosing git
-    /// worktree, when one exists.
+    /// source. Defaults to the basename of the enclosing git repository's
+    /// main working tree (linked worktrees share it), when one exists.
     #[arg(long)]
     pub repo: Option<String>,
     /// Exit `65` (`EX_DATAERR`) when any per-file error (corrupt/unreadable/
