@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.32.4] - 2026-09-16
+
+### Fixed
+
+- optimize graph and listing queries ([#160](https://github.com/Falconiere/comemory/pull/160))
+
 ## [0.32.3] - 2026-09-16
 
 ### Added
