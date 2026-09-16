@@ -146,46 +146,10 @@ pub fn list_memories(
     sort: SortBy,
 ) -> Result<ListPage> {
     let mut filters = String::new();
-    // Filter params come first; the windowed query appends the bound
-    // `LIMIT`/`OFFSET` after them. Boxed so the string filters and the
-    // integer window can share one `ToSql` list.
     let mut binds: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
-    if let Some(r) = filter.repo {
-        filters.push_str(" AND repo = ?");
-        binds.push(Box::new(r.to_string()));
-    }
-    if let Some(k) = filter.kind {
-        filters.push_str(" AND kind = ?");
-        binds.push(Box::new(k.to_string()));
-    }
-    if let Some(t) = filter.tag {
-        filters.push_str(" AND id IN (SELECT memory_id FROM memory_tags WHERE tag = ?)");
-        binds.push(Box::new(t.to_string()));
-    }
-    if let Some(min) = filter.min_quality {
-        filters.push_str(" AND quality >= ?");
-        binds.push(Box::new(i64::from(min)));
-    }
-    if let Some(q) = filter.q.map(str::trim).filter(|q| !q.is_empty()) {
-        filters.push_str(" AND body LIKE ? ESCAPE '\\'");
-        binds.push(Box::new(like_literal(q)));
-    }
-
-    let total: usize = {
-        // The COUNT carries only the filter params — never the window.
-        let count_sql = format!("SELECT count(*) FROM memories WHERE deleted_at IS NULL{filters}");
-        let mut stmt = conn.prepare(&count_sql)?;
-        let n: i64 = stmt.query_row(
-            rusqlite::params_from_iter(binds.iter().map(std::convert::AsRef::as_ref)),
-            |r| r.get(0),
-        )?;
-        usize::try_from(n).unwrap_or(0)
-    };
-
-    // `limit == 0` means "all": SQLite forbids a bare `OFFSET`, so use its
-    // `LIMIT -1` ("no limit") idiom while still honoring `offset`. Both are
-    // bound params appended after the filter params.
-    let limit_param: i64 = if limit == 0 {
+    append_filters(filter, &mut filters, &mut binds);
+    let total = count_matching(conn, &filters, &binds)?;
+    let limit_param = if limit == 0 {
         -1
     } else {
         i64::try_from(limit).unwrap_or(i64::MAX)
@@ -207,6 +171,57 @@ pub fn list_memories(
         .collect::<std::result::Result<Vec<_>, _>>()?;
     attach_tags(conn, &mut rows)?;
     Ok(ListPage { rows, total })
+}
+
+/// Append bound predicates shared by the total and page queries.
+fn append_filters(
+    filter: &ListFilter<'_>,
+    filters: &mut String,
+    binds: &mut Vec<Box<dyn rusqlite::ToSql>>,
+) {
+    if let Some(r) = filter.repo {
+        filters.push_str(" AND repo = ?");
+        binds.push(Box::new(r.to_string()));
+    }
+    if let Some(k) = filter.kind {
+        filters.push_str(" AND kind = ?");
+        binds.push(Box::new(k.to_string()));
+    }
+    if let Some(t) = filter.tag {
+        filters.push_str(" AND id IN (SELECT memory_id FROM memory_tags WHERE tag = ?)");
+        binds.push(Box::new(t.to_string()));
+    }
+    if let Some(min) = filter.min_quality {
+        filters.push_str(" AND quality >= ?");
+        binds.push(Box::new(i64::from(min)));
+    }
+    if let Some(q) = filter.q.map(str::trim).filter(|q| !q.is_empty()) {
+        // Trigrams narrow candidates; LIKE retains ASCII case folding and
+        // literal wildcard semantics. Short/NUL queries need the original scan.
+        if q.chars().count() >= 3 && !q.contains('\0') {
+            filters.push_str(
+                " AND rowid IN (SELECT rowid FROM memory_substring WHERE memory_substring MATCH ?)",
+            );
+            binds.push(Box::new(format!("\"{}\"", q.replace('"', "\"\""))));
+        }
+        filters.push_str(" AND body LIKE ? ESCAPE '\\'");
+        binds.push(Box::new(like_literal(q)));
+    }
+}
+
+/// Count the full filtered set before applying the page window.
+fn count_matching(
+    conn: &Connection,
+    filters: &str,
+    binds: &[Box<dyn rusqlite::ToSql>],
+) -> Result<usize> {
+    let sql = format!("SELECT count(*) FROM memories WHERE deleted_at IS NULL{filters}");
+    let n: i64 = conn.query_row(
+        &sql,
+        rusqlite::params_from_iter(binds.iter().map(std::convert::AsRef::as_ref)),
+        |r| r.get(0),
+    )?;
+    Ok(usize::try_from(n).unwrap_or(0))
 }
 
 /// Build one [`ListRow`] from a `SELECT id, kind, repo, author, md_path, body,

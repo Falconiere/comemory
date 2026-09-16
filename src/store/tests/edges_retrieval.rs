@@ -143,6 +143,38 @@ fn expand_memory_seeds_empty_seeds_json_is_empty() {
 }
 
 #[test]
+fn expand_memory_seeds_walks_both_directions_through_cycles() {
+    let conn = seed_db();
+    for id in ["aaaa0001", "bbbb0002", "cccc0003", "dddd0004"] {
+        seed_memory(&conn, id, 0);
+    }
+    edge(&conn, "bbbb0002", "aaaa0001", "relates_to");
+    edge(&conn, "bbbb0002", "cccc0003", "relates_to");
+    edge(&conn, "cccc0003", "bbbb0002", "relates_to");
+    edge(&conn, "cccc0003", "dddd0004", "conflicts_with");
+    let seeds = serde_json::to_string(&["aaaa0001"]).expect("json");
+    let rows = expand_memory_seeds(
+        &conn,
+        &SeedWalk {
+            rels_clause: "'relates_to'",
+            seeds_json: &seeds,
+            hops: 3,
+            max_walk: 4096,
+            repo: Some("r"),
+            kind: None,
+            since: None,
+            cutoff: None,
+            cap: 256,
+        },
+    )
+    .expect("walk");
+    assert_eq!(
+        rows,
+        vec![("bbbb0002".to_string(), 1), ("cccc0003".to_string(), 2)]
+    );
+}
+
+#[test]
 fn walk_context_edges_orders_by_rel_then_node_and_walks_two_hops() {
     let conn = seed_db();
     for id in ["aaaa0001", "bbbb0002", "cccc0003"] {

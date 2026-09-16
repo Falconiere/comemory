@@ -357,6 +357,7 @@ fn schema_fidelity_virtual_tables_match_the_live_database() {
             "document_fts",
             "edge_fts",
             "memory_fts",
+            "memory_substring",
             "memory_vec"
         ],
         "the declared virtual tables"

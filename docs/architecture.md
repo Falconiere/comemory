@@ -102,6 +102,7 @@ migrations stay idempotent.
 | `schema_meta` | Key/value rows: schema version, locked-in vector dimensions, code-format version, and migration markers |
 | `memories` | Frontmatter + body mirror keyed by memory id, plus a materialized `rank_score` (memory-graph PageRank) |
 | `memory_fts` (FTS5) | Lexical index over memory body + title |
+| `memory_substring` (FTS5) | Trigram candidates for listing by literal body substring; external content references `memories`, synchronized by insert/delete/update triggers |
 | `memory_vec` (vec0) | Dense vectors keyed by memory id; dim locked at first save |
 | `code_symbols` | Symbols extracted from indexed repos (file, kind, snippet, simhash) plus a materialized `rank_score` (PageRank) and `parent_id` (cAST chunk → parent symbol) |
 | `code_fts` (FTS5) | Lexical index over symbol identifiers + snippets + path tokens |
@@ -114,6 +115,18 @@ Every dense lookup goes through `sqlite-vec`'s `vec0` virtual table with a
 dimension guard so a mismatched embedder fails fast (`VecDimMismatch`)
 instead of corrupting the index. FTS5 hits and vector hits are fused via
 Reciprocal Rank Fusion (RRF, `k = 60` by default).
+
+Memory listing uses partial creation-order indexes for unfiltered, repo, kind,
+and combined repo/kind pages. Substring filters with at least three characters
+use trigram candidates plus the original escaped `LIKE` check; shorter queries
+and queries containing NUL retain the scan path. Migration 19 backfills the
+index, and metadata-only updates leave it untouched. The index is rebuilt
+automatically as markdown memories are reinserted during `comemory rebuild`.
+
+Graph expansion seeks both edge orientations directly. Citation counts seek
+exact file IDs and literal symbol-prefix ranges. Recent-query suggestions read
+in timestamp/ID order and stop after enough distinct Unicode-lowercased queries;
+retrieval time windows and repository run history have dedicated indexes.
 
 ### 3.2 Schema migration & upgrade safety
 

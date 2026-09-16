@@ -11,7 +11,8 @@
 use crate::test_common::code_seed;
 use comemory::memory::{Frontmatter, Kind, References, Relations};
 use comemory::store::code_graph_nodes::{
-    citing_memories, fetch_node, fetch_nodes, fetch_nodes_for_pairs, top_symbols,
+    FileExpr, cites_file_predicate, citing_memories, fetch_node, fetch_nodes,
+    fetch_nodes_for_pairs, top_symbols,
 };
 use comemory::store::edges::{self, EdgeKey, REFERENCES_FILE, REFERENCES_SYMBOL};
 use comemory::store::memory_row;
@@ -181,4 +182,112 @@ fn citing_memories_matches_the_cites_file_predicate_and_stays_distinct() {
 
     let untouched = citing_memories(&conn, "demo", "b.rs").expect("citing_memories b");
     assert!(untouched.is_empty());
+}
+
+#[test]
+fn citation_range_is_literal_and_uses_both_index_searches() {
+    let (_d, conn) = code_seed::open_db();
+    let path = "src/memory_list%.rs";
+    code_seed::seed_symbol(&conn, "demo", path, "node");
+    for id in ["aaaaaaaa", "bbbbbbbb", "cccccccc", "dddddddd", "eeeeeeee"] {
+        seed_memory(&conn, id, id);
+    }
+    for (src_id, dst_id, rel) in [
+        ("aaaaaaaa", "demo:src/memory_list%.rs", REFERENCES_FILE),
+        (
+            "aaaaaaaa",
+            "demo:src/memory_list%.rs:method",
+            REFERENCES_SYMBOL,
+        ),
+        (
+            "bbbbbbbb",
+            "demo:src/memory_list%.rs:inner:method",
+            REFERENCES_SYMBOL,
+        ),
+        (
+            "cccccccc",
+            "demo:src/memory_listX.rs:method",
+            REFERENCES_SYMBOL,
+        ),
+        (
+            "dddddddd",
+            "demo:src/memory_list%.rs-extra:method",
+            REFERENCES_SYMBOL,
+        ),
+        (
+            "eeeeeeee",
+            "other:src/memory_list%.rs:method",
+            REFERENCES_SYMBOL,
+        ),
+    ] {
+        edges::insert(
+            &conn,
+            EdgeKey {
+                src_kind: "memory",
+                src_id,
+                dst_kind: if rel == REFERENCES_FILE {
+                    "file"
+                } else {
+                    "symbol"
+                },
+                dst_id,
+                rel,
+            },
+        )
+        .expect("insert citation");
+    }
+    let rows = citing_memories(&conn, "demo", path).expect("citing memories");
+    assert_eq!(
+        rows.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
+        vec!["aaaaaaaa", "bbbbbbbb"]
+    );
+    assert_eq!(
+        fetch_node(&conn, "demo", path)
+            .expect("node")
+            .expect("indexed")
+            .memories,
+        2
+    );
+
+    let sql = format!(
+        "EXPLAIN QUERY PLAN SELECT e.src_id FROM edges e WHERE {}",
+        cites_file_predicate(FileExpr::FirstParam)
+    );
+    let mut stmt = conn.prepare(&sql).expect("prepare plan");
+    let steps = stmt
+        .query_map([format!("demo:{path}")], |row| row.get::<_, String>(3))
+        .expect("plan")
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .expect("steps");
+    assert_eq!(
+        steps
+            .iter()
+            .filter(|step| step.contains("USING COVERING INDEX idx_edges_citation"))
+            .count(),
+        2,
+        "file equality and symbol range must each seek the citation index: {steps:?}"
+    );
+
+    let correlated_sql = format!(
+        "EXPLAIN QUERY PLAN SELECT c.repo, c.path, MAX(c.rank_score), COUNT(*), {} \
+           FROM code_symbols c WHERE c.parent_id IS NULL \
+           GROUP BY c.repo, c.path",
+        super::extra_columns()
+    );
+    let mut stmt = conn
+        .prepare(&correlated_sql)
+        .expect("prepare correlated plan");
+    let correlated_steps = stmt
+        .query_map([], |row| row.get::<_, String>(3))
+        .expect("correlated plan")
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .expect("correlated steps");
+    assert_eq!(
+        correlated_steps
+            .iter()
+            .filter(|step| step.contains("USING COVERING INDEX idx_edges_citation"))
+            .count(),
+        2,
+        "correlated node count must seek both citation ranges: {correlated_steps:?}"
+    );
 }

@@ -37,7 +37,7 @@ is the source of truth and one SQLite file (`comemory.db`) backs FTS5 +
 - **Source of truth:** markdown files with YAML frontmatter at
   `~/.comemory/memories/{id}-{slug}.md` (override with `COMEMORY_DATA_DIR`).
 - **Single SQLite file:** `~/.comemory/comemory.db` with `memories`,
-  `memory_fts` (FTS5), `memory_vec` (`sqlite-vec` `vec0`), `code_symbols`,
+  `memory_fts` (FTS5), `memory_substring` (external-content trigram FTS5), `memory_vec` (`sqlite-vec` `vec0`), `code_symbols`,
   `code_fts`, `code_vec`, `edges`, `schema_meta`, plus stats / repo-marker
   tables. `rusqlite 0.40` with `bundled` + `load_extension` features.
 - **Declared schema (toolu-orm 0.6):** every table in `comemory.db` is a
@@ -67,6 +67,10 @@ is the source of truth and one SQLite file (`comemory.db`) backs FTS5 +
 - **No in-process LLM.** All ranking is deterministic (RRF fusion of FTS5 +
   `sqlite-vec`, a tiered lexical fallback ladder ending in mined learned
   expansions, edge walks).
+
+Migration 19 adds graph/history/listing indexes and `memory_substring`. Its
+triggers maintain the substring index for every memory write; listing retains
+literal `LIKE` verification and a scan fallback for queries under three characters.
 
 ## Key Commands
 

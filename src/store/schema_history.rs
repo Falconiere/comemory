@@ -84,7 +84,8 @@ pub struct IndexFailures {
 
 /// `index_runs`: one row per `index-code` run, outcomes included.
 #[table(name = "index_runs")]
-#[index("idx_index_runs_started", desc(started_at))]
+#[index("idx_index_runs_started", desc(started_at), id)]
+#[index("idx_index_runs_repo_started", repo, desc(started_at), id)]
 pub struct IndexRuns {
     /// Random hex run id.
     #[column(primary_key)]

@@ -41,7 +41,8 @@ One line per file:
 | File | Purpose |
 | --- | --- |
 | `_journal.json` | toolu-orm journal: every migration in apply order with its SHA-256 (`sha256:<hex>` of the file bytes) |
-| `0016_v16_sync.snapshot.json` | The declared schema (`store::schema::registry()`) as of v16 — the baseline the next generate diffs against |
+| `0016_v16_sync.snapshot.json` | Initial declared schema baseline at v16 |
+| `0019_query_performance.snapshot.json` | Current declared schema, including query indexes and substring search |
 | `0001_schema_meta.sql` | The `schema_meta` key/value table itself (bootstraps version tracking) |
 | `0002_v2_tables.sql` | v2: `memories`, `memory_fts`, `memory_vec`, `code_symbols`, `code_fts`, `code_vec`, `edges` |
 | `0003_stats_tables.sql` | Stats tables migrated from the old `stats.db` (v0.2 unification): `retrieval_log` |
@@ -60,6 +61,7 @@ One line per file:
 | `0016_v16_sync.sql` | v16: cloud sync — `sync_log`, `sync_state`, `sync_binding`, `memory_vector_model` schema_meta key |
 | `0017_sync_repush.sql` | v17: rewind every `sync_state.pushed_seq` once, so memories the old push filter stranded behind the cursor are re-offered |
 | `0018_scheme_path_refs.sql` | v18: delete the `references_*` edges, `code_ref` anchors and `edge_fts` triplets minted from `file:/…`, `./…`, `../…` path expressions (#153) |
+| `0019_query_performance.sql` | v19: graph, history, and listing indexes; external-content trigram index with backfill and synchronization triggers |
 
 When you add a migration, append the next-numbered file and add its row above
 — never edit an existing one.

@@ -37,6 +37,7 @@
 //! `connection::open` path — no mocks.
 
 use comemory::store::connection;
+use comemory::store::memory_list::{self, ListFilter, SortBy};
 use comemory::store::migrate::tests_2::build_legacy_db;
 use comemory::store::migrate::{self};
 use tempfile::tempdir;
@@ -123,5 +124,32 @@ fn upgrade_matrix_every_historical_version_survives_to_head() {
     );
     for through in versions {
         assert_version_survives_to_head(through);
+    }
+}
+
+#[test]
+fn substring_upgrade_backfills_existing_rows_and_reopens_idempotently() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("comemory.db");
+    build_legacy_db(&path, 18, "18", "aaaa0018");
+    for _ in 0..2 {
+        let conn = connection::open(&path).unwrap();
+        let page = memory_list::list_memories(
+            &conn,
+            &ListFilter {
+                q: Some("body"),
+                ..ListFilter::default()
+            },
+            1,
+            0,
+            SortBy::Created,
+        )
+        .unwrap();
+        assert_eq!(page.rows.len(), 1);
+        assert_eq!(page.rows[0].id, "aaaa0018");
+        conn.execute_batch(
+            "INSERT INTO memory_substring(memory_substring, rank) VALUES('integrity-check', 1);",
+        )
+        .unwrap();
     }
 }

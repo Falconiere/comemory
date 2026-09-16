@@ -114,22 +114,16 @@ fn expansions(conn: &Connection, q: &str, limit: usize) -> Result<Vec<Expansion>
 /// wanted *with its own* `query_id`, and a bare `GROUP BY` would pick an
 /// arbitrary row's id.
 fn recent(conn: &Connection, q: &str, limit: usize) -> Result<Vec<RecentQuery>> {
-    let rows = retrieval_log::prefix_matches(conn, SEARCH_CODE, &like_prefix(q))?;
-    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let mut out = Vec::new();
-    for row in rows {
-        if out.len() >= limit {
-            break;
-        }
-        if seen.insert(row.query.to_lowercase()) {
-            out.push(RecentQuery {
+    Ok(
+        retrieval_log::distinct_prefix_matches(conn, SEARCH_CODE, &like_prefix(q), limit)?
+            .into_iter()
+            .map(|row| RecentQuery {
                 query: row.query,
                 query_id: row.query_id,
                 at: row.at,
-            });
-        }
-    }
-    Ok(out)
+            })
+            .collect(),
+    )
 }
 
 /// `LIKE` prefix pattern for a user-supplied string, built on the shared

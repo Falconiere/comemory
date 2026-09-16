@@ -209,3 +209,103 @@ fn slug_is_file_stem_id_dash_slug() {
     assert_eq!(row.kind, "bug");
     assert_eq!(row.author, "alice");
 }
+
+#[test]
+fn substring_listing_matches_literal_like_across_unicode_and_punctuation() {
+    let (_dir, conn) = seeded_db();
+    let bodies = [
+        include_str!("../memory_list.rs"),
+        "SQLite query: 100% literal_under_score \\ escaped \"quotes\" café CAFÉ 日本語",
+        "sqlite QUERY: 100 percent literalXunderXscore café café",
+    ];
+    for (id, body) in ["aaaa0001", "aaaa0002", "aaaa0003"].into_iter().zip(bodies) {
+        conn.execute("UPDATE memories SET body = ?1 WHERE id = ?2", [body, id])
+            .unwrap();
+    }
+    for q in [
+        "SQLite",
+        "100%",
+        "_under_",
+        "\\",
+        "\"quotes\"",
+        "café",
+        "CAFÉ",
+        "日本語",
+        "日",
+        "bo",
+        "%",
+        "OR",
+        "missing",
+        "body\0ignored",
+    ] {
+        let pattern = format!("%{}%", memory_list::like_escape(q));
+        let expected: Vec<String> = conn.prepare(
+            "SELECT id FROM memories WHERE deleted_at IS NULL AND body LIKE ?1 ESCAPE '\\' ORDER BY created_at DESC, id ASC",
+        ).unwrap().query_map([pattern], |r| r.get(0)).unwrap().collect::<Result<_, _>>().unwrap();
+        let page = memory_list::list_memories(
+            &conn,
+            &ListFilter {
+                q: Some(q),
+                ..ListFilter::default()
+            },
+            0,
+            0,
+            SortBy::Created,
+        )
+        .unwrap();
+        assert_eq!(ids(&page.rows), expected, "query {q:?}");
+        assert_eq!(page.total, expected.len(), "query {q:?}");
+    }
+}
+
+#[test]
+fn substring_index_tracks_updates_deletes_and_vacuum() {
+    let (_dir, conn) = seeded_db();
+    let count = |term: &str| -> i64 {
+        conn.query_row(
+            "SELECT count(*) FROM memory_substring WHERE memory_substring MATCH ?1",
+            [term],
+            |r| r.get(0),
+        )
+        .unwrap()
+    };
+    assert_eq!(count("body"), 8);
+    conn.execute(
+        "UPDATE memories SET body = 'SQLite query performance' WHERE id = 'aaaa0001'",
+        [],
+    )
+    .unwrap();
+    assert_eq!(count("body"), 7);
+    assert_eq!(count("performance"), 1);
+    conn.execute("DELETE FROM memories WHERE id = 'aaaa0001'", [])
+        .unwrap();
+    assert_eq!(count("performance"), 0);
+    conn.execute_batch("VACUUM; INSERT INTO memory_substring(memory_substring, rank) VALUES('integrity-check', 1);").unwrap();
+    assert_eq!(count("body"), 7);
+}
+
+#[test]
+fn created_listing_uses_ordered_indexes() {
+    let (_dir, conn) = seeded_db();
+    for filter in [
+        "",
+        " AND repo = 'alpha'",
+        " AND kind = 'bug'",
+        " AND repo = 'alpha' AND kind = 'bug'",
+    ] {
+        let sql = format!(
+            "EXPLAIN QUERY PLAN SELECT id, body FROM memories WHERE deleted_at IS NULL{filter} ORDER BY created_at DESC, id ASC LIMIT 3"
+        );
+        let plan: Vec<String> = conn
+            .prepare(&sql)
+            .unwrap()
+            .query_map([], |r| r.get(3))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert!(
+            !plan.iter().any(|line| line.contains("TEMP B-TREE")),
+            "{filter}: {plan:?}"
+        );
+    }
+}

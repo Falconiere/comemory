@@ -1,18 +1,6 @@
-//! The declared schema: `registry()` — every table whose live DDL is stated
-//! as a toolu-orm `#[table]` / `#[fts5_table]` / `#[vec0_table]` struct in
-//! the `schema_*.rs` siblings — and `DECLARED_TABLES`, the same set by name.
-//!
-//! The registry is what `examples/migrations.rs` diffs against
-//! `migrations/<newest>.snapshot.json` to generate the next migration, and
-//! what the colocated fidelity test proves identical to the database the
-//! frozen `migrations/*.sql` chain builds. Since toolu-orm 0.6.0 every
-//! table in `comemory.db` is declared here — the six upstream gaps filed
-//! during the adoption (#64–#70) all shipped the same day; only
-//! `sqlite_sequence`, SQLite's own `AUTOINCREMENT` bookkeeping, is not a
-//! declaration.
-//!
-//! Runtime apply is unchanged and lives in `store::migrate` — this module
-//! never touches a connection.
+//! Declared table registry for migration generation and schema fidelity tests.
+//! Every application table is declared in a `schema_*` sibling; only SQLite's
+//! internal bookkeeping is excluded. Runtime apply lives in `store::migrate`.
 
 use toolu_orm::core::schema::SchemaRegistry;
 use toolu_orm::core::table::TableSchema;
@@ -25,7 +13,7 @@ use super::schema_history::{EvalRuns, GcRuns, IndexFailures, IndexRuns};
 use super::schema_learning::{
     BanditArms, CodeFeedback, Feedback, FeedbackEvents, QueryExpansions, RetrievalLog,
 };
-use super::schema_memory::{Memories, MemoryFts, MemoryTags, MemoryVec};
+use super::schema_memory::{Memories, MemoryFts, MemorySubstring, MemoryTags, MemoryVec};
 use super::schema_sync::{SyncBinding, SyncLog, SyncState};
 
 /// Every table `registry()` declares, by name, sorted. The fidelity test
@@ -52,6 +40,7 @@ pub const DECLARED_TABLES: &[&str] = &[
     "indexed_files",
     "memories",
     "memory_fts",
+    "memory_substring",
     "memory_tags",
     "memory_vec",
     "query_expansions",
@@ -91,6 +80,7 @@ pub fn registry() -> SchemaRegistry {
         IndexedFiles::table_def(),
         Memories::table_def(),
         MemoryFts::table_def(),
+        MemorySubstring::table_def(),
         MemoryTags::table_def(),
         MemoryVec::table_def(),
         QueryExpansions::table_def(),

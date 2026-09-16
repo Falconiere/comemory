@@ -30,7 +30,7 @@ pub(crate) mod preflight;
 /// it is what `schema_meta` stores and what several eval modules hash via
 /// `.as_bytes()` — not derived from [`CURRENT_VERSION_NUM`]: on the pinned
 /// stable toolchain `const … = &N.to_string()` fails with `E0015`.
-pub const CURRENT_VERSION: &str = "18";
+pub const CURRENT_VERSION: &str = "19";
 
 /// The same value numerically as [`CURRENT_VERSION`], for callers that need
 /// to compare or count migrations. Agreement between the two is asserted by
@@ -119,6 +119,8 @@ pub const M_V17: &str = include_str!("../../migrations/0017_sync_repush.sql");
 /// `file:/…`, `./…` and `../…` path expressions before it learned to refuse
 /// them.
 pub const M_V18: &str = include_str!("../../migrations/0018_scheme_path_refs.sql");
+/// v19: query indexes and the automatically maintained substring index.
+pub const M_V19: &str = include_str!("../../migrations/0019_query_performance.sql");
 
 /// Apply all pending migrations. Safe to re-run; each migration is only
 /// applied if its key is absent from `schema_meta`, and each post-apply
@@ -269,25 +271,8 @@ fn recompute_simhashes(
     Ok(())
 }
 
-/// Upsert the current schema version into `schema_meta`.
-///
-/// Read-first: on an up-to-date schema the stored version already equals
-/// `version`, so the UPSERT is skipped. Without this guard every `open`
-/// would write here — including read-only commands like `search`, `list`,
-/// and `context` — taking SQLite's single WAL write lock on each run. That
-/// write blocks on, and after `busy_timeout` fails against, any concurrent
-/// writer (e.g. a detached `maintain`), surfacing as "database is locked"
-/// on a command the user issued as a pure read. With every other migration
-/// step gated behind its `schema_meta` marker, this guard makes an open on
-/// a current schema perform zero writes.
-///
-/// Also refuses to lower a stored version: a database written by a newer
-/// comemory must not have its `schema_meta.version` stomped downward by an
-/// older binary that no-ops through every marker it recognizes. Both sides
-/// are parsed to `u32` before comparing — the values are `&str`, and
-/// lexicographically `"13" < "9"`, so a naive string comparison would
-/// refuse every v9 (or any single-digit-version) database's upgrade. A
-/// stored value that fails to parse is treated as lower and overwritten.
+/// Advance the stored version, skipping unchanged values to avoid a WAL write
+/// lock on reads. Compare numerically to refuse downgrades; replace invalid values.
 fn set_version(conn: &Connection, version: &str) -> Result<()> {
     let current = conn
         .query_row(

@@ -9,7 +9,7 @@
 //! real files copied into a tempdir so `run_generate` can write beside them.
 //!
 //! Proves two things a hand-inspected snapshot cannot: that the shipped
-//! `0016_v16_sync.snapshot.json` describes `registry()` exactly (a struct
+//! newest shipped snapshot describes `registry()` exactly (a struct
 //! edited without `just migration <name>` makes `run_generate` emit a file
 //! here), and that what `run_generate` emits for a real change is SQL the
 //! runtime runner applies as-is onto a real database — `execute_batch` over
@@ -36,7 +36,7 @@ const SHIPPED: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/migrations");
 /// snapshot — everything `run_generate` reads.
 fn shipped_copy() -> (tempfile::TempDir, PathBuf) {
     let dir = tempdir().expect("tempdir");
-    for name in ["_journal.json", "0016_v16_sync.snapshot.json"] {
+    for name in ["_journal.json", "0019_query_performance.snapshot.json"] {
         fs::copy(Path::new(SHIPPED).join(name), dir.path().join(name))
             .unwrap_or_else(|e| panic!("copy {name}: {e}"));
     }
@@ -69,7 +69,7 @@ fn schema_drift_registry_matches_shipped_snapshot() {
     assert_eq!(
         written, None,
         "run_generate wrote {written:?}: the registry differs from \
-         migrations/0016_v16_sync.snapshot.json (a struct changed without `just migration <name>`, \
+         migrations/0019_query_performance.snapshot.json (a struct changed without `just migration <name>`, \
          or a declared table was not re-adopted with `just migration-adopt`)"
     );
     assert_eq!(entries(&dir), before, "a no-op generate must write nothing");

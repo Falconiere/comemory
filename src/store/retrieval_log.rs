@@ -4,6 +4,8 @@
 //! provenance query behind [`crate::graph::search_edit`]'s search→edit
 //! lookback.
 
+use std::collections::HashSet;
+
 use rusqlite::{Connection, params};
 
 use crate::prelude::*;
@@ -121,30 +123,66 @@ pub fn queries_excluding_source(
 
 /// Every `retrieval_log` row whose `source` is not `exclude_source` and
 /// whose `query` matches `like_prefix` (an already-escaped `LIKE` pattern,
-/// paired with `ESCAPE '\'`), newest first — behind `api::suggest`'s
-/// "recent" list. The caller does the dedup-by-lowercased-text and the
-/// `limit` cut, since the newest row of each distinct text must keep its
-/// own `query_id`, which a bare `GROUP BY` cannot guarantee.
+/// paired with `ESCAPE '\'`), newest first.
 pub fn prefix_matches(
     conn: &Connection,
     exclude_source: &str,
     like_prefix: &str,
 ) -> Result<Vec<LogQueryRow>> {
+    let mut out = Vec::new();
+    scan_prefix_matches(conn, exclude_source, like_prefix, |row| {
+        out.push(row);
+        true
+    })?;
+    Ok(out)
+}
+
+/// The newest `limit` distinct prefix matches, retaining the first row's
+/// `query_id` and using Rust Unicode lowercase for deduplication. Stops the
+/// ordered SQLite cursor once enough distinct queries have been found.
+pub fn distinct_prefix_matches(
+    conn: &Connection,
+    exclude_source: &str,
+    like_prefix: &str,
+    limit: usize,
+) -> Result<Vec<LogQueryRow>> {
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
+    let mut seen = HashSet::new();
+    let mut out = Vec::new();
+    scan_prefix_matches(conn, exclude_source, like_prefix, |row| {
+        if seen.insert(row.query.to_lowercase()) {
+            out.push(row);
+        }
+        out.len() < limit
+    })?;
+    Ok(out)
+}
+
+/// Visit matching rows in index order until `visit` returns false.
+fn scan_prefix_matches(
+    conn: &Connection,
+    exclude_source: &str,
+    like_prefix: &str,
+    mut visit: impl FnMut(LogQueryRow) -> bool,
+) -> Result<()> {
     let mut stmt = conn.prepare(
         "SELECT query, query_id, at FROM retrieval_log \
           WHERE source != ?1 AND query LIKE ?2 ESCAPE '\\' \
           ORDER BY at DESC, query_id DESC",
     )?;
-    let rows = stmt
-        .query_map(params![exclude_source, like_prefix], |r| {
-            Ok(LogQueryRow {
-                query: r.get(0)?,
-                query_id: r.get(1)?,
-                at: r.get(2)?,
-            })
-        })?
-        .collect::<std::result::Result<_, _>>()?;
-    Ok(rows)
+    let mut rows = stmt.query(params![exclude_source, like_prefix])?;
+    while let Some(row) = rows.next()? {
+        if !visit(LogQueryRow {
+            query: row.get(0)?,
+            query_id: row.get(1)?,
+            at: row.get(2)?,
+        }) {
+            break;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

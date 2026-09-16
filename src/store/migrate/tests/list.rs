@@ -132,10 +132,17 @@ fn normalize_for_pattern_match(sql: &str) -> String {
 /// True when `sql` contains any [`DESTRUCTIVE_PATTERNS`] shape, matched
 /// case- and whitespace-insensitively — see [`normalize_for_pattern_match`].
 fn sql_demands_destructive(sql: &str) -> bool {
-    let normalized = normalize_for_pattern_match(sql);
-    DESTRUCTIVE_PATTERNS
-        .iter()
-        .any(|pattern| normalized.contains(pattern))
+    // UPDATE in a trigger event declares when it fires; only its body can
+    // update existing data. Leave any UPDATE statement in that body visible.
+    let normalized = normalize_for_pattern_match(sql)
+        .replace("AFTER UPDATE ON", "AFTER CHANGE ON")
+        .replace("BEFORE UPDATE ON", "BEFORE CHANGE ON")
+        .replace("INSTEAD OF UPDATE ON", "INSTEAD OF CHANGE ON");
+    let tokens: Vec<_> = normalized.split_whitespace().collect();
+    DESTRUCTIVE_PATTERNS.iter().any(|pattern| {
+        let words: Vec<_> = pattern.split_whitespace().collect();
+        tokens.windows(words.len()).any(|window| window == words)
+    })
 }
 
 /// Any migration whose SQL text matches [`DESTRUCTIVE_PATTERNS`] must be
@@ -217,6 +224,8 @@ fn migration_integrity_destructive_matcher_is_case_and_whitespace_insensitive() 
         "SELECT * FROM memories;",
         "INSERT INTO memories VALUES (1);",
         "CREATE INDEX idx ON memories(id);",
+        "CREATE TRIGGER t AFTER UPDATE ON memories BEGIN INSERT INTO log VALUES(1); END;",
+        "CREATE TRIGGER memories_update AFTER UPDATE ON memories BEGIN INSERT INTO log VALUES(1); END;",
     ];
     for sql in negative {
         assert!(
@@ -224,6 +233,9 @@ fn migration_integrity_destructive_matcher_is_case_and_whitespace_insensitive() 
             "expected {sql:?} to NOT be classed destructive"
         );
     }
+    assert!(sql_demands_destructive(
+        "CREATE TRIGGER t AFTER UPDATE ON memories BEGIN UPDATE log SET n = 1; END;"
+    ));
 }
 
 /// The declared `Migration::markers` — unioned across `MIGRATIONS` — must

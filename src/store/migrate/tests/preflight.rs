@@ -75,16 +75,16 @@ fn real_current_database_is_not_refused() {
     assert_eq!(bak_count, 0, "an already-current DB must create no .bak");
 }
 
-/// Insert a bogus `0019_future` marker directly, simulating a database
-/// written by a newer comemory. `version_value` lets the caller pin
-/// `schema_meta.version` at either `"19"` (a completed future upgrade) or
-/// `"18"` (a crash between the last migration and the version write) —
-/// both must be refused identically, since preflight never reads
-/// `version` at all.
+/// An unknown migration immediately beyond this build's supported version.
+fn future_marker() -> String {
+    format!("{:04}_future", migrate::CURRENT_VERSION_NUM + 1)
+}
+
+/// Simulate a future migration, with either a completed or stale version stamp.
 fn inject_future_marker(conn: &Connection, version_value: &str) {
     conn.execute(
-        "INSERT INTO schema_meta(key, value) VALUES('0019_future', '1')",
-        [],
+        "INSERT INTO schema_meta(key, value) VALUES(?1, '1')",
+        [future_marker()],
     )
     .expect("seed future marker");
     conn.execute(
@@ -118,11 +118,11 @@ fn assert_future_marker_is_refused(version_value: &str) {
     );
     let msg = err.to_string();
     assert!(
-        msg.contains("0019_future"),
+        msg.contains(&future_marker()),
         "error must name the unknown key, got: {msg}"
     );
     assert!(
-        msg.contains("0018_scheme_path_refs"),
+        msg.contains(list::MIGRATIONS.last().expect("migrations").key),
         "error must name the highest key this build supports, got: {msg}"
     );
 
@@ -137,13 +137,13 @@ fn assert_future_marker_is_refused(version_value: &str) {
 }
 
 #[test]
-fn unknown_marker_is_refused_when_version_already_says_nineteen() {
-    assert_future_marker_is_refused("19");
+fn unknown_marker_is_refused_when_version_already_says_future() {
+    assert_future_marker_is_refused(&(migrate::CURRENT_VERSION_NUM + 1).to_string());
 }
 
 #[test]
-fn unknown_marker_is_refused_when_version_still_says_eighteen_crash_before_set_version() {
-    assert_future_marker_is_refused("18");
+fn unknown_marker_is_refused_when_version_still_says_current_after_crash() {
+    assert_future_marker_is_refused(migrate::CURRENT_VERSION);
 }
 
 #[test]
@@ -263,15 +263,29 @@ fn additive_only_pending_proceeds_when_snapshot_is_blocked() {
 
 #[test]
 fn skip_migration_backup_completes_a_destructive_upgrade_with_no_bak() {
+    // Set the override on a child process instead of mutating this process's
+    // environment, which is unsafe when the harness has other threads.
+    if std::env::var_os("COMEMORY_SKIP_MIGRATION_BACKUP").as_deref()
+        != Some(std::ffi::OsStr::new("1"))
+    {
+        let test = format!(
+            "{}::skip_migration_backup_completes_a_destructive_upgrade_with_no_bak",
+            module_path!().trim_start_matches("comemory::")
+        );
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", &test])
+            .env("COMEMORY_SKIP_MIGRATION_BACKUP", "1")
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"));
+        return;
+    }
     let dir = tempdir().expect("tempdir");
     let db = dir.path().join("comemory.db");
     build_legacy_db(&db, 12, "12", "bbbb2222");
 
-    // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
-    unsafe { std::env::set_var("COMEMORY_SKIP_MIGRATION_BACKUP", "1") };
     let result = connection::open(&db);
-    // SAFETY: nextest runs each #[test] in its own process — set_var/remove_var cannot race with another test.
-    unsafe { std::env::remove_var("COMEMORY_SKIP_MIGRATION_BACKUP") };
 
     let conn = result.expect("destructive upgrade must complete with backups skipped");
     assert_eq!(
