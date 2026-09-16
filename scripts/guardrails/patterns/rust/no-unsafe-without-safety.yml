@@ -1,7 +1,7 @@
 # PROJECT-LOCAL RULE (not part of the toolu kit).
 #
 # comemory cannot set `unsafe_code = "forbid"` (7 FFI-necessary unsafe blocks —
-# see CLAUDE.md deviation D1), so the SAFETY-comment discipline is enforced
+# see AGENTS.md deviation D1), so the SAFETY-comment discipline is enforced
 # here instead. This is strictly stronger than the bash gate it replaced:
 # scripts/no-bypass-check.sh only ever looked at `unsafe {` blocks and never at
 # an `unsafe fn` signature.

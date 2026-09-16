@@ -12,7 +12,7 @@
 //! real rustls listener so a missing reqwest TLS backend cannot regress.
 //!
 //! The module-level `#![allow(…)]` header is the crate's test-file
-//! convention (see CLAUDE.md Testing) — every colocated suite uses it.
+//! convention (see AGENTS.md Testing) — every colocated suite uses it.
 
 use std::io::{Read as _, Write as _};
 use std::net::TcpListener;

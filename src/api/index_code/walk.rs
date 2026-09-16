@@ -173,7 +173,7 @@ pub(crate) fn simhash_of(text: &str) -> i64 {
 fn oid_is_indexed(conn: &Connection, repo: &str, path: &str, oid: &str) -> bool {
     // Any query failure (not just "no such cursor") is treated as
     // "unindexed", exactly as before this SQL moved to `store::indexed_files`
-    // — a deliberately preserved blanket swallow (CLAUDE.md's "blanket .ok()
+    // — a deliberately preserved blanket swallow (AGENTS.md's "blanket .ok()
     // swallows DB errors" note), not a new one.
     let row = indexed_files::blob_oid_for(conn, repo, path).ok().flatten();
     matches!(row, Some(v) if v == oid)

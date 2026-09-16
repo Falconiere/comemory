@@ -63,7 +63,7 @@ offenders=()
 for f in "${all_files[@]}"; do
   [[ -f "$f" ]] || continue
   # src/store.rs is the store module's ROOT file, not a sibling of it:
-  # CLAUDE.md Binding Rule 2 — "src/store.rs declares mod migrate;,
+  # AGENTS.md Binding Rule 2 — "src/store.rs declares mod migrate;,
   # src/store/migrate.rs holds it". The two together ARE the store layer,
   # and AC-9 has src/store.rs permanently re-export Connection, so it can
   # never be a leak.

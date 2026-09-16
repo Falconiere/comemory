@@ -3,7 +3,7 @@
 # (file names + memory.yml id refs) spuriously trip the dictionary — data, not
 # prose, so never spell-check it.
 # scripts/guardrails/ is vendored verbatim from toolu-conventions upstream and
-# must never be hand-edited (see "Claude Code Hooks" in CLAUDE.md; the hook that
+# must never be hand-edited (see "Claude Code Hooks" in AGENTS.md; the hook that
 # used to enforce this is retired, so it is convention now)
 # — typos in it are upstream's to fix, not ours to silently rewrite.
 # comemory.io/ is a SEPARATE git repo (the comemory.io platform monorepo)

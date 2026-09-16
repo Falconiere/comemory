@@ -35,7 +35,7 @@ One line per file, named after its primary item:
 | `sources.rs` | `table_entries` | `GET /sources`, job-backed `POST /sources`, and `DELETE /sources?target=&confirm=` / `DELETE /sources/{target}?confirm=` |
 | `stats.rs` | `table_entries` | `GET /stats` — corpus counters and database size |
 | `config.rs` | `table_entries` | `GET\|PUT /config/retrieval` — live ranking knobs; the `PUT` validates first and reloads `AppState.cfg` |
-| `graph_nodes.rs` | `table_entries` | `GET /graph/nodes`, `GET /graph/nodes/{id}`, `GET /graph/nodes/{id}/neighbors`, `GET /graph/snapshot`, job-backed `POST /graph/recompute` |
+| `graph_nodes.rs` | `table_entries` | `GET /graph/nodes`, `GET /graph/nodes/{id}`, `GET /graph/nodes/{id}/neighbors`, `GET /graph/nodes/{id}/source` (contained local file read), `GET /graph/snapshot`, job-backed `POST /graph/recompute` |
 | `index_runs.rs` | `table_entries` | `GET /index/runs` (history) and job-backed `POST /index/runs` (`409 index_running` when the repo already has a live job) |
 | `learning_console.rs` | `table_entries` | `GET /learning/{summary,evals,golden-set,proposals,expansions}`, `POST /learning/evals` (alias of the eval job), confirm-gated `POST /learning/proposals/{id}/apply`, `POST /learning/proposals/{id}/discard` |
 | `memory_stores.rs` | `table_entries` | `GET /memory-stores` + `GET /memory-stores/{id}` (the one store, `default`), `POST /memory-stores` (`guard_mutating` then the always-`501 unsupported` refusal), `PATCH /memory-stores/{id}` (`[git] auto_sync`/`remote` into `config.toml`, no confirm, reloads `AppState.cfg`), job-backed `POST /memory-stores/{id}/sync` (`store-sync`: pull --rebase, commit `memories/`, push; steps streamed into the job log) |
