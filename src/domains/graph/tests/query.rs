@@ -1,10 +1,8 @@
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::float_cmp,
-    clippy::too_many_lines
-)]
+// A fixture that cannot create its git repo or open its database has no
+// assertion left to make, so `expect` is the right failure here and its
+// message names the step. Narrowed to that one lint: nothing else is
+// suppressed in this file.
+#![allow(clippy::expect_used)]
 //! Tests for `comemory::domains::graph::query` against a REAL indexed git
 //! repo, covering the two things this module owns after #170 moved it out of
 //! delivery.

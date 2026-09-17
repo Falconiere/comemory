@@ -24,9 +24,13 @@ No file here may import `cli`, `serve`, `output` or the legacy `api` tree, with
 
 | File | Forbidden import | Why it is still here | Removed by |
 | --- | --- | --- | --- |
-| `graph_nodes.rs` | `output::search::title_of` | a cited memory's title is a memory rule, and it still lives in delivery on this branch | [#169](https://github.com/Falconiere/comemory/issues/169), which relocates `title_of` into `domains::memories` |
+| `graph_nodes.rs` | `output::search::title_of` | a cited memory's title is a memory rule, and it still lives in delivery on this branch | [#169](https://github.com/Falconiere/comemory/issues/169) / [PR #189](https://github.com/Falconiere/comemory/pull/189), which move `title_of` into `domains::memories::nav` and delete this entry |
 
-Adding any other such import fails the architecture gate.
+Adding any other such import fails the architecture gate. The entry is
+labelled `#169` rather than `#170` because a `legacy_edges` issue names the
+slice that *removes* the edge, not the one that moves the source file — the
+same convention every other `crate::output::search` entry in the policy
+follows.
 
 ## Contents
 
