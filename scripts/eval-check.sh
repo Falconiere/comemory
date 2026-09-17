@@ -83,9 +83,12 @@ fi
 [[ -f "$golden" ]]     || die "eval-check" "missing golden file: $golden"
 
 # The binary is not on PATH in a fresh checkout/CI; build and use the artifact
-# directly (mirrors scripts/e2e.sh).
-run_cargo build --release --quiet
-bin="$PROJECT_ROOT/target/release/comemory"
+# directly. release-quick, not release: this gate scores retrieval quality, so
+# it needs a correct binary and not a fat-LTO/codegen-units=1 one, and
+# cli-docs-check (inside check-all) already builds that same profile — so in a
+# CI run the two share artifacts instead of linking the workspace twice.
+run_cargo build --profile release-quick --locked --quiet
+bin="$PROJECT_ROOT/target/release-quick/comemory"
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT

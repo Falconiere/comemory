@@ -80,15 +80,31 @@ jobs:
         with:
           toolchain: "1.95"
           components: rustfmt, clippy
-      - name: Install typos-cli
-        run: cargo install typos-cli --version 1.32.0 --locked
-      # NOTE: hand-maintained, like the `validate` step below. release.yml is
-      # the second workflow that runs check-all.sh, so it needs ast-grep on
-      # PATH exactly as test.yml does — scripts/guardrails-check.sh exits 3
-      # without it, which fails this job at the guardrails gate.
+      # NOTE: the four steps below are hand-maintained, like the `validate`
+      # step further down (the rest of the file is dist-generated). On a
+      # future `cargo dist init`, re-apply this block.
+      #
+      # They run on tag pushes only. On a pull_request the Test workflow runs
+      # the identical scripts/check-all.sh over the identical commit, so this
+      # copy was pure double spend: 629s of a 10m job whose own work (`dist
+      # plan`) takes 2s. A tag push does not trigger Test, so on that ref this
+      # is the only gate and it stays.
+      - name: Cache cargo build
+        if: ${{ !github.event.pull_request }}
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Install cargo tools
+        if: ${{ !github.event.pull_request }}
+        uses: taiki-e/install-action@7a79fe8c3a13344501c80d99cae481c1c9085912 # v2.81.10
+        with:
+          tool: typos-cli@1.32.0
+      # ast-grep is not in taiki-e/install-action's supported-tools manifest
+      # (TOOLS.md), so it is installed directly, exactly as test.yml does —
+      # scripts/guardrails-check.sh exits 3 without it on PATH.
       - name: Install ast-grep
+        if: ${{ !github.event.pull_request }}
         run: cargo install ast-grep --locked
       - name: Run check-all gate
+        if: ${{ !github.event.pull_request }}
         run: bash scripts/check-all.sh
       # NOTE: this `validate` step is hand-maintained (the rest of the file is
       # dist-generated). On a future `cargo dist init`, re-apply this block.
