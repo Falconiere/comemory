@@ -18,7 +18,7 @@
 
 use crate::test_common::serve_state::{self, Session};
 
-use comemory::memory::Kind;
+use comemory::domains::memories::Kind;
 use serde_json::json;
 
 /// Save a memory into `session`'s store and return its id.

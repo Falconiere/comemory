@@ -14,8 +14,8 @@
 //! label at all, which is the behaviour change this suite pins down.
 
 use comemory::config::{Config, Paths};
+use comemory::domains::memories::Kind;
 use comemory::domains::memories::save;
-use comemory::memory::Kind;
 use comemory::store::connection;
 use comemory::sync::AuthFile;
 use comemory::sync::push;
@@ -91,7 +91,7 @@ fn an_unlabelled_memory_is_pushed_like_any_other() {
     let secret = server.snapshot().secret;
 
     let body = "a note saved in a directory that is not a git worktree";
-    let id = comemory::memory::id::memory_id(body);
+    let id = comemory::domains::memories::id::memory_id(body);
     let content_hash = comemory::utilities::digest::sha256_hex(body.trim_end().as_bytes());
     server.update(|st| {
         st.import_results = serde_json::json!([{
@@ -144,7 +144,7 @@ fn a_label_no_allowlist_would_have_carried_is_now_pushed() {
     let secret = server.snapshot().secret;
 
     let body = "a memory labelled with a repo no GitHub App allowlist carried";
-    let id = comemory::memory::id::memory_id(body);
+    let id = comemory::domains::memories::id::memory_id(body);
     let content_hash = comemory::utilities::digest::sha256_hex(body.trim_end().as_bytes());
     server.update(|st| {
         st.import_results = serde_json::json!([{
@@ -189,9 +189,9 @@ fn a_mixed_batch_reports_each_filter_separately() {
 
     let pushed_body = "the labelled memory in this batch the organization receives";
     let unlabelled_body = "an unlabelled note that now travels with it";
-    let id = comemory::memory::id::memory_id(pushed_body);
+    let id = comemory::domains::memories::id::memory_id(pushed_body);
     let content_hash = comemory::utilities::digest::sha256_hex(pushed_body.trim_end().as_bytes());
-    let unlabelled_id = comemory::memory::id::memory_id(unlabelled_body);
+    let unlabelled_id = comemory::domains::memories::id::memory_id(unlabelled_body);
     let unlabelled_hash =
         comemory::utilities::digest::sha256_hex(unlabelled_body.trim_end().as_bytes());
     server.update(|st| {
@@ -252,7 +252,7 @@ fn repo_not_allowed_does_not_advance_pushed_seq() {
     let secret = server.snapshot().secret;
 
     let body = "memory the empty org allowlist refuses";
-    let id = comemory::memory::id::memory_id(body);
+    let id = comemory::domains::memories::id::memory_id(body);
     let content_hash = comemory::utilities::digest::sha256_hex(body.trim_end().as_bytes());
     server.update(|st| {
         st.import_results = serde_json::json!([{

@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 
 use comemory::api;
 use comemory::config::{Config, Paths};
-use comemory::memory::Kind;
+use comemory::domains::memories::Kind;
 use comemory::prelude::Error;
 use comemory::retrieval::bundle::{self, RankedMemory};
 use comemory::retrieval::code_rerank::WorkingSet;

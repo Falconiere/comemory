@@ -23,7 +23,7 @@
 
 use comemory::api;
 use comemory::config::{Config, Paths};
-use comemory::memory::Kind;
+use comemory::domains::memories::Kind;
 use comemory::store::connection;
 use comemory::store::migrate::CURRENT_VERSION;
 use comemory::utilities::context::Ctx;

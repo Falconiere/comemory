@@ -229,7 +229,7 @@ fn save_supersedes_writes_edge_frontmatter_and_penalizes_ranking() {
     // (b) Markdown stays the source of truth: the new memory's frontmatter
     // carries relations.supersedes = [old_id].
     let raw = fs::read_to_string(&new_path).expect("read new memory markdown");
-    let (fm, _) = comemory::memory::Frontmatter::split(&raw).expect("parse frontmatter");
+    let (fm, _) = comemory::domains::memories::Frontmatter::split(&raw).expect("parse frontmatter");
     assert_eq!(
         fm.relations.supersedes,
         vec![old_id.clone()],

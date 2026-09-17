@@ -15,7 +15,7 @@
 //! save path uses) rather than scraped from a response, so each test names
 //! the memory it seeded.
 
-use comemory::memory::{Kind, id};
+use comemory::domains::memories::{Kind, id};
 use serde_json::{Value, json};
 
 use crate::test_common::serve_state;

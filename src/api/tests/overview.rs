@@ -13,8 +13,8 @@
 
 use comemory::api::overview;
 use comemory::config::{Config, Paths};
+use comemory::domains::memories::Kind;
 use comemory::domains::memories::save;
-use comemory::memory::Kind;
 use comemory::store::{connection, eval_runs, index_runs};
 use comemory::utilities::context::Ctx;
 use tempfile::TempDir;

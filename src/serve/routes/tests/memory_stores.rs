@@ -12,7 +12,7 @@
 
 use std::time::Duration;
 
-use comemory::memory::Kind;
+use comemory::domains::memories::Kind;
 use serde_json::{Value, json};
 use tempfile::TempDir;
 

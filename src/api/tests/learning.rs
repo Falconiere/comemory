@@ -12,7 +12,7 @@
 
 use comemory::api;
 use comemory::config::{Config, Paths};
-use comemory::memory::Kind;
+use comemory::domains::memories::Kind;
 use comemory::store::{connection, eval_runs};
 use comemory::utilities::context::Ctx;
 use tempfile::TempDir;

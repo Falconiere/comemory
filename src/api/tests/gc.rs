@@ -151,7 +151,7 @@ fn save_note(paths: &Paths, cfg: &Config, conn: &mut rusqlite::Connection, body:
         crate::domains::memories::save::Request {
             body: body.to_string(),
             title: None,
-            kind: comemory::memory::Kind::Note,
+            kind: comemory::domains::memories::Kind::Note,
             repo: "demo".to_string(),
             tags: vec!["gc".to_string()],
             author: "tester".to_string(),

@@ -14,7 +14,7 @@ use crate::test_common::git_sample;
 
 use comemory::config::{Config, Paths};
 use comemory::domains::code::index_code::IndexMode;
-use comemory::memory::Kind;
+use comemory::domains::memories::Kind;
 use comemory::store::edges::{self, EdgeKey};
 use comemory::store::{connection, repo_drop};
 use comemory::utilities::context::Ctx;

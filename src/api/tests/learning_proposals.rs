@@ -293,7 +293,7 @@ fn save_note(ctx: &mut Ctx<'_>, body: &str) -> String {
     let req = crate::domains::memories::save::Request {
         body: body.to_string(),
         title: None,
-        kind: comemory::memory::Kind::Note,
+        kind: comemory::domains::memories::Kind::Note,
         repo: "comemory".to_string(),
         tags: Vec::new(),
         author: String::new(),

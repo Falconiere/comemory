@@ -12,7 +12,7 @@
 
 use comemory::api;
 use comemory::config::{Config, Paths};
-use comemory::memory::{Kind, Ref, References};
+use comemory::domains::memories::{Kind, Ref, References};
 use comemory::store::memory_purge::{
     expired_deleted_ids, purge_memory, soft_delete as store_soft_delete, trashed_with_hash,
 };

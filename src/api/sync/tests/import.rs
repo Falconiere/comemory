@@ -10,10 +10,10 @@ use time::OffsetDateTime;
 
 use comemory::api::sync;
 use comemory::config::{Config, Paths};
+use comemory::domains::memories::frontmatter::{References, Relations};
+use comemory::domains::memories::id::memory_id;
 use comemory::domains::memories::save;
-use comemory::memory::frontmatter::{References, Relations};
-use comemory::memory::id::memory_id;
-use comemory::memory::{Kind, MemoryStore};
+use comemory::domains::memories::{Kind, MemoryStore};
 use comemory::store::connection;
 use comemory::store::sync_log::{self, SyncOp};
 use comemory::utilities::context::Ctx;
