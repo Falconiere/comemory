@@ -11,7 +11,7 @@ use sha2::{Digest, Sha256};
 /// Compute the full 64-hex-char SHA-256 digest of `bytes`.
 ///
 /// Shared by `memory::store` (`content_hash`), `api::doctor::checks`,
-/// `domains::memories::save`, `api::sync::import_state` and [`crate::utilities::query_id`],
+/// `domains::memories::save`, `domains::sync::exchange::import_state` and [`crate::utilities::query_id`],
 /// so a stable hex digest is produced in exactly one place.
 pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
     use std::fmt::Write as _;

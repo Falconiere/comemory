@@ -769,7 +769,7 @@ intent; several make the local rule strictly stronger than the one it replaces.
   capabilities and delivery adapters:
 
   - `domains`: `memories`, `code`, `documents`, `graph`, `retrieval`, `learning`, `sync`, `capture`, `maintenance`, `integrations`
-  - `domains/*`: `ast`, `document`, `index_code`, `repos`, `source`, `tests`, `proptest-regressions`
+  - `domains/*`: `ast`, `cloud`, `document`, `exchange`, `index_code`, `memory_store`, `repos`, `source`, `tests`, `proptest-regressions`
   - `store`: `tokenizer`, `migrate`, `tests`
   - `api`: `doctor`, `index_code`, `memory_store`, `rebuild`, `repos`, `sync`, `tests`, `proptest-regressions`, `install`, `setup`
   - `cli`: `graph`, `tests`, `proptest-regressions`, `setup`

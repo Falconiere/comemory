@@ -414,10 +414,10 @@ fn data_dir_layout(paths: &Paths) -> Check {
 
 /// Check 11: when org credentials exist, the sync daemon should be running.
 fn sync_daemon_check(paths: &Paths) -> Check {
-    if !matches!(crate::sync::AuthFile::load_usable(paths), Ok(Some(_))) {
+    if !matches!(crate::domains::sync::AuthFile::load_usable(paths), Ok(Some(_))) {
         return ok("sync daemon", "not linked — daemon not required");
     }
-    match crate::sync::daemon::status() {
+    match crate::domains::sync::daemon::status() {
         Ok(st) if st.running => ok("sync daemon", st.detail),
         Ok(st) => warn(
             "sync daemon",

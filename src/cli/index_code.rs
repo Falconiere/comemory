@@ -113,7 +113,7 @@ pub async fn run(args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<(
     // `comemory serve`, where pushing a tenant's index outward would be wrong
     // — the same split `sync::push_on_save` keeps for memories.
     off_runtime(|| {
-        crate::sync::code::after_index_best_effort(&paths, &cfg, &args.repo);
+        crate::domains::sync::code::after_index_best_effort(&paths, &cfg, &args.repo);
         Ok(())
     })
 }

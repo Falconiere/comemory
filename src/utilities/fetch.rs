@@ -1,6 +1,6 @@
 //! Shell out to `curl` (falling back to `wget`) for HTTP — no TLS stack in
 //! the crate. Shared by [`crate::upgrade::release`] (asset download +
-//! redirect resolve) and [`crate::cloud`] (JSON device-auth / mint calls).
+//! redirect resolve) and [`crate::domains::sync::cloud`] (JSON device-auth / mint calls).
 
 use std::path::Path;
 use std::process::{Command, Stdio};

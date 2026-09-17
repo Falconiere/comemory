@@ -84,7 +84,7 @@ pub fn run(ctx: &mut Ctx<'_>, target: &Path, host_filter: Option<&str>) -> Resul
         // Read locally, never over the network: detection must not issue a
         // platform request just to answer "are you signed in?" (and
         // `cloud::device::org_status` would).
-        authenticated: crate::sync::auth_file::AuthFile::load_usable(ctx.paths)?.is_some(),
+        authenticated: crate::domains::sync::auth_file::AuthFile::load_usable(ctx.paths)?.is_some(),
     })
 }
 

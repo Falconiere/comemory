@@ -18,9 +18,9 @@ use crate::config::sync::apply_embed_model;
 use crate::output::json;
 use crate::prelude::*;
 use crate::store::connection::open;
-use crate::sync::auth_file::AuthFile;
-use crate::sync::daemon;
-use crate::sync::{code, pull, push, verify};
+use crate::domains::sync::auth_file::AuthFile;
+use crate::domains::sync::daemon;
+use crate::domains::sync::{code, pull, push, verify};
 
 const EXAMPLES: &str = "\
 Examples:

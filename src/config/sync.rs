@@ -182,8 +182,8 @@ impl SyncConfig {
     ///
     /// # Errors
     /// [`Error::Config`] when a pattern is not a valid glob.
-    pub fn skip_matcher(&self) -> Result<crate::sync::skip_repos::SkipMatcher> {
-        crate::sync::skip_repos::SkipMatcher::compile(&self.skip_repos)
+    pub fn skip_matcher(&self) -> Result<crate::domains::sync::skip_repos::SkipMatcher> {
+        crate::domains::sync::skip_repos::SkipMatcher::compile(&self.skip_repos)
     }
 
     /// Parse [`Self::allowlist_ttl`] as a [`Duration`].

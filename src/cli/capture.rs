@@ -11,7 +11,7 @@ use crate::cli::off_runtime::off_runtime;
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::output::json;
 use crate::prelude::*;
-use crate::sync::AuthFile;
+use crate::domains::sync::AuthFile;
 
 const EXAMPLES: &str = "\
 Examples:

@@ -30,8 +30,8 @@ use crate::cli::off_runtime::off_runtime;
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::prelude::*;
 use crate::store::connection;
-use crate::sync::client;
-use crate::sync::{AuthFile, pull};
+use crate::domains::sync::client;
+use crate::domains::sync::{AuthFile, pull};
 
 const EXAMPLES: &str = "\
 Examples:

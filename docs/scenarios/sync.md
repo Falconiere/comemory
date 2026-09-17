@@ -25,7 +25,7 @@ Local engine also exposes `GET|POST /api/v1/sync/{changes,import,manifest}`
 and the code-index pair `GET /api/v1/sync/code/manifest?repo=` /
 `POST /api/v1/sync/code/import` for the host; those routes are covered by
 `src/serve/routes/tests/sync.rs`, `src/serve/routes/tests/sync_code.rs` and
-`src/api/sync/tests/`.
+`src/domains/sync/exchange/tests/`.
 
 Global flags `--json` and `--data-dir` apply. See [globals.md](globals.md).
 
@@ -100,8 +100,8 @@ reach. Switching organization means running `comemory auth login` again.
 - **Expect:** the first run reads `GET /v1/sync/code/manifest` and posts one
   `POST /v1/sync/code/import` carrying every file; the second run reads the
   manifest and posts nothing. No request body carries source text.
-- **Covered by:** `src/sync/tests/code.rs::ac12_first_push_sends_every_file_and_the_second_only_reads_the_manifest`,
-  `src/sync/tests/code.rs::ac16_no_request_body_carries_source_text`
+- **Covered by:** `src/domains/sync/tests/code.rs::ac12_first_push_sends_every_file_and_the_second_only_reads_the_manifest`,
+  `src/domains/sync/tests/code.rs::ac16_no_request_body_carries_source_text`
 
 ### sync-07 `[sync] code_index = false` and `skip_repos` withhold the index
 
@@ -111,5 +111,5 @@ reach. Switching organization means running `comemory auth login` again.
 - **Command:** `comemory sync --action push`
 - **Expect:** no `/v1/sync/code/*` request at all; `skip_repos` counts the
   repo under `skipped_config`.
-- **Covered by:** `src/sync/tests/code.rs::ac11_code_index_off_sends_nothing_even_with_an_index`,
-  `src/sync/tests/code.rs::skip_repos_withholds_the_index_too`
+- **Covered by:** `src/domains/sync/tests/code.rs::ac11_code_index_off_sends_nothing_even_with_an_index`,
+  `src/domains/sync/tests/code.rs::skip_repos_withholds_the_index_too`

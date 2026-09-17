@@ -1,7 +1,7 @@
 //! `comemory auth` — organization login against the cloud platform.
 //!
-//! Nested: `login` / `status` / `logout`. Logic lives in [`crate::cloud`] and
-//! [`crate::sync::initial`]; this module owns clap + TTY/JSON rendering.
+//! Nested: `login` / `status` / `logout`. Logic lives in [`crate::domains::sync::cloud`] and
+//! [`crate::domains::sync::initial`]; this module owns clap + TTY/JSON rendering.
 //! CLI-only (no `/api/v1` route).
 
 use std::io::Write as _;
@@ -13,13 +13,13 @@ use crate::cli::auth_render::{
 };
 use crate::cli::load_config;
 use crate::cli::off_runtime::off_runtime;
-use crate::cloud;
+use crate::domains::sync::cloud;
 use crate::config::env;
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::output::json;
 use crate::prelude::*;
-use crate::sync::auth_file::{self, AuthFile};
-use crate::sync::daemon;
+use crate::domains::sync::auth_file::{self, AuthFile};
+use crate::domains::sync::daemon;
 use clap::{Args as ClapArgs, Subcommand};
 use owo_colors::OwoColorize;
 
@@ -109,7 +109,7 @@ fn run_login(paths: &Paths, a: LoginArgs, json_flag: bool) -> Result<()> {
 
     // Best-effort: credential is already on disk; sync counts belong in the report.
     let cfg = load_config(paths)?;
-    let synced = off_runtime(|| crate::sync::initial::run_initial_sync(paths, &cfg, creds));
+    let synced = off_runtime(|| crate::domains::sync::initial::run_initial_sync(paths, &cfg, creds));
     if let Err(e) = &synced {
         tracing::warn!(error = %e, "first sync after login failed");
     }

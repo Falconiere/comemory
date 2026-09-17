@@ -14,7 +14,7 @@
 //! socket, which is the only way to reproduce it.
 
 use comemory::cli::off_runtime::off_runtime;
-use comemory::sync::client;
+use comemory::domains::sync::client;
 
 use crate::test_common::sync_platform_server::{SyncPlatformServer, SyncPlatformState};
 

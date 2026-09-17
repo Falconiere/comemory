@@ -9,10 +9,10 @@ use crate::output::json;
 use crate::prelude::*;
 use crate::store::Connection;
 use crate::store::{code_sync, indexed_files, repo_marker, sync_log, sync_state};
-use crate::sync::code::CodePushStats;
-use crate::sync::daemon::{self, DaemonStatus};
-use crate::sync::initial::InitialSyncStats;
-use crate::sync::{pull, push, verify};
+use crate::domains::sync::code::CodePushStats;
+use crate::domains::sync::daemon::{self, DaemonStatus};
+use crate::domains::sync::initial::InitialSyncStats;
+use crate::domains::sync::{pull, push, verify};
 
 /// The login report's code line: what the code-index push did, or why it
 /// could not run.

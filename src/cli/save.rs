@@ -146,7 +146,7 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     // connection should be closed before the push opens its own.
     drop(ctx);
     off_runtime(|| {
-        crate::sync::push_on_save::after_write_best_effort(&paths, &cfg);
+        crate::domains::sync::push_on_save::after_write_best_effort(&paths, &cfg);
         Ok(())
     })?;
     emit(json, &output)

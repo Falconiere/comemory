@@ -63,13 +63,9 @@ pub mod graph_recompute;
 pub mod learning;
 /// `GET /learning/proposals`, `POST /learning/proposals/{id}/{apply,discard}`.
 pub mod learning_proposals;
-/// `GET|PATCH /memory-stores`, `POST /memory-stores/{id}/sync`.
-pub mod memory_store;
 /// `GET /overview`, `GET /overview/eval-series`.
 pub mod overview;
 /// `POST /doctor/reembed`: re-vectorize through the embed command.
 pub mod reembed;
 /// `GET /search/suggest`: mined expansions + recent queries.
 pub mod suggest;
-/// `GET /sync/{changes,manifest}` and `POST /sync/import`.
-pub mod sync;

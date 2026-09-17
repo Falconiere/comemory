@@ -53,11 +53,9 @@ One line per file, named after its primary item:
 | `graph_recompute.rs` | `Response` | Console-only: `POST /api/v1/graph/recompute` — PageRank re-projection for every repo, then the memory rank |
 | `learning.rs` | `Summary` | Console-only: `GET /api/v1/learning/{summary,evals,golden-set,expansions}` |
 | `learning_proposals.rs` | `Proposal` | Console-only: knob proposals derived from unapplied `tune`/`bandit` runs — list, apply (writes `config.toml`), discard |
-| `memory_store.rs` | `Store` | Console-only: the one memory store's view, its `[git]` patch, and the `store-sync` job (commit → pull → push); the `git` shell-outs live in `memory_store/git.rs` |
 | `overview.rs` | `Response` | Console-only: `GET /api/v1/overview` (+ `/overview/eval-series`) — counters, index state, last run, metrics, recent memories |
 | `reembed.rs` | `Request` | Console-only: `POST /api/v1/doctor/reembed` — re-vectorize memories and/or code through the embed command, cancellable |
 | `suggest.rs` | `Request` | Console-only: `GET /api/v1/search/suggest` — mined expansions + recent queries for the ⌘K palette |
-| `sync/` | `import::run` | Cloud sync: `changes` / `import` / `manifest` middles for `/api/v1/sync/*` |
 
 Two capabilities no longer live here. The code cores — `ast`, `index_code` (+
 `walk`), `ingest_code`, `index_runs`, `repos` (+ `git_state`), `repo_admin`,

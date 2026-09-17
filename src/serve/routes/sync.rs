@@ -11,8 +11,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 
-use crate::api;
-use crate::api::sync::{CodeImportRequest, ImportRequest};
+use crate::domains::sync::exchange::{self, CodeImportRequest, ImportRequest};
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::routes::{RouteEntry, guard_mutating, respond, run_blocking};
@@ -58,7 +57,7 @@ pub fn table_entries() -> &'static [RouteEntry] {
 
 /// This resource's routes, mounted under `/api/v1`. Each handler is a
 /// closure over [`handle`] — the five differ only in the extractor they
-/// take and the `api::sync` core they call, and a named wrapper per route
+/// take and the `domains::sync::exchange` core they call, and a named wrapper per route
 /// would be five copies of the same three lines.
 pub fn router(_state: AppState) -> Router<AppState> {
     Router::new()
@@ -68,7 +67,7 @@ pub fn router(_state: AppState) -> Router<AppState> {
             get(
                 |State(state): State<AppState>, Query(q): Query<ChangesQuery>| {
                     handle(state, "sync.changes", Gate::Read, move |ctx| {
-                        api::sync::changes::run(ctx, q.since, q.limit)
+                        exchange::changes::run(ctx, q.since, q.limit)
                     })
                 },
             ),
@@ -77,7 +76,7 @@ pub fn router(_state: AppState) -> Router<AppState> {
         .route(
             "/api/v1/sync/manifest",
             get(|State(state): State<AppState>| {
-                handle(state, "sync.manifest", Gate::Read, api::sync::manifest::run)
+                handle(state, "sync.manifest", Gate::Read, exchange::manifest::run)
             }),
         )
         // `POST /sync/import` — apply a batch of wire entries, stamping the
@@ -90,7 +89,7 @@ pub fn router(_state: AppState) -> Router<AppState> {
                  Json(req): Json<ImportRequest>| {
                     let author = author_from_headers(&headers);
                     handle(state, "sync.import", Gate::Write, move |ctx| {
-                        api::sync::import::run(ctx, req, author.as_deref())
+                        exchange::import::run(ctx, req, author.as_deref())
                     })
                 },
             ),
@@ -101,7 +100,7 @@ pub fn router(_state: AppState) -> Router<AppState> {
             get(
                 |State(state): State<AppState>, Query(q): Query<CodeManifestQuery>| {
                     handle(state, "sync.code.manifest", Gate::Read, move |ctx| {
-                        api::sync::code_manifest::run(ctx, &q.repo)
+                        exchange::code_manifest::run(ctx, &q.repo)
                     })
                 },
             ),
@@ -112,7 +111,7 @@ pub fn router(_state: AppState) -> Router<AppState> {
             post(
                 |State(state): State<AppState>, Json(req): Json<CodeImportRequest>| {
                     handle(state, "sync.code.import", Gate::Write, move |ctx| {
-                        api::sync::code_import::run(ctx, req)
+                        exchange::code_import::run(ctx, req)
                     })
                 },
             ),
