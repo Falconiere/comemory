@@ -200,6 +200,29 @@ fn redirect_worktree_label(
     Ok(())
 }
 
+/// The directory `repo` is RECORDED at (`repo_marker.root_path`), which is not
+/// always the directory that was walked.
+///
+/// When `repo` is the repository's own label, the repo is recorded at its main
+/// working tree: a linked worktree is temporary (`git worktree remove` deletes
+/// it), repo-relative paths resolve the same against either checkout, and
+/// stamping the worktree would only leave `serve::repo_root` pointing at a
+/// directory that is about to vanish.
+///
+/// For any OTHER label — one the operator connected under a custom name, or a
+/// per-worktree row minted before [`redirect_worktree_label`] existed — the
+/// walked path is recorded verbatim. Those rows keep their own root on
+/// purpose: rewriting one to the main worktree would repoint an existing code
+/// index at a checkout it was never indexed from, and would leave two labels
+/// claiming one root, which `api::repo_admin::connect` refuses to create and
+/// `cli::lazy_reindex` refuses to reindex through.
+fn recorded_root_for(repo: &str, walked: &Path, git_repo: &Repository) -> PathBuf {
+    if git_utils::repo_label(git_repo).as_deref() != Some(repo) {
+        return walked.to_path_buf();
+    }
+    git_utils::main_worktree_dir(git_repo).unwrap_or_else(|| walked.to_path_buf())
+}
+
 /// `Err(Error::BadRequest)` when `repo` carries `repo_marker.archived = 1`
 /// (`POST /api/v1/repos/{name}/archive`): an archived repo keeps its
 /// memories searchable but is never re-indexed, by any entry point — the
@@ -242,13 +265,7 @@ fn index_repo(
     }
     let files_indexed = walk_repo(&tx, &req.repo, root, git_repo, &mut imports_by_file, sink)?;
     code_row::stamp_repo_format(&tx, &req.repo)?;
-    // The walk reads `root` — the checkout that actually holds the files — but
-    // the repo is RECORDED at its main working tree. A linked worktree is
-    // temporary (`git worktree remove` deletes it), and repo-relative paths
-    // resolve the same against either checkout, so stamping the worktree would
-    // only leave `serve::repo_root` pointing at a directory that will vanish.
-    let recorded_root =
-        git_utils::main_worktree_dir(git_repo).unwrap_or_else(|| root.to_path_buf());
+    let recorded_root = recorded_root_for(&req.repo, root, git_repo);
     walk::stamp_repo_root(&tx, &req.repo, &recorded_root)?;
     stamp_last_indexed(&tx, &req.repo, root);
     tx.commit()?;

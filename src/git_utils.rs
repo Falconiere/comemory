@@ -200,9 +200,14 @@ pub fn repo_label_at(start: &Path) -> Option<String> {
 pub fn is_linked_worktree(repo: &Repository) -> bool {
     let git_dir = repo.path();
     let common = repo.commondir();
-    // Canonicalize both before comparing: git2 hands back whatever spelling
-    // the repo was opened with, so `/tmp/...` vs `/private/tmp/...` (macOS) or
-    // a trailing separator would otherwise read as a difference.
+    // The main worktree is the common case and git2 hands both paths back with
+    // the same spelling there, so settle it without touching the filesystem.
+    if git_dir == common {
+        return false;
+    }
+    // Only a genuine difference is worth two `canonicalize` calls: git2 returns
+    // whatever spelling the repo was opened with, so `/tmp/...` vs
+    // `/private/tmp/...` (macOS) or a trailing separator must not read as one.
     match (git_dir.canonicalize(), common.canonicalize()) {
         (Ok(a), Ok(b)) => a != b,
         // An uncanonicalizable path is not evidence of a linked worktree.
@@ -315,7 +320,7 @@ pub(crate) const HOOK_MARKER: &str = "comemory index-code";
 /// main repo's index rather than minting a `<worktree-name>` repo. The
 /// `--show-toplevel` basename is only the fallback for a common dir not
 /// named `.git` (bare layouts) or a git too old for `--path-format`.
-pub(crate) const REINDEX_HOOK_SCRIPT: &str = "#!/usr/bin/env bash\n\
+pub const REINDEX_HOOK_SCRIPT: &str = "#!/usr/bin/env bash\n\
                       ROOT=\"$(git rev-parse --show-toplevel 2>/dev/null)\"\n\
                       [ -z \"$ROOT\" ] && exit 0\n\
                       COMMON=\"$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)\"\n\

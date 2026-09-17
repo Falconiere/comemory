@@ -152,16 +152,10 @@ fn run_repairs_an_outdated_comemory_hook_without_force() {
 
     for hook in ["post-commit", "post-merge", "post-checkout"] {
         let body = std::fs::read_to_string(hooks_dir.join(hook)).expect("read hook");
-        assert_ne!(
-            body, LEGACY_HOOK_SCRIPT,
-            "{hook} must not still be the pre-worktree-rule body"
-        );
-        // The current body asks git for the COMMON dir and only falls back to
-        // the checkout's own basename for a bare/custom-GIT_DIR layout, so the
-        // repair is pinned by that derivation, not by the absence of one line.
-        assert!(
-            body.contains("--git-common-dir"),
-            "{hook} must derive the label from the main worktree, got: {body}"
+        assert_eq!(
+            body,
+            comemory::git_utils::REINDEX_HOOK_SCRIPT,
+            "{hook} must be byte-identical to the body this binary ships"
         );
         assert!(
             !comemory::git_utils::hook_outdated(&repo, hook),

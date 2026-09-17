@@ -355,6 +355,22 @@ fn run_leaves_an_already_known_label_alone_even_in_a_worktree() {
         resp.repo, "legacy-row",
         "a label this store already knows is never rewritten"
     );
+    // Nor is its recorded root. Stamping the main worktree here would repoint
+    // an existing code index at a checkout it was never indexed from, and would
+    // leave `legacy-row` and `sample-repo` both claiming one root — a state
+    // `repo_admin::connect` refuses to create.
+    let root_path: String = conn
+        .query_row(
+            "SELECT root_path FROM repo_marker WHERE repo = 'legacy-row'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("read repo_marker.root_path");
+    assert_eq!(
+        std::path::PathBuf::from(&root_path),
+        wt.canonicalize().expect("canonical worktree"),
+        "a known label keeps the root it was actually indexed from"
+    );
 }
 
 /// The main checkout keeps whatever label the caller asks for — the redirect
