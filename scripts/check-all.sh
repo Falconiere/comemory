@@ -11,6 +11,8 @@
 #                    secrets, shadow configs, ast-grep patterns: no inline test
 #                    module, no direct env read, no unsafe without SAFETY,
 #                    no #[allow])
+#   architecture-check  scripts/architecture-check.sh  (staged domain ownership
+#                    and temporary dependency policy)
 #   store-chokepoint-check  store-leak-baseline.txt  (two-sided ratchet: no
 #                    production file outside src/store/ except src/errors.rs
 #                    may import rusqlite; no store/ function returns a driver
@@ -33,6 +35,7 @@ GATES=(
   type-check
   lint-check
   guardrails-check
+  architecture-check
   store-chokepoint-check
   typos-check
   cli-docs-check

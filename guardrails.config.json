@@ -3,7 +3,48 @@
   "version": 2,
   "srcRoot": "src",
   "src": {
+    "topLevel": [
+      "api",
+      "ast",
+      "capture",
+      "cli",
+      "cloud",
+      "config",
+      "consolidate",
+      "document",
+      "domains",
+      "eval",
+      "graph",
+      "memory",
+      "output",
+      "prune",
+      "retrieval",
+      "serve",
+      "source",
+      "stats",
+      "store",
+      "sync",
+      "tests",
+      "upgrade",
+      "utilities"
+    ],
     "nested": {
+      "domains": [
+        "memories",
+        "code",
+        "documents",
+        "graph",
+        "retrieval",
+        "learning",
+        "sync",
+        "capture",
+        "maintenance",
+        "integrations"
+      ],
+      "domains/*": [
+        "tests",
+        "proptest-regressions"
+      ],
       "store": [
         "tokenizer",
         "migrate",
