@@ -318,6 +318,26 @@ fn run_files_a_linked_worktree_under_its_main_repo_label() {
         symbols >= 2,
         "the worktree's symbols land under the main label, got {symbols}"
     );
+    // The run HISTORY carries the redirected label too. `run_with_progress`
+    // mutates one local `Request` through `&mut` and then hands `record_run` a
+    // shared borrow of that same value, so there is no pre-redirect snapshot
+    // for the history to record — a split record here would mean the console's
+    // run list disagreed with the index it describes.
+    let runs: Vec<String> = {
+        let mut stmt = conn
+            .prepare("SELECT repo FROM index_runs ORDER BY repo")
+            .expect("prepare index_runs");
+        let rows = stmt
+            .query_map([], |r| r.get::<_, String>(0))
+            .expect("query index_runs");
+        rows.collect::<std::result::Result<Vec<_>, _>>()
+            .expect("collect index_runs")
+    };
+    assert_eq!(
+        runs,
+        vec!["sample-repo".to_string()],
+        "index_runs must record the redirected label, not the worktree one"
+    );
 }
 
 /// The redirect is narrow: a label that already has a `repo_marker` row is
