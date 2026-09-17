@@ -7,7 +7,8 @@
 //! `edge_kinds` all resolve through its `ValueEnum` string table, so no second
 //! match arm exists in delivery (Binding Rule 1). [`build_code_graph`] returns
 //! the whole graph and [`build_graph_page`] one `(limit, offset)` window; both
-//! transports share them, so they cannot drift. The SQL lives in
+//! are `pub(crate)` — in-crate callers only, never a library promise — and
+//! both transports share them, so they cannot drift. The SQL lives in
 //! [`crate::store::code_graph_edges::fetch_page`], where `limit == 0` is the
 //! "no window" sentinel it renders as SQLite's `LIMIT -1`.
 

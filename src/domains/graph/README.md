@@ -15,12 +15,18 @@ lives in `store::edges`, `store::edges_retrieval`, `store::code_graph_edges`,
 `store::code_graph_nodes` and `store::edge_fts`; the JSON/DOT/HTML writers and
 `graph_template.html` stay in `output::graph`, which imports this folder's
 model rather than owning it; and consuming the graph to rank search results
-belongs to `retrieval::graph_route` and `retrieval::code_prior`. No file here
-may import `cli`, `serve`, `output` or the legacy `api` tree. One temporary
-exception is recorded in `scripts/architecture-policy.json`: `graph_nodes.rs`
-still reads `output::search::title_of` for a cited memory's title, an
-allowlisted delivery edge that [#169](https://github.com/Falconiere/comemory/issues/169)
-removes when it relocates `title_of` into `domains::memories`.
+belongs to `retrieval::graph_route` and `retrieval::code_prior`.
+
+No file here may import `cli`, `serve`, `output` or the legacy `api` tree, with
+**exactly one temporary exception**, allowlisted in
+`scripts/architecture-policy.json` and enforced by
+`scripts/architecture-check.sh`:
+
+| File | Forbidden import | Why it is still here | Removed by |
+| --- | --- | --- | --- |
+| `graph_nodes.rs` | `output::search::title_of` | a cited memory's title is a memory rule, and it still lives in delivery on this branch | [#169](https://github.com/Falconiere/comemory/issues/169), which relocates `title_of` into `domains::memories` |
+
+Adding any other such import fails the architecture gate.
 
 ## Contents
 

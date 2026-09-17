@@ -80,9 +80,13 @@ pub struct GraphPage {
 impl GraphPage {
     /// Build a `GraphPage` from a window of edges (already sliced in SQL),
     /// their derived `nodes`, and the cursor metadata. `total` is the count of
-    /// all edges matching the scope filters; `has_more` is derived here from
-    /// the same window math [`crate::utilities::pagination::Page::from_slice`] uses so
-    /// the two envelopes agree (Binding Rule 1).
+    /// all edges matching the scope filters. `has_more` answers the same
+    /// question [`crate::utilities::pagination::Page::from_slice`] answers —
+    /// "does anything remain past this window?" — and agrees with it for every
+    /// input, but the arithmetic differs by necessity: `from_slice` clamps
+    /// with `offset.min(total)` because it holds the whole collection, while
+    /// the edges here were already sliced in SQL, so an out-of-range `offset`
+    /// is absorbed with `saturating_add` instead.
     pub fn new(graph: CodeGraph, limit: usize, offset: usize, total: usize) -> Self {
         let has_more = offset.saturating_add(graph.edges.len()) < total;
         Self {
