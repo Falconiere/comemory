@@ -23,8 +23,12 @@ validate() {
   jq -e --slurpfile rows "$scratch/rows" '
     . as $p | .version == 1 and
     (["version","staged_top_level_dirs","staged_root_modules","domains","legacy_modules",
-      "owner_dependencies","legacy_edges","store_callbacks","passive_store_models"] - keys | length == 0) and
-    ([.staged_top_level_dirs,.staged_root_modules,.domains] | all(type == "array" and length == (unique|length))) and
+      "owner_dependencies","legacy_edges","store_callbacks","passive_store_models",
+      "setup_runtime_dependencies"] - keys | length == 0) and
+    (.setup_runtime_dependencies | type == "array") and
+    .staged_top_level_dirs == ("api ast capture cli cloud config consolidate document domains eval graph memory output prune retrieval serve source stats store sync upgrade utilities"|split(" ")) and
+    .staged_root_modules == ("api ast capture cli cloud config consolidate document embed errors eval fetch git_utils graph http_error index lib main memory output prelude prune retrieval serve simhash source stats store sync test_common upgrade"|split(" ")) and
+    .domains == ("memories code documents graph retrieval learning sync capture maintenance integrations"|split(" ")) and
     all($rows[0][];
       (.owner | test("^(domains::[a-z_]+|delivery::(cli|serve)|shared::(config|utilities|root)|infrastructure::store)$")) and
       (if (.owner | startswith("domains::")) then
@@ -62,12 +66,21 @@ validate() {
     all(.legacy_modules[]; . as $entry | any($rows[0][];
       .path == (($entry.module|sub("^crate::";"src/"))+".rs") and .owner == $entry.owner and .issue == $entry.issue))
   ' "$POLICY" >/dev/null || fail 'invalid ownership policy'
+  jq -e --slurpfile rows "$scratch/rows" '
+    (.setup_runtime_dependencies | group_by([.source,.target]) | all(length == 1)) and
+    all(.setup_runtime_dependencies[]; . as $entry |
+      (.source | type == "string" and test("^src/([a-z_]+/)*[a-z_]+\\.rs$")) and
+      (.target | type == "string" and test("^crate(::[A-Za-z_][A-Za-z_0-9]*)+$")) and
+      (.owner | type == "string" and test("^domains::[a-z_]+$")) and
+      any($rows[0][]; .path == (($entry.target|sub("^crate::";"src/")|gsub("::";"/"))+".rs") and .owner == $entry.owner))
+  ' "$POLICY" >/dev/null || fail 'invalid setup runtime dependency'
   jq -e '
     [.legacy_edges[], .store_callbacks[]] as $edges |
     all($edges[]; (.source | type == "string" and test("^src/([a-z_]+/)*[a-z_]+\\.rs$")) and
       (.target | type == "string" and test("^crate(::[A-Za-z_][A-Za-z_0-9]*)+$")) and
       (.class | IN("delivery", "store-callback")) and (.issue | IN("#166", "#167", "#169", "#170", "#177"))) and
     ($edges | group_by([.source,.target]) | all(length == 1)) and
+    (.passive_store_models | group_by([.source,.target]) | all(length == 1)) and
     all(.passive_store_models[]; (.source | startswith("src/store/")) and
       (.target | test("^crate(::[A-Za-z_][A-Za-z_0-9]*)+$")))
   ' "$POLICY" >/dev/null || fail 'invalid policy edge'
@@ -119,12 +132,12 @@ rule:
         (.target|split("::")|last) == $parts[0]) |
       {source:$edge.source,target:([.target]+$parts[1:]|join("::"))} end] | unique
   ' "$scratch/ast" >"$scratch/refs"
-  jq -er --slurpfile refs "$scratch/refs" --slurpfile rows "$scratch/rows" '
+  jq -r --slurpfile refs "$scratch/refs" '
     [.legacy_edges[],.store_callbacks[],.passive_store_models[],.setup_runtime_dependencies[]] | .[] |
     . as $edge | if any($refs[0][]; .source == $edge.source and
       (.target == $edge.target or (.target|startswith($edge.target+"::")))) then empty
     else "absent policy edge: \(.source) -> \(.target)" end
-  ' "$POLICY" >"$scratch/absent" || [[ ! -s "$scratch/absent" ]]
+  ' "$POLICY" >"$scratch/absent" || fail 'policy edge validation failed'
   [[ ! -s "$scratch/absent" ]] || fail "$(cat "$scratch/absent")"
   jq -r '
     def resolve: split("/") | reduce .[] as $p ([];
@@ -186,6 +199,20 @@ assert_fails() {
 }
 
 bash "$CHECK" --validate
+jq 'del(.setup_runtime_dependencies)' "$POLICY" >"$TASK_TMP/no-setup.json"
+assert_fails 'missing setup runtime dependencies' 'invalid policy or inventory metadata' --policy "$TASK_TMP/no-setup.json"
+jq '.setup_runtime_dependencies = null' "$POLICY" >"$TASK_TMP/null-setup.json"
+assert_fails 'null setup runtime dependencies' 'invalid policy or inventory metadata' --policy "$TASK_TMP/null-setup.json"
+jq 'del(.setup_runtime_dependencies[0].target)' "$POLICY" >"$TASK_TMP/setup-target.json"
+assert_fails 'missing setup target' 'invalid setup runtime dependency' --policy "$TASK_TMP/setup-target.json"
+jq '.passive_store_models += [.passive_store_models[0]]' "$POLICY" >"$TASK_TMP/duplicate-model.json"
+assert_fails 'duplicate passive model' 'invalid policy edge' --policy "$TASK_TMP/duplicate-model.json"
+jq '.staged_top_level_dirs += ["unexpected"]' "$POLICY" >"$TASK_TMP/unexpected-dir.json"
+assert_fails 'unexpected staged directory' 'invalid policy or inventory metadata' --policy "$TASK_TMP/unexpected-dir.json"
+jq '.staged_root_modules += ["unexpected"]' "$POLICY" >"$TASK_TMP/unexpected-root.json"
+assert_fails 'unexpected staged root' 'invalid policy or inventory metadata' --policy "$TASK_TMP/unexpected-root.json"
+jq '.domains += ["unexpected"]' "$POLICY" >"$TASK_TMP/eleventh-domain.json"
+assert_fails 'eleventh domain' 'invalid policy or inventory metadata' --policy "$TASK_TMP/eleventh-domain.json"
 sed '/^| src\/api\/save.rs |/d' "$INVENTORY" >"$TASK_TMP/missing.md"
 assert_fails 'missing production row' 'inventory coverage' --inventory "$TASK_TMP/missing.md"
 cp "$INVENTORY" "$TASK_TMP/duplicate.md"

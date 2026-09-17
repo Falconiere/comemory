@@ -28,7 +28,8 @@ through `lib.rs`, never a directory barrel or an API/stats facade.
 Version 0.34.0 removes the technical `comemory::api` and `comemory::stats`
 public module trees. Library users migrate to each row's target module.
 Moved CLI utility modules and `serve::repo_root` also move to their named
-utility paths. These are Rust module-path breaks only: CLI flags and output,
+utility paths; `cli::graph::nodes` moves to `domains::graph::nodes` with graph
+assembly ownership. These are Rust module-path breaks only: CLI flags and output,
 HTTP routes, JSON, wire protocols, ranking and persisted formats stay unchanged.
 Breaking rows link to this release-note target before any source move.
 
@@ -166,7 +167,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/cli/find.rs | comemory::cli::find; preserve | none | none | delivery::cli | src/cli/find.rs | retain |
 | src/cli/gc.rs | comemory::cli::gc; preserve | none | none | delivery::cli | src/cli/gc.rs | retain |
 | src/cli/graph.rs | comemory::cli::graph; preserve | none | none | delivery::cli | src/cli/graph.rs | retain |
-| src/cli/graph/nodes.rs | comemory::cli::graph::nodes; preserve | none | none | delivery::cli | src/cli/graph/nodes.rs | retain |
+| src/cli/graph/nodes.rs | comemory::cli::graph::nodes; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | none | none | domains::graph | src/domains/graph/nodes.rs | #170 |
 | src/cli/hooks.rs | comemory::cli::hooks; preserve | none | none | delivery::cli | src/cli/hooks.rs | retain |
 | src/cli/index.rs | comemory::cli::index; preserve | none | none | delivery::cli | src/cli/index.rs | retain |
 | src/cli/index_code.rs | comemory::cli::index_code; preserve | none | none | delivery::cli | src/cli/index_code.rs | retain |
