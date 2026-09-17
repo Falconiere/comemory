@@ -87,3 +87,44 @@ fn config_dir_prefers_an_explicit_override_and_absolutizes_it() {
     assert!(resolved.is_absolute());
     assert!(resolved.ends_with("explicit"));
 }
+
+#[test]
+fn the_installed_marker_is_per_host_not_per_shared_bundle() {
+    let temp = tempfile::tempdir().unwrap();
+    let data = temp.path();
+
+    // Nothing installed yet.
+    for host in HOSTS {
+        assert!(!crate::api::install::is_installed(data, host));
+    }
+
+    // Simulate one host's successful install by writing only its marker.
+    // The bundle tree itself is SHARED across hosts, so a detector keyed on
+    // the bundle would now wrongly report every host as installed.
+    let marker = crate::api::install::marker_path(data, "claude");
+    std::fs::create_dir_all(marker.parent().unwrap()).unwrap();
+    std::fs::write(&marker, env!("CARGO_PKG_VERSION")).unwrap();
+
+    assert!(crate::api::install::is_installed(data, "claude"));
+    assert!(
+        !crate::api::install::is_installed(data, "codex"),
+        "registering claude must not make codex look installed"
+    );
+}
+
+#[test]
+fn a_dry_run_writes_no_installed_marker() {
+    let temp = tempfile::tempdir().unwrap();
+    let (paths, cfg) = ctx_for(temp.path());
+    let mut ctx = Ctx::lazy(&paths, &cfg);
+    run(
+        &mut ctx,
+        Request {
+            host: "claude".to_string(),
+            dry_run: true,
+            config_dir: Some(temp.path().join("cfg")),
+        },
+    )
+    .unwrap();
+    assert!(!crate::api::install::is_installed(temp.path(), "claude"));
+}

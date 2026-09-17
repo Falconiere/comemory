@@ -43,7 +43,7 @@ pub struct Detected {
     pub doc_sources: usize,
     /// Agent hosts whose CLI answered `--version`.
     pub hosts_present: Vec<&'static str>,
-    /// Agent hosts whose bundle is already extracted for this version.
+    /// Agent hosts that already have this version's plugin registered.
     pub hosts_installed: Vec<&'static str>,
     /// Whether a usable cloud credential was found.
     pub authenticated: bool,
@@ -211,18 +211,17 @@ fn hosts_present(host_filter: Option<&str>) -> Vec<&'static str> {
         .collect()
 }
 
-/// Hosts whose bundle for *this* comemory version is already extracted.
-/// Version-scoped on purpose: an upgrade should offer to reinstall.
+/// Hosts that already have this comemory version's plugin registered.
+///
+/// Per-host, from `api::install`'s own marker — NOT from the extracted
+/// bundle, which is one shared tree for every host and would therefore
+/// report a second host as installed the moment the first one was.
 fn hosts_installed(ctx: &Ctx<'_>, present: &[&'static str]) -> Vec<&'static str> {
-    let bundle = ctx
-        .paths
-        .data_dir()
-        .join("integrations")
-        .join(env!("CARGO_PKG_VERSION"));
-    if !bundle.exists() {
-        return Vec::new();
-    }
-    present.to_vec()
+    present
+        .iter()
+        .copied()
+        .filter(|host| api::install::is_installed(ctx.paths.data_dir(), host))
+        .collect()
 }
 
 #[cfg(test)]

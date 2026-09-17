@@ -58,6 +58,26 @@ pub struct Response {
 /// The plugin id every host registers the bundle under.
 const PLUGIN: &str = "comemory@comemory";
 
+/// Where a successful install records that `host` was registered at this
+/// comemory version.
+///
+/// The extracted bundle itself is **shared** — every host gets the same
+/// `<data_dir>/integrations/<version>` tree — so its existence says nothing
+/// about which hosts had the plugin registered with their own CLI. This
+/// per-host marker is that missing fact, and it is version-scoped so an
+/// upgrade correctly reports the host as needing a reinstall.
+pub fn marker_path(data_dir: &Path, host: &str) -> PathBuf {
+    data_dir
+        .join("integrations")
+        .join(env!("CARGO_PKG_VERSION"))
+        .join(format!(".installed-{host}"))
+}
+
+/// Whether `host` has this comemory version's plugin registered.
+pub fn is_installed(data_dir: &Path, host: &str) -> bool {
+    marker_path(data_dir, host).exists()
+}
+
 /// External programs the generated agent hooks shell out to. Probed before
 /// anything is written so a missing one fails the install rather than
 /// surfacing later as a silently broken hook.
@@ -135,6 +155,12 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
     let config_dir = config_dir(host, req.config_dir)?;
     if !req.dry_run {
         install(host, &config_dir, &root)?;
+        // Written only after the host's own CLI accepted the plugin, so the
+        // marker never claims an install that did not finish.
+        std::fs::write(
+            marker_path(ctx.paths.data_dir(), host),
+            env!("CARGO_PKG_VERSION"),
+        )?;
     }
     Ok(Response {
         marketplace: root.parent().map(Path::to_path_buf),
