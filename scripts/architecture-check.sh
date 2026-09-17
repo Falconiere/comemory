@@ -253,7 +253,10 @@ jq '
       {parts:(.text|tokens),alias:null} end) |
     {source:$node.file,parts:canonical(.parts;$base),alias:.alias,kind:$node.ruleId,
       receiver:($node.metaVariables.single.RECEIVER.text // null),
-      base:$base,scope:$scope,at:$node.range.byteOffset.start}
+      base:$base,scope:$scope,
+      at:(if $node.ruleId == "receiver-bindings" and ($node.text|tokens|first) == "let" and
+        ($node.metaVariables.single.TYPE.text // "") == ""
+        then $node.range.byteOffset.end else $node.range.byteOffset.start end)}
   ] as $raw |
     ([$raw[] | select(.kind == "imports") | . + {name:(.alias // .parts[-1]),
       binding:(.base+[(.alias // .parts[-1])])}]) as $aliases |
