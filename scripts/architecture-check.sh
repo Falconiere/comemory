@@ -149,7 +149,11 @@ rule:
         - kind: parameter
         - kind: let_declaration
     - has: {field: pattern, pattern: $RECEIVER}
-    - has: {field: type, pattern: $TYPE}
+    - any:
+        - has: {field: type, pattern: $TYPE}
+        - all:
+            - kind: let_declaration
+            - not: {has: {field: type, pattern: $TYPE}}
 ---
 id: method-calls
 language: Rust
@@ -240,7 +244,8 @@ jq '
       {start:-1,end:9007199254740991,module:true}) as $scope |
     (if .ruleId == "imports" then .text|imports
       elif .ruleId == "receiver-bindings" then
-        {parts:(.metaVariables.single.TYPE.text|tokens|map(select(. != "mut"))),alias:null}
+        {parts:((.metaVariables.single.TYPE.text // "") |
+          gsub("\u0027[A-Za-z_][A-Za-z_0-9]*"; "") | tokens | map(select(. != "mut"))),alias:null}
       elif .ruleId == "method-calls" then
         {parts:[.metaVariables.single.RECEIVER.text,.metaVariables.single.METHOD.text],alias:null}
       elif .ruleId == "enum-variants" then {parts:($base+
@@ -281,7 +286,8 @@ jq '
         .at < $entry.at)] | sort_by(.scope.start,.at) | last;
     [$raw[] | select(.kind != "receiver-bindings") | . as $entry |
       .parts=(if .kind == "method-calls" then receiver_type($entry) as $binding |
-        if $binding == null then [] else resolve($binding.parts;$binding;[])+[.parts[-1]] end
+        if $binding == null or ($binding.parts|length) == 0 then []
+        else resolve($binding.parts;$binding;[])+[.parts[-1]] end
         else resolve(.parts;$entry;[]) end) | select(.parts[0] == "crate") |
     {source,target:(.parts|join("::")),kind,
       binding:(if .kind == "imports" and .scope.module then
