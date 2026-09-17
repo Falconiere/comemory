@@ -239,15 +239,15 @@ domain $'use crate::{config::Config /* cli::run /* nested */ */}; pub fn work() 
 both 0 '' src/domains/memories.rs
 
 new_tree legacy_exception
-put src/api/save.rs 'pub fn run() { crate::cli::embedding_input(); }'
-policy '.legacy_edges=[{source:"src/api/save.rs",target:"crate::cli::embedding_input",class:"delivery",issue:"#166"}]'
-both 0 '' src/api/save.rs
+put src/api/search.rs 'pub fn run() { crate::cli::embedding_input(); }'
+policy '.legacy_edges=[{source:"src/api/search.rs",target:"crate::cli::embedding_input",class:"delivery",issue:"#166"}]'
+both 0 '' src/api/search.rs
 policy '.legacy_edges=[]'
-both 1 'crate::cli::embedding_input' src/api/save.rs
+both 1 'crate::cli::embedding_input' src/api/search.rs
 new_tree stale_exception
-put src/api/save.rs 'pub fn run() {}'
-policy '.legacy_edges=[{source:"src/api/save.rs",target:"crate::cli::embedding_input",class:"delivery",issue:"#166"}]'
-both 1 'stale policy edge' src/api/save.rs
+put src/api/search.rs 'pub fn run() {}'
+policy '.legacy_edges=[{source:"src/api/search.rs",target:"crate::cli::embedding_input",class:"delivery",issue:"#166"}]'
+both 1 'stale policy edge' src/api/search.rs
 
 for mutation in \
   '.legacy_edges += [.legacy_edges[0]]' \
@@ -262,10 +262,10 @@ for mutation in \
   '.setup_runtime_dependencies=[{source:"src/api/setup.rs",target:"crate::api::save",owner:"bogus"}]' \
   '.setup_runtime_dependencies=null'; do
   new_tree invalid_policy
-  put src/api/save.rs 'pub fn run() { crate::cli::embedding_input(); }'
-  policy '.legacy_edges=[{source:"src/api/save.rs",target:"crate::cli::embedding_input",class:"delivery",issue:"#166"}]'
+  put src/api/search.rs 'pub fn run() { crate::cli::embedding_input(); }'
+  policy '.legacy_edges=[{source:"src/api/search.rs",target:"crate::cli::embedding_input",class:"delivery",issue:"#166"}]'
   policy "$mutation"
-  both 3 'invalid policy' src/api/save.rs
+  both 3 'invalid policy' src/api/search.rs
 done
 new_tree malformed_json
 put scripts/architecture-policy.json '{broken'
@@ -280,72 +280,72 @@ new_tree callback_constructor
 put src/store/rows.rs 'use crate::domains::documents::source::registry::Registry as Lock; pub fn write() { Lock::acquire(); }'
 both 1 'crate::domains::documents::source::registry::Registry' src/store/rows.rs
 new_tree passive_model
-put src/store/rows.rs 'use crate::memory::Ref; pub fn read() -> Ref { Ref::new("value") }'
-policy '.passive_store_models=[{source:"src/store/rows.rs",target:"crate::memory::Ref"}]'
+put src/store/rows.rs 'use crate::domains::memories::Ref; pub fn read() -> Ref { Ref::new("value") }'
+policy '.passive_store_models=[{source:"src/store/rows.rs",target:"crate::domains::memories::Ref"}]'
 both 0 '' src/store/rows.rs
-put src/store/rows.rs 'use crate::memory::Ref; pub fn write() { Ref::reindex(); }'
-both 1 'crate::memory::Ref::reindex' src/store/rows.rs
-put src/store/rows.rs 'use crate::memory::Ref; pub fn write(model: Ref) { model.reindex(); }'
-both 1 'crate::memory::Ref::reindex' src/store/rows.rs
-put src/store/rows.rs 'use crate::memory::Ref as Model; fn write(model: &Model) { model.reindex(); }'
-both 1 'crate::memory::Ref::reindex' src/store/rows.rs
-put src/store/rows.rs "use crate::memory::Ref; fn write<'a>(model: &'a Ref) { model.reindex(); }"
-both 1 'crate::memory::Ref::reindex' src/store/rows.rs
-put src/store/rows.rs 'use crate::memory::Ref; fn write(model: Ref) { let model = model.reindex(); }'
-both 1 'crate::memory::Ref::reindex' src/store/rows.rs
-put src/store/rows.rs 'use crate::memory::Ref; fn write(model: Ref) { let model = 7; model.to_string(); }'
+put src/store/rows.rs 'use crate::domains::memories::Ref; pub fn write() { Ref::reindex(); }'
+both 1 'crate::domains::memories::Ref::reindex' src/store/rows.rs
+put src/store/rows.rs 'use crate::domains::memories::Ref; pub fn write(model: Ref) { model.reindex(); }'
+both 1 'crate::domains::memories::Ref::reindex' src/store/rows.rs
+put src/store/rows.rs 'use crate::domains::memories::Ref as Model; fn write(model: &Model) { model.reindex(); }'
+both 1 'crate::domains::memories::Ref::reindex' src/store/rows.rs
+put src/store/rows.rs "use crate::domains::memories::Ref; fn write<'a>(model: &'a Ref) { model.reindex(); }"
+both 1 'crate::domains::memories::Ref::reindex' src/store/rows.rs
+put src/store/rows.rs 'use crate::domains::memories::Ref; fn write(model: Ref) { let model = model.reindex(); }'
+both 1 'crate::domains::memories::Ref::reindex' src/store/rows.rs
+put src/store/rows.rs 'use crate::domains::memories::Ref; fn write(model: Ref) { let model = 7; model.to_string(); }'
 both 0 '' src/store/rows.rs
-put src/store/rows.rs 'use crate::memory::Ref; fn write(model: Ref) { let model = 7;model.to_string(); }'
+put src/store/rows.rs 'use crate::domains::memories::Ref; fn write(model: Ref) { let model = 7;model.to_string(); }'
 both 0 '' src/store/rows.rs
-put src/store/rows.rs 'use crate::memory::Ref; fn write() { let model: Ref = Ref::new("value"); model.reindex(); }'
-both 1 'crate::memory::Ref::reindex' src/store/rows.rs
-put src/store/rows.rs 'use crate::memory::Ref; fn read(model: Ref) {} fn other(model: crate::config::Config) { model.reindex(); }'
+put src/store/rows.rs 'use crate::domains::memories::Ref; fn write() { let model: Ref = Ref::new("value"); model.reindex(); }'
+both 1 'crate::domains::memories::Ref::reindex' src/store/rows.rs
+put src/store/rows.rs 'use crate::domains::memories::Ref; fn read(model: Ref) {} fn other(model: crate::config::Config) { model.reindex(); }'
 both 0 '' src/store/rows.rs
 new_tree passive_prefix_escape
-put src/store/rows.rs 'use crate::memory::ReferencesService; pub fn write() {}'
-policy '.passive_store_models=[{source:"src/store/rows.rs",target:"crate::memory::Ref"}]'
-both 1 'crate::memory::ReferencesService' src/store/rows.rs
+put src/store/rows.rs 'use crate::domains::memories::ReferencesService; pub fn write() {}'
+policy '.passive_store_models=[{source:"src/store/rows.rs",target:"crate::domains::memories::Ref"}]'
+both 1 'crate::domains::memories::ReferencesService' src/store/rows.rs
 
 # Scope must select the actual binding, not the first same-name import in a file.
 for body in \
-  'use crate::config as model; fn write() { use crate::memory::Ref as model; model::reindex(); }' \
-  'fn read() { use crate::config as model; model::read(); } fn write() { use crate::memory::Ref as model; model::reindex(); }' \
-  'use crate::memory::Ref; fn write() { self::Ref::reindex(); }' \
-  'use {crate::memory::Ref, Ref as model}; fn write() { model::reindex(); }' \
-  'use crate::memory::Ref; mod inner { fn write() { super::Ref::reindex(); } }'; do
+  'use crate::config as model; fn write() { use crate::domains::memories::Ref as model; model::reindex(); }' \
+  'fn read() { use crate::config as model; model::read(); } fn write() { use crate::domains::memories::Ref as model; model::reindex(); }' \
+  'use crate::domains::memories::Ref; fn write() { self::Ref::reindex(); }' \
+  'use {crate::domains::memories::Ref, Ref as model}; fn write() { model::reindex(); }' \
+  'use crate::domains::memories::Ref; mod inner { fn write() { super::Ref::reindex(); } }'; do
   new_tree lexical_store_alias
   put src/store/rows.rs "$body"
-  policy '.passive_store_models=[{source:"src/store/rows.rs",target:"crate::memory::Ref"}]'
-  both 1 'crate::memory::Ref::reindex' src/store/rows.rs
+  policy '.passive_store_models=[{source:"src/store/rows.rs",target:"crate::domains::memories::Ref"}]'
+  both 1 'crate::domains::memories::Ref::reindex' src/store/rows.rs
 done
 new_tree parent_file_alias
-put src/store/rows.rs 'use crate::memory::Ref; pub mod child;'
+put src/store/rows.rs 'use crate::domains::memories::Ref; pub mod child;'
 put src/store/rows/child.rs 'fn write() { super::Ref::reindex(); }'
-policy '.passive_store_models=[{source:"src/store/rows.rs",target:"crate::memory::Ref"}]'
-both 1 'crate::memory::Ref::reindex' src/store/rows/child.rs
+policy '.passive_store_models=[{source:"src/store/rows.rs",target:"crate::domains::memories::Ref"}]'
+both 1 'crate::domains::memories::Ref::reindex' src/store/rows/child.rs
 new_tree local_alias_shadows_passive
-put src/store/rows.rs 'use crate::memory::Ref as model; fn read() { use crate::config as model; model::read(); }'
-policy '.passive_store_models=[{source:"src/store/rows.rs",target:"crate::memory::Ref"}]'
+put src/store/rows.rs 'use crate::domains::memories::Ref as model; fn read() { use crate::config as model; model::read(); }'
+policy '.passive_store_models=[{source:"src/store/rows.rs",target:"crate::domains::memories::Ref"}]'
 both 0 '' src/store/rows.rs
 new_tree commented_module
 domain 'mod /* explanation */ inner { pub fn work() { super::super::super::cli::run(); } }'
 both 1 'crate::cli::run' src/domains/memories.rs
 new_tree passive_enum
-put src/memory.rs 'pub enum Kind { Note, Tagged(String), Record { value: String } }'
-put src/store/rows.rs 'use crate::memory::Kind; fn read() -> Kind { Kind::Note }'
-policy '.passive_store_models=[{source:"src/store/rows.rs",target:"crate::memory::Kind"}]'
+domain 'pub enum Kind { Note, Tagged(String), Record { value: String } }'
+put src/store/rows.rs 'use crate::domains::memories::Kind; fn read() -> Kind { Kind::Note }'
+policy '.passive_store_models=[{source:"src/store/rows.rs",target:"crate::domains::memories::Kind"}]'
 both 0 '' src/store/rows.rs
-put src/store/rows.rs 'use crate::memory::Kind; fn read() -> Kind { Kind::Tagged(String::new()) }'
+put src/store/rows.rs 'use crate::domains::memories::Kind; fn read() -> Kind { Kind::Tagged(String::new()) }'
 both 0 '' src/store/rows.rs
 for method in reindex Reindex Unknown; do
-  put src/store/rows.rs "use crate::memory::Kind; fn write() { Kind::$method(); }"
-  both 1 "crate::memory::Kind::$method" src/store/rows.rs
+  put src/store/rows.rs "use crate::domains::memories::Kind; fn write() { Kind::$method(); }"
+  both 1 "crate::domains::memories::Kind::$method" src/store/rows.rs
 done
 new_tree reexported_passive_enum
-put src/memory.rs 'pub mod frontmatter; pub use self::frontmatter::Kind;'
-put src/memory/frontmatter.rs 'pub enum Kind { Note }'
-put src/store/rows.rs 'use crate::memory::Kind; fn read() -> Kind { Kind::Note }'
-policy '.passive_store_models=[{source:"src/store/rows.rs",target:"crate::memory::Kind"}]'
+domain 'pub mod frontmatter; pub use self::frontmatter::Kind;'
+put src/domains/memories/frontmatter.rs 'pub enum Kind { Note }'
+put src/store/rows.rs 'use crate::domains::memories::Kind; fn read() -> Kind { Kind::Note }'
+policy '.passive_store_models=[{source:"src/store/rows.rs",target:"crate::domains::memories::Kind"}]'
 both 0 '' src/store/rows.rs
 
 new_tree grouped_diagnostics
@@ -355,11 +355,11 @@ test "$(grep -c '^src/domains/memories.rs:' "$TASK_TMP/result")" = 1
 test "$(grep -n 'crate::cli::a' "$TASK_TMP/result" | cut -d: -f1)" -lt "$(grep -n 'crate::serve::z' "$TASK_TMP/result" | cut -d: -f1)"
 new_tree scoped_selection
 domain 'pub fn work() {}'
-put src/api/save.rs 'pub fn run() { crate::cli::embedding_input(); }'
+put src/api/search.rs 'pub fn run() { crate::cli::embedding_input(); }'
 put tests/cli__setup.rs 'use crate::cli::setup;'
 assert_status 0 '' --file tests/cli__setup.rs
 assert_status 0 '' --file src/domains/memories.rs
-assert_status 1 'crate::cli::embedding_input' --file src/domains/memories.rs --file src/api/save.rs
+assert_status 1 'crate::cli::embedding_input' --file src/domains/memories.rs --file src/api/search.rs
 new_tree scoped_parent
 domain 'use crate::cli; pub mod save;'
 put src/domains/memories/save.rs 'pub fn work() {}'

@@ -32,7 +32,7 @@ pub struct Registry {
 impl Registry {
     /// Construct a registry rooted at `paths`. Callers are responsible
     /// for `paths.ensure_dirs()` having run at least once (same contract
-    /// as [`crate::memory::MemoryStore`]).
+    /// as [`crate::domains::memories::MemoryStore`]).
     pub fn new(paths: Paths) -> Self {
         Self { paths }
     }

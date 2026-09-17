@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use time::format_description::well_known::Iso8601;
 
-use crate::memory::frontmatter::{Kind, References, Relations};
+use crate::domains::memories::frontmatter::{Kind, References, Relations};
 pub use crate::store::sync_log::SyncOp;
 
 /// Schema-1 frontmatter on the wire minus `author` (handled separately on

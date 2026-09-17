@@ -9,7 +9,7 @@
 
 use rusqlite::Connection;
 
-use crate::memory::{Ref, References};
+use crate::domains::memories::{Ref, References};
 use crate::prelude::*;
 use crate::store::edges::{self, EdgeKey, REFERENCES_FILE, REFERENCES_SYMBOL};
 

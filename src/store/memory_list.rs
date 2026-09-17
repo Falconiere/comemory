@@ -48,7 +48,7 @@ impl SortBy {
 /// same reason (a missing frontmatter author is stored as SQL `NULL` and
 /// surfaces as `""` so the JSON type stays a stable string). `body` is
 /// carried verbatim rather than a derived `title` so the title stays a
-/// one-rule concept: the caller (`api::list::Row::from`) derives it through
+/// one-rule concept: the caller (`domains::memories::list::Row::from`) derives it through
 /// `output::search::title_of`, the same helper `comemory search`/`comemory
 /// show` already use, instead of the store layer depending on `output` to
 /// compute it here (Binding Rule 1).

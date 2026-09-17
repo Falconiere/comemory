@@ -299,7 +299,7 @@ fn expansions_pages_mined_rows_strongest_support_first() {
 
 /// Save one note through the real command core and return its id.
 fn save_note(ctx: &mut Ctx<'_>, body: &str) -> String {
-    let req = api::save::Request {
+    let req = crate::domains::memories::save::Request {
         body: body.to_string(),
         title: None,
         kind: Kind::Note,
@@ -312,7 +312,9 @@ fn save_note(ctx: &mut Ctx<'_>, body: &str) -> String {
         ref_file: Vec::new(),
         ref_symbol: Vec::new(),
     };
-    api::save::run(ctx, req, false, None).expect("seed save").id
+    crate::domains::memories::save::run(ctx, req, false, None)
+        .expect("seed save")
+        .id
 }
 
 /// Run a tracked search (so a `retrieval_log` row exists) and return its

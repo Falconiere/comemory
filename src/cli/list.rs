@@ -14,7 +14,6 @@ use std::path::PathBuf;
 
 use clap::{Args as ClapArgs, ValueEnum};
 
-use crate::api;
 use crate::cli::load_config;
 use crate::cli::pagination::PaginationArgs;
 use crate::config::paths::{Paths, resolve_data_dir};
@@ -88,7 +87,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     let mut conn = connection::open(paths.db_path())?;
     let cfg = load_config(&paths)?;
 
-    let req = api::list::Request {
+    let req = crate::domains::memories::list::Request {
         repo: a.repo,
         kind: a.kind,
         tag: a.tag,
@@ -97,13 +96,13 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         limit: a.page.limit,
         offset: a.page.offset,
         sort: match a.sort {
-            Sort::Created => api::list::Sort::Created,
-            Sort::Quality => api::list::Sort::Quality,
-            Sort::Accessed => api::list::Sort::Accessed,
+            Sort::Created => crate::domains::memories::list::Sort::Created,
+            Sort::Quality => crate::domains::memories::list::Sort::Quality,
+            Sort::Accessed => crate::domains::memories::list::Sort::Accessed,
         },
     };
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-    let page = api::list::run(&mut ctx, req)?;
+    let page = crate::domains::memories::list::run(&mut ctx, req)?;
 
     if json_flag {
         json::write(&page)?;

@@ -1,4 +1,4 @@
-//! `api::refresh_refs` — `POST /api/v1/memories/{id}/references/refresh`:
+//! `memories::refresh_refs` — `POST /api/v1/memories/{id}/references/refresh`:
 //! re-pin every anchored code reference to the current HEAD (console-api
 //! spec §4).
 //!
@@ -24,9 +24,9 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
-use crate::api::show::CodeRefRow;
 use crate::domains::code::git_utils;
-use crate::memory::{MemoryStore, Ref};
+use crate::domains::memories::show::CodeRefRow;
+use crate::domains::memories::{MemoryStore, Ref};
 use crate::prelude::*;
 use crate::store::Connection;
 use crate::utilities::context::Ctx;
@@ -82,10 +82,13 @@ pub fn run(ctx: &mut Ctx<'_>, id: &str, overrides: &RootOverrides) -> Result<Res
         // The re-pin's own response reports the refreshed refs; a stale
         // triplet index is not part of that answer, and the next write
         // rebuilds it.
-        let _stale = crate::api::update::mirror_record(ctx, &record)?;
+        let _stale = crate::domains::memories::update::mirror_record(ctx, &record)?;
     }
 
-    let shown = crate::api::show::run(ctx, crate::api::show::Request { id: id.clone() })?;
+    let shown = crate::domains::memories::show::run(
+        ctx,
+        crate::domains::memories::show::Request { id: id.clone() },
+    )?;
     Ok(Response {
         id,
         refreshed,

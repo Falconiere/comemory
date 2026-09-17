@@ -9,7 +9,7 @@
 
 use serde::Deserialize;
 
-use crate::memory::Kind;
+use crate::domains::memories::Kind;
 use crate::prelude::*;
 use crate::retrieval::pipeline;
 use crate::retrieval::scope::{Domain, Domains, Filters};

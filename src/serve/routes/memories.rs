@@ -1,5 +1,5 @@
-//! `GET /api/v1/memories` (`api::list`) and `GET /api/v1/memories/{id}`
-//! (`api::show` — the same middle `comemory show --json` uses, so the two
+//! `GET /api/v1/memories` (`domains::memories::list`) and `GET /api/v1/memories/{id}`
+//! (`domains::memories::show` — the same middle `comemory show --json` uses, so the two
 //! surfaces answer identically). `GET|POST /api/v1/memories/search` and
 //! `GET|POST /api/v1/context` live
 //! in [`search`]; the mutating routes (`POST /memories`, `DELETE
@@ -15,7 +15,6 @@ use axum::extract::{Path, Query, State};
 use axum::response::Response;
 use axum::routing::get;
 
-use crate::api;
 use crate::serve::AppState;
 use crate::serve::routes::{RouteEntry, respond, run_blocking};
 use crate::serve::scope::RepoScope;
@@ -43,7 +42,7 @@ pub fn table_entries() -> &'static [RouteEntry] {
         RouteEntry {
             method: "GET",
             path: "/memories/{id}",
-            // `show` — the route runs `api::show::run`, so the table names
+            // `show` — the route runs `domains::memories::show::run`, so the table names
             // that command rather than a synthetic one. The parity walk
             // requires every non-cli-only subcommand to own a route (AC-12).
             command: "show",
@@ -86,13 +85,13 @@ pub fn router(state: AppState) -> Router<AppState> {
         .merge(edit::router(state))
 }
 
-/// `GET /api/v1/memories` — page live memories (`api::list`). An
+/// `GET /api/v1/memories` — page live memories (`domains::memories::list`). An
 /// `X-Comemory-Repo` header is the default `repo` filter when the query
 /// omits one ([`RepoScope`]).
 async fn list(
     State(state): State<AppState>,
     scope: RepoScope,
-    Query(mut req): Query<api::list::Request>,
+    Query(mut req): Query<crate::domains::memories::list::Request>,
 ) -> Response {
     req.repo = scope.resolve(req.repo);
     let started = Instant::now();
@@ -100,13 +99,13 @@ async fn list(
         let cfg = state.cfg();
         let mut conn = state.conn()?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        api::list::run(&mut ctx, req)
+        crate::domains::memories::list::run(&mut ctx, req)
     })
     .await;
     respond("list", result, started)
 }
 
-/// `GET /api/v1/memories/{id}` — single-row lookup (`api::show`), so the
+/// `GET /api/v1/memories/{id}` — single-row lookup (`domains::memories::show`), so the
 /// HTTP surface and `comemory show --json` answer identically. `404
 /// not_found` when the id is absent or soft-deleted.
 async fn get_one(State(state): State<AppState>, Path(id): Path<String>) -> Response {
@@ -115,7 +114,10 @@ async fn get_one(State(state): State<AppState>, Path(id): Path<String>) -> Respo
         let cfg = state.cfg();
         let mut conn = state.conn()?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        api::show::run(&mut ctx, api::show::Request { id })
+        crate::domains::memories::show::run(
+            &mut ctx,
+            crate::domains::memories::show::Request { id },
+        )
     })
     .await;
     respond("show", result, started)

@@ -9,7 +9,7 @@
 //! `POST /api/v1/search/{query_id}/feedback` driven through the real router
 //! (`tests/common/serve_state.rs`) — console-api spec AC-4 and AC-5.
 //!
-//! Real data throughout: memories saved through `api::save`, a real git repo
+//! Real data throughout: memories saved through `domains::memories::save`, a real git repo
 //! indexed through `domains::code::index_code`, and feedback counters read back from
 //! the store with a second connection rather than from the response body.
 

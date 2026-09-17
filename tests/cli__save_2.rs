@@ -391,6 +391,68 @@ fn malformed_supersedes_wins_over_unparsable_vector_stdin() {
 }
 
 #[test]
+fn validation_precedes_data_dir_creation_and_db_open() {
+    // #169 regression: `supersedes` / `ref_*` validation runs before the data
+    // directory is created and before `comemory.db` is opened, not merely
+    // before the markdown write. Pointing `COMEMORY_DATA_DIR` at a path that
+    // does not exist makes the difference observable: if either effect had
+    // run, the directory would be on disk afterwards.
+    let parent = tempdir().expect("tempdir");
+    let absent = parent.path().join("never-created");
+
+    for (args, code) in [
+        (
+            vec![
+                "save",
+                "--kind",
+                "note",
+                "--supersedes",
+                "NOT-HEX!",
+                "body that must never reach the filesystem",
+            ],
+            78,
+        ),
+        (
+            vec![
+                "save",
+                "--kind",
+                "note",
+                "--repo",
+                "comemory",
+                "--ref-symbol",
+                "foo.rs",
+                "body that must never reach the filesystem",
+            ],
+            64,
+        ),
+    ] {
+        Command::cargo_bin("comemory")
+            .expect("bin")
+            .env("COMEMORY_DATA_DIR", &absent)
+            .args(&args)
+            .assert()
+            .code(code);
+        assert!(
+            !absent.exists(),
+            "{args:?} must abort before `ensure_dirs`, but {} exists",
+            absent.display(),
+        );
+    }
+
+    // Positive control: the same absent path IS created, database included,
+    // once the same flags are well formed — so the assertions above are about
+    // validation order, not about the path being unwritable.
+    Command::cargo_bin("comemory")
+        .expect("bin")
+        .env("COMEMORY_DATA_DIR", &absent)
+        .args(["save", "--kind", "note", "a valid body reaches the store"])
+        .assert()
+        .success();
+    assert!(absent.join("comemory.db").is_file(), "positive control");
+    assert_eq!(count_md_files(&absent), 1, "positive control");
+}
+
+#[test]
 fn save_rejects_out_of_range_quality() {
     let home = tempdir().expect("tempdir");
     let assertion = Command::cargo_bin("comemory")

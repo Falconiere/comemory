@@ -5,13 +5,13 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Test mirror for `src/memory/store.rs` — filesystem-backed memory CRUD.
+//! Test mirror for `src/domains/memories/store.rs` — filesystem-backed memory CRUD.
 
 use std::time::{Duration, SystemTime};
 
 use comemory::config::paths::Paths;
+use comemory::domains::memories::{Kind, MemoryStore, Relations, SaveParams};
 use comemory::errors::Error;
-use comemory::memory::{Kind, MemoryStore, Relations, SaveParams};
 
 use crate::test_common as common;
 

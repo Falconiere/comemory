@@ -20,9 +20,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::cli::graph::nodes::build_graph;
 use crate::cli::graph::{Rel, build_graph_page};
+use crate::domains::memories::nav::title_of;
 use crate::graph::neighbors::{self, DEFAULT_MIN_WEIGHT, NeighborRow};
 use crate::output::graph::{Edge, Node};
-use crate::output::search::title_of;
 use crate::prelude::*;
 use crate::store::Connection;
 use crate::store::code_graph_nodes::{self, NodeRow, fetch_node, fetch_nodes};

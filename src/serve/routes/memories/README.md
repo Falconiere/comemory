@@ -16,7 +16,7 @@ One line per file, named after its primary item:
 | --- | --- | --- |
 | `edit.rs` | `table_entries` | `PATCH /memories/{id}`, `POST /memories/{id}/restore`, `POST /memories/{id}/references/refresh` (`api::{update,restore,refresh_refs}`) |
 | `search.rs` | `router` | `GET\|POST /memories/search` (`api::search`) and `GET\|POST /context` (`api::context`), including access-tracking suppression |
-| `write.rs` | `table_entries` | `POST /memories` (`api::save`), the confirm-gated `DELETE /memories/{id}`, and `POST /feedback` |
+| `write.rs` | `table_entries` | `POST /memories` (`domains::memories::save`), the confirm-gated `DELETE /memories/{id}`, and `POST /feedback` |
 
 When you add a file here, add its row above so the index stays current. No
 `mod.rs` barrel — submodules are declared from

@@ -7,8 +7,8 @@
 )]
 //! The login-time first sync (AC-2, AC-3), against the real loopback platform.
 
-use comemory::api::save;
 use comemory::config::{Config, Paths};
+use comemory::domains::memories::save;
 use comemory::memory::Kind;
 use comemory::store::{connection, sync_state};
 use comemory::sync::initial::run_initial_sync;

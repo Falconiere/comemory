@@ -51,7 +51,7 @@ fn save_json(home: &TempDir, body: &str, extra: &[&str]) -> Value {
 /// `repo:path:symbol` body reference returns the body verbatim, quality 4,
 /// the tag list, and exactly one `code_refs` entry (the implied file ref
 /// for the same path collapses into the symbol ref — see
-/// `api::show::code_refs_for`).
+/// `memories::show::code_refs_for`).
 #[test]
 fn show_returns_full_body_quality_tags_and_one_code_ref() {
     let home = TempDir::new().expect("tempdir");

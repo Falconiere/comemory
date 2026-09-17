@@ -5,12 +5,12 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Test mirror for `src/memory/prior.rs` — `MemoryStore::prior` against real
+//! Test mirror for `src/domains/memories/prior.rs` — `MemoryStore::prior` against real
 //! files on disk: an empty store, a store with no `memories/` directory yet,
 //! a live file, its trash copy, a revived file, and an unparsable file.
 
 use comemory::config::paths::Paths;
-use comemory::memory::{Kind, MemoryStore, Prior, SaveParams};
+use comemory::domains::memories::{Kind, MemoryStore, Prior, SaveParams};
 
 use crate::test_common as common;
 

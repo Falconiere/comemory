@@ -51,7 +51,6 @@ One line per file, named after its primary item:
 | `pagination.rs` | `PaginationArgs` | Shared `--k` / `--offset` window flags, flattened into paginated commands |
 | `prune.rs` | `Args` | `comemory prune` — surface deletion candidates against the SQLite mirror |
 | `rebuild.rs` | `Args` | `comemory rebuild` — atomically rebuild the SQLite mirror from markdown |
-| `ref_args.rs` | `collect` | Parse `--ref-file` / `--ref-symbol` into a `References` block |
 | `save.rs` | `Args` | `comemory save` — atomic markdown write + SQLite-mirror upsert; waits on the after-save push |
 | `search.rs` | `Args` | `comemory search` — natural-language search over the memory store |
 | `search_code.rs` | `Args` | `comemory search-code` — ranked search over indexed `code_symbols` |
@@ -68,7 +67,6 @@ One line per file, named after its primary item:
 | `tune.rs` | `Args` | `comemory tune` — deterministic/sampled search over the blend knobs |
 | `unindex.rs` | `Args` | `comemory unindex <SOURCE_ID\|PATH>` — unregister a document source |
 | `upgrade.rs` | `Args` | `comemory upgrade` — move this binary to the newest release (`--check`, `--version`, `--force`); core in `crate::upgrade`, CLI-only |
-| `when.rs` | `DayEdge` | `--since`/`--until`/`--as-of` value parsing shared by `search` and `context` |
 
 When you add a file here, add its row above so the index stays current. No
 `mod.rs` barrel — submodules are declared from `src/cli.rs` (`pub mod <name>;`)

@@ -5,7 +5,7 @@
 //! no producer for was *one round trip* that returns all of them. This
 //! module is that composition and nothing else: it calls
 //! [`crate::api::stats::run`] for the counters, [`crate::domains::code::repos::run`]
-//! for the per-repo freshness, [`crate::api::list::run`] for the recent
+//! for the per-repo freshness, [`crate::domains::memories::list::run`] for the recent
 //! memories, and reads `index_runs` / `eval_runs` directly. No counter is
 //! recomputed here, so the tiles can never disagree with the screens they
 //! link to.
@@ -15,14 +15,15 @@
 //! side effect of being asked for a summary. On a data dir with no
 //! `comemory.db`, [`run`] never calls [`Ctx::conn`] — it answers with zero
 //! counters, an `unknown` index state, and empty lists. The two delegates
-//! that guard this themselves are still not enough: `api::list::run` opens
+//! that guard this themselves are still not enough: `domains::memories::list::run` opens
 //! a connection unconditionally, so the guard has to be here too.
 
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::api::{list, stats};
+use crate::api::stats;
 use crate::domains::code::repos;
+use crate::domains::memories::list;
 use crate::prelude::*;
 use crate::store::{Connection, edges, eval_runs, index_runs, memory_row};
 use crate::utilities::context::Ctx;

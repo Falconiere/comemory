@@ -1,20 +1,19 @@
 //! `comemory delete` — soft-delete a memory by id (moves the file into
 //! `memories/.trash/`, stamps `deleted_at` in `comemory.db`, and removes
-//! all touching graph edges + the FTS5 row).
+//! all touching graph edges + the FTS5 row). The deletion itself lives in
+//! `domains::memories::delete`; this module owns the clap flags, the inline
+//! cloud push and the output rendering.
 
 use std::io::Write as _;
 use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
-use time::OffsetDateTime;
 
-use crate::api;
 use crate::cli::load_config;
 use crate::cli::off_runtime::off_runtime;
 use crate::config::paths::{Paths, resolve_data_dir};
-use crate::memory::MemoryStore;
 use crate::prelude::*;
-use crate::store::{Connection, connection, memory_purge, memory_row};
+use crate::store::connection;
 use crate::utilities::context::Ctx;
 
 const EXAMPLES: &str = "\
@@ -33,55 +32,9 @@ pub struct Args {
     pub id: String,
 }
 
-/// Soft-delete one memory: move the markdown file into `memories/.trash/`
-/// (source of truth), then mirror the delete into `comemory.db` via
-/// [`mirror_soft_delete`]. Returns the canonical id from the removed
-/// record's frontmatter.
-///
-/// Shared by `comemory delete` (via `api::delete::run`) and `comemory
-/// prune` (low-value apply path) so the two soft-delete surfaces cannot
-/// drift.
-/// Returns the canonical id and whether the derived-artifact refresh that
-/// follows the mirror write FAILED, so the caller can report a stale
-/// relation index instead of leaving it in the log
-/// ([`crate::graph::derived::refresh_derived_best_effort`]).
-pub(crate) fn soft_delete(
-    paths: &Paths,
-    conn: &mut Connection,
-    id: &str,
-) -> Result<(String, String, bool)> {
-    let removed = MemoryStore::new(paths.clone()).delete(id)?;
-    let content_hash = removed.frontmatter.content_hash.clone();
-    let id = removed.frontmatter.id;
-    let derived_stale = mirror_soft_delete(conn, &id)?;
-    Ok((id, content_hash, derived_stale))
-}
-
-/// Mirror a soft-delete into `comemory.db` in one transaction: stamp
-/// `deleted_at`, drop the `memory_fts` + `memory_vec` rows, remove all
-/// touching edges.
-///
-/// Factored out of [`soft_delete`] so `comemory prune` can heal a
-/// half-deleted memory — live DB row, markdown already gone after a crash
-/// between the file move and this transaction — with no markdown move.
-///
-/// After the commit the memory and its edges have left the graph, so
-/// [`crate::graph::derived`] refreshes both derived artifacts best-effort
-/// here, not at the [`soft_delete`] call site: every soft-delete surface
-/// (delete, prune apply, prune heal) then heals rank and triplets alike.
-pub(crate) fn mirror_soft_delete(conn: &mut Connection, id: &str) -> Result<bool> {
-    let now = memory_row::iso_format(OffsetDateTime::now_utc())?;
-    let tx = conn.transaction()?;
-    memory_purge::soft_delete(&tx, id, &now)?;
-    tx.commit()?;
-    // After the commit, so a failed refresh cannot roll back a delete that
-    // succeeded — and reported rather than swallowed, since a stale
-    // relation index is something the caller can pass on.
-    Ok(!crate::graph::derived::refresh_derived_best_effort(conn))
-}
-
 /// Soft-delete the memory and report the affected id. Parses `Args`, opens
-/// the store, and delegates to [`api::delete::run`] (Binding Rule 1) —
+/// the store, and delegates to [`crate::domains::memories::delete::run`]
+/// (Binding Rule 1) —
 /// shared with `DELETE /api/v1/memories/{id}`.
 pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
@@ -93,7 +46,7 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let cfg = load_config(&paths)?;
     let mut conn = connection::open(paths.db_path())?;
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-    let output = api::delete::run(&mut ctx, &a.id)?;
+    let output = crate::domains::memories::delete::run(&mut ctx, &a.id)?;
     // A tombstone is a change like any other: push it inline so the console
     // and every other device see the delete without waiting for a sync.
     //

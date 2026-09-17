@@ -1,13 +1,13 @@
 //! The `memories` scan behind `GET /api/v1/trash`: every soft-deleted row,
 //! newest deletion first. On-disk join and day-countdown math stay in
-//! `api::trash` (spec
+//! `domains::memories::trash` (spec
 //! `docs/toolu/specs/2026-09-07-store-layer-chokepoint-design.md`).
 
 use rusqlite::Connection;
 
 use crate::prelude::*;
 
-/// The `memories` columns `api::trash` reads, before the on-disk join.
+/// The `memories` columns `domains::memories::trash` reads, before the on-disk join.
 pub struct DeletedMemoryRow {
     /// 8-hex memory id.
     pub id: String,

@@ -8,7 +8,7 @@
 use std::collections::HashSet;
 
 use crate::config::paths::Paths;
-use crate::memory::MemoryStore;
+use crate::domains::memories::MemoryStore;
 use crate::prelude::*;
 
 /// Scan `memories/.trash/` and return the ids of entries that no longer have

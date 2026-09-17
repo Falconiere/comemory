@@ -101,11 +101,6 @@
       "issue": "#170"
     },
     {
-      "module": "crate::memory",
-      "owner": "domains::memories",
-      "issue": "#169"
-    },
-    {
       "module": "crate::output",
       "owner": "delivery::cli",
       "issue": "#166"
@@ -160,6 +155,10 @@
     {
       "source": "domains::graph",
       "target": "domains::learning"
+    },
+    {
+      "source": "domains::graph",
+      "target": "domains::memories"
     },
     {
       "source": "domains::integrations",
@@ -309,12 +308,6 @@
   ],
   "legacy_edges": [
     {
-      "source": "src/api/delete.rs",
-      "target": "crate::cli::delete",
-      "class": "delivery",
-      "issue": "#169"
-    },
-    {
       "source": "src/api/graph.rs",
       "target": "crate::cli::graph",
       "class": "delivery",
@@ -345,64 +338,10 @@
       "issue": "#170"
     },
     {
-      "source": "src/api/graph_nodes.rs",
-      "target": "crate::output::search",
-      "class": "delivery",
-      "issue": "#170"
-    },
-    {
-      "source": "src/api/list.rs",
-      "target": "crate::output::search",
-      "class": "delivery",
-      "issue": "#169"
-    },
-    {
-      "source": "src/api/prune.rs",
-      "target": "crate::cli::delete",
-      "class": "delivery",
-      "issue": "#169"
-    },
-    {
-      "source": "src/api/prune.rs",
-      "target": "crate::output::search",
-      "class": "delivery",
-      "issue": "#169"
-    },
-    {
-      "source": "src/api/save.rs",
-      "target": "crate::output::search",
-      "class": "delivery",
-      "issue": "#169"
-    },
-    {
-      "source": "src/api/show.rs",
-      "target": "crate::output::search",
-      "class": "delivery",
-      "issue": "#169"
-    },
-    {
-      "source": "src/api/sync/import_rules.rs",
-      "target": "crate::cli::delete",
-      "class": "delivery",
-      "issue": "#169"
-    },
-    {
-      "source": "src/api/trash.rs",
-      "target": "crate::output::search",
-      "class": "delivery",
-      "issue": "#169"
-    },
-    {
       "source": "src/cli/graph/nodes.rs",
       "target": "crate::output::graph",
       "class": "delivery",
       "issue": "#170"
-    },
-    {
-      "source": "src/retrieval/unified/fuse_domains.rs",
-      "target": "crate::output::search",
-      "class": "delivery",
-      "issue": "#169"
     }
   ],
   "store_callbacks": [
@@ -434,23 +373,23 @@
   "passive_store_models": [
     {
       "source": "src/store/code_ref.rs",
-      "target": "crate::memory::Ref"
+      "target": "crate::domains::memories::Ref"
     },
     {
       "source": "src/store/code_ref.rs",
-      "target": "crate::memory::References"
+      "target": "crate::domains::memories::References"
     },
     {
       "source": "src/store/memory_meta.rs",
-      "target": "crate::memory::Ref"
+      "target": "crate::domains::memories::Ref"
     },
     {
       "source": "src/store/memory_meta.rs",
-      "target": "crate::memory::References"
+      "target": "crate::domains::memories::References"
     },
     {
       "source": "src/store/memory_row.rs",
-      "target": "crate::memory::Frontmatter"
+      "target": "crate::domains::memories::Frontmatter"
     }
   ]
 }

@@ -206,7 +206,7 @@ fn memory_signals(conn: &Connection, id: &str) -> Result<Option<Signals>> {
 /// [`crate::store::edges_retrieval::live_superseder`] for the join and the
 /// `as_of_cutoff` contract.
 ///
-/// `pub(crate)` so `api::show` reuses the exact same join for its
+/// `pub(crate)` so `domains::memories::show` reuses the exact same join for its
 /// `superseded_by` field instead of re-deriving it (Binding Rule 1).
 pub(crate) fn live_superseder(
     conn: &Connection,

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use time::format_description::well_known::Iso8601;
 
-use crate::memory::references::Ref;
+use crate::domains::memories::references::Ref;
 use crate::prelude::*;
 
 /// Memory taxonomy. Stored lowercase in YAML.

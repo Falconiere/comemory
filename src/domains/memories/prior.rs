@@ -2,7 +2,7 @@
 //! by [`MemoryStore::prior`] before a save. The live `memories/{id}-*.md` is
 //! consulted first, then `.trash/{id}-*.md`, the same order
 //! `MemoryStore::find_in_trash` uses, so the two can never disagree on which
-//! copy of an id counts. One lookup backs both `api::save`'s replay rules —
+//! copy of an id counts. One lookup backs both `memories::save`'s replay rules —
 //! the 32-bit collision guard, `created` preservation, and the
 //! `created: bool` outcome report — and `api::sync::import_state`'s
 //! pulled-record collision rule (Binding Rule 1).
@@ -16,8 +16,8 @@ use std::path::Path;
 
 use time::OffsetDateTime;
 
-use crate::memory::frontmatter::Frontmatter;
-use crate::memory::store::MemoryStore;
+use crate::domains::memories::frontmatter::Frontmatter;
+use crate::domains::memories::store::MemoryStore;
 use crate::prelude::*;
 
 /// The frontmatter facts an existing memory file contributes to a re-save.

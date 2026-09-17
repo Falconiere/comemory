@@ -11,8 +11,9 @@
 //! hand-forged log row, because the exclusion of `search-code` queries is
 //! precisely what one of these tests is about.
 
-use comemory::api::{find, save, search_code, suggest};
+use comemory::api::{find, search_code, suggest};
 use comemory::config::{Config, Paths};
+use comemory::domains::memories::save;
 use comemory::memory::Kind;
 use comemory::store::connection;
 use comemory::utilities::context::Ctx;

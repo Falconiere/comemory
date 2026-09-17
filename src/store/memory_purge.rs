@@ -39,8 +39,9 @@ use crate::store::edges;
 /// filter, so a surviving `memory_vec` row would block a future re-save of
 /// the same body with a PK constraint failure), and delete every edge
 /// touching the memory. Caller commits; see
-/// [`crate::cli::delete::mirror_soft_delete`] for why the derived-artifact
-/// refresh runs after that commit rather than inside this helper.
+/// [`crate::domains::memories::delete::mirror_soft_delete`] for why the
+/// derived-artifact refresh runs after that commit rather than inside this
+/// helper.
 pub fn soft_delete(conn: &Connection, id: &str, now: &str) -> Result<()> {
     conn.execute(
         "UPDATE memories SET deleted_at = ?1 WHERE id = ?2",

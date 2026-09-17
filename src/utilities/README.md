@@ -39,7 +39,7 @@ One line per file, named after its primary item:
 | `path_containment.rs` | `resolve_within` | Canonicalize-and-contain checks: `resolve_within` for a repo-relative `file:<repo>:<path>` id and `contain_abs` for a caller-supplied absolute path; both reject `..`, absolute, NUL, and symlink escapes |
 | `progress.rs` | `ProgressSink` | The progress / cancellation contract a long-running walk reports through and a job worker consumes |
 | `query_id.rs` | `generate_query_id` | The `q-<yyyymmdd>-<8hex>` retrieval-log id: mint and validate, kept out of the learning capability so retrieval does not depend on it |
-| `repo_root.rs` | `resolve_root` | Resolve a `file:<repo>:<path>` node id to an absolute file on disk, and the `RootOverrides` map a caller may layer over the stored `repo_marker` roots — the one repository resolver `cli`, `serve`, `retrieval::code_ref_fetch` and `api::refresh_refs` share |
+| `repo_root.rs` | `resolve_root` | Resolve a `file:<repo>:<path>` node id to an absolute file on disk, and the `RootOverrides` map a caller may layer over the stored `repo_marker` roots — the one repository resolver `cli`, `serve`, `retrieval::code_ref_fetch` and `domains::memories::refresh_refs` share |
 | `ref_args.rs` | `collect` | The `--ref-file` / `--ref-symbol` values qualified, rewritten repo-root-relative, and anchored to the HEAD blob into a `References` block |
 | `simhash.rs` | `simhash64` | 64-bit SimHash, Hamming distance, and the `NEAR_DUP_HAMMING` near-duplicate radius |
 | `telemetry.rs` | `PROV_MANUAL` | The persisted vocabularies: `retrieval_log.source`, `feedback_events.target_kind`, the four `provenance` values, and the two auto-reinforcement sentinel query ids |

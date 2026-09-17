@@ -5,10 +5,10 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Test mirror for `src/memory/slug.rs` — filename-safe slug derivation
+//! Test mirror for `src/domains/memories/slug.rs` — filename-safe slug derivation
 //! from a memory body's first line.
 
-use comemory::memory::slug::slug_from_body;
+use comemory::domains::memories::slug::slug_from_body;
 
 #[test]
 fn slug_from_first_meaningful_line() {

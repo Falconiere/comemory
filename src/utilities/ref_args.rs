@@ -7,7 +7,7 @@
 use std::path::Path;
 
 use crate::domains::code::git_utils;
-use crate::memory::{Ref, References};
+use crate::domains::memories::{Ref, References};
 use crate::prelude::*;
 
 /// A reference's resolved repo plus the repo-root-relative path used both as

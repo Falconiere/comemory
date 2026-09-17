@@ -11,8 +11,8 @@
 
 use std::time::Instant;
 
-use comemory::api::save;
 use comemory::config::{Config, Paths};
+use comemory::domains::memories::save;
 use comemory::memory::Kind;
 use comemory::store::connection;
 use comemory::sync::push_on_save::after_write_best_effort;

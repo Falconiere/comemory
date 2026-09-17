@@ -10,7 +10,7 @@
 //! `GET /prune`), `POST /api/v1/prune {ids}` (apply only these candidates)
 //! and `POST /api/v1/prune {dry_run}` (the HTTP-only inverse of `apply`).
 //!
-//! Candidates are real: memories saved through `api::save` and then made
+//! Candidates are real: memories saved through `domains::memories::save` and then made
 //! prune-eligible by the same mirror-doctoring the CLI prune suite uses
 //! (`tests/common/cli_prune_support.rs`'s rule — quality 2 plus a
 //! back-dated `last_accessed`), so `low_value::detect` flags them for the

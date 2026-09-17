@@ -143,12 +143,12 @@ fn open_store(home: &tempfile::TempDir) -> (Paths, Config, rusqlite::Connection)
     (paths, Config::defaults(), conn)
 }
 
-/// Save one note through the real `api::save::run`, returning its id.
+/// Save one note through the real `domains::memories::save::run`, returning its id.
 fn save_note(paths: &Paths, cfg: &Config, conn: &mut rusqlite::Connection, body: &str) -> String {
     let mut ctx = Ctx::borrowed(paths, cfg, conn);
-    api::save::run(
+    crate::domains::memories::save::run(
         &mut ctx,
-        api::save::Request {
+        crate::domains::memories::save::Request {
             body: body.to_string(),
             title: None,
             kind: comemory::memory::Kind::Note,
@@ -168,7 +168,7 @@ fn save_note(paths: &Paths, cfg: &Config, conn: &mut rusqlite::Connection, body:
     .id
 }
 
-/// Soft-delete `id` through the real `api::delete::run` and return the
+/// Soft-delete `id` through the real `domains::memories::delete::run` and return the
 /// `.trash/` path the file landed at.
 fn soft_delete(
     paths: &Paths,
@@ -177,11 +177,11 @@ fn soft_delete(
     id: &str,
 ) -> std::path::PathBuf {
     let mut ctx = Ctx::borrowed(paths, cfg, conn);
-    api::delete::run(&mut ctx, id).expect("soft delete");
+    crate::domains::memories::delete::run(&mut ctx, id).expect("soft delete");
     let mut ctx = Ctx::borrowed(paths, cfg, conn);
-    let page = api::trash::run(
+    let page = crate::domains::memories::trash::run(
         &mut ctx,
-        api::trash::Request {
+        crate::domains::memories::trash::Request {
             limit: 0,
             offset: 0,
         },
@@ -213,9 +213,9 @@ fn gc(paths: &Paths, cfg: &Config, conn: &mut rusqlite::Connection) -> api::gc::
 
 fn trash_ids(paths: &Paths, cfg: &Config, conn: &mut rusqlite::Connection) -> Vec<String> {
     let mut ctx = Ctx::borrowed(paths, cfg, conn);
-    api::trash::run(
+    crate::domains::memories::trash::run(
         &mut ctx,
-        api::trash::Request {
+        crate::domains::memories::trash::Request {
             limit: 0,
             offset: 0,
         },

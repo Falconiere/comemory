@@ -9,9 +9,9 @@ use std::time::SystemTime;
 use time::OffsetDateTime;
 
 use crate::config::paths::Paths;
-use crate::memory::frontmatter::{Frontmatter, Kind, References, Relations};
-use crate::memory::id::memory_id;
-use crate::memory::slug::slug_from_body;
+use crate::domains::memories::frontmatter::{Frontmatter, Kind, References, Relations};
+use crate::domains::memories::id::memory_id;
+use crate::domains::memories::slug::slug_from_body;
 use crate::prelude::*;
 use crate::utilities::digest::sha256_hex;
 
@@ -44,7 +44,7 @@ pub struct SaveParams<'a> {
     /// Creation timestamp. When `None`, [`MemoryStore::save`] stamps
     /// `now_utc()`. A re-save of an existing id must pass the prior file's
     /// value ([`MemoryStore::prior`]) so a replay never moves a memory's
-    /// creation instant forward; `api::save` does, `save` itself never
+    /// creation instant forward; `memories::save` does, `save` itself never
     /// looks it up.
     pub created: Option<OffsetDateTime>,
 }
@@ -131,7 +131,7 @@ impl MemoryStore {
     ///
     /// The id is content-derived, so a same-body re-save lands on the same
     /// filename and overwrites it: this is the idempotent replay
-    /// `api::save` promises. The three replay rules — refuse a same-id
+    /// `memories::save` promises. The three replay rules — refuse a same-id
     /// different-body collision, carry the prior `created`, report
     /// `created: bool` — are the caller's, over [`MemoryStore::prior`].
     pub fn save(&self, p: SaveParams<'_>) -> Result<MemoryRecord> {
@@ -211,7 +211,7 @@ impl MemoryStore {
     /// Bring a soft-deleted memory back: move `.trash/{id}-{slug}.md` back
     /// into `memories/` and return the record parsed from the restored file.
     /// The exact reverse of [`MemoryStore::delete`]'s file move; the SQLite
-    /// mirror is the caller's half (`api::restore`).
+    /// mirror is the caller's half (`memories::restore`).
     ///
     /// `Error::BadRequest` when `id` names a live memory — checked BEFORE the
     /// trash is consulted, so a stale trash copy can never be renamed over a
@@ -407,7 +407,7 @@ fn matches_prefix(name: &str, prefix: &str) -> bool {
 }
 
 /// Set `path`'s mtime to now. `fs::rename` keeps the original mtime, but the
-/// trash readers (`api::gc::sweep_trash`, `api::trash::days_until_gc`) treat
+/// trash readers (`api::gc::sweep_trash`, `trash::days_until_gc`) treat
 /// a trashed file's mtime as its deletion instant — without this stamp a
 /// memory last written 45 days ago and deleted today would be reaped by the
 /// next gc under a 30-day window, with no undo window at all. Best-effort:

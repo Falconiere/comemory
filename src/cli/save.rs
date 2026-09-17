@@ -3,7 +3,7 @@
 //! Clap `Args` parsing plus the stdin body read (the only place stdin
 //! exists — spec §Architecture) live here. The raw `--vector`/
 //! `--vector-stdin` flags pass through unparsed to
-//! [`crate::api::save::run`] (Binding Rule 1, shared with `POST
+//! [`crate::domains::memories::save::run`] (Binding Rule 1, shared with `POST
 //! /api/v1/memories`), which parses (and reads stdin for) them AFTER its
 //! own `supersedes`/`ref_*` validation — see that function's doc.
 
@@ -13,11 +13,10 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::api;
 use crate::cli::load_config;
 use crate::cli::off_runtime::off_runtime;
 use crate::config::paths::{Paths, resolve_data_dir};
-use crate::memory::Kind;
+use crate::domains::memories::Kind;
 use crate::output::tty;
 use crate::prelude::*;
 use crate::utilities::context::Ctx;
@@ -111,7 +110,7 @@ pub struct Args {
 /// Save the body and emit the new memory id + on-disk path.
 ///
 /// Uses a lazy `Ctx` (no data-dir/DB touch up front) and passes the raw
-/// `--vector`/`--vector-stdin` flags straight through to `api::save::run`
+/// `--vector`/`--vector-stdin` flags straight through to `domains::memories::save::run`
 /// unparsed, so its `supersedes`/`ref_*` validation runs (and can fail)
 /// before the vector is parsed, the data dir is created, the DB is opened,
 /// or stdin is read — exactly as `cli::save::run` did pre-extraction
@@ -123,7 +122,7 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let cfg = load_config(&paths)?;
     let mut ctx = Ctx::lazy(&paths, &cfg);
 
-    let req = api::save::Request {
+    let req = crate::domains::memories::save::Request {
         body,
         title: None,
         kind: a.kind,
@@ -136,7 +135,8 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
         ref_file: a.ref_file,
         ref_symbol: a.ref_symbol,
     };
-    let output = api::save::run(&mut ctx, req, a.vector_stdin, a.vector.as_deref())?;
+    let output =
+        crate::domains::memories::save::run(&mut ctx, req, a.vector_stdin, a.vector.as_deref())?;
     // The write is committed; sync is now the writing command's own business
     // (`sync::push_on_save`). `off_runtime` because the platform client is
     // `reqwest::blocking`, which panics on drop inside this async fn's runtime.
@@ -172,7 +172,7 @@ fn read_body(a: &Args) -> Result<String> {
 /// summary — `saved <id>` for an insert, `updated <id>` for a replay of an
 /// existing body — with the near-dup advisory and each ref warning on
 /// stderr.
-fn emit(json: bool, output: &api::save::Response) -> Result<()> {
+fn emit(json: bool, output: &crate::domains::memories::save::Response) -> Result<()> {
     let mut out = std::io::stdout().lock();
     if json {
         writeln!(out, "{}", serde_json::to_string(output)?)?;

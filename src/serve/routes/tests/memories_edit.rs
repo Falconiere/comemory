@@ -88,7 +88,7 @@ async fn ac6_patching_the_body_mints_a_new_id_that_supersedes_the_old() {
     assert_ne!(new_id, old_id);
     assert_eq!(data(&resp)["superseded"], json!(old_id));
 
-    // `api::show` reports the supersede edge on the OLD id.
+    // `domains::memories::show` reports the supersede edge on the OLD id.
     let old = serve_state::send(&session, "GET", &format!("/api/v1/memories/{old_id}"), None).await;
     assert_eq!(old.json["data"]["superseded_by"], json!(new_id));
 

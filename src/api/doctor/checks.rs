@@ -8,7 +8,7 @@
 
 use crate::config::Paths;
 use crate::config::env::env_parse;
-use crate::memory::MemoryStore;
+use crate::domains::memories::MemoryStore;
 use crate::prelude::*;
 use crate::store::{Connection, doctor_probes, vector};
 use crate::utilities::digest::sha256_hex;

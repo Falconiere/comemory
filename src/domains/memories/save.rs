@@ -1,4 +1,4 @@
-//! `api::save::{Request, Response, run}` — the shared middle of `comemory
+//! `memories::save::{Request, Response, run}` — the shared middle of `comemory
 //! save` / `POST /api/v1/memories`, moved out of `cli::save::run` (Binding
 //! Rule 1): id derivation, `supersedes` validation, `ref_*` collection,
 //! vector dim guard, near-dup check, atomic markdown write + SQLite mirror.
@@ -19,7 +19,7 @@
 //! is the **server process's** cwd, not the client's — documented API
 //! behavior (spec §Architecture); deterministic anchoring needs explicit
 //! `repo:`-qualified `ref_file`/`ref_symbol` values. An in-process caller
-//! that already holds qualified references — `api::update`'s superseding
+//! that already holds qualified references — `memories::update`'s superseding
 //! re-save — hands them to [`run_with`] as [`Verbatim`] instead, which never
 //! re-qualifies them.
 
@@ -27,7 +27,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::memory::{Kind, MemoryStore, Prior, References, Relations, SaveParams, id};
+use crate::domains::memories::{Kind, MemoryStore, Prior, References, Relations, SaveParams, id};
 use crate::prelude::*;
 use crate::store::{Connection, embed, memory_row, sync_log, vector};
 use crate::utilities::context::Ctx;
@@ -43,7 +43,7 @@ pub struct Request {
     /// Memory body (markdown).
     pub body: String,
     /// Optional title. A memory's title is by definition the first
-    /// non-empty line of its body (`output::search::title_of`), so a
+    /// non-empty line of its body ([`super::nav::title_of`]), so a
     /// supplied title is prepended as that first line (followed by a blank
     /// line) before the content hash is taken — unless the body's first
     /// non-empty line already *equals* it (see [`fold_title`]). HTTP-only
@@ -100,7 +100,7 @@ fn default_quality() -> u8 {
 /// lists the CLI has no flag for, and references that are already qualified
 /// (`<repo>:<path>[:<symbol>]` ids, anchors included) and so must NOT go
 /// through `ref_args::qualify`'s cwd-relative path rewrite. Not a JSON
-/// surface — it is the contract `api::update`'s re-save uses to move an old
+/// surface — it is the contract `memories::update`'s re-save uses to move an old
 /// memory's frontmatter onto its successor byte-for-byte. Nothing here is
 /// validated or de-duplicated, exactly as `comemory rebuild` carries
 /// hand-edited markdown: `store::memory_row` skips a self-referential
@@ -167,7 +167,7 @@ pub fn run(
 }
 
 /// [`run`] with frontmatter carried over as [`Verbatim`] — the entry point
-/// `api::update`'s re-save uses. Every other caller goes through [`run`].
+/// `memories::update`'s re-save uses. Every other caller goes through [`run`].
 pub fn run_with(
     ctx: &mut Ctx<'_>,
     mut req: Request,
@@ -246,24 +246,24 @@ fn replay_prior(store: &MemoryStore, id: &str, body: &str) -> Result<Option<Prio
 
 /// Fold `title` into `body` as its first line (see [`Request::title`]). A
 /// blank title is ignored. A body whose title — its first non-empty trimmed
-/// line, `output::search::title_of`'s definition — already equals the
+/// line, [`super::nav::title_of`]'s definition — already equals the
 /// trimmed title is returned unchanged, so a round-tripped save stays
 /// idempotent. That is an equality test, not a prefix test: `"Pool"` on a
 /// body opening `"Pooling connections…"` is still prepended. `pub(crate)`
-/// because `api::update` must apply the same rule *before* calling [`run`]
+/// because `memories::update` must apply the same rule *before* calling [`run`]
 /// to tell whether a patch changes the content hash.
 pub(crate) fn fold_title(title: Option<&str>, body: &str) -> String {
     let Some(title) = title.map(str::trim).filter(|t| !t.is_empty()) else {
         return body.to_string();
     };
-    if crate::output::search::title_of(body) == title {
+    if super::nav::title_of(body) == title {
         return body.to_string();
     }
     format!("{title}\n\n{}", body.trim_start())
 }
 
 /// `1..=5`, matching the CLI's clap range validator (HTTP has no clap, so
-/// this must be enforced explicitly). Shared with `api::update`, whose
+/// this must be enforced explicitly). Shared with `memories::update`, whose
 /// `quality` field has no clap validator either.
 pub(crate) fn validate_quality(quality: u8) -> Result<()> {
     if (1..=5).contains(&quality) {
@@ -322,7 +322,7 @@ fn persist(
     store: &MemoryStore,
     params: SaveParams<'_>,
     vector_opt: Option<&[f32]>,
-) -> Result<crate::memory::MemoryRecord> {
+) -> Result<crate::domains::memories::MemoryRecord> {
     let tags = params.tags.to_vec();
     let rec = store.save(params)?;
     let md_path = rec.path.clone();
@@ -394,7 +394,7 @@ fn near_duplicate_inner(
 /// [`memory_row::insert`] so save and `comemory rebuild` cannot drift.
 fn write_sqlite_mirror(
     conn: &mut Connection,
-    rec: &crate::memory::MemoryRecord,
+    rec: &crate::domains::memories::MemoryRecord,
     tags: &[String],
     vector_opt: Option<&[f32]>,
 ) -> Result<()> {

@@ -1,8 +1,8 @@
-//! `api::restore` — `POST /api/v1/memories/{id}/restore` /
+//! `memories::restore` — `POST /api/v1/memories/{id}/restore` /
 //! `POST /api/v1/trash/{id}/restore`: bring a soft-deleted memory back
 //! (console-api spec §4/§9).
 //!
-//! The exact reverse of `cli::delete::soft_delete`: that surface moves
+//! The exact reverse of [`super::delete::soft_delete`]: that surface moves
 //! `memories/{id}-{slug}.md` into `.trash/`, stamps `deleted_at`, and drops
 //! the FTS/vector rows and every touching edge. Restore moves the file back
 //! (`MemoryStore::restore`, which refuses to rename over a live re-save of
@@ -20,7 +20,7 @@
 
 use serde::Serialize;
 
-use crate::memory::{MemoryRecord, MemoryStore};
+use crate::domains::memories::{MemoryRecord, MemoryStore};
 use crate::prelude::*;
 use crate::store::edges::{self, EdgeKey};
 use crate::store::{Connection, memory_row, sync_log};
@@ -50,7 +50,7 @@ pub struct Response {
 /// The file move and the SQLite mirror are two steps, not one transaction:
 /// a mirror failure leaves the markdown live under `memories/` with the row
 /// still stamped `deleted_at`, so the error names the path and the
-/// `comemory rebuild` recovery, exactly as `api::save` does.
+/// `comemory rebuild` recovery, exactly as `memories::save` does.
 pub fn run(ctx: &mut Ctx<'_>, id: &str) -> Result<Response> {
     let store = MemoryStore::new(ctx.paths.clone());
     let record = store.restore(id)?;
@@ -72,7 +72,7 @@ pub fn run(ctx: &mut Ctx<'_>, id: &str) -> Result<Response> {
 
 /// The SQLite half of a restore: the incoming relation edges first (their
 /// own transaction), then the row itself through the shared
-/// `api::update::mirror_record`, which also refreshes the derived artifacts
+/// `memories::update::mirror_record`, which also refreshes the derived artifacts
 /// — once, after both halves are in place.
 /// Returns whether that refresh failed, so `run` can report it.
 fn mirror(ctx: &mut Ctx<'_>, store: &MemoryStore, record: &MemoryRecord) -> Result<bool> {
@@ -87,7 +87,7 @@ fn mirror(ctx: &mut Ctx<'_>, store: &MemoryStore, record: &MemoryRecord) -> Resu
         relinked,
         "restore re-derived incoming relation edges"
     );
-    crate::api::update::mirror_record(ctx, record)
+    crate::domains::memories::update::mirror_record(ctx, record)
 }
 
 /// Soft-delete removes every edge touching the memory, both directions. The

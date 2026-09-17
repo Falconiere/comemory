@@ -12,7 +12,7 @@ use clap::Args as ClapArgs;
 use crate::api;
 use crate::cli::{load_config, track_searches};
 use crate::config::paths::{Paths, resolve_data_dir};
-use crate::memory::Kind;
+use crate::domains::memories::Kind;
 use crate::output::json;
 use crate::prelude::*;
 use crate::store::connection;

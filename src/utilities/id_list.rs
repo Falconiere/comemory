@@ -3,7 +3,7 @@
 //! [`csv_unique`] is the de-duplication rule every CSV flag uses; the two
 //! parsers add the id validation their flag needs. The *policy* each parser
 //! delegates to stays with its owner — memory-id shape is
-//! [`crate::memory::id::is_valid_memory_id`] — so this file only splits,
+//! [`crate::domains::memories::id::is_valid_memory_id`] — so this file only splits,
 //! trims, de-duplicates, and reports (#166).
 
 use crate::prelude::*;
@@ -24,13 +24,13 @@ pub(crate) fn csv_unique(raw: &str) -> Vec<String> {
 }
 
 /// Parse a CSV of memory ids via [`csv_unique`] and validate every entry
-/// against [`crate::memory::id::is_valid_memory_id`], naming the offending
+/// against [`crate::domains::memories::id::is_valid_memory_id`], naming the offending
 /// `flag` in the error. Shared by `save --supersedes` and the `feedback`
 /// id flags so malformed ids are rejected identically everywhere.
 pub(crate) fn parse_id_csv(raw: &str, flag: &str) -> Result<Vec<String>> {
     let ids = csv_unique(raw);
     for entry in &ids {
-        if !crate::memory::id::is_valid_memory_id(entry) {
+        if !crate::domains::memories::id::is_valid_memory_id(entry) {
             return Err(Error::Config(format!(
                 "{flag}: invalid memory id `{entry}` (expected 8 lowercase hex chars)"
             )));

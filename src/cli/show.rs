@@ -1,7 +1,7 @@
 //! `comemory show` — one memory in full: body, frontmatter, activation,
 //! references, and code-reference freshness.
 //!
-//! The lookup itself lives in `api::show` (Binding Rule 1); this module only
+//! The lookup itself lives in `domains::memories::show` (Binding Rule 1); this module only
 //! parses args, resolves the connection, and renders the TTY detail view.
 
 use std::io::Write as _;
@@ -9,7 +9,6 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::api;
 use crate::cli::load_config;
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::output::json;
@@ -33,14 +32,17 @@ pub struct Args {
     pub id: String,
 }
 
-/// Show one memory in full. `--json` emits the [`api::show::Response`]
+/// Show one memory in full. `--json` emits the [`domains::memories::show::Response`]
 /// verbatim; TTY mode renders a readable detail view. An unknown or
 /// soft-deleted id surfaces `Error::NotFound` before anything is printed.
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     let cfg = load_config(&paths)?;
     let mut ctx = Ctx::lazy(&paths, &cfg);
-    let resp = api::show::run(&mut ctx, api::show::Request { id: a.id })?;
+    let resp = crate::domains::memories::show::run(
+        &mut ctx,
+        crate::domains::memories::show::Request { id: a.id },
+    )?;
 
     if json_flag {
         json::write(&resp)
@@ -51,7 +53,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
 
 /// Render the TTY detail view: frontmatter fields, the full body, then any
 /// direct code references with their freshness verdict.
-fn render_tty(resp: &api::show::Response) -> Result<()> {
+fn render_tty(resp: &crate::domains::memories::show::Response) -> Result<()> {
     let mut out = std::io::stdout().lock();
     writeln!(out, "id            {}", resp.id)?;
     writeln!(out, "kind          {}", resp.kind)?;
@@ -99,7 +101,10 @@ fn tags_line(tags: &[String]) -> String {
 }
 
 /// Append the `code refs:` section when `resp` carries any.
-fn write_code_refs(out: &mut impl std::io::Write, resp: &api::show::Response) -> Result<()> {
+fn write_code_refs(
+    out: &mut impl std::io::Write,
+    resp: &crate::domains::memories::show::Response,
+) -> Result<()> {
     if resp.code_refs.is_empty() {
         return Ok(());
     }

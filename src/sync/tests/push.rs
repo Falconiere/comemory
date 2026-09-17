@@ -13,8 +13,8 @@
 //! including labels no allowlist would ever have carried, and memories with no
 //! label at all, which is the behaviour change this suite pins down.
 
-use comemory::api::save;
 use comemory::config::{Config, Paths};
+use comemory::domains::memories::save;
 use comemory::memory::Kind;
 use comemory::store::connection;
 use comemory::sync::AuthFile;

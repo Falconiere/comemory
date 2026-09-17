@@ -6,7 +6,7 @@
     clippy::too_many_lines
 )]
 //! Mirror test for `src/api/delete.rs`. Seeds a real memory via the
-//! `comemory` binary, then calls `api::delete::run` directly against a
+//! `comemory` binary, then calls `memories::delete::run` directly against a
 //! `Ctx` opened on the same data-dir — proving the extracted command core
 //! soft-deletes the same way `comemory delete` does (`cli::delete::run` is
 //! byte-compat tested against CLI stdout in `tests/cli__delete.rs`; the
@@ -14,8 +14,8 @@
 //! `tests/serve__routes__memories__write.rs`).
 
 use assert_cmd::Command;
-use comemory::api;
 use comemory::config::{Config, Paths};
+use comemory::domains::memories;
 use comemory::store::connection;
 use comemory::utilities::context::Ctx;
 
@@ -42,7 +42,7 @@ fn run_soft_deletes_a_live_memory() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let resp = api::delete::run(&mut ctx, &id).expect("delete run");
+    let resp = memories::delete::run(&mut ctx, &id).expect("delete run");
     assert_eq!(resp.deleted, id);
 
     let deleted_at: Option<String> = conn
@@ -71,7 +71,7 @@ fn run_errors_on_a_nonexistent_id() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let err = api::delete::run(&mut ctx, "deadbeef").expect_err("nonexistent id must error");
+    let err = memories::delete::run(&mut ctx, "deadbeef").expect_err("nonexistent id must error");
     assert!(
         matches!(err, comemory::errors::Error::NotFound(_)),
         "unexpected error: {err}"

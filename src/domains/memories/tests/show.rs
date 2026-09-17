@@ -5,28 +5,27 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! `api::show::run` against a real store: memories written through the real
-//! `api::save::run` (never hand-inserted rows), a real migrated SQLite
+//! `memories::show::run` against a real store: memories written through the real
+//! `memories::save::run` (never hand-inserted rows), a real migrated SQLite
 //! database. Covers spec AC-6, AC-7, and the `superseded_by`/`activation`
 //! wiring; the full git-repo fresh/stale/ghost walk (AC-8) and the
 //! access-tracking activation sequence (AC-10) live in the real-binary
 //! suite `tests/cli__show.rs`, where a subprocess is the more faithful
 //! consumer of both `comemory search` and `comemory index-code`.
 
-use comemory::api;
 use comemory::config::{Config, Paths};
+use comemory::domains::memories::{self, Kind};
 use comemory::errors::Error;
-use comemory::memory::Kind;
 use comemory::store::connection;
 use comemory::utilities::context::Ctx;
 
-/// `api::save::run` with no CLI raw-vector input, mirroring `api::tests::save`.
-fn save(ctx: &mut Ctx<'_>, req: api::save::Request) -> api::save::Response {
-    api::save::run(ctx, req, false, None).expect("save run")
+/// `memories::save::run` with no CLI raw-vector input, mirroring `api::tests::save`.
+fn save(ctx: &mut Ctx<'_>, req: memories::save::Request) -> memories::save::Response {
+    memories::save::run(ctx, req, false, None).expect("save run")
 }
 
-fn save_request(body: &str) -> api::save::Request {
-    api::save::Request {
+fn save_request(body: &str) -> memories::save::Request {
+    memories::save::Request {
         body: body.to_string(),
         title: None,
         kind: Kind::Note,
@@ -55,9 +54,9 @@ fn unknown_id_is_not_found() {
     let (paths, cfg, mut conn) = open_ctx(home.path());
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let err = api::show::run(
+    let err = memories::show::run(
         &mut ctx,
-        api::show::Request {
+        memories::show::Request {
             id: "deadbeef".into(),
         },
     )
@@ -75,18 +74,18 @@ fn soft_deleted_id_is_not_found() {
     };
     {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        api::delete::run(&mut ctx, &id).expect("delete run");
+        memories::delete::run(&mut ctx, &id).expect("delete run");
     }
 
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-    let err = api::show::run(&mut ctx, api::show::Request { id })
+    let err = memories::show::run(&mut ctx, memories::show::Request { id })
         .expect_err("soft-deleted id must be NotFound");
     assert!(matches!(err, Error::NotFound(_)), "got {err:?}");
 }
 
 /// AC-6: body verbatim, quality, tags, and exactly one `code_refs` entry for
 /// a single `repo:path:symbol` body mention (the implied file ref is
-/// collapsed — see `api::show::code_refs_for`'s doc). The symbol never
+/// collapsed — see `memories::show::code_refs_for`'s doc). The symbol never
 /// resolves (no `comemory index-code` ran), so its status is `unpinned`.
 #[test]
 fn full_shape_body_quality_tags_and_one_code_ref() {
@@ -95,7 +94,7 @@ fn full_shape_body_quality_tags_and_one_code_ref() {
     let body = "the ranker reads frontmatter, never the body\n\nsee `demo:src/lib.rs:foo_fn`";
     let id = {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        let req = api::save::Request {
+        let req = memories::save::Request {
             quality: 4,
             tags: vec!["ranking".to_string(), "frontmatter".to_string()],
             author: "alice".to_string(),
@@ -105,7 +104,8 @@ fn full_shape_body_quality_tags_and_one_code_ref() {
     };
 
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-    let resp = api::show::run(&mut ctx, api::show::Request { id: id.clone() }).expect("show run");
+    let resp = memories::show::run(&mut ctx, memories::show::Request { id: id.clone() })
+        .expect("show run");
 
     assert_eq!(resp.id, id);
     assert_eq!(resp.body, body, "body must round-trip verbatim");
@@ -151,7 +151,7 @@ fn author_empty_string_when_unset() {
     };
 
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-    let resp = api::show::run(&mut ctx, api::show::Request { id }).expect("show run");
+    let resp = memories::show::run(&mut ctx, memories::show::Request { id }).expect("show run");
     assert_eq!(resp.author, "");
 }
 
@@ -171,7 +171,7 @@ fn superseded_by_reports_the_live_superseder() {
     };
     let new_id = {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        let req = api::save::Request {
+        let req = memories::save::Request {
             supersedes: vec![old_id.clone()],
             ..save_request("new convention: pgbouncer transaction mode")
         };
@@ -179,7 +179,8 @@ fn superseded_by_reports_the_live_superseder() {
     };
 
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-    let resp = api::show::run(&mut ctx, api::show::Request { id: old_id }).expect("show run");
+    let resp =
+        memories::show::run(&mut ctx, memories::show::Request { id: old_id }).expect("show run");
     assert_eq!(resp.superseded_by, Some(new_id));
 }
 
@@ -194,7 +195,7 @@ fn a_reference_with_no_symbol_suffix_surfaces_as_a_file_ref() {
     };
 
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-    let resp = api::show::run(&mut ctx, api::show::Request { id }).expect("show run");
+    let resp = memories::show::run(&mut ctx, memories::show::Request { id }).expect("show run");
     assert_eq!(resp.code_refs.len(), 1);
     assert_eq!(resp.code_refs[0].anchor, "demo:README.md");
     assert_eq!(resp.code_refs[0].path, "README.md");

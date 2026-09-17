@@ -7,7 +7,7 @@ references).
 
 **What does NOT belong here:** the actual mutation. Turning a candidate list
 into a soft-delete or filesystem purge is the CLI surface's job
-(`cli::prune`, `cli::gc`, calling `memory::MemoryStore::delete`); nothing in
+(`cli::prune`, `cli::gc`, calling `domains::memories::MemoryStore::delete`); nothing in
 `prune/` writes to the store.
 
 ## Contents

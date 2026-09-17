@@ -1,5 +1,5 @@
-//! `POST /api/v1/memories` (`api::save`), `DELETE /api/v1/memories/{id}`
-//! (`api::delete`, confirm-gated), and `POST /api/v1/feedback`
+//! `POST /api/v1/memories` (`domains::memories::save`), `DELETE /api/v1/memories/{id}`
+//! (`domains::memories::delete`, confirm-gated), and `POST /api/v1/feedback`
 //! (`api::feedback`). The first mutating routes in `/api/v1` — every handler
 //! here calls [`guard_mutating`] first (read-only → busy ordering, AC-19),
 //! holding the returned permit across the blocking write.
@@ -49,8 +49,11 @@ pub fn router(_state: AppState) -> Router<AppState> {
         .route("/api/v1/feedback", post(feedback))
 }
 
-/// `POST /api/v1/memories` — save a memory (`api::save`).
-async fn save(State(state): State<AppState>, Json(req): Json<api::save::Request>) -> Response {
+/// `POST /api/v1/memories` — save a memory (`domains::memories::save`).
+async fn save(
+    State(state): State<AppState>,
+    Json(req): Json<crate::domains::memories::save::Request>,
+) -> Response {
     let started = Instant::now();
     let permit = match guard_mutating("save", &state) {
         Ok(permit) => permit,
@@ -62,22 +65,22 @@ async fn save(State(state): State<AppState>, Json(req): Json<api::save::Request>
         let mut conn = state.conn()?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
         // No CLI stdin-vs-flag ambiguity over HTTP: `req.vector` is already
-        // a parsed vector off the JSON body (see `api::save::run`'s doc).
-        api::save::run(&mut ctx, req, false, None)
+        // a parsed vector off the JSON body (see `domains::memories::save::run`'s doc).
+        crate::domains::memories::save::run(&mut ctx, req, false, None)
     })
     .await;
     respond("save", result, started)
 }
 
 /// `?confirm=true` on `DELETE /memories/{id}` — transport-level; not part of
-/// `api::delete::Request` since the CLI has no `--confirm` concept.
+/// `domains::memories::delete::Request` since the CLI has no `--confirm` concept.
 #[derive(Deserialize)]
 struct ConfirmQuery {
     #[serde(default)]
     confirm: bool,
 }
 
-/// `DELETE /api/v1/memories/{id}` — soft-delete (`api::delete`), confirm
+/// `DELETE /api/v1/memories/{id}` — soft-delete (`domains::memories::delete`), confirm
 /// gated. `guard_mutating` (read-only/busy) runs before [`require_confirm`]
 /// so a read-only server rejects with `405` even without `?confirm=true`
 /// (AC-19).
@@ -97,7 +100,7 @@ async fn delete_memory(
         let cfg = state.cfg();
         let mut conn = state.conn()?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        api::delete::run(&mut ctx, &id)
+        crate::domains::memories::delete::run(&mut ctx, &id)
     })
     .await;
     respond("delete", result, started)

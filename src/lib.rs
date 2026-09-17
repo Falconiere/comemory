@@ -22,9 +22,6 @@ pub mod config;
 /// Retrieval scoring loop: golden sets, metrics, mining, tuning, bandit.
 pub mod eval;
 
-/// Markdown source of truth: frontmatter, slug/id, atomic save and load.
-pub mod memory;
-
 /// Usage, feedback and repo-marker tables inside `comemory.db`.
 pub mod stats;
 
@@ -77,13 +74,15 @@ pub mod utilities;
 
 // Crate-root aliases for modules that were public root modules before the
 // migration moved them: `ast` and `git_utils` under `domains::code` (#167),
-// `document` and `source` under `domains::documents` (#168), the four shared
-// primitives under `utilities` (#166). They preserve `comemory::<name>` for
-// external consumers; in-crate code names the real path directly.
+// `document` and `source` under `domains::documents` (#168), `memory` under
+// `domains::memories` (#169), the four shared primitives under `utilities`
+// (#166). They preserve `comemory::<name>` for external consumers; in-crate
+// code names the real path directly.
 pub use domains::code::ast;
 pub use domains::code::git_utils;
 pub use domains::documents::document;
 pub use domains::documents::source;
+pub use domains::memories as memory;
 pub use utilities::embed;
 pub use utilities::fetch;
 pub use utilities::http_error;

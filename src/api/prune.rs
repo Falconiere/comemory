@@ -13,9 +13,9 @@
 use serde::Deserialize;
 use time::OffsetDateTime;
 
-use crate::cli::delete;
 use crate::config::{Config, Paths};
-use crate::output::search::title_of;
+use crate::domains::memories::delete;
+use crate::domains::memories::nav::title_of;
 use crate::prelude::*;
 use crate::prune::report::{PruneRow, Report};
 use crate::prune::{low_value, stale_code};

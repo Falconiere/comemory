@@ -9,7 +9,7 @@
 //! (console-api spec §8, AC-15).
 //!
 //! Two invariants are load-bearing and both are proven here against real
-//! data (a real temp data-dir, real memories saved through `api::save`, a
+//! data (a real temp data-dir, real memories saved through `domains::memories::save`, a
 //! real migrated `comemory.db`):
 //!
 //! 1. The report **never runs the embed command**. Proven structurally, not
@@ -58,7 +58,7 @@ fn save(paths: &Paths, body: &str) {
     let mut conn = connection::open(paths.db_path()).expect("open db");
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(paths, &cfg, &mut conn);
-    let req = api::save::Request {
+    let req = crate::domains::memories::save::Request {
         body: body.to_string(),
         title: None,
         kind: Kind::Note,
@@ -71,7 +71,7 @@ fn save(paths: &Paths, body: &str) {
         ref_file: Vec::new(),
         ref_symbol: Vec::new(),
     };
-    api::save::run(&mut ctx, req, false, None).expect("seed save");
+    crate::domains::memories::save::run(&mut ctx, req, false, None).expect("seed save");
 }
 
 #[test]
@@ -173,7 +173,7 @@ fn run_counts_trashed_files_and_names_a_migration_snapshot() {
             r.get::<_, String>(0)
         })
         .expect("read seeded id");
-    comemory::cli::delete::soft_delete(&paths, &mut conn, &id).expect("soft delete");
+    comemory::domains::memories::delete::soft_delete(&paths, &mut conn, &id).expect("soft delete");
     drop(conn);
 
     // A real pre-migration snapshot beside the live db.

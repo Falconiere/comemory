@@ -5,10 +5,10 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Test mirror for `src/memory/frontmatter.rs` — YAML round-trip and
+//! Test mirror for `src/domains/memories/frontmatter.rs` — YAML round-trip and
 //! `Kind` parsing.
 
-use comemory::memory::frontmatter::{Frontmatter, Kind, References, Relations};
+use comemory::domains::memories::frontmatter::{Frontmatter, Kind, References, Relations};
 use time::OffsetDateTime;
 
 #[test]

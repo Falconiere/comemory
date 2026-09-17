@@ -1,8 +1,8 @@
 //! Import validation and memory-state probes (rules 1–2, 6).
 
 use crate::api::sync::{ImportEntry, SyncRecord};
-use crate::memory::MemoryStore;
-use crate::memory::id::{is_valid_memory_id, memory_id};
+use crate::domains::memories::MemoryStore;
+use crate::domains::memories::id::{is_valid_memory_id, memory_id};
 use crate::prelude::*;
 use crate::store::{Connection, memory_purge, sync_log};
 use crate::utilities::digest::sha256_hex;
@@ -34,7 +34,10 @@ pub(crate) fn validate_record(entry: &ImportEntry, record: &SyncRecord) -> Optio
 }
 
 /// Rule 8 — whether live frontmatter already matches the wire payload.
-pub(crate) fn frontmatter_equal(rec: &crate::memory::MemoryRecord, wire: &SyncRecord) -> bool {
+pub(crate) fn frontmatter_equal(
+    rec: &crate::domains::memories::MemoryRecord,
+    wire: &SyncRecord,
+) -> bool {
     let fm = &rec.frontmatter;
     let w = &wire.frontmatter;
     fm.kind == w.kind
@@ -47,11 +50,11 @@ pub(crate) fn frontmatter_equal(rec: &crate::memory::MemoryRecord, wire: &SyncRe
 }
 
 /// Rule 2 — live or trashed id bound to a different content hash: the
-/// same 32-bit collision `api::save` refuses, answered by the same
+/// same 32-bit collision `domains::memories::save` refuses, answered by the same
 /// `MemoryStore::prior` lookup so the two rules cannot drift. One
 /// deliberate difference: a local copy that exists but cannot be parsed is
 /// logged and treated as *no* collision, so a pull can repair it —
-/// `api::save` is stricter and refuses to overwrite what it cannot read.
+/// `domains::memories::save` is stricter and refuses to overwrite what it cannot read.
 pub(crate) fn id_collision(
     paths: &crate::config::Paths,
     id: &str,
