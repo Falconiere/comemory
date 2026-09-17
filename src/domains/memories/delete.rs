@@ -28,7 +28,7 @@ pub struct Response {
 }
 
 /// Soft-delete one memory: move the markdown file into `memories/.trash/`
-/// and mirror the delete into `comemory.db`, via the shared [`soft_delete`]
+/// and mirror the delete into `comemory.db`, via the shared `soft_delete`
 /// helper — also reused by `comemory prune`'s low-value apply path and by the
 /// sync import.
 pub fn run(ctx: &mut Ctx<'_>, id: &str) -> Result<Response> {

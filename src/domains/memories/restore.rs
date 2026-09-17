@@ -2,7 +2,7 @@
 //! `POST /api/v1/trash/{id}/restore`: bring a soft-deleted memory back
 //! (console-api spec §4/§9).
 //!
-//! The exact reverse of [`super::delete::soft_delete`]: that surface moves
+//! The exact reverse of `delete::soft_delete`: that surface moves
 //! `memories/{id}-{slug}.md` into `.trash/`, stamps `deleted_at`, and drops
 //! the FTS/vector rows and every touching edge. Restore moves the file back
 //! (`MemoryStore::restore`, which refuses to rename over a live re-save of

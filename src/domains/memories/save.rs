@@ -43,7 +43,7 @@ pub struct Request {
     /// Memory body (markdown).
     pub body: String,
     /// Optional title. A memory's title is by definition the first
-    /// non-empty line of its body ([`super::nav::title_of`]), so a
+    /// non-empty line of its body (`nav::title_of`), so a
     /// supplied title is prepended as that first line (followed by a blank
     /// line) before the content hash is taken — unless the body's first
     /// non-empty line already *equals* it (see [`fold_title`]). HTTP-only
@@ -246,7 +246,7 @@ fn replay_prior(store: &MemoryStore, id: &str, body: &str) -> Result<Option<Prio
 
 /// Fold `title` into `body` as its first line (see [`Request::title`]). A
 /// blank title is ignored. A body whose title — its first non-empty trimmed
-/// line, [`super::nav::title_of`]'s definition — already equals the
+/// line, `nav::title_of`'s definition — already equals the
 /// trimmed title is returned unchanged, so a round-tripped save stays
 /// idempotent. That is an equality test, not a prefix test: `"Pool"` on a
 /// body opening `"Pooling connections…"` is still prepended. `pub(crate)`

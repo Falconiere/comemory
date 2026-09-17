@@ -5,7 +5,7 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror test for `src/api/delete.rs`. Seeds a real memory via the
+//! Mirror test for `src/domains/memories/delete.rs`. Seeds a real memory via the
 //! `comemory` binary, then calls `memories::delete::run` directly against a
 //! `Ctx` opened on the same data-dir — proving the extracted command core
 //! soft-deletes the same way `comemory delete` does (`cli::delete::run` is
