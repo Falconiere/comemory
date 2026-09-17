@@ -42,6 +42,58 @@ assert_status() {
 }
 both() { assert_status "$1" "$2"; assert_status "$1" "$2" --file "$3"; }
 
+# A removed gate lets the source tree report green without its architecture
+# contract. This verifies the actual CI and staged-hook wiring, including the
+# required check-all order, against disposable copies.
+test_gate_wiring() {
+  local check_all=$1 hook=$2
+  awk '
+    /^GATES=\(/ { collecting = 1; next }
+    collecting && /^\)/ { exit }
+    collecting && /^  guardrails-check$/ { guardrails = NR }
+    collecting && /^  architecture-check$/ { architecture = NR }
+    collecting && /^  store-chokepoint-check$/ { store = NR }
+    END { exit(!(guardrails < architecture && architecture < store)) }
+  ' "$check_all" || return 1
+  awk '
+    /^    architecture:$/ { command = 1; next }
+    command && /^      glob: "\*\.rs"$/ { scoped = 1; next }
+    command && /^      run: bash scripts\/architecture-check\.sh --file \{staged_files\}$/ {
+      found = scoped
+      exit
+    }
+    command && /^    [^ ]/ { exit 1 }
+    END { exit(found ? 0 : 1) }
+  ' "$hook"
+}
+assert_gate_wiring() {
+  if ! test_gate_wiring "$@"; then
+    printf 'FAIL: architecture checker is not wired into check-all and pre-commit\n' >&2
+    exit 1
+  fi
+  COUNT=$((COUNT + 1))
+}
+assert_fails() {
+  local test=$1
+  shift
+  if "$test" "$@"; then
+    printf 'FAIL: gate wiring accepted %s\n' "$*" >&2
+    exit 1
+  fi
+  COUNT=$((COUNT + 1))
+}
+
+TEST_GATE_WIRING=test_gate_wiring
+CHECK_ALL=$ROOT/scripts/check-all.sh
+HOOK=$ROOT/lefthook.yml
+CHECK_ALL_WITHOUT_GATE=$TASK_TMP/check-all-without-gate.sh
+HOOK_WITHOUT_SCOPED_CHECK=$TASK_TMP/lefthook-without-scoped-check.yml
+sed '/^  architecture-check$/d' "$CHECK_ALL" >"$CHECK_ALL_WITHOUT_GATE"
+sed '/^    architecture:$/,/^    [^ ]/d' "$HOOK" >"$HOOK_WITHOUT_SCOPED_CHECK"
+assert_gate_wiring "$CHECK_ALL" "$HOOK"
+assert_fails "$TEST_GATE_WIRING" "$CHECK_ALL_WITHOUT_GATE" "$HOOK"
+assert_fails "$TEST_GATE_WIRING" "$CHECK_ALL" "$HOOK_WITHOUT_SCOPED_CHECK"
+
 new_tree allowed
 put src/config.rs 'pub struct Config;'
 both 0 '' src/config.rs
