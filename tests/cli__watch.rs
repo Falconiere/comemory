@@ -120,6 +120,29 @@ fn watch_pulls_what_the_channel_announces() {
         }),
         "the announced memory must be on disk after the triggered pull: {memories:?}"
     );
+
+    // The `--json` contract: one object per event, exactly two keys, the
+    // greeting first. Asserted here because `cli::watch::report` is the only
+    // thing that renders it and this is the only suite that sees its stdout.
+    //
+    // Both counts are zero: `auth login` above already ran the initial sync,
+    // and the fixture consumes its changes, so the nudge's cursored pull finds
+    // nothing left to apply. That is the empty-pull path a duplicate frame
+    // takes, and it is the shape — not the arithmetic — this assertion guards.
+    let events: Vec<serde_json::Value> = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| serde_json::from_str(line).expect("each line is one JSON object"))
+        .collect();
+    assert_eq!(
+        events,
+        vec![
+            serde_json::json!({"event": "connected", "pulled": 0}),
+            serde_json::json!({"event": "pulled", "pulled": 0}),
+        ],
+        "watch --json emitted {}",
+        String::from_utf8_lossy(&out.stdout)
+    );
 }
 
 #[test]

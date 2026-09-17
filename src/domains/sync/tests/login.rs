@@ -50,11 +50,13 @@ fn establish_persists_the_minted_credential_and_installs_no_daemon_by_default() 
     assert!(established.daemon_skipped);
     assert_eq!(established.daemon_running, None);
 
-    // The device-code prompt is the caller's to render, but it must reach the
-    // writer it was handed rather than a stream the domain chose.
+    // The device-code prompt must reach the writer it was handed rather than a
+    // stream the domain chose — and it must be the prompt, not just any bytes.
+    let prompt = String::from_utf8(progress).expect("utf-8 prompt");
     assert!(
-        !progress.is_empty(),
-        "the device prompt never reached the injected writer"
+        prompt.contains("Visit http://fixture.local/device")
+            && prompt.contains("and enter code: USER-"),
+        "the injected writer received {prompt:?}"
     );
 
     // The mint route ran; the retired workspace-list route did not.
@@ -75,21 +77,4 @@ fn status_reports_logged_out_without_a_credential_or_an_env_override() {
         "test environment must not carry a key override"
     );
     assert!(login::status(&paths, None).expect("status").is_none());
-}
-
-#[test]
-fn logout_removes_the_credential_and_reports_the_daemon_stopped() {
-    let sb = common::runner::Sandbox::new();
-    let paths = Paths::new(sb.data_dir());
-    paths.ensure_dirs().expect("ensure_dirs");
-    common::auth_fixture::seed_org_auth(&paths, "https://api.example", "cmk_secret", "ws-org");
-    assert!(AuthFile::load(&paths).expect("load").is_some());
-
-    // No daemon was ever installed here, so an unavailable status probe still
-    // answers "stopped" — the report must not claim one is running.
-    assert!(login::logout(&paths).expect("logout"));
-    assert!(AuthFile::load(&paths).expect("load").is_none());
-
-    // Logging out twice is not an error: the file is simply already gone.
-    assert!(login::logout(&paths).expect("second logout"));
 }

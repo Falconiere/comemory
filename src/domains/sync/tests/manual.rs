@@ -99,10 +99,14 @@ fn a_full_run_pulls_before_it_pushes_and_always_offers_the_code_index() {
 
     let stats = manual::run_all(&paths, &cfg, &mut session, None, manual::RUN_LIMIT).expect("run");
 
-    // All three legs ran, and the report can tell each apart.
-    assert!(stats.pull.is_some(), "the pull leg did not run");
+    // All three legs ran, and the report can tell each apart. The fixture
+    // serves no remote changes and nothing here is code-indexed, so the pull
+    // and code legs are present with zero counts — which is exactly what
+    // distinguishes them from a leg that did not run at all.
+    assert_eq!(stats.pull.as_ref().expect("pull leg").pulled, 0);
     assert_eq!(stats.push.as_ref().expect("push leg").pushed, 1);
-    assert!(stats.code.is_some(), "the code leg did not run");
+    let code = stats.code.as_ref().expect("code leg");
+    assert_eq!((code.repos, code.files_pushed, code.failed), (0, 0, 0));
 
     // Pull is first on the wire: the platform saw `changes` before `import`.
     let paths_seen: Vec<String> = server.requests().into_iter().map(|r| r.path).collect();
@@ -129,7 +133,7 @@ fn a_pull_only_run_reports_no_push_and_no_code_leg() {
 
     // "Did not run" is distinguishable from "ran and moved nothing": the
     // report's push and code fields are absent rather than zeroed.
-    assert!(stats.pull.is_some());
+    assert_eq!(stats.pull.as_ref().expect("pull leg").pulled, 0);
     assert!(stats.push.is_none());
     assert!(stats.code.is_none());
     assert!(

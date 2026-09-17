@@ -112,7 +112,7 @@ async fn once_pulls_on_the_first_greeting_and_reports_it_to_the_caller() {
     assert!(
         matches!(
             events.as_slice(),
-            [WatchEvent::Connected, WatchEvent::Pulled(_)]
+            [WatchEvent::Connected, WatchEvent::Pulled(0)]
         ),
         "unexpected event stream: {events:?}"
     );
@@ -160,7 +160,7 @@ async fn a_second_nudge_on_one_connection_costs_exactly_one_more_empty_pull() {
             events.as_slice(),
             [
                 WatchEvent::Connected,
-                WatchEvent::Pulled(_),
+                WatchEvent::Pulled(0),
                 WatchEvent::Pulled(0)
             ]
         ),

@@ -57,7 +57,7 @@ One line per file, named after its primary item:
 | `reembed.rs` | `Request` | Console-only: `POST /api/v1/doctor/reembed` — re-vectorize memories and/or code through the embed command, cancellable |
 | `suggest.rs` | `Request` | Console-only: `GET /api/v1/search/suggest` — mined expansions + recent queries for the ⌘K palette |
 
-Two capabilities no longer live here. The code cores — `ast`, `index_code` (+
+Three capabilities no longer live here. The code cores — `ast`, `index_code` (+
 `walk`), `ingest_code`, `index_runs`, `repos` (+ `git_state`), `repo_admin`,
 `hooks` and `install_hooks` — moved to
 [`domains/code/`](../domains/code/README.md) with
@@ -70,7 +70,7 @@ Two capabilities no longer live here. The code cores — `ast`, `index_code` (+
 `refresh_refs` — moved to
 [`domains/memories/`](../domains/memories/README.md) with
 [#169](https://github.com/Falconiere/comemory/issues/169). This shell itself is
-deleted by #178.
+deleted by #178. The sync cores — `sync` (the wire models plus the `changes`, `manifest`, `import` and code-import middles) and `memory_store` — moved to [`domains/sync/`](../domains/sync/README.md) with [#172](https://github.com/Falconiere/comemory/issues/172), where `api::sync` is `domains::sync::exchange`, beside the client half that calls it.
 
 When you add a file here, add its row above so the index stays current. No
 `mod.rs` barrel — submodules are declared from `src/api.rs` (`pub mod
