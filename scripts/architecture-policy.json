@@ -1,0 +1,723 @@
+{
+  "version": 1,
+  "staged_top_level_dirs": [
+    "api",
+    "ast",
+    "capture",
+    "cli",
+    "cloud",
+    "config",
+    "consolidate",
+    "document",
+    "domains",
+    "eval",
+    "graph",
+    "memory",
+    "output",
+    "prune",
+    "retrieval",
+    "serve",
+    "source",
+    "stats",
+    "store",
+    "sync",
+    "upgrade",
+    "utilities"
+  ],
+  "staged_root_modules": [
+    "api",
+    "ast",
+    "capture",
+    "cli",
+    "cloud",
+    "config",
+    "consolidate",
+    "document",
+    "embed",
+    "errors",
+    "eval",
+    "fetch",
+    "git_utils",
+    "graph",
+    "http_error",
+    "index",
+    "lib",
+    "main",
+    "memory",
+    "output",
+    "prelude",
+    "prune",
+    "retrieval",
+    "serve",
+    "simhash",
+    "source",
+    "stats",
+    "store",
+    "sync",
+    "test_common",
+    "upgrade"
+  ],
+  "domains": [
+    "memories",
+    "code",
+    "documents",
+    "graph",
+    "retrieval",
+    "learning",
+    "sync",
+    "capture",
+    "maintenance",
+    "integrations"
+  ],
+  "legacy_modules": [
+    {
+      "module": "crate::api",
+      "owner": "shared::utilities",
+      "issue": "#166"
+    },
+    {
+      "module": "crate::ast",
+      "owner": "domains::code",
+      "issue": "#167"
+    },
+    {
+      "module": "crate::capture",
+      "owner": "domains::capture",
+      "issue": "#174"
+    },
+    {
+      "module": "crate::cloud",
+      "owner": "domains::sync",
+      "issue": "#172"
+    },
+    {
+      "module": "crate::consolidate",
+      "owner": "domains::maintenance",
+      "issue": "#176"
+    },
+    {
+      "module": "crate::document",
+      "owner": "domains::documents",
+      "issue": "#168"
+    },
+    {
+      "module": "crate::embed",
+      "owner": "shared::utilities",
+      "issue": "#166"
+    },
+    {
+      "module": "crate::eval",
+      "owner": "domains::learning",
+      "issue": "#173"
+    },
+    {
+      "module": "crate::fetch",
+      "owner": "shared::utilities",
+      "issue": "#166"
+    },
+    {
+      "module": "crate::git_utils",
+      "owner": "domains::code",
+      "issue": "#167"
+    },
+    {
+      "module": "crate::graph",
+      "owner": "domains::graph",
+      "issue": "#170"
+    },
+    {
+      "module": "crate::http_error",
+      "owner": "shared::utilities",
+      "issue": "#166"
+    },
+    {
+      "module": "crate::index",
+      "owner": "domains::code",
+      "issue": "#167"
+    },
+    {
+      "module": "crate::memory",
+      "owner": "domains::memories",
+      "issue": "#169"
+    },
+    {
+      "module": "crate::output",
+      "owner": "delivery::cli",
+      "issue": "#166"
+    },
+    {
+      "module": "crate::prune",
+      "owner": "domains::maintenance",
+      "issue": "#176"
+    },
+    {
+      "module": "crate::retrieval",
+      "owner": "domains::retrieval",
+      "issue": "#171"
+    },
+    {
+      "module": "crate::simhash",
+      "owner": "shared::utilities",
+      "issue": "#166"
+    },
+    {
+      "module": "crate::source",
+      "owner": "domains::documents",
+      "issue": "#168"
+    },
+    {
+      "module": "crate::stats",
+      "owner": "shared::utilities",
+      "issue": "#166"
+    },
+    {
+      "module": "crate::sync",
+      "owner": "domains::sync",
+      "issue": "#172"
+    },
+    {
+      "module": "crate::upgrade",
+      "owner": "domains::maintenance",
+      "issue": "#176"
+    }
+  ],
+  "owner_dependencies": [
+    {
+      "source": "domains::capture",
+      "target": "domains::sync"
+    },
+    {
+      "source": "domains::code",
+      "target": "domains::graph"
+    },
+    {
+      "source": "domains::documents",
+      "target": "domains::code"
+    },
+    {
+      "source": "domains::documents",
+      "target": "domains::graph"
+    },
+    {
+      "source": "domains::graph",
+      "target": "domains::code"
+    },
+    {
+      "source": "domains::graph",
+      "target": "domains::learning"
+    },
+    {
+      "source": "domains::integrations",
+      "target": "domains::code"
+    },
+    {
+      "source": "domains::integrations",
+      "target": "domains::documents"
+    },
+    {
+      "source": "domains::integrations",
+      "target": "domains::maintenance"
+    },
+    {
+      "source": "domains::integrations",
+      "target": "domains::sync"
+    },
+    {
+      "source": "domains::learning",
+      "target": "domains::memories"
+    },
+    {
+      "source": "domains::learning",
+      "target": "domains::retrieval"
+    },
+    {
+      "source": "domains::maintenance",
+      "target": "domains::code"
+    },
+    {
+      "source": "domains::maintenance",
+      "target": "domains::documents"
+    },
+    {
+      "source": "domains::maintenance",
+      "target": "domains::graph"
+    },
+    {
+      "source": "domains::maintenance",
+      "target": "domains::memories"
+    },
+    {
+      "source": "domains::maintenance",
+      "target": "domains::retrieval"
+    },
+    {
+      "source": "domains::maintenance",
+      "target": "domains::sync"
+    },
+    {
+      "source": "domains::memories",
+      "target": "domains::code"
+    },
+    {
+      "source": "domains::memories",
+      "target": "domains::graph"
+    },
+    {
+      "source": "domains::memories",
+      "target": "domains::retrieval"
+    },
+    {
+      "source": "domains::retrieval",
+      "target": "domains::code"
+    },
+    {
+      "source": "domains::retrieval",
+      "target": "domains::graph"
+    },
+    {
+      "source": "domains::retrieval",
+      "target": "domains::learning"
+    },
+    {
+      "source": "domains::retrieval",
+      "target": "domains::memories"
+    },
+    {
+      "source": "domains::sync",
+      "target": "domains::code"
+    },
+    {
+      "source": "domains::sync",
+      "target": "domains::graph"
+    },
+    {
+      "source": "domains::sync",
+      "target": "domains::memories"
+    }
+  ],
+  "setup_runtime_dependencies": [
+    {
+      "source": "src/api/setup/apply.rs",
+      "target": "crate::api::hooks",
+      "owner": "domains::code"
+    },
+    {
+      "source": "src/api/setup/apply.rs",
+      "target": "crate::api::index_code",
+      "owner": "domains::code"
+    },
+    {
+      "source": "src/api/setup/apply.rs",
+      "target": "crate::api::install",
+      "owner": "domains::integrations"
+    },
+    {
+      "source": "src/api/setup/apply.rs",
+      "target": "crate::api::install_hooks",
+      "owner": "domains::code"
+    },
+    {
+      "source": "src/api/setup/detect.rs",
+      "target": "crate::api::doctor",
+      "owner": "domains::maintenance"
+    },
+    {
+      "source": "src/api/setup/detect.rs",
+      "target": "crate::api::hooks",
+      "owner": "domains::code"
+    },
+    {
+      "source": "src/api/setup/detect.rs",
+      "target": "crate::api::install",
+      "owner": "domains::integrations"
+    },
+    {
+      "source": "src/api/setup/detect.rs",
+      "target": "crate::api::repos",
+      "owner": "domains::code"
+    },
+    {
+      "source": "src/api/setup/detect.rs",
+      "target": "crate::api::sources",
+      "owner": "domains::documents"
+    },
+    {
+      "source": "src/api/setup/detect.rs",
+      "target": "crate::git_utils",
+      "owner": "domains::code"
+    },
+    {
+      "source": "src/api/setup/detect.rs",
+      "target": "crate::sync::auth_file",
+      "owner": "domains::sync"
+    }
+  ],
+  "legacy_edges": [
+    {
+      "source": "src/api/ast.rs",
+      "target": "crate::output::page",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/completions.rs",
+      "target": "crate::cli::Cli",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/consolidate.rs",
+      "target": "crate::cli::page_window",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/consolidate.rs",
+      "target": "crate::output::consolidate",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/consolidate.rs",
+      "target": "crate::output::page",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/context.rs",
+      "target": "crate::cli::page_meta",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/context.rs",
+      "target": "crate::cli::page_window",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/context.rs",
+      "target": "crate::cli::when",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/context.rs",
+      "target": "crate::output::context",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/delete.rs",
+      "target": "crate::cli::delete",
+      "class": "delivery",
+      "issue": "#169"
+    },
+    {
+      "source": "src/api/edges.rs",
+      "target": "crate::cli::page_window",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/edges.rs",
+      "target": "crate::output::edges",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/feedback.rs",
+      "target": "crate::cli::parse_id_csv",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/feedback.rs",
+      "target": "crate::cli::parse_symbol_id_csv",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/find.rs",
+      "target": "crate::cli::page_meta",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/find.rs",
+      "target": "crate::cli::page_window",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/find.rs",
+      "target": "crate::cli::when",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/find.rs",
+      "target": "crate::output::search",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/graph.rs",
+      "target": "crate::cli::graph",
+      "class": "delivery",
+      "issue": "#170"
+    },
+    {
+      "source": "src/api/graph.rs",
+      "target": "crate::output::graph",
+      "class": "delivery",
+      "issue": "#170"
+    },
+    {
+      "source": "src/api/graph_nodes.rs",
+      "target": "crate::cli::graph",
+      "class": "delivery",
+      "issue": "#170"
+    },
+    {
+      "source": "src/api/graph_nodes.rs",
+      "target": "crate::cli::graph::nodes",
+      "class": "delivery",
+      "issue": "#170"
+    },
+    {
+      "source": "src/api/graph_nodes.rs",
+      "target": "crate::output::graph",
+      "class": "delivery",
+      "issue": "#170"
+    },
+    {
+      "source": "src/api/graph_nodes.rs",
+      "target": "crate::output::page",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/graph_nodes.rs",
+      "target": "crate::output::search",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/index_runs.rs",
+      "target": "crate::output::page",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/learning.rs",
+      "target": "crate::output::page",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/list.rs",
+      "target": "crate::output::page",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/list.rs",
+      "target": "crate::output::search",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/prune.rs",
+      "target": "crate::cli::delete",
+      "class": "delivery",
+      "issue": "#169"
+    },
+    {
+      "source": "src/api/prune.rs",
+      "target": "crate::cli::parse_id_csv",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/prune.rs",
+      "target": "crate::output::page",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/prune.rs",
+      "target": "crate::output::prune",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/prune.rs",
+      "target": "crate::output::search",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/refresh_refs.rs",
+      "target": "crate::serve::repo_root",
+      "class": "delivery",
+      "issue": "#169"
+    },
+    {
+      "source": "src/api/save.rs",
+      "target": "crate::cli::embedding_input",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/save.rs",
+      "target": "crate::cli::parse_id_csv",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/save.rs",
+      "target": "crate::cli::ref_args",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/save.rs",
+      "target": "crate::output::search",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/search.rs",
+      "target": "crate::cli::page_meta",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/search.rs",
+      "target": "crate::cli::page_window",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/search.rs",
+      "target": "crate::cli::when",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/search.rs",
+      "target": "crate::output::search",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/search_code.rs",
+      "target": "crate::cli::page_meta",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/search_code.rs",
+      "target": "crate::cli::page_window",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/search_code.rs",
+      "target": "crate::output::search_code",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/show.rs",
+      "target": "crate::output::search",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/sync/import_rules.rs",
+      "target": "crate::cli::delete",
+      "class": "delivery",
+      "issue": "#169"
+    },
+    {
+      "source": "src/api/trash.rs",
+      "target": "crate::output::page",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/api/trash.rs",
+      "target": "crate::output::search",
+      "class": "delivery",
+      "issue": "#166"
+    },
+    {
+      "source": "src/retrieval/code_ref_fetch.rs",
+      "target": "crate::serve::repo_root",
+      "class": "delivery",
+      "issue": "#167"
+    },
+    {
+      "source": "src/retrieval/unified/fuse_domains.rs",
+      "target": "crate::output::search",
+      "class": "delivery",
+      "issue": "#166"
+    }
+  ],
+  "store_callbacks": [
+    {
+      "source": "src/store/memory_row.rs",
+      "target": "crate::graph::cross_link::extract_and_emit",
+      "class": "store-callback",
+      "issue": "#177"
+    },
+    {
+      "source": "src/store/memory_row.rs",
+      "target": "crate::graph::cross_link::extract_refs",
+      "class": "store-callback",
+      "issue": "#177"
+    },
+    {
+      "source": "src/store/memory_row.rs",
+      "target": "crate::graph::doc_link::derive_after_memory_save",
+      "class": "store-callback",
+      "issue": "#177"
+    },
+    {
+      "source": "src/store/migrate/preflight.rs",
+      "target": "crate::source::lock::FileLock::acquire",
+      "class": "store-callback",
+      "issue": "#177"
+    },
+    {
+      "source": "src/store/repo_drop.rs",
+      "target": "crate::graph::derived::refresh_derived_best_effort",
+      "class": "store-callback",
+      "issue": "#177"
+    }
+  ],
+  "passive_store_models": [
+    {
+      "source": "src/store/code_ref.rs",
+      "target": "crate::memory::Ref"
+    },
+    {
+      "source": "src/store/code_ref.rs",
+      "target": "crate::memory::References"
+    },
+    {
+      "source": "src/store/memory_meta.rs",
+      "target": "crate::memory::Ref"
+    },
+    {
+      "source": "src/store/memory_meta.rs",
+      "target": "crate::memory::References"
+    },
+    {
+      "source": "src/store/memory_row.rs",
+      "target": "crate::memory::Frontmatter"
+    }
+  ]
+}
