@@ -346,6 +346,13 @@ assert_status 3 'invalid file argument' --file src/../tests/cli__setup.rs
 assert_status 3 'missing input' --policy "$TASK_TMP/missing.json"
 assert_status 3 'missing input' --inventory "$TASK_TMP/missing.md"
 assert_status 0 '' --policy "$TREE/scripts/architecture-policy.json" --inventory "$TREE/docs/designs/2026-09-17-domain-first-migration-inventory.md"
+# GitHub's review runner does not install ripgrep. The architecture gate must
+# retain its complete validation with the portable tools it already requires.
+mkdir "$TASK_TMP/no-rg-path"
+for tool in bash basename cat diff dirname find jq mktemp rm sort ast-grep; do
+  ln -s "$(command -v "$tool")" "$TASK_TMP/no-rg-path/$tool"
+done
+PATH="$TASK_TMP/no-rg-path" FIXTURE_INVENTORY_READY=true assert_status 0 ''
 # Keep the actual shell and dirname, but deliberately omit every checker tool.
 mkdir "$TASK_TMP/tool-path"
 ln -s "$(command -v bash)" "$TASK_TMP/tool-path/bash"

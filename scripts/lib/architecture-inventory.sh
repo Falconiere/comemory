@@ -4,7 +4,7 @@ validate_inventory() (
   fail() { printf 'architecture-policy: %s\n' "$*" >&2; exit 1; }
   scratch=$(mktemp -d)
   trap 'rm -rf "$scratch"' EXIT
-  rg --files src -g '*.rs' -g '!src/**/tests/**' | sort >"$scratch/files"
+  find src -type f -name '*.rs' ! -path '*/tests/*' | sort >"$scratch/files"
   jq -Rn '[inputs | select(startswith("| src/")) | split("|")[1:-1]
     | map(gsub("^ +| +$"; ""))
     | if length != 7 then error("malformed inventory row") else . end

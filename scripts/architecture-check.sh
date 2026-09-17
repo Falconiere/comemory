@@ -30,7 +30,7 @@ while [ "$#" -gt 0 ]; do
     *) bad "unknown argument: $1" ;;
   esac
 done
-for tool in jq ast-grep find sort rg diff; do
+for tool in jq ast-grep find sort diff; do
   command -v "$tool" >/dev/null 2>&1 || bad "missing tool: $tool"
 done
 [ -d "$ROOT/src" ] || bad "missing input: $ROOT/src"
