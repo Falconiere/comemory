@@ -2,7 +2,7 @@
 //!
 //! Opt-in since the 2026-09-14 sync design: `comemory auth login --daemon`
 //! installs and starts it, logout stops it (the unit stays installed). A plain
-//! login installs nothing, because a save pushes inline (`sync::push_on_save`)
+//! login installs nothing, because a save pushes inline (`domains::sync::push_on_save`)
 //! and `comemory watch` covers the pull direction from the foreground. What is
 //! left for a daemon is a headless host that wants pulls without either.
 //! Manual `comemory sync` works with the daemon stopped, as it always did.

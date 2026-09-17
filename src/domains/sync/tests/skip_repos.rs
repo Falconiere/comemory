@@ -5,7 +5,7 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirrors `src/sync/skip_repos.rs` — the `[sync] skip_repos` opt-out that
+//! Mirrors `src/domains/sync/skip_repos.rs` — the `[sync] skip_repos` opt-out that
 //! replaced the GitHub App allowlist. Labels below are the real shapes
 //! `Frontmatter.repo` carries: a bare basename, a qualified `owner/name`, a
 //! hand-edited label with stray case and whitespace, and an empty one.

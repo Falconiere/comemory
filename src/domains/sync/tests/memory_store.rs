@@ -5,7 +5,7 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Coverage for `src/api/memory_store.rs` against REAL data: memories saved
+//! Coverage for `src/domains/sync/memory_store.rs` against REAL data: memories saved
 //! through `domains::memories::save::run`, real `git init`ed work trees (the shared
 //! `tests/common/git_repo.rs` fixture), and a real bare repo standing in for
 //! the remote. Nothing here is mocked — the `store-sync` job's whole value is

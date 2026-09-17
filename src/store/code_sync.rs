@@ -1,4 +1,4 @@
-//! Reads and the one cursor behind the code-index push (`sync::code`): the
+//! Reads and the one cursor behind the code-index push (`domains::sync::code`): the
 //! snippet-free per-file projection out of `code_symbols` / `edges`, the
 //! repo's co-change set, and the `schema_meta` record of what was last
 //! pushed. The server side of the same feature writes through `code_row`,

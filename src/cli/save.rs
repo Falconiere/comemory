@@ -138,7 +138,7 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let output =
         crate::domains::memories::save::run(&mut ctx, req, a.vector_stdin, a.vector.as_deref())?;
     // The write is committed; sync is now the writing command's own business
-    // (`sync::push_on_save`). `off_runtime` because the platform client is
+    // (`domains::sync::push_on_save`). `off_runtime` because the platform client is
     // `reqwest::blocking`, which panics on drop inside this async fn's runtime.
     //
     // `ctx` is dropped rather than left to end of scope because it borrows

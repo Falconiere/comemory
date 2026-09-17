@@ -17,7 +17,7 @@ use comemory::domains::sync::{AuthFile, login};
 use crate::test_common as common;
 use common::device_auth_server::{DeviceAuthServer, tooling_present};
 
-/// `cloud::login` shells out to curl/wget; without either there is no flow to
+/// `domains::sync::cloud::login` shells out to curl/wget; without either there is no flow to
 /// exercise, exactly as the crate-root auth suite decides.
 fn http_tools() -> bool {
     tooling_present()

@@ -3,7 +3,7 @@
 //!
 //! Every fact comes from the command that owns it — `api::doctor` for the
 //! data directory, `domains::code::hooks` for the git hooks, `domains::code::repos` for index
-//! freshness, `sync::auth_file` for the credential — so a detected value can
+//! freshness, `domains::sync::auth_file` for the credential — so a detected value can
 //! never disagree with what that command reports on its own.
 //!
 //! **Never creates the database, never touches the network.** Every probe
@@ -83,7 +83,7 @@ pub fn run(ctx: &mut Ctx<'_>, target: &Path, host_filter: Option<&str>) -> Resul
         hosts_installed,
         // Read locally, never over the network: detection must not issue a
         // platform request just to answer "are you signed in?" (and
-        // `cloud::device::org_status` would).
+        // `domains::sync::cloud::device::org_status` would).
         authenticated: crate::domains::sync::auth_file::AuthFile::load_usable(ctx.paths)?.is_some(),
     })
 }

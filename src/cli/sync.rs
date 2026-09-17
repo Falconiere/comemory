@@ -2,7 +2,7 @@
 //!
 //! Nested `daemon {install,uninstall,start,stop,status,run}` owns continuous
 //! auto-sync. Flat `--action` still drives a one-shot manual sync. `run` and
-//! `push` push the code index after the memories (`sync::code`); rendering
+//! `push` push the code index after the memories (`domains::sync::code`); rendering
 //! lives in `cli::sync_render`.
 
 use std::io::Write as _;

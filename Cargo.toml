@@ -199,11 +199,11 @@ insta = { version = "1", features = ["json", "yaml"] }
 predicates = "3"
 proptest = "1"
 # Same feature set as the main dep (incl. `rustls`) so test Clients exercise
-# the https path. Main dep: platform sync client (`src/sync/client.rs`).
+# the https path. Main dep: platform sync client (`src/domains/sync/client.rs`).
 reqwest = { version = "0.13", default-features = false, features = ["blocking", "json", "query", "rustls"] }
 # Self-signed leaf for the colocated https sync regression (#138).
 rcgen = "0.14"
-# Direct so `src/sync/tests/client_https.rs` can drive a rustls listener;
+# Direct so `src/domains/sync/tests/client_https.rs` can drive a rustls listener;
 # version aligns with the reqwest `rustls` feature's transitive rustls.
 rustls = "0.23"
 tempfile = "3"

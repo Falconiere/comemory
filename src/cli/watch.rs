@@ -3,7 +3,7 @@
 //! [`crate::domains::sync::watch`].
 //!
 //! Every platform call except the socket goes through
-//! [`crate::cli::off_runtime::off_runtime`]: `sync::client` and `run_pull` are
+//! [`crate::cli::off_runtime::off_runtime`]: `domains::sync::client` and `run_pull` are
 //! `reqwest::blocking`, which panics on drop inside this command's runtime.
 //! That escape hatch belongs to this adapter, so it is handed to the service
 //! rather than reached for from inside it.

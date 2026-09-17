@@ -6,7 +6,7 @@
     clippy::too_many_lines
 )]
 
-//! HTTPS regression coverage for `sync::client` (#138).
+//! HTTPS regression coverage for `domains::sync::client` (#138).
 //!
 //! The http fixture in `client.rs` never exercises TLS. These tests bind a
 //! real rustls listener so a missing reqwest TLS backend cannot regress.

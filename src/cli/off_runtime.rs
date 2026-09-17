@@ -1,7 +1,7 @@
 //! Run blocking platform I/O outside the tokio runtime.
 //!
 //! `main` is `#[tokio::main]`, so every subcommand body executes inside an
-//! async context. `sync::client` uses `reqwest::blocking`, which builds its
+//! async context. `domains::sync::client` uses `reqwest::blocking`, which builds its
 //! own current-thread runtime per call and panics on drop when it finds
 //! another runtime already in scope:
 //!
