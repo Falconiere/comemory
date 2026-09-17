@@ -20,8 +20,8 @@ use crate::serve::AppState;
 use crate::serve::routes::{self, RouteEntry, respond, run_blocking};
 
 /// Real subcommands with no HTTP mapping: `serve` IS the server (spec
-/// Non-Goal 3), `install` configures an agent host, `upgrade` replaces the
-/// running binary, and the platform
+/// Non-Goal 3), `install` configures an agent host, `setup` enables one on
+/// this machine, `upgrade` replaces the running binary, and the platform
 /// client verbs (`auth` / `sync` / `watch` / `capture` / `distill`) talk to
 /// the cloud platform — none belong behind `/api/v1`. `install` and `setup`
 /// write into the operator's own machine (an agent host's configuration

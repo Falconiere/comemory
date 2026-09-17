@@ -108,11 +108,21 @@ fn setup_yes_indexes_a_fresh_repo_then_search_code_finds_a_symbol() {
     }
 
     // The index is real: a symbol from the committed sources is findable.
+    // Asserted on the parsed hit, not on the whole stdout — the query string
+    // is echoed back in the envelope, so a substring test would pass on zero
+    // hits.
     let (code, stdout, stderr) = comemory(data.path(), &["search-code", "gamma", "--json"]);
     assert_eq!(code, 0, "search-code failed: {stderr}");
-    assert!(
-        stdout.contains("Gamma") || stdout.contains("gamma"),
-        "the indexed symbol should be searchable, got {stdout}"
+    let hits: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let hits = hits["hits"].as_array().expect("hits array");
+    let gamma = hits
+        .iter()
+        .find(|hit| hit["symbol"].as_str() == Some("Gamma"))
+        .unwrap_or_else(|| panic!("no `Gamma` hit in {stdout}"));
+    assert_eq!(
+        gamma["path"].as_str(),
+        Some("src/gamma.rs"),
+        "the hit must point at the committed source: {gamma}"
     );
 
     // Re-running settles: everything is satisfied, nothing is applied.
