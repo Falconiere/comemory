@@ -5,7 +5,7 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Behavior tests for [`comemory::graph::derived`] — the single post-write
+//! Behavior tests for [`comemory::domains::graph::derived`] — the single post-write
 //! pass that refreshes `memories.rank_score` and the `edge_fts` triplet
 //! index together.
 //!
@@ -17,7 +17,7 @@
 
 use std::collections::BTreeMap;
 
-use comemory::graph::derived;
+use comemory::domains::graph::derived;
 use rusqlite::{Connection, params};
 
 /// A freshly migrated `comemory.db` inside a tempdir.

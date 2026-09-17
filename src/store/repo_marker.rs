@@ -1,5 +1,5 @@
 //! `repo_marker.last_mined_commit` — the co-change mining cursor read and
-//! advanced by [`crate::graph::materialize`]. Kept separate from
+//! advanced by [`crate::domains::graph::materialize`]. Kept separate from
 //! `code_row.rs` (which owns `root_path`/`last_head`/`last_indexed_at`, the
 //! `index-code` writer's own fields) and `repo_marker_roots.rs` (the serve
 //! layer's root reads): this column has its own writer and its own caller.
@@ -100,7 +100,7 @@ pub fn archived(conn: &Connection, repo: &str) -> Result<Option<bool>> {
 }
 
 /// Every `repo_marker` label, ascending — the authoritative repo list
-/// behind `api::graph_recompute`'s "rescore every repo" walk.
+/// behind `domains::graph::graph_recompute`'s "rescore every repo" walk.
 pub(crate) fn all_repos(conn: &Connection) -> Result<Vec<String>> {
     let mut stmt = conn.prepare("SELECT repo FROM repo_marker ORDER BY repo")?;
     let rows = stmt

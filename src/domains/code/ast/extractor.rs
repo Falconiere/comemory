@@ -103,7 +103,7 @@ fn rust_patterns() -> &'static [(&'static str, &'static str)] {
     //   * modifiers: bare / `pub` / `async` / `pub async`.
     // The `pub` patterns also cover `pub(crate)` / `pub(super)` — ast-grep
     // treats the visibility node loosely, same as the `pub use` import
-    // patterns in `crate::graph::imports`. Known gap, accepted to keep the
+    // patterns in `crate::domains::graph::imports`. Known gap, accepted to keep the
     // table small: `const fn` / `unsafe fn` items (any visibility) are not
     // matched.
     &[
@@ -187,7 +187,7 @@ fn go_patterns() -> &'static [(&'static str, &'static str)] {
 /// Parse `source` under `language` once, then run every pre-compiled
 /// `(tag, pattern)` pair against it, invoking `on_match` with the tag and
 /// every matched node. Shared by symbol extraction here and import
-/// extraction in `crate::graph::imports`.
+/// extraction in `crate::domains::graph::imports`.
 ///
 /// The patterns are compiled once per language (see [`pattern_cache`]) and
 /// passed in already compiled, so this performs exactly one tree-sitter parse

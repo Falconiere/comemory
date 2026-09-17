@@ -5,7 +5,7 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Tests for `comemory::graph::neighbors` against a REAL indexed git repo:
+//! Tests for `comemory::domains::graph::neighbors` against a REAL indexed git repo:
 //! two Rust files where `src/a.rs` declares `mod b;`, committed together,
 //! then walked by `crate::domains::code::index_code::run` so the `imports` (and `co_changed`)
 //! edges under test are the ones production mining actually writes.
@@ -20,7 +20,7 @@ use crate::test_common::{git_commit, git_repo};
 use std::path::{Path, PathBuf};
 
 use comemory::config::{Config, Paths};
-use comemory::graph::neighbors::{DEFAULT_MIN_WEIGHT, file_neighbors};
+use comemory::domains::graph::neighbors::{DEFAULT_MIN_WEIGHT, file_neighbors};
 use comemory::store::connection;
 use comemory::utilities::context::Ctx;
 use tempfile::TempDir;

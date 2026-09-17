@@ -143,30 +143,27 @@ ratchet re-scans fresh each run, it does not pin line numbers).
 | --- | --- | --- | --- |
 | `src/domains/documents/document/extract.rs:70-84` function `extract_txt` | `src/domains/documents/document/extract.rs:86-95` function `extract_markdown` | 88.81% | parallel read-and-chunk extractors for two plain-text document kinds |
 
-### `src/graph/`
+### `src/domains/graph/`
 
 | Pair A | Pair B | Similarity | Why it's debt, not urgent |
 | --- | --- | --- | --- |
-| `src/graph/doc_link.rs:111-149` function `resolve_markdown_links` | `src/graph/doc_link.rs:174-199` function `resolve_document_id` | 85.67% | parallel document/memory-reference resolvers, same link-walk shape by design |
-| `src/graph/doc_link.rs:21-45` function `derive_after_document` | `src/graph/doc_link.rs:111-149` function `resolve_markdown_links` | 85.28% | parallel document/memory-reference resolvers, same link-walk shape by design |
-| `src/graph/doc_link.rs:78-105` function `resolve_memory_references` | `src/graph/doc_link.rs:174-199` function `resolve_document_id` | 85.26% | parallel document/memory-reference resolvers, same link-walk shape by design |
-| `src/graph/edges.rs:116-125` function `insert_weighted` | `src/graph/edges.rs:131-141` function `current_weight` | 86.15% | parallel weighted-upsert / delete-by-predicate helpers on the same `edges` table |
-| `src/graph/edges.rs:97-106` function `insert_at` | `src/graph/edges.rs:116-125` function `insert_weighted` | 85.55% | parallel weighted-upsert / delete-by-predicate helpers on the same `edges` table |
-| `src/graph/edges.rs:197-203` function `delete_outgoing` | `src/graph/edges.rs:207-213` function `delete_touching` | 93.65% | parallel weighted-upsert / delete-by-predicate helpers on the same `edges` table |
-| `src/graph/memory_rank.rs:116-127` function `push_direct_edges` | `src/graph/memory_rank.rs:132-144` function `push_co_citation_edges` | 95.57% | parallel edge-push helpers for two edge kinds (direct vs. co-citation) into the same rank graph |
-| `src/graph/imports.rs:223-248` function `rust_imports` | `src/graph/imports.rs:358-383` function `go_imports` | 86.53% | the deliberate per-language import-resolution repetition (rust/python/go/ts/js) — same shape per language, see AGENTS.md `graph/` row |
-| `src/graph/imports.rs:337-354` function `python_imports` | `src/graph/imports.rs:358-383` function `go_imports` | 92.32% | the deliberate per-language import-resolution repetition (rust/python/go/ts/js) — same shape per language, see AGENTS.md `graph/` row |
-| `src/graph/imports.rs:223-248` function `rust_imports` | `src/graph/imports.rs:337-354` function `python_imports` | 86.42% | the deliberate per-language import-resolution repetition (rust/python/go/ts/js) — same shape per language, see AGENTS.md `graph/` row |
-| `src/graph/imports.rs:55-70` function `extract_imports` | `src/graph/imports.rs:223-248` function `rust_imports` | 87.31% | the deliberate per-language import-resolution repetition (rust/python/go/ts/js) — same shape per language, see AGENTS.md `graph/` row |
-| `src/graph/imports.rs:55-70` function `extract_imports` | `src/graph/imports.rs:358-383` function `go_imports` | 85.12% | the deliberate per-language import-resolution repetition (rust/python/go/ts/js) — same shape per language, see AGENTS.md `graph/` row |
-| `src/graph/imports.rs:55-70` function `extract_imports` | `src/graph/imports.rs:337-354` function `python_imports` | 85.03% | the deliberate per-language import-resolution repetition (rust/python/go/ts/js) — same shape per language, see AGENTS.md `graph/` row |
-| `src/graph/imports.rs:321-325` function `ts_imports` | `src/graph/imports.rs:328-332` function `js_imports` | 91.65% | the deliberate per-language import-resolution repetition (rust/python/go/ts/js) — same shape per language, see AGENTS.md `graph/` row |
+| `src/domains/graph/doc_link.rs:111-149` function `resolve_markdown_links` | `src/domains/graph/doc_link.rs:174-199` function `resolve_document_id` | 85.67% | parallel document/memory-reference resolvers, same link-walk shape by design |
+| `src/domains/graph/doc_link.rs:21-45` function `derive_after_document` | `src/domains/graph/doc_link.rs:111-149` function `resolve_markdown_links` | 85.28% | parallel document/memory-reference resolvers, same link-walk shape by design |
+| `src/domains/graph/doc_link.rs:78-105` function `resolve_memory_references` | `src/domains/graph/doc_link.rs:174-199` function `resolve_document_id` | 85.26% | parallel document/memory-reference resolvers, same link-walk shape by design |
+| `src/domains/graph/memory_rank.rs:116-127` function `push_direct_edges` | `src/domains/graph/memory_rank.rs:132-144` function `push_co_citation_edges` | 95.57% | parallel edge-push helpers for two edge kinds (direct vs. co-citation) into the same rank graph |
+| `src/domains/graph/imports.rs:223-248` function `rust_imports` | `src/domains/graph/imports.rs:358-383` function `go_imports` | 86.53% | the deliberate per-language import-resolution repetition (rust/python/go/ts/js) — same shape per language, see AGENTS.md `graph/` row |
+| `src/domains/graph/imports.rs:337-354` function `python_imports` | `src/domains/graph/imports.rs:358-383` function `go_imports` | 92.32% | the deliberate per-language import-resolution repetition (rust/python/go/ts/js) — same shape per language, see AGENTS.md `graph/` row |
+| `src/domains/graph/imports.rs:223-248` function `rust_imports` | `src/domains/graph/imports.rs:337-354` function `python_imports` | 86.42% | the deliberate per-language import-resolution repetition (rust/python/go/ts/js) — same shape per language, see AGENTS.md `graph/` row |
+| `src/domains/graph/imports.rs:55-70` function `extract_imports` | `src/domains/graph/imports.rs:223-248` function `rust_imports` | 87.31% | the deliberate per-language import-resolution repetition (rust/python/go/ts/js) — same shape per language, see AGENTS.md `graph/` row |
+| `src/domains/graph/imports.rs:55-70` function `extract_imports` | `src/domains/graph/imports.rs:358-383` function `go_imports` | 85.12% | the deliberate per-language import-resolution repetition (rust/python/go/ts/js) — same shape per language, see AGENTS.md `graph/` row |
+| `src/domains/graph/imports.rs:55-70` function `extract_imports` | `src/domains/graph/imports.rs:337-354` function `python_imports` | 85.03% | the deliberate per-language import-resolution repetition (rust/python/go/ts/js) — same shape per language, see AGENTS.md `graph/` row |
+| `src/domains/graph/imports.rs:321-325` function `ts_imports` | `src/domains/graph/imports.rs:328-332` function `js_imports` | 91.65% | the deliberate per-language import-resolution repetition (rust/python/go/ts/js) — same shape per language, see AGENTS.md `graph/` row |
 
 ### `src/output/`
 
 | Pair A | Pair B | Similarity | Why it's debt, not urgent |
 | --- | --- | --- | --- |
-| `src/output/graph.rs:114-118` function `write_dot` | `src/output/graph.rs:121-125` function `write_html` | 89.98% | parallel DOT vs. HTML emitters over the same graph walk |
+| `src/output/graph.rs:31-35` function `write_dot` | `src/output/graph.rs:38-42` function `write_html` | 89.98% | parallel DOT vs. HTML emitters over the same graph walk |
 
 ### `src/retrieval/`
 
@@ -191,6 +188,9 @@ ratchet re-scans fresh each run, it does not pin line numbers).
 
 | Pair A | Pair B | Similarity | Why it's debt, not urgent |
 | --- | --- | --- | --- |
+| `src/store/edges.rs:116-125` function `insert_weighted` | `src/store/edges.rs:131-141` function `current_weight` | 86.15% | parallel weighted-upsert / delete-by-predicate helpers on the same `edges` table |
+| `src/store/edges.rs:97-106` function `insert_at` | `src/store/edges.rs:116-125` function `insert_weighted` | 85.55% | parallel weighted-upsert / delete-by-predicate helpers on the same `edges` table |
+| `src/store/edges.rs:197-203` function `delete_outgoing` | `src/store/edges.rs:207-213` function `delete_touching` | 93.65% | parallel weighted-upsert / delete-by-predicate helpers on the same `edges` table |
 | `src/store/memory_row.rs:136-151` function `relation_edge_stamps` | `src/store/memory_row.rs:226-260` function `insert_relation_edges` | 85.18% | edge-row construction helpers sharing the same relation-materialization shape |
 | `src/store/memory_meta.rs:95-115` function `attach_tags` | `src/store/memory_meta.rs:121-156` function `attach_references` | 89.52% | parallel batched attach-by-id helpers for two metadata columns (tags vs. references) |
 | `src/store/sources.rs:59-72` function `upsert` | `src/store/sources.rs:203-221` function `upsert_file` | 90.50% | parallel source-row vs. file-row CRUD helpers on twin tables |

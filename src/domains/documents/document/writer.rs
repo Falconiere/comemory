@@ -17,7 +17,7 @@ use super::fingerprint::{self, FileStat};
 use super::{DocumentFormat, ExtractedDocument, extract};
 use crate::domains::documents::source::classify::Classification;
 use crate::domains::documents::source::discover::Candidate;
-use crate::graph::doc_link;
+use crate::domains::graph::doc_link;
 use crate::prelude::*;
 use crate::store::Connection;
 use crate::store::document_fts;

@@ -16,8 +16,6 @@ pub mod consolidate;
 pub mod context;
 /// `comemory doctor`: runtime health check.
 pub mod doctor;
-/// `comemory edges`: lexical search over the relation graph.
-pub mod edges;
 /// `comemory eval`: score retrieval quality against a golden set.
 pub mod eval;
 /// `comemory feedback`: record which hits were used.
@@ -26,8 +24,6 @@ pub mod feedback;
 pub mod find;
 /// `comemory gc`: trash sweep + learning-telemetry retention purge.
 pub mod gc;
-/// `comemory graph`: the file-level code-connection graph, full or paged.
-pub mod graph;
 /// `comemory install`: bundled agent skills and hooks for a host.
 pub mod install;
 /// `comemory mine`: distill query-reformulation term mappings.
@@ -55,10 +51,6 @@ pub mod tune;
 pub mod config_retrieval;
 /// `GET|PUT /gc/policy`: retention windows + last gc run.
 pub mod gc_policy;
-/// `GET /graph/nodes*`, `GET /graph/snapshot`: node listing, detail, neighbors.
-pub mod graph_nodes;
-/// `POST /graph/recompute`: PageRank re-projection job.
-pub mod graph_recompute;
 /// `GET /learning/{summary,evals,golden-set,expansions}`.
 pub mod learning;
 /// `GET /learning/proposals`, `POST /learning/proposals/{id}/{apply,discard}`.

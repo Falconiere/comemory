@@ -6,7 +6,7 @@
     clippy::too_many_lines
 )]
 //! Mirror test for `src/api/edges.rs`. Seeds a real supersede relation via
-//! the `comemory` binary, then calls `api::edges::run` directly against a
+//! the `comemory` binary, then calls `domains::graph::edges::run` directly against a
 //! `Ctx` opened on the same data-dir — proving the extracted command core
 //! reproduces `comemory edges`'s triplet paging and the `allow_self_heal`
 //! gate (`cli::edges::run` is byte-compat tested against CLI stdout in
@@ -14,7 +14,6 @@
 //! `tests/serve__routes__graph.rs`).
 
 use assert_cmd::Command;
-use comemory::api;
 use comemory::config::{Config, Paths};
 use comemory::store::connection;
 use comemory::utilities::context::Ctx;
@@ -55,8 +54,8 @@ fn seeded_home() -> (tempfile::TempDir, String, String) {
     (home, old, new)
 }
 
-fn request(query: &str) -> api::edges::Request {
-    api::edges::Request {
+fn request(query: &str) -> comemory::domains::graph::edges::Request {
+    comemory::domains::graph::edges::Request {
         query: query.to_string(),
         k: None,
         offset: 0,
@@ -72,7 +71,8 @@ fn run_finds_the_supersede_triplet() {
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
     let result =
-        api::edges::run(&mut ctx, request("supersedes queue design"), true).expect("edges run");
+        comemory::domains::graph::edges::run(&mut ctx, request("supersedes queue design"), true)
+            .expect("edges run");
     assert_eq!(result.hits.len(), 1);
     let hit = &result.hits[0];
     assert_eq!(hit.rel, "supersedes");
@@ -94,7 +94,8 @@ fn allow_self_heal_false_leaves_an_empty_index_empty() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
     let result =
-        api::edges::run(&mut ctx, request("supersedes queue design"), false).expect("edges run");
+        comemory::domains::graph::edges::run(&mut ctx, request("supersedes queue design"), false)
+            .expect("edges run");
     assert!(
         result.hits.is_empty(),
         "allow_self_heal=false must not repopulate edge_fts: {:?}",
@@ -113,7 +114,8 @@ fn allow_self_heal_true_repopulates_an_empty_index() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
     let result =
-        api::edges::run(&mut ctx, request("supersedes queue design"), true).expect("edges run");
+        comemory::domains::graph::edges::run(&mut ctx, request("supersedes queue design"), true)
+            .expect("edges run");
     assert_eq!(result.hits.len(), 1);
     assert_eq!(result.hits[0].src_id, new);
     assert_eq!(result.hits[0].dst_id, old);

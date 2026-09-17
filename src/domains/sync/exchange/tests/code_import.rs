@@ -74,10 +74,13 @@ impl Workspace {
         code_import::run(&mut ctx, req).expect("import")
     }
 
-    fn snapshot(&mut self) -> api::graph_nodes::Snapshot {
+    fn snapshot(&mut self) -> comemory::domains::graph::graph_nodes::Snapshot {
         let mut ctx = Ctx::borrowed(&self.paths, &self.cfg, &mut self.conn);
-        api::graph_nodes::snapshot(&mut ctx, api::graph_nodes::SnapshotRequest::default())
-            .expect("snapshot")
+        comemory::domains::graph::graph_nodes::snapshot(
+            &mut ctx,
+            comemory::domains::graph::graph_nodes::SnapshotRequest::default(),
+        )
+        .expect("snapshot")
     }
 
     fn symbols(&self, path: &str) -> Vec<(String, String)> {
@@ -331,7 +334,11 @@ fn ac10_rank_after_import_equals_an_explicit_recompute() {
     let imported = ws.ranks();
     assert!(imported.iter().any(|(_, r)| *r > 0.0), "{imported:?}");
     let mut ctx = Ctx::borrowed(&ws.paths, &ws.cfg, &mut ws.conn);
-    api::graph_recompute::run(&mut ctx, api::graph_recompute::Request::default()).unwrap();
+    comemory::domains::graph::graph_recompute::run(
+        &mut ctx,
+        comemory::domains::graph::graph_recompute::Request::default(),
+    )
+    .unwrap();
     assert_eq!(ws.ranks(), imported);
 }
 

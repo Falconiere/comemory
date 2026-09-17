@@ -330,7 +330,7 @@ fn seed_file_ref_edge(conn: &rusqlite::Connection, memory_id: &str, dst: &str) {
 }
 
 /// Insert a real `file`→`file` `imports`/`co_changed` edge, the shape
-/// [`comemory::graph::materialize`] writes.
+/// [`comemory::domains::graph::materialize`] writes.
 fn seed_file_edge(conn: &rusqlite::Connection, src: &str, dst: &str, rel: &str, weight: i64) {
     conn.execute(
         "INSERT INTO edges(src_kind,src_id,dst_kind,dst_id,rel,weight,created_at) \

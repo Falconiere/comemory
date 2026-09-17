@@ -32,7 +32,7 @@ pub struct CodeRefRow {
 
 /// Emit reference edges for `refs` and persist their anchors.
 ///
-/// Reference edges mirror [`crate::graph::cross_link::extract_and_emit`]
+/// Reference edges mirror [`crate::domains::graph::cross_link::extract_and_emit`]
 /// (`memory → file` / `memory → symbol`); the `edges` table dedups via
 /// `INSERT OR IGNORE`, so a ref also mentioned in the body collapses to one
 /// edge. The anchors are then written to `code_ref` via [`upsert`].

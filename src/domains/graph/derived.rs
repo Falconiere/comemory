@@ -1,12 +1,12 @@
 //! The single post-write pass that refreshes every derived artifact.
 //!
 //! Two artifacts are computed from `memories` + `edges` rather than written
-//! incrementally: `memories.rank_score` ([`crate::graph::memory_rank`]) and
+//! incrementally: `memories.rank_score` ([`crate::domains::graph::memory_rank`]) and
 //! the `edge_fts` triplet index ([`crate::store::edge_fts`]). They share
 //! one staleness window and one set of trigger seams, so they share one
 //! entry point — a new seam cannot refresh half the derived state.
 
-use crate::graph::memory_rank;
+use crate::domains::graph::memory_rank;
 use crate::store::Connection;
 use crate::store::edge_fts;
 

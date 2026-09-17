@@ -158,11 +158,11 @@ probe_fn!(probe_completions, comemory::cli::completion_script::Request);
 probe_fn!(probe_consolidate, api::consolidate::Request);
 probe_fn!(probe_context, api::context::Request);
 probe_fn!(probe_doctor, api::doctor::Request);
-probe_fn!(probe_edges, api::edges::Request);
+probe_fn!(probe_edges, comemory::domains::graph::edges::Request);
 probe_fn!(probe_eval, api::eval::Request);
 probe_fn!(probe_feedback, api::feedback::Request);
 probe_fn!(probe_gc, api::gc::Request);
-probe_fn!(probe_graph, api::graph::Request);
+probe_fn!(probe_graph, comemory::domains::graph::view::Request);
 probe_fn!(probe_index, index::Request);
 probe_fn!(
     probe_index_code,

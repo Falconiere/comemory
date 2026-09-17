@@ -14,7 +14,7 @@
 //! pattern, reordered table) would change the extracted symbol list.
 
 use comemory::domains::code::ast::{Lang, extract};
-use comemory::graph::imports::extract_imports;
+use comemory::domains::graph::imports::extract_imports;
 
 /// Extraction must be byte-identical across repeated calls: the first call
 /// compiles the table into the process `static`, every later call reuses it.

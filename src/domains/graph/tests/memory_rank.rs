@@ -5,7 +5,7 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Behavior tests for [`comemory::graph::memory_rank`] — PageRank over the
+//! Behavior tests for [`comemory::domains::graph::memory_rank`] — PageRank over the
 //! derived memory graph, materialized onto `memories.rank_score`.
 //!
 //! Every test runs against a real migrated `comemory.db`. Rows are seeded
@@ -17,7 +17,7 @@
 
 use std::collections::BTreeMap;
 
-use comemory::graph::memory_rank;
+use comemory::domains::graph::memory_rank;
 use rusqlite::{Connection, params};
 
 /// A freshly migrated `comemory.db` inside a tempdir.

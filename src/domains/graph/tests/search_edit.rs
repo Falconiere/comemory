@@ -5,7 +5,7 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Search→edit lookback (`comemory::graph::search_edit`) exercised through
+//! Search→edit lookback (`comemory::domains::graph::search_edit`) exercised through
 //! the public `materialize` path. `search_edit` is `pub(crate)`, so these
 //! tests assert provenance upgrades the same way `index-code` does: seed a
 //! `retrieval_log` hit, then materialize over real git touches.
@@ -16,8 +16,8 @@ use crate::test_common::git_repo;
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use comemory::graph::materialize::materialize;
-use comemory::graph::search_edit::memories_seen_recently;
+use comemory::domains::graph::materialize::materialize;
+use comemory::domains::graph::search_edit::memories_seen_recently;
 use comemory::store::code_row::{self, CodeSymbolRow};
 use comemory::store::connection;
 use comemory::store::memory_row;

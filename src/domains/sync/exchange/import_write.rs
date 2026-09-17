@@ -54,7 +54,7 @@ pub(crate) fn write_new_memory(
     }
     let seq = log_sync_upsert(&tx, entry)?;
     tx.commit()?;
-    let _stale = crate::graph::derived::refresh_derived_best_effort(conn);
+    let _stale = crate::domains::graph::derived::refresh_derived_best_effort(conn);
     out.status = ImportStatus::Accepted;
     out.seq = Some(seq);
     out.duplicate_of = duplicate_of;

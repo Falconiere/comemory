@@ -16,7 +16,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::graph::search_edit;
+use crate::domains::graph::search_edit;
 use crate::prelude::*;
 use crate::stats::feedback;
 use crate::store::Connection;
@@ -40,7 +40,7 @@ const BETA_THRESHOLD: i64 = 2;
 /// or context), and bump each reinforced memory's activation once.
 ///
 /// `touched` maps repo-relative paths to per-pass commit-touch counts (from
-/// [`crate::graph::cochange::MineOutcome::touched`]). `at` is the run
+/// [`crate::domains::graph::cochange::MineOutcome::touched`]). `at` is the run
 /// timestamp for `feedback_events.at` and `memories.last_accessed`.
 /// `lookback_days` bounds the search→edit `retrieval_log` window.
 pub(crate) fn harvest(

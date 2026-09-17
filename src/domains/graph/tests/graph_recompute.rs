@@ -5,7 +5,7 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Tests for `comemory::api::graph_recompute` (console-api spec §5) over a
+//! Tests for `comemory::domains::graph::graph_recompute` (console-api spec §5) over a
 //! REAL indexed git repo, so the PageRank it re-derives runs against the
 //! `imports`/`co_changed` edges `index-code` actually mined.
 //!
@@ -90,8 +90,11 @@ fn recompute_rescores_every_indexed_repo() {
     let (_ws, _home, paths, cfg, mut conn) = store(true);
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let resp = api::graph_recompute::run(&mut ctx, api::graph_recompute::Request {})
-        .expect("graph_recompute run");
+    let resp = comemory::domains::graph::graph_recompute::run(
+        &mut ctx,
+        comemory::domains::graph::graph_recompute::Request {},
+    )
+    .expect("graph_recompute run");
 
     assert_eq!(resp.repos, vec![REPO.to_string()]);
     assert!(
@@ -112,14 +115,20 @@ fn recompute_leaves_an_unchanged_graph_bit_identical() {
 
     {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        api::graph_recompute::run(&mut ctx, api::graph_recompute::Request {})
-            .expect("first recompute");
+        comemory::domains::graph::graph_recompute::run(
+            &mut ctx,
+            comemory::domains::graph::graph_recompute::Request {},
+        )
+        .expect("first recompute");
     }
     let after_one = ranks(&conn);
     {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        api::graph_recompute::run(&mut ctx, api::graph_recompute::Request {})
-            .expect("second recompute");
+        comemory::domains::graph::graph_recompute::run(
+            &mut ctx,
+            comemory::domains::graph::graph_recompute::Request {},
+        )
+        .expect("second recompute");
     }
     let after_two = ranks(&conn);
 
@@ -160,8 +169,11 @@ fn recompute_counts_live_memories_as_the_memory_side() {
     }
 
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-    let resp = api::graph_recompute::run(&mut ctx, api::graph_recompute::Request {})
-        .expect("graph_recompute run");
+    let resp = comemory::domains::graph::graph_recompute::run(
+        &mut ctx,
+        comemory::domains::graph::graph_recompute::Request {},
+    )
+    .expect("graph_recompute run");
     assert_eq!(resp.memories_scored, 2, "resp: {resp:?}");
 }
 
@@ -170,8 +182,11 @@ fn recompute_on_an_empty_store_is_a_no_op() {
     let (_ws, _home, paths, cfg, mut conn) = store(false);
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let resp = api::graph_recompute::run(&mut ctx, api::graph_recompute::Request {})
-        .expect("graph_recompute run");
+    let resp = comemory::domains::graph::graph_recompute::run(
+        &mut ctx,
+        comemory::domains::graph::graph_recompute::Request {},
+    )
+    .expect("graph_recompute run");
     assert!(resp.repos.is_empty(), "resp: {resp:?}");
     assert_eq!(resp.symbols_scored, 0);
     assert_eq!(resp.memories_scored, 0);

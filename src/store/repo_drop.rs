@@ -27,7 +27,7 @@
 use rusqlite::Connection;
 use serde::Serialize;
 
-use crate::graph::derived;
+use crate::domains::graph::derived;
 use crate::prelude::*;
 use crate::store::edges;
 

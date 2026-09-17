@@ -8,7 +8,7 @@
 //! Test mirror for `src/graph/cross_link.rs` — backtick-fenced
 //! `<repo>:<path>[:<symbol>]` reference extraction from memory bodies.
 
-use comemory::graph::cross_link::{extract_and_emit, extract_refs};
+use comemory::domains::graph::cross_link::{extract_and_emit, extract_refs};
 use comemory::store::connection;
 use tempfile::tempdir;
 

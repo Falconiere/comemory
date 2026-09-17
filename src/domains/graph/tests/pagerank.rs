@@ -8,7 +8,7 @@
 //! Test mirror for `src/graph/pagerank.rs` — deterministic weighted
 //! PageRank.
 
-use comemory::graph::pagerank::pagerank;
+use comemory::domains::graph::pagerank::pagerank;
 
 #[test]
 fn pagerank_matches_hand_computed_values() {

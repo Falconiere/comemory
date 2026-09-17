@@ -11,10 +11,10 @@
 //! `materialize::recompute_rank` an explicit `POST /graph/recompute` does
 //! (AC-10). Nothing here touches a memory row or `sync_log`.
 
+use crate::domains::graph::{derived, materialize};
 use crate::domains::sync::exchange::code_import_rules::{MAX_FILES, validate};
 use crate::domains::sync::exchange::code_import_write::{remove_file, write_file};
 use crate::domains::sync::exchange::code_types::{CodeImportRequest, CodeImportResponse};
-use crate::graph::{derived, materialize};
 use crate::prelude::*;
 use crate::store::edges::{self, EdgeKey, file_node_id, file_node_prefix};
 use crate::store::{Transaction, code_row, code_sync, repo_marker};

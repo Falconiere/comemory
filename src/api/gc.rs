@@ -176,7 +176,8 @@ fn purge_rows(conn: &mut Connection, sweep: &Sweep, trash_days: u32) -> Result<P
             purged += u64::from(memory_purge::purge_memory(conn, &id)?);
         }
     }
-    let derived_stale = purged > 0 && !crate::graph::derived::refresh_derived_best_effort(conn);
+    let derived_stale =
+        purged > 0 && !crate::domains::graph::derived::refresh_derived_best_effort(conn);
     Ok(Purge {
         rows: purged,
         derived_stale,

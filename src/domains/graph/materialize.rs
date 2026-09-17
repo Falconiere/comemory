@@ -11,7 +11,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 
-use crate::graph::{coactivate, cochange, imports, pagerank};
+use crate::domains::graph::{coactivate, cochange, imports, pagerank};
 use crate::prelude::*;
 use crate::store::code_row;
 use crate::store::edges::{self, EdgeKey, file_node_id, file_node_prefix};

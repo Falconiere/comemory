@@ -45,7 +45,7 @@ pub fn derive_after_document(
 }
 
 /// Resolve `file_refs` (bare `<repo>:<path>` strings, as harvested by
-/// [`crate::graph::cross_link::extract_refs`]) against any already-indexed
+/// [`crate::domains::graph::cross_link::extract_refs`]) against any already-indexed
 /// document and materialize `references_document` for each live match.
 pub fn derive_after_memory_save(
     conn: &Connection,

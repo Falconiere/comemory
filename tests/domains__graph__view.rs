@@ -6,14 +6,13 @@
     clippy::too_many_lines
 )]
 //! Mirror test for `src/api/graph.rs`. Indexes a real git fixture repo
-//! (import edge) via `comemory index-code`, then calls `api::graph::run`
+//! (import edge) via `comemory index-code`, then calls `domains::graph::view::run`
 //! directly against a `Ctx` opened on the same data-dir — proving the
 //! full/page switch reuses `cli::graph::{build_code_graph, build_graph_page}`
 //! (`cli::graph` itself is byte-compat tested in `tests/cli__graph.rs`; the
 //! HTTP route + legacy-handler parity live in `tests/serve__routes__graph.rs`).
 
 use assert_cmd::Command;
-use comemory::api;
 use comemory::config::{Config, Paths};
 use comemory::store::connection;
 use comemory::utilities::context::Ctx;
@@ -23,8 +22,8 @@ mod git_commit;
 #[path = "common/git_repo.rs"]
 mod git_repo;
 
-fn request() -> api::graph::Request {
-    api::graph::Request {
+fn request() -> comemory::domains::graph::view::Request {
+    comemory::domains::graph::view::Request {
         repo: None,
         rel: None,
         min_weight: None,
@@ -66,9 +65,9 @@ fn absent_limit_and_offset_return_the_full_graph() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let response = api::graph::run(&mut ctx, request()).expect("graph run");
+    let response = comemory::domains::graph::view::run(&mut ctx, request()).expect("graph run");
     match response {
-        api::graph::Response::Full(graph) => {
+        comemory::domains::graph::view::Response::Full(graph) => {
             assert!(!graph.edges.is_empty(), "expected the import edge");
             assert!(
                 graph
@@ -79,7 +78,9 @@ fn absent_limit_and_offset_return_the_full_graph() {
                 graph.edges
             );
         }
-        api::graph::Response::Paged(_) => panic!("absent limit/offset must return the full graph"),
+        comemory::domains::graph::view::Response::Paged(_) => {
+            panic!("absent limit/offset must return the full graph")
+        }
     }
 }
 
@@ -93,14 +94,16 @@ fn present_limit_returns_a_windowed_page() {
 
     let mut req = request();
     req.limit = Some(1);
-    let response = api::graph::run(&mut ctx, req).expect("graph run");
+    let response = comemory::domains::graph::view::run(&mut ctx, req).expect("graph run");
     match response {
-        api::graph::Response::Paged(page) => {
+        comemory::domains::graph::view::Response::Paged(page) => {
             assert_eq!(page.limit, 1);
             assert_eq!(page.offset, 0);
             assert!(page.edges.len() <= 1);
         }
-        api::graph::Response::Full(_) => panic!("present limit must return a paged response"),
+        comemory::domains::graph::view::Response::Full(_) => {
+            panic!("present limit must return a paged response")
+        }
     }
 }
 
@@ -115,10 +118,13 @@ fn rel_filters_to_the_selected_relation() {
     // Unfiltered first, so the filtered assertion below cannot pass
     // vacuously: this proves the fixture really does carry an `imports`
     // edge for `rel=co-changed` to remove.
-    let unfiltered = match api::graph::run(&mut ctx, request()).expect("graph run") {
-        api::graph::Response::Full(graph) => graph,
-        api::graph::Response::Paged(_) => panic!("unreachable: no window requested"),
-    };
+    let unfiltered =
+        match comemory::domains::graph::view::run(&mut ctx, request()).expect("graph run") {
+            comemory::domains::graph::view::Response::Full(graph) => graph,
+            comemory::domains::graph::view::Response::Paged(_) => {
+                panic!("unreachable: no window requested")
+            }
+        };
     assert!(
         unfiltered.edges.iter().any(|e| e.rel == "imports"),
         "fixture must carry an imports edge to filter out: {:?}",
@@ -127,9 +133,9 @@ fn rel_filters_to_the_selected_relation() {
 
     let mut req = request();
     req.rel = Some("co-changed".to_string());
-    let response = api::graph::run(&mut ctx, req).expect("graph run");
+    let response = comemory::domains::graph::view::run(&mut ctx, req).expect("graph run");
     match response {
-        api::graph::Response::Full(graph) => {
+        comemory::domains::graph::view::Response::Full(graph) => {
             assert!(
                 !graph.edges.iter().any(|e| e.rel == "imports"),
                 "rel=co-changed must exclude the imports edge: {:?}",
@@ -141,7 +147,9 @@ fn rel_filters_to_the_selected_relation() {
                 graph.edges
             );
         }
-        api::graph::Response::Paged(_) => panic!("unreachable: no window requested"),
+        comemory::domains::graph::view::Response::Paged(_) => {
+            panic!("unreachable: no window requested")
+        }
     }
 }
 
@@ -155,7 +163,8 @@ fn invalid_rel_is_a_bad_request() {
 
     let mut req = request();
     req.rel = Some("not-a-real-relation".to_string());
-    let err = api::graph::run(&mut ctx, req).expect_err("invalid rel must be rejected");
+    let err = comemory::domains::graph::view::run(&mut ctx, req)
+        .expect_err("invalid rel must be rejected");
     assert!(
         err.to_string().contains("invalid rel"),
         "unexpected error: {err}"

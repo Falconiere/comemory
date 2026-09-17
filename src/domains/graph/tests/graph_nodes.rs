@@ -5,7 +5,7 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Tests for `comemory::api::graph_nodes` (console-api spec §5) over a REAL
+//! Tests for `comemory::domains::graph::graph_nodes` (console-api spec §5) over a REAL
 //! indexed git repo: three Rust files under `src/`, `a.rs` importing `b.rs`,
 //! walked by `crate::domains::code::index_code::run` so the `imports` edges, the `code_symbols`
 //! rows and the materialized `rank_score` under assertion are the ones
@@ -122,8 +122,8 @@ impl Store {
 }
 
 /// A `ListRequest` for the whole corpus with an explicit sort.
-fn list_req(sort: Option<&str>) -> api::graph_nodes::ListRequest {
-    api::graph_nodes::ListRequest {
+fn list_req(sort: Option<&str>) -> comemory::domains::graph::graph_nodes::ListRequest {
+    comemory::domains::graph::graph_nodes::ListRequest {
         repo: Some(REPO.to_string()),
         sort: sort.map(str::to_string),
         limit: None,
@@ -134,7 +134,8 @@ fn list_req(sort: Option<&str>) -> api::graph_nodes::ListRequest {
 #[test]
 fn list_defaults_to_pagerank_order_over_real_scores() {
     let mut store = indexed_store();
-    let page = api::graph_nodes::list(&mut store.ctx(), list_req(None)).expect("list");
+    let page = comemory::domains::graph::graph_nodes::list(&mut store.ctx(), list_req(None))
+        .expect("list");
 
     assert_eq!(page.items.len(), 3, "one node per indexed file: {page:?}");
     assert_eq!(page.total, Some(3));
@@ -154,7 +155,9 @@ fn list_defaults_to_pagerank_order_over_real_scores() {
 #[test]
 fn list_sort_path_orders_by_node_id() {
     let mut store = indexed_store();
-    let page = api::graph_nodes::list(&mut store.ctx(), list_req(Some("path"))).expect("list");
+    let page =
+        comemory::domains::graph::graph_nodes::list(&mut store.ctx(), list_req(Some("path")))
+            .expect("list");
 
     let ids: Vec<&str> = page.items.iter().map(|n| n.id.as_str()).collect();
     let mut sorted = ids.clone();
@@ -166,7 +169,8 @@ fn list_sort_path_orders_by_node_id() {
 #[test]
 fn list_rejects_an_unknown_sort() {
     let mut store = indexed_store();
-    let err = api::graph_nodes::list(&mut store.ctx(), list_req(Some("rank"))).unwrap_err();
+    let err = comemory::domains::graph::graph_nodes::list(&mut store.ctx(), list_req(Some("rank")))
+        .unwrap_err();
     assert!(matches!(err, Error::BadRequest(_)), "got {err:?}");
 }
 
@@ -175,14 +179,16 @@ fn list_pages_with_limit_and_offset() {
     let mut store = indexed_store();
     let mut req = list_req(Some("path"));
     req.limit = Some(2);
-    let first = api::graph_nodes::list(&mut store.ctx(), req).expect("first page");
+    let first =
+        comemory::domains::graph::graph_nodes::list(&mut store.ctx(), req).expect("first page");
     assert_eq!(first.items.len(), 2);
     assert!(first.has_more);
 
     let mut req = list_req(Some("path"));
     req.limit = Some(2);
     req.offset = Some(2);
-    let second = api::graph_nodes::list(&mut store.ctx(), req).expect("second page");
+    let second =
+        comemory::domains::graph::graph_nodes::list(&mut store.ctx(), req).expect("second page");
     assert_eq!(second.items.len(), 1);
     assert!(!second.has_more);
 }
@@ -191,10 +197,14 @@ fn list_pages_with_limit_and_offset() {
 fn detail_accepts_the_prefixed_and_bare_id_forms_and_a_scoped_path() {
     let mut store = indexed_store();
     let prefixed =
-        api::graph_nodes::detail(&mut store.ctx(), "file:demo:src/a.rs", None).expect("prefixed");
-    let bare = api::graph_nodes::detail(&mut store.ctx(), "demo:src/a.rs", None).expect("bare");
+        comemory::domains::graph::graph_nodes::detail(&mut store.ctx(), "file:demo:src/a.rs", None)
+            .expect("prefixed");
+    let bare =
+        comemory::domains::graph::graph_nodes::detail(&mut store.ctx(), "demo:src/a.rs", None)
+            .expect("bare");
     let scoped =
-        api::graph_nodes::detail(&mut store.ctx(), "src/a.rs", Some(REPO)).expect("scoped path");
+        comemory::domains::graph::graph_nodes::detail(&mut store.ctx(), "src/a.rs", Some(REPO))
+            .expect("scoped path");
 
     assert_eq!(prefixed.node.id, "file:demo:src/a.rs");
     assert_eq!(bare.node.id, prefixed.node.id);
@@ -216,15 +226,20 @@ fn detail_accepts_the_prefixed_and_bare_id_forms_and_a_scoped_path() {
 #[test]
 fn detail_is_not_found_for_a_file_with_no_indexed_symbols() {
     let mut store = indexed_store();
-    let err =
-        api::graph_nodes::detail(&mut store.ctx(), "file:demo:src/missing.rs", None).unwrap_err();
+    let err = comemory::domains::graph::graph_nodes::detail(
+        &mut store.ctx(),
+        "file:demo:src/missing.rs",
+        None,
+    )
+    .unwrap_err();
     assert!(matches!(err, Error::NotFound(_)), "got {err:?}");
 }
 
 #[test]
 fn detail_rejects_an_unparsable_id_without_a_repo_scope() {
     let mut store = indexed_store();
-    let err = api::graph_nodes::detail(&mut store.ctx(), "src/a.rs", None).unwrap_err();
+    let err = comemory::domains::graph::graph_nodes::detail(&mut store.ctx(), "src/a.rs", None)
+        .unwrap_err();
     assert!(matches!(err, Error::BadRequest(_)), "got {err:?}");
 }
 
@@ -234,7 +249,8 @@ fn detail_lists_the_memory_citing_the_file_and_agrees_with_the_node_count() {
     let id = store.save_citing_a();
 
     let detail =
-        api::graph_nodes::detail(&mut store.ctx(), "file:demo:src/a.rs", None).expect("detail");
+        comemory::domains::graph::graph_nodes::detail(&mut store.ctx(), "file:demo:src/a.rs", None)
+            .expect("detail");
     assert_eq!(detail.cited_by.len(), 1, "cited_by: {:?}", detail.cited_by);
     assert_eq!(detail.cited_by[0].id, id);
     assert!(
@@ -251,7 +267,8 @@ fn detail_lists_the_memory_citing_the_file_and_agrees_with_the_node_count() {
     );
 
     let untouched =
-        api::graph_nodes::detail(&mut store.ctx(), "file:demo:src/c.rs", None).expect("detail c");
+        comemory::domains::graph::graph_nodes::detail(&mut store.ctx(), "file:demo:src/c.rs", None)
+            .expect("detail c");
     assert!(untouched.cited_by.is_empty());
     assert_eq!(untouched.node.memories, 0);
 }
@@ -259,11 +276,11 @@ fn detail_lists_the_memory_citing_the_file_and_agrees_with_the_node_count() {
 #[test]
 fn neighbors_lists_the_real_imports_counterpart() {
     let mut store = indexed_store();
-    let rows = api::graph_nodes::neighbors(
+    let rows = comemory::domains::graph::graph_nodes::neighbors(
         &mut store.ctx(),
         "file:demo:src/a.rs",
         None,
-        api::graph_nodes::NeighborsRequest { min_weight: None },
+        comemory::domains::graph::graph_nodes::NeighborsRequest { min_weight: None },
     )
     .expect("neighbors");
 
@@ -299,16 +316,16 @@ fn neighbors_match_the_context_bundle_for_a_memory_citing_the_file_ac9() {
         );
         b.neighbors
     };
-    let from_api = api::graph_nodes::neighbors(
+    let from_api = comemory::domains::graph::graph_nodes::neighbors(
         &mut store.ctx(),
         "file:demo:src/a.rs",
         None,
-        api::graph_nodes::NeighborsRequest { min_weight: None },
+        comemory::domains::graph::graph_nodes::NeighborsRequest { min_weight: None },
     )
     .expect("neighbors");
 
     assert!(!from_bundle.is_empty(), "AC-9 needs a non-empty comparison");
-    let key = |rows: &[comemory::graph::neighbors::NeighborRow]| {
+    let key = |rows: &[comemory::domains::graph::neighbors::NeighborRow]| {
         rows.iter()
             .map(|r| (r.path.clone(), r.repo.clone(), r.rel.clone(), r.weight))
             .collect::<Vec<_>>()
@@ -323,11 +340,11 @@ fn neighbors_match_the_context_bundle_for_a_memory_citing_the_file_ac9() {
 #[test]
 fn neighbors_honor_a_min_weight_floor() {
     let mut store = indexed_store();
-    let kept = api::graph_nodes::neighbors(
+    let kept = comemory::domains::graph::graph_nodes::neighbors(
         &mut store.ctx(),
         "file:demo:src/a.rs",
         None,
-        api::graph_nodes::NeighborsRequest {
+        comemory::domains::graph::graph_nodes::NeighborsRequest {
             min_weight: Some(1),
         },
     )
@@ -335,11 +352,11 @@ fn neighbors_honor_a_min_weight_floor() {
     let max_weight = kept.iter().map(|r| r.weight).max().unwrap_or(0);
     assert!(max_weight > 0, "rows: {kept:?}");
 
-    let filtered = api::graph_nodes::neighbors(
+    let filtered = comemory::domains::graph::graph_nodes::neighbors(
         &mut store.ctx(),
         "file:demo:src/a.rs",
         None,
-        api::graph_nodes::NeighborsRequest {
+        comemory::domains::graph::graph_nodes::NeighborsRequest {
             min_weight: Some(max_weight + 1),
         },
     )
@@ -350,9 +367,9 @@ fn neighbors_honor_a_min_weight_floor() {
 #[test]
 fn snapshot_is_untruncated_on_a_small_graph_and_totals_its_own_edges() {
     let mut store = indexed_store();
-    let snap = api::graph_nodes::snapshot(
+    let snap = comemory::domains::graph::graph_nodes::snapshot(
         &mut store.ctx(),
-        api::graph_nodes::SnapshotRequest {
+        comemory::domains::graph::graph_nodes::SnapshotRequest {
             repo: Some(REPO.to_string()),
             edge_kinds: None,
             min_weight: None,
@@ -369,9 +386,9 @@ fn snapshot_is_untruncated_on_a_small_graph_and_totals_its_own_edges() {
 #[test]
 fn snapshot_edge_kinds_selects_one_relation_and_rejects_an_unknown_one() {
     let mut store = indexed_store();
-    let imports_only = api::graph_nodes::snapshot(
+    let imports_only = comemory::domains::graph::graph_nodes::snapshot(
         &mut store.ctx(),
-        api::graph_nodes::SnapshotRequest {
+        comemory::domains::graph::graph_nodes::SnapshotRequest {
             repo: Some(REPO.to_string()),
             edge_kinds: Some("imports".to_string()),
             min_weight: None,
@@ -381,9 +398,9 @@ fn snapshot_edge_kinds_selects_one_relation_and_rejects_an_unknown_one() {
     assert!(!imports_only.edges.is_empty());
     assert!(imports_only.edges.iter().all(|e| e.rel == "imports"));
 
-    let both = api::graph_nodes::snapshot(
+    let both = comemory::domains::graph::graph_nodes::snapshot(
         &mut store.ctx(),
-        api::graph_nodes::SnapshotRequest {
+        comemory::domains::graph::graph_nodes::SnapshotRequest {
             repo: Some(REPO.to_string()),
             edge_kinds: Some("imports, co-changed".to_string()),
             min_weight: None,
@@ -392,9 +409,9 @@ fn snapshot_edge_kinds_selects_one_relation_and_rejects_an_unknown_one() {
     .expect("both snapshot");
     assert!(both.total_edges >= imports_only.total_edges);
 
-    let err = api::graph_nodes::snapshot(
+    let err = comemory::domains::graph::graph_nodes::snapshot(
         &mut store.ctx(),
-        api::graph_nodes::SnapshotRequest {
+        comemory::domains::graph::graph_nodes::SnapshotRequest {
             repo: Some(REPO.to_string()),
             edge_kinds: Some("calls".to_string()),
             min_weight: None,

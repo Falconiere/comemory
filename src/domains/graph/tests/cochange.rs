@@ -5,7 +5,7 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Integration tests for `comemory::graph::cochange` against a REAL git
+//! Integration tests for `comemory::domains::graph::cochange` against a REAL git
 //! repo built with the git CLI — no mocked history. The fixture script:
 //! commit1 touches `a.rs`+`b.rs`, commit2 touches `a.rs`+`b.rs`, commit3
 //! touches `b.rs`+`c.rs`, commit4 is a 25-file mega-commit (must be
@@ -22,7 +22,7 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use comemory::domains::code::git_utils::current_head;
-use comemory::graph::cochange::{
+use comemory::domains::graph::cochange::{
     CoChange, FIRST_RUN_COMMIT_LIMIT, MEGA_COMMIT_FILE_CAP, mine_cochange,
 };
 use tempfile::TempDir;

@@ -25,7 +25,7 @@ use serde::Serialize;
 use time::OffsetDateTime;
 
 use crate::config::Config;
-use crate::graph::neighbors::{self, DEFAULT_MIN_WEIGHT};
+use crate::domains::graph::neighbors::{self, DEFAULT_MIN_WEIGHT};
 use crate::prelude::*;
 use crate::retrieval::code_prior::{self, CodePriorParts, Signals};
 use crate::retrieval::code_ref_collect::{self, RawRef};
@@ -55,7 +55,7 @@ pub struct Bundle {
     pub relations: Vec<RelationRow>,
     /// The one-hop `imports`/`co_changed` graph neighborhood of the distinct
     /// files `code_refs` resolve to (see
-    /// [`crate::graph::neighbors::file_neighbors`]) — the console's
+    /// [`crate::domains::graph::neighbors::file_neighbors`]) — the console's
     /// file-neighborhood panel. Additive: empty when `code_refs` is empty,
     /// and does not change [`Bundle::relations`], which stays the memory's
     /// own reference-edge walk.
@@ -155,11 +155,11 @@ pub struct RelationRow {
 /// while a `NeighborRow` walks the CODE graph outward from the files those
 /// refs resolve to.
 ///
-/// The type itself lives in [`crate::graph::neighbors`] alongside the query
+/// The type itself lives in [`crate::domains::graph::neighbors`] alongside the query
 /// that produces it, shared with `GET /api/v1/graph/nodes/{id}/neighbors`;
 /// it is re-exported here because `retrieval::bundle::NeighborRow` is the
 /// path `comemory context`'s JSON contract was written against.
-pub use crate::graph::neighbors::NeighborRow;
+pub use crate::domains::graph::neighbors::NeighborRow;
 
 /// Assemble a [`Bundle`] for `query`, expanding each ranked memory by
 /// walking `references_file`, `references_symbol`, `relates_to`, and

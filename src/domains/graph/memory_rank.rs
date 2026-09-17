@@ -1,6 +1,6 @@
 //! Memory-graph PageRank: the save/rebuild/delete post-pass that scores
 //! every live memory by structural centrality and projects the result onto
-//! `memories.rank_score`, mirroring what [`crate::graph::materialize`] does
+//! `memories.rank_score`, mirroring what [`crate::domains::graph::materialize`] does
 //! for the code side.
 //!
 //! The graph is derived at compute time, never persisted: hub rels
@@ -13,7 +13,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::graph::pagerank;
+use crate::domains::graph::pagerank;
 use crate::prelude::*;
 use crate::store::edges;
 use crate::store::memory_row;

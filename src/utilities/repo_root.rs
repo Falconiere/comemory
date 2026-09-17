@@ -9,7 +9,7 @@
 //! [`id_to_abs_path`], so the containment guarantee has a single chokepoint.
 //!
 //! [`parse_id`] — the decoder for that id grammar, and the inverse of
-//! `store::edges::file_node_id` — lives here rather than in `cli::graph`,
+//! `store::edges::file_node_id` — lives here rather than in a delivery module,
 //! where it sat until #167: a shared primitive may not reach into a delivery
 //! adapter, and every consumer of the resolver needs the decoder too.
 

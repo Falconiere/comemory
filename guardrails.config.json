@@ -116,11 +116,9 @@
       "api/rebuild",
       "domains/sync/exchange",
       "cli",
-      "cli/graph",
       "config",
       "consolidate",
       "eval",
-      "graph",
       "output",
       "prune",
       "retrieval",
@@ -150,7 +148,8 @@
       "domains/code/repos",
       "domains/documents",
       "domains/documents/document",
-      "domains/documents/source"
+      "domains/documents/source",
+      "domains/graph"
     ]
   },
   "fileSize": {

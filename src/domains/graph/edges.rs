@@ -1,11 +1,11 @@
-//! `api::edges::{Request, run}` — the shared middle of `comemory edges` /
+//! `domains::graph::edges::{Request, run}` — the shared middle of `comemory edges` /
 //! `GET /api/v1/edges`: self-heal the `edge_fts` index when needed, then
 //! page the triplet search. Moved out of `cli::edges::run` (Binding Rule 1).
 
 use serde::Deserialize;
 
 use crate::config::Config;
-use crate::graph::edges_result::EdgesResult;
+use crate::domains::graph::edges_result::EdgesResult;
 use crate::prelude::*;
 use crate::store::edge_fts;
 use crate::utilities::context::Ctx;

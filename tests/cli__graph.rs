@@ -10,8 +10,8 @@
 //! is a pure read over `comemory.db` and never indexes.
 
 use assert_cmd::Command;
-use comemory::cli::graph::nodes::build_graph;
-use comemory::output::graph::Edge;
+use comemory::domains::graph::code_graph::Edge;
+use comemory::domains::graph::nodes::build_graph;
 use comemory::store::code_graph_nodes::NodeRow;
 use tempfile::TempDir;
 

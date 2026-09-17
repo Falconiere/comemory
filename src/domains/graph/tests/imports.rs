@@ -9,7 +9,7 @@
 //! (`PathIndex`) and raw import-string extraction (`extract_imports`).
 
 use comemory::domains::code::ast::languages::Lang;
-use comemory::graph::imports::{PathIndex, extract_imports};
+use comemory::domains::graph::imports::{PathIndex, extract_imports};
 
 fn paths(v: &[&str]) -> Vec<String> {
     v.iter().map(std::string::ToString::to_string).collect()

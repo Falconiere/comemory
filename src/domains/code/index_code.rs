@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::domains::code::git_utils::{self, map_git_err};
-use crate::graph::{derived, materialize};
+use crate::domains::graph::{derived, materialize};
 use crate::prelude::*;
 use crate::store::{Connection, code_row, index_runs, memory_row, random_id, repo_marker};
 use crate::utilities::context::Ctx;

@@ -1,23 +1,20 @@
-//! `api::graph::{Request, run}` — the shared middle behind
+//! `domains::graph::view::{Request, run}` — the shared middle behind
 //! `GET /api/v1/graph`: the full `{nodes, edges}` graph or a
 //! `(limit, offset)`-windowed [`GraphPage`], reusing
-//! [`crate::cli::graph::build_code_graph`] / [`crate::cli::graph::build_graph_page`]
-//! directly (Binding Rule 1) — the same pair the legacy `GET /api/graph`
-//! handler already calls, so there is exactly one graph query path.
+//! [`build_code_graph`] / [`build_graph_page`] directly (Binding Rule 1), so
+//! there is exactly one graph query path.
 //!
-//! A directory module: `cli::graph`'s donor file already sits close to the
-//! 300-code-line budget, so this stays a thin caller rather than relocating
-//! the builders. `comemory graph`'s CLI is not rewired onto this module — it
-//! already calls `build_graph_page` directly and always wants a page, so
-//! routing it through the full/page [`Response`] switch would add pure
-//! indirection. `--format` (`dot`/`html`) has no HTTP counterpart (documented
-//! exclusion from the parity test) — the versioned surface is always JSON.
+//! `comemory graph`'s CLI is not rewired onto this module — it already calls
+//! `build_graph_page` directly and always wants a page, so routing it through
+//! the full/page [`Response`] switch would add pure indirection. `--format`
+//! (`dot`/`html`) has no HTTP counterpart (documented exclusion from the
+//! parity test) — the versioned surface is always JSON.
 
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 
-use crate::cli::graph::{Rel, build_code_graph, build_graph_page};
-use crate::output::graph::{CodeGraph, GraphPage};
+use crate::domains::graph::code_graph::{CodeGraph, GraphPage};
+use crate::domains::graph::query::{Rel, build_code_graph, build_graph_page};
 use crate::prelude::*;
 use crate::store::Connection;
 use crate::utilities::context::Ctx;

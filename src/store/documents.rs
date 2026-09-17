@@ -214,7 +214,7 @@ pub fn document_ids_for_source(conn: &Connection, source_id: &str) -> Result<Vec
 
 /// Look up a document by relative path within one source — `source_files`
 /// carries `UNIQUE (source_id, relative_path)`, so this can never be
-/// ambiguous. See [`crate::graph::doc_link::derive_after_document`].
+/// ambiguous. See [`crate::domains::graph::doc_link::derive_after_document`].
 pub(crate) fn document_id_in_source(
     conn: &Connection,
     source_id: &str,
@@ -232,7 +232,7 @@ pub(crate) fn document_id_in_source(
 
 /// Every live document id at `(repo, relative_path)` across every indexed
 /// source — 0, 1 (resolves), or 2+ (ambiguous, caller's concern). See
-/// [`crate::graph::doc_link::derive_after_document`].
+/// [`crate::domains::graph::doc_link::derive_after_document`].
 pub(crate) fn document_ids_for_repo_path(
     conn: &Connection,
     repo: &str,

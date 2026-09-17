@@ -17,7 +17,7 @@ use std::path::Path;
 use time::OffsetDateTime;
 
 use crate::config::Config;
-use crate::graph::cochange;
+use crate::domains::graph::cochange;
 use crate::prelude::*;
 use crate::retrieval::code_prior::{self, Signals};
 use crate::retrieval::code_route::CodeRoutedHit;
@@ -198,7 +198,7 @@ fn from_repo(git: &git2::Repository, label: &str) -> WorkingSet {
 /// Gather the raw repo-relative working-set paths: statuses first
 /// (worktree + index changes, untracked files included), then the
 /// first-parent diffs of the most recent [`WORKING_SET_COMMITS`]
-/// commits via [`crate::graph::cochange::commit_changed_paths`].
+/// commits via [`crate::domains::graph::cochange::commit_changed_paths`].
 ///
 /// Commits touching more than [`cochange::MEGA_COMMIT_FILE_CAP`] files
 /// are skipped for the same reason the co-change miner skips them: a

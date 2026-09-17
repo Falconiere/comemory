@@ -5,7 +5,7 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Integration tests for `comemory::graph::materialize` against a REAL
+//! Integration tests for `comemory::domains::graph::materialize` against a REAL
 //! git repo (built with the git CLI) and a real `comemory.db` connection.
 //! The fixture mirrors the CLI-level test: `a.rs` imports `b.rs` (`mod b;`
 //! raw module "b"), a.rs+b.rs are committed together twice, `c.rs` is
@@ -18,7 +18,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use comemory::domains::code::git_utils::current_head;
-use comemory::graph::materialize::materialize;
+use comemory::domains::graph::materialize::materialize;
 use comemory::store::code_row::{self, CodeSymbolRow};
 use comemory::store::connection;
 use tempfile::TempDir;

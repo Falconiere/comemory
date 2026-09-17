@@ -272,9 +272,9 @@ put scripts/architecture-policy.json '{broken'
 both 3 'invalid policy' src/lib.rs
 
 new_tree store_callback
-put src/store/rows.rs 'use crate::graph::derived as algorithm; pub fn write() { algorithm::refresh(); }'
-both 1 'crate::graph::derived' src/store/rows.rs
-policy '.store_callbacks=[{source:"src/store/rows.rs",target:"crate::graph::derived::refresh",class:"store-callback",issue:"#177"}]'
+put src/store/rows.rs 'use crate::domains::graph::derived as algorithm; pub fn write() { algorithm::refresh(); }'
+both 1 'crate::domains::graph::derived' src/store/rows.rs
+policy '.store_callbacks=[{source:"src/store/rows.rs",target:"crate::domains::graph::derived::refresh",class:"store-callback",issue:"#177"}]'
 both 0 '' src/store/rows.rs
 new_tree callback_constructor
 put src/store/rows.rs 'use crate::domains::documents::source::registry::Registry as Lock; pub fn write() { Lock::acquire(); }'

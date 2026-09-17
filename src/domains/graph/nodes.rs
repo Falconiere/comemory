@@ -3,19 +3,16 @@
 //! node rows to their edges. The SQL and its row mapping —
 //! [`NodeRow`](crate::store::code_graph_nodes::NodeRow),
 //! `fetch_nodes`/`fetch_node`, and the `cites_file_predicate` fragment
-//! `api::graph_nodes` also reuses — moved to
-//! [`crate::store::code_graph_nodes`] (spec
-//! `docs/toolu/specs/2026-09-07-store-layer-chokepoint-design.md`).
+//! [`graph_nodes`](super::graph_nodes) also reuses — live in
+//! [`crate::store::code_graph_nodes`].
 //!
-//! Split out of `cli::graph` when the node query grew the `memories` and
-//! `blob` columns the console's selected-node panel needs — the donor file
-//! was at the 300-line ceiling. `cli::graph` keeps the CLI surface, the edge
-//! fetch, and the two `build_*` entry points; everything about turning a
-//! `(repo, path)` pair into a [`Node`] lives here.
+//! [`query`](super::query) owns the edge fetch and the two `build_*` entry
+//! points; everything about turning a `(repo, path)` pair into a [`Node`]
+//! lives here.
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::output::graph::{CodeGraph, Edge, Node};
+use crate::domains::graph::code_graph::{CodeGraph, Edge, Node};
 use crate::prelude::*;
 use crate::store::code_graph_nodes::NodeRow;
 use crate::store::edges::file_node_id;

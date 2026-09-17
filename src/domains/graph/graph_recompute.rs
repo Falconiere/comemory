@@ -1,4 +1,4 @@
-//! `api::graph_recompute` — `POST /api/v1/graph/recompute`: re-run PageRank
+//! `domains::graph::graph_recompute` — `POST /api/v1/graph/recompute`: re-run PageRank
 //! and re-project it for every repo, then the memory rank (console-api
 //! spec §5).
 //!
@@ -20,7 +20,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::graph::{derived, materialize};
+use crate::domains::graph::{derived, materialize};
 use crate::prelude::*;
 use crate::store::{Connection, doctor_probes, repo_marker};
 use crate::utilities::context::Ctx;

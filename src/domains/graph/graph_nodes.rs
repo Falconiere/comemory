@@ -1,4 +1,4 @@
-//! `api::graph_nodes` — `GET /api/v1/graph/nodes`, `GET /api/v1/graph/nodes/{id}`,
+//! `domains::graph::graph_nodes` — `GET /api/v1/graph/nodes`, `GET /api/v1/graph/nodes/{id}`,
 //! `GET /api/v1/graph/nodes/{id}/neighbors`, `GET /api/v1/graph/snapshot`
 //! (console-api spec §5).
 //!
@@ -6,9 +6,9 @@
 //! already exports, reusing its query layer rather than growing a second
 //! one (Binding Rule 1): [`crate::store::code_graph_nodes::fetch_nodes`] /
 //! [`crate::store::code_graph_nodes::fetch_node`] for node rows,
-//! [`crate::cli::graph::nodes::build_graph`] for the `NodeRow → Node`
-//! mapping, [`crate::cli::graph::build_graph_page`] for the snapshot, and
-//! [`crate::graph::neighbors::file_neighbors`] — the query `comemory
+//! [`super::nodes::build_graph`] for the `NodeRow → Node`
+//! mapping, [`super::query::build_graph_page`] for the snapshot, and
+//! [`super::neighbors::file_neighbors`] — the query `comemory
 //! context` reports its `neighbors` from — for the neighborhood (AC-9).
 //!
 //! Node ids are the canonical `file:<repo>:<path>`; the bare `<repo>:<path>`
@@ -18,11 +18,11 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::cli::graph::nodes::build_graph;
-use crate::cli::graph::{Rel, build_graph_page};
+use crate::domains::graph::code_graph::{Edge, Node};
+use crate::domains::graph::neighbors::{self, DEFAULT_MIN_WEIGHT, NeighborRow};
+use crate::domains::graph::nodes::build_graph;
+use crate::domains::graph::query::{Rel, build_graph_page};
 use crate::domains::memories::nav::title_of;
-use crate::graph::neighbors::{self, DEFAULT_MIN_WEIGHT, NeighborRow};
-use crate::output::graph::{Edge, Node};
 use crate::prelude::*;
 use crate::store::Connection;
 use crate::store::code_graph_nodes::{self, NodeRow, fetch_node, fetch_nodes};
@@ -82,7 +82,7 @@ pub struct SnapshotRequest {
     pub edge_kinds: Option<String>,
     /// Drop `co_changed` edges below this accumulated weight. Absent means
     /// `1`; values below `1` are clamped up rather than rejected, matching
-    /// `api::graph`.
+    /// [`view`](super::view).
     #[serde(default)]
     pub min_weight: Option<i64>,
 }

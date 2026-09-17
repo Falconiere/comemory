@@ -6,7 +6,7 @@
     clippy::too_many_lines
 )]
 //! End-to-end tests for the commit co-activation reward
-//! (`comemory::graph::coactivate`) driven through the public
+//! (`comemory::domains::graph::coactivate`) driven through the public
 //! `materialize::materialize` entry against a REAL git repo and a real
 //! `comemory.db`. No mocks: commits touch real files, memories carry real
 //! `references_file` edges, and every channel is asserted by querying the
@@ -23,7 +23,7 @@ use crate::test_common::git_repo;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use comemory::graph::materialize::materialize;
+use comemory::domains::graph::materialize::materialize;
 use comemory::store::code_row::{self, CodeSymbolRow};
 use comemory::store::connection;
 use rusqlite::Connection;
