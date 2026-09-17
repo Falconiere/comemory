@@ -11,7 +11,7 @@
 //! at the transport layer, plus the read-only gate every mutating route
 //! carries.
 //!
-//! Ids are derived with `memory::id::memory_id` (the same content hash the
+//! Ids are derived with `memories::id::memory_id` (the same content hash the
 //! save path uses) rather than scraped from a response, so each test names
 //! the memory it seeded.
 
