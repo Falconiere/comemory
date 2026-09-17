@@ -113,7 +113,35 @@ rule:
 ---
 id: modules
 language: Rust
-rule: {kind: mod_item}
+rule:
+  kind: mod_item
+  has:
+    field: name
+    pattern: $NAME
+---
+id: lexical-scopes
+language: Rust
+rule: {kind: block}
+---
+id: module-scopes
+language: Rust
+rule:
+  kind: declaration_list
+  inside: {kind: mod_item}
+---
+id: enum-variants
+language: Rust
+rule:
+  kind: enum_variant
+  has:
+    field: name
+    pattern: $VARIANT
+  inside:
+    kind: enum_item
+    stopBy: end
+    has:
+      field: name
+      pattern: $ENUM
 ---
 id: substance
 language: Rust
@@ -158,30 +186,66 @@ jq '
       if $parts[1] == "super" or $parts[1] == "self" then $rest else $base[:-1]+$parts[1:] end
     else $parts end | if .[-1] == "self" then .[:-1] else . end;
   [.[] | select(.ruleId == "modules" and (.text|test("\\{")))] as $modules |
-  [ .[] | select(.ruleId == "imports" or .ruleId == "paths") | . as $node |
-    (.file|module_path) as $base |
-    ([$modules[] | select(.file == $node.file and .range.byteOffset.start < $node.range.byteOffset.start and
+  def base_for($node):
+    ($node.file|module_path) + ([$modules[] | select(.file == $node.file and
+      .range.byteOffset.start < $node.range.byteOffset.start and
       .range.byteOffset.end >= $node.range.byteOffset.end) |
-      {start:.range.byteOffset.start,name:(.text|capture("mod\\s+(?<name>[A-Za-z_][A-Za-z_0-9]*)").name)}] |
-      sort_by(.start)|map(.name)) as $inline |
-    (if .ruleId == "imports" then .text|imports else
+      {start:.range.byteOffset.start,name:(.metaVariables.single.NAME.text|ltrimstr("r#"))}] |
+      sort_by(.start)|map(.name));
+  ([.[] | select(.ruleId == "modules") | {source:.file,base:base_for(.),
+    name:(.metaVariables.single.NAME.text|ltrimstr("r#"))}] |
+    map({key:([.source]+.base+[.name]|join("::")),value:true}) | from_entries) as $declared |
+  ([.[] | select(.ruleId == "lexical-scopes" or .ruleId == "module-scopes")] |
+    group_by(.file) | map({key:.[0].file,value:map({start:.range.byteOffset.start,
+      end:.range.byteOffset.end,module:(.ruleId == "module-scopes")})}) | from_entries) as $scopes |
+  [ .[] | select(.ruleId == "imports" or .ruleId == "paths" or .ruleId == "enum-variants") | . as $node |
+    base_for(.) as $base |
+    ([$scopes[$node.file][]? | select(.start < $node.range.byteOffset.start and
+      .end >= $node.range.byteOffset.end)] | sort_by(.start) | last //
+      {start:-1,end:9007199254740991,module:true}) as $scope |
+    (if .ruleId == "imports" then .text|imports
+      elif .ruleId == "enum-variants" then {parts:($base+
+        [.metaVariables.single.ENUM.text,.metaVariables.single.VARIANT.text]|map(ltrimstr("r#"))),alias:null} else
       {parts:(.text|tokens),alias:null} end) |
-    {source:$node.file,parts:canonical(.parts;$base+$inline),alias:.alias,kind:$node.ruleId}
-  ] | group_by(.source) | [.[] as $raw |
-    [$raw[] | select(.kind == "imports") | {name:(.alias // .parts[-1]),parts:.parts}] as $aliases |
-    def resolve($n): . as $parts | if $n > 20 or .[0] == "crate" then . else
-      ([$aliases[]|select(.name == $parts[0])][0] // null) as $a |
-      if $a == null or $a.parts == $parts then . else ($a.parts+$parts[1:]|resolve($n+1)) end end;
-    $raw[] | .parts |= resolve(0) | select(.parts[0] == "crate") |
-    {source,target:(.parts|join("::")),kind}
-  ] | unique
+    {source:$node.file,parts:canonical(.parts;$base),alias:.alias,kind:$node.ruleId,
+      base:$base,scope:$scope,at:$node.range.byteOffset.start}
+  ] as $raw |
+    ([$raw[] | select(.kind == "imports") | . + {name:(.alias // .parts[-1]),
+      binding:(.base+[(.alias // .parts[-1])])}]) as $aliases |
+    ($aliases|group_by(.name)|map({key:.[0].name,value:.})|from_entries) as $names |
+    ($aliases|group_by(.binding)|map({key:(.[0].binding|join("::")),value:.})|from_entries) as $bindings |
+    def resolve($parts;$context;$seen):
+        ((if $parts[0] == "crate" then [range(1;($parts|length)+1) as $n |
+          $bindings[$parts[:$n]|join("::")][]?] else $names[$parts[0]] // [] end) |
+          [.[] | select(
+          if $parts[0] == "crate" then .scope.module and
+            (.source == $context.source or $context.base[:(.base|length)] == .base)
+          else .source == $context.source and .base == $context.base and
+            .scope.start < $context.at and .scope.end > $context.at end)] |
+          sort_by([(.binding|length),.scope.start]) | last) as $a |
+        if $a == null then
+          if $declared[([$context.source]+$context.base+[$parts[0]]|join("::"))] == true
+          then $context.base+$parts else $parts end
+        else
+          (if $parts[0] == "crate" then ($a.binding|length) else 1 end) as $used |
+          ([$a.source,$a.at,$a.name]|tojson) as $key |
+          if $a.parts == $parts[:$used] or ($seen|index($key)) != null then $parts else
+            resolve($a.parts+$parts[$used:];$a;$seen+[$key])
+          end
+        end;
+    [$raw[] | . as $entry | .parts=resolve(.parts;$entry;[]) | select(.parts[0] == "crate") |
+    {source,target:(.parts|join("::")),kind,
+      binding:(if .kind == "imports" and .scope.module then
+        (.base+[(.alias // .parts[-1])]|join("::")) else null end)}
+  ] | unique | {edges:map(select(.kind != "enum-variants")),
+    variants:map(select(.kind == "enum-variants")|.target)}
 ' "$TASK_TMP/ast" >"$TASK_TMP/edges" || bad 'path normalization failed'
 
 jq -nr --slurpfile p "$POLICY" --slurpfile inv "$TASK_TMP/inventory" \
   --slurpfile ast "$TASK_TMP/ast" --slurpfile edges "$TASK_TMP/edges" \
   --slurpfile files "$TASK_TMP/file_json" --slurpfile dirs "$TASK_TMP/dir_json" \
   --slurpfile scope "$TASK_TMP/scope" '
-  $p[0] as $p | $inv[0] as $inv | $edges[0] as $edges |
+  $p[0] as $p | $inv[0] as $inv | $edges[0] as $refs | $refs.edges as $edges |
   def prefix($parent): . == $parent or startswith($parent+"::");
   def module_path: ltrimstr("src/")|rtrimstr(".rs")|gsub("/";"::")|"crate::"+.;
   ([$p.legacy_modules[]|{key:.module,value:.owner}] +
@@ -194,6 +258,13 @@ jq -nr --slurpfile p "$POLICY" --slurpfile inv "$TASK_TMP/inventory" \
     . == $source or startswith(($source|rtrimstr(".rs"))+"/"));
   def exemption($list;$edge): any($list[]; . as $entry | .source == $edge.source and ($edge.target|prefix($entry.target)));
   def diagnostic($source;$target;$why): {source:$source,target:$target,why:$why};
+  ([$edges[]|select(.binding != null)]|group_by(.target)|
+    map({key:.[0].target,value:map(.binding)})|from_entries) as $enum_imports |
+  def enum_aliases:
+    . as $known | (. + [$known[]|split("::") as $parts |
+      $enum_imports[$parts[:-1]|join("::")][]? | .+"::"+$parts[-1]] | unique) |
+    if . == $known then . else enum_aliases end;
+  ($refs.variants | unique | enum_aliases) as $variants |
   [
     $dirs[0][] | select((split("/")|length)==2) | . as $d |
       select(($p.staged_top_level_dirs|index($d|split("/")[1])) == null) |
@@ -206,7 +277,7 @@ jq -nr --slurpfile p "$POLICY" --slurpfile inv "$TASK_TMP/inventory" \
   ] + [
     ([$files[0][],$dirs[0][]|select(startswith("src/domains/"))|split("/")[2]|rtrimstr(".rs")] +
      [$ast[0][]|select(.file == "src/domains.rs" and .ruleId == "modules")|
-       .text|capture("mod\\s+(?<name>[A-Za-z_][A-Za-z_0-9]*)").name] | unique)[] as $d |
+       .metaVariables.single.NAME.text|ltrimstr("r#")] | unique)[] as $d |
     ("src/domains/"+$d) as $base |
     if ($p.domains|index($d)) == null then diagnostic($base;"";"unapproved domain") else
       (if any($ast[0][]; (.file == ($base+".rs") or (.file|startswith($base+"/"))) and .ruleId == "substance")
@@ -238,7 +309,8 @@ jq -nr --slurpfile p "$POLICY" --slurpfile inv "$TASK_TMP/inventory" \
       elif any($p.store_callbacks[]; .source == $edge.source and (.target|startswith($edge.target+"::"))) and
         .kind == "imports" then empty
       elif any($p.passive_store_models[]; . as $model | .source == $edge.source and
-        ($edge.target == .target or ($edge.target|IN($model.target+"::new",$model.target+"::default",$model.target+"::from")))) then empty
+        ($edge.target == .target or ($edge.target|IN($model.target+"::new",$model.target+"::default",$model.target+"::from")) or
+          (($edge.target|startswith($model.target+"::")) and ($variants|index($edge.target)) != null))) then empty
       else diagnostic(.source;.target;"store service dependency") end
     elif (($source_owner // "")|startswith("domains::")) or (.source|startswith("src/api/")) or
       .source == "src/domains.rs" then

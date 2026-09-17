@@ -182,6 +182,48 @@ put src/store/rows.rs 'use crate::memory::ReferencesService; pub fn write() {}'
 policy '.passive_store_models=[{source:"src/store/rows.rs",target:"crate::memory::Ref"}]'
 both 1 'crate::memory::ReferencesService' src/store/rows.rs
 
+# Scope must select the actual binding, not the first same-name import in a file.
+for body in \
+  'use crate::config as model; fn write() { use crate::memory::Ref as model; model::reindex(); }' \
+  'fn read() { use crate::config as model; model::read(); } fn write() { use crate::memory::Ref as model; model::reindex(); }' \
+  'use crate::memory::Ref; fn write() { self::Ref::reindex(); }' \
+  'use {crate::memory::Ref, Ref as model}; fn write() { model::reindex(); }' \
+  'use crate::memory::Ref; mod inner { fn write() { super::Ref::reindex(); } }'; do
+  new_tree lexical_store_alias
+  put src/store/rows.rs "$body"
+  policy '.passive_store_models=[{source:"src/store/rows.rs",target:"crate::memory::Ref"}]'
+  both 1 'crate::memory::Ref::reindex' src/store/rows.rs
+done
+new_tree parent_file_alias
+put src/store/rows.rs 'use crate::memory::Ref; pub mod child;'
+put src/store/rows/child.rs 'fn write() { super::Ref::reindex(); }'
+policy '.passive_store_models=[{source:"src/store/rows.rs",target:"crate::memory::Ref"}]'
+both 1 'crate::memory::Ref::reindex' src/store/rows/child.rs
+new_tree local_alias_shadows_passive
+put src/store/rows.rs 'use crate::memory::Ref as model; fn read() { use crate::config as model; model::read(); }'
+policy '.passive_store_models=[{source:"src/store/rows.rs",target:"crate::memory::Ref"}]'
+both 0 '' src/store/rows.rs
+new_tree commented_module
+domain 'mod /* explanation */ inner { pub fn work() { super::super::super::cli::run(); } }'
+both 1 'crate::cli::run' src/domains/memories.rs
+new_tree passive_enum
+put src/memory.rs 'pub enum Kind { Note, Tagged(String), Record { value: String } }'
+put src/store/rows.rs 'use crate::memory::Kind; fn read() -> Kind { Kind::Note }'
+policy '.passive_store_models=[{source:"src/store/rows.rs",target:"crate::memory::Kind"}]'
+both 0 '' src/store/rows.rs
+put src/store/rows.rs 'use crate::memory::Kind; fn read() -> Kind { Kind::Tagged(String::new()) }'
+both 0 '' src/store/rows.rs
+for method in reindex Reindex Unknown; do
+  put src/store/rows.rs "use crate::memory::Kind; fn write() { Kind::$method(); }"
+  both 1 "crate::memory::Kind::$method" src/store/rows.rs
+done
+new_tree reexported_passive_enum
+put src/memory.rs 'pub mod frontmatter; pub use self::frontmatter::Kind;'
+put src/memory/frontmatter.rs 'pub enum Kind { Note }'
+put src/store/rows.rs 'use crate::memory::Kind; fn read() -> Kind { Kind::Note }'
+policy '.passive_store_models=[{source:"src/store/rows.rs",target:"crate::memory::Kind"}]'
+both 0 '' src/store/rows.rs
+
 new_tree grouped_diagnostics
 domain 'use crate::{serve::z, cli::{z, a}}; pub fn work() {}'
 assert_status 1 'crate::cli::a'
