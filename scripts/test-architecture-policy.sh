@@ -240,4 +240,23 @@ sed '/^| src\/memory.rs |/s/comemory::memory; crate-root-alias/private/' "$INVEN
 assert_fails 'missing public compatibility choice' 'public path mismatch' --inventory "$TASK_TMP/public.md"
 sed '/^| src\/capture\/redact.rs |/s@src/capture/rules.toml@none@' "$INVENTORY" >"$TASK_TMP/asset.md"
 assert_fails 'missing compile-time asset' 'inventory asset/bridge mismatch' --inventory "$TASK_TMP/asset.md"
+
+require_guidance() {
+  local file=$1 expected=$2 label=$3
+  rg -Fq -- "$expected" "$file" || fail "missing $label"
+}
+
+require_guidance AGENTS.md 'D3 — `barrelNames: ["mod.rs"]`' 'D3 barrel policy guidance'
+require_guidance AGENTS.md 'D4 — `src.nested` replaces the starter map' 'D4 nested policy guidance'
+while IFS=$'\t' read -r scope children; do
+  require_guidance AGENTS.md "- \`$scope\`: $children" "D4 $scope nested policy guidance"
+done < <(jq -r '.src.nested | to_entries[] |
+  [.key, (.value | map("`" + . + "`") | join(", "))] | @tsv' guardrails.config.json)
+readme_count=$(jq '.src.requireReadme | length' guardrails.config.json)
+require_guidance AGENTS.md "D5 — \`src.requireReadme\` extends the kit's \`domains\` entry to exactly $readme_count folders" 'D5 README count guidance'
+require_guidance AGENTS.md 'names folders, not files' 'D5 folder policy guidance'
+require_guidance AGENTS.md 'single-file module is listed in its parent folder' 'D5 single-file policy guidance'
+require_guidance docs/designs/2026-09-17-domain-first-migration.md '[inventory](2026-09-17-domain-first-migration-inventory.md)' 'inventory design link'
+require_guidance docs/designs/2026-09-17-domain-first-migration.md '[#162](https://github.com/Falconiere/comemory/issues/162)' '#162 baseline link'
+require_guidance docs/designs/2026-09-17-domain-first-migration.md '[#163](https://github.com/Falconiere/comemory/issues/163)' '#163 baseline link'
 echo 'PASS: architecture policy and inventory'

@@ -203,11 +203,15 @@ The migration order above prevents moving setup before those owners exist.
 #165 compares AGENTS.md's historical D3/D4/D5 wording with the pinned
 toolu-conventions commit `abd091eb50e91e18fdc8e07acf5b4e91c0a8addf`, replaces
 any stale description, and records each retained stronger local rule as a
-project deviation. The inventory explicitly treats merged #162 and #163 as
-baseline behavior: common-directory hooks and unseen/custom worktree labels,
-plus setup's seven stable step IDs, offline missing-database-safe detection,
-report-only cloud/document steps, and per-step failure rendering before exit
-69 are compatibility constraints, not migration work.
+project deviation. The checked [inventory](2026-09-17-domain-first-migration-inventory.md)
+is the evidence for the staged policy. It explicitly treats merged
+[#162](https://github.com/Falconiere/comemory/issues/162) and
+[#163](https://github.com/Falconiere/comemory/issues/163) as baseline behavior:
+common-directory hooks and unseen/custom worktree labels, plus setup's seven
+stable step IDs, offline missing-database-safe detection, report-only
+cloud/document steps, and per-step failure rendering before exit 69 are
+compatibility constraints, not migration work. `serve` remains the HTTP adapter
+and `store` the SQLite exception throughout that preservation work.
 
 ## Verification
 

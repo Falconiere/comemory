@@ -762,20 +762,33 @@ intent; several make the local rule strictly stronger than the one it replaces.
 
       awk 'NF && $1 !~ /^#/' <file> | wc -l
 
-- **D3 — `barrelNames: ["mod.rs"]`** (the kit ships `[]`, which leaves
-  `no-barrels` inert for Rust). Declaring `mod.rs` a barrel name makes the
-  `<dir>.rs` beside `<dir>/` layout permanent and machine-checked.
-- **D4 — `src.nested` is extended** beyond the kit's `{"*": ["tests"]}` to
-  allow `src/store/tokenizer/`, `src/store/migrate/` (the migration SQL
-  itself moved out of `src/store/` to the crate-root `migrations/` in v0.29;
-  the former `sql` entry left `src.nested.store` and the `store/sql` README
-  requirement left `src.requireReadme` in the same change),
-  and a universal `proptest-regressions` allowlist entry
-  (proptest creates that directory itself on a failing property test; a gate
-  that fails on a tool's own artifact is a gate people route around).
-- **D5 — `src.requireReadme` is added** (the kit ships nothing). All 20 of
-  comemory's grown module folders carry a `README.md`; the source material was
-  already this file's Module Map, transformed rather than newly written.
+- **D3 — `barrelNames: ["mod.rs"]`** is inherited unchanged from the pinned
+  Rust conventions, not a local deviation. It makes the `<dir>.rs` beside
+  `<dir>/` layout permanent and machine-checked.
+- **D4 — `src.nested` replaces the starter map** with the exact, project-specific
+  folder policy below. It retains the kit's test separation while replacing its
+  generic `model`/`service`/`store` domain shape with comemory's staged
+  capabilities and delivery adapters:
+
+  - `domains`: `memories`, `code`, `documents`, `graph`, `retrieval`, `learning`, `sync`, `capture`, `maintenance`, `integrations`
+  - `domains/*`: `tests`, `proptest-regressions`
+  - `store`: `tokenizer`, `migrate`, `tests`
+  - `api`: `doctor`, `index_code`, `memory_store`, `rebuild`, `repos`, `sync`, `tests`, `proptest-regressions`, `install`, `setup`
+  - `cli`: `graph`, `tests`, `proptest-regressions`, `setup`
+  - `retrieval`: `unified`, `tests`, `proptest-regressions`
+  - `sync`: `auth_file`, `redact`, `skip_repos`, `tests`, `proptest-regressions`
+  - `capture`: `tests`, `proptest-regressions`
+  - `serve`: `routes`, `jobs`, `tests`, `proptest-regressions`
+  - `serve/routes`: `memories`, `maint`, `tests`, `proptest-regressions`
+  - `*`: `tests`, `proptest-regressions`
+
+  `serve` remains the HTTP adapter and `store` remains the SQLite exception;
+  neither template name controls their project ownership.
+- **D5 — `src.requireReadme` extends the kit's `domains` entry to exactly 37 folders.**
+  It names folders, not files: each listed grown folder has a `README.md` that
+  indexes its contents, while a single-file module is listed in its parent folder
+  README and documented by its module doc. The configured list, rather than a
+  prose count, is the source of truth.
 - **D6 — two project-local ast-grep pattern rules**
   (`no-unsafe-without-safety.yml` for D1, `no-allow-attribute.yml` for Binding
   Rule 5's `#[allow]` ban) are **additions** to `scripts/guardrails/patterns/rust/`;
