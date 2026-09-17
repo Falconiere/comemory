@@ -1,12 +1,13 @@
-//! `api::unindex::{Request, run}` — the shared middle of `comemory unindex`
-//! / `DELETE /api/v1/sources`: unregister a document source and delete its
-//! derived rows. External files under the source root are never touched.
+//! `domains::documents::unindex::{Request, run}` — the shared middle of
+//! `comemory unindex` / `DELETE /api/v1/sources`: unregister a document
+//! source and delete its derived rows. External files under the source root
+//! are never touched.
 //! Moved out of `cli::unindex::run` (Binding Rule 1).
 
 use serde::{Deserialize, Serialize};
 
+use crate::domains::documents::source::registry::Registry;
 use crate::prelude::*;
-use crate::source::registry::Registry;
 use crate::store::{document_fts, documents, edges, sources};
 use crate::utilities::context::Ctx;
 

@@ -16,6 +16,7 @@ use std::path::Path;
 use super::RepoContext;
 use crate::api;
 use crate::domains::code::git_utils;
+use crate::domains::documents::sources;
 use crate::prelude::*;
 use crate::utilities::context::Ctx;
 
@@ -183,14 +184,15 @@ fn doc_sources(ctx: &mut Ctx<'_>, repo: Option<&RepoContext>) -> Result<usize> {
     let Some(repo) = repo else {
         return Ok(0);
     };
-    // `api::sources::run` calls `Ctx::conn` unconditionally, so the
+    // `domains::documents::sources::run` calls `Ctx::conn`
+    // unconditionally, so the
     // existence guard is what keeps a probe from creating the database.
     // `reconcile: false` keeps it a pure read as well — the default would
     // rewrite the SQLite mirror from `sources.toml`.
     if !ctx.paths.db_path().exists() {
         return Ok(0);
     }
-    let rows = api::sources::run(ctx, api::sources::Request { reconcile: false })?;
+    let rows = sources::run(ctx, sources::Request { reconcile: false })?;
     Ok(rows
         .iter()
         .filter(|source| source.repo.as_deref() == Some(repo.label.as_str()))

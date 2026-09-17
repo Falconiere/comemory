@@ -5,7 +5,7 @@ the wizard's decisions are testable without a terminal.
 
 | File | Primary item | Purpose |
 | --- | --- | --- |
-| `detect.rs` | `Detected` | Read-only probe of machine + repo. Delegates to `api::doctor`, `domains::code::hooks`, `domains::code::repos`, `api::sources`, and `sync::auth_file`; never creates the database and never touches the network |
+| `detect.rs` | `Detected` | Read-only probe of machine + repo. Delegates to `api::doctor`, `domains::code::hooks`, `domains::code::repos`, `domains::documents::sources`, and `sync::auth_file`; never creates the database and never touches the network |
 | `plan.rs` | `run` | Pure `(Detected, Request) -> Vec<Step>`. Every decision lives here |
 | `apply.rs` | `run` | The only phase that writes. Dispatches each pending step to the command that owns it; a per-step failure is recorded, never propagated |
 

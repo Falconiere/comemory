@@ -9,8 +9,9 @@
 //! against a real bound server, including the read-only reconcile gate: the
 //! route computes `reconcile` from `--read-only` server-side, never from the
 //! query string (mirrors `tests/api__sources.rs`, which exercises
-//! `api::sources::run` directly without HTTP). `DELETE
-//! /sources?target=&confirm=true` (`api::unindex`) coverage lives here too.
+//! `domains::documents::sources::run` directly without HTTP). `DELETE
+//! /sources?target=&confirm=true` (`domains::documents::unindex`) coverage
+//! lives here too.
 
 #[path = "common/docs_fixtures.rs"]
 mod docs_fixtures;
@@ -317,7 +318,8 @@ fn v1_post_sources_outside_every_allowed_root_is_403_and_creates_no_job() {
 }
 
 /// TOCTOU regression: `req.path` entries are overwritten with the SAME
-/// canonicalized path `contain_abs` just verified before `api::index::run`
+/// canonicalized path `contain_abs` just verified before
+/// `domains::documents::index::run`
 /// sees them (§Security "Path containment"). Registering through a symlink
 /// inside the allowed root must succeed and land the source at its resolved
 /// (canonical) target, not the symlink path.

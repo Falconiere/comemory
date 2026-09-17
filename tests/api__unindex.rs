@@ -5,8 +5,9 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror test for `src/api/unindex.rs`. Registers a real docs fixture
-//! source via `comemory index`, then calls `api::unindex::run` directly
+//! Mirror test for `src/domains/documents/unindex.rs`. Registers a real docs fixture
+//! source via `comemory index`, then calls
+//! `domains::documents::unindex::run` directly
 //! against a `Ctx` opened on the same data-dir (`cli::unindex::run` is
 //! byte-compat tested against CLI stdout in `tests/cli__unindex.rs`; the
 //! HTTP route lives in `tests/serve__routes__sources.rs`).
@@ -15,8 +16,8 @@
 mod docs_fixtures;
 
 use assert_cmd::Command;
-use comemory::api;
 use comemory::config::{Config, Paths};
+use comemory::domains::documents::unindex;
 use comemory::store::connection;
 use comemory::utilities::context::Ctx;
 use serde::Deserialize;
@@ -67,9 +68,9 @@ fn run_unregisters_by_source_id_and_removes_documents() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let resp = api::unindex::run(
+    let resp = unindex::run(
         &mut ctx,
-        api::unindex::Request {
+        unindex::Request {
             target: source_id.clone(),
         },
     )
@@ -91,9 +92,9 @@ fn run_errors_on_an_unregistered_target() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let err = api::unindex::run(
+    let err = unindex::run(
         &mut ctx,
-        api::unindex::Request {
+        unindex::Request {
             target: "no-such-source".to_string(),
         },
     )
@@ -103,7 +104,7 @@ fn run_errors_on_an_unregistered_target() {
 
 #[test]
 fn request_rejects_unknown_fields() {
-    let err = serde_json::from_value::<api::unindex::Request>(serde_json::json!({
+    let err = serde_json::from_value::<unindex::Request>(serde_json::json!({
         "target": "abc",
         "bogus": 1,
     }))

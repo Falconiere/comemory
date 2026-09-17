@@ -5,12 +5,12 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Test mirror for `src/document/extract.rs` — dispatch plus the
+//! Test mirror for `src/domains/documents/document/extract.rs` — dispatch plus the
 //! TXT/Markdown extractors, run over real fixture files in
 //! `common/fixtures/docs/`.
 
-use comemory::document::DocumentFormat;
-use comemory::document::extract::extract;
+use comemory::domains::documents::document::DocumentFormat;
+use comemory::domains::documents::document::extract::extract;
 
 const GUIDE_MD: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -109,7 +109,10 @@ fn markdown_chunks_never_bust_the_ceiling_and_simhash_is_stable() {
     for (ca, cb) in a.chunks.iter().zip(b.chunks.iter()) {
         assert_eq!(ca.simhash, cb.simhash);
         assert_ne!(ca.simhash, 0);
-        assert!(ca.text.chars().count() <= comemory::document::chunk::CHUNK_CHAR_CEILING);
+        assert!(
+            ca.text.chars().count()
+                <= comemory::domains::documents::document::chunk::CHUNK_CHAR_CEILING
+        );
     }
 }
 

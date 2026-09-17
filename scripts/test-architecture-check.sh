@@ -277,8 +277,8 @@ both 1 'crate::graph::derived' src/store/rows.rs
 policy '.store_callbacks=[{source:"src/store/rows.rs",target:"crate::graph::derived::refresh",class:"store-callback",issue:"#177"}]'
 both 0 '' src/store/rows.rs
 new_tree callback_constructor
-put src/store/rows.rs 'use crate::source::lock::FileLock as Lock; pub fn write() { Lock::acquire(); }'
-both 1 'crate::source::lock::FileLock' src/store/rows.rs
+put src/store/rows.rs 'use crate::domains::documents::source::registry::Registry as Lock; pub fn write() { Lock::acquire(); }'
+both 1 'crate::domains::documents::source::registry::Registry' src/store/rows.rs
 new_tree passive_model
 put src/store/rows.rs 'use crate::memory::Ref; pub fn read() -> Ref { Ref::new("value") }'
 policy '.passive_store_models=[{source:"src/store/rows.rs",target:"crate::memory::Ref"}]'

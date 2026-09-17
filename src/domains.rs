@@ -14,3 +14,6 @@
 
 /// AST extraction, code indexing, the repository inventory, and Git hooks.
 pub mod code;
+
+/// Document extraction, the durable source registry, and document indexing.
+pub mod documents;

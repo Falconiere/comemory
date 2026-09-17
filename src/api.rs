@@ -30,8 +30,6 @@ pub mod find;
 pub mod gc;
 /// `comemory graph`: the file-level code-connection graph, full or paged.
 pub mod graph;
-/// `comemory index`: register document sources and reconcile them.
-pub mod index;
 /// `comemory install`: bundled agent skills and hooks for a host.
 pub mod install;
 /// `comemory list`: page live memories.
@@ -49,19 +47,14 @@ pub mod save;
 pub mod search;
 /// `comemory search-code`: ranked code search.
 pub mod search_code;
-/// `comemory sources`: list registered document sources, with a skippable
-/// reconcile side effect.
 /// `comemory setup`: detect, plan, and apply first-run onboarding.
 pub mod setup;
 /// `comemory show`: one memory in full.
 pub mod show;
-pub mod sources;
 /// `comemory stats`: corpus counters and database size.
 pub mod stats;
 /// `comemory tune`: grid-search the blend knobs, confirm, apply.
 pub mod tune;
-/// `comemory unindex`: unregister a document source and its derived rows.
-pub mod unindex;
 
 // Console-only cores (console-api spec, 2026-09-01): no CLI subcommand of
 // their own, reached through `serve::routes`.

@@ -5,7 +5,7 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Test mirror for `src/source/discover.rs`.
+//! Test mirror for `src/domains/documents/source/discover.rs`.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -14,10 +14,10 @@ use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 
 use comemory::config::paths::Paths;
-use comemory::document::DocumentFormat;
-use comemory::source::SourceKind;
-use comemory::source::classify::Classification;
-use comemory::source::discover::discover;
+use comemory::domains::documents::document::DocumentFormat;
+use comemory::domains::documents::source::SourceKind;
+use comemory::domains::documents::source::classify::Classification;
+use comemory::domains::documents::source::discover::discover;
 use tempfile::TempDir;
 
 const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/common/fixtures/docs");
@@ -40,7 +40,7 @@ fn sandbox() -> (TempDir, PathBuf) {
     (tmp, memories_dir)
 }
 
-fn rel_names(found: &[comemory::source::discover::Candidate]) -> Vec<String> {
+fn rel_names(found: &[comemory::domains::documents::source::discover::Candidate]) -> Vec<String> {
     found
         .iter()
         .map(|c| c.relative_path.to_string_lossy().to_string())

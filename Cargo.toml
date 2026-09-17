@@ -44,7 +44,7 @@ clap_complete = "4"
 # macros, so nothing expands to `println!` inside this crate and the
 # `print_stdout` lint plus the no-bypass ast-grep rule stay clean.
 cliclack = "0.5"
-# Delimited-text (CSV/TSV) document extraction (src/document/delimited.rs).
+# Delimited-text (CSV/TSV) document extraction (src/domains/documents/document/delimited.rs).
 csv = "1"
 futures = "0.3"
 git2 = { version = "0.21", default-features = false, features = ["vendored-libgit2"] }
@@ -82,7 +82,7 @@ time = { version = "0.3", features = ["serde", "formatting", "parsing", "macros"
 # migration APPLY stays comemory's own `store::migrate` — see
 # docs/guides/schema-migrations.md.
 toolu-orm = { version = "0.6.0", default-features = false, features = ["rusqlite"] }
-# Pure-Rust HTML/XHTML tag-stripping (src/document/html.rs); MIT, zero deps.
+# Pure-Rust HTML/XHTML tag-stripping (src/domains/documents/document/html.rs); MIT, zero deps.
 tl = "0.7"
 tokio = { version = "1", features = ["full"] }
 # `rustls` is required: sync + capture talk to https platform origins

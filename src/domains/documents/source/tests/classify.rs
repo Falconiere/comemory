@@ -5,12 +5,12 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Test mirror for `src/source/classify.rs`.
+//! Test mirror for `src/domains/documents/source/classify.rs`.
 
 use std::path::Path;
 
-use comemory::document::DocumentFormat;
-use comemory::source::classify::{Classification, SNIFF_WINDOW, classify};
+use comemory::domains::documents::document::DocumentFormat;
+use comemory::domains::documents::source::classify::{Classification, SNIFF_WINDOW, classify};
 
 const TEXT_HEAD: &[u8] = b"# Heading\n\nSome real prose, no NUL bytes here.\n";
 

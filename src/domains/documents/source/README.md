@@ -1,4 +1,4 @@
-# source/
+# domains/documents/source/
 
 **What belongs here:** the durable document-source registry — TOML-backed
 registration of external roots (`sources.toml`), the exclusive-flock guard
@@ -24,5 +24,6 @@ One line per file, named after its primary item:
 | `registry.rs` | `Registry` | `sources.toml` load/save, overlap validation, atomic durability |
 
 When you add a file here, add its row above so the index stays current. No
-`mod.rs` barrel — submodules are declared from `src/source.rs` (`pub mod
-<name>;`) and callers import concrete paths.
+`mod.rs` barrel — submodules are declared from
+`src/domains/documents/source.rs` (`pub mod <name>;`) and callers import
+concrete paths.

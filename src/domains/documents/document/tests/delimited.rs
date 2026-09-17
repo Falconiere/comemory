@@ -5,11 +5,12 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Test mirror for `src/document/delimited.rs` — CSV/TSV extraction via
+//! Test mirror for `src/domains/documents/document/delimited.rs` —
+//! CSV/TSV extraction via
 //! the `csv` crate, run over a real fixture in `common/fixtures/docs/`.
 
-use comemory::document::DocumentFormat;
-use comemory::document::delimited::extract;
+use comemory::domains::documents::document::DocumentFormat;
+use comemory::domains::documents::document::delimited::extract;
 
 const DATA_CSV: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -30,7 +31,7 @@ fn title_is_always_the_file_stem() {
 /// Concatenate every chunk's text — with 200-char overlap between forced
 /// cuts, this may repeat a little content, but never drops any, so
 /// `contains` checks against it are safe regardless of where a cut lands.
-fn full_text(doc: &comemory::document::ExtractedDocument) -> String {
+fn full_text(doc: &comemory::domains::documents::document::ExtractedDocument) -> String {
     doc.chunks
         .iter()
         .map(|c| c.text.as_str())
@@ -62,7 +63,10 @@ fn chunks_never_bust_the_ceiling_and_simhash_is_stable() {
     for (ca, cb) in a.chunks.iter().zip(b.chunks.iter()) {
         assert_eq!(ca.simhash, cb.simhash);
         assert_ne!(ca.simhash, 0);
-        assert!(ca.text.chars().count() <= comemory::document::chunk::CHUNK_CHAR_CEILING);
+        assert!(
+            ca.text.chars().count()
+                <= comemory::domains::documents::document::chunk::CHUNK_CHAR_CEILING
+        );
     }
 }
 

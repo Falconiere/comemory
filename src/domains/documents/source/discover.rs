@@ -11,8 +11,8 @@ use std::path::{Path, PathBuf};
 
 use ignore::WalkBuilder;
 
-use crate::source::SourceKind;
-use crate::source::classify::{self, Classification, SNIFF_WINDOW};
+use crate::domains::documents::source::SourceKind;
+use crate::domains::documents::source::classify::{self, Classification, SNIFF_WINDOW};
 
 /// One file discovered under a registered source root, already
 /// classified. `absolute_path` is the path to open for reading — the

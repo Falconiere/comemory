@@ -5,11 +5,12 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Test mirror for `src/document/html.rs` — HTML/XHTML extraction via
+//! Test mirror for `src/domains/documents/document/html.rs` —
+//! HTML/XHTML extraction via
 //! `tl`, run over a real fixture page in `common/fixtures/docs/`.
 
-use comemory::document::DocumentFormat;
-use comemory::document::html::extract;
+use comemory::domains::documents::document::DocumentFormat;
+use comemory::domains::documents::document::html::extract;
 
 const PAGE_HTML: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -105,7 +106,10 @@ fn chunks_never_bust_the_ceiling_and_simhash_is_stable() {
     for (ca, cb) in a.chunks.iter().zip(b.chunks.iter()) {
         assert_eq!(ca.simhash, cb.simhash);
         assert_ne!(ca.simhash, 0);
-        assert!(ca.text.chars().count() <= comemory::document::chunk::CHUNK_CHAR_CEILING);
+        assert!(
+            ca.text.chars().count()
+                <= comemory::domains::documents::document::chunk::CHUNK_CHAR_CEILING
+        );
     }
 }
 

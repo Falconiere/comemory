@@ -1,4 +1,4 @@
-# document/
+# domains/documents/document/
 
 **What belongs here:** pure, in-process document extraction (TXT, Markdown,
 HTML/XHTML, CSV/TSV) and size-bounded chunking. Every extractor turns
@@ -25,5 +25,6 @@ One line per file, named after its primary item:
 | `writer.rs` | `UpdateOutcome` | Per-file index writer: fingerprint skip, extraction, one-transaction row replacement |
 
 When you add a file here, add its row above so the index stays current. No
-`mod.rs` barrel — submodules are declared from `src/document.rs` (`pub mod
-<name>;`) and callers import concrete paths.
+`mod.rs` barrel — submodules are declared from
+`src/domains/documents/document.rs` (`pub mod <name>;`) and callers import
+concrete paths.
