@@ -784,11 +784,13 @@ intent; several make the local rule strictly stronger than the one it replaces.
 
   `serve` remains the HTTP adapter and `store` remains the SQLite exception;
   neither template name controls their project ownership.
-- **D5 — `src.requireReadme` extends the kit's `domains` entry to exactly 37 folders.**
-  It names folders, not files: each listed grown folder has a `README.md` that
-  indexes its contents, while a single-file module is listed in its parent folder
-  README and documented by its module doc. The configured list, rather than a
-  prose count, is the source of truth.
+- **D5 — `src.requireReadme` replaces the pinned single-`domains` rule during staging with exactly 37 folders.**
+  The staged configuration deliberately has no `domains` entry: that requirement
+  returns when the first real capability domain lands. It names folders, not
+  files: each listed grown folder has a `README.md` that indexes its contents,
+  while a single-file module is listed in its parent folder README and documented
+  by its module doc. The configured list, rather than a prose count, is the
+  source of truth.
 - **D6 — two project-local ast-grep pattern rules**
   (`no-unsafe-without-safety.yml` for D1, `no-allow-attribute.yml` for Binding
   Rule 5's `#[allow]` ban) are **additions** to `scripts/guardrails/patterns/rust/`;

@@ -253,7 +253,7 @@ while IFS=$'\t' read -r scope children; do
 done < <(jq -r '.src.nested | to_entries[] |
   [.key, (.value | map("`" + . + "`") | join(", "))] | @tsv' guardrails.config.json)
 readme_count=$(jq '.src.requireReadme | length' guardrails.config.json)
-require_guidance AGENTS.md "D5 — \`src.requireReadme\` extends the kit's \`domains\` entry to exactly $readme_count folders" 'D5 README count guidance'
+require_guidance AGENTS.md "D5 — \`src.requireReadme\` replaces the pinned single-\`domains\` rule during staging with exactly $readme_count folders" 'D5 README count guidance'
 require_guidance AGENTS.md 'names folders, not files' 'D5 folder policy guidance'
 require_guidance AGENTS.md 'single-file module is listed in its parent folder' 'D5 single-file policy guidance'
 require_guidance docs/designs/2026-09-17-domain-first-migration.md '[inventory](2026-09-17-domain-first-migration-inventory.md)' 'inventory design link'
