@@ -27,7 +27,7 @@ use crate::serve::routes::{self, RouteEntry, respond, run_blocking};
 /// long-lived by construction: it holds a socket open until interrupted,
 /// which is not a request-response shape.
 const CLI_ONLY: &[&str] = &[
-    "auth", "capture", "distill", "install", "serve", "sync", "upgrade", "watch",
+    "auth", "capture", "distill", "install", "serve", "setup", "sync", "upgrade", "watch",
 ];
 
 /// This resource's route-table entries, appended onto [`super::table`].

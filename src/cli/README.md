@@ -57,6 +57,7 @@ One line per file, named after its primary item:
 | `search_only.rs` | `OnlyDomain` | `--only`/`--path` domain-scope resolution shared by `search` |
 | `serve.rs` | `Args` | `comemory serve` — launch the local web viewer + in-browser code editor |
 | `repos.rs` | `Args` | `comemory repos` — indexed code repositories and their index freshness |
+| `setup.rs` | `Args` | `comemory setup` — detect, plan, and apply first-run onboarding. Owns the `Intent`/`Prompting` → `Mode` decision and the exit-code mapping; `setup/` holds the wizard and the summary renderer |
 | `show.rs` | `Args` | `comemory show` — one memory in full: body, frontmatter, activation, refs |
 | `sources.rs` | `Args` | `comemory sources` — list registered document sources with status counts |
 | `stats.rs` | `Args` | `comemory stats` — corpus counters and `comemory.db` size |

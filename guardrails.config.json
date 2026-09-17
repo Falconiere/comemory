@@ -12,18 +12,20 @@
       "api": [
         "doctor",
         "index_code",
+        "install",
         "memory_store",
+        "proptest-regressions",
         "rebuild",
         "repos",
+        "setup",
         "sync",
-        "tests",
-        "proptest-regressions"
+        "tests"
       ],
       "cli": [
         "graph",
-        "install",
-        "tests",
-        "proptest-regressions"
+        "proptest-regressions",
+        "setup",
+        "tests"
       ],
       "retrieval": [
         "unified",
@@ -69,7 +71,6 @@
       "ast",
       "cli",
       "cli/graph",
-      "cli/install",
       "config",
       "consolidate",
       "document",
@@ -93,7 +94,10 @@
       "store/tokenizer",
       "upgrade",
       "capture",
-      "cloud"
+      "cloud",
+      "api/install",
+      "api/setup",
+      "cli/setup"
     ]
   },
   "fileSize": {

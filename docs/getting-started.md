@@ -105,6 +105,22 @@ Later, moving to the next release is one command — `comemory upgrade` (or
 `comemory upgrade --check` to only look); see
 [docs/guides/upgrading.md](guides/upgrading.md).
 
+**The short way through the rest of this guide** is `comemory setup`. It
+detects what is already true about this machine and the repo you are standing
+in, shows you the plan, and applies the parts you pick — covering steps 4 and
+5 below (the code index and the git hooks) plus the agent-host plugin and the
+cloud sign-in. It is safe to re-run: anything already done reports as
+`satisfied` and is not redone.
+
+```bash
+comemory setup              # interactive
+comemory setup --yes        # apply everything this machine can, no prompts
+comemory setup --dry-run    # just show me the plan
+```
+
+Steps 2 and 3 — saving and searching your first memory — are worth doing by
+hand once, so the rest of this guide still walks the whole path.
+
 Verify the install — `comemory doctor` checks the data directory and the SQLite
 mirror:
 

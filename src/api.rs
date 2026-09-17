@@ -47,6 +47,8 @@ pub mod index;
 pub mod index_code;
 /// `comemory ingest-code`: mirror pre-embedded NDJSON symbol rows.
 pub mod ingest_code;
+/// `comemory install`: bundled agent skills and hooks for a host.
+pub mod install;
 /// `comemory install-hooks`: install git hooks for background reindexing.
 pub mod install_hooks;
 /// `comemory list`: page live memories.
@@ -66,10 +68,12 @@ pub mod save;
 pub mod search;
 /// `comemory search-code`: ranked code search.
 pub mod search_code;
-/// `comemory show`: one memory in full.
-pub mod show;
 /// `comemory sources`: list registered document sources, with a skippable
 /// reconcile side effect.
+/// `comemory setup`: detect, plan, and apply first-run onboarding.
+pub mod setup;
+/// `comemory show`: one memory in full.
+pub mod show;
 pub mod sources;
 /// `comemory stats`: corpus counters and database size.
 pub mod stats;

@@ -44,16 +44,19 @@ use serde_json::json;
 use tempfile::TempDir;
 
 /// Real subcommands with no HTTP mapping at all: `serve` IS the server
-/// (spec Non-Goal 3), `upgrade` replaces the running binary, and the
-/// platform client verbs (`auth` / `sync` / `capture` / `distill`)
-/// talk to the cloud platform — never on an HTTP request to this process.
+/// (spec Non-Goal 3), `upgrade` replaces the running binary, `install` and
+/// `setup` write into the operator's own machine (an agent host's config
+/// directory, git hooks, shell state) which a server must never do on
+/// request, and the platform client verbs (`auth` / `sync` / `capture` /
+/// `distill`) talk to the cloud platform — never on an HTTP request to this
+/// process.
 /// A local, hardcoded mirror of `serve::routes::meta::CLI_ONLY` (private to
 /// that module) — deliberate: this test proves the *real*
 /// `GET /api/v1/commands` endpoint against an independently-stated
 /// expectation, not against whatever that endpoint's own internal constant
 /// happens to say today.
 const CLI_ONLY: &[&str] = &[
-    "auth", "capture", "distill", "install", "serve", "sync", "upgrade", "watch",
+    "auth", "capture", "distill", "install", "serve", "setup", "sync", "upgrade", "watch",
 ];
 
 // ---------------------------------------------------------------------

@@ -36,6 +36,14 @@ axum = "0.8"
 base64 = "0.22"
 clap = { version = "4", features = ["derive", "env"] }
 clap_complete = "4"
+# The inline prompt/progress stack behind `comemory setup`'s wizard
+# (src/cli/setup/wizard.rs). Built on `console`, which the dep tree already
+# carried via `insta`, so the added runtime crates are small and permissive
+# (indicatif, strsim, textwrap, zeroize — all inside deny.toml's allowlist).
+# Its `log::*` / `outro` helpers are plain fns returning `io::Result<()>`, not
+# macros, so nothing expands to `println!` inside this crate and the
+# `print_stdout` lint plus the no-bypass ast-grep rule stay clean.
+cliclack = "0.5"
 # Delimited-text (CSV/TSV) document extraction (src/document/delimited.rs).
 csv = "1"
 futures = "0.3"

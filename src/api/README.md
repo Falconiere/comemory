@@ -44,7 +44,9 @@ One line per file, named after its primary item:
 | `index.rs` | `Request` | Shared middle of `comemory index` / `POST /api/v1/index` |
 | `index_code.rs` | `Request` | Shared middle of `comemory index-code` / `POST /api/v1/code/index` (+ `POST /index/runs`), incl. the `mode` (incremental\|full) switch and the `index_runs` row every run records; the walk internals live in `index_code/` |
 | `ingest_code.rs` | `Response` | Shared middle of `comemory ingest-code` / `POST /api/v1/code/ingest` |
+| `install.rs` | `Request` | Shared middle of `comemory install` — extracts the embedded agent bundle and registers it with the host CLI. CLI-only (a server must never write into an operator's agent config); conn-free. Host names are validated strings, not clap enums, so `api::` stays free of CLI types. `install/` holds the embedded `bundle` |
 | `install_hooks.rs` | `Request` | Shared middle of `comemory install-hooks` / `POST /api/v1/hooks/install` |
+| `setup.rs` | `Request` | Shared middle of `comemory setup` — the stable `STEP_IDS`, the `StepState` machine, and the `run` that sequences detect → plan → apply. CLI-only; conn-free until a step applies. `setup/` holds the three phases |
 | `list.rs` | `Request` | Shared middle of `comemory list` / `GET /api/v1/memories` |
 | `mine.rs` | `Request` | Shared middle of `comemory mine` / `POST /api/v1/mine` |
 | `prune.rs` | `Request` | Shared middle of `comemory prune` / `GET\|POST /api/v1/prune` |

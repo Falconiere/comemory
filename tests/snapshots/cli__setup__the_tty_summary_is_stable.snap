@@ -1,0 +1,15 @@
+---
+source: tests/cli__setup.rs
+expression: plain_text
+---
+comemory setup — plan
+  <DATA_DIR> · not in a git repository
+  ◻ Data directory — not initialized yet
+  ! Agent skills + hooks — no codex CLI found on PATH
+  ! Git reindex hooks — not a git repository
+  ! Index this repo's code — not a git repository
+  ! Index documents — not a git repository
+  ✔ Search-edit reinforcement — enabled
+  ! Cloud sync — requires interactive device authorization; run `comemory auth login`
+
+1 step(s) would run. Apply them with: comemory setup --yes

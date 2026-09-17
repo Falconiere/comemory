@@ -140,6 +140,12 @@ archive it downloads. The short URL `https://get.comemory.io/pkg/comemory/instal
 (a redirect served from a separate repo) still points at cargo-dist's older
 `comemory-installer.sh` until it is repointed at the asset above.
 
+Then run `comemory setup`. It detects what this machine and the repo you are
+in still need — the agent-host plugin, the git reindex hooks, a code index, a
+cloud sign-in — shows you the plan, and applies the parts you pick. It never
+redoes work that is already done, so it is safe to re-run; `--yes` applies
+everything without prompting and `--dry-run --json` just reports.
+
 Then verify: `comemory doctor`. Prebuilt binaries for **macOS aarch64** and
 **Linux** (x86_64 + aarch64, gnu) are attached to every
 [GitHub Release](https://github.com/Falconiere/comemory/releases), beside
@@ -257,6 +263,7 @@ Full data model, save flow, retrieval pipeline, and graph mechanics:
 | `comemory graph` | Export the code-connection graph as JSON, Graphviz DOT, or interactive HTML |
 | `comemory serve` | Loopback `/api/v1` HTTP server: every command over REST, background jobs with SSE progress |
 | `comemory ast` | Run an ast-grep structural pattern against a source file |
+| `comemory setup` | Detect what this machine and repo still need, then set it up |
 | `comemory doctor` | Report on data-directory and SQLite-mirror health |
 | `comemory prune` | Detect (and optionally soft-delete) stale memories |
 | `comemory rebuild` | Drop `comemory.db` and repopulate it from `memories/*.md` |

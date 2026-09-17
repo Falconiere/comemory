@@ -55,6 +55,7 @@ Commands:
   graph          Export the file-level code-connection graph (imports + co-change) as JSON, Graphviz DOT, or an interactive HTML page
   edges          Search the relation graph lexically (supersedes, imports, references)
   serve          Serve the loopback HTTP API (`/api/v1`) for consoles, agents, and scripts
+  setup          Detect what this machine and repo still need, then set it up
   context        Headline lookup: code symbol + memories matching a key
   completions    Emit a shell completion script for `bash`, `zsh`, `fish`, `powershell`, or `elvish`
   prune          Detect (and optionally soft-delete) stale memories

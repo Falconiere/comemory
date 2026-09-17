@@ -53,6 +53,7 @@ Per-command files do not replace the multi-command journeys:
 | Maintenance | `tests/cli_scenario_maintenance.rs` | save, consolidate, prune, rebuild, gc |
 | Hooks | `tests/cli_scenario_hooks.rs` | install-hooks, hooks, index-code, search-code |
 | Agent installation (CLI only) | `tests/cli_scenario_install.rs` | install --dry-run |
+| First-run setup (CLI only) | `tests/cli_scenario_setup.rs` | setup, search-code |
 | BYO-vector | `tests/cli_scenario_vectors.rs` | index-code --extract, ingest-code, search-code --vector-stdin, save --vector-stdin |
 | Globals | `tests/cli_scenario_globals.rs` | `--data-dir` vs env, `--json` placement, usage exits |
 
