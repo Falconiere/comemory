@@ -117,8 +117,10 @@ fn a_failing_step_is_recorded_and_the_other_steps_still_run() {
     let mut ctx = Ctx::lazy(&paths, &cfg);
     let detected = detect::run(&mut ctx, repo.path(), Some("definitely-not-a-host")).unwrap();
 
-    // `cloud-auth` has no non-interactive applier, so forcing it pending is
-    // the honest way to make exactly one step fail while its neighbours work.
+    // `cloud-auth` is a report with no applier at all, so forcing it Pending
+    // by hand is the honest way to make exactly one step fail while its
+    // neighbours still run — and it also pins the refusal that guards any
+    // step a caller forces Pending.
     let mut steps = plan::run(
         &detected,
         &Request {

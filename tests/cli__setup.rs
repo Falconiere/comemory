@@ -104,7 +104,7 @@ fn dry_run_json_reports_a_plan_and_creates_no_database() {
 }
 
 #[test]
-fn cloud_auth_is_unavailable_without_a_terminal_and_issues_no_request() {
+fn cloud_auth_is_reported_not_applied_and_issues_no_request() {
     let data = tempfile::tempdir().unwrap();
     let repo = repo_with_sources();
 
@@ -135,6 +135,10 @@ fn cloud_auth_is_unavailable_without_a_terminal_and_issues_no_request() {
     assert!(
         reason.contains("comemory auth login"),
         "the reason names the remedy: {reason}"
+    );
+    assert_eq!(
+        envelope["applied"], 0,
+        "setup never runs the device flow itself"
     );
 }
 

@@ -66,10 +66,6 @@ pub struct Request {
     /// Whether to apply the plan. `false` is the `--dry-run` shape.
     #[serde(default)]
     pub apply: bool,
-    /// Whether the caller can service an interactive prompt. Gates
-    /// `cloud-auth`, whose device flow needs a browser and a human.
-    #[serde(default)]
-    pub interactive: bool,
 }
 
 /// What a step's plan resolved to. `plan` emits only `Satisfied`, `Pending`,

@@ -118,3 +118,7 @@ fn footer(out: &mut impl Write, resp: &Response, mode: Mode) -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "tests/render.rs"]
+mod tests;

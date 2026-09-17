@@ -8,7 +8,7 @@
 //! happen here — would propagate.
 
 use super::detect::Detected;
-use super::{AGENT_HOST, CLOUD_AUTH, DATA_DIR, GIT_HOOKS, INDEX_CODE, REINFORCE, Step, StepState};
+use super::{AGENT_HOST, DATA_DIR, GIT_HOOKS, INDEX_CODE, REINFORCE, Step, StepState};
 use crate::api::{self, Ctx};
 use crate::prelude::*;
 
@@ -37,9 +37,10 @@ fn one(ctx: &mut Ctx<'_>, detected: &Detected, id: &str) -> Result<String> {
         GIT_HOOKS => git_hooks(ctx, detected),
         INDEX_CODE => index_code(ctx, detected),
         REINFORCE => reinforce(ctx),
-        CLOUD_AUTH => Err(Error::Unavailable(
-            "cloud sign-in runs through `comemory auth login`".into(),
-        )),
+        // `cloud-auth` and `index-docs` are never planned Pending — they
+        // are reports pointing at `comemory auth login` / `comemory index
+        // <path>` — so they fall through to the refusal below, which also
+        // guards any step a caller forces Pending by hand.
         other => Err(Error::Usage(format!("no applier for step `{other}`"))),
     }
 }

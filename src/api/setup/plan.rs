@@ -23,7 +23,7 @@ pub fn run(detected: &Detected, req: &Request) -> Vec<Step> {
         index_code(detected),
         index_docs(detected),
         reinforce(detected),
-        cloud_auth(detected, req),
+        cloud_auth(detected),
     ]
     .into_iter()
     .map(|step| deselect(step, req))
@@ -224,10 +224,8 @@ fn reinforce(detected: &Detected) -> Step {
     step(REINFORCE, "Search-edit reinforcement", detail, state)
 }
 
-/// Cloud sign-in. The device flow needs a browser and a human, so it is only
-/// ever pending on an interactive run — under `--yes` or `--json` it reports
-/// as unavailable rather than hanging a CI job.
-fn cloud_auth(detected: &Detected, req: &Request) -> Step {
+/// Cloud sign-in — a report, never an action.
+fn cloud_auth(detected: &Detected) -> Step {
     let title = "Cloud sync";
     if detected.authenticated {
         return step(
@@ -237,22 +235,17 @@ fn cloud_auth(detected: &Detected, req: &Request) -> Step {
             StepState::Satisfied,
         );
     }
-    if !req.interactive {
-        return step(
-            CLOUD_AUTH,
-            title,
-            String::new(),
-            StepState::Unavailable {
-                reason: "requires interactive device authorization; run `comemory auth login`"
-                    .to_string(),
-            },
-        );
-    }
+    // Never pending, in any mode. The device flow needs a browser, a human,
+    // and the daemon + initial-sync orchestration that `comemory auth login`
+    // already owns; setup points at it rather than reimplementing it, so
+    // this step is a report and never something that can fail.
     step(
         CLOUD_AUTH,
         title,
-        "opens a browser to authorize this machine".to_string(),
-        StepState::Pending,
+        String::new(),
+        StepState::Unavailable {
+            reason: "not signed in; run `comemory auth login`".to_string(),
+        },
     )
 }
 

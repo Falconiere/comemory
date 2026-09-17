@@ -10,6 +10,6 @@ comemory setup — plan
   ! Index this repo's code — not a git repository
   ! Index documents — not a git repository
   ✔ Search-edit reinforcement — enabled
-  ! Cloud sync — requires interactive device authorization; run `comemory auth login`
+  ! Cloud sync — not signed in; run `comemory auth login`
 
 1 step(s) would run. Apply them with: comemory setup --yes

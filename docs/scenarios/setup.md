@@ -40,7 +40,7 @@ The ids `--only` / `--skip` accept, and what each reports as already done:
 | `index-code` | `comemory repos` reports the repo `fresh` |
 | `index-docs` | at least one document source is registered for the repo |
 | `reinforce` | `[reinforce] enabled` is on (it ships on) |
-| `cloud-auth` | a usable credential is in `auth.json` |
+| `cloud-auth` | a usable credential is in `auth.json`. Report-only: setup never runs the device flow, it points at `comemory auth login` |
 
 ## Scenarios
 
@@ -107,10 +107,11 @@ The ids `--only` / `--skip` accept, and what each reports as already done:
 - **Command:** `comemory setup --dry-run --repo /tmp/not-a-repo --host codex`
 - **Expect:** `git-hooks`, `index-code`, and `index-docs` all `unavailable`
   with reason `not a git repository`; `agent-host` unavailable naming `PATH`;
-  `cloud-auth` unavailable naming `comemory auth login`. Exit 0 throughout —
-  unavailable is never a failure.
+  `cloud-auth` unavailable naming `comemory auth login` — it is a report in
+  every mode, never something setup applies, so it can never fail. Exit 0
+  throughout: unavailable is never a failure.
 - **Covered by:** `tests/cli__setup.rs::a_non_git_directory_reports_unavailable_repo_steps_and_exits_zero`,
-  `tests/cli__setup.rs::cloud_auth_is_unavailable_without_a_terminal_and_issues_no_request`
+  `tests/cli__setup.rs::cloud_auth_is_reported_not_applied_and_issues_no_request`
 
 ### setup-08 A hand-written hook is never clobbered
 

@@ -160,7 +160,6 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         only: a.only.as_deref().map(csv_unique).unwrap_or_default(),
         skip: a.skip.as_deref().map(csv_unique).unwrap_or_default(),
         apply: false,
-        interactive: mode == Mode::Wizard,
     };
 
     if mode == Mode::Wizard {
@@ -193,7 +192,6 @@ fn clone_request(req: &api::setup::Request) -> api::setup::Request {
         only: req.only.clone(),
         skip: req.skip.clone(),
         apply: false,
-        interactive: req.interactive,
     }
 }
 

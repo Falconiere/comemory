@@ -109,34 +109,32 @@ fn a_non_git_target_makes_every_repo_scoped_step_unavailable() {
 }
 
 #[test]
-fn cloud_auth_is_unavailable_when_the_caller_cannot_prompt() {
+fn cloud_auth_is_always_a_report_never_something_setup_can_fail_at() {
     let data = tempfile::tempdir().unwrap();
     let repo = repo_with_sources();
     let detected = detect_at(data.path(), repo.path());
 
-    let non_interactive = run(&detected, &Request::default());
-    match &step(&non_interactive, CLOUD_AUTH).state {
-        StepState::Unavailable { reason } => {
-            assert!(
-                reason.contains("comemory auth login"),
-                "the reason must name the remedy, got {reason}"
-            );
-        }
-        other => panic!("cloud-auth must be unavailable non-interactively, got {other:?}"),
-    }
-
-    let interactive = run(
-        &detected,
-        &Request {
-            interactive: true,
+    // There is no mode in which this becomes Pending: setup points at
+    // `comemory auth login` rather than reimplementing the device flow, so
+    // it can never be selected and can never fail.
+    for request in [
+        Request::default(),
+        Request {
+            only: vec![CLOUD_AUTH.to_string()],
             ..Request::default()
         },
-    );
-    assert_eq!(
-        step(&interactive, CLOUD_AUTH).state,
-        StepState::Pending,
-        "an interactive caller can run the device flow"
-    );
+    ] {
+        let steps = run(&detected, &request);
+        match &step(&steps, CLOUD_AUTH).state {
+            StepState::Unavailable { reason } => {
+                assert!(
+                    reason.contains("comemory auth login"),
+                    "the reason must name the remedy, got {reason}"
+                );
+            }
+            other => panic!("cloud-auth must never be actionable, got {other:?}"),
+        }
+    }
 }
 
 #[test]
