@@ -66,11 +66,8 @@ fn install_hooks_toggle_then_search_code() {
 
     // `--force` keeps its one job: clobbering a hook comemory did NOT write.
     let hooks_dir = repo.join(".git").join("hooks");
-    std::fs::write(
-        hooks_dir.join("post-commit"),
-        "#!/bin/sh\necho hand-written\n",
-    )
-    .expect("write a foreign hook");
+    let foreign_hook = "#!/bin/sh\necho hand-written\n";
+    std::fs::write(hooks_dir.join("post-commit"), foreign_hook).expect("write a foreign hook");
     let refused = home
         .bin()
         .args(["install-hooks", "--repo", repo_s])
@@ -85,11 +82,10 @@ fn install_hooks_toggle_then_search_code() {
         "stderr must point at --force: {}",
         String::from_utf8_lossy(&refused.stderr)
     );
-    assert!(
-        std::fs::read_to_string(hooks_dir.join("post-commit"))
-            .expect("read foreign hook")
-            .contains("hand-written"),
-        "a refused install must leave the foreign hook untouched"
+    assert_eq!(
+        std::fs::read_to_string(hooks_dir.join("post-commit")).expect("read foreign hook"),
+        foreign_hook,
+        "a refused install must leave the foreign hook byte-identical"
     );
     home.run_ok(&["install-hooks", "--repo", repo_s, "--force"]);
     let after_force = home.run_json(&["hooks", "--repo", repo_s]);
