@@ -11,11 +11,12 @@
 
 use std::time::Instant;
 
-use comemory::api::{Ctx, save};
+use comemory::api::save;
 use comemory::config::{Config, Paths};
 use comemory::memory::Kind;
 use comemory::store::connection;
 use comemory::sync::push_on_save::after_write_best_effort;
+use comemory::utilities::context::Ctx;
 
 use crate::test_common as common;
 use crate::test_common::sync_platform_server::{SyncPlatformServer, SyncPlatformState};
@@ -52,7 +53,7 @@ fn an_unlabelled_save_is_pushed_inline() {
 
     let body = "a note saved somewhere that is not a git worktree";
     let id = comemory::memory::id::memory_id(body);
-    let content_hash = comemory::memory::id::sha256_hex(body.trim_end().as_bytes());
+    let content_hash = comemory::utilities::digest::sha256_hex(body.trim_end().as_bytes());
     server.update(|st| {
         st.import_results = serde_json::json!([{
             "id": id,

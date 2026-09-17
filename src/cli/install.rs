@@ -7,10 +7,11 @@ use std::path::PathBuf;
 
 use clap::{Args as ClapArgs, ValueEnum};
 
-use crate::api::{self, Ctx};
+use crate::api;
 use crate::config::Config;
 use crate::output::json;
 use crate::prelude::*;
+use crate::utilities::context::Ctx;
 
 const EXAMPLES: &str = "Examples:
   comemory install claude

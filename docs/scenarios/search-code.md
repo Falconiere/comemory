@@ -85,6 +85,6 @@ echo '{"embedding":[...768 floats...]}' | \
 - **Setup:** an ingested 768-dim code vector
 - **Command:** `comemory search-code "parse frontmatter" --vector 0.1,0.2,...`
 - **Expect:** same ANN leg as `--vector-stdin`; the CSV parser is the shared
-  `cli::embedding_input` path every `--vector` flag goes through.
+  `utilities::embedding_input` path every `--vector` flag goes through.
 - **Covered by:** `tests/cli_scenario_vectors.rs::extract_embed_ingest_search_code_vector` (stdin twin),
   `tests/cli__save.rs::save_with_vector_csv_flag_writes_memory_vec_row` (CSV parser)

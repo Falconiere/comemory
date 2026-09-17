@@ -5,12 +5,12 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror tests for `src/output/page.rs`. Exercise the canonical paginator
+//! Mirror tests for `src/utilities/pagination.rs`. Exercise the canonical paginator
 //! [`Page::from_slice`] (window math, `--limit 0` = all, `has_more`/`total`
 //! at boundaries, empty input) plus the [`Page::new`] passthrough constructor
 //! and the JSON contract.
 
-use comemory::output::page::Page;
+use comemory::utilities::pagination::Page;
 
 fn nums(n: usize) -> Vec<usize> {
     (0..n).collect()

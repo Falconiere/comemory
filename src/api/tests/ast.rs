@@ -12,8 +12,9 @@
 //! `tests/cli__ast.rs`; the HTTP route, including `--file` containment,
 //! lives in `tests/serve__routes__code.rs`).
 
-use comemory::api::{self, Ctx};
+use comemory::api;
 use comemory::config::{Config, Paths};
+use comemory::utilities::context::Ctx;
 
 fn write_fixture(dir: &std::path::Path) -> std::path::PathBuf {
     let file = dir.join("sample.rs");

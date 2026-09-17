@@ -7,16 +7,16 @@
 //! for signature uniformity with every other `api::<cmd>::run`.
 //!
 //! **Containment is not this file's job.** The HTTP route handler
-//! canonicalizes and contains `req.repo` (`security::contain_abs`) before
+//! canonicalizes and contains `req.repo` (`utilities::path_containment::contain_abs`) before
 //! calling [`run`]; this middle stays exactly as unrestricted as the CLI.
 
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::api::Ctx;
 use crate::git_utils::{self, install_hook};
 use crate::prelude::*;
+use crate::utilities::context::Ctx;
 
 /// `comemory install-hooks` / `POST /api/v1/hooks/install` request.
 #[derive(Deserialize, Debug)]

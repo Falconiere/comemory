@@ -45,7 +45,7 @@ pub(crate) fn default_code_vector_dim() -> usize {
 /// The shared constant in `simhash` stays the single source of the default
 /// radius; the config field merely makes it operator-tunable.
 pub(crate) fn default_near_dup_hamming() -> u32 {
-    crate::simhash::NEAR_DUP_HAMMING
+    crate::utilities::simhash::NEAR_DUP_HAMMING
 }
 
 /// The constant next to the prune rule stays the single source of the

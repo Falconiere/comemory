@@ -14,12 +14,13 @@
 //! the title-fold equality rule, what a re-save carries verbatim, and the
 //! derived-refresh skip on a `quality`-only patch.
 
+use comemory::api;
 use comemory::api::save::Verbatim;
-use comemory::api::{self, Ctx};
 use comemory::config::{Config, Paths};
 use comemory::errors::Error;
 use comemory::memory::{Frontmatter, Kind, Ref, References};
 use comemory::store::connection;
+use comemory::utilities::context::Ctx;
 
 /// A fresh `Ctx::borrowed` over a temp data dir with a migrated database.
 fn open_ctx(home: &std::path::Path) -> (Paths, Config, rusqlite::Connection) {

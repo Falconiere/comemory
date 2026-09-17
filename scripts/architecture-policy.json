@@ -73,7 +73,7 @@
     {
       "module": "crate::api",
       "owner": "shared::utilities",
-      "issue": "#166"
+      "issue": "#178"
     },
     {
       "module": "crate::ast",
@@ -101,19 +101,9 @@
       "issue": "#168"
     },
     {
-      "module": "crate::embed",
-      "owner": "shared::utilities",
-      "issue": "#166"
-    },
-    {
       "module": "crate::eval",
       "owner": "domains::learning",
       "issue": "#173"
-    },
-    {
-      "module": "crate::fetch",
-      "owner": "shared::utilities",
-      "issue": "#166"
     },
     {
       "module": "crate::git_utils",
@@ -124,11 +114,6 @@
       "module": "crate::graph",
       "owner": "domains::graph",
       "issue": "#170"
-    },
-    {
-      "module": "crate::http_error",
-      "owner": "shared::utilities",
-      "issue": "#166"
     },
     {
       "module": "crate::index",
@@ -156,11 +141,6 @@
       "issue": "#171"
     },
     {
-      "module": "crate::simhash",
-      "owner": "shared::utilities",
-      "issue": "#166"
-    },
-    {
       "module": "crate::source",
       "owner": "domains::documents",
       "issue": "#168"
@@ -168,7 +148,7 @@
     {
       "module": "crate::stats",
       "owner": "shared::utilities",
-      "issue": "#166"
+      "issue": "#173"
     },
     {
       "module": "crate::sync",
@@ -354,112 +334,10 @@
   ],
   "legacy_edges": [
     {
-      "source": "src/api/ast.rs",
-      "target": "crate::output::page",
-      "class": "delivery",
-      "issue": "#166"
-    },
-    {
-      "source": "src/api/completions.rs",
-      "target": "crate::cli::Cli",
-      "class": "delivery",
-      "issue": "#166"
-    },
-    {
-      "source": "src/api/consolidate.rs",
-      "target": "crate::cli::page_window",
-      "class": "delivery",
-      "issue": "#166"
-    },
-    {
-      "source": "src/api/consolidate.rs",
-      "target": "crate::output::consolidate",
-      "class": "delivery",
-      "issue": "#166"
-    },
-    {
-      "source": "src/api/consolidate.rs",
-      "target": "crate::output::page",
-      "class": "delivery",
-      "issue": "#166"
-    },
-    {
-      "source": "src/api/context.rs",
-      "target": "crate::cli::page_meta",
-      "class": "delivery",
-      "issue": "#166"
-    },
-    {
-      "source": "src/api/context.rs",
-      "target": "crate::cli::page_window",
-      "class": "delivery",
-      "issue": "#166"
-    },
-    {
-      "source": "src/api/context.rs",
-      "target": "crate::cli::when",
-      "class": "delivery",
-      "issue": "#166"
-    },
-    {
-      "source": "src/api/context.rs",
-      "target": "crate::output::context",
-      "class": "delivery",
-      "issue": "#166"
-    },
-    {
       "source": "src/api/delete.rs",
       "target": "crate::cli::delete",
       "class": "delivery",
       "issue": "#169"
-    },
-    {
-      "source": "src/api/edges.rs",
-      "target": "crate::cli::page_window",
-      "class": "delivery",
-      "issue": "#166"
-    },
-    {
-      "source": "src/api/edges.rs",
-      "target": "crate::output::edges",
-      "class": "delivery",
-      "issue": "#166"
-    },
-    {
-      "source": "src/api/feedback.rs",
-      "target": "crate::cli::parse_id_csv",
-      "class": "delivery",
-      "issue": "#166"
-    },
-    {
-      "source": "src/api/feedback.rs",
-      "target": "crate::cli::parse_symbol_id_csv",
-      "class": "delivery",
-      "issue": "#166"
-    },
-    {
-      "source": "src/api/find.rs",
-      "target": "crate::cli::page_meta",
-      "class": "delivery",
-      "issue": "#166"
-    },
-    {
-      "source": "src/api/find.rs",
-      "target": "crate::cli::page_window",
-      "class": "delivery",
-      "issue": "#166"
-    },
-    {
-      "source": "src/api/find.rs",
-      "target": "crate::cli::when",
-      "class": "delivery",
-      "issue": "#166"
-    },
-    {
-      "source": "src/api/find.rs",
-      "target": "crate::output::search",
-      "class": "delivery",
-      "issue": "#166"
     },
     {
       "source": "src/api/graph.rs",
@@ -493,39 +371,15 @@
     },
     {
       "source": "src/api/graph_nodes.rs",
-      "target": "crate::output::page",
-      "class": "delivery",
-      "issue": "#166"
-    },
-    {
-      "source": "src/api/graph_nodes.rs",
       "target": "crate::output::search",
       "class": "delivery",
-      "issue": "#166"
-    },
-    {
-      "source": "src/api/index_runs.rs",
-      "target": "crate::output::page",
-      "class": "delivery",
-      "issue": "#166"
-    },
-    {
-      "source": "src/api/learning.rs",
-      "target": "crate::output::page",
-      "class": "delivery",
-      "issue": "#166"
-    },
-    {
-      "source": "src/api/list.rs",
-      "target": "crate::output::page",
-      "class": "delivery",
-      "issue": "#166"
+      "issue": "#170"
     },
     {
       "source": "src/api/list.rs",
       "target": "crate::output::search",
       "class": "delivery",
-      "issue": "#166"
+      "issue": "#169"
     },
     {
       "source": "src/api/prune.rs",
@@ -535,27 +389,9 @@
     },
     {
       "source": "src/api/prune.rs",
-      "target": "crate::cli::parse_id_csv",
-      "class": "delivery",
-      "issue": "#166"
-    },
-    {
-      "source": "src/api/prune.rs",
-      "target": "crate::output::page",
-      "class": "delivery",
-      "issue": "#166"
-    },
-    {
-      "source": "src/api/prune.rs",
-      "target": "crate::output::prune",
-      "class": "delivery",
-      "issue": "#166"
-    },
-    {
-      "source": "src/api/prune.rs",
       "target": "crate::output::search",
       "class": "delivery",
-      "issue": "#166"
+      "issue": "#169"
     },
     {
       "source": "src/api/refresh_refs.rs",
@@ -565,75 +401,15 @@
     },
     {
       "source": "src/api/save.rs",
-      "target": "crate::cli::embedding_input",
-      "class": "delivery",
-      "issue": "#166"
-    },
-    {
-      "source": "src/api/save.rs",
-      "target": "crate::cli::parse_id_csv",
-      "class": "delivery",
-      "issue": "#166"
-    },
-    {
-      "source": "src/api/save.rs",
-      "target": "crate::cli::ref_args",
-      "class": "delivery",
-      "issue": "#166"
-    },
-    {
-      "source": "src/api/save.rs",
       "target": "crate::output::search",
       "class": "delivery",
-      "issue": "#166"
-    },
-    {
-      "source": "src/api/search.rs",
-      "target": "crate::cli::page_meta",
-      "class": "delivery",
-      "issue": "#166"
-    },
-    {
-      "source": "src/api/search.rs",
-      "target": "crate::cli::page_window",
-      "class": "delivery",
-      "issue": "#166"
-    },
-    {
-      "source": "src/api/search.rs",
-      "target": "crate::cli::when",
-      "class": "delivery",
-      "issue": "#166"
-    },
-    {
-      "source": "src/api/search.rs",
-      "target": "crate::output::search",
-      "class": "delivery",
-      "issue": "#166"
-    },
-    {
-      "source": "src/api/search_code.rs",
-      "target": "crate::cli::page_meta",
-      "class": "delivery",
-      "issue": "#166"
-    },
-    {
-      "source": "src/api/search_code.rs",
-      "target": "crate::cli::page_window",
-      "class": "delivery",
-      "issue": "#166"
-    },
-    {
-      "source": "src/api/search_code.rs",
-      "target": "crate::output::search_code",
-      "class": "delivery",
-      "issue": "#166"
+      "issue": "#169"
     },
     {
       "source": "src/api/show.rs",
       "target": "crate::output::search",
       "class": "delivery",
-      "issue": "#166"
+      "issue": "#169"
     },
     {
       "source": "src/api/sync/import_rules.rs",
@@ -643,15 +419,9 @@
     },
     {
       "source": "src/api/trash.rs",
-      "target": "crate::output::page",
-      "class": "delivery",
-      "issue": "#166"
-    },
-    {
-      "source": "src/api/trash.rs",
       "target": "crate::output::search",
       "class": "delivery",
-      "issue": "#166"
+      "issue": "#169"
     },
     {
       "source": "src/cli/graph/nodes.rs",
@@ -675,7 +445,7 @@
       "source": "src/retrieval/unified/fuse_domains.rs",
       "target": "crate::output::search",
       "class": "delivery",
-      "issue": "#166"
+      "issue": "#169"
     }
   ],
   "store_callbacks": [
@@ -694,12 +464,6 @@
     {
       "source": "src/store/memory_row.rs",
       "target": "crate::graph::doc_link::derive_after_memory_save",
-      "class": "store-callback",
-      "issue": "#177"
-    },
-    {
-      "source": "src/store/migrate/preflight.rs",
-      "target": "crate::source::lock::FileLock::acquire",
       "class": "store-callback",
       "issue": "#177"
     },

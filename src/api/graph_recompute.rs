@@ -20,10 +20,10 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::api::Ctx;
 use crate::graph::{derived, materialize};
 use crate::prelude::*;
 use crate::store::{Connection, doctor_probes, repo_marker};
+use crate::utilities::context::Ctx;
 
 /// `POST /api/v1/graph/recompute` request. The recompute always covers
 /// every indexed repo — a per-repo variant would leave PageRank comparable

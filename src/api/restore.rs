@@ -20,11 +20,11 @@
 
 use serde::Serialize;
 
-use crate::api::Ctx;
 use crate::memory::{MemoryRecord, MemoryStore};
 use crate::prelude::*;
 use crate::store::edges::{self, EdgeKey};
 use crate::store::{Connection, memory_row, sync_log};
+use crate::utilities::context::Ctx;
 
 /// `POST /api/v1/memories/{id}/restore` / `POST /api/v1/trash/{id}/restore`
 /// response.

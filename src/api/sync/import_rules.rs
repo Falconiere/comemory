@@ -1,6 +1,5 @@
 //! Per-entry import rules (spec rules 1–10).
 
-use crate::api::Ctx;
 use crate::api::sync::import_state::{
     frontmatter_equal, id_collision, stale_for_cursor, trash_file_exists, trashed_with_hash,
     validate_record,
@@ -14,6 +13,7 @@ use crate::memory::id::is_valid_memory_id;
 use crate::prelude::*;
 use crate::store::sync_log;
 use crate::sync::redact;
+use crate::utilities::context::Ctx;
 
 /// Apply one import entry, returning its disposition.
 pub fn apply_entry(

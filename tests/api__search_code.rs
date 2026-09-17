@@ -14,9 +14,10 @@
 //! surface's parity live in `tests/serve__routes__code.rs`).
 
 use assert_cmd::Command;
-use comemory::api::{self, Ctx};
+use comemory::api;
 use comemory::config::{Config, Paths};
 use comemory::store::connection;
+use comemory::utilities::context::Ctx;
 
 #[path = "common/git_commit.rs"]
 mod git_commit;

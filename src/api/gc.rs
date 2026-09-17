@@ -23,10 +23,10 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::api::Ctx;
 use crate::api::trash::trash_entry_id;
 use crate::prelude::*;
 use crate::store::{Connection, gc_learning, gc_runs, memory_purge, memory_row, random_id};
+use crate::utilities::context::Ctx;
 
 /// `comemory gc` / `POST /api/v1/gc` request. No CLI args today.
 #[derive(Deserialize, Debug)]

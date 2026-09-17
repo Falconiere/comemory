@@ -13,25 +13,12 @@ use std::io::Write as _;
 
 use serde::Serialize;
 
-use crate::output::search::{PageMeta, ScopeEcho};
+use crate::output::search::ScopeEcho;
 use crate::output::{json, tty};
 use crate::prelude::*;
 use crate::retrieval::bundle::Bundle;
-use crate::retrieval::scope::TimeScope;
-
-/// Everything `comemory context`'s render layer needs: `api::context::run`
-/// returns this so the CLI and the HTTP handler can each build their own
-/// envelope from one owned value instead of four loose parameters.
-pub struct ContextResult {
-    /// The assembled context bundle.
-    pub bundle: Bundle,
-    /// Id of the retrieval_log row for this lookup.
-    pub query_id: Option<String>,
-    /// Memory-list pagination cursor.
-    pub meta: PageMeta,
-    /// The lookup's time-scoping flags.
-    pub scope: TimeScope,
-}
+use crate::retrieval::context_result::ContextResult;
+use crate::utilities::pagination::PageMeta;
 
 /// JSON envelope returned to `--json` callers. The bundle fields stay at the
 /// top level (flattened) so existing consumers keep reading `query` /

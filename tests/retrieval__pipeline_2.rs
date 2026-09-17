@@ -16,10 +16,11 @@
 //! committed baseline ranking snapshot over the shared smoke corpus.
 
 use assert_cmd::Command;
-use comemory::retrieval::pipeline::{PageWindow, SearchOptions, paginate, pool_size, search};
+use comemory::retrieval::pipeline::{SearchOptions, paginate, pool_size, search};
 use comemory::retrieval::router::CANDIDATE_POOL;
 use comemory::retrieval::scope::Filters;
 use comemory::simhash::{NEAR_DUP_HAMMING, hamming64};
+use comemory::utilities::pagination::PageWindow;
 
 // Included via `#[path]` rather than a declaration in `tests/common/mod.rs`
 // so only the binaries that actually call the corpus pull it in — same

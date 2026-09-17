@@ -15,10 +15,11 @@ use axum::extract::{Path, Query, State};
 use axum::response::Response;
 use axum::routing::get;
 
-use crate::api::{self, Ctx};
+use crate::api;
 use crate::serve::AppState;
 use crate::serve::routes::{RouteEntry, respond, run_blocking};
 use crate::serve::scope::RepoScope;
+use crate::utilities::context::Ctx;
 
 /// `PATCH /memories/{id}`, `POST /memories/{id}/restore`,
 /// `POST /memories/{id}/references/refresh` (`api::{update,restore,refresh_refs}`).

@@ -38,7 +38,7 @@ use rusqlite::Connection;
 use super::list::{self, Class};
 use crate::config::{env, paths::Paths};
 use crate::prelude::*;
-use crate::source::lock::FileLock;
+use crate::utilities::file_lock::FileLock;
 
 /// Guard and, if needed, snapshot the database at `db_path` (already open
 /// as `conn`) before [`super::run`] touches it. See the module doc for the

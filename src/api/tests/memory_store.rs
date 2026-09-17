@@ -17,10 +17,12 @@
 use std::cell::RefCell;
 use std::path::Path;
 
-use comemory::api::{self, Ctx, memory_store};
+use comemory::api;
+use comemory::api::memory_store;
 use comemory::config::{Config, Paths};
 use comemory::memory::Kind;
 use comemory::store::connection;
+use comemory::utilities::context::Ctx;
 use tempfile::TempDir;
 
 use crate::test_common::git_repo::{init_repo, run_git};

@@ -17,6 +17,8 @@ pub mod auth_render;
 pub mod bandit;
 /// `comemory capture`: session receipt + consent read (CLI-only).
 pub mod capture;
+/// Completion-script generation shared by the CLI and `GET /api/v1/completions`.
+pub mod completion_script;
 /// `comemory completions`: shell completion scripts.
 pub mod completions;
 /// `comemory consolidate`: advisory near-duplicate cluster report.
@@ -31,8 +33,6 @@ pub mod distill;
 pub mod doctor;
 /// `comemory edges`: lexical search over the relation graph.
 pub mod edges;
-/// Shared `--vector` / `--vector-stdin` parsing.
-pub(crate) mod embedding_input;
 /// `comemory eval`: score retrieval against a golden set.
 pub mod eval;
 /// `comemory feedback`: record which hits were used.
@@ -69,8 +69,6 @@ pub mod pagination;
 pub mod prune;
 /// `comemory rebuild`: reconstruct the store from markdown.
 pub mod rebuild;
-/// Shared `--ref` / `--symbol` reference flags.
-pub mod ref_args;
 /// `comemory repos` — the indexed code-repository inventory.
 pub mod repos;
 /// `comemory save`: write a memory (markdown + store mirror).
@@ -103,8 +101,6 @@ pub mod unindex;
 /// `comemory upgrade`: move this binary to a newer release.
 pub mod upgrade;
 pub mod watch;
-/// `--since` / `--until` / `--as-of` value parsing.
-pub mod when;
 
 /// Top-level CLI. `comemory <subcommand> [--json] [--data-dir DIR]`. The `--json`
 /// and `--data-dir` flags are global so callers can place them either before
@@ -277,39 +273,6 @@ pub async fn run(cli: Cli) -> Result<()> {
     }
 }
 
-/// Build the retrieval [`PageWindow`] for a paginated subcommand from its
-/// `--k`/`--limit` page size (`None` → configured `retrieval.top_k`) and
-/// `--offset`. Shared by `search`, `search-code`, and `context` so the
-/// three subcommands cannot drift on what "page size" means (Binding
-/// Rule 1). `--k 0` / `--limit 0` is preserved as the "all remaining
-/// within the window" sentinel.
-pub(crate) fn page_window(
-    cfg: &Config,
-    k: Option<usize>,
-    offset: usize,
-) -> crate::retrieval::pipeline::PageWindow {
-    crate::retrieval::pipeline::PageWindow {
-        offset,
-        limit: k.unwrap_or(cfg.retrieval.top_k),
-    }
-}
-
-/// Translate a finished pipeline run's window metadata into the
-/// [`crate::output::search::PageMeta`] the JSON envelopes carry. Shared by
-/// the three paginated subcommands so the cursor shape stays uniform.
-pub(crate) fn page_meta(
-    window: crate::retrieval::pipeline::PageWindow,
-    has_more: bool,
-    total: usize,
-) -> crate::output::search::PageMeta {
-    crate::output::search::PageMeta {
-        limit: window.limit,
-        offset: window.offset,
-        has_more,
-        total: Some(total),
-    }
-}
-
 /// Whether a user-facing lookup (`search` / `context`) should record access
 /// tracking + the `retrieval_log` row this run — the `SearchOptions::track`
 /// gate. `true` (the default) for every real invocation; lowered to `false`
@@ -324,62 +287,6 @@ pub(crate) fn track_searches() -> Result<bool> {
     let disabled =
         crate::config::env::env_parse::<bool>("COMEMORY_DISABLE_ACCESS_TRACKING")?.unwrap_or(false);
     Ok(!disabled)
-}
-
-/// Split a comma-separated flag value into trimmed, non-empty, de-duplicated
-/// entries preserving first-mention order. Shared by `save` (`--tags`,
-/// `--supersedes`) and `feedback` (`--used`, `--irrelevant`) so every CSV
-/// flag tolerates `a,,a , b` style input identically.
-pub(crate) fn csv_unique(raw: &str) -> Vec<String> {
-    if raw.is_empty() {
-        return Vec::new();
-    }
-    let mut seen = std::collections::HashSet::new();
-    raw.split(',')
-        .map(|t| t.trim().to_string())
-        .filter(|t| !t.is_empty() && seen.insert(t.clone()))
-        .collect()
-}
-
-/// Parse a CSV of memory ids via [`csv_unique`] and validate every entry
-/// against [`crate::memory::id::is_valid_memory_id`], naming the offending
-/// `flag` in the error. Shared by `save --supersedes` and the `feedback`
-/// id flags so malformed ids are rejected identically everywhere.
-pub(crate) fn parse_id_csv(raw: &str, flag: &str) -> Result<Vec<String>> {
-    let ids = csv_unique(raw);
-    for entry in &ids {
-        if !crate::memory::id::is_valid_memory_id(entry) {
-            return Err(Error::Config(format!(
-                "{flag}: invalid memory id `{entry}` (expected 8 lowercase hex chars)"
-            )));
-        }
-    }
-    Ok(ids)
-}
-
-/// Parse a CSV of code-symbol ids via [`csv_unique`] and validate every
-/// entry as a positive integer (`code_symbols.id` is an INTEGER rowid; 0
-/// and negatives never name a row), naming the offending `flag` in the
-/// error. De-duplicates again on the parsed value so `07,7` cannot
-/// double-count a counter. Sibling of [`parse_id_csv`] for the
-/// `feedback --used-code` / `--irrelevant-code` flags.
-pub(crate) fn parse_symbol_id_csv(raw: &str, flag: &str) -> Result<Vec<i64>> {
-    let mut ids: Vec<i64> = Vec::new();
-    for entry in csv_unique(raw) {
-        let bad = || {
-            Error::Config(format!(
-                "{flag}: invalid symbol id `{entry}` (expected a positive integer)"
-            ))
-        };
-        let id: i64 = entry.parse().map_err(|_| bad())?;
-        if id <= 0 {
-            return Err(bad());
-        }
-        if !ids.contains(&id) {
-            ids.push(id);
-        }
-    }
-    Ok(ids)
 }
 
 /// Load the layered config: defaults → optional `config.toml` → env. Every

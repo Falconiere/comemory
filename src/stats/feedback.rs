@@ -3,7 +3,9 @@
 //! Each record corresponds to one memory id and tracks how many times the
 //! memory was surfaced and accepted vs. dismissed. Inserts use SQLite UPSERT
 //! so callers do not need to seed rows. The query-id contract (generate +
-//! validate) lives here too so the writer and the checker cannot drift.
+//! validate) and the persisted provenance vocabulary are shared contracts and
+//! live in [`crate::utilities::query_id`] and
+//! `crate::utilities::telemetry` (#166).
 
 use time::OffsetDateTime;
 
@@ -12,44 +14,7 @@ use crate::stats::sqlite::StatsDb;
 use crate::store::Connection;
 use crate::store::feedback as store_feedback;
 use crate::store::memory_row;
-
-/// `provenance` of a human-stated verdict; the column's own `DEFAULT`
-/// (`0008_v8_reinforcement.sql`). Written by `comemory feedback`, and by
-/// the two HTTP feedback routes when the wire field `source` is omitted or
-/// `"explicit"`. Every writer names it explicitly since #130, so no INSERT
-/// leans on the default.
-pub(crate) const PROV_MANUAL: &str = "manual";
-
-/// `provenance` of an observed verdict: an HTTP caller's
-/// `source: "implicit"`, such as an answer citing the memory. Counted in
-/// `learning/summary`'s `implicit_share` like the `auto_*` tags, and like
-/// them never harvested into the golden set nor used to mark a query
-/// succeeded for reformulation mining (`store::feedback`'s readers take
-/// [`PROV_MANUAL`]).
-pub(crate) const PROV_IMPLICIT: &str = "implicit";
-
-/// `provenance` tag for implicit `used` feedback minted by the
-/// co-activation reward (commits touching a memory's referenced files).
-/// Distinguishes auto-reinforcement rows from the [`PROV_MANUAL`] rows
-/// written by `comemory feedback`. Matches the column added in
-/// `0008_v8_reinforcement.sql`.
-pub(crate) const PROV_AUTO_COACTIVATION: &str = "auto_coactivation";
-
-/// `provenance` for search→edit credit: memory appeared in a recent
-/// `retrieval_log` page *and* a referenced file was touched in the mined
-/// commits. Still excluded from golden harvest via the sentinel query id.
-pub(crate) const PROV_AUTO_SEARCH_EDIT: &str = "auto_search_edit";
-
-/// Sentinel `query_id` stamped on co-activation `feedback_events` rows.
-/// Deliberately NOT a real `q-<yyyymmdd>-<8hex>` id: `eval::golden::harvest`
-/// INNER JOINs `feedback_events.query_id = retrieval_log.query_id`, and this
-/// sentinel has no `retrieval_log` row, so an auto-reinforced memory can
-/// never mint a golden pair — closing the confirmation loop.
-pub(crate) const COACTIVATION_QUERY_ID: &str = "auto-coactivation";
-
-/// Sentinel `query_id` for search→edit implicit `used` rows. Same golden
-/// exclusion contract as [`COACTIVATION_QUERY_ID`].
-pub(crate) const SEARCH_EDIT_QUERY_ID: &str = "auto-search-edit";
+use crate::utilities::telemetry::{PROV_IMPLICIT, PROV_MANUAL};
 
 /// The caller-facing `source` vocabulary of `POST /api/v1/feedback` and
 /// `POST /api/v1/search/{query_id}/feedback`, and its one mapping onto the
@@ -90,40 +55,6 @@ impl Source {
     }
 }
 
-/// `q-<yyyymmdd>-<8hex>`: day-sortable, collision-resistant query id
-/// derived from the query text and a nanosecond timestamp. Not a content
-/// hash — the same query run twice gets two distinct ids. The writer
-/// side of the contract checked by [`is_valid_query_id`]; written into
-/// `retrieval_log` by `retrieval::pipeline`.
-pub fn generate_query_id(query: &str, now: OffsetDateTime) -> String {
-    let mut input = Vec::with_capacity(query.len() + 16);
-    input.extend_from_slice(query.as_bytes());
-    input.extend_from_slice(&now.unix_timestamp_nanos().to_be_bytes());
-    let hex = crate::memory::id::sha256_hex(&input);
-    format!(
-        "q-{:04}{:02}{:02}-{}",
-        now.year(),
-        u8::from(now.month()),
-        now.day(),
-        &hex[..8]
-    )
-}
-
-/// Validate the `q-<yyyymmdd>-<8hex>` query-id shape emitted by
-/// [`generate_query_id`]. Shared by `comemory feedback` (reject typos
-/// loudly) and tests. The 8-hex tail has exactly the shape of a memory
-/// id, so the check is delegated to
-/// [`crate::memory::id::is_valid_memory_id`]; the byte slice at 11 is
-/// safe because the earlier checks pin the first 11 bytes to ASCII.
-pub fn is_valid_query_id(s: &str) -> bool {
-    let b = s.as_bytes();
-    b.len() == 19
-        && s.starts_with("q-")
-        && b[2..10].iter().all(u8::is_ascii_digit)
-        && b[10] == b'-'
-        && crate::memory::id::is_valid_memory_id(&s[11..])
-}
-
 /// Mint one implicit `used` for `id` with caller-chosen `provenance` and
 /// sentinel `query_id`: bumps the `feedback` counter and writes a
 /// memory-target `feedback_events` row. Composes inside the caller's
@@ -150,7 +81,7 @@ pub(crate) fn record_implicit_used(
         id,
         "used",
         at,
-        crate::stats::target::MEMORY,
+        crate::utilities::telemetry::target::MEMORY,
         provenance,
     )?;
     store_feedback::upsert_used(conn, id, at)?;
@@ -191,7 +122,7 @@ pub fn record_with_provenance(
             id,
             "used",
             &now,
-            crate::stats::target::MEMORY,
+            crate::utilities::telemetry::target::MEMORY,
             provenance,
         )?;
         store_feedback::upsert_used(&tx, id, &now)?;
@@ -203,7 +134,7 @@ pub fn record_with_provenance(
             id,
             "irrelevant",
             &now,
-            crate::stats::target::MEMORY,
+            crate::utilities::telemetry::target::MEMORY,
             provenance,
         )?;
         store_feedback::upsert_irrelevant(&tx, id)?;

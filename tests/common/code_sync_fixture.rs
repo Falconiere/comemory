@@ -18,10 +18,11 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+use comemory::api;
 use comemory::api::sync::CodeFileWire;
-use comemory::api::{self, Ctx};
 use comemory::config::{Config, Paths};
 use comemory::store::{Connection, indexed_files};
+use comemory::utilities::context::Ctx;
 
 /// The repo label every fixture row lands under.
 pub const REPO: &str = "scratch";

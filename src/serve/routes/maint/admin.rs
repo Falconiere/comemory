@@ -13,7 +13,7 @@ use axum::routing::post;
 use axum::{Json, Router};
 use serde_json::Value;
 
-use crate::api::{self, Ctx};
+use crate::api;
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::envelope::Envelope;
@@ -22,7 +22,8 @@ use crate::serve::routes::maint::prune::split_confirm;
 use crate::serve::routes::{
     RouteEntry, accepted, guard_job, guard_mutating, require_confirm, respond, run_blocking,
 };
-use crate::serve::security;
+use crate::utilities::context::Ctx;
+use crate::utilities::path_containment;
 
 /// This resource's route-table entries, appended onto [`super::table_entries`].
 pub fn table_entries() -> &'static [RouteEntry] {
@@ -155,5 +156,5 @@ pub(crate) fn contain_repo(state: &AppState, repo: &str) -> Result<PathBuf> {
     let conn = state.conn()?;
     let roots = state.allowed_roots(&conn);
     drop(conn);
-    security::contain_abs(&roots, Path::new(repo))
+    path_containment::contain_abs(&roots, Path::new(repo))
 }

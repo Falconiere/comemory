@@ -8,27 +8,10 @@
 use std::fmt::Write as _;
 use std::io::Write as _;
 
-use serde::Serialize;
-
+use crate::consolidate::report::Report;
 use crate::consolidate::{Cluster, Member};
-use crate::output::page::Page;
 use crate::output::{json, tty};
 use crate::prelude::*;
-
-/// The report `comemory consolidate` emits, in JSON and TTY alike.
-#[derive(Debug, Serialize)]
-pub struct Report {
-    /// Radius the clusters were built at.
-    pub radius: u32,
-    /// Live memories carrying a real fingerprint that were compared.
-    pub scanned: usize,
-    /// Live rows skipped because their `simhash` was never backfilled.
-    pub skipped_unhashed: usize,
-    /// Memories that landed in a reported cluster.
-    pub clustered: usize,
-    /// The windowed clusters.
-    pub clusters: Page<Cluster>,
-}
 
 /// Members rendered per cluster before the tail takes over. A wide `--radius`
 /// legitimately unions most of the corpus into one cluster, and paging is

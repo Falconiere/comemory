@@ -14,9 +14,10 @@ use axum::extract::{Path, Query, State};
 use axum::response::Response;
 use axum::routing::{get, post};
 
-use crate::api::{self, Ctx};
+use crate::api;
 use crate::serve::AppState;
 use crate::serve::routes::{RouteEntry, guard_mutating, respond, run_blocking};
+use crate::utilities::context::Ctx;
 
 /// This resource's route-table entries, appended onto [`super::table`].
 pub fn table_entries() -> &'static [RouteEntry] {

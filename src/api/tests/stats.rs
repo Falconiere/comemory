@@ -11,9 +11,10 @@
 //! second way (a SQL count, a directory listing) rather than against a
 //! hard-coded number that would only restate the fixture.
 
-use comemory::api::{Ctx, stats};
+use comemory::api::stats;
 use comemory::config::{Config, Paths};
 use comemory::store::connection;
+use comemory::utilities::context::Ctx;
 use tempfile::TempDir;
 
 /// A data dir with `memories/` present but no database — the fresh-install

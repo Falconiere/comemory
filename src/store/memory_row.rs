@@ -87,7 +87,7 @@ fn insert_memories_row(
     conn.execute("DELETE FROM memory_tags WHERE memory_id = ?1", [&fm.id])?;
     conn.execute("DELETE FROM memory_fts WHERE memory_id = ?1", [&fm.id])?;
     edges::delete_outgoing(conn, "memory", &fm.id)?;
-    let simhash = crate::simhash::of_body(body) as i64;
+    let simhash = crate::utilities::simhash::of_body(body) as i64;
     conn.execute(
         MEMORIES_UPSERT_SQL,
         rusqlite::params![

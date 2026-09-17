@@ -11,10 +11,11 @@
 //! hand-forged log row, because the exclusion of `search-code` queries is
 //! precisely what one of these tests is about.
 
-use comemory::api::{Ctx, find, save, search_code, suggest};
+use comemory::api::{find, save, search_code, suggest};
 use comemory::config::{Config, Paths};
 use comemory::memory::Kind;
 use comemory::store::connection;
+use comemory::utilities::context::Ctx;
 use tempfile::TempDir;
 
 fn fresh_paths(dir: &TempDir) -> Paths {

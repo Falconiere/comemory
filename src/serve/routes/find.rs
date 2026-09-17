@@ -15,10 +15,11 @@ use axum::extract::{Json, Query, State};
 use axum::response::Response;
 use axum::routing::get;
 
-use crate::api::{self, Ctx};
+use crate::api;
 use crate::serve::AppState;
 use crate::serve::routes::{RouteEntry, respond, run_blocking, track_for};
 use crate::serve::scope::RepoScope;
+use crate::utilities::context::Ctx;
 
 /// This resource's route-table entries, appended onto [`super::table`].
 pub fn table_entries() -> &'static [RouteEntry] {

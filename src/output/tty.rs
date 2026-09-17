@@ -45,7 +45,7 @@ pub fn dim(s: &str) -> String {
     s.dimmed().to_string()
 }
 
-/// Write a dim pagination footer for a [`crate::output::page::Page`] view:
+/// Write a dim pagination footer for a [`crate::utilities::pagination::Page`] view:
 /// `showing A–B of TOTAL (--offset M)`, where `A..=B` is the 1-based range
 /// of `shown` items starting at `offset`. An empty page prints
 /// `showing 0 of TOTAL (--offset M)`. Shared by every paginated TTY command

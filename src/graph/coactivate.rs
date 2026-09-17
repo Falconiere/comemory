@@ -22,6 +22,7 @@ use crate::stats::feedback;
 use crate::store::Connection;
 use crate::store::edges::{self, EdgeKey, REFERENCES_FILE, file_node_id};
 use crate::store::memory_row;
+use crate::utilities::telemetry;
 
 /// Max bound variables per `IN (...)` chunk — well under bundled SQLite's
 /// `SQLITE_MAX_VARIABLE_NUMBER` (32766 in 3.46), so a large touch set never
@@ -143,13 +144,13 @@ fn reward_pair(
     if old < BETA_THRESHOLD && old + delta >= BETA_THRESHOLD {
         let (prov, qid) = if search_edit {
             (
-                feedback::PROV_AUTO_SEARCH_EDIT,
-                feedback::SEARCH_EDIT_QUERY_ID,
+                telemetry::PROV_AUTO_SEARCH_EDIT,
+                telemetry::SEARCH_EDIT_QUERY_ID,
             )
         } else {
             (
-                feedback::PROV_AUTO_COACTIVATION,
-                feedback::COACTIVATION_QUERY_ID,
+                telemetry::PROV_AUTO_COACTIVATION,
+                telemetry::COACTIVATION_QUERY_ID,
             )
         };
         feedback::record_implicit_used(conn, memory_id, at, prov, qid)?;

@@ -1,12 +1,12 @@
 //! `GET /sync/changes` — pull log entries above a cursor.
 
-use crate::api::Ctx;
 use crate::api::sync::{
     ChangesResponse, SyncEntry, SyncOp, SyncRecord, SyncVector, WireFrontmatter,
 };
 use crate::memory::{Frontmatter, MemoryStore};
 use crate::prelude::*;
 use crate::store::{Connection, embed, schema_meta, sync_log, vector};
+use crate::utilities::context::Ctx;
 
 const MIN_LIMIT: usize = 1;
 const MAX_LIMIT: usize = 500;

@@ -2,10 +2,10 @@
 
 use sha2::{Digest, Sha256};
 
-use crate::api::Ctx;
 use crate::api::sync::ManifestResponse;
 use crate::prelude::*;
 use crate::store::sync_log;
+use crate::utilities::context::Ctx;
 
 const BUCKET_COUNT: usize = 256;
 

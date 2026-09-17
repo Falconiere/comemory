@@ -152,7 +152,7 @@ macro_rules! probe_fn {
 
 probe_fn!(probe_ast, api::ast::Request);
 probe_fn!(probe_bandit, api::bandit::Request);
-probe_fn!(probe_completions, api::completions::Request);
+probe_fn!(probe_completions, comemory::cli::completion_script::Request);
 probe_fn!(probe_consolidate, api::consolidate::Request);
 probe_fn!(probe_context, api::context::Request);
 probe_fn!(probe_doctor, api::doctor::Request);

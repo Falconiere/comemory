@@ -21,15 +21,16 @@ use axum::routing::get;
 use axum::{Json, Router};
 use serde::Deserialize;
 
+use crate::api;
 use crate::api::index_code::IndexMode;
-use crate::api::{self, Ctx};
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::envelope::Envelope;
 use crate::serve::jobs::{self, JobId};
 use crate::serve::routes::{RouteEntry, accepted, guard_job, respond, run_blocking};
 use crate::serve::scope::RepoScope;
-use crate::serve::security;
+use crate::utilities::context::Ctx;
+use crate::utilities::path_containment;
 
 /// The job/registry command name every index run is registered under —
 /// the CLI subcommand's own name, shared with `POST /api/v1/code/index` so
@@ -179,7 +180,7 @@ fn resolve_path(req: &StartRequest) -> Result<String> {
 /// Canonicalize `path` inside an allowed root, as the `String` an
 /// `api::index_code::Request` carries.
 fn contained(roots: &[PathBuf], path: &str) -> Result<String> {
-    let canonical = security::contain_abs(roots, Path::new(path))?;
+    let canonical = path_containment::contain_abs(roots, Path::new(path))?;
     Ok(canonical.to_string_lossy().into_owned())
 }
 

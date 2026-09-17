@@ -119,7 +119,7 @@ assert_gate_rejects "$TASK_TMP/public.md" 'public path mismatch'
 sed '/^| src\/capture\/redact.rs |/s@src/capture/rules.toml@none@' "$INVENTORY" >"$TASK_TMP/asset.md"
 assert_fails 'missing compile-time asset' 'inventory asset/bridge mismatch' --inventory "$TASK_TMP/asset.md"
 assert_gate_rejects "$TASK_TMP/asset.md" 'inventory asset/bridge mismatch'
-sed '/^| src\/api.rs |/s@src/tests/api.rs@none@' "$INVENTORY" >"$TASK_TMP/bridge.md"
+sed '/^| src\/utilities\/context.rs |/s@src/utilities/tests/context.rs@none@' "$INVENTORY" >"$TASK_TMP/bridge.md"
 assert_gate_rejects "$TASK_TMP/bridge.md" 'inventory asset/bridge mismatch'
 
 require_guidance() {

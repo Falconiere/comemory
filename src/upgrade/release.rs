@@ -1,5 +1,5 @@
 //! Talking to GitHub Releases without an HTTP client in the binary:
-//! `comemory upgrade` shells out through [`crate::fetch`] (`curl`, falling
+//! `comemory upgrade` shells out through [`crate::utilities::fetch`] (`curl`, falling
 //! back to `wget`), the same tools the shell installer itself needs, so the
 //! upgrade path adds no TLS stack to the crate. Two operations: resolve the
 //! `latest` redirect to a tag, and download one asset to a file.
@@ -7,8 +7,8 @@
 use std::path::Path;
 
 use crate::config::env::env_parse;
-use crate::fetch;
 use crate::prelude::*;
+use crate::utilities::fetch;
 
 /// Where releases live. `COMEMORY_RELEASES_URL` overrides it — a test hook
 /// so the suite can point at a loopback fixture server, not a user knob.

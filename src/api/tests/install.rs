@@ -1,8 +1,8 @@
 //! `api::install` host validation and dry-run reporting against a real
 //! temporary data directory.
 use super::{HOSTS, Request, config_dir, run, validate_host};
-use crate::api::Ctx;
 use crate::config::{Config, Paths};
+use crate::utilities::context::Ctx;
 
 /// Build a `Ctx` over a real temporary data directory.
 fn ctx_for(dir: &std::path::Path) -> (Paths, Config) {

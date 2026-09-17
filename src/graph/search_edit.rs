@@ -11,8 +11,8 @@ use std::collections::HashSet;
 use time::{Duration, OffsetDateTime, format_description::well_known::Iso8601};
 
 use crate::prelude::*;
-use crate::stats::source;
 use crate::store::{Connection, memory_row, retrieval_log};
+use crate::utilities::telemetry::source;
 
 /// Return the subset of `candidates` that appear in any `retrieval_log` row
 /// with `source IN ('search','context')`, `at` in `[cutoff, at]`, and

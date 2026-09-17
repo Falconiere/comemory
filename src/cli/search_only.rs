@@ -14,13 +14,14 @@ use clap::ValueEnum;
 use serde::Serialize;
 
 use crate::config::Config;
-use crate::output::page::Page;
 use crate::output::{json, tty};
 use crate::prelude::*;
 use crate::retrieval::doc_route::{self, DocHit};
-use crate::retrieval::pipeline::{self, PageWindow};
+use crate::retrieval::pipeline;
 use crate::retrieval::scope::{Domain, Domains, Filters};
 use crate::store::Connection;
+use crate::utilities::pagination::Page;
+use crate::utilities::pagination::PageWindow;
 
 /// One CLI-selectable retrieval domain for `--only`. Mirrors [`Domain`]'s
 /// three variants; kept as its own `clap::ValueEnum` so `--only`'s

@@ -17,6 +17,7 @@ One line per file, named after its primary item:
 | --- | --- | --- |
 | `cluster.rs` | `Group` | Union-find grouping of live fingerprints into near-duplicate clusters within a Hamming radius |
 | `keeper.rs` | `build` | Keeper ordering (quality → access → recency → PageRank → id), member metadata, and in-cluster supersede resolution |
+| `report.rs` | `Report` | The owned value `api::consolidate::run` returns for both delivery surfaces |
 
 When you add a file here, add its row above so the index stays current. No
 `mod.rs` barrel — submodules are declared from `src/consolidate.rs` (`pub mod

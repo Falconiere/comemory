@@ -14,8 +14,9 @@
 //! route, including `--repo` containment, lives in
 //! `tests/serve__routes__maint__admin.rs`).
 
-use comemory::api::{self, Ctx};
+use comemory::api;
 use comemory::config::{Config, Paths};
+use comemory::utilities::context::Ctx;
 
 fn ctx_paths(home: &std::path::Path) -> Paths {
     Paths::new(home)

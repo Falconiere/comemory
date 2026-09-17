@@ -21,9 +21,10 @@ mod corpus;
 use corpus::vectors::vector;
 use corpus::{BenchCorpus, CODE_DIM, MEMORY_DIM, build_corpus};
 
-use comemory::retrieval::pipeline::{self, PageWindow, SearchOptions};
+use comemory::retrieval::pipeline::{self, SearchOptions};
 use comemory::retrieval::scope::Filters;
 use comemory::retrieval::{code_rerank, code_route};
+use comemory::utilities::pagination::PageWindow;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 
 /// Corpus sizes swept by every sizing bench.

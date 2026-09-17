@@ -22,16 +22,17 @@ use axum::routing::{delete, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 
+use crate::api;
 use crate::api::index_code::IndexMode;
 use crate::api::repo_admin::{ArchiveRequest, ConnectRequest, ConnectResponse, PatchRequest};
-use crate::api::{self, Ctx};
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::routes::{
     RouteEntry, guard_mutating, index_runs, require_confirm, respond, run_blocking,
 };
-use crate::serve::security;
 use crate::store::Connection;
+use crate::utilities::context::Ctx;
+use crate::utilities::path_containment;
 
 /// Envelope/route-table command for `POST /repos`.
 const CONNECT: &str = "repos.connect";
@@ -230,7 +231,7 @@ async fn disconnect_repo(
 /// both contain identically.
 fn contain(state: &AppState, conn: &Connection, root: &str) -> Result<String> {
     let roots = state.allowed_roots(conn);
-    let canonical = security::contain_abs(&roots, Path::new(root))?;
+    let canonical = path_containment::contain_abs(&roots, Path::new(root))?;
     Ok(canonical.to_string_lossy().into_owned())
 }
 

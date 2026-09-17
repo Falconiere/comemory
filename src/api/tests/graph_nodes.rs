@@ -18,13 +18,14 @@ use crate::test_common::{git_commit, git_repo};
 
 use std::path::{Path, PathBuf};
 
-use comemory::api::{self, Ctx};
+use comemory::api;
 use comemory::config::{Config, Paths};
 use comemory::memory::Kind;
 use comemory::prelude::Error;
 use comemory::retrieval::bundle::{self, RankedMemory};
 use comemory::retrieval::code_rerank::WorkingSet;
 use comemory::store::connection;
+use comemory::utilities::context::Ctx;
 use tempfile::TempDir;
 
 /// Repo label every test in this file indexes under.

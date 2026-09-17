@@ -13,10 +13,11 @@
 //! indexed through `api::index_code`, and feedback counters read back from
 //! the store with a second connection rather than from the response body.
 
-use comemory::api::{Ctx, index_code};
+use comemory::api::index_code;
 use comemory::config::{Config, Paths};
 use comemory::memory::Kind;
 use comemory::store::connection;
+use comemory::utilities::context::Ctx;
 use serde_json::{Value, json};
 use tempfile::TempDir;
 

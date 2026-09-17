@@ -135,7 +135,7 @@ fn like_literal(q: &str) -> String {
 /// replicates the legacy markdown-scan sort — the fixed-width ISO-8601
 /// `created_at` sorts lexicographically and the `id` tiebreak keeps the
 /// window stable across pages. `limit == 0` is the shared "all" sentinel
-/// ([`crate::output::page::Page::from_slice`]) — the `LIMIT` clause is
+/// ([`crate::utilities::pagination::Page::from_slice`]) — the `LIMIT` clause is
 /// dropped. [`ListPage::total`] counts the filtered set before the window so
 /// `has_more` is exact.
 pub fn list_memories(

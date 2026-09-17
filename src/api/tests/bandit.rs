@@ -12,9 +12,10 @@
 
 use crate::test_common::cli_eval_support as support;
 
-use comemory::api::{self, Ctx};
+use comemory::api;
 use comemory::config::{Config, Paths};
 use comemory::errors::Error;
+use comemory::utilities::context::Ctx;
 use support::{TOPICS, corpus_with_golden};
 use tempfile::TempDir;
 

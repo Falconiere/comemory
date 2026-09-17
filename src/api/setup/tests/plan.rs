@@ -2,7 +2,6 @@
 //! running the real `detect` against a real temp data dir and a real git
 //! working tree, so the inputs are the ones production produces.
 use super::run;
-use crate::api::Ctx;
 use crate::api::setup::detect::{self, Detected};
 use crate::api::setup::{
     AGENT_HOST, CLOUD_AUTH, DATA_DIR, GIT_HOOKS, INDEX_CODE, INDEX_DOCS, REINFORCE, Request, Step,
@@ -10,6 +9,7 @@ use crate::api::setup::{
 };
 use crate::config::{Config, Paths};
 use crate::test_common::{git_commit::commit_files, git_repo::init_repo};
+use crate::utilities::context::Ctx;
 
 /// Detect against a real data dir and a real target path.
 fn detect_at(data: &std::path::Path, target: &std::path::Path) -> Detected {

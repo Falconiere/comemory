@@ -35,7 +35,7 @@ fn defaults_module_feeds_expected_rank_and_prune_values() {
     let c = Config::defaults();
     assert_eq!(
         c.rank.near_dup_hamming,
-        comemory::simhash::NEAR_DUP_HAMMING,
+        comemory::utilities::simhash::NEAR_DUP_HAMMING,
         "default_near_dup_hamming tracks the simhash constant"
     );
     // default_superseded_grace_days tracks the prune-rule constant (7).

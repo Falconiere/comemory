@@ -14,13 +14,14 @@ use axum::routing::get;
 use axum::{Json, Router};
 use serde_json::Value;
 
-use crate::api::{self, Ctx};
+use crate::api;
 use crate::output::search::ScopeEcho;
 use crate::output::{context, search};
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::routes::{respond, run_blocking, track_for};
 use crate::serve::scope::RepoScope;
+use crate::utilities::context::Ctx;
 
 /// This module's routes, merged into the `memories` resource router.
 pub fn router(_state: AppState) -> Router<AppState> {

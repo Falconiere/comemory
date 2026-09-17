@@ -4,12 +4,12 @@
 
 use serde::Deserialize;
 
-use crate::api::Ctx;
-use crate::cli::page_window;
 use crate::config::Config;
-use crate::output::edges::EdgesResult;
+use crate::graph::edges_result::EdgesResult;
 use crate::prelude::*;
 use crate::store::edge_fts;
+use crate::utilities::context::Ctx;
+use crate::utilities::pagination::page_window;
 
 /// `comemory edges` / `GET /api/v1/edges` request.
 #[derive(Deserialize, Debug)]

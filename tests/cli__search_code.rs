@@ -170,7 +170,7 @@ fn search_code_json_contract_telemetry_and_access_bump() {
         .expect("query_id in envelope")
         .to_string();
     assert!(
-        comemory::stats::feedback::is_valid_query_id(&qid),
+        comemory::utilities::query_id::is_valid_query_id(&qid),
         "query_id shape, got: {qid}"
     );
     let hit_ids: Vec<String> = hits

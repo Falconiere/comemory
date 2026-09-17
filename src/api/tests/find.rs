@@ -14,9 +14,10 @@
 //! `retrieval_log` row is the difference between an offline evaluation and
 //! one that pollutes its own training signal.
 
-use comemory::api::{Ctx, find};
+use comemory::api::find;
 use comemory::config::{Config, Paths};
 use comemory::store::{connection, fts};
+use comemory::utilities::context::Ctx;
 use tempfile::TempDir;
 
 fn paths_for(dir: &TempDir) -> Paths {

@@ -12,10 +12,11 @@
 //! never appears, and a data dir with no database answers an empty page
 //! instead of creating one.
 
-use comemory::api::{self, Ctx};
+use comemory::api;
 use comemory::config::{Config, Paths};
 use comemory::memory::Kind;
 use comemory::store::connection;
+use comemory::utilities::context::Ctx;
 
 /// A fresh `Ctx::borrowed` over a temp data dir with a migrated database.
 fn open_ctx(home: &std::path::Path) -> (Paths, Config, rusqlite::Connection) {

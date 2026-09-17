@@ -20,7 +20,7 @@ use axum::response::Response;
 use axum::routing::{get, post};
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::api::{self, Ctx};
+use crate::api;
 use crate::memory::Kind;
 use crate::output::explain::{self, ExplainPart};
 use crate::prelude::*;
@@ -28,6 +28,7 @@ use crate::retrieval::unified::fuse_domains::UnifiedHit;
 use crate::serve::AppState;
 use crate::serve::routes::{RouteEntry, guard_mutating, respond, run_blocking, track_for};
 use crate::serve::scope::RepoScope;
+use crate::utilities::context::Ctx;
 
 /// How many lexical ladder tiers the memory router has (strict, word-OR,
 /// subtoken-OR, learned expansion) — echoed so a console can render

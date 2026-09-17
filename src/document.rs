@@ -57,7 +57,7 @@ pub struct Chunk {
     pub line_range: (usize, usize),
     /// The chunk's raw text.
     pub text: String,
-    /// 64-bit SimHash of `text` (see [`crate::simhash`]).
+    /// 64-bit SimHash of `text` (see [`crate::utilities::simhash`]).
     pub simhash: u64,
 }
 

@@ -52,11 +52,11 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::api::Ctx;
-use crate::api::index_code::ProgressSink;
 use crate::embed;
 use crate::prelude::*;
 use crate::store::{Connection, embed as store_embed, vector};
+use crate::utilities::context::Ctx;
+use crate::utilities::progress::ProgressSink;
 
 /// Emit one log line every this many processed rows — enough for a console
 /// to see a long run moving without flooding the bounded 20-line tail.

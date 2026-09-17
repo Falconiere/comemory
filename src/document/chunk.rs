@@ -7,7 +7,7 @@
 //! as `crate::ast::chunk`.
 
 use super::{Block, Chunk};
-use crate::simhash;
+use crate::utilities::simhash;
 
 /// Ceiling on a chunk's length, in Unicode characters.
 pub const CHUNK_CHAR_CEILING: usize = 2000;

@@ -19,7 +19,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde_json::Value;
 
-use crate::api::{self, Ctx};
+use crate::api;
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::envelope::Envelope;
@@ -28,6 +28,7 @@ use crate::serve::routes::maint::prune::split_confirm;
 use crate::serve::routes::{
     RouteEntry, accepted, guard_job, guard_mutating, require_confirm, respond, run_blocking,
 };
+use crate::utilities::context::Ctx;
 
 /// This resource's route-table entries, appended onto [`super::table`].
 pub fn table_entries() -> &'static [RouteEntry] {

@@ -11,6 +11,7 @@ use crate::prelude::*;
 use crate::retrieval::pipeline::{self, SearchOptions};
 use crate::retrieval::scope::Filters;
 use crate::store::Connection;
+use crate::utilities::pagination::PageWindow;
 
 /// Per-query eval outcome, serialized into the `--json` report.
 #[derive(Debug, Serialize)]
@@ -135,10 +136,10 @@ fn score_pair(cfg: &Config, conn: &Connection, pair: &GoldenPair, k: usize) -> R
         },
         SearchOptions {
             track: false,
-            source: crate::stats::source::SEARCH,
+            source: crate::utilities::telemetry::source::SEARCH,
             // Eval scores the unpaginated first page (the historical
             // `top_k` cut), so metrics stay comparable across runs.
-            window: pipeline::PageWindow::top_k(cfg),
+            window: PageWindow::top_k(cfg),
         },
     )?;
     let returned: Vec<String> = run.hits.iter().map(|h| h.memory_id.clone()).collect();

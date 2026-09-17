@@ -9,11 +9,12 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::api::{self, Ctx};
+use crate::api;
 use crate::cli::pagination::PaginationArgs;
 use crate::config::Config;
 use crate::output::{json, tty};
 use crate::prelude::*;
+use crate::utilities::context::Ctx;
 
 const EXAMPLES: &str = "\
 Examples:

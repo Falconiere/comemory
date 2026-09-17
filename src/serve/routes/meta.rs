@@ -1,4 +1,4 @@
-//! `GET /api/v1/completions` (`api::completions`) and `GET /api/v1/commands`
+//! `GET /api/v1/completions` (`cli::completion_script`) and `GET /api/v1/commands`
 //! (new — the machine-readable route/command inventory, AC-10). `commands`
 //! derives its subcommand list from clap introspection (`Cli::command()`),
 //! so it cannot drift from the real clap subcommand surface.
@@ -14,10 +14,11 @@ use clap::CommandFactory;
 use serde::Serialize;
 use serde_json::json;
 
-use crate::api::{self, Ctx};
 use crate::cli::Cli;
+use crate::cli::completion_script;
 use crate::serve::AppState;
 use crate::serve::routes::{self, RouteEntry, respond, run_blocking};
+use crate::utilities::context::Ctx;
 
 /// Real subcommands with no HTTP mapping: `serve` IS the server (spec
 /// Non-Goal 3), `install` configures an agent host, `setup` enables one on
@@ -58,16 +59,16 @@ pub fn router(_state: AppState) -> Router<AppState> {
 }
 
 /// `GET /api/v1/completions?shell=` — a shell completion script as a JSON
-/// string (`api::completions`). Conn-free: uses `Ctx::lazy`.
+/// string (`cli::completion_script`). Conn-free: uses `Ctx::lazy`.
 async fn completions(
     State(state): State<AppState>,
-    Query(req): Query<api::completions::Request>,
+    Query(req): Query<completion_script::Request>,
 ) -> Response {
     let started = Instant::now();
     let result = run_blocking(move || {
         let cfg = state.cfg();
         let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        api::completions::run(&mut ctx, req)
+        completion_script::run(&mut ctx, req)
     })
     .await;
     respond("completions", result, started)

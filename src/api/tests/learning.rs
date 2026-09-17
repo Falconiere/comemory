@@ -10,10 +10,11 @@
 //! `query_expansions` rows, and a golden harvest grown from a real
 //! save → search → feedback round trip (no fixture doubles).
 
-use comemory::api::{self, Ctx};
+use comemory::api;
 use comemory::config::{Config, Paths};
 use comemory::memory::Kind;
 use comemory::store::{connection, eval_runs};
+use comemory::utilities::context::Ctx;
 use tempfile::TempDir;
 
 /// A data-dir under a fresh temp home. The database is NOT created — the

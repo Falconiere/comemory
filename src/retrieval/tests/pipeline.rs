@@ -10,12 +10,13 @@
 //! tracking and query logging.
 
 use comemory::config::Config;
-use comemory::retrieval::pipeline::{PageWindow, SearchOptions, search};
+use comemory::retrieval::pipeline::{SearchOptions, search};
 use comemory::retrieval::rerank::Reranked;
 use comemory::retrieval::router::Source;
 use comemory::retrieval::scope::{Filters, TimeScope};
 use comemory::retrieval::score::SUPERSEDE_PENALTY;
-use comemory::simhash::{NEAR_DUP_HAMMING, hamming64};
+use comemory::utilities::pagination::PageWindow;
+use comemory::utilities::simhash::{NEAR_DUP_HAMMING, hamming64};
 
 /// SimHash for the `nth` fixture memory, spread by a golden-ratio multiply
 /// so no two fixtures land within `NEAR_DUP_HAMMING` of each other and get
@@ -205,7 +206,7 @@ fn search_with_track_logs_one_retrieval_log_row() {
     )
     .expect("search");
     let qid = run.query_id.expect("query_id present when tracking");
-    assert!(comemory::stats::feedback::is_valid_query_id(&qid));
+    assert!(comemory::utilities::query_id::is_valid_query_id(&qid));
     let (q, ids, dur): (String, String, Option<i64>) = conn
         .query_row(
             "SELECT query, returned_ids, duration_ms FROM retrieval_log WHERE query_id = ?1",

@@ -14,9 +14,10 @@
 //! whose mtime is pushed two days back so `api::gc::run` under the patched
 //! window actually reaps it.
 
-use comemory::api::{self, Ctx};
+use comemory::api;
 use comemory::config::{Config, Paths};
 use comemory::store::{connection, gc_runs};
+use comemory::utilities::context::Ctx;
 use tempfile::TempDir;
 
 /// Load `config.toml` through the same layered path a fresh process uses,

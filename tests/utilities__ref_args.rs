@@ -5,15 +5,15 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Integration tests for `comemory::cli::ref_args::collect`. Exercised against
+//! Integration tests for `comemory::utilities::ref_args::collect`. Exercised against
 //! the REAL comemory git repo (`CARGO_MANIFEST_DIR` is the crate root, a git
 //! checkout with committed files) so anchor capture hits the same on-disk
 //! layout a user repo would have. No mocks.
 
 use std::path::{Path, PathBuf};
 
-use comemory::cli::ref_args::collect;
 use comemory::git_utils::blob_oid_at_head;
+use comemory::utilities::ref_args::collect;
 
 /// The real comemory checkout this test crate lives in.
 fn repo_root() -> PathBuf {

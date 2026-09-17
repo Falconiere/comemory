@@ -44,8 +44,10 @@ pub struct MinedMapping {
 /// expansions. `source = 'context'` rows still participate — context
 /// queries are first-class mining citizens since M2.
 pub fn mine(conn: &Connection) -> Result<Vec<MinedMapping>> {
-    let log =
-        store::retrieval_log::queries_excluding_source(conn, crate::stats::source::SEARCH_CODE)?;
+    let log = store::retrieval_log::queries_excluding_source(
+        conn,
+        crate::utilities::telemetry::source::SEARCH_CODE,
+    )?;
     // Only MANUAL memory-target verdicts mark a query successful: a code
     // verdict (target_kind = 'code', written by `stats::code_feedback`) says
     // nothing about memory retrieval quality, and an HTTP-implicit verdict
@@ -54,8 +56,8 @@ pub fn mine(conn: &Connection) -> Result<Vec<MinedMapping>> {
     // code-target or implicit must not read as a successful rewording.
     let used: HashSet<String> = store::feedback::used_query_ids(
         conn,
-        crate::stats::target::MEMORY,
-        crate::stats::feedback::PROV_MANUAL,
+        crate::utilities::telemetry::target::MEMORY,
+        crate::utilities::telemetry::PROV_MANUAL,
     )?
     .into_iter()
     .collect();

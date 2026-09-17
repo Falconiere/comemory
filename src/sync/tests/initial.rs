@@ -7,11 +7,12 @@
 )]
 //! The login-time first sync (AC-2, AC-3), against the real loopback platform.
 
-use comemory::api::{Ctx, save};
+use comemory::api::save;
 use comemory::config::{Config, Paths};
 use comemory::memory::Kind;
 use comemory::store::{connection, sync_state};
 use comemory::sync::initial::run_initial_sync;
+use comemory::utilities::context::Ctx;
 
 use crate::test_common as common;
 use crate::test_common::sync_platform_server::{SyncPlatformServer, SyncPlatformState};
@@ -35,7 +36,7 @@ fn save_req(body: &str, repo: &str) -> save::Request {
 /// One remote entry the organization already holds, for the pull leg.
 fn remote_entry(seq: i64, body: &str) -> serde_json::Value {
     let id = comemory::memory::id::memory_id(body);
-    let content_hash = comemory::memory::id::sha256_hex(body.trim_end().as_bytes());
+    let content_hash = comemory::utilities::digest::sha256_hex(body.trim_end().as_bytes());
     serde_json::json!({
         "seq": seq,
         "op": "upsert",
@@ -84,7 +85,7 @@ fn initial_sync_pulls_then_pushes_and_records_the_cursor() {
 
     let local_body = "a local decision this machine offers to the organization";
     let local_id = comemory::memory::id::memory_id(local_body);
-    let local_hash = comemory::memory::id::sha256_hex(local_body.trim_end().as_bytes());
+    let local_hash = comemory::utilities::digest::sha256_hex(local_body.trim_end().as_bytes());
     server.update(|st| {
         st.import_results = serde_json::json!([{
             "id": local_id,
@@ -228,7 +229,7 @@ fn initial_sync_pushes_an_unlabelled_memory() {
     let mut conn = connection::open(paths.db_path()).unwrap();
     let body = "a note saved outside any git worktree";
     let id = comemory::memory::id::memory_id(body);
-    let content_hash = comemory::memory::id::sha256_hex(body.trim_end().as_bytes());
+    let content_hash = comemory::utilities::digest::sha256_hex(body.trim_end().as_bytes());
     server.update(|st| {
         st.import_results = serde_json::json!([{
             "id": id,

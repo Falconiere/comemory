@@ -112,6 +112,6 @@ echo '{"embedding":[...]}' | comemory search "knn dim guard" --vector-stdin --js
 - **Setup:** a memory saved with a 1024-dim vector
 - **Command:** `comemory search "knn dim guard" --vector 0.1,0.2,...`
 - **Expect:** same ANN leg as `--vector-stdin` (both legs reported in
-  `score_parts`); the CSV parser is the shared `cli::embedding_input` path.
+  `score_parts`); the CSV parser is the shared `utilities::embedding_input` path.
 - **Covered by:** `tests/cli__search_legs.rs::a_hybrid_search_reports_both_legs` (stdin twin),
   `tests/cli__save.rs::save_with_vector_csv_flag_writes_memory_vec_row` (CSV parser)

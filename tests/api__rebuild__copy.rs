@@ -16,8 +16,9 @@ pub mod support;
 #[path = "common/vectors.rs"]
 mod vectors;
 
-use comemory::api::{self, Ctx};
+use comemory::api;
 use comemory::config::{Config, Paths};
+use comemory::utilities::context::Ctx;
 use rusqlite::Connection;
 use tempfile::{TempDir, tempdir};
 

@@ -21,11 +21,11 @@
 
 use serde::Serialize;
 
-use crate::api::Ctx;
 use crate::api::doctor::checks;
 use crate::config::Paths;
 use crate::prelude::*;
 use crate::store::{migrate, vector};
+use crate::utilities::context::Ctx;
 
 /// The `GET /api/v1/doctor/system` payload: what this binary is, where its
 /// data lives, and how much of it there is.

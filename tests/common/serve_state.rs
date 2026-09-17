@@ -21,11 +21,12 @@ use std::path::{Path, PathBuf};
 use axum::Router;
 use axum::body::Body;
 use axum::http::{HeaderMap, Request as HttpRequest, StatusCode};
-use comemory::api::{self, Ctx};
+use comemory::api;
 use comemory::config::{Config, Paths};
 use comemory::memory::Kind;
 use comemory::serve::{AppState, RootOverrides, ServeOptions};
 use comemory::store::connection;
+use comemory::utilities::context::Ctx;
 use tempfile::TempDir;
 use tower::ServiceExt;
 

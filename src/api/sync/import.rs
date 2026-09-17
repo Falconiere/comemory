@@ -1,10 +1,10 @@
 //! `POST /sync/import` — apply a batch of wire entries (rules 1–10).
 
-use crate::api::Ctx;
 use crate::api::sync::import_rules;
 use crate::api::sync::{ImportRequest, ImportResponse};
 use crate::prelude::*;
 use crate::store::sync_log;
+use crate::utilities::context::Ctx;
 
 const MAX_ENTRIES: usize = 500;
 

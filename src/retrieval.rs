@@ -30,6 +30,10 @@ pub mod code_ref_status;
 pub mod code_rerank;
 pub mod code_route;
 pub mod code_search;
+/// The owned value `comemory search-code` produces.
+pub mod code_search_result;
+/// The owned value `comemory context` produces.
+pub mod context_result;
 pub mod diversify;
 /// The document retrieval leg: BM25 over `document_fts`, chunk hits
 /// coalesced to their parent document.
@@ -42,5 +46,7 @@ pub mod router;
 /// Created-date window (`--since` / `--until` / `--as-of`) shared by every leg.
 pub mod scope;
 pub mod score;
+/// The owned value `comemory search` produces.
+pub mod search_result;
 /// Unified retrieval across memory, code, and documents (`comemory find`).
 pub mod unified;

@@ -22,12 +22,13 @@ use axum::response::Response;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 
-use crate::api::{self, Ctx};
+use crate::api;
 use crate::serve::AppState;
 use crate::serve::jobs;
 use crate::serve::routes::{
     RouteEntry, accepted, guard_job, guard_mutating, respond, run_blocking,
 };
+use crate::utilities::context::Ctx;
 
 /// This resource's route-table entries, appended onto [`super::table`].
 pub fn table_entries() -> &'static [RouteEntry] {

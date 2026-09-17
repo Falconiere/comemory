@@ -3,9 +3,10 @@
 **What belongs here:** the loopback-only `comemory serve` HTTP server — axum
 router assembly and the request-gating middleware, the versioned `/api/v1`
 REST surface (`routes/`), the background-job model (`jobs/`), the response
-envelope, graph-node-id-to-file resolution, the per-request repo scope, and
-the per-session security primitives (bearer token, Host-header guard, path
-containment).
+envelope, graph-node-id-to-file resolution, the per-request repo scope,
+and the per-session security primitives (bearer token, Host-header guard).
+Path containment is transport-neutral and lives in
+`utilities::path_containment`.
 
 **What does NOT belong here:** command logic. Every route calls an
 `api::<cmd>::run` core — the same one the CLI calls — and never reimplements
@@ -28,7 +29,8 @@ One line per file, named after its primary item:
 | `router.rs` | `build_router` | axum router assembly, the global body limit, and the path-aware request-gating middleware |
 | `routes.rs` | `v1_router` | The versioned `/api/v1` surface: the aggregated route table and the handler-layer helpers every resource shares; per-resource files live in `routes/` |
 | `scope.rs` | `RepoScope` | The per-request default `repo` filter: `X-Comemory-Repo` header first, the server's `--repo` second, never overriding an explicit parameter |
-| `security.rs` | `generate_token` | Per-session bearer token, loopback Host-header guard, path containment |
+| `security.rs` | `generate_token` | Per-session bearer token and the loopback Host-header guard (path containment is `utilities::path_containment`) |
+
 
 When you add a file here, add its row above so the index stays current. No
 `mod.rs` barrel — submodules are declared from `src/serve.rs` (`pub mod

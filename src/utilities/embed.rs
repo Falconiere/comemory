@@ -11,8 +11,8 @@ use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
 use std::time::Duration;
 
-use crate::cli::embedding_input;
 use crate::prelude::*;
+use crate::utilities::embedding_input;
 
 /// Maximum time to wait for the embed command to produce its vector.
 pub const EMBED_TIMEOUT: Duration = Duration::from_secs(10);

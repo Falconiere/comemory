@@ -15,11 +15,12 @@
 //! thing under test is the interaction between the shell-out, the vec0
 //! dim guard, and the per-row transaction, and a mock would hide all three.
 
-use comemory::api::index_code::ProgressSink;
-use comemory::api::{self, Ctx};
+use comemory::api;
 use comemory::config::{Config, Paths};
 use comemory::memory::Kind;
 use comemory::store::connection;
+use comemory::utilities::context::Ctx;
+use comemory::utilities::progress::ProgressSink;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tempfile::TempDir;
 
@@ -342,7 +343,9 @@ fn seed_code(paths: &Paths, symbol: &str) {
             line_start: 1,
             line_end: 3,
             snippet: &snippet,
-            simhash: comemory::simhash::simhash64(comemory::simhash::tokens(&snippet)) as i64,
+            simhash: comemory::utilities::simhash::simhash64(comemory::utilities::simhash::tokens(
+                &snippet,
+            )) as i64,
             parent_id: None,
         },
     )

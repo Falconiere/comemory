@@ -5,7 +5,7 @@
 //! `comemory.db-wal` — `VACUUM INTO` reads through SQLite itself, so the
 //! snapshot always reflects every committed row regardless of checkpoint
 //! state. It cannot run inside a transaction (SQLite will not serialize it
-//! on its own — callers take [`crate::source::lock::FileLock`] around it)
+//! on its own — callers take [`crate::utilities::file_lock::FileLock`] around it)
 //! and it errors rather than overwriting an existing destination, so
 //! [`snapshot`] validates and clears a stale destination first.
 //!

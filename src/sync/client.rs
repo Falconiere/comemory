@@ -16,8 +16,8 @@ use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use serde::Deserialize;
 
 use crate::api::sync::{ChangesResponse, ImportRequest, ImportResponse, ManifestResponse};
-use crate::http_error::map_reqwest;
 use crate::prelude::*;
+use crate::utilities::http_error::map_reqwest;
 
 const CLIENT_ID: &str = "comemory-cli";
 

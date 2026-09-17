@@ -29,11 +29,11 @@ use git2::{BranchType, Oid, Repository, StatusOptions};
 use serde::{Deserialize, Serialize};
 use toml::Value;
 
-use crate::api::Ctx;
 use crate::config::patch::{patch_config_file, section};
 use crate::config::{Config, Paths};
 use crate::git_utils;
 use crate::prelude::*;
+use crate::utilities::context::Ctx;
 
 /// The single store's id. Every route takes an `{id}` path segment so the
 /// URL shape survives a future multi-store model, but today anything other

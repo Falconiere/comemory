@@ -14,12 +14,14 @@ use std::path::PathBuf;
 use clap::Args as ClapArgs;
 
 use crate::api;
+use crate::cli::load_config;
 use crate::cli::off_runtime::off_runtime;
-use crate::cli::{csv_unique, load_config};
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::memory::Kind;
 use crate::output::tty;
 use crate::prelude::*;
+use crate::utilities::context::Ctx;
+use crate::utilities::id_list::csv_unique;
 
 const EXAMPLES: &str = "\
 Examples:
@@ -119,7 +121,7 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
 
     let paths = Paths::new(resolve_data_dir(data_dir));
     let cfg = load_config(&paths)?;
-    let mut ctx = api::Ctx::lazy(&paths, &cfg);
+    let mut ctx = Ctx::lazy(&paths, &cfg);
 
     let req = api::save::Request {
         body,

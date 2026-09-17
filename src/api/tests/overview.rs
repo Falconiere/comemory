@@ -11,10 +11,11 @@
 //! `store::eval_runs` writer. Every counter is compared against the same
 //! thing counted a second way rather than against a hardcoded number.
 
-use comemory::api::{Ctx, index_code, overview, save};
+use comemory::api::{index_code, overview, save};
 use comemory::config::{Config, Paths};
 use comemory::memory::Kind;
 use comemory::store::{connection, eval_runs, index_runs};
+use comemory::utilities::context::Ctx;
 use tempfile::TempDir;
 
 use crate::test_common::git_sample;

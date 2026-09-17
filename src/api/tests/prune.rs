@@ -16,9 +16,10 @@
 
 use crate::test_common::cli_prune_support as support;
 
-use comemory::api::{self, Ctx};
+use comemory::api;
 use comemory::config::{Config, Paths};
 use comemory::store::connection;
+use comemory::utilities::context::Ctx;
 use support::{make_prune_eligible, save_memory};
 use tempfile::TempDir;
 

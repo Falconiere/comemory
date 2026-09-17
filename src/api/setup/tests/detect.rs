@@ -1,9 +1,9 @@
 //! `api::setup::detect` against a real temporary data directory and a real
 //! `git init` working tree.
 use super::run;
-use crate::api::Ctx;
 use crate::config::{Config, Paths};
 use crate::test_common::{git_commit::commit_files, git_repo::init_repo};
+use crate::utilities::context::Ctx;
 
 /// A real git working tree carrying two real Rust files.
 fn repo_with_sources() -> tempfile::TempDir {

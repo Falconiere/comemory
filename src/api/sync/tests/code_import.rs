@@ -9,10 +9,11 @@
 //! `index-code` run: one data dir indexes the tree, a second one receives
 //! the projection and must answer the graph the same way.
 
+use comemory::api;
 use comemory::api::sync::{CodeImportRejection, CodeImportRequest, code_import};
-use comemory::api::{self, Ctx};
 use comemory::config::{Config, Paths};
 use comemory::store::{Connection, connection, repo_marker};
+use comemory::utilities::context::Ctx;
 
 use crate::test_common::code_sync_fixture as fixture;
 use crate::test_common::{git_commit, git_repo};

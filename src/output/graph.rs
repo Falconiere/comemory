@@ -89,7 +89,7 @@ impl GraphPage {
     /// Build a `GraphPage` from a window of edges (already sliced in SQL),
     /// their derived `nodes`, and the cursor metadata. `total` is the count of
     /// all edges matching the scope filters; `has_more` is derived here from
-    /// the same window math [`crate::output::page::Page::from_slice`] uses so
+    /// the same window math [`crate::utilities::pagination::Page::from_slice`] uses so
     /// the two envelopes agree (Binding Rule 1).
     pub fn new(graph: CodeGraph, limit: usize, offset: usize, total: usize) -> Self {
         let has_more = offset.saturating_add(graph.edges.len()) < total;

@@ -10,14 +10,14 @@ use std::path::Path;
 
 use git2::Repository;
 
-use super::ProgressSink;
 use crate::ast::extractor::ExtractedSymbol;
 use crate::ast::{self, languages};
 use crate::graph::imports;
 use crate::prelude::*;
-use crate::simhash;
 use crate::store::code_row::{self, CodeSymbolRow};
 use crate::store::{Connection, fts, indexed_files};
+use crate::utilities::progress::ProgressSink;
+use crate::utilities::simhash;
 
 /// Index one walked file into the caller's open transaction, returning
 /// whether it was actually (re)indexed. `false` covers every skip reason:

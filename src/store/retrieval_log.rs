@@ -13,7 +13,7 @@ use crate::prelude::*;
 /// Insert parameters for one `retrieval_log` row, bundled into a struct
 /// rather than eight positional arguments (`clippy::too_many_arguments`).
 pub struct NewLogRow<'a> {
-    /// Deterministic query id (`stats::feedback::generate_query_id`).
+    /// Deterministic query id (`utilities::query_id::generate_query_id`).
     pub query_id: &'a str,
     /// The raw query text.
     pub query: &'a str,
@@ -27,7 +27,7 @@ pub struct NewLogRow<'a> {
     pub repo: Option<&'a str>,
     /// Kind filter the caller searched with (`--lang` for code searches).
     pub kind: Option<&'a str>,
-    /// Query origin (a [`crate::stats::source`] const).
+    /// Query origin (a `crate::utilities::telemetry::source` const).
     pub source: &'a str,
 }
 

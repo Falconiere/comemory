@@ -11,11 +11,12 @@
 //! (AC-13's api-layer half; the HTTP half lives in
 //! `src/serve/routes/tests/learning_console.rs`).
 
-use comemory::api::{self, Ctx};
+use comemory::api;
 use comemory::config::{Config, Paths};
 use comemory::errors::Error;
 use comemory::eval::tune::TuneCandidate;
 use comemory::store::{connection, eval_runs};
+use comemory::utilities::context::Ctx;
 use tempfile::TempDir;
 
 /// A knob set that differs from `Config::defaults()` on rrf_k and

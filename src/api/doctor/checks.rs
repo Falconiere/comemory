@@ -9,9 +9,9 @@
 use crate::config::Paths;
 use crate::config::env::env_parse;
 use crate::memory::MemoryStore;
-use crate::memory::id::sha256_hex;
 use crate::prelude::*;
 use crate::store::{Connection, doctor_probes, vector};
+use crate::utilities::digest::sha256_hex;
 
 /// One named health probe inside [`super::Report::checks`]. `status` is a
 /// plain string (`"ok"` | `"warn"` | `"fail"`) rather than an enum so the

@@ -18,9 +18,10 @@ use crate::test_common::serve_state::{self, Session};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use comemory::api::{self, Ctx};
+use comemory::api;
 use comemory::config::{Config, Paths};
 use comemory::store::connection;
+use comemory::utilities::context::Ctx;
 use serde_json::Value;
 
 use crate::test_common::{git_commit, git_repo};

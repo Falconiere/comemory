@@ -8,16 +8,17 @@
 
 use serde::Deserialize;
 
-use crate::api::Ctx;
-use crate::cli::{page_meta, page_window, when};
-use crate::output::context::ContextResult;
 use crate::prelude::*;
 use crate::retrieval::bundle::RankedMemory;
 use crate::retrieval::code_rerank::WorkingSet;
+use crate::retrieval::context_result::ContextResult;
 use crate::retrieval::scope::{Domains, Filters};
 use crate::retrieval::{bundle, pipeline};
 use crate::store::Connection;
 use crate::store::code_row;
+use crate::utilities::context::Ctx;
+use crate::utilities::pagination::{page_meta, page_window};
+use crate::utilities::when;
 
 /// `comemory context` / `GET|POST /api/v1/context` request.
 #[derive(Deserialize, Debug)]
@@ -65,7 +66,7 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<ContextResult
     let window = page_window(cfg, req.k, req.offset);
     let opts = pipeline::SearchOptions {
         track,
-        source: crate::stats::source::CONTEXT,
+        source: crate::utilities::telemetry::source::CONTEXT,
         window,
     };
     let scope = when::scope_from_flags(

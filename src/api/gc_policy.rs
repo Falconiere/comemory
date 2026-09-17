@@ -15,10 +15,10 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::api::Ctx;
 use crate::config::patch::{patch_config_file, section};
 use crate::prelude::*;
 use crate::store::gc_runs::{self, GcRunRow};
+use crate::utilities::context::Ctx;
 
 /// The `GET|PUT /api/v1/gc/policy` payload.
 #[derive(Serialize, Debug)]

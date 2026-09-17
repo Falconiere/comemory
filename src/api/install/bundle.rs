@@ -90,8 +90,10 @@ pub(super) fn extract(root: &Path) -> Result<()> {
         .parent()
         .ok_or_else(|| Error::Usage("bundle needs a parent".into()))?;
     std::fs::create_dir_all(parent)?;
-    let _lock =
-        crate::source::lock::FileLock::acquire(&parent.join("install.lock"), "agent-install")?;
+    let _lock = crate::utilities::file_lock::FileLock::acquire(
+        &parent.join("install.lock"),
+        "agent-install",
+    )?;
     if root
         .symlink_metadata()
         .is_ok_and(|m| m.file_type().is_symlink())

@@ -15,10 +15,10 @@ use clap::{Args as ClapArgs, ValueEnum};
 use git2::Repository;
 use ignore::WalkBuilder;
 
+use crate::api;
 use crate::api::index_code::walk::{
     blob_oid, chunk_symbol, parent_snippet_of, relative, simhash_of,
 };
-use crate::api::{self, Ctx};
 use crate::ast::extractor::ExtractedSymbol;
 use crate::ast::{self, languages};
 use crate::cli::load_config;
@@ -26,6 +26,7 @@ use crate::cli::off_runtime::off_runtime;
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::git_utils::map_git_err;
 use crate::prelude::*;
+use crate::utilities::context::Ctx;
 
 const EXAMPLES: &str = "\
 Examples:

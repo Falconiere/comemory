@@ -30,6 +30,7 @@ One line per file, named after its primary item:
 | `cross_link.rs` | `Refs` | Extract `<repo>:<path>[:<symbol>]` references from a memory body; URLs and bare-scheme path expressions (`file:/…`, `./…`, `../…`) are refused |
 | `derived.rs` | `refresh_derived_best_effort` | Single post-write pass refreshing both `rank_score` and the `edge_fts` index |
 | `doc_link.rs` | `derive_after_document` | Deterministic `member_of_source` / `references_document` link deriver |
+| `edges_result.rs` | `EdgesResult` | The owned value `api::edges::run` returns for both delivery surfaces |
 | `imports.rs` | `extract_imports` | Per-language import extraction and conservative module-to-path resolution |
 | `materialize.rs` | `materialize` | `index-code` post-pass: mined pairs + resolved imports → edges + projected PageRank; `recompute_rank(tx, repo)` is the PageRank + projection tail, shared with `api::graph_recompute` |
 | `memory_rank.rs` | `materialize_memory_rank` | PageRank over the derived memory graph → `memories.rank_score` |

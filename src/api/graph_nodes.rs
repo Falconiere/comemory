@@ -18,16 +18,16 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::api::Ctx;
 use crate::cli::graph::nodes::build_graph;
 use crate::cli::graph::{Rel, build_graph_page, parse_id};
 use crate::graph::neighbors::{self, DEFAULT_MIN_WEIGHT, NeighborRow};
 use crate::output::graph::{Edge, Node};
-use crate::output::page::Page;
 use crate::output::search::title_of;
 use crate::prelude::*;
 use crate::store::Connection;
 use crate::store::code_graph_nodes::{self, NodeRow, fetch_node, fetch_nodes};
+use crate::utilities::context::Ctx;
+use crate::utilities::pagination::Page;
 
 /// Default page size for `GET /graph/nodes`, matching the `/api/v1`
 /// pagination convention (spec §1 "Pagination"). `0` still means "all".

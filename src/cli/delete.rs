@@ -15,6 +15,7 @@ use crate::config::paths::{Paths, resolve_data_dir};
 use crate::memory::MemoryStore;
 use crate::prelude::*;
 use crate::store::{Connection, connection, memory_purge, memory_row};
+use crate::utilities::context::Ctx;
 
 const EXAMPLES: &str = "\
 Examples:
@@ -91,7 +92,7 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
 
     let cfg = load_config(&paths)?;
     let mut conn = connection::open(paths.db_path())?;
-    let mut ctx = api::Ctx::borrowed(&paths, &cfg, &mut conn);
+    let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
     let output = api::delete::run(&mut ctx, &a.id)?;
     // A tombstone is a change like any other: push it inline so the console
     // and every other device see the delete without waiting for a sync.

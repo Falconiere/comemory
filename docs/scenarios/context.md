@@ -84,6 +84,6 @@ Global flags `--json` and `--data-dir` apply. See [globals.md](globals.md).
 - **Setup:** a memory saved with a 1024-dim vector
 - **Command:** `comemory context "frontmatter" --vector 0.1,0.2,...`
 - **Expect:** same ANN leg as `--vector-stdin`; the CSV parser is the shared
-  `cli::embedding_input` path every `--vector` flag goes through.
+  `utilities::embedding_input` path every `--vector` flag goes through.
 - **Covered by:** `tests/cli__context.rs::context_vector_path_accepts_stdin_vector` (stdin twin),
   `tests/cli__save.rs::save_with_vector_csv_flag_writes_memory_vec_row` (CSV parser)

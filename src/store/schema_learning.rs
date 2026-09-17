@@ -99,7 +99,7 @@ pub struct FeedbackEvents {
 #[index("idx_retrieval_log_recent", desc(at), desc(query_id))]
 #[index("idx_retrieval_log_source_at", source, at)]
 pub struct RetrievalLog {
-    /// Query id (`stats::feedback::generate_query_id`).
+    /// Query id (`utilities::query_id::generate_query_id`).
     #[column(primary_key)]
     pub query_id: Text,
     /// The query text.

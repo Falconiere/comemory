@@ -13,10 +13,10 @@
 
 use serde::Deserialize;
 
-use crate::api::Ctx;
-use crate::output::page::Page;
 use crate::prelude::*;
 use crate::store::index_runs::{self, IndexRunRow};
+use crate::utilities::context::Ctx;
+use crate::utilities::pagination::Page;
 
 /// Rows per page when the caller sends no `limit` — a console history list,
 /// not a search result, so the window is wider than the retrieval default.

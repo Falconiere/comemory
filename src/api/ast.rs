@@ -6,18 +6,18 @@
 //! Conn-free — `run` never calls [`Ctx::conn`].
 //!
 //! **Containment is not this file's job.** The HTTP route handler
-//! canonicalizes and contains `req.file` (`security::contain_abs`) before
+//! canonicalizes and contains `req.file` (`utilities::path_containment::contain_abs`) before
 //! calling [`run`]; this middle stays exactly as unrestricted as the CLI.
 
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::api::Ctx;
 use crate::ast::languages::{self, Lang};
 use crate::ast::pattern::find;
-use crate::output::page::Page;
 use crate::prelude::*;
+use crate::utilities::context::Ctx;
+use crate::utilities::pagination::Page;
 
 /// `comemory ast` / `POST /api/v1/code/ast` request.
 #[derive(Deserialize, Debug)]

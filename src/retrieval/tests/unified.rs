@@ -12,10 +12,10 @@
 //! read.
 
 use comemory::config::{Config, Paths};
-use comemory::retrieval::pipeline::PageWindow;
 use comemory::retrieval::scope::{Domain, Domains, Filters, TimeScope};
 use comemory::retrieval::unified::{self, fuse_domains};
 use comemory::store::connection;
+use comemory::utilities::pagination::PageWindow;
 use tempfile::TempDir;
 
 /// A migrated store with three memories whose bodies share a query term but

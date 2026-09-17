@@ -24,7 +24,7 @@ use axum::routing::get;
 use axum::{Json, Router};
 use serde::Deserialize;
 
-use crate::api::{self, Ctx};
+use crate::api;
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::envelope::Envelope;
@@ -32,7 +32,8 @@ use crate::serve::jobs;
 use crate::serve::routes::{
     RouteEntry, accepted, guard_job, guard_mutating, require_confirm, respond, run_blocking,
 };
-use crate::serve::security;
+use crate::utilities::context::Ctx;
+use crate::utilities::path_containment;
 
 /// This resource's route-table entries, appended onto [`super::table`].
 pub fn table_entries() -> &'static [RouteEntry] {
@@ -111,7 +112,7 @@ async fn index_sources(
         let roots = contain_state.allowed_roots(&conn);
         drop(conn);
         for p in &mut req.path {
-            let canonical = security::contain_abs(&roots, Path::new(p.as_str()))?;
+            let canonical = path_containment::contain_abs(&roots, Path::new(p.as_str()))?;
             *p = canonical.to_string_lossy().into_owned();
         }
         Ok(req)

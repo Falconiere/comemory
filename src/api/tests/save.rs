@@ -12,12 +12,13 @@
 //! stdout in `tests/cli__save.rs`; the HTTP surface's AC-1 cross-check
 //! lives in `tests/serve__routes__memories__write.rs`).
 
-use comemory::api::{self, Ctx};
+use comemory::api;
 use comemory::config::{Config, Paths};
 use comemory::errors::Error;
 use comemory::memory::id::memory_id;
 use comemory::memory::{Frontmatter, Kind};
 use comemory::store::{connection, memory_row};
+use comemory::utilities::context::Ctx;
 
 /// `api::save::run` with no CLI raw-vector input (HTTP-shaped call), since
 /// none of these tests exercise the `--vector`/`--vector-stdin` CLI flags.

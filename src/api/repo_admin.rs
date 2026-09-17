@@ -21,9 +21,9 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::api::Ctx;
 use crate::prelude::*;
 use crate::store::{Connection, code_row, repo_drop, repo_marker};
+use crate::utilities::context::Ctx;
 
 /// `POST /api/v1/repos` request — register a working-tree root under a repo
 /// label.

@@ -11,12 +11,13 @@
 use time::OffsetDateTime;
 
 use comemory::config::{Config, Paths};
-use comemory::memory::id::{memory_id, sha256_hex};
+use comemory::memory::id::memory_id;
 use comemory::memory::{Kind, MemoryStore};
 use comemory::store::connection;
 use comemory::store::sync_state;
 use comemory::sync::AuthFile;
 use comemory::sync::pull;
+use comemory::utilities::digest::sha256_hex;
 
 use crate::test_common as common;
 use crate::test_common::sync_platform_server::{SyncPlatformServer, SyncPlatformState};

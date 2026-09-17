@@ -72,9 +72,9 @@ pub fn load_file(path: &Path) -> Result<Vec<GoldenPair>> {
 pub fn harvest(conn: &Connection) -> Result<Vec<GoldenPair>> {
     let rows = feedback::used_events_for_golden(
         conn,
-        crate::stats::target::MEMORY,
-        crate::stats::source::SEARCH_CODE,
-        crate::stats::feedback::PROV_MANUAL,
+        crate::utilities::telemetry::target::MEMORY,
+        crate::utilities::telemetry::source::SEARCH_CODE,
+        crate::utilities::telemetry::PROV_MANUAL,
     )?;
     let mut by_key: BTreeMap<PairKey, Vec<String>> = BTreeMap::new();
     for row in rows {

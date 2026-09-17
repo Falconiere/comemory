@@ -8,8 +8,9 @@
 //! In-process coverage of `GET|POST /api/v1/sync/*` through the real router.
 
 use comemory::api::sync::SyncOp;
-use comemory::memory::id::{memory_id, sha256_hex};
+use comemory::memory::id::memory_id;
 use comemory::memory::{Kind, MemoryStore};
+use comemory::utilities::digest::sha256_hex;
 use serde_json::json;
 use time::OffsetDateTime;
 use time::format_description::well_known::Iso8601;

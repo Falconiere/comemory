@@ -12,11 +12,12 @@ mapping, the response envelope and the read-only/confirm gates stay in
 `serve/routes/`. An `api::` module takes a plain `Request` and returns a plain
 `Response` — it never touches `stdout` and never names an HTTP type.
 
-`Ctx` (in `src/api.rs`) bundles `Paths` + `Config` with a connection that is
-either `Borrowed` (the CLI's own connection, or the server's shared
-per-request one) or `Lazy` (opened on first `Ctx::conn()` call — a job
-worker's own dedicated connection). Conn-free commands (`doctor`, `rebuild`,
-`ast`, `install-hooks`, `completions`) never open one at all.
+`Ctx` (in `src/utilities/context.rs` since #166 — it is transport-neutral, so
+neither delivery adapter nor this shell owns it) bundles `Paths` + `Config`
+with a connection that is either `Borrowed` (the CLI's own connection, or the
+server's shared per-request one) or `Lazy` (opened on first `Ctx::conn()` call
+— a job worker's own dedicated connection). Conn-free commands (`doctor`,
+`rebuild`, `ast`, `install-hooks`, `completions`) never open one at all.
 
 Every `Request` derives `#[serde(deny_unknown_fields)]`, enforced by the
 clap-introspection walk in `tests/api__parity.rs`.
@@ -29,7 +30,6 @@ One line per file, named after its primary item:
 | --- | --- | --- |
 | `ast.rs` | `Request` | Shared middle of `comemory ast` / `POST /api/v1/code/ast` |
 | `bandit.rs` | `Request` | Shared middle of `comemory bandit` / `POST /api/v1/bandit` |
-| `completions.rs` | `Request` | Shared middle of `comemory completions` / `GET /api/v1/completions` |
 | `consolidate.rs` | `Request` | Shared middle of `comemory consolidate` / `GET /api/v1/consolidate` |
 | `context.rs` | `Request` | Shared middle of `comemory context` / `GET\|POST /api/v1/context`. `query` accepts `key` as a serde alias, the spelling the console-api spec's `GET /context?key=` uses |
 | `delete.rs` | `Response` | Shared middle of `comemory delete` / `DELETE /api/v1/memories/{id}` |

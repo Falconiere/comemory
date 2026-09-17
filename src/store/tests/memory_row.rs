@@ -100,7 +100,9 @@ fn insert_persists_simhash_and_upsert_refreshes_it() {
 
     let body_a = "advisory locks serialize concurrent migrations in postgres";
     insert_body(&mut conn, &fm, body_a);
-    let expected_a = comemory::simhash::simhash64(comemory::simhash::tokens(body_a)) as i64;
+    let expected_a =
+        comemory::utilities::simhash::simhash64(comemory::utilities::simhash::tokens(body_a))
+            as i64;
     let got_a = stored_simhash(&conn);
     assert_ne!(
         got_a, 0,
@@ -115,7 +117,9 @@ fn insert_persists_simhash_and_upsert_refreshes_it() {
     // upsert arm and refresh the fingerprint, not keep the stale one.
     let body_b = "completely different note about ast-grep pattern syntax";
     insert_body(&mut conn, &fm, body_b);
-    let expected_b = comemory::simhash::simhash64(comemory::simhash::tokens(body_b)) as i64;
+    let expected_b =
+        comemory::utilities::simhash::simhash64(comemory::utilities::simhash::tokens(body_b))
+            as i64;
     let got_b = stored_simhash(&conn);
     assert_eq!(got_b, expected_b, "upsert must refresh simhash");
     assert_ne!(got_b, got_a, "changed body should change the simhash");

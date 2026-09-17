@@ -16,8 +16,9 @@
 //! zombie row (file already gone, `deleted_at` past the window) is purged,
 //! and a live memory or a fresh trash entry is never touched.
 
-use comemory::api::{self, Ctx};
+use comemory::api;
 use comemory::config::{Config, Paths};
+use comemory::utilities::context::Ctx;
 use time::{Duration, OffsetDateTime};
 
 fn db_path(home: &tempfile::TempDir) -> std::path::PathBuf {

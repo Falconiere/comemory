@@ -15,8 +15,6 @@ pub mod explain;
 pub mod graph;
 /// Single-line JSON writer shared by every `--json` surface.
 pub mod json;
-/// The generic pagination envelope every paged command serializes.
-pub mod page;
 /// Rendering for `comemory prune` (candidate lists).
 pub mod prune;
 /// Rendering for `comemory search` (memory hits).

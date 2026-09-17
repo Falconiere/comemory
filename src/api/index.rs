@@ -14,7 +14,6 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::api::Ctx;
 use crate::document::writer::{self, UpdateOutcome};
 use crate::prelude::*;
 use crate::source::SourceEntry;
@@ -22,6 +21,7 @@ use crate::source::discover::{self, Candidate};
 use crate::source::mirror;
 use crate::source::registry::Registry;
 use crate::store::Connection;
+use crate::utilities::context::Ctx;
 
 /// `comemory index <PATH>...` / `POST /api/v1/sources` request.
 #[derive(Deserialize, Debug)]

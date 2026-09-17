@@ -14,9 +14,9 @@
 
 use comemory::config::paths::Paths;
 use comemory::stats::code_feedback::record_code_with_provenance;
-use comemory::stats::feedback::PROV_MANUAL;
 use comemory::stats::sqlite::StatsDb;
 use comemory::store::code_row::{self, CodeSymbolRow};
+use comemory::utilities::telemetry::PROV_MANUAL;
 use tempfile::TempDir;
 
 /// Open a [`StatsDb`] over a fresh `comemory.db` in a tempdir.

@@ -4,8 +4,9 @@
 `comemory <subcommand>`, each owning its own `Args` shape, thin orchestration
 (`run`), and output rendering hookup — plus the top-level dispatcher
 (`Cli`/`Cmd` in `src/cli.rs`) and the small cross-cutting flag layers shared by
-several subcommands (`when`, `pagination`, `ref_args`, `embedding_input`,
-`search_only`).
+several subcommands (`pagination`, `search_only`). The transport-neutral
+helpers that used to live here (`when`, `ref_args`, `embedding_input`) moved to
+`utilities::` with #166.
 
 **What does NOT belong here:** business logic. A `cli/*.rs` file parses flags,
 loads `Config`, calls into `retrieval::`, `graph::`, `store::`, `memory::`, or
@@ -25,6 +26,7 @@ One line per file, named after its primary item:
 | `auth.rs` | `Args` | `comemory auth` — nested `login` / `status` / `logout` for the org-scoped key; `login` runs the first sync (CLI-only) |
 | `auth_render.rs` | `LoginJson` | JSON/TTY helpers for `comemory auth` login/status/logout |
 | `bandit.rs` | `Args` | `comemory bandit` — Thompson-sample the `[tune]` grid, confirm with offline eval |
+| `completion_script.rs` | `Request` | Completion-script generation shared by `comemory completions` and `GET /api/v1/completions` |
 | `completions.rs` | `Args` | `comemory completions <shell>` — emit a shell completion script |
 | `consolidate.rs` | `Args` | `comemory consolidate` — advisory near-duplicate cluster report |
 | `context.rs` | `Args` | `comemory context` — headline memory + code bundle lookup |
@@ -32,7 +34,6 @@ One line per file, named after its primary item:
 | `distill.rs` | `Args` | `comemory distill` — extract explicit saves and propose platform candidates (CLI-only) |
 | `doctor.rs` | `Args` | `comemory doctor` — runtime health check against the SQLite storage stack |
 | `edges.rs` | `Args` | `comemory edges` — lexical search over the relation graph |
-| `embedding_input.rs` | `EmbeddingPayload` | Shared `--vector` / `--vector-stdin` parsing for `save` and `search` |
 | `eval.rs` | `GoldenSetArgs` | `comemory eval` — score retrieval quality (recall@k, MRR) against a golden set |
 | `feedback.rs` | `Args` | `comemory feedback` — record used/irrelevant feedback into the stats DB |
 | `gc.rs` | `run` | `comemory gc` — purge `.trash/` and evict expired learning telemetry |

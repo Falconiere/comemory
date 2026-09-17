@@ -13,13 +13,14 @@
 use crate::test_common::git_sample;
 use crate::test_common::git_worktree::add_worktree;
 
+use comemory::api;
 use comemory::api::index_code::IndexMode;
 use comemory::api::repo_admin::{ArchiveRequest, ConnectRequest, PatchRequest};
-use comemory::api::{self, Ctx};
 use comemory::config::{Config, Paths};
 use comemory::errors::Error;
 use comemory::memory::Kind;
 use comemory::store::connection;
+use comemory::utilities::context::Ctx;
 use tempfile::TempDir;
 
 fn ctx_over(home: &TempDir) -> (Paths, Config, rusqlite::Connection) {

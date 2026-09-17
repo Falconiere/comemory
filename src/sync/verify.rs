@@ -6,14 +6,15 @@
 use time::OffsetDateTime;
 use time::format_description::well_known::Iso8601;
 
+use crate::api;
 use crate::api::sync::ManifestResponse;
-use crate::api::{self, Ctx};
 use crate::config::{Config, Paths};
 use crate::prelude::*;
 use crate::store::{Connection, sync_state};
 use crate::sync::AuthFile;
 use crate::sync::client;
 use crate::sync::{pull, push};
+use crate::utilities::context::Ctx;
 
 /// Buckets that differ between local and remote manifests.
 #[derive(Debug, Clone, serde::Serialize)]

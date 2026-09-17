@@ -5,7 +5,7 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Test mirror for `src/source/lock.rs`.
+//! Test mirror for `src/utilities/file_lock.rs`.
 
 use std::fs;
 use std::path::PathBuf;
@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use comemory::source::lock::FileLock;
+use comemory::utilities::file_lock::FileLock;
 use tempfile::TempDir;
 
 /// Acquire the lock, read `data_path`, sleep to widen the race window,

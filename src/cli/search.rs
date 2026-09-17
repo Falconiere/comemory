@@ -11,9 +11,9 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::api::{self, Ctx};
+use crate::api;
 use crate::cli::search_only::{self, OnlyDomain};
-use crate::cli::{embedding_input, load_config, page_window, track_searches, when};
+use crate::cli::{load_config, track_searches};
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::memory::Kind;
 use crate::output;
@@ -21,6 +21,10 @@ use crate::prelude::*;
 use crate::retrieval::scope::{Domain, Filters};
 use crate::store::Connection;
 use crate::store::connection;
+use crate::utilities::context::Ctx;
+use crate::utilities::pagination::page_window;
+use crate::utilities::vector_stdin;
+use crate::utilities::when;
 
 const EXAMPLES: &str = "\
 Examples:
@@ -166,7 +170,7 @@ async fn run_memory(
     conn: &mut Connection,
     cfg: &crate::config::Config,
 ) -> Result<()> {
-    let vector = embedding_input::read_optional(a.vector_stdin, a.vector.as_deref())?;
+    let vector = vector_stdin::read_optional(a.vector_stdin, a.vector.as_deref())?;
     let req = api::search::Request {
         query: a.query.clone(),
         k: a.k,

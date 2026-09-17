@@ -7,7 +7,7 @@
 )]
 //! Test mirror for `src/simhash.rs` — 64-bit SimHash and Hamming distance.
 
-use comemory::simhash;
+use comemory::utilities::simhash;
 
 #[test]
 fn similar_strings_have_close_simhash() {

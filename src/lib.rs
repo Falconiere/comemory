@@ -59,20 +59,11 @@ pub mod git_utils;
 /// TTY and JSON emitters shared by the subcommands.
 pub mod output;
 
-/// Shared embed-command shell-out (`COMEMORY_EMBED_CMD`).
-pub mod embed;
-
 /// Loopback web viewer (`comemory serve`).
 pub mod serve;
 
 /// `comemory upgrade`: resolve the newest release and swap the binary.
 pub mod upgrade;
-
-/// Shared curl/wget HTTP (no in-process TLS stack).
-pub mod fetch;
-
-/// Map reqwest transport errors into [`crate::Error`] (sync + capture).
-pub mod http_error;
 
 /// Cloud platform auth: device login and workspace-key credentials.
 pub mod cloud;
@@ -82,9 +73,6 @@ pub mod capture;
 
 /// clap subcommand entry points and the top-level dispatcher.
 pub mod cli;
-
-/// 64-bit SimHash and Hamming distance over tokenized memory bodies.
-pub mod simhash;
 
 /// Pure in-process document extraction (TXT/Markdown/HTML/CSV) and
 /// chunking, independent of the store.
@@ -96,3 +84,16 @@ pub mod source;
 
 /// Cloud-sync client helpers: match keys, redaction, auth file, allowlist cache.
 pub mod sync;
+
+/// Transport-neutral shared primitives usable by domains and by both
+/// delivery adapters.
+pub mod utilities;
+
+// Crate-root aliases for the shared primitives that were public root modules
+// before #166 moved them under `utilities`. They preserve `comemory::<name>`
+// for external consumers; in-crate code names the real
+// `crate::utilities::<name>` path.
+pub use utilities::embed;
+pub use utilities::fetch;
+pub use utilities::http_error;
+pub use utilities::simhash;
