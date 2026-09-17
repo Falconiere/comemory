@@ -265,6 +265,8 @@ put src/store/rows.rs 'use crate::memory::Ref; fn write(model: Ref) { let model 
 both 1 'crate::memory::Ref::reindex' src/store/rows.rs
 put src/store/rows.rs 'use crate::memory::Ref; fn write(model: Ref) { let model = 7; model.to_string(); }'
 both 0 '' src/store/rows.rs
+put src/store/rows.rs 'use crate::memory::Ref; fn write(model: Ref) { let model = 7;model.to_string(); }'
+both 0 '' src/store/rows.rs
 put src/store/rows.rs 'use crate::memory::Ref; fn write() { let model: Ref = Ref::new("value"); model.reindex(); }'
 both 1 'crate::memory::Ref::reindex' src/store/rows.rs
 put src/store/rows.rs 'use crate::memory::Ref; fn read(model: Ref) {} fn other(model: crate::config::Config) { model.reindex(); }'

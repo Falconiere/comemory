@@ -286,7 +286,7 @@ jq '
     def receiver_type($entry):
       [$receivers[[$entry.source,$entry.receiver]|tojson][]? | select(
         .scope.start < $entry.at and .scope.end > $entry.at and
-        .at < $entry.at)] | sort_by(.scope.start,.at) | last;
+        .at <= $entry.at)] | sort_by(.scope.start,.at) | last;
     [$raw[] | select(.kind != "receiver-bindings") | . as $entry |
       .parts=(if .kind == "method-calls" then receiver_type($entry) as $binding |
         if $binding == null or ($binding.parts|length) == 0 then []
