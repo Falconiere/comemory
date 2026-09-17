@@ -1,10 +1,13 @@
 //! `domains::sync` — everything about keeping this machine and the
 //! organization's platform holding the same memories and code index.
 //!
-//! [`auth_file`] owns the one org-scoped credential; [`client`] speaks the
-//! wire; [`push`], [`pull`], [`code`] and [`verify`] are the directions of
-//! travel, run once together by [`initial`]. [`redact`] and [`skip_repos`]
-//! decide what may leave this machine.
+//! [`auth_file`][a] owns the one org-scoped credential; [`client`][c] speaks
+//! the wire; `push`, `pull`, `code` and `verify` are the directions of travel,
+//! run once together by `initial`; `redact` and `skip_repos` decide what may
+//! leave this machine.
+//!
+//! [a]: crate::domains::sync::auth_file
+//! [c]: crate::domains::sync::client
 //!
 //! Every SQL string stays in the central `store`. Clap flags, prompts, process
 //! launch and every `writeln!` stay in `cli`; HTTP policy stays in `serve`.
@@ -16,12 +19,12 @@ pub mod auth_file;
 pub mod client;
 /// The two code-index calls layered on [`client`]'s base URL and credential.
 pub mod client_code;
+/// Platform API base URL and the RFC 8628 device login that mints the key.
+pub mod cloud;
 /// `comemory sync`'s code-index push: diff by blob OID, send only what differs.
 pub mod code;
 /// The pure code-push diff and its batching — no store, no network.
 pub mod code_plan;
-/// Platform API base URL and the RFC 8628 device login that mints the key.
-pub mod cloud;
 /// The user-level auto-sync daemon (launchd / systemd --user), opt-in.
 pub mod daemon;
 /// Rendered launchd plist and systemd unit bodies.
@@ -33,6 +36,11 @@ pub mod daemon_unit;
 pub mod exchange;
 /// The exhaustive pull-then-push-then-code run `auth login` performs.
 pub mod initial;
+/// The `comemory auth` sequences: device login, status probe, logout.
+pub mod login;
+/// What one `comemory sync` run does: the session it opens and the three
+/// composite action sequences.
+pub mod manual;
 /// Git synchronization of the data directory itself — commit, pull, push —
 /// which is the memory store's own `store-sync` job, not platform push/pull.
 pub mod memory_store;
@@ -49,6 +57,8 @@ pub mod redact;
 pub mod skip_repos;
 /// Manifest compare and bucket repair.
 pub mod verify;
+/// `comemory watch`: hold the workspace channel and pull on every nudge.
+pub mod watch;
 
 pub use auth_file::AuthFile;
 pub use initial::{InitialSyncStats, run_initial_sync};

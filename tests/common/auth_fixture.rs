@@ -14,7 +14,7 @@
 //! per-file edit every time a field moves.
 
 use comemory::config::paths::Paths;
-use comemory::sync::auth_file::{AUTH_SCHEMA_VERSION, AuthFile};
+use comemory::domains::sync::auth_file::{AUTH_SCHEMA_VERSION, AuthFile};
 
 /// Default org workspace id the loopback sync fixture serves.
 pub const FIXTURE_WORKSPACE: &str = "ws-org";

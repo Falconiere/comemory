@@ -63,7 +63,8 @@ fn mint_org_key_returns_the_org_scope_over_a_real_socket() {
     }
     let server = common::device_auth_server::DeviceAuthServer::start_default();
     let mut progress = Vec::new();
-    let outcome = comemory::domains::sync::cloud::login(&server.base, &mut progress).expect("login");
+    let outcome =
+        comemory::domains::sync::cloud::login(&server.base, &mut progress).expect("login");
     let creds = outcome.credentials;
 
     assert_eq!(

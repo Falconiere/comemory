@@ -7,8 +7,12 @@
 )]
 //! Tests for [`crate::domains::sync::redact`].
 
-use comemory::domains::sync::redact::{RULE_SET_VERSION, findings, redact, scan, scan_with_override};
-use comemory::domains::sync::{scan as scan_reexport, scan_with_override as scan_override_reexport};
+use comemory::domains::sync::redact::{
+    RULE_SET_VERSION, findings, redact, scan, scan_with_override,
+};
+use comemory::domains::sync::{
+    scan as scan_reexport, scan_with_override as scan_override_reexport,
+};
 use rusqlite::Connection;
 
 fn aws_example_key() -> String {

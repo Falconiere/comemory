@@ -6,8 +6,8 @@
     clippy::too_many_lines
 )]
 
-use comemory::domains::sync::exchange;
 use comemory::config::{Config, Paths};
+use comemory::domains::sync::exchange;
 use comemory::store::connection;
 use comemory::utilities::context::Ctx;
 

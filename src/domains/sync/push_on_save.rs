@@ -26,10 +26,10 @@
 //! memories outward would be wrong anyway.
 
 use crate::config::{Config, Paths};
-use crate::prelude::*;
-use crate::store::connection;
 use crate::domains::sync::AuthFile;
 use crate::domains::sync::push;
+use crate::prelude::*;
+use crate::store::connection;
 
 /// Entries one inline push may send. A single write adds one `sync_log` row;
 /// the rest of the budget drains whatever earlier writes left behind, which is

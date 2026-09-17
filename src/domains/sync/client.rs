@@ -15,7 +15,9 @@ use reqwest::blocking::Client;
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use serde::Deserialize;
 
-use crate::domains::sync::exchange::{ChangesResponse, ImportRequest, ImportResponse, ManifestResponse};
+use crate::domains::sync::exchange::{
+    ChangesResponse, ImportRequest, ImportResponse, ManifestResponse,
+};
 use crate::prelude::*;
 use crate::utilities::http_error::map_reqwest;
 

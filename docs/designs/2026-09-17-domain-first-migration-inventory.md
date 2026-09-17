@@ -119,6 +119,25 @@ crate-private in `domains::memories::delete` and `domains::memories::nav`, so
 they are not a library break. `comemory::cli::delete` and
 `comemory::output::search` themselves are retained.
 
+#172 lands the fourth set. `comemory::sync` and `comemory::cloud` keep
+resolving through crate-root aliases over their new `comemory::domains::sync`
+home, so `comemory::sync::{auth_file, client, client_code, code, code_plan,
+daemon, daemon_templates, daemon_unit, initial, pull, push, push_on_save,
+redact, skip_repos, verify}`, `comemory::cloud::{api_url, device}` and the
+items they re-export are unchanged; the two API cores move with no alias:
+
+| Removed path | New path |
+| --- | --- |
+| `comemory::api::sync` (+ `::{changes, code_import, code_manifest, code_types, import, manifest, types}`) | `comemory::domains::sync::exchange` (+ the same children) |
+| `comemory::api::memory_store` | `comemory::domains::sync::memory_store` |
+
+`cli::watch::backoff_delay` was public only so its own test could reach it and
+moves with the watch service to `domains::sync::watch::backoff_delay`;
+`comemory::cli::watch` itself is retained, now holding the clap arguments, the
+launch and the reporting. `domains::sync::{login, manual, watch}` are new
+public modules rather than moved ones: they hold the non-presentation halves
+of `cli::{auth, sync, watch}`, which were never a library surface.
+
 `comemory::index` is **removed with no replacement**. It has been an empty
 module since v0.2 (indexing moved to `store::vector` / `store::fts`), so nothing
 resolvable was lost; a `crate-root-alias` needs a coherent item to alias, and an
@@ -246,7 +265,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/cli/tune.rs | comemory::cli::tune; preserve | none | none | delivery::cli | src/cli/tune.rs | retain |
 | src/cli/unindex.rs | comemory::cli::unindex; preserve | none | none | delivery::cli | src/cli/unindex.rs | retain |
 | src/cli/upgrade.rs | comemory::cli::upgrade; preserve | none | none | delivery::cli | src/cli/upgrade.rs | retain |
-| src/cli/watch.rs | comemory::cli::watch; preserve | src/cli/tests/watch.rs | none | delivery::cli | src/cli/watch.rs | retain |
+| src/cli/watch.rs | comemory::cli::watch; preserve | none | none | delivery::cli | src/cli/watch.rs | retain |
 | src/config.rs | comemory::config; preserve | none | none | shared::config | src/config.rs | retain |
 | src/config/defaults.rs | private | src/config/tests/defaults.rs | none | shared::config | src/config/defaults.rs | retain |
 | src/config/env.rs | comemory::config::env; preserve | src/config/tests/env.rs; src/config/tests/env_2.rs | none | shared::config | src/config/env.rs | retain |
@@ -339,6 +358,8 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/sync/exchange/manifest.rs | comemory::domains::sync::exchange::manifest; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | none | none | domains::sync | src/domains/sync/exchange/manifest.rs | retain |
 | src/domains/sync/exchange/types.rs | comemory::domains::sync::exchange::types; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | none | none | domains::sync | src/domains/sync/exchange/types.rs | retain |
 | src/domains/sync/initial.rs | comemory::domains::sync::initial; crate-root-alias | src/domains/sync/tests/initial.rs | none | domains::sync | src/domains/sync/initial.rs | retain |
+| src/domains/sync/login.rs | comemory::domains::sync::login; preserve | src/domains/sync/tests/login.rs | none | domains::sync | src/domains/sync/login.rs | retain |
+| src/domains/sync/manual.rs | comemory::domains::sync::manual; preserve | src/domains/sync/tests/manual.rs | none | domains::sync | src/domains/sync/manual.rs | retain |
 | src/domains/sync/memory_store.rs | comemory::domains::sync::memory_store; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/sync/tests/memory_store.rs | none | domains::sync | src/domains/sync/memory_store.rs | retain |
 | src/domains/sync/memory_store/git.rs | private | none | none | domains::sync | src/domains/sync/memory_store/git.rs | retain |
 | src/domains/sync/pull.rs | comemory::domains::sync::pull; crate-root-alias | src/domains/sync/tests/pull.rs | none | domains::sync | src/domains/sync/pull.rs | retain |
@@ -347,6 +368,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/sync/redact.rs | comemory::domains::sync::redact; crate-root-alias | src/domains/sync/tests/redact.rs | src/domains/sync/rules.toml | domains::sync | src/domains/sync/redact.rs | retain |
 | src/domains/sync/skip_repos.rs | comemory::domains::sync::skip_repos; crate-root-alias | src/domains/sync/tests/skip_repos.rs | none | domains::sync | src/domains/sync/skip_repos.rs | retain |
 | src/domains/sync/verify.rs | comemory::domains::sync::verify; crate-root-alias | src/domains/sync/tests/verify.rs | none | domains::sync | src/domains/sync/verify.rs | retain |
+| src/domains/sync/watch.rs | comemory::domains::sync::watch; preserve | src/domains/sync/tests/watch.rs | none | domains::sync | src/domains/sync/watch.rs | retain |
 | src/errors.rs | comemory::errors; preserve | none | none | shared::root | src/errors.rs | retain |
 | src/eval.rs | comemory::eval; crate-root-alias | none | none | domains::learning | src/domains/learning/evaluation.rs | #173 |
 | src/eval/bandit.rs | comemory::eval::bandit; crate-root-alias | src/eval/tests/bandit.rs | none | domains::learning | src/domains/learning/evaluation/bandit.rs | #173 |

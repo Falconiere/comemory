@@ -1,9 +1,9 @@
 //! `GET /sync/changes` — pull log entries above a cursor.
 
+use crate::domains::memories::{Frontmatter, MemoryStore};
 use crate::domains::sync::exchange::{
     ChangesResponse, SyncEntry, SyncOp, SyncRecord, SyncVector, WireFrontmatter,
 };
-use crate::domains::memories::{Frontmatter, MemoryStore};
 use crate::prelude::*;
 use crate::store::{Connection, embed, schema_meta, sync_log, vector};
 use crate::utilities::context::Ctx;

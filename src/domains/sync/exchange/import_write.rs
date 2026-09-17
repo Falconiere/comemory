@@ -1,11 +1,11 @@
 //! Import write path — markdown + SQLite mirror + sync log (rules 8–10).
 
-use crate::domains::sync::exchange::{
-    ImportEntry, ImportItemResult, ImportStatus, SyncOp, SyncRecord, SyncVector,
-};
 use crate::config::Config;
 use crate::domains::memories::frontmatter::Frontmatter;
 use crate::domains::memories::{MemoryStore, SaveParams};
+use crate::domains::sync::exchange::{
+    ImportEntry, ImportItemResult, ImportStatus, SyncOp, SyncRecord, SyncVector,
+};
 use crate::prelude::*;
 use crate::store::{Connection, embed, memory_row, schema_meta, simhash_scan, sync_log, vector};
 use crate::utilities::context::Ctx;

@@ -1,8 +1,8 @@
 //! `comemory auth` — organization login against the cloud platform.
 //!
-//! Nested: `login` / `status` / `logout`. Logic lives in [`crate::domains::sync::cloud`] and
-//! [`crate::domains::sync::initial`]; this module owns clap + TTY/JSON rendering.
-//! CLI-only (no `/api/v1` route).
+//! Nested: `login` / `status` / `logout`. The sequences live in
+//! [`crate::domains::sync::login`]; this module owns clap, the progress
+//! destination and TTY/JSON rendering. CLI-only (no `/api/v1` route).
 
 use std::io::Write as _;
 use std::path::PathBuf;
@@ -13,13 +13,11 @@ use crate::cli::auth_render::{
 };
 use crate::cli::load_config;
 use crate::cli::off_runtime::off_runtime;
-use crate::domains::sync::cloud;
-use crate::config::env;
 use crate::config::paths::{Paths, resolve_data_dir};
+use crate::domains::sync::daemon;
+use crate::domains::sync::login;
 use crate::output::json;
 use crate::prelude::*;
-use crate::domains::sync::auth_file::{self, AuthFile};
-use crate::domains::sync::daemon;
 use clap::{Args as ClapArgs, Subcommand};
 use owo_colors::OwoColorize;
 
@@ -86,30 +84,19 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
 }
 
 fn run_login(paths: &Paths, a: LoginArgs, json_flag: bool) -> Result<()> {
-    let api_url = cloud::resolve_api_url(a.api_url.as_deref())?;
     let mut progress = std::io::stderr().lock();
-    let outcome = cloud::login(&api_url, &mut progress)?;
+    let established = login::establish(paths, a.api_url.as_deref(), a.daemon, &mut progress)?;
     drop(progress);
-    outcome.credentials.save(paths)?;
-    auth_file::clear_stale_allowlist(paths)?;
-    let creds = &outcome.credentials;
-
-    let daemon_json = if a.daemon {
-        daemon::install_and_start_best_effort(paths);
-        DaemonLoginJson {
-            skipped: false,
-            running: daemon::status().ok().map(|s| s.running),
-        }
-    } else {
-        DaemonLoginJson {
-            skipped: true,
-            running: None,
-        }
+    let creds = &established.credentials;
+    let daemon_json = DaemonLoginJson {
+        skipped: established.daemon_skipped,
+        running: established.daemon_running,
     };
 
     // Best-effort: credential is already on disk; sync counts belong in the report.
     let cfg = load_config(paths)?;
-    let synced = off_runtime(|| crate::domains::sync::initial::run_initial_sync(paths, &cfg, creds));
+    let synced =
+        off_runtime(|| crate::domains::sync::initial::run_initial_sync(paths, &cfg, creds));
     if let Err(e) = &synced {
         tracing::warn!(error = %e, "first sync after login failed");
     }
@@ -174,33 +161,12 @@ fn run_login(paths: &Paths, a: LoginArgs, json_flag: bool) -> Result<()> {
 }
 
 fn run_status(paths: &Paths, a: StatusArgs, json_flag: bool) -> Result<()> {
-    let file = AuthFile::load(paths)?;
-    let secret = match &file {
-        Some(creds) => Some(creds.effective_secret()),
-        None => env::api_key_override(),
-    };
-    let Some(secret) = secret else {
-        return emit_logged_out(json_flag);
-    };
-    let api_url = if let Some(raw) = a.api_url.as_deref() {
-        cloud::resolve_api_url(Some(raw))?
-    } else if let Some(creds) = &file {
-        creds.api_url.clone()
-    } else {
-        cloud::resolve_api_url(None)?
-    };
-    let mut report = cloud::org_status(&api_url, &secret, file.as_ref())?;
-    if report.key_prefix.is_none() {
-        report.key_prefix = file.as_ref().map(|c| c.key_prefix.clone());
+    match login::status(paths, a.api_url.as_deref())? {
+        Some(report) => emit_status(json_flag, &report),
+        None => emit_logged_out(json_flag),
     }
-    emit_status(json_flag, &report)
 }
 
 fn run_logout(paths: &Paths, json_flag: bool) -> Result<()> {
-    // Stop while credentials still exist so a failing stop does not leave the
-    // daemon racing against a deleted auth.json mid-clear.
-    daemon::stop_best_effort();
-    let daemon_stopped = daemon::status().map_or(true, |s| !s.running);
-    AuthFile::clear(paths)?;
-    write_logout(json_flag, daemon_stopped)
+    write_logout(json_flag, login::logout(paths)?)
 }

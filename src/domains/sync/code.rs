@@ -6,7 +6,7 @@
 //! `domains::sync::exchange::code_types` describes: file paths and blob OIDs, symbol
 //! names with kinds and line ranges, the resolved `imports` edges and the
 //! mined `co_changed` pairs. Never a line of source — see
-//! [`project_file`], the one place a file entry is built.
+//! [`project_file`](crate::domains::sync::code::project_file), the one place a file entry is built.
 //!
 //! Every indexed repo (`repo_marker`) is offered unless its label matches
 //! `[sync] skip_repos` or `[sync] code_index` is off. The unit of work is
@@ -16,8 +16,8 @@
 //! counted and reported, and the next run re-offers it.
 //!
 //! Two entry points differ only in when they skip the manifest read:
-//! [`run_code_push`] (a manual `comemory sync`, login) always asks the
-//! workspace; [`run_code_push_if_moved`] (the daemon, the tail of
+//! [`run_code_push`](crate::domains::sync::code::run_code_push) (a manual `comemory sync`, login) always asks the
+//! workspace; [`run_code_push_if_moved`](crate::domains::sync::code::run_code_push_if_moved) (the daemon, the tail of
 //! `index-code`) first compares the recorded cursor against the local
 //! head, mining cursor and file digest, and stays silent when nothing moved.
 
@@ -27,13 +27,13 @@ use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 use time::format_description::well_known::Iso8601;
 
-use crate::domains::sync::exchange::{CoChangeWire, CodeFileWire, CodeSymbolWire};
 use crate::config::{Config, Paths};
+use crate::domains::sync::AuthFile;
+use crate::domains::sync::exchange::{CoChangeWire, CodeFileWire, CodeSymbolWire};
+use crate::domains::sync::{client_code, code_plan};
 use crate::prelude::*;
 use crate::store::code_sync::{self, CodeSyncCursor};
 use crate::store::{Connection, connection, indexed_files, repo_marker};
-use crate::domains::sync::AuthFile;
-use crate::domains::sync::{client_code, code_plan};
 
 /// Counters surfaced by `comemory sync` and the login report.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]

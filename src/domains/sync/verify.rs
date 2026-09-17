@@ -6,13 +6,13 @@
 use time::OffsetDateTime;
 use time::format_description::well_known::Iso8601;
 
-use crate::domains::sync::exchange::ManifestResponse;
 use crate::config::{Config, Paths};
-use crate::prelude::*;
-use crate::store::{Connection, sync_state};
 use crate::domains::sync::AuthFile;
 use crate::domains::sync::client;
+use crate::domains::sync::exchange::ManifestResponse;
 use crate::domains::sync::{pull, push};
+use crate::prelude::*;
+use crate::store::{Connection, sync_state};
 use crate::utilities::context::Ctx;
 
 /// Buckets that differ between local and remote manifests.

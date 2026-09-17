@@ -7,8 +7,8 @@
 )]
 //! The pure diff and batching behind the code push.
 
-use comemory::domains::sync::exchange::{CodeFileRef, CodeFileWire, CodeSymbolWire};
 use comemory::domains::sync::code_plan::{MAX_BATCH_FILES, batches, plan};
+use comemory::domains::sync::exchange::{CodeFileRef, CodeFileWire, CodeSymbolWire};
 
 fn local(rows: &[(&str, &str)]) -> Vec<(String, String)> {
     rows.iter()

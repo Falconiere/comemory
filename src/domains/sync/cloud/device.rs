@@ -16,9 +16,9 @@ use std::time::{Duration, Instant};
 use serde::Deserialize;
 use serde::Serialize;
 
+use crate::domains::sync::auth_file::AuthFile;
 use crate::domains::sync::cloud::CLIENT_ID;
 use crate::prelude::*;
-use crate::domains::sync::auth_file::AuthFile;
 use crate::utilities::fetch::{self, Request};
 
 const GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";

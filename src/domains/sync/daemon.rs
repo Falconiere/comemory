@@ -13,11 +13,11 @@ use std::time::{Duration, Instant};
 
 use crate::config::sync::apply_embed_model;
 use crate::config::{Config, Paths};
-use crate::prelude::*;
-use crate::store::connection::open;
 use crate::domains::sync::AuthFile;
 use crate::domains::sync::daemon_unit;
 use crate::domains::sync::{code, pull, push, verify};
+use crate::prelude::*;
+use crate::store::connection::open;
 
 pub use daemon_unit::{
     DAEMON_LABEL, DaemonStatus, SYSTEMD_UNIT, install, launch_agent_plist,

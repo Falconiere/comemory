@@ -16,16 +16,16 @@ use std::time::Duration;
 use time::OffsetDateTime;
 use time::format_description::well_known::Iso8601;
 
-use crate::domains::sync::exchange::changes::enrich_record;
-use crate::domains::sync::exchange::{ImportEntry, ImportRequest, ImportStatus, SyncOp};
 use crate::config::{Config, Paths};
 use crate::domains::memories::MemoryStore;
-use crate::prelude::*;
-use crate::store::{Connection, sync_binding, sync_log, sync_state};
 use crate::domains::sync::AuthFile;
 use crate::domains::sync::client;
+use crate::domains::sync::exchange::changes::enrich_record;
+use crate::domains::sync::exchange::{ImportEntry, ImportRequest, ImportStatus, SyncOp};
 use crate::domains::sync::redact;
 use crate::domains::sync::skip_repos::SkipMatcher;
+use crate::prelude::*;
+use crate::store::{Connection, sync_binding, sync_log, sync_state};
 
 const MAX_BATCH: usize = 500;
 

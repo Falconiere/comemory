@@ -16,9 +16,9 @@
 use comemory::config::{Config, Paths};
 use comemory::domains::memories::Kind;
 use comemory::domains::memories::save;
-use comemory::store::connection;
 use comemory::domains::sync::AuthFile;
 use comemory::domains::sync::push;
+use comemory::store::connection;
 use comemory::utilities::context::Ctx;
 
 use crate::test_common as common;

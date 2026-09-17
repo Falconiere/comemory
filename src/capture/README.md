@@ -7,7 +7,7 @@ receipts / candidate batches over the device-key credential.
 
 **What does NOT belong here:** accept/reject of candidates (workspace key /
 console only), server-side extraction, the local `comemory save` path, or
-sync push/pull (`sync/`).
+sync push/pull (`domains/sync/`).
 
 ## Contents
 

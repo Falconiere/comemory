@@ -9,8 +9,8 @@
 //! Real HTTP coverage of `comemory::domains::sync::client` against the loopback
 //! platform fixture (`tests/common/sync_platform_server.rs`).
 
-use comemory::domains::sync::exchange::{ImportEntry, ImportRequest, ImportStatus, SyncOp};
 use comemory::domains::sync::client;
+use comemory::domains::sync::exchange::{ImportEntry, ImportRequest, ImportStatus, SyncOp};
 
 use crate::test_common::sync_platform_server::{SyncPlatformServer, SyncPlatformState};
 

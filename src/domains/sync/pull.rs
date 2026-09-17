@@ -3,12 +3,12 @@
 use time::OffsetDateTime;
 use time::format_description::well_known::Iso8601;
 
-use crate::domains::sync::exchange::{ImportEntry, ImportRequest};
 use crate::config::{Config, Paths};
-use crate::prelude::*;
-use crate::store::{Connection, sync_state};
 use crate::domains::sync::AuthFile;
 use crate::domains::sync::client;
+use crate::domains::sync::exchange::{ImportEntry, ImportRequest};
+use crate::prelude::*;
+use crate::store::{Connection, sync_state};
 use crate::utilities::context::Ctx;
 
 const MAX_BATCH: usize = 500;

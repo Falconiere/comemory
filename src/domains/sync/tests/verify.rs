@@ -9,9 +9,9 @@
 //! `verify_manifests` against a loopback platform (match + repair paths).
 
 use comemory::config::{Config, Paths};
-use comemory::store::connection;
 use comemory::domains::sync::AuthFile;
 use comemory::domains::sync::verify;
+use comemory::store::connection;
 
 use crate::test_common as common;
 use crate::test_common::sync_platform_server::{

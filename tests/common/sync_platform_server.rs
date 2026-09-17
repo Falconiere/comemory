@@ -10,7 +10,7 @@
 )]
 //! Loopback stand-in for the platform sync + org-key surface.
 //!
-//! Speaks real HTTP so `comemory::sync::client` (reqwest) hits a real socket.
+//! Speaks real HTTP so `comemory::domains::sync::client` (reqwest) hits a real socket.
 //! Covers device code/token, the org-key mint, and the sync routes.
 //!
 //! Every request is appended to an ordered log ([`SyncPlatformServer::requests`])
@@ -628,7 +628,7 @@ fn code_manifest(
 }
 
 /// Apply one import batch onto the in-memory manifest and answer the way
-/// `api::sync::code_import` does.
+/// `domains::sync::exchange::code_import` does.
 fn code_import(
     st: &mut SyncPlatformState,
     authorization: &str,

@@ -4,7 +4,9 @@
 //! `POST /sync/code/import` (code-graph sync design, 2026-09-15).
 //!
 //! The wire models here are shared with the client half beside it
-//! ([`super::client`], [`super::client_code`], [`super::code_plan`]); the
+//! ([`client`](crate::domains::sync::client),
+//! [`client_code`](crate::domains::sync::client_code) and
+//! [`code_plan`](crate::domains::sync::code_plan)); the
 //! `code_*` modules here are the *server's* code import, distinct from the
 //! client's `code.rs`/`client_code.rs` push.
 

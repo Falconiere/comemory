@@ -1,7 +1,7 @@
 //! Cloud platform client: API base URL and RFC 8628 device-code login.
 //!
 //! Mints the organization-scoped key via `POST /v1/device/mint-org-key` and
-//! persists it as [`super::auth_file::AuthFile`] — one `auth.json`
+//! persists it as [`AuthFile`](crate::domains::sync::auth_file::AuthFile) — one `auth.json`
 //! schema shared with `sync`, which reads the same file. HTTP for device
 //! auth shells out through [`crate::utilities::fetch`] (curl/wget). Sync and capture
 //! use in-process reqwest with the `rustls` feature for https platforms.

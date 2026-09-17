@@ -1,18 +1,20 @@
 //! Per-entry import rules (spec rules 1–10).
 
-use crate::domains::sync::exchange::import_state::{
-    frontmatter_equal, id_collision, stale_for_cursor, trash_file_exists, trashed_with_hash,
-    validate_record,
-};
-use crate::domains::sync::exchange::import_write::{log_sync_upsert, patch_frontmatter, write_new_memory};
-use crate::domains::sync::exchange::{ImportEntry, ImportItemResult, ImportStatus, SyncOp};
 use crate::config::Config;
 use crate::domains::memories::MemoryStore;
 use crate::domains::memories::delete;
 use crate::domains::memories::id::is_valid_memory_id;
+use crate::domains::sync::exchange::import_state::{
+    frontmatter_equal, id_collision, stale_for_cursor, trash_file_exists, trashed_with_hash,
+    validate_record,
+};
+use crate::domains::sync::exchange::import_write::{
+    log_sync_upsert, patch_frontmatter, write_new_memory,
+};
+use crate::domains::sync::exchange::{ImportEntry, ImportItemResult, ImportStatus, SyncOp};
+use crate::domains::sync::redact;
 use crate::prelude::*;
 use crate::store::sync_log;
-use crate::domains::sync::redact;
 use crate::utilities::context::Ctx;
 
 /// Apply one import entry, returning its disposition.

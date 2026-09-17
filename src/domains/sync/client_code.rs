@@ -3,9 +3,9 @@
 //! envelope handling as [`crate::domains::sync::client`]; kept beside it so that file
 //! stays under the size ceiling.
 
+use crate::domains::sync::client::{auth_headers, http_client, normalize_api_url, parse_envelope};
 use crate::domains::sync::exchange::{CodeImportRequest, CodeImportResponse, CodeManifestResponse};
 use crate::prelude::*;
-use crate::domains::sync::client::{auth_headers, http_client, normalize_api_url, parse_envelope};
 use crate::utilities::http_error::map_reqwest;
 
 /// `GET {api}/v1/sync/code/manifest?repo=` — what the workspace holds.

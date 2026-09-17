@@ -8,12 +8,12 @@
 
 use time::OffsetDateTime;
 
-use comemory::domains::sync::exchange;
 use comemory::config::{Config, Paths};
 use comemory::domains::memories::frontmatter::{References, Relations};
 use comemory::domains::memories::id::memory_id;
 use comemory::domains::memories::save;
 use comemory::domains::memories::{Kind, MemoryStore};
+use comemory::domains::sync::exchange;
 use comemory::store::connection;
 use comemory::store::sync_log::{self, SyncOp};
 use comemory::utilities::context::Ctx;
@@ -148,7 +148,8 @@ fn id_collision_rejects_live_hash_mismatch() {
     let id = memory_id(body);
 
     assert!(
-        exchange::import_state::id_collision_for_test(&paths, &id, &"ff".repeat(32)).expect("probe"),
+        exchange::import_state::id_collision_for_test(&paths, &id, &"ff".repeat(32))
+            .expect("probe"),
         "live memory hash must differ from a forged wire hash"
     );
 }
@@ -195,7 +196,10 @@ fn secret_detected_blocks_upsert() {
     )
     .expect("import");
 
-    assert_eq!(resp.results[0].status, exchange::ImportStatus::SecretDetected);
+    assert_eq!(
+        resp.results[0].status,
+        exchange::ImportStatus::SecretDetected
+    );
     assert_eq!(resp.results[0].reason.as_deref(), Some("aws-access-key-id"));
 }
 

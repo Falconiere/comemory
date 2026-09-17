@@ -1,8 +1,8 @@
 //! Import validation and memory-state probes (rules 1–2, 6).
 
-use crate::domains::sync::exchange::{ImportEntry, SyncRecord};
 use crate::domains::memories::MemoryStore;
 use crate::domains::memories::id::{is_valid_memory_id, memory_id};
+use crate::domains::sync::exchange::{ImportEntry, SyncRecord};
 use crate::prelude::*;
 use crate::store::{Connection, memory_purge, sync_log};
 use crate::utilities::digest::sha256_hex;

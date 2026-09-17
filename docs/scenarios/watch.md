@@ -12,7 +12,7 @@ latency and a duplicate frame costs one empty pull. A refused or dropped
 socket is not an error: the command reconnects with jittered backoff (1s → 30s)
 until interrupted.
 
-**Runnable tests:** `tests/cli__watch.rs`, `src/cli/tests/watch.rs`
+**Runnable tests:** `tests/cli__watch.rs`, `src/domains/sync/tests/watch.rs`
 
 **HTTP:** none — `transport: "cli-only"`. It talks to the platform's
 `POST /v1/ws/ticket` and `GET /v1/ws`, and holding a socket open until
@@ -55,4 +55,4 @@ _None._
 - **Flags:** _(none)_
 - **Expect:** the schedule never waits less than 1s or more than 30s, and a
   fraction outside `[0, 1]` cannot push it out of that range.
-- **Covered by:** `src/cli/tests/watch.rs::backoff_grows_to_a_thirty_second_ceiling_and_never_drops_below_a_second`
+- **Covered by:** `src/domains/sync/tests/watch.rs::backoff_grows_to_a_thirty_second_ceiling_and_never_drops_below_a_second`

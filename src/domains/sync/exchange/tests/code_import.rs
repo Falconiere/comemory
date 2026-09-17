@@ -10,8 +10,8 @@
 //! the projection and must answer the graph the same way.
 
 use comemory::api;
-use comemory::domains::sync::exchange::{CodeImportRejection, CodeImportRequest, code_import};
 use comemory::config::{Config, Paths};
+use comemory::domains::sync::exchange::{CodeImportRejection, CodeImportRequest, code_import};
 use comemory::store::{Connection, connection, repo_marker};
 use comemory::utilities::context::Ctx;
 
@@ -66,7 +66,10 @@ fn workspace() -> Workspace {
 }
 
 impl Workspace {
-    fn import(&mut self, req: CodeImportRequest) -> comemory::domains::sync::exchange::CodeImportResponse {
+    fn import(
+        &mut self,
+        req: CodeImportRequest,
+    ) -> comemory::domains::sync::exchange::CodeImportResponse {
         let mut ctx = Ctx::borrowed(&self.paths, &self.cfg, &mut self.conn);
         code_import::run(&mut ctx, req).expect("import")
     }
@@ -118,7 +121,13 @@ fn full_request(src: &Source) -> CodeImportRequest {
     let cochange = comemory::store::code_sync::co_changed_pairs(&src.conn, fixture::REPO)
         .unwrap()
         .into_iter()
-        .map(|(from, to, weight)| comemory::domains::sync::exchange::CoChangeWire { from, to, weight })
+        .map(
+            |(from, to, weight)| comemory::domains::sync::exchange::CoChangeWire {
+                from,
+                to,
+                weight,
+            },
+        )
         .collect();
     CodeImportRequest {
         repo: fixture::REPO.into(),
@@ -261,12 +270,13 @@ fn ac7_an_invalid_tail_entry_applies_nothing() {
     let src = source();
     let mut ws = workspace();
     let mut req = full_request(&src);
-    req.files.push(comemory::domains::sync::exchange::CodeFileWire {
-        path: "../outside.ts".into(),
-        blob_oid: "b".repeat(40),
-        symbols: Vec::new(),
-        imports: Vec::new(),
-    });
+    req.files
+        .push(comemory::domains::sync::exchange::CodeFileWire {
+            path: "../outside.ts".into(),
+            blob_oid: "b".repeat(40),
+            symbols: Vec::new(),
+            imports: Vec::new(),
+        });
     let resp = ws.import(req);
     assert_eq!(resp.applied, 0);
     assert_eq!(

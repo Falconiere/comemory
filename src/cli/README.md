@@ -23,11 +23,12 @@ One line per file, named after its primary item:
 | File | Primary item | Purpose |
 | --- | --- | --- |
 | `ast.rs` | `Args` | `comemory ast` — run an ast-grep pattern against a source file |
-| `auth.rs` | `Args` | `comemory auth` — nested `login` / `status` / `logout` for the org-scoped key; `login` runs the first sync (CLI-only) |
+| `auth.rs` | `Args` | `comemory auth` — nested `login` / `status` / `logout` for the org-scoped key; the sequences are `domains::sync::login`, and `login` still runs the first sync (CLI-only) |
 | `auth_render.rs` | `LoginJson` | JSON/TTY helpers for `comemory auth` login/status/logout |
 | `bandit.rs` | `Args` | `comemory bandit` — Thompson-sample the `[tune]` grid, confirm with offline eval |
 | `completion_script.rs` | `Request` | Completion-script generation shared by `comemory completions` and `GET /api/v1/completions` |
 | `completions.rs` | `Args` | `comemory completions <shell>` — emit a shell completion script |
+| `capture.rs` | `Args` | `comemory capture` — post a session transcript's receipts and candidate batches over the device-key credential; core in `crate::capture` |
 | `consolidate.rs` | `Args` | `comemory consolidate` — advisory near-duplicate cluster report |
 | `context.rs` | `Args` | `comemory context` — headline memory + code bundle lookup |
 | `delete.rs` | `Args` | `comemory delete` — soft-delete a memory by id |
@@ -43,6 +44,7 @@ One line per file, named after its primary item:
 | `index.rs` | `Args` | `comemory index <PATH>...` — register document sources and reconcile them |
 | `index_code.rs` | `Args` | `comemory index-code` — incremental symbol extraction over a git repo |
 | `ingest_code.rs` | `Args` | `comemory ingest-code` — bulk pre-embedded code-symbol ingestion from stdin |
+| `install.rs` | `Args` | `comemory install` — install the embedded agent skills and hooks through the native Claude Code or Codex plugin manager; core in `api::install` |
 | `install_hooks.rs` | `Args` | `comemory install-hooks` — install git hooks that trigger `index-code` |
 | `lazy_reindex.rs` | `RepoContext` | Detached, non-blocking auto-reindex trigger behind `indexing.auto_reindex = lazy` |
 | `list.rs` | `Args` | `comemory list` — page live memories with `--repo` / `--kind` filters |
@@ -61,9 +63,9 @@ One line per file, named after its primary item:
 | `show.rs` | `Args` | `comemory show` — one memory in full: body, frontmatter, activation, refs |
 | `sources.rs` | `Args` | `comemory sources` — list registered document sources with status counts |
 | `stats.rs` | `Args` | `comemory stats` — corpus counters and `comemory.db` size |
-| `sync.rs` | `Args` | `comemory sync` — nested `push` / `pull` / `status` / `verify` for cloud sync; `run` and `push` push the code index after the memories |
+| `sync.rs` | `Args` | `comemory sync` — nested `push` / `pull` / `status` / `verify` for cloud sync; the run sequences are `domains::sync::manual`, and `run` and `push` still push the code index after the memories |
 | `sync_render.rs` | `emit_run` | The TTY and `--json` shapes of `comemory sync`: the run counters (memories and code), `status`'s cursors plus one `code` row per indexed repo (`moved_since_push`), the verify report, the daemon status, and the login report's code line |
-| `watch.rs` | `Args` | `comemory watch` — the one long-lived command: holds the platform's workspace channel open and runs a cursored pull on every nudge, reconnecting with jittered backoff |
+| `watch.rs` | `Args` | `comemory watch` — the one long-lived command; arguments, launch and reporting for `domains::sync::watch`, which holds the workspace channel open and pulls on every nudge. This module supplies the `OffRuntime` the service isolates blocking platform calls through |
 | `tune.rs` | `Args` | `comemory tune` — deterministic/sampled search over the blend knobs |
 | `unindex.rs` | `Args` | `comemory unindex <SOURCE_ID\|PATH>` — unregister a document source |
 | `upgrade.rs` | `Args` | `comemory upgrade` — move this binary to the newest release (`--check`, `--version`, `--force`); core in `crate::upgrade`, CLI-only |
@@ -71,5 +73,3 @@ One line per file, named after its primary item:
 When you add a file here, add its row above so the index stays current. No
 `mod.rs` barrel — submodules are declared from `src/cli.rs` (`pub mod <name>;`)
 and the dispatcher (`Cmd`) imports concrete paths.
-
-- `install.rs` / `install/`: installs embedded agent skills and hooks through the native Claude Code or Codex plugin manager.

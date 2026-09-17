@@ -10,8 +10,8 @@
 use comemory::config::{Config, Paths};
 use comemory::domains::memories::Kind;
 use comemory::domains::memories::save;
-use comemory::store::{connection, sync_state};
 use comemory::domains::sync::initial::run_initial_sync;
+use comemory::store::{connection, sync_state};
 use comemory::utilities::context::Ctx;
 
 use crate::test_common as common;

@@ -10,9 +10,9 @@
 
 use comemory::config::{Config, Paths};
 use comemory::domains::code::index_code::IndexMode;
-use comemory::store::connection;
 use comemory::domains::sync::AuthFile;
 use comemory::domains::sync::code::{run_code_push, run_code_push_if_moved};
+use comemory::store::connection;
 
 use crate::test_common as common;
 use crate::test_common::code_sync_fixture as fixture;
@@ -278,7 +278,10 @@ fn code_index_off_stays_silent_even_after_the_index_moves() {
     );
     rig.reindex(IndexMode::Incremental);
     let stats = rig.push_if_moved();
-    assert_eq!(stats, comemory::domains::sync::code::CodePushStats::default());
+    assert_eq!(
+        stats,
+        comemory::domains::sync::code::CodePushStats::default()
+    );
     assert_eq!(
         rig.code_paths().len(),
         2,

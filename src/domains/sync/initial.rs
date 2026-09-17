@@ -18,11 +18,11 @@
 //! it is reported beside the memory counts and re-offered by the next sync.
 
 use crate::config::{Config, Paths};
-use crate::prelude::*;
-use crate::store::{connection, sync_state};
 use crate::domains::sync::AuthFile;
 use crate::domains::sync::code::{self, CodePushStats};
 use crate::domains::sync::{pull, push};
+use crate::prelude::*;
+use crate::store::{connection, sync_state};
 
 /// Page size for each `run_pull` / `run_push` call inside the exhaustive loop.
 ///

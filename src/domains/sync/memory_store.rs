@@ -4,7 +4,8 @@
 //!
 //! **Not platform push/pull.** This synchronizes the data directory's own Git
 //! work tree against the operator's remote and shares nothing with the
-//! organization protocol in [`super::push`] / [`super::pull`]: different
+//! organization protocol in [`push`](crate::domains::sync::push) /
+//! [`pull`](crate::domains::sync::pull): different
 //! credentials, different cursors, its own `store-sync` job and log contract.
 //!
 //! The store is not a row in a table — it IS the data dir.
@@ -19,7 +20,7 @@
 //! creates and migrates a `comemory.db` as a side effect (the same
 //! must-not-create-the-db invariant `api::stats` documents).
 //!
-//! **`git` is the only subprocess.** [`sync`] shells out to `git` — and to
+//! **`git` is the only subprocess.** [`sync`](crate::domains::sync::memory_store::sync) shells out to `git` — and to
 //! nothing else — always through the child module's `git::run`, which
 //! captures output with `.output()` (never a detached `.spawn()`), so every
 //! step's stdout/stderr is available for the job log and for the error
