@@ -66,6 +66,9 @@ Understanding-oriented background:
   retrieval pipeline, the edge graph, auto-reinforcement, and pagination.
 - **[Sync daemon design](designs/2026-09-14-sync-daemon.md)** — user-level
   OS daemon + exhaustive post-login sync (replaces in-process auto-sync hooks).
+- **[Domain-first migration contract](designs/2026-09-17-domain-first-migration.md)** —
+  staged, behavior-preserving migration of the Rust CLI from technical layers
+  to business capabilities.
 - **[Benchmarking token efficiency](benchmark.md)** — what exists to measure
   how many tokens and tool calls comemory saves an agent, and the first
   experiment that would put a number on it.
