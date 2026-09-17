@@ -8,6 +8,11 @@ INVENTORY=
 FILES=()
 SCOPED=false
 bad() { printf 'architecture-check: %s\n' "$*" >&2; exit 3; }
+bad_file() {
+  printf 'architecture-check: %s' "$1" >&2
+  if [ -s "$2" ]; then cat "$2" >&2; else printf '\n' >&2; fi
+  exit 3
+}
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --file)
@@ -196,7 +201,7 @@ rule:
     - kind: type_item
     - kind: macro_definition
 ' --globs '!**/tests/**' --json=compact src >"$TASK_TMP/ast" 2>"$TASK_TMP/ast_errors" || status=$?
-[ "$status" -le 1 ] || bad "Rust parser failed: $(cat "$TASK_TMP/ast_errors")"
+[ "$status" -le 1 ] || bad_file 'Rust parser failed: ' "$TASK_TMP/ast_errors"
 jq -e 'type == "array"' "$TASK_TMP/ast" >/dev/null || bad 'Rust parser returned invalid output'
 jq '
   def module_path: ltrimstr("src/") | rtrimstr(".rs") | split("/") |
@@ -384,6 +389,6 @@ jq -nr --slurpfile p "$POLICY" --slurpfile inv "$TASK_TMP/inventory" \
     else empty end
   ] | unique | sort_by(.source,.target,.why) | group_by(.source)[] |
     .[0].source+":", (.[]|"  "+.why+(if .target == "" then "" else " -> "+.target end))
-' >"$TASK_TMP/diagnostics" 2>"$TASK_TMP/jq_errors" || bad "analysis failed: $(cat "$TASK_TMP/jq_errors")"
+' >"$TASK_TMP/diagnostics" 2>"$TASK_TMP/jq_errors" || bad_file 'analysis failed: ' "$TASK_TMP/jq_errors"
 if [ -s "$TASK_TMP/diagnostics" ]; then cat "$TASK_TMP/diagnostics" >&2; exit 1; fi
 exit 0

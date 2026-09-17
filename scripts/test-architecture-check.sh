@@ -16,6 +16,7 @@ write_baseline() {
 }
 write_baseline "$ROOT/docs/designs/2026-09-17-domain-first-migration-inventory.md" "$TASK_TMP/baseline"
 
+put() { mkdir -p "$TREE/$(dirname "$1")"; printf '%s\n' "$2" >"$TREE/$1"; }
 new_tree() {
   TREE="$TASK_TMP/$1"
   mkdir -p "$TREE/src" "$TREE/scripts" "$TREE/docs/designs"
@@ -25,7 +26,6 @@ new_tree() {
     jq -r '.legacy_modules[].module | sub("^crate::";"src/")+".rs"' "$ROOT/scripts/architecture-policy.json")
   put src/lib.rs '//! Fixture crate.'
 }
-put() { mkdir -p "$TREE/$(dirname "$1")"; printf '%s\n' "$2" >"$TREE/$1"; }
 policy() {
   jq "$1" "$TREE/scripts/architecture-policy.json" >"$TASK_TMP/next.json"
   cp "$TASK_TMP/next.json" "$TREE/scripts/architecture-policy.json"
@@ -111,6 +111,19 @@ assert_fails() {
   fi
   COUNT=$((COUNT + 1))
 }
+
+# Error output is emitted as data from its file, never interpolated into a
+# command-substitution argument. This keeps diagnostics intact when a parser
+# reports shell-significant text.
+assert_no_interpolated_error_files() {
+  local command_substitution='$'"(cat "
+  if rg -Fq "$command_substitution" "$CHECK" "$ROOT/scripts/lib/architecture-inventory.sh"; then
+    printf 'FAIL: architecture diagnostics interpolate error files\n' >&2
+    exit 1
+  fi
+  COUNT=$((COUNT + 1))
+}
+assert_no_interpolated_error_files
 
 TEST_GATE_WIRING=test_gate_wiring
 CHECK_ALL=$ROOT/scripts/check-all.sh

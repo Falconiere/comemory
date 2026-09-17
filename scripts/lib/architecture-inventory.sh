@@ -2,6 +2,11 @@
 # Shared complete inventory validation for the gate and its regression harness.
 validate_inventory() (
   fail() { printf 'architecture-policy: %s\n' "$*" >&2; exit 1; }
+  fail_file() {
+    printf 'architecture-policy: ' >&2
+    cat "$1" >&2
+    exit 1
+  }
   scratch=$(mktemp -d)
   trap 'rm -rf "$scratch"' EXIT
   find src -type f -name '*.rs' ! -path '*/tests/*' | sort >"$scratch/files"
@@ -132,7 +137,7 @@ rule:
       (.target == $edge.target or (.target|startswith($edge.target+"::")))) then empty
     else "absent policy edge: \(.source) -> \(.target)" end
   ' "$POLICY" >"$scratch/absent" || fail 'policy edge validation failed'
-  [[ ! -s "$scratch/absent" ]] || fail "$(cat "$scratch/absent")"
+  [[ ! -s "$scratch/absent" ]] || fail_file "$scratch/absent"
   fi
   jq -r '
     def resolve: split("/") | reduce .[] as $p ([];
