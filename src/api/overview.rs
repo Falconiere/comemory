@@ -22,6 +22,7 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::api::{list, stats};
+use crate::domains::code::repos;
 use crate::prelude::*;
 use crate::store::{Connection, edges, eval_runs, index_runs, memory_row};
 use crate::utilities::context::Ctx;
@@ -193,9 +194,9 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
             repo: req.repo.clone(),
         },
     )?);
-    let inventory = crate::domains::code::repos::run(
+    let inventory = repos::run(
         ctx,
-        crate::domains::code::repos::Request {
+        repos::Request {
             repo: req.repo.clone(),
         },
     )?;
@@ -284,7 +285,7 @@ fn recent_request(repo: Option<String>) -> list::Request {
 
 /// Roll the per-repo inventory up into one index state (see
 /// [`IndexState::status`] for why the worst status wins).
-fn index_state_of(rows: Vec<crate::domains::code::repos::Row>, checked_at: String) -> IndexState {
+fn index_state_of(rows: Vec<repos::Row>, checked_at: String) -> IndexState {
     let status = if rows.iter().any(|r| r.status == STALE) {
         STALE
     } else if rows.iter().any(|r| r.status == FRESH) {

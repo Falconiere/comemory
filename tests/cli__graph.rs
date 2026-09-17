@@ -11,7 +11,6 @@
 
 use assert_cmd::Command;
 use comemory::cli::graph::nodes::build_graph;
-use comemory::cli::graph::parse_id;
 use comemory::output::graph::Edge;
 use comemory::store::code_graph_nodes::NodeRow;
 use tempfile::TempDir;
@@ -212,25 +211,6 @@ fn build_graph_materializes_dangling_edge_endpoints() {
         "a file the index has never seen cites no memories"
     );
     assert_eq!(dangling.blob, None, "and has no pinned blob");
-}
-
-#[test]
-fn parse_id_splits_repo_and_path() {
-    assert_eq!(
-        parse_id("file:demo:src/a.rs"),
-        Some(("demo", "src/a.rs")),
-        "well-formed id splits into (repo, path)"
-    );
-    assert_eq!(
-        parse_id("file:demo:src/dir:weird.rs"),
-        Some(("demo", "src/dir:weird.rs"))
-    );
-    assert_eq!(parse_id("notfile:demo:x"), None, "wrong prefix rejected");
-    assert_eq!(
-        parse_id("file:demo"),
-        None,
-        "missing path separator rejected"
-    );
 }
 
 /// Build a `comemory` invocation with `COMEMORY_DATA_DIR` rooted at `home`.

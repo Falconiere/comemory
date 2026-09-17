@@ -11,7 +11,9 @@
 
 use comemory::errors::Error;
 use comemory::store::{code_row, connection};
-use comemory::utilities::repo_root::{RootOverrides, id_to_abs_path, rel_of, resolve_root};
+use comemory::utilities::repo_root::{
+    RootOverrides, id_to_abs_path, parse_id, rel_of, resolve_root,
+};
 use tempfile::TempDir;
 
 /// Open a migrated `comemory.db` in a fresh temp data dir.
@@ -88,4 +90,23 @@ fn id_to_abs_path_resolves_and_contains() {
 fn rel_of_splits_path() {
     assert_eq!(rel_of("file:demo:src/a.rs"), Some("src/a.rs"));
     assert_eq!(rel_of("bogus"), None);
+}
+
+#[test]
+fn parse_id_splits_repo_and_path() {
+    assert_eq!(
+        parse_id("file:demo:src/a.rs"),
+        Some(("demo", "src/a.rs")),
+        "well-formed id splits into (repo, path)"
+    );
+    assert_eq!(
+        parse_id("file:demo:src/dir:weird.rs"),
+        Some(("demo", "src/dir:weird.rs"))
+    );
+    assert_eq!(parse_id("notfile:demo:x"), None, "wrong prefix rejected");
+    assert_eq!(
+        parse_id("file:demo"),
+        None,
+        "missing path separator rejected"
+    );
 }

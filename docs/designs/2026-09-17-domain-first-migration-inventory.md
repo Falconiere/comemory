@@ -77,11 +77,14 @@ homes; the following move with no alias:
 | `comemory::api::install_hooks` | `comemory::domains::code::install_hooks` |
 | `comemory::serve::repo_root` | `comemory::utilities::repo_root` |
 | `comemory::cli::lazy_reindex::{LastTrigger, should_reindex, parse_trigger, encode_trigger}` | `comemory::domains::code::reindex_policy::{…}` |
+| `comemory::cli::graph::parse_id` | `comemory::utilities::repo_root::parse_id` |
 
 `comemory::serve::RootOverrides` is **unchanged**: the re-export predates #167
 and now points at `utilities::repo_root::RootOverrides`.
 `comemory::cli::lazy_reindex` itself is retained — only the four items above
-left it.
+left it. `parse_id` moves for the same reason `repo_root` does: the shared
+resolver decodes `file:<repo>:<path>` ids, and a shared primitive may not
+import a delivery module. `comemory::cli::graph` itself is retained.
 
 `comemory::index` is **removed with no replacement**. It has been an empty
 module since v0.2 (indexing moved to `store::vector` / `store::fts`), so nothing

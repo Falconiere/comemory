@@ -404,12 +404,6 @@
     },
     {
       "source": "src/cli/graph/nodes.rs",
-      "target": "crate::cli::graph",
-      "class": "delivery",
-      "issue": "#170"
-    },
-    {
-      "source": "src/cli/graph/nodes.rs",
       "target": "crate::output::graph",
       "class": "delivery",
       "issue": "#170"

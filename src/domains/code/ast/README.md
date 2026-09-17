@@ -1,4 +1,4 @@
-# ast/
+# `domains/code/ast/`
 
 **What belongs here:** ast-grep-based symbol extraction and pattern search —
 turning source text into `ExtractedSymbol`s and running user-supplied AST
@@ -8,7 +8,8 @@ javascript, python, go).
 **What does NOT belong here:** persisting extracted symbols to SQLite (that's
 `store::code_row`), resolving per-language import statements (that's
 `graph::imports`), and the `comemory ast` CLI argument shape (that's
-`cli::ast`, which calls into `pattern::find`).
+`cli::ast`, which reaches `pattern::find` through
+`domains::code::pattern_search`).
 
 ## Contents
 
@@ -23,5 +24,6 @@ One line per file, named after its primary item:
 | `pattern_cache.rs` | `cached` | Process-global, compile-once cache of ast-grep `Pattern`s |
 
 When you add a file here, add its row above so the index stays current. No
-`mod.rs` barrel — submodules are declared from `src/ast.rs` (`pub mod <name>;`)
-and callers import concrete paths.
+`mod.rs` barrel — submodules are declared from
+`src/domains/code/ast.rs` (`pub mod <name>;`) and callers import concrete
+paths.

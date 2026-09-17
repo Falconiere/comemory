@@ -19,9 +19,11 @@ domain scaffold.
 
 ## Contents
 
+One row per capability — its sibling module file and its folder together:
+
 | Capability | Owns | Landed by |
 | --- | --- | --- |
-| [`code/`](code/README.md) | AST extraction, code indexing, the repository inventory, Git hooks, reindex freshness | #167 |
+| `code.rs` + [`code/`](code/README.md) | AST extraction, code indexing, the repository inventory, Git hooks, reindex freshness | #167 |
 
 The remaining nine capabilities named by the contract — `memories`, `documents`,
 `graph`, `retrieval`, `learning`, `sync`, `capture`, `maintenance`,

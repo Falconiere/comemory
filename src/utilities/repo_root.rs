@@ -7,11 +7,15 @@
 //! then hand off to [`crate::utilities::path_containment::resolve_within`] for the
 //! canonicalize-and-contain check. Every file read and write funnels through
 //! [`id_to_abs_path`], so the containment guarantee has a single chokepoint.
+//!
+//! [`parse_id`] — the decoder for that id grammar, and the inverse of
+//! `store::edges::file_node_id` — lives here rather than in `cli::graph`,
+//! where it sat until #167: a shared primitive may not reach into a delivery
+//! adapter, and every consumer of the resolver needs the decoder too.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::cli::graph::parse_id;
 use crate::prelude::*;
 use crate::store::Connection;
 use crate::store::repo_marker_roots;
@@ -19,6 +23,15 @@ use crate::utilities::path_containment;
 
 /// `--root <repo>=<path>` overrides, keyed by repo label.
 pub type RootOverrides = HashMap<String, PathBuf>;
+
+/// Split a canonical file node id (`file:<repo>:<path>`) into `(repo, path)`.
+/// Returns `None` for ids that do not follow the convention. Assumes repo
+/// labels contain no `:` (the same assumption baked into
+/// `store::edges::file_node_prefix`'s `substr` predicate); a repo with a `:`
+/// would split on the wrong colon.
+pub fn parse_id(id: &str) -> Option<(&str, &str)> {
+    id.strip_prefix("file:")?.split_once(':')
+}
 
 /// Resolve the canonical absolute working-tree root for `repo`. Precedence:
 /// an explicit `--root` override, then `repo_marker.root_path`, then an error
