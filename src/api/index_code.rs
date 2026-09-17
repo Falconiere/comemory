@@ -17,11 +17,12 @@ use ignore::WalkBuilder;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::api::Ctx;
 use crate::git_utils::{self, map_git_err};
 use crate::graph::{derived, materialize};
 use crate::prelude::*;
 use crate::store::{Connection, code_row, index_runs, memory_row, random_id, repo_marker};
+use crate::utilities::context::Ctx;
+use crate::utilities::progress::ProgressSink;
 
 /// File-walk / symbol-write internals, shared (in part) with
 /// `cli::index_code`'s `--extract` path.
@@ -85,30 +86,6 @@ pub struct Response {
     /// the repo's `code_vec` rows are gone until the caller re-runs
     /// `ingest-code` (see [`IndexMode::Full`]).
     pub mode: IndexMode,
-}
-
-/// Progress-reporting sink for a long `index-code` walk: [`ProgressSink::on_progress`]
-/// after every candidate file (indexed or skipped alike) with the running
-/// `(done, total)` file counts, [`ProgressSink::on_log`] for one
-/// human-readable line per file actually (re)indexed. `serve::jobs::worker`
-/// implements this over the job [`crate::serve::jobs::Registry`]; the CLI
-/// never constructs one — [`run`] passes `None`, which is the "no-op" the
-/// plan calls for. Implementations must be best-effort: neither method
-/// returns a `Result`, so a reporting failure can only be handled (e.g.
-/// `tracing::warn!`) inside the implementation itself, never by failing the
-/// walk it instruments.
-pub trait ProgressSink: Send + Sync {
-    /// Report progress after processing one candidate file.
-    fn on_progress(&self, done: u64, total: u64);
-    /// Append one line to the job's log tail.
-    fn on_log(&self, line: &str);
-    /// Whether the caller asked this run to stop (`POST /jobs/{id}/cancel`).
-    /// Polled at every file boundary; `true` makes the walk return
-    /// [`Error::Cancelled`] and roll its transaction back. Defaults to
-    /// `false` — a sink that cannot be cancelled never is.
-    fn is_cancelled(&self) -> bool {
-        false
-    }
 }
 
 /// `comemory index-code` (DB-write path) / `POST /api/v1/code/index`: walk

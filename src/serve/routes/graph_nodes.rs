@@ -22,14 +22,15 @@ use axum::response::Response;
 use axum::routing::{get, post};
 use serde::Serialize;
 
-use crate::api::{self, Ctx};
+use crate::api;
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::jobs;
 use crate::serve::routes::{RouteEntry, accepted, guard_job, respond, run_blocking};
 use crate::serve::scope::RepoScope;
-use crate::serve::security;
 use crate::store::{code_graph_nodes, repo_marker_roots};
+use crate::utilities::context::Ctx;
+use crate::utilities::path_containment;
 
 /// The largest file the console reads in one response.
 const SOURCE_LIMIT_BYTES: u64 = 1024 * 1024;
@@ -192,7 +193,7 @@ fn read_node_source(ctx: &mut Ctx<'_>, id: &str, scope: Option<&str>) -> Result<
             reason: Some("worktree_missing"),
         });
     };
-    let file = security::resolve_within(&root, &path)?;
+    let file = path_containment::resolve_within(&root, &path)?;
     let Ok(metadata) = file.metadata() else {
         return Ok(NodeSource {
             content: None,

@@ -138,7 +138,8 @@
       "cloud",
       "api/install",
       "api/setup",
-      "cli/setup"
+      "cli/setup",
+      "utilities"
     ]
   },
   "fileSize": {

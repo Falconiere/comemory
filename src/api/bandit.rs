@@ -12,7 +12,6 @@
 
 use serde::Deserialize;
 
-use crate::api::Ctx;
 use crate::api::eval::{RunOutcome, default_k, record_run};
 use crate::eval::bandit::{self, BanditReport};
 use crate::eval::golden;
@@ -20,6 +19,7 @@ use crate::eval::runner;
 use crate::eval::tune;
 use crate::prelude::*;
 use crate::store::Connection;
+use crate::utilities::context::Ctx;
 
 /// `comemory bandit` / `POST /api/v1/bandit` request.
 #[derive(Deserialize, Debug)]

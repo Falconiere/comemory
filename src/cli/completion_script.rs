@@ -1,10 +1,12 @@
-//! `api::completions::{Request, run}` — the shared middle of `comemory
+//! `cli::completion_script::{Request, run}` — the shared middle of `comemory
 //! completions <shell>` / `GET /api/v1/completions?shell=`: generate a
-//! shell completion script for `Cli` into an owned buffer. Moved out of
-//! `cli::completions::run` (Binding Rule 1) — the CLI still writes the
-//! result to stdout unchanged (byte-identical, AC-13). [`run`] never
+//! shell completion script for [`Cli`] into an owned buffer. [`run`] never
 //! touches stdout, generating into a `Vec<u8>` buffer instead so the same
 //! bytes can also serve as an HTTP response body.
+//!
+//! Delivery-owned on purpose (#166): generating a completion script *is* clap
+//! work, so it belongs beside the clap definition it reflects rather than in
+//! a command core that would then have to import `cli::Cli`.
 //!
 //! Conn-free: `comemory completions` has no DB at all, so `run` never
 //! calls `Ctx::conn`.
@@ -15,9 +17,9 @@ use clap::CommandFactory;
 use clap_complete::{Shell, generate};
 use serde::Deserialize;
 
-use crate::api::Ctx;
 use crate::cli::Cli;
 use crate::prelude::*;
+use crate::utilities::context::Ctx;
 
 /// `comemory completions` / `GET /api/v1/completions` request.
 #[derive(Deserialize, Debug)]
@@ -42,5 +44,5 @@ pub fn run(_ctx: &mut Ctx<'_>, req: Request) -> Result<String> {
 }
 
 #[cfg(test)]
-#[path = "tests/completions.rs"]
+#[path = "tests/completion_script.rs"]
 mod tests;

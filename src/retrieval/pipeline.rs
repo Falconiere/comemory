@@ -13,6 +13,7 @@ use crate::retrieval::{diversify, rerank, router};
 use crate::store::Connection;
 use crate::store::memory_row;
 use crate::store::retrieval_log::{self, NewLogRow};
+use crate::utilities::pagination::PageWindow;
 
 /// Caller-facing knobs for one pipeline run.
 #[derive(Debug, Clone, Copy)]
@@ -22,37 +23,13 @@ pub struct SearchOptions {
     /// measurement cannot pollute its own training signal.
     pub track: bool,
     /// Query origin written verbatim to `retrieval_log.source` — one of
-    /// the [`crate::stats::source`] consts (`SEARCH`, `CONTEXT`,
+    /// the `crate::utilities::telemetry::source` consts (`SEARCH`, `CONTEXT`,
     /// `SEARCH_CODE`). Reformulation mining excludes `search-code` rows,
     /// which can only earn code-target feedback.
     pub source: &'static str,
     /// The `(offset, limit)` page of the bounded ranked window to return.
     /// Use [`PageWindow::top_k`] for the unpaginated first-page default.
     pub window: PageWindow,
-}
-
-/// The `(offset, limit)` slice a paginated retrieval should return from the
-/// bounded ranked window. `limit == 0` is the "page size = remaining within
-/// the window" sentinel (mirrors the shared [`crate::output::page::Page`]
-/// "all" rule, bounded here by `max_page_window`).
-#[derive(Debug, Clone, Copy)]
-pub struct PageWindow {
-    /// Leading ranked results to skip before the page starts.
-    pub offset: usize,
-    /// Page size; `0` means "everything remaining within the window".
-    pub limit: usize,
-}
-
-impl PageWindow {
-    /// The full first page sized to `top_k` — the unpaginated default that
-    /// reproduces the pre-pagination behavior (`offset = 0`, `limit =
-    /// top_k`).
-    pub fn top_k(cfg: &Config) -> Self {
-        Self {
-            offset: 0,
-            limit: cfg.retrieval.top_k,
-        }
-    }
 }
 
 /// Candidate-pool size for paging into a ranked result list with this
@@ -264,7 +241,7 @@ fn record_query(
 /// text-encodes its symbol ids so the `returned_ids` column shape matches
 /// the memory rows). Logs the repo/kind filters the caller searched with
 /// (verbatim, `None` → NULL; `kind` carries `--lang` for code searches)
-/// and the query `source` (a [`crate::stats::source`] const). Best-effort
+/// and the query `source` (a `crate::utilities::telemetry::source` const). Best-effort
 /// like [`record_access`]: a logging failure warns and returns `None` —
 /// the search result must never depend on telemetry.
 pub(crate) fn log_retrieval(
@@ -284,7 +261,7 @@ pub(crate) fn log_retrieval(
             return None;
         }
     };
-    let query_id = crate::stats::feedback::generate_query_id(query, now);
+    let query_id = crate::utilities::query_id::generate_query_id(query, now);
     let returned = match serde_json::to_string(returned_ids) {
         Ok(s) => s,
         Err(e) => {

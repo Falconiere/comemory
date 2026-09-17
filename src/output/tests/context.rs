@@ -12,10 +12,11 @@
 //! accepts an empty bundle without panicking.
 
 use comemory::output::context::{self, ContextResult};
-use comemory::output::search::{PageMeta, ScopeEcho};
+use comemory::output::search::ScopeEcho;
 use comemory::retrieval::bundle::{Bundle, CodeRow};
 use comemory::retrieval::code_prior::CodePriorParts;
 use comemory::retrieval::scope::TimeScope;
+use comemory::utilities::pagination::PageMeta;
 
 /// Representative memory-list pagination cursor for the unpaginated first
 /// page (page size 12, no offset, empty in-window list).

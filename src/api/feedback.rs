@@ -12,12 +12,13 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::api::Ctx;
-use crate::cli::{parse_id_csv, parse_symbol_id_csv};
 use crate::prelude::*;
 use crate::stats::code_feedback::record_code_with_provenance;
-use crate::stats::feedback::{Source, is_valid_query_id, record_with_provenance};
+use crate::stats::feedback::{Source, record_with_provenance};
 use crate::stats::sqlite::StatsDb;
+use crate::utilities::context::Ctx;
+use crate::utilities::id_list::{parse_id_csv, parse_symbol_id_csv};
+use crate::utilities::query_id::is_valid_query_id;
 
 /// `comemory feedback` / `POST /api/v1/feedback` request.
 #[derive(Deserialize, Debug)]

@@ -6,8 +6,8 @@ use reqwest::blocking::Client;
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
 
-use crate::http_error::map_reqwest;
 use crate::prelude::*;
+use crate::utilities::http_error::map_reqwest;
 
 use super::redact::RedactionAttestation;
 

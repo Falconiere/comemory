@@ -2,6 +2,7 @@
 
 **What belongs here:** the durable document-source registry — TOML-backed
 registration of external roots (`sources.toml`), the exclusive-flock guard
+(now `utilities::file_lock`, shared with `store::migrate`'s preflight snapshot)
 over concurrent read-modify-write cycles, the discovery walk and file
 classification that decide which files are in scope, and the reconciler that
 mirrors the registry into SQLite's `source_roots` table.
@@ -19,7 +20,6 @@ One line per file, named after its primary item:
 | --- | --- | --- |
 | `classify.rs` | `Classification` | v1 extension allowlist + binary-content sniff, managed-directory exclusion |
 | `discover.rs` | `Candidate` | Discovery walk over a registered source root: boundary/ignore/exclusion rules |
-| `lock.rs` | `FileLock` | Exclusive advisory lock over a sibling lock file (generalized from `sources.toml.lock`; also consumed by `store::migrate`'s preflight snapshot) |
 | `mirror.rs` | `MirrorReport` | Reconciles the TOML registry into the SQLite `source_roots` mirror |
 | `registry.rs` | `Registry` | `sources.toml` load/save, overlap validation, atomic durability |
 

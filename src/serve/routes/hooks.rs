@@ -30,11 +30,12 @@ use axum::routing::{get, put};
 use axum::{Json, Router};
 use serde::Deserialize;
 
-use crate::api::{self, Ctx};
+use crate::api;
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::routes::maint::admin::contain_repo;
 use crate::serve::routes::{RouteEntry, guard_mutating, respond, run_blocking};
+use crate::utilities::context::Ctx;
 
 /// This resource's route-table entries, appended onto [`super::table`].
 pub fn table_entries() -> &'static [RouteEntry] {

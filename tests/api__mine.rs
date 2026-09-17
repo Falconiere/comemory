@@ -13,9 +13,10 @@
 //! `tests/serve__routes__maint__admin.rs`).
 
 use assert_cmd::Command;
-use comemory::api::{self, Ctx};
+use comemory::api;
 use comemory::config::{Config, Paths};
 use comemory::store::connection;
+use comemory::utilities::context::Ctx;
 use tempfile::TempDir;
 
 fn bin(home: &TempDir) -> Command {

@@ -13,11 +13,12 @@
 //! suite `tests/cli__show.rs`, where a subprocess is the more faithful
 //! consumer of both `comemory search` and `comemory index-code`.
 
-use comemory::api::{self, Ctx};
+use comemory::api;
 use comemory::config::{Config, Paths};
 use comemory::errors::Error;
 use comemory::memory::Kind;
 use comemory::store::connection;
+use comemory::utilities::context::Ctx;
 
 /// `api::save::run` with no CLI raw-vector input, mirroring `api::tests::save`.
 fn save(ctx: &mut Ctx<'_>, req: api::save::Request) -> api::save::Response {

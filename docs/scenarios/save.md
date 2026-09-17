@@ -4,7 +4,7 @@ Write a memory as markdown (the source of truth) and upsert the SQLite
 mirror: FTS, optional vector, relation edges, and code refs.
 
 **Runnable tests:** `tests/cli__save.rs`, `tests/cli__save_2.rs`,
-`tests/cli__save_3.rs`, `tests/cli__ref_args.rs`,
+`tests/cli__save_3.rs`, `tests/utilities__ref_args.rs`,
 `tests/cli_scenario_memory_lifecycle.rs`
 
 **HTTP:** `POST /api/v1/memories` — covered by `tests/serve_scenario_memory_lifecycle.rs`, `tests/serve_scenario_getting_started.rs`, `tests/serve_scenario_vectors.rs`, `tests/serve__routes__memories__write.rs` (replay `created`, `409 id_collision`)
@@ -129,7 +129,7 @@ echo '{"embedding":[...1024 floats...]}' | comemory save "body" --vector-stdin
 - **Command:** `comemory save body --ref-symbol src/lib.rs:foo`
 - **Expect:** frontmatter + `code_ref` row + edge. A value without `:symbol`
   is usage (exit 64).
-- **Covered by:** `tests/cli__ref_args.rs`
+- **Covered by:** `tests/utilities__ref_args.rs`
 
 ### save-11 Ref file untracked
 
@@ -137,7 +137,7 @@ echo '{"embedding":[...1024 floats...]}' | comemory save "body" --vector-stdin
 - **Setup:** path not in the git tree
 - **Command:** `comemory save body --ref-file untracked.txt`
 - **Expect:** exit 0, unpinned, advisory warning.
-- **Covered by:** `tests/cli__ref_args.rs::untracked_path_is_unpinned_with_warning`
+- **Covered by:** `tests/utilities__ref_args.rs::untracked_path_is_unpinned_with_warning`
 
 ### save-12 Idempotent replay
 

@@ -1,11 +1,11 @@
 //! `GET /sync/code/manifest?repo=` — the per-file digest list the pushing
 //! side diffs against, plus the repo's head and co-change cursor.
 
-use crate::api::Ctx;
 use crate::api::sync::code_import_rules::repo_label_error;
 use crate::api::sync::code_types::{CodeFileRef, CodeManifestResponse};
 use crate::prelude::*;
 use crate::store::{indexed_files, repo_marker};
+use crate::utilities::context::Ctx;
 
 /// List every `indexed_files` row for `repo` with the marker's cursors. An
 /// unknown label is not an error: the answer is an empty list, which is

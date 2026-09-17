@@ -16,11 +16,11 @@
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 
-use crate::api::Ctx;
 use crate::cli::graph::{Rel, build_code_graph, build_graph_page};
 use crate::output::graph::{CodeGraph, GraphPage};
 use crate::prelude::*;
 use crate::store::Connection;
+use crate::utilities::context::Ctx;
 
 /// `GET /api/v1/graph` request. `format` is CLI-only (documented exclusion
 /// — HTTP is always JSON).

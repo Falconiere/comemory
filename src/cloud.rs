@@ -3,7 +3,7 @@
 //! Mints the organization-scoped key via `POST /v1/device/mint-org-key` and
 //! persists it as [`crate::sync::auth_file::AuthFile`] — one `auth.json`
 //! schema shared with `sync`, which reads the same file. HTTP for device
-//! auth shells out through [`crate::fetch`] (curl/wget). Sync and capture
+//! auth shells out through [`crate::utilities::fetch`] (curl/wget). Sync and capture
 //! use in-process reqwest with the `rustls` feature for https platforms.
 //! CLI-only: there is no `/api/v1` route for `auth`.
 

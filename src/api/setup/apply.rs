@@ -9,8 +9,9 @@
 
 use super::detect::Detected;
 use super::{AGENT_HOST, DATA_DIR, GIT_HOOKS, INDEX_CODE, REINFORCE, Step, StepState};
-use crate::api::{self, Ctx};
+use crate::api;
 use crate::prelude::*;
+use crate::utilities::context::Ctx;
 
 /// Apply every [`StepState::Pending`] step in `steps`, in place. Infallible
 /// by construction: a step's error becomes its [`StepState::Failed`] rather

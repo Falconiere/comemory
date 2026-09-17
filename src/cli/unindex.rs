@@ -7,12 +7,13 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::api::{self, Ctx};
+use crate::api;
 use crate::config::Config;
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::output::json;
 use crate::prelude::*;
 use crate::store::connection;
+use crate::utilities::context::Ctx;
 
 const EXAMPLES: &str = "\
 Examples:

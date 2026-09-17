@@ -6,9 +6,10 @@
     clippy::too_many_lines
 )]
 
-use comemory::api::{Ctx, sync};
+use comemory::api::sync;
 use comemory::config::{Config, Paths};
 use comemory::store::connection;
+use comemory::utilities::context::Ctx;
 
 #[test]
 fn empty_changes_returns_zero_head() {

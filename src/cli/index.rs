@@ -9,13 +9,14 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
+use crate::api;
 use crate::api::index::Output;
-use crate::api::{self, Ctx};
 use crate::cli::load_config;
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::output::{json, tty};
 use crate::prelude::*;
 use crate::store::connection;
+use crate::utilities::context::Ctx;
 
 const EXAMPLES: &str = "\
 Examples:

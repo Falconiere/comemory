@@ -1,12 +1,12 @@
 //! `api::setup::apply` — the write phase, against a real temporary data
 //! directory and a real `git init` working tree carrying real Rust files.
 use super::run;
-use crate::api::Ctx;
 use crate::api::setup::detect::{self, Detected};
 use crate::api::setup::{GIT_HOOKS, INDEX_CODE, Request, Step, StepState, plan};
 use crate::config::{Config, Paths};
 use crate::git_utils;
 use crate::test_common::{git_commit::commit_files, git_repo::init_repo};
+use crate::utilities::context::Ctx;
 
 /// Four real Rust files, enough to prove a walk without indexing a whole
 /// crate on every test run.

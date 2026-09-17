@@ -9,13 +9,15 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::api::{self, Ctx};
-use crate::cli::{embedding_input, load_config, track_searches};
+use crate::api;
+use crate::cli::{load_config, track_searches};
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::memory::Kind;
 use crate::output::json;
 use crate::prelude::*;
 use crate::store::connection;
+use crate::utilities::context::Ctx;
+use crate::utilities::vector_stdin;
 
 const EXAMPLES: &str = "\
 Examples:
@@ -83,7 +85,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     paths.ensure_dirs()?;
     let mut conn = connection::open(paths.db_path())?;
     let cfg = load_config(&paths)?;
-    let vector = embedding_input::read_optional(a.vector_stdin, a.vector.as_deref())?;
+    let vector = vector_stdin::read_optional(a.vector_stdin, a.vector.as_deref())?;
 
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
     let result = api::find::run(

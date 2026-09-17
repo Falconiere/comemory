@@ -14,11 +14,11 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::api::Ctx;
 use crate::api::eval::{RunOutcome, default_k, record_run};
 use crate::eval::golden;
 use crate::eval::tune::{self, TuneReport};
 use crate::prelude::*;
+use crate::utilities::context::Ctx;
 
 /// `comemory tune` / `POST /api/v1/tune` request.
 #[derive(Deserialize, Debug)]

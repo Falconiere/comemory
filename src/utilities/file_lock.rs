@@ -1,7 +1,7 @@
 //! Exclusive advisory lock over a sibling lock file, generalized from the
 //! `sources.toml.lock` guard it started as.
 //!
-//! `registry::Registry::register` / `unregister` hold one of these for
+//! `source::registry::Registry::register` / `unregister` hold one of these for
 //! their whole read-modify-write cycle so two concurrent `comemory index`
 //! (or `unindex`) invocations serialize instead of the last writer silently
 //! discarding the first registration (spec: "Concurrent registrations").
@@ -12,12 +12,10 @@
 //! `flock(2)` on unix and `LockFileEx` on Windows internally — no FFI, no
 //! `unsafe`, and no new dependency needed here.
 //!
-//! Stays under `src/source/` rather than moving to `src/store/` or a
-//! shared location: it is fully generic already (a path plus a label), the
-//! move would only relocate a handful of lines while touching every
-//! caller, and `src.nested` in `guardrails.config.json` would need a new
-//! allowlist entry for wherever it landed. Binding Rule 1 (no duplication)
-//! is satisfied by reuse in place, not by relocation.
+//! Two owners across two future domains (documents and infrastructure) is
+//! exactly why #166 gave it a neutral home here rather than leaving it under
+//! `src/source/`, where `store::migrate::preflight` would have had to reach
+//! into the documents capability for a lock.
 
 use std::fs::{File, OpenOptions};
 use std::path::Path;
@@ -57,5 +55,5 @@ impl Drop for FileLock {
 }
 
 #[cfg(test)]
-#[path = "tests/lock.rs"]
+#[path = "tests/file_lock.rs"]
 mod tests;

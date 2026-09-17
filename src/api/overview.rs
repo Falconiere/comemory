@@ -21,9 +21,10 @@
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::api::{Ctx, list, repos, stats};
+use crate::api::{list, repos, stats};
 use crate::prelude::*;
 use crate::store::{Connection, edges, eval_runs, index_runs, memory_row};
+use crate::utilities::context::Ctx;
 
 /// How many recent memories the Overview screen's list shows.
 const RECENT_MEMORIES: usize = 4;

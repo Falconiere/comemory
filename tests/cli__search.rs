@@ -79,7 +79,7 @@ fn search_json_emits_query_id_backed_by_retrieval_log_row() {
         .expect("query_id in envelope")
         .to_string();
     assert!(
-        comemory::stats::feedback::is_valid_query_id(&qid),
+        comemory::utilities::query_id::is_valid_query_id(&qid),
         "query_id shape, got: {qid}"
     );
 

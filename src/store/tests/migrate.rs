@@ -243,7 +243,7 @@ fn v5_adds_learning_tables_drops_search_stats_and_rehashes() {
 
     assert_eq!(
         simhash_of(&conn, "aaaaaaaa"),
-        comemory::simhash::of_body("Café notes")
+        comemory::utilities::simhash::of_body("Café notes")
     );
 
     // Learning tables exist; search_stats is gone.
@@ -315,7 +315,7 @@ fn open_migrates_v4_db_to_v5() {
     // Both stored simhashes were recomputed with the new tokens().
     assert_eq!(
         simhash_of(&conn, "cafecafe"),
-        comemory::simhash::of_body("Café notes")
+        comemory::utilities::simhash::of_body("Café notes")
     );
 
     let code_sh: i64 = conn
@@ -323,10 +323,10 @@ fn open_migrates_v4_db_to_v5() {
             r.get(0)
         })
         .expect("code simhash");
-    let toks = comemory::simhash::tokens("fn naïve_fn() {}");
+    let toks = comemory::utilities::simhash::tokens("fn naïve_fn() {}");
     assert_eq!(
         code_sh as u64,
-        comemory::simhash::simhash64(toks.iter().map(std::string::String::as_str))
+        comemory::utilities::simhash::simhash64(toks.iter().map(std::string::String::as_str))
     );
 
     // Learning tables present; search_stats dropped.

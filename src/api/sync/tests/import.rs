@@ -8,13 +8,16 @@
 
 use time::OffsetDateTime;
 
-use comemory::api::{self, Ctx, save, sync};
+use comemory::api;
+use comemory::api::{save, sync};
 use comemory::config::{Config, Paths};
 use comemory::memory::frontmatter::{References, Relations};
-use comemory::memory::id::{memory_id, sha256_hex};
+use comemory::memory::id::memory_id;
 use comemory::memory::{Kind, MemoryStore};
 use comemory::store::connection;
 use comemory::store::sync_log::{self, SyncOp};
+use comemory::utilities::context::Ctx;
+use comemory::utilities::digest::sha256_hex;
 
 fn wire_frontmatter(body: &str) -> sync::WireFrontmatter {
     let id = memory_id(body);

@@ -19,9 +19,9 @@
 
 use comemory::config::paths::Paths;
 use comemory::stats::code_feedback::record_code_with_provenance;
-use comemory::stats::feedback::{PROV_IMPLICIT, PROV_MANUAL};
 use comemory::stats::sqlite::StatsDb;
 use comemory::store::code_row::{self, CodeSymbolRow};
+use comemory::utilities::telemetry::{PROV_IMPLICIT, PROV_MANUAL};
 
 use crate::test_common as common;
 

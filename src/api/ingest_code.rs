@@ -13,10 +13,10 @@ use std::collections::{BTreeSet, HashMap};
 
 use serde::{Deserialize, Serialize};
 
-use crate::api::Ctx;
 use crate::prelude::*;
 use crate::store::code_row::{self, CodeSymbolRow};
 use crate::store::{Connection, fts, vector};
+use crate::utilities::context::Ctx;
 
 /// One NDJSON row, mirroring the JSON emitted by `comemory index-code
 /// --extract` plus the caller-supplied dense vector. `deny_unknown_fields`

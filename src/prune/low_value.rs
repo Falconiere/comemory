@@ -24,7 +24,7 @@ use crate::store::prune_signals;
 /// candidate set, sorted and de-duplicated.
 ///
 /// This is the authoritative list `cli::prune --apply` soft-deletes, and the
-/// list its dry-run display windows via [`crate::output::page::Page`] —
+/// list its dry-run display windows via [`crate::utilities::pagination::Page`] —
 /// pagination never gates deletions. The activation/feedback floor runs here
 /// in Rust with the shared [`score`] primitives so prune and rerank cannot
 /// drift on what "cold" means.

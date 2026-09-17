@@ -1,15 +1,13 @@
-//! Security primitives for `comemory serve`: a per-session bearer token, a
-//! loopback Host-header guard (DNS-rebinding defense), and the
-//! canonicalize-and-contain path check that gates every file read and write.
+//! Security primitives for `comemory serve`: a per-session bearer token and a
+//! loopback Host-header guard (DNS-rebinding defense).
 //!
 //! The threat model is a single local user on `127.0.0.1`. The token blocks a
 //! malicious web page (which, under default-deny CORS, cannot read responses
 //! but could still issue requests) and DNS-rebinding from reaching the file
 //! API; the Host guard rejects requests whose `Host` resolves a rebinding
-//! attacker's domain; the containment check ensures a crafted `file:<repo>:…`
-//! id can never escape the repo root, even through `..` or a symlink.
-
-use std::path::{Component, Path, PathBuf};
+//! attacker's domain. The canonicalize-and-contain path check that gates every
+//! file read and write is transport-neutral and lives in
+//! [`crate::utilities::path_containment`].
 
 use crate::prelude::*;
 
@@ -83,75 +81,6 @@ pub fn host_is_loopback(host: &str) -> bool {
         None => host.rsplit_once(':').map_or(host, |(h, _)| h),
     };
     matches!(hostname, "127.0.0.1" | "localhost" | "[::1]")
-}
-
-/// Resolve `rel` (a repo-relative path from a `file:<repo>:<path>` id) against
-/// the canonical repo `root`, guaranteeing the result stays inside `root`.
-///
-/// `root` MUST already be canonical (the caller canonicalizes it). The check
-/// rejects absolute paths, `..` components, and NUL up front, then
-/// canonicalizes the target — resolving symlinks — and asserts it is still
-/// prefixed by `root`. For a not-yet-existing file (a fresh `PUT`), the parent
-/// directory is canonicalized instead and the filename re-appended, so a
-/// symlinked parent escaping the root is still caught.
-pub fn resolve_within(root: &Path, rel: &str) -> Result<PathBuf> {
-    if rel.is_empty() {
-        return Err(Error::BadRequest("empty path".into()));
-    }
-    if rel.contains('\0') {
-        return Err(Error::Forbidden("NUL in path".into()));
-    }
-    let rel_path = Path::new(rel);
-    for comp in rel_path.components() {
-        match comp {
-            Component::ParentDir => {
-                return Err(Error::Forbidden("'..' not allowed in path".into()));
-            }
-            Component::Prefix(_) | Component::RootDir => {
-                return Err(Error::Forbidden("absolute path not allowed".into()));
-            }
-            Component::CurDir | Component::Normal(_) => {}
-        }
-    }
-    let candidate = root.join(rel_path);
-    let canonical = if let Ok(c) = candidate.canonicalize() {
-        c
-    } else {
-        // Not-yet-existing file: canonicalize the parent, re-append name.
-        let parent = candidate
-            .parent()
-            .ok_or_else(|| Error::BadRequest("path has no parent".into()))?;
-        let name = candidate
-            .file_name()
-            .ok_or_else(|| Error::BadRequest("path has no file name".into()))?;
-        let parent_canon = parent.canonicalize().map_err(Error::Io)?;
-        parent_canon.join(name)
-    };
-    if !canonical.starts_with(root) {
-        return Err(Error::Forbidden("path escapes repo root".into()));
-    }
-    Ok(canonical)
-}
-
-/// Canonicalize `p` and require it inside one of `roots`. Nonexistent path
-/// -> `BadRequest` (400); outside every root -> `Forbidden` (403); an empty
-/// `roots` slice always forbids (nothing is allowed).
-///
-/// Unlike [`resolve_within`], `p` may be absolute or cwd-relative — this is
-/// the containment check for the mutating routes that take a filesystem path
-/// directly (`index-code --path`, `ast --file`, `install-hooks --repo`, a
-/// `--golden` file), not a repo-relative `file:<repo>:<path>` id. Every entry
-/// in `roots` MUST already be canonical (the caller's job, e.g.
-/// `AppState::allowed_roots`); this function does not canonicalize them.
-pub fn contain_abs(roots: &[PathBuf], p: &Path) -> Result<PathBuf> {
-    let canonical = p
-        .canonicalize()
-        .map_err(|e| Error::BadRequest(format!("path `{}` is unusable: {e}", p.display())))?;
-    if roots.iter().any(|root| canonical.starts_with(root)) {
-        Ok(canonical)
-    } else {
-        Err(Error::Forbidden("path escapes every allowed root".into()))
-    }
 }
 
 #[cfg(test)]

@@ -17,7 +17,7 @@
 //! new event type. Log lines are a third channel (`broadcast`, the SSE
 //! `log` event), and cancellation (`POST /jobs/{id}/cancel`) is a per-job
 //! flag a cooperating core polls at its next boundary — see
-//! [`Registry::cancel`] and `api::index_code::ProgressSink::is_cancelled`.
+//! [`Registry::cancel`] and `utilities::progress::ProgressSink::is_cancelled`.
 
 use std::collections::VecDeque;
 use std::sync::Arc;

@@ -20,11 +20,12 @@
 
 use crate::config::Config;
 use crate::prelude::*;
-use crate::retrieval::pipeline::{self, PageWindow};
+use crate::retrieval::pipeline;
 use crate::retrieval::scope::{Domain, Filters};
 use crate::retrieval::{code_search, diversify, doc_route, rerank, router};
 use crate::store::Connection;
 use crate::store::memory_meta;
+use crate::utilities::pagination::PageWindow;
 
 /// Weighted fusion and the domain-tagged hit shape.
 pub mod fuse_domains;

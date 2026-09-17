@@ -34,12 +34,12 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::api::Ctx;
 use crate::config::Paths;
 use crate::prelude::*;
 use crate::store::migrate;
 use crate::store::migrate::preflight;
 use crate::store::{Connection, connection, schema_meta, vector};
+use crate::utilities::context::Ctx;
 
 /// Check 4 — the migration-backup snapshot probe.
 pub mod backup;

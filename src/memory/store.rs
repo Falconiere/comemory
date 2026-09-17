@@ -10,9 +10,10 @@ use time::OffsetDateTime;
 
 use crate::config::paths::Paths;
 use crate::memory::frontmatter::{Frontmatter, Kind, References, Relations};
-use crate::memory::id::{memory_id, sha256_hex};
+use crate::memory::id::memory_id;
 use crate::memory::slug::slug_from_body;
 use crate::prelude::*;
+use crate::utilities::digest::sha256_hex;
 
 /// Caller-supplied inputs for [`MemoryStore::save`]. Grouped into a struct
 /// (rather than a growing positional list) so new frontmatter knobs extend

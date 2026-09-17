@@ -27,11 +27,13 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::api::Ctx;
-use crate::cli::{parse_id_csv, ref_args};
 use crate::memory::{Kind, MemoryStore, Prior, References, Relations, SaveParams, id};
 use crate::prelude::*;
 use crate::store::{Connection, embed, memory_row, sync_log, vector};
+use crate::utilities::context::Ctx;
+use crate::utilities::digest;
+use crate::utilities::id_list::parse_id_csv;
+use crate::utilities::ref_args;
 
 /// `comemory save` / `POST /api/v1/memories` request. The stdin/`-` body
 /// convenience is CLI-only — `body` is a required JSON field over HTTP.
@@ -145,7 +147,7 @@ pub struct Response {
 ///
 /// `cli_vector_stdin`/`cli_vector_csv` are `cli::save::run`'s raw, unparsed
 /// `--vector`/`--vector-stdin` flags (mirroring
-/// `embedding_input::read_optional`'s params) — parsed only after the
+/// `vector_stdin::read_optional`'s params) — parsed only after the
 /// `supersedes`/`ref_*` validation below, matching `main`'s original
 /// ordering (AC-13). HTTP callers always pass `(false, None)`: `req.vector`
 /// is already a parsed vector off the JSON body.
@@ -196,7 +198,7 @@ pub fn run_with(
     // opens the DB, or reads stdin.
     let vector = match req.vector.take() {
         Some(v) => Some(v),
-        None => crate::cli::embedding_input::read_optional(cli_vector_stdin, cli_vector_csv)?,
+        None => crate::utilities::vector_stdin::read_optional(cli_vector_stdin, cli_vector_csv)?,
     };
     paths.ensure_dirs()?;
     let store = MemoryStore::new(paths.clone());
@@ -232,7 +234,7 @@ pub fn run_with(
 /// collision writes nothing at all.
 fn replay_prior(store: &MemoryStore, id: &str, body: &str) -> Result<Option<Prior>> {
     let prior = store.prior(id)?;
-    let content_hash = id::sha256_hex(body.trim_end().as_bytes());
+    let content_hash = digest::sha256_hex(body.trim_end().as_bytes());
     if prior
         .as_ref()
         .is_some_and(|p| p.collides_with(&content_hash))
@@ -352,7 +354,7 @@ fn resolve_repo_root() -> Option<PathBuf> {
 /// Best-effort: any DB error is logged and treated as "no duplicate" so the
 /// check can never block a save.
 fn near_duplicate(conn: &Connection, body: &str, self_id: &str, radius: u32) -> Option<String> {
-    let hash = crate::simhash::of_body(body);
+    let hash = crate::utilities::simhash::of_body(body);
     match near_duplicate_inner(conn, hash, self_id, radius) {
         Ok(hit) => hit,
         Err(e) => {
@@ -374,7 +376,12 @@ fn near_duplicate_inner(
     Ok(
         crate::store::simhash_scan::live_simhashes(conn, None, Some(self_id))?
             .into_iter()
-            .map(|row| (row.id, crate::simhash::hamming64(hash, row.simhash as u64)))
+            .map(|row| {
+                (
+                    row.id,
+                    crate::utilities::simhash::hamming64(hash, row.simhash as u64),
+                )
+            })
             .filter(|(_, d)| *d <= radius)
             .min_by_key(|(_, d)| *d)
             .map(|(id, _)| id),

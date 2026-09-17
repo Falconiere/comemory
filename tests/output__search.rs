@@ -14,10 +14,11 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use comemory::memory::{Ref, References};
-use comemory::output::search::{self, PageMeta, ScopeEcho};
+use comemory::output::search::{self, ScopeEcho};
 use comemory::retrieval::rerank::{Reranked, ScoreParts};
 use comemory::retrieval::router::Source;
 use comemory::store::memory_meta::MemoryMeta;
+use comemory::utilities::pagination::PageMeta;
 
 /// Empty navigation map: hits degrade to empty path/kind/tags. Used by the
 /// tests that only exercise the score/source/tier shape.

@@ -100,7 +100,7 @@ pub fn purge_memory(conn: &mut Connection, id: &str) -> Result<bool> {
     // memory-id shape, so the kind filter is what keeps code telemetry out.
     tx.execute(
         "DELETE FROM feedback_events WHERE memory_id = ?1 AND target_kind = ?2",
-        params![id, crate::stats::target::MEMORY],
+        params![id, crate::utilities::telemetry::target::MEMORY],
     )?;
     tx.commit()?;
     Ok(true)

@@ -4,7 +4,7 @@
 //! working-tree root captured at index time in `repo_marker.root_path` (v7).
 //! This module turns a node id back into a real path: pick the root (a
 //! `--root` override wins over the stored value, which wins over an error),
-//! then hand off to [`crate::serve::security::resolve_within`] for the
+//! then hand off to [`crate::utilities::path_containment::resolve_within`] for the
 //! canonicalize-and-contain check. Every file read and write funnels through
 //! [`id_to_abs_path`], so the containment guarantee has a single chokepoint.
 
@@ -13,9 +13,9 @@ use std::path::PathBuf;
 
 use crate::cli::graph::parse_id;
 use crate::prelude::*;
-use crate::serve::security;
 use crate::store::Connection;
 use crate::store::repo_marker_roots;
+use crate::utilities::path_containment;
 
 /// `--root <repo>=<path>` overrides, keyed by repo label.
 pub type RootOverrides = HashMap<String, PathBuf>;
@@ -23,7 +23,7 @@ pub type RootOverrides = HashMap<String, PathBuf>;
 /// Resolve the canonical absolute working-tree root for `repo`. Precedence:
 /// an explicit `--root` override, then `repo_marker.root_path`, then an error
 /// instructing the caller to supply `--root`. The chosen root is canonicalized
-/// so the containment check in [`security::resolve_within`] has a stable,
+/// so the containment check in [`path_containment::resolve_within`] has a stable,
 /// symlink-resolved prefix to compare against.
 pub fn resolve_root(conn: &Connection, repo: &str, overrides: &RootOverrides) -> Result<PathBuf> {
     if let Some(p) = overrides.get(repo) {
@@ -51,7 +51,7 @@ pub fn id_to_abs_path(conn: &Connection, id: &str, overrides: &RootOverrides) ->
     let (repo, rel) =
         parse_id(id).ok_or_else(|| Error::BadRequest(format!("invalid file node id: {id}")))?;
     let root = resolve_root(conn, repo, overrides)?;
-    security::resolve_within(&root, rel)
+    path_containment::resolve_within(&root, rel)
 }
 
 /// Split the `path` (repo-relative) out of a `file:<repo>:<path>` id for

@@ -13,9 +13,10 @@
 //! `tests/serve__routes__memories__write.rs`).
 
 use assert_cmd::Command;
-use comemory::api::{self, Ctx};
+use comemory::api;
 use comemory::config::{Config, Paths};
 use comemory::store::connection;
+use comemory::utilities::context::Ctx;
 
 fn save(home: &tempfile::TempDir, body: &str) -> String {
     let out = Command::cargo_bin("comemory")

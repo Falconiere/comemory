@@ -17,10 +17,11 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::api::{Ctx, save};
+use crate::api::save;
 use crate::memory::{Frontmatter, Kind, MemoryRecord, MemoryStore, id};
 use crate::prelude::*;
 use crate::store::{memory_row, sync_log};
+use crate::utilities::context::Ctx;
 
 /// `PATCH /api/v1/memories/{id}` request. Every field is optional: an absent
 /// field is left untouched, and an empty object is a no-op patch that still

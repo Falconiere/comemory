@@ -9,8 +9,8 @@
 //! `--as-of` value parser and the [`TimeScope`] both `search` and
 //! `context` build from those flags.
 
-use comemory::cli::when::{DayEdge, parse_when, scope_from_flags};
 use comemory::retrieval::scope::TimeScope;
+use comemory::utilities::when::{DayEdge, parse_when, scope_from_flags};
 use time::macros::datetime;
 
 #[test]

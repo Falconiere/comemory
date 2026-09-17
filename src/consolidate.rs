@@ -9,6 +9,8 @@
 pub mod cluster;
 /// Keeper ordering, member metadata, and in-cluster supersede resolution.
 pub mod keeper;
+/// The owned value `comemory consolidate` produces.
+pub mod report;
 
 use crate::prelude::*;
 use crate::store::Connection;

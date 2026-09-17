@@ -11,17 +11,17 @@
 //!   already knows.
 //! - **recent**: distinct `retrieval_log` queries that start with what the
 //!   user typed, newest first. `search-code` rows are excluded for the same
-//!   reason mining excludes them (`stats::source::SEARCH_CODE`): they are a
+//!   reason mining excludes them (`utilities::telemetry::source::SEARCH_CODE`): they are a
 //!   different query vocabulary and can only ever earn code feedback.
 
 use serde::{Deserialize, Serialize};
 
-use crate::api::Ctx;
 use crate::prelude::*;
-use crate::stats::source::SEARCH_CODE;
 use crate::store::memory_list::like_escape;
 use crate::store::tokenizer::split::query_tokens;
 use crate::store::{Connection, query_expansions, retrieval_log};
+use crate::utilities::context::Ctx;
+use crate::utilities::telemetry::source::SEARCH_CODE;
 
 /// Rows returned per list when the request omits `limit`.
 const DEFAULT_LIMIT: usize = 10;

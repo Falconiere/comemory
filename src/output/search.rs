@@ -18,24 +18,9 @@ use crate::prelude::*;
 use crate::retrieval::rerank::{Reranked, ScoreParts};
 use crate::retrieval::router::{Source, TIER_EXPANDED};
 use crate::retrieval::scope::TimeScope;
+use crate::retrieval::search_result::SearchResult;
 use crate::store::memory_meta::MemoryMeta;
-
-/// Everything `comemory search`'s render layer needs: `api::search::run`
-/// returns this so the CLI and the HTTP handler can each build their own
-/// envelope (`--json` stdout vs the `/api/v1` response `data` field) from
-/// one owned value instead of five loose parameters.
-pub struct SearchResult {
-    /// Reranked + diversified hits for the requested page.
-    pub hits: Vec<Reranked>,
-    /// Id of the retrieval_log row for this run.
-    pub query_id: Option<String>,
-    /// Pagination cursor for the returned page.
-    pub meta: PageMeta,
-    /// Batched navigation metadata for `hits`, keyed by memory id.
-    pub nav: HashMap<String, MemoryMeta>,
-    /// The run's time-scoping flags.
-    pub scope: TimeScope,
-}
+use crate::utilities::pagination::PageMeta;
 
 /// One search hit as emitted to the user. `score` duplicates
 /// `score_parts.final_score` so simple consumers never need to descend
@@ -75,22 +60,6 @@ pub struct Row<'a> {
     pub tags: Vec<String>,
     /// Code references harvested from the body (`{symbols, files}`).
     pub references: References,
-}
-
-/// Pagination cursor metadata carried alongside the hits in an
-/// [`Envelope`]. `total` is the in-window ranked count (the diversified
-/// list the page was sliced from, capped by `max_page_window`), not a
-/// global match count.
-#[derive(Debug, Clone, Copy, Serialize)]
-pub struct PageMeta {
-    /// Requested page size (`--k` / `--limit`).
-    pub limit: usize,
-    /// Number of leading ranked results skipped (`--offset`).
-    pub offset: usize,
-    /// Whether more in-window ranked results exist beyond this page.
-    pub has_more: bool,
-    /// In-window ranked count the page was sliced from.
-    pub total: Option<usize>,
 }
 
 /// The time-scoping flags echoed back at the root of a `--json` envelope,

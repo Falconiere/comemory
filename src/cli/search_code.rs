@@ -25,12 +25,14 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::api::{self, Ctx};
-use crate::cli::{embedding_input, lazy_reindex, load_config, track_searches};
+use crate::api;
+use crate::cli::{lazy_reindex, load_config, track_searches};
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::output;
 use crate::prelude::*;
 use crate::store::connection;
+use crate::utilities::context::Ctx;
+use crate::utilities::vector_stdin;
 
 // The closing working-set caveat paragraph is intentionally duplicated in
 // `cli::context::EXAMPLES` (same semantics; only the command name and the
@@ -116,7 +118,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     // search (see `cli::lazy_reindex`).
     lazy_reindex::maybe_trigger(&conn, &cfg, &paths, a.repo.as_deref());
 
-    let vector = embedding_input::read_optional(a.vector_stdin, a.vector.as_deref())?;
+    let vector = vector_stdin::read_optional(a.vector_stdin, a.vector.as_deref())?;
     let req = api::search_code::Request {
         query: a.query,
         k: a.k,

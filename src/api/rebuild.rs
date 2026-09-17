@@ -56,13 +56,13 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use crate::api::Ctx;
 use crate::memory::MemoryStore;
 use crate::prelude::*;
 use crate::source::mirror;
 use crate::source::registry::Registry;
 use crate::store::migrate::backup;
 use crate::store::{connection, memory_row};
+use crate::utilities::context::Ctx;
 
 /// The live-table allowlist pair plus the thin delegate into
 /// `crate::store::rebuild_copy`, which owns the actual `ATTACH`-based

@@ -226,7 +226,7 @@ pub struct RankConfig {
     /// (`retrieval::diversify`) and the save-time duplicate warning. Must
     /// be <= 64 (the hash is 64-bit; a larger radius would collapse every
     /// pair); `0` collapses only bit-identical hashes.
-    /// Default: `crate::simhash::NEAR_DUP_HAMMING` (8).
+    /// Default: `crate::utilities::simhash::NEAR_DUP_HAMMING` (8).
     #[serde(default = "default_near_dup_hamming")]
     pub near_dup_hamming: u32,
 }

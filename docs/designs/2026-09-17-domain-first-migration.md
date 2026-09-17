@@ -121,7 +121,7 @@ but their final policy entries name concrete pairs:
 | `api::graph` and `api::graph_nodes` to CLI graph builders | #170 |
 | `retrieval::code_ref_fetch` and `api::refresh_refs` to `serve::repo_root` | #167 / #169 |
 | `store::memory_row` and `store::repo_drop` to graph algorithms | #177 |
-| `store::migrate::preflight` to `source::lock` | #177 |
+| `store::migrate::preflight` to `source::lock` | #166 |
 
 No wildcard exemption is permitted. A policy entry fails validation when its
 issue is unknown, its source/target is malformed, it duplicates another entry,

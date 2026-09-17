@@ -265,7 +265,7 @@ fn recompute_simhashes(
         .collect::<std::result::Result<_, _>>()?;
     for (id, text) in rows {
         // SQLite INTEGER is i64; store the u64 bit pattern.
-        let hash = crate::simhash::of_body(&text) as i64;
+        let hash = crate::utilities::simhash::of_body(&text) as i64;
         update.execute(rusqlite::params![hash, id])?;
     }
     Ok(())

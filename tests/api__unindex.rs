@@ -15,9 +15,10 @@
 mod docs_fixtures;
 
 use assert_cmd::Command;
-use comemory::api::{self, Ctx};
+use comemory::api;
 use comemory::config::{Config, Paths};
 use comemory::store::connection;
+use comemory::utilities::context::Ctx;
 use serde::Deserialize;
 use tempfile::TempDir;
 

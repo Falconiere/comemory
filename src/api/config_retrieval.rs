@@ -17,10 +17,10 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use toml::Value;
 
-use crate::api::Ctx;
 use crate::config::Config;
 use crate::config::patch::{Table, patch_config_file, section};
 use crate::prelude::*;
+use crate::utilities::context::Ctx;
 
 /// The declared bound of one knob, mirroring `config::validate`. `min`/`max`
 /// are the numeric bounds; `note` carries what a number cannot (exclusivity,

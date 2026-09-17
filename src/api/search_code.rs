@@ -10,14 +10,14 @@
 
 use serde::Deserialize;
 
-use crate::api::Ctx;
 use crate::ast::languages::{self, Lang};
-use crate::cli::{page_meta, page_window};
-use crate::output::search_code::SearchCodeResult;
 use crate::prelude::*;
 use crate::retrieval::code_rerank::CodeReranked;
+use crate::retrieval::code_search_result::SearchCodeResult;
 use crate::retrieval::{code_search, pipeline};
 use crate::store::{Connection, code_row};
+use crate::utilities::context::Ctx;
+use crate::utilities::pagination::{page_meta, page_window};
 
 /// `comemory search-code` / `GET|POST /api/v1/code/search` request.
 #[derive(Deserialize, Debug)]
@@ -153,7 +153,7 @@ fn record_code_telemetry(
             elapsed,
             repo,
             lang,
-            crate::stats::source::SEARCH_CODE,
+            crate::utilities::telemetry::source::SEARCH_CODE,
         )
     };
     match conn.unchecked_transaction() {

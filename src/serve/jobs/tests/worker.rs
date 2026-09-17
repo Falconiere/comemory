@@ -16,10 +16,11 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use comemory::api::{self, Ctx};
+use comemory::api;
 use comemory::config::{Config, Paths};
 use comemory::errors::Error;
 use comemory::serve::jobs::{JobStatus, Registry, spawn_job};
+use comemory::utilities::context::Ctx;
 use serde_json::Value;
 use tokio::sync::Semaphore;
 

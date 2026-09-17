@@ -9,8 +9,8 @@
 //! grouping of live fingerprints, its ordering, and the unhashed-row drop.
 
 use comemory::consolidate::cluster::{Grouping, group_near_dups};
-use comemory::simhash::{hamming64, of_body};
 use comemory::store::simhash_scan::SimhashRow;
+use comemory::utilities::simhash::{hamming64, of_body};
 
 /// Real bodies whose fingerprints come from `of_body`, exactly as the save
 /// path writes them — no hand-picked bit patterns.

@@ -9,15 +9,16 @@
 
 use serde::Deserialize;
 
-use crate::api::Ctx;
-use crate::cli::{page_meta, page_window, when};
 use crate::memory::Kind;
-use crate::output::search::PageMeta;
 use crate::prelude::*;
 use crate::retrieval::pipeline;
 use crate::retrieval::scope::{Domain, Domains, Filters};
 use crate::retrieval::unified::{self, fuse_domains::UnifiedHit};
 use crate::store::Connection;
+use crate::utilities::context::Ctx;
+use crate::utilities::pagination::PageMeta;
+use crate::utilities::pagination::{page_meta, page_window};
+use crate::utilities::when;
 
 /// `comemory find` / `GET|POST /api/v1/find` request.
 #[derive(Deserialize, Debug)]
@@ -177,7 +178,7 @@ fn track_run(
         started.elapsed(),
         filters.repo,
         filters.kind,
-        crate::stats::source::FIND,
+        crate::utilities::telemetry::source::FIND,
     )
 }
 

@@ -14,8 +14,9 @@
 //! `tests/serve__routes__hooks.rs`. This file exercises `api::hooks::run`
 //! directly.
 
-use comemory::api::{self, Ctx};
+use comemory::api;
 use comemory::config::{Config, Paths};
+use comemory::utilities::context::Ctx;
 
 fn fake_repo(home: &std::path::Path) -> std::path::PathBuf {
     let repo = home.join("repo");

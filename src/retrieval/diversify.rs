@@ -5,11 +5,11 @@
 use std::collections::HashSet;
 
 use crate::retrieval::rerank::Reranked;
-use crate::simhash::hamming64;
+use crate::utilities::simhash::hamming64;
 
 /// Collapse near-duplicates within `near_dup_hamming` SimHash bits
 /// (callers pass `cfg.rank.near_dup_hamming`, which defaults to
-/// [`crate::simhash::NEAR_DUP_HAMMING`]), then greedily select up to
+/// [`crate::utilities::simhash::NEAR_DUP_HAMMING`]), then greedily select up to
 /// `top_k` items maximizing
 /// `lambda·score − (1−lambda)·max_jaccard_to_selected`.
 /// Input must already be sorted by final score descending (rerank output).
@@ -43,7 +43,9 @@ fn collapse_near_dups(items: Vec<Reranked>, near_dup_hamming: u32) -> Vec<Rerank
 
 /// Build a token set from a body string for Jaccard computation.
 fn token_set(body: &str) -> HashSet<String> {
-    crate::simhash::tokens(body).into_iter().collect()
+    crate::utilities::simhash::tokens(body)
+        .into_iter()
+        .collect()
 }
 
 /// Jaccard similarity between two token sets.

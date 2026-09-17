@@ -5,15 +5,15 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror test for `src/api.rs`.
+//! Mirror test for `src/utilities/context.rs`.
 //!
 //! Proves the two `Ctx` constructors keep their contract: [`Ctx::lazy`]
 //! never opens `comemory.db` until [`Ctx::conn`] is first called, and
 //! [`Ctx::borrowed`] hands back the caller's own connection rather than
 //! opening a second one.
 
-use comemory::api::Ctx;
 use comemory::config::{Config, Paths};
+use comemory::utilities::context::Ctx;
 use rusqlite::Connection;
 
 use crate::test_common as common;

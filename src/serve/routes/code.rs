@@ -14,7 +14,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde_json::Value;
 
-use crate::api::{self, Ctx};
+use crate::api;
 use crate::output::search_code;
 use crate::prelude::*;
 use crate::serve::AppState;
@@ -24,7 +24,8 @@ use crate::serve::routes::{
     RouteEntry, accepted, guard_job, index_runs, respond, run_blocking, track_for,
 };
 use crate::serve::scope::RepoScope;
-use crate::serve::security;
+use crate::utilities::context::Ctx;
+use crate::utilities::path_containment;
 
 /// The per-route body limit `POST /api/v1/code/ingest` carries — well above
 /// the 5 MiB global default (`router::BODY_LIMIT`), since a real NDJSON
@@ -132,7 +133,7 @@ async fn code_ast(
         let conn = state.conn()?;
         let roots = state.allowed_roots(&conn);
         drop(conn);
-        let canonical = security::contain_abs(&roots, Path::new(&req.file))?;
+        let canonical = path_containment::contain_abs(&roots, Path::new(&req.file))?;
         req.file = canonical.to_string_lossy().into_owned();
         let cfg = state.cfg();
         let mut ctx = Ctx::lazy(state.paths(), &cfg);
@@ -170,7 +171,7 @@ async fn code_index(
         let conn = contain_state.conn()?;
         let roots = contain_state.allowed_roots(&conn);
         drop(conn);
-        let canonical = security::contain_abs(&roots, Path::new(&req.path))?;
+        let canonical = path_containment::contain_abs(&roots, Path::new(&req.path))?;
         req.path = canonical.to_string_lossy().into_owned();
         Ok(req)
     })

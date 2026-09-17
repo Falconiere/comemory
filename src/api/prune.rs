@@ -13,16 +13,16 @@
 use serde::Deserialize;
 use time::OffsetDateTime;
 
-use crate::api::Ctx;
 use crate::cli::delete;
 use crate::config::{Config, Paths};
-use crate::output::page::Page;
-use crate::output::prune::{PruneRow, Report};
 use crate::output::search::title_of;
 use crate::prelude::*;
+use crate::prune::report::{PruneRow, Report};
 use crate::prune::{low_value, stale_code};
 use crate::retrieval::score;
 use crate::store::{Connection, prune_apply};
+use crate::utilities::context::Ctx;
+use crate::utilities::pagination::Page;
 
 /// `comemory prune` / `GET /api/v1/prune` request.
 #[derive(Deserialize, Debug)]
@@ -80,7 +80,8 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Report> {
 /// scan's), so the deletion sequence does not depend on how the caller
 /// sorted its selection.
 ///
-/// Every requested id is validated through [`crate::cli::parse_id_csv`] —
+/// Every requested id is validated through
+/// `crate::utilities::id_list::parse_id_csv` —
 /// the same 8-hex check `save --supersedes` and `feedback` use — so a
 /// malformed id is a hard error naming the flag, not a silently ignored
 /// entry.
@@ -88,7 +89,7 @@ fn select_ids(candidates: &[String], requested: &[String]) -> Result<Vec<String>
     if requested.is_empty() {
         return Ok(candidates.to_vec());
     }
-    let wanted = crate::cli::parse_id_csv(&requested.join(","), "--ids")?;
+    let wanted = crate::utilities::id_list::parse_id_csv(&requested.join(","), "--ids")?;
     Ok(candidates
         .iter()
         .filter(|id| wanted.contains(id))

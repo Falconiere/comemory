@@ -17,9 +17,9 @@ use serde::Deserialize;
 use serde::Serialize;
 
 use crate::cloud::CLIENT_ID;
-use crate::fetch::{self, Request};
 use crate::prelude::*;
 use crate::sync::auth_file::AuthFile;
+use crate::utilities::fetch::{self, Request};
 
 const GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
 const DEFAULT_INTERVAL_SECS: u64 = 5;

@@ -6,8 +6,8 @@
 //! into an ambiguous question. Chaining is the accepted cost, made visible by
 //! [`Group::max_hamming`].
 
-use crate::simhash::hamming64;
 use crate::store::simhash_scan::SimhashRow;
+use crate::utilities::simhash::hamming64;
 
 /// One near-duplicate group: its rows plus the widest distance inside it.
 #[derive(Debug, Clone)]

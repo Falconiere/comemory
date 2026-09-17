@@ -25,6 +25,8 @@ pub mod cross_link;
 pub mod derived;
 /// Deterministic `member_of_source` / `references_document` link deriver.
 pub mod doc_link;
+/// The owned value `comemory edges` produces.
+pub mod edges_result;
 pub mod imports;
 pub mod materialize;
 /// PageRank over the derived memory graph → `memories.rank_score`.

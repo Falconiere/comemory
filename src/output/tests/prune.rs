@@ -11,9 +11,9 @@
 //! that `output::prune::emit` accepts an empty report and a populated
 //! `Page`-wrapped report in both render modes without panicking.
 
-use comemory::output::page::Page;
 use comemory::output::prune;
-use comemory::output::prune::{PruneRow, Report};
+use comemory::prune::report::{PruneRow, Report};
+use comemory::utilities::pagination::Page;
 
 /// Build one [`PruneRow`] fixture with a fixed activation/age, so tests only
 /// need to vary id and reason.

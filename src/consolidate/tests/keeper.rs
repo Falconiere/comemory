@@ -10,8 +10,8 @@
 
 use comemory::consolidate::cluster::Group;
 use comemory::consolidate::keeper::build;
-use comemory::simhash::of_body;
 use comemory::store::simhash_scan::SimhashRow;
+use comemory::utilities::simhash::of_body;
 
 /// One live memory with the stats the keeper order reads.
 struct Row<'a> {

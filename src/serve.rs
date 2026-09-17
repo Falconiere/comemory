@@ -63,7 +63,7 @@ pub struct ServeOptions {
 #[derive(Clone)]
 pub struct AppState {
     conn: Arc<Mutex<Connection>>,
-    /// The data-dir layout this session was started with. `api::Ctx`
+    /// The data-dir layout this session was started with. `crate::utilities::context::Ctx`
     /// (`src/api.rs`) needs it for the commands whose middle touches
     /// the filesystem directly (`rebuild`'s atomic swap, `ast`, …).
     paths: Arc<Paths>,
@@ -235,7 +235,7 @@ impl AppState {
         &self.jobs
     }
 
-    /// The full allowed-roots set for `security::contain_abs`: `--root`
+    /// The full allowed-roots set for `utilities::path_containment::contain_abs`: `--root`
     /// override paths (canonicalized here — the map's values are not
     /// guaranteed pre-canonical) ∪ every stored `repo_marker.root_path` ∪
     /// the server-cwd bootstrap root, if any ∪ `--allow-path` entries.

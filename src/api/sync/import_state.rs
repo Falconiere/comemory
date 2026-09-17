@@ -2,9 +2,10 @@
 
 use crate::api::sync::{ImportEntry, SyncRecord};
 use crate::memory::MemoryStore;
-use crate::memory::id::{is_valid_memory_id, memory_id, sha256_hex};
+use crate::memory::id::{is_valid_memory_id, memory_id};
 use crate::prelude::*;
 use crate::store::{Connection, memory_purge, sync_log};
+use crate::utilities::digest::sha256_hex;
 
 /// Rule 1 — schema/hash/id validation for upsert/restore payloads.
 pub(crate) fn validate_record(entry: &ImportEntry, record: &SyncRecord) -> Option<String> {

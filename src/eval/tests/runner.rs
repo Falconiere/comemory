@@ -17,7 +17,7 @@ use comemory::eval::runner::run_eval;
 /// near-dup/diversify leg sees production-shaped values instead of
 /// hand-picked sentinels.
 fn insert_memory(conn: &rusqlite::Connection, id: &str, kind: &str, body: &str) {
-    let sim = comemory::simhash::of_body(body) as i64;
+    let sim = comemory::utilities::simhash::of_body(body) as i64;
     conn.execute(
         "INSERT INTO memories(id, slug, kind, repo, author, quality, schema, content_hash,
                               body, created_at, updated_at, md_path, simhash)
@@ -39,8 +39,10 @@ fn insert_memory(conn: &rusqlite::Connection, id: &str, kind: &str, body: &str) 
 /// that radius has to fail here rather than as a mystery collapse downstream.
 fn assert_not_near_dup(a: &str, b: &str) {
     let radius = comemory::config::Config::defaults().rank.near_dup_hamming;
-    let d =
-        comemory::simhash::hamming64(comemory::simhash::of_body(a), comemory::simhash::of_body(b));
+    let d = comemory::utilities::simhash::hamming64(
+        comemory::utilities::simhash::of_body(a),
+        comemory::utilities::simhash::of_body(b),
+    );
     assert!(
         d > radius,
         "fixture bodies collapse as near-dups (hamming {d} <= {radius}): {a:?} / {b:?}"

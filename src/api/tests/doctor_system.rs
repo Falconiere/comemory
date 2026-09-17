@@ -21,11 +21,12 @@
 //! 2. It **never creates `comemory.db`**, so a console polling it on a
 //!    fresh install does not silently materialize a store.
 
-use comemory::api::{self, Ctx};
+use comemory::api;
 use comemory::config::{Config, Paths};
 use comemory::memory::Kind;
 use comemory::store::connection;
 use comemory::store::migrate::CURRENT_VERSION;
+use comemory::utilities::context::Ctx;
 use tempfile::TempDir;
 
 /// Write an executable shell script that touches `sentinel` and prints a

@@ -6,13 +6,13 @@
 
 use serde::Deserialize;
 
-use crate::api::Ctx;
-use crate::cli::page_window;
+use crate::consolidate::report::Report;
 use crate::consolidate::{self, Options};
-use crate::output::consolidate::Report;
-use crate::output::page::Page;
 use crate::prelude::*;
 use crate::store::Connection;
+use crate::utilities::context::Ctx;
+use crate::utilities::pagination::Page;
+use crate::utilities::pagination::page_window;
 
 /// `comemory consolidate` / `GET /api/v1/consolidate` request.
 #[derive(Deserialize, Debug)]

@@ -5,7 +5,8 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Tests for [`comemory::stats::feedback`].
+//! Tests for [`comemory::stats::feedback`]. The query-id contract moved to
+//! `utilities::query_id` with #166 and is asserted there.
 //!
 //! v0.2: feedback rows land in `comemory.db` (via `StatsDb::open` which
 //! now delegates to `crate::store::connection::open`). Counter upsert
@@ -13,11 +14,9 @@
 //! exercised through `record_with_provenance`, the only src/ writer.
 
 use comemory::config::paths::Paths;
-use comemory::stats::feedback::{
-    PROV_IMPLICIT, PROV_MANUAL, Source, generate_query_id, is_valid_query_id,
-    record_with_provenance,
-};
+use comemory::stats::feedback::{Source, record_with_provenance};
 use comemory::stats::sqlite::StatsDb;
+use comemory::utilities::telemetry::{PROV_IMPLICIT, PROV_MANUAL};
 
 use crate::test_common as common;
 
@@ -256,42 +255,5 @@ fn record_with_provenance_writes_the_callers_provenance_on_both_verdicts() {
         (used, irrelevant),
         (1, 1),
         "implicit verdicts bump the same counters"
-    );
-}
-
-#[test]
-fn valid_query_id_shape_is_accepted() {
-    assert!(is_valid_query_id("q-20260610-a1b2c3d4"));
-}
-
-#[test]
-fn malformed_query_ids_are_rejected() {
-    let bad = [
-        "",                     // empty
-        "q-2026061-a1b2c3d4",   // 7-digit date
-        "q-20260610-A1B2C3D4",  // uppercase hex
-        "q-20260610-a1b2c3",    // short hex
-        "x-20260610-a1b2c3d4",  // wrong prefix
-        "q-20260610-a1b2c3d4x", // trailing garbage
-    ];
-    for s in bad {
-        assert!(!is_valid_query_id(s), "must reject {s:?}");
-    }
-}
-
-#[test]
-fn generated_query_id_always_validates() {
-    // Round-trip of the writer/checker contract: every id the generator
-    // emits must pass the validator, for both a fixed and a live clock.
-    let fixed = time::macros::datetime!(2026-06-10 12:34:56.789 UTC);
-    for query in ["", "sqlite busy", "Café VecDimMismatch \"quoted\""] {
-        let id = generate_query_id(query, fixed);
-        assert!(is_valid_query_id(&id), "generated id must validate: {id}");
-        assert!(id.starts_with("q-20260610-"), "day-sortable prefix: {id}");
-    }
-    let live = generate_query_id("any query", time::OffsetDateTime::now_utc());
-    assert!(
-        is_valid_query_id(&live),
-        "live-clock id must validate: {live}"
     );
 }

@@ -17,8 +17,6 @@ pub mod classify;
 /// Discovery walk over a registered source root: boundary/ignore rules
 /// plus classification, producing a deterministic candidate list.
 pub mod discover;
-/// Exclusive flock guard over the `sources.toml.lock` sibling file.
-pub mod lock;
 /// Reconciles the TOML registry into the SQLite `source_roots` mirror.
 pub mod mirror;
 /// `sources.toml` load/save, overlap validation, atomic durability.

@@ -11,15 +11,16 @@
 
 use serde::Deserialize;
 
-use crate::api::Ctx;
-use crate::cli::{page_meta, page_window, when};
 use crate::memory::Kind;
-use crate::output::search::SearchResult;
 use crate::prelude::*;
 use crate::retrieval::pipeline::{self, SearchOptions};
 use crate::retrieval::scope::{Domains, Filters};
+use crate::retrieval::search_result::SearchResult;
 use crate::store::Connection;
 use crate::store::memory_meta;
+use crate::utilities::context::Ctx;
+use crate::utilities::pagination::{page_meta, page_window};
+use crate::utilities::when;
 
 /// `comemory search` / `GET|POST /api/v1/memories/search` request.
 #[derive(Deserialize, Debug)]
@@ -89,7 +90,7 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<SearchResult>
         filters,
         SearchOptions {
             track,
-            source: crate::stats::source::SEARCH,
+            source: crate::utilities::telemetry::source::SEARCH,
             window,
         },
     )?;

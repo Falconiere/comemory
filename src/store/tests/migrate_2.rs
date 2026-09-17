@@ -330,7 +330,7 @@ fn seed_real_simhash(conn: &Connection, id: &str) {
             r.get(0)
         })
         .expect("seeded row body");
-    let hash = comemory::simhash::of_body(&body) as i64;
+    let hash = comemory::utilities::simhash::of_body(&body) as i64;
     conn.execute(
         "UPDATE memories SET simhash = ?1 WHERE id = ?2",
         rusqlite::params![hash, id],

@@ -24,13 +24,13 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
-use crate::api::Ctx;
 use crate::api::show::CodeRefRow;
 use crate::git_utils;
 use crate::memory::{MemoryStore, Ref};
 use crate::prelude::*;
 use crate::serve::repo_root::{RootOverrides, resolve_root};
 use crate::store::Connection;
+use crate::utilities::context::Ctx;
 
 /// `POST /api/v1/memories/{id}/references/refresh` response.
 #[derive(Serialize, Debug)]

@@ -17,13 +17,13 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::api::Ctx;
 use crate::memory::id::is_valid_memory_id;
-use crate::output::page::Page;
 use crate::output::search::title_of;
 use crate::prelude::*;
 use crate::retrieval::score;
 use crate::store::trash_list;
+use crate::utilities::context::Ctx;
+use crate::utilities::pagination::Page;
 
 /// `GET /api/v1/trash` request.
 #[derive(Deserialize, Debug)]

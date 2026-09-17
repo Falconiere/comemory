@@ -12,10 +12,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use serde_json::Value;
 use tokio::sync::Semaphore;
 
-use crate::api::index_code::ProgressSink;
 use crate::prelude::*;
 use crate::serve::jobs::registry::Accepted;
 use crate::serve::jobs::{JobError, JobId, JobStatus, Progress, Registry};
+use crate::utilities::progress::ProgressSink;
 
 /// Spawn `body` as a background job named `command`: register it
 /// [`JobStatus::Queued`], then run it to completion on the blocking pool,

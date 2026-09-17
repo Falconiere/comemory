@@ -1,6 +1,6 @@
 //! `sources.toml` load/save: the durable, authoritative record of
 //! registered document roots. Mutations run under an exclusive
-//! [`crate::source::lock::FileLock`] for their whole
+//! [`crate::utilities::file_lock::FileLock`] for their whole
 //! read-modify-write cycle (spec: "Concurrent registrations").
 
 use std::fs;
@@ -11,8 +11,8 @@ use time::OffsetDateTime;
 
 use crate::config::paths::Paths;
 use crate::prelude::*;
-use crate::source::lock::FileLock;
 use crate::source::{SourceEntry, SourceId, SourceKind};
+use crate::utilities::file_lock::FileLock;
 
 /// On-disk shape of `sources.toml`: a format tag plus the `[[source]]`
 /// array of tables.

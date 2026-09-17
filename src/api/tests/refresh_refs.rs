@@ -17,12 +17,13 @@
 //! against `repo_marker.root_path`. That is the same path a memory saved
 //! over HTTP takes, which makes it the honest one to test.
 
-use comemory::api::{self, Ctx};
+use comemory::api;
 use comemory::config::{Config, Paths};
 use comemory::errors::Error;
 use comemory::memory::Kind;
 use comemory::serve::RootOverrides;
 use comemory::store::connection;
+use comemory::utilities::context::Ctx;
 
 use crate::test_common::{git_commit, git_repo};
 

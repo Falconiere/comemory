@@ -1,7 +1,7 @@
 //! Reusable clap pagination flags shared across subcommands. Flatten this into
 //! a command's `Args` with `#[command(flatten)]` so every paginated command
 //! exposes an identical `--limit` / `--offset` pair and feeds the same window
-//! into [`crate::output::page::Page::from_slice`] (Binding Rule 1).
+//! into [`crate::utilities::pagination::Page::from_slice`] (Binding Rule 1).
 
 use clap::Args as ClapArgs;
 

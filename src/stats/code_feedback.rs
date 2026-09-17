@@ -99,7 +99,7 @@ pub fn record_code_with_provenance(
             *id,
             "used",
             &now,
-            crate::stats::target::CODE,
+            crate::utilities::telemetry::target::CODE,
             provenance,
         )?;
         store_code_feedback::upsert_used(&tx, &sym, &now)?;
@@ -112,7 +112,7 @@ pub fn record_code_with_provenance(
             *id,
             "irrelevant",
             &now,
-            crate::stats::target::CODE,
+            crate::utilities::telemetry::target::CODE,
             provenance,
         )?;
         store_code_feedback::upsert_irrelevant(&tx, &sym)?;

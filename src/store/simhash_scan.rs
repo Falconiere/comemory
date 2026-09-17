@@ -14,7 +14,7 @@ use crate::prelude::*;
 ///
 /// `simhash` is the raw `INTEGER` column: the write path stores
 /// `simhash::of_body(body) as i64`, so a reader casts back with `as u64`
-/// before handing it to [`crate::simhash::hamming64`].
+/// before handing it to [`crate::utilities::simhash::hamming64`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SimhashRow {
     /// 8-hex memory id.

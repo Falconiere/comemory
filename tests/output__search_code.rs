@@ -12,10 +12,10 @@
 //! `score path:start-end symbol (kind) #id` rows, the code-flavored
 //! `--used-code` feedback footer, and the empty-index hint.
 
-use comemory::output::search::PageMeta;
 use comemory::output::search_code;
 use comemory::retrieval::code_rerank::{CodeReranked, CodeScoreParts};
 use comemory::retrieval::router::Source;
+use comemory::utilities::pagination::PageMeta;
 
 /// Representative pagination cursor for the unpaginated first page: page
 /// size 12 (default `top_k`), no offset, single in-window hit.

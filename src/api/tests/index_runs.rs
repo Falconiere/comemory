@@ -12,10 +12,11 @@
 
 use crate::test_common::git_sample;
 
+use comemory::api;
 use comemory::api::index_code::IndexMode;
-use comemory::api::{self, Ctx};
 use comemory::config::{Config, Paths};
 use comemory::store::connection;
+use comemory::utilities::context::Ctx;
 use tempfile::TempDir;
 
 fn ctx_over(home: &TempDir) -> (Paths, Config, rusqlite::Connection) {

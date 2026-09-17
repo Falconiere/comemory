@@ -14,9 +14,10 @@
 
 use crate::test_common::vectors;
 
-use comemory::api::{self, Ctx};
+use comemory::api;
 use comemory::config::{Config, Paths};
 use comemory::store::connection;
+use comemory::utilities::context::Ctx;
 use tempfile::tempdir;
 
 fn make_row(seed: &str, repo: &str, path: &str, blob_oid: &str) -> String {

@@ -12,12 +12,13 @@
 
 use crate::test_common::git_sample;
 
+use comemory::api;
 use comemory::api::index_code::IndexMode;
-use comemory::api::{self, Ctx};
 use comemory::config::{Config, Paths};
 use comemory::memory::Kind;
 use comemory::store::edges::{self, EdgeKey};
 use comemory::store::{connection, repo_drop};
+use comemory::utilities::context::Ctx;
 use rusqlite::Connection;
 use tempfile::TempDir;
 

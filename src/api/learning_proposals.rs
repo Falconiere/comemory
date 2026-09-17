@@ -15,12 +15,12 @@
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::api::Ctx;
 use crate::config::Config;
 use crate::eval::tune::{self, TuneCandidate};
 use crate::prelude::*;
 use crate::store::Connection;
 use crate::store::eval_runs::{self, EvalRunRow};
+use crate::utilities::context::Ctx;
 
 /// Read the whole run history: a proposal can be arbitrarily old, and the
 /// list is filtered down to unapplied/undiscarded rows anyway.

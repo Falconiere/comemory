@@ -1,9 +1,10 @@
 //! `feedback` row CRUD: the per-memory `used`/`irrelevant` counter table,
 //! plus the memory-tagged `feedback_events` provenance inserts.
 //!
-//! The provenance vocabulary (`stats::target`), the query-id contract, and
-//! every transaction boundary stay in [`crate::stats::feedback`] — this
-//! module owns only the SQL text and its parameter binding. See
+//! The provenance vocabulary lives in `crate::utilities::telemetry` and the
+//! query-id contract in [`crate::utilities::query_id`]; every transaction
+//! boundary stays in [`crate::stats::feedback`] — this module owns only the
+//! SQL text and its parameter binding. See
 //! [`crate::store::code_feedback`] for the code-side sibling table.
 //!
 //! [`used_query_ids`] and [`used_events_for_golden`] are `feedback_events`
@@ -68,7 +69,7 @@ pub(crate) fn insert_event(
 
 /// Distinct `query_id`s carrying at least one `used` verdict of `target_kind`
 /// and `provenance` — the "this query succeeded" set behind `eval::mine`'s
-/// reformulation scan, which passes `stats::feedback::PROV_MANUAL` so an
+/// reformulation scan, which passes `utilities::telemetry::PROV_MANUAL` so an
 /// HTTP-implicit `used` on a real query id never marks a rewording
 /// successful.
 pub(crate) fn used_query_ids(
@@ -106,7 +107,7 @@ pub struct GoldenFeedbackRow {
 /// `source` is `exclude_source`, restricted to still-live memories. Ordered
 /// `(query, repo, kind, memory_id)`, `DISTINCT` (a query/memory pair can
 /// carry more than one verdict row across retries). `eval::golden::harvest`
-/// passes `stats::feedback::PROV_MANUAL`: only a human-stated verdict is
+/// passes `utilities::telemetry::PROV_MANUAL`: only a human-stated verdict is
 /// ground truth, so an HTTP-implicit `used` with a real query id — which
 /// the JOIN would otherwise admit — never mints a golden pair.
 pub fn used_events_for_golden(

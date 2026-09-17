@@ -32,13 +32,13 @@ use serde_json::json;
 use tokio::sync::broadcast::error::TryRecvError;
 use tokio::sync::{broadcast, watch};
 
-use crate::output::page::Page;
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::envelope::Envelope;
 use crate::serve::jobs::registry::CancelOutcome;
 use crate::serve::jobs::{JobEvent, JobStatus, LogEvent, Progress, ProgressEvent};
 use crate::serve::routes::{RouteEntry, respond};
+use crate::utilities::pagination::Page;
 
 /// Emitted (and the stream ended) when a status payload cannot be
 /// serialized — a shape-stable last word instead of a silently truncated

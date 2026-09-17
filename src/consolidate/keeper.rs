@@ -9,8 +9,8 @@ use std::collections::HashMap;
 use super::{Cluster, Member};
 use crate::consolidate::cluster::Group;
 use crate::prelude::*;
-use crate::simhash::hamming64;
 use crate::store::Connection;
+use crate::utilities::simhash::hamming64;
 
 /// Per-memory stats behind the keeper order, re-exported from
 /// [`crate::store::memory_meta`] so this module's field accesses are

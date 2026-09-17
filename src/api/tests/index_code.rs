@@ -14,10 +14,11 @@
 
 use crate::test_common::{git_sample, git_worktree};
 
+use comemory::api;
 use comemory::api::index_code::IndexMode;
-use comemory::api::{self, Ctx};
 use comemory::config::{Config, Paths};
 use comemory::store::connection;
+use comemory::utilities::context::Ctx;
 use tempfile::tempdir;
 
 fn ctx_over(home: &std::path::Path) -> (Paths, Config, rusqlite::Connection) {
@@ -198,7 +199,7 @@ fn run_on_a_non_git_directory_never_creates_the_db() {
     );
 }
 
-/// A [`api::index_code::ProgressSink`] that just records every call, for
+/// A [`comemory::utilities::progress::ProgressSink`] that just records every call, for
 /// asserting the seam `serve::jobs::worker::RegistryProgressSink` uses in
 /// production — proven end-to-end over real HTTP in
 /// `tests/serve__jobs_progress.rs`; this proves the plain function contract.
@@ -208,7 +209,7 @@ struct RecordingSink {
     logs: std::sync::Mutex<Vec<String>>,
 }
 
-impl api::index_code::ProgressSink for RecordingSink {
+impl comemory::utilities::progress::ProgressSink for RecordingSink {
     fn on_progress(&self, done: u64, total: u64) {
         self.progress.lock().expect("lock").push((done, total));
     }

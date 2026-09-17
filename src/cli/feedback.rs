@@ -7,11 +7,12 @@ use std::path::PathBuf;
 use clap::Args as ClapArgs;
 
 use crate::api;
-use crate::cli::csv_unique;
 use crate::config::Config;
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::output::json;
 use crate::prelude::*;
+use crate::utilities::context::Ctx;
+use crate::utilities::id_list::csv_unique;
 
 const EXAMPLES: &str = "\
 Examples:
@@ -66,7 +67,7 @@ pub struct Args {
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     let cfg = Config::defaults();
-    let mut ctx = api::Ctx::lazy(&paths, &cfg);
+    let mut ctx = Ctx::lazy(&paths, &cfg);
 
     let req = api::feedback::Request {
         query_id: a.query_id,

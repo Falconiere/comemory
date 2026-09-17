@@ -28,6 +28,8 @@ One line per file, named after its primary item:
 | `code_rerank.rs` | `WORKING_SET_COMMITS` | Code rerank: relevance × the four `code_prior` boosts, chunk→parent coalesce |
 | `code_route.rs` | `CodeRoutedHit` | Candidate stage for code search: weighted BM25 + thresholded ANN, RRF-fused |
 | `code_search.rs` | `search_code_hits` | Shared code-search entry point (route → rerank) for `search-code` and `serve` |
+| `code_search_result.rs` | `SearchCodeResult` | The owned value `api::search_code::run` returns for both delivery surfaces |
+| `context_result.rs` | `ContextResult` | The owned value `api::context::run` returns for both delivery surfaces |
 | `diversify.rs` | `diversify` | SimHash near-dup collapse then MMR with token-set Jaccard similarity |
 | `doc_route.rs` | `DocHit` | Document retrieval leg: BM25 over `document_fts`, chunk→parent coalesce |
 | `fuse.rs` | `RankedHit` | Reciprocal Rank Fusion across ranked lists |
@@ -38,6 +40,7 @@ One line per file, named after its primary item:
 | `router.rs` | `CANDIDATE_POOL` | Route to vector, lexical, or hybrid path; the 4-tier lexical fallback ladder |
 | `scope.rs` | `TimeScope` | Created-date window (`--since`/`--until`/`--as-of`) shared by every leg |
 | `score.rs` | `activation` | Deterministic scoring primitives: ACT-R activation, Beta-smoothed feedback |
+| `search_result.rs` | `SearchResult` | The owned value `api::search::run` returns for both delivery surfaces |
 
 When you add a file here, add its row above so the index stays current. No
 `mod.rs` barrel — submodules are declared from `src/retrieval.rs` (`pub mod

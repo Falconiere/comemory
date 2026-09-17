@@ -10,14 +10,15 @@
 //! `api::save::run`, `api::delete::run` (the soft delete), `api::feedback::run`,
 //! `store::code_ref::upsert`, `store::vector::insert_memory`.
 
-use comemory::api::{self, Ctx};
+use comemory::api;
 use comemory::config::{Config, Paths};
 use comemory::memory::{Kind, Ref, References};
-use comemory::stats::feedback::generate_query_id;
 use comemory::store::memory_purge::{
     expired_deleted_ids, purge_memory, soft_delete as store_soft_delete, trashed_with_hash,
 };
 use comemory::store::{code_ref, connection, fts, memory_row, vector};
+use comemory::utilities::context::Ctx;
+use comemory::utilities::query_id::generate_query_id;
 use rusqlite::Connection;
 use time::{Duration, OffsetDateTime};
 

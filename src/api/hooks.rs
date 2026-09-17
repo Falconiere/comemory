@@ -20,10 +20,10 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::api::Ctx;
 use crate::config::patch::{patch_config_file, section};
 use crate::git_utils;
 use crate::prelude::*;
+use crate::utilities::context::Ctx;
 
 /// The three git hooks `install-hooks` writes, each independently
 /// controllable here via `--enable`/`--disable`.

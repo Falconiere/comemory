@@ -12,9 +12,10 @@
 //! against CLI stdout in `tests/cli__doctor.rs`; the HTTP route lives in
 //! `tests/serve__routes__maint__mod.rs`).
 
-use comemory::api::{self, Ctx};
+use comemory::api;
 use comemory::config::{Config, Paths};
 use comemory::store::migrate::CURRENT_VERSION;
+use comemory::utilities::context::Ctx;
 
 #[test]
 fn run_reports_current_schema_and_embed_hint_on_a_fresh_writable_dir() {

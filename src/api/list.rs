@@ -5,11 +5,11 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::api::Ctx;
-use crate::output::page::Page;
 use crate::output::search::title_of;
 use crate::prelude::*;
 use crate::store::memory_list::{self, ListFilter, ListRow, SortBy};
+use crate::utilities::context::Ctx;
+use crate::utilities::pagination::Page;
 
 /// `comemory list` / `GET /api/v1/memories` request. Every field is
 /// optional — an empty request lists every live memory, newest first.

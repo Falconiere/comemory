@@ -9,10 +9,10 @@
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::api::Ctx;
 use crate::eval::mine::{self, MinedMapping};
 use crate::prelude::*;
 use crate::store::memory_row;
+use crate::utilities::context::Ctx;
 
 /// `comemory mine` / `POST /api/v1/mine` request.
 #[derive(Deserialize, Debug)]

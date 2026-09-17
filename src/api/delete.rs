@@ -6,9 +6,9 @@
 
 use serde::Serialize;
 
-use crate::api::Ctx;
 use crate::prelude::*;
 use crate::store::{Connection, memory_row, sync_log};
+use crate::utilities::context::Ctx;
 use time::OffsetDateTime;
 
 /// `comemory delete` / `DELETE /api/v1/memories/{id}` response.

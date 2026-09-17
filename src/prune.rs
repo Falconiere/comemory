@@ -11,4 +11,6 @@
 
 pub mod low_value;
 pub mod orphans;
+/// The owned value `comemory prune` produces.
+pub mod report;
 pub mod stale_code;

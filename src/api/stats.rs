@@ -15,10 +15,10 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::api::Ctx;
 use crate::config::Paths;
 use crate::prelude::*;
 use crate::store::{schema_meta, stats_counts};
+use crate::utilities::context::Ctx;
 
 /// `comemory stats` / `GET /api/v1/stats` request.
 #[derive(Deserialize, Debug, Default)]

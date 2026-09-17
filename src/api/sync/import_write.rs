@@ -1,6 +1,5 @@
 //! Import write path — markdown + SQLite mirror + sync log (rules 8–10).
 
-use crate::api::Ctx;
 use crate::api::sync::{
     ImportEntry, ImportItemResult, ImportStatus, SyncOp, SyncRecord, SyncVector,
 };
@@ -9,6 +8,7 @@ use crate::memory::frontmatter::Frontmatter;
 use crate::memory::{MemoryStore, SaveParams};
 use crate::prelude::*;
 use crate::store::{Connection, embed, memory_row, schema_meta, simhash_scan, sync_log, vector};
+use crate::utilities::context::Ctx;
 
 const MEMORY_DIM: usize = 1024;
 
@@ -130,11 +130,16 @@ fn decode_vector(conn: &Connection, wire: Option<&SyncVector>) -> Result<Option<
 }
 
 fn near_duplicate(conn: &Connection, body: &str, self_id: &str, radius: u32) -> Option<String> {
-    let hash = crate::simhash::of_body(body);
+    let hash = crate::utilities::simhash::of_body(body);
     simhash_scan::live_simhashes(conn, None, Some(self_id))
         .ok()?
         .into_iter()
-        .map(|row| (row.id, crate::simhash::hamming64(hash, row.simhash as u64)))
+        .map(|row| {
+            (
+                row.id,
+                crate::utilities::simhash::hamming64(hash, row.simhash as u64),
+            )
+        })
         .filter(|(_, d)| *d <= radius)
         .min_by_key(|(_, d)| *d)
         .map(|(id, _)| id)

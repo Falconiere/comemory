@@ -18,6 +18,7 @@ One line per file, named after its primary item:
 | --- | --- | --- |
 | `low_value.rs` | `detect` | Low-value memory detection: activation, Beta feedback, quality, graph degree. The two SQL scans (`signal_rule`, `superseded_rule`) delegate to `store::prune_signals`; the ACT-R/Beta scoring and the grace-day cutoff computation stay here |
 | `orphans.rs` | `detect` | Orphan detection: trash entries whose live counterpart is gone |
+| `report.rs` | `Report` | The owned value `api::prune::run` returns for both delivery surfaces |
 | `stale_code.rs` | `detect` | Ghost code-reference detection: pinned `references_symbol` edges gone stale. The `code_ref` scan and the `code_symbols` resolve check delegate to `store::code_ref::for_rel_live` / `store::code_row::symbol_row_exists`; the `RefStatusCache` classification stays here |
 
 When you add a file here, add its row above so the index stays current. No

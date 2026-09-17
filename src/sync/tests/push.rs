@@ -13,12 +13,13 @@
 //! including labels no allowlist would ever have carried, and memories with no
 //! label at all, which is the behaviour change this suite pins down.
 
-use comemory::api::{Ctx, save};
+use comemory::api::save;
 use comemory::config::{Config, Paths};
 use comemory::memory::Kind;
 use comemory::store::connection;
 use comemory::sync::AuthFile;
 use comemory::sync::push;
+use comemory::utilities::context::Ctx;
 
 use crate::test_common as common;
 use crate::test_common::sync_platform_server::{SyncPlatformServer, SyncPlatformState};
@@ -91,7 +92,7 @@ fn an_unlabelled_memory_is_pushed_like_any_other() {
 
     let body = "a note saved in a directory that is not a git worktree";
     let id = comemory::memory::id::memory_id(body);
-    let content_hash = comemory::memory::id::sha256_hex(body.trim_end().as_bytes());
+    let content_hash = comemory::utilities::digest::sha256_hex(body.trim_end().as_bytes());
     server.update(|st| {
         st.import_results = serde_json::json!([{
             "id": id,
@@ -144,7 +145,7 @@ fn a_label_no_allowlist_would_have_carried_is_now_pushed() {
 
     let body = "a memory labelled with a repo no GitHub App allowlist carried";
     let id = comemory::memory::id::memory_id(body);
-    let content_hash = comemory::memory::id::sha256_hex(body.trim_end().as_bytes());
+    let content_hash = comemory::utilities::digest::sha256_hex(body.trim_end().as_bytes());
     server.update(|st| {
         st.import_results = serde_json::json!([{
             "id": id,
@@ -189,9 +190,10 @@ fn a_mixed_batch_reports_each_filter_separately() {
     let pushed_body = "the labelled memory in this batch the organization receives";
     let unlabelled_body = "an unlabelled note that now travels with it";
     let id = comemory::memory::id::memory_id(pushed_body);
-    let content_hash = comemory::memory::id::sha256_hex(pushed_body.trim_end().as_bytes());
+    let content_hash = comemory::utilities::digest::sha256_hex(pushed_body.trim_end().as_bytes());
     let unlabelled_id = comemory::memory::id::memory_id(unlabelled_body);
-    let unlabelled_hash = comemory::memory::id::sha256_hex(unlabelled_body.trim_end().as_bytes());
+    let unlabelled_hash =
+        comemory::utilities::digest::sha256_hex(unlabelled_body.trim_end().as_bytes());
     server.update(|st| {
         st.import_results = serde_json::json!([
             {
@@ -251,7 +253,7 @@ fn repo_not_allowed_does_not_advance_pushed_seq() {
 
     let body = "memory the empty org allowlist refuses";
     let id = comemory::memory::id::memory_id(body);
-    let content_hash = comemory::memory::id::sha256_hex(body.trim_end().as_bytes());
+    let content_hash = comemory::utilities::digest::sha256_hex(body.trim_end().as_bytes());
     server.update(|st| {
         st.import_results = serde_json::json!([{
             "id": id,

@@ -15,9 +15,10 @@
 use crate::test_common::git_commit;
 use crate::test_common::git_repo;
 
-use comemory::api::{self, Ctx};
+use comemory::api;
 use comemory::config::{Config, Paths};
 use comemory::store::connection;
+use comemory::utilities::context::Ctx;
 use tempfile::tempdir;
 
 /// Real oversized function fixture, shared with `tests/cli__index_code_2.rs`

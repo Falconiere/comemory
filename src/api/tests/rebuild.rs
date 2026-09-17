@@ -16,8 +16,9 @@
 
 use crate::test_common::cli_rebuild_support as support;
 
-use comemory::api::{self, Ctx};
+use comemory::api;
 use comemory::config::{Config, Paths};
+use comemory::utilities::context::Ctx;
 use rusqlite::Connection;
 use tempfile::{TempDir, tempdir};
 

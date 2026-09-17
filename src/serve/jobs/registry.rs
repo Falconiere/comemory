@@ -214,7 +214,7 @@ impl Registry {
     /// Record a progress report for job `id`: update the stored snapshot
     /// (`JobView::progress`) and publish it on the job's progress `watch`
     /// channel (the SSE `progress` event). `NotFound` when the id is
-    /// unknown — a [`crate::api::index_code::ProgressSink`] implementation
+    /// unknown — a [`crate::utilities::progress::ProgressSink`] implementation
     /// treats that as best-effort and only warns; see that trait's doc.
     pub fn set_progress(&self, id: &str, progress: Progress) -> Result<()> {
         let mut jobs = self.lock()?;

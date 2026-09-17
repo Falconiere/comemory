@@ -19,9 +19,9 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::api::Ctx;
 use crate::prelude::*;
 use crate::store::repos_inventory::{self, RepoMarkerRow};
+use crate::utilities::context::Ctx;
 
 /// The git-state half of a row: HEAD comparison, remote/branch lookup, and
 /// changed-file count.
