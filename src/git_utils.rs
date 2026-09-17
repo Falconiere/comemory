@@ -19,8 +19,9 @@
 //!   second one of some other repository?", which `index-code` asks before it
 //!   would create a repo label that has never been seen before.
 //! * [`hook_outdated`] — whether a hook we wrote predates the body this
-//!   binary ships, so `install-hooks` can replace its own stale scripts
-//!   instead of leaving a pre-worktree-rule hook running forever.
+//!   binary ships. `install-hooks` repairs such a hook by rewriting every
+//!   hook it owns unconditionally; this predicate is how a caller (or a
+//!   test) can tell a stale pre-worktree-rule hook from a current one.
 //!
 //! All `git2::Error` cases are flattened into [`Error::Other`] via
 //! [`map_git_err`] — callers only need to handle our own error enum.
@@ -349,8 +350,9 @@ pub fn hook_installed(repo_root: &Path, hook: &str) -> bool {
 /// (which passed `basename "$(git rev-parse --show-toplevel)"` as `--repo`)
 /// still contains the marker, so it counted as installed and no release ever
 /// replaced it. Every commit and every `git worktree add` in such a repo kept
-/// minting a `<worktree-dir>` repo label. [`crate::api::install_hooks`] uses
-/// this to rewrite our own outdated hooks without `--force`.
+/// minting a `<worktree-dir>` repo label. [`crate::api::install_hooks`]
+/// repairs that by rewriting every hook it owns on every run — it does not
+/// consult this predicate; naming the stale state is what this is for.
 ///
 /// A file we did not write (no marker) is never "outdated" — it is foreign,
 /// and replacing it is the caller's explicit `--force` decision.
