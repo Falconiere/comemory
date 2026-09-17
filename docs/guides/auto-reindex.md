@@ -72,6 +72,16 @@ Because one label has one recorded root, a search from a linked worktree does
 not reindex (the rule above); the index keeps following the checkout that
 first indexed it, and `--repo` still overrides the label explicitly.
 
+`index-code` enforces the rule rather than trusting its caller: asked to index
+a **linked worktree** under a label this store has never seen, it indexes under
+the main worktree's label instead and logs a warning. That is deliberately
+narrow — a label that already has a `repo_marker` row is left alone, whether
+you connected it deliberately under a custom name or it was minted by an older
+release — but it means no caller can add a repository to the console's list
+just by running `git worktree add`. If your list already carries per-worktree
+rows from before this rule, disconnect them (`DELETE /api/v1/repos/{name}`);
+nothing re-creates them.
+
 ### Archived and disconnected repos
 
 The console (`comemory serve`'s `/api/v1/repos` routes) offers two ways to
@@ -103,10 +113,18 @@ comemory install-hooks
 
 This installs `post-commit`, `post-merge`, and `post-checkout` hooks that
 trigger `comemory index-code`, so the index refreshes whenever your HEAD moves
-through git. Re-run with `--force` to overwrite existing hooks. The hooks are
-written where git runs them — the shared `.git/hooks` of the main worktree, even
-when you install from a linked worktree — and a commit made in a linked worktree
-refreshes the main repo's label (see *Worktrees* above).
+through git. The hooks are written where git runs them — the shared
+`.git/hooks` of the main worktree, even when you install from a linked worktree
+— and a commit made in a linked worktree refreshes the main repo's label (see
+*Worktrees* above).
+
+Re-running `install-hooks` **refreshes any hook comemory wrote**, no `--force`
+needed: the body is rewritten to the one your current binary ships. That
+matters because a hook is a copy on disk, not a link — a repo whose hooks were
+installed before the worktree rule kept running the old script, passing the
+checkout's own basename as `--repo`, so every `git worktree add` fired
+`post-checkout` and registered one more "repository". `--force` now has one
+job: clobbering a hook comemory did *not* write, which is somebody else's file.
 
 ## Off / manual
 

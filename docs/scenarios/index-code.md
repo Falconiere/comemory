@@ -19,7 +19,7 @@ _None._ `--repo` and `--path` are required flags.
 
 | Flag | Default | Effect |
 | --- | --- | --- |
-| `--repo` | **required** | Label stored on every symbol row |
+| `--repo` | **required** | Label stored on every symbol row. A linked `git worktree` is never a repository of its own: if `--path` is one and this label is unknown to the store, the run files under the main worktree's label instead (see [auto-reindex](../guides/auto-reindex.md#worktrees)) |
 | `--path` | **required** | Working-tree root (must live inside a git repo) |
 | `--extract` | off | JSONL on stdout, no DB writes, ignores the blob cursor |
 | `--mode` | `incremental` | `incremental` skips unchanged blobs; `full` re-extracts every file (lossy: drops that repo's `code_vec` and per-symbol access counters) |
@@ -59,3 +59,16 @@ _None._ `--repo` and `--path` are required flags.
 - **Command:** `comemory index-code --repo x --path /tmp/not-a-repo`
 - **Expect:** non-zero exit (git discovery failure).
 - **Covered by:** `src/api/tests/index_code.rs::run_on_a_non_git_directory_errors` (API); CLI surfaces the same error
+
+### index-code-05 A linked worktree is not a repository
+
+- **Flags:** `--repo` `--path`
+- **Setup:** a repo `sample-repo` plus `git worktree add ../feature-42`
+- **Command:** `comemory index-code --repo feature-42 --path ../feature-42`
+- **Expect:** the symbols land under `sample-repo` and no `repo_marker` row is
+  created for `feature-42`, so a stale git hook (or any caller passing the
+  checkout's own basename) cannot add a repository per worktree. A label the
+  store already knows is left alone.
+- **Covered by:** `src/api/tests/index_code.rs::run_files_a_linked_worktree_under_its_main_repo_label`,
+  `src/api/tests/index_code.rs::run_leaves_an_already_known_label_alone_even_in_a_worktree`,
+  `src/api/tests/index_code.rs::run_keeps_a_custom_label_for_a_main_checkout`

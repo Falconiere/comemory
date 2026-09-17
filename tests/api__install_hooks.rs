@@ -7,8 +7,9 @@
 )]
 //! Mirror test for `src/api/install_hooks.rs`. Calls `api::install_hooks::run`
 //! directly against a `Ctx::lazy` (conn-free) — proving the three hooks are
-//! written, the pre-flight refuses to clobber an existing hook without
-//! `force`, and `force` overwrites (`cli::install_hooks::run` is byte-compat
+//! written, the pre-flight refuses to clobber a FOREIGN hook without `force`,
+//! that an outdated comemory-written hook is repaired without it, and that
+//! `force` overwrites (`cli::install_hooks::run` is byte-compat
 //! tested against CLI stdout in `tests/cli__install_hooks.rs`; the HTTP
 //! route, including `--repo` containment, lives in
 //! `tests/serve__routes__maint__admin.rs`).
@@ -49,7 +50,7 @@ fn run_installs_all_three_hooks() {
 }
 
 #[test]
-fn run_refuses_to_clobber_an_existing_hook_without_force() {
+fn run_refuses_to_clobber_a_foreign_hook_without_force() {
     let home = tempfile::tempdir().expect("tempdir");
     let repo = home.path().join("repo");
     let hooks_dir = repo.join(".git").join("hooks");
@@ -118,4 +119,67 @@ fn request_rejects_unknown_fields() {
     }))
     .expect_err("unknown field must be rejected");
     assert!(err.to_string().contains("unknown field"));
+}
+
+/// The body comemory shipped before the worktree-label rule: it carries the
+/// `comemory index-code` marker, so `hook_installed` has always reported it as
+/// installed and no release ever replaced it — while it kept passing the
+/// checkout's OWN basename as `--repo`, minting one repo per `git worktree
+/// add`. `install-hooks` must repair its own hook without `--force`.
+const LEGACY_HOOK_SCRIPT: &str = "#!/usr/bin/env bash\n\
+     ROOT=\"$(git rev-parse --show-toplevel 2>/dev/null)\"\n\
+     [ -z \"$ROOT\" ] && exit 0\n\
+     REPO=\"$(basename \"$ROOT\")\"\n\
+     ( comemory index-code --repo \"$REPO\" --path \"$ROOT\" >/dev/null 2>&1 & )\n\
+     exit 0\n";
+
+#[test]
+fn run_repairs_an_outdated_comemory_hook_without_force() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let repo = home.path().join("repo");
+    let hooks_dir = repo.join(".git").join("hooks");
+    std::fs::create_dir_all(&hooks_dir).expect("fake hooks dir");
+    for hook in ["post-commit", "post-merge", "post-checkout"] {
+        std::fs::write(hooks_dir.join(hook), LEGACY_HOOK_SCRIPT).expect("write legacy hook");
+    }
+
+    let paths = ctx_paths(home.path());
+    let cfg = Config::defaults();
+    let mut ctx = Ctx::lazy(&paths, &cfg);
+    let resp =
+        api::install_hooks::run(&mut ctx, request(&repo, false)).expect("repair without force");
+    assert_eq!(resp.installed.len(), 3);
+
+    for hook in ["post-commit", "post-merge", "post-checkout"] {
+        let body = std::fs::read_to_string(hooks_dir.join(hook)).expect("read hook");
+        assert_eq!(
+            body,
+            comemory::git_utils::REINDEX_HOOK_SCRIPT,
+            "{hook} must be byte-identical to the body this binary ships"
+        );
+        assert!(
+            !comemory::git_utils::hook_outdated(&repo, hook),
+            "{hook} must no longer read as outdated after the repair"
+        );
+    }
+}
+
+#[test]
+fn run_is_idempotent_over_an_up_to_date_comemory_hook() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let repo = home.path().join("repo");
+    std::fs::create_dir_all(repo.join(".git")).expect("fake .git dir");
+
+    let paths = ctx_paths(home.path());
+    let cfg = Config::defaults();
+    let mut ctx = Ctx::lazy(&paths, &cfg);
+    api::install_hooks::run(&mut ctx, request(&repo, false)).expect("first install");
+    let first = std::fs::read_to_string(repo.join(".git").join("hooks").join("post-commit"))
+        .expect("read hook");
+
+    api::install_hooks::run(&mut ctx, request(&repo, false))
+        .expect("re-running over our own current hook is not a conflict");
+    let second = std::fs::read_to_string(repo.join(".git").join("hooks").join("post-commit"))
+        .expect("read hook again");
+    assert_eq!(first, second);
 }

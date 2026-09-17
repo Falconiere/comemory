@@ -49,20 +49,35 @@ pub struct Response {
     pub repo: String,
 }
 
-/// Install (or, with `req.force`, overwrite) the three reindex hooks.
+/// Install the three reindex hooks, refreshing any comemory already wrote
+/// and clobbering a foreign one only with `req.force`.
 ///
-/// Pre-flight: verify every target hook either doesn't exist or `force` is
-/// set BEFORE writing any of them, so a partial install (e.g. a fresh
-/// `post-commit` next to an unchanged pre-existing `post-merge`) can never
-/// happen.
+/// Pre-flight: verify every target hook is writable BEFORE writing any of
+/// them, so a partial install (e.g. a fresh `post-commit` next to an
+/// untouched pre-existing `post-merge`) can never happen.
+///
+/// A target is writable when it does not exist, when `force` is set, or when
+/// it is **our own** hook — one carrying [`git_utils::HOOK_MARKER`].
+/// Rewriting a comemory-written hook with the body this binary ships is
+/// idempotent when it already matches and a repair when it does not
+/// ([`git_utils::hook_outdated`]), and that repair is the point: hooks
+/// written before the worktree-label rule pass
+/// `basename "$(git rev-parse --show-toplevel)"` as `--repo`, so every commit
+/// and every `git worktree add` in the repo mints a `<worktree-dir>` repo
+/// label. Nothing replaced them, because [`git_utils::hook_installed`]
+/// matches on the marker alone and reported them as installed.
+///
+/// `--force` keeps its one remaining job: clobbering a **foreign** hook,
+/// which is somebody else's file and never ours to overwrite silently.
 pub fn run(_ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
     let repo = PathBuf::from(&req.repo);
     if !req.force {
         for hook in HOOKS {
             let target = git_utils::hooks_dir(&repo).join(hook);
-            if target.exists() {
+            if target.exists() && !git_utils::hook_installed(&repo, hook) {
                 return Err(Error::Other(format!(
-                    "{} already exists; pass --force to overwrite",
+                    "{} already exists and was not written by comemory; \
+                     pass --force to overwrite",
                     target.display()
                 )));
             }

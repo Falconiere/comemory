@@ -131,7 +131,7 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
 /// recording is best-effort and never turns an indexed repo into a failure.
 pub fn run_with_progress(
     ctx: &mut Ctx<'_>,
-    req: Request,
+    mut req: Request,
     sink: Option<&dyn ProgressSink>,
 ) -> Result<Response> {
     let started = Instant::now();
@@ -150,10 +150,77 @@ pub fn run_with_progress(
         .enabled
         .then_some(ctx.cfg.reinforce.search_edit_days);
     let conn = ctx.conn()?;
+    redirect_worktree_label(conn, &mut req, &git_repo)?;
     refuse_if_archived(conn, &req.repo)?;
     let outcome = index_repo(conn, &req, &root, &git_repo, lookback_days, sink);
     record_run(conn, &req, &root, &started_at, started.elapsed(), &outcome);
     outcome
+}
+
+/// A linked worktree is a second checkout of one repository, never a
+/// repository of its own. When `req.path` is one and `req.repo` is a label
+/// this store has never seen, index under the main worktree's label
+/// ([`git_utils::repo_label`]) rather than create a brand-new repo row.
+///
+/// Narrow on purpose: only the *creation* of a per-worktree label is
+/// refused. A label that already has a `repo_marker` row is left alone — it
+/// is either a repo the operator connected deliberately (possibly under a
+/// custom label, which `api::repo_admin::connect` allows) or a worktree row
+/// minted before this rule existed, and rewriting either would silently
+/// repoint an existing code index at a different checkout.
+///
+/// This is the backstop for callers that pass a label we did not derive: a
+/// git hook or an agent wrapper written before the worktree rule passes
+/// `basename "$(git rev-parse --show-toplevel)"`, so every `git worktree
+/// add` fired `post-checkout` and added one more "repository" to the
+/// console's list. Fixing the shipped hook body cannot fix the copies
+/// already on disk in every repo; this can.
+fn redirect_worktree_label(
+    conn: &Connection,
+    req: &mut Request,
+    git_repo: &Repository,
+) -> Result<()> {
+    if repo_marker::exists(conn, &req.repo)? || !git_utils::is_linked_worktree(git_repo) {
+        return Ok(());
+    }
+    let Some(main_label) = git_utils::repo_label(git_repo) else {
+        return Ok(());
+    };
+    if main_label == req.repo {
+        return Ok(());
+    }
+    tracing::warn!(
+        requested = %req.repo,
+        repo = %main_label,
+        "index-code: requested label is a linked worktree directory, not a repository; \
+         indexing under the main worktree's label instead (run `comemory install-hooks` \
+         to refresh a git hook that predates this rule)",
+    );
+    req.repo = main_label;
+    Ok(())
+}
+
+/// The directory `repo` is RECORDED at (`repo_marker.root_path`), which is not
+/// always the directory that was walked.
+///
+/// When `repo` is the repository's own label, the repo is recorded at its main
+/// working tree: a linked worktree is temporary (`git worktree remove` deletes
+/// it), repo-relative paths resolve the same against either checkout, and
+/// stamping the worktree would only leave `serve::repo_root` pointing at a
+/// directory that is about to vanish.
+///
+/// For any OTHER label — one the operator connected under a custom name, or a
+/// per-worktree row minted before [`redirect_worktree_label`] existed — the
+/// walked path is recorded verbatim. Those rows keep their own root on
+/// purpose: rewriting one to the main worktree would repoint an existing code
+/// index at a checkout it was never indexed from, and would leave two labels
+/// claiming one root, which `api::repo_admin::connect` refuses to create and
+/// `cli::lazy_reindex` refuses to reindex through.
+fn recorded_root_for(repo: &str, walked: &Path, git_repo: &Repository) -> PathBuf {
+    if git_utils::repo_label(git_repo).as_deref() != Some(repo) {
+        return walked.to_path_buf();
+    }
+    git_utils::main_worktree_dir(git_repo).unwrap_or_else(|| walked.to_path_buf())
 }
 
 /// `Err(Error::BadRequest)` when `repo` carries `repo_marker.archived = 1`
@@ -198,7 +265,8 @@ fn index_repo(
     }
     let files_indexed = walk_repo(&tx, &req.repo, root, git_repo, &mut imports_by_file, sink)?;
     code_row::stamp_repo_format(&tx, &req.repo)?;
-    walk::stamp_repo_root(&tx, &req.repo, root)?;
+    let recorded_root = recorded_root_for(&req.repo, root, git_repo);
+    walk::stamp_repo_root(&tx, &req.repo, &recorded_root)?;
     stamp_last_indexed(&tx, &req.repo, root);
     tx.commit()?;
     // Best-effort graph post-pass: the symbol index is already durable, so

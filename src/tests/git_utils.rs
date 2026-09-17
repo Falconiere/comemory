@@ -14,7 +14,8 @@ use std::process::Command;
 
 use comemory::git_utils::{
     REINDEX_HOOK_SCRIPT, blob_oid_at_head, changed_files, current_branch, current_head,
-    hook_installed, hooks_dir, install_hook, remove_hook, repo_label, repo_label_at,
+    hook_installed, hook_outdated, hooks_dir, install_hook, is_linked_worktree, remove_hook,
+    repo_label, repo_label_at,
 };
 use tempfile::TempDir;
 
@@ -378,4 +379,88 @@ fn current_branch_none_when_detached() {
         .expect("blob_oid_at_head detached")
         .expect("a.txt still committed when detached");
     assert_eq!(oid.len(), 40, "got {oid:?}");
+}
+
+/// The exact `post-commit` body comemory shipped before the worktree-label
+/// rule, as found installed in real repos. It carries the marker (so
+/// `hook_installed` reports it) but labels every checkout by its OWN
+/// basename, which is what filled the console with one "repository" per
+/// `git worktree add`.
+const LEGACY_HOOK_SCRIPT: &str = "#!/usr/bin/env bash\n\
+     ROOT=\"$(git rev-parse --show-toplevel 2>/dev/null)\"\n\
+     [ -z \"$ROOT\" ] && exit 0\n\
+     REPO=\"$(basename \"$ROOT\")\"\n\
+     ( comemory index-code --repo \"$REPO\" --path \"$ROOT\" >/dev/null 2>&1 & )\n\
+     exit 0\n";
+
+#[test]
+fn hook_outdated_flags_a_comemory_hook_written_before_the_worktree_rule() {
+    let tmp = TempDir::new().expect("tempdir");
+    make_repo_with_one_commit(&tmp);
+    let root = tmp.path();
+
+    install_hook(root, "post-commit", LEGACY_HOOK_SCRIPT).expect("install legacy hook");
+    assert!(
+        hook_installed(root, "post-commit"),
+        "the legacy body carries the marker, which is why nothing ever replaced it"
+    );
+    assert!(
+        hook_outdated(root, "post-commit"),
+        "a comemory hook whose body is not the shipped one is outdated"
+    );
+
+    install_hook(root, "post-commit", REINDEX_HOOK_SCRIPT).expect("install current hook");
+    assert!(hook_installed(root, "post-commit"));
+    assert!(
+        !hook_outdated(root, "post-commit"),
+        "the body this binary ships is never outdated"
+    );
+}
+
+#[test]
+fn hook_outdated_ignores_a_hook_comemory_did_not_write() {
+    let tmp = TempDir::new().expect("tempdir");
+    make_repo_with_one_commit(&tmp);
+    let root = tmp.path();
+    let hooks = hooks_dir(root);
+    std::fs::create_dir_all(&hooks).expect("hooks dir");
+    std::fs::write(hooks.join("post-commit"), "#!/bin/sh\necho mine\n").expect("foreign hook");
+
+    assert!(!hook_installed(root, "post-commit"));
+    assert!(
+        !hook_outdated(root, "post-commit"),
+        "somebody else's hook is foreign, never ours to call outdated"
+    );
+    assert!(
+        !hook_outdated(root, "post-merge"),
+        "a hook that does not exist is not outdated"
+    );
+}
+
+#[test]
+fn is_linked_worktree_separates_a_worktree_from_its_main_checkout() {
+    let tmp = TempDir::new().expect("tempdir");
+    let (main, wt) = main_and_linked_worktree(&tmp);
+    let nested = wt.join("src").join("deep");
+    std::fs::create_dir_all(&nested).expect("nested dir");
+
+    let discovered =
+        |p: &std::path::Path| git2::Repository::discover(p).map(|repo| is_linked_worktree(&repo));
+
+    assert!(
+        !discovered(&main).expect("discover main"),
+        "the main checkout is the repository itself"
+    );
+    assert!(
+        discovered(&wt).expect("discover worktree"),
+        "a linked worktree is a second checkout, not a repository"
+    );
+    assert!(
+        discovered(&nested).expect("discover from inside the worktree"),
+        "the answer is the same from anywhere inside the worktree"
+    );
+    assert!(
+        discovered(tmp.path()).is_err(),
+        "outside any repository there is nothing to discover"
+    );
 }

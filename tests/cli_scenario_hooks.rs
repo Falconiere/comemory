@@ -53,9 +53,21 @@ fn install_hooks_toggle_then_search_code() {
     assert!(map["post-merge"]);
     assert!(map["post-checkout"]);
 
-    // A second plain install must refuse to clobber the hooks that are
-    // still there; `--force` overwrites them, which re-installs the one
-    // just disabled.
+    // A second plain install refreshes the hooks comemory itself wrote — that
+    // is how a repo whose hooks predate the worktree-label rule stops
+    // registering every `git worktree add` as a repository — and re-installs
+    // the one just disabled. No `--force` involved.
+    home.run_ok(&["install-hooks", "--repo", repo_s]);
+    let after_reinstall = home.run_json(&["hooks", "--repo", repo_s]);
+    assert!(
+        installed_by_name(&after_reinstall)["post-commit"],
+        "a plain re-install must restore the disabled hook: {after_reinstall}"
+    );
+
+    // `--force` keeps its one job: clobbering a hook comemory did NOT write.
+    let hooks_dir = repo.join(".git").join("hooks");
+    let foreign_hook = "#!/bin/sh\necho hand-written\n";
+    std::fs::write(hooks_dir.join("post-commit"), foreign_hook).expect("write a foreign hook");
     let refused = home
         .bin()
         .args(["install-hooks", "--repo", repo_s])
@@ -63,18 +75,23 @@ fn install_hooks_toggle_then_search_code() {
         .expect("run install-hooks");
     assert!(
         !refused.status.success(),
-        "install-hooks over existing hooks must fail without --force"
+        "install-hooks over a foreign hook must fail without --force"
     );
     assert!(
         String::from_utf8_lossy(&refused.stderr).contains("--force"),
         "stderr must point at --force: {}",
         String::from_utf8_lossy(&refused.stderr)
     );
+    assert_eq!(
+        std::fs::read_to_string(hooks_dir.join("post-commit")).expect("read foreign hook"),
+        foreign_hook,
+        "a refused install must leave the foreign hook byte-identical"
+    );
     home.run_ok(&["install-hooks", "--repo", repo_s, "--force"]);
     let after_force = home.run_json(&["hooks", "--repo", repo_s]);
     assert!(
         installed_by_name(&after_force)["post-commit"],
-        "--force must re-install the disabled hook: {after_force}"
+        "--force must replace the foreign hook with comemory's: {after_force}"
     );
 
     home.run_ok(&["index-code", "--repo", "repo", "--path", repo_s]);
