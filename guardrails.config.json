@@ -17,13 +17,15 @@
         "repos",
         "sync",
         "tests",
-        "proptest-regressions"
+        "proptest-regressions",
+        "install",
+        "setup"
       ],
       "cli": [
         "graph",
-        "install",
         "tests",
-        "proptest-regressions"
+        "proptest-regressions",
+        "setup"
       ],
       "retrieval": [
         "unified",
@@ -69,7 +71,6 @@
       "ast",
       "cli",
       "cli/graph",
-      "cli/install",
       "config",
       "consolidate",
       "document",
@@ -93,7 +94,10 @@
       "store/tokenizer",
       "upgrade",
       "capture",
-      "cloud"
+      "cloud",
+      "api/install",
+      "api/setup",
+      "cli/setup"
     ]
   },
   "fileSize": {

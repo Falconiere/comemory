@@ -20,14 +20,16 @@ use crate::serve::AppState;
 use crate::serve::routes::{self, RouteEntry, respond, run_blocking};
 
 /// Real subcommands with no HTTP mapping: `serve` IS the server (spec
-/// Non-Goal 3), `install` configures an agent host, `upgrade` replaces the
-/// running binary, and the platform
+/// Non-Goal 3), `install` configures an agent host, `setup` enables one on
+/// this machine, `upgrade` replaces the running binary, and the platform
 /// client verbs (`auth` / `sync` / `watch` / `capture` / `distill`) talk to
-/// the cloud platform — none belong behind `/api/v1`. `watch` is also
-/// long-lived by construction: it holds a socket open until interrupted,
-/// which is not a request-response shape.
+/// the cloud platform — none belong behind `/api/v1`. `install` and `setup`
+/// write into the operator's own machine (an agent host's configuration
+/// directory, a repo's git hooks), which a server must never do on request.
+/// `watch` is also long-lived by construction: it holds a socket open until
+/// interrupted, which is not a request-response shape.
 const CLI_ONLY: &[&str] = &[
-    "auth", "capture", "distill", "install", "serve", "sync", "upgrade", "watch",
+    "auth", "capture", "distill", "install", "serve", "setup", "sync", "upgrade", "watch",
 ];
 
 /// This resource's route-table entries, appended onto [`super::table`].

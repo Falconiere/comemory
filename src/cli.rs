@@ -84,6 +84,8 @@ pub mod search_code;
 pub(crate) mod search_only;
 /// `comemory serve`: loopback web viewer.
 pub mod serve;
+/// `comemory setup`: guided first-run onboarding.
+pub mod setup;
 /// `comemory show` — one memory in full.
 pub mod show;
 pub mod sources;
@@ -192,6 +194,8 @@ pub enum Cmd {
     Edges(edges::Args),
     /// Serve the loopback HTTP API (`/api/v1`) for consoles, agents, and scripts.
     Serve(serve::Args),
+    /// Detect what this machine and repo still need, then set it up.
+    Setup(setup::Args),
     /// Headline lookup: code symbol + memories matching a key.
     Context(context::Args),
     /// Emit a shell completion script for `bash`, `zsh`, `fish`, `powershell`, or `elvish`.
@@ -254,6 +258,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::Graph(a) => graph::run(a, cli.json, cli.data_dir).await,
         Cmd::Edges(a) => edges::run(a, cli.json, cli.data_dir).await,
         Cmd::Serve(a) => serve::run(a, cli.json, cli.data_dir).await,
+        Cmd::Setup(a) => setup::run(a, cli.json, cli.data_dir).await,
         Cmd::Context(a) => context::run(a, cli.json, cli.data_dir).await,
         Cmd::Completions(a) => completions::run(a, cli.json, cli.data_dir).await,
         Cmd::Prune(a) => prune::run(a, cli.json, cli.data_dir).await,
