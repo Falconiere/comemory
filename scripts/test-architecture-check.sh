@@ -6,13 +6,17 @@ CHECK="$ROOT/scripts/architecture-check.sh"
 TASK_TMP=$(mktemp -d)
 trap 'rm -rf "$TASK_TMP"' EXIT
 COUNT=0
+jq -Rn '[inputs | select(startswith("| src/")) | split("|")[1:-1] |
+  map(gsub("^ +| +$"; "")) | {path:.[0],owner:.[4],target:.[5],issue:.[6]}]' \
+  "$ROOT/docs/designs/2026-09-17-domain-first-migration-inventory.md" >"$TASK_TMP/baseline"
 
 new_tree() {
   TREE="$TASK_TMP/$1"
   mkdir -p "$TREE/src" "$TREE/scripts" "$TREE/docs/designs"
   jq '.legacy_edges=[] | .store_callbacks=[] | .passive_store_models=[] |
       .setup_runtime_dependencies=[]' "$ROOT/scripts/architecture-policy.json" >"$TREE/scripts/architecture-policy.json"
-  cp "$ROOT/docs/designs/2026-09-17-domain-first-migration-inventory.md" "$TREE/docs/designs/2026-09-17-domain-first-migration-inventory.md"
+  while IFS= read -r module; do put "$module" '//! Legacy ownership fixture.'; done < <(
+    jq -r '.legacy_modules[].module | sub("^crate::";"src/")+".rs"' "$ROOT/scripts/architecture-policy.json")
   put src/lib.rs '//! Fixture crate.'
 }
 put() { mkdir -p "$TREE/$(dirname "$1")"; printf '%s\n' "$2" >"$TREE/$1"; }
@@ -27,6 +31,20 @@ domain() {
 assert_status() {
   local want=$1 needle=$2 actual=0
   shift 2
+  # Fixtures carry a complete contract too; ownership comes from the checked
+  # inventory while public paths/assets remain absent in these private trees.
+  if [ "${FIXTURE_INVENTORY_READY:-false}" != true ]; then
+  (cd "$TREE" && find src -name '*.rs' ! -path '*/tests/*' | sort) |
+    jq -Rn --slurpfile baseline "$TASK_TMP/baseline" --slurpfile policy "$ROOT/scripts/architecture-policy.json" '
+      inputs as $path | ($baseline[0] | map(select(.path == $path)) | first) as $row |
+      ($row.owner // (if ($path|startswith("src/domains/")) and
+        (($policy[0].domains|index($path|split("/")[2]|rtrimstr(".rs"))) != null) then
+        "domains::"+($path|split("/")[2]|rtrimstr(".rs"))
+        elif ($path|startswith("src/store/")) then "infrastructure::store" else "shared::root" end)) as $owner |
+      (if ($path|contains("/surprise/")) then ($path|sub("/surprise/";"/")) else $path end) as $target |
+      "| "+([$path,"private","none","none",$owner,$target,($row.issue // "retain")]|join(" | "))+" |"
+    ' -r >"$TREE/docs/designs/2026-09-17-domain-first-migration-inventory.md"
+  fi
   bash "$CHECK" --root "$TREE" "$@" >"$TASK_TMP/result" 2>&1 || actual=$?
   if [ "$actual" != "$want" ] || { [ -n "$needle" ] && ! grep -Fq "$needle" "$TASK_TMP/result"; }; then
     printf 'FAIL: %s (%s), expected %s / %s; got %s\n' "${TREE##*/}" "$*" "$want" "$needle" "$actual" >&2
@@ -46,7 +64,7 @@ both() { assert_status "$1" "$2"; assert_status "$1" "$2" --file "$3"; }
 # contract. This verifies the actual CI and staged-hook wiring, including the
 # required check-all order, against disposable copies.
 test_gate_wiring() {
-  local check_all=$1 hook=$2
+  local check_all=$1 hook=$2 command
   awk '
     /^GATES=\(/ { collecting = 1; next }
     collecting && /^\)/ { exit }
@@ -55,16 +73,21 @@ test_gate_wiring() {
     collecting && /^  store-chokepoint-check$/ { store = NR }
     END { exit(!(guardrails < architecture && architecture < store)) }
   ' "$check_all" || return 1
-  awk '
+  command=$(awk '
     /^    architecture:$/ { command = 1; next }
-    command && /^      glob: "\*\.rs"$/ { scoped = 1; next }
-    command && /^      run: bash scripts\/architecture-check\.sh --file \{staged_files\}$/ {
-      found = scoped
+    command && /^      run: / {
+      sub(/^      run: /, "")
+      print
+      found = 1
       exit
     }
     command && /^    [^ ]/ { exit 1 }
     END { exit(found ? 0 : 1) }
-  ' "$hook"
+  ' "$hook") || return 1
+  # Execute the configured command with the multi-path expansion lefthook
+  # supplies, including a root integration test matched by its Rust glob.
+  command=${command/\{staged_files\}/'"$@"'}
+  (cd "$ROOT" && bash -c "$command" architecture-hook src/lib.rs src/config.rs tests/cli__setup.rs)
 }
 assert_gate_wiring() {
   if ! test_gate_wiring "$@"; then
@@ -97,6 +120,9 @@ assert_fails "$TEST_GATE_WIRING" "$CHECK_ALL" "$HOOK_WITHOUT_SCOPED_CHECK"
 new_tree allowed
 put src/config.rs 'pub struct Config;'
 both 0 '' src/config.rs
+put tests/cli__setup.rs 'use crate::cli::setup;'
+assert_status 0 '' --file src/lib.rs src/config.rs tests/cli__setup.rs
+assert_status 0 '' --file tests/cli__setup.rs
 
 new_tree root_module
 put src/business.rs 'pub fn run() {}'
@@ -229,6 +255,14 @@ policy '.passive_store_models=[{source:"src/store/rows.rs",target:"crate::memory
 both 0 '' src/store/rows.rs
 put src/store/rows.rs 'use crate::memory::Ref; pub fn write() { Ref::reindex(); }'
 both 1 'crate::memory::Ref::reindex' src/store/rows.rs
+put src/store/rows.rs 'use crate::memory::Ref; pub fn write(model: Ref) { model.reindex(); }'
+both 1 'crate::memory::Ref::reindex' src/store/rows.rs
+put src/store/rows.rs 'use crate::memory::Ref as Model; fn write(model: &Model) { model.reindex(); }'
+both 1 'crate::memory::Ref::reindex' src/store/rows.rs
+put src/store/rows.rs 'use crate::memory::Ref; fn write() { let model: Ref = Ref::new("value"); model.reindex(); }'
+both 1 'crate::memory::Ref::reindex' src/store/rows.rs
+put src/store/rows.rs 'use crate::memory::Ref; fn read(model: Ref) {} fn other(model: crate::config::Config) { model.reindex(); }'
+both 0 '' src/store/rows.rs
 new_tree passive_prefix_escape
 put src/store/rows.rs 'use crate::memory::ReferencesService; pub fn write() {}'
 policy '.passive_store_models=[{source:"src/store/rows.rs",target:"crate::memory::Ref"}]'
@@ -284,6 +318,8 @@ test "$(grep -n 'crate::cli::a' "$TASK_TMP/result" | cut -d: -f1)" -lt "$(grep -
 new_tree scoped_selection
 domain 'pub fn work() {}'
 put src/api/save.rs 'pub fn run() { crate::cli::embedding_input(); }'
+put tests/cli__setup.rs 'use crate::cli::setup;'
+assert_status 0 '' --file tests/cli__setup.rs
 assert_status 0 '' --file src/domains/memories.rs
 assert_status 1 'crate::cli::embedding_input' --file src/domains/memories.rs --file src/api/save.rs
 new_tree scoped_parent
@@ -298,6 +334,7 @@ new_tree arguments
 assert_status 3 'argument' --unknown
 assert_status 3 'argument' --file
 assert_status 3 'missing input' --file src/missing.rs
+assert_status 3 'invalid file argument' --file src/../tests/cli__setup.rs
 assert_status 3 'missing input' --policy "$TASK_TMP/missing.json"
 assert_status 3 'missing input' --inventory "$TASK_TMP/missing.md"
 assert_status 0 '' --policy "$TREE/scripts/architecture-policy.json" --inventory "$TREE/docs/designs/2026-09-17-domain-first-migration-inventory.md"
@@ -307,5 +344,5 @@ ln -s "$(command -v bash)" "$TASK_TMP/tool-path/bash"
 ln -s "$(command -v dirname)" "$TASK_TMP/tool-path/dirname"
 ln -s "$(command -v grep)" "$TASK_TMP/tool-path/grep"
 ln -s "$(command -v cat)" "$TASK_TMP/tool-path/cat"
-PATH="$TASK_TMP/tool-path" assert_status 3 'missing tool'
+PATH="$TASK_TMP/tool-path" FIXTURE_INVENTORY_READY=true assert_status 3 'missing tool'
 printf 'PASS: %s architecture fixture assertions\n' "$COUNT"

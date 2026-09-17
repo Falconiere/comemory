@@ -6,21 +6,31 @@ ROOT=$SCRIPT_ROOT
 POLICY=
 INVENTORY=
 FILES=()
+SCOPED=false
 bad() { printf 'architecture-check: %s\n' "$*" >&2; exit 3; }
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --root|--policy|--inventory|--file)
+    --file)
+      SCOPED=true
+      shift
+      [ "$#" -gt 0 ] || bad 'missing argument for --file'
+      case "$1" in --*) bad 'missing argument for --file' ;; esac
+      while [ "$#" -gt 0 ]; do
+        case "$1" in --*) break ;; esac
+        FILES+=("$1")
+        shift
+      done ;;
+    --root|--policy|--inventory)
       [ "$#" -ge 2 ] && [ -n "$2" ] || bad "missing argument for $1"
       case "$2" in --*) bad "missing argument for $1" ;; esac
       case "$1" in
         --root) ROOT=$2 ;; --policy) POLICY=$2 ;; --inventory) INVENTORY=$2 ;;
-        --file) FILES+=("$2") ;;
       esac
       shift 2 ;;
     *) bad "unknown argument: $1" ;;
   esac
 done
-for tool in jq ast-grep find sort; do
+for tool in jq ast-grep find sort rg diff; do
   command -v "$tool" >/dev/null 2>&1 || bad "missing tool: $tool"
 done
 [ -d "$ROOT/src" ] || bad "missing input: $ROOT/src"
@@ -76,8 +86,8 @@ jq -e --slurpfile policy "$POLICY" '
 cd "$ROOT"
 for file in "${FILES[@]+${FILES[@]}}"; do
   case "$file" in "$ROOT"/*) file=${file#"$ROOT/"} ;; ./*) file=${file#./} ;; esac
-  case "$file" in src/*) ;; *) bad "invalid file argument: $file" ;; esac
   case "$file" in */../*|*/./*) bad "invalid file argument: $file" ;; esac
+  case "$file" in tests/*|src/*/tests/*) continue ;; src/*.rs) ;; *) bad "invalid file argument: $file" ;; esac
   [ -f "$file" ] || bad "missing input: $file"
   printf '%s\n' "$file"
 done >"$TASK_TMP/selected"
@@ -86,6 +96,10 @@ find src -type f -name '*.rs' ! -path '*/tests/*' | sort >"$TASK_TMP/files"
 find src -type d ! -path '*/tests' ! -path '*/tests/*' ! -path '*/proptest-regressions*' | sort >"$TASK_TMP/dirs"
 jq -Rn '[inputs]' "$TASK_TMP/files" >"$TASK_TMP/file_json"
 jq -Rn '[inputs]' "$TASK_TMP/dirs" >"$TASK_TMP/dir_json"
+# Both entry modes enforce the complete contract before dependency analysis.
+# shellcheck source=scripts/lib/architecture-inventory.sh
+source "$SCRIPT_ROOT/scripts/lib/architecture-inventory.sh"
+INVENTORY_EDGE_CHECK=false INVENTORY_QUIET=true validate_inventory
 # Different rule ids retain node kinds; ancestor predicates remove path prefixes
 # and import children, preventing a grouped import from becoming a broad exemption.
 status=0
@@ -122,6 +136,27 @@ rule:
 id: lexical-scopes
 language: Rust
 rule: {kind: block}
+---
+id: function-scopes
+language: Rust
+rule: {kind: function_item}
+---
+id: receiver-bindings
+language: Rust
+rule:
+  all:
+    - any:
+        - kind: parameter
+        - kind: let_declaration
+    - has: {field: pattern, pattern: $RECEIVER}
+    - has: {field: type, pattern: $TYPE}
+---
+id: method-calls
+language: Rust
+rule:
+  kind: field_expression
+  pattern: $RECEIVER.$METHOD
+  inside: {kind: call_expression, field: function}
 ---
 id: module-scopes
 language: Rust
@@ -195,19 +230,24 @@ jq '
   ([.[] | select(.ruleId == "modules") | {source:.file,base:base_for(.),
     name:(.metaVariables.single.NAME.text|ltrimstr("r#"))}] |
     map({key:([.source]+.base+[.name]|join("::")),value:true}) | from_entries) as $declared |
-  ([.[] | select(.ruleId == "lexical-scopes" or .ruleId == "module-scopes")] |
+  ([.[] | select(.ruleId == "lexical-scopes" or .ruleId == "module-scopes" or .ruleId == "function-scopes")] |
     group_by(.file) | map({key:.[0].file,value:map({start:.range.byteOffset.start,
       end:.range.byteOffset.end,module:(.ruleId == "module-scopes")})}) | from_entries) as $scopes |
-  [ .[] | select(.ruleId == "imports" or .ruleId == "paths" or .ruleId == "enum-variants") | . as $node |
+  [ .[] | select(.ruleId | IN("imports","paths","enum-variants","receiver-bindings","method-calls")) | . as $node |
     base_for(.) as $base |
     ([$scopes[$node.file][]? | select(.start < $node.range.byteOffset.start and
       .end >= $node.range.byteOffset.end)] | sort_by(.start) | last //
       {start:-1,end:9007199254740991,module:true}) as $scope |
     (if .ruleId == "imports" then .text|imports
+      elif .ruleId == "receiver-bindings" then
+        {parts:(.metaVariables.single.TYPE.text|tokens|map(select(. != "mut"))),alias:null}
+      elif .ruleId == "method-calls" then
+        {parts:[.metaVariables.single.RECEIVER.text,.metaVariables.single.METHOD.text],alias:null}
       elif .ruleId == "enum-variants" then {parts:($base+
         [.metaVariables.single.ENUM.text,.metaVariables.single.VARIANT.text]|map(ltrimstr("r#"))),alias:null} else
       {parts:(.text|tokens),alias:null} end) |
     {source:$node.file,parts:canonical(.parts;$base),alias:.alias,kind:$node.ruleId,
+      receiver:($node.metaVariables.single.RECEIVER.text // null),
       base:$base,scope:$scope,at:$node.range.byteOffset.start}
   ] as $raw |
     ([$raw[] | select(.kind == "imports") | . + {name:(.alias // .parts[-1]),
@@ -233,7 +273,16 @@ jq '
             resolve($a.parts+$parts[$used:];$a;$seen+[$key])
           end
         end;
-    [$raw[] | . as $entry | .parts=resolve(.parts;$entry;[]) | select(.parts[0] == "crate") |
+    ($raw | map(select(.kind == "receiver-bindings")) | group_by([.source,.receiver]) |
+      map({key:([.[0].source,.[0].receiver]|tojson),value:.}) | from_entries) as $receivers |
+    def receiver_type($entry):
+      [$receivers[[$entry.source,$entry.receiver]|tojson][]? | select(
+        .scope.start < $entry.at and .scope.end > $entry.at and
+        .at < $entry.at)] | sort_by(.scope.start,.at) | last;
+    [$raw[] | select(.kind != "receiver-bindings") | . as $entry |
+      .parts=(if .kind == "method-calls" then receiver_type($entry) as $binding |
+        if $binding == null then [] else resolve($binding.parts;$binding;[])+[.parts[-1]] end
+        else resolve(.parts;$entry;[]) end) | select(.parts[0] == "crate") |
     {source,target:(.parts|join("::")),kind,
       binding:(if .kind == "imports" and .scope.module then
         (.base+[(.alias // .parts[-1])]|join("::")) else null end)}
@@ -244,7 +293,7 @@ jq '
 jq -nr --slurpfile p "$POLICY" --slurpfile inv "$TASK_TMP/inventory" \
   --slurpfile ast "$TASK_TMP/ast" --slurpfile edges "$TASK_TMP/edges" \
   --slurpfile files "$TASK_TMP/file_json" --slurpfile dirs "$TASK_TMP/dir_json" \
-  --slurpfile scope "$TASK_TMP/scope" '
+  --slurpfile scope "$TASK_TMP/scope" --argjson scoped "$SCOPED" '
   $p[0] as $p | $inv[0] as $inv | $edges[0] as $refs | $refs.edges as $edges |
   def prefix($parent): . == $parent or startswith($parent+"::");
   def module_path: ltrimstr("src/")|rtrimstr(".rs")|gsub("/";"::")|"crate::"+.;
@@ -254,7 +303,7 @@ jq -nr --slurpfile p "$POLICY" --slurpfile inv "$TASK_TMP/inventory" \
     if ($target|startswith("crate::domains::")) then ($target|split("::")|.[1:3]|join("::"))
     else ($target|split("::")) as $parts |
       [range(1;($parts|length)+1) as $n | $owners[$parts[:$n]|join("::")]|select(. != null)] | last end;
-  def selected($source): ($scope[0]|length)==0 or any($scope[0][];
+  def selected($source): ($scoped|not) or any($scope[0][];
     . == $source or startswith(($source|rtrimstr(".rs"))+"/"));
   def exemption($list;$edge): any($list[]; . as $entry | .source == $edge.source and ($edge.target|prefix($entry.target)));
   def diagnostic($source;$target;$why): {source:$source,target:$target,why:$why};
