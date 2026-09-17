@@ -17,18 +17,26 @@ workspace's own crates are skipped (they are not third-party dependencies).
 import json
 import re
 import sys
+import tomllib
 
 
 def allowed_licenses(deny_toml_path):
-    """Parse the `allow = [...]` array out of deny.toml's [licenses] table."""
-    text = open(deny_toml_path, encoding="utf-8").read()
-    section = re.search(r"\[licenses\](.*?)(?=\n\[|\Z)", text, re.S)
-    if not section:
-        raise SystemExit("license-audit: deny.toml has no [licenses] section")
-    array = re.search(r"allow\s*=\s*\[(.*?)\]", section.group(1), re.S)
-    if not array:
+    """Read the `allow` list out of deny.toml's [licenses] table.
+
+    Parsed with `tomllib` rather than a regex: a hand-rolled
+    `allow\\s*=\\s*\\[(.*?)\\]` stops at the first `]`, so any nesting or a
+    `]` inside a comment silently truncates the set — and a license that
+    falls off the allow list makes the audit pass things it should reject.
+    """
+    with open(deny_toml_path, "rb") as handle:
+        document = tomllib.load(handle)
+    licenses = document.get("licenses")
+    if not isinstance(licenses, dict):
+        raise SystemExit("license-audit: deny.toml has no [licenses] table")
+    allow = licenses.get("allow")
+    if not isinstance(allow, list) or not allow:
         raise SystemExit("license-audit: deny.toml [licenses] has no allow list")
-    return {m.group(1) for m in re.finditer(r'"([^"]+)"', array.group(1))}
+    return {entry for entry in allow if isinstance(entry, str)}
 
 
 def split_top_level(expression, operator):

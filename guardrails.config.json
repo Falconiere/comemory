@@ -12,20 +12,20 @@
       "api": [
         "doctor",
         "index_code",
-        "install",
         "memory_store",
-        "proptest-regressions",
         "rebuild",
         "repos",
-        "setup",
         "sync",
-        "tests"
+        "tests",
+        "proptest-regressions",
+        "install",
+        "setup"
       ],
       "cli": [
         "graph",
+        "tests",
         "proptest-regressions",
-        "setup",
-        "tests"
+        "setup"
       ],
       "retrieval": [
         "unified",

@@ -41,7 +41,10 @@ fn one(ctx: &mut Ctx<'_>, detected: &Detected, id: &str) -> Result<String> {
         // are reports pointing at `comemory auth login` / `comemory index
         // <path>` — so they fall through to the refusal below, which also
         // guards any step a caller forces Pending by hand.
-        other => Err(Error::Usage(format!("no applier for step `{other}`"))),
+        other => Err(Error::Usage(format!(
+            "step `{other}` is a report, not an action — setup never applies \
+             it; see its `reason` for the command that does"
+        ))),
     }
 }
 

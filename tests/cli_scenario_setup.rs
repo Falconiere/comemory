@@ -98,7 +98,7 @@ fn setup_yes_indexes_a_fresh_repo_then_search_code_finds_a_symbol() {
     assert_eq!(state_of(&envelope, "data-dir"), "applied");
     assert_eq!(state_of(&envelope, "git-hooks"), "applied");
     assert_eq!(state_of(&envelope, "index-code"), "applied");
-    assert_eq!(envelope["failed"], 0);
+    assert_eq!(envelope["failed"].as_u64().unwrap(), 0);
     assert!(
         data.path().join("comemory.db").exists(),
         "applying creates the store"
@@ -132,7 +132,7 @@ fn setup_yes_indexes_a_fresh_repo_then_search_code_finds_a_symbol() {
     );
     assert_eq!(code, 0, "{stderr}");
     let again: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    assert_eq!(again["applied"], 0, "idempotent");
+    assert_eq!(again["applied"].as_u64().unwrap(), 0, "idempotent");
     assert_eq!(state_of(&again, "index-code"), "satisfied");
     assert_eq!(state_of(&again, "git-hooks"), "satisfied");
 }
@@ -180,9 +180,23 @@ fn a_failing_step_still_reports_every_step_and_exits_69() {
 
     let envelope: serde_json::Value = serde_json::from_str(&stdout)
         .unwrap_or_else(|e| panic!("stdout must stay valid JSON ({e}): {stdout}\n{stderr}"));
+    let ids: Vec<&str> = envelope["steps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["id"].as_str().unwrap())
+        .collect();
     assert_eq!(
-        envelope["steps"].as_array().unwrap().len(),
-        7,
+        ids,
+        [
+            "data-dir",
+            "agent-host",
+            "git-hooks",
+            "index-code",
+            "index-docs",
+            "reinforce",
+            "cloud-auth",
+        ],
         "every step is reported even when one fails"
     );
     assert_eq!(
@@ -190,7 +204,7 @@ fn a_failing_step_still_reports_every_step_and_exits_69() {
         "failed",
         "an unwritable data dir is a real apply-time failure"
     );
-    assert_eq!(envelope["failed"], 1);
+    assert_eq!(envelope["failed"].as_u64().unwrap(), 1);
     assert_eq!(
         state_of(&envelope, "git-hooks"),
         "applied",
@@ -236,7 +250,7 @@ fn only_runs_exactly_one_step_and_skips_the_others() {
     assert_eq!(code, 0, "{stderr}");
     let envelope: serde_json::Value = serde_json::from_str(&stdout).unwrap();
 
-    assert_eq!(envelope["applied"], 1);
+    assert_eq!(envelope["applied"].as_u64().unwrap(), 1);
     assert_eq!(state_of(&envelope, "git-hooks"), "applied");
     assert_eq!(state_of(&envelope, "index-code"), "skipped");
     assert_eq!(state_of(&envelope, "data-dir"), "skipped");

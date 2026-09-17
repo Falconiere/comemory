@@ -33,12 +33,35 @@ fn response(steps: Vec<Step>, repo: Option<RepoContext>) -> Response {
     }
 }
 
-/// Render to a string, with ANSI styling left in (the assertions below use
-/// `contains`, so escape codes around a word do not interfere).
+/// Render to a string with the ANSI styling stripped, so assertions can pin
+/// whole lines rather than fragments that survive a spacing bug.
 fn render(resp: &Response, mode: Mode) -> String {
     let mut out = Vec::new();
     summary(&mut out, resp, mode).unwrap();
-    String::from_utf8(out).unwrap()
+    strip_ansi(&String::from_utf8(out).unwrap())
+}
+
+/// Remove ANSI SGR sequences; every escape this renderer emits ends in `m`.
+fn strip_ansi(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut chars = input.chars();
+    while let Some(c) = chars.next() {
+        if c != '\u{1b}' {
+            out.push(c);
+            continue;
+        }
+        for next in chars.by_ref() {
+            if next == 'm' {
+                break;
+            }
+        }
+    }
+    out
+}
+
+/// The rendered lines, for whole-line assertions.
+fn lines(resp: &Response, mode: Mode) -> Vec<String> {
+    render(resp, mode).lines().map(str::to_string).collect()
 }
 
 #[test]
@@ -70,18 +93,25 @@ fn every_state_gets_its_own_marker_and_trailing_clause() {
         None,
     );
 
-    let text = render(&resp, Mode::Apply);
+    let rendered = lines(&resp, Mode::Apply);
 
-    assert!(text.contains("✔ Title for a"), "satisfied marker: {text}");
-    assert!(text.contains("◻ Title for b"), "pending marker: {text}");
-    assert!(text.contains("– Title for c"), "skipped marker: {text}");
-    assert!(text.contains("! Title for d"), "unavailable marker: {text}");
-    assert!(text.contains("✔ Title for e"), "applied marker: {text}");
-    assert!(text.contains("✘ Title for f"), "failed marker: {text}");
-    // The state's own note replaces the generic detail where it has one.
-    assert!(text.contains("no git here"));
-    assert!(text.contains("wrote three hooks"));
-    assert!(text.contains("permission denied"));
+    // Whole lines: marker, title, and the trailing clause in one assertion,
+    // so a spacing or ordering bug cannot slip past a substring match. A
+    // state with its own note replaces the generic detail; the rest fall
+    // back to it.
+    for expected in [
+        "  ✔ Title for a — detail",
+        "  ◻ Title for b — detail",
+        "  – Title for c — detail",
+        "  ! Title for d — no git here",
+        "  ✔ Title for e — wrote three hooks",
+        "  ✘ Title for f — permission denied",
+    ] {
+        assert!(
+            rendered.iter().any(|line| line == expected),
+            "missing exact line {expected:?} in {rendered:#?}"
+        );
+    }
 }
 
 #[test]
@@ -90,12 +120,12 @@ fn a_step_with_no_note_and_no_detail_renders_without_a_dash() {
     bare.detail = String::new();
     let resp = response(vec![bare], None);
 
-    let text = render(&resp, Mode::Apply);
+    let rendered = lines(&resp, Mode::Apply);
 
-    assert!(text.contains("◻ Title for a"));
     assert!(
-        !text.contains("Title for a —"),
-        "an empty trailing clause must not render a dangling dash: {text}"
+        rendered.iter().any(|line| line == "  ◻ Title for a"),
+        "with no note and no detail the line ends after the title, with no \
+         dangling dash and no trailing space: {rendered:#?}"
     );
 }
 
@@ -121,8 +151,14 @@ fn the_failure_footer_names_every_failed_id_and_outranks_the_done_line() {
 
     let text = render(&resp, Mode::Apply);
 
-    assert!(text.contains("1 step(s) failed"), "{text}");
-    assert!(text.contains("data-dir"), "names the failed id: {text}");
+    let rendered: Vec<String> = text.lines().map(str::to_string).collect();
+    assert!(
+        rendered
+            .iter()
+            .any(|line| line == "1 step(s) failed: data-dir"),
+        "the footer names exactly the failed id, and not the applied one: \
+         {rendered:#?}"
+    );
     assert!(
         !text.contains("Done —"),
         "a failure outranks the success footer: {text}"

@@ -60,6 +60,16 @@ fn state_of<'a>(envelope: &'a serde_json::Value, id: &str) -> &'a str {
         .expect("state is a string")
 }
 
+/// Every step id in an envelope, in the order the plan emitted them.
+fn step_ids(envelope: &serde_json::Value) -> Vec<&str> {
+    envelope["steps"]
+        .as_array()
+        .expect("steps is an array")
+        .iter()
+        .map(|s| s["id"].as_str().expect("id is a string"))
+        .collect()
+}
+
 /// A real git working tree with two real Rust files committed.
 fn repo_with_sources() -> TempDir {
     let repo = tempfile::tempdir().unwrap();
@@ -91,10 +101,25 @@ fn dry_run_json_reports_a_plan_and_creates_no_database() {
         ],
     );
 
-    assert_eq!(envelope["dry_run"], true);
-    assert_eq!(envelope["applied"], 0);
-    assert_eq!(envelope["failed"], 0);
-    assert_eq!(envelope["steps"].as_array().unwrap().len(), 7);
+    assert!(
+        envelope["dry_run"].as_bool().unwrap(),
+        "dry_run must be a JSON bool"
+    );
+    assert_eq!(envelope["applied"].as_u64().unwrap(), 0);
+    assert_eq!(envelope["failed"].as_u64().unwrap(), 0);
+    assert_eq!(
+        step_ids(&envelope),
+        [
+            "data-dir",
+            "agent-host",
+            "git-hooks",
+            "index-code",
+            "index-docs",
+            "reinforce",
+            "cloud-auth",
+        ],
+        "every published step id appears exactly once, in order"
+    );
     assert_eq!(state_of(&envelope, "git-hooks"), "pending");
     assert_eq!(state_of(&envelope, "index-code"), "pending");
     assert!(
@@ -122,7 +147,11 @@ fn cloud_auth_is_reported_not_applied_and_issues_no_request() {
     );
 
     assert_eq!(state_of(&envelope, "cloud-auth"), "unavailable");
-    assert_eq!(envelope["failed"], 0, "unavailable is never a failure");
+    assert_eq!(
+        envelope["failed"].as_u64().unwrap(),
+        0,
+        "unavailable is never a failure"
+    );
     let reason = envelope["steps"]
         .as_array()
         .unwrap()
@@ -137,7 +166,8 @@ fn cloud_auth_is_reported_not_applied_and_issues_no_request() {
         "the reason names the remedy: {reason}"
     );
     assert_eq!(
-        envelope["applied"], 0,
+        envelope["applied"].as_u64().unwrap(),
+        0,
         "setup never runs the device flow itself"
     );
 }
@@ -161,7 +191,10 @@ fn a_non_git_directory_reports_unavailable_repo_steps_and_exits_zero() {
     for id in ["git-hooks", "index-code", "index-docs"] {
         assert_eq!(state_of(&envelope, id), "unavailable", "for {id}");
     }
-    assert_eq!(envelope["repo"], serde_json::Value::Null);
+    assert!(
+        envelope["repo"].is_null(),
+        "no repo context outside a worktree"
+    );
 }
 
 #[test]
@@ -230,7 +263,7 @@ fn applying_git_hooks_writes_them_and_a_second_run_is_satisfied() {
 
     let first = setup_json(data.path(), &args);
     assert_eq!(state_of(&first, "git-hooks"), "applied");
-    assert_eq!(first["applied"], 1);
+    assert_eq!(first["applied"].as_u64().unwrap(), 1);
     for hook in ["post-commit", "post-merge", "post-checkout"] {
         assert!(
             repo.path().join(".git/hooks").join(hook).exists(),
@@ -240,7 +273,11 @@ fn applying_git_hooks_writes_them_and_a_second_run_is_satisfied() {
 
     let second = setup_json(data.path(), &args);
     assert_eq!(state_of(&second, "git-hooks"), "satisfied");
-    assert_eq!(second["applied"], 0, "idempotent: nothing left to do");
+    assert_eq!(
+        second["applied"].as_u64().unwrap(),
+        0,
+        "idempotent: nothing left to do"
+    );
 }
 
 #[test]
