@@ -15,6 +15,12 @@
 //!   main working tree's basename, shared by every linked `git worktree`.
 //!   Every label the binary infers (lazy reindex, the hook script, the code
 //!   rerank working set, document sources, `POST /repos`) goes through it.
+//!   [`is_linked_worktree`] is its narrowing companion: "is this checkout a
+//!   second one of some other repository?", which `index-code` asks before it
+//!   would create a repo label that has never been seen before.
+//! * [`hook_outdated`] — whether a hook we wrote predates the body this
+//!   binary ships, so `install-hooks` can replace its own stale scripts
+//!   instead of leaving a pre-worktree-rule hook running forever.
 //!
 //! All `git2::Error` cases are flattened into [`Error::Other`] via
 //! [`map_git_err`] — callers only need to handle our own error enum.
@@ -149,12 +155,31 @@ pub fn current_branch(repo_root: &Path) -> Result<Option<String>> {
 /// `integrations/agent/lib/repo-scope.sh`, so the binary and the plugin
 /// wrapper mint the same key.
 pub fn repo_label(repo: &Repository) -> Option<String> {
+    let dir = main_worktree_dir(repo)?;
+    dir.file_name().and_then(OsStr::to_str).map(str::to_string)
+}
+
+/// The **main** working tree's directory for `repo`, from any checkout of it.
+///
+/// Derived from `commondir()` — for a linked worktree that is the main
+/// worktree's `.git`, for the main worktree its own — so `<main>/.git` yields
+/// `<main>`. A common dir not named `.git` (a bare repository, a custom
+/// `GIT_DIR`) falls back to this checkout's own working tree, which is `None`
+/// for a bare repo.
+///
+/// [`repo_label`] is its basename. It is also the directory a repository is
+/// *recorded* at (`repo_marker.root_path`): a linked worktree is a temporary
+/// checkout that `git worktree remove` deletes, so pointing a repo's stored
+/// root at one would leave `serve::repo_root` resolving file ids against a
+/// directory that no longer exists.
+pub fn main_worktree_dir(repo: &Repository) -> Option<PathBuf> {
     let common = repo.commondir();
     let main_worktree = (common.file_name() == Some(OsStr::new(".git")))
         .then(|| common.parent())
         .flatten();
-    let dir = main_worktree.or_else(|| repo.workdir())?;
-    dir.file_name().and_then(OsStr::to_str).map(str::to_string)
+    main_worktree
+        .or_else(|| repo.workdir())
+        .map(Path::to_path_buf)
 }
 
 /// [`repo_label`] for the repository containing `start` (walking up like
@@ -162,6 +187,35 @@ pub fn repo_label(repo: &Repository) -> Option<String> {
 pub fn repo_label_at(start: &Path) -> Option<String> {
     let repo = Repository::discover(start).ok()?;
     repo_label(&repo)
+}
+
+/// Whether `repo` is a **linked** worktree (`git worktree add`) rather than
+/// the main one. A linked worktree's git dir is
+/// `<main>/.git/worktrees/<name>` while its common dir is `<main>/.git`; for
+/// the main worktree the two are the same directory.
+///
+/// A linked worktree is a second checkout of one repository, never a
+/// repository of its own — [`crate::api::index_code`] uses this to refuse to
+/// mint a new repo label for one.
+pub fn is_linked_worktree(repo: &Repository) -> bool {
+    let git_dir = repo.path();
+    let common = repo.commondir();
+    // Canonicalize both before comparing: git2 hands back whatever spelling
+    // the repo was opened with, so `/tmp/...` vs `/private/tmp/...` (macOS) or
+    // a trailing separator would otherwise read as a difference.
+    match (git_dir.canonicalize(), common.canonicalize()) {
+        (Ok(a), Ok(b)) => a != b,
+        // An uncanonicalizable path is not evidence of a linked worktree.
+        _ => false,
+    }
+}
+
+/// [`is_linked_worktree`] for the repository containing `start`, or `false`
+/// when `start` is not inside one — the degrade-to-`false` contract
+/// [`hook_installed`] uses, since "is this a worktree" is only ever a
+/// narrowing check.
+pub fn is_linked_worktree_at(start: &Path) -> bool {
+    Repository::discover(start).is_ok_and(|repo| is_linked_worktree(&repo))
 }
 
 /// The directory git runs `repo_root`'s hooks from: `<commondir>/hooks`,
@@ -272,6 +326,14 @@ pub(crate) const REINDEX_HOOK_SCRIPT: &str = "#!/usr/bin/env bash\n\
                       ( comemory index-code --repo \"$REPO\" --path \"$ROOT\" >/dev/null 2>&1 & )\n\
                       exit 0\n";
 
+/// The body of `<hooks_dir>/<hook>` for `repo_root`, or `None` when it is
+/// missing, unreadable, or not UTF-8. The single read behind
+/// [`hook_installed`] and [`hook_outdated`], so the two cannot disagree
+/// about what is on disk (Binding Rule 1).
+fn hook_body(repo_root: &Path, hook: &str) -> Option<String> {
+    std::fs::read_to_string(hooks_dir(repo_root).join(hook)).ok()
+}
+
 /// Whether `<hooks_dir>/<hook>` exists for `repo_root` and carries
 /// [`HOOK_MARKER`] — the on-disk state `comemory hooks` reports (no DB
 /// table involved). A read-side probe: any I/O failure (missing file,
@@ -279,8 +341,25 @@ pub(crate) const REINDEX_HOOK_SCRIPT: &str = "#!/usr/bin/env bash\n\
 /// matching [`current_branch`]/[`remote_url`]'s degrade-to-`None` contract
 /// one step further — listing hook state is inherently best-effort.
 pub fn hook_installed(repo_root: &Path, hook: &str) -> bool {
-    let path = hooks_dir(repo_root).join(hook);
-    std::fs::read_to_string(path).is_ok_and(|body| body.contains(HOOK_MARKER))
+    hook_body(repo_root, hook).is_some_and(|body| body.contains(HOOK_MARKER))
+}
+
+/// Whether `<hooks_dir>/<hook>` is a comemory-written hook whose body is no
+/// longer the one this binary ships — a hook installed by an older release.
+///
+/// This exists because [`hook_installed`] deliberately matches on
+/// [`HOOK_MARKER`] alone: a hook written before the worktree-label rule
+/// (which passed `basename "$(git rev-parse --show-toplevel)"` as `--repo`)
+/// still contains the marker, so it counted as installed and no release ever
+/// replaced it. Every commit and every `git worktree add` in such a repo kept
+/// minting a `<worktree-dir>` repo label. [`crate::api::install_hooks`] uses
+/// this to rewrite our own outdated hooks without `--force`.
+///
+/// A file we did not write (no marker) is never "outdated" — it is foreign,
+/// and replacing it is the caller's explicit `--force` decision.
+pub fn hook_outdated(repo_root: &Path, hook: &str) -> bool {
+    hook_body(repo_root, hook)
+        .is_some_and(|body| body.contains(HOOK_MARKER) && body != REINDEX_HOOK_SCRIPT)
 }
 
 /// Remove `<hooks_dir>/<hook>` for `repo_root`, if present.

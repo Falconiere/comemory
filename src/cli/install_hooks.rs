@@ -21,7 +21,7 @@ Examples:
   # Install into a specific repo path
   comemory install-hooks --repo /path/to/repo
 
-  # Overwrite any hand-written hooks
+  # Overwrite a hand-written hook (comemory's own is refreshed anyway)
   comemory install-hooks --force";
 
 /// Arguments to `comemory install-hooks`.
@@ -32,15 +32,18 @@ pub struct Args {
     /// directory.
     #[arg(long, default_value = ".")]
     pub repo: PathBuf,
-    /// Overwrite existing hook files. Without this flag the command refuses
-    /// to clobber a pre-existing `post-commit`/`post-merge`/`post-checkout`
-    /// to avoid surprising users with hand-written hooks.
+    /// Overwrite a hook comemory did not write. A hook comemory DID write is
+    /// always refreshed to this binary's body, with or without this flag, so
+    /// one installed by an older release stops labelling every `git worktree`
+    /// as its own repo. Without this flag the command refuses to clobber a
+    /// hand-written `post-commit`/`post-merge`/`post-checkout`.
     #[arg(long, default_value_t = false)]
     pub force: bool,
 }
 
-/// Install (or, with `--force`, overwrite) the three reindex hooks via
-/// `api::install_hooks::run`. On success the human-readable line lists the
+/// Install the three reindex hooks via `api::install_hooks::run`, refreshing
+/// any comemory already wrote and clobbering a foreign one only with
+/// `--force`. On success the human-readable line lists the
 /// hooks that were written; under `--json` we emit a small object so callers
 /// can detect success programmatically. `install-hooks` has no `Paths`/db
 /// dependency, so `data_dir` resolves a throwaway `Ctx::lazy` that is never

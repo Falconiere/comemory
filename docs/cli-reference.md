@@ -1185,7 +1185,7 @@ Options:
       --json                 Emit machine-readable JSON instead of a human TTY view
       --repo <REPO>          Repo root to install hooks into. Defaults to the current working directory [default: .]
       --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
-      --force                Overwrite existing hook files. Without this flag the command refuses to clobber a pre-existing `post-commit`/`post-merge`/`post-checkout` to avoid surprising users with hand-written hooks
+      --force                Overwrite a hook comemory did not write. A hook comemory DID write is always refreshed to this binary's body, with or without this flag, so one installed by an older release stops labelling every `git worktree` as its own repo. Without this flag the command refuses to clobber a hand-written `post-commit`/`post-merge`/`post-checkout`
   -h, --help                 Print help
 
 Examples:
@@ -1195,7 +1195,7 @@ Examples:
   # Install into a specific repo path
   comemory install-hooks --repo /path/to/repo
 
-  # Overwrite any hand-written hooks
+  # Overwrite a hand-written hook (comemory's own is refreshed anyway)
   comemory install-hooks --force
 ```
 
