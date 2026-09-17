@@ -14,7 +14,7 @@ use std::process::Command;
 
 use comemory::git_utils::{
     REINDEX_HOOK_SCRIPT, blob_oid_at_head, changed_files, current_branch, current_head,
-    hook_installed, hook_outdated, hooks_dir, install_hook, is_linked_worktree_at, remove_hook,
+    hook_installed, hook_outdated, hooks_dir, install_hook, is_linked_worktree, remove_hook,
     repo_label, repo_label_at,
 };
 use tempfile::TempDir;
@@ -444,20 +444,23 @@ fn is_linked_worktree_separates_a_worktree_from_its_main_checkout() {
     let nested = wt.join("src").join("deep");
     std::fs::create_dir_all(&nested).expect("nested dir");
 
+    let discovered =
+        |p: &std::path::Path| git2::Repository::discover(p).map(|repo| is_linked_worktree(&repo));
+
     assert!(
-        !is_linked_worktree_at(&main),
+        !discovered(&main).expect("discover main"),
         "the main checkout is the repository itself"
     );
     assert!(
-        is_linked_worktree_at(&wt),
+        discovered(&wt).expect("discover worktree"),
         "a linked worktree is a second checkout, not a repository"
     );
     assert!(
-        is_linked_worktree_at(&nested),
+        discovered(&nested).expect("discover from inside the worktree"),
         "the answer is the same from anywhere inside the worktree"
     );
     assert!(
-        !is_linked_worktree_at(tmp.path()),
-        "outside any repository there is no worktree to report"
+        discovered(tmp.path()).is_err(),
+        "outside any repository there is nothing to discover"
     );
 }

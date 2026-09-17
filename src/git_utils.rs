@@ -215,14 +215,6 @@ pub fn is_linked_worktree(repo: &Repository) -> bool {
     }
 }
 
-/// [`is_linked_worktree`] for the repository containing `start`, or `false`
-/// when `start` is not inside one — the degrade-to-`false` contract
-/// [`hook_installed`] uses, since "is this a worktree" is only ever a
-/// narrowing check.
-pub fn is_linked_worktree_at(start: &Path) -> bool {
-    Repository::discover(start).is_ok_and(|repo| is_linked_worktree(&repo))
-}
-
 /// The directory git runs `repo_root`'s hooks from: `<commondir>/hooks`,
 /// which a linked worktree shares with its main worktree (its own `.git` is
 /// a file pointing at the common dir, so `<worktree>/.git/hooks` neither

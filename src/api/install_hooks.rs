@@ -49,7 +49,8 @@ pub struct Response {
     pub repo: String,
 }
 
-/// Install (or, with `req.force`, overwrite) the three reindex hooks.
+/// Install the three reindex hooks, refreshing any comemory already wrote
+/// and clobbering a foreign one only with `req.force`.
 ///
 /// Pre-flight: verify every target hook is writable BEFORE writing any of
 /// them, so a partial install (e.g. a fresh `post-commit` next to an
