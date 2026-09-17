@@ -335,7 +335,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/graph.rs | comemory::domains::graph; crate-root-alias | none | none | domains::graph | src/domains/graph.rs | retain |
 | src/domains/graph/coactivate.rs | comemory::domains::graph::coactivate; crate-root-alias | src/domains/graph/tests/coactivate.rs | none | domains::graph | src/domains/graph/coactivate.rs | retain |
 | src/domains/graph/cochange.rs | comemory::domains::graph::cochange; crate-root-alias | src/domains/graph/tests/cochange.rs | none | domains::graph | src/domains/graph/cochange.rs | retain |
-| src/domains/graph/code_graph.rs | comemory::domains::graph::code_graph; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | none | none | domains::graph | src/domains/graph/code_graph.rs | retain |
+| src/domains/graph/code_graph.rs | comemory::domains::graph::code_graph; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/graph/tests/code_graph.rs | none | domains::graph | src/domains/graph/code_graph.rs | retain |
 | src/domains/graph/cross_link.rs | comemory::domains::graph::cross_link; crate-root-alias | src/domains/graph/tests/cross_link.rs | none | domains::graph | src/domains/graph/cross_link.rs | retain |
 | src/domains/graph/derived.rs | comemory::domains::graph::derived; crate-root-alias | src/domains/graph/tests/derived.rs | none | domains::graph | src/domains/graph/derived.rs | retain |
 | src/domains/graph/doc_link.rs | comemory::domains::graph::doc_link; crate-root-alias | src/domains/graph/tests/doc_link.rs | none | domains::graph | src/domains/graph/doc_link.rs | retain |
@@ -349,7 +349,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/graph/neighbors.rs | comemory::domains::graph::neighbors; crate-root-alias | src/domains/graph/tests/neighbors.rs | none | domains::graph | src/domains/graph/neighbors.rs | retain |
 | src/domains/graph/nodes.rs | comemory::domains::graph::nodes; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | none | none | domains::graph | src/domains/graph/nodes.rs | retain |
 | src/domains/graph/pagerank.rs | comemory::domains::graph::pagerank; crate-root-alias | src/domains/graph/tests/pagerank.rs | none | domains::graph | src/domains/graph/pagerank.rs | retain |
-| src/domains/graph/query.rs | comemory::domains::graph::query; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | none | none | domains::graph | src/domains/graph/query.rs | retain |
+| src/domains/graph/query.rs | comemory::domains::graph::query; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/graph/tests/query.rs | none | domains::graph | src/domains/graph/query.rs | retain |
 | src/domains/graph/search_edit.rs | private | src/domains/graph/tests/search_edit.rs | none | domains::graph | src/domains/graph/search_edit.rs | retain |
 | src/domains/graph/view.rs | comemory::domains::graph::view; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | none | none | domains::graph | src/domains/graph/view.rs | retain |
 | src/domains/memories.rs | comemory::domains::memories; crate-root-alias | none | none | domains::memories | src/domains/memories.rs | retain |

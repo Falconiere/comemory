@@ -95,3 +95,7 @@ impl GraphPage {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "tests/code_graph.rs"]
+mod tests;

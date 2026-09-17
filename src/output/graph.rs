@@ -3,9 +3,10 @@
 //! Graphviz DOT (`dot -Tsvg`), and an interactive HTML page backed by
 //! `sigma.js` + `graphology` (WebGL render, ForceAtlas2 layout, loaded from a
 //! CDN, so the page needs network access on first load). The data shape
-//! ([`CodeGraph`](crate::domains::graph::code_graph::CodeGraph)) is owned and
-//! built by `domains::graph` and only rendered here, so presentation depends
-//! on the model rather than the other way round (#170).
+//! ([`CodeGraph`](crate::domains::graph::code_graph::CodeGraph)) is defined by
+//! `domains::graph::code_graph` and built by `domains::graph::query`'s
+//! `build_code_graph` / `build_graph_page`; this module only renders it, so
+//! presentation depends on the model rather than the other way round (#170).
 
 use std::fmt::Write as _;
 use std::io::Write as _;

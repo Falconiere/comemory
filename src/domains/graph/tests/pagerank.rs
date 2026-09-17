@@ -5,7 +5,7 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Test mirror for `src/graph/pagerank.rs` — deterministic weighted
+//! Test mirror for `src/domains/graph/pagerank.rs` — deterministic weighted
 //! PageRank.
 
 use comemory::domains::graph::pagerank::pagerank;

@@ -5,7 +5,7 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror test for `src/api/edges.rs`. Seeds a real supersede relation via
+//! Mirror test for `src/domains/graph/edges.rs`. Seeds a real supersede relation via
 //! the `comemory` binary, then calls `domains::graph::edges::run` directly against a
 //! `Ctx` opened on the same data-dir — proving the extracted command core
 //! reproduces `comemory edges`'s triplet paging and the `allow_self_heal`

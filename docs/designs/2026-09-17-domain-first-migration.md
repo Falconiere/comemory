@@ -118,7 +118,7 @@ but their final policy entries name concrete pairs:
 | --- | --- |
 | `api::delete` and `api::prune` to CLI deletion helpers | #169 |
 | `api` paging, date, reference, and embedding helpers to `cli` | #166 |
-| `api::graph` and `api::graph_nodes` to CLI graph builders | #170 (landed) |
+| `api::graph` and `api::graph_nodes` to CLI graph builders | #170 |
 | `retrieval::code_ref_fetch` and `api::refresh_refs` to `serve::repo_root` | #167 / #169 |
 | `store::memory_row` and `store::repo_drop` to graph algorithms | #177 |
 | `store::migrate::preflight` to `source::lock` | #166 |

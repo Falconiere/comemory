@@ -237,7 +237,7 @@ fn mine_on_repo_without_commits_is_an_error() {
 }
 
 /// Mutation guard for the `MEGA_COMMIT_FILE_CAP` boundary at
-/// `src/graph/cochange.rs:129` (`changed.len() > MEGA_COMMIT_FILE_CAP`).
+/// `src/domains/graph/cochange.rs:129` (`changed.len() > MEGA_COMMIT_FILE_CAP`).
 ///
 /// A commit touching EXACTLY `MEGA_COMMIT_FILE_CAP` files (two of them the
 /// known pair `a.rs`/`b.rs`) must be COUNTED, because the cap is exclusive
@@ -274,7 +274,7 @@ fn commit_at_exact_mega_cap_is_kept_not_skipped() {
 }
 
 /// Mutation guard for the pair-quorum threshold at
-/// `src/graph/cochange.rs:137` (`hit.len() < 2`).
+/// `src/domains/graph/cochange.rs:137` (`hit.len() < 2`).
 ///
 /// A single commit touching THREE known files (`a.rs`, `b.rs`, `c.rs`)
 /// must contribute all three undirected pairs. The `<`→`>` mutant turns
@@ -317,7 +317,7 @@ fn commit_touching_three_known_files_mines_all_pairs() {
 }
 
 /// Mutation guard for the first-run cap predicate at
-/// `src/graph/cochange.rs:115` (`since.is_none() || cursor_lost`).
+/// `src/domains/graph/cochange.rs:115` (`since.is_none() || cursor_lost`).
 ///
 /// The walk caps at `FIRST_RUN_COMMIT_LIMIT` commits when `capped` is true.
 /// We bury the only pair-bearing commits BELOW that horizon: the two

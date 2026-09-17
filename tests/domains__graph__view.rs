@@ -5,10 +5,10 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror test for `src/api/graph.rs`. Indexes a real git fixture repo
+//! Mirror test for `src/domains/graph/view.rs`. Indexes a real git fixture repo
 //! (import edge) via `comemory index-code`, then calls `domains::graph::view::run`
 //! directly against a `Ctx` opened on the same data-dir — proving the
-//! full/page switch reuses `cli::graph::{build_code_graph, build_graph_page}`
+//! full/page switch reuses `domains::graph::query::{build_code_graph, build_graph_page}`
 //! (`cli::graph` itself is byte-compat tested in `tests/cli__graph.rs`; the
 //! HTTP route + legacy-handler parity live in `tests/serve__routes__graph.rs`).
 

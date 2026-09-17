@@ -5,7 +5,7 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Test mirror for `src/graph/doc_link.rs`: the deterministic
+//! Test mirror for `src/domains/graph/doc_link.rs`: the deterministic
 //! `member_of_source` / `references_document` link deriver, exercised
 //! through the real seams (`document::writer::update_file`,
 //! `store::memory_row::insert`) against a real migrated `comemory.db`,

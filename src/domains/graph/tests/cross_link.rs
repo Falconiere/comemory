@@ -5,7 +5,7 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Test mirror for `src/graph/cross_link.rs` — backtick-fenced
+//! Test mirror for `src/domains/graph/cross_link.rs` — backtick-fenced
 //! `<repo>:<path>[:<symbol>]` reference extraction from memory bodies.
 
 use comemory::domains::graph::cross_link::{extract_and_emit, extract_refs};
@@ -167,7 +167,7 @@ fn ignores_url_like_matches() {
 }
 
 /// Mutation guard for the prefix-start offset at
-/// `src/graph/cross_link.rs:70` (`.map(|i| i + 1)`).
+/// `src/domains/graph/cross_link.rs:70` (`.map(|i| i + 1)`).
 ///
 /// `i` is the index of the last whitespace before the match; `i + 1` is
 /// the first byte of the token, so the URL-prefix slice starts AFTER the
@@ -201,7 +201,7 @@ fn at_sign_in_a_separate_token_does_not_taint_the_following_ref() {
 }
 
 /// Mutation guard for the URL-window equality at
-/// `src/graph/cross_link.rs:73` (`prefix.windows(3).any(|w| w == b"://")`).
+/// `src/domains/graph/cross_link.rs:73` (`prefix.windows(3).any(|w| w == b"://")`).
 ///
 /// The check keeps a ref unless some 3-byte window of its non-whitespace
 /// prefix equals `://`. Here a ref is glued to a three-dot lead-in inside

@@ -16,7 +16,11 @@ lives in `store::edges`, `store::edges_retrieval`, `store::code_graph_edges`,
 `graph_template.html` stay in `output::graph`, which imports this folder's
 model rather than owning it; and consuming the graph to rank search results
 belongs to `retrieval::graph_route` and `retrieval::code_prior`. No file here
-may import `cli`, `serve`, `output` or the legacy `api` tree.
+may import `cli`, `serve`, `output` or the legacy `api` tree. One temporary
+exception is recorded in `scripts/architecture-policy.json`: `graph_nodes.rs`
+still reads `output::search::title_of` for a cited memory's title, an
+allowlisted delivery edge that [#169](https://github.com/Falconiere/comemory/issues/169)
+removes when it relocates `title_of` into `domains::memories`.
 
 ## Contents
 
@@ -26,7 +30,7 @@ One line per file, named after its primary item:
 | --- | --- | --- |
 | `coactivate.rs` | `harvest` | Commit co-activation reward: commits touching a memory's referenced files reinforce it |
 | `cochange.rs` | `CoChange` | Git co-change mining: files that change together in bounded history, weighted pairs |
-| `code_graph.rs` | `CodeGraph` | The exported graph model — `Node`, `Edge`, `CodeGraph` and the paginated `GraphPage` |
+| `code_graph.rs` | `CodeGraph` | The exported graph model — `Node`, `Edge`, `CodeGraph` and the paginated `GraphPage`; `output::graph` renders it, this file defines it |
 | `cross_link.rs` | `Refs` | Extract `<repo>:<path>[:<symbol>]` references from a memory body; URLs and bare-scheme path expressions (`file:/…`, `./…`, `../…`) are refused |
 | `derived.rs` | `refresh_derived_best_effort` | Single post-write pass refreshing both `rank_score` and the `edge_fts` index |
 | `doc_link.rs` | `derive_after_document` | Deterministic `member_of_source` / `references_document` link deriver |
@@ -42,7 +46,7 @@ One line per file, named after its primary item:
 | `pagerank.rs` | `pagerank` | Deterministic PageRank over a weighted directed graph |
 | `query.rs` | `build_graph_page` | The `Rel` relation vocabulary and the edge-window query behind the full and paged graph builders |
 | `search_edit.rs` | `memories_seen_recently` | Which memories appeared on a recent search/context page, for `auto_search_edit` provenance |
-| `view.rs` | `run` | `comemory graph` / `GET /api/v1/graph`: the full graph or one `(limit, offset)` window |
+| `view.rs` | `run` | `GET /api/v1/graph`: the full graph or one `(limit, offset)` window. `comemory graph` is deliberately not routed through it — it always wants a page, so it calls `query::build_graph_page` directly |
 
 When you add a file here, add its row above so the index stays current. No
 `mod.rs` barrel — submodules are declared from `src/domains/graph.rs` (`pub mod

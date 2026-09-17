@@ -1,5 +1,6 @@
-//! The relation vocabulary and the edge-window query behind the two graph
-//! builders.
+//! The relation vocabulary, and the edge-window query behind the two graph
+//! builders. Three public items: `Rel` is the vocabulary, `build_code_graph`
+//! and `build_graph_page` are the builders.
 //!
 //! [`Rel`] is the single relation vocabulary — `comemory graph --rel`,
 //! `GET /api/v1/graph`'s `rel` and `GET /api/v1/graph/snapshot`'s
@@ -7,7 +8,8 @@
 //! match arm exists in delivery (Binding Rule 1). [`build_code_graph`] returns
 //! the whole graph and [`build_graph_page`] one `(limit, offset)` window; both
 //! transports share them, so they cannot drift. The SQL lives in
-//! [`crate::store::code_graph_edges::fetch_page`].
+//! [`crate::store::code_graph_edges::fetch_page`], where `limit == 0` is the
+//! "no window" sentinel it renders as SQLite's `LIMIT -1`.
 
 use clap::ValueEnum;
 
@@ -105,3 +107,7 @@ fn fetch_edges(
         .collect();
     Ok((edges, total))
 }
+
+#[cfg(test)]
+#[path = "tests/query.rs"]
+mod tests;

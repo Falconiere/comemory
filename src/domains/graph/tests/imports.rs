@@ -5,7 +5,7 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Test mirror for `src/graph/imports.rs` — per-language import resolution
+//! Test mirror for `src/domains/graph/imports.rs` — per-language import resolution
 //! (`PathIndex`) and raw import-string extraction (`extract_imports`).
 
 use comemory::domains::code::ast::languages::Lang;
@@ -224,7 +224,7 @@ fn empty_source_yields_no_imports() {
 }
 
 /// Mutation guard for the Go-prefix-retry match guard at
-/// `src/graph/imports.rs:157`
+/// `src/domains/graph/imports.rs:157`
 /// (`None if module.contains('/') && !module.starts_with('.')`).
 ///
 /// The guard restricts the "drop one leading segment and retry" tolerance

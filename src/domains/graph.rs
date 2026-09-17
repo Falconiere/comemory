@@ -5,9 +5,11 @@
 //! [`doc_link`], [`cochange`], [`imports`] and [`coactivate`] derive and mine
 //! edges; [`pagerank`], [`materialize`] and [`memory_rank`] score them;
 //! [`derived`] is the one best-effort refresh every write seam calls.
-//! [`query`] and [`nodes`] assemble the file-level graph, and [`view`],
-//! [`graph_nodes`], [`graph_recompute`] and [`edges`] are the command cores
-//! both delivery adapters call. Every SQL string stays in
+//! [`query`] and [`nodes`] assemble the file-level graph. [`edges`] is the
+//! command core both delivery adapters call; [`view`] backs `GET /graph`
+//! alone (the CLI calls [`query`] directly — see its module doc), and
+//! [`graph_nodes`] / [`graph_recompute`] are console-only. Every SQL string
+//! stays in
 //! [`crate::store::edges`] and its `code_graph_*` / `edge_fts` siblings.
 
 /// Commit co-activation reward over a memory's referenced files.
