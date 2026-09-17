@@ -325,9 +325,11 @@ pub const REINDEX_HOOK_SCRIPT: &str = "#!/usr/bin/env bash\n\
                       exit 0\n";
 
 /// The body of `<hooks_dir>/<hook>` for `repo_root`, or `None` when it is
-/// missing, unreadable, or not UTF-8. The single read behind
-/// [`hook_installed`] and [`hook_outdated`], so the two cannot disagree
-/// about what is on disk (Binding Rule 1).
+/// missing, unreadable, or not UTF-8. The one read rule behind
+/// [`hook_installed`] and [`hook_outdated`], so the two never disagree about
+/// which file they read or when a failure degrades to `None` (Binding
+/// Rule 1). Each call reads afresh: a write landing between two calls is
+/// visible to the later one.
 fn hook_body(repo_root: &Path, hook: &str) -> Option<String> {
     std::fs::read_to_string(hooks_dir(repo_root).join(hook)).ok()
 }
