@@ -6,9 +6,15 @@ CHECK="$ROOT/scripts/architecture-check.sh"
 TASK_TMP=$(mktemp -d)
 trap 'rm -rf "$TASK_TMP"' EXIT
 COUNT=0
-jq -Rn '[inputs | select(startswith("| src/")) | split("|")[1:-1] |
-  map(gsub("^ +| +$"; "")) | {path:.[0],owner:.[4],target:.[5],issue:.[6]}]' \
-  "$ROOT/docs/designs/2026-09-17-domain-first-migration-inventory.md" >"$TASK_TMP/baseline"
+write_baseline() {
+  jq -Rn '[inputs | select(startswith("| src/")) | split("|")[1:-1] |
+  map(gsub("^ +| +$"; "")) |
+  if length != 7 then error("malformed baseline inventory row") else
+    {path:.[0],owner:.[4],target:.[5],issue:.[6]}
+  end]' \
+    "$1" >"$2"
+}
+write_baseline "$ROOT/docs/designs/2026-09-17-domain-first-migration-inventory.md" "$TASK_TMP/baseline"
 
 new_tree() {
   TREE="$TASK_TMP/$1"
@@ -116,6 +122,17 @@ sed '/^    architecture:$/,/^    [^ ]/d' "$HOOK" >"$HOOK_WITHOUT_SCOPED_CHECK"
 assert_gate_wiring "$CHECK_ALL" "$HOOK"
 assert_fails "$TEST_GATE_WIRING" "$CHECK_ALL_WITHOUT_GATE" "$HOOK"
 assert_fails "$TEST_GATE_WIRING" "$CHECK_ALL" "$HOOK_WITHOUT_SCOPED_CHECK"
+
+assert_malformed_baseline_is_rejected() {
+  local malformed=$TASK_TMP/malformed-baseline.md
+  printf '%s\n' '| src/lib.rs | private | none | none | shared::root | src/lib.rs |' >"$malformed"
+  if write_baseline "$malformed" "$TASK_TMP/malformed-baseline" >/dev/null 2>&1; then
+    printf 'FAIL: baseline parser accepted a malformed inventory row\n' >&2
+    exit 1
+  fi
+  COUNT=$((COUNT + 1))
+}
+assert_malformed_baseline_is_rejected
 
 new_tree allowed
 put src/config.rs 'pub struct Config;'

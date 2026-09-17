@@ -8,6 +8,10 @@ INVENTORY=docs/designs/2026-09-17-domain-first-migration-inventory.md
 
 fail() { echo "architecture-policy: $*" >&2; exit 1; }
 
+for tool in rg jq ast-grep; do
+  command -v "$tool" >/dev/null 2>&1 || fail "missing tool: $tool"
+done
+
 # shellcheck source=scripts/lib/architecture-inventory.sh
 source "$ROOT/scripts/lib/architecture-inventory.sh"
 validate() { validate_inventory; }
@@ -46,6 +50,16 @@ assert_fails() {
 }
 
 bash "$CHECK" --validate
+assert_missing_rg_is_clear() {
+  local status=0
+  PATH=/usr/bin:/bin /bin/bash "$CHECK" --validate >"$TASK_TMP/missing-rg" 2>&1 || status=$?
+  [[ $status != 0 ]] && grep -Fq 'missing tool: rg' "$TASK_TMP/missing-rg" || {
+    cat "$TASK_TMP/missing-rg" >&2
+    fail 'missing rg was not reported clearly'
+  }
+  echo 'PASS: missing rg preflight'
+}
+assert_missing_rg_is_clear
 jq 'del(.setup_runtime_dependencies)' "$POLICY" >"$TASK_TMP/no-setup.json"
 assert_fails 'missing setup runtime dependencies' 'invalid policy or inventory metadata' --policy "$TASK_TMP/no-setup.json"
 jq '.setup_runtime_dependencies = null' "$POLICY" >"$TASK_TMP/null-setup.json"
