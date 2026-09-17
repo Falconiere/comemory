@@ -137,7 +137,7 @@ fn search_hit_upgrades_provenance_while_miss_stays_coactivation() {
 /// `Config.reinforce.enabled = false` — surfaced to the user as
 /// `comemory hooks --disable search-edit-reinforcement` — must actually STOP
 /// the harvest, not merely report itself off. Passing `None` for the lookback
-/// window is how `api::index_code` expresses that, and this test is the one
+/// window is how `domains::code::index_code` expresses that, and this test is the one
 /// that fails if the toggle ever goes back to being cosmetic.
 #[test]
 fn a_disabled_reinforcement_window_harvests_nothing() {

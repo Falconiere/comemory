@@ -1,6 +1,6 @@
 //! `comemory install-hooks` — drop git hooks into a repo so
 //! commits/merges/checkouts kick off `comemory index-code` in the
-//! background. The hook-writing middle lives in `api::install_hooks`
+//! background. The hook-writing middle lives in `domains::code::install_hooks`
 //! (Binding Rule 1).
 
 use std::io::Write as _;
@@ -8,7 +8,6 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::api;
 use crate::config::Config;
 use crate::output::json;
 use crate::prelude::*;
@@ -42,7 +41,7 @@ pub struct Args {
     pub force: bool,
 }
 
-/// Install the three reindex hooks via `api::install_hooks::run`, refreshing
+/// Install the three reindex hooks via `crate::domains::code::install_hooks::run`, refreshing
 /// any comemory already wrote and clobbering a foreign one only with
 /// `--force`. On success the human-readable line lists the
 /// hooks that were written; under `--json` we emit a small object so callers
@@ -52,12 +51,12 @@ pub struct Args {
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = crate::config::Paths::new(crate::config::paths::resolve_data_dir(data_dir));
     let cfg = Config::defaults();
-    let req = api::install_hooks::Request {
+    let req = crate::domains::code::install_hooks::Request {
         repo: a.repo.display().to_string(),
         force: a.force,
     };
     let mut ctx = Ctx::lazy(&paths, &cfg);
-    let resp = api::install_hooks::run(&mut ctx, req)?;
+    let resp = crate::domains::code::install_hooks::run(&mut ctx, req)?;
     if json_flag {
         json::write(&resp)?;
     } else {

@@ -7,7 +7,7 @@
 //! against the live repo to report `fresh|stale|ghost|unpinned|unknown`. This
 //! surface moves the anchor forward: for every ref whose repo root resolves
 //! (a `--root <repo>=<path>` override first, then `repo_marker.root_path`,
-//! via `serve::repo_root::resolve_root`) it re-reads the HEAD-tree blob,
+//! via `utilities::repo_root::resolve_root`) it re-reads the HEAD-tree blob,
 //! HEAD commit and branch, rewrites the frontmatter in place, and re-mirrors
 //! — so a `stale` ref the user has reviewed becomes `fresh` again without
 //! re-saving the memory under a new id.
@@ -25,12 +25,12 @@ use std::path::PathBuf;
 use serde::Serialize;
 
 use crate::api::show::CodeRefRow;
-use crate::git_utils;
+use crate::domains::code::git_utils;
 use crate::memory::{MemoryStore, Ref};
 use crate::prelude::*;
-use crate::serve::repo_root::{RootOverrides, resolve_root};
 use crate::store::Connection;
 use crate::utilities::context::Ctx;
+use crate::utilities::repo_root::{RootOverrides, resolve_root};
 
 /// `POST /api/v1/memories/{id}/references/refresh` response.
 #[derive(Serialize, Debug)]

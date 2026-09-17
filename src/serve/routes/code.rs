@@ -1,8 +1,8 @@
 //! `GET|POST /api/v1/code/search` (`api::search_code`, `GET` no vector,
 //! `POST` vector-capable; no lazy-reindex over HTTP, spec Non-Goal 8).
-//! `POST /api/v1/code/ast` (`api::ast`): a read, but `req.file` needs
-//! containment first. `POST /api/v1/code/index` (`api::index_code`, job)
-//! and `POST /api/v1/code/ingest` (`api::ingest_code`, job, NDJSON body,
+//! `POST /api/v1/code/ast` (`domains::code::pattern_search`): a read, but `req.file` needs
+//! containment first. `POST /api/v1/code/index` (`domains::code::index_code`, job)
+//! and `POST /api/v1/code/ingest` (`domains::code::ingest_code`, job, NDJSON body,
 //! its own 64 MiB per-route limit) round out this resource.
 
 use std::path::Path;
@@ -121,12 +121,12 @@ fn run(state: AppState, req: api::search_code::Request) -> Result<Value> {
 }
 
 /// `POST /api/v1/code/ast` — run an ast-grep pattern against a file
-/// (`api::ast`), read-only but requiring `req.file` inside an allowed root
+/// (`domains::code::pattern_search`), read-only but requiring `req.file` inside an allowed root
 /// before the filesystem read (§Security "Path containment"). Nonexistent
 /// path -> `400`; outside every root -> `403`.
 async fn code_ast(
     State(state): State<AppState>,
-    Json(mut req): Json<api::ast::Request>,
+    Json(mut req): Json<crate::domains::code::pattern_search::Request>,
 ) -> Response {
     let started = Instant::now();
     let result = run_blocking(move || {
@@ -137,13 +137,13 @@ async fn code_ast(
         req.file = canonical.to_string_lossy().into_owned();
         let cfg = state.cfg();
         let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        api::ast::run(&mut ctx, req)
+        crate::domains::code::pattern_search::run(&mut ctx, req)
     })
     .await;
     respond("code.ast", result, started)
 }
 
-/// `POST /api/v1/code/index` — start an `index-code` job (`api::index_code`)
+/// `POST /api/v1/code/index` — start an `index-code` job (`domains::code::index_code`)
 /// over `req.path`, contained to an allowed root BEFORE the job is created
 /// (AC-7: an out-of-root or nonexistent path never spawns a job).
 /// `405 read_only` on a `--read-only` server; never `503 busy` — a
@@ -157,7 +157,7 @@ async fn code_ast(
 /// `progress` event alongside the unchanged `status` events (AC-34).
 async fn code_index(
     State(state): State<AppState>,
-    Json(mut req): Json<api::index_code::Request>,
+    Json(mut req): Json<crate::domains::code::index_code::Request>,
 ) -> Response {
     let started = Instant::now();
     if let Err(resp) = guard_job("index-code", &state) {
@@ -167,14 +167,16 @@ async fn code_index(
         return Envelope::err("index-code", &e, 0);
     }
     let contain_state = state.clone();
-    let contained = run_blocking(move || -> Result<api::index_code::Request> {
-        let conn = contain_state.conn()?;
-        let roots = contain_state.allowed_roots(&conn);
-        drop(conn);
-        let canonical = path_containment::contain_abs(&roots, Path::new(&req.path))?;
-        req.path = canonical.to_string_lossy().into_owned();
-        Ok(req)
-    })
+    let contained = run_blocking(
+        move || -> Result<crate::domains::code::index_code::Request> {
+            let conn = contain_state.conn()?;
+            let roots = contain_state.allowed_roots(&conn);
+            drop(conn);
+            let canonical = path_containment::contain_abs(&roots, Path::new(&req.path))?;
+            req.path = canonical.to_string_lossy().into_owned();
+            Ok(req)
+        },
+    )
     .await;
     let req = match contained {
         Ok(req) => req,
@@ -184,7 +186,7 @@ async fn code_index(
     accepted("index-code", job, started)
 }
 
-/// `POST /api/v1/code/ingest` — start an `ingest-code` job (`api::ingest_code`)
+/// `POST /api/v1/code/ingest` — start an `ingest-code` job (`domains::code::ingest_code`)
 /// over the raw NDJSON request body (bounded by [`INGEST_BODY_LIMIT`], not
 /// the global 5 MiB default). `405 read_only` on a `--read-only` server.
 async fn code_ingest(State(state): State<AppState>, body: String) -> Response {
@@ -201,7 +203,7 @@ async fn code_ingest(State(state): State<AppState>, body: String) -> Response {
         move || {
             let cfg = job_state.cfg();
             let mut ctx = Ctx::lazy(job_state.paths(), &cfg);
-            let resp = api::ingest_code::run(&mut ctx, &body)?;
+            let resp = crate::domains::code::ingest_code::run(&mut ctx, &body)?;
             serde_json::to_value(resp).map_err(Error::Json)
         },
     );

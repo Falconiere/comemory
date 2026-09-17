@@ -21,7 +21,7 @@
 //! `search-code` / `context` run from that checkout sees a never-indexed
 //! repo and spawns a background `index-code` that rebuilds the index (only
 //! `hook` / `off` leave it alone). To stop indexing while keeping the
-//! memories, archive the repo instead (`api::repo_admin::archive`), which
+//! memories, archive the repo instead (`crate::domains::code::repo_admin::archive`), which
 //! lazy reindex skips.
 
 use rusqlite::Connection;
@@ -51,7 +51,7 @@ pub struct DropCounts {
 /// Dropping a label that was never indexed is not an error: every statement
 /// simply matches zero rows and the counters come back zero. Callers that
 /// need "unknown repo" to be a `404` check `repo_marker` first
-/// (`api::repo_admin::disconnect`).
+/// (`crate::domains::code::repo_admin::disconnect`).
 pub fn drop_repo(conn: &mut Connection, repo: &str) -> Result<DropCounts> {
     let prefix = edges::file_node_prefix(repo);
     let prefix_len = i64::try_from(prefix.chars().count()).unwrap_or(i64::MAX);

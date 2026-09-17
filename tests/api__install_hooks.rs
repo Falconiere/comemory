@@ -5,7 +5,7 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror test for `src/api/install_hooks.rs`. Calls `api::install_hooks::run`
+//! Mirror test for `src/domains/code/install_hooks.rs`. Calls `comemory::domains::code::install_hooks::run`
 //! directly against a `Ctx::lazy` (conn-free) — proving the three hooks are
 //! written, the pre-flight refuses to clobber a FOREIGN hook without `force`,
 //! that an outdated comemory-written hook is repaired without it, and that
@@ -14,7 +14,6 @@
 //! route, including `--repo` containment, lives in
 //! `tests/serve__routes__maint__admin.rs`).
 
-use comemory::api;
 use comemory::config::{Config, Paths};
 use comemory::utilities::context::Ctx;
 
@@ -22,8 +21,8 @@ fn ctx_paths(home: &std::path::Path) -> Paths {
     Paths::new(home)
 }
 
-fn request(repo: &std::path::Path, force: bool) -> api::install_hooks::Request {
-    api::install_hooks::Request {
+fn request(repo: &std::path::Path, force: bool) -> comemory::domains::code::install_hooks::Request {
+    comemory::domains::code::install_hooks::Request {
         repo: repo.display().to_string(),
         force,
     }
@@ -38,7 +37,8 @@ fn run_installs_all_three_hooks() {
     let paths = ctx_paths(home.path());
     let cfg = Config::defaults();
     let mut ctx = Ctx::lazy(&paths, &cfg);
-    let resp = api::install_hooks::run(&mut ctx, request(&repo, false)).expect("install run");
+    let resp = comemory::domains::code::install_hooks::run(&mut ctx, request(&repo, false))
+        .expect("install run");
 
     assert_eq!(resp.installed.len(), 3);
     assert_eq!(resp.repo, repo.display().to_string());
@@ -65,7 +65,8 @@ fn run_refuses_to_clobber_a_foreign_hook_without_force() {
     let paths = ctx_paths(home.path());
     let cfg = Config::defaults();
     let mut ctx = Ctx::lazy(&paths, &cfg);
-    let err = api::install_hooks::run(&mut ctx, request(&repo, false)).expect_err("must refuse");
+    let err = comemory::domains::code::install_hooks::run(&mut ctx, request(&repo, false))
+        .expect_err("must refuse");
     assert!(err.to_string().contains("already exists"));
 
     let body = std::fs::read_to_string(hooks_dir.join("post-commit")).expect("read hook");
@@ -94,7 +95,8 @@ fn run_force_overwrites_an_existing_hook() {
     let paths = ctx_paths(home.path());
     let cfg = Config::defaults();
     let mut ctx = Ctx::lazy(&paths, &cfg);
-    let resp = api::install_hooks::run(&mut ctx, request(&repo, true)).expect("force install");
+    let resp = comemory::domains::code::install_hooks::run(&mut ctx, request(&repo, true))
+        .expect("force install");
     assert_eq!(resp.installed.len(), 3);
 
     let body = std::fs::read_to_string(hooks_dir.join("post-commit")).expect("read hook");
@@ -106,7 +108,7 @@ fn run_force_overwrites_an_existing_hook() {
 
 #[test]
 fn request_defaults_repo_to_dot() {
-    let req: api::install_hooks::Request =
+    let req: comemory::domains::code::install_hooks::Request =
         serde_json::from_value(serde_json::json!({})).expect("defaults must parse");
     assert_eq!(req.repo, ".");
     assert!(!req.force);
@@ -114,10 +116,12 @@ fn request_defaults_repo_to_dot() {
 
 #[test]
 fn request_rejects_unknown_fields() {
-    let err = serde_json::from_value::<api::install_hooks::Request>(serde_json::json!({
-        "repo": ".",
-        "bogus": 1,
-    }))
+    let err = serde_json::from_value::<comemory::domains::code::install_hooks::Request>(
+        serde_json::json!({
+            "repo": ".",
+            "bogus": 1,
+        }),
+    )
     .expect_err("unknown field must be rejected");
     assert!(err.to_string().contains("unknown field"));
 }
@@ -147,8 +151,8 @@ fn run_repairs_an_outdated_comemory_hook_without_force() {
     let paths = ctx_paths(home.path());
     let cfg = Config::defaults();
     let mut ctx = Ctx::lazy(&paths, &cfg);
-    let resp =
-        api::install_hooks::run(&mut ctx, request(&repo, false)).expect("repair without force");
+    let resp = comemory::domains::code::install_hooks::run(&mut ctx, request(&repo, false))
+        .expect("repair without force");
     assert_eq!(resp.installed.len(), 3);
 
     for hook in ["post-commit", "post-merge", "post-checkout"] {
@@ -174,11 +178,12 @@ fn run_is_idempotent_over_an_up_to_date_comemory_hook() {
     let paths = ctx_paths(home.path());
     let cfg = Config::defaults();
     let mut ctx = Ctx::lazy(&paths, &cfg);
-    api::install_hooks::run(&mut ctx, request(&repo, false)).expect("first install");
+    comemory::domains::code::install_hooks::run(&mut ctx, request(&repo, false))
+        .expect("first install");
     let first = std::fs::read_to_string(repo.join(".git").join("hooks").join("post-commit"))
         .expect("read hook");
 
-    api::install_hooks::run(&mut ctx, request(&repo, false))
+    comemory::domains::code::install_hooks::run(&mut ctx, request(&repo, false))
         .expect("re-running over our own current hook is not a conflict");
     let second = std::fs::read_to_string(repo.join(".git").join("hooks").join("post-commit"))
         .expect("read hook again");

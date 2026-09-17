@@ -6,7 +6,7 @@
 
 use std::path::Path;
 
-use crate::git_utils;
+use crate::domains::code::git_utils;
 use crate::memory::{Ref, References};
 use crate::prelude::*;
 

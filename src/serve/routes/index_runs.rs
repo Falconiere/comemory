@@ -3,13 +3,13 @@
 //! `POST` is the console's own index-run entry point: the same `index-code`
 //! job `POST /api/v1/code/index` and `POST /api/v1/repos {index_now}`
 //! start, with the two gates every one of them applies — an archived repo
-//! is refused (`400`, `api::index_code::refuse_if_archived`, which the core
+//! is refused (`400`, `crate::domains::code::index_code::refuse_if_archived`, which the core
 //! run re-checks itself) and a repo that already has a live run is refused
 //! (`409 index_running`, AC-10). All three entry points share
 //! [`spawn_index_job`] and [`refuse_if_running`], so the job they create and
 //! the conflict they report cannot drift.
 //!
-//! `GET` pages `index_runs` (`api::index_runs`), the history every run —
+//! `GET` pages `index_runs` (`domains::code::index_runs`), the history every run —
 //! CLI, `POST /code/index`, or `POST /index/runs` — writes one row into.
 
 use std::path::{Path, PathBuf};
@@ -21,8 +21,7 @@ use axum::routing::get;
 use axum::{Json, Router};
 use serde::Deserialize;
 
-use crate::api;
-use crate::api::index_code::IndexMode;
+use crate::domains::code::index_code::IndexMode;
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::envelope::Envelope;
@@ -66,20 +65,20 @@ pub fn router(_state: AppState) -> Router<AppState> {
     Router::new().route("/api/v1/index/runs", get(list_runs).post(start_run))
 }
 
-/// `GET /api/v1/index/runs` — the paged run history (`api::index_runs`).
+/// `GET /api/v1/index/runs` — the paged run history (`domains::code::index_runs`).
 /// Uses `Ctx::lazy` so the must-not-create-the-db invariant holds: a server
 /// pointed at an empty data dir answers with an empty page.
 async fn list_runs(
     State(state): State<AppState>,
     scope: RepoScope,
-    Query(mut req): Query<api::index_runs::Request>,
+    Query(mut req): Query<crate::domains::code::index_runs::Request>,
 ) -> Response {
     req.repo = scope.resolve(req.repo);
     let started = Instant::now();
     let result = run_blocking(move || {
         let cfg = state.cfg();
         let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        api::index_runs::run(&mut ctx, req)
+        crate::domains::code::index_runs::run(&mut ctx, req)
     })
     .await;
     respond(RUNS_COMMAND, result, started)
@@ -145,7 +144,7 @@ async fn start_run(State(state): State<AppState>, Json(req): Json<StartRequest>)
 fn plan_run(state: &AppState, req: StartRequest) -> Result<IndexPlan> {
     let path = resolve_path(&req)?;
     let conn = state.conn()?;
-    api::index_code::refuse_if_archived(&conn, &req.repo)?;
+    crate::domains::code::index_code::refuse_if_archived(&conn, &req.repo)?;
     let roots = state.allowed_roots(&conn);
     drop(conn);
     let canonical = contained(&roots, &path)?;
@@ -178,7 +177,7 @@ fn resolve_path(req: &StartRequest) -> Result<String> {
 }
 
 /// Canonicalize `path` inside an allowed root, as the `String` an
-/// `api::index_code::Request` carries.
+/// `crate::domains::code::index_code::Request` carries.
 fn contained(roots: &[PathBuf], path: &str) -> Result<String> {
     let canonical = path_containment::contain_abs(roots, Path::new(path))?;
     Ok(canonical.to_string_lossy().into_owned())
@@ -230,9 +229,9 @@ pub(crate) fn spawn_index_job(
             let cfg = job_state.cfg();
             let mut ctx = Ctx::lazy(job_state.paths(), &cfg);
             let sink = jobs::worker::RegistryProgressSink::new(job_state.jobs().clone(), job_id);
-            let resp = api::index_code::run_with_progress(
+            let resp = crate::domains::code::index_code::run_with_progress(
                 &mut ctx,
-                api::index_code::Request { repo, path, mode },
+                crate::domains::code::index_code::Request { repo, path, mode },
                 Some(&sink),
             )?;
             serde_json::to_value(resp).map_err(Error::Json)

@@ -5,7 +5,7 @@ Working-set affinity applies only when the process CWD is the indexed
 repo **and** `--repo` matches the label used at `index-code` time.
 
 **Runnable tests:** `tests/cli__search_code.rs`, `tests/cli__search_code_2.rs`,
-`tests/cli__lazy_reindex.rs`, `tests/cli_scenario_code.rs`,
+`tests/domains__code__reindex_policy.rs`, `tests/cli_scenario_code.rs`,
 `tests/cli_scenario_vectors.rs`
 
 **HTTP:** `GET|POST /api/v1/code/search` — covered by `tests/serve_scenario_getting_started.rs`, `tests/serve_scenario_code.rs`, `tests/serve_scenario_vectors.rs`
@@ -77,7 +77,7 @@ echo '{"embedding":[...768 floats...]}' | \
 - **Command:** `comemory search-code QUERY --repo r`
 - **Expect:** search returns immediately on the current index; a detached
   `index-code` may spawn. A bad `--lang` fails **before** the trigger.
-- **Covered by:** `tests/cli__lazy_reindex.rs`
+- **Covered by:** `tests/domains__code__reindex_policy.rs`
 
 ### search-code-06 Vector CSV
 

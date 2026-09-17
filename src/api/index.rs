@@ -131,7 +131,7 @@ fn validate_input_path(path: &Path) -> Result<PathBuf> {
 }
 
 /// Infer a repo label from the enclosing git repository — its main
-/// worktree's basename ([`crate::git_utils::repo_label`]), so a source
+/// worktree's basename ([`crate::domains::code::git_utils::repo_label`]), so a source
 /// registered from a linked worktree files under the same label as one
 /// registered from the main checkout — or `None` when `canonical` is not
 /// inside one. Discovery starts from the containing directory for a file
@@ -142,7 +142,7 @@ fn infer_repo_label(canonical: &Path) -> Option<String> {
     } else {
         canonical.parent()?
     };
-    crate::git_utils::repo_label_at(start)
+    crate::domains::code::git_utils::repo_label_at(start)
 }
 
 /// Discover every candidate under `entry`, index each one, then tombstone

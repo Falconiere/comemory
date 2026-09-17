@@ -230,7 +230,7 @@ fn assert_symbols_at_least(home: &TempDir, repo: &str, min: i64) {
 }
 
 /// TOCTOU regression: `req.file` is overwritten with the SAME canonicalized
-/// path `contain_abs` just verified before `api::ast::run` reads it
+/// path `contain_abs` just verified before `comemory::domains::code::pattern_search::run` reads it
 /// (§Security "Path containment") — a file reached only through a symlink
 /// inside the allowed root must still be found and searched.
 #[test]

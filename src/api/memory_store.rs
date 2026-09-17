@@ -31,7 +31,7 @@ use toml::Value;
 
 use crate::config::patch::{patch_config_file, section};
 use crate::config::{Config, Paths};
-use crate::git_utils;
+use crate::domains::code::git_utils;
 use crate::prelude::*;
 use crate::utilities::context::Ctx;
 

@@ -7,7 +7,7 @@
 )]
 //! Tests for `comemory::graph::neighbors` against a REAL indexed git repo:
 //! two Rust files where `src/a.rs` declares `mod b;`, committed together,
-//! then walked by `api::index_code::run` so the `imports` (and `co_changed`)
+//! then walked by `crate::domains::code::index_code::run` so the `imports` (and `co_changed`)
 //! edges under test are the ones production mining actually writes.
 //!
 //! Also pins AC-9's shared-query half: the rows this module returns for a
@@ -19,7 +19,6 @@ use crate::test_common::{git_commit, git_repo};
 
 use std::path::{Path, PathBuf};
 
-use comemory::api;
 use comemory::config::{Config, Paths};
 use comemory::graph::neighbors::{DEFAULT_MIN_WEIGHT, file_neighbors};
 use comemory::store::connection;
@@ -58,12 +57,12 @@ pub fn index_into(home: &Path, repo_root: &Path) -> rusqlite::Connection {
     let mut conn = connection::open(paths.db_path()).expect("open db");
     {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        api::index_code::run(
+        crate::domains::code::index_code::run(
             &mut ctx,
-            api::index_code::Request {
+            crate::domains::code::index_code::Request {
                 repo: REPO.to_string(),
                 path: repo_root.to_str().expect("utf8 repo path").to_string(),
-                mode: api::index_code::IndexMode::Incremental,
+                mode: crate::domains::code::index_code::IndexMode::Incremental,
             },
         )
         .expect("index_code run");

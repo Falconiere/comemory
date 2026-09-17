@@ -42,6 +42,9 @@
         "integrations"
       ],
       "domains/*": [
+        "ast",
+        "index_code",
+        "repos",
         "tests",
         "proptest-regressions"
       ],
@@ -104,12 +107,9 @@
     "requireReadme": [
       "api",
       "api/doctor",
-      "api/index_code",
       "api/memory_store",
       "api/rebuild",
-      "api/repos",
       "api/sync",
-      "ast",
       "cli",
       "cli/graph",
       "config",
@@ -139,7 +139,12 @@
       "api/install",
       "api/setup",
       "cli/setup",
-      "utilities"
+      "utilities",
+      "domains",
+      "domains/code",
+      "domains/code/ast",
+      "domains/code/index_code",
+      "domains/code/repos"
     ]
   },
   "fileSize": {

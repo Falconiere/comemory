@@ -44,6 +44,8 @@ pub mod progress;
 pub mod query_id;
 /// Collect the `--ref-file` / `--ref-symbol` values into a `References` block.
 pub mod ref_args;
+/// Repository-root resolution and `file:<repo>:<path>` node addressing.
+pub mod repo_root;
 /// 64-bit SimHash and Hamming distance over tokenized bodies.
 pub mod simhash;
 /// The persisted retrieval-log / feedback vocabularies.

@@ -177,7 +177,7 @@ pub fn upsert_repo_root(conn: &Connection, repo: &str, root: &str) -> Result<()>
 /// successful `index-code` walk, creating the marker row if `index-code` is
 /// the first writer to touch this repo (mirrors [`upsert_repo_root`]'s
 /// creates-the-row contract). `head` is the working tree's current git HEAD
-/// oid at the moment the walk completed; `api::repos`'s freshness
+/// oid at the moment the walk completed; `domains::code::repos`'s freshness
 /// comparison (`repo_marker.last_head` vs. a fresh
 /// `git_utils::current_head` read) has nothing to compare against until
 /// this is stamped.
@@ -370,7 +370,7 @@ pub(crate) fn parent_identity(conn: &Connection, id: i64) -> Result<Option<(Stri
 }
 
 /// Number of `code_symbols` rows for `repo` — the `index_runs.symbols`
-/// count behind `api::index_code::record_run`.
+/// count behind `crate::domains::code::index_code::record_run`.
 pub fn count_for_repo(conn: &Connection, repo: &str) -> Result<i64> {
     conn.query_row(
         "SELECT COUNT(*) FROM code_symbols WHERE repo = ?1",

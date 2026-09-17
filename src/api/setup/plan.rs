@@ -131,7 +131,7 @@ fn git_hooks(detected: &Detected) -> Step {
             },
         );
     }
-    let missing: Vec<&str> = api::hooks::GIT_HOOKS
+    let missing: Vec<&str> = crate::domains::code::hooks::GIT_HOOKS
         .iter()
         .copied()
         .filter(|name| !detected.hooks_installed.iter().any(|i| i == name))

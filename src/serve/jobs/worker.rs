@@ -46,7 +46,7 @@ where
 
 /// Like [`spawn_job`], but for a caller whose closure needs the job id
 /// before it runs — `POST /api/v1/code/index` uses it to build a
-/// [`RegistryProgressSink`] so `api::index_code::run_with_progress` can
+/// [`RegistryProgressSink`] so `crate::domains::code::index_code::run_with_progress` can
 /// report progress into the very job it is running as. Otherwise
 /// identical: the job is registered [`JobStatus::Queued`] first, then
 /// `body` (handed its own id) runs exactly as [`spawn_job`]'s would.
@@ -177,7 +177,7 @@ fn set_status(registry: &Registry, id: &str, status: JobStatus) {
 }
 
 /// Concrete [`ProgressSink`] that writes into the job [`Registry`] — what
-/// `POST /api/v1/code/index` hands `api::index_code::run_with_progress` via
+/// `POST /api/v1/code/index` hands `crate::domains::code::index_code::run_with_progress` via
 /// [`spawn_job_with_id`], so a real index-code job's progress and log
 /// lines land in `JobView.progress`/`log_tail` and stream out as the SSE
 /// `progress` event. A failed registry write only warns (§Error handling

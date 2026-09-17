@@ -1,6 +1,6 @@
 //! `POST /api/v1/mine` (`api::mine`, no confirm gate — a bounded scan that
 //! only mutates when `"apply":true`), `POST /api/v1/hooks/install`
-//! (`api::install_hooks`, confirm-gated, `--repo` contained), and
+//! (`domains::code::install_hooks`, confirm-gated, `--repo` contained), and
 //! `POST /api/v1/rebuild` (`api::rebuild`) — a confirm-gated **job** that
 //! also swaps the server's shared connection onto the freshly built DB.
 
@@ -77,11 +77,11 @@ async fn mine(State(state): State<AppState>, Json(req): Json<api::mine::Request>
     respond("mine", result, started)
 }
 
-/// `POST /api/v1/hooks/install` — install git hooks (`api::install_hooks`),
+/// `POST /api/v1/hooks/install` — install git hooks (`domains::code::install_hooks`),
 /// confirm-gated with `--repo` contained to an allowed root. The body is
 /// read as a raw JSON [`Value`] (via [`split_confirm`], shared with
 /// `maint::prune`'s `POST /prune`) so the HTTP-only `confirm` flag never
-/// joins `api::install_hooks::Request` itself (AC-12 parity).
+/// joins `crate::domains::code::install_hooks::Request` itself (AC-12 parity).
 async fn hooks_install(State(state): State<AppState>, Json(body): Json<Value>) -> Response {
     let started = Instant::now();
     let permit = match guard_mutating("hooks.install", &state) {
@@ -90,13 +90,14 @@ async fn hooks_install(State(state): State<AppState>, Json(body): Json<Value>) -
     };
     let result = run_blocking(move || {
         let _permit = permit;
-        let (mut req, confirmed) = split_confirm::<api::install_hooks::Request>(body)?;
+        let (mut req, confirmed) =
+            split_confirm::<crate::domains::code::install_hooks::Request>(body)?;
         let canonical = contain_repo(&state, &req.repo)?;
         req.repo = canonical.to_string_lossy().into_owned();
         require_confirm(confirmed)?;
         let cfg = state.cfg();
         let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        api::install_hooks::run(&mut ctx, req)
+        crate::domains::code::install_hooks::run(&mut ctx, req)
     })
     .await;
     respond("hooks.install", result, started)

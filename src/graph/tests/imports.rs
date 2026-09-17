@@ -8,7 +8,7 @@
 //! Test mirror for `src/graph/imports.rs` — per-language import resolution
 //! (`PathIndex`) and raw import-string extraction (`extract_imports`).
 
-use comemory::ast::languages::Lang;
+use comemory::domains::code::ast::languages::Lang;
 use comemory::graph::imports::{PathIndex, extract_imports};
 
 fn paths(v: &[&str]) -> Vec<String> {

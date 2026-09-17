@@ -1,6 +1,6 @@
 //! `comemory index-code` — incremental symbol extraction over a real git
 //! repo, mirrored into the `code_symbols` SQLite table via the shared
-//! [`api::index_code`] middle (Binding Rule 1).
+//! [`crate::domains::code::index_code`] middle (Binding Rule 1).
 //!
 //! `--extract` stays CLI-only: it emits one JSONL row per symbol on
 //! stdout instead of writing to the DB, skipping `connection::open`
@@ -15,16 +15,15 @@ use clap::{Args as ClapArgs, ValueEnum};
 use git2::Repository;
 use ignore::WalkBuilder;
 
-use crate::api;
-use crate::api::index_code::walk::{
-    blob_oid, chunk_symbol, parent_snippet_of, relative, simhash_of,
-};
-use crate::ast::extractor::ExtractedSymbol;
-use crate::ast::{self, languages};
 use crate::cli::load_config;
 use crate::cli::off_runtime::off_runtime;
 use crate::config::paths::{Paths, resolve_data_dir};
-use crate::git_utils::map_git_err;
+use crate::domains::code::ast::extractor::ExtractedSymbol;
+use crate::domains::code::ast::{self, languages};
+use crate::domains::code::git_utils::map_git_err;
+use crate::domains::code::index_code::walk::{
+    blob_oid, chunk_symbol, parent_snippet_of, relative, simhash_of,
+};
 use crate::prelude::*;
 use crate::utilities::context::Ctx;
 
@@ -65,7 +64,7 @@ pub struct Args {
     pub mode: Mode,
 }
 
-/// `--mode` values, mirrored onto [`api::index_code::IndexMode`] (the CLI
+/// `--mode` values, mirrored onto [`crate::domains::code::index_code::IndexMode`] (the CLI
 /// keeps its `ValueEnum` derive, the HTTP surface a plain `Deserialize`).
 #[derive(Copy, Clone, Debug, ValueEnum)]
 #[clap(rename_all = "lowercase")]
@@ -79,7 +78,7 @@ pub enum Mode {
     Full,
 }
 
-impl From<Mode> for api::index_code::IndexMode {
+impl From<Mode> for crate::domains::code::index_code::IndexMode {
     fn from(m: Mode) -> Self {
         match m {
             Mode::Incremental => Self::Incremental,
@@ -89,7 +88,7 @@ impl From<Mode> for api::index_code::IndexMode {
 }
 
 /// `--extract` streams JSONL to stdout; otherwise delegates the DB-write
-/// walk to [`api::index_code::run`].
+/// walk to [`crate::domains::code::index_code::run`].
 pub async fn run(args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
@@ -100,9 +99,9 @@ pub async fn run(args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<(
     let cfg = load_config(&paths)?;
     {
         let mut ctx = Ctx::lazy(&paths, &cfg);
-        api::index_code::run(
+        crate::domains::code::index_code::run(
             &mut ctx,
-            api::index_code::Request {
+            crate::domains::code::index_code::Request {
                 repo: args.repo.clone(),
                 path: args.path.to_string_lossy().into_owned(),
                 mode: args.mode.into(),
@@ -110,7 +109,7 @@ pub async fn run(args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<(
         )?;
     }
     // The index is durable; offer it to the workspace, best-effort. Runs
-    // here and not in `api::index_code` because that core also runs inside
+    // here and not in `domains::code::index_code` because that core also runs inside
     // `comemory serve`, where pushing a tenant's index outward would be wrong
     // — the same split `sync::push_on_save` keeps for memories.
     off_runtime(|| {

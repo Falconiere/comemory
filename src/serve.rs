@@ -23,13 +23,15 @@ use crate::store::{Connection, connection, repo_marker_roots};
 
 pub mod envelope;
 pub mod jobs;
-pub mod repo_root;
 pub mod router;
 pub mod routes;
 pub mod scope;
 pub mod security;
 
-pub use repo_root::RootOverrides;
+// `RootOverrides` is the per-session `--root` map: a serve concept that
+// `utilities::repo_root` consumes. The re-export predates #167 and is kept so
+// `comemory::serve::RootOverrides` stays the public path it has always been.
+pub use crate::utilities::repo_root::RootOverrides;
 
 /// Caller-supplied configuration for one `comemory serve` session.
 pub struct ServeOptions {

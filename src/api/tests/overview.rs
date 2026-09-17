@@ -7,11 +7,11 @@
 )]
 //! `api::overview::run` against a real store (console-api spec AC-3):
 //! memories saved through `api::save`, a real git repo indexed through
-//! `api::index_code`, eval history written through the production
+//! `domains::code::index_code`, eval history written through the production
 //! `store::eval_runs` writer. Every counter is compared against the same
 //! thing counted a second way rather than against a hardcoded number.
 
-use comemory::api::{index_code, overview, save};
+use comemory::api::{overview, save};
 use comemory::config::{Config, Paths};
 use comemory::memory::Kind;
 use comemory::store::{connection, eval_runs, index_runs};
@@ -188,12 +188,12 @@ fn last_run_is_absent_until_a_real_index_run_and_then_mirrors_the_newest_row() {
     {
         let cfg = Config::defaults();
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        index_code::run(
+        crate::domains::code::index_code::run(
             &mut ctx,
-            index_code::Request {
+            crate::domains::code::index_code::Request {
                 repo: "sample-repo".into(),
                 path: repo_root.to_string_lossy().into_owned(),
-                mode: index_code::IndexMode::Incremental,
+                mode: crate::domains::code::index_code::IndexMode::Incremental,
             },
         )
         .unwrap();

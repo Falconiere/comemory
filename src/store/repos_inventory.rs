@@ -1,6 +1,6 @@
 //! The `repo_marker` join behind `comemory repos` / `GET /api/v1/repos`:
 //! one row per indexed repo, joined against its per-repo file/symbol/memory
-//! counters. Git-state resolution and JSON shaping stay in `api::repos`
+//! counters. Git-state resolution and JSON shaping stay in `domains::code::repos`
 //! (spec `docs/toolu/specs/2026-09-07-store-layer-chokepoint-design.md`).
 
 use rusqlite::Connection;

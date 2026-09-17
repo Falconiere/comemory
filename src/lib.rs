@@ -25,9 +25,6 @@ pub mod eval;
 /// Markdown source of truth: frontmatter, slug/id, atomic save and load.
 pub mod memory;
 
-/// Code indexing entry points over the AST extractor.
-pub mod index;
-
 /// Usage, feedback and repo-marker tables inside `comemory.db`.
 pub mod stats;
 
@@ -44,17 +41,11 @@ pub mod store;
 /// and `serve::routes::` so neither surface duplicates subcommand logic.
 pub mod api;
 
-/// Symbol extraction and AST patterns via ast-grep.
-pub mod ast;
-
 /// Orphan / low-value / stale-code detection plus soft-delete and gc.
 pub mod prune;
 
 /// Advisory near-duplicate cluster report over live memories (read-only).
 pub mod consolidate;
-
-/// Repo and author detection, blob lookup, git-hook installation.
-pub mod git_utils;
 
 /// TTY and JSON emitters shared by the subcommands.
 pub mod output;
@@ -85,14 +76,20 @@ pub mod source;
 /// Cloud-sync client helpers: match keys, redaction, auth file, allowlist cache.
 pub mod sync;
 
+/// Business capabilities, each owning one area of behavior end to end.
+pub mod domains;
+
 /// Transport-neutral shared primitives usable by domains and by both
 /// delivery adapters.
 pub mod utilities;
 
-// Crate-root aliases for the shared primitives that were public root modules
-// before #166 moved them under `utilities`. They preserve `comemory::<name>`
-// for external consumers; in-crate code names the real
-// `crate::utilities::<name>` path.
+// Crate-root aliases for modules that were public root modules before the
+// migration moved them: `ast` and `git_utils` under `domains::code` (#167), the
+// four shared primitives under `utilities` (#166). They preserve
+// `comemory::<name>` for external consumers; in-crate code names the real
+// path directly.
+pub use domains::code::ast;
+pub use domains::code::git_utils;
 pub use utilities::embed;
 pub use utilities::fetch;
 pub use utilities::http_error;

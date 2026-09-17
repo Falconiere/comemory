@@ -1,6 +1,6 @@
 //! `comemory hooks` — read and per-hook toggle the reindex git hooks
 //! `install-hooks` writes, plus the config-backed search→edit
-//! auto-reinforcement row. The read/write logic lives in `api::hooks`
+//! auto-reinforcement row. The read/write logic lives in `domains::code::hooks`
 //! (Binding Rule 1).
 
 use std::io::Write as _;
@@ -8,7 +8,6 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::api;
 use crate::cli::load_config;
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::output::json;
@@ -53,26 +52,26 @@ pub struct Args {
 }
 
 /// Report (and, with `--enable`/`--disable`, toggle) hook state via
-/// `api::hooks::run`. Uses `Ctx::lazy` — this command never opens the
+/// `crate::domains::code::hooks::run`. Uses `Ctx::lazy` — this command never opens the
 /// database.
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     let cfg = load_config(&paths)?;
     let mut ctx = Ctx::lazy(&paths, &cfg);
-    let req = api::hooks::Request {
+    let req = crate::domains::code::hooks::Request {
         repo: Some(a.repo.display().to_string()),
         enable: a.enable,
         disable: a.disable,
     };
-    let resp = api::hooks::run(&mut ctx, req)?;
+    let resp = crate::domains::code::hooks::run(&mut ctx, req)?;
     emit(json_flag, &resp)
 }
 
 /// Emit the hook report: the whole `{"hooks": [...]}` object under
-/// `--json` (matching `api::hooks::Response`'s shape verbatim, the same
+/// `--json` (matching `crate::domains::code::hooks::Response`'s shape verbatim, the same
 /// contract `GET|POST /api/v1/hooks` serves), else an aligned
 /// `name  installed  source` table.
-fn emit(json_flag: bool, resp: &api::hooks::Response) -> Result<()> {
+fn emit(json_flag: bool, resp: &crate::domains::code::hooks::Response) -> Result<()> {
     if json_flag {
         json::write(resp)?;
         return Ok(());

@@ -4,14 +4,14 @@
 //! Every number here already had a producer; what the Overview screen had
 //! no producer for was *one round trip* that returns all of them. This
 //! module is that composition and nothing else: it calls
-//! [`crate::api::stats::run`] for the counters, [`crate::api::repos::run`]
+//! [`crate::api::stats::run`] for the counters, [`crate::domains::code::repos::run`]
 //! for the per-repo freshness, [`crate::api::list::run`] for the recent
 //! memories, and reads `index_runs` / `eval_runs` directly. No counter is
 //! recomputed here, so the tiles can never disagree with the screens they
 //! link to.
 //!
 //! **Must-not-create-the-db invariant** (the same rule `api::stats` and
-//! `api::repos` keep): a read must not create and migrate a database as a
+//! `domains::code::repos` keep): a read must not create and migrate a database as a
 //! side effect of being asked for a summary. On a data dir with no
 //! `comemory.db`, [`run`] never calls [`Ctx::conn`] — it answers with zero
 //! counters, an `unknown` index state, and empty lists. The two delegates
@@ -21,7 +21,7 @@
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::api::{list, repos, stats};
+use crate::api::{list, stats};
 use crate::prelude::*;
 use crate::store::{Connection, edges, eval_runs, index_runs, memory_row};
 use crate::utilities::context::Ctx;
@@ -67,7 +67,7 @@ pub struct Counters {
 pub struct RepoState {
     /// The repo label.
     pub repo: String,
-    /// `"fresh"` | `"stale"` | `"unknown"`, verbatim from [`repos::Row`].
+    /// `"fresh"` | `"stale"` | `"unknown"`, verbatim from [`crate::domains::code::repos::Row`].
     pub status: String,
     /// Files changed since the last index, when the repo is stale and git
     /// could answer.
@@ -193,9 +193,9 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
             repo: req.repo.clone(),
         },
     )?);
-    let inventory = repos::run(
+    let inventory = crate::domains::code::repos::run(
         ctx,
-        repos::Request {
+        crate::domains::code::repos::Request {
             repo: req.repo.clone(),
         },
     )?;
@@ -250,7 +250,7 @@ fn empty(checked_at: String) -> Response {
 }
 
 /// The `repos`/`index_state` status vocabulary, shared with
-/// `api::repos::git_state` (which produces the per-row values this rolls up).
+/// `crate::domains::code::repos::git_state` (which produces the per-row values this rolls up).
 const STALE: &str = "stale";
 const FRESH: &str = "fresh";
 const UNKNOWN: &str = "unknown";
@@ -284,7 +284,7 @@ fn recent_request(repo: Option<String>) -> list::Request {
 
 /// Roll the per-repo inventory up into one index state (see
 /// [`IndexState::status`] for why the worst status wins).
-fn index_state_of(rows: Vec<repos::Row>, checked_at: String) -> IndexState {
+fn index_state_of(rows: Vec<crate::domains::code::repos::Row>, checked_at: String) -> IndexState {
     let status = if rows.iter().any(|r| r.status == STALE) {
         STALE
     } else if rows.iter().any(|r| r.status == FRESH) {

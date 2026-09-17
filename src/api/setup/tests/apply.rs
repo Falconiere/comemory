@@ -4,7 +4,7 @@ use super::run;
 use crate::api::setup::detect::{self, Detected};
 use crate::api::setup::{GIT_HOOKS, INDEX_CODE, Request, Step, StepState, plan};
 use crate::config::{Config, Paths};
-use crate::git_utils;
+use crate::domains::code::git_utils;
 use crate::test_common::{git_commit::commit_files, git_repo::init_repo};
 use crate::utilities::context::Ctx;
 
@@ -68,7 +68,7 @@ fn git_hooks_writes_all_three_and_a_second_run_reports_satisfied() {
         "got {:?}",
         step(&steps, GIT_HOOKS).state
     );
-    for hook in crate::api::hooks::GIT_HOOKS {
+    for hook in crate::domains::code::hooks::GIT_HOOKS {
         assert!(
             git_utils::hook_installed(repo.path(), hook),
             "{hook} must be installed and carry comemory's marker"
@@ -102,7 +102,7 @@ fn index_code_indexes_the_real_sources_and_then_reports_fresh() {
         other => panic!("index-code should have applied, got {other:?}"),
     }
 
-    // The freshness verdict comes from `api::repos` reading real HEAD oids.
+    // The freshness verdict comes from `domains::code::repos` reading real HEAD oids.
     let (detected, again) = detect_plan_apply(data.path(), repo.path(), &req);
     assert_eq!(detected.index_status.as_deref(), Some("fresh"));
     assert_eq!(step(&again, INDEX_CODE).state, StepState::Satisfied);
@@ -147,7 +147,7 @@ fn a_failing_step_is_recorded_and_the_other_steps_still_run() {
         "a neighbouring step still runs after a failure: {:?}",
         step(&steps, GIT_HOOKS).state
     );
-    for hook in crate::api::hooks::GIT_HOOKS {
+    for hook in crate::domains::code::hooks::GIT_HOOKS {
         assert!(git_utils::hook_installed(repo.path(), hook));
     }
 }

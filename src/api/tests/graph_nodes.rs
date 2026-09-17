@@ -7,7 +7,7 @@
 )]
 //! Tests for `comemory::api::graph_nodes` (console-api spec §5) over a REAL
 //! indexed git repo: three Rust files under `src/`, `a.rs` importing `b.rs`,
-//! walked by `api::index_code::run` so the `imports` edges, the `code_symbols`
+//! walked by `crate::domains::code::index_code::run` so the `imports` edges, the `code_symbols`
 //! rows and the materialized `rank_score` under assertion are the ones
 //! production writes — no hand-seeded graph.
 //!
@@ -73,12 +73,12 @@ fn indexed_store() -> Store {
     let mut conn = connection::open(paths.db_path()).expect("open db");
     {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        api::index_code::run(
+        crate::domains::code::index_code::run(
             &mut ctx,
-            api::index_code::Request {
+            crate::domains::code::index_code::Request {
                 repo: REPO.to_string(),
                 path: repo_root.to_str().expect("utf8 repo path").to_string(),
-                mode: api::index_code::IndexMode::Incremental,
+                mode: crate::domains::code::index_code::IndexMode::Incremental,
             },
         )
         .expect("index_code run");

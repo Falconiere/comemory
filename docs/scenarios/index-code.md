@@ -51,14 +51,14 @@ _None._ `--repo` and `--path` are required flags.
 - **Command:** `comemory index-code --repo r --path /path/to/repo --mode full`
 - **Expect:** the unchanged file is re-extracted (`files_indexed` > 0 on a
   tree that incremental would skip). BYO vectors for that repo are dropped.
-- **Covered by:** `src/api/tests/index_code.rs::full_mode_re_extracts_an_unchanged_file_and_drops_its_code_vectors` (API core; the CLI only maps `--mode`)
+- **Covered by:** `src/domains/code/tests/index_code.rs::full_mode_re_extracts_an_unchanged_file_and_drops_its_code_vectors` (API core; the CLI only maps `--mode`)
 
 ### index-code-04 Non-git path
 
 - **Flags:** `--path`
 - **Command:** `comemory index-code --repo x --path /tmp/not-a-repo`
 - **Expect:** non-zero exit (git discovery failure).
-- **Covered by:** `src/api/tests/index_code.rs::run_on_a_non_git_directory_errors` (API); CLI surfaces the same error
+- **Covered by:** `src/domains/code/tests/index_code.rs::run_on_a_non_git_directory_errors` (API); CLI surfaces the same error
 
 ### index-code-05 A linked worktree is not a repository
 
@@ -69,6 +69,6 @@ _None._ `--repo` and `--path` are required flags.
   created for `feature-42`, so a stale git hook (or any caller passing the
   checkout's own basename) cannot add a repository per worktree. A label the
   store already knows is left alone.
-- **Covered by:** `src/api/tests/index_code.rs::run_files_a_linked_worktree_under_its_main_repo_label`,
-  `src/api/tests/index_code.rs::run_leaves_an_already_known_label_alone_even_in_a_worktree`,
-  `src/api/tests/index_code.rs::run_keeps_a_custom_label_for_a_main_checkout`
+- **Covered by:** `src/domains/code/tests/index_code.rs::run_files_a_linked_worktree_under_its_main_repo_label`,
+  `src/domains/code/tests/index_code.rs::run_leaves_an_already_known_label_alone_even_in_a_worktree`,
+  `src/domains/code/tests/index_code.rs::run_keeps_a_custom_label_for_a_main_checkout`

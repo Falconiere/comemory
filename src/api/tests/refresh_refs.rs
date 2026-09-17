@@ -6,7 +6,7 @@
     clippy::too_many_lines
 )]
 //! `api::refresh_refs::run` against a real git repo indexed by the real
-//! `api::index_code::run` — console-api spec AC-8: a reference whose file
+//! `crate::domains::code::index_code::run` — console-api spec AC-8: a reference whose file
 //! has moved on since it was pinned reports `stale`, and one refresh re-pins
 //! it to the current HEAD blob so it reports `fresh` again.
 //!
@@ -49,12 +49,12 @@ fn build_repo(workspace: &std::path::Path, body: &str) -> std::path::PathBuf {
 
 /// Run the real code indexer over `repo` under the label `sample`.
 fn index(ctx: &mut Ctx<'_>, repo: &std::path::Path) {
-    api::index_code::run(
+    crate::domains::code::index_code::run(
         ctx,
-        api::index_code::Request {
+        crate::domains::code::index_code::Request {
             repo: "sample".into(),
             path: repo.to_str().expect("utf8 repo path").to_string(),
-            mode: api::index_code::IndexMode::Incremental,
+            mode: crate::domains::code::index_code::IndexMode::Incremental,
         },
     )
     .expect("index_code");

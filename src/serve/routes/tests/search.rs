@@ -10,11 +10,11 @@
 //! (`tests/common/serve_state.rs`) — console-api spec AC-4 and AC-5.
 //!
 //! Real data throughout: memories saved through `api::save`, a real git repo
-//! indexed through `api::index_code`, and feedback counters read back from
+//! indexed through `domains::code::index_code`, and feedback counters read back from
 //! the store with a second connection rather than from the response body.
 
-use comemory::api::index_code;
 use comemory::config::{Config, Paths};
+use comemory::domains::code::index_code;
 use comemory::memory::Kind;
 use comemory::store::connection;
 use comemory::utilities::context::Ctx;

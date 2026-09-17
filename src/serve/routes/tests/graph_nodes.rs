@@ -18,7 +18,6 @@ use crate::test_common::serve_state::{self, Session};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use comemory::api;
 use comemory::config::{Config, Paths};
 use comemory::store::connection;
 use comemory::utilities::context::Ctx;
@@ -62,12 +61,12 @@ fn seed_indexed_repo(session: &Session) -> TempDir {
     let cfg = Config::defaults();
     let mut conn = connection::open(paths.db_path()).expect("open db for seed index");
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-    api::index_code::run(
+    crate::domains::code::index_code::run(
         &mut ctx,
-        api::index_code::Request {
+        crate::domains::code::index_code::Request {
             repo: REPO.to_string(),
             path: repo_root.to_str().expect("utf8 repo path").to_string(),
-            mode: api::index_code::IndexMode::Incremental,
+            mode: crate::domains::code::index_code::IndexMode::Incremental,
         },
     )
     .expect("seed index_code run");

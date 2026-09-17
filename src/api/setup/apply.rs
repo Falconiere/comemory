@@ -85,9 +85,9 @@ fn agent_host(ctx: &mut Ctx<'_>, detected: &Detected) -> Result<String> {
 /// free.
 fn git_hooks(ctx: &mut Ctx<'_>, detected: &Detected) -> Result<String> {
     let repo = repo_root(detected)?;
-    let resp = api::install_hooks::run(
+    let resp = crate::domains::code::install_hooks::run(
         ctx,
-        api::install_hooks::Request {
+        crate::domains::code::install_hooks::Request {
             repo: repo.clone(),
             force: false,
         },
@@ -101,12 +101,12 @@ fn index_code(ctx: &mut Ctx<'_>, detected: &Detected) -> Result<String> {
         .repo
         .as_ref()
         .ok_or_else(|| Error::Usage("index-code needs a git repository".into()))?;
-    let resp = api::index_code::run(
+    let resp = crate::domains::code::index_code::run(
         ctx,
-        api::index_code::Request {
+        crate::domains::code::index_code::Request {
             repo: repo.label.clone(),
             path: repo.root.clone(),
-            mode: api::index_code::IndexMode::default(),
+            mode: crate::domains::code::index_code::IndexMode::default(),
         },
     )?;
     Ok(format!(
@@ -117,11 +117,11 @@ fn index_code(ctx: &mut Ctx<'_>, detected: &Detected) -> Result<String> {
 
 /// Turn on the config-backed search-edit reinforcement row.
 fn reinforce(ctx: &mut Ctx<'_>) -> Result<String> {
-    api::hooks::run(
+    crate::domains::code::hooks::run(
         ctx,
-        api::hooks::Request {
+        crate::domains::code::hooks::Request {
             repo: None,
-            enable: Some(api::hooks::REINFORCE_HOOK.to_string()),
+            enable: Some(crate::domains::code::hooks::REINFORCE_HOOK.to_string()),
             disable: None,
         },
     )?;

@@ -1,6 +1,6 @@
 //! `comemory ingest-code` — read pre-embedded code symbol rows from stdin
 //! (one JSON object per line) and mirror them into `code_symbols`,
-//! `code_fts`, and `code_vec` via the shared [`api::ingest_code::run`]
+//! `code_fts`, and `code_vec` via the shared [`crate::domains::code::ingest_code::run`]
 //! middle (Binding Rule 1).
 //!
 //! Pairs with `comemory index-code --extract`, which emits the same JSONL
@@ -11,7 +11,6 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::api;
 use crate::cli::load_config;
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::prelude::*;
@@ -32,7 +31,7 @@ Examples:
 #[command(after_help = EXAMPLES)]
 pub struct Args;
 
-/// Read all of stdin into a buffer and hand it to [`api::ingest_code::run`].
+/// Read all of stdin into a buffer and hand it to [`crate::domains::code::ingest_code::run`].
 pub async fn run(_args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
@@ -44,6 +43,6 @@ pub async fn run(_args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<
     let cfg = load_config(&paths)?;
     let mut conn = connection::open(paths.db_path())?;
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-    api::ingest_code::run(&mut ctx, &body)?;
+    crate::domains::code::ingest_code::run(&mut ctx, &body)?;
     Ok(())
 }

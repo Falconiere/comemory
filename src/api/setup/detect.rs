@@ -2,7 +2,7 @@
 //! this machine and this repo.
 //!
 //! Every fact comes from the command that owns it — `api::doctor` for the
-//! data directory, `api::hooks` for the git hooks, `api::repos` for index
+//! data directory, `domains::code::hooks` for the git hooks, `domains::code::repos` for index
 //! freshness, `sync::auth_file` for the credential — so a detected value can
 //! never disagree with what that command reports on its own.
 //!
@@ -15,7 +15,7 @@ use std::path::Path;
 
 use super::RepoContext;
 use crate::api;
-use crate::git_utils;
+use crate::domains::code::git_utils;
 use crate::prelude::*;
 use crate::utilities::context::Ctx;
 
@@ -28,14 +28,14 @@ pub struct Detected {
     pub schema_version: String,
     /// The repo context, when the target path is a git working tree.
     pub repo: Option<RepoContext>,
-    /// Git hooks reported installed by `api::hooks`, by name.
+    /// Git hooks reported installed by `domains::code::hooks`, by name.
     pub hooks_installed: Vec<String>,
     /// Hook names whose `.git/hooks/` file exists but is not comemory's —
     /// installing over one needs `--force`, which setup never passes.
     pub hooks_foreign: Vec<String>,
     /// Whether search-edit reinforcement is enabled in `config.toml`.
     pub reinforce_enabled: bool,
-    /// `api::repos` status for this repo: `fresh`, `stale`, `archived`,
+    /// `domains::code::repos` status for this repo: `fresh`, `stale`, `archived`,
     /// `unknown`, or `None` when the repo has never been indexed.
     pub index_status: Option<String>,
     /// Files changed since the last index, when the repo is `stale`.
@@ -121,11 +121,11 @@ fn repo_context(target: &Path) -> Option<RepoContext> {
 }
 
 /// The installed git hooks and the `[reinforce]` toggle, both from
-/// `api::hooks` so this cannot drift from `comemory hooks`.
+/// `domains::code::hooks` so this cannot drift from `comemory hooks`.
 fn hooks(ctx: &mut Ctx<'_>, target: &Path) -> Result<(Vec<String>, bool)> {
-    let report = api::hooks::run(
+    let report = crate::domains::code::hooks::run(
         ctx,
-        api::hooks::Request {
+        crate::domains::code::hooks::Request {
             repo: Some(target.display().to_string()),
             enable: None,
             disable: None,
@@ -134,7 +134,7 @@ fn hooks(ctx: &mut Ctx<'_>, target: &Path) -> Result<(Vec<String>, bool)> {
     let mut installed = Vec::new();
     let mut reinforce = false;
     for row in report.hooks {
-        if row.name == api::hooks::REINFORCE_HOOK {
+        if row.name == crate::domains::code::hooks::REINFORCE_HOOK {
             reinforce = row.installed;
         } else if row.installed {
             installed.push(row.name);
@@ -143,20 +143,20 @@ fn hooks(ctx: &mut Ctx<'_>, target: &Path) -> Result<(Vec<String>, bool)> {
     Ok((installed, reinforce))
 }
 
-/// Hook names with a `.git/hooks/` file that `api::hooks` does *not* report
+/// Hook names with a `.git/hooks/` file that `domains::code::hooks` does *not* report
 /// as installed — i.e. someone else's hook. `install-hooks` refuses to
 /// clobber one without `--force`, so `plan` reports these as unavailable
 /// rather than letting `apply` fail on them.
 fn foreign_hooks(target: &Path, installed: &[String]) -> Vec<String> {
     let dir = git_utils::hooks_dir(target);
-    api::hooks::GIT_HOOKS
+    crate::domains::code::hooks::GIT_HOOKS
         .iter()
         .filter(|name| !installed.iter().any(|i| i == *name) && dir.join(name).exists())
         .map(|name| (*name).to_string())
         .collect()
 }
 
-/// This repo's index freshness from `api::repos`, which answers with an
+/// This repo's index freshness from `domains::code::repos`, which answers with an
 /// empty inventory (never a created database) when there is no `comemory.db`.
 fn index_state(
     ctx: &mut Ctx<'_>,
@@ -165,9 +165,9 @@ fn index_state(
     let Some(repo) = repo else {
         return Ok((None, None));
     };
-    let report = api::repos::run(
+    let report = crate::domains::code::repos::run(
         ctx,
-        api::repos::Request {
+        crate::domains::code::repos::Request {
             repo: Some(repo.label.clone()),
         },
     )?;
