@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-09-18
+
+### Changed
+
+- remove storage callbacks into domain services ([#197](https://github.com/Falconiere/comemory/pull/197))
+- separate agent installation and setup from CLI delivery ([#196](https://github.com/Falconiere/comemory/pull/196))
+- group health, retention, rebuild and upgrade operations ([#195](https://github.com/Falconiere/comemory/pull/195))
+- consolidate feedback, evaluation and ranking learning ([#194](https://github.com/Falconiere/comemory/pull/194))
+- group search, context and unified retrieval ([#193](https://github.com/Falconiere/comemory/pull/193))
+- move graph algorithms and query assembly out of adapters ([#188](https://github.com/Falconiere/comemory/pull/188))
+- isolate session capture and distillation ([#191](https://github.com/Falconiere/comemory/pull/191))
+- consolidate authentication, sync and workspace watching ([#190](https://github.com/Falconiere/comemory/pull/190))
+- consolidate memory lifecycle and reference handling ([#189](https://github.com/Falconiere/comemory/pull/189))
+- consolidate document extraction and source indexing ([#187](https://github.com/Falconiere/comemory/pull/187))
+- group code indexing, repositories and Git hooks ([#186](https://github.com/Falconiere/comemory/pull/186))
+- extract transport-neutral context and shared primitives ([#184](https://github.com/Falconiere/comemory/pull/184))
+- define staged architecture guardrails ([#182](https://github.com/Falconiere/comemory/pull/182))
+
 ## [0.33.0] - 2026-09-17
 
 ### Added
