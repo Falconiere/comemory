@@ -355,3 +355,33 @@ fn every_domain_target_round_trips_through_its_reference() {
         assert_eq!(target.domain, identity.domain());
     }
 }
+
+#[test]
+fn a_corrupt_stored_candidate_is_named_apart_from_a_bad_argument() {
+    let c = captured();
+    let conn = connection::open(c.paths.db_path()).expect("open");
+    conn.execute(
+        "UPDATE candidate_observations SET candidate_ref = 'memory:onlyone' \
+          WHERE observation_id = ?1 AND pool_position = 1",
+        [&c.observation_id],
+    )
+    .expect("corrupt one stored reference");
+
+    let err = judge(&c, vec![format!("{}=3", c.refs[1])], None)
+        .expect_err("an unreadable stored row must fail the call");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("holds an unreadable candidate at pool position 1"),
+        "a corrupt row must be named as a stored-record problem, not as a bad \
+         argument the caller passed: {msg}"
+    );
+    assert!(
+        msg.contains(&c.observation_id),
+        "and name the observation: {msg}"
+    );
+    assert!(
+        !matches!(err, comemory::prelude::Error::Config(_)),
+        "a bad `--ref` argument is Error::Config; a corrupt stored row must not \
+         share that classification, or the two are indistinguishable by exit code"
+    );
+}

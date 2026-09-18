@@ -208,7 +208,7 @@ fn resolve_all(
 ) -> Result<Vec<Row>> {
     let observed = candidates
         .iter()
-        .map(|c| Ok((parse_ref(&c.candidate_ref)?, c)))
+        .map(|c| Ok((stored_identity(observation_id, c)?, c)))
         .collect::<Result<Vec<_>>>()?;
     let mut rows = Vec::with_capacity(verdicts.len());
     let mut refusals = Vec::new();
@@ -227,6 +227,24 @@ fn resolve_all(
         refusals.len(),
         refusals.join("\n  ")
     )))
+}
+
+/// The identity of one STORED candidate.
+///
+/// `parse_ref`'s own error names the reference and reads as "you passed a bad
+/// `--ref`" — true for a command-line argument, misleading here, where the
+/// reference came out of the database. A row this build cannot read is a
+/// corrupt record rather than a usage mistake, so it gets its own sentence and
+/// `Error::Other`'s exit code instead of the config one every argument error
+/// uses.
+fn stored_identity(observation_id: &str, row: &StoredCandidate) -> Result<CandidateIdentity> {
+    parse_ref(&row.candidate_ref).map_err(|e| {
+        Error::Other(format!(
+            "observation `{observation_id}` holds an unreadable candidate at pool position \
+             {}: {e}. That row was not written by this build's observation contract.",
+            row.pool_position
+        ))
+    })
 }
 
 /// One verdict against one observation's candidates: the row to write, or the
