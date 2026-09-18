@@ -222,9 +222,16 @@ fn verdict(ctx: &ArmContext<'_>, judged_tasks: usize, paired: Option<&PairedDelt
 /// irreproducible on the next compiler.
 fn summary_seed(arm: &str, tasks: usize, k: usize) -> u64 {
     let digest = sha256_hex(format!("{arm}:{tasks}:{k}").as_bytes());
+    // Decode hex PAIRS, not the hex characters themselves: each ASCII digit
+    // carries only 4 bits, so taking the first 8 bytes of the string would seed
+    // 32 bits of a 64-bit stream. A malformed digit cannot occur — `sha256_hex`
+    // emits lowercase hex — and would contribute zero rather than panic.
+    let (pairs, _) = digest.as_bytes().as_chunks::<2>();
     let mut seed = [0u8; 8];
-    for (slot, byte) in seed.iter_mut().zip(digest.as_bytes()) {
-        *slot = *byte;
+    for (slot, [high, low]) in seed.iter_mut().zip(pairs) {
+        let value = char::from(*high).to_digit(16).unwrap_or(0) * 16
+            + char::from(*low).to_digit(16).unwrap_or(0);
+        *slot = u8::try_from(value).unwrap_or(0);
     }
     u64::from_le_bytes(seed)
 }
