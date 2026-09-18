@@ -123,7 +123,9 @@ guardrail that reports success while checking nothing is the failure mode this
 work exists to remove. It is grouped instead with the other two tool-dependent
 gates — `deny-check.sh` and `machete-check.sh` — in the `justfile`'s `qa`
 recipe, and runs authoritatively as its own step in `.github/workflows/test.yml`,
-where the pinned version is guaranteed. When `similarity-rs` is missing, the
+where the pinned version is guaranteed. Since #205 those other two are pinned
+and wired the same way, each by its own constant, so all three are enforced
+rather than advisory. When `similarity-rs` is missing, the
 gate **fails in CI** and **skips locally with a loud warning** that names the
 pinned install command and states plainly that it did not run.
 

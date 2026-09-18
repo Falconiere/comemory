@@ -631,18 +631,37 @@ a competing number.
 | Duplication ratchet | `scripts/dup-check.sh` against `dup-baseline.txt`; it **enforces** the `similarity-rs` build named by its `SIMILARITY_RS_VERSION` constant, hard-failing on any other version (see `docs/dup-debt.md`) |
 | rusqlite confined to `src/store/` | `store-leak-baseline.txt`, `scripts/store-chokepoint-check.sh` |
 
-Additional gates wired into `just qa`: `scripts/deny-check.sh`
-(`cargo deny check`), `scripts/dup-check.sh`, and `scripts/machete-check.sh`
-(unused dependencies). These three — `deny-check`, `dup-check` and
-`machete-check` — are deliberately outside `check-all.sh`'s `GATES` array
-because each needs a separately installed tool that contributors may not have. `dup-check` also
-runs as its own step in `.github/workflows/test.yml`, which `cargo install`s the
-`similarity-rs` version *derived from* the `SIMILARITY_RS_VERSION` constant in
-`scripts/dup-check.sh`, so the workflow and the gate cannot drift; the gate
-hard-fails on a version mismatch locally as well as in CI, because a count from
-another build is not comparable to `dup-baseline.txt`. `scripts/test-run.sh`
-runs the nextest suite. A task is not "done" until `scripts/check-all.sh`
-exits 0.
+Three further gates need a separately installed tool, so they are deliberately
+outside `check-all.sh`'s `GATES` array — and all three run both in `just qa` and
+as their own steps in `.github/workflows/test.yml`:
+
+| Gate | Tool, and the constant that pins it |
+| --- | --- |
+| `scripts/deny-check.sh` (licence + advisory policy) | `cargo-deny`, `CARGO_DENY_VERSION` |
+| `scripts/dup-check.sh` (duplication ratchet) | `similarity-rs`, `SIMILARITY_RS_VERSION` |
+| `scripts/machete-check.sh` (unused dependencies) | `cargo-machete`, `CARGO_MACHETE_VERSION` |
+
+Each constant lives on one line in its own script and is the single source of
+truth: the workflow *derives* the version it installs from that line instead of
+repeating it, so the workflow and the gate cannot drift, and bumping the
+constant is the only edit a version bump needs. Each gate **hard-fails on a
+version mismatch locally as well as in CI** — a verdict from another build is
+not the verdict CI will reach. When the tool is missing the gate **fails in CI
+and skips locally with a loud warning** naming the pinned install command.
+
+Two of them assert that their tool actually ingested the tree, because a gate
+that reports success while checking nothing is this repo's recurring failure
+mode: `dup-check` parses `similarity-rs`'s `Checking N files` line and fails
+when `N` differs from the file count it handed over, and `machete-check` runs
+`cargo-machete` over a copy of this crate's own `Cargo.toml` first and fails
+unless that canary reports unused dependencies — the tool exits 0 with a
+success message when handed a directory containing no manifest at all.
+`deny-check` asserts that cargo-deny read this repo's `deny.toml`, gathered a
+crate count floored against `Cargo.lock`, fetched the advisory database, and
+reported all four of its checks.
+
+`scripts/test-run.sh` runs the nextest suite. A task is not "done" until
+`scripts/check-all.sh` exits 0.
 
 ## Distribution
 
@@ -816,9 +835,10 @@ intent; several make the local rule strictly stronger than the one it replaces.
   `docs/lint-debt.md` for the full list and burn-down order.
 - **D8 — extra quality gates are retained** beyond the kit's four-step
   command (`fmt && clippy && guardrails && test`): `typos-check`,
-  `cli-docs-check`, `coverage-check`, `eval-check`, `dup-check` (pinned to one
-  `similarity-rs` build and wired into the `test` workflow),
-  `machete-check` and `deny-check`. None has a kit equivalent; all guard
+  `cli-docs-check`, `coverage-check`, `eval-check`, and the three tool-dependent
+  gates `dup-check`, `machete-check` and `deny-check` — each pinned to one tool
+  build by a constant in its own script, and each wired into the `test`
+  workflow. None has a kit equivalent; all guard
   comemory-specific failure modes. They layer around the guardrails step, not
   in place of it. Mutation testing is no longer among them: its workflow ran
   a nightly full sweep and a PR-scoped job that had been disabled, and it was

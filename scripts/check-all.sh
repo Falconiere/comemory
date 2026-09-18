@@ -32,8 +32,11 @@
 # would mean either hard-failing every contributor who lacks the tool or
 # skipping silently, and a guardrail that reports success while checking nothing
 # is exactly what these gates exist to prevent. They are grouped in the
-# justfile's `qa` recipe instead; dup-check additionally runs as its own step in
-# .github/workflows/test.yml, where its pinned similarity-rs is guaranteed.
+# justfile's `qa` recipe instead, and ALL THREE now also run as their own steps
+# in .github/workflows/test.yml, where their pinned tools are guaranteed —
+# SIMILARITY_RS_VERSION, CARGO_DENY_VERSION and CARGO_MACHETE_VERSION, each a
+# single constant in its own script that the workflow derives from rather than
+# repeats. Omitting them here therefore costs no enforcement at all.
 # Do not "fix" this omission by adding them to GATES below.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
