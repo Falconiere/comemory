@@ -53,9 +53,6 @@ pub mod serve;
 /// `comemory upgrade`: resolve the newest release and swap the binary.
 pub mod upgrade;
 
-/// Client-side session capture and distillation (platform Slices 3–4).
-pub mod capture;
-
 /// clap subcommand entry points and the top-level dispatcher.
 pub mod cli;
 
@@ -70,9 +67,10 @@ pub mod utilities;
 // migration moved them: `ast` and `git_utils` under `domains::code` (#167),
 // `document` and `source` under `domains::documents` (#168), `memory` under
 // `domains::memories` (#169), `sync` and `cloud` under `domains::sync` (#172),
-// the four shared primitives under `utilities` (#166). They preserve
-// `comemory::<name>` for external consumers; in-crate code names the real path
-// directly.
+// `capture` under `domains::capture` (#174), the four shared primitives under
+// `utilities` (#166). They preserve `comemory::<name>` for external consumers;
+// in-crate code names the real path directly.
+pub use domains::capture;
 pub use domains::code::ast;
 pub use domains::code::git_utils;
 pub use domains::documents::document;

@@ -116,7 +116,7 @@ assert_fails 'stale passive model' 'absent policy edge' --policy "$TASK_TMP/mode
 sed '/^| src\/domains\/memories.rs |/s/comemory::domains::memories; crate-root-alias/private/' "$INVENTORY" >"$TASK_TMP/public.md"
 assert_fails 'missing public compatibility choice' 'public path mismatch' --inventory "$TASK_TMP/public.md"
 assert_gate_rejects "$TASK_TMP/public.md" 'public path mismatch'
-sed '/^| src\/capture\/redact.rs |/s@src/capture/rules.toml@none@' "$INVENTORY" >"$TASK_TMP/asset.md"
+sed '/^| src\/domains\/capture\/redact.rs |/s@src/domains/capture/rules.toml@none@' "$INVENTORY" >"$TASK_TMP/asset.md"
 assert_fails 'missing compile-time asset' 'inventory asset/bridge mismatch' --inventory "$TASK_TMP/asset.md"
 assert_gate_rejects "$TASK_TMP/asset.md" 'inventory asset/bridge mismatch'
 sed '/^| src\/utilities\/context.rs |/s@src/utilities/tests/context.rs@none@' "$INVENTORY" >"$TASK_TMP/bridge.md"

@@ -28,7 +28,7 @@ One line per file, named after its primary item:
 | `bandit.rs` | `Args` | `comemory bandit` — Thompson-sample the `[tune]` grid, confirm with offline eval |
 | `completion_script.rs` | `Request` | Completion-script generation shared by `comemory completions` and `GET /api/v1/completions` |
 | `completions.rs` | `Args` | `comemory completions <shell>` — emit a shell completion script |
-| `capture.rs` | `Args` | `comemory capture` — post a session transcript's receipts and candidate batches over the device-key credential; core in `crate::capture` |
+| `capture.rs` | `Args` | `comemory capture` — post a session transcript's receipts and candidate batches over the device-key credential; core in `domains::capture` |
 | `consolidate.rs` | `Args` | `comemory consolidate` — advisory near-duplicate cluster report |
 | `context.rs` | `Args` | `comemory context` — headline memory + code bundle lookup |
 | `delete.rs` | `Args` | `comemory delete` — soft-delete a memory by id |

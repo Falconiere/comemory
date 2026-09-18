@@ -10,7 +10,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::capture::claude_code::BashCommand;
+use crate::domains::capture::claude_code::BashCommand;
 
 /// Extractor id posted on every batch from this path.
 pub const EXTRACTOR_ID: &str = "claude-code-explicit-save";

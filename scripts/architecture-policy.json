@@ -76,11 +76,6 @@
       "issue": "#178"
     },
     {
-      "module": "crate::capture",
-      "owner": "domains::capture",
-      "issue": "#174"
-    },
-    {
       "module": "crate::consolidate",
       "owner": "domains::maintenance",
       "issue": "#176"

@@ -4,11 +4,11 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
-use crate::capture::candidates::{
+use crate::domains::capture::candidates::{
     CandidateBatch, ProposeResponse, batch_from_extracted, post_candidates,
 };
-use crate::capture::claude_code::{bash_commands_from_jsonl, read_transcript_file};
-use crate::capture::explicit_save::extract_explicit_saves;
+use crate::domains::capture::claude_code::{bash_commands_from_jsonl, read_transcript_file};
+use crate::domains::capture::explicit_save::extract_explicit_saves;
 use crate::domains::sync::auth_file::AuthFile;
 use crate::prelude::*;
 
@@ -40,6 +40,15 @@ pub struct DistillReport {
     pub response: Option<ProposeResponse>,
     /// True when no POST was made.
     pub dry_run: bool,
+}
+
+/// Whether this run must present platform credentials.
+///
+/// A dry run builds the batch and stops, so it stays usable on a machine that
+/// never logged in; every other run POSTs and needs the org key. The CLI asks
+/// this instead of re-deciding, so the rule has one home.
+pub fn requires_credentials(req: &DistillRequest) -> bool {
+    !req.dry_run
 }
 
 /// Extract and redact a transcript into a candidate batch (no network).
@@ -93,3 +102,7 @@ pub fn run(auth: Option<&AuthFile>, req: &DistillRequest) -> Result<DistillRepor
         dry_run: false,
     })
 }
+
+#[cfg(test)]
+#[path = "tests/distill.rs"]
+mod tests;

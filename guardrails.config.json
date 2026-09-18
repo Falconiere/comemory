@@ -136,7 +136,7 @@
       "store/migrate",
       "store/tokenizer",
       "upgrade",
-      "capture",
+      "domains/capture",
       "domains/sync/cloud",
       "api/install",
       "api/setup",

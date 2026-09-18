@@ -7,7 +7,7 @@
 )]
 //! Client redaction attestation for capture / distillation.
 
-use comemory::capture::redact::{REDACTION_RULE_SET_VERSION, merge_findings, redact_text};
+use comemory::domains::capture::redact::{REDACTION_RULE_SET_VERSION, merge_findings, redact_text};
 
 fn aws_example_key() -> String {
     // Split so repo secret-content does not flag the AWS example id literal.

@@ -12,6 +12,10 @@
 //!
 //! [m]: https://github.com/Falconiere/comemory/issues/164
 
+/// Coding-session transcript capture, client redaction attestation, and
+/// explicit-save distillation against the platform.
+pub mod capture;
+
 /// AST extraction, code indexing, the repository inventory, and Git hooks.
 pub mod code;
 

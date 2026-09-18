@@ -6,8 +6,10 @@ use reqwest::blocking::Client;
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use serde::{Deserialize, Serialize};
 
-use crate::capture::explicit_save::{EXTRACTOR_ID, EXTRACTOR_VERSION, ExtractedCandidate};
-use crate::capture::redact::{RedactionAttestation, RedactionFinding, merge_findings, redact_text};
+use crate::domains::capture::explicit_save::{EXTRACTOR_ID, EXTRACTOR_VERSION, ExtractedCandidate};
+use crate::domains::capture::redact::{
+    RedactionAttestation, RedactionFinding, merge_findings, redact_text,
+};
 use crate::prelude::*;
 
 const HTTP_TIMEOUT: Duration = Duration::from_secs(30);
@@ -98,7 +100,7 @@ struct ApiErrorBody {
 
 /// Build a redacted batch from extracted claims.
 pub fn batch_from_extracted(extracted: &[ExtractedCandidate]) -> Result<CandidateBatch> {
-    crate::capture::redact::ensure_rules_loaded()?;
+    crate::domains::capture::redact::ensure_rules_loaded()?;
     if extracted.len() > MAX_CANDIDATES {
         return Err(Error::Usage(format!(
             "distill produced {} candidates; platform cap is {MAX_CANDIDATES}",
@@ -189,7 +191,7 @@ pub fn post_candidates(
     session_id: &str,
     batch: &CandidateBatch,
 ) -> Result<ProposeResponse> {
-    crate::capture::redact::ensure_rules_loaded()?;
+    crate::domains::capture::redact::ensure_rules_loaded()?;
     validate_session_id(session_id)?;
     let base = api_url.trim_end_matches('/');
     let url = format!("{base}/v1/sessions/{session_id}/candidates");

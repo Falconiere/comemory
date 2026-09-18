@@ -4,11 +4,10 @@ use std::io::{Read as _, Write as _};
 use std::path::PathBuf;
 
 use clap::{Args as ClapArgs, Subcommand};
-use serde::Deserialize;
 
-use crate::capture;
 use crate::cli::off_runtime::off_runtime;
 use crate::config::paths::{Paths, resolve_data_dir};
+use crate::domains::capture;
 use crate::domains::sync::AuthFile;
 use crate::output::json;
 use crate::prelude::*;
@@ -113,9 +112,11 @@ async fn run_sources(json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
 }
 
 fn run_install_hook(h: InstallHookArgs, json_flag: bool) -> Result<()> {
+    // Relative by design, and resolved against this process's cwd: the hook is
+    // installed into the project the user is standing in.
     let path = h
         .settings
-        .unwrap_or_else(|| PathBuf::from(".claude/settings.json"));
+        .unwrap_or_else(|| PathBuf::from(capture::hook::DEFAULT_SETTINGS_PATH));
     let report = capture::hook::install(&path, h.force)?;
     if json_flag {
         json::write(&report)?;
@@ -147,34 +148,17 @@ async fn run_session(a: SessionArgs, json_flag: bool, data_dir: Option<PathBuf>)
     emit_report(json_flag, &report)
 }
 
+/// Read stdin when `--from-hook`, else take the flags clap already parsed.
+///
+/// Decoding the payload belongs to [`capture::hook`], which also owns the
+/// command that produces it; this side only acquires the bytes.
 fn resolve_target(a: &SessionArgs) -> Result<(Option<PathBuf>, Option<String>)> {
     if a.from_hook {
         let mut buf = String::new();
         std::io::stdin().read_to_string(&mut buf)?;
-        let hook: HookPayload = serde_json::from_str(buf.trim()).map_err(|e| {
-            Error::Usage(format!("--from-hook expects SessionEnd JSON on stdin: {e}"))
-        })?;
-        let path = hook
-            .transcript_path
-            .filter(|s| !s.is_empty())
-            .map(PathBuf::from);
-        let session_id = hook.session_id.filter(|s| !s.is_empty());
-        if path.is_none() && session_id.is_none() {
-            return Err(Error::Usage(
-                "SessionEnd payload missing session_id and transcript_path".into(),
-            ));
-        }
-        return Ok((path, session_id));
+        return capture::hook::session_end_target(&buf);
     }
     Ok((a.path.clone(), a.session_id.clone()))
-}
-
-#[derive(Debug, Deserialize)]
-struct HookPayload {
-    #[serde(default)]
-    session_id: Option<String>,
-    #[serde(default)]
-    transcript_path: Option<String>,
 }
 
 fn emit_report(json_flag: bool, report: &capture::CaptureReport) -> Result<()> {

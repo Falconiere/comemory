@@ -9,7 +9,7 @@
 
 use std::path::PathBuf;
 
-use comemory::capture::claude_code;
+use comemory::domains::capture::claude_code;
 use sha2::{Digest, Sha256};
 
 fn fixture() -> PathBuf {
@@ -34,11 +34,11 @@ fn loads_fixture_session_metadata() {
 #[test]
 fn receipt_digest_matches_redacted_bytes() {
     let s = claude_code::load_path(&fixture()).expect("load");
-    let receipt = comemory::capture::build_receipt(&s, "claude-code").expect("receipt");
+    let receipt = comemory::domains::capture::build_receipt(&s, "claude-code").expect("receipt");
     assert_eq!(receipt.redaction.version, 1);
     assert_eq!(receipt.turn_count, 24);
     let raw = std::str::from_utf8(&s.raw).unwrap();
-    let redacted = comemory::capture::redact_text(raw).text;
+    let redacted = comemory::domains::capture::redact_text(raw).text;
     assert_eq!(receipt.transcript_bytes, redacted.len() as u64);
     let mut hasher = Sha256::new();
     hasher.update(redacted.as_bytes());
