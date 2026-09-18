@@ -1,6 +1,6 @@
 //! `bandit_arms` row CRUD: the Beta-posterior state per `comemory bandit`
 //! arm. The knob grid, Thompson sampling, and the win/loss decision stay in
-//! [`crate::eval::bandit`] — this module owns only the SQL text and its row
+//! [`crate::domains::learning::evaluation::bandit`] — this module owns only the SQL text and its row
 //! mapping.
 
 use rusqlite::{Connection, OptionalExtension, params};

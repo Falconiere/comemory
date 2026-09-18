@@ -1,6 +1,6 @@
 //! `POST /api/v1/memories` (`domains::memories::save`), `DELETE /api/v1/memories/{id}`
 //! (`domains::memories::delete`, confirm-gated), and `POST /api/v1/feedback`
-//! (`api::feedback`). The first mutating routes in `/api/v1` — every handler
+//! (`domains::learning::feedback`). The first mutating routes in `/api/v1` — every handler
 //! here calls [`guard_mutating`] first (read-only → busy ordering, AC-19),
 //! holding the returned permit across the blocking write.
 
@@ -12,7 +12,7 @@ use axum::routing::{delete, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 
-use crate::api;
+use crate::domains::learning::feedback;
 use crate::serve::AppState;
 use crate::serve::routes::{RouteEntry, guard_mutating, require_confirm, respond, run_blocking};
 use crate::utilities::context::Ctx;
@@ -106,11 +106,8 @@ async fn delete_memory(
     respond("delete", result, started)
 }
 
-/// `POST /api/v1/feedback` — record feedback (`api::feedback`).
-async fn feedback(
-    State(state): State<AppState>,
-    Json(req): Json<api::feedback::Request>,
-) -> Response {
+/// `POST /api/v1/feedback` — record feedback (`domains::learning::feedback`).
+async fn feedback(State(state): State<AppState>, Json(req): Json<feedback::Request>) -> Response {
     let started = Instant::now();
     let permit = match guard_mutating("feedback", &state) {
         Ok(permit) => permit,
@@ -121,7 +118,7 @@ async fn feedback(
         let cfg = state.cfg();
         let mut conn = state.conn()?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        api::feedback::run(&mut ctx, req)
+        feedback::run(&mut ctx, req)
     })
     .await;
     respond("feedback", result, started)

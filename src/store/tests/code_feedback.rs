@@ -13,8 +13,8 @@
 //! calling the `pub(crate)` store helpers with a bare connection.
 
 use comemory::config::paths::Paths;
-use comemory::stats::code_feedback::record_code_with_provenance;
-use comemory::stats::sqlite::StatsDb;
+use comemory::domains::learning::code_feedback::record_code_with_provenance;
+use comemory::domains::learning::telemetry::StatsDb;
 use comemory::store::code_row::{self, CodeSymbolRow};
 use comemory::utilities::telemetry::PROV_MANUAL;
 use tempfile::TempDir;

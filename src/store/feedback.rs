@@ -3,7 +3,7 @@
 //!
 //! The provenance vocabulary lives in `crate::utilities::telemetry` and the
 //! query-id contract in [`crate::utilities::query_id`]; every transaction
-//! boundary stays in [`crate::stats::feedback`] — this module owns only the
+//! boundary stays in [`crate::domains::learning::feedback_tracking`] — this module owns only the
 //! SQL text and its parameter binding. See
 //! [`crate::store::code_feedback`] for the code-side sibling table.
 //!
@@ -43,7 +43,7 @@ pub(crate) fn upsert_irrelevant(conn: &Connection, id: &str) -> Result<()> {
 }
 
 /// Insert one memory-tagged `feedback_events` row. `target_kind` and
-/// `provenance` are the caller's `crate::stats::{target, feedback}`
+/// `provenance` are the caller's `crate::domains::learning::feedback_tracking`
 /// vocabulary constants, passed explicitly rather than hardcoded (or, for
 /// `provenance`, left to the column's `'manual'` default) so this helper
 /// stays table-shaped, not domain-shaped. The one INSERT behind every

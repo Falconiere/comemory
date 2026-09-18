@@ -1,8 +1,8 @@
-//! `POST /api/v1/eval` (`api::eval`, **job**, read class — no confirm gate,
-//! not read-only-gated, AC-4), `GET /api/v1/eval/history` (`api::eval`'s
+//! `POST /api/v1/eval` (`domains::learning::eval`, **job**, read class — no confirm gate,
+//! not read-only-gated, AC-4), `GET /api/v1/eval/history` (`domains::learning::eval`'s
 //! `history`, synchronous — a `SELECT`, not worth a job), `POST
-//! /api/v1/tune` (`api::tune`, **job**, mutating, confirm only when
-//! `req.apply`), and `POST /api/v1/bandit` (`api::bandit`, **job**, always
+//! /api/v1/tune` (`domains::learning::tune`, **job**, mutating, confirm only when
+//! `req.apply`), and `POST /api/v1/bandit` (`domains::learning::bandit`, **job**, always
 //! mutating — it upserts `bandit_arms` regardless of `apply` — confirm
 //! only when `req.apply`). `POST /api/v1/feedback` stays in
 //! `memories/write.rs`.
@@ -22,7 +22,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde_json::Value;
 
-use crate::api;
+use crate::domains::learning;
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::envelope::Envelope;
@@ -92,20 +92,20 @@ pub(crate) fn contain_golden(state: &AppState, golden: Option<&str>) -> Result<O
     Ok(Some(canonical.to_string_lossy().into_owned()))
 }
 
-/// `POST /api/v1/eval` — start an `eval` job (`api::eval`). Read class
+/// `POST /api/v1/eval` — start an `eval` job (`domains::learning::eval`). Read class
 /// through and through (§Route map Notes): no confirm gate, and — per
 /// AC-4 — no read-only gate either, so it stays functional on a
 /// `--read-only` server. `req.golden`, when present, is contained to an
 /// allowed root before the job is created (AC-7's golden-file half), and a
 /// `knobs` override is validated against the live config next — a `400`
 /// here, before any job exists, rather than a job that ends `error`
-/// (`api::eval::run` re-checks; this is the synchronous answer).
+/// (`learning::eval::run` re-checks; this is the synchronous answer).
 ///
 /// `pub(crate)` because `POST /api/v1/learning/evals` (console-api spec §7)
 /// is an ALIAS onto this same handler, not a second implementation.
 pub(crate) async fn eval(
     State(state): State<AppState>,
-    Json(mut req): Json<api::eval::Request>,
+    Json(mut req): Json<learning::eval::Request>,
 ) -> Response {
     let started = Instant::now();
     let contain_state = state.clone();
@@ -115,7 +115,7 @@ pub(crate) async fn eval(
         Ok(canonical) => req.golden = canonical,
         Err(e) => return Envelope::err("eval", &e, 0),
     }
-    if let Err(e) = api::eval::effective_config(&state.cfg(), req.knobs.as_ref()) {
+    if let Err(e) = learning::eval::effective_config(&state.cfg(), req.knobs.as_ref()) {
         return Envelope::err("eval", &e, 0);
     }
     let job_state = state.clone();
@@ -127,7 +127,7 @@ pub(crate) async fn eval(
         move || {
             let cfg = job_state.cfg();
             let mut ctx = Ctx::lazy(job_state.paths(), &cfg);
-            let resp = api::eval::run(&mut ctx, req)?;
+            let resp = learning::eval::run(&mut ctx, req)?;
             serde_json::to_value(resp).map_err(Error::Json)
         },
     );
@@ -135,36 +135,36 @@ pub(crate) async fn eval(
 }
 
 /// `GET /api/v1/eval/history` — read back up to `?limit=` past `eval`/
-/// `tune`/`bandit` runs, newest-first (`api::eval::history`). Query-decoded
-/// as the same [`api::eval::Request`] `POST /eval` uses (AC-41 parity probes
+/// `tune`/`bandit` runs, newest-first (`learning::eval::history`). Query-decoded
+/// as the same [`learning::eval::Request`] `POST /eval` uses (AC-41 parity probes
 /// one `Request` type per subcommand); `history` only ever reads `limit`
 /// from it. A plain `SELECT` against `eval_runs`, so it runs synchronously
 /// (`run_blocking`) rather than as a job, matching `GET /memories`'s shape.
 async fn eval_history(
     State(state): State<AppState>,
-    Query(req): Query<api::eval::Request>,
+    Query(req): Query<learning::eval::Request>,
 ) -> Response {
     let started = Instant::now();
     let result = run_blocking(move || {
         let cfg = state.cfg();
         let mut conn = state.conn()?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        api::eval::history(&mut ctx, &req)
+        learning::eval::history(&mut ctx, &req)
     })
     .await;
     respond("eval.history", result, started)
 }
 
-/// `POST /api/v1/tune` — start a `tune` job (`api::tune`). The body is a
+/// `POST /api/v1/tune` — start a `tune` job (`domains::learning::tune`). The body is a
 /// raw [`Value`] read through [`split_confirm`] so the HTTP-only `confirm`
-/// flag never joins `api::tune::Request` (AC-12 parity). Gate order:
+/// flag never joins `learning::tune::Request` (AC-12 parity). Gate order:
 /// `golden` containment first (before any other check, including
 /// read-only — AC-7), then the read-only gate (`405`, this route IS
 /// mutating regardless of `apply`), then — only when `req.apply` — the
 /// confirm gate (AC-19: read-only still outranks confirm).
 async fn tune(State(state): State<AppState>, Json(body): Json<Value>) -> Response {
     let started = Instant::now();
-    let (mut req, confirmed) = match split_confirm::<api::tune::Request>(body) {
+    let (mut req, confirmed) = match split_confirm::<learning::tune::Request>(body) {
         Ok(v) => v,
         Err(e) => return Envelope::err("tune", &e, 0),
     };
@@ -192,7 +192,7 @@ async fn tune(State(state): State<AppState>, Json(body): Json<Value>) -> Respons
         move || {
             let cfg = job_state.cfg();
             let mut ctx = Ctx::lazy(job_state.paths(), &cfg);
-            let resp = api::tune::run(&mut ctx, req)?;
+            let resp = learning::tune::run(&mut ctx, req)?;
             if resp.applied {
                 job_state.reload_cfg(job_state.paths())?;
             }
@@ -202,14 +202,14 @@ async fn tune(State(state): State<AppState>, Json(body): Json<Value>) -> Respons
     accepted("tune", job, started)
 }
 
-/// `POST /api/v1/bandit` — start a `bandit` job (`api::bandit`). Same
+/// `POST /api/v1/bandit` — start a `bandit` job (`domains::learning::bandit`). Same
 /// body/confirm/gate shape as [`tune`]: `golden` containment, then the
-/// read-only gate (this route is always mutating — `api::bandit::run`
+/// read-only gate (this route is always mutating — `learning::bandit::run`
 /// upserts `bandit_arms` regardless of `apply`), then confirm only when
 /// `req.apply`.
 async fn bandit(State(state): State<AppState>, Json(body): Json<Value>) -> Response {
     let started = Instant::now();
-    let (mut req, confirmed) = match split_confirm::<api::bandit::Request>(body) {
+    let (mut req, confirmed) = match split_confirm::<learning::bandit::Request>(body) {
         Ok(v) => v,
         Err(e) => return Envelope::err("bandit", &e, 0),
     };
@@ -237,7 +237,7 @@ async fn bandit(State(state): State<AppState>, Json(body): Json<Value>) -> Respo
         move || {
             let cfg = job_state.cfg();
             let mut ctx = Ctx::lazy(job_state.paths(), &cfg);
-            let resp = api::bandit::run(&mut ctx, req)?;
+            let resp = learning::bandit::run(&mut ctx, req)?;
             if resp.applied {
                 job_state.reload_cfg(job_state.paths())?;
             }

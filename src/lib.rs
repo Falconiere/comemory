@@ -19,12 +19,6 @@ pub mod errors;
 /// Layered configuration (defaults → file → env) and the data-dir layout.
 pub mod config;
 
-/// Retrieval scoring loop: golden sets, metrics, mining, tuning, bandit.
-pub mod eval;
-
-/// Usage, feedback and repo-marker tables inside `comemory.db`.
-pub mod stats;
-
 /// Single-file SQLite layer backing memories, code rows, FTS and vectors.
 pub mod store;
 
@@ -62,16 +56,18 @@ pub mod utilities;
 // `document` and `source` under `domains::documents` (#168), `memory` under
 // `domains::memories` (#169), `graph` under `domains::graph` (#170),
 // `retrieval` under `domains::retrieval` (#171), `sync` and `cloud` under
-// `domains::sync` (#172), `capture` under `domains::capture` (#174), the four
-// shared primitives under `utilities` (#166). They preserve `comemory::<name>`
-// for external consumers; in-crate production code names the real path
-// directly.
+// `domains::sync` (#172), `eval` under `domains::learning::evaluation` (#173),
+// `capture` under `domains::capture` (#174), the four shared primitives under
+// `utilities` (#166). They preserve `comemory::<name>` for external consumers;
+// in-crate production code names the real path directly. `stats` has no alias:
+// #173 removes that tree outright in 0.34.0.
 pub use domains::capture;
 pub use domains::code::ast;
 pub use domains::code::git_utils;
 pub use domains::documents::document;
 pub use domains::documents::source;
 pub use domains::graph;
+pub use domains::learning::evaluation as eval;
 pub use domains::memories as memory;
 pub use domains::retrieval;
 pub use domains::sync;

@@ -7,9 +7,9 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::api;
 use crate::config::Config;
 use crate::config::paths::{Paths, resolve_data_dir};
+use crate::domains::learning::mine;
 use crate::output::json;
 use crate::prelude::*;
 use crate::store::connection;
@@ -45,9 +45,9 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     let mut conn = connection::open(paths.db_path())?;
     let cfg = Config::defaults();
 
-    let req = api::mine::Request { apply: a.apply };
+    let req = mine::Request { apply: a.apply };
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-    let resp = api::mine::run(&mut ctx, req)?;
+    let resp = mine::run(&mut ctx, req)?;
 
     if json_flag {
         json::write(&resp)?;

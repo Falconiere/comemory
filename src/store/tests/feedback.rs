@@ -13,8 +13,8 @@
 //! the test exercises the same integration path the pre-move code took.
 
 use comemory::config::paths::Paths;
-use comemory::stats::feedback::record_with_provenance;
-use comemory::stats::sqlite::StatsDb;
+use comemory::domains::learning::feedback_tracking::record_with_provenance;
+use comemory::domains::learning::telemetry::StatsDb;
 use comemory::store::connection;
 use comemory::store::feedback::{event_counts, used_events_for_golden, used_query_ids};
 use comemory::utilities::telemetry::PROV_MANUAL;

@@ -6,9 +6,9 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::api;
 use crate::config::Config;
 use crate::config::paths::{Paths, resolve_data_dir};
+use crate::domains::learning::feedback;
 use crate::output::json;
 use crate::prelude::*;
 use crate::utilities::context::Ctx;
@@ -55,13 +55,13 @@ pub struct Args {
     pub irrelevant_code: String,
 }
 
-/// Parse `Args` into an [`api::feedback::Request`], run the shared middle
+/// Parse `Args` into an [`feedback::Request`], run the shared middle
 /// (Binding Rule 1 — shared with `POST /api/v1/feedback`), and emit a
 /// one-line ack (or a JSON envelope with the recorded counts under
 /// `--json`).
 ///
 /// Uses a lazy `Ctx` (no `config.toml` read, no data-dir/DB touch) so
-/// `api::feedback::run`'s validation runs first, exactly as
+/// `feedback::run`'s validation runs first, exactly as
 /// `cli::feedback::run` did pre-extraction (AC-13: a malformed query id or
 /// id list must not create the data dir or `comemory.db`).
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
@@ -69,7 +69,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     let cfg = Config::defaults();
     let mut ctx = Ctx::lazy(&paths, &cfg);
 
-    let req = api::feedback::Request {
+    let req = feedback::Request {
         query_id: a.query_id,
         used: csv_unique(&a.used),
         irrelevant: csv_unique(&a.irrelevant),
@@ -79,7 +79,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         // always records `manual`. Only the HTTP routes can say `implicit`.
         source: None,
     };
-    let output = api::feedback::run(&mut ctx, req)?;
+    let output = feedback::run(&mut ctx, req)?;
     emit(json_flag, &output)
 }
 
@@ -88,7 +88,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
 /// `/api/v1` envelope's own `ok` makes redundant over HTTP), else a TTY
 /// line that surfaces the orphan-query-id notice (invisible at the default
 /// `tracing` `EnvFilter` level).
-fn emit(json_flag: bool, output: &api::feedback::Response) -> Result<()> {
+fn emit(json_flag: bool, output: &feedback::Response) -> Result<()> {
     if json_flag {
         json::write(&serde_json::json!({
             "ok": true,

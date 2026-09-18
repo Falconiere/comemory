@@ -13,11 +13,11 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::api;
 use crate::cli::eval::GoldenSetArgs;
 use crate::cli::load_config;
 use crate::config::paths::{Paths, resolve_data_dir};
-use crate::eval::tune::{self, TuneCandidate};
+use crate::domains::learning;
+use crate::domains::learning::evaluation::tune::{self, TuneCandidate};
 use crate::output::json;
 use crate::prelude::*;
 use crate::store::connection;
@@ -124,7 +124,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     let cfg = load_config(&paths)?;
 
     let g = &a.golden_set;
-    let req = api::tune::Request {
+    let req = learning::tune::Request {
         golden: g.golden.as_ref().map(|p| p.to_string_lossy().into_owned()),
         golden_only: g.golden_only,
         k: g.k,
@@ -132,7 +132,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         seed: a.seed,
     };
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-    let resp = api::tune::run(&mut ctx, req)?;
+    let resp = learning::tune::run(&mut ctx, req)?;
     let improved = resp.report.improves_baseline();
 
     if json_flag {

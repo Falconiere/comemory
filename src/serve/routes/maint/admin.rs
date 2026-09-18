@@ -1,4 +1,4 @@
-//! `POST /api/v1/mine` (`api::mine`, no confirm gate — a bounded scan that
+//! `POST /api/v1/mine` (`domains::learning::mine`, no confirm gate — a bounded scan that
 //! only mutates when `"apply":true`), `POST /api/v1/hooks/install`
 //! (`domains::code::install_hooks`, confirm-gated, `--repo` contained), and
 //! `POST /api/v1/rebuild` (`api::rebuild`) — a confirm-gated **job** that
@@ -14,6 +14,7 @@ use axum::{Json, Router};
 use serde_json::Value;
 
 use crate::api;
+use crate::domains::learning::mine;
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::envelope::Envelope;
@@ -58,9 +59,9 @@ pub fn router(_state: AppState) -> Router<AppState> {
 }
 
 /// `POST /api/v1/mine` — distill (and, with `"apply":true`, rebuild)
-/// `query_expansions` (`api::mine`). Not confirm-gated (§Route map): it is a
+/// `query_expansions` (`domains::learning::mine`). Not confirm-gated (§Route map): it is a
 /// bounded scan, mutating only on explicit `apply`.
-async fn mine(State(state): State<AppState>, Json(req): Json<api::mine::Request>) -> Response {
+async fn mine(State(state): State<AppState>, Json(req): Json<mine::Request>) -> Response {
     let started = Instant::now();
     let permit = match guard_mutating("mine", &state) {
         Ok(permit) => permit,
@@ -71,7 +72,7 @@ async fn mine(State(state): State<AppState>, Json(req): Json<api::mine::Request>
         let cfg = state.cfg();
         let mut conn = state.conn()?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        api::mine::run(&mut ctx, req)
+        mine::run(&mut ctx, req)
     })
     .await;
     respond("mine", result, started)

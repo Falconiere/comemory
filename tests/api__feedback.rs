@@ -5,7 +5,7 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror test for `src/api/feedback.rs`. Calls `api::feedback::run`
+//! Mirror test for `src/api/feedback.rs`. Calls `feedback::run`
 //! directly against a `Ctx` opened on a fresh temp data-dir — proving the
 //! extracted command core records feedback the same way `comemory feedback`
 //! does (`cli::feedback::run` is byte-compat tested against CLI stdout in
@@ -13,8 +13,8 @@
 //! `tests/serve__routes__memories__write.rs`).
 
 use assert_cmd::Command;
-use comemory::api;
 use comemory::config::{Config, Paths};
+use comemory::domains::learning::feedback;
 use comemory::store::connection;
 use comemory::utilities::context::Ctx;
 
@@ -32,8 +32,8 @@ fn save(home: &tempfile::TempDir, body: &str) -> String {
         .to_string()
 }
 
-fn request(query_id: &str, used: Vec<String>) -> api::feedback::Request {
-    api::feedback::Request {
+fn request(query_id: &str, used: Vec<String>) -> feedback::Request {
+    feedback::Request {
         query_id: query_id.to_string(),
         used,
         irrelevant: Vec::new(),
@@ -69,8 +69,8 @@ fn run_records_feedback_for_an_unlogged_query_id() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let resp = api::feedback::run(&mut ctx, request("q-20260610-a1b2c3d4", vec![id]))
-        .expect("feedback run");
+    let resp =
+        feedback::run(&mut ctx, request("q-20260610-a1b2c3d4", vec![id])).expect("feedback run");
     assert_eq!(resp.used, 1);
     assert_eq!(resp.irrelevant, 0);
     assert!(!resp.known_query, "query id was never logged");
@@ -86,7 +86,7 @@ fn run_rejects_a_malformed_query_id() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let err = api::feedback::run(&mut ctx, request("not-a-query-id", Vec::new()))
+    let err = feedback::run(&mut ctx, request("not-a-query-id", Vec::new()))
         .expect_err("malformed query id must be rejected");
     assert!(
         err.to_string().contains("invalid query id"),
@@ -104,7 +104,7 @@ fn run_rejects_an_invalid_memory_id_in_used() {
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
     let req = request("q-20260610-a1b2c3d4", vec!["not-8-hex".to_string()]);
-    let err = api::feedback::run(&mut ctx, req).expect_err("invalid memory id must be rejected");
+    let err = feedback::run(&mut ctx, req).expect_err("invalid memory id must be rejected");
     assert!(
         err.to_string().contains("invalid memory id"),
         "unexpected error: {err}"
@@ -127,7 +127,7 @@ fn run_stores_implicit_provenance_for_used_and_irrelevant() {
     let mut req = request("q-20260912-a1b2c3d4", vec![used.clone()]);
     req.irrelevant = vec![ignored.clone()];
     req.source = Some("implicit".into());
-    let resp = api::feedback::run(&mut ctx, req).expect("feedback run");
+    let resp = feedback::run(&mut ctx, req).expect("feedback run");
     assert_eq!((resp.used, resp.irrelevant), (1, 1));
     assert_eq!(resp.provenance, "implicit");
     drop(ctx);
@@ -164,12 +164,12 @@ fn run_defaults_and_explicit_both_store_manual() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let omitted = api::feedback::run(&mut ctx, request("q-20260912-00000001", vec![id.clone()]))
+    let omitted = feedback::run(&mut ctx, request("q-20260912-00000001", vec![id.clone()]))
         .expect("omitted source");
     assert_eq!(omitted.provenance, "manual");
     let mut req = request("q-20260912-00000002", vec![id.clone()]);
     req.source = Some("explicit".into());
-    let explicit = api::feedback::run(&mut ctx, req).expect("explicit source");
+    let explicit = feedback::run(&mut ctx, req).expect("explicit source");
     assert_eq!(explicit.provenance, "manual");
     drop(ctx);
 
@@ -195,7 +195,7 @@ fn run_rejects_an_unknown_source_before_opening_the_db() {
     for bad in ["manual", "Implicit", ""] {
         let mut req = request("q-20260912-a1b2c3d4", vec!["aaaa0001".into()]);
         req.source = Some(bad.into());
-        let err = api::feedback::run(&mut ctx, req).expect_err("bad source must be rejected");
+        let err = feedback::run(&mut ctx, req).expect_err("bad source must be rejected");
         assert!(
             matches!(err, comemory::errors::Error::BadRequest(_)),
             "{bad:?}: {err:?}"
@@ -225,7 +225,7 @@ fn run_with_source_and_no_ids_writes_nothing_but_echoes_provenance() {
 
     let mut req = request("q-20260912-a1b2c3d4", Vec::new());
     req.source = Some("implicit".into());
-    let resp = api::feedback::run(&mut ctx, req).expect("empty batch");
+    let resp = feedback::run(&mut ctx, req).expect("empty batch");
     assert_eq!(
         (
             resp.used,

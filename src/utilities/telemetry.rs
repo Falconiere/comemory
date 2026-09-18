@@ -32,7 +32,7 @@ pub(crate) mod source {
 pub(crate) mod target {
     /// Memory id (8-hex).
     pub(crate) const MEMORY: &str = "memory";
-    /// Text-encoded `code_symbols` rowid (see `crate::stats::code_feedback`).
+    /// Text-encoded `code_symbols` rowid (see `crate::domains::learning::code_feedback`).
     pub(crate) const CODE: &str = "code";
 }
 

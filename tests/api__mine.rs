@@ -6,15 +6,15 @@
     clippy::too_many_lines
 )]
 //! Mirror test for `src/api/mine.rs`. Seeds a real failed → reworded search
-//! pair with used feedback via the real binary, then calls `api::mine::run`
+//! pair with used feedback via the real binary, then calls `mine::run`
 //! directly against a `Ctx` opened on the same data-dir
 //! (`cli::mine::run` is byte-compat tested against CLI stdout in
 //! `tests/cli__mine.rs`; the HTTP route lives in
 //! `tests/serve__routes__maint__admin.rs`).
 
 use assert_cmd::Command;
-use comemory::api;
 use comemory::config::{Config, Paths};
+use comemory::domains::learning::mine;
 use comemory::store::connection;
 use comemory::utilities::context::Ctx;
 use tempfile::TempDir;
@@ -74,7 +74,7 @@ fn run_report_only_leaves_query_expansions_empty() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let resp = api::mine::run(&mut ctx, api::mine::Request { apply: false }).expect("mine run");
+    let resp = mine::run(&mut ctx, mine::Request { apply: false }).expect("mine run");
     assert!(!resp.applied);
     assert_eq!(resp.mappings.len(), 6, "mappings: {:?}", resp.mappings);
     assert_eq!(expansion_rows(&home), 0, "report-only must not write");
@@ -90,7 +90,7 @@ fn run_apply_rebuilds_query_expansions() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let resp = api::mine::run(&mut ctx, api::mine::Request { apply: true }).expect("mine run");
+    let resp = mine::run(&mut ctx, mine::Request { apply: true }).expect("mine run");
     assert!(resp.applied);
     assert!(
         resp.mappings
@@ -102,7 +102,7 @@ fn run_apply_rebuilds_query_expansions() {
 
 #[test]
 fn request_rejects_unknown_fields() {
-    let err = serde_json::from_value::<api::mine::Request>(serde_json::json!({
+    let err = serde_json::from_value::<mine::Request>(serde_json::json!({
         "apply": true,
         "bogus": 1,
     }))

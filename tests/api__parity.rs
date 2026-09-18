@@ -154,14 +154,17 @@ macro_rules! probe_fn {
 }
 
 probe_fn!(probe_ast, comemory::domains::code::pattern_search::Request);
-probe_fn!(probe_bandit, api::bandit::Request);
+probe_fn!(probe_bandit, comemory::domains::learning::bandit::Request);
 probe_fn!(probe_completions, comemory::cli::completion_script::Request);
 probe_fn!(probe_consolidate, api::consolidate::Request);
 probe_fn!(probe_context, retrieval::context::Request);
 probe_fn!(probe_doctor, api::doctor::Request);
 probe_fn!(probe_edges, comemory::domains::graph::edges::Request);
-probe_fn!(probe_eval, api::eval::Request);
-probe_fn!(probe_feedback, api::feedback::Request);
+probe_fn!(probe_eval, comemory::domains::learning::eval::Request);
+probe_fn!(
+    probe_feedback,
+    comemory::domains::learning::feedback::Request
+);
 probe_fn!(probe_gc, api::gc::Request);
 probe_fn!(probe_graph, comemory::domains::graph::view::Request);
 probe_fn!(probe_index, index::Request);
@@ -174,7 +177,7 @@ probe_fn!(
     comemory::domains::code::install_hooks::Request
 );
 probe_fn!(probe_list, memories::list::Request);
-probe_fn!(probe_mine, api::mine::Request);
+probe_fn!(probe_mine, comemory::domains::learning::mine::Request);
 probe_fn!(probe_prune, api::prune::Request);
 probe_fn!(probe_rebuild, api::rebuild::Request);
 probe_fn!(probe_save, memories::save::Request);
@@ -186,7 +189,7 @@ probe_fn!(probe_hooks, comemory::domains::code::hooks::Request);
 probe_fn!(probe_repos, comemory::domains::code::repos::Request);
 probe_fn!(probe_show, memories::show::Request);
 probe_fn!(probe_stats, api::stats::Request);
-probe_fn!(probe_tune, api::tune::Request);
+probe_fn!(probe_tune, comemory::domains::learning::tune::Request);
 probe_fn!(probe_unindex, unindex::Request);
 
 /// A [`PROBES`] dispatch entry's function pointer type, factored out of the

@@ -176,13 +176,19 @@ ratchet re-scans fresh each run, it does not pin line numbers).
 | `src/domains/retrieval/score.rs:155-165` function `min_max_normalize` | `src/domains/retrieval/score.rs:182-188` function `max_normalize` | 91.94% | min-max vs. max-only variants of the same normalization formula |
 | `src/domains/retrieval/pipeline.rs:186-213` function `record_telemetry` | `src/domains/retrieval/pipeline.rs:248-259` function `record_query` | 92.69% | parallel telemetry/query log-row inserts, same shape |
 
-### `src/stats/`
+### `src/store/` + `src/domains/learning/` (recorded as `src/stats/`)
+
+Snapshotted when these lived in `src/stats/`. The SQL half moved to
+`store::{feedback, code_feedback}` with the store-layer chokepoint work and the
+policy half to `domains::learning` with #173; the paths and spans below are
+re-measured at their current homes, and the similarity figures are the
+originals, unchanged.
 
 | Pair A | Pair B | Similarity | Why it's debt, not urgent |
 | --- | --- | --- | --- |
-| `src/stats/code_feedback.rs:106-115` function `upsert_code_used` | `src/stats/code_feedback.rs:121-130` function `upsert_code_irrelevant` | 88.18% | parallel counter-upsert helpers for two feedback signals (used vs. irrelevant) |
-| `src/stats/feedback.rs:106-119` function `insert_event` | `src/stats/feedback.rs:132-146` function `record_implicit_used` | 85.25% | parallel event-insert / counter-upsert helpers for two feedback signals |
-| `src/stats/feedback.rs:77-85` function `upsert_used` | `src/stats/feedback.rs:91-99` function `upsert_irrelevant` | 88.38% | parallel event-insert / counter-upsert helpers for two feedback signals |
+| `src/store/code_feedback.rs:69-78` function `upsert_used` | `src/store/code_feedback.rs:84-93` function `upsert_irrelevant` | 88.18% | parallel counter-upsert helpers for two feedback signals (used vs. irrelevant) |
+| `src/store/feedback.rs:53-68` function `insert_event` | `src/domains/learning/feedback_tracking.rs:71-89` function `record_implicit_used` | 85.25% | parallel event-insert / counter-upsert helpers for two feedback signals; no longer one file, since #173 left the policy half in the capability |
+| `src/store/feedback.rs:22-30` function `upsert_used` | `src/store/feedback.rs:35-43` function `upsert_irrelevant` | 88.38% | parallel event-insert / counter-upsert helpers for two feedback signals |
 
 ### `src/store/`
 
@@ -231,7 +237,7 @@ correctness or maintainability emergency:
    sites each.
 2. **Parallel accessor / CRUD pairs** (`config/paths.rs` path joins,
    `store/sources.rs` source-vs-file rows, `store/documents.rs` fetch
-   helpers, `stats/*.rs` used-vs-irrelevant counters) — twin small
+   helpers, `store/feedback.rs` used-vs-irrelevant counters) — twin small
    functions over twin data shapes. Similarity-rs's APTED tree-edit-distance
    scoring is naturally high on these because they *are* structurally
    identical by design; the alternative is a generic helper taking a

@@ -1,6 +1,6 @@
 //! `query_expansions` row CRUD: the mined (term → expansion) mapping table
 //! `store::fts`'s tier-4 lexical ladder reads, rewritten wholesale by
-//! `comemory mine --apply` ([`crate::eval::mine::apply`]).
+//! `comemory mine --apply` ([`crate::domains::learning::evaluation::mine::apply`]).
 
 use rusqlite::{Connection, ToSql, params, params_from_iter};
 

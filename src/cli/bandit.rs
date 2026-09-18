@@ -5,12 +5,12 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::api;
 use crate::cli::eval::GoldenSetArgs;
 use crate::cli::load_config;
 use crate::config::paths::{Paths, resolve_data_dir};
-use crate::eval::bandit::BanditReport;
-use crate::eval::tune::TuneCandidate;
+use crate::domains::learning;
+use crate::domains::learning::evaluation::bandit::BanditReport;
+use crate::domains::learning::evaluation::tune::TuneCandidate;
 use crate::output::json;
 use crate::prelude::*;
 use crate::store::connection;
@@ -78,14 +78,14 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     let cfg = load_config(&paths)?;
 
     let g = &a.golden_set;
-    let req = api::bandit::Request {
+    let req = learning::bandit::Request {
         golden: g.golden.as_ref().map(|p| p.to_string_lossy().into_owned()),
         golden_only: g.golden_only,
         k: g.k,
         apply: a.apply,
     };
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-    let report = api::bandit::run(&mut ctx, req)?;
+    let report = learning::bandit::run(&mut ctx, req)?;
 
     if json_flag {
         json::write(&serde_json::json!({ "report": report }))?;

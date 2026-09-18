@@ -1,0 +1,128 @@
+//! Per-symbol code feedback counters: `used` and `irrelevant`.
+//!
+//! Code-side sibling of [`crate::domains::learning::feedback_tracking`] (read that first — the
+//! shapes deliberately mirror each other). Each `code_feedback` row is
+//! keyed by the **stable (repo, path, symbol) identity**, not the
+//! `code_symbols` rowid: re-indexing purges + reinserts every row of a
+//! touched file and SQLite recycles the freed rowids, so a rowid key would
+//! silently re-attribute feedback history to whatever symbol inherits the
+//! number. Callers still address symbols by rowid (the id `search-code`
+//! prints); [`record_code_with_provenance`][r] resolves each id to its
+//! identity before writing the counter row, following a chunk's
+//! `parent_id` one hop so the counter lands under the parent's key — the
+//! only key the scoring join in `retrieval::code_prior::signals` matches.
+//!
+//! Provenance lands in the shared `feedback_events` table tagged
+//! `target_kind = 'code'` with the **text-encoded symbol rowid** in the
+//! `memory_id` column (a memory-era column-name wart, e.g. symbol `42` →
+//! `'42'`). Events deliberately keep the rowid, not the identity: they are
+//! point-in-time telemetry about one query's hit list, aged out by
+//! `comemory gc`, and never re-joined against `code_symbols` for ranking.
+//! Readers must filter on `target_kind` before interpreting the column —
+//! `evaluation::golden::harvest` and `evaluation::mine` do.
+//!
+//! The SQL lives in [`crate::store::code_feedback`], which intentionally
+//! parallels [`crate::store::feedback`] rather than sharing a helper: the
+//! tables differ in name, key columns, and key type, and a generic helper
+//! parameterized on table name would be stringly-typed overkill.
+//!
+//! [r]: crate::domains::learning::code_feedback::record_code_with_provenance
+
+use time::OffsetDateTime;
+
+use crate::domains::learning::telemetry::StatsDb;
+use crate::prelude::*;
+use crate::store::Connection;
+use crate::store::code_feedback as store_code_feedback;
+use crate::store::code_feedback::SymbolIdentity;
+use crate::store::memory_row;
+
+/// Resolve a `code_symbols` rowid to its stable identity, or error loudly
+/// naming the id when the row is gone.
+///
+/// A cAST CHUNK row (`parent_id` NOT NULL, symbol `<name>#<n>`) resolves
+/// one hop further to its PARENT's identity: the `name#n` key is one the
+/// COALESCE-to-parent feedback join in `retrieval::code_prior::signals`
+/// can never match, so a chunk-keyed counter row would be silently inert.
+/// `search-code` only prints coalesced parent ids, but `feedback
+/// --used-code` accepts any rowid (IDE callers, manual entry), so the
+/// writer must normalize. A chunk whose parent vanished (raced re-index
+/// delete) keeps its own identity — the same degraded case as
+/// `retrieval::code_rerank::coalesce` and the `signals` COALESCE fallback.
+///
+/// This is deliberately ASYMMETRIC with the query-id check in
+/// `cli::feedback` (which only warns when the id is absent from
+/// `retrieval_log`): a missing query id still leaves valid verdict targets
+/// to record, but a vanished symbol id leaves *nothing* to attribute the
+/// verdict to — the rowid may already name an unrelated symbol (recycled by
+/// a re-index purge+reinsert), so writing it anyway would be exactly the
+/// misattribution the identity key exists to prevent.
+fn resolve_identity(conn: &Connection, id: i64) -> Result<SymbolIdentity> {
+    let (own, parent_id) = store_code_feedback::own_identity(conn, id)?.ok_or_else(|| {
+        Error::Config(format!(
+            "code feedback: symbol id {id} not found in code_symbols \
+             (re-indexed away or never existed); re-run comemory search-code \
+             for current ids"
+        ))
+    })?;
+    let Some(parent_id) = parent_id else {
+        return Ok(own);
+    };
+    let parent = store_code_feedback::parent_identity(conn, parent_id)?;
+    Ok(parent.unwrap_or(own))
+}
+
+/// Record a batch of used/irrelevant code-symbol verdicts for one query in
+/// a single transaction: each rowid is resolved to its stable
+/// (repo, path, symbol) identity FIRST (an unknown id errors loudly — see
+/// `resolve_identity` for the deliberate asymmetry with the query-id warn
+/// path), then one code-tagged `feedback_events` row plus the matching
+/// identity-keyed `code_feedback` counter upsert land together per id.
+/// All-or-nothing — a failure on any id leaves both tables untouched, so
+/// events and counters cannot drift. Mirrors
+/// [`crate::domains::learning::feedback_tracking::record_with_provenance`], including the
+/// recorded-verbatim query-id contract, the per-batch `provenance` stamp
+/// (`manual` / `implicit`, on both verdicts), and the
+/// [`memory_row::iso_format`] timestamp shared with `retrieval_log.at`.
+pub fn record_code_with_provenance(
+    db: &mut StatsDb,
+    query_id: &str,
+    used: &[i64],
+    irrelevant: &[i64],
+    provenance: &str,
+) -> Result<()> {
+    let now = memory_row::iso_format(OffsetDateTime::now_utc())?;
+    let tx = db.conn_mut().transaction()?;
+    for id in used {
+        let sym = resolve_identity(&tx, *id)?;
+        store_code_feedback::insert_event(
+            &tx,
+            query_id,
+            *id,
+            "used",
+            &now,
+            crate::utilities::telemetry::target::CODE,
+            provenance,
+        )?;
+        store_code_feedback::upsert_used(&tx, &sym, &now)?;
+    }
+    for id in irrelevant {
+        let sym = resolve_identity(&tx, *id)?;
+        store_code_feedback::insert_event(
+            &tx,
+            query_id,
+            *id,
+            "irrelevant",
+            &now,
+            crate::utilities::telemetry::target::CODE,
+            provenance,
+        )?;
+        store_code_feedback::upsert_irrelevant(&tx, &sym)?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+#[cfg(test)]
+#[path = "tests/code_feedback.rs"]
+mod tests;
