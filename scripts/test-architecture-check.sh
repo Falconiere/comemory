@@ -238,23 +238,28 @@ new_tree import_comments
 domain $'use crate::{config::Config /* cli::run /* nested */ */}; pub fn work() {}'
 both 0 '' src/domains/memories.rs
 
-# The fixture file must be an `src/api/` core whose inventory row still exists:
-# `assert_status` synthesizes each fixture row from the real ledger, and a path
-# whose row has moved defaults to `shared::root`, which the API-ownership map
-# then rejects with `API ownership mismatch`. #171 moved `src/api/search.rs`
-# under `domains/retrieval/` and #176 moved `src/api/prune.rs` — the row these
-# cases used until now — under `domains/maintenance/`, so they name
-# `src/api/setup.rs` until #175 moves the integrations cores in turn.
+# The fixture file needs an owner that stays put. `assert_status` synthesizes
+# each fixture row from the real ledger, so a path whose row has moved falls
+# through to `shared::root` and the case stops asserting what it was written to
+# assert. These trees named `src/api/search.rs` until #171 took it under
+# `domains/retrieval/`, then `src/api/prune.rs` until #176 took it under
+# `domains/maintenance/`, then `src/api/setup.rs` until #175 took the
+# integrations cores and left `src/api/` with no inventory row at all.
+# `src/domains/memories.rs` ends that sequence because it is armed twice over:
+# it has a real ledger row owned by `domains::memories`, and the synthesizer's
+# own fallback above derives that same owner from any
+# `src/domains/<declared-capability>/` path even when no row exists — so no
+# later slice can move it out from under these fixtures.
 new_tree legacy_exception
-put src/api/setup.rs 'pub fn run() { crate::cli::embedding_input(); }'
-policy '.legacy_edges=[{source:"src/api/setup.rs",target:"crate::cli::embedding_input",class:"delivery",issue:"#166"}]'
-both 0 '' src/api/setup.rs
+domain 'pub fn run() { crate::cli::embedding_input(); }'
+policy '.legacy_edges=[{source:"src/domains/memories.rs",target:"crate::cli::embedding_input",class:"delivery",issue:"#166"}]'
+both 0 '' src/domains/memories.rs
 policy '.legacy_edges=[]'
-both 1 'crate::cli::embedding_input' src/api/setup.rs
+both 1 'crate::cli::embedding_input' src/domains/memories.rs
 new_tree stale_exception
-put src/api/setup.rs 'pub fn run() {}'
-policy '.legacy_edges=[{source:"src/api/setup.rs",target:"crate::cli::embedding_input",class:"delivery",issue:"#166"}]'
-both 1 'stale policy edge' src/api/setup.rs
+domain 'pub fn run() {}'
+policy '.legacy_edges=[{source:"src/domains/memories.rs",target:"crate::cli::embedding_input",class:"delivery",issue:"#166"}]'
+both 1 'stale policy edge' src/domains/memories.rs
 
 for mutation in \
   '.legacy_edges += [.legacy_edges[0]]' \
@@ -266,13 +271,13 @@ for mutation in \
   '.owner_dependencies += [.owner_dependencies[0]]' \
   '.legacy_modules[0].module="crate::api::save"' \
   '.legacy_modules[0].issue="#999"' \
-  '.setup_runtime_dependencies=[{source:"src/api/setup.rs",target:"crate::api::save",owner:"bogus"}]' \
+  '.setup_runtime_dependencies=[{source:"src/domains/memories.rs",target:"crate::domains::memories::save",owner:"bogus"}]' \
   '.setup_runtime_dependencies=null'; do
   new_tree invalid_policy
-  put src/api/setup.rs 'pub fn run() { crate::cli::embedding_input(); }'
-  policy '.legacy_edges=[{source:"src/api/setup.rs",target:"crate::cli::embedding_input",class:"delivery",issue:"#166"}]'
+  domain 'pub fn run() { crate::cli::embedding_input(); }'
+  policy '.legacy_edges=[{source:"src/domains/memories.rs",target:"crate::cli::embedding_input",class:"delivery",issue:"#166"}]'
   policy "$mutation"
-  both 3 'invalid policy' src/api/setup.rs
+  both 3 'invalid policy' src/domains/memories.rs
 done
 new_tree malformed_json
 put scripts/architecture-policy.json '{broken'
