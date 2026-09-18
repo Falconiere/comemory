@@ -16,12 +16,13 @@ use crate::store::{Connection, MemoryLinks, memory_row};
 /// Derive the graph links `body` owes, then write the whole mirror row set
 /// for one memory inside the caller's transaction.
 ///
-/// Both derivation steps run BEFORE the first write: the regex harvest is
-/// pure, and the document resolution reads only `documents` / `source_files`,
-/// neither of which this write touches, so moving it ahead of the write cannot
-/// change its answer. A derivation failure therefore leaves the transaction
-/// untouched, and the statement order inside `store::memory_row::insert` is
-/// exactly what it was when the store derived these itself.
+/// Both derivation steps run BEFORE the first write, and neither can see a
+/// different answer for having moved: the regex harvest touches no database at
+/// all, and the document resolution reads only `documents` / `source_files`,
+/// which this write never writes to. A derivation failure therefore leaves the
+/// transaction untouched, and the statement order inside
+/// `store::memory_row::insert` is exactly what it was when the store derived
+/// these itself.
 ///
 /// `conn` is the caller's [`crate::store::Transaction`] in every production
 /// path; no connection or transaction is opened here.

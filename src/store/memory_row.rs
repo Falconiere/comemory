@@ -16,9 +16,7 @@ use time::format_description::well_known::Iso8601;
 use crate::domains::memories::Frontmatter;
 use crate::prelude::*;
 use crate::store::MemoryLinks;
-use crate::store::edges::{
-    self, CO_ACTIVATED, EdgeKey, REFERENCES_DOCUMENT, REFERENCES_FILE, REFERENCES_SYMBOL,
-};
+use crate::store::edges::{self, CO_ACTIVATED, EdgeKey};
 use crate::store::fts;
 
 /// Upsert SQL for the `memories` row. `ON CONFLICT(id)` preserves `created_at`
@@ -236,37 +234,7 @@ fn insert_edges(
 ) -> Result<()> {
     insert_scope_edges(conn, fm, tags)?;
     insert_relation_edges(conn, fm, relation_stamps)?;
-    insert_reference_edges(conn, &fm.id, links)
-}
-
-/// Emit the three reference-edge kinds in the order their derivation runs:
-/// the `<repo>:<path>` and `<repo>:<path>:<symbol>` mentions harvested from
-/// the body, then the `documents` rows those mentions already resolve to.
-/// Node addressing matches `migrations/0002_v2_tables.sql` — bare qualified
-/// ids on the destination side, no kind prefix.
-fn insert_reference_edges(
-    conn: &Connection,
-    memory_id: &str,
-    links: &MemoryLinks<'_>,
-) -> Result<()> {
-    let targets = [
-        ("file", REFERENCES_FILE, links.files),
-        ("symbol", REFERENCES_SYMBOL, links.symbols),
-        ("document", REFERENCES_DOCUMENT, links.documents),
-    ]
-    .into_iter()
-    .flat_map(|(dst_kind, rel, ids)| ids.iter().map(move |id| (dst_kind, rel, id.as_str())));
-    for (dst_kind, rel, dst_id) in targets {
-        let key = EdgeKey {
-            src_kind: "memory",
-            src_id: memory_id,
-            dst_kind,
-            dst_id,
-            rel,
-        };
-        edges::insert(conn, key)?;
-    }
-    Ok(())
+    edges::insert_memory_references(conn, &fm.id, links)
 }
 
 /// Insert the `in_repo` / `authored_by` / `tagged` edges for one memory.

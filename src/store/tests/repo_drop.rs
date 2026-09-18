@@ -80,6 +80,48 @@ fn file_edge_triplets(conn: &Connection, repo: &str) -> i64 {
     .expect("count edge_fts")
 }
 
+/// Save one real memory citing the sample repo, through the production
+/// `domains::memories::save` core. Its body mentions `sample:src.rs`, so the
+/// save derives a `references_file` edge — the memory-side link a repo
+/// disconnect must KEEP (spec AC-18).
+fn save_sample_memory(ctx: &mut Ctx<'_>) -> String {
+    crate::domains::memories::save::run(
+        ctx,
+        crate::domains::memories::save::Request {
+            body: "the sample repo indexes `sample:src.rs` cleanly".to_string(),
+            title: None,
+            kind: Kind::Note,
+            repo: "sample".to_string(),
+            tags: Vec::new(),
+            author: String::new(),
+            quality: 3,
+            supersedes: Vec::new(),
+            vector: None,
+            ref_file: Vec::new(),
+            ref_symbol: Vec::new(),
+        },
+        false,
+        None,
+    )
+    .expect("save")
+    .id
+}
+
+/// Every live memory's `(id, rank_score)`, the OTHER derived artifact
+/// `graph::derived::refresh_derived_best_effort` maintains beside `edge_fts`.
+/// Read as a string so a `NULL` and a `0.0` are distinguishable.
+fn rank_scores(conn: &Connection) -> Vec<(String, String)> {
+    conn.prepare(
+        "SELECT id, COALESCE(CAST(rank_score AS TEXT), 'NULL') FROM memories \
+          WHERE deleted_at IS NULL ORDER BY id",
+    )
+    .expect("prepare")
+    .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+    .expect("query")
+    .collect::<std::result::Result<Vec<_>, _>>()
+    .expect("rank_score rows")
+}
+
 /// Seed one file→file `imports` edge inside `repo` so the edge purge has a
 /// row to prove itself against even for a single-file sample repo.
 fn seed_import_edge(conn: &Connection, repo: &str) {
@@ -107,26 +149,7 @@ fn drop_repo_removes_every_code_row_and_file_edge_and_keeps_the_memory() {
     let memory_id = {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
         index(&mut ctx, "sample", &repo);
-        crate::domains::memories::save::run(
-            &mut ctx,
-            crate::domains::memories::save::Request {
-                body: "the sample repo indexes `sample:src.rs` cleanly".to_string(),
-                title: None,
-                kind: Kind::Note,
-                repo: "sample".to_string(),
-                tags: Vec::new(),
-                author: String::new(),
-                quality: 3,
-                supersedes: Vec::new(),
-                vector: None,
-                ref_file: Vec::new(),
-                ref_symbol: Vec::new(),
-            },
-            false,
-            None,
-        )
-        .expect("save")
-        .id
+        save_sample_memory(&mut ctx)
     };
     seed_import_edge(&conn, "sample");
 
@@ -245,29 +268,61 @@ fn drop_repo_leaves_a_second_repo_in_the_same_store_untouched() {
 fn drop_repo_does_not_refresh_the_derived_artifacts() {
     // The refresh is the CALLER's post-commit step (#177):
     // `domains::code::repo_admin::disconnect` owns it, and this store helper
-    // must leave the derived index exactly as it found it. Proven by reading
-    // `edge_fts` — `index_code` populates it, and calling `drop_repo`
-    // directly must leave the now-dangling triplets behind.
+    // must leave BOTH derived artifacts exactly as it found them.
+    // `refresh_derived_best_effort` maintains two — `memories.rank_score` and
+    // the `edge_fts` triplet index — so checking only one would leave half the
+    // separation unproven.
     let home = TempDir::new().expect("home");
     let workspace = TempDir::new().expect("workspace");
     let sample = git_sample::build_sample_repo(workspace.path());
     let (paths, cfg, mut conn) = ctx_over(&home);
-    {
+    let memory_id = {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
         index(&mut ctx, "sample", &sample);
-    }
+        save_sample_memory(&mut ctx)
+    };
     seed_import_edge(&conn, "sample");
-    comemory::store::edge_fts::refresh(&mut conn).expect("materialize the triplet index");
-    let before = file_edge_triplets(&conn, "sample");
-    assert!(before > 0, "the fixture must really index its file edges");
+    // Materialize both artifacts through the very seam that was moved, so the
+    // "before" state is the one a real disconnect would be invalidating.
+    crate::domains::graph::derived::refresh_derived_best_effort(&mut conn);
+    let triplets_before = file_edge_triplets(&conn, "sample");
+    assert!(
+        triplets_before > 0,
+        "the fixture must really index its file edges"
+    );
+    // `rank_score` needs a different instrument from `edge_fts`. Dropping a
+    // repo deliberately KEEPS every memory-sourced edge (AC-18), so the real
+    // score is the same before and after a refresh — asserting it "unchanged"
+    // would prove nothing. Stamp a sentinel no PageRank can produce instead:
+    // surviving the drop means no rank pass ran at all.
+    conn.execute("UPDATE memories SET rank_score = -1.0", [])
+        .expect("stamp the sentinel score");
+    let sentinel = rank_scores(&conn);
+    assert_eq!(sentinel.len(), 1, "one saved memory");
+    assert_eq!(sentinel[0].0, memory_id);
 
     repo_drop::drop_repo(&mut conn, "sample").expect("drop_repo");
 
     assert_eq!(file_edges(&conn, "sample"), 0, "the edges themselves go");
     assert_eq!(
         file_edge_triplets(&conn, "sample"),
-        before,
-        "drop_repo must not refresh the derived index; its caller does"
+        triplets_before,
+        "drop_repo must not refresh the triplet index; its caller does"
+    );
+    assert_eq!(
+        rank_scores(&conn),
+        sentinel,
+        "drop_repo must not recompute rank_score either; its caller does"
+    );
+
+    // And the sentinel really is refresh-sensitive: running the caller's step
+    // now overwrites it. Without this the assertion above could pass simply
+    // because nothing ever rewrites `rank_score`.
+    crate::domains::graph::derived::refresh_derived_best_effort(&mut conn);
+    assert_ne!(
+        rank_scores(&conn),
+        sentinel,
+        "the refresh the caller owns must replace the sentinel score"
     );
 }
 

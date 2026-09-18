@@ -3,6 +3,7 @@
 use rusqlite::{Connection, OptionalExtension, named_params, params};
 
 use crate::prelude::*;
+use crate::store::MemoryLinks;
 
 /// The `co_activated` relation label: a weighted memory→file edge minted
 /// by the co-activation reward when commits touch files a memory
@@ -53,6 +54,45 @@ pub struct EdgeKey<'a> {
     pub dst_id: &'a str,
     /// Relation label; must match the `edges.rel` CHECK constraint.
     pub rel: &'a str,
+}
+
+/// Emit one memory's reference edges in the order their derivation runs: the
+/// `<repo>:<path>` and `<repo>:<path>:<symbol>` mentions harvested from the
+/// body, then the `documents` rows those mentions already resolve to. Node
+/// addressing matches `migrations/0002_v2_tables.sql` — bare qualified ids on
+/// the destination side, no kind prefix.
+///
+/// [`MemoryLinks`] is destructured rather than read field by field so a fourth
+/// link kind cannot be added without this mapping failing to compile; the node
+/// kind and relation for each list are only knowable here.
+pub(crate) fn insert_memory_references(
+    conn: &Connection,
+    memory_id: &str,
+    links: &MemoryLinks<'_>,
+) -> Result<()> {
+    let MemoryLinks {
+        files,
+        symbols,
+        documents,
+    } = *links;
+    let targets = [
+        ("file", REFERENCES_FILE, files),
+        ("symbol", REFERENCES_SYMBOL, symbols),
+        ("document", REFERENCES_DOCUMENT, documents),
+    ]
+    .into_iter()
+    .flat_map(|(dst_kind, rel, ids)| ids.iter().map(move |id| (dst_kind, rel, id.as_str())));
+    for (dst_kind, rel, dst_id) in targets {
+        let key = EdgeKey {
+            src_kind: "memory",
+            src_id: memory_id,
+            dst_kind,
+            dst_id,
+            rel,
+        };
+        insert(conn, key)?;
+    }
+    Ok(())
 }
 
 /// Graph node id for a file: `file:<repo>:<path>` — the addressing
