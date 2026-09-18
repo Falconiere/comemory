@@ -1,13 +1,13 @@
 //! Node assembly for the file-level code graph behind `comemory graph` /
 //! `GET /api/v1/graph`: the `code_symbols` aggregate that turns indexed
 //! files into graph nodes ([`NodeRow`]), plus the shared "memory cites this
-//! file" predicate ([`cites_file_predicate`]) `api::graph_nodes`'s
+//! file" predicate ([`cites_file_predicate`]) `domains::graph::graph_nodes`'s
 //! `cited_by` list reuses.
 //!
-//! Split out of `cli::graph`/`cli::graph::nodes` (spec
+//! Split out of the graph query assembly, now `domains::graph` (spec
 //! `docs/toolu/specs/2026-09-07-store-layer-chokepoint-design.md`): this file
-//! owns the SQL and row mapping, `cli::graph::nodes` keeps the pure
-//! `(repo, path)` dedup and [`crate::output::graph::CodeGraph`] assembly
+//! owns the SQL and row mapping, `domains::graph::nodes` keeps the pure
+//! `(repo, path)` dedup and [`crate::domains::graph::code_graph::CodeGraph`] assembly
 //! that consume it.
 
 use rusqlite::Connection;
@@ -59,7 +59,7 @@ pub enum FileExpr {
     /// `code_symbols` ([`extra_columns`]).
     CorrelatedRow,
     /// The first bound parameter, for a standalone query that binds the
-    /// `<repo>:<path>` value itself (`api::graph_nodes`'s `cited_by`).
+    /// `<repo>:<path>` value itself (`domains::graph::graph_nodes`'s `cited_by`).
     FirstParam,
 }
 
@@ -150,7 +150,7 @@ pub fn fetch_nodes(conn: &Connection, repo: Option<&str>) -> Result<Vec<NodeRow>
 /// All pairs are aggregated in ONE chunked query per [`NODE_PAIR_CHUNK`]
 /// batch (a `(repo, path)` `VALUES`-join), not one query per pair, so a page
 /// of many edges costs a bounded number of round-trips. `pairs` should
-/// already be deduplicated — the caller (`cli::graph::nodes::
+/// already be deduplicated — the caller (`domains::graph::nodes::
 /// fetch_nodes_for_edges`) builds it from a `BTreeSet` for a stable order.
 pub fn fetch_nodes_for_pairs(
     conn: &Connection,
@@ -214,7 +214,7 @@ pub fn fetch_node(conn: &Connection, repo: &str, path: &str) -> Result<Option<No
 }
 
 /// One row of a file's top-level symbols, strongest PageRank first —
-/// behind `api::graph_nodes`'s `top_symbols` list.
+/// behind `domains::graph::graph_nodes`'s `top_symbols` list.
 pub struct TopSymbolRow {
     /// `code_symbols` rowid.
     pub id: i64,

@@ -2,7 +2,7 @@
 //! `GET /api/v1/graph/nodes/{id}/neighbors`, `GET /api/v1/graph/snapshot`,
 //! `POST /api/v1/graph/recompute` (console-api spec §5).
 //!
-//! The four reads are thin transports over [`api::graph_nodes`]; the
+//! The four reads are thin transports over [`graph_nodes`](crate::domains::graph::graph_nodes); the
 //! recompute is a job (`graph-recompute`), because a PageRank pass over
 //! every repo is not something to hold an HTTP request open for.
 //!
@@ -11,7 +11,7 @@
 //! `file%3Ademo%3Asrc%2Fa.rs` and axum's `Path<String>` hands the decoded
 //! id back. An `X-Comemory-Repo` scope ([`RepoScope`]) additionally lets a
 //! console pass a bare repo-relative path as the id — see
-//! `api::graph_nodes::resolve_node_id`.
+//! `domains::graph::graph_nodes::resolve_node_id`.
 
 use std::path::Path as FsPath;
 use std::time::Instant;
@@ -22,7 +22,6 @@ use axum::response::Response;
 use axum::routing::{get, post};
 use serde::Serialize;
 
-use crate::api;
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::jobs;
@@ -97,11 +96,11 @@ pub fn router(_state: AppState) -> Router<AppState> {
         .route("/api/v1/graph/recompute", post(recompute))
 }
 
-/// `GET /api/v1/graph/nodes` — page the file nodes (`api::graph_nodes::list`).
+/// `GET /api/v1/graph/nodes` — page the file nodes (`domains::graph::graph_nodes::list`).
 async fn list(
     State(state): State<AppState>,
     scope: RepoScope,
-    Query(mut req): Query<api::graph_nodes::ListRequest>,
+    Query(mut req): Query<crate::domains::graph::graph_nodes::ListRequest>,
 ) -> Response {
     req.repo = scope.resolve(req.repo);
     let started = Instant::now();
@@ -109,18 +108,18 @@ async fn list(
         let cfg = state.cfg();
         let mut conn = state.conn()?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        api::graph_nodes::list(&mut ctx, req)
+        crate::domains::graph::graph_nodes::list(&mut ctx, req)
     })
     .await;
     respond("graph.nodes", result, started)
 }
 
 /// `GET /api/v1/graph/snapshot` — the whole capped graph
-/// (`api::graph_nodes::snapshot`).
+/// (`domains::graph::graph_nodes::snapshot`).
 async fn snapshot(
     State(state): State<AppState>,
     scope: RepoScope,
-    Query(mut req): Query<api::graph_nodes::SnapshotRequest>,
+    Query(mut req): Query<crate::domains::graph::graph_nodes::SnapshotRequest>,
 ) -> Response {
     req.repo = scope.resolve(req.repo);
     let started = Instant::now();
@@ -128,14 +127,14 @@ async fn snapshot(
         let cfg = state.cfg();
         let mut conn = state.conn()?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        api::graph_nodes::snapshot(&mut ctx, req)
+        crate::domains::graph::graph_nodes::snapshot(&mut ctx, req)
     })
     .await;
     respond("graph.snapshot", result, started)
 }
 
 /// `GET /api/v1/graph/nodes/{id}` — one node with its top symbols and the
-/// memories citing it (`api::graph_nodes::detail`). `404 not_found` when the
+/// memories citing it (`domains::graph::graph_nodes::detail`). `404 not_found` when the
 /// id names a file with no indexed symbols.
 async fn node_detail(
     State(state): State<AppState>,
@@ -147,27 +146,27 @@ async fn node_detail(
         let cfg = state.cfg();
         let mut conn = state.conn()?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        api::graph_nodes::detail(&mut ctx, &id, scope.0.as_deref())
+        crate::domains::graph::graph_nodes::detail(&mut ctx, &id, scope.0.as_deref())
     })
     .await;
     respond("graph.node", result, started)
 }
 
 /// `GET /api/v1/graph/nodes/{id}/neighbors` — the one-hop file neighborhood
-/// (`api::graph_nodes::neighbors`), the same rows `comemory context` reports
+/// (`domains::graph::graph_nodes::neighbors`), the same rows `comemory context` reports
 /// as a memory's `neighbors` (AC-9).
 async fn node_neighbors(
     State(state): State<AppState>,
     scope: RepoScope,
     Path(id): Path<String>,
-    Query(req): Query<api::graph_nodes::NeighborsRequest>,
+    Query(req): Query<crate::domains::graph::graph_nodes::NeighborsRequest>,
 ) -> Response {
     let started = Instant::now();
     let result = run_blocking(move || {
         let cfg = state.cfg();
         let mut conn = state.conn()?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        api::graph_nodes::neighbors(&mut ctx, &id, scope.0.as_deref(), req)
+        crate::domains::graph::graph_nodes::neighbors(&mut ctx, &id, scope.0.as_deref(), req)
     })
     .await;
     respond("graph.neighbors", result, started)
@@ -176,7 +175,7 @@ async fn node_neighbors(
 /// Resolve one indexed node against its local worktree, with containment and
 /// a response size limit. A synced cloud projection has no local root.
 fn read_node_source(ctx: &mut Ctx<'_>, id: &str, scope: Option<&str>) -> Result<NodeSource> {
-    let (repo, path) = api::graph_nodes::resolve_node_id(id, scope)?;
+    let (repo, path) = crate::domains::graph::graph_nodes::resolve_node_id(id, scope)?;
     let conn = ctx.conn()?;
     if code_graph_nodes::fetch_node(conn, &repo, &path)?.is_none() {
         return Err(Error::NotFound(format!("graph node {id}")));
@@ -243,7 +242,7 @@ async fn node_source(
 }
 
 /// `POST /api/v1/graph/recompute` — start a `graph-recompute` job
-/// (`api::graph_recompute`). Read-only gate first ([`guard_job`] → `405
+/// (`domains::graph::graph_recompute`). Read-only gate first ([`guard_job`] → `405
 /// read_only`); no confirm gate, since a recompute rewrites only derived
 /// scores and is idempotent. The request body carries nothing and is
 /// ignored.
@@ -261,7 +260,10 @@ async fn recompute(State(state): State<AppState>) -> Response {
         move || {
             let cfg = job_state.cfg();
             let mut ctx = Ctx::lazy(job_state.paths(), &cfg);
-            let resp = api::graph_recompute::run(&mut ctx, api::graph_recompute::Request {})?;
+            let resp = crate::domains::graph::graph_recompute::run(
+                &mut ctx,
+                crate::domains::graph::graph_recompute::Request {},
+            )?;
             serde_json::to_value(resp).map_err(Error::Json)
         },
     );

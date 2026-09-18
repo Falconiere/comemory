@@ -84,7 +84,7 @@ fn append_local_tombstone(conn: &mut Connection, memory_id: &str, content_hash: 
 /// Returns the canonical id and whether the derived-artifact refresh that
 /// follows the mirror write FAILED, so the caller can report a stale
 /// relation index instead of leaving it in the log
-/// ([`crate::graph::derived::refresh_derived_best_effort`]).
+/// ([`crate::domains::graph::derived::refresh_derived_best_effort`]).
 pub(crate) fn soft_delete(
     paths: &Paths,
     conn: &mut Connection,
@@ -106,7 +106,7 @@ pub(crate) fn soft_delete(
 /// between the file move and this transaction — with no markdown move.
 ///
 /// After the commit the memory and its edges have left the graph, so
-/// [`crate::graph::derived`] refreshes both derived artifacts best-effort
+/// [`crate::domains::graph::derived`] refreshes both derived artifacts best-effort
 /// here, not at the [`soft_delete`] call site: every soft-delete surface
 /// (delete, prune apply, prune heal) then heals rank and triplets alike.
 pub(crate) fn mirror_soft_delete(conn: &mut Connection, id: &str) -> Result<bool> {
@@ -117,5 +117,5 @@ pub(crate) fn mirror_soft_delete(conn: &mut Connection, id: &str) -> Result<bool
     // After the commit, so a failed refresh cannot roll back a delete that
     // succeeded — and reported rather than swallowed, since a stale
     // relation index is something the caller can pass on.
-    Ok(!crate::graph::derived::refresh_derived_best_effort(conn))
+    Ok(!crate::domains::graph::derived::refresh_derived_best_effort(conn))
 }

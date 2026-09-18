@@ -275,7 +275,7 @@ pub fn parent_snippets(conn: &Connection) -> Result<Vec<(i64, String)>> {
 
 /// Every distinct `code_symbols.path` for `repo`, sorted ascending — the
 /// deterministic dense-index mapping `graph::pagerank` needs. See
-/// [`crate::graph::materialize::known_paths`].
+/// [`crate::domains::graph::materialize::known_paths`].
 pub(crate) fn distinct_paths_for_repo(conn: &Connection, repo: &str) -> Result<Vec<String>> {
     let mut stmt =
         conn.prepare("SELECT DISTINCT path FROM code_symbols WHERE repo = ?1 ORDER BY path")?;
@@ -289,7 +289,7 @@ pub(crate) fn distinct_paths_for_repo(conn: &Connection, repo: &str) -> Result<V
 /// between `paths` and `scores`. Returns the total number of `code_symbols`
 /// rows updated — a path may back more than one row (chunk children share
 /// their parent's path). See
-/// [`crate::graph::materialize::project_pagerank`].
+/// [`crate::domains::graph::materialize::project_pagerank`].
 pub(crate) fn update_rank_scores(
     conn: &Connection,
     repo: &str,

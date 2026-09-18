@@ -60,7 +60,7 @@ authoritative architecture reference; pair it with the
 | `cli` | clap subcommand definitions, arg parsing, dispatch, exit codes |
 | `domains::memories` | the memory capability — markdown I/O, frontmatter parsing, atomic save, ID generation, and the save / delete / list / show / update / restore / trash / reference-refresh cores both adapters call (`comemory::memory` is a crate-root alias over it) |
 | `store` | the SQLite chokepoint — the only module importing `rusqlite`, holding every SQL string in the crate (see AGENTS.md Binding Rule 10). Connection layer, schema_meta, migrations, vector + FTS helpers, identifier tokenizer (camelCase/snake_case split + FFI registration), `edge_fts` (the triplet index over `edges` — rendering, refresh, and the ladder behind `comemory edges`) |
-| `graph` | algorithms over the edges relation — CRUD and walks live in `store::edges`/`store::edges_retrieval` (`Supersedes`, `ConflictsWith`, `RelatesTo`, `ReferencesFile`, `ReferencesSymbol`, `CoChanged`, `Imports`, …) + recursive walks; `cross_link` parses backticked refs; `cochange` mines git history, `imports` extracts per-language import edges, `pagerank` + `materialize` write `code_symbols.rank_score`, `memory_rank` writes `memories.rank_score` from the derived memory graph, `derived` refreshes every derived artifact in one best-effort post-write pass (§5.3) |
+| `domains/graph/` | the graph capability (#170): algorithms over the edges relation — CRUD and walks live in `store::edges`/`store::edges_retrieval` (`Supersedes`, `ConflictsWith`, `RelatesTo`, `ReferencesFile`, `ReferencesSymbol`, `CoChanged`, `Imports`, …) + recursive walks; `cross_link` parses backticked refs; `cochange` mines git history, `imports` extracts per-language import edges, `pagerank` + `materialize` write `code_symbols.rank_score`, `memory_rank` writes `memories.rank_score` from the derived memory graph, `derived` refreshes every derived artifact in one best-effort post-write pass (§5.3); `code_graph` is the exported model, `query` + `nodes` assemble the file-level graph, and `edges` (both transports), `view` (`GET /graph`) and `graph_nodes` / `graph_recompute` (console-only) are the command cores |
 | `retrieval` | router (candidates + 4-tier lexical ladder ending in learned expansion), graph_route (graph-expansion leg: an edge walk seeded from the provisional top hits), scope (the created-date `TimeScope` + the `Filters` bundle threading repo/kind/time through every leg), score (ACT-R/Beta primitives + the shared median/PageRank-boost math), rerank (five multiplicative priors, including the memory PageRank boost), diversify (SimHash collapse + MMR), pipeline (orchestration + access tracking), fuse (RRF, pairwise + N-ary), bundle (context lookup, code refs ranked by graph priors); code side: code_route (BM25 + thresholded ANN + RRF, chunk→parent coalesce), code_rerank + code_prior (PageRank / recency / working-set affinity / feedback) |
 | `eval` | learning loop: golden sets (file + feedback harvest), recall@k/MRR metrics, eval runner (replays originating repo/kind filters), reformulation mining, grid tune |
 | `stats` | feedback domain logic — Beta scoring and counter arithmetic; the SQL lives in `store::{feedback,code_feedback,index_failures}` and the persisted vocabularies in `utilities::telemetry` |
@@ -326,7 +326,7 @@ it); its `rrf` field is the max-normalized relevance in `[0, 1]` (pool max
 maps to 1.0), not the raw fused score.
 
 The fifth prior, `rank`, is the memory-side mirror of what `code_prior`
-already does for symbols. `graph::memory_rank` runs PageRank over a graph
+already does for symbols. `domains::graph::memory_rank` runs PageRank over a graph
 derived at compute time — the direct memory→memory relations
 (`supersedes`, `conflicts_with`, `derived_from`, `relates_to`) plus
 undirected co-citation edges between memories that reference the same file
@@ -438,7 +438,7 @@ Two things in `comemory.db` are computed *from* `memories` + `edges` rather
 than written alongside them: the memory-graph PageRank in
 `memories.rank_score` (§5) and the `edge_fts` triplet index that backs
 `comemory edges`. They share a staleness window and a set of trigger points,
-so they share one entry point — `graph::derived::refresh_derived_best_effort`
+so they share one entry point — `domains::graph::derived::refresh_derived_best_effort`
 — and a new seam cannot refresh half the derived state. Each artifact is
 independently best-effort: a failure warns and the other still runs.
 
@@ -450,7 +450,7 @@ failed refresh costs freshness and never the primary write:
   `comemory prune`'s delete paths behave alike;
 - `rebuild`, after the markdown replay and the preserved-table copy, before
   the atomic swap;
-- `index-code`, after `graph::materialize` returns. This seam is new, and it
+- `index-code`, after `domains::graph::materialize` returns. This seam is new, and it
   closes a real gap: `materialize` writes the `co_activated` memory→file
   edges earned by the co-activation reward (§7.1), but nothing used to
   recompute rank afterwards, so a reward sat in `edges` unread until the
@@ -548,7 +548,7 @@ mass and can still surface in `search-code` results.
 ### 7.1 Auto-reinforcement reward
 
 `index-code` harvests an implicit-feedback signal on every run — always on,
-no flag. When `graph::materialize` mines commit co-activation, it applies a
+no flag. When `domains::graph::materialize` mines commit co-activation, it applies a
 **triple-channel** reinforcement reward for each `(memory, referenced-file)`
 pair that co-occurs in a commit:
 
@@ -657,7 +657,7 @@ working-set affinity probe), and the code index is **stale**.
 - **Staleness probe (cheap — runs on every search).** Stale iff the repo was
   never indexed (no `repo_marker` row, or a NULL `last_mined_commit`) OR the
   current repo HEAD differs from `repo_marker.last_mined_commit` (the cursor
-  `graph::materialize` advances to HEAD after each successful `index-code`).
+  `domains::graph::materialize` advances to HEAD after each successful `index-code`).
   Cost: one `git2` HEAD resolve plus two single-row SQLite reads — **no**
   working-tree walk or per-file blob hash. Consequently, uncommitted
   (un-HEAD) working-tree edits are **intentionally not** detected by the lazy

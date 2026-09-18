@@ -12,7 +12,7 @@ use git2::Repository;
 
 use crate::domains::code::ast::extractor::ExtractedSymbol;
 use crate::domains::code::ast::{self, languages};
-use crate::graph::imports;
+use crate::domains::graph::imports;
 use crate::prelude::*;
 use crate::store::code_row::{self, CodeSymbolRow};
 use crate::store::{Connection, fts, indexed_files};

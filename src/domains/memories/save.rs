@@ -334,7 +334,7 @@ fn persist(
             e
         ))
     })?;
-    let _stale = crate::graph::derived::refresh_derived_best_effort(conn);
+    let _stale = crate::domains::graph::derived::refresh_derived_best_effort(conn);
     Ok(rec)
 }
 

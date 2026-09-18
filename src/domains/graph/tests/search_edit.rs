@@ -1,0 +1,201 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
+//! Search→edit lookback (`comemory::domains::graph::search_edit`) exercised through
+//! the public `materialize` path. `search_edit` is `pub(crate)`, so these
+//! tests assert provenance upgrades the same way `index-code` does: seed a
+//! `retrieval_log` hit, then materialize over real git touches.
+
+use crate::test_common::git_commit;
+use crate::test_common::git_repo;
+
+use std::collections::{BTreeMap, HashSet};
+use std::path::{Path, PathBuf};
+
+use comemory::domains::graph::materialize::materialize;
+use comemory::domains::graph::search_edit::memories_seen_recently;
+use comemory::store::code_row::{self, CodeSymbolRow};
+use comemory::store::connection;
+use comemory::store::memory_row;
+use rusqlite::Connection;
+use tempfile::TempDir;
+use time::OffsetDateTime;
+
+const REPO: &str = "r";
+
+fn build_repo(root: &Path) -> PathBuf {
+    let repo = root.join("search-edit-repo");
+    git_repo::init_repo(&repo);
+    git_commit::commit_files(
+        &repo,
+        &[("a.rs", "fn a() {}\n"), ("docs/guide.md", "v1\n")],
+        "c1",
+    );
+    git_commit::commit_files(
+        &repo,
+        &[("docs/guide.md", "v2\n"), ("notes.md", "n1\n")],
+        "c2",
+    );
+    repo
+}
+
+fn open_db_with_symbols(home: &TempDir) -> Connection {
+    let conn = connection::open(home.path().join("comemory.db")).expect("open db");
+    code_row::insert(
+        &conn,
+        &CodeSymbolRow {
+            repo: REPO,
+            path: "a.rs",
+            blob_oid: "0000000000000000000000000000000000000000",
+            symbol: "a",
+            kind: "function",
+            lang: "rust",
+            line_start: 1,
+            line_end: 1,
+            snippet: "fn a() {}",
+            simhash: 0,
+            parent_id: None,
+        },
+    )
+    .expect("insert code_symbols row");
+    conn
+}
+
+fn seed_memory_referencing(conn: &Connection, id: &str, path: &str) {
+    conn.execute(
+        "INSERT INTO memories(id, slug, kind, content_hash, body, created_at, updated_at, md_path) \
+         VALUES (?1, ?1, 'note', 'h', 'b', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', ?1)",
+        rusqlite::params![id],
+    )
+    .expect("insert memory");
+    conn.execute(
+        "INSERT INTO edges(src_kind, src_id, dst_kind, dst_id, rel, created_at) \
+         VALUES ('memory', ?1, 'file', ?2, 'references_file', '2026-01-01T00:00:00Z')",
+        rusqlite::params![id, format!("{REPO}:{path}")],
+    )
+    .expect("insert references_file edge");
+}
+
+fn seed_search_hit(conn: &Connection, memory_id: &str) {
+    let at = memory_row::iso_format(OffsetDateTime::now_utc()).expect("iso now");
+    let returned = serde_json::to_string(&vec![memory_id]).expect("json ids");
+    conn.execute(
+        "INSERT INTO retrieval_log(query_id, query, returned_ids, at, duration_ms, repo, source) \
+         VALUES ('q-20260720-aabbccdd', 'guide docs', ?1, ?2, 1, ?3, 'search')",
+        rusqlite::params![returned, at, REPO],
+    )
+    .expect("insert retrieval_log");
+}
+
+fn used_event(conn: &Connection, id: &str) -> Option<(String, String)> {
+    conn.query_row(
+        "SELECT provenance, query_id FROM feedback_events \
+          WHERE memory_id=?1 AND verdict='used'",
+        rusqlite::params![id],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )
+    .ok()
+}
+
+/// A memory returned by a recent `search` page that also crosses the Beta
+/// threshold gets `auto_search_edit` / `auto-search-edit`. A sibling memory
+/// on the same touched file without a retrieval_log hit stays
+/// `auto_coactivation`. Golden harvest stays empty for both auto rows.
+#[test]
+fn search_hit_upgrades_provenance_while_miss_stays_coactivation() {
+    let workspace = TempDir::new().expect("workspace");
+    let home = TempDir::new().expect("home");
+    let repo_root = build_repo(workspace.path());
+    let mut conn = open_db_with_symbols(&home);
+
+    // Both reference the twice-touched file → both cross Beta in one pass.
+    seed_memory_referencing(&conn, "aaaaaaa1", "docs/guide.md");
+    seed_memory_referencing(&conn, "aaaaaaa2", "docs/guide.md");
+    seed_search_hit(&conn, "aaaaaaa1");
+
+    materialize(&mut conn, &repo_root, REPO, &BTreeMap::new(), Some(7)).expect("materialize");
+
+    let (prov1, qid1) = used_event(&conn, "aaaaaaa1").expect("search-edit used event");
+    assert_eq!(prov1, "auto_search_edit");
+    assert_eq!(qid1, "auto-search-edit");
+
+    let (prov2, qid2) = used_event(&conn, "aaaaaaa2").expect("coactivation used event");
+    assert_eq!(prov2, "auto_coactivation");
+    assert_eq!(qid2, "auto-coactivation");
+
+    let pairs = comemory::eval::golden::harvest(&conn).expect("golden harvest");
+    assert!(
+        pairs.is_empty(),
+        "auto provenance rows must not mint golden pairs, got {pairs:?}"
+    );
+}
+
+/// `Config.reinforce.enabled = false` — surfaced to the user as
+/// `comemory hooks --disable search-edit-reinforcement` — must actually STOP
+/// the harvest, not merely report itself off. Passing `None` for the lookback
+/// window is how `domains::code::index_code` expresses that, and this test is the one
+/// that fails if the toggle ever goes back to being cosmetic.
+#[test]
+fn a_disabled_reinforcement_window_harvests_nothing() {
+    let workspace = TempDir::new().expect("workspace");
+    let home = TempDir::new().expect("home");
+    let repo_root = build_repo(workspace.path());
+    let mut conn = open_db_with_symbols(&home);
+
+    // Exactly the corpus that DOES produce two used events when enabled.
+    seed_memory_referencing(&conn, "aaaaaaa1", "docs/guide.md");
+    seed_memory_referencing(&conn, "aaaaaaa2", "docs/guide.md");
+    seed_search_hit(&conn, "aaaaaaa1");
+
+    materialize(&mut conn, &repo_root, REPO, &BTreeMap::new(), None).expect("materialize");
+
+    assert!(
+        used_event(&conn, "aaaaaaa1").is_none(),
+        "a disabled window must not write a search-edit reward"
+    );
+    assert!(
+        used_event(&conn, "aaaaaaa2").is_none(),
+        "a disabled window must not write a co-activation reward either"
+    );
+}
+
+/// Direct coverage of `memories_seen_recently` (moved off the raw
+/// `conn.prepare` onto `store::retrieval_log::returned_ids_in_window`,
+/// docs/toolu/plans/2026-09-07-store-layer-chokepoint.md s4-graph-algos):
+/// a malformed `returned_ids` row is skipped rather than fatal, a matching
+/// row inside the lookback window is counted, and an empty `candidates` set
+/// short-circuits to an empty result.
+#[test]
+fn memories_seen_recently_skips_malformed_rows_and_short_circuits_on_empty_candidates() {
+    let home = TempDir::new().expect("home");
+    let conn = connection::open(home.path().join("comemory.db")).expect("open db");
+
+    seed_search_hit(&conn, "aaaaaaa1");
+    // Computed AFTER seeding: the window's upper bound must be at or after
+    // every row's own `at`, or a row seeded a few nanoseconds later than a
+    // pre-computed bound would fall just outside the window.
+    let at = memory_row::iso_format(OffsetDateTime::now_utc()).expect("iso now");
+    conn.execute(
+        "INSERT INTO retrieval_log(query_id, query, returned_ids, at, duration_ms, repo, source) \
+         VALUES ('q-malformed', 'guide docs', 'not-json', ?1, 1, ?2, 'search')",
+        rusqlite::params![at, REPO],
+    )
+    .expect("insert malformed retrieval_log row");
+
+    let mut candidates: HashSet<String> = HashSet::new();
+    candidates.insert("aaaaaaa1".to_string());
+    candidates.insert("aaaaaaa2".to_string());
+
+    let hit = memories_seen_recently(&conn, REPO, &candidates, &at, 7).expect("lookback");
+    assert_eq!(hit, HashSet::from(["aaaaaaa1".to_string()]));
+
+    let empty = memories_seen_recently(&conn, REPO, &HashSet::new(), &at, 7).expect("empty");
+    assert!(
+        empty.is_empty(),
+        "empty candidates must short-circuit to an empty set"
+    );
+}

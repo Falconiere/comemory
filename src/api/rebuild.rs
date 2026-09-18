@@ -296,7 +296,7 @@ fn build_new_db(old_db: &Path, tmp_path: &Path, paths: &crate::config::paths::Pa
     // is logged by the refresh itself, and the next save, delete or
     // index-code run rebuilds the index. `gc` and `delete` DO report it —
     // they have a response with somewhere to put it.
-    let _stale = crate::graph::derived::refresh_derived_best_effort(&mut conn);
+    let _stale = crate::domains::graph::derived::refresh_derived_best_effort(&mut conn);
 
     // Close the connection before rename by dropping it here.
     drop(conn);

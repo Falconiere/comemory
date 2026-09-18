@@ -1,0 +1,133 @@
+//! Memory-graph PageRank: the save/rebuild/delete post-pass that scores
+//! every live memory by structural centrality and projects the result onto
+//! `memories.rank_score`, mirroring what [`crate::domains::graph::materialize`] does
+//! for the code side.
+//!
+//! The graph is derived at compute time, never persisted: hub rels
+//! (`in_repo`, `authored_by`, `tagged`) are excluded because they connect
+//! the whole corpus, and two memories citing the same file or symbol are
+//! joined by an in-memory undirected co-citation edge. Persisting that
+//! derived edge would need a new `edges.rel` kind — a CHECK rebuild
+//! migration — to buy nothing: the self-join is cheap and runs inside the
+//! transaction that writes the scores.
+
+use std::collections::BTreeMap;
+
+use crate::domains::graph::pagerank;
+use crate::prelude::*;
+use crate::store::edges;
+use crate::store::memory_row;
+use crate::store::{Connection, Transaction};
+
+/// A derived memory graph: sorted live memory ids (the dense node index,
+/// by position) paired with weighted `(src, dst, weight)` edges over those
+/// indices — the exact shape [`pagerank::pagerank`] consumes.
+pub type MemoryGraph = (Vec<String>, Vec<(u32, u32, f64)>);
+
+/// Recompute PageRank over the live-memory graph and write every
+/// `memories.rank_score` in one transaction. A corpus with no live
+/// memories is a no-op. Callers treat failure as best-effort — see
+/// [`refresh_best_effort`].
+pub fn materialize_memory_rank(conn: &mut Connection) -> Result<()> {
+    let tx = conn.transaction()?;
+    let (nodes, graph) = derive_memory_graph(&tx)?;
+    if nodes.is_empty() {
+        return Ok(());
+    }
+    let scores = pagerank::pagerank(nodes.len(), &graph);
+    write_scores(&tx, &nodes, &scores)?;
+    tx.commit()?;
+    Ok(())
+}
+
+/// Best-effort [`materialize_memory_rank`]: warn and continue on any
+/// error. Every trigger (save, rebuild, soft-delete) calls this AFTER its
+/// own transaction has committed, so a failed refresh can only cost rank
+/// freshness, never the primary write.
+pub fn refresh_best_effort(conn: &mut Connection) {
+    if let Err(e) = materialize_memory_rank(conn) {
+        tracing::warn!(error = %e, "memory_rank: refresh failed; rank_score left stale");
+    }
+}
+
+/// Derive the [`MemoryGraph`] from the live memories and their edges.
+///
+/// `pub` so the flat-mirror test can assert the derived topology directly,
+/// without reading it back through the scores.
+pub fn derive_memory_graph(conn: &Connection) -> Result<MemoryGraph> {
+    let nodes = live_memory_ids(conn)?;
+    let index: BTreeMap<&str, u32> = nodes
+        .iter()
+        .enumerate()
+        .map(|(i, id)| (id.as_str(), i as u32))
+        .collect();
+    let mut graph: Vec<(u32, u32, f64)> = Vec::new();
+    push_direct_edges(conn, &index, &mut graph)?;
+    push_co_citation_edges(conn, &index, &mut graph)?;
+    Ok((nodes, graph))
+}
+
+/// Every live memory id, sorted ascending — the deterministic dense-index
+/// mapping PageRank needs. Soft-deleted rows leave the node universe, so
+/// their mass redistributes on the next recompute.
+fn live_memory_ids(conn: &Connection) -> Result<Vec<String>> {
+    memory_row::live_ids(conn)
+}
+
+/// Append the directed memory→memory relation edges to `graph`.
+fn push_direct_edges(
+    conn: &Connection,
+    index: &BTreeMap<&str, u32>,
+    graph: &mut Vec<(u32, u32, f64)>,
+) -> Result<()> {
+    for (src, dst, weight) in edges::memory_direct_relation_edges(conn)? {
+        if let Some((s, d)) = resolve(index, &src, &dst) {
+            graph.push((s, d, weight));
+        }
+    }
+    Ok(())
+}
+
+/// Append the derived co-citation edges to `graph`, each expanded to both
+/// directions — the undirected in-memory expansion `co_changed` uses on the
+/// code side, so neither co-citing memory is the donor.
+fn push_co_citation_edges(
+    conn: &Connection,
+    index: &BTreeMap<&str, u32>,
+    graph: &mut Vec<(u32, u32, f64)>,
+) -> Result<()> {
+    for (src, dst, weight) in edges::memory_co_citation_edges(conn)? {
+        if let Some((s, d)) = resolve(index, &src, &dst) {
+            graph.push((s, d, weight));
+            graph.push((d, s, weight));
+        }
+    }
+    Ok(())
+}
+
+/// Dense indices for an edge's endpoints, or `None` when either id is not a
+/// live memory — a dangling relation target (frontmatter may name an id
+/// that was never saved) or a soft-deleted endpoint.
+fn resolve(index: &BTreeMap<&str, u32>, src: &str, dst: &str) -> Option<(u32, u32)> {
+    if let (Some(&s), Some(&d)) = (index.get(src), index.get(dst)) {
+        Some((s, d))
+    } else {
+        tracing::debug!(
+            src,
+            dst,
+            "memory_rank: endpoint is not a live memory; skipping edge"
+        );
+        None
+    }
+}
+
+/// Write one score per node, positionally aligned with `nodes` (both come
+/// from the same dense index). Split out of [`materialize_memory_rank`] so
+/// the prepared statement's borrow of `tx` ends before the commit.
+fn write_scores(tx: &Transaction<'_>, nodes: &[String], scores: &[f64]) -> Result<()> {
+    memory_row::update_rank_scores(tx, nodes, scores)
+}
+
+#[cfg(test)]
+#[path = "tests/memory_rank.rs"]
+mod tests;

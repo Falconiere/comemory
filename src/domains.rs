@@ -22,9 +22,13 @@ pub mod code;
 /// Document extraction, the durable source registry, and document indexing.
 pub mod documents;
 
+/// The `edges` relation graph: derivation, mining, ranking and its queries.
+pub mod graph;
+
 /// The memory lifecycle: markdown models and store, plus the save, delete,
 /// list, show, update, restore, trash and reference-refresh cores.
 pub mod memories;
+
 /// Org authentication, platform push/pull, the workspace channel, and the
 /// Git memory store.
 pub mod sync;

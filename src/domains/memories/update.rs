@@ -273,9 +273,7 @@ fn dedup(tags: &[String]) -> Vec<String> {
 /// stale relation index the way `gc`, `delete` and `prune` do.
 pub(crate) fn mirror_record(ctx: &mut Ctx<'_>, record: &MemoryRecord) -> Result<bool> {
     mirror_row(ctx, record)?;
-    Ok(!crate::graph::derived::refresh_derived_best_effort(
-        ctx.conn()?,
-    ))
+    Ok(!crate::domains::graph::derived::refresh_derived_best_effort(ctx.conn()?))
 }
 
 /// The transaction half of [`mirror_record`], without the derived refresh.

@@ -45,7 +45,7 @@ pub struct ScoreParts {
     pub supersede: f64,
     /// Memory-graph PageRank boost (post-clamp multiplier), relative to the
     /// candidate pool's median `memories.rank_score`. Exactly 1.0 while no
-    /// [`crate::graph::memory_rank`] pass has run (every score still at the
+    /// [`crate::domains::graph::memory_rank`] pass has run (every score still at the
     /// column default), and uniform across the pool on an edge-free corpus.
     pub rank: f64,
     /// Product of all factors.

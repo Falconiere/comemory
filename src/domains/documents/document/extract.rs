@@ -34,7 +34,7 @@ static MD_LINK_RE: std::sync::LazyLock<Option<Regex>> =
 
 /// Scan `text` for inline Markdown links and return every non-image
 /// target, first-mention order, deduplicated. `#fragment` suffixes are
-/// kept — [`crate::graph::doc_link`] strips them while resolving. Runs
+/// kept — [`crate::domains::graph::doc_link`] strips them while resolving. Runs
 /// over the whole normalized text, fenced code blocks included: an
 /// unresolvable target inside a code sample is simply left unresolved by
 /// the deriver, never a wrongly-guessed edge.

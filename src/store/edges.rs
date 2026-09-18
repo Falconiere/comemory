@@ -6,33 +6,33 @@ use crate::prelude::*;
 
 /// The `co_activated` relation label: a weighted memory→file edge minted
 /// by the co-activation reward when commits touch files a memory
-/// references. Named here so the writer ([`crate::graph::coactivate`]) and
+/// references. Named here so the writer ([`crate::domains::graph::coactivate`]) and
 /// the `edges.rel` CHECK in `0008_v8_reinforcement.sql` cannot drift on the
 /// literal. The weight accumulates via [`insert_weighted`].
 pub(crate) const CO_ACTIVATED: &str = "co_activated";
 
 /// The `references_file` relation label: a memory→file edge written by
-/// [`crate::graph::cross_link`] whose `dst_id` is the BARE `<repo>:<path>`
+/// [`crate::domains::graph::cross_link`] whose `dst_id` is the BARE `<repo>:<path>`
 /// form (no `file:` kind prefix — see [`file_node_id`]'s divergence note).
 /// Named here so the co-activation reverse query binds the same literal the
 /// cross-link writer emits.
 pub(crate) const REFERENCES_FILE: &str = "references_file";
 
 /// The `references_symbol` relation label: a memory→symbol edge written by
-/// [`crate::graph::cross_link`] whose `dst_id` is the BARE
+/// [`crate::domains::graph::cross_link`] whose `dst_id` is the BARE
 /// `<repo>:<path>:<symbol>` form (no `symbol:` kind prefix — see
 /// [`file_node_id`]'s divergence note). Named here so the cross-link writer
 /// and the navigation-metadata reader bind the same literal.
 pub(crate) const REFERENCES_SYMBOL: &str = "references_symbol";
 
 /// `file → source` edge (bare `source_files.id` → bare `source_roots.id`),
-/// written by [`crate::graph::doc_link`]. Filtering/explain only —
+/// written by [`crate::domains::graph::doc_link`]. Filtering/explain only —
 /// deliberately excluded from `retrieval::graph_route::ALLOWED_RELS`.
 pub(crate) const MEMBER_OF_SOURCE: &str = "member_of_source";
 
 /// Resolved `<repo>:<path>` reference to a `documents` row: `memory →
 /// document` for a backtick mention, `document → document` for a resolved
-/// Markdown link. Bare ids on both sides. See [`crate::graph::doc_link`].
+/// Markdown link. Bare ids on both sides. See [`crate::domains::graph::doc_link`].
 pub(crate) const REFERENCES_DOCUMENT: &str = "references_document";
 
 /// Addressing tuple for a single directed edge.
@@ -60,7 +60,7 @@ pub struct EdgeKey<'a> {
 /// every graph-side writer/reader (`materialize`, the working set, the
 /// affinity prior).
 ///
-/// KNOWN pre-existing divergence: [`crate::graph::cross_link`]'s
+/// KNOWN pre-existing divergence: [`crate::domains::graph::cross_link`]'s
 /// `extract_and_emit` writes `references_file` / `references_symbol`
 /// destination ids WITHOUT the `file:` / `symbol:` kind prefix (bare
 /// `<repo>:<path>` / `<repo>:<path>:<symbol>`), and its reader
@@ -223,7 +223,7 @@ pub fn delete_touching(conn: &Connection, kind: &str, id: &str) -> Result<()> {
 }
 
 /// One raw `(src_id, dst_id, rel, weight)` row from the code-graph edge set.
-/// Read by [`crate::graph::materialize::project_pagerank`] (PageRank input)
+/// Read by [`crate::domains::graph::materialize::project_pagerank`] (PageRank input)
 /// and [`crate::store::code_graph_edges::fetch_page`] (`comemory graph`'s
 /// paginated edge window).
 pub struct GraphEdgeRow {
@@ -304,7 +304,7 @@ fn fetch_weighted_edges(conn: &Connection, sql: &str) -> Result<Vec<(String, Str
 /// Direct memory→memory relation edges (`supersedes`/`conflicts_with`/
 /// `derived_from`/`relates_to`), read in the direction they are stored (src
 /// = the newer/building memory). See
-/// [`crate::graph::memory_rank::derive_memory_graph`].
+/// [`crate::domains::graph::memory_rank::derive_memory_graph`].
 pub(crate) fn memory_direct_relation_edges(
     conn: &Connection,
 ) -> Result<Vec<(String, String, f64)>> {
@@ -319,7 +319,7 @@ pub(crate) fn memory_direct_relation_edges(
 
 /// Co-citation edges: one row per unordered memory pair referencing the
 /// same target through the same rel, weighted by the number of shared
-/// targets. See [`crate::graph::memory_rank::derive_memory_graph`].
+/// targets. See [`crate::domains::graph::memory_rank::derive_memory_graph`].
 pub(crate) fn memory_co_citation_edges(conn: &Connection) -> Result<Vec<(String, String, f64)>> {
     fetch_weighted_edges(
         conn,
@@ -337,7 +337,7 @@ pub(crate) fn memory_co_citation_edges(conn: &Connection) -> Result<Vec<(String,
 /// Every memory id whose `rel` edge points at `dst_id`
 /// (`src_kind='memory'`, `dst_kind='file'`) — resolves a document's identity
 /// against pre-existing memory mentions. See
-/// [`crate::graph::doc_link::derive_after_document`].
+/// [`crate::domains::graph::doc_link::derive_after_document`].
 pub(crate) fn memory_ids_referencing_file(
     conn: &Connection,
     rel: &str,
@@ -355,7 +355,7 @@ pub(crate) fn memory_ids_referencing_file(
 
 /// Reverse batch lookup: every `(src_id, dst_id)` edge with the given `rel`
 /// and `dst_kind='file'`, `dst_id` one of `dst_ids` — the per-chunk query
-/// behind [`crate::graph::coactivate::referencing_memories`].
+/// behind [`crate::domains::graph::coactivate::referencing_memories`].
 pub(crate) fn src_ids_for_dst_ids(
     conn: &Connection,
     rel: &str,
@@ -391,7 +391,7 @@ const ID_BODY_START: usize = FILE_PREFIX.len() + 1;
 /// exactly as one a seed imports. `:seeds` is a JSON array bound as a named
 /// parameter (never interpolated). Multiple contributions to the same
 /// `(repo, path, rel)` neighbor collapse to one row carrying the strongest
-/// (`MAX`) weight. See [`crate::graph::neighbors::file_neighbors`].
+/// (`MAX`) weight. See [`crate::domains::graph::neighbors::file_neighbors`].
 static NEIGHBOR_SQL: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
     format!(
         "\

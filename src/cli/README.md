@@ -9,7 +9,7 @@ helpers that used to live here (`when`, `ref_args`, `embedding_input`) moved to
 `utilities::` with #166.
 
 **What does NOT belong here:** business logic. A `cli/*.rs` file parses flags,
-loads `Config`, calls into `retrieval::`, `graph::`, `store::`, `memory::`, or
+loads `Config`, calls into `retrieval::`, `domains::`, `store::`, `memory::`, or
 `prune::` to do the real work, and hands the result to `output::` to render.
 Keeping the logic out of `cli/` is what lets `eval::runner` and tests exercise
 the same pipelines without going through argument parsing. CLI integration
@@ -39,7 +39,7 @@ One line per file, named after its primary item:
 | `feedback.rs` | `Args` | `comemory feedback` — record used/irrelevant feedback into the stats DB |
 | `gc.rs` | `run` | `comemory gc` — purge `.trash/` and evict expired learning telemetry |
 | `find.rs` | `Args` | `comemory find` — one ranked list over memories, code, and documents |
-| `graph.rs` | `Format` | `comemory graph` — export the file-level code-connection graph; node assembly lives in `graph/nodes.rs` |
+| `graph.rs` | `Format` | `comemory graph` — the clap surface and the `--format` renderers; the graph itself is built by `domains::graph::query` |
 | `hooks.rs` | `Args` | `comemory hooks` — report and toggle the git reindex hooks individually |
 | `index.rs` | `Args` | `comemory index <PATH>...` — register document sources and reconcile them |
 | `index_code.rs` | `Args` | `comemory index-code` — incremental symbol extraction over a git repo |

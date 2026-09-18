@@ -15,7 +15,6 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::api;
 use crate::cli::load_config;
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::output;
@@ -57,7 +56,7 @@ pub struct Args {
 }
 
 /// Run `comemory edges`: open the store, then delegate the shared middle
-/// (self-heal + triplet paging) to `api::edges::run`.
+/// (self-heal + triplet paging) to `domains::graph::edges::run`.
 ///
 /// Migration 0012 creates `edge_fts` empty on purpose — the rendering lives
 /// in Rust and only there — so a database upgraded from an earlier version
@@ -72,13 +71,13 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     let mut conn = connection::open(paths.db_path())?;
     let cfg = load_config(&paths)?;
 
-    let req = api::edges::Request {
+    let req = crate::domains::graph::edges::Request {
         query: a.query,
         k: a.k,
         offset: a.offset,
     };
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-    let result = api::edges::run(&mut ctx, req, true)?;
+    let result = crate::domains::graph::edges::run(&mut ctx, req, true)?;
     output::edges::emit(
         &result.hits,
         result.limit,

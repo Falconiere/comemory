@@ -20,7 +20,7 @@ One line per file, named after its primary item:
 | `context.rs` | `Envelope` | Rendering for `comemory context` (headline bundle) |
 | `edges.rs` | `Row` | Rendering for `comemory edges` (triplet rows + shared page envelope) |
 | `explain.rs` | `ExplainPart` | The console's explain strip: a hit's `score_parts` as `{name, value, share, note}` rows (`share` = log-magnitude partition of the priors) |
-| `graph.rs` | `Node` | Rendering for `comemory graph` (JSON / DOT / HTML relation-graph export) |
+| `graph.rs` | `to_dot` | Rendering for `comemory graph` (JSON / DOT / HTML relation-graph export) over `domains::graph::code_graph`'s model |
 | `graph_template.html` | — | HTML template the `graph.rs` HTML renderer fills in |
 | `json.rs` | `write` | Single-line JSON writer shared by every `--json` surface |
 | `prune.rs` | `emit` | Rendering for `comemory prune` (candidate lists) |

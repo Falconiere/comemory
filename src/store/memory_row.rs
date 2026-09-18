@@ -11,9 +11,9 @@ use rusqlite::Connection;
 use time::OffsetDateTime;
 use time::format_description::well_known::Iso8601;
 
+use crate::domains::graph::cross_link;
+use crate::domains::graph::doc_link;
 use crate::domains::memories::Frontmatter;
-use crate::graph::cross_link;
-use crate::graph::doc_link;
 use crate::prelude::*;
 use crate::store::edges::{self, CO_ACTIVATED, EdgeKey};
 use crate::store::fts;
@@ -155,7 +155,7 @@ fn relation_edge_stamps(
 }
 
 /// One earned edge carried across the outgoing wipe: a `co_activated` row
-/// (memory → file, weight accumulated by [`crate::graph::coactivate`]) — the
+/// (memory → file, weight accumulated by [`crate::domains::graph::coactivate`]) — the
 /// only memory-sourced edge kind with no markdown source. `co_changed` /
 /// `imports` are file- and symbol-sourced, and `auto_search_edit` is a
 /// feedback provenance rather than an edge, so today this is the whole list;
@@ -333,7 +333,7 @@ pub fn iso_format(t: OffsetDateTime) -> Result<String> {
 
 /// Every live (`deleted_at IS NULL`) memory id, sorted ascending — the
 /// deterministic dense-index mapping `graph::pagerank` needs. See
-/// [`crate::graph::memory_rank::derive_memory_graph`].
+/// [`crate::domains::graph::memory_rank::derive_memory_graph`].
 pub(crate) fn live_ids(conn: &Connection) -> Result<Vec<String>> {
     let mut stmt = conn.prepare("SELECT id FROM memories WHERE deleted_at IS NULL ORDER BY id")?;
     let rows = stmt
@@ -354,7 +354,7 @@ pub fn live_bodies(conn: &Connection) -> Result<Vec<(String, String)>> {
 }
 
 /// Write one `rank_score` per memory id, positionally aligned with `scores`.
-/// See [`crate::graph::memory_rank::materialize_memory_rank`].
+/// See [`crate::domains::graph::memory_rank::materialize_memory_rank`].
 pub(crate) fn update_rank_scores(conn: &Connection, ids: &[String], scores: &[f64]) -> Result<()> {
     let mut update = conn.prepare("UPDATE memories SET rank_score = ?1 WHERE id = ?2")?;
     for (id, score) in ids.iter().zip(scores) {
@@ -366,7 +366,7 @@ pub(crate) fn update_rank_scores(conn: &Connection, ids: &[String], scores: &[f6
 /// Bump `access_count`/`last_accessed` for one chunk of memory ids in a
 /// single `UPDATE ... WHERE id IN (...)`. Caller chunks `ids` to stay under
 /// SQLite's bound-parameter limit. See
-/// [`crate::graph::coactivate::bump_activation`].
+/// [`crate::domains::graph::coactivate::bump_activation`].
 pub(crate) fn bump_access(conn: &Connection, ids: &[String], at: &str) -> Result<()> {
     if ids.is_empty() {
         return Ok(());

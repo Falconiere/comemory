@@ -1,8 +1,8 @@
-//! `GET /api/v1/graph` (`api::graph`) and `GET /api/v1/edges` (`api::edges`).
+//! `GET /api/v1/graph` (`domains::graph::view`) and `GET /api/v1/edges` (`domains::graph::edges`).
 //!
 //! The graph route reuses the exact `build_code_graph` / `build_graph_page`
 //! pair the legacy `GET /api/graph` handler already calls (via
-//! `api::graph::run`) — no second query path — and keeps the same
+//! `domains::graph::view::run`) — no second query path — and keeps the same
 //! backward-compatible full-vs-page switch (absent `limit` **and** `offset`
 //! → the whole graph; either present → a windowed page). The edges route
 //! skips the one-time `edge_fts` self-heal on a read-only server
@@ -16,7 +16,6 @@ use axum::response::Response;
 use axum::routing::get;
 use serde_json::Value;
 
-use crate::api;
 use crate::output::edges as edges_output;
 use crate::prelude::*;
 use crate::serve::AppState;
@@ -48,11 +47,11 @@ pub fn router(_state: AppState) -> Router<AppState> {
         .route("/api/v1/edges", get(edges))
 }
 
-/// `GET /api/v1/graph` — the full graph or a windowed page (`api::graph`).
+/// `GET /api/v1/graph` — the full graph or a windowed page (`domains::graph::view`).
 async fn graph(
     State(state): State<AppState>,
     scope: crate::serve::scope::RepoScope,
-    Query(mut req): Query<api::graph::Request>,
+    Query(mut req): Query<crate::domains::graph::view::Request>,
 ) -> Response {
     req.repo = scope.resolve(req.repo);
     let started = Instant::now();
@@ -60,27 +59,30 @@ async fn graph(
         let cfg = state.cfg();
         let mut conn = state.conn()?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        api::graph::run(&mut ctx, req)
+        crate::domains::graph::view::run(&mut ctx, req)
     })
     .await;
     respond("graph", result, started)
 }
 
 /// `GET /api/v1/edges` — paged lexical search over the relation graph
-/// (`api::edges`). The `edge_fts` self-heal is allowed only when the server
+/// (`domains::graph::edges`). The `edge_fts` self-heal is allowed only when the server
 /// is not read-only.
-async fn edges(State(state): State<AppState>, Query(req): Query<api::edges::Request>) -> Response {
+async fn edges(
+    State(state): State<AppState>,
+    Query(req): Query<crate::domains::graph::edges::Request>,
+) -> Response {
     let started = Instant::now();
     let result = run_blocking(move || run_edges(state, req)).await;
     respond("edges", result, started)
 }
 
-fn run_edges(state: AppState, req: api::edges::Request) -> Result<Value> {
+fn run_edges(state: AppState, req: crate::domains::graph::edges::Request) -> Result<Value> {
     let allow_self_heal = !state.read_only();
     let cfg = state.cfg();
     let mut conn = state.conn()?;
     let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-    let result = api::edges::run(&mut ctx, req, allow_self_heal)?;
+    let result = crate::domains::graph::edges::run(&mut ctx, req, allow_self_heal)?;
     let envelope =
         edges_output::envelope(&result.hits, result.limit, result.offset, result.has_more);
     serde_json::to_value(envelope).map_err(Error::Json)

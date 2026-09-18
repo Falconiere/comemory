@@ -171,8 +171,8 @@ fn insert_sql() -> String {
 /// Rebuild `edge_fts` wholesale from `edges` in one transaction and report
 /// the number of rows indexed. At personal-memory scale (thousands of
 /// edges) this is a millisecond pass — the same economics that make
-/// [`crate::graph::memory_rank`] a full recompute. Callers treat failure as
-/// best-effort; see [`crate::graph::derived`].
+/// [`crate::domains::graph::memory_rank`] a full recompute. Callers treat failure as
+/// best-effort; see [`crate::domains::graph::derived`].
 pub fn refresh(conn: &mut Connection) -> Result<usize> {
     let tx = conn.transaction()?;
     tx.execute("DELETE FROM edge_fts", [])?;

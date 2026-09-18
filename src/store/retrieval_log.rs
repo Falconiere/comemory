@@ -1,7 +1,7 @@
 //! `retrieval_log` insert + reads: the single write behind every tracked
 //! `search`/`context`/`search-code` run
 //! (`retrieval::pipeline::log_retrieval`), and the raw `returned_ids`
-//! provenance query behind [`crate::graph::search_edit`]'s search→edit
+//! provenance query behind [`crate::domains::graph::search_edit`]'s search→edit
 //! lookback.
 
 use std::collections::HashSet;
@@ -60,7 +60,7 @@ pub fn insert(conn: &Connection, row: &NewLogRow<'_>) -> Result<()> {
 /// unscoped log row still matches any repo filter).
 ///
 /// Fixed to exactly two sources rather than a variable-length `IN (...)`
-/// list: the one caller ([`crate::graph::search_edit::memories_seen_recently`])
+/// list: the one caller ([`crate::domains::graph::search_edit::memories_seen_recently`])
 /// always queries `(search, context)`, and a generated `IN` list would add
 /// complexity with no second caller to justify it.
 ///

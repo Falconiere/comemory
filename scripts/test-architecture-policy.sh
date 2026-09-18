@@ -94,11 +94,19 @@ assert_gate_rejects "$TASK_TMP/only-lib.md" 'inventory coverage mismatch'
 cp "$INVENTORY" "$TASK_TMP/duplicate.md"
 grep '^| src/domains/memories/save.rs |' "$INVENTORY" >>"$TASK_TMP/duplicate.md"
 assert_fails 'duplicate production row' 'duplicate inventory row' --inventory "$TASK_TMP/duplicate.md"
-jq '.legacy_edges[0].issue = "#999"' "$POLICY" >"$TASK_TMP/issue.json"
+# `legacy_edges` empties out as its last delivery exemption clears (#170 was the
+# last one), and a mutation of `.legacy_edges[0]` on an empty array is a no-op
+# that makes the negative case pass while asserting nothing. Each fixture below
+# therefore seeds one well-formed entry when the real allowlist is empty and
+# breaks that, so the case keeps asserting whatever the policy currently holds.
+SEED_EDGE='.legacy_edges = (if (.legacy_edges | length) > 0 then .legacy_edges else
+  [{source: "src/domains/graph/view.rs", target: "crate::output::graph",
+    class: "delivery", issue: "#170"}] end)'
+jq "$SEED_EDGE"' | .legacy_edges[0].issue = "#999"' "$POLICY" >"$TASK_TMP/issue.json"
 assert_fails 'unknown removal issue' 'invalid policy edge' --policy "$TASK_TMP/issue.json"
-jq 'del(.legacy_edges[0].target)' "$POLICY" >"$TASK_TMP/target.json"
+jq "$SEED_EDGE"' | del(.legacy_edges[0].target)' "$POLICY" >"$TASK_TMP/target.json"
 assert_fails 'missing exact target' 'invalid policy edge' --policy "$TASK_TMP/target.json"
-jq '.legacy_edges[0].target = "crate::cli::not_present"' "$POLICY" >"$TASK_TMP/stale.json"
+jq "$SEED_EDGE"' | .legacy_edges[0].target = "crate::cli::not_present"' "$POLICY" >"$TASK_TMP/stale.json"
 assert_fails 'stale allowlisted target' 'absent policy edge' --policy "$TASK_TMP/stale.json"
 sed '/^| src\/api\/search.rs |/s/domains::retrieval/domains::code/' "$INVENTORY" >"$TASK_TMP/owner.md"
 assert_fails 'wrong API owner' 'API ownership mismatch' --inventory "$TASK_TMP/owner.md"
@@ -107,9 +115,9 @@ sed '/^| src\/domains\/memories\/save.rs |/s@src/domains/memories/save.rs@src/do
 assert_fails 'duplicate migration target' 'duplicate inventory target' --inventory "$TASK_TMP/target.md"
 sed '/^| src\/domains\/memories\/save.rs |/s@src/domains/memories/save.rs@none@2' "$INVENTORY" >"$TASK_TMP/no-target.md"
 assert_fails 'missing inventory target' 'invalid policy or inventory metadata' --inventory "$TASK_TMP/no-target.md"
-jq '.legacy_edges += [.legacy_edges[0]]' "$POLICY" >"$TASK_TMP/duplicate.json"
+jq "$SEED_EDGE"' | .legacy_edges += [.legacy_edges[0]]' "$POLICY" >"$TASK_TMP/duplicate.json"
 assert_fails 'duplicate policy edge' 'invalid policy edge' --policy "$TASK_TMP/duplicate.json"
-jq '.store_callbacks[0].target = "crate::graph::cross_link::absent"' "$POLICY" >"$TASK_TMP/callback.json"
+jq '.store_callbacks[0].target = "crate::domains::graph::cross_link::absent"' "$POLICY" >"$TASK_TMP/callback.json"
 assert_fails 'stale store callback' 'absent policy edge' --policy "$TASK_TMP/callback.json"
 jq '.passive_store_models[0].target = "crate::domains::memories::Absent"' "$POLICY" >"$TASK_TMP/model.json"
 assert_fails 'stale passive model' 'absent policy edge' --policy "$TASK_TMP/model.json"
