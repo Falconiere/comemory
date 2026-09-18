@@ -275,7 +275,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/capture/candidates.rs | comemory::domains::capture::candidates; crate-root-alias | src/domains/capture/tests/candidates.rs | none | domains::capture | src/domains/capture/candidates.rs | retain |
 | src/domains/capture/claude_code.rs | comemory::domains::capture::claude_code; crate-root-alias | src/domains/capture/tests/claude_code.rs | none | domains::capture | src/domains/capture/claude_code.rs | retain |
 | src/domains/capture/client.rs | comemory::domains::capture::client; crate-root-alias | none | none | domains::capture | src/domains/capture/client.rs | retain |
-| src/domains/capture/distill.rs | comemory::domains::capture::distill; crate-root-alias | none | none | domains::capture | src/domains/capture/distill.rs | retain |
+| src/domains/capture/distill.rs | comemory::domains::capture::distill; crate-root-alias | src/domains/capture/tests/distill.rs | none | domains::capture | src/domains/capture/distill.rs | retain |
 | src/domains/capture/explicit_save.rs | comemory::domains::capture::explicit_save; crate-root-alias | src/domains/capture/tests/explicit_save.rs | none | domains::capture | src/domains/capture/explicit_save.rs | retain |
 | src/domains/capture/hook.rs | comemory::domains::capture::hook; crate-root-alias | src/domains/capture/tests/hook.rs | none | domains::capture | src/domains/capture/hook.rs | retain |
 | src/domains/capture/receipt.rs | comemory::domains::capture::receipt; crate-root-alias | none | none | domains::capture | src/domains/capture/receipt.rs | retain |

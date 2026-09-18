@@ -1,8 +1,10 @@
-//! Install a Claude Code `SessionEnd` hook that runs `comemory capture`.
+//! The Claude Code `SessionEnd` contract, owned end to end: the hook command
+//! written into `settings.json`, and the payload that command hands back.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::prelude::*;
@@ -10,9 +12,42 @@ use crate::prelude::*;
 /// Marker comment embedded in the hook command so re-installs are detectable.
 pub const HOOK_MARKER: &str = "comemory-capture-session-end";
 
+/// Settings file the hook is installed into when the caller names none.
+pub const DEFAULT_SETTINGS_PATH: &str = ".claude/settings.json";
+
 /// Default command the SessionEnd hook runs.
 pub fn hook_command() -> String {
     format!("comemory capture session --from-hook # {HOOK_MARKER}")
+}
+
+/// The `SessionEnd` payload as [`hook_command`] receives it on stdin.
+#[derive(Debug, Deserialize)]
+struct SessionEndPayload {
+    #[serde(default)]
+    session_id: Option<String>,
+    #[serde(default)]
+    transcript_path: Option<String>,
+}
+
+/// Decode a `SessionEnd` payload into the transcript path / session id to
+/// capture.
+///
+/// At least one of the two is `Some`; an empty string counts as absent, since
+/// the tool writes `""` rather than omitting the field.
+pub fn session_end_target(raw: &str) -> Result<(Option<PathBuf>, Option<String>)> {
+    let payload: SessionEndPayload = serde_json::from_str(raw.trim())
+        .map_err(|e| Error::Usage(format!("--from-hook expects SessionEnd JSON on stdin: {e}")))?;
+    let path = payload
+        .transcript_path
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from);
+    let session_id = payload.session_id.filter(|s| !s.is_empty());
+    if path.is_none() && session_id.is_none() {
+        return Err(Error::Usage(
+            "SessionEnd payload missing session_id and transcript_path".into(),
+        ));
+    }
+    Ok((path, session_id))
 }
 
 /// Install (or refresh) the SessionEnd hook in `settings.json`.

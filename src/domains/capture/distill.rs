@@ -42,6 +42,15 @@ pub struct DistillReport {
     pub dry_run: bool,
 }
 
+/// Whether this run must present platform credentials.
+///
+/// A dry run builds the batch and stops, so it stays usable on a machine that
+/// never logged in; every other run POSTs and needs the org key. The CLI asks
+/// this instead of re-deciding, so the rule has one home.
+pub fn requires_credentials(req: &DistillRequest) -> bool {
+    !req.dry_run
+}
+
 /// Extract and redact a transcript into a candidate batch (no network).
 pub fn build_batch(transcript: &std::path::Path) -> Result<(usize, CandidateBatch)> {
     let text = read_transcript_file(transcript)?;
@@ -93,3 +102,7 @@ pub fn run(auth: Option<&AuthFile>, req: &DistillRequest) -> Result<DistillRepor
         dry_run: false,
     })
 }
+
+#[cfg(test)]
+#[path = "tests/distill.rs"]
+mod tests;
