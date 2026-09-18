@@ -9,7 +9,7 @@ helpers that used to live here (`when`, `ref_args`, `embedding_input`) moved to
 `utilities::` with #166.
 
 **What does NOT belong here:** business logic. A `cli/*.rs` file parses flags,
-loads `Config`, calls into `retrieval::`, `domains::`, `store::`, `memory::`, or
+loads `Config`, calls into `domains::`, `store::`, or
 `prune::` to do the real work, and hands the result to `output::` to render.
 Keeping the logic out of `cli/` is what lets `eval::runner` and tests exercise
 the same pipelines without going through argument parsing. CLI integration
@@ -56,7 +56,7 @@ One line per file, named after its primary item:
 | `save.rs` | `Args` | `comemory save` — atomic markdown write + SQLite-mirror upsert; waits on the after-save push |
 | `search.rs` | `Args` | `comemory search` — natural-language search over the memory store |
 | `search_code.rs` | `Args` | `comemory search-code` — ranked search over indexed `code_symbols` |
-| `search_only.rs` | `OnlyDomain` | `--only`/`--path` domain-scope resolution shared by `search` |
+| `search_only.rs` | `OnlyDomain` | The `--only` clap `ValueEnum` and the interim `--only document` path; the resolution policy itself is `domains::retrieval::scope::resolve_domains` |
 | `serve.rs` | `Args` | `comemory serve` — launch the local web viewer + in-browser code editor |
 | `repos.rs` | `Args` | `comemory repos` — indexed code repositories and their index freshness |
 | `setup.rs` | `Args` | `comemory setup` — detect, plan, and apply first-run onboarding. Owns the `Intent`/`Prompting` → `Mode` decision and the exit-code mapping; `setup/` holds the wizard and the summary renderer |

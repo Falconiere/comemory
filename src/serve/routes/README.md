@@ -8,13 +8,16 @@ read-only gate, `GET /commands`, and the parity test, so a route that is not
 in it does not exist.
 
 `src/serve/routes.rs` also owns the handler-layer helpers every resource
-shares: `run_blocking` (runs `api::<cmd>::run` and takes the connection mutex
-entirely inside one `spawn_blocking` closure, never across an `.await`),
+shares: `run_blocking` (runs the command core — `domains::<cap>::<cmd>::run`,
+or `api::<cmd>::run` for one the #164 migration has not moved yet — and takes
+the connection mutex entirely inside one `spawn_blocking` closure, never
+across an `.await`),
 `respond`/`accepted`, `guard_mutating`, `guard_job`, `require_confirm`, and
 `track_for`.
 
-**What does NOT belong here:** command logic, which is `api::`'s, and the
-legacy un-versioned handlers, which stay in `src/serve/handlers.rs`.
+**What does NOT belong here:** command logic, which belongs to the capability
+that owns the command, and the legacy un-versioned handlers, which stay in
+`src/serve/handlers.rs`.
 
 ## Contents
 

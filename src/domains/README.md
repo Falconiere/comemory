@@ -28,8 +28,9 @@ One row per capability — its sibling module file and its folder together:
 | `documents.rs` + [`documents/`](documents/README.md) | Document extraction, the durable source registry, discovery, and document indexing | #168 |
 | `graph.rs` + [`graph/`](graph/README.md) | The `edges` relation graph: reference and link derivation, co-change and import mining, PageRank and its projections, neighbor walks, co-activation, and the graph/edge command cores | #170 |
 | `memories.rs` + [`memories/`](memories/README.md) | The memory lifecycle: the markdown record and its atomic store, and the save / delete / list / show / update / restore / trash / reference-refresh cores | #169 |
+| `retrieval.rs` + [`retrieval/`](retrieval/README.md) | Hybrid search across memories, code and documents: the candidate legs and their fusion, the rerank priors and diversification, graph expansion, the time and domain scope, context bundles, pinned code-reference freshness, the score-explanation strip, and the search / search-code / context / find / suggest / retrieval-config cores | #171 |
 | `sync.rs` + [`sync/`](sync/README.md) | Organization authentication, platform push/pull and its wire protocol, the workspace channel, secret redaction, the opt-in daemon, and the Git memory store | #172 |
 
-The remaining four capabilities named by the contract — `retrieval`,
-`learning`, `maintenance`, `integrations` — arrive with #171, #173, #175 and
-#176, and keep their legacy roots until then.
+The remaining three capabilities named by the contract — `learning`,
+`maintenance`, `integrations` — arrive with #173, #175 and #176, and keep
+their legacy roots until then.

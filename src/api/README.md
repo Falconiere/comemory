@@ -30,9 +30,7 @@ One line per file, named after its primary item:
 | --- | --- | --- |
 | `bandit.rs` | `Request` | Shared middle of `comemory bandit` / `POST /api/v1/bandit` |
 | `consolidate.rs` | `Request` | Shared middle of `comemory consolidate` / `GET /api/v1/consolidate` |
-| `context.rs` | `Request` | Shared middle of `comemory context` / `GET\|POST /api/v1/context`. `query` accepts `key` as a serde alias, the spelling the console-api spec's `GET /context?key=` uses |
 | `doctor.rs` | `Request` | Shared middle of `comemory doctor` / `GET /api/v1/doctor`; the individual health probes live in `doctor/checks.rs` |
-| `find.rs` | `Request` | Shared middle of `comemory find` / `GET\|POST /api/v1/find` — the unified memory + code + document ranking |
 | `eval.rs` | `Request` | Shared middle of `comemory eval` / `POST /api/v1/eval` |
 | `feedback.rs` | `Request` | Shared middle of `comemory feedback` / `POST /api/v1/feedback` (and the per-hit search route): validates the query id, the four id lists, and the optional `source` (`explicit` → `manual`, `implicit` → `implicit`) before the db opens; `Response.provenance` echoes what every verdict was stored under |
 | `gc.rs` | `Request` | Shared middle of `comemory gc` / `POST /api/v1/gc` — reaps aged `.trash/` files AND purges their mirror rows (`store::memory_purge`), healing zombie rows earlier sweeps left behind |
@@ -41,19 +39,15 @@ One line per file, named after its primary item:
 | `mine.rs` | `Request` | Shared middle of `comemory mine` / `POST /api/v1/mine` |
 | `prune.rs` | `Request` | Shared middle of `comemory prune` / `GET\|POST /api/v1/prune` |
 | `rebuild.rs` | `Request` | Shared middle of `comemory rebuild` / `POST /api/v1/rebuild`; the preservation copy lives in `rebuild/` |
-| `search.rs` | `Request` | Shared middle of `comemory search` / `GET\|POST /api/v1/memories/search` |
-| `search_code.rs` | `Request` | Shared middle of `comemory search-code` / `GET\|POST /api/v1/code/search` |
 | `stats.rs` | `Request` | Shared middle of `comemory stats` / `GET /api/v1/stats` — corpus counters and database size |
 | `tune.rs` | `Request` | Shared middle of `comemory tune` / `POST /api/v1/tune` |
-| `config_retrieval.rs` | `RetrievalKnobs` | Console-only: `GET\|PUT /api/v1/config/retrieval` — the live ranking knobs with their ranges, and the validated partial update |
 | `gc_policy.rs` | `Policy` | Console-only: `GET\|PUT /api/v1/gc/policy` — trash + telemetry retention windows and the last gc run |
 | `learning.rs` | `Summary` | Console-only: `GET /api/v1/learning/{summary,evals,golden-set,expansions}` |
 | `learning_proposals.rs` | `Proposal` | Console-only: knob proposals derived from unapplied `tune`/`bandit` runs — list, apply (writes `config.toml`), discard |
 | `overview.rs` | `Response` | Console-only: `GET /api/v1/overview` (+ `/overview/eval-series`) — counters, index state, last run, metrics, recent memories |
 | `reembed.rs` | `Request` | Console-only: `POST /api/v1/doctor/reembed` — re-vectorize memories and/or code through the embed command, cancellable |
-| `suggest.rs` | `Request` | Console-only: `GET /api/v1/search/suggest` — mined expansions + recent queries for the ⌘K palette |
 
-Five capabilities no longer live here. The code cores — `ast`, `index_code` (+
+Six capabilities no longer live here. The code cores — `ast`, `index_code` (+
 `walk`), `ingest_code`, `index_runs`, `repos` (+ `git_state`), `repo_admin`,
 `hooks` and `install_hooks` — moved to
 [`domains/code/`](../domains/code/README.md) with
@@ -69,7 +63,12 @@ Five capabilities no longer live here. The code cores — `ast`, `index_code` (+
 `graph`, `graph_nodes`, `graph_recompute` and `edges` — moved to
 [`domains/graph/`](../domains/graph/README.md) with
 [#170](https://github.com/Falconiere/comemory/issues/170): `api::graph` is
-`domains::graph::view` there. The sync cores — `sync` (the wire models plus the `changes`, `manifest`, `import` and code-import middles) and `memory_store` — moved to [`domains/sync/`](../domains/sync/README.md) with [#172](https://github.com/Falconiere/comemory/issues/172): `api::sync` is now `domains::sync::exchange` and `api::memory_store` is now `domains::sync::memory_store`, beside the client half that calls them. This shell itself is
+`domains::graph::view` there. The sync cores — `sync` (the wire models plus the `changes`, `manifest`, `import` and code-import middles) and `memory_store` — moved to [`domains/sync/`](../domains/sync/README.md) with [#172](https://github.com/Falconiere/comemory/issues/172): `api::sync` is now `domains::sync::exchange` and `api::memory_store` is now `domains::sync::memory_store`, beside the client half that calls them. The
+retrieval cores — `search`, `search_code`, `context`, `find`, `suggest` and
+the console-only `config_retrieval` — moved to
+[`domains/retrieval/`](../domains/retrieval/README.md) with
+[#171](https://github.com/Falconiere/comemory/issues/171), beside the ranking
+pipeline they all call. This shell itself is
 deleted by #178.
 
 When you add a file here, add its row above so the index stays current. No
