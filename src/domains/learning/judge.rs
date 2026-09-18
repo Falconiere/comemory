@@ -277,7 +277,7 @@ fn write_rows(
     provenance: &str,
 ) -> Result<usize> {
     let at = memory_row::iso_format(OffsetDateTime::now_utc())?;
-    let written = upsert_all(
+    upsert_all(
         conn,
         &rows
             .iter()
@@ -290,8 +290,7 @@ fn write_rows(
                 at: &at,
             })
             .collect::<Vec<_>>(),
-    )?;
-    Ok(usize::try_from(written).unwrap_or(rows.len()))
+    )
 }
 
 /// The read-only view of one observation: its pinned versions and every

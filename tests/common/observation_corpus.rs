@@ -26,6 +26,20 @@ use rusqlite::Connection;
 use serde_json::Value;
 use tempfile::TempDir;
 
+/// The git helpers this fixture seeds with, included here rather than by each
+/// consuming binary so `seeded` needs no injected callbacks and the two suites
+/// share one definition of the corpus.
+#[path = "git_commit.rs"]
+pub mod git_commit;
+#[path = "git_repo.rs"]
+pub mod git_repo;
+
+/// The query every corpus in this fixture answers: "activation" appears in two
+/// memory bodies, in the indexed symbol's own name, and in the indexed
+/// document. A query only one corpus answers would make every cross-domain
+/// assertion in either suite vacuous.
+pub const QUERY: &str = "activation";
+
 /// Env var that arms candidate capture for one subprocess.
 pub const CAPTURE_ON: (&str, &str) = ("COMEMORY_OBSERVATIONS_ENABLED", "1");
 
@@ -187,17 +201,14 @@ fn parse_json(stdout: &str) -> Value {
 
 /// Seed the mixed corpus: three memories, one indexed git repo, one indexed
 /// markdown tree. Returns the home and the repository path.
-pub fn seeded(
-    init_repo: impl Fn(&Path),
-    commit: impl Fn(&Path, &[(&str, &str)], &str),
-) -> (Home, PathBuf) {
+pub fn seeded() -> (Home, PathBuf) {
     let home = Home::new();
     for (kind, body) in MEMORIES {
         home.run_ok(&["save", body, "--kind", kind, "--repo", "demo"]);
     }
     let repo = home.workspace().join("demo");
-    init_repo(&repo);
-    commit(&repo, &[("src/ranking.rs", RANKING_RS)], "ranking");
+    git_repo::init_repo(&repo);
+    git_commit::commit_files(&repo, &[("src/ranking.rs", RANKING_RS)], "ranking");
     home.run_ok(&[
         "index-code",
         "--path",

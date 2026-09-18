@@ -55,10 +55,26 @@ enum Stmt {
 /// well-formed. 0020 was the first generated migration to create a table and
 /// is what surfaced it.
 const STATEMENT_PATTERN: &str = concat!(
-    r#"(?i)CREATE\s+(?:VIRTUAL\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?"?(?P<create>[A-Za-z_][A-Za-z0-9_]*)"#,
-    r#"|DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?"?(?P<drop>[A-Za-z_][A-Za-z0-9_]*)"#,
-    r#"|ALTER\s+TABLE\s+"?(?P<rename_from>[A-Za-z_][A-Za-z0-9_]*)"?\s+RENAME\s+TO\s+"?(?P<rename_to>[A-Za-z_][A-Za-z0-9_]*)"#,
+    r#"(?i)CREATE\s+(?:VIRTUAL\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?P<create>"?[A-Za-z_][A-Za-z0-9_]*"?)"#,
+    r#"|DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?P<drop>"?[A-Za-z_][A-Za-z0-9_]*"?)"#,
+    r#"|ALTER\s+TABLE\s+(?P<rename_from>"?[A-Za-z_][A-Za-z0-9_]*"?)\s+RENAME\s+TO\s+(?P<rename_to>"?[A-Za-z_][A-Za-z0-9_]*"?)"#,
 );
+
+/// Strip an identifier's surrounding double quotes, requiring them to balance.
+///
+/// The quotes are captured rather than matched outside the group so a lone
+/// opening or closing quote is visible here: an unbalanced one is `None`, the
+/// statement is dropped, and the derived set then disagrees with the real
+/// database — which is exactly what
+/// [`migration_integrity_derived_live_set_matches_a_real_migrated_db`] is for.
+/// Silently accepting `"foo` would instead hide a malformed migration.
+fn unquote(raw: &str) -> Option<&str> {
+    match (raw.starts_with('"'), raw.ends_with('"')) {
+        (false, false) => Some(raw),
+        (true, true) if raw.len() > 1 => Some(&raw[1..raw.len() - 1]),
+        _ => None,
+    }
+}
 
 /// Compile [`STATEMENT_PATTERN`].
 fn statement_pattern() -> Regex {
@@ -73,15 +89,18 @@ fn statements() -> Vec<Stmt> {
     MIGRATIONS
         .iter()
         .flat_map(|m| pattern.captures_iter(m.sql).collect::<Vec<_>>())
-        .map(|caps| {
+        .filter_map(|caps| {
             if let Some(name) = caps.name("create") {
-                Stmt::Create(name.as_str().to_string())
+                Some(Stmt::Create(unquote(name.as_str())?.to_string()))
             } else if let Some(name) = caps.name("drop") {
-                Stmt::Drop(name.as_str().to_string())
+                Some(Stmt::Drop(unquote(name.as_str())?.to_string()))
             } else {
                 let from = caps.name("rename_from").expect("rename_from present");
                 let to = caps.name("rename_to").expect("rename_to present");
-                Stmt::Rename(from.as_str().to_string(), to.as_str().to_string())
+                Some(Stmt::Rename(
+                    unquote(from.as_str())?.to_string(),
+                    unquote(to.as_str())?.to_string(),
+                ))
             }
         })
         .collect()

@@ -181,7 +181,10 @@ pub struct CandidateQueryObservations {
     #[column(primary_key)]
     pub observation_id: Text,
     /// The `candidate_observation::OBSERVATION_VERSION` this row was written
-    /// at. A reader that meets an unknown value must refuse the record.
+    /// at. No `CHECK` pins it deliberately — the column must accept a version
+    /// this build does not know, so a downgrade can still READ the row and
+    /// refuse it by name. The refusal is `learning::judge::load`'s, covered by
+    /// `an_unknown_observation_version_is_refused`.
     #[column(not_null)]
     pub observation_version: Integer,
     /// The `retrieval_log.query_id` of the same run; NULL when that write
@@ -309,8 +312,13 @@ pub struct CandidateJudgments {
     /// `memory` | `code` | `document`.
     #[column(not_null, check = "domain IN ('memory','code','document')")]
     pub domain: Text,
-    /// Graded relevance, `0..=judgment::MAX_RELEVANCE`. `0` is an explicit
-    /// "reviewed and not relevant", which is not the same as unjudged.
+    /// Graded relevance, `0..=3`. `0` is an explicit "reviewed and not
+    /// relevant", which is not the same as unjudged.
+    ///
+    /// The bound is spelled literally because a `CHECK` is a SQL string and
+    /// cannot read `judgment::MAX_RELEVANCE`. The colocated test
+    /// `the_check_bound_is_exactly_max_relevance` ties the two together, so
+    /// raising the constant fails loudly instead of drifting.
     #[column(not_null, check = "relevance >= 0 AND relevance <= 3")]
     pub relevance: Integer,
     /// `manual` or `implicit` — `utilities::telemetry`'s provenance

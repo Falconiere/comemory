@@ -14,23 +14,9 @@
 
 #[path = "common/observation_corpus.rs"]
 mod corpus;
-#[path = "common/git_commit.rs"]
-mod git_commit;
-#[path = "common/git_repo.rs"]
-mod git_repo;
 
 use comemory::domains::learning::evaluation::candidate_identity::{CandidateIdentity, parse_ref};
-use corpus::{CAPTURE_ON, candidate_scalar, count, observation_of, ref_in, refs};
-
-/// Seed the shared mixed corpus.
-fn seeded() -> (corpus::Home, std::path::PathBuf) {
-    corpus::seeded(git_repo::init_repo, git_commit::commit_files)
-}
-
-/// A query every domain answers: "activation" appears in two memory bodies,
-/// in the indexed symbol's own name, and in the indexed document. A query only
-/// one corpus answers would make every cross-domain assertion below vacuous.
-const QUERY: &str = "activation";
+use corpus::{CAPTURE_ON, QUERY, candidate_scalar, count, observation_of, ref_in, refs, seeded};
 
 #[test]
 fn capture_records_every_domain_in_one_observation() {

@@ -33,17 +33,18 @@ pub struct NewJudgment<'a> {
 }
 
 /// Write every verdict in `rows` as one unit, replacing any previous verdict
-/// on the same candidate. Returns how many rows were written.
+/// on the same candidate. Returns how many rows were written — a count of
+/// `rows`, so it is a `usize` and no caller has to narrow a database integer.
 ///
 /// `INSERT OR REPLACE` is correct here and is not the row-preserving-upsert
 /// case the store forbids: the row has no unassigned fields to reset and
 /// nothing references it, so replacing a verdict IS the intended semantics.
-pub fn upsert_all(conn: &Connection, rows: &[NewJudgment<'_>]) -> Result<u64> {
+pub fn upsert_all(conn: &Connection, rows: &[NewJudgment<'_>]) -> Result<usize> {
     if rows.is_empty() {
         return Ok(0);
     }
     let tx = conn.unchecked_transaction()?;
-    let mut written = 0_u64;
+    let mut written = 0_usize;
     for row in rows {
         tx.prepare_cached(
             "INSERT OR REPLACE INTO candidate_judgments\

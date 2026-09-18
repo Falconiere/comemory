@@ -145,8 +145,9 @@ fn a_zero_observation_bound_fails_validate_naming_the_knob() {
             .err()
             .map_or_else(|| panic!("{var}=0 must fail validate"), |e| e.to_string());
         assert!(
-            msg.contains(knob) || msg.contains(var),
-            "error must name the knob, got: {msg}"
+            msg.contains(knob) && msg.contains(var) && msg.contains("must be >= 1"),
+            "the error must name the config field, its env var AND the bound, so it \
+             is actionable from either entry point; got: {msg}"
         );
     }
 }

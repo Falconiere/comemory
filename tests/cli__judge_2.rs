@@ -16,21 +16,11 @@
 
 #[path = "common/observation_corpus.rs"]
 mod corpus;
-#[path = "common/git_commit.rs"]
-mod git_commit;
-#[path = "common/git_repo.rs"]
-mod git_repo;
 
 use corpus::{
-    CHUNKING_MD_EDITED, RANKING_RS_EDITED, candidate_scalar, count, observation_of, ref_in, refs,
+    CHUNKING_MD_EDITED, QUERY, RANKING_RS_EDITED, candidate_scalar, count, git_commit,
+    observation_of, ref_in, refs, seeded,
 };
-
-fn seeded() -> (corpus::Home, std::path::PathBuf) {
-    corpus::seeded(git_repo::init_repo, git_commit::commit_files)
-}
-
-/// The query every corpus answers; see `tests/cli__judge.rs`.
-const QUERY: &str = "activation";
 
 /// Capture one pool over `home` and return its observation id.
 fn capture(home: &corpus::Home) -> String {

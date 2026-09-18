@@ -13,6 +13,7 @@
 //! refused by the database itself, not only by the caller that happens to
 //! write today.
 
+use comemory::domains::learning::evaluation::judgment::MAX_RELEVANCE;
 use comemory::store::candidate_judgments::{NewJudgment, fetch_for_observation, upsert_all};
 use comemory::store::connection;
 
@@ -131,5 +132,24 @@ fn a_rejected_row_rolls_the_whole_batch_back() {
             .expect("fetch")
             .is_empty(),
         "a batch is one unit: the valid row must not survive the invalid one"
+    );
+}
+
+#[test]
+fn the_check_bound_is_exactly_max_relevance() {
+    // The declared `CHECK` spells its bound literally because a SQL string
+    // cannot read a Rust constant. This is what stops the two drifting: the
+    // highest grade the contract defines must be accepted, and one above it
+    // must be refused by the database itself.
+    let (_d, conn) = seed_db();
+    let top = i64::from(MAX_RELEVANCE);
+    upsert_all(&conn, &[judgment("memory:aaaa0001:hash1", top)]).unwrap_or_else(|e| {
+        panic!("relevance {top} is the contract's maximum and must store: {e}")
+    });
+    let err = upsert_all(&conn, &[judgment("memory:bbbb0002:hash2", top + 1)])
+        .expect_err("one above the contract's maximum must be refused by the CHECK");
+    assert!(
+        format!("{err}").to_lowercase().contains("constraint"),
+        "expected a CHECK constraint failure, got: {err}"
     );
 }
