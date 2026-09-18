@@ -152,9 +152,9 @@ documented as such, and AC-18 pins it.
 **Parity is preserved by construction, not by matching two implementations.** `search` and
 `find --domain memory` both apply the stage to the same deterministic list, with the same pool, the
 same prefix and the same candidate identities, before pagination. The same holds for `search-code`
-and `find --domain code`. Because the candidate id on the wire is #208's `candidate_ref` — which
-carries the identity and the content version and nothing about the surface — the two runs submit
-byte-identical requests and receive byte-identical orders.
+and `find --domain code`. Because the candidate id on the wire is `<domain>:<id>` — the pool key,
+which says nothing about the surface — the two runs submit byte-identical requests and receive
+byte-identical orders.
 
 **A refusal is applied through the same code path as a success.** `RerankOutcome::order_ids()`
 returns the reranked order when applied and the *submitted* order when declined.
@@ -297,7 +297,9 @@ where noted:
 | `enabled` implies `!model.trim().is_empty()` | `rerank.model must name the model identity when rerank.enabled is true` |
 | `prefix * max_candidate_text_bytes <= RerankLimits::default().max_request_bytes` | `rerank.prefix × rerank.max_candidate_text_bytes exceeds the 8388608-byte request limit` |
 
-The runner's remaining bounds are derived, not configured: `max_candidates` is set to `prefix`
+The 8 MiB request ceiling is DERIVED from `RerankLimits::default().max_request_bytes` rather than
+restated in `config`, so the two cannot drift; `config::defaults` already reaches into `utilities`
+the same way for `simhash::NEAR_DUP_HAMMING`. The remaining bounds are derived too, not configured: `max_candidates` is set to `prefix`
 (lowering #211's 256 default, as its Open Question 2 anticipated), and `max_request_bytes`,
 `max_stdout_bytes` and `max_stderr_bytes` keep `RerankLimits::default()` (8 MiB / 8 MiB / 16 KiB).
 A second byte knob would let an operator configure a combination the prefix bound already forbids.
@@ -441,8 +443,10 @@ one `"learned": null` alongside the two nulls it already emitted.
     "prefix": 50,
     "elapsed_ms": 83,
     "scores": [
-      {"candidate_ref": "memory:679929eb:9f2c…", "rank": 1, "deterministic_rank": 7, "score": 0.42},
-      {"candidate_ref": "memory:5a9f19bc:3ab1…", "rank": 2, "deterministic_rank": 1, "score": 0.31}
+      {"candidate_id": "memory:679929eb", "candidate_ref": "memory:679929eb:9f2c…",
+       "rank": 1, "deterministic_rank": 7, "score": 0.42},
+      {"candidate_id": "memory:5a9f19bc", "candidate_ref": "memory:5a9f19bc:3ab1…",
+       "rank": 2, "deterministic_rank": 1, "score": 0.31}
     ]
   }
 }
@@ -634,7 +638,7 @@ assertions AC-1 makes, not assumptions.
 
 | Situation | Observable behavior |
 | --- | --- |
-| `[rerank]` absent, or `enabled = false` | `LearnedStage::from_config` returns `None`. No `RerankRunner` is constructed, no process is spawned, `candidate_pool` is `pool_size` unchanged, the `learned` key is absent from every envelope, and ranking is byte-identical to v0.36.0 |
+| `[rerank]` absent, or `enabled = false` | `LearnedStage::from_config` returns `None`. No `RerankRunner` is constructed, no process is spawned, `candidate_pool` is `pool_size` unchanged, the `learned` key is absent from the `search` / `search-code` / `context` envelopes and `null` on `find` and the console search, and ranking is byte-identical to v0.36.0 |
 | `enabled = true`, `command` empty or `model` blank | Config load fails with a named `Error::Config`. The binary refuses to run any command, rather than silently searching unreranked |
 | Zero candidates (empty corpus, or every filter excluded everything) | `plan` returns `None`; no process is spawned; `learned` is absent; the empty page is returned |
 | Fewer candidates than `prefix` | The whole ranking is submitted; the tail is empty |

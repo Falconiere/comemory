@@ -13,6 +13,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::prelude::*;
+use crate::utilities::rerank_runner::RerankLimits;
 
 /// Shipped default for [`RerankConfig::prefix`] — how many leading candidates
 /// one request scores.
@@ -26,13 +27,16 @@ const DEFAULT_TIMEOUT_MS: u64 = 20_000;
 /// candidate observation contract's own text bound.
 const DEFAULT_CANDIDATE_TEXT_BYTES: usize = 4096;
 
-/// Ceiling the serialized request is held to, mirroring
-/// `utilities::rerank_runner::RerankLimits::default().max_request_bytes`.
+/// Ceiling the serialized scorer request is held to.
 ///
-/// Restated here rather than imported so `config` stays a pure data layer with
-/// no dependency on the process utilities; the two are pinned together by
-/// `config::tests::rerank`, which compares them.
-pub const MAX_REQUEST_BYTES: usize = 8 << 20;
+/// DERIVED from the process utilities rather than restated, so the two cannot
+/// drift: a restated constant is only as good as the test that compares it, and
+/// the comparison would pass at test time while a release shipped the drift.
+/// `config::defaults` already reaches into `utilities` the same way for
+/// `simhash::NEAR_DUP_HAMMING`.
+pub fn max_request_bytes() -> usize {
+    RerankLimits::default().max_request_bytes
+}
 
 /// The optional learned ordering stage: which scorer to run, how much of the
 /// ranking to hand it, and what it is allowed to cost.
@@ -137,11 +141,20 @@ impl RerankConfig {
                 "must be >= 1",
             ));
         }
-        let request_bytes = self.prefix.saturating_mul(self.max_candidate_text_bytes);
-        if request_bytes > MAX_REQUEST_BYTES {
+        // `checked_mul`, not `saturating_mul`: a product that overflows `usize`
+        // is a misconfiguration in its own right and is reported as one, rather
+        // than arriving at the comparison as a capped value that happens to
+        // fail it for the wrong reason.
+        let limit = max_request_bytes();
+        let over = match self.prefix.checked_mul(self.max_candidate_text_bytes) {
+            Some(bytes) if bytes <= limit => None,
+            Some(bytes) => Some(bytes.to_string()),
+            None => Some("more than usize::MAX".to_string()),
+        };
+        if let Some(request_bytes) = over {
             return Err(Error::Config(format!(
                 "invalid rerank.prefix={} × rerank.max_candidate_text_bytes={} (file-only [rerank] keys): \
-                 their product of {request_bytes} bytes exceeds the {MAX_REQUEST_BYTES}-byte scorer request limit",
+                 their product of {request_bytes} bytes exceeds the {limit}-byte scorer request limit",
                 self.prefix, self.max_candidate_text_bytes
             )));
         }

@@ -12,7 +12,7 @@
 use std::path::PathBuf;
 
 use comemory::config::Config;
-use comemory::config::rerank::MAX_REQUEST_BYTES;
+use comemory::config::rerank::max_request_bytes;
 
 /// Write `body` as a `config.toml` in a fresh temp dir and return its path,
 /// keeping the dir alive for the caller.
@@ -172,7 +172,7 @@ fn a_disabled_stage_may_leave_the_identity_keys_empty() {
 
 #[test]
 fn the_request_budget_bounds_prefix_times_text() {
-    let over = MAX_REQUEST_BYTES / 4096 + 1;
+    let over = max_request_bytes() / 4096 + 1;
     let err = load(&format!(
         "[rerank]\nprefix = {over}\nmax_candidate_text_bytes = 4096\n"
     ))
@@ -180,10 +180,10 @@ fn the_request_budget_bounds_prefix_times_text() {
     let text = err.to_string();
     assert!(text.contains("rerank.prefix"), "got: {text}");
     assert!(
-        text.contains(&MAX_REQUEST_BYTES.to_string()),
+        text.contains(&max_request_bytes().to_string()),
         "the message must name the byte limit, got: {text}"
     );
-    let exactly = MAX_REQUEST_BYTES / 4096;
+    let exactly = max_request_bytes() / 4096;
     load(&format!(
         "[rerank]\nprefix = {exactly}\nmax_candidate_text_bytes = 4096\n"
     ))
@@ -191,11 +191,15 @@ fn the_request_budget_bounds_prefix_times_text() {
 }
 
 #[test]
-fn the_declared_request_ceiling_matches_the_runners_own() {
-    assert_eq!(
-        MAX_REQUEST_BYTES,
-        comemory::utilities::rerank_runner::RerankLimits::default().max_request_bytes,
-        "config restates the runner's ceiling; the two must never drift"
+fn an_overflowing_product_is_refused_rather_than_capped() {
+    let err = load(&format!(
+        "[rerank]\nprefix = {}\nmax_candidate_text_bytes = 4\n",
+        usize::MAX
+    ))
+    .expect_err("a product that overflows usize must be refused");
+    assert!(
+        err.to_string().contains("more than usize::MAX"),
+        "and named as an overflow rather than a capped number: {err}"
     );
 }
 

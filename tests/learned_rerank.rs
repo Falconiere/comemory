@@ -270,17 +270,13 @@ fn disabled_by_default_changes_nothing() {
     // `search`, `search-code` and `context` build their payload from a shared
     // `Envelope` whose `learned` field is skipped when absent, so the key is
     // not there at all.
-    for (args, key) in [
-        (vec!["search", QUERY], "memory_id"),
-        (vec!["search-code", "sqlite"], "symbol_id"),
-    ] {
+    for args in [vec!["search", QUERY], vec!["search-code", "sqlite"]] {
         let v = home.json(&args);
         assert!(
             v.get("learned").is_none(),
             "{args:?} must emit no learned key at all: {v}"
         );
         assert!(v.get("hits").is_some(), "and still emit its hits: {v}");
-        let _ = key;
     }
     let ctx = home.json(&["context", QUERY]);
     assert!(
@@ -958,32 +954,31 @@ fn records_the_extra_retrieval_cost() {
     enabled.write_config(&enabled_block(50));
     seed(&enabled);
 
-    let off = timed(&disabled, &["search", QUERY]);
-    let on = timed(&enabled, &["search", QUERY]);
-    let pool = on.1["learned"]["pool"].as_u64().expect("pool");
-    let scored = on.1["learned"]["prefix"].as_u64().expect("prefix");
+    // Wall-clock is measured but not asserted on: comparing two separate
+    // process invocations is a CI timing race, and the real measurement lives
+    // in the design doc's "Measured cost" section.
+    let off = measure(&disabled, &["search", QUERY]);
+    let on = measure(&enabled, &["search", QUERY]);
+    let pool = on["learned"]["pool"].as_u64().expect("pool");
+    let scored = on["learned"]["prefix"].as_u64().expect("prefix");
     // The measurement itself is recorded in the design doc's "Measured cost"
     // section; what is asserted here is that both paths answer, that the
     // enabled run really did rank the bounded universe it reports, and that
     // reranking cost something rather than being silently skipped.
-    assert!(!hit_ids(&off.1, "memory_id").is_empty());
-    assert!(!hit_ids(&on.1, "memory_id").is_empty());
+    assert!(!hit_ids(&off, "memory_id").is_empty());
+    assert!(!hit_ids(&on, "memory_id").is_empty());
     assert_eq!(
         scored,
         pool.min(50),
         "an enabled run scores the whole prefix it configured, over the pool it ranked"
     );
     assert!(
-        on.1["learned"]["elapsed_ms"]
+        on["learned"]["elapsed_ms"]
             .as_u64()
             .is_some_and(|ms| ms > 0),
         "and reports a measured, non-zero inference cost: {}",
-        on.1["learned"]
+        on["learned"]
     );
-    // Wall-clock is recorded rather than asserted: comparing two separate
-    // process invocations is a CI timing race, and the real measurement lives
-    // in the design doc's "Measured cost" section.
-    let _ = (off.0, on.0);
 }
 
 // ------------------------------------------------------------------ helpers
@@ -1161,9 +1156,9 @@ fn observation_rows(home: &Home) -> i64 {
     .expect("count observations")
 }
 
-/// One timed `--json` run.
-fn timed(home: &Home, args: &[&str]) -> (std::time::Duration, Value) {
-    let started = std::time::Instant::now();
-    let v = home.json(args);
-    (started.elapsed(), v)
+/// One `--json` run, with its wall clock discarded: the measurement that
+/// matters is recorded in the design doc, and a cross-process timing
+/// comparison is not something to assert on in CI.
+fn measure(home: &Home, args: &[&str]) -> Value {
+    home.json(args)
 }

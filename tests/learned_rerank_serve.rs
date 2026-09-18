@@ -48,19 +48,32 @@ impl Prepared {
             format!("[rank]\ndecay = 0.0\n\n{rerank}"),
         )
         .expect("write config.toml");
-        let me = Self { root };
+        let me = Self::around(root);
         // The same quality spread `tests/learned_rerank.rs` uses: it is what
         // makes the deterministic order and the lexical-overlap order disagree,
         // so a parity assertion over the learned object is not vacuous.
-        for (quality, body) in [
+        me.seed_memories(&[
             (1, "sqlite busy timeout"),
             (5, "sqlite busy timeout pool retry backoff wal mode"),
             (3, "sqlite busy timeout pool"),
             (3, "sqlite busy timeout pool retry"),
-        ] {
-            me.save(body, quality);
-        }
+        ]);
         me
+    }
+
+    /// Wrap a root whose `config.toml` the caller already wrote — for the one
+    /// test that must create its scorer script beside the data directory before
+    /// the config can name it. Named rather than a bare struct literal so a
+    /// future addition to `new` is a compile error here, not a silent skip.
+    fn around(root: TempDir) -> Self {
+        Self { root }
+    }
+
+    /// Save each `(quality, body)` through the real binary.
+    fn seed_memories(&self, rows: &[(u8, &str)]) {
+        for (quality, body) in rows {
+            self.save(body, *quality);
+        }
     }
 
     fn data_dir(&self) -> PathBuf {
@@ -200,6 +213,10 @@ fn get(base: &str, token: &str, path: &str, params: &[(&str, &str)]) -> Value {
 }
 
 /// A scorer that stalls, then executes the real shipped backend.
+///
+/// The backend path arrives as `sys.argv[1]`, never interpolated into the
+/// script's source: a checkout path is not attacker-controlled, but embedding a
+/// filesystem path in generated code is a pattern worth not setting.
 fn slow_scorer(workspace: &Path) -> PathBuf {
     let script = workspace.join("slow_scorer.py");
     std::fs::write(
@@ -207,13 +224,13 @@ fn slow_scorer(workspace: &Path) -> PathBuf {
         format!(
             "#!/usr/bin/env python3\n\
              import subprocess, sys, time\n\
+             backend = sys.argv[1]\n\
              body = sys.stdin.buffer.read()\n\
              time.sleep({SLOW_SECONDS})\n\
-             p = subprocess.run([sys.executable, {backend:?}, 'score', '--scoring', 'lexical-overlap'],\n\
+             p = subprocess.run([sys.executable, backend, 'score', '--scoring', 'lexical-overlap'],\n\
              \x20               input=body, capture_output=True)\n\
              sys.stdout.buffer.write(p.stdout)\n\
-             sys.exit(p.returncode)\n",
-            backend = backend_path(),
+             sys.exit(p.returncode)\n"
         ),
     )
     .expect("write slow scorer");
@@ -247,19 +264,18 @@ fn unrelated_read_completes_during_inference() {
     std::fs::write(
         data_dir.join("config.toml"),
         format!(
-            "[rank]\ndecay = 0.0\n\n[rerank]\nenabled = true\ncommand = [{:?}]\nmodel = \"lexical-overlap@1\"\ntimeout_ms = 30000\n",
-            scorer.to_string_lossy()
+            "[rank]\ndecay = 0.0\n\n[rerank]\nenabled = true\ncommand = [{:?}, {:?}]\nmodel = \"lexical-overlap@1\"\ntimeout_ms = 30000\n",
+            scorer.to_string_lossy(),
+            backend_path()
         ),
     )
     .expect("write config.toml");
-    let prepared = Prepared { root };
-    for (quality, body) in [
+    let prepared = Prepared::around(root);
+    prepared.seed_memories(&[
         (1, "sqlite busy timeout"),
         (3, "sqlite busy timeout pool"),
         (3, "sqlite busy timeout pool retry"),
-    ] {
-        prepared.save(body, quality);
-    }
+    ]);
     let server = Server::spawn(&prepared);
     let base = server.base.clone();
     let token = server.token.clone();
@@ -314,10 +330,12 @@ fn unrelated_read_completes_during_inference() {
 #[test]
 fn cli_and_http_learned_payload_match() {
     let prepared = Prepared::new(&enabled_block());
+    // Seeded BEFORE the server opens the database: a second writer against a
+    // live server is a `SQLITE_BUSY` race this test has no reason to run.
+    prepared.seed_code();
     let server = Server::spawn(&prepared);
     let query = "sqlite busy timeout";
 
-    prepared.seed_code();
     for (cli_args, path) in [
         (vec!["search", query], "/memories/search"),
         (vec!["find", query], "/find"),

@@ -287,10 +287,19 @@ fn the_learned_key_is_absent_unless_a_stage_ran() {
     ))
     .expect("serialize");
     assert_eq!(
-        with["learned"]["model"],
-        serde_json::json!("lexical-overlap@1")
+        with["learned"],
+        serde_json::json!({
+            "applied": true,
+            "model": "lexical-overlap@1",
+            "adapter": null,
+            "request_id": "rr-20260918-1a2b3c4d",
+            "pool": 7,
+            "prefix": 2,
+            "elapsed_ms": 12,
+            "scores": [],
+        }),
+        "the whole object is the contract, not two of its fields"
     );
-    assert_eq!(with["learned"]["pool"], serde_json::json!(7));
     assert_eq!(
         with["hits"], without["hits"],
         "the hits and their deterministic breakdowns are untouched by the report"
