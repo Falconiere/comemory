@@ -3,9 +3,14 @@
 //! timestamps); the TOML file stays authoritative for identity, and
 //! `src/domains/documents/source/mirror.rs` reconciles this table from it.
 
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, params};
 
+use super::{
+    orm,
+    schema_documents::{SourceFiles, SourceRoots, source_files as file, source_roots as col},
+};
 use crate::prelude::*;
+use toolu_orm::core::query_column::CommonOps;
 
 /// Upsert SQL for one `source_roots` row. `ON CONFLICT(id)` leaves
 /// `status` and `created_at` untouched, so a reconcile pass never resets
@@ -74,39 +79,45 @@ pub fn upsert(conn: &Connection, row: SourceRootUpsert<'_>) -> Result<()> {
 /// Delete a `source_roots` row by id. Cascades to `source_files` /
 /// `documents` / `document_chunks` via `ON DELETE CASCADE`.
 pub fn delete(conn: &Connection, id: &str) -> Result<()> {
-    conn.execute("DELETE FROM source_roots WHERE id = ?1", params![id])?;
+    orm::execute(conn, SourceRoots::delete().filter(col::id.eq(id)).to_sql())?;
     Ok(())
 }
 
 /// List every `source_roots` row, ordered by `canonical_path` for a
 /// deterministic listing.
 pub fn list(conn: &Connection) -> Result<Vec<SourceRootRow>> {
-    let mut stmt = conn.prepare(
-        "SELECT id, canonical_path, kind, repo, status, created_at, updated_at \
-           FROM source_roots ORDER BY canonical_path",
-    )?;
-    let rows = stmt
-        .query_map([], row_from_sql)?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    Ok(rows)
+    orm::query_all(
+        conn,
+        select_roots().order_by(col::canonical_path.asc()).to_sql(),
+        row_from_sql,
+    )
 }
 
 /// Fetch one `source_roots` row by id, or `None` if it does not exist.
 pub fn get(conn: &Connection, id: &str) -> Result<Option<SourceRootRow>> {
-    conn.query_row(
-        "SELECT id, canonical_path, kind, repo, status, created_at, updated_at \
-           FROM source_roots WHERE id = ?1",
-        params![id],
+    orm::query_optional(
+        conn,
+        select_roots().filter(col::id.eq(id)).to_sql(),
         row_from_sql,
     )
-    .optional()
-    .map_err(Error::from)
 }
 
 /// Total `source_roots` row count.
 pub fn count(conn: &Connection) -> Result<usize> {
-    let n: i64 = conn.query_row("SELECT COUNT(*) FROM source_roots", [], |r| r.get(0))?;
+    let n: i64 = orm::query_one(conn, SourceRoots::select().to_count_sql(), |r| r.get(0))?;
     Ok(n as usize)
+}
+
+fn select_roots() -> toolu_orm::query::select::SelectBuilder {
+    SourceRoots::select().columns_typed(&[
+        &col::id,
+        &col::canonical_path,
+        &col::kind,
+        &col::repo,
+        &col::status,
+        &col::created_at,
+        &col::updated_at,
+    ])
 }
 
 fn row_from_sql(r: &rusqlite::Row<'_>) -> rusqlite::Result<SourceRootRow> {
@@ -189,14 +200,6 @@ const FILE_UPSERT_SQL: &str = "INSERT INTO source_files(\
      status = excluded.status, error = excluded.error, \
      updated_at = excluded.updated_at";
 
-const FILE_GET_SQL: &str = "SELECT id, source_id, relative_path, classification, \
-     size, mtime, sha256, status, error, created_at, updated_at \
-     FROM source_files WHERE id = ?1";
-
-const FILE_LIST_BY_SOURCE_SQL: &str = "SELECT id, source_id, relative_path, classification, \
-     size, mtime, sha256, status, error, created_at, updated_at \
-     FROM source_files WHERE source_id = ?1 ORDER BY relative_path";
-
 /// Insert a fresh `source_files` row, or overwrite an existing one's
 /// mutable fields (everything but `id`/`source_id`/`relative_path`/
 /// `created_at`, which stay fixed once a row exists).
@@ -231,9 +234,14 @@ pub fn touch_file(
     mtime: i64,
     updated_at: &str,
 ) -> Result<()> {
-    conn.execute(
-        "UPDATE source_files SET size = ?2, mtime = ?3, updated_at = ?4 WHERE id = ?1",
-        params![id, size, mtime, updated_at],
+    orm::execute(
+        conn,
+        SourceFiles::update()
+            .set(&file::size, size)
+            .set(&file::mtime, mtime)
+            .set(&file::updated_at, updated_at)
+            .filter(file::id.eq(id))
+            .to_sql(),
     )?;
     Ok(())
 }
@@ -242,18 +250,24 @@ pub fn touch_file(
 /// `size`/`mtime`/`sha256` in place for diagnostics (spec: "a `deleted`
 /// tombstone for diagnostics").
 pub fn mark_deleted(conn: &Connection, id: &str, updated_at: &str) -> Result<()> {
-    conn.execute(
-        "UPDATE source_files SET status = 'deleted', updated_at = ?2 WHERE id = ?1",
-        params![id, updated_at],
+    orm::execute(
+        conn,
+        SourceFiles::update()
+            .set(&file::status, "deleted")
+            .set(&file::updated_at, updated_at)
+            .filter(file::id.eq(id))
+            .to_sql(),
     )?;
     Ok(())
 }
 
 /// Fetch one `source_files` row by id, or `None` if it does not exist.
 pub fn get_file(conn: &Connection, id: &str) -> Result<Option<SourceFileRow>> {
-    conn.query_row(FILE_GET_SQL, params![id], file_row_from_sql)
-        .optional()
-        .map_err(Error::from)
+    orm::query_optional(
+        conn,
+        select_files().filter(file::id.eq(id)).to_sql(),
+        file_row_from_sql,
+    )
 }
 
 /// List every `source_files` row for one source, ordered by
@@ -262,11 +276,14 @@ pub fn get_file(conn: &Connection, id: &str) -> Result<Option<SourceFileRow>> {
 /// [`crate::domains::documents::document::writer::reconcile_deletions`]
 /// diffs this against a fresh discovery walk.
 pub fn list_files_by_source(conn: &Connection, source_id: &str) -> Result<Vec<SourceFileRow>> {
-    let mut stmt = conn.prepare(FILE_LIST_BY_SOURCE_SQL)?;
-    let rows = stmt
-        .query_map(params![source_id], file_row_from_sql)?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    Ok(rows)
+    orm::query_all(
+        conn,
+        select_files()
+            .filter(file::source_id.eq(source_id))
+            .order_by(file::relative_path.asc())
+            .to_sql(),
+        file_row_from_sql,
+    )
 }
 
 /// Per-status `source_files` counts for one source, surfaced by
@@ -305,6 +322,22 @@ pub fn file_status_counts(conn: &Connection, source_id: &str) -> Result<SourceFi
         }
     }
     Ok(counts)
+}
+
+fn select_files() -> toolu_orm::query::select::SelectBuilder {
+    SourceFiles::select().columns_typed(&[
+        &file::id,
+        &file::source_id,
+        &file::relative_path,
+        &file::classification,
+        &file::size,
+        &file::mtime,
+        &file::sha256,
+        &file::status,
+        &file::error,
+        &file::created_at,
+        &file::updated_at,
+    ])
 }
 
 fn file_row_from_sql(r: &rusqlite::Row<'_>) -> rusqlite::Result<SourceFileRow> {

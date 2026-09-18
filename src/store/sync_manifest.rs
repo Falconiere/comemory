@@ -8,7 +8,12 @@
 
 use rusqlite::Connection;
 
+use super::{
+    orm,
+    schema_memory::{Memories, memories as col},
+};
 use crate::prelude::*;
+use toolu_orm::core::query_column::CommonOps;
 
 /// Every live memory's `content_hash`, ordered, oldest lexicographic first.
 ///
@@ -17,10 +22,13 @@ use crate::prelude::*;
 /// different bucket digests. The order is fixed in SQL so the caller's digest
 /// is reproducible without sorting the whole set first.
 pub fn live_content_hashes(conn: &Connection) -> Result<Vec<String>> {
-    let mut stmt = conn.prepare(
-        "SELECT content_hash FROM memories WHERE deleted_at IS NULL ORDER BY content_hash",
-    )?;
-    let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
-    let out = rows.collect::<std::result::Result<Vec<String>, _>>()?;
-    Ok(out)
+    orm::query_all(
+        conn,
+        Memories::select()
+            .columns_typed(&[&col::content_hash])
+            .filter(col::deleted_at.is_null())
+            .order_by(col::content_hash.asc())
+            .to_sql(),
+        |r| r.get(0),
+    )
 }

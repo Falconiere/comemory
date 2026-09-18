@@ -8,7 +8,12 @@ use std::collections::HashSet;
 
 use rusqlite::{Connection, params};
 
+use super::{
+    orm,
+    schema_learning::{RetrievalLog, retrieval_log as col},
+};
 use crate::prelude::*;
+use toolu_orm::core::query_column::CommonOps;
 
 /// Insert parameters for one `retrieval_log` row, bundled into a struct
 /// rather than eight positional arguments (`clippy::too_many_arguments`).
@@ -36,20 +41,18 @@ pub struct NewLogRow<'a> {
 /// their symbol ids so `returned_ids`'s column shape matches the memory
 /// rows).
 pub fn insert(conn: &Connection, row: &NewLogRow<'_>) -> Result<()> {
-    conn.execute(
-        "INSERT INTO retrieval_log(query_id, query, returned_ids, at, duration_ms,
-                                   repo, kind, source)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-        params![
-            row.query_id,
-            row.query,
-            row.returned_ids,
-            row.at,
-            row.duration_ms,
-            row.repo,
-            row.kind,
-            row.source,
-        ],
+    orm::execute(
+        conn,
+        RetrievalLog::insert()
+            .set(&col::query_id, row.query_id)
+            .set(&col::query, row.query)
+            .set(&col::returned_ids, row.returned_ids)
+            .set(&col::at, row.at)
+            .set(&col::duration_ms, row.duration_ms)
+            .set(&col::repo, row.repo)
+            .set(&col::kind, row.kind)
+            .set(&col::source, row.source)
+            .to_sql(),
     )?;
     Ok(())
 }
@@ -105,20 +108,22 @@ pub fn queries_excluding_source(
     conn: &Connection,
     exclude_source: &str,
 ) -> Result<Vec<LogQueryRow>> {
-    let mut stmt = conn.prepare(
-        "SELECT query_id, query, at FROM retrieval_log
-         WHERE source != ?1 ORDER BY at, query_id",
-    )?;
-    let rows = stmt
-        .query_map([exclude_source], |r| {
+    orm::query_all(
+        conn,
+        RetrievalLog::select()
+            .columns_typed(&[&col::query_id, &col::query, &col::at])
+            .filter(col::source.ne(exclude_source))
+            .order_by(col::at.asc())
+            .order_by(col::query_id.asc())
+            .to_sql(),
+        |r| {
             Ok(LogQueryRow {
                 query_id: r.get(0)?,
                 query: r.get(1)?,
                 at: r.get(2)?,
             })
-        })?
-        .collect::<std::result::Result<_, _>>()?;
-    Ok(rows)
+        },
+    )
 }
 
 /// Whether `query_id` names a row in `retrieval_log`.
@@ -127,11 +132,13 @@ pub fn queries_excluding_source(
 /// the run was evicted by retention or never logged, which is worth a warning
 /// but never a refusal, so the caller records the verdict either way.
 pub fn contains_query_id(conn: &Connection, query_id: &str) -> Result<bool> {
-    Ok(conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM retrieval_log WHERE query_id = ?1)",
-        [query_id],
+    orm::query_one(
+        conn,
+        RetrievalLog::select()
+            .filter(col::query_id.eq(query_id))
+            .to_exists_sql(),
         |r| r.get(0),
-    )?)
+    )
 }
 
 /// Every `retrieval_log` row whose `source` is not `exclude_source` and

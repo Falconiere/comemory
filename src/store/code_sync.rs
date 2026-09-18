@@ -4,8 +4,13 @@
 //! pushed. The server side of the same feature writes through `code_row`,
 //! `indexed_files` and `edges` directly.
 
+use super::{
+    orm,
+    schema_code::{CodeSymbols, code_symbols as c},
+};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
+use toolu_orm::core::query_column::CommonOps;
 
 use crate::prelude::*;
 use crate::store::edges::{self, file_node_id, file_node_prefix};
@@ -52,13 +57,17 @@ pub fn parent_symbols_for_file(
     repo: &str,
     path: &str,
 ) -> Result<Vec<FileSymbolRow>> {
-    let mut stmt = conn.prepare(
-        "SELECT symbol, kind, lang, line_start, line_end FROM code_symbols \
-          WHERE repo = ?1 AND path = ?2 AND parent_id IS NULL \
-          ORDER BY line_start, symbol",
-    )?;
-    let rows = stmt
-        .query_map(rusqlite::params![repo, path], |r| {
+    orm::query_all(
+        conn,
+        CodeSymbols::select()
+            .columns_typed(&[&c::symbol, &c::kind, &c::lang, &c::line_start, &c::line_end])
+            .filter(c::repo.eq(repo))
+            .filter(c::path.eq(path))
+            .filter(c::parent_id.is_null())
+            .order_by(c::line_start.asc())
+            .order_by(c::symbol.asc())
+            .to_sql(),
+        |r| {
             Ok(FileSymbolRow {
                 symbol: r.get(0)?,
                 kind: r.get(1)?,
@@ -66,9 +75,8 @@ pub fn parent_symbols_for_file(
                 line_start: r.get(3)?,
                 line_end: r.get(4)?,
             })
-        })?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    Ok(rows)
+        },
+    )
 }
 
 /// Repo-relative paths `path` imports, from its outgoing `imports` edges.
@@ -111,12 +119,15 @@ pub fn symbol_count_excluding(conn: &Connection, repo: &str, paths: &[&str]) -> 
     let total = crate::store::code_row::count_for_repo(conn, repo)?;
     let mut inside: i64 = 0;
     for chunk in paths.chunks(500) {
-        let qmarks = crate::store::qmarks(chunk.len());
-        let sql =
-            format!("SELECT COUNT(*) FROM code_symbols WHERE repo = ?1 AND path IN ({qmarks})");
-        let mut stmt = conn.prepare(&sql)?;
-        let bound = std::iter::once(repo).chain(chunk.iter().copied());
-        let n: i64 = stmt.query_row(rusqlite::params_from_iter(bound), |r| r.get(0))?;
+        let values = chunk.iter().map(|path| (*path).into()).collect::<Vec<_>>();
+        let n: i64 = orm::query_one(
+            conn,
+            CodeSymbols::select()
+                .filter(c::repo.eq(repo))
+                .filter(c::path.in_list(&values))
+                .to_count_sql(),
+            |r| r.get(0),
+        )?;
         inside = inside.saturating_add(n);
     }
     Ok(usize::try_from(total.saturating_sub(inside)).unwrap_or(0))

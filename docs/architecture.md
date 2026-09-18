@@ -199,7 +199,7 @@ create-copy-drop-rename rebuild — is a hand-written file journaled with
 `just migration-journal` (`store::schema_journal`). Both kinds are then
 wired into `MIGRATIONS` the same way.
 
-Only the *generate* half is toolu-orm's. Apply stays `store::migrate`:
+Migration generation uses toolu-orm. Apply stays `store::migrate`:
 `execute_batch` over each file (the `--> statement-breakpoint` lines a
 generated file carries are SQL comments), gated by `schema_meta` markers.
 Swapping in toolu-orm's runner is deliberately a separate decision: it
@@ -212,6 +212,15 @@ connection and compares `pragma_table_info`, unique column-sets, indexes and
 virtual-table module args against the database the frozen chain builds, and
 the drift suite runs `run_generate` over a copy of the shipped journal and
 expects nothing. See [Schema migrations](guides/schema-migrations.md).
+
+Runtime queries also use the declared table builders. The private
+`store::orm` bridge executes generated SQL and bound values on the existing
+connection, preserving native errors, owned results, statement caching, and
+caller-owned transactions. Complex queries that toolu-orm 0.6 cannot express
+remain in the store, with upstream issues in the
+[runtime query inventory](guides/runtime-orm.md). Scoped statistics accept
+`stats_counts::Corpus` instead of a table/predicate SQL pair. Schema snapshots,
+migration files, and the migration-application policy are unchanged.
 
 See [Upgrading comemory](guides/upgrading.md) for the user-facing walkthrough
 — including how to restore a snapshot and the `comemory serve` restart

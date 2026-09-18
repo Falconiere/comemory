@@ -7,7 +7,12 @@
 //! because these four together would push that file past the 300-line
 //! ceiling; every function here is a plain read with no writer counterpart.
 
+use super::{
+    orm,
+    schema_graph::{Edges, edges as c},
+};
 use rusqlite::{Connection, OptionalExtension, named_params, params};
+use toolu_orm::core::query_column::CommonOps;
 
 use crate::prelude::*;
 use crate::store::edges::{REFERENCES_FILE, REFERENCES_SYMBOL};
@@ -150,9 +155,8 @@ pub fn walk_context_edges(
 
 /// Total `co_changed` weight between `fid` and the working-set file ids, in
 /// either direction (the miner stores one canonical row per undirected
-/// pair). Numbered placeholders are reused across both `IN` lists so the
-/// parameter vector binds once; `prepare_cached` caches one statement per
-/// working-set arity.
+/// pair). The ORM binds each orientation separately; `prepare_cached`
+/// caches one statement per working-set arity.
 ///
 /// Arity-keyed caching tradeoff: the SQL string (and thus the cache key)
 /// embeds the working-set length, so each distinct arity compiles its own
@@ -161,20 +165,26 @@ pub fn walk_context_edges(
 /// Fine unless affinity shows up in a profile — revisit with arity
 /// bucketing (pad the `IN` list to fixed sizes) if it does.
 pub fn co_change_weight(conn: &Connection, fid: &str, ws_files: &[String]) -> Result<f64> {
-    let marks = (0..ws_files.len())
-        .map(|i| format!("?{}", i + 2))
-        .collect::<Vec<_>>()
-        .join(",");
-    let sql = format!(
-        "SELECT COALESCE(SUM(weight), 0) FROM edges \
-          WHERE rel = 'co_changed' AND src_kind = 'file' AND dst_kind = 'file' \
-            AND ((src_id = ?1 AND dst_id IN ({marks})) \
-              OR (dst_id = ?1 AND src_id IN ({marks})))"
-    );
-    let mut stmt = conn.prepare_cached(&sql)?;
-    let params =
-        rusqlite::params_from_iter(std::iter::once(fid).chain(ws_files.iter().map(String::as_str)));
-    let w: i64 = stmt.query_row(params, |r| r.get(0))?;
+    let files = ws_files
+        .iter()
+        .map(|s| s.as_str().into())
+        .collect::<Vec<_>>();
+    let w: i64 = orm::query_one(
+        conn,
+        Edges::select()
+            .column_expr("COALESCE(SUM(weight), 0)", "weight")
+            .filter(c::rel.eq("co_changed"))
+            .filter(c::src_kind.eq("file"))
+            .filter(c::dst_kind.eq("file"))
+            .filter(
+                c::src_id
+                    .eq(fid)
+                    .and(c::dst_id.in_list(&files))
+                    .or(c::dst_id.eq(fid).and(c::src_id.in_list(&files))),
+            )
+            .to_sql(),
+        |r| r.get(0),
+    )?;
     Ok(w.max(0) as f64)
 }
 
@@ -214,18 +224,18 @@ pub fn live_superseder(
 /// — `comemory show`'s depth-1 reference read. See [`walk_context_edges`]
 /// for the multi-hop version `comemory context` uses.
 pub fn direct_reference_edges(conn: &Connection, memory_id: &str) -> Result<Vec<(String, String)>> {
-    let mut stmt = conn.prepare(
-        "SELECT rel, dst_id FROM edges \
-          WHERE src_kind = 'memory' AND src_id = ?1 AND rel IN (?2, ?3) \
-          ORDER BY rel, dst_id",
-    )?;
-    let rows = stmt
-        .query_map(
-            params![memory_id, REFERENCES_FILE, REFERENCES_SYMBOL],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )?
-        .collect::<std::result::Result<_, _>>()?;
-    Ok(rows)
+    orm::query_all(
+        conn,
+        Edges::select()
+            .columns_typed(&[&c::rel, &c::dst_id])
+            .filter(c::src_kind.eq("memory"))
+            .filter(c::src_id.eq(memory_id))
+            .filter(c::rel.in_list(&[REFERENCES_FILE.into(), REFERENCES_SYMBOL.into()]))
+            .order_by(c::rel.asc())
+            .order_by(c::dst_id.asc())
+            .to_sql(),
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )
 }
 
 #[cfg(test)]

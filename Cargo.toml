@@ -73,7 +73,8 @@ siphasher = "1"
 sqlite-vec = "0.1"
 thiserror = "2"
 time = { version = "0.3", features = ["serde", "formatting", "parsing", "macros"] }
-# Schema-first table declarations (`src/store/schema*.rs`): `#[table]` /
+# Schema-first table declarations and runtime queries (`src/store/schema*.rs`):
+# `#[table]` /
 # `#[fts5_table]` / `#[vec0_table]` structs are the declared schema, diffed into
 # `migrations/` by `examples/migrations.rs`. The facade is the one crate that
 # satisfies both the `::toolu_orm::core` paths the macros emit and the

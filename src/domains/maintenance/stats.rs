@@ -80,11 +80,11 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
     let repo = req.repo.as_deref();
     let conn = ctx.conn()?;
     Ok(Response {
-        memories: stats_counts::scoped_count(conn, "memories", "deleted_at IS NULL", repo)?,
-        trashed: stats_counts::scoped_count(conn, "memories", "deleted_at IS NOT NULL", repo)?,
+        memories: stats_counts::scoped_count(conn, stats_counts::Corpus::LiveMemories, repo)?,
+        trashed: stats_counts::scoped_count(conn, stats_counts::Corpus::TrashedMemories, repo)?,
         markdown_files,
-        code_symbols: stats_counts::scoped_count(conn, "code_symbols", "1 = 1", repo)?,
-        documents: stats_counts::scoped_count(conn, "documents", "1 = 1", repo)?,
+        code_symbols: stats_counts::scoped_count(conn, stats_counts::Corpus::CodeSymbols, repo)?,
+        documents: stats_counts::scoped_count(conn, stats_counts::Corpus::Documents, repo)?,
         edges: stats_counts::count_table(conn, "edges")?,
         db_bytes: stats_counts::db_bytes(conn)?,
         repos: stats_counts::count_table(conn, "repo_marker")?,

@@ -21,13 +21,9 @@ does another capability's policy: the dashboards call `domains::code::repos`,
 `domains::memories::list` and `domains::maintenance::stats` rather than
 restating what those own.
 
-One inherited exception to the store rule: `doctor/system.rs` still reads the
-`schema_meta` version with an inline `SELECT`, although
-`store::schema_meta::version` is the equivalent `doctor.rs` already calls.
-`domains::learning::feedback` and `domains::sync::exchange::manifest` carry the
-same kind of leftover, and `store-chokepoint-check.sh` does not catch it
-because it gates the driver type, not SQL text. Folding it in is chokepoint
-work, not part of a behavior-preserving move.
+All persistence stays in the store: `doctor/system.rs` uses the shared schema
+version reader, and `stats.rs` selects `store::stats_counts::Corpus` variants
+rather than passing SQL predicates to its counters.
 
 `upgrade` is deliberately CLI-only (`serve::routes::meta::CLI_ONLY`, beside
 `serve` and `auth`). A server replacing its own binary on request is not a

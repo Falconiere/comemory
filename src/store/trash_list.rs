@@ -5,7 +5,12 @@
 
 use rusqlite::Connection;
 
+use super::{
+    orm,
+    schema_memory::{Memories, memories},
+};
 use crate::prelude::*;
+use toolu_orm::core::query_column::CommonOps;
 
 /// The `memories` columns `domains::memories::trash` reads, before the on-disk join.
 pub struct DeletedMemoryRow {
@@ -25,11 +30,18 @@ pub struct DeletedMemoryRow {
 /// id as a stable tie-breaker (so paging is deterministic when a batch of
 /// memories was deleted in the same run).
 pub fn deleted_memories(conn: &Connection) -> Result<Vec<DeletedMemoryRow>> {
-    let mut stmt = conn.prepare(
-        "SELECT id, body, kind, repo, deleted_at FROM memories \
-          WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC, id",
-    )?;
-    let rows = stmt.query_map([], |r| {
+    let query = Memories::select()
+        .columns_typed(&[
+            &memories::id,
+            &memories::body,
+            &memories::kind,
+            &memories::repo,
+            &memories::deleted_at,
+        ])
+        .filter(memories::deleted_at.is_not_null())
+        .order_by(memories::deleted_at.desc())
+        .order_by(memories::id.asc());
+    orm::query_all(conn, query.to_sql(), |r| {
         Ok(DeletedMemoryRow {
             id: r.get(0)?,
             body: r.get(1)?,
@@ -37,12 +49,7 @@ pub fn deleted_memories(conn: &Connection) -> Result<Vec<DeletedMemoryRow>> {
             repo: r.get(3)?,
             deleted_at: r.get(4)?,
         })
-    })?;
-    let mut out = Vec::new();
-    for row in rows {
-        out.push(row?);
-    }
-    Ok(out)
+    })
 }
 
 #[cfg(test)]

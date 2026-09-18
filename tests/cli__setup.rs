@@ -289,10 +289,14 @@ fn a_hand_written_hook_is_never_clobbered() {
     let original = "#!/bin/sh\necho mine\n";
     std::fs::write(&hook, original).unwrap();
 
+    // Select only the behavior under test so installed host marketplace state
+    // cannot affect whether a handwritten Git hook is preserved.
     let envelope = setup_json(
         data.path(),
         &[
             "--yes",
+            "--only",
+            "git-hooks",
             "--repo",
             repo.path().to_str().unwrap(),
             "--host",

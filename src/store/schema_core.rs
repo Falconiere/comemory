@@ -3,9 +3,9 @@
 //! triplet index over `edges`.
 //!
 //! The structs here (and in every `schema_*.rs` sibling) are schema
-//! declarations only — `registry()` in `schema.rs` is the entry point that
-//! consumes them; the macro-generated column constants and query builders
-//! are unused by comemory's own code.
+//! declarations shared by migration generation and runtime query builders.
+//! `registry()` in `schema.rs` assembles the migration input; store helpers
+//! use the generated columns and builders through `store::orm`.
 
 use toolu_orm::core::column::Text;
 use toolu_orm::{fts5_table, table};

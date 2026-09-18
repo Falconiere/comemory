@@ -15,6 +15,11 @@ decides what edges mean. Derived inputs arrive as owned/borrowed row data
 only as a TYPE — never a function — under the `passive_store_models`
 allowlist in `scripts/architecture-policy.json`.
 
+Runtime queries use the schema's generated table and column builders through
+`orm.rs`. See [the query inventory](../../docs/guides/runtime-orm.md) for the
+remaining unsupported SQL and its upstream issues. `stats_counts::Corpus`
+replaces the old table/predicate string pair for repo-scoped counters.
+
 ## Contents
 
 One line per file, named after its primary item:
@@ -36,6 +41,7 @@ One line per file, named after its primary item:
 | `documents.rs` | `DocumentUpsert` | `documents` + `document_chunks` row CRUD, plus `document_id_in_source` and `document_ids_for_repo_path`, the `(source, path)` / `(repo, path)` document-id lookups behind `domains::graph::doc_link` |
 | `edge_fts.rs` | `EdgeFtsHit` | FTS5 triplet index over `edges`: rendering, refresh, and the `comemory edges` lexical ladder |
 | `edges.rs` | `insert` | `edges` table CRUD: typed upserts, weighted accumulation, outgoing neighbors, the `supersedes_chain` recursive walk, delete-by-node, the code-graph/`memory_rank` weighted-edge queries, `co_changed`/`imports` scoped deletes, `count_by_rel` (behind `maintenance::overview`'s edge totals), the `file_neighbor_rows` one-hop query, and `insert_memory_references` (the three reference-edge kinds a memory row owes, written from the `store::MemoryLinks` the caller derived); every `domains::graph` algorithm calls this rather than owning its own SQL |
+| `edges_neighbors.rs` | `file_neighbor_rows` | The bounded file-neighbor CTE, kept separate from edge CRUD to respect the file-size ceiling |
 | `edges_retrieval.rs` | `expand_memory_seeds` | Retrieval-side `edges` reads split out of `edges.rs` to stay under the 300-line ceiling: the memory graph-expansion walk (`retrieval::graph_route`), the context-bundle relation walk (`retrieval::bundle`), the working-set co-change affinity sum (`retrieval::code_prior`), the live-supersede lookup (`retrieval::rerank`, reused by `domains::memories::show`), and `direct_reference_edges` (`comemory show`'s depth-1 reference read) |
 | `embed.rs` | `to_vec_blob` | f32 ↔ `vec0` BLOB encoding plus the per-table dim guards |
 | `fts.rs` | `CodeFtsHit` | FTS5 insert/search helpers for the code leg |
@@ -44,7 +50,9 @@ One line per file, named after its primary item:
 | `memory_list.rs` | `ListRow` | Paginated listing of live memories with ordered creation indexes and trigram candidates for literal substring filters |
 | `memory_meta.rs` | `MemoryMeta` | Batched per-memory metadata: path, repo, kind, tags, references; also the smaller `memories`-table reads `ids_matching_kind` (ANN kind post-filter, `retrieval::router`), `kind_and_body` (`retrieval::bundle`), `rank_signals` (`retrieval::rerank`), `keeper_stats` (`maintenance::consolidation::keeper`), and `fetch_extra` (the single-row body/quality/timestamps/access/rank_score read behind `comemory show`) |
 | `memory_purge.rs` | `purge_memory` | One-transaction hard delete of a **soft-deleted** memory's mirror rows (`memories`, tags, FTS, vec, touching edges, `code_ref`, `feedback` + memory-target `feedback_events`; a live row is refused), plus `expired_deleted_ids` — the `deleted_at`-past-retention scan behind `comemory gc`'s zombie-row pass — `soft_delete` — the `comemory delete` mirror write (stamp `deleted_at`, drop FTS/vec, delete touching edges) called inside `domains::memories::delete::mirror_soft_delete`'s transaction — and `trashed_with_hash` — the "already trashed under this hash" probe behind `domains::sync::exchange::import_state` |
+| `memory_signals.rs` | `bump_access` | Memory activation updates and materialized graph-rank writes; callers own the transaction |
 | `memory_row.rs` | `insert` | `memories` row upserts and their edge materialization, taking the body's reference targets as a borrowed `store::MemoryLinks` rather than deriving them (`domains::memories::mirror` does that and is the only caller) and emitting them through `edges::insert_memory_references`; the outgoing-edge wipe carries relation-edge timestamps and the mined `co_activated` edges (the one memory-sourced kind with no markdown source) across every re-mirror; also `live_ids`, `live_bodies` (the re-embed scan behind `maintenance::reembed`'s memory leg), the `rank_score` bulk writer, and the chunked access-count bump behind `domains::graph::memory_rank` / `domains::graph::coactivate` |
+| `orm.rs` | `execute` | Store-private execution of generated statements; cached preparation, owned reads, native SQLite errors and caller-owned transactions |
 | `migrate.rs` | `CURRENT_VERSION` | Versioned, idempotent schema migrations plus `schema_meta`; loops over the `MIGRATIONS` slice declared in `migrate/list.rs` |
 | `schema.rs` | `registry` | The declared schema: `registry()` assembles the `#[table]` / `#[fts5_table]` / `#[vec0_table]` structs from the `schema_*.rs` siblings into a toolu-orm `SchemaRegistry` (what `examples/migrations.rs` diffs into the next `migrations/*.sql`), plus `DECLARED_TABLES`; the colocated fidelity test proves the registry identical to the database the frozen chain builds |
 | `schema_core.rs` | `SchemaMeta` | Declared `schema_meta` + `edge_fts` |

@@ -3,9 +3,13 @@
 //! console-history table (`migrations/0014_v14_console.sql`).
 //! [`newest`] backs `GET /api/v1/gc/policy`'s `last_run` / `last_run_at`.
 
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::Connection;
 use serde::Serialize;
 
+use super::{
+    orm,
+    schema_history::{GcRuns, gc_runs as col},
+};
 use crate::prelude::*;
 
 /// Insert one `gc_runs` row for a completed sweep. `id` is caller-generated
@@ -21,17 +25,22 @@ pub fn insert(
     event_rows: u64,
     bytes_freed: u64,
 ) -> Result<()> {
-    conn.execute(
-        "INSERT INTO gc_runs(id, at, removed, log_rows, event_rows, bytes_freed) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        rusqlite::params![
-            id,
-            at,
-            i64::try_from(removed).unwrap_or(i64::MAX),
-            i64::try_from(log_rows).unwrap_or(i64::MAX),
-            i64::try_from(event_rows).unwrap_or(i64::MAX),
-            i64::try_from(bytes_freed).unwrap_or(i64::MAX),
-        ],
+    orm::execute(
+        conn,
+        GcRuns::insert()
+            .set(&col::id, id)
+            .set(&col::at, at)
+            .set(&col::removed, i64::try_from(removed).unwrap_or(i64::MAX))
+            .set(&col::log_rows, i64::try_from(log_rows).unwrap_or(i64::MAX))
+            .set(
+                &col::event_rows,
+                i64::try_from(event_rows).unwrap_or(i64::MAX),
+            )
+            .set(
+                &col::bytes_freed,
+                i64::try_from(bytes_freed).unwrap_or(i64::MAX),
+            )
+            .to_sql(),
     )?;
     Ok(())
 }
@@ -66,24 +75,32 @@ pub struct GcRunRow {
 /// be deterministic but arbitrary — it would sometimes answer with the
 /// earlier sweep.
 pub fn newest(conn: &Connection) -> Result<Option<GcRunRow>> {
-    let row = conn
-        .query_row(
-            "SELECT id, at, removed, log_rows, event_rows, bytes_freed FROM gc_runs \
-              ORDER BY at DESC, rowid DESC LIMIT 1",
-            [],
-            |r| {
-                Ok(GcRunRow {
-                    id: r.get(0)?,
-                    at: r.get(1)?,
-                    removed: to_count(r.get(2)?),
-                    log_rows: to_count(r.get(3)?),
-                    event_rows: to_count(r.get(4)?),
-                    bytes_freed: to_count(r.get(5)?),
-                })
-            },
-        )
-        .optional()?;
-    Ok(row)
+    orm::query_optional(
+        conn,
+        GcRuns::select()
+            .columns_typed(&[
+                &col::id,
+                &col::at,
+                &col::removed,
+                &col::log_rows,
+                &col::event_rows,
+                &col::bytes_freed,
+            ])
+            .order_by(col::at.desc())
+            .order_by(toolu_orm::core::expr::OrderBy::alias_desc("rowid"))
+            .limit(1)
+            .to_sql(),
+        |r| {
+            Ok(GcRunRow {
+                id: r.get(0)?,
+                at: r.get(1)?,
+                removed: to_count(r.get(2)?),
+                log_rows: to_count(r.get(3)?),
+                event_rows: to_count(r.get(4)?),
+                bytes_freed: to_count(r.get(5)?),
+            })
+        },
+    )
 }
 
 /// A stored counter as `u64`, clamping a (impossible-in-practice) negative

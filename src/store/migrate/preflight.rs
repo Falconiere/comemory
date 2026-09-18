@@ -34,10 +34,17 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 use rusqlite::Connection;
+use toolu_orm::core::column::Text;
+use toolu_orm::core::query_column::{Column, CommonOps};
+use toolu_orm::query::select::SelectBuilder;
 
 use super::list::{self, Class};
 use crate::config::{env, paths::Paths};
 use crate::prelude::*;
+use crate::store::{
+    orm,
+    schema_core::{SchemaMeta, schema_meta},
+};
 use crate::utilities::file_lock::FileLock;
 
 /// Guard and, if needed, snapshot the database at `db_path` (already open
@@ -88,10 +95,13 @@ pub(crate) fn preflight(conn: &Connection, db_path: &Path) -> Result<()> {
 /// database. The stored key format itself is unchanged — only the filter
 /// moved.
 pub(crate) fn applied_keys(conn: &Connection) -> Result<BTreeSet<String>> {
-    let mut stmt = conn.prepare("SELECT key FROM schema_meta")?;
-    let keys = stmt
-        .query_map([], |row| row.get::<_, String>(0))?
-        .collect::<std::result::Result<Vec<String>, rusqlite::Error>>()?;
+    let keys = orm::query_all(
+        conn,
+        SchemaMeta::select()
+            .columns_typed(&[&schema_meta::key])
+            .to_sql(),
+        |row| row.get::<_, String>(0),
+    )?;
     Ok(keys
         .into_iter()
         .filter(|k| is_migration_marker(k))
@@ -140,22 +150,23 @@ fn schema_meta_exists(conn: &Connection) -> Result<bool> {
 /// distinguishes a brand-new empty file (fresh, no snapshot needed) from a
 /// legacy database that predates `schema_meta` (snapshot warranted).
 fn has_any_table(conn: &Connection) -> Result<bool> {
-    let n: i64 = conn.query_row(
-        "SELECT count(*) FROM sqlite_master WHERE type = 'table'",
-        [],
-        |row| row.get(0),
-    )?;
-    Ok(n > 0)
+    orm::query_one(conn, sqlite_tables().to_exists_sql(), |row| row.get(0))
 }
 
 /// True when a table named `name` exists.
 fn table_exists(conn: &Connection, name: &str) -> Result<bool> {
-    let n: i64 = conn.query_row(
-        "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
-        [name],
+    let name_column = Column::<Text>::new("sqlite_master", "name");
+    orm::query_one(
+        conn,
+        sqlite_tables().filter(name_column.eq(name)).to_exists_sql(),
         |row| row.get(0),
-    )?;
-    Ok(n > 0)
+    )
+}
+
+/// SQLite's own catalog is queried without declaring it as an application table.
+fn sqlite_tables() -> SelectBuilder {
+    let kind = Column::<Text>::new("sqlite_master", "type");
+    SelectBuilder::new("sqlite_master").filter(kind.eq("table"))
 }
 
 /// Build the forward-compat refusal: `applied` holds a key `unknown` to

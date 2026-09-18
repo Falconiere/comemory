@@ -1,6 +1,11 @@
 //! SQLite-backed edge store. Replaces the v0.1 kuzu writer.
 
-use rusqlite::{Connection, OptionalExtension, named_params, params};
+use super::{
+    orm,
+    schema_graph::{Edges, edges as c},
+};
+use rusqlite::{Connection, params};
+use toolu_orm::core::query_column::CommonOps;
 
 use crate::prelude::*;
 use crate::store::MemoryLinks;
@@ -171,14 +176,18 @@ pub fn insert_weighted(conn: &Connection, e: EdgeKey<'_>, weight: i64) -> Result
 /// [`insert_weighted`] so it can detect the Beta crossing-once boundary
 /// (`old < 2 && old + delta >= 2`) as a pure function of the stored state.
 pub(crate) fn current_weight(conn: &Connection, e: EdgeKey<'_>) -> Result<i64> {
-    let w: Option<i64> = conn
-        .query_row(
-            "SELECT weight FROM edges \
-              WHERE src_kind=?1 AND src_id=?2 AND dst_kind=?3 AND dst_id=?4 AND rel=?5",
-            params![e.src_kind, e.src_id, e.dst_kind, e.dst_id, e.rel],
-            |r| r.get(0),
-        )
-        .optional()?;
+    let w = orm::query_optional(
+        conn,
+        Edges::select()
+            .columns_typed(&[&c::weight])
+            .filter(c::src_kind.eq(e.src_kind))
+            .filter(c::src_id.eq(e.src_id))
+            .filter(c::dst_kind.eq(e.dst_kind))
+            .filter(c::dst_id.eq(e.dst_id))
+            .filter(c::rel.eq(e.rel))
+            .to_sql(),
+        |r| r.get::<_, i64>(0),
+    )?;
     Ok(w.unwrap_or(0))
 }
 
@@ -186,9 +195,11 @@ pub(crate) fn current_weight(conn: &Connection, e: EdgeKey<'_>) -> Result<i64> {
 /// parameter, never interpolated. Behind `maintenance::overview`'s code-graph edge
 /// totals (`co_changed` / `imports`).
 pub fn count_by_rel(conn: &Connection, rel: &str) -> Result<u64> {
-    let n: i64 = conn.query_row("SELECT COUNT(*) FROM edges WHERE rel = ?1", [rel], |r| {
-        r.get(0)
-    })?;
+    let n: i64 = orm::query_one(
+        conn,
+        Edges::select().filter(c::rel.eq(rel)).to_count_sql(),
+        |r| r.get(0),
+    )?;
     Ok(u64::try_from(n).unwrap_or(0))
 }
 
@@ -199,16 +210,16 @@ pub fn outgoing(
     src_id: &str,
     rel: &str,
 ) -> Result<Vec<(String, String)>> {
-    let mut stmt = conn.prepare(
-        "SELECT dst_kind, dst_id FROM edges \
-          WHERE src_kind = ?1 AND src_id = ?2 AND rel = ?3",
-    )?;
-    let rows = stmt
-        .query_map(params![src_kind, src_id, rel], |r| {
-            Ok((r.get(0)?, r.get(1)?))
-        })?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    Ok(rows)
+    orm::query_all(
+        conn,
+        Edges::select()
+            .columns_typed(&[&c::dst_kind, &c::dst_id])
+            .filter(c::src_kind.eq(src_kind))
+            .filter(c::src_id.eq(src_id))
+            .filter(c::rel.eq(rel))
+            .to_sql(),
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )
 }
 
 /// Transitive `supersedes` chain starting at `start` memory id,
@@ -247,9 +258,12 @@ pub fn supersedes_chain(conn: &Connection, start: &str, max_depth: u32) -> Resul
 /// replays memories newest-first, so the superseder's edge is already in
 /// place when the superseded memory is inserted.
 pub fn delete_outgoing(conn: &Connection, kind: &str, id: &str) -> Result<()> {
-    conn.execute(
-        "DELETE FROM edges WHERE src_kind = ?1 AND src_id = ?2",
-        params![kind, id],
+    orm::execute(
+        conn,
+        Edges::delete()
+            .filter(c::src_kind.eq(kind))
+            .filter(c::src_id.eq(id))
+            .to_sql(),
     )?;
     Ok(())
 }
@@ -257,9 +271,16 @@ pub fn delete_outgoing(conn: &Connection, kind: &str, id: &str) -> Result<()> {
 /// Delete every edge touching `(kind, id)`, either side. Used by
 /// soft-delete.
 pub fn delete_touching(conn: &Connection, kind: &str, id: &str) -> Result<()> {
-    conn.execute(
-        "DELETE FROM edges WHERE (src_kind = ?1 AND src_id = ?2) OR (dst_kind = ?1 AND dst_id = ?2)",
-        params![kind, id],
+    orm::execute(
+        conn,
+        Edges::delete()
+            .filter(
+                c::src_kind
+                    .eq(kind)
+                    .and(c::src_id.eq(id))
+                    .or(c::dst_kind.eq(kind).and(c::dst_id.eq(id))),
+            )
+            .to_sql(),
     )?;
     Ok(())
 }
@@ -324,23 +345,15 @@ pub(crate) fn delete_co_changed_for_repo(conn: &Connection, prefix: &str) -> Res
 /// relation sourced at the same node untouched — unlike [`delete_outgoing`],
 /// which deletes every outgoing edge regardless of `rel`.
 pub(crate) fn delete_imports_from(conn: &Connection, src_id: &str) -> Result<()> {
-    conn.execute(
-        "DELETE FROM edges WHERE src_kind='file' AND src_id = ?1 AND rel='imports'",
-        [src_id],
+    orm::execute(
+        conn,
+        Edges::delete()
+            .filter(c::src_kind.eq("file"))
+            .filter(c::src_id.eq(src_id))
+            .filter(c::rel.eq("imports"))
+            .to_sql(),
     )?;
     Ok(())
-}
-
-/// Shared `(String, String, f64)` row fetch for the two memory-graph edge
-/// queries below.
-fn fetch_weighted_edges(conn: &Connection, sql: &str) -> Result<Vec<(String, String, f64)>> {
-    let mut stmt = conn.prepare(sql)?;
-    let rows = stmt
-        .query_map([], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get(2)?))
-        })?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    Ok(rows)
 }
 
 /// Direct memory→memory relation edges (`supersedes`/`conflicts_with`/
@@ -350,12 +363,23 @@ fn fetch_weighted_edges(conn: &Connection, sql: &str) -> Result<Vec<(String, Str
 pub(crate) fn memory_direct_relation_edges(
     conn: &Connection,
 ) -> Result<Vec<(String, String, f64)>> {
-    fetch_weighted_edges(
+    orm::query_all(
         conn,
-        "SELECT src_id, dst_id, weight FROM edges \
-          WHERE src_kind = 'memory' AND dst_kind = 'memory' \
-            AND rel IN ('supersedes','conflicts_with','derived_from','relates_to') \
-         ORDER BY rel, src_id, dst_id",
+        Edges::select()
+            .columns_typed(&[&c::src_id, &c::dst_id, &c::weight])
+            .filter(c::src_kind.eq("memory"))
+            .filter(c::dst_kind.eq("memory"))
+            .filter(c::rel.in_list(&[
+                "supersedes".into(),
+                "conflicts_with".into(),
+                "derived_from".into(),
+                "relates_to".into(),
+            ]))
+            .order_by(c::rel.asc())
+            .order_by(c::src_id.asc())
+            .order_by(c::dst_id.asc())
+            .to_sql(),
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
     )
 }
 
@@ -363,8 +387,7 @@ pub(crate) fn memory_direct_relation_edges(
 /// same target through the same rel, weighted by the number of shared
 /// targets. See [`crate::domains::graph::memory_rank::derive_memory_graph`].
 pub(crate) fn memory_co_citation_edges(conn: &Connection) -> Result<Vec<(String, String, f64)>> {
-    fetch_weighted_edges(
-        conn,
+    let mut stmt = conn.prepare(
         "SELECT a.src_id, b.src_id, CAST(COUNT(*) AS REAL) AS w \
            FROM edges a \
            JOIN edges b ON a.rel = b.rel AND a.dst_kind = b.dst_kind \
@@ -373,7 +396,10 @@ pub(crate) fn memory_co_citation_edges(conn: &Connection) -> Result<Vec<(String,
             AND a.rel IN ('references_file','references_symbol','co_activated') \
           GROUP BY a.src_id, b.src_id \
           ORDER BY a.src_id, b.src_id",
-    )
+    )?;
+    Ok(stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+        .collect::<rusqlite::Result<Vec<_>>>()?)
 }
 
 /// Every memory id whose `rel` edge points at `dst_id`
@@ -385,14 +411,17 @@ pub(crate) fn memory_ids_referencing_file(
     rel: &str,
     dst_id: &str,
 ) -> Result<Vec<String>> {
-    let mut stmt = conn.prepare(
-        "SELECT src_id FROM edges \
-          WHERE rel = ?1 AND src_kind = 'memory' AND dst_kind = 'file' AND dst_id = ?2",
-    )?;
-    let ids = stmt
-        .query_map(params![rel, dst_id], |r| r.get(0))?
-        .collect::<std::result::Result<Vec<String>, _>>()?;
-    Ok(ids)
+    orm::query_all(
+        conn,
+        Edges::select()
+            .columns_typed(&[&c::src_id])
+            .filter(c::rel.eq(rel))
+            .filter(c::src_kind.eq("memory"))
+            .filter(c::dst_kind.eq("file"))
+            .filter(c::dst_id.eq(dst_id))
+            .to_sql(),
+        |r| r.get(0),
+    )
 }
 
 /// Reverse batch lookup: every `(src_id, dst_id)` edge with the given `rel`
@@ -403,75 +432,29 @@ pub(crate) fn src_ids_for_dst_ids(
     rel: &str,
     dst_ids: &[&str],
 ) -> Result<Vec<(String, String)>> {
-    let qmarks = crate::store::qmarks(dst_ids.len());
-    let sql = format!(
-        "SELECT src_id, dst_id FROM edges \
-          WHERE rel = ?1 AND dst_kind = 'file' AND dst_id IN ({qmarks}) \
-          ORDER BY dst_id, src_id"
-    );
-    let mut stmt = conn.prepare(&sql)?;
-    let bound = std::iter::once(rel).chain(dst_ids.iter().copied());
-    let rows = stmt
-        .query_map(rusqlite::params_from_iter(bound), |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
-        })?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    Ok(rows)
+    let ids = dst_ids.iter().copied().map(Into::into).collect::<Vec<_>>();
+    orm::query_all(
+        conn,
+        Edges::select()
+            .columns_typed(&[&c::src_id, &c::dst_id])
+            .filter(c::rel.eq(rel))
+            .filter(c::dst_kind.eq("file"))
+            .filter(c::dst_id.in_list(&ids))
+            .order_by(c::dst_id.asc())
+            .order_by(c::src_id.asc())
+            .to_sql(),
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )
 }
 
-/// The prefix every file node id carries, mirrored from [`file_node_id`].
-const FILE_PREFIX: &str = "file:";
-
-/// 1-based `substr` start that strips [`FILE_PREFIX`] off a file node id,
-/// derived from the prefix itself rather than a literal offset that would
-/// silently rot if the id grammar changed.
-const ID_BODY_START: usize = FILE_PREFIX.len() + 1;
-
-/// One-hop, undirected `imports`/`co_changed` graph query seeded from a set
-/// of `file:<repo>:<path>` ids. Not recursive — a single query, self-joined
-/// against both edge orientations so a file that imports a seed is found
-/// exactly as one a seed imports. `:seeds` is a JSON array bound as a named
-/// parameter (never interpolated). Multiple contributions to the same
-/// `(repo, path, rel)` neighbor collapse to one row carrying the strongest
-/// (`MAX`) weight. See [`crate::domains::graph::neighbors::file_neighbors`].
-static NEIGHBOR_SQL: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
-    format!(
-        "\
-    WITH seeds(id) AS (SELECT value FROM json_each(:seeds)),
-    one_hop(rest, rel, weight) AS (
-      SELECT substr(e.dst_id, {ID_BODY_START}), e.rel, e.weight FROM edges e JOIN seeds s ON s.id = e.src_id
-       WHERE e.src_kind='file' AND e.dst_kind='file' AND e.rel IN ('imports','co_changed')
-         AND e.weight >= :min_weight
-         AND e.dst_id NOT IN (SELECT id FROM seeds)
-      UNION ALL
-      SELECT substr(e.src_id, {ID_BODY_START}), e.rel, e.weight FROM edges e JOIN seeds s ON s.id = e.dst_id
-       WHERE e.src_kind='file' AND e.dst_kind='file' AND e.rel IN ('imports','co_changed')
-         AND e.weight >= :min_weight
-         AND e.src_id NOT IN (SELECT id FROM seeds)
-    )
-    SELECT substr(rest,1,instr(rest,':')-1) AS repo, substr(rest,instr(rest,':')+1) AS path,
-           rel, MAX(weight) AS weight
-      FROM one_hop WHERE instr(rest,':') > 0
-     GROUP BY repo, path, rel ORDER BY weight DESC, rel ASC, path ASC"
-    )
-});
-
-/// Raw `(repo, path, rel, weight)` rows from [`NEIGHBOR_SQL`]. `seeds_json`
-/// must be a JSON array of `file:<repo>:<path>` ids; `min_weight` drops
-/// edges below the floor on both orientations.
+/// Raw `(repo, path, rel, weight)` neighbors from the file-graph CTE.
+/// `seeds_json` is a JSON array of file-node ids; `min_weight` is inclusive.
 pub(crate) fn file_neighbor_rows(
     conn: &Connection,
     seeds_json: &str,
     min_weight: i64,
 ) -> Result<Vec<(String, String, String, i64)>> {
-    let mut stmt = conn.prepare(&NEIGHBOR_SQL)?;
-    let rows = stmt
-        .query_map(
-            named_params! { ":seeds": seeds_json, ":min_weight": min_weight },
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
-        )?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    Ok(rows)
+    super::edges_neighbors::file_neighbor_rows(conn, seeds_json, min_weight)
 }
 
 #[cfg(test)]

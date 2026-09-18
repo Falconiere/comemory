@@ -16,8 +16,8 @@ use std::collections::BTreeMap;
 use crate::domains::graph::pagerank;
 use crate::prelude::*;
 use crate::store::edges;
-use crate::store::memory_row;
 use crate::store::{Connection, Transaction};
+use crate::store::{memory_row, memory_signals};
 
 /// A derived memory graph: sorted live memory ids (the dense node index,
 /// by position) paired with weighted `(src, dst, weight)` edges over those
@@ -125,7 +125,7 @@ fn resolve(index: &BTreeMap<&str, u32>, src: &str, dst: &str) -> Option<(u32, u3
 /// from the same dense index). Split out of [`materialize_memory_rank`] so
 /// the prepared statement's borrow of `tx` ends before the commit.
 fn write_scores(tx: &Transaction<'_>, nodes: &[String], scores: &[f64]) -> Result<()> {
-    memory_row::update_rank_scores(tx, nodes, scores)
+    memory_signals::update_rank_scores(tx, nodes, scores)
 }
 
 #[cfg(test)]

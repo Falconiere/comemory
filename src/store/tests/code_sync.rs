@@ -89,3 +89,34 @@ fn cursor_round_trips_and_tolerates_garbage() {
     comemory::store::schema_meta::upsert(&conn, "code_sync:broken", "not json").unwrap();
     assert_eq!(code_sync::cursor(&conn, "broken").unwrap(), None);
 }
+
+#[test]
+fn symbol_count_excluding_preserves_repo_scope_across_path_chunks() {
+    let home = tempfile::tempdir().unwrap();
+    let paths = Paths::new(home.path().join("data"));
+    paths.ensure_dirs().unwrap();
+    let cfg = Config::defaults();
+    let mut conn = connection::open(paths.db_path()).unwrap();
+    let tree = fixture::write_ts_repo(home.path());
+    fixture::index(&paths, &cfg, &mut conn, &tree);
+
+    assert_eq!(
+        code_sync::symbol_count_excluding(&conn, fixture::REPO, &[]).unwrap(),
+        3
+    );
+    assert_eq!(
+        code_sync::symbol_count_excluding(&conn, fixture::REPO, &["src/a.ts", "src/c.ts"]).unwrap(),
+        1
+    );
+    let mut excluded: Vec<String> = (0..500).map(|n| format!("missing/{n}.ts")).collect();
+    excluded.push("src/b.ts".into());
+    let excluded: Vec<&str> = excluded.iter().map(String::as_str).collect();
+    assert_eq!(
+        code_sync::symbol_count_excluding(&conn, fixture::REPO, &excluded).unwrap(),
+        2
+    );
+    assert_eq!(
+        code_sync::symbol_count_excluding(&conn, "other", &excluded).unwrap(),
+        0
+    );
+}

@@ -9,7 +9,12 @@
 //! `root_path`, and `archived` in the same round trip, so it stays one query
 //! rather than three.
 
-use rusqlite::{Connection, OptionalExtension, params};
+use super::{
+    orm,
+    schema_code::{RepoMarker, repo_marker as c},
+};
+use rusqlite::{Connection, params};
+use toolu_orm::core::query_column::{ColumnRef, CommonOps};
 
 use crate::prelude::*;
 
@@ -27,23 +32,20 @@ pub(crate) struct LazyReindexMarker {
     pub archived: bool,
 }
 
-/// `SELECT <column> FROM repo_marker WHERE repo = ?1`, as `Ok(None)` when the
-/// repo has no marker row at all.
-///
-/// `column` is `&'static str` and is interpolated into the SQL, so only a
-/// compile-time literal at a call site can reach it — `repo`, the one
-/// genuinely dynamic value, is bound. The three single-column readers below
-/// differ only in that literal and in how they interpret the value, which is
-/// why they share this body rather than repeating the query three times.
+/// Read one declared marker column, retaining an absent marker as `None`.
 fn column_for_repo<T: rusqlite::types::FromSql>(
     conn: &Connection,
-    column: &'static str,
+    column: &dyn ColumnRef,
     repo: &str,
 ) -> Result<Option<T>> {
-    let sql = format!("SELECT {column} FROM repo_marker WHERE repo = ?1");
-    conn.query_row(&sql, [repo], |r| r.get::<_, T>(0))
-        .optional()
-        .map_err(Error::Sqlite)
+    orm::query_optional(
+        conn,
+        RepoMarker::select()
+            .columns_typed(&[column])
+            .filter(c::repo.eq(repo))
+            .to_sql(),
+        |r| r.get(0),
+    )
 }
 
 /// The `repo_marker` row for `repo`, or `None` when there is no marker row
@@ -52,25 +54,26 @@ pub(crate) fn read_for_lazy_reindex(
     conn: &Connection,
     repo: &str,
 ) -> Result<Option<LazyReindexMarker>> {
-    conn.query_row(
-        "SELECT last_mined_commit, root_path, archived FROM repo_marker WHERE repo = ?1",
-        [repo],
+    orm::query_optional(
+        conn,
+        RepoMarker::select()
+            .columns_typed(&[&c::last_mined_commit, &c::root_path, &c::archived])
+            .filter(c::repo.eq(repo))
+            .to_sql(),
         |r| {
             Ok(LazyReindexMarker {
-                last_mined_commit: r.get::<_, Option<String>>(0)?,
-                root_path: r.get::<_, Option<String>>(1)?,
+                last_mined_commit: r.get(0)?,
+                root_path: r.get(1)?,
                 archived: r.get::<_, i64>(2)? != 0,
             })
         },
     )
-    .optional()
-    .map_err(Error::Sqlite)
 }
 
 /// The stored `last_mined_commit` cursor for `repo`, or `None` when the repo
 /// has never been mined, or its marker row's cursor column is `NULL`.
 pub(crate) fn last_mined_commit(conn: &Connection, repo: &str) -> Result<Option<String>> {
-    Ok(column_for_repo::<Option<String>>(conn, "last_mined_commit", repo)?.flatten())
+    Ok(column_for_repo::<Option<String>>(conn, &c::last_mined_commit, repo)?.flatten())
 }
 
 /// Advance `repo_marker.last_mined_commit` to `cursor`, creating the marker
@@ -89,51 +92,57 @@ pub(crate) fn advance_mined_cursor(conn: &Connection, repo: &str, cursor: &str) 
 /// been indexed (or the column is `NULL`) — the head a code push reports
 /// and a code manifest answers.
 pub(crate) fn last_head(conn: &Connection, repo: &str) -> Result<Option<String>> {
-    Ok(column_for_repo::<Option<String>>(conn, "last_head", repo)?.flatten())
+    Ok(column_for_repo::<Option<String>>(conn, &c::last_head, repo)?.flatten())
 }
 
 /// Whether `repo`'s `repo_marker.archived` flag is set. `None` when the
 /// repo has no marker row yet (never indexed) — `domains::code::index_code`'s
 /// archived-repo refusal treats an unknown repo as not archived.
 pub fn archived(conn: &Connection, repo: &str) -> Result<Option<bool>> {
-    Ok(column_for_repo::<i64>(conn, "archived", repo)?.map(|f| f != 0))
+    Ok(column_for_repo::<i64>(conn, &c::archived, repo)?.map(|f| f != 0))
 }
 
 /// Every `repo_marker` label, ascending — the authoritative repo list
 /// behind `domains::graph::graph_recompute`'s "rescore every repo" walk.
 pub(crate) fn all_repos(conn: &Connection) -> Result<Vec<String>> {
-    let mut stmt = conn.prepare("SELECT repo FROM repo_marker ORDER BY repo")?;
-    let rows = stmt
-        .query_map([], |r| r.get(0))?
-        .collect::<std::result::Result<Vec<String>, _>>()?;
-    Ok(rows)
+    orm::query_all(
+        conn,
+        RepoMarker::select()
+            .columns_typed(&[&c::repo])
+            .order_by(c::repo.asc())
+            .to_sql(),
+        |r| r.get(0),
+    )
 }
 
 /// `repo_marker.root_path` for `repo`, or `None` when there is no marker
 /// row (or its root is `NULL`) — behind `domains::code::repo_admin`'s connect/patch.
 pub(crate) fn root_path(conn: &Connection, repo: &str) -> Result<Option<String>> {
-    Ok(column_for_repo::<Option<String>>(conn, "root_path", repo)?.flatten())
+    Ok(column_for_repo::<Option<String>>(conn, &c::root_path, repo)?.flatten())
 }
 
 /// Whether a `repo_marker` row exists for `repo` — behind
 /// `domains::code::repo_admin`'s "unknown repo" `404` gate.
 pub(crate) fn exists(conn: &Connection, repo: &str) -> Result<bool> {
-    conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM repo_marker WHERE repo = ?1)",
-        [repo],
+    orm::query_one(
+        conn,
+        RepoMarker::select()
+            .filter(c::repo.eq(repo))
+            .to_exists_sql(),
         |r| r.get(0),
     )
-    .map_err(Error::from)
 }
 
 /// Set `repo_marker.archived` for `repo`; the returned row count is `0`
 /// when the label is unknown — `crate::domains::code::repo_admin::archive`'s `404` gate.
 pub(crate) fn set_archived(conn: &Connection, repo: &str, archived: bool) -> Result<usize> {
-    conn.execute(
-        "UPDATE repo_marker SET archived = ?2 WHERE repo = ?1",
-        params![repo, i64::from(archived)],
+    orm::execute(
+        conn,
+        RepoMarker::update()
+            .set(&c::archived, i64::from(archived))
+            .filter(c::repo.eq(repo))
+            .to_sql(),
     )
-    .map_err(Error::from)
 }
 
 #[cfg(test)]

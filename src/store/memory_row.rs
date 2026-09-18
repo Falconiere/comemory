@@ -13,11 +13,17 @@ use rusqlite::Connection;
 use time::OffsetDateTime;
 use time::format_description::well_known::Iso8601;
 
+use super::{
+    orm,
+    schema_graph::{Edges, edges as edge_columns},
+    schema_memory::{Memories, MemoryFts, MemoryTags, memories, memory_fts, memory_tags},
+};
 use crate::domains::memories::Frontmatter;
 use crate::prelude::*;
 use crate::store::MemoryLinks;
 use crate::store::edges::{self, CO_ACTIVATED, EdgeKey};
 use crate::store::fts;
+use toolu_orm::core::query_column::CommonOps;
 
 /// Upsert SQL for the `memories` row. `ON CONFLICT(id)` preserves `created_at`
 /// and bumps `updated_at`, so a re-save (same id, possibly changed body)
@@ -89,8 +95,18 @@ fn insert_memories_row(
 ) -> Result<()> {
     let repo_opt: Option<&str> = (!fm.repo.is_empty()).then_some(fm.repo.as_str());
     let author_opt: Option<&str> = (!fm.author.is_empty()).then_some(fm.author.as_str());
-    conn.execute("DELETE FROM memory_tags WHERE memory_id = ?1", [&fm.id])?;
-    conn.execute("DELETE FROM memory_fts WHERE memory_id = ?1", [&fm.id])?;
+    orm::execute(
+        conn,
+        MemoryTags::delete()
+            .filter(memory_tags::memory_id.eq(fm.id.as_str()))
+            .to_sql(),
+    )?;
+    orm::execute(
+        conn,
+        MemoryFts::delete()
+            .filter(memory_fts::memory_id.eq(fm.id.as_str()))
+            .to_sql(),
+    )?;
     edges::delete_outgoing(conn, "memory", &fm.id)?;
     let simhash = crate::utilities::simhash::of_body(body) as i64;
     conn.execute(
@@ -130,9 +146,12 @@ fn insert_tags<'a>(conn: &Connection, memory_id: &str, tags: &'a [String]) -> Re
         .filter(|t| !t.is_empty() && seen.insert(*t))
         .collect();
     for tag in &unique_tags {
-        conn.execute(
-            "INSERT INTO memory_tags(memory_id, tag) VALUES(?1, ?2)",
-            rusqlite::params![memory_id, tag],
+        orm::execute(
+            conn,
+            MemoryTags::insert()
+                .set(&memory_tags::memory_id, memory_id)
+                .set(&memory_tags::tag, *tag)
+                .to_sql(),
         )?;
     }
     Ok(unique_tags)
@@ -146,17 +165,24 @@ fn relation_edge_stamps(
     conn: &Connection,
     memory_id: &str,
 ) -> Result<std::collections::HashMap<(String, String), String>> {
-    let mut stmt = conn.prepare(
-        "SELECT rel, dst_id, created_at FROM edges \
-          WHERE src_kind = 'memory' AND src_id = ?1 AND dst_kind = 'memory' \
-            AND rel IN ('supersedes','conflicts_with','derived_from')",
-    )?;
-    let rows = stmt
-        .query_map([memory_id], |r| {
-            Ok(((r.get::<_, String>(0)?, r.get::<_, String>(1)?), r.get(2)?))
-        })?
-        .collect::<std::result::Result<_, _>>()?;
-    Ok(rows)
+    let query = Edges::select()
+        .columns_typed(&[
+            &edge_columns::rel,
+            &edge_columns::dst_id,
+            &edge_columns::created_at,
+        ])
+        .filter(edge_columns::src_kind.eq("memory"))
+        .filter(edge_columns::src_id.eq(memory_id))
+        .filter(edge_columns::dst_kind.eq("memory"))
+        .filter(edge_columns::rel.in_list(&[
+            "supersedes".into(),
+            "conflicts_with".into(),
+            "derived_from".into(),
+        ]));
+    let rows = orm::query_all(conn, query.to_sql(), |r| {
+        Ok(((r.get::<_, String>(0)?, r.get::<_, String>(1)?), r.get(2)?))
+    })?;
+    Ok(rows.into_iter().collect())
 }
 
 /// One earned edge carried across the outgoing wipe: a `co_activated` row
@@ -180,21 +206,24 @@ struct MinedEdge {
 /// restore) have no such re-copy, so without this capture every one of them
 /// would silently drop the reward.
 fn mined_edges(conn: &Connection, memory_id: &str) -> Result<Vec<MinedEdge>> {
-    let mut stmt = conn.prepare(
-        "SELECT dst_kind, dst_id, weight, created_at FROM edges \
-          WHERE src_kind = 'memory' AND src_id = ?1 AND rel = ?2",
-    )?;
-    let rows = stmt
-        .query_map(rusqlite::params![memory_id, CO_ACTIVATED], |r| {
-            Ok(MinedEdge {
-                dst_kind: r.get(0)?,
-                dst_id: r.get(1)?,
-                weight: r.get(2)?,
-                created_at: r.get(3)?,
-            })
-        })?
-        .collect::<std::result::Result<_, _>>()?;
-    Ok(rows)
+    let query = Edges::select()
+        .columns_typed(&[
+            &edge_columns::dst_kind,
+            &edge_columns::dst_id,
+            &edge_columns::weight,
+            &edge_columns::created_at,
+        ])
+        .filter(edge_columns::src_kind.eq("memory"))
+        .filter(edge_columns::src_id.eq(memory_id))
+        .filter(edge_columns::rel.eq(CO_ACTIVATED));
+    orm::query_all(conn, query.to_sql(), |r| {
+        Ok(MinedEdge {
+            dst_kind: r.get(0)?,
+            dst_id: r.get(1)?,
+            weight: r.get(2)?,
+            created_at: r.get(3)?,
+        })
+    })
 }
 
 /// Put the captured mined edges back — weight and `created_at` intact — once
@@ -203,17 +232,18 @@ fn mined_edges(conn: &Connection, memory_id: &str) -> Result<Vec<MinedEdge>> {
 /// re-emits the same key during the re-materialization.
 fn restore_mined_edges(conn: &Connection, memory_id: &str, mined: &[MinedEdge]) -> Result<()> {
     for e in mined {
-        conn.execute(
-            "INSERT OR IGNORE INTO edges(src_kind,src_id,dst_kind,dst_id,rel,weight,created_at) \
-             VALUES('memory',?1,?2,?3,?4,?5,?6)",
-            rusqlite::params![
-                memory_id,
-                e.dst_kind,
-                e.dst_id,
-                CO_ACTIVATED,
-                e.weight,
-                e.created_at
-            ],
+        orm::execute(
+            conn,
+            Edges::insert()
+                .or_ignore()
+                .set(&edge_columns::src_kind, "memory")
+                .set(&edge_columns::src_id, memory_id)
+                .set(&edge_columns::dst_kind, e.dst_kind.as_str())
+                .set(&edge_columns::dst_id, e.dst_id.as_str())
+                .set(&edge_columns::rel, CO_ACTIVATED)
+                .set(&edge_columns::weight, e.weight)
+                .set(&edge_columns::created_at, e.created_at.as_str())
+                .to_sql(),
         )?;
     }
     Ok(())
@@ -332,50 +362,21 @@ pub fn iso_format(t: OffsetDateTime) -> Result<String> {
 /// deterministic dense-index mapping `graph::pagerank` needs. See
 /// [`crate::domains::graph::memory_rank::derive_memory_graph`].
 pub(crate) fn live_ids(conn: &Connection) -> Result<Vec<String>> {
-    let mut stmt = conn.prepare("SELECT id FROM memories WHERE deleted_at IS NULL ORDER BY id")?;
-    let rows = stmt
-        .query_map([], |r| r.get(0))?
-        .collect::<std::result::Result<Vec<String>, _>>()?;
-    Ok(rows)
+    let query = Memories::select()
+        .columns_typed(&[&memories::id])
+        .filter(memories::deleted_at.is_null())
+        .order_by(memories::id.asc());
+    orm::query_all(conn, query.to_sql(), |r| r.get(0))
 }
 
 /// Every live memory's `(id, body)`, ordered by id so a re-embed run is
 /// reproducible. Behind `maintenance::reembed`'s memory leg.
 pub fn live_bodies(conn: &Connection) -> Result<Vec<(String, String)>> {
-    let mut stmt =
-        conn.prepare("SELECT id, body FROM memories WHERE deleted_at IS NULL ORDER BY id")?;
-    let rows = stmt
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    Ok(rows)
-}
-
-/// Write one `rank_score` per memory id, positionally aligned with `scores`.
-/// See [`crate::domains::graph::memory_rank::materialize_memory_rank`].
-pub(crate) fn update_rank_scores(conn: &Connection, ids: &[String], scores: &[f64]) -> Result<()> {
-    let mut update = conn.prepare("UPDATE memories SET rank_score = ?1 WHERE id = ?2")?;
-    for (id, score) in ids.iter().zip(scores) {
-        update.execute(rusqlite::params![score, id])?;
-    }
-    Ok(())
-}
-
-/// Bump `access_count`/`last_accessed` for one chunk of memory ids in a
-/// single `UPDATE ... WHERE id IN (...)`. Caller chunks `ids` to stay under
-/// SQLite's bound-parameter limit. See
-/// [`crate::domains::graph::coactivate::bump_activation`].
-pub(crate) fn bump_access(conn: &Connection, ids: &[String], at: &str) -> Result<()> {
-    if ids.is_empty() {
-        return Ok(());
-    }
-    let qmarks = crate::store::qmarks(ids.len());
-    let sql = format!(
-        "UPDATE memories SET access_count = access_count + 1, last_accessed = ?1 \
-          WHERE id IN ({qmarks})"
-    );
-    let params = std::iter::once(at).chain(ids.iter().map(String::as_str));
-    conn.execute(&sql, rusqlite::params_from_iter(params))?;
-    Ok(())
+    let query = Memories::select()
+        .columns_typed(&[&memories::id, &memories::body])
+        .filter(memories::deleted_at.is_null())
+        .order_by(memories::id.asc());
+    orm::query_all(conn, query.to_sql(), |r| Ok((r.get(0)?, r.get(1)?)))
 }
 
 #[cfg(test)]

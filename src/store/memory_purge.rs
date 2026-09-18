@@ -28,10 +28,19 @@
 //! the call reports `false`, so a caller that wrongly derives an id from a
 //! filename cannot take a live memory with it.
 
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::Connection;
 
+use super::{
+    orm,
+    schema_graph::{CodeRef, code_ref},
+    schema_learning::{Feedback, FeedbackEvents, feedback, feedback_events},
+    schema_memory::{
+        Memories, MemoryFts, MemoryTags, MemoryVec, memories, memory_fts, memory_tags, memory_vec,
+    },
+};
 use crate::prelude::*;
 use crate::store::edges;
+use toolu_orm::core::query_column::CommonOps;
 
 /// Mirror one soft-delete into `comemory.db`, inside the caller's already-open
 /// transaction: stamp `deleted_at`, drop the `memory_fts` + `memory_vec`
@@ -43,28 +52,28 @@ use crate::store::edges;
 /// derived-artifact refresh runs after that commit rather than inside this
 /// helper.
 pub fn soft_delete(conn: &Connection, id: &str, now: &str) -> Result<()> {
-    conn.execute(
-        "UPDATE memories SET deleted_at = ?1 WHERE id = ?2",
-        params![now, id],
+    orm::execute(
+        conn,
+        Memories::update()
+            .set(&memories::deleted_at, now)
+            .filter(memories::id.eq(id))
+            .to_sql(),
     )?;
-    conn.execute("DELETE FROM memory_fts WHERE memory_id = ?1", params![id])?;
-    conn.execute("DELETE FROM memory_vec WHERE memory_id = ?1", params![id])?;
+    orm::execute(
+        conn,
+        MemoryFts::delete()
+            .filter(memory_fts::memory_id.eq(id))
+            .to_sql(),
+    )?;
+    orm::execute(
+        conn,
+        MemoryVec::delete()
+            .filter(memory_vec::memory_id.eq(id))
+            .to_sql(),
+    )?;
     edges::delete_touching(conn, "memory", id)?;
     Ok(())
 }
-
-/// The per-memory tables keyed by a bare memory id, each cleared with the
-/// id bound as `?1` once the guarded `memories` delete has matched.
-/// `memory_tags` also cascades from the `memories` delete under
-/// `PRAGMA foreign_keys=ON`; the explicit row keeps the purge complete on a
-/// connection where that pragma is off.
-const DEPENDENT_DELETES: &[&str] = &[
-    "DELETE FROM memory_tags WHERE memory_id = ?1",
-    "DELETE FROM memory_fts WHERE memory_id = ?1",
-    "DELETE FROM memory_vec WHERE memory_id = ?1",
-    "DELETE FROM code_ref WHERE memory_id = ?1",
-    "DELETE FROM feedback WHERE memory_id = ?1",
-];
 
 /// Hard-delete every mirror row of the soft-deleted memory `id` in one
 /// transaction (see the module doc for the table list). Returns `true`
@@ -84,24 +93,37 @@ pub fn purge_memory(conn: &mut Connection, id: &str) -> Result<bool> {
         ));
     }
     let tx = conn.transaction()?;
-    let matched = tx.execute(
-        "DELETE FROM memories WHERE id = ?1 AND deleted_at IS NOT NULL",
-        [id],
+    let matched = orm::execute(
+        &tx,
+        Memories::delete()
+            .filter(memories::id.eq(id))
+            .filter(memories::deleted_at.is_not_null())
+            .to_sql(),
     )?;
     if matched == 0 {
         // Dropping `tx` without a commit rolls it back: nothing was written.
         return Ok(false);
     }
-    for sql in DEPENDENT_DELETES {
-        tx.execute(sql, [id])?;
+    // Explicit cleanup also works when a caller disabled foreign-key cascades.
+    for query in [
+        MemoryTags::delete().filter(memory_tags::memory_id.eq(id)),
+        MemoryFts::delete().filter(memory_fts::memory_id.eq(id)),
+        MemoryVec::delete().filter(memory_vec::memory_id.eq(id)),
+        CodeRef::delete().filter(code_ref::memory_id.eq(id)),
+        Feedback::delete().filter(feedback::memory_id.eq(id)),
+    ] {
+        orm::execute(&tx, query.to_sql())?;
     }
     edges::delete_touching(&tx, "memory", id)?;
     // `feedback_events.memory_id` also carries text-encoded code-symbol
     // rowids under `target_kind = 'code'`; an 8-digit rowid is a valid
     // memory-id shape, so the kind filter is what keeps code telemetry out.
-    tx.execute(
-        "DELETE FROM feedback_events WHERE memory_id = ?1 AND target_kind = ?2",
-        params![id, crate::utilities::telemetry::target::MEMORY],
+    orm::execute(
+        &tx,
+        FeedbackEvents::delete()
+            .filter(feedback_events::memory_id.eq(id))
+            .filter(feedback_events::target_kind.eq(crate::utilities::telemetry::target::MEMORY))
+            .to_sql(),
     )?;
     tx.commit()?;
     Ok(true)
@@ -129,14 +151,10 @@ pub fn expired_deleted_ids(conn: &Connection, retention_days: u32) -> Result<Vec
 /// Whether a soft-deleted `memories` row carries `content_hash` — behind
 /// `domains::sync::exchange::import_state`'s "already trashed under this hash" check.
 pub fn trashed_with_hash(conn: &Connection, content_hash: &str) -> Result<bool> {
-    conn.query_row(
-        "SELECT 1 FROM memories WHERE content_hash = ?1 AND deleted_at IS NOT NULL",
-        [content_hash],
-        |r| r.get::<_, i64>(0),
-    )
-    .optional()
-    .map(|row| row.is_some())
-    .map_err(Into::into)
+    let query = Memories::select()
+        .filter(memories::content_hash.eq(content_hash))
+        .filter(memories::deleted_at.is_not_null());
+    orm::query_one(conn, query.to_exists_sql(), |r| r.get(0))
 }
 
 #[cfg(test)]

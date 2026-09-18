@@ -13,7 +13,12 @@
 
 use rusqlite::Connection;
 
+use super::{
+    orm,
+    schema_memory::{Memories, memories},
+};
 use crate::prelude::*;
+use toolu_orm::core::query_column::CommonOps;
 
 /// One `memories` row read for [`crate::domains::maintenance::prune`]'s display
 /// list: body (for the
@@ -71,19 +76,22 @@ pub fn stale_code_files(conn: &Connection) -> Result<Vec<String>> {
 
 /// The display fields for one memory, by id.
 pub fn memory_for_prune(conn: &Connection, id: &str) -> Result<PruneMemoryRow> {
-    conn.query_row(
-        "SELECT body, created_at, access_count, last_accessed FROM memories WHERE id = ?1",
-        [id],
-        |r| {
-            Ok(PruneMemoryRow {
-                body: r.get(0)?,
-                created_at: r.get(1)?,
-                access_count: r.get(2)?,
-                last_accessed: r.get(3)?,
-            })
-        },
-    )
-    .map_err(Error::from)
+    let query = Memories::select()
+        .columns_typed(&[
+            &memories::body,
+            &memories::created_at,
+            &memories::access_count,
+            &memories::last_accessed,
+        ])
+        .filter(memories::id.eq(id));
+    orm::query_one(conn, query.to_sql(), |r| {
+        Ok(PruneMemoryRow {
+            body: r.get(0)?,
+            created_at: r.get(1)?,
+            access_count: r.get(2)?,
+            last_accessed: r.get(3)?,
+        })
+    })
 }
 
 /// Delete every `edges` row sourced at a memory that no longer exists (or

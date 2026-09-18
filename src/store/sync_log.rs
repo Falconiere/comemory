@@ -6,7 +6,12 @@
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
+use super::{
+    orm,
+    schema_sync::{SyncLog, sync_log as col},
+};
 use crate::prelude::*;
+use toolu_orm::core::query_column::{CommonOps, NumericOps};
 
 /// One sync-log operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -96,17 +101,28 @@ pub fn append(
     at: &str,
     origin: SyncOrigin,
 ) -> Result<i64> {
-    conn.execute(
-        "INSERT INTO sync_log(op, memory_id, content_hash, at, origin) \
-         VALUES(?1, ?2, ?3, ?4, ?5)",
-        rusqlite::params![op.as_str(), memory_id, content_hash, at, origin.as_str()],
+    orm::execute(
+        conn,
+        SyncLog::insert()
+            .set(&col::op, op.as_str())
+            .set(&col::memory_id, memory_id)
+            .set(&col::content_hash, content_hash)
+            .set(&col::at, at)
+            .set(&col::origin, origin.as_str())
+            .to_sql(),
     )?;
     Ok(conn.last_insert_rowid())
 }
 
 /// Highest `seq` in the log, or `0` when empty.
 pub fn head_seq(conn: &Connection) -> Result<i64> {
-    let seq: Option<i64> = conn.query_row("SELECT MAX(seq) FROM sync_log", [], |r| r.get(0))?;
+    let seq: Option<i64> = orm::query_one(
+        conn,
+        SyncLog::select()
+            .column_expr("MAX(seq)", "head_seq")
+            .to_sql(),
+        |r| r.get(0),
+    )?;
     Ok(seq.unwrap_or(0))
 }
 
@@ -116,12 +132,14 @@ pub fn head_seq(conn: &Connection) -> Result<i64> {
 /// Counts `origin = 'local'` only: a pulled entry is journalled too, and
 /// counting it would report work that was never this machine's to do.
 pub fn pending_local(conn: &Connection, since: i64) -> Result<i64> {
-    let count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM sync_log WHERE seq > ?1 AND origin = 'local'",
-        rusqlite::params![since],
+    orm::query_one(
+        conn,
+        SyncLog::select()
+            .filter(col::seq.gt(since))
+            .filter(col::origin.eq("local"))
+            .to_count_sql(),
         |r| r.get(0),
-    )?;
-    Ok(count)
+    )
 }
 
 /// Entries with `seq > since`, ordered ascending, capped at `limit`.
@@ -129,43 +147,39 @@ pub fn pending_local(conn: &Connection, since: i64) -> Result<i64> {
 /// Ignores `origin` — pullers need every entry above the cursor, including
 /// console deletes recorded as `local` on the server.
 pub fn entries_since(conn: &Connection, since: i64, limit: usize) -> Result<Vec<SyncLogRow>> {
-    let mut stmt = conn.prepare(
-        "SELECT seq, op, memory_id, content_hash, at, origin \
-         FROM sync_log WHERE seq > ?1 ORDER BY seq ASC LIMIT ?2",
-    )?;
-    let rows = stmt.query_map(rusqlite::params![since, limit as i64], |r| {
-        Ok((
-            r.get::<_, i64>(0)?,
-            r.get::<_, String>(1)?,
-            r.get::<_, String>(2)?,
-            r.get::<_, String>(3)?,
-            r.get::<_, String>(4)?,
-            r.get::<_, String>(5)?,
-        ))
-    })?;
-    let mut out = Vec::new();
-    for row in rows {
-        let (seq, op, memory_id, content_hash, at, origin) = row?;
-        out.push(SyncLogRow {
-            seq,
-            op: SyncOp::parse(&op)?,
-            memory_id,
-            content_hash,
-            at,
-            origin: SyncOrigin::parse(&origin)?,
-        });
-    }
-    Ok(out)
+    read_entries(conn, since, limit, false)
 }
 
 /// Local-origin entries with `seq > since` (the push outbox), ascending.
 pub fn local_entries_since(conn: &Connection, since: i64, limit: usize) -> Result<Vec<SyncLogRow>> {
-    let mut stmt = conn.prepare(
-        "SELECT seq, op, memory_id, content_hash, at, origin \
-         FROM sync_log WHERE seq > ?1 AND origin = 'local' \
-         ORDER BY seq ASC LIMIT ?2",
-    )?;
-    let rows = stmt.query_map(rusqlite::params![since, limit as i64], |r| {
+    read_entries(conn, since, limit, true)
+}
+
+/// Read and decode one ordered feed page, optionally restricted to the outbox.
+fn read_entries(
+    conn: &Connection,
+    since: i64,
+    limit: usize,
+    local_only: bool,
+) -> Result<Vec<SyncLogRow>> {
+    let query = SyncLog::select()
+        .columns_typed(&[
+            &col::seq,
+            &col::op,
+            &col::memory_id,
+            &col::content_hash,
+            &col::at,
+            &col::origin,
+        ])
+        .filter(col::seq.gt(since))
+        .order_by(col::seq.asc())
+        .limit(limit as i64);
+    let query = if local_only {
+        query.filter(col::origin.eq("local"))
+    } else {
+        query
+    };
+    let rows = orm::query_all(conn, query.to_sql(), |r| {
         Ok((
             r.get::<_, i64>(0)?,
             r.get::<_, String>(1)?,
@@ -175,30 +189,31 @@ pub fn local_entries_since(conn: &Connection, since: i64, limit: usize) -> Resul
             r.get::<_, String>(5)?,
         ))
     })?;
-    let mut out = Vec::new();
-    for row in rows {
-        let (seq, op, memory_id, content_hash, at, origin) = row?;
-        out.push(SyncLogRow {
-            seq,
-            op: SyncOp::parse(&op)?,
-            memory_id,
-            content_hash,
-            at,
-            origin: SyncOrigin::parse(&origin)?,
-        });
-    }
-    Ok(out)
+    rows.into_iter()
+        .map(|(seq, op, memory_id, content_hash, at, origin)| {
+            Ok(SyncLogRow {
+                seq,
+                op: SyncOp::parse(&op)?,
+                memory_id,
+                content_hash,
+                at,
+                origin: SyncOrigin::parse(&origin)?,
+            })
+        })
+        .collect()
 }
 
 /// Newest tombstone `seq` for `memory_id`, if any.
 pub fn latest_tombstone_seq(conn: &Connection, memory_id: &str) -> Result<Option<i64>> {
-    let seq: Option<i64> = conn.query_row(
-        "SELECT MAX(seq) FROM sync_log \
-         WHERE memory_id = ?1 AND op = 'tombstone'",
-        rusqlite::params![memory_id],
+    orm::query_one(
+        conn,
+        SyncLog::select()
+            .column_expr("MAX(seq)", "latest_seq")
+            .filter(col::memory_id.eq(memory_id))
+            .filter(col::op.eq("tombstone"))
+            .to_sql(),
         |r| r.get(0),
-    )?;
-    Ok(seq)
+    )
 }
 
 /// Append local `upsert` rows for live memories that have no `sync_log`

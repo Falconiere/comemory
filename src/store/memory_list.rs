@@ -10,8 +10,12 @@ use std::collections::HashMap;
 
 use rusqlite::Connection;
 
+use super::{
+    orm,
+    schema_memory::{MemoryTags, memory_tags},
+};
 use crate::prelude::*;
-use crate::store::qmarks;
+use toolu_orm::core::{query_column::CommonOps, value::Value};
 
 /// Sort order for [`list_memories`]'s window over the filtered set.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -261,20 +265,15 @@ fn attach_tags(conn: &Connection, rows: &mut [ListRow]) -> Result<()> {
     if rows.is_empty() {
         return Ok(());
     }
-    let ids: Vec<&str> = rows.iter().map(|r| r.id.as_str()).collect();
-    let sql = format!(
-        "SELECT memory_id, tag FROM memory_tags WHERE memory_id IN ({})",
-        qmarks(ids.len())
-    );
-    let params: Vec<&dyn rusqlite::ToSql> =
-        ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
-    let mut stmt = conn.prepare(&sql)?;
+    let ids: Vec<Value> = rows.iter().map(|r| r.id.as_str().into()).collect();
+    let query = MemoryTags::select()
+        .columns_typed(&[&memory_tags::memory_id, &memory_tags::tag])
+        .filter(memory_tags::memory_id.in_list(&ids));
     let mut by_id: HashMap<String, Vec<String>> = HashMap::new();
-    let tag_rows = stmt.query_map(params.as_slice(), |r| {
+    let tag_rows = orm::query_all(conn, query.to_sql(), |r| {
         Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
     })?;
-    for row in tag_rows {
-        let (id, tag) = row?;
+    for (id, tag) in tag_rows {
         by_id.entry(id).or_default().push(tag);
     }
     for row in rows.iter_mut() {

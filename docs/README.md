@@ -38,6 +38,8 @@ Task-oriented recipes for a specific job:
 - **[Schema migrations](guides/schema-migrations.md)** — for contributors:
   the declared `#[table]` schema, `just migration <name>`, hand-SQL tables,
   and the `migrations/` journal.
+- **[Runtime queries](guides/runtime-orm.md)** — toolu-orm builders, execution
+  behavior, and the capability inventory for SQL awaiting upstream support.
 
 ## Reference
 

@@ -10,7 +10,13 @@
 //! module owns only the SQL text, the row mapping, and the
 //! `feedback`/`feedback_events` CRUD.
 
-use rusqlite::{Connection, OptionalExtension, params};
+use super::{
+    orm,
+    schema_code::{CodeSymbols, code_symbols as c},
+    schema_learning::{FeedbackEvents, feedback_events as e},
+};
+use rusqlite::{Connection, params};
+use toolu_orm::core::query_column::CommonOps;
 
 use crate::prelude::*;
 
@@ -40,27 +46,27 @@ pub(crate) fn own_identity(
     conn: &Connection,
     id: i64,
 ) -> Result<Option<(SymbolIdentity, Option<i64>)>> {
-    let row = conn
-        .query_row(
-            "SELECT repo, path, symbol, parent_id FROM code_symbols WHERE id = ?1",
-            [id],
-            |r| Ok((identity_columns(r)?, r.get::<_, Option<i64>>(3)?)),
-        )
-        .optional()?;
-    Ok(row)
+    orm::query_optional(
+        conn,
+        CodeSymbols::select()
+            .columns_typed(&[&c::repo, &c::path, &c::symbol, &c::parent_id])
+            .filter(c::id.eq(id))
+            .to_sql(),
+        |r| Ok((identity_columns(r)?, r.get(3)?)),
+    )
 }
 
 /// The identity of the `code_symbols` row at `parent_id`, or `None` when
 /// absent (a raced re-index delete can vanish a chunk's parent row).
 pub(crate) fn parent_identity(conn: &Connection, parent_id: i64) -> Result<Option<SymbolIdentity>> {
-    let row = conn
-        .query_row(
-            "SELECT repo, path, symbol FROM code_symbols WHERE id = ?1",
-            [parent_id],
-            identity_columns,
-        )
-        .optional()?;
-    Ok(row)
+    orm::query_optional(
+        conn,
+        CodeSymbols::select()
+            .columns_typed(&[&c::repo, &c::path, &c::symbol])
+            .filter(c::id.eq(parent_id))
+            .to_sql(),
+        identity_columns,
+    )
 }
 
 /// Upsert the `used` side of the per-symbol counter row: insert with
@@ -106,17 +112,16 @@ pub(crate) fn insert_event(
     target_kind: &str,
     provenance: &str,
 ) -> Result<()> {
-    conn.execute(
-        "INSERT INTO feedback_events(query_id, memory_id, verdict, at, target_kind, provenance)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![
-            query_id,
-            id.to_string(),
-            verdict,
-            at,
-            target_kind,
-            provenance
-        ],
+    orm::execute(
+        conn,
+        FeedbackEvents::insert()
+            .set(&e::query_id, query_id)
+            .set(&e::memory_id, id.to_string())
+            .set(&e::verdict, verdict)
+            .set(&e::at, at)
+            .set(&e::target_kind, target_kind)
+            .set(&e::provenance, provenance)
+            .to_sql(),
     )?;
     Ok(())
 }

@@ -3,9 +3,14 @@
 //! [`crate::domains::learning::evaluation::bandit`] — this module owns only the SQL text and its row
 //! mapping.
 
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::Connection;
 
+use super::{
+    orm,
+    schema_learning::{BanditArms, bandit_arms as col},
+};
 use crate::prelude::*;
+use toolu_orm::core::query_column::CommonOps;
 
 /// A freshly-seeded arm's knob values, bundled into a struct rather than
 /// seven positional arguments (`clippy::too_many_arguments`).
@@ -30,20 +35,22 @@ pub struct NewArm<'a> {
 /// (`INSERT OR IGNORE`) — a re-seed of an already-pulled arm must not reset
 /// its posterior.
 pub fn seed(conn: &Connection, arm: &NewArm<'_>) -> Result<()> {
-    conn.execute(
-        "INSERT OR IGNORE INTO bandit_arms(\
-             arm_id, rrf_k, decay, mmr_lambda, bm25_body, bm25_tags, \
-             alpha, beta, pulls, last_mrr, updated_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1.0, 1.0, 0, NULL, ?7)",
-        params![
-            arm.arm_id,
-            arm.rrf_k,
-            arm.decay,
-            arm.mmr_lambda,
-            arm.bm25_body,
-            arm.bm25_tags,
-            arm.at,
-        ],
+    orm::execute(
+        conn,
+        BanditArms::insert()
+            .set(&col::arm_id, arm.arm_id)
+            .set(&col::rrf_k, arm.rrf_k)
+            .set(&col::decay, arm.decay)
+            .set(&col::mmr_lambda, arm.mmr_lambda)
+            .set(&col::bm25_body, arm.bm25_body)
+            .set(&col::bm25_tags, arm.bm25_tags)
+            .set(&col::alpha, 1.0)
+            .set(&col::beta, 1.0)
+            .set(&col::pulls, 0)
+            .set_null(&col::last_mrr)
+            .set(&col::updated_at, arm.at)
+            .or_ignore()
+            .to_sql(),
     )?;
     Ok(())
 }
@@ -63,9 +70,12 @@ pub struct ArmState {
 /// Load the stored state of `arm_id`, or `None` when the arm has no
 /// `bandit_arms` row yet (never seeded, or seeded under a pre-widening hash).
 pub fn load(conn: &Connection, arm_id: &str) -> Result<Option<ArmState>> {
-    conn.query_row(
-        "SELECT alpha, beta, pulls, last_mrr FROM bandit_arms WHERE arm_id = ?1",
-        [arm_id],
+    orm::query_optional(
+        conn,
+        BanditArms::select()
+            .columns_typed(&[&col::alpha, &col::beta, &col::pulls, &col::last_mrr])
+            .filter(col::arm_id.eq(arm_id))
+            .to_sql(),
         |r| {
             Ok(ArmState {
                 alpha: r.get(0)?,
@@ -75,8 +85,6 @@ pub fn load(conn: &Connection, arm_id: &str) -> Result<Option<ArmState>> {
             })
         },
     )
-    .optional()
-    .map_err(Error::Sqlite)
 }
 
 /// Update one arm's posterior after a confirm cycle: `alpha += 1.0` on a win,
@@ -89,14 +97,17 @@ pub fn record_outcome(
     mrr: f64,
     at: &str,
 ) -> Result<()> {
-    let sql = if won {
-        "UPDATE bandit_arms SET alpha = alpha + 1.0, pulls = pulls + 1, \
-             last_mrr = ?2, updated_at = ?3 WHERE arm_id = ?1"
+    let query = BanditArms::update()
+        .set_expr(&col::pulls, "pulls + 1")
+        .set(&col::last_mrr, mrr)
+        .set(&col::updated_at, at)
+        .filter(col::arm_id.eq(arm_id));
+    let query = if won {
+        query.set_expr(&col::alpha, "alpha + 1.0")
     } else {
-        "UPDATE bandit_arms SET beta = beta + 1.0, pulls = pulls + 1, \
-             last_mrr = ?2, updated_at = ?3 WHERE arm_id = ?1"
+        query.set_expr(&col::beta, "beta + 1.0")
     };
-    conn.execute(sql, params![arm_id, mrr, at])?;
+    orm::execute(conn, query.to_sql())?;
     Ok(())
 }
 

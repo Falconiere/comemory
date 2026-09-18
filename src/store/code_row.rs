@@ -14,8 +14,13 @@
 //! collide on the `UNIQUE (repo, path, symbol, line_start)` constraint and so
 //! the `indexed_files` cursor reflects the most-recent ingest as well.
 
-use rusqlite::{Connection, OptionalExtension};
+use super::{
+    orm,
+    schema_code::{CodeSymbols, code_symbols as c},
+};
+use rusqlite::Connection;
 use time::OffsetDateTime;
+use toolu_orm::core::query_column::CommonOps;
 
 use crate::prelude::*;
 use crate::store::memory_row;
@@ -56,13 +61,9 @@ fn repo_format_key(repo: &str) -> String {
 /// per-file rows as the walk proceeds. Shared by `cli::index_code` and
 /// `cli::ingest_code` so the two writers cannot drift on the gate.
 pub(crate) fn ensure_repo_format(conn: &Connection, repo: &str) -> Result<()> {
-    let stamped: Option<String> = conn
-        .query_row(
-            "SELECT value FROM schema_meta WHERE key = ?1",
-            [repo_format_key(repo)],
-            |r| r.get(0),
-        )
-        .ok();
+    let stamped = super::schema_meta::get(conn, &repo_format_key(repo))
+        .ok()
+        .flatten();
     if stamped.as_deref() != Some(CODE_FORMAT_VERSION) {
         crate::store::indexed_files::delete_for_repo(conn, repo)?;
     }
@@ -75,12 +76,7 @@ pub(crate) fn ensure_repo_format(conn: &Connection, repo: &str) -> Result<()> {
 /// `indexed_files` cursors must also stamp, or the next `index-code` run
 /// wipes the cursors (and with them the BYO `code_vec` rows) it left.
 pub(crate) fn stamp_repo_format(conn: &Connection, repo: &str) -> Result<()> {
-    conn.execute(
-        "INSERT INTO schema_meta(key, value) VALUES(?1, ?2) \
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        rusqlite::params![repo_format_key(repo), CODE_FORMAT_VERSION],
-    )?;
-    Ok(())
+    super::schema_meta::upsert(conn, &repo_format_key(repo), CODE_FORMAT_VERSION)
 }
 
 /// Owned column payload for one `code_symbols` row insert.
@@ -134,9 +130,12 @@ pub fn purge_file_symbols(conn: &Connection, repo: &str, path: &str) -> Result<(
              SELECT id FROM code_symbols WHERE repo = ?1 AND path = ?2)",
         rusqlite::params![repo, path],
     )?;
-    conn.execute(
-        "DELETE FROM code_symbols WHERE repo = ?1 AND path = ?2",
-        rusqlite::params![repo, path],
+    orm::execute(
+        conn,
+        CodeSymbols::delete()
+            .filter(c::repo.eq(repo))
+            .filter(c::path.eq(path))
+            .to_sql(),
     )?;
     Ok(())
 }
@@ -245,17 +244,12 @@ pub fn record_access(conn: &Connection, ids: &[i64]) {
             return;
         }
     };
-    let qmarks = crate::store::qmarks(ids.len());
-    let sql = format!(
-        "UPDATE code_symbols SET access_count = access_count + 1, last_accessed = ? \
-         WHERE id IN ({qmarks})"
-    );
-    let mut params: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(ids.len() + 1);
-    params.push(&now);
-    for id in ids {
-        params.push(id);
-    }
-    if let Err(e) = conn.execute(&sql, params.as_slice()) {
+    let ids = ids.iter().copied().map(Into::into).collect::<Vec<_>>();
+    let query = CodeSymbols::update()
+        .set_expr(&c::access_count, "access_count + 1")
+        .set(&c::last_accessed, now)
+        .filter(c::id.in_list(&ids));
+    if let Err(e) = orm::execute(conn, query.to_sql()) {
         tracing::warn!(error = %e, hit_count = ids.len(), "code access tracking update failed");
     }
 }
@@ -265,12 +259,15 @@ pub fn record_access(conn: &Connection, ids: &[i64]) {
 /// NULL`) carry no `code_vec` row of their own — the parent's vector
 /// represents the symbol. Behind `maintenance::reembed`'s code leg.
 pub fn parent_snippets(conn: &Connection) -> Result<Vec<(i64, String)>> {
-    let mut stmt =
-        conn.prepare("SELECT id, snippet FROM code_symbols WHERE parent_id IS NULL ORDER BY id")?;
-    let rows = stmt
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    Ok(rows)
+    orm::query_all(
+        conn,
+        CodeSymbols::select()
+            .columns_typed(&[&c::id, &c::snippet])
+            .filter(c::parent_id.is_null())
+            .order_by(c::id.asc())
+            .to_sql(),
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )
 }
 
 /// Every distinct `code_symbols.path` for `repo`, sorted ascending — the
@@ -296,11 +293,16 @@ pub(crate) fn update_rank_scores(
     paths: &[String],
     scores: &[f64],
 ) -> Result<u64> {
-    let mut update =
-        conn.prepare("UPDATE code_symbols SET rank_score = ?1 WHERE repo = ?2 AND path = ?3")?;
     let mut written: u64 = 0;
     for (path, score) in paths.iter().zip(scores) {
-        let rows = update.execute(rusqlite::params![score, repo, path])?;
+        let rows = orm::execute(
+            conn,
+            CodeSymbols::update()
+                .set(&c::rank_score, *score)
+                .filter(c::repo.eq(repo))
+                .filter(c::path.eq(path.as_str()))
+                .to_sql(),
+        )?;
         written = written.saturating_add(u64::try_from(rows).unwrap_or(0));
     }
     Ok(written)
@@ -327,19 +329,23 @@ pub(crate) fn find_by_address(
     path: &str,
     symbol: &str,
 ) -> Result<Option<SymbolLocation>> {
-    let mut stmt = conn.prepare_cached(
-        "SELECT id, snippet, line_start FROM code_symbols \
-          WHERE repo = ?1 AND path = ?2 AND symbol = ?3 LIMIT 1",
-    )?;
-    stmt.query_row(rusqlite::params![repo, path, symbol], |r| {
-        Ok(SymbolLocation {
-            id: r.get(0)?,
-            snippet: r.get(1)?,
-            line_start: r.get(2)?,
-        })
-    })
-    .optional()
-    .map_err(Error::from)
+    orm::query_optional(
+        conn,
+        CodeSymbols::select()
+            .columns_typed(&[&c::id, &c::snippet, &c::line_start])
+            .filter(c::repo.eq(repo))
+            .filter(c::path.eq(path))
+            .filter(c::symbol.eq(symbol))
+            .limit(1)
+            .to_sql(),
+        |r| {
+            Ok(SymbolLocation {
+                id: r.get(0)?,
+                snippet: r.get(1)?,
+                line_start: r.get(2)?,
+            })
+        },
+    )
 }
 
 /// Whether a live `code_symbols` row exists for `(repo, path, symbol)` — the
@@ -351,44 +357,48 @@ pub(crate) fn symbol_row_exists(
     path: &str,
     symbol: &str,
 ) -> Result<bool> {
-    let n: i64 = conn.query_row(
-        "SELECT count(*) FROM code_symbols \
-          WHERE repo = ?1 AND path = ?2 AND symbol = ?3",
-        rusqlite::params![repo, path, symbol],
-        |row| row.get(0),
-    )?;
-    Ok(n > 0)
+    orm::query_one(
+        conn,
+        CodeSymbols::select()
+            .filter(c::repo.eq(repo))
+            .filter(c::path.eq(path))
+            .filter(c::symbol.eq(symbol))
+            .to_exists_sql(),
+        |r| r.get(0),
+    )
 }
 
 /// Identity columns (`symbol`, `kind`) of one `code_symbols` row by id.
 /// `Ok(None)` when the row vanished (raced re-index delete). `prepare_cached`
 /// for a per-group chunk-coalescing loop.
 pub(crate) fn parent_identity(conn: &Connection, id: i64) -> Result<Option<(String, String)>> {
-    let mut stmt = conn.prepare_cached("SELECT symbol, kind FROM code_symbols WHERE id = ?1")?;
-    stmt.query_row([id], |r| Ok((r.get(0)?, r.get(1)?)))
-        .optional()
-        .map_err(Error::from)
+    orm::query_optional(
+        conn,
+        CodeSymbols::select()
+            .columns_typed(&[&c::symbol, &c::kind])
+            .filter(c::id.eq(id))
+            .to_sql(),
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )
 }
 
 /// Number of `code_symbols` rows for `repo` — the `index_runs.symbols`
 /// count behind `crate::domains::code::index_code::record_run`.
 pub fn count_for_repo(conn: &Connection, repo: &str) -> Result<i64> {
-    conn.query_row(
-        "SELECT COUNT(*) FROM code_symbols WHERE repo = ?1",
-        [repo],
+    orm::query_one(
+        conn,
+        CodeSymbols::select()
+            .filter(c::repo.eq(repo))
+            .to_count_sql(),
         |r| r.get(0),
     )
-    .map_err(Error::from)
 }
 
 /// Whether at least one `code_symbols` row exists anywhere — distinguishes
 /// "query missed" from "nothing was ever indexed" for `search-code`'s
 /// zero-hit TTY hint.
 pub fn any_indexed(conn: &Connection) -> Result<bool> {
-    conn.query_row("SELECT EXISTS(SELECT 1 FROM code_symbols)", [], |r| {
-        r.get(0)
-    })
-    .map_err(Error::from)
+    orm::query_one(conn, CodeSymbols::select().to_exists_sql(), |r| r.get(0))
 }
 
 #[cfg(test)]

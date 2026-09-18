@@ -8,7 +8,12 @@
 
 use rusqlite::Connection;
 
+use super::{
+    orm,
+    schema_memory::{Memories, memories},
+};
 use crate::prelude::*;
+use toolu_orm::core::query_column::CommonOps;
 
 /// One live memory's stored SimHash fingerprint.
 ///
@@ -35,28 +40,22 @@ pub fn live_simhashes(
     repo: Option<&str>,
     exclude: Option<&str>,
 ) -> Result<Vec<SimhashRow>> {
-    let mut sql = String::from("SELECT id, simhash FROM memories WHERE deleted_at IS NULL");
-    let mut params: Vec<&dyn rusqlite::ToSql> = Vec::new();
-    if let Some(r) = repo.as_ref() {
-        sql.push_str(" AND repo = ?");
-        params.push(r);
+    let mut query = Memories::select()
+        .columns_typed(&[&memories::id, &memories::simhash])
+        .filter(memories::deleted_at.is_null())
+        .order_by(memories::id.asc());
+    if let Some(repo) = repo {
+        query = query.filter(memories::repo.eq(repo));
     }
-    if let Some(id) = exclude.as_ref() {
-        sql.push_str(" AND id <> ?");
-        params.push(id);
+    if let Some(id) = exclude {
+        query = query.filter(memories::id.ne(id));
     }
-    sql.push_str(" ORDER BY id ASC");
-
-    let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt
-        .query_map(params.as_slice(), |r| {
-            Ok(SimhashRow {
-                id: r.get(0)?,
-                simhash: r.get(1)?,
-            })
-        })?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    Ok(rows)
+    orm::query_all(conn, query.to_sql(), |r| {
+        Ok(SimhashRow {
+            id: r.get(0)?,
+            simhash: r.get(1)?,
+        })
+    })
 }
 
 #[cfg(test)]

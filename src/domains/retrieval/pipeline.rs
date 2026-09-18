@@ -11,8 +11,8 @@ use crate::domains::retrieval::scope::Filters;
 use crate::domains::retrieval::{diversify, rerank, router};
 use crate::prelude::*;
 use crate::store::Connection;
-use crate::store::memory_row;
 use crate::store::retrieval_log::{self, NewLogRow};
+use crate::store::{memory_row, memory_signals};
 use crate::utilities::pagination::PageWindow;
 
 /// Caller-facing knobs for one pipeline run.
@@ -247,7 +247,7 @@ pub(crate) fn record_access(conn: &Connection, ids: &[&str]) {
         }
     };
     let owned: Vec<String> = ids.iter().map(|id| (*id).to_string()).collect();
-    if let Err(e) = memory_row::bump_access(conn, &owned, &now) {
+    if let Err(e) = memory_signals::bump_access(conn, &owned, &now) {
         tracing::warn!(error = %e, hit_count = ids.len(), "access tracking update failed");
     }
 }

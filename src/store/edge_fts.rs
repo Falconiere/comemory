@@ -12,10 +12,19 @@
 
 use std::fmt::Write as _;
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, params_from_iter};
 
+use super::{
+    orm,
+    schema_core::{EdgeFts, edge_fts},
+    schema_graph::Edges,
+};
 use crate::prelude::*;
 use crate::store::fts;
+use toolu_orm::core::{
+    expr::{Expr, OrderBy},
+    fts5,
+};
 
 /// One `edge_fts` match: the raw edge from the payload columns plus the
 /// rendered text that was actually indexed.
@@ -175,7 +184,7 @@ fn insert_sql() -> String {
 /// best-effort; see [`crate::domains::graph::derived`].
 pub fn refresh(conn: &mut Connection) -> Result<usize> {
     let tx = conn.transaction()?;
-    tx.execute("DELETE FROM edge_fts", [])?;
+    orm::execute(&tx, EdgeFts::delete().to_sql())?;
     let written = tx.execute(&insert_sql(), [])?;
     tx.commit()?;
     Ok(written)
@@ -190,11 +199,11 @@ pub fn refresh(conn: &mut Connection) -> Result<usize> {
 /// idempotent wholesale rebuild, so the worst cases are one redundant
 /// refresh or one no-op refresh over an emptied table.
 pub fn needs_refresh(conn: &Connection) -> Result<bool> {
-    let indexed: i64 = conn.query_row("SELECT count(*) FROM edge_fts", [], |r| r.get(0))?;
+    let indexed: i64 = orm::query_one(conn, EdgeFts::select().to_count_sql(), |r| r.get(0))?;
     if indexed > 0 {
         return Ok(false);
     }
-    let edges: i64 = conn.query_row("SELECT count(*) FROM edges", [], |r| r.get(0))?;
+    let edges: i64 = orm::query_one(conn, Edges::select().to_count_sql(), |r| r.get(0))?;
     Ok(edges > 0)
 }
 
@@ -239,12 +248,15 @@ fn pick_tier(conn: &Connection, query: &str) -> Result<String> {
 
 /// Whether `match_expr` hits at least one indexed triplet.
 fn matches_any(conn: &Connection, match_expr: &str) -> Result<bool> {
-    let probe = fts::run_fts_query(
-        conn,
-        "SELECT 1 FROM edge_fts WHERE edge_fts MATCH ?1 LIMIT 1",
-        params![match_expr],
-        |row| row.get::<_, i64>(0),
-    )?;
+    let query = EdgeFts::select()
+        .columns_typed(&[])
+        .column_expr("1", "present")
+        .filter(Expr::table_match("edge_fts", match_expr).map_err(orm::build_error)?)
+        .limit(1);
+    let (sql, values) = query.to_sql();
+    let probe = fts::run_fts_query(conn, &sql, params_from_iter(values), |row| {
+        row.get::<_, i64>(0)
+    })?;
     Ok(!probe.is_empty())
 }
 
@@ -262,30 +274,40 @@ fn run_match(
     if match_expr.is_empty() {
         return Ok(Vec::new());
     }
-    let sql = "SELECT src_kind, src_id, src_text, rel, dst_kind, dst_id, dst_text, weight, \
-                      bm25(edge_fts) AS bm \
-                 FROM edge_fts \
-                WHERE edge_fts MATCH ?1 \
-                ORDER BY bm, src_id, rel, dst_id \
-                LIMIT ?2 OFFSET ?3";
-    fts::run_fts_query(
-        conn,
-        sql,
-        params![match_expr, limit as i64, offset as i64],
-        |row| {
-            Ok(EdgeFtsHit {
-                src_kind: row.get(0)?,
-                src_id: row.get(1)?,
-                src_text: row.get(2)?,
-                rel: row.get(3)?,
-                dst_kind: row.get(4)?,
-                dst_id: row.get(5)?,
-                dst_text: row.get(6)?,
-                weight: row.get(7)?,
-                score: -row.get::<_, f32>(8)?,
-            })
-        },
-    )
+    let score = fts5::bm25("edge_fts", &[]).map_err(orm::build_error)?;
+    let query = EdgeFts::select()
+        .columns_typed(&[
+            &edge_fts::src_kind,
+            &edge_fts::src_id,
+            &edge_fts::src_text,
+            &edge_fts::rel,
+            &edge_fts::dst_kind,
+            &edge_fts::dst_id,
+            &edge_fts::dst_text,
+            &edge_fts::weight,
+        ])
+        .column_expr(score.sql(), "bm")
+        .filter(Expr::table_match("edge_fts", match_expr).map_err(orm::build_error)?)
+        .order_by(OrderBy::alias_asc("bm"))
+        .order_by(edge_fts::src_id.asc())
+        .order_by(edge_fts::rel.asc())
+        .order_by(edge_fts::dst_id.asc())
+        .limit(limit as i64)
+        .offset(offset as i64);
+    let (sql, values) = query.to_sql();
+    fts::run_fts_query(conn, &sql, params_from_iter(values), |row| {
+        Ok(EdgeFtsHit {
+            src_kind: row.get(0)?,
+            src_id: row.get(1)?,
+            src_text: row.get(2)?,
+            rel: row.get(3)?,
+            dst_kind: row.get(4)?,
+            dst_id: row.get(5)?,
+            dst_text: row.get(6)?,
+            weight: row.get(7)?,
+            score: -row.get::<_, f32>(8)?,
+        })
+    })
 }
 
 #[cfg(test)]

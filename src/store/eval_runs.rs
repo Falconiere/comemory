@@ -10,21 +10,30 @@
 //! [`set_discarded`] (the run was dismissed without applying), plus
 //! [`get`] for the single-row read those routes do first.
 
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::Connection;
 use serde::Serialize;
 
+use super::{
+    orm,
+    schema_history::{EvalRuns, eval_runs as col},
+};
 use crate::prelude::*;
+use toolu_orm::core::query_column::CommonOps;
 
-/// The column list every reader selects, in the order [`read_row`] expects.
-///
-/// A macro rather than a `const` so it can be spliced with [`concat!`],
-/// which takes literals only: both SELECT statements below are then compile-time
-/// `&'static str`s with no runtime string building, and the list still has
-/// exactly one definition.
-macro_rules! columns {
-    () => {
-        "id, kind, at, golden_pairs, k, recall, mrr, knobs, applied, discarded"
-    };
+/// The projection every reader decodes through [`read_row`].
+fn select_rows() -> toolu_orm::query::select::SelectBuilder {
+    EvalRuns::select().columns_typed(&[
+        &col::id,
+        &col::kind,
+        &col::at,
+        &col::golden_pairs,
+        &col::k,
+        &col::recall,
+        &col::mrr,
+        &col::knobs,
+        &col::applied,
+        &col::discarded,
+    ])
 }
 
 /// Insert parameters for one completed run, bundled into a struct rather
@@ -94,7 +103,7 @@ struct RawRow {
     discarded: i64,
 }
 
-/// Map one [`columns!`]-shaped result row into a [`RawRow`]. Shared by
+/// Map one [`select_rows`]-shaped result row into a [`RawRow`]. Shared by
 /// [`list`] and [`get`] so the two readers cannot drift on column order.
 fn read_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<RawRow> {
     Ok(RawRow {
@@ -130,20 +139,22 @@ fn finish(raw: RawRow) -> Result<EvalRunRow> {
 /// Insert one `eval_runs` row. A single `INSERT` with no read-modify-write
 /// race — every field is caller-computed (id, timestamp, JSON knobs).
 pub fn insert(conn: &Connection, row: &NewRun<'_>) -> Result<()> {
-    conn.execute(
-        "INSERT INTO eval_runs(id, kind, at, golden_pairs, k, recall, mrr, knobs, applied) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-        rusqlite::params![
-            row.id,
-            row.kind,
-            row.at,
-            i64::try_from(row.golden_pairs).unwrap_or(i64::MAX),
-            i64::try_from(row.k).unwrap_or(i64::MAX),
-            row.recall,
-            row.mrr,
-            row.knobs,
-            i64::from(row.applied),
-        ],
+    orm::execute(
+        conn,
+        EvalRuns::insert()
+            .set(&col::id, row.id)
+            .set(&col::kind, row.kind)
+            .set(&col::at, row.at)
+            .set(
+                &col::golden_pairs,
+                i64::try_from(row.golden_pairs).unwrap_or(i64::MAX),
+            )
+            .set(&col::k, i64::try_from(row.k).unwrap_or(i64::MAX))
+            .set(&col::recall, row.recall)
+            .set(&col::mrr, row.mrr)
+            .set(&col::knobs, row.knobs)
+            .set(&col::applied, i64::from(row.applied))
+            .to_sql(),
     )?;
     Ok(())
 }
@@ -152,37 +163,34 @@ pub fn insert(conn: &Connection, row: &NewRun<'_>) -> Result<()> {
 /// `idx_eval_runs_at`). An empty table returns an empty `Vec`, never an
 /// error.
 pub fn list(conn: &Connection, limit: u32) -> Result<Vec<EvalRunRow>> {
-    let mut stmt = conn.prepare(concat!(
-        "SELECT ",
-        columns!(),
-        " FROM eval_runs ORDER BY at DESC LIMIT ?1"
-    ))?;
-    let rows = stmt.query_map(rusqlite::params![limit], read_row)?;
-    let mut out = Vec::new();
-    for row in rows {
-        out.push(finish(row?)?);
-    }
-    Ok(out)
+    orm::query_all(
+        conn,
+        select_rows()
+            .order_by(col::at.desc())
+            .limit(i64::from(limit))
+            .to_sql(),
+        read_row,
+    )?
+    .into_iter()
+    .map(finish)
+    .collect()
 }
 
 /// Read one row by id. `Ok(None)` when no such run exists — an unknown id
 /// is a caller-visible outcome (the console's proposal routes turn it into
 /// a `404`), not an error this layer decides.
 pub fn get(conn: &Connection, id: &str) -> Result<Option<EvalRunRow>> {
-    let raw = conn
-        .query_row(
-            concat!("SELECT ", columns!(), " FROM eval_runs WHERE id = ?1"),
-            rusqlite::params![id],
-            read_row,
-        )
-        .optional()?;
-    raw.map(finish).transpose()
+    orm::query_optional(
+        conn,
+        select_rows().filter(col::id.eq(id)).to_sql(),
+        read_row,
+    )?
+    .map(finish)
+    .transpose()
 }
 
 /// Which proposal flag [`set_flag`] stamps. An enum rather than a column
-/// name: each variant maps to one whole literal `UPDATE`, so there is no
-/// column identifier to build at runtime and no caller-supplied string that
-/// could reach the SQL, whatever its type.
+/// name: each variant selects one generated schema column.
 enum Flag {
     /// `applied = 1`.
     Applied,
@@ -190,22 +198,16 @@ enum Flag {
     Discarded,
 }
 
-impl Flag {
-    /// The complete statement for this flag.
-    const fn sql(&self) -> &'static str {
-        match self {
-            Self::Applied => "UPDATE eval_runs SET applied = 1 WHERE id = ?1",
-            Self::Discarded => "UPDATE eval_runs SET discarded = 1 WHERE id = ?1",
-        }
-    }
-}
-
 /// Set one flag on one row, erroring with [`Error::NotFound`] when the id
 /// matched nothing — a silent zero-row `UPDATE` would report success for a
 /// run that does not exist.
 fn set_flag(conn: &Connection, id: &str, flag: &Flag) -> Result<()> {
-    let changed = conn.execute(flag.sql(), rusqlite::params![id])?;
-    if changed == 0 {
+    let query = EvalRuns::update().filter(col::id.eq(id));
+    let query = match flag {
+        Flag::Applied => query.set(&col::applied, 1),
+        Flag::Discarded => query.set(&col::discarded, 1),
+    };
+    if orm::execute(conn, query.to_sql())? == 0 {
         return Err(Error::NotFound(format!("eval run {id}")));
     }
     Ok(())
