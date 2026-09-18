@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.35.1] - 2026-09-18
+
+### Fixed
+
+- paged search is non-deterministic on tied scores ([#203](https://github.com/Falconiere/comemory/pull/203))
+
 ### Fixed
 
 - paged search no longer returns a different row across identical runs: a
