@@ -369,15 +369,16 @@ fn a_corrupt_stored_candidate_is_named_apart_from_a_bad_argument() {
 
     let err = judge(&c, vec![format!("{}=3", c.refs[1])], None)
         .expect_err("an unreadable stored row must fail the call");
-    let msg = err.to_string();
-    assert!(
-        msg.contains("holds an unreadable candidate at pool position 1"),
-        "a corrupt row must be named as a stored-record problem, not as a bad \
-         argument the caller passed: {msg}"
-    );
-    assert!(
-        msg.contains(&c.observation_id),
-        "and name the observation: {msg}"
+    assert_eq!(
+        err.to_string(),
+        format!(
+            "other: observation `{}` holds an unreadable candidate at pool position 1: \
+             config: candidate ref `memory:onlyone`: expected 2 components, found 1. That \
+             row was not written by this build's observation contract.",
+            c.observation_id
+        ),
+        "the whole sentence is the contract: it names the observation, the pool \
+         position, the underlying parse failure, and what that means"
     );
     assert!(
         !matches!(err, comemory::prelude::Error::Config(_)),
