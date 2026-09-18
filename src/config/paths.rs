@@ -51,7 +51,7 @@ impl Paths {
     ///
     /// Previously this returned `stats.db`; v0.2 consolidates all tables
     /// into `comemory.db` (spec §4: one file). The method is kept so callers
-    /// need no churn — they still pass the path to [`StatsDb::open`] which
+    /// need no churn — they still pass the path to [`StatsDb::open`](crate::domains::learning::telemetry::StatsDb::open) which
     /// now delegates to [`crate::store::connection::open`].
     pub fn stats_db(&self) -> PathBuf {
         self.db_path()

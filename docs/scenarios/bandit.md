@@ -54,5 +54,5 @@ _None._
   still upserted); with `--apply` the write is refused while
   `[bandit] enabled = false`. A winning apply depends on the sampled arm
   beating baseline, so only the two deterministic contracts are pinned.
-- **Covered by:** `src/api/tests/bandit.rs::run_without_apply_reports_and_never_writes_config`,
-  `src/api/tests/bandit.rs::run_apply_refused_when_bandit_disabled_in_config`
+- **Covered by:** `src/domains/learning/tests/bandit.rs::run_without_apply_reports_and_never_writes_config`,
+  `src/domains/learning/tests/bandit.rs::run_apply_refused_when_bandit_disabled_in_config`

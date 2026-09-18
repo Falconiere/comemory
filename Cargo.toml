@@ -212,7 +212,7 @@ tempfile = "3"
 # release binary.
 toolu-orm-cli = { version = "0.6.0", default-features = false, features = ["rusqlite"] }
 # Tests construct `OffsetDateTime` values to drive the query-id round-trip
-# (`stats::feedback::generate_query_id`); same version line as the main dep.
+# (`utilities::query_id::generate_query_id`); same version line as the main dep.
 time = { version = "0.3", features = ["macros"] }
 # In-process `serve` router tests (tests/serve__*.rs) need an async runtime
 # to drive `tower::ServiceExt::oneshot`; tokio is already a main dep with

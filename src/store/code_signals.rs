@@ -53,7 +53,7 @@ pub struct Signals {
 /// Column projection + `code_feedback` join shared by [`signals`] and
 /// [`signals_batch`]. Prefixing with `c.id` lets the batch map rows back by
 /// id while the single-row form ignores column 0. `code_feedback` is keyed by
-/// stable (repo, path, symbol) identity (see `stats::code_feedback`), joined
+/// stable (repo, path, symbol) identity (see `domains::learning::code_feedback`), joined
 /// by the row's EFFECTIVE identity: the CLI feedback path records against the
 /// COALESCED parent id, so a cAST chunk row (`parent_id` NOT NULL, symbol
 /// `<name>#<n>`) never owns a feedback row of its own — it inherits the

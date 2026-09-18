@@ -6,9 +6,9 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::api;
 use crate::cli::load_config;
 use crate::config::paths::{Paths, resolve_data_dir};
+use crate::domains::learning::eval;
 use crate::output::json;
 use crate::prelude::*;
 use crate::store::connection;
@@ -74,7 +74,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
     let g = &a.golden_set;
-    let req = api::eval::Request {
+    let req = eval::Request {
         golden: g.golden.as_ref().map(|p| p.to_string_lossy().into_owned()),
         golden_only: g.golden_only,
         k: g.k,
@@ -85,11 +85,11 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         knobs: None,
     };
     if a.history {
-        let rows = api::eval::history(&mut ctx, &req)?;
+        let rows = eval::history(&mut ctx, &req)?;
         return emit_history(json_flag, &rows);
     }
 
-    let report = api::eval::run(&mut ctx, req)?;
+    let report = eval::run(&mut ctx, req)?;
     if json_flag {
         json::write(&report)?;
     } else {

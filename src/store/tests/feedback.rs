@@ -6,15 +6,15 @@
     clippy::too_many_lines
 )]
 //! Integration coverage for `src/store/feedback.rs` — the `feedback` /
-//! memory-tagged `feedback_events` CRUD moved out of `stats::feedback`.
+//! memory-tagged `feedback_events` CRUD moved out of `domains::learning::feedback_tracking`.
 //! Driven through the real [`StatsDb`] + `record_with_provenance` path
 //! (the domain writer that still owns the transaction boundary) rather
 //! than calling the `pub(crate)` store helpers with a bare connection, so
 //! the test exercises the same integration path the pre-move code took.
 
 use comemory::config::paths::Paths;
-use comemory::stats::feedback::record_with_provenance;
-use comemory::stats::sqlite::StatsDb;
+use comemory::domains::learning::feedback_tracking::record_with_provenance;
+use comemory::domains::learning::telemetry::StatsDb;
 use comemory::store::connection;
 use comemory::store::feedback::{event_counts, used_events_for_golden, used_query_ids};
 use comemory::utilities::telemetry::PROV_MANUAL;
@@ -201,7 +201,7 @@ fn used_events_for_golden_excludes_source_dead_memories_and_other_provenance() {
 /// `event_counts` sums the whole `feedback_events` table and the
 /// `provenance != 'manual'` implicit-share numerator in one scan, reading
 /// the `NULL`-on-empty conditional sums back as `0` — behind
-/// `api::learning::summary`'s header tiles.
+/// `domains::learning::console::summary`'s header tiles.
 #[test]
 fn event_counts_sums_verdicts_and_the_implicit_share_numerator() {
     let dir = TempDir::new().expect("tempdir");

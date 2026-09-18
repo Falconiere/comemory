@@ -75,7 +75,7 @@ pub mod gc_learning;
 /// `gc_runs` row insert — one row per `comemory gc` sweep.
 pub mod gc_runs;
 /// `index_failures` row CRUD: append-only log of swallowed indexing
-/// failures, behind `crate::stats::sqlite::StatsDb`.
+/// failures, including its ISO 8601 timestamp and its `usize` count clamp.
 pub mod index_failures;
 /// `index_runs` writer + readers — one row per `index-code` run.
 pub mod index_runs;

@@ -17,8 +17,8 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::domains::graph::search_edit;
+use crate::domains::learning::feedback_tracking;
 use crate::prelude::*;
-use crate::stats::feedback;
 use crate::store::Connection;
 use crate::store::edges::{self, EdgeKey, REFERENCES_FILE, file_node_id};
 use crate::store::memory_row;
@@ -153,7 +153,7 @@ fn reward_pair(
                 telemetry::COACTIVATION_QUERY_ID,
             )
         };
-        feedback::record_implicit_used(conn, memory_id, at, prov, qid)?;
+        feedback_tracking::record_implicit_used(conn, memory_id, at, prov, qid)?;
     }
     Ok(())
 }

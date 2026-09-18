@@ -28,26 +28,19 @@ One line per file, named after its primary item:
 
 | File | Primary item | Purpose |
 | --- | --- | --- |
-| `bandit.rs` | `Request` | Shared middle of `comemory bandit` / `POST /api/v1/bandit` |
 | `consolidate.rs` | `Request` | Shared middle of `comemory consolidate` / `GET /api/v1/consolidate` |
 | `doctor.rs` | `Request` | Shared middle of `comemory doctor` / `GET /api/v1/doctor`; the individual health probes live in `doctor/checks.rs` |
-| `eval.rs` | `Request` | Shared middle of `comemory eval` / `POST /api/v1/eval` |
-| `feedback.rs` | `Request` | Shared middle of `comemory feedback` / `POST /api/v1/feedback` (and the per-hit search route): validates the query id, the four id lists, and the optional `source` (`explicit` → `manual`, `implicit` → `implicit`) before the db opens; `Response.provenance` echoes what every verdict was stored under |
 | `gc.rs` | `Request` | Shared middle of `comemory gc` / `POST /api/v1/gc` — reaps aged `.trash/` files AND purges their mirror rows (`store::memory_purge`), healing zombie rows earlier sweeps left behind |
 | `install.rs` | `Request` | Shared middle of `comemory install` — extracts the embedded agent bundle and registers it with the host CLI. CLI-only (a server must never write into an operator's agent config); conn-free. Host names are validated strings, not clap enums, so `api::` stays free of CLI types. `install/` holds the embedded `bundle` |
 | `setup.rs` | `Request` | Shared middle of `comemory setup` — the stable `STEP_IDS`, the `StepState` machine, and the `run` that sequences detect → plan → apply. CLI-only; conn-free until a step applies. `setup/` holds the three phases |
-| `mine.rs` | `Request` | Shared middle of `comemory mine` / `POST /api/v1/mine` |
 | `prune.rs` | `Request` | Shared middle of `comemory prune` / `GET\|POST /api/v1/prune` |
 | `rebuild.rs` | `Request` | Shared middle of `comemory rebuild` / `POST /api/v1/rebuild`; the preservation copy lives in `rebuild/` |
 | `stats.rs` | `Request` | Shared middle of `comemory stats` / `GET /api/v1/stats` — corpus counters and database size |
-| `tune.rs` | `Request` | Shared middle of `comemory tune` / `POST /api/v1/tune` |
 | `gc_policy.rs` | `Policy` | Console-only: `GET\|PUT /api/v1/gc/policy` — trash + telemetry retention windows and the last gc run |
-| `learning.rs` | `Summary` | Console-only: `GET /api/v1/learning/{summary,evals,golden-set,expansions}` |
-| `learning_proposals.rs` | `Proposal` | Console-only: knob proposals derived from unapplied `tune`/`bandit` runs — list, apply (writes `config.toml`), discard |
 | `overview.rs` | `Response` | Console-only: `GET /api/v1/overview` (+ `/overview/eval-series`) — counters, index state, last run, metrics, recent memories |
 | `reembed.rs` | `Request` | Console-only: `POST /api/v1/doctor/reembed` — re-vectorize memories and/or code through the embed command, cancellable |
 
-Six capabilities no longer live here. The code cores — `ast`, `index_code` (+
+Seven capabilities no longer live here. The code cores — `ast`, `index_code` (+
 `walk`), `ingest_code`, `index_runs`, `repos` (+ `git_state`), `repo_admin`,
 `hooks` and `install_hooks` — moved to
 [`domains/code/`](../domains/code/README.md) with
@@ -68,7 +61,12 @@ retrieval cores — `search`, `search_code`, `context`, `find`, `suggest` and
 the console-only `config_retrieval` — moved to
 [`domains/retrieval/`](../domains/retrieval/README.md) with
 [#171](https://github.com/Falconiere/comemory/issues/171), beside the ranking
-pipeline they all call. This shell itself is
+pipeline they all call. The learning cores — `feedback`, `eval`, `mine`,
+`tune`, `bandit` and the console-only `learning` and `learning_proposals` —
+moved to [`domains/learning/`](../domains/learning/README.md) with
+[#173](https://github.com/Falconiere/comemory/issues/173): `api::learning` is
+`domains::learning::console` there, beside the feedback counters and the
+evaluation algorithms they read and write. This shell itself is
 deleted by #178.
 
 When you add a file here, add its row above so the index stays current. No

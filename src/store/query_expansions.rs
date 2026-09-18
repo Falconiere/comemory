@@ -1,6 +1,6 @@
 //! `query_expansions` row CRUD: the mined (term → expansion) mapping table
 //! `store::fts`'s tier-4 lexical ladder reads, rewritten wholesale by
-//! `comemory mine --apply` ([`crate::eval::mine::apply`]).
+//! `comemory mine --apply` ([`crate::domains::learning::evaluation::mine::apply`]).
 
 use rusqlite::{Connection, ToSql, params, params_from_iter};
 
@@ -92,7 +92,7 @@ pub fn matching_terms(
         .map_err(Error::from)
 }
 
-/// Total `query_expansions` row count — behind `api::learning`'s summary
+/// Total `query_expansions` row count — behind `domains::learning::console`'s summary
 /// tile and its paged `expansions` list.
 pub fn count(conn: &Connection) -> Result<u64> {
     Ok(

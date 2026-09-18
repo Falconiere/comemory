@@ -20,7 +20,7 @@ use axum::response::Response;
 use axum::routing::{get, post};
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::api;
+use crate::domains::learning;
 use crate::domains::memories::Kind;
 use crate::domains::retrieval;
 use crate::domains::retrieval::explain::{self, ExplainPart};
@@ -322,7 +322,7 @@ async fn suggest(
 }
 
 /// Per-hit feedback as the console sends it, adapted onto
-/// [`api::feedback::Request`]'s four id lists by [`into_feedback`].
+/// [`learning::feedback::Request`]'s four id lists by [`into_feedback`].
 #[derive(Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 struct HitFeedback {
@@ -336,7 +336,7 @@ struct HitFeedback {
     signal: String,
     /// `explicit` (default) | `implicit`, stored as the verdict's
     /// `feedback_events.provenance` (`manual` / `implicit`). Passed through
-    /// to [`api::feedback::Request::source`] verbatim; the core validates
+    /// to [`learning::feedback::Request::source`] verbatim; the core validates
     /// it and answers `400 bad_request` for anything else (#130).
     #[serde(default)]
     source: Option<String>,
@@ -361,7 +361,7 @@ async fn feedback(
         let cfg = state.cfg();
         let mut conn = state.conn()?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        api::feedback::run(&mut ctx, request)
+        learning::feedback::run(&mut ctx, request)
     })
     .await;
     respond("search.feedback", result, started)
@@ -372,7 +372,7 @@ async fn feedback(
 /// aggregated `feedback` table has one positive counter, and inventing a
 /// third verdict here would change the ranking contract. `source` is not
 /// inspected here: the core owns its vocabulary.
-fn into_feedback(query_id: String, req: HitFeedback) -> Result<api::feedback::Request> {
+fn into_feedback(query_id: String, req: HitFeedback) -> Result<learning::feedback::Request> {
     let positive = match req.signal.as_str() {
         "used" | "opened" => true,
         "ignored" => false,
@@ -382,7 +382,7 @@ fn into_feedback(query_id: String, req: HitFeedback) -> Result<api::feedback::Re
             )));
         }
     };
-    let mut out = api::feedback::Request {
+    let mut out = learning::feedback::Request {
         query_id,
         used: Vec::new(),
         irrelevant: Vec::new(),

@@ -4,7 +4,7 @@
 //! reinserts every row of a touched file and SQLite recycles the freed
 //! rowids, so a rowid key would silently re-attribute feedback history.
 //!
-//! [`crate::stats::code_feedback::resolve_identity`] composes
+//! `domains::learning::code_feedback`'s `resolve_identity` composes
 //! [`own_identity`] and [`parent_identity`] into the chunk-to-parent walk
 //! (the domain rule for *which* row a verdict should land under); this
 //! module owns only the SQL text, the row mapping, and the
@@ -94,7 +94,7 @@ pub(crate) fn upsert_irrelevant(conn: &Connection, sym: &SymbolIdentity) -> Resu
 
 /// Insert one code-tagged `feedback_events` row, text-encoding the symbol
 /// rowid into the `memory_id` column (a memory-era column-name wart the
-/// reader must know about — see `crate::stats::code_feedback`'s module
+/// reader must know about — see `crate::domains::learning::code_feedback`'s module
 /// doc). `provenance` is written explicitly, never left to the column
 /// default, mirroring [`crate::store::feedback::insert_event`].
 pub(crate) fn insert_event(

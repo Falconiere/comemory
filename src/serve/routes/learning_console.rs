@@ -19,7 +19,7 @@ use axum::{Json, Router};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::api;
+use crate::domains::learning;
 use crate::serve::AppState;
 use crate::serve::routes::learning::{contain_golden, eval};
 use crate::serve::routes::maint::prune::split_confirm;
@@ -111,7 +111,7 @@ async fn summary(State(state): State<AppState>) -> Response {
         let cfg = state.cfg();
         let mut conn = state.conn()?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        api::learning::summary(&mut ctx)
+        learning::console::summary(&mut ctx)
     })
     .await;
     respond("learning.summary", result, started)
@@ -121,7 +121,7 @@ async fn summary(State(state): State<AppState>) -> Response {
 /// `GET /eval/history` uses so the two run lists page alike.
 #[derive(Deserialize)]
 struct EvalsQuery {
-    #[serde(default = "crate::api::eval::default_history_limit")]
+    #[serde(default = "crate::domains::learning::eval::default_history_limit")]
     limit: u32,
 }
 
@@ -133,7 +133,7 @@ async fn evals(State(state): State<AppState>, Query(q): Query<EvalsQuery>) -> Re
         let cfg = state.cfg();
         let mut conn = state.conn()?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        api::learning::evals(&mut ctx, q.limit)
+        learning::console::evals(&mut ctx, q.limit)
     })
     .await;
     respond("learning.evals", result, started)
@@ -157,7 +157,7 @@ async fn golden_set(State(state): State<AppState>, Query(q): Query<GoldenQuery>)
         let cfg = state.cfg();
         let mut conn = state.conn()?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        api::learning::golden_set(&mut ctx, golden.as_deref())
+        learning::console::golden_set(&mut ctx, golden.as_deref())
     })
     .await;
     respond("learning.golden-set", result, started)
@@ -171,7 +171,7 @@ async fn proposals(State(state): State<AppState>) -> Response {
         let cfg = state.cfg();
         let mut conn = state.conn()?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        api::learning_proposals::list(&mut ctx)
+        learning::learning_proposals::list(&mut ctx)
     })
     .await;
     respond("learning.proposals", result, started)
@@ -208,7 +208,7 @@ async fn proposal_apply(
             let cfg = state.cfg();
             let mut conn = state.conn()?;
             let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-            api::learning_proposals::apply(&mut ctx, &id)?
+            learning::learning_proposals::apply(&mut ctx, &id)?
         };
         state.reload_cfg(state.paths())?;
         Ok(applied)
@@ -232,7 +232,7 @@ async fn proposal_discard(State(state): State<AppState>, Path(id): Path<String>)
         let cfg = state.cfg();
         let mut conn = state.conn()?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        api::learning_proposals::discard(&mut ctx, &id)
+        learning::learning_proposals::discard(&mut ctx, &id)
     })
     .await;
     respond("learning.proposals.discard", result, started)
@@ -255,7 +255,7 @@ async fn expansions(State(state): State<AppState>, Query(q): Query<ExpansionsQue
         let cfg = state.cfg();
         let mut conn = state.conn()?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        api::learning::expansions(&mut ctx, q.limit, q.offset)
+        learning::console::expansions(&mut ctx, q.limit, q.offset)
     })
     .await;
     respond("learning.expansions", result, started)

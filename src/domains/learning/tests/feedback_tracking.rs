@@ -1,0 +1,259 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::too_many_lines
+)]
+//! Tests for [`comemory::domains::learning::feedback_tracking`]. The query-id contract moved to
+//! `utilities::query_id` with #166 and is asserted there.
+//!
+//! v0.2: feedback rows land in `comemory.db` (via `StatsDb::open` which
+//! now delegates to `crate::store::connection::open`). Counter upsert
+//! semantics (first insert → 1, conflict → +1, last_used refresh) are
+//! exercised through `record_with_provenance`, the only src/ writer.
+
+use comemory::config::paths::Paths;
+use comemory::domains::learning::feedback_tracking::{Source, record_with_provenance};
+use comemory::domains::learning::telemetry::StatsDb;
+use comemory::utilities::telemetry::{PROV_IMPLICIT, PROV_MANUAL};
+
+use crate::test_common as common;
+
+/// Open a [`StatsDb`] in a fresh sandbox, returning the guard with it.
+fn open_db() -> (common::runner::Sandbox, StatsDb) {
+    let sb = common::runner::Sandbox::new();
+    let paths = Paths::new(sb.data_dir());
+    let db = StatsDb::open(paths.stats_db()).expect("open");
+    (sb, db)
+}
+
+#[test]
+fn used_counter_inserts_then_increments_and_refreshes_last_used() {
+    let (_sb, mut db) = open_db();
+    record_with_provenance(
+        &mut db,
+        "q-20260610-aabbccd1",
+        &["aaaaaaa1".into()],
+        &[],
+        PROV_MANUAL,
+    )
+    .expect("first record");
+    let (used, last): (i64, String) = db
+        .conn()
+        .query_row(
+            "SELECT used_count, last_used FROM feedback WHERE memory_id='aaaaaaa1'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .expect("row after insert");
+    assert_eq!(used, 1, "first insert seeds used_count = 1");
+    assert!(!last.is_empty(), "insert sets last_used");
+
+    // Backdate last_used so the conflict path's refresh is observable
+    // without sleeping between the two records.
+    db.conn()
+        .execute(
+            "UPDATE feedback SET last_used='2000-01-01T00:00:00Z' WHERE memory_id='aaaaaaa1'",
+            [],
+        )
+        .expect("backdate last_used");
+    record_with_provenance(
+        &mut db,
+        "q-20260610-aabbccd2",
+        &["aaaaaaa1".into()],
+        &[],
+        PROV_MANUAL,
+    )
+    .expect("second record");
+    let (used, last): (i64, String) = db
+        .conn()
+        .query_row(
+            "SELECT used_count, last_used FROM feedback WHERE memory_id='aaaaaaa1'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .expect("row after conflict");
+    assert_eq!(used, 2, "conflict bumps used_count");
+    assert!(
+        last.as_str() > "2000-01-01T00:00:00Z",
+        "conflict refreshes last_used, got {last}"
+    );
+}
+
+#[test]
+fn irrelevant_counter_inserts_then_increments_without_touching_last_used() {
+    let (_sb, mut db) = open_db();
+    for qid in ["q-20260610-aabbccd1", "q-20260610-aabbccd2"] {
+        record_with_provenance(&mut db, qid, &[], &["aaaaaaa2".into()], PROV_MANUAL)
+            .expect("record");
+    }
+    let (used, irrelevant, last): (i64, i64, Option<String>) = db
+        .conn()
+        .query_row(
+            "SELECT used_count, irrelevant_count, last_used FROM feedback \
+              WHERE memory_id='aaaaaaa2'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .expect("row");
+    assert_eq!(used, 0);
+    assert_eq!(irrelevant, 2, "insert seeds 1, conflict bumps to 2");
+    assert!(last.is_none(), "a dismissal is not a use");
+}
+
+#[test]
+fn record_with_provenance_writes_events_and_counters_atomically() {
+    let (_sb, mut db) = open_db();
+    record_with_provenance(
+        &mut db,
+        "q-20260610-aabbccdd",
+        &["aaaaaaa1".into()],
+        &["aaaaaaa2".into()],
+        PROV_MANUAL,
+    )
+    .expect("record");
+
+    let conn = db.conn();
+    let events: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM feedback_events WHERE query_id='q-20260610-aabbccdd'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("events");
+    assert_eq!(events, 2);
+    let used: i64 = conn
+        .query_row(
+            "SELECT used_count FROM feedback WHERE memory_id='aaaaaaa1'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("used");
+    assert_eq!(used, 1);
+    let (verdict, target_kind): (String, String) = conn
+        .query_row(
+            "SELECT verdict, target_kind FROM feedback_events WHERE memory_id='aaaaaaa2'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .expect("verdict");
+    assert_eq!(verdict, "irrelevant");
+    assert_eq!(
+        target_kind, "memory",
+        "memory-side events must be explicitly tagged target_kind='memory'"
+    );
+}
+
+#[test]
+fn record_with_provenance_errors_on_schema_drift() {
+    // Schema drift: if the `feedback` table is missing entirely, the write
+    // must surface the SQLite error rather than swallow it, and the
+    // all-or-nothing transaction must leave no event row behind.
+    let (_sb, mut db) = open_db();
+    db.conn()
+        .execute("DROP TABLE feedback", [])
+        .expect("drop feedback table");
+
+    let err = record_with_provenance(
+        &mut db,
+        "q-20260610-aabbccdd",
+        &["aaaaaaa1".into()],
+        &[],
+        PROV_MANUAL,
+    )
+    .expect_err("record must error when feedback table is missing");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("feedback"),
+        "error should mention 'feedback', got: {msg}"
+    );
+    let events: i64 = db
+        .conn()
+        .query_row("SELECT count(*) FROM feedback_events", [], |r| r.get(0))
+        .expect("count events");
+    assert_eq!(events, 0, "failed batch must not leave a partial event row");
+}
+
+/// The closed `source` vocabulary (#130): the two exact words map onto the
+/// two route-written provenance values; a spelling of the stored word, a
+/// case variant, or an empty string is a `BadRequest` naming the offender,
+/// never a silent fall-through to `manual`.
+#[test]
+fn source_parse_accepts_the_two_words_and_maps_provenance() {
+    assert_eq!(
+        Source::parse("explicit").expect("explicit"),
+        Source::Explicit
+    );
+    assert_eq!(
+        Source::parse("implicit").expect("implicit"),
+        Source::Implicit
+    );
+    assert_eq!(Source::Explicit.provenance(), PROV_MANUAL);
+    assert_eq!(Source::Implicit.provenance(), PROV_IMPLICIT);
+    assert_eq!(
+        Source::default(),
+        Source::Explicit,
+        "omitted source is explicit"
+    );
+    for bad in ["manual", "Implicit", "", "cited", " implicit"] {
+        let err = Source::parse(bad).expect_err(bad);
+        assert!(
+            matches!(err, comemory::errors::Error::BadRequest(_)),
+            "{bad:?} must be a BadRequest, got {err:?}"
+        );
+        assert_eq!(
+            err.to_string(),
+            format!("bad request: unknown source `{bad}`: expected explicit or implicit")
+        );
+    }
+}
+
+/// `record_with_provenance` stamps the caller's provenance on BOTH
+/// verdicts — an implicit negative is storable (#130) — and bumps the same
+/// counters a manual batch does.
+#[test]
+fn record_with_provenance_writes_the_callers_provenance_on_both_verdicts() {
+    let (_sb, mut db) = open_db();
+    record_with_provenance(
+        &mut db,
+        "q-20260912-aabbccdd",
+        &["aaaaaaa1".into()],
+        &["aaaaaaa2".into()],
+        PROV_IMPLICIT,
+    )
+    .expect("record implicit batch");
+
+    let conn = db.conn();
+    let mut stmt = conn
+        .prepare(
+            "SELECT memory_id, verdict, provenance FROM feedback_events \
+              WHERE query_id = 'q-20260912-aabbccdd' ORDER BY memory_id",
+        )
+        .expect("prepare");
+    let rows: Vec<(String, String, String)> = stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .expect("query")
+        .collect::<Result<_, _>>()
+        .expect("rows");
+    assert_eq!(
+        rows,
+        vec![
+            ("aaaaaaa1".into(), "used".into(), "implicit".into()),
+            ("aaaaaaa2".into(), "irrelevant".into(), "implicit".into()),
+        ]
+    );
+    let (used, irrelevant): (i64, i64) = conn
+        .query_row(
+            "SELECT (SELECT used_count FROM feedback WHERE memory_id = 'aaaaaaa1'), \
+                    (SELECT irrelevant_count FROM feedback WHERE memory_id = 'aaaaaaa2')",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .expect("counters");
+    assert_eq!(
+        (used, irrelevant),
+        (1, 1),
+        "implicit verdicts bump the same counters"
+    );
+}

@@ -7,11 +7,11 @@
 )]
 //! [`purge_memory`] / [`expired_deleted_ids`] / [`soft_delete`] against a
 //! real migrated `comemory.db`, populated through the real writers:
-//! `domains::memories::save::run`, `domains::memories::delete::run` (the soft delete), `api::feedback::run`,
+//! `domains::memories::save::run`, `domains::memories::delete::run` (the soft delete), `feedback::run`,
 //! `store::code_ref::upsert`, `store::vector::insert_memory`.
 
-use comemory::api;
 use comemory::config::{Config, Paths};
+use comemory::domains::learning::feedback;
 use comemory::domains::memories::{Kind, Ref, References};
 use comemory::store::memory_purge::{
     expired_deleted_ids, purge_memory, soft_delete as store_soft_delete, trashed_with_hash,
@@ -124,9 +124,9 @@ fn purge_clears_every_mirror_row_of_a_soft_deleted_memory() {
     // memory-target event.
     {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        api::feedback::run(
+        feedback::run(
             &mut ctx,
-            api::feedback::Request {
+            feedback::Request {
                 query_id: generate_query_id("pool leak", OffsetDateTime::now_utc()),
                 used: vec![id.clone()],
                 irrelevant: Vec::new(),

@@ -61,7 +61,7 @@ fn feedback_json_emits_counts_and_query_provenance() {
     // pre-extraction key set (no `provenance`) while every row it wrote is
     // `manual` — a typed verdict is a human one. `cli::feedback::emit`
     // builds this object field by field; it never serializes
-    // `api::feedback::Response` itself, which is where `provenance` lives.
+    // `domains::learning::feedback::Response` itself, which is where `provenance` lives.
     let mut keys: Vec<&str> = v
         .as_object()
         .expect("object")

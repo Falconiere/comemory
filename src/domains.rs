@@ -25,6 +25,11 @@ pub mod documents;
 /// The `edges` relation graph: derivation, mining, ranking and its queries.
 pub mod graph;
 
+/// The learning loop: memory and code feedback, golden sets and metrics,
+/// reformulation mining, and the deterministic, sampled and bandit searches
+/// over the ranking blend.
+pub mod learning;
+
 /// The memory lifecycle: markdown models and store, plus the save, delete,
 /// list, show, update, restore, trash and reference-refresh cores.
 pub mod memories;

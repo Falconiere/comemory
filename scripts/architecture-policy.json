@@ -81,11 +81,6 @@
       "issue": "#176"
     },
     {
-      "module": "crate::eval",
-      "owner": "domains::learning",
-      "issue": "#173"
-    },
-    {
       "module": "crate::output",
       "owner": "delivery::cli",
       "issue": "#166"
@@ -94,11 +89,6 @@
       "module": "crate::prune",
       "owner": "domains::maintenance",
       "issue": "#176"
-    },
-    {
-      "module": "crate::stats",
-      "owner": "shared::utilities",
-      "issue": "#173"
     },
     {
       "module": "crate::upgrade",
@@ -153,10 +143,6 @@
     },
     {
       "source": "domains::learning",
-      "target": "domains::memories"
-    },
-    {
-      "source": "domains::learning",
       "target": "domains::retrieval"
     },
     {
@@ -202,10 +188,6 @@
     {
       "source": "domains::retrieval",
       "target": "domains::graph"
-    },
-    {
-      "source": "domains::retrieval",
-      "target": "domains::learning"
     },
     {
       "source": "domains::retrieval",

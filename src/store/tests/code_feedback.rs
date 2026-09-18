@@ -7,14 +7,14 @@
 )]
 //! Integration coverage for `src/store/code_feedback.rs` — the
 //! `code_feedback` / code-tagged `feedback_events` CRUD and identity
-//! lookups moved out of `stats::code_feedback`. Driven through the real
+//! lookups moved out of `domains::learning::code_feedback`. Driven through the real
 //! [`StatsDb`] + `record_code_with_provenance` path, which still owns the
 //! chunk-to-parent resolution and the transaction boundary, rather than
 //! calling the `pub(crate)` store helpers with a bare connection.
 
 use comemory::config::paths::Paths;
-use comemory::stats::code_feedback::record_code_with_provenance;
-use comemory::stats::sqlite::StatsDb;
+use comemory::domains::learning::code_feedback::record_code_with_provenance;
+use comemory::domains::learning::telemetry::StatsDb;
 use comemory::store::code_row::{self, CodeSymbolRow};
 use comemory::utilities::telemetry::PROV_MANUAL;
 use tempfile::TempDir;

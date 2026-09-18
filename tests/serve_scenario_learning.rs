@@ -116,7 +116,7 @@ fn search_feedback_mine_eval_tune_bandit_over_http() {
     assert_eq!(ranked.len(), 1, "one-arm grid: {tuned}");
     assert_eq!(tuned["applied"].as_bool(), Some(false), "{tuned}");
 
-    // `api::bandit::run` returns `BanditReport` directly (unlike the CLI's
+    // `domains::learning::bandit::run` returns `BanditReport` directly (unlike the CLI's
     // `--json` output, which wraps it as `{"report": ...}`) — the job
     // result's fields sit at the top level, not nested under `report`.
     let bandit = srv.job(

@@ -11,7 +11,7 @@ helpers that used to live here (`when`, `ref_args`, `embedding_input`) moved to
 **What does NOT belong here:** business logic. A `cli/*.rs` file parses flags,
 loads `Config`, calls into `domains::`, `store::`, or
 `prune::` to do the real work, and hands the result to `output::` to render.
-Keeping the logic out of `cli/` is what lets `eval::runner` and tests exercise
+Keeping the logic out of `cli/` is what lets `domains::learning::evaluation::runner` and tests exercise
 the same pipelines without going through argument parsing. CLI integration
 tests stay at crate-root (`tests/cli__*.rs` per command, `tests/cli_scenario_*.rs`
 for multi-command journeys) — never under `src/cli/`.
