@@ -57,7 +57,11 @@ jobs:
         # dup-baseline.txt a measurement of the runner instead of the tree.
         run: |
           set -euo pipefail
-          matches="$(sed -n 's/^SIMILARITY_RS_VERSION="\(.*\)"$/\1/p' scripts/dup-check.sh)"
+          # `[^"]*`, not `.*`: the greedy form captures `0.5.0" and more` from a
+          # malformed `SIMILARITY_RS_VERSION="0.5.0" and more"` line. The shape
+          # check below would still reject it, but not matching at all is better
+          # than matching the wrong thing.
+          matches="$(sed -n 's/^SIMILARITY_RS_VERSION="\([^"]*\)"$/\1/p' scripts/dup-check.sh)"
           count="$(printf '%s' "$matches" | grep -c . || true)"
           if [ "$count" != "1" ]; then
             echo "::error::expected exactly one SIMILARITY_RS_VERSION assignment in scripts/dup-check.sh, found $count"
@@ -69,8 +73,12 @@ jobs:
           # Anchored on the WHOLE value, not per line: `grep -E '^..$'` matches
           # if ANY line matches, so it would accept a stray empty assignment
           # sitting above the real one. bash's =~ anchors to the whole string.
-          if ! [[ "$matches" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::SIMILARITY_RS_VERSION is not a bare semver version: '$matches'"
+          # The optional trailing group accepts a pre-release or build suffix
+          # (0.6.0-rc.1, 0.6.0+meta) so pinning one is not blocked here; the
+          # required X.Y.Z prefix still rejects `latest`, a range, or an empty
+          # value, any of which would make `cargo install --version` unpinned.
+          if ! [[ "$matches" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::SIMILARITY_RS_VERSION is not a pinned semver version: '$matches'"
             exit 1
           fi
           echo "installing similarity-rs $matches (pinned by scripts/dup-check.sh)"

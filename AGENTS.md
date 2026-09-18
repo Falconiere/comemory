@@ -628,13 +628,14 @@ a competing number.
 | Typos | `typos.toml`, `scripts/typos-check.sh` |
 | `docs/cli-reference.md` drift | `scripts/cli-docs-check.sh` vs the real `--help` output |
 | Shipped migration SQL is immutable | `scripts/migration-check.sh` (git-tag-dependent; compares each `migrations/*.sql` against its first release tag, accepting the pre-v0.29 location under `src/store/` for the same basename) |
-| Duplication ratchet | `scripts/dup-check.sh` against `dup-baseline.txt`, using the `similarity-rs` build pinned by its `SIMILARITY_RS_VERSION` constant (see `docs/dup-debt.md`) |
+| Duplication ratchet | `scripts/dup-check.sh` against `dup-baseline.txt`; it **enforces** the `similarity-rs` build named by its `SIMILARITY_RS_VERSION` constant, hard-failing on any other version (see `docs/dup-debt.md`) |
 | rusqlite confined to `src/store/` | `store-leak-baseline.txt`, `scripts/store-chokepoint-check.sh` |
 
 Additional gates wired into `just qa`: `scripts/deny-check.sh`
 (`cargo deny check`), `scripts/dup-check.sh`, and `scripts/machete-check.sh`
-(unused dependencies). These three are deliberately outside `check-all.sh`'s
-`GATES` array because each needs a separately installed tool. `dup-check` also
+(unused dependencies). These three — `deny-check`, `dup-check` and
+`machete-check` — are deliberately outside `check-all.sh`'s `GATES` array
+because each needs a separately installed tool that contributors may not have. `dup-check` also
 runs as its own step in `.github/workflows/test.yml`, which `cargo install`s the
 `similarity-rs` version *derived from* the `SIMILARITY_RS_VERSION` constant in
 `scripts/dup-check.sh`, so the workflow and the gate cannot drift; the gate

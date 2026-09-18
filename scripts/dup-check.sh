@@ -84,11 +84,14 @@ if ! command -v similarity-rs >/dev/null 2>&1; then
   exit 0
 fi
 
-# `|| true`: under set -e + pipefail a binary that exists but exits nonzero
-# (broken install, wrong arch, missing dylib) would kill the script here, making
-# the empty-version branch below — the one carrying $INSTALL_HINT — dead code in
-# exactly the case it was written for.
-installed_version="$(similarity-rs --version 2>/dev/null | awk 'NF { print $NF; exit }' || true)"
+# The `|| true` is scoped to the TOOL call alone, not to the whole pipeline.
+# Under set -e + pipefail a binary that exists but exits nonzero (broken
+# install, wrong arch, missing dylib) would otherwise kill the script here,
+# making the empty-version branch below — the one carrying $INSTALL_HINT — dead
+# code in exactly the case it was written for. Keeping awk outside that `||`
+# means a genuine awk failure still propagates instead of being swallowed.
+version_output="$(similarity-rs --version 2>/dev/null || true)"
+installed_version="$(printf '%s\n' "$version_output" | awk 'NF { print $NF; exit }')"
 if [[ -z "$installed_version" ]]; then
   log_err "$STEP" \
     "could not read the installed similarity-rs version (this gate is pinned to $SIMILARITY_RS_VERSION); install the pinned build with: $INSTALL_HINT"
@@ -128,6 +131,10 @@ set +e
 scan_output="$(similarity-rs --threshold 0.85 --fail-on-duplicates "${targets[@]}" 2>&1)"
 set -e
 scan_log="$(mktemp -t comemory-dup.XXXXXX)"
+# Removed on every exit path EXCEPT the ones that print its location for a human
+# to read; each of those disarms the trap first. Without the trap, any early
+# exit after this point leaks one temp file per run.
+trap 'rm -f "$scan_log"' EXIT
 printf '%s\n' "$scan_output" > "$scan_log"
 
 # ANTI-VACUOUS: assert the tool actually ingested every file we handed it.
@@ -138,16 +145,22 @@ printf '%s\n' "$scan_output" > "$scan_log"
 # "lower the baseline" nudge while having scanned a fraction of the tree. That
 # is the precise failure this gate exists to prevent, so it is asserted, not
 # assumed.
+# [0-9,_]+ then strip separators: the pinned build prints a bare integer, but a
+# digit-grouped "1,234" would otherwise fail to parse and be reported as "did
+# not report how many files it checked" — a confusing message for a tool that
+# did report it. The integer guard below still validates the normalized value.
 checked_count="$(printf '%s\n' "$scan_output" \
-  | awk '/^Checking [0-9]+ file(s)? for duplicates/ { print $2; exit }')"
+  | awk '/^Checking [0-9,_]+ file(s)? for duplicates/ { gsub(/[,_]/, "", $2); print $2; exit }')"
 if [[ -z "$checked_count" ]]; then
   log_err "$STEP" \
     "similarity-rs did not report how many files it checked; see $scan_log"
+  trap - EXIT   # keep the log: its path is named above
   exit 1
 fi
 if (( checked_count != ${#targets[@]} )); then
   log_err "$STEP" \
     "similarity-rs checked $checked_count files but ${#targets[@]} were handed to it — it silently skipped $(( ${#targets[@]} - checked_count )); see $scan_log"
+  trap - EXIT   # keep the log: its path is named above
   exit 1
 fi
 
@@ -158,6 +171,7 @@ else
     | awk -F': ' '/^Total duplicate pairs found:/ { print $2; exit }')"
   if [[ -z "$current_count" ]]; then
     log_err "$STEP" "could not parse similarity-rs output; see $scan_log"
+    trap - EXIT   # keep the log: its path is named above
     exit 1
   fi
 fi
@@ -171,17 +185,18 @@ fi
 if ! [[ "$current_count" =~ ^[0-9]+$ ]]; then
   log_err "$STEP" \
     "parsed a non-numeric duplicate-pair count ('$current_count') from similarity-rs; see $scan_log"
+  trap - EXIT   # keep the log: its path is named above
   exit 1
 fi
 
 if (( current_count > baseline_count )); then
   log_err "$STEP" \
     "near-duplicate count $current_count exceeds baseline $baseline_count (docs/dup-debt.md); see $scan_log"
+  trap - EXIT   # keep the log: its path is named above
   exit 1
 fi
 if (( current_count < baseline_count )); then
   log_info "$STEP" \
     "near-duplicate count $current_count is below baseline $baseline_count — lower $BASELINE_FILE to lock in the improvement"
 fi
-rm -f "$scan_log"
 log_ok "$STEP" "near-duplicate count $current_count within baseline $baseline_count (similarity-rs $SIMILARITY_RS_VERSION)"
