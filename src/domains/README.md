@@ -23,11 +23,12 @@ One row per capability — its sibling module file and its folder together:
 
 | Capability | Owns | Landed by |
 | --- | --- | --- |
+| `capture.rs` + [`capture/`](capture/README.md) | Client-side coding-session capture: transcript reading, client redaction attestation and receipts, explicit-save distillation, and the platform session and candidate-batch calls | #174 |
 | `code.rs` + [`code/`](code/README.md) | AST extraction, code indexing, the repository inventory, Git hooks, reindex freshness | #167 |
 | `documents.rs` + [`documents/`](documents/README.md) | Document extraction, the durable source registry, discovery, and document indexing | #168 |
 | `memories.rs` + [`memories/`](memories/README.md) | The memory lifecycle: the markdown record and its atomic store, and the save / delete / list / show / update / restore / trash / reference-refresh cores | #169 |
 | `sync.rs` + [`sync/`](sync/README.md) | Organization authentication, platform push/pull and its wire protocol, the workspace channel, secret redaction, the opt-in daemon, and the Git memory store | #172 |
 
-The remaining six capabilities named by the contract — `graph`, `retrieval`,
-`learning`, `capture`, `maintenance`, `integrations` — arrive with #170, #171
-and #173–#176, and keep their legacy roots until then.
+The remaining five capabilities named by the contract — `graph`, `retrieval`,
+`learning`, `maintenance`, `integrations` — arrive with #170, #171, #173, #175
+and #176, and keep their legacy roots until then.
