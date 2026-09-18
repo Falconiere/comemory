@@ -283,8 +283,8 @@ impl<'a> ScopeEcho<'a> {
         let cutoff = scope.cutoff.as_deref();
         ScopeEcho {
             since: scope.since.as_deref(),
-            until: (!scope.as_of).then_some(cutoff).flatten(),
-            as_of: scope.as_of.then_some(cutoff).flatten(),
+            until: if scope.as_of { None } else { cutoff },
+            as_of: if scope.as_of { cutoff } else { None },
         }
     }
 }

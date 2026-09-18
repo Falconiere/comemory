@@ -288,7 +288,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/cli/save.rs | comemory::cli::save; preserve | none | none | delivery::cli | src/cli/save.rs | retain |
 | src/cli/search.rs | comemory::cli::search; preserve | none | none | delivery::cli | src/cli/search.rs | retain |
 | src/cli/search_code.rs | comemory::cli::search_code; preserve | none | none | delivery::cli | src/cli/search_code.rs | retain |
-| src/cli/search_only.rs | private | none | none | delivery::cli | src/cli/search_only.rs | retain |
+| src/cli/search_only.rs | private | src/cli/tests/search_only.rs | none | delivery::cli | src/cli/search_only.rs | retain |
 | src/cli/serve.rs | comemory::cli::serve; preserve | none | none | delivery::cli | src/cli/serve.rs | retain |
 | src/cli/setup.rs | comemory::cli::setup; preserve | none | none | delivery::cli | src/cli/setup.rs | retain |
 | src/cli/setup/render.rs | comemory::cli::setup::render; preserve | src/cli/setup/tests/render.rs | none | delivery::cli | src/cli/setup/render.rs | retain |
@@ -413,7 +413,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/retrieval/context_result.rs | comemory::domains::retrieval::context_result; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | none | none | domains::retrieval | src/domains/retrieval/context_result.rs | retain |
 | src/domains/retrieval/diversify.rs | comemory::domains::retrieval::diversify; crate-root-alias | src/domains/retrieval/tests/diversify.rs | none | domains::retrieval | src/domains/retrieval/diversify.rs | retain |
 | src/domains/retrieval/doc_route.rs | comemory::domains::retrieval::doc_route; crate-root-alias | src/domains/retrieval/tests/doc_route.rs | none | domains::retrieval | src/domains/retrieval/doc_route.rs | retain |
-| src/domains/retrieval/explain.rs | comemory::domains::retrieval::explain; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/retrieval/tests/explain.rs | none | delivery::cli | src/domains/retrieval/explain.rs | retain |
+| src/domains/retrieval/explain.rs | comemory::domains::retrieval::explain; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/retrieval/tests/explain.rs | none | domains::retrieval | src/domains/retrieval/explain.rs | retain |
 | src/domains/retrieval/find.rs | comemory::domains::retrieval::find; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/retrieval/tests/find.rs | none | domains::retrieval | src/domains/retrieval/find.rs | retain |
 | src/domains/retrieval/fuse.rs | comemory::domains::retrieval::fuse; crate-root-alias | src/domains/retrieval/tests/fuse.rs | none | domains::retrieval | src/domains/retrieval/fuse.rs | retain |
 | src/domains/retrieval/graph_route.rs | comemory::domains::retrieval::graph_route; crate-root-alias | src/domains/retrieval/tests/graph_route.rs | none | domains::retrieval | src/domains/retrieval/graph_route.rs | retain |

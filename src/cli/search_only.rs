@@ -145,3 +145,7 @@ fn write_tty(out: &mut impl std::io::Write, page: &Page<DocHit>) -> Result<()> {
     }
     tty::write_page_footer(out, page.items.len(), page.offset, page.total)
 }
+
+#[cfg(test)]
+#[path = "tests/search_only.rs"]
+mod tests;

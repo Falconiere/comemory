@@ -7,7 +7,7 @@
 )]
 //! Test mirror for `src/domains/retrieval/scope.rs`.
 
-use comemory::retrieval::scope::{Domain, Domains, Filters, TimeScope, resolve_domains};
+use comemory::retrieval::scope::{Domain, Domains, Filters, ScopeEcho, TimeScope, resolve_domains};
 
 #[test]
 fn none_is_the_unbounded_scope() {
@@ -215,9 +215,14 @@ fn an_explicit_single_domain_is_taken_verbatim() {
         resolve_domains(&[Domain::Document], None).expect("document alone is valid"),
         Domains::of(&[Domain::Document])
     );
-    assert_eq!(
-        resolve_domains(&[Domain::Memory], Some("bug")).expect("memory + kind is valid"),
-        Domains::memory_only()
+    // Not `[Memory]` + a kind: the empty-`only` branch returns `memory_only()`
+    // too, so that assertion would pass even if `only` were ignored entirely.
+    let both = resolve_domains(&[Domain::Memory, Domain::Document], Some("bug"))
+        .expect_err("memory + document is rejected even with a kind")
+        .to_string();
+    assert!(
+        both.contains("memory and document"),
+        "an explicit two-domain --only must be read, not defaulted: {both}"
     );
 }
 
@@ -249,4 +254,49 @@ fn the_three_contradictions_report_their_exact_usage_errors() {
         kind.to_string(),
         "--kind decision requires memory in --only (got: document)"
     );
+}
+
+/// The `--json` scope echo reports the cutoff under the flag that produced
+/// it: `until` for a plain `--until`, `as_of` for `--as-of`. A consumer reads
+/// the distinction to tell whether the supersede penalty was time-scoped too,
+/// so each of the three fields is asserted on both sides of `as_of`.
+#[test]
+fn the_scope_echo_reports_the_cutoff_under_the_flag_that_set_it() {
+    let none = TimeScope::none();
+    let unscoped = ScopeEcho::of(&none);
+    assert_eq!(unscoped.since, None);
+    assert_eq!(unscoped.until, None);
+    assert_eq!(unscoped.as_of, None, "an unbounded scope echoes nothing");
+
+    let until_scope = TimeScope {
+        since: Some("2026-01-01T00:00:00Z".into()),
+        cutoff: Some("2026-06-01T00:00:00Z".into()),
+        as_of: false,
+    };
+    let until = ScopeEcho::of(&until_scope);
+    assert_eq!(until.since, Some("2026-01-01T00:00:00Z"));
+    assert_eq!(until.until, Some("2026-06-01T00:00:00Z"));
+    assert_eq!(until.as_of, None, "--until must not echo as as_of");
+
+    let as_of_scope = TimeScope {
+        since: None,
+        cutoff: Some("2026-06-01T00:00:00Z".into()),
+        as_of: true,
+    };
+    let as_of = ScopeEcho::of(&as_of_scope);
+    assert_eq!(as_of.since, None);
+    assert_eq!(as_of.until, None, "--as-of must not echo as until");
+    assert_eq!(as_of.as_of, Some("2026-06-01T00:00:00Z"));
+
+    let open_scope = TimeScope {
+        since: Some("2026-01-01T00:00:00Z".into()),
+        cutoff: None,
+        as_of: true,
+    };
+    let open = ScopeEcho::of(&open_scope);
+    assert_eq!(
+        open.as_of, None,
+        "as-of semantics with no cutoff echoes no bound"
+    );
+    assert_eq!(open.until, None);
 }

@@ -111,7 +111,7 @@ pub fn list(ctx: &mut Ctx<'_>) -> Result<Vec<Proposal>> {
 /// run whose stored `knobs` is not a full knob set (`400`), and a knob set
 /// that fails `Config::validate` against the live config (`400`, before
 /// the file or the row is touched — validate-then-write, the rule
-/// `retrieval::config_retrieval` keeps: a row an older binary with wider grids
+/// `domains::retrieval::config_retrieval` keeps: a row an older binary with wider grids
 /// recorded, or a hand-edited one, must not leave a `config.toml` every
 /// later `comemory` start refuses to load).
 ///
