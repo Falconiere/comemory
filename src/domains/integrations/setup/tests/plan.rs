@@ -1,13 +1,13 @@
-//! `api::setup::plan` — the pure planner. Every snapshot here is built by
+//! `domains::integrations::setup::plan` — the pure planner. Every snapshot here is built by
 //! running the real `detect` against a real temp data dir and a real git
 //! working tree, so the inputs are the ones production produces.
 use super::run;
-use crate::api::setup::detect::{self, Detected};
-use crate::api::setup::{
+use crate::config::{Config, Paths};
+use crate::domains::integrations::setup::detect::{self, Detected};
+use crate::domains::integrations::setup::{
     AGENT_HOST, CLOUD_AUTH, DATA_DIR, GIT_HOOKS, INDEX_CODE, INDEX_DOCS, REINFORCE, Request, Step,
     StepState,
 };
-use crate::config::{Config, Paths};
 use crate::test_common::{git_commit::commit_files, git_repo::init_repo};
 use crate::utilities::context::Ctx;
 
@@ -52,7 +52,7 @@ fn a_fresh_repo_plans_hooks_and_indexing_as_pending() {
 
     assert_eq!(
         steps.iter().map(|s| s.id).collect::<Vec<_>>(),
-        crate::api::setup::STEP_IDS,
+        crate::domains::integrations::setup::STEP_IDS,
         "every id appears exactly once, in order"
     );
     assert_eq!(step(&steps, DATA_DIR).state, StepState::Pending);

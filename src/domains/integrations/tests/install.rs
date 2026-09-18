@@ -1,4 +1,4 @@
-//! `api::install` host validation and dry-run reporting against a real
+//! `domains::integrations::install` host validation and dry-run reporting against a real
 //! temporary data directory.
 use super::{HOSTS, Request, config_dir, run, validate_host};
 use crate::config::{Config, Paths};
@@ -95,19 +95,23 @@ fn the_installed_marker_is_per_host_not_per_shared_bundle() {
 
     // Nothing installed yet.
     for host in HOSTS {
-        assert!(!crate::api::install::is_installed(data, host));
+        assert!(!crate::domains::integrations::install::is_installed(
+            data, host
+        ));
     }
 
     // Simulate one host's successful install by writing only its marker.
     // The bundle tree itself is SHARED across hosts, so a detector keyed on
     // the bundle would now wrongly report every host as installed.
-    let marker = crate::api::install::marker_path(data, "claude");
+    let marker = crate::domains::integrations::install::marker_path(data, "claude");
     std::fs::create_dir_all(marker.parent().unwrap()).unwrap();
     std::fs::write(&marker, env!("CARGO_PKG_VERSION")).unwrap();
 
-    assert!(crate::api::install::is_installed(data, "claude"));
+    assert!(crate::domains::integrations::install::is_installed(
+        data, "claude"
+    ));
     assert!(
-        !crate::api::install::is_installed(data, "codex"),
+        !crate::domains::integrations::install::is_installed(data, "codex"),
         "registering claude must not make codex look installed"
     );
 }
@@ -126,5 +130,8 @@ fn a_dry_run_writes_no_installed_marker() {
         },
     )
     .unwrap();
-    assert!(!crate::api::install::is_installed(temp.path(), "claude"));
+    assert!(!crate::domains::integrations::install::is_installed(
+        temp.path(),
+        "claude"
+    ));
 }

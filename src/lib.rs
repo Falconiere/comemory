@@ -22,8 +22,8 @@ pub mod config;
 /// Single-file SQLite layer backing memories, code rows, FTS and vectors.
 pub mod store;
 
-/// Shared command core: `Ctx` + `api::<cmd>::run`, called by both `cli::`
-/// and `serve::routes::` so neither surface duplicates subcommand logic.
+/// The emptied command-core shell: every core now lives under `domains::`,
+/// and #178 removes this module.
 pub mod api;
 
 /// TTY and JSON emitters shared by the subcommands.

@@ -7,7 +7,7 @@
 use std::io::Write;
 
 use super::Mode;
-use crate::api::setup::{Response, Step, StepState};
+use crate::domains::integrations::setup::{Response, Step, StepState};
 use crate::output::tty;
 use crate::prelude::*;
 

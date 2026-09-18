@@ -1,8 +1,8 @@
-//! `api::setup::run` — the composition: validation before probing, and the
+//! `domains::integrations::setup::run` — the composition: validation before probing, and the
 //! counts the response carries.
 use super::{Request, Response, STEP_IDS, run, validate_step_ids};
-use crate::api::setup::StepState;
 use crate::config::{Config, Paths};
+use crate::domains::integrations::setup::StepState;
 use crate::test_common::{git_commit::commit_files, git_repo::init_repo};
 use crate::utilities::context::Ctx;
 
@@ -21,7 +21,7 @@ fn repo_with_sources() -> tempfile::TempDir {
     repo
 }
 
-/// Run `api::setup::run` against a real data dir and a real target.
+/// Run `domains::integrations::setup::run` against a real data dir and a real target.
 fn run_at(data: &std::path::Path, req: Request) -> crate::prelude::Result<Response> {
     let paths = Paths::new(data.to_path_buf());
     let cfg = Config::defaults();
@@ -116,7 +116,7 @@ fn applying_git_hooks_reports_one_applied_step_and_no_failures() {
         Request {
             repo: Some(repo.path().display().to_string()),
             host: Some("codex".to_string()),
-            only: vec![crate::api::setup::GIT_HOOKS.to_string()],
+            only: vec![crate::domains::integrations::setup::GIT_HOOKS.to_string()],
             apply: true,
             ..Request::default()
         },

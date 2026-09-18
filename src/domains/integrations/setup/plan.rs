@@ -10,7 +10,7 @@ use super::{
     AGENT_HOST, CLOUD_AUTH, DATA_DIR, GIT_HOOKS, INDEX_CODE, INDEX_DOCS, REINFORCE, Request, Step,
     StepState,
 };
-use crate::api;
+use crate::domains::integrations::install;
 
 /// Build the plan. Steps come back in [`super::STEP_IDS`] order, every id
 /// present exactly once, so a caller can index the list positionally and the
@@ -81,7 +81,7 @@ fn agent_host(detected: &Detected, req: &Request) -> Step {
         let wanted = req
             .host
             .clone()
-            .unwrap_or_else(|| api::install::HOSTS.join(" or "));
+            .unwrap_or_else(|| install::HOSTS.join(" or "));
         return step(
             AGENT_HOST,
             title,

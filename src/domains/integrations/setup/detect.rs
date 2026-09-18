@@ -15,9 +15,9 @@
 use std::path::Path;
 
 use super::RepoContext;
-use crate::api;
 use crate::domains::code::git_utils;
 use crate::domains::documents::sources;
+use crate::domains::integrations::install;
 use crate::domains::maintenance;
 use crate::prelude::*;
 use crate::utilities::context::Ctx;
@@ -56,7 +56,8 @@ pub struct Detected {
 /// Probe the machine and the repo at `target`.
 ///
 /// `host_filter` restricts the agent-host probe to one already-validated
-/// host name; `None` probes every host in [`api::install::HOSTS`].
+/// host name; `None` probes every host in
+/// [`HOSTS`](crate::domains::integrations::install::HOSTS).
 ///
 /// # Errors
 /// Propagates a genuine read failure from the delegated probes. A *missing*
@@ -204,7 +205,7 @@ fn doc_sources(ctx: &mut Ctx<'_>, repo: Option<&RepoContext>) -> Result<usize> {
 
 /// Agent hosts whose CLI is on `PATH` and answers `--version`.
 fn hosts_present(host_filter: Option<&str>) -> Vec<&'static str> {
-    api::install::HOSTS
+    install::HOSTS
         .iter()
         .copied()
         .filter(|host| host_filter.is_none_or(|wanted| wanted == *host))
@@ -219,14 +220,14 @@ fn hosts_present(host_filter: Option<&str>) -> Vec<&'static str> {
 
 /// Hosts that already have this comemory version's plugin registered.
 ///
-/// Per-host, from `api::install`'s own marker — NOT from the extracted
+/// Per-host, from the installer's own marker — NOT from the extracted
 /// bundle, which is one shared tree for every host and would therefore
 /// report a second host as installed the moment the first one was.
 fn hosts_installed(ctx: &Ctx<'_>, present: &[&'static str]) -> Vec<&'static str> {
     present
         .iter()
         .copied()
-        .filter(|host| api::install::is_installed(ctx.paths.data_dir(), host))
+        .filter(|host| install::is_installed(ctx.paths.data_dir(), host))
         .collect()
 }
 

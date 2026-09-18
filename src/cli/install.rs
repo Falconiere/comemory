@@ -1,5 +1,6 @@
 //! `comemory install` — install the bundled, standalone comemory skills and
-//! hooks in an agent host. The installer middle lives in `api::install`
+//! hooks in an agent host. The installer middle lives in
+//! `domains::integrations::install`
 //! (Binding Rule 1); this wrapper owns the argument shape and rendering.
 
 use std::io::Write as _;
@@ -7,8 +8,8 @@ use std::path::PathBuf;
 
 use clap::{Args as ClapArgs, ValueEnum};
 
-use crate::api;
 use crate::config::Config;
+use crate::domains::integrations;
 use crate::output::json;
 use crate::prelude::*;
 use crate::utilities::context::Ctx;
@@ -20,7 +21,7 @@ const EXAMPLES: &str = "Examples:
 
 /// Supported native plugin managers. A CLI-only enum so `--help` and shell
 /// completion can enumerate the hosts and accept the historical aliases;
-/// `api::install::HOSTS` is the real source of truth.
+/// `domains::integrations::install::HOSTS` is the real source of truth.
 #[derive(Clone, Copy, Debug, ValueEnum)]
 pub enum Host {
     /// Claude Code skills and hooks.
@@ -32,7 +33,7 @@ pub enum Host {
 }
 
 impl Host {
-    /// The canonical host name `api::install` validates against.
+    /// The canonical host name `domains::integrations::install` validates against.
     fn name(self) -> &'static str {
         match self {
             Self::Claude => "claude",
@@ -56,19 +57,20 @@ pub struct Args {
     pub config_dir: Option<PathBuf>,
 }
 
-/// Install via `api::install::run` and render the report. `install` has no
+/// Install via `domains::integrations::install::run` and render the report.
+/// `install` has no
 /// `Paths`/db dependency, so `data_dir` resolves a throwaway `Ctx::lazy` that
 /// is never opened.
 pub fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = crate::config::Paths::new(crate::config::paths::resolve_data_dir(data_dir));
     let cfg = Config::defaults();
     let mut ctx = Ctx::lazy(&paths, &cfg);
-    let req = api::install::Request {
+    let req = integrations::install::Request {
         host: a.host.name().to_string(),
         dry_run: a.dry_run,
         config_dir: a.config_dir,
     };
-    let resp = api::install::run(&mut ctx, req)?;
+    let resp = integrations::install::run(&mut ctx, req)?;
     if json_flag {
         json::write(&resp)?;
     } else {
@@ -79,7 +81,7 @@ pub fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
 
 /// Write the three-line human report: what happened, the plugin id, and the
 /// toolu-migration note.
-fn emit(resp: &api::install::Response) -> Result<()> {
+fn emit(resp: &integrations::install::Response) -> Result<()> {
     let mut out = std::io::stdout().lock();
     writeln!(
         out,

@@ -3,8 +3,8 @@
 //! The end-to-end shape against the real binary is snapshotted in
 //! `tests/cli__setup.rs`.
 use super::summary;
-use crate::api::setup::{RepoContext, Response, Step, StepState};
 use crate::cli::setup::Mode;
+use crate::domains::integrations::setup::{RepoContext, Response, Step, StepState};
 
 /// Build a step with the given id and state.
 fn step(id: &'static str, state: StepState) -> Step {
@@ -17,7 +17,7 @@ fn step(id: &'static str, state: StepState) -> Step {
 }
 
 /// Build a response around `steps`, counting the states the way
-/// `api::setup` does.
+/// `domains::integrations::setup` does.
 fn response(steps: Vec<Step>, repo: Option<RepoContext>) -> Response {
     let count =
         |matcher: fn(&StepState) -> bool| steps.iter().filter(|s| matcher(&s.state)).count();

@@ -9,5 +9,7 @@ the wizard's decisions are testable without a terminal.
 | `plan.rs` | `run` | Pure `(Detected, Request) -> Vec<Step>`. Every decision lives here |
 | `apply.rs` | `run` | The only phase that writes. Dispatches each pending step to the command that owns it; a per-step failure is recorded, never propagated |
 
-`src/api/setup.rs` beside this folder holds the request/response types, the
-stable `STEP_IDS`, and the `run` that sequences the three.
+`src/domains/integrations/setup.rs` beside this folder holds the
+request/response types, the stable `STEP_IDS`, and the `run` that sequences the
+three. `cloud-auth` and `index-docs` are report-only: `plan` never marks them
+pending, so `apply` never signs in and never indexes a document root.

@@ -1,13 +1,13 @@
 //! The cliclack wizard for `comemory setup`.
 //!
 //! Deliberately the thinnest file in the change. It holds no decisions —
-//! `api::setup::plan` made them all — so there is nothing here to test
+//! `domains::integrations::setup::plan` made them all — so there is nothing here to test
 //! without a pty, and nothing here that a pty test would catch. It renders
 //! what it is given and returns which steps the operator deselected.
 
 use cliclack::{intro, multiselect, outro, outro_cancel};
 
-use crate::api::setup::{Response, StepState};
+use crate::domains::integrations::setup::{Response, StepState};
 use crate::prelude::*;
 
 /// What the operator chose.
@@ -28,7 +28,7 @@ pub struct Selection {
 /// cliclack reports it as `ErrorKind::Interrupted`, which becomes
 /// `Ok(None)`.
 pub fn select(planned: &Response) -> Result<Option<Selection>> {
-    let pending: Vec<&crate::api::setup::Step> = planned
+    let pending: Vec<&crate::domains::integrations::setup::Step> = planned
         .steps
         .iter()
         .filter(|step| matches!(step.state, StepState::Pending))

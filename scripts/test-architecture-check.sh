@@ -365,6 +365,11 @@ domain 'use crate::{serve::z, cli::{z, a}}; pub fn work() {}'
 assert_status 1 'crate::cli::a'
 test "$(grep -c '^src/domains/memories.rs:' "$TASK_TMP/result")" = 1
 test "$(grep -n 'crate::cli::a' "$TASK_TMP/result" | cut -d: -f1)" -lt "$(grep -n 'crate::serve::z' "$TASK_TMP/result" | cut -d: -f1)"
+# The one case that still names an `src/api/` path, deliberately: it is the only
+# cover for the checker's `src/api/` source branch, which subjects a file in the
+# emptied shell to the delivery rule although it has no `domains::` owner. The
+# path carries no owner expectation now that capability ownership replaced the
+# `src/api/` core map, and #178 retires the branch with the shell.
 new_tree scoped_selection
 domain 'pub fn work() {}'
 put src/api/setup.rs 'pub fn run() { crate::cli::embedding_input(); }'

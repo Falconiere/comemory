@@ -108,15 +108,18 @@ jq "$SEED_EDGE"' | del(.legacy_edges[0].target)' "$POLICY" >"$TASK_TMP/target.js
 assert_fails 'missing exact target' 'invalid policy edge' --policy "$TASK_TMP/target.json"
 jq "$SEED_EDGE"' | .legacy_edges[0].target = "crate::cli::not_present"' "$POLICY" >"$TASK_TMP/stale.json"
 assert_fails 'stale allowlisted target' 'absent policy edge' --policy "$TASK_TMP/stale.json"
-# The API-ownership map only constrains rows still under `src/api/`, so this
-# fixture must name one. It moved off `src/api/search.rs` when #171 took the
-# retrieval cores into `domains/retrieval/`, and off `src/api/doctor.rs` when
-# #176 took the maintenance cores into `domains/maintenance/`: a row that has
-# left `src/api/` is skipped by the check, and the negative case would pass
-# asserting nothing. `src/api/setup.rs` holds until #175 moves integrations.
-sed '/^| src\/api\/setup.rs |/s/domains::integrations/domains::code/' "$INVENTORY" >"$TASK_TMP/owner.md"
-assert_fails 'wrong API owner' 'API ownership mismatch' --inventory "$TASK_TMP/owner.md"
-assert_gate_rejects "$TASK_TMP/owner.md" 'API ownership mismatch'
+# The `src/api/` core map this case used to break went vacuous when #175 moved
+# the last two cores out: with no row left under `src/api/`, `all` quantified
+# over nothing and the negative case passed asserting nothing — after being
+# repointed twice already, off `src/api/search.rs` (#171) and `src/api/doctor.rs`
+# (#176). The capability-ownership rule that replaced it is anchored on the
+# capability folder, so every `src/domains/` row is subject to it and no move
+# can empty it out. The substitution targets the owner column specifically: an
+# unanchored one would rewrite the public column's `comemory::domains::memories`
+# first and exercise the public-path check instead.
+sed '/^| src\/domains\/memories\/save.rs |/s/ | domains::memories | / | domains::code | /' "$INVENTORY" >"$TASK_TMP/owner.md"
+assert_fails 'wrong capability owner' 'capability ownership mismatch' --inventory "$TASK_TMP/owner.md"
+assert_gate_rejects "$TASK_TMP/owner.md" 'capability ownership mismatch'
 sed '/^| src\/domains\/memories\/save.rs |/s@src/domains/memories/save.rs@src/domains/memories/delete.rs@2' "$INVENTORY" >"$TASK_TMP/target.md"
 assert_fails 'duplicate migration target' 'duplicate inventory target' --inventory "$TASK_TMP/target.md"
 sed '/^| src\/domains\/memories\/save.rs |/s@src/domains/memories/save.rs@none@2' "$INVENTORY" >"$TASK_TMP/no-target.md"

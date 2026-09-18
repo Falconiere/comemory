@@ -193,57 +193,57 @@
   ],
   "setup_runtime_dependencies": [
     {
-      "source": "src/api/setup/apply.rs",
+      "source": "src/domains/integrations/setup/apply.rs",
       "target": "crate::domains::code::hooks",
       "owner": "domains::code"
     },
     {
-      "source": "src/api/setup/apply.rs",
+      "source": "src/domains/integrations/setup/apply.rs",
       "target": "crate::domains::code::index_code",
       "owner": "domains::code"
     },
     {
-      "source": "src/api/setup/apply.rs",
-      "target": "crate::api::install",
+      "source": "src/domains/integrations/setup/apply.rs",
+      "target": "crate::domains::integrations::install",
       "owner": "domains::integrations"
     },
     {
-      "source": "src/api/setup/apply.rs",
+      "source": "src/domains/integrations/setup/apply.rs",
       "target": "crate::domains::code::install_hooks",
       "owner": "domains::code"
     },
     {
-      "source": "src/api/setup/detect.rs",
+      "source": "src/domains/integrations/setup/detect.rs",
       "target": "crate::domains::maintenance::doctor",
       "owner": "domains::maintenance"
     },
     {
-      "source": "src/api/setup/detect.rs",
+      "source": "src/domains/integrations/setup/detect.rs",
       "target": "crate::domains::code::hooks",
       "owner": "domains::code"
     },
     {
-      "source": "src/api/setup/detect.rs",
-      "target": "crate::api::install",
+      "source": "src/domains/integrations/setup/detect.rs",
+      "target": "crate::domains::integrations::install",
       "owner": "domains::integrations"
     },
     {
-      "source": "src/api/setup/detect.rs",
+      "source": "src/domains/integrations/setup/detect.rs",
       "target": "crate::domains::code::repos",
       "owner": "domains::code"
     },
     {
-      "source": "src/api/setup/detect.rs",
+      "source": "src/domains/integrations/setup/detect.rs",
       "target": "crate::domains::documents::sources",
       "owner": "domains::documents"
     },
     {
-      "source": "src/api/setup/detect.rs",
+      "source": "src/domains/integrations/setup/detect.rs",
       "target": "crate::domains::code::git_utils",
       "owner": "domains::code"
     },
     {
-      "source": "src/api/setup/detect.rs",
+      "source": "src/domains/integrations/setup/detect.rs",
       "target": "crate::domains::sync::auth_file",
       "owner": "domains::sync"
     }

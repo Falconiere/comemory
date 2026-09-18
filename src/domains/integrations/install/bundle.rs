@@ -5,83 +5,83 @@ use std::path::Path;
 const FILES: &[(&str, &str)] = &[
     (
         "hooks/memory-lifecycle.sh",
-        include_str!("../../../integrations/agent/hooks/memory-lifecycle.sh"),
+        include_str!("../../../../integrations/agent/hooks/memory-lifecycle.sh"),
     ),
     (
         "hooks/scope.sh",
-        include_str!("../../../integrations/agent/hooks/scope.sh"),
+        include_str!("../../../../integrations/agent/hooks/scope.sh"),
     ),
     (
         "lib/shell-input.sh",
-        include_str!("../../../integrations/agent/lib/shell-input.sh"),
+        include_str!("../../../../integrations/agent/lib/shell-input.sh"),
     ),
     (
         ".claude-plugin/plugin.json",
-        include_str!("../../../integrations/agent/.claude-plugin/plugin.json"),
+        include_str!("../../../../integrations/agent/.claude-plugin/plugin.json"),
     ),
     (
         ".codex-plugin/plugin.json",
-        include_str!("../../../integrations/agent/.codex-plugin/plugin.json"),
+        include_str!("../../../../integrations/agent/.codex-plugin/plugin.json"),
     ),
     (
         "hooks/comemory-status.sh",
-        include_str!("../../../integrations/agent/hooks/comemory-status.sh"),
+        include_str!("../../../../integrations/agent/hooks/comemory-status.sh"),
     ),
     (
         "hooks/hooks.json",
-        include_str!("../../../integrations/agent/hooks/hooks.json"),
+        include_str!("../../../../integrations/agent/hooks/hooks.json"),
     ),
     (
         "hooks/project-skills-curate.sh",
-        include_str!("../../../integrations/agent/hooks/project-skills-curate.sh"),
+        include_str!("../../../../integrations/agent/hooks/project-skills-curate.sh"),
     ),
     (
         "hooks/project-skills-index.sh",
-        include_str!("../../../integrations/agent/hooks/project-skills-index.sh"),
+        include_str!("../../../../integrations/agent/hooks/project-skills-index.sh"),
     ),
     (
         "hooks/session-start.sh",
-        include_str!("../../../integrations/agent/hooks/session-start.sh"),
+        include_str!("../../../../integrations/agent/hooks/session-start.sh"),
     ),
     (
         "hooks/skill-use.sh",
-        include_str!("../../../integrations/agent/hooks/skill-use.sh"),
+        include_str!("../../../../integrations/agent/hooks/skill-use.sh"),
     ),
     (
         "lib/project-skills.sh",
-        include_str!("../../../integrations/agent/lib/project-skills.sh"),
+        include_str!("../../../../integrations/agent/lib/project-skills.sh"),
     ),
     (
         "lib/project-skills-foundation.sh",
-        include_str!("../../../integrations/agent/lib/project-skills-foundation.sh"),
+        include_str!("../../../../integrations/agent/lib/project-skills-foundation.sh"),
     ),
     (
         "lib/project-skills-commands.sh",
-        include_str!("../../../integrations/agent/lib/project-skills-commands.sh"),
+        include_str!("../../../../integrations/agent/lib/project-skills-commands.sh"),
     ),
     (
         "lib/project-skills-curation.sh",
-        include_str!("../../../integrations/agent/lib/project-skills-curation.sh"),
+        include_str!("../../../../integrations/agent/lib/project-skills-curation.sh"),
     ),
     (
         "lib/repo-scope.sh",
-        include_str!("../../../integrations/agent/lib/repo-scope.sh"),
+        include_str!("../../../../integrations/agent/lib/repo-scope.sh"),
     ),
     (
         "skills/agent-memory/SKILL.md",
-        include_str!("../../../integrations/agent/skills/agent-memory/SKILL.md"),
+        include_str!("../../../../integrations/agent/skills/agent-memory/SKILL.md"),
     ),
     (
         "skills/agent-memory/scripts/comemory.sh",
-        include_str!("../../../integrations/agent/skills/agent-memory/scripts/comemory.sh"),
+        include_str!("../../../../integrations/agent/skills/agent-memory/scripts/comemory.sh"),
     ),
     (
         "skills/project-skills/SKILL.md",
-        include_str!("../../../integrations/agent/skills/project-skills/SKILL.md"),
+        include_str!("../../../../integrations/agent/skills/project-skills/SKILL.md"),
     ),
     (
         "skills/project-skills/scripts/skills.sh",
-        include_str!("../../../integrations/agent/skills/project-skills/scripts/skills.sh"),
+        include_str!("../../../../integrations/agent/skills/project-skills/scripts/skills.sh"),
     ),
 ];
 

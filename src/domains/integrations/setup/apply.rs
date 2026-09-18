@@ -9,7 +9,7 @@
 
 use super::detect::Detected;
 use super::{AGENT_HOST, DATA_DIR, GIT_HOOKS, INDEX_CODE, REINFORCE, Step, StepState};
-use crate::api;
+use crate::domains::integrations::install;
 use crate::prelude::*;
 use crate::utilities::context::Ctx;
 
@@ -67,9 +67,9 @@ fn agent_host(ctx: &mut Ctx<'_>, detected: &Detected) -> Result<String> {
         .collect();
     let mut installed = Vec::new();
     for host in pending {
-        api::install::run(
+        install::run(
             ctx,
-            api::install::Request {
+            install::Request {
                 host: host.to_string(),
                 dry_run: false,
                 config_dir: None,
