@@ -9,9 +9,9 @@
 //! (`src/serve/routes/maint/prune.rs`) against a real bound server. The
 //! critical `GET` behavior under test: the route forces `apply = false`
 //! unconditionally, so a `GET` — even one carrying `?apply=true` in the
-//! query string — must never soft-delete anything (`api::prune::run` itself,
+//! query string — must never soft-delete anything (`maintenance::prune::run` itself,
 //! including the `apply: true` path, is covered directly in
-//! `src/api/tests/prune.rs`; `api::gc::run` in `src/api/tests/gc.rs`).
+//! `src/domains/maintenance/tests/prune.rs`; `maintenance::gc::run` in `src/domains/maintenance/tests/gc.rs`).
 
 #[path = "common/cli_prune_support.rs"]
 mod support;

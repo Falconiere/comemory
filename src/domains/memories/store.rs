@@ -407,7 +407,7 @@ fn matches_prefix(name: &str, prefix: &str) -> bool {
 }
 
 /// Set `path`'s mtime to now. `fs::rename` keeps the original mtime, but the
-/// trash readers (`api::gc::sweep_trash`, `trash::days_until_gc`) treat
+/// trash readers (`maintenance::gc::sweep_trash`, `trash::days_until_gc`) treat
 /// a trashed file's mtime as its deletion instant — without this stamp a
 /// memory last written 45 days ago and deleted today would be reaped by the
 /// next gc under a 30-day window, with no undo window at all. Best-effort:

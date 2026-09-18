@@ -63,4 +63,4 @@ _None._
 - **Command:** `comemory prune --apply --ids <only-the-first>`
 - **Expect:** only that id is soft-deleted; the other remains live.
 - **Covered by:** `tests/cli__prune_2.rs::prune_apply_ids_restricts_the_delete_set`,
-  `src/api/tests/prune.rs::run_apply_with_ids_touches_only_the_listed_candidate`
+  `src/domains/maintenance/tests/prune.rs::run_apply_with_ids_touches_only_the_listed_candidate`

@@ -175,7 +175,7 @@ fn list_reports_one_store_matching_the_on_disk_markdown_count() {
 }
 
 /// The read side must not create `comemory.db` as a side effect (the
-/// must-not-create-the-db invariant `api::stats` documents).
+/// must-not-create-the-db invariant `maintenance::stats` documents).
 #[test]
 fn list_never_creates_the_database() {
     let home = TempDir::new().expect("tempdir");

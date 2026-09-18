@@ -105,7 +105,7 @@ impl Paths {
     }
 
     /// Pre-swap snapshot of `comemory.db`, written by `comemory rebuild`
-    /// (`src/api/rebuild.rs`) immediately before the rebuilt database
+    /// (`src/domains/maintenance/rebuild.rs`) immediately before the rebuilt database
     /// replaces the live one.
     pub fn rebuild_backup(&self) -> PathBuf {
         self.data_dir.join("comemory.db.pre-rebuild.bak")

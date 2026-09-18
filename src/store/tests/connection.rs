@@ -53,7 +53,7 @@ fn open_on_current_schema_performs_no_writes() {
 }
 
 /// `open_read_only` opens a genuinely writable-looking file but refuses
-/// every write — the read-only forward-compat fallback (`api::doctor`) must
+/// every write — the read-only forward-compat fallback (`maintenance::doctor`) must
 /// never be able to mutate a schema it does not understand.
 #[test]
 fn open_read_only_refuses_writes() {

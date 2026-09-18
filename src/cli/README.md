@@ -68,7 +68,7 @@ One line per file, named after its primary item:
 | `watch.rs` | `Args` | `comemory watch` — the one long-lived command; arguments, launch and reporting for `domains::sync::watch`, which holds the workspace channel open and pulls on every nudge. This module supplies the `OffRuntime` the service isolates blocking platform calls through |
 | `tune.rs` | `Args` | `comemory tune` — deterministic/sampled search over the blend knobs |
 | `unindex.rs` | `Args` | `comemory unindex <SOURCE_ID\|PATH>` — unregister a document source |
-| `upgrade.rs` | `Args` | `comemory upgrade` — move this binary to the newest release (`--check`, `--version`, `--force`); core in `crate::upgrade`, CLI-only |
+| `upgrade.rs` | `Args` | `comemory upgrade` — move this binary to the newest release (`--check`, `--version`, `--force`); core in `crate::domains::maintenance::upgrade`, CLI-only |
 
 When you add a file here, add its row above so the index stays current. No
 `mod.rs` barrel — submodules are declared from `src/cli.rs` (`pub mod <name>;`)

@@ -289,7 +289,8 @@ pub fn rank_signals(conn: &Connection, id: &str) -> Result<Option<RankSignals>> 
     .map_err(Error::from)
 }
 
-/// Per-memory stats behind `consolidate::keeper`'s best-keeper ordering.
+/// Per-memory stats behind `maintenance::consolidation::keeper`'s
+/// best-keeper ordering.
 #[derive(Debug, Clone, Default)]
 pub struct KeeperStats {
     /// Owning repo, or `None` when the memory has none.

@@ -1,7 +1,7 @@
 //! `comemory gc`'s learning-telemetry eviction: raw `retrieval_log` /
 //! `feedback_events` rows older than the configured retention window.
 //! Counters in `feedback` are permanent; only these two raw event tables
-//! age out. Moved out of `api::gc::sweep_learning` (spec
+//! age out. Moved out of `maintenance::gc::sweep_learning` (spec
 //! `docs/toolu/specs/2026-09-07-store-layer-chokepoint-design.md`).
 
 use rusqlite::Connection;
@@ -16,7 +16,7 @@ use crate::prelude::*;
 /// `cutoff` must already be rendered in the same fixed-width ISO-8601 UTC
 /// format both tables' `at` columns are written in
 /// (`memory_row::iso_format`), so the plain string `<` compares
-/// chronologically — see `api::gc::sweep_learning`'s doc for the format
+/// chronologically — see `maintenance::gc::sweep_learning`'s doc for the format
 /// note this preserves.
 pub fn evict_before(conn: &Connection, cutoff: &str) -> Result<(u64, u64)> {
     let logs = conn.execute("DELETE FROM retrieval_log WHERE at < ?1", [cutoff])?;

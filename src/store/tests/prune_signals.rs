@@ -6,7 +6,7 @@
     clippy::too_many_lines
 )]
 //! Mirror test for `src/store/prune_signals.rs` — the low-quality/degree
-//! scan and the superseded-and-forgotten scan behind `prune::low_value`.
+//! scan and the superseded-and-forgotten scan behind `maintenance::retention::low_value`.
 //! Pins the `<=`/`<` boundaries directly: `prune --apply` deletes whatever
 //! these two queries return, so an off-by-one here is a data-loss bug.
 

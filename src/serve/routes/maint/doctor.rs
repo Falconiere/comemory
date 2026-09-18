@@ -7,7 +7,7 @@
 //! mounts, with the same confirm gate, the same job, and the same
 //! post-rebuild connection swap. Only `scope: "all"` exists (a per-repo
 //! rebuild would have to re-derive memories from a subset of markdown,
-//! which is not a thing `api::rebuild` can do), so anything else is a
+//! which is not a thing `maintenance::rebuild` can do), so anything else is a
 //! `400` before the job is created.
 
 use std::sync::Arc;
@@ -19,7 +19,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde_json::Value;
 
-use crate::api;
+use crate::domains::maintenance;
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::envelope::Envelope;
@@ -65,7 +65,7 @@ pub fn router(_state: AppState) -> Router<AppState> {
 }
 
 /// `GET /api/v1/doctor/system` — the probe-free facts read
-/// (`api::doctor::system`). Uses `Ctx::lazy`, and the core itself opens the
+/// (`maintenance::doctor::system`). Uses `Ctx::lazy`, and the core itself opens the
 /// DB only when it already exists, so polling this endpoint on a fresh data
 /// dir never creates one. `embed_cmd` is this server's own configured
 /// command ([`AppState::embed_cmd`]) — the one `/health` and
@@ -75,7 +75,7 @@ async fn system(State(state): State<AppState>) -> Response {
     let result = run_blocking(move || {
         let cfg = state.cfg();
         let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        api::doctor::system::run(&mut ctx, state.embed_cmd())
+        maintenance::doctor::system::run(&mut ctx, state.embed_cmd())
     })
     .await;
     respond("doctor.system", result, started)
@@ -104,7 +104,7 @@ async fn rebuild(State(state): State<AppState>, Json(body): Json<Value>) -> Resp
 /// this endpoint cannot do.
 ///
 /// They must be *removed*, not merely inspected: the shared handler reads
-/// the remainder as `api::rebuild::Request`, which is
+/// the remainder as `maintenance::rebuild::Request`, which is
 /// `deny_unknown_fields`, so leaving them in would turn a spec-conformant
 /// body into a deserialization error. A non-object body is passed through
 /// untouched — the shared handler's own `split_confirm` already answers it
@@ -131,7 +131,7 @@ fn strip_scope(mut body: Value) -> Result<Value> {
 }
 
 /// `POST /api/v1/doctor/reembed` — start a `reembed` job
-/// (`api::reembed::run`) over the server's own embed command.
+/// (`maintenance::reembed::run`) over the server's own embed command.
 ///
 /// Gate order: read-only first ([`guard_job`] → `405 read_only`), then the
 /// embed-command check → `503 embedder_unavailable` **before** a job is
@@ -145,7 +145,7 @@ fn strip_scope(mut body: Value) -> Result<Value> {
 /// the next row boundary.
 async fn reembed(
     State(state): State<AppState>,
-    Json(req): Json<api::reembed::Request>,
+    Json(req): Json<maintenance::reembed::Request>,
 ) -> Response {
     let started = Instant::now();
     if let Err(resp) = guard_job("doctor.reembed", &state) {
@@ -169,7 +169,7 @@ async fn reembed(
             let sink = RegistryProgressSink::new(registry, job_id);
             let cfg = job_state.cfg();
             let mut ctx = Ctx::lazy(job_state.paths(), &cfg);
-            let resp = api::reembed::run(&mut ctx, req, &cmd, Some(&sink))?;
+            let resp = maintenance::reembed::run(&mut ctx, req, &cmd, Some(&sink))?;
             serde_json::to_value(resp).map_err(Error::Json)
         },
     );

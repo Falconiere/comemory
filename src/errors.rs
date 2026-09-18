@@ -49,7 +49,7 @@ pub enum Error {
     /// carries an applied migration marker this build does not recognize —
     /// the database was written by a *newer* comemory. Maps to
     /// `EX_SOFTWARE` (exit 70), same as [`Error::Migration`]. Kept distinct
-    /// so `api::doctor`'s forward-compat fallback can catch exactly this
+    /// so `maintenance::doctor`'s forward-compat fallback can catch exactly this
     /// refusal and fall back to a read-only report, while a genuinely
     /// broken migration ([`Error::Migration`]) still propagates.
     #[error("schema too new: {0}")]

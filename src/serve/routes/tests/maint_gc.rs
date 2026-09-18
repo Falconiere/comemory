@@ -12,7 +12,7 @@
 //! AC-17 is proven with real data, not a stub clock: a real file is written
 //! into `memories/.trash/` and its mtime pushed two days back with
 //! `File::set_modified`, so the sweep that reaps it is the same
-//! `api::gc::run` mtime comparison a production sweep makes.
+//! `maintenance::gc::run` mtime comparison a production sweep makes.
 
 use crate::test_common::serve_state::{self, Session};
 

@@ -1,6 +1,6 @@
 //! The corpus counters behind `comemory stats` / `GET /api/v1/stats`: a
 //! generic scoped `COUNT(*)`, a table-wide `COUNT(*)`, and the logical
-//! database size. Moved out of `api::stats` (spec
+//! database size. Moved out of `maintenance::stats` (spec
 //! `docs/toolu/specs/2026-09-07-store-layer-chokepoint-design.md`).
 
 use rusqlite::Connection;

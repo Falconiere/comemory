@@ -28,7 +28,7 @@ pub mod code_graph_edges;
 /// `code_symbols` node aggregation behind `comemory graph`'s node assembly.
 pub mod code_graph_nodes;
 /// `code_ref` side table: version-anchor store for explicit code references,
-/// plus the live-symbol-ref scan behind `prune::stale_code`.
+/// plus the live-symbol-ref scan behind `maintenance::retention::stale_code`.
 pub mod code_ref;
 /// `code_symbols` row upserts (insert, refresh, delete-by-file), plus the
 /// `symbol_row_exists` ghost-reference resolve check.
@@ -93,16 +93,16 @@ pub mod memory_purge;
 pub mod memory_row;
 /// Versioned, idempotent schema migrations plus `schema_meta`.
 pub mod migrate;
-/// `api::prune`'s own scan (orphan-edge count, stale-code-file list, one
+/// `maintenance::prune`'s own scan (orphan-edge count, stale-code-file list, one
 /// memory's display fields) and apply-time cleanup deletes.
 pub mod prune_apply;
 /// The low-quality/zero-incoming-edge and superseded-and-forgotten scans
-/// behind `prune::low_value`.
+/// behind `maintenance::retention::low_value`.
 pub mod prune_signals;
 /// Mined `(term → expansion)` row CRUD behind `comemory mine --apply`.
 pub mod query_expansions;
 /// Shared random-hex id generation (`/dev/urandom`), the neutral home for
-/// both `serve::security` and `api::gc`.
+/// both `serve::security` and `maintenance::gc`.
 pub mod random_id;
 /// The `ATTACH`-based rebuild preservation copy: entry point, `DETACH`
 /// guarantee, and the two attached-DB schema-probe helpers.

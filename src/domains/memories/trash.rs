@@ -95,7 +95,7 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Page<TrashRow>> {
 /// The memory id a `memories/.trash/` entry name carries: the `{id}-`
 /// prefix of an `{id}-{slug}.md` file, validated as an 8-hex memory id.
 /// `None` for anything else in the directory. Shared by this listing and
-/// `api::gc`'s sweep so the two cannot disagree on which files are
+/// `maintenance::gc`'s sweep so the two cannot disagree on which files are
 /// memories.
 pub fn trash_entry_id(name: &str) -> Option<&str> {
     let is_md = Path::new(name)
@@ -123,7 +123,7 @@ fn trash_files(trash_dir: &Path) -> HashMap<String, PathBuf> {
 }
 
 /// Days left before gc may reap this entry: the retention window minus the
-/// whole days elapsed on the file's mtime (the clock `api::gc::sweep_trash`
+/// whole days elapsed on the file's mtime (the clock `maintenance::gc::sweep_trash`
 /// actually reads), falling back to `deleted_at` when the file is gone.
 /// Clamped at `0` — an overdue entry reports `0`, never a negative count.
 fn days_until_gc(

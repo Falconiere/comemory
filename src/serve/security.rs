@@ -31,8 +31,8 @@ pub fn generate_token() -> Result<String> {
 /// `/dev/urandom` is an error, never a degraded default.
 ///
 /// Delegates to [`crate::store::random_id::random_hex`] — the neutral home
-/// shared with `api::gc`'s `gc_runs` row ids, so `api::` never has to depend
-/// on `serve::` for the same primitive (Binding Rule 1).
+/// shared with `maintenance::gc`'s `gc_runs` row ids, so a command core never
+/// has to depend on `serve::` for the same primitive (Binding Rule 1).
 pub fn random_hex(bytes: usize) -> Result<String> {
     crate::store::random_id::random_hex(bytes)
 }

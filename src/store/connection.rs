@@ -58,7 +58,7 @@ pub fn open<P: AsRef<Path>>(path: P) -> Result<Connection> {
 
 /// Open `path` as a plain, read-only connection: no PRAGMAs, no migration,
 /// no tokenizer registration. Distinct from [`open`] on purpose — the one
-/// caller (`api::doctor`'s forward-compat fallback, see its module doc) has
+/// caller (`maintenance::doctor`'s forward-compat fallback, see its module doc) has
 /// already been refused an [`open`] with `Error::SchemaTooNew` and reaches
 /// here specifically because a read-only handle can never `CREATE` (or
 /// migrate) a database it does not understand, whatever the schema turns

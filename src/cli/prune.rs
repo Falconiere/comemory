@@ -5,7 +5,7 @@
 //! (cold/unloved/low-quality/unreferenced or superseded), and ghost code-refs
 //! (memories whose pinned symbol no longer resolves — advisory only, never
 //! auto-deleted, per spec Non-Goal 5). The scan + apply middle lives in
-//! `api::prune` (Binding Rule 1).
+//! `maintenance::prune` (Binding Rule 1).
 //!
 //! Default is a dry run. `--apply` soft-deletes low-value memories through the
 //! `comemory delete` path then runs the orphan/stale cleanup in one
@@ -15,10 +15,10 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::api;
 use crate::cli::load_config;
 use crate::cli::pagination::PaginationArgs;
 use crate::config::paths::{Paths, resolve_data_dir};
+use crate::domains::maintenance;
 use crate::output::prune as output;
 use crate::prelude::*;
 use crate::store::connection;
@@ -72,7 +72,7 @@ pub struct Args {
 }
 
 /// Run `comemory prune`: build the request, delegate the scan (+ optional
-/// apply) to `api::prune::run`, then emit. Always emits the report,
+/// apply) to `maintenance::prune::run`, then emit. Always emits the report,
 /// regardless of `--apply`.
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
@@ -80,13 +80,13 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     let cfg = load_config(&paths)?;
     let mut conn = connection::open(paths.db_path())?;
 
-    let req = api::prune::Request {
+    let req = maintenance::prune::Request {
         apply: a.apply,
         limit: a.page.limit,
         offset: a.page.offset,
         ids: a.ids,
     };
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-    let report = api::prune::run(&mut ctx, req)?;
+    let report = maintenance::prune::run(&mut ctx, req)?;
     output::emit(&report, json_flag)
 }

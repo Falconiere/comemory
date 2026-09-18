@@ -75,7 +75,7 @@ pub(crate) fn preflight(conn: &Connection, db_path: &Path) -> Result<()> {
 /// The applied-migration keys recorded in `schema_meta` — every row whose
 /// key looks like a migration marker (`0001_schema_meta`,
 /// `0004_simhash_backfill`, ...). Only called once `schema_meta` is known
-/// to exist. `pub(crate)`: [`crate::api::doctor`] reuses this against its
+/// to exist. `pub(crate)`: [`crate::domains::maintenance::doctor`] reuses this against its
 /// own read-only fallback connection rather than re-querying by hand.
 ///
 /// Fetches every `schema_meta` row and filters in Rust with
@@ -111,7 +111,7 @@ fn is_migration_marker(key: &str) -> bool {
 
 /// Union of every [`list::Migration::markers`] entry across
 /// [`list::MIGRATIONS`] — every `schema_meta` key a fully-migrated database
-/// holds. `pub(crate)`: [`crate::api::doctor`] reuses this to compute the
+/// holds. `pub(crate)`: [`crate::domains::maintenance::doctor`] reuses this to compute the
 /// same unknown-key set its read-only fallback reports.
 pub(crate) fn expected_markers() -> BTreeSet<&'static str> {
     list::MIGRATIONS
@@ -162,7 +162,7 @@ fn table_exists(conn: &Connection, name: &str) -> Result<bool> {
 /// this build, meaning the database was written by a newer comemory.
 /// `schema_meta` is left untouched — this returns before anything is
 /// written. Returns [`Error::SchemaTooNew`], not [`Error::Migration`]: this
-/// is the one refusal `api::doctor` catches and falls back on, so it must
+/// is the one refusal `maintenance::doctor` catches and falls back on, so it must
 /// stay distinguishable from every other way the migration chain can fail.
 fn forward_compat_error(db_path: &Path, unknown: &str) -> Error {
     Error::SchemaTooNew(format!(
@@ -239,7 +239,7 @@ fn take_snapshot(conn: &Connection, db_path: &Path, dest: &Path) -> Result<()> {
 
 /// Pre-migration snapshot destination, derived from the actual database
 /// **file name** — not `Paths::db_path()` — since `connection::open` is
-/// also called on `comemory.db.rebuild.tmp` (`api::rebuild::run`), and
+/// also called on `comemory.db.rebuild.tmp` (`maintenance::rebuild::run`), and
 /// resolving through `Paths` there would collide the tmp database's backup
 /// namespace with the live one in the same directory. `from` is the count
 /// of fully-applied migrations preceding the first pending one, i.e. the

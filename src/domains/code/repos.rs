@@ -11,7 +11,7 @@
 //! [`git_state`] owns the HEAD comparison, remote/branch lookup, and
 //! changed-file count — and never returns an error (see its module doc).
 //!
-//! **Must-not-create-the-db invariant** (the same rule `api::stats` keeps):
+//! **Must-not-create-the-db invariant** (the same rule `maintenance::stats` keeps):
 //! a read command must not create and migrate a database as a side effect
 //! of being asked which repos are indexed. On a data dir with no
 //! `comemory.db`, `run` never calls [`Ctx::conn`] and reports an empty

@@ -109,7 +109,8 @@ fn insert_row(
 }
 
 /// One anchored `code_ref` row from a live memory, as read by the
-/// ghost-reference scan behind `prune::stale_code::detect`.
+/// ghost-reference scan behind
+/// `domains::maintenance::retention::stale_code::detect`.
 pub struct LiveRefRow {
     /// Owning (live) memory id.
     pub memory_id: String,

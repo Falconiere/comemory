@@ -147,7 +147,7 @@ pub fn history(ctx: &mut Ctx<'_>, req: &Request) -> Result<Vec<eval_runs::EvalRu
 }
 
 /// Random bytes behind an `eval_runs` row id — 8 bytes, rendered as 16
-/// lowercase-hex chars (the same width `api::gc` uses for
+/// lowercase-hex chars (the same width `maintenance::gc` uses for
 /// `gc_runs`).
 const RUN_ID_BYTES: usize = 8;
 

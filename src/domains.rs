@@ -30,6 +30,11 @@ pub mod graph;
 /// over the ranking blend.
 pub mod learning;
 
+/// Corpus health, retention, repair and the binary upgrade: the doctor, gc,
+/// gc-policy, prune, consolidate, rebuild, re-embed, stats and overview cores
+/// plus the retention, near-duplicate and release-channel algorithms.
+pub mod maintenance;
+
 /// The memory lifecycle: markdown models and store, plus the save, delete,
 /// list, show, update, restore, trash and reference-refresh cores.
 pub mod memories;

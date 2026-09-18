@@ -1,15 +1,15 @@
 //! Output helpers for `comemory consolidate`. JSON mode serializes the
 //! [`Report`] directly; TTY mode prints a scan header, one block per
 //! cluster with the keeper marked, and the shared pagination footer.
-//! `Report` also doubles as `api::consolidate::run`'s return type — the
+//! `Report` also doubles as `maintenance::consolidate::run`'s return type — the
 //! CLI's `--json` stdout and the `/api/v1/consolidate` response `data`
 //! field build from the same owned value.
 
 use std::fmt::Write as _;
 use std::io::Write as _;
 
-use crate::consolidate::report::Report;
-use crate::consolidate::{Cluster, Member};
+use crate::domains::maintenance::consolidation::{Cluster, Member};
+use crate::domains::maintenance::consolidation_report::Report;
 use crate::output::{json, tty};
 use crate::prelude::*;
 

@@ -1,7 +1,7 @@
 //! `GET|PUT /api/v1/gc/policy`, `POST /api/v1/gc/run` (console-api spec §9).
 //!
 //! The two retention windows `comemory gc` reads live in `config.toml`, so
-//! `PUT /gc/policy` is a config writer (`api::gc_policy::update`) followed
+//! `PUT /gc/policy` is a config writer (`maintenance::gc_policy::update`) followed
 //! by an `AppState::reload_cfg` — without the reload, `POST /gc/run` on the
 //! same server would keep sweeping under the pre-`PUT` windows until
 //! restart, which is exactly the surprise AC-17 exists to rule out.
@@ -19,7 +19,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde_json::Value;
 
-use crate::api;
+use crate::domains::maintenance;
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::envelope::Envelope;
@@ -62,23 +62,23 @@ pub fn router(_state: AppState) -> Router<AppState> {
 }
 
 /// `GET /api/v1/gc/policy` — the live retention windows plus the newest
-/// `gc_runs` row (`api::gc_policy::get`). `Ctx::lazy`: the core reads the
+/// `gc_runs` row (`maintenance::gc_policy::get`). `Ctx::lazy`: the core reads the
 /// DB only when it already exists, so this never creates one.
 async fn policy(State(state): State<AppState>) -> Response {
     let started = Instant::now();
     let result = run_blocking(move || {
         let cfg = state.cfg();
         let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        api::gc_policy::get(&mut ctx)
+        maintenance::gc_policy::get(&mut ctx)
     })
     .await;
     respond("gc.policy", result, started)
 }
 
 /// `PUT /api/v1/gc/policy` — patch one or both windows into `config.toml`
-/// (`api::gc_policy::update`), then reload the server's shared config so
+/// (`maintenance::gc_policy::update`), then reload the server's shared config so
 /// the new windows take effect immediately (module doc), and answer with
-/// the RELOADED policy (`api::gc_policy::get`) rather than the in-memory
+/// the RELOADED policy (`maintenance::gc_policy::get`) rather than the in-memory
 /// patch: the reload re-applies the same defaults → file → env layering a
 /// restart would, so a window an env override pins
 /// (`COMEMORY_LEARNING_RETENTION_DAYS`) shows up in the `200` body exactly
@@ -90,7 +90,7 @@ async fn policy(State(state): State<AppState>) -> Response {
 /// validate-before-write, with the file untouched.
 async fn update_policy(
     State(state): State<AppState>,
-    Json(req): Json<api::gc_policy::UpdateRequest>,
+    Json(req): Json<maintenance::gc_policy::UpdateRequest>,
 ) -> Response {
     let started = Instant::now();
     let permit = match guard_mutating("gc.policy.update", &state) {
@@ -102,21 +102,21 @@ async fn update_policy(
         {
             let cfg = state.cfg();
             let mut ctx = Ctx::lazy(state.paths(), &cfg);
-            api::gc_policy::update(&mut ctx, req)?;
+            maintenance::gc_policy::update(&mut ctx, req)?;
         }
         // Only after the file is written: a failed write must not swap in a
         // config the file does not back.
         state.reload_cfg(state.paths())?;
         let cfg = state.cfg();
         let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        api::gc_policy::get(&mut ctx)
+        maintenance::gc_policy::get(&mut ctx)
     })
     .await;
     respond("gc.policy.update", result, started)
 }
 
 /// `POST /api/v1/gc/run` — the job-backed trash + telemetry sweep
-/// (`api::gc`). Gate order (AC-19): read-only first ([`guard_job`] →
+/// (`maintenance::gc`). Gate order (AC-19): read-only first ([`guard_job`] →
 /// `405 read_only`), then the confirm gate — `gc` hard-deletes trashed
 /// markdown, which is the one prune-family step with nothing behind it.
 async fn run(State(state): State<AppState>, Json(body): Json<Value>) -> Response {
@@ -125,9 +125,9 @@ async fn run(State(state): State<AppState>, Json(body): Json<Value>) -> Response
         return *resp;
     }
     // The parsed request is carried into the job rather than dropped and
-    // rebuilt: `api::gc::Request` is empty today, and rebuilding it here
+    // rebuilt: `maintenance::gc::Request` is empty today, and rebuilding it here
     // would silently ignore any field it gains later.
-    let req = match split_confirm::<api::gc::Request>(body)
+    let req = match split_confirm::<maintenance::gc::Request>(body)
         .and_then(|(req, confirmed)| require_confirm(confirmed).map(|()| req))
     {
         Ok(req) => req,
@@ -142,7 +142,7 @@ async fn run(State(state): State<AppState>, Json(body): Json<Value>) -> Response
         move || {
             let cfg = job_state.cfg();
             let mut ctx = Ctx::lazy(job_state.paths(), &cfg);
-            let resp = api::gc::run(&mut ctx, req)?;
+            let resp = maintenance::gc::run(&mut ctx, req)?;
             serde_json::to_value(resp).map_err(Error::Json)
         },
     );

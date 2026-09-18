@@ -31,7 +31,7 @@ pub fn memory_vector_model(conn: &Connection) -> Result<String> {
 
 /// The stored `schema_meta.version` value. Errors (including a missing row)
 /// propagate via `?` exactly as the bare query did before this moved out of
-/// `api::doctor` — the key is written unconditionally by
+/// `maintenance::doctor` — the key is written unconditionally by
 /// `store::migrate::set_version`, so a missing row means a database
 /// `migrate::run` never touched, not a normal "not found" a caller should
 /// branch on.

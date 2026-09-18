@@ -1,7 +1,8 @@
 //! The read-only half of `comemory setup`: probe what is already true about
 //! this machine and this repo.
 //!
-//! Every fact comes from the command that owns it — `api::doctor` for the
+//! Every fact comes from the command that owns it —
+//! `domains::maintenance::doctor` for the
 //! data directory, `domains::code::hooks` for the git hooks, `domains::code::repos` for index
 //! freshness, `domains::sync::auth_file` for the credential — so a detected value can
 //! never disagree with what that command reports on its own.
@@ -17,6 +18,7 @@ use super::RepoContext;
 use crate::api;
 use crate::domains::code::git_utils;
 use crate::domains::documents::sources;
+use crate::domains::maintenance;
 use crate::prelude::*;
 use crate::utilities::context::Ctx;
 
@@ -90,7 +92,8 @@ pub fn run(ctx: &mut Ctx<'_>, target: &Path, host_filter: Option<&str>) -> Resul
 
 /// Whether the store is ready, and the schema version to show for it.
 ///
-/// `api::doctor::run` is the authority on both, but it opens the database to
+/// `domains::maintenance::doctor::run` is the authority on both, but it opens
+/// the database to
 /// answer — which would *create* it. So it is consulted only once a
 /// `comemory.db` exists; before that, "not initialized" is the honest answer
 /// and no file is written.
@@ -103,7 +106,7 @@ fn data_dir_state(ctx: &mut Ctx<'_>) -> (bool, String) {
     if !ctx.paths.db_path().exists() {
         return (false, "not initialized".to_string());
     }
-    match api::doctor::run(ctx, api::doctor::Request {}) {
+    match maintenance::doctor::run(ctx, maintenance::doctor::Request {}) {
         Ok(report) => (report.db_writable, report.schema_version),
         Err(error) => (false, error.to_string()),
     }

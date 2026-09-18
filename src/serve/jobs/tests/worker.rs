@@ -8,7 +8,7 @@
 //! Mirror test for `src/serve/jobs/worker.rs`, driven directly (no HTTP —
 //! no job-creating route exists yet; see the plan's `## Deviations`).
 //!
-//! Every "real work" job here runs `api::gc::run` through a `Ctx::lazy`
+//! Every "real work" job here runs `maintenance::gc::run` through a `Ctx::lazy`
 //! over a real temp data-dir, so the worker is exercised against the actual
 //! command core, a real SQLite file and a real filesystem — no mocks. The
 //! permit tests use the same `Arc<Semaphore>` type `AppState` holds.
@@ -16,8 +16,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use comemory::api;
 use comemory::config::{Config, Paths};
+use comemory::domains::maintenance;
 use comemory::errors::Error;
 use comemory::serve::jobs::{JobStatus, Registry, spawn_job};
 use comemory::utilities::context::Ctx;
@@ -31,7 +31,7 @@ fn gc_body(dir: std::path::PathBuf) -> impl FnOnce() -> comemory::prelude::Resul
         paths.ensure_dirs()?;
         let cfg = Config::defaults();
         let mut ctx = Ctx::lazy(&paths, &cfg);
-        let report = api::gc::run(&mut ctx, api::gc::Request {})?;
+        let report = maintenance::gc::run(&mut ctx, maintenance::gc::Request {})?;
         serde_json::to_value(report).map_err(Error::Json)
     }
 }

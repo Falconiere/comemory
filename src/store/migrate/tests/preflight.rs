@@ -114,7 +114,7 @@ fn assert_future_marker_is_refused(version_value: &str) {
     assert!(
         matches!(err, comemory::errors::Error::SchemaTooNew(_)),
         "the forward-compat refusal must surface as Error::SchemaTooNew, not Error::Migration \
-         (api::doctor's fallback catches exactly this variant), got: {err:?}"
+         (maintenance::doctor's fallback catches exactly this variant), got: {err:?}"
     );
     let msg = err.to_string();
     assert!(

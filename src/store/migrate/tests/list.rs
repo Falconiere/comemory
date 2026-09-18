@@ -13,7 +13,7 @@
 //! holds (see `docs/architecture.md`'s schema-migration section). All fns
 //! are prefixed `migration_integrity_`: the
 //! project-wide `cargo nextest run -E 'test(migration_integrity)'` filter
-//! selects exactly this suite plus `api::rebuild::tests::coverage`, and a
+//! selects exactly this suite plus `maintenance::rebuild::tests::coverage`, and a
 //! zero-match filter run exits 4 — a misnamed fn here turns that check red
 //! rather than silently green.
 //!

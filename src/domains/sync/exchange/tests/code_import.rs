@@ -9,9 +9,9 @@
 //! `index-code` run: one data dir indexes the tree, a second one receives
 //! the projection and must answer the graph the same way.
 
-use comemory::api;
 use comemory::config::{Config, Paths};
 use comemory::domains::graph::{graph_nodes, graph_recompute};
+use comemory::domains::maintenance;
 use comemory::domains::sync::exchange::{CodeImportRejection, CodeImportRequest, code_import};
 use comemory::retrieval;
 use comemory::store::{Connection, connection, repo_marker};
@@ -168,7 +168,7 @@ fn ac8_ac9_import_answers_the_graph_and_the_inventory_without_source() {
     assert_eq!(repos.repos[0].repo, fixture::REPO);
     assert_eq!(repos.repos[0].files, 3);
     assert_eq!(repos.repos[0].last_head.as_deref(), Some(head.as_str()));
-    let stats = api::stats::run(&mut ctx, api::stats::Request::default()).unwrap();
+    let stats = maintenance::stats::run(&mut ctx, maintenance::stats::Request::default()).unwrap();
     assert_eq!(stats.repos, 1);
     assert!(stats.code_symbols >= 3);
 

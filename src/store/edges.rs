@@ -91,7 +91,8 @@ pub fn insert(conn: &Connection, e: EdgeKey<'_>) -> Result<()> {
 /// The explicit-timestamp form exists for `store::memory_row`, which wipes
 /// and re-emits a memory's outgoing edges on every re-save: relation edges
 /// (`supersedes` / …) must keep their original `created_at` across the
-/// wipe, because `prune::low_value::superseded_rule` compares the target's
+/// wipe, because `maintenance::retention::low_value::superseded_rule`
+/// compares the target's
 /// `last_accessed` against the edge timestamp — a refreshed stamp would
 /// re-arm the rule on every re-save of the superseder.
 pub fn insert_at(conn: &Connection, e: EdgeKey<'_>, created_at: Option<&str>) -> Result<()> {
@@ -141,7 +142,7 @@ pub(crate) fn current_weight(conn: &Connection, e: EdgeKey<'_>) -> Result<i64> {
 }
 
 /// `COUNT(*)` over `edges` for one relation kind. `rel` is bound as a
-/// parameter, never interpolated. Behind `api::overview`'s code-graph edge
+/// parameter, never interpolated. Behind `maintenance::overview`'s code-graph edge
 /// totals (`co_changed` / `imports`).
 pub fn count_by_rel(conn: &Connection, rel: &str) -> Result<u64> {
     let n: i64 = conn.query_row("SELECT COUNT(*) FROM edges WHERE rel = ?1", [rel], |r| {

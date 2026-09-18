@@ -18,7 +18,7 @@
 //! **Conn-free.** Nothing here calls [`Ctx::conn`]: the counters come from the
 //! filesystem and the sync state from `git2`, so asking about the store never
 //! creates and migrates a `comemory.db` as a side effect (the same
-//! must-not-create-the-db invariant `api::stats` documents).
+//! must-not-create-the-db invariant `maintenance::stats` documents).
 //!
 //! **`git` is the only subprocess.** [`sync`](crate::domains::sync::memory_store::sync) shells out to `git` — and to
 //! nothing else — always through the child module's `git::run`, which
@@ -84,7 +84,7 @@ pub struct Store {
     /// `[git] auto_sync` — whether a save is expected to commit and push.
     pub push_on_save: bool,
     /// `*.md` files directly under `memories/` (`.trash/` excluded — the same
-    /// rule `api::stats::Response::markdown_files` uses).
+    /// rule `maintenance::stats::Response::markdown_files` uses).
     pub markdown_files: u64,
     /// `*.md` files under `memories/.trash/` — soft-deleted memories.
     pub trashed_files: u64,

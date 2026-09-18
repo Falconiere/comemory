@@ -1,6 +1,6 @@
-//! `GET /api/v1/prune` — the dry-run scan report (`api::prune`), always
+//! `GET /api/v1/prune` — the dry-run scan report (`maintenance::prune`), always
 //! forcing `apply: false`. `POST /api/v1/prune` — the confirm-gated apply
-//! path — and `POST /api/v1/gc` (`api::gc`, also confirm-gated) live here
+//! path — and `POST /api/v1/gc` (`maintenance::gc`, also confirm-gated) live here
 //! too: both are single mutating maintenance actions with no natural home
 //! besides this resource.
 
@@ -13,7 +13,7 @@ use axum::{Json, Router};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::api;
+use crate::domains::maintenance;
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::routes::{RouteEntry, guard_mutating, require_confirm, respond, run_blocking};
@@ -60,13 +60,13 @@ pub fn router(_state: AppState) -> Router<AppState> {
         .route("/api/v1/gc", post(gc))
 }
 
-/// `GET /api/v1/prune` — the dry-run report (`api::prune`). `apply` is
+/// `GET /api/v1/prune` — the dry-run report (`maintenance::prune`). `apply` is
 /// forced `false` regardless of the query string: a `GET` route carries
 /// no confirm gate, so it must never trigger the soft-delete/cleanup path
 /// — that is [`prune_apply`] below.
 async fn prune(
     State(state): State<AppState>,
-    Query(mut req): Query<api::prune::Request>,
+    Query(mut req): Query<maintenance::prune::Request>,
 ) -> Response {
     req.apply = false;
     let started = Instant::now();
@@ -74,17 +74,17 @@ async fn prune(
         let cfg = state.cfg();
         let mut conn = state.conn()?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        api::prune::run(&mut ctx, req)
+        maintenance::prune::run(&mut ctx, req)
     })
     .await;
     respond("prune", result, started)
 }
 
-/// `POST /api/v1/prune` — the confirm-gated apply path (`api::prune::run`
+/// `POST /api/v1/prune` — the confirm-gated apply path (`maintenance::prune::run`
 /// with `req.apply` taken as-is from the body). The body is read as a raw
-/// [`Value`] rather than `Json<api::prune::Request>` so an HTTP-only
+/// [`Value`] rather than `Json<maintenance::prune::Request>` so an HTTP-only
 /// `confirm` field can ride alongside the real prune fields without adding
-/// `confirm` to `api::prune::Request` itself — that struct's
+/// `confirm` to `maintenance::prune::Request` itself — that struct's
 /// `deny_unknown_fields` must keep mirroring exactly the CLI's `prune` args
 /// (AC-12 parity), and `#[serde(flatten)]`ing it here would silently
 /// disable that check.
@@ -97,7 +97,7 @@ async fn prune_apply(State(state): State<AppState>, Json(body): Json<Value>) -> 
     let result = run_blocking(move || {
         let _permit = permit;
         let (body, dry_run) = split_dry_run(body)?;
-        let (mut req, confirmed) = split_confirm::<api::prune::Request>(body)?;
+        let (mut req, confirmed) = split_confirm::<maintenance::prune::Request>(body)?;
         if let Some(dry_run) = dry_run {
             req.apply = !dry_run;
         }
@@ -105,14 +105,14 @@ async fn prune_apply(State(state): State<AppState>, Json(body): Json<Value>) -> 
         let cfg = state.cfg();
         let mut conn = state.conn()?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        api::prune::run(&mut ctx, req)
+        maintenance::prune::run(&mut ctx, req)
     })
     .await;
     respond("prune", result, started)
 }
 
 /// Extract and remove the HTTP-only `"dry_run"` field from a raw JSON body
-/// (console-api spec §9). It is the *inverse* of `api::prune::Request`'s
+/// (console-api spec §9). It is the *inverse* of `maintenance::prune::Request`'s
 /// `apply`, and HTTP-only for the same reason `confirm` is: the CLI already
 /// spells this as the absence of `--apply`, and adding a second name for it
 /// to the shared `Request` would break the clap↔HTTP field parity walk.
@@ -138,7 +138,7 @@ fn split_dry_run(mut body: Value) -> Result<(Value, Option<bool>)> {
     Ok((body, dry_run))
 }
 
-/// `?confirm=true`-equivalent body for `POST /api/v1/gc`: `api::gc::Request`
+/// `?confirm=true`-equivalent body for `POST /api/v1/gc`: `maintenance::gc::Request`
 /// is `{}` (no CLI args), so the only body field is the HTTP-only confirm
 /// flag.
 #[derive(Deserialize)]
@@ -147,7 +147,7 @@ struct ConfirmBody {
     confirm: bool,
 }
 
-/// `POST /api/v1/gc` — confirm-gated trash + telemetry sweep (`api::gc`).
+/// `POST /api/v1/gc` — confirm-gated trash + telemetry sweep (`maintenance::gc`).
 async fn gc(State(state): State<AppState>, Json(body): Json<ConfirmBody>) -> Response {
     let started = Instant::now();
     let permit = match guard_mutating("gc", &state) {
@@ -159,17 +159,17 @@ async fn gc(State(state): State<AppState>, Json(body): Json<ConfirmBody>) -> Res
         require_confirm(body.confirm)?;
         let cfg = state.cfg();
         let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        api::gc::run(&mut ctx, api::gc::Request {})
+        maintenance::gc::run(&mut ctx, maintenance::gc::Request {})
     })
     .await;
     respond("gc", result, started)
 }
 
 /// Extract and remove the HTTP-only `"confirm"` field from a raw JSON body,
-/// then deserialize the rest as `T` (an `api::<cmd>::Request`, which keeps
+/// then deserialize the rest as `T` (a command core's `Request`, which keeps
 /// enforcing its own `deny_unknown_fields` on every field besides
 /// `confirm`). Shared by every route whose confirm gate must not leak into
-/// the corresponding `api::` `Request` type (see [`prune_apply`]'s doc).
+/// the corresponding core's `Request` type (see [`prune_apply`]'s doc).
 pub(crate) fn split_confirm<T: serde::de::DeserializeOwned>(body: Value) -> Result<(T, bool)> {
     let Value::Object(mut obj) = body else {
         return Err(Error::BadRequest("expected a JSON object body".into()));

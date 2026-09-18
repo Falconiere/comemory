@@ -1,7 +1,7 @@
 //! `purge_memory` — hard-delete one **soft-deleted** memory's mirror rows
 //! from `comemory.db`, in one transaction. The markdown half of the same
 //! operation (unlinking `memories/.trash/{id}-{slug}.md`) is
-//! `api::gc`'s trash sweep; this is the row half `gc` runs for every file
+//! `maintenance::gc`'s trash sweep; this is the row half `gc` runs for every file
 //! it reaps, and for the zombie rows earlier `gc` runs left behind
 //! ([`expired_deleted_ids`]) — before this module existed a reaped memory
 //! kept its `memories` row forever, listed in `GET /api/v1/trash` with no
@@ -72,7 +72,7 @@ const DEPENDENT_DELETES: &[&str] = &[
 /// written — when `id` is unknown or names a **live** memory.
 ///
 /// Takes the connection, not a `Transaction`, and opens its own: the
-/// all-or-nothing purge IS the unit of work, and the caller (`api::gc`)
+/// all-or-nothing purge IS the unit of work, and the caller (`maintenance::gc`)
 /// loops over many ids, each independently durable. It must therefore be
 /// called OUTSIDE an open transaction, which it checks rather than assumes:
 /// a connection already in one is refused with a named error instead of the

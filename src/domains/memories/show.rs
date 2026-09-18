@@ -104,7 +104,7 @@ pub struct Response {
 /// `deleted_at IS NOT NULL` rows). A data dir with no `comemory.db` yet
 /// (nothing has ever been saved) short-circuits to the same `NotFound`
 /// before opening a connection — the same must-not-create-the-db-as-a-
-/// side-effect-of-a-read invariant `api::stats`/`api::gc` keep, applied to
+/// side-effect-of-a-read invariant `maintenance::stats`/`maintenance::gc` keep, applied to
 /// a single-id lookup instead of a counter.
 pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
     if !ctx.paths.db_path().exists() {
