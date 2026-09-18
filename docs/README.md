@@ -71,6 +71,11 @@ Understanding-oriented background:
 - **[Domain-first migration contract](designs/2026-09-17-domain-first-migration.md)** —
   staged, behavior-preserving migration of the Rust CLI from technical layers
   to business capabilities.
+- **[Reranker command protocol](designs/2026-09-18-reranker-command-protocol.md)** —
+  the versioned JSON stdin/stdout contract for an optional external relevance
+  scorer and the deadline-bounded process runner that carries it. Its
+  § Wire protocol section is the field-by-field contract; nothing on the search
+  path calls it yet.
 - **[Benchmarking token efficiency](benchmark.md)** — what exists to measure
   how many tokens and tool calls comemory saves an agent, and the first
   experiment that would put a number on it.

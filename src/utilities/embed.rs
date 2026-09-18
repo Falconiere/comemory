@@ -1,18 +1,21 @@
 //! Shared embed-command shell-out (Memory-tab semantic enrich + `serve`).
 //!
-//! Spawns the user-configured command via `sh -c`, pipes the query to its
-//! stdin, and parses a JSON `{"embedding":[..]}` payload from its stdout. The
-//! read is bounded by [`EMBED_TIMEOUT`] so a hung embedder cannot pin the
-//! caller's thread. Every failure path returns an `Error` for the caller to
-//! surface — it never panics and never blocks forever.
+//! Runs the user-configured command as `sh -c <cmd>` through
+//! [`ProcessRunner`], pipes the query to its stdin, and parses a JSON
+//! `{"embedding":[..]}` payload from its stdout. The shell is the *program*
+//! here — a pre-existing, user-configured contract — while the runner itself
+//! never assembles a command line.
+//!
+//! [`EMBED_TIMEOUT`] is an end-to-end budget covering startup, concurrent
+//! stdin/stdout handling and exit (#211); it previously bounded only the
+//! stdout read. Every failure path returns an `Error`.
 
-use std::io::{Read, Write};
-use std::process::{Child, Command, Stdio};
-use std::sync::mpsc;
+use std::ffi::OsString;
 use std::time::Duration;
 
 use crate::prelude::*;
 use crate::utilities::embedding_input;
+use crate::utilities::process_runner::{ProcessError, ProcessFailure, ProcessRunner};
 
 /// Maximum time to wait for the embed command to produce its vector.
 pub const EMBED_TIMEOUT: Duration = Duration::from_secs(10);
@@ -23,83 +26,47 @@ pub fn embed_query(cmd: &str, query: &str) -> Result<Vec<f32>> {
     embed_query_with_timeout(cmd, query, EMBED_TIMEOUT)
 }
 
-/// [`embed_query`] with an explicit read `timeout`. Exposed so tests can drive
-/// the timeout path with a tiny bound instead of waiting [`EMBED_TIMEOUT`].
+/// [`embed_query`] with an explicit `timeout`. Exposed so tests can drive the
+/// timeout path with a tiny bound instead of waiting [`EMBED_TIMEOUT`].
+///
+/// A command may close its end of the stdin pipe, or exit, before the whole
+/// query has been written — whether it never reads stdin at all (a `printf` of
+/// a canned payload, a script that embeds from an argument) or stops after
+/// consuming part of it. That is the command's choice, not a failure: its exit
+/// status and stdout still decide the outcome, so the runner's truncation flag
+/// is deliberately ignored here.
 pub fn embed_query_with_timeout(cmd: &str, query: &str, timeout: Duration) -> Result<Vec<f32>> {
-    let mut child = spawn(cmd)?;
-    write_stdin(&mut child, query)?;
-    let stdout = read_with_timeout(&mut child, timeout)?;
-    let status = child.wait().map_err(|e| fail("wait", e))?;
-    if !status.success() {
+    let runner = ProcessRunner::new("sh", vec![OsString::from("-c"), OsString::from(cmd)])
+        .with_timeout(timeout);
+    let output = runner.run(query.as_bytes()).map_err(fail)?;
+    if !output.status.success() {
+        let status = output.status;
         return Err(Error::Config(format!("embed-cmd exited with {status}")));
     }
+    let stdout = String::from_utf8(output.stdout)
+        .map_err(|e| Error::Config(format!("embed-cmd stdout read failed: {e}")))?;
     embedding_input::parse_payload(&stdout)
 }
 
-/// Spawn `sh -c <cmd>` with piped stdin/stdout and a silenced stderr.
-fn spawn(cmd: &str) -> Result<Child> {
-    Command::new("sh")
-        .arg("-c")
-        .arg(cmd)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|e| fail("spawn", e))
-}
-
-/// Write `query` to the child's stdin and close it (signals EOF on drop).
+/// Restate a bounded-run failure in the embed command's own wording, which
+/// `comemory doctor` and `POST /api/v1/doctor/reembed` already surface.
 ///
-/// A command may close its end of the pipe, or exit, before the whole
-/// query has been written — whether it never reads stdin at all (a
-/// `printf` of a canned payload, a script that embeds from an argument)
-/// or stops after consuming part of it. `write_all` loops over write
-/// syscalls, and the first one to hit the closed read end fails with
-/// `EPIPE`, which surfaces here as `ErrorKind::BrokenPipe` no matter how
-/// many bytes went through first. That is the command's choice, not a
-/// failure: its exit status and stdout still decide the outcome, so a
-/// broken pipe is swallowed and every other write error propagates.
-fn write_stdin(child: &mut Child, query: &str) -> Result<()> {
-    let mut stdin = child
-        .stdin
-        .take()
-        .ok_or_else(|| Error::Config("embed-cmd stdin unavailable".into()))?;
-    match stdin.write_all(query.as_bytes()) {
-        Ok(()) => Ok(()),
-        Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
-        Err(e) => Err(fail("stdin write", e)),
-    }
-}
-
-/// Read the child's stdout to EOF on a helper thread, bounded by
-/// [`EMBED_TIMEOUT`]; on timeout the child is killed and an error returned.
-fn read_with_timeout(child: &mut Child, timeout: Duration) -> Result<String> {
-    let mut stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| Error::Config("embed-cmd stdout unavailable".into()))?;
-    let (tx, rx) = mpsc::channel();
-    std::thread::spawn(move || {
-        let mut buf = String::new();
-        let res = stdout.read_to_string(&mut buf).map(|_| buf);
-        let _ = tx.send(res);
-    });
-    match rx.recv_timeout(timeout) {
-        Ok(Ok(buf)) => Ok(buf),
-        Ok(Err(e)) => Err(fail("stdout read", e)),
-        Err(_) => {
-            // Kill AND reap: `Child::kill` only signals; without `wait` the
-            // SIGKILLed child lingers as a zombie until this process exits.
-            let _ = child.kill();
-            let _ = child.wait();
-            Err(Error::Config("embed-cmd timed out".into()))
+/// The runner now captures the command's stderr, but it stays out of the
+/// message: these strings are a stated contract and the embed command's stderr
+/// was discarded (`Stdio::null`) before this ran on the shared runner.
+fn fail(error: ProcessError) -> Error {
+    let message = match error.failure {
+        ProcessFailure::TimedOut { .. } => "embed-cmd timed out".to_string(),
+        ProcessFailure::Spawn(e) => format!("embed-cmd spawn failed: {e}"),
+        ProcessFailure::Io { phase, message } => format!("embed-cmd {phase} failed: {message}"),
+        ProcessFailure::InputTooLarge { bytes, max } => {
+            format!("embed-cmd query of {bytes} bytes exceeds the {max}-byte limit")
         }
-    }
-}
-
-/// Build a `Config` error tagged with the failing embed-cmd phase.
-fn fail(phase: &str, e: std::io::Error) -> Error {
-    Error::Config(format!("embed-cmd {phase} failed: {e}"))
+        ProcessFailure::StdoutTooLarge { max } => {
+            format!("embed-cmd output exceeds the {max}-byte limit")
+        }
+    };
+    Error::Config(message)
 }
 
 #[cfg(test)]

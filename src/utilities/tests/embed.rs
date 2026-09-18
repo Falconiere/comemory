@@ -75,3 +75,61 @@ fn command_that_never_reads_stdin_still_yields_vector() {
     let v = embed_query(cmd, &big_query).expect("EPIPE on stdin must be tolerated");
     assert_eq!(v, vec![4.0_f32, 5.0]);
 }
+
+#[test]
+fn command_that_answers_then_refuses_to_exit_times_out() {
+    // The child drains stdin, prints a perfectly valid payload, closes stdout
+    // (so the read reaches EOF) and then refuses to exit. Before #211 the
+    // budget stopped before the final `wait`, so this pinned the caller for
+    // the child's whole lifetime while looking bounded. The budget now spans
+    // the exit, so it fails promptly instead.
+    let started = Instant::now();
+    let err = embed_query_with_timeout(
+        r#"cat > /dev/null; printf '{"embedding":[1.0]}'; exec >&-; sleep 5"#,
+        "q",
+        Duration::from_millis(200),
+    )
+    .expect_err("a child that never exits must not succeed inside the budget");
+    // Full-string equality, not a substring: the wording is a stated contract
+    // and a looser match would pass for a different failure that happens to
+    // share the prefix.
+    assert_eq!(format!("{err}"), "config: embed-cmd timed out");
+    assert!(
+        started.elapsed() < Duration::from_secs(3),
+        "the budget must cover the exit: {:?}",
+        started.elapsed()
+    );
+}
+
+#[test]
+fn command_that_writes_before_reading_does_not_deadlock() {
+    // A child that fills its stdout pipe before draining a stdin larger than
+    // the pipe buffer deadlocked the old write-then-read sequencing outright:
+    // neither side could move and no timer was running. Concurrent pipe
+    // servicing makes it an ordinary round trip.
+    let started = Instant::now();
+    let big_query = "q".repeat(1 << 21);
+    let v = embed_query_with_timeout(
+        r#"printf '{"embedding":[2.0,3.0]}'; cat > /dev/null"#,
+        &big_query,
+        Duration::from_secs(20),
+    )
+    .expect("concurrent stdin/stdout must not deadlock");
+    assert_eq!(v, vec![2.0_f32, 3.0]);
+    assert!(started.elapsed() < Duration::from_secs(10));
+}
+
+#[test]
+fn nonzero_exit_reports_the_exit_status_wording() {
+    // `nonzero_exit_is_error` above asserts only the `embed-cmd` prefix every
+    // failure carries, so it would pass for a timeout or a spawn error too.
+    // This pins the specific wording `comemory doctor` surfaces.
+    let err = embed_query("printf '{\"embedding\":[1.0]}'; exit 7", "q")
+        .expect_err("a non-zero exit must fail even with a valid payload");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("embed-cmd exited with"),
+        "expected the exit-status wording, got: {msg}"
+    );
+    assert!(msg.contains('7'), "the status itself must be named: {msg}");
+}
