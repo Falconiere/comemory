@@ -29,7 +29,8 @@
   /* ---- routing ---------------------------------------------------------- */
 
   function parseHash() {
-    var raw = decodeURIComponent(window.location.hash.replace(/^#/, ''));
+    var raw;
+    try { raw = decodeURIComponent(window.location.hash.replace(/^#/, '')); } catch (error) { raw = ''; }
     if (!raw) return { path: INDEX, frag: null };
     var at = raw.indexOf(':');
     var path = at === -1 ? raw : raw.slice(0, at);

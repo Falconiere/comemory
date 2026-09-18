@@ -181,7 +181,8 @@
   function renderCard(card, kind) {
     var button = el('button', 'card');
     button.type = 'button';
-    button.setAttribute('aria-current', 'false');
+    button.setAttribute('role', 'tab');
+    button.setAttribute('aria-selected', 'false');
     button.setAttribute('data-id', card.id);
     if (card.step) button.appendChild(el('span', 'card-step', card.step));
     var head = el('span', 'card-head');
@@ -243,7 +244,7 @@
       else if (uses.has(id) && usedBy.has(id)) role = 'both';
       else if (uses.has(id)) role = 'uses';
       else if (usedBy.has(id)) role = 'used-by';
-      button.setAttribute('aria-current', id === activeId ? 'true' : 'false');
+      button.setAttribute('aria-selected', id === activeId ? 'true' : 'false');
       button.setAttribute('data-role', role);
       var label = button.querySelector('.card-role');
       var text = spec.edges || role === 'current' ? ROLE_TEXT[role] : ROLE_TEXT.none;
@@ -256,14 +257,24 @@
     var spec = SPECS[figure.getAttribute('data-deck')];
     if (!spec) return;
     var body = figure.querySelector('.viz-body');
+    /* the cards are tabs and the inspector is their one panel: exactly one
+       card is selected, and selecting it again cannot unselect it */
+    var deckId = figure.getAttribute('data-deck');
     var listNode = el(spec.kind === 'pipe' ? 'ol' : 'ul', spec.kind === 'pipe' ? 'pipe' : spec.kind === 'grid4' ? 'deck deck-4' : 'deck');
+    listNode.setAttribute('role', 'tablist');
     listNode.setAttribute('aria-label', figure.querySelector('.viz-head .label').textContent);
     spec.cards.forEach(function (card) {
       var item = el('li');
-      item.appendChild(renderCard(card, spec.kind));
+      item.setAttribute('role', 'presentation');
+      var button = renderCard(card, spec.kind);
+      button.id = deckId + '-tab-' + card.id;
+      button.setAttribute('aria-controls', deckId + '-panel');
+      item.appendChild(button);
       listNode.appendChild(item);
     });
     var inspector = el('div', 'inspector');
+    inspector.id = deckId + '-panel';
+    inspector.setAttribute('role', 'tabpanel');
     inspector.setAttribute('aria-live', 'polite');
     body.appendChild(listNode);
     body.appendChild(inspector);
@@ -272,6 +283,7 @@
       var card = spec.cards.filter(function (candidate) { return candidate.id === id; })[0];
       if (!card) return;
       applyRoles(listNode, spec, id);
+      inspector.setAttribute('aria-labelledby', deckId + '-tab-' + id);
       inspector.innerHTML = '';
       inspector.appendChild(renderFacts(card, spec));
     }

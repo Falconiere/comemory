@@ -44,17 +44,17 @@
 .card .card-sub { display: block; color: var(--text-muted); font-size: 0.8125rem; line-height: 1.55; }
 .card .dot { display: none; width: 0.5rem; height: 0.5rem; border-radius: 9999px; background: var(--accent); flex: none; }
 /* the current card — the live item in a data panel, the signal's second job */
-.card[aria-current="true"] { border-color: var(--accent); }
-.card[aria-current="true"] .dot { display: inline-block; }
-.card[aria-current="true"] .card-role { color: var(--accent); }
+.card[aria-selected="true"] { border-color: var(--accent); }
+.card[aria-selected="true"] .dot { display: inline-block; }
+.card[aria-selected="true"] .card-role { color: var(--accent); }
 /* relations to the current card are carried in ink, not in a second hue */
 .deck[data-active] .card[data-role="none"] { opacity: 0.45; }
 .deck[data-active] .card[data-role="none"]:hover { opacity: 1; }
 .deck[data-active] .card[data-role="uses"] .card-role, .deck[data-active] .card[data-role="used-by"] .card-role,
 .deck[data-active] .card[data-role="both"] .card-role { color: var(--text); }
 @keyframes signal-blink { 50% { opacity: 0.35; } }
-.card[aria-current="true"] .dot { animation: signal-blink 1800ms steps(1, end) infinite; }
-@media (prefers-reduced-motion: reduce) { .card[aria-current="true"] .dot { animation: none; } }
+.card[aria-selected="true"] .dot { animation: signal-blink 1800ms steps(1, end) infinite; }
+@media (prefers-reduced-motion: reduce) { .card[aria-selected="true"] .dot { animation: none; } }
 .inspector { margin-top: 1.25rem; border-top: 1px solid var(--border-inner); padding-top: 0.25rem; }
 .inspector .fact-rail { border-top: 0; margin-top: 0; }
 .inspector .fact-rail > div:last-child { border-bottom: 0; }
@@ -65,7 +65,6 @@
 .inspector .fact-rail dd li { padding: 0.1rem 0; }
 .inspector .fact-rail dd li::before { content: "├─ "; font-family: var(--font-mono); color: var(--text-soft); }
 .inspector .fact-rail dd li:last-child::before { content: "└─ "; }
-.inspector-empty { color: var(--text-soft); font-size: 0.8125rem; margin: 0.75rem 0 0; }
 
 /* pipeline — a deck laid out as a track, one glyph between steps */
 .pipe { display: flex; flex-direction: column; gap: 0; margin: 0; padding: 0; list-style: none; border: 1px solid var(--border); background: var(--border); }
@@ -83,7 +82,7 @@
 .pipe .card .card-name { display: block; }
 /* the kicker above a card name: a stage number, a table's layer */
 .card .card-step { font-family: var(--font-mono); font-size: 0.5625rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-soft); display: block; margin-bottom: 0.4rem; }
-.card[aria-current="true"] .card-step { color: var(--accent); }
+.card[aria-selected="true"] .card-step { color: var(--accent); }
 
 /* two write paths side by side above md, stacked below */
 .writes-grid { display: grid; gap: 2.5rem; margin-top: 2rem; }
