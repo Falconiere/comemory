@@ -12,7 +12,7 @@
 //! by raw INSERT in the exact forms the production writers emit: bare 8-hex
 //! memory ids on both sides of a relation edge (`memory_row::
 //! insert_relation_edges`), bare `<repo>:<path>[:<symbol>]` reference
-//! targets (`cross_link::extract_and_emit`), and `file:`-prefixed
+//! targets (`memory_row::insert_reference_edges`), and `file:`-prefixed
 //! `co_activated` targets (`coactivate::harvest`).
 
 use std::collections::BTreeMap;

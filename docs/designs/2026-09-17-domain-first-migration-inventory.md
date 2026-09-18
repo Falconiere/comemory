@@ -527,6 +527,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/memories/frontmatter.rs | comemory::domains::memories::frontmatter; crate-root-alias | src/domains/memories/tests/frontmatter.rs | none | domains::memories | src/domains/memories/frontmatter.rs | retain |
 | src/domains/memories/id.rs | comemory::domains::memories::id; crate-root-alias | src/domains/memories/tests/id.rs | none | domains::memories | src/domains/memories/id.rs | retain |
 | src/domains/memories/list.rs | comemory::domains::memories::list; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | none | none | domains::memories | src/domains/memories/list.rs | retain |
+| src/domains/memories/mirror.rs | comemory::domains::memories::mirror; preserve | src/domains/memories/tests/mirror.rs | none | domains::memories | src/domains/memories/mirror.rs | retain |
 | src/domains/memories/nav.rs | private | none | none | domains::memories | src/domains/memories/nav.rs | retain |
 | src/domains/memories/prior.rs | comemory::domains::memories::prior; crate-root-alias | src/domains/memories/tests/prior.rs | none | domains::memories | src/domains/memories/prior.rs | retain |
 | src/domains/memories/references.rs | comemory::domains::memories::references; crate-root-alias | src/domains/memories/tests/references.rs | none | domains::memories | src/domains/memories/references.rs | retain |

@@ -60,8 +60,8 @@ use crate::domains::documents::source::mirror;
 use crate::domains::documents::source::registry::Registry;
 use crate::domains::memories::MemoryStore;
 use crate::prelude::*;
+use crate::store::connection;
 use crate::store::migrate::backup;
-use crate::store::{connection, memory_row};
 use crate::utilities::context::Ctx;
 
 /// The live-table allowlist pair plus the thin delegate into
@@ -257,7 +257,7 @@ fn build_new_db(old_db: &Path, tmp_path: &Path, paths: &crate::config::paths::Pa
     let store = MemoryStore::new(paths.clone());
     for rec in store.list()? {
         let md_path = rec.path.to_string_lossy();
-        memory_row::insert(
+        crate::domains::memories::mirror::insert_row(
             &tx,
             &rec.frontmatter,
             &rec.body,

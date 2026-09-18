@@ -200,3 +200,21 @@ pub struct CreatedWindow<'a> {
     /// Inclusive upper bound: keep rows created at or before this instant.
     pub cutoff: Option<&'a str>,
 }
+
+/// The reference edges one memory row owes, already derived and resolved.
+///
+/// The same borrow-only shape as [`CreatedWindow`], and for the same reason:
+/// `store` writes these rows but must not derive them. The regex harvest and
+/// the document-resolution policy belong to `domains::graph`, and
+/// [`crate::domains::memories::mirror`] — the single seam every memory writer
+/// goes through — hands the result here. An all-empty value (its
+/// [`Default`]) writes no reference edge at all.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct MemoryLinks<'a> {
+    /// Bare `<repo>:<path>` targets for `references_file`.
+    pub files: &'a [String],
+    /// Bare `<repo>:<path>:<symbol>` targets for `references_symbol`.
+    pub symbols: &'a [String],
+    /// Resolved `documents.id` targets for `references_document`.
+    pub documents: &'a [String],
+}

@@ -6,15 +6,16 @@
 //! extra step rebuild skips — `memory_vec` for the BYO embedding, which can't
 //! be regenerated from markdown. The connection may be a
 //! [`rusqlite::Transaction`]; callers own the surrounding `BEGIN`/`COMMIT`.
+//! Rows are written here, never derived: the graph links a body owes arrive
+//! as [`MemoryLinks`], resolved by [`crate::domains::memories::mirror`].
 
 use rusqlite::Connection;
 use time::OffsetDateTime;
 use time::format_description::well_known::Iso8601;
 
-use crate::domains::graph::cross_link;
-use crate::domains::graph::doc_link;
 use crate::domains::memories::Frontmatter;
 use crate::prelude::*;
+use crate::store::MemoryLinks;
 use crate::store::edges::{self, CO_ACTIVATED, EdgeKey};
 use crate::store::fts;
 
@@ -40,6 +41,8 @@ const MEMORIES_UPSERT_SQL: &str = "INSERT INTO memories(\
 /// reuses `MemoryRecord`'s values while rebuild recomputes them. The optional
 /// `memory_vec` row is *not* handled here — `cli::save` inserts it inline
 /// after this returns; rebuild skips it (BYO vectors can't be regenerated).
+/// `links` carries the reference targets the caller already derived from
+/// `body`; an empty [`MemoryLinks`] writes no reference edge.
 pub fn insert(
     conn: &Connection,
     fm: &Frontmatter,
@@ -47,6 +50,7 @@ pub fn insert(
     slug: &str,
     md_path: &str,
     tags: &[String],
+    links: &MemoryLinks<'_>,
 ) -> Result<()> {
     let created_iso = iso_format(fm.created)?;
     // Relation-edge timestamps are captured before the outgoing-edge wipe so a
@@ -65,7 +69,7 @@ pub fn insert(
     insert_memories_row(conn, fm, body, slug, md_path, &created_iso)?;
     let unique_tags = insert_tags(conn, &fm.id, tags)?;
     fts::index_memory(conn, &fm.id, body, &unique_tags.join(","))?;
-    insert_edges(conn, fm, &unique_tags, body, &relation_stamps)?;
+    insert_edges(conn, fm, &unique_tags, links, &relation_stamps)?;
     restore_mined_edges(conn, &fm.id, &mined)?;
     crate::store::code_ref::materialize(conn, &fm.id, &fm.references, &created_iso)?;
     Ok(())
@@ -217,28 +221,20 @@ fn restore_mined_edges(conn: &Connection, memory_id: &str, mined: &[MinedEdge]) 
 
 /// Insert the v0.2 graph edges that accompany a saved or rebuilt memory:
 /// `in_repo`, `authored_by`, `tagged`, the frontmatter relation edges
-/// (`supersedes` / `conflicts_with` / `derived_from`), plus the
-/// `references_file` / `references_symbol` edges harvested from the body by
-/// [`cross_link::extract_and_emit`]. Relation edges that recur from a
-/// previous save reuse the captured `relation_stamps` timestamp instead of
-/// a fresh one (see [`relation_edge_stamps`]).
+/// (`supersedes` / `conflicts_with` / `derived_from`), then the reference
+/// edges the caller derived. Relation edges that recur from a previous save
+/// reuse the captured `relation_stamps` timestamp instead of a fresh one
+/// (see [`relation_edge_stamps`]).
 fn insert_edges(
     conn: &Connection,
     fm: &Frontmatter,
     tags: &[&str],
-    body: &str,
+    links: &MemoryLinks<'_>,
     relation_stamps: &std::collections::HashMap<(String, String), String>,
 ) -> Result<()> {
     insert_scope_edges(conn, fm, tags)?;
     insert_relation_edges(conn, fm, relation_stamps)?;
-    cross_link::extract_and_emit(conn, &fm.id, body)?;
-    // Resolve any `<repo>:<path>` mention that already has a `documents`
-    // row into a typed `references_document` edge (design spec's "both
-    // seams" resolver; the document-index seam is `doc_link::
-    // derive_after_document`).
-    let refs = cross_link::extract_refs(body);
-    doc_link::derive_after_memory_save(conn, &fm.id, &refs.files)?;
-    Ok(())
+    edges::insert_memory_references(conn, &fm.id, links)
 }
 
 /// Insert the `in_repo` / `authored_by` / `tagged` edges for one memory.

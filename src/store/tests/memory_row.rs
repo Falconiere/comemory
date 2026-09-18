@@ -7,12 +7,14 @@
 )]
 //! Verifies the shared `memory_row::insert` helper writes the `memories`
 //! row, every `memory_tags` row, the `memory_fts` index entry, and the
-//! v0.2 edges (in_repo / authored_by / tagged plus cross-link references)
-//! that both `cli::save` and `cli::rebuild` depend on.
+//! v0.2 edges (in_repo / authored_by / tagged plus the reference edges its
+//! `MemoryLinks` input carries) that both `cli::save` and `cli::rebuild`
+//! depend on. The links arrive as row data — deriving them from the body is
+//! `domains::memories::mirror`'s job and is covered by its own mirror test.
 
 use comemory::memory::{Frontmatter, Kind, Ref, References, Relations};
 use comemory::store::edges::{self, EdgeKey};
-use comemory::store::{code_ref, connection, memory_row};
+use comemory::store::{MemoryLinks, code_ref, connection, memory_row};
 use rusqlite::Connection;
 use tempfile::tempdir;
 use time::OffsetDateTime;
@@ -23,6 +25,21 @@ const ID: &str = "abc12345";
 /// mention, which mints BOTH the `references_symbol` edge and the
 /// `references_file` edge for its path.
 const CROSS_LINK_BODY: &str = "use `qwick:src/lib.rs:start` for bootstrap";
+
+/// The `<repo>:<path>` target `CROSS_LINK_BODY` mentions.
+const CROSS_LINK_FILE: &str = "qwick:src/lib.rs";
+/// The `<repo>:<path>:<symbol>` target `CROSS_LINK_BODY` mentions.
+const CROSS_LINK_SYMBOL: &str = "qwick:src/lib.rs:start";
+
+/// The owned link lists `domains::memories::mirror` derives from
+/// `CROSS_LINK_BODY`, spelled out here so this suite pins the row writer's
+/// behavior independently of the extractor.
+fn cross_link_targets() -> (Vec<String>, Vec<String>) {
+    (
+        vec![CROSS_LINK_FILE.to_string()],
+        vec![CROSS_LINK_SYMBOL.to_string()],
+    )
+}
 
 fn sample_fm() -> Frontmatter {
     Frontmatter {
@@ -68,19 +85,32 @@ fn assert_all_edges(conn: &Connection) {
     assert_edge(conn, "authored_by", "author", "alice");
     assert_edge(conn, "tagged", "tag", "db");
     assert_edge(conn, "tagged", "tag", "postgres");
-    assert_edge(conn, "references_file", "file", "qwick:src/lib.rs");
-    assert_edge(
-        conn,
-        "references_symbol",
-        "symbol",
-        "qwick:src/lib.rs:start",
-    );
+    assert_edge(conn, "references_file", "file", CROSS_LINK_FILE);
+    assert_edge(conn, "references_symbol", "symbol", CROSS_LINK_SYMBOL);
 }
 
-/// Run `memory_row::insert` for `body` inside its own transaction.
+/// Run `memory_row::insert` for `body` with no derived links, inside its own
+/// transaction — the shape every caller whose body mentions no code takes.
 fn insert_body(conn: &mut Connection, fm: &Frontmatter, body: &str) {
+    insert_with_links(conn, fm, body, &MemoryLinks::default());
+}
+
+/// Run `memory_row::insert` for `CROSS_LINK_BODY` with the links the mirror
+/// seam would have derived from it.
+fn insert_cross_linked(conn: &mut Connection, fm: &Frontmatter) {
+    let (files, symbols) = cross_link_targets();
+    let links = MemoryLinks {
+        files: &files,
+        symbols: &symbols,
+        documents: &[],
+    };
+    insert_with_links(conn, fm, CROSS_LINK_BODY, &links);
+}
+
+/// Run `memory_row::insert` inside its own transaction.
+fn insert_with_links(conn: &mut Connection, fm: &Frontmatter, body: &str, links: &MemoryLinks<'_>) {
     let tx = conn.transaction().expect("tx");
-    memory_row::insert(&tx, fm, body, "slug-x", "/abs/path.md", &fm.tags).expect("insert");
+    memory_row::insert(&tx, fm, body, "slug-x", "/abs/path.md", &fm.tags, links).expect("insert");
     tx.commit().expect("commit");
 }
 
@@ -229,11 +259,9 @@ fn self_referential_relation_edges_are_skipped() {
 fn inserts_row_tags_fts_and_edges() {
     let dir = tempdir().expect("tempdir");
     let mut conn = connection::open(dir.path().join("comemory.db")).expect("open");
-    let tx = conn.transaction().expect("tx");
     let fm = sample_fm();
-    let body = CROSS_LINK_BODY;
-    memory_row::insert(&tx, &fm, body, "slug-x", "/abs/path.md", &fm.tags).expect("insert");
-    tx.commit().expect("commit");
+
+    insert_cross_linked(&mut conn, &fm);
 
     assert_row_counts(&conn);
     assert_all_edges(&conn);
@@ -299,7 +327,7 @@ fn re_mirror_preserves_mined_co_activated_edges() {
     let dir = tempdir().expect("tempdir");
     let mut conn = connection::open(dir.path().join("comemory.db")).expect("open");
     let fm = sample_fm();
-    insert_body(&mut conn, &fm, CROSS_LINK_BODY);
+    insert_cross_linked(&mut conn, &fm);
     edges::insert_weighted(
         &conn,
         EdgeKey {
@@ -319,7 +347,7 @@ fn re_mirror_preserves_mined_co_activated_edges() {
     )
     .expect("backdate edge");
 
-    insert_body(&mut conn, &fm, CROSS_LINK_BODY);
+    insert_cross_linked(&mut conn, &fm);
 
     let (weight, stamp): (i64, String) = conn
         .query_row(

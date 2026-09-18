@@ -2,12 +2,12 @@
 
 use crate::config::Config;
 use crate::domains::memories::frontmatter::Frontmatter;
-use crate::domains::memories::{MemoryStore, SaveParams};
+use crate::domains::memories::{MemoryStore, SaveParams, mirror};
 use crate::domains::sync::exchange::{
     ImportEntry, ImportItemResult, ImportStatus, SyncOp, SyncRecord, SyncVector,
 };
 use crate::prelude::*;
-use crate::store::{Connection, embed, memory_row, schema_meta, simhash_scan, sync_log, vector};
+use crate::store::{Connection, embed, schema_meta, simhash_scan, sync_log, vector};
 use crate::utilities::context::Ctx;
 
 const MEMORY_DIM: usize = 1024;
@@ -41,7 +41,7 @@ pub(crate) fn write_new_memory(
     let rec = store.save(params)?;
     let md_path = rec.path.to_string_lossy();
     let tx = conn.transaction()?;
-    memory_row::insert(
+    mirror::insert_row(
         &tx,
         &rec.frontmatter,
         &rec.body,

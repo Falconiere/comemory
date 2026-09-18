@@ -4,10 +4,10 @@
 //! and `prior` model a record and `store` writes it atomically. The command
 //! cores both delivery adapters call sit beside them — `save`, `delete`,
 //! `list`, `show`, `update`, `restore`, `trash` and `refresh_refs` — with
-//! `nav` holding the two derived fields every listing reports. Every SQL
-//! string and database-driver import stays in the central `store`, which this
-//! capability calls; clap flags, process I/O and the inline cloud push stay in
-//! `cli`.
+//! `nav` holding the two derived fields every listing reports and `mirror`
+//! the single SQLite-mirror path they all write through. Every SQL string and
+//! database-driver import stays in the central `store`, which this capability
+//! calls; clap flags, process I/O and the inline cloud push stay in `cli`.
 
 /// `comemory delete` / `DELETE /memories/{id}`, plus the soft-delete helpers
 /// `comemory prune` and the sync import share.
@@ -18,6 +18,9 @@ pub mod frontmatter;
 pub mod id;
 /// `comemory list` / `GET /memories`: page live memories.
 pub mod list;
+/// The one SQLite-mirror path every memory writer goes through: derive the
+/// body's graph links, then write the row set.
+pub mod mirror;
 /// What the markdown tree already holds for an id (`Prior`), consulted
 /// before a save.
 pub mod prior;

@@ -1,5 +1,7 @@
 //! `store::repo_drop` — drop every code-index row and edge for one repo
-//! label, keeping its memories (`DELETE /api/v1/repos/{name}`).
+//! label, keeping its memories (`DELETE /api/v1/repos/{name}`). Rows only:
+//! the post-commit derived refresh belongs to the caller
+//! (`crate::domains::code::repo_admin::disconnect`).
 //!
 //! One transaction over the six code-side tables plus the repo's file
 //! nodes in `edges`, so a failure part-way leaves the repo fully indexed
@@ -27,7 +29,6 @@
 use rusqlite::Connection;
 use serde::Serialize;
 
-use crate::domains::graph::derived;
 use crate::prelude::*;
 use crate::store::edges;
 
@@ -45,8 +46,12 @@ pub struct DropCounts {
 }
 
 /// Delete every code-index row and file-node edge for `repo` in ONE
-/// transaction, then best-effort refresh the derived artifacts
-/// (`memories.rank_score`, `edge_fts`) the removed edges fed.
+/// transaction.
+///
+/// The removed edges feed two derived artifacts (`memories.rank_score`,
+/// `edge_fts`); refreshing them is the CALLER's post-commit step, exactly as
+/// it is for `save`, `delete`, `rebuild` and `index-code`. Here that caller is
+/// `crate::domains::code::repo_admin::disconnect`.
 ///
 /// Dropping a label that was never indexed is not an error: every statement
 /// simply matches zero rows and the counters come back zero. Callers that
@@ -82,7 +87,6 @@ pub fn drop_repo(conn: &mut Connection, repo: &str) -> Result<DropCounts> {
     tx.execute("DELETE FROM repo_marker WHERE repo = ?1", [repo])?;
     tx.commit()?;
 
-    let _stale = derived::refresh_derived_best_effort(conn);
     Ok(DropCounts {
         symbols_removed: count(symbols_removed),
         files_removed: count(files_removed),

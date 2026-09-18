@@ -12,7 +12,7 @@
 
 use comemory::memory::{Frontmatter, Kind, References, Relations};
 use comemory::store::memory_list::{self, ListFilter, ListRow, SortBy};
-use comemory::store::{connection, memory_row};
+use comemory::store::{MemoryLinks, connection, memory_row};
 use rusqlite::Connection;
 use time::OffsetDateTime;
 
@@ -40,7 +40,18 @@ fn seed(conn: &mut Connection, id: &str, kind: Kind, repo: &str, day: i64) {
     let md_path = format!("/data/.comemory/memories/{id}-{slug}.md");
     let body = format!("body for {id}");
     let tx = conn.transaction().expect("tx");
-    memory_row::insert(&tx, &fm, &body, &slug, &md_path, &fm.tags).expect("insert");
+    // No `<repo>:<path>` mention in the body, so the derived link set the
+    // domain would compute is empty — this suite exercises the row writer.
+    memory_row::insert(
+        &tx,
+        &fm,
+        &body,
+        &slug,
+        &md_path,
+        &fm.tags,
+        &MemoryLinks::default(),
+    )
+    .expect("insert");
     tx.commit().expect("commit");
 }
 

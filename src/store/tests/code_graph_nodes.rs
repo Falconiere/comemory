@@ -15,7 +15,7 @@ use comemory::store::code_graph_nodes::{
     fetch_nodes_for_pairs, top_symbols,
 };
 use comemory::store::edges::{self, EdgeKey, REFERENCES_FILE, REFERENCES_SYMBOL};
-use comemory::store::memory_row;
+use comemory::store::{MemoryLinks, memory_row};
 use time::OffsetDateTime;
 
 #[test]
@@ -139,6 +139,7 @@ fn seed_memory(conn: &rusqlite::Connection, id: &str, body: &str) {
         "note",
         &format!("/data/.comemory/memories/{id}-note.md"),
         &[],
+        &MemoryLinks::default(),
     )
     .expect("insert memory");
 }

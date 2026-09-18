@@ -188,7 +188,7 @@ fn backfill_missing_local_appends_live_memories_with_no_log_row() {
     // push sees on older corpora. Backfill must mint a local upsert so
     // `local_entries_since` can drain it.
     use comemory::memory::{Frontmatter, Kind, References, Relations};
-    use comemory::store::{connection, memory_row};
+    use comemory::store::{MemoryLinks, connection, memory_row};
     use tempfile::tempdir;
     use time::OffsetDateTime;
 
@@ -219,6 +219,7 @@ fn backfill_missing_local_appends_live_memories_with_no_log_row() {
         "gap-body",
         "memories/beefcafe-gap-body.md",
         &[],
+        &MemoryLinks::default(),
     )
     .expect("insert");
     tx.commit().expect("commit");

@@ -17,9 +17,10 @@
 pub mod vectors;
 
 use comemory::config::{Config, Paths};
+use comemory::domains::memories::mirror;
 use comemory::memory::frontmatter::{Frontmatter, Kind, References, Relations};
 use comemory::store::code_row::{self, CodeSymbolRow};
-use comemory::store::{connection, fts, memory_row, vector};
+use comemory::store::{connection, fts, vector};
 use rusqlite::Connection;
 use tempfile::TempDir;
 use time::OffsetDateTime;
@@ -97,7 +98,7 @@ fn seed_memory(conn: &Connection, i: usize) -> String {
     };
     let slug = format!("mem-{i}");
     let md_path = format!("memories/{id}-{slug}.md");
-    memory_row::insert(conn, &fm, &body, &slug, &md_path, &fm.tags).unwrap();
+    mirror::insert_row(conn, &fm, &body, &slug, &md_path, &fm.tags).unwrap();
     vector::insert_memory(conn, &fm.id, &vector(&fm.id, MEMORY_DIM)).unwrap();
     id
 }
