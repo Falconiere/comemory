@@ -71,6 +71,10 @@
       var rel = url.pathname.slice(ROOT.pathname.length);
       if (/\.md$/.test(rel)) {
         anchor.setAttribute('href', hashFor(rel, url.hash ? url.hash.slice(1) : null));
+      } else {
+        /* any other file beside a doc resolves against the doc's own path,
+           not against this page's URL */
+        anchor.setAttribute('href', url.href);
       }
       return;
     }
@@ -85,7 +89,7 @@
   /* GitHub's slug: lowercase, drop punctuation, spaces to hyphens, and a
      numeric suffix on a repeat, so links written against GitHub resolve. */
   function slugify(text, seen) {
-    var slug = text.trim().toLowerCase().replace(/[^\w\- ]+/g, '').replace(/ +/g, '-');
+    var slug = text.trim().toLowerCase().replace(/[^\w\- ]+/g, '').replace(/ /g, '-');
     var unique = slug;
     var n = 1;
     while (seen.has(unique)) { unique = slug + '-' + n; n += 1; }

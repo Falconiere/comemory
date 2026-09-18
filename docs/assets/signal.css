@@ -111,7 +111,9 @@ body {
 a { color: inherit; text-underline-offset: 0.18em; }
 a:hover { color: var(--accent-lift); }
 .band-light a:hover { color: var(--primary-hover); }
-:focus-visible { outline: 3px solid var(--accent-wash); outline-offset: 2px; }
+/* focus is a signal border plus a wash ring (DESIGN §9); the wash alone
+   is near-invisible against a dark band */
+:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; box-shadow: 0 0 0 4px var(--accent-wash); }
 button { font: inherit; color: inherit; }
 code, kbd, pre { font-family: var(--font-mono); }
 code { font-size: 0.75rem; line-height: 1.75; font-variant-numeric: tabular-nums; }

@@ -181,7 +181,7 @@
   function renderCard(card, kind) {
     var button = el('button', 'card');
     button.type = 'button';
-    button.setAttribute('aria-pressed', 'false');
+    button.setAttribute('aria-current', 'false');
     button.setAttribute('data-id', card.id);
     if (card.step) button.appendChild(el('span', 'card-step', card.step));
     var head = el('span', 'card-head');
@@ -243,7 +243,7 @@
       else if (uses.has(id) && usedBy.has(id)) role = 'both';
       else if (uses.has(id)) role = 'uses';
       else if (usedBy.has(id)) role = 'used-by';
-      button.setAttribute('aria-pressed', id === activeId ? 'true' : 'false');
+      button.setAttribute('aria-current', id === activeId ? 'true' : 'false');
       button.setAttribute('data-role', role);
       var label = button.querySelector('.card-role');
       var text = spec.edges || role === 'current' ? ROLE_TEXT[role] : ROLE_TEXT.none;
