@@ -12,7 +12,13 @@ use crate::prelude::*;
 /// Marker comment embedded in the hook command so re-installs are detectable.
 pub const HOOK_MARKER: &str = "comemory-capture-session-end";
 
-/// Settings file the hook is installed into when the caller names none.
+/// Project-local settings file the hook is installed into when the caller
+/// names none.
+///
+/// Deliberately **relative**: it resolves against the invoking process's
+/// current directory, so `capture install-hook` writes the hook into the
+/// project you are standing in rather than a single machine-wide file. Callers
+/// wanting a fixed location pass an absolute path to [`install`] instead.
 pub const DEFAULT_SETTINGS_PATH: &str = ".claude/settings.json";
 
 /// Default command the SessionEnd hook runs.

@@ -54,11 +54,46 @@ fn a_dry_run_builds_the_real_fixture_batch_without_auth_and_without_posting() {
         report.extracted, extracted,
         "the use case reports what the extractor recovered"
     );
-    assert_eq!(report.extracted, 6, "the fixture holds six explicit saves");
-    assert_eq!(report.batch.candidates.len(), batch.candidates.len());
     assert_eq!(report.batch.extractor, "claude-code-explicit-save");
     assert_eq!(report.batch.extractor_version, 1);
     assert_eq!(report.batch.redaction.version, 1);
+
+    // Identity, not just the count: a fixture change must name which claim moved.
+    let identity: Vec<(&str, &str)> = report
+        .batch
+        .candidates
+        .iter()
+        .map(|c| (c.kind.as_str(), c.title.as_str()))
+        .collect();
+    assert_eq!(
+        identity,
+        vec![
+            ("fact", "comemory.io feature gap map (2026-09-10)"),
+            ("fact", "Feature-gap issues filed on GitHub (#45-#59)"),
+            (
+                "fact",
+                "Engine sync routes landed in 0.21.0; author absent from HTTP API"
+            ),
+            (
+                "fact",
+                "comemory.io repo needs bun installed; local console suite fails on macOS+Node 26"
+            ),
+            (
+                "fact",
+                "Console tests pass locally with --localstorage-file; docs ingest impossible from a Worker"
+            ),
+            (
+                "pattern",
+                "Gate every merge on threads+label+checks, not just the bot label"
+            ),
+        ],
+        "the six real saves, in transcript order, with their product kinds"
+    );
+    assert_eq!(
+        report.batch.candidates.len(),
+        batch.candidates.len(),
+        "the use case posts exactly the batch build_batch produced"
+    );
 }
 
 #[test]

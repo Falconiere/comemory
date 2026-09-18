@@ -112,6 +112,8 @@ async fn run_sources(json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
 }
 
 fn run_install_hook(h: InstallHookArgs, json_flag: bool) -> Result<()> {
+    // Relative by design, and resolved against this process's cwd: the hook is
+    // installed into the project the user is standing in.
     let path = h
         .settings
         .unwrap_or_else(|| PathBuf::from(capture::hook::DEFAULT_SETTINGS_PATH));
