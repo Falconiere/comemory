@@ -324,12 +324,20 @@ fn report(
 }
 
 /// The captured headline, or an empty string when the locator cannot be read.
+///
 /// A locator is display-only, so an unreadable one costs a title and nothing
-/// else — it must never fail a review.
+/// else — it must never fail a review. It is still warned about: an
+/// unparsable locator means a row was written by something that disagrees
+/// with `CandidateLocator`, which is worth seeing even though the verdict it
+/// belongs to remains perfectly judgeable.
 fn title_of(locator_json: &str) -> String {
-    serde_json::from_str::<CandidateLocator>(locator_json)
-        .map(|l| l.title)
-        .unwrap_or_default()
+    match serde_json::from_str::<CandidateLocator>(locator_json) {
+        Ok(locator) => locator.title,
+        Err(e) => {
+            tracing::warn!(error = %e, "candidate locator is unreadable; reporting no title");
+            String::new()
+        }
+    }
 }
 
 /// The reviewed target an observed identity addresses, pinned to the content
