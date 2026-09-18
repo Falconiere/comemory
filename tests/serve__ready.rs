@@ -60,9 +60,12 @@ async fn a_failing_ready_callback_aborts_startup_instead_of_serving_on() {
     .expect("serve must return promptly, not start accepting requests");
 
     let err = result.expect_err("a failing ready callback must abort startup");
+    // The whole message, not a substring: a `contains` here would also pass for
+    // an unrelated failure that happened to mention the same words, which would
+    // make this test green for the wrong reason.
     assert!(
-        err.to_string().contains("banner writer failed"),
-        "the callback's own error must propagate verbatim, got: {err}"
+        matches!(err, Error::Other(ref m) if m == "banner writer failed"),
+        "the callback's own error must propagate verbatim and unwrapped, got: {err:?}"
     );
     assert_eq!(
         calls.load(Ordering::SeqCst),

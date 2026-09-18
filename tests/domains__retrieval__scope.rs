@@ -73,9 +73,16 @@ fn an_inverted_window_is_rejected_naming_both_flags() {
             "an inverted window is a usage error, got: {err:?}"
         );
         let msg = err.to_string();
+        // Both flags must appear as FLAG LABELS, not merely somewhere in the
+        // text: the values are echoed too, so a bare `contains` would also pass
+        // for a message that only quoted `--until` as the offending value.
         assert!(
-            msg.contains("--since") && msg.contains(cutoff_flag),
-            "the error must name both bounds, got: {msg}"
+            msg.contains("--since must not be later than"),
+            "the error must lead with the --since bound it rejected, got: {msg}"
+        );
+        assert!(
+            msg.contains(&format!("later than {cutoff_flag}")),
+            "and must name {cutoff_flag} as the opposing bound, got: {msg}"
         );
     }
 }
