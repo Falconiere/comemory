@@ -7,7 +7,7 @@
 )]
 //! Test mirror for `src/domains/retrieval/scope.rs`.
 
-use comemory::retrieval::scope::{Domain, Domains, Filters, TimeScope};
+use comemory::retrieval::scope::{Domain, Domains, Filters, TimeScope, resolve_domains};
 
 #[test]
 fn none_is_the_unbounded_scope() {
@@ -190,3 +190,63 @@ fn filters_none_defaults_domains_to_all() {
     );
 }
 
+/// `--only` unset is the pre-`--only` default: `--kind` narrows the run to
+/// memory (the only corpus a kind applies to), and nothing at all leaves
+/// every domain in scope.
+#[test]
+fn an_empty_only_narrows_to_memory_only_when_a_kind_is_set() {
+    assert_eq!(
+        resolve_domains(&[], Some("decision")).expect("kind alone is valid"),
+        Domains::memory_only(),
+        "a kind with no --only must scope the run to memory"
+    );
+    assert_eq!(
+        resolve_domains(&[], None).expect("no scope at all is valid"),
+        Domains::all(),
+        "no --only and no --kind must leave every domain in scope"
+    );
+}
+
+/// An explicit `--only` is taken verbatim when it names one searchable
+/// domain.
+#[test]
+fn an_explicit_single_domain_is_taken_verbatim() {
+    assert_eq!(
+        resolve_domains(&[Domain::Document], None).expect("document alone is valid"),
+        Domains::of(&[Domain::Document])
+    );
+    assert_eq!(
+        resolve_domains(&[Domain::Memory], Some("bug")).expect("memory + kind is valid"),
+        Domains::memory_only()
+    );
+}
+
+/// The three rejections, asserted as exact strings. `resolve_domains` moved
+/// off clap's `ValueEnum` in #171, so the domain labels are now spelled by
+/// this module rather than derived from `to_possible_value`; an exact match
+/// is what keeps the user-visible message from drifting.
+#[test]
+fn the_three_contradictions_report_their_exact_usage_errors() {
+    let code = resolve_domains(&[Domain::Memory, Domain::Code], None)
+        .expect_err("code is not searchable through --only");
+    assert_eq!(
+        code.to_string(),
+        "code domain joins unified search in a later release; use `comemory search-code` \
+         instead (got: --only memory,code)"
+    );
+
+    let both = resolve_domains(&[Domain::Memory, Domain::Document], None)
+        .expect_err("memory and document cannot be combined yet");
+    assert_eq!(
+        both.to_string(),
+        "memory and document can't be combined yet — search unifies them in a later \
+         release; run them separately (got: --only memory,document)"
+    );
+
+    let kind = resolve_domains(&[Domain::Document], Some("decision"))
+        .expect_err("a kind needs memory in scope");
+    assert_eq!(
+        kind.to_string(),
+        "--kind decision requires memory in --only (got: document)"
+    );
+}
