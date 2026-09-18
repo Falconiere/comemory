@@ -1,10 +1,10 @@
 //! Per-language import extraction and conservative module-to-path resolution.
 //!
-//! [`extract_imports`] returns the raw module strings a source file imports
+//! [`extract_imports`](crate::domains::graph::imports::extract_imports) returns the raw module strings a source file imports
 //! (deduped, first-seen order within pattern-first/source-second traversal).
-//! [`PathIndex`] — built once per materialize run from the repo's indexed
+//! [`PathIndex`](crate::domains::graph::imports::PathIndex) — built once per materialize run from the repo's indexed
 //! file paths — maps one module string onto those paths via
-//! [`PathIndex::resolve`] and answers only when the match is unambiguous:
+//! [`PathIndex::resolve`](crate::domains::graph::imports::PathIndex::resolve) and answers only when the match is unambiguous:
 //! zero or two-plus candidates yield `None`, so external packages and
 //! ambiguous suffixes drop out naturally instead of being guessed at
 //! (spec §2.2). The module is pure — no SQLite, no filesystem — the

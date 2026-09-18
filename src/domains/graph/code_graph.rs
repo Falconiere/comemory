@@ -1,7 +1,7 @@
 //! The file-level code-connection graph as a value: PageRank-weighted file
 //! nodes plus their `imports` / `co_changed` edges, full or windowed.
 //!
-//! [`query`](super::query) and [`nodes`](super::nodes) build these; the CLI's
+//! [`query`](crate::domains::graph::query) and [`nodes`](crate::domains::graph::nodes) build these; the CLI's
 //! JSON / DOT / HTML writers in `output::graph` and the `/api/v1/graph`
 //! handlers each render the same value, so no transport owns the shape (#170).
 

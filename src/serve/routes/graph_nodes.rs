@@ -2,7 +2,7 @@
 //! `GET /api/v1/graph/nodes/{id}/neighbors`, `GET /api/v1/graph/snapshot`,
 //! `POST /api/v1/graph/recompute` (console-api spec §5).
 //!
-//! The four reads are thin transports over [`domains::graph::graph_nodes`]; the
+//! The four reads are thin transports over [`graph_nodes`](crate::domains::graph::graph_nodes); the
 //! recompute is a job (`graph-recompute`), because a PageRank pass over
 //! every repo is not something to hold an HTTP request open for.
 //!

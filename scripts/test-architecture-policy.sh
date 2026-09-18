@@ -109,7 +109,7 @@ sed '/^| src\/domains\/memories\/save.rs |/s@src/domains/memories/save.rs@none@2
 assert_fails 'missing inventory target' 'invalid policy or inventory metadata' --inventory "$TASK_TMP/no-target.md"
 jq '.legacy_edges += [.legacy_edges[0]]' "$POLICY" >"$TASK_TMP/duplicate.json"
 assert_fails 'duplicate policy edge' 'invalid policy edge' --policy "$TASK_TMP/duplicate.json"
-jq '.store_callbacks[0].target = "crate::graph::cross_link::absent"' "$POLICY" >"$TASK_TMP/callback.json"
+jq '.store_callbacks[0].target = "crate::domains::graph::cross_link::absent"' "$POLICY" >"$TASK_TMP/callback.json"
 assert_fails 'stale store callback' 'absent policy edge' --policy "$TASK_TMP/callback.json"
 jq '.passive_store_models[0].target = "crate::domains::memories::Absent"' "$POLICY" >"$TASK_TMP/model.json"
 assert_fails 'stale passive model' 'absent policy edge' --policy "$TASK_TMP/model.json"

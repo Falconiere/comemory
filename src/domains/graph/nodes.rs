@@ -1,12 +1,12 @@
 //! Node assembly for the file-level code graph: the pure `(repo, path)`
-//! dedup over a windowed edge set, and the [`build_graph`] pass that joins
+//! dedup over a windowed edge set, and the [`build_graph`](crate::domains::graph::nodes::build_graph) pass that joins
 //! node rows to their edges. The SQL and its row mapping —
 //! [`NodeRow`](crate::store::code_graph_nodes::NodeRow),
 //! `fetch_nodes`/`fetch_node`, and the `cites_file_predicate` fragment
-//! [`graph_nodes`](super::graph_nodes) also reuses — live in
+//! [`graph_nodes`](crate::domains::graph::graph_nodes) also reuses — live in
 //! [`crate::store::code_graph_nodes`].
 //!
-//! [`query`](super::query) owns the edge fetch and the two `build_*` entry
+//! [`query`](crate::domains::graph::query) owns the edge fetch and the two `build_*` entry
 //! points; everything about turning a `(repo, path)` pair into a [`Node`]
 //! lives here.
 

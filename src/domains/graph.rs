@@ -1,16 +1,39 @@
 //! `domains::graph` — deriving, mining, ranking and querying the `edges`
 //! relation graph.
 //!
-//! [`code_graph`] is the model both transports serialize. [`cross_link`],
-//! [`doc_link`], [`cochange`], [`imports`] and [`coactivate`] derive and mine
-//! edges; [`pagerank`], [`materialize`] and [`memory_rank`] score them;
-//! [`derived`] is the one best-effort refresh every write seam calls.
-//! [`query`] and [`nodes`] assemble the file-level graph. [`edges`] is the
-//! command core both delivery adapters call; [`view`] backs `GET /graph`
-//! alone (the CLI calls [`query`] directly — see its module doc), and
-//! [`graph_nodes`] / [`graph_recompute`] are console-only. Every SQL string
-//! stays in
+//! [`code_graph`][code_graph] is the model both transports serialize.
+//! [`cross_link`][cross_link], [`doc_link`][doc_link], [`cochange`][cochange],
+//! [`imports`][imports] and [`coactivate`][coactivate] derive and mine edges;
+//! [`pagerank`][pagerank], [`materialize`][materialize] and
+//! [`memory_rank`][memory_rank] score them; [`derived`][derived] is the one
+//! best-effort refresh every write seam calls. [`query`][query] and
+//! [`nodes`][nodes] assemble the file-level graph. [`edges`][edges] is the
+//! command core both delivery adapters call; [`view`][view] backs `GET /graph`
+//! alone (the CLI calls [`query`][query] directly — see its module doc), and
+//! [`graph_nodes`][graph_nodes] / [`graph_recompute`][graph_recompute] are
+//! console-only. Every SQL string stays in
 //! [`crate::store::edges`] and its `code_graph_*` / `edge_fts` siblings.
+//!
+//! A capability's `//!` doc merges with the `///` on its `pub mod` line in
+//! `src/domains.rs`, so bare intra-doc links here would resolve in the
+//! `domains` scope. Every target below is therefore spelled in full.
+//!
+//! [coactivate]: crate::domains::graph::coactivate
+//! [cochange]: crate::domains::graph::cochange
+//! [code_graph]: crate::domains::graph::code_graph
+//! [cross_link]: crate::domains::graph::cross_link
+//! [derived]: crate::domains::graph::derived
+//! [doc_link]: crate::domains::graph::doc_link
+//! [edges]: crate::domains::graph::edges
+//! [graph_nodes]: crate::domains::graph::graph_nodes
+//! [graph_recompute]: crate::domains::graph::graph_recompute
+//! [imports]: crate::domains::graph::imports
+//! [materialize]: crate::domains::graph::materialize
+//! [memory_rank]: crate::domains::graph::memory_rank
+//! [nodes]: crate::domains::graph::nodes
+//! [pagerank]: crate::domains::graph::pagerank
+//! [query]: crate::domains::graph::query
+//! [view]: crate::domains::graph::view
 
 /// Commit co-activation reward over a memory's referenced files.
 pub mod coactivate;

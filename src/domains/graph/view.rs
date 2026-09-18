@@ -1,7 +1,8 @@
 //! `domains::graph::view::{Request, run}` — the shared middle behind
 //! `GET /api/v1/graph`: the full `{nodes, edges}` graph or a
 //! `(limit, offset)`-windowed [`GraphPage`], reusing
-//! [`build_code_graph`] / [`build_graph_page`] directly (Binding Rule 1), so
+//! [`build_code_graph`](crate::domains::graph::query::build_code_graph) /
+//! [`build_graph_page`](crate::domains::graph::query::build_graph_page) directly (Binding Rule 1), so
 //! there is exactly one graph query path.
 //!
 //! `comemory graph`'s CLI is not rewired onto this module — it already calls

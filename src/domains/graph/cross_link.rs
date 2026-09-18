@@ -1,6 +1,7 @@
 //! Extract `<repo>:<path>[:<symbol>]` references from a memory body.
 //!
-//! The save pipeline scans every memory body with [`extract_refs`] and creates
+//! The save pipeline scans every memory body with
+//! [`extract_refs`](crate::domains::graph::cross_link::extract_refs) and creates
 //! `ReferencesFile` / `ReferencesSymbol` edges to the code-layer nodes. The
 //! parser is intentionally simple: a single regex match per token, with
 //! deduplication so a body that mentions the same file twice produces a single

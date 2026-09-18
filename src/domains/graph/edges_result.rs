@@ -1,6 +1,6 @@
 //! The owned value `comemory edges` produces.
 //!
-//! [`edges::run`](super::edges::run) returns this so the CLI writers and the `/api/v1/edges`
+//! [`edges::run`](crate::domains::graph::edges::run) returns this so the CLI writers and the `/api/v1/edges`
 //! handler each build their own envelope from one value. The graph
 //! capability's result model, not a rendering concern (#166).
 

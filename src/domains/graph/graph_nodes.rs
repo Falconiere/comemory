@@ -6,9 +6,9 @@
 //! already exports, reusing its query layer rather than growing a second
 //! one (Binding Rule 1): [`crate::store::code_graph_nodes::fetch_nodes`] /
 //! [`crate::store::code_graph_nodes::fetch_node`] for node rows,
-//! [`super::nodes::build_graph`] for the `NodeRow → Node`
-//! mapping, [`super::query::build_graph_page`] for the snapshot, and
-//! [`super::neighbors::file_neighbors`] — the query `comemory
+//! [`nodes::build_graph`](crate::domains::graph::nodes::build_graph) for the `NodeRow → Node`
+//! mapping, [`query::build_graph_page`](crate::domains::graph::query::build_graph_page) for the
+//! snapshot, and [`neighbors::file_neighbors`](crate::domains::graph::neighbors::file_neighbors) — the query `comemory
 //! context` reports its `neighbors` from — for the neighborhood (AC-9).
 //!
 //! Node ids are the canonical `file:<repo>:<path>`; the bare `<repo>:<path>`

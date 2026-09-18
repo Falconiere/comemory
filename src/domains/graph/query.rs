@@ -2,11 +2,12 @@
 //! builders. Three public items: `Rel` is the vocabulary, `build_code_graph`
 //! and `build_graph_page` are the builders.
 //!
-//! [`Rel`] is the single relation vocabulary — `comemory graph --rel`,
+//! [`Rel`](crate::domains::graph::query::Rel) is the single relation vocabulary — `comemory graph --rel`,
 //! `GET /api/v1/graph`'s `rel` and `GET /api/v1/graph/snapshot`'s
 //! `edge_kinds` all resolve through its `ValueEnum` string table, so no second
-//! match arm exists in delivery (Binding Rule 1). [`build_code_graph`] returns
-//! the whole graph and [`build_graph_page`] one `(limit, offset)` window; both
+//! match arm exists in delivery (Binding Rule 1).
+//! [`build_code_graph`](crate::domains::graph::query::build_code_graph) returns the whole graph and
+//! [`build_graph_page`](crate::domains::graph::query::build_graph_page) one `(limit, offset)` window; both
 //! are `pub(crate)` — in-crate callers only, never a library promise — and
 //! both transports share them, so they cannot drift. The SQL lives in
 //! [`crate::store::code_graph_edges::fetch_page`], where `limit == 0` is the
