@@ -8,6 +8,7 @@ use super::defaults::{
 use super::learning::{
     BanditConfig, PartialBanditConfig, PartialReinforceConfig, PartialTuneConfig, ReinforceConfig,
 };
+use super::observations::{ObservationsConfig, PartialObservationsConfig};
 use super::retrieval::PartialRetrievalConfig;
 use super::sync::{EmbedConfig, PartialEmbedConfig, PartialSyncConfig, SyncConfig};
 use crate::prelude::*;
@@ -49,6 +50,8 @@ struct PartialConfig {
     reinforce: Option<PartialReinforceConfig>,
     /// Bandit apply gate. Absent keys leave defaults.
     bandit: Option<PartialBanditConfig>,
+    /// Candidate-observation capture bounds. Absent keys leave defaults.
+    observations: Option<PartialObservationsConfig>,
     /// Optional file-overlay for document-source indexing knobs. Absent
     /// keys leave defaults.
     indexing: Option<PartialIndexingConfig>,
@@ -339,6 +342,9 @@ pub struct Config {
     /// `comemory bandit` apply gate.
     #[serde(default)]
     pub bandit: BanditConfig,
+    /// Opt-in candidate-observation capture — see [`ObservationsConfig`].
+    #[serde(default)]
+    pub observations: ObservationsConfig,
     /// Emitter defaults — see [`OutputConfig`].
     pub output: OutputConfig,
     /// Free-form caller-set hint identifying the embedder that produced the
@@ -390,6 +396,7 @@ impl Config {
             tune: TuneConfig::default(),
             reinforce: ReinforceConfig::default(),
             bandit: BanditConfig::default(),
+            observations: ObservationsConfig::default(),
             output: OutputConfig {
                 json: false,
                 color: "auto".into(),
@@ -443,6 +450,9 @@ impl Config {
             && let Some(v) = pb.enabled
         {
             self.bandit.enabled = v;
+        }
+        if let Some(po) = partial.observations {
+            self.observations.apply(po);
         }
         if let Some(pi) = partial.indexing {
             self.indexing.apply(pi);

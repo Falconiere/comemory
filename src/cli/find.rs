@@ -33,7 +33,11 @@ Examples:
 
   # The document leg's weight relative to memory and code (both 1.0) is
   # COMEMORY_RETRIEVAL_DOCUMENT_LEG_WEIGHT (default 0.5)
-  COMEMORY_RETRIEVAL_DOCUMENT_LEG_WEIGHT=1.5 comemory find \"upgrade guide\"";
+  COMEMORY_RETRIEVAL_DOCUMENT_LEG_WEIGHT=1.5 comemory find \"upgrade guide\"
+
+  # With [observations] enabled, each run records its candidate pool and
+  # prints the observation id `comemory judge` takes
+  COMEMORY_OBSERVATIONS_ENABLED=1 comemory find \"rrf fusion\"";
 
 /// Arguments to `comemory find`.
 #[derive(ClapArgs, Debug)]
@@ -111,6 +115,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         json::write(&serde_json::json!({
             "hits": result.hits,
             "query_id": result.query_id,
+            "observation_id": result.observation_id,
             "limit": result.meta.limit,
             "offset": result.meta.offset,
             "has_more": result.meta.has_more,
@@ -121,6 +126,15 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         for hit in &result.hits {
             writeln!(out, "{:.4}  {:<8}  {}", hit.score, hit.domain, hit.title)?;
             writeln!(out, "          {}", hit.subtitle)?;
+        }
+        // Only when candidate capture produced one: the id is the handle
+        // `comemory judge` takes, so printing it is what makes an opt-in
+        // capture usable without reading the database.
+        if let Some(id) = &result.observation_id {
+            writeln!(
+                out,
+                "observation: {id}  (judge: comemory judge --observation {id})"
+            )?;
         }
     }
     Ok(())

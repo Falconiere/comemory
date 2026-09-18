@@ -4,7 +4,6 @@
 //! Split out of `benchmark_runner` so that file keeps the retrieval
 //! orchestration and this one keeps the mapping onto the published contract.
 
-use crate::domains::learning::evaluation::benchmark_set::{BenchmarkSet, BenchmarkTask};
 use crate::domains::learning::evaluation::candidate_facts::FactsByHit;
 use crate::domains::learning::evaluation::candidate_identity::{
     CandidateDomain, CandidateIdentity, CodeIdentity, DocumentIdentity, MemoryIdentity,
@@ -12,8 +11,9 @@ use crate::domains::learning::evaluation::candidate_identity::{
 use crate::domains::learning::evaluation::candidate_observation::{
     BoundedText, CandidateLocator, CandidateObservation, EffectiveFilters, VectorScenario,
 };
-use crate::domains::retrieval::scope::{self, Domain, TimeScope};
+use crate::domains::retrieval::scope::{self, Domain, Domains, TimeScope};
 use crate::domains::retrieval::unified::fuse_domains;
+use crate::utilities::pagination::PageWindow;
 
 /// Pair each fused hit with its facts into a [`CandidateObservation`], and
 /// count the candidates that reached the pool with no text.
@@ -27,7 +27,7 @@ use crate::domains::retrieval::unified::fuse_domains;
 pub fn observe(
     pool: &[fuse_domains::UnifiedHit],
     facts: &FactsByHit,
-    k: usize,
+    window: PageWindow,
 ) -> (Vec<CandidateObservation>, usize) {
     let mut unavailable = 0usize;
     let candidates = pool
@@ -47,7 +47,7 @@ pub fn observe(
                 candidate_ref: identity.candidate_ref(),
                 identity,
                 pool_position: index + 1,
-                returned_position: (index < k).then_some(index + 1),
+                returned_position: returned_position(window, index),
                 retrieval_score: hit.score,
                 rank_in_domain: hit.rank_in_domain,
                 tier: hit.tier,
@@ -64,6 +64,22 @@ pub fn observe(
         })
         .collect();
     (candidates, unavailable)
+}
+
+/// Where a pooled candidate at `index` landed on the displayed page, or
+/// `None` when it fell outside it.
+///
+/// Mirrors `pipeline::paginate` exactly, including its `limit == 0` case
+/// ("everything from the offset onward"), so a candidate is reported as
+/// returned precisely when the caller was handed it. A benchmark run passes
+/// `offset: 0`; a real `find` may not, which is why the contract carries
+/// `page_offset` at all.
+fn returned_position(window: PageWindow, index: usize) -> Option<usize> {
+    if index < window.offset {
+        return None;
+    }
+    let within = window.limit == 0 || index < window.offset.saturating_add(window.limit);
+    within.then(|| index - window.offset + 1)
 }
 
 /// The candidate domain a fused hit's label names. `fuse_domains` emits only
@@ -100,19 +116,36 @@ fn placeholder_identity(domain: CandidateDomain, id: &str) -> CandidateIdentity 
     }
 }
 
-/// The complete filter record for one task, `null` where a dimension was not
-/// narrowed. Time bounds are the normalized values the store compared against,
-/// not the raw text the set carried.
+/// The narrowing one run applied, as the caller already holds it — a
+/// benchmark task and a `find` request supply the same five values from
+/// different shapes, and this is where they meet so the mapping onto
+/// [`EffectiveFilters`] has exactly one implementation.
+#[derive(Debug, Clone, Copy)]
+pub struct FilterInputs<'a> {
+    /// The legs that were in scope.
+    pub domains: Domains,
+    /// Repo label; narrows the memory and code legs.
+    pub repo: Option<&'a str>,
+    /// Canonical lowercase memory kind; narrows the memory leg only.
+    pub kind: Option<&'a str>,
+    /// Source language; narrows the code leg only.
+    pub lang: Option<&'a str>,
+    /// Git-style path globs; narrow the document leg only.
+    pub path_globs: &'a [String],
+}
+
+/// The complete filter record for one run, `null` where a dimension was not
+/// narrowed. Time bounds are the normalized values the store compared
+/// against, not the raw text the caller supplied.
 pub fn effective_filters(
-    task: &BenchmarkTask,
-    set: &BenchmarkSet,
+    inputs: FilterInputs<'_>,
     time_scope: &TimeScope,
+    vector: VectorScenario,
 ) -> EffectiveFilters {
-    let mask = task.domain.mask();
     let domains = CandidateDomain::all()
         .into_iter()
         .filter(|d| {
-            mask.contains(match d {
+            inputs.domains.contains(match d {
                 CandidateDomain::Memory => Domain::Memory,
                 CandidateDomain::Code => Domain::Code,
                 CandidateDomain::Document => Domain::Document,
@@ -123,16 +156,13 @@ pub fn effective_filters(
     let echo = scope::ScopeEcho::of(time_scope);
     EffectiveFilters {
         domains,
-        repo: task.filters.repo.clone(),
-        kind: task.filters.kind.clone(),
-        lang: task.filters.lang.clone(),
-        path_globs: task.filters.path.clone(),
+        repo: inputs.repo.map(str::to_string),
+        kind: inputs.kind.map(str::to_string),
+        lang: inputs.lang.map(str::to_string),
+        path_globs: inputs.path_globs.to_vec(),
         since: echo.since.map(str::to_string),
         until: echo.until.map(str::to_string),
         as_of: echo.as_of.map(str::to_string),
-        vector: match (&set.vectors, &task.vector) {
-            (Some(spec), Some(vector)) => VectorScenario::supplied(&spec.model, vector),
-            _ => VectorScenario::Lexical,
-        },
+        vector,
     }
 }

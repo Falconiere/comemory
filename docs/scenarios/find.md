@@ -79,3 +79,30 @@ Global flags `--json` and `--data-dir` apply. See [globals.md](globals.md).
   share. `--as-of` conflicts with `--until`.
 - **Covered by:** `tests/cli__find.rs` (domain/kind/lang/paging),
   `tests/cli__search_2.rs` (time grammar is shared)
+
+### find-07 Candidate observation capture
+
+- **Flags:** `--json` `--k` `--offset` `--domain` `--repo` `--kind` `--since`
+- **Setup:** three memories saved through the binary, a real git repo indexed
+  with `index-code`, a markdown tree indexed with `index`; capture armed with
+  `COMEMORY_OBSERVATIONS_ENABLED=1`
+- **Command:** `COMEMORY_OBSERVATIONS_ENABLED=1 comemory --json find activation --k 2`
+- **Expect:** `observation_id` carries an `o-<yyyymmdd>-<8hex>` handle
+  ([`judge`](judge.md) takes it) and the TTY view prints it. One observation
+  records every pooled candidate from all three corpora with its bounded
+  passage, the digest of the FULL passage before bounding, the complete
+  effective filters, and the retrieval and corpus digests. A candidate below
+  the page cut keeps its pool position with no returned position, and an
+  `--offset` page numbers its own returned positions from 1. With capture off —
+  the default — `observation_id` is `null` and nothing is written. A run that
+  may not write telemetry (a read-only server, or
+  `COMEMORY_DISABLE_ACCESS_TRACKING`) captures nothing either, and a capture
+  that fails outright still returns the ranked hits and exits `0`.
+- **Covered by:** `tests/cli__judge.rs::capture_records_every_domain_in_one_observation`,
+  `tests/cli__judge.rs::captured_text_is_bounded_and_digested_before_truncation`,
+  `tests/cli__judge.rs::an_observation_separates_the_pool_from_the_page`,
+  `tests/cli__judge.rs::an_observation_records_the_complete_effective_filters`,
+  `tests/cli__judge.rs::capture_is_off_by_default`,
+  `tests/cli__judge.rs::a_disabled_access_tracker_also_disables_capture`,
+  `tests/cli__judge.rs::a_failing_capture_never_fails_the_search`,
+  `tests/cli__judge.rs::the_tty_view_of_a_capturing_find_prints_the_observation_handle`

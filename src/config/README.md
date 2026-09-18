@@ -32,6 +32,7 @@ One line per file, named after its primary item:
 | `env.rs` | `with_env` | `COMEMORY_*` env-var overrides — the outermost config layer, with shared optional-override application |
 | `file.rs` | `AutoReindexMode` | `Config` struct definitions, shipped defaults, and the `config.toml` overlay |
 | `learning.rs` | `TuneConfig` | Learning-loop sections: `[tune]` grids, `[reinforce]`, `[bandit]` |
+| `observations.rs` | `ObservationsConfig` | The `[observations]` section: opt-in, bounded candidate observation capture (`enabled`, `max_text_bytes`, `max_candidates`), its file overlay and its own invariants |
 | `patch.rs` | `patch_config_file` | The one read-patch-atomically-write primitive over `config.toml`, shared by `tune --apply`, the `hooks` reinforce toggle, and the console-api config routes |
 | `paths.rs` | `Paths` | Data-directory layout resolution (`resolve_data_dir` plus every derived path, including `auth_file`) |
 | `retrieval.rs` | `RetrievalConfig` | The `[retrieval]` section and its file overlay |

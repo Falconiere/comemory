@@ -62,6 +62,7 @@ One line per file:
 | `0017_sync_repush.sql` | v17: rewind every `sync_state.pushed_seq` once, so memories the old push filter stranded behind the cursor are re-offered |
 | `0018_scheme_path_refs.sql` | v18: delete the `references_*` edges, `code_ref` anchors and `edge_fts` triplets minted from `file:/…`, `./…`, `../…` path expressions (#153) |
 | `0019_query_performance.sql` | v19: graph, history, and listing indexes; external-content trigram index with backfill and synchronization triggers |
+| `0020_candidate_observations.sql` | v20: candidate observation capture — `candidate_query_observations` (the per-query envelope), `candidate_observations` (each candidate's bounded text and content version) and `candidate_judgments` (reviewed verdicts resolved against them) |
 
 When you add a migration, append the next-numbered file and add its row above
 — never edit an existing one.

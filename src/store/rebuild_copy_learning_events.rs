@@ -1,6 +1,7 @@
 //! The `feedback_events`/`query_expansions`/`bandit_arms` third of
-//! [`super::rebuild_copy_learning`]'s copy pass — split into its own file
-//! so that module stays under the 300-line ceiling.
+//! [`super::rebuild_copy_learning`]'s copy pass, plus the three
+//! candidate-observation tables (#209) — split into its own file so that
+//! module stays under the 300-line ceiling.
 
 use crate::prelude::*;
 use crate::store::Connection;
@@ -47,6 +48,50 @@ pub(crate) fn copy_event_and_mined_tables(conn: &Connection) -> Result<()> {
              SELECT arm_id, rrf_k, decay, mmr_lambda, bm25_body, bm25_tags, \
                  alpha, beta, pulls, last_mrr, updated_at \
              FROM old.bandit_arms;",
+        )?;
+    }
+    copy_candidate_observation_tables(conn)
+}
+
+/// Copy the candidate observations, their candidates and the reviewed
+/// judgments resolved against them (v20).
+///
+/// These carry the strongest claim on this pass: a judgment is human review,
+/// and the bounded passage it was made against is a snapshot of content that
+/// may since have changed. A rebuild cannot rebuild either from markdown, the
+/// code index, or anything else on disk. All three are guarded by
+/// [`old_table_exists`] because a pre-v20 source database has none of them.
+fn copy_candidate_observation_tables(conn: &Connection) -> Result<()> {
+    if old_table_exists(conn, "candidate_query_observations")? {
+        conn.execute_batch(
+            "INSERT OR IGNORE INTO main.candidate_query_observations(\
+                 observation_id, observation_version, query_id, query, source, \
+                 filters_json, retrieval_json, knobs_hash, corpus_digest, decay_frozen, \
+                 pool_size, page_limit, page_offset, candidate_count, truncated, at) \
+             SELECT observation_id, observation_version, query_id, query, source, \
+                 filters_json, retrieval_json, knobs_hash, corpus_digest, decay_frozen, \
+                 pool_size, page_limit, page_offset, candidate_count, truncated, at \
+             FROM old.candidate_query_observations;",
+        )?;
+    }
+    if old_table_exists(conn, "candidate_observations")? {
+        conn.execute_batch(
+            "INSERT OR IGNORE INTO main.candidate_observations(\
+                 observation_id, pool_position, domain, candidate_ref, content_version, \
+                 unresolved, returned_position, retrieval_score, rank_in_domain, tier, \
+                 text, text_sha256, text_full_bytes, text_truncated, locator_json) \
+             SELECT observation_id, pool_position, domain, candidate_ref, content_version, \
+                 unresolved, returned_position, retrieval_score, rank_in_domain, tier, \
+                 text, text_sha256, text_full_bytes, text_truncated, locator_json \
+             FROM old.candidate_observations;",
+        )?;
+    }
+    if old_table_exists(conn, "candidate_judgments")? {
+        conn.execute_batch(
+            "INSERT OR IGNORE INTO main.candidate_judgments(\
+                 observation_id, candidate_ref, domain, relevance, provenance, at) \
+             SELECT observation_id, candidate_ref, domain, relevance, provenance, at \
+             FROM old.candidate_judgments;",
         )?;
     }
     Ok(())

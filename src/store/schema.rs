@@ -11,7 +11,8 @@ use super::schema_documents::{DocumentChunks, DocumentFts, Documents, SourceFile
 use super::schema_graph::{CodeRef, Edges};
 use super::schema_history::{EvalRuns, GcRuns, IndexFailures, IndexRuns};
 use super::schema_learning::{
-    BanditArms, CodeFeedback, Feedback, FeedbackEvents, QueryExpansions, RetrievalLog,
+    BanditArms, CandidateJudgments, CandidateObservations, CandidateQueryObservations,
+    CodeFeedback, Feedback, FeedbackEvents, QueryExpansions, RetrievalLog,
 };
 use super::schema_memory::{Memories, MemoryFts, MemorySubstring, MemoryTags, MemoryVec};
 use super::schema_sync::{SyncBinding, SyncLog, SyncState};
@@ -21,6 +22,9 @@ use super::schema_sync::{SyncBinding, SyncLog, SyncState};
 /// listing it here (or vice versa) fails loudly.
 pub const DECLARED_TABLES: &[&str] = &[
     "bandit_arms",
+    "candidate_judgments",
+    "candidate_observations",
+    "candidate_query_observations",
     "code_feedback",
     "code_fts",
     "code_ref",
@@ -61,6 +65,9 @@ pub const DECLARED_TABLES: &[&str] = &[
 pub fn registry() -> SchemaRegistry {
     SchemaRegistry::from_tables(vec![
         BanditArms::table_def(),
+        CandidateJudgments::table_def(),
+        CandidateObservations::table_def(),
+        CandidateQueryObservations::table_def(),
         CodeFeedback::table_def(),
         CodeFts::table_def(),
         CodeRef::table_def(),

@@ -9,7 +9,9 @@
 //! bandit defaults, env + file overlay, validation, and
 //! `Paths::config_file` layout.
 
-use comemory::config::{BanditConfig, Config, Paths, ReinforceConfig, TuneConfig};
+use comemory::config::{
+    BanditConfig, Config, ObservationsConfig, Paths, ReinforceConfig, TuneConfig,
+};
 
 #[test]
 fn reinforce_default_search_edit_days_is_seven() {
@@ -90,4 +92,76 @@ fn paths_config_file_is_data_dir_config_toml() {
     let dir = tempfile::tempdir().expect("tempdir");
     let paths = Paths::new(dir.path().to_path_buf());
     assert_eq!(paths.config_file(), dir.path().join("config.toml"));
+}
+
+#[test]
+fn observation_capture_is_off_by_default_and_bounded() {
+    let defaults = ObservationsConfig::default();
+    assert!(
+        !defaults.enabled,
+        "capture stores passage snapshots and must be opted into, never inherited"
+    );
+    assert_eq!(defaults.max_text_bytes, 4096);
+    assert_eq!(defaults.max_candidates, 100);
+    let cfg = Config::defaults();
+    assert!(!cfg.observations.enabled);
+    assert_eq!(cfg.observations.max_text_bytes, 4096);
+    assert_eq!(cfg.observations.max_candidates, 100);
+}
+
+#[test]
+fn observations_env_overrides_apply() {
+    // SAFETY: nextest runs each #[test] in its own process.
+    unsafe {
+        std::env::set_var("COMEMORY_OBSERVATIONS_ENABLED", "1");
+        std::env::set_var("COMEMORY_OBSERVATIONS_MAX_TEXT_BYTES", "512");
+        std::env::set_var("COMEMORY_OBSERVATIONS_MAX_CANDIDATES", "7");
+    }
+    let result = Config::defaults().with_env();
+    // SAFETY: nextest runs each #[test] in its own process.
+    unsafe {
+        std::env::remove_var("COMEMORY_OBSERVATIONS_ENABLED");
+        std::env::remove_var("COMEMORY_OBSERVATIONS_MAX_TEXT_BYTES");
+        std::env::remove_var("COMEMORY_OBSERVATIONS_MAX_CANDIDATES");
+    }
+    let cfg = result.expect("valid overrides must succeed");
+    assert!(cfg.observations.enabled);
+    assert_eq!(cfg.observations.max_text_bytes, 512);
+    assert_eq!(cfg.observations.max_candidates, 7);
+}
+
+#[test]
+fn a_zero_observation_bound_fails_validate_naming_the_knob() {
+    for (var, knob) in [
+        ("COMEMORY_OBSERVATIONS_MAX_TEXT_BYTES", "max_text_bytes"),
+        ("COMEMORY_OBSERVATIONS_MAX_CANDIDATES", "max_candidates"),
+    ] {
+        // SAFETY: nextest runs each #[test] in its own process.
+        unsafe { std::env::set_var(var, "0") };
+        let result = Config::defaults().with_env();
+        // SAFETY: nextest runs each #[test] in its own process.
+        unsafe { std::env::remove_var(var) };
+        let msg = result
+            .err()
+            .map_or_else(|| panic!("{var}=0 must fail validate"), |e| e.to_string());
+        assert!(
+            msg.contains(knob) || msg.contains(var),
+            "error must name the knob, got: {msg}"
+        );
+    }
+}
+
+#[test]
+fn a_file_overlay_sets_the_observation_section() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        "[observations]\nenabled = true\nmax_text_bytes = 128\nmax_candidates = 3\n",
+    )
+    .expect("write config");
+    let cfg = Config::defaults().with_file(&path).expect("overlay loads");
+    assert!(cfg.observations.enabled);
+    assert_eq!(cfg.observations.max_text_bytes, 128);
+    assert_eq!(cfg.observations.max_candidates, 3);
 }

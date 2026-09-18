@@ -78,6 +78,7 @@ async fn execute(state: AppState, req: retrieval::find::Request) -> Response {
         Ok(serde_json::json!({
             "hits": out.hits,
             "query_id": out.query_id,
+            "observation_id": out.observation_id,
             "limit": out.meta.limit,
             "offset": out.meta.offset,
             "has_more": out.meta.has_more,

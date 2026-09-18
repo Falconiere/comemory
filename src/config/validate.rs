@@ -29,9 +29,10 @@ fn check_graph_hops(v: u32) -> std::result::Result<(), &'static str> {
     Ok(())
 }
 
-/// The walk needs at least one graph seed and the default page at least one hit.
-/// Persisted `top_k = 0` would otherwise select the router's unlimited-page sentinel.
-fn check_positive_count(v: usize) -> std::result::Result<(), &'static str> {
+/// The walk needs at least one graph seed, the default page at least one hit,
+/// and a capture bound at least one of what it bounds. Persisted `top_k = 0`
+/// would otherwise select the router's unlimited-page sentinel.
+pub(super) fn check_positive_count(v: usize) -> std::result::Result<(), &'static str> {
     if v < 1 {
         return Err("must be >= 1");
     }
@@ -111,7 +112,7 @@ fn check_grid<T: Copy + std::fmt::Debug>(
 }
 
 /// Attach the field, its env override, and the original display value to a failed bound.
-fn check_knob(
+pub(super) fn check_knob(
     field: &str,
     env: &str,
     value: impl std::fmt::Display,
@@ -138,7 +139,7 @@ impl Config {
         self.check_reinforce_knobs()?;
         self.check_indexing_knobs()?;
         self.check_sync_knobs()?;
-        Ok(self)
+        self.observations.validate().map(|()| self)
     }
 
     /// Weighted-BM25 column-weight sets for `memory_fts` and `code_fts`.

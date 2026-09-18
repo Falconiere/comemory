@@ -256,6 +256,7 @@ Full data model, save flow, retrieval pipeline, and graph mechanics:
 | `comemory feedback` | Record per-hit feedback against a `query_id` (`--used` / `--used-code` …) |
 | `comemory eval` | Score retrieval quality (recall@k, MRR) against a golden set (`--history` reads past runs) |
 | `comemory benchmark` | Score a reviewed benchmark set over memory, code and document retrieval; reports candidate-pool recall apart from recall@k / MRR / nDCG@k and writes a replayable artifact |
+| `comemory judge` | Record reviewed relevance verdicts against a candidate observation `comemory find` captured, or report that observation |
 | `comemory mine` | Distill failed→successful query rewordings into expansions (`--apply`) |
 | `comemory tune` | Grid-search ranking knobs against the golden set (`--apply` writes `config.toml`) |
 | `comemory bandit` | Thompson-sample ranking knobs (`--apply` writes when the sample beats baseline) |
@@ -360,6 +361,44 @@ A run writes no query log row and bumps no access counter: measurement never
 feeds the signals it measures. The full contract, including the reference-string
 encoding and the per-domain identity rules, is in
 [docs/designs/2026-09-18-domain-aware-retrieval-benchmark.md](docs/designs/2026-09-18-domain-aware-retrieval-benchmark.md).
+
+### Capturing real queries, and judging them
+
+A benchmark set is hand-written. The same contract can also be filled in from
+real queries, which is what `[observations]` turns on:
+
+```bash
+COMEMORY_OBSERVATIONS_ENABLED=1 comemory find "activation decay"
+# … ranked hits …
+# observation: o-20260918-9f8e7d6c  (judge: comemory judge --observation o-20260918-9f8e7d6c)
+
+comemory judge o-20260918-9f8e7d6c            # what was in the pool
+comemory judge o-20260918-9f8e7d6c \
+  --ref 'memory:5a9f19bc:5a9f19bc403e…=3' \
+  --ref 'document:0f1e2d3c:guides/chunking.md:7b2a9c…:3=1'
+```
+
+Capture is **off by default**, bounded by `observations.max_text_bytes` and
+`observations.max_candidates`, and best effort: a search that cannot record an
+observation still returns its hits. It never runs on a read-only
+`comemory serve`, because it only arms on a run that may write telemetry.
+
+A verdict addresses a candidate by its domain-qualified reference, never by a
+title or a path on screen, so:
+
+- a target the pool never returned is refused as a candidate-pool recall miss,
+  and nothing in that call is written;
+- a reference pinned to a content version the observation did not see is
+  refused as **stale** — after an edit and re-index, a code reference still
+  names the same `(repo, path, symbol)` and never the recyclable
+  `code_symbols` rowid;
+- documents get a relevance path they have never had.
+
+`comemory gc` ages unjudged observations out on the learning-retention window
+and keeps judged ones; purging a deleted memory blanks its captured passage
+while keeping the recorded pool's shape. Observations are local — never synced.
+The contract is
+[docs/designs/2026-09-18-candidate-observation-capture.md](docs/designs/2026-09-18-candidate-observation-capture.md).
 
 ## Configuration
 

@@ -20,6 +20,12 @@ pub use rusqlite::Transaction;
 pub mod bandit_arms;
 /// Whether an `Error` wraps SQLite's `SQLITE_BUSY` / `SQLITE_LOCKED`.
 pub mod busy;
+/// `candidate_judgments` row CRUD: reviewed relevance verdicts resolved
+/// against a captured observation.
+pub mod candidate_judgments;
+/// `candidate_query_observations` + `candidate_observations` row CRUD: the
+/// persisted candidate observation contract and its retention/purge rules.
+pub mod candidate_observations;
 /// `code_feedback` row CRUD: per-symbol counter table + code-tagged
 /// `feedback_events` inserts.
 pub mod code_feedback;

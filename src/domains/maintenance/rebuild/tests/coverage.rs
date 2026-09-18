@@ -46,10 +46,18 @@ enum Stmt {
 /// backslash-continued raw string: a raw string never processes `\`, so a
 /// trailing `\` before a newline stays a literal backslash character in the
 /// pattern instead of continuing the line.
+///
+/// Each table name may be double-quoted, because `just migration` quotes
+/// every identifier it generates. Without the optional quote the identifier
+/// class cannot match `"name"`, the optional `IF NOT EXISTS` group is
+/// abandoned on backtracking, and the statement silently yields the table
+/// name `IF` — a derived live set missing the real table while still looking
+/// well-formed. 0020 was the first generated migration to create a table and
+/// is what surfaced it.
 const STATEMENT_PATTERN: &str = concat!(
-    r"(?i)CREATE\s+(?:VIRTUAL\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?P<create>[A-Za-z_][A-Za-z0-9_]*)",
-    r"|DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?P<drop>[A-Za-z_][A-Za-z0-9_]*)",
-    r"|ALTER\s+TABLE\s+(?P<rename_from>[A-Za-z_][A-Za-z0-9_]*)\s+RENAME\s+TO\s+(?P<rename_to>[A-Za-z_][A-Za-z0-9_]*)",
+    r#"(?i)CREATE\s+(?:VIRTUAL\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?"?(?P<create>[A-Za-z_][A-Za-z0-9_]*)"#,
+    r#"|DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?"?(?P<drop>[A-Za-z_][A-Za-z0-9_]*)"#,
+    r#"|ALTER\s+TABLE\s+"?(?P<rename_from>[A-Za-z_][A-Za-z0-9_]*)"?\s+RENAME\s+TO\s+"?(?P<rename_to>[A-Za-z_][A-Za-z0-9_]*)"#,
 );
 
 /// Compile [`STATEMENT_PATTERN`].
@@ -103,14 +111,16 @@ fn derive_live_tables() -> BTreeSet<String> {
 }
 
 /// Every table addition must choose a rebuild policy. History and sync tables
-/// are copied; v19's trigram index is reconstructed by memory-write triggers.
+/// are copied; v19's trigram index is reconstructed by memory-write triggers;
+/// v20's three candidate-observation tables are copied, because a reviewed
+/// judgment and the passage it was made against exist nowhere else.
 #[test]
-fn migration_integrity_derived_live_set_has_exactly_thirty_two_tables() {
+fn migration_integrity_derived_live_set_has_exactly_thirty_five_tables() {
     let live = derive_live_tables();
     assert_eq!(
         live.len(),
-        32,
-        "expected exactly 32 live tables, got {}: {live:?}",
+        35,
+        "expected exactly 35 live tables, got {}: {live:?}",
         live.len()
     );
     // The count alone would still pass if a history table were added to
@@ -123,6 +133,9 @@ fn migration_integrity_derived_live_set_has_exactly_thirty_two_tables() {
         "sync_log",
         "sync_state",
         "sync_binding",
+        "candidate_query_observations",
+        "candidate_observations",
+        "candidate_judgments",
     ] {
         assert!(
             COPIED_TABLES.contains(&table),

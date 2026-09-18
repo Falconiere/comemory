@@ -9,6 +9,9 @@
 
 use serde::Deserialize;
 
+use crate::config::Config;
+use crate::domains::learning::evaluation::candidate_facts::{self, FactsByHit};
+use crate::domains::learning::observation_capture::{self, CaptureInput};
 use crate::domains::memories::Kind;
 use crate::domains::retrieval::pipeline;
 use crate::domains::retrieval::scope::{self, Domain, Domains, Filters};
@@ -69,6 +72,12 @@ pub struct FindResult {
     pub hits: Vec<UnifiedHit>,
     /// `retrieval_log` row id for this run, when tracking was on.
     pub query_id: Option<String>,
+    /// `candidate_query_observations` row id for this run, when candidate
+    /// capture was armed AND succeeded. `None` covers all three of "capture is
+    /// off", "this run may not write telemetry", and "the capture failed" —
+    /// deliberately one value, because a caller's response to each is the
+    /// same: there is no observation to judge against.
+    pub observation_id: Option<String>,
     /// Pagination cursor.
     pub meta: PageMeta,
 }
@@ -87,8 +96,16 @@ fn domains_of(domain: Option<&str>) -> Result<Domains> {
     }
 }
 
-/// Run the unified query. `track` governs the `retrieval_log` write and the
-/// per-domain access bumps, exactly as it does for `search`.
+/// Run the unified query. `track` governs the `retrieval_log` write, the
+/// per-domain access bumps, and — with `observations.enabled` — whether the
+/// candidate pool is captured, exactly as it does for `search`.
+///
+/// The three published steps of `unified::find` are composed here rather than
+/// called through it, because capture needs each leg's rows *before*
+/// `fuse_legs` drops their passage text, and the fused pool *before*
+/// `paginate` cuts it to a page. Both capture calls are conditional; the
+/// retrieval path itself is not, so there is one ordering through `find` and
+/// not two.
 pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<FindResult> {
     let cfg = ctx.cfg;
     let scope = scope::scope_from_flags(
@@ -105,33 +122,109 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<FindResult> {
         scope: &scope,
         domains,
     };
+    let domain_filters = unified::DomainFilters {
+        lang: req.lang.as_deref(),
+        path_globs: &req.path,
+    };
+    let query = unified::UnifiedQuery {
+        text: &req.query,
+        vector: req.vector.as_deref(),
+        filters,
+        domain_filters,
+    };
+    let capturing = observation_capture::armed(cfg, track);
     let conn: &Connection = ctx.conn()?;
     let started = std::time::Instant::now();
-    let run = unified::find(
-        cfg,
-        conn,
-        unified::UnifiedQuery {
-            text: &req.query,
-            vector: req.vector.as_deref(),
-            filters,
-            domain_filters: unified::DomainFilters {
-                lang: req.lang.as_deref(),
-                path_globs: &req.path,
-            },
-        },
-        window,
-    )?;
+    let legs = unified::run_legs(cfg, conn, query, window)?;
+    let pool_size = legs.pool;
+    // Read while identity is still known: `fuse_legs` flattens the legs and
+    // drops the passage text and the version anchors. A failure here costs the
+    // observation, never the search.
+    let facts = capturing
+        .then(|| candidate_facts::collect(conn, &legs, cfg.observations.max_text_bytes))
+        .transpose()
+        .unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "candidate text unavailable; capture skipped");
+            None
+        });
+    let ranked = unified::fuse_legs(cfg, conn, legs)?;
+    // Pagination consumes the ranking and hands back only the page, while an
+    // observation records the whole pool. The clone is paid only when capture
+    // is armed, so an ordinary search allocates exactly what it did before.
+    let pooled = facts.is_some().then(|| ranked.clone());
+    let (hits, has_more, total) = pipeline::paginate(ranked, window, cfg.retrieval.max_page_window);
     let query_id = if track {
-        track_run(conn, &req.query, &run.hits, filters, window, started)
+        track_run(conn, &req.query, &hits, filters, window, started)
     } else {
         None
     };
-    let meta = page_meta(window, run.has_more, run.total);
+    let observation_id = match (pooled.as_deref(), facts.as_ref()) {
+        (Some(pool), Some(facts)) => {
+            let captured = Captured {
+                pool,
+                facts,
+                pool_size,
+                window,
+                query_id: query_id.as_deref(),
+            };
+            capture_pool(cfg, conn, &req, filters, domain_filters, captured)
+        }
+        _ => None,
+    };
+    let meta = page_meta(window, has_more, total);
     Ok(FindResult {
-        hits: run.hits,
+        hits,
         query_id,
+        observation_id,
         meta,
     })
+}
+
+/// What one captured run contributes that is neither the request nor its
+/// filters — bundled so [`capture_pool`] stays inside the argument ceiling.
+struct Captured<'a> {
+    /// The fused ranking, before pagination cut it to a page.
+    pool: &'a [UnifiedHit],
+    /// Identity, content version and bounded text, read before fusion.
+    facts: &'a FactsByHit,
+    /// The shared pool size every leg was fetched at.
+    pool_size: usize,
+    /// The window the page was sliced at.
+    window: PageWindow,
+    /// The `retrieval_log` id of the same run, when one was written.
+    query_id: Option<&'a str>,
+}
+
+/// Persist this run's candidate pool. Best effort by construction: the
+/// capture writer swallows its own failures, so a search that cannot record
+/// an observation still returns its hits.
+fn capture_pool(
+    cfg: &Config,
+    conn: &Connection,
+    req: &Request,
+    filters: Filters<'_>,
+    domain_filters: unified::DomainFilters<'_>,
+    captured: Captured<'_>,
+) -> Option<String> {
+    observation_capture::record(
+        cfg,
+        conn,
+        CaptureInput {
+            query: &req.query,
+            query_id: captured.query_id,
+            source: crate::utilities::telemetry::source::FIND,
+            filters: observation_capture::find_filters(
+                cfg,
+                filters,
+                domain_filters,
+                req.vector.as_deref(),
+            ),
+            window: captured.window,
+            pool_size: captured.pool_size,
+            pool: captured.pool,
+            facts: captured.facts,
+        },
+    )
 }
 
 /// Best-effort telemetry for one tracked run: one `retrieval_log` row for

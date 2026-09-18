@@ -58,6 +58,9 @@ pub mod ingest_code;
 pub mod install;
 /// `comemory install-hooks`: git-hook installation.
 pub mod install_hooks;
+/// `comemory judge`: reviewed relevance verdicts against a captured
+/// candidate observation.
+pub mod judge;
 /// Detached auto-reindex spawn behind `indexing.auto_reindex = lazy`.
 pub mod lazy_reindex;
 /// `comemory list`: page live memories.
@@ -156,6 +159,9 @@ pub enum Cmd {
     /// Score a reviewed benchmark set over memory, code and document
     /// retrieval, and emit a replayable candidate-observation artifact.
     Benchmark(benchmark::Args),
+    /// Record reviewed relevance verdicts against a captured candidate
+    /// observation, or report that observation (CLI-only).
+    Judge(judge::Args),
     /// Mine reformulation pairs from the query log into term-expansion
     /// mappings (report only; `--apply` rebuilds `query_expansions`).
     Mine(mine::Args),
@@ -244,6 +250,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::Feedback(a) => feedback::run(a, cli.json, cli.data_dir).await,
         Cmd::Eval(a) => eval::run(a, cli.json, cli.data_dir).await,
         Cmd::Benchmark(a) => benchmark::run(a, cli.json, cli.data_dir).await,
+        Cmd::Judge(a) => judge::run(a, cli.json, cli.data_dir).await,
         Cmd::Mine(a) => mine::run(a, cli.json, cli.data_dir).await,
         Cmd::Tune(a) => tune::run(a, cli.json, cli.data_dir).await,
         Cmd::Bandit(a) => bandit::run(a, cli.json, cli.data_dir).await,

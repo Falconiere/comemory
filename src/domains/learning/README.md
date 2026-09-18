@@ -41,8 +41,10 @@ One line per file, named after its primary item:
 | `evaluation.rs` | — | Declares [`evaluation/`](evaluation/README.md); named for the collision with the `eval` core |
 | `feedback.rs` | `Request` | Shared middle of `comemory feedback` / `POST /api/v1/feedback` (and the per-hit search route). Validates the query id, parses `Source`, and writes memory and code verdicts through the two recorders |
 | `feedback_tracking.rs` | `Source` | Per-memory `used`/`irrelevant` counters, plus `Source` — the routes' `explicit`\|`implicit` request word and its one mapping onto the stored `manual`\|`implicit` provenance. Also `record_implicit_used`, which takes a bare `&Connection` so the caller keeps its own transaction |
+| `judge.rs` | `Request` | Shared middle of `comemory judge` — resolve typed verdicts against a captured observation through `evaluation::judgment`, refusing a pool-recall miss, a stale content version and an unresolvable candidate, all-or-nothing; `target_of` is the identity→`JudgmentTarget` inverse #210 renders reviewed sets with |
 | `learning_proposals.rs` | `Proposal` | Console-only: knob proposals derived from unapplied `tune`/`bandit` runs — list, apply (writes `config.toml`), discard |
 | `mine.rs` | `Request` | Shared middle of `comemory mine` / `POST /api/v1/mine` — a bounded scan, not confirm-gated |
+| `observation_capture.rs` | `record` | Opt-in, bounded capture of a real `find` run's candidate pool: `armed` (config AND a run allowed to write telemetry), `find_filters`, and the best-effort write that warns rather than failing a search |
 | `telemetry.rs` | `StatsDb` | The shared `comemory.db` connection handle, opened through `store::connection`. Owns no table: the two recorders borrow `conn_mut()` for their transactions |
 | `tune.rs` | `Request` | Shared middle of `comemory tune` / `POST /api/v1/tune` — mutating only when `apply`, and confirm-gated only then |
 
