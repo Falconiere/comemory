@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.0] - 2026-09-18
+
+### Added
+
+- persist candidate observations and version-bound judgments ([#224](https://github.com/Falconiere/comemory/pull/224))
+- optional Python reference reranker backend ([#223](https://github.com/Falconiere/comemory/pull/223))
+- domain-aware retrieval benchmark and candidate observation contract ([#220](https://github.com/Falconiere/comemory/pull/220))
+- versioned reranker command protocol and bounded process runner ([#219](https://github.com/Falconiere/comemory/pull/219))
+
 ## [0.36.0] - 2026-09-18
 
 ### BREAKING
