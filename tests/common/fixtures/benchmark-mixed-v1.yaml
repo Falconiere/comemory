@@ -1,0 +1,105 @@
+# Reviewed benchmark set for `comemory benchmark`, version 1.
+#
+# It is scored against the fixture corpus `tests/cli__benchmark.rs` builds:
+# three memories saved through the real binary, one real git repo indexed with
+# `index-code --repo demo`, and one markdown tree indexed with `index`.
+# The memory ids below are content-derived (the 8-hex prefix of
+# `sha256(body.trim_end())`), so they are stable for those exact bodies and the
+# test asserts that they still resolve.
+version: 1
+name: comemory-mixed-v1
+description: >-
+  Memory, code, document and mixed-domain tasks over the pinned fixture corpus.
+
+# The pinned retrieval configuration. decay 0.0 makes ACT-R activation
+# time-independent, so two runs a day apart score identically. Disabling access
+# tracking alone would not achieve that.
+ranking:
+  rrf_k: 60.0
+  decay: 0.0
+  mmr_lambda: 0.7
+  bm25_weights: [1.0, 3.0]
+  graph_hops: 2
+  graph_seeds: 8
+
+defaults:
+  k: 3
+  max_text_bytes: 2048
+
+# Declared before anything is scored. min_tasks is above the task count on
+# purpose for the inconclusive-verdict scenario; the end-to-end scenario passes
+# a set whose min_tasks the corpus can meet.
+budgets:
+  min_tasks: 3
+  min_ndcg_gain: 0.02
+  max_ndcg_regression: 0.01
+  max_p95_task_ms: 5000
+
+tasks:
+  - id: mem-paging-01
+    domain: memory
+    query: paged search tied results
+    filters:
+      repo: demo
+      kind: bug
+    judgments:
+      - relevance: 3
+        target:
+          domain: memory
+          id: 3f116117
+
+  - id: mem-decay-02
+    domain: memory
+    query: activation decay wall clock
+    filters:
+      repo: demo
+    judgments:
+      - relevance: 3
+        target:
+          domain: memory
+          id: 0568bffe
+      - relevance: 0
+        target:
+          domain: memory
+          id: 278ef8f4
+
+  - id: code-ranking-03
+    domain: code
+    query: activation boost clamp
+    filters:
+      repo: demo
+      lang: rust
+    judgments:
+      - relevance: 3
+        target:
+          domain: code
+          repo: demo
+          path: src/ranking.rs
+          symbol: activation_boost
+
+  - id: doc-chunking-04
+    domain: document
+    query: paragraph boundary chunk splitter
+    filters:
+      path:
+        - "**/*.md"
+    judgments:
+      - relevance: 2
+        target:
+          domain: document
+          path: guides/chunking.md
+
+  - id: mixed-decay-05
+    domain: all
+    query: activation decay
+    judgments:
+      - relevance: 3
+        target:
+          domain: memory
+          id: 0568bffe
+      - relevance: 1
+        target:
+          domain: code
+          repo: demo
+          path: src/ranking.rs
+          symbol: activation_boost

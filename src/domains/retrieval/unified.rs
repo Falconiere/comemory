@@ -21,7 +21,7 @@
 use crate::config::Config;
 use crate::domains::retrieval::pipeline;
 use crate::domains::retrieval::scope::{Domain, Filters};
-use crate::domains::retrieval::{code_search, diversify, doc_route, rerank, router};
+use crate::domains::retrieval::{code_rerank, code_search, diversify, doc_route, rerank, router};
 use crate::prelude::*;
 use crate::store::Connection;
 use crate::store::memory_meta;
@@ -51,22 +51,59 @@ pub struct UnifiedRun {
     pub total: usize,
 }
 
-/// Run every in-scope leg and fuse. `filters.domains` selects the legs; a
-/// domain left out is skipped entirely rather than run and discarded.
+/// Everything one unified run is asked for, bundled so [`find`] and
+/// [`run_legs`] take a query rather than seven positional arguments — the same
+/// reason [`Filters`] and [`DomainFilters`] exist. `Copy`, like `Filters`: call
+/// sites pass by value and keep reading fields.
+#[derive(Debug, Clone, Copy)]
+pub struct UnifiedQuery<'a> {
+    /// Natural-language query text, run verbatim.
+    pub text: &'a str,
+    /// Caller-supplied dense vector, when the run is a BYO-vector one.
+    pub vector: Option<&'a [f32]>,
+    /// The filters every leg narrows by.
+    pub filters: Filters<'a>,
+    /// The per-leg narrowing `filters` has no place for.
+    pub domain_filters: DomainFilters<'a>,
+}
+
+/// The three legs' own reranked rows for one run, before
+/// [`fuse_domains::fuse`] flattens them into [`fuse_domains::UnifiedHit`] and
+/// drops their passage text and version anchors.
 ///
-/// [`DomainFilters`] carries the per-leg narrowing (`lang` for code,
-/// `path_globs` for documents) that the shared [`Filters`] has no place for.
-pub fn find(
+/// Returned by [`run_legs`] for the offline benchmark
+/// (`domains::learning::evaluation::benchmark_runner`), which needs each
+/// candidate's text and content version to build a candidate observation.
+/// [`find`] itself consumes the same value and is the only other caller.
+pub struct LegRows {
+    /// Memory hits, reranked and diversified.
+    pub memory: Vec<rerank::Reranked>,
+    /// Code hits, reranked and coalesced onto their parents.
+    pub code: Vec<code_rerank::CodeReranked>,
+    /// Document hits, in the leg's own BM25 order.
+    pub documents: Vec<doc_route::DocHit>,
+    /// The one [`pipeline::pool_size`] every leg was fetched at.
+    pub pool: usize,
+}
+
+/// Run every in-scope leg and return its own rows, unfused.
+///
+/// `filters.domains` selects the legs; a domain left out is skipped entirely
+/// rather than run and discarded. [`DomainFilters`] carries the per-leg
+/// narrowing (`lang` for code, `path_globs` for documents) that the shared
+/// [`Filters`] has no place for.
+///
+/// This is [`find`] minus fusion and pagination, extracted so a caller that
+/// needs the legs' text (the offline benchmark) reads it off the same rows
+/// `find` fuses, instead of running a second retrieval path that could drift.
+pub fn run_legs(
     cfg: &Config,
     conn: &Connection,
-    query: &str,
-    vec: Option<&[f32]>,
-    filters: Filters<'_>,
-    domain_filters: DomainFilters<'_>,
+    query: UnifiedQuery<'_>,
     window: PageWindow,
-) -> Result<UnifiedRun> {
-    let max_window = cfg.retrieval.max_page_window;
-    let pool = pipeline::pool_size(window.offset, window.limit, max_window);
+) -> Result<LegRows> {
+    let filters = query.filters;
+    let pool = pipeline::pool_size(window.offset, window.limit, cfg.retrieval.max_page_window);
 
     // Every leg is gated HERE, uniformly. `memory_leg` and `route_documents`
     // also refuse their own excluded domain internally — `route_documents` is
@@ -74,7 +111,7 @@ pub fn find(
     // that made this read like a missing guard to three separate reviewers.
     // One visible shape for all three is worth the duplicated condition.
     let memory = if filters.domains.contains(Domain::Memory) {
-        memory_leg(cfg, conn, query, vec, filters, pool)?
+        memory_leg(cfg, conn, query.text, query.vector, filters, pool)?
     } else {
         Vec::new()
     };
@@ -82,43 +119,75 @@ pub fn find(
         code_search::search_code_hits(
             cfg,
             conn,
-            query,
-            vec,
+            query.text,
+            query.vector,
             filters.repo,
-            domain_filters.lang,
+            query.domain_filters.lang,
             pool,
         )?
     } else {
         Vec::new()
     };
     let documents = if filters.domains.contains(Domain::Document) {
-        doc_route::route_documents(conn, query, filters, domain_filters.path_globs, pool)?
+        doc_route::route_documents(
+            conn,
+            query.text,
+            filters,
+            query.domain_filters.path_globs,
+            pool,
+        )?
     } else {
         Vec::new()
     };
+    Ok(LegRows {
+        memory,
+        code,
+        documents,
+        pool,
+    })
+}
 
-    // Skipped outright on an empty memory leg. `fetch_meta` already returns an
-    // empty map for an empty id list, so this is about saying so at the call
-    // site rather than about the round trip.
-    let meta = if memory.is_empty() {
+/// Fuse one run's legs into the ranked list, reading the batched navigation
+/// metadata the memory hits need on the way. Split out of [`find`] so the
+/// offline benchmark fuses through this exact code rather than restating it.
+///
+/// Skipped outright on an empty memory leg: `fetch_meta` already returns an
+/// empty map for an empty id list, so this is about saying so at the call site
+/// rather than about the round trip.
+pub fn fuse_legs(
+    cfg: &Config,
+    conn: &Connection,
+    legs: LegRows,
+) -> Result<Vec<fuse_domains::UnifiedHit>> {
+    let meta = if legs.memory.is_empty() {
         std::collections::HashMap::new()
     } else {
-        let ids: Vec<&str> = memory.iter().map(|h| h.memory_id.as_str()).collect();
+        let ids: Vec<&str> = legs.memory.iter().map(|h| h.memory_id.as_str()).collect();
         memory_meta::fetch_meta(conn, &ids)?
     };
-
-    let ranked = fuse_domains::fuse(
+    Ok(fuse_domains::fuse(
         fuse_domains::Legs {
-            memory,
+            memory: legs.memory,
             memory_meta: &meta,
-            code,
-            documents,
+            code: legs.code,
+            documents: legs.documents,
         },
         cfg.retrieval.document_leg_weight,
-        pool,
+        legs.pool,
         cfg.retrieval.rrf_k,
-    );
-    let (hits, has_more, total) = pipeline::paginate(ranked, window, max_window);
+    ))
+}
+
+/// Run every in-scope leg and fuse: [`run_legs`], then [`fuse_legs`], then ONE
+/// [`pipeline::paginate`] over the fused list.
+pub fn find(
+    cfg: &Config,
+    conn: &Connection,
+    query: UnifiedQuery<'_>,
+    window: PageWindow,
+) -> Result<UnifiedRun> {
+    let ranked = fuse_legs(cfg, conn, run_legs(cfg, conn, query, window)?)?;
+    let (hits, has_more, total) = pipeline::paginate(ranked, window, cfg.retrieval.max_page_window);
     Ok(UnifiedRun {
         hits,
         has_more,

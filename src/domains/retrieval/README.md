@@ -46,7 +46,7 @@ One line per file, named after its primary item:
 | `find.rs` | `Request` | `comemory find` / `GET|POST /find`: the shared middle over the unified pipeline |
 | `fuse.rs` | `RankedHit` | Reciprocal Rank Fusion across ranked lists |
 | `graph_route.rs` | `ALLOWED_RELS` | Graph-expansion leg: recursive-CTE walk from provisional top hits, fused as a third RRF list |
-| `unified.rs` | `find` | `comemory find`'s entry point and the one-pool/one-paginate rule; weighted fusion lives in `unified/fuse_domains.rs` |
+| `unified.rs` | `find` | `comemory find`'s entry point and the one-pool/one-paginate rule; weighted fusion lives in `unified/fuse_domains.rs`. `run_legs` is `find` minus fusion and pagination, returning each leg's own rows with their passage text and version anchors intact, for the offline benchmark |
 | `pipeline.rs` | `SearchOptions` | End-to-end memory search: route → rerank → diversify → top-k + access tracking |
 | `rerank.rs` | `MEMORY_RANK_SCALE` | Multiply fused relevance by activation × feedback × quality × supersede × rank priors |
 | `router.rs` | `CANDIDATE_POOL` | Route to vector, lexical, or hybrid path; the 4-tier lexical fallback ladder |

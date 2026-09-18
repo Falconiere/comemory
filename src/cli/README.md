@@ -39,6 +39,7 @@ One line per file, named after its primary item:
 | `distill.rs` | `Args` | `comemory distill` — extract explicit saves and propose platform candidates (CLI-only) |
 | `doctor.rs` | `Args` | `comemory doctor` — runtime health check against the SQLite storage stack |
 | `edges.rs` | `Args` | `comemory edges` — lexical search over the relation graph |
+| `benchmark.rs` | `Args` | `comemory benchmark` — score a reviewed benchmark set over memory, code and document retrieval, print the arm summary, and write the replayable artifact |
 | `eval.rs` | `GoldenSetArgs` | `comemory eval` — score retrieval quality (recall@k, MRR) against a golden set |
 | `feedback.rs` | `Args` | `comemory feedback` — record used/irrelevant feedback into the stats DB |
 | `gc.rs` | `run` | `comemory gc` — purge `.trash/` and evict expired learning telemetry |
