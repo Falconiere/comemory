@@ -693,10 +693,11 @@ Soft delete moves `memories/{id}.md` → `memories/.trash/{id}.md`. Trash is
 retained 30 days, then purged by `comemory gc`. SQL rows are hard-deleted
 (always rebuildable from markdown).
 
-Stale-code pruning is **not implemented yet** (`maintenance::retention::stale_code::detect`
-is a stub returning an empty set): code symbols and graph edges for files
-deleted from a repo persist — keeping their PageRank mass — until a future
-stale-code prune lands (M4 candidate).
+Stale-code pruning flags *memories* whose pinned `references_symbol` anchor has
+gone ghost (`maintenance::retention::stale_code::detect`). What is still not
+implemented is pruning the code side: symbols and graph edges for files deleted
+from a repo persist — keeping their PageRank mass — until a code-side stale
+sweep lands (M4 candidate).
 
 ## Where to go next
 

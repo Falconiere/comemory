@@ -9,8 +9,8 @@
 //! the one command with no HTTP surface at all.
 //!
 //! Every operation is a separate named file: maintenance is a capability,
-//! not a drawer. No SQL lives here — the `ATTACH`/copy/`DETACH` unit and the
-//! migration chain belong to [`crate::store`], which this capability
+//! not a drawer. The `ATTACH`/copy/`DETACH` unit, the pre-rebuild snapshot and
+//! the migration chain belong to [`crate::store`], which this capability
 //! composes, as the dashboards compose the cores that own each fact.
 
 /// `comemory consolidate`: the advisory near-duplicate cluster core.

@@ -242,9 +242,9 @@ both 0 '' src/domains/memories.rs
 # `assert_status` synthesizes each fixture row from the real ledger, and a path
 # whose row has moved defaults to `shared::root`, which the API-ownership map
 # then rejects with `API ownership mismatch`. #171 moved `src/api/search.rs`
-# under `domains/retrieval/` and #176 moved `src/api/setup.rs` under
-# `domains/maintenance/`, so these cases use `src/api/setup.rs` until #175
-# moves the integrations cores in turn.
+# under `domains/retrieval/` and #176 moved `src/api/prune.rs` — the row these
+# cases used until now — under `domains/maintenance/`, so they name
+# `src/api/setup.rs` until #175 moves the integrations cores in turn.
 new_tree legacy_exception
 put src/api/setup.rs 'pub fn run() { crate::cli::embedding_input(); }'
 policy '.legacy_edges=[{source:"src/api/setup.rs",target:"crate::cli::embedding_input",class:"delivery",issue:"#166"}]'
