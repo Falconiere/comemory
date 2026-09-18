@@ -1,5 +1,5 @@
 //! The `ATTACH`-based preservation copy lifecycle behind
-//! `api::rebuild::copy`: [`copy_preserved_tables_from_old`] owns attach,
+//! `maintenance::rebuild::copy`: [`copy_preserved_tables_from_old`] owns attach,
 //! every per-table copy pass, and detach as ONE unit, so no caller can pair
 //! attach/detach incorrectly and leave a database attached to a live
 //! connection on an early return.

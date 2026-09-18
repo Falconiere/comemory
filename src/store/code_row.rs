@@ -263,7 +263,7 @@ pub fn record_access(conn: &Connection, ids: &[i64]) {
 /// Every PARENT `code_symbols` row's `(id, snippet)`, ordered by id so a
 /// re-embed run is reproducible. Child chunk rows (`parent_id IS NOT
 /// NULL`) carry no `code_vec` row of their own — the parent's vector
-/// represents the symbol. Behind `api::reembed`'s code leg.
+/// represents the symbol. Behind `maintenance::reembed`'s code leg.
 pub fn parent_snippets(conn: &Connection) -> Result<Vec<(i64, String)>> {
     let mut stmt =
         conn.prepare("SELECT id, snippet FROM code_symbols WHERE parent_id IS NULL ORDER BY id")?;
@@ -343,7 +343,8 @@ pub(crate) fn find_by_address(
 }
 
 /// Whether a live `code_symbols` row exists for `(repo, path, symbol)` — the
-/// ghost-reference resolve check behind `prune::stale_code::detect`.
+/// ghost-reference resolve check behind
+/// `domains::maintenance::retention::stale_code::detect`.
 pub(crate) fn symbol_row_exists(
     conn: &Connection,
     repo: &str,

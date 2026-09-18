@@ -4,7 +4,9 @@
 `api::<cmd>::run(&mut Ctx, Request) -> Result<Response>` holds the logic that
 both surfaces need, so `cli::<cmd>` and `serve::routes::<resource>` call one
 implementation instead of keeping two in step. One file per subcommand, named
-after the subcommand.
+after the subcommand. Two are left — `install` and `setup` — and
+[#175](https://github.com/Falconiere/comemory/issues/175) takes both into
+`domains/integrations/`.
 
 **What does NOT belong here:** argument parsing and rendering. clap `Args`
 structs, TTY colouring and `--json` emission stay in `cli/`; HTTP status
@@ -16,8 +18,9 @@ mapping, the response envelope and the read-only/confirm gates stay in
 neither delivery adapter nor this shell owns it) bundles `Paths` + `Config`
 with a connection that is either `Borrowed` (the CLI's own connection, or the
 server's shared per-request one) or `Lazy` (opened on first `Ctx::conn()` call
-— a job worker's own dedicated connection). Conn-free commands (`doctor`,
-`rebuild`, `ast`, `install-hooks`, `completions`) never open one at all.
+— a job worker's own dedicated connection). Conn-free commands (`install`,
+`setup` until a step applies, and elsewhere `doctor`, `rebuild`, `ast`,
+`install-hooks`, `completions`) never open one at all.
 
 Every `Request` derives `#[serde(deny_unknown_fields)]`, enforced by the
 clap-introspection walk in `tests/api__parity.rs`.
@@ -28,19 +31,10 @@ One line per file, named after its primary item:
 
 | File | Primary item | Purpose |
 | --- | --- | --- |
-| `consolidate.rs` | `Request` | Shared middle of `comemory consolidate` / `GET /api/v1/consolidate` |
-| `doctor.rs` | `Request` | Shared middle of `comemory doctor` / `GET /api/v1/doctor`; the individual health probes live in `doctor/checks.rs` |
-| `gc.rs` | `Request` | Shared middle of `comemory gc` / `POST /api/v1/gc` — reaps aged `.trash/` files AND purges their mirror rows (`store::memory_purge`), healing zombie rows earlier sweeps left behind |
 | `install.rs` | `Request` | Shared middle of `comemory install` — extracts the embedded agent bundle and registers it with the host CLI. CLI-only (a server must never write into an operator's agent config); conn-free. Host names are validated strings, not clap enums, so `api::` stays free of CLI types. `install/` holds the embedded `bundle` |
 | `setup.rs` | `Request` | Shared middle of `comemory setup` — the stable `STEP_IDS`, the `StepState` machine, and the `run` that sequences detect → plan → apply. CLI-only; conn-free until a step applies. `setup/` holds the three phases |
-| `prune.rs` | `Request` | Shared middle of `comemory prune` / `GET\|POST /api/v1/prune` |
-| `rebuild.rs` | `Request` | Shared middle of `comemory rebuild` / `POST /api/v1/rebuild`; the preservation copy lives in `rebuild/` |
-| `stats.rs` | `Request` | Shared middle of `comemory stats` / `GET /api/v1/stats` — corpus counters and database size |
-| `gc_policy.rs` | `Policy` | Console-only: `GET\|PUT /api/v1/gc/policy` — trash + telemetry retention windows and the last gc run |
-| `overview.rs` | `Response` | Console-only: `GET /api/v1/overview` (+ `/overview/eval-series`) — counters, index state, last run, metrics, recent memories |
-| `reembed.rs` | `Request` | Console-only: `POST /api/v1/doctor/reembed` — re-vectorize memories and/or code through the embed command, cancellable |
 
-Seven capabilities no longer live here. The code cores — `ast`, `index_code` (+
+Eight capabilities no longer live here. The code cores — `ast`, `index_code` (+
 `walk`), `ingest_code`, `index_runs`, `repos` (+ `git_state`), `repo_admin`,
 `hooks` and `install_hooks` — moved to
 [`domains/code/`](../domains/code/README.md) with
@@ -66,8 +60,13 @@ pipeline they all call. The learning cores — `feedback`, `eval`, `mine`,
 moved to [`domains/learning/`](../domains/learning/README.md) with
 [#173](https://github.com/Falconiere/comemory/issues/173): `api::learning` is
 `domains::learning::console` there, beside the feedback counters and the
-evaluation algorithms they read and write. This shell itself is
-deleted by #178.
+evaluation algorithms they read and write. The maintenance cores — `doctor`
+(+ `doctor/`), `gc`, `prune`, `consolidate`, `rebuild` (+ `rebuild/`), `stats`
+and the console-only `gc_policy`, `overview` and `reembed` — moved to
+[`domains/maintenance/`](../domains/maintenance/README.md) with
+[#176](https://github.com/Falconiere/comemory/issues/176), beside the
+retention, near-duplicate and release-channel algorithms they call. This shell
+itself is deleted by #178.
 
 When you add a file here, add its row above so the index stays current. No
 `mod.rs` barrel — submodules are declared from `src/api.rs` (`pub mod

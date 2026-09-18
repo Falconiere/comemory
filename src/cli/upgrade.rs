@@ -1,6 +1,7 @@
 //! `comemory upgrade` — move this binary to the newest release (or a pinned
 //! one). Resolution, channel detection, and the swap live in
-//! `crate::upgrade`; this wrapper parses flags and renders the report.
+//! `crate::domains::maintenance::upgrade`; this wrapper parses flags and
+//! renders the report.
 //! CLI-only by design: no `/api/v1` route (`serve::routes::meta::CLI_ONLY`).
 
 use std::path::PathBuf;
@@ -8,9 +9,9 @@ use std::path::PathBuf;
 use clap::Args as ClapArgs;
 use owo_colors::OwoColorize;
 
+use crate::domains::maintenance::upgrade::{self, Report, Request, Status};
 use crate::output::json;
 use crate::prelude::*;
-use crate::upgrade::{self, Report, Request, Status};
 
 const EXAMPLES: &str = "\
 Examples:

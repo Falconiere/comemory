@@ -1,6 +1,6 @@
 //! `comemory stats` — corpus counters and database size in one call.
 //!
-//! The counting itself lives in `api::stats` (Binding Rule 1), including
+//! The counting itself lives in `maintenance::stats` (Binding Rule 1), including
 //! the must-not-create-the-db-on-a-fresh-dir invariant this command shares
 //! with `gc`.
 
@@ -9,9 +9,9 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::api;
 use crate::cli::load_config;
 use crate::config::paths::{Paths, resolve_data_dir};
+use crate::domains::maintenance;
 use crate::output::json;
 use crate::prelude::*;
 use crate::utilities::context::Ctx;
@@ -46,7 +46,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     let paths = Paths::new(resolve_data_dir(data_dir));
     let cfg = load_config(&paths)?;
     let mut ctx = Ctx::lazy(&paths, &cfg);
-    let resp = api::stats::run(&mut ctx, api::stats::Request { repo: a.repo })?;
+    let resp = maintenance::stats::run(&mut ctx, maintenance::stats::Request { repo: a.repo })?;
 
     if json_flag {
         json::write(&resp)?;

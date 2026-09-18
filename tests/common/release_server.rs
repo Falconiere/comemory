@@ -7,7 +7,8 @@
 )]
 //! A loopback stand-in for GitHub Releases, for the installer and
 //! `comemory upgrade` tests. It answers the three request shapes
-//! `install.sh` and `upgrade::release` rely on — `/latest` as a 302 to
+//! `install.sh` and `domains::maintenance::upgrade::release` rely on —
+//! `/latest` as a 302 to
 //! `/tag/<latest>`, `/tag/<t>` as 200, `/download/<tag>/<file>` from a
 //! directory — over a real socket, with real files, real tarballs, and real
 //! checksums. Nothing is mocked in-process: the binary under test still

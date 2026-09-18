@@ -6,8 +6,8 @@
 //! `query_expansions` table. Nothing here writes; the console's write half
 //! is `domains::learning::learning_proposals`.
 //!
-//! **Must-not-create-the-db invariant** (the rule `api::stats` and
-//! `api::gc` keep): being asked how the learning loop is doing must not
+//! **Must-not-create-the-db invariant** (the rule `maintenance::stats` and
+//! `maintenance::gc` keep): being asked how the learning loop is doing must not
 //! create and migrate a database as a side effect. On a data dir with no
 //! `comemory.db`, every function here answers with zeros / an empty page
 //! and never calls [`Ctx::conn`].

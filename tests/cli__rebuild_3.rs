@@ -9,7 +9,7 @@
 //!
 //! THE motivating bug: migration 0013 added `source_files`, `documents`,
 //! `document_chunks`, `document_fts`, and `source_roots`, and
-//! `src/api/rebuild/copy.rs` was never taught about any of them, so
+//! `src/domains/maintenance/rebuild/copy.rs` was never taught about any of them, so
 //! `comemory rebuild` silently discarded a user's entire document index.
 //! These tests drive the real binary against a real indexed document
 //! corpus (`common::docs_fixtures::seed`) and prove the four copyable

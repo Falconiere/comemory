@@ -110,7 +110,8 @@ pub const SUPERSEDE_PENALTY: f64 = 0.2;
 
 /// Whole-second days elapsed between an RFC 3339 timestamp and `now`, floored
 /// at zero. Shared by `retrieval::rerank`, `retrieval::code_prior`, and
-/// `prune::low_value` so the consumers cannot drift on day math. An
+/// `maintenance::retention::low_value` so the consumers cannot drift on day
+/// math. An
 /// unparsable timestamp scores as fresh — never punish a memory for a
 /// malformed clock — but is logged: it means a writer bug or row corruption.
 ///

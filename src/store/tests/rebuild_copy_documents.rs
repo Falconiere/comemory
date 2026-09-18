@@ -26,7 +26,7 @@ use crate::test_common::document_writer_support as support;
 /// `source_roots` row for [`support::SOURCE_ID`] — the FK
 /// `copy_document_tables_inner`'s `source_files` copy requires, mirroring
 /// what `source::mirror::reconcile` populates in the real
-/// `api::rebuild::build_new_db` flow before this copy runs.
+/// `maintenance::rebuild::build_new_db` flow before this copy runs.
 fn open_new_db_with_source_root(tmp: &TempDir) -> Connection {
     let conn = connection::open(tmp.path().join("comemory.db")).expect("open new db");
     sources::upsert(

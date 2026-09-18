@@ -5,16 +5,16 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror test for `src/api/consolidate.rs`. Seeds near-duplicate memories
-//! via the real binary, then calls `api::consolidate::run` directly against
+//! Mirror test for `src/domains/maintenance/consolidate.rs`. Seeds near-duplicate memories
+//! via the real binary, then calls `maintenance::consolidate::run` directly against
 //! a `Ctx` opened on the same data-dir — proving the scan/cluster/page
 //! middle reproduces `comemory consolidate`'s report (`cli::consolidate::run`
 //! is byte-compat tested against CLI stdout in `tests/cli__consolidate.rs`;
 //! the HTTP route lives in `tests/serve__routes__maint__mod.rs`).
 
 use assert_cmd::Command;
-use comemory::api;
 use comemory::config::{Config, Paths};
+use comemory::domains::maintenance;
 use comemory::store::connection;
 use comemory::utilities::context::Ctx;
 
@@ -45,8 +45,8 @@ fn seeded_home() -> tempfile::TempDir {
     home
 }
 
-fn request() -> api::consolidate::Request {
-    api::consolidate::Request {
+fn request() -> maintenance::consolidate::Request {
+    maintenance::consolidate::Request {
         radius: None,
         repo: None,
         all: false,
@@ -63,7 +63,7 @@ fn run_clusters_near_duplicates_with_keeper_first() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let report = api::consolidate::run(&mut ctx, request()).expect("consolidate run");
+    let report = maintenance::consolidate::run(&mut ctx, request()).expect("consolidate run");
     assert_eq!(report.radius, cfg.rank.near_dup_hamming);
     assert_eq!(report.scanned, 4);
     assert_eq!(report.clustered, 3);
@@ -80,11 +80,11 @@ fn run_radius_zero_clusters_only_identical_bodies() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let req = api::consolidate::Request {
+    let req = maintenance::consolidate::Request {
         radius: Some(0),
         ..request()
     };
-    let report = api::consolidate::run(&mut ctx, req).expect("consolidate run");
+    let report = maintenance::consolidate::run(&mut ctx, req).expect("consolidate run");
     assert_eq!(report.radius, 0);
     assert_eq!(report.clusters.total, Some(0));
 }
@@ -107,11 +107,11 @@ fn run_repo_filter_scopes_the_scan() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let scoped_req = api::consolidate::Request {
+    let scoped_req = maintenance::consolidate::Request {
         repo: Some("alpha".to_string()),
         ..request()
     };
-    let scoped = api::consolidate::run(&mut ctx, scoped_req).expect("consolidate run");
+    let scoped = maintenance::consolidate::run(&mut ctx, scoped_req).expect("consolidate run");
     assert_eq!(scoped.scanned, 1);
     assert_eq!(scoped.clusters.total, Some(0));
 }
@@ -138,14 +138,14 @@ fn run_pages_clusters_with_k_and_offset() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let full = api::consolidate::run(&mut ctx, request()).expect("consolidate run");
+    let full = maintenance::consolidate::run(&mut ctx, request()).expect("consolidate run");
     assert!(full.clusters.total.unwrap_or(0) >= 2);
 
-    let paged_req = api::consolidate::Request {
+    let paged_req = maintenance::consolidate::Request {
         k: Some(1),
         ..request()
     };
-    let paged = api::consolidate::run(&mut ctx, paged_req).expect("consolidate run");
+    let paged = maintenance::consolidate::run(&mut ctx, paged_req).expect("consolidate run");
     assert_eq!(paged.clusters.items.len(), 1);
     assert!(paged.clusters.has_more);
 }

@@ -1,9 +1,9 @@
 //! Shared random-hex id generation, read from `/dev/urandom`.
 //!
 //! A neutral home under `store/` so both `serve::security` (session tokens,
-//! job ids) and `api::gc` (`gc_runs` row ids) draw from the one
+//! job ids) and `maintenance::gc` (`gc_runs` row ids) draw from the one
 //! implementation, instead of `api::` depending on `serve::` — a layering
-//! `api::gc` must not introduce (Binding Rule 1: no duplication).
+//! `maintenance::gc` must not introduce (Binding Rule 1: no duplication).
 
 use std::fmt::Write as _;
 use std::io::Read as _;

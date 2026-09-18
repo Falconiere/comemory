@@ -542,7 +542,7 @@ comemory ingest-code  (BYO embedder)
 that exist in the working tree, so symbols, `indexed_files` cursors, and
 `co_changed`/`imports` edges for files *deleted* from a repo persist in
 the index until a future stale-code prune lands (an M4 candidate — see
-`src/prune/stale_code.rs`). Until then, deleted files keep their PageRank
+`src/domains/maintenance/retention/stale_code.rs`). Until then, deleted files keep their PageRank
 mass and can still surface in `search-code` results.
 
 ### 7.1 Auto-reinforcement reward
@@ -693,7 +693,7 @@ Soft delete moves `memories/{id}.md` → `memories/.trash/{id}.md`. Trash is
 retained 30 days, then purged by `comemory gc`. SQL rows are hard-deleted
 (always rebuildable from markdown).
 
-Stale-code pruning is **not implemented yet** (`prune::stale_code::detect`
+Stale-code pruning is **not implemented yet** (`maintenance::retention::stale_code::detect`
 is a stub returning an empty set): code symbols and graph edges for files
 deleted from a repo persist — keeping their PageRank mass — until a future
 stale-code prune lands (M4 candidate).

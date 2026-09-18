@@ -51,7 +51,8 @@ pub fn insert(
     let created_iso = iso_format(fm.created)?;
     // Relation-edge timestamps are captured before the outgoing-edge wipe so a
     // re-save re-inserting the same relation keeps the original `created_at`:
-    // `prune::low_value::superseded_rule` compares the superseded memory's
+    // `maintenance::retention::low_value::superseded_rule` compares the
+    // superseded memory's
     // `last_accessed` against the edge timestamp, and a refreshed stamp would
     // re-arm the rule on every re-save of the superseder. The wipe itself only
     // clears *outgoing* edges — incoming edges (e.g. a newer memory's
@@ -170,7 +171,7 @@ struct MinedEdge {
 
 /// Capture the memory's mined outgoing edges before [`insert_memories_row`]
 /// wipes every outgoing row. `rebuild` re-copies them from the pre-rebuild
-/// database afterwards (`api::rebuild::copy`), but the in-place re-mirror
+/// database afterwards (`maintenance::rebuild::copy`), but the in-place re-mirror
 /// seams (`domains::memories::update::mirror_record` — metadata PATCH, references refresh,
 /// restore) have no such re-copy, so without this capture every one of them
 /// would silently drop the reward.
@@ -343,7 +344,7 @@ pub(crate) fn live_ids(conn: &Connection) -> Result<Vec<String>> {
 }
 
 /// Every live memory's `(id, body)`, ordered by id so a re-embed run is
-/// reproducible. Behind `api::reembed`'s memory leg.
+/// reproducible. Behind `maintenance::reembed`'s memory leg.
 pub fn live_bodies(conn: &Connection) -> Result<Vec<(String, String)>> {
     let mut stmt =
         conn.prepare("SELECT id, body FROM memories WHERE deleted_at IS NULL ORDER BY id")?;

@@ -3,7 +3,7 @@
 //!
 //! `source_roots` — the fifth v13 table — is deliberately absent from this
 //! module: it is reconstructed, not copied, from `sources.toml`
-//! (`source::mirror::reconcile`, run by `api::rebuild::build_new_db` before
+//! (`source::mirror::reconcile`, run by `maintenance::rebuild::build_new_db` before
 //! this copy runs). That ordering is load-bearing: `source_files.source_id`
 //! is a `REFERENCES source_roots(id)` foreign key and the connection runs
 //! with `PRAGMA foreign_keys=ON`, so an `INSERT OR IGNORE` into

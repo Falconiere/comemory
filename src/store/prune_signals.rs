@@ -1,8 +1,8 @@
-//! The two SQL scans behind `prune::low_value`'s candidate detection:
+//! The two SQL scans behind `maintenance::retention::low_value`'s candidate detection:
 //! [`quality_and_degree_candidates`] (the low-quality, zero-incoming-edge
 //! scan) and [`superseded_and_forgotten`] (the superseded-and-untouched-since
 //! scan). The activation/feedback scoring and the grace-day cutoff
-//! computation stay in `prune::low_value` — this module owns only the SQL
+//! computation stay in `maintenance::retention::low_value` — this module owns only the SQL
 //! text and its row mapping (spec
 //! `docs/toolu/specs/2026-09-07-store-layer-chokepoint-design.md`).
 //!
@@ -31,7 +31,8 @@ pub struct SignalCandidate {
 
 /// Live memories at or below `max_quality` (inclusive) with zero incoming
 /// `edges` rows, each paired with the counts the caller's activation/Beta
-/// scoring needs. See [`crate::prune::low_value::signal_rule`].
+/// scoring needs. See
+/// `domains::maintenance::retention::low_value::signal_rule` (private).
 pub fn quality_and_degree_candidates(
     conn: &Connection,
     max_quality: u32,
@@ -64,7 +65,7 @@ pub fn quality_and_degree_candidates(
 /// edge is older than `cutoff` (`edges.created_at < cutoff`, strict) and
 /// which have not been accessed since (`COALESCE(last_accessed, created_at)
 /// < edges.created_at`, strict). See
-/// [`crate::prune::low_value::superseded_rule`].
+/// `domains::maintenance::retention::low_value::superseded_rule` (private).
 pub fn superseded_and_forgotten(conn: &Connection, cutoff: &str) -> Result<Vec<String>> {
     let mut stmt = conn.prepare(
         "SELECT old.id FROM memories old

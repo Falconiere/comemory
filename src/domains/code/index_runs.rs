@@ -6,7 +6,7 @@
 //! label.
 //!
 //! **Must-not-create-the-db invariant** (the same rule `domains::code::repos` and
-//! `api::stats` keep): being asked for the run history must never create
+//! `maintenance::stats` keep): being asked for the run history must never create
 //! and migrate a database as a side effect. On a data dir with no
 //! `comemory.db`, [`run`] never calls [`Ctx::conn`] and reports an empty
 //! page.

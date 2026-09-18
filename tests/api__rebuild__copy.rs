@@ -5,9 +5,9 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror test for `src/api/rebuild/copy.rs`. Every function in that file is
-//! private to `api::rebuild`, so the preservation copy is exercised through
-//! the public `api::rebuild::run` entry point: seed a real DB with a real
+//! Mirror test for `src/domains/maintenance/rebuild/copy.rs`. Every function in that file is
+//! private to `maintenance::rebuild`, so the preservation copy is exercised through
+//! the public `maintenance::rebuild::run` entry point: seed a real DB with a real
 //! ingested code symbol (`comemory ingest-code`) plus real learning-loop
 //! rows, rebuild, and assert every SQLite-only table survived the swap.
 
@@ -16,20 +16,20 @@ pub mod support;
 #[path = "common/vectors.rs"]
 mod vectors;
 
-use comemory::api;
 use comemory::config::{Config, Paths};
+use comemory::domains::maintenance;
 use comemory::utilities::context::Ctx;
 use rusqlite::Connection;
 use tempfile::{TempDir, tempdir};
 
 use support::{count, open_db, open_db_with_vec, run_save};
 
-/// Call `api::rebuild::run` over `home`'s data dir with a `Ctx::lazy`.
+/// Call `maintenance::rebuild::run` over `home`'s data dir with a `Ctx::lazy`.
 fn run_rebuild_api(home: &TempDir) {
     let paths = Paths::new(home.path());
     let cfg = Config::defaults();
     let mut ctx = Ctx::lazy(&paths, &cfg);
-    api::rebuild::run(&mut ctx, api::rebuild::Request {}).expect("rebuild");
+    maintenance::rebuild::run(&mut ctx, maintenance::rebuild::Request {}).expect("rebuild");
 }
 
 /// Ingest one real code symbol row (with a 768-d embedding) through the real

@@ -26,20 +26,11 @@ pub mod store;
 /// and `serve::routes::` so neither surface duplicates subcommand logic.
 pub mod api;
 
-/// Orphan / low-value / stale-code detection plus soft-delete and gc.
-pub mod prune;
-
-/// Advisory near-duplicate cluster report over live memories (read-only).
-pub mod consolidate;
-
 /// TTY and JSON emitters shared by the subcommands.
 pub mod output;
 
 /// Loopback web viewer (`comemory serve`).
 pub mod serve;
-
-/// `comemory upgrade`: resolve the newest release and swap the binary.
-pub mod upgrade;
 
 /// clap subcommand entry points and the top-level dispatcher.
 pub mod cli;
@@ -57,10 +48,14 @@ pub mod utilities;
 // `domains::memories` (#169), `graph` under `domains::graph` (#170),
 // `retrieval` under `domains::retrieval` (#171), `sync` and `cloud` under
 // `domains::sync` (#172), `eval` under `domains::learning::evaluation` (#173),
-// `capture` under `domains::capture` (#174), the four shared primitives under
-// `utilities` (#166). They preserve `comemory::<name>` for external consumers;
-// in-crate production code names the real path directly. `stats` has no alias:
-// #173 removes that tree outright in 0.34.0.
+// `capture` under `domains::capture` (#174), `prune`, `consolidate` and
+// `upgrade` under `domains::maintenance` (#176), the four shared primitives
+// under `utilities` (#166). They preserve `comemory::<name>` for external
+// consumers; in-crate production code names the real path directly. `stats`
+// has no alias: #173 removes that tree outright in 0.34.0. The two report
+// models are not aliased either — `domains::maintenance::retention_report`
+// and `::consolidation_report` are siblings of their algorithms, so
+// `comemory::{prune,consolidate}::report` is a 0.34.0 removal.
 pub use domains::capture;
 pub use domains::code::ast;
 pub use domains::code::git_utils;
@@ -68,6 +63,9 @@ pub use domains::documents::document;
 pub use domains::documents::source;
 pub use domains::graph;
 pub use domains::learning::evaluation as eval;
+pub use domains::maintenance::consolidation as consolidate;
+pub use domains::maintenance::retention as prune;
+pub use domains::maintenance::upgrade;
 pub use domains::memories as memory;
 pub use domains::retrieval;
 pub use domains::sync;

@@ -2,7 +2,7 @@
 //! `comemory setup`, which takes a machine or a repo from "binary
 //! installed" to "memory + code search working in my agent".
 //!
-//! Like [`crate::api::overview`], a composition and nothing else: it
+//! Like [`crate::domains::maintenance::overview`], a composition and nothing else: it
 //! delegates to the existing readers and writers rather than restating
 //! them. [`detect`] reads (never creating the database — asking what needs
 //! setting up is a read), [`plan`] is pure, [`apply`] is the only phase

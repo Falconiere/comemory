@@ -9,9 +9,9 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::api;
 use crate::cli::load_config;
 use crate::config::paths::{Paths, resolve_data_dir};
+use crate::domains::maintenance;
 use crate::output;
 use crate::prelude::*;
 use crate::store::connection;
@@ -59,7 +59,7 @@ pub struct Args {
     pub offset: usize,
 }
 
-/// Run `comemory consolidate`: scan, cluster, page (`api::consolidate::run`),
+/// Run `comemory consolidate`: scan, cluster, page (`maintenance::consolidate::run`),
 /// then emit. Exit code is 0 whether or not duplication was found — the
 /// report is advisory, not a gate.
 ///
@@ -71,7 +71,7 @@ pub fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let mut conn = connection::open(paths.db_path())?;
     let cfg = load_config(&paths)?;
 
-    let req = api::consolidate::Request {
+    let req = maintenance::consolidate::Request {
         radius: a.radius,
         repo: a.repo,
         all: a.all,
@@ -79,6 +79,6 @@ pub fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
         offset: a.offset,
     };
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-    let report = api::consolidate::run(&mut ctx, req)?;
+    let report = maintenance::consolidate::run(&mut ctx, req)?;
     output::consolidate::emit(&report, json_flag)
 }

@@ -4,7 +4,7 @@
 //! commands are the dotted synthetic names `overview` / `overview.eval-series`.
 //!
 //! Both use [`Ctx::lazy`] rather than the shared connection, for the same
-//! reason [`super::stats`] does: `api::overview` keeps the
+//! reason [`super::stats`] does: `maintenance::overview` keeps the
 //! must-not-create-the-db invariant, and borrowing the already-open shared
 //! connection would defeat it — a server pointed at an empty data dir would
 //! materialize a database just by having its Overview screen opened.
@@ -17,7 +17,7 @@ use axum::response::Response;
 use axum::routing::get;
 use serde::Deserialize;
 
-use crate::api;
+use crate::domains::maintenance;
 use crate::serve::AppState;
 use crate::serve::routes::{RouteEntry, respond, run_blocking};
 use crate::serve::scope::RepoScope;
@@ -54,27 +54,27 @@ pub fn router(_state: AppState) -> Router<AppState> {
 async fn overview(
     State(state): State<AppState>,
     scope: RepoScope,
-    Query(mut req): Query<api::overview::Request>,
+    Query(mut req): Query<maintenance::overview::Request>,
 ) -> Response {
     req.repo = scope.resolve(req.repo);
     let started = Instant::now();
     let result = run_blocking(move || {
         let cfg = state.cfg();
         let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        api::overview::run(&mut ctx, req)
+        maintenance::overview::run(&mut ctx, req)
     })
     .await;
     respond("overview", result, started)
 }
 
 /// `?limit=` on `GET /overview/eval-series` — transport-level, since
-/// `api::overview::eval_series` takes a plain `u32` rather than a `Request`
+/// `maintenance::overview::eval_series` takes a plain `u32` rather than a `Request`
 /// struct. No repo scope: `eval_runs` is a global history (an eval run
 /// scores the whole golden set, not one repo's slice of it).
 #[derive(Deserialize)]
 struct EvalSeriesQuery {
     /// How many runs to plot, newest-selected but oldest-first in the
-    /// answer. Defaults to [`api::overview::EVAL_SERIES_LIMIT`].
+    /// answer. Defaults to [`maintenance::overview::EVAL_SERIES_LIMIT`].
     #[serde(default)]
     limit: Option<u32>,
 }
@@ -85,11 +85,13 @@ async fn eval_series(
     Query(query): Query<EvalSeriesQuery>,
 ) -> Response {
     let started = Instant::now();
-    let limit = query.limit.unwrap_or(api::overview::EVAL_SERIES_LIMIT);
+    let limit = query
+        .limit
+        .unwrap_or(maintenance::overview::EVAL_SERIES_LIMIT);
     let result = run_blocking(move || {
         let cfg = state.cfg();
         let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        api::overview::eval_series(&mut ctx, limit)
+        maintenance::overview::eval_series(&mut ctx, limit)
     })
     .await;
     respond("overview.eval-series", result, started)

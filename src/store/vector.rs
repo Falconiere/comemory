@@ -71,7 +71,7 @@ pub fn insert_memory(conn: &Connection, memory_id: &str, vector: &[f32]) -> Resu
 /// point it is today). `memory_vec` is a `vec0` virtual table whose primary
 /// key does not participate in SQLite's FK cascade, so a bare re-insert on
 /// an id that already has a row would leave two rows behind — every
-/// re-save (`domains::memories::save`) and re-embed (`api::reembed`) of the same memory
+/// re-save (`domains::memories::save`) and re-embed (`maintenance::reembed`) of the same memory
 /// must replace, not duplicate.
 pub fn replace_memory(conn: &Connection, memory_id: &str, vector: &[f32]) -> Result<()> {
     conn.execute(
@@ -186,7 +186,7 @@ pub fn insert_code(conn: &Connection, symbol_id: i64, vector: &[f32]) -> Result<
 }
 
 /// Replace a code symbol's `code_vec` row — the code-side twin of
-/// [`replace_memory`], used by `api::reembed`'s re-vectorize-in-place run.
+/// [`replace_memory`], used by `maintenance::reembed`'s re-vectorize-in-place run.
 pub fn replace_code(conn: &Connection, symbol_id: i64, vector: &[f32]) -> Result<()> {
     conn.execute(
         "DELETE FROM code_vec WHERE symbol_id = ?1",

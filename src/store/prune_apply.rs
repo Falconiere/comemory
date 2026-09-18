@@ -1,8 +1,8 @@
-//! The SQL behind `api::prune`'s scan and apply phases — everything
+//! The SQL behind `maintenance::prune`'s scan and apply phases — everything
 //! [`crate::store::prune_signals`] does not already own: the orphan-edge
 //! count, the stale-code-file scan, one memory's display fields, and the
 //! apply-time cleanup deletes. Report shaping, the soft-delete call, and the
-//! transaction itself stay in `api::prune` (spec
+//! transaction itself stay in `maintenance::prune` (spec
 //! `docs/toolu/specs/2026-09-07-store-layer-chokepoint-design.md`).
 //!
 //! **Every `NOT EXISTS` subquery below is correlated on purpose** — each one
@@ -15,7 +15,8 @@ use rusqlite::Connection;
 
 use crate::prelude::*;
 
-/// One `memories` row read for [`api::prune`]'s display list: body (for the
+/// One `memories` row read for [`crate::domains::maintenance::prune`]'s display
+/// list: body (for the
 /// title), creation stamp, access count, and last-accessed stamp.
 pub struct PruneMemoryRow {
     /// The memory's stored body.
@@ -46,7 +47,7 @@ pub fn count_orphan_memory_edges(conn: &Connection) -> Result<i64> {
 /// `indexed_files` cursor, ordered by repo then path.
 ///
 /// A row that fails to decode is dropped rather than failing the whole scan
-/// (`filter_map(Result::ok)`) — preserved verbatim from `api::prune::scan`,
+/// (`filter_map(Result::ok)`) — preserved verbatim from `maintenance::prune::scan`,
 /// a deliberate blanket swallow (spec Non-Goal 3), not introduced by this
 /// move.
 pub fn stale_code_files(conn: &Connection) -> Result<Vec<String>> {

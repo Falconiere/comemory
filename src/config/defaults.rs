@@ -51,7 +51,7 @@ pub(crate) fn default_near_dup_hamming() -> u32 {
 /// The constant next to the prune rule stays the single source of the
 /// default grace window; the config field merely makes it operator-tunable.
 pub(crate) fn default_superseded_grace_days() -> u32 {
-    crate::prune::low_value::SUPERSEDED_GRACE_DAYS
+    crate::domains::maintenance::retention::low_value::SUPERSEDED_GRACE_DAYS
 }
 
 /// Default ceiling (bytes) above which a candidate document file is

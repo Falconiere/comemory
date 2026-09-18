@@ -92,7 +92,7 @@ async fn system_reports_the_current_schema_on_a_seeded_store_ac15() {
         comemory::store::migrate::CURRENT_VERSION
     );
     assert_eq!(data["markdown_files"].as_u64(), Some(1));
-    // Literal AND cross-check, as in `api::doctor::system`'s own test: the
+    // Literal AND cross-check, as in `maintenance::doctor::system`'s own test: the
     // first pins the shipped width, the second pins the DDL against the
     // config it must agree with.
     assert_eq!(data["memory_vec_dim"].as_u64(), Some(1024));

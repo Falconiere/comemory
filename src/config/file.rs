@@ -275,7 +275,8 @@ pub struct PruneConfig {
     /// only supersede edges older than this many days count. Protects
     /// freshly-rebuilt DBs, whose edges all carry rebuild-time timestamps.
     /// `0` disables the grace entirely.
-    /// Default: `crate::prune::low_value::SUPERSEDED_GRACE_DAYS` (7).
+    /// Default:
+    /// `crate::domains::maintenance::retention::low_value::SUPERSEDED_GRACE_DAYS` (7).
     #[serde(default = "default_superseded_grace_days")]
     pub superseded_grace_days: u32,
 }

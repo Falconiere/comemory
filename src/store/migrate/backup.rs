@@ -28,7 +28,7 @@ const KEEP: usize = 2;
 /// connection. `dest` is bound as a query parameter, never
 /// string-interpolated, so a data directory whose path contains a quote (or
 /// other SQL metacharacter) cannot break the statement — the same reasoning
-/// as `api::rebuild::copy`'s `ATTACH`.
+/// as `maintenance::rebuild::copy`'s `ATTACH`.
 ///
 /// If `dest` already holds a file that passes `PRAGMA quick_check`, the
 /// snapshot is skipped as an idempotent no-op (`VACUUM INTO` errors rather

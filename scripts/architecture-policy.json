@@ -76,24 +76,9 @@
       "issue": "#178"
     },
     {
-      "module": "crate::consolidate",
-      "owner": "domains::maintenance",
-      "issue": "#176"
-    },
-    {
       "module": "crate::output",
       "owner": "delivery::cli",
       "issue": "#166"
-    },
-    {
-      "module": "crate::prune",
-      "owner": "domains::maintenance",
-      "issue": "#176"
-    },
-    {
-      "module": "crate::upgrade",
-      "owner": "domains::maintenance",
-      "issue": "#176"
     }
   ],
   "owner_dependencies": [
@@ -229,7 +214,7 @@
     },
     {
       "source": "src/api/setup/detect.rs",
-      "target": "crate::api::doctor",
+      "target": "crate::domains::maintenance::doctor",
       "owner": "domains::maintenance"
     },
     {

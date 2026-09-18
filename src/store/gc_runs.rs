@@ -60,7 +60,7 @@ pub struct GcRunRow {
 ///
 /// Ordered by `at DESC, rowid DESC`: every `at` is written through
 /// `store::memory_row::iso_format`, whose fixed-width rendering makes
-/// lexicographic order chronological (see `api::gc::sweep_learning`'s doc),
+/// lexicographic order chronological (see `maintenance::gc::sweep_learning`'s doc),
 /// and the `rowid` tie-break returns the LATER-INSERTED row when two sweeps
 /// land in the same nanosecond. Ids are random hex, so ordering by id would
 /// be deterministic but arbitrary — it would sometimes answer with the

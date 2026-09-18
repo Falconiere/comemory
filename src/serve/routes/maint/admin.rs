@@ -1,7 +1,7 @@
 //! `POST /api/v1/mine` (`domains::learning::mine`, no confirm gate — a bounded scan that
 //! only mutates when `"apply":true`), `POST /api/v1/hooks/install`
 //! (`domains::code::install_hooks`, confirm-gated, `--repo` contained), and
-//! `POST /api/v1/rebuild` (`api::rebuild`) — a confirm-gated **job** that
+//! `POST /api/v1/rebuild` (`maintenance::rebuild`) — a confirm-gated **job** that
 //! also swaps the server's shared connection onto the freshly built DB.
 
 use std::path::{Path, PathBuf};
@@ -13,8 +13,8 @@ use axum::routing::post;
 use axum::{Json, Router};
 use serde_json::Value;
 
-use crate::api;
 use crate::domains::learning;
+use crate::domains::maintenance;
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::envelope::Envelope;
@@ -104,14 +104,14 @@ async fn hooks_install(State(state): State<AppState>, Json(body): Json<Value>) -
     respond("hooks.install", result, started)
 }
 
-/// `POST /api/v1/rebuild` — start a `rebuild` job (`api::rebuild`), then
+/// `POST /api/v1/rebuild` — start a `rebuild` job (`maintenance::rebuild`), then
 /// swap the server's shared connection onto the freshly built DB.
 ///
 /// Gate order (AC-19): read-only first ([`guard_job`] → `405 read_only`,
 /// never `503 busy` — a job-creating `POST` always answers immediately and
 /// waits for the write permit inside the job), then the confirm gate. The
 /// body is a raw [`Value`] read through [`split_confirm`] so the HTTP-only
-/// `confirm` flag never joins `api::rebuild::Request` (AC-12 parity).
+/// `confirm` flag never joins `maintenance::rebuild::Request` (AC-12 parity).
 ///
 /// The job body runs the two steps in sequence on its own thread: the
 /// rebuild first, and — only if that succeeded — [`AppState::swap_conn`].
@@ -128,7 +128,7 @@ pub(crate) async fn rebuild(State(state): State<AppState>, Json(body): Json<Valu
     if let Err(resp) = guard_job("rebuild", &state) {
         return *resp;
     }
-    if let Err(e) = split_confirm::<api::rebuild::Request>(body)
+    if let Err(e) = split_confirm::<maintenance::rebuild::Request>(body)
         .and_then(|(_req, confirmed)| require_confirm(confirmed))
     {
         return Envelope::err("rebuild", &e, 0);
@@ -142,7 +142,7 @@ pub(crate) async fn rebuild(State(state): State<AppState>, Json(body): Json<Valu
         move || {
             let cfg = job_state.cfg();
             let mut ctx = Ctx::lazy(job_state.paths(), &cfg);
-            api::rebuild::run(&mut ctx, api::rebuild::Request {})?;
+            maintenance::rebuild::run(&mut ctx, maintenance::rebuild::Request {})?;
             job_state.swap_conn(job_state.paths())?;
             Ok(Value::Null)
         },

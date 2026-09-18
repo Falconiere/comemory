@@ -2,15 +2,15 @@
 //! [`Report`] struct directly (each list as a `Page` envelope); TTY mode
 //! prints the orphan-edge count then each list's windowed entries followed
 //! by a shared pagination footer carrying the list's full total. `Report`
-//! also doubles as `api::prune::run`'s return type — the CLI's `--json`
+//! also doubles as `maintenance::prune::run`'s return type — the CLI's `--json`
 //! stdout and the `/api/v1/prune` response `data` field build from the
 //! same owned value.
 
 use std::io::Write as _;
 
+use crate::domains::maintenance::retention_report::{PruneRow, Report};
 use crate::output::{json, tty};
 use crate::prelude::*;
-use crate::prune::report::{PruneRow, Report};
 use crate::utilities::pagination::Page;
 
 /// Render `report` to stdout in either JSON or TTY mode.

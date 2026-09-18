@@ -10,7 +10,7 @@
 //! source memory is missing or soft-deleted), stale code files (paths
 //! referenced from `code_symbols` that no longer appear in
 //! `indexed_files`), and low-value memories (signal-based detection
-//! from `prune::low_value`).
+//! from `maintenance::retention::low_value`).
 //!
 //! On a freshly-initialised DB all lists are empty and the default
 //! (dry-run) mode must not mutate anything. `--apply` soft-deletes
