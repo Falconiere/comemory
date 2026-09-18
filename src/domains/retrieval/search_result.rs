@@ -179,3 +179,7 @@ pub fn source_label(s: Source) -> &'static str {
         Source::Graph => "graph",
     }
 }
+
+#[cfg(test)]
+#[path = "tests/search_result.rs"]
+mod tests;
