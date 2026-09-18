@@ -5,11 +5,11 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror tests for `src/output/graph.rs`. Lock the DOT and HTML rendering
+//! Mirror tests for `src/cli/output/graph.rs`. Lock the DOT and HTML rendering
 //! shapes and the JSON serialization contract without touching a database.
 
+use comemory::cli::output::graph::{to_dot, to_html};
 use comemory::domains::graph::code_graph::{CodeGraph, Edge, GraphPage, Node};
-use comemory::output::graph::{to_dot, to_html};
 
 /// A small two-file graph: one `imports` edge and one weighted `co_changed`
 /// edge, with one zero-rank dangling endpoint.
@@ -123,7 +123,9 @@ fn dot_escapes_newlines_in_labels() {
     assert!(dot.contains("src/a\\nb.rs"), "newline escaped to \\n");
 }
 
-/// Kill mutant `src/output/graph.rs:56`: `> 0.0` → `>= 0.0`.
+/// Kill mutant in `cli::output::graph::to_dot`: `max_rank > 0.0` → `>= 0.0`.
+/// Cited by symbol, not by line: a line number rots on the next edit, and
+/// `scripts/mutation-check.sh` does not run in CI to catch it.
 ///
 /// When every node has `rank == 0.0`, `max_rank` is `0.0`. The original
 /// guard (`> 0.0` is false) takes the else branch and assigns `scale = 0.0`,

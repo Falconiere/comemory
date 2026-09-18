@@ -11,9 +11,9 @@ use std::path::PathBuf;
 use clap::Args as ClapArgs;
 
 use crate::cli::load_config;
+use crate::cli::output::{json, tty};
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::domains::documents::index::{self, Output};
-use crate::output::{json, tty};
 use crate::prelude::*;
 use crate::store::connection;
 use crate::utilities::context::Ctx;

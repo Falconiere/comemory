@@ -9,8 +9,8 @@ use std::path::PathBuf;
 use clap::Args as ClapArgs;
 use owo_colors::OwoColorize;
 
+use crate::cli::output::json;
 use crate::domains::maintenance::upgrade::{self, Report, Request, Status};
-use crate::output::json;
 use crate::prelude::*;
 
 const EXAMPLES: &str = "\

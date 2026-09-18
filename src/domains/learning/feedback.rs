@@ -16,6 +16,7 @@ use crate::domains::learning::code_feedback::record_code_with_provenance;
 use crate::domains::learning::feedback_tracking::{Source, record_with_provenance};
 use crate::domains::learning::telemetry::StatsDb;
 use crate::prelude::*;
+use crate::store::retrieval_log;
 use crate::utilities::context::Ctx;
 use crate::utilities::id_list::{parse_id_csv, parse_symbol_id_csv};
 use crate::utilities::query_id::is_valid_query_id;
@@ -107,11 +108,7 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
         .provenance();
 
     let mut db = StatsDb::open(ctx.paths.stats_db())?;
-    let known: bool = db.conn().query_row(
-        "SELECT EXISTS(SELECT 1 FROM retrieval_log WHERE query_id = ?1)",
-        [&req.query_id],
-        |r| r.get(0),
-    )?;
+    let known = retrieval_log::contains_query_id(db.conn(), &req.query_id)?;
     if !known {
         tracing::warn!(query_id = %req.query_id,
             "query id not found in retrieval_log (evicted or never logged); recording anyway");

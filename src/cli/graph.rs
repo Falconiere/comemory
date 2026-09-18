@@ -13,12 +13,12 @@ use std::path::PathBuf;
 
 use clap::{Args as ClapArgs, ValueEnum};
 
+use crate::cli::output::graph as render;
+use crate::cli::output::tty;
 use crate::cli::pagination::PaginationArgs;
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::domains::graph::code_graph::{CodeGraph, GraphPage};
 use crate::domains::graph::query::{Rel, build_graph_page};
-use crate::output::graph as render;
-use crate::output::tty;
 use crate::prelude::*;
 use crate::store::connection;
 

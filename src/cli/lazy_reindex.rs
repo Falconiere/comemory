@@ -44,7 +44,7 @@ pub(crate) fn maybe_trigger(
         // Off-repo (no git repo at CWD) or bare repo: nothing to reindex.
         return;
     };
-    let current_head = match crate::git_utils::current_head(&ctx.root) {
+    let current_head = match crate::domains::code::git_utils::current_head(&ctx.root) {
         Ok(h) => h,
         Err(e) => {
             tracing::debug!(error = %e, "lazy reindex: HEAD unresolved; skipping");

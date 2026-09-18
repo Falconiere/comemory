@@ -5,14 +5,17 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror tests for `src/output/tty.rs`. The primary assertion checks that
+//! Mirror tests for `src/cli/output/tty.rs`. The primary assertion checks that
 //! `score(0.5)` produces a string containing the 3-decimal numeric form, so
 //! we are robust to ANSI escapes from `owo-colors` (which only kick in when
 //! the runtime detects a real TTY).
 
-use comemory::output::tty;
+use comemory::cli::output::tty;
 
-/// Kill mutant `src/output/tty.rs:15`: `header` body replaced with `Ok(())`.
+/// Kill mutant in `cli::output::tty::write_header`: body replaced with
+/// `Ok(())`. The baseline recorded this against `header`, before that function
+/// was split into the stdout wrapper and this testable writer. Cited by
+/// symbol, not by line, because a line number rots on the next edit.
 ///
 /// The original writes the header text to the output; the mutant writes
 /// nothing. `write_header` (the extracted helper that `header` delegates to)

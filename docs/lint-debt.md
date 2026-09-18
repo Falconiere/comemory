@@ -3,7 +3,9 @@
 Status: documented baseline, burned down line by line · Owner: whoever fixes
 a lint next
 
-DEVIATION D7 (`docs/toolu/specs/folder-structure-migration.md` section 1.2):
+DEVIATION D7 (the folder-structure migration design, section 1.2; its spec
+lives in the untracked `docs/toolu/` workspace, so it is named rather than
+linked):
 adopting `clippy::pedantic` wholesale at the toolu-conventions migration
 would have made `-D warnings` a red build (630 warnings measured on
 `cargo clippy --lib` before this table existed). Instead, `Cargo.toml`

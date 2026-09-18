@@ -100,7 +100,7 @@ assert_fails 'duplicate production row' 'duplicate inventory row' --inventory "$
 # therefore seeds one well-formed entry when the real allowlist is empty and
 # breaks that, so the case keeps asserting whatever the policy currently holds.
 SEED_EDGE='.legacy_edges = (if (.legacy_edges | length) > 0 then .legacy_edges else
-  [{source: "src/domains/graph/view.rs", target: "crate::output::graph",
+  [{source: "src/domains/graph/view.rs", target: "crate::cli::output::graph",
     class: "delivery", issue: "#170"}] end)'
 jq "$SEED_EDGE"' | .legacy_edges[0].issue = "#999"' "$POLICY" >"$TASK_TMP/issue.json"
 assert_fails 'unknown removal issue' 'invalid policy edge' --policy "$TASK_TMP/issue.json"
@@ -120,6 +120,20 @@ assert_fails 'stale allowlisted target' 'absent policy edge' --policy "$TASK_TMP
 sed '/^| src\/domains\/memories\/save.rs |/s/ | domains::memories | / | domains::code | /' "$INVENTORY" >"$TASK_TMP/owner.md"
 assert_fails 'wrong capability owner' 'capability ownership mismatch' --inventory "$TASK_TMP/owner.md"
 assert_gate_rejects "$TASK_TMP/owner.md" 'capability ownership mismatch'
+# The other two directions of the same total map. A capability-folder rule
+# alone leaves every row outside `src/domains/` unconstrained, which is how a
+# root module (`src/output.rs`) carried `delivery::cli` for twelve slices, and
+# how a shared file (`src/cli/pagination.rs`) carried `shared::utilities` while
+# holding nothing but clap args.
+sed '/^| src\/errors.rs |/s/ | shared::root | / | delivery::cli | /' "$INVENTORY" >"$TASK_TMP/root-owner.md"
+assert_fails 'root module claiming a delivery owner' 'capability ownership mismatch' --inventory "$TASK_TMP/root-owner.md"
+assert_gate_rejects "$TASK_TMP/root-owner.md" 'capability ownership mismatch'
+sed '/^| src\/utilities\/when.rs |/s/ | shared::utilities | / | delivery::cli | /' "$INVENTORY" >"$TASK_TMP/shared-owner.md"
+assert_fails 'shared file claiming a delivery owner' 'capability ownership mismatch' --inventory "$TASK_TMP/shared-owner.md"
+sed '/^| src\/cli\/pagination.rs |/s/ | delivery::cli | / | shared::utilities | /' "$INVENTORY" >"$TASK_TMP/cli-owner.md"
+assert_fails 'delivery file claiming a shared owner' 'capability ownership mismatch' --inventory "$TASK_TMP/cli-owner.md"
+sed '/^| src\/store\/sync_manifest.rs |/s/ | infrastructure::store | / | domains::sync | /' "$INVENTORY" >"$TASK_TMP/store-owner.md"
+assert_fails 'store file claiming a capability owner' 'capability ownership mismatch' --inventory "$TASK_TMP/store-owner.md"
 sed '/^| src\/domains\/memories\/save.rs |/s@src/domains/memories/save.rs@src/domains/memories/delete.rs@2' "$INVENTORY" >"$TASK_TMP/target.md"
 assert_fails 'duplicate migration target' 'duplicate inventory target' --inventory "$TASK_TMP/target.md"
 sed '/^| src\/domains\/memories\/save.rs |/s@src/domains/memories/save.rs@none@2' "$INVENTORY" >"$TASK_TMP/no-target.md"
@@ -163,6 +177,32 @@ assert_fails 'missing compile-time asset' 'inventory asset/bridge mismatch' --in
 assert_gate_rejects "$TASK_TMP/asset.md" 'inventory asset/bridge mismatch'
 sed '/^| src\/utilities\/context.rs |/s@src/utilities/tests/context.rs@none@' "$INVENTORY" >"$TASK_TMP/bridge.md"
 assert_gate_rejects "$TASK_TMP/bridge.md" 'inventory asset/bridge mismatch'
+
+# The shared layer's declared escapes. Unlike `legacy_edges` and
+# `store_callbacks`, this list is NOT expected to empty out — `config` must be
+# able to reject a bad `[sync] skip_repos` glob at load, and the shared argument
+# parsers produce memories values. Requiring it non-empty here is what stops a
+# later slice from emptying it and silently disarming every case below, which is
+# the failure this repository hit three separate times.
+jq -e '(.shared_domain_dependencies | length) > 0' "$POLICY" >/dev/null ||
+  fail 'shared_domain_dependencies is empty: the fixtures below would assert nothing'
+jq '.shared_domain_dependencies[0].target = "crate::domains::memories::Absent"' \
+  "$POLICY" >"$TASK_TMP/shared-stale.json"
+assert_fails 'stale shared domain dependency' 'absent policy edge' --policy "$TASK_TMP/shared-stale.json"
+jq '.shared_domain_dependencies[0].reason = "too short"' "$POLICY" >"$TASK_TMP/shared-reason.json"
+assert_fails 'unjustified shared domain dependency' 'invalid shared domain dependency' \
+  --policy "$TASK_TMP/shared-reason.json"
+jq '.shared_domain_dependencies += [.shared_domain_dependencies[0]]' \
+  "$POLICY" >"$TASK_TMP/shared-dup.json"
+assert_fails 'duplicate shared domain dependency' 'invalid shared domain dependency' \
+  --policy "$TASK_TMP/shared-dup.json"
+jq '.shared_domain_dependencies[0].source = "src/domains/memories.rs"' \
+  "$POLICY" >"$TASK_TMP/shared-source.json"
+assert_fails 'shared domain dependency from outside the shared layer' 'invalid shared domain dependency' \
+  --policy "$TASK_TMP/shared-source.json"
+jq 'del(.shared_domain_dependencies)' "$POLICY" >"$TASK_TMP/no-shared.json"
+assert_fails 'missing shared domain dependencies' 'invalid policy or inventory metadata' \
+  --policy "$TASK_TMP/no-shared.json"
 
 require_guidance() {
   local file=$1 expected=$2 label=$3

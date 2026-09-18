@@ -5,15 +5,17 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Behavior tests for [`comemory::output::edges`] — the `--json` envelope
-//! and the TTY triplet rendering behind `comemory edges`.
+//! Behavior tests for [`comemory::cli::output::edges`] — the TTY triplet rendering
+//! behind `comemory edges`.
 //!
-//! Both renderers are driven directly from [`EdgeFtsHit`] values in the exact
-//! shapes `store::edge_fts::search_edges` produces (a memory→memory relation
-//! rendered as `kind slug`, and a prefix-stripped file endpoint), so the
-//! contract is pinned without a database.
+//! The writer is driven directly from [`EdgeFtsHit`] values in the exact shapes
+//! `store::edge_fts::search_edges` produces (a memory→memory relation rendered
+//! as `kind slug`, and a prefix-stripped file endpoint), so the rendering is
+//! pinned without a database. The `--json` envelope these same hits produce is
+//! the graph capability's contract and is tested beside it, in
+//! `src/domains/graph/tests/edges_result.rs`.
 
-use comemory::output::edges;
+use comemory::cli::output::edges;
 use comemory::store::edge_fts::EdgeFtsHit;
 
 /// A memory→memory `supersedes` hit, rendered the way `refresh` renders a
@@ -46,46 +48,6 @@ fn co_changed_hit() -> EdgeFtsHit {
         weight: 7,
         score: 0.5,
     }
-}
-
-#[test]
-fn json_envelope_carries_every_documented_row_field() {
-    let hits = vec![supersedes_hit()];
-    let page = edges::envelope(&hits, 12, 0, false);
-    let v = serde_json::to_value(&page).expect("serialize envelope");
-
-    let row = &v["items"][0];
-    assert_eq!(row["src_kind"], "memory");
-    assert_eq!(row["src_id"], "d3715797");
-    assert_eq!(row["src_text"], "decision queue-design-v2");
-    assert_eq!(row["rel"], "supersedes");
-    assert_eq!(row["dst_kind"], "memory");
-    assert_eq!(row["dst_id"], "13414461");
-    assert_eq!(row["dst_text"], "decision queue-design-v1");
-    assert_eq!(row["weight"], 1);
-    assert_eq!(row["score"], 1.25);
-    // Exactly the nine documented fields — a silent addition would break
-    // consumers pinned to this shape.
-    assert_eq!(
-        row.as_object().expect("row is an object").len(),
-        9,
-        "unexpected row shape: {row}"
-    );
-}
-
-#[test]
-fn json_envelope_carries_the_shared_page_cursor() {
-    let hits = vec![supersedes_hit(), co_changed_hit()];
-    let page = edges::envelope(&hits, 2, 4, true);
-    let v = serde_json::to_value(&page).expect("serialize envelope");
-
-    assert_eq!(v["limit"], 2);
-    assert_eq!(v["offset"], 4);
-    assert_eq!(v["has_more"], true);
-    // `total` is deliberately null: the page is SQL-sliced behind a k+1
-    // probe, so the full match count is never taken.
-    assert!(v["total"].is_null(), "total must stay uncounted: {v}");
-    assert_eq!(v["items"].as_array().expect("items array").len(), 2);
 }
 
 #[test]

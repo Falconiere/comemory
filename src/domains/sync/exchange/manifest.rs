@@ -4,7 +4,7 @@ use sha2::{Digest, Sha256};
 
 use crate::domains::sync::exchange::ManifestResponse;
 use crate::prelude::*;
-use crate::store::sync_log;
+use crate::store::{sync_log, sync_manifest};
 use crate::utilities::context::Ctx;
 
 const BUCKET_COUNT: usize = 256;
@@ -14,12 +14,7 @@ pub fn run(ctx: &mut Ctx<'_>) -> Result<ManifestResponse> {
     let conn = ctx.conn()?;
     let head_seq = sync_log::head_seq(conn)?;
     let mut buckets: Vec<Vec<String>> = vec![Vec::new(); BUCKET_COUNT];
-    let mut stmt = conn.prepare(
-        "SELECT content_hash FROM memories WHERE deleted_at IS NULL ORDER BY content_hash",
-    )?;
-    let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
-    for row in rows {
-        let hash: String = row?;
+    for hash in sync_manifest::live_content_hashes(conn)? {
         if hash.len() < 2 {
             continue;
         }

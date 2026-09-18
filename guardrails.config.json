@@ -4,28 +4,11 @@
   "srcRoot": "src",
   "src": {
     "topLevel": [
-      "api",
-      "ast",
-      "capture",
       "cli",
-      "cloud",
       "config",
-      "consolidate",
-      "document",
       "domains",
-      "eval",
-      "graph",
-      "memory",
-      "output",
-      "prune",
-      "retrieval",
       "serve",
-      "source",
-      "stats",
       "store",
-      "sync",
-      "tests",
-      "upgrade",
       "utilities"
     ],
     "nested": {
@@ -67,39 +50,11 @@
         "migrate",
         "tests"
       ],
-      "api": [
-        "doctor",
-        "index_code",
-        "memory_store",
-        "rebuild",
-        "repos",
-        "sync",
-        "tests",
-        "proptest-regressions",
-        "install",
-        "setup"
-      ],
       "cli": [
-        "graph",
+        "output",
         "tests",
         "proptest-regressions",
         "setup"
-      ],
-      "retrieval": [
-        "unified",
-        "tests",
-        "proptest-regressions"
-      ],
-      "sync": [
-        "auth_file",
-        "redact",
-        "skip_repos",
-        "tests",
-        "proptest-regressions"
-      ],
-      "capture": [
-        "tests",
-        "proptest-regressions"
       ],
       "serve": [
         "routes",
@@ -128,7 +83,7 @@
       "config",
       "domains/maintenance/consolidation",
       "domains/learning",
-      "output",
+      "cli/output",
       "domains/maintenance/retention",
       "domains/retrieval",
       "domains/retrieval/unified",

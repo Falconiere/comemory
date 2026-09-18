@@ -121,6 +121,19 @@ pub fn queries_excluding_source(
     Ok(rows)
 }
 
+/// Whether `query_id` names a row in `retrieval_log`.
+///
+/// `comemory feedback` probes this before recording a verdict: a miss means
+/// the run was evicted by retention or never logged, which is worth a warning
+/// but never a refusal, so the caller records the verdict either way.
+pub fn contains_query_id(conn: &Connection, query_id: &str) -> Result<bool> {
+    Ok(conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM retrieval_log WHERE query_id = ?1)",
+        [query_id],
+        |r| r.get(0),
+    )?)
+}
+
 /// Every `retrieval_log` row whose `source` is not `exclude_source` and
 /// whose `query` matches `like_prefix` (an already-escaped `LIKE` pattern,
 /// paired with `ESCAPE '\'`), newest first.

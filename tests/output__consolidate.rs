@@ -5,7 +5,7 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror for `comemory::output::consolidate` — the TTY cluster blocks, the
+//! Mirror for `comemory::cli::output::consolidate` — the TTY cluster blocks, the
 //! member cap, and the JSON passthrough, exercised through the real binary
 //! so the assertions read exactly what an operator sees.
 

@@ -11,8 +11,8 @@
 use std::fmt::Write as _;
 use std::io::Write as _;
 
+use crate::cli::output::json;
 use crate::domains::graph::code_graph::{CodeGraph, GraphPage};
-use crate::output::json;
 use crate::prelude::*;
 
 /// Embedded HTML viewer template; `__GRAPH_DATA__` is replaced with the

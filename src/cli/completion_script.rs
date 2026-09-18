@@ -31,7 +31,7 @@ pub struct Request {
 }
 
 /// Generate the completion script for `req.shell` as an owned `String`.
-/// `ctx` is accepted only for the uniform `api::<cmd>::run` signature and
+/// `ctx` is accepted only for the uniform command-core `run` signature and
 /// is never touched.
 pub fn run(_ctx: &mut Ctx<'_>, req: Request) -> Result<String> {
     let shell = Shell::from_str(&req.shell)

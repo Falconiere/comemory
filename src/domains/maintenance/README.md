@@ -15,7 +15,7 @@ operation gets its own file and its own row below, never a shared
 `ATTACH`/copy/`DETACH` preservation unit, the pre-rebuild `VACUUM INTO`
 snapshot, the schema journal and the migration chain all belong to
 [`store/`](../../store/README.md); this capability composes them. TTY and
-`--json` emission belongs to `output/`; HTTP status mapping, the response
+`--json` emission belongs to `cli/output/`; HTTP status mapping, the response
 envelope and the read-only/confirm gates belong to `serve/routes/maint/`. Nor
 does another capability's policy: the dashboards call `domains::code::repos`,
 `domains::memories::list` and `domains::maintenance::stats` rather than

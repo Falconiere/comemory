@@ -8,8 +8,8 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
+use crate::cli::output::json;
 use crate::config::Config;
-use crate::output::json;
 use crate::prelude::*;
 use crate::utilities::context::Ctx;
 

@@ -21,6 +21,14 @@ and formats bounds through `store::memory_row`, and `ref_args` builds
 `domains::` in #167/#169/#171; the direction (shared → capability) stays legal
 for a shared utility under the final tree.
 
+Two files here reach into a capability and are declared for it in
+`scripts/architecture-policy.json`'s `shared_domain_dependencies` (#178):
+`id_list` validates a memory id through `domains::memories::id`, and
+`ref_args` resolves blob OIDs through `domains::code::git_utils` and produces
+`domains::memories::{Ref, References}` — the parsed value *is* a memories
+model. Anything not on that list is a gate failure (`shared layer
+dependency`), so a new one cannot appear unnoticed.
+
 ## Contents
 
 One line per file, named after its primary item:
@@ -44,7 +52,7 @@ One line per file, named after its primary item:
 | `simhash.rs` | `simhash64` | 64-bit SimHash, Hamming distance, and the `NEAR_DUP_HAMMING` near-duplicate radius |
 | `telemetry.rs` | `PROV_MANUAL` | The persisted vocabularies: `retrieval_log.source`, `feedback_events.target_kind`, the four `provenance` values, and the two auto-reinforcement sentinel query ids |
 | `vector_stdin.rs` | `read_optional` | Acquiring a caller-supplied vector from the flag pair and process stdin, under the 8 MiB payload cap — the only file here that reads stdin |
-| `when.rs` | `scope_from_flags` | `--since` / `--until` / `--as-of` value parsing, including the bare-date day-edge expansion |
+| `when.rs` | `parse_when` | `--since` / `--until` / `--as-of` value parsing, including the bare-date day-edge expansion. Building the window from three parsed instants is `domains::retrieval::scope::scope_from_flags` — `TimeScope` is the retrieval capability's, and a shared module must not reach into one (#178) |
 
 `src/lib.rs` re-exports `embed`, `fetch`, `http_error` and `simhash` at the
 crate root so `comemory::<name>` keeps resolving for external consumers; in-crate

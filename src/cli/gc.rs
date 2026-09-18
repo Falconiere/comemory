@@ -9,9 +9,9 @@ use std::io::Write as _;
 use std::path::PathBuf;
 
 use crate::cli::load_config;
+use crate::cli::output::json;
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::domains::maintenance;
-use crate::output::json;
 use crate::prelude::*;
 use crate::utilities::context::Ctx;
 

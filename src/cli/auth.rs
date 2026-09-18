@@ -13,10 +13,10 @@ use crate::cli::auth_render::{
 };
 use crate::cli::load_config;
 use crate::cli::off_runtime::off_runtime;
+use crate::cli::output::json;
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::domains::sync::daemon;
 use crate::domains::sync::login;
-use crate::output::json;
 use crate::prelude::*;
 use clap::{Args as ClapArgs, Subcommand};
 use owo_colors::OwoColorize;

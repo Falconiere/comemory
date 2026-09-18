@@ -5,14 +5,14 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror tests for `src/output/prune.rs`. The full TTY/JSON shape of
+//! Mirror tests for `src/cli/output/prune.rs`. The full TTY/JSON shape of
 //! `comemory prune --json` is covered end-to-end in `tests/cli__prune.rs`;
 //! this module exists to satisfy the tests-mirror gate and to lock in
 //! that `output::prune::emit` accepts an empty report and a populated
 //! `Page`-wrapped report in both render modes without panicking.
 
+use comemory::cli::output::prune;
 use comemory::domains::maintenance::retention_report::{PruneRow, Report};
-use comemory::output::prune;
 use comemory::utilities::pagination::Page;
 
 /// Build one [`PruneRow`] fixture with a fixed activation/age, so tests only

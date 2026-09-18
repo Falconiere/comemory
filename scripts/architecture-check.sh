@@ -64,7 +64,7 @@ jq -e '
   . as $p | type == "object" and .version == 1 and
   all([.staged_top_level_dirs,.staged_root_modules,.domains,.legacy_modules,
     .owner_dependencies,.legacy_edges,.store_callbacks,.passive_store_models,
-    .setup_runtime_dependencies][]; type == "array") and
+    .setup_runtime_dependencies,.shared_domain_dependencies][]; type == "array") and
   all([.staged_top_level_dirs,.staged_root_modules,.domains][]; all(.[]; name) and (unique_by_key(.))) and
   all(.legacy_modules[]; (.module|type == "string" and test("^crate::[a-z_]+$")) and
     (.owner|owner($p)) and (.issue|issue)) and
@@ -79,7 +79,18 @@ jq -e '
   all(.passive_store_models[]; (.source|path) and (.source|startswith("src/store/")) and (.target|model_target)) and
   (.passive_store_models|unique_by_key([.source,.target])) and
   all(.setup_runtime_dependencies[]; (.source|path) and (.target|target) and (.owner|owner($p))) and
-  (.setup_runtime_dependencies|unique_by_key([.source,.target]))
+  (.setup_runtime_dependencies|unique_by_key([.source,.target])) and
+  # Every declared shared-to-domain edge carries a written reason. The REAL
+  # policy must also keep the list non-empty — an empty exception array silently
+  # disarms the fixtures that resolve through it, which this series paid for
+  # three times — but that is asserted by test-architecture-policy.sh against
+  # the real file, because a fixture tree legitimately declares none.
+  all(.shared_domain_dependencies[]; (.source|path) and
+    (.source|test("^src/(config|utilities)/")) and (.target|target) and
+    (.target|startswith("crate::domains::")) and (.owner|owner($p)) and
+    (.owner|startswith("domains::")) and
+    (.reason|type == "string" and (length > 40))) and
+  (.shared_domain_dependencies|unique_by_key([.source,.target]))
 ' "$POLICY" >/dev/null 2>&1 || bad 'invalid policy'
 jq -Rn '[inputs | select(startswith("| src/")) | split("|")[1:-1] | map(gsub("^ +| +$"; "")) |
   if length != 7 then error("invalid inventory row") else
@@ -342,6 +353,24 @@ jq -nr --slurpfile p "$POLICY" --slurpfile inv "$TASK_TMP/inventory" \
       select(($p.staged_root_modules|index($f|ltrimstr("src/")|rtrimstr(".rs"))) == null and
         . != "src/domains.rs" and . != "src/utilities.rs") | diagnostic(.;"";"unapproved root module")
   ] + [
+    # A crate-root re-export written with a uniform path (`pub use domains::x;`)
+    # is the same export as `pub use crate::domains::x;` to rustc, but not to
+    # the resolver below: given the unqualified form it rewrites a binding to a
+    # relative path, which then fails the `crate::` filter and the edge is
+    # DROPPED. One `crate::git_utils` call site rode that hole from #167 to
+    # #178. Requiring the qualified form keeps every alias resolvable.
+    $ast[0][] | select(.file == "src/lib.rs" and .ruleId == "imports") |
+      select(.text|test("^pub(\\([a-z]+\\))? use ")) |
+      select((.text|test("^pub(\\([a-z]+\\))? use crate::"))|not) |
+      . as $node |
+      (.text|capture("^pub(\\([a-z]+\\))? use (?<p>[A-Za-z_][A-Za-z_0-9]*)").p) as $root |
+      # Only an IN-CRATE root is a problem: `pub use serde::Serialize;` re-exports
+      # a dependency and the resolver has nothing to resolve. `pub(crate) use`
+      # counts, because the resolver drops that binding identically.
+      select(($p.staged_root_modules|index($root)) != null or
+        $root == "domains" or $root == "utilities") |
+      diagnostic("src/lib.rs";($node.text|capture("use (?<p>[^; ]+)").p);"unqualified root re-export")
+  ] + [
     ([$files[0][],$dirs[0][]|select(startswith("src/domains/"))|split("/")[2]|rtrimstr(".rs")] +
      [$ast[0][]|select(.file == "src/domains.rs" and .ruleId == "modules")|
        .metaVariables.single.NAME.text|ltrimstr("r#")] | unique)[] as $d |
@@ -364,7 +393,8 @@ jq -nr --slurpfile p "$POLICY" --slurpfile inv "$TASK_TMP/inventory" \
       else diagnostic($d;"";"unapproved domain directory") end,
     if ($files[0]|index($d+".rs")) == null then diagnostic($d;"";"missing sibling module") else empty end
   ] + [
-    [$p.legacy_edges[],$p.store_callbacks[],$p.passive_store_models[],$p.setup_runtime_dependencies[]][] as $entry |
+    [$p.legacy_edges[],$p.store_callbacks[],$p.passive_store_models[],
+     $p.setup_runtime_dependencies[],$p.shared_domain_dependencies[]][] as $entry |
     if any($edges[]; .source == $entry.source and (.target|prefix($entry.target))) then empty
       else diagnostic($entry.source;$entry.target;"stale policy edge") end
   ] + [
@@ -379,9 +409,8 @@ jq -nr --slurpfile p "$POLICY" --slurpfile inv "$TASK_TMP/inventory" \
         ($edge.target == .target or ($edge.target|IN($model.target+"::new",$model.target+"::default",$model.target+"::from")) or
           (($edge.target|startswith($model.target+"::")) and ($variants|index($edge.target)) != null))) then empty
       else diagnostic(.source;.target;"store service dependency") end
-    elif (($source_owner // "")|startswith("domains::")) or (.source|startswith("src/api/")) or
-      .source == "src/domains.rs" then
-      if (.target|test("^crate::(cli|serve|output)(::|$)")) then
+    elif (($source_owner // "")|startswith("domains::")) or .source == "src/domains.rs" then
+      if (.target|test("^crate::(cli|serve)(::|$)")) then
         if exemption($p.legacy_edges;$edge) then empty else diagnostic(.source;.target;"delivery dependency") end
       elif (.source|startswith("src/domains/")) and (.target|test("^crate::api(::|$)")) then
         diagnostic(.source;.target;"legacy core dependency")
@@ -390,6 +419,16 @@ jq -nr --slurpfile p "$POLICY" --slurpfile inv "$TASK_TMP/inventory" \
         (any($p.owner_dependencies[]; .source == $source_owner and .target == $target_owner)|not) then
         diagnostic(.source;.target;"unapproved owner dependency")
       else empty end
+    elif ($source_owner == "shared::config" or $source_owner == "shared::utilities" or
+      ($source_owner == "shared::root" and .source != "src/lib.rs")) and
+      (.target|startswith("crate::domains::")) then
+      # The shared layer was the one part of the tree no rule watched, which is
+      # how seven references into a capability, across five files, reached #178
+      # unnoticed. Only `src/lib.rs` is excluded, and only because re-exporting
+      # domain paths is the crate-root facade s entire job; the other
+      # `shared::root` files get no such pass.
+      if exemption($p.shared_domain_dependencies;$edge) then empty
+      else diagnostic(.source;.target;"shared layer dependency") end
     else empty end
   ] | unique | sort_by(.source,.target,.why) | group_by(.source)[] |
     .[0].source+":", (.[]|"  "+.why+(if .target == "" then "" else " -> "+.target end))

@@ -12,12 +12,12 @@ use clap::{Args as ClapArgs, Subcommand, ValueEnum};
 
 use crate::cli::load_config;
 use crate::cli::off_runtime::off_runtime;
+use crate::cli::output::json;
 use crate::cli::sync_render::{emit_daemon_status, emit_run, emit_status, emit_verify};
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::domains::sync::daemon;
 use crate::domains::sync::manual::{self, RUN_LIMIT};
 use crate::domains::sync::verify;
-use crate::output::json;
 use crate::prelude::*;
 
 const EXAMPLES: &str = "\

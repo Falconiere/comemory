@@ -169,6 +169,8 @@ pub mod stats_counts;
 pub mod sync_binding;
 /// Append-only cloud-sync change journal.
 pub mod sync_log;
+/// The live `content_hash` set behind `GET /sync/manifest`.
+pub mod sync_manifest;
 /// Per-workspace pull/push cursors.
 pub mod sync_state;
 /// Custom FTS5 identifier tokenizer (camelCase/snake_case split + FFI).

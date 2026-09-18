@@ -16,11 +16,11 @@
 use clap::ValueEnum;
 use serde::Serialize;
 
+use crate::cli::output::{json, tty};
 use crate::config::Config;
 use crate::domains::retrieval::doc_route::{self, DocHit};
 use crate::domains::retrieval::pipeline;
 use crate::domains::retrieval::scope::{self, Domain, Domains, Filters};
-use crate::output::{json, tty};
 use crate::prelude::*;
 use crate::store::Connection;
 use crate::utilities::pagination::Page;

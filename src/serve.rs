@@ -6,15 +6,13 @@
 //! per-session token check and a loopback Host-header guard, and every
 //! mutating route that takes a filesystem path through a
 //! canonicalize-and-contain check (see [`security`]). Command logic lives in
-//! `api::` — the same cores the CLI calls — so the two surfaces cannot
-//! drift.
+//! `domains::<capability>::` — the same cores the CLI calls — so the two
+//! surfaces cannot drift.
 
 use std::collections::HashSet;
 use std::net::Ipv4Addr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
-
-use serde::Serialize;
 
 use crate::config::Config;
 use crate::config::paths::Paths;
@@ -66,7 +64,7 @@ pub struct ServeOptions {
 pub struct AppState {
     conn: Arc<Mutex<Connection>>,
     /// The data-dir layout this session was started with. `crate::utilities::context::Ctx`
-    /// (`src/api.rs`) needs it for the commands whose middle touches
+    /// (`src/utilities/context.rs`) needs it for the commands whose middle touches
     /// the filesystem directly (`rebuild`'s atomic swap, `ast`, …).
     paths: Arc<Paths>,
     roots: Arc<RootOverrides>,
@@ -265,19 +263,38 @@ impl AppState {
     }
 }
 
-/// What the startup banner reports (also the `--json` payload).
-#[derive(Serialize)]
-struct ServeInfo<'a> {
-    url: &'a str,
-    port: u16,
-    token: &'a str,
-    read_only: bool,
+/// What the bound server knows before it accepts its first request: the base
+/// URL, the port actually bound (an ephemeral one when `--port 0` was asked
+/// for), the session token, and whether this session refuses mutating routes.
+///
+/// Handed to [`serve`]'s `ready` callback rather than printed here, because
+/// stdout belongs to the CLI: `cli::serve` owns the banner and the `--json`
+/// switch that selects its shape, and the server stays free of presentation.
+pub struct Ready<'a> {
+    /// Base URL of the versioned surface, `http://127.0.0.1:<port>/api/v1`.
+    pub url: &'a str,
+    /// The loopback port actually bound.
+    pub port: u16,
+    /// Per-session bearer token every request must carry.
+    pub token: &'a str,
+    /// Whether every mutating `/api/v1` route answers `405 read_only`.
+    pub read_only: bool,
 }
 
 /// Open `comemory.db`, build the handler state + router, bind a loopback
-/// listener, print the base URL and the session token, and serve until the
-/// process is interrupted.
-pub async fn serve(paths: &Paths, opts: ServeOptions, json: bool) -> Result<()> {
+/// listener, hand the bound details to `ready`, and serve until the process is
+/// interrupted.
+///
+/// `ready` runs once, after the listener is bound and before the first request
+/// can be accepted, so a caller that prints the URL and token is guaranteed to
+/// have done so before anything could use them. Its error propagates and
+/// aborts startup: a banner nobody could read means a caller that cannot reach
+/// the server either.
+pub async fn serve(
+    paths: &Paths,
+    opts: ServeOptions,
+    ready: &dyn Fn(Ready<'_>) -> Result<()>,
+) -> Result<()> {
     // `port` is read off `opts` before it moves into `AppState::new` (which
     // also hoists `ensure_dirs()` — so every route, including read-only
     // ones like `GET /doctor`, can rely on the data-dir tree already
@@ -292,27 +309,16 @@ pub async fn serve(paths: &Paths, opts: ServeOptions, json: bool) -> Result<()> 
         .map_err(Error::Io)?;
     let port = listener.local_addr().map_err(Error::Io)?.port();
     let url = format!("http://127.0.0.1:{port}/api/v1");
-    emit_banner(&url, port, &token, read_only, json)?;
+    ready(Ready {
+        url: &url,
+        port,
+        token: &token,
+        read_only,
+    })?;
 
     let app = router::build_router(state);
     axum::serve(listener, app).await.map_err(Error::Io)?;
     Ok(())
-}
-
-/// Print the base URL and token to stdout. Uses the `output` module (not
-/// `tracing`, which is silent without `RUST_LOG`) so both are always visible
-/// and machine-readable under `--json`.
-fn emit_banner(url: &str, port: u16, token: &str, read_only: bool, json: bool) -> Result<()> {
-    if json {
-        return crate::output::json::write(&ServeInfo {
-            url,
-            port,
-            token,
-            read_only,
-        });
-    }
-    let mode = if read_only { " (read-only)" } else { "" };
-    crate::output::tty::header(&format!("comemory serve{mode} → {url}  token={token}"))
 }
 
 /// Best-effort: when the server process's own cwd sits inside a git work

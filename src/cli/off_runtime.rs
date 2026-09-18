@@ -13,7 +13,7 @@
 //! current, which is exactly what `reqwest` objects to. A plain scoped thread
 //! has no handle at all, so the blocking client builds and drops cleanly.
 //!
-//! Only the CLI needs this. `serve` already runs `api::` bodies inside
+//! Only the CLI needs this. `serve` already runs its command cores inside
 //! `spawn_blocking`. The sync daemon runs outside tokio entirely.
 
 use crate::prelude::*;

@@ -3,14 +3,18 @@
 **What belongs here:** clap subcommand entry points — one file per
 `comemory <subcommand>`, each owning its own `Args` shape, thin orchestration
 (`run`), and output rendering hookup — plus the top-level dispatcher
-(`Cli`/`Cmd` in `src/cli.rs`) and the small cross-cutting flag layers shared by
-several subcommands (`pagination`, `search_only`). The transport-neutral
+(`Cli`/`Cmd` in `src/cli.rs`), the small cross-cutting flag layers shared by
+several subcommands (`pagination`, `search_only`), and the TTY/JSON writers in
+`output/`, which #178 moved in from the top level. The transport-neutral
 helpers that used to live here (`when`, `ref_args`, `embedding_input`) moved to
 `utilities::` with #166.
 
 **What does NOT belong here:** business logic. A `cli/*.rs` file parses flags,
-loads `Config`, calls into `domains::`, `store::`, or
-`prune::` to do the real work, and hands the result to `output::` to render.
+loads `Config`, calls into `domains::` or `store::` to do the real work, and
+hands the result to `cli::output::` to render. (It is `domains::` throughout:
+`cli/prune.rs` calls `domains::maintenance::prune`, never a top-level
+`prune::` — that crate-root name is only the compatibility alias `lib.rs`
+keeps over `domains::maintenance::retention` for library consumers.)
 Keeping the logic out of `cli/` is what lets `domains::learning::evaluation::runner` and tests exercise
 the same pipelines without going through argument parsing. CLI integration
 tests stay at crate-root (`tests/cli__*.rs` per command, `tests/cli_scenario_*.rs`
@@ -56,8 +60,9 @@ One line per file, named after its primary item:
 | `save.rs` | `Args` | `comemory save` — atomic markdown write + SQLite-mirror upsert; waits on the after-save push |
 | `search.rs` | `Args` | `comemory search` — natural-language search over the memory store |
 | `search_code.rs` | `Args` | `comemory search-code` — ranked search over indexed `code_symbols` |
+| `output/` | — | TTY and JSON writers shared by the subcommands; see `output/README.md` |
 | `search_only.rs` | `OnlyDomain` | The `--only` clap `ValueEnum` and the interim `--only document` path; the resolution policy itself is `domains::retrieval::scope::resolve_domains` |
-| `serve.rs` | `Args` | `comemory serve` — launch the local web viewer + in-browser code editor |
+| `serve.rs` | `Args` | `comemory serve` — launch the loopback `/api/v1` HTTP server (API-only; the embedded web viewer was removed in 0.18.0). Also owns the startup banner: `serve::serve` hands back a `serve::Ready` and this module writes the `--json` payload or the TTY header, so the server never touches stdout |
 | `repos.rs` | `Args` | `comemory repos` — indexed code repositories and their index freshness |
 | `setup.rs` | `Args` | `comemory setup` — detect, plan, and apply first-run onboarding; core in `domains::integrations::setup`. Owns the `Intent`/`Prompting` → `Mode` decision and the exit-code mapping; `setup/` holds the wizard and the summary renderer |
 | `show.rs` | `Args` | `comemory show` — one memory in full: body, frontmatter, activation, refs |

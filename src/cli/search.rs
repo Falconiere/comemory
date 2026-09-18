@@ -11,20 +11,19 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
+use crate::cli::output;
 use crate::cli::search_only::{self, OnlyDomain};
 use crate::cli::{load_config, track_searches};
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::domains::memories::Kind;
 use crate::domains::retrieval;
-use crate::domains::retrieval::scope::{Domain, Filters};
-use crate::output;
+use crate::domains::retrieval::scope::{self, Domain, Filters};
 use crate::prelude::*;
 use crate::store::Connection;
 use crate::store::connection;
 use crate::utilities::context::Ctx;
 use crate::utilities::pagination::page_window;
 use crate::utilities::vector_stdin;
-use crate::utilities::when;
 
 const EXAMPLES: &str = "\
 Examples:
@@ -133,7 +132,8 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
 
     let cfg = load_config(&paths)?;
     let window = page_window(&cfg, a.k, a.offset);
-    let scope = when::scope_from_flags(a.since.as_deref(), a.until.as_deref(), a.as_of.as_deref())?;
+    let scope =
+        scope::scope_from_flags(a.since.as_deref(), a.until.as_deref(), a.as_of.as_deref())?;
     let kind = a.kind.map(Kind::as_str);
     let domains = search_only::resolve_domains(&a.only, kind)?;
     // s9 fuses the document leg into `pipeline::search`; until then a

@@ -8,12 +8,12 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::path::Path;
 
+use crate::cli::output::{json, tty};
 use crate::domains::memories::nav::{abs_path, title_of};
 use crate::domains::retrieval::rerank::Reranked;
 use crate::domains::retrieval::router::TIER_EXPANDED;
 use crate::domains::retrieval::scope::ScopeEcho;
 use crate::domains::retrieval::search_result::{SearchResult, envelope, source_label};
-use crate::output::{json, tty};
 use crate::prelude::*;
 use crate::store::memory_meta::MemoryMeta;
 

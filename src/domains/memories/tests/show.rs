@@ -19,7 +19,7 @@ use comemory::errors::Error;
 use comemory::store::connection;
 use comemory::utilities::context::Ctx;
 
-/// `memories::save::run` with no CLI raw-vector input, mirroring `api::tests::save`.
+/// `memories::save::run` with no CLI raw-vector input, mirroring `save`'s own tests.
 fn save(ctx: &mut Ctx<'_>, req: memories::save::Request) -> memories::save::Response {
     memories::save::run(ctx, req, false, None).expect("save run")
 }

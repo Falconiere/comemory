@@ -6,10 +6,10 @@ use std::path::PathBuf;
 use clap::{Args as ClapArgs, Subcommand};
 
 use crate::cli::off_runtime::off_runtime;
+use crate::cli::output::json;
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::domains::capture;
 use crate::domains::sync::AuthFile;
-use crate::output::json;
 use crate::prelude::*;
 
 const EXAMPLES: &str = "\

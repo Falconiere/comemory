@@ -8,9 +8,9 @@
 use std::fmt::Write as _;
 use std::io::Write as _;
 
+use crate::cli::output::{json, tty};
 use crate::domains::maintenance::consolidation::{Cluster, Member};
 use crate::domains::maintenance::consolidation_report::Report;
-use crate::output::{json, tty};
 use crate::prelude::*;
 
 /// Members rendered per cluster before the tail takes over. A wide `--radius`

@@ -13,14 +13,13 @@ use serde::Deserialize;
 
 use crate::domains::memories::Kind;
 use crate::domains::retrieval::pipeline::{self, SearchOptions};
-use crate::domains::retrieval::scope::{Domains, Filters};
+use crate::domains::retrieval::scope::{self, Domains, Filters};
 use crate::domains::retrieval::search_result::SearchResult;
 use crate::prelude::*;
 use crate::store::Connection;
 use crate::store::memory_meta;
 use crate::utilities::context::Ctx;
 use crate::utilities::pagination::{page_meta, page_window};
-use crate::utilities::when;
 
 /// `comemory search` / `GET|POST /api/v1/memories/search` request.
 #[derive(Deserialize, Debug)]
@@ -68,7 +67,7 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<SearchResult>
     // Copied out before `ctx.conn()` so the later mutable borrow of `ctx`
     // (for the connection) doesn't also lock out this field.
     let cfg = ctx.cfg;
-    let scope = when::scope_from_flags(
+    let scope = scope::scope_from_flags(
         req.since.as_deref(),
         req.until.as_deref(),
         req.as_of.as_deref(),

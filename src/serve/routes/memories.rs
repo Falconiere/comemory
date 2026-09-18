@@ -21,13 +21,14 @@ use crate::serve::scope::RepoScope;
 use crate::utilities::context::Ctx;
 
 /// `PATCH /memories/{id}`, `POST /memories/{id}/restore`,
-/// `POST /memories/{id}/references/refresh` (`api::{update,restore,refresh_refs}`).
+/// `POST /memories/{id}/references/refresh`
+/// (`domains::memories::{update, restore, refresh_refs}`).
 pub mod edit;
 /// `GET|POST /memories/search` (`retrieval::search`) and `GET|POST /context`
 /// (`retrieval::context`).
 pub mod search;
 /// `POST /memories`, `DELETE /memories/{id}`, `POST /feedback` — the
-/// mutating routes (`api::{save,delete,feedback}`).
+/// mutating routes (`domains::memories::{save, delete}`, `domains::learning::feedback`).
 pub mod write;
 
 /// This resource's route-table entries, appended onto [`super::table`].

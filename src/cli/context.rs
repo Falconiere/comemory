@@ -15,10 +15,10 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
+use crate::cli::output;
 use crate::cli::{lazy_reindex, load_config, track_searches};
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::domains::retrieval;
-use crate::output;
 use crate::prelude::*;
 use crate::store::connection;
 use crate::utilities::context::Ctx;

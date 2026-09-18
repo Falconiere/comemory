@@ -2,7 +2,7 @@
 //! this module's route [`table`] (source of truth for the read-only gate's
 //! `mutating` flag and `GET /commands`, both later steps) and `v1_router`
 //! assembly. Also owns the handler-layer helpers every resource reuses:
-//! [`run_blocking`] (run `api::<cmd>::run` — and the connection lock it
+//! [`run_blocking`] (run `domains::<capability>::<cmd>::run` — and the connection lock it
 //! takes — on a blocking-pool thread, never across an `.await`),
 //! [`respond`] (envelope the result), and [`guard_mutating`] (the
 //! read-only/write-permit gate every mutating route calls first).
@@ -186,7 +186,7 @@ async fn health(State(state): State<AppState>) -> Response {
 
 /// Run `f` on the blocking-thread-pool, flattening a `JoinError` (task
 /// panic) into the crate `Error` so callers can just `?` through it. Shared
-/// by every `/api/v1` route: `api::<cmd>::run`'s DB work — and the
+/// by every `/api/v1` route: the command core's DB work — and the
 /// `MutexGuard` it takes on `AppState`'s shared connection — must never run
 /// on (or cross an `.await` on) the async runtime's own worker threads;
 /// running the whole closure, guard included, inside the blocking task

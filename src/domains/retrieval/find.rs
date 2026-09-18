@@ -11,14 +11,13 @@ use serde::Deserialize;
 
 use crate::domains::memories::Kind;
 use crate::domains::retrieval::pipeline;
-use crate::domains::retrieval::scope::{Domain, Domains, Filters};
+use crate::domains::retrieval::scope::{self, Domain, Domains, Filters};
 use crate::domains::retrieval::unified::{self, fuse_domains::UnifiedHit};
 use crate::prelude::*;
 use crate::store::Connection;
 use crate::utilities::context::Ctx;
 use crate::utilities::pagination::PageMeta;
 use crate::utilities::pagination::{page_meta, page_window};
-use crate::utilities::when;
 
 /// `comemory find` / `GET|POST /api/v1/find` request.
 #[derive(Deserialize, Debug)]
@@ -92,7 +91,7 @@ fn domains_of(domain: Option<&str>) -> Result<Domains> {
 /// per-domain access bumps, exactly as it does for `search`.
 pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<FindResult> {
     let cfg = ctx.cfg;
-    let scope = when::scope_from_flags(
+    let scope = scope::scope_from_flags(
         req.since.as_deref(),
         req.until.as_deref(),
         req.as_of.as_deref(),

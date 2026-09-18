@@ -194,6 +194,21 @@ The work proceeds as independently green slices:
 5. #177 removes storage callbacks; #178 removes legacy shells and temporary
    allowlists, then enforces the final tree.
 
+All fourteen have landed. The final tree is `src/{cli,config,domains,serve,
+store,utilities}` plus the root modules `cli.rs`, `config.rs`, `domains.rs`,
+`errors.rs`, `lib.rs`, `main.rs`, `prelude.rs`, `serve.rs`, `store.rs`,
+`test_common.rs` and `utilities.rs`; `scripts/architecture-policy.json`'s
+`staged_top_level_dirs` and `staged_root_modules` now name exactly those, and
+`scripts/lib/architecture-inventory.sh` asserts both lists verbatim so the
+policy and its validator cannot drift apart. `legacy_modules`, `legacy_edges`
+and `store_callbacks` are all empty; every ledger row reads `issue = retain`
+with `path == target`. What the gate enforces from here is a total path-to-owner
+map over every row, a declared-only `shared_domain_dependencies` list for the
+edges `config`/`utilities` keep into a capability, a `crate::api` target rule
+that refuses a resurrected command-core layer, and a requirement that every
+crate-root re-export in `lib.rs` be written `pub use crate::…` so the
+dependency resolver can see through it.
+
 Setup's runtime helpers (doctor, hooks, repos, sources, local auth) are normal
 runtime dependencies, not evidence that its migration ticket may run early.
 The migration order above prevents moving setup before those owners exist.

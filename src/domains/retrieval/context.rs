@@ -11,14 +11,13 @@ use serde::Deserialize;
 use crate::domains::retrieval::bundle::RankedMemory;
 use crate::domains::retrieval::code_rerank::WorkingSet;
 use crate::domains::retrieval::context_result::ContextResult;
-use crate::domains::retrieval::scope::{Domains, Filters};
+use crate::domains::retrieval::scope::{self, Domains, Filters};
 use crate::domains::retrieval::{bundle, pipeline};
 use crate::prelude::*;
 use crate::store::Connection;
 use crate::store::code_row;
 use crate::utilities::context::Ctx;
 use crate::utilities::pagination::{page_meta, page_window};
-use crate::utilities::when;
 
 /// `comemory context` / `GET|POST /api/v1/context` request.
 #[derive(Deserialize, Debug)]
@@ -69,7 +68,7 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<ContextResult
         source: crate::utilities::telemetry::source::CONTEXT,
         window,
     };
-    let scope = when::scope_from_flags(
+    let scope = scope::scope_from_flags(
         req.since.as_deref(),
         req.until.as_deref(),
         req.as_of.as_deref(),

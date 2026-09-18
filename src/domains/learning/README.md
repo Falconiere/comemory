@@ -21,7 +21,7 @@ and store consume them directly and never depend on this capability for them.
 Turning stored counters into a ranking multiplier is likewise not ours: that is
 `retrieval::score` and `retrieval::code_prior`.
 
-No file here may import `cli`, `serve`, `output` or the legacy `api` tree. The
+No file here may import `cli` (the `cli::output` writers included) or `serve`. The
 one capability this folder depends on is `domains::retrieval`, through
 `evaluation::runner` alone, which drives the real pipeline exactly as a CLI
 caller would. `domains::graph` depends on us in the other direction, for the
