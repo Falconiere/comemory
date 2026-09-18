@@ -157,13 +157,34 @@ fn a_dataset_id_covers_the_configuration_and_the_snapshot() {
 
     assert_ne!(baseline, dataset_id(&filters(), &split(), "other-snapshot"));
 
-    let mut unjudged = filters();
-    unjudged.include_unjudged = true;
-    assert_ne!(baseline, dataset_id(&unjudged, &split(), "snap"));
+    for mutate in [
+        (|f: &mut FilterReport| f.include_unjudged = true) as fn(&mut FilterReport),
+        |f: &mut FilterReport| f.include_holdout = true,
+        |f: &mut FilterReport| f.provenance = "all".into(),
+        |f: &mut FilterReport| f.domains = vec!["memory".into()],
+        |f: &mut FilterReport| f.since = Some("2026-09-01T00:00:00.000000000Z".into()),
+        |f: &mut FilterReport| f.until = Some("2026-09-30T00:00:00.000000000Z".into()),
+        |f: &mut FilterReport| f.max_negatives_per_query = 1,
+    ] {
+        let mut changed = filters();
+        mutate(&mut changed);
+        assert_ne!(
+            baseline,
+            dataset_id(&changed, &split(), "snap"),
+            "every filtering knob must move the id, or two different datasets share one name: \
+             {changed:?}"
+        );
+    }
 
-    let mut reseeded = split();
-    reseeded.seed = "another-seed".into();
-    assert_ne!(baseline, dataset_id(&filters(), &reseeded, "snap"));
+    for mutate in [
+        (|s: &mut SplitReport| s.seed = "another-seed".into()) as fn(&mut SplitReport),
+        |s: &mut SplitReport| s.policy = "other-policy".into(),
+        |s: &mut SplitReport| s.holdout_since = Some("2026-09-18T00:00:00.000000000Z".into()),
+    ] {
+        let mut changed = split();
+        mutate(&mut changed);
+        assert_ne!(baseline, dataset_id(&filters(), &changed, "snap"));
+    }
 
     let mut reserved = split();
     reserved.holdout_repo = Some("demo".into());

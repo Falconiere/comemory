@@ -553,5 +553,16 @@ fn an_empty_database_exports_an_empty_dataset_rather_than_failing() {
         ""
     );
     assert!(report.manifest.retrieval_revisions.is_empty());
-    assert_eq!(report.manifest.files.len(), 2, "train and validation");
+    assert_eq!(
+        report
+            .manifest
+            .files
+            .iter()
+            .map(|f| f.path.as_str())
+            .collect::<Vec<_>>(),
+        vec!["train.jsonl", "validation.jsonl"],
+        "an empty export still writes exactly the two training files, by name"
+    );
+    assert!(!out.join("holdout.jsonl").exists());
+    assert!(!out.join("train.implicit.jsonl").exists());
 }

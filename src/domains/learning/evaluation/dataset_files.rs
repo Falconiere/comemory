@@ -40,7 +40,14 @@ pub fn write_buckets(
     dataset: &Dataset,
     include_holdout: bool,
 ) -> Result<(Vec<FileEntry>, Vec<FileEntry>)> {
-    std::fs::create_dir_all(out).map_err(Error::Io)?;
+    // `io::Error` carries no path, and an operator who mistyped `--out` needs
+    // to see which path failed — not "Not a directory" on its own.
+    std::fs::create_dir_all(out).map_err(|e| {
+        Error::Other(format!(
+            "cannot create the output directory {}: {e}",
+            out.display()
+        ))
+    })?;
     sweep(out)?;
     let mut written = Vec::new();
     let mut withheld = Vec::new();

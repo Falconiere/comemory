@@ -14,7 +14,9 @@ use crate::cli::load_config;
 use crate::cli::output::json;
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::domains::learning::dataset_export::{self, ExportReport};
+use crate::domains::learning::evaluation::candidate_identity::CandidateDomain;
 use crate::domains::learning::evaluation::dataset_manifest::FileEntry;
+use crate::domains::learning::evaluation::dataset_rows::ProvenanceFilter;
 use crate::prelude::*;
 use crate::store::connection;
 use crate::utilities::context::Ctx;
@@ -41,7 +43,17 @@ pub struct Args {
     pub out: PathBuf,
     /// Which judgment provenance reaches the dataset. Implicit labels are
     /// never written to the reviewed files.
-    #[arg(long, value_name = "WORD", default_value = "manual")]
+    ///
+    /// The accepted words are read off `ProvenanceFilter::WORDS`, so clap can
+    /// refuse a typo before the database opens without the vocabulary being
+    /// spelled a second time. The core still validates: `Request` derives
+    /// `Deserialize`, so it must refuse a bad word whatever the caller is.
+    #[arg(
+        long,
+        value_name = "WORD",
+        default_value = "manual",
+        value_parser = clap::builder::PossibleValuesParser::new(ProvenanceFilter::WORDS)
+    )]
     pub provenance: String,
     /// Also emit a record for every retrieved candidate nobody judged,
     /// carrying `label: null`. Never a relevance of 0.
@@ -53,7 +65,16 @@ pub struct Args {
     pub include_holdout: bool,
     /// Restrict records to a domain (`memory`, `code`, `document`).
     /// Repeatable; all three by default.
-    #[arg(long = "domain", value_name = "DOMAIN")]
+    ///
+    /// The accepted words are the contract's own `CandidateDomain` spellings,
+    /// read off the enum rather than restated here.
+    #[arg(
+        long = "domain",
+        value_name = "DOMAIN",
+        value_parser = clap::builder::PossibleValuesParser::new(
+            CandidateDomain::all().map(CandidateDomain::as_str)
+        )
+    )]
     pub domains: Vec<String>,
     /// Only observations captured at or after this instant.
     #[arg(long, value_name = "WHEN")]
@@ -157,8 +178,12 @@ fn write_tty(report: &ExportReport) -> Result<()> {
     Ok(())
 }
 
-/// One file line: its name, its rows, and the first 12 characters of its
-/// digest — enough to compare two exports by eye.
+/// One file line: its name, its rows, and the leading characters of its digest
+/// — enough to compare two exports by eye.
+///
+/// `sha256` is always 64 characters here, so the fallback is unreachable; it
+/// exists because slicing a string is fallible and this report line must never
+/// be the thing that fails an export.
 fn line_of(entry: &FileEntry) -> String {
     let digest = entry.sha256.get(..12).unwrap_or(entry.sha256.as_str());
     format!(

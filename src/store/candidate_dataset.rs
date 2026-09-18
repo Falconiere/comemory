@@ -1,5 +1,6 @@
-//! Bulk windowed reads over the three candidate-observation tables: the input
-//! side of the reviewed dataset export (#210).
+//! Bulk windowed reads over `candidate_query_observations`,
+//! `candidate_observations` and `candidate_judgments`: the input side of the
+//! reviewed dataset export (#210).
 //!
 //! `candidate_observations::fetch` answers "show me this one observation" for
 //! `comemory judge`. An export asks a different question — "give me every

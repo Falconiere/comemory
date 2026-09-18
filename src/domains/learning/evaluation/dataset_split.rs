@@ -176,7 +176,7 @@ fn components(
         let root = graph.find(*root);
         let entry = components.entry(root).or_default();
         entry.rows = entry.rows.saturating_add(1);
-        entry.forced = stronger(entry.forced.take(), forced_by(row, cfg));
+        entry.forced = stronger(entry.forced, forced_by(row, cfg));
     }
     components
 }

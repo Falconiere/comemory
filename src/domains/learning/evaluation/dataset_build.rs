@@ -71,6 +71,10 @@ pub fn assemble(input: BuildInput<'_>, stats: &mut RowStats) -> Dataset {
     let mut buckets: BTreeMap<BucketKey, Vec<DatasetRecord>> = BTreeMap::new();
     for split in Split::all() {
         for labels in [LabelClass::Manual, LabelClass::Implicit] {
+            // The Manual bucket is the PRIMARY file and exists for every split
+            // whatever the provenance filter says, because an unjudged record
+            // carries no evidence class and has nowhere else to go. Only the
+            // implicit file is conditional.
             if labels == LabelClass::Manual || input.classes.contains(&labels) {
                 buckets.insert(BucketKey { split, labels }, Vec::new());
             }
