@@ -47,8 +47,50 @@ jobs:
         # (TOOLS.md), so it is installed directly. scripts/guardrails-check.sh
         # (part of scripts/check-all.sh) exits 3 without it on PATH.
         run: cargo install ast-grep --locked
+      - name: Install similarity-rs
+        # Also absent from taiki-e/install-action's TOOLS.md, so installed
+        # directly like ast-grep above — but PINNED. The version is DERIVED
+        # from scripts/dup-check.sh rather than repeated here, so the workflow
+        # and the gate cannot drift: bumping the constant in that one file is
+        # all it takes. similarity-rs scores with APTED tree-edit distance and
+        # its results move between releases, so an unpinned tool would make
+        # dup-baseline.txt a measurement of the runner instead of the tree.
+        run: |
+          set -euo pipefail
+          # `[^"]*`, not `.*`: the greedy form captures `0.5.0" and more` from a
+          # malformed `SIMILARITY_RS_VERSION="0.5.0" and more"` line. The shape
+          # check below would still reject it, but not matching at all is better
+          # than matching the wrong thing.
+          matches="$(sed -n 's/^SIMILARITY_RS_VERSION="\([^"]*\)"$/\1/p' scripts/dup-check.sh)"
+          count="$(printf '%s' "$matches" | grep -c . || true)"
+          if [ "$count" != "1" ]; then
+            echo "::error::expected exactly one SIMILARITY_RS_VERSION assignment in scripts/dup-check.sh, found $count"
+            exit 1
+          fi
+          # Validate the SHAPE too, not just the count: a stray empty
+          # assignment alongside the real one yields count 1 while $matches is
+          # two lines, and the empty half would reach `cargo install --version`.
+          # Anchored on the WHOLE value, not per line: `grep -E '^..$'` matches
+          # if ANY line matches, so it would accept a stray empty assignment
+          # sitting above the real one. bash's =~ anchors to the whole string.
+          # The optional trailing group accepts a pre-release or build suffix
+          # (0.6.0-rc.1, 0.6.0+meta) so pinning one is not blocked here; the
+          # required X.Y.Z prefix still rejects `latest`, a range, or an empty
+          # value, any of which would make `cargo install --version` unpinned.
+          if ! [[ "$matches" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::SIMILARITY_RS_VERSION is not a pinned semver version: '$matches'"
+            exit 1
+          fi
+          echo "installing similarity-rs $matches (pinned by scripts/dup-check.sh)"
+          cargo install similarity-rs --version "$matches" --locked
       - name: Run check-all gate
         run: bash scripts/check-all.sh
+      - name: Run duplication gate
+        # Deliberately a separate step rather than an entry in check-all.sh's
+        # GATES array: it needs a separately installed tool, and check-all runs
+        # on every local iteration and on the release path. See the header of
+        # scripts/dup-check.sh for the full rationale.
+        run: bash scripts/dup-check.sh
       - name: Run coverage gate
         run: bash scripts/coverage-check.sh
       - name: Run eval gate
