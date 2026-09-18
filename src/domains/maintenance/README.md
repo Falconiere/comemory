@@ -45,7 +45,7 @@ One row per file, named after its primary item. Command cores take a plain
 | `consolidate.rs` | `run` | `comemory consolidate` / `GET /api/v1/consolidate` — the advisory near-duplicate cluster core: scan, cluster, page. Read-only end to end |
 | `consolidation.rs` + [`consolidation/`](consolidation/README.md) | `detect` | The near-duplicate algorithm: union-find grouping of live SimHashes within a Hamming radius, keeper ordering, in-cluster supersede resolution |
 | `consolidation_report.rs` | `Report` | The owned value `consolidate::run` returns for both delivery surfaces |
-| `doctor.rs` + [`doctor/`](doctor/README.md) | `run` | `comemory doctor` / `GET /api/v1/doctor` — the structured health report, plus `GET /api/v1/doctor/system`. Probes without ever creating the database, and falls back to a read-only open when the schema is newer than this binary. Also the read/probe `api::setup::detect` consults once a `comemory.db` exists |
+| `doctor.rs` + [`doctor/`](doctor/README.md) | `run` | `comemory doctor` / `GET /api/v1/doctor` — the structured health report, plus `GET /api/v1/doctor/system`. Probes without ever creating the database, and falls back to a read-only open when the schema is newer than this binary. Also the read/probe `domains::integrations::setup::detect` consults once a `comemory.db` exists |
 | `gc.rs` | `run` | `comemory gc` / `POST /api/v1/gc` — reap aged trash entries and purge their mirror rows, then age out learning telemetry. Never creates the database |
 | `gc_policy.rs` | `get` | `GET\|PUT /api/v1/gc/policy` — the retention windows and the last gc run |
 | `overview.rs` | `run` | `GET /api/v1/overview`, `GET /api/v1/overview/eval-series` — the console landing aggregate, composed from the cores that own each fact |

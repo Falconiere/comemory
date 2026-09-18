@@ -44,7 +44,7 @@ One line per file, named after its primary item:
 | `index.rs` | `Args` | `comemory index <PATH>...` — register document sources and reconcile them |
 | `index_code.rs` | `Args` | `comemory index-code` — incremental symbol extraction over a git repo |
 | `ingest_code.rs` | `Args` | `comemory ingest-code` — bulk pre-embedded code-symbol ingestion from stdin |
-| `install.rs` | `Args` | `comemory install` — install the embedded agent skills and hooks through the native Claude Code or Codex plugin manager; core in `api::install` |
+| `install.rs` | `Args` | `comemory install` — install the embedded agent skills and hooks through the native Claude Code or Codex plugin manager; core in `domains::integrations::install` |
 | `install_hooks.rs` | `Args` | `comemory install-hooks` — install git hooks that trigger `index-code` |
 | `lazy_reindex.rs` | `RepoContext` | Detached, non-blocking auto-reindex trigger behind `indexing.auto_reindex = lazy` |
 | `list.rs` | `Args` | `comemory list` — page live memories with `--repo` / `--kind` filters |
@@ -59,7 +59,7 @@ One line per file, named after its primary item:
 | `search_only.rs` | `OnlyDomain` | The `--only` clap `ValueEnum` and the interim `--only document` path; the resolution policy itself is `domains::retrieval::scope::resolve_domains` |
 | `serve.rs` | `Args` | `comemory serve` — launch the local web viewer + in-browser code editor |
 | `repos.rs` | `Args` | `comemory repos` — indexed code repositories and their index freshness |
-| `setup.rs` | `Args` | `comemory setup` — detect, plan, and apply first-run onboarding. Owns the `Intent`/`Prompting` → `Mode` decision and the exit-code mapping; `setup/` holds the wizard and the summary renderer |
+| `setup.rs` | `Args` | `comemory setup` — detect, plan, and apply first-run onboarding; core in `domains::integrations::setup`. Owns the `Intent`/`Prompting` → `Mode` decision and the exit-code mapping; `setup/` holds the wizard and the summary renderer |
 | `show.rs` | `Args` | `comemory show` — one memory in full: body, frontmatter, activation, refs |
 | `sources.rs` | `Args` | `comemory sources` — list registered document sources with status counts |
 | `stats.rs` | `Args` | `comemory stats` — corpus counters and `comemory.db` size |

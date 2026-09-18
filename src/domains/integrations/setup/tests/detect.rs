@@ -1,4 +1,4 @@
-//! `api::setup::detect` against a real temporary data directory and a real
+//! `domains::integrations::setup::detect` against a real temporary data directory and a real
 //! `git init` working tree.
 use super::run;
 use crate::config::{Config, Paths};
@@ -103,9 +103,49 @@ fn an_unknown_host_filter_yields_no_present_hosts() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::lazy(&paths, &cfg);
 
-    // A name outside `api::install::HOSTS` filters everything out, so the
+    // A name outside `domains::integrations::install::HOSTS` filters everything out, so the
     // probe never shells out to an arbitrary program name.
     let detected = run(&mut ctx, work.path(), Some("definitely-not-a-host")).unwrap();
     assert!(detected.hosts_present.is_empty());
     assert!(detected.hosts_installed.is_empty());
+}
+
+#[test]
+fn detection_lists_document_sources_without_reconciling_the_mirror() {
+    let data = tempfile::tempdir().unwrap();
+    let repo = repo_with_sources();
+    let docs = tempfile::tempdir().unwrap();
+    std::fs::write(docs.path().join("note.md"), "# note\n").unwrap();
+
+    let paths = Paths::new(data.path().to_path_buf());
+    let cfg = Config::defaults();
+    paths.ensure_dirs().unwrap();
+    let label = crate::domains::code::git_utils::repo_label_at(repo.path())
+        .expect("the fixture is a real git working tree");
+
+    // `sources.toml` is the durable registry and registering never writes the
+    // SQLite mirror. That gap is what makes this discriminating: only a
+    // reconciling listing would close it.
+    crate::domains::documents::source::registry::Registry::new(paths.clone())
+        .register(docs.path(), Some(label))
+        .unwrap();
+
+    let mut ctx = Ctx::lazy(&paths, &cfg);
+    assert_eq!(
+        crate::store::sources::count(ctx.conn().unwrap()).unwrap(),
+        0,
+        "registering writes sources.toml, never the mirror"
+    );
+
+    let detected = run(&mut ctx, repo.path(), None).unwrap();
+
+    assert_eq!(
+        detected.doc_sources, 0,
+        "detection lists with `reconcile: false`, so it reports the mirror as it stands"
+    );
+    assert_eq!(
+        crate::store::sources::count(ctx.conn().unwrap()).unwrap(),
+        0,
+        "a read-only probe must never rewrite the SQLite mirror from sources.toml"
+    );
 }

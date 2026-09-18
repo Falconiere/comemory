@@ -1,6 +1,7 @@
 //! `comemory setup` — one command that takes a machine or a repo from
 //! "binary installed" to "memory + code search working in my agent". The
-//! detect/plan/apply engine lives in `api::setup` (Binding Rule 1); this
+//! detect/plan/apply engine lives in `domains::integrations::setup` (Binding
+//! Rule 1); this
 //! wrapper owns the argument shape, the mode decision, and rendering.
 
 use std::io::IsTerminal as _;
@@ -8,9 +9,9 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::api;
 use crate::cli::load_config;
 use crate::config::paths::{Paths, resolve_data_dir};
+use crate::domains::integrations;
 use crate::output::json;
 use crate::prelude::*;
 use crate::utilities::context::Ctx;
@@ -143,7 +144,8 @@ pub fn mode(intent: Intent, prompting: Prompting) -> Mode {
 ///
 /// # Errors
 /// [`Error::Usage`] for an unknown step id or host, propagated from
-/// `api::setup::run` before anything is probed. A step that fails while being
+/// `domains::integrations::setup::run` before anything is probed. A step that
+/// fails while being
 /// applied does not abort the run: the whole summary is rendered first, and
 /// only then does this return [`Error::Unavailable`] so the process exits
 /// non-zero (69) with the failure already on screen.
@@ -156,7 +158,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     );
     let mut ctx = Ctx::lazy(&paths, &cfg);
 
-    let mut req = api::setup::Request {
+    let mut req = integrations::setup::Request {
         repo: a.repo.map(|p| p.display().to_string()),
         host: a.host,
         only: a.only.as_deref().map(csv_unique).unwrap_or_default(),
@@ -167,7 +169,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     if mode == Mode::Wizard {
         // Plan first so the wizard has something real to offer, then let the
         // operator narrow it before anything is written.
-        let planned = api::setup::run(&mut ctx, clone_request(&req))?;
+        let planned = integrations::setup::run(&mut ctx, clone_request(&req))?;
         let Some(selection) = wizard::select(&planned)? else {
             return Ok(());
         };
@@ -175,7 +177,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     }
     req.apply = mode.applies();
 
-    let resp = api::setup::run(&mut ctx, req)?;
+    let resp = integrations::setup::run(&mut ctx, req)?;
     if json_flag {
         json::write(&resp)?;
     } else {
@@ -187,8 +189,8 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
 /// Copy a request for the wizard's planning pass. `Request` is deliberately
 /// not `Clone` — it is a deserialized API input, not a value type — so the
 /// one place that needs a second copy spells it out.
-fn clone_request(req: &api::setup::Request) -> api::setup::Request {
-    api::setup::Request {
+fn clone_request(req: &integrations::setup::Request) -> integrations::setup::Request {
+    integrations::setup::Request {
         repo: req.repo.clone(),
         host: req.host.clone(),
         only: req.only.clone(),
@@ -199,7 +201,7 @@ fn clone_request(req: &api::setup::Request) -> api::setup::Request {
 
 /// Turn any applied-step failures into the command's exit status, after the
 /// summary has already been written.
-fn finish(resp: &api::setup::Response) -> Result<()> {
+fn finish(resp: &integrations::setup::Response) -> Result<()> {
     if resp.failed == 0 {
         return Ok(());
     }

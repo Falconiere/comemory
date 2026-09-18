@@ -280,9 +280,40 @@ Nothing about behavior moves with them. `upgrade` remains in
 can replace the running binary; the `ATTACH`/copy/`DETACH` preservation unit,
 the pre-rebuild `VACUUM INTO` snapshot and the migration chain stay in
 `store`; and `doctor` keeps the read-only, must-not-create-the-database
-semantics that `api::setup::detect` depends on — `setup_runtime_dependencies`
-simply retargets that declared edge from `crate::api::doctor` to
-`crate::domains::maintenance::doctor`.
+semantics that `domains::integrations::setup::detect` depends on —
+`setup_runtime_dependencies` simply retargets that declared edge from
+`crate::api::doctor` to `crate::domains::maintenance::doctor`.
+
+#175 moves the integrations capability, emptying `src/api/` of the last two
+command cores. Neither has a crate-root alias to preserve, because neither was
+ever a root module, so both are removals:
+
+| Removed path | New path |
+| --- | --- |
+| `comemory::api::install` | `comemory::domains::integrations::install` |
+| `comemory::api::setup` | `comemory::domains::integrations::setup` |
+| `comemory::api::setup::apply` | `comemory::domains::integrations::setup::apply` |
+| `comemory::api::setup::detect` | `comemory::domains::integrations::setup::detect` |
+| `comemory::api::setup::plan` | `comemory::domains::integrations::setup::plan` |
+
+Nothing about behavior moves with them. Both stay CLI-only in
+`serve::routes::meta::CLI_ONLY` and in the `tests/api__parity.rs` exceptions;
+the seven step ids, the offline detection, the report-only `cloud-auth` and
+`index-docs` steps and the connection-free installer are unchanged, and the
+authored assets stay in the repository-root `integrations/agent/` tree, which
+`install/bundle.rs` embeds one directory deeper than before. The two
+`setup_runtime_dependencies` rows that named `crate::api::install` are
+retargeted onto `crate::domains::integrations::install`; they stay recorded
+even though they are now intra-capability, because that list exists to record
+detection's and application's exact runtime delegations.
+
+With `src/api/` holding no row, the ledger's `src/api/` core-ownership check
+had nothing left to constrain — `all` over an empty selection is true — so
+#175 replaces it with a capability-ownership rule anchored on the capability
+folder instead: a row under `src/domains/<capability>/` is owned by that
+capability, and a row owned by a capability lives inside it. Every
+`src/domains/` row is subject to it, and it fails as
+`capability ownership mismatch`.
 
 ## Baseline compatibility
 
@@ -310,12 +341,6 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | path | public path | test bridge | assets | owner | target | issue |
 | --- | --- | --- | --- | --- | --- | --- |
 | src/api.rs | comemory::api; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | none | none | shared::utilities | src/api.rs | #178 |
-| src/api/install.rs | comemory::api::install; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/api/tests/install.rs | none | domains::integrations | src/domains/integrations/install.rs | #175 |
-| src/api/install/bundle.rs | private | src/api/install/tests/bundle.rs | integrations/agent/.claude-plugin/plugin.json; integrations/agent/.codex-plugin/plugin.json; integrations/agent/hooks/comemory-status.sh; integrations/agent/hooks/hooks.json; integrations/agent/hooks/memory-lifecycle.sh; integrations/agent/hooks/project-skills-curate.sh; integrations/agent/hooks/project-skills-index.sh; integrations/agent/hooks/scope.sh; integrations/agent/hooks/session-start.sh; integrations/agent/hooks/skill-use.sh; integrations/agent/lib/project-skills-commands.sh; integrations/agent/lib/project-skills-curation.sh; integrations/agent/lib/project-skills-foundation.sh; integrations/agent/lib/project-skills.sh; integrations/agent/lib/repo-scope.sh; integrations/agent/lib/shell-input.sh; integrations/agent/skills/agent-memory/SKILL.md; integrations/agent/skills/agent-memory/scripts/comemory.sh; integrations/agent/skills/project-skills/SKILL.md; integrations/agent/skills/project-skills/scripts/skills.sh | domains::integrations | src/domains/integrations/install/bundle.rs | #175 |
-| src/api/setup.rs | comemory::api::setup; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/api/tests/setup.rs | none | domains::integrations | src/domains/integrations/setup.rs | #175 |
-| src/api/setup/apply.rs | comemory::api::setup::apply; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/api/setup/tests/apply.rs | none | domains::integrations | src/domains/integrations/setup/apply.rs | #175 |
-| src/api/setup/detect.rs | comemory::api::setup::detect; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/api/setup/tests/detect.rs | none | domains::integrations | src/domains/integrations/setup/detect.rs | #175 |
-| src/api/setup/plan.rs | comemory::api::setup::plan; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/api/setup/tests/plan.rs | none | domains::integrations | src/domains/integrations/setup/plan.rs | #175 |
 | src/cli.rs | comemory::cli; preserve | none | none | delivery::cli | src/cli.rs | retain |
 | src/cli/ast.rs | comemory::cli::ast; preserve | none | none | delivery::cli | src/cli/ast.rs | retain |
 | src/cli/auth.rs | comemory::cli::auth; preserve | none | none | delivery::cli | src/cli/auth.rs | retain |
@@ -442,6 +467,13 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/graph/query.rs | comemory::domains::graph::query; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/graph/tests/query.rs | none | domains::graph | src/domains/graph/query.rs | retain |
 | src/domains/graph/search_edit.rs | private | src/domains/graph/tests/search_edit.rs | none | domains::graph | src/domains/graph/search_edit.rs | retain |
 | src/domains/graph/view.rs | comemory::domains::graph::view; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | none | none | domains::graph | src/domains/graph/view.rs | retain |
+| src/domains/integrations.rs | comemory::domains::integrations; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | none | none | domains::integrations | src/domains/integrations.rs | retain |
+| src/domains/integrations/install.rs | comemory::domains::integrations::install; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/integrations/tests/install.rs | none | domains::integrations | src/domains/integrations/install.rs | retain |
+| src/domains/integrations/install/bundle.rs | private | src/domains/integrations/install/tests/bundle.rs | integrations/agent/.claude-plugin/plugin.json; integrations/agent/.codex-plugin/plugin.json; integrations/agent/hooks/comemory-status.sh; integrations/agent/hooks/hooks.json; integrations/agent/hooks/memory-lifecycle.sh; integrations/agent/hooks/project-skills-curate.sh; integrations/agent/hooks/project-skills-index.sh; integrations/agent/hooks/scope.sh; integrations/agent/hooks/session-start.sh; integrations/agent/hooks/skill-use.sh; integrations/agent/lib/project-skills-commands.sh; integrations/agent/lib/project-skills-curation.sh; integrations/agent/lib/project-skills-foundation.sh; integrations/agent/lib/project-skills.sh; integrations/agent/lib/repo-scope.sh; integrations/agent/lib/shell-input.sh; integrations/agent/skills/agent-memory/SKILL.md; integrations/agent/skills/agent-memory/scripts/comemory.sh; integrations/agent/skills/project-skills/SKILL.md; integrations/agent/skills/project-skills/scripts/skills.sh | domains::integrations | src/domains/integrations/install/bundle.rs | retain |
+| src/domains/integrations/setup.rs | comemory::domains::integrations::setup; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/integrations/tests/setup.rs | none | domains::integrations | src/domains/integrations/setup.rs | retain |
+| src/domains/integrations/setup/apply.rs | comemory::domains::integrations::setup::apply; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/integrations/setup/tests/apply.rs | none | domains::integrations | src/domains/integrations/setup/apply.rs | retain |
+| src/domains/integrations/setup/detect.rs | comemory::domains::integrations::setup::detect; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/integrations/setup/tests/detect.rs | none | domains::integrations | src/domains/integrations/setup/detect.rs | retain |
+| src/domains/integrations/setup/plan.rs | comemory::domains::integrations::setup::plan; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/integrations/setup/tests/plan.rs | none | domains::integrations | src/domains/integrations/setup/plan.rs | retain |
 | src/domains/learning.rs | comemory::domains::learning; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | none | none | domains::learning | src/domains/learning.rs | retain |
 | src/domains/learning/bandit.rs | comemory::domains::learning::bandit; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/learning/tests/bandit.rs | none | domains::learning | src/domains/learning/bandit.rs | retain |
 | src/domains/learning/code_feedback.rs | comemory::domains::learning::code_feedback; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/learning/tests/code_feedback.rs | none | domains::learning | src/domains/learning/code_feedback.rs | retain |

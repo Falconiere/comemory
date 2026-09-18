@@ -1,8 +1,8 @@
 # setup/
 
 **What belongs here:** the terminal surface of `comemory setup`. Every
-decision it appears to make is really made by `api::setup::plan` — these two
-files only select and render.
+decision it appears to make is really made by
+`domains::integrations::setup::plan` — these two files only select and render.
 
 | File | Primary item | Purpose |
 | --- | --- | --- |

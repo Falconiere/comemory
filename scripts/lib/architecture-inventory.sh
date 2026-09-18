@@ -41,22 +41,27 @@ validate_inventory() (
       (.target | ltrimstr("domains::")) as $t |
       ($p.domains | index($s)) != null and ($p.domains | index($t)) != null and $s != $t)
   ' "$POLICY" >/dev/null || fail 'invalid policy or inventory metadata'
-  jq -e '
-    {memories:"save delete list show update restore trash refresh_refs",
-     code:"ast index_code ingest_code index_runs repos repo_admin hooks install_hooks",
-     documents:"index sources unindex", graph:"graph graph_nodes graph_recompute edges",
-     retrieval:"search search_code context find suggest config_retrieval",
-     learning:"feedback eval mine tune bandit learning learning_proposals",
-     sync:"sync memory_store", integrations:"install setup",
-     maintenance:"doctor gc gc_policy prune consolidate rebuild reembed stats overview"}
-    | to_entries | map(.key as $owner | .value | split(" ")[] |
-        {key:.,value:("domains::"+$owner)}) | from_entries
-  ' >"$scratch/api_owners" <<<null
-  jq -e --slurpfile owners "$scratch/api_owners" '
-    all(.[] | select(.path|startswith("src/api/"));
-      (.path|split("/")[2]|split(".")[0]) as $core |
-      .owner == (if $core == "completions" then "delivery::cli" else $owners[0][$core] end))
-  ' "$scratch/rows" >/dev/null || fail 'API ownership mismatch'
+  # Capability ownership, in both directions. This replaces the `src/api/` core
+  # map #165 started with: that map constrained only rows still under `src/api/`,
+  # and #175 moved the last two cores out, leaving `all` to quantify over an
+  # empty selection and pass while asserting nothing. Anchoring on the
+  # capability folder instead keeps the same path-to-owner invariant on every
+  # row permanently, and closes the gap that let a row moved into `domains/`
+  # keep the owner of wherever it came from.
+  jq -e --slurpfile policy "$POLICY" '
+    ($policy[0].domains) as $domains |
+    all(.[]; . as $row |
+      (if ($row.path | startswith("src/domains/")) then
+        ($row.path | split("/")[2] | rtrimstr(".rs")) as $capability |
+        ($domains | index($capability)) == null or
+          $row.owner == "domains::" + $capability
+      else true end) and
+      (if ($row.owner | startswith("domains::")) then
+        ($row.owner | ltrimstr("domains::")) as $capability |
+        $row.path == "src/domains/" + $capability + ".rs" or
+          ($row.path | startswith("src/domains/" + $capability + "/"))
+      else true end))
+  ' "$scratch/rows" >/dev/null || fail 'capability ownership mismatch'
   jq -e 'group_by(.target) | all(length == 1)' "$scratch/rows" >/dev/null || fail 'duplicate inventory target'
   jq -e --slurpfile rows "$scratch/rows" '
     (.owner_dependencies | group_by([.source,.target]) | all(length == 1)) and

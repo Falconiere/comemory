@@ -1,11 +1,12 @@
-//! `api::install::{Request, Response, run}` — the shared middle of
+//! `domains::integrations::install::{Request, Response, run}` — the shared middle of
 //! `comemory install <host>`: extract the embedded agent integration and
 //! register it with the host's native plugin manager. Moved out of
-//! `cli::install::run` (Binding Rule 1) so `api::setup` drives the same
+//! `cli::install::run` (Binding Rule 1) so `setup` drives the same
 //! installation instead of duplicating the host probe.
 //!
 //! The host is a validated string, not a clap enum, for the same reason
-//! `crate::domains::code::hooks::Request::enable` is: `api::` must not depend on the CLI's
+//! `crate::domains::code::hooks::Request::enable` is: a command core must not
+//! depend on the CLI's
 //! argument types. Conn-free like `domains::code::install_hooks` — [`run`] never calls
 //! `Ctx::conn`, so installing an integration never creates a database.
 

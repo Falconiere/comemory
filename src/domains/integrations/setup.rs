@@ -1,4 +1,4 @@
-//! `api::setup::{Request, Response, run}` — the shared middle of
+//! `domains::integrations::setup::{Request, Response, run}` — the shared middle of
 //! `comemory setup`, which takes a machine or a repo from "binary
 //! installed" to "memory + code search working in my agent".
 //!
@@ -212,7 +212,7 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
     validate_step_ids(&req.only, "--only")?;
     validate_step_ids(&req.skip, "--skip")?;
     if let Some(host) = &req.host {
-        crate::api::install::validate_host(host)?;
+        super::install::validate_host(host)?;
     }
     let data_dir = ctx.paths.data_dir().display().to_string();
     let target = req

@@ -10,8 +10,9 @@ editor extension, a console, or a script — through the loopback server
 versioned REST API at `/api/v1` — there is no bundled web page. Almost
 every CLI subcommand — `save`, `search`, `search-code`, `index-code`,
 `eval`, `rebuild`, and 20-odd more — gets a `/api/v1` route. Both surfaces
-share one command core, `src/api/`: each `api::<cmd>::run(&mut Ctx, Request)`
-holds a subcommand's logic once, called by `cli::<cmd>::run` (which adds
+share one command core under `src/domains/<capability>/`: each
+`<capability>::<cmd>::run(&mut Ctx, Request)` holds a subcommand's logic once,
+called by `cli::<cmd>::run` (which adds
 arg-parsing and TTY/`--json` rendering) and by the matching HTTP handler
 (which adds JSON (de)serialization and the response envelope). One store, one
 behavior, two transports — a save over HTTP and a save from the CLI write the

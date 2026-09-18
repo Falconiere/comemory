@@ -1,10 +1,10 @@
-//! `api::setup::apply` — the write phase, against a real temporary data
+//! `domains::integrations::setup::apply` — the write phase, against a real temporary data
 //! directory and a real `git init` working tree carrying real Rust files.
 use super::run;
-use crate::api::setup::detect::{self, Detected};
-use crate::api::setup::{GIT_HOOKS, INDEX_CODE, Request, Step, StepState, plan};
 use crate::config::{Config, Paths};
 use crate::domains::code::git_utils;
+use crate::domains::integrations::setup::detect::{self, Detected};
+use crate::domains::integrations::setup::{GIT_HOOKS, INDEX_CODE, Request, Step, StepState, plan};
 use crate::test_common::{git_commit::commit_files, git_repo::init_repo};
 use crate::utilities::context::Ctx;
 
@@ -129,7 +129,7 @@ fn a_failing_step_is_recorded_and_the_other_steps_still_run() {
         },
     );
     for candidate in &mut steps {
-        if candidate.id == crate::api::setup::CLOUD_AUTH {
+        if candidate.id == crate::domains::integrations::setup::CLOUD_AUTH {
             candidate.state = StepState::Pending;
         }
     }
@@ -137,7 +137,7 @@ fn a_failing_step_is_recorded_and_the_other_steps_still_run() {
 
     assert!(
         matches!(
-            step(&steps, crate::api::setup::CLOUD_AUTH).state,
+            step(&steps, crate::domains::integrations::setup::CLOUD_AUTH).state,
             StepState::Failed { .. }
         ),
         "the forced step must fail"

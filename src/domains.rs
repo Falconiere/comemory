@@ -25,6 +25,10 @@ pub mod documents;
 /// The `edges` relation graph: derivation, mining, ranking and its queries.
 pub mod graph;
 
+/// The embedded agent bundle, its host registration, and the detect → plan →
+/// apply onboarding composition on top.
+pub mod integrations;
+
 /// The learning loop: memory and code feedback, golden sets and metrics,
 /// reformulation mining, and the deterministic, sampled and bandit searches
 /// over the ranking blend.
