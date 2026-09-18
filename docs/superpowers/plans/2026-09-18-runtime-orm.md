@@ -93,9 +93,14 @@ orm::query_optional(conn, query.to_sql(), |row| row.get(0))
 - Review follow-up generates and prepares rank/simhash updates once per batch.
   Real SQLite regressions cover rebinding, affected-row counts, native errors,
   early failure, and caller rollback.
-- The additional duplication scan reports 271 pairs with similarity-rs 0.5.0,
-  down from 278 before shared edge identity, metadata reads, live-memory scope,
-  document joins, and vector-write helpers. Current main enables this CI gate
-  with a baseline of 242; the check remains unresolved. The baseline and
-  detector settings are unchanged. Remaining matches include distinct typed
-  CRUD operations and short wrappers whose execution is already shared.
+- After rebasing onto main, the full suite passes 2,473 tests across 121 binaries.
+  Broader cleanup shares AST pattern dispatch/import collection, environment
+  overrides, validation bounds/errors, HTTP query responses, and SSE payload
+  serialization. The new import regression covers all five languages and cache
+  reuse. The pinned duplication count drops from 271 to 235; the baseline
+  tightens from 242 to 235 and `docs/dup-debt.md` inventories every remaining
+  pair. Detector settings and exclusions are unchanged.
+- Final umbrella, dependency, duplication and diff checks pass. The validator
+  remains within the 300-code-line ceiling; its final simplification passes
+  all 128 config tests. The final raw scan and documented inventory match all
+  235 pairs exactly.

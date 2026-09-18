@@ -23,7 +23,9 @@ use crate::domains::learning;
 use crate::serve::AppState;
 use crate::serve::routes::learning::{contain_golden, eval};
 use crate::serve::routes::maint::prune::split_confirm;
-use crate::serve::routes::{RouteEntry, guard_mutating, require_confirm, respond, run_blocking};
+use crate::serve::routes::{
+    RouteEntry, guard_mutating, query_response, require_confirm, respond, run_blocking,
+};
 use crate::utilities::context::Ctx;
 
 /// Default page size for `GET /learning/expansions`.
@@ -106,15 +108,7 @@ pub fn router(_state: AppState) -> Router<AppState> {
 /// `GET /api/v1/learning/summary` — feedback counters, the newest run, the
 /// mined-expansion count, and the best recall gain on record.
 async fn summary(State(state): State<AppState>) -> Response {
-    let started = Instant::now();
-    let result = run_blocking(move || {
-        let cfg = state.cfg();
-        let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        learning::console::summary(&mut ctx)
-    })
-    .await;
-    respond("learning.summary", result, started)
+    query_response(state, "learning.summary", learning::console::summary).await
 }
 
 /// `?limit=` on `GET /learning/evals`, defaulted to the same value
@@ -128,15 +122,10 @@ struct EvalsQuery {
 /// `GET /api/v1/learning/evals` — the run history with the console's
 /// derived `delta` / `is_baseline` / `is_best` per row.
 async fn evals(State(state): State<AppState>, Query(q): Query<EvalsQuery>) -> Response {
-    let started = Instant::now();
-    let result = run_blocking(move || {
-        let cfg = state.cfg();
-        let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        learning::console::evals(&mut ctx, q.limit)
+    query_response(state, "learning.evals", move |ctx| {
+        learning::console::evals(ctx, q.limit)
     })
-    .await;
-    respond("learning.evals", result, started)
+    .await
 }
 
 /// `?golden=` on `GET /learning/golden-set` — an optional YAML file merged
@@ -166,15 +155,12 @@ async fn golden_set(State(state): State<AppState>, Query(q): Query<GoldenQuery>)
 /// `GET /api/v1/learning/proposals` — the unapplied, undiscarded
 /// `tune`/`bandit` runs whose knobs still differ from the live config.
 async fn proposals(State(state): State<AppState>) -> Response {
-    let started = Instant::now();
-    let result = run_blocking(move || {
-        let cfg = state.cfg();
-        let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        learning::learning_proposals::list(&mut ctx)
-    })
-    .await;
-    respond("learning.proposals", result, started)
+    query_response(
+        state,
+        "learning.proposals",
+        learning::learning_proposals::list,
+    )
+    .await
 }
 
 /// The body of a confirm-gated route with no request fields of its own:
@@ -250,15 +236,10 @@ struct ExpansionsQuery {
 /// `GET /api/v1/learning/expansions` — one page of mined `query_expansions`
 /// rows, strongest support first.
 async fn expansions(State(state): State<AppState>, Query(q): Query<ExpansionsQuery>) -> Response {
-    let started = Instant::now();
-    let result = run_blocking(move || {
-        let cfg = state.cfg();
-        let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        learning::console::expansions(&mut ctx, q.limit, q.offset)
+    query_response(state, "learning.expansions", move |ctx| {
+        learning::console::expansions(ctx, q.limit, q.offset)
     })
-    .await;
-    respond("learning.expansions", result, started)
+    .await
 }
 
 #[cfg(test)]

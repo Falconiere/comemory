@@ -4,6 +4,7 @@
 //! assembly. Also owns the handler-layer helpers every resource reuses:
 //! [`run_blocking`] (run `domains::<capability>::<cmd>::run` — and the connection lock it
 //! takes — on a blocking-pool thread, never across an `.await`),
+//! [`query_response`] (borrow the shared context and envelope a query result),
 //! [`respond`] (envelope the result), and [`guard_mutating`] (the
 //! read-only/write-permit gate every mutating route calls first).
 
@@ -22,6 +23,7 @@ use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::envelope::Envelope;
 use crate::serve::jobs::JobId;
+use crate::utilities::context::Ctx;
 
 /// `GET|POST /code/search`.
 pub mod code;
@@ -204,6 +206,25 @@ where
     tokio::task::spawn_blocking(f)
         .await
         .map_err(|e| Error::Other(format!("blocking task panicked: {e}")))?
+}
+
+/// Run a query with the shared connection and envelope its owned result.
+/// Configuration and connection guards stay on the blocking thread; callers
+/// resolve request scope first and keep any specialized validation ordering.
+pub(crate) async fn query_response<T, F>(state: AppState, command: &str, query: F) -> Response
+where
+    F: FnOnce(&mut Ctx<'_>) -> Result<T> + Send + 'static,
+    T: Serialize + Send + 'static,
+{
+    let started = Instant::now();
+    let result = run_blocking(move || {
+        let cfg = state.cfg();
+        let mut conn = state.conn()?;
+        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
+        query(&mut ctx)
+    })
+    .await;
+    respond(command, result, started)
 }
 
 /// Gate a confirm-required mutating route: `Ok(())` when `confirmed`, else

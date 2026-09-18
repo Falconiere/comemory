@@ -52,6 +52,11 @@ SQL after an ORM upgrade. This procedure does not change historical migrations.
 
 Run targeted nextest suites, then `cargo nextest run --all-features` and
 `bash scripts/check-all.sh`. Full tests include loopback servers. Check the
-final retained-SQL inventory and verify `migrations/` has no diff. The ORM
-bridge tests cover binding/error/rollback behavior; the fractional BM25 test
-compares score bits with independent SQLite SQL.
+final retained-SQL inventory and verify `migrations/` has no diff. Run the pinned
+`scripts/dup-check.sh` separately: `check-all.sh` does not include it. Extract
+shared behavior within the authorized scope when conversion raises the count;
+keep the detector settings fixed, and lower `dup-baseline.txt` together with a
+fresh complete `docs/dup-debt.md` inventory when the count improves. Check the
+300-code-line ceiling after extracting helpers. The ORM bridge tests cover
+binding/error/rollback behavior; the fractional BM25 test compares score bits
+with independent SQLite SQL.

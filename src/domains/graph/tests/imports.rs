@@ -259,3 +259,40 @@ fn dotted_module_does_not_trigger_go_prefix_retry() {
         "dotted (slash-less) module must not trigger the Go module-prefix retry",
     );
 }
+
+/// Every extraction strategy feeds the same nonempty, first-seen collector.
+/// Source order deliberately differs from AST pattern order in the JS cases.
+#[test]
+fn every_language_preserves_unique_nonempty_import_order() {
+    let js = "const first = require('./shared');\nimport './bare';\n\
+              import shared from './shared';\nimport other from \"./double\";\n\
+              const dynamic = require(pluginName);\nimport '';\n";
+    let cases: &[(Lang, &str, &[&str])] = &[
+        (
+            Lang::Rust,
+            "mod local;\nuse crate::shared;\nuse self::shared;\npub use crate::public;\nuse self;\n",
+            &["shared", "public", "local"],
+        ),
+        (Lang::Typescript, js, &["./bare", "./shared", "./double"]),
+        (Lang::Javascript, js, &["./bare", "./shared", "./double"]),
+        (
+            Lang::Python,
+            "import shared, shared as alias\nfrom shared import x\nfrom  import x\nimport tail\n",
+            &["shared", "tail"],
+        ),
+        (
+            Lang::Go,
+            "package main\nimport \"one\"\nimport (\n\"one\"\n\"\"\n\"two\"\n)\n",
+            &["one", "two"],
+        ),
+    ];
+    for _ in 0..2 {
+        for (lang, source, expected) in cases {
+            assert_eq!(
+                extract_imports(*lang, source).expect("imports"),
+                *expected,
+                "{lang:?}"
+            );
+        }
+    }
+}

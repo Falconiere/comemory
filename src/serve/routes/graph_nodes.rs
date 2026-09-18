@@ -25,7 +25,7 @@ use serde::Serialize;
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::jobs;
-use crate::serve::routes::{RouteEntry, accepted, guard_job, respond, run_blocking};
+use crate::serve::routes::{RouteEntry, accepted, guard_job, query_response};
 use crate::serve::scope::RepoScope;
 use crate::store::{code_graph_nodes, repo_marker_roots};
 use crate::utilities::context::Ctx;
@@ -103,15 +103,10 @@ async fn list(
     Query(mut req): Query<crate::domains::graph::graph_nodes::ListRequest>,
 ) -> Response {
     req.repo = scope.resolve(req.repo);
-    let started = Instant::now();
-    let result = run_blocking(move || {
-        let cfg = state.cfg();
-        let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        crate::domains::graph::graph_nodes::list(&mut ctx, req)
+    query_response(state, "graph.nodes", move |ctx| {
+        crate::domains::graph::graph_nodes::list(ctx, req)
     })
-    .await;
-    respond("graph.nodes", result, started)
+    .await
 }
 
 /// `GET /api/v1/graph/snapshot` — the whole capped graph
@@ -122,15 +117,10 @@ async fn snapshot(
     Query(mut req): Query<crate::domains::graph::graph_nodes::SnapshotRequest>,
 ) -> Response {
     req.repo = scope.resolve(req.repo);
-    let started = Instant::now();
-    let result = run_blocking(move || {
-        let cfg = state.cfg();
-        let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        crate::domains::graph::graph_nodes::snapshot(&mut ctx, req)
+    query_response(state, "graph.snapshot", move |ctx| {
+        crate::domains::graph::graph_nodes::snapshot(ctx, req)
     })
-    .await;
-    respond("graph.snapshot", result, started)
+    .await
 }
 
 /// `GET /api/v1/graph/nodes/{id}` — one node with its top symbols and the
@@ -141,15 +131,10 @@ async fn node_detail(
     scope: RepoScope,
     Path(id): Path<String>,
 ) -> Response {
-    let started = Instant::now();
-    let result = run_blocking(move || {
-        let cfg = state.cfg();
-        let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        crate::domains::graph::graph_nodes::detail(&mut ctx, &id, scope.0.as_deref())
+    query_response(state, "graph.node", move |ctx| {
+        crate::domains::graph::graph_nodes::detail(ctx, &id, scope.0.as_deref())
     })
-    .await;
-    respond("graph.node", result, started)
+    .await
 }
 
 /// `GET /api/v1/graph/nodes/{id}/neighbors` — the one-hop file neighborhood
@@ -161,15 +146,10 @@ async fn node_neighbors(
     Path(id): Path<String>,
     Query(req): Query<crate::domains::graph::graph_nodes::NeighborsRequest>,
 ) -> Response {
-    let started = Instant::now();
-    let result = run_blocking(move || {
-        let cfg = state.cfg();
-        let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        crate::domains::graph::graph_nodes::neighbors(&mut ctx, &id, scope.0.as_deref(), req)
+    query_response(state, "graph.neighbors", move |ctx| {
+        crate::domains::graph::graph_nodes::neighbors(ctx, &id, scope.0.as_deref(), req)
     })
-    .await;
-    respond("graph.neighbors", result, started)
+    .await
 }
 
 /// Resolve one indexed node against its local worktree, with containment and
@@ -230,15 +210,10 @@ async fn node_source(
     scope: RepoScope,
     Path(id): Path<String>,
 ) -> Response {
-    let started = Instant::now();
-    let result = run_blocking(move || {
-        let cfg = state.cfg();
-        let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        read_node_source(&mut ctx, &id, scope.0.as_deref())
+    query_response(state, "graph.source", move |ctx| {
+        read_node_source(ctx, &id, scope.0.as_deref())
     })
-    .await;
-    respond("graph.source", result, started)
+    .await
 }
 
 /// `POST /api/v1/graph/recompute` — start a `graph-recompute` job

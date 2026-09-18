@@ -55,9 +55,6 @@ where
     Ok(Some(out))
 }
 
-/// Read an env var as an `"a,b"` pair of numbers; `Ok(None)` when unset.
-/// Shared by `COMEMORY_RANK_PRIOR_CLAMP` (`f64`) and
-/// `COMEMORY_RETRIEVAL_BM25_WEIGHTS` (`f32`).
 /// Parse one of the boolean env vars, naming the variable when it is not one.
 fn parse_bool_env(name: &str, raw: &str) -> Result<bool> {
     match raw {
@@ -69,6 +66,9 @@ fn parse_bool_env(name: &str, raw: &str) -> Result<bool> {
     }
 }
 
+/// Read an env var as an `"a,b"` pair of numbers; `Ok(None)` when unset.
+/// Shared by `COMEMORY_RANK_PRIOR_CLAMP` (`f64`) and
+/// `COMEMORY_RETRIEVAL_BM25_WEIGHTS` (`f32`).
 fn env_pair<T: std::str::FromStr + Copy>(name: &str) -> Result<Option<(T, T)>>
 where
     T::Err: std::fmt::Display,
@@ -84,6 +84,18 @@ where
     T::Err: std::fmt::Display,
 {
     Ok(env_numbers::<T>(name, 3)?.map(|v| (v[0], v[1], v[2])))
+}
+
+/// Apply a parsed override when present; an absent variable preserves the current layer.
+fn apply_override<T>(
+    target: &mut T,
+    name: &str,
+    read: impl FnOnce(&str) -> Result<Option<T>>,
+) -> Result<()> {
+    if let Some(value) = read(name)? {
+        *target = value;
+    }
+    Ok(())
 }
 
 impl Config {
@@ -125,46 +137,64 @@ impl Config {
                 }
             };
         }
-        if let Some(v) = env_parse::<u64>("COMEMORY_INDEXING_MAX_FILE_BYTES")? {
-            self.indexing.max_file_bytes = v;
-        }
+        apply_override(
+            &mut self.indexing.max_file_bytes,
+            "COMEMORY_INDEXING_MAX_FILE_BYTES",
+            env_parse,
+        )?;
         Ok(())
     }
 
     /// `COMEMORY_RETRIEVAL_*` → [`Config::retrieval`].
     fn apply_retrieval_env(&mut self) -> Result<()> {
-        if let Some(v) = env_parse::<usize>("COMEMORY_RETRIEVAL_TOP_K")? {
-            self.retrieval.top_k = v;
-        }
-        if let Some(v) = env_parse::<usize>("COMEMORY_RETRIEVAL_MAX_PAGE_WINDOW")? {
-            self.retrieval.max_page_window = v;
-        }
-        if let Some(v) = env_parse::<f32>("COMEMORY_RETRIEVAL_MEMORY_THRESHOLD")? {
-            self.retrieval.memory_threshold = v;
-        }
+        apply_override(
+            &mut self.retrieval.top_k,
+            "COMEMORY_RETRIEVAL_TOP_K",
+            env_parse,
+        )?;
+        apply_override(
+            &mut self.retrieval.max_page_window,
+            "COMEMORY_RETRIEVAL_MAX_PAGE_WINDOW",
+            env_parse,
+        )?;
+        apply_override(
+            &mut self.retrieval.memory_threshold,
+            "COMEMORY_RETRIEVAL_MEMORY_THRESHOLD",
+            env_parse,
+        )?;
         // Only the parse happens here; the finite/positive invariant lives
         // in `Config::validate` so the file overlay is checked identically.
-        if let Some(v) = env_parse::<f32>("COMEMORY_RETRIEVAL_RRF_K")? {
-            self.retrieval.rrf_k = v;
-        }
-        if let Some(v) = env_parse::<u32>("COMEMORY_RETRIEVAL_GRAPH_HOPS")? {
-            self.retrieval.graph_hops = v;
-        }
-        if let Some(v) = env_parse::<usize>("COMEMORY_RETRIEVAL_GRAPH_SEEDS")? {
-            self.retrieval.graph_seeds = v;
-        }
+        apply_override(
+            &mut self.retrieval.rrf_k,
+            "COMEMORY_RETRIEVAL_RRF_K",
+            env_parse,
+        )?;
+        apply_override(
+            &mut self.retrieval.graph_hops,
+            "COMEMORY_RETRIEVAL_GRAPH_HOPS",
+            env_parse,
+        )?;
+        apply_override(
+            &mut self.retrieval.graph_seeds,
+            "COMEMORY_RETRIEVAL_GRAPH_SEEDS",
+            env_parse,
+        )?;
         if let Some(v) = env_pair::<f32>("COMEMORY_RETRIEVAL_BM25_WEIGHTS")? {
             self.retrieval.bm25_weights = v;
         }
-        if let Some(v) = env_parse::<f32>("COMEMORY_RETRIEVAL_CODE_THRESHOLD")? {
-            self.retrieval.code_threshold = v;
-        }
+        apply_override(
+            &mut self.retrieval.code_threshold,
+            "COMEMORY_RETRIEVAL_CODE_THRESHOLD",
+            env_parse,
+        )?;
         if let Some(v) = env_triple::<f32>("COMEMORY_RETRIEVAL_CODE_BM25_WEIGHTS")? {
             self.retrieval.code_bm25_weights = v;
         }
-        if let Some(v) = env_parse::<f32>("COMEMORY_RETRIEVAL_DOCUMENT_LEG_WEIGHT")? {
-            self.retrieval.document_leg_weight = v;
-        }
+        apply_override(
+            &mut self.retrieval.document_leg_weight,
+            "COMEMORY_RETRIEVAL_DOCUMENT_LEG_WEIGHT",
+            env_parse,
+        )?;
         Ok(())
     }
 
@@ -209,47 +239,63 @@ impl Config {
     /// Parsing happens here; range invariants are enforced once for both
     /// env and file overlays by `Config::validate`.
     fn apply_rank_env(&mut self) -> Result<()> {
-        if let Some(v) = env_parse::<f64>("COMEMORY_RANK_DECAY")? {
-            self.rank.decay = v;
-        }
-        if let Some(v) = env_pair::<f64>("COMEMORY_RANK_PRIOR_CLAMP")? {
-            self.rank.prior_clamp = v;
-        }
-        if let Some(v) = env_parse::<f64>("COMEMORY_RANK_MMR_LAMBDA")? {
-            self.rank.mmr_lambda = v;
-        }
-        if let Some(v) = env_parse::<u32>("COMEMORY_RANK_NEAR_DUP_HAMMING")? {
-            self.rank.near_dup_hamming = v;
-        }
+        apply_override(&mut self.rank.decay, "COMEMORY_RANK_DECAY", env_parse)?;
+        apply_override(
+            &mut self.rank.prior_clamp,
+            "COMEMORY_RANK_PRIOR_CLAMP",
+            env_pair,
+        )?;
+        apply_override(
+            &mut self.rank.mmr_lambda,
+            "COMEMORY_RANK_MMR_LAMBDA",
+            env_parse,
+        )?;
+        apply_override(
+            &mut self.rank.near_dup_hamming,
+            "COMEMORY_RANK_NEAR_DUP_HAMMING",
+            env_parse,
+        )?;
         Ok(())
     }
 
     /// `COMEMORY_PRUNE_*` and `COMEMORY_LEARNING_RETENTION_DAYS` →
     /// [`Config::prune`]. Range invariants live in `Config::validate`.
     fn apply_prune_env(&mut self) -> Result<()> {
-        if let Some(v) = env_parse::<f64>("COMEMORY_PRUNE_MIN_ACTIVATION")? {
-            self.prune.min_activation = v;
-        }
-        if let Some(v) = env_parse::<f64>("COMEMORY_PRUNE_MIN_FEEDBACK")? {
-            self.prune.min_feedback = v;
-        }
-        if let Some(v) = env_parse::<u32>("COMEMORY_PRUNE_BELOW_QUALITY")? {
-            self.prune.low_value_default_below_quality = v;
-        }
-        if let Some(v) = env_parse::<u32>("COMEMORY_LEARNING_RETENTION_DAYS")? {
-            self.prune.learning_retention_days = v;
-        }
-        if let Some(v) = env_parse::<u32>("COMEMORY_PRUNE_SUPERSEDED_GRACE_DAYS")? {
-            self.prune.superseded_grace_days = v;
-        }
+        apply_override(
+            &mut self.prune.min_activation,
+            "COMEMORY_PRUNE_MIN_ACTIVATION",
+            env_parse,
+        )?;
+        apply_override(
+            &mut self.prune.min_feedback,
+            "COMEMORY_PRUNE_MIN_FEEDBACK",
+            env_parse,
+        )?;
+        apply_override(
+            &mut self.prune.low_value_default_below_quality,
+            "COMEMORY_PRUNE_BELOW_QUALITY",
+            env_parse,
+        )?;
+        apply_override(
+            &mut self.prune.learning_retention_days,
+            "COMEMORY_LEARNING_RETENTION_DAYS",
+            env_parse,
+        )?;
+        apply_override(
+            &mut self.prune.superseded_grace_days,
+            "COMEMORY_PRUNE_SUPERSEDED_GRACE_DAYS",
+            env_parse,
+        )?;
         Ok(())
     }
 
     /// `COMEMORY_REINFORCE_SEARCH_EDIT_DAYS` → [`Config::reinforce`].
     fn apply_reinforce_env(&mut self) -> Result<()> {
-        if let Some(v) = env_parse::<u32>("COMEMORY_REINFORCE_SEARCH_EDIT_DAYS")? {
-            self.reinforce.search_edit_days = v;
-        }
+        apply_override(
+            &mut self.reinforce.search_edit_days,
+            "COMEMORY_REINFORCE_SEARCH_EDIT_DAYS",
+            env_parse,
+        )?;
         Ok(())
     }
 }
