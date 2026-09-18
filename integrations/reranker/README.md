@@ -32,6 +32,7 @@ The design and the reasoning behind every pinned choice are in
 | Batch size / score column | `16` / `0` |
 | Score direction | `higher_is_better` |
 | Network | off — `local_files_only`, unless `--allow-download` |
+| Maximum request | 8 MiB on stdin, matching `RerankLimits::max_request_bytes` |
 
 Every one of these is a constant in `comemory_rerank_pins.py`, appears in the
 fingerprint the backend emits, and has a flag that overrides it. The dependency
@@ -245,6 +246,7 @@ The ladder is:
 | `69` | A dependency is not importable, the pinned snapshot is absent, or the warm socket is unreachable |
 | `70` | Scoring raised, or produced a non-finite score |
 | `73` | The warm socket cannot be bound, or another server owns it |
+| anything else | An unhandled internal error. The traceback is on stderr, and it is a bug in this backend — every refusal it knows about is one of the codes above |
 
 Every non-zero exit writes one `comemory-rerank: <message>` line to stderr.
 stderr is diagnostic only and is never parsed; it reaches a Rust caller as

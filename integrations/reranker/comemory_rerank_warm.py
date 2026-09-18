@@ -41,9 +41,9 @@ KIND_ERROR = 2
 
 _HEADER = struct.Struct(">BBI")
 
-# The same ceiling `RerankLimits::max_request_bytes` applies on the Rust side.
-# A frame claiming more is refused before a single byte of it is allocated.
-MAX_FRAME_BYTES = 8 << 20
+# A frame claiming more than the pinned request ceiling is refused before a
+# single byte of it is allocated.
+MAX_FRAME_BYTES = pins.MAX_REQUEST_BYTES
 
 DEFAULT_CONNECT_TIMEOUT = 2.0
 # Below the Rust runner's 20-second `DEFAULT_RERANK_TIMEOUT`, so a stalled
@@ -176,7 +176,14 @@ def _bind(path: str) -> socket.socket:
 
 
 def _clear_stale(path: str) -> None:
-    """Remove a leftover socket file, but never one a live server is using."""
+    """Remove a leftover socket file, but never one a live server is using.
+
+    The probe and the unlink are two steps, so a server that binds this exact
+    path in between would have its socket removed. Unix domain sockets offer no
+    atomic create-or-fail, so the race is narrow rather than absent: it is
+    stated here instead of being papered over, and it needs two servers racing
+    for one path, which is a configuration mistake in its own right.
+    """
     if not os.path.exists(path):
         return
     probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)

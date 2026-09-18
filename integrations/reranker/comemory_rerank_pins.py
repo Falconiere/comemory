@@ -28,6 +28,13 @@ PROTOCOL_VERSION = 1
 BACKEND_NAME = "comemory-rerank"
 BACKEND_VERSION = 1
 
+# The largest request this backend will read from stdin, matching the Rust
+# side's `RerankLimits::max_request_bytes`. The runner already refuses a larger
+# one before spawning, but the backend is also driven by hand and by the
+# training work in #214, so it enforces its own ceiling rather than trusting a
+# caller it cannot see.
+MAX_REQUEST_BYTES = 8 << 20
+
 # The request id shape minted by `utilities::dated_id` under the `rr` prefix.
 REQUEST_ID_PATTERN = r"\Arr-[0-9]{8}-[0-9a-f]{8}\Z"
 

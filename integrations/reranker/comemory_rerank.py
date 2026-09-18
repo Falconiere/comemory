@@ -81,8 +81,7 @@ def _dispatch(args: argparse.Namespace) -> int:
 
 def _score(scorer, verbose: bool) -> int:
     """Read one request from stdin, score it, and write one response."""
-    raw = sys.stdin.buffer.read()
-    request = wire.decode(raw)
+    request = wire.decode(_read_request())
     wire.check_identity(request, scorer.model_label, scorer.adapter_label)
     scorer.load()
     if verbose:
@@ -91,6 +90,21 @@ def _score(scorer, verbose: bool) -> int:
     sys.stdout.write(wire.encode(request, scores))
     sys.stdout.flush()
     return pins.EX_OK
+
+
+def _read_request() -> bytes:
+    """Read the request body, refusing one larger than the pinned ceiling.
+
+    One byte past the ceiling is read deliberately: it is how an over-cap body
+    is distinguished from one that exactly fills the budget, without buffering
+    the whole oversized payload to find out.
+    """
+    raw = sys.stdin.buffer.read(pins.MAX_REQUEST_BYTES + 1)
+    if len(raw) > pins.MAX_REQUEST_BYTES:
+        raise pins.RerankError(
+            "request exceeds the limit of " + str(pins.MAX_REQUEST_BYTES) + " bytes"
+        )
+    return raw
 
 
 def _benchmark(scorer, candidates: int, repeat: int) -> int:

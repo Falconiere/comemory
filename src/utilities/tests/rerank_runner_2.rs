@@ -57,6 +57,10 @@ const QUERY: &str = "bounded subprocess deadline";
 const EX_DATAERR: i32 = 65;
 /// `sysexits.h` `EX_UNAVAILABLE`: the warm server could not be reached.
 const EX_UNAVAILABLE: i32 = 69;
+/// `sysexits.h` `EX_USAGE`: the command line itself was wrong.
+const EX_USAGE: i32 = 64;
+/// `sysexits.h` `EX_CANTCREAT`: the warm socket could not be taken over.
+const EX_CANTCREAT: i32 = 73;
 
 /// The shipped backend, addressed from the manifest so the path is stable
 /// wherever this file is compiled from.
@@ -86,16 +90,37 @@ fn require_python() {
 }
 
 /// A runner pointed at the backend in its deterministic mode.
-fn lexical_runner(extra: &[&str]) -> RerankRunner {
+fn lexical_runner() -> RerankRunner {
     require_python();
-    let mut args: Vec<OsString> = vec![
-        backend().into_os_string(),
-        OsString::from("score"),
-        OsString::from("--scoring"),
-        OsString::from("lexical-overlap"),
-    ];
-    args.extend(extra.iter().map(OsString::from));
-    RerankRunner::new("python3", args).with_timeout(Duration::from_secs(30))
+    RerankRunner::new(
+        "python3",
+        backend_args(&["score", "--scoring", "lexical-overlap"]),
+    )
+    .with_timeout(Duration::from_secs(30))
+}
+
+/// The backend script followed by `rest`, as one argument vector. The program
+/// and its arguments are always passed separately, so no payload can reach a
+/// shell.
+fn backend_args(rest: &[&str]) -> Vec<OsString> {
+    let mut args = vec![backend().into_os_string()];
+    args.extend(rest.iter().map(OsString::from));
+    args
+}
+
+/// The same, with a filesystem path as the final argument — a socket, say,
+/// which is not representable as `&str` on every platform.
+fn backend_args_at(rest: &[&str], path: &Path) -> Vec<OsString> {
+    let mut args = backend_args(rest);
+    args.push(path.to_path_buf().into_os_string());
+    args
+}
+
+/// A bare process runner over the backend, for the cases that need a request
+/// body `RerankRequest` cannot express.
+fn backend_process(rest: &[&str]) -> ProcessRunner {
+    require_python();
+    ProcessRunner::new("python3", backend_args(rest)).with_timeout(Duration::from_secs(60))
 }
 
 /// The three candidates whose scores the design document computes by hand:
@@ -128,7 +153,7 @@ fn declined_code(outcome: &RerankOutcome) -> i32 {
 #[test]
 fn reorders_by_the_backends_own_scores() {
     let outcome =
-        lexical_runner(&[]).rerank(&request(LEXICAL_MODEL, None, hand_computed_candidates()));
+        lexical_runner().rerank(&request(LEXICAL_MODEL, None, hand_computed_candidates()));
     assert!(
         outcome.is_applied(),
         "expected the shipped backend to be applied, got {outcome:?}"
@@ -160,7 +185,7 @@ fn equal_scores_keep_the_submitted_order() {
         RerankCandidate::new("code:second", 1, "bounded subprocess deadline"),
         RerankCandidate::new("code:third", 2, "unrelated prose"),
     ];
-    let outcome = lexical_runner(&[]).rerank(&request(LEXICAL_MODEL, None, candidates));
+    let outcome = lexical_runner().rerank(&request(LEXICAL_MODEL, None, candidates));
     assert!(outcome.is_applied(), "{outcome:?}");
     assert_eq!(
         outcome.order_ids(),
@@ -172,7 +197,7 @@ fn equal_scores_keep_the_submitted_order() {
 #[test]
 fn refuses_a_model_label_it_does_not_answer_to() {
     let request = request(PINNED_MODEL, None, hand_computed_candidates());
-    let outcome = lexical_runner(&[]).rerank(&request);
+    let outcome = lexical_runner().rerank(&request);
     assert_eq!(declined_code(&outcome), EX_DATAERR);
     assert_eq!(outcome.order_ids(), vec![MEMORY, CODE, DOCUMENT]);
     let RerankOutcome::Declined(declined) = &outcome else {
@@ -193,26 +218,16 @@ fn refuses_an_adapter_a_base_only_process_cannot_honour() {
         Some("lora-v1".to_string()),
         hand_computed_candidates(),
     );
-    let outcome = lexical_runner(&[]).rerank(&request);
+    let outcome = lexical_runner().rerank(&request);
     assert_eq!(declined_code(&outcome), EX_DATAERR);
     assert_eq!(outcome.order_ids(), vec![MEMORY, CODE, DOCUMENT]);
 }
 
 #[test]
 fn refuses_every_malformed_request_body() {
-    require_python();
-    let runner = ProcessRunner::new(
-        "python3",
-        vec![
-            backend().into_os_string(),
-            OsString::from("score"),
-            OsString::from("--scoring"),
-            OsString::from("lexical-overlap"),
-        ],
-    )
-    .with_timeout(Duration::from_secs(30));
+    let runner = backend_process(&["score", "--scoring", "lexical-overlap"]);
 
-    let cases: [(&str, &str); 5] = [
+    let cases: [(&str, &str); 8] = [
         ("", "empty body"),
         ("not json at all", "unparsable body"),
         (
@@ -226,6 +241,18 @@ fn refuses_every_malformed_request_body() {
         (
             r#"{"protocol_version":1,"request_id":"rr-20260918-1a2b3c4d","model":"lexical-overlap@1","adapter":null,"query":"q","surprise":1,"candidates":[{"id":"a","rank":0,"text":"t"}]}"#,
             "unknown request key",
+        ),
+        (
+            r#"{"protocol_version":1,"request_id":"rr-20260918-1a2b3c4d","model":"lexical-overlap@1","adapter":null,"query":"q","candidates":[]}"#,
+            "empty candidate list",
+        ),
+        (
+            r#"{"protocol_version":1,"request_id":"rr-20260918-1a2b3c4d","model":"lexical-overlap@1","adapter":null,"query":"q","candidates":[{"id":"a","rank":0,"text":"t"},{"id":"a","rank":1,"text":"u"}]}"#,
+            "duplicate candidate id",
+        ),
+        (
+            r#"{"protocol_version":1,"request_id":"rr-20260918-1a2b3c4d","model":"lexical-overlap@1","adapter":null,"query":"q","candidates":[{"id":"a","rank":0,"text":"t","weight":1}]}"#,
+            "unknown candidate key",
         ),
     ];
 
@@ -248,17 +275,7 @@ fn refuses_every_malformed_request_body() {
 
 #[test]
 fn fingerprint_marks_the_deterministic_mode_as_not_a_model() {
-    require_python();
-    let runner = ProcessRunner::new(
-        "python3",
-        vec![
-            backend().into_os_string(),
-            OsString::from("fingerprint"),
-            OsString::from("--scoring"),
-            OsString::from("lexical-overlap"),
-        ],
-    )
-    .with_timeout(Duration::from_secs(30));
+    let runner = backend_process(&["fingerprint", "--scoring", "lexical-overlap"]);
     let output = runner.run(b"").expect("fingerprint must complete");
     assert_eq!(output.status.code(), Some(0));
     let parsed: serde_json::Value =
@@ -272,21 +289,15 @@ fn fingerprint_marks_the_deterministic_mode_as_not_a_model() {
 
 #[test]
 fn benchmark_reports_load_cost_latency_and_memory() {
-    require_python();
-    let runner = ProcessRunner::new(
-        "python3",
-        vec![
-            backend().into_os_string(),
-            OsString::from("benchmark"),
-            OsString::from("--scoring"),
-            OsString::from("lexical-overlap"),
-            OsString::from("--candidates"),
-            OsString::from("32"),
-            OsString::from("--repeat"),
-            OsString::from("5"),
-        ],
-    )
-    .with_timeout(Duration::from_secs(60));
+    let runner = backend_process(&[
+        "benchmark",
+        "--scoring",
+        "lexical-overlap",
+        "--candidates",
+        "32",
+        "--repeat",
+        "5",
+    ]);
     let output = runner.run(b"").expect("benchmark must complete");
     assert_eq!(output.status.code(), Some(0));
     let parsed: serde_json::Value =
@@ -323,7 +334,7 @@ fn shell_metacharacters_are_scored_as_literal_text() {
         query,
         candidates,
     );
-    let outcome = lexical_runner(&[]).rerank(&request);
+    let outcome = lexical_runner().rerank(&request);
     assert!(outcome.is_applied(), "{outcome:?}");
     assert!(
         !sentinel.exists(),
@@ -352,14 +363,14 @@ fn a_warm_server_answers_two_requests_without_reloading() {
     let log = dir.path().join("server.log");
 
     let mut server = spawn_server(&socket, &ready, &log);
-    let outcome = wait_then_drive(&ready, &socket, &mut server);
+    let (first, second) = wait_then_drive(&ready, &socket, &mut server);
 
     // Both requests go through the thin client, which is a real child process
     // speaking the real protocol on real pipes — exactly what #213 would run.
-    assert!(outcome.0.is_applied(), "first request: {:?}", outcome.0);
-    assert!(outcome.1.is_applied(), "second request: {:?}", outcome.1);
-    assert_eq!(outcome.0.order_ids(), vec![CODE, DOCUMENT, MEMORY]);
-    assert_eq!(outcome.1.order_ids(), vec![CODE, DOCUMENT, MEMORY]);
+    assert!(first.is_applied(), "first request: {first:?}");
+    assert!(second.is_applied(), "second request: {second:?}");
+    assert_eq!(first.order_ids(), vec![CODE, DOCUMENT, MEMORY]);
+    assert_eq!(second.order_ids(), vec![CODE, DOCUMENT, MEMORY]);
 
     let _ = server.kill();
     let _ = server.wait();
@@ -385,19 +396,137 @@ fn a_client_with_no_server_declines_and_keeps_the_original_order() {
     require_python();
     let dir = TempDir::new().expect("temp dir");
     let absent = dir.path().join("absent.sock");
-    let runner = RerankRunner::new(
-        "python3",
-        vec![
-            backend().into_os_string(),
-            OsString::from("client"),
-            OsString::from("--socket"),
-            absent.clone().into_os_string(),
-        ],
-    )
-    .with_timeout(Duration::from_secs(30));
+    let runner = RerankRunner::new("python3", backend_args_at(&["client", "--socket"], &absent))
+        .with_timeout(Duration::from_secs(30));
     let outcome = runner.rerank(&request(LEXICAL_MODEL, None, hand_computed_candidates()));
     assert_eq!(declined_code(&outcome), EX_UNAVAILABLE);
     assert_eq!(outcome.order_ids(), vec![MEMORY, CODE, DOCUMENT]);
+}
+
+#[test]
+fn verbose_puts_the_fingerprint_on_stderr_without_touching_the_response() {
+    require_python();
+    let runner = RerankRunner::new(
+        "python3",
+        backend_args(&["score", "--scoring", "lexical-overlap", "--verbose"]),
+    )
+    .with_timeout(Duration::from_secs(30));
+    let outcome = runner.rerank(&request(LEXICAL_MODEL, None, hand_computed_candidates()));
+    assert!(outcome.is_applied(), "{outcome:?}");
+    assert_eq!(outcome.order_ids(), vec![CODE, DOCUMENT, MEMORY]);
+    let RerankOutcome::Applied(applied) = &outcome else {
+        unreachable!("checked above")
+    };
+    // The fingerprint travels on stderr, never in the response: the response
+    // object denies unknown fields, so an extra key there would be a protocol
+    // version bump rather than a diagnostic.
+    assert!(
+        applied
+            .stderr_excerpt
+            .contains("\"scoring\":\"lexical-overlap\"")
+            && applied
+                .stderr_excerpt
+                .contains("\"scoring_is_neural\":false"),
+        "expected the fingerprint on stderr, found {:?}",
+        applied.stderr_excerpt
+    );
+}
+
+#[test]
+fn an_adapter_is_a_usage_error_in_the_deterministic_mode() {
+    let runner = backend_process(&[
+        "score",
+        "--scoring",
+        "lexical-overlap",
+        "--adapter",
+        "/nonexistent/lora-v1",
+    ]);
+    let output = runner.run(b"").expect("the child must complete");
+    assert_eq!(
+        output.status.code(),
+        Some(EX_USAGE),
+        "a mode with no model to adapt must refuse --adapter as a usage error"
+    );
+    assert!(output.stdout.is_empty());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("no model to adapt"),
+        "{:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn a_second_server_never_displaces_the_one_already_listening() {
+    require_python();
+    let dir = TempDir::new().expect("temp dir");
+    let socket = dir.path().join("rerank.sock");
+    let ready = dir.path().join("ready");
+    let log = dir.path().join("server.log");
+
+    let mut server = spawn_server(&socket, &ready, &log);
+    await_ready(&ready, &mut server);
+
+    let intruder = ProcessRunner::new(
+        "python3",
+        backend_args_at(
+            &["serve", "--scoring", "lexical-overlap", "--socket"],
+            &socket,
+        ),
+    )
+    .with_timeout(Duration::from_secs(30));
+    let output = intruder
+        .run(b"")
+        .expect("the second server must exit, not hang");
+    assert_eq!(
+        output.status.code(),
+        Some(EX_CANTCREAT),
+        "a live socket must never be reclaimed from under its owner"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("already listening"),
+        "{:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // The incumbent is untouched and still answers.
+    let client = RerankRunner::new("python3", backend_args_at(&["client", "--socket"], &socket))
+        .with_timeout(Duration::from_secs(30));
+    let outcome = client.rerank(&request(LEXICAL_MODEL, None, hand_computed_candidates()));
+    let _ = server.kill();
+    let _ = server.wait();
+    assert!(
+        outcome.is_applied(),
+        "the incumbent must still serve: {outcome:?}"
+    );
+}
+
+#[test]
+fn the_opt_in_model_suite_never_reports_success_without_its_prerequisites() {
+    require_python();
+    let preflight = PathBuf::from(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/integrations/reranker/comemory_rerank_preflight.py"
+    ));
+    let runner = ProcessRunner::new("python3", vec![preflight.into_os_string()])
+        .with_timeout(Duration::from_secs(60));
+    let output = runner.run(b"").expect("the preflight must complete");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    match output.status.code() {
+        // Every pinned library and the pinned snapshot are present on this
+        // machine, so the opt-in suite would genuinely run.
+        Some(0) => assert!(
+            stderr.is_empty(),
+            "a satisfied preflight says nothing: {stderr:?}"
+        ),
+        // Something is missing. The contract is that it never exits 0 and that
+        // it names the command that fixes each gap, so a skipped model test
+        // cannot be mistaken for a passing one.
+        Some(EX_UNAVAILABLE) => assert!(
+            stderr.contains("pip install -r") && stderr.contains("huggingface-cli download"),
+            "an unsatisfied preflight must name both fixes: {stderr:?}"
+        ),
+        other => panic!("unexpected preflight exit {other:?}: {stderr}"),
+    }
 }
 
 /// Start a real warm server with its stderr captured to `log`.
@@ -419,12 +548,8 @@ fn spawn_server(socket: &Path, ready: &Path, log: &Path) -> Child {
         .expect("the warm server must start")
 }
 
-/// Wait for readiness, then drive two requests through the thin client.
-fn wait_then_drive(
-    ready: &Path,
-    socket: &Path,
-    server: &mut Child,
-) -> (RerankOutcome, RerankOutcome) {
+/// Block until the server publishes its ready file, or fail the test.
+fn await_ready(ready: &Path, server: &mut Child) {
     let deadline = Instant::now() + Duration::from_secs(30);
     while !ready.exists() {
         if Instant::now() > deadline {
@@ -434,16 +559,17 @@ fn wait_then_drive(
         }
         sleep(Duration::from_millis(20));
     }
-    let runner = RerankRunner::new(
-        "python3",
-        vec![
-            backend().into_os_string(),
-            OsString::from("client"),
-            OsString::from("--socket"),
-            socket.to_path_buf().into_os_string(),
-        ],
-    )
-    .with_timeout(Duration::from_secs(30));
+}
+
+/// Wait for readiness, then drive two requests through the thin client.
+fn wait_then_drive(
+    ready: &Path,
+    socket: &Path,
+    server: &mut Child,
+) -> (RerankOutcome, RerankOutcome) {
+    await_ready(ready, server);
+    let runner = RerankRunner::new("python3", backend_args_at(&["client", "--socket"], socket))
+        .with_timeout(Duration::from_secs(30));
     let first = runner.rerank(&request(LEXICAL_MODEL, None, hand_computed_candidates()));
     let second = runner.rerank(&request(LEXICAL_MODEL, None, hand_computed_candidates()));
     (first, second)

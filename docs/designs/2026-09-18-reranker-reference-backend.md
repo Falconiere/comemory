@@ -371,6 +371,7 @@ own control flow.
 | `69` | `EX_UNAVAILABLE` | A dependency is not importable, the pinned snapshot is absent under `local_files_only`, or the warm socket cannot be reached |
 | `70` | `EX_SOFTWARE` | Scoring raised, or produced a non-finite score |
 | `73` | `EX_CANTCREAT` | The warm socket path cannot be bound, or another server already owns it |
+| anything else | — | An unhandled internal error, with a traceback on stderr. Every refusal the backend knows about is one of the codes above, so this is a bug in the backend rather than a contract |
 
 Every non-zero exit writes exactly one `comemory-rerank: <message>` line to
 stderr. stderr is diagnostic only and is never parsed by the Rust side; it
@@ -499,6 +500,7 @@ row's `bridge` column, and that file now declares two. The edit is exactly:
 
 | Case | Observable behavior |
 | --- | --- |
+| Request body over 8 MiB | `EX_DATAERR`. The backend enforces its own ceiling rather than trusting the runner's, because it is also driven by hand and by #214. |
 | `python3` absent | The Rust conformance suite fails with a message naming `python3` as a prerequisite. It never skips: a skipped protocol test that reads as a pass is the failure mode this design exists to avoid. |
 | Empty stdin | `EX_DATAERR`; the Rust side reports `NonZeroExit { code: Some(65) }`, and `order_ids()` is the submitted order. |
 | Stdin is not JSON, or is a JSON array | `EX_DATAERR`. |
