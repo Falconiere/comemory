@@ -245,6 +245,8 @@
       else if (uses.has(id)) role = 'uses';
       else if (usedBy.has(id)) role = 'used-by';
       button.setAttribute('aria-selected', id === activeId ? 'true' : 'false');
+      /* roving tabindex: the deck is one tab stop, arrow keys move inside it */
+      button.setAttribute('tabindex', id === activeId ? '0' : '-1');
       button.setAttribute('data-role', role);
       var label = button.querySelector('.card-role');
       var text = spec.edges || role === 'current' ? ROLE_TEXT[role] : ROLE_TEXT.none;
