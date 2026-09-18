@@ -91,8 +91,9 @@ issues include concrete consumer examples and inspected upstream APIs.
 
 ## Rust API
 
-The next minor release changes `store::stats_counts::scoped_count` from
-`(conn, table, predicate, repo)` to `(conn, Corpus, repo)`. Use
+This conversion changes `store::stats_counts::scoped_count` from
+`(conn, table, predicate, repo)` to `(conn, Corpus, repo)`; the new signature
+is already in `src/store/stats_counts.rs` and ships in the next release. Use
 `Corpus::LiveMemories`, `Corpus::TrashedMemories`, `Corpus::CodeSymbols`, or
 `Corpus::Documents` instead of passing SQL text. The CLI and HTTP statistics
 shapes are unchanged. The other converted public store interfaces are preserved.

@@ -365,4 +365,12 @@ fn co_change_weight_handles_large_working_sets() {
         "working-set IDs must share placeholders across orientations"
     );
     assert_eq!(weight.unwrap(), 18.0);
+    // The same large working set without the two edge endpoints must sum to
+    // zero: edgeless IDs contribute nothing, so 18.0 above is the two real
+    // edges and not an artifact of the reused placeholders.
+    assert_eq!(
+        co_change_weight(&conn, fid, &files[1..16_380]).expect("query"),
+        0.0,
+        "edgeless working-set IDs must not contribute weight"
+    );
 }
