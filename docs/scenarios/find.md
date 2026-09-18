@@ -19,7 +19,7 @@ Global flags `--json` and `--data-dir` apply. See [globals.md](globals.md).
 | Flag | Default | Effect |
 | --- | --- | --- |
 | `--k` / `--limit` | config `retrieval.top_k` | Page size |
-| `--offset` | `0` | Skip this many fused hits |
+| `--offset` | `0` | Skip this many fused hits. A page past the head does not bump access counts |
 | `--domain` | `all` | `all` \| `memory` \| `code` \| `document` |
 | `--repo` | unset | Narrows memory and code legs |
 | `--kind` | unset | Narrows the memory leg only |

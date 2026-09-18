@@ -17,7 +17,7 @@ use crate::domains::retrieval::{code_search, pipeline};
 use crate::prelude::*;
 use crate::store::{Connection, code_row};
 use crate::utilities::context::Ctx;
-use crate::utilities::pagination::{page_meta, page_window};
+use crate::utilities::pagination::{PageWindow, page_meta, page_window};
 
 /// `comemory search-code` / `GET|POST /api/v1/code/search` request.
 #[derive(Deserialize, Debug)]
@@ -78,6 +78,7 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<SearchCodeRes
             req.repo.as_deref(),
             lang,
             &hits,
+            window,
             started.elapsed(),
         )
     } else {
@@ -142,6 +143,7 @@ fn record_code_telemetry(
     repo: Option<&str>,
     lang: Option<&str>,
     hits: &[CodeReranked],
+    window: PageWindow,
     elapsed: std::time::Duration,
 ) -> Option<String> {
     let ids: Vec<String> = hits.iter().map(|h| h.symbol_id.to_string()).collect();
@@ -158,7 +160,7 @@ fn record_code_telemetry(
     };
     match conn.unchecked_transaction() {
         Ok(tx) => {
-            record_code_access(&tx, hits);
+            record_code_access(&tx, hits, window);
             let query_id = log(&tx);
             match tx.commit() {
                 Ok(()) => query_id,
@@ -170,7 +172,7 @@ fn record_code_telemetry(
         }
         Err(e) => {
             tracing::warn!(error = %e, "code telemetry transaction unavailable; falling back to direct writes");
-            record_code_access(conn, hits);
+            record_code_access(conn, hits, window);
             log(conn)
         }
     }
@@ -181,7 +183,16 @@ fn record_code_telemetry(
 /// via the shared [`code_row::record_access`] writer, so `search-code`
 /// and `context` cannot drift on the bump SQL or its best-effort
 /// contract.
-fn record_code_access(conn: &Connection, hits: &[CodeReranked]) {
+///
+/// Only a head window is reinforced. `code_prior` feeds the same
+/// [`crate::domains::retrieval::score::activation`] the memory reranker
+/// uses, so a mid-list bump reorders code results between identical paged
+/// calls exactly as it did for memories — see
+/// `retrieval::pipeline::record_access` for the rule (#201).
+fn record_code_access(conn: &Connection, hits: &[CodeReranked], window: PageWindow) {
+    if !window.is_head() {
+        return;
+    }
     let ids: Vec<i64> = hits.iter().map(|h| h.symbol_id).collect();
     code_row::record_access(conn, &ids);
 }

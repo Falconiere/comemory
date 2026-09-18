@@ -201,3 +201,83 @@ fn empty_index_reports_index_empty() {
         "a never-indexed store must report index_empty"
     );
 }
+
+/// Symbols carrying any access-tracking write at all — either column.
+fn bumped_symbols(conn: &rusqlite::Connection) -> i64 {
+    conn.query_row(
+        "SELECT COUNT(*) FROM code_symbols WHERE access_count <> 0 OR last_accessed IS NOT NULL",
+        [],
+        |r| r.get(0),
+    )
+    .expect("count bumped symbols")
+}
+
+/// A fixture repo whose two functions share a query token, so a search over it
+/// returns at least two ranked hits and `--offset 1` has something to return.
+fn seeded_two_hit_home() -> (tempfile::TempDir, tempfile::TempDir) {
+    let home = tempfile::tempdir().expect("tempdir");
+    let workspace = tempfile::tempdir().expect("workspace");
+    let repo = workspace.path().join("widget-repo");
+    git_repo::init_repo(&repo);
+    git_commit::commit_files(
+        &repo,
+        &[("widget.rs", "fn widget_alpha() {}\nfn widget_bravo() {}\n")],
+        "init",
+    );
+    index_repo(&home, &repo);
+    (home, workspace)
+}
+
+/// Issue #201: a `search-code` page past the head writes its `retrieval_log`
+/// row but bumps no `code_symbols.access_count`.
+///
+/// `code_prior` feeds `score::activation(sig.access_count, ...)` exactly as the
+/// memory reranker does, so an ungated bump here reorders the code ranking
+/// between identical paged calls in the same way.
+///
+/// Both halves are deltas over one real indexed repository: the offset-0 call
+/// must bump (proving the path is reachable with this fixture), and the
+/// offset-1 call must then add nothing.
+#[test]
+fn a_deep_code_page_logs_the_query_but_bumps_no_access_counts() {
+    let (home, _workspace) = seeded_two_hit_home();
+    let paths = Paths::new(home.path());
+    let mut conn = connection::open(paths.db_path()).expect("open db");
+    let cfg = Config::defaults();
+
+    let paged = |conn: &mut rusqlite::Connection, offset: usize| {
+        let mut ctx = Ctx::borrowed(&paths, &cfg, conn);
+        retrieval::search_code::run(
+            &mut ctx,
+            retrieval::search_code::Request {
+                k: Some(1),
+                offset,
+                ..request("widget")
+            },
+            true,
+        )
+        .expect("search run")
+    };
+
+    let head = paged(&mut conn, 0);
+    assert_eq!(head.hits.len(), 1, "a one-row head page");
+    assert!(head.query_id.is_some(), "the head page is logged");
+    let after_head = bumped_symbols(&conn);
+    assert!(
+        after_head > 0,
+        "the head page must bump its hit, else the deep-page assertion below \
+         would prove nothing"
+    );
+
+    let deep = paged(&mut conn, 1);
+    assert_eq!(deep.hits.len(), 1, "a one-row page at offset 1");
+    assert!(
+        deep.query_id.is_some(),
+        "a deep page is still logged, so `comemory feedback` reaches it"
+    );
+    assert_eq!(
+        bumped_symbols(&conn),
+        after_head,
+        "a page past the head must not bump any further symbol access counts"
+    );
+}

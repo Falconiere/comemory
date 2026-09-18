@@ -177,3 +177,100 @@ fn an_unknown_domain_is_a_usage_error_naming_the_offender() {
         "a bad flag value is a usage error, not an internal one: {err:?}"
     );
 }
+
+/// Issue #201: a `find` page past the head writes its `retrieval_log` row but
+/// bumps no access counts.
+///
+/// Both halves are asserted as DELTAS against the same corpus, in order, so
+/// neither can hold vacuously: the offset-0 call must move
+/// `memories.access_count`, proving the bump path is reachable with this
+/// fixture at all, and the offset-1 call must then leave it exactly where the
+/// first call left it.
+///
+/// Scope note: `find::track_run` bumps `code_symbols.access_count` for code
+/// hits from the same `if`, but this fixture indexes no code, so asserting the
+/// code column here would compare 0 to 0 and pass against any implementation.
+/// The code column is covered non-vacuously by `tests/api__search_code.rs`
+/// and `tests/api__context.rs` against real indexed repositories.
+#[test]
+fn a_deep_find_page_logs_the_query_but_bumps_no_access_counts() {
+    let dir = TempDir::new().unwrap();
+    let paths = paths_for(&dir);
+    let mut conn = connection::open(paths.db_path()).unwrap();
+    seed_memory(
+        &conn,
+        "aaaa1111",
+        "frontmatter is the contract for a memory",
+    );
+    seed_memory(
+        &conn,
+        "aaaa2222",
+        "frontmatter drives the rebuild of an index",
+    );
+    // `seed_memory` leaves `simhash` at its column default, so two rows would
+    // be zero bits apart and the diversify stage would collapse them into one
+    // — leaving a one-row corpus and nothing at offset 1 to assert about.
+    spread_simhashes(&conn);
+    let cfg = Config::defaults();
+
+    let paged = |conn: &mut rusqlite::Connection, offset: usize| {
+        let mut ctx = Ctx::borrowed(&paths, &cfg, conn);
+        find::run(
+            &mut ctx,
+            find::Request {
+                offset,
+                k: Some(1),
+                ..request("frontmatter", Some("memory"))
+            },
+            true,
+        )
+        .unwrap()
+    };
+
+    let head = paged(&mut conn, 0);
+    assert_eq!(head.hits.len(), 1, "a one-row head page");
+    assert!(head.query_id.is_some(), "the head page is logged");
+    let after_head = bumped_memories(&conn);
+    assert_eq!(
+        after_head, 1,
+        "the head page must bump its hit, else the deep-page assertion below \
+         would prove nothing"
+    );
+
+    let deep = paged(&mut conn, 1);
+    assert_eq!(deep.hits.len(), 1, "a one-row page at offset 1");
+    assert!(
+        deep.query_id.is_some(),
+        "a deep page is still logged, so `comemory feedback` reaches it"
+    );
+    assert_eq!(log_rows(&conn), 2, "one row per run, head and deep alike");
+    assert_eq!(
+        bumped_memories(&conn),
+        after_head,
+        "a page past the head must not bump any further access counts"
+    );
+}
+
+/// Give each seeded memory a far-apart SimHash so near-dup collapse cannot
+/// merge the fixture corpus into a single row.
+fn spread_simhashes(conn: &rusqlite::Connection) {
+    conn.execute(
+        "UPDATE memories SET simhash = CASE id \
+           WHEN 'aaaa1111' THEN ?1 ELSE ?2 END",
+        rusqlite::params![
+            0x0F0F_0F0F_0F0F_0F0F_u64 as i64,
+            0x7070_7070_7070_7070_u64 as i64
+        ],
+    )
+    .unwrap();
+}
+
+/// Memories carrying any access-tracking write at all — either column.
+fn bumped_memories(conn: &rusqlite::Connection) -> i64 {
+    conn.query_row(
+        "SELECT COUNT(*) FROM memories WHERE access_count <> 0 OR last_accessed IS NOT NULL",
+        [],
+        |r| r.get(0),
+    )
+    .unwrap()
+}

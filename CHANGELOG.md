@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- paged search no longer returns a different row across identical runs: a
+  tracked retrieval bumps ACT-R access counts only for a page at the head of
+  the ranking, so a page past the head no longer reinforces itself
+  ([#201](https://github.com/Falconiere/comemory/issues/201))
+
 ## [0.35.0] - 2026-09-18
 
 ### Changed

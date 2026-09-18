@@ -20,7 +20,7 @@ Global flags `--json` and `--data-dir` apply. See [globals.md](globals.md).
 | Flag | Default | Effect |
 | --- | --- | --- |
 | `--k` / `--limit` | config `retrieval.top_k` | Page size. `0` = rest of the window |
-| `--offset` | `0` | Skip this many ranked hits |
+| `--offset` | `0` | Skip this many ranked hits. A page past the head does not bump access counts |
 | `--repo` | unset | Exact repo filter |
 | `--kind` | unset | Filter to one memory kind |
 | `--vector` | unset | CSV embedding (1024-dim) for the ANN leg |

@@ -21,6 +21,12 @@ pub struct SearchOptions {
     /// Record access counts and write the `retrieval_log` row. CLI
     /// search/context set `true`; eval and tune set `false` so offline
     /// measurement cannot pollute its own training signal.
+    ///
+    /// The two writes are not symmetric once `window` leaves the head of the
+    /// ranked list: a tracked page past the head still writes its
+    /// `retrieval_log` row — so `comemory feedback <query_id>` reaches a
+    /// result found on page three — but bumps no access counts. See
+    /// [`search`] for why.
     pub track: bool,
     /// Query origin written verbatim to `retrieval_log.source` — one of
     /// the `crate::utilities::telemetry::source` consts (`SEARCH`, `CONTEXT`,
@@ -104,8 +110,10 @@ pub struct SearchRun {
 /// `decision`), and created-date scope — [`Filters::none`] searches
 /// everything. `opts.window` selects the `(offset, limit)` page of the
 /// bounded ranked window (use [`PageWindow::top_k`] for the unpaginated
-/// default). With `opts.track` set, access counts are bumped and the query
-/// is logged to `retrieval_log` — for the RETURNED page only.
+/// default). With `opts.track` set, the returned page is logged to
+/// `retrieval_log` at every offset, but its access counts are bumped only
+/// when the window starts at the head ([`PageWindow::is_head`]) — see
+/// [`record_access`] for why only a prefix may be reinforced (#201).
 ///
 /// An `--as-of` scope additionally reaches the rerank stage, where it
 /// limits the supersede penalty to superseders that existed at the cutoff;
@@ -139,7 +147,7 @@ pub fn search(
             query,
             filters.repo,
             filters.kind,
-            opts.source,
+            opts,
             &page,
             started.elapsed(),
         )
@@ -156,23 +164,30 @@ pub fn search(
 
 /// Best-effort telemetry for one tracked run: bump access counts and
 /// write the `retrieval_log` row inside ONE transaction, so the pair
-/// costs a single WAL fsync instead of two. The contract stays
-/// best-effort end to end — search never fails on telemetry: if the
-/// transaction cannot be opened the two writes fall back to direct
-/// autocommit calls, and if the commit fails both writes are dropped
-/// with a warning and no `query_id` is reported.
+/// costs a single WAL fsync instead of two. The two writes have different
+/// scopes: the log always covers the returned page, while the bump covers
+/// it only on a head window ([`bumped_ids`]).
+///
+/// The contract stays best-effort end to end — search never fails on
+/// telemetry: if the transaction cannot be opened the two writes fall back
+/// to direct autocommit calls, and if the commit fails both writes are
+/// dropped with a warning and no `query_id` is reported.
+///
+/// Takes the whole [`SearchOptions`] rather than `source` plus a window
+/// because an eighth parameter would exceed `clippy::too_many_arguments`.
 fn record_telemetry(
     conn: &Connection,
     query: &str,
     repo: Option<&str>,
     kind: Option<&str>,
-    source: &'static str,
+    opts: SearchOptions,
     hits: &[Reranked],
     elapsed: std::time::Duration,
 ) -> Option<String> {
+    let source = opts.source;
     match conn.unchecked_transaction() {
         Ok(tx) => {
-            record_access(&tx, &ids_of(hits));
+            record_access(&tx, &bumped_ids(opts.window, hits));
             let query_id = record_query(&tx, query, repo, kind, source, hits, elapsed);
             match tx.commit() {
                 Ok(()) => query_id,
@@ -184,19 +199,34 @@ fn record_telemetry(
         }
         Err(e) => {
             tracing::warn!(error = %e, "telemetry transaction unavailable; falling back to direct writes");
-            record_access(conn, &ids_of(hits));
+            record_access(conn, &bumped_ids(opts.window, hits));
             record_query(conn, query, repo, kind, source, hits, elapsed)
         }
     }
 }
 
-/// Borrow every hit's id, for the id-based [`record_access`] writer.
-fn ids_of(hits: &[Reranked]) -> Vec<&str> {
-    hits.iter().map(|h| h.memory_id.as_str()).collect()
+/// The ids this run may reinforce: every hit on a head window, none at all
+/// once `window` skips past the head. Returning an empty slice rather than
+/// branching at the call site reuses [`record_access`]'s own empty-input
+/// guard, so there is exactly one place that decides "nothing to bump".
+fn bumped_ids(window: PageWindow, hits: &[Reranked]) -> Vec<&str> {
+    if window.is_head() {
+        hits.iter().map(|h| h.memory_id.as_str()).collect()
+    } else {
+        Vec::new()
+    }
 }
 
 /// Bump access tracking for returned hits. Best-effort: a failure must
 /// never break the read path.
+///
+/// Search-path callers must pass a PREFIX of the ranked window, never a band
+/// out of its middle. Activation only grows with `access_count` and recency,
+/// so a bump weakly raises exactly the rows it touches: a prefix is a fixed
+/// point of its own reinforcement, while a gapped set floats above the rows
+/// it was behind and the next identical query returns a different band
+/// (#201). This constrains the search path only — `graph::coactivate` bumps
+/// co-activated memories outside any ranking and is not bound by it.
 ///
 /// All ids are folded into one `UPDATE ... WHERE id IN (...)` statement so
 /// the bump costs a single statement and waits on `busy_timeout` at most

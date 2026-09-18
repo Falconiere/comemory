@@ -14,6 +14,7 @@
 use assert_cmd::Command;
 use comemory::config::{Config, Paths};
 use comemory::retrieval;
+use comemory::store::code_row::{self, CodeSymbolRow};
 use comemory::store::connection;
 use comemory::utilities::context::Ctx;
 
@@ -158,4 +159,119 @@ fn track_true_bumps_memory_access_count() {
         })
         .expect("read access_count after");
     assert!(after > before, "track=true must bump access_count");
+}
+
+/// Save a memory through the real binary and return the id it reports.
+fn save_id(home: &tempfile::TempDir, body: &str) -> String {
+    let assert = Command::cargo_bin("comemory")
+        .expect("bin")
+        .env("COMEMORY_DATA_DIR", home.path())
+        .args([
+            "save", body, "--kind", "decision", "--repo", "demo", "--json",
+        ])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let v: serde_json::Value = serde_json::from_str(&out).expect("save --json");
+    v["id"].as_str().expect("saved id").to_string()
+}
+
+/// Insert one real `code_symbols` row through the production writer, so the
+/// column defaults (`rank_score`, `access_count`, `last_accessed`) are the
+/// ones `index-code` produces.
+fn seed_symbol(conn: &rusqlite::Connection, path: &str, symbol: &str) {
+    code_row::insert(
+        conn,
+        &CodeSymbolRow {
+            repo: "demo",
+            path,
+            blob_oid: "oid",
+            symbol,
+            kind: "function",
+            lang: "rust",
+            line_start: 1,
+            line_end: 10,
+            snippet: "fn body() {}",
+            simhash: 0,
+            parent_id: None,
+        },
+    )
+    .expect("insert code symbol");
+}
+
+/// Point `memory_id` at a `<repo>:<path>:<symbol>` destination, the shape
+/// `bundle::assemble` resolves into `resolved_code_ids`.
+fn seed_symbol_edge(conn: &rusqlite::Connection, memory_id: &str, dst: &str) {
+    conn.execute(
+        "INSERT INTO edges(src_kind,src_id,dst_kind,dst_id,rel,created_at) \
+         VALUES('memory',?1,'symbol',?2,'references_symbol','t')",
+        rusqlite::params![memory_id, dst],
+    )
+    .expect("seed references_symbol edge");
+}
+
+/// Symbols carrying any access-tracking write at all — either column.
+fn bumped_symbols(conn: &rusqlite::Connection) -> i64 {
+    conn.query_row(
+        "SELECT COUNT(*) FROM code_symbols WHERE access_count <> 0 OR last_accessed IS NOT NULL",
+        [],
+        |r| r.get(0),
+    )
+    .expect("count bumped symbols")
+}
+
+/// Issue #201: `context`'s code-ref self-reinforcement must also stop at the
+/// head of the ranking.
+///
+/// This bump is NOT covered by `pipeline::search`'s gate — it fires after the
+/// bundle is assembled, over refs derived from the page that was returned —
+/// so a deep `context` page would keep churning `code_prior`'s activation
+/// input and reordering code refs between identical calls.
+///
+/// Both halves are deltas over one corpus: the offset-0 call must bump
+/// (proving the refs really resolve, so the negative half is not vacuous),
+/// and the offset-1 call must then add nothing.
+#[test]
+fn a_deep_context_page_does_not_bump_code_ref_access_counts() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let first = save_id(&home, "advisory lock guards the migration runner");
+    let second = save_id(&home, "advisory lock protects every schema rebuild");
+    let paths = Paths::new(home.path());
+    let mut conn = connection::open(paths.db_path()).expect("open db");
+    seed_symbol(&conn, "alpha.rs", "alpha_run");
+    seed_symbol(&conn, "bravo.rs", "bravo_run");
+    seed_symbol_edge(&conn, &first, "demo:alpha.rs:alpha_run");
+    seed_symbol_edge(&conn, &second, "demo:bravo.rs:bravo_run");
+    let cfg = Config::defaults();
+
+    let paged = |conn: &mut rusqlite::Connection, offset: usize| {
+        let mut ctx = Ctx::borrowed(&paths, &cfg, conn);
+        retrieval::context::run(
+            &mut ctx,
+            retrieval::context::Request {
+                k: Some(1),
+                offset,
+                ..request("advisory lock")
+            },
+            true,
+        )
+        .expect("context run")
+    };
+
+    let head = paged(&mut conn, 0);
+    assert_eq!(head.bundle.memories.len(), 1, "a one-row head page");
+    let after_head = bumped_symbols(&conn);
+    assert!(
+        after_head > 0,
+        "the head page must reinforce its resolved code ref, else the \
+         deep-page assertion below would prove nothing"
+    );
+
+    let deep = paged(&mut conn, 1);
+    assert_eq!(deep.bundle.memories.len(), 1, "a one-row page at offset 1");
+    assert_eq!(
+        bumped_symbols(&conn),
+        after_head,
+        "a context page past the head must not reinforce further code refs"
+    );
 }

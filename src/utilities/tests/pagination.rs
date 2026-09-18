@@ -10,7 +10,7 @@
 //! at boundaries, empty input) plus the [`Page::new`] passthrough constructor
 //! and the JSON contract.
 
-use comemory::utilities::pagination::Page;
+use comemory::utilities::pagination::{Page, PageWindow};
 
 fn nums(n: usize) -> Vec<usize> {
     (0..n).collect()
@@ -130,4 +130,44 @@ fn serializes_total_none_as_json_null() {
     let p: Page<usize> = Page::new(vec![], 0, 0, None, false);
     let v = serde_json::to_value(&p).expect("serialize Page");
     assert_eq!(v["total"], serde_json::Value::Null);
+}
+
+#[test]
+fn a_window_at_offset_zero_starts_at_the_head() {
+    assert!(
+        PageWindow {
+            offset: 0,
+            limit: 5
+        }
+        .is_head()
+    );
+}
+
+#[test]
+fn any_nonzero_offset_is_not_the_head() {
+    assert!(
+        !PageWindow {
+            offset: 1,
+            limit: 5
+        }
+        .is_head()
+    );
+    assert!(
+        !PageWindow {
+            offset: 99,
+            limit: 0
+        }
+        .is_head()
+    );
+}
+
+#[test]
+fn the_all_remaining_sentinel_is_still_a_head_window_at_offset_zero() {
+    assert!(
+        PageWindow {
+            offset: 0,
+            limit: 0
+        }
+        .is_head()
+    );
 }

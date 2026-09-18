@@ -245,10 +245,14 @@ fn seed_many(home: &tempfile::TempDir, n: usize) {
 /// Run `comemory search --json` with extra args, return the parsed envelope.
 ///
 /// `COMEMORY_DISABLE_ACCESS_TRACKING` is set so each query does NOT bump
-/// `access_count` / `last_accessed`. These helpers back ranking/pagination
-/// stability tests that drive `search` many times over one corpus; tracked,
-/// every call would feed ACT-R activation and reorder the window between
-/// calls (the pagination flake). The access side-effect is out of scope here.
+/// `access_count` / `last_accessed`. Since #201 a page past the head is never
+/// bumped, so paged stability no longer depends on this hook — see
+/// `a_paged_search_returns_the_same_row_across_eight_tracked_runs`, which
+/// deliberately runs tracked. What the hook still buys these helpers is a
+/// frozen FIRST page: they drive `search` many times over one corpus, and a
+/// repeated head query does still re-reinforce the rows it returns, which
+/// would drift the ordering they assert on. The access side effect itself is
+/// out of scope here.
 fn search_json(home: &tempfile::TempDir, extra: &[&str]) -> Value {
     let mut args = vec!["search", "sqlite indexing", "--json"];
     args.extend_from_slice(extra);
@@ -344,4 +348,70 @@ fn search_offset_beyond_window_is_empty_with_no_more() {
     assert!(ids_of(&v).is_empty(), "offset past the window is empty");
     assert_eq!(v["has_more"], Value::Bool(false), "nothing beyond");
     assert!(v["total"].as_u64().unwrap() >= 5, "total still reported");
+}
+
+/// Save one memory through the real CLI.
+fn save_body(home: &tempfile::TempDir, body: &str) {
+    Command::cargo_bin("comemory")
+        .expect("bin")
+        .env("COMEMORY_DATA_DIR", home.path())
+        .args(["save", "--kind", "note", body])
+        .assert()
+        .success();
+}
+
+/// One `comemory search --json` run with access tracking at its DEFAULT — on.
+///
+/// Deliberately not [`search_json`]: that helper sets
+/// `COMEMORY_DISABLE_ACCESS_TRACKING=true`, which switches off the exact
+/// mechanism this test exists to pin, and a paging assertion written through
+/// it would pass against the unfixed binary.
+fn tracked_search_ids(home: &tempfile::TempDir, paging: &[&str]) -> Vec<String> {
+    let mut argv = vec!["search", "widget", "--json"];
+    argv.extend_from_slice(paging);
+    let assert = Command::cargo_bin("comemory")
+        .expect("bin")
+        .env("COMEMORY_DATA_DIR", home.path())
+        .args(&argv)
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let v: Value = serde_json::from_str(&out).expect("json");
+    ids_of(&v)
+}
+
+/// Issue #201, end to end through the real binary: eight identical paged
+/// searches must return the same row, with access tracking left at its
+/// default.
+///
+/// The two bodies carry the same token count and share exactly one query
+/// term, so BM25 — and every prior after it — ties them, and the rerank
+/// tie-break on `memory_id` is all that orders them. On unmodified `main`
+/// this loop alternates: the run bumps `access_count` / `last_accessed` for
+/// the single row it returned, ACT-R activation reads both back, and the
+/// bumped row floats above the row ahead of it.
+///
+/// Eight runs, matching the count reported in the issue. `main` first
+/// diverges at run 3 here — `ln(max(n,1))` is flat between counts 0 and 1, so
+/// the first bump is invisible and the second is not — which is why a
+/// single-run assertion would prove nothing.
+#[test]
+fn a_paged_search_returns_the_same_row_across_eight_tracked_runs() {
+    let home = tempdir().expect("tempdir");
+    save_body(&home, "widget alpha bravo charlie delta echo");
+    save_body(&home, "widget juliett kilo lima mike november");
+
+    let runs: Vec<Vec<String>> = (0..8)
+        .map(|_| tracked_search_ids(&home, &["--limit", "1", "--offset", "1"]))
+        .collect();
+
+    assert!(
+        runs.iter().all(|r| r.len() == 1),
+        "every run must return exactly one row, got {runs:?}"
+    );
+    let first = &runs[0];
+    assert!(
+        runs.iter().all(|r| r == first),
+        "eight identical paged searches returned different rows: {runs:?}"
+    );
 }

@@ -58,7 +58,8 @@ pub struct Request {
 /// assemble a bundle covering every matched memory plus cross-link edges
 /// walked to depth ≤ 2. `track` governs access tracking (memory + the
 /// code-ref self-reinforcement below) — see `retrieval::search::run`'s doc for
-/// the CLI/HTTP split.
+/// the CLI/HTTP split. Both bumps additionally require a head window, per
+/// `retrieval::pipeline::record_access`.
 pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<ContextResult> {
     // Continuous sync is the user-level daemon — context no longer pulls.
     let cfg = ctx.cfg;
@@ -93,8 +94,11 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<ContextResult
     let bundle = bundle::assemble(conn, cfg, &req.query, &ranked, &ws)?;
     // Self-reinforce the code refs the bundle actually surfaced, the
     // code-side twin of the memory access bump `pipeline::search` already
-    // applied — gated by the same `track` flag.
-    if track {
+    // applied — gated by the same `track` flag AND by the same head-window
+    // rule. `pipeline::search`'s gate does not reach this call: the refs are
+    // derived from the returned page here, so a deep page would still churn
+    // the bundle's code-ref ordering (#201).
+    if track && window.is_head() {
         code_row::record_access(conn, &bundle.resolved_code_ids);
     }
     Ok(ContextResult {

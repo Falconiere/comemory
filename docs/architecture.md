@@ -392,6 +392,23 @@ The `--json` envelope is `Page<T>` = `{items, limit, offset, total,
 has_more}`. For retrieval, `total` is the **in-window** ranked count, not a
 global match count.
 
+**Only a head window is reinforced.** A tracked run writes its `retrieval_log`
+row at every offset, but bumps `access_count` / `last_accessed` only when
+`offset == 0`. ACT-R activation grows with access count and recency, so a bump
+weakly raises exactly the rows it touches and no others. Bump a *prefix* of the
+ranking and the same set stays on top, so the next identical query returns the
+same page; bump a band with a gap in front of it and that band floats above the
+rows it was behind, so the next identical query returns a different one.
+Reinforcing the returned page at any offset is what made `--offset N`
+non-deterministic across identical runs (#201). The rule covers all four ranked
+surfaces — `search`, `search-code`, `find`, `context` — on both transports.
+
+This fixes which rows a given `--offset` returns, not every ordering effect of
+tracking. The boost is logarithmic in access count, so a repeated *head* query
+can still reorder rows within page 1, and because MMR normalizes relevance
+across the pool it can shift deeper picks too. Stable deep paging needs a
+snapshot cursor, which the bounded window deliberately does not provide.
+
 The mechanism differs per command: `list` / `graph` page via SQLite
 `LIMIT/OFFSET`; `ast` / `prune` page **in-memory** (and `prune` paging is
 display-only — `--apply` acts on the full set, not the current page).
