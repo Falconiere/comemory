@@ -63,6 +63,8 @@ pub mod list;
 /// `comemory mine`: distill query reformulations into expansions.
 pub mod mine;
 pub mod off_runtime;
+/// TTY and JSON writers shared by the subcommands (`cli::output::*`).
+pub mod output;
 /// Shared `--k` / `--offset` window resolution.
 pub mod pagination;
 /// `comemory prune`: orphan / low-value / stale-code candidates.

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Ratchets src/store/ toward being the ONLY production module that imports
-# rusqlite (docs/toolu/specs/2026-09-07-store-layer-chokepoint-design.md).
+# rusqlite (the 2026-09-07 store-layer chokepoint design; that spec lives in
+# the untracked docs/toolu/ workspace, so it is named rather than linked).
 # Two checks:
 #
 # Check A — a TWO-SIDED file-count ratchet, unlike scripts/dup-check.sh's

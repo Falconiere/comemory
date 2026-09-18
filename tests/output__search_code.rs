@@ -5,14 +5,14 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror tests for `src/output/search_code.rs`. Pins the `comemory
+//! Mirror tests for `src/cli/output/search_code.rs`. Pins the `comemory
 //! search-code --json` envelope contract (`lines` is a 2-element
 //! `[start, end]` array; `score_parts` is the stable explainability
 //! surface) via an insta snapshot, and locks in the TTY shape:
 //! `score path:start-end symbol (kind) #id` rows, the code-flavored
 //! `--used-code` feedback footer, and the empty-index hint.
 
-use comemory::output::search_code;
+use comemory::cli::output::search_code;
 use comemory::retrieval::code_rerank::{CodeReranked, CodeScoreParts};
 use comemory::retrieval::code_search_result;
 use comemory::retrieval::router::Source;

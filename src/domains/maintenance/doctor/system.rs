@@ -24,7 +24,7 @@ use serde::Serialize;
 use crate::config::Paths;
 use crate::domains::maintenance::doctor::checks;
 use crate::prelude::*;
-use crate::store::{migrate, vector};
+use crate::store::{migrate, schema_meta, vector};
 use crate::utilities::context::Ctx;
 
 /// The `GET /api/v1/doctor/system` payload: what this binary is, where its
@@ -88,11 +88,7 @@ pub fn run(ctx: &mut Ctx<'_>, embed_cmd: Option<&str>) -> Result<System> {
     };
     if paths.db_path().exists() {
         let conn = ctx.conn()?;
-        system.schema_version = Some(conn.query_row(
-            "SELECT value FROM schema_meta WHERE key = 'version'",
-            [],
-            |r| r.get(0),
-        )?);
+        system.schema_version = Some(schema_meta::version(conn)?);
         system.memory_vec_dim = vector::dim_memory(conn)?;
         system.code_vec_dim = vector::dim_code(conn)?;
     }

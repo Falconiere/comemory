@@ -8,9 +8,9 @@ use std::path::PathBuf;
 
 use clap::{Args as ClapArgs, ValueEnum};
 
+use crate::cli::output::json;
 use crate::config::Config;
 use crate::domains::integrations;
-use crate::output::json;
 use crate::prelude::*;
 use crate::utilities::context::Ctx;
 

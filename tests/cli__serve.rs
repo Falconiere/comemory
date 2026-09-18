@@ -157,6 +157,54 @@ fn serve_banner_token_gate_and_v1_graph_over_a_real_index() {
     );
 }
 
+/// The `--json` banner is a stdout contract, not a log line: it is the first
+/// line the process writes, it carries exactly four keys, and it carries them
+/// in a fixed order because callers parse it with a streaming reader. #178
+/// moved the writer from `serve::` to `cli::serve` so the server stops
+/// importing CLI presentation; this pins the bytes across that move, including
+/// the `read_only` flag, which no other test reads off the banner.
+#[test]
+fn serve_json_banner_keeps_its_four_keys_in_order_and_reports_read_only() {
+    let home = TempDir::new().expect("home");
+    let mut child = Command::new(cargo_bin("comemory"))
+        .env("COMEMORY_DATA_DIR", home.path().join(".comemory"))
+        .args(["--json", "serve", "--port", "0", "--read-only"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn serve");
+    let stdout = child.stdout.take().expect("piped stdout");
+    // The guard is taken BEFORE the read: a panic in `read_line` would
+    // otherwise leak the spawned server for the rest of the run.
+    let _guard = ServerGuard(child);
+    let mut line = String::new();
+    BufReader::new(stdout)
+        .read_line(&mut line)
+        .expect("read banner");
+
+    let raw = line.trim();
+    assert!(!raw.is_empty(), "the banner must not be empty");
+    let mut cursor = 0usize;
+    for key in [r#""url""#, r#""port""#, r#""token""#, r#""read_only""#] {
+        let at = raw[cursor..]
+            .find(key)
+            .unwrap_or_else(|| panic!("banner is missing {key}: {raw}"))
+            + cursor;
+        cursor = at + key.len();
+    }
+    let info: serde_json::Value = serde_json::from_str(raw).expect("banner is json");
+    assert_eq!(
+        info.as_object().expect("banner is an object").len(),
+        4,
+        "the banner carries exactly four keys: {raw}"
+    );
+    assert_eq!(
+        info["read_only"],
+        serde_json::json!(true),
+        "--read-only must be reported on the banner: {raw}"
+    );
+}
+
 #[test]
 fn serve_read_only_refuses_a_mutating_route_with_405() {
     let home = TempDir::new().expect("home");

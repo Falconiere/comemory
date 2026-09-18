@@ -16,7 +16,7 @@ use axum::response::Response;
 use axum::routing::get;
 use serde_json::Value;
 
-use crate::output::edges as edges_output;
+use crate::domains::graph::edges_result;
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::routes::{RouteEntry, respond, run_blocking};
@@ -84,6 +84,6 @@ fn run_edges(state: AppState, req: crate::domains::graph::edges::Request) -> Res
     let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
     let result = crate::domains::graph::edges::run(&mut ctx, req, allow_self_heal)?;
     let envelope =
-        edges_output::envelope(&result.hits, result.limit, result.offset, result.has_more);
+        edges_result::envelope(&result.hits, result.limit, result.offset, result.has_more);
     serde_json::to_value(envelope).map_err(Error::Json)
 }

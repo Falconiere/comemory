@@ -13,13 +13,16 @@ assembly both transports share (`query`, `nodes`), and the four command cores
 **What does NOT belong here:** SQL, rendering, or ranking. Every SQL string
 lives in `store::edges`, `store::edges_retrieval`, `store::code_graph_edges`,
 `store::code_graph_nodes` and `store::edge_fts`; the JSON/DOT/HTML writers and
-`graph_template.html` stay in `output::graph`, which imports this folder's
-model rather than owning it; and consuming the graph to rank search results
+`graph_template.html` stay in `cli::output::graph`, which imports this
+folder's model rather than owning it; and consuming the graph to rank search results
 belongs to `retrieval::graph_route` and `retrieval::code_prior`.
 
-No file here may import `cli`, `serve`, `output` or the legacy `api` tree, and
-none does — `scripts/architecture-policy.json`'s `legacy_edges` allowlist is
-empty once this slice lands, and `scripts/architecture-check.sh` enforces that.
+No file here may import `cli` (the `cli::output` writers included) or
+`serve`, and none does — `scripts/architecture-policy.json`'s `legacy_edges`
+allowlist is empty, and `scripts/architecture-check.sh` enforces that. The
+`--json` row shape for `comemory edges` and `GET /api/v1/edges` is this
+capability's, not a rendering concern: it lives in `edges_result` alongside the
+result model, and both transports build their envelope from it (#178).
 `graph_nodes.rs` reads a cited memory's title from
 `domains::memories::nav::title_of`, where
 [#169](https://github.com/Falconiere/comemory/issues/169) moved that memory
@@ -36,12 +39,12 @@ One line per file, named after its primary item:
 | --- | --- | --- |
 | `coactivate.rs` | `harvest` | Commit co-activation reward: commits touching a memory's referenced files reinforce it |
 | `cochange.rs` | `CoChange` | Git co-change mining: files that change together in bounded history, weighted pairs |
-| `code_graph.rs` | `CodeGraph` | The exported graph model — `Node`, `Edge`, `CodeGraph` and the paginated `GraphPage`; `output::graph` renders it, this file defines it |
+| `code_graph.rs` | `CodeGraph` | The exported graph model — `Node`, `Edge`, `CodeGraph` and the paginated `GraphPage`; `cli::output::graph` renders it, this file defines it |
 | `cross_link.rs` | `Refs` | Extract `<repo>:<path>[:<symbol>]` references from a memory body; URLs and bare-scheme path expressions (`file:/…`, `./…`, `../…`) are refused. Extraction only — `domains::memories::mirror` calls it and `store::memory_row` writes the edges (#177) |
 | `derived.rs` | `refresh_derived_best_effort` | Single post-write pass refreshing both `rank_score` and the `edge_fts` index. Every caller is a domain core, invoked after its own transaction commits — `memories::{save,delete,update}`, `maintenance::{rebuild,gc}`, `code::{index_code,repo_admin::disconnect}`, `sync::exchange::{import_write,code_import}` and `graph_recompute` |
 | `doc_link.rs` | `derive_after_document` | Deterministic `member_of_source` / `references_document` link deriver. The document-index seam writes its own edges; the memory-save seam is `resolve_memory_documents`, which returns the resolved `documents.id` list for `domains::memories::mirror` to pass to the store. Both share one lookup, so whichever fires second completes the link |
 | `edges.rs` | `run` | `comemory edges` / `GET /api/v1/edges`: the `edge_fts` self-heal and the paged triplet search |
-| `edges_result.rs` | `EdgesResult` | The owned value `edges::run` returns for both delivery surfaces |
+| `edges_result.rs` | `EdgesResult` | The owned value `edges::run` returns for both delivery surfaces, plus the `Row` and `envelope` they each serialize — `comemory edges --json` and `GET /api/v1/edges` build the same shape from the same builder (#178) |
 | `graph_nodes.rs` | `list` | `GET /graph/nodes`, `/nodes/{id}`, `/nodes/{id}/neighbors` and `/graph/snapshot` |
 | `graph_recompute.rs` | `run` | `POST /graph/recompute`: re-project PageRank per repo in one transaction, then the memory rank |
 | `imports.rs` | `extract_imports` | Per-language import extraction and conservative module-to-path resolution |

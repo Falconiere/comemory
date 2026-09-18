@@ -5,7 +5,7 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror tests for `src/output/search.rs`. Pins the `comemory search
+//! Mirror tests for `src/cli/output/search.rs`. Pins the `comemory search
 //! --json` envelope contract (`score_parts` is a stable, documented
 //! surface — M2 tuning reads it) via an insta snapshot, plus the TTY
 //! footer and tier-label shape.
@@ -13,8 +13,8 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use comemory::cli::output::search;
 use comemory::memory::{Ref, References};
-use comemory::output::search;
 use comemory::retrieval::rerank::{Reranked, ScoreParts};
 use comemory::retrieval::router::Source;
 use comemory::retrieval::scope::ScopeEcho;
@@ -188,7 +188,10 @@ fn make_hit(memory_id: &str, tier: u8, final_score: f64) -> Reranked {
     }
 }
 
-/// Kill mutant `src/output/search.rs:81`: `hit.tier == TIER_EXPANDED` → `hit.tier != TIER_EXPANDED`.
+/// Kill mutant in `cli::output::search::write_tty`:
+/// `hit.tier == TIER_EXPANDED` → `!=`. Cited by symbol, not by line: the
+/// recorded `:81` stopped resolving when #171 moved the envelope out, and
+/// nothing in CI would have caught the drift.
 ///
 /// Original: tier-4 → `[expanded]`, tier-1 → nothing.
 /// Mutant:   tier-4 → nothing,       tier-1 → `[expanded]`.

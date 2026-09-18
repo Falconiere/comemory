@@ -29,7 +29,7 @@ use crate::utilities::context::Ctx;
 /// `comemory eval` / `POST /api/v1/eval` request — also, via its `history`/
 /// `limit` fields, `comemory eval --history` / `GET /api/v1/eval/history`'s
 /// request. One `Request` type rather than two: `tests/api__parity.rs`
-/// (AC-41) probes exactly one `api::<cmd>::Request` per clap subcommand, and
+/// (AC-41) probes exactly one command-core `Request` per clap subcommand, and
 /// `eval --history` is a second mode of the same `eval` subcommand, not a
 /// separate one. [`run`] never reads `history`/`limit`; [`history`] never
 /// reads `golden`/`golden_only`/`k` — the caller (CLI arg-branch, or the

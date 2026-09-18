@@ -2,7 +2,7 @@
 //!
 //! A neutral home under `store/` so both `serve::security` (session tokens,
 //! job ids) and `maintenance::gc` (`gc_runs` row ids) draw from the one
-//! implementation, instead of `api::` depending on `serve::` — a layering
+//! implementation, instead of a command core depending on `serve::` — a layering
 //! `maintenance::gc` must not introduce (Binding Rule 1: no duplication).
 
 use std::fmt::Write as _;

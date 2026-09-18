@@ -1,5 +1,5 @@
 //! [`spawn_job`] — the one place a background job is started. Job-creating
-//! routes hand it a closure (typically `api::<cmd>::run` over a
+//! routes hand it a closure (typically `domains::<capability>::<cmd>::run` over a
 //! `Ctx::lazy`, i.e. the job's **own** connection) and get back a job id to
 //! put in their `202 Accepted` body; everything after that is this module's
 //! bookkeeping. [`spawn_job_with_id`] is the same thing for a caller whose

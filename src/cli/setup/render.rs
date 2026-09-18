@@ -7,8 +7,8 @@
 use std::io::Write;
 
 use super::Mode;
+use crate::cli::output::tty;
 use crate::domains::integrations::setup::{Response, Step, StepState};
-use crate::output::tty;
 use crate::prelude::*;
 
 /// The marker shown beside each step.

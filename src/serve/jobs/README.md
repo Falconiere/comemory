@@ -3,7 +3,8 @@
 **What belongs here:** the background job model for the long-running
 commands (`index-code`, `ingest-code`, `index`, `rebuild`, `eval`, `tune`,
 `bandit`) — the in-process job table, its status watch channels, and the
-spawner that runs one `api::<cmd>::run` off the request path, plus the SSE
+spawner that runs one `domains::<capability>::<cmd>::run` off the request
+path, plus the SSE
 event payloads. Lifecycle is `Queued → Running → Done | Error | Cancelled`,
 not persisted: a server restart forgets every unfinished job. Cancellation
 is cooperative — `Registry::cancel` flips a per-job flag that a cooperating
@@ -11,8 +12,8 @@ core polls at its next boundary (`ProgressSink::is_cancelled`).
 
 **What does NOT belong here:** the routes that accept a job (`202` +
 `Location`) or stream its events — those live in `serve/routes/jobs.rs` and
-each resource's own route file — and the command logic itself, which is
-`api::`'s.
+each resource's own route file — and the command logic itself, which belongs
+to the capability that owns the command.
 
 ## Contents
 

@@ -25,8 +25,14 @@ through `lib.rs`, never a directory barrel or an API/stats facade.
 
 ## Rust module path release note for 0.34.0
 
-Version 0.34.0 removes the technical `comemory::api` and `comemory::stats`
-public module trees. Library users migrate to each row's target module.
+`0.34.0` shipped on 2026-09-18 with the thirteen capability slices #166-#177,
+so every break below attributed to one of those is released. #178's own breaks
+are NOT in it: `0.34.0` still carries the emptied `src/api.rs` shell and the
+top-level `output` tree, both of which this slice removes, so they land in the
+next minor release. They are listed under #178 below and marked `0.35.0`.
+
+Version 0.34.0 emptied the technical `comemory::api` tree — every core moved to
+`comemory::domains::<capability>` — and removed `comemory::stats`. Library users migrate to each row's target module.
 Moved CLI utility modules and `serve::repo_root` also move to their named
 utility paths; `cli::graph::nodes` moves to `domains::graph::nodes` with graph
 assembly ownership. These are Rust module-path breaks only: CLI flags and output,
@@ -56,6 +62,26 @@ simhash}` keep resolving through crate-root aliases over their new
 | `comemory::serve::security::{resolve_within, contain_abs}` | `comemory::utilities::path_containment::{resolve_within, contain_abs}` |
 | `comemory::api::index_code::ProgressSink` | `comemory::utilities::progress::ProgressSink` |
 | `comemory::stats::feedback::{generate_query_id, is_valid_query_id}` | `comemory::utilities::query_id::{generate_query_id, is_valid_query_id}` |
+
+#178 closes the series, and its breaks land in **0.35.0** rather than 0.34.0:
+the emptied shell and the `output` tree were both still present in the 0.34.0
+release. `comemory::output` keeps resolving through a crate-root alias over its
+new `comemory::cli::output` home, so `comemory::output::{consolidate, context,
+edges, graph, json, prune, search, search_code, tty}` are unaffected. The
+following move with no alias:
+
+| Removed path | New path |
+| --- | --- |
+| `comemory::api` (the emptied module itself) | removed; every core was already under `comemory::domains::<capability>` as of 0.34.0 |
+| `comemory::output::edges::{Row, envelope}` | `comemory::domains::graph::edges_result::{Row, envelope}` |
+| `comemory::utilities::when::scope_from_flags` | `comemory::domains::retrieval::scope::scope_from_flags` |
+
+`comemory::serve::serve`'s third parameter changes from `json: bool` to
+`ready: &dyn Fn(Ready<'_>) -> Result<()>`, and `comemory::serve::Ready` is new:
+the startup banner moved to `cli::serve`, so the server no longer writes to
+stdout and `--json`, a CLI global, no longer crosses into it. The banner's own
+JSON — `{url, port, token, read_only}`, in that key order — is unchanged, and
+`tests/cli__serve.rs` pins it.
 
 #168 moves the document capability. `comemory::{document, source}` keep
 resolving through crate-root aliases over their new
@@ -315,6 +341,35 @@ capability, and a row owned by a capability lives inside it. Every
 `src/domains/` row is subject to it, and it fails as
 `capability ownership mismatch`.
 
+#178 closes the series. It deletes the emptied `src/api.rs` shell with its
+`legacy_modules` entry and its ledger row, moves the `output` tree under
+`cli/`, and widens that ownership rule into one total map from path to owner —
+`src/domains/<cap>/**` to `domains::<cap>`, `src/cli/**` to `delivery::cli`,
+`src/serve/**` to `delivery::serve`, `src/store/**` to
+`infrastructure::store`, `src/config/**` and `src/utilities/**` to their
+`shared::` owners, every other `src/*.rs` to `shared::root`. The capability
+rule constrained 204 of `main`'s 411 rows and left 207 unconstrained, which is
+how a file at the source root (`src/output.rs`) carried `delivery::cli` and a
+file under `src/cli/` (`src/cli/pagination.rs`) carried `shared::utilities`.
+Both are corrected here, the second by moving the owner rather than the file:
+it holds nothing but the flattened clap `PaginationArgs`. The rule was measured
+against the live ledger before it was written — 399 of 411 rows already
+satisfied it, and the twelve that did not are exactly the rows this slice
+deletes, moves or relabels: `src/api.rs`, `src/cli/pagination.rs`, and the ten
+`src/output*` rows.
+
+A second gap closed with it: `config` and `utilities` sources were never
+subject to any dependency rule, so seven references back into a capability had
+accumulated unnoticed, across five files. Two are removed — `scope_from_flags`
+moves to `domains::retrieval::scope`, which owns `TimeScope`, and the prune
+rule's `SUPERSEDED_GRACE_DAYS` moves into `config::defaults`, which owns its
+own default values. The remaining five are declared in the new
+`shared_domain_dependencies` list, each with a written reason, and anything
+undeclared now fails as `shared layer dependency`.
+
+After this slice every ledger row reads `issue = retain` with `path == target`:
+the #164 migration has nothing outstanding.
+
 ## Baseline compatibility
 
 Merged #162/#163 are baseline: common-directory hooks, unseen/custom worktree
@@ -324,7 +379,13 @@ failure before exit 69 must remain unchanged.
 
 ## Policy schema
 
-`legacy_modules` lists `{module, owner, issue}` for staged roots that must move.
+`legacy_modules` lists `{module, owner, issue}` for staged roots that must
+move; #178 empties it, and its fixtures seed a well-formed entry rather than
+mutating an empty array, which would auto-vivify a half-formed one and assert
+nothing. `shared_domain_dependencies` lists `{source, target, owner, reason}`
+for the edges `config`/`utilities` keep into a capability; it must stay
+non-empty for the same reason, and every entry carries a written
+justification.
 `owner_dependencies` lists directed `{source, target}` capability owner pairs.
 `setup_runtime_dependencies` separately records exact `{source, target, owner}`
 runtime edges for detection and application, not migration prerequisites.
@@ -340,7 +401,6 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 
 | path | public path | test bridge | assets | owner | target | issue |
 | --- | --- | --- | --- | --- | --- | --- |
-| src/api.rs | comemory::api; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | none | none | shared::utilities | src/api.rs | #178 |
 | src/cli.rs | comemory::cli; preserve | none | none | delivery::cli | src/cli.rs | retain |
 | src/cli/ast.rs | comemory::cli::ast; preserve | none | none | delivery::cli | src/cli/ast.rs | retain |
 | src/cli/auth.rs | comemory::cli::auth; preserve | none | none | delivery::cli | src/cli/auth.rs | retain |
@@ -370,7 +430,17 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/cli/list.rs | comemory::cli::list; preserve | none | none | delivery::cli | src/cli/list.rs | retain |
 | src/cli/mine.rs | comemory::cli::mine; preserve | none | none | delivery::cli | src/cli/mine.rs | retain |
 | src/cli/off_runtime.rs | comemory::cli::off_runtime; preserve | src/cli/tests/off_runtime.rs | none | delivery::cli | src/cli/off_runtime.rs | retain |
-| src/cli/pagination.rs | comemory::cli::pagination; preserve | none | none | shared::utilities | src/cli/pagination.rs | retain |
+| src/cli/output.rs | comemory::cli::output; crate-root-alias | none | none | delivery::cli | src/cli/output.rs | retain |
+| src/cli/output/consolidate.rs | comemory::cli::output::consolidate; crate-root-alias | none | none | delivery::cli | src/cli/output/consolidate.rs | retain |
+| src/cli/output/context.rs | comemory::cli::output::context; crate-root-alias | src/cli/output/tests/context.rs | none | delivery::cli | src/cli/output/context.rs | retain |
+| src/cli/output/edges.rs | comemory::cli::output::edges; crate-root-alias | src/cli/output/tests/edges.rs | none | delivery::cli | src/cli/output/edges.rs | retain |
+| src/cli/output/graph.rs | comemory::cli::output::graph; crate-root-alias | src/cli/output/tests/graph.rs | src/cli/output/graph_template.html | delivery::cli | src/cli/output/graph.rs | retain |
+| src/cli/output/json.rs | comemory::cli::output::json; crate-root-alias | none | none | delivery::cli | src/cli/output/json.rs | retain |
+| src/cli/output/prune.rs | comemory::cli::output::prune; crate-root-alias | src/cli/output/tests/prune.rs | none | delivery::cli | src/cli/output/prune.rs | retain |
+| src/cli/output/search.rs | comemory::cli::output::search; crate-root-alias | none | none | delivery::cli | src/cli/output/search.rs | retain |
+| src/cli/output/search_code.rs | comemory::cli::output::search_code; crate-root-alias | none | none | delivery::cli | src/cli/output/search_code.rs | retain |
+| src/cli/output/tty.rs | comemory::cli::output::tty; crate-root-alias | src/cli/output/tests/tty.rs | none | delivery::cli | src/cli/output/tty.rs | retain |
+| src/cli/pagination.rs | comemory::cli::pagination; preserve | none | none | delivery::cli | src/cli/pagination.rs | retain |
 | src/cli/prune.rs | comemory::cli::prune; preserve | none | none | delivery::cli | src/cli/prune.rs | retain |
 | src/cli/rebuild.rs | comemory::cli::rebuild; preserve | none | none | delivery::cli | src/cli/rebuild.rs | retain |
 | src/cli/repos.rs | comemory::cli::repos; preserve | none | none | delivery::cli | src/cli/repos.rs | retain |
@@ -455,7 +525,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/graph/derived.rs | comemory::domains::graph::derived; crate-root-alias | src/domains/graph/tests/derived.rs | none | domains::graph | src/domains/graph/derived.rs | retain |
 | src/domains/graph/doc_link.rs | comemory::domains::graph::doc_link; crate-root-alias | src/domains/graph/tests/doc_link.rs | none | domains::graph | src/domains/graph/doc_link.rs | retain |
 | src/domains/graph/edges.rs | comemory::domains::graph::edges; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | none | none | domains::graph | src/domains/graph/edges.rs | retain |
-| src/domains/graph/edges_result.rs | comemory::domains::graph::edges_result; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | none | none | domains::graph | src/domains/graph/edges_result.rs | retain |
+| src/domains/graph/edges_result.rs | comemory::domains::graph::edges_result; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/graph/tests/edges_result.rs | none | domains::graph | src/domains/graph/edges_result.rs | retain |
 | src/domains/graph/graph_nodes.rs | comemory::domains::graph::graph_nodes; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/graph/tests/graph_nodes.rs | none | domains::graph | src/domains/graph/graph_nodes.rs | retain |
 | src/domains/graph/graph_recompute.rs | comemory::domains::graph::graph_recompute; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/graph/tests/graph_recompute.rs | none | domains::graph | src/domains/graph/graph_recompute.rs | retain |
 | src/domains/graph/imports.rs | comemory::domains::graph::imports; crate-root-alias | src/domains/graph/tests/imports.rs | none | domains::graph | src/domains/graph/imports.rs | retain |
@@ -609,16 +679,6 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/errors.rs | comemory::errors; preserve | none | none | shared::root | src/errors.rs | retain |
 | src/lib.rs | private | none | none | shared::root | src/lib.rs | retain |
 | src/main.rs | private | none | none | shared::root | src/main.rs | retain |
-| src/output.rs | comemory::output; crate-root-alias | none | none | delivery::cli | src/cli/output.rs | #166 |
-| src/output/consolidate.rs | comemory::output::consolidate; crate-root-alias | none | none | delivery::cli | src/cli/output/consolidate.rs | #166 |
-| src/output/context.rs | comemory::output::context; crate-root-alias | src/output/tests/context.rs | none | delivery::cli | src/cli/output/context.rs | #166 |
-| src/output/edges.rs | comemory::output::edges; crate-root-alias | src/output/tests/edges.rs | none | delivery::cli | src/cli/output/edges.rs | #166 |
-| src/output/graph.rs | comemory::output::graph; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/output/tests/graph.rs | src/output/graph_template.html | delivery::cli | src/cli/output/graph.rs | #166 |
-| src/output/json.rs | comemory::output::json; crate-root-alias | none | none | delivery::cli | src/cli/output/json.rs | #166 |
-| src/output/prune.rs | comemory::output::prune; crate-root-alias | src/output/tests/prune.rs | none | delivery::cli | src/cli/output/prune.rs | #166 |
-| src/output/search.rs | comemory::output::search; crate-root-alias | none | none | delivery::cli | src/cli/output/search.rs | #166 |
-| src/output/search_code.rs | comemory::output::search_code; crate-root-alias | none | none | delivery::cli | src/cli/output/search_code.rs | #166 |
-| src/output/tty.rs | comemory::output::tty; crate-root-alias | src/output/tests/tty.rs | none | delivery::cli | src/cli/output/tty.rs | #166 |
 | src/prelude.rs | comemory::prelude; preserve | none | none | shared::root | src/prelude.rs | retain |
 | src/serve.rs | comemory::serve; preserve | none | none | delivery::serve | src/serve.rs | retain |
 | src/serve/envelope.rs | comemory::serve::envelope; preserve | src/serve/tests/envelope.rs | none | delivery::serve | src/serve/envelope.rs | retain |
@@ -725,6 +785,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/store/stats_counts.rs | comemory::store::stats_counts; preserve | src/store/tests/stats_counts.rs | none | infrastructure::store | src/store/stats_counts.rs | retain |
 | src/store/sync_binding.rs | comemory::store::sync_binding; preserve | src/store/tests/sync_binding.rs | none | infrastructure::store | src/store/sync_binding.rs | retain |
 | src/store/sync_log.rs | comemory::store::sync_log; preserve | src/store/tests/sync_log.rs | none | infrastructure::store | src/store/sync_log.rs | retain |
+| src/store/sync_manifest.rs | comemory::store::sync_manifest; preserve | none | none | infrastructure::store | src/store/sync_manifest.rs | retain |
 | src/store/sync_state.rs | comemory::store::sync_state; preserve | src/store/tests/sync_state.rs | none | infrastructure::store | src/store/sync_state.rs | retain |
 | src/store/tokenizer.rs | comemory::store::tokenizer; preserve | none | none | infrastructure::store | src/store/tokenizer.rs | retain |
 | src/store/tokenizer/ffi.rs | comemory::store::tokenizer::ffi; preserve | src/store/tokenizer/tests/ffi.rs | none | infrastructure::store | src/store/tokenizer/ffi.rs | retain |

@@ -22,10 +22,10 @@ validate_inventory() (
     . as $p | .version == 1 and
     (["version","staged_top_level_dirs","staged_root_modules","domains","legacy_modules",
       "owner_dependencies","legacy_edges","store_callbacks","passive_store_models",
-      "setup_runtime_dependencies"] - keys | length == 0) and
+      "setup_runtime_dependencies","shared_domain_dependencies"] - keys | length == 0) and
     (.setup_runtime_dependencies | type == "array") and
-    .staged_top_level_dirs == ("api ast capture cli cloud config consolidate document domains eval graph memory output prune retrieval serve source stats store sync upgrade utilities"|split(" ")) and
-    .staged_root_modules == ("api ast capture cli cloud config consolidate document embed errors eval fetch git_utils graph http_error index lib main memory output prelude prune retrieval serve simhash source stats store sync test_common upgrade"|split(" ")) and
+    .staged_top_level_dirs == ("cli config domains serve store utilities"|split(" ")) and
+    .staged_root_modules == ("cli config errors lib main prelude serve store test_common"|split(" ")) and
     .domains == ("memories code documents graph retrieval learning sync capture maintenance integrations"|split(" ")) and
     all($rows[0][];
       (.owner | test("^(domains::[a-z_]+|delivery::(cli|serve)|shared::(config|utilities|root)|infrastructure::store)$")) and
@@ -41,21 +41,32 @@ validate_inventory() (
       (.target | ltrimstr("domains::")) as $t |
       ($p.domains | index($s)) != null and ($p.domains | index($t)) != null and $s != $t)
   ' "$POLICY" >/dev/null || fail 'invalid policy or inventory metadata'
-  # Capability ownership, in both directions. This replaces the `src/api/` core
-  # map #165 started with: that map constrained only rows still under `src/api/`,
-  # and #175 moved the last two cores out, leaving `all` to quantify over an
-  # empty selection and pass while asserting nothing. Anchoring on the
-  # capability folder instead keeps the same path-to-owner invariant on every
-  # row permanently, and closes the gap that let a row moved into `domains/`
-  # keep the owner of wherever it came from.
+  # Ownership, as one total function from path to owner, checked over every
+  # row. #165 mapped only rows under `src/api/`, and when #175 moved the last
+  # core out `all` quantified over an empty selection and passed asserting
+  # nothing. #175's successor anchored on `src/domains/<cap>/`, which covers
+  # 196 of 411 rows and says nothing about the rest — so a file at the source
+  # ROOT could still claim a delivery owner, which is exactly what
+  # `src/output.rs` did. Stating the map for every path leaves no unconstrained
+  # region and no selection that can go empty. The reverse clause is kept for
+  # the one path the forward map deliberately exempts: a `<cap>` segment that
+  # is not a declared domain belongs to the `unapproved domain` diagnostic, and
+  # claiming it here would replace that message with this one.
   jq -e --slurpfile policy "$POLICY" '
     ($policy[0].domains) as $domains |
+    def expected:
+      if startswith("src/domains/") then
+        (split("/")[2] | rtrimstr(".rs")) as $capability |
+        (if ($domains | index($capability)) == null then null
+         else "domains::" + $capability end)
+      elif . == "src/cli.rs" or startswith("src/cli/") then "delivery::cli"
+      elif . == "src/serve.rs" or startswith("src/serve/") then "delivery::serve"
+      elif . == "src/store.rs" or startswith("src/store/") then "infrastructure::store"
+      elif . == "src/config.rs" or startswith("src/config/") then "shared::config"
+      elif . == "src/utilities.rs" or startswith("src/utilities/") then "shared::utilities"
+      else "shared::root" end;
     all(.[]; . as $row |
-      (if ($row.path | startswith("src/domains/")) then
-        ($row.path | split("/")[2] | rtrimstr(".rs")) as $capability |
-        ($domains | index($capability)) == null or
-          $row.owner == "domains::" + $capability
-      else true end) and
+      (($row.path | expected) as $want | $want == null or $row.owner == $want) and
       (if ($row.owner | startswith("domains::")) then
         ($row.owner | ltrimstr("domains::")) as $capability |
         $row.path == "src/domains/" + $capability + ".rs" or
@@ -77,6 +88,23 @@ validate_inventory() (
       (.owner | type == "string" and test("^domains::[a-z_]+$")) and
       any($rows[0][]; .path == (($entry.target|sub("^crate::";"src/")|gsub("::";"/"))+".rs") and .owner == $entry.owner))
   ' "$POLICY" >/dev/null || fail 'invalid setup runtime dependency'
+  # The shared layer's declared escapes. `config` and `utilities` sit under
+  # every capability, so an edge back into one inverts the layering; the list
+  # names the ones that survive, each with a written reason and a source the
+  # ledger agrees is a shared file. `test-architecture-policy.sh` additionally
+  # requires the REAL list to stay non-empty, for the same reason `legacy_edges`
+  # and `store_callbacks` seed a fixture entry: `all` over an empty array passes
+  # while asserting nothing.
+  jq -e --slurpfile rows "$scratch/rows" '
+    (.shared_domain_dependencies | group_by([.source,.target]) | all(length == 1)) and
+    all(.shared_domain_dependencies[]; . as $entry |
+      (.source | type == "string" and test("^src/(config|utilities)/([a-z_]+/)*[a-z_]+\\.rs$")) and
+      (.target | type == "string" and test("^crate::domains(::[A-Za-z_][A-Za-z_0-9]*)+$")) and
+      (.owner | type == "string" and test("^domains::[a-z_]+$")) and
+      (.reason | type == "string" and (length > 40)) and
+      any($rows[0][]; .path == $entry.source and
+        (.owner == "shared::config" or .owner == "shared::utilities")))
+  ' "$POLICY" >/dev/null || fail 'invalid shared domain dependency'
   jq -e '
     [.legacy_edges[], .store_callbacks[]] as $edges |
     all($edges[]; (.source | type == "string" and test("^src/([a-z_]+/)*[a-z_]+\\.rs$")) and
@@ -138,7 +166,8 @@ rule:
       {source:$edge.source,target:([.target]+$parts[1:]|join("::"))} end] | unique
   ' "$scratch/ast" >"$scratch/refs"
   jq -r --slurpfile refs "$scratch/refs" '
-    [.legacy_edges[],.store_callbacks[],.passive_store_models[],.setup_runtime_dependencies[]] | .[] |
+    [.legacy_edges[],.store_callbacks[],.passive_store_models[],
+     .setup_runtime_dependencies[],.shared_domain_dependencies[]] | .[] |
     . as $edge | if any($refs[0][]; .source == $edge.source and
       (.target == $edge.target or (.target|startswith($edge.target+"::")))) then empty
     else "absent policy edge: \(.source) -> \(.target)" end

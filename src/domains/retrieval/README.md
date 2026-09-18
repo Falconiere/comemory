@@ -19,8 +19,8 @@ explain strip derived from a hit's `score_parts` (`explain`).
 candidate leg needs to build its ranked list. FTS5, `vec0`, and row CRUD
 primitives live in `store/`; this capability calls them, it doesn't own them.
 Nor delivery: clap `Args`, TTY colouring and `--json` emission stay in `cli/`
-and `output/`, and HTTP status mapping stays in `serve/routes/`. No file here
-may import `cli`, `serve`, `output`, or the legacy `api` tree.
+and its `output/` writers, and HTTP status mapping stays in `serve/routes/`.
+No file here may import `cli` (the `cli::output` writers included) or `serve`.
 
 ## Contents
 
@@ -50,7 +50,7 @@ One line per file, named after its primary item:
 | `pipeline.rs` | `SearchOptions` | End-to-end memory search: route → rerank → diversify → top-k + access tracking |
 | `rerank.rs` | `MEMORY_RANK_SCALE` | Multiply fused relevance by activation × feedback × quality × supersede × rank priors |
 | `router.rs` | `CANDIDATE_POOL` | Route to vector, lexical, or hybrid path; the 4-tier lexical fallback ladder |
-| `scope.rs` | `TimeScope` | Created-date window (`--since`/`--until`/`--as-of`) shared by every leg, the `Domain`/`Domains` scope with its transport-neutral `resolve_domains` policy, and the `ScopeEcho` both envelopes flatten |
+| `scope.rs` | `TimeScope` | Created-date window (`--since`/`--until`/`--as-of`) shared by every leg, `scope_from_flags` (which builds it from the three raw flag values, parsing each through `utilities::when::parse_when`), the `Domain`/`Domains` scope with its transport-neutral `resolve_domains` policy, and the `ScopeEcho` both envelopes flatten |
 | `search.rs` | `Request` | `comemory search` / `GET|POST /memories/search`: the shared middle |
 | `search_code.rs` | `Request` | `comemory search-code` / `GET|POST /code/search`: the shared middle |
 | `score.rs` | `activation` | Deterministic scoring primitives: ACT-R activation, Beta-smoothed feedback |

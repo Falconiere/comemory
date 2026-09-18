@@ -5,10 +5,10 @@ use std::io::Write as _;
 use owo_colors::OwoColorize;
 use serde::Serialize;
 
+use crate::cli::output::json;
 use crate::domains::sync::auth_file::AuthFile;
 use crate::domains::sync::cloud::StatusReport;
 use crate::domains::sync::daemon;
-use crate::output::json;
 use crate::prelude::*;
 
 #[derive(Serialize)]

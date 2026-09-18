@@ -22,14 +22,8 @@ pub mod config;
 /// Single-file SQLite layer backing memories, code rows, FTS and vectors.
 pub mod store;
 
-/// The emptied command-core shell: every core now lives under `domains::`,
-/// and #178 removes this module.
-pub mod api;
-
-/// TTY and JSON emitters shared by the subcommands.
-pub mod output;
-
-/// Loopback web viewer (`comemory serve`).
+/// Loopback `/api/v1` HTTP server (`comemory serve`). API-only: the embedded
+/// web viewer was removed in 0.18.0.
 pub mod serve;
 
 /// clap subcommand entry points and the top-level dispatcher.
@@ -49,28 +43,39 @@ pub mod utilities;
 // `retrieval` under `domains::retrieval` (#171), `sync` and `cloud` under
 // `domains::sync` (#172), `eval` under `domains::learning::evaluation` (#173),
 // `capture` under `domains::capture` (#174), `prune`, `consolidate` and
-// `upgrade` under `domains::maintenance` (#176), the four shared primitives
-// under `utilities` (#166). They preserve `comemory::<name>` for external
-// consumers; in-crate production code names the real path directly. `stats`
-// has no alias: #173 removes that tree outright in 0.34.0. The two report
-// models are not aliased either — `domains::maintenance::retention_report`
-// and `::consolidation_report` are siblings of their algorithms, so
-// `comemory::{prune,consolidate}::report` is a 0.34.0 removal.
-pub use domains::capture;
-pub use domains::code::ast;
-pub use domains::code::git_utils;
-pub use domains::documents::document;
-pub use domains::documents::source;
-pub use domains::graph;
-pub use domains::learning::evaluation as eval;
-pub use domains::maintenance::consolidation as consolidate;
-pub use domains::maintenance::retention as prune;
-pub use domains::maintenance::upgrade;
-pub use domains::memories as memory;
-pub use domains::retrieval;
-pub use domains::sync;
-pub use domains::sync::cloud;
-pub use utilities::embed;
-pub use utilities::fetch;
-pub use utilities::http_error;
-pub use utilities::simhash;
+// `upgrade` under `domains::maintenance` (#176), `output` under `cli` (#178),
+// the four shared primitives under `utilities` (#166). They preserve
+// `comemory::<name>` for external consumers; in-crate production code names the
+// real path directly. `stats` has no alias: #173 removes that tree outright in
+// 0.34.0. `api` has none either: #178 deletes the shell, and 0.34.0 removes the
+// `comemory::api` tree with it. The two report models are not aliased either —
+// `domains::maintenance::retention_report` and `::consolidation_report` are
+// siblings of their algorithms, so `comemory::{prune,consolidate}::report` is a
+// 0.34.0 removal.
+//
+// Every alias is written `pub use crate::…`, never the uniform-path
+// `pub use domains::…` these once used. The two spell the same export, but
+// `scripts/architecture-check.sh`'s resolver rewrites an unqualified binding to
+// a relative path and then DROPS the edge, so a domain reaching delivery or a
+// sibling capability through an alias became invisible to the gate — which is
+// exactly how one `crate::git_utils` call site survived #167 through #177.
+// `unqualified root re-export` now fails the gate if this ever regresses.
+pub use crate::cli::output;
+pub use crate::domains::capture;
+pub use crate::domains::code::ast;
+pub use crate::domains::code::git_utils;
+pub use crate::domains::documents::document;
+pub use crate::domains::documents::source;
+pub use crate::domains::graph;
+pub use crate::domains::learning::evaluation as eval;
+pub use crate::domains::maintenance::consolidation as consolidate;
+pub use crate::domains::maintenance::retention as prune;
+pub use crate::domains::maintenance::upgrade;
+pub use crate::domains::memories as memory;
+pub use crate::domains::retrieval;
+pub use crate::domains::sync;
+pub use crate::domains::sync::cloud;
+pub use crate::utilities::embed;
+pub use crate::utilities::fetch;
+pub use crate::utilities::http_error;
+pub use crate::utilities::simhash;

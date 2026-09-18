@@ -10,11 +10,13 @@
 use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
+use serde::Serialize;
 
 use crate::cli::load_config;
+use crate::cli::output::{json as json_out, tty};
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::prelude::*;
-use crate::serve::{self, RootOverrides, ServeOptions};
+use crate::serve::{self, Ready, RootOverrides, ServeOptions};
 
 const EXAMPLES: &str = "\
 Examples:
@@ -86,7 +88,43 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
         embed_cmd: a.embed_cmd,
         allow_path,
     };
-    serve::serve(&paths, opts, json).await
+    serve::serve(&paths, opts, &|ready| emit_banner(ready, json)).await
+}
+
+/// What the startup banner reports (also the `--json` payload). Field order is
+/// the JSON key order, so it is part of the `comemory serve --json` contract.
+#[derive(Serialize)]
+struct ServeInfo<'a> {
+    url: &'a str,
+    port: u16,
+    token: &'a str,
+    read_only: bool,
+}
+
+/// Print the base URL and token to stdout once the server is bound. Uses the
+/// `cli::output` writers (not `tracing`, which is silent without `RUST_LOG`)
+/// so both are always visible and machine-readable under `--json`.
+///
+/// Lives here rather than in `serve::` because stdout is a console concern and
+/// `--json` is a CLI global: the server hands over [`Ready`] and stays free of
+/// presentation.
+fn emit_banner(ready: Ready<'_>, json: bool) -> Result<()> {
+    let Ready {
+        url,
+        port,
+        token,
+        read_only,
+    } = ready;
+    if json {
+        return json_out::write(&ServeInfo {
+            url,
+            port,
+            token,
+            read_only,
+        });
+    }
+    let mode = if read_only { " (read-only)" } else { "" };
+    tty::header(&format!("comemory serve{mode} → {url}  token={token}"))
 }
 
 /// Canonicalize each `--allow-path <dir>` entry. A non-existent or

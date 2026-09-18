@@ -48,10 +48,18 @@ pub(crate) fn default_near_dup_hamming() -> u32 {
     crate::utilities::simhash::NEAR_DUP_HAMMING
 }
 
-/// The constant next to the prune rule stays the single source of the
-/// default grace window; the config field merely makes it operator-tunable.
+/// Grace window (days) seeding [`super::file::PruneConfig::superseded_grace_days`].
+///
+/// The value lives here rather than beside the prune rule that consumes it:
+/// config owns its own defaults, and a shared module reaching into a
+/// capability for one integer is the boundary inversion #178 removed. The
+/// rule reads `cfg.prune.superseded_grace_days` and never the constant.
+pub(crate) const SUPERSEDED_GRACE_DAYS: u32 = 7;
+
+/// Default grace window for the superseded-and-forgotten prune rule; the
+/// config field makes it operator-tunable.
 pub(crate) fn default_superseded_grace_days() -> u32 {
-    crate::domains::maintenance::retention::low_value::SUPERSEDED_GRACE_DAYS
+    SUPERSEDED_GRACE_DAYS
 }
 
 /// Default ceiling (bytes) above which a candidate document file is

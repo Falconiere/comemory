@@ -8,8 +8,8 @@
 
 use std::io::Write as _;
 
+use crate::cli::output::{json, tty};
 use crate::domains::maintenance::retention_report::{PruneRow, Report};
-use crate::output::{json, tty};
 use crate::prelude::*;
 use crate::utilities::pagination::Page;
 

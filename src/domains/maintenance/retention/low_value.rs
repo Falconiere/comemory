@@ -80,23 +80,17 @@ fn signal_rule(conn: &Connection, cfg: &Config, now: OffsetDateTime) -> Result<V
     Ok(out)
 }
 
-/// Default grace window for the superseded rule: only supersede edges
-/// older than this many days count. Protects freshly-rebuilt DBs —
-/// `comemory rebuild` rematerializes every edge with a rebuild-time
-/// timestamp, so without a grace period every superseded memory would
-/// instantly look "never accessed since the edge was written" and get
-/// flagged. Operator-tunable via `cfg.prune.superseded_grace_days`
-/// (env `COMEMORY_PRUNE_SUPERSEDED_GRACE_DAYS`); this constant seeds
-/// that field's default.
-pub(crate) const SUPERSEDED_GRACE_DAYS: u32 = 7;
-
 /// Superseded-and-forgotten rule: a live memory superseded by another
 /// *live* memory, with no access recorded since the supersede edge was
 /// created — and only when the edge has aged past `grace_days`
-/// (`cfg.prune.superseded_grace_days`, default
-/// [`SUPERSEDED_GRACE_DAYS`]). Quality and feedback are deliberately
-/// ignored here — a replaced memory nobody has touched since its
-/// replacement is prune material regardless of how good it once was.
+/// (`cfg.prune.superseded_grace_days`, default 7). The grace window protects
+/// freshly-rebuilt databases: `comemory rebuild` rematerializes every edge
+/// with a rebuild-time timestamp, so without it every superseded memory would
+/// instantly look "never accessed since the edge was written" and get
+/// flagged. Its default lives with the rest of the configuration defaults,
+/// in `config::defaults`, not here. Quality and feedback are deliberately
+/// ignored — a replaced memory nobody has touched since its replacement is
+/// prune material regardless of how good it once was.
 /// Self-edges (`src_id = dst_id`) are ignored as defense-in-depth; the
 /// writers refuse to create them.
 fn superseded_rule(conn: &Connection, grace_days: u32, now: OffsetDateTime) -> Result<Vec<String>> {

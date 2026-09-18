@@ -5,7 +5,7 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Integration tests for `comemory::git_utils`. We shell out to the real `git`
+//! Integration tests for `comemory::domains::code::git_utils`. We shell out to the real `git`
 //! binary to construct fixtures (rather than driving `git2` directly) so the
 //! test exercises the same on-disk layout a user repo would have — including
 //! the `.git/` directory `Repository::discover` looks for.

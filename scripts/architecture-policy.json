@@ -1,61 +1,23 @@
 {
   "version": 1,
   "staged_top_level_dirs": [
-    "api",
-    "ast",
-    "capture",
     "cli",
-    "cloud",
     "config",
-    "consolidate",
-    "document",
     "domains",
-    "eval",
-    "graph",
-    "memory",
-    "output",
-    "prune",
-    "retrieval",
     "serve",
-    "source",
-    "stats",
     "store",
-    "sync",
-    "upgrade",
     "utilities"
   ],
   "staged_root_modules": [
-    "api",
-    "ast",
-    "capture",
     "cli",
-    "cloud",
     "config",
-    "consolidate",
-    "document",
-    "embed",
     "errors",
-    "eval",
-    "fetch",
-    "git_utils",
-    "graph",
-    "http_error",
-    "index",
     "lib",
     "main",
-    "memory",
-    "output",
     "prelude",
-    "prune",
-    "retrieval",
     "serve",
-    "simhash",
-    "source",
-    "stats",
     "store",
-    "sync",
-    "test_common",
-    "upgrade"
+    "test_common"
   ],
   "domains": [
     "memories",
@@ -69,18 +31,7 @@
     "maintenance",
     "integrations"
   ],
-  "legacy_modules": [
-    {
-      "module": "crate::api",
-      "owner": "shared::utilities",
-      "issue": "#178"
-    },
-    {
-      "module": "crate::output",
-      "owner": "delivery::cli",
-      "issue": "#166"
-    }
-  ],
+  "legacy_modules": [],
   "owner_dependencies": [
     {
       "source": "domains::capture",
@@ -270,6 +221,38 @@
     {
       "source": "src/store/memory_row.rs",
       "target": "crate::domains::memories::Frontmatter"
+    }
+  ],
+  "shared_domain_dependencies": [
+    {
+      "source": "src/config/sync.rs",
+      "target": "crate::domains::sync::skip_repos::SkipMatcher",
+      "owner": "domains::sync",
+      "reason": "config::validate must reject an invalid [sync] skip_repos glob at load, and the matcher owns the lowercase normalization that decides what a pattern means; duplicating the compile inside config would fork that rule."
+    },
+    {
+      "source": "src/utilities/id_list.rs",
+      "target": "crate::domains::memories::id::is_valid_memory_id",
+      "owner": "domains::memories",
+      "reason": "the shared --ids/--used list parser rejects a malformed id up front, and the memory-id format is the memories capability's contract, not a string shape utilities may restate."
+    },
+    {
+      "source": "src/utilities/ref_args.rs",
+      "target": "crate::domains::code::git_utils",
+      "owner": "domains::code",
+      "reason": "--ref-* anchoring resolves a blob OID and the current branch/HEAD through the one Git reader in the code capability, rather than opening a second repository handle."
+    },
+    {
+      "source": "src/utilities/ref_args.rs",
+      "target": "crate::domains::memories::Ref",
+      "owner": "domains::memories",
+      "reason": "the shared --ref-* parser's output IS a memories value; producing a structurally identical local type would be the duplication the ledger exists to prevent."
+    },
+    {
+      "source": "src/utilities/ref_args.rs",
+      "target": "crate::domains::memories::References",
+      "owner": "domains::memories",
+      "reason": "as above: the parsed collection is the memories model both delivery adapters hand to save/update."
     }
   ]
 }

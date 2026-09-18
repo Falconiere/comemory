@@ -77,7 +77,7 @@ fn report(json_flag: bool, event: WatchEvent) -> Result<()> {
             WatchEvent::Connected => ("connected", 0),
             WatchEvent::Pulled(pulled) => ("pulled", pulled),
         };
-        return crate::output::json::write(&serde_json::json!({
+        return crate::cli::output::json::write(&serde_json::json!({
             "event": name,
             "pulled": pulled,
         }));

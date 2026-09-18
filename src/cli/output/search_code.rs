@@ -8,9 +8,9 @@
 
 use std::io::Write;
 
+use crate::cli::output::{json, tty};
 use crate::domains::retrieval::code_rerank::CodeReranked;
 use crate::domains::retrieval::code_search_result::envelope;
-use crate::output::{json, tty};
 use crate::prelude::*;
 use crate::utilities::pagination::PageMeta;
 

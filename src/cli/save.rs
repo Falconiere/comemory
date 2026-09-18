@@ -15,9 +15,9 @@ use clap::Args as ClapArgs;
 
 use crate::cli::load_config;
 use crate::cli::off_runtime::off_runtime;
+use crate::cli::output::tty;
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::domains::memories::Kind;
-use crate::output::tty;
 use crate::prelude::*;
 use crate::utilities::context::Ctx;
 use crate::utilities::id_list::csv_unique;

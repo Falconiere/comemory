@@ -29,7 +29,7 @@ fn open_ctx(home: &std::path::Path) -> (Paths, Config, rusqlite::Connection) {
     (paths, Config::defaults(), conn)
 }
 
-/// A minimal `memories::save::Request` — the same shape `api::tests::show` uses.
+/// A minimal `memories::save::Request` — the same shape `show`'s tests use.
 fn save_request(body: &str) -> memories::save::Request {
     memories::save::Request {
         body: body.to_string(),

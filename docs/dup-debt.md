@@ -4,7 +4,9 @@ Status: documented baseline, tracked by a count ratchet · Owner: whoever burns
 a pair down next
 
 `scripts/dup-check.sh` was silently non-functional before Phase 6 of the
-toolu-conventions migration (`docs/toolu/specs/folder-structure-migration.md`):
+toolu-conventions migration (the folder-structure migration design; its spec
+lives in the untracked `docs/toolu/` workspace, so it is named rather than
+linked):
 it invoked `similarity-rs` with CLI flags the installed version doesn't accept
 and grepped for output shapes the tool never produces, so it always fell
 through to a green no-op. Phase 6 fixed the invocation (correct flags,
@@ -14,6 +16,36 @@ time, it finds **113 near-duplicate function/method pairs at threshold
 migration — none was introduced by folder moves, `mod.rs` -> `<dir>.rs`
 flattening, or the colocated-tests rewrite; they are pre-existing shape
 duplication that a broken gate simply never caught.
+
+## The 113 is not reproducible, and the ratchet is broken (measured 2026-09-18, #178)
+
+`bash scripts/dup-check.sh` fails on `main`: **242 pairs against the recorded
+baseline of 113**. That is not 129 pairs of new duplication. Three facts,
+each measured rather than assumed:
+
+1. **The recorded number does not reproduce on its own tree.** Re-running the
+   locally installed `similarity-rs 0.5.0` against the tree at `16286113` — the
+   commit that wrote `113` into `dup-baseline.txt` — reports **140** pairs over
+   the same 226 production `.rs` files and 45 `scripts/*.sh`. So `242 > 113` is
+   not a like-for-like comparison: the baseline was taken with a different
+   `similarity-rs` build, and `dup-check.sh` pins no version.
+2. **Nothing runs the gate.** `dup-check.sh` appears in neither
+   `scripts/check-all.sh`'s `GATES` array nor `.github/workflows/`, and it exits
+   0 with a notice when `similarity-rs` is absent. A ratchet nobody runs, over a
+   tool nobody pins, is how the gap went unnoticed across sixty merged pull
+   requests.
+3. **#178 adds none of it.** Its pair set is identical to `origin/main`'s,
+   modulo the `src/output/` → `src/cli/output/` rename, under one
+   `similarity-rs 0.5.0` run of each: 242 pairs on both sides, and a normalized
+   diff of the pair lines is empty.
+
+`dup-baseline.txt` is therefore deliberately **left at 113 and left failing**.
+Re-baselining to 242 would record a number tied to one machine's installed
+tool in a gate with no pinned version and no CI run — the same trap one more
+turn. The fix is a tooling change, not a number: pin `similarity-rs` (version
+and invocation) the way the other gates pin their tools, wire `dup-check.sh`
+into `check-all.sh` or the `test` workflow, then re-baseline against that
+pinned version in the same commit as the table below.
 
 This document is the baseline snapshot **at fix time**, mirroring the
 `docs/lint-debt.md`-style pattern used for the D7 `clippy::pedantic`
@@ -159,11 +191,11 @@ ratchet re-scans fresh each run, it does not pin line numbers).
 | `src/domains/graph/imports.rs:55-70` function `extract_imports` | `src/domains/graph/imports.rs:337-354` function `python_imports` | 85.03% | the deliberate per-language import-resolution repetition (rust/python/go/ts/js) — same shape per language, see AGENTS.md `domains/graph/` row |
 | `src/domains/graph/imports.rs:321-325` function `ts_imports` | `src/domains/graph/imports.rs:328-332` function `js_imports` | 91.65% | the deliberate per-language import-resolution repetition (rust/python/go/ts/js) — same shape per language, see AGENTS.md `domains/graph/` row |
 
-### `src/output/`
+### `src/cli/output/`
 
 | Pair A | Pair B | Similarity | Why it's debt, not urgent |
 | --- | --- | --- | --- |
-| `src/output/graph.rs:33-37` function `write_dot` | `src/output/graph.rs:40-44` function `write_html` | 89.98% | parallel DOT vs. HTML emitters over the same graph walk |
+| `src/cli/output/graph.rs:33-37` function `write_dot` | `src/cli/output/graph.rs:40-44` function `write_html` | 89.98% | parallel DOT vs. HTML emitters over the same graph walk |
 
 ### `src/domains/retrieval/`
 

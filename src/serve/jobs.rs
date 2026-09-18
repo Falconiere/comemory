@@ -6,7 +6,7 @@
 //!
 //! These lifecycle types plus [`Registry`] (job records + their retained
 //! `watch::Sender`s) and [`worker::spawn_job`] (run-this-closure-as-a-job).
-//! Nothing here knows about `api::` or `Ctx` — the caller builds the
+//! Nothing here knows about the command cores or `Ctx` — the caller builds the
 //! closure, this layer only tracks it. Not persisted (Non-Goal 4): a
 //! restart forgets every job.
 //!

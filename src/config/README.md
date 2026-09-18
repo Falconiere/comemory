@@ -10,6 +10,18 @@ in the crate. Every other module reads a resolved `Config`/`Paths` value, not
 `std::env` directly — that's what the `no-direct-env-var` guardrails rule
 enforces (this folder is its documented exemption).
 
+Nor, as a rule, a capability: `config` sits under every domain, so an import
+back into one inverts the layering. Since #178 the architecture gate reports
+any such edge as `shared layer dependency` unless it is declared in
+`scripts/architecture-policy.json`'s `shared_domain_dependencies`, with a
+written reason. This folder declares exactly one — `sync::skip_matcher`
+returns `domains::sync::skip_repos::SkipMatcher`, because `validate` must
+reject an invalid `[sync] skip_repos` glob at load and the matcher owns the
+lowercase normalization that decides what a pattern means. Recompiling that
+rule here would fork it. Default VALUES stay here, though: #178 moved
+`SUPERSEDED_GRACE_DAYS` in from the prune rule that consumes it, so `defaults`
+owns its own numbers.
+
 ## Contents
 
 One line per file, named after its primary item:

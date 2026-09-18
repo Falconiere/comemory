@@ -11,9 +11,9 @@
 
 use std::io::Write as _;
 
+use crate::cli::output::{json, tty};
 use crate::domains::retrieval::context_result::{ContextResult, envelope};
 use crate::domains::retrieval::scope::ScopeEcho;
-use crate::output::{json, tty};
 use crate::prelude::*;
 
 /// Render `result` to stdout in either JSON or TTY mode. Footer semantics

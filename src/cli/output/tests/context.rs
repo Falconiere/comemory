@@ -5,14 +5,14 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror tests for `src/output/context.rs`. The public-facing bundle shape
+//! Mirror tests for `src/cli/output/context.rs`. The public-facing bundle shape
 //! emitted by `comemory context --json` is covered end-to-end in
 //! `tests/cli/context.rs`; this module pins the envelope contract (flattened
 //! bundle + optional `query_id`) this emitter serializes — the envelope
 //! itself moved to `retrieval::context_result` with #171 — and locks in that
 //! `output::context::emit` accepts an empty bundle without panicking.
 
-use comemory::output::context;
+use comemory::cli::output::context;
 use comemory::retrieval::bundle::{Bundle, CodeRow};
 use comemory::retrieval::code_prior::CodePriorParts;
 use comemory::retrieval::context_result::{ContextResult, envelope};

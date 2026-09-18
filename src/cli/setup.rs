@@ -10,9 +10,9 @@ use std::path::PathBuf;
 use clap::Args as ClapArgs;
 
 use crate::cli::load_config;
+use crate::cli::output::json;
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::domains::integrations;
-use crate::output::json;
 use crate::prelude::*;
 use crate::utilities::context::Ctx;
 use crate::utilities::id_list::csv_unique;

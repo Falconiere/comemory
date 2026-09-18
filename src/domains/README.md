@@ -6,7 +6,7 @@ delivery adapters call — and appears as a sibling module file (`<name>.rs`) pl
 its folder, declared from `src/domains.rs`.
 
 **What does NOT belong here:** delivery. No file under `domains/` may import
-`cli`, `serve`, `output`, or the legacy `api` command-core tree. A capability may
+`cli` (including the `cli::output` writers) or `serve`. A capability may
 depend on `store`, `config`, `errors`, `prelude`, the named shared primitives in
 [`utilities/`](../utilities/README.md), and — only through the directed table in
 `scripts/architecture-policy.json` — another capability.

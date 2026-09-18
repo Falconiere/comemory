@@ -262,8 +262,9 @@ view over the same cores; ◇ = a job-creating route)
 
 ### Request field mapping
 
-Every clap arg id maps to the same-named snake_case JSON field on
-`api::<cmd>::Request` (`--ref-file` → `ref_file`; a CSV flag like `--tags
+Every clap arg id maps to the same-named snake_case JSON field on the
+command core's `Request` — `domains::<capability>::<cmd>::Request`
+(`--ref-file` → `ref_file`; a CSV flag like `--tags
 a,b` becomes a real JSON array `["a", "b"]`). `--vector`/`--vector-stdin`
 collapse to one `"vector": [f32, ...]` field. `GET` endpoints take query
 params; `POST` endpoints take a JSON body; search-shaped endpoints
@@ -392,7 +393,8 @@ The allowed-roots set (`AppState::allowed_roots`) is the union of:
    yet),
 4. `--allow-path <dir>` entries (repeatable; see below).
 
-Handlers enforce containment **before** calling into `api::<cmd>::run` —
+Handlers enforce containment **before** calling into
+`domains::<capability>::<cmd>::run` —
 the shared command core stays transport-agnostic and exactly as
 unrestricted as the CLI (which already trusts the local filesystem).
 Containment for a job-creating route runs before the job is even created,

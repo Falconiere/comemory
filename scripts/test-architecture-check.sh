@@ -21,9 +21,8 @@ new_tree() {
   TREE="$TASK_TMP/$1"
   mkdir -p "$TREE/src" "$TREE/scripts" "$TREE/docs/designs"
   jq '.legacy_edges=[] | .store_callbacks=[] | .passive_store_models=[] |
-      .setup_runtime_dependencies=[]' "$ROOT/scripts/architecture-policy.json" >"$TREE/scripts/architecture-policy.json"
-  while IFS= read -r module; do put "$module" '//! Legacy ownership fixture.'; done < <(
-    jq -r '.legacy_modules[].module | sub("^crate::";"src/")+".rs"' "$ROOT/scripts/architecture-policy.json")
+      .setup_runtime_dependencies=[] | .shared_domain_dependencies=[]' \
+    "$ROOT/scripts/architecture-policy.json" >"$TREE/scripts/architecture-policy.json"
   put src/lib.rs '//! Fixture crate.'
 }
 policy() {
@@ -46,7 +45,10 @@ assert_status() {
       ($row.owner // (if ($path|startswith("src/domains/")) and
         (($policy[0].domains|index($path|split("/")[2]|rtrimstr(".rs"))) != null) then
         "domains::"+($path|split("/")[2]|rtrimstr(".rs"))
-        elif ($path|startswith("src/store/")) then "infrastructure::store" else "shared::root" end)) as $owner |
+        elif ($path|startswith("src/store/")) then "infrastructure::store"
+        elif ($path|startswith("src/config/")) then "shared::config"
+        elif ($path|startswith("src/utilities/")) then "shared::utilities"
+        else "shared::root" end)) as $owner |
       (if ($path|contains("/surprise/")) then ($path|sub("/surprise/";"/")) else $path end) as $target |
       "| "+([$path,"private","none","none",$owner,$target,($row.issue // "retain")]|join(" | "))+" |"
     ' -r >"$TREE/docs/designs/2026-09-17-domain-first-migration-inventory.md"
@@ -261,17 +263,19 @@ domain 'pub fn run() {}'
 policy '.legacy_edges=[{source:"src/domains/memories.rs",target:"crate::cli::embedding_input",class:"delivery",issue:"#166"}]'
 both 1 'stale policy edge' src/domains/memories.rs
 
+# The `legacy_modules` mutations are NOT in this loop: with that array empty
+# they auto-vivify a half-formed entry and fail the shape check instead of the
+# rule under test. They live in `invalid_legacy_module` above, behind a seed.
 for mutation in \
   '.legacy_edges += [.legacy_edges[0]]' \
   'del(.legacy_edges[0].target)' \
   '.legacy_edges[0].issue="#999"' \
   '.legacy_edges[0].target="crate::cli::*"' \
   '.legacy_edges[0].class="store-callback"' \
-  '.legacy_modules += [.legacy_modules[0]]' \
   '.owner_dependencies += [.owner_dependencies[0]]' \
-  '.legacy_modules[0].module="crate::api::save"' \
-  '.legacy_modules[0].issue="#999"' \
   '.setup_runtime_dependencies=[{source:"src/domains/memories.rs",target:"crate::domains::memories::save",owner:"bogus"}]' \
+  '.shared_domain_dependencies=[{source:"src/utilities/when.rs",target:"crate::domains::memories::Ref",owner:"domains::memories",reason:"too short"}]' \
+  '.shared_domain_dependencies=[{source:"src/domains/memories.rs",target:"crate::domains::memories::Ref",owner:"domains::memories",reason:"a source outside config/ or utilities/ is not a shared-layer escape at all."}]' \
   '.setup_runtime_dependencies=null'; do
   new_tree invalid_policy
   domain 'pub fn run() { crate::cli::embedding_input(); }'
@@ -360,23 +364,100 @@ put src/store/rows.rs 'use crate::domains::memories::Kind; fn read() -> Kind { K
 policy '.passive_store_models=[{source:"src/store/rows.rs",target:"crate::domains::memories::Kind"}]'
 both 0 '' src/store/rows.rs
 
+# The shared layer. `config` and `utilities` sit under every capability, so an
+# edge back into one inverts the layering — and until #178 nothing watched for
+# it, which is how four of them accumulated. `shared::root` stays exempt: the
+# crate-root facade's job IS re-exporting domain paths.
+new_tree shared_layer
+put src/utilities.rs 'pub mod helper;'
+put src/utilities/helper.rs 'use crate::domains::memories::Ref; pub fn read() -> Ref { Ref::new() }'
+both 1 'shared layer dependency' src/utilities/helper.rs
+policy '.shared_domain_dependencies=[{source:"src/utilities/helper.rs",
+  target:"crate::domains::memories::Ref",owner:"domains::memories",
+  reason:"fixture: a declared shared-to-domain edge is exempt, and only the declared one is."}]'
+both 0 '' src/utilities/helper.rs
+# The declaration is exact, not a blanket pass for the file.
+put src/utilities/helper.rs 'use crate::domains::memories::References; pub fn read() -> References { References::default() }'
+both 1 'crate::domains::memories::References' src/utilities/helper.rs
+# `src/lib.rs` re-exporting a domain path is the facade doing its job.
+new_tree shared_root_facade
+put src/lib.rs 'pub use crate::domains::memories::Ref;'
+both 0 '' src/lib.rs
+
+# `legacy_modules` emptied out with #178: `crate::api` went with the shell and
+# `crate::output` with the move under `cli/`. On an empty array jq auto-vivifies
+# `.legacy_modules[0]`, so each mutation below produces a half-formed entry that
+# fails the SHAPE check rather than the rule it was written to exercise — the
+# duplicate check, the module-path regex and the issue regex all stop being
+# reached. Each case therefore seeds one well-formed entry first, exactly as
+# `SEED_EDGE` does for `legacy_edges` in test-architecture-policy.sh.
+SEED_MODULE='.legacy_modules=[{module:"crate::legacy",owner:"delivery::cli",issue:"#166"}]'
+new_tree legacy_module_row
+domain 'pub fn run() {}'
+policy "$SEED_MODULE"
+# The seed alone is schema-valid, so it reaches the NEXT check and fails there:
+# every legacy_modules entry needs a ledger row agreeing on owner and issue.
+# That is what proves the seed is not passing the mutations below vacuously.
+both 1 'invalid ownership policy' src/domains/memories.rs
+for mutation in \
+  '.legacy_modules += [.legacy_modules[0]]' \
+  '.legacy_modules[0].module="crate::api::save"' \
+  '.legacy_modules[0].issue="#999"' \
+  '.legacy_modules[0].owner="bogus"'; do
+  new_tree invalid_legacy_module
+  domain 'pub fn run() {}'
+  policy "$SEED_MODULE"
+  policy "$mutation"
+  both 3 'invalid policy' src/domains/memories.rs
+done
+
 new_tree grouped_diagnostics
 domain 'use crate::{serve::z, cli::{z, a}}; pub fn work() {}'
 assert_status 1 'crate::cli::a'
 test "$(grep -c '^src/domains/memories.rs:' "$TASK_TMP/result")" = 1
 test "$(grep -n 'crate::cli::a' "$TASK_TMP/result" | cut -d: -f1)" -lt "$(grep -n 'crate::serve::z' "$TASK_TMP/result" | cut -d: -f1)"
-# The one case that still names an `src/api/` path, deliberately: it is the only
-# cover for the checker's `src/api/` source branch, which subjects a file in the
-# emptied shell to the delivery rule although it has no `domains::` owner. The
-# path carries no owner expectation now that capability ownership replaced the
-# `src/api/` core map, and #178 retires the branch with the shell.
+# Scoped selection reports only the files actually selected. #178 retired the
+# checker's `src/api/` source branch with the shell it guarded, so this case now
+# carries its violation on a real capability file: the clean parent stays silent
+# when selected alone, and naming both files reports the child. (Selecting a
+# CHILD also selects its parent module file — that direction is `scoped_parent`
+# below; this one proves the parent does not drag in its children.)
 new_tree scoped_selection
 domain 'pub fn work() {}'
-put src/api/setup.rs 'pub fn run() { crate::cli::embedding_input(); }'
+put src/domains/memories/save.rs 'pub fn run() { crate::cli::embedding_input(); }'
 put tests/cli__setup.rs 'use crate::cli::setup;'
 assert_status 0 '' --file tests/cli__setup.rs
 assert_status 0 '' --file src/domains/memories.rs
-assert_status 1 'crate::cli::embedding_input' --file src/domains/memories.rs --file src/api/setup.rs
+assert_status 1 'crate::cli::embedding_input' --file src/domains/memories.rs --file src/domains/memories/save.rs
+# A crate-root re-export must be written `pub use crate::…`. rustc treats the
+# uniform path as the same export, but the checker's resolver rewrites an
+# unqualified binding to a relative path and then drops the edge — which is how
+# a domain reaching delivery THROUGH an alias stayed invisible for twelve
+# slices. Both halves are asserted: the rule fires on the unqualified form, and
+# the qualified form actually makes the aliased edge visible.
+new_tree unqualified_reexport
+domain 'pub fn work() {}'
+put src/lib.rs 'pub use domains::memories;'
+both 1 'unqualified root re-export' src/lib.rs
+put src/lib.rs 'pub use crate::domains::memories;'
+both 0 '' src/lib.rs
+# `pub(crate) use` loses the binding the same way, so it counts too.
+put src/lib.rs 'pub(crate) use domains::memories;'
+both 1 'unqualified root re-export' src/lib.rs
+# Re-exporting a DEPENDENCY is not the same thing: there is no in-crate path
+# for the resolver to lose, so the rule must stay quiet.
+put src/lib.rs 'pub use serde::Serialize;'
+both 0 '' src/lib.rs
+new_tree aliased_delivery
+put src/lib.rs 'pub use crate::cli::output;'
+domain 'pub fn work() { crate::output::json::write(); }'
+both 1 'crate::cli::output::json::write' src/domains/memories.rs
+# The same tree with the unqualified alias: the delivery edge disappears
+# entirely, and only the new rule reports anything at all.
+put src/lib.rs 'pub use cli::output;'
+assert_status 1 'unqualified root re-export'
+test "$(grep -c 'crate::cli::output' "$TASK_TMP/result")" = 0
+
 new_tree scoped_parent
 domain 'use crate::cli; pub mod save;'
 put src/domains/memories/save.rs 'pub fn work() {}'

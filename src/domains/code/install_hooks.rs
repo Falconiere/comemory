@@ -4,7 +4,7 @@
 //! Moved out of `cli::install_hooks::run` (Binding Rule 1).
 //!
 //! Conn-free — `run` never calls [`Ctx::conn`]; `&mut Ctx` is threaded only
-//! for signature uniformity with every other `api::<cmd>::run`.
+//! for signature uniformity with every other command core's `run`.
 //!
 //! **Containment is not this file's job.** The HTTP route handler
 //! canonicalizes and contains `req.repo` (`utilities::path_containment::contain_abs`) before
