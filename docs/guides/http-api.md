@@ -353,6 +353,11 @@ Three of them degrade a side effect rather than refusing outright:
   server (list-only; the CLI always reconciles).
 - `edges`: the one-time `edge_fts` self-heal is skipped.
 
+Separately, wherever tracking IS on, a request for a page past the head of the
+ranking (`offset > 0`) still records its `retrieval_log` row — so `POST
+/feedback` can still cite that `query_id` — but bumps no access counts, so a
+deep page cannot reinforce itself. See §5.1 of `docs/architecture.md`.
+
 ## Confirm gate
 
 Routes marked **confirm** above require explicit confirmation beyond the

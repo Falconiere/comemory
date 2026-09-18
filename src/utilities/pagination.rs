@@ -111,6 +111,16 @@ impl PageWindow {
             limit: cfg.retrieval.top_k,
         }
     }
+
+    /// Whether this window starts at the head of the ranked list: nothing is
+    /// skipped before its first item, so the window covers an unbroken prefix
+    /// of the ranking rather than a band out of the middle of it.
+    ///
+    /// Independent of `limit` — a zero-length or "all remaining" window still
+    /// starts at the head when `offset` is `0`.
+    pub fn is_head(self) -> bool {
+        self.offset == 0
+    }
 }
 
 /// Pagination cursor metadata carried alongside the hits in a retrieval

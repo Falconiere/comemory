@@ -22,7 +22,7 @@ snake_case tokens split automatically.
 | Flag | Default | Effect |
 | --- | --- | --- |
 | `--k` / `--limit` | config `retrieval.top_k` | Page size |
-| `--offset` | `0` | Skip this many ranked hits |
+| `--offset` | `0` | Skip this many ranked hits. A page past the head does not bump access counts |
 | `--repo` | unset | Repo label as passed to `index-code --repo` |
 | `--lang` | unset | Language filter (`rust`/`rs`, `python`/`py`, …) |
 | `--vector` | unset | CSV embedding (768-dim) |

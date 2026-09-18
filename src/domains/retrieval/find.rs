@@ -17,7 +17,7 @@ use crate::prelude::*;
 use crate::store::Connection;
 use crate::utilities::context::Ctx;
 use crate::utilities::pagination::PageMeta;
-use crate::utilities::pagination::{page_meta, page_window};
+use crate::utilities::pagination::{PageWindow, page_meta, page_window};
 
 /// `comemory find` / `GET|POST /api/v1/find` request.
 #[derive(Deserialize, Debug)]
@@ -120,7 +120,7 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<FindResult> {
         window,
     )?;
     let query_id = if track {
-        track_run(conn, &req.query, &run.hits, filters, started)
+        track_run(conn, &req.query, &run.hits, filters, window, started)
     } else {
         None
     };
@@ -137,11 +137,16 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<FindResult> {
 /// tracker for the hits it contributed — `memories.access_count` for
 /// memory hits, `code_feedback` for code hits, matching what `search` and
 /// `search-code` each already do for their own domain.
+///
+/// The log is written at every offset; both access trackers fire only on a
+/// head window, for the reason given in
+/// `retrieval::pipeline::record_access` (#201).
 fn track_run(
     conn: &Connection,
     query: &str,
     hits: &[UnifiedHit],
     filters: Filters<'_>,
+    window: PageWindow,
     started: std::time::Instant,
 ) -> Option<String> {
     let memory_ids: Vec<String> = hits
@@ -149,27 +154,32 @@ fn track_run(
         .filter(|h| h.domain == unified::fuse_domains::DOMAIN_MEMORY)
         .map(|h| h.id.clone())
         .collect();
-    // A code hit's id is a `code_symbols` rowid that `fuse_domains` stringified,
-    // so this parse cannot fail in practice — but a silent drop here would mean
-    // access tracking quietly skipping a hit, so it warns like the identical
-    // spot in `code_route::fuse_legs` does.
-    let code_ids: Vec<i64> = hits
-        .iter()
-        .filter(|h| h.domain == unified::fuse_domains::DOMAIN_CODE)
-        .filter_map(|h| match h.id.parse() {
-            Ok(id) => Some(id),
-            Err(e) => {
-                tracing::warn!(id = %h.id, error = %e, "skipping non-numeric code hit id");
-                None
-            }
-        })
-        .collect();
-    // Two shapes because the two consumers genuinely differ: `record_access`
-    // takes `&[&str]` (it binds the ids into an `IN` list) while
-    // `log_retrieval` takes `&[String]` (it serializes them to JSON).
-    let memory_refs: Vec<&str> = memory_ids.iter().map(String::as_str).collect();
-    pipeline::record_access(conn, memory_refs.as_slice());
-    crate::store::code_row::record_access(conn, &code_ids);
+    // Both bumps live inside the head check, so a deep page neither writes nor
+    // walks the hits looking for something to write — and cannot emit the
+    // parse warning below for ids it was never going to use.
+    if window.is_head() {
+        // A code hit's id is a `code_symbols` rowid that `fuse_domains`
+        // stringified, so this parse cannot fail in practice — but a silent
+        // drop here would mean access tracking quietly skipping a hit, so it
+        // warns like the identical spot in `code_route::fuse_legs` does.
+        let code_ids: Vec<i64> = hits
+            .iter()
+            .filter(|h| h.domain == unified::fuse_domains::DOMAIN_CODE)
+            .filter_map(|h| match h.id.parse() {
+                Ok(id) => Some(id),
+                Err(e) => {
+                    tracing::warn!(id = %h.id, error = %e, "skipping non-numeric code hit id");
+                    None
+                }
+            })
+            .collect();
+        // Two shapes because the two consumers genuinely differ:
+        // `record_access` takes `&[&str]` (it binds the ids into an `IN` list)
+        // while `log_retrieval` takes `&[String]` (it serializes them to JSON).
+        let memory_refs: Vec<&str> = memory_ids.iter().map(String::as_str).collect();
+        pipeline::record_access(conn, memory_refs.as_slice());
+        crate::store::code_row::record_access(conn, &code_ids);
+    }
     pipeline::log_retrieval(
         conn,
         query,

@@ -567,3 +567,244 @@ fn scope_cutoff_excludes_a_candidate_end_to_end() {
         "the memory created after the cutoff must not reach the caller"
     );
 }
+
+// --- #201: a paged read must not reinforce the band it returned -------------
+
+/// Two memories the query term hits identically — same token count, same
+/// `created_at` (so `last_accessed` falls back to the same instant), same
+/// default `access_count` — so their `final_score` is exactly equal and the
+/// rerank tie-break on `memory_id` is the only thing ordering them.
+/// `spread_simhash` keeps diversify from collapsing the pair.
+fn seed_tied_pair() -> (tempfile::TempDir, rusqlite::Connection) {
+    let (dir, conn) = open_db();
+    seed_body(
+        &conn,
+        "bbbb0001",
+        "widget alpha bravo charlie delta echo",
+        0,
+    );
+    seed_body(
+        &conn,
+        "bbbb0002",
+        "widget juliett kilo lima mike november",
+        1,
+    );
+    (dir, conn)
+}
+
+/// Three memories of deliberately different token counts, so BM25 — and with
+/// it `final_score` — separates all three. Same dates and counts as
+/// [`seed_tied_pair`], so the only difference is relevance.
+fn seed_distinct_trio() -> (tempfile::TempDir, rusqlite::Connection) {
+    let (dir, conn) = open_db();
+    seed_body(&conn, "cccc0001", "widget alpha", 0);
+    seed_body(&conn, "cccc0002", "widget bravo charlie delta", 1);
+    seed_body(
+        &conn,
+        "cccc0003",
+        "widget echo foxtrot golf hotel india juliett",
+        2,
+    );
+    (dir, conn)
+}
+
+/// One TRACKED single-row page at `offset`, exactly as a caller paging through
+/// results asks for it. Tracking is deliberately left on: it is the mechanism
+/// under test.
+fn tracked_page(
+    cfg: &Config,
+    conn: &rusqlite::Connection,
+    query: &str,
+    offset: usize,
+) -> Vec<String> {
+    search(
+        cfg,
+        conn,
+        query,
+        None,
+        Filters::none(),
+        SearchOptions {
+            track: true,
+            source: "search",
+            window: PageWindow { offset, limit: 1 },
+        },
+    )
+    .expect("search")
+    .hits
+    .iter()
+    .map(|h| h.memory_id.clone())
+    .collect()
+}
+
+/// One TRACKED single-row page at `offset`, returning the whole run so a test
+/// can assert on `query_id` as well as the hits.
+fn tracked_search(
+    cfg: &Config,
+    conn: &rusqlite::Connection,
+    query: &str,
+    offset: usize,
+) -> comemory::retrieval::pipeline::SearchRun {
+    search(
+        cfg,
+        conn,
+        query,
+        None,
+        Filters::none(),
+        SearchOptions {
+            track: true,
+            source: "search",
+            window: PageWindow { offset, limit: 1 },
+        },
+    )
+    .expect("search")
+}
+
+/// Eight tracked `--offset 1 --limit 1` runs over one corpus, as returned ids.
+fn eight_tracked_pages(cfg: &Config, conn: &rusqlite::Connection, query: &str) -> Vec<Vec<String>> {
+    (0..8).map(|_| tracked_page(cfg, conn, query, 1)).collect()
+}
+
+/// Assert all eight runs agree, naming the divergence when they do not.
+fn assert_stable(runs: &[Vec<String>], what: &str) {
+    assert!(
+        runs.iter().all(|r| r.len() == 1),
+        "every run must return exactly one row, got {runs:?}"
+    );
+    let first = &runs[0];
+    assert!(
+        runs.iter().all(|r| r == first),
+        "{what}: eight identical paged queries returned different rows: {runs:?}"
+    );
+}
+
+/// Issue #201: eight identical paged queries must return the same row.
+///
+/// Access tracking is left ON — that is the whole point. A tracked run bumps
+/// `access_count` / `last_accessed` for the rows it returned, ACT-R activation
+/// reads both back on the next run, and before the head-only rule a bump set
+/// with a gap in front of it (`offset > 0`) floated the returned row above the
+/// row ahead of it. Measured on `main`, this fixture alternates from run 2 —
+/// its rows carry a dated `created_at`, so the first bump moves
+/// `last_accessed` by ~100 days and the flip needs no second access. The same
+/// loop driven through the real binary over a freshly saved corpus
+/// (`tests/cli__search.rs`) diverges at run 3, because there `access_count`
+/// has to reach 2 before `ln(max(n,1))` moves at all.
+///
+/// Eight runs because issue #201 reports eight, and because that is well clear
+/// of both divergence points; a single run proves nothing about a bug that
+/// alternates.
+#[test]
+fn a_paged_tracked_search_returns_the_same_tied_row_every_run() {
+    let (_d, conn) = seed_tied_pair();
+    let cfg = Config::defaults();
+
+    // Guard against a vacuous assertion: if the pair is not genuinely tied,
+    // this test would be about something else entirely.
+    let head = run_search(&cfg, &conn, "widget");
+    assert_eq!(
+        head.len(),
+        2,
+        "both fixtures must survive diversify, got {:?}",
+        ids(&head)
+    );
+    assert_eq!(
+        head[0].parts.final_score, head[1].parts.final_score,
+        "the fixtures are not tied, so this test would not exercise a tie group"
+    );
+
+    let runs = eight_tracked_pages(&cfg, &conn, "widget");
+    assert_stable(&runs, "tied pair");
+}
+
+/// Issue #201 is NOT tie-specific: the same reinforcement loop leapfrogs rows
+/// whose scores are plainly different, so a fix that merely completed the tie
+/// ordering would pass the issue's own reproduction and leave the bug in place.
+/// Measured on `main`, this fixture flips at run 2; through the real binary,
+/// with a 24% score gap between rank 0 and rank 1, it flips at run 4.
+#[test]
+fn a_paged_tracked_search_is_stable_on_distinct_scores() {
+    let (_d, conn) = seed_distinct_trio();
+    let cfg = Config::defaults();
+
+    let head = run_search(&cfg, &conn, "widget");
+    assert_eq!(
+        head.len(),
+        3,
+        "all three fixtures must survive diversify, got {:?}",
+        ids(&head)
+    );
+    assert!(
+        head[0].parts.final_score > head[1].parts.final_score
+            && head[1].parts.final_score > head[2].parts.final_score,
+        "the fixtures must be strictly ordered, else this is a tie test in disguise: {:?}",
+        head.iter().map(|h| h.parts.final_score).collect::<Vec<_>>()
+    );
+
+    let runs = eight_tracked_pages(&cfg, &conn, "widget");
+    assert_stable(&runs, "distinct scores");
+}
+
+/// The split the fix rests on: a tracked page past the head still writes its
+/// `retrieval_log` row — so `comemory feedback <query_id>` keeps working for a
+/// result found on page 3 — but writes no access counts at all.
+///
+/// The head call is a positive control on the SAME fixture: without it, the
+/// deep-page assertion would still hold if the bump writer were broken
+/// outright, or if these filters had stopped matching the rows it targets.
+/// A non-empty page proves neither. Both columns are checked, because
+/// `record_access` writes `access_count` AND `last_accessed` and pinning only
+/// the count would pass a half-fix.
+#[test]
+fn a_deep_page_logs_the_query_but_bumps_no_access_counts() {
+    let (_d, conn) = seed_tied_pair();
+    let cfg = Config::defaults();
+
+    let head = tracked_search(&cfg, &conn, "widget", 0);
+    assert_eq!(head.hits.len(), 1, "a one-row head page");
+    let after_head = bumped_memories(&conn);
+    assert_eq!(
+        after_head, 1,
+        "the head page must bump exactly its one hit, else everything below \
+         would hold vacuously"
+    );
+
+    let deep = tracked_search(&cfg, &conn, "widget", 1);
+    assert_eq!(deep.hits.len(), 1, "a one-row page at offset 1");
+    let returned = deep.hits[0].memory_id.clone();
+    let query_id = deep.query_id.clone().expect(
+        "a deep page must still be logged, or `comemory feedback` \
+                 could not reach a result found past the first page",
+    );
+
+    let logged: i64 = conn
+        .query_row("SELECT COUNT(*) FROM retrieval_log", [], |r| r.get(0))
+        .expect("count retrieval_log");
+    assert_eq!(logged, 2, "one row per run — the head run and the deep run");
+    let returned_ids: String = conn
+        .query_row(
+            "SELECT returned_ids FROM retrieval_log WHERE query_id = ?1",
+            [&query_id],
+            |r| r.get(0),
+        )
+        .expect("read the deep run's row");
+    assert!(
+        returned_ids.contains(&returned),
+        "the logged returned_ids must be the page that was returned: {returned_ids}"
+    );
+
+    assert_eq!(
+        bumped_memories(&conn),
+        after_head,
+        "a page past the head must bump neither access_count nor last_accessed"
+    );
+}
+
+/// Memories carrying any access-tracking write at all — either column.
+fn bumped_memories(conn: &rusqlite::Connection) -> i64 {
+    conn.query_row(
+        "SELECT COUNT(*) FROM memories WHERE access_count <> 0 OR last_accessed IS NOT NULL",
+        [],
+        |r| r.get(0),
+    )
+    .expect("count bumped memories")
+}

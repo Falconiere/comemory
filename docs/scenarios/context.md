@@ -19,7 +19,7 @@ Global flags `--json` and `--data-dir` apply. See [globals.md](globals.md).
 | Flag | Default | Effect |
 | --- | --- | --- |
 | `--k` / `--limit` | config `retrieval.top_k` | How many memories in the bundle |
-| `--offset` | `0` | Skip this many memory hits |
+| `--offset` | `0` | Skip this many memory hits. A page past the head does not bump access counts |
 | `--repo` | unset | Scope both legs |
 | `--vector` | unset | CSV embedding (1024-dim) |
 | `--vector-stdin` | off | JSON embedding on stdin |
