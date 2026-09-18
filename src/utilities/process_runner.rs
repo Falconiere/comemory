@@ -173,10 +173,13 @@ impl ProcessRunner {
         let started = Instant::now();
         // `Instant + Duration` panics on overflow, and the budget is a public
         // input: a caller passing `Duration::MAX` must get a long deadline,
-        // not an abort.
+        // not an abort. Every step is checked, including the fallback — on a
+        // clock already at its ceiling the deadline collapses to `started`,
+        // which times the run out at once rather than panicking.
         let deadline = started
             .checked_add(self.timeout)
-            .unwrap_or_else(|| started + FALLBACK_DEADLINE);
+            .or_else(|| started.checked_add(FALLBACK_DEADLINE))
+            .unwrap_or(started);
         let mut child = self.spawn()?;
         let pipes = Pipes::start(
             &mut child,
@@ -229,7 +232,10 @@ fn bare(failure: ProcessFailure) -> ProcessError {
 /// until this process exits. `wait` on a signalled direct child returns as
 /// soon as that child is reaped, whatever its descendants are doing.
 fn terminate(child: &mut Child) {
-    if matches!(child.try_wait(), Ok(None)) {
+    // Kill unless the child is positively known to have exited. A `try_wait`
+    // that fails tells us nothing, and skipping the kill on it would leave
+    // `wait` below to block on a child still running.
+    if !matches!(child.try_wait(), Ok(Some(_))) {
         let _ = child.kill();
     }
     let _ = child.wait();

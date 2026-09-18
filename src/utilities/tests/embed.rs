@@ -85,7 +85,7 @@ fn command_that_answers_then_refuses_to_exit_times_out() {
     // the exit, so it fails promptly instead.
     let started = Instant::now();
     let err = embed_query_with_timeout(
-        r#"cat > /dev/null; printf '{"embedding":[1.0]}'; exec >&-; sleep 30"#,
+        r#"cat > /dev/null; printf '{"embedding":[1.0]}'; exec >&-; sleep 5"#,
         "q",
         Duration::from_millis(200),
     )

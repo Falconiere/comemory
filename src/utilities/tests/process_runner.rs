@@ -138,7 +138,7 @@ fn child_that_never_reads_stdin_still_returns_its_output() {
 #[test]
 fn child_that_never_exits_times_out_and_is_reaped() {
     let started = Instant::now();
-    let err = sh("sleep 30", &[])
+    let err = sh("sleep 5", &[])
         .with_timeout(Duration::from_millis(300))
         .run(b"")
         .expect_err("a child that outlives the budget must fail")
@@ -162,7 +162,7 @@ fn child_that_closes_stdout_but_stays_alive_times_out() {
     // stdout reaches EOF immediately; the process does not exit. Only a budget
     // that also covers the exit can end this run.
     let started = Instant::now();
-    let err = sh("exec >&-; sleep 30", &[])
+    let err = sh("exec >&-; sleep 5", &[])
         .with_timeout(Duration::from_millis(300))
         .run(b"")
         .expect_err("an alive child with a closed stdout must fail")
@@ -297,7 +297,7 @@ fn an_enormous_budget_does_not_overflow_the_deadline() {
 fn a_failure_carries_the_stderr_drained_before_it() {
     // A scorer that narrates its start-up and then hangs leaves no other
     // clue, so the excerpt has to travel with the failure, not just success.
-    let err = sh("printf 'loading weights...' >&2; sleep 30", &[])
+    let err = sh("printf 'loading weights...' >&2; sleep 5", &[])
         .with_timeout(Duration::from_millis(300))
         .run(b"")
         .expect_err("the child outlives its budget");

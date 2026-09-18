@@ -118,16 +118,19 @@ impl RerankRunner {
             serde_json::to_vec(request).map_err(|e| (malformed(&e.to_string()), String::new()))?;
         let output = self.process_runner().run(&body).map_err(restate)?;
         let stderr_excerpt = String::from_utf8_lossy(&output.stderr).into_owned();
-        apply(request, &output)
-            .map_err(|failure| (failure, stderr_excerpt.clone()))
-            .map(|order| RerankApplied {
+        // A match, not a `map`/`map_err` pair: only one arm ever runs, so the
+        // excerpt can be moved into it instead of cloned for the other.
+        match apply(request, &output) {
+            Ok(order) => Ok(RerankApplied {
                 request_id: request.request_id.clone(),
                 model: request.model.clone(),
                 adapter: request.adapter.clone(),
                 order,
                 stderr_excerpt,
                 elapsed: output.elapsed,
-            })
+            }),
+            Err(failure) => Err((failure, stderr_excerpt)),
+        }
     }
 
     /// The bounded process runner this configuration implies.

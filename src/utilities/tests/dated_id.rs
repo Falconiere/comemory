@@ -64,3 +64,28 @@ fn the_same_seed_twice_yields_distinct_ids() {
     );
     assert_ne!(a, b);
 }
+
+#[test]
+fn the_query_id_shape_is_byte_identical_to_the_pre_extraction_one() {
+    // `query_id` used to build this string itself. The extraction must not
+    // have changed one byte of it, because the ids are written into
+    // `retrieval_log` and handed back to `comemory feedback` verbatim.
+    // This is the same computation the old code performed, spelled out.
+    let now = time::macros::datetime!(2026-09-18 12:34:56.789 UTC);
+    let query = "sqlite busy";
+    let mut input = Vec::new();
+    input.extend_from_slice(query.as_bytes());
+    input.extend_from_slice(&now.unix_timestamp_nanos().to_be_bytes());
+    let expected = format!(
+        "q-{:04}{:02}{:02}-{}",
+        now.year(),
+        u8::from(now.month()),
+        now.day(),
+        &comemory::utilities::digest::sha256_hex(&input)[..8]
+    );
+    assert_eq!(
+        comemory::utilities::query_id::generate_query_id(query, now),
+        expected
+    );
+    assert_eq!(dated_id("q", query, now), expected);
+}

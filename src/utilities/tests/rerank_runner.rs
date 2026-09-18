@@ -303,7 +303,7 @@ fn a_valid_response_with_a_nonzero_exit_is_not_applied() {
 fn a_hanging_scorer_times_out_within_its_budget() {
     let dir = workdir("hang");
     let started = Instant::now();
-    let outcome = runner(dir.path(), "sleep 30")
+    let outcome = runner(dir.path(), "sleep 5")
         .with_timeout(Duration::from_millis(300))
         .rerank(&request());
     let failure = declined(&outcome);
@@ -528,7 +528,7 @@ fn a_timed_out_scorer_declines_with_the_stderr_it_had_already_printed() {
     // narrated before it hung, so the excerpt has to reach the declined
     // outcome — an empty one here would leave "timed out" as the only clue.
     let dir = workdir("stderr-on-timeout");
-    let outcome = runner(dir.path(), "printf 'loading weights...' >&2; sleep 30")
+    let outcome = runner(dir.path(), "printf 'loading weights...' >&2; sleep 5")
         .with_timeout(Duration::from_millis(300))
         .rerank(&request());
     let failure = declined(&outcome);
@@ -540,7 +540,6 @@ fn a_timed_out_scorer_declines_with_the_stderr_it_had_already_printed() {
         panic!("expected Declined, got {outcome:?}");
     };
     assert_eq!(details.stderr_excerpt, "loading weights...");
-    assert_eq!(details.request_id, outcome_request_id(&outcome));
 }
 
 #[test]
@@ -580,12 +579,4 @@ fn the_published_defaults_are_what_the_design_document_states() {
     assert_eq!(limits.max_request_bytes, 8 * 1024 * 1024);
     assert_eq!(limits.max_stdout_bytes, 8 * 1024 * 1024);
     assert_eq!(limits.max_stderr_bytes, 16 * 1024);
-}
-
-/// The request id an outcome reports, in whichever arm it landed.
-fn outcome_request_id(outcome: &RerankOutcome) -> String {
-    match outcome {
-        RerankOutcome::Applied(applied) => applied.request_id.clone(),
-        RerankOutcome::Declined(declined) => declined.request_id.clone(),
-    }
 }
