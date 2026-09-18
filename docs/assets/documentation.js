@@ -228,17 +228,17 @@
     document.title = (first && path !== INDEX ? first.textContent.trim() + ' · ' : '') + SITE_TITLE;
   }
 
-  /* Landing on a route is instant; smooth scrolling is for clicks within a
-     page. Web fonts swap after first paint and move every line below them,
-     so the landing is repeated once the fonts are in. */
-  function scrollTo(frag) {
+  /* Landing on a route is instant; a click within the same page scrolls
+     smoothly. Web fonts swap after first paint and move every line below
+     them, so a landing is repeated once the fonts are in. */
+  function scrollTo(frag, behavior) {
     function land() {
       var target = frag ? document.getElementById(frag) : null;
-      if (target) target.scrollIntoView({ block: 'start', behavior: 'instant' });
-      else window.scrollTo({ top: 0, behavior: 'instant' });
+      if (target) target.scrollIntoView({ block: 'start', behavior: behavior });
+      else window.scrollTo({ top: 0, behavior: behavior });
     }
     land();
-    if (document.fonts && document.fonts.ready) document.fonts.ready.then(land);
+    if (behavior === 'instant' && document.fonts && document.fonts.ready) document.fonts.ready.then(land);
   }
 
   function markCurrent(path) {
@@ -253,14 +253,14 @@
     var samePage = next.path === current.path;
     current = next;
     markCurrent(next.path);
-    if (samePage) { scrollTo(next.frag); return; }
+    if (samePage) { scrollTo(next.frag, 'smooth'); return; }
     renderCrumbs(next.path);
     showLoading(next.path);
     fetchDoc(next.path).then(function (markdown) {
       if (current.path !== next.path) return;
       clearState();
       renderDoc(next.path, markdown);
-      scrollTo(next.frag);
+      scrollTo(next.frag, 'instant');
     }).catch(function (error) {
       if (current.path !== next.path) return;
       body.innerHTML = '';

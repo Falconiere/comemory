@@ -178,7 +178,7 @@
     return node;
   }
 
-  function renderCard(card, kind) {
+  function renderCard(card) {
     var button = el('button', 'card');
     button.type = 'button';
     button.setAttribute('role', 'tab');
@@ -195,7 +195,6 @@
     head.appendChild(dot);
     button.appendChild(head);
     button.appendChild(el('span', 'card-sub', card.sub));
-    if (kind === 'pipe') button.querySelector('.card-name').style.display = 'block';
     return button;
   }
 
@@ -268,7 +267,7 @@
     spec.cards.forEach(function (card) {
       var item = el('li');
       item.setAttribute('role', 'presentation');
-      var button = renderCard(card, spec.kind);
+      var button = renderCard(card);
       button.id = deckId + '-tab-' + card.id;
       button.setAttribute('aria-controls', deckId + '-panel');
       item.appendChild(button);
