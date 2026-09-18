@@ -37,6 +37,8 @@ pub mod doctor;
 pub mod edges;
 /// `comemory eval`: score retrieval against a golden set.
 pub mod eval;
+/// `comemory export-dataset`: the reviewed relevance dataset export.
+pub mod export_dataset;
 /// `comemory feedback`: record which hits were used.
 pub mod feedback;
 /// `comemory sources`: list registered document sources.
@@ -162,6 +164,9 @@ pub enum Cmd {
     /// Record reviewed relevance verdicts against a captured candidate
     /// observation, or report that observation (CLI-only).
     Judge(judge::Args),
+    /// Export the reviewed relevance dataset and its manifest as versioned
+    /// JSONL, with grouped splits and a withheld holdout (CLI-only).
+    ExportDataset(export_dataset::Args),
     /// Mine reformulation pairs from the query log into term-expansion
     /// mappings (report only; `--apply` rebuilds `query_expansions`).
     Mine(mine::Args),
@@ -251,6 +256,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::Eval(a) => eval::run(a, cli.json, cli.data_dir).await,
         Cmd::Benchmark(a) => benchmark::run(a, cli.json, cli.data_dir).await,
         Cmd::Judge(a) => judge::run(a, cli.json, cli.data_dir).await,
+        Cmd::ExportDataset(a) => export_dataset::run(a, cli.json, cli.data_dir).await,
         Cmd::Mine(a) => mine::run(a, cli.json, cli.data_dir).await,
         Cmd::Tune(a) => tune::run(a, cli.json, cli.data_dir).await,
         Cmd::Bandit(a) => bandit::run(a, cli.json, cli.data_dir).await,

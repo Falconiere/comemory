@@ -25,6 +25,8 @@ pub mod code_feedback;
 /// `GET /learning/{summary,evals,golden-set,expansions}`: the console
 /// read model.
 pub mod console;
+/// `comemory export-dataset`: the reviewed relevance dataset export.
+pub mod dataset_export;
 /// `comemory eval`: score retrieval quality against a golden set.
 pub mod eval;
 /// Golden sets, metrics, the eval runner, mining and the tuning searches.

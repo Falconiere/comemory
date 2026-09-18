@@ -30,6 +30,22 @@ pub mod candidate_facts;
 pub mod candidate_identity;
 /// The candidate observation contract: one candidate, and its query envelope.
 pub mod candidate_observation;
+/// Bucketing split rows into the files a dataset export writes.
+pub mod dataset_build;
+/// Duplicate observations, orphan verdicts and contradictory verdicts.
+pub mod dataset_dedup;
+/// The owned-name sweep, the JSONL serialization and the manifest write.
+pub mod dataset_files;
+/// The dataset manifest, its counts and its two digests.
+pub mod dataset_manifest;
+/// The exported JSONL record shape and its version.
+pub mod dataset_record;
+/// The provenance filter, the contract-version refusal and the row pipeline.
+pub mod dataset_rows;
+/// Which candidates and verdicts survive, and the rows they become.
+pub mod dataset_select;
+/// Grouped, seeded split assignment over the query/content graph.
+pub mod dataset_split;
 /// Golden-set model: hand-written YAML pairs plus the feedback harvest.
 pub mod golden;
 /// Reviewed relevance judgments and how a target matches an observation.

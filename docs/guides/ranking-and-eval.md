@@ -380,12 +380,47 @@ Compare recall@k and MRR against the baseline you recorded. If they rose, the
 change earned its place — commit `config.toml`. If they didn't, revert: the
 loop is deterministic, so the same inputs always reproduce the same scores.
 
+## Export what was reviewed
+
+`comemory eval` and `comemory benchmark` score retrieval. `comemory
+export-dataset` hands the same reviewed material to something outside the
+binary:
+
+```bash
+comemory export-dataset --out ./dataset                      # reviewed, holdout withheld
+comemory export-dataset --out ./dataset --include-unjudged   # plus the pool, label: null
+comemory export-dataset --out ./qualify --include-holdout    # release the qualification split
+```
+
+Three things about the splits are worth knowing before you use the output.
+
+**A split is assigned to a component, not to a row.** A row links one query to
+one piece of content, and either side can leak. The export unions the two into
+a connected component and assigns the component, so a document two queries both
+retrieved cannot appear on both sides. When the corpus is densely connected the
+manifest says so — `split.groups` near `1` and `split.largest_group_rows` near
+`counts.rows_emitted` means this corpus cannot be split without leakage, which
+is better learned here than from an implausible score later.
+
+**Assignment is a seeded hash, so the realized ratios only approach the
+requested ones.** `manifest.by_split` reports what actually happened;
+`manifest.split.ratios` reports what was asked for. Adding observations never
+moves an existing component unless it merges two.
+
+**The holdout split is withheld by default.** Training-time mining and model
+selection read `train.jsonl` and `validation.jsonl`; there is no `holdout.jsonl`
+to read unless you pass `--include-holdout`, and the export clears a stale one
+before it writes. Reserve a whole repository with `--holdout-repo`, or a time
+slice with `--holdout-since`, when the data allows it.
+
 ---
 
 ## See also
 
-- [CLI reference](../cli-reference.md) — every flag for `eval`, `mine`, and
-  `tune`.
+- [CLI reference](../cli-reference.md) — every flag for `eval`, `mine`, `tune`
+  and `export-dataset`.
+- [The reviewed dataset export design](../designs/2026-09-18-reviewed-dataset-export.md)
+  — the JSONL record and manifest schemas, and the deterministic pipeline.
 - [Configuration](../configuration.md) — the full environment-variable table.
 - [Getting started](../getting-started.md) — install, save, search, index.
 - [Architecture](../architecture.md) — the RRF fusion, rerank priors, and

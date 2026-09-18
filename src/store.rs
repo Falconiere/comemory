@@ -20,6 +20,9 @@ pub use rusqlite::Transaction;
 pub mod bandit_arms;
 /// Whether an `Error` wraps SQLite's `SQLITE_BUSY` / `SQLITE_LOCKED`.
 pub mod busy;
+/// Bulk windowed reads over the three candidate-observation tables: the input
+/// side of the reviewed dataset export.
+pub mod candidate_dataset;
 /// `candidate_judgments` row CRUD: reviewed relevance verdicts resolved
 /// against a captured observation.
 pub mod candidate_judgments;
