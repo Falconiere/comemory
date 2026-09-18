@@ -135,5 +135,6 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         result.meta,
         result.index_empty,
         json_flag,
+        result.learned.as_ref(),
     )
 }

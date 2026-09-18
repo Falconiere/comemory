@@ -120,6 +120,11 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
             "offset": result.meta.offset,
             "has_more": result.meta.has_more,
             "total": result.meta.total,
+            // Present and null when no learned ordering stage ran, exactly as
+            // `query_id` and `observation_id` above already are: this object is
+            // assembled by hand and spells every absent field as an explicit
+            // null.
+            "learned": result.learned,
         }))?;
     } else {
         let mut out = std::io::stdout().lock();
@@ -136,6 +141,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
                 "observation: {id}  (judge: comemory judge --observation {id})"
             )?;
         }
+        crate::cli::output::tty::write_learned_line(&mut out, result.learned.as_ref())?;
     }
     Ok(())
 }

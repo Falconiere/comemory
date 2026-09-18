@@ -64,6 +64,13 @@ Set these in `config.toml`; they have **no** environment override.
 | `prune.trash_retention_days` | Days a soft-deleted memory stays in `memories/.trash/` before `comemory gc` reaps it. Must be ≥ 1. Editable live through `PUT /api/v1/gc/policy`. | `30` |
 | `indexing.auto_reindex_threshold_ms` | Debounce (ms) that suppresses spawning bursts of `lazy` auto-reindex processes during rapid successive searches: a new background `index-code` is only spawned if at least this long elapsed since the last trigger. | `200` |
 | `tune.rrf_k_grid` / `tune.decay_grid` / `tune.mmr_lambda_grid` / `tune.bm25_grid` | The `[tune]` grid-search axes consumed by `comemory tune` and `comemory bandit`. | — |
+| `rerank.enabled` | Run the optional learned ordering stage after the deterministic ranking and before the page, on `search` / `search-code` / `find` / `context`. Off means no process is launched, no dependency is added and ranking is unchanged. See [Learned reranking](guides/learned-reranking.md). | `false` |
+| `rerank.command` | Program and arguments for the scorer, passed to the operating system separately and never through a shell. Validated non-empty when `rerank.enabled`. | `[]` |
+| `rerank.model` | The immutable model identity the scorer must echo back byte for byte. Validated non-blank when `rerank.enabled`. | `""` |
+| `rerank.adapter` | The adapter (LoRA) identity; omit it or leave it blank for the base model. Rolling an adapter back means clearing this key and dropping `--adapter` from `rerank.command` — wire protocol v1 cannot express an in-process fallback. | unset |
+| `rerank.prefix` | How many leading candidates of the deterministic ranking are scored. Everything below keeps its deterministic position and its full `score_parts`. Validated ≥ 1. | `50` |
+| `rerank.timeout_ms` | End-to-end budget for one scorer child, in milliseconds. Exceeding it declines the response and the deterministic order stands. Validated ≥ 1. | `20000` |
+| `rerank.max_candidate_text_bytes` | Per-candidate text bound, cut at a UTF-8 character boundary. Validated ≥ 1, and `prefix × max_candidate_text_bytes` must stay within the 8 MiB scorer request ceiling. | `4096` |
 | `bandit.enabled` | When `false`, `comemory bandit --apply` refuses; report still works. | `true` |
 | `reinforce.search_edit_days` | File overlay for the search→edit lookback (same as `COMEMORY_REINFORCE_SEARCH_EDIT_DAYS`). | `7` |
 | `sync.push_on_save` | Push the outbox inline after `save` / `delete`, so continuous sync needs no resident process. Env: `COMEMORY_SYNC_PUSH_ON_SAVE`. | `true` |

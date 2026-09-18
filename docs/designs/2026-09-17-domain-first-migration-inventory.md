@@ -470,7 +470,9 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/config/learning.rs | comemory::config::learning; preserve | src/config/tests/learning.rs | none | shared::config | src/config/learning.rs | retain |
 | src/config/observations.rs | comemory::config::observations; preserve | none | none | shared::config | src/config/observations.rs | retain |
 | src/config/patch.rs | comemory::config::patch; preserve | src/config/tests/patch.rs | none | shared::config | src/config/patch.rs | retain |
+| src/config/prune.rs | comemory::config::prune; preserve | none | none | shared::config | src/config/prune.rs | retain |
 | src/config/paths.rs | comemory::config::paths; preserve | src/config/tests/paths.rs | none | shared::config | src/config/paths.rs | retain |
+| src/config/rerank.rs | comemory::config::rerank; preserve | src/config/tests/rerank.rs | none | shared::config | src/config/rerank.rs | retain |
 | src/config/retrieval.rs | comemory::config::retrieval; preserve | src/config/tests/retrieval.rs | none | shared::config | src/config/retrieval.rs | retain |
 | src/config/sync.rs | comemory::config::sync; preserve | src/config/tests/sync.rs | none | shared::config | src/config/sync.rs | retain |
 | src/config/validate.rs | private | src/config/tests/validate.rs | none | shared::config | src/config/validate.rs | retain |
@@ -647,6 +649,8 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/retrieval/find.rs | comemory::domains::retrieval::find; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/retrieval/tests/find.rs | none | domains::retrieval | src/domains/retrieval/find.rs | retain |
 | src/domains/retrieval/fuse.rs | comemory::domains::retrieval::fuse; crate-root-alias | src/domains/retrieval/tests/fuse.rs | none | domains::retrieval | src/domains/retrieval/fuse.rs | retain |
 | src/domains/retrieval/graph_route.rs | comemory::domains::retrieval::graph_route; crate-root-alias | src/domains/retrieval/tests/graph_route.rs | none | domains::retrieval | src/domains/retrieval/graph_route.rs | retain |
+| src/domains/retrieval/learned_report.rs | comemory::domains::retrieval::learned_report; crate-root-alias | src/domains/retrieval/tests/learned_report.rs | none | domains::retrieval | src/domains/retrieval/learned_report.rs | retain |
+| src/domains/retrieval/learned_rerank.rs | comemory::domains::retrieval::learned_rerank; crate-root-alias | src/domains/retrieval/tests/learned_rerank.rs | none | domains::retrieval | src/domains/retrieval/learned_rerank.rs | retain |
 | src/domains/retrieval/pipeline.rs | comemory::domains::retrieval::pipeline; crate-root-alias | src/domains/retrieval/tests/pipeline.rs | none | domains::retrieval | src/domains/retrieval/pipeline.rs | retain |
 | src/domains/retrieval/rerank.rs | comemory::domains::retrieval::rerank; crate-root-alias | src/domains/retrieval/tests/rerank.rs | none | domains::retrieval | src/domains/retrieval/rerank.rs | retain |
 | src/domains/retrieval/router.rs | comemory::domains::retrieval::router; crate-root-alias | src/domains/retrieval/tests/router.rs; src/domains/retrieval/tests/router_2.rs | none | domains::retrieval | src/domains/retrieval/router.rs | retain |
@@ -655,6 +659,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/retrieval/search.rs | comemory::domains::retrieval::search; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | none | none | domains::retrieval | src/domains/retrieval/search.rs | retain |
 | src/domains/retrieval/search_code.rs | comemory::domains::retrieval::search_code; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | none | none | domains::retrieval | src/domains/retrieval/search_code.rs | retain |
 | src/domains/retrieval/search_result.rs | comemory::domains::retrieval::search_result; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/retrieval/tests/search_result.rs | none | domains::retrieval | src/domains/retrieval/search_result.rs | retain |
+| src/domains/retrieval/staged.rs | comemory::domains::retrieval::staged; crate-root-alias | src/domains/retrieval/tests/staged.rs | none | domains::retrieval | src/domains/retrieval/staged.rs | retain |
 | src/domains/retrieval/suggest.rs | comemory::domains::retrieval::suggest; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/retrieval/tests/suggest.rs | none | domains::retrieval | src/domains/retrieval/suggest.rs | retain |
 | src/domains/retrieval/unified.rs | comemory::domains::retrieval::unified; crate-root-alias | src/domains/retrieval/tests/unified.rs | none | domains::retrieval | src/domains/retrieval/unified.rs | retain |
 | src/domains/retrieval/unified/fuse_domains.rs | comemory::domains::retrieval::unified::fuse_domains; crate-root-alias | none | none | domains::retrieval | src/domains/retrieval/unified/fuse_domains.rs | retain |
@@ -733,6 +738,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/serve/routes/repos_admin.rs | comemory::serve::routes::repos_admin; preserve | src/serve/routes/tests/repos_admin.rs | none | delivery::serve | src/serve/routes/repos_admin.rs | retain |
 | src/serve/routes/search.rs | comemory::serve::routes::search; preserve | src/serve/routes/tests/search.rs | none | delivery::serve | src/serve/routes/search.rs | retain |
 | src/serve/routes/sources.rs | comemory::serve::routes::sources; preserve | src/serve/routes/tests/sources_path.rs | none | delivery::serve | src/serve/routes/sources.rs | retain |
+| src/serve/routes/staged.rs | comemory::serve::routes::staged; preserve | none | none | delivery::serve | src/serve/routes/staged.rs | retain |
 | src/serve/routes/stats.rs | comemory::serve::routes::stats; preserve | none | none | delivery::serve | src/serve/routes/stats.rs | retain |
 | src/serve/routes/sync.rs | comemory::serve::routes::sync; preserve | src/serve/routes/tests/sync.rs; src/serve/routes/tests/sync_code.rs | none | delivery::serve | src/serve/routes/sync.rs | retain |
 | src/serve/routes/trash.rs | comemory::serve::routes::trash; preserve | src/serve/routes/tests/trash.rs | none | delivery::serve | src/serve/routes/trash.rs | retain |

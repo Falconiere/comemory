@@ -8,6 +8,7 @@ use std::io::Write as _;
 
 use owo_colors::OwoColorize;
 
+use crate::domains::retrieval::learned_report::LearnedOrdering;
 use crate::prelude::*;
 
 /// Render `s` as a bold cyan section header to `out`, followed by a newline.
@@ -116,6 +117,19 @@ pub fn write_query_footer(
             String::new()
         };
         writeln!(out, "query: {qid}{suffix}")?;
+    }
+    Ok(())
+}
+
+/// Write the shared one-line learned-ordering summary used by `comemory
+/// search`, `search-code`, `find` and `context`. Nothing is written when no
+/// learned ordering stage ran, so the TTY view of a default build is unchanged.
+pub fn write_learned_line(
+    out: &mut impl std::io::Write,
+    learned: Option<&LearnedOrdering>,
+) -> Result<()> {
+    if let Some(l) = learned {
+        writeln!(out, "{}", dim(&l.summary()))?;
     }
     Ok(())
 }

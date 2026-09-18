@@ -27,10 +27,17 @@ pub fn emit(result: &ContextResult, json_flag: bool) -> Result<()> {
         query_id,
         meta,
         scope,
+        learned,
     } = result;
     let query_id = query_id.as_deref();
     if json_flag {
-        return json::write(&envelope(bundle, query_id, *meta, ScopeEcho::of(scope)));
+        return json::write(&envelope(
+            bundle,
+            query_id,
+            *meta,
+            ScopeEcho::of(scope),
+            learned.as_ref(),
+        ));
     }
     tty::header(&format!("context: {}", bundle.query))?;
     let mut out = std::io::stdout().lock();
@@ -51,7 +58,8 @@ pub fn emit(result: &ContextResult, json_flag: bool) -> Result<()> {
         query_id,
         !bundle.memories.is_empty(),
         tty::FeedbackHint::Memory,
-    )
+    )?;
+    tty::write_learned_line(&mut out, learned.as_ref())
 }
 
 /// Render one code ref: the qualified address line (symbol refs keep the

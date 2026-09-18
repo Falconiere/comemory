@@ -8,11 +8,16 @@
 //! here — it stays a CLI-only affordance (spec Non-Goal 8: HTTP callers
 //! reindex explicitly via `POST /api/v1/code/index`).
 
+use std::time::Instant;
+
 use serde::Deserialize;
 
 use crate::domains::code::ast::languages::{self, Lang};
 use crate::domains::retrieval::code_rerank::CodeReranked;
 use crate::domains::retrieval::code_search_result::SearchCodeResult;
+use crate::domains::retrieval::learned_report::LearnedOrdering;
+use crate::domains::retrieval::learned_rerank::{self, Candidates, LearnedStage};
+use crate::domains::retrieval::staged::{FinishStep, Paused, Staged, resolve};
 use crate::domains::retrieval::{code_search, pipeline};
 use crate::prelude::*;
 use crate::store::{Connection, code_row};
@@ -54,12 +59,20 @@ pub struct Request {
 /// `cli::track_searches()`, a read-only HTTP server passes `false`
 /// unconditionally (§Security "Read-only side-effect degradation").
 pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<SearchCodeResult> {
+    let staged = begin(ctx, req, track)?;
+    resolve(ctx, staged)
+}
+
+/// [`run`], stopping at the learned ordering stage. `Staged::Ready` when none
+/// is configured; otherwise a scoring call that borrows no connection, so
+/// `comemory serve` can release its shared lock before the model runs.
+pub fn begin(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<Staged<SearchCodeResult>> {
     let lang = canonical_lang(req.lang.as_deref())?;
     let cfg = ctx.cfg;
     let window = page_window(cfg, req.k, req.offset);
-    let max_window = cfg.retrieval.max_page_window;
-    let pool = pipeline::pool_size(window.offset, window.limit, max_window);
-    let started = std::time::Instant::now();
+    let pool = pipeline::candidate_pool(cfg, window);
+    let started = Instant::now();
+    let stage = LearnedStage::from_config(cfg);
     let conn: &Connection = ctx.conn()?;
     let ranked = code_search::search_code_hits(
         cfg,
@@ -70,6 +83,69 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<SearchCodeRes
         lang,
         pool,
     )?;
+    let keys = learned_rerank::code_keys(&ranked);
+    let call = learned_rerank::plan_call(
+        stage.as_ref(),
+        conn,
+        &req.query,
+        Candidates {
+            code: &ranked,
+            keys: &keys,
+            ..Candidates::default()
+        },
+    )?;
+    let carry = CodeRun {
+        req,
+        lang,
+        track,
+        window,
+        started,
+    };
+    let Some(call) = call else {
+        return Ok(Staged::Ready(finish(ctx, carry, ranked, None)?));
+    };
+    let plan = call.plan();
+    Ok(Staged::Paused(Paused::new(
+        call,
+        FinishStep::new(move |ctx, outcome| {
+            let (ranked, learned) = learned_rerank::apply(ranked, &plan, &outcome);
+            finish(ctx, carry, ranked, Some(learned))
+        }),
+    )))
+}
+
+/// The request-scoped values phase three needs, bundled so [`finish`] stays
+/// inside `clippy::too_many_arguments`' ceiling — the same reason
+/// `pipeline::record_telemetry` takes a whole `SearchOptions`.
+struct CodeRun {
+    /// The request, owned: `Filters`-shaped borrows cannot cross the pause.
+    req: Request,
+    /// The canonical language filter, already validated.
+    lang: Option<&'static str>,
+    /// Whether telemetry may be written.
+    track: bool,
+    /// The page the ranking is sliced at.
+    window: PageWindow,
+    /// When the whole request started, so the logged duration covers inference.
+    started: Instant,
+}
+
+/// Slice the page, record best-effort telemetry, and probe the empty index.
+fn finish(
+    ctx: &mut Ctx<'_>,
+    carry: CodeRun,
+    ranked: Vec<CodeReranked>,
+    learned: Option<LearnedOrdering>,
+) -> Result<SearchCodeResult> {
+    let CodeRun {
+        req,
+        lang,
+        track,
+        window,
+        started,
+    } = carry;
+    let max_window = ctx.cfg.retrieval.max_page_window;
+    let conn: &Connection = ctx.conn()?;
     let (hits, has_more, total) = pipeline::paginate(ranked, window, max_window);
     let query_id = if track {
         record_code_telemetry(
@@ -93,6 +169,7 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<SearchCodeRes
         query_id,
         meta,
         index_empty,
+        learned,
     })
 }
 

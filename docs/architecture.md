@@ -61,7 +61,7 @@ authoritative architecture reference; pair it with the
 | `domains::memories` | the memory capability — markdown I/O, frontmatter parsing, atomic save, ID generation, and the save / delete / list / show / update / restore / trash / reference-refresh cores both adapters call (`comemory::memory` is a crate-root alias over it) |
 | `store` | the SQLite chokepoint — the only module importing `rusqlite`, holding every SQL string in the crate (see AGENTS.md Binding Rule 10). Connection layer, schema_meta, migrations, vector + FTS helpers, identifier tokenizer (camelCase/snake_case split + FFI registration), `edge_fts` (the triplet index over `edges` — rendering, refresh, and the ladder behind `comemory edges`) |
 | `domains/graph/` | the graph capability (#170): algorithms over the edges relation — CRUD and walks live in `store::edges`/`store::edges_retrieval` (`Supersedes`, `ConflictsWith`, `RelatesTo`, `ReferencesFile`, `ReferencesSymbol`, `CoChanged`, `Imports`, …) + recursive walks; `cross_link` parses backticked refs; `cochange` mines git history, `imports` extracts per-language import edges, `pagerank` + `materialize` write `code_symbols.rank_score`, `memory_rank` writes `memories.rank_score` from the derived memory graph, `derived` refreshes every derived artifact in one best-effort post-write pass (§5.3); `code_graph` is the exported model, `query` + `nodes` assemble the file-level graph, and `edges` (both transports), `view` (`GET /graph`) and `graph_nodes` / `graph_recompute` (console-only) are the command cores |
-| `retrieval` | router (candidates + 4-tier lexical ladder ending in learned expansion), graph_route (graph-expansion leg: an edge walk seeded from the provisional top hits), scope (the created-date `TimeScope` + the `Filters` bundle threading repo/kind/time through every leg), score (ACT-R/Beta primitives + the shared median/PageRank-boost math), rerank (five multiplicative priors, including the memory PageRank boost), diversify (SimHash collapse + MMR), pipeline (orchestration + access tracking), fuse (RRF, pairwise + N-ary), bundle (context lookup, code refs ranked by graph priors); code side: code_route (BM25 + thresholded ANN + RRF, chunk→parent coalesce), code_rerank + code_prior (PageRank / recency / working-set affinity / feedback) |
+| `retrieval` | router (candidates + 4-tier lexical ladder ending in learned expansion), graph_route (graph-expansion leg: an edge walk seeded from the provisional top hits), scope (the created-date `TimeScope` + the `Filters` bundle threading repo/kind/time through every leg), score (ACT-R/Beta primitives + the shared median/PageRank-boost math), rerank (five multiplicative priors, including the memory PageRank boost), diversify (SimHash collapse + MMR), pipeline (orchestration + access tracking), learned_rerank + learned_report + staged (the optional out-of-process learned ordering stage, off by default), fuse (RRF, pairwise + N-ary), bundle (context lookup, code refs ranked by graph priors); code side: code_route (BM25 + thresholded ANN + RRF, chunk→parent coalesce), code_rerank + code_prior (PageRank / recency / working-set affinity / feedback) |
 | `eval` | learning loop: golden sets (file + feedback harvest), recall@k/MRR metrics, eval runner (replays originating repo/kind filters), reformulation mining, grid tune |
 | `stats` | feedback domain logic — Beta scoring and counter arithmetic; the SQL lives in `store::{feedback,code_feedback,index_failures}` and the persisted vocabularies in `utilities::telemetry` |
 | `config` | Layered config: built-in defaults → `config.toml` → env → CLI flags |
@@ -324,6 +324,16 @@ search("postgres migration race")
   │   ├─ SimHash near-dup collapse (Hamming ≤ threshold → keep highest score)
   │   └─ MMR re-ranking (mmr_lambda blends relevance vs. diversity)
   │
+  ├─ learned rerank  (learned_rerank.rs)     — OPTIONAL, off by default
+  │   ├─ only when [rerank] enabled; otherwise nothing is built and no
+  │   │   process is launched
+  │   ├─ candidate pool becomes max_page_window, independent of the page
+  │   ├─ the leading [rerank] prefix is scored by ONE child process under
+  │   │   [rerank] timeout_ms; the tail below it keeps its exact order
+  │   ├─ any refusal (spawn, non-zero exit, timeout, invalid response)
+  │   │   restores the ENTIRE deterministic order
+  │   └─ reported as the envelope's optional `learned` object
+  │
   └─ emit  (output/search.rs)
       ├─ TTY: one line per hit with colored score + source label
       └─ JSON: {"hits":[{"memory_id","score","source","tier","superseded_by"?,"score_parts":{
@@ -400,6 +410,14 @@ more paging.
 The `--json` envelope is `Page<T>` = `{items, limit, offset, total,
 has_more}`. For retrieval, `total` is the **in-window** ranked count, not a
 global match count.
+
+**With `[rerank]` enabled the pool is the whole window.** A neural scorer is
+not prefix-stable, so a page-proportional pool would let a deeper page rewrite a
+shallower one by admitting a candidate that outscores the current head.
+`pipeline::candidate_pool` therefore returns `max_page_window` for every
+request, which is what keeps paging over a reranked list a pure slice. `total`
+and `has_more` then describe that larger window — honestly, since the run really
+did rank it. See `docs/guides/learned-reranking.md`.
 
 **Only a head window is reinforced.** A tracked run writes its `retrieval_log`
 row at every offset, but bumps `access_count` / `last_accessed` only when

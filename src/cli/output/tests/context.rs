@@ -48,6 +48,7 @@ fn emit_accepts_empty_bundle_in_json_mode() {
     // full envelope shape is asserted end-to-end in `tests/cli/context.rs`
     // (`context_returns_bundle_for_seeded_memory`).
     let result = ContextResult {
+        learned: None,
         bundle: empty_bundle(),
         query_id: None,
         meta: meta(),
@@ -64,6 +65,7 @@ fn envelope_carries_query_id_and_flattens_bundle() {
         Some("q-20260611-a1b2c3d4"),
         meta(),
         ScopeEcho::default(),
+        None,
     ))
     .expect("serialize");
     assert_eq!(
@@ -127,7 +129,7 @@ fn code_ref_rank_parts_serialize_when_present_and_skip_when_none() {
         neighbors: Vec::new(),
         resolved_code_ids: Vec::new(),
     };
-    let v = serde_json::to_value(envelope(&bundle, None, meta(), ScopeEcho::default()))
+    let v = serde_json::to_value(envelope(&bundle, None, meta(), ScopeEcho::default(), None))
         .expect("serialize");
     let refs = v["code_refs"].as_array().expect("code_refs array");
     for key in ["rank", "activation", "affinity", "feedback", "final_score"] {
@@ -156,7 +158,7 @@ fn code_ref_rank_parts_serialize_when_present_and_skip_when_none() {
 #[test]
 fn envelope_omits_query_id_when_absent() {
     let bundle = empty_bundle();
-    let v = serde_json::to_value(envelope(&bundle, None, meta(), ScopeEcho::default()))
+    let v = serde_json::to_value(envelope(&bundle, None, meta(), ScopeEcho::default(), None))
         .expect("serialize");
     assert!(
         v.get("query_id").is_none(),

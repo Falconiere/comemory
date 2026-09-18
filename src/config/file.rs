@@ -2,19 +2,22 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use super::defaults::{
-    default_max_file_bytes, default_near_dup_hamming, default_superseded_grace_days,
-};
+use super::defaults::{default_max_file_bytes, default_near_dup_hamming};
 use super::learning::{
     BanditConfig, PartialBanditConfig, PartialReinforceConfig, PartialTuneConfig, ReinforceConfig,
 };
 use super::observations::{ObservationsConfig, PartialObservationsConfig};
+use super::prune::PartialPruneConfig;
+use super::prune::default_prune;
+use super::rerank::{PartialRerankConfig, RerankConfig};
 use super::retrieval::PartialRetrievalConfig;
 use super::sync::{EmbedConfig, PartialEmbedConfig, PartialSyncConfig, SyncConfig};
 use crate::prelude::*;
 
 /// Re-export: historical `config::file::TuneConfig` import path.
 pub use super::learning::TuneConfig;
+/// Re-export: historical `config::file::PruneConfig` import path.
+pub use super::prune::PruneConfig;
 /// Re-export: historical `config::file::RetrievalConfig` import path.
 pub use super::retrieval::RetrievalConfig;
 
@@ -52,6 +55,9 @@ struct PartialConfig {
     bandit: Option<PartialBanditConfig>,
     /// Candidate-observation capture bounds. Absent keys leave defaults.
     observations: Option<PartialObservationsConfig>,
+    /// Learned ordering stage. Absent keys leave defaults; the section is
+    /// file-only, so this is its only entry point.
+    rerank: Option<PartialRerankConfig>,
     /// Optional file-overlay for document-source indexing knobs. Absent
     /// keys leave defaults.
     indexing: Option<PartialIndexingConfig>,
@@ -94,23 +100,6 @@ struct PartialRankConfig {
     prior_clamp: Option<(f64, f64)>,
     mmr_lambda: Option<f64>,
     near_dup_hamming: Option<u32>,
-}
-
-/// File-overlay partial for [`PruneConfig`]. All fields optional.
-///
-/// Carries every *consumed* `PruneConfig` field, not just the M1 scoring
-/// extensions: `deny_unknown_fields` would otherwise hard-error on a valid
-/// `[prune]` key like `trash_retention_days` once the section is
-/// overlayable at all.
-#[derive(Debug, Deserialize, Default)]
-#[serde(deny_unknown_fields)]
-struct PartialPruneConfig {
-    trash_retention_days: Option<u32>,
-    low_value_default_below_quality: Option<u32>,
-    min_activation: Option<f64>,
-    min_feedback: Option<f64>,
-    learning_retention_days: Option<u32>,
-    superseded_grace_days: Option<u32>,
 }
 
 /// How the code index is refreshed — see [`IndexingConfig::auto_reindex`].
@@ -252,63 +241,6 @@ impl RankConfig {
     }
 }
 
-/// Prune scoring floors and retention windows for `comemory prune` / `gc`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PruneConfig {
-    /// Days a soft-deleted memory stays in the trash before `gc` reaps it.
-    pub trash_retention_days: u32,
-    /// Quality (1..=5) at or below which a memory is a low-value candidate.
-    pub low_value_default_below_quality: u32,
-    /// Activation floor (ACT-R scale) below which a memory is prune-eligible.
-    ///
-    /// Memories whose computed activation falls below this threshold are
-    /// candidates for soft-deletion. Default: `-2.0`.
-    pub min_activation: f64,
-    /// Beta-feedback ceiling at or below which a memory is prune-eligible.
-    ///
-    /// Range `[0.0, 1.0]`. A memory with cumulative feedback ≤ this value
-    /// is considered low-value. Default: `0.25`.
-    pub min_feedback: f64,
-    /// Days to retain learning telemetry (`retrieval_log` rows and
-    /// `feedback_events` rows). `comemory gc` deletes older rows.
-    /// Aggregated `feedback` counters are permanent — only raw event
-    /// rows age out. Must be >= 1. Default: `90`.
-    pub learning_retention_days: u32,
-    /// Grace window (days) for the superseded-and-forgotten prune rule:
-    /// only supersede edges older than this many days count. Protects
-    /// freshly-rebuilt DBs, whose edges all carry rebuild-time timestamps.
-    /// `0` disables the grace entirely.
-    /// Default: `SUPERSEDED_GRACE_DAYS` in `config::defaults` (7). Plain
-    /// backticks, not a link: the constant is `pub(crate)`, and an intra-doc
-    /// link to it from a public item raises `links to private item`.
-    #[serde(default = "default_superseded_grace_days")]
-    pub superseded_grace_days: u32,
-}
-
-impl PruneConfig {
-    /// Overlay the file's `[prune]` keys; absent keys leave `self` untouched.
-    fn apply(&mut self, p: PartialPruneConfig) {
-        if let Some(v) = p.trash_retention_days {
-            self.trash_retention_days = v;
-        }
-        if let Some(v) = p.low_value_default_below_quality {
-            self.low_value_default_below_quality = v;
-        }
-        if let Some(v) = p.min_activation {
-            self.min_activation = v;
-        }
-        if let Some(v) = p.min_feedback {
-            self.min_feedback = v;
-        }
-        if let Some(v) = p.learning_retention_days {
-            self.learning_retention_days = v;
-        }
-        if let Some(v) = p.superseded_grace_days {
-            self.superseded_grace_days = v;
-        }
-    }
-}
-
 /// Emitter defaults shared by every subcommand.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OutputConfig {
@@ -345,6 +277,9 @@ pub struct Config {
     /// Opt-in candidate-observation capture — see [`ObservationsConfig`].
     #[serde(default)]
     pub observations: ObservationsConfig,
+    /// Opt-in learned ordering stage — see [`RerankConfig`].
+    #[serde(default)]
+    pub rerank: RerankConfig,
     /// Emitter defaults — see [`OutputConfig`].
     pub output: OutputConfig,
     /// Free-form caller-set hint identifying the embedder that produced the
@@ -385,18 +320,12 @@ impl Config {
                 mmr_lambda: 0.7,
                 near_dup_hamming: default_near_dup_hamming(),
             },
-            prune: PruneConfig {
-                trash_retention_days: 30,
-                low_value_default_below_quality: 2,
-                min_activation: -2.0,
-                min_feedback: 0.25,
-                learning_retention_days: 90,
-                superseded_grace_days: default_superseded_grace_days(),
-            },
+            prune: default_prune(),
             tune: TuneConfig::default(),
             reinforce: ReinforceConfig::default(),
             bandit: BanditConfig::default(),
             observations: ObservationsConfig::default(),
+            rerank: RerankConfig::default(),
             output: OutputConfig {
                 json: false,
                 color: "auto".into(),
@@ -453,6 +382,9 @@ impl Config {
         }
         if let Some(po) = partial.observations {
             self.observations.apply(po);
+        }
+        if let Some(pr) = partial.rerank {
+            self.rerank.apply(pr);
         }
         if let Some(pi) = partial.indexing {
             self.indexing.apply(pi);

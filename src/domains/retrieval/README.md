@@ -13,7 +13,12 @@ code-search entry point (`code_search`) used by both `search-code` and
 `search`, `search_code`, `context`, `find`, `suggest` and the console-only
 `config_retrieval` — the result models and `--json` envelopes both transports
 serialize (`search_result`, `code_search_result`, `context_result`), and the
-explain strip derived from a hit's `score_parts` (`explain`).
+explain strip derived from a hit's `score_parts` (`explain`). Since #213 there
+is one optional fourth ranking stage: `learned_rerank` reorders a fixed leading
+prefix of the deterministic ranking through an out-of-process scorer when
+`[rerank]` is enabled, `learned_report` is what it tells the caller, and
+`staged` is the pause point that lets `serve` release its shared connection
+mutex across inference.
 
 **What does NOT belong here:** raw SQL table/DDL access beyond what a
 candidate leg needs to build its ranked list. FTS5, `vec0`, and row CRUD
@@ -47,7 +52,10 @@ One line per file, named after its primary item:
 | `fuse.rs` | `RankedHit` | Reciprocal Rank Fusion across ranked lists |
 | `graph_route.rs` | `ALLOWED_RELS` | Graph-expansion leg: recursive-CTE walk from provisional top hits, fused as a third RRF list |
 | `unified.rs` | `find` | `comemory find`'s entry point and the one-pool/one-paginate rule; weighted fusion lives in `unified/fuse_domains.rs`. `run_legs` is `find` minus fusion and pagination, returning each leg's own rows with their passage text and version anchors intact, for the offline benchmark |
-| `pipeline.rs` | `SearchOptions` | End-to-end memory search: route → rerank → diversify → top-k + access tracking |
+| `learned_report.rs` | `LearnedOrdering` | What the optional learned ordering stage did to one requested search — the `learned` key on every retrieval envelope |
+| `learned_rerank.rs` | `LearnedStage` | The one optional learned ordering stage: materialize candidates, score a fixed prefix out of process, reorder it and preserve the tail |
+| `pipeline.rs` | `SearchOptions` | End-to-end memory search: `rank` (route → rerank → diversify), `complete` (paginate + access tracking), `candidate_pool` |
+| `staged.rs` | `Staged` | The pause point between a deterministic ranking and its learned order, so a shared connection lock is never held across inference |
 | `rerank.rs` | `MEMORY_RANK_SCALE` | Multiply fused relevance by activation × feedback × quality × supersede × rank priors |
 | `router.rs` | `CANDIDATE_POOL` | Route to vector, lexical, or hybrid path; the 4-tier lexical fallback ladder |
 | `scope.rs` | `TimeScope` | Created-date window (`--since`/`--until`/`--as-of`) shared by every leg, `scope_from_flags` (which builds it from the three raw flag values, parsing each through `utilities::when::parse_when`), the `Domain`/`Domains` scope with its transport-neutral `resolve_domains` policy, and the `ScopeEcho` both envelopes flatten |

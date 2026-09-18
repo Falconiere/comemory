@@ -30,15 +30,12 @@ pub fn emit(result: &SearchResult, json_flag: bool, data_dir: &Path) -> Result<(
             &result.nav,
             data_dir,
             ScopeEcho::of(&result.scope),
+            result.learned.as_ref(),
         ));
     }
-    write_tty(
-        &mut std::io::stdout().lock(),
-        &result.hits,
-        query_id,
-        &result.nav,
-        data_dir,
-    )
+    let mut out = std::io::stdout().lock();
+    write_tty(&mut out, &result.hits, query_id, &result.nav, data_dir)?;
+    tty::write_learned_line(&mut out, result.learned.as_ref())
 }
 
 /// Render the TTY view of `hits` to `out`. Public so tests can capture the

@@ -6,12 +6,18 @@
 //! The CLI's lazy-reindex trigger (`cli::lazy_reindex`) does **not** move
 //! here — it stays a CLI-only affordance (spec Non-Goal 8).
 
+use std::time::Instant;
+
 use serde::Deserialize;
 
 use crate::domains::retrieval::bundle::RankedMemory;
 use crate::domains::retrieval::code_rerank::WorkingSet;
 use crate::domains::retrieval::context_result::ContextResult;
-use crate::domains::retrieval::scope::{self, Domains, Filters};
+use crate::domains::retrieval::learned_report::LearnedOrdering;
+use crate::domains::retrieval::learned_rerank::{self, Candidates, LearnedStage};
+use crate::domains::retrieval::rerank::Reranked;
+use crate::domains::retrieval::scope::{self, Domains, Filters, TimeScope};
+use crate::domains::retrieval::staged::{FinishStep, Paused, Staged, resolve};
 use crate::domains::retrieval::{bundle, pipeline};
 use crate::prelude::*;
 use crate::store::Connection;
@@ -61,6 +67,16 @@ pub struct Request {
 /// the CLI/HTTP split. Both bumps additionally require a head window, per
 /// `retrieval::pipeline::record_access`.
 pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<ContextResult> {
+    let staged = begin(ctx, req, track)?;
+    resolve(ctx, staged)
+}
+
+/// [`run`], stopping at the learned ordering stage.
+///
+/// The stage orders the memory ranking BEFORE the page is sliced and therefore
+/// before the bundle is assembled, so the bundle covers the memories the caller
+/// was actually handed.
+pub fn begin(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<Staged<ContextResult>> {
     // Continuous sync is the user-level daemon — context no longer pulls.
     let cfg = ctx.cfg;
     let window = page_window(cfg, req.k, req.offset);
@@ -74,15 +90,98 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<ContextResult
         req.until.as_deref(),
         req.as_of.as_deref(),
     )?;
-    let filters = Filters {
+    let started = Instant::now();
+    let pool = pipeline::candidate_pool(cfg, window);
+    let stage = LearnedStage::from_config(cfg);
+    let conn: &Connection = ctx.conn()?;
+    let ranked = pipeline::rank(
+        cfg,
+        conn,
+        &req.query,
+        req.vector.as_deref(),
+        filters_of(&req, &scope),
+        pool,
+    )?;
+    let keys = learned_rerank::memory_keys(&ranked);
+    let call = learned_rerank::plan_call(
+        stage.as_ref(),
+        conn,
+        &req.query,
+        Candidates {
+            memory: &ranked,
+            keys: &keys,
+            ..Candidates::default()
+        },
+    )?;
+    let carry = ContextRun {
+        req,
+        scope,
+        opts,
+        started,
+    };
+    let Some(call) = call else {
+        return Ok(Staged::Ready(finish(ctx, carry, ranked, None)?));
+    };
+    let plan = call.plan();
+    Ok(Staged::Paused(Paused::new(
+        call,
+        FinishStep::new(move |ctx, outcome| {
+            let (ranked, learned) = learned_rerank::apply(ranked, &plan, &outcome);
+            finish(ctx, carry, ranked, Some(learned))
+        }),
+    )))
+}
+
+/// The filters this lookup narrows by. Rebuilt rather than carried, because
+/// `Filters` borrows its `TimeScope` and the continuation owns one.
+fn filters_of<'a>(req: &'a Request, scope: &'a TimeScope) -> Filters<'a> {
+    Filters {
         repo: req.repo.as_deref(),
         kind: None,
-        scope: &scope,
+        scope,
         domains: Domains::all(),
-    };
+    }
+}
+
+/// The request-scoped values phase three needs, bundled so [`finish`] stays
+/// inside `clippy::too_many_arguments`' ceiling.
+struct ContextRun {
+    /// The request, owned: borrowed filters cannot cross the pause.
+    req: Request,
+    /// The lookup's time scope, owned for the same reason.
+    scope: TimeScope,
+    /// Tracking, source and window for the telemetry write.
+    opts: pipeline::SearchOptions,
+    /// When the whole request started, so the logged duration covers inference.
+    started: Instant,
+}
+
+/// Slice the page, record telemetry, assemble the bundle, and reinforce the
+/// code refs it surfaced.
+fn finish(
+    ctx: &mut Ctx<'_>,
+    carry: ContextRun,
+    ranked: Vec<Reranked>,
+    learned: Option<LearnedOrdering>,
+) -> Result<ContextResult> {
+    let ContextRun {
+        req,
+        scope,
+        opts,
+        started,
+    } = carry;
+    let cfg = ctx.cfg;
     let conn: &Connection = ctx.conn()?;
-    let run = pipeline::search(cfg, conn, &req.query, req.vector.as_deref(), filters, opts)?;
-    let meta = page_meta(window, run.has_more, run.total);
+    let run = pipeline::complete(
+        cfg,
+        conn,
+        &req.query,
+        filters_of(&req, &scope),
+        opts,
+        ranked,
+        started,
+    );
+    let meta = page_meta(opts.window, run.has_more, run.total);
     let query_id = run.query_id;
     // Carry each hit's `final_score` into the bundle: the memory rows keep
     // the pipeline's ranked order AND its number, so a consumer can tell
@@ -93,12 +192,12 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<ContextResult
     let ws = working_set_for(&ranked, req.repo.as_deref());
     let bundle = bundle::assemble(conn, cfg, &req.query, &ranked, &ws)?;
     // Self-reinforce the code refs the bundle actually surfaced, the
-    // code-side twin of the memory access bump `pipeline::search` already
+    // code-side twin of the memory access bump `pipeline::complete` already
     // applied — gated by the same `track` flag AND by the same head-window
-    // rule. `pipeline::search`'s gate does not reach this call: the refs are
-    // derived from the returned page here, so a deep page would still churn
-    // the bundle's code-ref ordering (#201).
-    if track && window.is_head() {
+    // rule. That gate does not reach this call: the refs are derived from the
+    // returned page here, so a deep page would still churn the bundle's
+    // code-ref ordering (#201).
+    if opts.track && opts.window.is_head() {
         code_row::record_access(conn, &bundle.resolved_code_ids);
     }
     Ok(ContextResult {
@@ -106,6 +205,7 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<ContextResult
         query_id,
         meta,
         scope,
+        learned,
     })
 }
 
