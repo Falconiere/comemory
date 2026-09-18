@@ -19,7 +19,7 @@ fn seed_db() -> Connection {
 }
 
 /// Seed one `code_symbols` row and its `indexed_files` cursor exactly as
-/// `api::index_code::walk::index_file` does: insert the symbol, then
+/// `crate::domains::code::index_code::walk::index_file` does: insert the symbol, then
 /// upsert the cursor via the production writer.
 fn seed_indexed_file(conn: &Connection, repo: &str, path: &str, oid: &str) {
     code_row::insert(

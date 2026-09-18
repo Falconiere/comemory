@@ -39,9 +39,9 @@ use ast_grep_core::Pattern;
 use ast_grep_core::tree_sitter::LanguageExt;
 use ast_grep_language::{JavaScript, Rust, Tsx};
 
-use crate::ast::extractor::for_each_match;
-use crate::ast::languages::Lang;
-use crate::ast::pattern_cache::{self, CompiledPatterns};
+use crate::domains::code::ast::extractor::for_each_match;
+use crate::domains::code::ast::languages::Lang;
+use crate::domains::code::ast::pattern_cache::{self, CompiledPatterns};
 use crate::prelude::*;
 
 /// Quote characters stripped from / checked against string-literal nodes.

@@ -10,7 +10,7 @@
 
 use serde::Deserialize;
 
-use crate::ast::languages::{self, Lang};
+use crate::domains::code::ast::languages::{self, Lang};
 use crate::prelude::*;
 use crate::retrieval::code_rerank::CodeReranked;
 use crate::retrieval::code_search_result::SearchCodeResult;

@@ -1,11 +1,11 @@
-//! `GET /api/v1/hooks` (read hook state, `api::hooks`) and `POST
-//! /api/v1/hooks` (per-hook enable/disable, `api::hooks`) — the console's
+//! `GET /api/v1/hooks` (read hook state, `domains::code::hooks`) and `POST
+//! /api/v1/hooks` (per-hook enable/disable, `domains::code::hooks`) — the console's
 //! readable, per-hook-controllable surface over `install-hooks`'s three git
 //! hooks plus the config-backed search→edit auto-reinforcement row.
 //!
 //! `PUT /api/v1/hooks/{name}?repo=<path>` (console-api spec §6) is the
 //! per-hook, idempotent form of the same write: `{enabled: true|false}`
-//! against one hook named in the URL. It shares `api::hooks::run` with the
+//! against one hook named in the URL. It shares `crate::domains::code::hooks::run` with the
 //! `POST` body form — the only difference is where the hook name and the
 //! desired state come from.
 //!
@@ -30,7 +30,6 @@ use axum::routing::{get, put};
 use axum::{Json, Router};
 use serde::Deserialize;
 
-use crate::api;
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::routes::maint::admin::contain_repo;
@@ -69,7 +68,7 @@ pub fn router(_state: AppState) -> Router<AppState> {
 }
 
 /// The only query parameter `GET /api/v1/hooks` reads. Deliberately narrower
-/// than `api::hooks::Request` (which also carries `enable`/`disable`) — a
+/// than `crate::domains::code::hooks::Request` (which also carries `enable`/`disable`) — a
 /// `GET` must never be able to toggle a hook no matter what a client puts on
 /// the query string, so this handler builds the request itself rather than
 /// deserializing the full type straight off the query.
@@ -79,15 +78,15 @@ struct ListQuery {
     repo: Option<String>,
 }
 
-/// `GET /api/v1/hooks` — report all four rows (`api::hooks`), read-only.
+/// `GET /api/v1/hooks` — report all four rows (`domains::code::hooks`), read-only.
 async fn list_hooks(State(state): State<AppState>, Query(q): Query<ListQuery>) -> Response {
     let started = Instant::now();
     let result = run_blocking(move || {
         let cfg = state.cfg();
         let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        api::hooks::run(
+        crate::domains::code::hooks::run(
             &mut ctx,
-            api::hooks::Request {
+            crate::domains::code::hooks::Request {
                 repo: q.repo,
                 enable: None,
                 disable: None,
@@ -98,12 +97,12 @@ async fn list_hooks(State(state): State<AppState>, Query(q): Query<ListQuery>) -
     respond("hooks", result, started)
 }
 
-/// `POST /api/v1/hooks` — enable/disable one hook (`api::hooks`), then
+/// `POST /api/v1/hooks` — enable/disable one hook (`domains::code::hooks`), then
 /// report all four rows. Read-only-gated via [`guard_mutating`]; not
 /// confirm-gated (module doc, AC-33b).
 async fn toggle_hooks(
     State(state): State<AppState>,
-    Json(req): Json<api::hooks::Request>,
+    Json(req): Json<crate::domains::code::hooks::Request>,
 ) -> Response {
     let started = Instant::now();
     let permit = match guard_mutating("hooks", &state) {
@@ -121,7 +120,7 @@ async fn toggle_hooks(
 /// The shared middle of both writers: contain an explicit `repo` (a hook
 /// file is written under it — the same [`contain_repo`] gate `POST
 /// /hooks/install` runs; `400` when it does not exist, `403` outside every
-/// allowed root), apply the toggle through `api::hooks::run`, reload the
+/// allowed root), apply the toggle through `crate::domains::code::hooks::run`, reload the
 /// server's config when the config-backed row was written, and only then
 /// report all four rows — read back through the reloaded config, so the
 /// answer is exactly what the next `GET /hooks` will say rather than an
@@ -130,19 +129,19 @@ async fn toggle_hooks(
 /// `save --ref-*` anchors against.
 fn apply_and_report(
     state: &AppState,
-    mut req: api::hooks::Request,
-) -> Result<api::hooks::Response> {
+    mut req: crate::domains::code::hooks::Request,
+) -> Result<crate::domains::code::hooks::Response> {
     if let Some(repo) = req.repo.as_deref() {
         let canonical = contain_repo(state, repo)?;
         req.repo = Some(canonical.to_string_lossy().into_owned());
     }
     let repo = req.repo.clone();
-    let wrote_config =
-        [req.enable.as_deref(), req.disable.as_deref()].contains(&Some(api::hooks::REINFORCE_HOOK));
+    let wrote_config = [req.enable.as_deref(), req.disable.as_deref()]
+        .contains(&Some(crate::domains::code::hooks::REINFORCE_HOOK));
     {
         let cfg = state.cfg();
         let mut ctx = Ctx::lazy(state.paths(), &cfg);
-        api::hooks::run(&mut ctx, req)?;
+        crate::domains::code::hooks::run(&mut ctx, req)?;
     }
     if wrote_config {
         // Only after the file is written: a failed write must not swap in
@@ -151,9 +150,9 @@ fn apply_and_report(
     }
     let cfg = state.cfg();
     let mut ctx = Ctx::lazy(state.paths(), &cfg);
-    api::hooks::run(
+    crate::domains::code::hooks::run(
         &mut ctx,
-        api::hooks::Request {
+        crate::domains::code::hooks::Request {
             repo,
             enable: None,
             disable: None,
@@ -170,10 +169,10 @@ struct SetBody {
 }
 
 /// `PUT /api/v1/hooks/{name}?repo=<path>` — set one hook's state
-/// (`api::hooks`), then report all four rows. `name` is accepted in either
+/// (`domains::code::hooks`), then report all four rows. `name` is accepted in either
 /// spelling the console might send: `post_commit` and `post-commit` both
 /// resolve to the git hook `post-commit` (an unknown name after that
-/// normalization is `api::hooks`' own `400 usage`). Read-only-gated via
+/// normalization is `domains::code::hooks`' own `400 usage`). Read-only-gated via
 /// [`guard_mutating`], `repo` contained, config reloaded after a
 /// `search-edit-reinforcement` write ([`apply_and_report`]); idempotent, so
 /// not confirm-gated — the same rules the `POST` form follows.
@@ -194,7 +193,7 @@ async fn set_hook(
         // spelling, so a console may send either `post_commit` or
         // `post-commit` (and either `search_edit_reinforcement` or its
         // hyphenated form). Anything that does not match a known hook
-        // after this is rejected by `api::hooks` as a usage error.
+        // after this is rejected by `domains::code::hooks` as a usage error.
         let hook = name.replace('_', "-");
         let (enable, disable) = if body.enabled {
             (Some(hook), None)
@@ -203,7 +202,7 @@ async fn set_hook(
         };
         apply_and_report(
             &state,
-            api::hooks::Request {
+            crate::domains::code::hooks::Request {
                 repo: q.repo,
                 enable,
                 disable,

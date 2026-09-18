@@ -58,12 +58,12 @@ fn store(indexed: bool) -> (TempDir, TempDir, Paths, Config, rusqlite::Connectio
     if indexed {
         let repo_root = build_import_repo(workspace.path());
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        api::index_code::run(
+        crate::domains::code::index_code::run(
             &mut ctx,
-            api::index_code::Request {
+            crate::domains::code::index_code::Request {
                 repo: REPO.to_string(),
                 path: repo_root.to_str().expect("utf8 repo path").to_string(),
-                mode: api::index_code::IndexMode::Incremental,
+                mode: crate::domains::code::index_code::IndexMode::Incremental,
             },
         )
         .expect("index_code run");

@@ -13,7 +13,7 @@
 //! makes the same symbol ref stale once the index is current.
 
 use crate::test_common::{git_commit, git_repo};
-use comemory::git_utils;
+use comemory::domains::code::git_utils;
 use comemory::retrieval::code_ref_fetch::RefStatusCache;
 use comemory::store::connection;
 

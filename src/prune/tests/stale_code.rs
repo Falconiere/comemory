@@ -21,7 +21,7 @@ use crate::test_common::git_repo;
 
 use comemory::cli::pagination::PaginationArgs;
 use comemory::cli::prune;
-use comemory::git_utils;
+use comemory::domains::code::git_utils;
 use comemory::prune::stale_code;
 use comemory::store::connection;
 use comemory::store::edges::{self, EdgeKey};

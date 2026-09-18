@@ -11,7 +11,7 @@ use std::path::Path;
 
 use git2::{Commit, Oid, Repository, Sort};
 
-use crate::git_utils::map_git_err;
+use crate::domains::code::git_utils::map_git_err;
 use crate::prelude::*;
 
 /// Most recent commits walked on a first (cursor-less) run.
@@ -85,14 +85,14 @@ pub struct MineOutcome {
 /// * HEAD is unborn (a repo with no commits) — callers treat the whole
 ///   mining pass as best-effort and skip it.
 /// * Any underlying `git2` failure, flattened via
-///   [`crate::git_utils::map_git_err`].
+///   [`crate::domains::code::git_utils::map_git_err`].
 pub fn mine_cochange<S: ::std::hash::BuildHasher>(
     repo_root: &Path,
     known_files: &HashSet<String, S>,
     since: Option<&str>,
 ) -> Result<MineOutcome> {
     let repo = Repository::open(repo_root).map_err(map_git_err)?;
-    let cursor = crate::git_utils::head_oid(&repo)?;
+    let cursor = crate::domains::code::git_utils::head_oid(&repo)?;
 
     let mut walk = repo.revwalk().map_err(map_git_err)?;
     walk.set_sorting(Sort::TOPOLOGICAL | Sort::TIME)
@@ -170,8 +170,8 @@ pub fn mine_cochange<S: ::std::hash::BuildHasher>(
 
 /// Collect the new-side paths changed by `commit` against its FIRST
 /// parent; root commits diff against the empty tree. Delegates the
-/// delta walk to [`crate::git_utils::collect_diff_paths`] — the
-/// rev-string-resolving [`crate::git_utils::changed_files`] cannot
+/// delta walk to [`crate::domains::code::git_utils::collect_diff_paths`] — the
+/// rev-string-resolving [`crate::domains::code::git_utils::changed_files`] cannot
 /// serve a revwalk directly, but the underlying collection is shared.
 /// `pub(crate)` so `retrieval::code_rerank::working_set` reuses the
 /// same first-parent diff for its recent-commit window.
@@ -183,7 +183,7 @@ pub(crate) fn commit_changed_paths(repo: &Repository, commit: &Commit<'_>) -> Re
     } else {
         None
     };
-    crate::git_utils::collect_diff_paths(repo, parent_tree.as_ref(), &tree)
+    crate::domains::code::git_utils::collect_diff_paths(repo, parent_tree.as_ref(), &tree)
 }
 
 #[cfg(test)]

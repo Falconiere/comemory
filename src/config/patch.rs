@@ -1,7 +1,7 @@
 //! The one read-patch-write primitive over `config.toml`, shared by every
 //! writer that rewrites part of the file in place: `comemory tune`/`bandit
 //! --apply` (`eval::tune::apply_to_config_file`), the `[reinforce]` toggle
-//! behind `comemory hooks` (`api::hooks`), and the console-api routes
+//! behind `comemory hooks` (`domains::code::hooks`), and the console-api routes
 //! (`PUT /config/retrieval`, `PUT /gc/policy`, `PATCH /memory-stores/{id}`).
 //! One home so the atomic tmp+rename (fsynced before the rename, so a
 //! crash cannot publish a truncated file), the missing-file bootstrap, and

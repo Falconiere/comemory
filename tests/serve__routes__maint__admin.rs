@@ -180,10 +180,10 @@ fn v1_hooks_install_confirmed_inside_an_allow_path_root_installs_hooks() {
 }
 
 /// TOCTOU regression: `req.repo` is overwritten with the SAME canonicalized
-/// path `contain_abs` just verified, before `api::install_hooks::run` sees
+/// path `contain_abs` just verified, before `comemory::domains::code::install_hooks::run` sees
 /// it — not re-resolved from the raw (symlink) string. `Response.repo`
 /// echoes `req.repo` verbatim (no internal re-canonicalization in
-/// `api::install_hooks::run`), so it directly discriminates: had the
+/// `comemory::domains::code::install_hooks::run`), so it directly discriminates: had the
 /// handler passed the raw symlink path through, `data.repo` would equal the
 /// symlink path, not its resolved target.
 #[test]
@@ -215,7 +215,7 @@ fn v1_hooks_install_through_a_symlink_operates_on_the_resolved_target() {
     assert_eq!(
         body["data"]["repo"],
         serde_json::json!(canonical_real_repo.to_str().expect("utf8 path")),
-        "the resolved (canonicalized) target must reach api::install_hooks::run, \
+        "the resolved (canonicalized) target must reach comemory::domains::code::install_hooks::run, \
          not the raw symlink path: {body}"
     );
     for hook in ["post-commit", "post-merge", "post-checkout"] {

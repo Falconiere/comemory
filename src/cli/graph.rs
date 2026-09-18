@@ -184,14 +184,6 @@ fn rels_of(rel: Rel) -> &'static [&'static str] {
     }
 }
 
-/// Split a canonical file node id (`file:<repo>:<path>`) into `(repo, path)`.
-/// Returns `None` for ids that do not follow the convention. Assumes repo
-/// labels contain no `:` (the same assumption baked into `file_node_prefix`'s
-/// `substr` predicate); a repo with a `:` would split on the wrong colon.
-pub fn parse_id(id: &str) -> Option<(&str, &str)> {
-    id.strip_prefix("file:")?.split_once(':')
-}
-
 /// Fetch a `(limit, offset)` window of file→file edges for the selected
 /// relations, scoped to one repo's source side and dropping low-weight
 /// `co_changed` links, plus the `total` count of edges matching those same

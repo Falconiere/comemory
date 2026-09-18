@@ -9,7 +9,7 @@
 //! after it (AC-19 ordering: read-only outranks a missing confirm).
 //!
 //! Any `root` a client sends is contained against `AppState::allowed_roots`
-//! here, BEFORE `api::repo_admin` writes it, exactly as
+//! here, BEFORE `domains::code::repo_admin` writes it, exactly as
 //! `POST /api/v1/code/index` contains its `path`.
 
 use std::path::Path;
@@ -22,9 +22,10 @@ use axum::routing::{delete, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 
-use crate::api;
-use crate::api::index_code::IndexMode;
-use crate::api::repo_admin::{ArchiveRequest, ConnectRequest, ConnectResponse, PatchRequest};
+use crate::domains::code::index_code::IndexMode;
+use crate::domains::code::repo_admin::{
+    ArchiveRequest, ConnectRequest, ConnectResponse, PatchRequest,
+};
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::routes::{
@@ -86,7 +87,7 @@ pub fn router(_state: AppState) -> Router<AppState> {
 }
 
 /// `POST /api/v1/repos` — register a working-tree root under a repo label
-/// (`api::repo_admin::connect`). With `index_now`, the same `index-code`
+/// (`crate::domains::code::repo_admin::connect`). With `index_now`, the same `index-code`
 /// job `POST /api/v1/index/runs` starts is spawned afterwards (the write
 /// permit is already released by then) and its id returned as `job_id`.
 async fn connect_repo(State(state): State<AppState>, Json(req): Json<ConnectRequest>) -> Response {
@@ -103,7 +104,8 @@ async fn connect_repo(State(state): State<AppState>, Json(req): Json<ConnectRequ
         let mut conn = write_state.conn()?;
         let root = contain(&write_state, &conn, &req.root)?;
         let mut ctx = Ctx::borrowed(write_state.paths(), &cfg, &mut conn);
-        let resp = api::repo_admin::connect(&mut ctx, ConnectRequest { root, ..req })?;
+        let resp =
+            crate::domains::code::repo_admin::connect(&mut ctx, ConnectRequest { root, ..req })?;
         Ok((resp, index_now))
     })
     .await;
@@ -131,7 +133,7 @@ fn start_initial_index(state: &AppState, mut resp: ConnectResponse) -> Result<Co
 }
 
 /// `PATCH /api/v1/repos/{name}` — move a repo's root
-/// (`api::repo_admin::patch`). Every other field is `501 unsupported`.
+/// (`crate::domains::code::repo_admin::patch`). Every other field is `501 unsupported`.
 async fn patch_repo(
     State(state): State<AppState>,
     UrlPath(name): UrlPath<String>,
@@ -152,14 +154,14 @@ async fn patch_repo(
             .map(|root| contain(&state, &conn, root))
             .transpose()?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        api::repo_admin::patch(&mut ctx, &name, PatchRequest { root, ..req })
+        crate::domains::code::repo_admin::patch(&mut ctx, &name, PatchRequest { root, ..req })
     })
     .await;
     respond(PATCH, result, started)
 }
 
 /// `POST /api/v1/repos/{name}/archive` — flip `repo_marker.archived`
-/// (`api::repo_admin::archive`). The body is optional: an empty one
+/// (`crate::domains::code::repo_admin::archive`). The body is optional: an empty one
 /// archives ([`ArchiveRequest::default`]).
 async fn archive_repo(
     State(state): State<AppState>,
@@ -177,7 +179,7 @@ async fn archive_repo(
         let cfg = state.cfg();
         let mut conn = state.conn()?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        api::repo_admin::archive(&mut ctx, &name, req)
+        crate::domains::code::repo_admin::archive(&mut ctx, &name, req)
     })
     .await;
     respond(ARCHIVE, result, started)
@@ -202,7 +204,7 @@ struct ConfirmQuery {
 }
 
 /// `DELETE /api/v1/repos/{name}?confirm=true` — drop the repo's code index
-/// (`api::repo_admin::disconnect`), keeping its memories. Confirm-gated,
+/// (`crate::domains::code::repo_admin::disconnect`), keeping its memories. Confirm-gated,
 /// with [`guard_mutating`] first (AC-19).
 async fn disconnect_repo(
     State(state): State<AppState>,
@@ -220,14 +222,14 @@ async fn disconnect_repo(
         let cfg = state.cfg();
         let mut conn = state.conn()?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        api::repo_admin::disconnect(&mut ctx, &name)
+        crate::domains::code::repo_admin::disconnect(&mut ctx, &name)
     })
     .await;
     respond(DISCONNECT, result, started)
 }
 
 /// Canonicalize `root` inside an allowed root, as the `String`
-/// `api::repo_admin` stores. Shared by the connect and patch handlers so
+/// `domains::code::repo_admin` stores. Shared by the connect and patch handlers so
 /// both contain identically.
 fn contain(state: &AppState, conn: &Connection, root: &str) -> Result<String> {
     let roots = state.allowed_roots(conn);

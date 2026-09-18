@@ -6,15 +6,15 @@
     clippy::too_many_lines
 )]
 //! Mirror test for `src/store/repo_drop.rs`, over a REALLY indexed temp git
-//! repo (`api::index_code::run`) with a real memory saved against it: every
+//! repo (`crate::domains::code::index_code::run`) with a real memory saved against it: every
 //! code-side row for the label goes, the memory and its `references_file`
 //! edge stay, and a second repo indexed in the same store is untouched.
 
 use crate::test_common::git_sample;
 
 use comemory::api;
-use comemory::api::index_code::IndexMode;
 use comemory::config::{Config, Paths};
+use comemory::domains::code::index_code::IndexMode;
 use comemory::memory::Kind;
 use comemory::store::edges::{self, EdgeKey};
 use comemory::store::{connection, repo_drop};
@@ -30,9 +30,9 @@ fn ctx_over(home: &TempDir) -> (Paths, Config, Connection) {
 }
 
 fn index(ctx: &mut Ctx<'_>, repo: &str, path: &std::path::Path) {
-    api::index_code::run(
+    crate::domains::code::index_code::run(
         ctx,
-        api::index_code::Request {
+        crate::domains::code::index_code::Request {
             repo: repo.into(),
             path: path.to_str().expect("utf8 path").to_string(),
             mode: IndexMode::Incremental,

@@ -1,4 +1,4 @@
-//! `GET /api/v1/repos` (`api::repos`) — the indexed code-repository
+//! `GET /api/v1/repos` (`domains::code::repos`) — the indexed code-repository
 //! inventory. Own resource file rather than folded into [`super::stats`]:
 //! `stats` reports the corpus, this reports the per-repo inventory the
 //! console's Repositories screen and Code graph legend need. Not folded
@@ -13,7 +13,6 @@ use axum::extract::{Query, State};
 use axum::response::Response;
 use axum::routing::get;
 
-use crate::api;
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::routes::index_runs::INDEX_JOB_COMMAND;
@@ -35,7 +34,7 @@ pub fn router(_state: AppState) -> Router<AppState> {
     Router::new().route("/api/v1/repos", get(repos))
 }
 
-/// `GET /api/v1/repos` — the code-repository inventory (`api::repos`). Uses
+/// `GET /api/v1/repos` — the code-repository inventory (`domains::code::repos`). Uses
 /// `Ctx::lazy` rather than the shared connection so the must-not-create-the-
 /// db invariant holds here exactly as it does on the CLI: a server pointed
 /// at an empty data dir answers with an empty inventory instead of
@@ -46,7 +45,7 @@ pub fn router(_state: AppState) -> Router<AppState> {
 /// `status: "indexing"` and carries the job's id in `indexing_job`, so the
 /// console can link the row straight to `GET /jobs/{id}`. The registry is a
 /// server-process concept the CLI has no access to, which is why it is an
-/// overlay here rather than a field `api::repos` could fill in.
+/// overlay here rather than a field `domains::code::repos` could fill in.
 ///
 /// Deliberately the one repo-bearing read OUTSIDE the default repo scope
 /// (`X-Comemory-Repo` / `serve --repo`, `crate::serve::scope::RepoScope`):
@@ -55,13 +54,16 @@ pub fn router(_state: AppState) -> Router<AppState> {
 /// absent and falls back to `--repo`), so applying it here would leave a
 /// `--repo alpha` console unable to ever list — or switch to — another
 /// repo. Only an explicit `?repo=` narrows it.
-async fn repos(State(state): State<AppState>, Query(req): Query<api::repos::Request>) -> Response {
+async fn repos(
+    State(state): State<AppState>,
+    Query(req): Query<crate::domains::code::repos::Request>,
+) -> Response {
     let started = Instant::now();
     let result = run_blocking(move || {
         let cfg = state.cfg();
         let mut response = {
             let mut ctx = Ctx::lazy(state.paths(), &cfg);
-            api::repos::run(&mut ctx, req)?
+            crate::domains::code::repos::run(&mut ctx, req)?
         };
         // Best-effort: the inventory is the answer, the overlay is a
         // decoration on it. A poisoned registry lock must not turn a
@@ -86,7 +88,10 @@ mod tests;
 /// Its error is logged and swallowed by the caller: the only way this
 /// fails is a poisoned registry mutex, and losing the whole inventory over
 /// a missing decoration would be the worse outcome.
-fn overlay_indexing(state: &AppState, response: &mut api::repos::Response) -> Result<()> {
+fn overlay_indexing(
+    state: &AppState,
+    response: &mut crate::domains::code::repos::Response,
+) -> Result<()> {
     for row in &mut response.repos {
         if let Some(job_id) = state.jobs().active_for(INDEX_JOB_COMMAND, &row.repo)? {
             row.status = "indexing".to_string();

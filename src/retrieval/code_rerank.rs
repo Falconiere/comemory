@@ -141,7 +141,7 @@ impl WorkingSet {
             // The main worktree's basename (`git_utils::repo_label`), so a
             // search from a linked worktree still matches the label the
             // repo was indexed under.
-            None => match crate::git_utils::repo_label(&git) {
+            None => match crate::domains::code::git_utils::repo_label(&git) {
                 Some(n) => n,
                 None => return WorkingSet::default(),
             },
@@ -206,7 +206,7 @@ fn from_repo(git: &git2::Repository, label: &str) -> WorkingSet {
 /// is working on, and folding it in would flood the working set (and the
 /// affinity SQL's `IN` lists) with noise.
 fn collect_working_paths(repo: &git2::Repository) -> Result<BTreeSet<String>> {
-    use crate::git_utils::map_git_err;
+    use crate::domains::code::git_utils::map_git_err;
     let mut out = BTreeSet::new();
 
     let mut opts = git2::StatusOptions::new();

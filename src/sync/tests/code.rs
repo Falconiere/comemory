@@ -8,8 +8,8 @@
 //! The code-index push against the real loopback platform fixture, over a
 //! real `index-code` run (AC-11 … AC-16 of the code-graph sync design).
 
-use comemory::api::index_code::IndexMode;
 use comemory::config::{Config, Paths};
+use comemory::domains::code::index_code::IndexMode;
 use comemory::store::connection;
 use comemory::sync::AuthFile;
 use comemory::sync::code::{run_code_push, run_code_push_if_moved};

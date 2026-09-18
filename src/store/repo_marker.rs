@@ -93,7 +93,7 @@ pub(crate) fn last_head(conn: &Connection, repo: &str) -> Result<Option<String>>
 }
 
 /// Whether `repo`'s `repo_marker.archived` flag is set. `None` when the
-/// repo has no marker row yet (never indexed) — `api::index_code`'s
+/// repo has no marker row yet (never indexed) — `domains::code::index_code`'s
 /// archived-repo refusal treats an unknown repo as not archived.
 pub fn archived(conn: &Connection, repo: &str) -> Result<Option<bool>> {
     Ok(column_for_repo::<i64>(conn, "archived", repo)?.map(|f| f != 0))
@@ -110,13 +110,13 @@ pub(crate) fn all_repos(conn: &Connection) -> Result<Vec<String>> {
 }
 
 /// `repo_marker.root_path` for `repo`, or `None` when there is no marker
-/// row (or its root is `NULL`) — behind `api::repo_admin`'s connect/patch.
+/// row (or its root is `NULL`) — behind `domains::code::repo_admin`'s connect/patch.
 pub(crate) fn root_path(conn: &Connection, repo: &str) -> Result<Option<String>> {
     Ok(column_for_repo::<Option<String>>(conn, "root_path", repo)?.flatten())
 }
 
 /// Whether a `repo_marker` row exists for `repo` — behind
-/// `api::repo_admin`'s "unknown repo" `404` gate.
+/// `domains::code::repo_admin`'s "unknown repo" `404` gate.
 pub(crate) fn exists(conn: &Connection, repo: &str) -> Result<bool> {
     conn.query_row(
         "SELECT EXISTS(SELECT 1 FROM repo_marker WHERE repo = ?1)",
@@ -127,7 +127,7 @@ pub(crate) fn exists(conn: &Connection, repo: &str) -> Result<bool> {
 }
 
 /// Set `repo_marker.archived` for `repo`; the returned row count is `0`
-/// when the label is unknown — `api::repo_admin::archive`'s `404` gate.
+/// when the label is unknown — `crate::domains::code::repo_admin::archive`'s `404` gate.
 pub(crate) fn set_archived(conn: &Connection, repo: &str, archived: bool) -> Result<usize> {
     conn.execute(
         "UPDATE repo_marker SET archived = ?2 WHERE repo = ?1",

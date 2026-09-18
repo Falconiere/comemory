@@ -12,14 +12,14 @@ use crate::prelude::*;
 /// Drop every `indexed_files` cursor row for `repo`, forcing the next
 /// `index-code` walk to re-extract every file. Shared by
 /// [`crate::store::code_row::ensure_repo_format`] (the code-format-version
-/// gate) and `api::index_code::run_with_progress`'s `--mode full`.
+/// gate) and `crate::domains::code::index_code::run_with_progress`'s `--mode full`.
 pub fn delete_for_repo(conn: &Connection, repo: &str) -> Result<()> {
     conn.execute("DELETE FROM indexed_files WHERE repo = ?1", [repo])?;
     Ok(())
 }
 
 /// The recorded blob OID for `(repo, path)`, or `None` when the file has
-/// never been indexed. Behind `api::index_code::walk`'s incremental skip
+/// never been indexed. Behind `crate::domains::code::index_code::walk`'s incremental skip
 /// gate — the caller compares this against the file's current blob OID.
 pub fn blob_oid_for(conn: &Connection, repo: &str, path: &str) -> Result<Option<String>> {
     conn.query_row(

@@ -9,7 +9,6 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::api;
 use crate::cli::pagination::PaginationArgs;
 use crate::config::Config;
 use crate::output::{json, tty};
@@ -52,14 +51,14 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     let cfg = Config::defaults();
     let paths = crate::config::Paths::new(crate::config::paths::resolve_data_dir(data_dir));
     let mut ctx = Ctx::lazy(&paths, &cfg);
-    let req = api::ast::Request {
+    let req = crate::domains::code::pattern_search::Request {
         pattern: a.pattern,
         lang: a.lang,
         file: a.file.display().to_string(),
         limit: a.page.limit,
         offset: a.page.offset,
     };
-    let page = api::ast::run(&mut ctx, req)?;
+    let page = crate::domains::code::pattern_search::run(&mut ctx, req)?;
 
     if json_flag {
         json::write(&page)?;

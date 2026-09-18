@@ -5,8 +5,8 @@
 //! installation instead of duplicating the host probe.
 //!
 //! The host is a validated string, not a clap enum, for the same reason
-//! `api::hooks::Request::enable` is: `api::` must not depend on the CLI's
-//! argument types. Conn-free like `api::install_hooks` — [`run`] never calls
+//! `crate::domains::code::hooks::Request::enable` is: `api::` must not depend on the CLI's
+//! argument types. Conn-free like `domains::code::install_hooks` — [`run`] never calls
 //! `Ctx::conn`, so installing an integration never creates a database.
 
 use std::path::{Path, PathBuf};

@@ -77,7 +77,7 @@ const EXCLUSIONS: &[(&str, &str)] = &[
     ("search-code", "vector_stdin"),
     ("context", "vector_stdin"),
     // "`index-code --extract` (streams JSONL to stdout)" — DB-free CLI-only
-    // path; `api::index_code::Request` (the DB-write path's request type)
+    // path; `comemory::domains::code::index_code::Request` (the DB-write path's request type)
     // carries no `extract` field at all (see its module doc).
     ("index-code", "extract"),
     // "`graph --format` (HTTP is always JSON; `dot`/`html` stay CLI)".
@@ -150,7 +150,7 @@ macro_rules! probe_fn {
     };
 }
 
-probe_fn!(probe_ast, api::ast::Request);
+probe_fn!(probe_ast, comemory::domains::code::pattern_search::Request);
 probe_fn!(probe_bandit, api::bandit::Request);
 probe_fn!(probe_completions, comemory::cli::completion_script::Request);
 probe_fn!(probe_consolidate, api::consolidate::Request);
@@ -162,8 +162,14 @@ probe_fn!(probe_feedback, api::feedback::Request);
 probe_fn!(probe_gc, api::gc::Request);
 probe_fn!(probe_graph, api::graph::Request);
 probe_fn!(probe_index, api::index::Request);
-probe_fn!(probe_index_code, api::index_code::Request);
-probe_fn!(probe_install_hooks, api::install_hooks::Request);
+probe_fn!(
+    probe_index_code,
+    comemory::domains::code::index_code::Request
+);
+probe_fn!(
+    probe_install_hooks,
+    comemory::domains::code::install_hooks::Request
+);
 probe_fn!(probe_list, api::list::Request);
 probe_fn!(probe_mine, api::mine::Request);
 probe_fn!(probe_prune, api::prune::Request);
@@ -173,8 +179,8 @@ probe_fn!(probe_search, api::search::Request);
 probe_fn!(probe_search_code, api::search_code::Request);
 probe_fn!(probe_sources, api::sources::Request);
 probe_fn!(probe_find, api::find::Request);
-probe_fn!(probe_hooks, api::hooks::Request);
-probe_fn!(probe_repos, api::repos::Request);
+probe_fn!(probe_hooks, comemory::domains::code::hooks::Request);
+probe_fn!(probe_repos, comemory::domains::code::repos::Request);
 probe_fn!(probe_show, api::show::Request);
 probe_fn!(probe_stats, api::stats::Request);
 probe_fn!(probe_tune, api::tune::Request);

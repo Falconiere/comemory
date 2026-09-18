@@ -1,0 +1,30 @@
+# `src/domains/`
+
+**What belongs here:** business capabilities. Each folder owns one area of
+behavior end to end — its models, its algorithms, and the command cores both
+delivery adapters call — and appears as a sibling module file (`<name>.rs`) plus
+its folder, declared from `src/domains.rs`.
+
+**What does NOT belong here:** delivery. No file under `domains/` may import
+`cli`, `serve`, `output`, or the legacy `api` command-core tree. A capability may
+depend on `store`, `config`, `errors`, `prelude`, the named shared primitives in
+[`utilities/`](../utilities/README.md), and — only through the directed table in
+`scripts/architecture-policy.json` — another capability.
+
+Filled one slice at a time by the
+[#164 migration](../../docs/designs/2026-09-17-domain-first-migration.md). A
+folder, README, or module declaration may never exist here without production
+code owned by that capability: `scripts/architecture-check.sh` fails an empty
+domain scaffold.
+
+## Contents
+
+One row per capability — its sibling module file and its folder together:
+
+| Capability | Owns | Landed by |
+| --- | --- | --- |
+| `code.rs` + [`code/`](code/README.md) | AST extraction, code indexing, the repository inventory, Git hooks, reindex freshness | #167 |
+
+The remaining nine capabilities named by the contract — `memories`, `documents`,
+`graph`, `retrieval`, `learning`, `sync`, `capture`, `maintenance`,
+`integrations` — arrive with #168–#176 and keep their legacy roots until then.

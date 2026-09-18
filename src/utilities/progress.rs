@@ -10,7 +10,7 @@
 /// `(done, total)` file counts, [`ProgressSink::on_log`] for one
 /// human-readable line per file actually (re)indexed. `serve::jobs::worker`
 /// implements this over the job registry; the CLI never constructs one —
-/// `api::index_code::run` passes `None`, which is the "no-op" the plan calls
+/// `crate::domains::code::index_code::run` passes `None`, which is the "no-op" the plan calls
 /// for. Implementations must be best-effort: neither method
 /// returns a `Result`, so a reporting failure can only be handled (e.g.
 /// `tracing::warn!`) inside the implementation itself, never by failing the

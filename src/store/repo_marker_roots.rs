@@ -1,7 +1,7 @@
 //! Reads over `repo_marker.root_path`, for `comemory serve`: [`all_roots`]
 //! enumerates every distinct working-tree root (the allowed-roots set behind
 //! `utilities::path_containment::contain_abs` containment), and [`root_path`] looks up
-//! one repo's stored root (behind `serve::repo_root::resolve_root`'s
+//! one repo's stored root (behind `utilities::repo_root::resolve_root`'s
 //! `--root`-override fallback). Kept separate from `code_row.rs` (which owns
 //! the per-repo *writer*, `upsert_repo_root`) because these are read-side
 //! queries with a different caller (the serve layer, not the indexer).

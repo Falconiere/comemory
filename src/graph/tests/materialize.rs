@@ -17,7 +17,7 @@ use crate::test_common::git_repo;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use comemory::git_utils::current_head;
+use comemory::domains::code::git_utils::current_head;
 use comemory::graph::materialize::materialize;
 use comemory::store::code_row::{self, CodeSymbolRow};
 use comemory::store::connection;

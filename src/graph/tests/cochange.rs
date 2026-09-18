@@ -21,7 +21,7 @@ use std::collections::HashSet;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
-use comemory::git_utils::current_head;
+use comemory::domains::code::git_utils::current_head;
 use comemory::graph::cochange::{
     CoChange, FIRST_RUN_COMMIT_LIMIT, MEGA_COMMIT_FILE_CAP, mine_cochange,
 };

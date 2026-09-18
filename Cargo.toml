@@ -112,7 +112,7 @@ version = "0.45"
 # dart, hcl, nix, solidity, ...); its `parsers.rs` gates each `language_*()`
 # constructor on that grammar's own `tree-sitter-<lang>` feature and stubs
 # the rest to `unimplemented!()`. Only the five grammars comemory supports
-# are enabled, and `src/ast/languages.rs` is the gate that keeps every
+# are enabled, and `src/domains/code/ast/languages.rs` is the gate that keeps every
 # other `language_*()` from ever being called.
 [dependencies.ast-grep-language]
 version = "0.45"

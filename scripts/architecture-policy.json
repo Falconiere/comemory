@@ -76,11 +76,6 @@
       "issue": "#178"
     },
     {
-      "module": "crate::ast",
-      "owner": "domains::code",
-      "issue": "#167"
-    },
-    {
       "module": "crate::capture",
       "owner": "domains::capture",
       "issue": "#174"
@@ -106,19 +101,9 @@
       "issue": "#173"
     },
     {
-      "module": "crate::git_utils",
-      "owner": "domains::code",
-      "issue": "#167"
-    },
-    {
       "module": "crate::graph",
       "owner": "domains::graph",
       "issue": "#170"
-    },
-    {
-      "module": "crate::index",
-      "owner": "domains::code",
-      "issue": "#167"
     },
     {
       "module": "crate::memory",
@@ -278,12 +263,12 @@
   "setup_runtime_dependencies": [
     {
       "source": "src/api/setup/apply.rs",
-      "target": "crate::api::hooks",
+      "target": "crate::domains::code::hooks",
       "owner": "domains::code"
     },
     {
       "source": "src/api/setup/apply.rs",
-      "target": "crate::api::index_code",
+      "target": "crate::domains::code::index_code",
       "owner": "domains::code"
     },
     {
@@ -293,7 +278,7 @@
     },
     {
       "source": "src/api/setup/apply.rs",
-      "target": "crate::api::install_hooks",
+      "target": "crate::domains::code::install_hooks",
       "owner": "domains::code"
     },
     {
@@ -303,7 +288,7 @@
     },
     {
       "source": "src/api/setup/detect.rs",
-      "target": "crate::api::hooks",
+      "target": "crate::domains::code::hooks",
       "owner": "domains::code"
     },
     {
@@ -313,7 +298,7 @@
     },
     {
       "source": "src/api/setup/detect.rs",
-      "target": "crate::api::repos",
+      "target": "crate::domains::code::repos",
       "owner": "domains::code"
     },
     {
@@ -323,7 +308,7 @@
     },
     {
       "source": "src/api/setup/detect.rs",
-      "target": "crate::git_utils",
+      "target": "crate::domains::code::git_utils",
       "owner": "domains::code"
     },
     {
@@ -394,12 +379,6 @@
       "issue": "#169"
     },
     {
-      "source": "src/api/refresh_refs.rs",
-      "target": "crate::serve::repo_root",
-      "class": "delivery",
-      "issue": "#169"
-    },
-    {
       "source": "src/api/save.rs",
       "target": "crate::output::search",
       "class": "delivery",
@@ -425,21 +404,9 @@
     },
     {
       "source": "src/cli/graph/nodes.rs",
-      "target": "crate::cli::graph",
-      "class": "delivery",
-      "issue": "#170"
-    },
-    {
-      "source": "src/cli/graph/nodes.rs",
       "target": "crate::output::graph",
       "class": "delivery",
       "issue": "#170"
-    },
-    {
-      "source": "src/retrieval/code_ref_fetch.rs",
-      "target": "crate::serve::repo_root",
-      "class": "delivery",
-      "issue": "#167"
     },
     {
       "source": "src/retrieval/unified/fuse_domains.rs",

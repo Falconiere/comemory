@@ -4,7 +4,7 @@
 //! end carries [`CHUNK_OVERLAP`] chars into the next chunk. A chunk never
 //! spans two blocks. Pure and deterministic, split into a PURE
 //! offset-packing layer ([`pack`]) and the [`split`] driver — same shape
-//! as `crate::ast::chunk`.
+//! as `crate::domains::code::ast::chunk`.
 
 use super::{Block, Chunk};
 use crate::utilities::simhash;
@@ -58,7 +58,7 @@ pub fn split(blocks: &[Block]) -> Vec<Chunk> {
 /// `search_floor` is the previous chunk's true (pre-overlap) end,
 /// monotonic — it stops overlap from re-exposing an already-used boundary
 /// and cascading into near-empty chunks. Pure and deterministic — the
-/// char-offset counterpart of [`crate::ast::chunk::pack_spans`].
+/// char-offset counterpart of [`crate::domains::code::ast::chunk::pack_spans`].
 pub fn pack(len: usize, boundaries: &[usize]) -> Vec<(usize, usize)> {
     if len == 0 {
         return Vec::new();

@@ -15,12 +15,12 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::cli::graph::parse_id;
 use crate::output::graph::{CodeGraph, Edge, Node};
 use crate::prelude::*;
 use crate::store::code_graph_nodes::NodeRow;
 use crate::store::edges::file_node_id;
 use crate::store::{self, Connection};
+use crate::utilities::repo_root::parse_id;
 
 /// Fetch one [`NodeRow`] per distinct endpoint file referenced by `edges`, so
 /// a paged subgraph carries exactly the nodes its windowed edges touch (and

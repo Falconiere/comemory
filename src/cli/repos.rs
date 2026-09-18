@@ -1,6 +1,6 @@
 //! `comemory repos` — the indexed code-repository inventory: per-repo file
 //! and symbol counts plus git freshness against the working tree on disk.
-//! The `repo_marker` join and git-state resolution live in `api::repos`
+//! The `repo_marker` join and git-state resolution live in `domains::code::repos`
 //! (Binding Rule 1).
 
 use std::io::Write as _;
@@ -8,7 +8,6 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::api;
 use crate::cli::load_config;
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::output::json;
@@ -36,22 +35,25 @@ pub struct Args {
     pub repo: Option<String>,
 }
 
-/// List every indexed repo's inventory row via `api::repos::run`. Uses
+/// List every indexed repo's inventory row via `crate::domains::code::repos::run`. Uses
 /// `Ctx::lazy` (never eagerly opens `comemory.db`) so a data dir with no
 /// database yet reports an empty inventory rather than creating one.
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     let cfg = load_config(&paths)?;
     let mut ctx = Ctx::lazy(&paths, &cfg);
-    let resp = api::repos::run(&mut ctx, api::repos::Request { repo: a.repo })?;
+    let resp = crate::domains::code::repos::run(
+        &mut ctx,
+        crate::domains::code::repos::Request { repo: a.repo },
+    )?;
     emit(json_flag, &resp)
 }
 
 /// Emit the repo inventory: the whole `{"repos": [...]}` object under
-/// `--json` (matching `api::repos::Response`'s shape verbatim, the same
+/// `--json` (matching `crate::domains::code::repos::Response`'s shape verbatim, the same
 /// contract `GET /api/v1/repos` serves), else an aligned table with a
 /// `root=/remote=/last_head=/...` detail line under each row.
-fn emit(json_flag: bool, resp: &api::repos::Response) -> Result<()> {
+fn emit(json_flag: bool, resp: &crate::domains::code::repos::Response) -> Result<()> {
     if json_flag {
         json::write(resp)?;
         return Ok(());

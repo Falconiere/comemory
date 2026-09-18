@@ -2,7 +2,7 @@
 //!
 //! Turns a pinned `code_ref` into a [`RefStatus`] by gathering the live signals
 //! [`classify`] needs: the repo's working-tree root (reusing
-//! [`crate::serve::repo_root::resolve_root`], `Err` → repo not on disk), the
+//! [`crate::utilities::repo_root::resolve_root`], `Err` → repo not on disk), the
 //! current HEAD-tree blob of the referenced file, and — only when the index is
 //! current for that repo — whether the symbol still resolves. Repo-level facts
 //! (root, currency) are cached so a bundle citing many refs in one repo pays
@@ -12,8 +12,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::retrieval::code_ref_status::{CurrentRef, RefStatus, classify};
-use crate::serve::repo_root::resolve_root;
 use crate::store::Connection;
+use crate::utilities::repo_root::resolve_root;
 
 /// Cached per-repo facts: the resolved working-tree root (`None` when the repo
 /// is not on disk) and whether the code index is current for it.
@@ -83,7 +83,7 @@ fn repo_state_uncached(conn: &Connection, repo: &str) -> RepoState {
 /// downstream rather than erroring the whole bundle).
 fn head_blob_for(root: Option<&Path>, path: &str) -> Option<String> {
     let root = root?;
-    crate::git_utils::blob_oid_at_head(root, path)
+    crate::domains::code::git_utils::blob_oid_at_head(root, path)
         .ok()
         .flatten()
 }
@@ -92,7 +92,7 @@ fn head_blob_for(root: Option<&Path>, path: &str) -> Option<String> {
 /// signal — `repo_marker.last_mined_commit` equals `git_utils::current_head`.
 /// A missing marker, unborn HEAD, or read error is treated as not-current.
 fn index_is_current(conn: &Connection, repo: &str, root: &Path) -> bool {
-    let head = match crate::git_utils::current_head(root) {
+    let head = match crate::domains::code::git_utils::current_head(root) {
         Ok(head) => head,
         Err(e) => {
             tracing::debug!(repo, error = %e, "current_head failed; treating index as stale");

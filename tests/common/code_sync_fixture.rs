@@ -18,7 +18,6 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use comemory::api;
 use comemory::api::sync::CodeFileWire;
 use comemory::config::{Config, Paths};
 use comemory::store::{Connection, indexed_files};
@@ -66,7 +65,7 @@ pub fn index(paths: &Paths, cfg: &Config, conn: &mut Connection, tree: &Path) {
         cfg,
         conn,
         tree,
-        api::index_code::IndexMode::Incremental,
+        comemory::domains::code::index_code::IndexMode::Incremental,
     );
 }
 
@@ -77,12 +76,12 @@ pub fn index_mode(
     cfg: &Config,
     conn: &mut Connection,
     tree: &Path,
-    mode: api::index_code::IndexMode,
+    mode: comemory::domains::code::index_code::IndexMode,
 ) {
     let mut ctx = Ctx::borrowed(paths, cfg, conn);
-    api::index_code::run(
+    comemory::domains::code::index_code::run(
         &mut ctx,
-        api::index_code::Request {
+        comemory::domains::code::index_code::Request {
             repo: REPO.into(),
             path: tree.to_string_lossy().into_owned(),
             mode,

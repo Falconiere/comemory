@@ -151,7 +151,9 @@ fn ac8_ac9_import_answers_the_graph_and_the_inventory_without_source() {
     assert!(snap.nodes.iter().any(|n| n.rank > 0.0));
 
     let mut ctx = Ctx::borrowed(&ws.paths, &ws.cfg, &mut ws.conn);
-    let repos = api::repos::run(&mut ctx, api::repos::Request::default()).unwrap();
+    let repos =
+        crate::domains::code::repos::run(&mut ctx, crate::domains::code::repos::Request::default())
+            .unwrap();
     assert_eq!(repos.repos.len(), 1);
     assert_eq!(repos.repos[0].repo, fixture::REPO);
     assert_eq!(repos.repos[0].files, 3);

@@ -8,8 +8,6 @@
 //! [#178](https://github.com/Falconiere/comemory/issues/178) removes once every
 //! core has moved under `domains::`.
 
-/// `comemory ast`: run an ast-grep pattern against one file, paged.
-pub mod ast;
 /// `comemory bandit`: Thompson-sample the `[tune]` grid, confirm, apply.
 pub mod bandit;
 /// `comemory consolidate`: advisory near-duplicate cluster report.
@@ -32,18 +30,10 @@ pub mod find;
 pub mod gc;
 /// `comemory graph`: the file-level code-connection graph, full or paged.
 pub mod graph;
-/// `comemory hooks`: read and toggle the git reindex hooks.
-pub mod hooks;
 /// `comemory index`: register document sources and reconcile them.
 pub mod index;
-/// `comemory index-code` (DB-write path): mirror a repo's symbols.
-pub mod index_code;
-/// `comemory ingest-code`: mirror pre-embedded NDJSON symbol rows.
-pub mod ingest_code;
 /// `comemory install`: bundled agent skills and hooks for a host.
 pub mod install;
-/// `comemory install-hooks`: install git hooks for background reindexing.
-pub mod install_hooks;
 /// `comemory list`: page live memories.
 pub mod list;
 /// `comemory mine`: distill query-reformulation term mappings.
@@ -53,8 +43,6 @@ pub mod mine;
 pub mod prune;
 /// `comemory rebuild`: atomically rebuild the SQLite mirror from markdown.
 pub mod rebuild;
-/// `comemory repos`: the indexed code-repository inventory.
-pub mod repos;
 /// `comemory save`: write a memory (markdown + store mirror).
 pub mod save;
 /// `comemory search`: hybrid memory retrieval.
@@ -86,8 +74,6 @@ pub mod gc_policy;
 pub mod graph_nodes;
 /// `POST /graph/recompute`: PageRank re-projection job.
 pub mod graph_recompute;
-/// `GET /index/runs`: the `index_runs` history.
-pub mod index_runs;
 /// `GET /learning/{summary,evals,golden-set,expansions}`.
 pub mod learning;
 /// `GET /learning/proposals`, `POST /learning/proposals/{id}/{apply,discard}`.
@@ -100,8 +86,6 @@ pub mod overview;
 pub mod reembed;
 /// `POST /memories/{id}/references/refresh`: re-pin code references.
 pub mod refresh_refs;
-/// `POST /repos`, `PATCH /repos/{name}`, `POST /repos/{name}/archive`, `DELETE /repos/{name}`.
-pub mod repo_admin;
 /// `POST /memories/{id}/restore`, `POST /trash/{id}/restore`.
 pub mod restore;
 /// `GET /search/suggest`: mined expansions + recent queries.
