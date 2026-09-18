@@ -644,10 +644,13 @@ as their own steps in `.github/workflows/test.yml`:
 Each constant lives on one line in its own script and is the single source of
 truth: the workflow *derives* the version it installs from that line instead of
 repeating it, so the workflow and the gate cannot drift, and bumping the
-constant is the only edit a version bump needs. Each gate **hard-fails on a
-version mismatch locally as well as in CI** — a verdict from another build is
-not the verdict CI will reach. When the tool is missing the gate **fails in CI
-and skips locally with a loud warning** naming the pinned install command.
+constant is the only edit a version bump needs. The two cases are handled differently, and the difference
+matters: a **version mismatch** is a hard failure everywhere, CI and local
+alike, because a verdict from another build is not the verdict CI will reach;
+a **missing tool** fails in CI but locally prints a loud `[warn]` saying the
+gate did not run, names the pinned install command, and **exits 0**. So a green
+`just qa` on a machine without the tool means "this gate was skipped, loudly",
+not "this gate passed" — CI is the run that decides.
 
 Two of them assert that their tool actually ingested the tree, because a gate
 that reports success while checking nothing is this repo's recurring failure

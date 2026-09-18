@@ -107,9 +107,18 @@ if [[ ! -f "$LOCK_FILE" ]]; then
   log_err "$STEP" "missing $LOCK_FILE — the crate-count floor cannot be computed without it"
   exit 1
 fi
+# `|| true` because grep -c exits 1 when the count is legitimately 0, which
+# under set -e would kill the script before the explicit zero check below can
+# give a better message. The zero case is NOT swallowed: it is caught on the
+# next line, so the floor can never be computed from an empty or truncated lock.
 locked_packages="$(grep -c '^\[\[package\]\]' "$LOCK_FILE" || true)"
-if ! [[ "$locked_packages" =~ ^[0-9]+$ ]] || (( locked_packages == 0 )); then
-  log_err "$STEP" "could not count [[package]] entries in $LOCK_FILE"
+if ! [[ "$locked_packages" =~ ^[0-9]+$ ]]; then
+  log_err "$STEP" "could not read [[package]] entries from $LOCK_FILE (is it readable?)"
+  exit 1
+fi
+if (( locked_packages == 0 )); then
+  log_err "$STEP" \
+    "$LOCK_FILE contains no [[package]] entries — a truncated or malformed lock would make the crate-count floor 0, which would make the floor check below vacuous"
   exit 1
 fi
 min_crates=$(( locked_packages / 2 ))

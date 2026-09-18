@@ -92,6 +92,13 @@ if [[ "$installed_version" != "$CARGO_MACHETE_VERSION" ]]; then
   exit 1
 fi
 
+# ONE flag list, used by BOTH the canary and the real scan. They are empty
+# today, but the canary only proves the real scan is live if the two runs use
+# the same detection rules — add --with-metadata to one and not the other and
+# the proof quietly stops covering what it claims to. Sharing the array makes
+# divergence impossible rather than merely discouraged.
+MACHETE_FLAGS=()
+
 MANIFEST="$PROJECT_ROOT/Cargo.toml"
 if [[ ! -f "$MANIFEST" ]]; then
   log_err "$STEP" "missing $MANIFEST — there is nothing for this gate to scan"
@@ -130,7 +137,7 @@ printf '// Intentionally empty: the canary uses none of the declared dependencie
   > "$canary_dir/src/lib.rs"
 
 set +e
-canary_output="$("$MACHETE_BIN" "$canary_dir" 2>&1)"
+canary_output="$("$MACHETE_BIN" ${MACHETE_FLAGS[@]+"${MACHETE_FLAGS[@]}"} "$canary_dir" 2>&1)"
 canary_rc=$?
 set -e
 if (( canary_rc == 0 )); then
@@ -153,7 +160,7 @@ fi
 # directory, and cargo-machete echoes back the path it was handed, so the banner
 # below proves the scan was aimed where this gate intended.
 set +e
-scan_output="$("$MACHETE_BIN" "$PROJECT_ROOT" 2>&1)"
+scan_output="$("$MACHETE_BIN" ${MACHETE_FLAGS[@]+"${MACHETE_FLAGS[@]}"} "$PROJECT_ROOT" 2>&1)"
 scan_rc=$?
 set -e
 
