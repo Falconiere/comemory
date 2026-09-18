@@ -12,7 +12,9 @@
 use comemory::config::Config;
 use comemory::domains::learning::evaluation::benchmark_runner::{self, RunContext};
 use comemory::domains::learning::evaluation::benchmark_set::{BenchmarkSet, BenchmarkTask};
-use comemory::domains::learning::evaluation::candidate_identity::CandidateDomain;
+use comemory::domains::learning::evaluation::candidate_identity::{
+    CandidateDomain, CandidateIdentity,
+};
 use comemory::domains::learning::evaluation::run_environment;
 use comemory::domains::retrieval::scope::{Domain, Filters};
 use comemory::domains::retrieval::unified::{self, DomainFilters};
@@ -259,20 +261,39 @@ fn every_observed_memory_carries_its_body_digest_as_the_content_version() {
     let conn = connection::open(paths.db_path()).expect("open db");
     let capture = capture_first(&cfg, &conn, &set);
 
+    assert!(
+        !capture.observation.candidates.is_empty(),
+        "the query must produce candidates, or the loop below asserts nothing"
+    );
     for candidate in &capture.observation.candidates {
         assert_eq!(candidate.identity.domain(), CandidateDomain::Memory);
-        let version = candidate.identity.content_version();
-        assert_eq!(version.len(), 64, "the content version is a full sha256");
+        let CandidateIdentity::Memory(identity) = &candidate.identity else {
+            panic!("a memory-only run cannot observe {:?}", candidate.identity);
+        };
+        assert_eq!(
+            identity.content_hash.len(),
+            64,
+            "the content version is a full sha256"
+        );
+        // Read the column by the memory's own id — not by a locator field —
+        // and fail hard when the row is missing. A fallback to the observed
+        // digest would make the comparison below compare a value with itself.
         let stored: String = conn
             .query_row(
                 "SELECT content_hash FROM memories WHERE id = ?1",
-                [candidate.locator.title.as_str()],
+                [identity.memory_id.as_str()],
                 |r| r.get(0),
             )
-            .unwrap_or_else(|_| version.to_string());
-        assert!(
-            stored == version || !stored.is_empty(),
-            "the observed digest must agree with memories.content_hash"
+            .unwrap_or_else(|e| {
+                panic!(
+                    "memory {} must still be in the corpus: {e}",
+                    identity.memory_id
+                )
+            });
+        assert_eq!(
+            stored, identity.content_hash,
+            "the observed digest must equal memories.content_hash for {}",
+            identity.memory_id
         );
         assert_eq!(candidate.text.sha256.len(), 64);
         assert!(
