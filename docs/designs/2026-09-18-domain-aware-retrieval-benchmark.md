@@ -519,6 +519,14 @@ pub struct RetrievalVersion {
     /// `sha256` hex over the canonical JSON of `knobs`. This is the
     /// "retrieval configuration version": two runs with equal `knobs_hash`
     /// used the same ranking configuration.
+    ///
+    /// Canonical here means map-free. `serde_json` emits struct fields in
+    /// declaration order and sequences in order, but a `HashMap` serializes in
+    /// arbitrary order and would make the digest irreproducible. Both digested
+    /// values satisfy that today — `RetrievalKnobs` is scalars and tuples,
+    /// `CorpusSnapshot` is counters plus a `Vec<RepoRevision>` the store
+    /// returns ordered by repo — and a consumer adding a field that carries a
+    /// map must sort it into a sequence before digesting.
     pub knobs_hash: String,
     /// The corpus and index snapshot the run read.
     pub corpus: CorpusSnapshot,
@@ -976,7 +984,17 @@ pub struct CodeText {
 /// are absent from the map — a raced re-index delete is a missing entry, not
 /// an error.
 pub fn fetch(conn: &Connection, ids: &[i64]) -> Result<HashMap<i64, CodeText>>;
+
+// src/store/documents.rs
+
+/// Batched `revision_hash` read for `ids`, keyed by `documents.id`. The
+/// document leg's counterpart to the code leg's read above: one query per run
+/// rather than a point read per pooled document. Missing ids are absent.
+pub fn fetch_revisions(conn: &Connection, ids: &[&str]) -> Result<HashMap<String, String>>;
 ```
+
+Both are batched, and both exist only because fusion drops these fields: the
+search path pays neither read.
 
 ## Failure modes and edge cases
 
