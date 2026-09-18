@@ -25,6 +25,16 @@
 #
 # Retired in the toolu migration (folded into guardrails-check + lint-check):
 #   test-placement-check  no-bypass-check  module-size-check  tests-mirror-check
+#
+# DELIBERATELY NOT HERE: dup-check, deny-check, machete-check. Each needs a
+# separately installed tool (similarity-rs, cargo-deny, cargo-machete), and this
+# script runs on every local iteration and on the release path — so adding one
+# would mean either hard-failing every contributor who lacks the tool or
+# skipping silently, and a guardrail that reports success while checking nothing
+# is exactly what these gates exist to prevent. They are grouped in the
+# justfile's `qa` recipe instead; dup-check additionally runs as its own step in
+# .github/workflows/test.yml, where its pinned similarity-rs is guaranteed.
+# Do not "fix" this omission by adding them to GATES below.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=scripts/lib/common.sh
