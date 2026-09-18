@@ -13,7 +13,10 @@ use super::{
     },
 };
 use crate::prelude::*;
-use toolu_orm::core::query_column::CommonOps;
+use toolu_orm::core::{
+    column::Text,
+    query_column::{Column, CommonOps},
+};
 
 /// Caller-supplied fields for [`upsert_document`].
 pub struct DocumentUpsert<'a> {
@@ -205,9 +208,7 @@ pub fn get_chunk(
 pub fn get_document_path(conn: &Connection, id: &str) -> Result<Option<String>> {
     orm::query_optional(
         conn,
-        Documents::select()
-            .column_expr(&file::relative_path.qualified(), "relative_path")
-            .join(file::id.table, file::id.equals(&col::source_file_id))
+        select_source_document_column(&file::relative_path)
             .filter(col::id.eq(id))
             .to_sql(),
         |r| r.get(0),
@@ -223,7 +224,7 @@ pub fn get_document_path(conn: &Connection, id: &str) -> Result<Option<String>> 
 pub fn document_ids_for_source(conn: &Connection, source_id: &str) -> Result<Vec<String>> {
     orm::query_all(
         conn,
-        select_document_ids()
+        select_source_document_column(&col::id)
             .filter(file::source_id.eq(source_id))
             .to_sql(),
         |r| r.get(0),
@@ -240,7 +241,7 @@ pub(crate) fn document_id_in_source(
 ) -> Result<Option<String>> {
     orm::query_optional(
         conn,
-        select_document_ids()
+        select_source_document_column(&col::id)
             .filter(file::source_id.eq(source_id))
             .filter(file::relative_path.eq(relative_path))
             .to_sql(),
@@ -258,7 +259,7 @@ pub(crate) fn document_ids_for_repo_path(
 ) -> Result<Vec<String>> {
     orm::query_all(
         conn,
-        select_document_ids()
+        select_source_document_column(&col::id)
             .filter(col::repo.eq(repo))
             .filter(file::relative_path.eq(relative_path))
             .to_sql(),
@@ -266,9 +267,9 @@ pub(crate) fn document_ids_for_repo_path(
     )
 }
 
-fn select_document_ids() -> toolu_orm::query::select::SelectBuilder {
+fn select_source_document_column(column: &Column<Text>) -> toolu_orm::query::select::SelectBuilder {
     Documents::select()
-        .column_expr(&col::id.qualified(), "id")
+        .column_expr(&column.qualified(), column.name)
         .join(file::id.table, file::id.equals(&col::source_file_id))
 }
 

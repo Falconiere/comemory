@@ -37,8 +37,10 @@ SQL after an ORM upgrade. This procedure does not change historical migrations.
 - Compare bind counts for repeated predicates. The ORM allocates fresh slots
   for each occurrence; converting reused numbered placeholders can exceed
   SQLite's parameter limit on inputs that previously succeeded.
-- Nested parameterized raw expressions misnumber placeholders in 0.6.0;
+- Nested parameterized raw expressions misnumber placeholders in 0.6.0 and 0.7.0;
   use the supported typed predicates or the documented separate-filter form.
+- For repeated writes, generate SQL once and use `orm::execute_many` with
+  each row bound in placeholder order; preserve the caller transaction.
 - Preserve fractional f32 BM25 decimal literals before supplying f64 ORM
   weights. Direct binary widening can change result score bits.
 - Keep set-based cleanup and date normalization in the database. Avoid

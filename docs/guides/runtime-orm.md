@@ -8,12 +8,14 @@ schema declarations and the migration runner.
 
 ## Execution and behavior
 
-The project resolves toolu-orm 0.6.0 with the `rusqlite` feature. Builders
+The project resolves toolu-orm 0.7.0 with the `rusqlite` feature. Builders
 return SQL and bound `Value` parameters through `to_sql()`.
 `src/store/orm.rs` executes those results on the existing connection using
 cached statements and the store's row decoders. This preserves native SQLite
-errors, optional-row behavior, and caller-owned transactions. It also avoids
-creating another connection or an async runtime for synchronous store work.
+errors, optional-row behavior, and caller-owned transactions. Repeated writes
+generate one statement and pass it to `execute_many`, which prepares once
+and binds each row in placeholder order. The bridge avoids creating another
+connection or an async runtime for synchronous store work.
 FTS queries use the existing `run_fts_query` helper with generated SQL and
 values so malformed MATCH expressions retain their empty-result behavior.
 
@@ -37,7 +39,7 @@ listed file. Convert supported statements in the same file. When a builder
 supports the surrounding statement but needs an unsupported scalar fragment,
 keep only that fragment raw and bind its values.
 
-| Capability missing from 0.6.0 | Runtime examples | Upstream tracking |
+| Capability missing from 0.7.0 | Runtime examples | Upstream tracking |
 | --- | --- | --- |
 | SQLite `ON CONFLICT ... DO UPDATE`, inserted expressions, and `RETURNING` | Selected-field memory/source/sync upserts; feedback and edge counter increments; `code_row` database timestamps and generated ids | [#108](https://github.com/Falconiere/toolu-orm/issues/108) |
 | `DISTINCT`, `GROUP BY`, `HAVING`, and typed aggregate projections | `sources` status counts; unique code paths; grouped graph nodes; deduplicated feedback queries | [#109](https://github.com/Falconiere/toolu-orm/issues/109) |
@@ -61,24 +63,24 @@ pragma methods; those methods still belong inside the store boundary.
 
 ## Version-specific traps
 
-The audit checked installed 0.6.0 source and upstream main on 2026-09-18,
-when main declared 0.7.0. The capability issues above include concrete
-consumer examples and references to the inspected upstream APIs.
+The audit checked published 0.7.0 source on 2026-09-18 after upgrading from
+0.6.0. The retained query capabilities above remain unsupported. Their
+issues include concrete consumer examples and inspected upstream APIs.
 
 - **Raw expression parameter numbering:** a parameterized `Expr::raw` after
   another bound predicate inside one `.and()`/`.or()` expression reuses the
   earlier placeholder index. This was reproduced against the installed
-  library and still appeared upstream ([#113](https://github.com/Falconiere/toolu-orm/issues/113)).
+  0.6.0 library and remains in 0.7.0 ([#113](https://github.com/Falconiere/toolu-orm/issues/113)).
   Separate top-level `.filter(...)` calls correctly offset their parameters.
   Use bare `?` placeholders in independently composed raw fragments; do not
   carry a whole statement's numbered placeholders into them.
-- **One-row fetches:** installed ORM `fetch_one`/`fetch_optional` collect all
-  matching rows before choosing one. The store bridge retains rusqlite's
-  direct one-row reads. The upstream fix is tracked by closed
-  [#87](https://github.com/Falconiere/toolu-orm/issues/87).
-- **Offset without limit:** 0.6.0 emits an invalid SQLite offset-only clause.
-  Preserve `LIMIT -1` for unlimited offset pagination. The upstream fix is
-  tracked by closed [#92](https://github.com/Falconiere/toolu-orm/issues/92).
+- **One-row fetches:** 0.7.0 fixes ORM `fetch_one`/`fetch_optional` collecting
+  all matches before selecting one ([#87](https://github.com/Falconiere/toolu-orm/issues/87)).
+  The store bridge still reads one row directly to preserve native errors
+  and the existing connection and transaction boundaries.
+- **Offset without limit:** 0.7.0 automatically emits SQLite's `LIMIT -1` for
+  offset-only pagination, fixing 0.6.0 ([#92](https://github.com/Falconiere/toolu-orm/issues/92)).
+  Existing explicit `LIMIT -1` queries remain equivalent.
 - **Projection order:** builders emit ordinary columns before `column_expr`
   projections. Keep row decoder indexes aligned when a query mixes them.
   Typed projections currently omit table qualification; duplicate joined

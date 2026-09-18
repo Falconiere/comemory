@@ -65,7 +65,7 @@ pub fn fetch_meta(conn: &Connection, ids: &[&str]) -> Result<HashMap<String, Mem
 /// rows are excluded so a hit that raced a delete falls back to the caller's
 /// defaults rather than surfacing a tombstoned path.
 fn fetch_rows(conn: &Connection, ids: &[Value]) -> Result<HashMap<String, MemoryMeta>> {
-    let query = Memories::select()
+    let query = live_memories()
         .columns_typed(&[
             &memories::id,
             &memories::md_path,
@@ -73,8 +73,7 @@ fn fetch_rows(conn: &Connection, ids: &[Value]) -> Result<HashMap<String, Memory
             &memories::kind,
             &memories::slug,
         ])
-        .filter(memories::id.in_list(ids))
-        .filter(memories::deleted_at.is_null());
+        .filter(memories::id.in_list(ids));
     let rows = orm::query_all(conn, query.to_sql(), |r| {
         Ok((
             r.get::<_, String>(0)?,
@@ -165,10 +164,9 @@ pub fn ids_matching_kind(conn: &Connection, kind: &str, ids: &[&str]) -> Result<
 /// soft-deleted. Used by `comemory context` to assemble a bundle row for
 /// each matched memory id.
 pub fn kind_and_body(conn: &Connection, id: &str) -> Result<Option<(String, String)>> {
-    let query = Memories::select()
+    let query = live_memories()
         .columns_typed(&[&memories::kind, &memories::body])
-        .filter(memories::id.eq(id))
-        .filter(memories::deleted_at.is_null());
+        .filter(memories::id.eq(id));
     orm::query_optional(conn, query.to_sql(), |r| Ok((r.get(0)?, r.get(1)?)))
 }
 
@@ -199,7 +197,7 @@ pub struct ExtraFields {
 /// Fetch [`ExtraFields`] for one live memory. `Ok(None)` for an unknown or
 /// soft-deleted id.
 pub fn fetch_extra(conn: &Connection, id: &str) -> Result<Option<ExtraFields>> {
-    let query = Memories::select()
+    let query = live_memories()
         .columns_typed(&[
             &memories::body,
             &memories::author,
@@ -210,8 +208,7 @@ pub fn fetch_extra(conn: &Connection, id: &str) -> Result<Option<ExtraFields>> {
             &memories::last_accessed,
             &memories::rank_score,
         ])
-        .filter(memories::id.eq(id))
-        .filter(memories::deleted_at.is_null());
+        .filter(memories::id.eq(id));
     orm::query_optional(conn, query.to_sql(), |r| {
         let author: Option<String> = r.get(1)?;
         Ok(ExtraFields {
@@ -253,7 +250,7 @@ pub struct RankSignals {
 /// the row does not exist or is soft-deleted. `prepare_cached` so a
 /// per-candidate rerank loop reuses one prepared statement.
 pub fn rank_signals(conn: &Connection, id: &str) -> Result<Option<RankSignals>> {
-    let query = Memories::select()
+    let query = live_memories()
         .columns_typed(&[])
         .column_expr(&memories::quality.qualified(), "quality")
         .column_expr(&memories::access_count.qualified(), "access_count")
@@ -267,8 +264,7 @@ pub fn rank_signals(conn: &Connection, id: &str) -> Result<Option<RankSignals>> 
         .column_expr("COALESCE(feedback.irrelevant_count, 0)", "irrelevant_count")
         .column_expr(&memories::rank_score.qualified(), "rank_score")
         .left_join("feedback", feedback::memory_id.equals(&memories::id))
-        .filter(memories::id.eq(id))
-        .filter(memories::deleted_at.is_null());
+        .filter(memories::id.eq(id));
     orm::query_optional(conn, query.to_sql(), |r| {
         Ok(RankSignals {
             quality: r.get(0)?,
@@ -331,6 +327,11 @@ pub fn keeper_stats(conn: &Connection, ids: &[&str]) -> Result<Vec<(String, Keep
             },
         ))
     })
+}
+
+/// Start a read that excludes soft-deleted memories.
+fn live_memories() -> toolu_orm::query::select::SelectBuilder {
+    Memories::select().filter(memories::deleted_at.is_null())
 }
 
 #[cfg(test)]

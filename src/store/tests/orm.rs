@@ -96,3 +96,75 @@ fn caller_transaction_rolls_back_generated_writes() {
         0
     );
 }
+
+#[test]
+fn repeated_execution_rebinds_each_row_and_counts_matches() {
+    let conn = connection();
+    assert_eq!(
+        execute_many(&conn, insert("", ""), [("first", "old"), ("second", "old")]).unwrap(),
+        2
+    );
+    let update = SchemaMeta::update()
+        .set(&schema_meta::value, "")
+        .filter(schema_meta::key.eq(""));
+    assert_eq!(
+        execute_many(
+            &conn,
+            update.to_sql(),
+            [
+                ("new one", "first"),
+                ("ignored", "missing"),
+                ("new two", "second")
+            ],
+        )
+        .unwrap(),
+        2
+    );
+    let values: Vec<(String, String)> = query_all(
+        &conn,
+        SchemaMeta::select()
+            .columns_typed(&[&schema_meta::key, &schema_meta::value])
+            .order_by(schema_meta::key.asc())
+            .to_sql(),
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )
+    .unwrap();
+    assert_eq!(
+        values,
+        [
+            ("first".into(), "new one".into()),
+            ("second".into(), "new two".into())
+        ]
+    );
+}
+
+#[test]
+fn repeated_execution_preserves_errors_and_caller_rollback() {
+    let mut conn = connection();
+    {
+        let tx = conn.transaction().unwrap();
+        let result = execute_many(
+            &tx,
+            insert("", ""),
+            [
+                ("same", "first"),
+                ("same", "duplicate"),
+                ("later", "not reached"),
+            ],
+        );
+        assert!(matches!(
+            result,
+            Err(Error::Sqlite(rusqlite::Error::SqliteFailure(..)))
+        ));
+        assert_eq!(
+            query_optional(&tx, select("later"), |r| r.get::<_, String>(0)).unwrap(),
+            None
+        );
+    }
+    assert_eq!(
+        query_one(&conn, SchemaMeta::select().to_count_sql(), |r| r
+            .get::<_, i64>(0))
+        .unwrap(),
+        0
+    );
+}

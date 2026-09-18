@@ -26,9 +26,7 @@ pub fn set_memory_vector_model(conn: &Connection, model: &str) -> Result<()> {
 /// behind `comemory sync`'s wire vector encode/decode. Missing row is a
 /// config error, not a `None` — every migrated database stamps this key.
 pub fn memory_vector_model(conn: &Connection) -> Result<String> {
-    let query = SchemaMeta::select()
-        .columns_typed(&[&schema_meta::value])
-        .filter(schema_meta::key.eq("memory_vector_model"));
+    let query = select_value("memory_vector_model");
     // Preserve the existing configuration error text, including its driver cause.
     orm::query_one(conn, query.to_sql(), |r| r.get(0)).map_err(|e| match e {
         Error::Sqlite(cause) => Error::Config(format!("memory_vector_model: {cause}")),
@@ -43,17 +41,13 @@ pub fn memory_vector_model(conn: &Connection) -> Result<String> {
 /// `migrate::run` never touched, not a normal "not found" a caller should
 /// branch on.
 pub fn version(conn: &Connection) -> Result<String> {
-    let query = SchemaMeta::select()
-        .columns_typed(&[&schema_meta::value])
-        .filter(schema_meta::key.eq("version"));
+    let query = select_value("version");
     orm::query_one(conn, query.to_sql(), |r| r.get(0))
 }
 
 /// Read the `schema_meta` value stored under `key`, or `None` when absent.
 pub(crate) fn get(conn: &Connection, key: &str) -> Result<Option<String>> {
-    let query = SchemaMeta::select()
-        .columns_typed(&[&schema_meta::value])
-        .filter(schema_meta::key.eq(key));
+    let query = select_value(key);
     orm::query_optional(conn, query.to_sql(), |r| r.get(0))
 }
 
@@ -66,6 +60,13 @@ pub(crate) fn upsert(conn: &Connection, key: &str, value: &str) -> Result<()> {
         params![key, value],
     )?;
     Ok(())
+}
+
+/// Select the stored value for one metadata key.
+fn select_value(key: &str) -> toolu_orm::query::select::SelectBuilder {
+    SchemaMeta::select()
+        .columns_typed(&[&schema_meta::value])
+        .filter(schema_meta::key.eq(key))
 }
 
 #[cfg(test)]

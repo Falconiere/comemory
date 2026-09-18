@@ -40,7 +40,7 @@ is the source of truth and one SQLite file (`comemory.db`) backs FTS5 +
   `memory_fts` (FTS5), `memory_substring` (external-content trigram FTS5), `memory_vec` (`sqlite-vec` `vec0`), `code_symbols`,
   `code_fts`, `code_vec`, `edges`, `schema_meta`, plus stats / repo-marker
   tables. `rusqlite 0.40` with `bundled` + `load_extension` features.
-- **Declared schema (toolu-orm 0.6):** every table in `comemory.db` is a
+- **Declared schema (toolu-orm 0.7):** every table in `comemory.db` is a
   `#[table]` / `#[fts5_table]` / `#[vec0_table]` struct in
   `src/store/schema_*.rs`, assembled by `store::schema::registry()`.
   `just migration <name>` diffs the structs against

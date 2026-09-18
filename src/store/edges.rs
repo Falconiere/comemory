@@ -180,8 +180,7 @@ pub(crate) fn current_weight(conn: &Connection, e: EdgeKey<'_>) -> Result<i64> {
         conn,
         Edges::select()
             .columns_typed(&[&c::weight])
-            .filter(c::src_kind.eq(e.src_kind))
-            .filter(c::src_id.eq(e.src_id))
+            .filter(source_node(e.src_kind, e.src_id))
             .filter(c::dst_kind.eq(e.dst_kind))
             .filter(c::dst_id.eq(e.dst_id))
             .filter(c::rel.eq(e.rel))
@@ -214,8 +213,7 @@ pub fn outgoing(
         conn,
         Edges::select()
             .columns_typed(&[&c::dst_kind, &c::dst_id])
-            .filter(c::src_kind.eq(src_kind))
-            .filter(c::src_id.eq(src_id))
+            .filter(source_node(src_kind, src_id))
             .filter(c::rel.eq(rel))
             .to_sql(),
         |r| Ok((r.get(0)?, r.get(1)?)),
@@ -258,13 +256,7 @@ pub fn supersedes_chain(conn: &Connection, start: &str, max_depth: u32) -> Resul
 /// replays memories newest-first, so the superseder's edge is already in
 /// place when the superseded memory is inserted.
 pub fn delete_outgoing(conn: &Connection, kind: &str, id: &str) -> Result<()> {
-    orm::execute(
-        conn,
-        Edges::delete()
-            .filter(c::src_kind.eq(kind))
-            .filter(c::src_id.eq(id))
-            .to_sql(),
-    )?;
+    orm::execute(conn, Edges::delete().filter(source_node(kind, id)).to_sql())?;
     Ok(())
 }
 
@@ -274,12 +266,7 @@ pub fn delete_touching(conn: &Connection, kind: &str, id: &str) -> Result<()> {
     orm::execute(
         conn,
         Edges::delete()
-            .filter(
-                c::src_kind
-                    .eq(kind)
-                    .and(c::src_id.eq(id))
-                    .or(c::dst_kind.eq(kind).and(c::dst_id.eq(id))),
-            )
+            .filter(source_node(kind, id).or(c::dst_kind.eq(kind).and(c::dst_id.eq(id))))
             .to_sql(),
     )?;
     Ok(())
@@ -348,8 +335,7 @@ pub(crate) fn delete_imports_from(conn: &Connection, src_id: &str) -> Result<()>
     orm::execute(
         conn,
         Edges::delete()
-            .filter(c::src_kind.eq("file"))
-            .filter(c::src_id.eq(src_id))
+            .filter(source_node("file", src_id))
             .filter(c::rel.eq("imports"))
             .to_sql(),
     )?;
@@ -455,6 +441,11 @@ pub(crate) fn file_neighbor_rows(
     min_weight: i64,
 ) -> Result<Vec<(String, String, String, i64)>> {
     super::edges_neighbors::file_neighbor_rows(conn, seeds_json, min_weight)
+}
+
+/// Match one source node by both its kind and identifier.
+fn source_node(kind: &str, id: &str) -> toolu_orm::core::expr::Expr {
+    c::src_kind.eq(kind).and(c::src_id.eq(id))
 }
 
 #[cfg(test)]

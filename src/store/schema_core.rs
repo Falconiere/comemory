@@ -2,10 +2,10 @@
 //! runner's own `schema_meta` key/value store and the derived `edge_fts`
 //! triplet index over `edges`.
 //!
-//! The structs here (and in every `schema_*.rs` sibling) are schema
-//! declarations shared by migration generation and runtime query builders.
-//! `registry()` in `schema.rs` assembles the migration input; store helpers
-//! use the generated columns and builders through `store::orm`.
+//! These structs declare schema metadata and generate column constants and
+//! query constructors through their attributes. `registry()` in `schema.rs`
+//! assembles the migration input; runtime store helpers in other modules
+//! consume the generated columns and constructors through `store::orm`.
 
 use toolu_orm::core::column::Text;
 use toolu_orm::{fts5_table, table};

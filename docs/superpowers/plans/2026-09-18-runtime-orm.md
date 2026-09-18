@@ -13,7 +13,7 @@ transactions. Generate SQL and bound values using the declared schema, then
 execute through a small store-private bridge that preserves owned results,
 row decoding, affected-row counts, and SQLite error classification.
 
-**Tech stack:** Rust, toolu-orm 0.6.0, rusqlite 0.40, SQLite FTS5/sqlite-vec.
+**Tech stack:** Rust, toolu-orm 0.7.0, rusqlite 0.40, SQLite FTS5/sqlite-vec.
 
 **Spec:** The user request in this session and the binding rules in AGENTS.md.
 
@@ -75,10 +75,12 @@ orm::query_optional(conn, query.to_sql(), |row| row.get(0))
 
 ## Review and validation notes
 
-- Final validation: 2,459 tests passed across 121 binaries; every
+- Validation after the 0.7.0 upgrade: 2,462 tests passed across 121 binaries; every
   `bash scripts/check-all.sh` gate passed. `git diff --check` is clean.
 - Upstream gaps are filed as Falconiere/toolu-orm #108–#116 and mapped in
-  `docs/guides/runtime-orm.md`. Shipped migrations and Cargo.lock are unchanged.
+  `docs/guides/runtime-orm.md`. Shipped migrations are unchanged. The requested
+  upgrade updates only the six toolu-orm packages in Cargo.lock from 0.6.0
+  to 0.7.0.
 - Independent query review caught fractional BM25 weight rounding; a real
   SQLite regression failed before the correction and passed afterward.
 - Committed-diff review also caught duplicated bindings for both co-change
@@ -88,12 +90,12 @@ orm::query_optional(conn, query.to_sql(), |row| row.get(0))
 - The setup hook test now selects only `git-hooks`, avoiding a pre-existing
   dependence on the developer's registered Codex marketplace. The original
   handwritten-hook preservation assertion remains unchanged.
-- The additional duplication scan still fails the existing baseline of 113.
-  With the same similarity-rs 0.5.0 invocation, HEAD has 242 pairs and this
-  change has 278, including new files normally omitted by `git ls-files`.
-  Review of the 47 added and 11 removed pairs identified shared row execution
-  and metadata ID binding, which were extracted. Remaining matches reflect
-  typed CRUD chains and thin wrappers, including read-versus-write pairs.
-  `docs/dup-debt.md` documents the pre-existing baseline problem; the baseline
-  is unchanged. Comparison artifacts are in
-  `/tmp/comemory-duplicate-review-m9uj6yej/final_comparison.md` for this session.
+- Review follow-up generates and prepares rank/simhash updates once per batch.
+  Real SQLite regressions cover rebinding, affected-row counts, native errors,
+  early failure, and caller rollback.
+- The additional duplication scan reports 271 pairs with similarity-rs 0.5.0,
+  down from 278 before shared edge identity, metadata reads, live-memory scope,
+  document joins, and vector-write helpers. Current main enables this CI gate
+  with a baseline of 242; the check remains unresolved. The baseline and
+  detector settings are unchanged. Remaining matches include distinct typed
+  CRUD operations and short wrappers whose execution is already shared.

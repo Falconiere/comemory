@@ -280,24 +280,17 @@ fn recompute_simhashes<T>(
 ) -> Result<()> {
     let rows: Vec<(rusqlite::types::Value, String)> =
         orm::query_all(tx, query.to_sql(), |r| Ok((r.get(0)?, r.get(1)?)))?;
-    for (id, text) in rows {
-        let id = match id {
-            rusqlite::types::Value::Null => Value::Null,
-            rusqlite::types::Value::Integer(value) => Value::Integer(value),
-            rusqlite::types::Value::Real(value) => Value::Real(value),
-            rusqlite::types::Value::Text(value) => Value::Text(value),
-            rusqlite::types::Value::Blob(value) => Value::Blob(value),
-        };
-        // SQLite INTEGER is i64; store the u64 bit pattern.
-        let hash = crate::utilities::simhash::of_body(&text) as i64;
-        orm::execute(
-            tx,
-            UpdateBuilder::new(query.table_name())
-                .set(simhash_column, hash)
-                .filter(id_column.eq(id))
-                .to_sql(),
-        )?;
-    }
+    let update = UpdateBuilder::new(query.table_name())
+        .set(simhash_column, 0_i64)
+        .filter(id_column.eq(Value::Null));
+    orm::execute_many(
+        tx,
+        update.to_sql(),
+        rows.into_iter().map(|(id, text)| {
+            // SQLite INTEGER is i64; store the u64 bit pattern.
+            (crate::utilities::simhash::of_body(&text) as i64, id)
+        }),
+    )?;
     Ok(())
 }
 

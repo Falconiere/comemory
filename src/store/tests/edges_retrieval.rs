@@ -335,9 +335,11 @@ fn direct_reference_edges_is_empty_for_a_memory_with_no_references() {
 }
 
 #[test]
-fn co_change_weight_reuses_bindings_for_large_working_sets() {
+fn co_change_weight_handles_large_working_sets() {
     let conn = seed_db();
     let fid = "file:r:candidate.rs";
+    // Binding both orientations separately needs 32,767 variables, exceeding
+    // bundled SQLite's 32,766 limit. This size failed before placeholder reuse.
     let files: Vec<String> = (0..16_381).map(|n| format!("file:r:{n}.rs")).collect();
     for (src, dst, weight) in [
         (fid, files[0].as_str(), 7),

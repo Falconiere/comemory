@@ -46,36 +46,17 @@ pub fn is_loaded(conn: &Connection) -> bool {
 
 /// Read the configured memory vector dim from schema_meta.
 pub fn dim_memory(conn: &Connection) -> Result<usize> {
-    let query = SchemaMeta::select()
-        .columns_typed(&[&schema_meta::value])
-        .filter(schema_meta::key.eq("memory_vector_dim"));
-    let v: String = orm::query_one(conn, query.to_sql(), |row| row.get(0))?;
-    v.parse::<usize>()
-        .map_err(|e| Error::Config(format!("memory_vector_dim: {e}")))
+    read_dimension(conn, "memory_vector_dim")
 }
 
 /// Read the configured code vector dim from schema_meta.
 pub fn dim_code(conn: &Connection) -> Result<usize> {
-    let query = SchemaMeta::select()
-        .columns_typed(&[&schema_meta::value])
-        .filter(schema_meta::key.eq("code_vector_dim"));
-    let v: String = orm::query_one(conn, query.to_sql(), |row| row.get(0))?;
-    v.parse::<usize>()
-        .map_err(|e| Error::Config(format!("code_vector_dim: {e}")))
+    read_dimension(conn, "code_vector_dim")
 }
 
 /// Insert a memory vector. Dim is validated against schema_meta.
 pub fn insert_memory(conn: &Connection, memory_id: &str, vector: &[f32]) -> Result<()> {
-    let dim = dim_memory(conn)?;
-    embed::guard_dim(vector, dim)?;
-    orm::execute(
-        conn,
-        MemoryVec::insert()
-            .set(&memory_vec::memory_id, memory_id)
-            .set(&memory_vec::embedding, embed::to_vec_blob(vector))
-            .to_sql(),
-    )?;
-    Ok(())
+    write_vector(conn, VectorTarget::Memory(memory_id), vector, false)
 }
 
 /// Replace a memory's `memory_vec` row: drop any prior row for `memory_id`,
@@ -86,13 +67,7 @@ pub fn insert_memory(conn: &Connection, memory_id: &str, vector: &[f32]) -> Resu
 /// re-save (`domains::memories::save`) and re-embed (`maintenance::reembed`) of the same memory
 /// must replace, not duplicate.
 pub fn replace_memory(conn: &Connection, memory_id: &str, vector: &[f32]) -> Result<()> {
-    orm::execute(
-        conn,
-        MemoryVec::delete()
-            .filter(memory_vec::memory_id.eq(memory_id))
-            .to_sql(),
-    )?;
-    insert_memory(conn, memory_id, vector)
+    write_vector(conn, VectorTarget::Memory(memory_id), vector, true)
 }
 
 /// Raw `memory_vec.embedding` blob for `memory_id`, or `None` when it has no
@@ -187,28 +162,13 @@ pub struct CodeHit {
 
 /// Insert a code vector. Dim is validated against schema_meta.
 pub fn insert_code(conn: &Connection, symbol_id: i64, vector: &[f32]) -> Result<()> {
-    let dim = dim_code(conn)?;
-    embed::guard_dim(vector, dim)?;
-    orm::execute(
-        conn,
-        CodeVec::insert()
-            .set(&code_vec::symbol_id, symbol_id)
-            .set(&code_vec::embedding, embed::to_vec_blob(vector))
-            .to_sql(),
-    )?;
-    Ok(())
+    write_vector(conn, VectorTarget::Code(symbol_id), vector, false)
 }
 
 /// Replace a code symbol's `code_vec` row — the code-side twin of
 /// [`replace_memory`], used by `maintenance::reembed`'s re-vectorize-in-place run.
 pub fn replace_code(conn: &Connection, symbol_id: i64, vector: &[f32]) -> Result<()> {
-    orm::execute(
-        conn,
-        CodeVec::delete()
-            .filter(code_vec::symbol_id.eq(symbol_id))
-            .to_sql(),
-    )?;
-    insert_code(conn, symbol_id, vector)
+    write_vector(conn, VectorTarget::Code(symbol_id), vector, true)
 }
 
 /// Top-k nearest code symbols, optionally restricted to one `repo`
@@ -260,6 +220,55 @@ pub fn knn_code(
             distance: row.get(1)?,
         })
     })
+}
+
+/// A vector identity selects one of the two independently sized indexes.
+#[derive(Clone, Copy)]
+enum VectorTarget<'a> {
+    Memory(&'a str),
+    Code(i64),
+}
+
+/// Share vector validation and encoding, preserving delete-before-validation on replacement.
+fn write_vector(
+    conn: &Connection,
+    target: VectorTarget<'_>,
+    vector: &[f32],
+    replace: bool,
+) -> Result<()> {
+    if replace {
+        let deletion = match target {
+            VectorTarget::Memory(id) => MemoryVec::delete().filter(memory_vec::memory_id.eq(id)),
+            VectorTarget::Code(id) => CodeVec::delete().filter(code_vec::symbol_id.eq(id)),
+        };
+        orm::execute(conn, deletion.to_sql())?;
+    }
+    let key = match target {
+        VectorTarget::Memory(_) => "memory_vector_dim",
+        VectorTarget::Code(_) => "code_vector_dim",
+    };
+    embed::guard_dim(vector, read_dimension(conn, key)?)?;
+    let blob = embed::to_vec_blob(vector);
+    let insertion = match target {
+        VectorTarget::Memory(id) => MemoryVec::insert()
+            .set(&memory_vec::memory_id, id)
+            .set(&memory_vec::embedding, blob),
+        VectorTarget::Code(id) => CodeVec::insert()
+            .set(&code_vec::symbol_id, id)
+            .set(&code_vec::embedding, blob),
+    };
+    orm::execute(conn, insertion.to_sql())?;
+    Ok(())
+}
+
+/// Read and parse one configured index dimension.
+fn read_dimension(conn: &Connection, key: &str) -> Result<usize> {
+    let query = SchemaMeta::select()
+        .columns_typed(&[&schema_meta::value])
+        .filter(schema_meta::key.eq(key));
+    let v: String = orm::query_one(conn, query.to_sql(), |row| row.get(0))?;
+    v.parse::<usize>()
+        .map_err(|e| Error::Config(format!("{key}: {e}")))
 }
 
 #[cfg(test)]

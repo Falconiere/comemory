@@ -11,15 +11,14 @@ use toolu_orm::core::{query_column::CommonOps, value::Value};
 /// Write one `rank_score` per memory id, positionally aligned with `scores`.
 /// See [`crate::domains::graph::memory_rank::materialize_memory_rank`].
 pub(crate) fn update_rank_scores(conn: &Connection, ids: &[String], scores: &[f64]) -> Result<()> {
-    for (id, score) in ids.iter().zip(scores) {
-        orm::execute(
-            conn,
-            Memories::update()
-                .set(&memories::rank_score, *score)
-                .filter(memories::id.eq(id.as_str()))
-                .to_sql(),
-        )?;
-    }
+    let query = Memories::update()
+        .set(&memories::rank_score, 0.0)
+        .filter(memories::id.eq(""));
+    orm::execute_many(
+        conn,
+        query.to_sql(),
+        ids.iter().zip(scores).map(|(id, score)| (score, id)),
+    )?;
     Ok(())
 }
 

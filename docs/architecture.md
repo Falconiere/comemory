@@ -188,7 +188,7 @@ schema changes are always a new, appended, numbered file.
 
 Since v0.29 the schema is *declared*, not only migrated: every table in
 `comemory.db` is a `#[table]` / `#[fts5_table]` / `#[vec0_table]` struct
-under `src/store/schema_*.rs` (toolu-orm 0.6), and
+under `src/store/schema_*.rs` (toolu-orm 0.7), and
 `store::schema::registry()` assembles them into a `SchemaRegistry`.
 `examples/migrations.rs` (`just migration <name>`) diffs that registry
 against `migrations/<newest>.snapshot.json` and, when something changed,
@@ -216,7 +216,7 @@ expects nothing. See [Schema migrations](guides/schema-migrations.md).
 Runtime queries also use the declared table builders. The private
 `store::orm` bridge executes generated SQL and bound values on the existing
 connection, preserving native errors, owned results, statement caching, and
-caller-owned transactions. Complex queries that toolu-orm 0.6 cannot express
+caller-owned transactions. Complex queries that toolu-orm 0.7 cannot express
 remain in the store, with upstream issues in the
 [runtime query inventory](guides/runtime-orm.md). Scoped statistics accept
 `stats_counts::Corpus` instead of a table/predicate SQL pair. Schema snapshots,

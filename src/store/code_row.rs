@@ -293,19 +293,18 @@ pub(crate) fn update_rank_scores(
     paths: &[String],
     scores: &[f64],
 ) -> Result<u64> {
-    let mut written: u64 = 0;
-    for (path, score) in paths.iter().zip(scores) {
-        let rows = orm::execute(
-            conn,
-            CodeSymbols::update()
-                .set(&c::rank_score, *score)
-                .filter(c::repo.eq(repo))
-                .filter(c::path.eq(path.as_str()))
-                .to_sql(),
-        )?;
-        written = written.saturating_add(u64::try_from(rows).unwrap_or(0));
-    }
-    Ok(written)
+    let query = CodeSymbols::update()
+        .set(&c::rank_score, 0.0)
+        .filter(c::repo.eq(repo))
+        .filter(c::path.eq(""));
+    orm::execute_many(
+        conn,
+        query.to_sql(),
+        paths
+            .iter()
+            .zip(scores)
+            .map(|(path, score)| (score, repo, path)),
+    )
 }
 
 /// One `code_symbols` row resolved by [`find_by_address`]: the rowid, its

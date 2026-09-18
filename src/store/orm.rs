@@ -20,6 +20,23 @@ pub(super) fn execute(conn: &Connection, query: (String, Vec<Value>)) -> Result<
         .execute(params_from_iter(values))?)
 }
 
+/// Execute one generated statement repeatedly with row-specific bindings.
+/// The query's initial values establish its placeholder shape; each row replaces
+/// all of them in the same order. The caller owns any surrounding transaction.
+pub(super) fn execute_many<P: rusqlite::Params>(
+    conn: &Connection,
+    query: (String, Vec<Value>),
+    rows: impl IntoIterator<Item = P>,
+) -> Result<u64> {
+    let mut statement = conn.prepare_cached(&query.0)?;
+    let mut written = 0_u64;
+    for values in rows {
+        let count = statement.execute(values)?;
+        written = written.saturating_add(u64::try_from(count).unwrap_or(0));
+    }
+    Ok(written)
+}
+
 /// Decode all rows from a generated query into owned values.
 pub(super) fn query_all<T>(
     conn: &Connection,
