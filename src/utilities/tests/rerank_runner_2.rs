@@ -120,7 +120,7 @@ fn backend_args_at(rest: &[&str], path: &Path) -> Vec<OsString> {
 /// body `RerankRequest` cannot express.
 fn backend_process(rest: &[&str]) -> ProcessRunner {
     require_python();
-    ProcessRunner::new("python3", backend_args(rest)).with_timeout(Duration::from_secs(60))
+    ProcessRunner::new("python3", backend_args(rest)).with_timeout(Duration::from_mins(1))
 }
 
 /// The three candidates whose scores the design document computes by hand:
@@ -372,8 +372,10 @@ fn a_warm_server_answers_two_requests_without_reloading() {
     assert_eq!(first.order_ids(), vec![CODE, DOCUMENT, MEMORY]);
     assert_eq!(second.order_ids(), vec![CODE, DOCUMENT, MEMORY]);
 
-    let _ = server.kill();
-    let _ = server.wait();
+    // Stop the server before reading its log, so every line it will ever write
+    // is already there. The guard would reap it anyway, including on a panic
+    // above; this is about the log being complete, not about the process.
+    drop(server);
 
     // The observation that makes "warm" a fact rather than a claim: the server
     // process announced readiness once and served twice, so the model — here a
@@ -492,8 +494,6 @@ fn a_second_server_never_displaces_the_one_already_listening() {
     let client = RerankRunner::new("python3", backend_args_at(&["client", "--socket"], &socket))
         .with_timeout(Duration::from_secs(30));
     let outcome = client.rerank(&request(LEXICAL_MODEL, None, hand_computed_candidates()));
-    let _ = server.kill();
-    let _ = server.wait();
     assert!(
         outcome.is_applied(),
         "the incumbent must still serve: {outcome:?}"
@@ -508,7 +508,7 @@ fn the_opt_in_model_suite_never_reports_success_without_its_prerequisites() {
         "/integrations/reranker/comemory_rerank_preflight.py"
     ));
     let runner = ProcessRunner::new("python3", vec![preflight.into_os_string()])
-        .with_timeout(Duration::from_secs(60));
+        .with_timeout(Duration::from_mins(1));
     let output = runner.run(b"").expect("the preflight must complete");
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     match output.status.code() {
@@ -529,10 +529,25 @@ fn the_opt_in_model_suite_never_reports_success_without_its_prerequisites() {
     }
 }
 
+/// Owns a warm server for the length of a test and always reaps it.
+///
+/// `Child`'s own `Drop` neither kills nor waits, so an assertion that panics
+/// between the spawn and an explicit `kill` would leave the server running for
+/// the rest of the suite. A guard makes the cleanup unconditional, which is
+/// what "always reaped" has to mean if it is to survive a failing test.
+struct ServerGuard(Child);
+
+impl Drop for ServerGuard {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
 /// Start a real warm server with its stderr captured to `log`.
-fn spawn_server(socket: &Path, ready: &Path, log: &Path) -> Child {
+fn spawn_server(socket: &Path, ready: &Path, log: &Path) -> ServerGuard {
     let sink = fs::File::create(log).expect("server log");
-    Command::new("python3")
+    let child = Command::new("python3")
         .arg(backend())
         .arg("serve")
         .arg("--scoring")
@@ -545,18 +560,25 @@ fn spawn_server(socket: &Path, ready: &Path, log: &Path) -> Child {
         .stdout(Stdio::null())
         .stderr(Stdio::from(sink))
         .spawn()
-        .expect("the warm server must start")
+        .expect("the warm server must start");
+    ServerGuard(child)
 }
 
 /// Block until the server publishes its ready file, or fail the test.
-fn await_ready(ready: &Path, server: &mut Child) {
+///
+/// A server that died during start-up is reported as the exit status it died
+/// with, immediately. Waiting out the full deadline first would cost thirty
+/// seconds and then report a timeout, which says nothing about why.
+fn await_ready(ready: &Path, server: &mut ServerGuard) {
     let deadline = Instant::now() + Duration::from_secs(30);
     while !ready.exists() {
-        if Instant::now() > deadline {
-            let _ = server.kill();
-            let _ = server.wait();
-            panic!("the warm server never became ready within 30s");
+        if let Some(status) = server.0.try_wait().expect("the server must be pollable") {
+            panic!("the warm server exited with {status} before becoming ready");
         }
+        assert!(
+            Instant::now() <= deadline,
+            "the warm server never became ready within 30s"
+        );
         sleep(Duration::from_millis(20));
     }
 }
@@ -565,7 +587,7 @@ fn await_ready(ready: &Path, server: &mut Child) {
 fn wait_then_drive(
     ready: &Path,
     socket: &Path,
-    server: &mut Child,
+    server: &mut ServerGuard,
 ) -> (RerankOutcome, RerankOutcome) {
     await_ready(ready, server);
     let runner = RerankRunner::new("python3", backend_args_at(&["client", "--socket"], socket))

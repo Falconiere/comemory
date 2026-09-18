@@ -63,11 +63,8 @@ def serve(scorer, path: str, ready_file: str | None, idle_timeout: float) -> int
     """
     server = _bind(path)
     try:
-        started = time.perf_counter()
         load_ms = scorer.load()
         _diag("fingerprint " + json.dumps(scorer.fingerprint(), separators=(",", ":")))
-        if not load_ms:
-            load_ms = int((time.perf_counter() - started) * 1000)
         if ready_file:
             _write_ready(ready_file, path)
         _diag("ready socket=" + path + " load_ms=" + str(load_ms))
@@ -161,11 +158,19 @@ def _bind(path: str) -> socket.socket:
     """Take ownership of `path`, refusing to displace a live server on it."""
     _clear_stale(path)
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    # Both, and in this order. The umask is what makes the socket private at
+    # the instant it is created, leaving no window in which it is world
+    # reachable; the chmod then states the intended mode explicitly and does
+    # not depend on a process-global that something else could have changed.
+    # `_bind` runs once, before any worker exists, so the global is not shared
+    # with anything here — but it is restored immediately regardless.
     previous = os.umask(0o077)
     try:
         server.bind(path)
+        os.chmod(path, 0o600)
     except OSError as exc:
         server.close()
+        _unlink_quietly(path)
         raise pins.RerankError(
             "cannot bind " + path + ": " + str(exc), pins.EX_CANTCREAT
         ) from exc

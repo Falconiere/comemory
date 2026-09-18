@@ -116,9 +116,7 @@ def _benchmark(scorer, candidates: int, repeat: int) -> int:
     """
     if candidates < 1 or repeat < 1:
         raise pins.RerankError("--candidates and --repeat must both be at least 1", pins.EX_USAGE)
-    started = time.perf_counter()
-    reported = scorer.load()
-    load_ms = reported or int((time.perf_counter() - started) * 1000)
+    load_ms = scorer.load()
     texts = [_BENCHMARK_TEXT.format(index=index) for index in range(candidates)]
     samples = []
     for _ in range(repeat):

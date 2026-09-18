@@ -245,7 +245,19 @@ def checkpoint_keys(path: str) -> set:
             raw = handle.read(8)
             if len(raw) != 8:
                 raise pins.RerankError(path + " is not a safetensors file", pins.EX_DATAERR)
-            header = json.loads(handle.read(int.from_bytes(raw, "little")).decode("utf-8"))
+            declared = int.from_bytes(raw, "little")
+            # The declared length is eight attacker-influenced bytes, so it is
+            # checked against the file it came from before a single byte is
+            # read on its word. A corrupt or hostile checkpoint otherwise gets
+            # to name how much memory this process allocates.
+            available = os.fstat(handle.fileno()).st_size - 8
+            if declared <= 0 or declared > available:
+                raise pins.RerankError(
+                    path + " declares a " + str(declared) + "-byte header, but only "
+                    + str(available) + " bytes follow it",
+                    pins.EX_DATAERR,
+                )
+            header = json.loads(handle.read(declared).decode("utf-8"))
         return {key for key in header if key != "__metadata__"}
     torch, _ = import_core()
     return set(torch.load(path, map_location="cpu", weights_only=True).keys())
