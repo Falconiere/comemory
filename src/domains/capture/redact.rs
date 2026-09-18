@@ -39,7 +39,7 @@ fn compiled_rules() -> &'static [Rule] {
 }
 
 fn compile_rules() -> Result<Vec<Rule>, String> {
-    // Co-located with this module: `src/capture/rules.toml` (not repo-root).
+    // Co-located with this module: `src/domains/capture/rules.toml` (not repo-root).
     let raw = include_str!("rules.toml");
     let table = raw
         .parse::<toml::Table>()

@@ -5,9 +5,9 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::capture::distill::{DistillRequest, run as distill_run};
 use crate::cli::off_runtime::off_runtime;
 use crate::config::paths::{Paths, resolve_data_dir};
+use crate::domains::capture::distill::{DistillRequest, run as distill_run};
 use crate::domains::sync::auth_file::AuthFile;
 use crate::output::json;
 use crate::prelude::*;

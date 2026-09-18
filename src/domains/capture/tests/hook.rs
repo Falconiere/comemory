@@ -7,7 +7,7 @@
 )]
 //! SessionEnd hook installer.
 
-use comemory::capture::hook::{HOOK_MARKER, install};
+use comemory::domains::capture::hook::{HOOK_MARKER, install};
 
 #[test]
 fn install_writes_session_end_command() {

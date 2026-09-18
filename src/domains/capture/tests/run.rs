@@ -7,13 +7,13 @@
 )]
 //! Capture orchestration + platform client against the loopback fixture.
 
-#[path = "../../../tests/common/capture_platform_server.rs"]
+#[path = "../../../../tests/common/capture_platform_server.rs"]
 mod capture_platform_server;
 
 use std::path::PathBuf;
 
 use capture_platform_server::{CapturePlatformServer, CapturePlatformState};
-use comemory::capture::{CaptureRequest, run_capture, run_sources};
+use comemory::domains::capture::{CaptureRequest, run_capture, run_sources};
 use comemory::domains::sync::AuthFile;
 
 fn fixture() -> PathBuf {

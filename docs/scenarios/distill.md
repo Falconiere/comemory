@@ -7,7 +7,7 @@ Requires a prior capture receipt for `--session-id` (platform Slice 3 / CLI
 #121). Nothing is auto-accepted — a human reviews the queue on the platform.
 
 **Runnable tests:** `tests/cli__distill.rs`,
-`src/capture/tests/explicit_save.rs`, `src/capture/tests/candidates.rs`
+`src/domains/capture/tests/explicit_save.rs`, `src/domains/capture/tests/candidates.rs`
 
 **HTTP:** none — platform `/v1/sessions/{id}/candidates` (`transport: "cli-only"`).
 

@@ -11,11 +11,11 @@ use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::path::PathBuf;
 
-use comemory::capture::candidates::{batch_from_extracted, post_candidates};
-use comemory::capture::claude_code::{bash_commands_from_jsonl, read_transcript_file};
-use comemory::capture::explicit_save::extract_explicit_saves;
+use comemory::domains::capture::candidates::{batch_from_extracted, post_candidates};
+use comemory::domains::capture::claude_code::{bash_commands_from_jsonl, read_transcript_file};
+use comemory::domains::capture::explicit_save::extract_explicit_saves;
 
-fn fixture_extracted() -> Vec<comemory::capture::ExtractedCandidate> {
+fn fixture_extracted() -> Vec<comemory::domains::capture::ExtractedCandidate> {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/claude-code-session-saves.jsonl");
     let text = read_transcript_file(&path).unwrap();

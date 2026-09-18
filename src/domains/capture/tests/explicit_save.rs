@@ -9,8 +9,8 @@
 
 use std::path::PathBuf;
 
-use comemory::capture::claude_code::{bash_commands_from_jsonl, read_transcript_file};
-use comemory::capture::explicit_save::extract_explicit_saves;
+use comemory::domains::capture::claude_code::{bash_commands_from_jsonl, read_transcript_file};
+use comemory::domains::capture::explicit_save::extract_explicit_saves;
 
 struct Expected {
     kind: &'static str,
@@ -72,7 +72,7 @@ fn fixture_text() -> String {
     read_transcript_file(&path).expect("fixture readable")
 }
 
-fn extracted() -> Vec<comemory::capture::ExtractedCandidate> {
+fn extracted() -> Vec<comemory::domains::capture::ExtractedCandidate> {
     let commands = bash_commands_from_jsonl(&fixture_text());
     extract_explicit_saves(&commands)
 }

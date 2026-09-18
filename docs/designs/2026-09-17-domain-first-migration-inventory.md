@@ -205,16 +205,6 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/api/stats.rs | comemory::api::stats; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/api/tests/stats.rs | none | domains::maintenance | src/domains/maintenance/stats.rs | #176 |
 | src/api/suggest.rs | comemory::api::suggest; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/api/tests/suggest.rs | none | domains::retrieval | src/domains/retrieval/suggest.rs | #171 |
 | src/api/tune.rs | comemory::api::tune; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/api/tests/tune.rs | none | domains::learning | src/domains/learning/tune.rs | #173 |
-| src/capture.rs | comemory::capture; crate-root-alias | none | none | domains::capture | src/domains/capture.rs | #174 |
-| src/capture/candidates.rs | comemory::capture::candidates; crate-root-alias | src/capture/tests/candidates.rs | none | domains::capture | src/domains/capture/candidates.rs | #174 |
-| src/capture/claude_code.rs | comemory::capture::claude_code; crate-root-alias | src/capture/tests/claude_code.rs | none | domains::capture | src/domains/capture/claude_code.rs | #174 |
-| src/capture/client.rs | comemory::capture::client; crate-root-alias | none | none | domains::capture | src/domains/capture/client.rs | #174 |
-| src/capture/distill.rs | comemory::capture::distill; crate-root-alias | none | none | domains::capture | src/domains/capture/distill.rs | #174 |
-| src/capture/explicit_save.rs | comemory::capture::explicit_save; crate-root-alias | src/capture/tests/explicit_save.rs | none | domains::capture | src/domains/capture/explicit_save.rs | #174 |
-| src/capture/hook.rs | comemory::capture::hook; crate-root-alias | src/capture/tests/hook.rs | none | domains::capture | src/domains/capture/hook.rs | #174 |
-| src/capture/receipt.rs | comemory::capture::receipt; crate-root-alias | none | none | domains::capture | src/domains/capture/receipt.rs | #174 |
-| src/capture/redact.rs | comemory::capture::redact; crate-root-alias | src/capture/tests/redact.rs | src/capture/rules.toml | domains::capture | src/domains/capture/redact.rs | #174 |
-| src/capture/run.rs | comemory::capture::run; crate-root-alias | src/capture/tests/run.rs | none | domains::capture | src/domains/capture/run.rs | #174 |
 | src/cli.rs | comemory::cli; preserve | none | none | delivery::cli | src/cli.rs | retain |
 | src/cli/ast.rs | comemory::cli::ast; preserve | none | none | delivery::cli | src/cli/ast.rs | retain |
 | src/cli/auth.rs | comemory::cli::auth; preserve | none | none | delivery::cli | src/cli/auth.rs | retain |
@@ -281,6 +271,16 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/consolidate/keeper.rs | comemory::consolidate::keeper; crate-root-alias | src/consolidate/tests/keeper.rs | none | domains::maintenance | src/domains/maintenance/consolidation/keeper.rs | #176 |
 | src/consolidate/report.rs | comemory::consolidate::report; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | none | none | domains::maintenance | src/domains/maintenance/consolidation_report.rs | #176 |
 | src/domains.rs | comemory::domains; preserve | none | none | shared::root | src/domains.rs | retain |
+| src/domains/capture.rs | comemory::domains::capture; crate-root-alias | none | none | domains::capture | src/domains/capture.rs | retain |
+| src/domains/capture/candidates.rs | comemory::domains::capture::candidates; crate-root-alias | src/domains/capture/tests/candidates.rs | none | domains::capture | src/domains/capture/candidates.rs | retain |
+| src/domains/capture/claude_code.rs | comemory::domains::capture::claude_code; crate-root-alias | src/domains/capture/tests/claude_code.rs | none | domains::capture | src/domains/capture/claude_code.rs | retain |
+| src/domains/capture/client.rs | comemory::domains::capture::client; crate-root-alias | none | none | domains::capture | src/domains/capture/client.rs | retain |
+| src/domains/capture/distill.rs | comemory::domains::capture::distill; crate-root-alias | none | none | domains::capture | src/domains/capture/distill.rs | retain |
+| src/domains/capture/explicit_save.rs | comemory::domains::capture::explicit_save; crate-root-alias | src/domains/capture/tests/explicit_save.rs | none | domains::capture | src/domains/capture/explicit_save.rs | retain |
+| src/domains/capture/hook.rs | comemory::domains::capture::hook; crate-root-alias | src/domains/capture/tests/hook.rs | none | domains::capture | src/domains/capture/hook.rs | retain |
+| src/domains/capture/receipt.rs | comemory::domains::capture::receipt; crate-root-alias | none | none | domains::capture | src/domains/capture/receipt.rs | retain |
+| src/domains/capture/redact.rs | comemory::domains::capture::redact; crate-root-alias | src/domains/capture/tests/redact.rs | src/domains/capture/rules.toml | domains::capture | src/domains/capture/redact.rs | retain |
+| src/domains/capture/run.rs | comemory::domains::capture::run; crate-root-alias | src/domains/capture/tests/run.rs | none | domains::capture | src/domains/capture/run.rs | retain |
 | src/domains/code.rs | comemory::domains::code; preserve | none | none | domains::code | src/domains/code.rs | retain |
 | src/domains/code/ast.rs | comemory::domains::code::ast; crate-root-alias | none | none | domains::code | src/domains/code/ast.rs | retain |
 | src/domains/code/ast/chunk.rs | comemory::domains::code::ast::chunk; crate-root-alias | src/domains/code/ast/tests/chunk.rs | none | domains::code | src/domains/code/ast/chunk.rs | retain |

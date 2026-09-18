@@ -4,11 +4,11 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
-use crate::capture::candidates::{
+use crate::domains::capture::candidates::{
     CandidateBatch, ProposeResponse, batch_from_extracted, post_candidates,
 };
-use crate::capture::claude_code::{bash_commands_from_jsonl, read_transcript_file};
-use crate::capture::explicit_save::extract_explicit_saves;
+use crate::domains::capture::claude_code::{bash_commands_from_jsonl, read_transcript_file};
+use crate::domains::capture::explicit_save::extract_explicit_saves;
 use crate::domains::sync::auth_file::AuthFile;
 use crate::prelude::*;
 
