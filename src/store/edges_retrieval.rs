@@ -155,8 +155,9 @@ pub fn walk_context_edges(
 
 /// Total `co_changed` weight between `fid` and the working-set file ids, in
 /// either direction (the miner stores one canonical row per undirected
-/// pair). The ORM binds each orientation separately; `prepare_cached`
-/// caches one statement per working-set arity.
+/// pair). Numbered placeholders are reused across both `IN` lists so the
+/// parameter vector binds once; `prepare_cached` caches one statement per
+/// working-set arity.
 ///
 /// Arity-keyed caching tradeoff: the SQL string (and thus the cache key)
 /// embeds the working-set length, so each distinct arity compiles its own
@@ -165,26 +166,20 @@ pub fn walk_context_edges(
 /// Fine unless affinity shows up in a profile — revisit with arity
 /// bucketing (pad the `IN` list to fixed sizes) if it does.
 pub fn co_change_weight(conn: &Connection, fid: &str, ws_files: &[String]) -> Result<f64> {
-    let files = ws_files
-        .iter()
-        .map(|s| s.as_str().into())
-        .collect::<Vec<_>>();
-    let w: i64 = orm::query_one(
-        conn,
-        Edges::select()
-            .column_expr("COALESCE(SUM(weight), 0)", "weight")
-            .filter(c::rel.eq("co_changed"))
-            .filter(c::src_kind.eq("file"))
-            .filter(c::dst_kind.eq("file"))
-            .filter(
-                c::src_id
-                    .eq(fid)
-                    .and(c::dst_id.in_list(&files))
-                    .or(c::dst_id.eq(fid).and(c::src_id.in_list(&files))),
-            )
-            .to_sql(),
-        |r| r.get(0),
-    )?;
+    let marks = (0..ws_files.len())
+        .map(|i| format!("?{}", i + 2))
+        .collect::<Vec<_>>()
+        .join(",");
+    let sql = format!(
+        "SELECT COALESCE(SUM(weight), 0) FROM edges \
+          WHERE rel = 'co_changed' AND src_kind = 'file' AND dst_kind = 'file' \
+            AND ((src_id = ?1 AND dst_id IN ({marks})) \
+              OR (dst_id = ?1 AND src_id IN ({marks})))"
+    );
+    let mut stmt = conn.prepare_cached(&sql)?;
+    let params =
+        rusqlite::params_from_iter(std::iter::once(fid).chain(ws_files.iter().map(String::as_str)));
+    let w: i64 = stmt.query_row(params, |r| r.get(0))?;
     Ok(w.max(0) as f64)
 }
 

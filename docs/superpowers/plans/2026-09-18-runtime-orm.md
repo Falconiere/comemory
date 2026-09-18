@@ -77,10 +77,14 @@ orm::query_optional(conn, query.to_sql(), |row| row.get(0))
 
 - Final validation: 2,459 tests passed across 121 binaries; every
   `bash scripts/check-all.sh` gate passed. `git diff --check` is clean.
-- Upstream gaps are filed as Falconiere/toolu-orm #108–#115 and mapped in
+- Upstream gaps are filed as Falconiere/toolu-orm #108–#116 and mapped in
   `docs/guides/runtime-orm.md`. Shipped migrations and Cargo.lock are unchanged.
 - Independent query review caught fractional BM25 weight rounding; a real
   SQLite regression failed before the correction and passed afterward.
+- Committed-diff review also caught duplicated bindings for both co-change
+  edge directions. Retained the original reusable placeholders and added a
+  16,381-path regression: red before restoration, green afterward, with all
+  12 edge-retrieval tests passing. The missing capability is upstream #116.
 - The setup hook test now selects only `git-hooks`, avoiding a pre-existing
   dependence on the developer's registered Codex marketplace. The original
   handwritten-hook preservation assertion remains unchanged.

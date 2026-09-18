@@ -46,6 +46,7 @@ keep only that fragment raw and bind its values.
 | Composable scalar functions, arithmetic, text ordering comparisons, `LIKE ... ESCAPE`, and expression ordering | Normalized date windows in memory FTS/KNN; literal substring matching in `memory_list`/`retrieval_log`; access increments; `COALESCE` ranking signals; `CASE`/text rendering in `edge_fts` | [#112](https://github.com/Falconiere/toolu-orm/issues/112) |
 | `INSERT ... SELECT` and separately quoted database/table identifiers | `rebuild_copy*` copies from `old` into `main`; graph-label materialization in `edge_fts`; inspection of `old.sqlite_master` | [#114](https://github.com/Falconiere/toolu-orm/issues/114) |
 | SQLite administration and extension bootstrap | `VACUUM INTO` snapshots; attach/detach lifecycle; pragma inspection; the tokenizer's `SELECT fts5(?1)` pointer handshake | [#115](https://github.com/Falconiere/toolu-orm/issues/115) |
+| Reusable bound parameters across typed predicates | `edges_retrieval::co_change_weight` shares file IDs between both edge directions; separate bindings exceed SQLite's variable limit for previously valid working sets | [#116](https://github.com/Falconiere/toolu-orm/issues/116) |
 
 `INSERT OR REPLACE` must not substitute for an upsert that preserves an
 existing row: delete/reinsert semantics can cascade references and reset

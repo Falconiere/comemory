@@ -34,6 +34,9 @@ SQL after an ORM upgrade. This procedure does not change historical migrations.
 
 - `OR REPLACE` deletes/reinserts; it cannot replace a preserving upsert.
 - Generated projections put ordinary columns before expression columns.
+- Compare bind counts for repeated predicates. The ORM allocates fresh slots
+  for each occurrence; converting reused numbered placeholders can exceed
+  SQLite's parameter limit on inputs that previously succeeded.
 - Nested parameterized raw expressions misnumber placeholders in 0.6.0;
   use the supported typed predicates or the documented separate-filter form.
 - Preserve fractional f32 BM25 decimal literals before supplying f64 ORM
