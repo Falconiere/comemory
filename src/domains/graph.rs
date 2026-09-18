@@ -11,9 +11,15 @@
 //! command core both delivery adapters call; [`view`][view] backs `GET /graph`
 //! alone (the CLI calls [`query`][query] directly — see its module doc), and
 //! [`graph_nodes`][graph_nodes] / [`graph_recompute`][graph_recompute] are
-//! console-only, and `search_edit` is `pub(crate)` — reachable from inside the
-//! crate only, so it carries no intra-doc link here. Every SQL string stays in
+//! console-only. Every SQL string stays in
 //! [`crate::store::edges`] and its `code_graph_*` / `edge_fts` siblings.
+//!
+//! One module of this capability is named without a link above: `search_edit`,
+//! the search→edit lookback feeding `auto_search_edit` provenance. It is
+//! declared `pub(crate)` below, so a link to it from this public module doc
+//! raises rustdoc's `links to private item`. The plain backticks are
+//! deliberate rather than an omission, and carry no claim about which callers
+//! reach it.
 //!
 //! A capability's `//!` doc merges with the `///` on its `pub mod` line in
 //! `src/domains.rs`, so bare intra-doc links here would resolve in the
