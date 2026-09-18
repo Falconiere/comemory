@@ -5,8 +5,9 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Shared corpus + golden-file builder for `src/api/tests/eval.rs`,
-//! `src/api/tests/tune.rs`, and `src/api/tests/bandit.rs`.
+//! Shared corpus + golden-file builder for
+//! `src/domains/learning/tests/eval.rs`, `src/domains/learning/tests/tune.rs`,
+//! and `src/domains/learning/tests/bandit.rs`.
 
 use assert_cmd::Command;
 use serde_json::Value;
