@@ -94,6 +94,16 @@ jobs:
         # Their versions come from the step above, never from a literal typed
         # here. install-action resolves the CRATE name, so these spellings are
         # correct even where the installed binary differs (see typos-cli).
+        #
+        # EXPECTED WARNING, not a failure: this pinned install-action's manifest
+        # predates cargo-deny 0.20.2, so the log carries
+        #   install-action: cargo-deny is supported but version 0.20.2 for
+        #   'x86_64_linux' is not supported ...; fallback to cargo-binstall
+        # and cargo-binstall fetches exactly `cargo-deny@=0.20.2` from GitHub
+        # releases instead. The pin still holds — deny-check.sh verifies the
+        # version it actually got and hard-fails on anything else — and the whole
+        # step still finishes in seconds. Bumping install-action would put
+        # cargo-deny back on the manifest path and silence the warning.
         uses: taiki-e/install-action@7a79fe8c3a13344501c80d99cae481c1c9085912 # v2.81.10
         with:
           tool: cargo-nextest,cargo-llvm-cov,typos-cli@1.32.0,cargo-deny@${{ steps.gate_tool_versions.outputs.cargo_deny }},cargo-machete@${{ steps.gate_tool_versions.outputs.cargo_machete }}
