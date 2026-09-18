@@ -7,7 +7,7 @@
 )]
 //! In-process coverage of `GET|POST /api/v1/sync/*` through the real router.
 
-use comemory::api::sync::SyncOp;
+use comemory::domains::sync::exchange::SyncOp;
 use comemory::memory::id::memory_id;
 use comemory::memory::{Kind, MemoryStore};
 use comemory::utilities::digest::sha256_hex;

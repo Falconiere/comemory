@@ -9,9 +9,9 @@ use serde::Deserialize;
 use crate::capture;
 use crate::cli::off_runtime::off_runtime;
 use crate::config::paths::{Paths, resolve_data_dir};
+use crate::domains::sync::AuthFile;
 use crate::output::json;
 use crate::prelude::*;
-use crate::sync::AuthFile;
 
 const EXAMPLES: &str = "\
 Examples:

@@ -7,7 +7,7 @@ is shown via `capture sources` — the CLI cannot grant it (console / workspace
 key only). Distinct from document `comemory sources` (`sources.toml`).
 
 **Runnable tests:** `tests/cli__capture.rs`, colocated
-`src/capture/tests/*`, `src/sync/tests/redact.rs`
+`src/capture/tests/*`, `src/domains/sync/tests/redact.rs`
 
 **HTTP:** none — platform `/v1/capture/*` + `/v1/sessions` (`transport: "cli-only"`).
 

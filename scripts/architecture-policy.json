@@ -81,11 +81,6 @@
       "issue": "#174"
     },
     {
-      "module": "crate::cloud",
-      "owner": "domains::sync",
-      "issue": "#172"
-    },
-    {
       "module": "crate::consolidate",
       "owner": "domains::maintenance",
       "issue": "#176"
@@ -119,11 +114,6 @@
       "module": "crate::stats",
       "owner": "shared::utilities",
       "issue": "#173"
-    },
-    {
-      "module": "crate::sync",
-      "owner": "domains::sync",
-      "issue": "#172"
     },
     {
       "module": "crate::upgrade",
@@ -302,7 +292,7 @@
     },
     {
       "source": "src/api/setup/detect.rs",
-      "target": "crate::sync::auth_file",
+      "target": "crate::domains::sync::auth_file",
       "owner": "domains::sync"
     }
   ],

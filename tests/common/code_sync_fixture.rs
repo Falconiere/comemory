@@ -18,8 +18,8 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use comemory::api::sync::CodeFileWire;
 use comemory::config::{Config, Paths};
+use comemory::domains::sync::exchange::CodeFileWire;
 use comemory::store::{Connection, indexed_files};
 use comemory::utilities::context::Ctx;
 
@@ -97,7 +97,7 @@ pub fn projection(conn: &Connection) -> Vec<CodeFileWire> {
     files
         .iter()
         .map(|(path, _)| {
-            comemory::sync::code::project_file(conn, REPO, path, &known).expect("project")
+            comemory::domains::sync::code::project_file(conn, REPO, path, &known).expect("project")
         })
         .collect()
 }

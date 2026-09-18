@@ -36,7 +36,7 @@ pub mod code_row;
 /// Per-symbol ranking signals: the `code_symbols` + `code_feedback` join
 /// behind `retrieval::code_prior`'s four-prior scorer.
 pub mod code_signals;
-/// Reads and the pushed cursor behind the code-index sync (`sync::code`).
+/// Reads and the pushed cursor behind the code-index sync (`domains::sync::code`).
 pub mod code_sync;
 /// Connection open: PRAGMAs, migrations, `sqlite-vec` auto-extension.
 pub mod connection;

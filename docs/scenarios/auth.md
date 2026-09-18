@@ -10,7 +10,7 @@ first sync (pull, then push) before returning, best-effort: a platform outage
 warns on stderr and still exits 0. Nested: `login` / `status` / `logout`.
 
 **Runnable tests:** `tests/cli__auth.rs` (command; loopback fixture
-`tests/common/device_auth_server.rs`), colocated `src/cloud/tests/*`
+`tests/common/device_auth_server.rs`), colocated `src/domains/sync/cloud/tests/*`
 
 **HTTP:** none — cloud login is CLI-only (`transport: "cli-only"` in
 `GET /api/v1/commands`; asserted by `tests/api__parity.rs`)

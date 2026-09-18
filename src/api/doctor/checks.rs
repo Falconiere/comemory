@@ -9,6 +9,7 @@
 use crate::config::Paths;
 use crate::config::env::env_parse;
 use crate::domains::memories::MemoryStore;
+use crate::domains::sync::{AuthFile, daemon};
 use crate::prelude::*;
 use crate::store::{Connection, doctor_probes, vector};
 use crate::utilities::digest::sha256_hex;
@@ -414,10 +415,10 @@ fn data_dir_layout(paths: &Paths) -> Check {
 
 /// Check 11: when org credentials exist, the sync daemon should be running.
 fn sync_daemon_check(paths: &Paths) -> Check {
-    if !matches!(crate::sync::AuthFile::load_usable(paths), Ok(Some(_))) {
+    if !matches!(AuthFile::load_usable(paths), Ok(Some(_))) {
         return ok("sync daemon", "not linked — daemon not required");
     }
-    match crate::sync::daemon::status() {
+    match daemon::status() {
         Ok(st) if st.running => ok("sync daemon", st.detail),
         Ok(st) => warn(
             "sync daemon",

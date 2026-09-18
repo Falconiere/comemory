@@ -14,7 +14,7 @@ use std::path::PathBuf;
 
 use capture_platform_server::{CapturePlatformServer, CapturePlatformState};
 use comemory::capture::{CaptureRequest, run_capture, run_sources};
-use comemory::sync::AuthFile;
+use comemory::domains::sync::AuthFile;
 
 fn fixture() -> PathBuf {
     PathBuf::from(concat!(

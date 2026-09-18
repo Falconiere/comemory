@@ -217,7 +217,7 @@ pub fn run_with(
     // No sync hook here on purpose: this function also runs inside `comemory
     // serve`, where `reqwest::blocking` panics on drop and where pushing a
     // tenant's memories outward would be wrong. The CLI pushes in `cli::save`
-    // instead (`sync::push_on_save`).
+    // instead (`domains::sync::push_on_save`).
 
     Ok(Response {
         id: rec.frontmatter.id.clone(),

@@ -8,8 +8,8 @@
 //! The code lines `comemory sync` and the login report print.
 
 use comemory::cli::sync_render::{code_line, code_summary_line};
-use comemory::sync::code::CodePushStats;
-use comemory::sync::initial::InitialSyncStats;
+use comemory::domains::sync::code::CodePushStats;
+use comemory::domains::sync::initial::InitialSyncStats;
 
 fn stats() -> CodePushStats {
     CodePushStats {

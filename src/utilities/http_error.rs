@@ -1,6 +1,6 @@
 //! Map outbound HTTP client errors into [`crate::Error`].
 //!
-//! Shared by `sync::client` and `capture::client` so the reqwest source-chain
+//! Shared by `domains::sync::client` and `capture::client` so the reqwest source-chain
 //! enrichment cannot drift between the two platform callers (#138).
 
 use crate::prelude::*;

@@ -255,7 +255,7 @@ impl Config {
 }
 
 /// `COMEMORY_API_KEY` override for the device secret stored in `auth.json`.
-/// Unset → callers use the on-disk secret from [`crate::sync::AuthFile`].
+/// Unset → callers use the on-disk secret from [`crate::domains::sync::AuthFile`].
 pub fn api_key_override() -> Option<String> {
     std::env::var("COMEMORY_API_KEY")
         .ok()

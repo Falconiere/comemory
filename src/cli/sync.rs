@@ -2,7 +2,7 @@
 //!
 //! Nested `daemon {install,uninstall,start,stop,status,run}` owns continuous
 //! auto-sync. Flat `--action` still drives a one-shot manual sync. `run` and
-//! `push` push the code index after the memories (`sync::code`); rendering
+//! `push` push the code index after the memories (`domains::sync::code`); rendering
 //! lives in `cli::sync_render`.
 
 use std::io::Write as _;
@@ -14,13 +14,11 @@ use crate::cli::load_config;
 use crate::cli::off_runtime::off_runtime;
 use crate::cli::sync_render::{emit_daemon_status, emit_run, emit_status, emit_verify};
 use crate::config::paths::{Paths, resolve_data_dir};
-use crate::config::sync::apply_embed_model;
+use crate::domains::sync::daemon;
+use crate::domains::sync::manual::{self, RUN_LIMIT};
+use crate::domains::sync::verify;
 use crate::output::json;
 use crate::prelude::*;
-use crate::store::connection::open;
-use crate::sync::auth_file::AuthFile;
-use crate::sync::daemon;
-use crate::sync::{code, pull, push, verify};
 
 const EXAMPLES: &str = "\
 Examples:
@@ -169,50 +167,32 @@ fn run_sync(
     json_flag: bool,
 ) -> Result<()> {
     let cfg = load_config(paths)?;
-    let auth = AuthFile::load(paths)?
-        .ok_or_else(|| Error::Usage("not logged in — run `comemory auth login`".into()))?;
-    let workspace = auth.workspace_id.clone();
-    let mut conn = open(paths.db_path())?;
-    apply_embed_model(&conn, &cfg.embed)?;
+    let mut session = manual::open_session(paths, &cfg)?;
+    let workspace = session.auth.workspace_id.clone();
 
-    match action {
-        SyncAction::Status => emit_status(json_flag, &mut conn, &workspace),
+    let stats = match action {
+        SyncAction::Status => return emit_status(json_flag, &mut session.conn, &workspace),
         SyncAction::Verify => {
-            let report = off_runtime(|| verify::verify_manifests(paths, &cfg, &mut conn, &auth))?;
-            emit_verify(json_flag, &report)
+            let report = off_runtime(|| {
+                verify::verify_manifests(paths, &cfg, &mut session.conn, &session.auth)
+            })?;
+            return emit_verify(json_flag, &report);
         }
         SyncAction::Push => {
-            let (push_stats, code_stats) = off_runtime(|| {
-                let pushed = push::run_push(paths, &cfg, &mut conn, &auth, allow_secret, 2000)?;
-                let code = code::run_code_push(&cfg, &mut conn, &auth)?;
-                Ok((pushed, code))
-            })?;
-            emit_run(
-                json_flag,
-                &workspace,
-                None,
-                Some(&push_stats),
-                Some(&code_stats),
-            )
+            off_runtime(|| manual::push_only(paths, &cfg, &mut session, allow_secret, RUN_LIMIT))?
         }
         SyncAction::Pull => {
-            let stats = off_runtime(|| pull::run_pull(paths, &cfg, &mut conn, &auth, 2000))?;
-            emit_run(json_flag, &workspace, Some(&stats), None, None)
+            off_runtime(|| manual::pull_only(paths, &cfg, &mut session, RUN_LIMIT))?
         }
         SyncAction::Run => {
-            let (pull_stats, push_stats, code_stats) = off_runtime(|| {
-                let pulled = pull::run_pull(paths, &cfg, &mut conn, &auth, 2000)?;
-                let pushed = push::run_push(paths, &cfg, &mut conn, &auth, allow_secret, 2000)?;
-                let code = code::run_code_push(&cfg, &mut conn, &auth)?;
-                Ok((pulled, pushed, code))
-            })?;
-            emit_run(
-                json_flag,
-                &workspace,
-                Some(&pull_stats),
-                Some(&push_stats),
-                Some(&code_stats),
-            )
+            off_runtime(|| manual::run_all(paths, &cfg, &mut session, allow_secret, RUN_LIMIT))?
         }
-    }
+    };
+    emit_run(
+        json_flag,
+        &workspace,
+        stats.pull.as_ref(),
+        stats.push.as_ref(),
+        stats.code.as_ref(),
+    )
 }

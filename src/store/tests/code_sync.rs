@@ -5,7 +5,7 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! The projection reads and the pushed cursor behind `sync::code`, over a
+//! The projection reads and the pushed cursor behind `domains::sync::code`, over a
 //! real `index-code` run.
 
 use comemory::config::{Config, Paths};

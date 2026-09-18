@@ -4,7 +4,7 @@
 //! `MemoryStore::find_in_trash` uses, so the two can never disagree on which
 //! copy of an id counts. One lookup backs both `memories::save`'s replay rules —
 //! the 32-bit collision guard, `created` preservation, and the
-//! `created: bool` outcome report — and `api::sync::import_state`'s
+//! `created: bool` outcome report — and `domains::sync::exchange::import_state`'s
 //! pulled-record collision rule (Binding Rule 1).
 //!
 //! Markdown is the source of truth, so this reads the file and never the

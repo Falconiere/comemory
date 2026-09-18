@@ -111,9 +111,9 @@ pub async fn run(args: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<(
     // The index is durable; offer it to the workspace, best-effort. Runs
     // here and not in `domains::code::index_code` because that core also runs inside
     // `comemory serve`, where pushing a tenant's index outward would be wrong
-    // — the same split `sync::push_on_save` keeps for memories.
+    // — the same split `domains::sync::push_on_save` keeps for memories.
     off_runtime(|| {
-        crate::sync::code::after_index_best_effort(&paths, &cfg, &args.repo);
+        crate::domains::sync::code::after_index_best_effort(&paths, &cfg, &args.repo);
         Ok(())
     })
 }

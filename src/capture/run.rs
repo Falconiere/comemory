@@ -4,8 +4,8 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
+use crate::domains::sync::AuthFile;
 use crate::prelude::*;
-use crate::sync::AuthFile;
 
 use super::claude_code;
 use super::client::{self, CaptureSourceRow, PostSessionResponse, SessionReceipt};

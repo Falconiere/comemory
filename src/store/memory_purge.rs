@@ -127,7 +127,7 @@ pub fn expired_deleted_ids(conn: &Connection, retention_days: u32) -> Result<Vec
 }
 
 /// Whether a soft-deleted `memories` row carries `content_hash` — behind
-/// `api::sync::import_state`'s "already trashed under this hash" check.
+/// `domains::sync::exchange::import_state`'s "already trashed under this hash" check.
 pub fn trashed_with_hash(conn: &Connection, content_hash: &str) -> Result<bool> {
     conn.query_row(
         "SELECT 1 FROM memories WHERE content_hash = ?1 AND deleted_at IS NOT NULL",

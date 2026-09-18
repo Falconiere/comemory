@@ -58,7 +58,7 @@ pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
     drop(ctx);
     drop(conn);
     off_runtime(|| {
-        crate::sync::push_on_save::after_write_best_effort(&paths, &cfg);
+        crate::domains::sync::push_on_save::after_write_best_effort(&paths, &cfg);
         Ok(())
     })?;
 

@@ -53,17 +53,11 @@ pub mod serve;
 /// `comemory upgrade`: resolve the newest release and swap the binary.
 pub mod upgrade;
 
-/// Cloud platform auth: device login and workspace-key credentials.
-pub mod cloud;
-
 /// Client-side session capture and distillation (platform Slices 3–4).
 pub mod capture;
 
 /// clap subcommand entry points and the top-level dispatcher.
 pub mod cli;
-
-/// Cloud-sync client helpers: match keys, redaction, auth file, allowlist cache.
-pub mod sync;
 
 /// Business capabilities, each owning one area of behavior end to end.
 pub mod domains;
@@ -75,14 +69,17 @@ pub mod utilities;
 // Crate-root aliases for modules that were public root modules before the
 // migration moved them: `ast` and `git_utils` under `domains::code` (#167),
 // `document` and `source` under `domains::documents` (#168), `memory` under
-// `domains::memories` (#169), the four shared primitives under `utilities`
-// (#166). They preserve `comemory::<name>` for external consumers; in-crate
-// code names the real path directly.
+// `domains::memories` (#169), `sync` and `cloud` under `domains::sync` (#172),
+// the four shared primitives under `utilities` (#166). They preserve
+// `comemory::<name>` for external consumers; in-crate code names the real path
+// directly.
 pub use domains::code::ast;
 pub use domains::code::git_utils;
 pub use domains::documents::document;
 pub use domains::documents::source;
 pub use domains::memories as memory;
+pub use domains::sync;
+pub use domains::sync::cloud;
 pub use utilities::embed;
 pub use utilities::fetch;
 pub use utilities::http_error;

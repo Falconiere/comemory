@@ -21,3 +21,6 @@ pub mod documents;
 /// The memory lifecycle: markdown models and store, plus the save, delete,
 /// list, show, update, restore, trash and reference-refresh cores.
 pub mod memories;
+/// Org authentication, platform push/pull, the workspace channel, and the
+/// Git memory store.
+pub mod sync;

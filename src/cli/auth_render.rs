@@ -5,11 +5,11 @@ use std::io::Write as _;
 use owo_colors::OwoColorize;
 use serde::Serialize;
 
-use crate::cloud::StatusReport;
+use crate::domains::sync::auth_file::AuthFile;
+use crate::domains::sync::cloud::StatusReport;
+use crate::domains::sync::daemon;
 use crate::output::json;
 use crate::prelude::*;
-use crate::sync::auth_file::AuthFile;
-use crate::sync::daemon;
 
 #[derive(Serialize)]
 pub(crate) struct LoginJson<'a> {
@@ -42,7 +42,7 @@ pub(crate) struct InitialSyncJson {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub skipped_config: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub code: Option<crate::sync::code::CodePushStats>,
+    pub code: Option<crate::domains::sync::code::CodePushStats>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code_error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -70,7 +70,7 @@ pub(crate) fn org_label(creds: &AuthFile) -> &str {
 }
 
 pub(crate) fn initial_sync_json(
-    synced: &Result<crate::sync::initial::InitialSyncStats>,
+    synced: &Result<crate::domains::sync::initial::InitialSyncStats>,
 ) -> InitialSyncJson {
     match synced {
         Ok(s) => InitialSyncJson {
