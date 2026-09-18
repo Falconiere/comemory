@@ -10,7 +10,9 @@
 # that gets cloned inside this checkout; it owns its own gates.
 # ~/ is the same category: an Orca workspace clone that lands inside the
 # checkout under a literal `~` directory; never part of this repo.
-extend-exclude = ["tests/golden/", "tests/fixtures/", "scripts/guardrails/", "comemory.io/", "~/"]
+# docs/assets/vendor/ holds third-party browser libraries copied verbatim
+# (marked, for the documentation reader); minified identifiers are not prose.
+extend-exclude = ["tests/golden/", "tests/fixtures/", "scripts/guardrails/", "comemory.io/", "~/", "docs/assets/vendor/"]
 
 [default]
 extend-ignore-identifiers-re = ["nomic", "kuzu", "qwick", "cose", "ratatui"]  # ratatui: crate name kept in CHANGELOG history

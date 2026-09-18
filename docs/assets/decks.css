@@ -1,0 +1,91 @@
+/* decks.css — the interactive figures on architecture.html: the figure
+   shell, the card decks and the pipeline track, the inspector, and the
+   two-column write paths. Loads after signal.css and uses its tokens only. */
+
+/* ---------------------------------------------------------------------------
+   figures — the shell every interactive deck sits in
+   ------------------------------------------------------------------------- */
+.viz { margin: 2rem 0 0; padding: 0; border: 1px solid var(--border); background: var(--surface); box-shadow: var(--shadow); }
+.viz-head {
+  display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between;
+  gap: 0.5rem 1rem; padding: 0.85rem 1.1rem; border-bottom: 1px solid var(--border-inner);
+}
+.viz-body { padding: 1.25rem 1.1rem 1.4rem; }
+.viz-foot {
+  padding: 0.8rem 1.1rem; border-top: 1px solid var(--border-inner);
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem 1rem; justify-content: space-between;
+}
+.viz-head .meta { white-space: nowrap; }
+.viz figcaption { color: var(--text-soft); font-size: 0.8125rem; line-height: 1.6; margin: 0; max-width: 42rem; }
+
+/* ---------------------------------------------------------------------------
+   deck — a grid of cards; one is current, the rest read their relation to it
+   in ink. Hover changes colour or border only. No shadow on hover, ever.
+   ------------------------------------------------------------------------- */
+.deck { display: grid; gap: 0; background: var(--surface); border-top: 1px solid var(--border); border-left: 1px solid var(--border); margin: 0; padding: 0; list-style: none; }
+/* hairlines come from each cell, so a short last row leaves plain surface, not a filled hole */
+.deck > li { border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); display: flex; }
+.deck > li > .card { flex: 1 1 auto; }
+@media (min-width: 53.75rem) { .deck { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 70rem) { .deck { grid-template-columns: repeat(3, 1fr); } }
+.deck-4 { grid-template-columns: 1fr; }
+@media (min-width: 37.5rem) { .deck-4 { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 70rem) { .deck-4 { grid-template-columns: repeat(4, 1fr); } }
+.card {
+  appearance: none; display: block; width: 100%; text-align: left; cursor: pointer;
+  background: var(--surface); border: 1px solid transparent; padding: 1.1rem 1.1rem 1.2rem; margin: 0;
+  transition: border-color var(--duration-fast) var(--ease), color var(--duration-fast) var(--ease), opacity var(--duration-fast) var(--ease);
+}
+.card:hover { border-color: var(--border-strong); }
+.card .card-head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin-bottom: 0.5rem; }
+.card .card-name { font-family: var(--font-mono); font-size: 0.75rem; color: var(--text); letter-spacing: 0.02em; }
+.card .card-role { font-family: var(--font-mono); font-size: 0.5625rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-soft); white-space: nowrap; }
+.card .card-role::before { content: attr(data-glyph) " "; }
+.card .card-sub { display: block; color: var(--text-muted); font-size: 0.8125rem; line-height: 1.55; }
+.card .dot { display: none; width: 0.5rem; height: 0.5rem; border-radius: 9999px; background: var(--accent); flex: none; }
+/* the current card — the live item in a data panel, the signal's second job */
+.card[aria-pressed="true"] { border-color: var(--accent); }
+.card[aria-pressed="true"] .dot { display: inline-block; }
+.card[aria-pressed="true"] .card-role { color: var(--accent); }
+/* relations to the current card are carried in ink, not in a second hue */
+.deck[data-active] .card[data-role="none"] { opacity: 0.45; }
+.deck[data-active] .card[data-role="none"]:hover { opacity: 1; }
+.deck[data-active] .card[data-role="uses"] .card-role, .deck[data-active] .card[data-role="used-by"] .card-role,
+.deck[data-active] .card[data-role="both"] .card-role { color: var(--text); }
+@keyframes signal-blink { 50% { opacity: 0.35; } }
+.card[aria-pressed="true"] .dot { animation: signal-blink 1800ms steps(1, end) infinite; }
+@media (prefers-reduced-motion: reduce) { .card[aria-pressed="true"] .dot { animation: none; } }
+.inspector { margin-top: 1.25rem; border-top: 1px solid var(--border-inner); padding-top: 0.25rem; }
+.inspector .fact-rail { border-top: 0; margin-top: 0; }
+.inspector .fact-rail > div:last-child { border-bottom: 0; }
+.inspector .fact-rail dd { color: var(--text-muted); }
+.inspector .fact-rail dd b { color: var(--text); font-weight: 500; }
+.inspector .fact-rail dd a { color: var(--text); }
+.inspector .fact-rail dd ul { margin: 0; padding: 0; list-style: none; }
+.inspector .fact-rail dd li { padding: 0.1rem 0; }
+.inspector .fact-rail dd li::before { content: "├─ "; font-family: var(--font-mono); color: var(--text-soft); }
+.inspector .fact-rail dd li:last-child::before { content: "└─ "; }
+.inspector-empty { color: var(--text-soft); font-size: 0.8125rem; margin: 0.75rem 0 0; }
+
+/* pipeline — a deck laid out as a track, one glyph between steps */
+.pipe { display: flex; flex-direction: column; gap: 0; margin: 0; padding: 0; list-style: none; border: 1px solid var(--border); background: var(--border); }
+@media (min-width: 53.75rem) { .pipe { flex-direction: row; } }
+.pipe > li { position: relative; flex: 1 1 0; display: flex; }
+.pipe > li + li::before {
+  content: "→"; position: absolute; z-index: 2; font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-soft);
+  left: 1.1rem; top: -0.55rem; line-height: 1; transform: rotate(90deg); background: var(--surface); padding: 0 0.1rem;
+}
+@media (min-width: 53.75rem) {
+  .pipe > li + li::before { left: -0.5rem; top: 1.15rem; transform: none; }
+}
+.pipe > li + li { border-top: 1px solid var(--border); }
+@media (min-width: 53.75rem) { .pipe > li + li { border-top: 0; border-left: 1px solid var(--border); } }
+.pipe .card .card-name { display: block; }
+/* the kicker above a card name: a stage number, a table's layer */
+.card .card-step { font-family: var(--font-mono); font-size: 0.5625rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-soft); display: block; margin-bottom: 0.4rem; }
+.card[aria-pressed="true"] .card-step { color: var(--accent); }
+
+/* two write paths side by side above md, stacked below */
+.writes-grid { display: grid; gap: 2.5rem; margin-top: 2rem; }
+@media (min-width: 53.75rem) { .writes-grid { grid-template-columns: 1fr 1fr; gap: 3rem; } }
+.writes-grid .steps { margin-top: 0.75rem; }
