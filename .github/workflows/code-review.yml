@@ -69,7 +69,19 @@ jobs:
           # "Review incomplete — provider error" on a diff it had no
           # findings against. Excluded files are still committed and still
           # gated by `test`; they are only kept out of the LLM's diff.
-          EXCLUDE_GLOBS: .claude/**
+          #
+          # `docs/.nojekyll` is the same shape: an EMPTY marker file (it
+          # tells GitHub Pages to serve docs/ as-is). PR #222 hit it twice on
+          # one commit — Coverage reported `docs/.nojekyll: unreviewed
+          # (not-attempted)`, and one unreviewed file degrades the whole
+          # verdict to "provider error" even though every other file was
+          # reviewed clean. There is nothing in a zero-byte file to review.
+          #
+          # `docs/assets/vendor/` holds third-party browser libraries copied
+          # verbatim (marked, DOMPurify). The action already skips them as
+          # minified; the glob keeps that true for an unminified vendor file
+          # and keeps upstream code out of a review of this repository.
+          EXCLUDE_GLOBS: .claude/**,docs/.nojekyll,docs/assets/vendor/**
 
       # The gate is a STEP of this job, not a job in another workflow. That is
       # the whole design: `review` goes red on a high-or-critical finding, and
