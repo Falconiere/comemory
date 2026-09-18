@@ -11,8 +11,8 @@
 use time::OffsetDateTime;
 
 use crate::config::Config;
+use crate::domains::retrieval::score;
 use crate::prelude::*;
-use crate::retrieval::score;
 use crate::store::Connection;
 use crate::store::prune_signals;
 

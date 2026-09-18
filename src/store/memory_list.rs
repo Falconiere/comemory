@@ -111,7 +111,7 @@ pub struct ListFilter<'a> {
 /// `\` itself) in a user-supplied string so it matches literally. Every
 /// caller pairs the result with `ESCAPE '\'`; this is the one place the
 /// escape set is defined — `like_literal` (substring) and
-/// `api::suggest`'s prefix pattern both build on it.
+/// `retrieval::suggest`'s prefix pattern both build on it.
 pub(crate) fn like_escape(q: &str) -> String {
     let mut out = String::with_capacity(q.len());
     for c in q.chars() {

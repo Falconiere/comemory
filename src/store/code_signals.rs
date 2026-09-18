@@ -1,5 +1,5 @@
 //! Per-symbol ranking signals: the `code_symbols` + `code_feedback` join
-//! behind [`crate::retrieval::code_prior`]'s four-prior scorer.
+//! behind [`crate::domains::retrieval::code_prior`]'s four-prior scorer.
 //!
 //! Moved out of `retrieval::code_prior` (spec
 //! `docs/toolu/specs/2026-09-07-store-layer-chokepoint-design.md`): the SQL

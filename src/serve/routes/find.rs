@@ -1,4 +1,4 @@
-//! `GET|POST /api/v1/find` (`api::find`) — one ranked list across memory,
+//! `GET|POST /api/v1/find` (`retrieval::find`) — one ranked list across memory,
 //! code, and documents.
 //!
 //! Its own resource file rather than an entry under [`super::memories`]:
@@ -15,7 +15,7 @@ use axum::extract::{Json, Query, State};
 use axum::response::Response;
 use axum::routing::get;
 
-use crate::api;
+use crate::domains::retrieval;
 use crate::serve::AppState;
 use crate::serve::routes::{RouteEntry, respond, run_blocking, track_for};
 use crate::serve::scope::RepoScope;
@@ -49,7 +49,7 @@ pub fn router(_state: AppState) -> Router<AppState> {
 async fn find_get(
     State(state): State<AppState>,
     scope: RepoScope,
-    Query(mut req): Query<api::find::Request>,
+    Query(mut req): Query<retrieval::find::Request>,
 ) -> Response {
     req.repo = scope.resolve(req.repo);
     execute(state, req).await
@@ -59,7 +59,7 @@ async fn find_get(
 async fn find_post(
     State(state): State<AppState>,
     scope: RepoScope,
-    Json(mut req): Json<api::find::Request>,
+    Json(mut req): Json<retrieval::find::Request>,
 ) -> Response {
     req.repo = scope.resolve(req.repo);
     execute(state, req).await
@@ -67,14 +67,14 @@ async fn find_post(
 
 /// Shared handler body. Access tracking is suppressed on a read-only
 /// server exactly as it is for `search` / `search-code` / `context`.
-async fn execute(state: AppState, req: api::find::Request) -> Response {
+async fn execute(state: AppState, req: retrieval::find::Request) -> Response {
     let started = Instant::now();
     let result = run_blocking(move || {
         let track = track_for(&state)?;
         let cfg = state.cfg();
         let mut conn = state.conn()?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        let out = api::find::run(&mut ctx, req, track)?;
+        let out = retrieval::find::run(&mut ctx, req, track)?;
         Ok(serde_json::json!({
             "hits": out.hits,
             "query_id": out.query_id,

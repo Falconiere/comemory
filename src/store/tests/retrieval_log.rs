@@ -216,7 +216,7 @@ fn insert_with_no_repo_writes_null() {
 }
 
 /// `prefix_matches` drops `search-code` rows, matches only the `LIKE`
-/// prefix, and orders newest first — the scan behind `api::suggest`'s
+/// prefix, and orders newest first — the scan behind `retrieval::suggest`'s
 /// "recent" list (dedup/limit stay a caller concern).
 #[test]
 fn prefix_matches_excludes_source_and_orders_newest_first() {

@@ -10,10 +10,10 @@
 //! soft-deleted memory comes back out of `.trash/`, its row goes live again
 //! in `GET /memories` (`memories::list`), and search finds it once more.
 
-use comemory::api;
 use comemory::config::{Config, Paths};
 use comemory::domains::memories::{self, Kind};
 use comemory::errors::Error;
+use comemory::retrieval;
 use comemory::store::connection;
 use comemory::utilities::context::Ctx;
 
@@ -118,9 +118,9 @@ fn ac7_delete_then_restore_brings_the_file_and_the_row_back() {
     assert_eq!(shown.tags, vec!["restore".to_string()]);
 
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-    let found = api::search::run(
+    let found = retrieval::search::run(
         &mut ctx,
-        api::search::Request {
+        retrieval::search::Request {
             query: "kafka consumers offsets".to_string(),
             k: None,
             offset: 0,

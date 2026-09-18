@@ -14,11 +14,11 @@ use time::OffsetDateTime;
 
 use crate::domains::memories::References;
 use crate::domains::memories::nav::{abs_path, title_of};
+use crate::domains::retrieval::code_ref_collect;
+use crate::domains::retrieval::code_ref_fetch::RefStatusCache;
+use crate::domains::retrieval::rerank::live_superseder;
+use crate::domains::retrieval::score;
 use crate::prelude::*;
-use crate::retrieval::code_ref_collect;
-use crate::retrieval::code_ref_fetch::RefStatusCache;
-use crate::retrieval::rerank::live_superseder;
-use crate::retrieval::score;
 use crate::store::{Connection, edges_retrieval, memory_meta};
 use crate::utilities::context::Ctx;
 
@@ -31,7 +31,7 @@ pub struct Request {
 }
 
 /// One code reference harvested from the body, freshness-classified against
-/// the live repo state via [`crate::retrieval::code_ref_status`].
+/// the live repo state via [`crate::domains::retrieval::code_ref_status`].
 #[derive(Serialize, Debug)]
 pub struct CodeRefRow {
     /// Repo-relative path of the referenced file.

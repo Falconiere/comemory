@@ -4,8 +4,8 @@
 //!
 //! Mirrors `comemory search` (`crate::cli::search`): resolve the data dir,
 //! open `comemory.db`, parse any caller-supplied vector, route via
-//! [`crate::retrieval::code_route::route_code`], rerank via
-//! [`crate::retrieval::code_rerank::rerank_code`], cut to `top_k`, record
+//! [`crate::domains::retrieval::code_route::route_code`], rerank via
+//! [`crate::domains::retrieval::code_rerank::rerank_code`], cut to `top_k`, record
 //! telemetry, and emit. Code vectors are 768-dim (vs 1024 for memories);
 //! the dim guard lives inside `store::vector::knn_code`, so a wrong-dim
 //! vector fails there, not at parse time.
@@ -25,9 +25,9 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::api;
 use crate::cli::{lazy_reindex, load_config, track_searches};
 use crate::config::paths::{Paths, resolve_data_dir};
+use crate::domains::retrieval;
 use crate::output;
 use crate::prelude::*;
 use crate::store::connection;
@@ -98,15 +98,15 @@ pub struct Args {
 /// Run `comemory search-code`. Validates `--lang` first, so an unsupported
 /// value fails with zero side effects; only then opens the DB, fires the
 /// lazy auto-reindex trigger (a CLI-only affordance — see
-/// `api::search_code`'s doc), resolves the vector input (if any), and
-/// delegates the shared middle to `api::search_code::run` before emitting
+/// `retrieval::search_code`'s doc), resolves the vector input (if any), and
+/// delegates the shared middle to `retrieval::search_code::run` before emitting
 /// results in either TTY or JSON form.
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     // Validate `--lang` before any I/O — an unsupported value must fail
     // instantly with zero side effects (no db open, no lazy-reindex
-    // trigger). `api::search_code::run` re-validates internally too
+    // trigger). `retrieval::search_code::run` re-validates internally too
     // (defense-in-depth for the HTTP path).
-    api::search_code::canonical_lang(a.lang.as_deref())?;
+    retrieval::search_code::canonical_lang(a.lang.as_deref())?;
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
     let mut conn = connection::open(paths.db_path())?;
@@ -119,7 +119,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     lazy_reindex::maybe_trigger(&conn, &cfg, &paths, a.repo.as_deref());
 
     let vector = vector_stdin::read_optional(a.vector_stdin, a.vector.as_deref())?;
-    let req = api::search_code::Request {
+    let req = retrieval::search_code::Request {
         query: a.query,
         k: a.k,
         offset: a.offset,
@@ -128,7 +128,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         vector,
     };
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-    let result = api::search_code::run(&mut ctx, req, track_searches()?)?;
+    let result = retrieval::search_code::run(&mut ctx, req, track_searches()?)?;
     output::search_code::emit(
         &result.hits,
         result.query_id.as_deref(),

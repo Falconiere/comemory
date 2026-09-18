@@ -142,7 +142,7 @@ pub fn replace_chunks(conn: &Connection, document_id: &str, chunks: &[ChunkRow<'
 }
 
 /// One `document_chunks` row's citation fields, as read back by
-/// [`get_chunk`] — the provenance [`crate::retrieval::doc_route`]
+/// [`get_chunk`] — the provenance [`crate::domains::retrieval::doc_route`]
 /// attaches to a document hit's best-chunk citation.
 pub struct ChunkCitation {
     /// `" > "`-joined heading breadcrumb of the chunk.

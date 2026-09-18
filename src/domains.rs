@@ -29,6 +29,11 @@ pub mod graph;
 /// list, show, update, restore, trash and reference-refresh cores.
 pub mod memories;
 
+/// Hybrid search across memories, code and documents: the candidate legs,
+/// fusion, rerank, diversification, context bundles, code-reference freshness
+/// and the search, context, find, suggest and retrieval-config cores.
+pub mod retrieval;
+
 /// Org authentication, platform push/pull, the workspace channel, and the
 /// Git memory store.
 pub mod sync;

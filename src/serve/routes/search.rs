@@ -3,9 +3,9 @@
 //!
 //! `/search` is a **transport adapter, not a second ranking path** (spec
 //! Non-Goal 9): it renames the console's field names onto
-//! `api::find::Request`, runs the one unified pipeline, and reshapes the
+//! `retrieval::find::Request`, runs the one unified pipeline, and reshapes the
 //! answer. Nothing is re-scored here — the explain strip is derived from
-//! each hit's existing `score_parts` by [`crate::output::explain`], and
+//! each hit's existing `score_parts` by [`crate::domains::retrieval::explain`], and
 //! `fusion`/`tier` merely report what the pipeline already did.
 //!
 //! Its `RouteEntry` command is the dotted synthetic name `search.console`
@@ -22,9 +22,10 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::api;
 use crate::domains::memories::Kind;
-use crate::output::explain::{self, ExplainPart};
+use crate::domains::retrieval;
+use crate::domains::retrieval::explain::{self, ExplainPart};
+use crate::domains::retrieval::unified::fuse_domains::UnifiedHit;
 use crate::prelude::*;
-use crate::retrieval::unified::fuse_domains::UnifiedHit;
 use crate::serve::AppState;
 use crate::serve::routes::{RouteEntry, guard_mutating, respond, run_blocking, track_for};
 use crate::serve::scope::RepoScope;
@@ -74,7 +75,7 @@ pub fn router(_state: AppState) -> Router<AppState> {
 }
 
 /// The console's own search request shape. Adapted onto
-/// [`api::find::Request`] by [`into_find`]; never reaches the pipeline as-is.
+/// [`retrieval::find::Request`] by [`into_find`]; never reaches the pipeline as-is.
 #[derive(Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 struct ConsoleSearch {
@@ -96,7 +97,7 @@ struct ConsoleSearch {
     /// string on either form (`GET ?kinds=bug` — see [`kinds_field`]).
     #[serde(default, deserialize_with = "kinds_field")]
     kinds: Vec<String>,
-    /// Page size (`api::find`'s `k`).
+    /// Page size (`retrieval::find`'s `k`).
     #[serde(default)]
     limit: Option<usize>,
     /// Ranked results to skip.
@@ -202,7 +203,7 @@ async fn execute(state: AppState, req: ConsoleSearch) -> Response {
         let mut conn = state.conn()?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
         let run_started = Instant::now();
-        let out = api::find::run(&mut ctx, find, track)?;
+        let out = retrieval::find::run(&mut ctx, find, track)?;
         let took_ms = u64::try_from(run_started.elapsed().as_millis()).unwrap_or(u64::MAX);
         Ok(body(&out, explain_hits, took_ms, cfg.retrieval.rrf_k))
     })
@@ -212,7 +213,7 @@ async fn execute(state: AppState, req: ConsoleSearch) -> Response {
 
 /// Shape one finished run into the console's response `data`.
 fn body(
-    out: &api::find::FindResult,
+    out: &retrieval::find::FindResult,
     explain_hits: bool,
     took_ms: u64,
     rrf_k: f32,
@@ -258,8 +259,8 @@ fn console_hit(h: &UnifiedHit, explain_hits: bool) -> ConsoleHit {
 /// Adapt the console's request onto the pipeline's. The time-scoping,
 /// language, and document-path filters have no console control yet and are
 /// left at their defaults rather than invented here.
-fn into_find(req: ConsoleSearch) -> Result<api::find::Request> {
-    Ok(api::find::Request {
+fn into_find(req: ConsoleSearch) -> Result<retrieval::find::Request> {
+    Ok(retrieval::find::Request {
         query: req.q,
         k: req.limit,
         offset: req.offset,
@@ -275,7 +276,7 @@ fn into_find(req: ConsoleSearch) -> Result<api::find::Request> {
     })
 }
 
-/// `scope` → `api::find`'s `domain`. Both the console's plural spellings
+/// `scope` → `retrieval::find`'s `domain`. Both the console's plural spellings
 /// and the pipeline's own singular ones are accepted; anything else names
 /// the offender rather than silently searching everything.
 fn domain_of(scope: Option<&str>) -> Result<&'static str> {
@@ -307,14 +308,14 @@ fn kind_of(kinds: &[String]) -> Result<Option<Kind>> {
 /// `GET /api/v1/search/suggest` — mined expansions + recent queries.
 async fn suggest(
     State(state): State<AppState>,
-    Query(req): Query<api::suggest::Request>,
+    Query(req): Query<retrieval::suggest::Request>,
 ) -> Response {
     let started = Instant::now();
     let result = run_blocking(move || {
         let cfg = state.cfg();
         let mut conn = state.conn()?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        api::suggest::run(&mut ctx, req)
+        retrieval::suggest::run(&mut ctx, req)
     })
     .await;
     respond("search.suggest", result, started)

@@ -15,7 +15,7 @@
 #
 # Usage:  bash tests/golden/ranking-invariance.gen.sh [path/to/comemory]
 # Default binary: target/debug/comemory (built from the CURRENT checkout — run
-# this BEFORE editing src/retrieval/).
+# this BEFORE editing src/domains/retrieval/).
 
 set -euo pipefail
 

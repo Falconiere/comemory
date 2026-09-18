@@ -7,9 +7,9 @@
 //! yields `Unknown`, never `Ghost`. Detection is read-only and advisory —
 //! `cli::prune` surfaces the candidates without hard-deleting them.
 
+use crate::domains::retrieval::code_ref_fetch::RefStatusCache;
+use crate::domains::retrieval::code_ref_status::RefStatus;
 use crate::prelude::*;
-use crate::retrieval::code_ref_fetch::RefStatusCache;
-use crate::retrieval::code_ref_status::RefStatus;
 use crate::store::code_ref::LiveRefRow;
 use crate::store::edges::REFERENCES_SYMBOL;
 use crate::store::{self, Connection};
@@ -59,7 +59,7 @@ fn is_ghost(conn: &Connection, cache: &mut RefStatusCache, r: &LiveRefRow) -> Re
 
 /// Split a `<repo>:<path>:<symbol>` address into its three parts. `None` when
 /// the address lacks the symbol segment. Mirrors the parse in
-/// [`crate::retrieval::code_ref_collect`] so both read the same edge format.
+/// [`crate::domains::retrieval::code_ref_collect`] so both read the same edge format.
 fn split_symbol_id(dst_id: &str) -> Option<(&str, &str, &str)> {
     let parts: Vec<&str> = dst_id.splitn(3, ':').collect();
     match parts.as_slice() {

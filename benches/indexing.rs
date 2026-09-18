@@ -32,7 +32,7 @@ const CODE_DIM: usize = 768;
 
 /// A real comemory source file, embedded at compile time. Resolves
 /// relative to this bench file (`benches/`), so `../src/...`.
-const SAMPLE_SRC: &str = include_str!("../src/retrieval/pipeline.rs");
+const SAMPLE_SRC: &str = include_str!("../src/domains/retrieval/pipeline.rs");
 
 /// Open a fresh migrated `comemory.db` in a throwaway tempdir.
 fn fresh_conn() -> (tempfile::TempDir, Connection) {

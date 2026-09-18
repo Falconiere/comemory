@@ -1,5 +1,8 @@
-//! `--only` domain-scope resolution, plus the interim `--only document`
-//! search path for `comemory search`.
+//! The `--only` clap surface, plus the interim `--only document` search
+//! path for `comemory search`. The resolution policy itself is
+//! transport-neutral and lives in
+//! [`crate::domains::retrieval::scope::resolve_domains`]; this module only
+//! maps clap's own enum onto it.
 //!
 //! s9 fuses the document leg into `retrieval::pipeline` with a pinned
 //! `domain` + `fused_score` row shape (`output::document`); until then a
@@ -14,11 +17,11 @@ use clap::ValueEnum;
 use serde::Serialize;
 
 use crate::config::Config;
+use crate::domains::retrieval::doc_route::{self, DocHit};
+use crate::domains::retrieval::pipeline;
+use crate::domains::retrieval::scope::{self, Domain, Domains, Filters};
 use crate::output::{json, tty};
 use crate::prelude::*;
-use crate::retrieval::doc_route::{self, DocHit};
-use crate::retrieval::pipeline;
-use crate::retrieval::scope::{Domain, Domains, Filters};
 use crate::store::Connection;
 use crate::utilities::pagination::Page;
 use crate::utilities::pagination::PageWindow;
@@ -49,59 +52,11 @@ impl From<OnlyDomain> for Domain {
     }
 }
 
-/// Resolve `--only` (raw clap values) plus `--kind` into the [`Domains`]
-/// mask a search run should use. `--only` unset: `--kind` narrows the
-/// default to memory-only, else the full default stands. `--only` set:
-/// parsed verbatim, rejected as a usage error if it excludes memory
-/// while `--kind` is set (nothing to apply the filter to), if it
-/// includes [`Domain::Code`] — no leg here searches code yet, so it
-/// would otherwise silently drop code results instead of finding any —
-/// or if it includes both [`Domain::Memory`] and [`Domain::Document`]:
-/// `cli::search::run` routes on `Memory` alone (memory present ->
-/// `run_memory`, which never reads `Filters.domains` and would silently
-/// drop the document half of the request).
+/// Map the raw clap `--only` values onto [`Domain`] and hand them to
+/// [`scope::resolve_domains`], which owns the policy and its usage errors.
 pub fn resolve_domains(only: &[OnlyDomain], kind: Option<&str>) -> Result<Domains> {
-    if only.is_empty() {
-        return Ok(if kind.is_some() {
-            Domains::memory_only()
-        } else {
-            Domains::all()
-        });
-    }
-    let domains = Domains::of(&only.iter().map(|d| Domain::from(*d)).collect::<Vec<_>>());
-    if let Some(k) = kind
-        && !domains.contains(Domain::Memory)
-    {
-        return Err(Error::Usage(format!(
-            "--kind {k} requires memory in --only (got: {})",
-            only_label(only)
-        )));
-    }
-    if domains.contains(Domain::Code) {
-        return Err(Error::Usage(format!(
-            "code domain joins unified search in a later release; use `comemory search-code` \
-             instead (got: --only {})",
-            only_label(only)
-        )));
-    }
-    if domains.contains(Domain::Memory) && domains.contains(Domain::Document) {
-        return Err(Error::Usage(format!(
-            "memory and document can't be combined yet — search unifies them in a later \
-             release; run them separately (got: --only {})",
-            only_label(only)
-        )));
-    }
-    Ok(domains)
-}
-
-/// Render `only` back as its comma-separated flag values, for the
-/// contradiction error in [`resolve_domains`].
-fn only_label(only: &[OnlyDomain]) -> String {
-    only.iter()
-        .filter_map(clap::ValueEnum::to_possible_value)
-        .map(|v| v.get_name().to_string())
-        .collect::<Vec<_>>()
-        .join(",")
+    let domains: Vec<Domain> = only.iter().map(|d| Domain::from(*d)).collect();
+    scope::resolve_domains(&domains, kind)
 }
 
 /// Run the interim document-only search path: `doc_route` directly, no

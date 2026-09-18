@@ -1,7 +1,7 @@
 //! `comemory search` — natural-language search over the v0.2 SQLite store.
 //!
 //! Resolves the data dir, opens `comemory.db`, parses any caller-supplied
-//! vector, then delegates to [`crate::retrieval::pipeline::search`]
+//! vector, then delegates to [`crate::domains::retrieval::pipeline::search`]
 //! (route → rerank → diversify → top-k, plus access tracking). When the
 //! caller does not supply a vector (`--vector` / `--vector-stdin`), the
 //! lexical FTS5 BM25 branch handles the candidate stage — no embedder is
@@ -11,14 +11,14 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::api;
 use crate::cli::search_only::{self, OnlyDomain};
 use crate::cli::{load_config, track_searches};
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::domains::memories::Kind;
+use crate::domains::retrieval;
+use crate::domains::retrieval::scope::{Domain, Filters};
 use crate::output;
 use crate::prelude::*;
-use crate::retrieval::scope::{Domain, Filters};
 use crate::store::Connection;
 use crate::store::connection;
 use crate::utilities::context::Ctx;
@@ -122,7 +122,7 @@ pub struct Args {
 }
 
 /// Run `comemory search`. Opens the DB, resolves the domain scope, and
-/// dispatches to the memory pipeline (via `api::search::run`) or — for a
+/// dispatches to the memory pipeline (via `retrieval::search::run`) or — for a
 /// scope that excludes memory — the interim document-only path (see
 /// [`run_memory`] / `cli::search_only`). The `--k` flag overrides
 /// `retrieval.top_k`.
@@ -139,7 +139,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     // s9 fuses the document leg into `pipeline::search`; until then a
     // scope excluding memory (chiefly `--only document`) cannot go
     // through it — that pipeline always runs the full memory leg
-    // regardless of `Filters.domains`, and `api::search::Request` carries
+    // regardless of `Filters.domains`, and `retrieval::search::Request` carries
     // no `--only`/`--path` fields (see that module's doc). That case
     // takes the interim direct `doc_route` path instead; every other scope
     // (the default, `--only memory`, or any combination that still
@@ -158,9 +158,9 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     run_memory(&a, json_flag, &paths, &mut conn, &cfg).await
 }
 
-/// The pre-`--only` memory search path: build the shared `api::search::Request`
+/// The pre-`--only` memory search path: build the shared `retrieval::search::Request`
 /// from the CLI args (reading any `--vector`/`--vector-stdin` payload, a
-/// CLI-only affordance) and delegate to `api::search::run`, then emit via
+/// CLI-only affordance) and delegate to `retrieval::search::run`, then emit via
 /// `output::search::emit`. Split out of [`run`] to keep it under the
 /// function length gate.
 async fn run_memory(
@@ -171,7 +171,7 @@ async fn run_memory(
     cfg: &crate::config::Config,
 ) -> Result<()> {
     let vector = vector_stdin::read_optional(a.vector_stdin, a.vector.as_deref())?;
-    let req = api::search::Request {
+    let req = retrieval::search::Request {
         query: a.query.clone(),
         k: a.k,
         offset: a.offset,
@@ -183,6 +183,6 @@ async fn run_memory(
         as_of: a.as_of.clone(),
     };
     let mut ctx = Ctx::borrowed(paths, cfg, conn);
-    let result = api::search::run(&mut ctx, req, track_searches()?)?;
+    let result = retrieval::search::run(&mut ctx, req, track_searches()?)?;
     output::search::emit(&result, json_flag, paths.data_dir())
 }

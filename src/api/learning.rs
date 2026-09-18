@@ -184,7 +184,7 @@ pub fn golden_set(ctx: &mut Ctx<'_>, golden: Option<&str>) -> Result<GoldenSet> 
 /// `expansion` break the tie — `(term, expansion)` is the table's primary
 /// key, so the order is total and a page boundary is stable (two mappings
 /// for one term with equal support would otherwise be free to swap between
-/// pages); the same order `api::suggest` reads with. `limit == 0` is
+/// pages); the same order `retrieval::suggest` reads with. `limit == 0` is
 /// [`Page`]'s "all" sentinel.
 pub fn expansions(ctx: &mut Ctx<'_>, limit: usize, offset: usize) -> Result<Page<Expansion>> {
     if !ctx.paths.db_path().exists() {

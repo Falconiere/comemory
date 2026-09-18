@@ -50,6 +50,7 @@
         "memory_store",
         "repos",
         "source",
+        "unified",
         "tests",
         "proptest-regressions"
       ],
@@ -121,8 +122,8 @@
       "eval",
       "output",
       "prune",
-      "retrieval",
-      "retrieval/unified",
+      "domains/retrieval",
+      "domains/retrieval/unified",
       "serve",
       "serve/jobs",
       "serve/routes",

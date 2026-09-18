@@ -48,7 +48,7 @@ pub struct MatchedExpansion {
 
 /// Rows whose `term` is one of `terms`, strongest-support first (ties
 /// broken on `term`, then `expansion`), capped at `limit` — behind
-/// `api::suggest`'s "expansions" list. An empty `terms` slice short-circuits
+/// `retrieval::suggest`'s "expansions" list. An empty `terms` slice short-circuits
 /// to an empty result rather than building an invalid `IN ()` clause.
 pub fn matching_terms(
     conn: &Connection,
@@ -74,7 +74,7 @@ pub fn matching_terms(
         .collect();
     // A `limit` above i64::MAX cannot describe a reachable row count, so
     // saturating is the only meaningful conversion; SQLite treats any such
-    // value as "no limit" regardless. Preserved from the api::suggest call
+    // value as "no limit" regardless. Preserved from the retrieval::suggest call
     // site this moved from.
     binds.push(Box::new(i64::try_from(limit).unwrap_or(i64::MAX)));
     let mut stmt = conn.prepare(&sql)?;

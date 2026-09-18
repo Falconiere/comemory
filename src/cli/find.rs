@@ -1,7 +1,7 @@
 //! `comemory find` — one ranked list across memories, code, and documents.
 //!
 //! The fusion lives in `retrieval::unified` and the shared middle in
-//! `api::find` (Binding Rule 1). `search` and `search-code` are unchanged
+//! `retrieval::find` (Binding Rule 1). `search` and `search-code` are unchanged
 //! and remain the right call when you want one domain's own hit shape.
 
 use std::io::Write as _;
@@ -9,10 +9,10 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::api;
 use crate::cli::{load_config, track_searches};
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::domains::memories::Kind;
+use crate::domains::retrieval;
 use crate::output::json;
 use crate::prelude::*;
 use crate::store::connection;
@@ -88,9 +88,9 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     let vector = vector_stdin::read_optional(a.vector_stdin, a.vector.as_deref())?;
 
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-    let result = api::find::run(
+    let result = retrieval::find::run(
         &mut ctx,
-        api::find::Request {
+        retrieval::find::Request {
             query: a.query,
             k: a.k,
             offset: a.offset,

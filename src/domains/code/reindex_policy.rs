@@ -80,7 +80,7 @@ pub fn should_reindex(
 }
 
 /// Resolve the repo label + working-tree root from the process CWD, using
-/// the same policy as [`crate::retrieval::code_rerank::WorkingSet::from_cwd`]:
+/// the same policy as [`crate::domains::retrieval::code_rerank::WorkingSet::from_cwd`]:
 /// discover the repo from the CWD, take the `--repo` filter as the label,
 /// else [`crate::domains::code::git_utils::repo_label`] — the main worktree's basename, so
 /// a search from a linked worktree refreshes the main repo's index instead

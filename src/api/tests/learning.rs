@@ -13,6 +13,7 @@
 use comemory::api;
 use comemory::config::{Config, Paths};
 use comemory::domains::memories::Kind;
+use comemory::retrieval;
 use comemory::store::{connection, eval_runs};
 use comemory::utilities::context::Ctx;
 use tempfile::TempDir;
@@ -320,7 +321,7 @@ fn save_note(ctx: &mut Ctx<'_>, body: &str) -> String {
 /// Run a tracked search (so a `retrieval_log` row exists) and return its
 /// query id — the handle `comemory feedback` records verdicts against.
 fn search_query_id(ctx: &mut Ctx<'_>, query: &str) -> String {
-    let req = api::search::Request {
+    let req = retrieval::search::Request {
         query: query.to_string(),
         k: None,
         offset: 0,
@@ -331,7 +332,7 @@ fn search_query_id(ctx: &mut Ctx<'_>, query: &str) -> String {
         until: None,
         as_of: None,
     };
-    api::search::run(ctx, req, true)
+    retrieval::search::run(ctx, req, true)
         .expect("seed search")
         .query_id
         .expect("a tracked search records a query id")

@@ -10,8 +10,8 @@ use time::format_description::well_known::{Iso8601, Rfc3339};
 use time::macros::{format_description, time};
 use time::{Date, OffsetDateTime};
 
+use crate::domains::retrieval::scope::TimeScope;
 use crate::prelude::*;
-use crate::retrieval::scope::TimeScope;
 use crate::store::memory_row;
 
 /// Which edge of a bare `YYYY-MM-DD` day the value expands to. Full
