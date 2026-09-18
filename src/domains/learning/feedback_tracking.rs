@@ -96,7 +96,7 @@ pub(crate) fn record_implicit_used(
 ///
 /// `provenance` is stamped on every event row of the batch — a
 /// [`Source::provenance`] value ([`PROV_MANUAL`] / [`PROV_IMPLICIT`]) from
-/// `api::feedback::run`. Both verdicts carry it, so an implicit *negative*
+/// `domains::learning::feedback::run`. Both verdicts carry it, so an implicit *negative*
 /// is storable, not only an implicit `used`.
 ///
 /// The query id is recorded verbatim; it is not required to exist in

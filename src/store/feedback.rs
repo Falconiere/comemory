@@ -43,13 +43,15 @@ pub(crate) fn upsert_irrelevant(conn: &Connection, id: &str) -> Result<()> {
 }
 
 /// Insert one memory-tagged `feedback_events` row. `target_kind` and
-/// `provenance` are the caller's `crate::domains::learning::feedback_tracking`
-/// vocabulary constants, passed explicitly rather than hardcoded (or, for
-/// `provenance`, left to the column's `'manual'` default) so this helper
-/// stays table-shaped, not domain-shaped. The one INSERT behind every
+/// `provenance` are the shared vocabulary constants from
+/// `crate::utilities::telemetry` (`target::*` and `PROV_*`), passed
+/// explicitly by the caller rather than hardcoded (or, for `provenance`,
+/// left to the column's `'manual'` default) so this helper stays
+/// table-shaped, not domain-shaped. The one INSERT behind every
 /// memory-target verdict: manual and HTTP-implicit
-/// (`stats::feedback::record_with_provenance`) and the co-activation /
-/// search→edit rewards (`stats::feedback::record_implicit_used`).
+/// (`domains::learning::feedback_tracking::record_with_provenance`) and the
+/// co-activation / search→edit rewards
+/// (`domains::learning::feedback_tracking::record_implicit_used`).
 pub(crate) fn insert_event(
     conn: &Connection,
     query_id: &str,
@@ -140,7 +142,7 @@ pub fn used_events_for_golden(
 }
 
 /// `(total, implicit, used, irrelevant)` over `feedback_events` in one
-/// scan, behind `api::learning::summary`'s console header tiles. The three
+/// scan, behind `domains::learning::console::summary`'s console header tiles. The three
 /// conditional sums are `NULL` on an empty table, read back as `0`.
 pub fn event_counts(conn: &Connection) -> Result<(u64, u64, u64, u64)> {
     let row = conn.query_row(

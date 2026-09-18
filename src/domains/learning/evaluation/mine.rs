@@ -49,7 +49,7 @@ pub fn mine(conn: &Connection) -> Result<Vec<MinedMapping>> {
         crate::utilities::telemetry::source::SEARCH_CODE,
     )?;
     // Only MANUAL memory-target verdicts mark a query successful: a code
-    // verdict (target_kind = 'code', written by `stats::code_feedback`) says
+    // verdict (target_kind = 'code', written by `domains::learning::code_feedback`) says
     // nothing about memory retrieval quality, and an HTTP-implicit verdict
     // (#130) is a model's observation, not a human confirming the
     // rewording worked — so a follow-up whose only used feedback is

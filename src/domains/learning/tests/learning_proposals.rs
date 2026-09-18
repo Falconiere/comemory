@@ -5,7 +5,7 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror test for `src/api/learning_proposals.rs`: proposals derived from
+//! Mirror test for `src/domains/learning/learning_proposals.rs`: proposals derived from
 //! real `eval_runs` rows against the live config, and the apply/discard
 //! transitions — including the `config.toml` the apply actually writes
 //! (AC-13's api-layer half; the HTTP half lives in

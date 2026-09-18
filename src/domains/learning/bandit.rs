@@ -1,4 +1,4 @@
-//! `api::bandit::{Request, run}` — the shared middle of `comemory bandit`
+//! `domains::learning::bandit::{Request, run}` — the shared middle of `comemory bandit`
 //! / `POST /api/v1/bandit`: Thompson-sample the `[tune]` grid, confirm the
 //! sample against the golden set, and — with `apply` — persist a winning
 //! arm into `config.toml`. Moved out of `cli::bandit::run` (Binding Rule 1).

@@ -1,4 +1,4 @@
-//! `api::tune::{Request, Response, run}` — the shared middle of
+//! `domains::learning::tune::{Request, Response, run}` — the shared middle of
 //! `comemory tune` / `POST /api/v1/tune`: search the `[tune]` blend-knob
 //! grid against the merged golden set (tracking off) and, when `apply` is
 //! set and the winner strictly beats the current config, persist it into

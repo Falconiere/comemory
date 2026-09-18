@@ -5,7 +5,7 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror test for `src/api/eval.rs`. Seeds a real corpus + golden file via
+//! Mirror test for `src/domains/learning/eval.rs`. Seeds a real corpus + golden file via
 //! the binary, then calls `eval::run` directly against a `Ctx` opened
 //! on the same data-dir (the HTTP route — `POST /eval`, job, read-only
 //! containment — lives in `src/serve/routes/tests/learning.rs`).

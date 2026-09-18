@@ -92,7 +92,7 @@ pub fn matching_terms(
         .map_err(Error::from)
 }
 
-/// Total `query_expansions` row count — behind `api::learning`'s summary
+/// Total `query_expansions` row count — behind `domains::learning::console`'s summary
 /// tile and its paged `expansions` list.
 pub fn count(conn: &Connection) -> Result<u64> {
     Ok(

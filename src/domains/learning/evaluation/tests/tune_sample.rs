@@ -5,7 +5,7 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror for `src/eval/tune_sample.rs` — the seeded candidate sampler:
+//! Mirror for `src/domains/learning/evaluation/tune_sample.rs` — the seeded candidate sampler:
 //! determinism, pool membership, dedup/count, and the exhaustion fallback.
 
 use comemory::config::TuneConfig;

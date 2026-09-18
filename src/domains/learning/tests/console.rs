@@ -5,7 +5,7 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror test for `src/api/learning.rs`: the four console reads against a
+//! Mirror test for `src/domains/learning/console.rs`: the four console reads against a
 //! real migrated `comemory.db` — real `eval_runs` rows, real mined
 //! `query_expansions` rows, and a golden harvest grown from a real
 //! save → search → feedback round trip (no fixture doubles).

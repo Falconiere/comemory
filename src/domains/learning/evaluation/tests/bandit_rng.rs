@@ -5,7 +5,7 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror for `src/eval/bandit_rng.rs`. The SplitMix64 / `sample_beta`
+//! Mirror for `src/domains/learning/evaluation/bandit_rng.rs`. The SplitMix64 / `sample_beta`
 //! helpers are `pub(crate)`, so this binary pins them through the public
 //! `bandit::thompson_sample` / `bandit::sample_seed` surface they feed.
 

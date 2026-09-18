@@ -6,7 +6,7 @@
     clippy::too_many_lines
 )]
 //! Tests for the `q-<yyyymmdd>-<8hex>` query-id contract, extracted from
-//! `stats::feedback` by #166. The writer and the checker must agree for every
+//! `domains::learning::feedback_tracking` by #166. The writer and the checker must agree for every
 //! id the generator emits, and the two auto-reinforcement sentinel ids must
 //! stay deliberately invalid so `eval::golden::harvest` can never mint a
 //! golden pair from them.

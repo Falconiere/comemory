@@ -2,12 +2,13 @@
 //! [`crate::store::connection::open`] so all data lands in the single v0.2
 //! database (spec §4: one file).
 //!
-//! `StatsDb` is the shared connection handle the rest of `stats/` opens
-//! through — [`crate::domains::learning::feedback_tracking::record_with_provenance`] and
-//! [`crate::domains::learning::code_feedback::record_code_with_provenance`] borrow
-//! [`Self::conn_mut`] for their own transactions. It owns no table of its
-//! own: the `index_failures` bookkeeping it used to delegate now lives
-//! wholly in [`crate::store::index_failures`] (#173).
+//! `StatsDb` is the shared connection handle the two feedback recorders open
+//! through — [`crate::domains::learning::feedback_tracking::record_with_provenance`]
+//! and [`crate::domains::learning::code_feedback::record_code_with_provenance`]
+//! borrow [`Self::conn_mut`] for their own transactions. It owns no table:
+//! the `index_failures` bookkeeping it once delegated moved wholly to
+//! [`crate::store::index_failures`] with #173, leaving the connection itself
+//! as this type's only responsibility.
 
 use crate::prelude::*;
 use crate::store::Connection;

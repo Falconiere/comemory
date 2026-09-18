@@ -1,4 +1,4 @@
-//! `api::learning_proposals` — knob proposals derived from unapplied
+//! `domains::learning::learning_proposals` — knob proposals derived from unapplied
 //! `tune`/`bandit` runs: list, apply, discard (console-api spec §7).
 //!
 //! A *proposal* is not a stored row of its own: it is a `tune`/`bandit`
@@ -8,7 +8,7 @@
 //! already recorded, and "differs from live config" is computable, but
 //! "dismissed without applying" was not expressible.
 //!
-//! [`apply`] writes through the same `eval::tune::apply_to_config_file`
+//! [`apply`] writes through the same `evaluation::tune::apply_to_config_file`
 //! `comemory tune --apply` uses (Binding Rule 1: one config writer), then
 //! stamps the row `applied` so the proposal stops being offered.
 

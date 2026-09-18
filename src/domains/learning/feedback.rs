@@ -1,4 +1,4 @@
-//! `api::feedback::{Request, Response, run}` — the shared middle of
+//! `domains::learning::feedback::{Request, Response, run}` — the shared middle of
 //! `comemory feedback` / `POST /api/v1/feedback` (and, through
 //! `serve::routes::search::into_feedback`, of
 //! `POST /api/v1/search/{query_id}/feedback`): validate the query id

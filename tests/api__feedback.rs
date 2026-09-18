@@ -5,7 +5,7 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror test for `src/api/feedback.rs`. Calls `feedback::run`
+//! Mirror test for `src/domains/learning/feedback.rs`. Calls `feedback::run`
 //! directly against a `Ctx` opened on a fresh temp data-dir — proving the
 //! extracted command core records feedback the same way `comemory feedback`
 //! does (`cli::feedback::run` is byte-compat tested against CLI stdout in

@@ -1,4 +1,4 @@
-//! `api::mine::{Request, run}` — the shared middle of `comemory mine` /
+//! `domains::learning::mine::{Request, run}` — the shared middle of `comemory mine` /
 //! `POST /api/v1/mine`: distill (failed_term → fix_term) expansion mappings
 //! from reformulation pairs in `retrieval_log`, and optionally rebuild the
 //! `query_expansions` table the tier-4 lexical ladder reads. Moved out of

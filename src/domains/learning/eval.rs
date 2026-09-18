@@ -1,9 +1,9 @@
-//! `api::eval::{Request, run}` — the shared middle of `comemory eval` /
+//! `domains::learning::eval::{Request, run}` — the shared middle of `comemory eval` /
 //! `POST /api/v1/eval`: build the merged golden set (file ∪ feedback
 //! harvest) and score the real pipeline against it with tracking off.
 //! Moved out of `cli::eval::run` (Binding Rule 1). [`history`] is the
 //! shared middle of `comemory eval --history` / `GET /api/v1/eval/history`.
-//! Every run of either kind — and of `api::tune::run` / `api::bandit::run`
+//! Every run of either kind — and of `domains::learning::tune::run` / `domains::learning::bandit::run`
 //! — is recorded via [`record_run`] into `eval_runs`, one row per run.
 //!
 //! `eval` mutates nothing (§Route map Notes): the run is read-class even
@@ -88,7 +88,7 @@ pub(crate) fn default_k() -> usize {
 /// clone with the six blend knobs swapped in and re-validated, so an
 /// out-of-range override is an [`Error::BadRequest`] and never reaches the
 /// pipeline or `eval_runs` (a garbage row there would become the
-/// `best_delta` baseline and a sparkline point in `api::learning`).
+/// `best_delta` baseline and a sparkline point in `domains::learning::console`).
 /// Everything else (data dir, thresholds, …) stays as configured. `pub` so
 /// the HTTP route can refuse the override synchronously, before a job is
 /// created; [`run`] calls it again itself, so the core holds the rule no
@@ -147,7 +147,7 @@ pub fn history(ctx: &mut Ctx<'_>, req: &Request) -> Result<Vec<eval_runs::EvalRu
 }
 
 /// Random bytes behind an `eval_runs` row id — 8 bytes, rendered as 16
-/// lowercase-hex chars (the same width [`crate::api::gc`] uses for
+/// lowercase-hex chars (the same width `api::gc` uses for
 /// `gc_runs`).
 const RUN_ID_BYTES: usize = 8;
 
@@ -171,7 +171,7 @@ pub(crate) struct RunOutcome<'a> {
 }
 
 /// Insert one `eval_runs` row for a completed run — shared by `eval`
-/// (here) and by `api::tune::run` / `api::bandit::run`, so id generation,
+/// (here) and by `domains::learning::tune::run` / `domains::learning::bandit::run`, so id generation,
 /// the timestamp, and the row shape live in one place (Binding Rule 1).
 pub(crate) fn record_run(conn: &Connection, outcome: RunOutcome<'_>) -> Result<()> {
     let id = random_id::random_hex(RUN_ID_BYTES)?;

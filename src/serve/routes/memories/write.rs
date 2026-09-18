@@ -12,7 +12,7 @@ use axum::routing::{delete, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 
-use crate::domains::learning::feedback;
+use crate::domains::learning;
 use crate::serve::AppState;
 use crate::serve::routes::{RouteEntry, guard_mutating, require_confirm, respond, run_blocking};
 use crate::utilities::context::Ctx;
@@ -107,7 +107,10 @@ async fn delete_memory(
 }
 
 /// `POST /api/v1/feedback` — record feedback (`domains::learning::feedback`).
-async fn feedback(State(state): State<AppState>, Json(req): Json<feedback::Request>) -> Response {
+async fn feedback(
+    State(state): State<AppState>,
+    Json(req): Json<learning::feedback::Request>,
+) -> Response {
     let started = Instant::now();
     let permit = match guard_mutating("feedback", &state) {
         Ok(permit) => permit,
@@ -118,7 +121,7 @@ async fn feedback(State(state): State<AppState>, Json(req): Json<feedback::Reque
         let cfg = state.cfg();
         let mut conn = state.conn()?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        feedback::run(&mut ctx, req)
+        learning::feedback::run(&mut ctx, req)
     })
     .await;
     respond("feedback", result, started)

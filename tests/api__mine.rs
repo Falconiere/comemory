@@ -5,7 +5,7 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror test for `src/api/mine.rs`. Seeds a real failed → reworded search
+//! Mirror test for `src/domains/learning/mine.rs`. Seeds a real failed → reworded search
 //! pair with used feedback via the real binary, then calls `mine::run`
 //! directly against a `Ctx` opened on the same data-dir
 //! (`cli::mine::run` is byte-compat tested against CLI stdout in

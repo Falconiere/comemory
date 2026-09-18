@@ -37,8 +37,9 @@ pub fn record(conn: &Connection, when: OffsetDateTime, error: &str) -> Result<()
 }
 
 /// Number of rows in `index_failures`. Surfaced by `comemory doctor` and
-/// tests; saturates at `usize::MAX` because the underlying count is signed
-/// in SQLite and we clamp to 0 on negative results.
+/// tests. SQLite's `COUNT(*)` is signed, so a (structurally impossible)
+/// negative result clamps to 0; the upper bound is therefore `i64::MAX`
+/// widened to `usize`, not `usize::MAX`.
 pub fn count(conn: &Connection) -> Result<usize> {
     let n: i64 = conn.query_row("SELECT COUNT(*) FROM index_failures", [], |r| r.get(0))?;
     Ok(n.max(0) as usize)

@@ -5,7 +5,7 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror test for `src/api/tune.rs`. Seeds a real corpus + golden file via
+//! Mirror test for `src/domains/learning/tune.rs`. Seeds a real corpus + golden file via
 //! the binary, then calls `tune::run` directly against a `Ctx` opened
 //! on the same data-dir (the HTTP route — job, confirm-when-apply,
 //! `AppState.cfg` reload — lives in `src/serve/routes/tests/learning.rs`).

@@ -1,10 +1,10 @@
-//! `api::learning` — the learning-loop console reads: summary, evals with
+//! `domains::learning::console` — the learning-loop console reads: summary, evals with
 //! derived flags, golden set, expansions (console-api spec §7).
 //!
 //! Four independent reads over data the binary already records — the
 //! feedback log, `eval_runs`, the golden set, and the mined
 //! `query_expansions` table. Nothing here writes; the console's write half
-//! is `api::learning_proposals`.
+//! is `domains::learning::learning_proposals`.
 //!
 //! **Must-not-create-the-db invariant** (the rule `api::stats` and
 //! `api::gc` keep): being asked how the learning loop is doing must not
@@ -157,7 +157,7 @@ pub fn evals(ctx: &mut Ctx<'_>, limit: u32) -> Result<Vec<EvalRow>> {
 ///
 /// `golden` is a filesystem path the ROUTE has already contained to an
 /// allowed root (§Security "Path containment") — this function treats it as
-/// already-safe, exactly as `api::eval::run` treats its own `golden`.
+/// already-safe, exactly as `domains::learning::eval::run` treats its own `golden`.
 pub fn golden_set(ctx: &mut Ctx<'_>, golden: Option<&str>) -> Result<GoldenSet> {
     let file_pairs = match golden {
         Some(p) => golden::load_file(Path::new(p))?,

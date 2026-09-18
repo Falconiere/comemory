@@ -7,7 +7,7 @@
 )]
 //! Tests for [`comemory::domains::learning::code_feedback`].
 //!
-//! Code-side sibling of `tests/stats/feedback.rs`: counter upsert semantics
+//! Code-side sibling of `src/domains/learning/tests/feedback_tracking.rs`: counter upsert semantics
 //! (first insert → 1, conflict → +1, last_used refresh) are exercised
 //! through `record_code_with_provenance`, the only src/ writer. Counter
 //! rows are keyed by the stable (repo, path, symbol) identity — NOT the

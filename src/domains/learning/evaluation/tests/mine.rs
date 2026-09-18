@@ -58,7 +58,7 @@ fn mark_used_implicit(conn: &rusqlite::Connection, qid: &str) {
 
 /// Insert a `used` feedback event tagged `target_kind='code'` for the given
 /// query id (symbol id text-encoded into the memory_id column, as
-/// `stats::code_feedback` writes it).
+/// `domains::learning::code_feedback` writes it).
 fn mark_used_code(conn: &rusqlite::Connection, qid: &str) {
     conn.execute(
         "INSERT INTO feedback_events(query_id, memory_id, verdict, at, target_kind) \
