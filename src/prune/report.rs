@@ -57,7 +57,7 @@ pub struct PruneRow {
     /// Which detector flagged this row: `"low value"`, `"orphan"`, or
     /// `"stale code"`.
     pub reason: String,
-    /// ACT-R activation ([`crate::retrieval::score::activation`]) at scan
+    /// ACT-R activation ([`crate::domains::retrieval::score::activation`]) at scan
     /// time, using the configured decay.
     pub activation: f64,
     /// Whole days since the memory was created.

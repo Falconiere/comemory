@@ -13,6 +13,7 @@ use comemory::api;
 use comemory::config::{Config, Paths};
 use comemory::domains::graph::{graph_nodes, graph_recompute};
 use comemory::domains::sync::exchange::{CodeImportRejection, CodeImportRequest, code_import};
+use comemory::retrieval;
 use comemory::store::{Connection, connection, repo_marker};
 use comemory::utilities::context::Ctx;
 
@@ -184,9 +185,9 @@ fn ac8_ac9_import_answers_the_graph_and_the_inventory_without_source() {
         .unwrap();
     assert_eq!(fts, 0);
     let mut ctx = Ctx::borrowed(&ws.paths, &ws.cfg, &mut ws.conn);
-    let hits = api::search_code::run(
+    let hits = retrieval::search_code::run(
         &mut ctx,
-        api::search_code::Request {
+        retrieval::search_code::Request {
             query: "alpha".into(),
             k: Some(10),
             offset: 0,

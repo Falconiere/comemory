@@ -14,9 +14,11 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use comemory::memory::{Ref, References};
-use comemory::output::search::{self, ScopeEcho};
+use comemory::output::search;
 use comemory::retrieval::rerank::{Reranked, ScoreParts};
 use comemory::retrieval::router::Source;
+use comemory::retrieval::scope::ScopeEcho;
+use comemory::retrieval::search_result;
 use comemory::store::memory_meta::MemoryMeta;
 use comemory::utilities::pagination::PageMeta;
 
@@ -136,7 +138,7 @@ fn tty_footer_includes_feedback_hint_with_hits() {
 
 #[test]
 fn search_json_envelope_contract() {
-    insta::assert_json_snapshot!(search::envelope(
+    insta::assert_json_snapshot!(search_result::envelope(
         &sample_hits(),
         None,
         meta(),
@@ -149,7 +151,7 @@ fn search_json_envelope_contract() {
 #[test]
 fn envelope_carries_query_id_when_present() {
     let hits = sample_hits();
-    let v = serde_json::to_value(search::envelope(
+    let v = serde_json::to_value(search_result::envelope(
         &hits,
         Some("q-20260610-a1b2c3d4"),
         meta(),
@@ -224,7 +226,7 @@ fn tty_expanded_label_appears_only_for_tier4() {
 #[test]
 fn envelope_omits_query_id_when_absent() {
     let hits = sample_hits();
-    let v = serde_json::to_value(search::envelope(
+    let v = serde_json::to_value(search_result::envelope(
         &hits,
         None,
         meta(),

@@ -96,11 +96,6 @@
       "issue": "#176"
     },
     {
-      "module": "crate::retrieval",
-      "owner": "domains::retrieval",
-      "issue": "#171"
-    },
-    {
       "module": "crate::stats",
       "owner": "shared::utilities",
       "issue": "#173"

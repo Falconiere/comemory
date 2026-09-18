@@ -1,4 +1,4 @@
-//! `GET|POST /api/v1/code/search` (`api::search_code`, `GET` no vector,
+//! `GET|POST /api/v1/code/search` (`retrieval::search_code`, `GET` no vector,
 //! `POST` vector-capable; no lazy-reindex over HTTP, spec Non-Goal 8).
 //! `POST /api/v1/code/ast` (`domains::code::pattern_search`): a read, but `req.file` needs
 //! containment first. `POST /api/v1/code/index` (`domains::code::index_code`, job)
@@ -14,8 +14,8 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde_json::Value;
 
-use crate::api;
-use crate::output::search_code;
+use crate::domains::retrieval;
+use crate::domains::retrieval::code_search_result;
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::envelope::Envelope;
@@ -88,7 +88,7 @@ pub fn router(_state: AppState) -> Router<AppState> {
 async fn code_search_get(
     State(state): State<AppState>,
     scope: RepoScope,
-    Query(mut req): Query<api::search_code::Request>,
+    Query(mut req): Query<retrieval::search_code::Request>,
 ) -> Response {
     req.repo = scope.resolve(req.repo);
     handle(state, req).await
@@ -97,26 +97,27 @@ async fn code_search_get(
 async fn code_search_post(
     State(state): State<AppState>,
     scope: RepoScope,
-    Json(mut req): Json<api::search_code::Request>,
+    Json(mut req): Json<retrieval::search_code::Request>,
 ) -> Response {
     req.repo = scope.resolve(req.repo);
     handle(state, req).await
 }
 
 /// Shared spawn-blocking + envelope wiring for the two handlers above.
-async fn handle(state: AppState, req: api::search_code::Request) -> Response {
+async fn handle(state: AppState, req: retrieval::search_code::Request) -> Response {
     let started = Instant::now();
     let result = run_blocking(move || run(state, req)).await;
     respond("code.search", result, started)
 }
 
-fn run(state: AppState, req: api::search_code::Request) -> Result<Value> {
+fn run(state: AppState, req: retrieval::search_code::Request) -> Result<Value> {
     let track = track_for(&state)?;
     let cfg = state.cfg();
     let mut conn = state.conn()?;
     let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-    let result = api::search_code::run(&mut ctx, req, track)?;
-    let envelope = search_code::envelope(&result.hits, result.query_id.as_deref(), result.meta);
+    let result = retrieval::search_code::run(&mut ctx, req, track)?;
+    let envelope =
+        code_search_result::envelope(&result.hits, result.query_id.as_deref(), result.meta);
     serde_json::to_value(envelope).map_err(Error::Json)
 }
 

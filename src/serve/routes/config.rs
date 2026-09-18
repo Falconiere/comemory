@@ -14,7 +14,7 @@ use axum::response::Response;
 use axum::routing::get;
 use axum::{Json, Router};
 
-use crate::api;
+use crate::domains::retrieval;
 use crate::serve::AppState;
 use crate::serve::routes::{RouteEntry, guard_mutating, respond, run_blocking};
 use crate::utilities::context::Ctx;
@@ -46,7 +46,7 @@ pub fn router(_state: AppState) -> Router<AppState> {
 /// per-knob range table.
 async fn read(State(state): State<AppState>) -> Response {
     let started = Instant::now();
-    let knobs = api::config_retrieval::get(&state.cfg());
+    let knobs = retrieval::config_retrieval::get(&state.cfg());
     respond("config.retrieval", Ok(knobs), started)
 }
 
@@ -55,7 +55,7 @@ async fn read(State(state): State<AppState>) -> Response {
 /// validated before the write, and reversible by another `PUT`.
 async fn update(
     State(state): State<AppState>,
-    Json(req): Json<api::config_retrieval::UpdateRequest>,
+    Json(req): Json<retrieval::config_retrieval::UpdateRequest>,
 ) -> Response {
     let started = Instant::now();
     let permit = match guard_mutating("config.retrieval.update", &state) {
@@ -67,10 +67,10 @@ async fn update(
         {
             let cfg = state.cfg();
             let mut ctx = Ctx::lazy(state.paths(), &cfg);
-            api::config_retrieval::update(&mut ctx, req)?;
+            retrieval::config_retrieval::update(&mut ctx, req)?;
         }
         state.reload_cfg(state.paths())?;
-        Ok(api::config_retrieval::get(&state.cfg()))
+        Ok(retrieval::config_retrieval::get(&state.cfg()))
     })
     .await;
     respond("config.retrieval.update", result, started)

@@ -108,7 +108,11 @@ jq "$SEED_EDGE"' | del(.legacy_edges[0].target)' "$POLICY" >"$TASK_TMP/target.js
 assert_fails 'missing exact target' 'invalid policy edge' --policy "$TASK_TMP/target.json"
 jq "$SEED_EDGE"' | .legacy_edges[0].target = "crate::cli::not_present"' "$POLICY" >"$TASK_TMP/stale.json"
 assert_fails 'stale allowlisted target' 'absent policy edge' --policy "$TASK_TMP/stale.json"
-sed '/^| src\/api\/search.rs |/s/domains::retrieval/domains::code/' "$INVENTORY" >"$TASK_TMP/owner.md"
+# The API-ownership map only constrains rows still under `src/api/`, so this
+# fixture must name one. It moved off `src/api/search.rs` when #171 took the
+# retrieval cores into `domains/retrieval/`: a row that has left `src/api/` is
+# skipped by the check, and the negative case would pass asserting nothing.
+sed '/^| src\/api\/doctor.rs |/s/domains::maintenance/domains::code/' "$INVENTORY" >"$TASK_TMP/owner.md"
 assert_fails 'wrong API owner' 'API ownership mismatch' --inventory "$TASK_TMP/owner.md"
 assert_gate_rejects "$TASK_TMP/owner.md" 'API ownership mismatch'
 sed '/^| src\/domains\/memories\/save.rs |/s@src/domains/memories/save.rs@src/domains/memories/delete.rs@2' "$INVENTORY" >"$TASK_TMP/target.md"

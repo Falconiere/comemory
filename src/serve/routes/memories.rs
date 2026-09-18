@@ -23,8 +23,8 @@ use crate::utilities::context::Ctx;
 /// `PATCH /memories/{id}`, `POST /memories/{id}/restore`,
 /// `POST /memories/{id}/references/refresh` (`api::{update,restore,refresh_refs}`).
 pub mod edit;
-/// `GET|POST /memories/search` (`api::search`) and `GET|POST /context`
-/// (`api::context`).
+/// `GET|POST /memories/search` (`retrieval::search`) and `GET|POST /context`
+/// (`retrieval::context`).
 pub mod search;
 /// `POST /memories`, `DELETE /memories/{id}`, `POST /feedback` — the
 /// mutating routes (`api::{save,delete,feedback}`).

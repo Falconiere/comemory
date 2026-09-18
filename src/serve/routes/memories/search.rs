@@ -1,5 +1,5 @@
-//! `GET|POST /api/v1/memories/search` (`api::search`) and
-//! `GET|POST /api/v1/context` (`api::context`). `GET` takes query params
+//! `GET|POST /api/v1/memories/search` (`retrieval::search`) and
+//! `GET|POST /api/v1/context` (`retrieval::context`). `GET` takes query params
 //! (no vector — a 1024-float embedding does not fit in a query string);
 //! `POST` takes a JSON body and is vector-capable. Both reuse the exact
 //! `output::{search,context}::envelope` builders the CLI's `--json` path
@@ -14,9 +14,9 @@ use axum::routing::get;
 use axum::{Json, Router};
 use serde_json::Value;
 
-use crate::api;
-use crate::output::search::ScopeEcho;
-use crate::output::{context, search};
+use crate::domains::retrieval;
+use crate::domains::retrieval::scope::ScopeEcho;
+use crate::domains::retrieval::{context_result, search_result};
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::routes::{respond, run_blocking, track_for};
@@ -38,7 +38,7 @@ pub fn router(_state: AppState) -> Router<AppState> {
 async fn memories_search_get(
     State(state): State<AppState>,
     scope: RepoScope,
-    Query(mut req): Query<api::search::Request>,
+    Query(mut req): Query<retrieval::search::Request>,
 ) -> Response {
     req.repo = scope.resolve(req.repo);
     handle("search", state, move |state| run_search(state, req)).await
@@ -47,7 +47,7 @@ async fn memories_search_get(
 async fn memories_search_post(
     State(state): State<AppState>,
     scope: RepoScope,
-    Json(mut req): Json<api::search::Request>,
+    Json(mut req): Json<retrieval::search::Request>,
 ) -> Response {
     req.repo = scope.resolve(req.repo);
     handle("search", state, move |state| run_search(state, req)).await
@@ -56,7 +56,7 @@ async fn memories_search_post(
 async fn context_get(
     State(state): State<AppState>,
     scope: RepoScope,
-    Query(mut req): Query<api::context::Request>,
+    Query(mut req): Query<retrieval::context::Request>,
 ) -> Response {
     req.repo = scope.resolve(req.repo);
     handle("context", state, move |state| run_context(state, req)).await
@@ -65,7 +65,7 @@ async fn context_get(
 async fn context_post(
     State(state): State<AppState>,
     scope: RepoScope,
-    Json(mut req): Json<api::context::Request>,
+    Json(mut req): Json<retrieval::context::Request>,
 ) -> Response {
     req.repo = scope.resolve(req.repo);
     handle("context", state, move |state| run_context(state, req)).await
@@ -81,13 +81,13 @@ where
     respond(command, result, started)
 }
 
-fn run_search(state: AppState, req: api::search::Request) -> Result<Value> {
+fn run_search(state: AppState, req: retrieval::search::Request) -> Result<Value> {
     let track = track_for(&state)?;
     let cfg = state.cfg();
     let mut conn = state.conn()?;
     let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-    let result = api::search::run(&mut ctx, req, track)?;
-    let envelope = search::envelope(
+    let result = retrieval::search::run(&mut ctx, req, track)?;
+    let envelope = search_result::envelope(
         &result.hits,
         result.query_id.as_deref(),
         result.meta,
@@ -98,13 +98,13 @@ fn run_search(state: AppState, req: api::search::Request) -> Result<Value> {
     serde_json::to_value(envelope).map_err(Error::Json)
 }
 
-fn run_context(state: AppState, req: api::context::Request) -> Result<Value> {
+fn run_context(state: AppState, req: retrieval::context::Request) -> Result<Value> {
     let track = track_for(&state)?;
     let cfg = state.cfg();
     let mut conn = state.conn()?;
     let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-    let result = api::context::run(&mut ctx, req, track)?;
-    let envelope = context::envelope(
+    let result = retrieval::context::run(&mut ctx, req, track)?;
+    let envelope = context_result::envelope(
         &result.bundle,
         result.query_id.as_deref(),
         result.meta,

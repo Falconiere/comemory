@@ -1,12 +1,12 @@
 //! `comemory context` — headline lookup over the v0.2 SQLite store.
 //!
-//! Runs the query through [`crate::retrieval::pipeline::search`] (the same
+//! Runs the query through [`crate::domains::retrieval::pipeline::search`] (the same
 //! route → rerank → diversify path as `comemory search`) to surface
-//! relevant memory ids, then assembles a [`crate::retrieval::bundle`] that
+//! relevant memory ids, then assembles a [`crate::domains::retrieval::bundle`] that
 //! pulls each memory's body and any cross-link edges
 //! (`references_file`, `references_symbol`, `relates_to`, `supersedes`)
 //! up to depth 2. Code refs inside the bundle are ranked by the
-//! [`crate::retrieval::code_prior`] product, with the working set built
+//! [`crate::domains::retrieval::code_prior`] product, with the working set built
 //! from the process CWD via the shared [`WorkingSet::from_cwd`] policy
 //! (same caveat as `search-code`: the affinity boost only activates
 //! inside the referenced repo's checkout).
@@ -15,9 +15,9 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::api;
 use crate::cli::{lazy_reindex, load_config, track_searches};
 use crate::config::paths::{Paths, resolve_data_dir};
+use crate::domains::retrieval;
 use crate::output;
 use crate::prelude::*;
 use crate::store::connection;
@@ -98,8 +98,8 @@ pub struct Args {
 }
 
 /// Run `comemory context`. Opens the DB, fires the lazy auto-reindex trigger
-/// (a CLI-only affordance — see `api::context`'s doc), then delegates the
-/// shared middle to `api::context::run`. The lookup is tracked like a
+/// (a CLI-only affordance — see `retrieval::context`'s doc), then delegates the
+/// shared middle to `retrieval::context::run`. The lookup is tracked like a
 /// search, and the resulting `query_id` is surfaced (JSON field / TTY
 /// footer) so context lookups can receive `comemory feedback` instead of
 /// polluting reformulation mining as permanently-failed queries.
@@ -115,7 +115,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     lazy_reindex::maybe_trigger(&conn, &cfg, &paths, a.repo.as_deref());
 
     let vector = vector_stdin::read_optional(a.vector_stdin, a.vector.as_deref())?;
-    let req = api::context::Request {
+    let req = retrieval::context::Request {
         query: a.query,
         k: a.k,
         offset: a.offset,
@@ -126,6 +126,6 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         as_of: a.as_of,
     };
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-    let result = api::context::run(&mut ctx, req, track_searches()?)?;
+    let result = retrieval::context::run(&mut ctx, req, track_searches()?)?;
     output::context::emit(&result, json_flag)
 }

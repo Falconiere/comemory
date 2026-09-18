@@ -14,6 +14,7 @@
 
 use comemory::output::search_code;
 use comemory::retrieval::code_rerank::{CodeReranked, CodeScoreParts};
+use comemory::retrieval::code_search_result;
 use comemory::retrieval::router::Source;
 use comemory::utilities::pagination::PageMeta;
 
@@ -53,12 +54,12 @@ fn sample_hits() -> Vec<CodeReranked> {
 
 #[test]
 fn search_code_json_envelope_contract() {
-    insta::assert_json_snapshot!(search_code::envelope(&sample_hits(), None, meta()));
+    insta::assert_json_snapshot!(code_search_result::envelope(&sample_hits(), None, meta()));
 }
 
 #[test]
 fn envelope_carries_query_id_when_present() {
-    let v = serde_json::to_value(search_code::envelope(
+    let v = serde_json::to_value(code_search_result::envelope(
         &sample_hits(),
         Some("q-20260611-a1b2c3d4"),
         meta(),
@@ -72,7 +73,7 @@ fn envelope_carries_query_id_when_present() {
 
 #[test]
 fn envelope_omits_query_id_when_absent() {
-    let v = serde_json::to_value(search_code::envelope(&sample_hits(), None, meta()))
+    let v = serde_json::to_value(code_search_result::envelope(&sample_hits(), None, meta()))
         .expect("serialize");
     assert!(
         v.get("query_id").is_none(),
@@ -82,7 +83,7 @@ fn envelope_omits_query_id_when_absent() {
 
 #[test]
 fn envelope_serializes_lines_as_start_end_array() {
-    let v = serde_json::to_value(search_code::envelope(&sample_hits(), None, meta()))
+    let v = serde_json::to_value(code_search_result::envelope(&sample_hits(), None, meta()))
         .expect("serialize");
     assert_eq!(
         v["hits"][0]["lines"],

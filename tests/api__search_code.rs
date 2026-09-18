@@ -5,8 +5,8 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror test for `src/api/search_code.rs`. Indexes a real git fixture repo
-//! via `comemory index-code`, then calls `api::search_code::run` directly
+//! Mirror test for `src/domains/retrieval/search_code.rs`. Indexes a real git fixture repo
+//! via `comemory index-code`, then calls `retrieval::search_code::run` directly
 //! against a `Ctx` opened on the same data-dir — proving the extracted
 //! command core reproduces `comemory search-code`'s hit/telemetry shape and
 //! honors the `track` parameter (`cli::search_code::run` is byte-compat
@@ -14,8 +14,8 @@
 //! surface's parity live in `tests/serve__routes__code.rs`).
 
 use assert_cmd::Command;
-use comemory::api;
 use comemory::config::{Config, Paths};
+use comemory::retrieval;
 use comemory::store::connection;
 use comemory::utilities::context::Ctx;
 
@@ -59,8 +59,8 @@ fn seeded_home() -> (tempfile::TempDir, tempfile::TempDir) {
     (home, workspace)
 }
 
-fn request(query: &str) -> api::search_code::Request {
-    api::search_code::Request {
+fn request(query: &str) -> retrieval::search_code::Request {
+    retrieval::search_code::Request {
         query: query.to_string(),
         k: None,
         offset: 0,
@@ -79,7 +79,7 @@ fn run_returns_the_matching_hit() {
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
     let result =
-        api::search_code::run(&mut ctx, request("alpha_router"), false).expect("search run");
+        retrieval::search_code::run(&mut ctx, request("alpha_router"), false).expect("search run");
     assert!(!result.hits.is_empty(), "expected a hit for alpha_router");
     assert_eq!(result.hits[0].repo, "r");
     assert!(!result.index_empty);
@@ -95,7 +95,7 @@ fn unsupported_lang_is_rejected() {
 
     let mut req = request("alpha_router");
     req.lang = Some("not-a-real-language".to_string());
-    match api::search_code::run(&mut ctx, req, false) {
+    match retrieval::search_code::run(&mut ctx, req, false) {
         Ok(_) => panic!("unsupported lang must be rejected"),
         Err(e) => assert!(
             e.to_string().contains("unsupported lang"),
@@ -114,7 +114,7 @@ fn lang_alias_narrows_hits() {
 
     let mut req = request("alpha_router");
     req.lang = Some("rs".to_string());
-    let result = api::search_code::run(&mut ctx, req, false).expect("search run");
+    let result = retrieval::search_code::run(&mut ctx, req, false).expect("search run");
     assert!(
         result.hits.iter().all(|h| h.lang == "rust"),
         "the rs alias must canonicalize to rust: {:?}",
@@ -134,7 +134,7 @@ fn track_false_never_logs_a_query_or_bumps_access() {
 
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
     let result =
-        api::search_code::run(&mut ctx, request("alpha_router"), false).expect("search run");
+        retrieval::search_code::run(&mut ctx, request("alpha_router"), false).expect("search run");
     assert!(
         result.query_id.is_none(),
         "track=false must not report a query_id"
@@ -167,7 +167,7 @@ fn track_true_logs_a_query_and_bumps_access() {
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
     let result =
-        api::search_code::run(&mut ctx, request("alpha_router"), true).expect("search run");
+        retrieval::search_code::run(&mut ctx, request("alpha_router"), true).expect("search run");
     assert!(
         result.query_id.is_some(),
         "track=true must log the query and report its id"
@@ -193,7 +193,8 @@ fn empty_index_reports_index_empty() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let result = api::search_code::run(&mut ctx, request("anything"), false).expect("search run");
+    let result =
+        retrieval::search_code::run(&mut ctx, request("anything"), false).expect("search run");
     assert!(result.hits.is_empty());
     assert!(
         result.index_empty,

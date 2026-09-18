@@ -4,12 +4,12 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use crate::config::Config;
+use crate::domains::retrieval::pipeline::{self, SearchOptions};
+use crate::domains::retrieval::scope::Filters;
 use crate::eval::bandit_rng::SplitMix64;
 use crate::eval::golden::GoldenPair;
 use crate::eval::metrics;
 use crate::prelude::*;
-use crate::retrieval::pipeline::{self, SearchOptions};
-use crate::retrieval::scope::Filters;
 use crate::store::Connection;
 use crate::utilities::pagination::PageWindow;
 
@@ -131,7 +131,7 @@ fn score_pair(cfg: &Config, conn: &Connection, pair: &GoldenPair, k: usize) -> R
             // Golden pairs are memory ids: eval/tune/bandit all funnel
             // through this one Filters construction site, so pinning it
             // here pins all three.
-            domains: crate::retrieval::scope::Domains::memory_only(),
+            domains: crate::domains::retrieval::scope::Domains::memory_only(),
             ..Filters::none()
         },
         SearchOptions {

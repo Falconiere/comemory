@@ -14,7 +14,7 @@ Run date: 2026-06-13.
 **3 survivors**
 
 - `src/output/graph.rs:56` — replace `>` with `>=` in `to_dot`
-- `src/output/search.rs:81` — replace `==` with `!=` in `write_tty`
+- `src/output/search.rs:63` — replace `==` with `!=` in `write_tty`
 - `src/output/tty.rs:15` — replace `header -> Result<()>` with `Ok(())`
 
 ## src/memory

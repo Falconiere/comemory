@@ -48,7 +48,7 @@ cliclack = "0.5"
 csv = "1"
 futures = "0.3"
 git2 = { version = "0.21", default-features = false, features = ["vendored-libgit2"] }
-# Git-style glob matching for `search --path` (src/retrieval/doc_route.rs).
+# Git-style glob matching for `search --path` (src/domains/retrieval/doc_route.rs).
 # Already resolved transitively via `ignore`; promoted to a direct dep so
 # the version is pinned explicitly rather than riding `ignore`'s choice.
 globset = "0.4"

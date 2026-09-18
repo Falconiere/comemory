@@ -25,9 +25,6 @@ pub mod eval;
 /// Usage, feedback and repo-marker tables inside `comemory.db`.
 pub mod stats;
 
-/// Hybrid retrieval: candidate legs, fusion, rerank, diversify, bundles.
-pub mod retrieval;
-
 /// Single-file SQLite layer backing memories, code rows, FTS and vectors.
 pub mod store;
 
@@ -63,10 +60,11 @@ pub mod utilities;
 // Crate-root aliases for modules that were public root modules before the
 // migration moved them: `ast` and `git_utils` under `domains::code` (#167),
 // `document` and `source` under `domains::documents` (#168), `memory` under
-// `domains::memories` (#169), `graph` under `domains::graph` (#170), `sync` and
-// `cloud` under `domains::sync` (#172), `capture` under `domains::capture`
-// (#174), the four shared primitives under `utilities` (#166). They preserve
-// `comemory::<name>` for external consumers; in-crate code names the real path
+// `domains::memories` (#169), `graph` under `domains::graph` (#170),
+// `retrieval` under `domains::retrieval` (#171), `sync` and `cloud` under
+// `domains::sync` (#172), `capture` under `domains::capture` (#174), the four
+// shared primitives under `utilities` (#166). They preserve `comemory::<name>`
+// for external consumers; in-crate production code names the real path
 // directly.
 pub use domains::capture;
 pub use domains::code::ast;
@@ -75,6 +73,7 @@ pub use domains::documents::document;
 pub use domains::documents::source;
 pub use domains::graph;
 pub use domains::memories as memory;
+pub use domains::retrieval;
 pub use domains::sync;
 pub use domains::sync::cloud;
 pub use utilities::embed;

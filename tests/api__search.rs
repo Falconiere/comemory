@@ -5,8 +5,8 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror test for `src/api/search.rs`. Seeds real memories via the
-//! `comemory` binary, then calls `api::search::run` directly against a
+//! Mirror test for `src/domains/retrieval/search.rs`. Seeds real memories via the
+//! `comemory` binary, then calls `retrieval::search::run` directly against a
 //! `Ctx` opened on the same data-dir — proving the extracted command core
 //! reproduces `comemory search`'s hit/nav shape and honors the `track`
 //! parameter (`cli::search::run` is byte-compat tested against CLI stdout
@@ -14,8 +14,8 @@
 //! live in `tests/serve__routes__memories__search.rs`).
 
 use assert_cmd::Command;
-use comemory::api;
 use comemory::config::{Config, Paths};
+use comemory::retrieval;
 use comemory::store::connection;
 use comemory::utilities::context::Ctx;
 
@@ -35,8 +35,8 @@ fn seeded_home() -> tempfile::TempDir {
     home
 }
 
-fn request(query: &str) -> api::search::Request {
-    api::search::Request {
+fn request(query: &str) -> retrieval::search::Request {
+    retrieval::search::Request {
         query: query.to_string(),
         k: None,
         offset: 0,
@@ -57,7 +57,8 @@ fn run_returns_the_matching_hit_with_nav_metadata() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let result = api::search::run(&mut ctx, request("postgres pool"), false).expect("search run");
+    let result =
+        retrieval::search::run(&mut ctx, request("postgres pool"), false).expect("search run");
     assert_eq!(result.hits.len(), 1);
     let hit = &result.hits[0];
     assert!(hit.body.contains("postgres"));
@@ -79,7 +80,7 @@ fn track_false_never_logs_a_query() {
         .expect("count retrieval_log before");
 
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-    let result = api::search::run(&mut ctx, request("postgres"), false).expect("search run");
+    let result = retrieval::search::run(&mut ctx, request("postgres"), false).expect("search run");
     assert!(
         result.query_id.is_none(),
         "track=false must not report a query_id"
@@ -103,7 +104,7 @@ fn track_true_logs_a_query_and_reports_its_id() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let result = api::search::run(&mut ctx, request("postgres"), true).expect("search run");
+    let result = retrieval::search::run(&mut ctx, request("postgres"), true).expect("search run");
     assert!(
         result.query_id.is_some(),
         "track=true must log the query and report its id"

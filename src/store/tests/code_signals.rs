@@ -7,7 +7,7 @@
 )]
 //! Mirror test for `src/store/code_signals.rs` — real `code_symbols` +
 //! `code_feedback` rows, no mocks. The exhaustive prior-math coverage lives
-//! in `src/retrieval/tests/code_prior.rs` (through the `code_prior`
+//! in `src/domains/retrieval/tests/code_prior.rs` (through the `code_prior`
 //! re-export); this file pins the SQL/row-mapping contract directly.
 
 use crate::test_common::code_seed;

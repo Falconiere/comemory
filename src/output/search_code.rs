@@ -1,93 +1,18 @@
-//! Output helpers for `comemory search-code`. JSON shape is
-//! `{"hits":[{"symbol_id":..,"repo":..,"path":..,"symbol":..,"kind":..,
-//! "lang":..,"lines":[start,end],"score":..,"source":..,
-//! "score_parts":{..}}],"query_id"?:..}`. `lines` serializes the
-//! `(line_start, line_end)` pair as a 2-element `[start, end]` array —
-//! a stable contract, pinned in `tests/output/search_code.rs`.
-//! `score_parts` is the code-side explainability surface
-//! ([`CodeScoreParts`]), not debug info. TTY mode emits one
+//! Emitters for `comemory search-code`. The `--json` envelope and its `Row`
+//! are the contract both transports serialize, so they live in
+//! [`crate::domains::retrieval::code_search_result`]; this module only writes
+//! them out. TTY mode emits one
 //! `score path:start-end symbol (kind) #id` line per hit — the trailing
 //! `#<symbol_id>` is the id `comemory feedback --used-code` takes — plus
 //! the shared query footer in its code flavor.
 
 use std::io::Write;
 
-use serde::Serialize;
-
-use crate::output::search::source_label;
+use crate::domains::retrieval::code_rerank::CodeReranked;
+use crate::domains::retrieval::code_search_result::envelope;
 use crate::output::{json, tty};
 use crate::prelude::*;
-use crate::retrieval::code_rerank::{CodeReranked, CodeScoreParts};
 use crate::utilities::pagination::PageMeta;
-
-/// One code hit as emitted to the user. `score` duplicates
-/// `score_parts.final_score` so simple consumers never need to descend
-/// into the parts object.
-#[derive(Serialize)]
-pub struct Row<'a> {
-    /// `code_symbols.id` of the hit (the parent's id for a coalesced
-    /// cAST chunk win) — the id `comemory feedback --used-code` takes.
-    pub symbol_id: i64,
-    /// Repository the symbol was indexed from.
-    pub repo: &'a str,
-    /// Repo-relative file path.
-    pub path: &'a str,
-    /// Qualified symbol name.
-    pub symbol: &'a str,
-    /// Symbol kind, e.g. `function`.
-    pub kind: &'a str,
-    /// Source language, e.g. `rust`.
-    pub lang: &'a str,
-    /// `[line_start, line_end]` of the match (a tuple serializes as a
-    /// JSON array).
-    pub lines: (i64, i64),
-    /// Final blended score (`score_parts.final_score`).
-    pub score: f64,
-    /// Which retrieval branch produced the hit.
-    pub source: &'static str,
-    /// Every multiplicative factor behind `score` (stable contract).
-    pub score_parts: &'a CodeScoreParts,
-}
-
-/// JSON envelope returned to `--json` callers. Wraps the hits under `hits`
-/// so future top-level fields can be added without breaking parsers,
-/// mirroring the `comemory search` envelope.
-#[derive(Serialize)]
-pub struct Envelope<'a> {
-    /// Reranked hits in final pipeline order for the requested page.
-    pub hits: Vec<Row<'a>>,
-    /// Id of the retrieval_log row for this run; absent when logging
-    /// was off or failed. Feed it back via
-    /// `comemory feedback <id> --used-code <ids>`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub query_id: Option<&'a str>,
-    /// Requested page size.
-    pub limit: usize,
-    /// Number of leading ranked results skipped.
-    pub offset: usize,
-    /// Whether more in-window ranked results exist beyond this page.
-    pub has_more: bool,
-    /// In-window ranked count (post-coalesce) the page was sliced from;
-    /// `None` when not cheaply known. Not a global match count.
-    pub total: Option<usize>,
-}
-
-/// Build the serializable envelope. Public so mirror tests can pin the
-/// JSON contract without going through stdout.
-pub fn envelope<'a>(
-    hits: &'a [CodeReranked],
-    query_id: Option<&'a str>,
-    page: PageMeta,
-) -> Envelope<'a> {
-    Envelope {
-        hits: hits.iter().map(row_from).collect(),
-        query_id,
-        limit: page.limit,
-        offset: page.offset,
-        has_more: page.has_more,
-        total: page.total,
-    }
-}
 
 /// Render `hits` to stdout in either JSON or TTY mode. `query_id` is the
 /// retrieval_log id for this run (JSON field / TTY footer); `None` skips
@@ -138,19 +63,4 @@ pub fn write_tty(
         )?;
     }
     tty::write_query_footer(out, query_id, !hits.is_empty(), tty::FeedbackHint::Code)
-}
-
-fn row_from(h: &CodeReranked) -> Row<'_> {
-    Row {
-        symbol_id: h.symbol_id,
-        repo: h.repo.as_str(),
-        path: h.path.as_str(),
-        symbol: h.symbol.as_str(),
-        kind: h.kind.as_str(),
-        lang: h.lang.as_str(),
-        lines: (h.line_start, h.line_end),
-        score: h.parts.final_score,
-        source: source_label(h.source),
-        score_parts: &h.parts,
-    }
 }

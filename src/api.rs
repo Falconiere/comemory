@@ -12,16 +12,12 @@
 pub mod bandit;
 /// `comemory consolidate`: advisory near-duplicate cluster report.
 pub mod consolidate;
-/// `comemory context`: headline memory + code bundle for a query.
-pub mod context;
 /// `comemory doctor`: runtime health check.
 pub mod doctor;
 /// `comemory eval`: score retrieval quality against a golden set.
 pub mod eval;
 /// `comemory feedback`: record which hits were used.
 pub mod feedback;
-/// `comemory find`: one ranked list across memory, code, and documents.
-pub mod find;
 /// `comemory gc`: trash sweep + learning-telemetry retention purge.
 pub mod gc;
 /// `comemory install`: bundled agent skills and hooks for a host.
@@ -33,10 +29,6 @@ pub mod mine;
 pub mod prune;
 /// `comemory rebuild`: atomically rebuild the SQLite mirror from markdown.
 pub mod rebuild;
-/// `comemory search`: hybrid memory retrieval.
-pub mod search;
-/// `comemory search-code`: ranked code search.
-pub mod search_code;
 /// `comemory setup`: detect, plan, and apply first-run onboarding.
 pub mod setup;
 /// `comemory stats`: corpus counters and database size.
@@ -47,8 +39,6 @@ pub mod tune;
 // Console-only cores (console-api spec, 2026-09-01): no CLI subcommand of
 // their own, reached through `serve::routes`.
 
-/// `GET|PUT /config/retrieval`: live ranking knobs.
-pub mod config_retrieval;
 /// `GET|PUT /gc/policy`: retention windows + last gc run.
 pub mod gc_policy;
 /// `GET /learning/{summary,evals,golden-set,expansions}`.
@@ -59,5 +49,3 @@ pub mod learning_proposals;
 pub mod overview;
 /// `POST /doctor/reembed`: re-vectorize through the embed command.
 pub mod reembed;
-/// `GET /search/suggest`: mined expansions + recent queries.
-pub mod suggest;

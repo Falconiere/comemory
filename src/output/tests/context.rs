@@ -8,13 +8,15 @@
 //! Mirror tests for `src/output/context.rs`. The public-facing bundle shape
 //! emitted by `comemory context --json` is covered end-to-end in
 //! `tests/cli/context.rs`; this module pins the envelope contract (flattened
-//! bundle + optional `query_id`) and locks in that `output::context::emit`
-//! accepts an empty bundle without panicking.
+//! bundle + optional `query_id`) this emitter serializes — the envelope
+//! itself moved to `retrieval::context_result` with #171 — and locks in that
+//! `output::context::emit` accepts an empty bundle without panicking.
 
-use comemory::output::context::{self, ContextResult};
-use comemory::output::search::ScopeEcho;
+use comemory::output::context;
 use comemory::retrieval::bundle::{Bundle, CodeRow};
 use comemory::retrieval::code_prior::CodePriorParts;
+use comemory::retrieval::context_result::{ContextResult, envelope};
+use comemory::retrieval::scope::ScopeEcho;
 use comemory::retrieval::scope::TimeScope;
 use comemory::utilities::pagination::PageMeta;
 
@@ -57,7 +59,7 @@ fn emit_accepts_empty_bundle_in_json_mode() {
 #[test]
 fn envelope_carries_query_id_and_flattens_bundle() {
     let bundle = empty_bundle();
-    let v = serde_json::to_value(context::envelope(
+    let v = serde_json::to_value(envelope(
         &bundle,
         Some("q-20260611-a1b2c3d4"),
         meta(),
@@ -125,13 +127,8 @@ fn code_ref_rank_parts_serialize_when_present_and_skip_when_none() {
         neighbors: Vec::new(),
         resolved_code_ids: Vec::new(),
     };
-    let v = serde_json::to_value(context::envelope(
-        &bundle,
-        None,
-        meta(),
-        ScopeEcho::default(),
-    ))
-    .expect("serialize");
+    let v = serde_json::to_value(envelope(&bundle, None, meta(), ScopeEcho::default()))
+        .expect("serialize");
     let refs = v["code_refs"].as_array().expect("code_refs array");
     for key in ["rank", "activation", "affinity", "feedback", "final_score"] {
         assert!(
@@ -159,13 +156,8 @@ fn code_ref_rank_parts_serialize_when_present_and_skip_when_none() {
 #[test]
 fn envelope_omits_query_id_when_absent() {
     let bundle = empty_bundle();
-    let v = serde_json::to_value(context::envelope(
-        &bundle,
-        None,
-        meta(),
-        ScopeEcho::default(),
-    ))
-    .expect("serialize");
+    let v = serde_json::to_value(envelope(&bundle, None, meta(), ScopeEcho::default()))
+        .expect("serialize");
     assert!(
         v.get("query_id").is_none(),
         "query_id must be skipped when None: {v}"

@@ -238,16 +238,21 @@ new_tree import_comments
 domain $'use crate::{config::Config /* cli::run /* nested */ */}; pub fn work() {}'
 both 0 '' src/domains/memories.rs
 
+# The fixture file must be an `src/api/` core whose inventory row still exists:
+# `assert_status` synthesizes each fixture row from the real ledger, and a path
+# whose row has moved defaults to `shared::root`, which the API-ownership map
+# then rejects. #171 moved `src/api/search.rs` under `domains/retrieval/`, so
+# these cases use `src/api/prune.rs` until #176 moves that one in turn.
 new_tree legacy_exception
-put src/api/search.rs 'pub fn run() { crate::cli::embedding_input(); }'
-policy '.legacy_edges=[{source:"src/api/search.rs",target:"crate::cli::embedding_input",class:"delivery",issue:"#166"}]'
-both 0 '' src/api/search.rs
+put src/api/prune.rs 'pub fn run() { crate::cli::embedding_input(); }'
+policy '.legacy_edges=[{source:"src/api/prune.rs",target:"crate::cli::embedding_input",class:"delivery",issue:"#166"}]'
+both 0 '' src/api/prune.rs
 policy '.legacy_edges=[]'
-both 1 'crate::cli::embedding_input' src/api/search.rs
+both 1 'crate::cli::embedding_input' src/api/prune.rs
 new_tree stale_exception
-put src/api/search.rs 'pub fn run() {}'
-policy '.legacy_edges=[{source:"src/api/search.rs",target:"crate::cli::embedding_input",class:"delivery",issue:"#166"}]'
-both 1 'stale policy edge' src/api/search.rs
+put src/api/prune.rs 'pub fn run() {}'
+policy '.legacy_edges=[{source:"src/api/prune.rs",target:"crate::cli::embedding_input",class:"delivery",issue:"#166"}]'
+both 1 'stale policy edge' src/api/prune.rs
 
 for mutation in \
   '.legacy_edges += [.legacy_edges[0]]' \
@@ -262,10 +267,10 @@ for mutation in \
   '.setup_runtime_dependencies=[{source:"src/api/setup.rs",target:"crate::api::save",owner:"bogus"}]' \
   '.setup_runtime_dependencies=null'; do
   new_tree invalid_policy
-  put src/api/search.rs 'pub fn run() { crate::cli::embedding_input(); }'
-  policy '.legacy_edges=[{source:"src/api/search.rs",target:"crate::cli::embedding_input",class:"delivery",issue:"#166"}]'
+  put src/api/prune.rs 'pub fn run() { crate::cli::embedding_input(); }'
+  policy '.legacy_edges=[{source:"src/api/prune.rs",target:"crate::cli::embedding_input",class:"delivery",issue:"#166"}]'
   policy "$mutation"
-  both 3 'invalid policy' src/api/search.rs
+  both 3 'invalid policy' src/api/prune.rs
 done
 new_tree malformed_json
 put scripts/architecture-policy.json '{broken'
@@ -355,11 +360,11 @@ test "$(grep -c '^src/domains/memories.rs:' "$TASK_TMP/result")" = 1
 test "$(grep -n 'crate::cli::a' "$TASK_TMP/result" | cut -d: -f1)" -lt "$(grep -n 'crate::serve::z' "$TASK_TMP/result" | cut -d: -f1)"
 new_tree scoped_selection
 domain 'pub fn work() {}'
-put src/api/search.rs 'pub fn run() { crate::cli::embedding_input(); }'
+put src/api/prune.rs 'pub fn run() { crate::cli::embedding_input(); }'
 put tests/cli__setup.rs 'use crate::cli::setup;'
 assert_status 0 '' --file tests/cli__setup.rs
 assert_status 0 '' --file src/domains/memories.rs
-assert_status 1 'crate::cli::embedding_input' --file src/domains/memories.rs --file src/api/search.rs
+assert_status 1 'crate::cli::embedding_input' --file src/domains/memories.rs --file src/api/prune.rs
 new_tree scoped_parent
 domain 'use crate::cli; pub mod save;'
 put src/domains/memories/save.rs 'pub fn work() {}'

@@ -5,15 +5,15 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror test for `src/api/context.rs`. Seeds a real memory via the
-//! `comemory` binary, then calls `api::context::run` directly against a
+//! Mirror test for `src/domains/retrieval/context.rs`. Seeds a real memory via the
+//! `comemory` binary, then calls `retrieval::context::run` directly against a
 //! `Ctx` opened on the same data-dir — proving the extracted command core
 //! assembles the same bundle `comemory context` does (`cli::context::run`
 //! is byte-compat tested against CLI stdout in `tests/cli__context.rs`).
 
 use assert_cmd::Command;
-use comemory::api;
 use comemory::config::{Config, Paths};
+use comemory::retrieval;
 use comemory::store::connection;
 use comemory::utilities::context::Ctx;
 
@@ -26,8 +26,8 @@ fn save(home: &tempfile::TempDir, body: &str) {
         .success();
 }
 
-fn request(query: &str) -> api::context::Request {
-    api::context::Request {
+fn request(query: &str) -> retrieval::context::Request {
+    retrieval::context::Request {
         query: query.to_string(),
         k: None,
         offset: 0,
@@ -48,14 +48,15 @@ fn run_assembles_a_bundle_for_the_matched_memory() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let result = api::context::run(&mut ctx, request("run_migration"), false).expect("context run");
+    let result =
+        retrieval::context::run(&mut ctx, request("run_migration"), false).expect("context run");
     assert_eq!(result.bundle.query, "run_migration");
     assert_eq!(result.bundle.memories.len(), 1);
     assert!(result.bundle.memories[0].body.contains("run_migration"));
 }
 
 /// Issue #152, API twin: the bundle's memory `score` is the pipeline's
-/// `final_score` — the same number `api::search::run` ranks the same query
+/// `final_score` — the same number `retrieval::search::run` ranks the same query
 /// with — never the old `0.0` placeholder.
 #[test]
 fn run_carries_the_search_pipeline_score_onto_each_memory_row() {
@@ -74,7 +75,7 @@ fn run_carries_the_search_pipeline_score_onto_each_memory_row() {
 
     let search = {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        let req = api::search::Request {
+        let req = retrieval::search::Request {
             query: "run_migration".to_string(),
             k: None,
             offset: 0,
@@ -85,10 +86,11 @@ fn run_carries_the_search_pipeline_score_onto_each_memory_row() {
             until: None,
             as_of: None,
         };
-        api::search::run(&mut ctx, req, false).expect("search run")
+        retrieval::search::run(&mut ctx, req, false).expect("search run")
     };
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-    let result = api::context::run(&mut ctx, request("run_migration"), false).expect("context run");
+    let result =
+        retrieval::context::run(&mut ctx, request("run_migration"), false).expect("context run");
 
     let expected: Vec<(&str, f64)> = search
         .hits
@@ -128,8 +130,8 @@ fn run_reports_zero_hits_for_an_unmatched_query() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let result =
-        api::context::run(&mut ctx, request("zzz_never_matches_zzz"), false).expect("context run");
+    let result = retrieval::context::run(&mut ctx, request("zzz_never_matches_zzz"), false)
+        .expect("context run");
     assert!(result.bundle.memories.is_empty());
 }
 
@@ -148,7 +150,7 @@ fn track_true_bumps_memory_access_count() {
         .expect("read access_count before");
     {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        api::context::run(&mut ctx, request("advisory lock"), true).expect("context run");
+        retrieval::context::run(&mut ctx, request("advisory lock"), true).expect("context run");
     }
     let after: i64 = conn
         .query_row("SELECT access_count FROM memories LIMIT 1", [], |r| {

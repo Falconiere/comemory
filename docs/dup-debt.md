@@ -165,16 +165,16 @@ ratchet re-scans fresh each run, it does not pin line numbers).
 | --- | --- | --- | --- |
 | `src/output/graph.rs:33-37` function `write_dot` | `src/output/graph.rs:40-44` function `write_html` | 89.98% | parallel DOT vs. HTML emitters over the same graph walk |
 
-### `src/retrieval/`
+### `src/domains/retrieval/`
 
 | Pair A | Pair B | Similarity | Why it's debt, not urgent |
 | --- | --- | --- | --- |
-| `src/retrieval/fuse.rs:54-56` function `rrf_multi` | `src/retrieval/fuse.rs:65-67` function `rrf_multi_weighted` | 90.21% | weighted vs. unweighted variants of the same RRF fusion formula |
-| `src/retrieval/fuse.rs:32-34` function `rrf` | `src/retrieval/fuse.rs:40-42` function `rrf_k` | 86.10% | weighted vs. unweighted variants of the same RRF fusion formula |
-| `src/retrieval/router.rs:228-243` function `route_vector_only` | `src/retrieval/router.rs:314-330` function `route_lexical` | 88.51% | single-leg routing variants of the shared two-leg router, same scaffolding |
-| `src/retrieval/scope.rs:59-64` method `window` | `src/retrieval/scope.rs:115-117` method `window` | 89.43% | two different structs' same-named `window` accessor, same shape |
-| `src/retrieval/score.rs:155-165` function `min_max_normalize` | `src/retrieval/score.rs:182-188` function `max_normalize` | 91.94% | min-max vs. max-only variants of the same normalization formula |
-| `src/retrieval/pipeline.rs:186-213` function `record_telemetry` | `src/retrieval/pipeline.rs:248-259` function `record_query` | 92.69% | parallel telemetry/query log-row inserts, same shape |
+| `src/domains/retrieval/fuse.rs:54-56` function `rrf_multi` | `src/domains/retrieval/fuse.rs:65-67` function `rrf_multi_weighted` | 90.21% | weighted vs. unweighted variants of the same RRF fusion formula |
+| `src/domains/retrieval/fuse.rs:32-34` function `rrf` | `src/domains/retrieval/fuse.rs:40-42` function `rrf_k` | 86.10% | weighted vs. unweighted variants of the same RRF fusion formula |
+| `src/domains/retrieval/router.rs:228-243` function `route_vector_only` | `src/domains/retrieval/router.rs:314-330` function `route_lexical` | 88.51% | single-leg routing variants of the shared two-leg router, same scaffolding |
+| `src/domains/retrieval/scope.rs:68-73` method `window` | `src/domains/retrieval/scope.rs:124-126` method `window` | 89.43% | two different structs' same-named `window` accessor, same shape |
+| `src/domains/retrieval/score.rs:155-165` function `min_max_normalize` | `src/domains/retrieval/score.rs:182-188` function `max_normalize` | 91.94% | min-max vs. max-only variants of the same normalization formula |
+| `src/domains/retrieval/pipeline.rs:186-213` function `record_telemetry` | `src/domains/retrieval/pipeline.rs:248-259` function `record_query` | 92.69% | parallel telemetry/query log-row inserts, same shape |
 
 ### `src/stats/`
 

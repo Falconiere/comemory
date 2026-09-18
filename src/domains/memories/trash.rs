@@ -19,8 +19,8 @@ use time::OffsetDateTime;
 
 use crate::domains::memories::id::is_valid_memory_id;
 use crate::domains::memories::nav::title_of;
+use crate::domains::retrieval::score;
 use crate::prelude::*;
-use crate::retrieval::score;
 use crate::store::trash_list;
 use crate::utilities::context::Ctx;
 use crate::utilities::pagination::Page;
