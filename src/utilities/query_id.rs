@@ -8,7 +8,11 @@
 
 use time::OffsetDateTime;
 
-use crate::utilities::digest::{is_lower_hex, sha256_hex};
+use crate::utilities::dated_id::{dated_id, is_valid_dated_id};
+
+/// What distinguishes a retrieval query id from every other
+/// `<prefix>-<yyyymmdd>-<8hex>` contract built on `utilities::dated_id`.
+const QUERY_ID_PREFIX: &str = "q";
 
 /// `q-<yyyymmdd>-<8hex>`: day-sortable, collision-resistant query id
 /// derived from the query text and a nanosecond timestamp. Not a content
@@ -16,33 +20,14 @@ use crate::utilities::digest::{is_lower_hex, sha256_hex};
 /// side of the contract checked by [`is_valid_query_id`]; written into
 /// `retrieval_log` by `retrieval::pipeline`.
 pub fn generate_query_id(query: &str, now: OffsetDateTime) -> String {
-    let mut input = Vec::with_capacity(query.len() + 16);
-    input.extend_from_slice(query.as_bytes());
-    input.extend_from_slice(&now.unix_timestamp_nanos().to_be_bytes());
-    let hex = sha256_hex(&input);
-    format!(
-        "q-{:04}{:02}{:02}-{}",
-        now.year(),
-        u8::from(now.month()),
-        now.day(),
-        &hex[..8]
-    )
+    dated_id(QUERY_ID_PREFIX, query, now)
 }
 
 /// Validate the `q-<yyyymmdd>-<8hex>` query-id shape emitted by
 /// [`generate_query_id`]. Shared by `comemory feedback` (reject typos
-/// loudly), the HTTP feedback routes, and tests. The 8-hex tail is checked
-/// with the shared [`is_lower_hex`] primitive — the same one
-/// `memory::id::is_valid_memory_id` uses, so the two id shapes cannot drift;
-/// the byte slice at 11 is safe because the earlier checks pin the first 11
-/// bytes to ASCII.
+/// loudly), the HTTP feedback routes, and tests.
 pub fn is_valid_query_id(s: &str) -> bool {
-    let b = s.as_bytes();
-    b.len() == 19
-        && s.starts_with("q-")
-        && b[2..10].iter().all(u8::is_ascii_digit)
-        && b[10] == b'-'
-        && is_lower_hex(&s[11..], 8)
+    is_valid_dated_id(s, QUERY_ID_PREFIX)
 }
 
 #[cfg(test)]

@@ -75,3 +75,46 @@ fn command_that_never_reads_stdin_still_yields_vector() {
     let v = embed_query(cmd, &big_query).expect("EPIPE on stdin must be tolerated");
     assert_eq!(v, vec![4.0_f32, 5.0]);
 }
+
+#[test]
+fn command_that_answers_then_refuses_to_exit_times_out() {
+    // The child drains stdin, prints a perfectly valid payload, closes stdout
+    // (so the read reaches EOF) and then refuses to exit. Before #211 the
+    // budget stopped before the final `wait`, so this pinned the caller for
+    // the child's whole lifetime while looking bounded. The budget now spans
+    // the exit, so it fails promptly instead.
+    let started = Instant::now();
+    let err = embed_query_with_timeout(
+        r#"cat > /dev/null; printf '{"embedding":[1.0]}'; exec >&-; sleep 30"#,
+        "q",
+        Duration::from_millis(200),
+    )
+    .expect_err("a child that never exits must not succeed inside the budget");
+    assert!(
+        format!("{err}").contains("embed-cmd timed out"),
+        "expected the timeout wording, got: {err}"
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(3),
+        "the budget must cover the exit: {:?}",
+        started.elapsed()
+    );
+}
+
+#[test]
+fn command_that_writes_before_reading_does_not_deadlock() {
+    // A child that fills its stdout pipe before draining a stdin larger than
+    // the pipe buffer deadlocked the old write-then-read sequencing outright:
+    // neither side could move and no timer was running. Concurrent pipe
+    // servicing makes it an ordinary round trip.
+    let started = Instant::now();
+    let big_query = "q".repeat(1 << 21);
+    let v = embed_query_with_timeout(
+        r#"printf '{"embedding":[2.0,3.0]}'; cat > /dev/null"#,
+        &big_query,
+        Duration::from_secs(20),
+    )
+    .expect("concurrent stdin/stdout must not deadlock");
+    assert_eq!(v, vec![2.0_f32, 3.0]);
+    assert!(started.elapsed() < Duration::from_secs(10));
+}
