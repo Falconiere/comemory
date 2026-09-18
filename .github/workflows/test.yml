@@ -38,10 +38,65 @@ jobs:
           components: rustfmt, clippy, llvm-tools-preview
       - name: Cache cargo build
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Derive pinned gate tool versions
+        # The two tool-dependent gates below each pin their tool in a single
+        # constant inside the script that uses it. This step READS those
+        # constants rather than repeating the versions here, so the workflow and
+        # the gates cannot drift: bumping the constant in one script is the only
+        # edit a version bump needs. A missing, duplicated or malformed constant
+        # fails the build instead of falling back to an unpinned install.
+        # (scripts/dup-check.sh pins similarity-rs the same way, in its own
+        # install step below — it is installed differently because it is absent
+        # from taiki-e/install-action's TOOLS.md, while these two are in it.)
+        #
+        # The step id and both output names use underscores, not hyphens. A
+        # hyphen is legal in an Actions expression property name, but every
+        # other step id and output in this repo is a single hyphen-free word,
+        # and underscores leave no room for the reader — or the expression
+        # parser — to wonder whether `outputs.cargo-deny` is a subtraction.
+        id: gate_tool_versions
+        run: |
+          set -euo pipefail
+          derive() {
+            local file="$1" const="$2" out="$3" matches count
+            # `[^"]*`, not `.*`: the greedy form captures `0.20.2" and more`
+            # from a malformed `NAME="0.20.2" and more"` line. The shape check
+            # below would still reject it, but not matching at all is better
+            # than matching the wrong thing.
+            matches="$(sed -n "s/^${const}=\"\([^\"]*\)\"$/\1/p" "$file")"
+            count="$(printf '%s' "$matches" | grep -c . || true)"
+            if [ "$count" != "1" ]; then
+              echo "::error::expected exactly one $const assignment in $file, found $count"
+              exit 1
+            fi
+            # Validate the SHAPE too, not just the count: a stray empty
+            # assignment alongside the real one yields count 1 while $matches is
+            # two lines, and the empty half would reach `--version`. Anchored on
+            # the WHOLE value with bash's =~, not `grep -E '^..$'`, which matches
+            # if ANY line matches and so would accept a stray empty assignment
+            # sitting above the real one. The optional trailing group accepts a
+            # pre-release or build suffix (1.0.0-rc.1, 1.0.0+meta); the required
+            # X.Y.Z prefix still rejects `latest`, a range, or an empty value,
+            # any of which would make the install unpinned.
+            if ! [[ "$matches" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+              echo "::error::$const in $file is not a pinned semver version: '$matches'"
+              exit 1
+            fi
+            echo "$out=$matches" >> "$GITHUB_OUTPUT"
+            echo "$const=$matches (pinned by $file)"
+          }
+          derive scripts/deny-check.sh    CARGO_DENY_VERSION    cargo_deny
+          derive scripts/machete-check.sh CARGO_MACHETE_VERSION cargo_machete
       - name: Install cargo tools
+        # cargo-deny and cargo-machete are both in taiki-e/install-action's
+        # TOOLS.md, so they install here as prebuilt binaries in seconds rather
+        # than compiling from source like ast-grep and similarity-rs below.
+        # Their versions come from the step above, never from a literal typed
+        # here. install-action resolves the CRATE name, so these spellings are
+        # correct even where the installed binary differs (see typos-cli).
         uses: taiki-e/install-action@7a79fe8c3a13344501c80d99cae481c1c9085912 # v2.81.10
         with:
-          tool: cargo-nextest,cargo-llvm-cov,typos-cli@1.32.0
+          tool: cargo-nextest,cargo-llvm-cov,typos-cli@1.32.0,cargo-deny@${{ steps.gate_tool_versions.outputs.cargo_deny }},cargo-machete@${{ steps.gate_tool_versions.outputs.cargo_machete }}
       - name: Install ast-grep
         # ast-grep is not in taiki-e/install-action's supported-tools manifest
         # (TOOLS.md), so it is installed directly. scripts/guardrails-check.sh
@@ -89,8 +144,24 @@ jobs:
         # Deliberately a separate step rather than an entry in check-all.sh's
         # GATES array: it needs a separately installed tool, and check-all runs
         # on every local iteration and on the release path. See the header of
-        # scripts/dup-check.sh for the full rationale.
+        # scripts/dup-check.sh for the full rationale. The same applies to the
+        # two gates below, which is why all three sit here together.
         run: bash scripts/dup-check.sh
+      - name: Run deny gate
+        # Licence + advisory policy over the whole crate graph. Until #205 this
+        # ran in no workflow at all, so cargo-deny's findings — the ones that
+        # matter most at release time — were only ever seen by whoever happened
+        # to type `just qa`. CI is the authoritative run: the gate skips with a
+        # loud warning when cargo-deny is missing locally, but $CI is set here,
+        # so a missing tool fails the build instead.
+        run: bash scripts/deny-check.sh
+      - name: Run machete gate
+        # Unused dependencies. Same history as the deny gate above, plus a
+        # sharper failure mode of its own: cargo-machete reports success and
+        # exits 0 when it analysed nothing at all, so the gate proves the
+        # detector is live on every run before trusting a clean result. See the
+        # header of scripts/machete-check.sh.
+        run: bash scripts/machete-check.sh
       - name: Run coverage gate
         run: bash scripts/coverage-check.sh
       - name: Run eval gate
