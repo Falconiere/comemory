@@ -181,7 +181,9 @@
 
   function fetchDoc(path) {
     if (cache.has(path)) return Promise.resolve(cache.get(path));
-    return fetch(new URL(path, ROOT).href, { cache: 'no-cache' }).then(function (response) {
+    /* the browser's own cache policy: Pages serves the files with ETags,
+       so a repeat visit revalidates cheaply instead of refetching */
+    return fetch(new URL(path, ROOT).href).then(function (response) {
       if (!response.ok) throw new Error(String(response.status));
       return response.text();
     }).then(function (text) {
@@ -349,5 +351,8 @@
     route();
   }
 
-  start();
+  /* the script is deferred, so the DOM is parsed by now; the guard keeps
+     that true if the tag is ever moved into <head> without defer */
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
 })();
