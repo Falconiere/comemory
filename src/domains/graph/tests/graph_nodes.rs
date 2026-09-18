@@ -18,7 +18,6 @@ use crate::test_common::{git_commit, git_repo};
 
 use std::path::{Path, PathBuf};
 
-use comemory::api;
 use comemory::config::{Config, Paths};
 use comemory::domains::memories::Kind;
 use comemory::prelude::Error;
