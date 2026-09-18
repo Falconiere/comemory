@@ -37,9 +37,9 @@ One line per file, named after its primary item:
 | `coactivate.rs` | `harvest` | Commit co-activation reward: commits touching a memory's referenced files reinforce it |
 | `cochange.rs` | `CoChange` | Git co-change mining: files that change together in bounded history, weighted pairs |
 | `code_graph.rs` | `CodeGraph` | The exported graph model — `Node`, `Edge`, `CodeGraph` and the paginated `GraphPage`; `output::graph` renders it, this file defines it |
-| `cross_link.rs` | `Refs` | Extract `<repo>:<path>[:<symbol>]` references from a memory body; URLs and bare-scheme path expressions (`file:/…`, `./…`, `../…`) are refused |
-| `derived.rs` | `refresh_derived_best_effort` | Single post-write pass refreshing both `rank_score` and the `edge_fts` index |
-| `doc_link.rs` | `derive_after_document` | Deterministic `member_of_source` / `references_document` link deriver |
+| `cross_link.rs` | `Refs` | Extract `<repo>:<path>[:<symbol>]` references from a memory body; URLs and bare-scheme path expressions (`file:/…`, `./…`, `../…`) are refused. Extraction only — `domains::memories::mirror` calls it and `store::memory_row` writes the edges (#177) |
+| `derived.rs` | `refresh_derived_best_effort` | Single post-write pass refreshing both `rank_score` and the `edge_fts` index. Every caller is a domain core, invoked after its own transaction commits — `memories::{save,delete,update}`, `maintenance::{rebuild,gc}`, `code::{index_code,repo_admin::disconnect}`, `sync::exchange::{import_write,code_import}` and `graph_recompute` |
+| `doc_link.rs` | `derive_after_document` | Deterministic `member_of_source` / `references_document` link deriver. The document-index seam writes its own edges; the memory-save seam is `resolve_memory_documents`, which returns the resolved `documents.id` list for `domains::memories::mirror` to pass to the store. Both share one lookup, so whichever fires second completes the link |
 | `edges.rs` | `run` | `comemory edges` / `GET /api/v1/edges`: the `edge_fts` self-heal and the paged triplet search |
 | `edges_result.rs` | `EdgesResult` | The owned value `edges::run` returns for both delivery surfaces |
 | `graph_nodes.rs` | `list` | `GET /graph/nodes`, `/nodes/{id}`, `/nodes/{id}/neighbors` and `/graph/snapshot` |

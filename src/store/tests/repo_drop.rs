@@ -68,6 +68,18 @@ fn file_edges(conn: &Connection, repo: &str) -> i64 {
     .expect("count edges")
 }
 
+/// `edge_fts` triplet rows still naming a `file:<repo>:` node.
+fn file_edge_triplets(conn: &Connection, repo: &str) -> i64 {
+    let prefix = format!("file:{repo}:");
+    conn.query_row(
+        "SELECT COUNT(*) FROM edge_fts \
+          WHERE src_id LIKE ?1 || '%' OR dst_id LIKE ?1 || '%'",
+        [&prefix],
+        |r| r.get(0),
+    )
+    .expect("count edge_fts")
+}
+
 /// Seed one file→file `imports` edge inside `repo` so the edge purge has a
 /// row to prove itself against even for a single-file sample repo.
 fn seed_import_edge(conn: &Connection, repo: &str) {
@@ -227,6 +239,36 @@ fn drop_repo_leaves_a_second_repo_in_the_same_store_untouched() {
     );
     assert_eq!(file_edges(&conn, "repo-b"), kept_edges);
     assert!(kept_edges > 0);
+}
+
+#[test]
+fn drop_repo_does_not_refresh_the_derived_artifacts() {
+    // The refresh is the CALLER's post-commit step (#177):
+    // `domains::code::repo_admin::disconnect` owns it, and this store helper
+    // must leave the derived index exactly as it found it. Proven by reading
+    // `edge_fts` — `index_code` populates it, and calling `drop_repo`
+    // directly must leave the now-dangling triplets behind.
+    let home = TempDir::new().expect("home");
+    let workspace = TempDir::new().expect("workspace");
+    let sample = git_sample::build_sample_repo(workspace.path());
+    let (paths, cfg, mut conn) = ctx_over(&home);
+    {
+        let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+        index(&mut ctx, "sample", &sample);
+    }
+    seed_import_edge(&conn, "sample");
+    comemory::store::edge_fts::refresh(&mut conn).expect("materialize the triplet index");
+    let before = file_edge_triplets(&conn, "sample");
+    assert!(before > 0, "the fixture must really index its file edges");
+
+    repo_drop::drop_repo(&mut conn, "sample").expect("drop_repo");
+
+    assert_eq!(file_edges(&conn, "sample"), 0, "the edges themselves go");
+    assert_eq!(
+        file_edge_triplets(&conn, "sample"),
+        before,
+        "drop_repo must not refresh the derived index; its caller does"
+    );
 }
 
 #[test]

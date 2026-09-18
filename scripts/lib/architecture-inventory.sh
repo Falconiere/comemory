@@ -85,7 +85,8 @@ validate_inventory() (
     ($edges | group_by([.source,.target]) | all(length == 1)) and
     (.passive_store_models | group_by([.source,.target]) | all(length == 1)) and
     all(.passive_store_models[]; (.source | startswith("src/store/")) and
-      (.target | test("^crate(::[A-Za-z_][A-Za-z_0-9]*)+$")))
+      (.target | test("^crate(::[A-Za-z_][A-Za-z_0-9]*)+$") and
+        test("::[A-Z][A-Za-z_0-9]*$")))
   ' "$POLICY" >/dev/null || fail 'invalid policy edge'
   ast-grep scan --inline-rules '
 id: architecture-inventory

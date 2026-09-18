@@ -53,6 +53,10 @@ jq -e '
   def name: type == "string" and test("^[a-z_][a-z_0-9]*$");
   def path: type == "string" and test("^src/([a-z_][a-z_0-9]*/)*[a-z_][a-z_0-9]*\\.rs$");
   def target: type == "string" and test("^crate(::[A-Za-z_][A-Za-z_0-9]*)+$");
+  # A passive model is a TYPE carried as data, never a function. The
+  # upper-case final segment is what stops an algorithm callback removed by
+  # #177 from being re-admitted through the model exemption instead.
+  def model_target: target and test("::[A-Z][A-Za-z_0-9]*$");
   def issue: type == "string" and test("^#(166|167|168|169|170|171|172|173|174|175|176|177|178)$");
   def owner($p): . as $o | type == "string" and
     (test("^(delivery::(cli|serve)|shared::(config|utilities|root)|infrastructure::store)$") or
@@ -72,7 +76,7 @@ jq -e '
   all(.store_callbacks[]; (.source|path) and (.source|startswith("src/store/")) and
     (.target|target) and .class == "store-callback" and .issue == "#177") and
   ([.legacy_edges[],.store_callbacks[]]|unique_by_key([.source,.target])) and
-  all(.passive_store_models[]; (.source|path) and (.source|startswith("src/store/")) and (.target|target)) and
+  all(.passive_store_models[]; (.source|path) and (.source|startswith("src/store/")) and (.target|model_target)) and
   (.passive_store_models|unique_by_key([.source,.target])) and
   all(.setup_runtime_dependencies[]; (.source|path) and (.target|target) and (.owner|owner($p))) and
   (.setup_runtime_dependencies|unique_by_key([.source,.target]))

@@ -17,7 +17,7 @@ use comemory::store::edges_retrieval::{
     SeedWalk, co_change_weight, direct_reference_edges, expand_memory_seeds, live_superseder,
     walk_context_edges,
 };
-use comemory::store::{connection, memory_row};
+use comemory::store::{MemoryLinks, connection, memory_row};
 use rusqlite::Connection;
 use time::OffsetDateTime;
 
@@ -51,6 +51,7 @@ fn seed_memory(conn: &Connection, id: &str, day: i64) {
         "note",
         &format!("/data/.comemory/memories/{id}-note.md"),
         &[],
+        &MemoryLinks::default(),
     )
     .expect("insert memory");
 }

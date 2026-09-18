@@ -22,8 +22,9 @@ fn opts() -> Options {
     }
 }
 
-/// Mirror `body` into the store through the production `memory_row::insert`,
-/// so the row carries the same simhash a real save writes.
+/// Mirror `body` into the store through the production
+/// `domains::memories::mirror::insert_row` seam, so the row carries the same
+/// simhash and the same derived edges a real save writes.
 fn save(conn: &rusqlite::Connection, id: &str, body: &str, repo: &str) -> String {
     let fm = Frontmatter {
         id: id.to_string(),
@@ -39,7 +40,7 @@ fn save(conn: &rusqlite::Connection, id: &str, body: &str, repo: &str) -> String
         relations: Relations::default(),
     };
     let md_path = format!("memories/{id}.md");
-    comemory::store::memory_row::insert(conn, &fm, body, id, &md_path, &fm.tags)
+    comemory::domains::memories::mirror::insert_row(conn, &fm, body, id, &md_path, &fm.tags)
         .expect("mirror into the store");
     fm.id
 }

@@ -249,32 +249,7 @@
     }
   ],
   "legacy_edges": [],
-  "store_callbacks": [
-    {
-      "source": "src/store/memory_row.rs",
-      "target": "crate::domains::graph::cross_link::extract_and_emit",
-      "class": "store-callback",
-      "issue": "#177"
-    },
-    {
-      "source": "src/store/memory_row.rs",
-      "target": "crate::domains::graph::cross_link::extract_refs",
-      "class": "store-callback",
-      "issue": "#177"
-    },
-    {
-      "source": "src/store/memory_row.rs",
-      "target": "crate::domains::graph::doc_link::derive_after_memory_save",
-      "class": "store-callback",
-      "issue": "#177"
-    },
-    {
-      "source": "src/store/repo_drop.rs",
-      "target": "crate::domains::graph::derived::refresh_derived_best_effort",
-      "class": "store-callback",
-      "issue": "#177"
-    }
-  ],
+  "store_callbacks": [],
   "passive_store_models": [
     {
       "source": "src/store/code_ref.rs",

@@ -442,19 +442,31 @@ so they share one entry point — `domains::graph::derived::refresh_derived_best
 — and a new seam cannot refresh half the derived state. Each artifact is
 independently best-effort: a failure warns and the other still runs.
 
-Four seams call it, each only after its own transaction has committed, so a
-failed refresh costs freshness and never the primary write:
+Every caller is a DOMAIN core, and each calls it only after its own
+transaction has committed, so a failed refresh costs freshness and never the
+primary write. `store/` never calls it — that is Binding Rule 10's second half
+(#177), and the reason a row writer cannot decide on its caller's behalf that
+derived state is now stale. The seams:
 
 - `save`, after the SQLite mirror commits;
 - soft delete, inside `mirror_soft_delete`, so `comemory delete` and both of
   `comemory prune`'s delete paths behave alike;
+- `update`'s `mirror_record`, shared by the in-place PATCH, `restore`,
+  `refresh_refs` and the sync frontmatter patch — deliberately skipped by the
+  `DERIVED_INERT_FIELDS` path, whose write provably changes neither artifact;
 - `rebuild`, after the markdown replay and the preserved-table copy, before
   the atomic swap;
-- `index-code`, after `domains::graph::materialize` returns. This seam is new, and it
-  closes a real gap: `materialize` writes the `co_activated` memory→file
+- `gc`, only when it actually purged a row, and reporting the outcome as
+  `derived_stale` because its response has a field for it;
+- `index-code`, after `domains::graph::materialize` returns. This seam closes a
+  real gap: `materialize` writes the `co_activated` memory→file
   edges earned by the co-activation reward (§7.1), but nothing used to
   recompute rank afterwards, so a reward sat in `edges` unread until the
-  next save.
+  next save;
+- `repo_admin::disconnect`, after the code index for a label is dropped — the
+  file-node edges it removed fed both artifacts;
+- the sync import's `write_new_memory` and `code_import`;
+- `graph-recompute`, which is the explicit, operator-driven form of the pass.
 
 `edge_fts` is **refresh-materialized, not written through**: one transaction
 deletes the table and re-inserts it from `edges` in a single ordered
@@ -495,7 +507,8 @@ comemory save "..." --kind=decision [--vector ... | --vector-stdin]
        - memories row (+ simhash column)
        - memory_fts row
        - memory_vec row (only if a vector was supplied)
-       - edges from cross_link::extract_refs (ReferencesFile / ReferencesSymbol)
+       - edges from the links memories::mirror derived before the write
+         (ReferencesFile / ReferencesSymbol / ReferencesDocument)
   5. git add + commit + push (best-effort, only when COMEMORY_GIT_AUTO_SYNC is on).
   6. Answer {id, path, created, duplicate_of?, warnings?} — `created` is
      false on a replay (same body re-saved, metadata overwritten
@@ -604,7 +617,8 @@ branch — and records it in the markdown frontmatter (`references.{files,symbol
 the source of truth). There is no content snapshot: refs point at *live* code, the
 anchor only records *which committed state* the link was made against.
 
-These refs are materialized two ways by `memory_row::insert` (so `comemory rebuild`
+These refs are materialized two ways by `memory_row::insert`, whose only
+caller is the `domains::memories::mirror` seam (so `comemory rebuild`
 restores them from markdown for free): a `references_file` / `references_symbol`
 row in the `edges` table (graph shape) **plus** a row in the dedicated `code_ref`
 side table carrying the anchor (`pinned_blob`, `pinned_commit`, `branch`). The

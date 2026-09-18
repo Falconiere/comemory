@@ -14,7 +14,7 @@ use comemory::memory::{Frontmatter, Kind, References, Relations};
 use comemory::store::memory_meta::{
     fetch_extra, ids_matching_kind, keeper_stats, kind_and_body, rank_signals,
 };
-use comemory::store::{connection, memory_row};
+use comemory::store::{MemoryLinks, connection, memory_row};
 use rusqlite::Connection;
 use time::OffsetDateTime;
 
@@ -41,6 +41,7 @@ fn seed(conn: &Connection, id: &str, kind: Kind, repo: &str) {
         "note",
         &format!("/data/.comemory/memories/{id}-note.md"),
         &[],
+        &MemoryLinks::default(),
     )
     .expect("insert memory");
 }

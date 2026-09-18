@@ -1,7 +1,8 @@
 //! Deterministic link deriver: `member_of_source` (file → source,
 //! filtering/explain only) and `references_document` (the resolved, typed
 //! form of a `<repo>:<path>` mention once its target has a `documents`
-//! row). [`derive_after_document`] and [`derive_after_memory_save`] both
+//! row). [`crate::domains::graph::doc_link::derive_after_document`] and
+//! [`crate::domains::graph::doc_link::resolve_memory_documents`] both
 //! resolve through the same lookup, so whichever seam fires second
 //! completes the link regardless of order. An ambiguous match — more than
 //! one live document at the same `(repo, relative_path)` — stays an
@@ -45,31 +46,26 @@ pub fn derive_after_document(
 }
 
 /// Resolve `file_refs` (bare `<repo>:<path>` strings, as harvested by
-/// [`crate::domains::graph::cross_link::extract_refs`]) against any already-indexed
-/// document and materialize `references_document` for each live match.
-pub fn derive_after_memory_save(
-    conn: &Connection,
-    memory_id: &str,
-    file_refs: &[String],
-) -> Result<()> {
+/// [`crate::domains::graph::cross_link::extract_refs`]) against the indexed
+/// corpus and return the `documents.id` of every live match, in first-mention
+/// order. A ref with no colon, no match, or an ambiguous one contributes
+/// nothing — this is the memory-save half of the "both seams" resolver, and
+/// the ambiguity policy stays here rather than in the writer.
+///
+/// The owned result is what [`crate::domains::memories::mirror`] passes to
+/// `store::memory_row` as row data, so the store writes the
+/// `references_document` edges without ever calling back into the graph.
+pub fn resolve_memory_documents(conn: &Connection, file_refs: &[String]) -> Result<Vec<String>> {
+    let mut resolved = Vec::new();
     for file_q in file_refs {
         let Some((repo, path)) = file_q.split_once(':') else {
             continue;
         };
         if let Some(document_id) = resolve_document_id(conn, repo, path)? {
-            edges::insert(
-                conn,
-                EdgeKey {
-                    src_kind: "memory",
-                    src_id: memory_id,
-                    dst_kind: "document",
-                    dst_id: &document_id,
-                    rel: REFERENCES_DOCUMENT,
-                },
-            )?;
+            resolved.push(document_id);
         }
     }
-    Ok(())
+    Ok(resolved)
 }
 
 /// Seam A: find every memory whose `references_file` edge already names

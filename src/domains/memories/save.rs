@@ -27,7 +27,9 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::domains::memories::{Kind, MemoryStore, Prior, References, Relations, SaveParams, id};
+use crate::domains::memories::{
+    Kind, MemoryStore, Prior, References, Relations, SaveParams, id, mirror,
+};
 use crate::prelude::*;
 use crate::store::{Connection, embed, memory_row, sync_log, vector};
 use crate::utilities::context::Ctx;
@@ -401,7 +403,7 @@ fn write_sqlite_mirror(
     let tx = conn.transaction()?;
     let fm = &rec.frontmatter;
     let md_path = rec.path.to_string_lossy();
-    memory_row::insert(&tx, fm, &rec.body, rec.slug.as_str(), &md_path, tags)?;
+    mirror::insert_row(&tx, fm, &rec.body, rec.slug.as_str(), &md_path, tags)?;
     if let Some(v) = vector_opt {
         // A re-save of the same id must replace, not duplicate, its
         // memory_vec row (see `store::vector::replace_memory`'s doc).

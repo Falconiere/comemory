@@ -126,10 +126,35 @@ sed '/^| src\/domains\/memories\/save.rs |/s@src/domains/memories/save.rs@none@2
 assert_fails 'missing inventory target' 'invalid policy or inventory metadata' --inventory "$TASK_TMP/no-target.md"
 jq "$SEED_EDGE"' | .legacy_edges += [.legacy_edges[0]]' "$POLICY" >"$TASK_TMP/duplicate.json"
 assert_fails 'duplicate policy edge' 'invalid policy edge' --policy "$TASK_TMP/duplicate.json"
-jq '.store_callbacks[0].target = "crate::domains::graph::cross_link::absent"' "$POLICY" >"$TASK_TMP/callback.json"
+# `store_callbacks` emptied out with #177 — the last store-to-domain callback
+# went when `memory_row` stopped deriving its own links and `repo_drop` stopped
+# refreshing the derived artifacts. jq's `.store_callbacks[0].target = ...`
+# auto-vivifies element 0 on an empty array, producing a half-formed entry that
+# fails for the WRONG reason, and `+= [.store_callbacks[0]]` is a plain no-op.
+# Each case below therefore seeds one well-formed entry when the real allowlist
+# is empty, exactly as `SEED_EDGE` does for `legacy_edges`.
+SEED_CALLBACK='.store_callbacks = (if (.store_callbacks | length) > 0 then .store_callbacks else
+  [{source: "src/store/memory_row.rs", target: "crate::domains::memories::Frontmatter",
+    class: "store-callback", issue: "#177"}] end)'
+jq "$SEED_CALLBACK"' | .store_callbacks[0].target = "crate::domains::graph::cross_link::absent"' \
+  "$POLICY" >"$TASK_TMP/callback.json"
 assert_fails 'stale store callback' 'absent policy edge' --policy "$TASK_TMP/callback.json"
+jq "$SEED_CALLBACK"' | del(.store_callbacks[0].target)' "$POLICY" >"$TASK_TMP/callback-target.json"
+assert_fails 'missing store callback target' 'invalid policy edge' --policy "$TASK_TMP/callback-target.json"
+jq "$SEED_CALLBACK"' | .store_callbacks += [.store_callbacks[0]]' "$POLICY" >"$TASK_TMP/callback-dup.json"
+assert_fails 'duplicate store callback' 'invalid policy edge' --policy "$TASK_TMP/callback-dup.json"
 jq '.passive_store_models[0].target = "crate::domains::memories::Absent"' "$POLICY" >"$TASK_TMP/model.json"
 assert_fails 'stale passive model' 'absent policy edge' --policy "$TASK_TMP/model.json"
+# #177 tightened the model exemption to TYPE targets. Without it a module or
+# function path could be allowlisted as a "passive model", silently widening a
+# type-only exemption into one that covers an algorithm — the exact shape of
+# the callbacks this issue removed. (Prefix matching is `store_callbacks`;
+# `passive_store_models` exempts the exact target plus `::new`/`::default`/
+# `::from` and known enum variants.) The substitute target is deliberately one
+# the tree really contains (`store/code_ref.rs` imports from it), so the ONLY
+# thing failing the case is its lower-case final segment — not staleness.
+jq '.passive_store_models[0].target = "crate::domains::memories"' "$POLICY" >"$TASK_TMP/model-fn.json"
+assert_fails 'module as a passive model' 'invalid policy edge' --policy "$TASK_TMP/model-fn.json"
 sed '/^| src\/domains\/memories.rs |/s/comemory::domains::memories; crate-root-alias/private/' "$INVENTORY" >"$TASK_TMP/public.md"
 assert_fails 'missing public compatibility choice' 'public path mismatch' --inventory "$TASK_TMP/public.md"
 assert_gate_rejects "$TASK_TMP/public.md" 'public path mismatch'

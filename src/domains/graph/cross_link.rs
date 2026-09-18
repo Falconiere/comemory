@@ -1,17 +1,13 @@
 //! Extract `<repo>:<path>[:<symbol>]` references from a memory body.
 //!
-//! The save pipeline scans every memory body with
-//! [`extract_refs`](crate::domains::graph::cross_link::extract_refs) and creates
-//! `ReferencesFile` / `ReferencesSymbol` edges to the code-layer nodes. The
-//! parser is intentionally simple: a single regex match per token, with
-//! deduplication so a body that mentions the same file twice produces a single
-//! edge.
+//! [`crate::domains::memories::mirror`] scans every memory body with
+//! [`extract_refs`](crate::domains::graph::cross_link::extract_refs) before the
+//! mirror write; `store::memory_row` turns the result into `ReferencesFile` /
+//! `ReferencesSymbol` edges. This module extracts and never writes. The parser
+//! is intentionally simple: a single regex match per token, with deduplication
+//! so a body that mentions the same file twice produces a single edge.
 
 use regex::Regex;
-
-use crate::prelude::*;
-use crate::store::Connection;
-use crate::store::edges::{self, EdgeKey, REFERENCES_FILE, REFERENCES_SYMBOL};
 
 /// Code-layer references harvested from a memory body.
 ///
@@ -104,41 +100,6 @@ pub fn extract_refs(body: &str) -> Refs {
 /// the scheme (issue #153).
 fn is_path_expression(path: &str) -> bool {
     path.starts_with('/') || path.starts_with("./") || path.starts_with("../")
-}
-
-/// Walk `body`, extract every `<repo>:<path>[:<symbol>]` reference, and
-/// insert `references_file` / `references_symbol` edges into the v0.2
-/// `edges` table. Node addressing matches `migrations/0002_v2_tables.sql`:
-/// `file:<repo>:<path>` and `symbol:<repo>:<path>:<symbol>`. Replaces the
-/// v0.1 kuzu writer; the file/symbol nodes themselves are populated later
-/// by `comemory index-code`.
-pub fn extract_and_emit(conn: &Connection, memory_id: &str, body: &str) -> Result<()> {
-    let refs = extract_refs(body);
-    for file_q in &refs.files {
-        edges::insert(
-            conn,
-            EdgeKey {
-                src_kind: "memory",
-                src_id: memory_id,
-                dst_kind: "file",
-                dst_id: file_q,
-                rel: REFERENCES_FILE,
-            },
-        )?;
-    }
-    for sym_q in &refs.symbols {
-        edges::insert(
-            conn,
-            EdgeKey {
-                src_kind: "memory",
-                src_id: memory_id,
-                dst_kind: "symbol",
-                dst_id: sym_q,
-                rel: REFERENCES_SYMBOL,
-            },
-        )?;
-    }
-    Ok(())
 }
 
 #[cfg(test)]

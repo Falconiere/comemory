@@ -60,8 +60,9 @@ pub struct EdgeKey<'a> {
 /// every graph-side writer/reader (`materialize`, the working set, the
 /// affinity prior).
 ///
-/// KNOWN pre-existing divergence: [`crate::domains::graph::cross_link`]'s
-/// `extract_and_emit` writes `references_file` / `references_symbol`
+/// KNOWN pre-existing divergence: the `references_file` /
+/// `references_symbol` edges `memory_row::insert` writes from its
+/// [`crate::store::MemoryLinks`] input carry
 /// destination ids WITHOUT the `file:` / `symbol:` kind prefix (bare
 /// `<repo>:<path>` / `<repo>:<path>:<symbol>`), and its reader
 /// `retrieval::bundle::code_ref_lookup` matches that bare form. This works

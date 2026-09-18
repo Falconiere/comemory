@@ -21,6 +21,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use crate::domains::graph::derived;
 use crate::prelude::*;
 use crate::store::{Connection, code_row, repo_drop, repo_marker};
 use crate::utilities::context::Ctx;
@@ -209,7 +210,8 @@ pub fn archive(ctx: &mut Ctx<'_>, name: &str, req: ArchiveRequest) -> Result<Arc
 }
 
 /// Drop `name`'s whole code index (`store::repo_drop`), keeping its
-/// memories. Unknown label → `404`.
+/// memories, then refresh the derived artifacts the removed edges fed.
+/// Unknown label → `404`.
 ///
 /// Not a "stop indexing" action: the `repo_marker` row is dropped with the
 /// index, so under `COMEMORY_INDEXING_AUTO_REINDEX=lazy` (the default) the
@@ -221,6 +223,13 @@ pub fn disconnect(ctx: &mut Ctx<'_>, name: &str) -> Result<DisconnectResponse> {
     let conn = ctx.conn()?;
     require_marker(conn, name)?;
     let counts = repo_drop::drop_repo(conn, name)?;
+    // Post-commit, best-effort, and deliberately here rather than inside the
+    // row delete: the dropped file-node edges fed `memories.rank_score` and
+    // `edge_fts`, and a failed refresh must cost freshness only — never the
+    // disconnect, whose counters are already durable. The response has no
+    // staleness field to report it in, so the outcome is bound and dropped
+    // the way `rebuild` and `index-code` do.
+    let _stale = derived::refresh_derived_best_effort(conn);
     Ok(DisconnectResponse {
         repo: name.to_string(),
         symbols_removed: counts.symbols_removed,

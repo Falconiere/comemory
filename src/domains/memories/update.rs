@@ -18,7 +18,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::domains::memories::save;
-use crate::domains::memories::{Frontmatter, Kind, MemoryRecord, MemoryStore, id};
+use crate::domains::memories::{Frontmatter, Kind, MemoryRecord, MemoryStore, id, mirror};
 use crate::prelude::*;
 use crate::store::{memory_row, sync_log};
 use crate::utilities::context::Ctx;
@@ -284,7 +284,7 @@ fn mirror_row(ctx: &mut Ctx<'_>, record: &MemoryRecord) -> Result<()> {
     let fm = &record.frontmatter;
     let md_path = record.path.to_string_lossy().into_owned();
     let tx = conn.transaction()?;
-    memory_row::insert(
+    mirror::insert_row(
         &tx,
         fm,
         &record.body,

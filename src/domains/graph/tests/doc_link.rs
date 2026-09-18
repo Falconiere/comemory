@@ -8,8 +8,8 @@
 //! Test mirror for `src/domains/graph/doc_link.rs`: the deterministic
 //! `member_of_source` / `references_document` link deriver, exercised
 //! through the real seams (`document::writer::update_file`,
-//! `store::memory_row::insert`) against a real migrated `comemory.db`,
-//! never by calling `graph::doc_link` functions directly.
+//! `domains::memories::mirror::insert_row`) against a real migrated
+//! `comemory.db`, never by calling `graph::doc_link` functions directly.
 
 use std::fs;
 use std::path::PathBuf;
@@ -18,10 +18,11 @@ use comemory::domains::documents::document::DocumentFormat;
 use comemory::domains::documents::document::writer;
 use comemory::domains::documents::source::classify::Classification;
 use comemory::domains::documents::source::discover::Candidate;
+use comemory::domains::memories::mirror;
 use comemory::memory::{Frontmatter, Kind, References, Relations};
 use comemory::retrieval::graph_route::ALLOWED_RELS;
 use comemory::store::sources::SourceRootUpsert;
-use comemory::store::{connection, memory_row, sources};
+use comemory::store::{connection, sources};
 use rusqlite::{Connection, params};
 use tempfile::TempDir;
 use time::OffsetDateTime;
@@ -92,7 +93,7 @@ fn index_markdown(
     }
 }
 
-/// Save a real memory (through the same `memory_row::insert` seam
+/// Save a real memory (through the same `mirror::insert_row` seam
 /// `cli::save` uses) whose body is exactly `body`, inside its own
 /// transaction. Returns the memory id.
 fn save_memory(conn: &mut Connection, id: &str, repo: &str, body: &str) -> String {
@@ -110,7 +111,7 @@ fn save_memory(conn: &mut Connection, id: &str, repo: &str, body: &str) -> Strin
         relations: Relations::default(),
     };
     let tx = conn.transaction().expect("tx");
-    memory_row::insert(&tx, &fm, body, "slug", "/abs/path.md", &[]).expect("insert memory");
+    mirror::insert_row(&tx, &fm, body, "slug", "/abs/path.md", &[]).expect("insert memory");
     tx.commit().expect("commit");
     id.to_string()
 }

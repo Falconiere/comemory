@@ -18,7 +18,8 @@ use comemory::domains::code::index_code::IndexMode;
 use comemory::domains::code::repo_admin::{ArchiveRequest, ConnectRequest, PatchRequest};
 use comemory::domains::memories::Kind;
 use comemory::errors::Error;
-use comemory::store::connection;
+use comemory::store::edges::{self, EdgeKey};
+use comemory::store::{connection, edge_fts};
 use comemory::utilities::context::Ctx;
 use tempfile::TempDir;
 
@@ -27,6 +28,39 @@ fn ctx_over(home: &TempDir) -> (Paths, Config, rusqlite::Connection) {
     paths.ensure_dirs().expect("ensure dirs");
     let conn = connection::open(paths.db_path()).expect("open db");
     (paths, Config::defaults(), conn)
+}
+
+/// Seed one file→file `imports` edge inside `repo`. `git_sample` builds a
+/// ONE-file repo with no imports and a single commit, so `index_code` emits no
+/// file→file edge at all — without this the `edge_fts` assertion below would
+/// read zero before AND after the drop and prove nothing. The sibling
+/// `store::repo_drop` suite seeds the same edge for the same reason.
+fn seed_import_edge(conn: &rusqlite::Connection, repo: &str) {
+    let src = format!("file:{repo}:src.rs");
+    let dst = format!("file:{repo}:other.rs");
+    edges::insert(
+        conn,
+        EdgeKey {
+            src_kind: "file",
+            src_id: &src,
+            dst_kind: "file",
+            dst_id: &dst,
+            rel: "imports",
+        },
+    )
+    .expect("seed imports edge");
+}
+
+/// `edge_fts` triplet rows still naming a `file:<repo>:` node.
+fn file_edge_triplets(conn: &rusqlite::Connection, repo: &str) -> i64 {
+    let prefix = format!("file:{repo}:");
+    conn.query_row(
+        "SELECT COUNT(*) FROM edge_fts \
+          WHERE src_id LIKE ?1 || '%' OR dst_id LIKE ?1 || '%'",
+        [&prefix],
+        |r| r.get(0),
+    )
+    .expect("count edge_fts")
 }
 
 fn as_str(path: &std::path::Path) -> String {
@@ -245,6 +279,14 @@ fn disconnect_drops_the_code_index_and_keeps_the_memories() {
         index(&mut ctx, "sample", &repo);
         save_memory(&mut ctx, "a decision about the sample repo", "sample")
     };
+    seed_import_edge(&conn, "sample");
+    edge_fts::refresh(&mut conn).expect("materialize the triplet index");
+    let triplets_before = file_edge_triplets(&conn, "sample");
+    assert!(
+        triplets_before > 0,
+        "the derived index must really cover the repo's file edges, \
+         or the post-drop assertion below proves nothing"
+    );
 
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
     let dropped =
@@ -266,6 +308,18 @@ fn disconnect_drops_the_code_index_and_keeps_the_memories() {
         )
         .expect("count memories");
     assert_eq!(live, 1, "memories are retained (AC-18)");
+    // #177: the post-commit derived refresh moved out of `store::repo_drop`
+    // into this core. The triplet index demonstrably covered these file-node
+    // edges before the drop, so the only way those rows can be gone now is
+    // that `disconnect` refreshed after the drop committed —
+    // `store::repo_drop::tests::drop_repo_does_not_refresh_the_derived_artifacts`
+    // is the other half, proving the store helper leaves them alone.
+    assert_eq!(
+        file_edge_triplets(&conn, "sample"),
+        0,
+        "disconnect must refresh the derived index it invalidated \
+         (was {triplets_before} before the drop)"
+    );
 
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
     let unknown =
