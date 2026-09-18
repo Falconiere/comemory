@@ -24,7 +24,8 @@ One row per capability — its sibling module file and its folder together:
 | Capability | Owns | Landed by |
 | --- | --- | --- |
 | `code.rs` + [`code/`](code/README.md) | AST extraction, code indexing, the repository inventory, Git hooks, reindex freshness | #167 |
+| `documents.rs` + [`documents/`](documents/README.md) | Document extraction, the durable source registry, discovery, and document indexing | #168 |
 
-The remaining nine capabilities named by the contract — `memories`, `documents`,
-`graph`, `retrieval`, `learning`, `sync`, `capture`, `maintenance`,
-`integrations` — arrive with #168–#176 and keep their legacy roots until then.
+The remaining eight capabilities named by the contract — `memories`, `graph`,
+`retrieval`, `learning`, `sync`, `capture`, `maintenance`, `integrations` —
+arrive with #169–#176 and keep their legacy roots until then.

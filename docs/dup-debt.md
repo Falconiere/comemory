@@ -137,11 +137,11 @@ ratchet re-scans fresh each run, it does not pin line numbers).
 | `src/config/validate.rs:24-29` function `check_graph_hops` | `src/config/validate.rs:32-37` function `check_graph_seeds` | 88.07% | parallel per-knob-group range-validation helpers, same shape by design |
 | `src/config/validate.rs:15-20` function `check_rrf_k` | `src/config/validate.rs:40-45` function `check_decay` | 85.80% | parallel per-knob-group range-validation helpers, same shape by design |
 
-### `src/document/`
+### `src/domains/documents/document/`
 
 | Pair A | Pair B | Similarity | Why it's debt, not urgent |
 | --- | --- | --- | --- |
-| `src/document/extract.rs:70-84` function `extract_txt` | `src/document/extract.rs:86-95` function `extract_markdown` | 88.81% | parallel read-and-chunk extractors for two plain-text document kinds |
+| `src/domains/documents/document/extract.rs:70-84` function `extract_txt` | `src/domains/documents/document/extract.rs:86-95` function `extract_markdown` | 88.81% | parallel read-and-chunk extractors for two plain-text document kinds |
 
 ### `src/graph/`
 

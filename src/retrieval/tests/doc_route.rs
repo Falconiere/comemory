@@ -12,12 +12,12 @@
 
 use std::path::{Path, PathBuf};
 
-use comemory::document::DocumentFormat;
-use comemory::document::writer::{self, UpdateOutcome};
+use comemory::domains::documents::document::DocumentFormat;
+use comemory::domains::documents::document::writer::{self, UpdateOutcome};
+use comemory::domains::documents::source::classify::Classification;
+use comemory::domains::documents::source::discover::Candidate;
 use comemory::retrieval::doc_route::route_documents;
 use comemory::retrieval::scope::{Domain, Domains, Filters};
-use comemory::source::classify::Classification;
-use comemory::source::discover::Candidate;
 use comemory::store::connection;
 use comemory::store::document_fts;
 use comemory::store::sources::{self, SourceRootUpsert};

@@ -12,8 +12,8 @@
 //! full `comemory rebuild` workflow end to end with a real indexed document
 //! corpus.
 
-use comemory::document::DocumentFormat;
-use comemory::document::writer::UpdateOutcome;
+use comemory::domains::documents::document::DocumentFormat;
+use comemory::domains::documents::document::writer::UpdateOutcome;
 use comemory::store::connection;
 use comemory::store::rebuild_copy::copy_preserved_tables_from_old;
 use comemory::store::sources::{self, SourceRootUpsert};

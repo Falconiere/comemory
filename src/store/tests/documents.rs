@@ -10,8 +10,8 @@
 //! from the checked-in fixtures (`tests/common/fixtures/docs/`) rather
 //! than hand-typed placeholder rows.
 
-use comemory::document::extract::extract;
-use comemory::document::{DocumentFormat, ExtractedDocument};
+use comemory::domains::documents::document::extract::extract;
+use comemory::domains::documents::document::{DocumentFormat, ExtractedDocument};
 use comemory::store::connection;
 use comemory::store::documents::{self, ChunkRow, DocumentUpsert};
 use comemory::store::sources::{self, SourceFileUpsert, SourceRootUpsert};

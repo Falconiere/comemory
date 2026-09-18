@@ -43,8 +43,10 @@
       ],
       "domains/*": [
         "ast",
+        "document",
         "index_code",
         "repos",
+        "source",
         "tests",
         "proptest-regressions"
       ],
@@ -114,7 +116,6 @@
       "cli/graph",
       "config",
       "consolidate",
-      "document",
       "eval",
       "graph",
       "memory",
@@ -127,7 +128,6 @@
       "serve/routes",
       "serve/routes/maint",
       "serve/routes/memories",
-      "source",
       "sync",
       "stats",
       "store",
@@ -144,7 +144,10 @@
       "domains/code",
       "domains/code/ast",
       "domains/code/index_code",
-      "domains/code/repos"
+      "domains/code/repos",
+      "domains/documents",
+      "domains/documents/document",
+      "domains/documents/source"
     ]
   },
   "fileSize": {

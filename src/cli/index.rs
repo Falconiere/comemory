@@ -1,6 +1,7 @@
 //! `comemory index <PATH>...` — register one or more files or directories
 //! as document sources and run their synchronous initial reconcile. The
-//! shared middle (registration + reconcile loop) lives in `api::index`
+//! shared middle (registration + reconcile loop) lives in
+//! `domains::documents::index`
 //! (Binding Rule 1); this file keeps arg-parsing, the `--strict` exit-code
 //! decision, and TTY/JSON rendering.
 
@@ -9,10 +10,9 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::api;
-use crate::api::index::Output;
 use crate::cli::load_config;
 use crate::config::paths::{Paths, resolve_data_dir};
+use crate::domains::documents::index::{self, Output};
 use crate::output::{json, tty};
 use crate::prelude::*;
 use crate::store::connection;
@@ -49,8 +49,8 @@ pub struct Args {
 }
 
 /// Register every `a.path` entry and run its synchronous reconcile via
-/// [`api::index::run`]. See that module's doc for why `--strict` is
-/// re-checked here rather than inside the shared middle.
+/// [`index::run`]. See that module's doc for why `--strict` is re-checked
+/// here rather than inside the shared middle.
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
     let paths = Paths::new(resolve_data_dir(data_dir));
     paths.ensure_dirs()?;
@@ -58,7 +58,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     let mut conn = connection::open(paths.db_path())?;
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let req = api::index::Request {
+    let req = index::Request {
         path: a
             .path
             .iter()
@@ -67,7 +67,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         repo: a.repo.clone(),
         strict: a.strict,
     };
-    let output = api::index::run(&mut ctx, req)?;
+    let output = index::run(&mut ctx, req)?;
 
     let strict_failed = a.strict && output.sources.iter().any(|r| !r.errors.is_empty());
     emit(json_flag, &output)?;

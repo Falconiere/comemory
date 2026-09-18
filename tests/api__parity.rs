@@ -40,6 +40,7 @@ use assert_cmd::cargo::cargo_bin;
 use clap::{Command as ClapCommand, CommandFactory};
 use comemory::api;
 use comemory::cli::Cli;
+use comemory::domains::documents::{index, sources, unindex};
 use serde_json::json;
 use tempfile::TempDir;
 
@@ -161,7 +162,7 @@ probe_fn!(probe_eval, api::eval::Request);
 probe_fn!(probe_feedback, api::feedback::Request);
 probe_fn!(probe_gc, api::gc::Request);
 probe_fn!(probe_graph, api::graph::Request);
-probe_fn!(probe_index, api::index::Request);
+probe_fn!(probe_index, index::Request);
 probe_fn!(
     probe_index_code,
     comemory::domains::code::index_code::Request
@@ -177,14 +178,14 @@ probe_fn!(probe_rebuild, api::rebuild::Request);
 probe_fn!(probe_save, api::save::Request);
 probe_fn!(probe_search, api::search::Request);
 probe_fn!(probe_search_code, api::search_code::Request);
-probe_fn!(probe_sources, api::sources::Request);
+probe_fn!(probe_sources, sources::Request);
 probe_fn!(probe_find, api::find::Request);
 probe_fn!(probe_hooks, comemory::domains::code::hooks::Request);
 probe_fn!(probe_repos, comemory::domains::code::repos::Request);
 probe_fn!(probe_show, api::show::Request);
 probe_fn!(probe_stats, api::stats::Request);
 probe_fn!(probe_tune, api::tune::Request);
-probe_fn!(probe_unindex, api::unindex::Request);
+probe_fn!(probe_unindex, unindex::Request);
 
 /// A [`PROBES`] dispatch entry's function pointer type, factored out of the
 /// tuple so clippy's `type_complexity` lint (`-D warnings`) has a named type

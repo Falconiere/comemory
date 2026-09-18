@@ -5,8 +5,8 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Shared support for the `src/document/writer.rs` and
-//! `src/document/fingerprint.rs` test mirrors: only the pieces BOTH
+//! Shared support for the `src/domains/documents/document/writer.rs` and
+//! `src/domains/documents/document/fingerprint.rs` test mirrors: only the pieces BOTH
 //! consuming binaries actually call — opening a disposable
 //! `comemory.db` seeded with one `source_roots` row, copying a real
 //! document fixture into a temp directory (the writer must never be
@@ -23,10 +23,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use comemory::document::DocumentFormat;
-use comemory::document::writer::{self, UpdateOutcome};
-use comemory::source::classify::Classification;
-use comemory::source::discover::Candidate;
+use comemory::domains::documents::document::DocumentFormat;
+use comemory::domains::documents::document::writer::{self, UpdateOutcome};
+use comemory::domains::documents::source::classify::Classification;
+use comemory::domains::documents::source::discover::Candidate;
 use comemory::store::sources::SourceRootUpsert;
 use comemory::store::{connection, sources};
 use rusqlite::Connection;

@@ -7,7 +7,7 @@
 
 use std::path::Path;
 
-use crate::document::DocumentFormat;
+use crate::domains::documents::document::DocumentFormat;
 
 /// How a candidate file under a registered source root resolved.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -21,8 +21,9 @@ pub enum Classification {
     Unsupported,
     /// Excluded before the allowlist ever runs, by rule 3 (Comemory's
     /// managed memory directory). [`classify`] never returns this
-    /// variant — only [`crate::source::discover::discover`] does, for a
-    /// single-file source whose registered path falls inside the
+    /// variant — only
+    /// [`crate::domains::documents::source::discover::discover`] does, for
+    /// a single-file source whose registered path falls inside the
     /// managed directory. A directory-source walk instead prunes the
     /// whole managed-directory subtree, so its files never reach
     /// classification at all.

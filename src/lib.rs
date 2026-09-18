@@ -65,14 +65,6 @@ pub mod capture;
 /// clap subcommand entry points and the top-level dispatcher.
 pub mod cli;
 
-/// Pure in-process document extraction (TXT/Markdown/HTML/CSV) and
-/// chunking, independent of the store.
-pub mod document;
-
-/// Durable source registry (`sources.toml`), its exclusive-flock guard,
-/// and the reconciler mirroring it into SQLite's `source_roots`.
-pub mod source;
-
 /// Cloud-sync client helpers: match keys, redaction, auth file, allowlist cache.
 pub mod sync;
 
@@ -84,12 +76,14 @@ pub mod domains;
 pub mod utilities;
 
 // Crate-root aliases for modules that were public root modules before the
-// migration moved them: `ast` and `git_utils` under `domains::code` (#167), the
-// four shared primitives under `utilities` (#166). They preserve
-// `comemory::<name>` for external consumers; in-crate code names the real
-// path directly.
+// migration moved them: `ast` and `git_utils` under `domains::code` (#167),
+// `document` and `source` under `domains::documents` (#168), the four shared
+// primitives under `utilities` (#166). They preserve `comemory::<name>` for
+// external consumers; in-crate code names the real path directly.
 pub use domains::code::ast;
 pub use domains::code::git_utils;
+pub use domains::documents::document;
+pub use domains::documents::source;
 pub use utilities::embed;
 pub use utilities::fetch;
 pub use utilities::http_error;

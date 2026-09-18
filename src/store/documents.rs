@@ -1,5 +1,5 @@
 //! `documents` + `document_chunks` row CRUD — the two plain SQLite
-//! tables the index writer ([`crate::document::writer`]) replaces
+//! tables the index writer ([`crate::domains::documents::document::writer`]) replaces
 //! wholesale inside its per-file transaction. Mirrors the
 //! `code_symbols`/`code_fts` split: this module owns the plain rows,
 //! [`crate::store::document_fts`] owns the FTS5 virtual table.
@@ -11,7 +11,7 @@ use crate::prelude::*;
 /// Caller-supplied fields for [`upsert_document`].
 pub struct DocumentUpsert<'a> {
     /// 32-hex-char document id (see
-    /// [`crate::document::writer::document_id_of`]).
+    /// [`crate::domains::documents::document::fingerprint::document_id_of`]).
     pub id: &'a str,
     /// Owning `source_files.id`.
     pub source_file_id: &'a str,

@@ -5,8 +5,9 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror test for `src/api/index.rs`. Real document fixtures (`common
-//! /docs_fixtures.rs`, matching `tests/api__sources.rs`); `api::index::run`
+//! Mirror test for `src/domains/documents/index.rs`. Real document fixtures (`common
+//! /docs_fixtures.rs`, matching `tests/api__sources.rs`);
+//! `domains::documents::index::run`
 //! is called directly against a `Ctx::borrowed` connection. `cli::index::run`
 //! stays byte-compat tested against CLI stdout in `tests/cli__index.rs`;
 //! the HTTP job route (`POST /api/v1/sources`) lives in
@@ -16,8 +17,8 @@ use crate::test_common::docs_fixtures;
 use crate::test_common::git_sample;
 use crate::test_common::git_worktree::add_worktree;
 
-use comemory::api;
 use comemory::config::{Config, Paths};
+use comemory::domains::documents::index;
 use comemory::store::connection;
 use comemory::utilities::context::Ctx;
 use tempfile::TempDir;
@@ -37,9 +38,9 @@ fn run_registers_and_indexes_real_fixtures() {
     let (paths, cfg, mut conn) = ctx_over(&home);
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let output = api::index::run(
+    let output = index::run(
         &mut ctx,
-        api::index::Request {
+        index::Request {
             path: vec![docs.to_str().expect("utf8 path").to_string()],
             repo: Some("docs-corpus".into()),
             strict: false,
@@ -66,9 +67,9 @@ fn run_never_fails_on_strict_leaving_the_error_check_to_the_caller() {
     let (paths, cfg, mut conn) = ctx_over(&home);
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let output = api::index::run(
+    let output = index::run(
         &mut ctx,
-        api::index::Request {
+        index::Request {
             path: vec![docs.to_str().expect("utf8 path").to_string()],
             repo: None,
             strict: true,
@@ -91,9 +92,9 @@ fn run_labels_a_source_inside_a_linked_worktree_with_the_main_repo_name() {
     let (paths, cfg, mut conn) = ctx_over(&home);
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let output = api::index::run(
+    let output = index::run(
         &mut ctx,
-        api::index::Request {
+        index::Request {
             path: vec![docs.to_str().expect("utf8 path").to_string()],
             repo: None,
             strict: false,
@@ -113,9 +114,9 @@ fn run_on_a_nonexistent_path_is_a_usage_error() {
     let (paths, cfg, mut conn) = ctx_over(&home);
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let err = api::index::run(
+    let err = index::run(
         &mut ctx,
-        api::index::Request {
+        index::Request {
             path: vec!["/nonexistent/does/not/exist".to_string()],
             repo: None,
             strict: false,

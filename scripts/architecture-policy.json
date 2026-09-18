@@ -91,11 +91,6 @@
       "issue": "#176"
     },
     {
-      "module": "crate::document",
-      "owner": "domains::documents",
-      "issue": "#168"
-    },
-    {
       "module": "crate::eval",
       "owner": "domains::learning",
       "issue": "#173"
@@ -124,11 +119,6 @@
       "module": "crate::retrieval",
       "owner": "domains::retrieval",
       "issue": "#171"
-    },
-    {
-      "module": "crate::source",
-      "owner": "domains::documents",
-      "issue": "#168"
     },
     {
       "module": "crate::stats",
@@ -303,7 +293,7 @@
     },
     {
       "source": "src/api/setup/detect.rs",
-      "target": "crate::api::sources",
+      "target": "crate::domains::documents::sources",
       "owner": "domains::documents"
     },
     {

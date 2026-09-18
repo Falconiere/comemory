@@ -6,9 +6,10 @@
     clippy::too_many_lines,
     clippy::print_stderr
 )]
-//! Test mirror for `src/document/writer.rs`: the full extract →
+//! Test mirror for `src/domains/documents/document/writer.rs`: the full extract →
 //! one-transaction write path plus tombstone reconciliation. The
-//! fingerprint-skip ladder (`src/document/fingerprint.rs`) has its own
+//! fingerprint-skip ladder
+//! (`src/domains/documents/document/fingerprint.rs`) has its own
 //! mirror at `tests/document__fingerprint.rs`; both share fixture
 //! plumbing via `common/document_writer_support.rs`.
 
@@ -16,8 +17,8 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 
-use comemory::document::DocumentFormat;
-use comemory::document::writer::{self, UpdateOutcome};
+use comemory::domains::documents::document::DocumentFormat;
+use comemory::domains::documents::document::writer::{self, UpdateOutcome};
 use comemory::store::sources;
 use comemory::store::{document_fts, documents};
 use rusqlite::{Connection, params};

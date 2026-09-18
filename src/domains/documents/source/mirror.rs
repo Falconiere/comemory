@@ -5,8 +5,8 @@
 
 use std::collections::HashSet;
 
+use crate::domains::documents::source::SourceEntry;
 use crate::prelude::*;
-use crate::source::SourceEntry;
 use crate::store::Connection;
 use crate::store::memory_row::iso_format;
 use crate::store::sources::{self, SourceRootUpsert};

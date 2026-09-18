@@ -15,10 +15,10 @@ use time::OffsetDateTime;
 
 use super::fingerprint::{self, FileStat};
 use super::{DocumentFormat, ExtractedDocument, extract};
+use crate::domains::documents::source::classify::Classification;
+use crate::domains::documents::source::discover::Candidate;
 use crate::graph::doc_link;
 use crate::prelude::*;
-use crate::source::classify::Classification;
-use crate::source::discover::Candidate;
 use crate::store::Connection;
 use crate::store::document_fts;
 use crate::store::documents::{self, ChunkRow, DocumentUpsert};

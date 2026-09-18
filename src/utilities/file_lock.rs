@@ -14,8 +14,9 @@
 //!
 //! Two owners across two future domains (documents and infrastructure) is
 //! exactly why #166 gave it a neutral home here rather than leaving it under
-//! `src/source/`, where `store::migrate::preflight` would have had to reach
-//! into the documents capability for a lock.
+//! the source registry (now `domains::documents::source`), where
+//! `store::migrate::preflight` would have had to reach into the documents
+//! capability for a lock.
 
 use std::fs::{File, OpenOptions};
 use std::path::Path;

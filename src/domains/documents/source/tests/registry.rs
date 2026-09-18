@@ -5,13 +5,13 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Test mirror for `src/source/registry.rs`.
+//! Test mirror for `src/domains/documents/source/registry.rs`.
 
 use std::fs;
 
 use comemory::config::paths::Paths;
-use comemory::source::SourceKind;
-use comemory::source::registry::Registry;
+use comemory::domains::documents::source::SourceKind;
+use comemory::domains::documents::source::registry::Registry;
 use tempfile::TempDir;
 
 use crate::test_common as common;

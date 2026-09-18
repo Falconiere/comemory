@@ -5,12 +5,12 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Test mirror for `src/source/mirror.rs`.
+//! Test mirror for `src/domains/documents/source/mirror.rs`.
 
 use std::path::PathBuf;
 
-use comemory::source::mirror::{self, MirrorReport};
-use comemory::source::{SourceEntry, SourceId, SourceKind};
+use comemory::domains::documents::source::mirror::{self, MirrorReport};
+use comemory::domains::documents::source::{SourceEntry, SourceId, SourceKind};
 use comemory::store::connection;
 use comemory::store::sources;
 use rusqlite::Connection;

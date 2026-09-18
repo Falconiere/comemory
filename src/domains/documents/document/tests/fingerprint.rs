@@ -6,7 +6,8 @@
     clippy::too_many_lines,
     clippy::print_stderr
 )]
-//! Test mirror for `src/document/fingerprint.rs`. Its size+mtime skip,
+//! Test mirror for `src/domains/documents/document/fingerprint.rs`.
+//! Its size+mtime skip,
 //! size-ceiling, and content-hash comparison are all private to the
 //! module, so — same as the current `writer::update_file` mirror in
 //! `tests/document__writer.rs` — these tests drive that one public
@@ -18,8 +19,8 @@ use std::fs;
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
-use comemory::document::DocumentFormat;
-use comemory::document::writer::{self, UpdateOutcome};
+use comemory::domains::documents::document::DocumentFormat;
+use comemory::domains::documents::document::writer::{self, UpdateOutcome};
 use comemory::store::documents;
 use comemory::store::sources;
 use tempfile::TempDir;

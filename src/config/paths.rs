@@ -84,14 +84,14 @@ impl Paths {
         self.data_dir.join("allowlist.json")
     }
 
-    /// Durable source registry file (`src/source/registry.rs`), the
+    /// Durable source registry file (`src/domains/documents/source/registry.rs`), the
     /// authoritative record of registered document roots.
     pub fn sources_file(&self) -> PathBuf {
         self.data_dir.join("sources.toml")
     }
 
     /// Sibling exclusive-flock file guarding `sources.toml`
-    /// read-modify-write cycles (`src/source/lock.rs`).
+    /// read-modify-write cycles (`src/utilities/file_lock.rs`).
     pub fn sources_lock_file(&self) -> PathBuf {
         self.data_dir.join("sources.toml.lock")
     }
@@ -99,7 +99,7 @@ impl Paths {
     /// Sibling exclusive-flock file guarding the migration preflight's
     /// `VACUUM INTO` snapshot, since SQLite will not serialize that
     /// statement itself (`src/store/migrate/preflight.rs`, generalized
-    /// lock in `src/source/lock.rs`).
+    /// lock in `src/utilities/file_lock.rs`).
     pub fn migration_lock_file(&self) -> PathBuf {
         self.data_dir.join("comemory.db.migrate.lock")
     }

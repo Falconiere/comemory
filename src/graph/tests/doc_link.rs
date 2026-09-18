@@ -14,12 +14,12 @@
 use std::fs;
 use std::path::PathBuf;
 
-use comemory::document::DocumentFormat;
-use comemory::document::writer;
+use comemory::domains::documents::document::DocumentFormat;
+use comemory::domains::documents::document::writer;
+use comemory::domains::documents::source::classify::Classification;
+use comemory::domains::documents::source::discover::Candidate;
 use comemory::memory::{Frontmatter, Kind, References, Relations};
 use comemory::retrieval::graph_route::ALLOWED_RELS;
-use comemory::source::classify::Classification;
-use comemory::source::discover::Candidate;
 use comemory::store::sources::SourceRootUpsert;
 use comemory::store::{connection, memory_row, sources};
 use rusqlite::{Connection, params};

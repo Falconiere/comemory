@@ -11,8 +11,8 @@
 //! binary; crate-root `tests/cli__rebuild_3.rs` covers the full `comemory
 //! rebuild` workflow end to end with a real indexed document corpus.
 
-use comemory::document::DocumentFormat;
-use comemory::document::writer::UpdateOutcome;
+use comemory::domains::documents::document::DocumentFormat;
+use comemory::domains::documents::document::writer::UpdateOutcome;
 use comemory::store::connection;
 use comemory::store::sources::{self, SourceRootUpsert};
 use rusqlite::Connection;

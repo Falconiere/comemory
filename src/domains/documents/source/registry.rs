@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::config::paths::Paths;
+use crate::domains::documents::source::{SourceEntry, SourceId, SourceKind};
 use crate::prelude::*;
-use crate::source::{SourceEntry, SourceId, SourceKind};
 use crate::utilities::file_lock::FileLock;
 
 /// On-disk shape of `sources.toml`: a format tag plus the `[[source]]`

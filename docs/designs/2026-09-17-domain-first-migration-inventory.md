@@ -57,6 +57,17 @@ simhash}` keep resolving through crate-root aliases over their new
 | `comemory::api::index_code::ProgressSink` | `comemory::utilities::progress::ProgressSink` |
 | `comemory::stats::feedback::{generate_query_id, is_valid_query_id}` | `comemory::utilities::query_id::{generate_query_id, is_valid_query_id}` |
 
+#168 moves the document capability. `comemory::{document, source}` keep
+resolving through crate-root aliases over their new
+`comemory::domains::documents::` homes; the three command cores move with no
+alias:
+
+| Removed path | New path |
+| --- | --- |
+| `comemory::api::index` | `comemory::domains::documents::index` |
+| `comemory::api::sources` | `comemory::domains::documents::sources` |
+| `comemory::api::unindex` | `comemory::domains::documents::unindex` |
+
 `comemory::stats::{source, target}` and `comemory::stats::feedback`'s
 `PROV_*` / sentinel query-id consts were crate-private and stay crate-private
 in `utilities::telemetry`, so they are not a library break.
@@ -135,7 +146,6 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/api/graph.rs | comemory::api::graph; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | none | none | domains::graph | src/domains/graph/view.rs | #170 |
 | src/api/graph_nodes.rs | comemory::api::graph_nodes; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/api/tests/graph_nodes.rs | none | domains::graph | src/domains/graph/graph_nodes.rs | #170 |
 | src/api/graph_recompute.rs | comemory::api::graph_recompute; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/api/tests/graph_recompute.rs | none | domains::graph | src/domains/graph/graph_recompute.rs | #170 |
-| src/api/index.rs | comemory::api::index; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/api/tests/index.rs | none | domains::documents | src/domains/documents/index.rs | #168 |
 | src/api/install.rs | comemory::api::install; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/api/tests/install.rs | none | domains::integrations | src/domains/integrations/install.rs | #175 |
 | src/api/install/bundle.rs | private | src/api/install/tests/bundle.rs | integrations/agent/.claude-plugin/plugin.json; integrations/agent/.codex-plugin/plugin.json; integrations/agent/hooks/comemory-status.sh; integrations/agent/hooks/hooks.json; integrations/agent/hooks/memory-lifecycle.sh; integrations/agent/hooks/project-skills-curate.sh; integrations/agent/hooks/project-skills-index.sh; integrations/agent/hooks/scope.sh; integrations/agent/hooks/session-start.sh; integrations/agent/hooks/skill-use.sh; integrations/agent/lib/project-skills-commands.sh; integrations/agent/lib/project-skills-curation.sh; integrations/agent/lib/project-skills-foundation.sh; integrations/agent/lib/project-skills.sh; integrations/agent/lib/repo-scope.sh; integrations/agent/lib/shell-input.sh; integrations/agent/skills/agent-memory/SKILL.md; integrations/agent/skills/agent-memory/scripts/comemory.sh; integrations/agent/skills/project-skills/SKILL.md; integrations/agent/skills/project-skills/scripts/skills.sh | domains::integrations | src/domains/integrations/install/bundle.rs | #175 |
 | src/api/learning.rs | comemory::api::learning; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/api/tests/learning.rs | none | domains::learning | src/domains/learning/learning.rs | #173 |
@@ -159,7 +169,6 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/api/setup/detect.rs | comemory::api::setup::detect; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/api/setup/tests/detect.rs | none | domains::integrations | src/domains/integrations/setup/detect.rs | #175 |
 | src/api/setup/plan.rs | comemory::api::setup::plan; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/api/setup/tests/plan.rs | none | domains::integrations | src/domains/integrations/setup/plan.rs | #175 |
 | src/api/show.rs | comemory::api::show; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/api/tests/show.rs | none | domains::memories | src/domains/memories/show.rs | #169 |
-| src/api/sources.rs | comemory::api::sources; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | none | none | domains::documents | src/domains/documents/sources.rs | #168 |
 | src/api/stats.rs | comemory::api::stats; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/api/tests/stats.rs | none | domains::maintenance | src/domains/maintenance/stats.rs | #176 |
 | src/api/suggest.rs | comemory::api::suggest; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/api/tests/suggest.rs | none | domains::retrieval | src/domains/retrieval/suggest.rs | #171 |
 | src/api/sync.rs | comemory::api::sync; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/api/sync/tests/changes.rs; src/api/sync/tests/import.rs | none | domains::sync | src/domains/sync/exchange.rs | #172 |
@@ -177,7 +186,6 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/api/sync/types.rs | comemory::api::sync::types; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | none | none | domains::sync | src/domains/sync/exchange/types.rs | #172 |
 | src/api/trash.rs | comemory::api::trash; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/api/tests/trash.rs | none | domains::memories | src/domains/memories/trash.rs | #169 |
 | src/api/tune.rs | comemory::api::tune; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/api/tests/tune.rs | none | domains::learning | src/domains/learning/tune.rs | #173 |
-| src/api/unindex.rs | comemory::api::unindex; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | none | none | domains::documents | src/domains/documents/unindex.rs | #168 |
 | src/api/update.rs | comemory::api::update; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/api/tests/update.rs | none | domains::memories | src/domains/memories/update.rs | #169 |
 | src/capture.rs | comemory::capture; crate-root-alias | none | none | domains::capture | src/domains/capture.rs | #174 |
 | src/capture/candidates.rs | comemory::capture::candidates; crate-root-alias | src/capture/tests/candidates.rs | none | domains::capture | src/domains/capture/candidates.rs | #174 |
@@ -257,13 +265,6 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/consolidate/cluster.rs | comemory::consolidate::cluster; crate-root-alias | src/consolidate/tests/cluster.rs | none | domains::maintenance | src/domains/maintenance/consolidation/cluster.rs | #176 |
 | src/consolidate/keeper.rs | comemory::consolidate::keeper; crate-root-alias | src/consolidate/tests/keeper.rs | none | domains::maintenance | src/domains/maintenance/consolidation/keeper.rs | #176 |
 | src/consolidate/report.rs | comemory::consolidate::report; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | none | none | domains::maintenance | src/domains/maintenance/consolidation_report.rs | #176 |
-| src/document.rs | comemory::document; crate-root-alias | none | none | domains::documents | src/domains/documents/document.rs | #168 |
-| src/document/chunk.rs | comemory::document::chunk; crate-root-alias | src/document/tests/chunk.rs | none | domains::documents | src/domains/documents/document/chunk.rs | #168 |
-| src/document/delimited.rs | comemory::document::delimited; crate-root-alias | src/document/tests/delimited.rs | none | domains::documents | src/domains/documents/document/delimited.rs | #168 |
-| src/document/extract.rs | comemory::document::extract; crate-root-alias | src/document/tests/extract.rs | none | domains::documents | src/domains/documents/document/extract.rs | #168 |
-| src/document/fingerprint.rs | comemory::document::fingerprint; crate-root-alias | src/document/tests/fingerprint.rs | none | domains::documents | src/domains/documents/document/fingerprint.rs | #168 |
-| src/document/html.rs | comemory::document::html; crate-root-alias | src/document/tests/html.rs | none | domains::documents | src/domains/documents/document/html.rs | #168 |
-| src/document/writer.rs | comemory::document::writer; crate-root-alias | src/document/tests/writer.rs | none | domains::documents | src/domains/documents/document/writer.rs | #168 |
 | src/domains.rs | comemory::domains; preserve | none | none | shared::root | src/domains.rs | retain |
 | src/domains/code.rs | comemory::domains::code; preserve | none | none | domains::code | src/domains/code.rs | retain |
 | src/domains/code/ast.rs | comemory::domains::code::ast; crate-root-alias | none | none | domains::code | src/domains/code/ast.rs | retain |
@@ -284,6 +285,22 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/code/repo_admin.rs | comemory::domains::code::repo_admin; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/code/tests/repo_admin.rs | none | domains::code | src/domains/code/repo_admin.rs | retain |
 | src/domains/code/repos.rs | comemory::domains::code::repos; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/code/tests/repos.rs | none | domains::code | src/domains/code/repos.rs | retain |
 | src/domains/code/repos/git_state.rs | comemory::domains::code::repos::git_state; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/code/repos/tests/git_state.rs | none | domains::code | src/domains/code/repos/git_state.rs | retain |
+| src/domains/documents.rs | comemory::domains::documents; preserve | none | none | domains::documents | src/domains/documents.rs | retain |
+| src/domains/documents/document.rs | comemory::domains::documents::document; crate-root-alias | none | none | domains::documents | src/domains/documents/document.rs | retain |
+| src/domains/documents/document/chunk.rs | comemory::domains::documents::document::chunk; crate-root-alias | src/domains/documents/document/tests/chunk.rs | none | domains::documents | src/domains/documents/document/chunk.rs | retain |
+| src/domains/documents/document/delimited.rs | comemory::domains::documents::document::delimited; crate-root-alias | src/domains/documents/document/tests/delimited.rs | none | domains::documents | src/domains/documents/document/delimited.rs | retain |
+| src/domains/documents/document/extract.rs | comemory::domains::documents::document::extract; crate-root-alias | src/domains/documents/document/tests/extract.rs | none | domains::documents | src/domains/documents/document/extract.rs | retain |
+| src/domains/documents/document/fingerprint.rs | comemory::domains::documents::document::fingerprint; crate-root-alias | src/domains/documents/document/tests/fingerprint.rs | none | domains::documents | src/domains/documents/document/fingerprint.rs | retain |
+| src/domains/documents/document/html.rs | comemory::domains::documents::document::html; crate-root-alias | src/domains/documents/document/tests/html.rs | none | domains::documents | src/domains/documents/document/html.rs | retain |
+| src/domains/documents/document/writer.rs | comemory::domains::documents::document::writer; crate-root-alias | src/domains/documents/document/tests/writer.rs | none | domains::documents | src/domains/documents/document/writer.rs | retain |
+| src/domains/documents/index.rs | comemory::domains::documents::index; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/domains/documents/tests/index.rs | none | domains::documents | src/domains/documents/index.rs | retain |
+| src/domains/documents/source.rs | comemory::domains::documents::source; crate-root-alias | none | none | domains::documents | src/domains/documents/source.rs | retain |
+| src/domains/documents/source/classify.rs | comemory::domains::documents::source::classify; crate-root-alias | src/domains/documents/source/tests/classify.rs | none | domains::documents | src/domains/documents/source/classify.rs | retain |
+| src/domains/documents/source/discover.rs | comemory::domains::documents::source::discover; crate-root-alias | src/domains/documents/source/tests/discover.rs | none | domains::documents | src/domains/documents/source/discover.rs | retain |
+| src/domains/documents/source/mirror.rs | comemory::domains::documents::source::mirror; crate-root-alias | src/domains/documents/source/tests/mirror.rs | none | domains::documents | src/domains/documents/source/mirror.rs | retain |
+| src/domains/documents/source/registry.rs | comemory::domains::documents::source::registry; crate-root-alias | src/domains/documents/source/tests/registry.rs | none | domains::documents | src/domains/documents/source/registry.rs | retain |
+| src/domains/documents/sources.rs | comemory::domains::documents::sources; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | none | none | domains::documents | src/domains/documents/sources.rs | retain |
+| src/domains/documents/unindex.rs | comemory::domains::documents::unindex; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | none | none | domains::documents | src/domains/documents/unindex.rs | retain |
 | src/errors.rs | comemory::errors; preserve | none | none | shared::root | src/errors.rs | retain |
 | src/eval.rs | comemory::eval; crate-root-alias | none | none | domains::learning | src/domains/learning/evaluation.rs | #173 |
 | src/eval/bandit.rs | comemory::eval::bandit; crate-root-alias | src/eval/tests/bandit.rs | none | domains::learning | src/domains/learning/evaluation/bandit.rs | #173 |
@@ -395,11 +412,6 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/serve/routes/trash.rs | comemory::serve::routes::trash; preserve | src/serve/routes/tests/trash.rs | none | delivery::serve | src/serve/routes/trash.rs | retain |
 | src/serve/scope.rs | comemory::serve::scope; preserve | src/serve/tests/scope.rs | none | delivery::serve | src/serve/scope.rs | retain |
 | src/serve/security.rs | comemory::serve::security; preserve | src/serve/tests/security.rs | none | delivery::serve | src/serve/security.rs | retain |
-| src/source.rs | comemory::source; crate-root-alias | none | none | domains::documents | src/domains/documents/source.rs | #168 |
-| src/source/classify.rs | comemory::source::classify; crate-root-alias | src/source/tests/classify.rs | none | domains::documents | src/domains/documents/source/classify.rs | #168 |
-| src/source/discover.rs | comemory::source::discover; crate-root-alias | src/source/tests/discover.rs | none | domains::documents | src/domains/documents/source/discover.rs | #168 |
-| src/source/mirror.rs | comemory::source::mirror; crate-root-alias | src/source/tests/mirror.rs | none | domains::documents | src/domains/documents/source/mirror.rs | #168 |
-| src/source/registry.rs | comemory::source::registry; crate-root-alias | src/source/tests/registry.rs | none | domains::documents | src/domains/documents/source/registry.rs | #168 |
 | src/stats.rs | comemory::stats; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | none | none | shared::utilities | src/domains/learning.rs | #173 |
 | src/stats/code_feedback.rs | comemory::stats::code_feedback; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/stats/tests/code_feedback.rs | none | domains::learning | src/domains/learning/code_feedback.rs | #173 |
 | src/stats/feedback.rs | comemory::stats::feedback; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/stats/tests/feedback.rs | none | domains::learning | src/domains/learning/feedback_tracking.rs | #173 |

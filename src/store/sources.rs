@@ -1,7 +1,7 @@
 //! `source_roots` row CRUD — the SQLite mirror of `sources.toml`
-//! (`src/source/registry.rs`). Carries only ephemeral state (status,
+//! (`src/domains/documents/source/registry.rs`). Carries only ephemeral state (status,
 //! timestamps); the TOML file stays authoritative for identity, and
-//! `src/source/mirror.rs` reconciles this table from it.
+//! `src/domains/documents/source/mirror.rs` reconciles this table from it.
 
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -20,7 +20,7 @@ const UPSERT_SQL: &str = "INSERT INTO source_roots(\
 
 /// Caller-supplied fields for [`upsert`].
 pub struct SourceRootUpsert<'a> {
-    /// 32-hex-char [`crate::source::SourceId`] string.
+    /// 32-hex-char [`crate::domains::documents::source::SourceId`] string.
     pub id: &'a str,
     /// Absolute, symlink-resolved source path.
     pub canonical_path: &'a str,
@@ -123,12 +123,12 @@ fn row_from_sql(r: &rusqlite::Row<'_>) -> rusqlite::Result<SourceRootRow> {
 
 /// Caller-supplied fields for [`upsert_file`]. `id` is caller-computed —
 /// deterministic per `(source_id, relative_path)`, see
-/// [`crate::document::writer::file_id`] — so the `ON CONFLICT(id)`
-/// upsert below is exactly "update this file's existing row if any".
+/// [`crate::domains::documents::document::fingerprint::file_id`] — so the
+/// `ON CONFLICT(id)` upsert below is exactly "update this file's existing row if any".
 pub struct SourceFileUpsert<'a> {
     /// 32-hex-char file id.
     pub id: &'a str,
-    /// Owning [`crate::source::SourceId`] string.
+    /// Owning [`crate::domains::documents::source::SourceId`] string.
     pub source_id: &'a str,
     /// Path relative to the source root's canonical path.
     pub relative_path: &'a str,
@@ -258,7 +258,8 @@ pub fn get_file(conn: &Connection, id: &str) -> Result<Option<SourceFileRow>> {
 
 /// List every `source_files` row for one source, ordered by
 /// `relative_path` for a deterministic scan — the authoritative-scan
-/// reconciliation in [`crate::document::writer::reconcile_deletions`]
+/// reconciliation in
+/// [`crate::domains::documents::document::writer::reconcile_deletions`]
 /// diffs this against a fresh discovery walk.
 pub fn list_files_by_source(conn: &Connection, source_id: &str) -> Result<Vec<SourceFileRow>> {
     let mut stmt = conn.prepare(FILE_LIST_BY_SOURCE_SQL)?;

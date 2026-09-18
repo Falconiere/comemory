@@ -7,15 +7,15 @@
 )]
 //! In-process coverage of `DELETE /api/v1/sources/{target}?confirm=true` —
 //! the path form of the existing query-form unindex (spec §6). Real
-//! document fixtures registered through `api::index::run`, then removed
+//! document fixtures registered through `domains::documents::index::run`, then removed
 //! through the router; the query form is exercised side by side so the two
 //! spellings are compared against each other rather than against a
 //! hand-written expectation.
 
 use std::path::PathBuf;
 
-use comemory::api;
 use comemory::config::{Config, Paths};
+use comemory::domains::documents::index;
 use comemory::store::connection;
 use comemory::utilities::context::Ctx;
 use tempfile::TempDir;
@@ -33,9 +33,9 @@ fn seeded_session() -> (Session, TempDir, PathBuf) {
     let mut conn = connection::open(paths.db_path()).expect("open db for seed index");
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-    let out = api::index::run(
+    let out = index::run(
         &mut ctx,
-        api::index::Request {
+        index::Request {
             path: vec![docs.to_str().expect("utf8 path").to_string()],
             repo: Some("docs-corpus".into()),
             strict: false,

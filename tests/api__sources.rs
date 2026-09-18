@@ -5,7 +5,7 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror test for `src/api/sources.rs`. Registers a real document source
+//! Mirror test for `src/domains/documents/sources.rs`. Registers a real document source
 //! via `comemory index`, then edits `sources.toml` out from under the
 //! mirror to prove `Request::reconcile` gates the `source_roots` write:
 //! `mirror::reconcile`'s only write is "delete every `source_roots` row
@@ -19,8 +19,8 @@
 mod docs_fixtures;
 
 use assert_cmd::Command;
-use comemory::api;
 use comemory::config::{Config, Paths};
+use comemory::domains::documents::sources;
 use comemory::store::connection;
 use comemory::utilities::context::Ctx;
 use tempfile::TempDir;
@@ -54,8 +54,7 @@ fn run_reconcile_true_lists_the_registered_source_with_counts() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let rows = api::sources::run(&mut ctx, api::sources::Request { reconcile: true })
-        .expect("sources run");
+    let rows = sources::run(&mut ctx, sources::Request { reconcile: true }).expect("sources run");
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].repo.as_deref(), Some("docs-corpus"));
     assert_eq!(rows[0].indexed, docs_fixtures::FIXTURE_COUNT);
@@ -71,8 +70,7 @@ fn run_reconcile_false_skips_the_mirror_delete() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let rows = api::sources::run(&mut ctx, api::sources::Request { reconcile: false })
-        .expect("sources run");
+    let rows = sources::run(&mut ctx, sources::Request { reconcile: false }).expect("sources run");
     assert_eq!(
         rows.len(),
         1,
@@ -90,8 +88,7 @@ fn run_reconcile_true_deletes_a_row_dropped_from_the_toml() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let rows = api::sources::run(&mut ctx, api::sources::Request { reconcile: true })
-        .expect("sources run");
+    let rows = sources::run(&mut ctx, sources::Request { reconcile: true }).expect("sources run");
     assert!(
         rows.is_empty(),
         "reconcile:true must delete the mirror row absent from sources.toml"

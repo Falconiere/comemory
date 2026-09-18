@@ -1,5 +1,5 @@
-//! `api::sources::{Request, run}` — the shared middle of `comemory
-//! sources` / `GET /api/v1/sources`: optionally reconcile the SQLite
+//! `domains::documents::sources::{Request, run}` — the shared middle of
+//! `comemory sources` / `GET /api/v1/sources`: optionally reconcile the SQLite
 //! `source_roots` mirror against `sources.toml`, then list every
 //! registered source with its per-status file counts. Moved out of
 //! `cli::sources::run` (Binding Rule 1).
@@ -11,9 +11,9 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::domains::documents::source::mirror;
+use crate::domains::documents::source::registry::Registry;
 use crate::prelude::*;
-use crate::source::mirror;
-use crate::source::registry::Registry;
 use crate::store::Connection;
 use crate::store::sources;
 use crate::utilities::context::Ctx;

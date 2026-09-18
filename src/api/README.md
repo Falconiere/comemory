@@ -39,7 +39,6 @@ One line per file, named after its primary item:
 | `feedback.rs` | `Request` | Shared middle of `comemory feedback` / `POST /api/v1/feedback` (and the per-hit search route): validates the query id, the four id lists, and the optional `source` (`explicit` → `manual`, `implicit` → `implicit`) before the db opens; `Response.provenance` echoes what every verdict was stored under |
 | `gc.rs` | `Request` | Shared middle of `comemory gc` / `POST /api/v1/gc` — reaps aged `.trash/` files AND purges their mirror rows (`store::memory_purge`), healing zombie rows earlier sweeps left behind |
 | `graph.rs` | `Request` | Shared middle behind `comemory graph` / `GET /api/v1/graph` |
-| `index.rs` | `Request` | Shared middle of `comemory index` / `POST /api/v1/index` |
 | `install.rs` | `Request` | Shared middle of `comemory install` — extracts the embedded agent bundle and registers it with the host CLI. CLI-only (a server must never write into an operator's agent config); conn-free. Host names are validated strings, not clap enums, so `api::` stays free of CLI types. `install/` holds the embedded `bundle` |
 | `setup.rs` | `Request` | Shared middle of `comemory setup` — the stable `STEP_IDS`, the `StepState` machine, and the `run` that sequences detect → plan → apply. CLI-only; conn-free until a step applies. `setup/` holds the three phases |
 | `list.rs` | `Request` | Shared middle of `comemory list` / `GET /api/v1/memories` |
@@ -50,10 +49,8 @@ One line per file, named after its primary item:
 | `search.rs` | `Request` | Shared middle of `comemory search` / `GET\|POST /api/v1/memories/search` |
 | `search_code.rs` | `Request` | Shared middle of `comemory search-code` / `GET\|POST /api/v1/code/search` |
 | `show.rs` | `Request` | Shared middle of `comemory show` / `GET /api/v1/memories/{id}` — one memory in full |
-| `sources.rs` | `Request` | Shared middle of `comemory sources` / the `/api/v1/sources` routes |
 | `stats.rs` | `Request` | Shared middle of `comemory stats` / `GET /api/v1/stats` — corpus counters and database size |
 | `tune.rs` | `Request` | Shared middle of `comemory tune` / `POST /api/v1/tune` |
-| `unindex.rs` | `Request` | Shared middle of `comemory unindex` / the document-unindex route |
 | `config_retrieval.rs` | `RetrievalKnobs` | Console-only: `GET\|PUT /api/v1/config/retrieval` — the live ranking knobs with their ranges, and the validated partial update |
 | `gc_policy.rs` | `Policy` | Console-only: `GET\|PUT /api/v1/gc/policy` — trash + telemetry retention windows and the last gc run |
 | `graph_nodes.rs` | `NodeDetail` | Console-only: `GET /api/v1/graph/nodes`, `/graph/nodes/{id}`, `/graph/nodes/{id}/neighbors`, `/graph/snapshot` |
@@ -75,7 +72,11 @@ The code-capability cores no longer live here: `ast`, `index_code` (+
 `hooks` and `install_hooks` moved to
 [`domains/code/`](../domains/code/README.md) with
 [#167](https://github.com/Falconiere/comemory/issues/167) — `api::ast` is
-`domains::code::pattern_search` there. This shell itself is deleted by #178.
+`domains::code::pattern_search` there. The document-capability cores `index`,
+`sources` and `unindex` moved to
+[`domains/documents/`](../domains/documents/README.md) with
+[#168](https://github.com/Falconiere/comemory/issues/168). This shell itself is
+deleted by #178.
 
 When you add a file here, add its row above so the index stays current. No
 `mod.rs` barrel — submodules are declared from `src/api.rs` (`pub mod

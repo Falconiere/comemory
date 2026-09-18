@@ -5,13 +5,16 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Test mirror for `src/document/chunk.rs` — size-bounded chunk splitting
+//! Test mirror for `src/domains/documents/document/chunk.rs` —
+//! size-bounded chunk splitting
 //! with paragraph-boundary preference and overlap. `pack` is hit directly
 //! with hand-computed offsets (pure, no I/O); `split` is exercised with
 //! hand-built [`Block`]s.
 
-use comemory::document::Block;
-use comemory::document::chunk::{CHUNK_CHAR_CEILING, CHUNK_OVERLAP, pack, split};
+use comemory::domains::documents::document::Block;
+use comemory::domains::documents::document::chunk::{
+    CHUNK_CHAR_CEILING, CHUNK_OVERLAP, pack, split,
+};
 
 #[test]
 fn pack_empty_input_yields_no_chunks() {

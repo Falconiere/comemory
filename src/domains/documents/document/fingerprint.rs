@@ -1,6 +1,6 @@
 //! Per-candidate fingerprint bundle, the size+mtime skip check, SHA-256
 //! identity hashing, and the `source_files` fingerprint upsert — the
-//! fast-path plumbing [`crate::document::writer`] calls before (and
+//! fast-path plumbing [`crate::domains::documents::document::writer`] calls before (and
 //! instead of) running a full extraction.
 
 use std::fs;
@@ -14,7 +14,7 @@ use crate::store::Connection;
 use crate::store::sources::{self, SourceFileRow, SourceFileUpsert};
 
 /// Common identity + freshly-taken fingerprint for one candidate,
-/// bundled so the write-path helpers in [`crate::document::writer`]
+/// bundled so the write-path helpers in [`crate::domains::documents::document::writer`]
 /// don't each carry a long argument list.
 pub(super) struct FileStat<'a> {
     pub(super) source_id: &'a str,
@@ -115,7 +115,8 @@ pub(super) fn content_hash(bytes: &[u8]) -> String {
 /// Deterministic 32-hex-char (128-bit) id for one candidate file within
 /// a source: the first 16 bytes of `SHA-256(source_id ++ NUL ++
 /// relative_path)`, hex-encoded — the same "hash the identity" idiom
-/// [`crate::source::SourceId::from_canonical_path`] uses. Stable across
+/// [`crate::domains::documents::source::SourceId::from_canonical_path`]
+/// uses. Stable across
 /// re-index runs of the same file, which is what lets
 /// [`sources::upsert_file`]'s `ON CONFLICT(id)` update-not-duplicate
 /// the row. `pub(crate)` so a later CLI step can pre-derive it (e.g.

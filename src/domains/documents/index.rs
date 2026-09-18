@@ -1,5 +1,5 @@
-//! `api::index::{Request, run}` — shared middle of `comemory index
-//! <PATH>...` / `POST /api/v1/sources`: register sources and run their
+//! `domains::documents::index::{Request, run}` — shared middle of
+//! `comemory index <PATH>...` / `POST /api/v1/sources`: register sources and run their
 //! synchronous initial reconcile. Moved out of `cli::index::run`.
 //!
 //! `Request.path` (not `paths`) matches the clap arg id, for AC-12.
@@ -14,12 +14,12 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::document::writer::{self, UpdateOutcome};
+use crate::domains::documents::document::writer::{self, UpdateOutcome};
+use crate::domains::documents::source::SourceEntry;
+use crate::domains::documents::source::discover::{self, Candidate};
+use crate::domains::documents::source::mirror;
+use crate::domains::documents::source::registry::Registry;
 use crate::prelude::*;
-use crate::source::SourceEntry;
-use crate::source::discover::{self, Candidate};
-use crate::source::mirror;
-use crate::source::registry::Registry;
 use crate::store::Connection;
 use crate::utilities::context::Ctx;
 

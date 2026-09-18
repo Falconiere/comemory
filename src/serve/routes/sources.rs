@@ -1,15 +1,16 @@
-//! `GET /api/v1/sources` (`api::sources`). The `reconcile` side effect is
-//! computed server-side from the read-only flag — never taken from the
+//! `GET /api/v1/sources` (`domains::documents::sources`). The `reconcile`
+//! side effect is computed server-side from the read-only flag — never taken from the
 //! query string, so a client cannot force a mirror write on a read-only
 //! server (§Security "Read-only side-effect degradation").
 //!
-//! `POST /api/v1/sources` (`api::index`, job) registers + reconciles one or
-//! more sources, every `req.path` entry contained to an allowed root
+//! `POST /api/v1/sources` (`domains::documents::index`, job) registers +
+//! reconciles one or more sources, every `req.path` entry contained to an allowed root
 //! BEFORE the job is created (AC-7).
 //!
-//! `DELETE /api/v1/sources?target=<id|path>&confirm=true` (`api::unindex`)
-//! also lives here — the query form expresses both the id and the
-//! registered-path target, mirroring `comemory unindex <SOURCE_ID|PATH>`.
+//! `DELETE /api/v1/sources?target=<id|path>&confirm=true`
+//! (`domains::documents::unindex`) also lives here — the query form
+//! expresses both the id and the registered-path target, mirroring
+//! `comemory unindex <SOURCE_ID|PATH>`.
 //! `DELETE /api/v1/sources/{target}?confirm=true` (console-api spec §6) is
 //! the REST path form of exactly that call: same gates, same core, one
 //! shared [`unindex_target`] body — a percent-encoded filesystem path is a
@@ -24,7 +25,7 @@ use axum::routing::get;
 use axum::{Json, Router};
 use serde::Deserialize;
 
-use crate::api;
+use crate::domains::documents;
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::envelope::Envelope;
@@ -78,36 +79,38 @@ pub fn router(_state: AppState) -> Router<AppState> {
         )
 }
 
-/// `GET /api/v1/sources` — list registered sources (`api::sources`). The
-/// mirror reconcile runs only when the server is not `--read-only`.
+/// `GET /api/v1/sources` — list registered sources
+/// (`domains::documents::sources`). The mirror reconcile runs only when the
+/// server is not `--read-only`.
 async fn sources(State(state): State<AppState>) -> Response {
     let started = Instant::now();
     let result = run_blocking(move || {
-        let req = api::sources::Request {
+        let req = documents::sources::Request {
             reconcile: !state.read_only(),
         };
         let cfg = state.cfg();
         let mut conn = state.conn()?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        api::sources::run(&mut ctx, req)
+        documents::sources::run(&mut ctx, req)
     })
     .await;
     respond("sources", result, started)
 }
 
-/// `POST /api/v1/sources` — start an `index` job (`api::index`) registering
+/// `POST /api/v1/sources` — start an `index` job
+/// (`domains::documents::index`) registering
 /// and reconciling every `req.path` entry, each contained to an allowed
 /// root before the job is created.
 async fn index_sources(
     State(state): State<AppState>,
-    Json(mut req): Json<api::index::Request>,
+    Json(mut req): Json<documents::index::Request>,
 ) -> Response {
     let started = Instant::now();
     if let Err(resp) = guard_job("index", &state) {
         return *resp;
     }
     let contain_state = state.clone();
-    let contained = run_blocking(move || -> Result<api::index::Request> {
+    let contained = run_blocking(move || -> Result<documents::index::Request> {
         let conn = contain_state.conn()?;
         let roots = contain_state.allowed_roots(&conn);
         drop(conn);
@@ -131,7 +134,7 @@ async fn index_sources(
         move || {
             let cfg = job_state.cfg();
             let mut ctx = Ctx::lazy(job_state.paths(), &cfg);
-            let resp = api::index::run(&mut ctx, req)?;
+            let resp = documents::index::run(&mut ctx, req)?;
             serde_json::to_value(resp).map_err(Error::Json)
         },
     );
@@ -139,7 +142,7 @@ async fn index_sources(
 }
 
 /// `?target=&confirm=true` on `DELETE /sources` — transport-level; not part
-/// of `api::unindex::Request` since the CLI has no `--confirm` concept.
+/// of `documents::unindex::Request` since the CLI has no `--confirm` concept.
 #[derive(Deserialize)]
 struct UnindexQuery {
     target: String,
@@ -148,9 +151,9 @@ struct UnindexQuery {
 }
 
 /// `DELETE /api/v1/sources?target=&confirm=true` — unregister a source
-/// (`api::unindex`), confirm gated. `guard_mutating` (read-only/busy) runs
-/// before [`require_confirm`] so a read-only server rejects with `405` even
-/// without `?confirm=true` (AC-19).
+/// (`domains::documents::unindex`), confirm gated. `guard_mutating`
+/// (read-only/busy) runs before [`require_confirm`] so a read-only server
+/// rejects with `405` even without `?confirm=true` (AC-19).
 async fn unindex(State(state): State<AppState>, Query(query): Query<UnindexQuery>) -> Response {
     unindex_target(state, query.target, query.confirm).await
 }
@@ -177,7 +180,7 @@ async fn unindex_path(
 /// The shared body of both `unindex` forms: [`guard_mutating`]
 /// (read-only/busy) first, on the async task, then — inside the blocking
 /// closure, where the permit is held — [`require_confirm`] (AC-19) and
-/// finally `api::unindex::run`.
+/// finally `documents::unindex::run`.
 async fn unindex_target(state: AppState, target: String, confirm: bool) -> Response {
     let started = Instant::now();
     let permit = match guard_mutating("unindex", &state) {
@@ -190,7 +193,7 @@ async fn unindex_target(state: AppState, target: String, confirm: bool) -> Respo
         let cfg = state.cfg();
         let mut conn = state.conn()?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        api::unindex::run(&mut ctx, api::unindex::Request { target })
+        documents::unindex::run(&mut ctx, documents::unindex::Request { target })
     })
     .await;
     respond("unindex", result, started)

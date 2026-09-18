@@ -7,9 +7,9 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
-use crate::api;
 use crate::config::Config;
 use crate::config::paths::{Paths, resolve_data_dir};
+use crate::domains::documents::unindex;
 use crate::output::json;
 use crate::prelude::*;
 use crate::store::connection;
@@ -41,15 +41,15 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     let mut conn = connection::open(paths.db_path())?;
     let cfg = Config::defaults();
 
-    let req = api::unindex::Request { target: a.target };
+    let req = unindex::Request { target: a.target };
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-    let output = api::unindex::run(&mut ctx, req)?;
+    let output = unindex::run(&mut ctx, req)?;
     emit(json_flag, &output)
 }
 
 /// Emit the unindex report: a JSON object under `--json`, else a two-line
 /// TTY summary.
-fn emit(json_flag: bool, output: &api::unindex::Response) -> Result<()> {
+fn emit(json_flag: bool, output: &unindex::Response) -> Result<()> {
     if json_flag {
         json::write(output)?;
         return Ok(());

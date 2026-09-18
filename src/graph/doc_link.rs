@@ -201,7 +201,8 @@ fn normalize_link_target(current_relative_path: &str, raw: &str) -> Option<Strin
 }
 
 /// Collapse `.`/`..` path components into a clean `/`-joined relative
-/// path, matching the separator [`crate::source::discover`] stores in
+/// path, matching the separator
+/// [`crate::domains::documents::source::discover`] stores in
 /// `source_files.relative_path`.
 fn normalize_components(path: &Path) -> String {
     let mut out: Vec<&std::ffi::OsStr> = Vec::new();
