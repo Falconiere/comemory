@@ -6,6 +6,7 @@
 //! silently inert narrowing. Lexical and BYO-vector are separate scenarios and
 //! a set declares exactly one of them.
 
+use std::collections::HashSet;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -208,15 +209,14 @@ impl BenchmarkSet {
             return Err(Error::Config("no tasks: nothing to score".into()));
         }
         self.validate_numbers()?;
-        let mut seen: Vec<&str> = Vec::with_capacity(self.tasks.len());
+        let mut seen: HashSet<&str> = HashSet::with_capacity(self.tasks.len());
         for task in &self.tasks {
-            if seen.contains(&task.id.as_str()) {
+            if !seen.insert(task.id.as_str()) {
                 return Err(Error::Config(format!(
                     "duplicate task id `{}`: task ids key the report and every scores file",
                     task.id
                 )));
             }
-            seen.push(&task.id);
             self.validate_task(task)?;
         }
         Ok(())

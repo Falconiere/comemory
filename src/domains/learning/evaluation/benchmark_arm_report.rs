@@ -14,6 +14,7 @@ use crate::domains::learning::evaluation::benchmark_metrics::{
 use crate::domains::learning::evaluation::benchmark_runner::TaskCapture;
 use crate::domains::learning::evaluation::benchmark_set::Budgets;
 use crate::domains::learning::evaluation::candidate_identity::CandidateDomain;
+use crate::utilities::digest::sha256_hex;
 
 /// How one arm's paired delta reads against the declared budgets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -47,12 +48,13 @@ pub struct LatencyMs {
 }
 
 /// Percentiles of `samples` at the pinned index `((p/100) * (len-1)).round()`,
-/// the same rule the existing bootstrap percentile uses.
-pub fn latency(samples: &[u64]) -> LatencyMs {
-    if samples.is_empty() {
+/// the same rule the existing bootstrap percentile uses. Takes an iterator so a
+/// caller already walking its tasks does not build a Vec this would only copy.
+pub fn latency(samples: impl IntoIterator<Item = u64>) -> LatencyMs {
+    let mut sorted: Vec<u64> = samples.into_iter().collect();
+    if sorted.is_empty() {
         return LatencyMs::default();
     }
-    let mut sorted = samples.to_vec();
     sorted.sort_unstable();
     let at = |p: f64| {
         let last = sorted.len().saturating_sub(1);
@@ -119,7 +121,7 @@ pub fn build(captures: &[TaskCapture], arm: &ArmInput<'_>, ctx: &ArmContext<'_>)
     let per_task = score_arm(captures, arm, ctx.k, None);
     let seed = summary_seed(&arm.name, captures.len(), ctx.k);
     let overall = benchmark_metrics::summarize(&per_task, &judged_flags(captures, None), seed);
-    let latency_ms = latency(&captures.iter().map(|c| c.retrieval_ms).collect::<Vec<_>>());
+    let latency_ms = latency(captures.iter().map(|c| c.retrieval_ms));
     let paired = (!ctx.is_baseline).then(|| {
         let mine: Vec<f64> = per_task.iter().map(|m| m.ndcg_at_k).collect();
         benchmark_metrics::paired_delta("ndcg_at_k", &mine, ctx.baseline_ndcg, seed)
@@ -213,18 +215,18 @@ fn verdict(ctx: &ArmContext<'_>, judged_tasks: usize, paired: Option<&PairedDelt
 
 /// Deterministic bootstrap seed per arm: the arm name, the task count and the
 /// cut, so one arm's intervals reproduce and two arms do not share a stream.
+///
+/// Derived from the same SHA-256 the artifact's digests use rather than from
+/// `DefaultHasher`, whose output is explicitly not stable across Rust releases:
+/// a seed that moved with the toolchain would make a recorded interval
+/// irreproducible on the next compiler.
 fn summary_seed(arm: &str, tasks: usize, k: usize) -> u64 {
-    let mut seed: u64 = 0xcbf2_9ce4_8422_2325;
-    for byte in arm
-        .as_bytes()
-        .iter()
-        .chain(&tasks.to_le_bytes())
-        .chain(&k.to_le_bytes())
-    {
-        seed ^= u64::from(*byte);
-        seed = seed.wrapping_mul(0x0000_0100_0000_01b3);
+    let digest = sha256_hex(format!("{arm}:{tasks}:{k}").as_bytes());
+    let mut seed = [0u8; 8];
+    for (slot, byte) in seed.iter_mut().zip(digest.as_bytes()) {
+        *slot = *byte;
     }
-    seed
+    u64::from_le_bytes(seed)
 }
 
 #[cfg(test)]

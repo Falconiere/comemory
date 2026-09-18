@@ -23,6 +23,7 @@ mod git_repo;
 use std::path::{Path, PathBuf};
 
 use cli_bin::CliHome;
+use comemory::domains::learning::evaluation::candidate_identity::parse_ref;
 use serde_json::Value;
 
 /// The shipped reviewed benchmark set.
@@ -177,29 +178,45 @@ fn benchmark_emits_a_full_observation_artifact_over_every_domain() {
     let artifact = read_artifact(&artifact_path);
     let mut domains_seen: Vec<String> = Vec::new();
     for row in artifact["tasks"].as_array().expect("tasks") {
-        for candidate in row["observation"]["candidates"]
+        let candidates = row["observation"]["candidates"]
             .as_array()
-            .expect("candidates")
-        {
+            .expect("candidates");
+        for (index, candidate) in candidates.iter().enumerate() {
             let domain = candidate["identity"]["domain"].as_str().expect("domain");
             if !domains_seen.iter().any(|d| d == domain) {
                 domains_seen.push(domain.to_string());
             }
+            // Parse the reference back through the real codec rather than
+            // prefix-matching it: `memory_garbage` starts with `memory` too.
+            let raw = candidate["candidate_ref"].as_str().expect("ref");
+            let parsed = parse_ref(raw)
+                .unwrap_or_else(|e| panic!("every emitted reference must parse: {raw:?}: {e}"));
+            assert_eq!(
+                parsed.domain().as_str(),
+                domain,
+                "the parsed reference must agree with the recorded domain: {raw}"
+            );
+            assert_eq!(parsed.candidate_ref(), raw, "the encoding must round-trip");
+            let digest = candidate["text"]["sha256"].as_str().expect("digest");
+            assert_eq!(
+                digest.len(),
+                64,
+                "a text hash is a full sha256: {candidate}"
+            );
             assert!(
-                candidate["candidate_ref"]
-                    .as_str()
-                    .expect("ref")
-                    .starts_with(domain),
-                "every reference is domain-qualified: {candidate}"
+                digest
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)),
+                "and lowercase hex, not merely 64 characters: {digest}"
             );
             assert_eq!(
-                candidate["text"]["sha256"].as_str().expect("digest").len(),
-                64,
-                "every candidate carries a text hash: {candidate}"
+                candidate["pool_position"].as_u64().expect("pool position"),
+                index as u64 + 1,
+                "pool positions are dense and 1-based, with no gaps: {candidate}"
             );
-            assert!(candidate["pool_position"].as_u64().expect("pool position") >= 1);
         }
     }
+
     domains_seen.sort();
     assert_eq!(
         domains_seen,
@@ -562,6 +579,41 @@ fn a_malformed_set_exits_with_the_config_code_and_names_the_file() {
     assert!(
         String::from_utf8_lossy(&missing.stderr).contains("/nonexistent/set.yaml"),
         "a missing set file must name the path"
+    );
+}
+
+#[test]
+fn an_unwritable_report_path_fails_the_run_after_the_summary_is_printed() {
+    let (home, root) = seeded_home();
+    // A directory cannot be overwritten by a file write, so this is an
+    // unwritable report path that needs no permission games.
+    let blocked = root.join("blocked-report");
+    std::fs::create_dir_all(&blocked).expect("create directory in the report's place");
+
+    let out = home
+        .bin()
+        .args([
+            "--json",
+            "benchmark",
+            "--set",
+            SET,
+            "--report",
+            blocked.to_str().expect("utf8"),
+        ])
+        .output()
+        .expect("run");
+
+    assert_eq!(
+        out.status.code(),
+        Some(74),
+        "EX_IOERR: the artifact write failure is propagated, not swallowed"
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let summary: Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("the summary must still reach stdout first: {e}\n{stdout}"));
+    assert_eq!(
+        summary["set_name"], "comemory-mixed-v1",
+        "a bad report path must not lose the measured run"
     );
 }
 

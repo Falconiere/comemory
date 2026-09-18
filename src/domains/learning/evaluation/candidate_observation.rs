@@ -306,9 +306,16 @@ pub struct QueryObservation {
     pub candidates: Vec<CandidateObservation>,
 }
 
-/// `sha256` hex over a value's canonical JSON — the digest behind
-/// `knobs_hash` and `CorpusSnapshot::digest`. Serialization is by declaration
-/// order, so the digest is stable for a fixed struct definition.
+/// `sha256` hex over a value's JSON — the digest behind `knobs_hash` and
+/// `CorpusSnapshot::digest`.
+///
+/// Canonical only for map-free values: `serde_json` emits struct fields in
+/// declaration order and sequences in order, but a `HashMap` serializes in
+/// arbitrary order and would make the digest irreproducible. Both call sites
+/// satisfy that — [`RetrievalKnobs`] is scalars and tuples, and
+/// [`CorpusSnapshot`] is counters plus a `Vec<RepoRevision>` the store returns
+/// ordered by repo — and a future field carrying a map must sort it into a
+/// sequence before it reaches here.
 pub fn canonical_digest<T: Serialize>(value: &T) -> crate::prelude::Result<String> {
     let json = serde_json::to_vec(value).map_err(crate::prelude::Error::Json)?;
     Ok(sha256_hex(&json))

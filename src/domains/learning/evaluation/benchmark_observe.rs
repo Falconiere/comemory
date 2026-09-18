@@ -16,8 +16,14 @@ use crate::domains::retrieval::scope::{self, Domain, TimeScope};
 use crate::domains::retrieval::unified::fuse_domains;
 
 /// Pair each fused hit with its facts into a [`CandidateObservation`], and
-/// count the candidates whose row vanished before their text could be read. A
-/// hit with no facts entry keeps its pool position rather than being dropped.
+/// count the candidates that reached the pool with no text.
+///
+/// That covers both ways a row can go missing between fusion and the facts
+/// read: no facts entry at all, and an entry whose own row vanished
+/// (`text_available == false`, e.g. a document whose parent was deleted). Both
+/// mean "observed, but nothing to score", and a hit in either state keeps its
+/// pool position rather than being dropped — dropping it would silently shrink
+/// the pool, which is what pool recall exists to measure.
 pub fn observe(
     pool: &[fuse_domains::UnifiedHit],
     facts: &FactsByHit,

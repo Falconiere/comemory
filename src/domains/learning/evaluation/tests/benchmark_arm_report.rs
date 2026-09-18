@@ -14,7 +14,7 @@ use comemory::domains::learning::evaluation::benchmark_arm_report::{Verdict, lat
 
 #[test]
 fn a_latency_distribution_is_ordered_and_covers_its_sample() {
-    let l = latency(&[5, 1, 9, 3, 7]);
+    let l = latency([5, 1, 9, 3, 7]);
     assert_eq!(l.p50, 5);
     assert_eq!(l.max, 9);
     assert!(l.p50 <= l.p90 && l.p90 <= l.p95 && l.p95 <= l.max);
@@ -23,14 +23,14 @@ fn a_latency_distribution_is_ordered_and_covers_its_sample() {
 
 #[test]
 fn an_empty_sample_yields_zeros_rather_than_dividing_by_zero() {
-    let l = latency(&[]);
+    let l = latency(Vec::new());
     assert_eq!((l.p50, l.p90, l.p95, l.max), (0, 0, 0, 0));
     assert_eq!(l.mean, 0.0);
 }
 
 #[test]
 fn a_single_sample_is_every_percentile() {
-    let l = latency(&[42]);
+    let l = latency([42]);
     assert_eq!((l.p50, l.p90, l.p95, l.max), (42, 42, 42, 42));
     assert_eq!(l.mean, 42.0);
 }

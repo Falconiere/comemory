@@ -4,6 +4,8 @@
 //! `code_symbols`/`code_fts` split: this module owns the plain rows,
 //! [`crate::store::document_fts`] owns the FTS5 virtual table.
 
+use std::collections::HashMap;
+
 use rusqlite::{Connection, params};
 
 use super::{
@@ -16,6 +18,7 @@ use crate::prelude::*;
 use toolu_orm::core::{
     column::Text,
     query_column::{Column, CommonOps},
+    value::Value,
 };
 
 /// Caller-supplied fields for [`upsert_document`].
@@ -213,6 +216,29 @@ pub fn get_document_path(conn: &Connection, id: &str) -> Result<Option<String>> 
             .to_sql(),
         |r| r.get(0),
     )
+}
+
+/// Batched `revision_hash` read for `ids`, keyed by `documents.id`.
+///
+/// Ids with no row are absent from the map: a document deleted between a
+/// search and this read is an ordinary race, not an error. An empty `ids`
+/// slice short-circuits rather than building an empty `IN` list. Batched
+/// because the offline benchmark reads one revision per pooled document and a
+/// point read per candidate would be a query per hit.
+pub fn fetch_revisions(conn: &Connection, ids: &[&str]) -> Result<HashMap<String, String>> {
+    if ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let values: Vec<Value> = ids.iter().copied().map(Value::from).collect();
+    let rows = orm::query_all(
+        conn,
+        Documents::select()
+            .columns_typed(&[&col::id, &col::revision_hash])
+            .filter(col::id.in_list(&values))
+            .to_sql(),
+        |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+    )?;
+    Ok(rows.into_iter().collect())
 }
 
 /// List every `documents.id` owned (via `source_files`) by `source_id` —

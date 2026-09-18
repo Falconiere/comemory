@@ -95,6 +95,9 @@ pub fn capture(
     let legs = run_pool(cfg, conn, query)?;
     let facts = candidate_facts::collect(conn, &legs, set.defaults.max_text_bytes)?;
     let pool = unified::fuse_legs(cfg, conn, legs)?;
+    // `as_millis` is u128; the saturating fallback needs ~584 million years of
+    // retrieval to reach. It saturates UP on purpose: a `u64::MAX` reading
+    // fails every latency budget rather than passing one.
     let retrieval_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
 
     let (candidates, text_unavailable) = observe(&pool, &facts, shared.k);

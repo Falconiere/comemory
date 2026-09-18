@@ -7,7 +7,7 @@
 //! No subprocess, no timeout and no wire protocol is defined here — a scorer's
 //! output arrives as a file.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hash::BuildHasher;
 use std::path::Path;
 
@@ -62,8 +62,9 @@ impl ArmScores {
                 "arm name `{BASELINE_ARM}` is reserved for the baseline"
             )));
         }
+        let declared: HashSet<&str> = task_ids.iter().map(String::as_str).collect();
         for task in self.scores.keys() {
-            if !task_ids.iter().any(|id| id == task) {
+            if !declared.contains(task.as_str()) {
                 return Err(Error::Config(format!(
                     "task `{task}` is not in this benchmark set"
                 )));

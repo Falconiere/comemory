@@ -57,32 +57,29 @@ enum LegHit<'a> {
 /// Collect facts for every candidate in `legs`, bounding each text at
 /// `max_text_bytes`.
 ///
-/// The code leg takes one batched `code_symbols` read and the document leg one
-/// read per distinct parent — round trips an offline benchmark can afford and
-/// the search path deliberately does not pay.
+/// One batched read per leg that needs one: `code_symbols` rows for the code
+/// leg, `documents.revision_hash` for the document leg. The search path pays
+/// neither, which is why fusion drops these fields in the first place.
 pub fn collect(conn: &Connection, legs: &LegRows, max_text_bytes: usize) -> Result<FactsByHit> {
     let code_rows = code_text::fetch(
         conn,
         &legs.code.iter().map(|h| h.symbol_id).collect::<Vec<_>>(),
     )?;
-    let mut revisions: HashMap<&str, Option<String>> = HashMap::new();
-    for hit in &legs.documents {
-        if !revisions.contains_key(hit.document_id.as_str()) {
-            let row = documents::get_document(conn, &hit.document_id)?;
-            revisions.insert(&hit.document_id, row.map(|d| d.revision_hash));
-        }
-    }
+    let document_ids: Vec<&str> = legs
+        .documents
+        .iter()
+        .map(|h| h.document_id.as_str())
+        .collect();
+    let revisions = documents::fetch_revisions(conn, &document_ids)?;
     let memory = legs.memory.iter().map(LegHit::Memory);
     let code = legs
         .code
         .iter()
         .map(|hit| LegHit::Code(hit, code_rows.get(&hit.symbol_id)));
-    let documents = legs.documents.iter().map(|hit| {
-        let revision = revisions
-            .get(hit.document_id.as_str())
-            .and_then(Option::as_deref);
-        LegHit::Document(hit, revision)
-    });
+    let documents = legs
+        .documents
+        .iter()
+        .map(|hit| LegHit::Document(hit, revisions.get(&hit.document_id).map(String::as_str)));
     Ok(memory
         .chain(code)
         .chain(documents)
