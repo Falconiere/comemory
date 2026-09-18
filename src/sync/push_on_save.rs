@@ -20,7 +20,7 @@
 //!    `comemory sync`, `comemory watch`, or daemon cycle sends the same entry.
 //!
 //! It lives in `sync::` but is called from `cli::` — through
-//! [`crate::cli::off_runtime::off_runtime`] — never from `api::`. `api::save`
+//! [`crate::cli::off_runtime::off_runtime`] — never from `api::`. `domains::memories::save`
 //! also runs inside `comemory serve`, where `reqwest::blocking` would panic on
 //! drop inside the tokio runtime, and where a server pushing its tenants'
 //! memories outward would be wrong anyway.

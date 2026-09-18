@@ -14,8 +14,6 @@ pub mod bandit;
 pub mod consolidate;
 /// `comemory context`: headline memory + code bundle for a query.
 pub mod context;
-/// `comemory delete`: soft-delete one memory.
-pub mod delete;
 /// `comemory doctor`: runtime health check.
 pub mod doctor;
 /// `comemory edges`: lexical search over the relation graph.
@@ -32,8 +30,6 @@ pub mod gc;
 pub mod graph;
 /// `comemory install`: bundled agent skills and hooks for a host.
 pub mod install;
-/// `comemory list`: page live memories.
-pub mod list;
 /// `comemory mine`: distill query-reformulation term mappings.
 pub mod mine;
 /// `comemory prune`: orphan / low-value / stale-code candidates, dry-run
@@ -41,16 +37,12 @@ pub mod mine;
 pub mod prune;
 /// `comemory rebuild`: atomically rebuild the SQLite mirror from markdown.
 pub mod rebuild;
-/// `comemory save`: write a memory (markdown + store mirror).
-pub mod save;
 /// `comemory search`: hybrid memory retrieval.
 pub mod search;
 /// `comemory search-code`: ranked code search.
 pub mod search_code;
 /// `comemory setup`: detect, plan, and apply first-run onboarding.
 pub mod setup;
-/// `comemory show`: one memory in full.
-pub mod show;
 /// `comemory stats`: corpus counters and database size.
 pub mod stats;
 /// `comemory tune`: grid-search the blend knobs, confirm, apply.
@@ -77,15 +69,7 @@ pub mod memory_store;
 pub mod overview;
 /// `POST /doctor/reembed`: re-vectorize through the embed command.
 pub mod reembed;
-/// `POST /memories/{id}/references/refresh`: re-pin code references.
-pub mod refresh_refs;
-/// `POST /memories/{id}/restore`, `POST /trash/{id}/restore`.
-pub mod restore;
 /// `GET /search/suggest`: mined expansions + recent queries.
 pub mod suggest;
 /// `GET /sync/{changes,manifest}` and `POST /sync/import`.
 pub mod sync;
-/// `GET /trash`: soft-deleted memories.
-pub mod trash;
-/// `PATCH /memories/{id}`: frontmatter/body update.
-pub mod update;

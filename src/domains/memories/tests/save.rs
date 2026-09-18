@@ -5,32 +5,32 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror test for `src/api/save.rs`. Calls `api::save::run` directly
-//! against a `Ctx` opened on a fresh temp data-dir — proving the extracted
-//! command core writes the markdown file + SQLite mirror the same way
+//! Mirror test for `src/domains/memories/save.rs`. Calls
+//! `memories::save::run` directly against a `Ctx` opened on a fresh temp
+//! data-dir — proving the extracted command core writes the markdown file +
+//! SQLite mirror the same way
 //! `comemory save` does (`cli::save::run` is byte-compat tested against CLI
 //! stdout in `tests/cli__save.rs`; the HTTP surface's AC-1 cross-check
 //! lives in `tests/serve__routes__memories__write.rs`).
 
-use comemory::api;
 use comemory::config::{Config, Paths};
+use comemory::domains::memories::id::memory_id;
+use comemory::domains::memories::{self, Frontmatter, Kind};
 use comemory::errors::Error;
-use comemory::memory::id::memory_id;
-use comemory::memory::{Frontmatter, Kind};
 use comemory::store::{connection, memory_row};
 use comemory::utilities::context::Ctx;
 
-/// `api::save::run` with no CLI raw-vector input (HTTP-shaped call), since
+/// `memories::save::run` with no CLI raw-vector input (HTTP-shaped call), since
 /// none of these tests exercise the `--vector`/`--vector-stdin` CLI flags.
 fn run(
     ctx: &mut Ctx<'_>,
-    req: api::save::Request,
-) -> comemory::errors::Result<api::save::Response> {
-    api::save::run(ctx, req, false, None)
+    req: memories::save::Request,
+) -> comemory::errors::Result<memories::save::Response> {
+    memories::save::run(ctx, req, false, None)
 }
 
-fn request(body: &str) -> api::save::Request {
-    api::save::Request {
+fn request(body: &str) -> memories::save::Request {
+    memories::save::Request {
         body: body.to_string(),
         title: None,
         kind: Kind::Note,
@@ -86,8 +86,8 @@ fn run_rejects_self_supersede() {
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
     let body = "a memory that tries to supersede itself";
-    let self_id = comemory::memory::id::memory_id(body);
-    let req = api::save::Request {
+    let self_id = memories::id::memory_id(body);
+    let req = memories::save::Request {
         supersedes: vec![self_id],
         ..request(body)
     };
@@ -113,7 +113,7 @@ fn run_rejects_quality_out_of_range() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let req = api::save::Request {
+    let req = memories::save::Request {
         quality: 6,
         ..request("a memory with an invalid quality rating")
     };
@@ -142,13 +142,13 @@ fn run_with_a_vector_writes_one_row_and_a_resave_replaces_it() {
     let first_vec = vec![0.25_f32; dim];
     {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        let req = api::save::Request {
+        let req = memories::save::Request {
             vector: Some(first_vec),
             ..request(body)
         };
         run(&mut ctx, req).expect("first save with vector");
     }
-    let memory_id = comemory::memory::id::memory_id(body);
+    let memory_id = memories::id::memory_id(body);
     let count_rows = |conn: &rusqlite::Connection| -> i64 {
         conn.query_row(
             "SELECT COUNT(*) FROM memory_vec WHERE memory_id = ?1",
@@ -166,7 +166,7 @@ fn run_with_a_vector_writes_one_row_and_a_resave_replaces_it() {
     let expected_blob = comemory::store::embed::to_vec_blob(&second_vec);
     {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        let req = api::save::Request {
+        let req = memories::save::Request {
             vector: Some(second_vec),
             ..request(body)
         };
@@ -257,7 +257,7 @@ fn resave_preserves_markdown_created_and_reports_created_false() {
     // visible under exact equality without any sleep.
     let second = {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        let req = api::save::Request {
+        let req = memories::save::Request {
             kind: Kind::Decision,
             repo: "other".to_string(),
             tags: vec!["x".to_string(), "y".to_string()],

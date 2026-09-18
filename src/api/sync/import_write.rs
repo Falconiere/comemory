@@ -4,8 +4,8 @@ use crate::api::sync::{
     ImportEntry, ImportItemResult, ImportStatus, SyncOp, SyncRecord, SyncVector,
 };
 use crate::config::Config;
-use crate::memory::frontmatter::Frontmatter;
-use crate::memory::{MemoryStore, SaveParams};
+use crate::domains::memories::frontmatter::Frontmatter;
+use crate::domains::memories::{MemoryStore, SaveParams};
 use crate::prelude::*;
 use crate::store::{Connection, embed, memory_row, schema_meta, simhash_scan, sync_log, vector};
 use crate::utilities::context::Ctx;
@@ -81,7 +81,7 @@ pub(crate) fn patch_frontmatter(
         rec.frontmatter.author = author.to_string();
     }
     store.rewrite(&rec)?;
-    crate::api::update::mirror_record(ctx, &rec)?;
+    crate::domains::memories::update::mirror_record(ctx, &rec)?;
     Ok(())
 }
 

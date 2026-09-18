@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 
 use comemory::api;
 use comemory::config::{Config, Paths};
-use comemory::memory::Kind;
+use comemory::domains::memories::Kind;
 use comemory::store::connection;
 use comemory::utilities::context::Ctx;
 use tempfile::TempDir;
@@ -138,9 +138,9 @@ fn recompute_counts_live_memories_as_the_memory_side() {
         "Beta is the callee that alpha reaches.",
     ] {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        api::save::run(
+        crate::domains::memories::save::run(
             &mut ctx,
-            api::save::Request {
+            crate::domains::memories::save::Request {
                 body: body.to_string(),
                 title: None,
                 kind: Kind::Note,

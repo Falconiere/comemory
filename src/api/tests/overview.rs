@@ -6,14 +6,15 @@
     clippy::too_many_lines
 )]
 //! `api::overview::run` against a real store (console-api spec AC-3):
-//! memories saved through `api::save`, a real git repo indexed through
+//! memories saved through `domains::memories::save`, a real git repo indexed through
 //! `domains::code::index_code`, eval history written through the production
 //! `store::eval_runs` writer. Every counter is compared against the same
 //! thing counted a second way rather than against a hardcoded number.
 
-use comemory::api::{overview, save};
+use comemory::api::overview;
 use comemory::config::{Config, Paths};
-use comemory::memory::Kind;
+use comemory::domains::memories::Kind;
+use comemory::domains::memories::save;
 use comemory::store::{connection, eval_runs, index_runs};
 use comemory::utilities::context::Ctx;
 use tempfile::TempDir;

@@ -1,4 +1,4 @@
-//! `api::trash` — `GET /api/v1/trash`: soft-deleted memories with their
+//! `memories::trash` — `GET /api/v1/trash`: soft-deleted memories with their
 //! days until gc (console-api spec §9).
 //!
 //! A soft-deleted memory is a `memories` row with `deleted_at` set and its
@@ -17,8 +17,8 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::memory::id::is_valid_memory_id;
-use crate::output::search::title_of;
+use crate::domains::memories::id::is_valid_memory_id;
+use crate::domains::memories::nav::title_of;
 use crate::prelude::*;
 use crate::retrieval::score;
 use crate::store::trash_list;
@@ -37,7 +37,7 @@ pub struct Request {
     pub offset: usize,
 }
 
-/// The paged-command default page size, matching `api::list`.
+/// The paged-command default page size, matching `memories::list`.
 fn default_limit() -> usize {
     50
 }

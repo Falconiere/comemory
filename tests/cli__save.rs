@@ -90,7 +90,7 @@ fn save_writes_md_and_indexes_lexical_when_no_vector() {
 fn save_without_title_keeps_the_body_verbatim() {
     // `--title` folds a headline into the body (and so into the content
     // hash). Without the flag the body must reach the file untouched —
-    // `api::save::Request` names `title: None` explicitly since the field
+    // `memories::save::Request` names `title: None` explicitly since the field
     // was added, and this is the behavior that names it.
     let home = tempdir().expect("tempdir");
     let body = "advisory locks serialize the migration runner";

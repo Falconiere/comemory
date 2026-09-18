@@ -1,4 +1,4 @@
-//! `api::show::{Request, run}` — the shared middle of `comemory show` /
+//! `memories::show::{Request, run}` — the shared middle of `comemory show` /
 //! `GET /api/v1/memories/{id}`: one memory in full — body, frontmatter,
 //! activation, and code-reference freshness — in one round trip.
 //!
@@ -12,8 +12,8 @@
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::memory::References;
-use crate::output::search::{abs_path, title_of};
+use crate::domains::memories::References;
+use crate::domains::memories::nav::{abs_path, title_of};
 use crate::prelude::*;
 use crate::retrieval::code_ref_collect;
 use crate::retrieval::code_ref_fetch::RefStatusCache;
@@ -68,7 +68,7 @@ pub struct Response {
     /// Absolute path to the memory's markdown file.
     pub path: String,
     /// Frontmatter author, or empty string when unset. Stable string type
-    /// (never `null`) — same contract as [`crate::api::list::Row::author`].
+    /// (never `null`) — same contract as [`crate::domains::memories::list::Row::author`].
     pub author: String,
     /// First non-empty trimmed line of the body.
     pub title: String,

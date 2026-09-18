@@ -58,7 +58,7 @@ use serde::Deserialize;
 
 use crate::domains::documents::source::mirror;
 use crate::domains::documents::source::registry::Registry;
-use crate::memory::MemoryStore;
+use crate::domains::memories::MemoryStore;
 use crate::prelude::*;
 use crate::store::migrate::backup;
 use crate::store::{connection, memory_row};

@@ -5,22 +5,21 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! `api::refresh_refs::run` against a real git repo indexed by the real
+//! `memories::refresh_refs::run` against a real git repo indexed by the real
 //! `crate::domains::code::index_code::run` — console-api spec AC-8: a reference whose file
 //! has moved on since it was pinned reports `stale`, and one refresh re-pins
 //! it to the current HEAD blob so it reports `fresh` again.
 //!
-//! The save-time anchor is deliberately NOT captured here: `api::save`
+//! The save-time anchor is deliberately NOT captured here: `memories::save`
 //! anchors against the *calling process's* cwd repo (its documented cwd
 //! semantics), which in a test is the comemory checkout, not the fixture
 //! repo — so the ref lands `unpinned` and the first refresh is what pins it
 //! against `repo_marker.root_path`. That is the same path a memory saved
 //! over HTTP takes, which makes it the honest one to test.
 
-use comemory::api;
 use comemory::config::{Config, Paths};
+use comemory::domains::memories::{self, Kind};
 use comemory::errors::Error;
-use comemory::memory::Kind;
 use comemory::serve::RootOverrides;
 use comemory::store::connection;
 use comemory::utilities::context::Ctx;
@@ -60,8 +59,8 @@ fn index(ctx: &mut Ctx<'_>, repo: &std::path::Path) {
     .expect("index_code");
 }
 
-fn save_request(body: &str, ref_symbol: Vec<String>) -> api::save::Request {
-    api::save::Request {
+fn save_request(body: &str, ref_symbol: Vec<String>) -> memories::save::Request {
+    memories::save::Request {
         body: body.to_string(),
         title: None,
         kind: Kind::Note,
@@ -93,7 +92,7 @@ fn ac8_a_stale_reference_is_re_pinned_fresh_at_the_current_head() {
     let anchor = format!("sample:{TARGET_PATH}:{SYMBOL}");
     let saved = {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        api::save::run(
+        memories::save::run(
             &mut ctx,
             save_request(
                 "the retry budget lives in refreshed_symbol",
@@ -108,7 +107,8 @@ fn ac8_a_stale_reference_is_re_pinned_fresh_at_the_current_head() {
     // Pin #1: the first refresh anchors the (unpinned) ref at HEAD.
     let first = {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        api::refresh_refs::run(&mut ctx, &saved.id, &RootOverrides::new()).expect("first refresh")
+        memories::refresh_refs::run(&mut ctx, &saved.id, &RootOverrides::new())
+            .expect("first refresh")
     };
     assert_eq!(first.refreshed, 1, "one anchorable reference");
     assert!(first.skipped.is_empty(), "got {:?}", first.skipped);
@@ -141,9 +141,9 @@ fn ac8_a_stale_reference_is_re_pinned_fresh_at_the_current_head() {
 
     let stale = {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        api::show::run(
+        memories::show::run(
             &mut ctx,
-            api::show::Request {
+            memories::show::Request {
                 id: saved.id.clone(),
             },
         )
@@ -158,7 +158,8 @@ fn ac8_a_stale_reference_is_re_pinned_fresh_at_the_current_head() {
     // Pin #2: the refresh moves the anchor forward, and the ref is fresh.
     let second = {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        api::refresh_refs::run(&mut ctx, &saved.id, &RootOverrides::new()).expect("second refresh")
+        memories::refresh_refs::run(&mut ctx, &saved.id, &RootOverrides::new())
+            .expect("second refresh")
     };
     assert_eq!(second.refreshed, 1);
     assert_eq!(second.code_refs[0].status, "fresh");
@@ -184,7 +185,7 @@ fn a_reference_whose_repo_root_is_unknown_is_skipped_not_an_error() {
     let anchor = "never-indexed:src/gone.rs:missing_symbol".to_string();
     let saved = {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        api::save::run(
+        memories::save::run(
             &mut ctx,
             save_request("cites a repo nobody indexed", vec![anchor.clone()]),
             false,
@@ -194,7 +195,7 @@ fn a_reference_whose_repo_root_is_unknown_is_skipped_not_an_error() {
     };
 
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-    let resp = api::refresh_refs::run(&mut ctx, &saved.id, &RootOverrides::new())
+    let resp = memories::refresh_refs::run(&mut ctx, &saved.id, &RootOverrides::new())
         .expect("refresh must not error");
     assert_eq!(resp.refreshed, 0);
     assert_eq!(resp.skipped, vec![anchor]);
@@ -206,7 +207,7 @@ fn a_memory_with_no_references_refreshes_to_zero() {
     let (paths, cfg, mut conn) = open_ctx(home.path());
     let saved = {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        api::save::run(
+        memories::save::run(
             &mut ctx,
             save_request("no references at all", Vec::new()),
             false,
@@ -216,7 +217,8 @@ fn a_memory_with_no_references_refreshes_to_zero() {
     };
 
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-    let resp = api::refresh_refs::run(&mut ctx, &saved.id, &RootOverrides::new()).expect("refresh");
+    let resp =
+        memories::refresh_refs::run(&mut ctx, &saved.id, &RootOverrides::new()).expect("refresh");
     assert_eq!(resp.id, saved.id);
     assert_eq!(resp.refreshed, 0);
     assert!(resp.skipped.is_empty());
@@ -229,7 +231,7 @@ fn unknown_id_is_not_found() {
     let (paths, cfg, mut conn) = open_ctx(home.path());
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let err = api::refresh_refs::run(&mut ctx, "deadbeef", &RootOverrides::new())
+    let err = memories::refresh_refs::run(&mut ctx, "deadbeef", &RootOverrides::new())
         .expect_err("unknown id is NotFound");
     assert!(matches!(err, Error::NotFound(_)), "got {err:?}");
 }

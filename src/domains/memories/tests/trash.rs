@@ -5,16 +5,15 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! `api::trash::run` against a real store — console-api spec AC-17: a memory
-//! soft-deleted through the real `api::delete::run` shows up in the trash
+//! `memories::trash::run` against a real store — console-api spec AC-17: a memory
+//! soft-deleted through the real `memories::delete::run` shows up in the trash
 //! listing with `days_until_gc == prune.trash_retention_days` on the day of
 //! deletion. Also pins the two invariants the surface carries: a live memory
 //! never appears, and a data dir with no database answers an empty page
 //! instead of creating one.
 
-use comemory::api;
 use comemory::config::{Config, Paths};
-use comemory::memory::Kind;
+use comemory::domains::memories::{self, Kind};
 use comemory::store::connection;
 use comemory::utilities::context::Ctx;
 
@@ -26,8 +25,8 @@ fn open_ctx(home: &std::path::Path) -> (Paths, Config, rusqlite::Connection) {
     (paths, Config::defaults(), conn)
 }
 
-fn save_request(body: &str) -> api::save::Request {
-    api::save::Request {
+fn save_request(body: &str) -> memories::save::Request {
+    memories::save::Request {
         body: body.to_string(),
         title: None,
         kind: Kind::Bug,
@@ -42,8 +41,8 @@ fn save_request(body: &str) -> api::save::Request {
     }
 }
 
-fn request(limit: usize, offset: usize) -> api::trash::Request {
-    api::trash::Request { limit, offset }
+fn request(limit: usize, offset: usize) -> memories::trash::Request {
+    memories::trash::Request { limit, offset }
 }
 
 #[test]
@@ -52,7 +51,7 @@ fn ac17_a_freshly_deleted_memory_lists_with_the_full_retention_window() {
     let (paths, cfg, mut conn) = open_ctx(home.path());
     let saved = {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        api::save::run(
+        memories::save::run(
             &mut ctx,
             save_request("the retry loop double-counts attempts"),
             false,
@@ -63,7 +62,7 @@ fn ac17_a_freshly_deleted_memory_lists_with_the_full_retention_window() {
 
     let live = {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        api::trash::run(&mut ctx, request(50, 0)).expect("trash before delete")
+        memories::trash::run(&mut ctx, request(50, 0)).expect("trash before delete")
     };
     assert!(
         live.items.is_empty(),
@@ -73,11 +72,11 @@ fn ac17_a_freshly_deleted_memory_lists_with_the_full_retention_window() {
 
     {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        api::delete::run(&mut ctx, &saved.id).expect("delete");
+        memories::delete::run(&mut ctx, &saved.id).expect("delete");
     }
 
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-    let page = api::trash::run(&mut ctx, request(50, 0)).expect("trash after delete");
+    let page = memories::trash::run(&mut ctx, request(50, 0)).expect("trash after delete");
     assert_eq!(page.items.len(), 1, "one soft-deleted memory");
     assert_eq!(page.total, Some(1));
     let row = &page.items[0];
@@ -105,7 +104,7 @@ fn an_absent_database_answers_an_empty_page_without_creating_one() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::lazy(&paths, &cfg);
 
-    let page = api::trash::run(&mut ctx, request(50, 0)).expect("trash on a fresh data dir");
+    let page = memories::trash::run(&mut ctx, request(50, 0)).expect("trash on a fresh data dir");
     assert!(page.items.is_empty());
     assert_eq!(page.total, Some(0));
     assert!(
@@ -122,7 +121,7 @@ fn the_listing_pages_newest_deletion_first() {
     for n in 0..3 {
         let saved = {
             let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-            api::save::run(
+            memories::save::run(
                 &mut ctx,
                 save_request(&format!("trash row number {n}")),
                 false,
@@ -131,17 +130,17 @@ fn the_listing_pages_newest_deletion_first() {
             .expect("save")
         };
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        api::delete::run(&mut ctx, &saved.id).expect("delete");
+        memories::delete::run(&mut ctx, &saved.id).expect("delete");
         ids.push(saved.id);
     }
 
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-    let first = api::trash::run(&mut ctx, request(2, 0)).expect("first page");
+    let first = memories::trash::run(&mut ctx, request(2, 0)).expect("first page");
     assert_eq!(first.items.len(), 2);
     assert_eq!(first.total, Some(3));
     assert!(first.has_more, "a third row is left");
 
-    let second = api::trash::run(&mut ctx, request(2, 2)).expect("second page");
+    let second = memories::trash::run(&mut ctx, request(2, 2)).expect("second page");
     assert_eq!(second.items.len(), 1);
     assert!(!second.has_more);
 

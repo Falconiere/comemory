@@ -15,7 +15,6 @@ use axum::response::Response;
 use axum::routing::{patch, post};
 use axum::{Json, Router};
 
-use crate::api;
 use crate::serve::AppState;
 use crate::serve::routes::{RouteEntry, guard_mutating, respond, run_blocking};
 use crate::utilities::context::Ctx;
@@ -55,13 +54,13 @@ pub fn router(_state: AppState) -> Router<AppState> {
         )
 }
 
-/// `PATCH /api/v1/memories/{id}` — patch one memory (`api::update`). A
+/// `PATCH /api/v1/memories/{id}` — patch one memory (`domains::memories::update`). A
 /// frontmatter-only patch keeps the id; a body patch answers with the new id
 /// and the old one under `superseded`.
 async fn update(
     State(state): State<AppState>,
     Path(id): Path<String>,
-    Json(req): Json<api::update::Request>,
+    Json(req): Json<crate::domains::memories::update::Request>,
 ) -> Response {
     let started = Instant::now();
     let permit = match guard_mutating("memories.update", &state) {
@@ -73,14 +72,14 @@ async fn update(
         let cfg = state.cfg();
         let mut conn = state.conn()?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        api::update::run(&mut ctx, &id, req)
+        crate::domains::memories::update::run(&mut ctx, &id, req)
     })
     .await;
     respond("memories.update", result, started)
 }
 
 /// `POST /api/v1/memories/{id}/restore` — bring a soft-deleted memory back
-/// (`api::restore`). `400` when the id names a live memory, `404` when it is
+/// (`domains::memories::restore`). `400` when the id names a live memory, `404` when it is
 /// in neither the live tree nor the trash.
 async fn restore(State(state): State<AppState>, Path(id): Path<String>) -> Response {
     let started = Instant::now();
@@ -93,14 +92,14 @@ async fn restore(State(state): State<AppState>, Path(id): Path<String>) -> Respo
         let cfg = state.cfg();
         let mut conn = state.conn()?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        api::restore::run(&mut ctx, &id)
+        crate::domains::memories::restore::run(&mut ctx, &id)
     })
     .await;
     respond("memories.restore", result, started)
 }
 
 /// `POST /api/v1/memories/{id}/references/refresh` — re-pin the memory's
-/// code references to the current HEAD (`api::refresh_refs`) and answer with
+/// code references to the current HEAD (`domains::memories::refresh_refs`) and answer with
 /// the re-classified `code_refs`. Repo roots resolve through this server's
 /// `--root <repo>=<path>` overrides first, then `repo_marker.root_path`.
 async fn refresh_refs(State(state): State<AppState>, Path(id): Path<String>) -> Response {
@@ -114,7 +113,7 @@ async fn refresh_refs(State(state): State<AppState>, Path(id): Path<String>) -> 
         let cfg = state.cfg();
         let mut conn = state.conn()?;
         let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
-        api::refresh_refs::run(&mut ctx, &id, state.roots())
+        crate::domains::memories::refresh_refs::run(&mut ctx, &id, state.roots())
     })
     .await;
     respond("memories.refresh-refs", result, started)

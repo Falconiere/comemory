@@ -114,7 +114,7 @@ struct ListQuery {
     offset: usize,
 }
 
-/// Same default page size as the other paged routes (`api::list`).
+/// Same default page size as the other paged routes (`domains::memories::list`).
 fn default_limit() -> usize {
     50
 }

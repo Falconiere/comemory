@@ -26,7 +26,7 @@ pub mod registry;
 ///
 /// Deterministically derived from the canonical path — the first 16 bytes
 /// of `SHA-256(canonical path)`, hex-encoded — the same "hash the
-/// identity" idiom [`crate::memory::id::memory_id`] uses for memory ids.
+/// identity" idiom [`crate::domains::memories::id::memory_id`] uses for memory ids.
 /// A path's id therefore never changes across re-registration, which is
 /// what makes [`registry::Registry::register`]'s update-not-duplicate
 /// behavior hold: the same canonical path always resolves to the same id.

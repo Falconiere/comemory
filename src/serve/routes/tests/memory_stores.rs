@@ -7,12 +7,12 @@
 )]
 //! `/api/v1/memory-stores*` end-to-end through the real router
 //! (`tests/common/serve_state.rs`), against a real data dir: memories saved
-//! through `api::save::run`, a real `git init`ed store, and a real bare repo
+//! through `domains::memories::save::run`, a real `git init`ed store, and a real bare repo
 //! as the push target (console-api spec §10, AC-19).
 
 use std::time::Duration;
 
-use comemory::memory::Kind;
+use comemory::domains::memories::Kind;
 use serde_json::{Value, json};
 use tempfile::TempDir;
 

@@ -13,9 +13,9 @@
 use serde::Deserialize;
 use time::OffsetDateTime;
 
-use crate::cli::delete;
 use crate::config::{Config, Paths};
-use crate::output::search::title_of;
+use crate::domains::memories::delete;
+use crate::domains::memories::nav::title_of;
 use crate::prelude::*;
 use crate::prune::report::{PruneRow, Report};
 use crate::prune::{low_value, stale_code};
@@ -179,7 +179,7 @@ fn row_page(
 }
 
 /// Build one [`PruneRow`]: title from the stored body
-/// ([`crate::output::search::title_of`]), activation via
+/// ([`crate::domains::memories::nav::title_of`]), activation via
 /// [`score::activation`] (using `last_accessed`, falling back to
 /// `created_at`, and the configured decay), and whole days since creation.
 fn build_row(

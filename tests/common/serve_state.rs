@@ -21,9 +21,8 @@ use std::path::{Path, PathBuf};
 use axum::Router;
 use axum::body::Body;
 use axum::http::{HeaderMap, Request as HttpRequest, StatusCode};
-use comemory::api;
 use comemory::config::{Config, Paths};
-use comemory::memory::Kind;
+use comemory::domains::memories::{self, Kind};
 use comemory::serve::{AppState, RootOverrides, ServeOptions};
 use comemory::store::connection;
 use comemory::utilities::context::Ctx;
@@ -136,7 +135,7 @@ fn build(
     }
 }
 
-/// Save one memory through the real command core (`api::save::run`) against
+/// Save one memory through the real command core (`memories::save::run`) against
 /// `session`'s data-dir, so seeded rows go through the same
 /// markdown+SQLite+edges path a real `comemory save` does. Opens its own
 /// short-lived connection (the router's shared connection is private).
@@ -145,7 +144,7 @@ pub fn save(session: &Session, body: &str, kind: Kind, repo: &str) {
     let mut conn = connection::open(paths.db_path()).expect("open db for seed save");
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-    let req = api::save::Request {
+    let req = memories::save::Request {
         body: body.to_string(),
         title: None,
         kind,
@@ -158,7 +157,7 @@ pub fn save(session: &Session, body: &str, kind: Kind, repo: &str) {
         ref_file: Vec::new(),
         ref_symbol: Vec::new(),
     };
-    api::save::run(&mut ctx, req, false, None).expect("seed save");
+    memories::save::run(&mut ctx, req, false, None).expect("seed save");
 }
 
 /// Send a request through `session.router` with the session token attached

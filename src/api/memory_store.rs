@@ -2,7 +2,8 @@
 //! job (console-api spec §10, Non-Goal 3: "No multi-root memory stores. One
 //! `data_dir` remains the model").
 //!
-//! The store is not a row in a table — it IS the data dir. [`list`] therefore
+//! The store is not a row in a table — it IS the data dir.
+//! [`list`](memory_store::list) therefore
 //! always answers exactly one [`Store`], keyed by the constant [`STORE_ID`],
 //! and [`create`] is a hard [`Error::Unsupported`] rather than a silently
 //! ignored request: a console that asks for a second root gets a `501` naming
@@ -18,7 +19,8 @@
 //! captures output with `.output()` (never a detached `.spawn()`), so every
 //! step's stdout/stderr is available for the job log and for the error
 //! message, and which hardens each child against blocking on a credential
-//! prompt. The read-side probes ([`list`]/[`get`]) use in-process `git2`
+//! prompt. The read-side probes ([`list`](memory_store::list) /
+//! [`get`](memory_store::get)) use in-process `git2`
 //! instead, since they must be cheap enough to run on every console poll.
 
 mod git;

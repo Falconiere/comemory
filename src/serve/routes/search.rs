@@ -21,7 +21,7 @@ use axum::routing::{get, post};
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::api;
-use crate::memory::Kind;
+use crate::domains::memories::Kind;
 use crate::output::explain::{self, ExplainPart};
 use crate::prelude::*;
 use crate::retrieval::unified::fuse_domains::UnifiedHit;

@@ -5,15 +5,15 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! `api::restore::run` against a real store, driven through the real
-//! `api::save::run` / `api::delete::run` pair — console-api spec AC-7: a
+//! `memories::restore::run` against a real store, driven through the real
+//! `memories::save::run` / `memories::delete::run` pair — console-api spec AC-7: a
 //! soft-deleted memory comes back out of `.trash/`, its row goes live again
-//! in `GET /memories` (`api::list`), and search finds it once more.
+//! in `GET /memories` (`memories::list`), and search finds it once more.
 
 use comemory::api;
 use comemory::config::{Config, Paths};
+use comemory::domains::memories::{self, Kind};
 use comemory::errors::Error;
-use comemory::memory::Kind;
 use comemory::store::connection;
 use comemory::utilities::context::Ctx;
 
@@ -25,8 +25,8 @@ fn open_ctx(home: &std::path::Path) -> (Paths, Config, rusqlite::Connection) {
     (paths, Config::defaults(), conn)
 }
 
-fn save_request(body: &str) -> api::save::Request {
-    api::save::Request {
+fn save_request(body: &str) -> memories::save::Request {
+    memories::save::Request {
         body: body.to_string(),
         title: None,
         kind: Kind::Decision,
@@ -47,7 +47,7 @@ fn ac7_delete_then_restore_brings_the_file_and_the_row_back() {
     let (paths, cfg, mut conn) = open_ctx(home.path());
     let saved = {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        api::save::run(
+        memories::save::run(
             &mut ctx,
             save_request("kafka consumers must commit offsets manually"),
             false,
@@ -57,7 +57,7 @@ fn ac7_delete_then_restore_brings_the_file_and_the_row_back() {
     };
     {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        api::delete::run(&mut ctx, &saved.id).expect("delete");
+        memories::delete::run(&mut ctx, &saved.id).expect("delete");
     }
     assert!(
         !std::path::Path::new(&saved.path).exists(),
@@ -66,7 +66,7 @@ fn ac7_delete_then_restore_brings_the_file_and_the_row_back() {
 
     let resp = {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        api::restore::run(&mut ctx, &saved.id).expect("restore")
+        memories::restore::run(&mut ctx, &saved.id).expect("restore")
     };
 
     assert_eq!(resp.id, saved.id);
@@ -85,9 +85,9 @@ fn ac7_delete_then_restore_brings_the_file_and_the_row_back() {
     // Live in the mirror: listed, shown, and findable by search.
     let listed = {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        api::list::run(
+        memories::list::run(
             &mut ctx,
-            api::list::Request {
+            memories::list::Request {
                 repo: None,
                 kind: None,
                 tag: None,
@@ -95,7 +95,7 @@ fn ac7_delete_then_restore_brings_the_file_and_the_row_back() {
                 q: None,
                 limit: 50,
                 offset: 0,
-                sort: api::list::Sort::Created,
+                sort: memories::list::Sort::Created,
             },
         )
         .expect("list")
@@ -107,9 +107,9 @@ fn ac7_delete_then_restore_brings_the_file_and_the_row_back() {
 
     let shown = {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        api::show::run(
+        memories::show::run(
             &mut ctx,
-            api::show::Request {
+            memories::show::Request {
                 id: saved.id.clone(),
             },
         )
@@ -147,11 +147,12 @@ fn restoring_a_live_memory_is_bad_request() {
     let (paths, cfg, mut conn) = open_ctx(home.path());
     let saved = {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        api::save::run(&mut ctx, save_request("never deleted"), false, None).expect("save")
+        memories::save::run(&mut ctx, save_request("never deleted"), false, None).expect("save")
     };
 
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-    let err = api::restore::run(&mut ctx, &saved.id).expect_err("a live memory cannot be restored");
+    let err =
+        memories::restore::run(&mut ctx, &saved.id).expect_err("a live memory cannot be restored");
     match err {
         Error::BadRequest(msg) => assert!(
             msg.contains("not in the trash"),
@@ -167,7 +168,8 @@ fn unknown_id_is_not_found() {
     let (paths, cfg, mut conn) = open_ctx(home.path());
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let err = api::restore::run(&mut ctx, "deadbeef").expect_err("unknown id must be NotFound");
+    let err =
+        memories::restore::run(&mut ctx, "deadbeef").expect_err("unknown id must be NotFound");
     assert!(matches!(err, Error::NotFound(_)), "got {err:?}");
 }
 
@@ -177,23 +179,23 @@ fn a_restored_memory_can_be_deleted_and_restored_again() {
     let (paths, cfg, mut conn) = open_ctx(home.path());
     let saved = {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        api::save::run(&mut ctx, save_request("round trip twice"), false, None).expect("save")
+        memories::save::run(&mut ctx, save_request("round trip twice"), false, None).expect("save")
     };
 
     for _ in 0..2 {
         {
             let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-            api::delete::run(&mut ctx, &saved.id).expect("delete");
+            memories::delete::run(&mut ctx, &saved.id).expect("delete");
         }
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        let resp = api::restore::run(&mut ctx, &saved.id).expect("restore");
+        let resp = memories::restore::run(&mut ctx, &saved.id).expect("restore");
         assert_eq!(resp.id, saved.id);
     }
 
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-    let shown = api::show::run(
+    let shown = memories::show::run(
         &mut ctx,
-        api::show::Request {
+        memories::show::Request {
             id: saved.id.clone(),
         },
     )
@@ -222,19 +224,20 @@ fn restore_relinks_the_incoming_supersedes_edge() {
     let (paths, cfg, mut conn) = open_ctx(home.path());
     let a = {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        api::save::run(&mut ctx, save_request("original decision"), false, None).expect("save A")
+        memories::save::run(&mut ctx, save_request("original decision"), false, None)
+            .expect("save A")
     };
     let b = {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
         let mut req = save_request("revised decision");
         req.supersedes = vec![a.id.clone()];
-        api::save::run(&mut ctx, req, false, None).expect("save B")
+        memories::save::run(&mut ctx, req, false, None).expect("save B")
     };
     assert_eq!(relation_edges(&conn, &b.id, "supersedes", &a.id), 1);
 
     {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        api::delete::run(&mut ctx, &a.id).expect("delete A");
+        memories::delete::run(&mut ctx, &a.id).expect("delete A");
     }
     assert_eq!(
         relation_edges(&conn, &b.id, "supersedes", &a.id),
@@ -244,7 +247,7 @@ fn restore_relinks_the_incoming_supersedes_edge() {
 
     {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        api::restore::run(&mut ctx, &a.id).expect("restore A");
+        memories::restore::run(&mut ctx, &a.id).expect("restore A");
     }
     assert_eq!(
         relation_edges(&conn, &b.id, "supersedes", &a.id),
@@ -253,7 +256,8 @@ fn restore_relinks_the_incoming_supersedes_edge() {
     );
 
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-    let shown = api::show::run(&mut ctx, api::show::Request { id: a.id.clone() }).expect("show A");
+    let shown = memories::show::run(&mut ctx, memories::show::Request { id: a.id.clone() })
+        .expect("show A");
     assert_eq!(
         shown.superseded_by.as_deref(),
         Some(b.id.as_str()),
@@ -271,25 +275,25 @@ fn restore_after_a_same_body_re_save_is_bad_request_and_keeps_the_live_row() {
     let body = "idempotent body";
     let first = {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        api::save::run(&mut ctx, save_request(body), false, None).expect("save")
+        memories::save::run(&mut ctx, save_request(body), false, None).expect("save")
     };
     {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        api::delete::run(&mut ctx, &first.id).expect("delete");
+        memories::delete::run(&mut ctx, &first.id).expect("delete");
     }
     let second = {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
         let mut req = save_request(body);
         req.tags = vec!["resaved".to_string()];
         req.quality = 5;
-        api::save::run(&mut ctx, req, false, None).expect("re-save")
+        memories::save::run(&mut ctx, req, false, None).expect("re-save")
     };
     assert_eq!(second.id, first.id, "same body ⇒ same id");
     let live_bytes = std::fs::read_to_string(&second.path).expect("read live file");
 
     let err = {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        api::restore::run(&mut ctx, &first.id).expect_err("restore of a live id must fail")
+        memories::restore::run(&mut ctx, &first.id).expect_err("restore of a live id must fail")
     };
     assert!(matches!(err, Error::BadRequest(_)), "got {err:?}");
     assert_eq!(
@@ -299,9 +303,9 @@ fn restore_after_a_same_body_re_save_is_bad_request_and_keeps_the_live_row() {
     );
 
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-    let shown = api::show::run(
+    let shown = memories::show::run(
         &mut ctx,
-        api::show::Request {
+        memories::show::Request {
             id: first.id.clone(),
         },
     )

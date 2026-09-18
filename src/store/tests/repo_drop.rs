@@ -12,10 +12,9 @@
 
 use crate::test_common::git_sample;
 
-use comemory::api;
 use comemory::config::{Config, Paths};
 use comemory::domains::code::index_code::IndexMode;
-use comemory::memory::Kind;
+use comemory::domains::memories::Kind;
 use comemory::store::edges::{self, EdgeKey};
 use comemory::store::{connection, repo_drop};
 use comemory::utilities::context::Ctx;
@@ -96,9 +95,9 @@ fn drop_repo_removes_every_code_row_and_file_edge_and_keeps_the_memory() {
     let memory_id = {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
         index(&mut ctx, "sample", &repo);
-        api::save::run(
+        crate::domains::memories::save::run(
             &mut ctx,
-            api::save::Request {
+            crate::domains::memories::save::Request {
                 body: "the sample repo indexes `sample:src.rs` cleanly".to_string(),
                 title: None,
                 kind: Kind::Note,

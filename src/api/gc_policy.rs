@@ -2,7 +2,7 @@
 //! the two retention windows `comemory gc` reads (`prune.trash_retention_days`
 //! and `prune.learning_retention_days`) plus the last recorded sweep.
 //!
-//! [`update`] is a `config.toml` writer, and follows the spec's "Config
+//! [`update`](gc_policy::update) is a `config.toml` writer, and follows the spec's "Config
 //! patching" rule exactly: build the would-be [`Config`] in memory, run
 //! `Config::validate` on it, and only then hand the supplied keys to
 //! [`patch_config_file`]. An out-of-range window is therefore

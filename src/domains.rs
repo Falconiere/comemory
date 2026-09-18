@@ -17,3 +17,7 @@ pub mod code;
 
 /// Document extraction, the durable source registry, and document indexing.
 pub mod documents;
+
+/// The memory lifecycle: markdown models and store, plus the save, delete,
+/// list, show, update, restore, trash and reference-refresh cores.
+pub mod memories;

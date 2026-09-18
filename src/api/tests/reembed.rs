@@ -8,7 +8,7 @@
 //! Mirror test for `src/api/reembed.rs` — `POST /api/v1/doctor/reembed`
 //! (console-api spec §8, AC-16's core half).
 //!
-//! Real data end to end: memories saved through `api::save` into a real
+//! Real data end to end: memories saved through `domains::memories::save` into a real
 //! temp data-dir, and a REAL shell script standing in for the embedder —
 //! written to disk, made executable, and run by `embed::embed_query`
 //! exactly as an operator's `--embed-cmd` would be. There is no mock: the
@@ -17,7 +17,7 @@
 
 use comemory::api;
 use comemory::config::{Config, Paths};
-use comemory::memory::Kind;
+use comemory::domains::memories::Kind;
 use comemory::store::connection;
 use comemory::utilities::context::Ctx;
 use comemory::utilities::progress::ProgressSink;
@@ -53,7 +53,7 @@ fn seed(paths: &Paths, count: usize) {
     let cfg = Config::defaults();
     for i in 0..count {
         let mut ctx = Ctx::borrowed(paths, &cfg, &mut conn);
-        let req = api::save::Request {
+        let req = crate::domains::memories::save::Request {
             body: format!("re-embed subject number {i}: postgres advisory locks"),
             title: None,
             kind: Kind::Note,
@@ -66,7 +66,7 @@ fn seed(paths: &Paths, count: usize) {
             ref_file: Vec::new(),
             ref_symbol: Vec::new(),
         };
-        api::save::run(&mut ctx, req, false, None).expect("seed save");
+        crate::domains::memories::save::run(&mut ctx, req, false, None).expect("seed save");
     }
 }
 

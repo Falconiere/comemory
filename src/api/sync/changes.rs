@@ -3,7 +3,7 @@
 use crate::api::sync::{
     ChangesResponse, SyncEntry, SyncOp, SyncRecord, SyncVector, WireFrontmatter,
 };
-use crate::memory::{Frontmatter, MemoryStore};
+use crate::domains::memories::{Frontmatter, MemoryStore};
 use crate::prelude::*;
 use crate::store::{Connection, embed, schema_meta, sync_log, vector};
 use crate::utilities::context::Ctx;
@@ -66,7 +66,7 @@ pub(crate) fn enrich_record(
 /// Build a wire record from a live markdown row, optionally attaching a vector
 /// read from `memory_vec`.
 pub(crate) fn record_from_memory(
-    rec: &crate::memory::MemoryRecord,
+    rec: &crate::domains::memories::MemoryRecord,
     vector: Option<SyncVector>,
 ) -> SyncRecord {
     SyncRecord {

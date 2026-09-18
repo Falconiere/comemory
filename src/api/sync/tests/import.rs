@@ -8,12 +8,12 @@
 
 use time::OffsetDateTime;
 
-use comemory::api;
-use comemory::api::{save, sync};
+use comemory::api::sync;
 use comemory::config::{Config, Paths};
-use comemory::memory::frontmatter::{References, Relations};
-use comemory::memory::id::memory_id;
-use comemory::memory::{Kind, MemoryStore};
+use comemory::domains::memories::frontmatter::{References, Relations};
+use comemory::domains::memories::id::memory_id;
+use comemory::domains::memories::save;
+use comemory::domains::memories::{Kind, MemoryStore};
 use comemory::store::connection;
 use comemory::store::sync_log::{self, SyncOp};
 use comemory::utilities::context::Ctx;
@@ -229,7 +229,7 @@ fn stale_upsert_after_tombstone() {
     )
     .expect("seed save");
     let id = memory_id(body);
-    api::delete::run(&mut ctx, &id).expect("delete");
+    crate::domains::memories::delete::run(&mut ctx, &id).expect("delete");
 
     let tomb_seq = {
         let conn = ctx.conn().expect("conn");

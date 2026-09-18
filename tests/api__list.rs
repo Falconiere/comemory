@@ -5,21 +5,21 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror test for `src/api/list.rs`. Seeds real memories via the
+//! Mirror test for `src/domains/memories/list.rs`. Seeds real memories via the
 //! `comemory` binary (markdown + SQLite mirror), then calls
-//! `api::list::run` directly against a `Ctx` opened on the same data-dir —
+//! `memories::list::run` directly against a `Ctx` opened on the same data-dir —
 //! proving the extracted command core reproduces `comemory list`'s
 //! filtering and paging (`cli::list::run` is byte-compat tested against
 //! the CLI stdout in `tests/cli__list.rs`).
 
 use assert_cmd::Command;
-use comemory::api;
 use comemory::config::{Config, Paths};
+use comemory::domains::memories;
 use comemory::store::connection;
 use comemory::utilities::context::Ctx;
 
 /// Save a memory through the real binary so both the markdown file and the
-/// SQLite mirror row exist for `api::list::run` to read.
+/// SQLite mirror row exist for `memories::list::run` to read.
 fn save(home: &tempfile::TempDir, body: &str, kind: &str, repo: &str) {
     Command::cargo_bin("comemory")
         .expect("bin")
@@ -62,8 +62,8 @@ fn seeded_home() -> tempfile::TempDir {
 }
 
 /// A no-op-filter, default-limit, default-sort request.
-fn request() -> api::list::Request {
-    api::list::Request {
+fn request() -> memories::list::Request {
+    memories::list::Request {
         repo: None,
         kind: None,
         tag: None,
@@ -71,7 +71,7 @@ fn request() -> api::list::Request {
         q: None,
         limit: 50,
         offset: 0,
-        sort: api::list::Sort::Created,
+        sort: memories::list::Sort::Created,
     }
 }
 
@@ -83,7 +83,7 @@ fn run_lists_every_live_memory() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let page = api::list::run(&mut ctx, request()).expect("list run");
+    let page = memories::list::run(&mut ctx, request()).expect("list run");
     assert_eq!(page.total, Some(3));
     assert_eq!(page.items.len(), 3);
     assert!(!page.has_more);
@@ -101,7 +101,7 @@ fn run_applies_repo_and_kind_filters() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let req = api::list::Request {
+    let req = memories::list::Request {
         repo: Some("alpha".to_string()),
         kind: Some("Decision".to_string()),
         tag: None,
@@ -109,7 +109,7 @@ fn run_applies_repo_and_kind_filters() {
         q: None,
         ..request()
     };
-    let page = api::list::run(&mut ctx, req).expect("list run");
+    let page = memories::list::run(&mut ctx, req).expect("list run");
     assert_eq!(page.total, Some(1));
     assert_eq!(page.items[0].repo, "alpha");
     assert_eq!(page.items[0].kind, "decision");
@@ -123,12 +123,12 @@ fn run_pages_with_limit_and_offset() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let req = api::list::Request {
+    let req = memories::list::Request {
         limit: 2,
         offset: 0,
         ..request()
     };
-    let page = api::list::run(&mut ctx, req).expect("list run");
+    let page = memories::list::run(&mut ctx, req).expect("list run");
     assert_eq!(page.items.len(), 2);
     assert_eq!(page.total, Some(3));
     assert!(page.has_more);
@@ -166,7 +166,7 @@ fn run_rows_carry_new_fields_and_keep_legacy_fields() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let page = api::list::run(&mut ctx, request()).expect("list run");
+    let page = memories::list::run(&mut ctx, request()).expect("list run");
     assert_eq!(page.items.len(), 1);
     let row = &page.items[0];
     assert!(!row.id.is_empty(), "id must still be populated");
@@ -198,7 +198,7 @@ fn run_rows_author_empty_string_when_unset() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let page = api::list::run(&mut ctx, request()).expect("list run");
+    let page = memories::list::run(&mut ctx, request()).expect("list run");
     assert_eq!(page.items.len(), 1);
     assert_eq!(page.items[0].author, "");
 }
@@ -212,7 +212,7 @@ fn run_default_sort_is_newest_created_first() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let page = api::list::run(&mut ctx, request()).expect("list run");
+    let page = memories::list::run(&mut ctx, request()).expect("list run");
     // `seeded_home` saves "alpha decision one", "alpha bug two", then
     // "beta decision three" in that order via sequential real `save` runs.
     assert_eq!(page.items[0].title, "beta decision three");
@@ -232,11 +232,11 @@ fn run_sort_quality_orders_descending() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let req = api::list::Request {
-        sort: api::list::Sort::Quality,
+    let req = memories::list::Request {
+        sort: memories::list::Sort::Quality,
         ..request()
     };
-    let page = api::list::run(&mut ctx, req).expect("list run");
+    let page = memories::list::run(&mut ctx, req).expect("list run");
     let qualities: Vec<u8> = page.items.iter().map(|r| r.quality).collect();
     assert_eq!(qualities, vec![5, 3, 1]);
 }
@@ -259,11 +259,11 @@ fn run_sort_accessed_puts_most_recently_searched_first() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
 
-    let req = api::list::Request {
-        sort: api::list::Sort::Accessed,
+    let req = memories::list::Request {
+        sort: memories::list::Sort::Accessed,
         ..request()
     };
-    let page = api::list::run(&mut ctx, req).expect("list run");
+    let page = memories::list::run(&mut ctx, req).expect("list run");
     assert!(
         page.items[0].title.starts_with("keyboard"),
         "most-recently-accessed row must lead: {:?}",

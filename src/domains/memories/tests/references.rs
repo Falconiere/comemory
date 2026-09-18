@@ -10,7 +10,7 @@
 //! bare scalar in both YAML and JSON (no `{id: ...}` map), while an anchored
 //! ref round-trips as a full `{id, blob, commit, branch}` map.
 
-use comemory::memory::{Ref, References};
+use comemory::domains::memories::{Ref, References};
 
 /// A bare-string YAML scalar deserializes to an unanchored `Ref` and
 /// re-serializes byte-stable to the same bare scalar (no map wrapper).

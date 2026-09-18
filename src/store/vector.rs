@@ -71,7 +71,7 @@ pub fn insert_memory(conn: &Connection, memory_id: &str, vector: &[f32]) -> Resu
 /// point it is today). `memory_vec` is a `vec0` virtual table whose primary
 /// key does not participate in SQLite's FK cascade, so a bare re-insert on
 /// an id that already has a row would leave two rows behind — every
-/// re-save (`api::save`) and re-embed (`api::reembed`) of the same memory
+/// re-save (`domains::memories::save`) and re-embed (`api::reembed`) of the same memory
 /// must replace, not duplicate.
 pub fn replace_memory(conn: &Connection, memory_id: &str, vector: &[f32]) -> Result<()> {
     conn.execute(

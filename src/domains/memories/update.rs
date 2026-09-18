@@ -1,4 +1,4 @@
-//! `api::update` — `PATCH /api/v1/memories/{id}`: frontmatter-only patch in
+//! `memories::update` — `PATCH /api/v1/memories/{id}`: frontmatter-only patch in
 //! place, body patch as a superseding re-save (console-api spec §4).
 //!
 //! The split is forced by the data model, not chosen: a memory id is the
@@ -17,8 +17,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::api::save;
-use crate::memory::{Frontmatter, Kind, MemoryRecord, MemoryStore, id};
+use crate::domains::memories::save;
+use crate::domains::memories::{Frontmatter, Kind, MemoryRecord, MemoryStore, id};
 use crate::prelude::*;
 use crate::store::{memory_row, sync_log};
 use crate::utilities::context::Ctx;
@@ -40,7 +40,7 @@ pub struct Request {
     /// New body. Changing it mints a new id — see the module doc.
     pub body: Option<String>,
     /// New title. Folded into the body as its first line, exactly as
-    /// `api::save::Request::title` is, so patching a title is a body patch.
+    /// `memories::save::Request::title` is, so patching a title is a body patch.
     pub title: Option<String>,
 }
 
@@ -267,7 +267,7 @@ fn dedup(tags: &[String]) -> Vec<String> {
 /// edit. `memory_row::insert` rewrites tags, FTS, outgoing edges and the
 /// `code_ref` anchors for the id and clears `deleted_at`, so this is also
 /// exactly what a restore needs — hence `pub(crate)`, shared with
-/// [`crate::api::restore`] and [`crate::api::refresh_refs`] rather than
+/// [`crate::domains::memories::restore`] and [`crate::domains::memories::refresh_refs`] rather than
 /// re-derived in each.
 /// Returns whether the derived refresh FAILED, so the caller can report a
 /// stale relation index the way `gc`, `delete` and `prune` do.

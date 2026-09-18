@@ -1,11 +1,11 @@
-//! `api::list::{Request, run}` — the shared middle of `comemory list` /
+//! `memories::list::{Request, run}` — the shared middle of `comemory list` /
 //! `GET /api/v1/memories`: page live memories from the SQLite mirror with
 //! optional `repo`/`kind` filters. Moved out of `cli::list::run` so the CLI
 //! and the HTTP route call one implementation (Binding Rule 1).
 
 use serde::{Deserialize, Serialize};
 
-use crate::output::search::title_of;
+use crate::domains::memories::nav::title_of;
 use crate::prelude::*;
 use crate::store::memory_list::{self, ListFilter, ListRow, SortBy};
 use crate::utilities::context::Ctx;

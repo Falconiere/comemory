@@ -1,6 +1,6 @@
 //! `sync_log` append + read — the append-only change journal both engines
 //! keep for cloud sync. Written only at the API-layer callers
-//! (`api::save` / `delete` / `restore` / `update` / `api::sync::import`),
+//! (`domains::memories::save` / `delete` / `restore` / `update` / `api::sync::import`),
 //! never inside `memory_row::insert` (rebuild reuses that writer).
 
 use rusqlite::Connection;

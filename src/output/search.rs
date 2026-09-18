@@ -8,11 +8,12 @@
 
 use std::collections::HashMap;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde::Serialize;
 
-use crate::memory::References;
+use crate::domains::memories::References;
+use crate::domains::memories::nav::{abs_path, title_of};
 use crate::output::{json, tty};
 use crate::prelude::*;
 use crate::retrieval::rerank::{Reranked, ScoreParts};
@@ -246,34 +247,6 @@ fn row_from<'a, S: ::std::hash::BuildHasher>(
         tags: entry.map(|m| m.tags.clone()).unwrap_or_default(),
         references: entry.map(|m| m.references.clone()).unwrap_or_default(),
     }
-}
-
-/// Resolve a memory's stored `md_path` against `data_dir` into an absolute
-/// path string. Returns an empty string when the metadata is absent.
-/// `Path::join` returns an absolute `md_path` unchanged and joins a relative
-/// one, so this is correct whichever form the writer stored. `pub(crate)`
-/// so `serve::routes::memories`'s single-row lookup can resolve the same
-/// path without duplicating the join logic.
-pub(crate) fn abs_path(entry: Option<&MemoryMeta>, data_dir: &Path) -> String {
-    match entry {
-        Some(m) => PathBuf::from(data_dir)
-            .join(&m.md_path)
-            .to_string_lossy()
-            .into_owned(),
-        None => String::new(),
-    }
-}
-
-/// First non-empty trimmed line of `body` — a human-readable title. Empty
-/// when the body has no non-blank line. `pub(crate)` so `api::show` shares
-/// this one rule with `comemory search`'s title column instead of
-/// re-deriving it (Binding Rule 1).
-pub(crate) fn title_of(body: &str) -> String {
-    body.lines()
-        .map(str::trim)
-        .find(|l| !l.is_empty())
-        .unwrap_or_default()
-        .to_string()
 }
 
 /// Stable lowercase label for a retrieval [`Source`], shared with

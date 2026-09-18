@@ -11,9 +11,9 @@ use rusqlite::Connection;
 use time::OffsetDateTime;
 use time::format_description::well_known::Iso8601;
 
+use crate::domains::memories::Frontmatter;
 use crate::graph::cross_link;
 use crate::graph::doc_link;
-use crate::memory::Frontmatter;
 use crate::prelude::*;
 use crate::store::edges::{self, CO_ACTIVATED, EdgeKey};
 use crate::store::fts;
@@ -171,7 +171,7 @@ struct MinedEdge {
 /// Capture the memory's mined outgoing edges before [`insert_memories_row`]
 /// wipes every outgoing row. `rebuild` re-copies them from the pre-rebuild
 /// database afterwards (`api::rebuild::copy`), but the in-place re-mirror
-/// seams (`api::update::mirror_record` — metadata PATCH, references refresh,
+/// seams (`domains::memories::update::mirror_record` — metadata PATCH, references refresh,
 /// restore) have no such re-copy, so without this capture every one of them
 /// would silently drop the reward.
 fn mined_edges(conn: &Connection, memory_id: &str) -> Result<Vec<MinedEdge>> {

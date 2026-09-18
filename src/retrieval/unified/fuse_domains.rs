@@ -190,7 +190,7 @@ fn memory_hit(h: Reranked, rank: usize, meta: &HashMap<String, MemoryMeta>) -> U
     let repo = entry.and_then(|m| m.repo.clone());
     let refs = entry.map_or(0, |m| m.references.files.len() + m.references.symbols.len());
     let tier = h.tier;
-    let title = crate::output::search::title_of(&h.body);
+    let title = crate::domains::memories::nav::title_of(&h.body);
     let subtitle = match &repo {
         Some(r) => format!("{} · {kind} · {r} · {refs} refs", h.memory_id),
         None => format!("{} · {kind} · {refs} refs", h.memory_id),

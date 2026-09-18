@@ -6,7 +6,7 @@
     clippy::too_many_lines
 )]
 //! Coverage for `src/api/memory_store.rs` against REAL data: memories saved
-//! through `api::save::run`, real `git init`ed work trees (the shared
+//! through `domains::memories::save::run`, real `git init`ed work trees (the shared
 //! `tests/common/git_repo.rs` fixture), and a real bare repo standing in for
 //! the remote. Nothing here is mocked — the `store-sync` job's whole value is
 //! that it drives the actual `git` binary.
@@ -17,10 +17,9 @@
 use std::cell::RefCell;
 use std::path::Path;
 
-use comemory::api;
 use comemory::api::memory_store;
 use comemory::config::{Config, Paths};
-use comemory::memory::Kind;
+use comemory::domains::memories::Kind;
 use comemory::store::connection;
 use comemory::utilities::context::Ctx;
 use tempfile::TempDir;
@@ -124,7 +123,7 @@ fn seeded(n: usize) -> TempDir {
     let mut conn = connection::open(paths.db_path()).expect("open db");
     for i in 0..n {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        let req = api::save::Request {
+        let req = crate::domains::memories::save::Request {
             body: format!("memory store fixture body number {i}"),
             title: None,
             kind: Kind::Note,
@@ -137,7 +136,7 @@ fn seeded(n: usize) -> TempDir {
             ref_file: Vec::new(),
             ref_symbol: Vec::new(),
         };
-        api::save::run(&mut ctx, req, false, None).expect("seed save");
+        crate::domains::memories::save::run(&mut ctx, req, false, None).expect("seed save");
     }
     home
 }

@@ -7,9 +7,9 @@
 )]
 //! The login-time first sync (AC-2, AC-3), against the real loopback platform.
 
-use comemory::api::save;
 use comemory::config::{Config, Paths};
-use comemory::memory::Kind;
+use comemory::domains::memories::Kind;
+use comemory::domains::memories::save;
 use comemory::store::{connection, sync_state};
 use comemory::sync::initial::run_initial_sync;
 use comemory::utilities::context::Ctx;
@@ -35,7 +35,7 @@ fn save_req(body: &str, repo: &str) -> save::Request {
 
 /// One remote entry the organization already holds, for the pull leg.
 fn remote_entry(seq: i64, body: &str) -> serde_json::Value {
-    let id = comemory::memory::id::memory_id(body);
+    let id = comemory::domains::memories::id::memory_id(body);
     let content_hash = comemory::utilities::digest::sha256_hex(body.trim_end().as_bytes());
     serde_json::json!({
         "seq": seq,
@@ -84,7 +84,7 @@ fn initial_sync_pulls_then_pushes_and_records_the_cursor() {
     let mut conn = connection::open(paths.db_path()).unwrap();
 
     let local_body = "a local decision this machine offers to the organization";
-    let local_id = comemory::memory::id::memory_id(local_body);
+    let local_id = comemory::domains::memories::id::memory_id(local_body);
     let local_hash = comemory::utilities::digest::sha256_hex(local_body.trim_end().as_bytes());
     server.update(|st| {
         st.import_results = serde_json::json!([{
@@ -112,8 +112,8 @@ fn initial_sync_pulls_then_pushes_and_records_the_cursor() {
     assert_eq!(stats.pushed, 1, "the local entry must be offered");
 
     // A count alone would pass on any entry. Prove it is *this* one, on disk.
-    let remote_id = comemory::memory::id::memory_id(remote_body);
-    let adopted = comemory::memory::MemoryStore::new(paths.clone())
+    let remote_id = comemory::domains::memories::id::memory_id(remote_body);
+    let adopted = comemory::domains::memories::MemoryStore::new(paths.clone())
         .load(&remote_id)
         .expect("the pulled memory must be readable from the markdown store");
     assert_eq!(adopted.body.trim_end(), remote_body);
@@ -228,7 +228,7 @@ fn initial_sync_pushes_an_unlabelled_memory() {
     let cfg = Config::defaults();
     let mut conn = connection::open(paths.db_path()).unwrap();
     let body = "a note saved outside any git worktree";
-    let id = comemory::memory::id::memory_id(body);
+    let id = comemory::domains::memories::id::memory_id(body);
     let content_hash = comemory::utilities::digest::sha256_hex(body.trim_end().as_bytes());
     server.update(|st| {
         st.import_results = serde_json::json!([{

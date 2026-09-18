@@ -19,7 +19,7 @@ use time::format_description::well_known::Iso8601;
 use crate::api::sync::changes::enrich_record;
 use crate::api::sync::{ImportEntry, ImportRequest, ImportStatus, SyncOp};
 use crate::config::{Config, Paths};
-use crate::memory::MemoryStore;
+use crate::domains::memories::MemoryStore;
 use crate::prelude::*;
 use crate::store::{Connection, sync_binding, sync_log, sync_state};
 use crate::sync::AuthFile;

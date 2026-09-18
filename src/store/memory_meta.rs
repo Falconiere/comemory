@@ -11,7 +11,7 @@ use std::collections::HashMap;
 
 use rusqlite::{Connection, OptionalExtension};
 
-use crate::memory::{Ref, References};
+use crate::domains::memories::{Ref, References};
 use crate::prelude::*;
 use crate::store::edges::{REFERENCES_FILE, REFERENCES_SYMBOL};
 use crate::store::qmarks;

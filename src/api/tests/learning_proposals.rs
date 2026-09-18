@@ -290,10 +290,10 @@ fn a_real_tune_run_becomes_a_listed_proposal_ac13() {
 
 /// Save one note through the real command core and return its id.
 fn save_note(ctx: &mut Ctx<'_>, body: &str) -> String {
-    let req = api::save::Request {
+    let req = crate::domains::memories::save::Request {
         body: body.to_string(),
         title: None,
-        kind: comemory::memory::Kind::Note,
+        kind: comemory::domains::memories::Kind::Note,
         repo: "comemory".to_string(),
         tags: Vec::new(),
         author: String::new(),
@@ -303,7 +303,9 @@ fn save_note(ctx: &mut Ctx<'_>, body: &str) -> String {
         ref_file: Vec::new(),
         ref_symbol: Vec::new(),
     };
-    api::save::run(ctx, req, false, None).expect("seed save").id
+    crate::domains::memories::save::run(ctx, req, false, None)
+        .expect("seed save")
+        .id
 }
 
 #[test]

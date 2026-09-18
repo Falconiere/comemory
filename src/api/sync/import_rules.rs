@@ -6,10 +6,10 @@ use crate::api::sync::import_state::{
 };
 use crate::api::sync::import_write::{log_sync_upsert, patch_frontmatter, write_new_memory};
 use crate::api::sync::{ImportEntry, ImportItemResult, ImportStatus, SyncOp};
-use crate::cli::delete;
 use crate::config::Config;
-use crate::memory::MemoryStore;
-use crate::memory::id::is_valid_memory_id;
+use crate::domains::memories::MemoryStore;
+use crate::domains::memories::delete;
+use crate::domains::memories::id::is_valid_memory_id;
 use crate::prelude::*;
 use crate::store::sync_log;
 use crate::sync::redact;
@@ -117,7 +117,7 @@ fn apply_restore(
         out.reason = Some("restore target not in trash".into());
         return Ok(out);
     }
-    crate::api::restore::run(ctx, &entry.id)?;
+    crate::domains::memories::restore::run(ctx, &entry.id)?;
     patch_frontmatter(ctx, entry, record, author_override)?;
     let conn = ctx.conn()?;
     let tx = conn.transaction()?;
@@ -184,7 +184,7 @@ fn apply_upsert(
     let in_trash = trash_file_exists(&paths, &entry.id);
     if trashed_with_hash(conn, &entry.content_hash)? || in_trash {
         if in_trash {
-            crate::api::restore::run(ctx, &entry.id)?;
+            crate::domains::memories::restore::run(ctx, &entry.id)?;
             patch_frontmatter(ctx, entry, record, author_override)?;
             let conn = ctx.conn()?;
             let tx = conn.transaction()?;

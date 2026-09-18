@@ -7,18 +7,17 @@
 )]
 //! Mirror test for `src/domains/code/repo_admin.rs`: connect / patch / archive /
 //! disconnect over REAL temp git repos indexed through `domains::code::index_code`
-//! and real memories saved through `api::save` — the disconnect case is
+//! and real memories saved through `domains::memories::save` — the disconnect case is
 //! AC-18's "every code row goes, no memory row does".
 
 use crate::test_common::git_sample;
 use crate::test_common::git_worktree::add_worktree;
 
-use comemory::api;
 use comemory::config::{Config, Paths};
 use comemory::domains::code::index_code::IndexMode;
 use comemory::domains::code::repo_admin::{ArchiveRequest, ConnectRequest, PatchRequest};
+use comemory::domains::memories::Kind;
 use comemory::errors::Error;
-use comemory::memory::Kind;
 use comemory::store::connection;
 use comemory::utilities::context::Ctx;
 use tempfile::TempDir;
@@ -66,9 +65,9 @@ fn index(ctx: &mut Ctx<'_>, repo: &str, path: &std::path::Path) {
 }
 
 fn save_memory(ctx: &mut Ctx<'_>, body: &str, repo: &str) -> String {
-    api::save::run(
+    crate::domains::memories::save::run(
         ctx,
-        api::save::Request {
+        crate::domains::memories::save::Request {
             body: body.to_string(),
             title: None,
             kind: Kind::Note,

@@ -52,7 +52,7 @@ pub struct Report {
 pub struct PruneRow {
     /// The flagged memory's id.
     pub id: String,
-    /// First non-empty trimmed line of the body ([`crate::output::search::title_of`]).
+    /// First non-empty trimmed line of the body ([`crate::domains::memories::nav::title_of`]).
     pub title: String,
     /// Which detector flagged this row: `"low value"`, `"orphan"`, or
     /// `"stale code"`.

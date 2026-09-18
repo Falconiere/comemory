@@ -5,10 +5,10 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Test mirror for `src/memory/id.rs` — the 8-hex memory id derivation
+//! Test mirror for `src/domains/memories/id.rs` — the 8-hex memory id derivation
 //! and validation.
 
-use comemory::memory::id::{is_valid_memory_id, memory_id};
+use comemory::domains::memories::id::{is_valid_memory_id, memory_id};
 
 #[test]
 fn id_is_8_hex_prefix_of_sha256() {

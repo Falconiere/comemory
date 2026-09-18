@@ -7,12 +7,12 @@
 )]
 //! [`purge_memory`] / [`expired_deleted_ids`] / [`soft_delete`] against a
 //! real migrated `comemory.db`, populated through the real writers:
-//! `api::save::run`, `api::delete::run` (the soft delete), `api::feedback::run`,
+//! `domains::memories::save::run`, `domains::memories::delete::run` (the soft delete), `api::feedback::run`,
 //! `store::code_ref::upsert`, `store::vector::insert_memory`.
 
 use comemory::api;
 use comemory::config::{Config, Paths};
-use comemory::memory::{Kind, Ref, References};
+use comemory::domains::memories::{Kind, Ref, References};
 use comemory::store::memory_purge::{
     expired_deleted_ids, purge_memory, soft_delete as store_soft_delete, trashed_with_hash,
 };
@@ -37,9 +37,9 @@ fn save(
     supersedes: &[&str],
 ) -> String {
     let mut ctx = Ctx::borrowed(paths, cfg, conn);
-    api::save::run(
+    crate::domains::memories::save::run(
         &mut ctx,
-        api::save::Request {
+        crate::domains::memories::save::Request {
             body: body.to_string(),
             title: None,
             kind: Kind::Note,
@@ -61,7 +61,7 @@ fn save(
 
 fn soft_delete(paths: &Paths, cfg: &Config, conn: &mut Connection, id: &str) {
     let mut ctx = Ctx::borrowed(paths, cfg, conn);
-    api::delete::run(&mut ctx, id).expect("soft delete");
+    crate::domains::memories::delete::run(&mut ctx, id).expect("soft delete");
 }
 
 fn count(conn: &Connection, sql: &str, id: &str) -> i64 {
@@ -154,7 +154,7 @@ fn purge_clears_every_mirror_row_of_a_soft_deleted_memory() {
     code_ref::upsert(&conn, &id, &refs, &stamp).expect("code_ref upsert");
 
     soft_delete(&paths, &cfg, &mut conn, &id);
-    // The soft delete drops `memory_fts` itself (`cli::delete::mirror_soft_delete`),
+    // The soft delete drops `memory_fts` itself (`domains::memories::delete::mirror_soft_delete`),
     // so the index row is put back through the real writer: that is the
     // state a store carries when its trashed rows were indexed by an older
     // version, and it is what the purge has to clear.

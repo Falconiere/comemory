@@ -41,6 +41,7 @@ use clap::{Command as ClapCommand, CommandFactory};
 use comemory::api;
 use comemory::cli::Cli;
 use comemory::domains::documents::{index, sources, unindex};
+use comemory::domains::memories;
 use serde_json::json;
 use tempfile::TempDir;
 
@@ -94,7 +95,7 @@ const EXCLUSIONS: &[(&str, &str)] = &[
     // `comemory delete`'s only flag is the memory id, which the HTTP route
     // map (design.md "### Route map") carries as a URL path segment —
     // `DELETE /api/v1/memories/{id}?confirm=true` — not a JSON body field.
-    // `api::delete::run(&mut Ctx, id: &str)` takes a plain `&str`, not a
+    // `memories::delete::run(&mut Ctx, id: &str)` takes a plain `&str`, not a
     // `Request` struct at all, so there is no `Request` type to probe
     // against; excluding `id` here makes that mapping explicit rather than
     // silently skipping `delete` from the field check.
@@ -171,18 +172,18 @@ probe_fn!(
     probe_install_hooks,
     comemory::domains::code::install_hooks::Request
 );
-probe_fn!(probe_list, api::list::Request);
+probe_fn!(probe_list, memories::list::Request);
 probe_fn!(probe_mine, api::mine::Request);
 probe_fn!(probe_prune, api::prune::Request);
 probe_fn!(probe_rebuild, api::rebuild::Request);
-probe_fn!(probe_save, api::save::Request);
+probe_fn!(probe_save, memories::save::Request);
 probe_fn!(probe_search, api::search::Request);
 probe_fn!(probe_search_code, api::search_code::Request);
 probe_fn!(probe_sources, sources::Request);
 probe_fn!(probe_find, api::find::Request);
 probe_fn!(probe_hooks, comemory::domains::code::hooks::Request);
 probe_fn!(probe_repos, comemory::domains::code::repos::Request);
-probe_fn!(probe_show, api::show::Request);
+probe_fn!(probe_show, memories::show::Request);
 probe_fn!(probe_stats, api::stats::Request);
 probe_fn!(probe_tune, api::tune::Request);
 probe_fn!(probe_unindex, unindex::Request);
