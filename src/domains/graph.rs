@@ -11,7 +11,8 @@
 //! command core both delivery adapters call; [`view`][view] backs `GET /graph`
 //! alone (the CLI calls [`query`][query] directly — see its module doc), and
 //! [`graph_nodes`][graph_nodes] / [`graph_recompute`][graph_recompute] are
-//! console-only. Every SQL string stays in
+//! console-only, and `search_edit` is `pub(crate)` — reachable from inside the
+//! crate only, so it carries no intra-doc link here. Every SQL string stays in
 //! [`crate::store::edges`] and its `code_graph_*` / `edge_fts` siblings.
 //!
 //! A capability's `//!` doc merges with the `///` on its `pub mod` line in

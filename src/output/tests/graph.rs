@@ -123,7 +123,7 @@ fn dot_escapes_newlines_in_labels() {
     assert!(dot.contains("src/a\\nb.rs"), "newline escaped to \\n");
 }
 
-/// Kill mutant `src/output/graph.rs:55`: `> 0.0` → `>= 0.0`.
+/// Kill mutant `src/output/graph.rs:56`: `> 0.0` → `>= 0.0`.
 ///
 /// When every node has `rank == 0.0`, `max_rank` is `0.0`. The original
 /// guard (`> 0.0` is false) takes the else branch and assigns `scale = 0.0`,

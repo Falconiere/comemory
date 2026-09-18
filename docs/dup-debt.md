@@ -163,7 +163,7 @@ ratchet re-scans fresh each run, it does not pin line numbers).
 
 | Pair A | Pair B | Similarity | Why it's debt, not urgent |
 | --- | --- | --- | --- |
-| `src/output/graph.rs:31-35` function `write_dot` | `src/output/graph.rs:38-42` function `write_html` | 89.98% | parallel DOT vs. HTML emitters over the same graph walk |
+| `src/output/graph.rs:33-37` function `write_dot` | `src/output/graph.rs:40-44` function `write_html` | 89.98% | parallel DOT vs. HTML emitters over the same graph walk |
 
 ### `src/retrieval/`
 
