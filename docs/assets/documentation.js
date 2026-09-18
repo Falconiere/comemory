@@ -218,7 +218,7 @@
   }
 
   function renderDoc(path, markdown) {
-    body.innerHTML = window.marked.parse(markdown);
+    body.innerHTML = window.DOMPurify.sanitize(window.marked.parse(markdown));
     Array.prototype.forEach.call(body.querySelectorAll('a[href]'), function (anchor) {
       rewriteLink(anchor, path);
     });
@@ -275,7 +275,7 @@
      linked list item under it an entry. Change the index, change the nav. */
   function buildNav(markdown) {
     var scratch = document.createElement('div');
-    scratch.innerHTML = window.marked.parse(markdown);
+    scratch.innerHTML = window.DOMPurify.sanitize(window.marked.parse(markdown));
     nav.innerHTML = '';
     var group = null;
     var list = null;
@@ -323,14 +323,14 @@
 
   function start() {
     foldSidebar();
-    if (!window.marked) {
+    if (!window.marked || !window.DOMPurify) {
       showError('the markdown renderer', 'script blocked');
       return;
     }
     /* Raw HTML in a page is shown as text, never parsed: the docs are plain
        markdown (every angle bracket in them sits inside a code span), so the
-       only thing passthrough could add is a script. Escaping needs no
-       sanitizer library and keeps the reader a markdown viewer. */
+       only thing passthrough could add is a script. DOMPurify then filters
+       what marked itself generated before it reaches the page. */
     window.marked.use({
       gfm: true,
       breaks: false,

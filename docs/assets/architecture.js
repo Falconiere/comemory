@@ -11,8 +11,18 @@
 
   var GITHUB = 'https://github.com/Falconiere/comemory/blob/main/';
 
-  function src(path) { return '<a href="' + GITHUB + path + '" rel="noopener">' + path + '</a>'; }
-  function doc(path, text) { return '<a href="documentation.html#' + path + '">' + (text || path) + '</a>'; }
+  /* the fact strings below are authored literals; the helpers still build
+     their markup through the DOM so a path or label is always encoded, and
+     every fragment is sanitized again at the one sink in renderFacts */
+  function link(href, text, rel) {
+    var a = document.createElement('a');
+    a.href = href;
+    a.textContent = text;
+    if (rel) a.setAttribute('rel', rel);
+    return a.outerHTML;
+  }
+  function src(path) { return link(GITHUB + path, path, 'noopener'); }
+  function doc(path, text) { return link('documentation.html#' + path, text || path); }
   function list(items) { return '<ul>' + items.map(function (item) { return '<li>' + item + '</li>'; }).join('') + '</ul>'; }
 
   var LAYERS = {
@@ -211,7 +221,7 @@
       var row = el('div');
       row.appendChild(el('dt', null, fact[0]));
       var dd = el('dd');
-      dd.innerHTML = fact[1];
+      dd.innerHTML = window.DOMPurify.sanitize(fact[1]);
       row.appendChild(dd);
       rail.appendChild(row);
     });
