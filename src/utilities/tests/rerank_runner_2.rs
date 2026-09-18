@@ -227,7 +227,7 @@ fn refuses_an_adapter_a_base_only_process_cannot_honour() {
 fn refuses_every_malformed_request_body() {
     let runner = backend_process(&["score", "--scoring", "lexical-overlap"]);
 
-    let cases: [(&str, &str); 8] = [
+    let cases: [(&str, &str); 12] = [
         ("", "empty body"),
         ("not json at all", "unparsable body"),
         (
@@ -254,6 +254,24 @@ fn refuses_every_malformed_request_body() {
             r#"{"protocol_version":1,"request_id":"rr-20260918-1a2b3c4d","model":"lexical-overlap@1","adapter":null,"query":"q","candidates":[{"id":"a","rank":0,"text":"t","weight":1}]}"#,
             "unknown candidate key",
         ),
+        // A missing key must be reported by name, not raised as whatever the
+        // first direct lookup of it would have raised.
+        (
+            r#"{"protocol_version":1,"request_id":"rr-20260918-1a2b3c4d","model":"lexical-overlap@1","query":"q","candidates":[{"id":"a","rank":0,"text":"t"}]}"#,
+            "missing adapter key",
+        ),
+        (
+            r#"{"protocol_version":1,"request_id":"rr-20260918-1a2b3c4d","model":"lexical-overlap@1","adapter":null,"candidates":[{"id":"a","rank":0,"text":"t"}]}"#,
+            "missing query key",
+        ),
+        (
+            r#"{"protocol_version":1,"request_id":"rr-20260918-1a2b3c4d","model":"lexical-overlap@1","adapter":null,"query":"q"}"#,
+            "missing candidates key",
+        ),
+        (
+            r#"{"protocol_version":1,"request_id":"rr-20260918-1a2b3c4d","model":"lexical-overlap@1","adapter":null,"query":"q","candidates":[{"id":"a","text":"t"}]}"#,
+            "missing candidate rank",
+        ),
     ];
 
     for (body, what) in cases {
@@ -266,10 +284,20 @@ fn refuses_every_malformed_request_body() {
             "{what} must be refused with EX_DATAERR"
         );
         assert!(output.stdout.is_empty(), "{what} must write no response");
+        let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(
-            !output.stderr.is_empty(),
+            !stderr.is_empty(),
             "{what} must leave a diagnostic on stderr"
         );
+        if what.starts_with("missing ") {
+            // The point of the assertion: a key that is absent is reported by
+            // name from the one place that checks the whole key set, never as
+            // whatever a later direct lookup of it happened to raise.
+            assert!(
+                stderr.contains("is missing key(s)"),
+                "{what} must be reported as a missing key, found {stderr:?}"
+            );
+        }
     }
 }
 
