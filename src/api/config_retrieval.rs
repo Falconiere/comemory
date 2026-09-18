@@ -2,7 +2,8 @@
 //! ranking knobs with their ranges, and the validated partial update
 //! (console-api spec §7).
 //!
-//! The update is validate-then-write, never write-then-validate: [`update`]
+//! The update is validate-then-write, never write-then-validate:
+//! [`update`](config_retrieval::update)
 //! applies the supplied knobs to a CLONE of the live config, runs the same
 //! `Config::validate` the file and env layers run, and only then patches
 //! `config.toml` through the shared `config::patch::patch_config_file`

@@ -32,7 +32,7 @@ pub struct Args {
     pub id: String,
 }
 
-/// Show one memory in full. `--json` emits the [`domains::memories::show::Response`]
+/// Show one memory in full. `--json` emits the [`crate::domains::memories::show::Response`]
 /// verbatim; TTY mode renders a readable detail view. An unknown or
 /// soft-deleted id surfaces `Error::NotFound` before anything is printed.
 pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<()> {
