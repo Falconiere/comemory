@@ -12,10 +12,18 @@
 //! `stats.db`. The stats tables (`retrieval_log`, `repo_marker`,
 //! `index_failures`) are applied by migration `0003_stats_tables`;
 //! `feedback` is already present from `0002_v2_tables`.
+//!
+//! The handle owns no table of its own — #173 moved the `index_failures`
+//! bookkeeping it used to delegate into `store::index_failures`, where its
+//! own tests live. What remains to assert here is the property every
+//! learning writer depends on: `conn()` hands out the one migrated
+//! connection the composable writers reuse, so a reward minted through it
+//! lands in the same database, without a second `StatsDb` being opened.
 
 use comemory::config::paths::Paths;
+use comemory::stats::feedback::record_implicit_used;
 use comemory::stats::sqlite::StatsDb;
-use time::OffsetDateTime;
+use comemory::utilities::telemetry::{COACTIVATION_QUERY_ID, PROV_AUTO_COACTIVATION};
 
 use crate::test_common as common;
 
@@ -66,26 +74,33 @@ fn open_creates_stats_tables_in_comemory_db() {
 }
 
 #[test]
-fn record_index_failure_increments_count_and_returns_latest() {
+fn conn_is_the_one_connection_the_composable_writers_reuse() {
     let sb = common::runner::Sandbox::new();
     let paths = Paths::new(sb.data_dir());
     let db = StatsDb::open(paths.stats_db()).expect("open");
-    assert_eq!(db.index_failure_count().expect("count"), 0);
-    assert!(db.last_index_failure().expect("last").is_none());
 
-    let t1 = OffsetDateTime::from_unix_timestamp(1_700_000_000).expect("t1");
-    let t2 = OffsetDateTime::from_unix_timestamp(1_700_000_300).expect("t2");
-    db.record_index_failure(t1, "lance: read-only fs")
-        .expect("record 1");
-    db.record_index_failure(t2, "embedder: onnx load failed")
-        .expect("record 2");
+    // `record_implicit_used` takes a bare `&Connection` so callers can mint
+    // the reward inside a transaction they already own; borrowing it from
+    // the handle must reach the same `comemory.db` the handle opened.
+    record_implicit_used(
+        db.conn(),
+        "aaaaaaa1",
+        "2026-09-18T00:00:00.000000000Z",
+        PROV_AUTO_COACTIVATION,
+        COACTIVATION_QUERY_ID,
+    )
+    .expect("mint one implicit used");
 
-    assert_eq!(db.index_failure_count().expect("count"), 2);
-    let last = db.last_index_failure().expect("last").expect("row exists");
-    assert_eq!(last.1, "embedder: onnx load failed");
-    assert!(
-        last.0.starts_with("2023-"),
-        "ts should be ISO 8601 in UTC, got {:?}",
-        last.0
-    );
+    let (events, used): (i64, i64) = db
+        .conn()
+        .query_row(
+            "SELECT (SELECT count(*) FROM feedback_events \
+              WHERE memory_id='aaaaaaa1' AND provenance=?1), \
+             (SELECT used_count FROM feedback WHERE memory_id='aaaaaaa1')",
+            [PROV_AUTO_COACTIVATION],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .expect("read back through the same connection");
+    assert_eq!(events, 1, "one auto-coactivation event row");
+    assert_eq!(used, 1, "counter upserted alongside it");
 }

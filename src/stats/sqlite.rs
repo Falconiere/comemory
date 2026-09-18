@@ -5,17 +5,13 @@
 //! `StatsDb` is the shared connection handle the rest of `stats/` opens
 //! through — [`crate::stats::feedback::record_with_provenance`] and
 //! [`crate::stats::code_feedback::record_code_with_provenance`] borrow
-//! [`Self::conn_mut`] for their own transactions. Its own methods here own
-//! only `index_failures` (swallowed indexing errors); the SQL lives in
-//! [`crate::store::index_failures`].
-
-use time::OffsetDateTime;
-use time::format_description::well_known::Iso8601;
+//! [`Self::conn_mut`] for their own transactions. It owns no table of its
+//! own: the `index_failures` bookkeeping it used to delegate now lives
+//! wholly in [`crate::store::index_failures`] (#173).
 
 use crate::prelude::*;
 use crate::store::Connection;
 use crate::store::connection;
-use crate::store::index_failures;
 
 /// Owns a SQLite connection to `comemory.db` for stats operations.
 pub struct StatsDb {
@@ -43,39 +39,6 @@ impl StatsDb {
     /// Borrow the underlying connection mutably (for transactions).
     pub fn conn_mut(&mut self) -> &mut Connection {
         &mut self.conn
-    }
-
-    /// Append a row to `index_failures` recording a swallowed indexing
-    /// failure. Callers feed this from `comemory save` when the dense embed +
-    /// FTS upsert is skipped via `tracing::warn!`-and-continue, so operators
-    /// running on a read-only mount (or with a broken ONNX cache) have a
-    /// durable signal instead of a vanished log line.
-    ///
-    /// `when` is the wall-clock timestamp of the failure (ISO 8601 in UTC);
-    /// the caller passes it explicitly so tests can pin a deterministic value.
-    /// `error` is the stringified `Display` of the original error.
-    pub fn record_index_failure(&self, when: OffsetDateTime, error: &str) -> Result<()> {
-        let ts = when
-            .to_offset(time::UtcOffset::UTC)
-            .format(&Iso8601::DEFAULT)
-            .map_err(|e| Error::Other(e.to_string()))?;
-        index_failures::insert(&self.conn, &ts, error)
-    }
-
-    /// Number of rows in `index_failures`. Surfaced by `comemory doctor` and
-    /// tests; saturates at `usize::MAX` because the underlying count is
-    /// signed in SQLite and we clamp to 0 on negative results.
-    pub fn index_failure_count(&self) -> Result<usize> {
-        let n = index_failures::count(&self.conn)?;
-        Ok(n.max(0) as usize)
-    }
-
-    /// Most recent `(ts, error)` row in `index_failures`, or `None` when the
-    /// table is empty. The timestamp is the ISO 8601 string recorded by
-    /// [`Self::record_index_failure`]; the error is the original `Display`
-    /// payload.
-    pub fn last_index_failure(&self) -> Result<Option<(String, String)>> {
-        index_failures::latest(&self.conn)
     }
 }
 
