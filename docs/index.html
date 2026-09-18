@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en" data-signal="blueprint">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>comemory — developer memory and code search in one binary</title>
+    <meta
+      name="description"
+      content="comemory keeps the why behind a codebase as markdown, extracts the what from the repo, and returns both through one deterministic ranking. One Rust binary, one SQLite file, no daemon, no LLM in the loop."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="assets/signal.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <nav class="site-nav" aria-label="Site">
+      <a class="brand" href="index.html" aria-current="page">comemory</a>
+      <ul>
+        <li><a href="architecture.html">Architecture</a></li>
+        <li><a href="documentation.html">Documentation</a></li>
+        <li><a href="https://github.com/Falconiere/comemory/releases">Releases</a></li>
+        <li><a href="https://github.com/Falconiere/comemory">GitHub</a></li>
+      </ul>
+    </nav>
+
+    <main id="main">
+      <section class="band" aria-labelledby="hero-title">
+        <div class="wrap">
+          <p class="marker">— comemory · developer memory for coding agents</p>
+          <h1 id="hero-title" class="display-lg">
+            Memory for agents,
+            <span class="line-2">kept beside the code.</span>
+          </h1>
+          <p class="lede">
+            comemory saves the why behind a codebase as markdown, extracts the
+            what from the repo, and returns both through one deterministic
+            ranking. One Rust binary, one SQLite file, no daemon, no LLM in
+            the loop.
+          </p>
+          <p class="body">
+            Every codebase carries two kinds of knowledge: what the system
+            does, readable from source, and why it does it that way, which
+            evaporates into closed pull requests and chat threads. comemory
+            fuses both into one local property graph. Markdown stays the
+            source of truth; <code>comemory.db</code> is the rebuildable index.
+          </p>
+          <div class="cta-row">
+            <a class="btn btn-primary" href="architecture.html">Read the architecture</a>
+            <a class="btn btn-ghost" href="documentation.html">Browse the docs</a>
+            <a class="btn btn-ghost" href="https://github.com/Falconiere/comemory">Source on GitHub</a>
+          </div>
+        </div>
+      </section>
+      <hr class="band-seam" aria-hidden="true" />
+
+      <section class="band band-light" aria-label="By the numbers">
+        <div class="wrap wrap-tight">
+          <ul class="stat-band">
+            <li>
+              <span class="stat">40</span>
+              <span class="label">subcommands</span>
+              <p class="meta">every one with <code>--json</code></p>
+            </li>
+            <li>
+              <span class="stat">10</span>
+              <span class="label">capabilities</span>
+              <p class="meta">one folder each under <code>src/domains/</code></p>
+            </li>
+            <li>
+              <span class="stat">32</span>
+              <span class="label">declared tables</span>
+              <p class="meta">one SQLite file · 19 migrations</p>
+            </li>
+            <li>
+              <span class="stat">0</span>
+              <span class="label">LLM calls</span>
+              <p class="meta">ranking is deterministic end to end</p>
+            </li>
+          </ul>
+        </div>
+      </section>
+      <hr class="band-seam" aria-hidden="true" />
+
+      <section class="band" id="doors" aria-labelledby="doors-title">
+        <div class="wrap">
+          <p class="marker">— §01 · three doors</p>
+          <h2 id="doors-title" class="display">
+            The design, the docs,
+            <span class="line-2">and the source.</span>
+          </h2>
+          <div class="doors">
+            <a class="door" href="architecture.html">
+              <span class="tag">interactive</span>
+              <h3 class="subhead">Architecture</h3>
+              <p>
+                Layers, the ten capabilities and their dependency table, the
+                retrieval pipeline, and every table in the database, as cards
+                you can walk.
+              </p>
+              <span class="go">Explore →</span>
+            </a>
+            <a class="door" href="documentation.html">
+              <span class="tag">the guides</span>
+              <h3 class="subhead">Documentation</h3>
+              <p>
+                Getting started, the how-to guides, the CLI and HTTP
+                reference, and the design notes, rendered from the same
+                markdown the repository ships.
+              </p>
+              <span class="go">Read →</span>
+            </a>
+            <a class="door" href="https://github.com/Falconiere/comemory">
+              <span class="tag">mit licensed</span>
+              <h3 class="subhead">Source</h3>
+              <p>
+                The Rust crate, the release pipeline, the guardrails that hold
+                the tree to its shape, and the issues that shaped it.
+              </p>
+              <span class="go">Open ↗</span>
+            </a>
+          </div>
+        </div>
+      </section>
+      <hr class="band-seam" aria-hidden="true" />
+
+      <section class="band band-light" id="features" aria-labelledby="features-title">
+        <div class="wrap">
+          <p class="marker">— §02 · what it does</p>
+          <h2 id="features-title" class="display">
+            Eight things,
+            <span class="line-2">each with a number attached.</span>
+          </h2>
+          <ol class="index-list">
+            <li>
+              <a class="index-row" href="documentation.html#getting-started.md">
+                <span class="num">01</span>
+                <span><span class="title">Memory as markdown</span><span class="sub">Decisions, bugs, conventions and discoveries as plain files with YAML frontmatter at <code>~/.comemory/memories/</code>. Git-friendly and hand-editable.</span></span>
+                <span class="spec">id = sha256(body)[:8]</span>
+                <span class="arrow" aria-hidden="true">→</span>
+              </a>
+            </li>
+            <li>
+              <a class="index-row" href="architecture.html#pipeline">
+                <span class="num">02</span>
+                <span><span class="title">Hybrid retrieval</span><span class="sub">FTS5 BM25 plus optional bring-your-own-vector ANN, fused by reciprocal rank fusion, with a four-tier lexical fallback ladder that ends in mined query expansions.</span></span>
+                <span class="spec">rrf k = 60 · 4 tiers</span>
+                <span class="arrow" aria-hidden="true">→</span>
+              </a>
+            </li>
+            <li>
+              <a class="index-row" href="architecture.html#storage">
+                <span class="num">03</span>
+                <span><span class="title">Identifier-aware search</span><span class="sub">A custom FTS5 tokenizer splits camelCase and snake_case, so <code>parseFrontmatter</code> matches <code>parse_frontmatter</code> matches frontmatter parsing.</span></span>
+                <span class="spec">baked into the DDL</span>
+                <span class="arrow" aria-hidden="true">→</span>
+              </a>
+            </li>
+            <li>
+              <a class="index-row" href="architecture.html#graph">
+                <span class="num">04</span>
+                <span><span class="title">Two-layer code graph</span><span class="sub"><code>index-code</code> mines co-change edges from git history and import edges per language, then materializes a weighted PageRank onto every symbol.</span></span>
+                <span class="spec">5 languages · 2 mined kinds</span>
+                <span class="arrow" aria-hidden="true">→</span>
+              </a>
+            </li>
+            <li>
+              <a class="index-row" href="documentation.html#guides/linking-code-to-memories.md">
+                <span class="num">05</span>
+                <span><span class="title">Versioned code references</span><span class="sub"><code>--ref-file</code> and <code>--ref-symbol</code> pin a memory to code at a git anchor; <code>context</code> reports each link as fresh, stale or ghost.</span></span>
+                <span class="spec">blob + commit + branch</span>
+                <span class="arrow" aria-hidden="true">→</span>
+              </a>
+            </li>
+            <li>
+              <a class="index-row" href="documentation.html#guides/ranking-and-eval.md">
+                <span class="num">06</span>
+                <span><span class="title">A learning loop</span><span class="sub">Record which hits helped, score recall@k and MRR, mine reformulations, then grid-search or Thompson-sample the ranking knobs. Offline and deterministic.</span></span>
+                <span class="spec">eval → mine → tune</span>
+                <span class="arrow" aria-hidden="true">→</span>
+              </a>
+            </li>
+            <li>
+              <a class="index-row" href="documentation.html#guides/http-api.md">
+                <span class="num">07</span>
+                <span><span class="title">A local HTTP API</span><span class="sub"><code>comemory serve</code> exposes every command core on a loopback-only, token-gated <code>/api/v1</code> surface, with jobs that stream progress and logs.</span></span>
+                <span class="spec">256-bit token · loopback</span>
+                <span class="arrow" aria-hidden="true">→</span>
+              </a>
+            </li>
+            <li>
+              <a class="index-row" href="documentation.html#cli-reference.md:comemory-ast">
+                <span class="num">08</span>
+                <span><span class="title">AST patterns</span><span class="sub"><code>comemory ast</code> runs ast-grep structural patterns over Rust, TypeScript, JavaScript, Python and Go from the same binary.</span></span>
+                <span class="spec">ast-grep-core 0.45</span>
+                <span class="arrow" aria-hidden="true">→</span>
+              </a>
+            </li>
+          </ol>
+        </div>
+      </section>
+      <hr class="band-seam" aria-hidden="true" />
+
+      <section class="band" id="install" aria-labelledby="install-title">
+        <div class="wrap">
+          <p class="marker">— §03 · install</p>
+          <h2 id="install-title" class="display">
+            One line to install,
+            <span class="line-2">two commands to trust it.</span>
+          </h2>
+          <p class="body">
+            Prebuilt binaries ship for macOS on Apple silicon and for Linux
+            with glibc 2.35 or newer. The installer verifies the archive
+            against the SHA-256 sidecar every release carries and refuses to
+            continue without a checksum tool. Anything else builds from
+            source with <code>cargo install --path .</code>.
+          </p>
+<pre class="snippet"><span class="c"># the installer is attached to every release</span>
+curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL \
+  https://github.com/Falconiere/comemory/releases/latest/download/install.sh | sh
+
+<span class="c"># or Homebrew, on macOS and Linuxbrew</span>
+brew install Falconiere/tap/comemory
+
+<span class="c"># detect what this machine and repo still need, then apply the parts you pick</span>
+<b>comemory setup</b>
+
+<span class="c"># runtime health: checks[] + scalars, also as --json</span>
+<b>comemory doctor</b></pre>
+          <dl class="fact-rail">
+            <div><dt>source of truth</dt><dd><code>~/.comemory/memories/{id}-{slug}.md</code> <span class="muted">· override with <code>COMEMORY_DATA_DIR</code></span></dd></div>
+            <div><dt>index</dt><dd><code>~/.comemory/comemory.db</code> <span class="muted">· FTS5, sqlite-vec, edges; rebuildable from markdown at any time</span></dd></div>
+            <div><dt>vectors</dt><dd>Bring your own. <span class="muted">Pass them with <code>--vector</code> or <code>--vector-stdin</code>; lexical search works with none.</span></dd></div>
+            <div><dt>output</dt><dd>TTY or <code>--json</code> on every command. <span class="muted">Exit codes follow <code>sysexits.h</code>.</span></dd></div>
+            <div><dt>agents</dt><dd><code>comemory setup</code> installs the Claude Code or Codex skill bundle and the git reindex hooks.</dd></div>
+          </dl>
+          <div class="cta-row">
+            <a class="btn btn-ghost" href="documentation.html#getting-started.md">Getting started</a>
+            <a class="btn btn-ghost" href="documentation.html#cli-reference.md">CLI reference</a>
+          </div>
+        </div>
+      </section>
+      <hr class="band-seam" aria-hidden="true" />
+
+      <section class="band band-light closer" aria-labelledby="closer-title">
+        <div class="wrap">
+          <h2 id="closer-title" class="display">
+            Read the design,
+            <span class="line-2">then run it.</span>
+          </h2>
+          <div class="cta-row">
+            <a class="btn btn-primary" href="architecture.html">Architecture</a>
+            <a class="btn btn-ghost" href="documentation.html">Documentation</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p class="meta">comemory · MIT · <a href="https://github.com/Falconiere/comemory">source</a> · <a href="https://github.com/Falconiere/comemory/releases">releases</a></p>
+      <p class="meta">set in the <a href="https://github.com/Falconiere/toolu-conventions/blob/main/DESIGN.md">Signal</a> design language from toolu-conventions</p>
+    </footer>
+  </body>
+</html>
