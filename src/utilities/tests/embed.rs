@@ -90,10 +90,10 @@ fn command_that_answers_then_refuses_to_exit_times_out() {
         Duration::from_millis(200),
     )
     .expect_err("a child that never exits must not succeed inside the budget");
-    assert!(
-        format!("{err}").contains("embed-cmd timed out"),
-        "expected the timeout wording, got: {err}"
-    );
+    // Full-string equality, not a substring: the wording is a stated contract
+    // and a looser match would pass for a different failure that happens to
+    // share the prefix.
+    assert_eq!(format!("{err}"), "config: embed-cmd timed out");
     assert!(
         started.elapsed() < Duration::from_secs(3),
         "the budget must cover the exit: {:?}",

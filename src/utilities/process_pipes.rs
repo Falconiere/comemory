@@ -139,8 +139,12 @@ impl Pipes {
     }
 
     /// Poll the child and the three channels until the run is fully accounted
-    /// for, an unrecoverable condition appears, or `deadline` passes.
-    pub(crate) fn drain(&self, child: &mut Child, deadline: Instant) -> Drained {
+    /// for, an unrecoverable condition appears, or `budget` elapses.
+    ///
+    /// The budget is compared against `started.elapsed()` rather than against a
+    /// precomputed `Instant`, so no arithmetic here can overflow however large
+    /// a caller's budget is.
+    pub(crate) fn drain(&self, child: &mut Child, started: Instant, budget: Duration) -> Drained {
         let mut drained = Drained::default();
         loop {
             self.poll_once(child, &mut drained);
@@ -154,7 +158,7 @@ impl Pipes {
             {
                 return drained;
             }
-            if Instant::now() >= deadline {
+            if started.elapsed() >= budget {
                 drained.timed_out = true;
                 return drained;
             }

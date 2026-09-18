@@ -20,14 +20,6 @@ use crate::utilities::process_pipes::{Drained, Pipes, ReadDone, Streams};
 /// Default end-to-end budget for one bounded run.
 pub const DEFAULT_PROCESS_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Hours in [`FALLBACK_DEADLINE`].
-const FALLBACK_HOURS: u64 = 24;
-
-/// The deadline used when the configured budget is so large that adding it to
-/// the current instant would overflow. There is no `Instant::MAX` to clamp to,
-/// and a day is past anything a caller means by "effectively unbounded".
-const FALLBACK_DEADLINE: Duration = Duration::from_secs(FALLBACK_HOURS * 60 * 60);
-
 /// Byte bounds one run is held to.
 #[derive(Debug, Clone, Copy)]
 pub struct ProcessLimits {
@@ -170,16 +162,12 @@ impl ProcessRunner {
                 max: self.limits.max_input_bytes,
             }));
         }
+        // The budget is carried as a `Duration` and compared against
+        // `started.elapsed()`, never added to an `Instant`. `Instant + Duration`
+        // panics on overflow and the budget is a public input, so a caller
+        // passing `Duration::MAX` would abort the process; there is no addition
+        // left to overflow, and no fallback that could itself overflow.
         let started = Instant::now();
-        // `Instant + Duration` panics on overflow, and the budget is a public
-        // input: a caller passing `Duration::MAX` must get a long deadline,
-        // not an abort. Every step is checked, including the fallback — on a
-        // clock already at its ceiling the deadline collapses to `started`,
-        // which times the run out at once rather than panicking.
-        let deadline = started
-            .checked_add(self.timeout)
-            .or_else(|| started.checked_add(FALLBACK_DEADLINE))
-            .unwrap_or(started);
         let mut child = self.spawn()?;
         let pipes = Pipes::start(
             &mut child,
@@ -194,7 +182,7 @@ impl ProcessRunner {
                 return Err(bare(io_failed("pipe setup", message)));
             }
         };
-        let drained = pipes.drain(&mut child, deadline);
+        let drained = pipes.drain(&mut child, started, self.timeout);
         terminate(&mut child);
         let streams = pipes.retained();
         finish(
