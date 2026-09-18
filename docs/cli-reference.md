@@ -37,6 +37,7 @@ Commands:
   distill        Extract explicit `comemory save` claims from a transcript and propose them as platform candidate memories (CLI-only)
   feedback       Record per-memory feedback (used vs irrelevant)
   eval           Score retrieval quality against a golden set (recall@k, MRR)
+  benchmark      Score a reviewed benchmark set over memory, code and document retrieval, and emit a replayable candidate-observation artifact
   mine           Mine reformulation pairs from the query log into term-expansion mappings (report only; `--apply` rebuilds `query_expansions`)
   tune           Grid-search blend weights against the golden set (report only; `--apply` writes the winner into config.toml)
   bandit         Thompson-sample blend knobs against the golden set (report only; `--apply` writes when the sample beats baseline)

@@ -68,10 +68,12 @@ fn a_memory_only_run_preserves_the_memory_legs_own_order() {
     let unified_run = unified::find(
         &cfg,
         &conn,
-        "frontmatter",
-        None,
-        filters(&scope, Domains::of(&[Domain::Memory])),
-        unified::DomainFilters::default(),
+        unified::UnifiedQuery {
+            text: "frontmatter",
+            vector: None,
+            filters: filters(&scope, Domains::of(&[Domain::Memory])),
+            domain_filters: unified::DomainFilters::default(),
+        },
         PageWindow::top_k(&cfg),
     )
     .unwrap();
@@ -134,10 +136,12 @@ fn rank_in_domain_is_one_based_and_dense_within_a_domain() {
     let run = unified::find(
         &cfg,
         &conn,
-        "frontmatter",
-        None,
-        filters(&scope, Domains::all()),
-        unified::DomainFilters::default(),
+        unified::UnifiedQuery {
+            text: "frontmatter",
+            vector: None,
+            filters: filters(&scope, Domains::all()),
+            domain_filters: unified::DomainFilters::default(),
+        },
         PageWindow::top_k(&cfg),
     )
     .unwrap();
@@ -168,10 +172,12 @@ fn an_empty_corpus_returns_an_empty_ranking_rather_than_an_error() {
     let run = unified::find(
         &cfg,
         &conn,
-        "nothing here",
-        None,
-        filters(&scope, Domains::all()),
-        unified::DomainFilters::default(),
+        unified::UnifiedQuery {
+            text: "nothing here",
+            vector: None,
+            filters: filters(&scope, Domains::all()),
+            domain_filters: unified::DomainFilters::default(),
+        },
         PageWindow::top_k(&cfg),
     )
     .unwrap();
@@ -191,10 +197,12 @@ fn excluding_a_domain_skips_its_leg_entirely() {
     let code_only = unified::find(
         &cfg,
         &conn,
-        "frontmatter",
-        None,
-        filters(&scope, Domains::of(&[Domain::Code])),
-        unified::DomainFilters::default(),
+        unified::UnifiedQuery {
+            text: "frontmatter",
+            vector: None,
+            filters: filters(&scope, Domains::of(&[Domain::Code])),
+            domain_filters: unified::DomainFilters::default(),
+        },
         PageWindow::top_k(&cfg),
     )
     .unwrap();

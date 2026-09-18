@@ -255,6 +255,7 @@ Full data model, save flow, retrieval pipeline, and graph mechanics:
 | `comemory delete` | Soft-delete a memory by id (moves to `.trash/`) |
 | `comemory feedback` | Record per-hit feedback against a `query_id` (`--used` / `--used-code` …) |
 | `comemory eval` | Score retrieval quality (recall@k, MRR) against a golden set (`--history` reads past runs) |
+| `comemory benchmark` | Score a reviewed benchmark set over memory, code and document retrieval; reports candidate-pool recall apart from recall@k / MRR / nDCG@k and writes a replayable artifact |
 | `comemory mine` | Distill failed→successful query rewordings into expansions (`--apply`) |
 | `comemory tune` | Grid-search ranking knobs against the golden set (`--apply` writes `config.toml`) |
 | `comemory bandit` | Thompson-sample ranking knobs (`--apply` writes when the sample beats baseline) |
@@ -292,6 +293,73 @@ with flags and worked examples:
 Memory listing uses ordered indexes and trigram candidates for literal substring
 queries of at least three characters, with exact scan behavior for shorter queries.
 Existing databases gain these indexes automatically; see [storage architecture](docs/architecture.md).
+
+## Offline retrieval benchmark
+
+`comemory eval` scores memory-only lexical retrieval against a memory-id golden
+file, and it is unchanged. `comemory benchmark` answers a different question —
+how does ranking do across **memory, code, documents and mixed queries**, and
+would reordering the candidates help?
+
+```bash
+comemory benchmark --set benchmark.yaml --report run.json
+```
+
+A benchmark set is a reviewed, versioned YAML file. It pins its own retrieval
+configuration and its own budgets *before* anything is scored, so a result
+cannot be graded against a threshold invented afterwards:
+
+```yaml
+version: 1
+name: my-mixed-set
+ranking:                 # pinned: decay 0.0 freezes ACT-R activation, so a run
+  rrf_k: 60.0            # reproduces across days. Disabling access tracking
+  decay: 0.0             # alone does NOT freeze decay.
+  mmr_lambda: 0.7
+  bm25_weights: [1.0, 3.0]
+  graph_hops: 2
+  graph_seeds: 8
+defaults: { k: 5, max_text_bytes: 4096 }
+budgets:
+  min_tasks: 8           # fewer judged tasks => every verdict is inconclusive
+  min_ndcg_gain: 0.02
+  max_ndcg_regression: 0.01
+  max_p95_task_ms: 1500
+tasks:
+  - id: mixed-01
+    domain: all          # memory | code | document | all
+    query: activation decay
+    judgments:
+      - relevance: 3     # graded 0..=3; 0 is "reviewed, not relevant"
+        target: { domain: memory, id: 5a9f19bc }
+```
+
+What it reports, and why each piece exists:
+
+- **Candidate-pool recall, separately from recall@k.** A miss retrieval never
+  produced and a miss it ranked below the cut are different failures, and only
+  the second is one a reranker can fix. A judged-relevant result retrieval did
+  not return is reported as a miss, never inserted into the candidates.
+- **Judgment coverage, stated outright.** `judged_in_page`,
+  `unjudged_in_page` and `judged_page_fraction`, so a number computed over a
+  thinly judged page is visible rather than implied.
+- **Per-domain results.** Each corpus's own judgments are scored separately,
+  and each filter narrows only the legs it belongs to — `kind` the memory leg,
+  `lang` the code leg, `--path` globs the document leg. A task that sets a
+  filter for a leg it does not run fails to load.
+- **Arms over one candidate snapshot.** The deterministic baseline plus any
+  number of scorer outputs supplied as JSON (`--scores`, repeatable), compared
+  with paired bootstrap intervals. A verdict is read off the interval, and too
+  few judged tasks is `inconclusive` whatever the point estimate says.
+- **A replayable artifact.** `--report` writes every candidate observation —
+  domain-qualified identity, content version, bounded text and its digest —
+  so an external scorer can be run offline over exactly what retrieval
+  produced, and its scores fed back as an arm.
+
+A run writes no query log row and bumps no access counter: measurement never
+feeds the signals it measures. The full contract, including the reference-string
+encoding and the per-domain identity rules, is in
+[docs/designs/2026-09-18-domain-aware-retrieval-benchmark.md](docs/designs/2026-09-18-domain-aware-retrieval-benchmark.md).
 
 ## Configuration
 
@@ -375,7 +443,9 @@ tier directly:
   subcommand and flag · [docs/configuration.md](docs/configuration.md): every
   environment variable and config knob.
 - **Explanation** — [docs/architecture.md](docs/architecture.md): storage
-  layout, retrieval pipeline, edge graph, save flow.
+  layout, retrieval pipeline, edge graph, save flow ·
+  [designs/2026-09-18-domain-aware-retrieval-benchmark](docs/designs/2026-09-18-domain-aware-retrieval-benchmark.md):
+  the offline benchmark and the candidate observation contract.
 - **[CHANGELOG](CHANGELOG.md)** — what changed, version by version.
 
 ---

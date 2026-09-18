@@ -33,6 +33,7 @@ One line per file, named after its primary item:
 
 | File | Primary item | Purpose |
 | --- | --- | --- |
+| `benchmark.rs` | `Request` | Shared middle of `comemory benchmark` — load a reviewed versioned set, capture every task's candidate pool through the real retrieval legs, score every arm over that one snapshot. CLI-only; writes nothing to the database |
 | `bandit.rs` | `Request` | Shared middle of `comemory bandit` / `POST /api/v1/bandit` — always mutating, always confirm-gated |
 | `code_feedback.rs` | `record_code_with_provenance` | Per-symbol `used`/`irrelevant` counters. Owns the rowid→identity resolution (an unknown id is a loud error; a chunk walks one hop to its parent, because the `name#n` key a chunk-keyed counter would carry is one the scoring join can never match) and the transaction; the SQL is `store::code_feedback` |
 | `console.rs` | `Summary` | Console-only: `GET /api/v1/learning/{summary,evals,golden-set,expansions}`. Was `api::learning`, renamed for the collision with its own capability |

@@ -10,6 +10,8 @@
 
 #[path = "../tests/common/auth_fixture.rs"]
 pub(crate) mod auth_fixture;
+#[path = "../tests/common/benchmark_corpus.rs"]
+pub(crate) mod benchmark_corpus;
 #[path = "../tests/common/cli_eval_support.rs"]
 pub(crate) mod cli_eval_support;
 #[path = "../tests/common/cli_prune_support.rs"]

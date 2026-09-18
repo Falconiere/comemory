@@ -59,7 +59,16 @@ use tempfile::TempDir;
 /// expectation, not against whatever that endpoint's own internal constant
 /// happens to say today.
 const CLI_ONLY: &[&str] = &[
-    "auth", "capture", "distill", "install", "serve", "setup", "sync", "upgrade", "watch",
+    "auth",
+    "benchmark",
+    "capture",
+    "distill",
+    "install",
+    "serve",
+    "setup",
+    "sync",
+    "upgrade",
+    "watch",
 ];
 
 // ---------------------------------------------------------------------

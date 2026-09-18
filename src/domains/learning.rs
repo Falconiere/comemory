@@ -18,6 +18,8 @@
 
 /// `comemory bandit`: Thompson-sample the `[tune]` grid, confirm, apply.
 pub mod bandit;
+/// `comemory benchmark` — the domain-aware offline retrieval benchmark.
+pub mod benchmark;
 /// Per-symbol code feedback counters and the rowid-to-identity rule.
 pub mod code_feedback;
 /// `GET /learning/{summary,evals,golden-set,expansions}`: the console

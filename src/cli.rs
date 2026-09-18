@@ -15,6 +15,8 @@ pub mod auth;
 pub mod auth_render;
 /// `comemory bandit`: Thompson sampling over the tune knobs.
 pub mod bandit;
+/// `comemory benchmark` — the domain-aware offline retrieval benchmark.
+pub mod benchmark;
 /// `comemory capture`: session receipt + consent read (CLI-only).
 pub mod capture;
 /// Completion-script generation shared by the CLI and `GET /api/v1/completions`.
@@ -151,6 +153,9 @@ pub enum Cmd {
     Feedback(feedback::Args),
     /// Score retrieval quality against a golden set (recall@k, MRR).
     Eval(eval::Args),
+    /// Score a reviewed benchmark set over memory, code and document
+    /// retrieval, and emit a replayable candidate-observation artifact.
+    Benchmark(benchmark::Args),
     /// Mine reformulation pairs from the query log into term-expansion
     /// mappings (report only; `--apply` rebuilds `query_expansions`).
     Mine(mine::Args),
@@ -238,6 +243,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::Distill(a) => distill::run(a, cli.json, cli.data_dir).await,
         Cmd::Feedback(a) => feedback::run(a, cli.json, cli.data_dir).await,
         Cmd::Eval(a) => eval::run(a, cli.json, cli.data_dir).await,
+        Cmd::Benchmark(a) => benchmark::run(a, cli.json, cli.data_dir).await,
         Cmd::Mine(a) => mine::run(a, cli.json, cli.data_dir).await,
         Cmd::Tune(a) => tune::run(a, cli.json, cli.data_dir).await,
         Cmd::Bandit(a) => bandit::run(a, cli.json, cli.data_dir).await,

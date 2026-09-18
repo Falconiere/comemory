@@ -30,7 +30,16 @@ use crate::utilities::context::Ctx;
 /// `watch` is also long-lived by construction: it holds a socket open until
 /// interrupted, which is not a request-response shape.
 const CLI_ONLY: &[&str] = &[
-    "auth", "capture", "distill", "install", "serve", "setup", "sync", "upgrade", "watch",
+    "auth",
+    "benchmark",
+    "capture",
+    "distill",
+    "install",
+    "serve",
+    "setup",
+    "sync",
+    "upgrade",
+    "watch",
 ];
 
 /// This resource's route-table entries, appended onto [`super::table`].

@@ -38,6 +38,8 @@ pub mod code_row;
 pub mod code_signals;
 /// Reads and the pushed cursor behind the code-index sync (`domains::sync::code`).
 pub mod code_sync;
+/// Batched `code_symbols` identity, `blob_oid`, line range and snippet read.
+pub mod code_text;
 /// Connection open: PRAGMAs, migrations, `sqlite-vec` auto-extension.
 pub mod connection;
 /// The remaining `comemory doctor` health-check SQL: mirror-parity hashes,

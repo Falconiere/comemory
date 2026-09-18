@@ -110,12 +110,14 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<FindResult> {
     let run = unified::find(
         cfg,
         conn,
-        &req.query,
-        req.vector.as_deref(),
-        filters,
-        unified::DomainFilters {
-            lang: req.lang.as_deref(),
-            path_globs: &req.path,
+        unified::UnifiedQuery {
+            text: &req.query,
+            vector: req.vector.as_deref(),
+            filters,
+            domain_filters: unified::DomainFilters {
+                lang: req.lang.as_deref(),
+                path_globs: &req.path,
+            },
         },
         window,
     )?;
