@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-09-18
+
+### Changed
+
+- retire legacy layers and enforce the final domain structure ([#198](https://github.com/Falconiere/comemory/pull/198))
+
 ## [0.34.0] - 2026-09-18
 
 ### Changed
