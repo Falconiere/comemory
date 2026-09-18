@@ -56,7 +56,7 @@ where
 }
 
 /// Parse one of the boolean env vars, naming the variable when it is not one.
-fn parse_bool_env(name: &str, raw: &str) -> Result<bool> {
+pub(super) fn parse_bool_env(name: &str, raw: &str) -> Result<bool> {
     match raw {
         "true" | "1" | "yes" | "on" => Ok(true),
         "false" | "0" | "no" | "off" => Ok(false),
@@ -116,6 +116,10 @@ impl Config {
         self.apply_rank_env()?;
         self.apply_prune_env()?;
         self.apply_reinforce_env()?;
+        // The `[observations]` reads live beside their own section, in
+        // `config::observations`, rather than as a seventh near-identical
+        // `apply_*_env` method here.
+        self.observations.apply_env()?;
         // The `[tune]` grid lists deliberately have NO env equivalents: a
         // four-list env value ("20,60,100" × 4 vars, or worse, one var with
         // semicolons) is unreadable and easy to misquote. Set them in

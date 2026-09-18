@@ -25,7 +25,9 @@ use time::OffsetDateTime;
 
 use crate::domains::memories::trash::trash_entry_id;
 use crate::prelude::*;
-use crate::store::{Connection, gc_learning, gc_runs, memory_purge, memory_row, random_id};
+use crate::store::{
+    Connection, candidate_observations, gc_learning, gc_runs, memory_purge, memory_row, random_id,
+};
 use crate::utilities::context::Ctx;
 
 /// `comemory gc` / `POST /api/v1/gc` request. No CLI args today.
@@ -43,6 +45,11 @@ pub struct Response {
     pub log_rows: u64,
     /// `feedback_events` rows evicted past the configured retention window.
     pub event_rows: u64,
+    /// Captured candidate observations evicted past the same window
+    /// (`candidate_query_observations` rows; their `candidate_observations`
+    /// children go with them). An observation carrying a reviewed judgment is
+    /// retained however old it is, so this counts only unjudged ones.
+    pub observation_rows: u64,
     /// Summed size, in bytes, of the trashed files this run actually
     /// removed (stat'd before the unlink, never estimated after).
     pub bytes_freed: u64,
@@ -91,23 +98,34 @@ pub fn run(ctx: &mut Ctx<'_>, _req: Request) -> Result<Response> {
     let trash_days = ctx.cfg.prune.trash_retention_days;
     let sweep = sweep_trash(&ctx.paths.trash_dir(), trash_days);
 
-    let (log_rows, event_rows, purge) = if ctx.paths.db_path().exists() {
+    let (counts, observation_rows, purge) = if ctx.paths.db_path().exists() {
         let retention_days = ctx.cfg.prune.learning_retention_days;
         let conn = ctx.conn()?;
         let now = OffsetDateTime::now_utc();
+        // The trash purge runs first, so an observation redacted by it is
+        // still the same row this sweep may then evict.
         let purge = purge_rows(conn, &sweep, trash_days)?;
-        let counts = sweep_learning(conn, retention_days, now)?;
+        // One cutoff for both sweeps: telemetry ages out unconditionally,
+        // while an observation carrying a reviewed judgment is retained
+        // however old it is — the evidence behind human review outlives the
+        // window that evicts raw telemetry.
+        let cutoff = retention_cutoff(retention_days, now)?;
+        let counts = gc_learning::evict_before(conn, &cutoff)?;
+        let (observation_rows, _candidate_rows) =
+            candidate_observations::evict_unjudged_before(conn, &cutoff)?;
         record_run(conn, &sweep, counts, now)?;
-        (counts.0, counts.1, purge)
+        (counts, observation_rows, purge)
     } else {
-        (0, 0, Purge::default())
+        ((0, 0), 0, Purge::default())
     };
+    let (log_rows, event_rows) = counts;
 
     Ok(Response {
         removed: sweep.removed,
         log_rows,
         event_rows,
         bytes_freed: sweep.bytes_freed,
+        observation_rows,
         purged_rows: purge.rows,
         derived_stale: purge.derived_stale,
     })
@@ -216,25 +234,17 @@ fn record_run(
         sweep.bytes_freed,
     )
 }
-
-/// Evict learning telemetry older than the retention window. Counters in
-/// `feedback` are permanent; only raw event rows age out.
+/// The retention cutoff both sweeps compare against, rendered in the
+/// fixed-width ISO-8601 UTC shape every `at` column is written in.
 ///
-/// Both `retrieval_log.at` and `feedback_events.at` are written via
-/// [`memory_row::iso_format`] (`Iso8601::DEFAULT`), which renders a
-/// fixed-width `YYYY-MM-DDTHH:MM:SS.nnnnnnnnnZ` string — always nine
-/// fractional digits, verified empirically (whole-second values render as
-/// `.000000000Z`, see the shape assertion in `tests/cli/gc.rs`). On
-/// identical-width ISO-8601 UTC strings, lexicographic `<` is exactly
-/// chronological, so a plain string comparison against the rendered cutoff
-/// is correct without any `substr` truncation.
-fn sweep_learning(
-    conn: &Connection,
-    retention_days: u32,
-    now: OffsetDateTime,
-) -> Result<(u64, u64)> {
-    let cutoff = memory_row::iso_format(now - time::Duration::days(i64::from(retention_days)))?;
-    gc_learning::evict_before(conn, &cutoff)
+/// `memory_row::iso_format` renders ISO-8601 with nine fractional digits,
+/// verified empirically (whole-second values render as `.000000000Z`, see the
+/// shape assertion in `tests/cli/gc.rs`). On identical-width ISO-8601 UTC
+/// strings lexicographic `<` is exactly chronological, so a plain string
+/// comparison against the rendered cutoff is correct without any `substr`
+/// truncation.
+fn retention_cutoff(retention_days: u32, now: OffsetDateTime) -> Result<String> {
+    memory_row::iso_format(now - time::Duration::days(i64::from(retention_days)))
 }
 
 #[cfg(test)]

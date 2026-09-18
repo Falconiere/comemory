@@ -24,7 +24,7 @@ applies a hand-written one.
 ## Which tables are declared
 
 All of them. `store::schema::DECLARED_TABLES` is the authoritative list —
-31 tables as of v0.29 on toolu-orm 0.6.0, one struct per table across
+35 tables as of v20 on toolu-orm 0.7.0, one struct per table across
 `src/store/schema_{core,memory,code,documents,graph,learning,history,sync}.rs`.
 The six gaps filed against toolu-orm while adopting it
 ([#64](https://github.com/Falconiere/toolu-orm/issues/64) … [#70](https://github.com/Falconiere/toolu-orm/issues/70))
@@ -71,7 +71,12 @@ file, `just migration-adopt` so the snapshot describes it — and let
    `class`, `post`, `markers`), bump `CURRENT_VERSION` in
    `src/store/migrate.rs`, and add the row to `migrations/README.md`.
 
-3. **Prove it** — these fail until everything agrees:
+3. **Repoint the drift test** — `src/store/tests/schema_drift.rs` copies the
+   NEWEST shipped snapshot by name; update both occurrences of the filename to
+   the snapshot `just migration` just wrote, or the test keeps diffing the
+   registry against the previous one.
+
+4. **Prove it** — these fail until everything agrees:
 
    ```bash
    cargo nextest run --all-features -E 'test(migration_integrity) or test(schema_fidelity) or test(schema_drift) or test(upgrade_matrix)'

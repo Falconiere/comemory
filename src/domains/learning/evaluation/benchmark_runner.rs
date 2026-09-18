@@ -10,11 +10,13 @@ use std::time::Instant;
 
 use crate::config::Config;
 use crate::domains::learning::evaluation::benchmark_metrics::MatchedJudgment;
-use crate::domains::learning::evaluation::benchmark_observe::{effective_filters, observe};
+use crate::domains::learning::evaluation::benchmark_observe::{
+    FilterInputs, effective_filters, observe,
+};
 use crate::domains::learning::evaluation::benchmark_set::{BenchmarkSet, BenchmarkTask};
 use crate::domains::learning::evaluation::candidate_facts;
 use crate::domains::learning::evaluation::candidate_observation::{
-    CandidateObservation, OBSERVATION_VERSION, QueryObservation, RetrievalVersion,
+    CandidateObservation, OBSERVATION_VERSION, QueryObservation, RetrievalVersion, VectorScenario,
 };
 use crate::domains::learning::evaluation::judgment::{MatchOutcome, TargetKey};
 use crate::domains::retrieval::scope::{self, Filters};
@@ -100,7 +102,11 @@ pub fn capture(
     // fails every latency budget rather than passing one.
     let retrieval_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
 
-    let (candidates, text_unavailable) = observe(&pool, &facts, shared.k);
+    let page = PageWindow {
+        offset: 0,
+        limit: shared.k,
+    };
+    let (candidates, text_unavailable) = observe(&pool, &facts, page);
     let page_matches_production = page_matches(cfg, conn, query, shared.k, &pool)?;
     let judged = match_judgments(task, &candidates)?;
     Ok(TaskCapture {
@@ -109,7 +115,7 @@ pub fn capture(
             observation_version: OBSERVATION_VERSION,
             query_id: None,
             query: task.query.clone(),
-            filters: effective_filters(task, set, &time_scope),
+            filters: effective_filters(task_filters(task), &time_scope, task_vector(set, task)),
             retrieval: shared.version.clone(),
             reference_time: shared.reference_time.clone(),
             decay_frozen: shared.version.knobs.decay_frozen(),
@@ -125,6 +131,29 @@ pub fn capture(
         text_unavailable,
         retrieval_ms,
     })
+}
+
+/// The narrowing one benchmark task applies, in the shape
+/// [`effective_filters`] records. The `find` request side of the same mapping
+/// lives in `learning::observation_capture`.
+fn task_filters(task: &BenchmarkTask) -> FilterInputs<'_> {
+    FilterInputs {
+        domains: task.domain.mask(),
+        repo: task.filters.repo.as_deref(),
+        kind: task.filters.kind.as_deref(),
+        lang: task.filters.lang.as_deref(),
+        path_globs: &task.filters.path,
+    }
+}
+
+/// The vector scenario one task ran under: `Supplied` with the set's declared
+/// model identity when the task carries a vector, `Lexical` otherwise. A set
+/// never mixes the two.
+fn task_vector(set: &BenchmarkSet, task: &BenchmarkTask) -> VectorScenario {
+    match (&set.vectors, &task.vector) {
+        (Some(spec), Some(vector)) => VectorScenario::supplied(&spec.model, vector),
+        _ => VectorScenario::Lexical,
+    }
 }
 
 /// Run every in-scope leg over the whole ranked window. `limit: 0` is what

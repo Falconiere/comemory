@@ -50,9 +50,11 @@ use tempfile::TempDir;
 /// (spec Non-Goal 3), `upgrade` replaces the running binary, `install` and
 /// `setup` write into the operator's own machine (an agent host's config
 /// directory, git hooks, shell state) which a server must never do on
-/// request, and the platform client verbs (`auth` / `sync` / `capture` /
+/// request, the platform client verbs (`auth` / `sync` / `capture` /
 /// `distill`) talk to the cloud platform — never on an HTTP request to this
-/// process.
+/// process — `benchmark` writes its artifact to an operator-named filesystem
+/// path, and `judge` records a local review of a locally captured
+/// observation, which the two HTTP feedback routes deliberately do not do.
 /// A local, hardcoded mirror of `serve::routes::meta::CLI_ONLY` (private to
 /// that module) — deliberate: this test proves the *real*
 /// `GET /api/v1/commands` endpoint against an independently-stated
@@ -64,6 +66,7 @@ const CLI_ONLY: &[&str] = &[
     "capture",
     "distill",
     "install",
+    "judge",
     "serve",
     "setup",
     "sync",

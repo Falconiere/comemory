@@ -33,10 +33,15 @@ pub mod evaluation;
 pub mod feedback;
 /// Per-memory feedback counters and the caller-facing `Source` vocabulary.
 pub mod feedback_tracking;
+/// `comemory judge`: record reviewed relevance verdicts against a captured
+/// candidate observation.
+pub mod judge;
 /// `GET /learning/proposals`, `POST /learning/proposals/{id}/{apply,discard}`.
 pub mod learning_proposals;
 /// `comemory mine`: distill query-reformulation term mappings.
 pub mod mine;
+/// Opt-in, bounded capture of a real query's candidate pool.
+pub mod observation_capture;
 /// The shared `comemory.db` connection handle the feedback writers borrow.
 pub mod telemetry;
 /// `comemory tune`: grid-search the blend knobs, confirm, apply.

@@ -21,6 +21,12 @@ use crate::store::Connection;
 /// `co_activated`); the memory-domain rels are replayed from markdown. That
 /// partial copy is exactly why the live table must not be silently dropped
 /// from either list.
+///
+/// The three candidate-observation tables (#209) are copied for the strongest
+/// reason on this list: a reviewed relevance judgment is human work, and the
+/// bounded passage it was made against is a snapshot of content that may
+/// since have changed. Neither can be reconstructed from markdown, from the
+/// code index, or from anything else on disk.
 pub(crate) const COPIED_TABLES: &[&str] = &[
     "code_symbols",
     "indexed_files",
@@ -44,6 +50,9 @@ pub(crate) const COPIED_TABLES: &[&str] = &[
     "sync_log",
     "sync_state",
     "sync_binding",
+    "candidate_query_observations",
+    "candidate_observations",
+    "candidate_judgments",
 ];
 
 /// Live tables a rebuild deliberately does not copy, each with its reason.

@@ -114,6 +114,12 @@
       "name": "0019_query_performance.sql",
       "hash": "sha256:fa69cdd8988a1edc9ea2fa6f32b9f1830dfb0d28acf427b48a89d0bcc6a629ce",
       "created_at": 1789593668
+    },
+    {
+      "idx": 19,
+      "name": "0020_candidate_observations.sql",
+      "hash": "sha256:21a280739eef2c39993b11617643e38a1778b64aa35bf5c086c4c343c0e90491",
+      "created_at": 1789758152
     }
   ]
 }

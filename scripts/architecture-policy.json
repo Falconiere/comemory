@@ -127,6 +127,10 @@
     },
     {
       "source": "domains::retrieval",
+      "target": "domains::learning"
+    },
+    {
+      "source": "domains::retrieval",
       "target": "domains::memories"
     },
     {

@@ -23,6 +23,14 @@
 //! aggregated learning tables `comemory gc`'s retention window also leaves
 //! alone, and nothing in them dangles on a purge.
 //!
+//! What is REDACTED rather than kept or deleted: a `candidate_observations`
+//! row naming this memory (#209). Unlike a `retrieval_log` row, it holds the
+//! memory's body, so keeping it would resurrect content the user deleted;
+//! unlike the tables above, deleting it would punch a hole in a recorded
+//! candidate pool and corrupt the pool-recall figure that pool exists to
+//! make measurable. Blanking the passage and marking the candidate
+//! unresolved does neither.
+//!
 //! **Never a live row.** The `memories` delete carries `deleted_at IS NOT
 //! NULL`; when it matches nothing the transaction is dropped unwritten and
 //! the call reports `false`, so a caller that wrongly derives an id from a
@@ -115,6 +123,9 @@ pub fn purge_memory(conn: &mut Connection, id: &str) -> Result<bool> {
         orm::execute(&tx, query.to_sql())?;
     }
     edges::delete_touching(&tx, "memory", id)?;
+    // Redaction, not deletion — see the module doc. In the same transaction,
+    // so a purge can never leave the body behind on a partial failure.
+    super::candidate_observations::redact_memory(&tx, id)?;
     // `feedback_events.memory_id` also carries text-encoded code-symbol
     // rowids under `target_kind = 'code'`; an 8-digit rowid is a valid
     // memory-id shape, so the kind filter is what keeps code telemetry out.

@@ -35,6 +35,7 @@ const CLI_ONLY: &[&str] = &[
     "capture",
     "distill",
     "install",
+    "judge",
     "serve",
     "setup",
     "sync",

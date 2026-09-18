@@ -46,11 +46,35 @@ enum Stmt {
 /// backslash-continued raw string: a raw string never processes `\`, so a
 /// trailing `\` before a newline stays a literal backslash character in the
 /// pattern instead of continuing the line.
+///
+/// Each table name may be double-quoted, because `just migration` quotes
+/// every identifier it generates. Without the optional quote the identifier
+/// class cannot match `"name"`, the optional `IF NOT EXISTS` group is
+/// abandoned on backtracking, and the statement silently yields the table
+/// name `IF` — a derived live set missing the real table while still looking
+/// well-formed. 0020 was the first generated migration to create a table and
+/// is what surfaced it.
 const STATEMENT_PATTERN: &str = concat!(
-    r"(?i)CREATE\s+(?:VIRTUAL\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?P<create>[A-Za-z_][A-Za-z0-9_]*)",
-    r"|DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?P<drop>[A-Za-z_][A-Za-z0-9_]*)",
-    r"|ALTER\s+TABLE\s+(?P<rename_from>[A-Za-z_][A-Za-z0-9_]*)\s+RENAME\s+TO\s+(?P<rename_to>[A-Za-z_][A-Za-z0-9_]*)",
+    r#"(?i)CREATE\s+(?:VIRTUAL\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?P<create>"?[A-Za-z_][A-Za-z0-9_]*"?)"#,
+    r#"|DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?P<drop>"?[A-Za-z_][A-Za-z0-9_]*"?)"#,
+    r#"|ALTER\s+TABLE\s+(?P<rename_from>"?[A-Za-z_][A-Za-z0-9_]*"?)\s+RENAME\s+TO\s+(?P<rename_to>"?[A-Za-z_][A-Za-z0-9_]*"?)"#,
 );
+
+/// Strip an identifier's surrounding double quotes, requiring them to balance.
+///
+/// The quotes are captured rather than matched outside the group so a lone
+/// opening or closing quote is visible here: an unbalanced one is `None`, the
+/// statement is dropped, and the derived set then disagrees with the real
+/// database — which is exactly what
+/// [`migration_integrity_derived_live_set_matches_a_real_migrated_db`] is for.
+/// Silently accepting `"foo` would instead hide a malformed migration.
+fn unquote(raw: &str) -> Option<&str> {
+    match (raw.starts_with('"'), raw.ends_with('"')) {
+        (false, false) => Some(raw),
+        (true, true) if raw.len() > 1 => Some(&raw[1..raw.len() - 1]),
+        _ => None,
+    }
+}
 
 /// Compile [`STATEMENT_PATTERN`].
 fn statement_pattern() -> Regex {
@@ -65,15 +89,18 @@ fn statements() -> Vec<Stmt> {
     MIGRATIONS
         .iter()
         .flat_map(|m| pattern.captures_iter(m.sql).collect::<Vec<_>>())
-        .map(|caps| {
+        .filter_map(|caps| {
             if let Some(name) = caps.name("create") {
-                Stmt::Create(name.as_str().to_string())
+                Some(Stmt::Create(unquote(name.as_str())?.to_string()))
             } else if let Some(name) = caps.name("drop") {
-                Stmt::Drop(name.as_str().to_string())
+                Some(Stmt::Drop(unquote(name.as_str())?.to_string()))
             } else {
                 let from = caps.name("rename_from").expect("rename_from present");
                 let to = caps.name("rename_to").expect("rename_to present");
-                Stmt::Rename(from.as_str().to_string(), to.as_str().to_string())
+                Some(Stmt::Rename(
+                    unquote(from.as_str())?.to_string(),
+                    unquote(to.as_str())?.to_string(),
+                ))
             }
         })
         .collect()
@@ -103,14 +130,16 @@ fn derive_live_tables() -> BTreeSet<String> {
 }
 
 /// Every table addition must choose a rebuild policy. History and sync tables
-/// are copied; v19's trigram index is reconstructed by memory-write triggers.
+/// are copied; v19's trigram index is reconstructed by memory-write triggers;
+/// v20's three candidate-observation tables are copied, because a reviewed
+/// judgment and the passage it was made against exist nowhere else.
 #[test]
-fn migration_integrity_derived_live_set_has_exactly_thirty_two_tables() {
+fn migration_integrity_derived_live_set_has_exactly_thirty_five_tables() {
     let live = derive_live_tables();
     assert_eq!(
         live.len(),
-        32,
-        "expected exactly 32 live tables, got {}: {live:?}",
+        35,
+        "expected exactly 35 live tables, got {}: {live:?}",
         live.len()
     );
     // The count alone would still pass if a history table were added to
@@ -123,6 +152,9 @@ fn migration_integrity_derived_live_set_has_exactly_thirty_two_tables() {
         "sync_log",
         "sync_state",
         "sync_binding",
+        "candidate_query_observations",
+        "candidate_observations",
+        "candidate_judgments",
     ] {
         assert!(
             COPIED_TABLES.contains(&table),
