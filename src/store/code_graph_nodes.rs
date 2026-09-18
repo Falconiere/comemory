@@ -10,7 +10,12 @@
 //! `(repo, path)` dedup and [`crate::domains::graph::code_graph::CodeGraph`] assembly
 //! that consume it.
 
+use super::{
+    orm,
+    schema_code::{CodeSymbols, code_symbols as c},
+};
 use rusqlite::Connection;
+use toolu_orm::core::query_column::CommonOps;
 
 use crate::prelude::*;
 
@@ -241,29 +246,38 @@ pub fn top_symbols(
     path: &str,
     limit: usize,
 ) -> Result<Vec<TopSymbolRow>> {
-    let mut stmt = conn.prepare(
-        "SELECT id, symbol, kind, lang, line_start, line_end, rank_score \
-           FROM code_symbols \
-          WHERE repo = ?1 AND path = ?2 AND parent_id IS NULL \
-          ORDER BY rank_score DESC, symbol ASC, line_start ASC LIMIT ?3",
-    )?;
-    let rows = stmt
-        .query_map(
-            rusqlite::params![repo, path, i64::try_from(limit).unwrap_or(i64::MAX)],
-            |r| {
-                Ok(TopSymbolRow {
-                    id: r.get(0)?,
-                    symbol: r.get(1)?,
-                    kind: r.get(2)?,
-                    lang: r.get(3)?,
-                    line_start: r.get(4)?,
-                    line_end: r.get(5)?,
-                    rank_score: r.get(6)?,
-                })
-            },
-        )?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    Ok(rows)
+    orm::query_all(
+        conn,
+        CodeSymbols::select()
+            .columns_typed(&[
+                &c::id,
+                &c::symbol,
+                &c::kind,
+                &c::lang,
+                &c::line_start,
+                &c::line_end,
+                &c::rank_score,
+            ])
+            .filter(c::repo.eq(repo))
+            .filter(c::path.eq(path))
+            .filter(c::parent_id.is_null())
+            .order_by(c::rank_score.desc())
+            .order_by(c::symbol.asc())
+            .order_by(c::line_start.asc())
+            .limit(i64::try_from(limit).unwrap_or(i64::MAX))
+            .to_sql(),
+        |r| {
+            Ok(TopSymbolRow {
+                id: r.get(0)?,
+                symbol: r.get(1)?,
+                kind: r.get(2)?,
+                lang: r.get(3)?,
+                line_start: r.get(4)?,
+                line_end: r.get(5)?,
+                rank_score: r.get(6)?,
+            })
+        },
+    )
 }
 
 /// One live memory citing a file — the raw `(id, body)` pair, before the

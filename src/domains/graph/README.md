@@ -47,7 +47,7 @@ One line per file, named after its primary item:
 | `edges_result.rs` | `EdgesResult` | The owned value `edges::run` returns for both delivery surfaces, plus the `Row` and `envelope` they each serialize — `comemory edges --json` and `GET /api/v1/edges` build the same shape from the same builder (#178) |
 | `graph_nodes.rs` | `list` | `GET /graph/nodes`, `/nodes/{id}`, `/nodes/{id}/neighbors` and `/graph/snapshot` |
 | `graph_recompute.rs` | `run` | `POST /graph/recompute`: re-project PageRank per repo in one transaction, then the memory rank |
-| `imports.rs` | `extract_imports` | Per-language import extraction and conservative module-to-path resolution |
+| `imports.rs` | `extract_imports` | Shared AST import capture traversal and order-preserving collection, per-language parsing, and conservative module-to-path resolution |
 | `materialize.rs` | `materialize` | `index-code` post-pass: mined pairs + resolved imports → edges + projected PageRank; `recompute_rank(tx, repo)` is the PageRank + projection tail, shared with `graph_recompute` |
 | `memory_rank.rs` | `materialize_memory_rank` | PageRank over the derived memory graph → `memories.rank_score` |
 | `neighbors.rs` | `file_neighbors` | One-hop undirected `imports`/`co_changed` file neighborhood, shared by `retrieval::bundle` and `GET /api/v1/graph/nodes/{id}/neighbors` |

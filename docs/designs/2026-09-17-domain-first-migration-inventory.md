@@ -735,6 +735,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/store/documents.rs | comemory::store::documents; preserve | src/store/tests/documents.rs | none | infrastructure::store | src/store/documents.rs | retain |
 | src/store/edge_fts.rs | comemory::store::edge_fts; preserve | src/store/tests/edge_fts.rs | none | infrastructure::store | src/store/edge_fts.rs | retain |
 | src/store/edges.rs | comemory::store::edges; preserve | src/store/tests/edges.rs | none | infrastructure::store | src/store/edges.rs | retain |
+| src/store/edges_neighbors.rs | private | none | none | infrastructure::store | src/store/edges_neighbors.rs | retain |
 | src/store/edges_retrieval.rs | comemory::store::edges_retrieval; preserve | src/store/tests/edges_retrieval.rs | none | infrastructure::store | src/store/edges_retrieval.rs | retain |
 | src/store/embed.rs | comemory::store::embed; preserve | src/store/tests/embed.rs | none | infrastructure::store | src/store/embed.rs | retain |
 | src/store/eval_runs.rs | comemory::store::eval_runs; preserve | src/store/tests/eval_runs.rs | none | infrastructure::store | src/store/eval_runs.rs | retain |
@@ -750,10 +751,12 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/store/memory_meta.rs | comemory::store::memory_meta; preserve | src/store/tests/memory_meta.rs | none | infrastructure::store | src/store/memory_meta.rs | retain |
 | src/store/memory_purge.rs | comemory::store::memory_purge; preserve | src/store/tests/memory_purge.rs | none | infrastructure::store | src/store/memory_purge.rs | retain |
 | src/store/memory_row.rs | comemory::store::memory_row; preserve | src/store/tests/memory_row.rs | none | infrastructure::store | src/store/memory_row.rs | retain |
+| src/store/memory_signals.rs | private | none | none | infrastructure::store | src/store/memory_signals.rs | retain |
 | src/store/migrate.rs | comemory::store::migrate; preserve | src/store/tests/matrix.rs; src/store/tests/migrate.rs; src/store/tests/migrate_2.rs; src/store/tests/migrate_v14.rs; src/store/tests/migrate_v15.rs; src/store/tests/migrate_v4.rs; src/store/tests/migrate_v8.rs | migrations/0001_schema_meta.sql; migrations/0002_v2_tables.sql; migrations/0003_stats_tables.sql; migrations/0004_v4_rank.sql; migrations/0005_v5_learning.sql; migrations/0006_v6_code_graph.sql; migrations/0007_v7_repo_root.sql; migrations/0008_v8_reinforcement.sql; migrations/0009_v9_code_refs.sql; migrations/0010_v10_bandit.sql; migrations/0011_v11_memory_rank.sql; migrations/0012_v12_edge_fts.sql; migrations/0013_v13_documents.sql; migrations/0014_v14_console.sql; migrations/0015_v15_console_api.sql; migrations/0016_v16_sync.sql; migrations/0017_sync_repush.sql; migrations/0018_scheme_path_refs.sql; migrations/0019_query_performance.sql | infrastructure::store | src/store/migrate.rs | retain |
 | src/store/migrate/backup.rs | private | src/store/migrate/tests/backup.rs | none | infrastructure::store | src/store/migrate/backup.rs | retain |
 | src/store/migrate/list.rs | comemory::store::migrate::list; preserve | src/store/migrate/tests/list.rs | none | infrastructure::store | src/store/migrate/list.rs | retain |
 | src/store/migrate/preflight.rs | private | src/store/migrate/tests/preflight.rs | none | infrastructure::store | src/store/migrate/preflight.rs | retain |
+| src/store/orm.rs | private | src/store/tests/orm.rs | none | infrastructure::store | src/store/orm.rs | retain |
 | src/store/prune_apply.rs | comemory::store::prune_apply; preserve | src/store/tests/prune_apply.rs | none | infrastructure::store | src/store/prune_apply.rs | retain |
 | src/store/prune_signals.rs | comemory::store::prune_signals; preserve | src/store/tests/prune_signals.rs | none | infrastructure::store | src/store/prune_signals.rs | retain |
 | src/store/query_expansions.rs | comemory::store::query_expansions; preserve | src/store/tests/query_expansions.rs | none | infrastructure::store | src/store/query_expansions.rs | retain |
@@ -782,7 +785,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/store/schema_sync.rs | comemory::store::schema_sync; preserve | none | none | infrastructure::store | src/store/schema_sync.rs | retain |
 | src/store/simhash_scan.rs | comemory::store::simhash_scan; preserve | src/store/tests/simhash_scan.rs | none | infrastructure::store | src/store/simhash_scan.rs | retain |
 | src/store/sources.rs | comemory::store::sources; preserve | src/store/tests/sources.rs | none | infrastructure::store | src/store/sources.rs | retain |
-| src/store/stats_counts.rs | comemory::store::stats_counts; preserve | src/store/tests/stats_counts.rs | none | infrastructure::store | src/store/stats_counts.rs | retain |
+| src/store/stats_counts.rs | comemory::store::stats_counts; breaking 0.36.0 docs/guides/runtime-orm.md#rust-api | src/store/tests/stats_counts.rs | none | infrastructure::store | src/store/stats_counts.rs | retain |
 | src/store/sync_binding.rs | comemory::store::sync_binding; preserve | src/store/tests/sync_binding.rs | none | infrastructure::store | src/store/sync_binding.rs | retain |
 | src/store/sync_log.rs | comemory::store::sync_log; preserve | src/store/tests/sync_log.rs | none | infrastructure::store | src/store/sync_log.rs | retain |
 | src/store/sync_manifest.rs | comemory::store::sync_manifest; preserve | none | none | infrastructure::store | src/store/sync_manifest.rs | retain |

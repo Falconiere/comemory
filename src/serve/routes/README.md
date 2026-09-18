@@ -11,7 +11,8 @@ in it does not exist.
 shares: `run_blocking` (runs the command core — always
 `domains::<cap>::<cmd>::run` since #178 retired the last legacy shell — and
 takes the connection mutex entirely inside one `spawn_blocking` closure, never
-across an `.await`),
+across an `.await`), `query_response` (borrows the shared command context on
+that blocking thread and envelopes the query result),
 `respond`/`accepted`, `guard_mutating`, `guard_job`, `require_confirm`, and
 `track_for`.
 
@@ -32,7 +33,7 @@ One line per file, named after its primary item:
 | `find.rs` | `table_entries` | `GET\|POST /find` — the unified ranking. Its own resource because it is cross-domain, not a memories sub-resource |
 | `graph.rs` | `table_entries` | `GET /graph` and `GET /edges`, reusing the legacy graph builders — no second query path |
 | `hooks.rs` | `table_entries` | `GET /hooks` (read), `POST /hooks` and `PUT /hooks/{name}` (per-hook toggle, read-only gated, not confirm-gated) |
-| `jobs.rs` | `table_entries` | `GET /jobs`, `GET /jobs/{id}`, the `GET /jobs/{id}/events` SSE stream (`status` + `progress` + `log` events), and `POST /jobs/{id}/cancel` |
+| `jobs.rs` | `table_entries` | `GET /jobs`, `GET /jobs/{id}`, the `GET /jobs/{id}/events` SSE stream (`status` + `progress` + `log` events with shared payload encoding), and `POST /jobs/{id}/cancel` |
 | `learning.rs` | `table_entries` | Job-backed `POST /eval` (read class) plus `POST /tune` and `POST /bandit`, confirm-gated only when `apply` |
 | `maint.rs` | `table_entries` | `GET /doctor` and `GET /consolidate`; the rest of the maintenance surface (prune/gc/admin, doctor system+reembed, gc policy) lives in `maint/` |
 | `memories.rs` | `table_entries` | `GET /memories` and `GET /memories/{id}`; search, write, and edit live in `memories/` |

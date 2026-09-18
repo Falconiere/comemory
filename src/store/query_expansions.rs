@@ -2,9 +2,14 @@
 //! `store::fts`'s tier-4 lexical ladder reads, rewritten wholesale by
 //! `comemory mine --apply` ([`crate::domains::learning::evaluation::mine::apply`]).
 
-use rusqlite::{Connection, ToSql, params, params_from_iter};
+use rusqlite::Connection;
 
+use super::{
+    orm,
+    schema_learning::{QueryExpansions, query_expansions as col},
+};
 use crate::prelude::*;
+use toolu_orm::core::query_column::CommonOps;
 
 /// One mined mapping row to insert via [`insert`].
 pub struct NewExpansion<'a> {
@@ -22,16 +27,20 @@ pub struct NewExpansion<'a> {
 /// replace-all (support is always derived from the current `retrieval_log`,
 /// so gc-evicted rows must not linger). Caller commits.
 pub fn delete_all(conn: &Connection) -> Result<()> {
-    conn.execute("DELETE FROM query_expansions", [])?;
+    orm::execute(conn, QueryExpansions::delete().to_sql())?;
     Ok(())
 }
 
 /// Insert one mined mapping row.
 pub fn insert(conn: &Connection, row: &NewExpansion<'_>) -> Result<()> {
-    conn.execute(
-        "INSERT INTO query_expansions(term, expansion, support, last_mined)
-         VALUES (?1, ?2, ?3, ?4)",
-        params![row.term, row.expansion, row.support, row.last_mined],
+    orm::execute(
+        conn,
+        QueryExpansions::insert()
+            .set(&col::term, row.term)
+            .set(&col::expansion, row.expansion)
+            .set(&col::support, row.support)
+            .set(&col::last_mined, row.last_mined)
+            .to_sql(),
     )?;
     Ok(())
 }
@@ -58,28 +67,17 @@ pub fn matching_terms(
     if terms.is_empty() {
         return Ok(Vec::new());
     }
-    let placeholders = (1..=terms.len())
-        .map(|i| format!("?{i}"))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let sql = format!(
-        "SELECT term, expansion, support FROM query_expansions \
-          WHERE term IN ({placeholders}) \
-          ORDER BY support DESC, term ASC, expansion ASC LIMIT ?{}",
-        terms.len() + 1
-    );
-    let mut binds: Vec<Box<dyn ToSql>> = terms
-        .iter()
-        .map(|t| Box::new(t.clone()) as Box<dyn ToSql>)
-        .collect();
-    // A `limit` above i64::MAX cannot describe a reachable row count, so
-    // saturating is the only meaningful conversion; SQLite treats any such
-    // value as "no limit" regardless. Preserved from the retrieval::suggest call
-    // site this moved from.
-    binds.push(Box::new(i64::try_from(limit).unwrap_or(i64::MAX)));
-    let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt.query_map(
-        params_from_iter(binds.iter().map(std::convert::AsRef::as_ref)),
+    let terms = terms.iter().cloned().map(Into::into).collect::<Vec<_>>();
+    orm::query_all(
+        conn,
+        QueryExpansions::select()
+            .columns_typed(&[&col::term, &col::expansion, &col::support])
+            .filter(col::term.in_list(&terms))
+            .order_by(col::support.desc())
+            .order_by(col::term.asc())
+            .order_by(col::expansion.asc())
+            .limit(i64::try_from(limit).unwrap_or(i64::MAX))
+            .to_sql(),
         |r| {
             Ok(MatchedExpansion {
                 term: r.get(0)?,
@@ -87,16 +85,14 @@ pub fn matching_terms(
                 support: r.get(2)?,
             })
         },
-    )?;
-    rows.collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(Error::from)
+    )
 }
 
 /// Total `query_expansions` row count — behind `domains::learning::console`'s summary
 /// tile and its paged `expansions` list.
 pub fn count(conn: &Connection) -> Result<u64> {
     Ok(
-        conn.query_row("SELECT COUNT(*) FROM query_expansions", [], |r| {
+        orm::query_one(conn, QueryExpansions::select().to_count_sql(), |r| {
             r.get::<_, i64>(0)
         })? as u64,
     )
@@ -119,21 +115,25 @@ pub struct MinedRow {
 /// a page boundary is stable. `sql_limit` is a raw SQLite `LIMIT` value; a
 /// negative value means "no limit" (the caller's `Page`-"all" sentinel).
 pub fn page(conn: &Connection, sql_limit: i64, offset: i64) -> Result<Vec<MinedRow>> {
-    let mut stmt = conn.prepare(
-        "SELECT term, expansion, support, last_mined FROM query_expansions \
-         ORDER BY support DESC, term ASC, expansion ASC LIMIT ?1 OFFSET ?2",
-    )?;
-    let items = stmt
-        .query_map(params![sql_limit, offset], |r| {
+    orm::query_all(
+        conn,
+        QueryExpansions::select()
+            .columns_typed(&[&col::term, &col::expansion, &col::support, &col::last_mined])
+            .order_by(col::support.desc())
+            .order_by(col::term.asc())
+            .order_by(col::expansion.asc())
+            .limit(sql_limit)
+            .offset(offset)
+            .to_sql(),
+        |r| {
             Ok(MinedRow {
                 term: r.get(0)?,
                 expansion: r.get(1)?,
                 support: r.get(2)?,
                 last_mined: r.get(3)?,
             })
-        })?
-        .collect::<std::result::Result<_, _>>()?;
-    Ok(items)
+        },
+    )
 }
 
 #[cfg(test)]

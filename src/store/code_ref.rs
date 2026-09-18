@@ -7,7 +7,13 @@
 //! frontmatter on every [`materialize`] call, so `comemory rebuild` restores
 //! them for free.
 
+use super::{
+    orm,
+    schema_graph::{CodeRef, code_ref as c},
+    schema_memory::memories as m,
+};
 use rusqlite::Connection;
+use toolu_orm::core::query_column::CommonOps;
 
 use crate::domains::memories::{Ref, References};
 use crate::prelude::*;
@@ -82,7 +88,12 @@ pub fn upsert(
     refs: &References,
     created_at: &str,
 ) -> Result<()> {
-    conn.execute("DELETE FROM code_ref WHERE memory_id = ?1", [memory_id])?;
+    orm::execute(
+        conn,
+        CodeRef::delete()
+            .filter(c::memory_id.eq(memory_id))
+            .to_sql(),
+    )?;
     for r in &refs.files {
         insert_row(conn, memory_id, REFERENCES_FILE, r, created_at)?;
     }
@@ -100,11 +111,18 @@ fn insert_row(
     r: &Ref,
     created_at: &str,
 ) -> Result<()> {
-    conn.execute(
-        "INSERT OR REPLACE INTO code_ref \
-         (memory_id, rel, dst_id, pinned_blob, pinned_commit, branch, created_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        rusqlite::params![memory_id, rel, r.id, r.blob, r.commit, r.branch, created_at],
+    orm::execute(
+        conn,
+        CodeRef::insert()
+            .or_replace()
+            .set(&c::memory_id, memory_id)
+            .set(&c::rel, rel)
+            .set(&c::dst_id, r.id.as_str())
+            .set(&c::pinned_blob, r.blob.as_deref())
+            .set(&c::pinned_commit, r.commit.as_deref())
+            .set(&c::branch, r.branch.as_deref())
+            .set(&c::created_at, created_at)
+            .to_sql(),
     )?;
     Ok(())
 }
@@ -124,48 +142,56 @@ pub struct LiveRefRow {
 /// Every `code_ref` row of relation `rel` attached to a LIVE
 /// (`deleted_at IS NULL`) memory, ordered `(memory_id, dst_id)`.
 pub fn for_rel_live(conn: &Connection, rel: &str) -> Result<Vec<LiveRefRow>> {
-    let mut stmt = conn.prepare(
-        "SELECT cr.memory_id, cr.dst_id, cr.pinned_blob \
-           FROM code_ref cr \
-           JOIN memories m ON m.id = cr.memory_id AND m.deleted_at IS NULL \
-          WHERE cr.rel = ?1 \
-          ORDER BY cr.memory_id, cr.dst_id",
-    )?;
-    let rows = stmt.query_map([rel], |row| {
-        Ok(LiveRefRow {
-            memory_id: row.get(0)?,
-            dst_id: row.get(1)?,
-            pinned_blob: row.get(2)?,
-        })
-    })?;
-    let mut out = Vec::new();
-    for r in rows {
-        out.push(r?);
-    }
-    Ok(out)
+    orm::query_all(
+        conn,
+        CodeRef::select()
+            .column_expr(&c::memory_id.qualified(), "memory_id")
+            .column_expr(&c::dst_id.qualified(), "dst_id")
+            .column_expr(&c::pinned_blob.qualified(), "pinned_blob")
+            .join("memories", m::id.equals(&c::memory_id))
+            .filter(m::deleted_at.is_null())
+            .filter(c::rel.eq(rel))
+            .order_by(c::memory_id.asc())
+            .order_by(c::dst_id.asc())
+            .to_sql(),
+        |row| {
+            Ok(LiveRefRow {
+                memory_id: row.get(0)?,
+                dst_id: row.get(1)?,
+                pinned_blob: row.get(2)?,
+            })
+        },
+    )
 }
 
 /// Load every code reference attached to `memory_id`, ordered `rel, dst_id`.
 pub fn for_memory(conn: &Connection, memory_id: &str) -> Result<Vec<CodeRefRow>> {
-    let mut stmt = conn.prepare(
-        "SELECT memory_id, rel, dst_id, pinned_blob, pinned_commit, branch \
-         FROM code_ref WHERE memory_id = ?1 ORDER BY rel, dst_id",
-    )?;
-    let rows = stmt.query_map([memory_id], |row| {
-        Ok(CodeRefRow {
-            memory_id: row.get(0)?,
-            rel: row.get(1)?,
-            dst_id: row.get(2)?,
-            pinned_blob: row.get(3)?,
-            pinned_commit: row.get(4)?,
-            branch: row.get(5)?,
-        })
-    })?;
-    let mut out = Vec::new();
-    for r in rows {
-        out.push(r?);
-    }
-    Ok(out)
+    orm::query_all(
+        conn,
+        CodeRef::select()
+            .columns_typed(&[
+                &c::memory_id,
+                &c::rel,
+                &c::dst_id,
+                &c::pinned_blob,
+                &c::pinned_commit,
+                &c::branch,
+            ])
+            .filter(c::memory_id.eq(memory_id))
+            .order_by(c::rel.asc())
+            .order_by(c::dst_id.asc())
+            .to_sql(),
+        |row| {
+            Ok(CodeRefRow {
+                memory_id: row.get(0)?,
+                rel: row.get(1)?,
+                dst_id: row.get(2)?,
+                pinned_blob: row.get(3)?,
+                pinned_commit: row.get(4)?,
+                branch: row.get(5)?,
+            })
+        },
+    )
 }
 
 #[cfg(test)]

@@ -4,23 +4,34 @@
 //! `GET /api/v1/index/runs` pages it; `GET /api/v1/overview` reads the
 //! newest row for its "last run" tile.
 
-use rusqlite::{Connection, OptionalExtension};
+use super::{
+    orm,
+    schema_history::{IndexRuns, index_runs as c},
+};
+use rusqlite::Connection;
 use serde::Serialize;
+use toolu_orm::core::query_column::CommonOps;
 
 use crate::prelude::*;
 
-/// The projected column list every reader shares, in [`row_from_query`]'s
-/// index order.
-///
-/// A macro rather than a `const` so the readers can splice it with
-/// [`concat!`], which takes literals only: every SELECT below is then a
-/// compile-time `&'static str` with no runtime string building at all, and
-/// the list still has exactly one definition.
-macro_rules! columns {
-    () => {
-        "id, repo, root_path, mode, started_at, finished_at, duration_ms, \
-         files_indexed, symbols, outcome, error"
-    };
+/// Shared projection and stable ordering for run readers.
+fn select_runs() -> toolu_orm::query::select::SelectBuilder {
+    IndexRuns::select()
+        .columns_typed(&[
+            &c::id,
+            &c::repo,
+            &c::root_path,
+            &c::mode,
+            &c::started_at,
+            &c::finished_at,
+            &c::duration_ms,
+            &c::files_indexed,
+            &c::symbols,
+            &c::outcome,
+            &c::error,
+        ])
+        .order_by(c::started_at.desc())
+        .order_by(c::id.asc())
 }
 
 /// Insert parameters for one completed run, bundled into a struct rather
@@ -80,23 +91,21 @@ pub struct IndexRunRow {
 /// Insert one `index_runs` row. A single `INSERT` with no read-modify-write
 /// race — every field is caller-computed.
 pub fn insert(conn: &Connection, row: &NewIndexRun<'_>) -> Result<()> {
-    conn.execute(
-        "INSERT INTO index_runs(id, repo, root_path, mode, started_at, finished_at, \
-                                duration_ms, files_indexed, symbols, outcome, error) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
-        rusqlite::params![
-            row.id,
-            row.repo,
-            row.root_path,
-            row.mode,
-            row.started_at,
-            row.finished_at,
-            clamp(row.duration_ms),
-            clamp(row.files_indexed),
-            clamp(row.symbols),
-            row.outcome,
-            row.error,
-        ],
+    orm::execute(
+        conn,
+        IndexRuns::insert()
+            .set(&c::id, row.id)
+            .set(&c::repo, row.repo)
+            .set(&c::root_path, row.root_path)
+            .set(&c::mode, row.mode)
+            .set(&c::started_at, row.started_at)
+            .set(&c::finished_at, row.finished_at)
+            .set(&c::duration_ms, clamp(row.duration_ms))
+            .set(&c::files_indexed, clamp(row.files_indexed))
+            .set(&c::symbols, clamp(row.symbols))
+            .set(&c::outcome, row.outcome)
+            .set(&c::error, row.error)
+            .to_sql(),
     )?;
     Ok(())
 }
@@ -111,62 +120,34 @@ pub fn list(
     limit: usize,
     offset: usize,
 ) -> Result<(Vec<IndexRunRow>, usize)> {
-    let total: i64 = if let Some(repo) = repo {
-        conn.query_row(
-            "SELECT COUNT(*) FROM index_runs WHERE repo = ?1",
-            [repo],
-            |r| r.get(0),
-        )?
-    } else {
-        conn.query_row("SELECT COUNT(*) FROM index_runs", [], |r| r.get(0))?
-    };
-    let limit_param: i64 = if limit == 0 {
+    let mut query = select_runs();
+    if let Some(repo) = repo {
+        query = query.filter(c::repo.eq(repo));
+    }
+    let total: i64 = orm::query_one(conn, query.to_count_sql(), |r| r.get(0))?;
+    let limit = if limit == 0 {
         -1
     } else {
         i64::try_from(limit).unwrap_or(i64::MAX)
     };
-    let offset_param = i64::try_from(offset).unwrap_or(i64::MAX);
-    let rows = if let Some(repo) = repo {
-        let mut stmt = conn.prepare(concat!(
-            "SELECT ",
-            columns!(),
-            " FROM index_runs WHERE repo = ?1 \
-              ORDER BY started_at DESC, id ASC LIMIT ?2 OFFSET ?3"
-        ))?;
-        stmt.query_map(
-            rusqlite::params![repo, limit_param, offset_param],
-            row_from_query,
-        )?
-        .collect::<std::result::Result<Vec<_>, _>>()?
-    } else {
-        let mut stmt = conn.prepare(concat!(
-            "SELECT ",
-            columns!(),
-            " FROM index_runs ORDER BY started_at DESC, id ASC LIMIT ?1 OFFSET ?2"
-        ))?;
-        stmt.query_map(rusqlite::params![limit_param, offset_param], row_from_query)?
-            .collect::<std::result::Result<Vec<_>, _>>()?
-    };
+    let rows = orm::query_all(
+        conn,
+        query
+            .limit(limit)
+            .offset(i64::try_from(offset).unwrap_or(i64::MAX))
+            .to_sql(),
+        row_from_query,
+    )?;
     Ok((rows, usize::try_from(total).unwrap_or(0)))
 }
 
 /// The newest run on record, across every repo, or `None` on an empty
 /// table.
 pub fn newest(conn: &Connection) -> Result<Option<IndexRunRow>> {
-    conn.query_row(
-        concat!(
-            "SELECT ",
-            columns!(),
-            " FROM index_runs ORDER BY started_at DESC, id ASC LIMIT 1"
-        ),
-        [],
-        row_from_query,
-    )
-    .optional()
-    .map_err(Error::from)
+    orm::query_optional(conn, select_runs().limit(1).to_sql(), row_from_query)
 }
 
-/// Map one [`columns!`] row into an [`IndexRunRow`].
+/// Map one projected row into an [`IndexRunRow`].
 fn row_from_query(r: &rusqlite::Row<'_>) -> rusqlite::Result<IndexRunRow> {
     Ok(IndexRunRow {
         id: r.get(0)?,

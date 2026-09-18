@@ -8,7 +8,7 @@
 //! Mirror test for `src/store/stats_counts.rs`.
 
 use comemory::store::connection;
-use comemory::store::stats_counts::{count_table, db_bytes, scoped_count};
+use comemory::store::stats_counts::{Corpus, count_table, db_bytes, scoped_count};
 
 fn seed_db() -> (tempfile::TempDir, rusqlite::Connection) {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -33,10 +33,9 @@ fn scoped_count_narrows_by_repo() {
     seed_memory(&conn, "aaaa0001", "repo-a", false);
     seed_memory(&conn, "aaaa0002", "repo-b", false);
 
-    let all = scoped_count(&conn, "memories", "deleted_at IS NULL", None).expect("count");
+    let all = scoped_count(&conn, Corpus::LiveMemories, None).expect("count");
     assert_eq!(all, 2);
-    let scoped =
-        scoped_count(&conn, "memories", "deleted_at IS NULL", Some("repo-a")).expect("count");
+    let scoped = scoped_count(&conn, Corpus::LiveMemories, Some("repo-a")).expect("count");
     assert_eq!(scoped, 1);
 }
 
@@ -46,7 +45,7 @@ fn scoped_count_predicate_selects_deleted_rows() {
     seed_memory(&conn, "aaaa0001", "repo-a", false);
     seed_memory(&conn, "aaaa0002", "repo-a", true);
 
-    let trashed = scoped_count(&conn, "memories", "deleted_at IS NOT NULL", None).expect("count");
+    let trashed = scoped_count(&conn, Corpus::TrashedMemories, None).expect("count");
     assert_eq!(trashed, 1);
 }
 

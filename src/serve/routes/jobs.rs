@@ -27,7 +27,7 @@ use axum::response::sse::{Event, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use futures::Stream;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::broadcast::error::TryRecvError;
 use tokio::sync::{broadcast, watch};
@@ -343,7 +343,11 @@ fn drain_then_finish(mut cursor: Cursor, status: JobStatus) -> Step {
 /// Encode a status transition and decide whether the stream ends: on a
 /// terminal status, or when serialization itself failed.
 fn finish_on_status(cursor: Cursor, status: &JobStatus) -> Step {
-    let (event, ok) = encode_status(&cursor.id, status);
+    let (event, ok) = encode_event(
+        &cursor.id,
+        status.slug(),
+        &JobEvent::new(&cursor.id, status),
+    );
     let next = if status.is_terminal() || !ok {
         None
     } else {
@@ -354,49 +358,28 @@ fn finish_on_status(cursor: Cursor, status: &JobStatus) -> Step {
 
 /// Yield one `log` event, keeping the stream open unless encoding failed.
 fn emit_log(cursor: Cursor, line: &str) -> Step {
-    let (event, ok) = encode_log(&cursor.id, line);
+    let (event, ok) = encode_event(&cursor.id, "log", &LogEvent::new(&cursor.id, line));
     (Ok(event), ok.then_some(cursor))
 }
 
 /// Yield one `progress` event, keeping the stream open unless encoding
 /// failed.
 fn emit_progress(cursor: Cursor, progress: &Progress) -> Step {
-    let (event, ok) = encode_progress(&cursor.id, progress);
+    let (event, ok) = encode_event(
+        &cursor.id,
+        "progress",
+        &ProgressEvent::new(&cursor.id, progress),
+    );
     (Ok(event), ok.then_some(cursor))
 }
 
-/// Render one status as an SSE event named after the status slug. Returns
-/// `false` alongside the fallback event when the payload could not be
-/// serialized, which ends the stream.
-fn encode_status(id: &str, status: &JobStatus) -> (Event, bool) {
-    match serde_json::to_string(&JobEvent::new(id, status)) {
-        Ok(json) => (Event::default().event(status.slug()).data(json), true),
+/// Serialize a job payload into its named SSE event. A serialization failure
+/// produces the shared terminal error event and tells the caller to end the stream.
+fn encode_event(id: &str, name: &str, payload: &impl Serialize) -> (Event, bool) {
+    match serde_json::to_string(payload) {
+        Ok(json) => (Event::default().event(name).data(json), true),
         Err(e) => {
-            tracing::warn!(job_id = id, error = %e, "job event serialization failed");
-            (Event::default().event("error").data(ENCODE_FAILED), false)
-        }
-    }
-}
-
-/// Render one progress report as the SSE `progress` event. Same failure
-/// contract as [`encode_status`].
-fn encode_progress(id: &str, progress: &Progress) -> (Event, bool) {
-    match serde_json::to_string(&ProgressEvent::new(id, progress)) {
-        Ok(json) => (Event::default().event("progress").data(json), true),
-        Err(e) => {
-            tracing::warn!(job_id = id, error = %e, "job progress event serialization failed");
-            (Event::default().event("error").data(ENCODE_FAILED), false)
-        }
-    }
-}
-
-/// Render one log line as the SSE `log` event. Same failure contract as
-/// [`encode_status`].
-fn encode_log(id: &str, line: &str) -> (Event, bool) {
-    match serde_json::to_string(&LogEvent::new(id, line)) {
-        Ok(json) => (Event::default().event("log").data(json), true),
-        Err(e) => {
-            tracing::warn!(job_id = id, error = %e, "job log event serialization failed");
+            tracing::warn!(job_id = id, event = name, error = %e, "job event serialization failed");
             (Event::default().event("error").data(ENCODE_FAILED), false)
         }
     }

@@ -35,7 +35,6 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
-use ast_grep_core::Pattern;
 use ast_grep_core::tree_sitter::LanguageExt;
 use ast_grep_language::{JavaScript, Rust, Tsx};
 
@@ -53,20 +52,35 @@ const QUOTES: [char; 3] = ['\'', '"', '`'];
 /// local file. Errors only surface from ast-grep pattern compilation, which
 /// would indicate a programming error in the pattern tables.
 pub fn extract_imports(lang: Lang, source: &str) -> Result<Vec<String>> {
-    let raw = match lang {
-        Lang::Rust => rust_imports(source)?,
-        // Tsx parses both plain TS and JSX-bearing source (same dispatch
-        // choice as `ast::extractor`).
-        Lang::Typescript => ts_imports(source)?,
-        Lang::Javascript => js_imports(source)?,
-        Lang::Python => python_imports(source),
-        Lang::Go => go_imports(source),
-    };
-    let mut seen = HashSet::new();
-    Ok(raw
-        .into_iter()
-        .filter(|m| !m.is_empty() && seen.insert(m.clone()))
-        .collect())
+    static CELLS: [OnceLock<std::result::Result<CompiledPatterns, String>>; 3] =
+        [const { OnceLock::new() }; 3];
+    let mut imports = ImportCollector::default();
+    match lang {
+        Lang::Rust => ast_imports(Rust, source, &CELLS[0], RUST_PATTERNS, &mut imports)?,
+        // Tsx parses both plain TS and JSX-bearing source. JS has its own cache.
+        Lang::Typescript => ast_imports(Tsx, source, &CELLS[1], TS_JS_PATTERNS, &mut imports)?,
+        Lang::Javascript => {
+            ast_imports(JavaScript, source, &CELLS[2], TS_JS_PATTERNS, &mut imports)?;
+        }
+        Lang::Python => python_imports(source, &mut imports),
+        Lang::Go => go_imports(source, &mut imports),
+    }
+    Ok(imports.modules)
+}
+
+/// Collect nonempty modules once, preserving the traversal's first-seen order.
+#[derive(Default)]
+struct ImportCollector {
+    seen: HashSet<String>,
+    modules: Vec<String>,
+}
+
+impl ImportCollector {
+    fn push(&mut self, module: String) {
+        if !module.is_empty() && self.seen.insert(module.clone()) {
+            self.modules.push(module);
+        }
+    }
 }
 
 /// Resolution state of one lookup key: the single path that owns it, or a
@@ -215,37 +229,13 @@ fn insert_candidate(map: &mut HashMap<String, Candidate>, key: String, path: &st
     }
 }
 
-/// Rust extraction: `use` / `pub use` / `mod` / `pub mod` patterns in ONE
-/// `for_each_match` pass (one tree-sitter parse per file), with the
-/// use-path post-processing described in the module doc. The metavar name
-/// tags which pattern row hit: `PATH` rows get the use-path trimming,
-/// `NAME` rows are taken verbatim.
-fn rust_imports(source: &str) -> Result<Vec<String>> {
-    static CELL: OnceLock<std::result::Result<CompiledPatterns, String>> = OnceLock::new();
-    let patterns = pattern_cache::cached(
-        &CELL,
-        Rust,
-        &[
-            ("PATH", "use $PATH;"),
-            ("PATH", "pub use $PATH;"),
-            ("NAME", "mod $NAME;"),
-            ("NAME", "pub mod $NAME;"),
-        ],
-    )?;
-    let mut out = Vec::new();
-    for_each_match(Rust, source, patterns, |var, matched| {
-        let Some(node) = matched.get_env().get_match(var) else {
-            return;
-        };
-        let text = node.text().to_string();
-        out.push(if var == "PATH" {
-            rust_use_path(&text)
-        } else {
-            text
-        });
-    });
-    Ok(out)
-}
+/// Rust capture tags distinguish use paths from verbatim module names.
+const RUST_PATTERNS: &[(&str, &str)] = &[
+    ("PATH", "use $PATH;"),
+    ("PATH", "pub use $PATH;"),
+    ("NAME", "mod $NAME;"),
+    ("NAME", "pub mod $NAME;"),
+];
 
 /// Reduce a matched `use` argument to its module path: cut at the first of
 /// `::{` (use tree), `;`, or ` as ` (rename), then strip leading `crate::` /
@@ -274,68 +264,49 @@ fn rust_use_path(text: &str) -> String {
     }
 }
 
-/// TypeScript / JavaScript extraction: ESM `import … from`, bare `import`
-/// (each string pattern in both quote styles), and CommonJS `require()` —
-/// all in ONE `for_each_match` pass (one tree-sitter parse per file). The
-/// metavar name tags which pattern row hit: `SRC` binds the bare
-/// `string_fragment`, while `ARG` binds the whole `require` call argument,
-/// quotes included — only string literals are kept; dynamic
-/// `require(expr)` calls are dropped, never guessed at.
-fn ts_js_imports<L: LanguageExt + Clone>(
+/// Compile the selected grammar's table once and collect its captures in one parse.
+/// PATH captures need Rust use-tree normalization; ARG captures must be string
+/// literals. NAME and SRC captures already contain the desired module text.
+fn ast_imports<L: LanguageExt + Clone>(
     language: L,
     source: &str,
-    patterns: &[(&'static str, Pattern)],
-) -> Vec<String> {
-    let mut out = Vec::new();
+    cell: &'static OnceLock<std::result::Result<CompiledPatterns, String>>,
+    raw: &[(&'static str, &'static str)],
+    imports: &mut ImportCollector,
+) -> Result<()> {
+    let patterns = pattern_cache::cached(cell, language.clone(), raw)?;
     for_each_match(language, source, patterns, |var, matched| {
         let Some(node) = matched.get_env().get_match(var) else {
             return;
         };
         let text = node.text().to_string();
-        if var == "ARG" {
-            let stripped = text.trim_matches(QUOTES);
-            if stripped.len() < text.len() && !stripped.contains(QUOTES) {
-                out.push(stripped.to_string());
+        match var {
+            "PATH" => imports.push(rust_use_path(&text)),
+            "ARG" => {
+                let stripped = text.trim_matches(QUOTES);
+                if stripped.len() < text.len() && !stripped.contains(QUOTES) {
+                    imports.push(stripped.to_string());
+                }
             }
-        } else {
-            out.push(text);
+            _ => imports.push(text),
         }
     });
-    out
+    Ok(())
 }
 
-/// Raw TypeScript / JavaScript import pattern rows, shared by both grammar
-/// caches. The same strings compile to distinct trees under each grammar, so
-/// [`ts_imports`] and [`js_imports`] own separate cells.
-fn ts_js_import_patterns() -> &'static [(&'static str, &'static str)] {
-    &[
-        ("SRC", "import $$$SPEC from '$SRC'"),
-        ("SRC", "import $$$SPEC from \"$SRC\""),
-        ("SRC", "import '$SRC'"),
-        ("SRC", "import \"$SRC\""),
-        ("ARG", "require($ARG)"),
-    ]
-}
-
-/// TypeScript import extraction (Tsx grammar), patterns compiled once.
-fn ts_imports(source: &str) -> Result<Vec<String>> {
-    static CELL: OnceLock<std::result::Result<CompiledPatterns, String>> = OnceLock::new();
-    let patterns = pattern_cache::cached(&CELL, Tsx, ts_js_import_patterns())?;
-    Ok(ts_js_imports(Tsx, source, patterns))
-}
-
-/// JavaScript import extraction, patterns compiled once.
-fn js_imports(source: &str) -> Result<Vec<String>> {
-    static CELL: OnceLock<std::result::Result<CompiledPatterns, String>> = OnceLock::new();
-    let patterns = pattern_cache::cached(&CELL, JavaScript, ts_js_import_patterns())?;
-    Ok(ts_js_imports(JavaScript, source, patterns))
-}
+/// Shared TS/JS source patterns; each grammar compiles them into its own cache.
+const TS_JS_PATTERNS: &[(&str, &str)] = &[
+    ("SRC", "import $$$SPEC from '$SRC'"),
+    ("SRC", "import $$$SPEC from \"$SRC\""),
+    ("SRC", "import '$SRC'"),
+    ("SRC", "import \"$SRC\""),
+    ("ARG", "require($ARG)"),
+];
 
 /// Python extraction by line parsing: `import a[, b][ as c]` and
 /// `from X import …` (the module is always on the statement's first line,
 /// even for parenthesized import lists).
-fn python_imports(source: &str) -> Vec<String> {
-    let mut out = Vec::new();
+fn python_imports(source: &str, out: &mut ImportCollector) {
     for line in source.lines() {
         let trimmed = line.trim_start();
         if let Some(rest) = trimmed.strip_prefix("from ") {
@@ -350,13 +321,11 @@ fn python_imports(source: &str) -> Vec<String> {
             }
         }
     }
-    out
 }
 
 /// Go extraction by line parsing: single `import "x"` (optionally aliased)
 /// plus parenthesized import blocks via a one-flag state machine.
-fn go_imports(source: &str) -> Vec<String> {
-    let mut out = Vec::new();
+fn go_imports(source: &str, out: &mut ImportCollector) {
     let mut in_block = false;
     for line in source.lines() {
         let trimmed = line.trim();
@@ -379,7 +348,6 @@ fn go_imports(source: &str) -> Vec<String> {
             }
         }
     }
-    out
 }
 
 /// First `"…"`-quoted substring of `line`, if any.

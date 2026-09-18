@@ -29,19 +29,9 @@ fn check_graph_hops(v: u32) -> std::result::Result<(), &'static str> {
     Ok(())
 }
 
-/// Bounds for `retrieval.graph_seeds`: the walk needs at least one seed.
-fn check_graph_seeds(v: usize) -> std::result::Result<(), &'static str> {
-    if v < 1 {
-        return Err("must be >= 1");
-    }
-    Ok(())
-}
-
-/// Bounds for `retrieval.top_k`: the router must return at least one hit.
-/// `0` is `retrieval::pipeline`'s "no limit" page sentinel, so a persisted
-/// `0` would silently turn every `search` without an explicit `--k` into a
-/// `max_page_window`-deep page.
-fn check_top_k(v: usize) -> std::result::Result<(), &'static str> {
+/// The walk needs at least one graph seed and the default page at least one hit.
+/// Persisted `top_k = 0` would otherwise select the router's unlimited-page sentinel.
+fn check_positive_count(v: usize) -> std::result::Result<(), &'static str> {
     if v < 1 {
         return Err("must be >= 1");
     }
@@ -120,6 +110,16 @@ fn check_grid<T: Copy + std::fmt::Debug>(
     Ok(())
 }
 
+/// Attach the field, its env override, and the original display value to a failed bound.
+fn check_knob(
+    field: &str,
+    env: &str,
+    value: impl std::fmt::Display,
+    check: std::result::Result<(), &'static str>,
+) -> Result<()> {
+    check.map_err(|why| Error::Config(format!("invalid {field}={value} (env {env}): {why}")))
+}
+
 impl Config {
     /// Enforce the documented retrieval/rank/prune/tune invariants.
     ///
@@ -162,29 +162,33 @@ impl Config {
     /// size and window, and the two ANN similarity floors.
     fn check_retrieval_knobs(&self) -> Result<()> {
         let k = self.retrieval.rrf_k;
-        if let Err(why) = check_rrf_k(k) {
-            return Err(Error::Config(format!(
-                "invalid retrieval.rrf_k={k} (env COMEMORY_RETRIEVAL_RRF_K): {why}"
-            )));
-        }
+        check_knob(
+            "retrieval.rrf_k",
+            "COMEMORY_RETRIEVAL_RRF_K",
+            k,
+            check_rrf_k(k),
+        )?;
         let tk = self.retrieval.top_k;
-        if let Err(why) = check_top_k(tk) {
-            return Err(Error::Config(format!(
-                "invalid retrieval.top_k={tk} (env COMEMORY_RETRIEVAL_TOP_K): {why}"
-            )));
-        }
+        check_knob(
+            "retrieval.top_k",
+            "COMEMORY_RETRIEVAL_TOP_K",
+            tk,
+            check_positive_count(tk),
+        )?;
         let gh = self.retrieval.graph_hops;
-        if let Err(why) = check_graph_hops(gh) {
-            return Err(Error::Config(format!(
-                "invalid retrieval.graph_hops={gh} (env COMEMORY_RETRIEVAL_GRAPH_HOPS): {why}"
-            )));
-        }
+        check_knob(
+            "retrieval.graph_hops",
+            "COMEMORY_RETRIEVAL_GRAPH_HOPS",
+            gh,
+            check_graph_hops(gh),
+        )?;
         let gs = self.retrieval.graph_seeds;
-        if let Err(why) = check_graph_seeds(gs) {
-            return Err(Error::Config(format!(
-                "invalid retrieval.graph_seeds={gs} (env COMEMORY_RETRIEVAL_GRAPH_SEEDS): {why}"
-            )));
-        }
+        check_knob(
+            "retrieval.graph_seeds",
+            "COMEMORY_RETRIEVAL_GRAPH_SEEDS",
+            gs,
+            check_positive_count(gs),
+        )?;
         let w = self.retrieval.max_page_window;
         if w == 0 {
             return Err(Error::Config(
@@ -192,45 +196,43 @@ impl Config {
             ));
         }
         let mt = self.retrieval.memory_threshold;
-        if let Err(why) = check_unit_interval(f64::from(mt)) {
-            return Err(Error::Config(format!(
-                "invalid retrieval.memory_threshold={mt} (env COMEMORY_RETRIEVAL_MEMORY_THRESHOLD): {why}"
-            )));
-        }
+        check_knob(
+            "retrieval.memory_threshold",
+            "COMEMORY_RETRIEVAL_MEMORY_THRESHOLD",
+            mt,
+            check_unit_interval(f64::from(mt)),
+        )?;
         let ct = self.retrieval.code_threshold;
-        if let Err(why) = check_unit_interval(f64::from(ct)) {
-            return Err(Error::Config(format!(
-                "invalid retrieval.code_threshold={ct} (env COMEMORY_RETRIEVAL_CODE_THRESHOLD): {why}"
-            )));
-        }
+        check_knob(
+            "retrieval.code_threshold",
+            "COMEMORY_RETRIEVAL_CODE_THRESHOLD",
+            ct,
+            check_unit_interval(f64::from(ct)),
+        )?;
         let dw = self.retrieval.document_leg_weight;
-        if let Err(reason) = check_document_leg_weight(dw) {
-            return Err(Error::Config(format!(
-                "invalid retrieval.document_leg_weight={dw} (env COMEMORY_RETRIEVAL_DOCUMENT_LEG_WEIGHT): {reason}"
-            )));
-        }
-        Ok(())
+        check_knob(
+            "retrieval.document_leg_weight",
+            "COMEMORY_RETRIEVAL_DOCUMENT_LEG_WEIGHT",
+            dw,
+            check_document_leg_weight(dw),
+        )
     }
 
     /// Document-source indexing knobs consumed by `comemory index`.
     fn check_indexing_knobs(&self) -> Result<()> {
         let m = self.indexing.max_file_bytes;
-        if let Err(why) = check_max_file_bytes(m) {
-            return Err(Error::Config(format!(
-                "invalid indexing.max_file_bytes={m} (env COMEMORY_INDEXING_MAX_FILE_BYTES): {why}"
-            )));
-        }
-        Ok(())
+        check_knob(
+            "indexing.max_file_bytes",
+            "COMEMORY_INDEXING_MAX_FILE_BYTES",
+            m,
+            check_max_file_bytes(m),
+        )
     }
 
     /// Ranking knobs consumed by `retrieval::{rerank,diversify}`.
     fn check_rank_knobs(&self) -> Result<()> {
         let d = self.rank.decay;
-        if let Err(why) = check_decay(d) {
-            return Err(Error::Config(format!(
-                "invalid rank.decay={d} (env COMEMORY_RANK_DECAY): {why}"
-            )));
-        }
+        check_knob("rank.decay", "COMEMORY_RANK_DECAY", d, check_decay(d))?;
         let (lo, hi) = self.rank.prior_clamp;
         if !lo.is_finite() || !hi.is_finite() || lo <= 0.0 || lo > hi {
             return Err(Error::Config(format!(
@@ -238,11 +240,12 @@ impl Config {
             )));
         }
         let l = self.rank.mmr_lambda;
-        if let Err(why) = check_unit_interval(l) {
-            return Err(Error::Config(format!(
-                "invalid rank.mmr_lambda={l} (env COMEMORY_RANK_MMR_LAMBDA): {why}"
-            )));
-        }
+        check_knob(
+            "rank.mmr_lambda",
+            "COMEMORY_RANK_MMR_LAMBDA",
+            l,
+            check_unit_interval(l),
+        )?;
         let h = self.rank.near_dup_hamming;
         if h > 64 {
             return Err(Error::Config(format!(
@@ -261,11 +264,12 @@ impl Config {
             )));
         }
         let f = self.prune.min_feedback;
-        if let Err(why) = check_unit_interval(f) {
-            return Err(Error::Config(format!(
-                "invalid prune.min_feedback={f} (env COMEMORY_PRUNE_MIN_FEEDBACK): {why}"
-            )));
-        }
+        check_knob(
+            "prune.min_feedback",
+            "COMEMORY_PRUNE_MIN_FEEDBACK",
+            f,
+            check_unit_interval(f),
+        )?;
         let r = self.prune.learning_retention_days;
         if r < 1 {
             return Err(Error::Config(format!(
@@ -309,7 +313,7 @@ impl Config {
         check_grid(
             "tune.graph_seeds_grid",
             &self.tune.graph_seeds_grid,
-            check_graph_seeds,
+            check_positive_count,
         )?;
         // `tune.samples` has no range arm: any usize is valid (0 means the
         // exhaustive cartesian grid, and the sampler clamps a value above

@@ -21,7 +21,7 @@ use crate::domains::learning::feedback_tracking;
 use crate::prelude::*;
 use crate::store::Connection;
 use crate::store::edges::{self, EdgeKey, REFERENCES_FILE, file_node_id};
-use crate::store::memory_row;
+use crate::store::memory_signals;
 use crate::utilities::telemetry;
 
 /// Max bound variables per `IN (...)` chunk — well under bundled SQLite's
@@ -162,7 +162,7 @@ fn reward_pair(
 /// single chunked `UPDATE ... WHERE id IN (...)`. Empty input is a no-op.
 fn bump_activation(conn: &Connection, ids: &[String], at: &str) -> Result<()> {
     for chunk in ids.chunks(IN_CHUNK) {
-        memory_row::bump_access(conn, chunk, at)?;
+        memory_signals::bump_access(conn, chunk, at)?;
     }
     Ok(())
 }

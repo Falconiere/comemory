@@ -18,7 +18,7 @@ One line per file, named after its primary item:
 | File | Primary item | Purpose |
 | --- | --- | --- |
 | `chunk.rs` | `Chunk` | cAST-style greedy chunking of oversized AST nodes into line-budgeted child chunks |
-| `extractor.rs` | `ExtractedSymbol` | Symbol extraction via `ast-grep-core` patterns, one pattern set per language |
+| `extractor.rs` | `ExtractedSymbol` | Symbol extraction via `ast-grep-core` patterns, with one compile-once dispatcher and an isolated cache per language |
 | `languages.rs` | `Lang` | Registry of compiled-in ast-grep languages and extension-to-language detection |
 | `pattern.rs` | `find` | User-facing ast-grep pattern search over a single source file (`comemory ast`) |
 | `pattern_cache.rs` | `cached` | Process-global, compile-once cache of ast-grep `Pattern`s |

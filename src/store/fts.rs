@@ -3,9 +3,20 @@
 //! four ladder tiers live in [`crate::store::fts_memory`] and are
 //! re-exported here, so `fts::search_memory*` stays the call-site path.
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, params_from_iter};
 
+use super::{
+    orm,
+    schema_code::{CodeFts, code_fts, code_symbols},
+    schema_learning::{QueryExpansions, query_expansions},
+    schema_memory::{MemoryFts, memory_fts},
+};
 use crate::prelude::*;
+use toolu_orm::core::{
+    expr::{Expr, OrderBy},
+    fts5,
+    query_column::{CommonOps, NumericOps},
+};
 
 /// Memory leg, re-exported from [`crate::store::fts_memory`] so callers
 /// (and this module's doc links) keep one `fts::` path per FTS helper.
@@ -24,9 +35,13 @@ pub struct CodeFtsHit {
 
 /// Insert a row into the `memory_fts` virtual table indexing the memory body and tags.
 pub fn index_memory(conn: &Connection, memory_id: &str, body: &str, tags_csv: &str) -> Result<()> {
-    conn.execute(
-        "INSERT INTO memory_fts(memory_id, body, tags) VALUES(?1, ?2, ?3)",
-        params![memory_id, body, tags_csv],
+    orm::execute(
+        conn,
+        MemoryFts::insert()
+            .set(&memory_fts::memory_id, memory_id)
+            .set(&memory_fts::body, body)
+            .set(&memory_fts::tags, tags_csv)
+            .to_sql(),
     )?;
     Ok(())
 }
@@ -175,12 +190,6 @@ pub const MAX_EXPANSIONS_PER_TERM: usize = 2;
 pub fn build_expanded_or_query(conn: &Connection, query: &str) -> Result<String> {
     let mut tokens: Vec<String> = Vec::new();
     let mut any_expansion = false;
-    let mut stmt = conn.prepare_cached(
-        "SELECT expansion FROM query_expansions
-          WHERE term = ?1 AND support >= ?2
-          ORDER BY support DESC, expansion
-          LIMIT ?3",
-    )?;
     for key in crate::store::tokenizer::split::query_token_list(query)
         .into_iter()
         .take(MAX_QUERY_TERMS)
@@ -188,12 +197,14 @@ pub fn build_expanded_or_query(conn: &Connection, query: &str) -> Result<String>
         if !tokens.contains(&key) {
             tokens.push(key.clone());
         }
-        let expansions: Vec<String> = stmt
-            .query_map(
-                params![key, EXPANSION_MIN_SUPPORT, MAX_EXPANSIONS_PER_TERM as i64],
-                |r| r.get(0),
-            )?
-            .collect::<std::result::Result<_, _>>()?;
+        let query = QueryExpansions::select()
+            .columns_typed(&[&query_expansions::expansion])
+            .filter(query_expansions::term.eq(key.as_str()))
+            .filter(query_expansions::support.gte(EXPANSION_MIN_SUPPORT))
+            .order_by(query_expansions::support.desc())
+            .order_by(query_expansions::expansion.asc())
+            .limit(MAX_EXPANSIONS_PER_TERM as i64);
+        let expansions: Vec<String> = orm::query_all(conn, query.to_sql(), |r| r.get(0))?;
         for e in expansions {
             if !tokens.contains(&e) {
                 tokens.push(e);
@@ -292,10 +303,14 @@ pub fn index_code(
     snippet: &str,
     path_tokens: &str,
 ) -> Result<()> {
-    conn.execute(
-        "INSERT INTO code_fts(symbol_id, symbol, snippet, path_tokens) \
-         VALUES(?1, ?2, ?3, ?4)",
-        params![symbol_id, symbol, snippet, path_tokens],
+    orm::execute(
+        conn,
+        CodeFts::insert()
+            .set(&code_fts::symbol_id, symbol_id)
+            .set(&code_fts::symbol, symbol)
+            .set(&code_fts::snippet, snippet)
+            .set(&code_fts::path_tokens, path_tokens)
+            .to_sql(),
     )?;
     Ok(())
 }
@@ -329,27 +344,41 @@ pub fn search_code(
         return Ok(Vec::new());
     }
     let (w_sym, w_snip, w_path) = weights;
-    let sql = format!(
-        "SELECT code_fts.symbol_id, bm25(code_fts, 0.0, {w_sym}, {w_snip}, {w_path}) AS score \
-           FROM code_fts \
-           JOIN code_symbols c ON c.id = code_fts.symbol_id \
-          WHERE code_fts MATCH ?1 \
-            AND (?3 IS NULL OR c.repo = ?3) \
-            AND (?4 IS NULL OR c.lang = ?4) \
-          ORDER BY score \
-          LIMIT ?2"
-    );
-    run_fts_query(
-        conn,
-        &sql,
-        params![match_expr, k as i64, repo, lang],
-        |row| {
-            Ok(CodeFtsHit {
-                symbol_id: row.get(0)?,
-                score: row.get(1)?,
-            })
-        },
-    )
+    // Preserve the decimal literals SQLite received from the f32 settings.
+    // Widening the binary value first changes fractional BM25 score bits.
+    let weights = [0.0, w_sym, w_snip, w_path]
+        .into_iter()
+        .map(|weight| {
+            weight
+                .to_string()
+                .parse::<f64>()
+                .map_err(|e| Error::Other(format!("BM25 weight: {e}")))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let score = fts5::bm25("code_fts", &weights).map_err(orm::build_error)?;
+    let mut select = CodeFts::select()
+        .columns_typed(&[&code_fts::symbol_id])
+        .column_expr(score.sql(), "score")
+        .join(
+            "code_symbols",
+            code_symbols::id.equals(&code_fts::symbol_id),
+        )
+        .filter(Expr::table_match("code_fts", match_expr).map_err(orm::build_error)?)
+        .order_by(OrderBy::alias_asc("score"))
+        .limit(k as i64);
+    if let Some(repo) = repo {
+        select = select.filter(code_symbols::repo.eq(repo));
+    }
+    if let Some(lang) = lang {
+        select = select.filter(code_symbols::lang.eq(lang));
+    }
+    let (sql, values) = select.to_sql();
+    run_fts_query(conn, &sql, params_from_iter(values), |row| {
+        Ok(CodeFtsHit {
+            symbol_id: row.get(0)?,
+            score: row.get(1)?,
+        })
+    })
 }
 
 #[cfg(test)]

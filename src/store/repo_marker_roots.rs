@@ -6,6 +6,12 @@
 //! the per-repo *writer*, `upsert_repo_root`) because these are read-side
 //! queries with a different caller (the serve layer, not the indexer).
 
+use super::{
+    orm,
+    schema_code::{RepoMarker, repo_marker as c},
+};
+use toolu_orm::core::query_column::CommonOps;
+
 use std::path::PathBuf;
 
 use rusqlite::Connection;
@@ -19,11 +25,16 @@ use crate::prelude::*;
 /// the allowed-roots set, not a hard requirement (mirrors the skip-and-warn
 /// pattern in `graph::pagerank`/`graph::derived`).
 pub fn all_roots(conn: &Connection) -> Result<Vec<PathBuf>> {
-    let mut stmt = conn.prepare("SELECT root_path FROM repo_marker WHERE root_path IS NOT NULL")?;
-    let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+    let rows = orm::query_all(
+        conn,
+        RepoMarker::select()
+            .columns_typed(&[&c::root_path])
+            .filter(c::root_path.is_not_null())
+            .to_sql(),
+        |r| r.get::<_, String>(0),
+    )?;
     let mut roots = Vec::new();
-    for row in rows {
-        let raw = row?;
+    for raw in rows {
         match PathBuf::from(&raw).canonicalize() {
             Ok(canonical) => roots.push(canonical),
             Err(e) => {
@@ -45,15 +56,15 @@ pub fn all_roots(conn: &Connection) -> Result<Vec<PathBuf>> {
 /// half-applied v7 migration missing the `root_path` column) propagates as
 /// `Err` instead, so it is never disguised as that same hint.
 pub fn root_path(conn: &Connection, repo: &str) -> Result<Option<String>> {
-    match conn.query_row(
-        "SELECT root_path FROM repo_marker WHERE repo = ?1",
-        [repo],
+    Ok(orm::query_optional(
+        conn,
+        RepoMarker::select()
+            .columns_typed(&[&c::root_path])
+            .filter(c::repo.eq(repo))
+            .to_sql(),
         |r| r.get::<_, Option<String>>(0),
-    ) {
-        Ok(v) => Ok(v),
-        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-        Err(e) => Err(Error::Sqlite(e)),
-    }
+    )?
+    .flatten())
 }
 
 #[cfg(test)]

@@ -57,6 +57,65 @@ fn code_fts_returns_seeded_match() {
 }
 
 #[test]
+fn fractional_code_weights_preserve_sqlite_score_bits() {
+    let dir = tempdir().expect("tempdir");
+    let conn = connection::open(dir.path().join("comemory.db")).expect("open");
+    seed_code_symbol(
+        &conn,
+        1,
+        "r",
+        "rust",
+        "login",
+        "login login",
+        "src/login.rs",
+    );
+    seed_code_symbol(
+        &conn,
+        2,
+        "r",
+        "rust",
+        "auth",
+        "login authentication",
+        "src/auth.rs",
+    );
+    seed_code_symbol(
+        &conn,
+        3,
+        "r",
+        "rust",
+        "other",
+        "unrelated body",
+        "src/other.rs",
+    );
+    for weights in [
+        (0.2_f32, 0.3_f32, 0.1_f32),
+        (0.7, 1.3, 2.1),
+        (0.1, 0.0, 0.0),
+    ] {
+        let sql = format!(
+            "SELECT symbol_id, bm25(code_fts, 0.0, {}, {}, {}) AS score \
+             FROM code_fts WHERE code_fts MATCH ?1 ORDER BY score",
+            weights.0, weights.1, weights.2
+        );
+        let expected: Vec<(i64, u32)> = conn
+            .prepare(&sql)
+            .unwrap()
+            .query_map([fts::build_match_query("login")], |row| {
+                Ok((row.get(0)?, row.get::<_, f32>(1)?.to_bits()))
+            })
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        let actual: Vec<_> = fts::search_code(&conn, "login", 10, None, None, weights)
+            .unwrap()
+            .into_iter()
+            .map(|hit| (hit.symbol_id, hit.score.to_bits()))
+            .collect();
+        assert_eq!(actual, expected, "weights {weights:?}");
+    }
+}
+
+#[test]
 fn camel_case_path_is_reachable_by_subtoken() {
     // Regression: `path_to_tokens` used to pre-lowercase the path before
     // the identifier tokenizer saw it, destroying the camelCase boundary —

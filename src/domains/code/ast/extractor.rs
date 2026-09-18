@@ -53,46 +53,31 @@ pub struct ExtractedSymbol {
 /// `static` (see [`pattern_cache`]) and reused across every file, so a repo
 /// walk pays the compile cost once per language rather than once per file.
 pub fn extract(lang: Lang, source: &str) -> Result<Vec<ExtractedSymbol>> {
+    let patterns = compiled(lang)?;
     match lang {
-        Lang::Rust => Ok(extract_with(Rust, lang, source, rust_compiled()?)),
+        Lang::Rust => Ok(extract_with(Rust, lang, source, patterns)),
         // Tsx is a superset of the plain TypeScript grammar — it parses
         // JSX-bearing source as well as pure TS, so we route both `.ts` and
         // `.tsx` through it.
-        Lang::Typescript => Ok(extract_with(Tsx, lang, source, ts_compiled()?)),
-        Lang::Javascript => Ok(extract_with(JavaScript, lang, source, js_compiled()?)),
-        Lang::Python => Ok(extract_with(Python, lang, source, python_compiled()?)),
-        Lang::Go => Ok(extract_with(Go, lang, source, go_compiled()?)),
+        Lang::Typescript => Ok(extract_with(Tsx, lang, source, patterns)),
+        Lang::Javascript => Ok(extract_with(JavaScript, lang, source, patterns)),
+        Lang::Python => Ok(extract_with(Python, lang, source, patterns)),
+        Lang::Go => Ok(extract_with(Go, lang, source, patterns)),
     }
 }
 
-/// Compile-once accessor for the Rust symbol patterns.
-fn rust_compiled() -> Result<&'static [(&'static str, Pattern)]> {
-    static CELL: OnceLock<std::result::Result<CompiledPatterns, String>> = OnceLock::new();
-    pattern_cache::cached(&CELL, Rust, rust_patterns())
-}
-
-/// Compile-once accessor for the TypeScript symbol patterns (Tsx grammar).
-fn ts_compiled() -> Result<&'static [(&'static str, Pattern)]> {
-    static CELL: OnceLock<std::result::Result<CompiledPatterns, String>> = OnceLock::new();
-    pattern_cache::cached(&CELL, Tsx, &ts_patterns())
-}
-
-/// Compile-once accessor for the JavaScript symbol patterns.
-fn js_compiled() -> Result<&'static [(&'static str, Pattern)]> {
-    static CELL: OnceLock<std::result::Result<CompiledPatterns, String>> = OnceLock::new();
-    pattern_cache::cached(&CELL, JavaScript, js_patterns())
-}
-
-/// Compile-once accessor for the Python symbol patterns.
-fn python_compiled() -> Result<&'static [(&'static str, Pattern)]> {
-    static CELL: OnceLock<std::result::Result<CompiledPatterns, String>> = OnceLock::new();
-    pattern_cache::cached(&CELL, Python, python_patterns())
-}
-
-/// Compile-once accessor for the Go symbol patterns.
-fn go_compiled() -> Result<&'static [(&'static str, Pattern)]> {
-    static CELL: OnceLock<std::result::Result<CompiledPatterns, String>> = OnceLock::new();
-    pattern_cache::cached(&CELL, Go, go_patterns())
+/// Select one language's cache and compile only that language's symbol table.
+/// Separate slots retain grammar isolation and cache both success and failure.
+fn compiled(lang: Lang) -> Result<&'static [(&'static str, Pattern)]> {
+    static CELLS: [OnceLock<std::result::Result<CompiledPatterns, String>>; 5] =
+        [const { OnceLock::new() }; 5];
+    match lang {
+        Lang::Rust => pattern_cache::cached(&CELLS[0], Rust, rust_patterns()),
+        Lang::Typescript => pattern_cache::cached(&CELLS[1], Tsx, &ts_patterns()),
+        Lang::Javascript => pattern_cache::cached(&CELLS[2], JavaScript, js_patterns()),
+        Lang::Python => pattern_cache::cached(&CELLS[3], Python, python_patterns()),
+        Lang::Go => pattern_cache::cached(&CELLS[4], Go, go_patterns()),
+    }
 }
 
 fn rust_patterns() -> &'static [(&'static str, &'static str)] {
@@ -145,8 +130,7 @@ const TS_JS_COMMON: &[(&str, &str)] = &[
 
 /// TypeScript symbol patterns: [`TS_JS_COMMON`] plus the `abstract class`
 /// row, which is a distinct node kind under the Tsx grammar. The owned `Vec`
-/// is built only at first-call compile time — [`ts_compiled`] caches the
-/// resulting [`Pattern`]s, so it is never rebuilt per file.
+/// supplies [`compiled`], which caches the resulting [`Pattern`]s.
 fn ts_patterns() -> Vec<(&'static str, &'static str)> {
     let mut out = TS_JS_COMMON.to_vec();
     out.push(("class", "abstract class $NAME { $$$BODY }"));

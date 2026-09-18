@@ -8,30 +8,36 @@ use std::collections::HashMap;
 
 use rusqlite::Connection;
 
+use super::{
+    orm,
+    schema_code::{RepoMarker, repo_marker},
+    schema_memory::{Memories, memories},
+};
 use crate::prelude::*;
+use toolu_orm::core::query_column::CommonOps;
 
 /// `(id, content_hash)` for every live `memories` row, as a map keyed by id
 /// — one query for the whole corpus rather than one per markdown file (see
 /// `checks::mirror_parity`, which diffs this against each file's freshly
 /// computed hash).
 pub fn live_memory_hashes(conn: &Connection) -> Result<HashMap<String, String>> {
-    let mut stmt =
-        conn.prepare("SELECT id, content_hash FROM memories WHERE deleted_at IS NULL")?;
-    let rows = stmt
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
-        .collect::<std::result::Result<_, _>>()?;
-    Ok(rows)
+    let query = Memories::select()
+        .columns_typed(&[&memories::id, &memories::content_hash])
+        .filter(memories::deleted_at.is_null());
+    Ok(
+        orm::query_all(conn, query.to_sql(), |r| Ok((r.get(0)?, r.get(1)?)))?
+            .into_iter()
+            .collect(),
+    )
 }
 
 /// `(repo, root_path)` for every `repo_marker` row with a recorded root,
 /// behind `checks::repo_roots`'s on-disk existence check.
 pub fn repo_roots(conn: &Connection) -> Result<Vec<(String, String)>> {
-    let mut stmt =
-        conn.prepare("SELECT repo, root_path FROM repo_marker WHERE root_path IS NOT NULL")?;
-    let rows = stmt
-        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    Ok(rows)
+    let query = RepoMarker::select()
+        .columns_typed(&[&repo_marker::repo, &repo_marker::root_path])
+        .filter(repo_marker::root_path.is_not_null());
+    orm::query_all(conn, query.to_sql(), |r| Ok((r.get(0)?, r.get(1)?)))
 }
 
 /// Live (non-soft-deleted) `memories` row count, behind
@@ -40,12 +46,8 @@ pub fn repo_roots(conn: &Connection) -> Result<Vec<(String, String)>> {
 /// `u64::try_from(..).unwrap_or(0)` fallback is unreachable since this is
 /// never negative.
 pub fn live_memory_count(conn: &Connection) -> Result<i64> {
-    conn.query_row(
-        "SELECT COUNT(*) FROM memories WHERE deleted_at IS NULL",
-        [],
-        |r| r.get(0),
-    )
-    .map_err(Error::from)
+    let query = Memories::select().filter(memories::deleted_at.is_null());
+    orm::query_one(conn, query.to_count_sql(), |r| r.get(0))
 }
 
 #[cfg(test)]

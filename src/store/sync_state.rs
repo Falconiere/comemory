@@ -1,10 +1,15 @@
 //! Per-workspace sync cursors (`pulled_seq` / `pushed_seq`) and last-sync
 //! timestamp. One row per workspace the device has synced against.
 
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::Connection;
 use serde::Serialize;
 
+use super::{
+    orm,
+    schema_sync::{SyncState, sync_state as col},
+};
 use crate::prelude::*;
+use toolu_orm::core::query_column::CommonOps;
 
 /// One `sync_state` row.
 #[derive(Debug, Clone, Serialize)]
@@ -34,64 +39,70 @@ pub fn ensure(conn: &Connection, workspace_id: &str, api_url: &str) -> Result<()
 
 /// Load one workspace's cursors.
 pub fn get(conn: &Connection, workspace_id: &str) -> Result<Option<SyncStateRow>> {
-    conn.query_row(
-        "SELECT workspace_id, api_url, pulled_seq, pushed_seq, last_sync_at \
-         FROM sync_state WHERE workspace_id = ?1",
-        rusqlite::params![workspace_id],
-        |r| {
-            Ok(SyncStateRow {
-                workspace_id: r.get(0)?,
-                api_url: r.get(1)?,
-                pulled_seq: r.get(2)?,
-                pushed_seq: r.get(3)?,
-                last_sync_at: r.get(4)?,
-            })
-        },
+    orm::query_optional(
+        conn,
+        select_rows()
+            .filter(col::workspace_id.eq(workspace_id))
+            .to_sql(),
+        read_row,
     )
-    .optional()
-    .map_err(Into::into)
 }
 
 /// Advance `pushed_seq` (and optionally stamp `last_sync_at`).
 pub fn set_pushed(conn: &Connection, workspace_id: &str, pushed_seq: i64, at: &str) -> Result<()> {
-    conn.execute(
-        "UPDATE sync_state SET pushed_seq = ?2, last_sync_at = ?3 \
-         WHERE workspace_id = ?1",
-        rusqlite::params![workspace_id, pushed_seq, at],
+    orm::execute(
+        conn,
+        SyncState::update()
+            .set(&col::pushed_seq, pushed_seq)
+            .set(&col::last_sync_at, at)
+            .filter(col::workspace_id.eq(workspace_id))
+            .to_sql(),
     )?;
     Ok(())
 }
 
 /// Advance `pulled_seq` (and stamp `last_sync_at`).
 pub fn set_pulled(conn: &Connection, workspace_id: &str, pulled_seq: i64, at: &str) -> Result<()> {
-    conn.execute(
-        "UPDATE sync_state SET pulled_seq = ?2, last_sync_at = ?3 \
-         WHERE workspace_id = ?1",
-        rusqlite::params![workspace_id, pulled_seq, at],
+    orm::execute(
+        conn,
+        SyncState::update()
+            .set(&col::pulled_seq, pulled_seq)
+            .set(&col::last_sync_at, at)
+            .filter(col::workspace_id.eq(workspace_id))
+            .to_sql(),
     )?;
     Ok(())
 }
 
 /// List every workspace this device has synced.
 pub fn list(conn: &Connection) -> Result<Vec<SyncStateRow>> {
-    let mut stmt = conn.prepare(
-        "SELECT workspace_id, api_url, pulled_seq, pushed_seq, last_sync_at \
-         FROM sync_state ORDER BY workspace_id",
-    )?;
-    let rows = stmt.query_map([], |r| {
-        Ok(SyncStateRow {
-            workspace_id: r.get(0)?,
-            api_url: r.get(1)?,
-            pulled_seq: r.get(2)?,
-            pushed_seq: r.get(3)?,
-            last_sync_at: r.get(4)?,
-        })
-    })?;
-    let mut out = Vec::new();
-    for row in rows {
-        out.push(row?);
-    }
-    Ok(out)
+    orm::query_all(
+        conn,
+        select_rows().order_by(col::workspace_id.asc()).to_sql(),
+        read_row,
+    )
+}
+
+/// Build the shared workspace/cursor projection.
+fn select_rows() -> toolu_orm::query::select::SelectBuilder {
+    SyncState::select().columns_typed(&[
+        &col::workspace_id,
+        &col::api_url,
+        &col::pulled_seq,
+        &col::pushed_seq,
+        &col::last_sync_at,
+    ])
+}
+
+/// Decode the shared workspace/cursor projection.
+fn read_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<SyncStateRow> {
+    Ok(SyncStateRow {
+        workspace_id: r.get(0)?,
+        api_url: r.get(1)?,
+        pulled_seq: r.get(2)?,
+        pushed_seq: r.get(3)?,
+        last_sync_at: r.get(4)?,
+    })
 }
 
 #[cfg(test)]

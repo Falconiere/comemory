@@ -7,7 +7,12 @@
 //! because these four together would push that file past the 300-line
 //! ceiling; every function here is a plain read with no writer counterpart.
 
+use super::{
+    orm,
+    schema_graph::{Edges, edges as c},
+};
 use rusqlite::{Connection, OptionalExtension, named_params, params};
+use toolu_orm::core::query_column::CommonOps;
 
 use crate::prelude::*;
 use crate::store::edges::{REFERENCES_FILE, REFERENCES_SYMBOL};
@@ -214,18 +219,18 @@ pub fn live_superseder(
 /// — `comemory show`'s depth-1 reference read. See [`walk_context_edges`]
 /// for the multi-hop version `comemory context` uses.
 pub fn direct_reference_edges(conn: &Connection, memory_id: &str) -> Result<Vec<(String, String)>> {
-    let mut stmt = conn.prepare(
-        "SELECT rel, dst_id FROM edges \
-          WHERE src_kind = 'memory' AND src_id = ?1 AND rel IN (?2, ?3) \
-          ORDER BY rel, dst_id",
-    )?;
-    let rows = stmt
-        .query_map(
-            params![memory_id, REFERENCES_FILE, REFERENCES_SYMBOL],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )?
-        .collect::<std::result::Result<_, _>>()?;
-    Ok(rows)
+    orm::query_all(
+        conn,
+        Edges::select()
+            .columns_typed(&[&c::rel, &c::dst_id])
+            .filter(c::src_kind.eq("memory"))
+            .filter(c::src_id.eq(memory_id))
+            .filter(c::rel.in_list(&[REFERENCES_FILE.into(), REFERENCES_SYMBOL.into()]))
+            .order_by(c::rel.asc())
+            .order_by(c::dst_id.asc())
+            .to_sql(),
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )
 }
 
 #[cfg(test)]

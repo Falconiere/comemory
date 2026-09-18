@@ -333,3 +333,44 @@ fn direct_reference_edges_is_empty_for_a_memory_with_no_references() {
             .is_empty()
     );
 }
+
+#[test]
+fn co_change_weight_handles_large_working_sets() {
+    let conn = seed_db();
+    let fid = "file:r:candidate.rs";
+    // Binding both orientations separately needs 32,767 variables, exceeding
+    // bundled SQLite's 32,766 limit. This size failed before placeholder reuse.
+    let files: Vec<String> = (0..16_381).map(|n| format!("file:r:{n}.rs")).collect();
+    for (src, dst, weight) in [
+        (fid, files[0].as_str(), 7),
+        (files[16_380].as_str(), fid, 11),
+    ] {
+        edges::insert_weighted(
+            &conn,
+            EdgeKey {
+                src_kind: "file",
+                src_id: src,
+                dst_kind: "file",
+                dst_id: dst,
+                rel: "co_changed",
+            },
+            weight,
+        )
+        .expect("insert weighted edge");
+    }
+
+    let weight = co_change_weight(&conn, fid, &files);
+    assert!(
+        weight.is_ok(),
+        "working-set IDs must share placeholders across orientations"
+    );
+    assert_eq!(weight.unwrap(), 18.0);
+    // The same large working set without the two edge endpoints must sum to
+    // zero: edgeless IDs contribute nothing, so 18.0 above is the two real
+    // edges and not an artifact of the reused placeholders.
+    assert_eq!(
+        co_change_weight(&conn, fid, &files[1..16_380]).expect("query"),
+        0.0,
+        "edgeless working-set IDs must not contribute weight"
+    );
+}

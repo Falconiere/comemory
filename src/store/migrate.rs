@@ -8,8 +8,16 @@
 //! outside the apply-once gate.
 
 use rusqlite::Connection;
+use toolu_orm::core::column::Integer;
+use toolu_orm::core::query_column::{Column, CommonOps};
+use toolu_orm::core::value::Value;
+use toolu_orm::query::{select::SelectBuilder, update::UpdateBuilder};
 
 use crate::prelude::*;
+use crate::store::orm;
+use crate::store::schema_code::{CodeSymbols, code_symbols};
+use crate::store::schema_core::{SchemaMeta, schema_meta};
+use crate::store::schema_memory::{Memories, memories};
 
 /// Pre-migration / pre-rebuild snapshots (`VACUUM INTO`, prune, stale-`.bak`
 /// validation). `pub(crate)` — an internal implementation detail of
@@ -184,9 +192,12 @@ fn describe_migration_failure(key: &str, e: &rusqlite::Error) -> Error {
 /// `schema_meta`. Shared by [`apply`] and the simhash backfill/rehash
 /// passes so every run-once gate reads the marker identically.
 fn marker_done(conn: &Connection, key: &str) -> bool {
-    conn.query_row(
-        "SELECT value FROM schema_meta WHERE key = ?1",
-        [key],
+    orm::query_one(
+        conn,
+        SchemaMeta::select()
+            .columns_typed(&[&schema_meta::value])
+            .filter(schema_meta::key.eq(key))
+            .to_sql(),
         |row| row.get::<_, String>(0),
     )
     .is_ok()
@@ -195,7 +206,13 @@ fn marker_done(conn: &Connection, key: &str) -> bool {
 /// Record the run-once marker `key` inside the caller's transaction so
 /// the marker only persists together with the work it gates.
 fn insert_marker(tx: &rusqlite::Transaction<'_>, key: &str) -> Result<()> {
-    tx.execute("INSERT INTO schema_meta(key, value) VALUES(?1, '1')", [key])?;
+    orm::execute(
+        tx,
+        SchemaMeta::insert()
+            .set(&schema_meta::key, key)
+            .set(&schema_meta::value, "1")
+            .to_sql(),
+    )?;
     Ok(())
 }
 
@@ -213,8 +230,11 @@ pub(crate) fn backfill_memory_simhash(conn: &mut Connection) -> Result<()> {
     let tx = conn.transaction()?;
     recompute_simhashes(
         &tx,
-        "SELECT id, body FROM memories WHERE simhash = 0",
-        "UPDATE memories SET simhash = ?1 WHERE id = ?2",
+        &Memories::select()
+            .columns_typed(&[&memories::id, &memories::body])
+            .filter(memories::simhash.eq(0)),
+        &memories::id,
+        &memories::simhash,
     )?;
     insert_marker(&tx, "0004_simhash_backfill")?;
     tx.commit()?;
@@ -234,53 +254,58 @@ pub(crate) fn rehash_simhashes(conn: &mut Connection) -> Result<()> {
     let tx = conn.transaction()?;
     recompute_simhashes(
         &tx,
-        "SELECT id, body FROM memories",
-        "UPDATE memories SET simhash = ?1 WHERE id = ?2",
+        &Memories::select().columns_typed(&[&memories::id, &memories::body]),
+        &memories::id,
+        &memories::simhash,
     )?;
     recompute_simhashes(
         &tx,
-        "SELECT id, snippet FROM code_symbols",
-        "UPDATE code_symbols SET simhash = ?1 WHERE id = ?2",
+        &CodeSymbols::select().columns_typed(&[&code_symbols::id, &code_symbols::snippet]),
+        &code_symbols::id,
+        &code_symbols::simhash,
     )?;
     insert_marker(&tx, "0005_simhash_rehash")?;
     tx.commit()?;
     Ok(())
 }
 
-/// Recompute `simhash::of_body` over every `(id, text)` row that
-/// `sql_select` yields and persist via `sql_update` (`?1` = hash,
-/// `?2` = id). Both statements are prepared once, outside the row loop.
-/// The id column is bound as a dynamic [`rusqlite::types::Value`] so
-/// one helper serves both `memories` (TEXT id) and `code_symbols`
-/// (INTEGER id).
-fn recompute_simhashes(
+/// Recompute `simhash::of_body` over each `(id, text)` row and persist with
+/// a cached generated update. Preserve each SQLite id value and collect the
+/// scan before any writes begin; memory and code id types differ.
+fn recompute_simhashes<T>(
     tx: &rusqlite::Transaction<'_>,
-    sql_select: &str,
-    sql_update: &str,
+    query: &SelectBuilder,
+    id_column: &Column<T>,
+    simhash_column: &Column<Integer>,
 ) -> Result<()> {
-    let mut select = tx.prepare(sql_select)?;
-    let mut update = tx.prepare(sql_update)?;
-    let rows: Vec<(rusqlite::types::Value, String)> = select
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
-        .collect::<std::result::Result<_, _>>()?;
-    for (id, text) in rows {
-        // SQLite INTEGER is i64; store the u64 bit pattern.
-        let hash = crate::utilities::simhash::of_body(&text) as i64;
-        update.execute(rusqlite::params![hash, id])?;
-    }
+    let rows: Vec<(rusqlite::types::Value, String)> =
+        orm::query_all(tx, query.to_sql(), |r| Ok((r.get(0)?, r.get(1)?)))?;
+    let update = UpdateBuilder::new(query.table_name())
+        .set(simhash_column, 0_i64)
+        .filter(id_column.eq(Value::Null));
+    orm::execute_many(
+        tx,
+        update.to_sql(),
+        rows.into_iter().map(|(id, text)| {
+            // SQLite INTEGER is i64; store the u64 bit pattern.
+            (crate::utilities::simhash::of_body(&text) as i64, id)
+        }),
+    )?;
     Ok(())
 }
 
 /// Advance the stored version, skipping unchanged values to avoid a WAL write
 /// lock on reads. Compare numerically to refuse downgrades; replace invalid values.
 fn set_version(conn: &Connection, version: &str) -> Result<()> {
-    let current = conn
-        .query_row(
-            "SELECT value FROM schema_meta WHERE key = 'version'",
-            [],
-            |row| row.get::<_, String>(0),
-        )
-        .ok();
+    let current = orm::query_one(
+        conn,
+        SchemaMeta::select()
+            .columns_typed(&[&schema_meta::value])
+            .filter(schema_meta::key.eq("version"))
+            .to_sql(),
+        |row| row.get::<_, String>(0),
+    )
+    .ok();
     if current.as_deref() == Some(version) {
         return Ok(());
     }
@@ -294,12 +319,7 @@ fn set_version(conn: &Connection, version: &str) -> Result<()> {
     if stored_is_newer {
         return Ok(());
     }
-    conn.execute(
-        "INSERT INTO schema_meta(key, value) VALUES('version', ?1)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        [version],
-    )?;
-    Ok(())
+    crate::store::schema_meta::upsert(conn, "version", version)
 }
 
 #[cfg(test)]

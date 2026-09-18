@@ -26,8 +26,16 @@
 //! memories, archive the repo instead (`crate::domains::code::repo_admin::archive`), which
 //! lazy reindex skips.
 
+use super::{
+    orm,
+    schema_code::{
+        CodeSymbols, IndexedFiles, RepoMarker, code_symbols, indexed_files, repo_marker,
+    },
+    schema_learning::{CodeFeedback, code_feedback},
+};
 use rusqlite::Connection;
 use serde::Serialize;
+use toolu_orm::core::query_column::CommonOps;
 
 use crate::prelude::*;
 use crate::store::edges;
@@ -73,9 +81,24 @@ pub fn drop_repo(conn: &mut Connection, repo: &str) -> Result<DropCounts> {
         [repo],
     )?;
     // `code_feedback` is keyed by (repo, path, symbol), not by symbol id.
-    tx.execute("DELETE FROM code_feedback WHERE repo = ?1", [repo])?;
-    let symbols_removed = tx.execute("DELETE FROM code_symbols WHERE repo = ?1", [repo])?;
-    let files_removed = tx.execute("DELETE FROM indexed_files WHERE repo = ?1", [repo])?;
+    orm::execute(
+        &tx,
+        CodeFeedback::delete()
+            .filter(code_feedback::repo.eq(repo))
+            .to_sql(),
+    )?;
+    let symbols_removed = orm::execute(
+        &tx,
+        CodeSymbols::delete()
+            .filter(code_symbols::repo.eq(repo))
+            .to_sql(),
+    )?;
+    let files_removed = orm::execute(
+        &tx,
+        IndexedFiles::delete()
+            .filter(indexed_files::repo.eq(repo))
+            .to_sql(),
+    )?;
     // Prefix match by `substr`, never `LIKE`: a repo label containing `%`
     // or `_` would otherwise match foreign nodes.
     let edges_removed = tx.execute(
@@ -84,7 +107,12 @@ pub fn drop_repo(conn: &mut Connection, repo: &str) -> Result<DropCounts> {
              OR (dst_kind = 'file' AND substr(dst_id, 1, ?2) = ?1)",
         rusqlite::params![prefix, prefix_len],
     )?;
-    tx.execute("DELETE FROM repo_marker WHERE repo = ?1", [repo])?;
+    orm::execute(
+        &tx,
+        RepoMarker::delete()
+            .filter(repo_marker::repo.eq(repo))
+            .to_sql(),
+    )?;
     tx.commit()?;
 
     Ok(DropCounts {

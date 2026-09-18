@@ -73,7 +73,8 @@ siphasher = "1"
 sqlite-vec = "0.1"
 thiserror = "2"
 time = { version = "0.3", features = ["serde", "formatting", "parsing", "macros"] }
-# Schema-first table declarations (`src/store/schema*.rs`): `#[table]` /
+# Schema-first table declarations and runtime queries (`src/store/schema*.rs`):
+# `#[table]` /
 # `#[fts5_table]` / `#[vec0_table]` structs are the declared schema, diffed into
 # `migrations/` by `examples/migrations.rs`. The facade is the one crate that
 # satisfies both the `::toolu_orm::core` paths the macros emit and the
@@ -81,7 +82,7 @@ time = { version = "0.3", features = ["serde", "formatting", "parsing", "macros"
 # driver feature (the query crate compiles for exactly one backend). Runtime
 # migration APPLY stays comemory's own `store::migrate` — see
 # docs/guides/schema-migrations.md.
-toolu-orm = { version = "0.6.0", default-features = false, features = ["rusqlite"] }
+toolu-orm = { version = "0.7.0", default-features = false, features = ["rusqlite"] }
 # Pure-Rust HTML/XHTML tag-stripping (src/domains/documents/document/html.rs); MIT, zero deps.
 tl = "0.7"
 tokio = { version = "1", features = ["full"] }
@@ -210,7 +211,7 @@ tempfile = "3"
 # `run_generate` (struct → snapshot diff → `migrations/NNNN_<name>.sql`) for
 # `examples/migrations.rs` and the schema-drift test; never linked into the
 # release binary.
-toolu-orm-cli = { version = "0.6.0", default-features = false, features = ["rusqlite"] }
+toolu-orm-cli = { version = "0.7.0", default-features = false, features = ["rusqlite"] }
 # Tests construct `OffsetDateTime` values to drive the query-id round-trip
 # (`utilities::query_id::generate_query_id`); same version line as the main dep.
 time = { version = "0.3", features = ["macros"] }

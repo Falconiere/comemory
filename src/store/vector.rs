@@ -10,11 +10,22 @@
 //! yields cosine similarity in the range `[-1, 1]`, where `1.0` is
 //! identical and `-1.0` is opposite.
 
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, params};
 
+use super::{
+    orm,
+    schema_code::{CodeVec, code_symbols, code_vec},
+    schema_core::{SchemaMeta, schema_meta},
+    schema_memory::{MemoryVec, memory_vec},
+};
 use crate::prelude::*;
 use crate::store::CreatedWindow;
 use crate::store::embed;
+use toolu_orm::core::{
+    column::{Integer, Real},
+    query_column::{Column, CommonOps, Vec0Ops},
+};
+use toolu_orm::query::select::SelectBuilder;
 
 /// Result row from a KNN query.
 pub struct MemoryHit {
@@ -29,41 +40,23 @@ pub struct MemoryHit {
 /// `vec0` virtual-table module registered on this connection. Behind
 /// `comemory doctor`'s "sqlite-vec" check and its `sqlite_vec_loaded` field.
 pub fn is_loaded(conn: &Connection) -> bool {
-    conn.query_row("SELECT vec_version()", [], |r| r.get::<_, String>(0))
-        .is_ok()
+    let query = SelectBuilder::raw().column_expr("vec_version()", "version");
+    orm::query_one(conn, query.to_sql(), |r| r.get::<_, String>(0)).is_ok()
 }
 
 /// Read the configured memory vector dim from schema_meta.
 pub fn dim_memory(conn: &Connection) -> Result<usize> {
-    let v: String = conn.query_row(
-        "SELECT value FROM schema_meta WHERE key = 'memory_vector_dim'",
-        [],
-        |row| row.get(0),
-    )?;
-    v.parse::<usize>()
-        .map_err(|e| Error::Config(format!("memory_vector_dim: {e}")))
+    read_dimension(conn, "memory_vector_dim")
 }
 
 /// Read the configured code vector dim from schema_meta.
 pub fn dim_code(conn: &Connection) -> Result<usize> {
-    let v: String = conn.query_row(
-        "SELECT value FROM schema_meta WHERE key = 'code_vector_dim'",
-        [],
-        |row| row.get(0),
-    )?;
-    v.parse::<usize>()
-        .map_err(|e| Error::Config(format!("code_vector_dim: {e}")))
+    read_dimension(conn, "code_vector_dim")
 }
 
 /// Insert a memory vector. Dim is validated against schema_meta.
 pub fn insert_memory(conn: &Connection, memory_id: &str, vector: &[f32]) -> Result<()> {
-    let dim = dim_memory(conn)?;
-    embed::guard_dim(vector, dim)?;
-    conn.execute(
-        "INSERT INTO memory_vec(memory_id, embedding) VALUES(?1, ?2)",
-        params![memory_id, embed::to_vec_blob(vector)],
-    )?;
-    Ok(())
+    write_vector(conn, VectorTarget::Memory(memory_id), vector, false)
 }
 
 /// Replace a memory's `memory_vec` row: drop any prior row for `memory_id`,
@@ -74,23 +67,16 @@ pub fn insert_memory(conn: &Connection, memory_id: &str, vector: &[f32]) -> Resu
 /// re-save (`domains::memories::save`) and re-embed (`maintenance::reembed`) of the same memory
 /// must replace, not duplicate.
 pub fn replace_memory(conn: &Connection, memory_id: &str, vector: &[f32]) -> Result<()> {
-    conn.execute(
-        "DELETE FROM memory_vec WHERE memory_id = ?1",
-        params![memory_id],
-    )?;
-    insert_memory(conn, memory_id, vector)
+    write_vector(conn, VectorTarget::Memory(memory_id), vector, true)
 }
 
 /// Raw `memory_vec.embedding` blob for `memory_id`, or `None` when it has no
 /// vector row — behind `comemory sync`'s wire vector encode.
 pub fn memory_embedding_blob(conn: &Connection, memory_id: &str) -> Result<Option<Vec<u8>>> {
-    conn.query_row(
-        "SELECT embedding FROM memory_vec WHERE memory_id = ?1",
-        [memory_id],
-        |r| r.get(0),
-    )
-    .optional()
-    .map_err(Error::from)
+    let query = MemoryVec::select()
+        .columns_typed(&[&memory_vec::embedding])
+        .filter(memory_vec::memory_id.eq(memory_id));
+    orm::query_optional(conn, query.to_sql(), |r| r.get(0))
 }
 
 /// Oversample factor applied to the vec0 KNN candidate set when a scope
@@ -176,23 +162,13 @@ pub struct CodeHit {
 
 /// Insert a code vector. Dim is validated against schema_meta.
 pub fn insert_code(conn: &Connection, symbol_id: i64, vector: &[f32]) -> Result<()> {
-    let dim = dim_code(conn)?;
-    embed::guard_dim(vector, dim)?;
-    conn.execute(
-        "INSERT INTO code_vec(symbol_id, embedding) VALUES(?1, ?2)",
-        params![symbol_id, embed::to_vec_blob(vector)],
-    )?;
-    Ok(())
+    write_vector(conn, VectorTarget::Code(symbol_id), vector, false)
 }
 
 /// Replace a code symbol's `code_vec` row — the code-side twin of
 /// [`replace_memory`], used by `maintenance::reembed`'s re-vectorize-in-place run.
 pub fn replace_code(conn: &Connection, symbol_id: i64, vector: &[f32]) -> Result<()> {
-    conn.execute(
-        "DELETE FROM code_vec WHERE symbol_id = ?1",
-        params![symbol_id],
-    )?;
-    insert_code(conn, symbol_id, vector)
+    write_vector(conn, VectorTarget::Code(symbol_id), vector, true)
 }
 
 /// Top-k nearest code symbols, optionally restricted to one `repo`
@@ -213,25 +189,86 @@ pub fn knn_code(
 ) -> Result<Vec<CodeHit>> {
     let dim = dim_code(conn)?;
     embed::guard_dim(query, dim)?;
-    let sql = "SELECT v.symbol_id, v.distance FROM code_vec v \
-                 JOIN code_symbols c ON c.id = v.symbol_id \
-                WHERE v.embedding MATCH ?1 AND k = ?2 \
-                  AND (?3 IS NULL OR c.repo = ?3) \
-                  AND (?4 IS NULL OR c.lang = ?4) \
-                ORDER BY v.distance \
-                LIMIT ?5";
     let blob = embed::to_vec_blob(query);
     let cand = candidate_k(k, repo.is_some() || lang.is_some()) as i64;
-    let mut stmt = conn.prepare(sql)?;
-    let rows = stmt
-        .query_map(params![blob, cand, repo, lang, k as i64], |row| {
-            Ok(CodeHit {
-                symbol_id: row.get(0)?,
-                distance: row.get(1)?,
-            })
-        })?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    Ok(rows)
+    let distance = Column::<Real>::new("code_vec", "distance");
+    // Keep k=0 and integer-cast behavior identical to the direct vec0 query.
+    let mut select = CodeVec::select()
+        .columns_typed(&[&code_vec::symbol_id])
+        .column_expr(&distance.qualified(), "distance")
+        .join(
+            "code_symbols",
+            code_symbols::id.equals(&code_vec::symbol_id),
+        )
+        .filter(
+            code_vec::embedding
+                .matches(blob)
+                .map_err(orm::build_error)?,
+        )
+        .filter(Column::<Integer>::new("code_vec", "k").eq(cand))
+        .order_by(distance.asc())
+        .limit(k as i64);
+    if let Some(repo) = repo {
+        select = select.filter(code_symbols::repo.eq(repo));
+    }
+    if let Some(lang) = lang {
+        select = select.filter(code_symbols::lang.eq(lang));
+    }
+    orm::query_all(conn, select.to_sql(), |row| {
+        Ok(CodeHit {
+            symbol_id: row.get(0)?,
+            distance: row.get(1)?,
+        })
+    })
+}
+
+/// A vector identity selects one of the two independently sized indexes.
+#[derive(Clone, Copy)]
+enum VectorTarget<'a> {
+    Memory(&'a str),
+    Code(i64),
+}
+
+/// Share vector validation and encoding, preserving delete-before-validation on replacement.
+fn write_vector(
+    conn: &Connection,
+    target: VectorTarget<'_>,
+    vector: &[f32],
+    replace: bool,
+) -> Result<()> {
+    if replace {
+        let deletion = match target {
+            VectorTarget::Memory(id) => MemoryVec::delete().filter(memory_vec::memory_id.eq(id)),
+            VectorTarget::Code(id) => CodeVec::delete().filter(code_vec::symbol_id.eq(id)),
+        };
+        orm::execute(conn, deletion.to_sql())?;
+    }
+    let key = match target {
+        VectorTarget::Memory(_) => "memory_vector_dim",
+        VectorTarget::Code(_) => "code_vector_dim",
+    };
+    embed::guard_dim(vector, read_dimension(conn, key)?)?;
+    let blob = embed::to_vec_blob(vector);
+    let insertion = match target {
+        VectorTarget::Memory(id) => MemoryVec::insert()
+            .set(&memory_vec::memory_id, id)
+            .set(&memory_vec::embedding, blob),
+        VectorTarget::Code(id) => CodeVec::insert()
+            .set(&code_vec::symbol_id, id)
+            .set(&code_vec::embedding, blob),
+    };
+    orm::execute(conn, insertion.to_sql())?;
+    Ok(())
+}
+
+/// Read and parse one configured index dimension.
+fn read_dimension(conn: &Connection, key: &str) -> Result<usize> {
+    let query = SchemaMeta::select()
+        .columns_typed(&[&schema_meta::value])
+        .filter(schema_meta::key.eq(key));
+    let v: String = orm::query_one(conn, query.to_sql(), |row| row.get(0))?;
+    v.parse::<usize>()
+        .map_err(|e| Error::Config(format!("{key}: {e}")))
 }
 
 #[cfg(test)]

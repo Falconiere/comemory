@@ -29,14 +29,14 @@ One line per file, named after its primary item:
 | File | Primary item | Purpose |
 | --- | --- | --- |
 | `defaults.rs` | `default_memory_vector_dim` | Default-value functions backing `Config`'s `#[serde(default = "...")]` attributes |
-| `env.rs` | `with_env` | `COMEMORY_*` env-var overrides — the outermost config layer |
+| `env.rs` | `with_env` | `COMEMORY_*` env-var overrides — the outermost config layer, with shared optional-override application |
 | `file.rs` | `AutoReindexMode` | `Config` struct definitions, shipped defaults, and the `config.toml` overlay |
 | `learning.rs` | `TuneConfig` | Learning-loop sections: `[tune]` grids, `[reinforce]`, `[bandit]` |
 | `patch.rs` | `patch_config_file` | The one read-patch-atomically-write primitive over `config.toml`, shared by `tune --apply`, the `hooks` reinforce toggle, and the console-api config routes |
 | `paths.rs` | `Paths` | Data-directory layout resolution (`resolve_data_dir` plus every derived path, including `auth_file`) |
 | `retrieval.rs` | `RetrievalConfig` | The `[retrieval]` section and its file overlay |
 | `sync.rs` | `SyncConfig` | The `[sync]` section — the inline push (`push_on_save`, `push_on_save_timeout`), the opt-in daemon's intervals, `skip_repos`, and `code_index` (the code-index push, on by default) |
-| `validate.rs` | `validate` | Shared invariant pass over the fully layered config |
+| `validate.rs` | `validate` | Shared invariant pass over the fully layered config, with shared positive-count bounds and field/env error formatting |
 
 When you add a file here, add its row above so the index stays current. No
 `mod.rs` barrel — submodules are declared from `src/config.rs` (`pub mod

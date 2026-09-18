@@ -2,10 +2,15 @@
 //! A memory bound to a workspace never moves by relabeling; secret overrides
 //! are recorded here and shown in the console.
 
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::Connection;
 use serde::Serialize;
 
+use super::{
+    orm,
+    schema_sync::{SyncBinding, sync_binding as col},
+};
 use crate::prelude::*;
+use toolu_orm::core::query_column::CommonOps;
 
 /// One `sync_binding` row.
 #[derive(Debug, Clone, Serialize)]
@@ -52,10 +57,17 @@ pub fn allow_secret(
 
 /// Load the binding for one memory, if any.
 pub fn get(conn: &Connection, memory_id: &str) -> Result<Option<SyncBindingRow>> {
-    conn.query_row(
-        "SELECT memory_id, workspace_id, secret_override_rule, secret_override_at \
-         FROM sync_binding WHERE memory_id = ?1",
-        rusqlite::params![memory_id],
+    orm::query_optional(
+        conn,
+        SyncBinding::select()
+            .columns_typed(&[
+                &col::memory_id,
+                &col::workspace_id,
+                &col::secret_override_rule,
+                &col::secret_override_at,
+            ])
+            .filter(col::memory_id.eq(memory_id))
+            .to_sql(),
         |r| {
             Ok(SyncBindingRow {
                 memory_id: r.get(0)?,
@@ -65,8 +77,6 @@ pub fn get(conn: &Connection, memory_id: &str) -> Result<Option<SyncBindingRow>>
             })
         },
     )
-    .optional()
-    .map_err(Into::into)
 }
 
 /// Whether a secret override is recorded for `memory_id`.

@@ -4,10 +4,15 @@
 //! this module exposes the raw ranked rows over the default
 //! (unweighted) `bm25()`.
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, params_from_iter};
 
+use super::{
+    orm,
+    schema_documents::{DocumentFts, document_fts as col},
+};
 use crate::prelude::*;
 use crate::store::fts;
+use toolu_orm::core::query_column::CommonOps;
 
 /// One `document_fts` MATCH hit: the chunk's owning document, its
 /// ordinal within that document, and a higher-is-better relevance
@@ -37,10 +42,16 @@ pub fn insert(
     passage: &str,
     path_tokens: &str,
 ) -> Result<()> {
-    conn.execute(
-        "INSERT INTO document_fts(document_id, ordinal, title, headings, passage, path_tokens) \
-         VALUES(?1,?2,?3,?4,?5,?6)",
-        params![document_id, ordinal, title, headings, passage, path_tokens],
+    orm::execute(
+        conn,
+        DocumentFts::insert()
+            .set(&col::document_id, document_id)
+            .set(&col::ordinal, ordinal)
+            .set(&col::title, title)
+            .set(&col::headings, headings)
+            .set(&col::passage, passage)
+            .set(&col::path_tokens, path_tokens)
+            .to_sql(),
     )?;
     Ok(())
 }
@@ -50,9 +61,11 @@ pub fn insert(
 /// cleanup counterpart to [`crate::store::documents::delete_document`]
 /// (which only cascades the plain `documents`/`document_chunks` rows).
 pub fn delete_document(conn: &Connection, document_id: &str) -> Result<()> {
-    conn.execute(
-        "DELETE FROM document_fts WHERE document_id = ?1",
-        params![document_id],
+    orm::execute(
+        conn,
+        DocumentFts::delete()
+            .filter(col::document_id.eq(document_id))
+            .to_sql(),
     )?;
     Ok(())
 }
@@ -65,12 +78,18 @@ pub fn search(conn: &Connection, query: &str, k: usize) -> Result<Vec<DocumentFt
     if match_expr.is_empty() || k == 0 {
         return Ok(Vec::new());
     }
-    let sql = "SELECT document_id, ordinal, -bm25(document_fts) AS score \
-                 FROM document_fts \
-                WHERE document_fts MATCH ?1 \
-                ORDER BY score DESC \
-                LIMIT ?2";
-    fts::run_fts_query(conn, sql, params![match_expr, k as i64], |row| {
+    let score =
+        toolu_orm::core::fts5::bm25(col::document_id.table, &[]).map_err(orm::build_error)?;
+    let predicate = toolu_orm::core::expr::Expr::table_match(col::document_id.table, match_expr)
+        .map_err(orm::build_error)?;
+    let (sql, params) = DocumentFts::select()
+        .columns_typed(&[&col::document_id, &col::ordinal])
+        .column_expr(&format!("-{}", score.sql()), "score")
+        .filter(predicate)
+        .order_by(toolu_orm::core::expr::OrderBy::alias_desc("score"))
+        .limit(k as i64)
+        .to_sql();
+    fts::run_fts_query(conn, &sql, params_from_iter(params), |row| {
         Ok(DocumentFtsHit {
             document_id: row.get(0)?,
             ordinal: row.get(1)?,

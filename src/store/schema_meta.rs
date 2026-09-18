@@ -6,9 +6,14 @@
 //! Moved out of `config::sync::apply_embed_model` (spec
 //! `docs/toolu/specs/2026-09-07-store-layer-chokepoint-design.md`).
 
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, params};
 
+use super::{
+    orm,
+    schema_core::{SchemaMeta, schema_meta},
+};
 use crate::prelude::*;
+use toolu_orm::core::query_column::CommonOps;
 
 /// Upsert `schema_meta.memory_vector_model` — the embedder model id
 /// [`crate::config::sync::EmbedConfig`] records, surfaced by `comemory
@@ -21,12 +26,12 @@ pub fn set_memory_vector_model(conn: &Connection, model: &str) -> Result<()> {
 /// behind `comemory sync`'s wire vector encode/decode. Missing row is a
 /// config error, not a `None` — every migrated database stamps this key.
 pub fn memory_vector_model(conn: &Connection) -> Result<String> {
-    conn.query_row(
-        "SELECT value FROM schema_meta WHERE key = 'memory_vector_model'",
-        [],
-        |r| r.get(0),
-    )
-    .map_err(|e| Error::Config(format!("memory_vector_model: {e}")))
+    let query = select_value("memory_vector_model");
+    // Preserve the existing configuration error text, including its driver cause.
+    orm::query_one(conn, query.to_sql(), |r| r.get(0)).map_err(|e| match e {
+        Error::Sqlite(cause) => Error::Config(format!("memory_vector_model: {cause}")),
+        other => other,
+    })
 }
 
 /// The stored `schema_meta.version` value. Errors (including a missing row)
@@ -36,20 +41,14 @@ pub fn memory_vector_model(conn: &Connection) -> Result<String> {
 /// `migrate::run` never touched, not a normal "not found" a caller should
 /// branch on.
 pub fn version(conn: &Connection) -> Result<String> {
-    Ok(conn.query_row(
-        "SELECT value FROM schema_meta WHERE key = 'version'",
-        [],
-        |r| r.get(0),
-    )?)
+    let query = select_value("version");
+    orm::query_one(conn, query.to_sql(), |r| r.get(0))
 }
 
 /// Read the `schema_meta` value stored under `key`, or `None` when absent.
 pub(crate) fn get(conn: &Connection, key: &str) -> Result<Option<String>> {
-    conn.query_row("SELECT value FROM schema_meta WHERE key = ?1", [key], |r| {
-        r.get(0)
-    })
-    .optional()
-    .map_err(Error::Sqlite)
+    let query = select_value(key);
+    orm::query_optional(conn, query.to_sql(), |r| r.get(0))
 }
 
 /// Upsert an arbitrary `schema_meta(key, value)` pair, overwriting any
@@ -61,6 +60,13 @@ pub(crate) fn upsert(conn: &Connection, key: &str, value: &str) -> Result<()> {
         params![key, value],
     )?;
     Ok(())
+}
+
+/// Select the stored value for one metadata key.
+fn select_value(key: &str) -> toolu_orm::query::select::SelectBuilder {
+    SchemaMeta::select()
+        .columns_typed(&[&schema_meta::value])
+        .filter(schema_meta::key.eq(key))
 }
 
 #[cfg(test)]

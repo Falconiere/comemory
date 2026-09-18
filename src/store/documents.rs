@@ -4,9 +4,19 @@
 //! `code_symbols`/`code_fts` split: this module owns the plain rows,
 //! [`crate::store::document_fts`] owns the FTS5 virtual table.
 
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, params};
 
+use super::{
+    orm,
+    schema_documents::{
+        DocumentChunks, Documents, document_chunks as chunk, documents as col, source_files as file,
+    },
+};
 use crate::prelude::*;
+use toolu_orm::core::{
+    column::Text,
+    query_column::{Column, CommonOps},
+};
 
 /// Caller-supplied fields for [`upsert_document`].
 pub struct DocumentUpsert<'a> {
@@ -71,14 +81,22 @@ pub fn upsert_document(conn: &Connection, row: DocumentUpsert<'_>) -> Result<()>
 
 /// Fetch one `documents` row by id, or `None` if it does not exist.
 pub fn get_document(conn: &Connection, id: &str) -> Result<Option<DocumentRow>> {
-    conn.query_row(
-        "SELECT id, source_file_id, title, repo, revision_hash, created_at, updated_at \
-           FROM documents WHERE id = ?1",
-        params![id],
+    orm::query_optional(
+        conn,
+        Documents::select()
+            .columns_typed(&[
+                &col::id,
+                &col::source_file_id,
+                &col::title,
+                &col::repo,
+                &col::revision_hash,
+                &col::created_at,
+                &col::updated_at,
+            ])
+            .filter(col::id.eq(id))
+            .to_sql(),
         document_row_from_sql,
     )
-    .optional()
-    .map_err(Error::from)
 }
 
 /// Delete the `documents` row for `id`. Cascades to `document_chunks`
@@ -88,7 +106,7 @@ pub fn get_document(conn: &Connection, id: &str) -> Result<Option<DocumentRow>> 
 /// affected) when `id` has no row — safe to call for a `source_files`
 /// row that was never classified as a document.
 pub fn delete_document(conn: &Connection, id: &str) -> Result<()> {
-    conn.execute("DELETE FROM documents WHERE id = ?1", params![id])?;
+    orm::execute(conn, Documents::delete().filter(col::id.eq(id)).to_sql())?;
     Ok(())
 }
 
@@ -115,27 +133,26 @@ pub struct ChunkRow<'a> {
 /// per-file "delete+reinsert" contract (no diffing — the corpus is
 /// personal-scale).
 pub fn replace_chunks(conn: &Connection, document_id: &str, chunks: &[ChunkRow<'_>]) -> Result<()> {
-    conn.execute(
-        "DELETE FROM document_chunks WHERE document_id = ?1",
-        params![document_id],
+    orm::execute(
+        conn,
+        DocumentChunks::delete()
+            .filter(chunk::document_id.eq(document_id))
+            .to_sql(),
     )?;
     for c in chunks {
-        conn.execute(
-            "INSERT INTO document_chunks(\
-                 document_id, ordinal, heading_path, char_start, char_end, \
-                 line_start, line_end, simhash, text) \
-             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)",
-            params![
-                document_id,
-                c.ordinal,
-                c.heading_path,
-                c.char_range.0,
-                c.char_range.1,
-                c.line_range.0,
-                c.line_range.1,
-                c.simhash,
-                c.text,
-            ],
+        orm::execute(
+            conn,
+            DocumentChunks::insert()
+                .set(&chunk::document_id, document_id)
+                .set(&chunk::ordinal, c.ordinal)
+                .set(&chunk::heading_path, c.heading_path)
+                .set(&chunk::char_start, c.char_range.0)
+                .set(&chunk::char_end, c.char_range.1)
+                .set(&chunk::line_start, c.line_range.0)
+                .set(&chunk::line_end, c.line_range.1)
+                .set(&chunk::simhash, c.simhash)
+                .set(&chunk::text, c.text)
+                .to_sql(),
         )?;
     }
     Ok(())
@@ -161,10 +178,18 @@ pub fn get_chunk(
     document_id: &str,
     ordinal: i64,
 ) -> Result<Option<ChunkCitation>> {
-    conn.query_row(
-        "SELECT heading_path, line_start, line_end, text FROM document_chunks \
-          WHERE document_id = ?1 AND ordinal = ?2",
-        params![document_id, ordinal],
+    orm::query_optional(
+        conn,
+        DocumentChunks::select()
+            .columns_typed(&[
+                &chunk::heading_path,
+                &chunk::line_start,
+                &chunk::line_end,
+                &chunk::text,
+            ])
+            .filter(chunk::document_id.eq(document_id))
+            .filter(chunk::ordinal.eq(ordinal))
+            .to_sql(),
         |r| {
             Ok(ChunkCitation {
                 heading_path: r.get(0)?,
@@ -173,8 +198,6 @@ pub fn get_chunk(
             })
         },
     )
-    .optional()
-    .map_err(Error::from)
 }
 
 /// Fetch the source-relative path of the document at `id` — the join
@@ -183,15 +206,13 @@ pub fn get_chunk(
 /// row). `None` when the document, or the `source_files` row it points
 /// at, no longer exists.
 pub fn get_document_path(conn: &Connection, id: &str) -> Result<Option<String>> {
-    conn.query_row(
-        "SELECT sf.relative_path FROM documents d \
-           JOIN source_files sf ON sf.id = d.source_file_id \
-          WHERE d.id = ?1",
-        params![id],
+    orm::query_optional(
+        conn,
+        select_source_document_column(&file::relative_path)
+            .filter(col::id.eq(id))
+            .to_sql(),
         |r| r.get(0),
     )
-    .optional()
-    .map_err(Error::from)
 }
 
 /// List every `documents.id` owned (via `source_files`) by `source_id` —
@@ -201,15 +222,13 @@ pub fn get_document_path(conn: &Connection, id: &str) -> Result<Option<String>> 
 /// virtual table with no FK, so its rows need this id list to clean up
 /// independently.
 pub fn document_ids_for_source(conn: &Connection, source_id: &str) -> Result<Vec<String>> {
-    let mut stmt = conn.prepare(
-        "SELECT d.id FROM documents d \
-           JOIN source_files sf ON sf.id = d.source_file_id \
-          WHERE sf.source_id = ?1",
-    )?;
-    let ids = stmt
-        .query_map(params![source_id], |r| r.get(0))?
-        .collect::<std::result::Result<Vec<String>, _>>()?;
-    Ok(ids)
+    orm::query_all(
+        conn,
+        select_source_document_column(&col::id)
+            .filter(file::source_id.eq(source_id))
+            .to_sql(),
+        |r| r.get(0),
+    )
 }
 
 /// Look up a document by relative path within one source — `source_files`
@@ -220,14 +239,14 @@ pub(crate) fn document_id_in_source(
     source_id: &str,
     relative_path: &str,
 ) -> Result<Option<String>> {
-    conn.query_row(
-        "SELECT d.id FROM documents d JOIN source_files sf ON sf.id = d.source_file_id \
-          WHERE sf.source_id = ?1 AND sf.relative_path = ?2",
-        params![source_id, relative_path],
+    orm::query_optional(
+        conn,
+        select_source_document_column(&col::id)
+            .filter(file::source_id.eq(source_id))
+            .filter(file::relative_path.eq(relative_path))
+            .to_sql(),
         |r| r.get(0),
     )
-    .optional()
-    .map_err(Error::from)
 }
 
 /// Every live document id at `(repo, relative_path)` across every indexed
@@ -238,14 +257,20 @@ pub(crate) fn document_ids_for_repo_path(
     repo: &str,
     relative_path: &str,
 ) -> Result<Vec<String>> {
-    let mut stmt = conn.prepare(
-        "SELECT d.id FROM documents d JOIN source_files sf ON sf.id = d.source_file_id \
-          WHERE d.repo = ?1 AND sf.relative_path = ?2",
-    )?;
-    let ids = stmt
-        .query_map(params![repo, relative_path], |r| r.get(0))?
-        .collect::<std::result::Result<_, _>>()?;
-    Ok(ids)
+    orm::query_all(
+        conn,
+        select_source_document_column(&col::id)
+            .filter(col::repo.eq(repo))
+            .filter(file::relative_path.eq(relative_path))
+            .to_sql(),
+        |r| r.get(0),
+    )
+}
+
+fn select_source_document_column(column: &Column<Text>) -> toolu_orm::query::select::SelectBuilder {
+    Documents::select()
+        .column_expr(&column.qualified(), column.name)
+        .join(file::id.table, file::id.equals(&col::source_file_id))
 }
 
 fn document_row_from_sql(r: &rusqlite::Row<'_>) -> rusqlite::Result<DocumentRow> {

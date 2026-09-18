@@ -13,6 +13,10 @@
 
 use rusqlite::{Connection, params};
 
+use super::{
+    orm,
+    schema_learning::{FeedbackEvents, feedback_events as col},
+};
 use crate::prelude::*;
 
 /// Upsert the `used` side of the per-memory counter row: insert with
@@ -61,10 +65,16 @@ pub(crate) fn insert_event(
     target_kind: &str,
     provenance: &str,
 ) -> Result<()> {
-    conn.execute(
-        "INSERT INTO feedback_events(query_id, memory_id, verdict, at, target_kind, provenance)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![query_id, id, verdict, at, target_kind, provenance],
+    orm::execute(
+        conn,
+        FeedbackEvents::insert()
+            .set(&col::query_id, query_id)
+            .set(&col::memory_id, id)
+            .set(&col::verdict, verdict)
+            .set(&col::at, at)
+            .set(&col::target_kind, target_kind)
+            .set(&col::provenance, provenance)
+            .to_sql(),
     )?;
     Ok(())
 }
@@ -145,13 +155,20 @@ pub fn used_events_for_golden(
 /// scan, behind `domains::learning::console::summary`'s console header tiles. The three
 /// conditional sums are `NULL` on an empty table, read back as `0`.
 pub fn event_counts(conn: &Connection) -> Result<(u64, u64, u64, u64)> {
-    let row = conn.query_row(
-        "SELECT COUNT(*), \
-                SUM(CASE WHEN provenance != 'manual' THEN 1 ELSE 0 END), \
-                SUM(CASE WHEN verdict = 'used' THEN 1 ELSE 0 END), \
-                SUM(CASE WHEN verdict = 'irrelevant' THEN 1 ELSE 0 END) \
-           FROM feedback_events",
-        [],
+    let row = orm::query_one(
+        conn,
+        FeedbackEvents::select()
+            .column_expr("COUNT(*)", "total")
+            .column_expr(
+                "SUM(CASE WHEN provenance != 'manual' THEN 1 ELSE 0 END)",
+                "implicit",
+            )
+            .column_expr("SUM(CASE WHEN verdict = 'used' THEN 1 ELSE 0 END)", "used")
+            .column_expr(
+                "SUM(CASE WHEN verdict = 'irrelevant' THEN 1 ELSE 0 END)",
+                "irrelevant",
+            )
+            .to_sql(),
         |r| {
             Ok((
                 r.get::<_, i64>(0)?,

@@ -52,6 +52,8 @@ pub mod edge_fts;
 /// `edges` table CRUD: typed upserts, weighted accumulation, outgoing
 /// neighbors, the `supersedes_chain` recursive walk, and delete-by-node.
 pub mod edges;
+/// File-neighbor CTE query shared by the edge-store facade.
+mod edges_neighbors;
 /// Retrieval-side `edges` reads: the memory graph-expansion walk, the
 /// context-bundle relation walk, working-set co-change affinity, and the
 /// live-supersede lookup.
@@ -91,8 +93,12 @@ pub mod memory_meta;
 pub mod memory_purge;
 /// `memories` row upserts and their edge materialization.
 pub mod memory_row;
+/// Memory activation counters and materialized graph-rank writes.
+pub(crate) mod memory_signals;
 /// Versioned, idempotent schema migrations plus `schema_meta`.
 pub mod migrate;
+/// Execute schema-generated statements while retaining store error semantics.
+mod orm;
 /// `maintenance::prune`'s own scan (orphan-edge count, stale-code-file list, one
 /// memory's display fields) and apply-time cleanup deletes.
 pub mod prune_apply;
