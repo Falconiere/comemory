@@ -70,7 +70,7 @@ Three capabilities no longer live here. The code cores — `ast`, `index_code` (
 `refresh_refs` — moved to
 [`domains/memories/`](../domains/memories/README.md) with
 [#169](https://github.com/Falconiere/comemory/issues/169). This shell itself is
-deleted by #178. The sync cores — `sync` (the wire models plus the `changes`, `manifest`, `import` and code-import middles) and `memory_store` — moved to [`domains/sync/`](../domains/sync/README.md) with [#172](https://github.com/Falconiere/comemory/issues/172), where `api::sync` is `domains::sync::exchange`, beside the client half that calls it.
+deleted by #178. The sync cores — `sync` (the wire models plus the `changes`, `manifest`, `import` and code-import middles) and `memory_store` — moved to [`domains/sync/`](../domains/sync/README.md) with [#172](https://github.com/Falconiere/comemory/issues/172): `api::sync` is now `domains::sync::exchange` and `api::memory_store` is now `domains::sync::memory_store`, beside the client half that calls them.
 
 When you add a file here, add its row above so the index stays current. No
 `mod.rs` barrel — submodules are declared from `src/api.rs` (`pub mod
