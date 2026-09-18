@@ -20,6 +20,12 @@
   var cache = new Map();
   var current = { path: null, frag: null };
 
+  function escapeHtml(text) {
+    return String(text).replace(/[&<>"']/g, function (ch) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+    });
+  }
+
   /* ---- routing ---------------------------------------------------------- */
 
   function parseHash() {
@@ -316,7 +322,17 @@
       showError('the markdown renderer', 'script blocked');
       return;
     }
-    window.marked.use({ gfm: true, breaks: false });
+    /* Raw HTML in a page is shown as text, never parsed: the docs are plain
+       markdown (every angle bracket in them sits inside a code span), so the
+       only thing passthrough could add is a script. Escaping needs no
+       sanitizer library and keeps the reader a markdown viewer. */
+    window.marked.use({
+      gfm: true,
+      breaks: false,
+      renderer: {
+        html: function (token) { return escapeHtml(token.text); }
+      }
+    });
     fetchDoc(INDEX).then(buildNav).catch(function () {
       nav.innerHTML = '';
       var line = document.createElement('p');
