@@ -4,6 +4,17 @@
 ast-grep AST patterns into one local SQLite-backed CLI. These docs are
 organized by what you're trying to do.
 
+## Rendered site
+
+The same pages render at [falconiere.github.io/comemory](https://falconiere.github.io/comemory/):
+`docs/` doubles as the GitHub Pages root. `index.html` is the landing page,
+`architecture.html` walks the design as interactive cards, and
+`documentation.html` renders every markdown file here in the browser (the
+`.nojekyll` marker keeps the `.md` files served raw so nothing is copied).
+The site is set in the Signal design language from
+[toolu-conventions](https://github.com/Falconiere/toolu-conventions/blob/main/DESIGN.md);
+its tokens live in `assets/signal.css`.
+
 ## Start here
 
 - **[Getting started](getting-started.md)** — install, save your first memory,

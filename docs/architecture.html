@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en" data-signal="blueprint">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>comemory — architecture, as cards</title>
+    <meta
+      name="description"
+      content="The comemory architecture as interactive cards: the six layers, the ten capabilities and their declared dependency table, the retrieval pipeline, every table in comemory.db, the two write paths, the edge graph, and the gates that hold the tree to its shape."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="assets/signal.css" />
+    <script src="assets/architecture.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <nav class="site-nav" aria-label="Site">
+      <a class="brand" href="index.html">comemory <span>· architecture</span></a>
+      <ul>
+        <li><a href="#layers">Layers</a></li>
+        <li><a href="#capabilities">Capabilities</a></li>
+        <li><a href="#pipeline">Pipeline</a></li>
+        <li><a href="#storage">Storage</a></li>
+        <li><a href="#writes">Writes</a></li>
+        <li><a href="#graph">Graph</a></li>
+        <li><a href="#enforcement">Gates</a></li>
+        <li><a href="documentation.html">Documentation</a></li>
+      </ul>
+    </nav>
+
+    <main id="main">
+      <section class="band" aria-labelledby="hero-title">
+        <div class="wrap">
+          <p class="marker">— comemory · architecture</p>
+          <h1 id="hero-title" class="display-lg">
+            Two layers,
+            <span class="line-2">one file.</span>
+          </h1>
+          <p class="lede">
+            A memory layer of markdown and a code layer of extracted symbols,
+            joined by typed edges in one SQLite file, queried by a pipeline
+            that never calls a model.
+          </p>
+          <p class="body">
+            Every deck below is a set of cards. Select one and the panel under
+            it reads that card's facts; in the capabilities deck the other
+            cards also tell you whether they use the selection or are used by
+            it. Arrow keys move between cards. The prose version of all of it
+            is <a href="documentation.html#architecture.md">docs/architecture.md</a>,
+            which stays the authoritative reference.
+          </p>
+          <div class="cta-row">
+            <a class="btn btn-primary" href="#layers">Start with the layers</a>
+            <a class="btn btn-ghost" href="documentation.html#architecture.md">Read the prose</a>
+          </div>
+        </div>
+      </section>
+      <hr class="band-seam" aria-hidden="true" />
+
+      <!-- §01 ------------------------------------------------------- -->
+      <section class="band band-light" id="layers" aria-labelledby="layers-title">
+        <div class="wrap wrap-wide">
+          <p class="marker">— §01 · layers</p>
+          <h2 id="layers-title" class="display">
+            Delivery on top,
+            <span class="line-2">storage at the bottom.</span>
+          </h2>
+          <p class="body">
+            Six top-level folders under <code>src/</code>, and
+            <code>guardrails.config.json</code> allows no seventh. The two
+            delivery adapters parse input and render output; the capabilities
+            do the work; the store is the only module that may import
+            <code>rusqlite</code>. Edges here are import edges, as
+            <code>ast-grep</code> finds them in the tree today.
+          </p>
+          <figure class="viz" data-deck="layers">
+            <div class="viz-head">
+              <p class="label">src/ · six layers</p>
+              <p class="meta">├─ select a card · → uses · ← used by ─┤</p>
+            </div>
+            <div class="viz-body"></div>
+            <div class="viz-foot">
+              <figcaption>
+                Nothing under <code>domains/</code> or <code>utilities/</code>
+                may import <code>cli</code> or <code>serve</code>. The one
+                declared exception is <code>serve/routes/meta.rs</code>, which
+                reads the clap definition to answer <code>GET /commands</code>.
+              </figcaption>
+            </div>
+          </figure>
+        </div>
+      </section>
+      <hr class="band-seam" aria-hidden="true" />
+
+      <!-- §02 ------------------------------------------------------- -->
+      <section class="band" id="capabilities" aria-labelledby="capabilities-title">
+        <div class="wrap wrap-wide">
+          <p class="marker">— §02 · capabilities</p>
+          <h2 id="capabilities-title" class="display">
+            Ten capabilities,
+            <span class="line-2">one directed table.</span>
+          </h2>
+          <p class="body">
+            Each folder under <code>src/domains/</code> owns one area of
+            behavior end to end: its models, its algorithms, and the command
+            cores both the CLI and the HTTP server call. A capability may
+            depend on another only through the 27 edges declared in
+            <code>scripts/architecture-policy.json</code>;
+            <code>scripts/architecture-check.sh</code> fails any other.
+          </p>
+          <figure class="viz" data-deck="capabilities">
+            <div class="viz-head">
+              <p class="label">src/domains/ · declared dependencies</p>
+              <p class="meta">├─ select a card · → uses · ← used by · ↔ both ─┤</p>
+            </div>
+            <div class="viz-body"></div>
+            <div class="viz-foot">
+              <figcaption>
+                The table is directed and acyclic by construction: no
+                capability may reach one that reaches it back. Landed one
+                slice at a time by the domain-first migration, issues #164
+                through #178.
+              </figcaption>
+            </div>
+          </figure>
+        </div>
+      </section>
+      <hr class="band-seam" aria-hidden="true" />
+
+      <!-- §03 ------------------------------------------------------- -->
+      <section class="band band-light" id="pipeline" aria-labelledby="pipeline-title">
+        <div class="wrap wrap-wide">
+          <p class="marker">— §03 · retrieval</p>
+          <h2 id="pipeline-title" class="display">
+            Route, expand,
+            <span class="line-2">rerank, diversify.</span>
+          </h2>
+          <p class="body">
+            A query runs entirely in Rust. Three candidate legs are fused by
+            reciprocal rank fusion, five multiplicative priors reorder the
+            pool, near-duplicates collapse, and the page is cut from a bounded
+            window so deeper pages do not drift. <code>search-code</code>
+            runs the same shape over symbols with its own four priors.
+          </p>
+          <figure class="viz" data-deck="pipeline">
+            <div class="viz-head">
+              <p class="label">comemory search · five stages</p>
+              <p class="meta">├─ select a stage ─┤</p>
+            </div>
+            <div class="viz-body"></div>
+            <div class="viz-foot">
+              <figcaption>
+                <code>score_parts</code> is a stable contract: every hit
+                carries <code>rrf</code>, <code>activation</code>,
+                <code>feedback</code>, <code>quality</code>,
+                <code>supersede</code>, <code>rank</code> and
+                <code>final_score</code>, and <code>comemory tune</code> reads
+                them back.
+              </figcaption>
+            </div>
+          </figure>
+        </div>
+      </section>
+      <hr class="band-seam" aria-hidden="true" />
+
+      <!-- §04 ------------------------------------------------------- -->
+      <section class="band" id="storage" aria-labelledby="storage-title">
+        <div class="wrap wrap-wide">
+          <p class="marker">— §04 · storage</p>
+          <h2 id="storage-title" class="display">
+            Markdown is the truth,
+            <span class="line-2">SQLite is the index.</span>
+          </h2>
+          <p class="body">
+            One directory holds everything. The markdown files are the source
+            of truth; <code>comemory.db</code> is a mirror that
+            <code>comemory rebuild</code> reconstructs from them, carrying
+            across what markdown cannot rebuild: the code index, the document
+            index and the learning-loop tables.
+          </p>
+<pre class="snippet">~/.comemory/
+├── memories/{id}-{slug}.md      <span class="c">← source of truth (markdown + frontmatter)</span>
+├── memories/.trash/{id}.md      <span class="c">← soft-deleted, retained 30 days</span>
+├── comemory.db                  <span class="c">← one SQLite file: FTS5 · sqlite-vec · edges</span>
+└── config.toml                  <span class="c">← per-user configuration</span></pre>
+          <figure class="viz" data-deck="storage">
+            <div class="viz-head">
+              <p class="label">comemory.db · the tables that matter</p>
+              <p class="meta">├─ select a table ─┤</p>
+            </div>
+            <div class="viz-body"></div>
+            <div class="viz-foot">
+              <figcaption>
+                Every table is a declared <code>#[table]</code>,
+                <code>#[fts5_table]</code> or <code>#[vec0_table]</code>
+                struct under <code>src/store/schema_*.rs</code>;
+                <code>just migration &lt;name&gt;</code> diffs the declaration
+                against the newest snapshot and writes the next numbered file.
+                A shipped migration is never edited.
+              </figcaption>
+            </div>
+          </figure>
+        </div>
+      </section>
+      <hr class="band-seam" aria-hidden="true" />
+
+      <!-- §05 ------------------------------------------------------- -->
+      <section class="band band-light" id="writes" aria-labelledby="writes-title">
+        <div class="wrap wrap-wide">
+          <p class="marker">— §05 · write paths</p>
+          <h2 id="writes-title" class="display">
+            Two write paths,
+            <span class="line-2">one seam for derived state.</span>
+          </h2>
+          <p class="body">
+            A save writes markdown first and mirrors it second; an index run
+            walks the tree, extracts symbols, mines the graph and materializes
+            PageRank. Both end by refreshing the two derived artifacts, the
+            memory-graph rank and the <code>edge_fts</code> triplet index,
+            through one best-effort pass that runs only after the primary
+            transaction has committed.
+          </p>
+          <div class="writes-grid">
+            <div>
+              <p class="label">comemory save "…" --kind decision</p>
+              <ol class="steps">
+                <li><span class="step-name">Parse and identify</span><p>Build the memory; <code>id = sha256(body)[:8]</code>, <code>content_hash</code> the full digest. Equal bodies can never disagree on either.</p></li>
+                <li><span class="step-name">Prior lookup, before the database opens</span><p>A live or trashed file with this id and a different hash is a 32-bit collision: refused, nothing written. A matching prior keeps its <code>created</code> and answers <code>created: false</code>.</p></li>
+                <li><span class="step-name">Vector guard and near-duplicate check</span><p>A supplied vector must match the locked dimension. SimHash scans live rows; a near-duplicate is reported as <code>duplicate_of</code> and the save proceeds.</p></li>
+                <li><span class="step-name">Atomic markdown write</span><p><code>memories/.{id}.tmp</code> renamed to <code>memories/{id}-{slug}.md</code>. A same-body re-save lands on the same filename; a trashed copy is purged.</p></li>
+                <li><span class="step-name">One SQLite transaction</span><p>The <code>memories</code> row, its <code>memory_fts</code> row, the <code>memory_vec</code> row when a vector came, and the reference edges derived before the write.</p></li>
+                <li><span class="step-name">Refresh derived state</span><p>Memory PageRank and <code>edge_fts</code>, best effort, after commit. If the mirror fails the markdown is kept and the error names the path and <code>comemory rebuild</code>.</p></li>
+              </ol>
+            </div>
+            <div>
+              <p class="label">comemory index-code --repo r --path .</p>
+              <ol class="steps">
+                <li><span class="step-name">Walk the working tree</span><p>Respecting <code>.gitignore</code>, grouping files by language: Rust, TypeScript, JavaScript, Python, Go.</p></li>
+                <li><span class="step-name">Skip what is already ingested</span><p>Each path's git blob OID is compared with <code>repo_marker</code>; an unchanged blob is not re-read.</p></li>
+                <li><span class="step-name">Extract symbols with ast-grep</span><p>Oversized symbols split into child chunks at AST boundaries, pointing at their parent through <code>code_symbols.parent_id</code>.</p></li>
+                <li><span class="step-name">Upsert per file</span><p><code>code_symbols</code> and <code>code_fts</code> rows in one transaction per file.</p></li>
+                <li><span class="step-name">Mine the code graph</span><p><code>co_changed</code> edges from windowed git history with a mega-commit guard and a <code>last_mined_commit</code> cursor; <code>imports</code> edges from per-language import resolution.</p></li>
+                <li><span class="step-name">Materialize PageRank and reward</span><p>Weighted PageRank lands in <code>code_symbols.rank_score</code>. Commit co-activation pays a triple-channel reward to each memory that references a touched file, then the cursor advances to HEAD.</p></li>
+              </ol>
+            </div>
+          </div>
+        </div>
+      </section>
+      <hr class="band-seam" aria-hidden="true" />
+
+      <!-- §06 ------------------------------------------------------- -->
+      <section class="band" id="graph" aria-labelledby="graph-title">
+        <div class="wrap">
+          <p class="marker">— §06 · the edge graph</p>
+          <h2 id="graph-title" class="display">
+            Edges are rows,
+            <span class="line-2">walks are recursive queries.</span>
+          </h2>
+          <p class="body">
+            The <code>edges</code> table is a flat
+            <code>(src_kind, src_id, edge_kind, dst_kind, dst_id, weight)</code>
+            row set that replaced the v0.1 graph database. Multi-hop
+            traversal is a SQLite recursive common table expression, and two
+            PageRank passes are materialized from it rather than computed at
+            query time.
+          </p>
+          <p class="label">edge kinds</p>
+          <ul class="chips" aria-label="Edge kinds">
+            <li class="chip">supersedes</li>
+            <li class="chip">conflicts_with</li>
+            <li class="chip">relates_to</li>
+            <li class="chip">derived_from</li>
+            <li class="chip">references_file</li>
+            <li class="chip">references_symbol</li>
+            <li class="chip">references_document</li>
+            <li class="chip">in_repo</li>
+            <li class="chip">authored_by</li>
+            <li class="chip">tagged</li>
+            <li class="chip">co_changed</li>
+            <li class="chip">imports</li>
+            <li class="chip">co_activated</li>
+          </ul>
+          <dl class="fact-rail">
+            <div><dt>memory rank</dt><dd>PageRank over direct memory relations plus co-citation of the same file or symbol, written to <code>memories.rank_score</code>. <span class="muted">Hub kinds <code>in_repo</code>, <code>authored_by</code>, <code>tagged</code> are excluded.</span></dd></div>
+            <div><dt>code rank</dt><dd>Weighted PageRank over <code>co_changed</code> and <code>imports</code>, written to <code>code_symbols.rank_score</code> on every <code>index-code</code>.</dd></div>
+            <div><dt>expansion</dt><dd>The top 8 provisional hits seed one undirected walk of depth 2 over an allowlist of kinds; what it finds joins the fusion as a third list, tier 0.</dd></div>
+            <div><dt>reward</dt><dd>A commit that touches a file a memory references pays a <code>co_activated</code> edge, an activation bump, and once, at weight 2, a confidence-gated <code>used</code> event with its provenance recorded.</dd></div>
+            <div><dt>edge_fts</dt><dd>A derived triplet index, <code>src —rel→ dst</code> as searchable text, rebuilt in one ordered statement rather than written through. <span class="muted">Backs <code>comemory edges</code>.</span></dd></div>
+          </dl>
+        </div>
+      </section>
+      <hr class="band-seam" aria-hidden="true" />
+
+      <!-- §07 ------------------------------------------------------- -->
+      <section class="band band-light" id="enforcement" aria-labelledby="enforcement-title">
+        <div class="wrap">
+          <p class="marker">— §07 · gates</p>
+          <h2 id="enforcement-title" class="display">
+            The tree is a config,
+            <span class="line-2">not a habit.</span>
+          </h2>
+          <p class="body">
+            comemory follows the toolu-conventions Rust stack, with stricter
+            local ceilings. Each rule has exactly one enforcer, and
+            <code>scripts/check-all.sh</code> runs all of them before a push
+            and again in CI.
+          </p>
+          <ol class="index-list">
+            <li><span class="index-row"><span class="num">01</span><span><span class="title">No barrels</span><span class="sub">A module that grows into a folder keeps its file beside it; <code>mod.rs</code> is banned. A file of only <code>pub use</code> lines is a barrel.</span></span><span class="spec">no-barrels</span><span class="arrow" aria-hidden="true">✓</span></span></li>
+            <li><span class="index-row"><span class="num">02</span><span><span class="title">Size ceilings</span><span class="sub">300 code lines per file under <code>src/</code>, tests exempt, and 100 lines per function. Both declared once in <code>guardrails.config.json</code>.</span></span><span class="spec">file-size · too_many_lines</span><span class="arrow" aria-hidden="true">✓</span></span></li>
+            <li><span class="index-row"><span class="num">03</span><span><span class="title">Zero warnings, no silencing</span><span class="sub">Clippy over all targets and features with <code>-D warnings</code>, and no <code>#[allow]</code> in production code.</span></span><span class="spec">lint-check</span><span class="arrow" aria-hidden="true">✓</span></span></li>
+            <li><span class="index-row"><span class="num">04</span><span><span class="title">The store chokepoint</span><span class="sub">No production file outside <code>src/store/</code> may import <code>rusqlite</code>, and no store function returns a driver cursor. A two-sided ratchet.</span></span><span class="spec">store-chokepoint-check</span><span class="arrow" aria-hidden="true">✓</span></span></li>
+            <li><span class="index-row"><span class="num">05</span><span><span class="title">The dependency table</span><span class="sub">Capability-to-capability imports must appear in <code>architecture-policy.json</code>; an empty domain scaffold fails too.</span></span><span class="spec">architecture-check</span><span class="arrow" aria-hidden="true">✓</span></span></li>
+            <li><span class="index-row"><span class="num">06</span><span><span class="title">Shipped migrations are frozen</span><span class="sub">Every released <code>migrations/*.sql</code> must stay byte-identical to its content at the first tag that shipped it.</span></span><span class="spec">migration-check</span><span class="arrow" aria-hidden="true">✓</span></span></li>
+          </ol>
+        </div>
+      </section>
+      <hr class="band-seam" aria-hidden="true" />
+
+      <section class="band closer" aria-labelledby="closer-title">
+        <div class="wrap">
+          <h2 id="closer-title" class="display">
+            Read the words
+            <span class="line-2">the code is held to.</span>
+          </h2>
+          <div class="cta-row">
+            <a class="btn btn-primary" href="documentation.html#architecture.md">docs/architecture.md</a>
+            <a class="btn btn-ghost" href="documentation.html">All documentation</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p class="meta">comemory · MIT · <a href="https://github.com/Falconiere/comemory">source</a> · <a href="https://github.com/Falconiere/comemory/releases">releases</a></p>
+      <p class="meta">set in the <a href="https://github.com/Falconiere/toolu-conventions/blob/main/DESIGN.md">Signal</a> design language from toolu-conventions</p>
+    </footer>
+  </body>
+</html>

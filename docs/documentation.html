@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en" data-signal="blueprint">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>comemory docs</title>
+    <meta
+      name="description"
+      content="The comemory documentation, rendered from the markdown the repository ships: getting started, the how-to guides, the CLI and HTTP reference, and the design notes."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="assets/signal.css" />
+    <script
+      src="https://cdn.jsdelivr.net/npm/marked@15.0.12/marked.min.js"
+      integrity="sha384-948ahk4ZmxYVYOc+rxN1H2gM1EJ2Duhp7uHtZ4WSLkV4Vtx5MUqnV+l7u9B+jFv+"
+      crossorigin="anonymous"
+      defer
+    ></script>
+    <script src="assets/documentation.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <nav class="site-nav" aria-label="Site">
+      <a class="brand" href="index.html">comemory <span>· docs</span></a>
+      <ul>
+        <li><a href="architecture.html">Architecture</a></li>
+        <li><a href="documentation.html" aria-current="page">Documentation</a></li>
+        <li><a href="https://github.com/Falconiere/comemory/tree/main/docs">Edit on GitHub</a></li>
+        <li><a href="https://github.com/Falconiere/comemory">GitHub</a></li>
+      </ul>
+    </nav>
+
+    <div class="band">
+      <div class="wrap wrap-wide wrap-tight docs-layout">
+        <aside class="docs-side" aria-label="Documentation index">
+          <details open>
+            <summary><span class="label">contents</span><span class="meta">docs/README.md</span></summary>
+            <nav id="docs-nav" aria-label="Pages">
+              <p class="meta">loading · README.md</p>
+            </nav>
+          </details>
+        </aside>
+
+        <main id="main" class="docs-article">
+          <p class="crumbs" id="docs-crumbs"></p>
+          <div id="docs-state" class="docs-state" aria-live="polite"></div>
+          <nav id="docs-toc" class="docs-toc" aria-label="On this page" hidden></nav>
+          <article id="docs-body" class="prose">
+            <noscript>
+              <p class="body">
+                This reader renders the repository's markdown in the browser
+                and needs JavaScript. The same pages are readable on GitHub at
+                <a href="https://github.com/Falconiere/comemory/tree/main/docs">github.com/Falconiere/comemory/tree/main/docs</a>.
+              </p>
+            </noscript>
+          </article>
+        </main>
+      </div>
+    </div>
+
+    <footer class="site-footer">
+      <p class="meta">comemory · MIT · <a href="https://github.com/Falconiere/comemory">source</a> · <a href="https://github.com/Falconiere/comemory/releases">releases</a></p>
+      <p class="meta">set in the <a href="https://github.com/Falconiere/toolu-conventions/blob/main/DESIGN.md">Signal</a> design language from toolu-conventions</p>
+    </footer>
+  </body>
+</html>
