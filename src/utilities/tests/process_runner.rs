@@ -15,7 +15,11 @@
 use std::ffi::OsString;
 use std::time::{Duration, Instant};
 
-use comemory::utilities::process_runner::{ProcessFailure, ProcessLimits, ProcessRunner};
+use tempfile::TempDir;
+
+use comemory::utilities::process_runner::{
+    DEFAULT_PROCESS_TIMEOUT, ProcessFailure, ProcessLimits, ProcessRunner,
+};
 
 /// A payload far larger than any pipe buffer, so a partial write blocks.
 const BIG: usize = 4 << 20;
@@ -75,7 +79,7 @@ fn nonzero_exit_is_a_completed_run() {
 #[test]
 fn missing_program_is_a_spawn_failure() {
     let runner = ProcessRunner::new("/nonexistent/reranker-binary", vec![]);
-    match runner.run(b"{}") {
+    match runner.run(b"{}").map_err(|e| e.failure) {
         Err(ProcessFailure::Spawn(message)) => assert!(!message.is_empty()),
         other => panic!("expected Spawn, got {other:?}"),
     }
@@ -84,12 +88,12 @@ fn missing_program_is_a_spawn_failure() {
 #[test]
 fn input_over_the_cap_never_spawns() {
     let dir = tempdir("input-cap");
-    let sentinel = dir.join("spawned");
+    let sentinel = dir.path().join("spawned");
     let runner = sh(r#"touch "$1""#, &[&sentinel.to_string_lossy()]).with_limits(ProcessLimits {
         max_input_bytes: 8,
         ..ProcessLimits::default()
     });
-    match runner.run(b"far too many bytes") {
+    match runner.run(b"far too many bytes").map_err(|e| e.failure) {
         Err(ProcessFailure::InputTooLarge { bytes, max }) => {
             assert_eq!(bytes, 18);
             assert_eq!(max, 8);
@@ -104,7 +108,7 @@ fn child_that_writes_before_reading_does_not_deadlock() {
     // The case that deadlocks embed.rs's write-then-read sequencing: the child
     // fills the stdout pipe before draining a stdin far larger than its buffer.
     let dir = tempdir("write-first");
-    let payload = dir.join("payload");
+    let payload = dir.path().join("payload");
     std::fs::write(&payload, "o".repeat(512 * 1024)).unwrap();
     let runner = sh(
         r#"cat "$1"; cat > /dev/null"#,
@@ -133,12 +137,12 @@ fn child_that_never_reads_stdin_still_returns_its_output() {
 
 #[test]
 fn child_that_never_exits_times_out_and_is_reaped() {
-    let before = own_zombies();
     let started = Instant::now();
     let err = sh("sleep 30", &[])
         .with_timeout(Duration::from_millis(300))
         .run(b"")
-        .expect_err("a child that outlives the budget must fail");
+        .expect_err("a child that outlives the budget must fail")
+        .failure;
     assert!(matches!(err, ProcessFailure::TimedOut { .. }), "{err:?}");
     assert!(
         started.elapsed() < Duration::from_secs(3),
@@ -147,8 +151,9 @@ fn child_that_never_exits_times_out_and_is_reaped() {
     );
     assert_eq!(
         own_zombies(),
-        before,
-        "the killed child must also be reaped"
+        0,
+        "the killed child must also be reaped: nextest gives this test its own \
+         process, so any zombie here is ours"
     );
 }
 
@@ -156,38 +161,38 @@ fn child_that_never_exits_times_out_and_is_reaped() {
 fn child_that_closes_stdout_but_stays_alive_times_out() {
     // stdout reaches EOF immediately; the process does not exit. Only a budget
     // that also covers the exit can end this run.
-    let before = own_zombies();
     let started = Instant::now();
     let err = sh("exec >&-; sleep 30", &[])
         .with_timeout(Duration::from_millis(300))
         .run(b"")
-        .expect_err("an alive child with a closed stdout must fail");
+        .expect_err("an alive child with a closed stdout must fail")
+        .failure;
     assert!(matches!(err, ProcessFailure::TimedOut { .. }), "{err:?}");
     assert!(
         started.elapsed() < Duration::from_secs(3),
         "{:?}",
         started.elapsed()
     );
-    assert_eq!(own_zombies(), before);
+    assert_eq!(own_zombies(), 0, "killed and reaped, leaving no zombie");
 }
 
 #[test]
 fn child_whose_descendant_holds_the_pipe_times_out() {
     // The shell exits 0 at once, but the backgrounded `sleep` inherited stdout,
     // so EOF never arrives and the payload can never be known to be complete.
-    let before = own_zombies();
     let started = Instant::now();
-    let err = sh("sleep 30 & exit 0", &[])
+    let err = sh("sleep 3 & exit 0", &[])
         .with_timeout(Duration::from_millis(300))
         .run(b"")
-        .expect_err("an unterminated stdout must not be treated as complete");
+        .expect_err("an unterminated stdout must not be treated as complete")
+        .failure;
     assert!(matches!(err, ProcessFailure::TimedOut { .. }), "{err:?}");
     assert!(
         started.elapsed() < Duration::from_secs(3),
         "{:?}",
         started.elapsed()
     );
-    assert_eq!(own_zombies(), before, "the direct child is ours to reap");
+    assert_eq!(own_zombies(), 0, "the direct child is ours to reap");
 }
 
 #[test]
@@ -200,7 +205,8 @@ fn stdout_over_the_cap_fails_fast() {
             ..ProcessLimits::default()
         })
         .run(b"")
-        .expect_err("an oversized payload must be refused");
+        .expect_err("an oversized payload must be refused")
+        .failure;
     match err {
         ProcessFailure::StdoutTooLarge { max } => assert_eq!(max, 1024),
         other => panic!("expected StdoutTooLarge, got {other:?}"),
@@ -209,6 +215,34 @@ fn stdout_over_the_cap_fails_fast() {
         started.elapsed() < Duration::from_secs(10),
         "overflow must not wait for the deadline: {:?}",
         started.elapsed()
+    );
+}
+
+#[test]
+fn stdout_exactly_at_the_cap_succeeds_and_one_byte_over_fails() {
+    // The cap is "more than this is refused", not "this much is refused", so
+    // the two sides of the boundary must land on opposite verdicts.
+    let at_cap = sh("yes x | head -c 1024", &[])
+        .with_limits(ProcessLimits {
+            max_stdout_bytes: 1024,
+            ..ProcessLimits::default()
+        })
+        .run(b"")
+        .expect("a payload exactly at the cap is within it");
+    assert_eq!(at_cap.stdout.len(), 1024);
+    assert!(at_cap.status.success());
+
+    let over_cap = sh("yes x | head -c 1025", &[])
+        .with_limits(ProcessLimits {
+            max_stdout_bytes: 1024,
+            ..ProcessLimits::default()
+        })
+        .run(b"")
+        .expect_err("one byte over the cap must be refused")
+        .failure;
+    assert!(
+        matches!(over_cap, ProcessFailure::StdoutTooLarge { max: 1024 }),
+        "{over_cap:?}"
     );
 }
 
@@ -240,13 +274,42 @@ fn one_runner_serves_concurrent_runs() {
     });
 }
 
-/// A fresh, uniquely named directory under the system temp dir.
-fn tempdir(tag: &str) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "comemory-{tag}-{}-{:?}",
-        std::process::id(),
-        std::thread::current().id()
-    ));
-    std::fs::create_dir_all(&dir).expect("tempdir");
-    dir
+/// A temporary directory that cleans itself up when the test ends.
+fn tempdir(tag: &str) -> TempDir {
+    tempfile::Builder::new()
+        .prefix(&format!("comemory-{tag}-"))
+        .tempdir()
+        .expect("tempdir")
+}
+
+#[test]
+fn an_enormous_budget_does_not_overflow_the_deadline() {
+    // `Instant + Duration` panics on overflow and the budget is a public
+    // input, so `Duration::MAX` must mean "effectively unbounded", not abort.
+    let out = sh("printf ok", &[])
+        .with_timeout(Duration::MAX)
+        .run(b"")
+        .expect("an enormous budget is still a budget");
+    assert_eq!(out.stdout, b"ok");
+}
+
+#[test]
+fn a_failure_carries_the_stderr_drained_before_it() {
+    // A scorer that narrates its start-up and then hangs leaves no other
+    // clue, so the excerpt has to travel with the failure, not just success.
+    let err = sh("printf 'loading weights...' >&2; sleep 30", &[])
+        .with_timeout(Duration::from_millis(300))
+        .run(b"")
+        .expect_err("the child outlives its budget");
+    assert!(matches!(err.failure, ProcessFailure::TimedOut { .. }));
+    assert_eq!(err.stderr, b"loading weights...");
+}
+
+#[test]
+fn the_published_process_defaults_are_what_the_design_document_states() {
+    assert_eq!(DEFAULT_PROCESS_TIMEOUT, Duration::from_secs(10));
+    let limits = ProcessLimits::default();
+    assert_eq!(limits.max_input_bytes, 8 * 1024 * 1024);
+    assert_eq!(limits.max_stdout_bytes, 8 * 1024 * 1024);
+    assert_eq!(limits.max_stderr_bytes, 16 * 1024);
 }

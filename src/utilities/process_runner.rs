@@ -15,10 +15,18 @@ use std::time::{Duration, Instant};
 
 use thiserror::Error;
 
-use crate::utilities::process_pipes::{Drained, Pipes, ReadDone, WriteDone};
+use crate::utilities::process_pipes::{Drained, Pipes, ReadDone, Streams};
 
 /// Default end-to-end budget for one bounded run.
 pub const DEFAULT_PROCESS_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Hours in [`FALLBACK_DEADLINE`].
+const FALLBACK_HOURS: u64 = 24;
+
+/// The deadline used when the configured budget is so large that adding it to
+/// the current instant would overflow. There is no `Instant::MAX` to clamp to,
+/// and a day is past anything a caller means by "effectively unbounded".
+const FALLBACK_DEADLINE: Duration = Duration::from_secs(FALLBACK_HOURS * 60 * 60);
 
 /// Byte bounds one run is held to.
 #[derive(Debug, Clone, Copy)]
@@ -95,8 +103,23 @@ pub enum ProcessFailure {
     },
 }
 
+/// A failed bounded run, with whatever diagnostic stderr had been drained
+/// before it failed.
+///
+/// The stderr travels with the failure because that is exactly when it matters:
+/// a child that prints `loading weights...` and then exceeds its budget leaves
+/// no other clue, and the failure alone would say only "timed out".
+#[derive(Debug, Error)]
+#[error("{failure}")]
+pub struct ProcessError {
+    /// Why the run failed.
+    pub failure: ProcessFailure,
+    /// The retained stderr excerpt, empty when nothing was drained.
+    pub stderr: Vec<u8>,
+}
+
 /// Result alias for a bounded run.
-pub type ProcessResult<T> = std::result::Result<T, ProcessFailure>;
+pub type ProcessResult<T> = std::result::Result<T, ProcessError>;
 
 /// A child process to run once, under one end-to-end deadline.
 ///
@@ -136,24 +159,24 @@ impl ProcessRunner {
         self
     }
 
-    /// The byte bounds this runner enforces.
-    pub fn limits(&self) -> ProcessLimits {
-        self.limits
-    }
-
     /// Run the child once, writing `input` to its stdin.
     ///
     /// The deadline is taken before the spawn, so startup is inside the budget
     /// as much as the I/O and the exit are.
     pub fn run(&self, input: &[u8]) -> ProcessResult<ProcessOutput> {
         if input.len() > self.limits.max_input_bytes {
-            return Err(ProcessFailure::InputTooLarge {
+            return Err(bare(ProcessFailure::InputTooLarge {
                 bytes: input.len(),
                 max: self.limits.max_input_bytes,
-            });
+            }));
         }
         let started = Instant::now();
-        let deadline = started + self.timeout;
+        // `Instant + Duration` panics on overflow, and the budget is a public
+        // input: a caller passing `Duration::MAX` must get a long deadline,
+        // not an abort.
+        let deadline = started
+            .checked_add(self.timeout)
+            .unwrap_or_else(|| started + FALLBACK_DEADLINE);
         let mut child = self.spawn()?;
         let pipes = Pipes::start(
             &mut child,
@@ -165,15 +188,19 @@ impl ProcessRunner {
             Ok(pipes) => pipes,
             Err(message) => {
                 terminate(&mut child);
-                return Err(ProcessFailure::Io {
-                    phase: "pipe setup",
-                    message,
-                });
+                return Err(bare(io_failed("pipe setup", message)));
             }
         };
         let drained = pipes.drain(&mut child, deadline);
         terminate(&mut child);
-        finish(drained, started.elapsed(), self.timeout, self.limits)
+        let streams = pipes.retained();
+        finish(
+            drained,
+            streams,
+            started.elapsed(),
+            self.timeout,
+            self.limits,
+        )
     }
 
     /// Spawn the configured program with all three streams piped.
@@ -184,7 +211,15 @@ impl ProcessRunner {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .map_err(|e| ProcessFailure::Spawn(e.to_string()))
+            .map_err(|e| bare(ProcessFailure::Spawn(e.to_string())))
+    }
+}
+
+/// A failure that happened before any stderr could have been drained.
+fn bare(failure: ProcessFailure) -> ProcessError {
+    ProcessError {
+        failure,
+        stderr: Vec::new(),
     }
 }
 
@@ -201,36 +236,72 @@ fn terminate(child: &mut Child) {
 }
 
 /// Turn one drained run into an output or a typed failure.
+///
+/// The stderr excerpt travels with either verdict: on success it is the
+/// output's, on failure it is the failure's. The stdout bytes are only handed
+/// over once the stream is known to have reached EOF — a partial payload is
+/// never a payload.
 fn finish(
     drained: Drained,
+    streams: Streams,
     elapsed: Duration,
     budget: Duration,
     limits: ProcessLimits,
 ) -> ProcessResult<ProcessOutput> {
+    match completed(drained, budget, limits) {
+        Ok(status) => Ok(ProcessOutput {
+            status: status.0,
+            stdout: streams.stdout,
+            stderr: streams.stderr,
+            input_truncated: status.1,
+            elapsed,
+        }),
+        Err(failure) => Err(ProcessError {
+            failure,
+            stderr: streams.stderr,
+        }),
+    }
+}
+
+/// Account for stdout, stdin and the exit, or say what stopped the run.
+///
+/// The three arms are spelled out here rather than in a helper each, because a
+/// helper per stream is the same three-arm match twice over.
+fn completed(
+    drained: Drained,
+    budget: Duration,
+    limits: ProcessLimits,
+) -> Result<(ExitStatus, bool), ProcessFailure> {
     refuse_early(&drained, budget, limits)?;
-    let stdout = stdout_bytes(drained.stdout, budget)?;
-    let input_truncated = write_truncated(drained.write, budget)?;
+    // stdout must have reached EOF for its retained bytes to be the whole
+    // payload; a partial payload is never a payload.
+    match drained.stdout {
+        Some(ReadDone::Eof) => {}
+        Some(ReadDone::Failed(message)) => return Err(io_failed("stdout read", message)),
+        _ => return Err(ProcessFailure::TimedOut { budget }),
+    }
+    let input_truncated = match drained.write {
+        Some(Ok(truncated)) => truncated,
+        Some(Err(message)) => return Err(io_failed("stdin write", message)),
+        None => return Err(ProcessFailure::TimedOut { budget }),
+    };
     let status = drained.status.ok_or(ProcessFailure::TimedOut { budget })?;
-    Ok(ProcessOutput {
-        status,
-        stdout,
-        // A failed or missing stderr read is never fatal: it is diagnostic.
-        stderr: match drained.stderr {
-            Some(ReadDone::Eof(bytes)) => bytes,
-            _ => Vec::new(),
-        },
-        input_truncated,
-        elapsed,
-    })
+    Ok((status, input_truncated))
+}
+
+/// The one construction of a phase-tagged pipe or wait failure.
+fn io_failed(phase: &'static str, message: String) -> ProcessFailure {
+    ProcessFailure::Io { phase, message }
 }
 
 /// Reject the three conditions that make a complete output impossible.
-fn refuse_early(drained: &Drained, budget: Duration, limits: ProcessLimits) -> ProcessResult<()> {
+fn refuse_early(
+    drained: &Drained,
+    budget: Duration,
+    limits: ProcessLimits,
+) -> Result<(), ProcessFailure> {
     if let Some(message) = &drained.wait_error {
-        return Err(ProcessFailure::Io {
-            phase: "wait",
-            message: message.clone(),
-        });
+        return Err(io_failed("wait", message.clone()));
     }
     if matches!(drained.stdout, Some(ReadDone::Overflow)) {
         return Err(ProcessFailure::StdoutTooLarge {
@@ -241,30 +312,6 @@ fn refuse_early(drained: &Drained, budget: Duration, limits: ProcessLimits) -> P
         return Err(ProcessFailure::TimedOut { budget });
     }
     Ok(())
-}
-
-/// The complete, EOF-terminated stdout payload, or why it never arrived.
-fn stdout_bytes(done: Option<ReadDone>, budget: Duration) -> ProcessResult<Vec<u8>> {
-    match done {
-        Some(ReadDone::Eof(bytes)) => Ok(bytes),
-        Some(ReadDone::Failed(message)) => Err(ProcessFailure::Io {
-            phase: "stdout read",
-            message,
-        }),
-        _ => Err(ProcessFailure::TimedOut { budget }),
-    }
-}
-
-/// Whether the child closed stdin early, or why the write never finished.
-fn write_truncated(done: Option<WriteDone>, budget: Duration) -> ProcessResult<bool> {
-    match done {
-        Some(Ok(truncated)) => Ok(truncated),
-        Some(Err(message)) => Err(ProcessFailure::Io {
-            phase: "stdin write",
-            message,
-        }),
-        None => Err(ProcessFailure::TimedOut { budget }),
-    }
 }
 
 #[cfg(test)]

@@ -118,3 +118,18 @@ fn command_that_writes_before_reading_does_not_deadlock() {
     assert_eq!(v, vec![2.0_f32, 3.0]);
     assert!(started.elapsed() < Duration::from_secs(10));
 }
+
+#[test]
+fn nonzero_exit_reports_the_exit_status_wording() {
+    // `nonzero_exit_is_error` above asserts only the `embed-cmd` prefix every
+    // failure carries, so it would pass for a timeout or a spawn error too.
+    // This pins the specific wording `comemory doctor` surfaces.
+    let err = embed_query("printf '{\"embedding\":[1.0]}'; exit 7", "q")
+        .expect_err("a non-zero exit must fail even with a valid payload");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("embed-cmd exited with"),
+        "expected the exit-status wording, got: {msg}"
+    );
+    assert!(msg.contains('7'), "the status itself must be named: {msg}");
+}

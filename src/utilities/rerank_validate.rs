@@ -68,11 +68,13 @@ fn collect_scores<'a>(
         if !offered.contains(id.as_str()) {
             return Err(RerankFailure::UnknownScore { id: id.clone() });
         }
-        if !score.is_finite() {
-            return Err(RerankFailure::NonFiniteScore { id: id.clone() });
-        }
+        // Structural defects before value defects: a repeated id is reported as
+        // a duplicate even when its second copy is also non-finite.
         if scores.insert(id.as_str(), *score).is_some() {
             return Err(RerankFailure::DuplicateScore { id: id.clone() });
+        }
+        if !score.is_finite() {
+            return Err(RerankFailure::NonFiniteScore { id: id.clone() });
         }
     }
     Ok(scores)
@@ -108,17 +110,27 @@ fn rank_all(
 /// Order by score in the declared direction, breaking ties by the submitted
 /// rank ascending.
 ///
-/// Every score is already proven finite, so `total_cmp` is a total order and
-/// no comparator can panic. The rank comparison is never reversed: equal
-/// scores always preserve the caller's deterministic order.
+/// Every score is already proven finite, so `total_cmp` is a total order and no
+/// comparator can panic. The rank comparison is never reversed: numerically
+/// equal scores always preserve the caller's deterministic order — which is why
+/// the sign of zero is normalized first. `total_cmp` orders `-0.0` before
+/// `0.0` even though the two are numerically equal, and that would silently
+/// steal the tie-break from `rank`.
 fn sort_ranked(ranked: &mut [RerankedCandidate], direction: ScoreDirection) {
     ranked.sort_by(|a, b| {
+        let (left, right) = (unsign_zero(a.score), unsign_zero(b.score));
         let by_score = match direction {
-            ScoreDirection::HigherIsBetter => b.score.total_cmp(&a.score),
-            ScoreDirection::LowerIsBetter => a.score.total_cmp(&b.score),
+            ScoreDirection::HigherIsBetter => right.total_cmp(&left),
+            ScoreDirection::LowerIsBetter => left.total_cmp(&right),
         };
         by_score.then(a.rank.cmp(&b.rank))
     });
+}
+
+/// Map `-0.0` onto `0.0` and leave every other finite value alone, so that
+/// numerically equal scores compare equal under `total_cmp`.
+fn unsign_zero(score: f64) -> f64 {
+    if score == 0.0 { 0.0 } else { score }
 }
 
 #[cfg(test)]

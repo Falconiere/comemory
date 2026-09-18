@@ -14,12 +14,13 @@
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
+
+use tempfile::TempDir;
 
 use comemory::utilities::rerank_outcome::{RerankFailure, RerankOutcome};
 use comemory::utilities::rerank_protocol::{RerankCandidate, RerankRequest};
-use comemory::utilities::rerank_runner::{RerankLimits, RerankRunner};
+use comemory::utilities::rerank_runner::{DEFAULT_RERANK_TIMEOUT, RerankLimits, RerankRunner};
 
 /// A predicate naming the failure a case must produce.
 type Expect = fn(&RerankFailure) -> bool;
@@ -100,16 +101,12 @@ fn request() -> RerankRequest {
     )
 }
 
-/// A fresh directory nobody else in this test binary is using.
-fn workdir(tag: &str) -> PathBuf {
-    static SEQ: AtomicU32 = AtomicU32::new(0);
-    let dir = std::env::temp_dir().join(format!(
-        "comemory-rerank-{}-{tag}-{}",
-        std::process::id(),
-        SEQ.fetch_add(1, Ordering::Relaxed)
-    ));
-    std::fs::create_dir_all(&dir).expect("workdir");
-    dir
+/// A temporary directory that cleans itself up when the test ends.
+fn workdir(tag: &str) -> TempDir {
+    tempfile::Builder::new()
+        .prefix(&format!("comemory-rerank-{tag}-"))
+        .tempdir()
+        .expect("workdir")
 }
 
 /// Write `body` as a shell script and return its path.
@@ -142,8 +139,8 @@ fn responder(dir: &Path, reply: &Reply) -> RerankRunner {
 /// outcome and the exact bytes the child read from stdin.
 fn run(tag: &str, reply: &Reply) -> (RerankOutcome, String) {
     let dir = workdir(tag);
-    let outcome = responder(&dir, reply).rerank(&request());
-    let seen = std::fs::read_to_string(dir.join("seen.json")).unwrap_or_default();
+    let outcome = responder(dir.path(), reply).rerank(&request());
+    let seen = std::fs::read_to_string(dir.path().join("seen.json")).unwrap_or_default();
     (outcome, seen)
 }
 
@@ -276,7 +273,7 @@ fn malformed_and_empty_stdout_are_refused() {
         ),
     ] {
         let dir = workdir(tag);
-        let outcome = runner(&dir, body).rerank(&request());
+        let outcome = runner(dir.path(), body).rerank(&request());
         let failure = declined(&outcome);
         assert!(
             matches!(failure, RerankFailure::Malformed { .. }),
@@ -294,7 +291,7 @@ fn a_valid_response_with_a_nonzero_exit_is_not_applied() {
         "{PREAMBLE}printf '{}' \"$id\"\nexit 3\n",
         Reply::default().format()
     );
-    let outcome = runner(&dir, &body).rerank(&request());
+    let outcome = runner(dir.path(), &body).rerank(&request());
     let failure = declined(&outcome);
     assert!(
         matches!(failure, RerankFailure::NonZeroExit { code: Some(3) }),
@@ -306,7 +303,7 @@ fn a_valid_response_with_a_nonzero_exit_is_not_applied() {
 fn a_hanging_scorer_times_out_within_its_budget() {
     let dir = workdir("hang");
     let started = Instant::now();
-    let outcome = runner(&dir, "sleep 30")
+    let outcome = runner(dir.path(), "sleep 30")
         .with_timeout(Duration::from_millis(300))
         .rerank(&request());
     let failure = declined(&outcome);
@@ -334,7 +331,7 @@ fn a_missing_scorer_is_refused_without_a_panic() {
 #[test]
 fn an_oversized_response_is_refused() {
     let dir = workdir("huge");
-    let outcome = runner(&dir, "cat > /dev/null; yes x | head -c 200000")
+    let outcome = runner(dir.path(), "cat > /dev/null; yes x | head -c 200000")
         .with_limits(RerankLimits {
             max_stdout_bytes: 1024,
             ..RerankLimits::default()
@@ -354,7 +351,7 @@ fn a_chatty_scorer_still_applies_with_a_capped_excerpt() {
         "{PREAMBLE}yes e | head -c 200000 >&2\nprintf '{}' \"$id\"\n",
         Reply::default().format()
     );
-    let outcome = runner(&dir, &body)
+    let outcome = runner(dir.path(), &body)
         .with_limits(RerankLimits {
             max_stderr_bytes: 64,
             ..RerankLimits::default()
@@ -370,11 +367,11 @@ fn a_chatty_scorer_still_applies_with_a_capped_excerpt() {
 #[test]
 fn bounds_are_enforced_before_anything_is_spawned() {
     let dir = workdir("no-spawn");
-    let sentinel = dir.join("spawned");
+    let sentinel = dir.path().join("spawned");
     let spawn_detector = RerankRunner::new(
         "/bin/sh",
         vec![
-            OsString::from(script(&dir, r#"touch "$1""#)),
+            OsString::from(script(dir.path(), r#"touch "$1""#)),
             OsString::from(&sentinel),
         ],
     );
@@ -421,7 +418,7 @@ fn bounds_are_enforced_before_anything_is_spawned() {
 #[test]
 fn an_empty_or_ambiguous_candidate_list_is_refused() {
     let dir = workdir("bad-request");
-    let scorer = responder(&dir, &Reply::default());
+    let scorer = responder(dir.path(), &Reply::default());
 
     let empty = RerankRequest::with_request_id("rr-20260918-1a2b3c4d", MODEL, None, "q", vec![]);
     assert!(matches!(
@@ -448,10 +445,10 @@ fn an_empty_or_ambiguous_candidate_list_is_refused() {
 #[test]
 fn shell_metacharacters_travel_as_data_and_never_execute() {
     let dir = workdir("injection");
-    let pwned = dir.join("pwned");
+    let pwned = dir.path().join("pwned");
     let injection = format!(r#""; touch {}; #"#, pwned.display());
     let substitution = format!("$(touch {})", pwned.display());
-    let scorer = responder(&dir, &Reply::default());
+    let scorer = responder(dir.path(), &Reply::default());
 
     let request = RerankRequest::new(
         MODEL,
@@ -469,7 +466,7 @@ fn shell_metacharacters_travel_as_data_and_never_execute() {
     assert!(!pwned.exists(), "payload text must never reach a shell");
 
     // ...and it did arrive at the child, verbatim, on stdin.
-    let seen = std::fs::read_to_string(dir.join("seen.json")).expect("seen");
+    let seen = std::fs::read_to_string(dir.path().join("seen.json")).expect("seen");
     let decoded: serde_json::Value = serde_json::from_str(&seen).expect("valid JSON on stdin");
     assert_eq!(decoded["query"], serde_json::json!(injection));
     assert_eq!(
@@ -480,23 +477,24 @@ fn shell_metacharacters_travel_as_data_and_never_execute() {
 
 #[test]
 fn one_runner_serves_concurrent_requests() {
-    let dir_a = workdir("concurrent-a");
-    let dir_b = workdir("concurrent-b");
-    let body = format!("{PREAMBLE}printf '{}' \"$id\"\n", Reply::default().format());
-    let path = script(&dir_a, &body);
-    let path_b = script(&dir_b, &body);
-    let runner_a = RerankRunner::new(
-        "/bin/sh",
-        vec![
-            OsString::from(&path),
-            OsString::from(dir_a.join("seen.json")),
-        ],
+    // ONE runner value, shared by reference across two threads. The responder
+    // keys its record file by the request id it read, so each thread's request
+    // is verifiable separately and the two cannot be confused for each other.
+    let dir = workdir("concurrent");
+    let body = format!(
+        concat!(
+            "req=$(cat)\n",
+            "id=$(printf '%s' \"$req\" | sed -n 's/.*\"request_id\":\"\\([^\"]*\\)\".*/\\1/p')\n",
+            "printf '%s' \"$req\" > \"$1/$id.json\"\n",
+            "printf '{}' \"$id\"\n"
+        ),
+        Reply::default().format()
     );
-    let runner_b = RerankRunner::new(
+    let runner = RerankRunner::new(
         "/bin/sh",
         vec![
-            OsString::from(&path_b),
-            OsString::from(dir_b.join("seen.json")),
+            OsString::from(script(dir.path(), &body)),
+            OsString::from(dir.path()),
         ],
     );
 
@@ -505,14 +503,89 @@ fn one_runner_serves_concurrent_requests() {
     assert_ne!(first.request_id, second.request_id, "distinct ids");
 
     std::thread::scope(|scope| {
-        let a = scope.spawn(|| runner_a.rerank(&first));
-        let b = scope.spawn(|| runner_b.rerank(&second));
+        let a = scope.spawn(|| runner.rerank(&first));
+        let b = scope.spawn(|| runner.rerank(&second));
         for (outcome, expected) in [(a.join().unwrap(), &first), (b.join().unwrap(), &second)] {
             let RerankOutcome::Applied(applied) = &outcome else {
                 panic!("expected Applied, got {outcome:?}");
             };
             assert_eq!(applied.request_id, expected.request_id);
             assert_eq!(outcome.order_ids(), vec![CODE, DOCUMENT, MEMORY]);
+            let seen =
+                std::fs::read_to_string(dir.path().join(format!("{}.json", expected.request_id)))
+                    .expect("each request reached its own child");
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(&seen).expect("valid JSON")["request_id"],
+                serde_json::json!(expected.request_id)
+            );
         }
     });
+}
+
+#[test]
+fn a_timed_out_scorer_declines_with_the_stderr_it_had_already_printed() {
+    // The most useful diagnostic a hanging scorer produces is whatever it
+    // narrated before it hung, so the excerpt has to reach the declined
+    // outcome — an empty one here would leave "timed out" as the only clue.
+    let dir = workdir("stderr-on-timeout");
+    let outcome = runner(dir.path(), "printf 'loading weights...' >&2; sleep 30")
+        .with_timeout(Duration::from_millis(300))
+        .rerank(&request());
+    let failure = declined(&outcome);
+    assert!(
+        matches!(failure, RerankFailure::TimedOut { .. }),
+        "{failure:?}"
+    );
+    let RerankOutcome::Declined(details) = &outcome else {
+        panic!("expected Declined, got {outcome:?}");
+    };
+    assert_eq!(details.stderr_excerpt, "loading weights...");
+    assert_eq!(details.request_id, outcome_request_id(&outcome));
+}
+
+#[test]
+fn a_scorer_that_never_reads_stdin_is_still_applied() {
+    // Answering from a canned payload without draining the request is the
+    // child's choice, exactly as it is for the embed command: its response
+    // still has to echo the request id and score every candidate, which this
+    // one cannot do — so the canned reply is refused on identity, not on the
+    // undelivered request. The reverse case, a child that closes stdin after
+    // reading enough to echo the id, must still be applied.
+    let dir = workdir("partial-stdin");
+    let body = format!(
+        concat!(
+            "head -c 200 > \"$1\"\n",
+            "exec <&-\n",
+            "id=$(sed -n 's/.*\"request_id\":\"\\([^\"]*\\)\".*/\\1/p' \"$1\")\n",
+            "printf '{}' \"$id\"\n"
+        ),
+        Reply::default().format()
+    );
+    let outcome = runner(dir.path(), &body).rerank(&request());
+    assert!(
+        outcome.is_applied(),
+        "a child that stops reading early is not a failing child: {outcome:?}"
+    );
+    assert_eq!(outcome.order_ids(), vec![CODE, DOCUMENT, MEMORY]);
+}
+
+#[test]
+fn the_published_defaults_are_what_the_design_document_states() {
+    // These constants are the contract #212 and #213 build against, so they
+    // must not drift without the document drifting with them.
+    assert_eq!(DEFAULT_RERANK_TIMEOUT, Duration::from_secs(20));
+    let limits = RerankLimits::default();
+    assert_eq!(limits.max_candidates, 256);
+    assert_eq!(limits.max_candidate_text_bytes, 8 * 1024);
+    assert_eq!(limits.max_request_bytes, 8 * 1024 * 1024);
+    assert_eq!(limits.max_stdout_bytes, 8 * 1024 * 1024);
+    assert_eq!(limits.max_stderr_bytes, 16 * 1024);
+}
+
+/// The request id an outcome reports, in whichever arm it landed.
+fn outcome_request_id(outcome: &RerankOutcome) -> String {
+    match outcome {
+        RerankOutcome::Applied(applied) => applied.request_id.clone(),
+        RerankOutcome::Declined(declined) => declined.request_id.clone(),
+    }
 }

@@ -9,11 +9,12 @@
 //! [`RerankRunner::rerank`] never returns `Err`: every operational failure is
 //! a [`RerankOutcome::Declined`] carrying the submitted order.
 
+use std::collections::HashSet;
 use std::ffi::OsString;
 use std::time::Duration;
 
 use crate::utilities::process_runner::{
-    ProcessFailure, ProcessLimits, ProcessOutput, ProcessRunner,
+    ProcessError, ProcessFailure, ProcessLimits, ProcessOutput, ProcessRunner,
 };
 use crate::utilities::rerank_outcome::{
     RerankApplied, RerankDeclined, RerankFailure, RerankOutcome, RerankedCandidate,
@@ -115,10 +116,7 @@ impl RerankRunner {
         check_request(request, self.limits).map_err(|f| (f, String::new()))?;
         let body =
             serde_json::to_vec(request).map_err(|e| (malformed(&e.to_string()), String::new()))?;
-        let output = self
-            .process_runner()
-            .run(&body)
-            .map_err(|e| (restate(e), String::new()))?;
+        let output = self.process_runner().run(&body).map_err(restate)?;
         let stderr_excerpt = String::from_utf8_lossy(&output.stderr).into_owned();
         apply(request, &output)
             .map_err(|failure| (failure, stderr_excerpt.clone()))
@@ -145,6 +143,13 @@ impl RerankRunner {
 }
 
 /// Refuse a non-zero exit, then parse and validate the payload.
+///
+/// `ProcessOutput::input_truncated` is deliberately ignored, matching
+/// `utilities::embed`: a scorer that answers from a canned payload without
+/// draining stdin has made a choice, and its exit status and response still
+/// decide the outcome. Nothing that reaches here can be wrong *because* the
+/// request was not fully delivered — the response still has to echo the
+/// request id, the model and the adapter, and score every candidate.
 fn apply(
     request: &RerankRequest,
     output: &ProcessOutput,
@@ -159,9 +164,12 @@ fn apply(
     validate(request, &response)
 }
 
-/// Restate a process-level failure in the reranker's own vocabulary.
-fn restate(failure: ProcessFailure) -> RerankFailure {
-    match failure {
+/// Restate a process-level failure in the reranker's own vocabulary, keeping
+/// the stderr the runner drained before it failed — for a scorer that times out
+/// mid-load, that excerpt is the only diagnostic there is.
+fn restate(error: ProcessError) -> (RerankFailure, String) {
+    let excerpt = String::from_utf8_lossy(&error.stderr).into_owned();
+    let failure = match error.failure {
         ProcessFailure::InputTooLarge { bytes, max } => {
             RerankFailure::RequestTooLarge { bytes, max }
         }
@@ -174,7 +182,8 @@ fn restate(failure: ProcessFailure) -> RerankFailure {
         ProcessFailure::TimedOut { budget } => RerankFailure::TimedOut {
             budget_ms: u64::try_from(budget.as_millis()).unwrap_or(u64::MAX),
         },
-    }
+    };
+    (failure, excerpt)
 }
 
 /// Refuse a request that cannot be scored before anything is spawned.
@@ -188,14 +197,13 @@ fn check_request(request: &RerankRequest, limits: RerankLimits) -> Result<(), Re
             max: limits.max_candidates,
         });
     }
-    let mut seen: Vec<&str> = Vec::with_capacity(request.candidates.len());
+    let mut seen: HashSet<&str> = HashSet::with_capacity(request.candidates.len());
     for candidate in &request.candidates {
-        if seen.contains(&candidate.id.as_str()) {
+        if !seen.insert(candidate.id.as_str()) {
             return Err(RerankFailure::DuplicateCandidateId {
                 id: candidate.id.clone(),
             });
         }
-        seen.push(candidate.id.as_str());
         if candidate.text.len() > limits.max_candidate_text_bytes {
             return Err(RerankFailure::CandidateTextTooLarge {
                 id: candidate.id.clone(),

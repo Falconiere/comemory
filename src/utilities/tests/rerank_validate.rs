@@ -254,3 +254,36 @@ fn an_overflowing_json_literal_cannot_smuggle_in_an_infinity() {
         }
     }
 }
+
+#[test]
+fn a_repeated_id_is_a_duplicate_even_when_its_second_copy_is_non_finite() {
+    // Structural defects outrank value defects, so the reported failure names
+    // the real divergence (an id scored twice) rather than a symptom of it.
+    let response = response(vec![
+        ("memory:aaaaaaaa", 1.0),
+        ("code:comemory:src/lib.rs:main", 1.0),
+        ("document:notes.md#3", 1.0),
+        ("memory:aaaaaaaa", f64::NAN),
+    ]);
+    match validate(&request(), &response) {
+        Err(RerankFailure::DuplicateScore { id }) => assert_eq!(id, "memory:aaaaaaaa"),
+        other => panic!("expected DuplicateScore, got {other:?}"),
+    }
+}
+
+#[test]
+fn negative_zero_ties_with_positive_zero_and_rank_decides() {
+    // `-0.0` and `0.0` are numerically equal, but `total_cmp` orders the
+    // negative first — which would silently steal the tie-break from `rank`.
+    let request = request();
+    let response = response(vec![
+        ("document:notes.md#3", -0.0),
+        ("code:comemory:src/lib.rs:main", 0.0),
+        ("memory:aaaaaaaa", -0.0),
+    ]);
+    assert_eq!(
+        ids(&request, &response),
+        request.submitted_order(),
+        "numerically equal scores must preserve the submitted order"
+    );
+}

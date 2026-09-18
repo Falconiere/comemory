@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use crate::prelude::*;
 use crate::utilities::embedding_input;
-use crate::utilities::process_runner::{ProcessFailure, ProcessRunner};
+use crate::utilities::process_runner::{ProcessError, ProcessFailure, ProcessRunner};
 
 /// Maximum time to wait for the embed command to produce its vector.
 pub const EMBED_TIMEOUT: Duration = Duration::from_secs(10);
@@ -50,8 +50,12 @@ pub fn embed_query_with_timeout(cmd: &str, query: &str, timeout: Duration) -> Re
 
 /// Restate a bounded-run failure in the embed command's own wording, which
 /// `comemory doctor` and `POST /api/v1/doctor/reembed` already surface.
-fn fail(failure: ProcessFailure) -> Error {
-    let message = match failure {
+///
+/// The runner now captures the command's stderr, but it stays out of the
+/// message: these strings are a stated contract and the embed command's stderr
+/// was discarded (`Stdio::null`) before this ran on the shared runner.
+fn fail(error: ProcessError) -> Error {
+    let message = match error.failure {
         ProcessFailure::TimedOut { .. } => "embed-cmd timed out".to_string(),
         ProcessFailure::Spawn(e) => format!("embed-cmd spawn failed: {e}"),
         ProcessFailure::Io { phase, message } => format!("embed-cmd {phase} failed: {message}"),

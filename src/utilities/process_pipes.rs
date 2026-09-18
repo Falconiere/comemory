@@ -13,6 +13,7 @@
 use std::io::{ErrorKind, Read, Write};
 use std::process::{Child, ChildStdin, ExitStatus};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -25,13 +26,30 @@ const READ_CHUNK: usize = 64 * 1024;
 /// What a worker reports when its channel closed without a message — only
 /// reachable if the thread itself died, which none of them can do without a
 /// panic they contain no source of.
+///
+/// The remaining error arms here — `ReadDone::Failed` and a non-`BrokenPipe`
+/// write error — are defensive: no real child can make a `read` or `write` on
+/// its own pipe fail that way, so the only test that could reach them is a
+/// hand-built `Read`/`Write` that returns a canned error, which is the
+/// mock-data test Binding Rule 9 bans. They are covered by construction
+/// instead: both map onto `ProcessFailure::Io` with the failing phase named.
 const LOST: &str = "worker thread ended without reporting";
 
-/// How one pipe reader finished.
+/// A byte-capped buffer a reader thread appends to and the calling thread may
+/// snapshot at any moment, including before the reader has finished.
+///
+/// This is what lets a *failed* run still report the diagnostic stderr the
+/// child had already printed: a scorer that narrates its start-up and then
+/// hangs never reaches EOF, so a payload delivered only at EOF would be lost
+/// exactly when it is the sole clue.
+pub(crate) type Shared = Arc<Mutex<Vec<u8>>>;
+
+/// How one pipe reader finished. The bytes live in the reader's [`Shared`]
+/// buffer, not in this value, so they are readable whatever the verdict.
 #[derive(Debug)]
 pub(crate) enum ReadDone {
-    /// The pipe reached EOF. Carries the retained (byte-capped) payload.
-    Eof(Vec<u8>),
+    /// The pipe reached EOF.
+    Eof,
     /// More bytes arrived than the cap allows, and overflow is fatal for this
     /// stream. The reader stops immediately rather than draining to EOF.
     Overflow,
@@ -49,6 +67,16 @@ pub(crate) struct Pipes {
     writer: Receiver<WriteDone>,
     stdout: Receiver<ReadDone>,
     stderr: Receiver<ReadDone>,
+    stdout_bytes: Shared,
+    stderr_bytes: Shared,
+}
+
+/// What the two reader threads had retained when the run ended.
+pub(crate) struct Streams {
+    /// Bytes retained from the child's stdout.
+    pub(crate) stdout: Vec<u8>,
+    /// Bytes retained from the child's stderr.
+    pub(crate) stderr: Vec<u8>,
 }
 
 /// Everything one [`Pipes::drain`] call collected before it stopped.
@@ -91,11 +119,23 @@ impl Pipes {
             .stderr
             .take()
             .ok_or_else(|| "stderr unavailable".to_string())?;
+        let stdout_bytes = Shared::default();
+        let stderr_bytes = Shared::default();
         Ok(Self {
             writer: spawn_writer(stdin, input),
-            stdout: spawn_reader(stdout, max_stdout, true),
-            stderr: spawn_reader(stderr, max_stderr, false),
+            stdout: spawn_reader(stdout, Arc::clone(&stdout_bytes), max_stdout, true),
+            stderr: spawn_reader(stderr, Arc::clone(&stderr_bytes), max_stderr, false),
+            stdout_bytes,
+            stderr_bytes,
         })
+    }
+
+    /// Snapshot what both readers have retained so far, complete or not.
+    pub(crate) fn retained(&self) -> Streams {
+        Streams {
+            stdout: snapshot(&self.stdout_bytes),
+            stderr: snapshot(&self.stderr_bytes),
+        }
     }
 
     /// Poll the child and the three channels until the run is fully accounted
@@ -144,7 +184,7 @@ impl Pipes {
 /// Fill `slot` if the worker has reported, folding a closed channel into the
 /// value `on_lost` produces so a dead worker cannot spin the loop to the
 /// deadline.
-fn poll<T>(rx: &Receiver<T>, slot: &mut Option<T>, on_lost: impl FnOnce() -> T) {
+pub(crate) fn poll<T>(rx: &Receiver<T>, slot: &mut Option<T>, on_lost: impl FnOnce() -> T) {
     if slot.is_some() {
         return;
     }
@@ -164,23 +204,20 @@ fn poll<T>(rx: &Receiver<T>, slot: &mut Option<T>, on_lost: impl FnOnce() -> T) 
 /// filling its pipe and blocking the child that writes to it.
 fn spawn_reader<R: Read + Send + 'static>(
     mut src: R,
+    kept: Shared,
     cap: usize,
     fatal_overflow: bool,
 ) -> Receiver<ReadDone> {
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
-        let mut kept: Vec<u8> = Vec::new();
         let mut buf = vec![0_u8; READ_CHUNK];
         let mut total: usize = 0;
         let done = loop {
             match src.read(&mut buf) {
-                Ok(0) => break ReadDone::Eof(kept),
+                Ok(0) => break ReadDone::Eof,
                 Ok(n) => {
                     total = total.saturating_add(n);
-                    if kept.len() < cap {
-                        let room = cap - kept.len();
-                        kept.extend_from_slice(&buf[..n.min(room)]);
-                    }
+                    retain(&kept, &buf[..n], cap);
                     if fatal_overflow && total > cap {
                         break ReadDone::Overflow;
                     }
@@ -207,6 +244,24 @@ fn spawn_writer(mut sink: ChildStdin, input: Vec<u8>) -> Receiver<WriteDone> {
     rx
 }
 
+/// Append as much of `chunk` as the `cap` still has room for.
+fn retain(kept: &Shared, chunk: &[u8], cap: usize) {
+    let mut held = kept.lock().unwrap_or_else(PoisonError::into_inner);
+    if held.len() < cap {
+        let room = cap - held.len();
+        held.extend_from_slice(&chunk[..chunk.len().min(room)]);
+    }
+}
+
+/// A copy of what a reader has retained so far.
+///
+/// A poisoned lock still yields the bytes: the guarded value is an append-only
+/// byte buffer that no panic can leave half-written, and losing the diagnostic
+/// because a thread died would be the wrong trade.
+fn snapshot(kept: &Shared) -> Vec<u8> {
+    kept.lock().unwrap_or_else(PoisonError::into_inner).clone()
+}
+
 /// `write_all` + `flush`, treating a broken pipe as a truncated write rather
 /// than an error.
 ///
@@ -225,3 +280,7 @@ fn write_all(sink: &mut ChildStdin, input: &[u8]) -> WriteDone {
         Err(e) => Err(e.to_string()),
     }
 }
+
+#[cfg(test)]
+#[path = "tests/process_pipes.rs"]
+mod tests;

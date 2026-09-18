@@ -180,9 +180,10 @@ concatenates a command string.
 - `crate::utilities::digest::sha256_hex` mints the request id, exactly as
   `crate::utilities::query_id::generate_query_id` mints `q-<yyyymmdd>-<8hex>`.
   No second entropy source and no new dependency.
-- `crate::prelude::{Error, Result}` and `Error::Embedder` are reused unchanged;
-  no new `Error` variant is added, because `RerankRunner` reports operational
-  failure as a typed value rather than through `Error`.
+- No new `crate::Error` variant is added. `embed` keeps producing
+  `Error::Config`, and the four reranker files never name `crate::Error` at
+  all: `RerankRunner` reports operational failure as a typed value, so a
+  scorer failure cannot become a search failure through a stray `?`.
 - `serde` / `serde_json` are already direct dependencies.
 - No new crate is added to `Cargo.toml`.
 
@@ -202,7 +203,8 @@ and Debian `dash`.
 ### `src/utilities/process_runner.rs`
 
 ```rust
-/// Byte and time bounds one bounded child run is held to.
+/// Byte bounds one bounded child run is held to. The budget lives on the
+/// runner, not here.
 pub struct ProcessLimits {
     pub max_input_bytes: usize,   // default 8 MiB
     pub max_stdout_bytes: usize,  // default 8 MiB
@@ -214,10 +216,13 @@ pub struct ProcessRunner { /* program, args, timeout, limits */ }
 
 impl ProcessRunner {
     pub fn new(program: impl Into<OsString>, args: Vec<OsString>) -> Self;
-    pub fn with_timeout(self, timeout: Duration) -> Self;
-    pub fn with_limits(self, limits: ProcessLimits) -> Self;
+    #[must_use] pub fn with_timeout(self, timeout: Duration) -> Self;
+    #[must_use] pub fn with_limits(self, limits: ProcessLimits) -> Self;
     pub fn run(&self, input: &[u8]) -> ProcessResult<ProcessOutput>;
 }
+
+/// Default end-to-end budget, unchanged from the embed command's 10 s.
+pub const DEFAULT_PROCESS_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// What a completed run produced.
 pub struct ProcessOutput {
@@ -229,6 +234,11 @@ pub struct ProcessOutput {
     pub elapsed: Duration,
 }
 
+/// A failed run, with whatever diagnostic stderr had been drained before it
+/// failed — for a child that narrates its start-up and then hangs, that
+/// excerpt is the only clue there is.
+pub struct ProcessError { pub failure: ProcessFailure, pub stderr: Vec<u8> }
+
 /// Why a bounded run did not produce a complete output.
 pub enum ProcessFailure {
     InputTooLarge { bytes: usize, max: usize },
@@ -238,7 +248,7 @@ pub enum ProcessFailure {
     TimedOut { budget: Duration },
 }
 
-pub type ProcessResult<T> = std::result::Result<T, ProcessFailure>;
+pub type ProcessResult<T> = std::result::Result<T, ProcessError>;
 ```
 
 `run` returns `Ok(ProcessOutput)` for **any** completed run, including a
@@ -396,8 +406,8 @@ pub struct RerankRunner { /* program, args, timeout, limits */ }
 
 impl RerankRunner {
     pub fn new(program: impl Into<OsString>, args: Vec<OsString>) -> Self;
-    pub fn with_timeout(self, timeout: Duration) -> Self;
-    pub fn with_limits(self, limits: RerankLimits) -> Self;
+    #[must_use] pub fn with_timeout(self, timeout: Duration) -> Self;
+    #[must_use] pub fn with_limits(self, limits: RerankLimits) -> Self;
 
     /// Run one request. Never returns `Err`: every operational failure is a
     /// `Declined` carrying the original order, so a retrieval caller has one
@@ -500,12 +510,14 @@ unversioned extra key.
 | Duplicate candidate id in the request | `Declined(DuplicateCandidateId)`; no process spawned. |
 | Candidate text over `max_candidate_text_bytes` | `Declined(CandidateTextTooLarge)`; no process spawned. |
 | Child never reads stdin | Writer thread gets `EPIPE`; `input_truncated` is set; the run still completes on the child's stdout and exit status. A child that answers from a canned payload is legitimate. |
+| Child stops reading the request early but still answers | Applied, if the response validates. `input_truncated` is deliberately ignored at the reranker level too, exactly as `embed` ignores it: not draining the request is the child's choice, and nothing can be wrong *because* the request was undelivered — the response still has to echo the request id, the model and the adapter and score every candidate. |
 | Child writes its whole answer before reading stdin | Completes. Both pipes are drained concurrently, so neither fills. |
 | Child closes stdout but stays alive | `Declined(TimedOut)` at the deadline; child killed and reaped. |
 | Child exits but a descendant holds stdout | `Declined(TimedOut)` at the deadline; the direct child is reaped; the reader thread is left detached and unjoined. An incomplete, never-EOF'd payload is never parsed. |
 | Child never exits and never writes | `Declined(TimedOut)` at the deadline; killed and reaped. |
 | Child writes more than `max_stdout_bytes` | The reader reports overflow as soon as the cap is passed; the child is killed and reaped without waiting for the deadline; `Declined(OutputTooLarge)`. |
 | Child writes unbounded stderr | Drained to EOF so back-pressure can never stall it, but only the first `max_stderr_bytes` are retained. Never an error by itself. |
+| Child prints to stderr, then hangs | `Declined(TimedOut)` **with** the excerpt it had already printed. Readers append into a shared, capped buffer the calling thread can snapshot at any moment, so a diagnostic is not lost just because the stream never reached EOF. |
 | Non-zero exit | `Declined(NonZeroExit { code })` even when stdout parsed cleanly. A response is applied only after full validation *and* a zero exit. |
 | Killed by a signal | `code` is `None`; still `Declined(NonZeroExit)`. |
 | Empty stdout, zero exit | `Declined(Malformed)` from the JSON parser (EOF while parsing a value). |
@@ -517,8 +529,8 @@ unversioned extra key.
 | Response score is non-finite | `Declined(NonFiniteScore)`. |
 | All scores equal | Applied, in exactly the submitted order (rank tie-break). |
 | `lower_is_better` | Applied ascending by score, ties still by ascending rank — the rank comparison is never reversed. |
-| Any `Declined` | `original_order` carries every submitted id in submitted rank order, so the caller can restore the complete original ranking without holding its own copy. |
-| Concurrent runs | `ProcessRunner` and `RerankCommand` are immutable and `Send + Sync`; `run` borrows `&self` and owns all per-run state, so two threads may run the same configuration simultaneously. |
+| Any `Declined` | `original_order` carries every submitted id in submitted rank order, so the caller can restore the complete original ranking without holding its own copy, and `stderr_excerpt` carries whatever the scorer said. |
+| Concurrent runs | `ProcessRunner` and `RerankRunner` are immutable and `Send + Sync`; `run` borrows `&self` and owns all per-run state, so two threads may drive one value simultaneously. |
 
 ### Preserved embedding behavior
 
@@ -617,14 +629,14 @@ output but does stop a chatty one from blocking on a full stderr pipe.
 
 | AC | Real input / fixture | Expected observable result | Boundary or failure case | Runnable check |
 | --- | --- | --- | --- | --- |
-| AC-1 | A POSIX `sh` responder script written to a `tempfile` dir, driven with two real candidate ids | `RerankOutcome::Applied`, `order_ids() == ["memory:bbbbbbbb", "memory:aaaaaaaa"]` | Child reads the whole request before answering | `cargo nextest run --all-features rerank_runner` |
+| AC-1 | A POSIX `sh` responder script in a `tempfile::TempDir`, over three real domain-qualified candidate ids | `RerankOutcome::Applied`, `order_ids() == ["code:comemory:src/lib.rs:main", "document:notes.md#3", "memory:aaaaaaaa"]`, and the bytes the child read back off stdin carry the whole versioned request | Child reads the whole request before answering | `cargo nextest run --all-features rerank_runner` |
 | AC-2 | `RerankRequest::new("bge-reranker-base", None, "bounded subprocess", …, fixed `OffsetDateTime`)` | `is_valid_request_id` true; `serde_json::to_value` has exactly the six documented request keys and three candidate keys | Adapter `Some("lora-v1")` serializes as a string, `None` as `null` | `cargo nextest run --all-features rerank_protocol` |
 | AC-3 | Nine responder scripts, one per rejection, plus one hand-built `RerankResponse` with `f64::NAN` | The matching `RerankFailure` variant each time | Empty stdout with exit 0 | `cargo nextest run --all-features rerank_runner rerank_validate` |
 | AC-4 | The AC-3 fixtures | `order_ids()` equals the submitted id order; `is_applied()` false | Every declined variant, not just one | same as AC-3 |
 | AC-5 | `sh -c 'sleep 30'`, `sh -c 'exec >&-; sleep 30'`, `sh -c 'sleep 30 & exit 0'`, 300 ms budget | `ProcessFailure::TimedOut`; elapsed < 3 s; `ps -e -o ppid= -o stat=` shows no `Z` child of `std::process::id()` | Descendant holding the pipe | `cargo nextest run --all-features process_runner` |
 | AC-6 | `sh -c 'cat "$1"; cat > /dev/null'` with a 512 KiB file argument and a 4 MiB stdin | `Ok(ProcessOutput)` with the 512 KiB stdout, exit 0 | Payloads far above both pipe buffers | `cargo nextest run --all-features process_runner` |
 | AC-7 | `sh -c 'exec <&-; printf hello'` with a 4 MiB stdin | `stdout == b"hello"`, `input_truncated == true` | `EPIPE` mid-write | `cargo nextest run --all-features process_runner` |
-| AC-8 | Limits of `max_request_bytes = 64` and `max_candidates = 1`; program `sh -c 'touch "$1"'` with a sentinel path | `Declined(RequestTooLarge)` / `Declined(TooManyCandidates)`; sentinel absent | Refusal must precede the spawn | `cargo nextest run --all-features rerank_runner` |
+| AC-8 | Limits of `max_request_bytes = 32`, `max_candidates = 2` and `max_candidate_text_bytes = 4`, each against a program whose only job is `touch "$1"` | `Declined(RequestTooLarge)` / `Declined(TooManyCandidates)` / `Declined(CandidateTextTooLarge)`; the sentinel never appears | Refusal must precede the spawn | `cargo nextest run --all-features rerank_runner` |
 | AC-9 | `sh -c 'yes x \| head -c 200000'` with `max_stdout_bytes = 1024`; and a responder that also writes 200 000 bytes to stderr, with `max_stderr_bytes = 64` | `ProcessFailure::StdoutTooLarge`, elapsed far below the budget; the chatty-stderr run succeeds with `stderr.len() == 64`, and `rerank` reports `Applied` | Back-pressure on a full stderr pipe | `cargo nextest run --all-features process_runner rerank_runner` |
 | AC-10 | A responder emitting equal scores, and one emitting `"lower_is_better"` | Submitted order preserved; ascending-by-score order with rank tie-break | Exact float equality | `cargo nextest run --all-features rerank_validate` |
 | AC-11 | Query `"; touch <tmp>/pwned; #` and candidate text `$(touch <tmp>/pwned)`; the responder copies the bytes it read from stdin into `<tmp>/seen.json` | `<tmp>/pwned` does not exist; `<tmp>/seen.json` contains both substrings verbatim | Shell metacharacters in both query and text | `cargo nextest run --all-features rerank_runner` |
