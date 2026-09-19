@@ -166,10 +166,11 @@ impl serde::Serialize for Unserializable {
 fn a_payload_that_fails_to_serialize_is_an_opaque_protocol_error() {
     let outcome: comemory::errors::Result<Unserializable> = Ok(Unserializable);
     let err = into_tool_result(outcome).expect_err("serialization failure must not be Ok");
+    assert_eq!(err.code, rmcp::model::ErrorCode::INTERNAL_ERROR);
     assert_eq!(err.message, "internal");
     assert!(
-        !err.message.contains("deliberately"),
-        "the serializer's own message must not reach the wire: {}",
-        err.message
+        err.data.is_none(),
+        "the serializer's own message must not ride along as error data: {:?}",
+        err.data
     );
 }
