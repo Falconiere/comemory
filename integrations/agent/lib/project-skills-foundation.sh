@@ -25,6 +25,16 @@ ps_now() {
   python3 -c 'from datetime import datetime, timezone; print(datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))' 2>/dev/null && return 0
   printf '1970-01-01T00:00:00Z'
 }
+# Microsecond precision, for the session-start marker only: it becomes a
+# `--since` bound compared against fractional store timestamps, and a
+# whole-second marker would count a save or recall made earlier in the same
+# second as "after" the session started. Not for usage entries: their
+# staleness clock goes through ps_iso_to_epoch, whose macOS branch parses
+# whole seconds only.
+ps_now_precise() {
+  python3 -c 'from datetime import datetime, timezone; print(datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"))' 2>/dev/null && return 0
+  printf '1970-01-01T00:00:00.000000Z'
+}
 
 ps_realpath() {
   local p="$1" out
