@@ -26,10 +26,6 @@ Task-oriented recipes for a specific job:
 
 - **[Agent skills and hooks](guides/agent-integration.md)** — install the Claude
   Code or Codex integration and migrate from toolu.
-- **[Optional reranker backend](../integrations/reranker/README.md)** — install,
-  base versus adapter invocation, warm local inference, timeout behavior and the
-  fallback to base scoring for the optional external relevance scorer. Nothing on
-  the search path calls it yet.
 - **[Bring your own vectors](guides/byo-vectors.md)** — embed memories and code
   with your own model via `--vector` / `--vector-stdin` (dims 1024 / 768).
 - **[Keep the code index fresh](guides/auto-reindex.md)** — `lazy` (default),
@@ -91,11 +87,6 @@ Understanding-oriented background:
   scorer and the deadline-bounded process runner that carries it. Its
   § Wire protocol section is the field-by-field contract; nothing on the search
   path calls it yet.
-- **[Reranker reference backend](designs/2026-09-18-reranker-reference-backend.md)** —
-  the optional Python cross-encoder that implements that protocol: the pinned
-  base model and revision, PEFT adapter loading with compatibility validation,
-  the warm local inference option, and the deterministic mode that makes
-  protocol conformance provable without a model download.
 - **[Benchmarking token efficiency](benchmark.md)** — what exists to measure
   how many tokens and tool calls comemory saves an agent, and the first
   experiment that would put a number on it.

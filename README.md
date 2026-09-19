@@ -466,20 +466,6 @@ Full recipe, including the sample Ollama wrapper
 [`scripts/comemory-embed.sh`](scripts/comemory-embed.sh):
 **[docs/guides/byo-vectors.md](docs/guides/byo-vectors.md)**.
 
-### Optional external reranker (not wired into search)
-
-An optional Python cross-encoder backend ships in
-[`integrations/reranker/`](integrations/reranker/README.md): a pinned
-Transformers sequence-classification reranker with PEFT LoRA adapter loading,
-speaking a versioned JSON stdin/stdout protocol.
-
-**Nothing in comemory calls it.** The binary stays standalone — no Python
-dependency, no model, no change to how search ranks anything — and wiring it
-into retrieval is deliberately separate work. Read
-[integrations/reranker/README.md](integrations/reranker/README.md) for install,
-base versus adapter invocation, warm local inference, timeout behavior and the
-fallback to base scoring.
-
 ---
 
 ## Upgrading

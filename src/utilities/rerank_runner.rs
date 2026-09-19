@@ -228,7 +228,3 @@ fn malformed(message: &str) -> RerankFailure {
 #[cfg(test)]
 #[path = "tests/rerank_runner.rs"]
 mod tests;
-
-#[cfg(test)]
-#[path = "tests/rerank_runner_2.rs"]
-mod tests_2;
