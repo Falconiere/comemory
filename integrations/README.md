@@ -24,3 +24,17 @@ calls it. It is a repository asset an operator opts into.
 
 See [integrations/reranker/README.md](reranker/README.md) and the design,
 [docs/designs/2026-09-18-reranker-reference-backend.md](../docs/designs/2026-09-18-reranker-reference-backend.md).
+
+## `training/` — offline LoRA training and qualification
+
+`training/` is the pinned, external recipe that fits a LoRA adapter to a
+`comemory export-dataset` output, plus the harness that compares deterministic
+ranking, unadapted reranking and LoRA reranking over one captured candidate pool
+and records `go`, `no-go` or `insufficient-evidence` against predeclared budgets.
+
+Like `reranker/` and unlike `agent/`, it is **not** embedded in the binary, and
+nothing in comemory invokes it. Nothing here runs automatically either: no hook,
+watcher, save, sync or index event starts a training job.
+
+See [integrations/training/README.md](training/README.md) and the design,
+[docs/designs/2026-09-18-lora-adapter-training.md](../docs/designs/2026-09-18-lora-adapter-training.md).

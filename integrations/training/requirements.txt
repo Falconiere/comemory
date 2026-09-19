@@ -1,0 +1,26 @@
+# Pinned dependency set for the LoRA training recipe.
+#
+# Identical, version for version, to integrations/reranker/requirements.txt.
+# That is not a coincidence to be tidied away later: training and serving must
+# run the same libraries, or the save/reload parity check this recipe performs
+# compares two builds rather than one, and the adapter qualified here is not the
+# adapter served there. tests/test_offline_recipe.py asserts the two files
+# agree, and run-training-tests.sh refuses to run the opt-in suite against any
+# other version.
+#
+# Nothing in this file is needed by `comemory_train.py plan`, by any
+# `comemory_qualify.py` subcommand, or by the offline test suite. Those are the
+# standard library alone, which is what keeps comemory's normal
+# `cargo nextest` path free of every package below.
+#
+# numpy 2.5.3 requires Python >= 3.12, which is therefore the floor for the
+# training mode. Exact pins of the DIRECT dependency set only; the transitive
+# closure is left to pip rather than enumerated, because enumerating it without
+# resolving it in the target environment would record guesses as pins.
+torch==2.14.0
+transformers==5.17.0
+peft==0.21.0
+tokenizers==0.23.2
+safetensors==0.8.0
+huggingface-hub==1.32.0
+numpy==2.5.3

@@ -249,6 +249,31 @@ produced *before any arm reordered anything*, and the training dataset is built 
 pool the model has already reordered would feed the model's own output back into the set it is trained
 from. Collect data with reranking off; serve with it on.
 
+## Where an adapter comes from
+
+Nothing in this repository ships a trained adapter, and nothing in comemory trains one. The
+recipe is external, offline and opt-in, in
+[`integrations/training/`](../../integrations/training/README.md): a pinned LoRA configuration
+over a `comemory export-dataset` output, plus the harness that compares comemory's deterministic
+ranking, the unadapted cross-encoder and the adapted one over a single captured candidate pool
+and records `go`, `no-go` or `insufficient-evidence` against budgets declared before any arm was
+scored.
+
+Four properties of that workflow matter to an operator of this stage.
+
+1. **It is never automatic.** No hook, watcher, save, sync or index event starts a training job.
+2. **Collection and serving alternate; they never overlap.** Capture data with `[rerank]` off,
+   then serve with it on — see the section below, which is the run-time half of the same rule.
+3. **The held-out split is unreachable from training.** The trainer opens exactly
+   `manifest.json`, `train.jsonl` and `validation.jsonl`, and selects its checkpoint on
+   validation alone; the qualification is the only thing that reads the holdout.
+4. **A negative result is a valid result.** An adapter is not enabled because training finished.
+   The recorded outcome is what decides, and `insufficient-evidence` is a normal answer.
+
+An adapter is activated by writing `adapter` and `--adapter` into the `[rerank]` block above —
+explicitly, and never by discovery. Rolling one back is the two levers under *Rollback*: point
+`command` at a base-model invocation and drop `adapter`, or set `enabled = false`.
+
 ## Offline measurement is never reranked
 
 `comemory eval`, `tune`, `bandit` and `benchmark` keep the deterministic path whatever `[rerank]`

@@ -36,3 +36,21 @@
 # Python bytecode from scripts/lib helpers
 __pycache__/
 *.pyc
+
+# Offline LoRA training and qualification artifacts (#214). Model weights and
+# user-derived training exports never enter a normal source commit: an adapter
+# is hundreds of megabytes of derived state, and a dataset export carries
+# snapshots of the operator's own passages. The three directories are the
+# convention `integrations/training/README.md` documents; the file names below
+# are the owned name set `comemory export-dataset` writes wherever it is
+# pointed, so an export into an ad-hoc directory is still never staged.
+/lora-adapters/
+/lora-datasets/
+/lora-qualification/
+*.safetensors
+train.jsonl
+validation.jsonl
+holdout.jsonl
+train.implicit.jsonl
+validation.implicit.jsonl
+holdout.implicit.jsonl

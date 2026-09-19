@@ -480,6 +480,40 @@ preference:
 The record and manifest schemas are in
 [docs/designs/2026-09-18-reviewed-dataset-export.md](docs/designs/2026-09-18-reviewed-dataset-export.md).
 
+### Training an adapter, offline and by hand
+
+An external, pinned LoRA recipe over those exports ships in
+[`integrations/training/`](integrations/training/README.md), together with the
+harness that decides whether the resulting adapter is worth enabling.
+
+```bash
+comemory export-dataset --out ./lora-datasets/v1
+python3 integrations/training/comemory_train.py plan  --dataset ./lora-datasets/v1
+python3 integrations/training/comemory_train.py train --dataset ./lora-datasets/v1 \
+  --out ./lora-adapters/lora-v1
+```
+
+- **Nothing trains automatically.** No hook, no watcher, and no save, sync or
+  index event starts a job. Training is a command you type.
+- **Collecting and serving cannot overlap.** `[observations]` and `[rerank]` are
+  mutually exclusive at run time, because the pool a model already reordered must
+  never become the pool it is trained from.
+- **The holdout is unreachable from training.** The trainer opens exactly
+  `manifest.json`, `train.jsonl` and `validation.jsonl`; checkpoints and
+  hyperparameters are selected on validation alone.
+- **The verdict may be no.** The harness compares deterministic ranking,
+  unadapted reranking and LoRA reranking over one captured candidate pool through
+  `comemory benchmark`, and records `go`, `no-go` or `insufficient-evidence`
+  against budgets declared before any arm was scored. A check that could not run
+  is never recorded as a pass, and an adapter is not enabled because training
+  completed.
+- **Weights and exports stay out of the repository.** `.gitignore` covers every
+  path the workflow writes.
+
+The recipe, the qualification workflow and every pinned value are in
+[integrations/training/README.md](integrations/training/README.md); the design is
+[docs/designs/2026-09-18-lora-adapter-training.md](docs/designs/2026-09-18-lora-adapter-training.md).
+
 ## Configuration
 
 Config is layered: built-in defaults → `~/.comemory/config.toml` → environment →
@@ -509,9 +543,11 @@ An optional Python cross-encoder backend ships in
 Transformers sequence-classification reranker with PEFT LoRA adapter loading,
 speaking a versioned JSON stdin/stdout protocol.
 
-**Nothing in comemory calls it.** The binary stays standalone — no Python
-dependency, no model, no change to how search ranks anything — and wiring it
-into retrieval is deliberately separate work. Read
+**The binary stays standalone** — no Python dependency, no model, and a build
+that leaves `[rerank] enabled = false` ranks exactly as it did before this
+existed. The optional stage that can call this backend is described under
+*Optional learned reranking* above; the adapter it can load is trained by
+[`integrations/training/`](integrations/training/README.md). Read
 [integrations/reranker/README.md](integrations/reranker/README.md) for install,
 base versus adapter invocation, warm local inference, timeout behavior and the
 fallback to base scoring.
