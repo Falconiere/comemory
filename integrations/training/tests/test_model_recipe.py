@@ -30,7 +30,7 @@ sys.path.insert(0, BACKEND)
 
 import comemory_rerank_compat as compat
 import comemory_train_data as data
-import comemory_train_model as model
+import comemory_train_model as train_model
 import comemory_train_pins as pins
 
 EXAMPLES = (
@@ -64,16 +64,16 @@ class Recipe(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         """Load the pinned base once; every test below adapts a fresh copy."""
-        cls.config = model.backend_config("cpu", False)
+        cls.config = train_model.backend_config("cpu", False)
 
     def adapted(self):
         """A freshly built LoRA model over a freshly loaded frozen base."""
-        tokenizer, base, _head = model.load_base(self.config)
-        return model.torch_module(), tokenizer, model.attach_adapter(base)
+        tokenizer, base, _head = train_model.load_base(self.config)
+        return train_model.torch_module(), tokenizer, train_model.attach_adapter(base)
 
     def test_only_the_adapter_and_the_head_train(self) -> None:
         _torch, _tokenizer, adapted = self.adapted()
-        audit = model.audit(adapted)
+        audit = train_model.audit(adapted)
         self.assertGreater(audit["lora_parameters"], 0)
         self.assertGreater(audit["head_parameters"], 0)
         self.assertLessEqual(audit["fraction"], pins.TRAINABLE_FRACTION_MAX)
@@ -84,37 +84,37 @@ class Recipe(unittest.TestCase):
 
     def test_one_optimizer_step_leaves_the_base_byte_identical(self) -> None:
         torch_lib, tokenizer, adapted = self.adapted()
-        before = model.frozen_digest(torch_lib, adapted)
+        before = train_model.frozen_digest(torch_lib, adapted)
         rows = examples()
         optimizer = torch_lib.optim.AdamW(
             [p for p in adapted.parameters() if p.requires_grad], lr=pins.LEARNING_RATE
         )
         adapted.train()
-        encoded = model.encode(
+        encoded = train_model.encode(
             tokenizer, [e.query for e in rows], [e.text for e in rows], "cpu"
         )
         targets = torch_lib.tensor([e.target for e in rows], dtype=torch_lib.float32)
         logits = adapted(**encoded).logits[:, pins.SCORE_COLUMN]
         torch_lib.nn.BCEWithLogitsLoss()(logits.to(torch_lib.float32), targets).backward()
         optimizer.step()
-        after = model.frozen_digest(torch_lib, adapted)
+        after = train_model.frozen_digest(torch_lib, adapted)
         self.assertEqual(before["sha256"], after["sha256"])
         self.assertGreater(before["parameters"], 0)
 
     def test_a_saved_adapter_reloads_within_the_pinned_tolerance(self) -> None:
         torch_lib, tokenizer, adapted = self.adapted()
         adapted.eval()
-        probe = model.parity_pairs(pins.PARITY_PAIRS)
-        before = model.score_pairs(adapted, tokenizer, torch_lib, probe)
+        probe = train_model.parity_pairs(pins.PARITY_PAIRS)
+        before = train_model.score_pairs(adapted, tokenizer, torch_lib, probe)
         with tempfile.TemporaryDirectory() as root:
             package = os.path.join(root, "lora-test")
-            files = model.save(adapted, package)
+            files = train_model.save(adapted, package)
             self.assertTrue(any(f["path"] == pins.ADAPTER_CONFIG_FILE for f in files))
             facts = compat.validate_adapter(
-                model.backend_config("cpu", False, adapter=package)
+                train_model.backend_config("cpu", False, adapter=package)
             )
             self.assertEqual(facts["modules_to_save"], sorted(pins.MODULES_TO_SAVE))
-            result = model.reload_and_compare(package, before, "cpu", False)
+            result = train_model.reload_and_compare(package, before, "cpu", False)
         self.assertTrue(result["passed"])
         self.assertLessEqual(result["max_abs_delta"], pins.RELOAD_MAX_ABS_DELTA)
 
@@ -123,7 +123,7 @@ class Recipe(unittest.TestCase):
         adapted.eval()
         with tempfile.TemporaryDirectory() as root:
             package = os.path.join(root, "lora-v1")
-            files = model.save(adapted, package)
+            files = train_model.save(adapted, package)
             saved = {entry["path"]: entry["sha256"] for entry in files}
             response, fingerprint = self.score_through_backend(package)
         self.assertEqual(response["adapter"], "lora-v1")

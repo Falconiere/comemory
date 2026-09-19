@@ -139,9 +139,9 @@ def _train(args: argparse.Namespace) -> int:
 
 def _verify(args: argparse.Namespace) -> int:
     """Reload a saved adapter and re-check the parity guarantee."""
-    import comemory_train_model as model
+    import comemory_train_model as train_model
 
-    return model.verify(args.adapter, args.candidates, args.allow_download)
+    return train_model.verify(args.adapter, args.candidates, args.allow_download)
 
 
 def _prepare_output(directory: str, force: bool) -> None:

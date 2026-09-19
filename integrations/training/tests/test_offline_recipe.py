@@ -32,7 +32,7 @@ import comemory_qualify_yaml as yaml_out
 import comemory_rerank_compat as compat
 import comemory_rerank_pins as backend
 import comemory_train_manifest as manifest
-import comemory_train_model as model
+import comemory_train_model as train_model
 import comemory_train_pins as pins
 
 HEAD_TENSORS = (
@@ -87,7 +87,7 @@ class AdapterShape(unittest.TestCase):
 
     def validate(self, directory: str) -> dict:
         """Run the production compatibility check over a package."""
-        return compat.validate_adapter(model.backend_config("cpu", False, adapter=directory))
+        return compat.validate_adapter(train_model.backend_config("cpu", False, adapter=directory))
 
     def test_the_saved_shape_is_accepted(self) -> None:
         with tempfile.TemporaryDirectory() as root:

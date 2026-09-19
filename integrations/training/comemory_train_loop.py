@@ -34,7 +34,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 
 import comemory_train_manifest as manifest  # noqa: E402
-import comemory_train_model as model  # noqa: E402
+import comemory_train_model as train_model  # noqa: E402
 import comemory_train_pins as pins  # noqa: E402
 
 _BACKEND = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "reranker")
@@ -48,18 +48,18 @@ def run(dataset, args, overrides: dict) -> int:
     """Fit an adapter over `dataset` and package it into `args.out`."""
     recipe = manifest.recipe(overrides)
     started = time.perf_counter()
-    config = model.backend_config(recipe["precision"]["device"], args.allow_download)
-    torch_lib = model.torch_module()
-    tokenizer, base, _head = model.load_base(config)
+    config = train_model.backend_config(recipe["precision"]["device"], args.allow_download)
+    torch_lib = train_model.torch_module()
+    tokenizer, base, _head = train_model.load_base(config)
     _seed_everything(torch_lib, recipe)
-    adapted = model.attach_adapter(base)
-    audit = model.audit(adapted)
-    frozen_before = model.frozen_digest(torch_lib, adapted)
+    adapted = train_model.attach_adapter(base)
+    audit = train_model.audit(adapted)
+    frozen_before = train_model.frozen_digest(torch_lib, adapted)
     device = compat.resolve_device(torch_lib, recipe["precision"]["device"])
     adapted.to(device)
 
     selection, best_state = _fit(torch_lib, tokenizer, adapted, dataset, recipe, device)
-    frozen_after = model.frozen_digest(torch_lib, adapted)
+    frozen_after = train_model.frozen_digest(torch_lib, adapted)
     if frozen_after["sha256"] != frozen_before["sha256"]:
         raise pins.RecipeError(
             "the frozen base moved during training: " + frozen_before["sha256"]
@@ -69,10 +69,10 @@ def run(dataset, args, overrides: dict) -> int:
         )
     _restore(adapted, best_state)
     adapted.eval()
-    probe = model.parity_pairs(pins.PARITY_PAIRS)
-    before = model.score_pairs(adapted, tokenizer, torch_lib, probe)
-    files = model.save(adapted, args.out)
-    reload_check = model.reload_and_compare(
+    probe = train_model.parity_pairs(pins.PARITY_PAIRS)
+    before = train_model.score_pairs(adapted, tokenizer, torch_lib, probe)
+    files = train_model.save(adapted, args.out)
+    reload_check = train_model.reload_and_compare(
         args.out, before, recipe["precision"]["device"], args.allow_download
     )
     _package(args, dataset, recipe, audit, frozen_before, selection, reload_check, files, started)
@@ -170,7 +170,7 @@ def _one_epoch(torch_lib, tokenizer, adapted, dataset, recipe, device, optimizer
     total, seen = 0.0, 0
     for start in range(0, len(order), batch):
         window = [dataset.train[index] for index in order[start : start + batch]]
-        encoded = model.encode(
+        encoded = train_model.encode(
             tokenizer, [e.query for e in window], [e.text for e in window], device
         )
         targets = torch_lib.tensor([e.target for e in window], dtype=torch_lib.float32, device=device)
@@ -224,7 +224,7 @@ def _validate(torch_lib, tokenizer, adapted, groups: list, loss_fn, device) -> d
     losses, gains = [], []
     for group in groups:
         pairs = [(e.query, e.text) for e in group]
-        scores = model.score_pairs(adapted, tokenizer, torch_lib, pairs)
+        scores = train_model.score_pairs(adapted, tokenizer, torch_lib, pairs)
         targets = torch_lib.tensor([e.target for e in group], dtype=torch_lib.float32)
         logits = torch_lib.tensor(scores, dtype=torch_lib.float32)
         losses.append(float(loss_fn(logits, targets)) * len(group))
