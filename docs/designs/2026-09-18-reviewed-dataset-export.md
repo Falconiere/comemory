@@ -600,6 +600,32 @@ or drops it and increments one named counter.
    counted as `negatives_capped`. No other selection, sampling or mining exists,
    and no step after 8 can read a row from another split.
 
+### Two consequences of the learned reranking stage (#213)
+
+**A reranked run captures nothing, so it exports nothing.** #213 makes capture
+and reranking mutually exclusive at run time: with both enabled `comemory find`
+reports `observation_id: null`, writes no observation row and warns once. The
+reason is this design's as much as #213's — `pool_position` is defined as the
+order retrieval produced *before any arm reordered it*, so recording a reordered
+pool would feed the model's own output back into the set #214 trains on. The
+export therefore never assumes an observation exists for a given query; it reads
+what is in the table, and a corpus whose operator has reranking on will simply
+produce an empty dataset with `counts.observations_scanned` at zero.
+
+**`candidate_ref` is the training key, and it is not injective over
+`code_symbols`.** #213 reports a separate `candidate_id` of the form
+`<domain>:<id>` on the wire precisely because two same-named functions in one
+file collide on `(repo, path, symbol, blob_oid)`. This export keys on
+`candidate_ref` anyway, and that is the right choice rather than an oversight:
+`candidate_judgments` is keyed `(observation_id, candidate_ref)` by #209's
+schema, and #208 names `candidate_ref` the only matchable key precisely because
+the alternative — the `code_symbols` rowid #213's `candidate_id` carries — is
+recycled by re-indexing and would silently re-attribute a verdict to whatever
+symbol inherited the number. The cost is real and bounded: two overloads of one
+name in one file at one blob share a training key and are exported as one
+candidate. A rowid-keyed dataset would instead be wrong across re-indexes, which
+is the failure mode that cannot be detected after the fact.
+
 ## Failure modes and edge cases
 
 | Case | Behavior |

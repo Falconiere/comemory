@@ -20,6 +20,11 @@ is written at all, and the manifest publishes only its row count and SHA-256.
 Repeating an export from an unchanged database is byte-identical, and the
 manifest carries `dataset_id` and `snapshot_digest` to prove it.
 
+A run with learned reranking enabled captures no observation at all (see
+[find.md](find.md)), because `pool_position` is defined as the order retrieval
+produced before any arm reordered it. Such a corpus exports an empty dataset
+with `counts.observations_scanned` at zero rather than a reordered one.
+
 **Runnable tests:** `tests/cli__export_dataset.rs`, `tests/cli__export_dataset_2.rs`
 
 **HTTP:** none — CLI only. The run writes a directory of files to an

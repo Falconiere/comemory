@@ -248,6 +248,12 @@ fn manifest(parts: ManifestParts<'_>) -> DatasetManifest {
 
 /// The domains in scope, ascending and deduplicated. An empty request means
 /// all three; an unknown word is refused naming what is accepted.
+///
+/// Deliberately not `CandidateDomain::from_label`, which is total and maps any
+/// unrecognised label to `Memory` — correct where it is used, since a stored
+/// `UnifiedHit::domain` is one of three known literals, and wrong here, where
+/// `--domain memories` must be a refusal rather than a silent memory-only
+/// export.
 fn domains(requested: &[String]) -> Result<Vec<CandidateDomain>> {
     if requested.is_empty() {
         return Ok(CandidateDomain::all().to_vec());
