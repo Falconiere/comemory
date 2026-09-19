@@ -37,7 +37,8 @@ if ! command -v python3 >/dev/null 2>&1; then
 fi
 
 if ! python3 "$BACKEND/comemory_rerank_preflight.py"; then
-    printf 'comemory-train: integrations/training/requirements.txt pins the same versions\n' >&2
+    printf 'comemory-train: a pinned library is missing or at another version\n' >&2
+    printf 'comemory-train: install them with: pip install -r integrations/training/requirements.txt\n' >&2
     printf 'comemory-train: the training suite did NOT run\n' >&2
     exit "$EX_UNAVAILABLE"
 fi

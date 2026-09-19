@@ -74,4 +74,9 @@ def _scalar(value) -> str:
         return str(value)
     if isinstance(value, float):
         return repr(float(value))
-    return json.dumps(str(value), ensure_ascii=False)
+    if not isinstance(value, str):
+        # Falling through to `str(value)` would emit a repr that YAML might read
+        # back as something else entirely. A type this emitter has no spelling
+        # for is a bug in the caller, and it says so rather than guessing.
+        raise TypeError("no YAML spelling for " + type(value).__name__)
+    return json.dumps(value, ensure_ascii=False)

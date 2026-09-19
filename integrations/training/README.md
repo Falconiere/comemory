@@ -349,6 +349,7 @@ machine next to it is not a measurement.
 | `comemory_qualify_set.py` | The withheld holdout split as a reviewed benchmark set |
 | `comemory_qualify_yaml.py` | The standard-library YAML emitter that set is written with |
 | `comemory_qualify_score.py` | One captured artifact plus one scorer as one arm's scores and its operational cost |
+| `comemory_qualify_wire.py` | Response validation, and every way a scorer's answer is refused |
 | `comemory_qualify_checks.py` | The integrity checks and the operational budgets |
 | `comemory_qualify_decide.py` | The three-word outcome and the record behind it |
 | `comemory_qualify_render.py` | That record as markdown |

@@ -27,17 +27,16 @@ from __future__ import annotations
 import datetime
 import hashlib
 import json
-import math
 import os
 import resource
 import subprocess
 import sys
 import time
 
+import comemory_qualify_wire as wire
 import comemory_train_pins as pins
 
 SIDECAR_VERSION = 1
-STDERR_EXCERPT_BYTES = 2048
 
 
 def score(report_path: str, options: dict) -> tuple:
@@ -120,9 +119,20 @@ def _request_id(arm: str, task_id: str) -> str:
 
 def _invoke(options: dict, request: dict) -> dict:
     """Run the scorer as a child under one deadline and validate its answer."""
+    if not isinstance(options["command"], list):
+        # The entry point always builds a list, and a list is what keeps the
+        # query and the passage text off any shell command line. Checking it
+        # here anyway costs nothing and makes the guarantee local to the call
+        # that depends on it, rather than an invariant a future caller has to
+        # know about.
+        raise pins.RecipeError(
+            "the scorer command must be an argument vector, not "
+            + type(options["command"]).__name__,
+            pins.EX_USAGE,
+        )
     body = json.dumps(request, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     if len(body) > pins.MAX_REQUEST_BYTES:
-        return _failure("request_too_large", None, str(len(body)) + " bytes")
+        return wire.failure("request_too_large", None, str(len(body)) + " bytes")
     try:
         done = subprocess.run(
             options["command"],
@@ -136,68 +146,12 @@ def _invoke(options: dict, request: dict) -> dict:
         # A missing program, a directory, a file without the execute bit: every
         # one of them is a scorer that could not start, which is the same
         # fallback in production as one that started and failed.
-        return _failure("spawn_failed", None, str(exc))
+        return wire.failure("spawn_failed", None, str(exc))
     except subprocess.TimeoutExpired:
-        return _failure("timed_out", None, "exceeded " + str(options["timeout_ms"]) + "ms")
+        return wire.failure("timed_out", None, "exceeded " + str(options["timeout_ms"]) + "ms")
     if done.returncode != 0:
-        return _failure("non_zero_exit", done.returncode, _excerpt(done.stderr))
-    return _validate(request, done.stdout, _excerpt(done.stderr))
-
-
-def _validate(request: dict, stdout: bytes, stderr: str) -> dict:
-    """Refuse every response shape that would make this arm's scores a lie."""
-    try:
-        payload = json.loads(stdout.decode("utf-8"))
-    except (UnicodeDecodeError, ValueError) as exc:
-        return _failure("invalid_response", None, "unparsable stdout: " + str(exc), stderr)
-    if not isinstance(payload, dict):
-        return _failure("invalid_response", None, "response is not an object", stderr)
-    for key in ("request_id", "model", "adapter"):
-        if payload.get(key) != request[key]:
-            return _failure(
-                "identity_mismatch",
-                None,
-                key + " echoed " + repr(payload.get(key)) + ", expected " + repr(request[key]),
-                stderr,
-            )
-    if payload.get("protocol_version") != pins.PROTOCOL_VERSION:
-        return _failure(
-            "invalid_response", None,
-            "protocol_version " + repr(payload.get("protocol_version")), stderr,
-        )
-    if payload.get("score_direction") != pins.SCORE_DIRECTION:
-        return _failure(
-            "invalid_response", None,
-            "score_direction " + repr(payload.get("score_direction")), stderr,
-        )
-    return _scores(request, payload, stderr)
-
-
-def _scores(request: dict, payload: dict, stderr: str) -> dict:
-    """The per-candidate scores, or a refusal naming the exact divergence."""
-    wanted = {candidate["id"] for candidate in request["candidates"]}
-    found: dict = {}
-    for row in payload.get("scores") or []:
-        if not isinstance(row, dict):
-            return _failure("invalid_response", None, "a score row is not an object", stderr)
-        identity = row.get("id")
-        value = row.get("score")
-        if identity not in wanted:
-            return _failure("invalid_response", None, "unknown id " + repr(identity), stderr)
-        if identity in found:
-            return _failure("invalid_response", None, "repeated id " + repr(identity), stderr)
-        if not isinstance(value, (int, float)) or isinstance(value, bool):
-            return _failure("invalid_response", None, "score for " + repr(identity), stderr)
-        number = float(value)
-        if not math.isfinite(number):
-            return _failure("invalid_response", None, "non-finite score", stderr)
-        found[identity] = number
-    missing = sorted(wanted - set(found))
-    if missing:
-        return _failure(
-            "invalid_response", None, "no score for " + ", ".join(missing[:5]), stderr
-        )
-    return {"scores": found}
+        return wire.failure("non_zero_exit", done.returncode, wire.excerpt(done.stderr))
+    return wire.validate(request, done.stdout, wire.excerpt(done.stderr))
 
 
 def _record(task_id: str, candidates: list, scores: dict, state: dict) -> None:
@@ -246,7 +200,7 @@ def _documents(report: dict, report_path: str, options: dict, state: dict) -> tu
         "tasks_without_candidates": state["empty_pools"],
         "failure_reasons": state["failures"],
         "latency_ms": _latency(state["latencies"]),
-        "peak_child_rss": _peak_child_rss(),
+        "peak_child_rss": _peak_child_rss(state["invocations"]),
         "timeout_ms": options["timeout_ms"],
     }
     return scores, sidecar
@@ -279,15 +233,21 @@ def _latency(samples: list) -> dict:
     }
 
 
-def _peak_child_rss() -> dict:
+def _peak_child_rss(invocations: int) -> dict:
     """Peak resident memory over every child, with its unit named.
 
     `getrusage` reports this field in bytes on macOS and in kilobytes on Linux.
     Recording the platform beside the number is the difference between a
     measurement and a number.
+
+    `RUSAGE_CHILDREN` only accumulates children that have been waited on, so a
+    run where every spawn failed would report a peak of zero. That is an absent
+    measurement, not a measured zero, and it is spelled `null`.
     """
     return {
-        "value": resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss,
+        "value": (
+            resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss if invocations else None
+        ),
         "unit": "bytes" if sys.platform == "darwin" else "kilobytes",
         "platform": sys.platform,
     }
@@ -327,20 +287,3 @@ def _digest(path: str) -> str:
         for chunk in iter(lambda: handle.read(1 << 20), b""):
             out.update(chunk)
     return out.hexdigest()
-
-
-def _excerpt(stream: bytes) -> str:
-    """A bounded, diagnostic-only excerpt of a child's stderr."""
-    return stream[:STDERR_EXCERPT_BYTES].decode("utf-8", "replace").strip()
-
-
-def _failure(kind: str, code, detail: str, stderr: str = "") -> dict:
-    """One recorded failure, which is a fallback rather than an abort."""
-    return {
-        "failure": {
-            "kind": kind,
-            "code": code,
-            "detail": detail,
-            "stderr_excerpt": stderr,
-        }
-    }

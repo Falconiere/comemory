@@ -99,10 +99,17 @@ def _holdout_rows(directory: str, manifest: dict) -> list:
         )
     entry = data.file_entry(manifest, pins.HOLDOUT_FILE)
     found = data.sha256_file(path)
-    if entry is not None and entry.get("sha256") not in (None, found):
+    declared = (entry or {}).get("sha256")
+    if entry is None or not declared:
+        raise pins.RecipeError(
+            pins.DATASET_MANIFEST_FILE + " carries no digest for " + pins.HOLDOUT_FILE
+            + ", so the held-out set being scored cannot be shown to be the one the "
+            "export produced"
+        )
+    if declared != found:
         raise pins.RecipeError(
             pins.HOLDOUT_FILE + " does not match the manifest: manifest says "
-            + str(entry.get("sha256")) + ", file is " + found
+            + str(declared) + ", file is " + found
         )
     rows = []
     with open(path, "r", encoding="utf-8") as handle:

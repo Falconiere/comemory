@@ -51,8 +51,20 @@ def backend_config(device: str, allow_download: bool, adapter: str | None = None
     }
 
 
+def torch_module():
+    """The torch module, imported through the shared refusal path."""
+    torch, _transformers = compat.import_core()
+    return torch
+
+
 def load_base(config: dict):
-    """Load and validate the pinned base model and its tokenizer."""
+    """Load and validate the pinned base model and its tokenizer.
+
+    Returns `(tokenizer, model, head_parameters)` and NOT the torch module. A
+    caller that needs torch asks `torch_module` for it, so no call site
+    destructures a local named after the library, and the return order carries
+    no import in it to go stale.
+    """
     torch, transformers = compat.import_core()
     tokenizer = compat.call_hub(
         transformers.AutoTokenizer.from_pretrained,
@@ -69,7 +81,7 @@ def load_base(config: dict):
     )
     compat.check_architecture(model, config)
     head = compat.head_provenance(model, config)
-    return torch, tokenizer, model, head
+    return tokenizer, model, head
 
 
 def attach_adapter(model):
@@ -227,7 +239,8 @@ def reload_and_compare(directory: str, before: list, device: str, allow_download
     """Reload the saved adapter and compare its predictions with the pre-save ones."""
     config = backend_config(device, allow_download, adapter=directory)
     compat.validate_adapter(config)
-    torch, tokenizer, base, _head = load_base(config)
+    torch = torch_module()
+    tokenizer, base, _head = load_base(config)
     peft_model = compat.import_peft()
     adapted = compat.call_hub(
         peft_model.from_pretrained, base, directory, local_files_only=not allow_download
@@ -272,7 +285,8 @@ def verify(directory: str, candidates: int, allow_download: bool) -> int:
         )
     config = backend_config("cpu", allow_download, adapter=directory)
     compat.validate_adapter(config)
-    torch, tokenizer, base, _head = load_base(config)
+    torch = torch_module()
+    tokenizer, base, _head = load_base(config)
     peft_model = compat.import_peft()
     adapted = compat.call_hub(
         peft_model.from_pretrained, base, directory, local_files_only=not allow_download

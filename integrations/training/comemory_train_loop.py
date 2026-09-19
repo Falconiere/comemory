@@ -8,11 +8,14 @@ which the final test set could influence which epoch is kept. The manifest
 records `holdout_used: false` beside the per-epoch numbers, so the claim is
 auditable rather than asserted.
 
-**The run is seeded end to end.** One seed drives Python's RNG, NumPy's, torch's
-and the batch shuffle, deterministic kernels are requested unless an operator
-explicitly opts out, and the batching is plain index slicing rather than a
-DataLoader with worker processes, because worker scheduling is a source of
-nondeterminism nobody needs here.
+**The run is seeded end to end.** One seed initializes Python's global RNG,
+NumPy's and torch's, and each epoch's shuffle draws from its own
+`random.Random(seed + epoch)` — a separate stream per epoch, so an epoch's order
+depends on the seed and the epoch number and on nothing that ran before it.
+Deterministic kernels are requested unless an operator explicitly opts out, and
+the batching is plain index slicing rather than a DataLoader with worker
+processes, because worker scheduling is a source of nondeterminism nobody needs
+here.
 
 **The base is proven frozen.** The digest over every non-adapter parameter is
 taken before the first optimizer step and again after the last, and a difference
@@ -46,7 +49,8 @@ def run(dataset, args, overrides: dict) -> int:
     recipe = manifest.recipe(overrides)
     started = time.perf_counter()
     config = model.backend_config(recipe["precision"]["device"], args.allow_download)
-    torch, tokenizer, base, _head = model.load_base(config)
+    torch = model.torch_module()
+    tokenizer, base, _head = model.load_base(config)
     _seed_everything(torch, recipe)
     adapted = model.attach_adapter(base)
     audit = model.audit(adapted)

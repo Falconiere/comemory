@@ -16,6 +16,7 @@ the reference backend without the identity gate refusing it.
 from __future__ import annotations
 
 import json
+import math
 import os
 import subprocess
 import sys
@@ -67,8 +68,8 @@ class Recipe(unittest.TestCase):
 
     def adapted(self):
         """A freshly built LoRA model over a freshly loaded frozen base."""
-        torch, tokenizer, base, _head = model.load_base(self.config)
-        return torch, tokenizer, model.attach_adapter(base, {})
+        tokenizer, base, _head = model.load_base(self.config)
+        return model.torch_module(), tokenizer, model.attach_adapter(base)
 
     def test_only_the_adapter_and_the_head_train(self) -> None:
         _torch, _tokenizer, adapted = self.adapted()
@@ -118,7 +119,7 @@ class Recipe(unittest.TestCase):
         self.assertLessEqual(result["max_abs_delta"], pins.RELOAD_MAX_ABS_DELTA)
 
     def test_the_reference_backend_scores_through_the_saved_adapter(self) -> None:
-        torch, tokenizer, adapted = self.adapted()
+        _torch, _tokenizer, adapted = self.adapted()
         adapted.eval()
         with tempfile.TemporaryDirectory() as root:
             package = os.path.join(root, "lora-v1")
@@ -127,7 +128,11 @@ class Recipe(unittest.TestCase):
         self.assertEqual(response["adapter"], "lora-v1")
         self.assertEqual(response["model"], pins.MODEL_ID + "@" + pins.MODEL_REVISION)
         self.assertEqual(len(response["scores"]), 2)
-        _ = (torch, tokenizer)
+        self.assertEqual(response["score_direction"], pins.SCORE_DIRECTION)
+        self.assertEqual(sorted(row["id"] for row in response["scores"]), ["1", "2"])
+        for row in response["scores"]:
+            self.assertIsInstance(row["score"], float)
+            self.assertTrue(math.isfinite(row["score"]), row)
 
     def score_through_backend(self, package: str) -> dict:
         """One real request to the reference backend, over a real child process."""

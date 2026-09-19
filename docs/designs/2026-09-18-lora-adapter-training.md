@@ -168,6 +168,7 @@ precedent #212 set: external, offline, opt-in, not embedded in the binary. Nothi
 | `comemory_qualify_set.py` | Held-out split -> #208 benchmark set plus its provenance sidecar |
 | `comemory_qualify_yaml.py` | The standard-library block-YAML emitter that set is written with |
 | `comemory_qualify_score.py` | A benchmark artifact -> one arm's scores file plus its operational sidecar |
+| `comemory_qualify_wire.py` | Response validation, and every refusal that becomes a recorded fallback |
 | `comemory_qualify_checks.py` | The integrity checks and the operational budgets |
 | `comemory_qualify_decide.py` | The artifact plus the sidecars -> the recorded decision |
 | `comemory_qualify_render.py` | That decision as markdown |

@@ -155,6 +155,22 @@ def _decide(args: argparse.Namespace) -> int:
     return pins.EX_OK
 
 
+def _positive(value: str) -> int:
+    """A millisecond budget argparse accepts only when it can bound a child.
+
+    `subprocess.run` treats a zero or negative timeout as already expired, so an
+    unvalidated value would make every task record a spurious `timed_out`
+    fallback instead of reporting the operator's mistake.
+    """
+    try:
+        number = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+    if number < 1:
+        raise argparse.ArgumentTypeError("must be at least 1 millisecond")
+    return number
+
+
 def _pairs(values: list) -> list:
     """Decode every `--scoring <arm>=<path>` pair, or refuse naming the value."""
     decoded = []
@@ -231,7 +247,12 @@ def _score_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--sidecar", required=True, help="the operational sidecar to write")
     parser.add_argument("--model", required=True, help="the model label the scorer answers to")
     parser.add_argument("--adapter", default=None, help="the adapter label, or omit for base")
-    parser.add_argument("--timeout-ms", type=int, default=pins.DEFAULT_TIMEOUT_MS)
+    parser.add_argument(
+        "--timeout-ms",
+        type=_positive,
+        default=pins.DEFAULT_TIMEOUT_MS,
+        help="end-to-end budget for one scorer child, in milliseconds",
+    )
     parser.add_argument("command_argv", nargs=argparse.REMAINDER, metavar="-- PROGRAM [ARGS…]")
 
 
@@ -251,5 +272,4 @@ def _decide_flags(parser: argparse.ArgumentParser) -> None:
 
 
 if __name__ == "__main__":
-    args_in = sys.argv[1:]
-    sys.exit(main([a for a in args_in]))
+    sys.exit(main(sys.argv[1:]))
