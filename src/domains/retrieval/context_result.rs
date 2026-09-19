@@ -13,7 +13,6 @@
 use serde::Serialize;
 
 use crate::domains::retrieval::bundle::Bundle;
-use crate::domains::retrieval::learned_report::LearnedOrdering;
 use crate::domains::retrieval::scope::{ScopeEcho, TimeScope};
 use crate::utilities::pagination::PageMeta;
 
@@ -29,9 +28,6 @@ pub struct ContextResult {
     pub meta: PageMeta,
     /// The lookup's time-scoping flags.
     pub scope: TimeScope,
-    /// What the optional learned ordering stage did to the memory ranking this
-    /// bundle was assembled from, when one ran.
-    pub learned: Option<LearnedOrdering>,
 }
 
 /// JSON envelope returned to `--json` callers. The bundle fields stay at the
@@ -65,10 +61,6 @@ pub struct Envelope<'a> {
     /// unset, so an unscoped lookup is unchanged.
     #[serde(flatten)]
     pub scope: ScopeEcho<'a>,
-    /// What the optional learned ordering stage did. Absent entirely when no
-    /// stage ran, so a default build emits exactly the JSON it always has.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub learned: Option<&'a LearnedOrdering>,
 }
 
 /// Build the serializable envelope. Public so both delivery adapters and the
@@ -80,7 +72,6 @@ pub fn envelope<'a>(
     query_id: Option<&'a str>,
     page: PageMeta,
     scope: ScopeEcho<'a>,
-    learned: Option<&'a LearnedOrdering>,
 ) -> Envelope<'a> {
     Envelope {
         bundle,
@@ -90,6 +81,5 @@ pub fn envelope<'a>(
         has_more: page.has_more,
         total: page.total,
         scope,
-        learned,
     }
 }

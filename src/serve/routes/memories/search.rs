@@ -6,6 +6,8 @@
 //! calls, so the HTTP `data` payload is byte-identical to the CLI shape
 //! (just nested one level deeper, inside the `/api/v1` envelope).
 
+use std::time::Instant;
+
 use axum::extract::{Query, State};
 use axum::response::Response;
 use axum::routing::get;
@@ -14,12 +16,10 @@ use serde_json::Value;
 
 use crate::domains::retrieval;
 use crate::domains::retrieval::scope::ScopeEcho;
-use crate::domains::retrieval::staged::Staged;
 use crate::domains::retrieval::{context_result, search_result};
 use crate::prelude::*;
 use crate::serve::AppState;
-use crate::serve::routes::staged::staged_query_response;
-use crate::serve::routes::track_for;
+use crate::serve::routes::{respond, run_blocking, track_for};
 use crate::serve::scope::RepoScope;
 use crate::utilities::context::Ctx;
 
@@ -41,10 +41,7 @@ async fn memories_search_get(
     Query(mut req): Query<retrieval::search::Request>,
 ) -> Response {
     req.repo = scope.resolve(req.repo);
-    handle("search", state, move |ctx, state| {
-        run_search(ctx, state, req)
-    })
-    .await
+    handle("search", state, move |state| run_search(state, req)).await
 }
 
 async fn memories_search_post(
@@ -53,10 +50,7 @@ async fn memories_search_post(
     Json(mut req): Json<retrieval::search::Request>,
 ) -> Response {
     req.repo = scope.resolve(req.repo);
-    handle("search", state, move |ctx, state| {
-        run_search(ctx, state, req)
-    })
-    .await
+    handle("search", state, move |state| run_search(state, req)).await
 }
 
 async fn context_get(
@@ -65,10 +59,7 @@ async fn context_get(
     Query(mut req): Query<retrieval::context::Request>,
 ) -> Response {
     req.repo = scope.resolve(req.repo);
-    handle("context", state, move |ctx, state| {
-        run_context(ctx, state, req)
-    })
-    .await
+    handle("context", state, move |state| run_context(state, req)).await
 }
 
 async fn context_post(
@@ -77,58 +68,47 @@ async fn context_post(
     Json(mut req): Json<retrieval::context::Request>,
 ) -> Response {
     req.repo = scope.resolve(req.repo);
-    handle("context", state, move |ctx, state| {
-        run_context(ctx, state, req)
-    })
-    .await
+    handle("context", state, move |state| run_context(state, req)).await
 }
 
-/// Shared handler body for the four handlers above, driven through
-/// [`staged_query_response`] so an enabled learned ordering stage runs with the
-/// shared connection guard released.
+/// Shared spawn-blocking + envelope wiring for the four handlers above.
 async fn handle<F>(command: &'static str, state: AppState, f: F) -> Response
 where
-    F: FnOnce(&mut Ctx<'_>, AppState) -> Result<Staged<Value>> + Send + 'static,
+    F: FnOnce(AppState) -> Result<Value> + Send + 'static,
 {
-    let handler = state.clone();
-    staged_query_response(state, command, move |ctx| f(ctx, handler)).await
+    let started = Instant::now();
+    let result = run_blocking(move || f(state)).await;
+    respond(command, result, started)
 }
 
-fn run_search(
-    ctx: &mut Ctx<'_>,
-    state: AppState,
-    req: retrieval::search::Request,
-) -> Result<Staged<Value>> {
+fn run_search(state: AppState, req: retrieval::search::Request) -> Result<Value> {
     let track = track_for(&state)?;
-    let data_dir = state.paths().data_dir().to_path_buf();
-    retrieval::search::begin(ctx, req, track)?.map(move |result| {
-        let envelope = search_result::envelope(
-            &result.hits,
-            result.query_id.as_deref(),
-            result.meta,
-            &result.nav,
-            &data_dir,
-            ScopeEcho::of(&result.scope),
-            result.learned.as_ref(),
-        );
-        serde_json::to_value(envelope).map_err(Error::Json)
-    })
+    let cfg = state.cfg();
+    let mut conn = state.conn()?;
+    let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
+    let result = retrieval::search::run(&mut ctx, req, track)?;
+    let envelope = search_result::envelope(
+        &result.hits,
+        result.query_id.as_deref(),
+        result.meta,
+        &result.nav,
+        state.paths().data_dir(),
+        ScopeEcho::of(&result.scope),
+    );
+    serde_json::to_value(envelope).map_err(Error::Json)
 }
 
-fn run_context(
-    ctx: &mut Ctx<'_>,
-    state: AppState,
-    req: retrieval::context::Request,
-) -> Result<Staged<Value>> {
+fn run_context(state: AppState, req: retrieval::context::Request) -> Result<Value> {
     let track = track_for(&state)?;
-    retrieval::context::begin(ctx, req, track)?.map(|result| {
-        let envelope = context_result::envelope(
-            &result.bundle,
-            result.query_id.as_deref(),
-            result.meta,
-            ScopeEcho::of(&result.scope),
-            result.learned.as_ref(),
-        );
-        serde_json::to_value(envelope).map_err(Error::Json)
-    })
+    let cfg = state.cfg();
+    let mut conn = state.conn()?;
+    let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
+    let result = retrieval::context::run(&mut ctx, req, track)?;
+    let envelope = context_result::envelope(
+        &result.bundle,
+        result.query_id.as_deref(),
+        result.meta,
+        ScopeEcho::of(&result.scope),
+    );
+    serde_json::to_value(envelope).map_err(Error::Json)
 }

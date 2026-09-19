@@ -11,7 +11,6 @@ use std::io::Write;
 use crate::cli::output::{json, tty};
 use crate::domains::retrieval::code_rerank::CodeReranked;
 use crate::domains::retrieval::code_search_result::envelope;
-use crate::domains::retrieval::learned_report::LearnedOrdering;
 use crate::prelude::*;
 use crate::utilities::pagination::PageMeta;
 
@@ -27,14 +26,11 @@ pub fn emit(
     page: PageMeta,
     index_empty: bool,
     json_flag: bool,
-    learned: Option<&LearnedOrdering>,
 ) -> Result<()> {
     if json_flag {
-        return json::write(&envelope(hits, query_id, page, learned));
+        return json::write(&envelope(hits, query_id, page));
     }
-    let mut out = std::io::stdout().lock();
-    write_tty(&mut out, hits, query_id, index_empty)?;
-    tty::write_learned_line(&mut out, learned)
+    write_tty(&mut std::io::stdout().lock(), hits, query_id, index_empty)
 }
 
 /// Render the TTY view of `hits` to `out`. Public so tests can capture

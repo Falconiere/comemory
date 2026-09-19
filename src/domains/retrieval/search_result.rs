@@ -26,7 +26,6 @@ use serde::Serialize;
 
 use crate::domains::memories::References;
 use crate::domains::memories::nav::{abs_path, title_of};
-use crate::domains::retrieval::learned_report::LearnedOrdering;
 use crate::domains::retrieval::rerank::{Reranked, ScoreParts};
 use crate::domains::retrieval::router::Source;
 use crate::domains::retrieval::scope::{ScopeEcho, TimeScope};
@@ -48,8 +47,6 @@ pub struct SearchResult {
     pub nav: HashMap<String, MemoryMeta>,
     /// The run's time-scoping flags.
     pub scope: TimeScope,
-    /// What the optional learned ordering stage did, when one ran.
-    pub learned: Option<LearnedOrdering>,
 }
 
 /// One search hit as emitted to the user. `score` duplicates
@@ -118,10 +115,6 @@ pub struct Envelope<'a> {
     /// field is skipped when unset, so an unscoped run is unchanged.
     #[serde(flatten)]
     pub scope: ScopeEcho<'a>,
-    /// What the optional learned ordering stage did. Absent entirely when no
-    /// stage ran, so a default build emits exactly the JSON it always has.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub learned: Option<&'a LearnedOrdering>,
 }
 
 /// Build the serializable envelope. Public so both delivery adapters and
@@ -137,7 +130,6 @@ pub fn envelope<'a, S: ::std::hash::BuildHasher>(
     meta: &HashMap<String, MemoryMeta, S>,
     data_dir: &Path,
     scope: ScopeEcho<'a>,
-    learned: Option<&'a LearnedOrdering>,
 ) -> Envelope<'a> {
     Envelope {
         hits: hits.iter().map(|h| row_from(h, meta, data_dir)).collect(),
@@ -147,7 +139,6 @@ pub fn envelope<'a, S: ::std::hash::BuildHasher>(
         has_more: page.has_more,
         total: page.total,
         scope,
-        learned,
     }
 }
 
