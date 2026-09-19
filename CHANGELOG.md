@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.39.0] - 2026-09-19
+
+### Removed
+
+- remove external reranking, keep the retrieval-quality instrumentation ([#231](https://github.com/Falconiere/comemory/pull/231))
+
 ## [0.38.0] - 2026-09-19
 
 ### Added
