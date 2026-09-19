@@ -29,6 +29,10 @@ pub mod serve;
 /// clap subcommand entry points and the top-level dispatcher.
 pub mod cli;
 
+/// Stdio Model Context Protocol adapter (`comemory mcp`). The third delivery
+/// surface: the same command cores, spoken as typed tools to an agent host.
+pub mod mcp;
+
 /// Business capabilities, each owning one area of behavior end to end.
 pub mod domains;
 

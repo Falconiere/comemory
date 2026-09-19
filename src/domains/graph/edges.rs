@@ -12,7 +12,7 @@ use crate::utilities::context::Ctx;
 use crate::utilities::pagination::page_window;
 
 /// `comemory edges` / `GET /api/v1/edges` request.
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Request {
     /// Free-form query — relation verb, memory slug words, path or symbol

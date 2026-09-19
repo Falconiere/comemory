@@ -39,6 +39,12 @@ Installs a Claude Code `SessionEnd` command that runs
 `comemory capture session --from-hook`. Failures in the hook should not block
 session end (best-effort).
 
+The bundled agent plugin already ships this as `hooks/session-end.sh`, wired
+into `hooks.json`'s own `SessionEnd` entry, so `comemory install claude` /
+`comemory install codex` cover it automatically — no separate
+`install-hook` run needed for a plugin install. `comemory capture
+install-hook` remains for non-plugin setups that only want the capture hook.
+
 ## Redaction
 
 Client rule-set version `1` (attested as `redaction.version`). Rules include

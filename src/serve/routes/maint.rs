@@ -12,8 +12,9 @@ use axum::routing::get;
 
 use crate::domains::maintenance;
 use crate::serve::AppState;
-use crate::serve::routes::{RouteEntry, respond, run_blocking};
+use crate::serve::routes::{RouteEntry, respond};
 use crate::serve::scope::RepoScope;
+use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
 
 /// `POST /api/v1/mine`, `POST /api/v1/hooks/install`.

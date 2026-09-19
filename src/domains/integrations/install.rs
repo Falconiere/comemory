@@ -1,14 +1,13 @@
 //! `domains::integrations::install::{Request, Response, run}` — the shared middle of
-//! `comemory install <host>`: extract the embedded agent integration and
-//! register it with the host's native plugin manager. Moved out of
-//! `cli::install::run` (Binding Rule 1) so `setup` drives the same
+//! `comemory install <host>`: extract the embedded agent integration, write
+//! `<bundle>/plugins/comemory/.mcp.json` with this binary's absolute path,
+//! and register the plugin with the host's native plugin manager. Moved out
+//! of `cli::install::run` (Binding Rule 1) so `setup` drives the same
 //! installation instead of duplicating the host probe.
 //!
 //! The host is a validated string, not a clap enum, for the same reason
-//! `crate::domains::code::hooks::Request::enable` is: a command core must not
-//! depend on the CLI's
-//! argument types. Conn-free like `domains::code::install_hooks` — [`run`] never calls
-//! `Ctx::conn`, so installing an integration never creates a database.
+//! `crate::domains::code::hooks::Request::enable` is. Conn-free like
+//! `domains::code::install_hooks` — [`run`] never calls `Ctx::conn`.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -48,6 +47,8 @@ pub struct Response {
     pub plugin: &'static str,
     /// Where the integration bundle was extracted.
     pub bundle: PathBuf,
+    /// Where `.mcp.json` was written (or would be written under `--dry-run`).
+    pub mcp_manifest: PathBuf,
     /// The host configuration directory used.
     pub config_dir: PathBuf,
     /// Whether this was a preview.
@@ -154,29 +155,34 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
             .join(env!("CARGO_PKG_VERSION")),
     )?;
     let config_dir = config_dir(host, req.config_dir)?;
-    if !req.dry_run {
-        install(host, &config_dir, &root)?;
+    let mcp_manifest = if req.dry_run {
+        root.join("plugins/comemory").join(".mcp.json")
+    } else {
+        let manifest = install(host, &config_dir, &root)?;
         // Written only after the host's own CLI accepted the plugin, so the
         // marker never claims an install that did not finish.
         std::fs::write(
             marker_path(ctx.paths.data_dir(), host),
             env!("CARGO_PKG_VERSION"),
         )?;
-    }
+        manifest
+    };
     Ok(Response {
         marketplace: root.parent().map(Path::to_path_buf),
         host: host.to_string(),
         plugin: PLUGIN,
         bundle: root,
+        mcp_manifest,
         config_dir,
         dry_run: req.dry_run,
         installed: !req.dry_run,
     })
 }
 
-/// Probe the host CLI and the hook dependencies, extract the bundle, then
-/// register it as a local marketplace plugin.
-fn install(host: &str, config_dir: &Path, root: &Path) -> Result<()> {
+/// Probe the host CLI and the hook dependencies, extract the bundle, write
+/// its `.mcp.json`, then register it as a local marketplace plugin. Returns
+/// the `.mcp.json` path so the caller's report matches what was written.
+fn install(host: &str, config_dir: &Path, root: &Path) -> Result<PathBuf> {
     std::fs::create_dir_all(config_dir)?;
     run_host(host, Some(config_dir), &["--version"])?;
     for dependency in HOOK_DEPENDENCIES {
@@ -188,6 +194,8 @@ fn install(host: &str, config_dir: &Path, root: &Path) -> Result<()> {
         }
     }
     bundle::extract(root)?;
+    let binary = std::fs::canonicalize(std::env::current_exe()?)?;
+    let manifest = bundle::write_mcp_manifest(&root.join("plugins/comemory"), &binary)?;
     let marketplace = root
         .parent()
         .ok_or_else(|| Error::Usage("bundle needs a parent".into()))?;
@@ -204,7 +212,7 @@ fn install(host: &str, config_dir: &Path, root: &Path) -> Result<()> {
     if host == "claude" {
         run_host(host, Some(config_dir), &["plugin", "update", PLUGIN])?;
     }
-    Ok(())
+    Ok(manifest)
 }
 
 /// Invoke the host's own CLI with `args`, scoped to `config_dir` through the

@@ -96,6 +96,24 @@ fn status_and_code_covers_the_grouped_bad_request_rows() {
     );
     assert_row(&Error::Ast("x".into()), StatusCode::BAD_REQUEST, "ast");
     assert_row(&Error::Json(json_err), StatusCode::BAD_REQUEST, "json");
+    assert_row(
+        &Error::ConfirmationRequired("x".into()),
+        StatusCode::BAD_REQUEST,
+        "confirmation_required",
+    );
+}
+
+/// `id_collision` (409, `Class::Conflict`): a save refused to overwrite a
+/// different body under the same 8-hex id.
+#[test]
+fn status_and_code_covers_id_collision() {
+    assert_row(
+        &Error::IdCollision {
+            id: "ab12cd34".into(),
+        },
+        StatusCode::CONFLICT,
+        "id_collision",
+    );
 }
 
 #[test]

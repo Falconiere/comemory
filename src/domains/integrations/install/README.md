@@ -4,7 +4,7 @@
 
 | File | Primary item | Purpose |
 | --- | --- | --- |
-| `bundle.rs` | `extract` | Embeds the repository-root `integrations/agent/**` assets with `include_str!` and writes a versioned local marketplace atomically — staging directory, then rename. Re-extracting over an identical tree is a no-op; a file the operator has edited is refused with the edit left in place, and a symlinked destination or catalog is refused before anything is written |
+| `bundle.rs` | `extract` | Embeds the repository-root `integrations/agent/**` assets with `include_str!` and writes a versioned local marketplace atomically — staging directory, then rename. Re-extracting over an identical tree is a no-op; a file the operator has edited is refused with the edit left in place, and a symlinked destination or catalog is refused before anything is written. `write_mcp_manifest` writes the plugin root's `.mcp.json` (Claude Code and Codex's own launch manifest) the same way, but on every install regardless of the equality check — the manifest is deliberately outside `FILES` |
 
 `src/domains/integrations/install.rs` beside this folder holds the host
 validation, the configuration-directory precedence, the per-version and

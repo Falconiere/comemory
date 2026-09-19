@@ -19,7 +19,8 @@ use serde_json::Value;
 use crate::domains::graph::edges_result;
 use crate::prelude::*;
 use crate::serve::AppState;
-use crate::serve::routes::{RouteEntry, respond, run_blocking};
+use crate::serve::routes::{RouteEntry, respond};
+use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
 
 /// This resource's route-table entries, appended onto [`super::table`].

@@ -585,6 +585,10 @@ A task isn't done until `scripts/check-all.sh` exits 0.
 ## Agent integration
 
 `comemory install claude` and `comemory install codex` install the bundled skills
-and hooks through the host plugin manager. Use `--dry-run` to preview. The
-integration is owned here and requires no toolu plugin. See
-[installation and migration](docs/guides/agent-integration.md).
+and hooks through the host plugin manager, and write the plugin's `.mcp.json` so
+the host spawns `comemory mcp` — an eleven-tool MCP stdio server over the same
+command cores as the CLI and `comemory serve`. Use `--dry-run` to preview. Any
+other MCP host (Cursor, Gemini CLI, Windsurf) registers `comemory mcp` by hand
+with a one-line stdio server entry. `comemory recall-status` reports what the
+learning loop still owes a verdict. The integration is owned here and requires
+no toolu plugin. See [installation and migration](docs/guides/agent-integration.md).

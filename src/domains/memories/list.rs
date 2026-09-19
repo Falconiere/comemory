@@ -13,7 +13,7 @@ use crate::utilities::pagination::Page;
 
 /// `comemory list` / `GET /api/v1/memories` request. Every field is
 /// optional — an empty request lists every live memory, newest first.
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Request {
     /// Filter to memories whose `repo` matches exactly.
@@ -59,7 +59,7 @@ fn default_limit() -> usize {
 /// aliases: `recent` → `created`, `activation` → `accessed` (access recency
 /// is the ordering ACT-R activation is dominated by, and the one the mirror
 /// can sort in SQL).
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Sort {
     /// Newest created first — today's default ordering, unchanged.

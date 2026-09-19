@@ -20,7 +20,7 @@ use crate::utilities::context::Ctx;
 use crate::utilities::pagination::{PageWindow, page_meta, page_window};
 
 /// `comemory search-code` / `GET|POST /api/v1/code/search` request.
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Request {
     /// Natural-language or identifier query string.

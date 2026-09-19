@@ -16,8 +16,9 @@ use axum::response::Response;
 use axum::routing::get;
 
 use crate::serve::AppState;
-use crate::serve::routes::{RouteEntry, respond, run_blocking};
+use crate::serve::routes::{RouteEntry, respond};
 use crate::serve::scope::RepoScope;
+use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
 
 /// `PATCH /memories/{id}`, `POST /memories/{id}/restore`,

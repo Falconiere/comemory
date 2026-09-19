@@ -110,5 +110,222 @@ PYERROR
   disabled=$(jq -nc --arg cwd "$TASK/repository" '{cwd:$cwd}' | "$plugin/hooks/session-start.sh")
   [ -z "$disabled" ]
   rm "$cfg/comemory.json"
+
+  # AC-11: session-end.sh launches capture detached and returns within the
+  # host's ~1.5s SessionEnd budget, with real payload and the real binary,
+  # even when this machine's own first-exec spawn latency is slow. Measured
+  # twice (cold, then warm): first-exec-of-a-fresh-process latency on this
+  # Mac is a known, separate, environmental cost from a hook that fails to
+  # detach (see memories dc8b890a / f7c4b799), so only the WARM run is
+  # asserted under budget. Every invocation is wrapped in `timeout 5` so a
+  # detached child that still held this hook's stdout open would fail the
+  # harness's own `$( … )` capture loudly (timeout kills it) instead of
+  # hanging the test suite silently — proof the detach is real, not just a
+  # background `&`. stdout+stderr are captured together and asserted empty.
+  transcript="$TASK/transcript-$host.jsonl"
+  : > "$transcript"
+  end_payload=$(jq -nc --arg cwd "$TASK/repository" --arg sid "session-end-$host" --arg tp "$transcript" \
+    '{cwd:$cwd,session_id:$sid,transcript_path:$tp,reason:"other",hook_event_name:"SessionEnd"}')
+  for run in cold warm; do
+    end_start=$(python3 -c 'import time; print(time.time())')
+    end_out=$(printf '%s' "$end_payload" | timeout 5 "$plugin/hooks/session-end.sh" 2>&1) \
+      || { printf 'session-end.sh %s run hung or failed (exit %s)\n' "$run" "$?" >&2; exit 1; }
+    end_finish=$(python3 -c 'import time; print(time.time())')
+    [ -z "$end_out" ] || { printf 'session-end.sh %s run produced output: %s\n' "$run" "$end_out" >&2; exit 1; }
+    python3 - "$host" "$run" "$end_start" "$end_finish" <<'PYELAPSED'
+import sys
+host, run, start, finish = sys.argv[1], sys.argv[2], float(sys.argv[3]), float(sys.argv[4])
+elapsed = finish - start
+print(f"agent-install: {host} session-end.sh ({run}) returned in {elapsed:.3f}s")
+if run == "warm":
+    assert elapsed < 1.5, f"session-end.sh (warm) took {elapsed:.3f}s"
+PYELAPSED
+  done
+  noc_end_out=$(printf '%s' "$end_payload" | timeout 5 env PATH=/usr/bin:/bin "$plugin/hooks/session-end.sh" 2>&1) \
+    || { printf 'session-end.sh (no comemory on PATH) hung or failed (exit %s)\n' "$?" >&2; exit 1; }
+  [ -z "$noc_end_out" ]
+
+  # AC-12: comemory-status.sh nudges toward memory-bootstrap on a repo with
+  # zero memories, and stays silent once one is saved.
+  boot_repo="$TASK/bootstrap-$host"
+  mkdir -p "$boot_repo"
+  git init -q "$boot_repo"
+  boot_payload=$(jq -nc --arg cwd "$boot_repo" '{cwd:$cwd}')
+  printf '%s' "$boot_payload" | "$badge" | jq -e '.hookSpecificOutput.additionalContext | contains("memory-bootstrap")' >/dev/null
+  (cd "$boot_repo" && "$wrapper" save "Bootstrap seed $host" "Verified bootstrap fixture" --json) >/dev/null
+  boot_nudge_after=$(printf '%s' "$boot_payload" | "$badge")
+  [ -z "$boot_nudge_after" ]
+
+  # Write-once session-start marker: same session_id fired twice never moves
+  # the recorded instant, matching resume/clear/compact re-firing SessionStart.
+  ws_session="write-once-$host"
+  ws_payload=$(jq -nc --arg cwd "$TASK/repository" --arg sid "$ws_session" '{cwd:$cwd,session_id:$sid,source:"startup",hook_event_name:"SessionStart"}')
+  printf '%s' "$ws_payload" | "$plugin/hooks/session-start.sh" >/dev/null
+  ws_marker="$cfg/comemory/session-$ws_session.start"
+  [ -f "$ws_marker" ]
+  ws_first=$(cat "$ws_marker")
+  printf '%s' "$ws_payload" | "$plugin/hooks/session-start.sh" >/dev/null
+  ws_second=$(cat "$ws_marker")
+  [ "$ws_first" = "$ws_second" ]
+
+  # 7-day sweep: session-start.sh prunes a stale session-*.start marker but
+  # keeps a fresh one written by the same run.
+  mkdir -p "$cfg/comemory"
+  old_marker="$cfg/comemory/session-sweep-old-$host.start"
+  printf '1970-01-01T00:00:00Z' > "$old_marker"
+  eight_days_ago=$(date -v-8d +%Y%m%d%H%M 2>/dev/null || date -d '8 days ago' +%Y%m%d%H%M)
+  touch -t "$eight_days_ago" "$old_marker"
+  sweep_session="sweep-fresh-$host"
+  sweep_payload=$(jq -nc --arg cwd "$TASK/repository" --arg sid "$sweep_session" '{cwd:$cwd,session_id:$sid,source:"startup",hook_event_name:"SessionStart"}')
+  printf '%s' "$sweep_payload" | "$plugin/hooks/session-start.sh" >/dev/null
+  [ ! -e "$old_marker" ]
+  [ -f "$cfg/comemory/session-$sweep_session.start" ]
+
+  # Session ids name marker files. ps_sanitize_session_id rejects any value
+  # with a character outside [A-Za-z0-9_-] whole (empty output, non-zero)
+  # rather than stripping it to a safe leftover, and passes a host UUID
+  # untouched — asserted on the function itself, since the fixed `session-`
+  # prefix means no crafted id can reach a `..` path segment on disk.
+  uuid_sid="0f9d4c2e-1b2a-4c3d-8e7f-a1b2c3d4e5f6"
+  ( . "$plugin/lib/project-skills-foundation.sh"
+    if ps_sanitize_session_id "../../escape-$host" >/dev/null; then exit 1; fi
+    [ "$(ps_sanitize_session_id "$uuid_sid")" = "$uuid_sid" ] )
+  # And the hook writes no marker at all for a rejected id.
+  slash_sid="../../escape-$host"
+  slash_payload=$(jq -nc --arg cwd "$TASK/repository" --arg sid "$slash_sid" '{cwd:$cwd,session_id:$sid,source:"startup",hook_event_name:"SessionStart"}')
+  printf '%s' "$slash_payload" | "$plugin/hooks/session-start.sh" >/dev/null
+  leftover_escape=$(find "$TASK" -iname "*escape-$host*" 2>/dev/null)
+  [ -z "$leftover_escape" ]
+
+  # AC-9 / AC-10 fixture: a dedicated, otherwise-empty repo so recall
+  # injection and Stop enforcement see exactly one relevant memory.
+  rebase_repo="$TASK/rebase-$host"
+  mkdir -p "$rebase_repo"
+  git init -q "$rebase_repo"
+  (cd "$rebase_repo" && "$wrapper" save "Rebase on main before push" 'Fetch and rebase origin/main before every push or PR.' --kind convention --json) > "$TASK/rebase-$host.json"
+  rebase_id=$(jq -r '.id' "$TASK/rebase-$host.json")
+  [ -n "$rebase_id" ] && [ "$rebase_id" != null ]
+  rebase_key=$(basename "$rebase_repo")
+
+  # AC-9: recall injection on UserPromptSubmit names the memory; skip list and
+  # a missing comemory both stay silent; the injected find is never tracked.
+  queries_before=$(comemory recall-status --repo "$rebase_key" --json | jq -r '.queries')
+  push_payload=$(jq -nc --arg cwd "$rebase_repo" --arg prompt "how do I push this branch safely" \
+    '{cwd:$cwd,hook_event_name:"UserPromptSubmit",prompt:$prompt}')
+  push_out=$(printf '%s' "$push_payload" | "$plugin/hooks/memory-lifecycle.sh")
+  jq -e --arg id "$rebase_id" '.hookSpecificOutput.additionalContext | contains($id)' <<<"$push_out" >/dev/null
+  jq -e '.hookSpecificOutput.additionalContext | contains("Rebase on main before push")' <<<"$push_out" >/dev/null
+  ok_payload=$(jq -nc --arg cwd "$rebase_repo" '{cwd:$cwd,hook_event_name:"UserPromptSubmit",prompt:"ok"}')
+  ok_out=$(printf '%s' "$ok_payload" | "$plugin/hooks/memory-lifecycle.sh")
+  [ -z "$ok_out" ]
+  noc_push_out=$(printf '%s' "$push_payload" | env PATH=/usr/bin:/bin "$plugin/hooks/memory-lifecycle.sh")
+  [ -z "$noc_push_out" ]
+  queries_after=$(comemory recall-status --repo "$rebase_key" --json | jq -r '.queries')
+  [ "$queries_before" = "$queries_after" ]
+
+  # Project-level `.claude/comemory.json` / `.codex/comemory.json` overrides
+  # the user-level file: recall.inject true at user scope but false at the
+  # repo's project config means no injection, even though $rebase_repo has a
+  # matching saved memory that a working injection would otherwise surface.
+  printf '%s\n' '{"recall":{"inject":true}}' > "$cfg/comemory.json"
+  mkdir -p "$rebase_repo/.claude" "$rebase_repo/.codex"
+  printf '%s\n' '{"recall":{"inject":false}}' > "$rebase_repo/.claude/comemory.json"
+  printf '%s\n' '{"recall":{"inject":false}}' > "$rebase_repo/.codex/comemory.json"
+  override_payload=$(jq -nc --arg cwd "$rebase_repo" --arg prompt "how do I push this branch safely" \
+    '{cwd:$cwd,hook_event_name:"UserPromptSubmit",prompt:$prompt}')
+  override_out=$(printf '%s' "$override_payload" | "$plugin/hooks/memory-lifecycle.sh")
+  jq -e '.hookSpecificOutput.additionalContext | startswith("Recall relevant repo knowledge with")' <<<"$override_out" >/dev/null
+  jq -e '.hookSpecificOutput.additionalContext | contains("Recall hint") | not' <<<"$override_out" >/dev/null
+  rm -rf "$rebase_repo/.claude" "$rebase_repo/.codex"
+  rm -f "$cfg/comemory.json"
+
+  # recall.injectMinChars floor: a short, non-skip-list prompt gets no
+  # injection attempt at all (just the plain reminder), even against a repo
+  # with a matching saved memory.
+  short_payload=$(jq -nc --arg cwd "$rebase_repo" --arg prompt "why is this slow" \
+    '{cwd:$cwd,hook_event_name:"UserPromptSubmit",prompt:$prompt}')
+  short_out=$(printf '%s' "$short_payload" | "$plugin/hooks/memory-lifecycle.sh")
+  jq -e '.hookSpecificOutput.additionalContext | startswith("Recall relevant repo knowledge with")' <<<"$short_out" >/dev/null
+  jq -e '.hookSpecificOutput.additionalContext | contains("Recall hint") | not' <<<"$short_out" >/dev/null
+
+  # AC-10: Stop-time recall enforcement. A session with one tracked, unjudged
+  # recall blocks once and stays silent after; stop_hook_active suppresses
+  # it; a recorded verdict suppresses it; recall.enforce:false suppresses it.
+  stop_a="stop-a-$host"
+  start_a_payload=$(jq -nc --arg cwd "$rebase_repo" --arg sid "$stop_a" '{cwd:$cwd,session_id:$sid,source:"startup",hook_event_name:"SessionStart"}')
+  printf '%s' "$start_a_payload" | "$plugin/hooks/session-start.sh" >/dev/null
+  [ -f "$cfg/comemory/session-$stop_a.start" ]
+  (cd "$rebase_repo" && "$wrapper" search rebase --json) > "$TASK/stop-search-$host.json"
+  stop_qid=$(jq -r '.query_id' "$TASK/stop-search-$host.json")
+  [ -n "$stop_qid" ] && [ "$stop_qid" != null ]
+  stop_a_payload=$(jq -nc --arg cwd "$rebase_repo" --arg sid "$stop_a" '{cwd:$cwd,session_id:$sid,stop_hook_active:false,hook_event_name:"Stop"}')
+  stop_a_out=$(printf '%s' "$stop_a_payload" | "$plugin/hooks/memory-lifecycle.sh")
+  jq -e '.decision == "block"' <<<"$stop_a_out" >/dev/null
+  jq -e --arg id "$stop_qid" '.reason | contains($id)' <<<"$stop_a_out" >/dev/null
+  stop_a_out2=$(printf '%s' "$stop_a_payload" | "$plugin/hooks/memory-lifecycle.sh")
+  [ -z "$stop_a_out2" ]
+
+  stop_b="stop-b-$host"
+  stop_b_payload=$(jq -nc --arg cwd "$rebase_repo" --arg sid "$stop_b" '{cwd:$cwd,session_id:$sid,stop_hook_active:true,hook_event_name:"Stop"}')
+  stop_b_out=$(printf '%s' "$stop_b_payload" | "$plugin/hooks/memory-lifecycle.sh")
+  [ -z "$stop_b_out" ]
+
+  stop_c="stop-c-$host"
+  start_c_payload=$(jq -nc --arg cwd "$rebase_repo" --arg sid "$stop_c" '{cwd:$cwd,session_id:$sid,source:"startup",hook_event_name:"SessionStart"}')
+  printf '%s' "$start_c_payload" | "$plugin/hooks/session-start.sh" >/dev/null
+  qid_c=$(cd "$rebase_repo" && "$wrapper" search rebase --json | jq -r '.query_id')
+  [ -n "$qid_c" ] && [ "$qid_c" != null ]
+  comemory feedback "$qid_c" --used "$rebase_id" --json >/dev/null
+  stop_c_payload=$(jq -nc --arg cwd "$rebase_repo" --arg sid "$stop_c" '{cwd:$cwd,session_id:$sid,stop_hook_active:false,hook_event_name:"Stop"}')
+  stop_c_out=$(printf '%s' "$stop_c_payload" | "$plugin/hooks/memory-lifecycle.sh")
+  [ -z "$stop_c_out" ]
+
+  stop_d="stop-d-$host"
+  start_d_payload=$(jq -nc --arg cwd "$rebase_repo" --arg sid "$stop_d" '{cwd:$cwd,session_id:$sid,source:"startup",hook_event_name:"SessionStart"}')
+  printf '%s' "$start_d_payload" | "$plugin/hooks/session-start.sh" >/dev/null
+  (cd "$rebase_repo" && "$wrapper" search rebase --json) >/dev/null
+  printf '%s\n' '{"recall":{"enforce":false}}' > "$cfg/comemory.json"
+  stop_d_payload=$(jq -nc --arg cwd "$rebase_repo" --arg sid "$stop_d" '{cwd:$cwd,session_id:$sid,stop_hook_active:false,hook_event_name:"Stop"}')
+  stop_d_out=$(printf '%s' "$stop_d_payload" | "$plugin/hooks/memory-lifecycle.sh")
+  [ -z "$stop_d_out" ]
+  rm -f "$cfg/comemory.json"
+
+  # AC-13: the shipped skills carry the tool catalog and the required
+  # headings. Anchored on the backtick-quoted form the SKILL.md actually uses
+  # (e.g. `` `find` ``) rather than a bare substring — "find" alone would
+  # also match ordinary prose ("...find the memory...") and pass even if the
+  # tool catalog entry were dropped.
+  installed_agent_skill="$plugin/skills/agent-memory/SKILL.md"
+  for tool in find search search_code context show list edges repos recall_status save feedback; do
+    grep -qF -- "\`$tool\`" "$installed_agent_skill" \
+      || { printf 'agent-memory SKILL.md missing backtick-quoted tool name: %s\n' "$tool" >&2; exit 1; }
+  done
+  grep -qF 'comemory.sh' "$installed_agent_skill"
+  installed_bootstrap_skill="$plugin/skills/memory-bootstrap/SKILL.md"
+  [ -f "$installed_bootstrap_skill" ]
+  for heading in '## When to Use' '## Procedure' '## Pitfalls' '## Verification'; do
+    grep -qF -- "$heading" "$installed_bootstrap_skill" \
+      || { printf 'memory-bootstrap SKILL.md missing heading: %s\n' "$heading" >&2; exit 1; }
+  done
+
   printf 'agent-install: %s native install/upgrade, SessionStart, worktree recall, scope denial passed\n' "$host"
+  printf 'agent-install: %s SessionEnd capture, bootstrap nudge, recall injection, and Stop enforcement passed\n' "$host"
+done
+
+# AC-7: `.mcp.json` names this test binary's canonical path (`$BIN` above is
+# itself a symlink into the real target/debug binary) and the `mcp`
+# subcommand, for every host already installed above; `--dry-run` into a
+# fresh config dir reports the path but writes nothing.
+canonical_bin="$(python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$BIN")"
+for host in claude codex; do
+  plugin="$(jq -r .bundle "$TASK/install-$host.json")/plugins/comemory"
+  jq -e --arg bin "$canonical_bin" \
+    '.mcpServers.comemory.command == $bin and .mcpServers.comemory.args == ["mcp"]' \
+    "$plugin/.mcp.json" >/dev/null
+  dry_run_data="$TASK/$host data-dry-run"
+  dry_run_cfg="$TASK/$host config-dry-run"
+  "$BIN" install "$host" --data-dir "$dry_run_data" --config-dir "$dry_run_cfg" --dry-run --json > "$TASK/install-$host-dry-run.json"
+  dry_run_manifest="$(jq -r .mcp_manifest "$TASK/install-$host-dry-run.json")"
+  [ ! -e "$dry_run_manifest" ]
+  printf 'agent-install: %s .mcp.json manifest command/args verified, dry-run wrote none\n' "$host"
 done

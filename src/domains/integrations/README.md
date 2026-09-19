@@ -23,7 +23,7 @@ One line per file, named after its primary item:
 
 | File | Primary item | Purpose |
 | --- | --- | --- |
-| `install.rs` | `Request` | Shared middle of `comemory install` — validate the host, resolve its configuration directory, extract the embedded bundle and register it with the host's native plugin manager. Connection-free: [`run`](install::run) never calls `Ctx::conn`, so installing an integration never creates a database. Host names are validated strings, not clap enums. `install/` holds the embedded `bundle` |
+| `install.rs` | `Request` | Shared middle of `comemory install` — validate the host, resolve its configuration directory, extract the embedded bundle, write `<bundle>/plugins/comemory/.mcp.json` naming this binary, and register the plugin with the host's native plugin manager. Connection-free: [`run`](install::run) never calls `Ctx::conn`, so installing an integration never creates a database. Host names are validated strings, not clap enums. `install/` holds the embedded `bundle` |
 | `setup.rs` | `Request` | Shared middle of `comemory setup` — the stable `STEP_IDS`, the `StepState` machine, and the `run` that sequences detect → plan → apply. Conn-free until a step applies. `setup/` holds the three phases |
 
 The per-host `.installed-<host>` marker lives under

@@ -17,6 +17,31 @@ fn installation_preview_does_not_write_or_require_a_host() {
     assert!(!home.path().join("host").exists());
 }
 
+/// AC-7: a dry-run install reports where `.mcp.json` would land under the
+/// plugin root, without requiring the real `claude` CLI or writing anything.
+/// The real write (and the exact `command`/`args` it carries for the test
+/// binary) is exercised end to end by `scripts/test-agent-install.sh`, the
+/// only journey that has the host CLI to install against.
+#[test]
+fn install_writes_mcp_manifest() {
+    let home = tempfile::tempdir().unwrap();
+    let assert = Command::new(assert_cmd::cargo::cargo_bin!("comemory"))
+        .args(["install", "claude", "--dry-run", "--json", "--data-dir"])
+        .arg(home.path().join("data"))
+        .arg("--config-dir")
+        .arg(home.path().join("host"))
+        .assert()
+        .success();
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let manifest = report["mcp_manifest"].as_str().unwrap();
+    assert!(
+        manifest.ends_with("plugins/comemory/.mcp.json"),
+        "unexpected mcp_manifest path: {manifest}"
+    );
+    assert!(!std::path::Path::new(manifest).exists());
+}
+
 #[cfg(unix)]
 #[test]
 fn project_skill_lifecycle_uses_real_repository_paths() {

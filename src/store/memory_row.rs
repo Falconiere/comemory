@@ -8,6 +8,8 @@
 //! [`rusqlite::Transaction`]; callers own the surrounding `BEGIN`/`COMMIT`.
 //! Rows are written here, never derived: the graph links a body owes arrive
 //! as [`MemoryLinks`], resolved by [`crate::domains::memories::mirror`].
+//! [`count_created_since`] is the "saves" leg of
+//! `domains::learning::recall_status`'s window report.
 
 use rusqlite::Connection;
 use time::OffsetDateTime;
@@ -377,6 +379,25 @@ pub fn live_bodies(conn: &Connection) -> Result<Vec<(String, String)>> {
         .filter(memories::deleted_at.is_null())
         .order_by(memories::id.asc());
     orm::query_all(conn, query.to_sql(), |r| Ok((r.get(0)?, r.get(1)?)))
+}
+
+/// Count of live (`deleted_at IS NULL`) memories created at or after
+/// `since`, optionally scoped to `repo` — the "saves" leg of
+/// `domains::learning::recall_status`'s window report. Deliberately not a
+/// `stats_counts::Corpus` variant: that enum exists so no predicate crosses
+/// the store boundary, and `created_at >= since` is a caller-supplied
+/// window, not a fixed corpus. `since` must already be `iso_format`-shaped
+/// so the plain string `>=` compares chronologically; text `>=` is an
+/// unsupported toolu-orm 0.7.0 capability, so this stays hand SQL — see
+/// `docs/guides/runtime-orm.md`.
+pub fn count_created_since(conn: &Connection, repo: Option<&str>, since: &str) -> Result<u64> {
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM memories \
+          WHERE deleted_at IS NULL AND created_at >= ?1 AND (?2 IS NULL OR repo = ?2)",
+        rusqlite::params![since, repo],
+        |r| r.get(0),
+    )?;
+    Ok(count as u64)
 }
 
 #[cfg(test)]
