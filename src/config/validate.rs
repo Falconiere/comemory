@@ -51,7 +51,7 @@ fn check_decay(v: f64) -> std::result::Result<(), &'static str> {
 /// `rank.mmr_lambda` (and every `tune.mmr_lambda_grid` entry),
 /// `retrieval.memory_threshold`, `retrieval.code_threshold`, and
 /// `prune.min_feedback`.
-fn check_unit_interval(v: f64) -> std::result::Result<(), &'static str> {
+pub(super) fn check_unit_interval(v: f64) -> std::result::Result<(), &'static str> {
     if !v.is_finite() || !(0.0..=1.0).contains(&v) {
         return Err("must be a finite value in [0.0, 1.0]");
     }
@@ -134,11 +134,12 @@ impl Config {
         self.check_retrieval_weights()?;
         self.check_retrieval_knobs()?;
         self.check_rank_knobs()?;
-        self.check_prune_knobs()?;
+        self.prune.validate()?;
         self.check_tune_grids()?;
         self.check_reinforce_knobs()?;
         self.check_indexing_knobs()?;
         self.check_sync_knobs()?;
+        self.rerank.validate()?;
         self.observations.validate().map(|()| self)
     }
 
@@ -253,44 +254,6 @@ impl Config {
                 "invalid rank.near_dup_hamming={h} (env COMEMORY_RANK_NEAR_DUP_HAMMING): must be <= 64 (SimHash is 64-bit)"
             )));
         }
-        Ok(())
-    }
-
-    /// Prune scoring floors and the learning-telemetry retention window.
-    fn check_prune_knobs(&self) -> Result<()> {
-        let a = self.prune.min_activation;
-        if !a.is_finite() {
-            return Err(Error::Config(format!(
-                "invalid prune.min_activation={a} (env COMEMORY_PRUNE_MIN_ACTIVATION): must be a finite number"
-            )));
-        }
-        let f = self.prune.min_feedback;
-        check_knob(
-            "prune.min_feedback",
-            "COMEMORY_PRUNE_MIN_FEEDBACK",
-            f,
-            check_unit_interval(f),
-        )?;
-        let r = self.prune.learning_retention_days;
-        if r < 1 {
-            return Err(Error::Config(format!(
-                "invalid prune.learning_retention_days={r} (env COMEMORY_LEARNING_RETENTION_DAYS): must be >= 1"
-            )));
-        }
-        let trash_days = self.prune.trash_retention_days;
-        if trash_days < 1 {
-            return Err(Error::Config(format!(
-                "invalid prune.trash_retention_days={trash_days} (file-only [prune] key): must be >= 1"
-            )));
-        }
-        let q = self.prune.low_value_default_below_quality;
-        if !(1..=5).contains(&q) {
-            return Err(Error::Config(format!(
-                "invalid prune.low_value_default_below_quality={q} (env COMEMORY_PRUNE_BELOW_QUALITY): must be in 1..=5"
-            )));
-        }
-        // `prune.superseded_grace_days` has no range arm: any u32 is valid
-        // (0 disables the grace window).
         Ok(())
     }
 

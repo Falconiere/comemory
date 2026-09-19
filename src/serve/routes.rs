@@ -4,7 +4,10 @@
 //! assembly. Also owns the handler-layer helpers every resource reuses:
 //! [`run_blocking`] (run `domains::<capability>::<cmd>::run` — and the connection lock it
 //! takes — on a blocking-pool thread, never across an `.await`),
-//! [`query_response`] (borrow the shared context and envelope a query result),
+//! [`query_response`] (borrow the shared context and envelope a query result;
+//! [`staged::staged_query_response`] is its three-phase sibling for a core that
+//! may pause for out-of-process inference and must not hold the connection
+//! guard across it),
 //! [`respond`] (envelope the result), and [`guard_mutating`] (the
 //! read-only/write-permit gate every mutating route calls first).
 
@@ -47,6 +50,8 @@ pub mod meta;
 pub mod repos;
 /// `GET /sources`.
 pub mod sources;
+/// Run a command core that may pause for out-of-process inference.
+pub mod staged;
 /// `GET /stats`.
 pub mod stats;
 

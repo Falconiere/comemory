@@ -27,6 +27,7 @@ use crate::domains::retrieval::explain::{self, ExplainPart};
 use crate::domains::retrieval::unified::fuse_domains::UnifiedHit;
 use crate::prelude::*;
 use crate::serve::AppState;
+use crate::serve::routes::staged::staged_query_response;
 use crate::serve::routes::{RouteEntry, guard_mutating, respond, run_blocking, track_for};
 use crate::serve::scope::RepoScope;
 use crate::utilities::context::Ctx;
@@ -193,22 +194,23 @@ async fn search_post(
 
 /// Shared handler body: adapt, run, reshape. Access tracking is suppressed
 /// on a read-only server exactly as it is for `find`.
+///
+/// Driven through [`staged_query_response`] so an enabled learned ordering
+/// stage runs with the shared connection guard released.
 async fn execute(state: AppState, req: ConsoleSearch) -> Response {
-    let started = Instant::now();
-    let result = run_blocking(move || {
+    let handler = state.clone();
+    staged_query_response(state, "search.console", move |ctx| {
         let explain_hits = req.explain;
+        let rrf_k = ctx.cfg.retrieval.rrf_k;
         let find = into_find(req)?;
-        let track = track_for(&state)?;
-        let cfg = state.cfg();
-        let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
+        let track = track_for(&handler)?;
         let run_started = Instant::now();
-        let out = retrieval::find::run(&mut ctx, find, track)?;
-        let took_ms = u64::try_from(run_started.elapsed().as_millis()).unwrap_or(u64::MAX);
-        Ok(body(&out, explain_hits, took_ms, cfg.retrieval.rrf_k))
+        retrieval::find::begin(ctx, find, track)?.map(move |out| {
+            let took_ms = u64::try_from(run_started.elapsed().as_millis()).unwrap_or(u64::MAX);
+            Ok(body(&out, explain_hits, took_ms, rrf_k))
+        })
     })
-    .await;
-    respond("search.console", result, started)
+    .await
 }
 
 /// Shape one finished run into the console's response `data`.
@@ -237,6 +239,7 @@ fn body(
         "offset": out.meta.offset,
         "has_more": out.meta.has_more,
         "total": out.meta.total,
+        "learned": out.learned,
     })
 }
 

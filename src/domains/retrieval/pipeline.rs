@@ -127,20 +127,58 @@ pub fn search(
     opts: SearchOptions,
 ) -> Result<SearchRun> {
     let started = std::time::Instant::now();
-    let window = opts.window;
-    let max_window = cfg.retrieval.max_page_window;
-    let pool = pool_size(window.offset, window.limit, max_window);
+    let pool = pool_size(
+        opts.window.offset,
+        opts.window.limit,
+        cfg.retrieval.max_page_window,
+    );
+    let ranked = rank(cfg, conn, query, vec, filters, pool)?;
+    Ok(complete(cfg, conn, query, filters, opts, ranked, started))
+}
+
+/// The deterministic ranking for a memory query: route → rerank → diversify,
+/// cut at `pool`.
+///
+/// The first half of [`search`], split out so a surface can insert the optional
+/// learned ordering stage between the ranking and the page
+/// (`retrieval::learned_rerank`). Diversification runs over the WHOLE pool (cut
+/// at `pool`, not `top_k`) so the full ranked window is materialized before
+/// anything slices it.
+pub fn rank(
+    cfg: &Config,
+    conn: &Connection,
+    query: &str,
+    vec: Option<&[f32]>,
+    filters: Filters<'_>,
+    pool: usize,
+) -> Result<Vec<Reranked>> {
     let candidates = router::route(cfg, conn, query, vec, filters, pool)?;
     let reranked = rerank::rerank(conn, cfg, &candidates, filters.scope.as_of_cutoff())?;
-    // Diversify over the WHOLE pool (cut at `pool`, not `top_k`) so the
-    // full ranked window is materialized before the page is sliced.
-    let ranked = diversify::diversify(
+    Ok(diversify::diversify(
         reranked,
         cfg.rank.near_dup_hamming,
         cfg.rank.mmr_lambda,
         pool,
-    );
-    let (page, has_more, total) = paginate(ranked, window, max_window);
+    ))
+}
+
+/// Slice a final memory ranking to `opts.window` and record best-effort
+/// telemetry. The second half of [`search`], and the last step of every
+/// memory-domain surface whether or not a learned stage reordered `ranked`.
+///
+/// `started` is the caller's, not this function's, so the logged duration
+/// covers the whole request — including any model call between [`rank`] and
+/// here.
+pub fn complete(
+    cfg: &Config,
+    conn: &Connection,
+    query: &str,
+    filters: Filters<'_>,
+    opts: SearchOptions,
+    ranked: Vec<Reranked>,
+    started: std::time::Instant,
+) -> SearchRun {
+    let (page, has_more, total) = paginate(ranked, opts.window, cfg.retrieval.max_page_window);
     let query_id = if opts.track {
         record_telemetry(
             conn,
@@ -154,12 +192,26 @@ pub fn search(
     } else {
         None
     };
-    Ok(SearchRun {
+    SearchRun {
         hits: page,
         query_id,
         has_more,
         total,
-    })
+    }
+}
+
+/// The candidate universe one run builds.
+///
+/// With a learned ordering stage active this is the configured maximum window,
+/// independent of the requested page: a neural scorer is not prefix-stable, so
+/// a page-proportional pool would let a deeper page rewrite a shallower one by
+/// admitting a candidate that scores above the current head. Without a stage it
+/// is [`pool_size`], unchanged.
+pub fn candidate_pool(cfg: &Config, window: PageWindow) -> usize {
+    if cfg.rerank.enabled {
+        return cfg.retrieval.max_page_window.max(1);
+    }
+    pool_size(window.offset, window.limit, cfg.retrieval.max_page_window)
 }
 
 /// Best-effort telemetry for one tracked run: bump access counts and

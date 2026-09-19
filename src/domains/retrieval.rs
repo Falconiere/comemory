@@ -18,7 +18,12 @@
 //! third stage: SimHash near-duplicate collapse followed by Jaccard-MMR
 //! greedy selection up to top-k. [`pipeline`][pi] chains all three stages
 //! (route → rerank → diversify → top-k) and bumps access tracking, and
-//! [`unified`][un] fuses the three legs for `comemory find`. The cores both
+//! [`unified`][un] fuses the three legs for `comemory find`.
+//! [`learned_rerank`][lr] is the optional fourth stage: when `[rerank]` is
+//! enabled it reorders a fixed leading prefix of the deterministic ranking
+//! through an out-of-process scorer, reporting itself through
+//! [`learned_report`][lrp] and pausing through [`staged`][st] so a shared
+//! connection lock is never held across inference. The cores both
 //! delivery adapters call are `search`, `search_code`, `context`, `find`,
 //! `suggest` and the console-only `config_retrieval`; clap flags, TTY
 //! colouring and HTTP status mapping stay in `cli` and `serve`.
@@ -30,6 +35,9 @@
 //! [di]: crate::domains::retrieval::diversify
 //! [dro]: crate::domains::retrieval::doc_route
 //! [fu]: crate::domains::retrieval::fuse
+//! [lr]: crate::domains::retrieval::learned_rerank
+//! [lrp]: crate::domains::retrieval::learned_report
+//! [st]: crate::domains::retrieval::staged
 //! [pi]: crate::domains::retrieval::pipeline
 //! [re]: crate::domains::retrieval::rerank
 //! [ro]: crate::domains::retrieval::router
@@ -66,6 +74,10 @@ pub mod explain;
 pub mod find;
 pub mod fuse;
 pub mod graph_route;
+/// What a learned ordering stage did to one requested search.
+pub mod learned_report;
+/// The one optional learned ordering stage every search surface shares.
+pub mod learned_rerank;
 pub mod pipeline;
 pub mod rerank;
 pub mod router;
@@ -79,6 +91,8 @@ pub mod search;
 pub mod search_code;
 /// The owned value `comemory search` produces.
 pub mod search_result;
+/// The pause point between a deterministic ranking and its learned order.
+pub mod staged;
 /// `GET /search/suggest`: mined expansions + recent queries.
 pub mod suggest;
 /// Unified retrieval across memory, code, and documents (`comemory find`).

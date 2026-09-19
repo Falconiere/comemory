@@ -34,7 +34,7 @@ pub fn observe(
         .iter()
         .enumerate()
         .map(|(index, hit)| {
-            let domain = domain_of(&hit.domain);
+            let domain = CandidateDomain::from_label(&hit.domain);
             let entry = facts.get(&(domain, hit.id.clone()));
             if !entry.is_some_and(|f| f.text_available) {
                 unavailable += 1;
@@ -80,17 +80,6 @@ fn returned_position(window: PageWindow, index: usize) -> Option<usize> {
     }
     let within = window.limit == 0 || index < window.offset.saturating_add(window.limit);
     within.then(|| index - window.offset + 1)
-}
-
-/// The candidate domain a fused hit's label names. `fuse_domains` emits only
-/// the three labels, so an unknown one falls back to memory rather than
-/// silently dropping the candidate out of the pool.
-fn domain_of(label: &str) -> CandidateDomain {
-    match label {
-        fuse_domains::DOMAIN_CODE => CandidateDomain::Code,
-        fuse_domains::DOMAIN_DOCUMENT => CandidateDomain::Document,
-        _ => CandidateDomain::Memory,
-    }
 }
 
 /// The identity a candidate gets when its row vanished before its facts could

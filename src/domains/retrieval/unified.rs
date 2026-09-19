@@ -10,13 +10,20 @@
 //!
 //! ## Pagination
 //!
-//! Every leg fetches a pool sized by the same [`pipeline::pool_size`] the
+//! Every leg fetches a pool sized by the same [`pipeline::candidate_pool`] the
 //! single-domain commands use, and [`pipeline::paginate`] is applied ONCE,
 //! to the fused list. `total` is the fused in-window count — not a sum of
-//! per-domain totals. The legs must share one `pool_size` call rather than
+//! per-domain totals. The legs must share one pool-size call rather than
 //! each sizing its own: RRF is prefix-stable, so growing every leg by the
 //! same rule appends tail candidates without reordering the head, and
-//! divergent pools would let a deeper page reorder a shallower one.
+//! divergent pools would let a deeper page reorder a shallower one. With a
+//! learned ordering stage enabled that shared rule becomes the whole configured
+//! window, because a neural scorer is not prefix-stable — see
+//! [`pipeline::candidate_pool`].
+//!
+//! No leg ever calls the learned stage. `comemory find` invokes it once, on the
+//! FUSED ranking, in `retrieval::find::begin`; suppression inside a leg is
+//! therefore structural rather than a flag.
 
 use crate::config::Config;
 use crate::domains::retrieval::pipeline;
@@ -82,7 +89,7 @@ pub struct LegRows {
     pub code: Vec<code_rerank::CodeReranked>,
     /// Document hits, in the leg's own BM25 order.
     pub documents: Vec<doc_route::DocHit>,
-    /// The one [`pipeline::pool_size`] every leg was fetched at.
+    /// The one [`pipeline::candidate_pool`] every leg was fetched at.
     pub pool: usize,
 }
 
@@ -103,7 +110,7 @@ pub fn run_legs(
     window: PageWindow,
 ) -> Result<LegRows> {
     let filters = query.filters;
-    let pool = pipeline::pool_size(window.offset, window.limit, cfg.retrieval.max_page_window);
+    let pool = pipeline::candidate_pool(cfg, window);
 
     // Every leg is gated HERE, uniformly. `memory_leg` and `route_documents`
     // also refuse their own excluded domain internally — `route_documents` is

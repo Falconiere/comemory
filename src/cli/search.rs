@@ -1,7 +1,7 @@
 //! `comemory search` — natural-language search over the v0.2 SQLite store.
 //!
 //! Resolves the data dir, opens `comemory.db`, parses any caller-supplied
-//! vector, then delegates to [`crate::domains::retrieval::pipeline::search`]
+//! vector, then delegates to [`crate::domains::retrieval::search::run`]
 //! (route → rerank → diversify → top-k, plus access tracking). When the
 //! caller does not supply a vector (`--vector` / `--vector-stdin`), the
 //! lexical FTS5 BM25 branch handles the candidate stage — no embedder is

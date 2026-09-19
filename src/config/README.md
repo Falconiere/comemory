@@ -34,6 +34,8 @@ One line per file, named after its primary item:
 | `learning.rs` | `TuneConfig` | Learning-loop sections: `[tune]` grids, `[reinforce]`, `[bandit]` |
 | `observations.rs` | `ObservationsConfig` | The `[observations]` section: opt-in, bounded candidate observation capture (`enabled`, `max_text_bytes`, `max_candidates`), its file overlay and its own invariants |
 | `patch.rs` | `patch_config_file` | The one read-patch-atomically-write primitive over `config.toml`, shared by `tune --apply`, the `hooks` reinforce toggle, and the console-api config routes |
+| `prune.rs` | `PruneConfig` | The `[prune]` section: scoring floors and retention windows for `comemory prune` / `gc`, its file overlay and its own invariants |
+| `rerank.rs` | `RerankConfig` | The `[rerank]` section: the opt-in learned ordering stage (`enabled`, `command`, `model`, `adapter`, `prefix`, `timeout_ms`, `max_candidate_text_bytes`). File-only, like `[tune]` |
 | `paths.rs` | `Paths` | Data-directory layout resolution (`resolve_data_dir` plus every derived path, including `auth_file`) |
 | `retrieval.rs` | `RetrievalConfig` | The `[retrieval]` section and its file overlay |
 | `sync.rs` | `SyncConfig` | The `[sync]` section — the inline push (`push_on_save`, `push_on_save_timeout`), the opt-in daemon's intervals, `skip_repos`, and `code_index` (the code-index push, on by default) |

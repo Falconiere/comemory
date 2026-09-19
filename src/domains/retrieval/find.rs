@@ -7,15 +7,21 @@
 //! `find` orders identically to the matching dedicated command — see
 //! `retrieval::unified` for why.
 
+use std::time::Instant;
+
 use serde::Deserialize;
+use time::OffsetDateTime;
 
 use crate::config::Config;
 use crate::domains::learning::evaluation::candidate_facts::{self, FactsByHit};
 use crate::domains::learning::observation_capture::{self, CaptureInput};
 use crate::domains::memories::Kind;
+use crate::domains::retrieval::learned_report::LearnedOrdering;
+use crate::domains::retrieval::learned_rerank::{self, LearnedStage};
 use crate::domains::retrieval::pipeline;
-use crate::domains::retrieval::scope::{self, Domain, Domains, Filters};
-use crate::domains::retrieval::unified::{self, fuse_domains::UnifiedHit};
+use crate::domains::retrieval::scope::{self, Domain, Domains, Filters, TimeScope};
+use crate::domains::retrieval::staged::{FinishStep, Paused, Staged, resolve};
+use crate::domains::retrieval::unified::{self, LegRows, fuse_domains::UnifiedHit};
 use crate::prelude::*;
 use crate::store::Connection;
 use crate::utilities::context::Ctx;
@@ -80,6 +86,8 @@ pub struct FindResult {
     pub observation_id: Option<String>,
     /// Pagination cursor.
     pub meta: PageMeta,
+    /// What the optional learned ordering stage did, when one ran.
+    pub learned: Option<LearnedOrdering>,
 }
 
 /// Resolve `domain` into the leg selection. An unknown value is a usage
@@ -99,14 +107,22 @@ fn domains_of(domain: Option<&str>) -> Result<Domains> {
 /// Run the unified query. `track` governs the `retrieval_log` write, the
 /// per-domain access bumps, and — with `observations.enabled` — whether the
 /// candidate pool is captured, exactly as it does for `search`.
+pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<FindResult> {
+    let staged = begin(ctx, req, track)?;
+    resolve(ctx, staged)
+}
+
+/// [`run`], stopping at the learned ordering stage.
 ///
 /// The three published steps of `unified::find` are composed here rather than
 /// called through it, because capture needs each leg's rows *before*
-/// `fuse_legs` drops their passage text, and the fused pool *before*
-/// `paginate` cuts it to a page. Both capture calls are conditional; the
-/// retrieval path itself is not, so there is one ordering through `find` and
-/// not two.
-pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<FindResult> {
+/// `fuse_legs` drops their passage text, the learned stage needs the same rows
+/// for the same reason, and both need the fused pool *before* `paginate` cuts
+/// it to a page. The retrieval path itself is unconditional, so there is one
+/// ordering through `find` and not two.
+///
+/// The stage scores the FUSED ranking, once. No leg scores anything.
+pub fn begin(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<Staged<FindResult>> {
     let cfg = ctx.cfg;
     let scope = scope::scope_from_flags(
         req.since.as_deref(),
@@ -115,68 +131,168 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<FindResult> {
     )?;
     let window = page_window(cfg, req.k, req.offset);
     let domains = domains_of(req.domain.as_deref())?;
-    let kind = req.kind.map(Kind::as_str);
-    let filters = Filters {
-        repo: req.repo.as_deref(),
-        kind,
-        scope: &scope,
-        domains,
-    };
-    let domain_filters = unified::DomainFilters {
-        lang: req.lang.as_deref(),
-        path_globs: &req.path,
-    };
+    let stage = LearnedStage::from_config(cfg);
+    // Capture and a learned ordering stage are mutually exclusive: #208 fixes
+    // `pool_position` as the order retrieval produced BEFORE any arm reordered
+    // it, and recording a pool the model already reordered would feed its own
+    // output back into the training set it is trained from. The suppression is
+    // announced rather than silent, once per run.
+    let armed = observation_capture::armed(cfg, track);
+    let capturing = armed && stage.is_none();
+    if armed && stage.is_some() {
+        tracing::warn!(
+            "candidate observation capture is suppressed while [rerank] is enabled; \
+             disable reranking to collect training data"
+        );
+    }
+    let started = Instant::now();
+    let conn: &Connection = ctx.conn()?;
     let query = unified::UnifiedQuery {
         text: &req.query,
         vector: req.vector.as_deref(),
-        filters,
-        domain_filters,
+        filters: filters_of(&req, &scope, domains),
+        domain_filters: unified::DomainFilters {
+            lang: req.lang.as_deref(),
+            path_globs: &req.path,
+        },
     };
-    let capturing = observation_capture::armed(cfg, track);
-    let conn: &Connection = ctx.conn()?;
-    let started = std::time::Instant::now();
     let legs = unified::run_legs(cfg, conn, query, window)?;
     let pool_size = legs.pool;
     // Read while identity is still known: `fuse_legs` flattens the legs and
     // drops the passage text and the version anchors. A failure here costs the
-    // observation, never the search.
-    let facts = capturing
-        .then(|| candidate_facts::collect(conn, &legs, cfg.observations.max_text_bytes))
-        .transpose()
-        .unwrap_or_else(|e| {
-            tracing::warn!(error = %e, "candidate text unavailable; capture skipped");
-            None
-        });
+    // observation or the learned ordering, never the search.
+    let facts = leg_facts(cfg, conn, &legs, capturing, stage.as_ref());
     let ranked = unified::fuse_legs(cfg, conn, legs)?;
+    let call = stage.as_ref().zip(facts.as_ref()).and_then(|(s, f)| {
+        let keys = learned_rerank::unified_keys(&ranked);
+        s.plan(&req.query, &keys, f, OffsetDateTime::now_utc())
+    });
+    let carry = FindRun {
+        req,
+        scope,
+        domains,
+        window,
+        started,
+        track,
+        pool_size,
+        facts: capturing.then_some(facts).flatten(),
+    };
+    let Some(call) = call else {
+        return Ok(Staged::Ready(finish(ctx, carry, ranked, None)?));
+    };
+    let plan = call.plan();
+    Ok(Staged::Paused(Paused::new(
+        call,
+        FinishStep::new(move |ctx, outcome| {
+            let (ranked, learned) = learned_rerank::apply(ranked, &plan, &outcome);
+            finish(ctx, carry, ranked, Some(learned))
+        }),
+    )))
+}
+
+/// The shared filters this request narrows every leg by. Rebuilt rather than
+/// carried, because `Filters` borrows its `TimeScope`.
+fn filters_of<'a>(req: &'a Request, scope: &'a TimeScope, domains: Domains) -> Filters<'a> {
+    Filters {
+        repo: req.repo.as_deref(),
+        kind: req.kind.map(Kind::as_str),
+        scope,
+        domains,
+    }
+}
+
+/// Identity, content version and bounded text for every candidate, at whichever
+/// bound the one consumer of this run declared — capture's or the stage's, never
+/// both, because the two are mutually exclusive.
+///
+/// `None` when nobody needs them, and `None` with a warning when the read fails:
+/// an optional consumer must never fail a search.
+fn leg_facts(
+    cfg: &Config,
+    conn: &Connection,
+    legs: &LegRows,
+    capturing: bool,
+    stage: Option<&LearnedStage>,
+) -> Option<FactsByHit> {
+    let bound = match (capturing, stage) {
+        (true, _) => cfg.observations.max_text_bytes,
+        (false, Some(s)) => s.text_bytes(),
+        (false, None) => return None,
+    };
+    candidate_facts::collect(conn, legs, bound)
+        .map_err(|e| tracing::warn!(error = %e, "candidate text unavailable; capture and learned reranking skipped"))
+        .ok()
+}
+
+/// The request-scoped values phase three needs, bundled so [`finish`] stays
+/// inside `clippy::too_many_arguments`' ceiling.
+struct FindRun {
+    /// The request, owned: borrowed filters cannot cross the pause.
+    req: Request,
+    /// The run's time scope, owned for the same reason.
+    scope: TimeScope,
+    /// The legs that were in scope.
+    domains: Domains,
+    /// The page the fused ranking is sliced at.
+    window: PageWindow,
+    /// When the whole request started, so the logged duration covers inference.
+    started: Instant,
+    /// Whether telemetry may be written.
+    track: bool,
+    /// The shared pool size every leg was fetched at.
+    pool_size: usize,
+    /// Capture's facts, present only when capture is armed.
+    facts: Option<FactsByHit>,
+}
+
+/// Slice the page, record telemetry, and capture the pool when armed.
+fn finish(
+    ctx: &mut Ctx<'_>,
+    carry: FindRun,
+    ranked: Vec<UnifiedHit>,
+    learned: Option<LearnedOrdering>,
+) -> Result<FindResult> {
+    let cfg = ctx.cfg;
+    let conn: &Connection = ctx.conn()?;
+    let filters = filters_of(&carry.req, &carry.scope, carry.domains);
     // Pagination consumes the ranking and hands back only the page, while an
     // observation records the whole pool. The clone is paid only when capture
     // is armed, so an ordinary search allocates exactly what it did before.
-    let pooled = facts.is_some().then(|| ranked.clone());
-    let (hits, has_more, total) = pipeline::paginate(ranked, window, cfg.retrieval.max_page_window);
-    let query_id = if track {
-        track_run(conn, &req.query, &hits, filters, window, started)
+    let pooled = carry.facts.is_some().then(|| ranked.clone());
+    let (hits, has_more, total) =
+        pipeline::paginate(ranked, carry.window, cfg.retrieval.max_page_window);
+    let query_id = if carry.track {
+        track_run(
+            conn,
+            &carry.req.query,
+            &hits,
+            filters,
+            carry.window,
+            carry.started,
+        )
     } else {
         None
     };
-    let observation_id = match (pooled.as_deref(), facts.as_ref()) {
+    let observation_id = match (pooled.as_deref(), carry.facts.as_ref()) {
         (Some(pool), Some(facts)) => {
             let captured = Captured {
                 pool,
                 facts,
-                pool_size,
-                window,
+                pool_size: carry.pool_size,
+                window: carry.window,
                 query_id: query_id.as_deref(),
             };
-            capture_pool(cfg, conn, &req, filters, domain_filters, captured)
+            capture_pool(cfg, conn, &carry.req, filters, captured)
         }
         _ => None,
     };
-    let meta = page_meta(window, has_more, total);
+    let meta = page_meta(carry.window, has_more, total);
     Ok(FindResult {
         hits,
         query_id,
         observation_id,
         meta,
+        learned,
     })
 }
 
@@ -203,7 +319,6 @@ fn capture_pool(
     conn: &Connection,
     req: &Request,
     filters: Filters<'_>,
-    domain_filters: unified::DomainFilters<'_>,
     captured: Captured<'_>,
 ) -> Option<String> {
     observation_capture::record(
@@ -216,7 +331,10 @@ fn capture_pool(
             filters: observation_capture::find_filters(
                 cfg,
                 filters,
-                domain_filters,
+                unified::DomainFilters {
+                    lang: req.lang.as_deref(),
+                    path_globs: &req.path,
+                },
                 req.vector.as_deref(),
             ),
             window: captured.window,
@@ -242,7 +360,7 @@ fn track_run(
     hits: &[UnifiedHit],
     filters: Filters<'_>,
     window: PageWindow,
-    started: std::time::Instant,
+    started: Instant,
 ) -> Option<String> {
     let memory_ids: Vec<String> = hits
         .iter()

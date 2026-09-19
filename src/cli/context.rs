@@ -1,6 +1,6 @@
 //! `comemory context` — headline lookup over the v0.2 SQLite store.
 //!
-//! Runs the query through [`crate::domains::retrieval::pipeline::search`] (the same
+//! Runs the query through [`crate::domains::retrieval::context::run`] (the same
 //! route → rerank → diversify path as `comemory search`) to surface
 //! relevant memory ids, then assembles a [`crate::domains::retrieval::bundle`] that
 //! pulls each memory's body and any cross-link edges

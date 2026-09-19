@@ -14,7 +14,10 @@ takes the connection mutex entirely inside one `spawn_blocking` closure, never
 across an `.await`), `query_response` (borrows the shared command context on
 that blocking thread and envelopes the query result),
 `respond`/`accepted`, `guard_mutating`, `guard_job`, `require_confirm`, and
-`track_for`.
+`track_for`. `staged.rs` is `query_response`'s three-phase sibling: the four
+search-shaped routes run their command core through it so an enabled learned
+ordering stage (#213) executes with the connection guard dropped, and an
+unrelated read is not blocked behind a model call.
 
 **What does NOT belong here:** command logic, which belongs to the capability
 that owns the command, and CLI presentation — no route file imports
@@ -40,6 +43,7 @@ One line per file, named after its primary item:
 | `meta.rs` | `table_entries` | `GET /completions` and `GET /commands` — the clap-introspected route/command inventory |
 | `repos.rs` | `table_entries` | `GET /repos` — the indexed code-repository inventory, with the registry's `indexing` overlay and the `archived` status; the mutating repo routes live in `repos_admin.rs` |
 | `sources.rs` | `table_entries` | `GET /sources`, job-backed `POST /sources`, and `DELETE /sources?target=&confirm=` / `DELETE /sources/{target}?confirm=` |
+| `staged.rs` | `staged_query_response` | Run a command core that may pause for out-of-process inference across three blocking phases, holding the shared connection guard for the first and the third only |
 | `stats.rs` | `table_entries` | `GET /stats` — corpus counters and database size |
 | `config.rs` | `table_entries` | `GET\|PUT /config/retrieval` — live ranking knobs; the `PUT` validates first and reloads `AppState.cfg` |
 | `graph_nodes.rs` | `table_entries` | `GET /graph/nodes`, `GET /graph/nodes/{id}`, `GET /graph/nodes/{id}/neighbors`, `GET /graph/nodes/{id}/source` (contained local file read), `GET /graph/snapshot`, job-backed `POST /graph/recompute` |

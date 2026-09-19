@@ -76,7 +76,11 @@ is the source of truth and one SQLite file (`comemory.db`) backs FTS5 +
   `sysexits.h`.
 - **No in-process LLM.** All ranking is deterministic (RRF fusion of FTS5 +
   `sqlite-vec`, a tiered lexical fallback ladder ending in mined learned
-  expansions, edge walks).
+  expansions, edge walks). Since #213 an operator may add ONE optional learned
+  ordering stage after that ranking, as an out-of-process child under a
+  deadline — `[rerank]`, off by default, launching nothing when off, and
+  falling back to the deterministic order on any failure. Still no model in
+  this process: see `docs/guides/learned-reranking.md`.
 
 Migration 19 adds graph/history/listing indexes and `memory_substring`. Its
 triggers maintain the substring index for every memory write; listing retains
@@ -245,6 +249,8 @@ narrative; the folder `README.md` is the authoritative file-by-file list.
 
 | Module | Responsibility |
 |--------|---------------|
+| `domains/retrieval/learned_rerank.rs` | The one optional learned ordering stage (#213). Built from `[rerank]`, invoked once per requested search at each of the four surfaces' `begin`, and never inside a retrieval leg — so a unified query cannot score twice. Materializes candidates through #209's `candidate_facts`, submits the leading `[rerank] prefix` over #211's wire protocol, and reorders that prefix while preserving the tail. Applied and refused share one code path, because `RerankOutcome::order_ids` yields the submitted order on a refusal |
+| `domains/retrieval/staged.rs` | The pause point between a deterministic ranking and its learned order. A command core returns `Staged::{Ready, Paused}`; a `Paused` borrows no connection, so `serve/routes/staged.rs` can drop the shared `Mutex<Connection>` guard for the duration of the model call and an unrelated read is never blocked behind inference. The CLI owns its connection and resolves both arms in place |
 | `cli/off_runtime.rs` | `off_runtime` — runs blocking platform I/O on a scoped thread. `main` is `#[tokio::main]`, so every subcommand body sits inside an async context, and `reqwest::blocking` panics on drop there (`Cannot drop a runtime in a context where blocking is not allowed`). `block_in_place` does not help — the runtime handle stays current, which is what reqwest objects to. Used by `cli::auth` and `cli::sync`; `serve` needs nothing (it already runs its command cores in `spawn_blocking`) |
 | `cli/watch.rs` | `comemory watch` — the only long-lived CLI command: mints a 60-second ticket, holds the platform's workspace channel open (`tokio-tungstenite`, async on the existing runtime), and runs the same cursored `run_pull` on every `hello`/`change` frame. Frames are nudges: nothing is read out of one except that it arrived, so a missed frame costs latency and a duplicate costs an empty pull. Reconnects with jittered backoff (1s → 30s) |
 | `cli/` | clap subcommand entry points + the top-level dispatcher in `cli.rs`, plus `output/` (the TTY/JSON writers, moved in from the top level by #178), `completion_script` (completion-script generation for both `comemory completions` and `GET /api/v1/completions` — the one sanctioned HTTP-to-CLI bridge: generating a completion script *is* clap work, so it stays beside the clap definition it reflects rather than being forced into a capability, and `serve::routes::meta` imports `cli::{Cli, completion_script}` for exactly that and the `GET /commands` inventory) and `pagination` (the flattened `--limit`/`--offset` clap struct). The shared date-flag layer moved to `utilities::when` with #166; `edges` is the fourth free-text surface (`comemory edges <query>` — lexical search over `edge_fts`, self-healing an empty index on first use); `graph` keeps only the clap surface and the `--format` renderers since #170 |
@@ -324,6 +330,16 @@ it is the on/off bit behind `comemory hooks --enable|--disable
 search-edit-reinforcement`. `COMEMORY_REINFORCE_SEARCH_EDIT_DAYS` still sets
 the lookback window, but a window cannot express "off" (it is validated
 `≥ 1`), which is why the flag is a separate boolean rather than a magic `0`.
+
+The `[rerank]` section is file-only for the same reason `[tune]` is: a command
+vector has no readable single-string env encoding, and the rest is machine
+configuration set once rather than per invocation. Its keys are `enabled`
+(default `false`), `command`, `model`, `adapter`, `prefix` (`50`), `timeout_ms`
+(`20000`) and `max_candidate_text_bytes` (`4096`); `prefix ×
+max_candidate_text_bytes` is validated against the 8 MiB scorer request ceiling.
+Capture (`[observations]`) and reranking are mutually exclusive at run time —
+#208 fixes `pool_position` as the order retrieval produced before any arm
+reordered it, so a captured pool must not already carry the model's output.
 
 The `[tune]` knobs are file-only — set them in `config.toml`; they have no
 env override. Six grids (`tune.rrf_k_grid`, `tune.decay_grid`,
