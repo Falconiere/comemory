@@ -125,9 +125,9 @@ fn the_read_only_refusal_round_trips_to_the_read_only_code_word() {
     // must be the same bytes.
     assert_eq!(body, tool_error_body(&result::read_only("save")));
     assert_eq!(
-        body["message"].as_str().map(|m| m.contains("save")),
-        Some(true),
-        "the message names the refused tool"
+        body["message"],
+        json!("server is read-only: refusing the mutating tool `save`"),
+        "the message is the exact refusal text, naming the tool"
     );
 }
 
@@ -146,8 +146,13 @@ fn repo_required_is_a_tool_level_error_naming_how_to_supply_a_scope() {
     let result = result::repo_required();
     let body = tool_error_body(&result);
     assert_eq!(body["code"], json!(REPO_REQUIRED_CODE));
-    let message = body["message"].as_str().expect("a message string");
-    assert!(message.contains("--repo"), "message: {message}");
+    assert_eq!(
+        body["message"],
+        json!(
+            "no repo scope: pass `repo`, or start the server with --repo or inside a git work tree"
+        ),
+        "the message is the exact refusal text, naming both ways to supply a scope"
+    );
 }
 
 /// A response type whose `Serialize` fails. The response types are ours, so
