@@ -469,7 +469,8 @@ The sidecar:
   "backend": ["python3", "…/comemory_rerank.py", "score", "--adapter", "…"],
   "report_sha256": "…",                    // the artifact these scores were produced from
   "corpus_digest": "…", "knobs_hash": "…", // copied from the artifact
-  "tasks": 12, "invocations": 12, "failures": 1, "fallback_rate": 0.0833,
+  "tasks": 12, "invocations": 12, "children_started": 11,
+  "failures": 1, "fallback_rate": 0.0833,
   "candidates_submitted": 337, "candidates_scored": 306, "ambiguous_refs": 0,
   "failure_reasons": [{ "task_id": "…", "kind": "non_zero_exit", "code": 65,
                         "stderr_excerpt": "…" }],

@@ -228,7 +228,12 @@ def _validate(torch, tokenizer, adapted, groups: list, loss_fn, device) -> dict:
         targets = torch.tensor([e.target for e in group], dtype=torch.float32)
         logits = torch.tensor(scores, dtype=torch.float32)
         losses.append(float(loss_fn(logits, targets)) * len(group))
-        if len(group) >= 2:
+        # Two or more candidates AND at least one of them graded above zero.
+        # A group of reviewed hard negatives has an ideal DCG of zero, so every
+        # ordering of it scores 0.0 — counting that as a rankable observation
+        # would dilute the selection metric with tasks that cannot express a
+        # preference.
+        if len(group) >= 2 and any(e.relevance > 0 for e in group):
             gains.append(_ndcg([e.relevance for e in group], scores, pins.SELECTION_K))
     rows = sum(len(group) for group in groups)
     return {

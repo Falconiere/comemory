@@ -22,6 +22,17 @@ import comemory_train_pins as pins
 
 STDERR_EXCERPT_BYTES = 2048
 
+# The response object's whole key set, mirroring the backend's own
+# `deny_unknown_fields` in both directions.
+RESPONSE_KEYS = (
+    "protocol_version",
+    "request_id",
+    "model",
+    "adapter",
+    "score_direction",
+    "scores",
+)
+
 def validate(request: dict, stdout: bytes, stderr: str) -> dict:
     """Refuse every response shape that would make this arm's scores a lie."""
     try:
@@ -30,6 +41,19 @@ def validate(request: dict, stdout: bytes, stderr: str) -> dict:
         return failure("invalid_response", None, "unparsable stdout: " + str(exc), stderr)
     if not isinstance(payload, dict):
         return failure("invalid_response", None, "response is not an object", stderr)
+    # Exactly the six documented keys, in both directions. The protocol says a
+    # response carries these and no others, so an omitted `adapter` must not be
+    # allowed to read as a matching `null` and an invented key must not pass
+    # unnoticed — an additive field is a version bump, not a silent extension.
+    found, wanted = set(payload), set(RESPONSE_KEYS)
+    if found != wanted:
+        return failure(
+            "invalid_response",
+            None,
+            "response keys " + ", ".join(sorted(found)) + "; expected "
+            + ", ".join(sorted(wanted)),
+            stderr,
+        )
     for key in ("request_id", "model", "adapter"):
         if payload.get(key) != request[key]:
             return failure(

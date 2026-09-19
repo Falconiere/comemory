@@ -56,6 +56,7 @@ def score(report_path: str, options: dict) -> tuple:
         "ambiguous": 0,
         "empty_pools": 0,
         "invocations": 0,
+        "waited": 0,
     }
     for task in tasks:
         _one_task(task, options, state)
@@ -78,6 +79,11 @@ def _one_task(task: dict, options: dict, state: dict) -> None:
     started = time.perf_counter()
     outcome = _invoke(options, request)
     state["latencies"].append((time.perf_counter() - started) * 1000.0)
+    # A child that started is a child `getrusage` has accounted for, whatever it
+    # then did; one that never started is not. Only the second kind leaves the
+    # peak-RSS reading with nothing behind it.
+    if outcome.get("failure", {}).get("kind") != "spawn_failed":
+        state["waited"] += 1
     if "failure" in outcome:
         failure = dict(outcome["failure"])
         failure["task_id"] = task_id
@@ -198,9 +204,10 @@ def _documents(report: dict, report_path: str, options: dict, state: dict) -> tu
         "candidates_scored": state["scored"],
         "ambiguous_refs": state["ambiguous"],
         "tasks_without_candidates": state["empty_pools"],
+        "children_started": state["waited"],
         "failure_reasons": state["failures"],
         "latency_ms": _latency(state["latencies"]),
-        "peak_child_rss": _peak_child_rss(state["invocations"]),
+        "peak_child_rss": _peak_child_rss(state["waited"]),
         "timeout_ms": options["timeout_ms"],
     }
     return scores, sidecar
@@ -233,20 +240,22 @@ def _latency(samples: list) -> dict:
     }
 
 
-def _peak_child_rss(invocations: int) -> dict:
+def _peak_child_rss(waited: int) -> dict:
     """Peak resident memory over every child, with its unit named.
 
     `getrusage` reports this field in bytes on macOS and in kilobytes on Linux.
     Recording the platform beside the number is the difference between a
     measurement and a number.
 
-    `RUSAGE_CHILDREN` only accumulates children that have been waited on, so a
-    run where every spawn failed would report a peak of zero. That is an absent
-    measurement, not a measured zero, and it is spelled `null`.
+    `RUSAGE_CHILDREN` only accumulates children that have been waited on, so the
+    count that decides whether there is anything to read is how many children
+    actually STARTED — not how many requests were attempted. A run where every
+    spawn failed reports a peak of zero, and a zero with no child behind it is an
+    absent measurement rather than a measured one. It is spelled `null`.
     """
     return {
         "value": (
-            resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss if invocations else None
+            resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss if waited else None
         ),
         "unit": "bytes" if sys.platform == "darwin" else "kilobytes",
         "platform": sys.platform,

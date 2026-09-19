@@ -123,10 +123,25 @@ class Recipe(unittest.TestCase):
         adapted.eval()
         with tempfile.TemporaryDirectory() as root:
             package = os.path.join(root, "lora-v1")
-            model.save(adapted, package)
-            response = self.score_through_backend(package)
+            files = model.save(adapted, package)
+            saved = {entry["path"]: entry["sha256"] for entry in files}
+            response, fingerprint = self.score_through_backend(package)
         self.assertEqual(response["adapter"], "lora-v1")
         self.assertEqual(response["model"], pins.MODEL_ID + "@" + pins.MODEL_REVISION)
+        # The echoed label alone proves only that the process was CONFIGURED for
+        # this adapter — the identity gate makes it exit 65 otherwise. The
+        # fingerprint proves it LOADED this package: the digests it reports are
+        # taken from the two files on disk, so they can only agree with the ones
+        # recorded at save time if the weights that scored are these weights.
+        self.assertEqual(
+            fingerprint["adapter_weights_sha256"], saved["adapter_model.safetensors"]
+        )
+        self.assertEqual(
+            fingerprint["adapter_config_sha256"], saved[pins.ADAPTER_CONFIG_FILE]
+        )
+        self.assertEqual(fingerprint["adapter_path"], package)
+        self.assertEqual(fingerprint["adapter_modules_to_save"], sorted(pins.MODULES_TO_SAVE))
+        self.assertTrue(fingerprint["scoring_is_neural"])
         self.assertEqual(len(response["scores"]), 2)
         self.assertEqual(response["score_direction"], pins.SCORE_DIRECTION)
         self.assertEqual(sorted(row["id"] for row in response["scores"]), ["1", "2"])
@@ -134,8 +149,13 @@ class Recipe(unittest.TestCase):
             self.assertIsInstance(row["score"], float)
             self.assertTrue(math.isfinite(row["score"]), row)
 
-    def score_through_backend(self, package: str) -> dict:
-        """One real request to the reference backend, over a real child process."""
+    def score_through_backend(self, package: str) -> tuple:
+        """One real request to the backend; returns its response and fingerprint.
+
+        `--verbose` makes the backend write the complete scoring identity to
+        stderr before it scores, which is the only channel that reports what was
+        actually loaded rather than what was asked for.
+        """
         request = {
             "protocol_version": pins.PROTOCOL_VERSION,
             "request_id": "rr-20260918-0000abcd",
@@ -156,6 +176,7 @@ class Recipe(unittest.TestCase):
                 "cross-encoder",
                 "--adapter",
                 package,
+                "--verbose",
             ],
             input=json.dumps(request).encode("utf-8"),
             stdout=subprocess.PIPE,
@@ -166,7 +187,18 @@ class Recipe(unittest.TestCase):
         self.assertEqual(
             done.returncode, 0, done.stderr.decode("utf-8", "replace")
         )
-        return json.loads(done.stdout.decode("utf-8"))
+        return (
+            json.loads(done.stdout.decode("utf-8")),
+            self.fingerprint_of(done.stderr.decode("utf-8", "replace")),
+        )
+
+    def fingerprint_of(self, stderr: str) -> dict:
+        """The one `comemory-rerank: fingerprint {...}` line the backend wrote."""
+        marker = "fingerprint "
+        for line in stderr.splitlines():
+            if marker in line:
+                return json.loads(line.split(marker, 1)[1])
+        raise AssertionError("no fingerprint line on stderr:\n" + stderr)
 
 
 if __name__ == "__main__":

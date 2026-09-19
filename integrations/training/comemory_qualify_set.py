@@ -44,6 +44,7 @@ def build(directory: str, options: dict) -> tuple:
         "dropped_provenance": 0,
         "dropped_vector_scenario": 0,
         "dropped_domain_scope": 0,
+        "dropped_judgment_outside_scope": 0,
         "dropped_contradictory_target": 0,
         "truncated_source_pools": 0,
     }
@@ -164,7 +165,13 @@ def _task(observation_id: str, rows: list, counters: dict, options: dict) -> dic
         counters["dropped_unjudged"] += 1
         return None
     if any(j["target"]["domain"] not in _legs(scope) for j in judgments):
-        counters["dropped_domain_scope"] += 1
+        # A reviewed verdict about a corpus the run was not scoped to is a data
+        # integrity problem, not an unexpressible filter, so it is counted apart
+        # from the scope drops above. The benchmark set would refuse the task
+        # anyway — a judgment that can never match is a load error there — so
+        # the choice is between dropping it here with a name and failing the
+        # whole file later without one.
+        counters["dropped_judgment_outside_scope"] += 1
         return None
     task = {
         "id": observation_id,
