@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.38.0] - 2026-09-19
+
+### Added
+
+- export reviewed relevance datasets with grouped splits ([#210](https://github.com/Falconiere/comemory/pull/210)) ([#225](https://github.com/Falconiere/comemory/pull/225))
+- optional learned reranking across every search surface ([#226](https://github.com/Falconiere/comemory/pull/226))
+
 ## [0.37.0] - 2026-09-18
 
 ### Added
