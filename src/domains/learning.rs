@@ -44,6 +44,9 @@ pub mod learning_proposals;
 pub mod mine;
 /// Opt-in, bounded capture of a real query's candidate pool.
 pub mod observation_capture;
+/// `comemory recall-status`: tracked queries, verdicts, saves and pending
+/// recalls for a repo + lower time bound.
+pub mod recall_status;
 /// The shared `comemory.db` connection handle the feedback writers borrow.
 pub mod telemetry;
 /// `comemory tune`: grid-search the blend knobs, confirm, apply.

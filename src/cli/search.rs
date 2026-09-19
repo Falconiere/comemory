@@ -11,9 +11,9 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
+use crate::cli::load_config;
 use crate::cli::output;
 use crate::cli::search_only::{self, OnlyDomain};
-use crate::cli::{load_config, track_searches};
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::domains::memories::Kind;
 use crate::domains::retrieval;
@@ -183,6 +183,10 @@ async fn run_memory(
         as_of: a.as_of.clone(),
     };
     let mut ctx = Ctx::borrowed(paths, cfg, conn);
-    let result = retrieval::search::run(&mut ctx, req, track_searches()?)?;
+    let result = retrieval::search::run(
+        &mut ctx,
+        req,
+        crate::config::env::access_tracking_enabled()?,
+    )?;
     output::search::emit(&result, json_flag, paths.data_dir())
 }

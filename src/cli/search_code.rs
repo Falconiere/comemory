@@ -26,7 +26,7 @@ use std::path::PathBuf;
 use clap::Args as ClapArgs;
 
 use crate::cli::output;
-use crate::cli::{lazy_reindex, load_config, track_searches};
+use crate::cli::{lazy_reindex, load_config};
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::domains::retrieval;
 use crate::prelude::*;
@@ -128,7 +128,11 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         vector,
     };
     let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-    let result = retrieval::search_code::run(&mut ctx, req, track_searches()?)?;
+    let result = retrieval::search_code::run(
+        &mut ctx,
+        req,
+        crate::config::env::access_tracking_enabled()?,
+    )?;
     output::search_code::emit(
         &result.hits,
         result.query_id.as_deref(),

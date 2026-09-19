@@ -3,9 +3,9 @@
 Status: documented baseline, tracked by a count ratchet against a **pinned**
 `similarity-rs` · Owner: whoever burns a pair down next
 
-**235 near-duplicate function/method pairs at threshold 0.85**, measured with
-**`similarity-rs 0.5.0`** over the 414 production `.rs` files under `src/`, with
-pairs found in 95 of them. That number and the tool that produced it are
+**263 near-duplicate function/method pairs at threshold 0.85**, measured with
+**`similarity-rs 0.5.0`** over the 452 production `.rs` files under `src/`, with
+pairs found in 96 of them. That number and the tool that produced it are
 recorded together, here and in `dup-baseline.txt`, because either one alone is
 meaningless.
 
@@ -533,6 +533,51 @@ fresh and does not depend on these line numbers.
 | Pair A | Pair B | Similarity | Remaining distinction |
 | --- | --- | --- | --- |
 | `src/domains/retrieval/unified/fuse_domains.rs:213-226` function `code_hit` | `src/domains/retrieval/unified/fuse_domains.rs:229-248` function `doc_hit` | 89.78% | parallel per-domain fusion arms |
+
+### `src/mcp/`
+
+The nine read tools are one `#[tool_router]` block, and rmcp 3.4 forces the
+shape the detector scores: every tool must be a real method carrying
+`#[tool(description = "<literal>")]` with the same
+`(&self, Parameters<T>) -> Result<CallToolResult, ErrorData>` signature, and
+`#[tool_router]` registers nothing that a `macro_rules!` would generate (memory
+`rmcp-3-4-macro-constraints`). Each body is one `read_tool(self, move |c, s| { … })`
+call whose closure already differs per tool (core module, `track()` handling,
+envelope builder); the `*_data` helpers and the `run_read`/`run_write` pair were
+folded away first, which is what the count below excludes. These 28 pairs are the
+signature-and-attribute skeleton, not shared logic; the baseline moved from 235
+to 263 in the change that added the adapter (the MCP transport PR).
+
+| Pair A | Pair B | Similarity | Remaining distinction |
+| --- | --- | --- | --- |
+| `src/mcp/tools_read.rs:40-57` method `find` | `src/mcp/tools_read.rs:66-84` method `search` | 93.41% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
+| `src/mcp/tools_read.rs:66-84` method `search` | `src/mcp/tools_read.rs:114-130` method `context` | 93.41% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
+| `src/mcp/tools_read.rs:40-57` method `find` | `src/mcp/tools_read.rs:114-130` method `context` | 93.26% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
+| `src/mcp/tools_read.rs:66-84` method `search` | `src/mcp/tools_read.rs:93-105` method `search_code` | 95.91% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
+| `src/mcp/tools_read.rs:66-84` method `search` | `src/mcp/tools_read.rs:171-183` method `edges` | 89.72% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
+| `src/mcp/tools_read.rs:40-57` method `find` | `src/mcp/tools_read.rs:93-105` method `search_code` | 91.60% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
+| `src/mcp/tools_read.rs:40-57` method `find` | `src/mcp/tools_read.rs:171-183` method `edges` | 89.54% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
+| `src/mcp/tools_read.rs:93-105` method `search_code` | `src/mcp/tools_read.rs:114-130` method `context` | 91.56% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
+| `src/mcp/tools_read.rs:114-130` method `context` | `src/mcp/tools_read.rs:171-183` method `edges` | 89.50% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
+| `src/mcp/tools_read.rs:66-84` method `search` | `src/mcp/tools_read.rs:153-162` method `list` | 91.24% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
+| `src/mcp/tools_read.rs:66-84` method `search` | `src/mcp/tools_read.rs:211-220` method `recall_status` | 89.88% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
+| `src/mcp/tools_read.rs:40-57` method `find` | `src/mcp/tools_read.rs:153-162` method `list` | 91.09% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
+| `src/mcp/tools_read.rs:40-57` method `find` | `src/mcp/tools_read.rs:211-220` method `recall_status` | 89.73% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
+| `src/mcp/tools_read.rs:114-130` method `context` | `src/mcp/tools_read.rs:153-162` method `list` | 91.06% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
+| `src/mcp/tools_read.rs:114-130` method `context` | `src/mcp/tools_read.rs:211-220` method `recall_status` | 89.69% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
+| `src/mcp/tools_read.rs:93-105` method `search_code` | `src/mcp/tools_read.rs:171-183` method `edges` | 88.07% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
+| `src/mcp/tools_read.rs:171-183` method `edges` | `src/mcp/tools_read.rs:192-202` method `repos` | 89.92% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
+| `src/mcp/tools_read.rs:93-105` method `search_code` | `src/mcp/tools_read.rs:153-162` method `list` | 89.54% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
+| `src/mcp/tools_read.rs:153-162` method `list` | `src/mcp/tools_read.rs:171-183` method `edges` | 88.66% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
+| `src/mcp/tools_read.rs:93-105` method `search_code` | `src/mcp/tools_read.rs:211-220` method `recall_status` | 88.43% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
+| `src/mcp/tools_read.rs:171-183` method `edges` | `src/mcp/tools_read.rs:211-220` method `recall_status` | 87.42% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
+| `src/mcp/tools_read.rs:153-162` method `list` | `src/mcp/tools_read.rs:192-202` method `repos` | 87.76% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
+| `src/mcp/tools_read.rs:192-202` method `repos` | `src/mcp/tools_read.rs:211-220` method `recall_status` | 86.53% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
+| `src/mcp/tools_read.rs:153-162` method `list` | `src/mcp/tools_read.rs:211-220` method `recall_status` | 90.56% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
+| `src/mcp/tools_read.rs:139-144` method `show` | `src/mcp/tools_read.rs:171-183` method `edges` | 89.92% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
+| `src/mcp/tools_read.rs:139-144` method `show` | `src/mcp/tools_read.rs:192-202` method `repos` | 90.63% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
+| `src/mcp/tools_read.rs:139-144` method `show` | `src/mcp/tools_read.rs:153-162` method `list` | 89.95% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
+| `src/mcp/tools_read.rs:139-144` method `show` | `src/mcp/tools_read.rs:211-220` method `recall_status` | 86.53% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
 
 ## Continuing the cleanup
 

@@ -12,7 +12,9 @@ use crate::prelude::*;
 /// `clap::ValueEnum` is derived so the CLI can drive `--kind` through the
 /// validated value-parser path; unknown values are rejected at parse time
 /// with a usage hint listing every accepted variant.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, clap::ValueEnum)]
+#[derive(
+    Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, clap::ValueEnum, schemars::JsonSchema,
+)]
 #[serde(rename_all = "lowercase")]
 #[clap(rename_all = "lowercase")]
 pub enum Kind {

@@ -17,7 +17,8 @@ use serde_json::json;
 use crate::cli::Cli;
 use crate::cli::completion_script;
 use crate::serve::AppState;
-use crate::serve::routes::{self, RouteEntry, respond, run_blocking};
+use crate::serve::routes::{self, RouteEntry, respond};
+use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
 
 /// Real subcommands with no HTTP mapping: `serve` IS the server (spec
@@ -28,7 +29,10 @@ use crate::utilities::context::Ctx;
 /// write into the operator's own machine (an agent host's configuration
 /// directory, a repo's git hooks), which a server must never do on request.
 /// `watch` is also long-lived by construction: it holds a socket open until
-/// interrupted, which is not a request-response shape.
+/// interrupted, which is not a request-response shape. `mcp` is the same
+/// refusal as `serve` from the other side: it IS a server, one that speaks
+/// JSON-RPC on the process's own stdin/stdout, so an HTTP request must never
+/// be able to start one.
 const CLI_ONLY: &[&str] = &[
     "auth",
     "benchmark",
@@ -37,6 +41,7 @@ const CLI_ONLY: &[&str] = &[
     "export-dataset",
     "install",
     "judge",
+    "mcp",
     "serve",
     "setup",
     "sync",

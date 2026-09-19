@@ -312,11 +312,28 @@ pub fn api_key_override() -> Option<String> {
         .filter(|v| !v.is_empty())
 }
 
+/// Whether a user-facing lookup (`search` / `context`) should record access
+/// tracking + the `retrieval_log` row this run — the `SearchOptions::track`
+/// gate. `true` (the default) for every real invocation; lowered to `false`
+/// only when `COMEMORY_DISABLE_ACCESS_TRACKING` is set truthy.
+///
+/// This is a test hook, not a user knob (mirrors `eval::tune`'s
+/// `COMEMORY_TUNE_MIN_GOLDEN`): it lets a stability harness drive the binary
+/// repeatedly without each query mutating `access_count` / `last_accessed`,
+/// which feeds ACT-R activation and would reorder ranking between calls. An
+/// unparsable value errors, naming the variable, like every other env hook.
+/// Shared by `cli`, `serve`, and `mcp` so the three cannot drift.
+pub fn access_tracking_enabled() -> Result<bool> {
+    let disabled = env_parse::<bool>("COMEMORY_DISABLE_ACCESS_TRACKING")?.unwrap_or(false);
+    Ok(!disabled)
+}
+
 /// True when `COMEMORY_SKIP_MIGRATION_BACKUP` is truthy (`"1"` or
 /// `"true"`). Unset, empty, or any other value is `false` — a test/escape
-/// hatch hook (mirrors `COMEMORY_DISABLE_ACCESS_TRACKING`, `cli.rs`'s
-/// `track_searches`), not a validated user knob, so an unrecognized value
-/// degrades to the safer default (take the backup) rather than erroring.
+/// hatch hook (mirrors `COMEMORY_DISABLE_ACCESS_TRACKING`'s
+/// [`access_tracking_enabled`]), not a validated user knob, so an
+/// unrecognized value degrades to the safer default (take the backup)
+/// rather than erroring.
 ///
 /// Lives here, not in `store::migrate`, because the `no-direct-env-var`
 /// guardrail forbids reading env anywhere outside `config/`/`tests/`, and

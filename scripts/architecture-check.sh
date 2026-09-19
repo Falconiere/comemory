@@ -59,7 +59,7 @@ jq -e '
   def model_target: target and test("::[A-Z][A-Za-z_0-9]*$");
   def issue: type == "string" and test("^#(166|167|168|169|170|171|172|173|174|175|176|177|178)$");
   def owner($p): . as $o | type == "string" and
-    (test("^(delivery::(cli|serve)|shared::(config|utilities|root)|infrastructure::store)$") or
+    (test("^(delivery::(cli|serve|mcp)|shared::(config|utilities|root)|infrastructure::store)$") or
       any($p.domains[]; $o == "domains::"+.));
   . as $p | type == "object" and .version == 1 and
   all([.staged_top_level_dirs,.staged_root_modules,.domains,.legacy_modules,
@@ -99,7 +99,7 @@ jq -e --slurpfile policy "$POLICY" '
   length > 0 and (group_by(.path)|all(length == 1)) and (group_by(.target)|all(length == 1)) and
   all(.[]; (.path|test("^src/([a-z_]+/)*[a-z_]+\\.rs$")) and
     (.target|test("^src/([a-z_]+/)*[a-z_]+\\.rs$")) and
-    (.owner|test("^(domains::[a-z_]+|delivery::(cli|serve)|shared::(config|utilities|root)|infrastructure::store)$")) and
+    (.owner|test("^(domains::[a-z_]+|delivery::(cli|serve|mcp)|shared::(config|utilities|root)|infrastructure::store)$")) and
     (if (.owner|startswith("domains::")) then (.owner|ltrimstr("domains::")) as $d |
       ($policy[0].domains|index($d)) != null else true end))
 ' "$TASK_TMP/inventory" >/dev/null || bad 'invalid inventory'
@@ -410,7 +410,7 @@ jq -nr --slurpfile p "$POLICY" --slurpfile inv "$TASK_TMP/inventory" \
           (($edge.target|startswith($model.target+"::")) and ($variants|index($edge.target)) != null))) then empty
       else diagnostic(.source;.target;"store service dependency") end
     elif (($source_owner // "")|startswith("domains::")) or .source == "src/domains.rs" then
-      if (.target|test("^crate::(cli|serve)(::|$)")) then
+      if (.target|test("^crate::(cli|serve|mcp)(::|$)")) then
         if exemption($p.legacy_edges;$edge) then empty else diagnostic(.source;.target;"delivery dependency") end
       elif (.source|startswith("src/domains/")) and (.target|test("^crate::api(::|$)")) then
         diagnostic(.source;.target;"legacy core dependency")

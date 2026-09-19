@@ -29,7 +29,7 @@ One line per file, named after its primary item:
 | File | Primary item | Purpose |
 | --- | --- | --- |
 | `defaults.rs` | `default_memory_vector_dim` | Default-value functions backing `Config`'s `#[serde(default = "...")]` attributes |
-| `env.rs` | `with_env` | `COMEMORY_*` env-var overrides — the outermost config layer, with shared optional-override application |
+| `env.rs` | `with_env` | `COMEMORY_*` env-var overrides — the outermost config layer, with shared optional-override application; also owns `access_tracking_enabled`, the `COMEMORY_DISABLE_ACCESS_TRACKING` test hook shared by `cli`, `serve`, and `mcp` |
 | `file.rs` | `AutoReindexMode` | `Config` struct definitions, shipped defaults, and the `config.toml` overlay |
 | `learning.rs` | `TuneConfig` | Learning-loop sections: `[tune]` grids, `[reinforce]`, `[bandit]` |
 | `observations.rs` | `ObservationsConfig` | The `[observations]` section: opt-in, bounded candidate observation capture (`enabled`, `max_text_bytes`, `max_candidates`), its file overlay and its own invariants |

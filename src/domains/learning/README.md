@@ -5,9 +5,9 @@ counters and the provenance policy that decides which value a verdict is
 stored under (`feedback_tracking`, `code_feedback`), the shared `comemory.db`
 handle those writers borrow their transactions from (`telemetry`), the
 evaluation and ranking-search algorithms ([`evaluation/`](evaluation/README.md)),
-and the seven command cores `cli::` and `serve::routes::` call (`feedback`,
-`eval`, `mine`, `tune`, `bandit`, plus the console-only `console` and
-`learning_proposals`).
+and the eight command cores `cli::` and `serve::routes::` call (`feedback`,
+`eval`, `mine`, `tune`, `bandit`, `recall_status`, plus the console-only
+`console` and `learning_proposals`).
 
 **What does NOT belong here:** SQL, rendering, and the shared telemetry
 vocabulary. Every SQL string lives in `store::{feedback, code_feedback,
@@ -46,6 +46,7 @@ One line per file, named after its primary item:
 | `learning_proposals.rs` | `Proposal` | Console-only: knob proposals derived from unapplied `tune`/`bandit` runs — list, apply (writes `config.toml`), discard |
 | `mine.rs` | `Request` | Shared middle of `comemory mine` / `POST /api/v1/mine` — a bounded scan, not confirm-gated |
 | `observation_capture.rs` | `record` | Opt-in, bounded capture of a real `find` run's candidate pool: `armed` (config AND a run allowed to write telemetry), `find_filters`, and the best-effort write that warns rather than failing a search |
+| `recall_status.rs` | `Request` | Shared middle of `comemory recall-status` / `GET /api/v1/learning/recall-status` / the MCP `recall_status` tool — read-only: tracked queries, `feedback_events`, saves and the still-pending queries for a repo + lower time bound (`--since`, default start of the current UTC day, normalised to UTC when given an offset). Never creates `comemory.db` on a data dir that has none yet |
 | `telemetry.rs` | `StatsDb` | The shared `comemory.db` connection handle, opened through `store::connection`. Owns no table: the two recorders borrow `conn_mut()` for their transactions |
 | `tune.rs` | `Request` | Shared middle of `comemory tune` / `POST /api/v1/tune` — mutating only when `apply`, and confirm-gated only then |
 

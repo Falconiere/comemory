@@ -4,6 +4,7 @@
     "cli",
     "config",
     "domains",
+    "mcp",
     "serve",
     "store",
     "utilities"
@@ -14,6 +15,7 @@
     "errors",
     "lib",
     "main",
+    "mcp",
     "prelude",
     "serve",
     "store",

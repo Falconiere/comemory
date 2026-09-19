@@ -56,10 +56,12 @@ One line per file, named after its primary item:
 | `lazy_reindex.rs` | `RepoContext` | Detached, non-blocking auto-reindex trigger behind `indexing.auto_reindex = lazy` |
 | `list.rs` | `Args` | `comemory list` — page live memories with `--repo` / `--kind` filters |
 | `off_runtime.rs` | `off_runtime` | Run blocking platform I/O on a scoped thread, away from the tokio runtime |
+| `mcp.rs` | `Args` | `comemory mcp` — serve the MCP tool interface over stdio for agent hosts; the session itself is `mcp::serve` |
 | `mine.rs` | `Args` | `comemory mine` — distill query reformulations from `retrieval_log` into expansions |
 | `pagination.rs` | `PaginationArgs` | Shared `--k` / `--offset` window flags, flattened into paginated commands |
 | `prune.rs` | `Args` | `comemory prune` — surface deletion candidates against the SQLite mirror |
 | `rebuild.rs` | `Args` | `comemory rebuild` — atomically rebuild the SQLite mirror from markdown |
+| `recall_status.rs` | `Args` | `comemory recall-status` — tracked queries, verdicts, saves and pending recalls for a repo + lower time bound; core in `domains::learning::recall_status` |
 | `save.rs` | `Args` | `comemory save` — atomic markdown write + SQLite-mirror upsert; waits on the after-save push |
 | `search.rs` | `Args` | `comemory search` — natural-language search over the memory store |
 | `search_code.rs` | `Args` | `comemory search-code` — ranked search over indexed `code_symbols` |

@@ -26,8 +26,9 @@ use crate::serve::envelope::Envelope;
 use crate::serve::jobs;
 use crate::serve::routes::maint::prune::split_confirm;
 use crate::serve::routes::{
-    RouteEntry, accepted, guard_job, guard_mutating, require_confirm, respond, run_blocking,
+    RouteEntry, accepted, guard_job, guard_mutating, require_confirm, respond,
 };
+use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
 
 /// This resource's route-table entries, appended onto [`super::table`].

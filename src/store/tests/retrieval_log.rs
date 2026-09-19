@@ -10,15 +10,20 @@
 //! that a malformed `returned_ids` value is returned raw (unparsed), and
 //! that [`insert`] writes every column back readably.
 
+use comemory::config::paths::Paths;
+use comemory::domains::learning::feedback_tracking::record_with_provenance;
+use comemory::domains::learning::telemetry::StatsDb;
 use comemory::store::connection;
 use comemory::store::retrieval_log::{
-    NewLogRow, distinct_prefix_matches, insert, prefix_matches, queries_excluding_source,
-    returned_ids_in_window,
+    NewLogRow, count_since, distinct_prefix_matches, insert, pending_since, prefix_matches,
+    queries_excluding_source, returned_ids_in_window,
 };
+use comemory::utilities::telemetry::{PROV_MANUAL, source};
 use rusqlite::Connection;
-use tempfile::tempdir;
+use tempfile::{TempDir, tempdir};
 
 const REPO: &str = "r";
+const OTHER_REPO: &str = "other-repo";
 
 fn seed_db() -> Connection {
     let dir = tempdir().expect("tempdir");
@@ -377,4 +382,221 @@ fn queries_excluding_source_orders_by_at_then_query_id() {
     let rows = queries_excluding_source(&conn, "search-code").expect("query");
     let ids: Vec<&str> = rows.iter().map(|r| r.query_id.as_str()).collect();
     assert_eq!(ids, vec!["q-earlier", "q-a", "q-b"]);
+}
+
+/// Open a [`StatsDb`] over a fresh `comemory.db` in a tempdir — the same
+/// connection [`record_with_provenance`] and [`insert`] must share so a
+/// `feedback_events` row can judge a `retrieval_log` row written earlier in
+/// the same test.
+fn seed_stats_db() -> (StatsDb, TempDir) {
+    let tmp = TempDir::new().expect("tempdir");
+    let paths = Paths::new(tmp.path());
+    let db = StatsDb::open(paths.stats_db()).expect("open stats db");
+    (db, tmp)
+}
+
+fn insert_pending_row(
+    conn: &Connection,
+    query_id: &str,
+    source: &str,
+    at: &str,
+    ids: &str,
+    repo: Option<&str>,
+) {
+    insert(
+        conn,
+        &NewLogRow {
+            query_id,
+            query: "q",
+            returned_ids: ids,
+            at,
+            duration_ms: 1,
+            repo,
+            kind: None,
+            source,
+        },
+    )
+    .expect("insert retrieval_log row");
+}
+
+/// [`pending_since`] returns every tracked (`search`/`context`/`search-code`/
+/// `find`) query at or after `since` with no `feedback_events` verdict, in
+/// `at` order, with `returned_ids` decoded — the judged `context` row and the
+/// other repo's row are both excluded once `repo` is scoped.
+#[test]
+fn pending_since_returns_unjudged_queries_in_order_and_respects_repo_and_since() {
+    let (mut db, _tmp) = seed_stats_db();
+    insert_pending_row(
+        db.conn(),
+        "q-search",
+        source::SEARCH,
+        "2026-07-15T00:00:00Z",
+        r#"["a1"]"#,
+        Some(REPO),
+    );
+    insert_pending_row(
+        db.conn(),
+        "q-context",
+        source::CONTEXT,
+        "2026-07-15T00:01:00Z",
+        r#"["a2"]"#,
+        Some(REPO),
+    );
+    insert_pending_row(
+        db.conn(),
+        "q-search-code",
+        source::SEARCH_CODE,
+        "2026-07-15T00:02:00Z",
+        r#"["a3"]"#,
+        Some(REPO),
+    );
+    insert_pending_row(
+        db.conn(),
+        "q-find",
+        source::FIND,
+        "2026-07-15T00:03:00Z",
+        r#"["a4"]"#,
+        Some(REPO),
+    );
+    insert_pending_row(
+        db.conn(),
+        "q-other-repo",
+        source::SEARCH,
+        "2026-07-15T00:01:30Z",
+        r#"["a5"]"#,
+        Some(OTHER_REPO),
+    );
+    insert_pending_row(
+        db.conn(),
+        "q-no-repo",
+        source::SEARCH,
+        "2026-07-15T00:01:45Z",
+        r#"["a6"]"#,
+        None,
+    );
+    record_with_provenance(
+        &mut db,
+        "q-context",
+        &["aaaaaaa1".to_string()],
+        &[],
+        PROV_MANUAL,
+    )
+    .expect("record verdict for q-context");
+
+    let scoped = pending_since(db.conn(), Some(REPO), "2026-07-15T00:00:00Z").expect("query");
+    let ids: Vec<&str> = scoped.iter().map(|r| r.query_id.as_str()).collect();
+    assert_eq!(
+        ids,
+        vec!["q-search", "q-search-code", "q-find"],
+        "judged q-context, the other repo's row, and the repo-less row are all excluded, \
+         order is by at"
+    );
+    assert_eq!(scoped[0].query, "q");
+    assert_eq!(scoped[0].source, source::SEARCH);
+    assert_eq!(scoped[0].at, "2026-07-15T00:00:00Z");
+    assert_eq!(scoped[0].returned_ids, vec!["a1".to_string()]);
+    assert_eq!(scoped[2].returned_ids, vec!["a4".to_string()]);
+
+    let unscoped = pending_since(db.conn(), None, "2026-07-15T00:00:00Z").expect("query");
+    let unscoped_ids: Vec<&str> = unscoped.iter().map(|r| r.query_id.as_str()).collect();
+    assert_eq!(
+        unscoped_ids,
+        vec![
+            "q-search",
+            "q-other-repo",
+            "q-no-repo",
+            "q-search-code",
+            "q-find"
+        ],
+        "an unset repo filter includes every repo, including the repo-less row, \
+         still ordered by at"
+    );
+
+    let future = pending_since(db.conn(), Some(REPO), "2026-07-16T00:00:00Z").expect("query");
+    assert!(future.is_empty(), "a since in the future returns nothing");
+}
+
+/// A malformed `returned_ids` value propagates as [`Error::Json`] rather
+/// than being silently dropped.
+#[test]
+fn pending_since_propagates_malformed_returned_ids_as_json_error() {
+    let conn = seed_db();
+    insert_pending_row(
+        &conn,
+        "q-malformed",
+        source::SEARCH,
+        "2026-07-15T00:00:00Z",
+        "not json",
+        Some(REPO),
+    );
+
+    let result = pending_since(&conn, Some(REPO), "2026-07-15T00:00:00Z");
+    assert!(
+        matches!(result, Err(comemory::errors::Error::Json(_))),
+        "expected Error::Json for a malformed returned_ids value"
+    );
+}
+
+/// [`count_since`] counts every tracked row in the window regardless of
+/// whether it has been judged yet — unlike [`pending_since`], which excludes
+/// judged rows.
+#[test]
+fn count_since_counts_pending_and_judged_rows_scoped_by_repo_and_since() {
+    let (mut db, _tmp) = seed_stats_db();
+    insert_pending_row(
+        db.conn(),
+        "q-search",
+        source::SEARCH,
+        "2026-07-15T00:00:00Z",
+        r#"["a1"]"#,
+        Some(REPO),
+    );
+    insert_pending_row(
+        db.conn(),
+        "q-context",
+        source::CONTEXT,
+        "2026-07-15T00:01:00Z",
+        r#"["a2"]"#,
+        Some(REPO),
+    );
+    insert_pending_row(
+        db.conn(),
+        "q-other-repo",
+        source::SEARCH,
+        "2026-07-15T00:01:30Z",
+        r#"["a5"]"#,
+        Some(OTHER_REPO),
+    );
+    insert_pending_row(
+        db.conn(),
+        "q-no-repo",
+        source::SEARCH,
+        "2026-07-15T00:01:45Z",
+        r#"["a6"]"#,
+        None,
+    );
+    record_with_provenance(
+        &mut db,
+        "q-context",
+        &["aaaaaaa1".to_string()],
+        &[],
+        PROV_MANUAL,
+    )
+    .expect("record verdict for q-context");
+
+    let scoped = count_since(db.conn(), Some(REPO), "2026-07-15T00:00:00Z").expect("count");
+    assert_eq!(
+        scoped, 2,
+        "both the still-pending row and the now-judged row count for this repo; \
+         the repo-less row does not match"
+    );
+
+    let unscoped = count_since(db.conn(), None, "2026-07-15T00:00:00Z").expect("count");
+    assert_eq!(
+        unscoped, 4,
+        "an unset repo filter counts every repo, including the repo-less row"
+    );
+
+    let future = count_since(db.conn(), Some(REPO), "2026-07-16T00:00:00Z").expect("count");
+    assert_eq!(future, 0, "a since in the future counts nothing");
 }

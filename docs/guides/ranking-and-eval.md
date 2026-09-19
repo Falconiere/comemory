@@ -132,6 +132,13 @@ observed use, not human confirmation). The same rule gates `comemory mine`:
 only a manual `used` marks a query as one that succeeded. Implicit verdicts
 still bump the ranking counters; they just never become ground truth.
 
+The MCP `feedback` tool follows the same rule from the other direction:
+verdicts it records are `implicit` unless the caller sets
+`confirmed_by_user: true` — reserved for a verdict the user actually stated —
+so an agent's own judgment of what it used never enters the golden harvest on
+its own. `comemory feedback` on the CLI, and `POST /api/v1/feedback` without
+an explicit `source: implicit`, stay `manual`.
+
 Use `--golden-only` to score a file in isolation and skip the harvest entirely.
 
 ---

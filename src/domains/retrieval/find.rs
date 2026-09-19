@@ -23,7 +23,7 @@ use crate::utilities::pagination::PageMeta;
 use crate::utilities::pagination::{PageWindow, page_meta, page_window};
 
 /// `comemory find` / `GET|POST /api/v1/find` request.
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Request {
     /// Natural-language query string.

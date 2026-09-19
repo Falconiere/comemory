@@ -23,7 +23,7 @@ use crate::store::{Connection, edges_retrieval, memory_meta};
 use crate::utilities::context::Ctx;
 
 /// `comemory show` / `GET /api/v1/memories/{id}` request.
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Request {
     /// 8-hex memory id to show in full.
