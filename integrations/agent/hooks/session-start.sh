@@ -29,7 +29,7 @@ session_id=$(jq -r '.session_id // empty' <<<"$input" 2>/dev/null) || session_id
 session_id=$(ps_sanitize_session_id "$session_id") || session_id=""
 if [ -n "$session_id" ]; then
   marker="$root/comemory/session-$session_id.start"
-  [ -e "$marker" ] || printf '%s' "$(ps_now)" >"$marker" 2>/dev/null || true
+  [ -e "$marker" ] || printf '%s' "$(ps_now_precise)" >"$marker" 2>/dev/null || true
 fi
 find "$root/comemory" -maxdepth 1 -type f -name 'session-*.start' -mtime +7 -delete 2>/dev/null || true
 

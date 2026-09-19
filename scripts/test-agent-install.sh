@@ -5,7 +5,9 @@ ROOT="$(cd "${BASH_SOURCE%/*}/.." && pwd)"
 BIN="${COMEMORY_BIN:-$ROOT/target/debug/comemory}"
 [ -x "$BIN" ] || { printf 'Missing executable comemory binary: %s\n' "$BIN" >&2; exit 1; }
 TASK=$(mktemp -d "${TMPDIR:-/tmp}/comemory-test.XXXXXX")
-trap 'rm -rf "$TASK"' EXIT
+# The Stop hook's detached maintenance may still be writing under $TASK for a
+# few seconds; retry the sweep once so a late child never leaves a temp dir.
+trap 'rm -rf "$TASK" 2>/dev/null || { sleep 3; rm -rf "$TASK"; }' EXIT
 mkdir -p "$TASK/bin"
 ln -s "$BIN" "$TASK/bin/comemory"
 export PATH="$TASK/bin:$PATH"
