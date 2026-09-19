@@ -9,8 +9,8 @@ use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
 
+use crate::cli::load_config;
 use crate::cli::output::json;
-use crate::cli::{load_config, track_searches};
 use crate::config::paths::{Paths, resolve_data_dir};
 use crate::domains::memories::Kind;
 use crate::domains::retrieval;
@@ -108,7 +108,7 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
             until: a.until,
             as_of: a.as_of,
         },
-        track_searches()?,
+        crate::config::env::access_tracking_enabled()?,
     )?;
 
     if json_flag {

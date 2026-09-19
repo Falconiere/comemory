@@ -68,8 +68,19 @@ authoritative architecture reference; pair it with the
 | `output` | TTY rendering (owo-colors) + JSON serializers (serde_json) for the CLI |
 | `prune` | Orphan, stale-code, low-value detection and (soft) deletion |
 | `serve` | Loopback-only axum HTTP server behind the `comemory serve` command (256-bit per-session token, Host-header guard, default-deny CORS, and the shared `utilities::path_containment` chokepoint) exposing the versioned `/api/v1` REST surface — every command core, background jobs with SSE progress/log streaming, and the console-facing aggregates (overview, graph nodes, learning loop, trash, gc policy). The `comemory graph` command exports the same code graph as JSON / DOT / static HTML |
+| `mcp` | The stdio MCP adapter behind `comemory mcp` — the third delivery surface beside `cli` and `serve`, running the same command cores over a curated eleven-tool catalog (`find`, `search`, `search_code`, `context`, `show`, `list`, `edges`, `repos`, `recall_status`, `save`, `feedback`) instead of the full route table. Never imports `cli` or `serve` |
 | `domains/code` | the code capability: AST extraction and pattern search, incremental/full code indexing and ingestion, index-run history, the repository inventory and its admin operations, the git reindex hooks, and the lazy-reindex staleness policy. SQL stays in `store`; the detached index-code launch stays in `cli` |
-| `utilities` | transport-neutral shared primitives every domain and both delivery adapters may use: the execution `context` (`Ctx`), `pagination` (`Page`, `PageWindow`, `PageMeta`), `id_list`, `when`, `ref_args`, `embedding_input` + `vector_stdin`, `embed`, `fetch`, `http_error`, `simhash`, `digest`, `file_lock`, `path_containment`, `progress` (`ProgressSink`), `query_id`, `repo_root` (the one repository resolver, shared by the CLI, HTTP, retrieval freshness and reference refresh), and `telemetry` |
+| `utilities` | transport-neutral shared primitives every domain and every delivery adapter may use: the execution `context` (`Ctx`), `pagination` (`Page`, `PageWindow`, `PageMeta`), `id_list`, `when`, `ref_args`, `embedding_input` + `vector_stdin`, `embed`, `fetch`, `http_error`, `simhash`, `digest`, `file_lock`, `path_containment`, `progress` (`ProgressSink`), `query_id`, `repo_root` (the one repository resolver, shared by the CLI, HTTP, retrieval freshness and reference refresh), `blocking` (`run_blocking`), `error_code` (`classify`), and `telemetry` |
+
+comemory has three delivery adapters over the same command cores, never four:
+`cli` (the terminal), `serve` (loopback HTTP, `/api/v1`), and `mcp` (stdio
+MCP, § above). All three share `utilities::context::Ctx` as the execution
+context every core runs against, `utilities::blocking::run_blocking` so a
+connection lock never crosses an `.await`, and `utilities::error_code::classify`
+as the one `Error → (code, Class)` mapping — `serve::envelope` turns `Class`
+into an HTTP status, `mcp::result` turns it into a tool-level error (or, for
+`Class::Internal`, the protocol's own error object). No domain, `config` or
+`utilities` file may import any of the three.
 
 ## 3. Storage layout
 

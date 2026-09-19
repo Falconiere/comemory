@@ -24,11 +24,11 @@ validate_inventory() (
       "owner_dependencies","legacy_edges","store_callbacks","passive_store_models",
       "setup_runtime_dependencies","shared_domain_dependencies"] - keys | length == 0) and
     (.setup_runtime_dependencies | type == "array") and
-    .staged_top_level_dirs == ("cli config domains serve store utilities"|split(" ")) and
-    .staged_root_modules == ("cli config errors lib main prelude serve store test_common"|split(" ")) and
+    .staged_top_level_dirs == ("cli config domains mcp serve store utilities"|split(" ")) and
+    .staged_root_modules == ("cli config errors lib main mcp prelude serve store test_common"|split(" ")) and
     .domains == ("memories code documents graph retrieval learning sync capture maintenance integrations"|split(" ")) and
     all($rows[0][];
-      (.owner | test("^(domains::[a-z_]+|delivery::(cli|serve)|shared::(config|utilities|root)|infrastructure::store)$")) and
+      (.owner | test("^(domains::[a-z_]+|delivery::(cli|serve|mcp)|shared::(config|utilities|root)|infrastructure::store)$")) and
       (if (.owner | startswith("domains::")) then
         (.owner | ltrimstr("domains::")) as $domain | ($p.domains | index($domain)) != null
       else true end)) and
@@ -61,6 +61,7 @@ validate_inventory() (
          else "domains::" + $capability end)
       elif . == "src/cli.rs" or startswith("src/cli/") then "delivery::cli"
       elif . == "src/serve.rs" or startswith("src/serve/") then "delivery::serve"
+      elif . == "src/mcp.rs" or startswith("src/mcp/") then "delivery::mcp"
       elif . == "src/store.rs" or startswith("src/store/") then "infrastructure::store"
       elif . == "src/config.rs" or startswith("src/config/") then "shared::config"
       elif . == "src/utilities.rs" or startswith("src/utilities/") then "shared::utilities"

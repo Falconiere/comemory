@@ -58,12 +58,14 @@ Commands:
   graph           Export the file-level code-connection graph (imports + co-change) as JSON, Graphviz DOT, or an interactive HTML page
   edges           Search the relation graph lexically (supersedes, imports, references)
   serve           Serve the loopback HTTP API (`/api/v1`) for consoles, agents, and scripts
+  mcp             Serve the MCP tool interface over stdio for agent hosts
   setup           Detect what this machine and repo still need, then set it up
   context         Headline lookup: code symbol + memories matching a key
   completions     Emit a shell completion script for `bash`, `zsh`, `fish`, `powershell`, or `elvish`
   prune           Detect (and optionally soft-delete) stale memories
   consolidate     Report near-duplicate memory clusters and the member worth keeping
   rebuild         Drop `comemory.db` and repopulate it from the markdown source of truth
+  recall-status   Report tracked recalls awaiting a verdict, verdicts and saves since a bound
   gc              Purge old `memories/.trash/` entries and learning telemetry past retention
   install-hooks   Install git hooks that trigger `comemory index-code` on `post-commit`, `post-merge`, and `post-checkout`
   install         Install bundled skills and hooks for Claude Code or Codex
@@ -489,6 +491,36 @@ Examples:
 
   # Memory and code verdicts in one call
   comemory feedback q-20260610-e5f6a7b8 --used a1b2c3d4 --used-code 12
+```
+
+---
+
+## comemory recall-status
+
+```
+Report tracked recalls awaiting a verdict, verdicts and saves since a bound
+
+Usage: comemory recall-status [OPTIONS]
+
+Options:
+      --json                 Emit machine-readable JSON instead of a human TTY view
+      --repo <REPO>          Restrict every count to this repo. Unset reports across every repo
+      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+      --since <WHEN>         Lower time bound. Accepts an RFC3339 timestamp or a bare `YYYY-MM-DD` date (start of that UTC day) — the same grammar `search --since` accepts. Defaults to the start of the current UTC day when omitted
+  -h, --help                 Print help
+
+Examples:
+  # Everything tracked since the start of today
+  comemory recall-status
+
+  # Scope to one repo
+  comemory recall-status --repo comemory
+
+  # A wider window
+  comemory recall-status --since 2026-09-01
+
+  # JSON for a dashboard or an agent's own recall loop
+  comemory recall-status --repo comemory --json
 ```
 
 ---
@@ -960,6 +992,33 @@ Examples:
   # Allow a mutating route to touch an extra filesystem path (e.g. eval's
   # --golden file) outside any indexed repo root
   comemory serve --allow-path /abs/path/to/golden-dir
+```
+
+---
+
+## comemory mcp
+
+```
+Serve the MCP tool interface over stdio for agent hosts
+
+Usage: comemory mcp [OPTIONS]
+
+Options:
+      --json                 Emit machine-readable JSON instead of a human TTY view
+      --repo <NAME>          Default repo label (as passed to `index-code --repo`) for every tool that accepts a `repo` parameter. Unset derives it from the working directory's main worktree; an explicit `repo` on a call overrides it
+      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+      --read-only            Refuse every mutating tool (`save`, `feedback`) with a tool-level `read_only` error, and log no tracked recall
+  -h, --help                 Print help
+
+Examples:
+  # Register with a host: the host spawns this and talks JSON-RPC on stdio
+  comemory mcp
+
+  # Pin every tool's default repo scope instead of deriving it from the cwd
+  comemory mcp --repo myrepo
+
+  # Recall only: `save` and `feedback` answer a read_only tool error
+  comemory mcp --read-only
 ```
 
 ---

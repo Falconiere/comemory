@@ -27,8 +27,9 @@ use crate::domains::retrieval::explain::{self, ExplainPart};
 use crate::domains::retrieval::unified::fuse_domains::UnifiedHit;
 use crate::prelude::*;
 use crate::serve::AppState;
-use crate::serve::routes::{RouteEntry, guard_mutating, respond, run_blocking, track_for};
+use crate::serve::routes::{RouteEntry, guard_mutating, respond, track_for};
 use crate::serve::scope::RepoScope;
+use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
 
 /// How many lexical ladder tiers the memory router has (strict, word-OR,

@@ -28,7 +28,7 @@ use crate::utilities::context::Ctx;
 pub mod git_state;
 
 /// `comemory repos` / `GET /api/v1/repos` request.
-#[derive(Deserialize, Debug, Default)]
+#[derive(Deserialize, Debug, Default, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Request {
     /// Narrow the inventory to one repo label.

@@ -90,3 +90,7 @@ Understanding-oriented background:
 - **[Benchmarking token efficiency](benchmark.md)** — what exists to measure
   how many tokens and tool calls comemory saves an agent, and the first
   experiment that would put a number on it.
+- **[MCP transport and learning-loop hooks](designs/2026-09-18-mcp-transport-and-learning-loop.md)** —
+  `comemory mcp`, the stdio adapter beside `cli` and `serve`, its curated
+  eleven-tool catalog, and the recall-injection / Stop-enforcement / SessionEnd
+  hooks that close the learning loop.

@@ -14,10 +14,10 @@
 
 use comemory::memory::{Frontmatter, Kind, Ref, References, Relations};
 use comemory::store::edges::{self, EdgeKey};
-use comemory::store::{MemoryLinks, code_ref, connection, memory_row};
+use comemory::store::{MemoryLinks, code_ref, connection, memory_purge, memory_row};
 use rusqlite::Connection;
 use tempfile::tempdir;
-use time::OffsetDateTime;
+use time::{Duration, OffsetDateTime};
 
 const ID: &str = "abc12345";
 
@@ -380,4 +380,52 @@ fn re_mirror_preserves_mined_co_activated_edges() {
     assert_eq!(co_activated, 1, "the reward survives once, not twice");
     // The markdown-derived edges were still refreshed as before.
     assert_all_edges(&conn);
+}
+
+/// `count_created_since` counts live memories created at or after `since`,
+/// respects an optional `repo` filter, excludes a trashed row inside the
+/// same window (soft-deleted through the production
+/// `store::memory_purge::soft_delete` writer, the same one
+/// `domains::memories::delete::mirror_soft_delete` commits), and returns
+/// `0` once `since` moves past every row — the "saves" leg of
+/// `domains::learning::recall_status`'s window report.
+#[test]
+fn count_created_since_counts_by_window_and_repo() {
+    let dir = tempdir().expect("tempdir");
+    let mut conn = connection::open(dir.path().join("comemory.db")).expect("open");
+    let fm_a = sample_fm();
+    let mut fm_b = sample_fm();
+    fm_b.id = "def67890".to_string();
+    fm_b.repo = "other-repo".to_string();
+    fm_b.content_hash = "beadfeed".to_string();
+    let mut fm_c = sample_fm();
+    fm_c.id = "fed09876".to_string();
+    fm_c.content_hash = "cafebabe".to_string();
+
+    let since =
+        memory_row::iso_format(OffsetDateTime::now_utc() - Duration::minutes(1)).expect("iso");
+    insert_body(&mut conn, &fm_a, "memory a body");
+    insert_body(&mut conn, &fm_b, "memory b body");
+    insert_body(&mut conn, &fm_c, "memory c body, later trashed");
+    let deleted_at = memory_row::iso_format(OffsetDateTime::now_utc()).expect("iso");
+    memory_purge::soft_delete(&conn, &fm_c.id, &deleted_at).expect("soft delete memory c");
+
+    assert_eq!(
+        memory_row::count_created_since(&conn, None, &since).expect("count"),
+        2,
+        "both live memories fall inside the window; the trashed one does not count"
+    );
+    assert_eq!(
+        memory_row::count_created_since(&conn, Some("qwick"), &since).expect("count"),
+        1,
+        "repo filter excludes the other repo's memory, and the trashed qwick memory"
+    );
+
+    let future =
+        memory_row::iso_format(OffsetDateTime::now_utc() + Duration::minutes(5)).expect("iso");
+    assert_eq!(
+        memory_row::count_created_since(&conn, Some("qwick"), &future).expect("count"),
+        0,
+        "a since in the future returns nothing"
+    );
 }

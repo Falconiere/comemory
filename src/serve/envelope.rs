@@ -2,7 +2,10 @@
 //! every `/api/v1/*` response, and the one `Error → (StatusCode, code-slug)`
 //! mapping ([`status_and_code`]) every HTTP error derives its status from —
 //! including a failed job's `{code, message}` object
-//! (`serve::jobs::JobError`) — so no surface can drift (Binding Rule 1).
+//! (`serve::jobs::JobError`) — so no surface can drift (Binding Rule 1). The
+//! code-slug half of that mapping is
+//! [`crate::utilities::error_code::classify`], shared with `mcp`; this file
+//! keeps only the `Class → StatusCode` half.
 
 use axum::Json;
 use axum::http::{HeaderValue, StatusCode, header};
@@ -11,6 +14,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::prelude::*;
+use crate::utilities::error_code::{self, Class};
 
 /// The single write permit (§Concurrency) is held by another mutating
 /// request or job.
@@ -142,52 +146,24 @@ impl Envelope {
 }
 
 /// Map a crate [`Error`] to its `/api/v1` HTTP status and machine-readable
-/// `code` slug (§Interfaces "Response envelope" table).
+/// `code` slug (§Interfaces "Response envelope" table). The `code` and its
+/// [`Class`] come from [`error_code::classify`] — the transport-neutral half
+/// `mcp` shares — and this function's own match only ever does the one thing
+/// left to a transport: pick that class's HTTP status.
 pub fn status_and_code(e: &Error) -> (StatusCode, &'static str) {
-    match e {
-        Error::NotFound(_) => (StatusCode::NOT_FOUND, "not_found"),
-        Error::Forbidden(_) => (StatusCode::FORBIDDEN, "forbidden"),
-        Error::BadRequest(_) => (StatusCode::BAD_REQUEST, "bad_request"),
-        Error::ConfirmationRequired(_) => (StatusCode::BAD_REQUEST, CODE_CONFIRMATION_REQUIRED),
-        Error::Usage(_) => (StatusCode::BAD_REQUEST, "usage"),
-        Error::Config(_) => (StatusCode::BAD_REQUEST, "config"),
-        Error::Frontmatter(_) => (StatusCode::BAD_REQUEST, "frontmatter"),
-        Error::Document(_) => (StatusCode::BAD_REQUEST, "document"),
-        Error::Ast(_) => (StatusCode::BAD_REQUEST, "ast"),
-        Error::Json(_) => (StatusCode::BAD_REQUEST, "json"),
-        Error::VecDimMismatch { .. } => (StatusCode::UNPROCESSABLE_ENTITY, "vec_dim_mismatch"),
-        Error::Unavailable(_) => (StatusCode::SERVICE_UNAVAILABLE, "unavailable"),
-        Error::Embedder(_) => (StatusCode::SERVICE_UNAVAILABLE, "embedder_unavailable"),
-        Error::IndexRunning { .. } => (StatusCode::CONFLICT, "index_running"),
-        // Two different bodies sharing one 8-hex id: the save refused to
-        // overwrite the first. Conflict, not bad request — the payload is
-        // fine, the store already holds that id.
-        Error::IdCollision { .. } => (StatusCode::CONFLICT, "id_collision"),
-        // Only a job body ever produces `Cancelled`, and the worker turns it
-        // into `JobStatus::Cancelled` before any envelope is built — listed
-        // so the mapping stays total rather than falling through to 500.
-        Error::Cancelled => (StatusCode::CONFLICT, "cancelled"),
-        Error::Unsupported(_) => (StatusCode::NOT_IMPLEMENTED, "unsupported"),
-        // A database written by a NEWER comemory: the binary is older than
-        // the on-disk schema. Not the caller's fault and not retryable, but
-        // distinct from a broken migration — the console renders it as an
-        // upgrade prompt, so it gets its own code (spec §1 `schema_mismatch`).
-        Error::SchemaTooNew(_) => (StatusCode::UNPROCESSABLE_ENTITY, "schema_mismatch"),
-        // SQLite's write lock is held by another connection (a concurrent
-        // CLI run): transient, retry with backoff (spec §1 `store_locked`).
-        Error::Sqlite(_) if crate::store::busy::is_locked(e) => {
-            (StatusCode::LOCKED, "store_locked")
-        }
-        // A missing file on disk is a 404, not a 500.
-        Error::Io(io) if io.kind() == std::io::ErrorKind::NotFound => {
-            (StatusCode::NOT_FOUND, "not_found")
-        }
-        // Everything else — including a broken migration chain
-        // (`Error::Migration`), a server-side schema problem the caller
-        // cannot fix by retrying or rephrasing the request, the same
-        // bucket `main.rs::exit_code` puts it in (EX_SOFTWARE, 70).
-        _ => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
-    }
+    let (code, class) = error_code::classify(e);
+    let status = match class {
+        Class::NotFound => StatusCode::NOT_FOUND,
+        Class::Forbidden => StatusCode::FORBIDDEN,
+        Class::BadRequest => StatusCode::BAD_REQUEST,
+        Class::Unprocessable => StatusCode::UNPROCESSABLE_ENTITY,
+        Class::Conflict => StatusCode::CONFLICT,
+        Class::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
+        Class::Locked => StatusCode::LOCKED,
+        Class::NotImplemented => StatusCode::NOT_IMPLEMENTED,
+        Class::Internal => StatusCode::INTERNAL_SERVER_ERROR,
+    };
+    (status, code)
 }
 
 /// The structured `error.details` object for the variants that carry one;

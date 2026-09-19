@@ -225,8 +225,7 @@ fn no_display_field_reaches_a_training_record() {
         .filter_map(std::result::Result::ok)
         .filter(|body| {
             serde_json::from_str::<Value>(body)
-                .ok()
-                .is_some_and(|v| v["title"].as_str().is_some_and(|t| !t.is_empty()))
+                .is_ok_and(|v| v["title"].as_str().is_some_and(|t| !t.is_empty()))
         })
         .collect();
     assert!(

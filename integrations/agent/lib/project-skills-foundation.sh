@@ -25,6 +25,16 @@ ps_now() {
   python3 -c 'from datetime import datetime, timezone; print(datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))' 2>/dev/null && return 0
   printf '1970-01-01T00:00:00Z'
 }
+# Microsecond precision, for the session-start marker only: it becomes a
+# `--since` bound compared against fractional store timestamps, and a
+# whole-second marker would count a save or recall made earlier in the same
+# second as "after" the session started. Not for usage entries: their
+# staleness clock goes through ps_iso_to_epoch, whose macOS branch parses
+# whole seconds only.
+ps_now_precise() {
+  python3 -c 'from datetime import datetime, timezone; print(datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"))' 2>/dev/null && return 0
+  printf '1970-01-01T00:00:00.000000Z'
+}
 
 ps_realpath() {
   local p="$1" out
@@ -65,6 +75,16 @@ ps_cfg_int() {
   val=$(jq -r --arg p "$path" 'getpath($p | split(".")) // empty' <<<"$PS_CFG_JSON" 2>/dev/null || true)
   case "$value_type" in number) case "$val" in ''|*[!0-9]*) printf '%s' "$def" ;; *) printf '%s' "$val" ;; esac ;; null) printf '%s' "$def" ;; *) printf 'project-skills: %s is not an integer; using %s\n' "$path" "$def" >&2; printf '%s' "$def" ;; esac
 }
+ps_cfg_bool() {
+  local path="$1" def="$2" value_type
+  ps_load_cfg; command -v jq >/dev/null 2>&1 || { printf '%s' "$def"; return 0; }
+  value_type=$(jq -r --arg p "$path" 'getpath($p | split(".")) | type' <<<"$PS_CFG_JSON" 2>/dev/null || echo "null")
+  case "$value_type" in
+    boolean) jq -r --arg p "$path" 'getpath($p | split("."))' <<<"$PS_CFG_JSON" 2>/dev/null || printf '%s' "$def" ;;
+    null) printf '%s' "$def" ;;
+    *) printf 'project-skills: %s is not a boolean; using %s\n' "$path" "$def" >&2; printf '%s' "$def" ;;
+  esac
+}
 ps_thresholds() {
   PS_STALE=$(ps_cfg_int projectSkills.staleAfterDays 30); PS_ARCHIVE=$(ps_cfg_int projectSkills.archiveAfterDays 90); PS_INDEX_CAP=$(ps_cfg_int projectSkills.indexCap 20)
   if [ "$PS_STALE" -gt "$PS_ARCHIVE" ] 2>/dev/null; then printf 'project-skills: staleAfterDays > archiveAfterDays; using 30/90\n' >&2; PS_STALE=30; PS_ARCHIVE=90; fi
@@ -81,6 +101,20 @@ ps_save_usage() {
 ps_valid_name() {
   case "$1" in ''|*[!a-z0-9-]*|-*|*-) return 1 ;; esac
   printf '%s' "$1" | grep -qE '^[a-z][a-z0-9-]{0,63}$'
+}
+# ps_sanitize_session_id ID — a host-supplied session_id is untrusted and
+# ends up embedded in a marker FILE NAME (session-<id>.start /
+# session-<id>.blocked under $root/comemory); a value carrying '/' or '..'
+# would escape that directory. Prints ID unchanged when it is entirely
+# [A-Za-z0-9_-] and prints nothing (and returns non-zero) otherwise, INCLUDING
+# empty input — callers must treat an empty result as "no session" and skip
+# both the marker and enforcement, not fall back to a stripped-down id.
+ps_sanitize_session_id() {
+  case "$1" in
+    '') return 1 ;;
+    *[!A-Za-z0-9_-]*) return 1 ;;
+    *) printf '%s' "$1" ;;
+  esac
 }
 ps_word_count() { printf '%s' "$1" | wc -w | tr -d ' '; }
 ps_strip_frontmatter() { awk 'BEGIN { fm=0 } NR==1 && $0=="---" { fm=1; next } fm && $0=="---" { fm=0; next } !fm { print }'; }

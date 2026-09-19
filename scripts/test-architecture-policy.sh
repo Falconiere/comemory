@@ -134,6 +134,12 @@ sed '/^| src\/cli\/pagination.rs |/s/ | delivery::cli | / | shared::utilities | 
 assert_fails 'delivery file claiming a shared owner' 'capability ownership mismatch' --inventory "$TASK_TMP/cli-owner.md"
 sed '/^| src\/store\/sync_manifest.rs |/s/ | infrastructure::store | / | domains::sync | /' "$INVENTORY" >"$TASK_TMP/store-owner.md"
 assert_fails 'store file claiming a capability owner' 'capability ownership mismatch' --inventory "$TASK_TMP/store-owner.md"
+# The third delivery adapter. `delivery::(cli|serve)` was hardcoded in the owner
+# vocabulary, the expected-owner map and both owner regexes, so `src/mcp/` could
+# have carried ANY delivery owner without a gate noticing. This case pins the
+# `mcp` branch of that map the same way the `cli` case above pins its own.
+sed '/^| src\/mcp\/catalog.rs |/s/ | delivery::mcp | / | delivery::cli | /' "$INVENTORY" >"$TASK_TMP/mcp-owner.md"
+assert_fails 'mcp file claiming the cli owner' 'capability ownership mismatch' --inventory "$TASK_TMP/mcp-owner.md"
 sed '/^| src\/domains\/memories\/save.rs |/s@src/domains/memories/save.rs@src/domains/memories/delete.rs@2' "$INVENTORY" >"$TASK_TMP/target.md"
 assert_fails 'duplicate migration target' 'duplicate inventory target' --inventory "$TASK_TMP/target.md"
 sed '/^| src\/domains\/memories\/save.rs |/s@src/domains/memories/save.rs@none@2' "$INVENTORY" >"$TASK_TMP/no-target.md"

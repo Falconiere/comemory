@@ -39,7 +39,7 @@ use crate::utilities::ref_args;
 
 /// `comemory save` / `POST /api/v1/memories` request. The stdin/`-` body
 /// convenience is CLI-only — `body` is a required JSON field over HTTP.
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Request {
     /// Memory body (markdown).

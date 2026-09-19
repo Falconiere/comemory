@@ -59,4 +59,12 @@ jq -nc --arg repo "$KEY" --argjson count "$count" \
   --arg updated "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   '{repo:$repo,count:$count,updated:$updated}' >"$tmp" 2>/dev/null \
   && mv -f "$tmp" "$dir/$KEY.json" 2>/dev/null
+
+# Bootstrap nudge: an empty repo gets no benefit from the recall hooks above
+# until something is indexed or saved. Point at the memory-bootstrap skill
+# only when the count is exactly zero; otherwise stay silent as before.
+if [ "$count" -eq 0 ] 2>/dev/null; then
+  ctx="Comemory: $KEY has no memories yet. Load the memory-bootstrap skill to index code, index docs, distill past sessions, and save the decisions this repo cannot derive from itself."
+  jq -nc --arg ctx "$ctx" '{hookSpecificOutput:{hookEventName:"SessionStart",additionalContext:$ctx}}'
+fi
 exit 0

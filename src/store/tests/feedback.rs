@@ -13,12 +13,20 @@
 //! the test exercises the same integration path the pre-move code took.
 
 use comemory::config::paths::Paths;
-use comemory::domains::learning::feedback_tracking::record_with_provenance;
+use comemory::domains::learning::feedback_tracking::{
+    record_implicit_used, record_with_provenance,
+};
 use comemory::domains::learning::telemetry::StatsDb;
 use comemory::store::connection;
-use comemory::store::feedback::{event_counts, used_events_for_golden, used_query_ids};
-use comemory::utilities::telemetry::PROV_MANUAL;
+use comemory::store::feedback::{
+    event_counts, events_for_query, events_since, used_events_for_golden, used_query_ids,
+};
+use comemory::store::retrieval_log::{self, NewLogRow};
+use comemory::utilities::telemetry::{COACTIVATION_QUERY_ID, PROV_AUTO_COACTIVATION, PROV_MANUAL};
 use tempfile::TempDir;
+
+const REPO: &str = "r";
+const OTHER_REPO: &str = "other-repo";
 
 /// Open a [`StatsDb`] over a fresh `comemory.db` in a tempdir.
 fn open_db() -> (StatsDb, TempDir) {
@@ -221,4 +229,148 @@ fn event_counts_sums_verdicts_and_the_implicit_share_numerator() {
 
     let (total, implicit, used, irrelevant) = event_counts(&conn).expect("event_counts");
     assert_eq!((total, implicit, used, irrelevant), (3, 1, 2, 1));
+}
+
+/// `events_since` counts `feedback_events` at or after `since`, scoped by
+/// the originating `retrieval_log` row's `repo` when one is given, and `0`
+/// once `since` moves past the recorded verdict — the verdict leg of
+/// `domains::learning::recall_status`'s window report.
+#[test]
+fn events_since_counts_by_window_and_repo() {
+    let (mut db, _tmp) = open_db();
+    retrieval_log::insert(
+        db.conn(),
+        &NewLogRow {
+            query_id: "q-1",
+            query: "q",
+            returned_ids: "[]",
+            at: "2026-07-15T00:00:00Z",
+            duration_ms: 1,
+            repo: Some(REPO),
+            kind: None,
+            source: "search",
+        },
+    )
+    .expect("insert retrieval_log row");
+
+    assert_eq!(
+        events_since(db.conn(), Some(REPO), "2026-07-14T00:00:00Z").expect("count"),
+        0,
+        "no feedback_events row yet"
+    );
+
+    record_with_provenance(&mut db, "q-1", &["aaaaaaa1".to_string()], &[], PROV_MANUAL)
+        .expect("record verdict");
+
+    assert_eq!(
+        events_since(db.conn(), Some(REPO), "2026-07-14T00:00:00Z").expect("count"),
+        1
+    );
+    assert_eq!(
+        events_since(db.conn(), None, "2026-07-14T00:00:00Z").expect("count"),
+        1,
+        "no repo filter counts every repo"
+    );
+    assert_eq!(
+        events_since(db.conn(), Some(OTHER_REPO), "2026-07-14T00:00:00Z").expect("count"),
+        0,
+        "a different repo excludes the verdict"
+    );
+    assert_eq!(
+        events_since(db.conn(), Some(REPO), "2200-01-01T00:00:00Z").expect("count"),
+        0,
+        "a since in the future excludes the verdict"
+    );
+}
+
+/// A co-activation reward (the real sentinel path: `record_implicit_used`
+/// with [`PROV_AUTO_COACTIVATION`] and [`COACTIVATION_QUERY_ID`], the same
+/// call `domains::graph::coactivate::reward_pair` makes) writes a
+/// `feedback_events` row with NO matching `retrieval_log` row by design
+/// (`COACTIVATION_QUERY_ID` is deliberately not a real query id). The
+/// `LEFT JOIN` in `events_since` must still count it when `repo` is `None`,
+/// and exclude it when `repo` is `Some` — there is no repo to match.
+#[test]
+fn events_since_counts_a_coactivation_reward_with_no_retrieval_log_row_only_when_repo_is_none() {
+    let (db, _tmp) = open_db();
+    record_implicit_used(
+        db.conn(),
+        "aaaaaaa1",
+        "2026-07-15T00:00:00Z",
+        PROV_AUTO_COACTIVATION,
+        COACTIVATION_QUERY_ID,
+    )
+    .expect("record co-activation reward");
+
+    assert_eq!(
+        events_since(db.conn(), None, "2026-07-14T00:00:00Z").expect("count"),
+        1,
+        "no repo filter counts the sentinel row despite its missing retrieval_log join"
+    );
+    assert_eq!(
+        events_since(db.conn(), Some(REPO), "2026-07-14T00:00:00Z").expect("count"),
+        0,
+        "a repo filter excludes it: the LEFT JOIN has no repo to match"
+    );
+}
+
+/// `events_for_query` reads back exactly what landed against one query id —
+/// id, verdict and provenance — over two real `record_with_provenance`
+/// calls with DIFFERENT provenance, so a mapping that collapsed the two
+/// would fail here. The rows of a second query id must not leak in.
+#[test]
+fn events_for_query_reads_back_each_verdict_with_its_provenance() {
+    let (mut db, _tmp) = open_db();
+    record_with_provenance(
+        &mut db,
+        "q-20260918-aabbccdd",
+        &["aaaaaaa1".into()],
+        &["aaaaaaa2".into()],
+        "implicit",
+    )
+    .expect("implicit record");
+    record_with_provenance(
+        &mut db,
+        "q-20260918-aabbccdd",
+        &["aaaaaaa3".into()],
+        &[],
+        PROV_MANUAL,
+    )
+    .expect("manual record");
+    record_with_provenance(
+        &mut db,
+        "q-20260918-11223344",
+        &["aaaaaaa9".into()],
+        &[],
+        PROV_MANUAL,
+    )
+    .expect("other query record");
+
+    let rows = events_for_query(db.conn(), "q-20260918-aabbccdd").expect("events for query");
+    let shape: Vec<(&str, &str, &str)> = rows
+        .iter()
+        .map(|r| {
+            (
+                r.memory_id.as_str(),
+                r.verdict.as_str(),
+                r.provenance.as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        shape,
+        vec![
+            ("aaaaaaa1", "used", "implicit"),
+            ("aaaaaaa2", "irrelevant", "implicit"),
+            ("aaaaaaa3", "used", PROV_MANUAL),
+        ],
+        "ordered (memory_id, verdict), one row per verdict, provenance verbatim"
+    );
+
+    assert!(
+        events_for_query(db.conn(), "q-20260918-00000000")
+            .expect("events for an unjudged query")
+            .is_empty(),
+        "a query with no verdicts reads back empty, not an error"
+    );
 }

@@ -19,8 +19,9 @@ use crate::domains::retrieval::scope::ScopeEcho;
 use crate::domains::retrieval::{context_result, search_result};
 use crate::prelude::*;
 use crate::serve::AppState;
-use crate::serve::routes::{respond, run_blocking, track_for};
+use crate::serve::routes::{respond, track_for};
 use crate::serve::scope::RepoScope;
+use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
 
 /// This module's routes, merged into the `memories` resource router.

@@ -33,7 +33,8 @@ use serde::Deserialize;
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::routes::maint::admin::contain_repo;
-use crate::serve::routes::{RouteEntry, guard_mutating, respond, run_blocking};
+use crate::serve::routes::{RouteEntry, guard_mutating, respond};
+use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
 
 /// This resource's route-table entries, appended onto [`super::table`].

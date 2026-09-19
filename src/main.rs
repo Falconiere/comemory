@@ -1,16 +1,10 @@
-//! Binary entry point. Parses CLI args, runs the dispatched command, and
-//! maps any returned [`Error`] to a sysexits-style exit code so shell users
-//! and supervisors can react meaningfully (mapping per design §6.4):
-//!
-//! - 0  — success
-//! - 64 — `EX_USAGE` (`NotFound`, `Usage`)
-//! - 65 — `EX_DATAERR` (`Yaml`, `Json`, `Toml`, `Frontmatter`, `VecDimMismatch`,
-//!   `Document`)
-//! - 69 — `EX_UNAVAILABLE` (`Unavailable`)
-//! - 70 — `EX_SOFTWARE` (`Sqlite`, `Migration`, `SchemaTooNew`, `Ast`, `Git`,
-//!   `Forbidden`, `BadRequest`, `ConfirmationRequired`, `Other`)
-//! - 74 — `EX_IOERR` (`Io`)
-//! - 78 — `EX_CONFIG` (`Config`)
+//! Binary entry point: parse args, run the command, and map a returned
+//! [`Error`] to a sysexits code (design §6.4): 0 success; 64 `EX_USAGE`
+//! (`NotFound`, `Usage`); 65 `EX_DATAERR` (`Yaml`, `Json`, `Toml`,
+//! `Frontmatter`, `VecDimMismatch`, `Document`); 69 `EX_UNAVAILABLE`
+//! (`Unavailable`); 70 `EX_SOFTWARE` (`Sqlite`, `Migration`, `SchemaTooNew`,
+//! `Ast`, `Git`, `Forbidden`, `BadRequest`, `ConfirmationRequired`, `Other`);
+//! 74 `EX_IOERR` (`Io`); 78 `EX_CONFIG` (`Config`).
 
 use std::io::Write as _;
 
@@ -21,7 +15,11 @@ use comemory::errors::Error;
 
 #[tokio::main]
 async fn main() {
+    // Diagnostics go to stderr: stdout is a data channel for `--json` and the
+    // whole JSON-RPC stream for `comemory mcp`, so a `RUST_LOG` line there
+    // would corrupt what the caller parses.
     tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
     let cli = Cli::parse();

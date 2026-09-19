@@ -1,18 +1,22 @@
 //! `retrieval_log` insert + reads: the single write behind every tracked
-//! `search`/`context`/`search-code` run
-//! (`retrieval::pipeline::log_retrieval`), and the raw `returned_ids`
+//! `search`/`context`/`search-code`/`find` run
+//! (`retrieval::pipeline::log_retrieval`), the raw `returned_ids`
 //! provenance query behind [`crate::domains::graph::search_edit`]'s search→edit
-//! lookback.
+//! lookback, and [`pending_since`] / [`count_since`] — the unjudged-query
+//! and total-tracked-query window scans behind
+//! `domains::learning::recall_status`.
 
 use std::collections::HashSet;
 
 use rusqlite::{Connection, params};
+use serde::Serialize;
 
 use super::{
     orm,
     schema_learning::{RetrievalLog, retrieval_log as col},
 };
 use crate::prelude::*;
+use crate::utilities::telemetry::source;
 use toolu_orm::core::query_column::CommonOps;
 
 /// Insert parameters for one `retrieval_log` row, bundled into a struct
@@ -55,6 +59,116 @@ pub fn insert(conn: &Connection, row: &NewLogRow<'_>) -> Result<()> {
             .to_sql(),
     )?;
     Ok(())
+}
+
+/// One tracked query with no `feedback_events` verdict yet, decoded for
+/// `domains::learning::recall_status`'s `pending` list. Plain owned data
+/// (like [`crate::store::eval_runs::EvalRunRow`]), so `recall_status::run`
+/// reuses it directly for the JSON boundary rather than mirroring it with a
+/// second type.
+#[derive(Debug, Serialize)]
+pub struct PendingRow {
+    /// Deterministic query id.
+    pub query_id: String,
+    /// The raw query text.
+    pub query: String,
+    /// ISO-8601 UTC timestamp the query ran at.
+    pub at: String,
+    /// The `retrieval_log.source` value (`search` / `context` /
+    /// `search-code` / `find`).
+    pub source: String,
+    /// The decoded `returned_ids` JSON array.
+    pub returned_ids: Vec<String>,
+}
+
+/// Every tracked recall (`search` / `context` / `search-code` / `find`) at
+/// or after `since`, optionally scoped to `repo`, with no matching
+/// `feedback_events` row for its `query_id` — the `LEFT JOIN … IS NULL`
+/// behind `domains::learning::recall_status`'s "pending" list. `since` must
+/// already be `iso_format`-shaped, matching `retrieval_log.at`, so the plain
+/// string `>=` compares chronologically. Ordered by `at` ascending. Text
+/// `>=` and `LEFT JOIN` are both unsupported toolu-orm 0.7.0 capabilities,
+/// so this stays hand SQL — see `docs/guides/runtime-orm.md`. A malformed
+/// `returned_ids` value propagates as [`Error::Json`] rather than being
+/// skipped (unlike [`crate::domains::graph::search_edit`]'s best-effort
+/// reward scan): a status report must not understate pending recalls to
+/// the hook deciding whether to block the session.
+pub fn pending_since(
+    conn: &Connection,
+    repo: Option<&str>,
+    since: &str,
+) -> Result<Vec<PendingRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT rl.query_id, rl.query, rl.at, rl.source, rl.returned_ids \
+           FROM retrieval_log rl \
+           LEFT JOIN feedback_events fe ON fe.query_id = rl.query_id \
+          WHERE rl.source IN (?1, ?2, ?3, ?4) \
+            AND rl.at >= ?5 \
+            AND (?6 IS NULL OR rl.repo = ?6) \
+            AND fe.query_id IS NULL \
+          ORDER BY rl.at ASC",
+    )?;
+    let raw_rows = stmt
+        .query_map(
+            params![
+                source::SEARCH,
+                source::CONTEXT,
+                source::SEARCH_CODE,
+                source::FIND,
+                since,
+                repo
+            ],
+            |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, String>(3)?,
+                    r.get::<_, String>(4)?,
+                ))
+            },
+        )?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    raw_rows
+        .into_iter()
+        .map(|(query_id, query, at, source, returned_ids_raw)| {
+            let returned_ids: Vec<String> = serde_json::from_str(&returned_ids_raw)?;
+            Ok(PendingRow {
+                query_id,
+                query,
+                at,
+                source,
+                returned_ids,
+            })
+        })
+        .collect()
+}
+
+/// Count of tracked recalls (`search` / `context` / `search-code` / `find`)
+/// at or after `since`, optionally scoped to `repo` — pending ∪ judged, the
+/// `queries` total behind `domains::learning::recall_status`'s window
+/// report. Same source set and `since`/`repo` predicates as
+/// [`pending_since`], minus its `LEFT JOIN feedback_events`: unlike that
+/// scan, a row here is counted whether or not it has been judged yet.
+/// `since` must already be `iso_format`-shaped, matching `retrieval_log.at`,
+/// so the plain string `>=` compares chronologically.
+pub fn count_since(conn: &Connection, repo: Option<&str>, since: &str) -> Result<u64> {
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM retrieval_log \
+          WHERE source IN (?1, ?2, ?3, ?4) \
+            AND at >= ?5 \
+            AND (?6 IS NULL OR repo = ?6)",
+        params![
+            source::SEARCH,
+            source::CONTEXT,
+            source::SEARCH_CODE,
+            source::FIND,
+            since,
+            repo
+        ],
+        |r| r.get(0),
+    )?;
+    Ok(count as u64)
 }
 
 /// Return the RAW `returned_ids` JSON strings from every `retrieval_log`

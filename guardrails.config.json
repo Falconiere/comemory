@@ -7,6 +7,7 @@
       "cli",
       "config",
       "domains",
+      "mcp",
       "serve",
       "store",
       "utilities"
@@ -114,7 +115,8 @@
       "domains/documents/document",
       "domains/documents/source",
       "domains/graph",
-      "domains/maintenance"
+      "domains/maintenance",
+      "mcp"
     ]
   },
   "fileSize": {

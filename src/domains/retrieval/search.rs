@@ -22,7 +22,7 @@ use crate::utilities::context::Ctx;
 use crate::utilities::pagination::{page_meta, page_window};
 
 /// `comemory search` / `GET|POST /api/v1/memories/search` request.
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Request {
     /// Natural-language query string.
@@ -60,7 +60,7 @@ pub struct Request {
 }
 
 /// Run the shared memory-search middle. `track` governs access tracking +
-/// `retrieval_log` writes — the CLI passes `cli::track_searches()`, a
+/// `retrieval_log` writes — the CLI passes `config::env::access_tracking_enabled()`, a
 /// read-only HTTP server passes `false` unconditionally (§Security
 /// "Read-only side-effect degradation").
 pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<SearchResult> {

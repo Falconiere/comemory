@@ -2,9 +2,9 @@
 //! this module's route [`table`] (source of truth for the read-only gate's
 //! `mutating` flag and `GET /commands`, both later steps) and `v1_router`
 //! assembly. Also owns the handler-layer helpers every resource reuses:
-//! [`run_blocking`] (run `domains::<capability>::<cmd>::run` — and the connection lock it
-//! takes — on a blocking-pool thread, never across an `.await`),
-//! [`query_response`] (borrow the shared context and envelope a query result),
+//! [`query_response`] (borrow the shared context and envelope a query result,
+//! running it — and the connection lock it takes — on a blocking-pool thread
+//! via [`crate::utilities::blocking::run_blocking`], never across an `.await`),
 //! [`respond`] (envelope the result), and [`guard_mutating`] (the
 //! read-only/write-permit gate every mutating route calls first).
 
@@ -23,6 +23,7 @@ use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::envelope::Envelope;
 use crate::serve::jobs::JobId;
+use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
 
 /// `GET|POST /code/search`.
@@ -58,7 +59,8 @@ pub mod config;
 pub mod graph_nodes;
 /// `GET|POST /index/runs`.
 pub mod index_runs;
-/// `GET /learning/*`, `POST /learning/evals`, proposals.
+/// `GET /learning/*`, `POST /learning/evals`, proposals,
+/// `GET /learning/recall-status`.
 pub mod learning_console;
 /// `GET|POST|PATCH /memory-stores*`.
 pub mod memory_stores;
@@ -186,28 +188,6 @@ async fn health(State(state): State<AppState>) -> Response {
     )
 }
 
-/// Run `f` on the blocking-thread-pool, flattening a `JoinError` (task
-/// panic) into the crate `Error` so callers can just `?` through it. Shared
-/// by every `/api/v1` route: the command core's DB work — and the
-/// `MutexGuard` it takes on `AppState`'s shared connection — must never run
-/// on (or cross an `.await` on) the async runtime's own worker threads;
-/// running the whole closure, guard included, inside the blocking task
-/// satisfies both.
-///
-/// The flattening only fires under `panic = "unwind"` (dev/test default).
-/// This crate's `[profile.release]`/`[profile.dist]` — every shipped
-/// binary — set `panic = "abort"`, under which a panic here aborts the
-/// whole process for every connected client before this branch can run.
-pub(crate) async fn run_blocking<T, F>(f: F) -> Result<T>
-where
-    F: FnOnce() -> Result<T> + Send + 'static,
-    T: Send + 'static,
-{
-    tokio::task::spawn_blocking(f)
-        .await
-        .map_err(|e| Error::Other(format!("blocking task panicked: {e}")))?
-}
-
 /// Run a query with the shared connection and envelope its owned result.
 /// Configuration and connection guards stay on the blocking thread; callers
 /// resolve request scope first and keep any specialized validation ordering.
@@ -287,7 +267,7 @@ pub(crate) fn guard_job(command: &str, state: &AppState) -> std::result::Result<
 /// test hook the CLI honors — shared by `search`, `search-code`, and
 /// `context` so the three cannot drift.
 pub(crate) fn track_for(state: &AppState) -> Result<bool> {
-    Ok(!state.read_only() && crate::cli::track_searches()?)
+    Ok(!state.read_only() && crate::config::env::access_tracking_enabled()?)
 }
 
 /// Envelope a blocking route's result: [`Envelope::ok`] on success,

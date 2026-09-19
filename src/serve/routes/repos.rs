@@ -16,7 +16,8 @@ use axum::routing::get;
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::routes::index_runs::INDEX_JOB_COMMAND;
-use crate::serve::routes::{RouteEntry, respond, run_blocking};
+use crate::serve::routes::{RouteEntry, respond};
+use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
 
 /// This resource's route-table entries, appended onto [`super::table`].
