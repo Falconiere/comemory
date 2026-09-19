@@ -149,3 +149,27 @@ fn repo_required_is_a_tool_level_error_naming_how_to_supply_a_scope() {
     let message = body["message"].as_str().expect("a message string");
     assert!(message.contains("--repo"), "message: {message}");
 }
+
+/// A response type whose `Serialize` fails. The response types are ours, so
+/// this is the "bug in our own payload" branch: the outcome is a protocol
+/// error carrying only the opaque `internal` word, never a tool-level error
+/// that would leak the serializer's message to the agent.
+struct Unserializable;
+
+impl serde::Serialize for Unserializable {
+    fn serialize<S: serde::Serializer>(&self, _: S) -> std::result::Result<S::Ok, S::Error> {
+        Err(serde::ser::Error::custom("deliberately unserializable"))
+    }
+}
+
+#[test]
+fn a_payload_that_fails_to_serialize_is_an_opaque_protocol_error() {
+    let outcome: comemory::errors::Result<Unserializable> = Ok(Unserializable);
+    let err = into_tool_result(outcome).expect_err("serialization failure must not be Ok");
+    assert_eq!(err.message, "internal");
+    assert!(
+        !err.message.contains("deliberately"),
+        "the serializer's own message must not reach the wire: {}",
+        err.message
+    );
+}
