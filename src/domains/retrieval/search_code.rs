@@ -51,7 +51,7 @@ pub struct Request {
 /// [`pipeline::paginate`], and record best-effort telemetry (access bump +
 /// `retrieval_log` row, `source='search-code'`) when `track` is set.
 /// `track` mirrors `retrieval::search::run`'s CLI/HTTP split — the CLI passes
-/// `cli::track_searches()`, a read-only HTTP server passes `false`
+/// `config::env::access_tracking_enabled()`, a read-only HTTP server passes `false`
 /// unconditionally (§Security "Read-only side-effect degradation").
 pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<SearchCodeResult> {
     let lang = canonical_lang(req.lang.as_deref())?;

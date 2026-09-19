@@ -116,8 +116,8 @@ fn an_unparsable_since_is_a_usage_error() {
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("since"),
-        "stderr should name the offending flag, got: {stderr}"
+        stderr.contains("since: invalid time value `nonsense`"),
+        "stderr must name the flag and the offending value, got: {stderr}"
     );
 }
 
@@ -138,8 +138,8 @@ fn tty_output_prints_the_header_and_the_pending_line() {
     );
     let stdout = String::from_utf8(out.stdout).expect("utf8 stdout");
     assert!(
-        stdout.contains("queries=1") && stdout.contains("pending=1"),
-        "TTY header must report the counters: {stdout}"
+        stdout.contains("queries=1  feedback_events=0  saves=1  pending=1"),
+        "TTY header must report the exact counters: {stdout}"
     );
     assert!(
         stdout.contains(&query_id),

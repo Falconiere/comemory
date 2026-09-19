@@ -35,9 +35,18 @@ fn install_writes_mcp_manifest() {
     let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
     let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     let manifest = report["mcp_manifest"].as_str().unwrap();
-    assert!(
-        manifest.ends_with("plugins/comemory/.mcp.json"),
-        "unexpected mcp_manifest path: {manifest}"
+    let expected = home
+        .path()
+        .join("data")
+        .join("integrations")
+        .join(env!("CARGO_PKG_VERSION"))
+        .join("plugins")
+        .join("comemory")
+        .join(".mcp.json");
+    assert_eq!(
+        std::path::Path::new(manifest),
+        expected.as_path(),
+        "mcp_manifest must be the plugin-root path under this data dir"
     );
     assert!(!std::path::Path::new(manifest).exists());
 }

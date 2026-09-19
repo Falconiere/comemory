@@ -253,3 +253,28 @@ fn a_missing_database_reports_zeros_without_creating_one() {
         "recall-status must not create comemory.db as a side effect"
     );
 }
+
+/// A database that exists but is not SQLite must surface as an error, not
+/// a panic and not a silent zero report: the existence guard only covers the
+/// missing-file case.
+#[test]
+fn a_corrupt_database_is_an_error_not_a_zero_report() {
+    let dir = TempDir::new().expect("tempdir");
+    let paths = fresh_paths(&dir);
+    std::fs::create_dir_all(paths.db_path().parent().expect("db parent")).expect("data dir");
+    std::fs::write(paths.db_path(), b"this is not a sqlite file\n").expect("write garbage");
+
+    let cfg = Config::defaults();
+    let mut ctx = Ctx::lazy(&paths, &cfg);
+    let outcome = recall_status::run(
+        &mut ctx,
+        recall_status::Request {
+            repo: Some(REPO.to_string()),
+            since: None,
+        },
+    );
+    assert!(
+        outcome.is_err(),
+        "a corrupt store must propagate an error, got {outcome:?}"
+    );
+}

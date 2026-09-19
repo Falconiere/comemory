@@ -149,7 +149,10 @@ impl McpHome {
     /// Close the session and reap the child. Called by the journey when a
     /// second server must see the first one's writes settled.
     pub async fn cancel(self) {
-        let _ = self.client.cancel().await;
+        self.client
+            .cancel()
+            .await
+            .expect("cancel the mcp child session");
     }
 }
 

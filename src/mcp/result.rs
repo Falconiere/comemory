@@ -30,8 +30,8 @@ const REPO_REQUIRED_MESSAGE: &str =
 /// `exec::run` refuses an `Access::Write` before it builds its closure, but
 /// it returns the same `Result<T>` a read does so every tool body stays one line. The
 /// marker is how that one `Err` keeps the `read_only` code word instead of
-/// collapsing into the generic `forbidden` row — built and recognised here,
-/// in one place, by [`read_only_error`] and [`is_read_only_refusal`].
+/// collapsing into the generic `forbidden` row — built by [`read_only_error`]
+/// and recognised by the `starts_with` arm in [`into_tool_result`], both here.
 const READ_ONLY_PREFIX: &str = "server is read-only: refusing the mutating tool ";
 
 /// A tool-level error result: `{"code": …, "message": …}` as structured
