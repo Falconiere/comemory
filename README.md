@@ -257,6 +257,7 @@ Full data model, save flow, retrieval pipeline, and graph mechanics:
 | `comemory eval` | Score retrieval quality (recall@k, MRR) against a golden set (`--history` reads past runs) |
 | `comemory benchmark` | Score a reviewed benchmark set over memory, code and document retrieval; reports candidate-pool recall apart from recall@k / MRR / nDCG@k and writes a replayable artifact |
 | `comemory judge` | Record reviewed relevance verdicts against a candidate observation `comemory find` captured, or report that observation |
+| `comemory export-dataset` | Export the reviewed relevance dataset and its manifest as versioned JSONL, with grouped splits, a withheld holdout and a report of everything it refused to guess at |
 | `comemory mine` | Distill failed→successful query rewordings into expansions (`--apply`) |
 | `comemory tune` | Grid-search ranking knobs against the golden set (`--apply` writes `config.toml`) |
 | `comemory bandit` | Thompson-sample ranking knobs (`--apply` writes when the sample beats baseline) |
@@ -435,6 +436,49 @@ helps, not an assertion that it does. The guide —
 configuration, rollback, the process trust boundary, latency and the honest
 limits of stateless paging — is
 [docs/guides/learned-reranking.md](docs/guides/learned-reranking.md).
+
+### Exporting what was reviewed
+
+`comemory export-dataset` turns those observations and verdicts into a
+versioned JSONL dataset plus a manifest, for the evaluator and for an external
+trainer. No model framework enters the Rust binary.
+
+```bash
+comemory export-dataset --out ./dataset
+# d-3c1f5a90b7e24d68 -> ./dataset  (312 record(s), 14 group(s), record v1)
+#   train.jsonl                     210 row(s)     412233 byte(s)  5e11c0a7b3d2
+#   validation.jsonl                 45 row(s)      88214 byte(s)  9a41f0be7712
+#   holdout.jsonl                    45 row(s)      88120 byte(s)  c74003fa1b59  WITHHELD
+# unjudged 900  unresolved 7 (judged 2)  stale 1  pool miss 0  …
+```
+
+The defaults are the conservative ones, and each is a rule rather than a
+preference:
+
+- **Reviewed verdicts only.** Implicit signals are exported only on request and
+  only into their own `<split>.implicit.jsonl`, so a pseudo-label is never
+  silently promoted to evaluation truth. Access frequency and the absence of a
+  click are not negative relevance judgments.
+- **A reviewed relevance of `0` is a hard negative; a candidate nobody judged
+  stays unjudged.** The unjudged pool is reported in the manifest and emitted
+  only under `--include-unjudged`, always with `label: null`.
+- **An unresolved candidate is reported, never exported.** A purge blanks a
+  captured passage in place; the row keeps the pool's shape, and the manifest
+  counts both it and any verdict recorded against it.
+- **Splits are assigned to connected components of the query/content graph,
+  before any negative selection.** Two chunks of one document, two symbols of
+  one file, two content versions of one memory and two spellings of one query
+  never land on opposite sides. `--holdout-repo` and `--holdout-since` reserve
+  a whole repository or time slice when the data allows it.
+- **The holdout split is withheld.** Without `--include-holdout` no
+  `holdout.jsonl` is written at all, and a stale one an earlier run left in the
+  output directory is removed first; the manifest publishes only its row count
+  and SHA-256.
+- **A repeated export from an unchanged database is byte-identical**, and
+  `dataset_id` plus `snapshot_digest` prove it.
+
+The record and manifest schemas are in
+[docs/designs/2026-09-18-reviewed-dataset-export.md](docs/designs/2026-09-18-reviewed-dataset-export.md).
 
 ## Configuration
 

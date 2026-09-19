@@ -38,6 +38,14 @@ One line per file, named after its primary item:
 | `benchmark_set.rs` | `BenchmarkSet` | The versioned reviewed set: tasks, per-domain filters, the pinned `ranking` knobs, the vector scenario and the budgets, with every silently-inert shape refused at load |
 | `candidate_facts.rs` | `CandidateFacts` | Identity, content version and bounded text read off the leg rows before fusion discards them |
 | `candidate_identity.rs` | `CandidateIdentity` | Domain-qualified stable identity and the reference-string codec — the opaque token the reranker process protocol passes around |
+| `dataset_build.rs` | `assemble` | Bucket split rows by `(split, label class)` FIRST, then cap reviewed negatives inside one bucket — the ordering that makes "splits before negative mining" mechanical |
+| `dataset_dedup.rs` | `collapse_duplicates` | Duplicate observations, verdicts naming a stale version or nothing the pool returned, and contradictory verdicts, each resolved deterministically and counted |
+| `dataset_files.rs` | `write_buckets` | The closed owned-name set, the sweep that clears it before writing, the JSONL serialization and the manifest write |
+| `dataset_manifest.rs` | `DatasetManifest` | What was exported and what was refused, plus `snapshot_digest` and `dataset_id` — the two digests that make a repeated export provable |
+| `dataset_record.rs` | `DatasetRecord` | The exported JSONL line and `RECORD_VERSION`; no locator field, and no label invented for a candidate nobody judged |
+| `dataset_rows.rs` | `build` | The provenance filter, the contract-version refusal, the per-observation context and the fixed order the pipeline runs in |
+| `dataset_select.rs` | `resolve` | Which candidates and verdicts survive — every drop has a name and a counter — and the rows they become |
+| `dataset_split.rs` | `plan` | Grouped, seeded split assignment: union-find over the query/content graph, the reserved-repository and reserved-time-slice overrides, then a stable hash |
 | `candidate_observation.rs` | `CandidateObservation` | The candidate observation contract: one candidate, its bounded text, and the per-query envelope carrying the filters, the retrieval/corpus version and the reference time |
 | `golden.rs` | `GoldenPair` | Golden-set model: hand-written YAML pairs merged with feedback-harvested pairs; the harvest join delegates to `store::feedback::used_events_for_golden`, pinned to `manual` provenance |
 | `judgment.rs` | `Judgment` | A reviewed relevance judgment, its validated target key, and the match/stale/no outcome against an observed identity |

@@ -65,6 +65,7 @@ const CLI_ONLY: &[&str] = &[
     "benchmark",
     "capture",
     "distill",
+    "export-dataset",
     "install",
     "judge",
     "serve",

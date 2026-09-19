@@ -4,14 +4,16 @@
     clippy::panic,
     clippy::float_cmp,
     clippy::too_many_lines,
-    // One fixture, two consuming binaries: the capture suite never edits the
-    // corpus and the judgment suite never inspects a bound, so each compiles
-    // items the other uses. Same convention as `tests/common/auth_fixture.rs`.
+    // One fixture, three consuming binaries: the capture suite never edits the
+    // corpus, the judgment suite never inspects a bound, and the export suite
+    // uses neither the edited variants nor the counters, so each compiles
+    // items the others use. Same convention as `tests/common/auth_fixture.rs`.
     dead_code
 )]
-//! Shared fixture for `tests/cli__judge.rs` and `tests/cli__judge_2.rs`: a
-//! real mixed-domain corpus driven through the real `comemory` binary, plus
-//! the database reads those suites assert against.
+//! Shared fixture for `tests/cli__judge.rs`, `tests/cli__judge_2.rs` and
+//! `tests/cli__export_dataset.rs`: a real mixed-domain corpus driven through
+//! the real `comemory` binary, plus the database reads those suites assert
+//! against.
 //!
 //! Three memories saved through the production save path, one real git
 //! repository indexed with `index-code`, and one real markdown tree indexed

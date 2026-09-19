@@ -51,6 +51,7 @@ One line per file, named after its primary item:
 | `ingest_code.rs` | `Args` | `comemory ingest-code` — bulk pre-embedded code-symbol ingestion from stdin |
 | `install.rs` | `Args` | `comemory install` — install the embedded agent skills and hooks through the native Claude Code or Codex plugin manager; core in `domains::integrations::install` |
 | `install_hooks.rs` | `Args` | `comemory install-hooks` — install git hooks that trigger `index-code` |
+| `export_dataset.rs` | `Args` | `comemory export-dataset` — write the reviewed relevance dataset and its manifest as versioned JSONL, with grouped splits, a withheld holdout and the TTY summary of everything the export refused |
 | `judge.rs` | `Args` | `comemory judge` — record reviewed relevance verdicts against a captured candidate observation, or report that observation |
 | `lazy_reindex.rs` | `RepoContext` | Detached, non-blocking auto-reindex trigger behind `indexing.auto_reindex = lazy` |
 | `list.rs` | `Args` | `comemory list` — page live memories with `--repo` / `--kind` filters |

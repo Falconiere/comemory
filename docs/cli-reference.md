@@ -29,49 +29,50 @@ Agentic dev memory + code-aware semantic search
 Usage: comemory [OPTIONS] <COMMAND>
 
 Commands:
-  save           Save a memory (body via arg, `-`, or stdin)
-  search         Search the memory index by natural-language query
-  search-code    Search the code index by natural-language or identifier query
-  list           List memories with optional repo/kind filters
-  delete         Soft-delete a memory by id (moves to `.trash/`)
-  distill        Extract explicit `comemory save` claims from a transcript and propose them as platform candidate memories (CLI-only)
-  feedback       Record per-memory feedback (used vs irrelevant)
-  eval           Score retrieval quality against a golden set (recall@k, MRR)
-  benchmark      Score a reviewed benchmark set over memory, code and document retrieval, and emit a replayable candidate-observation artifact
-  judge          Record reviewed relevance verdicts against a captured candidate observation, or report that observation (CLI-only)
-  mine           Mine reformulation pairs from the query log into term-expansion mappings (report only; `--apply` rebuilds `query_expansions`)
-  tune           Grid-search blend weights against the golden set (report only; `--apply` writes the winner into config.toml)
-  bandit         Thompson-sample blend knobs against the golden set (report only; `--apply` writes when the sample beats baseline)
-  doctor         Report on the data directory and SQLite mirror health
-  index-code     Walk a repo, extract symbols, and upsert into the code index
-  ingest-code    Read pre-embedded JSONL rows from stdin and ingest them into the code index (`code_symbols` + `code_fts` + `code_vec`)
-  index          Register one or more paths as document sources and reconcile them
-  sources        List registered document sources with per-status counts
-  stats          Report corpus counters and the size of `comemory.db`
-  repos          List indexed code repositories with their index freshness
-  show           Show one memory in full: body, frontmatter, activation, references
-  find           Search memories, code, and documents as one ranked list
-  hooks          Report and toggle the git hooks that trigger background reindexing
-  unindex        Unregister a document source and remove its derived rows
-  ast            Run an ast-grep pattern against a single source file
-  graph          Export the file-level code-connection graph (imports + co-change) as JSON, Graphviz DOT, or an interactive HTML page
-  edges          Search the relation graph lexically (supersedes, imports, references)
-  serve          Serve the loopback HTTP API (`/api/v1`) for consoles, agents, and scripts
-  setup          Detect what this machine and repo still need, then set it up
-  context        Headline lookup: code symbol + memories matching a key
-  completions    Emit a shell completion script for `bash`, `zsh`, `fish`, `powershell`, or `elvish`
-  prune          Detect (and optionally soft-delete) stale memories
-  consolidate    Report near-duplicate memory clusters and the member worth keeping
-  rebuild        Drop `comemory.db` and repopulate it from the markdown source of truth
-  gc             Purge old `memories/.trash/` entries and learning telemetry past retention
-  install-hooks  Install git hooks that trigger `comemory index-code` on `post-commit`, `post-merge`, and `post-checkout`
-  install        Install bundled skills and hooks for Claude Code or Codex
-  upgrade        Move this binary to the newest release (or a pinned one)
-  auth           Cloud workspace-key login / status / logout (device authorization)
-  sync           Push/pull memories against the platform
-  watch          Follow the organization's changes over the workspace channel
-  capture        Capture a coding-session receipt (redacted) to the platform
-  help           Print this message or the help of the given subcommand(s)
+  save            Save a memory (body via arg, `-`, or stdin)
+  search          Search the memory index by natural-language query
+  search-code     Search the code index by natural-language or identifier query
+  list            List memories with optional repo/kind filters
+  delete          Soft-delete a memory by id (moves to `.trash/`)
+  distill         Extract explicit `comemory save` claims from a transcript and propose them as platform candidate memories (CLI-only)
+  feedback        Record per-memory feedback (used vs irrelevant)
+  eval            Score retrieval quality against a golden set (recall@k, MRR)
+  benchmark       Score a reviewed benchmark set over memory, code and document retrieval, and emit a replayable candidate-observation artifact
+  judge           Record reviewed relevance verdicts against a captured candidate observation, or report that observation (CLI-only)
+  export-dataset  Export the reviewed relevance dataset and its manifest as versioned JSONL, with grouped splits and a withheld holdout (CLI-only)
+  mine            Mine reformulation pairs from the query log into term-expansion mappings (report only; `--apply` rebuilds `query_expansions`)
+  tune            Grid-search blend weights against the golden set (report only; `--apply` writes the winner into config.toml)
+  bandit          Thompson-sample blend knobs against the golden set (report only; `--apply` writes when the sample beats baseline)
+  doctor          Report on the data directory and SQLite mirror health
+  index-code      Walk a repo, extract symbols, and upsert into the code index
+  ingest-code     Read pre-embedded JSONL rows from stdin and ingest them into the code index (`code_symbols` + `code_fts` + `code_vec`)
+  index           Register one or more paths as document sources and reconcile them
+  sources         List registered document sources with per-status counts
+  stats           Report corpus counters and the size of `comemory.db`
+  repos           List indexed code repositories with their index freshness
+  show            Show one memory in full: body, frontmatter, activation, references
+  find            Search memories, code, and documents as one ranked list
+  hooks           Report and toggle the git hooks that trigger background reindexing
+  unindex         Unregister a document source and remove its derived rows
+  ast             Run an ast-grep pattern against a single source file
+  graph           Export the file-level code-connection graph (imports + co-change) as JSON, Graphviz DOT, or an interactive HTML page
+  edges           Search the relation graph lexically (supersedes, imports, references)
+  serve           Serve the loopback HTTP API (`/api/v1`) for consoles, agents, and scripts
+  setup           Detect what this machine and repo still need, then set it up
+  context         Headline lookup: code symbol + memories matching a key
+  completions     Emit a shell completion script for `bash`, `zsh`, `fish`, `powershell`, or `elvish`
+  prune           Detect (and optionally soft-delete) stale memories
+  consolidate     Report near-duplicate memory clusters and the member worth keeping
+  rebuild         Drop `comemory.db` and repopulate it from the markdown source of truth
+  gc              Purge old `memories/.trash/` entries and learning telemetry past retention
+  install-hooks   Install git hooks that trigger `comemory index-code` on `post-commit`, `post-merge`, and `post-checkout`
+  install         Install bundled skills and hooks for Claude Code or Codex
+  upgrade         Move this binary to the newest release (or a pinned one)
+  auth            Cloud workspace-key login / status / logout (device authorization)
+  sync            Push/pull memories against the platform
+  watch           Follow the organization's changes over the workspace channel
+  capture         Capture a coding-session receipt (redacted) to the platform
+  help            Print this message or the help of the given subcommand(s)
 
 Options:
       --json                 Emit machine-readable JSON instead of a human TTY view
