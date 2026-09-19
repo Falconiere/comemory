@@ -40,10 +40,6 @@ pub(crate) mod id_list;
 pub mod pagination;
 /// Canonicalize-and-contain path checks shared by every filesystem surface.
 pub mod path_containment;
-/// The worker threads and polling loop behind [`process_runner`].
-pub(crate) mod process_pipes;
-/// Run one child process under a single end-to-end deadline.
-pub mod process_runner;
 /// The progress / cancellation contract long-running jobs report through.
 pub mod progress;
 /// The `q-<yyyymmdd>-<8hex>` retrieval-log query id: mint and validate.
