@@ -847,10 +847,6 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/utilities/query_id.rs | comemory::utilities::query_id; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/utilities/tests/query_id.rs | none | shared::utilities | src/utilities/query_id.rs | retain |
 | src/utilities/ref_args.rs | comemory::utilities::ref_args; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | none | none | shared::utilities | src/utilities/ref_args.rs | retain |
 | src/utilities/repo_root.rs | comemory::utilities::repo_root; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/utilities/tests/repo_root.rs | none | shared::utilities | src/utilities/repo_root.rs | retain |
-| src/utilities/rerank_outcome.rs | comemory::utilities::rerank_outcome; preserve | src/utilities/tests/rerank_outcome.rs | none | shared::utilities | src/utilities/rerank_outcome.rs | retain |
-| src/utilities/rerank_protocol.rs | comemory::utilities::rerank_protocol; preserve | src/utilities/tests/rerank_protocol.rs | none | shared::utilities | src/utilities/rerank_protocol.rs | retain |
-| src/utilities/rerank_runner.rs | comemory::utilities::rerank_runner; preserve | src/utilities/tests/rerank_runner.rs | none | shared::utilities | src/utilities/rerank_runner.rs | retain |
-| src/utilities/rerank_validate.rs | comemory::utilities::rerank_validate; preserve | src/utilities/tests/rerank_validate.rs | none | shared::utilities | src/utilities/rerank_validate.rs | retain |
 | src/utilities/simhash.rs | comemory::utilities::simhash; crate-root-alias | src/utilities/tests/simhash.rs | none | shared::utilities | src/utilities/simhash.rs | retain |
 | src/utilities/telemetry.rs | private | none | none | shared::utilities | src/utilities/telemetry.rs | retain |
 | src/utilities/vector_stdin.rs | private | none | none | shared::utilities | src/utilities/vector_stdin.rs | retain |

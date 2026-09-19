@@ -36,7 +36,7 @@ One line per file, named after its primary item:
 | File | Primary item | Owns |
 | --- | --- | --- |
 | `context.rs` | `Ctx` | The execution context every command core runs against: `Paths` + `Config` plus a borrowed or lazily opened connection, so conn-free commands never touch the database and a job worker gets exactly one connection |
-| `dated_id.rs` | `dated_id` | The shared `<prefix>-<yyyymmdd>-<8hex>` id shape, minted and validated once, so the `q-` retrieval query id and the `rr-` reranker request id cannot drift |
+| `dated_id.rs` | `dated_id` | The shared `<prefix>-<yyyymmdd>-<8hex>` id shape, minted and validated once, minted and validated in one place so the `q-` retrieval query id keeps one shape |
 | `digest.rs` | `sha256_hex` | SHA-256 hex digests and `is_lower_hex`, the shape check the memory-id and query-id contracts share |
 | `embed.rs` | `embed_query` | The `COMEMORY_EMBED_CMD` shell-out: `sh -c <cmd>` run through `process_runner` under an end-to-end `EMBED_TIMEOUT`, parsing the child's JSON payload through `embedding_input` |
 | `embedding_input.rs` | `parse_payload` | Pure decoding of a `--vector` CSV list and a `{"embedding":[..]}` JSON payload — no process I/O |
@@ -52,10 +52,6 @@ One line per file, named after its primary item:
 | `query_id.rs` | `generate_query_id` | The `q-<yyyymmdd>-<8hex>` retrieval-log id — the `dated_id` shape under a `q` prefix — kept out of the learning capability so retrieval does not depend on it |
 | `repo_root.rs` | `resolve_root` | Resolve a `file:<repo>:<path>` node id to an absolute file on disk, and the `RootOverrides` map a caller may layer over the stored `repo_marker` roots — the one repository resolver `cli`, `serve`, `retrieval::code_ref_fetch` and `domains::memories::refresh_refs` share |
 | `ref_args.rs` | `collect` | The `--ref-file` / `--ref-symbol` values qualified, rewritten repo-root-relative, and anchored to the HEAD blob into a `References` block |
-| `rerank_outcome.rs` | `RerankOutcome` | The reranker result vocabulary: `RerankedCandidate`, the typed `RerankFailure`, and the applied/declined pair whose `order_ids()` answers "what order should I use?" in both arms |
-| `rerank_protocol.rs` | `RerankRequest` | The versioned JSON stdin/stdout wire types: the four objects — request, candidate, response, score — each `deny_unknown_fields`, plus the `ScoreDirection` vocabulary. A candidate id is an opaque domain-qualified string this module never parses |
-| `rerank_runner.rs` | `RerankRunner` | Run one bounded scorer child and apply only a fully valid response. Holds the trusted program/arguments and the protocol bounds; derives no `Deserialize`, so a request body can never select a command |
-| `rerank_validate.rs` | `validate` | Check a response against its request — version, request id, model, adapter, exactly one finite score per candidate — and order by the declared direction with ties broken by the submitted rank |
 | `simhash.rs` | `simhash64` | 64-bit SimHash, Hamming distance, and the `NEAR_DUP_HAMMING` near-duplicate radius |
 | `telemetry.rs` | `PROV_MANUAL` | The persisted vocabularies: `retrieval_log.source`, `feedback_events.target_kind`, the four `provenance` values, and the two auto-reinforcement sentinel query ids |
 | `vector_stdin.rs` | `read_optional` | Acquiring a caller-supplied vector from the flag pair and process stdin, under the 8 MiB payload cap — the only file here that reads stdin |

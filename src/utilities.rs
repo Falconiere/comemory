@@ -52,14 +52,6 @@ pub mod query_id;
 pub mod ref_args;
 /// Repository-root resolution and `file:<repo>:<path>` node addressing.
 pub mod repo_root;
-/// The reranker result vocabulary: reranked order and typed failures.
-pub mod rerank_outcome;
-/// The versioned reranker request/response wire types.
-pub mod rerank_protocol;
-/// Run one bounded reranker child and apply only a fully valid response.
-pub mod rerank_runner;
-/// Validate a reranker response against the request that produced it.
-pub mod rerank_validate;
 /// 64-bit SimHash and Hamming distance over tokenized bodies.
 pub mod simhash;
 /// The persisted retrieval-log / feedback vocabularies.

@@ -3,7 +3,6 @@
 //! Day-sortable and collision-resistant: the digest covers the seed text plus
 //! a nanosecond timestamp, so the same seed twice yields two ids. Two
 //! contracts are built on it — `q-` retrieval query ids ([`crate::utilities::query_id`])
-//! and `rr-` reranker request ids ([`crate::utilities::rerank_protocol`]) — and
 //! they share one implementation so the shapes cannot drift (Binding Rule 1).
 
 use time::OffsetDateTime;
