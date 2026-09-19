@@ -401,42 +401,6 @@ while keeping the recorded pool's shape. Observations are local — never synced
 The contract is
 [docs/designs/2026-09-18-candidate-observation-capture.md](docs/designs/2026-09-18-candidate-observation-capture.md).
 
-### Optional learned reranking
-
-Everything above is deterministic. An operator who wants to try a neural
-reranker can put **one** learned ordering stage after the deterministic ranking
-and before the page, on `search`, `search-code`, `find` and `context` alike:
-
-```toml
-# ~/.comemory/config.toml — off by default, file-only like [tune]
-[rerank]
-enabled = true
-command = ["python3", "/abs/path/integrations/reranker/comemory_rerank.py", "score"]
-model   = "cross-encoder/ms-marco-MiniLM-L6-v2@233902d25c440f23af6f7d6e94d2946bac0bee0a"
-prefix  = 50            # only this many leading candidates are scored
-timeout_ms = 20000
-```
-
-- **Default disabled means nothing happens.** No process is launched, no
-  dependency is added, and the ranking is byte-identical to a build without it.
-- **One scorer child per requested search**, never one per retrieval leg.
-- **Any failure is a fallback, never an error.** A missing binary, a non-zero
-  exit, a timeout, or a response that fails validation restores the *entire*
-  deterministic order and says so in `learned.fallback`.
-- **The tail is untouched.** Only the leading `prefix` is reordered; everything
-  below it keeps its deterministic position and its full `score_parts`.
-- **Explainable.** Every payload gains one `learned` object carrying the learned
-  score, the effective order beside the deterministic one, the model identity and
-  the fallback status. `search`, `search-code` and `context` omit the key when no
-  stage ran, so their JSON is byte-identical to a build without this; `find` and
-  the console search spell it `null`, as they already do for `query_id`.
-
-Reranking is opt-in and unproven: enabling it is how you measure whether it
-helps, not an assertion that it does. The guide —
-configuration, rollback, the process trust boundary, latency and the honest
-limits of stateless paging — is
-[docs/guides/learned-reranking.md](docs/guides/learned-reranking.md).
-
 ### Exporting what was reviewed
 
 `comemory export-dataset` turns those observations and verdicts into a
@@ -501,20 +465,6 @@ immediately, and you supply vectors via `--vector` (CSV) or `--vector-stdin`
 Full recipe, including the sample Ollama wrapper
 [`scripts/comemory-embed.sh`](scripts/comemory-embed.sh):
 **[docs/guides/byo-vectors.md](docs/guides/byo-vectors.md)**.
-
-### Optional external reranker (not wired into search)
-
-An optional Python cross-encoder backend ships in
-[`integrations/reranker/`](integrations/reranker/README.md): a pinned
-Transformers sequence-classification reranker with PEFT LoRA adapter loading,
-speaking a versioned JSON stdin/stdout protocol.
-
-**Nothing in comemory calls it.** The binary stays standalone — no Python
-dependency, no model, no change to how search ranks anything — and wiring it
-into retrieval is deliberately separate work. Read
-[integrations/reranker/README.md](integrations/reranker/README.md) for install,
-base versus adapter invocation, warm local inference, timeout behavior and the
-fallback to base scoring.
 
 ---
 

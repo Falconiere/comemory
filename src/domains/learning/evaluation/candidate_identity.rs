@@ -10,7 +10,6 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::domains::retrieval::unified::fuse_domains;
 use crate::prelude::*;
 
 /// The corpus a candidate came from. The string forms are exactly the
@@ -34,18 +33,6 @@ impl CandidateDomain {
             CandidateDomain::Memory => "memory",
             CandidateDomain::Code => "code",
             CandidateDomain::Document => "document",
-        }
-    }
-
-    /// The domain a fused hit's label names.
-    ///
-    /// `fuse_domains` emits only the three labels, so an unrecognized one falls
-    /// back to memory rather than dropping the candidate out of the pool.
-    pub fn from_label(label: &str) -> CandidateDomain {
-        match label {
-            fuse_domains::DOMAIN_CODE => CandidateDomain::Code,
-            fuse_domains::DOMAIN_DOCUMENT => CandidateDomain::Document,
-            _ => CandidateDomain::Memory,
         }
     }
 

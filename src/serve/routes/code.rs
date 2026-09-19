@@ -12,6 +12,7 @@ use axum::extract::{DefaultBodyLimit, Query, State};
 use axum::response::Response;
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use serde_json::Value;
 
 use crate::domains::retrieval;
 use crate::domains::retrieval::code_search_result;
@@ -19,7 +20,6 @@ use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::envelope::Envelope;
 use crate::serve::jobs;
-use crate::serve::routes::staged::staged_query_response;
 use crate::serve::routes::{
     RouteEntry, accepted, guard_job, index_runs, respond, run_blocking, track_for,
 };
@@ -103,24 +103,22 @@ async fn code_search_post(
     handle(state, req).await
 }
 
-/// Shared handler body for the two search handlers above, driven through
-/// [`staged_query_response`] so an enabled learned ordering stage runs with the
-/// shared connection guard released.
+/// Shared spawn-blocking + envelope wiring for the two handlers above.
 async fn handle(state: AppState, req: retrieval::search_code::Request) -> Response {
-    let handler = state.clone();
-    staged_query_response(state, "code.search", move |ctx| {
-        let track = track_for(&handler)?;
-        retrieval::search_code::begin(ctx, req, track)?.map(|result| {
-            let envelope = code_search_result::envelope(
-                &result.hits,
-                result.query_id.as_deref(),
-                result.meta,
-                result.learned.as_ref(),
-            );
-            serde_json::to_value(envelope).map_err(Error::Json)
-        })
-    })
-    .await
+    let started = Instant::now();
+    let result = run_blocking(move || run(state, req)).await;
+    respond("code.search", result, started)
+}
+
+fn run(state: AppState, req: retrieval::search_code::Request) -> Result<Value> {
+    let track = track_for(&state)?;
+    let cfg = state.cfg();
+    let mut conn = state.conn()?;
+    let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
+    let result = retrieval::search_code::run(&mut ctx, req, track)?;
+    let envelope =
+        code_search_result::envelope(&result.hits, result.query_id.as_deref(), result.meta);
+    serde_json::to_value(envelope).map_err(Error::Json)
 }
 
 /// `POST /api/v1/code/ast` — run an ast-grep pattern against a file

@@ -40,10 +40,6 @@ pub(crate) mod id_list;
 pub mod pagination;
 /// Canonicalize-and-contain path checks shared by every filesystem surface.
 pub mod path_containment;
-/// The worker threads and polling loop behind [`process_runner`].
-pub(crate) mod process_pipes;
-/// Run one child process under a single end-to-end deadline.
-pub mod process_runner;
 /// The progress / cancellation contract long-running jobs report through.
 pub mod progress;
 /// The `q-<yyyymmdd>-<8hex>` retrieval-log query id: mint and validate.
@@ -52,14 +48,6 @@ pub mod query_id;
 pub mod ref_args;
 /// Repository-root resolution and `file:<repo>:<path>` node addressing.
 pub mod repo_root;
-/// The reranker result vocabulary: reranked order and typed failures.
-pub mod rerank_outcome;
-/// The versioned reranker request/response wire types.
-pub mod rerank_protocol;
-/// Run one bounded reranker child and apply only a fully valid response.
-pub mod rerank_runner;
-/// Validate a reranker response against the request that produced it.
-pub mod rerank_validate;
 /// 64-bit SimHash and Hamming distance over tokenized bodies.
 pub mod simhash;
 /// The persisted retrieval-log / feedback vocabularies.

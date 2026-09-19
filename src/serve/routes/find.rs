@@ -8,6 +8,8 @@
 //! `GET` carries the query in the query string; only `POST` can supply a
 //! `vector`, since an embedding does not fit in a URL.
 
+use std::time::Instant;
+
 use axum::Router;
 use axum::extract::{Json, Query, State};
 use axum::response::Response;
@@ -15,9 +17,9 @@ use axum::routing::get;
 
 use crate::domains::retrieval;
 use crate::serve::AppState;
-use crate::serve::routes::staged::staged_query_response;
-use crate::serve::routes::{RouteEntry, track_for};
+use crate::serve::routes::{RouteEntry, respond, run_blocking, track_for};
 use crate::serve::scope::RepoScope;
+use crate::utilities::context::Ctx;
 
 /// This resource's route-table entries, appended onto [`super::table`].
 pub fn table_entries() -> &'static [RouteEntry] {
@@ -65,29 +67,24 @@ async fn find_post(
 
 /// Shared handler body. Access tracking is suppressed on a read-only
 /// server exactly as it is for `search` / `search-code` / `context`.
-///
-/// Driven through [`staged_query_response`] so an enabled learned ordering
-/// stage runs with the shared connection guard released.
 async fn execute(state: AppState, req: retrieval::find::Request) -> Response {
-    let handler = state.clone();
-    staged_query_response(state, "find", move |ctx| {
-        let track = track_for(&handler)?;
-        retrieval::find::begin(ctx, req, track)?.map(|out| Ok(body(&out)))
+    let started = Instant::now();
+    let result = run_blocking(move || {
+        let track = track_for(&state)?;
+        let cfg = state.cfg();
+        let mut conn = state.conn()?;
+        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
+        let out = retrieval::find::run(&mut ctx, req, track)?;
+        Ok(serde_json::json!({
+            "hits": out.hits,
+            "query_id": out.query_id,
+            "observation_id": out.observation_id,
+            "limit": out.meta.limit,
+            "offset": out.meta.offset,
+            "has_more": out.meta.has_more,
+            "total": out.meta.total,
+        }))
     })
-    .await
-}
-
-/// Shape one finished run into the response `data`. The CLI writer builds the
-/// same object in `cli::find`.
-fn body(out: &retrieval::find::FindResult) -> serde_json::Value {
-    serde_json::json!({
-        "hits": out.hits,
-        "query_id": out.query_id,
-        "observation_id": out.observation_id,
-        "limit": out.meta.limit,
-        "offset": out.meta.offset,
-        "has_more": out.meta.has_more,
-        "total": out.meta.total,
-        "learned": out.learned,
-    })
+    .await;
+    respond("find", result, started)
 }

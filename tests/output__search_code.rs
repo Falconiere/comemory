@@ -54,12 +54,7 @@ fn sample_hits() -> Vec<CodeReranked> {
 
 #[test]
 fn search_code_json_envelope_contract() {
-    insta::assert_json_snapshot!(code_search_result::envelope(
-        &sample_hits(),
-        None,
-        meta(),
-        None
-    ));
+    insta::assert_json_snapshot!(code_search_result::envelope(&sample_hits(), None, meta()));
 }
 
 #[test]
@@ -68,7 +63,6 @@ fn envelope_carries_query_id_when_present() {
         &sample_hits(),
         Some("q-20260611-a1b2c3d4"),
         meta(),
-        None,
     ))
     .expect("serialize");
     assert_eq!(
@@ -79,13 +73,8 @@ fn envelope_carries_query_id_when_present() {
 
 #[test]
 fn envelope_omits_query_id_when_absent() {
-    let v = serde_json::to_value(code_search_result::envelope(
-        &sample_hits(),
-        None,
-        meta(),
-        None,
-    ))
-    .expect("serialize");
+    let v = serde_json::to_value(code_search_result::envelope(&sample_hits(), None, meta()))
+        .expect("serialize");
     assert!(
         v.get("query_id").is_none(),
         "query_id must be skipped when None: {v}"
@@ -94,13 +83,8 @@ fn envelope_omits_query_id_when_absent() {
 
 #[test]
 fn envelope_serializes_lines_as_start_end_array() {
-    let v = serde_json::to_value(code_search_result::envelope(
-        &sample_hits(),
-        None,
-        meta(),
-        None,
-    ))
-    .expect("serialize");
+    let v = serde_json::to_value(code_search_result::envelope(&sample_hits(), None, meta()))
+        .expect("serialize");
     assert_eq!(
         v["hits"][0]["lines"],
         serde_json::json!([3, 9]),

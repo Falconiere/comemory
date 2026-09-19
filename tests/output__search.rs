@@ -144,8 +144,7 @@ fn search_json_envelope_contract() {
         meta(),
         &sample_meta(),
         data_dir(),
-        ScopeEcho::default(),
-        None,
+        ScopeEcho::default()
     ));
 }
 
@@ -159,7 +158,6 @@ fn envelope_carries_query_id_when_present() {
         &sample_meta(),
         data_dir(),
         ScopeEcho::default(),
-        None,
     ))
     .expect("serialize");
     assert_eq!(
@@ -238,70 +236,10 @@ fn envelope_omits_query_id_when_absent() {
         &sample_meta(),
         data_dir(),
         ScopeEcho::default(),
-        None,
     ))
     .expect("serialize");
     assert!(
         v.get("query_id").is_none(),
         "query_id must be skipped when None: {v}"
-    );
-}
-
-#[test]
-fn the_learned_key_is_absent_unless_a_stage_ran() {
-    let hits = sample_hits();
-    let without = serde_json::to_value(search_result::envelope(
-        &hits,
-        None,
-        meta(),
-        &sample_meta(),
-        data_dir(),
-        ScopeEcho::default(),
-        None,
-    ))
-    .expect("serialize");
-    assert!(
-        without.get("learned").is_none(),
-        "a run with no learned ordering stage must emit the JSON it always has: {without}"
-    );
-
-    let learned = comemory::retrieval::learned_report::LearnedOrdering {
-        applied: true,
-        model: "lexical-overlap@1".into(),
-        adapter: None,
-        request_id: "rr-20260918-1a2b3c4d".into(),
-        pool: 7,
-        prefix: 2,
-        elapsed_ms: 12,
-        fallback: None,
-        scores: Vec::new(),
-    };
-    let with = serde_json::to_value(search_result::envelope(
-        &hits,
-        None,
-        meta(),
-        &sample_meta(),
-        data_dir(),
-        ScopeEcho::default(),
-        Some(&learned),
-    ))
-    .expect("serialize");
-    assert_eq!(
-        with["learned"],
-        serde_json::json!({
-            "applied": true,
-            "model": "lexical-overlap@1",
-            "adapter": null,
-            "request_id": "rr-20260918-1a2b3c4d",
-            "pool": 7,
-            "prefix": 2,
-            "elapsed_ms": 12,
-            "scores": [],
-        }),
-        "the whole object is the contract, not two of its fields"
-    );
-    assert_eq!(
-        with["hits"], without["hits"],
-        "the hits and their deterministic breakdowns are untouched by the report"
     );
 }

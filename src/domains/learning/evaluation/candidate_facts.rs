@@ -61,45 +61,23 @@ enum LegHit<'a> {
 /// leg, `documents.revision_hash` for the document leg. The search path pays
 /// neither, which is why fusion drops these fields in the first place.
 pub fn collect(conn: &Connection, legs: &LegRows, max_text_bytes: usize) -> Result<FactsByHit> {
-    collect_parts(
-        conn,
-        &legs.memory,
-        &legs.code,
-        &legs.documents,
-        max_text_bytes,
-    )
-}
-
-/// [`collect`] over loose leg slices.
-///
-/// A single-domain surface (`search`, `search-code`, `context`) has no
-/// [`LegRows`] to hand over, and building one would clone its whole ranking. It
-/// passes its own slice and two empty ones instead, so every surface
-/// materializes a candidate through exactly the rules `find` does — which is
-/// what makes the text a scorer sees at inference the text a capture persisted.
-/// An empty slice costs no round trip: both batched reads return early on an
-/// empty id list.
-pub fn collect_parts(
-    conn: &Connection,
-    memory_hits: &[Reranked],
-    code_hits: &[CodeReranked],
-    document_hits: &[DocHit],
-    max_text_bytes: usize,
-) -> Result<FactsByHit> {
     let code_rows = code_text::fetch(
         conn,
-        &code_hits.iter().map(|h| h.symbol_id).collect::<Vec<_>>(),
+        &legs.code.iter().map(|h| h.symbol_id).collect::<Vec<_>>(),
     )?;
-    let document_ids: Vec<&str> = document_hits
+    let document_ids: Vec<&str> = legs
+        .documents
         .iter()
         .map(|h| h.document_id.as_str())
         .collect();
     let revisions = documents::fetch_revisions(conn, &document_ids)?;
-    let memory = memory_hits.iter().map(LegHit::Memory);
-    let code = code_hits
+    let memory = legs.memory.iter().map(LegHit::Memory);
+    let code = legs
+        .code
         .iter()
         .map(|hit| LegHit::Code(hit, code_rows.get(&hit.symbol_id)));
-    let documents = document_hits
+    let documents = legs
+        .documents
         .iter()
         .map(|hit| LegHit::Document(hit, revisions.get(&hit.document_id).map(String::as_str)));
     Ok(memory

@@ -21,7 +21,6 @@
 use serde::Serialize;
 
 use crate::domains::retrieval::code_rerank::{CodeReranked, CodeScoreParts};
-use crate::domains::retrieval::learned_report::LearnedOrdering;
 use crate::domains::retrieval::search_result::source_label;
 use crate::utilities::pagination::PageMeta;
 
@@ -42,8 +41,6 @@ pub struct SearchCodeResult {
     /// TTY view uses this to print an `index-code` hint instead of silent
     /// emptiness.
     pub index_empty: bool,
-    /// What the optional learned ordering stage did, when one ran.
-    pub learned: Option<LearnedOrdering>,
 }
 
 /// One code hit as emitted to the user. `score` duplicates
@@ -96,10 +93,6 @@ pub struct Envelope<'a> {
     /// In-window ranked count (post-coalesce) the page was sliced from;
     /// `None` when not cheaply known. Not a global match count.
     pub total: Option<usize>,
-    /// What the optional learned ordering stage did. Absent entirely when no
-    /// stage ran, so a default build emits exactly the JSON it always has.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub learned: Option<&'a LearnedOrdering>,
 }
 
 /// Build the serializable envelope. Public so both delivery adapters and the
@@ -108,7 +101,6 @@ pub fn envelope<'a>(
     hits: &'a [CodeReranked],
     query_id: Option<&'a str>,
     page: PageMeta,
-    learned: Option<&'a LearnedOrdering>,
 ) -> Envelope<'a> {
     Envelope {
         hits: hits.iter().map(row_from).collect(),
@@ -117,7 +109,6 @@ pub fn envelope<'a>(
         offset: page.offset,
         has_more: page.has_more,
         total: page.total,
-        learned,
     }
 }
 
