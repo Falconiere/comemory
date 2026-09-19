@@ -9,7 +9,7 @@ records `holdout_used: false` beside the per-epoch numbers, so the claim is
 auditable rather than asserted.
 
 **The run is seeded end to end.** One seed initializes Python's global RNG,
-NumPy's and torch's, and each epoch's shuffle draws from its own
+NumPy's and torch_lib's, and each epoch's shuffle draws from its own
 `random.Random(seed + epoch)` — a separate stream per epoch, so an epoch's order
 depends on the seed and the epoch number and on nothing that ran before it.
 Deterministic kernels are requested unless an operator explicitly opts out, and
@@ -49,17 +49,17 @@ def run(dataset, args, overrides: dict) -> int:
     recipe = manifest.recipe(overrides)
     started = time.perf_counter()
     config = model.backend_config(recipe["precision"]["device"], args.allow_download)
-    torch = model.torch_module()
+    torch_lib = model.torch_module()
     tokenizer, base, _head = model.load_base(config)
-    _seed_everything(torch, recipe)
+    _seed_everything(torch_lib, recipe)
     adapted = model.attach_adapter(base)
     audit = model.audit(adapted)
-    frozen_before = model.frozen_digest(torch, adapted)
-    device = compat.resolve_device(torch, recipe["precision"]["device"])
+    frozen_before = model.frozen_digest(torch_lib, adapted)
+    device = compat.resolve_device(torch_lib, recipe["precision"]["device"])
     adapted.to(device)
 
-    selection, best_state = _fit(torch, tokenizer, adapted, dataset, recipe, device)
-    frozen_after = model.frozen_digest(torch, adapted)
+    selection, best_state = _fit(torch_lib, tokenizer, adapted, dataset, recipe, device)
+    frozen_after = model.frozen_digest(torch_lib, adapted)
     if frozen_after["sha256"] != frozen_before["sha256"]:
         raise pins.RecipeError(
             "the frozen base moved during training: " + frozen_before["sha256"]
@@ -70,7 +70,7 @@ def run(dataset, args, overrides: dict) -> int:
     _restore(adapted, best_state)
     adapted.eval()
     probe = model.parity_pairs(pins.PARITY_PAIRS)
-    before = model.score_pairs(adapted, tokenizer, torch, probe)
+    before = model.score_pairs(adapted, tokenizer, torch_lib, probe)
     files = model.save(adapted, args.out)
     reload_check = model.reload_and_compare(
         args.out, before, recipe["precision"]["device"], args.allow_download
@@ -107,11 +107,11 @@ def _package(args, dataset, recipe, audit, frozen, selection, reload_check, file
     compat.diag("wrote " + document["adapter_id"] + " to " + args.out)
 
 
-def _seed_everything(torch, recipe: dict) -> None:
+def _seed_everything(torch_lib, recipe: dict) -> None:
     """One seed for every stream, and deterministic kernels unless opted out."""
     seed = int(recipe["seed"])
     random.seed(seed)
-    torch.manual_seed(seed)
+    torch_lib.manual_seed(seed)
     try:
         import numpy
 
@@ -119,10 +119,10 @@ def _seed_everything(torch, recipe: dict) -> None:
     except ImportError:
         pass
     if recipe["deterministic_algorithms"]:
-        torch.use_deterministic_algorithms(True)
+        torch_lib.use_deterministic_algorithms(True)
 
 
-def _fit(torch, tokenizer, adapted, dataset, recipe: dict, device) -> tuple:
+def _fit(torch_lib, tokenizer, adapted, dataset, recipe: dict, device) -> tuple:
     """Run every epoch, score validation after each, and keep the best.
 
     Returns the selection record and the selected epoch's trainable tensors,
@@ -133,15 +133,15 @@ def _fit(torch, tokenizer, adapted, dataset, recipe: dict, device) -> tuple:
     epochs = int(schedule["epochs"])
     batch = int(schedule["train_batch_size"])
     steps = max(1, math.ceil(len(dataset.train) / batch)) * epochs
-    optimizer, scheduler = _optimizer(torch, adapted, schedule, steps)
-    loss_fn = torch.nn.BCEWithLogitsLoss()
+    optimizer, scheduler = _optimizer(torch_lib, adapted, schedule, steps)
+    loss_fn = torch_lib.nn.BCEWithLogitsLoss()
     groups = _validation_groups(dataset)
     per_epoch, best, state = [], None, None
     for epoch in range(1, epochs + 1):
         train_loss = _one_epoch(
-            torch, tokenizer, adapted, dataset, recipe, device, optimizer, scheduler, loss_fn, epoch
+            torch_lib, tokenizer, adapted, dataset, recipe, device, optimizer, scheduler, loss_fn, epoch
         )
-        scored = _validate(torch, tokenizer, adapted, groups, loss_fn, device)
+        scored = _validate(torch_lib, tokenizer, adapted, groups, loss_fn, device)
         row = {"epoch": epoch, "train_loss": train_loss}
         row.update(scored)
         per_epoch.append(row)
@@ -161,7 +161,7 @@ def _fit(torch, tokenizer, adapted, dataset, recipe: dict, device) -> tuple:
     return selection, state
 
 
-def _one_epoch(torch, tokenizer, adapted, dataset, recipe, device, optimizer, scheduler, loss_fn, epoch):
+def _one_epoch(torch_lib, tokenizer, adapted, dataset, recipe, device, optimizer, scheduler, loss_fn, epoch):
     """One pass over the shuffled training rows; returns the mean loss."""
     adapted.train()
     order = list(range(len(dataset.train)))
@@ -173,11 +173,11 @@ def _one_epoch(torch, tokenizer, adapted, dataset, recipe, device, optimizer, sc
         encoded = model.encode(
             tokenizer, [e.query for e in window], [e.text for e in window], device
         )
-        targets = torch.tensor([e.target for e in window], dtype=torch.float32, device=device)
+        targets = torch_lib.tensor([e.target for e in window], dtype=torch_lib.float32, device=device)
         logits = adapted(**encoded).logits[:, pins.SCORE_COLUMN]
-        loss = loss_fn(logits.to(torch.float32), targets)
+        loss = loss_fn(logits.to(torch_lib.float32), targets)
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(
+        torch_lib.nn.utils.clip_grad_norm_(
             [p for p in adapted.parameters() if p.requires_grad],
             float(recipe["schedule"]["max_grad_norm"]),
         )
@@ -189,10 +189,10 @@ def _one_epoch(torch, tokenizer, adapted, dataset, recipe, device, optimizer, sc
     return total / seen if seen else 0.0
 
 
-def _optimizer(torch, adapted, schedule: dict, steps: int):
+def _optimizer(torch_lib, adapted, schedule: dict, steps: int):
     """AdamW over the trainable parameters, with linear warmup and decay."""
     parameters = [p for p in adapted.parameters() if p.requires_grad]
-    optimizer = torch.optim.AdamW(
+    optimizer = torch_lib.optim.AdamW(
         parameters,
         lr=float(schedule["learning_rate"]),
         betas=tuple(schedule["adam_betas"]),
@@ -207,7 +207,7 @@ def _optimizer(torch, adapted, schedule: dict, steps: int):
         remaining = max(1, steps - warmup)
         return max(0.0, (steps - step) / remaining)
 
-    return optimizer, torch.optim.lr_scheduler.LambdaLR(optimizer, factor)
+    return optimizer, torch_lib.optim.lr_scheduler.LambdaLR(optimizer, factor)
 
 
 def _validation_groups(dataset) -> list:
@@ -218,15 +218,15 @@ def _validation_groups(dataset) -> list:
     return [grouped[key] for key in sorted(grouped)]
 
 
-def _validate(torch, tokenizer, adapted, groups: list, loss_fn, device) -> dict:
+def _validate(torch_lib, tokenizer, adapted, groups: list, loss_fn, device) -> dict:
     """Validation loss, and nDCG over every observation with a real ordering."""
     adapted.eval()
     losses, gains = [], []
     for group in groups:
         pairs = [(e.query, e.text) for e in group]
-        scores = model.score_pairs(adapted, tokenizer, torch, pairs)
-        targets = torch.tensor([e.target for e in group], dtype=torch.float32)
-        logits = torch.tensor(scores, dtype=torch.float32)
+        scores = model.score_pairs(adapted, tokenizer, torch_lib, pairs)
+        targets = torch_lib.tensor([e.target for e in group], dtype=torch_lib.float32)
+        logits = torch_lib.tensor(scores, dtype=torch_lib.float32)
         losses.append(float(loss_fn(logits, targets)) * len(group))
         # Two or more candidates AND at least one of them graded above zero.
         # A group of reviewed hard negatives has an ideal DCG of zero, so every

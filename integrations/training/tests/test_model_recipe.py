@@ -83,29 +83,29 @@ class Recipe(unittest.TestCase):
             )
 
     def test_one_optimizer_step_leaves_the_base_byte_identical(self) -> None:
-        torch, tokenizer, adapted = self.adapted()
-        before = model.frozen_digest(torch, adapted)
+        torch_lib, tokenizer, adapted = self.adapted()
+        before = model.frozen_digest(torch_lib, adapted)
         rows = examples()
-        optimizer = torch.optim.AdamW(
+        optimizer = torch_lib.optim.AdamW(
             [p for p in adapted.parameters() if p.requires_grad], lr=pins.LEARNING_RATE
         )
         adapted.train()
         encoded = model.encode(
             tokenizer, [e.query for e in rows], [e.text for e in rows], "cpu"
         )
-        targets = torch.tensor([e.target for e in rows], dtype=torch.float32)
+        targets = torch_lib.tensor([e.target for e in rows], dtype=torch_lib.float32)
         logits = adapted(**encoded).logits[:, pins.SCORE_COLUMN]
-        torch.nn.BCEWithLogitsLoss()(logits.to(torch.float32), targets).backward()
+        torch_lib.nn.BCEWithLogitsLoss()(logits.to(torch_lib.float32), targets).backward()
         optimizer.step()
-        after = model.frozen_digest(torch, adapted)
+        after = model.frozen_digest(torch_lib, adapted)
         self.assertEqual(before["sha256"], after["sha256"])
         self.assertGreater(before["parameters"], 0)
 
     def test_a_saved_adapter_reloads_within_the_pinned_tolerance(self) -> None:
-        torch, tokenizer, adapted = self.adapted()
+        torch_lib, tokenizer, adapted = self.adapted()
         adapted.eval()
         probe = model.parity_pairs(pins.PARITY_PAIRS)
-        before = model.score_pairs(adapted, tokenizer, torch, probe)
+        before = model.score_pairs(adapted, tokenizer, torch_lib, probe)
         with tempfile.TemporaryDirectory() as root:
             package = os.path.join(root, "lora-test")
             files = model.save(adapted, package)

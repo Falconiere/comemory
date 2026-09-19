@@ -52,20 +52,26 @@ def backend_config(device: str, allow_download: bool, adapter: str | None = None
 
 
 def torch_module():
-    """The torch module, imported through the shared refusal path."""
-    torch, _transformers = compat.import_core()
-    return torch
+    """The torch module, imported through the shared refusal path.
+
+    Every binding of it in this directory is called `torch_lib`, not `torch`, so
+    no local ever carries the library's own name — the module is imported lazily
+    and only inside `comemory_rerank_compat.import_core`, which is what keeps
+    `plan` and the whole qualification runnable with torch absent.
+    """
+    torch_lib, _transformers = compat.import_core()
+    return torch_lib
 
 
 def load_base(config: dict):
     """Load and validate the pinned base model and its tokenizer.
 
     Returns `(tokenizer, model, head_parameters)` and NOT the torch module. A
-    caller that needs torch asks `torch_module` for it, so no call site
+    caller that needs the library asks `torch_module` for it, so no call site
     destructures a local named after the library, and the return order carries
     no import in it to go stale.
     """
-    torch, transformers = compat.import_core()
+    torch_lib, transformers = compat.import_core()
     tokenizer = compat.call_hub(
         transformers.AutoTokenizer.from_pretrained,
         config["tokenizer_id"],
@@ -76,7 +82,7 @@ def load_base(config: dict):
         transformers.AutoModelForSequenceClassification.from_pretrained,
         config["model_id"],
         revision=config["model_revision"],
-        dtype=compat.resolve_dtype(torch, config["dtype"]),
+        dtype=compat.resolve_dtype(torch_lib, config["dtype"]),
         local_files_only=not config["allow_download"],
     )
     compat.check_architecture(model, config)
@@ -160,7 +166,7 @@ def audit(model) -> dict:
     }
 
 
-def frozen_digest(torch, model) -> dict:
+def frozen_digest(torch_lib, model) -> dict:
     """SHA-256 over every parameter the adapter is not allowed to move.
 
     A `requires_grad` assertion proves only what was intended. This proves what
@@ -174,7 +180,7 @@ def frozen_digest(torch, model) -> dict:
             continue
         counted += parameter.numel()
         digest.update(name.encode("utf-8"))
-        digest.update(parameter.detach().to(torch.float32).cpu().numpy().tobytes())
+        digest.update(parameter.detach().to(torch_lib.float32).cpu().numpy().tobytes())
     return {"sha256": digest.hexdigest(), "parameters": counted}
 
 
@@ -201,7 +207,7 @@ def encode(tokenizer, queries: list, texts: list, device):
     return {key: value.to(device) for key, value in encoded.items()}
 
 
-def score_pairs(model, tokenizer, torch, pairs: list) -> list:
+def score_pairs(model, tokenizer, torch_lib, pairs: list) -> list:
     """The relevance logit for every `(query, text)` pair, in submitted order."""
     scores: list = []
     device = next(model.parameters()).device
@@ -210,9 +216,9 @@ def score_pairs(model, tokenizer, torch, pairs: list) -> list:
         encoded = encode(
             tokenizer, [q for q, _ in window], [text for _, text in window], device
         )
-        with torch.inference_mode():
+        with torch_lib.inference_mode():
             logits = model(**encoded).logits
-        column = logits[:, pins.SCORE_COLUMN].to(torch.float32).cpu().tolist()
+        column = logits[:, pins.SCORE_COLUMN].to(torch_lib.float32).cpu().tolist()
         scores.extend(float(value) for value in column)
     return scores
 
@@ -239,15 +245,15 @@ def reload_and_compare(directory: str, before: list, device: str, allow_download
     """Reload the saved adapter and compare its predictions with the pre-save ones."""
     config = backend_config(device, allow_download, adapter=directory)
     compat.validate_adapter(config)
-    torch = torch_module()
+    torch_lib = torch_module()
     tokenizer, base, _head = load_base(config)
     peft_model = compat.import_peft()
     adapted = compat.call_hub(
         peft_model.from_pretrained, base, directory, local_files_only=not allow_download
     )
     adapted.eval()
-    adapted.to(compat.resolve_device(torch, device))
-    after = score_pairs(adapted, tokenizer, torch, parity_pairs(len(before)))
+    adapted.to(compat.resolve_device(torch_lib, device))
+    after = score_pairs(adapted, tokenizer, torch_lib, parity_pairs(len(before)))
     delta = max((abs(a - b) for a, b in zip(after, before)), default=0.0)
     passed = delta <= pins.RELOAD_MAX_ABS_DELTA
     result = {
@@ -285,14 +291,14 @@ def verify(directory: str, candidates: int, allow_download: bool) -> int:
         )
     config = backend_config("cpu", allow_download, adapter=directory)
     compat.validate_adapter(config)
-    torch = torch_module()
+    torch_lib = torch_module()
     tokenizer, base, _head = load_base(config)
     peft_model = compat.import_peft()
     adapted = compat.call_hub(
         peft_model.from_pretrained, base, directory, local_files_only=not allow_download
     )
     adapted.eval()
-    scores = score_pairs(adapted, tokenizer, torch, parity_pairs(candidates))
+    scores = score_pairs(adapted, tokenizer, torch_lib, parity_pairs(candidates))
     sys.stdout.write(
         json.dumps(
             {
