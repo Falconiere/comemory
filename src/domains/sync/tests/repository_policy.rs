@@ -65,6 +65,7 @@ fn checkout_remote_and_confirmed_mapping_resolve_to_the_approved_identity() {
         policy.memory_repository("Falconiere/Comemory"),
         Some("falconiere/comemory")
     );
+    assert_eq!(policy.memory_repository(""), None);
     assert_eq!(policy.memory_repository("comemory"), None);
 }
 

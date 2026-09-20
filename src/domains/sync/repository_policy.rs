@@ -60,6 +60,9 @@ impl RepositoryPolicy {
     #[must_use]
     pub fn memory_repository(&self, label: &str) -> Option<&str> {
         let label = normalize_repo_label(label);
+        if label.is_empty() {
+            return None;
+        }
         if let Some(canonical) = canonical_github_name(&label)
             && self.allowed.contains(&canonical)
         {

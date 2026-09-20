@@ -155,7 +155,7 @@ pub fn run_push_with_timeout(
             timeout,
         )?;
         apply_response(&resp, batch_high_seq, &mut stats)?;
-        sync_state::set_pushed(conn, workspace_id, batch_high_seq, &now_iso()?)?;
+        sync_state::set_pushed(conn, workspace_id, stats.last_pushed_seq, &now_iso()?)?;
         if stats.pushed as usize >= cap {
             break;
         }

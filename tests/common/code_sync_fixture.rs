@@ -36,16 +36,9 @@ pub const SECRET_BODY_LINE: &str = "const onlyInSource = 'never-on-the-wire';";
 /// `src/c.ts` (imports `./a` and `./b`), committed once. Returns the tree.
 pub fn write_ts_repo(root: &Path) -> PathBuf {
     let repo = root.join(REPO);
+    let remote = format!("git@github.com:{CANONICAL_REPO}.git");
     super::git_repo::init_repo(&repo);
-    super::git_repo::run_git(
-        &repo,
-        &[
-            "remote",
-            "add",
-            "origin",
-            "git@github.com:Falconiere/comemory.git",
-        ],
-    );
+    super::git_repo::run_git(&repo, &["remote", "add", "origin", &remote]);
     super::git_commit::commit_files(
         &repo,
         &[
