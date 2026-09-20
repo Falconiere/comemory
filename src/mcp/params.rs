@@ -6,10 +6,12 @@
 //! maps nested CLI arguments and the model body to domain cores.
 
 use serde::Deserialize;
+use serde_json::Value;
 
-use crate::domains::architecture::model::Model;
+use crate::domains::architecture::model::{MAX_BYTES, Model};
 use crate::domains::architecture::scaffold::Options;
 use crate::domains::learning::feedback;
+use crate::prelude::*;
 
 /// Shared clustering parameters for architecture scaffold and check.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -48,8 +50,21 @@ pub struct ArchitectureSaveParams {
     /// Repo label, defaulting to the MCP session scope.
     #[serde(default)]
     pub repo: Option<String>,
-    /// Complete schema-1 model to validate and store.
-    pub model: Model,
+    /// Complete schema-1 model to validate and store, bounded before parsing.
+    pub model: Value,
+}
+
+impl ArchitectureSaveParams {
+    /// Bound the raw body before deserializing it as the domain model.
+    pub fn parse_model(self) -> Result<Model> {
+        let size = serde_json::to_vec(&self.model)?.len();
+        if size > MAX_BYTES {
+            return Err(Error::Usage(format!(
+                "architecture model is {size} bytes; maximum is {MAX_BYTES}"
+            )));
+        }
+        Ok(serde_json::from_value(self.model)?)
+    }
 }
 
 /// Requested rendering for a stored architecture model.
@@ -70,7 +85,6 @@ pub struct ArchitectureShowParams {
     #[serde(default)]
     pub repo: Option<String>,
     /// Stored model JSON by default, or Mermaid source.
-    #[serde(default)]
     pub format: Option<ArchitectureShowFormat>,
 }
 

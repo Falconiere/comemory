@@ -10,6 +10,7 @@
 use std::process::Command;
 
 use assert_cmd::prelude::*;
+use comemory::domains::architecture::model::{MAX_BYTES, Model};
 use mcp_bin::McpHome;
 use serde_json::{Value, json};
 use tempfile::TempDir;
@@ -49,6 +50,8 @@ async fn architecture_tools_scaffold_save_show_and_check() {
     assert!(saved["id"].as_str().is_some(), "{saved}");
 
     let shown = home.data("architecture_show", json!({})).await;
+    let shown_model: Model = serde_json::from_value(shown.clone()).expect("shown schema-1 model");
+    assert_eq!(shown_model.repo, REPO);
     assert_eq!(shown["repo"], json!(REPO), "{shown}");
     assert_eq!(shown["source"], json!("agent"), "{shown}");
     assert_eq!(
@@ -70,6 +73,23 @@ async fn architecture_tools_scaffold_save_show_and_check() {
     let drift = home.data("architecture_check", json!({})).await;
     assert_eq!(drift["repo"], json!(REPO), "{drift}");
     assert_eq!(drift["drift_count"], json!(0), "{drift}");
+}
+
+/// The MCP boundary rejects a large raw model before domain deserialization.
+#[tokio::test]
+async fn architecture_save_bounds_raw_model_input() {
+    let nowhere = TempDir::new().expect("cwd");
+    let home = McpHome::spawn(nowhere.path(), &["--repo", REPO]).await;
+    let oversized = "x".repeat(MAX_BYTES + 1);
+    let refusal = home
+        .error("architecture_save", json!({ "model": oversized }))
+        .await;
+    assert!(
+        refusal["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("maximum")),
+        "{refusal}"
+    );
 }
 
 /// Architecture tools require a repo, and a read-only save keeps its existing

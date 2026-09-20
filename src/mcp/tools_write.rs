@@ -36,11 +36,12 @@ impl ComemoryServer {
         if state.read_only() {
             return Ok(result::read_only("architecture_save"));
         }
-        let Some(repo) = scope::resolve(params.repo, state.repo()) else {
+        let Some(repo) = scope::resolve(params.repo.clone(), state.repo()) else {
             return Ok(result::repo_required());
         };
         write_tool(state, "architecture_save", move |c, _| {
-            architecture::save::run(c, &repo, &params.model)
+            let model = params.parse_model()?;
+            architecture::save::run(c, &repo, &model)
         })
         .await
     }

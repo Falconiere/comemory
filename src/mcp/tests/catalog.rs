@@ -12,16 +12,14 @@
 
 use std::collections::BTreeSet;
 
-use clap::CommandFactory;
+use clap::{Command as ClapCommand, CommandFactory};
 use comemory::cli::Cli;
 use comemory::mcp::catalog::{self, TOOLS};
 
-/// Every subcommand name the real clap definition exposes.
-fn clap_subcommands() -> BTreeSet<String> {
-    Cli::command()
-        .get_subcommands()
-        .map(|c| c.get_name().to_string())
-        .collect()
+/// Resolve a root or nested clap path such as `architecture scaffold`.
+fn command_at_path<'a>(root: &'a ClapCommand, path: &str) -> Option<&'a ClapCommand> {
+    path.split_whitespace()
+        .try_fold(root, |current, segment| current.find_subcommand(segment))
 }
 
 #[test]
@@ -53,15 +51,15 @@ fn exactly_three_tools_mutate() {
 
 #[test]
 fn every_command_is_a_real_clap_subcommand() {
-    let known = clap_subcommands();
+    let root = Cli::command();
     assert!(
-        known.contains("find"),
-        "clap walk found no subcommands at all: {known:?}"
+        root.find_subcommand("find").is_some(),
+        "clap has no find command"
     );
     for tool in TOOLS {
         assert!(
-            known.contains(tool.command.split_whitespace().next().unwrap_or_default()),
-            "tool `{}` names command path `{}`, whose root does not exist",
+            command_at_path(&root, tool.command).is_some(),
+            "tool `{}` names command path `{}`, which clap does not have",
             tool.name,
             tool.command
         );

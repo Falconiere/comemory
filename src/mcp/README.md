@@ -52,5 +52,7 @@ the saved tagged memory rather than an architecture HTTP route. Use
 `architecture_check`; `architecture_show` returns the model JSON by default or
 `{ "mermaid": "..." }` when `format` is `mermaid`. Every architecture tool
 requires a repo from its parameter or the session default. `architecture_save`
-is a write and obeys `--read-only`; no MCP tool exposes `architecture learn` or
+is a write and returns `read_only` before checking scope in a read-only session;
+otherwise an unscoped call returns `repo_required`. Its raw model body is capped
+at 32 KiB before it is parsed. No MCP tool exposes `architecture learn` or
 the command execution behind it.
