@@ -105,7 +105,7 @@ pub fn reconcile_policy(
         SyncState::update()
             .set(&col::pulled_seq, 0_i64)
             .set(&col::pushed_seq, 0_i64)
-            .set_null(&col::last_sync_at)
+            .set_expr(&col::last_sync_at, "NULL")
             .filter(col::workspace_id.eq(workspace_id))
             .to_sql(),
     )?;
