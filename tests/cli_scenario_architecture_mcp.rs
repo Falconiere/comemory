@@ -77,7 +77,7 @@ async fn architecture_tools_scaffold_save_show_and_check() {
     assert_eq!(drift["drift_count"], json!(0), "{drift}");
 }
 
-/// The MCP boundary rejects a large raw model before domain deserialization.
+/// The MCP boundary rejects an oversized model value before domain deserialization.
 #[tokio::test]
 async fn architecture_save_bounds_raw_model_input() {
     let nowhere = TempDir::new().expect("cwd");
