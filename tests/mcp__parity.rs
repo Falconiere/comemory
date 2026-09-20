@@ -183,6 +183,23 @@ fn every_clap_arg_maps_to_a_field_on_its_tool_parameter_type() {
 }
 
 #[test]
+fn architecture_save_file_exclusion_is_its_positional_model_path() {
+    let root = Cli::command();
+    let save = command_at_path(&root, "architecture save").expect("architecture save command");
+    let file = save
+        .get_arguments()
+        .find(|argument| argument.get_id() == "file")
+        .expect("architecture save file argument");
+    assert!(file.is_positional(), "file must remain positional");
+    assert_eq!(
+        file.get_value_names()
+            .map(|names| names.iter().map(ToString::to_string).collect::<Vec<_>>()),
+        Some(vec!["FILE".to_string()]),
+        "the excluded file argument must remain the model path"
+    );
+}
+
+#[test]
 fn mcp_is_cli_only_and_recall_status_is_http() {
     let srv = ServeHome::new();
     let inventory = srv.get("/commands");
