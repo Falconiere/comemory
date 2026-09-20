@@ -4,6 +4,10 @@ set -euo pipefail
 ROOT="$(cd "${BASH_SOURCE%/*}/.." && pwd)"
 BIN="${COMEMORY_BIN:-$ROOT/target/debug/comemory}"
 [ -x "$BIN" ] || { printf 'Missing executable comemory binary: %s\n' "$BIN" >&2; exit 1; }
+# The SessionEnd budget checks below wrap the hook in `timeout 5`; stock macOS
+# ships no `timeout` (coreutils does), so name the gap here instead of failing
+# later with a misleading "hung or failed (exit 127)".
+command -v timeout >/dev/null 2>&1 || { printf 'timeout(1) is required (install coreutils)\n' >&2; exit 1; }
 TASK=$(mktemp -d "${TMPDIR:-/tmp}/comemory-test.XXXXXX")
 # The Stop hook's detached maintenance may still be writing under $TASK for a
 # few seconds; retry the sweep once so a late child rarely leaves a temp dir,

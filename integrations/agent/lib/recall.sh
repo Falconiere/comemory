@@ -14,10 +14,12 @@
 # keeps the hint from minting its own retrieval_log row — the agent's own
 # `find`/`search` call is the tracked one.
 recall_find_json() {
-  local repo="$1" k="$2" prompt="$3" to=()
-  if command -v timeout >/dev/null 2>&1; then to=(timeout 5)
-  elif command -v gtimeout >/dev/null 2>&1; then to=(gtimeout 5); fi
-  COMEMORY_DISABLE_ACCESS_TRACKING=true ${to[@]+"${to[@]}"} \
+  local repo="$1" k="$2" prompt="$3" bound=""
+  if command -v timeout >/dev/null 2>&1; then bound="timeout 5"
+  elif command -v gtimeout >/dev/null 2>&1; then bound="gtimeout 5"; fi
+  # $bound is a plain string split on purpose (empty, or "timeout 5"), the
+  # same shape as comemory-status.sh's bounded call.
+  COMEMORY_DISABLE_ACCESS_TRACKING=true $bound \
     comemory find --repo "$repo" --domain memory --k "$k" --json -- "$prompt" 2>/dev/null
 }
 

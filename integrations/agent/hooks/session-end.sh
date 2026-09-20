@@ -29,11 +29,14 @@ command -v jq >/dev/null 2>&1 || exit 0
 PS_CWD=$(jq -r '.cwd // empty' <<<"$input" 2>/dev/null) || exit 0
 ps_memory_enabled || exit 0
 command -v comemory >/dev/null 2>&1 || exit 0
-timeout_cmd=()
-if command -v timeout >/dev/null 2>&1; then timeout_cmd=(timeout 30)
-elif command -v gtimeout >/dev/null 2>&1; then timeout_cmd=(gtimeout 30); fi
+# Bound the detached capture at 30 s when timeout/gtimeout exists (stock macOS
+# has neither; bare otherwise). A plain string split on purpose, the same
+# shape as every other bounded call in this plugin (comemory-status.sh, recall.sh).
+bound=""
+if command -v timeout >/dev/null 2>&1; then bound="timeout 30"
+elif command -v gtimeout >/dev/null 2>&1; then bound="gtimeout 30"; fi
 (
-  ${timeout_cmd[@]+"${timeout_cmd[@]}"} comemory capture session --from-hook <<<"$input"
+  $bound comemory capture session --from-hook <<<"$input"
 ) </dev/null >/dev/null 2>&1 &
 disown || true
 exit 0
