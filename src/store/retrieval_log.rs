@@ -87,8 +87,9 @@ pub struct PendingRow {
 /// behind `domains::learning::recall_status`'s "pending" list. `since` must
 /// already be `iso_format`-shaped, matching `retrieval_log.at`, so the plain
 /// string `>=` compares chronologically. Ordered by `at` ascending. Text
-/// `>=` and `LEFT JOIN` are both unsupported toolu-orm 0.7.0 capabilities,
-/// so this stays hand SQL — see `docs/guides/runtime-orm.md`. A malformed
+/// `>=` and `LEFT JOIN` both became expressible in toolu-orm 0.10.1
+/// (`Scalar::gte`, `SelectBuilder::left_join`); this is still hand SQL,
+/// awaiting conversion — see `docs/guides/runtime-orm.md`. A malformed
 /// `returned_ids` value propagates as [`Error::Json`] rather than being
 /// skipped (unlike [`crate::domains::graph::search_edit`]'s best-effort
 /// reward scan): a status report must not understate pending recalls to

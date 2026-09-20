@@ -387,9 +387,9 @@ pub fn live_bodies(conn: &Connection) -> Result<Vec<(String, String)>> {
 /// `stats_counts::Corpus` variant: that enum exists so no predicate crosses
 /// the store boundary, and `created_at >= since` is a caller-supplied
 /// window, not a fixed corpus. `since` must already be `iso_format`-shaped
-/// so the plain string `>=` compares chronologically; text `>=` is an
-/// unsupported toolu-orm 0.7.0 capability, so this stays hand SQL — see
-/// `docs/guides/runtime-orm.md`.
+/// so the plain string `>=` compares chronologically; text `>=` became
+/// expressible in toolu-orm 0.10.1 (`Scalar::gte`), so this is still hand SQL
+/// awaiting conversion — see `docs/guides/runtime-orm.md`.
 pub fn count_created_since(conn: &Connection, repo: Option<&str>, since: &str) -> Result<u64> {
     let count: i64 = conn.query_row(
         "SELECT COUNT(*) FROM memories \

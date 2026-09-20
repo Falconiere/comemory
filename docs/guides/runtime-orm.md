@@ -8,7 +8,7 @@ schema declarations and the migration runner.
 
 ## Execution and behavior
 
-The project resolves toolu-orm 0.7.0 with the `rusqlite` feature. Builders
+The project resolves toolu-orm 0.10.1 with the `rusqlite` feature. Builders
 return SQL and bound `Value` parameters through `to_sql()`.
 `src/store/orm.rs` executes those results on the existing connection using
 cached statements and the store's row decoders. This preserves native SQLite
@@ -32,22 +32,29 @@ Keep the existing FTS parse-error handling, BM25 sign convention, vector
 dimension checks, scope filters, and KNN oversampling. A virtual table alone
 is not a reason to keep an entire raw query.
 
-## Capability inventory for retained SQL
+## Retained SQL — conversion debt, no longer capability-blocked
 
-These are capability-based exceptions, not exemptions for every query in a
-listed file. Convert supported statements in the same file. When a builder
-supports the surrounding statement but needs an unsupported scalar fragment,
-keep only that fragment raw and bind its values.
+**Every capability in this table shipped in toolu-orm 0.8.0** (#108, #109,
+#110, #111, #112, #114, #115 are all closed upstream), and 0.9.0 closed the
+raw-numbering bugs (#113, #131). The 0.7.0 upgrade left this table as a list
+of things the library could not express; the 0.10.1 upgrade turns it into a
+worklist of statements still written by hand.
 
-| Capability missing from 0.7.0 | Runtime examples | Upstream tracking |
+Nothing here is a standing exemption any more. A new query goes through the
+builders. When converting an existing one, keep the behaviours the surrounding
+prose calls out — `LEFT JOIN` semantics, FTS parse-error handling, the BM25
+sign convention, decoder index alignment — and prove each conversion against
+the store's own tests.
+
+| Capability, now available | Runtime examples still hand-written | Landed in |
 | --- | --- | --- |
-| SQLite `ON CONFLICT ... DO UPDATE`, inserted expressions, and `RETURNING` | Selected-field memory/source/sync upserts; feedback and edge counter increments; `code_row` database timestamps and generated ids | [#108](https://github.com/Falconiere/toolu-orm/issues/108) |
-| `DISTINCT`, `GROUP BY`, `HAVING`, and typed aggregate projections | `sources` status counts; unique code paths; grouped graph nodes; deduplicated feedback queries | [#109](https://github.com/Falconiere/toolu-orm/issues/109) |
-| Recursive/nonrecursive CTEs, set operations, subquery expressions, and table-valued sources | `edges_retrieval` graph walks; `edges` neighbor queries; `code_graph_nodes` lookup unions; set-based cleanup in `prune_apply`, `repo_drop`, and `code_row`; `json_each` and `pragma_table_info` | [#110](https://github.com/Falconiere/toolu-orm/issues/110) |
-| Table aliases, qualified typed projections, and compound `JOIN ... ON` | `code_signals` multi-column feedback identity; `prune_signals` memory self-join; repeated endpoint joins in `edge_fts` | [#111](https://github.com/Falconiere/toolu-orm/issues/111) |
-| Composable scalar functions, arithmetic, text ordering comparisons, `LIKE ... ESCAPE`, and expression ordering | Normalized date windows in memory FTS/KNN; literal substring matching in `memory_list`/`retrieval_log`; access increments; `COALESCE` ranking signals; `CASE`/text rendering in `edge_fts`; `retrieval_log::pending_since`'s `LEFT JOIN feedback_events … IS NULL` unjudged-query scan, `feedback::events_since`'s `retrieval_log` join, and `memory_row::count_created_since`'s `created_at >= since` predicate, all behind `domains::learning::recall_status`'s window report (`Text` columns have no `NumericOps` `>=`/`<=`, and the `LEFT JOIN` itself is #110/#111) | [#112](https://github.com/Falconiere/toolu-orm/issues/112) |
-| `INSERT ... SELECT` and separately quoted database/table identifiers | `rebuild_copy*` copies from `old` into `main`; graph-label materialization in `edge_fts`; inspection of `old.sqlite_master` | [#114](https://github.com/Falconiere/toolu-orm/issues/114) |
-| SQLite administration and extension bootstrap | `VACUUM INTO` snapshots; attach/detach lifecycle; pragma inspection; the tokenizer's `SELECT fts5(?1)` pointer handshake | [#115](https://github.com/Falconiere/toolu-orm/issues/115) |
+| SQLite `ON CONFLICT ... DO UPDATE`, inserted expressions, and `RETURNING` | Selected-field memory/source/sync upserts; feedback and edge counter increments; `code_row` database timestamps and generated ids | 0.8.0 ([#108](https://github.com/Falconiere/toolu-orm/issues/108)) |
+| `DISTINCT`, `GROUP BY`, `HAVING`, and typed aggregate projections | `sources` status counts; unique code paths; grouped graph nodes; deduplicated feedback queries | 0.8.0 ([#109](https://github.com/Falconiere/toolu-orm/issues/109)) |
+| Recursive/nonrecursive CTEs, set operations, subquery expressions, and table-valued sources | `edges_retrieval` graph walks; `edges` neighbor queries; `code_graph_nodes` lookup unions; set-based cleanup in `prune_apply`, `repo_drop`, and `code_row`; `json_each` and `pragma_table_info` | 0.8.0 ([#110](https://github.com/Falconiere/toolu-orm/issues/110)) |
+| Table aliases, qualified typed projections, and compound `JOIN ... ON` | `code_signals` multi-column feedback identity; `prune_signals` memory self-join; repeated endpoint joins in `edge_fts` | 0.8.0 ([#111](https://github.com/Falconiere/toolu-orm/issues/111)) |
+| Composable scalar functions, arithmetic, text ordering comparisons, `LIKE ... ESCAPE`, and expression ordering | Normalized date windows in memory FTS/KNN; literal substring matching in `memory_list`/`retrieval_log`; access increments; `COALESCE` ranking signals; `CASE`/text rendering in `edge_fts`; `retrieval_log::pending_since`'s `LEFT JOIN feedback_events … IS NULL` unjudged-query scan, `feedback::events_since`'s `retrieval_log` join, and `memory_row::count_created_since`'s `created_at >= since` predicate, all behind `domains::learning::recall_status`'s window report (`Scalar::gte` and `SelectBuilder::left_join` now express both) | 0.8.0 ([#112](https://github.com/Falconiere/toolu-orm/issues/112)) |
+| `INSERT ... SELECT` and separately quoted database/table identifiers | `rebuild_copy*` copies from `old` into `main`; graph-label materialization in `edge_fts`; inspection of `old.sqlite_master` | 0.8.0 ([#114](https://github.com/Falconiere/toolu-orm/issues/114)) |
+| SQLite administration and extension bootstrap | `VACUUM INTO` snapshots; attach/detach lifecycle; pragma inspection; the tokenizer's `SELECT fts5(?1)` pointer handshake | 0.8.0 ([#115](https://github.com/Falconiere/toolu-orm/issues/115)) |
 | Reusable bound parameters across typed predicates | `edges_retrieval::co_change_weight` shares file IDs between both edge directions; separate bindings exceed SQLite's variable limit for previously valid working sets | [#116](https://github.com/Falconiere/toolu-orm/issues/116) |
 
 `INSERT OR REPLACE` must not substitute for an upsert that preserves an
@@ -63,17 +70,21 @@ pragma methods; those methods still belong inside the store boundary.
 
 ## Version-specific traps
 
-The audit checked published 0.7.0 source on 2026-09-18 after upgrading from
-0.6.0. The retained query capabilities above remain unsupported. Their
-issues include concrete consumer examples and inspected upstream APIs.
+Checked against published 0.10.1 source on 2026-09-20, upgrading from 0.7.0.
 
-- **Raw expression parameter numbering:** a parameterized `Expr::raw` after
-  another bound predicate inside one `.and()`/`.or()` expression reuses the
-  earlier placeholder index. This was reproduced against the installed
-  0.6.0 library and remains in 0.7.0 ([#113](https://github.com/Falconiere/toolu-orm/issues/113)).
-  Separate top-level `.filter(...)` calls correctly offset their parameters.
-  Use bare `?` placeholders in independently composed raw fragments; do not
-  carry a whole statement's numbered placeholders into them.
+- **Raw expression parameter numbering (fixed):** 0.9.0 numbers a raw
+  fragment's placeholders from that fragment's own base
+  ([#113](https://github.com/Falconiere/toolu-orm/issues/113),
+  [#131](https://github.com/Falconiere/toolu-orm/issues/131)), so a
+  parameterized `Expr::raw` composed after another bound predicate no longer
+  reuses the earlier index. The habit the old bug forced — bare `?`
+  placeholders in independently composed fragments — is still the clearer
+  form, and `src/store/vector.rs`'s single `SelectBuilder::raw()` binds
+  nothing at all, so nothing in this repository changed behaviour on the
+  upgrade.
+- **Generic columns need `'static`:** `Column<T>::eq` now requires the column's
+  type parameter to outlive the statement, so a helper generic over a column
+  type carries `T: 'static` (`src/store/migrate.rs::recompute_simhashes`).
 - **One-row fetches:** 0.7.0 fixes ORM `fetch_one`/`fetch_optional` collecting
   all matches before selecting one ([#87](https://github.com/Falconiere/toolu-orm/issues/87)).
   The store bridge still reads one row directly to preserve native errors
@@ -83,8 +94,8 @@ issues include concrete consumer examples and inspected upstream APIs.
   Existing explicit `LIMIT -1` queries remain equivalent.
 - **Projection order:** builders emit ordinary columns before `column_expr`
   projections. Keep row decoder indexes aligned when a query mixes them.
-  Typed projections currently omit table qualification; duplicate joined
-  column names need a qualified expression until #111 is resolved.
+  Typed projections can be table-qualified since 0.8.0 (#111), so duplicate
+  joined column names no longer need a raw expression.
 - **Fractional BM25 weights:** preserve the former f32 decimal literals when
   supplying the ORM's f64 weights. Binary widening changes some result score
   bits; the code FTS regression compares against an independent SQLite query.
