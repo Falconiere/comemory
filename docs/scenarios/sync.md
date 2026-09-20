@@ -42,7 +42,9 @@ _None._
 
 `--action status` reports `pending` — how many local writes are still owed to
 the platform — beside the two cursors, and one `code` row per indexed repo
-(local head, last pushed head, `moved_since_push`).
+(local head, last pushed head, `moved_since_push`, plus `withheld=worktree` /
+`withheld=missing_root` / `withheld=no_checkout` on a row the push never
+offers).
 
 Nested: `comemory sync daemon {install,uninstall,start,stop,status,run}` —
 see [cloud-sync.md](../guides/cloud-sync.md).

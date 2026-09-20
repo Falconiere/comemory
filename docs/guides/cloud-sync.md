@@ -129,7 +129,24 @@ nothing changed costs one manifest read per repo. The push runs:
 - in the opt-in daemon's cycle, only for repos whose index moved.
 
 `comemory sync --action status` lists one `code:` row per indexed repo with
-its local head, the head last pushed, and `moved_since_push`.
+its local head, the head last pushed, `moved_since_push`, and — on a row the
+push refuses to offer — `withheld=worktree`, `withheld=missing_root` or
+`withheld=no_checkout`.
+
+A `repo_marker` row whose recorded root is not a repository is never
+offered, however the row was minted:
+
+| Row | Outcome | Counter |
+|-----|---------|---------|
+| Recorded root is a linked `git worktree` | Never pushed — a second checkout is not a repository, and its files already reach the workspace under the main checkout's label | `worktrees` |
+| Recorded root is not on disk | Not pushed until the path is back (a removed worktree, a deleted clone, an unmounted volume) | `missing_root` |
+| Recorded root is a directory git cannot open | Not pushed — `index-code` opens the root first thing, so nothing could refresh what would be sent | `missing_root` |
+
+Both counters appear in the `code:` summary line only when they are non-zero.
+Nothing is deleted: the local row stays, so `comemory repos` still lists it
+and a remounted volume resumes pushing on the next run. A row you want gone
+for good is a `DELETE /api/v1/repos/{name}` (disconnect) — and a repository
+the console already shows from an earlier push is removed there, not here.
 
 ```toml
 [sync]

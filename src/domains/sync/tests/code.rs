@@ -12,7 +12,8 @@ use comemory::config::{Config, Paths};
 use comemory::domains::code::index_code::IndexMode;
 use comemory::domains::sync::AuthFile;
 use comemory::domains::sync::code::{run_code_push, run_code_push_if_moved};
-use comemory::store::connection;
+use comemory::store::{connection, indexed_files};
+use comemory::utilities::context::Ctx;
 
 use crate::test_common as common;
 use crate::test_common::code_sync_fixture as fixture;
@@ -91,6 +92,42 @@ impl Rig {
     fn reindex(&mut self, mode: IndexMode) {
         fixture::index_mode(&self.paths, &self.cfg, &mut self.conn, &self.tree, mode);
     }
+}
+
+/// Register `label` the way a pre-rule git hook did: a linked worktree of
+/// the fixture repo with its own `repo_marker` row and its own code index.
+/// Returns the worktree path, and asserts the index is non-empty so a test
+/// that expects the row to be withheld cannot pass on an empty one.
+fn worktree_repo(rig: &mut Rig, label: &str) -> std::path::PathBuf {
+    let dest = rig.tree.parent().unwrap().join(label);
+    common::git_worktree::add_worktree(&rig.tree, &dest, label);
+    let root = dest.to_string_lossy().into_owned();
+    let mut ctx = Ctx::borrowed(&rig.paths, &rig.cfg, &mut rig.conn);
+    comemory::domains::code::repo_admin::connect(
+        &mut ctx,
+        comemory::domains::code::repo_admin::ConnectRequest {
+            root: root.clone(),
+            repo: Some(label.to_owned()),
+            index_now: false,
+        },
+    )
+    .expect("connect the worktree under its own label");
+    comemory::domains::code::index_code::run(
+        &mut ctx,
+        comemory::domains::code::index_code::Request {
+            repo: label.to_owned(),
+            path: root,
+            mode: IndexMode::Incremental,
+        },
+    )
+    .expect("index the worktree");
+    assert!(
+        !indexed_files::list_for_repo(&rig.conn, label)
+            .unwrap()
+            .is_empty(),
+        "the worktree row must carry an index, or the skip proves nothing"
+    );
+    dest
 }
 
 fn file_paths(body: &serde_json::Value) -> Vec<&str> {
@@ -305,4 +342,61 @@ fn a_rejected_batch_counts_as_failed_and_is_re_offered() {
     let retry = rig.push();
     assert_eq!(retry.repos, 1);
     assert_eq!(retry.files_pushed, 3);
+}
+
+#[test]
+fn a_linked_worktree_row_is_never_offered_as_a_repository() {
+    let mut rig = rig(Config::defaults(), true);
+    worktree_repo(&mut rig, "wt-live");
+    let stats = rig.push();
+    assert_eq!(stats.skipped_worktree, 1);
+    assert_eq!(stats.repos, 1, "only the main checkout is a repository");
+    assert_eq!(
+        rig.code_paths(),
+        ["/v1/sync/code/manifest", "/v1/sync/code/import"],
+        "the worktree label is not even asked about"
+    );
+    let pushed: Vec<String> = rig
+        .import_bodies()
+        .iter()
+        .map(|b| b["repo"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(pushed, [fixture::REPO]);
+}
+
+#[test]
+fn a_row_whose_root_is_gone_stops_being_pushed() {
+    let mut rig = rig(Config::defaults(), true);
+    let removed = worktree_repo(&mut rig, "wt-removed");
+    std::fs::remove_dir_all(&removed).unwrap();
+    let stats = rig.push();
+    assert_eq!(stats.skipped_missing_root, 1);
+    assert_eq!(stats.skipped_worktree, 0, "the root cannot be inspected");
+    assert_eq!(stats.repos, 1);
+    let pushed: Vec<String> = rig
+        .import_bodies()
+        .iter()
+        .map(|b| b["repo"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(pushed, [fixture::REPO]);
+}
+
+#[test]
+fn a_root_that_git_cannot_open_is_not_offered_either() {
+    let mut rig = rig(Config::defaults(), true);
+    let leftover = worktree_repo(&mut rig, "wt-leftover");
+    // What `git worktree remove` leaves when an ignored file survives it:
+    // the directory is still there, the checkout is not.
+    std::fs::remove_dir_all(&leftover).unwrap();
+    std::fs::create_dir_all(&leftover).unwrap();
+    std::fs::write(leftover.join("node_modules.log"), "left behind").unwrap();
+    let stats = rig.push();
+    assert_eq!(stats.skipped_missing_root, 1);
+    assert_eq!(stats.repos, 1);
+    let pushed: Vec<String> = rig
+        .import_bodies()
+        .iter()
+        .map(|b| b["repo"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(pushed, [fixture::REPO]);
 }

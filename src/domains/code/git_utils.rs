@@ -216,6 +216,38 @@ pub fn is_linked_worktree(repo: &Repository) -> bool {
     }
 }
 
+/// What git makes of the directory at `root`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CheckoutKind {
+    /// A repository's main working tree — the only kind that is a
+    /// repository in its own right.
+    Main,
+    /// A linked worktree (`git worktree add`): a second checkout of a
+    /// repository that already has a main working tree elsewhere.
+    Linked,
+    /// Not a git checkout: a plain directory, or a path that is gone.
+    None,
+}
+
+/// Classify the directory at `root`.
+///
+/// `Repository::open`, never `Repository::discover`: a recorded root that
+/// has since been deleted (`git worktree remove`, `rm -rf`) must not walk up
+/// into an ancestor checkout and read back as a repository of its own.
+///
+/// [`crate::domains::sync::code`] uses this to keep a `repo_marker` row that
+/// names no repository off the wire — a second checkout is never a
+/// repository the organization should see, and a root `index-code` could not
+/// open ([`crate::domains::code::index_code::run_with_progress`] opens it
+/// first thing) can never refresh the index it would push.
+pub fn checkout_kind(root: &Path) -> CheckoutKind {
+    match Repository::open(root) {
+        Ok(repo) if is_linked_worktree(&repo) => CheckoutKind::Linked,
+        Ok(_) => CheckoutKind::Main,
+        Err(_) => CheckoutKind::None,
+    }
+}
+
 /// The directory git runs `repo_root`'s hooks from: `<commondir>/hooks`,
 /// which a linked worktree shares with its main worktree (its own `.git` is
 /// a file pointing at the common dir, so `<worktree>/.git/hooks` neither
