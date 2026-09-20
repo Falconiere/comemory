@@ -9,7 +9,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::env::{env_parse, parse_bool_env};
-use super::validate::{check_knob, check_positive_count};
+use super::validate::check_knob;
 use crate::prelude::*;
 
 /// Recording and streaming knobs for the activity feed.
@@ -96,11 +96,19 @@ impl ActivityConfig {
     /// A zero poll interval would spin the stream task against the database
     /// with no wait at all, so it is refused rather than clamped.
     pub(crate) fn validate(&self) -> Result<()> {
+        // Checked on the `u64` itself: routing it through `check_positive_count`
+        // would mean a `usize` conversion that is lossy on a 32-bit target, and
+        // the only invalid interval is zero.
+        let bound = if self.stream_poll_ms >= 1 {
+            Ok(())
+        } else {
+            Err("must be >= 1")
+        };
         check_knob(
             "activity.stream_poll_ms",
             "COMEMORY_ACTIVITY_STREAM_POLL_MS",
             self.stream_poll_ms,
-            check_positive_count(usize::try_from(self.stream_poll_ms).unwrap_or(usize::MAX)),
+            bound,
         )
     }
 }

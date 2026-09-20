@@ -184,6 +184,5 @@ fn a_long_title_is_bounded_in_the_save_summary() {
         .as_str()
         .expect("a title")
         .to_string();
-    assert_eq!(title.chars().count(), 200);
-    assert!(long.starts_with(&title));
+    assert_eq!(title, long.chars().take(200).collect::<String>());
 }

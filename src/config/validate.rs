@@ -47,7 +47,8 @@ impl Config {
         self.check_indexing_knobs()?;
         self.check_sync_knobs()?;
         self.observations.validate()?;
-        self.activity.validate().map(|()| self)
+        self.activity.validate()?;
+        Ok(self)
     }
 
     /// Weighted-BM25 column-weight sets for `memory_fts` and `code_fts`.

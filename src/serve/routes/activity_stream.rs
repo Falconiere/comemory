@@ -206,7 +206,16 @@ fn emit(cursor: Cursor, item: &Item) -> (std::result::Result<Event, Infallible>,
         Ok(event) => (Ok(event), Some(cursor)),
         Err(e) => {
             tracing::warn!(error = %e, id = item.id, "activity event not serialized");
-            (Ok(Event::default().data(ENCODE_FAILED)), None)
+            // Still an `activity` event carrying the row id: a client that
+            // reconnects resumes above the last id it actually saw, which a
+            // typeless event would not give it.
+            (
+                Ok(Event::default()
+                    .event("activity")
+                    .id(item.id.to_string())
+                    .data(ENCODE_FAILED)),
+                None,
+            )
         }
     }
 }

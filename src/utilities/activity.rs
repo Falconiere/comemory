@@ -188,13 +188,17 @@ pub fn record(
             None
         }
     };
+    let Ok(duration_ms) = i64::try_from(elapsed.as_millis()) else {
+        tracing::warn!(command, "activity row skipped: duration out of range");
+        return;
+    };
     let row = NewActivityRow {
         at: &at,
         command,
         source: origin.source,
         actor: origin.actor.as_deref(),
         repo,
-        duration_ms: i64::try_from(elapsed.as_millis()).unwrap_or(i64::MAX),
+        duration_ms,
         ok,
         error_code,
         summary: summary.as_deref(),
