@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.40.0] - 2026-09-20
+
+### Added
+
+- install shell completions automatically ([#236](https://github.com/Falconiere/comemory/pull/236))
+- add agent transport with safe concurrent sessions ([#233](https://github.com/Falconiere/comemory/pull/233))
+
+### Fixed
+
+- never offer a worktree row as a repository to the platform ([#234](https://github.com/Falconiere/comemory/pull/234))
+
 ## [0.39.0] - 2026-09-19
 
 ### Removed
