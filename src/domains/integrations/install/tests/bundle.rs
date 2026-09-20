@@ -23,6 +23,29 @@ fn bundle_reinstall_preserves_identical_assets_and_rejects_user_edits() {
     );
 }
 
+#[test]
+fn bundle_ships_the_architecture_skill_with_its_whole_refresh_loop() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("bundle");
+    extract(&root).unwrap();
+    let skill = root.join("plugins/comemory/skills/architecture-map/SKILL.md");
+    let bundled = std::fs::read_to_string(&skill).unwrap();
+    assert_eq!(
+        bundled,
+        include_str!("../../../../../integrations/agent/skills/architecture-map/SKILL.md")
+    );
+    // An agent reading the skill must find every command of the loop, so it
+    // never has to guess a flag.
+    for command in [
+        "comemory architecture scaffold",
+        "comemory architecture save",
+        "comemory architecture check",
+        "comemory architecture show --repo <scope> --format mermaid",
+    ] {
+        assert!(bundled.contains(command), "skill omits {command:?}");
+    }
+}
+
 #[cfg(unix)]
 #[test]
 fn bundle_refuses_symlink_destination() {

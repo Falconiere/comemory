@@ -22,6 +22,7 @@
     "test_common"
   ],
   "domains": [
+    "architecture",
     "memories",
     "code",
     "documents",
@@ -35,6 +36,14 @@
   ],
   "legacy_modules": [],
   "owner_dependencies": [
+    {
+      "source": "domains::architecture",
+      "target": "domains::graph"
+    },
+    {
+      "source": "domains::architecture",
+      "target": "domains::memories"
+    },
     {
       "source": "domains::capture",
       "target": "domains::sync"

@@ -29,6 +29,7 @@ Agentic dev memory + code-aware semantic search
 Usage: comemory [OPTIONS] <COMMAND>
 
 Commands:
+  architecture    Scaffold, store, draw and drift-check the architecture model of an indexed repository (CLI-only)
   save            Save a memory (body via arg, `-`, or stdin)
   search          Search the memory index by natural-language query
   search-code     Search the code index by natural-language or identifier query
@@ -81,6 +82,45 @@ Options:
       --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
   -h, --help                 Print help
   -V, --version              Print version
+```
+
+---
+
+## comemory architecture
+
+```
+Scaffold, store, draw and drift-check the architecture model of an indexed repository (CLI-only)
+
+Usage: comemory architecture [OPTIONS] <COMMAND>
+
+Commands:
+  scaffold  Emit a deterministic model scaffolded from the indexed code graph
+  save      Validate a model and store it as this repo's architecture memory
+  show      Print the stored model as JSON or Mermaid
+  check     Report drift between the stored model and today's index
+  learn     Hand the scaffold to an agent command and store what it prints
+  help      Print this message or the help of the given subcommand(s)
+
+Options:
+      --json                 Emit machine-readable JSON instead of a human TTY view
+      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+  -h, --help                 Print help
+
+Examples:
+  # Deterministic scaffold of the repo in the current directory
+  comemory architecture scaffold --json > model.json
+
+  # Store an enriched model (validated against the code index)
+  comemory architecture save model.json
+
+  # Draw it
+  comemory architecture show --format mermaid
+
+  # What has the model stopped describing?
+  comemory architecture check --json
+
+  # Let an agent enrich the scaffold, then store the result
+  comemory architecture learn --command 'claude -p "$(cat {prompt_file})"'
 ```
 
 ---

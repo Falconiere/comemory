@@ -8,6 +8,8 @@ use crate::config::Config;
 use crate::config::paths::Paths;
 use crate::prelude::*;
 
+/// `comemory architecture`: the component-level architecture model.
+pub mod architecture;
 /// `comemory ast`: user-facing ast-grep pattern search.
 pub mod ast;
 /// `comemory auth`: cloud workspace-key login / status / logout.
@@ -147,6 +149,9 @@ pub struct Cli {
 /// `memory-for`, etc.
 #[derive(Subcommand, Debug)]
 pub enum Cmd {
+    /// Scaffold, store, draw and drift-check the architecture model of an
+    /// indexed repository (CLI-only).
+    Architecture(architecture::Args),
     /// Save a memory (body via arg, `-`, or stdin).
     Save(save::Args),
     /// Search the memory index by natural-language query.
@@ -257,6 +262,7 @@ pub enum Cmd {
 /// free of cross-references.
 pub async fn run(cli: Cli) -> Result<()> {
     match cli.cmd {
+        Cmd::Architecture(a) => architecture::run(a, cli.json, cli.data_dir).await,
         Cmd::Save(a) => save::run(a, cli.json, cli.data_dir).await,
         Cmd::Search(a) => search::run(a, cli.json, cli.data_dir).await,
         Cmd::SearchCode(a) => search_code::run(a, cli.json, cli.data_dir).await,

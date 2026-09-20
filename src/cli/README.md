@@ -26,6 +26,7 @@ One line per file, named after its primary item:
 
 | File | Primary item | Purpose |
 | --- | --- | --- |
+| `architecture.rs` | `Args` | `comemory architecture` — scaffold / save / show / check / learn the component-level architecture model (CLI-only); every core lives in `domains::architecture` |
 | `ast.rs` | `Args` | `comemory ast` — run an ast-grep pattern against a source file |
 | `auth.rs` | `Args` | `comemory auth` — nested `login` / `status` / `logout` for the org-scoped key; the sequences are `domains::sync::login`, and `login` still runs the first sync (CLI-only) |
 | `auth_render.rs` | `LoginJson` | JSON/TTY helpers for `comemory auth` login/status/logout |

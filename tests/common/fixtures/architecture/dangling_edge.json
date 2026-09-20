@@ -1,0 +1,57 @@
+{
+  "schema": 1,
+  "repo": "comemory",
+  "generated_at": "2026-09-20T12:00:00Z",
+  "source": "agent",
+  "direction": "LR",
+  "groups": [
+    {
+      "id": "domains",
+      "name": "Domain cores"
+    }
+  ],
+  "components": [
+    {
+      "id": "domains_graph",
+      "name": "Graph",
+      "group": "domains",
+      "kind": "module",
+      "members": [
+        "src/domains/graph"
+      ],
+      "summary": "Edges, PageRank, and the code graph queries.",
+      "rank": 0.081,
+      "files": 21
+    },
+    {
+      "id": "cli",
+      "name": "CLI",
+      "kind": "layer",
+      "members": [
+        "src/cli"
+      ],
+      "summary": "Clap surface and rendering."
+    },
+    {
+      "id": "sqlite",
+      "name": "SQLite",
+      "kind": "external",
+      "members": [],
+      "summary": "Bundled rusqlite."
+    }
+  ],
+  "edges": [
+    {
+      "from": "cli",
+      "to": "ghost",
+      "kind": "imports",
+      "weight": 37
+    },
+    {
+      "from": "domains_graph",
+      "to": "sqlite",
+      "kind": "reads",
+      "weight": 1
+    }
+  ]
+}

@@ -9,6 +9,9 @@
 //! #178). `comemory::output` still resolves for library consumers through the
 //! crate-root alias in `lib.rs`.
 
+/// Rendering for the `comemory architecture` family (model table, Mermaid,
+/// save result, drift report).
+pub mod architecture;
 /// Rendering for `comemory consolidate` (cluster blocks + keeper marker).
 pub mod consolidate;
 /// Rendering for `comemory context` (headline bundle).

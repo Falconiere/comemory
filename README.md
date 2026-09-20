@@ -267,6 +267,7 @@ Full data model, save flow, retrieval pipeline, and graph mechanics:
 | `comemory index-code` | Walk a repo, extract symbols, mine the co-change/import graph, run PageRank |
 | `comemory ingest-code` | Read pre-embedded JSONL from stdin into the code index |
 | `comemory graph` | Export the code-connection graph as JSON, Graphviz DOT, or interactive HTML |
+| `comemory architecture` | Scaffold the repo's component model from the code index, store it as one tagged memory, draw it as Mermaid, and check it for drift (`scaffold` / `save` / `show` / `check` / `learn`) |
 | `comemory serve` | Loopback `/api/v1` HTTP server: every command over REST, background jobs with SSE progress |
 | `comemory ast` | Run an ast-grep structural pattern against a source file |
 | `comemory setup` | Detect what this machine and repo still need, then set it up |

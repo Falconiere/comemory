@@ -77,6 +77,10 @@ const FILES: &[(&str, &str)] = &[
         include_str!("../../../../integrations/agent/lib/repo-scope.sh"),
     ),
     (
+        "skills/architecture-map/SKILL.md",
+        include_str!("../../../../integrations/agent/skills/architecture-map/SKILL.md"),
+    ),
+    (
         "skills/agent-memory/SKILL.md",
         include_str!("../../../../integrations/agent/skills/agent-memory/SKILL.md"),
     ),

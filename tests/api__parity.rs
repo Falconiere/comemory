@@ -64,6 +64,11 @@ use tempfile::TempDir;
 /// expectation, not against whatever that endpoint's own internal constant
 /// happens to say today.
 const CLI_ONLY: &[&str] = &[
+    // The architecture model reaches the console through the memory it is
+    // stored in (`GET /api/v1/memories?tag=architecture`), so the family owns
+    // no route of its own; `learn` also spawns a process, which an HTTP
+    // request must never do.
+    "architecture",
     "auth",
     "benchmark",
     "capture",

@@ -12,6 +12,11 @@
 //!
 //! [m]: https://github.com/Falconiere/comemory/issues/164
 
+/// The component-level architecture model: scaffolding it from the mined
+/// code graph, validating it against the index, storing it as a tagged
+/// memory, rendering it, and checking it for drift.
+pub mod architecture;
+
 /// Coding-session transcript capture, client redaction attestation, and
 /// explicit-save distillation against the platform.
 pub mod capture;
