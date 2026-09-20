@@ -111,15 +111,29 @@ fn the_status_rows_name_the_rows_that_are_never_offered() {
     std::fs::write(leftover.join("build.log"), "left behind").unwrap();
 
     let rows = super::code_status_rows(&conn).unwrap();
-    let withheld: Vec<(&str, Option<&'static str>)> =
-        rows.iter().map(|r| (r.repo.as_str(), r.withheld)).collect();
+    // Every field of every row, not just the new one: a connected-but-never-
+    // indexed repo has no files and no head, has never been pushed, and
+    // therefore reads as moved — which is exactly the promise `withheld`
+    // exists to qualify.
+    let all: Vec<(&str, usize, bool, bool, Option<&'static str>)> = rows
+        .iter()
+        .map(|r| {
+            (
+                r.repo.as_str(),
+                r.files,
+                r.head.is_none() && r.pushed_head.is_none() && r.pushed_at.is_none(),
+                r.moved_since_push,
+                r.withheld,
+            )
+        })
+        .collect();
     assert_eq!(
-        withheld,
+        all,
         [
-            ("gone-wt", Some("missing_root")),
-            ("left-wt", Some("no_checkout")),
-            ("live-wt", Some("worktree")),
-            ("main", None),
+            ("gone-wt", 0, true, true, Some("missing_root")),
+            ("left-wt", 0, true, true, Some("no_checkout")),
+            ("live-wt", 0, true, true, Some("worktree")),
+            ("main", 0, true, true, None),
         ]
     );
 }
