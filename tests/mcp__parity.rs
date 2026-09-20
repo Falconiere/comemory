@@ -27,7 +27,9 @@ use clap::{Command as ClapCommand, CommandFactory};
 use comemory::cli::Cli;
 use comemory::domains::{code, graph, learning, memories};
 use comemory::mcp::catalog::{self, TOOLS};
-use comemory::mcp::params::FeedbackParams;
+use comemory::mcp::params::{
+    ArchitectureSaveParams, ArchitectureShapeParams, ArchitectureShowParams, FeedbackParams,
+};
 use comemory::retrieval;
 use serde_json::json;
 use serve_bin::ServeHome;
@@ -57,6 +59,7 @@ const EXCLUSIONS: &[(&str, &str)] = &[
     ("context", "vector_stdin"),
     ("search", "only"),
     ("search", "path"),
+    ("architecture save", "file"),
 ];
 
 /// Whether deserializing `{ "<arg_id>": null }` as `T` failed specifically
@@ -92,7 +95,29 @@ const PROBES: &[(&str, ProbeFn)] = &[
     ),
     ("save", is_unknown_field::<memories::save::Request>),
     ("feedback", is_unknown_field::<FeedbackParams>),
+    (
+        "architecture_scaffold",
+        is_unknown_field::<ArchitectureShapeParams>,
+    ),
+    (
+        "architecture_save",
+        is_unknown_field::<ArchitectureSaveParams>,
+    ),
+    (
+        "architecture_show",
+        is_unknown_field::<ArchitectureShowParams>,
+    ),
+    (
+        "architecture_check",
+        is_unknown_field::<ArchitectureShapeParams>,
+    ),
 ];
+
+/// Resolve a root or nested clap path such as `architecture scaffold`.
+fn command_at_path<'a>(root: &'a ClapCommand, path: &str) -> Option<&'a ClapCommand> {
+    path.split_whitespace()
+        .try_fold(root, |current, segment| current.find_subcommand(segment))
+}
 
 /// This subcommand's arg ids minus clap's auto `help`/`version` and the
 /// documented [`EXCLUSIONS`].
@@ -107,15 +132,14 @@ fn remaining_arg_ids(sub: &ClapCommand, command: &str) -> Vec<String> {
 #[test]
 fn every_catalogued_tool_names_a_real_subcommand() {
     let root = Cli::command();
-    let names: Vec<&str> = root.get_subcommands().map(ClapCommand::get_name).collect();
     assert!(
-        names.contains(&"find"),
-        "sanity: the clap walk found no real subcommands: {names:?}"
+        root.find_subcommand("find").is_some(),
+        "clap has no find command"
     );
     for tool in TOOLS {
         assert!(
-            names.contains(&tool.command),
-            "tool `{}` names command `{}`, which clap does not have",
+            command_at_path(&root, tool.command).is_some(),
+            "tool `{}` names command path `{}`, which clap does not have",
             tool.name,
             tool.command
         );
@@ -134,12 +158,8 @@ fn every_clap_arg_maps_to_a_field_on_its_tool_parameter_type() {
                 tool.name
             );
         };
-        let sub = root.find_subcommand(tool.command).unwrap_or_else(|| {
-            panic!(
-                "clap subcommand `{}` must resolve via find_subcommand",
-                tool.command
-            )
-        });
+        let sub = command_at_path(&root, tool.command)
+            .unwrap_or_else(|| panic!("clap command path `{}` must resolve", tool.command));
         for id in remaining_arg_ids(sub, tool.command) {
             if probe(&id) {
                 problems.push(format!(
@@ -196,10 +216,21 @@ fn mcp_is_cli_only_and_recall_status_is_http() {
         "`recall-status` is a catalogued tool with a real HTTP twin: {recall}"
     );
 
-    // Every other catalogued tool's command must also be reachable over HTTP,
-    // so the catalog never names a verb only one adapter can run.
+    let architecture = commands
+        .iter()
+        .find(|c| c["name"] == json!("architecture"))
+        .expect("GET /api/v1/commands is missing architecture");
+    assert_eq!(
+        architecture["transport"],
+        json!("cli-only"),
+        "{architecture}"
+    );
+    assert_eq!(architecture["routes"], json!([]), "{architecture}");
+
+    // Architecture is already read by the console as a tagged memory, so its
+    // nested commands deliberately have no HTTP counterpart. Other tools do.
     for tool in TOOLS {
-        if tool.command == "mcp" {
+        if tool.command.starts_with("architecture ") {
             continue;
         }
         let entry = commands

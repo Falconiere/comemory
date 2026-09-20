@@ -54,7 +54,7 @@ macro_rules! wire_strings {
 
 /// How a model was produced. Recorded verbatim so a reader can tell a
 /// deterministic scaffold from an agent's enrichment.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Source {
     /// Emitted by `architecture scaffold` with no enrichment.
@@ -67,7 +67,9 @@ pub enum Source {
 
 /// Preferred layout direction, passed through to the renderer (Mermaid's
 /// `flowchart <direction>`; the console may ignore it).
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(
+    Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, schemars::JsonSchema,
+)]
 pub enum Direction {
     /// Left to right — the default.
     #[default]
@@ -86,7 +88,7 @@ pub enum Direction {
 
 /// What a component *is*. Closed set: a renderer may map each kind onto a
 /// shape without a fallback branch.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum ComponentKind {
     /// A module or package inside this repository.
@@ -104,7 +106,9 @@ pub enum ComponentKind {
 
 /// What a relation *means*. `imports` and `co_changed` mirror the mined code
 /// graph; the rest are claims only a human or an agent can make.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum EdgeKind {
     /// Source imports destination (mined).
@@ -138,7 +142,7 @@ wire_strings!(EdgeKind {
 });
 
 /// A visual grouping of components (a Mermaid `subgraph`).
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Group {
     /// Stable id; referenced by [`Component::group`].
@@ -149,7 +153,7 @@ pub struct Group {
 
 /// One node of the architecture: a named part of the system plus the
 /// repo-relative paths it is made of.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Component {
     /// Stable id, renderer-safe (`^[A-Za-z][A-Za-z0-9_]{0,63}$`).
@@ -177,7 +181,7 @@ pub struct Component {
 }
 
 /// One directed relation between two components.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Edge {
     /// Source [`Component::id`].
@@ -197,7 +201,7 @@ fn default_weight() -> i64 {
 }
 
 /// The whole model for one repo.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Model {
     /// Always [`SCHEMA_VERSION`] for a model this build accepts.

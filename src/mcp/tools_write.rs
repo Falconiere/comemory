@@ -1,6 +1,6 @@
-//! The two write tools, as one `#[tool_router]` block.
+//! The three write tools, as one `#[tool_router]` block.
 //!
-//! [`exec::Access::Write`] refuses both on a `--read-only` session before any
+//! [`exec::Access::Write`] refuses every write on a `--read-only` session before any
 //! core runs. `save` additionally refuses a call that resolved to no repo
 //! scope, so a memory can never land under an empty label.
 //!
@@ -12,8 +12,9 @@ use rmcp::model::{CallToolResult, ErrorData};
 use rmcp::{tool, tool_router};
 use serde::Serialize;
 
+use crate::domains::architecture;
 use crate::domains::{learning, memories};
-use crate::mcp::params::FeedbackParams;
+use crate::mcp::params::{ArchitectureSaveParams, FeedbackParams};
 use crate::mcp::server::ComemoryServer;
 use crate::mcp::state::McpState;
 use crate::mcp::{exec, result, scope};
@@ -22,6 +23,28 @@ use crate::utilities::context::Ctx;
 
 #[tool_router(router = write_router, vis = "pub(crate)")]
 impl ComemoryServer {
+    /// Validate and store an enriched architecture model.
+    #[tool(
+        name = "architecture_save",
+        description = "Validate and store an enriched architecture model. Supersedes the current model only after every member path validates against the code index."
+    )]
+    async fn architecture_save(
+        &self,
+        Parameters(params): Parameters<ArchitectureSaveParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let state = self.session();
+        if state.read_only() {
+            return Ok(result::read_only("architecture_save"));
+        }
+        let Some(repo) = scope::resolve(params.repo, state.repo()) else {
+            return Ok(result::repo_required());
+        };
+        write_tool(state, "architecture_save", move |c, _| {
+            architecture::save::run(c, &repo, &params.model)
+        })
+        .await
+    }
+
     /// Store a memory under the resolved repo scope.
     #[tool(
         name = "save",
@@ -68,7 +91,7 @@ impl ComemoryServer {
     }
 }
 
-/// The one line both write tools above end in: refuse `tool` outright when
+/// The one line every write tool above ends in: refuse `tool` outright when
 /// the session is `--read-only`, otherwise run `f` on the blocking pool and
 /// shape the outcome into a protocol result.
 async fn write_tool<T, F>(

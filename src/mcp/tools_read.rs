@@ -1,10 +1,10 @@
-//! The nine read tools, as one `#[tool_router]` block.
+//! The twelve read tools, as one `#[tool_router]` block.
 //!
 //! Each body runs on the blocking pool through [`read_tool`], which shapes
 //! the outcome into a protocol result; inside the closure each tool resolves
 //! the session's default repo (where it takes one), calls its own `domains::*`
-//! core, and builds the object the matching `/api/v1` route puts in its
-//! envelope's `data` — inline, since the nine tools differ in core module,
+//! core, and builds its structured result inline, since the twelve tools differ
+//! in core module,
 //! `track()` handling and envelope shape.
 //!
 //! `description` repeats [`crate::mcp::catalog`] because rmcp's `#[tool]`
@@ -17,11 +17,13 @@ use rmcp::{tool, tool_router};
 use serde::Serialize;
 use serde_json::json;
 
+use crate::domains::architecture::{check, current, mermaid, scaffold};
 use crate::domains::graph::edges_result;
 use crate::domains::retrieval::scope::ScopeEcho;
 use crate::domains::retrieval::{code_search_result, context_result, search_result};
 use crate::domains::{code, graph, learning, memories, retrieval};
 use crate::mcp::exec::{self, Access};
+use crate::mcp::params::{ArchitectureShapeParams, ArchitectureShowFormat, ArchitectureShowParams};
 use crate::mcp::server::ComemoryServer;
 use crate::mcp::state::McpState;
 use crate::mcp::{result, scope};
@@ -30,6 +32,67 @@ use crate::utilities::context::Ctx;
 
 #[tool_router(router = read_router, vis = "pub(crate)")]
 impl ComemoryServer {
+    /// Build a deterministic architecture scaffold from one indexed repo.
+    #[tool(
+        name = "architecture_scaffold",
+        description = "Build a deterministic architecture-model scaffold from the indexed repo. Enrich its names and summaries, then save the complete model."
+    )]
+    async fn architecture_scaffold(
+        &self,
+        Parameters(params): Parameters<ArchitectureShapeParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let state = self.session();
+        let options = params.options();
+        let Some(repo) = scope::resolve(params.repo, state.repo()) else {
+            return Ok(result::repo_required());
+        };
+        read_tool(self, move |c, _| scaffold::run(c.conn()?, &repo, &options)).await
+    }
+
+    /// Read the current architecture model or its Mermaid rendering.
+    #[tool(
+        name = "architecture_show",
+        description = "Read the current architecture model for a repo as JSON, or request its deterministic Mermaid flowchart source for a human-facing diagram."
+    )]
+    async fn architecture_show(
+        &self,
+        Parameters(params): Parameters<ArchitectureShowParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let state = self.session();
+        let Some(repo) = scope::resolve(params.repo, state.repo()) else {
+            return Ok(result::repo_required());
+        };
+        read_tool(self, move |c, _| {
+            let stored = current::require(c.conn()?, &repo)?;
+            match params.format.unwrap_or(ArchitectureShowFormat::Json) {
+                ArchitectureShowFormat::Json => {
+                    serde_json::to_value(stored.model).map_err(Error::Json)
+                }
+                ArchitectureShowFormat::Mermaid => {
+                    Ok(json!({ "mermaid": mermaid::render(&stored.model) }))
+                }
+            }
+        })
+        .await
+    }
+
+    /// Report drift between the saved architecture model and today's index.
+    #[tool(
+        name = "architecture_check",
+        description = "Compare the saved architecture model to today's index. Inspect drift before trusting it or after structural repository changes."
+    )]
+    async fn architecture_check(
+        &self,
+        Parameters(params): Parameters<ArchitectureShapeParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let state = self.session();
+        let options = params.options();
+        let Some(repo) = scope::resolve(params.repo, state.repo()) else {
+            return Ok(result::repo_required());
+        };
+        read_tool(self, move |c, _| check::run(c.conn()?, &repo, &options)).await
+    }
+
     /// One ranked list across memory, code and documents, plus a `query_id`.
     #[tool(
         name = "find",

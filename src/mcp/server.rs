@@ -39,7 +39,7 @@ const NO_SCOPE_NOTE: &str = "\n\nThis session has no default repo: reads run acr
 pub struct ComemoryServer {
     /// Connection, paths, config, default scope and the `--read-only` flag.
     state: McpState,
-    /// The nine read tools plus the two write tools, merged.
+    /// The twelve read tools plus the three write tools, merged.
     tool_router: ToolRouter<Self>,
 }
 

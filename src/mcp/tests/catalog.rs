@@ -5,8 +5,8 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror test for `src/mcp/catalog.rs`. The shape checks (eleven unique
-//! names, exactly two writers, every description non-empty) plus the parity
+//! Mirror test for `src/mcp/catalog.rs`. The shape checks (fifteen unique
+//! names, exactly three writers, every description non-empty) plus the parity
 //! half this step can already prove: every `command` is a real clap
 //! subcommand, walked off the live `Cli::command()` rather than a copied list.
 
@@ -25,22 +25,27 @@ fn clap_subcommands() -> BTreeSet<String> {
 }
 
 #[test]
-fn catalog_holds_eleven_uniquely_named_tools() {
-    assert_eq!(TOOLS.len(), 11, "catalog size");
+fn catalog_holds_fifteen_uniquely_named_tools() {
+    assert_eq!(TOOLS.len(), 15, "catalog size");
     let names: BTreeSet<&str> = TOOLS.iter().map(|t| t.name).collect();
-    assert_eq!(names.len(), 11, "duplicate tool name in {names:?}");
+    assert_eq!(names.len(), 15, "duplicate tool name in {names:?}");
 }
 
 #[test]
-fn exactly_two_tools_mutate() {
+fn exactly_three_tools_mutate() {
     let mutating: Vec<&str> = TOOLS
         .iter()
         .filter(|t| t.mutating)
         .map(|t| t.name)
         .collect();
-    assert_eq!(mutating, vec!["save", "feedback"], "mutating tools");
+    assert_eq!(
+        mutating,
+        vec!["save", "architecture_save", "feedback"],
+        "mutating tools"
+    );
     assert!(catalog::is_mutating("save"));
     assert!(catalog::is_mutating("feedback"));
+    assert!(catalog::is_mutating("architecture_save"));
     assert!(!catalog::is_mutating("find"));
     // An unknown name is not dispatchable at all, so it is not "mutating".
     assert!(!catalog::is_mutating("delete-everything"));
@@ -55,8 +60,8 @@ fn every_command_is_a_real_clap_subcommand() {
     );
     for tool in TOOLS {
         assert!(
-            known.contains(tool.command),
-            "tool `{}` names command `{}`, which clap does not have",
+            known.contains(tool.command.split_whitespace().next().unwrap_or_default()),
+            "tool `{}` names command path `{}`, whose root does not exist",
             tool.name,
             tool.command
         );
