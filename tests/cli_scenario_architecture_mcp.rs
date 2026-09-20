@@ -33,12 +33,12 @@ async fn architecture_tools_scaffold_save_show_and_check() {
     index(&home, &repo);
 
     let mut model = home.data("architecture_scaffold", json!({})).await;
+    let scaffold: Model = serde_json::from_value(model.clone()).expect("scaffold schema-1 model");
     assert_eq!(model["schema"], json!(1), "{model}");
     assert_eq!(model["repo"], json!(REPO), "{model}");
+    assert_eq!(scaffold.repo, REPO);
     assert!(
-        model["components"]
-            .as_array()
-            .is_some_and(|rows| !rows.is_empty()),
+        !scaffold.components.is_empty(),
         "scaffold has no components: {model}"
     );
     model["source"] = json!("agent");
