@@ -120,6 +120,12 @@
       "name": "0020_candidate_observations.sql",
       "hash": "sha256:21a280739eef2c39993b11617643e38a1778b64aa35bf5c086c4c343c0e90491",
       "created_at": 1789758152
+    },
+    {
+      "idx": 20,
+      "name": "0021_activity_log.sql",
+      "hash": "sha256:a3219008721287ce9dd3e743400c60fa97a87dafe6c1ab891c6f4953768dd151",
+      "created_at": 1789941085
     }
   ]
 }

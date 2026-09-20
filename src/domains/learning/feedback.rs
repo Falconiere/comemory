@@ -10,6 +10,8 @@
 //! immediate transaction for the known-query read plus every memory and code
 //! verdict. A mixed request therefore commits once or rolls back as a unit.
 
+use std::time::Instant;
+
 use serde::{Deserialize, Serialize};
 
 use crate::domains::learning::code_feedback::write_code_with_provenance;
@@ -18,6 +20,7 @@ use crate::domains::learning::telemetry::StatsDb;
 use crate::prelude::*;
 use crate::store::connection::write_transaction;
 use crate::store::retrieval_log;
+use crate::utilities::activity::{self, Outcome, command};
 use crate::utilities::context::Ctx;
 use crate::utilities::id_list::{parse_id_csv, parse_symbol_id_csv};
 use crate::utilities::query_id::is_valid_query_id;
@@ -80,6 +83,40 @@ pub struct Response {
 /// validating every field. Memory and code verdicts share the same commit so
 /// a failed code identity cannot leave memory counters or events behind.
 pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
+    let started = Instant::now();
+    let targets: Vec<String> = req
+        .used
+        .iter()
+        .chain(req.irrelevant.iter())
+        .chain(req.used_code.iter())
+        .chain(req.irrelevant_code.iter())
+        .take(5)
+        .cloned()
+        .collect();
+    let result = apply(ctx, req);
+    let summary = result.as_ref().map(|r| {
+        serde_json::json!({
+            "query_id": r.query_id,
+            "targets": targets,
+            "used": r.used,
+            "irrelevant": r.irrelevant,
+            "used_code": r.used_code,
+            "irrelevant_code": r.irrelevant_code,
+            "provenance": r.provenance,
+            "known_query": r.known_query,
+        })
+    });
+    let outcome = match &summary {
+        Ok(value) => Outcome::Ok(value),
+        Err(e) => Outcome::Failed(e),
+    };
+    activity::record_in(ctx, command::FEEDBACK, started, &outcome, None);
+    result
+}
+
+/// The verdict write itself, wrapped by [`run`] so the activity row is
+/// written once, outside the work it describes.
+fn apply(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
     if !is_valid_query_id(&req.query_id) {
         // `Error::Config` matches `cli::feedback::run`'s original check
         // exactly — same exit code (78, AC-13); over HTTP both map to 400.
@@ -139,3 +176,7 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
 #[cfg(test)]
 #[path = "tests/feedback.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests/activity.rs"]
+mod activity_tests;

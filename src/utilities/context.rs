@@ -13,6 +13,7 @@ use once_cell::sync::OnceCell;
 use crate::config::{Config, Paths};
 use crate::prelude::*;
 use crate::store::Connection;
+use crate::utilities::activity::Origin;
 
 /// Borrowed execution context passed to every command core's `run`.
 ///
@@ -23,6 +24,10 @@ pub struct Ctx<'a> {
     pub paths: &'a Paths,
     /// Layered configuration (defaults → file → env).
     pub cfg: &'a Config,
+    /// Who is running this command, for the activity feed. Defaults to a CLI
+    /// origin, so a terminal run needs no construction change; `serve` and
+    /// `mcp` replace it through [`Ctx::with_origin`].
+    pub origin: Origin,
     db: DbSource<'a>,
 }
 
@@ -42,6 +47,7 @@ impl<'a> Ctx<'a> {
         Self {
             paths,
             cfg,
+            origin: Origin::cli(cfg),
             db: DbSource::Borrowed(conn),
         }
     }
@@ -53,8 +59,18 @@ impl<'a> Ctx<'a> {
         Self {
             paths,
             cfg,
+            origin: Origin::cli(cfg),
             db: DbSource::Lazy(OnceCell::new()),
         }
+    }
+
+    /// Replace the default CLI origin — what `serve` and `mcp` call once, at
+    /// the single place each of them builds a `Ctx`, so no command core and
+    /// no other construction site has to know a second surface exists.
+    #[must_use]
+    pub fn with_origin(mut self, origin: Origin) -> Self {
+        self.origin = origin;
+        self
     }
 
     /// The SQLite connection, opening it lazily on first use when this

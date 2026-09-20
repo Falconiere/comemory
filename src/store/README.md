@@ -26,6 +26,8 @@ One line per file, named after its primary item:
 
 | File | Primary item | Purpose |
 | --- | --- | --- |
+| `activity.rs` | `NewActivityRow`, `ActivityRow`, `ActivityFilter`, `insert`, `list`, `since_cursor`, `newest_id`, `delete_before` | `activity_log` row CRUD: the write behind `utilities::activity::record`, the filtered newest-first page behind `GET /api/v1/activity`, the ascending cursor read its SSE twin polls, and the retention delete `maintenance::gc` sweeps with |
+| `activity_rollups.rs` | `ActivityRollup`, `rollups`, `SAMPLE` | Per-command runs/errors from `COUNT(*)`, plus p50/p95 of `duration_ms` computed in Rust over the newest `SAMPLE` durations per command (SQLite has no percentile function) |
 | `bandit_arms.rs` | `NewArm` | `bandit_arms` row CRUD: `seed`/`load`/`record_outcome` behind `domains::learning::evaluation::bandit`'s Thompson sampling; the knob grid and win/loss decision stay in `domains::learning::evaluation::bandit` |
 | `busy.rs` | `is_locked` | Whether an `Error` wraps SQLite's `SQLITE_BUSY` / `SQLITE_LOCKED` — the only place outside `errors.rs` that inspects a `rusqlite::Error` variant |
 | `candidate_dataset.rs` | `snapshot` | The bulk windowed read behind `comemory export-dataset`: all three candidate-observation tables in ONE read transaction, so a capture landing mid-read cannot hand back a header without its candidates. Deliberately never selects `locator_json`, so a display field cannot reach a training record |

@@ -7,10 +7,13 @@
 use serde::Serialize;
 use time::OffsetDateTime;
 
+use std::time::Instant;
+
 use crate::config::paths::Paths;
 use crate::domains::memories::MemoryStore;
 use crate::prelude::*;
 use crate::store::{Connection, memory_purge, memory_row, sync_log};
+use crate::utilities::activity::{self, Outcome, command};
 use crate::utilities::context::Ctx;
 
 /// `comemory delete` / `DELETE /api/v1/memories/{id}` response.
@@ -32,6 +35,22 @@ pub struct Response {
 /// helper — also reused by `comemory prune`'s low-value apply path and by the
 /// sync import.
 pub fn run(ctx: &mut Ctx<'_>, id: &str) -> Result<Response> {
+    let started = Instant::now();
+    let result = delete_one(ctx, id);
+    let summary = result
+        .as_ref()
+        .map(|r| serde_json::json!({"id": r.deleted, "derived_stale": r.derived_stale}));
+    let outcome = match &summary {
+        Ok(value) => Outcome::Ok(value),
+        Err(e) => Outcome::Failed(e),
+    };
+    activity::record_in(ctx, command::DELETE, started, &outcome, None);
+    result
+}
+
+/// The soft-delete itself, wrapped by [`run`] so the activity row is written
+/// once, outside the work it describes.
+fn delete_one(ctx: &mut Ctx<'_>, id: &str) -> Result<Response> {
     let paths = ctx.paths;
     let conn = ctx.conn()?;
     let (deleted, content_hash, derived_stale) = soft_delete(paths, conn, id)?;

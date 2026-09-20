@@ -6,13 +6,14 @@
 //! agents cannot retain an obsolete database after `comemory rebuild`.
 
 use std::path::Path;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use crate::config::paths::Paths;
 use crate::config::{Config, env};
 use crate::mcp::{McpOptions, scope};
 use crate::prelude::*;
 use crate::store::{Connection, connection};
+use crate::utilities::activity::Origin;
 
 /// Everything a tool body needs: the session gate, the data-dir layout,
 /// the layered config, the session's default scope and its refusal flag.
@@ -23,6 +24,11 @@ pub struct McpState {
     cfg: Arc<Config>,
     repo: Option<String>,
     read_only: bool,
+    /// `"<clientInfo.name>/<version>"`, recorded once at `initialize` and
+    /// reported as the `actor` of every row this session's calls write. A
+    /// `OnceLock` rather than a `Mutex`: a session initializes exactly once,
+    /// and a host that sends no `clientInfo` leaves it empty forever.
+    client: Arc<OnceLock<String>>,
 }
 
 impl McpState {
@@ -41,7 +47,28 @@ impl McpState {
             cfg: Arc::new(opts.cfg),
             repo: scope::default_repo(opts.repo, cwd),
             read_only: opts.read_only,
+            client: Arc::new(OnceLock::new()),
         })
+    }
+
+    /// Record the host that opened this session, once — `ComemoryServer`'s
+    /// `initialize` override calls it with the `clientInfo` the host sent.
+    /// A second call is ignored: a session has one client.
+    pub fn note_client(&self, label: String) {
+        let _ = self.client.set(label);
+    }
+
+    /// This session's activity origin: `source = "mcp"`, the host's label as
+    /// `actor` when it sent one, and recording off entirely on a
+    /// `--read-only` session (which writes nothing to the store, telemetry
+    /// included).
+    pub fn origin(&self) -> Origin {
+        let origin = Origin::mcp(&self.cfg, self.client.get().map(String::as_str));
+        if self.read_only {
+            origin.read_only()
+        } else {
+            origin
+        }
     }
 
     /// Serialize this session's tool calls, mapping poisoning to an error.

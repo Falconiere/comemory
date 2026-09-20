@@ -16,6 +16,10 @@ pub use rusqlite::Connection;
 /// `rusqlite` directly.
 pub use rusqlite::Transaction;
 
+/// `activity_log` insert + reads: the feed behind `GET /api/v1/activity`.
+pub mod activity;
+/// Per-command rollups over `activity_log`: runs, errors, p50/p95 duration.
+pub mod activity_rollups;
 /// `bandit_arms` row CRUD: seed/load/record-outcome behind `eval::bandit`.
 pub mod bandit_arms;
 /// Whether an `Error` wraps SQLite's `SQLITE_BUSY` / `SQLITE_LOCKED`.

@@ -18,6 +18,9 @@
 //! the move, and the aliases keep `comemory::<name>` resolving for external
 //! consumers (Binding Rule 1 — one implementation, one home).
 
+/// The activity feed's writer: `Origin`, the command vocabulary, and the
+/// best-effort `record` every instrumented core calls.
+pub mod activity;
 /// The `spawn_blocking` bridge shared by the `serve` and `mcp` adapters.
 pub mod blocking;
 /// The transport-neutral execution context every command core runs against.

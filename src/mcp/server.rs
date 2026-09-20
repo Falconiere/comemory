@@ -10,10 +10,12 @@
 //! save, verify, retry — and is the one piece of copy a host shows before any
 //! tool is called, so it states the loop rather than describing the server.
 
-use rmcp::ServerHandler;
 use rmcp::handler::server::router::tool::ToolRouter;
-use rmcp::model::{Implementation, ServerCapabilities, ServerConfig};
-use rmcp::tool_handler;
+use rmcp::model::{
+    Implementation, InitializeRequestParams, InitializeResult, ServerCapabilities, ServerConfig,
+};
+use rmcp::service::RequestContext;
+use rmcp::{ErrorData as McpError, RoleServer, ServerHandler, tool_handler};
 
 use crate::mcp::state::McpState;
 
@@ -83,5 +85,26 @@ impl ServerHandler for ComemoryServer {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new("comemory", env!("CARGO_PKG_VERSION")))
             .with_instructions(self.instructions())
+    }
+
+    /// Record which host opened the session, then negotiate as the default
+    /// would. The `actor` of every activity row this session writes is the
+    /// `clientInfo` captured here — the only point in the protocol where a
+    /// host says who it is.
+    ///
+    /// `set_peer_info` is repeated on purpose: it is the default
+    /// `initialize`'s own side effect (rmcp 3.4
+    /// `handler/server.rs`), and an override that dropped it would leave the
+    /// peer without client info for everything else that reads it.
+    async fn initialize(
+        &self,
+        request: InitializeRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> std::result::Result<InitializeResult, McpError> {
+        let client = &request.client_info;
+        self.state
+            .note_client(format!("{}/{}", client.name, client.version));
+        context.peer.set_peer_info(request.clone());
+        self.negotiate_initialize(&request)
     }
 }

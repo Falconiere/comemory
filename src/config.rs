@@ -1,3 +1,5 @@
+/// The `[activity]` section: the per-command activity feed's knobs.
+pub mod activity;
 mod defaults;
 /// `COMEMORY_*` env-var overrides — the outermost config layer.
 pub mod env;
@@ -13,10 +15,14 @@ pub mod patch;
 pub mod paths;
 /// The `[retrieval]` section and its file overlay.
 pub mod retrieval;
+/// The plain `[git]`, `[embeddings]` and `[output]` value sections.
+pub mod sections;
 /// The `[sync]` and `[embed]` sections.
 pub mod sync;
 mod validate;
+mod validate_knobs;
 
+pub use activity::ActivityConfig;
 pub use file::{AutoReindexMode, Config};
 pub use learning::{BanditConfig, ReinforceConfig, TuneConfig};
 pub use observations::ObservationsConfig;

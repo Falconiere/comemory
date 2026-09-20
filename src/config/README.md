@@ -32,6 +32,9 @@ One line per file, named after its primary item:
 | `env.rs` | `with_env` | `COMEMORY_*` env-var overrides — the outermost config layer, with shared optional-override application; also owns `access_tracking_enabled`, the `COMEMORY_DISABLE_ACCESS_TRACKING` test hook shared by `cli`, `serve`, and `mcp` |
 | `file.rs` | `AutoReindexMode` | `Config` struct definitions, shipped defaults, and the `config.toml` overlay |
 | `learning.rs` | `TuneConfig` | Learning-loop sections: `[tune]` grids, `[reinforce]`, `[bandit]` |
+| `activity.rs` | `ActivityConfig` | The `[activity]` section: the per-command activity feed's knobs (`enabled`, `summaries`, `stream_poll_ms`, plus the env-only `actor`), its file overlay, its `COMEMORY_ACTIVITY_*` / `COMEMORY_ACTOR` reads and its one invariant |
+| `sections.rs` | `GitConfig`, `EmbeddingsConfig`, `OutputConfig` | The three plain value sections split out of `file.rs` to keep it under the size ceiling |
+| `validate_knobs.rs` | `check_rrf_k`, `check_decay`, `check_grid`, … | The per-knob bounds every config layer funnels through, split out of `validate.rs` for the same reason |
 | `observations.rs` | `ObservationsConfig` | The `[observations]` section: opt-in, bounded candidate observation capture (`enabled`, `max_text_bytes`, `max_candidates`), its file overlay and its own invariants |
 | `patch.rs` | `patch_config_file` | The one read-patch-atomically-write primitive over `config.toml`, shared by `tune --apply`, the `hooks` reinforce toggle, and the console-api config routes |
 | `paths.rs` | `Paths` | Data-directory layout resolution (`resolve_data_dir` plus every derived path, including `auth_file`) |

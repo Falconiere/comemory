@@ -24,14 +24,17 @@
 //! re-qualifies them.
 
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 
+use crate::domains::memories::save_activity::{Asked, activity_summary};
 use crate::domains::memories::{
     Kind, MemoryStore, Prior, References, Relations, SaveParams, id, mirror,
 };
 use crate::prelude::*;
 use crate::store::{Connection, embed, memory_row, sync_log, vector};
+use crate::utilities::activity::{self, Outcome, command};
 use crate::utilities::context::Ctx;
 use crate::utilities::digest;
 use crate::utilities::id_list::parse_id_csv;
@@ -159,13 +162,31 @@ pub fn run(
     cli_vector_stdin: bool,
     cli_vector_csv: Option<&str>,
 ) -> Result<Response> {
-    run_with(
+    let started = Instant::now();
+    // Captured before `req` moves into the save: the summary describes what
+    // was asked for (kind, tags, supersedes) alongside what came back (id).
+    let asked = Asked {
+        title: req.title.clone(),
+        kind: req.kind.as_str().to_string(),
+        repo: req.repo.clone(),
+        tags: req.tags.len(),
+        supersedes: req.supersedes.len(),
+    };
+    let result = run_with(
         ctx,
         req,
         Verbatim::default(),
         cli_vector_stdin,
         cli_vector_csv,
-    )
+    );
+    let summary = result.as_ref().map(|r| activity_summary(&asked, r));
+    let outcome = match &summary {
+        Ok(value) => Outcome::Ok(value),
+        Err(e) => Outcome::Failed(e),
+    };
+    let repo = (!asked.repo.is_empty()).then_some(asked.repo.as_str());
+    activity::record_in(ctx, command::SAVE, started, &outcome, repo);
+    result
 }
 
 /// [`run`] with frontmatter carried over as [`Verbatim`] — the entry point
@@ -466,3 +487,7 @@ fn validate_supersedes(raw: &[String], self_id: &str) -> Result<Vec<String>> {
 #[cfg(test)]
 #[path = "tests/save.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests/activity.rs"]
+mod activity_tests;

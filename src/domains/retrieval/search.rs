@@ -9,6 +9,8 @@
 //! has not joined the unified pipeline yet — see that module's docs) and
 //! stays CLI-only, so `Request` carries no `--only`/`--path` fields.
 
+use std::time::Instant;
+
 use serde::Deserialize;
 
 use crate::domains::memories::Kind;
@@ -18,6 +20,7 @@ use crate::domains::retrieval::search_result::SearchResult;
 use crate::prelude::*;
 use crate::store::Connection;
 use crate::store::memory_meta;
+use crate::utilities::activity::{self, Outcome, command};
 use crate::utilities::context::Ctx;
 use crate::utilities::pagination::{page_meta, page_window};
 
@@ -64,6 +67,29 @@ pub struct Request {
 /// read-only HTTP server passes `false` unconditionally (§Security
 /// "Read-only side-effect degradation").
 pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<SearchResult> {
+    let started = Instant::now();
+    let query = activity::bounded_query(&req.query);
+    let repo = req.repo.clone();
+    let result = search(ctx, req, track);
+    let summary = result.as_ref().map(|r| {
+        serde_json::json!({
+            "query": query,
+            "hits": r.hits.len(),
+            "query_id": r.query_id,
+            "top": r.hits.iter().take(5).map(|h| h.memory_id.clone()).collect::<Vec<_>>(),
+        })
+    });
+    let outcome = match &summary {
+        Ok(value) => Outcome::Ok(value),
+        Err(e) => Outcome::Failed(e),
+    };
+    activity::record_in(ctx, command::SEARCH, started, &outcome, repo.as_deref());
+    result
+}
+
+/// The search itself, wrapped by [`run`] so the activity row is written once,
+/// outside the work it describes.
+fn search(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<SearchResult> {
     // Copied out before `ctx.conn()` so the later mutable borrow of `ctx`
     // (for the connection) doesn't also lock out this field.
     let cfg = ctx.cfg;
@@ -104,3 +130,7 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<SearchResult>
         scope,
     })
 }
+
+#[cfg(test)]
+#[path = "tests/activity.rs"]
+mod activity_tests;

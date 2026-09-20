@@ -7,6 +7,8 @@
 //! `find` orders identically to the matching dedicated command — see
 //! `retrieval::unified` for why.
 
+use std::time::Instant;
+
 use serde::Deserialize;
 
 use crate::config::Config;
@@ -18,6 +20,7 @@ use crate::domains::retrieval::scope::{self, Domain, Domains, Filters};
 use crate::domains::retrieval::unified::{self, fuse_domains::UnifiedHit};
 use crate::prelude::*;
 use crate::store::Connection;
+use crate::utilities::activity::{self, Outcome, command};
 use crate::utilities::context::Ctx;
 use crate::utilities::pagination::PageMeta;
 use crate::utilities::pagination::{PageWindow, page_meta, page_window};
@@ -107,6 +110,36 @@ fn domains_of(domain: Option<&str>) -> Result<Domains> {
 /// retrieval path itself is not, so there is one ordering through `find` and
 /// not two.
 pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<FindResult> {
+    let started = Instant::now();
+    let query = activity::bounded_query(&req.query);
+    let repo = req.repo.clone();
+    let result = find(ctx, req, track);
+    let summary = result.as_ref().map(|r| {
+        let mut per_domain = std::collections::BTreeMap::new();
+        for hit in &r.hits {
+            *per_domain.entry(hit.domain.clone()).or_insert(0_usize) += 1;
+        }
+        serde_json::json!({
+            "query": query,
+            "hits": per_domain,
+            "total": r.hits.len(),
+            "query_id": r.query_id,
+            "top": r.hits.iter().take(5).map(|h| h.id.clone()).collect::<Vec<_>>(),
+        })
+    });
+    let outcome = match &summary {
+        Ok(value) => Outcome::Ok(value),
+        Err(e) => Outcome::Failed(e),
+    };
+    activity::record_in(ctx, command::FIND, started, &outcome, repo.as_deref());
+    result
+}
+
+/// The unified search itself, wrapped by [`run`] so the activity row is
+/// written once, outside the work it describes. `hits` is reported per
+/// domain because that is what a `find` run actually returns — one number
+/// would hide which leg answered.
+fn find(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<FindResult> {
     let cfg = ctx.cfg;
     let scope = scope::scope_from_flags(
         req.since.as_deref(),

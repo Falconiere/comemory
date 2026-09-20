@@ -15,12 +15,15 @@
 //! vectors are BYO, so the new id starts lexical-only until re-embedded
 //! (`POST /doctor/reembed`, or a `POST /memories` carrying `vector`).
 
+use std::time::Instant;
+
 use serde::{Deserialize, Serialize};
 
 use crate::domains::memories::save;
 use crate::domains::memories::{Frontmatter, Kind, MemoryRecord, MemoryStore, id, mirror};
 use crate::prelude::*;
 use crate::store::{memory_row, sync_log};
+use crate::utilities::activity::{self, Outcome, command};
 use crate::utilities::context::Ctx;
 
 /// `PATCH /api/v1/memories/{id}` request. Every field is optional: an absent
@@ -86,6 +89,28 @@ const DERIVED_INERT_FIELDS: &[&str] = &["quality"];
 /// which `MemoryStore::load` does not scan); an out-of-range `quality` is
 /// `Error::BadRequest` before anything is touched.
 pub fn run(ctx: &mut Ctx<'_>, id: &str, req: Request) -> Result<Response> {
+    let started = Instant::now();
+    let result = patch(ctx, id, req);
+    let summary = result.as_ref().map(|r| {
+        serde_json::json!({
+            "id": r.id,
+            "fields": r.changed,
+            "superseded": r.superseded,
+        })
+    });
+    let outcome = match &summary {
+        Ok(value) => Outcome::Ok(value),
+        Err(e) => Outcome::Failed(e),
+    };
+    activity::record_in(ctx, command::UPDATE, started, &outcome, None);
+    result
+}
+
+/// The patch itself, wrapped by [`run`] so the activity row is written once,
+/// outside the work it describes. The inner `resave` reaches
+/// `memories::save::run_with` rather than `save::run`, so a patch records one
+/// `update` row and never a second `save` row for the same edit.
+fn patch(ctx: &mut Ctx<'_>, id: &str, req: Request) -> Result<Response> {
     if let Some(quality) = req.quality {
         save::validate_quality(quality)?;
     }

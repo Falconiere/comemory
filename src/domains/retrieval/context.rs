@@ -6,6 +6,8 @@
 //! The CLI's lazy-reindex trigger (`cli::lazy_reindex`) does **not** move
 //! here — it stays a CLI-only affordance (spec Non-Goal 8).
 
+use std::time::Instant;
+
 use serde::Deserialize;
 
 use crate::domains::retrieval::bundle::RankedMemory;
@@ -16,6 +18,7 @@ use crate::domains::retrieval::{bundle, pipeline};
 use crate::prelude::*;
 use crate::store::Connection;
 use crate::store::code_row;
+use crate::utilities::activity::{self, Outcome, command};
 use crate::utilities::context::Ctx;
 use crate::utilities::pagination::{page_meta, page_window};
 
@@ -61,6 +64,28 @@ pub struct Request {
 /// the CLI/HTTP split. Both bumps additionally require a head window, per
 /// `retrieval::pipeline::record_access`.
 pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<ContextResult> {
+    let started = Instant::now();
+    let query = activity::bounded_query(&req.query);
+    let repo = req.repo.clone();
+    let result = bundle(ctx, req, track);
+    let summary = result.as_ref().map(|r| {
+        serde_json::json!({
+            "query": query,
+            "hits": r.meta.total,
+            "query_id": r.query_id,
+        })
+    });
+    let outcome = match &summary {
+        Ok(value) => Outcome::Ok(value),
+        Err(e) => Outcome::Failed(e),
+    };
+    activity::record_in(ctx, command::CONTEXT, started, &outcome, repo.as_deref());
+    result
+}
+
+/// The bundle assembly itself, wrapped by [`run`] so the activity row is
+/// written once, outside the work it describes.
+fn bundle(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<ContextResult> {
     // Continuous sync is the user-level daemon — context no longer pulls.
     let cfg = ctx.cfg;
     let window = page_window(cfg, req.k, req.offset);

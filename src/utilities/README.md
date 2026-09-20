@@ -35,6 +35,7 @@ One line per file, named after its primary item:
 
 | File | Primary item | Owns |
 | --- | --- | --- |
+| `activity.rs` | `Origin`, `Outcome`, `record`, `source`, `command` | The activity feed's writer: who ran a command, the command vocabulary shared with `RouteEntry::command`, and the best-effort insert every instrumented core calls when it finishes — warns and returns on any failure, exactly as `retrieval::pipeline::log_retrieval` does |
 | `blocking.rs` | `run_blocking` | Run a closure on the blocking-thread-pool, flattening a task panic into `crate::Error`; the connection-lock bridge `serve` and `mcp` both call so a guard never crosses an `.await` |
 | `context.rs` | `Ctx` | The execution context every command core runs against: `Paths` + `Config` plus a borrowed or lazily opened connection, so conn-free commands never touch the database and a job worker gets exactly one connection |
 | `dated_id.rs` | `dated_id` | The shared `<prefix>-<yyyymmdd>-<8hex>` id shape, minted and validated in one place, so the `q-` retrieval query id and the `o-` observation id keep one form |
