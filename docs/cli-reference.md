@@ -61,7 +61,7 @@ Commands:
   mcp             Serve the MCP tool interface over stdio for agent hosts
   setup           Detect what this machine and repo still need, then set it up
   context         Headline lookup: code symbol + memories matching a key
-  completions     Emit a shell completion script for `bash`, `zsh`, `fish`, `powershell`, or `elvish`
+  completions     Emit a shell completion script, or install completions for supported shells
   prune           Detect (and optionally soft-delete) stale memories
   consolidate     Report near-duplicate memory clusters and the member worth keeping
   rebuild         Drop `comemory.db` and repopulate it from the markdown source of truth
@@ -1445,19 +1445,23 @@ tree: that tree's basename.
 ## comemory completions
 
 ```
-Emit a shell completion script for `bash`, `zsh`, `fish`, `powershell`, or `elvish`
+Emit a shell completion script, or install completions for supported shells
 
-Usage: comemory completions [OPTIONS] <SHELL>
+Usage: comemory completions [OPTIONS] [SHELL]
 
 Arguments:
-  <SHELL>  Shell to emit a completion script for [possible values: bash, elvish, fish, powershell, zsh]
+  [SHELL]  Shell to emit a completion script for [possible values: bash, elvish, fish, powershell, zsh]
 
 Options:
+      --install              Install completions for Bash, Zsh, Fish, and PowerShell
       --json                 Emit machine-readable JSON instead of a human TTY view
       --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
   -h, --help                 Print help
 
 Examples:
+  # install + register bash, zsh, fish, and powershell completions
+  comemory completions --install
+
   # fish (autoloaded from this path)
   comemory completions fish > ~/.config/fish/completions/comemory.fish
 
@@ -1467,7 +1471,7 @@ Examples:
   # bash (homebrew bash-completion.d)
   comemory completions bash > "$(brew --prefix)/etc/bash_completion.d/comemory"
 
-  # NOTE: scripts/dev-install.sh writes these automatically by default.
+  # NOTE: install.sh, Homebrew, and scripts/dev-install.sh install completions automatically.
 ```
 
 ---

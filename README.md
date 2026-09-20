@@ -118,15 +118,18 @@ verifies it against the SHA-256 sidecar every release ships (`sha256sum`,
 `shasum -a 256`, or `openssl` — it refuses to install unverified), checks the
 binary actually runs on this machine (an old glibc fails here, with a
 message, not later), swaps it into place atomically, and adds the bin
-directory to your shell rc once, if it is not already on `PATH`. It re-runs
-cleanly: a `comemory` already on `PATH` is replaced where it is, which is how
-`comemory upgrade` moves you to the next release afterwards.
+directory to your shell rc once, if it is not already on `PATH`. It also
+installs and registers Bash, Zsh, Fish, and PowerShell completions. Both steps
+are idempotent: a `comemory` already on `PATH` and the generated completions
+are refreshed in place, which is how `comemory upgrade` moves both to the next
+release afterwards.
 
 | Flag / env | Effect |
 |---|---|
 | `--version <tag>` / `COMEMORY_VERSION` | Install this release (`0.19.0` or `v0.19.0`) instead of the latest |
 | `--dir <path>` / `COMEMORY_INSTALL_DIR` | Directory the binary goes in. Default: the existing `comemory`'s directory, else `$CARGO_HOME/bin` if it exists, else `~/.local/bin` |
-| `--no-modify-path` / `COMEMORY_NO_MODIFY_PATH` | Leave shell rc files alone (a Dockerfile `RUN`, or when `--dir` is already on `PATH`) |
+| `--no-modify-path` / `COMEMORY_NO_MODIFY_PATH` | Do not add the install directory to shell rc files (a Dockerfile `RUN`, or when `--dir` is already on `PATH`) |
+| `--no-completions` | Skip installing shell completions and their managed profile blocks |
 | `--quiet` | Only print errors |
 | `NO_COLOR` | Plain output |
 
@@ -155,7 +158,7 @@ installer; still published, no in-place upgrade, no checksum on stock macOS).
 Windows users fork the repo and run `cargo install --path .` — see
 [Platform support](#platform-support) below.
 
-Full install details — every channel, and generating shell completions — are in
+Full install details — every channel, and shell completion behavior — are in
 **[docs/getting-started.md](docs/getting-started.md)**; the binary-size history
 lives in **[docs/build-perf.md](docs/build-perf.md)**.
 

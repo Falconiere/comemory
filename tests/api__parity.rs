@@ -122,6 +122,9 @@ const EXCLUSIONS: &[(&str, &str)] = &[
     // until interrupted, which is not a request-response shape), so there is
     // no `api::watch::Request` for its one flag to map onto.
     ("watch", "once"),
+    // `comemory completions --install` mutates per-user shell files and has
+    // no HTTP counterpart; the API only emits one requested script.
+    ("completions", "install"),
 ];
 
 /// Whether `(command, arg_id)` is a documented exclusion (see

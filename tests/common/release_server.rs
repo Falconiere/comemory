@@ -23,6 +23,7 @@ use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use assert_cmd::cargo::cargo_bin;
 use sha2::{Digest, Sha256};
 
 /// A running fixture server. Lives until the process exits.
@@ -136,9 +137,13 @@ pub fn stage_release(root: &Path, tag: &str, target: &str) {
     let pkg = dir.join(&pkg_name);
     std::fs::create_dir_all(&pkg).expect("create package dir");
     let stub = pkg.join("comemory");
+    let completion_bin = cargo_bin("comemory");
+    let quoted_completion_bin = completion_bin.to_string_lossy().replace('\'', "'\\''");
     std::fs::write(
         &stub,
-        format!("#!/bin/sh\nprintf 'comemory {version}\\n'\n"),
+        format!(
+            "#!/bin/sh\ncase \"${{1:-}}\" in\n  --version) printf 'comemory {version}\\n' ;;\n  completions) exec '{quoted_completion_bin}' \"$@\" ;;\n  *) exit 64 ;;\nesac\n"
+        ),
     )
     .expect("write stub binary");
     #[cfg(unix)]

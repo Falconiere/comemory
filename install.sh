@@ -7,7 +7,8 @@
 # not to) makes it reachable from your shell.
 #
 #   curl -fsSL https://github.com/Falconiere/comemory/releases/latest/download/install.sh | sh
-#   sh install.sh [--version <tag>] [--dir <bin dir>] [--no-modify-path] [--quiet]
+#   sh install.sh [--version <tag>] [--dir <bin dir>] [--no-modify-path]
+#                 [--no-completions] [--quiet]
 #
 # Environment (a flag wins over its variable):
 #   COMEMORY_VERSION         release to install (v0.18.2 or 0.18.2); default latest
@@ -19,7 +20,8 @@
 #
 # POSIX sh — runs under dash, ash, bash, and zsh. `comemory upgrade` runs this
 # same script with --version / --dir / --no-modify-path / --quiet, so those
-# four flags are a contract: the binary depends on them.
+# four flags are a contract: the binary depends on them. --no-completions is
+# the user-facing opt-out for the installer's default completion setup.
 set -eu
 
 APP=comemory
@@ -30,6 +32,7 @@ DIR="${COMEMORY_INSTALL_DIR:-}"
 MODIFY_PATH=1
 [ -z "${COMEMORY_NO_MODIFY_PATH:-}" ] || MODIFY_PATH=0
 QUIET=0
+INSTALL_COMPLETIONS=1
 NEEDS_RESTART=0
 TMP=""
 
@@ -68,7 +71,8 @@ usage: install.sh [options]
   --dir <path>        directory the binary goes in (default: the existing
                       comemory's directory, else \$CARGO_HOME/bin if it exists,
                       else ~/.local/bin)
-  --no-modify-path    do not touch shell rc files
+  --no-modify-path    do not add the install directory to shell rc files
+  --no-completions    do not install shell completion scripts
   --quiet, -q         only print errors
   --help, -h          this text
 
@@ -194,6 +198,18 @@ install_bin() {
   mv -f "$bin" "$staged" && mv -f "$staged" "$DIR/$APP"
 }
 
+# Generate all supported completion scripts with the installed binary. A
+# completion failure does not roll back a verified binary; report it so the
+# user can retry with `comemory completions --install`.
+install_completions() {
+  [ "$INSTALL_COMPLETIONS" -eq 1 ] || return 0
+  if "$DIR/$APP" completions --install >/dev/null; then
+    step "Completions" "bash, zsh, fish, powershell"
+  elif [ "$QUIET" -eq 0 ]; then
+    warn "binary installed, but shell completion setup failed; retry: $APP completions --install"
+  fi
+}
+
 # ------------------------------------------------------------- PATH ----
 on_path() { case ":$PATH:" in *":$1:"*) return 0 ;; esac; return 1; }
 
@@ -201,7 +217,7 @@ add_path() {
   on_path "$DIR" && return 0
   NEEDS_RESTART=1
   if [ "$MODIFY_PATH" -eq 0 ]; then
-    info "PATH" "$DIR is not on PATH; rc files left alone (--no-modify-path)"
+    info "PATH" "$DIR is not on PATH; PATH rc changes skipped (--no-modify-path)"
     return 0
   fi
   case "$DIR" in "$HOME"/*) short="\$HOME${DIR#"$HOME"}" ;; *) short="$DIR" ;; esac
@@ -246,6 +262,7 @@ while [ $# -gt 0 ]; do
     --dir)       [ $# -ge 2 ] || die "--dir needs a value"; DIR="$2"; shift 2 ;;
     --dir=*)     DIR="${1#*=}"; shift ;;
     --no-modify-path) MODIFY_PATH=0; shift ;;
+    --no-completions) INSTALL_COMPLETIONS=0; shift ;;
     --quiet|-q)  QUIET=1; shift ;;
     --help|-h)   usage; exit 0 ;;
     *) usage >&2; printf '\nerror: unknown option: %s\n' "$1" >&2; exit 2 ;;
@@ -276,5 +293,6 @@ step "Checksum" "sha256 $(printf '%.12s' "$expected")... verified"
 
 install_bin
 step "Installed" "$DIR/$APP ($REPORTED)"
+install_completions
 add_path
 summary

@@ -407,6 +407,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/cli/auth_render.rs | comemory::cli::auth_render; preserve | none | none | delivery::cli | src/cli/auth_render.rs | retain |
 | src/cli/bandit.rs | comemory::cli::bandit; preserve | none | none | delivery::cli | src/cli/bandit.rs | retain |
 | src/cli/capture.rs | comemory::cli::capture; preserve | none | none | delivery::cli | src/cli/capture.rs | retain |
+| src/cli/completion_install.rs | private | none | none | delivery::cli | src/cli/completion_install.rs | retain |
 | src/cli/completion_script.rs | comemory::cli::completion_script; breaking 0.34.0 docs/designs/2026-09-17-domain-first-migration-inventory.md#rust-module-path-release-note-for-0340 | src/cli/tests/completion_script.rs | none | delivery::cli | src/cli/completion_script.rs | retain |
 | src/cli/completions.rs | comemory::cli::completions; preserve | none | none | delivery::cli | src/cli/completions.rs | retain |
 | src/cli/consolidate.rs | comemory::cli::consolidate; preserve | none | none | delivery::cli | src/cli/consolidate.rs | retain |

@@ -13,6 +13,7 @@ use std::path::PathBuf;
 use clap::Args as ClapArgs;
 use clap_complete::Shell;
 
+use crate::cli::completion_install;
 use crate::cli::completion_script;
 use crate::config::paths::resolve_data_dir;
 use crate::config::{Config, Paths};
@@ -21,6 +22,9 @@ use crate::utilities::context::Ctx;
 
 const EXAMPLES: &str = "\
 Examples:
+  # install + register bash, zsh, fish, and powershell completions
+  comemory completions --install
+
   # fish (autoloaded from this path)
   comemory completions fish > ~/.config/fish/completions/comemory.fish
 
@@ -30,28 +34,57 @@ Examples:
   # bash (homebrew bash-completion.d)
   comemory completions bash > \"$(brew --prefix)/etc/bash_completion.d/comemory\"
 
-  # NOTE: scripts/dev-install.sh writes these automatically by default.";
+  # NOTE: install.sh, Homebrew, and scripts/dev-install.sh install completions automatically.";
 
 /// Arguments for `comemory completions`.
 #[derive(ClapArgs, Debug)]
 #[command(after_help = EXAMPLES)]
 pub struct Args {
     /// Shell to emit a completion script for.
-    pub shell: Shell,
+    #[arg(required_unless_present = "install", conflicts_with = "install")]
+    pub shell: Option<Shell>,
+    /// Install completions for Bash, Zsh, Fish, and PowerShell.
+    #[arg(long)]
+    pub install: bool,
 }
 
 /// Emit the completion script for `a.shell` on stdout, via
 /// [`crate::cli::completion_script::run`]. No data-dir I/O: `Paths`/`Config`
 /// are built but never touched by the conn-free middle.
-pub async fn run(a: Args, _json: bool, data_dir: Option<PathBuf>) -> Result<()> {
+pub async fn run(a: Args, json: bool, data_dir: Option<PathBuf>) -> Result<()> {
+    if a.install {
+        return install(json);
+    }
+    let shell = a
+        .shell
+        .ok_or_else(|| Error::Usage("a shell or --install is required".into()))?;
     let paths = Paths::new(resolve_data_dir(data_dir));
     let cfg = Config::defaults();
     let req = completion_script::Request {
-        shell: a.shell.to_string(),
+        shell: shell.to_string(),
     };
     let mut ctx = Ctx::lazy(&paths, &cfg);
     let script = completion_script::run(&mut ctx, req)?;
     let mut out = std::io::stdout().lock();
     out.write_all(script.as_bytes())?;
+    Ok(())
+}
+
+fn install(json: bool) -> Result<()> {
+    let report = completion_install::run()?;
+    let mut out = std::io::stdout().lock();
+    if json {
+        serde_json::to_writer(&mut out, &report)?;
+        out.write_all(b"\n")?;
+        return Ok(());
+    }
+    for item in report.installed {
+        writeln!(
+            out,
+            "installed {} completions: {}",
+            item.shell,
+            item.path.display()
+        )?;
+    }
     Ok(())
 }

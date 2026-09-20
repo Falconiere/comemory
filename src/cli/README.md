@@ -30,8 +30,9 @@ One line per file, named after its primary item:
 | `auth.rs` | `Args` | `comemory auth` — nested `login` / `status` / `logout` for the org-scoped key; the sequences are `domains::sync::login`, and `login` still runs the first sync (CLI-only) |
 | `auth_render.rs` | `LoginJson` | JSON/TTY helpers for `comemory auth` login/status/logout |
 | `bandit.rs` | `Args` | `comemory bandit` — Thompson-sample the `[tune]` grid, confirm with offline eval |
+| `completion_install.rs` | `Report` | Per-user Bash, Zsh, Fish and PowerShell completion installation plus idempotent profile registration |
 | `completion_script.rs` | `Request` | Completion-script generation shared by `comemory completions` and `GET /api/v1/completions` |
-| `completions.rs` | `Args` | `comemory completions <shell>` — emit a shell completion script |
+| `completions.rs` | `Args` | `comemory completions <shell>` emits a script; `--install` installs and registers the four supported interactive shells |
 | `capture.rs` | `Args` | `comemory capture` — post a session transcript's receipts and candidate batches over the device-key credential; core in `domains::capture` |
 | `consolidate.rs` | `Args` | `comemory consolidate` — advisory near-duplicate cluster report |
 | `context.rs` | `Args` | `comemory context` — headline memory + code bundle lookup |
