@@ -70,7 +70,9 @@ async fn architecture_tools_scaffold_save_show_and_check() {
         "{rendered}"
     );
 
-    let drift = home.data("architecture_check", json!({})).await;
+    let drift = home
+        .data("architecture_check", json!({ "repo": REPO }))
+        .await;
     assert_eq!(drift["repo"], json!(REPO), "{drift}");
     assert_eq!(drift["drift_count"], json!(0), "{drift}");
 }
