@@ -16,10 +16,11 @@ use crate::store::random_id::random_hex;
 pub const SCRIPT_ASSET: &str = "install.sh";
 
 /// Fetch `<base>/download/<tag>/install.sh` and run it pinned to `tag`,
-/// into `dir`, with rc files untouched (the binary is already reachable —
-/// that is how it is running). `quiet` captures the script's output instead
-/// of letting it paint the terminal; a failure then carries the tail of what
-/// it said.
+/// into `dir`, without adding another PATH startup-file entry (the binary is
+/// already reachable — that is how it is running). Completion registrations
+/// are refreshed by the installer. `quiet` captures the script's output
+/// instead of letting it paint the terminal; a failure then carries the tail
+/// of what it said.
 pub fn run_script(base: &str, tag: &str, dir: &Path, quiet: bool) -> Result<()> {
     let url = format!("{base}/download/{tag}/{SCRIPT_ASSET}");
     let workdir = private_workdir()?;

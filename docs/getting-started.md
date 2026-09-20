@@ -65,17 +65,19 @@ curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL \
 ```
 
 `--dir` (or `COMEMORY_INSTALL_DIR`) names the directory the binary goes in;
-`--no-modify-path` (or `COMEMORY_NO_MODIFY_PATH=1`) keeps the script out of
-shell rc files — a later `RUN` and the container entrypoint read none of
-those, so without `--dir` a Dockerfile ends up with `comemory` installed and
-still not on `PATH`. Left to itself the installer picks the directory of the
+`--no-modify-path` (or `COMEMORY_NO_MODIFY_PATH=1`) prevents the installer
+from adding its binary directory to shell rc files — a later `RUN` and the
+container entrypoint read none of those, so without `--dir` a Dockerfile ends
+up with `comemory` installed and still not on `PATH`. Left to itself the installer picks the directory of the
 `comemory` already on `PATH` (so a re-run upgrades in place), else
 `$CARGO_HOME/bin` when that exists, else `~/.local/bin`, and — when that
 directory is not on `PATH` — appends one `export PATH=…` line to your shell's
 rc file (`~/.zshrc`, `~/.bashrc` / `~/.bash_profile` on macOS, or a fish
 `conf.d/comemory.fish` with `fish_add_path`), only once, and tells you which.
 `--version <tag>` (or `COMEMORY_VERSION`) pins a release instead of the
-latest.
+latest. Completion installation is independent of PATH setup; pass
+`--no-completions` in containers or managed environments that do not want
+per-user completion files.
 
 Homebrew is as quick, on macOS and Linuxbrew:
 
@@ -97,8 +99,15 @@ x86_64) are attached to every
 `install.sh` and cargo-dist's older `comemory-installer.sh` (still published;
 no pinning, no in-place upgrade, and it skips the checksum on stock macOS).
 
-No install channel sets up shell completions — Homebrew, `install.sh` and
-`cargo install` alike. Generate them yourself with
+`install.sh` and Homebrew install Bash, Zsh, Fish, and PowerShell completions
+automatically; `comemory upgrade` refreshes them along with the binary. Cargo
+has no post-install hook, so a source install needs one follow-up command:
+
+```bash
+comemory completions --install
+```
+
+You can still emit one script without installing it with
 `comemory completions <bash|zsh|fish|powershell>`.
 
 Later, moving to the next release is one command — `comemory upgrade` (or

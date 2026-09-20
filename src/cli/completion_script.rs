@@ -36,6 +36,11 @@ pub struct Request {
 pub fn run(_ctx: &mut Ctx<'_>, req: Request) -> Result<String> {
     let shell = Shell::from_str(&req.shell)
         .map_err(|e| Error::BadRequest(format!("invalid shell {:?}: {e}", req.shell)))?;
+    generate_for(shell)
+}
+
+/// Generate a completion script for a parsed shell value.
+pub(crate) fn generate_for(shell: Shell) -> Result<String> {
     let mut cmd = Cli::command();
     let bin_name = cmd.get_name().to_string();
     let mut buf: Vec<u8> = Vec::new();

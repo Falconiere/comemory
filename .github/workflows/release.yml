@@ -392,6 +392,24 @@ jobs:
             name=$(echo "$filename" | sed "s/\.rb$//")
             version=$(echo "$release" | jq .app_version --raw-output)
 
+            # dist owns the formula shape but does not expose a completion
+            # hook. Add Homebrew-managed scripts before style/commit so every
+            # brew install and upgrade refreshes all four supported shells.
+            ruby - "Formula/${filename}" <<'RUBY'
+            path = ARGV.fetch(0)
+            formula = File.read(path)
+            anchor = "    install_binary_aliases!\n"
+            abort "completion anchor missing from #{path}" unless formula.scan(anchor).length == 1
+            completion = <<~'FORMULA'.lines.map { |line| "    #{line}" }.join
+              generate_completions_from_executable(
+                bin/"comemory",
+                "completions",
+                shells: [:bash, :zsh, :fish, :pwsh],
+              )
+            FORMULA
+            File.write(path, formula.sub(anchor, "#{anchor}\n#{completion}"))
+          RUBY
+
             export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
             brew update
             # We avoid reformatting user-provided data such as the app description and homepage.

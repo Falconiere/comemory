@@ -19,6 +19,7 @@ pub mod bandit;
 pub mod benchmark;
 /// `comemory capture`: session receipt + consent read (CLI-only).
 pub mod capture;
+mod completion_install;
 /// Completion-script generation shared by the CLI and `GET /api/v1/completions`.
 pub mod completion_script;
 /// `comemory completions`: shell completion scripts.
@@ -219,7 +220,7 @@ pub enum Cmd {
     Setup(setup::Args),
     /// Headline lookup: code symbol + memories matching a key.
     Context(context::Args),
-    /// Emit a shell completion script for `bash`, `zsh`, `fish`, `powershell`, or `elvish`.
+    /// Emit a shell completion script, or install completions for supported shells.
     Completions(completions::Args),
     /// Detect (and optionally soft-delete) stale memories.
     Prune(prune::Args),

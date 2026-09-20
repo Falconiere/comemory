@@ -56,6 +56,9 @@ impl Fixture {
             .env("COMEMORY_RELEASES_URL", &self.srv.base)
             .env("HOME", self.home.path())
             .env("NO_COLOR", "1")
+            .env_remove("XDG_CONFIG_HOME")
+            .env_remove("XDG_DATA_HOME")
+            .env_remove("ZDOTDIR")
             .env_remove("COMEMORY_INSTALL_DIR")
             .env_remove("COMEMORY_VERSION")
             .env_remove("COMEMORY_NO_MODIFY_PATH");
@@ -174,8 +177,8 @@ fn without_dir_it_falls_through_to_an_existing_cargo_bin() {
         "comemory 9.9.9"
     );
     assert!(
-        !fx.home.path().join(".local").exists(),
-        "not the last resort"
+        !fx.home.path().join(".local/bin/comemory").exists(),
+        "the binary did not fall through to the last-resort install dir"
     );
 }
 
@@ -258,7 +261,7 @@ fn path_line_is_appended_to_the_shell_rc_once() {
 }
 
 #[test]
-fn no_modify_path_leaves_rc_files_alone_and_says_so() {
+fn no_modify_path_skips_the_path_line_but_keeps_completion_setup() {
     let Some(fx) = Fixture::new(&["v9.9.9"]) else {
         return;
     };
@@ -267,9 +270,55 @@ fn no_modify_path_leaves_rc_files_alone_and_says_so() {
         &["--dir", dir.to_str().unwrap(), "--no-modify-path"],
         &[("SHELL", "/bin/bash"), ("PATH", "/usr/bin:/bin")],
     ));
-    assert!(stdout.contains("rc files left alone"), "{stdout}");
-    assert!(!fx.home.path().join(".bashrc").exists());
-    assert!(!fx.home.path().join(".bash_profile").exists());
+    assert!(stdout.contains("PATH rc changes skipped"), "{stdout}");
+    for relative in [".bashrc", ".bash_profile"] {
+        let body = std::fs::read_to_string(fx.home.path().join(relative)).unwrap();
+        assert!(body.contains("comemory completions"), "{body}");
+        assert!(!body.contains("export PATH="), "{body}");
+    }
+}
+
+#[test]
+fn installs_shell_completions_by_default() {
+    let Some(fx) = Fixture::new(&["v9.9.9"]) else {
+        return;
+    };
+    let dir = fx.home.path().join("bin");
+
+    ok(&fx.run(&["--dir", dir.to_str().unwrap(), "--no-modify-path"], &[]));
+
+    for relative in [
+        ".local/share/bash-completion/completions/comemory",
+        ".local/share/zsh/site-functions/_comemory",
+        ".config/fish/completions/comemory.fish",
+        ".config/powershell/comemory.ps1",
+    ] {
+        let path = fx.home.path().join(relative);
+        assert!(path.is_file(), "missing completion {}", path.display());
+    }
+}
+
+#[test]
+fn no_completions_skips_completion_installation() {
+    let Some(fx) = Fixture::new(&["v9.9.9"]) else {
+        return;
+    };
+    let dir = fx.home.path().join("bin");
+
+    ok(&fx.run(
+        &[
+            "--dir",
+            dir.to_str().unwrap(),
+            "--no-modify-path",
+            "--no-completions",
+        ],
+        &[],
+    ));
+
+    assert!(!fx.home.path().join(".local/share/bash-completion").exists());
+    assert!(!fx.home.path().join(".local/share/zsh").exists());
+    assert!(!fx.home.path().join(".config/fish").exists());
+    assert!(!fx.home.path().join(".config/powershell").exists());
 }
 
 #[test]

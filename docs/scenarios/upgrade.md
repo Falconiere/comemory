@@ -58,7 +58,8 @@ _None._
   + `install.sh`; a private copy of the binary in `<tmp>/bin/`
 - **Command:** `comemory --json upgrade`
 - **Expect:** `status: "upgraded"`, `target: "9.9.9"`; the file at `exe`
-  now answers `--version` with `comemory 9.9.9`; no staging leftovers.
+  now answers `--version` with `comemory 9.9.9`; shell completions are
+  refreshed through `install.sh`; no staging leftovers.
 - **Covered by:** `tests/cli__upgrade.rs::upgrade_replaces_the_running_binary_in_place`
 
 ### upgrade-04 No-op when current
@@ -114,7 +115,8 @@ _None._
 
 `install.sh` (repo root, uploaded to every release by
 `release-finalize.yml`) is what `upgrade` runs. Its own contract —
-`--version`, `--dir`, `--no-modify-path`, `--quiet`, the env twins,
-checksum verification, in-place replacement of the `comemory` already on
-`PATH`, the once-only rc-file PATH line — is driven by
+`--version`, `--dir`, `--no-modify-path`, `--no-completions`, `--quiet`, the
+env twins, checksum verification, in-place replacement of the `comemory`
+already on `PATH`, the once-only rc-file PATH line, and completion installation
+— is driven by
 `tests/install_script.rs`.

@@ -47,6 +47,9 @@ fn run(exe: &Path, base: &str, home: &TempDir, args: &[&str]) -> Output {
         .env("COMEMORY_RELEASES_URL", base)
         .env("COMEMORY_DATA_DIR", home.path().join(".comemory"))
         .env("HOME", home.path())
+        .env_remove("XDG_CONFIG_HOME")
+        .env_remove("XDG_DATA_HOME")
+        .env_remove("ZDOTDIR")
         .args(args)
         .output()
         .expect("run comemory")
@@ -143,6 +146,15 @@ fn upgrade_replaces_the_running_binary_in_place() {
         "comemory 9.9.9",
         "the file on disk is the release"
     );
+    for relative in [
+        ".local/share/bash-completion/completions/comemory",
+        ".local/share/zsh/site-functions/_comemory",
+        ".config/fish/completions/comemory.fish",
+        ".config/powershell/comemory.ps1",
+    ] {
+        let path = home.path().join(relative);
+        assert!(path.is_file(), "upgrade did not refresh {}", path.display());
+    }
     let leftovers: Vec<_> = std::fs::read_dir(exe.parent().unwrap())
         .unwrap()
         .flatten()

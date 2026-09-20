@@ -16,8 +16,8 @@ out how the running binary was installed, compares, and then:
 
 | Channel | What `upgrade` does |
 | --- | --- |
-| **Standalone** — `install.sh`, or a tarball you unpacked | Downloads that release's own `install.sh` and runs it pinned (`--version <tag> --dir <this binary's dir> --no-modify-path`). The script verifies the archive's SHA-256, runs the new binary's `--version` before touching anything, then renames it over the running one — an atomic swap, so the process you launched keeps executing the old inode until it exits |
-| **Homebrew** — under a `Cellar` / Homebrew prefix | Runs `brew upgrade comemory`. The tap can lag a GitHub release by a few minutes; the report says so instead of failing |
+| **Standalone** — `install.sh`, or a tarball you unpacked | Downloads that release's own `install.sh` and runs it pinned (`--version <tag> --dir <this binary's dir> --no-modify-path`). The script verifies the archive's SHA-256, runs the new binary's `--version` before touching anything, then renames it over the running one — an atomic swap, so the process you launched keeps executing the old inode until it exits. It then refreshes Bash, Zsh, Fish, and PowerShell completions idempotently |
+| **Homebrew** — under a `Cellar` / Homebrew prefix | Runs `brew upgrade comemory`. The formula regenerates Homebrew-managed Bash, Zsh, Fish, and PowerShell completions. The tap can lag a GitHub release by a few minutes; the report says so instead of failing |
 | **`cargo install`** — listed in `$CARGO_HOME/.crates.toml` | Refuses (exit 64) and prints the rebuild recipe: `cargo install --git … --tag vX.Y.Z`, or `git pull && cargo install --path .` in that checkout |
 
 After the swap it runs the binary on disk with `--version` and fails loudly if
