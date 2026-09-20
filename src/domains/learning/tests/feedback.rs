@@ -12,6 +12,7 @@ use std::thread;
 
 use comemory::config::{Config, Paths};
 use comemory::domains::learning::feedback::{self, Request};
+use comemory::errors::Error;
 use comemory::store::code_row::{self, CodeSymbolRow};
 use comemory::store::connection;
 use comemory::utilities::context::Ctx;
@@ -76,7 +77,9 @@ fn mixed_feedback_rolls_back_memory_rows_when_code_identity_is_missing() {
     )
     .expect_err("missing code identity must fail the mixed request");
     assert!(
-        err.to_string().contains("999999"),
+        matches!(&err, Error::Config(message) if message ==
+            "code feedback: symbol id 999999 not found in code_symbols \
+             (re-indexed away or never existed); re-run comemory search-code for current ids"),
         "unexpected error: {err}"
     );
     assert_eq!(
@@ -100,7 +103,8 @@ fn malformed_memory_id_refuses_mixed_feedback_before_writing_code() {
     )
     .expect_err("malformed memory id must refuse the entire mixed request");
     assert!(
-        error.to_string().contains("not-an-id"),
+        matches!(&error, Error::Config(message) if message ==
+            "--used: invalid memory id `not-an-id` (expected 8 lowercase hex chars)"),
         "unexpected error: {error}"
     );
     assert_eq!(counts(&paths), (0, 0, 0));
