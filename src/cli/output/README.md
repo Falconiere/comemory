@@ -28,6 +28,7 @@ One line per file, named after its primary item:
 
 | File | Primary item | Purpose |
 | --- | --- | --- |
+| `architecture.rs` | `write_model` | Rendering for the `comemory architecture` family (component table, Mermaid source, save result, drift report) over `domains::architecture`'s values |
 | `consolidate.rs` | `emit` | Rendering for `comemory consolidate` (cluster blocks + keeper marker) |
 | `context.rs` | `emit` | Rendering for `comemory context` (headline bundle) over `domains::retrieval::context_result`'s envelope |
 | `edges.rs` | `emit` | Rendering for `comemory edges` (triplet rows + the pagination footer) over `domains::graph::edges_result`'s envelope |

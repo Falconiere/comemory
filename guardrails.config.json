@@ -14,6 +14,7 @@
     ],
     "nested": {
       "domains": [
+        "architecture",
         "memories",
         "code",
         "documents",
@@ -116,7 +117,8 @@
       "domains/documents/source",
       "domains/graph",
       "domains/maintenance",
-      "mcp"
+      "mcp",
+      "domains/architecture"
     ]
   },
   "fileSize": {

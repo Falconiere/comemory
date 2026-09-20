@@ -23,6 +23,7 @@ One row per capability — its sibling module file and its folder together:
 
 | Capability | Owns | Landed by |
 | --- | --- | --- |
+| `architecture.rs` + [`architecture/`](architecture/README.md) | The component-level architecture model: the versioned value and its ceilings, the deterministic scaffold clustered from the indexed code graph, the save-time rules checked against indexed paths, the current-model read, the drift check, the Mermaid rendering, and the `learn` wrapper around a caller-named agent command | retain |
 | `capture.rs` + [`capture/`](capture/README.md) | Client-side coding-session capture: transcript reading, client redaction attestation and receipts, explicit-save distillation, and the platform session and candidate-batch calls | #174 |
 | `code.rs` + [`code/`](code/README.md) | AST extraction, code indexing, the repository inventory, Git hooks, reindex freshness | #167 |
 | `documents.rs` + [`documents/`](documents/README.md) | Document extraction, the durable source registry, discovery, and document indexing | #168 |

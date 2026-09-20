@@ -26,7 +26,7 @@ validate_inventory() (
     (.setup_runtime_dependencies | type == "array") and
     .staged_top_level_dirs == ("cli config domains mcp serve store utilities"|split(" ")) and
     .staged_root_modules == ("cli config errors lib main mcp prelude serve store test_common"|split(" ")) and
-    .domains == ("memories code documents graph retrieval learning sync capture maintenance integrations"|split(" ")) and
+    .domains == ("architecture memories code documents graph retrieval learning sync capture maintenance integrations"|split(" ")) and
     all($rows[0][];
       (.owner | test("^(domains::[a-z_]+|delivery::(cli|serve|mcp)|shared::(config|utilities|root)|infrastructure::store)$")) and
       (if (.owner | startswith("domains::")) then

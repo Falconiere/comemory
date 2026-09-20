@@ -34,6 +34,7 @@ use crate::utilities::context::Ctx;
 /// JSON-RPC on the process's own stdin/stdout, so an HTTP request must never
 /// be able to start one.
 const CLI_ONLY: &[&str] = &[
+    "architecture",
     "auth",
     "benchmark",
     "capture",
