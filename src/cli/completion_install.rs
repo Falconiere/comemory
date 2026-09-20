@@ -157,28 +157,67 @@ fn upsert_block(path: &Path, body: &str) -> Result<()> {
         Err(e) => return Err(e.into()),
     };
     let block = format!("{BLOCK_START}\n{body}\n{BLOCK_END}");
-    match (current.find(BLOCK_START), current.find(BLOCK_END)) {
-        (Some(start), Some(end)) if end >= start => {
-            current.replace_range(start..end + BLOCK_END.len(), &block);
+    let blocks = managed_blocks(&current, path)?;
+    if let Some(first) = blocks.first() {
+        let mut updated = String::from(&current[..first.0]);
+        updated.push_str(&block);
+        let mut cursor = first.1;
+        for (start, end) in blocks.iter().skip(1) {
+            updated.push_str(&current[cursor..*start]);
+            cursor = *end;
         }
-        (None, None) => {
-            if !current.is_empty() && !current.ends_with('\n') {
-                current.push('\n');
-            }
-            if !current.is_empty() {
-                current.push('\n');
-            }
-            current.push_str(&block);
+        updated.push_str(&current[cursor..]);
+        current = updated;
+    } else {
+        if !current.is_empty() && !current.ends_with('\n') {
             current.push('\n');
         }
-        _ => {
-            return Err(Error::Other(format!(
-                "incomplete comemory completion block in {}",
-                path.display()
-            )));
+        if !current.is_empty() {
+            current.push('\n');
         }
+        current.push_str(&block);
+        current.push('\n');
     }
     write_file(path, current.as_bytes())
+}
+
+fn managed_blocks(current: &str, path: &Path) -> Result<Vec<(usize, usize)>> {
+    let mut blocks = Vec::new();
+    let mut cursor = 0;
+    while let Some(start_offset) = current[cursor..].find(BLOCK_START) {
+        let start = cursor + start_offset;
+        let before_start = current[cursor..]
+            .find(BLOCK_END)
+            .map(|offset| cursor + offset);
+        if before_start.is_some_and(|end| end < start) {
+            return Err(incomplete_block(path));
+        }
+        let body_start = start + BLOCK_START.len();
+        let Some(end_offset) = current[body_start..].find(BLOCK_END) else {
+            return Err(incomplete_block(path));
+        };
+        let end = body_start + end_offset;
+        let nested_start = current[body_start..]
+            .find(BLOCK_START)
+            .map(|offset| body_start + offset);
+        if nested_start.is_some_and(|nested| nested < end) {
+            return Err(incomplete_block(path));
+        }
+        let block_end = end + BLOCK_END.len();
+        blocks.push((start, block_end));
+        cursor = block_end;
+    }
+    if current[cursor..].contains(BLOCK_END) {
+        return Err(incomplete_block(path));
+    }
+    Ok(blocks)
+}
+
+fn incomplete_block(path: &Path) -> Error {
+    Error::Other(format!(
+        "incomplete comemory completion block in {}",
+        path.display()
+    ))
 }
 
 fn write_file(path: &Path, body: &[u8]) -> Result<()> {

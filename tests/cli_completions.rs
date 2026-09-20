@@ -10,6 +10,9 @@
 use assert_cmd::Command;
 use tempfile::TempDir;
 
+const BLOCK_START: &str = "# >>> comemory completions >>>";
+const BLOCK_END: &str = "# <<< comemory completions <<<";
+
 fn run_completions(shell: &str) -> assert_cmd::assert::Assert {
     Command::cargo_bin("comemory")
         .expect("cargo_bin comemory")
@@ -111,19 +114,28 @@ fn install_writes_and_registers_the_four_supported_shells() {
 
     run_install(&home).success();
 
-    for relative in [
-        "data/bash-completion/completions/comemory",
-        "data/zsh/site-functions/_comemory",
-        "config/fish/completions/comemory.fish",
-        "config/powershell/comemory.ps1",
+    for (relative, marker) in [
+        (
+            "data/bash-completion/completions/comemory",
+            "complete -F _comemory",
+        ),
+        ("data/zsh/site-functions/_comemory", "#compdef comemory"),
+        (
+            "config/fish/completions/comemory.fish",
+            "complete -c comemory",
+        ),
+        (
+            "config/powershell/comemory.ps1",
+            "Register-ArgumentCompleter",
+        ),
     ] {
         let path = home.path().join(relative);
         let body = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("read installed completion {}: {e}", path.display()));
         assert!(!body.trim().is_empty(), "{} is empty", path.display());
         assert!(
-            body.contains("comemory"),
-            "{} does not name comemory",
+            body.contains(marker),
+            "{} is missing {marker}",
             path.display()
         );
     }
@@ -137,11 +149,8 @@ fn install_writes_and_registers_the_four_supported_shells() {
         let path = home.path().join(relative);
         let body = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("read configured profile {}: {e}", path.display()));
-        assert!(
-            body.contains("comemory completions"),
-            "{} has no managed completion block",
-            path.display()
-        );
+        assert_eq!(body.matches(BLOCK_START).count(), 1, "{}", path.display());
+        assert_eq!(body.matches(BLOCK_END).count(), 1, "{}", path.display());
     }
 }
 
@@ -178,9 +187,36 @@ fn install_is_idempotent_and_preserves_profile_text() {
     run_install(&home).success();
 
     let body = std::fs::read_to_string(&zshrc).expect("read zshrc");
-    assert!(body.starts_with("# user's setup\nexport EDITOR=vi\n"));
-    assert_eq!(body.matches("# >>> comemory completions >>>").count(), 1);
-    assert_eq!(body.matches("# <<< comemory completions <<<").count(), 1);
+    assert!(body.starts_with(&format!(
+        "# user's setup\nexport EDITOR=vi\n\n{BLOCK_START}\n"
+    )));
+    assert_eq!(body.matches(BLOCK_START).count(), 1);
+    assert_eq!(body.matches(BLOCK_END).count(), 1);
+}
+
+#[test]
+fn install_collapses_duplicate_managed_blocks() {
+    let home = TempDir::new().expect("temp home");
+    let zsh_dir = home.path().join("zsh");
+    std::fs::create_dir_all(&zsh_dir).expect("create zsh config dir");
+    let zshrc = zsh_dir.join(".zshrc");
+    std::fs::write(
+        &zshrc,
+        format!(
+            "export EDITOR=vi\n\n{BLOCK_START}\nold first\n{BLOCK_END}\n\nexport PATH\n\n{BLOCK_START}\nold second\n{BLOCK_END}\n"
+        ),
+    )
+    .expect("seed duplicate completion blocks");
+
+    run_install(&home).success();
+
+    let body = std::fs::read_to_string(&zshrc).expect("read zshrc");
+    assert_eq!(body.matches(BLOCK_START).count(), 1);
+    assert_eq!(body.matches(BLOCK_END).count(), 1);
+    assert!(body.contains("export EDITOR=vi\n"));
+    assert!(body.contains("export PATH\n"));
+    assert!(!body.contains("old first"));
+    assert!(!body.contains("old second"));
 }
 
 #[test]
