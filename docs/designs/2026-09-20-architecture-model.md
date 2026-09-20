@@ -85,8 +85,11 @@ only graph:
   diffs the saved model against today's index.
 
 **`learn` is a thin wrapper, not agent logic in the binary.** It scaffolds,
-writes `<tmpdir>/comemory-architecture-prompt.md` (instructions + scaffold
-JSON), substitutes `{prompt_file}` (or `{prompt}`, the prompt inline) into the
+writes `<data_dir>/architecture/<repo>-prompt.md` (instructions + scaffold
+JSON; the data directory rather than the world-writable temp dir, where a
+predictable name is a symlink someone else can plant, and the repo label is
+reduced to `[A-Za-z0-9._-]` so it cannot steer the write elsewhere),
+substitutes `{prompt_file}` (or `{prompt}`, the prompt inline) into the
 caller's `--command` template, runs it through `sh -c` on `tokio::process::Command` under
 `tokio::time::timeout` (`std::process` cannot wait with a deadline; tokio is
 already a dependency with `features = ["full"]`), extracts the model
@@ -129,9 +132,9 @@ comemory architecture learn --command TEMPLATE [--repo R] [--timeout SECS]
 | Flag | Default | Effect |
 | --- | --- | --- |
 | `--repo` | cwd's git repo label | Repo scope for every subcommand |
-| `--depth` | `2` | Directory-prefix depth a component clusters at |
-| `--max-components` | `120` | Truncate after this many components (rank order) |
-| `--min-edge-weight` | `1` | Drop component edges below this weight |
+| `--depth` | `2` | Directory-prefix depth a component clusters at (>= 1) |
+| `--max-components` | `120` | Truncate after this many components, rank order (>= 1) |
+| `--min-edge-weight` | `1` | Drop component edges below this weight (>= 1) |
 | `--format` | `json` | `show` output: `json` \| `mermaid` |
 | `--command` | *(required)* | `learn` agent template; must contain `{prompt_file}` or `{prompt}` |
 | `--timeout` | `600` | `learn` child-process timeout, seconds |
@@ -146,11 +149,11 @@ carries `**HTTP:** none — CLI-only (`transport: "cli-only"`)`, the same line
 `docs/scenarios/capture.md` uses.
 
 **Output writers.** Every subcommand owns both writers, as the rest of the
-CLI does. TTY: `scaffold` prints `<n> components, <m> edges` then one line
-per component (`<rank>  <id>  <name>  <files> files`); `show` prints the same
-table plus the edge list, or raw Mermaid under `--format mermaid`; `check`
-prints one line per drift entry grouped by kind, then `drift: <n>`. The
-global `--json` flag wins over `--format` exactly as it does for `comemory
+CLI does. TTY: `scaffold` prints `<repo> — <n> components, <m> edges` then one
+line per component (`<rank>  <id>  <files> files  <name>`) and one per edge;
+`save`, `check` and `learn` print their own summaries. `show` is format-driven
+(`--format json|mermaid`) because a stored model is normally piped somewhere.
+The global `--json` flag wins over `--format` exactly as it does for `comemory
 graph` — `show --format mermaid --json` emits the model JSON, not Mermaid.
 
 **Freshness under sync.** Two machines can each supersede the same predecessor
@@ -307,6 +310,14 @@ flowchart LR
   five subcommands, and `cargo nextest run -E 'test(cli_scenario_catalog)'`
   passes with `docs/scenarios/architecture.md` citing an existing
   `tests/<file>.rs::<fn>` for every flag in the table above.
+- **AC-17:** `scaffold` without `--json` prints the component table (repo
+  headline, one line per component, one per edge) and no JSON; `--depth 0`,
+  `--max-components 0` and `--min-edge-weight 0` are clap usage errors (exit 2)
+  rather than a model with nothing in it.
+- **AC-18:** Two mined kinds between the same pair of modeled components are
+  reported as one `missing_edges` entry carrying the strongest weight, and the
+  `learn` prompt is written under `<data_dir>/architecture/`, not the shared
+  temp directory.
 - **AC-16:** Saving a model does not displace normal recall: in the fixture
   repo, `comemory find "two" --json` returns the same ordered list of hit ids
   in its top 3 before and after the save, and the architecture memory's id is
@@ -326,6 +337,8 @@ flowchart LR
 | AC-14 | `comemory install claude --config-dir <tmp>` | byte-identical SKILL.md, four literal commands present | — | `src/domains/integrations/install/tests/bundle.rs` |
 | AC-15 | built `Cli::command()` + docs | both gates green | — | `scripts/cli-docs-check.sh`, `tests/cli_scenario_catalog.rs` |
 | AC-16 | fixture corpus before/after save | identical top-3 | — | `tests/cli__architecture_3.rs` |
+| AC-17 | indexed fixture, no `--json` | table text, exit 2 on a zero knob | each of the three knobs | `tests/cli__architecture.rs`, `tests/cli__architecture_2.rs` |
+| AC-18 | fixture mining both `imports` and `co_changed` between one pair | one drift entry; prompt path under the data dir | — | `tests/cli__architecture_3.rs` |
 
 ## Documentation impact
 

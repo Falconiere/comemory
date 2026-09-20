@@ -64,14 +64,26 @@ pub enum ArchitectureCmd {
 /// Scaffold knobs shared by `scaffold`, `check` and `learn`.
 #[derive(ClapArgs, Debug)]
 pub struct ShapeArgs {
-    /// Directory-prefix depth a component clusters at.
-    #[arg(long, default_value_t = 2)]
+    /// Directory-prefix depth a component clusters at. Must be >= 1.
+    #[arg(
+        long,
+        default_value_t = 2,
+        value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..)
+    )]
     pub depth: usize,
-    /// Keep at most this many components, highest rank first.
-    #[arg(long, default_value_t = 120)]
+    /// Keep at most this many components, highest rank first. Must be >= 1.
+    #[arg(
+        long,
+        default_value_t = 120,
+        value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..)
+    )]
     pub max_components: usize,
-    /// Drop component edges below this weight.
-    #[arg(long, default_value_t = 1)]
+    /// Drop component edges below this weight. Must be >= 1.
+    #[arg(
+        long,
+        default_value_t = 1,
+        value_parser = clap::builder::RangedI64ValueParser::<i64>::new().range(1..)
+    )]
     pub min_edge_weight: i64,
 }
 
@@ -170,7 +182,11 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
         ArchitectureCmd::Scaffold(s) => {
             let repo = resolve_repo(s.repo)?;
             let model = scaffold::run(ctx.conn()?, &repo, &(&s.shape).into())?;
-            emit_model(&model, json_flag, Format::Json)
+            if json_flag {
+                json::write(&model)
+            } else {
+                render::write_model(&model)
+            }
         }
         ArchitectureCmd::Save(s) => {
             let repo = resolve_repo(s.repo)?;
@@ -214,8 +230,8 @@ pub async fn run(a: Args, json_flag: bool, data_dir: Option<PathBuf>) -> Result<
     }
 }
 
-/// Emit a model, with the global `--json` flag overriding `--format` exactly
-/// as it does for `comemory graph --format dot --json`.
+/// Emit a stored model for `show`, with the global `--json` flag overriding
+/// `--format` exactly as it does for `comemory graph --format dot --json`.
 fn emit_model(model: &Model, json_flag: bool, format: Format) -> Result<()> {
     match (json_flag, format) {
         (true, _) | (false, Format::Json) => json::write(model),

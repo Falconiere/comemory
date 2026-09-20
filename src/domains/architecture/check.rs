@@ -110,9 +110,11 @@ fn stale(model: &Model, indexed: &[String]) -> Vec<StaleMember> {
     out
 }
 
-/// Mined relations between two modeled components that the model omits.
+/// Mined relations between two modeled components that the model omits. Two
+/// mined kinds between the same pair are one omission, not two, so the pair is
+/// reported once with the strongest weight seen.
 fn missing(model: &Model, fresh: &Model) -> Vec<MissingEdge> {
-    let mut out = Vec::new();
+    let mut out: Vec<MissingEdge> = Vec::new();
     for e in &fresh.edges {
         let (Some(from), Some(to)) = (
             member_owner(model, fresh, &e.from),
@@ -127,12 +129,16 @@ fn missing(model: &Model, fresh: &Model) -> Vec<MissingEdge> {
             .edges
             .iter()
             .any(|saved| saved.from == from && saved.to == to);
-        if !modeled {
-            out.push(MissingEdge {
+        if modeled {
+            continue;
+        }
+        match out.iter_mut().find(|m| m.from == from && m.to == to) {
+            Some(seen) => seen.weight = seen.weight.max(e.weight),
+            None => out.push(MissingEdge {
                 from: from.to_string(),
                 to: to.to_string(),
                 weight: e.weight,
-            });
+            }),
         }
     }
     out

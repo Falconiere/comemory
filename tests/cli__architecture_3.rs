@@ -95,6 +95,34 @@ fn a_moved_file_shows_up_as_a_stale_member_and_an_unmapped_directory() {
 }
 
 #[test]
+fn two_mined_kinds_between_one_pair_are_one_missing_edge() {
+    let home = TempDir::new().expect("tempdir");
+    let ws = TempDir::new().expect("workspace");
+    index_repo(&home, ws.path(), "r");
+
+    // The fixture mines BOTH an `imports` and a `co_changed` edge between the
+    // two directories. A model that keeps the components but drops the edges
+    // has omitted one relation, not two.
+    let mut model = architecture_json(&home, &["scaffold", "--repo", "r", "--json"]);
+    model["edges"] = Value::Array(Vec::new());
+    let path = ws.path().join("edgeless.json");
+    std::fs::write(&path, serde_json::to_string_pretty(&model).expect("json")).expect("write");
+    bin(&home)
+        .args(["architecture", "save"])
+        .arg(&path)
+        .args(["--repo", "r"])
+        .assert()
+        .success();
+
+    let drift = architecture_json(&home, &["check", "--repo", "r", "--json"]);
+    let missing = drift["missing_edges"].as_array().expect("missing_edges");
+    assert_eq!(missing.len(), 1, "{drift}");
+    assert_eq!(missing[0]["from"], "src_a");
+    assert_eq!(missing[0]["to"], "src_b");
+    assert_eq!(missing[0]["weight"], 1);
+}
+
+#[test]
 fn learn_hands_the_scaffold_to_the_agent_and_saves_what_it_prints() {
     let home = TempDir::new().expect("tempdir");
     let ws = TempDir::new().expect("workspace");

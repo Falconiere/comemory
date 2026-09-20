@@ -23,9 +23,9 @@ Global flags `--json` and `--data-dir` apply. See [globals.md](globals.md).
 | Flag | Subcommand | Default | Effect |
 | --- | --- | --- | --- |
 | `--repo` | all | cwd's git repo | Repo label to work on |
-| `--depth` | `scaffold`, `check`, `learn` | `2` | Directory-prefix depth a component clusters at |
-| `--max-components` | `scaffold`, `check`, `learn` | `120` | Keep this many components, highest rank first |
-| `--min-edge-weight` | `scaffold`, `check`, `learn` | `1` | Drop component edges below this weight |
+| `--depth` | `scaffold`, `check`, `learn` | `2` | Directory-prefix depth a component clusters at (>= 1) |
+| `--max-components` | `scaffold`, `check`, `learn` | `120` | Keep this many components, highest rank first (>= 1) |
+| `--min-edge-weight` | `scaffold`, `check`, `learn` | `1` | Drop component edges below this weight (>= 1) |
 | `--format` | `show` | `json` | `json` \| `mermaid`; global `--json` overrides it |
 | `--command` | `learn` | required | Agent template; must contain `{prompt_file}` or `{prompt}` |
 | `--timeout` | `learn` | `600` | Kill the agent command after this many seconds |
@@ -53,7 +53,11 @@ Global flags `--json` and `--data-dir` apply. See [globals.md](globals.md).
   files; intra-component edges are dropped, so `edges` is empty.
   `--max-components` truncates in rank order and `--min-edge-weight` drops
   weaker edges (same `scaffold::Options` the check path uses).
+  Each knob rejects `0` as a clap usage error (exit 2). Without `--json`,
+  `scaffold` prints the component table instead of JSON.
 - **Covered by:** `tests/cli__architecture.rs::depth_one_collapses_the_directories_into_one_component`,
+  `tests/cli__architecture.rs::scaffold_without_json_prints_the_component_table`,
+  `tests/cli__architecture_2.rs::a_zero_knob_is_a_usage_error_rather_than_an_empty_model`,
   `src/domains/architecture/tests/cluster.rs`
 
 ### architecture-03 Save validates against the index
@@ -98,15 +102,19 @@ Global flags `--json` and `--data-dir` apply. See [globals.md](globals.md).
 - **Expect:** exit 0 with `drift_count: 0` on a fresh model; after the move,
   `stale_members` names `src/b`, `unmapped` names `src/c`, `drift_count >= 2`.
   Exit stays 0 — drift is a report, like `doctor`.
+  Two mined kinds between one pair are one omission, reported once with the
+  strongest weight.
 - **Covered by:** `tests/cli__architecture_3.rs::a_freshly_saved_scaffold_reports_no_drift`,
-  `tests/cli__architecture_3.rs::a_moved_file_shows_up_as_a_stale_member_and_an_unmapped_directory`
+  `tests/cli__architecture_3.rs::a_moved_file_shows_up_as_a_stale_member_and_an_unmapped_directory`,
+  `tests/cli__architecture_3.rs::two_mined_kinds_between_one_pair_are_one_missing_edge`
 
 ### architecture-07 Learn runs the caller's agent
 
 - **Flags:** `--command`, `--dry-run`, `--timeout`, `--json`
 - **Setup:** real shell scripts in the test tmpdir standing in for the agent
 - **Command:** `comemory architecture learn --repo r --command 'sh agent.sh {prompt_file}' --json`
-- **Expect:** the prompt file holds the scaffold; the agent's model is saved
+- **Expect:** the prompt file is written under `<data_dir>/architecture/` and
+  holds the scaffold; the agent's model is saved
   with `source: agent`. `--dry-run` writes the prompt and starts nothing. A
   template with no placeholder exits 64 before any spawn; a command exiting
   non-zero exits 70 with its stderr tail; prose with no JSON exits 65.

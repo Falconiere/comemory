@@ -53,9 +53,14 @@ pub struct Learned {
 
 /// Scaffold, prompt, spawn, extract, validate, save.
 pub async fn run(ctx: &mut Ctx<'_>, repo: &str, opts: &Options) -> Result<Learned> {
+    let dir = ctx.paths.data_dir().join("architecture");
     let scaffolded = scaffold::run(ctx.conn()?, repo, &opts.scaffold)?;
     let text = prompt::build(repo, &scaffolded)?;
-    let path = std::env::temp_dir().join(format!("comemory-architecture-{repo}-prompt.md"));
+    // The prompt lands in the caller's own data directory, never in the
+    // world-writable temp dir: its name is predictable, and a predictable name
+    // under `/tmp` is a symlink someone else can plant.
+    std::fs::create_dir_all(&dir)?;
+    let path = dir.join(format!("{}-prompt.md", slug(repo)));
     std::fs::write(&path, &text)?;
     let prompt_path = path.to_string_lossy().to_string();
 
@@ -76,6 +81,21 @@ pub async fn run(ctx: &mut Ctx<'_>, repo: &str, opts: &Options) -> Result<Learne
         command: Some(command),
         saved: Some(saved),
     })
+}
+
+/// A repo label reduced to a filename: every character outside
+/// `[A-Za-z0-9._-]` becomes `_`, so a label carrying a path separator cannot
+/// steer the write out of the architecture directory.
+fn slug(repo: &str) -> String {
+    repo.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }
 
 /// Substitute the prompt into the template. A template naming neither

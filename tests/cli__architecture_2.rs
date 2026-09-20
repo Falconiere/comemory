@@ -159,6 +159,25 @@ fn show_and_check_name_the_repo_when_no_model_was_ever_saved() {
 }
 
 #[test]
+fn a_zero_knob_is_a_usage_error_rather_than_an_empty_model() {
+    let home = TempDir::new().expect("tempdir");
+    let ws = TempDir::new().expect("workspace");
+    index_repo(&home, ws.path(), "r");
+
+    for (flag, value) in [
+        ("--depth", "0"),
+        ("--max-components", "0"),
+        ("--min-edge-weight", "0"),
+    ] {
+        bin(&home)
+            .args(["architecture", "scaffold", "--repo", "r", flag, value])
+            .assert()
+            .failure()
+            .code(2);
+    }
+}
+
+#[test]
 fn scaffolding_an_unindexed_repo_points_at_the_indexer() {
     let home = TempDir::new().expect("tempdir");
     let out = bin(&home)

@@ -54,6 +54,23 @@ fn scaffold_clusters_indexed_directories_and_projects_mined_edges() {
 }
 
 #[test]
+fn scaffold_without_json_prints_the_component_table() {
+    let home = TempDir::new().expect("tempdir");
+    let ws = TempDir::new().expect("workspace");
+    index_repo(&home, ws.path(), "r");
+
+    let out = stdout_of(&home, &["scaffold", "--repo", "r"]);
+    assert!(out.starts_with("r — 2 components, 2 edges"), "{out}");
+    assert!(out.contains("src_a"), "{out}");
+    assert!(out.contains("1 files"), "{out}");
+    assert!(out.contains("src_a -> src_b (imports, weight 1)"), "{out}");
+    assert!(
+        !out.contains("\"schema\""),
+        "the table must not be JSON: {out}"
+    );
+}
+
+#[test]
 fn scaffold_is_byte_stable_across_runs() {
     let home = TempDir::new().expect("tempdir");
     let ws = TempDir::new().expect("workspace");
