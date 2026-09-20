@@ -25,6 +25,24 @@ pub struct ToolEntry {
 /// The catalog, in the order a host lists it: reads first, writes last.
 pub const TOOLS: &[ToolEntry] = &[
     ToolEntry {
+        name: "architecture_scaffold",
+        command: "architecture scaffold",
+        mutating: false,
+        description: "Build a deterministic architecture-model scaffold from the indexed repo. Enrich its names and summaries, then save the complete model.",
+    },
+    ToolEntry {
+        name: "architecture_show",
+        command: "architecture show",
+        mutating: false,
+        description: "Read the current architecture model for a repo as JSON, or request its deterministic Mermaid flowchart source for a human-facing diagram.",
+    },
+    ToolEntry {
+        name: "architecture_check",
+        command: "architecture check",
+        mutating: false,
+        description: "Compare the saved architecture model to today's index. Inspect drift before trusting it or after structural repository changes.",
+    },
+    ToolEntry {
         name: "find",
         command: "find",
         mutating: false,
@@ -83,6 +101,12 @@ pub const TOOLS: &[ToolEntry] = &[
         command: "save",
         mutating: true,
         description: "Save a verified lesson with evidence. Returns id and path; use supersedes for replaced memories.",
+    },
+    ToolEntry {
+        name: "architecture_save",
+        command: "architecture save",
+        mutating: true,
+        description: "Validate and store an enriched architecture model. Supersedes the current model only after every member path validates against the code index.",
     },
     ToolEntry {
         name: "feedback",

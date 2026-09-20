@@ -5,42 +5,45 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Mirror test for `src/mcp/catalog.rs`. The shape checks (eleven unique
-//! names, exactly two writers, every description non-empty) plus the parity
+//! Mirror test for `src/mcp/catalog.rs`. The shape checks (fifteen unique
+//! names, exactly three writers, every description non-empty) plus the parity
 //! half this step can already prove: every `command` is a real clap
 //! subcommand, walked off the live `Cli::command()` rather than a copied list.
 
 use std::collections::BTreeSet;
 
-use clap::CommandFactory;
+use clap::{Command as ClapCommand, CommandFactory};
 use comemory::cli::Cli;
 use comemory::mcp::catalog::{self, TOOLS};
 
-/// Every subcommand name the real clap definition exposes.
-fn clap_subcommands() -> BTreeSet<String> {
-    Cli::command()
-        .get_subcommands()
-        .map(|c| c.get_name().to_string())
-        .collect()
+/// Resolve a root or nested clap path such as `architecture scaffold`.
+fn command_at_path<'a>(root: &'a ClapCommand, path: &str) -> Option<&'a ClapCommand> {
+    path.split_whitespace()
+        .try_fold(root, |current, segment| current.find_subcommand(segment))
 }
 
 #[test]
-fn catalog_holds_eleven_uniquely_named_tools() {
-    assert_eq!(TOOLS.len(), 11, "catalog size");
+fn catalog_holds_fifteen_uniquely_named_tools() {
+    assert_eq!(TOOLS.len(), 15, "catalog size");
     let names: BTreeSet<&str> = TOOLS.iter().map(|t| t.name).collect();
-    assert_eq!(names.len(), 11, "duplicate tool name in {names:?}");
+    assert_eq!(names.len(), 15, "duplicate tool name in {names:?}");
 }
 
 #[test]
-fn exactly_two_tools_mutate() {
+fn exactly_three_tools_mutate() {
     let mutating: Vec<&str> = TOOLS
         .iter()
         .filter(|t| t.mutating)
         .map(|t| t.name)
         .collect();
-    assert_eq!(mutating, vec!["save", "feedback"], "mutating tools");
+    assert_eq!(
+        mutating,
+        vec!["save", "architecture_save", "feedback"],
+        "mutating tools"
+    );
     assert!(catalog::is_mutating("save"));
     assert!(catalog::is_mutating("feedback"));
+    assert!(catalog::is_mutating("architecture_save"));
     assert!(!catalog::is_mutating("find"));
     // An unknown name is not dispatchable at all, so it is not "mutating".
     assert!(!catalog::is_mutating("delete-everything"));
@@ -48,15 +51,15 @@ fn exactly_two_tools_mutate() {
 
 #[test]
 fn every_command_is_a_real_clap_subcommand() {
-    let known = clap_subcommands();
+    let root = Cli::command();
     assert!(
-        known.contains("find"),
-        "clap walk found no subcommands at all: {known:?}"
+        root.find_subcommand("find").is_some(),
+        "clap has no find command"
     );
     for tool in TOOLS {
         assert!(
-            known.contains(tool.command),
-            "tool `{}` names command `{}`, which clap does not have",
+            command_at_path(&root, tool.command).is_some(),
+            "tool `{}` names command path `{}`, which clap does not have",
             tool.name,
             tool.command
         );

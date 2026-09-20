@@ -1,15 +1,96 @@
-//! The one MCP-local parameter type.
+//! MCP-local parameter types.
 //!
-//! Every other tool takes the command core's own `Request`, which already
-//! derives `Deserialize` + `JsonSchema`. `feedback` cannot: its core defaults
-//! `source` to `explicit` (a typed verdict is a human one), while a verdict an
-//! agent inferred is `implicit` and must never enter the golden harvest. So
-//! the agent-facing shape drops `source` for a boolean the model can only set
-//! truthfully, and this module does the mapping.
+//! Most tools take the command core's own `Request`, which already derives
+//! `Deserialize` + `JsonSchema`. `feedback` and the architecture tools need
+//! adapter-owned shapes: feedback changes verdict provenance, while architecture
+//! maps nested CLI arguments and the model body to domain cores.
 
 use serde::Deserialize;
+use serde_json::Value;
 
+use crate::domains::architecture::model::{MAX_BYTES, Model};
+use crate::domains::architecture::scaffold::Options;
 use crate::domains::learning::feedback;
+use crate::prelude::*;
+
+/// Shared clustering parameters for architecture scaffold and check.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ArchitectureShapeParams {
+    /// Repo label, defaulting to the MCP session scope.
+    #[serde(default)]
+    pub repo: Option<String>,
+    /// Directory-prefix depth used to cluster indexed files.
+    #[serde(default)]
+    pub depth: Option<usize>,
+    /// Highest-ranked components retained in the scaffold.
+    #[serde(default)]
+    pub max_components: Option<usize>,
+    /// Minimum projected edge weight retained in the scaffold.
+    #[serde(default)]
+    pub min_edge_weight: Option<i64>,
+}
+
+impl ArchitectureShapeParams {
+    /// The domain options with absent MCP fields set to CLI-equivalent defaults.
+    pub fn options(&self) -> Options {
+        let defaults = Options::default();
+        Options {
+            depth: self.depth.unwrap_or(defaults.depth),
+            max_components: self.max_components.unwrap_or(defaults.max_components),
+            min_edge_weight: self.min_edge_weight.unwrap_or(defaults.min_edge_weight),
+        }
+    }
+}
+
+/// Parameters for saving an already-enriched architecture model.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ArchitectureSaveParams {
+    /// Repo label, defaulting to the MCP session scope.
+    #[serde(default)]
+    pub repo: Option<String>,
+    /// Complete schema-1 model, bounded before domain-schema deserialization.
+    pub model: Value,
+}
+
+impl ArchitectureSaveParams {
+    /// Bound the serialized model before domain-schema deserialization.
+    ///
+    /// The MCP transport has already decoded the JSON value using serde_json's
+    /// default nesting guard. This is the model-size limit, not a framing limit.
+    pub fn parse_model(self) -> Result<Model> {
+        let raw = serde_json::to_vec(&self.model)?;
+        if raw.len() > MAX_BYTES {
+            return Err(Error::Usage(format!(
+                "architecture model is {} bytes; maximum is {MAX_BYTES}",
+                raw.len()
+            )));
+        }
+        Ok(serde_json::from_slice(&raw)?)
+    }
+}
+
+/// Requested rendering for a stored architecture model.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ArchitectureShowFormat {
+    /// Return the stored model JSON.
+    Json,
+    /// Return deterministic Mermaid flowchart source.
+    Mermaid,
+}
+
+/// Parameters for reading a stored architecture model.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ArchitectureShowParams {
+    /// Repo label, defaulting to the MCP session scope.
+    #[serde(default)]
+    pub repo: Option<String>,
+    /// Stored model JSON by default, or Mermaid source.
+    pub format: Option<ArchitectureShowFormat>,
+}
 
 /// `feedback` tool parameters — `feedback::Request` with provenance replaced
 /// by [`FeedbackParams::confirmed_by_user`].

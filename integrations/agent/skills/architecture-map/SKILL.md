@@ -13,7 +13,10 @@ refreshed when the structure moves, not when a line changes.
 
 ## Procedure
 
-1. Scaffold from what is actually indexed — never invent the shape:
+1. Scaffold from what is actually indexed — never invent the shape. On an MCP
+   host, call `architecture_scaffold` with `{ "repo": "<scope>" }` (or use
+   the session scope); its result is the model to enrich. CLI remains the
+   fallback:
 
        comemory architecture scaffold --repo <scope> --json > /tmp/arch.json
 
@@ -35,12 +38,16 @@ refreshed when the structure moves, not when a line changes.
    - Set `"source": "agent"`. Leave `schema`, `repo`, and every `members`
      path alone unless a component is genuinely wrong.
 
-3. Save it. The save validates every member path against the code index and
-   refuses the model if one matches no indexed file:
+3. Save it. On an MCP host, call `architecture_save` with
+   `{ "repo": "<scope>", "model": <enriched model> }`. The save validates
+   every member path against the code index and refuses the model if one
+   matches no indexed file. CLI fallback:
 
        comemory architecture save /tmp/arch.json --repo <scope>
 
-4. Check drift before trusting an existing model, and after any restructuring:
+4. Check drift before trusting an existing model, and after any restructuring.
+   On an MCP host, call `architecture_check` with `{ "repo": "<scope>" }`.
+   CLI fallback:
 
        comemory architecture check --repo <scope> --json
 
@@ -49,7 +56,9 @@ refreshed when the structure moves, not when a line changes.
    full`, since incremental indexing never revisits a deleted file);
    `missing_edges` means a mined relation the model omits.
 
-5. Show it when a human wants to look at it:
+5. Show it when a human wants to look at it. On an MCP host, call
+   `architecture_show` with `{ "repo": "<scope>", "format": "mermaid" }`.
+   CLI fallback:
 
        comemory architecture show --repo <scope> --format mermaid
 
