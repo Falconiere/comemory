@@ -3,7 +3,7 @@
 Status: documented baseline, tracked by a count ratchet against a **pinned**
 `similarity-rs` · Owner: whoever burns a pair down next
 
-**263 near-duplicate function/method pairs at threshold 0.85**, measured with
+**266 near-duplicate function/method pairs at threshold 0.85**, measured with
 **`similarity-rs 0.5.0`** over the 452 production `.rs` files under `src/`, with
 pairs found in 96 of them. That number and the tool that produced it are
 recorded together, here and in `dup-baseline.txt`, because either one alone is
@@ -536,7 +536,7 @@ fresh and does not depend on these line numbers.
 
 ### `src/mcp/`
 
-The nine read tools are one `#[tool_router]` block, and rmcp 3.4 forces the
+The twelve read tools are one `#[tool_router]` block, and rmcp 3.4 forces the
 shape the detector scores: every tool must be a real method carrying
 `#[tool(description = "<literal>")]` with the same
 `(&self, Parameters<T>) -> Result<CallToolResult, ErrorData>` signature, and
@@ -544,12 +544,15 @@ shape the detector scores: every tool must be a real method carrying
 `rmcp-3-4-macro-constraints`). Each body is one `read_tool(self, move |c, s| { … })`
 call whose closure already differs per tool (core module, `track()` handling,
 envelope builder); the `*_data` helpers and the `run_read`/`run_write` pair were
-folded away first, which is what the count below excludes. These 28 pairs are the
+folded away first, which is what the count below excludes. These 31 pairs are the
 signature-and-attribute skeleton, not shared logic; the baseline moved from 235
-to 263 in the change that added the adapter (the MCP transport PR).
+to 266 as the MCP transport added three architecture tools.
 
 | Pair A | Pair B | Similarity | Remaining distinction |
 | --- | --- | --- | --- |
+| `src/mcp/tools_read.rs:40-50` method `architecture_scaffold` | `src/mcp/tools_read.rs:57-77` method `architecture_show` | 91.85% | rmcp-forced tool skeleton; the bodies call distinct architecture cores and renderers |
+| `src/mcp/tools_read.rs:57-77` method `architecture_show` | `src/mcp/tools_read.rs:84-94` method `architecture_check` | 91.85% | rmcp-forced tool skeleton; the bodies call distinct architecture cores and renderers |
+| `src/mcp/tools_read.rs:40-50` method `architecture_scaffold` | `src/mcp/tools_read.rs:84-94` method `architecture_check` | 96.62% | rmcp-forced tool skeleton; the bodies call distinct architecture cores and renderers |
 | `src/mcp/tools_read.rs:40-57` method `find` | `src/mcp/tools_read.rs:66-84` method `search` | 93.41% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
 | `src/mcp/tools_read.rs:66-84` method `search` | `src/mcp/tools_read.rs:114-130` method `context` | 93.41% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
 | `src/mcp/tools_read.rs:40-57` method `find` | `src/mcp/tools_read.rs:114-130` method `context` | 93.26% | rmcp-forced tool skeleton; the bodies call different cores and envelopes |
