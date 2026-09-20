@@ -57,13 +57,14 @@ pub struct ArchitectureSaveParams {
 impl ArchitectureSaveParams {
     /// Bound the raw body before deserializing it as the domain model.
     pub fn parse_model(self) -> Result<Model> {
-        let size = serde_json::to_vec(&self.model)?.len();
-        if size > MAX_BYTES {
+        let raw = serde_json::to_vec(&self.model)?;
+        if raw.len() > MAX_BYTES {
             return Err(Error::Usage(format!(
-                "architecture model is {size} bytes; maximum is {MAX_BYTES}"
+                "architecture model is {} bytes; maximum is {MAX_BYTES}",
+                raw.len()
             )));
         }
-        Ok(serde_json::from_value(self.model)?)
+        Ok(serde_json::from_slice(&raw)?)
     }
 }
 

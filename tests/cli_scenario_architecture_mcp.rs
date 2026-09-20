@@ -87,7 +87,8 @@ async fn architecture_save_bounds_raw_model_input() {
     assert!(
         refusal["message"]
             .as_str()
-            .is_some_and(|message| message.contains("maximum")),
+            .is_some_and(|message| message.contains("maximum")
+                && message.contains(&MAX_BYTES.to_string())),
         "{refusal}"
     );
 }
