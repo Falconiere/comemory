@@ -13,7 +13,8 @@ if a long flag / visible alias / positional is missing from its file, if a
 flag has no scenario section that both names it and cites a test, if a
 backticked `tests/…rs::fn` citation does not resolve, if a command's
 `**HTTP:**` line disagrees with the live `GET /api/v1/commands`, or if a
-journey file is missing from the tables below.
+journey file is missing from the tables below. It also checks that the generated
+CLI reference has exactly one section for every visible top-level clap command.
 
 ## How to read a scenario
 
@@ -55,6 +56,7 @@ Per-command files do not replace the multi-command journeys:
 | Agent installation (CLI only) | `tests/cli_scenario_install.rs` | install --dry-run |
 | First-run setup (CLI only) | `tests/cli_scenario_setup.rs` | setup, search-code |
 | BYO-vector | `tests/cli_scenario_vectors.rs` | index-code --extract, ingest-code, search-code --vector-stdin, save --vector-stdin |
+| MCP stdio (CLI only) | `tests/cli_scenario_mcp.rs` | mcp (initialize, tools/list, find, save, feedback, recall_status, --read-only) |
 | Globals | `tests/cli_scenario_globals.rs` | `--data-dir` vs env, `--json` placement, usage exits |
 
 Each journey has an HTTP twin over a real `comemory serve`, sharing
@@ -107,8 +109,10 @@ Each journey has an HTTP twin over a real `comemory serve`, sharing
 | `prune` | [prune.md](prune.md) |
 | `consolidate` | [consolidate.md](consolidate.md) |
 | `rebuild` | [rebuild.md](rebuild.md) |
+| `recall-status` | [recall-status.md](recall-status.md) |
 | `gc` | [gc.md](gc.md) |
 | `serve` | [serve.md](serve.md) |
+| `mcp` | [mcp.md](mcp.md) |
 | `completions` | [completions.md](completions.md) |
 | `upgrade` | [upgrade.md](upgrade.md) |
 | `auth` | [auth.md](auth.md) |

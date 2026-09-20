@@ -5,9 +5,9 @@ counters and the provenance policy that decides which value a verdict is
 stored under (`feedback_tracking`, `code_feedback`), the shared `comemory.db`
 handle those writers borrow their transactions from (`telemetry`), the
 evaluation and ranking-search algorithms ([`evaluation/`](evaluation/README.md)),
-and the seven command cores `cli::` and `serve::routes::` call (`feedback`,
-`eval`, `mine`, `tune`, `bandit`, plus the console-only `console` and
-`learning_proposals`).
+and the eight command cores `cli::` and `serve::routes::` call (`feedback`,
+`eval`, `mine`, `tune`, `bandit`, `recall_status`, plus the console-only
+`console` and `learning_proposals`).
 
 **What does NOT belong here:** SQL, rendering, and the shared telemetry
 vocabulary. Every SQL string lives in `store::{feedback, code_feedback,
@@ -39,13 +39,14 @@ One line per file, named after its primary item:
 | `console.rs` | `Summary` | Console-only: `GET /api/v1/learning/{summary,evals,golden-set,expansions}`. Was `api::learning`, renamed for the collision with its own capability |
 | `eval.rs` | `Request` | Shared middle of `comemory eval` / `POST /api/v1/eval` — read class, no confirm gate — plus `history` behind `eval --history` and `GET /eval/history` |
 | `evaluation.rs` | — | Declares [`evaluation/`](evaluation/README.md); named for the collision with the `eval` core |
-| `feedback.rs` | `Request` | Shared middle of `comemory feedback` / `POST /api/v1/feedback` (and the per-hit search route). Validates the query id, parses `Source`, and writes memory and code verdicts through the two recorders |
+| `feedback.rs` | `Request` | Shared middle of `comemory feedback` / `POST /api/v1/feedback` (and the MCP and per-hit search routes). Validates the query id, parses `Source`, and commits memory and code verdicts in one immediate transaction through the two recorders |
 | `feedback_tracking.rs` | `Source` | Per-memory `used`/`irrelevant` counters, plus `Source` — the routes' `explicit`\|`implicit` request word and its one mapping onto the stored `manual`\|`implicit` provenance. Also `record_implicit_used`, which takes a bare `&Connection` so the caller keeps its own transaction |
 | `dataset_export.rs` | `Request` | Shared middle of `comemory export-dataset` — validate the request before the database opens, read one consistent snapshot, run the export pipeline, and write the JSONL files and the manifest. The holdout split is withheld unless asked for by name |
 | `judge.rs` | `Request` | Shared middle of `comemory judge` — resolve typed verdicts against a captured observation through `evaluation::judgment`, refusing a pool-recall miss, a stale content version and an unresolvable candidate, all-or-nothing; `target_of` is the identity→`JudgmentTarget` inverse #210 renders reviewed sets with |
 | `learning_proposals.rs` | `Proposal` | Console-only: knob proposals derived from unapplied `tune`/`bandit` runs — list, apply (writes `config.toml`), discard |
 | `mine.rs` | `Request` | Shared middle of `comemory mine` / `POST /api/v1/mine` — a bounded scan, not confirm-gated |
 | `observation_capture.rs` | `record` | Opt-in, bounded capture of a real `find` run's candidate pool: `armed` (config AND a run allowed to write telemetry), `find_filters`, and the best-effort write that warns rather than failing a search |
+| `recall_status.rs` | `Request` | Shared middle of `comemory recall-status` / `GET /api/v1/learning/recall-status` / the MCP `recall_status` tool — read-only: tracked queries, `feedback_events`, saves and the still-pending queries for a repo + lower time bound (`--since`, default start of the current UTC day, normalised to UTC when given an offset). Never creates `comemory.db` on a data dir that has none yet |
 | `telemetry.rs` | `StatsDb` | The shared `comemory.db` connection handle, opened through `store::connection`. Owns no table: the two recorders borrow `conn_mut()` for their transactions |
 | `tune.rs` | `Request` | Shared middle of `comemory tune` / `POST /api/v1/tune` — mutating only when `apply`, and confirm-gated only then |
 

@@ -77,6 +77,41 @@ fn run_writes_markdown_and_sqlite_mirror() {
 }
 
 #[test]
+fn a_contended_save_preserves_the_retryable_error_and_can_be_replayed() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let paths = Paths::new(home.path());
+    paths.ensure_dirs().unwrap();
+    let holder = connection::open(paths.db_path()).unwrap();
+    let mut contender = connection::open(paths.db_path()).unwrap();
+    contender.busy_timeout(std::time::Duration::ZERO).unwrap();
+    holder.execute_batch("BEGIN IMMEDIATE").unwrap();
+    let cfg = Config::defaults();
+    let mut ctx = Ctx::borrowed(&paths, &cfg, &mut contender);
+    let body = "Retriable contention keeps the original SQLite error class";
+    let error = run(&mut ctx, request(body)).expect_err("another writer holds the store");
+    assert!(comemory::store::busy::is_locked(&error), "got {error}");
+    let before_replay: i64 = holder
+        .query_row(
+            "SELECT COUNT(*) FROM memories WHERE id = ?1",
+            [memory_id(body)],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(before_replay, 0, "the failed save must not publish a row");
+    holder.execute_batch("ROLLBACK").unwrap();
+    let response = run(&mut ctx, request(body)).expect("replay repairs the mirror");
+    assert_eq!(response.id, memory_id(body));
+    let count: i64 = contender
+        .query_row(
+            "SELECT COUNT(*) FROM memories WHERE id = ?1",
+            [&response.id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 1);
+}
+
+#[test]
 fn run_rejects_self_supersede() {
     let home = tempfile::tempdir().expect("tempdir");
     let paths = Paths::new(home.path());

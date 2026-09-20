@@ -39,7 +39,7 @@ use crate::utilities::ref_args;
 
 /// `comemory save` / `POST /api/v1/memories` request. The stdin/`-` body
 /// convenience is CLI-only — `body` is a required JSON field over HTTP.
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Request {
     /// Memory body (markdown).
@@ -203,6 +203,13 @@ pub fn run_with(
         None => crate::utilities::vector_stdin::read_optional(cli_vector_stdin, cli_vector_csv)?,
     };
     paths.ensure_dirs()?;
+    // Hold across prior lookup, content-addressed markdown staging and mirror
+    // commit. Concurrent replays otherwise share .<id>.tmp and can disagree
+    // about creation or leave the markdown and SQLite metadata out of sync.
+    let _save_guard = crate::utilities::file_lock::FileLock::acquire(
+        &paths.data_dir().join("memory-save.lock"),
+        "memory-save",
+    )?;
     let store = MemoryStore::new(paths.clone());
     // The replay contract (module doc): refuse a colliding body, carry the
     // prior `created`, and remember whether this is an insert.
@@ -329,6 +336,11 @@ fn persist(
     let rec = store.save(params)?;
     let md_path = rec.path.clone();
     write_sqlite_mirror(conn, &rec, &tags, vector_opt).map_err(|e| {
+        if crate::store::busy::is_locked(&e) {
+            // Keep the retryable error class through CLI, HTTP and MCP.
+            // Retrying this content-derived save safely repairs the mirror.
+            return e;
+        }
         Error::Other(format!(
             "save: markdown at {} was written but SQLite mirror failed: {}; \
              run `comemory rebuild` to reconcile",
@@ -400,7 +412,7 @@ fn write_sqlite_mirror(
     tags: &[String],
     vector_opt: Option<&[f32]>,
 ) -> Result<()> {
-    let tx = conn.transaction()?;
+    let tx = crate::store::connection::write_transaction(conn)?;
     let fm = &rec.frontmatter;
     let md_path = rec.path.to_string_lossy();
     mirror::insert_row(&tx, fm, &rec.body, rec.slug.as_str(), &md_path, tags)?;

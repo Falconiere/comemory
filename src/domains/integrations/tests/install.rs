@@ -59,6 +59,12 @@ fn dry_run_reports_the_bundle_under_the_ctx_data_dir_without_writing() {
     assert!(!temp.path().join("claude-config").exists());
     // `comemory.db` is never created — install is conn-free.
     assert!(!temp.path().join("comemory.db").exists());
+    // The report still names where `.mcp.json` would land, but writes none.
+    assert_eq!(
+        resp.mcp_manifest,
+        resp.bundle.join("plugins/comemory/.mcp.json")
+    );
+    assert!(!resp.mcp_manifest.exists());
 }
 
 #[test]

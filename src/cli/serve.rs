@@ -145,6 +145,9 @@ fn parse_allow_paths(raw: &[PathBuf]) -> Result<Vec<PathBuf>> {
 /// Parse `--root <repo>=<path>` flags into a [`RootOverrides`] map. Splits on
 /// the first `=` so paths containing `=` survive; rejects entries missing the
 /// separator or with an empty repo label.
+///
+/// `pub(crate)` because `cli::mcp` takes the same flag and must parse it the
+/// same way — one definition, not a copy (Binding Rule 1).
 fn parse_roots(raw: &[String]) -> Result<RootOverrides> {
     let mut map = RootOverrides::new();
     for entry in raw {

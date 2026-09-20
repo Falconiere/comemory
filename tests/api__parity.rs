@@ -55,6 +55,9 @@ use tempfile::TempDir;
 /// process — `benchmark` writes its artifact to an operator-named filesystem
 /// path, and `judge` records a local review of a locally captured
 /// observation, which the two HTTP feedback routes deliberately do not do.
+/// process. `mcp` is `serve`'s twin refusal: it IS a server too, speaking
+/// JSON-RPC on this process's own stdin/stdout, and a stdio server must never
+/// be started by an HTTP request.
 /// A local, hardcoded mirror of `serve::routes::meta::CLI_ONLY` (private to
 /// that module) — deliberate: this test proves the *real*
 /// `GET /api/v1/commands` endpoint against an independently-stated
@@ -68,6 +71,7 @@ const CLI_ONLY: &[&str] = &[
     "export-dataset",
     "install",
     "judge",
+    "mcp",
     "serve",
     "setup",
     "sync",
@@ -193,6 +197,10 @@ probe_fn!(probe_list, memories::list::Request);
 probe_fn!(probe_mine, comemory::domains::learning::mine::Request);
 probe_fn!(probe_prune, maintenance::prune::Request);
 probe_fn!(probe_rebuild, maintenance::rebuild::Request);
+probe_fn!(
+    probe_recall_status,
+    comemory::domains::learning::recall_status::Request
+);
 probe_fn!(probe_save, memories::save::Request);
 probe_fn!(probe_search, retrieval::search::Request);
 probe_fn!(probe_search_code, retrieval::search_code::Request);
@@ -237,6 +245,7 @@ const PROBES: &[(&str, ProbeFn)] = &[
     ("mine", probe_mine),
     ("prune", probe_prune),
     ("rebuild", probe_rebuild),
+    ("recall-status", probe_recall_status),
     ("save", probe_save),
     ("search", probe_search),
     ("search-code", probe_search_code),

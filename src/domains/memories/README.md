@@ -46,3 +46,8 @@ names `crate::domains::memories::<name>` directly.
 
 Colocated unit tests live in `tests/` beside their module and are reached through
 each module's `#[path]` bridge.
+
+Memory saves hold `memory-save.lock` across prior lookup, markdown staging and
+mirror commit, and reserve SQLite's writer before mirror reads. A lock failure keeps
+its retryable error class across CLI/HTTP/MCP; replaying the same content
+repairs a markdown record whose mirror could not yet be committed.

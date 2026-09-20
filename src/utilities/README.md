@@ -35,11 +35,13 @@ One line per file, named after its primary item:
 
 | File | Primary item | Owns |
 | --- | --- | --- |
+| `blocking.rs` | `run_blocking` | Run a closure on the blocking-thread-pool, flattening a task panic into `crate::Error`; the connection-lock bridge `serve` and `mcp` both call so a guard never crosses an `.await` |
 | `context.rs` | `Ctx` | The execution context every command core runs against: `Paths` + `Config` plus a borrowed or lazily opened connection, so conn-free commands never touch the database and a job worker gets exactly one connection |
 | `dated_id.rs` | `dated_id` | The shared `<prefix>-<yyyymmdd>-<8hex>` id shape, minted and validated in one place, so the `q-` retrieval query id and the `o-` observation id keep one form |
 | `digest.rs` | `sha256_hex` | SHA-256 hex digests and `is_lower_hex`, the shape check the memory-id and query-id contracts share |
 | `embed.rs` | `embed_query` | The `COMEMORY_EMBED_CMD` shell-out, bounded by `EMBED_TIMEOUT`, parsing the child's JSON payload through `embedding_input` |
 | `embedding_input.rs` | `parse_payload` | Pure decoding of a `--vector` CSV list and a `{"embedding":[..]}` JSON payload — no process I/O |
+| `error_code.rs` | `classify` | The transport-neutral `Error → (code, Class)` mapping: the code words and classes `serve::envelope::status_and_code` emits today, extracted so `serve` (`Class → StatusCode`) and `mcp` (`Class → tool-level error`, `Internal` excepted) share one exhaustive match |
 | `fetch.rs` | `exchange` | `curl` (falling back to `wget`) HTTP: `exchange`, `download`, `final_url`; no in-process TLS stack |
 | `file_lock.rs` | `FileLock` | Exclusive advisory lock over a sibling lock file, held by the source registry's read-modify-write cycle and by `store::migrate`'s preflight snapshot |
 | `http_error.rs` | `map_reqwest` | Outbound `reqwest` transport errors mapped into `crate::Error` with the source chain preserved |

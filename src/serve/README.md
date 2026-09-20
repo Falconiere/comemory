@@ -31,7 +31,7 @@ One line per file, named after its primary item:
 
 | File | Primary item | Purpose |
 | --- | --- | --- |
-| `envelope.rs` | `Envelope` | The `{ok,data,meta}` / `{ok,error,meta}` `/api/v1` response envelope and the one `Error → (StatusCode, code)` mapping table every HTTP error (and every failed job) derives its status from |
+| `envelope.rs` | `Envelope` | The `{ok,data,meta}` / `{ok,error,meta}` `/api/v1` response envelope and the one `Error → (StatusCode, code)` mapping every HTTP error (and every failed job) derives its status from — the `code` and its class come from `utilities::error_code::classify`, shared with `mcp`; this file's own match is only `Class → StatusCode`, and `status_and_code` pairs that status with the classified code word |
 | `jobs.rs` | `Registry` | The background job model for long-running commands; the table, spawner, and SSE event payloads live in `jobs/` |
 | `router.rs` | `build_router` | axum router assembly, the global body limit, and the path-aware request-gating middleware |
 | `routes.rs` | `v1_router` | The versioned `/api/v1` surface: the aggregated route table and the handler-layer helpers every resource shares; per-resource files live in `routes/` |

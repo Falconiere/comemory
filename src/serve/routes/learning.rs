@@ -28,9 +28,8 @@ use crate::serve::AppState;
 use crate::serve::envelope::Envelope;
 use crate::serve::jobs;
 use crate::serve::routes::maint::prune::split_confirm;
-use crate::serve::routes::{
-    RouteEntry, accepted, guard_job, require_confirm, respond, run_blocking,
-};
+use crate::serve::routes::{RouteEntry, accepted, guard_job, require_confirm, respond};
+use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
 use crate::utilities::path_containment;
 

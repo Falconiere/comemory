@@ -522,8 +522,8 @@ tier directly:
   [http-api](docs/guides/http-api.md) ·
   [prune-and-gc](docs/guides/prune-and-gc.md) ·
   [upgrading](docs/guides/upgrading.md).
-- **Reference** — [docs/cli-reference.md](docs/cli-reference.md): every
-  subcommand and flag · [docs/configuration.md](docs/configuration.md): every
+- **Reference** — [docs/cli-reference.md](docs/cli-reference.md): generated
+  help for every visible top-level command · [docs/configuration.md](docs/configuration.md): every
   environment variable and config knob.
 - **Explanation** — [docs/architecture.md](docs/architecture.md): storage
   layout, retrieval pipeline, edge graph, save flow ·
@@ -585,6 +585,14 @@ A task isn't done until `scripts/check-all.sh` exits 0.
 ## Agent integration
 
 `comemory install claude` and `comemory install codex` install the bundled skills
-and hooks through the host plugin manager. Use `--dry-run` to preview. The
-integration is owned here and requires no toolu plugin. See
-[installation and migration](docs/guides/agent-integration.md).
+and hooks through the host plugin manager, and write the plugin's `.mcp.json` so
+the host spawns `comemory mcp` — an eleven-tool MCP stdio server over the same
+command cores as the CLI and `comemory serve`. Use `--dry-run` to preview. Any
+other MCP host (Cursor, Gemini CLI, Windsurf) registers `comemory mcp` by hand
+with a one-line stdio server entry. `comemory recall-status` reports unjudged
+recalls in shared repository activity. For concise recall, start with
+`find(k=3)` and `show` only selected memories; `context` returns full bodies
+without a token cap. Stop reminders are advisory across concurrent agents.
+Memory and code feedback commit together, so a failed request leaves no partial verdicts.
+Session receipt capture currently supports Claude Code only. The integration
+is owned here and requires no toolu plugin. See [installation and migration](docs/guides/agent-integration.md).

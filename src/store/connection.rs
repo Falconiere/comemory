@@ -17,8 +17,8 @@
 use std::path::Path;
 use std::sync::OnceLock;
 
-use rusqlite::Connection;
 use rusqlite::auto_extension::{RawAutoExtension, register_auto_extension};
+use rusqlite::{Connection, Transaction, TransactionBehavior};
 
 use crate::prelude::*;
 
@@ -29,6 +29,13 @@ use crate::prelude::*;
 pub fn open<P: AsRef<Path>>(path: P) -> Result<Connection> {
     ensure_sqlite_vec_registered()?;
     let path = path.as_ref();
+    // Cover WAL setup, preflight and the entire migration chain. A SQLite
+    // busy timeout cannot serialize check-then-apply across connections.
+    // Keep this separate from preflight's snapshot lock, which is nested.
+    let mut lock_path = path.as_os_str().to_os_string();
+    lock_path.push(".open.lock");
+    let _guard =
+        crate::utilities::file_lock::FileLock::acquire(Path::new(&lock_path), "database-open")?;
     let mut conn = Connection::open(path)?;
     // Set busy_timeout FIRST: it defaults to 0 on a fresh connection, so any
     // later lock-taking statement run before it would fail instantly with
@@ -54,6 +61,13 @@ pub fn open<P: AsRef<Path>>(path: P) -> Result<Connection> {
     crate::store::migrate::preflight::preflight(&conn, path)?;
     crate::store::migrate::run(&mut conn)?;
     Ok(conn)
+}
+
+/// Reserve SQLite's writer before a transaction reads rows it will update.
+/// A deferred read-to-write upgrade can fail immediately under contention,
+/// even with a busy timeout; `BEGIN IMMEDIATE` waits before taking a snapshot.
+pub fn write_transaction(conn: &mut Connection) -> Result<Transaction<'_>> {
+    Ok(conn.transaction_with_behavior(TransactionBehavior::Immediate)?)
 }
 
 /// Open `path` as a plain, read-only connection: no PRAGMAs, no migration,

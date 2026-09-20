@@ -1,17 +1,14 @@
 //! `feedback` row CRUD: the per-memory `used`/`irrelevant` counter table,
-//! plus the memory-tagged `feedback_events` provenance inserts.
-//!
-//! The provenance vocabulary lives in `crate::utilities::telemetry` and the
-//! query-id contract in [`crate::utilities::query_id`]; every transaction
-//! boundary stays in [`crate::domains::learning::feedback_tracking`] — this module owns only the
-//! SQL text and its parameter binding. See
-//! [`crate::store::code_feedback`] for the code-side sibling table.
-//!
-//! [`used_query_ids`] and [`used_events_for_golden`] are `feedback_events`
-//! reads behind `eval::mine`'s reformulation scan and `eval::golden`'s
-//! feedback-harvest, moved here alongside the writers of the same table.
+//! plus the memory-tagged `feedback_events` provenance inserts and reads.
+//! The provenance vocabulary lives in `crate::utilities::telemetry`; every
+//! transaction boundary stays in
+//! [`crate::domains::learning::feedback_tracking`] — this module owns only
+//! SQL text and parameter binding. See [`crate::store::code_feedback`] for
+//! the code-side sibling table. [`events_since`] backs
+//! `domains::learning::recall_status`'s verdict count.
 
 use rusqlite::{Connection, params};
+use toolu_orm::core::query_column::CommonOps;
 
 use super::{
     orm,
@@ -149,6 +146,61 @@ pub fn used_events_for_golden(
         })?
         .collect::<std::result::Result<_, _>>()?;
     Ok(rows)
+}
+
+/// Count of `feedback_events` rows whose `at >= since`, joined to their
+/// originating `retrieval_log` row so an optional `repo` filter applies —
+/// the verdict count behind `domains::learning::recall_status`'s window
+/// report. A `LEFT JOIN`: a verdict with no matching `retrieval_log` row
+/// (e.g. a co-activation sentinel query id) still counts when `repo` is
+/// `None`, and is excluded — rather than assumed — once a `repo` filter
+/// asks a question the row cannot answer. Text `>=` and the join are both
+/// unsupported toolu-orm 0.7.0 capabilities, so this stays hand SQL — see
+/// `docs/guides/runtime-orm.md`.
+pub fn events_since(conn: &Connection, repo: Option<&str>, since: &str) -> Result<u64> {
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM feedback_events fe \
+           LEFT JOIN retrieval_log rl ON rl.query_id = fe.query_id \
+          WHERE fe.at >= ?1 AND (?2 IS NULL OR rl.repo = ?2)",
+        params![since, repo],
+        |r| r.get(0),
+    )?;
+    Ok(count as u64)
+}
+
+/// One `feedback_events` row as an MCP or CLI caller needs to read it back:
+/// which id was judged, how, and under which provenance.
+pub struct FeedbackEventRow {
+    /// The memory id (or, for code, the symbol identity) judged.
+    pub memory_id: String,
+    /// `used` or `irrelevant`.
+    pub verdict: String,
+    /// `manual` for a human-stated verdict, `implicit` (or one of the auto
+    /// rewards) for anything inferred — the split the golden harvest keys on.
+    pub provenance: String,
+}
+
+/// Every verdict recorded against `query_id`, ordered `(memory_id, verdict)`
+/// so the read is deterministic. Owned rows: no cursor crosses the store
+/// boundary. Backs the provenance assertion in `tests/cli_scenario_mcp.rs`,
+/// which must read what actually landed rather than trust the echoed field.
+pub fn events_for_query(conn: &Connection, query_id: &str) -> Result<Vec<FeedbackEventRow>> {
+    orm::query_all(
+        conn,
+        FeedbackEvents::select()
+            .columns_typed(&[&col::memory_id, &col::verdict, &col::provenance])
+            .filter(col::query_id.eq(query_id))
+            .order_by(col::memory_id.asc())
+            .order_by(col::verdict.asc())
+            .to_sql(),
+        |row| {
+            Ok(FeedbackEventRow {
+                memory_id: row.get(0)?,
+                verdict: row.get(1)?,
+                provenance: row.get(2)?,
+            })
+        },
+    )
 }
 
 /// `(total, implicit, used, irrelevant)` over `feedback_events` in one

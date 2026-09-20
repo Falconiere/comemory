@@ -5,8 +5,8 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Inventory gate for `docs/scenarios/`, the human-readable CLI test plan.
-//! It must track the real clap tree and point at tests that exist.
+//! Inventory gates for `docs/scenarios/` and the generated CLI reference.
+//! They must track the real clap tree and point at tests that exist.
 //!
 //! Every check walks the built `Cli::command()` (the same inventory
 //! `tests/api__parity.rs` and `tests/cli_help_examples.rs` use), so a new
@@ -27,6 +27,7 @@
 //!    route string appears in the doc, and a `cli-only` command says `none`;
 //! 6. every `tests/cli_scenario_*.rs` / `tests/serve_scenario_*.rs` journey
 //!    is listed in `README.md`.
+//! 7. every visible clap subcommand has one generated CLI reference section.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -65,6 +66,32 @@ fn real_subcommands(cli: &Command) -> Vec<&Command> {
     cli.get_subcommands()
         .filter(|s| !matches!(s.get_name(), "help" | "version"))
         .collect()
+}
+
+#[test]
+fn every_subcommand_has_a_cli_reference_section() {
+    let cli = built_cli();
+    let reference = fs::read_to_string(root().join("docs/cli-reference.md")).unwrap();
+    let headings: Vec<&str> = reference
+        .lines()
+        .filter_map(|line| line.strip_prefix("## comemory "))
+        .collect();
+    let sections: BTreeSet<&str> = headings.iter().copied().collect();
+    let names: BTreeSet<&str> = real_subcommands(&cli)
+        .into_iter()
+        .filter(|sub| !sub.is_hide_set())
+        .map(Command::get_name)
+        .collect();
+    assert!(!names.is_empty(), "clap must expose real subcommands");
+    assert_eq!(
+        headings.len(),
+        sections.len(),
+        "duplicate reference sections"
+    );
+    assert_eq!(
+        sections, names,
+        "CLI reference must cover the live clap tree"
+    );
 }
 
 /// `--long` spellings a scenario file must contain for one subcommand:

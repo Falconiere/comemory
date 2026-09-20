@@ -1,7 +1,11 @@
 //! `GET /api/v1/learning/summary`, `GET|POST /api/v1/learning/evals`,
 //! `GET /api/v1/learning/golden-set`, `GET /api/v1/learning/proposals`,
 //! `POST /api/v1/learning/proposals/{id}/apply|discard`,
-//! `GET /api/v1/learning/expansions` (console-api spec §7).
+//! `GET /api/v1/learning/expansions` (console-api spec §7),
+//! `GET /api/v1/learning/recall-status` — tracked queries, verdicts, saves
+//! and pending recalls for a repo + lower time bound, shared verbatim with
+//! `comemory recall-status` (`domains::learning::recall_status`, Binding
+//! Rule 1).
 //!
 //! Every read here is synchronous (`run_blocking` + `Ctx::borrowed`) — they
 //! are all `SELECT`s. The one long-running route, `POST /learning/evals`, is
@@ -23,9 +27,9 @@ use crate::domains::learning;
 use crate::serve::AppState;
 use crate::serve::routes::learning::{contain_golden, eval};
 use crate::serve::routes::maint::prune::split_confirm;
-use crate::serve::routes::{
-    RouteEntry, guard_mutating, query_response, require_confirm, respond, run_blocking,
-};
+use crate::serve::routes::{RouteEntry, guard_mutating, query_response, require_confirm, respond};
+use crate::serve::scope::RepoScope;
+use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
 
 /// Default page size for `GET /learning/expansions`.
@@ -84,6 +88,12 @@ pub fn table_entries() -> &'static [RouteEntry] {
             command: "learning.expansions",
             mutating: false,
         },
+        RouteEntry {
+            method: "GET",
+            path: "/learning/recall-status",
+            command: "recall-status",
+            mutating: false,
+        },
     ]
 }
 
@@ -103,6 +113,7 @@ pub fn router(_state: AppState) -> Router<AppState> {
             post(proposal_discard),
         )
         .route("/api/v1/learning/expansions", get(expansions))
+        .route("/api/v1/learning/recall-status", get(recall_status))
 }
 
 /// `GET /api/v1/learning/summary` — feedback counters, the newest run, the
@@ -238,6 +249,25 @@ struct ExpansionsQuery {
 async fn expansions(State(state): State<AppState>, Query(q): Query<ExpansionsQuery>) -> Response {
     query_response(state, "learning.expansions", move |ctx| {
         learning::console::expansions(ctx, q.limit, q.offset)
+    })
+    .await
+}
+
+/// `GET /api/v1/learning/recall-status` — tracked queries, verdicts, saves,
+/// and still-pending recalls for a repo + lower time bound
+/// (`domains::learning::recall_status`, shared verbatim with `comemory
+/// recall-status`). An `X-Comemory-Repo` header (or the server's own
+/// `--repo`) is the default `repo` filter when the query string omits one,
+/// same as `GET /find`; with neither, the report is unscoped, exactly as
+/// `comemory recall-status` without `--repo`.
+async fn recall_status(
+    State(state): State<AppState>,
+    scope: RepoScope,
+    Query(mut req): Query<learning::recall_status::Request>,
+) -> Response {
+    req.repo = scope.resolve(req.repo);
+    query_response(state, "recall-status", move |ctx| {
+        learning::recall_status::run(ctx, req)
     })
     .await
 }

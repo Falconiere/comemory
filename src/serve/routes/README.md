@@ -8,13 +8,13 @@ read-only gate, `GET /commands`, and the parity test, so a route that is not
 in it does not exist.
 
 `src/serve/routes.rs` also owns the handler-layer helpers every resource
-shares: `run_blocking` (runs the command core — always
-`domains::<cap>::<cmd>::run` since #178 retired the last legacy shell — and
-takes the connection mutex entirely inside one `spawn_blocking` closure, never
-across an `.await`), `query_response` (borrows the shared command context on
-that blocking thread and envelopes the query result),
-`respond`/`accepted`, `guard_mutating`, `guard_job`, `require_confirm`, and
-`track_for`.
+shares: `query_response` (runs the command core — always
+`domains::<cap>::<cmd>::run` since #178 retired the last legacy shell — by
+calling `utilities::blocking::run_blocking` itself, borrowing the shared command
+context on that blocking thread — the connection mutex never crosses an `.await` — and
+enveloping the query result), `respond`/`accepted`, `guard_mutating`,
+`guard_job`, `require_confirm`, and `track_for`. `run_blocking` itself lives
+in `crate::utilities::blocking`, shared with the `mcp` adapter.
 
 **What does NOT belong here:** command logic, which belongs to the capability
 that owns the command, and CLI presentation — no route file imports
@@ -44,7 +44,7 @@ One line per file, named after its primary item:
 | `config.rs` | `table_entries` | `GET\|PUT /config/retrieval` — live ranking knobs; the `PUT` validates first and reloads `AppState.cfg` |
 | `graph_nodes.rs` | `table_entries` | `GET /graph/nodes`, `GET /graph/nodes/{id}`, `GET /graph/nodes/{id}/neighbors`, `GET /graph/nodes/{id}/source` (contained local file read), `GET /graph/snapshot`, job-backed `POST /graph/recompute` |
 | `index_runs.rs` | `table_entries` | `GET /index/runs` (history) and job-backed `POST /index/runs` (`409 index_running` when the repo already has a live job) |
-| `learning_console.rs` | `table_entries` | `GET /learning/{summary,evals,golden-set,proposals,expansions}`, `POST /learning/evals` (alias of the eval job), confirm-gated `POST /learning/proposals/{id}/apply`, `POST /learning/proposals/{id}/discard` |
+| `learning_console.rs` | `table_entries` | `GET /learning/{summary,evals,golden-set,proposals,expansions,recall-status}`, `POST /learning/evals` (alias of the eval job), confirm-gated `POST /learning/proposals/{id}/apply`, `POST /learning/proposals/{id}/discard` |
 | `memory_stores.rs` | `table_entries` | `GET /memory-stores` + `GET /memory-stores/{id}` (the one store, `default`), `POST /memory-stores` (`guard_mutating` then the always-`501 unsupported` refusal), `PATCH /memory-stores/{id}` (`[git] auto_sync`/`remote` into `config.toml`, no confirm, reloads `AppState.cfg`), job-backed `POST /memory-stores/{id}/sync` (`store-sync`: pull --rebase, commit `memories/`, push; steps streamed into the job log) |
 | `overview.rs` | `table_entries` | `GET /overview` and `GET /overview/eval-series` — the console landing aggregate |
 | `repos_admin.rs` | `table_entries` | `POST /repos` (connect, contained root), `PATCH /repos/{name}` (`root` only), `POST /repos/{name}/archive`, confirm-gated `DELETE /repos/{name}` |

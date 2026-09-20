@@ -17,8 +17,9 @@ use axum::routing::get;
 
 use crate::domains::retrieval;
 use crate::serve::AppState;
-use crate::serve::routes::{RouteEntry, respond, run_blocking, track_for};
+use crate::serve::routes::{RouteEntry, respond, track_for};
 use crate::serve::scope::RepoScope;
+use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
 
 /// This resource's route-table entries, appended onto [`super::table`].

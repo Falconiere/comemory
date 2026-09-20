@@ -67,6 +67,8 @@ pub mod judge;
 pub mod lazy_reindex;
 /// `comemory list`: page live memories.
 pub mod list;
+/// `comemory mcp`: the stdio Model Context Protocol tool surface.
+pub mod mcp;
 /// `comemory mine`: distill query reformulations into expansions.
 pub mod mine;
 pub mod off_runtime;
@@ -78,6 +80,9 @@ pub mod pagination;
 pub mod prune;
 /// `comemory rebuild`: reconstruct the store from markdown.
 pub mod rebuild;
+/// `comemory recall-status`: tracked queries, verdicts, saves and pending
+/// recalls for a repo + lower time bound.
+pub mod recall_status;
 /// `comemory repos` — the indexed code-repository inventory.
 pub mod repos;
 /// `comemory save`: write a memory (markdown + store mirror).
@@ -208,6 +213,8 @@ pub enum Cmd {
     Edges(edges::Args),
     /// Serve the loopback HTTP API (`/api/v1`) for consoles, agents, and scripts.
     Serve(serve::Args),
+    /// Serve the MCP tool interface over stdio for agent hosts.
+    Mcp(mcp::Args),
     /// Detect what this machine and repo still need, then set it up.
     Setup(setup::Args),
     /// Headline lookup: code symbol + memories matching a key.
@@ -220,6 +227,9 @@ pub enum Cmd {
     Consolidate(consolidate::Args),
     /// Drop `comemory.db` and repopulate it from the markdown source of truth.
     Rebuild(rebuild::Args),
+    /// Report tracked recalls awaiting a verdict, verdicts and saves since a
+    /// bound.
+    RecallStatus(recall_status::Args),
     /// Purge old `memories/.trash/` entries and learning telemetry past
     /// retention.
     #[command(after_help = gc::EXAMPLES)]
@@ -275,6 +285,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::Graph(a) => graph::run(a, cli.json, cli.data_dir).await,
         Cmd::Edges(a) => edges::run(a, cli.json, cli.data_dir).await,
         Cmd::Serve(a) => serve::run(a, cli.json, cli.data_dir).await,
+        Cmd::Mcp(a) => mcp::run(a, cli.json, cli.data_dir).await,
         Cmd::Setup(a) => setup::run(a, cli.json, cli.data_dir).await,
         Cmd::Context(a) => context::run(a, cli.json, cli.data_dir).await,
         Cmd::Completions(a) => completions::run(a, cli.json, cli.data_dir).await,
@@ -283,6 +294,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         // work, so its handler is a plain fn.
         Cmd::Consolidate(a) => consolidate::run(a, cli.json, cli.data_dir),
         Cmd::Rebuild(a) => rebuild::run(a, cli.json, cli.data_dir).await,
+        Cmd::RecallStatus(a) => recall_status::run(a, cli.json, cli.data_dir).await,
         Cmd::Gc => gc::run(cli.json, cli.data_dir).await,
         Cmd::InstallHooks(a) => install_hooks::run(a, cli.json, cli.data_dir).await,
         Cmd::Install(a) => install::run(a, cli.json, cli.data_dir),
@@ -292,22 +304,6 @@ pub async fn run(cli: Cli) -> Result<()> {
         Cmd::Watch(a) => watch::run(a, cli.json, cli.data_dir).await,
         Cmd::Capture(a) => capture::run(a, cli.json, cli.data_dir).await,
     }
-}
-
-/// Whether a user-facing lookup (`search` / `context`) should record access
-/// tracking + the `retrieval_log` row this run — the `SearchOptions::track`
-/// gate. `true` (the default) for every real invocation; lowered to `false`
-/// only when `COMEMORY_DISABLE_ACCESS_TRACKING` is set truthy.
-///
-/// This is a test hook, not a user knob (mirrors `eval::tune`'s
-/// `COMEMORY_TUNE_MIN_GOLDEN`): it lets a stability harness drive the binary
-/// repeatedly without each query mutating `access_count` / `last_accessed`,
-/// which feeds ACT-R activation and would reorder ranking between calls. An
-/// unparsable value errors, naming the variable, like every other env hook.
-pub(crate) fn track_searches() -> Result<bool> {
-    let disabled =
-        crate::config::env::env_parse::<bool>("COMEMORY_DISABLE_ACCESS_TRACKING")?.unwrap_or(false);
-    Ok(!disabled)
 }
 
 /// Load the layered config: defaults → optional `config.toml` → env. Every

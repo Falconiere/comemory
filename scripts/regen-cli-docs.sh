@@ -17,12 +17,16 @@ run_cargo build --profile release-quick --locked --quiet
 BIN="$PROJECT_ROOT/target/release-quick/comemory"
 [[ -x "$BIN" ]] || die "$STEP" "expected binary at $BIN"
 
-SUBCOMMANDS=(
-  save search search-code list delete feedback eval mine tune bandit doctor
-  index-code ingest-code index sources unindex ast graph edges serve context
-  prune consolidate rebuild gc install install-hooks completions upgrade
-  auth sync capture
-)
+# Discover visible canonical names from clap's command rows. A fixed list can
+# silently omit commands while the drift check still passes. Capture first so
+# a failed --help cannot disappear inside process substitution on Bash 3.2.
+CLI_HELP=$("$BIN" --help)
+SUBCOMMANDS=$(printf '%s\n' "$CLI_HELP" | awk '
+  /^Commands:$/ { in_commands = 1; next }
+  in_commands && /^[^[:space:]]/ { exit }
+  in_commands && /^  [^[:space:]]/ && $1 != "help" && $1 != "version" { print $1 }
+')
+[[ -n "$SUBCOMMANDS" ]] || die "$STEP" "no commands found in CLI help"
 
 {
   cat <<'HEADER'
@@ -54,12 +58,12 @@ job model.
 ```
 HEADER
 
-  "$BIN" --help
+  printf '%s\n' "$CLI_HELP"
 
   echo '```'
   echo
 
-  for sub in "${SUBCOMMANDS[@]}"; do
+  while IFS= read -r sub; do
     echo "---"
     echo
     echo "## comemory $sub"
@@ -68,7 +72,7 @@ HEADER
     "$BIN" "$sub" --help
     echo '```'
     echo
-  done
+  done <<< "$SUBCOMMANDS"
 } | awk '{ sub(/[ \t]+$/, ""); print }' > "$OUT"
 
 log_ok "$STEP" "wrote $OUT"

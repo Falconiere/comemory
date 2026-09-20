@@ -20,7 +20,7 @@ use crate::utilities::context::Ctx;
 use crate::utilities::pagination::{page_meta, page_window};
 
 /// `comemory context` / `GET|POST /api/v1/context` request.
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Request {
     /// Free-form query — symbol name, file path fragment, or phrase. `key`

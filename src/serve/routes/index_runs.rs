@@ -26,8 +26,9 @@ use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::envelope::Envelope;
 use crate::serve::jobs::{self, JobId};
-use crate::serve::routes::{RouteEntry, accepted, guard_job, respond, run_blocking};
+use crate::serve::routes::{RouteEntry, accepted, guard_job, respond};
 use crate::serve::scope::RepoScope;
+use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
 use crate::utilities::path_containment;
 

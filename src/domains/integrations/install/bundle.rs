@@ -1,6 +1,7 @@
 //! Embedded agent integration; no repository checkout or download is needed.
 use crate::prelude::*;
-use std::path::Path;
+use std::io::Write as _;
+use std::path::{Path, PathBuf};
 
 const FILES: &[(&str, &str)] = &[
     (
@@ -12,8 +13,16 @@ const FILES: &[(&str, &str)] = &[
         include_str!("../../../../integrations/agent/hooks/scope.sh"),
     ),
     (
+        "hooks/session-end.sh",
+        include_str!("../../../../integrations/agent/hooks/session-end.sh"),
+    ),
+    (
         "lib/shell-input.sh",
         include_str!("../../../../integrations/agent/lib/shell-input.sh"),
+    ),
+    (
+        "lib/recall.sh",
+        include_str!("../../../../integrations/agent/lib/recall.sh"),
     ),
     (
         ".claude-plugin/plugin.json",
@@ -76,6 +85,10 @@ const FILES: &[(&str, &str)] = &[
         include_str!("../../../../integrations/agent/skills/agent-memory/scripts/comemory.sh"),
     ),
     (
+        "skills/memory-bootstrap/SKILL.md",
+        include_str!("../../../../integrations/agent/skills/memory-bootstrap/SKILL.md"),
+    ),
+    (
         "skills/project-skills/SKILL.md",
         include_str!("../../../../integrations/agent/skills/project-skills/SKILL.md"),
     ),
@@ -85,6 +98,8 @@ const FILES: &[(&str, &str)] = &[
     ),
 ];
 
+/// Extract the embedded bundle to `root`, or verify it is already
+/// byte-identical there, then write the two local marketplace catalogs.
 pub(super) fn extract(root: &Path) -> Result<()> {
     let parent = root
         .parent()
@@ -171,6 +186,75 @@ fn write_catalogs(parent: &Path) -> Result<()> {
         std::fs::write(&temp, serde_json::to_string_pretty(&value)?)?;
         std::fs::rename(temp, path)?;
     }
+    Ok(())
+}
+
+/// Write `<plugin_root>/.mcp.json`, the manifest Claude Code and Codex read
+/// to launch `comemory mcp` for this plugin. Written on **every** install —
+/// including a re-run over an already-extracted, byte-identical bundle — so
+/// moving the binary and reinstalling refreshes the path without tripping
+/// the `bundle differs` refusal in [`extract`]. It is deliberately not part
+/// of [`FILES`] or the equality check for the same reason.
+///
+/// # Errors
+/// [`Error::Usage`] for a symlinked target (or symlinked temp file) or a
+/// non-UTF-8 binary path; otherwise an [`Error::Io`] from the write or
+/// rename.
+pub(super) fn write_mcp_manifest(plugin_root: &Path, binary: &Path) -> Result<PathBuf> {
+    let path = plugin_root.join(".mcp.json");
+    if path
+        .symlink_metadata()
+        .is_ok_and(|m| m.file_type().is_symlink())
+    {
+        return Err(Error::Usage(format!(
+            "refusing symlink mcp manifest: {}",
+            path.display()
+        )));
+    }
+    let command = binary
+        .to_str()
+        .ok_or_else(|| Error::Usage("binary path must be UTF-8".into()))?;
+    let manifest = serde_json::json!({
+        "mcpServers": {
+            "comemory": { "command": command, "args": ["mcp"] }
+        }
+    });
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let temp = path.with_extension("json.tmp");
+    write_new_file_no_symlink(
+        &temp,
+        format!("{}\n", serde_json::to_string_pretty(&manifest)?).as_bytes(),
+    )?;
+    std::fs::rename(&temp, &path)?;
+    Ok(path)
+}
+
+/// Write `body` to `temp`, refusing to follow a symlink planted there.
+/// A stale *regular* file left over from a crashed prior install is
+/// removed first (the rename that follows always replaces it anyway);
+/// a stale *symlink* is refused outright rather than opened, since
+/// `OpenOptions::create_new` failing on an existing symlink still leaves
+/// an attacker-controlled path for a caller who instead reached for
+/// `std::fs::write` (which follows it and writes through).
+fn write_new_file_no_symlink(temp: &Path, body: &[u8]) -> Result<()> {
+    match temp.symlink_metadata() {
+        Ok(meta) if meta.file_type().is_symlink() => {
+            return Err(Error::Usage(format!(
+                "refusing symlink mcp manifest temp file: {}",
+                temp.display()
+            )));
+        }
+        Ok(_) => std::fs::remove_file(temp)?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e.into()),
+    }
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(temp)?;
+    file.write_all(body)?;
     Ok(())
 }
 

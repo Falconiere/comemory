@@ -19,8 +19,9 @@ use serde::Deserialize;
 
 use crate::domains::maintenance;
 use crate::serve::AppState;
-use crate::serve::routes::{RouteEntry, respond, run_blocking};
+use crate::serve::routes::{RouteEntry, respond};
 use crate::serve::scope::RepoScope;
+use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
 
 /// This resource's route-table entries, appended onto [`super::table`].

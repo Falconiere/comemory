@@ -18,6 +18,8 @@
 //! the move, and the aliases keep `comemory::<name>` resolving for external
 //! consumers (Binding Rule 1 — one implementation, one home).
 
+/// The `spawn_blocking` bridge shared by the `serve` and `mcp` adapters.
+pub mod blocking;
 /// The transport-neutral execution context every command core runs against.
 pub mod context;
 /// The shared `<prefix>-<yyyymmdd>-<8hex>` id shape.
@@ -28,6 +30,9 @@ pub(crate) mod digest;
 pub mod embed;
 /// Pure decoding of `--vector` CSV and `{"embedding":[..]}` JSON payloads.
 pub(crate) mod embedding_input;
+/// Transport-neutral `Error → (code, Class)` classification shared by
+/// `serve` and `mcp`.
+pub mod error_code;
 /// Shell out to `curl` (falling back to `wget`) for HTTP.
 pub mod fetch;
 /// Exclusive advisory lock over a sibling lock file.
