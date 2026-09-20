@@ -161,6 +161,13 @@ fn missing(model: &Model, fresh: &Model) -> Vec<MissingEdge> {
 }
 
 /// The saved component whose members overlap `key`, if any.
+///
+/// The overlap is deliberately symmetric. A saved model is free to sit at a
+/// different granularity than the check's `--depth`: a component owning
+/// `src/domains/graph` still describes part of the `src/domains` cluster, and
+/// a component owning `src/domains` still describes `src/domains/graph`.
+/// Matching one direction only would report every model built at another depth
+/// as one long list of unmapped clusters, which is noise rather than drift.
 fn owner_of<'a>(model: &'a Model, key: &str) -> Option<&'a str> {
     model
         .components

@@ -32,10 +32,13 @@ pub const MAX_BYTES: usize = 32 * 1024;
 /// Hard ceiling on one component's `summary`, in characters.
 pub const MAX_SUMMARY: usize = 280;
 
-/// Generate an `as_str` returning each variant's wire string. One definition
-/// for the three enums that need one: three hand-written match arms over the
-/// same shape are the near-duplicates `scripts/dup-check.sh` exists to catch,
-/// and a JSON round trip plus a quote trim is the fragile alternative.
+/// Generate an `as_str` returning each variant's wire string.
+///
+/// Three enums here need one, and the two alternatives are both worse: writing
+/// the match by hand three times gives `scripts/dup-check.sh` three
+/// near-duplicate bodies to count, and going through `serde_json::to_string`
+/// plus a quote trim breaks on any variant whose serialization carries a
+/// quote. One macro, three invocations, one table per enum below.
 macro_rules! wire_strings {
     ($ty:ty { $($variant:ident => $text:literal),+ $(,)? }) => {
         impl $ty {
