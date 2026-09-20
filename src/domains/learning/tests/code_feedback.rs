@@ -23,9 +23,10 @@ use comemory::domains::learning::telemetry::StatsDb;
 use comemory::store::code_row::{self, CodeSymbolRow};
 use comemory::utilities::telemetry::{PROV_IMPLICIT, PROV_MANUAL};
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Barrier};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::test_common as common;
 
@@ -223,6 +224,8 @@ fn record_code_with_provenance_errors_loudly_on_unknown_symbol_id() {
 
 #[test]
 fn code_feedback_waits_for_an_existing_writer_before_reading_identity() {
+    static CONTENDED: AtomicBool = AtomicBool::new(false);
+    CONTENDED.store(false, Ordering::SeqCst);
     let (sb, db) = open_db();
     let id = seed_symbol(db.conn(), "demo", "wait.rs", "waiting");
     let path = Paths::new(sb.data_dir()).stats_db();
@@ -233,6 +236,14 @@ fn code_feedback_waits_for_an_existing_writer_before_reading_identity() {
     let thread_barrier = Arc::clone(&barrier);
     let handle = thread::spawn(move || {
         let mut contender = StatsDb::open(path).expect("open contender");
+        contender
+            .conn()
+            .busy_handler(Some(|_| {
+                CONTENDED.store(true, Ordering::SeqCst);
+                thread::sleep(Duration::from_millis(1));
+                true
+            }))
+            .expect("observe real writer contention");
         thread_barrier.wait();
         record_code_with_provenance(
             &mut contender,
@@ -243,12 +254,18 @@ fn code_feedback_waits_for_an_existing_writer_before_reading_identity() {
         )
     });
     barrier.wait();
-    thread::sleep(Duration::from_millis(100));
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !CONTENDED.load(Ordering::SeqCst) && !handle.is_finished() && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(1));
+    }
+    let contended = CONTENDED.load(Ordering::SeqCst);
     db.conn().execute_batch("COMMIT").expect("release writer");
-    handle
-        .join()
-        .expect("feedback thread panicked")
-        .expect("feedback should wait, then succeed");
+    let result = handle.join().expect("feedback thread panicked");
+    assert!(
+        contended,
+        "SQLite must report contention before writer release"
+    );
+    result.expect("feedback should wait, then succeed");
 
     let (used, _, _) = counter_row(db.conn(), "demo", "wait.rs", "waiting").expect("counter");
     assert_eq!(used, 1);

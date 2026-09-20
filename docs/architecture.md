@@ -765,8 +765,8 @@ so a rebuild between calls does not strand agents on the replaced file.
 preflight and migration; memory saves use `BEGIN IMMEDIATE` before mirror
 reads, avoiding deferred read-to-write upgrade races. A `memory-save.lock`
 also covers prior lookup, markdown staging and the mirror commit, so identical
-concurrent saves replay once and cannot race their content-addressed temp file. Rebuild itself should
-run while writers are idle.
+concurrent saves replay once and cannot race their content-addressed temp file.
+Rebuild should run while writers are idle.
 
 The feedback command reserves the writer and commits memory/code verdicts in
 one transaction. Identity resolution happens inside that transaction; a missing

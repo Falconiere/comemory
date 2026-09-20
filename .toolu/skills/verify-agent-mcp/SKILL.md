@@ -22,6 +22,7 @@ When changing comemory's MCP transport, embedded agent hooks, or native host ins
 
 ## Pitfalls
 
+- On macOS, run the repository gates with Bash 4 or newer on `PATH` (for Homebrew: `PATH="/opt/homebrew/bin:$PATH" bash scripts/check-all.sh`). The store and migration checks use `mapfile`, which `/bin/bash` 3 lacks; a failure there is a tooling prerequisite, not evidence of a Rust regression.
 - Hooks are compiled into the binary. An old binary tests old hooks even after source edits.
 - A valid manifest alone does not prove host discovery or successful MCP calls.
 - Recall status aggregates a repository/time window; it cannot attribute activity to one agent. Injected untracked hints have no query ID.

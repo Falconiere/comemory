@@ -90,6 +90,14 @@ fn a_contended_save_preserves_the_retryable_error_and_can_be_replayed() {
     let body = "Retriable contention keeps the original SQLite error class";
     let error = run(&mut ctx, request(body)).expect_err("another writer holds the store");
     assert!(comemory::store::busy::is_locked(&error), "got {error}");
+    let before_replay: i64 = holder
+        .query_row(
+            "SELECT COUNT(*) FROM memories WHERE id = ?1",
+            [memory_id(body)],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(before_replay, 0, "the failed save must not publish a row");
     holder.execute_batch("ROLLBACK").unwrap();
     let response = run(&mut ctx, request(body)).expect("replay repairs the mirror");
     assert_eq!(response.id, memory_id(body));

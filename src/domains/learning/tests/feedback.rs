@@ -87,6 +87,26 @@ fn mixed_feedback_rolls_back_memory_rows_when_code_identity_is_missing() {
 }
 
 #[test]
+fn malformed_memory_id_refuses_mixed_feedback_before_writing_code() {
+    let sb = common::runner::Sandbox::new();
+    let paths = Paths::new(sb.data_dir());
+    let code_id = seed_symbol(&paths);
+    let cfg = Config::defaults();
+    let mut ctx = Ctx::lazy(&paths, &cfg);
+
+    let error = feedback::run(
+        &mut ctx,
+        request("q-20260920-aabbcc05", "not-an-id", code_id),
+    )
+    .expect_err("malformed memory id must refuse the entire mixed request");
+    assert!(
+        error.to_string().contains("not-an-id"),
+        "unexpected error: {error}"
+    );
+    assert_eq!(counts(&paths), (0, 0, 0));
+}
+
+#[test]
 fn concurrent_mixed_feedback_serializes_without_lost_or_duplicate_counts() {
     let sb = common::runner::Sandbox::new();
     let data_dir = sb.data_dir().clone();
