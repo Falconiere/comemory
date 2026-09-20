@@ -86,6 +86,9 @@ pub fn list(conn: &Connection) -> Result<Vec<SyncStateRow>> {
 /// Persist a policy fingerprint and reset memory/code reconciliation state
 /// atomically when the server revision or local repository identities change.
 ///
+/// A reset zeroes both cursors and clears `last_sync_at` so a stale stamp
+/// cannot outlive the reconciliation.
+///
 /// Returns `true` when a reset was applied.
 pub fn reconcile_policy(
     conn: &mut Connection,
@@ -102,6 +105,7 @@ pub fn reconcile_policy(
         SyncState::update()
             .set(&col::pulled_seq, 0_i64)
             .set(&col::pushed_seq, 0_i64)
+            .set_null(&col::last_sync_at)
             .filter(col::workspace_id.eq(workspace_id))
             .to_sql(),
     )?;

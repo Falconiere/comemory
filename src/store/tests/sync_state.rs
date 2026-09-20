@@ -100,6 +100,7 @@ fn a_changed_policy_resets_memory_and_code_cursors_once() {
     assert!(sync_state::reconcile_policy(&mut conn, "ws-1", "first").expect("reset"));
     let row = sync_state::get(&conn, "ws-1").expect("get").expect("row");
     assert_eq!((row.pulled_seq, row.pushed_seq), (0, 0));
+    assert_eq!(row.last_sync_at, None, "policy reset clears last_sync_at");
     assert!(
         code_sync::cursor(&conn, "local-label")
             .expect("cursor")
