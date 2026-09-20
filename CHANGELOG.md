@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.42.0] - 2026-09-20
+
+### Added
+
+- enforce repository policy ([#237](https://github.com/Falconiere/comemory/pull/237))
+
 ## [0.41.0] - 2026-09-20
 
 ### Added
