@@ -39,7 +39,7 @@ pub fn write_model(model: &Model) -> Result<()> {
             "  {} -> {} ({}, weight {})",
             e.from,
             e.to,
-            serde_json::to_string(&e.kind)?.trim_matches('"'),
+            e.kind.as_str(),
             e.weight
         )?;
     }
@@ -86,10 +86,14 @@ pub fn write_drift(drift: &Drift) -> Result<()> {
         )?;
     }
     for e in &drift.missing_edges {
+        let kinds: Vec<&str> = e.kinds.iter().map(|k| k.as_str()).collect();
         writeln!(
             out,
-            "  edge      {} -> {} (weight {})",
-            e.from, e.to, e.weight
+            "  edge      {} -> {} ({}, weight {})",
+            e.from,
+            e.to,
+            kinds.join("+"),
+            e.weight
         )?;
     }
     writeln!(out, "drift: {}", drift.drift_count)?;

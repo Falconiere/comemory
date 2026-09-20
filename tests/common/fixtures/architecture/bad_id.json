@@ -42,7 +42,7 @@
   ],
   "edges": [
     {
-      "from": "cli",
+      "from": "1bad",
       "to": "domains_graph",
       "kind": "imports",
       "weight": 37

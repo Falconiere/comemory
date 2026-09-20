@@ -20,5 +20,14 @@ LLM runs here: `learn` spawns the caller's command and nothing else.
 
 | File | Primary item | Purpose |
 | --- | --- | --- |
-| `model.rs` | `Model` | The versioned `{ groups, components, edges }` value and its ceilings |
+| `model.rs` | `Model` | The versioned `{ groups, components, edges }` value, its enums and its ceilings |
+| `cluster.rs` | `key_for` | Directory-prefix keys, renderer-safe ids, README-seeded summaries, and the shared `covers` path test |
+| `scaffold.rs` | `run` | The deterministic model: clusters over `build_code_graph` + `indexed_files`, with mined edges projected onto them |
 | `validate.rs` | `validate` | Every save-time rule, checked against the indexed paths |
+| `save.rs` | `run` | Validate, then store the model through `memories::save::run` with a supersede link |
+| `current.rs` | `find` / `require` | The newest live memory tagged `architecture` and the fenced JSON inside it |
+| `check.rs` | `run` | Drift: stale members, unmapped clusters, missing mined edges |
+| `mermaid.rs` | `render` | Deterministic `flowchart` source |
+| `prompt.rs` | `build` | The instructions + scaffold an agent is handed |
+| `learn.rs` | `run` | Prompt file, one `sh -c` spawn of the caller's command under a deadline, then the validated save |
+| `extract.rs` | `model_json` | The model dug out of an agent's stdout (fence, balanced object, or the raw text) |

@@ -82,6 +82,6 @@ fn body_for(repo: &str, model: &Model) -> Result<String> {
         model.components.len(),
         model.edges.len(),
         model.generated_at,
-        serde_json::to_string(&model.source)?.trim_matches('"'),
+        model.source.as_str(),
     ))
 }

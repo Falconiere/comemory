@@ -6,7 +6,7 @@
 //! covers, and which mined relations the model is missing.
 
 use crate::domains::architecture::cluster::covers;
-use crate::domains::architecture::model::Model;
+use crate::domains::architecture::model::{EdgeKind, Model};
 use crate::domains::architecture::{current, scaffold};
 use crate::prelude::*;
 use crate::store::{Connection, indexed_files};
@@ -38,7 +38,12 @@ pub struct MissingEdge {
     pub from: String,
     /// Destination component id, as declared in the saved model.
     pub to: String,
-    /// Mined weight.
+    /// Every mined kind found between the pair, in `EdgeKind` order. One
+    /// omission can be mined under more than one kind — `imports` and
+    /// `co_changed` between the same two directories is the common case —
+    /// and reporting only the first would hide what the model is missing.
+    pub kinds: Vec<EdgeKind>,
+    /// The strongest mined weight across those kinds.
     pub weight: i64,
 }
 
@@ -133,10 +138,17 @@ fn missing(model: &Model, fresh: &Model) -> Vec<MissingEdge> {
             continue;
         }
         match out.iter_mut().find(|m| m.from == from && m.to == to) {
-            Some(seen) => seen.weight = seen.weight.max(e.weight),
+            Some(seen) => {
+                seen.weight = seen.weight.max(e.weight);
+                if !seen.kinds.contains(&e.kind) {
+                    seen.kinds.push(e.kind);
+                    seen.kinds.sort_unstable();
+                }
+            }
             None => out.push(MissingEdge {
                 from: from.to_string(),
                 to: to.to_string(),
+                kinds: vec![e.kind],
                 weight: e.weight,
             }),
         }

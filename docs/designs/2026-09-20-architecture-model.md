@@ -211,7 +211,11 @@ flowchart LR
 ```
 
 `check --json`:
-`{ "repo": "r", "drift_count": 3, "stale_members": [{"component":"x","member":"src/gone"}], "unmapped": [{"path":"src/new","rank":0.04,"files":6}], "missing_edges": [{"from":"cli","to":"store","weight":12}] }`
+`{ "repo": "r", "model_id": "8e1f…", "drift_count": 3, "stale_members": [{"component":"x","member":"src/gone"}], "unmapped": [{"path":"src/new","rank":0.04,"files":6}], "missing_edges": [{"from":"cli","to":"store","kinds":["imports","co_changed"],"weight":12}] }`
+
+One pair of components is one `missing_edges` entry, carrying every mined kind
+found between them and the strongest weight: `imports` and `co_changed` between
+the same two directories is one omission, not two.
 
 ## Failure modes and edge cases
 
@@ -315,7 +319,8 @@ flowchart LR
   `--max-components 0` and `--min-edge-weight 0` are clap usage errors (exit 2)
   rather than a model with nothing in it.
 - **AC-18:** Two mined kinds between the same pair of modeled components are
-  reported as one `missing_edges` entry carrying the strongest weight, and the
+  reported as one `missing_edges` entry naming both kinds and carrying the
+  strongest weight, and the
   `learn` prompt is written under `<data_dir>/architecture/`, not the shared
   temp directory.
 - **AC-16:** Saving a model does not displace normal recall: in the fixture

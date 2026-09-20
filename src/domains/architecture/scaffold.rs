@@ -103,11 +103,29 @@ fn components_from(
     });
     rows.truncate(max_components);
     let mut seen: BTreeMap<String, u32> = BTreeMap::new();
+    let mut leaves: BTreeMap<&str, u32> = BTreeMap::new();
+    for (key, _) in &rows {
+        *leaves.entry(leaf_of(key)).or_default() += 1;
+    }
+    let ambiguous: Vec<String> = leaves
+        .iter()
+        .filter(|(_, count)| **count > 1)
+        .map(|(leaf, _)| (*leaf).to_string())
+        .collect();
     rows.into_iter()
         .map(|(key, c)| {
             let id = unique_id(&key, &mut seen);
+            // `src/domains` and `tests/domains` both end in `domains`; a
+            // diagram with two nodes called "domains" is unreadable, so an
+            // ambiguous leaf falls back to the whole key.
+            let leaf = leaf_of(&key);
+            let name = if ambiguous.iter().any(|a| a == leaf) {
+                key.clone()
+            } else {
+                leaf.to_string()
+            };
             Component {
-                name: key.rsplit('/').next().unwrap_or(&key).to_string(),
+                name,
                 summary: root
                     .and_then(|r| cluster::summary_from_readme(Path::new(r), &key))
                     .unwrap_or_default(),
@@ -120,6 +138,11 @@ fn components_from(
             }
         })
         .collect()
+}
+
+/// The last path segment of a component key.
+fn leaf_of(key: &str) -> &str {
+    key.rsplit('/').next().unwrap_or(key)
 }
 
 /// [`cluster::ident`] with a numeric suffix when two keys sanitize alike.

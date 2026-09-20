@@ -45,6 +45,17 @@ pub enum Source {
     Manual,
 }
 
+impl Source {
+    /// The wire string this variant serializes as.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Scaffold => "scaffold",
+            Self::Agent => "agent",
+            Self::Manual => "manual",
+        }
+    }
+}
+
 /// Preferred layout direction, passed through to the renderer (Mermaid's
 /// `flowchart <direction>`; the console may ignore it).
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -113,6 +124,24 @@ pub enum EdgeKind {
     Writes,
     /// Source publishes events destination consumes.
     Publishes,
+}
+
+impl EdgeKind {
+    /// The wire string this variant serializes as. Rendering an edge kind
+    /// goes through here rather than through `serde_json::to_string` and a
+    /// quote trim, which would corrupt any variant whose serialization ever
+    /// carried a quote.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Imports => "imports",
+            Self::CoChanged => "co_changed",
+            Self::Calls => "calls",
+            Self::Depends => "depends",
+            Self::Reads => "reads",
+            Self::Writes => "writes",
+            Self::Publishes => "publishes",
+        }
+    }
 }
 
 /// A visual grouping of components (a Mermaid `subgraph`).

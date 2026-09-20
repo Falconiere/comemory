@@ -119,6 +119,11 @@ fn two_mined_kinds_between_one_pair_are_one_missing_edge() {
     assert_eq!(missing.len(), 1, "{drift}");
     assert_eq!(missing[0]["from"], "src_a");
     assert_eq!(missing[0]["to"], "src_b");
+    // One omission, both mined kinds named on it.
+    assert_eq!(
+        missing[0]["kinds"],
+        serde_json::json!(["imports", "co_changed"])
+    );
     assert_eq!(missing[0]["weight"], 1);
 }
 
@@ -276,6 +281,10 @@ fn a_failing_agent_surfaces_its_status_and_stderr_and_prose_is_a_data_error() {
         .code(65);
     let stderr = String::from_utf8(out.get_output().stderr.clone()).expect("utf8");
     assert!(stderr.starts_with("error: json:"), "{stderr}");
+    assert!(
+        stderr.contains("expected value at line 1 column 1"),
+        "the parse error must name what failed: {stderr}"
+    );
 }
 
 #[test]

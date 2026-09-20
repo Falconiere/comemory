@@ -102,8 +102,8 @@ Global flags `--json` and `--data-dir` apply. See [globals.md](globals.md).
 - **Expect:** exit 0 with `drift_count: 0` on a fresh model; after the move,
   `stale_members` names `src/b`, `unmapped` names `src/c`, `drift_count >= 2`.
   Exit stays 0 — drift is a report, like `doctor`.
-  Two mined kinds between one pair are one omission, reported once with the
-  strongest weight.
+  Two mined kinds between one pair are one omission: one entry naming both
+  kinds, with the strongest weight.
 - **Covered by:** `tests/cli__architecture_3.rs::a_freshly_saved_scaffold_reports_no_drift`,
   `tests/cli__architecture_3.rs::a_moved_file_shows_up_as_a_stale_member_and_an_unmapped_directory`,
   `tests/cli__architecture_3.rs::two_mined_kinds_between_one_pair_are_one_missing_edge`
