@@ -32,6 +32,23 @@ pub const MAX_BYTES: usize = 32 * 1024;
 /// Hard ceiling on one component's `summary`, in characters.
 pub const MAX_SUMMARY: usize = 280;
 
+/// Generate an `as_str` returning each variant's wire string. One definition
+/// for the three enums that need one: three hand-written match arms over the
+/// same shape are the near-duplicates `scripts/dup-check.sh` exists to catch,
+/// and a JSON round trip plus a quote trim is the fragile alternative.
+macro_rules! wire_strings {
+    ($ty:ty { $($variant:ident => $text:literal),+ $(,)? }) => {
+        impl $ty {
+            /// The wire string this variant serializes as.
+            pub fn as_str(self) -> &'static str {
+                match self {
+                    $(Self::$variant => $text),+
+                }
+            }
+        }
+    };
+}
+
 /// How a model was produced. Recorded verbatim so a reader can tell a
 /// deterministic scaffold from an agent's enrichment.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,17 +60,6 @@ pub enum Source {
     Agent,
     /// Hand-written.
     Manual,
-}
-
-impl Source {
-    /// The wire string this variant serializes as.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Scaffold => "scaffold",
-            Self::Agent => "agent",
-            Self::Manual => "manual",
-        }
-    }
 }
 
 /// Preferred layout direction, passed through to the renderer (Mermaid's
@@ -73,18 +79,6 @@ pub enum Direction {
     /// Bottom to top.
     #[serde(rename = "BT")]
     Bt,
-}
-
-impl Direction {
-    /// The Mermaid keyword for this direction.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Lr => "LR",
-            Self::Tb => "TB",
-            Self::Rl => "RL",
-            Self::Bt => "BT",
-        }
-    }
 }
 
 /// What a component *is*. Closed set: a renderer may map each kind onto a
@@ -126,23 +120,19 @@ pub enum EdgeKind {
     Publishes,
 }
 
-impl EdgeKind {
-    /// The wire string this variant serializes as. Rendering an edge kind
-    /// goes through here rather than through `serde_json::to_string` and a
-    /// quote trim, which would corrupt any variant whose serialization ever
-    /// carried a quote.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Imports => "imports",
-            Self::CoChanged => "co_changed",
-            Self::Calls => "calls",
-            Self::Depends => "depends",
-            Self::Reads => "reads",
-            Self::Writes => "writes",
-            Self::Publishes => "publishes",
-        }
-    }
-}
+wire_strings!(Source { Scaffold => "scaffold", Agent => "agent", Manual => "manual" });
+
+wire_strings!(Direction { Lr => "LR", Tb => "TB", Rl => "RL", Bt => "BT" });
+
+wire_strings!(EdgeKind {
+    Imports => "imports",
+    CoChanged => "co_changed",
+    Calls => "calls",
+    Depends => "depends",
+    Reads => "reads",
+    Writes => "writes",
+    Publishes => "publishes",
+});
 
 /// A visual grouping of components (a Mermaid `subgraph`).
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]

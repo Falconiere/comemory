@@ -6,6 +6,7 @@
 //! wins here, in the console, and in `check`; the next save supersedes
 //! whichever this returned.
 
+use crate::domains::architecture::extract;
 use crate::domains::architecture::model::{Model, TAG};
 use crate::prelude::*;
 use crate::store::Connection;
@@ -51,20 +52,11 @@ pub fn require(conn: &Connection, repo: &str) -> Result<Current> {
 }
 
 /// Parse the model out of a memory body: the first ```json fence, falling back
-/// to the whole body when it is bare JSON.
+/// to the whole body when it is bare JSON. A memory body and an agent's stdout
+/// pose the same question, so both go through
+/// [`extract::model_json`](super::extract::model_json).
 pub fn parse_body(body: &str) -> Result<Model> {
-    let json = fenced_json(body).unwrap_or(body);
-    Ok(serde_json::from_str(json)?)
-}
-
-/// The contents of the first ```json fence in `body`, if there is one.
-fn fenced_json(body: &str) -> Option<&str> {
-    let open = body.find("```json")?;
-    let after = open + "```json".len();
-    let rest = &body[after..];
-    let start = rest.find('\n')? + 1;
-    let end = rest[start..].find("```")? + start;
-    Some(&rest[start..end])
+    Ok(serde_json::from_str(extract::model_json(body))?)
 }
 
 #[cfg(test)]

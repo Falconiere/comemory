@@ -119,12 +119,16 @@ fn stale(model: &Model, indexed: &[String]) -> Vec<StaleMember> {
 /// mined kinds between the same pair are one omission, not two, so the pair is
 /// reported once with the strongest weight seen.
 fn missing(model: &Model, fresh: &Model) -> Vec<MissingEdge> {
+    // Every scaffolded component owns exactly one member, so its first member
+    // is its cluster key; the saved component covering that key is the owner.
+    let owner = |id: &str| {
+        let component = fresh.components.iter().find(|c| c.id == id)?;
+        let key = component.members.first()?;
+        owner_of(model, key)
+    };
     let mut out: Vec<MissingEdge> = Vec::new();
     for e in &fresh.edges {
-        let (Some(from), Some(to)) = (
-            member_owner(model, fresh, &e.from),
-            member_owner(model, fresh, &e.to),
-        ) else {
+        let (Some(from), Some(to)) = (owner(&e.from), owner(&e.to)) else {
             continue;
         };
         if from == to {
@@ -154,16 +158,6 @@ fn missing(model: &Model, fresh: &Model) -> Vec<MissingEdge> {
         }
     }
     out
-}
-
-/// The saved component owning the cluster of the fresh component `id`.
-fn member_owner<'a>(model: &'a Model, fresh: &Model, id: &str) -> Option<&'a str> {
-    let key = fresh
-        .components
-        .iter()
-        .find(|c| c.id == id)
-        .and_then(|c| c.members.first())?;
-    owner_of(model, key)
 }
 
 /// The saved component whose members overlap `key`, if any.
