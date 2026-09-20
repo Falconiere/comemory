@@ -114,6 +114,7 @@ fn skip_repos_withholds_a_label_the_operator_chose_to_keep_local() {
     let stats = seeded.push();
     assert_eq!(stats.pushed, 0);
     assert_eq!(stats.skipped_config, 1);
+    assert!(server.snapshot().last_import_body.is_none());
 }
 
 #[test]
@@ -151,8 +152,10 @@ fn an_admin_mapping_authorizes_a_legacy_label() {
         server.saw_path("/v1/sync/status"),
         "repository policy must be loaded before import"
     );
-    let sent = server.snapshot().last_import_body.expect("import");
-    assert!(sent.contains(&format!("\"{id}\":\"falconiere/comemory\"")));
+    let sent: serde_json::Value =
+        serde_json::from_str(&server.snapshot().last_import_body.expect("import"))
+            .expect("import json");
+    assert_eq!(sent["repositories"][id.as_str()], "falconiere/comemory");
 }
 
 #[test]
@@ -234,6 +237,7 @@ fn repo_not_allowed_does_not_advance_pushed_seq() {
         .push_result()
         .expect_err("server rejection must stop push");
     assert!(error.to_string().contains("repository policy"), "{error}");
+    assert!(error.to_string().contains(&id), "{error}");
     let sent = server
         .snapshot()
         .last_import_body

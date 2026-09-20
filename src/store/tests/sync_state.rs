@@ -5,9 +5,12 @@
     clippy::float_cmp,
     clippy::too_many_lines
 )]
-//! Tests for [`comemory::store::sync_state`].
+//! Tests for managed-sync persistence helpers.
 
-use comemory::store::{code_sync, connection, sync_state};
+use comemory::config::{Config, Paths};
+use comemory::domains::memories::{Kind, delete, save};
+use comemory::store::{code_sync, connection, memory_repository, sync_manifest, sync_state};
+use comemory::utilities::context::Ctx;
 use rusqlite::Connection;
 
 fn open_with_sync_state() -> Connection {
@@ -120,4 +123,65 @@ fn a_changed_policy_resets_memory_and_code_cursors_once() {
             .pulled_seq,
         0
     );
+}
+
+#[test]
+fn repository_labels_and_live_manifest_pairs_follow_real_memory_lifecycle() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let paths = Paths::new(home.path());
+    paths.ensure_dirs().expect("dirs");
+    let cfg = Config::defaults();
+    let mut conn = connection::open(paths.db_path()).expect("db");
+    let (live_id, live_hash) = save_memory(&paths, &cfg, &mut conn, "live decision", "acme/live");
+    let (deleted_id, _) = save_memory(&paths, &cfg, &mut conn, "deleted decision", "acme/deleted");
+    let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+    delete::run(&mut ctx, &deleted_id).expect("soft delete");
+
+    assert_eq!(
+        memory_repository::label(&conn, &live_id).expect("live label"),
+        Some("acme/live".into())
+    );
+    assert_eq!(
+        memory_repository::label(&conn, &deleted_id).expect("deleted label"),
+        Some("acme/deleted".into())
+    );
+    assert_eq!(
+        memory_repository::label(&conn, "missing00").expect("missing label"),
+        None
+    );
+    assert_eq!(
+        sync_manifest::live_repository_hashes(&conn).expect("manifest pairs"),
+        vec![(live_hash, "acme/live".into())]
+    );
+}
+
+fn save_memory(
+    paths: &Paths,
+    cfg: &Config,
+    conn: &mut Connection,
+    body: &str,
+    repo: &str,
+) -> (String, String) {
+    let content_hash = comemory::utilities::digest::sha256_hex(body.trim_end().as_bytes());
+    let mut ctx = Ctx::borrowed(paths, cfg, conn);
+    let response = save::run(
+        &mut ctx,
+        save::Request {
+            body: body.into(),
+            title: None,
+            kind: Kind::Decision,
+            repo: repo.into(),
+            tags: Vec::new(),
+            author: "review-test".into(),
+            quality: 3,
+            supersedes: Vec::new(),
+            vector: None,
+            ref_file: Vec::new(),
+            ref_symbol: Vec::new(),
+        },
+        false,
+        None,
+    )
+    .expect("save");
+    (response.id, content_hash)
 }

@@ -25,6 +25,8 @@ use comemory::utilities::context::Ctx;
 
 /// The repo label every fixture row lands under.
 pub const REPO: &str = "scratch";
+/// Canonical GitHub identity resolved from the fixture checkout's origin.
+pub const CANONICAL_REPO: &str = "falconiere/comemory";
 
 /// A source line that must never appear on the wire — the snippet-free
 /// assertion greps every recorded request body for it.

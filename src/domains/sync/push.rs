@@ -178,13 +178,14 @@ fn apply_response(resp: &ImportResponse, batch_high_seq: i64, stats: &mut PushSt
         .results
         .iter()
         .filter(|result| matches!(result.status, ImportStatus::RepoNotAllowed))
-        .count();
-    let rejected = u32::try_from(rejected)
+        .collect::<Vec<_>>();
+    let rejected_count = u32::try_from(rejected.len())
         .map_err(|_| Error::Other("repository rejection count exceeds u32".into()))?;
-    stats.rejected_repo = stats.rejected_repo.saturating_add(rejected);
-    if rejected > 0 {
+    stats.rejected_repo = stats.rejected_repo.saturating_add(rejected_count);
+    if let Some(first) = rejected.first() {
         return Err(Error::Other(format!(
-            "platform rejected {rejected} memory entries under repository policy"
+            "platform rejected {rejected_count} memory entries under repository policy (first: {})",
+            first.id
         )));
     }
     let accepted = u32::try_from(accepted)
