@@ -13,9 +13,9 @@
 use std::process::Command;
 
 use comemory::domains::code::git_utils::{
-    REINDEX_HOOK_SCRIPT, blob_oid_at_head, changed_files, current_branch, current_head,
-    hook_installed, hook_outdated, hooks_dir, install_hook, is_linked_worktree, remove_hook,
-    repo_label, repo_label_at,
+    CheckoutKind, REINDEX_HOOK_SCRIPT, blob_oid_at_head, changed_files, checkout_kind,
+    current_branch, current_head, hook_installed, hook_outdated, hooks_dir, install_hook,
+    is_linked_worktree, remove_hook, repo_label, repo_label_at,
 };
 use tempfile::TempDir;
 
@@ -462,5 +462,36 @@ fn is_linked_worktree_separates_a_worktree_from_its_main_checkout() {
     assert!(
         discovered(tmp.path()).is_err(),
         "outside any repository there is nothing to discover"
+    );
+}
+
+/// `checkout_kind` answers about the directory it is HANDED, never an
+/// ancestor — the rule the code-index push leans on to keep a worktree row,
+/// and a row whose checkout is gone, off the wire.
+#[test]
+fn checkout_kind_never_walks_up_out_of_the_directory_it_was_given() {
+    let tmp = TempDir::new().expect("tempdir");
+    let (main, wt) = main_and_linked_worktree(&tmp);
+
+    assert_eq!(checkout_kind(&main), CheckoutKind::Main);
+    assert_eq!(checkout_kind(&wt), CheckoutKind::Linked);
+
+    // A subdirectory of a checkout is not itself one: `discover` would walk
+    // up and call this a repository.
+    let inside = main.join("src");
+    std::fs::create_dir_all(&inside).expect("nested dir");
+    assert_eq!(checkout_kind(&inside), CheckoutKind::None);
+
+    // What `git worktree remove` leaves when an ignored file survived it.
+    std::fs::remove_dir_all(&wt).expect("remove the worktree");
+    std::fs::create_dir_all(&wt).expect("leftover dir");
+    std::fs::write(wt.join("build.log"), "left behind").expect("leftover file");
+    assert_eq!(checkout_kind(&wt), CheckoutKind::None);
+
+    std::fs::remove_dir_all(&wt).expect("remove the leftover");
+    assert_eq!(
+        checkout_kind(&wt),
+        CheckoutKind::None,
+        "a gone path is none"
     );
 }

@@ -9,7 +9,12 @@
 //! [`project_file`](crate::domains::sync::code::project_file), the one place a file entry is built.
 //!
 //! Every indexed repo (`repo_marker`) is offered unless its label matches
-//! `[sync] skip_repos` or `[sync] code_index` is off. The unit of work is
+//! `[sync] skip_repos`, `[sync] code_index` is off, or its recorded root is
+//! not a repository at all — a linked worktree, a root that is no longer on
+//! disk, or a directory git cannot open ([`not_a_repository`]). A `git worktree add` is a second checkout
+//! of a repository already synced under its own label; a row minted for one
+//! before that rule existed kept standing a per-worktree "repository" up in
+//! the console on every push. The unit of work is
 //! one repo: read the workspace's manifest, diff it against
 //! `indexed_files` by blob OID ([`crate::domains::sync::code_plan`]), and post only
 //! what differs. A repo that fails leaves the others alone — its error is
@@ -22,12 +27,14 @@
 //! head, mining cursor and file digest, and stays silent when nothing moved.
 
 use std::collections::BTreeSet;
+use std::path::Path;
 
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 use time::format_description::well_known::Iso8601;
 
 use crate::config::{Config, Paths};
+use crate::domains::code::git_utils::{self, CheckoutKind};
 use crate::domains::sync::AuthFile;
 use crate::domains::sync::exchange::{CoChangeWire, CodeFileWire, CodeSymbolWire};
 use crate::domains::sync::{client_code, code_plan};
@@ -50,6 +57,14 @@ pub struct CodePushStats {
     pub unchanged: u32,
     /// Repos withheld by `[sync] skip_repos`.
     pub skipped_config: u32,
+    /// Rows whose recorded root is a linked worktree — a second checkout of
+    /// a repository already offered under its own label, never a repository
+    /// of its own.
+    pub skipped_worktree: u32,
+    /// Rows whose recorded root is no longer a checkout `index-code` could
+    /// open — gone from disk, or a leftover directory with no `.git` — so
+    /// nothing could refresh the index they would push.
+    pub skipped_missing_root: u32,
     /// Repos whose push failed; `errors` names each.
     pub failed: u32,
     /// One line per failed repo.
@@ -123,6 +138,28 @@ fn run(
             stats.skipped_config += 1;
             continue;
         }
+        match not_a_repository(conn, &repo)? {
+            Some(NotARepository::LinkedWorktree) => {
+                tracing::warn!(
+                    repo = %repo,
+                    "code index push: this label's root is a linked worktree, not a \
+                     repository; not offered (`comemory repos` lists it; disconnect it \
+                     to drop the row)",
+                );
+                stats.skipped_worktree += 1;
+                continue;
+            }
+            Some(reason @ (NotARepository::VanishedRoot | NotARepository::NoCheckout)) => {
+                tracing::debug!(
+                    repo = %repo,
+                    reason = reason.label(),
+                    "code index push: recorded root is not a checkout; not offered until it is",
+                );
+                stats.skipped_missing_root += 1;
+                continue;
+            }
+            None => {}
+        }
         if let Err(e) = push_repo(conn, auth, &repo, force, &mut stats) {
             tracing::warn!(repo = %repo, error = %e, "code index push failed");
             stats.failed += 1;
@@ -130,6 +167,62 @@ fn run(
         }
     }
     Ok(stats)
+}
+
+/// Why a `repo_marker` row names something other than a repository to offer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotARepository {
+    /// The recorded root is a linked worktree (`git worktree add`). Its
+    /// files already reach the workspace under the main worktree's label —
+    /// offering it too would stand one more "repository" up in the console
+    /// for every checkout an agent ever made.
+    LinkedWorktree,
+    /// The recorded root is not on disk: a removed worktree, a deleted
+    /// clone, or an unmounted volume. The first two must stop pushing; the
+    /// third resumes on its own once the path is back, because nothing here
+    /// deletes a row.
+    VanishedRoot,
+    /// The recorded root is a directory git cannot open as a checkout —
+    /// what a removed worktree leaves behind when an ignored file survived
+    /// it. `index-code` opens the root before anything else, so nothing
+    /// could ever refresh the index this row would push.
+    NoCheckout,
+}
+
+impl NotARepository {
+    /// The short reason `comemory sync --action status` prints and serializes
+    /// for a row it will not offer; the same words the push's counters use.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::LinkedWorktree => "worktree",
+            Self::VanishedRoot => "missing_root",
+            Self::NoCheckout => "no_checkout",
+        }
+    }
+}
+
+/// Classify `repo`'s `repo_marker` row against the working tree it records.
+///
+/// A row with no recorded root (pre-v7) is offered as before — there is
+/// nothing to check it against, and withholding it would strand a repo that
+/// has been syncing since before the column existed.
+///
+/// # Errors
+/// Store failures reading `repo_marker.root_path`.
+pub fn not_a_repository(conn: &Connection, repo: &str) -> Result<Option<NotARepository>> {
+    let Some(root) = repo_marker::root_path(conn, repo)? else {
+        return Ok(None);
+    };
+    let root = Path::new(&root);
+    if !root.exists() {
+        return Ok(Some(NotARepository::VanishedRoot));
+    }
+    Ok(match git_utils::checkout_kind(root) {
+        CheckoutKind::Main => None,
+        CheckoutKind::Linked => Some(NotARepository::LinkedWorktree),
+        CheckoutKind::None => Some(NotARepository::NoCheckout),
+    })
 }
 
 /// The local state a push is keyed on: head, mining cursor, and a digest

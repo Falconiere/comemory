@@ -6,7 +6,7 @@
 use std::io::Write as _;
 
 use crate::cli::output::json;
-use crate::domains::sync::code::CodePushStats;
+use crate::domains::sync::code::{self, CodePushStats, NotARepository};
 use crate::domains::sync::daemon::{self, DaemonStatus};
 use crate::domains::sync::initial::InitialSyncStats;
 use crate::domains::sync::{pull, push, verify};
@@ -25,13 +25,19 @@ pub(crate) fn code_summary_line(stats: &InitialSyncStats) -> String {
 
 /// One line summarizing a code push, shared by login and `comemory sync`.
 pub(crate) fn code_line(code: &CodePushStats) -> String {
+    use std::fmt::Write as _;
     let mut line = format!(
         "code: {} repo(s) pushed · {} files · {} removed · unchanged={} · skip_repos={}",
         code.repos, code.files_pushed, code.files_removed, code.unchanged, code.skipped_config
     );
-    if code.failed > 0 {
-        use std::fmt::Write as _;
-        let _ = write!(line, " · failed={}", code.failed);
+    for (label, count) in [
+        ("worktrees", code.skipped_worktree),
+        ("missing_root", code.skipped_missing_root),
+        ("failed", code.failed),
+    ] {
+        if count > 0 {
+            let _ = write!(line, " · {label}={count}");
+        }
     }
     line
 }
@@ -47,6 +53,12 @@ struct CodeStatusRow {
     /// Whether the local head or mining cursor moved since the last push —
     /// what the next `comemory sync` will offer, judged offline.
     moved_since_push: bool,
+    /// Why this row is never offered, however much it moved: `"worktree"`
+    /// (its root is a linked `git worktree`), `"missing_root"` (its root is
+    /// not on disk) or `"no_checkout"` (its root is a directory git cannot
+    /// open). Absent for a repo the push does offer.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    withheld: Option<&'static str>,
 }
 
 fn code_status_rows(conn: &Connection) -> Result<Vec<CodeStatusRow>> {
@@ -59,6 +71,7 @@ fn code_status_rows(conn: &Connection) -> Result<Vec<CodeStatusRow>> {
             .as_ref()
             .is_none_or(|c| c.pushed_head != head || c.pushed_mined_commit != mined);
         rows.push(CodeStatusRow {
+            withheld: code::not_a_repository(conn, &repo)?.map(NotARepository::label),
             files: indexed_files::list_for_repo(conn, &repo)?.len(),
             head,
             pushed_head: cursor.as_ref().and_then(|c| c.pushed_head.clone()),
@@ -133,12 +146,15 @@ pub(crate) fn emit_status(json_flag: bool, conn: &mut Connection, workspace: &st
         for row in &code {
             writeln!(
                 out,
-                "code: {} files={} head={} pushed_head={} moved_since_push={}",
+                "code: {} files={} head={} pushed_head={} moved_since_push={}{}",
                 row.repo,
                 row.files,
                 row.head.as_deref().unwrap_or("-"),
                 row.pushed_head.as_deref().unwrap_or("never"),
-                row.moved_since_push
+                row.moved_since_push,
+                row.withheld
+                    .map(|why| format!(" withheld={why}"))
+                    .unwrap_or_default()
             )?;
         }
         if let Some(warn) = daemon.inactive_warning() {
