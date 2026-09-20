@@ -22,9 +22,9 @@ use comemory::retrieval::find;
 use comemory::store::connection;
 use comemory::utilities::context::Ctx;
 use tempfile::TempDir;
-use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 use time::macros::offset;
+use time::{OffsetDateTime, UtcOffset};
 
 const REPO: &str = "app";
 
@@ -183,7 +183,10 @@ fn an_unparsable_since_is_a_usage_error() {
 
     let err = recall_status_for(&paths, &mut conn, None, Some("not a date"))
         .expect_err("an unparsable since must be refused before the store opens a query");
-    assert!(matches!(err, Error::Usage(_)), "got {err:?}");
+    assert!(
+        matches!(&err, Error::Usage(msg) if msg.starts_with("since: ")),
+        "the usage error must name the `since` field, got {err:?}"
+    );
 }
 
 /// An explicit `since` carrying a non-UTC offset names the same instant no
@@ -213,14 +216,22 @@ fn an_offset_since_is_normalised_to_utc_before_comparing() {
         report.saves, 1,
         "the same instant expressed in +05:00 must still count a save made at/after it"
     );
-    assert!(
-        report.since.ends_with('Z'),
+    let echoed = OffsetDateTime::parse(&report.since, &Rfc3339).unwrap_or_else(|e| {
+        panic!(
+            "since must echo back as RFC 3339, got {}: {e}",
+            report.since
+        )
+    });
+    assert_eq!(
+        echoed.offset(),
+        UtcOffset::UTC,
         "since must echo back UTC-normalised, got {}",
         report.since
     );
-    assert!(
-        !report.since.contains("+05:00"),
-        "since must not carry the original offset through, got {}",
+    assert_eq!(
+        echoed.unix_timestamp(),
+        now.unix_timestamp(),
+        "since must name the same instant the +05:00 input did, got {}",
         report.since
     );
 }

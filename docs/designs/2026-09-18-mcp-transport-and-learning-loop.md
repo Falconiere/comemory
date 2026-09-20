@@ -101,7 +101,7 @@ AC-14 names a flip-and-revert proof for each:
 | File | Primary item | Purpose |
 | --- | --- | --- |
 | `src/mcp.rs` | `McpOptions`, `serve` | Open the store, build `McpState`, run the rmcp service over stdio until EOF |
-| `src/mcp/state.rs` | `McpState` | `Arc<Mutex<()>> session gate + per-call connection` + `Arc<Paths>` + `Arc<Config>` + default repo + `read_only`; the `AppState` shape without token, port, roots or jobs |
+| `src/mcp/state.rs` | `McpState` | `Arc<Mutex<()>>` session gate + `Arc<Paths>` + `Arc<Config>` + default repo + `read_only` — no connection is held; `conn()` opens one per call under the gate and drops it before the gate releases (§ Review corrections); the `AppState` shape without token, port, roots or jobs |
 | `src/mcp/catalog.rs` | `ToolEntry`, `TOOLS` | Static table `(name, command, mutating)` — the read-only gate and the parity test read it |
 | `src/mcp/server.rs` | `ComemoryServer` | `#[tool_handler] impl ServerHandler`: `get_info` with `instructions`, composes the two routers |
 | `src/mcp/tools_read.rs` | `read_router` | `#[tool_router(router = read_router)]`: `find`, `search`, `search_code`, `context`, `show`, `list`, `edges`, `repos`, `recall_status` |
@@ -253,17 +253,19 @@ that cannot be opened propagates through the `main.rs` mapping (`EX_SOFTWARE`
 | `repos` | `repos` | no | `code::repos::Request` |
 | `recall_status` | `recall-status` | no | `learning::recall_status::Request` |
 | `save` | `save` | yes | `memories::save::Request` |
-| `feedback` | `feedback` | yes | `mcp::params::FeedbackParams` |
+| `feedback` | `feedback` | yes | `mcp::params::FeedbackParams` — memory and code verdicts commit in one immediate transaction (§ Review corrections) |
 
-Every `repo` parameter left unset resolves to the server's default scope,
-except on `repos`, which stays unscoped like `GET /api/v1/repos` because it
+A `repo` parameter left unset resolves to the server's default scope on
+every tool but `repos`, which stays unscoped like `GET /api/v1/repos` because it
 is the discovery surface that tells an agent which labels exist. A `save`
 whose `repo` is empty after that resolution is refused (`repo_required`);
 reads run unscoped when the session has no default, as `serve` does.
 
 ```rust
 /// `feedback` tool parameters. Differs from `learning::feedback::Request`
-/// in one rule: provenance defaults to implicit.
+/// in one rule: provenance defaults to implicit. Memory and code verdicts
+/// commit together in one immediate transaction; a code identity error
+/// rolls the memory verdicts back too (§ Review corrections).
 #[derive(Deserialize, JsonSchema)]
 pub struct FeedbackParams {
     pub query_id: String,
@@ -383,6 +385,8 @@ telemetry, but the reminder skips them.
 | `find` param `vector` supplied with the wrong dimension | Class `Unprocessable`: tool-level `vec_dim_mismatch`. |
 | `install` re-run after the binary moved | `.mcp.json` is rewritten with the new path; the bundle equality check ignores it. |
 | `install --dry-run` | Reports the `.mcp.json` path, writes nothing. |
+| Bootstrap nudge: integration disabled (`ps_memory_enabled` false) | No output — `comemory-status.sh` still refreshes the badge count but emits no hint. |
+| Bootstrap skill: `distill` step | `comemory distill --session-id <id> --transcript <path> [--dry-run]` — never `--repo`, which `distill` does not accept (`src/cli/distill.rs` takes `--session-id`, `--transcript`, `--dry-run` and `--api-url` only). |
 | Injection: `comemory` absent, prompt under the floor, or in the skip list | No output. |
 | Injection: `comemory` present but `find` fails, exceeds 5 s, or returns no hit | The plain reminder text, as before this change. `retrieval_log` untouched in every injection case (the hint runs with `COMEMORY_DISABLE_ACCESS_TRACKING=true`). |
 | Injection output over 10,000 characters | Cannot happen: at most `injectK` lines of id and title. The script still truncates defensively. |
@@ -559,3 +563,18 @@ telemetry, but the reminder skips them.
   complete the connection. Generic stdio clients exercise protocol negotiation.
 - Disabled integration emits no bootstrap hint. Capture is Claude-only, and
   bootstrap must not pass unsupported `--repo` to `distill`.
+
+### Review-added acceptance evidence
+
+Each correction above maps to a runnable check the same way the AC table
+does; these rows are the traceability the AC table lacked for review-added
+scenarios.
+
+| AC | Real input / fixture | Expected observable | Boundary case | Runnable check |
+| --- | --- | --- | --- | --- |
+| AC-R1 | one MCP session, a CLI `rebuild` between its calls, a second session | both sessions see both later writes through the live database | the first session's next call after the rebuild | `tests/cli_scenario_mcp.rs::mcp_07_rebuild_between_calls_keeps_agents_on_the_live_store` (`docs/scenarios/mcp.md` mcp-07) |
+| AC-R2 | four MCP processes over one store; eight threads on one fresh `comemory.db` | every save searchable, identical replays return one id; `schema_meta.version` is `CURRENT_VERSION` on every connection | identical large-lesson replay from every process | `tests/cli_scenario_mcp.rs::mcp_08_concurrent_agents_save_and_find_each_others_memories` (mcp-08), `src/store/tests/connection.rs::simultaneous_first_opens_apply_each_migration_once` |
+| AC-R3 | one `feedback` request carrying memory and code verdicts | one immediate transaction; a code identity error leaves zero memory rows | malformed memory id refused before any code write; concurrent mixed verdicts | `src/domains/learning/tests/feedback.rs::{mixed_feedback_rolls_back_memory_rows_when_code_identity_is_missing, malformed_memory_id_refuses_mixed_feedback_before_writing_code, concurrent_mixed_feedback_serializes_without_lost_or_duplicate_counts}` |
+| AC-R4 | real `claude` / `codex` CLIs, `install <host> --config-dir <tmp>` | the host's own `plugin list --json` carries the installed version and `.mcp.json` names the binary with `["mcp"]` | re-install over an older registered bundle | `scripts/test-agent-install.sh` (`plugin list --json` + AC-7 manifest block) |
+| AC-R5 | real `comemory-status.sh` with the integration disabled | no bootstrap hint on stdout | the same repo with the integration enabled nudges | `scripts/test-agent-install.sh::test_source_hook_regressions` (disabled-hint block) |
+| AC-R6 | the installed `skills/memory-bootstrap/SKILL.md` | the `distill` step passes `--session-id` and `--transcript` only | — | `scripts/test-agent-install.sh` checks the installed skill's four headings; the flag rule itself is prose in the skill, gated by no script |

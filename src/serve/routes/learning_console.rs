@@ -258,7 +258,8 @@ async fn expansions(State(state): State<AppState>, Query(q): Query<ExpansionsQue
 /// (`domains::learning::recall_status`, shared verbatim with `comemory
 /// recall-status`). An `X-Comemory-Repo` header (or the server's own
 /// `--repo`) is the default `repo` filter when the query string omits one,
-/// same as `GET /find`.
+/// same as `GET /find`; with neither, the report is unscoped, exactly as
+/// `comemory recall-status` without `--repo`.
 async fn recall_status(
     State(state): State<AppState>,
     scope: RepoScope,

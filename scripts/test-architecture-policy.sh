@@ -140,6 +140,10 @@ assert_fails 'store file claiming a capability owner' 'capability ownership mism
 # `mcp` branch of that map the same way the `cli` case above pins its own.
 sed '/^| src\/mcp\/catalog.rs |/s/ | delivery::mcp | / | delivery::cli | /' "$INVENTORY" >"$TASK_TMP/mcp-owner.md"
 assert_fails 'mcp file claiming the cli owner' 'capability ownership mismatch' --inventory "$TASK_TMP/mcp-owner.md"
+# A second `src/mcp/` row proves the map keys on the directory, not on one
+# hardcoded file name.
+sed '/^| src\/mcp\/state.rs |/s/ | delivery::mcp | / | delivery::serve | /' "$INVENTORY" >"$TASK_TMP/mcp-owner-2.md"
+assert_fails 'second mcp file claiming the serve owner' 'capability ownership mismatch' --inventory "$TASK_TMP/mcp-owner-2.md"
 sed '/^| src\/domains\/memories\/save.rs |/s@src/domains/memories/save.rs@src/domains/memories/delete.rs@2' "$INVENTORY" >"$TASK_TMP/target.md"
 assert_fails 'duplicate migration target' 'duplicate inventory target' --inventory "$TASK_TMP/target.md"
 sed '/^| src\/domains\/memories\/save.rs |/s@src/domains/memories/save.rs@none@2' "$INVENTORY" >"$TASK_TMP/no-target.md"

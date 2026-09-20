@@ -97,7 +97,11 @@ fn write_mcp_manifest_refuses_a_symlinked_target() {
 
     let err = write_mcp_manifest(&plugin_root, &binary).unwrap_err();
 
-    assert!(matches!(err, Error::Usage(_)), "unexpected error: {err}");
+    assert!(
+        matches!(&err, Error::Usage(msg) if msg.starts_with("refusing symlink mcp manifest: ")
+            && msg.ends_with(".mcp.json")),
+        "unexpected error: {err}"
+    );
     assert_eq!(std::fs::read_to_string(&elsewhere).unwrap(), "{}");
 }
 
@@ -119,7 +123,11 @@ fn write_mcp_manifest_refuses_a_symlinked_temp_file() {
 
     let err = write_mcp_manifest(&plugin_root, &binary).unwrap_err();
 
-    assert!(matches!(err, Error::Usage(_)), "unexpected error: {err}");
+    assert!(
+        matches!(&err, Error::Usage(msg) if msg.starts_with("refusing symlink mcp manifest temp file: ")
+            && msg.ends_with(".mcp.json.tmp")),
+        "unexpected error: {err}"
+    );
     assert_eq!(
         std::fs::read_to_string(&elsewhere).unwrap(),
         "{}",

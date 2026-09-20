@@ -30,8 +30,8 @@ saves useful corrections and discoveries, and records retrieval feedback.
 
 Prompt and compaction hooks provide compact reminders. Stop runs local retrieval
 maintenance at most once per UTC day in a detached process. Recall and maintenance
-run locally without models. The separate Claude SessionEnd receipt capture is
-described below.
+run locally without models and upload nothing. The separate Claude SessionEnd
+receipt capture, the one hook that does upload, is described below.
 
 ## MCP registration
 

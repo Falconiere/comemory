@@ -6,8 +6,9 @@ BIN="${COMEMORY_BIN:-$ROOT/target/debug/comemory}"
 [ -x "$BIN" ] || { printf 'Missing executable comemory binary: %s\n' "$BIN" >&2; exit 1; }
 TASK=$(mktemp -d "${TMPDIR:-/tmp}/comemory-test.XXXXXX")
 # The Stop hook's detached maintenance may still be writing under $TASK for a
-# few seconds; retry the sweep once so a late child never leaves a temp dir.
-trap 'rm -rf "$TASK" 2>/dev/null || { sleep 3; rm -rf "$TASK"; }' EXIT
+# few seconds; retry the sweep once so a late child rarely leaves a temp dir,
+# and name the leftover on stderr when the retry fails too.
+trap 'rm -rf "$TASK" 2>/dev/null || { sleep 3; rm -rf "$TASK" 2>/dev/null || printf "warning: temp dir left behind: %s\n" "$TASK" >&2; }' EXIT
 mkdir -p "$TASK/bin"
 ln -s "$BIN" "$TASK/bin/comemory"
 export PATH="$TASK/bin:$PATH"

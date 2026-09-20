@@ -9,9 +9,9 @@ in it does not exist.
 
 `src/serve/routes.rs` also owns the handler-layer helpers every resource
 shares: `query_response` (runs the command core — always
-`domains::<cap>::<cmd>::run` since #178 retired the last legacy shell — on
-`utilities::blocking::run_blocking`, borrowing the shared command context on
-that blocking thread — the connection mutex never crosses an `.await` — and
+`domains::<cap>::<cmd>::run` since #178 retired the last legacy shell — by
+calling `utilities::blocking::run_blocking` itself, borrowing the shared command
+context on that blocking thread — the connection mutex never crosses an `.await` — and
 enveloping the query result), `respond`/`accepted`, `guard_mutating`,
 `guard_job`, `require_confirm`, and `track_for`. `run_blocking` itself lives
 in `crate::utilities::blocking`, shared with the `mcp` adapter.
