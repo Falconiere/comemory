@@ -156,6 +156,16 @@ pub fn set_cursor(conn: &Connection, repo: &str, cursor: &CodeSyncCursor) -> Res
     schema_meta::upsert(conn, &format!("{CURSOR_KEY_PREFIX}{repo}"), &json)
 }
 
+/// Remove every code-push cursor after repository policy or checkout
+/// identity changes. The next push rechecks each authorized manifest.
+pub(crate) fn clear_cursors(conn: &Connection) -> Result<()> {
+    conn.execute(
+        "DELETE FROM schema_meta WHERE key LIKE ?1",
+        [format!("{CURSOR_KEY_PREFIX}%")],
+    )?;
+    Ok(())
+}
+
 #[cfg(test)]
 #[path = "tests/code_sync.rs"]
 mod tests;

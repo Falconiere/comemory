@@ -1,14 +1,15 @@
 # `comemory sync`
 
 Push/pull memories against the organization the key from `comemory auth login`
-is scoped to, through `api.comemory.io`. Organization membership is the
-platform's gate; on this side one filter runs — a `[sync] skip_repos` glob
-match (`skipped_config`) — plus client-side redaction. An empty `repo` label no
-longer withholds anything: a memory saved outside a git worktree syncs like any
-other. Distinct from git `memory-stores` sync (`[git] auto_sync`).
+is scoped to, through `api.comemory.io`. Every data request carries the
+negotiated repository-policy protocol and revision. Memories sync only when
+their label is a canonical approved GitHub repository, an administrator mapping,
+or an unambiguous indexed checkout identity. Unlabelled and unresolved memories
+remain local (`blocked_repo`), in addition to `skip_repos` and secret filtering.
+Distinct from git `memory-stores` sync (`[git] auto_sync`).
 
 `run` and `push` also push the **code index** of every indexed repo — a
-snippet-free projection (paths, blob OIDs, symbol names and line ranges, the
+snippet-free projection for each approved canonical repository (paths, blob OIDs, symbol names and line ranges, the
 `imports` / `co_changed` edges), diffed by blob OID against the workspace's
 manifest. `[sync] code_index = false` turns it off; `skip_repos` withholds a
 repo's index along with its memories.

@@ -98,7 +98,7 @@ fn pull_applies_remote_upsert_and_advances_cursor() {
 }
 
 #[test]
-fn empty_remote_changes_still_records_head() {
+fn empty_remote_changes_without_a_continuation_do_not_infer_progress() {
     let platform = SyncPlatformState {
         head_seq: 42,
         changes: serde_json::json!([]),
@@ -118,5 +118,5 @@ fn empty_remote_changes_still_records_head() {
     let auth = AuthFile::load(&paths).expect("load").expect("auth");
     let pull_stats = pull::run_pull(&paths, &cfg, &mut conn, &auth, 50).expect("pull");
     assert_eq!(pull_stats.pulled, 0);
-    assert_eq!(pull_stats.last_pulled_seq, 42);
+    assert_eq!(pull_stats.last_pulled_seq, 0);
 }

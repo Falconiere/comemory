@@ -19,6 +19,7 @@ fn stats() -> CodePushStats {
         batches: 2,
         unchanged: 1,
         skipped_config: 1,
+        blocked_repo: 0,
         skipped_worktree: 0,
         skipped_missing_root: 0,
         failed: 0,
@@ -31,14 +32,14 @@ fn the_code_line_names_every_counter_and_only_mentions_failures_when_there_are_a
     let quiet = code_line(&stats());
     assert_eq!(
         quiet,
-        "code: 2 repo(s) pushed · 41 files · 3 removed · unchanged=1 · skip_repos=1"
+        "code: 2 repo(s) pushed · 41 files · 3 removed · unchanged=1 · skip_repos=1 · blocked_repo=0"
     );
     let mut withheld = stats();
     withheld.skipped_worktree = 2;
     withheld.skipped_missing_root = 1;
     assert_eq!(
         code_line(&withheld),
-        "code: 2 repo(s) pushed · 41 files · 3 removed · unchanged=1 · skip_repos=1 \
+        "code: 2 repo(s) pushed · 41 files · 3 removed · unchanged=1 · skip_repos=1 · blocked_repo=0 \
          · worktrees=2 · missing_root=1"
     );
     let mut failing = stats();
@@ -48,7 +49,7 @@ fn the_code_line_names_every_counter_and_only_mentions_failures_when_there_are_a
         .push("acme/app: code manifest: HTTP 503".into());
     assert_eq!(
         code_line(&failing),
-        "code: 2 repo(s) pushed · 41 files · 3 removed · unchanged=1 · skip_repos=1 · failed=1"
+        "code: 2 repo(s) pushed · 41 files · 3 removed · unchanged=1 · skip_repos=1 · blocked_repo=0 · failed=1"
     );
 }
 

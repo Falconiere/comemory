@@ -143,8 +143,8 @@ fn run_login(paths: &Paths, a: LoginArgs, json_flag: bool) -> Result<()> {
         Ok(stats) => {
             writeln!(
                 out,
-                "  synced: pulled {} · pushed {} · skip_repos={}",
-                stats.pulled, stats.pushed, stats.skipped_config
+                "  synced: pulled {} · pushed {} · skip_repos={} · blocked_repo={}",
+                stats.pulled, stats.pushed, stats.skipped_config, stats.blocked_repo
             )?;
             writeln!(
                 out,

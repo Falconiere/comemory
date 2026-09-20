@@ -72,7 +72,7 @@ Set these in `config.toml`; they have **no** environment override.
 | `sync.pull_before_context_after` | **Deprecated, ignored.** Use `comemory watch` for live pulls. | `""` |
 | `sync.daemon_interval` | Sleep between cycles of the opt-in daemon (`comemory auth login --daemon`). | `"5s"` |
 | `sync.verify_every` | Interval hint for `comemory sync --action verify` and the daemon. | `"7d"` |
-| `sync.skip_repos` | Globs over the trimmed, lowercased `repo` label; a match keeps that memory local — and that repo's code index too. The **only** client-side sync filter — an empty label no longer withholds anything, and organization membership is the platform's gate. An invalid glob fails at config load. | `[]` |
+| `sync.skip_repos` | Globs over the trimmed, lowercased local `repo` label; a match keeps that memory and code index local in addition to the platform's repository approval policy. An invalid glob fails at config load. | `[]` |
 | `sync.code_index` | Push the code index of every indexed repo alongside memories: file paths and blob OIDs, symbol names with kinds and line ranges, the `imports` and `co_changed` edges — never source text. On by default so the console's code graph fills in right after `comemory auth login`; `false` keeps every index on this machine. Env: `COMEMORY_SYNC_CODE_INDEX`. | `true` |
 | `sync.allowlist_ttl`, `sync.repos`, `sync.default_workspace` | **Deprecated, parsed and ignored**, each with a warning naming it. Kept declared for one release because `[sync]` is `deny_unknown_fields`, so deleting them outright would stop every existing `config.toml` that sets them from loading at all. Remove them. | — |
 | `embed.model` | Model id recorded for sync vector import compatibility. | `""` |

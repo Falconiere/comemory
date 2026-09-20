@@ -7,7 +7,7 @@
 )]
 //! Tests for [`comemory::store::sync_state`].
 
-use comemory::store::sync_state;
+use comemory::store::{code_sync, connection, sync_state};
 use rusqlite::Connection;
 
 fn open_with_sync_state() -> Connection {
@@ -73,4 +73,51 @@ fn ensure_updates_api_url_on_conflict() {
 fn get_missing_returns_none() {
     let conn = open_with_sync_state();
     assert!(sync_state::get(&conn, "missing").expect("get").is_none());
+}
+
+#[test]
+fn a_changed_policy_resets_memory_and_code_cursors_once() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let mut conn = connection::open(home.path().join("comemory.db")).expect("db");
+    sync_state::ensure(&conn, "ws-1", "https://api.example").expect("ensure");
+    sync_state::set_pulled(&conn, "ws-1", 12, "2026-09-20T00:00:00Z").expect("pulled");
+    sync_state::set_pushed(&conn, "ws-1", 9, "2026-09-20T00:00:00Z").expect("pushed");
+    code_sync::set_cursor(
+        &conn,
+        "local-label",
+        &code_sync::CodeSyncCursor {
+            pushed_head: Some("abc".into()),
+            pushed_mined_commit: Some("abc".into()),
+            pushed_digest: "digest".into(),
+            pushed_at: "2026-09-20T00:00:00Z".into(),
+        },
+    )
+    .expect("cursor");
+
+    assert!(sync_state::reconcile_policy(&mut conn, "ws-1", "first").expect("reset"));
+    let row = sync_state::get(&conn, "ws-1").expect("get").expect("row");
+    assert_eq!((row.pulled_seq, row.pushed_seq), (0, 0));
+    assert!(
+        code_sync::cursor(&conn, "local-label")
+            .expect("cursor")
+            .is_none()
+    );
+
+    sync_state::set_pulled(&conn, "ws-1", 4, "2026-09-20T01:00:00Z").expect("pulled");
+    assert!(!sync_state::reconcile_policy(&mut conn, "ws-1", "first").expect("same"));
+    assert_eq!(
+        sync_state::get(&conn, "ws-1")
+            .expect("get")
+            .expect("row")
+            .pulled_seq,
+        4
+    );
+    assert!(sync_state::reconcile_policy(&mut conn, "ws-1", "second").expect("changed"));
+    assert_eq!(
+        sync_state::get(&conn, "ws-1")
+            .expect("get")
+            .expect("row")
+            .pulled_seq,
+        0
+    );
 }

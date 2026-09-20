@@ -27,8 +27,13 @@ pub(crate) fn code_summary_line(stats: &InitialSyncStats) -> String {
 pub(crate) fn code_line(code: &CodePushStats) -> String {
     use std::fmt::Write as _;
     let mut line = format!(
-        "code: {} repo(s) pushed · {} files · {} removed · unchanged={} · skip_repos={}",
-        code.repos, code.files_pushed, code.files_removed, code.unchanged, code.skipped_config
+        "code: {} repo(s) pushed · {} files · {} removed · unchanged={} · skip_repos={} · blocked_repo={}",
+        code.repos,
+        code.files_pushed,
+        code.files_removed,
+        code.unchanged,
+        code.skipped_config,
+        code.blocked_repo
     );
     for (label, count) in [
         ("worktrees", code.skipped_worktree),
@@ -213,8 +218,8 @@ pub(crate) fn emit_run(
         if let Some(p) = push_stats {
             writeln!(
                 out,
-                "Pushed {} entries (skip_repos={}, blocked_secrets={}, rejected_repo={})",
-                p.pushed, p.skipped_config, p.blocked_secrets, p.rejected_repo
+                "Pushed {} entries (skip_repos={}, blocked_repo={}, blocked_secrets={}, rejected_repo={})",
+                p.pushed, p.skipped_config, p.blocked_repo, p.blocked_secrets, p.rejected_repo
             )?;
         }
         if let Some(c) = code_stats {

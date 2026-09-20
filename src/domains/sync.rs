@@ -3,8 +3,8 @@
 //!
 //! [`auth_file`][a] owns the one org-scoped credential; [`client`][c] speaks
 //! the wire; `push`, `pull`, `code` and `verify` are the directions of travel,
-//! run once together by `initial`; `redact` and `skip_repos` decide what may
-//! leave this machine.
+//! run once together by `initial`; repository policy, `redact`, and
+//! `skip_repos` decide what may leave this machine.
 //!
 //! [a]: crate::domains::sync::auth_file
 //! [c]: crate::domains::sync::client
@@ -19,12 +19,18 @@ pub mod auth_file;
 pub mod client;
 /// The two code-index calls layered on [`client`]'s base URL and credential.
 pub mod client_code;
+/// Status fetch and wire model for repository policy negotiation.
+pub mod client_policy;
+/// Managed data-request protocol headers and response validation.
+pub mod client_protocol;
 /// Platform API base URL and the RFC 8628 device login that mints the key.
 pub mod cloud;
 /// `comemory sync`'s code-index push: diff by blob OID, send only what differs.
 pub mod code;
 /// The pure code-push diff and its batching — no store, no network.
 pub mod code_plan;
+/// One canonical repository's code-manifest diff and upload.
+pub mod code_repo_push;
 /// The user-level auto-sync daemon (launchd / systemd --user), opt-in.
 pub mod daemon;
 /// Rendered launchd plist and systemd unit bodies.
@@ -46,14 +52,18 @@ pub mod manual;
 pub mod memory_store;
 /// The cursored pull half of `comemory sync`.
 pub mod pull;
-/// The push half of `comemory sync`, filtered by `skip_repos` alone.
+/// The push half of `comemory sync`, filtered by repository policy and local exclusions.
 pub mod push;
 /// The inline outbox drain a local save or delete triggers, time-bounded and
 /// never fatal to the write.
 pub mod push_on_save;
 /// Curated secret scan (`rules.toml`) before a memory is enqueued for push.
 pub mod redact;
-/// The one client-side filter left: the `[sync] skip_repos` glob matcher.
+/// Strict `github.com` remote parsing into lowercase `owner/name` identities.
+pub mod repository_identity;
+/// Server policy resolved against local checkout remotes and legacy mappings.
+pub mod repository_policy;
+/// The local `[sync] skip_repos` glob matcher, applied after repository policy.
 pub mod skip_repos;
 /// Manifest compare and bucket repair.
 pub mod verify;

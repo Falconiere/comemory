@@ -96,7 +96,13 @@ fn initial_sync_pulls_then_pushes_and_records_the_cursor() {
     });
     {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        save::run(&mut ctx, save_req(local_body, "acme/backend"), false, None).unwrap();
+        save::run(
+            &mut ctx,
+            save_req(local_body, "falconiere/comemory"),
+            false,
+            None,
+        )
+        .unwrap();
     }
     drop(conn);
 
@@ -218,7 +224,7 @@ fn initial_sync_drains_multiple_remote_pages() {
 }
 
 #[test]
-fn initial_sync_pushes_an_unlabelled_memory() {
+fn initial_sync_withholds_an_unlabelled_memory() {
     let server = SyncPlatformServer::start(SyncPlatformState::default());
     let secret = server.snapshot().secret;
 
@@ -228,19 +234,8 @@ fn initial_sync_pushes_an_unlabelled_memory() {
     let cfg = Config::defaults();
     let mut conn = connection::open(paths.db_path()).unwrap();
     let body = "a note saved outside any git worktree";
-    let id = comemory::domains::memories::id::memory_id(body);
-    let content_hash = comemory::utilities::digest::sha256_hex(body.trim_end().as_bytes());
-    server.update(|st| {
-        st.import_results = serde_json::json!([{
-            "id": id,
-            "content_hash": content_hash,
-            "status": "accepted",
-            "seq": 1
-        }]);
-    });
     {
         let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
-        // No repo label at all — it still reaches the organization.
         save::run(&mut ctx, save_req(body, ""), false, None).unwrap();
     }
     drop(conn);
@@ -252,8 +247,10 @@ fn initial_sync_pushes_an_unlabelled_memory() {
         common::auth_fixture::FIXTURE_WORKSPACE,
     );
     let stats = run_initial_sync(&paths, &cfg, &auth).expect("initial sync");
-    assert_eq!(stats.pushed, 1);
+    assert_eq!(stats.pushed, 0);
     assert_eq!(stats.skipped_config, 0);
+    assert_eq!(stats.blocked_repo, 1);
+    assert!(server.snapshot().last_import_body.is_none());
 }
 
 #[test]

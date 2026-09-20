@@ -19,6 +19,8 @@ use crate::test_common as common;
 use crate::test_common::code_sync_fixture as fixture;
 use crate::test_common::sync_platform_server::{SyncPlatformServer, SyncPlatformState};
 
+const CANONICAL_REPO: &str = "falconiere/comemory";
+
 struct Rig {
     _home: tempfile::TempDir,
     paths: Paths,
@@ -249,7 +251,7 @@ fn ac14_a_deleted_file_lands_in_removed() {
     assert_eq!(stats.files_removed, 1);
     let bodies = rig.import_bodies();
     assert_eq!(bodies[1]["removed"], serde_json::json!(["src/c.ts"]));
-    let manifest = rig.server.snapshot().code_manifests[fixture::REPO].clone();
+    let manifest = rig.server.snapshot().code_manifests[CANONICAL_REPO].clone();
     let held: Vec<&str> = manifest["files"]
         .as_array()
         .unwrap()
@@ -361,7 +363,7 @@ fn a_linked_worktree_row_is_never_offered_as_a_repository() {
         .iter()
         .map(|b| b["repo"].as_str().unwrap().to_owned())
         .collect();
-    assert_eq!(pushed, [fixture::REPO]);
+    assert_eq!(pushed, [CANONICAL_REPO]);
 }
 
 #[test]
@@ -378,7 +380,7 @@ fn a_row_whose_root_is_gone_stops_being_pushed() {
         .iter()
         .map(|b| b["repo"].as_str().unwrap().to_owned())
         .collect();
-    assert_eq!(pushed, [fixture::REPO]);
+    assert_eq!(pushed, [CANONICAL_REPO]);
 }
 
 #[test]
@@ -398,5 +400,5 @@ fn a_root_that_git_cannot_open_is_not_offered_either() {
         .iter()
         .map(|b| b["repo"].as_str().unwrap().to_owned())
         .collect();
-    assert_eq!(pushed, [fixture::REPO]);
+    assert_eq!(pushed, [CANONICAL_REPO]);
 }

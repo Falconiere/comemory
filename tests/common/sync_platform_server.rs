@@ -43,6 +43,10 @@ pub struct SyncPlatformState {
     pub allowlist: Value,
     /// ETag for allowlist cache short-circuit.
     pub allowlist_etag: Option<String>,
+    /// Repository policy revision returned by status and managed headers.
+    pub policy_revision: i64,
+    /// Administrator-confirmed legacy memory-label mappings.
+    pub repo_mappings: Value,
     /// When true, status answers 404 (personal / unbound).
     pub status_404: bool,
     /// `{ok:false}` envelope on status (auth/gate errors).
@@ -108,8 +112,10 @@ impl Default for SyncPlatformState {
             access_token: "dev-access-token".into(),
             secret: "cmk_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into(),
             personal_workspace_id: "ws-personal".into(),
-            allowlist: json!([{"fullName": "codasignal/foo", "name": "foo"}]),
+            allowlist: json!([{"fullName": "falconiere/comemory", "name": "comemory"}]),
             allowlist_etag: Some("etag-1".into()),
+            policy_revision: 1,
+            repo_mappings: json!([]),
             status_404: false,
             status_error: None,
             changes: json!([]),
@@ -301,8 +307,16 @@ fn handle(
             ),
         }
     };
+    let policy_header = if path.starts_with("/v1/sync/") && path != "/v1/sync/status" {
+        let revision = state.lock().expect("state").policy_revision;
+        format!(
+            "X-Comemory-Sync-Protocol: repository-policy-v1\r\nX-Comemory-Policy-Revision: {revision}\r\n"
+        )
+    } else {
+        String::new()
+    };
     let head = format!(
-        "HTTP/1.1 {status}\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
+        "HTTP/1.1 {status}\r\nConnection: close\r\nContent-Type: application/json\r\n{policy_header}Content-Length: {}\r\n\r\n",
         resp.len()
     );
     // `try_clone` keeps `stream` for the response write; `BufReader` owns the clone.
@@ -417,6 +431,7 @@ fn route(
                 .to_string(),
             )
         }
+        ("GET", "/v1/sync/status") => sync_status(&mut st, authorization),
         // One guard over every alternative: when `sync_unavailable` is set,
         // all three sync routes answer 500. Written as a single arm because
         // clippy::match_same_arms rejects three arms with identical bodies.
@@ -477,6 +492,11 @@ fn sync_status(st: &mut SyncPlatformState, authorization: &str) -> (&'static str
             "devices": [],
             "allowlist": st.allowlist.clone(),
             "allowlist_etag": st.allowlist_etag,
+            "repo_mappings": st.repo_mappings,
+            "workspace_id": st.workspace_id,
+            "policy_revision": st.policy_revision,
+            "sync_protocol": "repository-policy-v1",
+            "import_gate": "repository_allowlist",
             "personal_sync": false
         })),
     )

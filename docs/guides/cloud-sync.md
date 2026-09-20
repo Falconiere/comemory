@@ -2,7 +2,7 @@
 
 Share organization memories across machines through `api.comemory.io`. The
 local CLI stays the day-to-day engine; cloud sync is optional, and what may
-leave a machine is decided by **organization membership**.
+leave a machine is decided by the organization's approved repository policy.
 
 Contract (platform + engine): the comemory.io platform API. If a CLI flag name
 drifts while wire seams settle, the **platform HTTP contract** at
@@ -27,7 +27,7 @@ before it returns** — pulling every remote page, then pushing every local page
 ✓ logged in to Acme, Inc. (cmk_abcd)
   api https://api.comemory.io · credentials ~/.comemory/auth.json
   daemon: not installed (saves push inline; `comemory watch` for live pulls)
-  synced: pulled 12 · pushed 3 · skip_repos=0
+  synced: pulled 12 · pushed 3 · skip_repos=0 · blocked_repo=0
 ```
 
 There is no second step, and nothing resident is installed. After login:
@@ -93,19 +93,28 @@ is gone — it opted out of an install that no longer happens.)
 
 ## What syncs
 
-**Everything.** Every memory on the machine is offered to your organization,
-which accepts or rejects it on membership alone — and so is the **code index**
-of every repo you have run `comemory index-code` over, so the console's Code
-graph and Repositories screens fill in from the first login with no further
-step.
+The CLI fetches the workspace's authoritative repository policy before every
+sync leg. A memory leaves the machine only when its local label is already a
+canonical approved GitHub `owner/name`, an administrator has confirmed a label
+mapping, or the label belongs to an indexed checkout whose current `origin`
+unambiguously resolves to the approved repository. A free-text label alone is
+not proof. The code index follows the checkout's current GitHub origin and is
+sent under that canonical identity without rewriting the local label.
 
 One filter runs on your machine first:
 
 | Memory | Outcome | Counter |
 |--------|---------|---------|
 | Label matches `[sync] skip_repos` | Stays local | `skipped_config` |
+| Missing, unsupported, ambiguous or unapproved repository identity | Stays local | `blocked_repo` |
 | Body trips the secret scan | Withheld until `--allow-secret` | `blocked_secrets` |
-| Anything else | Offered to the organization | `pushed` |
+| Approved canonical identity | Offered with an id-to-repository binding | `pushed` |
+
+If policy cannot be fetched or validated, explicit sync fails closed and sends
+nothing. Local `save`, `delete`, and `index-code` operations still succeed
+offline because their automatic push is best effort. A policy or checkout
+identity change resets memory reconciliation and code cursors so previously
+withheld entries are reconsidered without requiring another save.
 
 ### The code index
 
@@ -133,8 +142,8 @@ its local head, the head last pushed, `moved_since_push`, and — on a row the
 push refuses to offer — `withheld=worktree`, `withheld=missing_root` or
 `withheld=no_checkout`.
 
-A `repo_marker` row whose recorded root is not a repository is never
-offered, however the row was minted:
+A `repo_marker` row whose recorded root is not a repository, has no supported
+GitHub origin, or resolves outside the approved set is never offered:
 
 | Row | Outcome | Counter |
 |-----|---------|---------|
@@ -154,17 +163,9 @@ code_index = false     # keep every code index on this machine
 skip_repos = ["acme/secret-*"]   # withholds that repo's memories AND its index
 ```
 
-> **This is wider than before, twice over.** An empty `repo` label used to keep
-> a memory local forever. Because `repo` is filled in from the git repository
-> of whatever directory `comemory save` ran in, that rule quietly meant *a note
-> taken outside a worktree could never sync* — which is why it is gone. The
-> per-repo GitHub App allowlist is gone too: a memory labelled with a repo the
-> App was never installed on is now pushed.
->
-> **Everything already on your machine is re-offered once** after the upgrade
-> (migration `0017`), including memories saved long before this change. If you
-> keep memories that should not reach your organization, set `skip_repos`
-> **before** upgrading.
+> Repository labels remain local metadata. The CLI does not rewrite historical
+> frontmatter when an administrator confirms a mapping; it attaches the
+> canonical repository only to the managed import request.
 
 ```toml
 [sync]

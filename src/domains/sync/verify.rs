@@ -10,10 +10,10 @@ use crate::config::{Config, Paths};
 use crate::domains::sync::AuthFile;
 use crate::domains::sync::client;
 use crate::domains::sync::exchange::ManifestResponse;
+use crate::domains::sync::repository_policy::RepositoryPolicy;
 use crate::domains::sync::{pull, push};
 use crate::prelude::*;
-use crate::store::{Connection, sync_state};
-use crate::utilities::context::Ctx;
+use crate::store::{Connection, sync_log, sync_state};
 
 /// Buckets that differ between local and remote manifests.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -38,7 +38,7 @@ pub fn verify_manifests(
     conn: &mut Connection,
     auth: &AuthFile,
 ) -> Result<VerifyReport> {
-    let first = compare_once(paths, cfg, conn, auth)?;
+    let first = compare_once(conn, auth)?;
     if first.bucket_indices.is_empty() {
         return Ok(VerifyReport {
             repaired: false,
@@ -46,7 +46,7 @@ pub fn verify_manifests(
         });
     }
     repair_reconcile(paths, cfg, conn, auth)?;
-    let after = compare_once(paths, cfg, conn, auth)?;
+    let after = compare_once(conn, auth)?;
     Ok(VerifyReport {
         repaired: after.bucket_indices.is_empty(),
         differing_buckets: after.differing_buckets,
@@ -56,16 +56,14 @@ pub fn verify_manifests(
     })
 }
 
-fn compare_once(
-    paths: &Paths,
-    cfg: &Config,
-    conn: &mut Connection,
-    auth: &AuthFile,
-) -> Result<VerifyReport> {
-    let mut ctx = Ctx::borrowed(paths, cfg, conn);
-    let local = crate::domains::sync::exchange::manifest::run(&mut ctx)?;
+fn compare_once(conn: &mut Connection, auth: &AuthFile) -> Result<VerifyReport> {
+    let policy = RepositoryPolicy::load(conn, auth)?;
+    let local = crate::domains::sync::exchange::manifest::from_hashes(
+        sync_log::head_seq(conn)?,
+        policy.authorized_content_hashes(conn)?,
+    );
     let secret = auth.effective_secret();
-    let remote = client::fetch_manifest(&auth.api_url, &secret)?;
+    let remote = client::fetch_manifest(&auth.api_url, &secret, policy.revision())?;
     let indices = diff_buckets(&local, &remote);
     Ok(VerifyReport {
         differing_buckets: indices.len() as u32,

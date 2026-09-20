@@ -9,6 +9,8 @@
 //! Real HTTP coverage of `comemory::domains::sync::client` against the loopback
 //! platform fixture (`tests/common/sync_platform_server.rs`).
 
+use std::collections::BTreeMap;
+
 use comemory::domains::sync::client;
 use comemory::domains::sync::exchange::{ImportEntry, ImportRequest, ImportStatus, SyncOp};
 
@@ -26,6 +28,10 @@ fn sample_entry() -> ImportRequest {
             record: None,
         }],
     }
+}
+
+fn repositories() -> BTreeMap<String, String> {
+    BTreeMap::from([("abcd1234".into(), "falconiere/comemory".into())])
 }
 
 #[test]
@@ -51,9 +57,10 @@ fn sends_no_workspace_header_on_any_sync_route() {
     let server = SyncPlatformServer::start(platform);
     let secret = server.snapshot().secret;
 
-    client::pull_changes(&server.base, &secret, 0, 50).expect("changes");
-    client::push_import(&server.base, &secret, &sample_entry()).expect("import");
-    client::fetch_manifest(&server.base, &secret).expect("manifest");
+    client::pull_changes(&server.base, &secret, 0, 50, 1).expect("changes");
+    client::push_import(&server.base, &secret, 1, &sample_entry(), &repositories())
+        .expect("import");
+    client::fetch_manifest(&server.base, &secret, 1).expect("manifest");
 
     let seen = server.requests();
     assert_eq!(seen.len(), 3, "three sync calls, got: {seen:?}");
@@ -82,8 +89,9 @@ fn never_calls_the_removed_allowlist_route() {
     let server = SyncPlatformServer::start_default();
     let secret = server.snapshot().secret;
 
-    client::pull_changes(&server.base, &secret, 0, 50).expect("changes");
-    client::push_import(&server.base, &secret, &sample_entry()).expect("import");
+    client::pull_changes(&server.base, &secret, 0, 50, 1).expect("changes");
+    client::push_import(&server.base, &secret, 1, &sample_entry(), &repositories())
+        .expect("import");
 
     assert!(
         !server.saw_path("/v1/sync/status"),
@@ -120,16 +128,17 @@ fn pull_changes_push_import_and_manifest() {
     let server = SyncPlatformServer::start(platform);
     let secret = server.snapshot().secret;
 
-    let changes = client::pull_changes(&server.base, &secret, 0, 50).expect("changes");
+    let changes = client::pull_changes(&server.base, &secret, 0, 50, 1).expect("changes");
     assert_eq!(changes.entries.len(), 1);
     assert_eq!(changes.head_seq, 3);
     assert_eq!(changes.entries[0].op, SyncOp::Tombstone);
 
-    let import = client::push_import(&server.base, &secret, &sample_entry()).expect("import");
+    let import = client::push_import(&server.base, &secret, 1, &sample_entry(), &repositories())
+        .expect("import");
     assert_eq!(import.results.len(), 1);
     assert_eq!(import.results[0].status, ImportStatus::Accepted);
 
-    let manifest = client::fetch_manifest(&server.base, &secret).expect("manifest");
+    let manifest = client::fetch_manifest(&server.base, &secret, 1).expect("manifest");
     assert_eq!(manifest.buckets.len(), 256);
     assert_eq!(manifest.head_seq, 3);
 }
@@ -146,7 +155,7 @@ fn envelope_error_surfaces_with_its_code() {
 
     // The fixture's `unavailable()` answers exactly `500 Internal Server
     // Error`, so the status is pinned on both sides of this assertion.
-    let err = client::pull_changes(&server.base, &secret, 0, 50).expect_err("outage surfaces");
+    let err = client::pull_changes(&server.base, &secret, 0, 50, 1).expect_err("outage surfaces");
     let msg = err.to_string();
     assert!(
         msg.contains("500"),
@@ -163,7 +172,7 @@ fn trailing_slash_base_url_normalizes() {
     let server = SyncPlatformServer::start_default();
     let secret = server.snapshot().secret;
     let base = format!("{}/", server.base);
-    let manifest = client::fetch_manifest(&base, &secret).expect("slash");
+    let manifest = client::fetch_manifest(&base, &secret, 1).expect("slash");
     assert_eq!(manifest.buckets.len(), 256);
 }
 

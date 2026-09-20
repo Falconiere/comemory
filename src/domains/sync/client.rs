@@ -4,17 +4,21 @@
 //! - `POST {api}/auth/device/code` with `{client_id:"comemory-cli"}` → device/user codes.
 //! - `POST {api}/auth/device/token` with OAuth device-code grant → session access token.
 //! - `POST {api}/v1/device/mint-org-key` + Bearer session → an org-scoped `cmk_` secret.
-//! - Authenticated calls send `Authorization: Bearer {cmk_…}` and **nothing else**:
-//!   the key is scoped to one organization, so the platform derives the
-//!   workspace from it. No call names a workspace.
+//! - Authenticated calls send `Authorization: Bearer {cmk_…}`. Managed data
+//!   routes also carry the negotiated sync protocol and policy revision; the
+//!   key still supplies the workspace, so no call names one.
 //! - Sync routes wrap payloads in `{ok,data,meta}` (Worker status + engine forward).
 
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use reqwest::blocking::Client;
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
+use crate::domains::sync::client_protocol::{
+    PROTOCOL_HEADER, REVISION_HEADER, SYNC_PROTOCOL, validate_response,
+};
 use crate::domains::sync::exchange::{
     ChangesResponse, ImportRequest, ImportResponse, ManifestResponse,
 };
@@ -90,7 +94,7 @@ pub(crate) fn http_client() -> Result<Client> {
 }
 
 /// Build a blocking client with an explicit timeout.
-fn http_client_with(timeout: Duration) -> Result<Client> {
+pub(crate) fn http_client_with(timeout: Duration) -> Result<Client> {
     Client::builder()
         .timeout(timeout)
         .build()
@@ -138,6 +142,7 @@ pub fn pull_changes(
     org_key: &str,
     since: i64,
     limit: usize,
+    revision: i64,
 ) -> Result<ChangesResponse> {
     let base = normalize_api_url(api_url);
     let url = format!("{base}/v1/sync/changes");
@@ -145,15 +150,21 @@ pub fn pull_changes(
     let resp = client
         .get(&url)
         .query(&[("since", since.to_string()), ("limit", limit.to_string())])
-        .headers(auth_headers(org_key)?)
+        .headers(managed_headers(org_key, revision)?)
         .send()
         .map_err(map_reqwest)?;
-    parse_envelope(resp, "pull changes")
+    parse_managed_envelope(resp, "pull changes", revision)
 }
 
 /// Push a batch of local changes to the platform.
-pub fn push_import(api_url: &str, org_key: &str, body: &ImportRequest) -> Result<ImportResponse> {
-    push_import_with(api_url, org_key, body, HTTP_TIMEOUT)
+pub fn push_import(
+    api_url: &str,
+    org_key: &str,
+    revision: i64,
+    body: &ImportRequest,
+    repositories: &BTreeMap<String, String>,
+) -> Result<ImportResponse> {
+    push_import_with(api_url, org_key, revision, body, repositories, HTTP_TIMEOUT)
 }
 
 /// Push one import batch under an explicit timeout.
@@ -168,7 +179,9 @@ pub fn push_import(api_url: &str, org_key: &str, body: &ImportRequest) -> Result
 pub fn push_import_with(
     api_url: &str,
     org_key: &str,
+    revision: i64,
     body: &ImportRequest,
+    repositories: &BTreeMap<String, String>,
     timeout: Duration,
 ) -> Result<ImportResponse> {
     let base = normalize_api_url(api_url);
@@ -176,11 +189,15 @@ pub fn push_import_with(
     let client = http_client_with(timeout)?;
     let resp = client
         .post(&url)
-        .headers(auth_headers(org_key)?)
-        .json(body)
+        .headers(managed_headers(org_key, revision)?)
+        .json(&ManagedImportRequest {
+            cursor: body.cursor,
+            entries: &body.entries,
+            repositories,
+        })
         .send()
         .map_err(map_reqwest)?;
-    parse_envelope(resp, "push import")
+    parse_managed_envelope(resp, "push import", revision)
 }
 
 /// Mint a workspace-channel ticket (`POST /v1/ws/ticket`).
@@ -243,16 +260,23 @@ fn urlencoding_lite(value: &str) -> String {
 }
 
 /// Fetch the remote content-hash manifest for verify/repair.
-pub fn fetch_manifest(api_url: &str, org_key: &str) -> Result<ManifestResponse> {
+pub fn fetch_manifest(api_url: &str, org_key: &str, revision: i64) -> Result<ManifestResponse> {
     let base = normalize_api_url(api_url);
     let url = format!("{base}/v1/sync/manifest");
     let client = http_client()?;
     let resp = client
         .get(&url)
-        .headers(auth_headers(org_key)?)
+        .headers(managed_headers(org_key, revision)?)
         .send()
         .map_err(map_reqwest)?;
-    parse_envelope(resp, "fetch manifest")
+    parse_managed_envelope(resp, "fetch manifest", revision)
+}
+
+#[derive(Serialize)]
+struct ManagedImportRequest<'a> {
+    cursor: i64,
+    entries: &'a [crate::domains::sync::exchange::ImportEntry],
+    repositories: &'a BTreeMap<String, String>,
 }
 
 fn bearer_value(token: &str) -> Result<HeaderValue> {
@@ -266,6 +290,18 @@ fn bearer_value(token: &str) -> Result<HeaderValue> {
 pub(crate) fn auth_headers(org_key: &str) -> Result<HeaderMap> {
     let mut headers = HeaderMap::new();
     headers.insert(AUTHORIZATION, bearer_value(org_key)?);
+    Ok(headers)
+}
+
+/// Authorization plus the repository-policy protocol snapshot.
+pub(crate) fn managed_headers(org_key: &str, revision: i64) -> Result<HeaderMap> {
+    let mut headers = auth_headers(org_key)?;
+    headers.insert(PROTOCOL_HEADER, HeaderValue::from_static(SYNC_PROTOCOL));
+    headers.insert(
+        REVISION_HEADER,
+        HeaderValue::from_str(&revision.to_string())
+            .map_err(|e| Error::Other(format!("policy revision header: {e}")))?,
+    );
     Ok(headers)
 }
 
@@ -304,6 +340,15 @@ pub(crate) fn parse_envelope<T: for<'de> Deserialize<'de>>(
     }
     env.data
         .ok_or_else(|| Error::Other(format!("{ctx}: envelope missing data; body: {text}")))
+}
+
+fn parse_managed_envelope<T: for<'de> Deserialize<'de>>(
+    response: reqwest::blocking::Response,
+    context: &str,
+    revision: i64,
+) -> Result<T> {
+    validate_response(&response, revision, context)?;
+    parse_envelope(response, context)
 }
 
 #[cfg(test)]
