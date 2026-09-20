@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.41.0] - 2026-09-20
+
+### Added
+
+- model a repo's components as drawable, synced JSON ([#238](https://github.com/Falconiere/comemory/pull/238))
+
 ## [0.40.0] - 2026-09-20
 
 ### Added
