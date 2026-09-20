@@ -17,6 +17,8 @@ use crate::prelude::*;
 
 const BLOCK_START: &str = "# >>> comemory completions >>>";
 const BLOCK_END: &str = "# <<< comemory completions <<<";
+const POSIX_APOSTROPHE_ESCAPE: &str = "'\\''";
+const POWERSHELL_APOSTROPHE_ESCAPE: &str = "''";
 
 /// One completion script installed for a shell.
 #[derive(Debug, Serialize)]
@@ -102,14 +104,17 @@ fn register_profiles(
     zsh: &Path,
     powershell: &Path,
 ) -> Result<Vec<PathBuf>> {
-    let bash_body = format!("[ -r {0} ] && . {0}", shell_quote(bash));
+    let bash_body = format!(
+        "[ -r {0} ] && . {0}",
+        quote_path(bash, POSIX_APOSTROPHE_ESCAPE)
+    );
     let bashrc = roots.home.join(".bashrc");
     upsert_block(&bashrc, &bash_body)?;
     let (bash_login, created) = bash_login_profile(&roots.home);
     let bash_login_body = if created {
         format!(
             "[ -r {0} ] && . {0}\n{bash_body}",
-            shell_quote(&roots.home.join(".profile"))
+            quote_path(&roots.home.join(".profile"), POSIX_APOSTROPHE_ESCAPE)
         )
     } else {
         bash_body
@@ -118,13 +123,16 @@ fn register_profiles(
 
     let zsh_body = format!(
         "fpath=({} $fpath)\nif (( ! $+functions[compdef] )); then\n  autoload -Uz compinit\n  compinit\nfi\n[ -r {1} ] && . {1}",
-        shell_quote(zsh.parent().unwrap_or(Path::new("."))),
-        shell_quote(zsh)
+        quote_path(
+            zsh.parent().unwrap_or(Path::new(".")),
+            POSIX_APOSTROPHE_ESCAPE
+        ),
+        quote_path(zsh, POSIX_APOSTROPHE_ESCAPE)
     );
     let zshrc = roots.zdot.join(".zshrc");
     upsert_block(&zshrc, &zsh_body)?;
 
-    let ps_body = format!(". {}", powershell_quote(powershell));
+    let ps_body = format!(". {}", quote_path(powershell, POWERSHELL_APOSTROPHE_ESCAPE));
     let ps_profile = powershell_profile(roots);
     upsert_block(&ps_profile, &ps_body)?;
     Ok(vec![bashrc, bash_login, zshrc, ps_profile])
@@ -140,14 +148,15 @@ fn bash_login_profile(home: &Path) -> (PathBuf, bool) {
     (home.join(".bash_profile"), true)
 }
 
-#[cfg(not(windows))]
 fn powershell_profile(roots: &Roots) -> PathBuf {
-    roots.config.join("powershell/profile.ps1")
-}
-
-#[cfg(windows)]
-fn powershell_profile(roots: &Roots) -> PathBuf {
-    roots.home.join("Documents/PowerShell/Profile.ps1")
+    #[cfg(windows)]
+    {
+        roots.home.join("Documents/PowerShell/Profile.ps1")
+    }
+    #[cfg(not(windows))]
+    {
+        roots.config.join("powershell/profile.ps1")
+    }
 }
 
 fn upsert_block(path: &Path, body: &str) -> Result<()> {
@@ -301,12 +310,7 @@ fn write_temp(
     )))
 }
 
-fn shell_quote(path: &Path) -> String {
-    let value = path.to_string_lossy().replace('\'', "'\\''");
-    format!("'{value}'")
-}
-
-fn powershell_quote(path: &Path) -> String {
-    let value = path.to_string_lossy().replace('\'', "''");
+fn quote_path(path: &Path, apostrophe_escape: &str) -> String {
+    let value = path.to_string_lossy().replace('\'', apostrophe_escape);
     format!("'{value}'")
 }
