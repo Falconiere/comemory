@@ -16,26 +16,27 @@ use std::time::Instant;
 
 use axum::Router;
 use axum::extract::{Json, Path, Query, State};
+use axum::http::HeaderMap;
 use axum::response::Response;
 use axum::routing::{get, post};
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer};
 
 use crate::domains::learning;
 use crate::domains::memories::Kind;
 use crate::domains::retrieval;
-use crate::domains::retrieval::explain::{self, ExplainPart};
-use crate::domains::retrieval::unified::fuse_domains::UnifiedHit;
 use crate::prelude::*;
 use crate::serve::AppState;
+use crate::serve::routes::search_body::body;
 use crate::serve::routes::{RouteEntry, guard_mutating, respond, track_for};
 use crate::serve::scope::RepoScope;
+use crate::utilities::activity::Origin;
 use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
 
 /// How many lexical ladder tiers the memory router has (strict, word-OR,
 /// subtoken-OR, learned expansion) — echoed so a console can render
 /// `tier / tier_count` without hardcoding the ladder's depth.
-const TIER_COUNT: u8 = 4;
+pub(super) const TIER_COUNT: u8 = 4;
 
 /// This resource's route-table entries, appended onto [`super::table`].
 pub fn table_entries() -> &'static [RouteEntry] {
@@ -143,58 +144,33 @@ fn kinds_field<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<Vec<Strin
     })
 }
 
-/// One hit as the console reads it: the unified hit's fields plus `type`
-/// (an alias of `domain`, which is what the draft spec's clients key on)
-/// and the derived explain strip.
-#[derive(Serialize)]
-struct ConsoleHit {
-    /// Memory id, `code_symbols` id, or document id.
-    id: String,
-    /// Domain label under the draft spec's field name.
-    #[serde(rename = "type")]
-    hit_type: String,
-    /// Domain label under the pipeline's own field name.
-    domain: String,
-    /// Human-readable headline.
-    title: String,
-    /// The dim second line.
-    subtitle: String,
-    /// Owning repo, where the domain has one.
-    repo: Option<String>,
-    /// File path, where the domain has one.
-    path: Option<String>,
-    /// Fused score.
-    score: f64,
-    /// 1-based position within this hit's own domain.
-    rank_in_domain: usize,
-    /// The derived explain strip; omitted entirely when `explain: false`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    score_parts: Option<Vec<ExplainPart>>,
-}
-
 /// `GET /api/v1/search` — query-string form, no vector.
 async fn search_get(
     State(state): State<AppState>,
     scope: RepoScope,
+    headers: HeaderMap,
     Query(mut req): Query<ConsoleSearch>,
 ) -> Response {
     req.repo = scope.resolve(req.repo);
-    execute(state, req).await
+    let origin = state.http_origin(&headers);
+    execute(state, req, origin).await
 }
 
 /// `POST /api/v1/search` — body form, vector-capable.
 async fn search_post(
     State(state): State<AppState>,
     scope: RepoScope,
+    headers: HeaderMap,
     Json(mut req): Json<ConsoleSearch>,
 ) -> Response {
     req.repo = scope.resolve(req.repo);
-    execute(state, req).await
+    let origin = state.http_origin(&headers);
+    execute(state, req, origin).await
 }
 
 /// Shared handler body: adapt, run, reshape. Access tracking is suppressed
 /// on a read-only server exactly as it is for `find`.
-async fn execute(state: AppState, req: ConsoleSearch) -> Response {
+async fn execute(state: AppState, req: ConsoleSearch, origin: Origin) -> Response {
     let started = Instant::now();
     let result = run_blocking(move || {
         let explain_hits = req.explain;
@@ -202,7 +178,7 @@ async fn execute(state: AppState, req: ConsoleSearch) -> Response {
         let track = track_for(&state)?;
         let cfg = state.cfg();
         let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
+        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn).with_origin(origin);
         let run_started = Instant::now();
         let out = retrieval::find::run(&mut ctx, find, track)?;
         let took_ms = u64::try_from(run_started.elapsed().as_millis()).unwrap_or(u64::MAX);
@@ -210,51 +186,6 @@ async fn execute(state: AppState, req: ConsoleSearch) -> Response {
     })
     .await;
     respond("search.console", result, started)
-}
-
-/// Shape one finished run into the console's response `data`.
-fn body(
-    out: &retrieval::find::FindResult,
-    explain_hits: bool,
-    took_ms: u64,
-    rrf_k: f32,
-) -> serde_json::Value {
-    let hits: Vec<ConsoleHit> = out
-        .hits
-        .iter()
-        .map(|h| console_hit(h, explain_hits))
-        .collect();
-    serde_json::json!({
-        "query_id": out.query_id,
-        "took_ms": took_ms,
-        "fusion": { "method": "rrf", "k": f64::from(rrf_k) },
-        // The DEEPEST ladder tier any memory hit needed. A code or document
-        // hit carries no tier (it never ran the memory ladder), so this is
-        // `null` on a code-only page rather than a misleading `1`.
-        "tier": out.hits.iter().filter_map(|h| h.tier).max(),
-        "tier_count": TIER_COUNT,
-        "hits": hits,
-        "limit": out.meta.limit,
-        "offset": out.meta.offset,
-        "has_more": out.meta.has_more,
-        "total": out.meta.total,
-    })
-}
-
-/// Project one [`UnifiedHit`], deriving its explain strip when asked.
-fn console_hit(h: &UnifiedHit, explain_hits: bool) -> ConsoleHit {
-    ConsoleHit {
-        id: h.id.clone(),
-        hit_type: h.domain.clone(),
-        domain: h.domain.clone(),
-        title: h.title.clone(),
-        subtitle: h.subtitle.clone(),
-        repo: h.repo.clone(),
-        path: h.path.clone(),
-        score: h.score,
-        rank_in_domain: h.rank_in_domain,
-        score_parts: explain_hits.then(|| explain::parts_of(&h.score_parts)),
-    }
 }
 
 /// Adapt the console's request onto the pipeline's. The time-scoping,
@@ -349,9 +280,11 @@ struct HitFeedback {
 async fn feedback(
     State(state): State<AppState>,
     Path(query_id): Path<String>,
+    headers: HeaderMap,
     Json(req): Json<HitFeedback>,
 ) -> Response {
     let started = Instant::now();
+    let origin = state.http_origin(&headers);
     let permit = match guard_mutating("search.feedback", &state) {
         Ok(permit) => permit,
         Err(resp) => return *resp,
@@ -361,7 +294,7 @@ async fn feedback(
         let request = into_feedback(query_id, req)?;
         let cfg = state.cfg();
         let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
+        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn).with_origin(origin);
         learning::feedback::run(&mut ctx, request)
     })
     .await;

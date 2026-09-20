@@ -13,6 +13,8 @@
 //! the migration chain belong to [`crate::store`], which this capability
 //! composes, as the dashboards compose the cores that own each fact.
 
+/// The activity feed's read side: one filtered page plus its rollups.
+pub mod activity;
 /// `comemory consolidate`: the advisory near-duplicate cluster core.
 pub mod consolidate;
 /// Union-find clustering of live fingerprints and keeper ordering.

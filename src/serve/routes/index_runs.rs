@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use axum::extract::{Query, State};
+use axum::http::HeaderMap;
 use axum::response::Response;
 use axum::routing::get;
 use axum::{Json, Router};
@@ -28,6 +29,7 @@ use crate::serve::envelope::Envelope;
 use crate::serve::jobs::{self, JobId};
 use crate::serve::routes::{RouteEntry, accepted, guard_job, respond};
 use crate::serve::scope::RepoScope;
+use crate::utilities::activity::Origin;
 use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
 use crate::utilities::path_containment;
@@ -121,8 +123,13 @@ struct IndexPlan {
 /// then containment of the root to an allowed root (`403`/`400`) — every
 /// one of them BEFORE a job exists, so a refused request never leaves a
 /// job behind.
-async fn start_run(State(state): State<AppState>, Json(req): Json<StartRequest>) -> Response {
+async fn start_run(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<StartRequest>,
+) -> Response {
     let started = Instant::now();
+    let origin = state.http_origin(&headers);
     if let Err(resp) = guard_job(RUN_COMMAND, &state) {
         return *resp;
     }
@@ -135,7 +142,7 @@ async fn start_run(State(state): State<AppState>, Json(req): Json<StartRequest>)
         Ok(plan) => plan,
         Err(e) => return Envelope::err(RUN_COMMAND, &e, 0),
     };
-    let job = spawn_index_job(&state, plan.repo, plan.path, plan.mode);
+    let job = spawn_index_job(&state, plan.repo, plan.path, plan.mode, origin);
     accepted(RUN_COMMAND, job, started)
 }
 
@@ -217,6 +224,7 @@ pub(crate) fn spawn_index_job(
     repo: String,
     path: String,
     mode: IndexMode,
+    origin: Origin,
 ) -> Result<JobId> {
     let label = repo.clone();
     let job_state = state.clone();
@@ -228,7 +236,7 @@ pub(crate) fn spawn_index_job(
         true,
         move |job_id| {
             let cfg = job_state.cfg();
-            let mut ctx = Ctx::lazy(job_state.paths(), &cfg);
+            let mut ctx = Ctx::lazy(job_state.paths(), &cfg).with_origin(origin);
             let sink = jobs::worker::RegistryProgressSink::new(job_state.jobs().clone(), job_id);
             let resp = crate::domains::code::index_code::run_with_progress(
                 &mut ctx,

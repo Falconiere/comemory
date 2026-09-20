@@ -38,6 +38,7 @@ One row per file, named after its primary item. Command cores take a plain
 
 | File | Primary item | Purpose |
 | --- | --- | --- |
+| `activity.rs` | `Request`, `Response`, `Item`, `run`, `MAX_LIMIT` | `GET /api/v1/activity` — one filtered, newest-first page of recorded command runs plus its per-command rollups and the stream cursor. Keeps the must-not-create-the-db invariant: no database, no read, none created |
 | `consolidate.rs` | `run` | `comemory consolidate` / `GET /api/v1/consolidate` — the advisory near-duplicate cluster core: scan, cluster, page. Read-only end to end |
 | `consolidation.rs` + [`consolidation/`](consolidation/README.md) | `detect` | The near-duplicate algorithm: union-find grouping of live SimHashes within a Hamming radius, keeper ordering, in-cluster supersede resolution |
 | `consolidation_report.rs` | `Report` | The owned value `consolidate::run` returns for both delivery surfaces |

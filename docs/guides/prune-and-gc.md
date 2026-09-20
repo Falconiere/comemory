@@ -192,7 +192,9 @@ exception: it emits nothing on success by contract, so a failed refresh
 there is logged rather than reported.
 
 The telemetry window is `COMEMORY_LEARNING_RETENTION_DAYS` (default `90`). It
-applies to **raw** rows only — `retrieval_log` and `feedback_events`:
+applies to **raw** rows only — `retrieval_log`, `feedback_events` and
+`activity_log` (the recorded command runs behind `GET /api/v1/activity`;
+the count evicted is reported as `activity_rows`):
 
 ```bash
 # tighten the telemetry window to a week

@@ -7,6 +7,7 @@
 use std::time::Instant;
 
 use axum::extract::{Path, Query, State};
+use axum::http::HeaderMap;
 use axum::response::Response;
 use axum::routing::{delete, post};
 use axum::{Json, Router};
@@ -53,9 +54,11 @@ pub fn router(_state: AppState) -> Router<AppState> {
 /// `POST /api/v1/memories` — save a memory (`domains::memories::save`).
 async fn save(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(req): Json<crate::domains::memories::save::Request>,
 ) -> Response {
     let started = Instant::now();
+    let origin = state.http_origin(&headers);
     let permit = match guard_mutating("save", &state) {
         Ok(permit) => permit,
         Err(resp) => return *resp,
@@ -64,7 +67,7 @@ async fn save(
         let _permit = permit;
         let cfg = state.cfg();
         let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
+        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn).with_origin(origin);
         // No CLI stdin-vs-flag ambiguity over HTTP: `req.vector` is already
         // a parsed vector off the JSON body (see `domains::memories::save::run`'s doc).
         crate::domains::memories::save::run(&mut ctx, req, false, None)
@@ -89,8 +92,10 @@ async fn delete_memory(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Query(query): Query<ConfirmQuery>,
+    headers: HeaderMap,
 ) -> Response {
     let started = Instant::now();
+    let origin = state.http_origin(&headers);
     let permit = match guard_mutating("delete", &state) {
         Ok(permit) => permit,
         Err(resp) => return *resp,
@@ -100,7 +105,7 @@ async fn delete_memory(
         require_confirm(query.confirm)?;
         let cfg = state.cfg();
         let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
+        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn).with_origin(origin);
         crate::domains::memories::delete::run(&mut ctx, &id)
     })
     .await;
@@ -110,9 +115,11 @@ async fn delete_memory(
 /// `POST /api/v1/feedback` — record feedback (`domains::learning::feedback`).
 async fn feedback(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(req): Json<learning::feedback::Request>,
 ) -> Response {
     let started = Instant::now();
+    let origin = state.http_origin(&headers);
     let permit = match guard_mutating("feedback", &state) {
         Ok(permit) => permit,
         Err(resp) => return *resp,
@@ -121,7 +128,7 @@ async fn feedback(
         let _permit = permit;
         let cfg = state.cfg();
         let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
+        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn).with_origin(origin);
         learning::feedback::run(&mut ctx, req)
     })
     .await;

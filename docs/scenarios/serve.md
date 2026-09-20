@@ -51,3 +51,15 @@ _None._
   missing v7 root; `--allow-path` is the extra containment root for
   path-taking jobs; unset embed-cmd → 503 on reembed.
 - **Covered by:** `tests/cli__serve.rs`, `tests/serve__routes__*`
+
+### serve-04 Activity feed and its stream
+
+- **Flags:** *(none — the feed has no CLI subcommand)*
+- **Setup:** a save and a search against the server's data dir
+- **Command:** `GET /api/v1/activity`, `GET /api/v1/activity/events`
+- **Expect:** the snapshot pages the recorded runs newest-first with their
+  per-command rollups and a `cursor`; the SSE route emits one `activity`
+  event per row written afterwards, including by a separate process, and
+  resumes above `Last-Event-ID` on reconnect. A `--read-only` server serves
+  both and records nothing of its own.
+- **Covered by:** `tests/serve__routes__activity.rs`, `tests/serve__activity_stream.rs`

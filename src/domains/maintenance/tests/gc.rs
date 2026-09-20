@@ -410,3 +410,52 @@ fn run_leaves_live_memories_and_fresh_trash_entries_alone() {
     );
     assert_eq!(trash_ids(&paths, &cfg, &mut conn), vec![fresh]);
 }
+
+#[test]
+fn gc_evicts_activity_rows_past_the_window_and_reports_the_count() {
+    use comemory::store::activity::{ActivityFilter, NewActivityRow, insert, list};
+
+    let home = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(home.path()).expect("create data dir");
+    let mut conn = comemory::store::connection::open(db_path(&home)).expect("open + migrate db");
+    let now = OffsetDateTime::now_utc();
+    let old = comemory::store::memory_row::iso_format(now - Duration::days(100)).expect("old");
+    let fresh = comemory::store::memory_row::iso_format(now - Duration::days(1)).expect("fresh");
+    for at in [&old, &fresh] {
+        insert(
+            &conn,
+            &NewActivityRow {
+                at,
+                command: "save",
+                source: "cli",
+                actor: None,
+                repo: Some("demo"),
+                duration_ms: 3,
+                ok: true,
+                error_code: None,
+                summary: None,
+            },
+        )
+        .expect("insert activity row");
+    }
+
+    let paths = Paths::new(home.path());
+    let cfg = Config::defaults();
+    let out = {
+        let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+        maintenance::gc::run(&mut ctx, maintenance::gc::Request {}).expect("gc run")
+    };
+
+    assert_eq!(
+        out.activity_rows, 1,
+        "the row past prune.learning_retention_days is evicted, the fresh one kept"
+    );
+    let (rows, total) = list(&conn, &ActivityFilter::default(), 0, 0).expect("list activity");
+    assert_eq!(total, 1);
+    assert_eq!(rows[0].at, fresh);
+
+    let recorded: i64 = conn
+        .query_row("SELECT activity_rows FROM gc_runs", [], |r| r.get(0))
+        .expect("the sweep recorded its own count");
+    assert_eq!(recorded, 1);
+}

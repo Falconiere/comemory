@@ -94,28 +94,6 @@ pub struct Response {
 /// with no progress reporting. See [`run_with_progress`] for the
 /// progress-reporting form the job worker uses.
 pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
-    let started = Instant::now();
-    let repo = req.repo.clone();
-    let result = index(ctx, req);
-    let summary = result.as_ref().map(|r| {
-        serde_json::json!({
-            "repo": r.repo,
-            "files": r.files_indexed,
-            "mode": r.mode.as_str(),
-        })
-    });
-    let outcome = match &summary {
-        Ok(value) => Outcome::Ok(value),
-        Err(e) => Outcome::Failed(e),
-    };
-    let repo = (!repo.is_empty()).then_some(repo.as_str());
-    activity::record_in(ctx, command::INDEX_CODE, started, &outcome, repo);
-    result
-}
-
-/// The index run itself, wrapped by [`run`] so the activity row is written
-/// once, outside the work it describes.
-fn index(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
     run_with_progress(ctx, req, None)
 }
 
@@ -131,9 +109,32 @@ fn index(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
 /// recording is best-effort and never turns an indexed repo into a failure.
 pub fn run_with_progress(
     ctx: &mut Ctx<'_>,
-    mut req: Request,
+    req: Request,
     sink: Option<&dyn ProgressSink>,
 ) -> Result<Response> {
+    let activity_started = Instant::now();
+    let repo = req.repo.clone();
+    let result = index(ctx, req, sink);
+    let summary = result.as_ref().map(|r| {
+        serde_json::json!({
+            "repo": r.repo,
+            "files": r.files_indexed,
+            "mode": r.mode.as_str(),
+        })
+    });
+    let outcome = match &summary {
+        Ok(value) => Outcome::Ok(value),
+        Err(e) => Outcome::Failed(e),
+    };
+    let repo = (!repo.is_empty()).then_some(repo.as_str());
+    activity::record_in(ctx, command::INDEX_CODE, activity_started, &outcome, repo);
+    result
+}
+
+/// The walk itself, wrapped by [`run_with_progress`] so the activity row is
+/// written once whichever entry point was used — the CLI's [`run`] and the
+/// server's job both land here.
+fn index(ctx: &mut Ctx<'_>, mut req: Request, sink: Option<&dyn ProgressSink>) -> Result<Response> {
     let started = Instant::now();
     let started_at = memory_row::iso_format(OffsetDateTime::now_utc())?;
     let root = PathBuf::from(&req.path);

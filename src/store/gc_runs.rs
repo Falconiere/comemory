@@ -12,37 +12,47 @@ use super::{
 };
 use crate::prelude::*;
 
-/// Insert one `gc_runs` row for a completed sweep. `id` is caller-generated
-/// (16 lowercase-hex chars via [`crate::store::random_id::random_hex`]) so
-/// the write is a single `INSERT` with no read-modify-write race; `at` is a
-/// pre-rendered ISO-8601 timestamp (`store::memory_row::iso_format`).
-pub fn insert(
-    conn: &Connection,
-    id: &str,
-    at: &str,
-    removed: u64,
-    log_rows: u64,
-    event_rows: u64,
-    bytes_freed: u64,
-) -> Result<()> {
+/// Insert parameters for one completed sweep, bundled into a struct rather
+/// than eight positional arguments (`clippy::too_many_arguments`), the same
+/// shape [`super::index_runs::NewIndexRun`] uses.
+pub struct NewGcRun<'a> {
+    /// 16-hex run id (`store::random_id::random_hex`).
+    pub id: &'a str,
+    /// Pre-rendered ISO-8601 UTC timestamp (`store::memory_row::iso_format`).
+    pub at: &'a str,
+    /// Trashed memory files hard-deleted.
+    pub removed: u64,
+    /// `retrieval_log` rows evicted.
+    pub log_rows: u64,
+    /// `feedback_events` rows evicted.
+    pub event_rows: u64,
+    /// Bytes reclaimed from the trash sweep.
+    pub bytes_freed: u64,
+    /// `activity_log` rows evicted.
+    pub activity_rows: u64,
+}
+
+/// Insert one `gc_runs` row for a completed sweep. A single `INSERT` with no
+/// read-modify-write race: every field is caller-computed.
+pub fn insert(conn: &Connection, run: &NewGcRun<'_>) -> Result<()> {
     orm::execute(
         conn,
         GcRuns::insert()
-            .set(&col::id, id)
-            .set(&col::at, at)
-            .set(&col::removed, i64::try_from(removed).unwrap_or(i64::MAX))
-            .set(&col::log_rows, i64::try_from(log_rows).unwrap_or(i64::MAX))
-            .set(
-                &col::event_rows,
-                i64::try_from(event_rows).unwrap_or(i64::MAX),
-            )
-            .set(
-                &col::bytes_freed,
-                i64::try_from(bytes_freed).unwrap_or(i64::MAX),
-            )
+            .set(&col::id, run.id)
+            .set(&col::at, run.at)
+            .set(&col::removed, clamp(run.removed))
+            .set(&col::log_rows, clamp(run.log_rows))
+            .set(&col::event_rows, clamp(run.event_rows))
+            .set(&col::bytes_freed, clamp(run.bytes_freed))
+            .set(&col::activity_rows, clamp(run.activity_rows))
             .to_sql(),
     )?;
     Ok(())
+}
+
+/// Saturate a `u64` count into SQLite's `i64` column type.
+fn clamp(v: u64) -> i64 {
+    i64::try_from(v).unwrap_or(i64::MAX)
 }
 
 /// One `gc_runs` row, as the console reads it back. Counters are stored as

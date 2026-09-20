@@ -18,6 +18,7 @@ use crate::config::Config;
 use crate::config::paths::Paths;
 use crate::prelude::*;
 use crate::store::{Connection, connection, repo_marker_roots};
+use crate::utilities::activity::Origin;
 
 pub mod envelope;
 pub mod jobs;
@@ -186,6 +187,25 @@ impl AppState {
     }
 
     /// Whether writes are disabled for this session.
+    /// The activity [`Origin`] for one request: `source = "http"`, the
+    /// caller's `User-Agent` as its `actor`, and recording off entirely on a
+    /// `--read-only` server — which writes nothing to the store, telemetry
+    /// included.
+    ///
+    /// Handlers whose core is instrumented pass the result into their
+    /// `Ctx`; every other handler leaves the default alone.
+    pub(crate) fn http_origin(&self, headers: &axum::http::HeaderMap) -> Origin {
+        let user_agent = headers
+            .get(axum::http::header::USER_AGENT)
+            .and_then(|v| v.to_str().ok());
+        let origin = Origin::http(&self.cfg(), user_agent);
+        if self.read_only() {
+            origin.read_only()
+        } else {
+            origin
+        }
+    }
+
     pub(crate) fn read_only(&self) -> bool {
         self.read_only
     }

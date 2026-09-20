@@ -12,6 +12,7 @@ use std::time::Instant;
 
 use axum::Router;
 use axum::extract::{Json, Query, State};
+use axum::http::HeaderMap;
 use axum::response::Response;
 use axum::routing::get;
 
@@ -19,6 +20,7 @@ use crate::domains::retrieval;
 use crate::serve::AppState;
 use crate::serve::routes::{RouteEntry, respond, track_for};
 use crate::serve::scope::RepoScope;
+use crate::utilities::activity::Origin;
 use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
 
@@ -49,32 +51,36 @@ pub fn router(_state: AppState) -> Router<AppState> {
 /// header is the default `repo` filter when the query omits one.
 async fn find_get(
     State(state): State<AppState>,
+    headers: HeaderMap,
     scope: RepoScope,
     Query(mut req): Query<retrieval::find::Request>,
 ) -> Response {
     req.repo = scope.resolve(req.repo);
-    execute(state, req).await
+    let origin = state.http_origin(&headers);
+    execute(state, req, origin).await
 }
 
 /// `POST /api/v1/find` — body form, vector-capable.
 async fn find_post(
     State(state): State<AppState>,
     scope: RepoScope,
+    headers: HeaderMap,
     Json(mut req): Json<retrieval::find::Request>,
 ) -> Response {
     req.repo = scope.resolve(req.repo);
-    execute(state, req).await
+    let origin = state.http_origin(&headers);
+    execute(state, req, origin).await
 }
 
 /// Shared handler body. Access tracking is suppressed on a read-only
 /// server exactly as it is for `search` / `search-code` / `context`.
-async fn execute(state: AppState, req: retrieval::find::Request) -> Response {
+async fn execute(state: AppState, req: retrieval::find::Request, origin: Origin) -> Response {
     let started = Instant::now();
     let result = run_blocking(move || {
         let track = track_for(&state)?;
         let cfg = state.cfg();
         let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
+        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn).with_origin(origin);
         let out = retrieval::find::run(&mut ctx, req, track)?;
         Ok(serde_json::json!({
             "hits": out.hits,

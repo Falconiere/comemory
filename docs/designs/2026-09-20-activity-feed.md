@@ -288,9 +288,12 @@ when unset). Config section lives in `src/config/activity.rs`, following
   deadline — an `activity` event whose `id` is `> n` and whose payload is
   byte-equal to the item `GET /api/v1/activity?limit=1` returns for the row a
   *separate* `comemory save` process wrote after the connection opened.
-- **AC-5:** `GET /api/v1/activity` against a data dir with no `comemory.db`
-  returns `200` with `items: []`, `total: 0`, `rollups: []`, and the data dir
-  still contains no `comemory.db` afterwards.
+- **AC-5:** `maintenance::activity::run` against a data dir with no
+  `comemory.db` returns an empty page (`items: []`, `total: 0`, `rollups: []`,
+  `cursor: 0`) and the data dir still contains no `comemory.db` afterwards. A
+  fresh server's `GET /api/v1/activity` answers the same empty page (the
+  server itself opens the database at startup, so the no-database half of the
+  invariant is a core-level claim).
 - **AC-6:** On a server started `--read-only`, an HTTP `search` returns `200`
   with its normal results and the `activity_log` row count is unchanged.
 - **AC-7:** `GET /api/v1/activity?command=save&since=<ts>&limit=2` returns only
@@ -304,9 +307,11 @@ when unset). Config section lives in `src/config/activity.rs`, following
 - **AC-10:** With `activity.summaries = false` in `config.toml`, a `find`
   writes a row whose `summary` is NULL, and the query text appears in no
   `activity_log` column.
-- **AC-11:** `GET /api/v1/commands` lists `activity` and `activity.events`,
-  both with `mutating: false`, and `tests/api__parity.rs`' route-table check
-  plus the `docs/guides/http-api.md` route map agree with it.
+- **AC-11:** The `/api/v1` route table carries `activity` and
+  `activity.events`, both with `mutating: false`, and the
+  `docs/guides/http-api.md` route map lists them. (`GET /api/v1/commands` maps
+  CLI subcommands onto routes; the feed has no CLI counterpart — Non-Goal 1 —
+  so it is absent there by design, like `overview` and `health`.)
 - **AC-12:** A `save` refused for a missing repo scope writes a row with
   `ok = 0` and the matching `error_code` slug, and no memory file is created.
 - **AC-13:** `comemory feedback --query-id <id> --memory <id> --verdict used`
@@ -335,7 +340,7 @@ when unset). Config section lives in `src/config/activity.rs`, following
 | AC-8 | Real SQLite db with `DROP TABLE activity_log` executed | `save` exits 0; `show` finds the memory | — | `tests/cli__activity.rs` |
 | AC-9 | Rows inserted with backdated `at` values | Old deleted, new kept, `activity_rows` reported | Retention window shorter than every row → all evicted | `tests/cli__gc.rs` |
 | AC-10 | `activity.summaries = false` in a real `config.toml` | NULL summary; query text absent | — | `tests/cli__activity.rs` |
-| AC-11 | The live route table and the rendered docs route map | Both entries present, `mutating: false` | — | `tests/api__parity.rs` |
+| AC-11 | The live route table and the rendered docs route map | Both entries present, `mutating: false` | — | `tests/serve__routes__activity.rs` |
 | AC-12 | `save` without a resolvable repo scope | Row `ok = 0` with slug; no memory file | — | `tests/cli__activity.rs` |
 | AC-13 | A real tracked query id from a prior `find`, then a real verdict | Row with target, kind, verdict, provenance | Verdict on an untracked id → command errors, row `ok = 0` | `tests/cli__activity.rs` |
 | AC-14 | `comemory index-code` over a real two-file git repo | Row whose `files` equals the distinct indexed paths | A path that is not a git work tree → command errors, and no database is created | `tests/cli__activity.rs` |

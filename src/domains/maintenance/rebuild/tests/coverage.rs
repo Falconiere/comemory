@@ -134,12 +134,12 @@ fn derive_live_tables() -> BTreeSet<String> {
 /// v20's three candidate-observation tables are copied, because a reviewed
 /// judgment and the passage it was made against exist nowhere else.
 #[test]
-fn migration_integrity_derived_live_set_has_exactly_thirty_five_tables() {
+fn migration_integrity_derived_live_set_has_exactly_thirty_six_tables() {
     let live = derive_live_tables();
     assert_eq!(
         live.len(),
-        35,
-        "expected exactly 35 live tables, got {}: {live:?}",
+        36,
+        "expected exactly 36 live tables, got {}: {live:?}",
         live.len()
     );
     // The count alone would still pass if a history table were added to

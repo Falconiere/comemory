@@ -121,6 +121,7 @@ migrations stay idempotent.
 | `edges` | Sparse weighted table replacing the kuzu graph (typed src→dst rows; includes mined `co_changed` + `imports` code-graph edges) |
 | `edge_fts` (FTS5) | Derived triplet index over `edges`: each row rendered as searchable `src —rel→ dst` text with the raw edge carried in UNINDEXED payload columns. Refresh-materialized (§5.3), never written incrementally |
 | `retrieval_log`, `feedback`, `feedback_events`, `code_feedback`, `query_expansions`, `repo_marker` | Learning-loop telemetry (query log + per-query feedback provenance), aggregated memory + code-symbol feedback counters, mined expansions, indexing markers (incl. the v7 `repo_marker.root_path` working-tree root used by `serve` to resolve `file:<repo>:<path>` ids back to disk) |
+| `activity_log` | One row per instrumented command run (`save`, `search`, `find`, `feedback`, `sync.import`, `index-code`, …), whatever surface ran it: command, `source` (`cli`/`http`/`mcp`), the caller's self-declared `actor`, duration, outcome and a bounded JSON summary. Written best-effort at the command core (`utilities::activity::record`) and read by `GET /api/v1/activity` and its SSE twin; aged out by `gc` under `prune.learning_retention_days` |
 
 Every dense lookup goes through `sqlite-vec`'s `vec0` virtual table with a
 dimension guard so a mismatched embedder fails fast (`VecDimMismatch`)

@@ -15,6 +15,7 @@ use crate::domains::sync::exchange::{self, CodeImportRequest, ImportRequest};
 use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::routes::{RouteEntry, guard_mutating, respond};
+use crate::utilities::activity::Origin;
 use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
 
@@ -66,8 +67,11 @@ pub fn router(_state: AppState) -> Router<AppState> {
         .route(
             "/api/v1/sync/changes",
             get(
-                |State(state): State<AppState>, Query(q): Query<ChangesQuery>| {
-                    handle(state, "sync.changes", Gate::Read, move |ctx| {
+                |State(state): State<AppState>,
+                 headers: HeaderMap,
+                 Query(q): Query<ChangesQuery>| {
+                    let origin = state.http_origin(&headers);
+                    handle(state, "sync.changes", Gate::Read, origin, move |ctx| {
                         exchange::changes::run(ctx, q.since, q.limit)
                     })
                 },
@@ -76,8 +80,15 @@ pub fn router(_state: AppState) -> Router<AppState> {
         // `GET /sync/manifest` — 256-bucket content-hash digest.
         .route(
             "/api/v1/sync/manifest",
-            get(|State(state): State<AppState>| {
-                handle(state, "sync.manifest", Gate::Read, exchange::manifest::run)
+            get(|State(state): State<AppState>, headers: HeaderMap| {
+                let origin = state.http_origin(&headers);
+                handle(
+                    state,
+                    "sync.manifest",
+                    Gate::Read,
+                    origin,
+                    exchange::manifest::run,
+                )
             }),
         )
         // `POST /sync/import` — apply a batch of wire entries, stamping the
@@ -89,7 +100,8 @@ pub fn router(_state: AppState) -> Router<AppState> {
                  headers: HeaderMap,
                  Json(req): Json<ImportRequest>| {
                     let author = author_from_headers(&headers);
-                    handle(state, "sync.import", Gate::Write, move |ctx| {
+                    let origin = state.http_origin(&headers);
+                    handle(state, "sync.import", Gate::Write, origin, move |ctx| {
                         exchange::import::run(ctx, req, author.as_deref())
                     })
                 },
@@ -99,10 +111,17 @@ pub fn router(_state: AppState) -> Router<AppState> {
         .route(
             "/api/v1/sync/code/manifest",
             get(
-                |State(state): State<AppState>, Query(q): Query<CodeManifestQuery>| {
-                    handle(state, "sync.code.manifest", Gate::Read, move |ctx| {
-                        exchange::code_manifest::run(ctx, &q.repo)
-                    })
+                |State(state): State<AppState>,
+                 headers: HeaderMap,
+                 Query(q): Query<CodeManifestQuery>| {
+                    let origin = state.http_origin(&headers);
+                    handle(
+                        state,
+                        "sync.code.manifest",
+                        Gate::Read,
+                        origin,
+                        move |ctx| exchange::code_manifest::run(ctx, &q.repo),
+                    )
                 },
             ),
         )
@@ -110,8 +129,11 @@ pub fn router(_state: AppState) -> Router<AppState> {
         .route(
             "/api/v1/sync/code/import",
             post(
-                |State(state): State<AppState>, Json(req): Json<CodeImportRequest>| {
-                    handle(state, "sync.code.import", Gate::Write, move |ctx| {
+                |State(state): State<AppState>,
+                 headers: HeaderMap,
+                 Json(req): Json<CodeImportRequest>| {
+                    let origin = state.http_origin(&headers);
+                    handle(state, "sync.code.import", Gate::Write, origin, move |ctx| {
                         exchange::code_import::run(ctx, req)
                     })
                 },
@@ -148,7 +170,13 @@ enum Gate {
 
 /// One request: gate it, open the shared connection off the runtime, run
 /// `f` over a borrowed [`Ctx`], and envelope the result under `command`.
-async fn handle<T, F>(state: AppState, command: &'static str, gate: Gate, f: F) -> Response
+async fn handle<T, F>(
+    state: AppState,
+    command: &'static str,
+    gate: Gate,
+    origin: Origin,
+    f: F,
+) -> Response
 where
     T: serde::Serialize + Send + 'static,
     F: FnOnce(&mut Ctx<'_>) -> Result<T> + Send + 'static,
@@ -165,7 +193,7 @@ where
         let _permit = permit;
         let cfg = state.cfg();
         let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
+        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn).with_origin(origin);
         f(&mut ctx)
     })
     .await;
