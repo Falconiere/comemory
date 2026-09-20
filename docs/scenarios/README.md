@@ -13,7 +13,8 @@ if a long flag / visible alias / positional is missing from its file, if a
 flag has no scenario section that both names it and cites a test, if a
 backticked `tests/…rs::fn` citation does not resolve, if a command's
 `**HTTP:**` line disagrees with the live `GET /api/v1/commands`, or if a
-journey file is missing from the tables below.
+journey file is missing from the tables below. It also checks that the generated
+CLI reference has exactly one section for every visible top-level clap command.
 
 ## How to read a scenario
 

@@ -15,8 +15,11 @@ Two bundled skills close the learning loop: `agent-memory` (the MCP tools and
 the recall/judge/save loop, with the wrapper as fallback) and
 `memory-bootstrap` (indexes code and docs, then saves the decisions a fresh
 repo cannot derive from itself, triggered by the SessionStart nudge when a
-repo has zero memories). A `SessionEnd` hook (`hooks/session-end.sh`) launches
+repo has zero memories and the integration is enabled). Stop emits a compact,
+advisory repository-window reminder; it never blocks another agent for shared
+activity. A Claude-only `SessionEnd` hook (`hooks/session-end.sh`) launches
 `comemory capture session --from-hook` detached so a session receipt is
-captured without delaying the host's shutdown budget.
+captured without waiting for upload. The shared hook exits silently under Codex;
+Codex transcript capture is not implemented. Both hosts support the MCP tools.
 
 See [installation and migration](../docs/guides/agent-integration.md).

@@ -35,6 +35,7 @@ use crate::prelude::*;
 use crate::store::Connection;
 use crate::store::code_feedback as store_code_feedback;
 use crate::store::code_feedback::SymbolIdentity;
+use crate::store::connection::write_transaction;
 use crate::store::memory_row;
 
 /// Resolve a `code_symbols` rowid to its stable identity, or error loudly
@@ -91,12 +92,27 @@ pub fn record_code_with_provenance(
     irrelevant: &[i64],
     provenance: &str,
 ) -> Result<()> {
+    let tx = write_transaction(db.conn_mut())?;
+    write_code_with_provenance(&tx, query_id, used, irrelevant, provenance)?;
+    tx.commit()?;
+    Ok(())
+}
+
+/// Write code feedback rows through a transaction owned by the caller.
+/// Identity reads and writes therefore share the caller's reserved snapshot.
+/// [`record_code_with_provenance`] retains the standalone public transaction.
+pub(crate) fn write_code_with_provenance(
+    conn: &Connection,
+    query_id: &str,
+    used: &[i64],
+    irrelevant: &[i64],
+    provenance: &str,
+) -> Result<()> {
     let now = memory_row::iso_format(OffsetDateTime::now_utc())?;
-    let tx = db.conn_mut().transaction()?;
     for id in used {
-        let sym = resolve_identity(&tx, *id)?;
+        let sym = resolve_identity(conn, *id)?;
         store_code_feedback::insert_event(
-            &tx,
+            conn,
             query_id,
             *id,
             "used",
@@ -104,12 +120,12 @@ pub fn record_code_with_provenance(
             crate::utilities::telemetry::target::CODE,
             provenance,
         )?;
-        store_code_feedback::upsert_used(&tx, &sym, &now)?;
+        store_code_feedback::upsert_used(conn, &sym, &now)?;
     }
     for id in irrelevant {
-        let sym = resolve_identity(&tx, *id)?;
+        let sym = resolve_identity(conn, *id)?;
         store_code_feedback::insert_event(
-            &tx,
+            conn,
             query_id,
             *id,
             "irrelevant",
@@ -117,9 +133,8 @@ pub fn record_code_with_provenance(
             crate::utilities::telemetry::target::CODE,
             provenance,
         )?;
-        store_code_feedback::upsert_irrelevant(&tx, &sym)?;
+        store_code_feedback::upsert_irrelevant(conn, &sym)?;
     }
-    tx.commit()?;
     Ok(())
 }
 

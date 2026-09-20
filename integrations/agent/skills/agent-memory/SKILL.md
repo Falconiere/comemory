@@ -13,7 +13,8 @@ or by the bare name on any other MCP host:
 - `find` — one ranked list across memory, code and documents. Start here.
 - `search` — memory-only ranked search.
 - `search_code` — lexical code-symbol search.
-- `context` — headline lookup: code symbol + memories matching a key.
+- `context` — full memory bodies plus linked code for a key. Its `k` limits
+  result count, not a token budget.
 - `show` — one memory in full (body, frontmatter, activation, references).
 - `list` — list memories, filterable.
 - `edges` — search the relation graph (supersedes, imports, references).
@@ -24,13 +25,18 @@ or by the bare name on any other MCP host:
 
 The loop:
 
-1. **Recall.** Call `find` (or `search`) before exploring — every call scoped
-   to this repo unless a cross-repo answer is actually needed.
-2. **Judge.** For every hit you act on, call `feedback` with `used` or
-   `irrelevant` ids. Set `confirmed_by_user: true` only when the user
-   themselves stated the verdict — everything else is implicit. Unjudged
-   recalls with nothing saved by the end of a session may block `Stop`; call
-   `recall_status` if you're unsure what's still unjudged.
+1. **Recall.** Call `find` with `k: 3` before exploring — every call scoped to
+   this repo unless a cross-repo answer is actually needed. If a hook already
+   injected memory IDs, do not repeat `find`: call `show` only for the IDs you
+   need to inspect.
+2. **Judge.** For hits from a tracked recall with a `query_id`, call `feedback`
+   with `used` or `irrelevant` ids for those you judged. Untracked hook hints
+   require no feedback. Set `confirmed_by_user: true` only when the user
+   themselves stated the verdict — everything else is implicit. Because
+   `recall_status` is aggregated over a repository and time window, the Stop
+   hook can only give an at-most-once shared-activity advisory; it cannot
+   attribute an unjudged recall to one session. Empty-result queries have no
+   memory IDs to judge and are omitted from that advisory.
 3. **Verify, then save.** Work and verify with real inputs; derive *why*
    from the interaction and observed results, not from the diff alone.
    Compare against recalled memories, then `save` explicit user corrections,
@@ -68,6 +74,10 @@ shared across worktrees. `--repo NAME` overrides it explicitly.
    knowledge. A duplicate warning does not mean the save failed.
 5. When recalled knowledge helped, run `comemory.sh feedback QUERY_ID --used ID`.
    Query IDs come from search output, including `--json`.
+
+Raw wrapper feedback uses the CLI's manual provenance. Prefer MCP `feedback`
+for agent-inferred verdicts so they remain implicit; use the wrapper fallback
+when the verdict is explicitly manual or MCP is unavailable.
 
 `search`, `context`, `list`, and `save` accept `--json`. The wrapper also exposes
 `delete`, `search-code`, `index-code`, `graph`, and local retrieval maintenance.

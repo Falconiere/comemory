@@ -25,9 +25,7 @@ impl ComemoryServer {
     /// Store a memory under the resolved repo scope.
     #[tool(
         name = "save",
-        description = "Store a memory. Returns the new 8-hex id and file path — call \
-it for a verified correction, decision or fix with evidence, passing `supersedes` \
-with the ids of any memory it replaces."
+        description = "Save a verified lesson with evidence. Returns id and path; use supersedes for replaced memories."
     )]
     async fn save(
         &self,
@@ -56,9 +54,7 @@ with the ids of any memory it replaces."
     /// stated the verdict ([`FeedbackParams`]).
     #[tool(
         name = "feedback",
-        description = "Record which recalled ids you actually used. Returns the \
-counts stored against that query_id — call it after every recall you acted on, \
-and set confirmed_by_user only when the user stated the verdict."
+        description = "Judge returned ids for query_id. Use confirmed_by_user only for explicit user verdicts; skip empty recalls."
     )]
     async fn feedback(
         &self,

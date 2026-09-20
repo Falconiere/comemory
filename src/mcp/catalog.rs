@@ -1,7 +1,7 @@
 //! The curated MCP tool table.
 //!
-//! Eleven entries, not the 94-route HTTP table: an agent host budgets every
-//! tool description into every turn. Each row names the clap subcommand whose
+//! Eleven entries keep tool discovery compact alongside the 94-route HTTP
+//! table. Each row names the clap subcommand whose
 //! core the tool runs, which is what `tests/mcp__parity.rs` walks to prove no
 //! tool invents a command or a parameter the CLI does not have.
 //!
@@ -28,89 +28,67 @@ pub const TOOLS: &[ToolEntry] = &[
         name: "find",
         command: "find",
         mutating: false,
-        description: "Recall memories and code for a natural-language question. \
-Returns ranked hits across both corpora plus a query_id — call this first, \
-before exploring a repository, and report the verdict back through `feedback`.",
+        description: "Search memories, code and documents. Returns ranked hits and query_id. Start with k=3; read selected hits, then feedback.",
     },
     ToolEntry {
         name: "search",
         command: "search",
         mutating: false,
-        description: "Search saved memories only. Returns ranked memory hits with \
-their ids, titles and scores plus a query_id; use it when you already know the \
-answer is a recorded decision, convention or bug rather than code.",
+        description: "Search memories only; returns ids, titles, scores and query_id. Use k=3 for focused recall.",
     },
     ToolEntry {
         name: "search_code",
         command: "search-code",
         mutating: false,
-        description: "Search indexed code symbols only. Returns ranked functions, \
-types and methods with their file, line span and repo plus a query_id; use it to \
-locate an implementation before reading files.",
+        description: "Search indexed code; returns symbols, locations and query_id. Use k=3, then read the relevant files.",
     },
     ToolEntry {
         name: "context",
         command: "context",
         mutating: false,
-        description: "Assemble a token-budgeted briefing for a task. Returns the \
-memories and code symbols that fit the budget, already ordered — call it when \
-starting work and you want one payload instead of several searches.",
+        description: "Return full memory bodies and linked code/relations. k limits memory count, not tokens; prefer find then selective show for concise recall.",
     },
     ToolEntry {
         name: "show",
         command: "show",
         mutating: false,
-        description: "Fetch one memory by its 8-hex id. Returns the full body, \
-frontmatter and relations — call it before citing or acting on a hit, since a \
-search result carries only an excerpt.",
+        description: "Read one memory by its 8-hex id: full body, metadata and relations. Read selected hits before relying on them.",
     },
     ToolEntry {
         name: "list",
         command: "list",
         mutating: false,
-        description: "Page through live memories with optional repo, kind, tag and \
-quality filters. Returns a page of rows with ids and titles — use it to browse or \
-audit what is stored, not to answer a question.",
+        description: "Browse a page of live memories; filter by repo, kind, tag or quality.",
     },
     ToolEntry {
         name: "edges",
         command: "edges",
         mutating: false,
-        description: "List the graph edges touching a node. Returns each neighbour \
-with its relation and direction — use it to follow `supersedes`, `references` and \
-co-activation links out from a memory or a file.",
+        description: "Search relation triplets by words in titles, paths or relation names. Returns ranked edges; this is not node-id adjacency lookup.",
     },
     ToolEntry {
         name: "repos",
         command: "repos",
         mutating: false,
-        description: "List the indexed repositories. Returns each repo label with \
-its symbol and memory counts — use it to learn the exact label to pass as `repo` \
-elsewhere.",
+        description: "List indexed repo labels, counts and freshness. Unscoped by default; use these labels in repo parameters.",
     },
     ToolEntry {
         name: "recall_status",
         command: "recall-status",
         mutating: false,
-        description: "Report the recall loop's state for a repo since a timestamp. \
-Returns tracked query counts, verdicts, saves and the pending queries with no \
-verdict yet — call it to find which query_ids still owe a `feedback` call.",
+        description: "Report shared repo activity since a timestamp: queries, verdicts, saves and unjudged queries. Not session-specific; empty recalls need no verdict.",
     },
     ToolEntry {
         name: "save",
         command: "save",
         mutating: true,
-        description: "Store a memory. Returns the new 8-hex id and file path — call \
-it for a verified correction, decision or fix with evidence, passing `supersedes` \
-with the ids of any memory it replaces.",
+        description: "Save a verified lesson with evidence. Returns id and path; use supersedes for replaced memories.",
     },
     ToolEntry {
         name: "feedback",
         command: "feedback",
         mutating: true,
-        description: "Record which recalled ids you actually used. Returns the \
-counts stored against that query_id — call it after every recall you acted on, \
-and set confirmed_by_user only when the user stated the verdict.",
+        description: "Judge returned ids for query_id. Use confirmed_by_user only for explicit user verdicts; skip empty recalls.",
     },
 ];
 

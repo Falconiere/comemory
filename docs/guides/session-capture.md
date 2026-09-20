@@ -40,9 +40,10 @@ Installs a Claude Code `SessionEnd` command that runs
 session end (best-effort).
 
 The bundled agent plugin already ships this as `hooks/session-end.sh`, wired
-into `hooks.json`'s own `SessionEnd` entry, so `comemory install claude` /
-`comemory install codex` cover it automatically — no separate
-`install-hook` run needed for a plugin install. `comemory capture
+into `hooks.json`'s own `SessionEnd` entry. `comemory install claude` covers
+it automatically; the shared hook exits silently under Codex because capture
+and distillation currently parse Claude Code transcripts only. No separate
+`install-hook` run is needed for the Claude plugin. `comemory capture
 install-hook` remains for non-plugin setups that only want the capture hook.
 
 ## Redaction

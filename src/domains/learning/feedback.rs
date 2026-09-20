@@ -6,16 +6,17 @@
 //! both memory and code verdicts under one provenance. Moved out of
 //! `cli::feedback::run` (Binding Rule 1).
 //!
-//! Opens its own `StatsDb` (same file as `Ctx::conn`, via
-//! `record_with_provenance`'s `&mut StatsDb` signature) rather than routing
-//! through `ctx.conn()`, matching what `cli::feedback::run` already did.
+//! Opens its own `StatsDb` (the same file as `Ctx::conn`) and reserves one
+//! immediate transaction for the known-query read plus every memory and code
+//! verdict. A mixed request therefore commits once or rolls back as a unit.
 
 use serde::{Deserialize, Serialize};
 
-use crate::domains::learning::code_feedback::record_code_with_provenance;
-use crate::domains::learning::feedback_tracking::{Source, record_with_provenance};
+use crate::domains::learning::code_feedback::write_code_with_provenance;
+use crate::domains::learning::feedback_tracking::{Source, write_with_provenance};
 use crate::domains::learning::telemetry::StatsDb;
 use crate::prelude::*;
+use crate::store::connection::write_transaction;
 use crate::store::retrieval_log;
 use crate::utilities::context::Ctx;
 use crate::utilities::id_list::{parse_id_csv, parse_symbol_id_csv};
@@ -75,9 +76,9 @@ pub struct Response {
     pub provenance: String,
 }
 
-/// Record feedback for each id provided. See `cli::feedback::run`'s original
-/// doc for the validation and transaction-splitting rationale, preserved
-/// verbatim by this move.
+/// Record feedback for each id provided in one immediate transaction after
+/// validating every field. Memory and code verdicts share the same commit so
+/// a failed code identity cannot leave memory counters or events behind.
 pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
     if !is_valid_query_id(&req.query_id) {
         // `Error::Config` matches `cli::feedback::run`'s original check
@@ -108,25 +109,21 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
         .provenance();
 
     let mut db = StatsDb::open(ctx.paths.stats_db())?;
-    let known = retrieval_log::contains_query_id(db.conn(), &req.query_id)?;
+    let tx = write_transaction(db.conn_mut())?;
+    let known = retrieval_log::contains_query_id(&tx, &req.query_id)?;
     if !known {
         tracing::warn!(query_id = %req.query_id,
             "query id not found in retrieval_log (evicted or never logged); recording anyway");
     }
-    record_with_provenance(
-        &mut db,
-        &req.query_id,
-        &used_ids,
-        &irrelevant_ids,
-        provenance,
-    )?;
-    record_code_with_provenance(
-        &mut db,
+    write_with_provenance(&tx, &req.query_id, &used_ids, &irrelevant_ids, provenance)?;
+    write_code_with_provenance(
+        &tx,
         &req.query_id,
         &used_code_ids,
         &irrelevant_code_ids,
         provenance,
     )?;
+    tx.commit()?;
 
     Ok(Response {
         used: used_ids.len(),
@@ -138,3 +135,7 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
         provenance: provenance.to_string(),
     })
 }
+
+#[cfg(test)]
+#[path = "tests/feedback.rs"]
+mod tests;

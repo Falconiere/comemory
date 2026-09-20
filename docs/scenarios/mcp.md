@@ -110,3 +110,20 @@ _None._
   line lands on stderr, so a host that enables logging still parses the
   stream.
 - **Covered by:** `tests/cli_scenario_mcp.rs::mcp_06_diagnostics_stay_off_stdout_under_rust_log`
+
+### mcp-07 A rebuild between calls is visible to existing agents
+
+- **Setup:** start a real MCP session and save a memory; rebuild using CLI.
+- **Action:** a second session saves another memory, then the original session
+  reads it and saves one of its own.
+- **Expected:** both sessions see both new writes through the live database.
+- **Covered by:** `mcp_07_rebuild_between_calls_keeps_agents_on_the_live_store`.
+
+### mcp-08 Concurrent agents save without losing files or index rows
+
+- **Setup:** four independent MCP processes over one store.
+- **Action:** save distinct lessons concurrently, then replay one identical
+  large lesson from every process.
+- **Expected:** every save succeeds and is searchable; identical replays return
+  one id, exactly one creation, and the complete body.
+- **Covered by:** `mcp_08_concurrent_agents_save_and_find_each_others_memories`.

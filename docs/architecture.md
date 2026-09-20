@@ -756,3 +756,24 @@ sweep lands (M4 candidate).
 - [Upgrading comemory](guides/upgrading.md) — the schema-migration snapshot
   and forward-compat guard (§3.2), user-facing.
 - [README](../README.md) — install, quickstart, and the feature tour.
+
+## MCP connection and agent lifecycle
+
+MCP keeps a session mutex but opens and drops the database for each tool call,
+so a rebuild between calls does not strand agents on the replaced file.
+`store::connection::open` holds a per-database `.open.lock` across WAL setup,
+preflight and migration; memory saves use `BEGIN IMMEDIATE` before mirror
+reads, avoiding deferred read-to-write upgrade races. A `memory-save.lock`
+also covers prior lookup, markdown staging and the mirror commit, so identical
+concurrent saves replay once and cannot race their content-addressed temp file. Rebuild itself should
+run while writers are idle.
+
+The feedback command reserves the writer and commits memory/code verdicts in
+one transaction. Identity resolution happens inside that transaction; a missing
+code symbol or a lock failure cannot leave memory feedback partially committed.
+
+The eleven-tool catalog recommends a small `find` followed by selective
+`show`; `context` returns complete bodies and has no token budget.
+`recall-status` is repository/window aggregate telemetry, not session
+attribution. Stop hints are therefore advisory. Shared plugin hooks support
+Claude Code and Codex, but receipt capture parses only Claude transcripts.

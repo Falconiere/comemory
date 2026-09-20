@@ -23,6 +23,10 @@ use comemory::domains::learning::telemetry::StatsDb;
 use comemory::store::code_row::{self, CodeSymbolRow};
 use comemory::utilities::telemetry::{PROV_IMPLICIT, PROV_MANUAL};
 
+use std::sync::{Arc, Barrier};
+use std::thread;
+use std::time::Duration;
+
 use crate::test_common as common;
 
 /// Open a [`StatsDb`] in a fresh sandbox, returning the guard with it.
@@ -215,6 +219,39 @@ fn record_code_with_provenance_errors_loudly_on_unknown_symbol_id() {
         (0, 0),
         "failed batch must roll back the live id's rows too"
     );
+}
+
+#[test]
+fn code_feedback_waits_for_an_existing_writer_before_reading_identity() {
+    let (sb, db) = open_db();
+    let id = seed_symbol(db.conn(), "demo", "wait.rs", "waiting");
+    let path = Paths::new(sb.data_dir()).stats_db();
+    db.conn()
+        .execute_batch("BEGIN IMMEDIATE")
+        .expect("reserve writer");
+    let barrier = Arc::new(Barrier::new(2));
+    let thread_barrier = Arc::clone(&barrier);
+    let handle = thread::spawn(move || {
+        let mut contender = StatsDb::open(path).expect("open contender");
+        thread_barrier.wait();
+        record_code_with_provenance(
+            &mut contender,
+            "q-20260920-aabbcc04",
+            &[id],
+            &[],
+            PROV_MANUAL,
+        )
+    });
+    barrier.wait();
+    thread::sleep(Duration::from_millis(100));
+    db.conn().execute_batch("COMMIT").expect("release writer");
+    handle
+        .join()
+        .expect("feedback thread panicked")
+        .expect("feedback should wait, then succeed");
+
+    let (used, _, _) = counter_row(db.conn(), "demo", "wait.rs", "waiting").expect("counter");
+    assert_eq!(used, 1);
 }
 
 #[test]

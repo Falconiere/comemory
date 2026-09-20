@@ -60,13 +60,13 @@ fn new_opens_a_real_store_and_exposes_the_session() {
     );
 
     // A real query proves the connection is usable, not merely constructed.
-    let guard = state.conn().expect("lock the shared connection");
+    let guard = state.conn().expect("open a call connection");
     let page = list_memories(&guard, &ListFilter::default(), 10, 0, SortBy::Created)
         .expect("list on a fresh store");
     assert_eq!(page.total, 0);
     drop(guard);
 
-    // A clone shares the same connection, so it sees the same store.
+    // A clone opens the same live database, so it sees the same store.
     let clone = state.clone();
     assert_eq!(clone.repo(), Some("app"));
     assert!(clone.conn().is_ok());

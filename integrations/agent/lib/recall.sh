@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
-# Recall-injection and Stop-time enforcement helpers for memory-lifecycle.sh.
+# Recall-injection and Stop-time advisory helpers for memory-lifecycle.sh.
 # Split out once the hook grew past ~120 lines. Assumes the caller already
 # sourced project-skills.sh (for ps_cfg_int/ps_cfg_bool/ps_config_root and,
 # through it, comemory_repo_key) and that jq is present — both are guarded by
@@ -66,23 +66,21 @@ recall_hint_from_json() {
   [ "$n" -gt 0 ] 2>/dev/null || return 1
   lines=$(jq -r '(.hits // [])[] | (.id // "?") + "  " + (.title // .subtitle // "")' <<<"$json" 2>/dev/null) || return 1
   [ -n "$lines" ] || return 1
-  ctx=$(printf 'Recall hint — possibly relevant memories:\n%s\nCall find for full results, and feedback afterwards.' "$lines")
+  ctx=$(printf 'Recall hint — possibly relevant memories:\n%s\nThese IDs came from an untracked find; selectively show only useful ones. Feedback applies only to a separate tracked recall with a query_id.' "$lines")
   recall_truncate_chars "$ctx" 4000
 }
 
-# recall_enforce_block INPUT_JSON CWD — Stop-time enforcement. Prints the
-# top-level `{"decision":"block", "reason":…}` object and returns 0 when this
-# session made tracked recalls with neither a verdict nor a save; returns 1
-# with no output in every skip case: recall.enforce is off, no session_id,
-# stop_hook_active is true, the session has no `.start` marker (nothing
-# tracked to check), the session already blocked once, comemory is missing,
-# or `recall-status` itself fails. Writes the `.blocked` marker before
-# printing so a second identical Stop this session stays silent. Runs before
-# the once-per-day maintenance latch and never touches it.
-recall_enforce_block() {
+# recall_advisory INPUT_JSON CWD — Stop-time repository-window advisory.
+# Prints one compact systemMessage and returns 0 when the shared repo window
+# has judgeable pending recalls with neither a verdict nor a save. It never
+# claims session ownership and never blocks. Returns 1 with no output for all
+# skip cases. recall.enforce remains the compatibility switch. Empty
+# returned_ids rows are omitted because no honest per-memory verdict can be
+# recorded for them.
+recall_advisory() {
   local input="$1" cwd="$2"
-  local root session_id stop_active start_marker blocked_marker since repo status
-  local pending fb saves ids
+  local root session_id stop_active start_marker advised_marker since repo status
+  local actionable pending fb saves ids
   [ "$(ps_cfg_bool recall.enforce true)" = true ] || return 1
   session_id=$(jq -r '.session_id // empty' <<<"$input" 2>/dev/null) || return 1
   # Sanitised: an untrusted session_id with '/' or '..' must not escape
@@ -94,26 +92,31 @@ recall_enforce_block() {
   root="$(ps_config_root)/comemory"
   start_marker="$root/session-$session_id.start"
   [ -e "$start_marker" ] || return 1
-  blocked_marker="$root/session-$session_id.blocked"
-  [ ! -e "$blocked_marker" ] || return 1
+  advised_marker="$root/session-$session_id.advised"
+  [ ! -e "$advised_marker" ] || return 1
   since=$(cat "$start_marker" 2>/dev/null) || return 1
   [ -n "$since" ] || return 1
   repo=$(comemory_repo_key "$cwd")
   [ -n "$repo" ] || return 1
   status=$(comemory recall-status --repo "$repo" --since "$since" --json 2>/dev/null) || return 1
   [ -n "$status" ] || return 1
-  pending=$(jq -r '(.pending // []) | length' <<<"$status" 2>/dev/null) || return 1
+  actionable=$(jq -c '[(.pending // [])[] | select((.returned_ids // []) | length > 0)]' \
+    <<<"$status" 2>/dev/null) || return 1
+  pending=$(jq -r 'length' <<<"$actionable" 2>/dev/null) || return 1
   fb=$(jq -r '.feedback_events // 0' <<<"$status" 2>/dev/null) || return 1
   saves=$(jq -r '.saves // 0' <<<"$status" 2>/dev/null) || return 1
   [ "$pending" -gt 0 ] 2>/dev/null || return 1
   [ "$fb" -eq 0 ] 2>/dev/null || return 1
   [ "$saves" -eq 0 ] 2>/dev/null || return 1
-  ids=$(jq -r '[(.pending // [])[].query_id] | join(", ")' <<<"$status" 2>/dev/null) || ids=""
+  ids=$(jq -r '[.[0:3][].query_id] | join(", ")' <<<"$actionable" 2>/dev/null) || ids=""
   mkdir -p "$root" 2>/dev/null || true
-  : >"$blocked_marker" 2>/dev/null || true
-  jq -n --argjson n "$pending" --arg ids "$ids" '
-    {decision:"block",
-     reason:("comemory: " + ($n|tostring) + " recalls this session have no verdict and nothing was saved. Call feedback (used/irrelevant) for " + $ids + ", or save the lesson, then stop.")}
+  # noclobber makes the check-and-create atomic when duplicate Stop hooks race.
+  (set -o noclobber; : >"$advised_marker") 2>/dev/null || return 1
+  jq -nc --argjson n "$pending" --arg ids "$ids" '
+    {systemMessage:("Comemory: shared repository activity in this session window has " +
+      ($n|tostring) + " unjudged recall(s) (e.g. query IDs: " + $ids +
+      "). If useful, inspect recall_status and selectively show returned IDs; feedback only " +
+      "what you judged. No action is required for work from another session.")}
   ' 2>/dev/null || true
   return 0
 }

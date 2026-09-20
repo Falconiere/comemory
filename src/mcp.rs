@@ -33,7 +33,7 @@ pub mod result;
 pub mod scope;
 /// The rmcp service object: the merged tool router and `get_info`.
 pub mod server;
-/// Shared per-session state: connection, paths, config, scope and flags.
+/// Shared per-session state: call gate, paths, config, scope and flags.
 pub mod state;
 /// The nine read tools.
 pub mod tools_read;

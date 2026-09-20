@@ -80,3 +80,9 @@ _None._
 - **Expect:** `saves=1` (the same instant still counts the save); `since` in
   the response ends in `Z`, not `+05:00`.
 - **Covered by:** `src/domains/learning/tests/recall_status.rs::an_offset_since_is_normalised_to_utc_before_comparing`
+
+The report aggregates all agents sharing the repository and time window; it
+cannot attribute work to a session. A zero-hit query can remain pending with no
+ids because no item verdict exists. `find` logs memory ids only, so a code-only
+query can also have an empty logged array. Empty arrays are omitted from the
+advisory Stop reminder and never require fabricated feedback or a save.

@@ -14,6 +14,172 @@ export PATH="$TASK/bin:$PATH"
 export COMEMORY_DATA_DIR="$TASK/data with spaces"
 unset TOOLU_CONFIG_DIR TOOLU_HOST_OVERRIDE PLUGIN_ROOT CLAUDE_PLUGIN_ROOT
 
+test_source_hook_regressions() {
+  local source_agent="$ROOT/integrations/agent"
+  local source_cfg="$TASK/source config"
+  local source_repo="$TASK/source-hooks-repo"
+  local source_key disabled_payload disabled_out
+  local start_a start_b stop_b stop_b_out stop_b_out2 empty_stop empty_stop_out
+  local resume_start old_start old_blocked old_advised eight_days_ago
+  local race_start race_stop race_pid nonempty_race push_out
+  local many_start many_stop many_out first_three fourth_id fifth_id
+
+  mkdir -p "$source_cfg" "$source_repo"
+  git init -q "$source_repo"
+  source_key=$(basename "$source_repo")
+
+  # Disabling comemory suppresses the empty-repository bootstrap hint as well
+  # as the standing SessionStart reminder. Badge refresh is allowed to remain.
+  printf '%s\n' '{"skills":{"comemory":false}}' > "$source_cfg/comemory.json"
+  disabled_payload=$(jq -nc --arg cwd "$source_repo" '{cwd:$cwd,hook_event_name:"SessionStart"}')
+  disabled_out=$(printf '%s' "$disabled_payload" \
+    | TOOLU_CONFIG_DIR="$source_cfg" TOOLU_HOST_OVERRIDE=claude \
+      "$source_agent/hooks/comemory-status.sh")
+  [ -z "$disabled_out" ] || {
+    printf 'disabled comemory emitted a bootstrap hint: %s\n' "$disabled_out" >&2
+    exit 1
+  }
+  rm -f "$source_cfg/comemory.json"
+
+  # The recall-status window is repository-wide. A starts a recall after B's
+  # marker, so B's Stop can see it but must never claim ownership or block B.
+  (cd "$source_repo" && "$BIN" save \
+    "Concurrent recall fixture: a repository-wide recall cannot be attributed to one host session." \
+    --repo "$source_key" --json) >/dev/null
+  start_a=$(jq -nc --arg cwd "$source_repo" \
+    '{cwd:$cwd,session_id:"source-agent-a",source:"startup",hook_event_name:"SessionStart"}')
+  start_b=$(jq -nc --arg cwd "$source_repo" \
+    '{cwd:$cwd,session_id:"source-agent-b",source:"startup",hook_event_name:"SessionStart"}')
+  printf '%s' "$start_a" | TOOLU_CONFIG_DIR="$source_cfg" TOOLU_HOST_OVERRIDE=claude \
+    "$source_agent/hooks/session-start.sh" >/dev/null
+  printf '%s' "$start_b" | TOOLU_CONFIG_DIR="$source_cfg" TOOLU_HOST_OVERRIDE=claude \
+    "$source_agent/hooks/session-start.sh" >/dev/null
+  (cd "$source_repo" && "$BIN" search "Concurrent recall fixture" \
+    --repo "$source_key" --json) >/dev/null
+  stop_b=$(jq -nc --arg cwd "$source_repo" \
+    '{cwd:$cwd,session_id:"source-agent-b",stop_hook_active:false,hook_event_name:"Stop"}')
+  stop_b_out=$(printf '%s' "$stop_b" \
+    | TOOLU_CONFIG_DIR="$source_cfg" TOOLU_HOST_OVERRIDE=claude \
+      "$source_agent/hooks/memory-lifecycle.sh")
+  jq -e 'has("decision") | not' <<<"$stop_b_out" >/dev/null
+  jq -e '.systemMessage | contains("shared repository activity")' <<<"$stop_b_out" >/dev/null
+  [ -d "$source_cfg/comemory/maintain-$(date -u +%Y%m%d)" ] || {
+    printf 'Stop advisory skipped the independent daily maintenance latch\n' >&2
+    exit 1
+  }
+  stop_b_out2=$(printf '%s' "$stop_b" \
+    | TOOLU_CONFIG_DIR="$source_cfg" TOOLU_HOST_OVERRIDE=claude \
+      "$source_agent/hooks/memory-lifecycle.sh")
+  [ -z "$stop_b_out2" ]
+
+  # A long shared window keeps its full pending count but bounds the example
+  # query IDs. It also makes clear that another session's work is optional.
+  many_start=$(jq -nc --arg cwd "$source_repo" \
+    '{cwd:$cwd,session_id:"source-many",source:"startup",hook_event_name:"SessionStart"}')
+  printf '%s' "$many_start" | TOOLU_CONFIG_DIR="$source_cfg" TOOLU_HOST_OVERRIDE=claude \
+    "$source_agent/hooks/session-start.sh" >/dev/null
+  : > "$TASK/many-searches.jsonl"
+  for suffix in one two three four five; do
+    (cd "$source_repo" && "$BIN" search "Concurrent recall fixture $suffix" \
+      --repo "$source_key" --json) >> "$TASK/many-searches.jsonl"
+  done
+  jq -s '[.[].query_id]' "$TASK/many-searches.jsonl" > "$TASK/many-query-ids.json"
+  first_three=$(jq -r '.[0:3] | join(", ")' "$TASK/many-query-ids.json")
+  fourth_id=$(jq -r '.[3]' "$TASK/many-query-ids.json")
+  fifth_id=$(jq -r '.[4]' "$TASK/many-query-ids.json")
+  many_stop=$(jq -nc --arg cwd "$source_repo" \
+    '{cwd:$cwd,session_id:"source-many",stop_hook_active:false,hook_event_name:"Stop"}')
+  many_out=$(printf '%s' "$many_stop" \
+    | TOOLU_CONFIG_DIR="$source_cfg" TOOLU_HOST_OVERRIDE=claude \
+      "$source_agent/hooks/memory-lifecycle.sh")
+  jq -e --arg ids "$first_three" --arg fourth "$fourth_id" --arg fifth "$fifth_id" '
+    .systemMessage
+    | contains("5 unjudged recall(s)")
+      and contains("e.g. query IDs: " + $ids)
+      and (contains($fourth) | not)
+      and (contains($fifth) | not)
+      and contains("If useful, inspect recall_status")
+      and contains("No action is required for work from another session")' <<<"$many_out" >/dev/null
+
+  # A tracked lookup with no returned ids cannot receive an honest per-memory
+  # verdict, so Stop must omit it instead of requesting fabricated feedback.
+  start_a=$(jq -nc --arg cwd "$source_repo" \
+    '{cwd:$cwd,session_id:"source-empty-results",source:"startup",hook_event_name:"SessionStart"}')
+  printf '%s' "$start_a" | TOOLU_CONFIG_DIR="$source_cfg" TOOLU_HOST_OVERRIDE=claude \
+    "$source_agent/hooks/session-start.sh" >/dev/null
+  (cd "$source_repo" && "$BIN" search "no-match-9f826bb50d1b" \
+    --repo "$source_key" --json) >/dev/null
+  empty_stop=$(jq -nc --arg cwd "$source_repo" \
+    '{cwd:$cwd,session_id:"source-empty-results",stop_hook_active:false,hook_event_name:"Stop"}')
+  empty_stop_out=$(printf '%s' "$empty_stop" \
+    | TOOLU_CONFIG_DIR="$source_cfg" TOOLU_HOST_OVERRIDE=claude \
+      "$source_agent/hooks/memory-lifecycle.sh")
+  [ -z "$empty_stop_out" ] || {
+    printf 'empty returned_ids produced a Stop advisory: %s\n' "$empty_stop_out" >&2
+    exit 1
+  }
+
+  # Resume keeps its own write-once marker even when old, while the same sweep
+  # removes stale start markers and both legacy/new advisory latch markers.
+  resume_start=$(jq -nc --arg cwd "$source_repo" \
+    '{cwd:$cwd,session_id:"source-resume",source:"startup",hook_event_name:"SessionStart"}')
+  printf '%s' "$resume_start" | TOOLU_CONFIG_DIR="$source_cfg" TOOLU_HOST_OVERRIDE=claude \
+    "$source_agent/hooks/session-start.sh" >/dev/null
+  old_start="$source_cfg/comemory/session-old.start"
+  old_blocked="$source_cfg/comemory/session-old.blocked"
+  old_advised="$source_cfg/comemory/session-old.advised"
+  : > "$old_start"
+  : > "$old_blocked"
+  : > "$old_advised"
+  eight_days_ago=$(date -v-8d +%Y%m%d%H%M 2>/dev/null || date -d '8 days ago' +%Y%m%d%H%M)
+  touch -t "$eight_days_ago" "$old_start" "$old_blocked" "$old_advised" \
+    "$source_cfg/comemory/session-source-resume.start"
+  printf '%s' "$resume_start" | TOOLU_CONFIG_DIR="$source_cfg" TOOLU_HOST_OVERRIDE=claude \
+    "$source_agent/hooks/session-start.sh" >/dev/null
+  [ -f "$source_cfg/comemory/session-source-resume.start" ]
+  [ ! -e "$old_start" ] && [ ! -e "$old_blocked" ] && [ ! -e "$old_advised" ]
+
+  # Duplicate Stop invocations for one session race on the advisory latch;
+  # atomic creation permits exactly one systemMessage.
+  race_start=$(jq -nc --arg cwd "$source_repo" \
+    '{cwd:$cwd,session_id:"source-race",source:"startup",hook_event_name:"SessionStart"}')
+  printf '%s' "$race_start" | TOOLU_CONFIG_DIR="$source_cfg" TOOLU_HOST_OVERRIDE=claude \
+    "$source_agent/hooks/session-start.sh" >/dev/null
+  (cd "$source_repo" && "$BIN" search "Concurrent recall fixture" \
+    --repo "$source_key" --json) >/dev/null
+  race_stop=$(jq -nc --arg cwd "$source_repo" \
+    '{cwd:$cwd,session_id:"source-race",stop_hook_active:false,hook_event_name:"Stop"}')
+  printf '%s' "$race_stop" | TOOLU_CONFIG_DIR="$source_cfg" TOOLU_HOST_OVERRIDE=claude \
+    "$source_agent/hooks/memory-lifecycle.sh" > "$TASK/race-stop-1.json" &
+  race_pid=$!
+  printf '%s' "$race_stop" | TOOLU_CONFIG_DIR="$source_cfg" TOOLU_HOST_OVERRIDE=claude \
+    "$source_agent/hooks/memory-lifecycle.sh" > "$TASK/race-stop-2.json"
+  wait "$race_pid"
+  nonempty_race=0
+  [ ! -s "$TASK/race-stop-1.json" ] || nonempty_race=$((nonempty_race + 1))
+  [ ! -s "$TASK/race-stop-2.json" ] || nonempty_race=$((nonempty_race + 1))
+  [ "$nonempty_race" -eq 1 ]
+
+  # An injected hint comes from an untracked lookup and has no query_id. It
+  # directs selective show without asking for a redundant find or a verdict
+  # that cannot be attached to this hint.
+  push_out=$(jq -nc --arg cwd "$source_repo" \
+    --arg prompt "where is the concurrent recall fixture documented" \
+    '{cwd:$cwd,hook_event_name:"UserPromptSubmit",prompt:$prompt}' \
+    | TOOLU_CONFIG_DIR="$source_cfg" TOOLU_HOST_OVERRIDE=claude \
+      "$source_agent/hooks/memory-lifecycle.sh")
+  jq -e '.hookSpecificOutput.additionalContext
+    | contains("selectively show")
+      and contains("Feedback applies only to a separate tracked recall with a query_id")
+      and (contains("then feedback") | not)
+      and (contains("Call find") | not)' <<<"$push_out" >/dev/null
+
+  printf 'agent-install: source hook disable, concurrent Stop, bounded advisory, maintenance, hint, empty-result, marker-sweep, and advisory-race regressions passed\n'
+}
+
+test_source_hook_regressions
+[ "${COMEMORY_TEST_SOURCE_HOOKS_ONLY:-0}" != 1 ] || exit 0
+
 git init -q "$TASK/repository"
 git -C "$TASK/repository" -c user.name=Comemory -c user.email=test@example.invalid commit -qm initial --allow-empty
 git -C "$TASK/repository" worktree add -q -b sibling "$TASK/worktree"
@@ -64,7 +230,7 @@ PYUPGRADE
   jq -e --arg version "$($BIN --version | awk '{print $2}')" '.. | objects | select(.version? == $version)' "$TASK/list-$host.json" >/dev/null
   jq -nc --arg cwd "$TASK/repository" '{cwd:$cwd,session_id:"migration-integration",source:"startup",hook_event_name:"SessionStart"}' \
     | bash -c "$(jq -r '.hooks.SessionStart[0].hooks[0].command' "$plugin/hooks/hooks.json")" > "$TASK/start-$host.json"
-  jq -e '.hookSpecificOutput.additionalContext | contains("repo-scoped recall")' "$TASK/start-$host.json" >/dev/null
+  jq -e '.hookSpecificOutput.additionalContext | contains("MCP find (k=3)")' "$TASK/start-$host.json" >/dev/null
   wrapper="$cfg/comemory/comemory.sh"
   badge="$plugin/hooks/comemory-status.sh"
   (cd "$TASK/repository" && "$wrapper" save "Worktree correction $host" 'Use the canonical repository scope; a worktree name splits retrieval. Verified by saving in the primary checkout and retrieving from its sibling.' --kind convention --json) > "$TASK/saved-$host.json"
@@ -92,6 +258,12 @@ PYUPGRADE
   [ -z "$leftover" ]
   printf blocked > "$TASK/blocked-config"
   printf '%s' "$badge_payload" | TOOLU_CONFIG_DIR="$TASK/blocked-config" "$badge"
+  # A host without any configuration root must keep the installed hook silent.
+  printf '%s' "$badge_payload" | env -u HOME -u CODEX_HOME -u CLAUDE_CONFIG_DIR \
+    -u TOOLU_CONFIG_DIR -u TOOLU_HOST_OVERRIDE -u PLUGIN_ROOT -u CLAUDE_PLUGIN_ROOT \
+    "$badge" > "$TASK/no-config-$host.out" 2> "$TASK/no-config-$host.err"
+  [ ! -s "$TASK/no-config-$host.out" ]
+  [ ! -s "$TASK/no-config-$host.err" ]
   # Exact argv handling, explicit scope, real CLI failure, and disable controls.
   body=$'User correction: "quoted" title\nEvidence: a real Git worktree shares its parent repository.'
   (cd "$TASK/worktree" && "$wrapper" save "Quoted lesson $host" "$body" --repo overridden --json) >/dev/null
@@ -113,8 +285,9 @@ PYERROR
   [ -z "$disabled" ]
   rm "$cfg/comemory.json"
 
-  # AC-11: session-end.sh launches capture detached and returns within the
-  # host's ~1.5s SessionEnd budget, with real payload and the real binary,
+  # AC-11: session-end.sh launches Claude capture detached and returns within
+  # the host's ~1.5s SessionEnd budget, with real payload and the real binary;
+  # Codex exits silently because capture does not accept its transcript format,
   # even when this machine's own first-exec spawn latency is slow. Measured
   # twice (cold, then warm): first-exec-of-a-fresh-process latency on this
   # Mac is a known, separate, environmental cost from a hook that fails to
@@ -200,7 +373,7 @@ PYELAPSED
   [ -z "$leftover_escape" ]
 
   # AC-9 / AC-10 fixture: a dedicated, otherwise-empty repo so recall
-  # injection and Stop enforcement see exactly one relevant memory.
+  # injection and the Stop advisory see exactly one relevant memory.
   rebase_repo="$TASK/rebase-$host"
   mkdir -p "$rebase_repo"
   git init -q "$rebase_repo"
@@ -217,6 +390,11 @@ PYELAPSED
   push_out=$(printf '%s' "$push_payload" | "$plugin/hooks/memory-lifecycle.sh")
   jq -e --arg id "$rebase_id" '.hookSpecificOutput.additionalContext | contains($id)' <<<"$push_out" >/dev/null
   jq -e '.hookSpecificOutput.additionalContext | contains("Rebase on main before push")' <<<"$push_out" >/dev/null
+  jq -e '.hookSpecificOutput.additionalContext
+    | contains("selectively show")
+      and contains("Feedback applies only to a separate tracked recall with a query_id")
+      and (contains("then feedback") | not)
+      and (contains("Call find") | not)' <<<"$push_out" >/dev/null
   ok_payload=$(jq -nc --arg cwd "$rebase_repo" '{cwd:$cwd,hook_event_name:"UserPromptSubmit",prompt:"ok"}')
   ok_out=$(printf '%s' "$ok_payload" | "$plugin/hooks/memory-lifecycle.sh")
   [ -z "$ok_out" ]
@@ -236,7 +414,7 @@ PYELAPSED
   override_payload=$(jq -nc --arg cwd "$rebase_repo" --arg prompt "how do I push this branch safely" \
     '{cwd:$cwd,hook_event_name:"UserPromptSubmit",prompt:$prompt}')
   override_out=$(printf '%s' "$override_payload" | "$plugin/hooks/memory-lifecycle.sh")
-  jq -e '.hookSpecificOutput.additionalContext | startswith("Recall relevant repo knowledge with")' <<<"$override_out" >/dev/null
+  jq -e '.hookSpecificOutput.additionalContext | startswith("Comemory: use MCP find (k=3)")' <<<"$override_out" >/dev/null
   jq -e '.hookSpecificOutput.additionalContext | contains("Recall hint") | not' <<<"$override_out" >/dev/null
   rm -rf "$rebase_repo/.claude" "$rebase_repo/.codex"
   rm -f "$cfg/comemory.json"
@@ -247,12 +425,13 @@ PYELAPSED
   short_payload=$(jq -nc --arg cwd "$rebase_repo" --arg prompt "why is this slow" \
     '{cwd:$cwd,hook_event_name:"UserPromptSubmit",prompt:$prompt}')
   short_out=$(printf '%s' "$short_payload" | "$plugin/hooks/memory-lifecycle.sh")
-  jq -e '.hookSpecificOutput.additionalContext | startswith("Recall relevant repo knowledge with")' <<<"$short_out" >/dev/null
+  jq -e '.hookSpecificOutput.additionalContext | startswith("Comemory: use MCP find (k=3)")' <<<"$short_out" >/dev/null
   jq -e '.hookSpecificOutput.additionalContext | contains("Recall hint") | not' <<<"$short_out" >/dev/null
 
-  # AC-10: Stop-time recall enforcement. A session with one tracked, unjudged
-  # recall blocks once and stays silent after; stop_hook_active suppresses
-  # it; a recorded verdict suppresses it; recall.enforce:false suppresses it.
+  # AC-10: Stop-time recall advisory. A repository window with one tracked,
+  # judgeable recall emits a shared-activity systemMessage once and stays
+  # silent after; stop_hook_active suppresses it; a recorded verdict suppresses
+  # it; recall.enforce:false suppresses it.
   stop_a="stop-a-$host"
   start_a_payload=$(jq -nc --arg cwd "$rebase_repo" --arg sid "$stop_a" '{cwd:$cwd,session_id:$sid,source:"startup",hook_event_name:"SessionStart"}')
   printf '%s' "$start_a_payload" | "$plugin/hooks/session-start.sh" >/dev/null
@@ -262,8 +441,8 @@ PYELAPSED
   [ -n "$stop_qid" ] && [ "$stop_qid" != null ]
   stop_a_payload=$(jq -nc --arg cwd "$rebase_repo" --arg sid "$stop_a" '{cwd:$cwd,session_id:$sid,stop_hook_active:false,hook_event_name:"Stop"}')
   stop_a_out=$(printf '%s' "$stop_a_payload" | "$plugin/hooks/memory-lifecycle.sh")
-  jq -e '.decision == "block"' <<<"$stop_a_out" >/dev/null
-  jq -e --arg id "$stop_qid" '.reason | contains($id)' <<<"$stop_a_out" >/dev/null
+  jq -e 'has("decision") | not' <<<"$stop_a_out" >/dev/null
+  jq -e --arg id "$stop_qid" '.systemMessage | contains("shared repository activity") and contains($id)' <<<"$stop_a_out" >/dev/null
   stop_a_out2=$(printf '%s' "$stop_a_payload" | "$plugin/hooks/memory-lifecycle.sh")
   [ -z "$stop_a_out2" ]
 
@@ -311,7 +490,7 @@ PYELAPSED
   done
 
   printf 'agent-install: %s native install/upgrade, SessionStart, worktree recall, scope denial passed\n' "$host"
-  printf 'agent-install: %s SessionEnd capture, bootstrap nudge, recall injection, and Stop enforcement passed\n' "$host"
+  printf 'agent-install: %s SessionEnd behavior, bootstrap nudge, recall injection, and Stop advisory passed\n' "$host"
 done
 
 # AC-7: `.mcp.json` names this test binary's canonical path (`$BIN` above is

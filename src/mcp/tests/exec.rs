@@ -60,7 +60,7 @@ async fn a_read_drives_a_real_core_over_the_session_connection() {
     let dir = tempdir().expect("tempdir");
     let state = state_in(&dir, false);
 
-    // Seed through the production writer, on the same shared connection.
+    // Seed through the production writer, on the same database.
     let saved = exec::run(state.clone(), Access::Write("save"), |ctx, _| {
         save::run(
             ctx,

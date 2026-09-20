@@ -101,12 +101,12 @@ AC-14 names a flip-and-revert proof for each:
 | File | Primary item | Purpose |
 | --- | --- | --- |
 | `src/mcp.rs` | `McpOptions`, `serve` | Open the store, build `McpState`, run the rmcp service over stdio until EOF |
-| `src/mcp/state.rs` | `McpState` | `Arc<Mutex<Connection>>` + `Arc<Paths>` + `Arc<Config>` + default repo + `read_only`; the `AppState` shape without token, port, roots or jobs |
+| `src/mcp/state.rs` | `McpState` | `Arc<Mutex<()>> session gate + per-call connection` + `Arc<Paths>` + `Arc<Config>` + default repo + `read_only`; the `AppState` shape without token, port, roots or jobs |
 | `src/mcp/catalog.rs` | `ToolEntry`, `TOOLS` | Static table `(name, command, mutating)` — the read-only gate and the parity test read it |
 | `src/mcp/server.rs` | `ComemoryServer` | `#[tool_handler] impl ServerHandler`: `get_info` with `instructions`, composes the two routers |
 | `src/mcp/tools_read.rs` | `read_router` | `#[tool_router(router = read_router)]`: `find`, `search`, `search_code`, `context`, `show`, `list`, `edges`, `repos`, `recall_status` |
 | `src/mcp/tools_write.rs` | `write_router` | `#[tool_router(router = write_router)]`: `save`, `feedback` |
-| `src/mcp/exec.rs` | `run`, `Access` | Clone state, `run_blocking`, lock the connection for the synchronous call only, build `Ctx::borrowed`, run the core; an `Access::Write` on a read-only session is refused before the closure exists |
+| `src/mcp/exec.rs` | `run`, `Access` | Clone state, `run_blocking`, lock the session and open/drop the current connection for the synchronous call, build `Ctx::borrowed`, run the core; an `Access::Write` on a read-only session is refused before the closure exists |
 | `src/mcp/result.rs` | `into_tool_result` | `utilities::error_code::classify` → tool-level `structured_error` for every class but `Internal`, protocol `ErrorData` for `Internal` (§ Failure modes) |
 | `src/utilities/error_code.rs` | `classify`, `Class` | The code-word half of today's `serve::envelope::status_and_code`, extracted so `serve` and `mcp` share one total mapping; `envelope` keeps only `Class → StatusCode` |
 | `src/mcp/scope.rs` | `default_repo` | `--repo` flag, else `domains::code::git_utils::repo_label_at(cwd)`, else `None` |
@@ -174,9 +174,10 @@ Four hook changes and two skills, all inside `integrations/agent/`:
 - **Recall injection.** `memory-lifecycle.sh` on `UserPromptSubmit` runs
   `comemory find` on the prompt (memory domain, `k` from config, tracking
   disabled so the hint mints no `retrieval_log` row) and injects ids and
-  titles only. The agent's own `find` call is the tracked one. Skipped for
+  titles only. Agents can `show` selected hints without repeating the search;
+  an explicit `find` call is tracked. Skipped for
   prompts under `recall.injectMinChars`, for the existing skip list, and when
-  the call exceeds five seconds.
+  the call exceeds five seconds with `timeout`/`gtimeout` available.
 - **Bootstrap nudge.** `comemory-status.sh` already counts this repo's
   memories; when the count is zero it now also emits `additionalContext`
   pointing at the `memory-bootstrap` skill.
@@ -187,26 +188,19 @@ Four hook changes and two skills, all inside `integrations/agent/`:
   and rewriting the marker would move `--since` forward past unjudged
   recalls. The Stop branch reads it as the `--since` bound. Markers older
   than seven days are swept the way `maintain-*` directories are.
-- **Enforcement.** `memory-lifecycle.sh` on `Stop` calls
-  `comemory recall-status --repo KEY --since <session start>`. When the
-  session made tracked recalls and recorded neither a verdict nor a save, the
-  hook returns top-level `{"decision":"block","reason":…}` once per session
-  and records the block in `<cfg>/comemory/session-<id>.blocked`. Both hosts
-  document that shape and both deliver `stop_hook_active: true` on a turn
-  that is already a continuation; the hook never blocks when that flag is
-  true, never blocks on error, and never blocks twice. Claude Code also caps
-  consecutive blocks at eight on its side.
-  **Ordering:** the existing Stop branch is a once-per-day maintenance latch
-  (`mkdir "$root/maintain-$day" || exit 0`, then detached `mine`/`prune`/`gc`).
-  The enforcement check runs **before** that latch, in its own function, and
-  when it blocks it prints the decision and exits without touching the
-  latch; the maintenance latch stays an independent gate that runs on the
-  next non-blocking Stop. AC-10's second-Stop silence therefore comes from
-  the session `.blocked` marker, never from the daily latch.
-- **SessionEnd capture.** `hooks.json` gains a `SessionEnd` entry running
-  `hooks/session-end.sh`, which launches `comemory capture session
-  --from-hook` detached and exits within the host's 1.5 s budget.
-  `comemory capture install-hook` stays for non-plugin setups.
+- **Advisory reminder.** `memory-lifecycle.sh` on `Stop` calls
+  `comemory recall-status --repo KEY --since <session start>`. This window is
+  shared across agents, so it cannot authorize a per-session block. The hook
+  emits a compact `systemMessage` at most once per session, never a block,
+  and only names pending rows with recorded ids. Empty recalls need no
+  fabricated feedback/save. `recall.enforce` remains the compatibility switch.
+  Errors, missing markers and `stop_hook_active` stay silent. The daily local
+  maintenance latch remains independent.
+- **SessionEnd capture.** `hooks.json` registers `hooks/session-end.sh` for
+  both hosts. It starts detached `comemory capture session --from-hook` only
+  for Claude Code and exits silently under Codex, whose transcript format
+  has no capture/distill adapter yet. `comemory capture install-hook` stays
+  for non-plugin Claude setups.
 - **`agent-memory/SKILL.md`** leads with the MCP tools, keeps the wrapper as
   fallback, and states the loop: recall, judge every hit you acted on, record
   `feedback` (implicit unless the user confirmed), save with evidence.
@@ -369,12 +363,10 @@ Claude Code names the tools `mcp__plugin_comemory_comemory__<tool>`.
               "enforce": true } }
 ```
 
-Stop-hook block shape, emitted at most once per session:
-
-```json
-{ "decision": "block",
-  "reason": "comemory: 2 recalls this session have no verdict and nothing was saved. Call feedback (used/irrelevant) for q-…, q-…, or save the lesson, then stop." }
-```
+Stop emits at most one advisory `systemMessage`, describing unjudged activity
+in the shared repository window. It never emits `decision: "block"`; another
+agent may own those queries. `recall-status` retains empty-id rows for accurate
+telemetry, but the reminder skips them.
 
 ## Failure modes and edge cases
 
@@ -394,8 +386,8 @@ Stop-hook block shape, emitted at most once per session:
 | Injection: `comemory` absent, prompt under the floor, or in the skip list | No output. |
 | Injection: `comemory` present but `find` fails, exceeds 5 s, or returns no hit | The plain reminder text, as before this change. `retrieval_log` untouched in every injection case (the hint runs with `COMEMORY_DISABLE_ACCESS_TRACKING=true`). |
 | Injection output over 10,000 characters | Cannot happen: at most `injectK` lines of id and title. The script still truncates defensively. |
-| Stop: no `session_id`, `stop_hook_active` true, `recall-status` error, already blocked once, `recall.enforce` false | No block. |
-| Stop: recalls but a save happened | No block; a save is a valid outcome of a recall. |
+| Stop: no `session_id`, `stop_hook_active` true, `recall-status` error, already advised once, `recall.enforce` false | No advisory. |
+| Stop: recalls but a save happened | No advisory; the window already includes a save. |
 | SessionEnd: not logged in or platform down | Detached child fails quietly; the hook exits `0` in under 1.5 s. |
 | Parity: a catalog entry names a subcommand clap does not have, or its parameter type rejects one of that subcommand's arg ids | `tests/mcp__parity.rs` fails naming the tool and the arg. |
 
@@ -446,13 +438,12 @@ Stop-hook block shape, emitted at most once per session:
   that memory's id and title; with prompt "ok" it emits nothing; with the
   same prompt but `comemory` absent from `PATH` it emits nothing and exits
   `0`; the `retrieval_log` row count is unchanged in every case.
-- **AC-10:** Given a session with one tracked recall and no verdict or save,
-  the first `Stop` payload yields `{"decision":"block", …}` and the second
-  yields no output; given a verdict recorded, the first `Stop` yields no
-  output; given `"stop_hook_active": true` in the payload, no output.
-- **AC-11:** `hooks.json` declares `SessionEnd`, and running the real
-  `session-end.sh` with a real payload and the real unauthenticated binary
-  exits `0` in under 1.5 s with empty stdout.
+- **AC-10:** A repository window with an unjudged recall containing ids can
+  emit one advisory `systemMessage`; a repeated Stop is silent. Two overlapping
+  sessions never block each other. Empty-id recalls, a recorded verdict/save,
+  and `stop_hook_active` produce no reminder.
+- **AC-11:** `SessionEnd` returns quietly without waiting for upload. Claude
+  uses the supported transcript parser; Codex exits without attempting capture.
 - **AC-12:** `comemory-status.sh` on a repo with zero memories emits
   `additionalContext` naming `memory-bootstrap`; with one memory saved it
   emits none.
@@ -492,7 +483,7 @@ Stop-hook block shape, emitted at most once per session:
 | AC-7 | `install <host> --config-dir <tmp> --json` per host | `.mcp.json` path and `command` | `--dry-run` → no file | `tests/cli_scenario_install.rs::install_writes_mcp_manifest`, `scripts/test-agent-install.sh` |
 | AC-8 | one tracked `find` via CLI, then `feedback` | pending 1 → 0 | `--since` in the future → all zeros | `tests/cli__recall_status.rs`, `tests/serve__routes__learning.rs::recall_status_route` |
 | AC-9 | real hook script, real binary, saved memory, JSON payload on stdin | id and title in `additionalContext`; nothing for "ok" | `comemory` absent from `PATH` → nothing, exit 0 | `scripts/test-agent-install.sh` (new block) |
-| AC-10 | real hook script with a session start marker and a tracked `find` | block once, then silence | `stop_hook_active: true` → silence | `scripts/test-agent-install.sh` (new block) |
+| AC-10 | real hook script with a session start marker and a tracked `find` | advisory once, then silence; never block another agent | `stop_hook_active: true` → silence | `scripts/test-agent-install.sh` (new block) |
 | AC-11 | real `session-end.sh`, real payload, unauthenticated binary | exit 0, empty stdout, elapsed < 1.5 s | `comemory` absent from PATH → exit 0 | `scripts/test-agent-install.sh` (new block) |
 | AC-12 | real `comemory-status.sh` with 0 then 1 memory | nudge then none | count command fails → no output | `scripts/test-agent-install.sh` (new block) |
 | AC-13 | the SKILL.md files | tool names present; four sections present | — | `scripts/test-project-skills.sh`, `scripts/test-agent-install.sh` |
@@ -509,7 +500,7 @@ Stop-hook block shape, emitted at most once per session:
 - `docs/architecture.md`: delivery adapters are now three.
 - `docs/guides/agent-integration.md`: MCP registration per host, manual
   registration for Cursor / Gemini CLI / Windsurf, the `recall` config keys,
-  the enforcement behavior and how to turn it off, SessionEnd capture.
+  the advisory behavior and how to turn it off, SessionEnd capture.
 - `docs/guides/ranking-and-eval.md`: agent verdicts are `implicit` by default.
 - `docs/cli-reference.md`: regenerated (`scripts/regen-cli-docs.sh`).
 - `docs/scenarios/mcp.md`, `docs/scenarios/recall-status.md`, journey rows in
@@ -535,11 +526,9 @@ Stop-hook block shape, emitted at most once per session:
 
 ## Open Questions
 
-1. **Codex `Stop` block semantics.** Resolved 2026-09-18: Codex documents
-   the same top-level `decision`/`reason` shape and a `stop_hook_active`
-   input flag (learn.chatgpt.com/docs/hooks); Claude Code documents both plus
-   an eight-block backstop (code.claude.com/docs/en/hooks). Enforcement is
-   on for both hosts.
+1. **Stop attribution.** Review correction: the repository/time window does
+   not identify an agent session. Reminders are advisory on both hosts; true
+   per-session enforcement would require explicit attribution and is deferred.
 2. **Router composition across two files.** Resolved 2026-09-18: rmcp
    documents `#[tool_router(router = name, vis = "pub")]` per impl block and
    `ToolRouter<S>` implements `Add`, so `server.rs` builds
@@ -551,3 +540,22 @@ Stop-hook block shape, emitted at most once per session:
 4. **Expose `vector` on MCP `find`/`search`/`save`?** Kept, because the
    domain `Request` carries it and hiding it would need a second type.
    Non-blocking; revisit if hosts choke on the array schema.
+
+## Review corrections and additional acceptance (2026-09-19)
+
+- `context` returns full bodies and linked data; it has no token budget.
+  Recommend `find(k=3)` then selected `show` calls. `edges` is lexical triplet
+  search, not adjacency lookup by id. `find` includes documents.
+- MCP opens/drops one connection per call under its session mutex. A rebuild
+  between calls must be visible to every agent (`mcp_07` journey).
+- Concurrent fresh opens apply each migration once. Concurrent MCP saves,
+  including identical-body replays, must preserve the markdown/index contract
+  (`simultaneous_first_opens_apply_each_migration_once`, `mcp_08`).
+- Mixed memory/code feedback must commit in one immediate transaction; a
+  code identity error must roll back memory verdicts too. Concurrent verdicts
+  must not fail from a deferred read-to-write upgrade.
+- Native Claude and Codex installers must expose the MCP server in each host's
+  `mcp list`, not merely leave a manifest on disk. Claude's health check must
+  complete the connection. Generic stdio clients exercise protocol negotiation.
+- Disabled integration emits no bootstrap hint. Capture is Claude-only, and
+  bootstrap must not pass unsupported `--repo` to `distill`.

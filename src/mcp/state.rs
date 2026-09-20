@@ -1,9 +1,9 @@
 //! Shared, cheaply-cloneable state for one `comemory mcp` session.
 //!
 //! `serve::AppState`'s shape without anything a socket needs: no token, no
-//! port, no job registry, no write permit. The connection is behind a
-//! `Mutex` (it is `Send` but not `Sync`); every holder locks it inside a
-//! blocking task only — see [`crate::mcp::exec`].
+//! port or job registry. A session mutex serializes tool calls inside the
+//! blocking task. Each call opens and drops its own connection so idle
+//! agents cannot retain an obsolete database after `comemory rebuild`.
 
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -14,11 +14,11 @@ use crate::mcp::{McpOptions, scope};
 use crate::prelude::*;
 use crate::store::{Connection, connection};
 
-/// Everything a tool body needs: the shared connection, the data-dir layout,
+/// Everything a tool body needs: the session gate, the data-dir layout,
 /// the layered config, the session's default scope and its refusal flag.
 #[derive(Clone)]
 pub struct McpState {
-    conn: Arc<Mutex<Connection>>,
+    gate: Arc<Mutex<()>>,
     paths: Arc<Paths>,
     cfg: Arc<Config>,
     repo: Option<String>,
@@ -34,9 +34,9 @@ impl McpState {
     /// error (§ Failure modes).
     pub fn new(paths: &Paths, opts: McpOptions, cwd: &Path) -> Result<Self> {
         paths.ensure_dirs()?;
-        let conn = connection::open(paths.db_path())?;
+        drop(connection::open(paths.db_path())?);
         Ok(Self {
-            conn: Arc::new(Mutex::new(conn)),
+            gate: Arc::new(Mutex::new(())),
             paths: Arc::new(paths.clone()),
             cfg: Arc::new(opts.cfg),
             repo: scope::default_repo(opts.repo, cwd),
@@ -44,13 +44,17 @@ impl McpState {
         })
     }
 
-    /// Lock the shared connection, mapping lock poisoning (a panic in another
-    /// tool while holding the guard) to an internal error instead of
-    /// propagating the panic across the protocol loop.
-    pub fn conn(&self) -> Result<MutexGuard<'_, Connection>> {
-        self.conn
+    /// Serialize this session's tool calls, mapping poisoning to an error.
+    pub fn lock(&self) -> Result<MutexGuard<'_, ()>> {
+        self.gate
             .lock()
-            .map_err(|_| Error::Other("mcp: database lock poisoned".into()))
+            .map_err(|_| Error::Other("mcp: session lock poisoned".into()))
+    }
+
+    /// Open the current database for one call, including after a rebuild.
+    /// Callers hold [`Self::lock`] until this connection has been dropped.
+    pub fn conn(&self) -> Result<Connection> {
+        connection::open(self.paths.db_path())
     }
 
     /// The data-dir layout this session was started with.

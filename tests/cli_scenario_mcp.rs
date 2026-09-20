@@ -37,6 +37,106 @@ const REPO: &str = "demo";
 const POSTGRES: &str = "Use Postgres for analytics, not the primary store\n";
 const NEXTEST: &str = "Prefer nextest over cargo test for the suite\n";
 
+/// A long-lived agent must observe a rebuilt database on its next tool call.
+#[tokio::test]
+async fn mcp_07_rebuild_between_calls_keeps_agents_on_the_live_store() {
+    let cwd = tempfile::tempdir().unwrap();
+    let home = McpHome::spawn(cwd.path(), &["--repo", REPO]).await;
+    save(&home, POSTGRES, REPO).await;
+    Command::new(assert_cmd::cargo::cargo_bin("comemory"))
+        .arg("rebuild")
+        .env("COMEMORY_DATA_DIR", home.data_dir())
+        .assert()
+        .success();
+    let fresh = home.attach(cwd.path(), &["--repo", REPO]).await;
+    let id = save(
+        &fresh,
+        "Freshstore discovery after database replacement",
+        REPO,
+    )
+    .await;
+    let seen = home
+        .data("find", json!({"query": "Freshstore", "k": 3}))
+        .await;
+    assert!(
+        hit_ids(&seen).contains(&id),
+        "old session must read the live database"
+    );
+    let later = save(&home, "Oldsession writes after database replacement", REPO).await;
+    let seen = fresh
+        .data("find", json!({"query": "Oldsession", "k": 3}))
+        .await;
+    assert!(
+        hit_ids(&seen).contains(&later),
+        "old session must write the live database"
+    );
+    fresh.cancel().await;
+    home.cancel().await;
+}
+
+/// Separate agent processes contend for SQLite's writer, not a shared Rust mutex.
+#[tokio::test]
+async fn mcp_08_concurrent_agents_save_and_find_each_others_memories() {
+    let cwd = tempfile::tempdir().unwrap();
+    let home = McpHome::spawn(cwd.path(), &["--repo", REPO]).await;
+    let (a, b, c, d) = tokio::join!(
+        home.attach(cwd.path(), &["--repo", REPO]),
+        home.attach(cwd.path(), &["--repo", REPO]),
+        home.attach(cwd.path(), &["--repo", REPO]),
+        home.attach(cwd.path(), &["--repo", REPO]),
+    );
+    let (a_id, b_id, c_id, d_id) = tokio::join!(
+        save(
+            &a,
+            "Parallelwriters alpha saves an independent observation",
+            REPO
+        ),
+        save(
+            &b,
+            "Parallelwriters beta saves its own verified decision",
+            REPO
+        ),
+        save(
+            &c,
+            "Parallelwriters gamma records a reproduced correction",
+            REPO
+        ),
+        save(
+            &d,
+            "Parallelwriters delta preserves a measured discovery",
+            REPO
+        ),
+    );
+    let seen = home
+        .data("find", json!({"query": "Parallelwriters", "k": 10}))
+        .await;
+    let ids = hit_ids(&seen);
+    for id in [a_id, b_id, c_id, d_id] {
+        assert!(
+            ids.contains(&id),
+            "every successful save must be indexed: {id}"
+        );
+    }
+    // Replays must not race the same markdown staging file, and exactly one
+    // writer creates the content-derived id.
+    let body = "Shared replay evidence from concurrent agents. ".repeat(5000);
+    let (one, two, three, four) = tokio::join!(
+        a.data("save", json!({"body": body, "repo": REPO})),
+        b.data("save", json!({"body": body, "repo": REPO})),
+        c.data("save", json!({"body": body, "repo": REPO})),
+        d.data("save", json!({"body": body, "repo": REPO})),
+    );
+    let replays = [one, two, three, four];
+    assert_eq!(replays.iter().filter(|r| r["created"] == true).count(), 1);
+    assert!(replays.iter().all(|r| r["id"] == replays[0]["id"]));
+    let shown = home.data("show", json!({"id": replays[0]["id"]})).await;
+    assert_eq!(shown["body"].as_str().unwrap().trim_end(), body.trim_end());
+    for agent in [a, b, c, d] {
+        agent.cancel().await;
+    }
+    home.cancel().await;
+}
+
 /// Save one memory through the `save` tool and return its 8-hex id.
 async fn save(home: &McpHome, body: &str, repo: &str) -> String {
     let data = home

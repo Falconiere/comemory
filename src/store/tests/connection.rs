@@ -12,6 +12,34 @@ use comemory::store::connection;
 use tempfile::tempdir;
 
 #[test]
+fn simultaneous_first_opens_apply_each_migration_once() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("comemory.db");
+    let barrier = std::sync::Barrier::new(8);
+    std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..8)
+            .map(|_| {
+                scope.spawn(|| {
+                    barrier.wait();
+                    let conn = connection::open(&path).expect("concurrent first open");
+                    let version: String = conn
+                        .query_row(
+                            "SELECT value FROM schema_meta WHERE key = 'version'",
+                            [],
+                            |r| r.get(0),
+                        )
+                        .expect("complete schema");
+                    assert_eq!(version, comemory::store::migrate::CURRENT_VERSION);
+                })
+            })
+            .collect();
+        for worker in workers {
+            worker.join().expect("open worker");
+        }
+    });
+}
+
+#[test]
 fn opens_db_and_loads_sqlite_vec() {
     let dir = tempdir().expect("tempdir");
     let path = dir.path().join("comemory.db");

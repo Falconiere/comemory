@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Recall injection, compaction context, Stop-time recall enforcement, and
-# detached daily local maintenance. Helpers for injection/enforcement live in
+# Recall injection, compaction context, Stop-time recall advisory, and
+# detached daily local maintenance. Helpers for injection/advisory live in
 # ../lib/recall.sh (split out once this hook grew past ~120 lines).
 set -euo pipefail
 HOOK_DIR="$(cd "${BASH_SOURCE%/*}" && pwd)"
@@ -10,6 +10,7 @@ HOOK_DIR="$(cd "${BASH_SOURCE%/*}" && pwd)"
 . "$HOOK_DIR/../lib/recall.sh"
 input=$(cat)
 command -v jq >/dev/null 2>&1 || exit 0
+# shellcheck disable=SC2034 # Read by ps_load_cfg from the sourced library.
 PS_CWD=$(jq -r '.cwd // empty' <<<"$input" 2>/dev/null) || exit 0
 ps_memory_enabled || exit 0
 event=$(jq -r '.hook_event_name // empty' <<<"$input")
@@ -20,7 +21,7 @@ case "$event" in
     # comemory absent → nothing to recall from and no reminder about it either
     # (mirrors the Stop branch's own comemory guard below).
     command -v comemory >/dev/null 2>&1 || exit 0
-    ctx="Recall relevant repo knowledge with $(ps_config_root)/comemory/comemory.sh search before exploration. Save verified reusable lessons promptly; avoid duplicate summaries."
+    ctx="Comemory: use MCP find (k=3) before exploration; selectively show useful IDs, then feedback. Wrapper fallback: $(ps_config_root)/comemory/comemory.sh."
     # Character floor: `${#prompt}` counts CHARACTERS under a multibyte-aware
     # LC_CTYPE and BYTES under C/POSIX, so a prompt with non-ASCII text reads
     # longer than it is and can clear the floor early under C. Scope a UTF-8
@@ -44,13 +45,13 @@ case "$event" in
     fi
     ;;
   PreCompact)
-    ctx="Before compaction, persist verified reusable lessons through the repo-scoped comemory wrapper. Keep facts in memory and recurring procedures in project skills."
+    ctx="Before compaction, use MCP save for verified reusable lessons; keep recurring procedures in project skills."
     ;;
   Stop)
-    # Enforcement runs BEFORE the once-per-day maintenance latch, in its own
-    # function; when it blocks it prints the decision and exits without
-    # touching the latch below.
-    recall_enforce_block "$input" "$PS_CWD" && exit 0
+    # The advisory runs BEFORE the once-per-day maintenance latch, in its own
+    # function. It is independent of maintenance: emitting a message must not
+    # skip the daily detached work now that Stop is never blocked.
+    recall_advisory "$input" "$PS_CWD" || true
     command -v comemory >/dev/null 2>&1 || exit 0
     root="$(ps_config_root)/comemory"
     mkdir -p "$root" || exit 0

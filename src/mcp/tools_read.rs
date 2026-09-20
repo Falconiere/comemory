@@ -33,9 +33,7 @@ impl ComemoryServer {
     /// One ranked list across memory, code and documents, plus a `query_id`.
     #[tool(
         name = "find",
-        description = "Recall memories and code for a natural-language question. \
-Returns ranked hits across both corpora plus a query_id — call this first, \
-before exploring a repository, and report the verdict back through `feedback`."
+        description = "Search memories, code and documents. Returns ranked hits and query_id. Start with k=3; read selected hits, then feedback."
     )]
     async fn find(
         &self,
@@ -59,9 +57,7 @@ before exploring a repository, and report the verdict back through `feedback`."
     /// Ranked memory hits only.
     #[tool(
         name = "search",
-        description = "Search saved memories only. Returns ranked memory hits with \
-their ids, titles and scores plus a query_id; use it when you already know the \
-answer is a recorded decision, convention or bug rather than code."
+        description = "Search memories only; returns ids, titles, scores and query_id. Use k=3 for focused recall."
     )]
     async fn search(
         &self,
@@ -86,9 +82,7 @@ answer is a recorded decision, convention or bug rather than code."
     /// Ranked code-symbol hits only.
     #[tool(
         name = "search_code",
-        description = "Search indexed code symbols only. Returns ranked functions, \
-types and methods with their file, line span and repo plus a query_id; use it to \
-locate an implementation before reading files."
+        description = "Search indexed code; returns symbols, locations and query_id. Use k=3, then read the relevant files."
     )]
     async fn search_code(
         &self,
@@ -104,12 +98,10 @@ locate an implementation before reading files."
         .await
     }
 
-    /// The token-budgeted briefing bundle for a task.
+    /// Full memory bodies and their linked code and relations.
     #[tool(
         name = "context",
-        description = "Assemble a token-budgeted briefing for a task. Returns the \
-memories and code symbols that fit the budget, already ordered — call it when \
-starting work and you want one payload instead of several searches."
+        description = "Return full memory bodies and linked code/relations. k limits memory count, not tokens; prefer find then selective show for concise recall."
     )]
     async fn context(
         &self,
@@ -132,9 +124,7 @@ starting work and you want one payload instead of several searches."
     /// One memory in full. No `repo` parameter: an 8-hex id is global.
     #[tool(
         name = "show",
-        description = "Fetch one memory by its 8-hex id. Returns the full body, \
-frontmatter and relations — call it before citing or acting on a hit, since a \
-search result carries only an excerpt."
+        description = "Read one memory by its 8-hex id: full body, metadata and relations. Read selected hits before relying on them."
     )]
     async fn show(
         &self,
@@ -146,9 +136,7 @@ search result carries only an excerpt."
     /// One page of live memories.
     #[tool(
         name = "list",
-        description = "Page through live memories with optional repo, kind, tag and \
-quality filters. Returns a page of rows with ids and titles — use it to browse or \
-audit what is stored, not to answer a question."
+        description = "Browse a page of live memories; filter by repo, kind, tag or quality."
     )]
     async fn list(
         &self,
@@ -161,12 +149,10 @@ audit what is stored, not to answer a question."
         .await
     }
 
-    /// Relation-graph neighbours of a node.
+    /// Lexical search over relation triplets.
     #[tool(
         name = "edges",
-        description = "List the graph edges touching a node. Returns each neighbour \
-with its relation and direction — use it to follow `supersedes`, `references` and \
-co-activation links out from a memory or a file."
+        description = "Search relation triplets by words in titles, paths or relation names. Returns ranked edges; this is not node-id adjacency lookup."
     )]
     async fn edges(
         &self,
@@ -185,9 +171,7 @@ co-activation links out from a memory or a file."
     /// The indexed-repository inventory.
     #[tool(
         name = "repos",
-        description = "List the indexed repositories. Returns each repo label with \
-its symbol and memory counts — use it to learn the exact label to pass as `repo` \
-elsewhere."
+        description = "List indexed repo labels, counts and freshness. Unscoped by default; use these labels in repo parameters."
     )]
     async fn repos(
         &self,
@@ -204,9 +188,7 @@ elsewhere."
     /// Tracked recalls, verdicts, saves and the still-unjudged queries.
     #[tool(
         name = "recall_status",
-        description = "Report the recall loop's state for a repo since a timestamp. \
-Returns tracked query counts, verdicts, saves and the pending queries with no \
-verdict yet — call it to find which query_ids still owe a `feedback` call."
+        description = "Report shared repo activity since a timestamp: queries, verdicts, saves and unjudged queries. Not session-specific; empty recalls need no verdict."
     )]
     async fn recall_status(
         &self,
@@ -221,7 +203,7 @@ verdict yet — call it to find which query_ids still owe a `feedback` call."
 }
 
 /// The one line every read tool above is: clone the session, run `f` on the
-/// blocking pool with the connection locked only inside it, and shape the
+/// blocking pool with the session locked only inside it, and shape the
 /// outcome into a protocol result.
 async fn read_tool<T, F>(server: &ComemoryServer, f: F) -> Result<CallToolResult, ErrorData>
 where

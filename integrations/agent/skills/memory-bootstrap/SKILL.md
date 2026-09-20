@@ -18,7 +18,8 @@ session — once the corpus is seeded, `agent-memory` is the loop to use.
 3. Index docs: `comemory index <dir> --repo <scope>` for each docs folder
    that actually exists in this repo (e.g. `docs/`, `README.md`) — skip the
    ones that don't.
-4. When a platform session id is known, distill it:
+4. For Claude Code only, when a captured platform session id is known,
+   distill its Claude JSONL transcript:
    `comemory distill --session-id <id> --transcript <path> --dry-run` first,
    then without `--dry-run` to file the candidates.
 5. Save the decisions the repo cannot derive from itself: why a choice was
@@ -31,10 +32,13 @@ session — once the corpus is seeded, `agent-memory` is the loop to use.
 
 - Do not save summaries of files that indexing already covers — that's
   duplicate content with no reasoning attached.
-- Do not skip `--repo` on raw `index-code`/`index`/`distill` calls; an
-  unscoped bootstrap corpus is unusable by the repo-scoped recall hooks.
-- Do not distill a transcript with no session id — the platform join key is
-  required; there is no local-only distill.
+- Do not skip `--repo` on raw `index-code`/`index` calls; an unscoped
+  bootstrap corpus is unusable by the repo-scoped recall hooks. `distill`
+  has no `--repo` option.
+- Do not distill a transcript with no captured platform session id — that
+  platform-scoped join key is required; there is no local-only distill.
+  Distillation currently accepts Claude Code JSONL transcripts, not Codex
+  session data.
 - A single bootstrap pass does not replace the ongoing loop: keep saving
   verified corrections and decisions as they happen, per `agent-memory`.
 

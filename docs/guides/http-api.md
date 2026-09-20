@@ -152,7 +152,7 @@ disagree, trust the running server.
 | ○ `GET\|POST /context` | `context` | same GET/POST split |
 | ● `POST /memories` | `save` | content-addressed, idempotent replay; `created` in the response; `409 id_collision` — see [Save contract](#save-contract) |
 | ● `DELETE /memories/{id}?confirm=true` | `delete` | soft-delete, **confirm** |
-| ● `POST /feedback` | `feedback` | `{query_id, used[], irrelevant[], used_code[], irrelevant_code[], source?}`; `source` is `explicit` (default) or `implicit` and is stored as every verdict's `feedback_events.provenance` (`manual` / `implicit`) — any other value is `400 bad_request`; `data.provenance` echoes what was stored |
+| ● `POST /feedback` | `feedback` | `{query_id, used[], irrelevant[], used_code[], irrelevant_code[], source?}`; memory and code verdicts commit atomically; `source` is `explicit` (default) or `implicit` and is stored as every verdict's `feedback_events.provenance` (`manual` / `implicit`) — any other value is `400 bad_request`; `data.provenance` echoes what was stored |
 
 **Code** (`serve/routes/code.rs`)
 

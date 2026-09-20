@@ -23,11 +23,11 @@ use crate::mcp::state::McpState;
 /// class [`crate::mcp::result`] marks retryable, and an agent that does not
 /// know it is transient will otherwise report a broken server.
 pub const INSTRUCTIONS: &str = "\
-1. Recall first: call `find` with the user's question before exploring a repository.
-2. Judge what you used: call `feedback` with the ids you acted on, and with confirmed_by_user only when the user stated the verdict.
-3. Save what is worth keeping: `save` verified corrections, decisions and fixes with evidence, passing `supersedes` for the memories they replace.
-4. Read before citing: `show` an id before you quote or act on it — a search hit carries only an excerpt.
-5. Retry a locked store: on a `store_locked` error wait a moment and retry the same call once.";
+1. Recall before repository exploration: find with k=3 unless relevant results are already in context.
+2. Read selected memories with show; read code/document hits at their paths.
+3. Give feedback on tracked results you used; confirmed_by_user requires an explicit user verdict. Empty recalls need no verdict.
+4. Save verified lessons with evidence; use supersedes for outdated memories.
+5. On store_locked, wait briefly and retry once.";
 
 /// Appended to [`INSTRUCTIONS`] when the session resolved no default repo
 /// (no `--repo` and no git work tree at the process's cwd), so the host is

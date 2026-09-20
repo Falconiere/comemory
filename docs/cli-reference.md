@@ -450,6 +450,30 @@ Examples:
 
 ---
 
+## comemory distill
+
+```
+Extract explicit `comemory save` claims from a transcript and propose them as platform candidate memories (CLI-only)
+
+Usage: comemory distill [OPTIONS] --session-id <ID> --transcript <PATH>
+
+Options:
+      --json                 Emit machine-readable JSON instead of a human TTY view
+      --session-id <ID>      Platform session id from a prior `POST /v1/sessions` capture receipt
+      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+      --transcript <PATH>    Path to a Claude Code JSONL transcript
+      --dry-run              Build and print the candidate batch without POSTing
+      --api-url <URL>        Override the platform API base (defaults to the URL stored in auth.json)
+  -h, --help                 Print help
+
+Examples:
+  comemory distill --session-id <uuid> --transcript ~/.claude/projects/.../session.jsonl --dry-run
+  comemory distill --session-id <uuid> --transcript ./session.jsonl --json
+  comemory distill --session-id <uuid> --transcript ./session.jsonl --api-url https://dev-api.comemory.io
+```
+
+---
+
 ## comemory feedback
 
 ```
@@ -495,36 +519,6 @@ Examples:
 
 ---
 
-## comemory recall-status
-
-```
-Report tracked recalls awaiting a verdict, verdicts and saves since a bound
-
-Usage: comemory recall-status [OPTIONS]
-
-Options:
-      --json                 Emit machine-readable JSON instead of a human TTY view
-      --repo <REPO>          Restrict every count to this repo. Unset reports across every repo
-      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
-      --since <WHEN>         Lower time bound. Accepts an RFC3339 timestamp or a bare `YYYY-MM-DD` date (start of that UTC day) — the same grammar `search --since` accepts. Defaults to the start of the current UTC day when omitted
-  -h, --help                 Print help
-
-Examples:
-  # Everything tracked since the start of today
-  comemory recall-status
-
-  # Scope to one repo
-  comemory recall-status --repo comemory
-
-  # A wider window
-  comemory recall-status --since 2026-09-01
-
-  # JSON for a dashboard or an agent's own recall loop
-  comemory recall-status --repo comemory --json
-```
-
----
-
 ## comemory eval
 
 ```
@@ -554,6 +548,146 @@ Examples:
 
   # Past eval/tune/bandit runs, newest-first
   comemory eval --history --limit 20 --json
+```
+
+---
+
+## comemory benchmark
+
+```
+Score a reviewed benchmark set over memory, code and document retrieval, and emit a replayable candidate-observation artifact
+
+Usage: comemory benchmark [OPTIONS] --set <SET>
+
+Options:
+      --json                 Emit machine-readable JSON instead of a human TTY view
+      --set <SET>            Path to the reviewed benchmark set YAML
+      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+      --report <REPORT>      Write the full replayable artifact JSON here (created or truncated)
+      --scores <SCORES>      Add one arm from a scorer's JSON scores file. Repeatable
+      --k <K>                Override the set's recall@k / nDCG@k cut
+  -h, --help                 Print help
+
+Examples:
+  # Score the deterministic baseline over a reviewed set
+  comemory benchmark --set benchmark.yaml
+
+  # Write the replayable artifact, then score an external scorer over it
+  comemory benchmark --set benchmark.yaml --report run.json
+  comemory benchmark --set benchmark.yaml --scores reranker.json --json
+
+  # Compare two scorers against one candidate snapshot at recall@10
+  comemory benchmark --set benchmark.yaml --scores base.json --scores lora.json --k 10
+```
+
+---
+
+## comemory judge
+
+```
+Record reviewed relevance verdicts against a captured candidate observation, or report that observation (CLI-only)
+
+Usage: comemory judge [OPTIONS] <OBSERVATION_ID>
+
+Arguments:
+  <OBSERVATION_ID>  Id of the captured observation (`o-<yyyymmdd>-<8hex>`, as printed by `comemory find` when candidate capture is enabled)
+
+Options:
+      --json                 Emit machine-readable JSON instead of a human TTY view
+      --ref <REF=RELEVANCE>  A verdict, as `<candidate_ref>=<relevance>` with relevance in 0..=3. Repeatable. With none, the observation is reported and nothing is written
+      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+  -h, --help                 Print help
+
+Examples:
+  # Capture a pool, then look at what it recorded
+  COMEMORY_OBSERVATIONS_ENABLED=1 comemory find "frontmatter contract"
+  comemory judge o-20260918-9f8e7d6c
+
+  # Grade three candidates, one per domain (0 = reviewed and not relevant)
+  comemory judge o-20260918-9f8e7d6c \
+    --ref 'memory:5a9f19bc:5a9f19bc403e...=3' \
+    --ref 'code:comemory:src/domains/retrieval/rerank.rs:rerank:9d1c1f0b=2' \
+    --ref 'document:0f1e2d3c:guides/schema-migrations.md:7b2a9c:3=0'
+```
+
+---
+
+## comemory export-dataset
+
+```
+Export the reviewed relevance dataset and its manifest as versioned JSONL, with grouped splits and a withheld holdout (CLI-only)
+
+Usage: comemory export-dataset [OPTIONS] --out <OUT>
+
+Options:
+      --json
+          Emit machine-readable JSON instead of a human TTY view
+
+      --out <OUT>
+          Output directory (created if absent). Every file this command owns is removed from it before writing; nothing else is touched
+
+      --data-dir <DATA_DIR>
+          Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable
+
+          [env: COMEMORY_DATA_DIR=]
+
+      --provenance <WORD>
+          Which judgment provenance reaches the dataset. Implicit labels are never written to the reviewed files.
+
+          The accepted words are read off `ProvenanceFilter::WORDS`, so clap can refuse a typo before the database opens without the vocabulary being spelled a second time. The core still validates: `Request` derives `Deserialize`, so it must refuse a bad word whatever the caller is.
+
+          [default: manual]
+          [possible values: manual, implicit, all]
+
+      --include-unjudged
+          Also emit a record for every retrieved candidate nobody judged, carrying `label: null`. Never a relevance of 0
+
+      --include-holdout
+          Also write the holdout split. Withheld by default, so training-time mining and model selection have no qualification file to read
+
+      --domain <DOMAIN>
+          Restrict records to a domain (`memory`, `code`, `document`). Repeatable; all three by default.
+
+          The accepted words are the contract's own `CandidateDomain` spellings, read off the enum rather than restated here.
+
+          [possible values: memory, code, document]
+
+      --since <WHEN>
+          Only observations captured at or after this instant
+
+      --until <WHEN>
+          Only observations captured before this instant
+
+      --split <TRAIN,VALIDATION,HOLDOUT>
+          Train, validation and holdout ratios, summing to 1.0
+
+      --split-seed <STRING>
+          Salt for the group hash. Changing it reassigns every group
+
+      --holdout-repo <LABEL>
+          Reserve every group holding a code candidate from this repo for the holdout split, whatever its hash says
+
+      --holdout-since <WHEN>
+          Reserve every group holding an observation captured at or after this instant for the holdout split
+
+      --max-negatives-per-query <N>
+          Cap how many reviewed relevance-0 records one query group contributes to one split. 0 is unlimited
+
+          [default: 0]
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+Examples:
+  # Reviewed verdicts only, holdout withheld (the defaults)
+  comemory export-dataset --out ./dataset
+
+  # Include the pool a reviewer did not judge, marked label: null
+  comemory export-dataset --out ./dataset --include-unjudged
+
+  # Reserve one repository as the qualification split, then release it
+  comemory export-dataset --out ./dataset --holdout-repo comemory
+  comemory export-dataset --out ./qualify --holdout-repo comemory --include-holdout
 ```
 
 ---
@@ -793,6 +927,212 @@ Examples:
 
 ---
 
+## comemory stats
+
+```
+Report corpus counters and the size of `comemory.db`
+
+Usage: comemory stats [OPTIONS]
+
+Options:
+      --json                 Emit machine-readable JSON instead of a human TTY view
+      --repo <REPO>          Scope the per-repo counters (memories, trashed, code symbols, documents) to one repo label. Edge, database-size, repo, and markdown counts stay global
+      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+  -h, --help                 Print help
+
+Examples:
+  # Corpus counters and database size
+  comemory stats
+
+  # Scope the per-repo counters to one repo (db_bytes stays global)
+  comemory stats --repo comemory
+
+  # JSON for a dashboard or CI
+  comemory stats --json
+```
+
+---
+
+## comemory repos
+
+```
+List indexed code repositories with their index freshness
+
+Usage: comemory repos [OPTIONS]
+
+Options:
+      --json                 Emit machine-readable JSON instead of a human TTY view
+      --repo <REPO>          Narrow the inventory to one repo label
+      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+  -h, --help                 Print help
+
+Examples:
+  # Every indexed repo, ordered by label
+  comemory repos
+
+  # Narrow to one repo label
+  comemory repos --repo comemory
+
+  # JSON for the console or scripting
+  comemory repos --json
+```
+
+---
+
+## comemory show
+
+```
+Show one memory in full: body, frontmatter, activation, references
+
+Usage: comemory show [OPTIONS] <ID>
+
+Arguments:
+  <ID>  8-hex memory id to show in full
+
+Options:
+      --json                 Emit machine-readable JSON instead of a human TTY view
+      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+  -h, --help                 Print help
+
+Examples:
+  # Show one memory in full
+  comemory show a1b2c3d4
+
+  # JSON for scripting
+  comemory show a1b2c3d4 --json
+```
+
+---
+
+## comemory find
+
+```
+Search memories, code, and documents as one ranked list
+
+Usage: comemory find [OPTIONS] <QUERY>
+
+Arguments:
+  <QUERY>
+          Natural-language query string
+
+Options:
+      --json
+          Emit machine-readable JSON instead of a human TTY view
+
+      --k <K>
+          Page size — overrides the configured `retrieval.top_k`
+
+          [alias: --limit]
+
+      --data-dir <DATA_DIR>
+          Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable
+
+          [env: COMEMORY_DATA_DIR=]
+
+      --offset <OFFSET>
+          Ranked results to skip (deep paging)
+
+          [default: 0]
+
+      --domain <DOMAIN>
+          Restrict to one domain
+
+          [default: all]
+
+      --repo <REPO>
+          Repo filter. Narrows the memory and code legs
+
+      --kind <KIND>
+          Memory-kind filter. Narrows the memory leg only
+
+          Possible values:
+          - decision:   A choice made and its rationale
+          - bug:        A defect and how it was diagnosed or fixed
+          - convention: A team or codebase convention to follow going forward
+          - discovery:  An observation worth remembering that isn't a decision or bug
+          - pattern:    A reusable approach or idiom
+          - note:       A catch-all memory kind not covered by the others
+
+      --lang <LANG>
+          Language filter. Narrows the code leg only
+
+      --path <GLOB>
+          Document path glob (repeatable). Narrows the document leg only
+
+      --vector <VECTOR>
+          Caller-supplied dense vector as a comma-separated float list
+
+      --vector-stdin
+          Read a JSON `{ "embedding": [..] }` payload from stdin
+
+      --since <WHEN>
+          Only consider memories created at or after this instant
+
+      --until <WHEN>
+          Only consider memories created at or before this instant
+
+      --as-of <WHEN>
+          Search the corpus as it stood at this instant
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+Examples:
+  # One ranked list across every domain
+  comemory find "frontmatter contract"
+
+  # Just the code domain — same ordering as `comemory search-code`
+  comemory find "parse_frontmatter" --domain code
+
+  # JSON; every hit carries `domain`, `rank_in_domain`, and that domain's
+  # own `score_parts` object verbatim
+  comemory find "rrf fusion" --json
+
+  # The document leg's weight relative to memory and code (both 1.0) is
+  # COMEMORY_RETRIEVAL_DOCUMENT_LEG_WEIGHT (default 0.5)
+  COMEMORY_RETRIEVAL_DOCUMENT_LEG_WEIGHT=1.5 comemory find "upgrade guide"
+
+  # With [observations] enabled, each run records its candidate pool and
+  # prints the observation id `comemory judge` takes
+  COMEMORY_OBSERVATIONS_ENABLED=1 comemory find "rrf fusion"
+```
+
+---
+
+## comemory hooks
+
+```
+Report and toggle the git hooks that trigger background reindexing
+
+Usage: comemory hooks [OPTIONS]
+
+Options:
+      --json                 Emit machine-readable JSON instead of a human TTY view
+      --repo <REPO>          Repo root the three git hooks are read from / written to. Defaults to the current working directory. Irrelevant to the `search-edit-reinforcement` row [default: .]
+      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+      --enable <ENABLE>      Install/enable one hook: `post-commit`, `post-merge`, `post-checkout`, or `search-edit-reinforcement`
+      --disable <DISABLE>    Remove/disable one hook: `post-commit`, `post-merge`, `post-checkout`, or `search-edit-reinforcement`
+  -h, --help                 Print help
+
+Examples:
+  # List every hook's state for the current repo
+  comemory hooks
+
+  # List for a specific repo
+  comemory hooks --repo /path/to/repo
+
+  # Turn one git hook off, leaving the other two untouched
+  comemory hooks --disable post-checkout
+
+  # Turn search->edit auto-reinforcement off
+  comemory hooks --disable search-edit-reinforcement
+
+  # JSON for the console or scripting
+  comemory hooks --json
+```
+
+---
+
 ## comemory unindex
 
 ```
@@ -1023,6 +1363,40 @@ Examples:
 
 ---
 
+## comemory setup
+
+```
+Detect what this machine and repo still need, then set it up
+
+Usage: comemory setup [OPTIONS]
+
+Options:
+      --json                 Emit machine-readable JSON instead of a human TTY view
+      --yes                  Apply every pending step without prompting
+      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+      --dry-run              Report the plan and change nothing
+      --only <ONLY>          Comma-separated step ids to run; every other step is skipped
+      --skip <SKIP>          Comma-separated step ids to skip
+      --host <HOST>          Restrict the agent-host step to one host (`claude` or `codex`)
+      --repo <REPO>          Repo root for the repo-scoped steps. Defaults to the working directory
+  -h, --help                 Print help
+
+Examples:
+  # Interactive: pick what to enable here
+  comemory setup
+
+  # Non-interactive: apply everything this machine can
+  comemory setup --yes
+
+  # See the plan without changing anything
+  comemory setup --dry-run --json
+
+  # Just the git hooks, in another repo
+  comemory setup --yes --only git-hooks --repo /path/to/repo
+```
+
+---
+
 ## comemory context
 
 ```
@@ -1064,6 +1438,36 @@ to detect dirty/recent files) AND the repo label used at index time
 (`index-code --repo`) matches the --repo flag — or, when --repo is
 omitted, the label every linked worktree shares with its main working
 tree: that tree's basename.
+```
+
+---
+
+## comemory completions
+
+```
+Emit a shell completion script for `bash`, `zsh`, `fish`, `powershell`, or `elvish`
+
+Usage: comemory completions [OPTIONS] <SHELL>
+
+Arguments:
+  <SHELL>  Shell to emit a completion script for [possible values: bash, elvish, fish, powershell, zsh]
+
+Options:
+      --json                 Emit machine-readable JSON instead of a human TTY view
+      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+  -h, --help                 Print help
+
+Examples:
+  # fish (autoloaded from this path)
+  comemory completions fish > ~/.config/fish/completions/comemory.fish
+
+  # zsh (homebrew site-functions path)
+  comemory completions zsh > "$(brew --prefix)/share/zsh/site-functions/_comemory"
+
+  # bash (homebrew bash-completion.d)
+  comemory completions bash > "$(brew --prefix)/etc/bash_completion.d/comemory"
+
+  # NOTE: scripts/dev-install.sh writes these automatically by default.
 ```
 
 ---
@@ -1170,6 +1574,36 @@ Examples:
 
 ---
 
+## comemory recall-status
+
+```
+Report tracked recalls awaiting a verdict, verdicts and saves since a bound
+
+Usage: comemory recall-status [OPTIONS]
+
+Options:
+      --json                 Emit machine-readable JSON instead of a human TTY view
+      --repo <REPO>          Restrict every count to this repo. Unset reports across every repo
+      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+      --since <WHEN>         Lower time bound. Accepts an RFC3339 timestamp or a bare `YYYY-MM-DD` date (start of that UTC day) — the same grammar `search --since` accepts. Defaults to the start of the current UTC day when omitted
+  -h, --help                 Print help
+
+Examples:
+  # Everything tracked since the start of today
+  comemory recall-status
+
+  # Scope to one repo
+  comemory recall-status --repo comemory
+
+  # A wider window
+  comemory recall-status --since 2026-09-01
+
+  # JSON for a dashboard or an agent's own recall loop
+  comemory recall-status --repo comemory --json
+```
+
+---
+
 ## comemory gc
 
 ```
@@ -1191,6 +1625,33 @@ Examples:
 
   # JSON output for CI/automation
   comemory gc --json
+```
+
+---
+
+## comemory install-hooks
+
+```
+Install git hooks that trigger `comemory index-code` on `post-commit`, `post-merge`, and `post-checkout`
+
+Usage: comemory install-hooks [OPTIONS]
+
+Options:
+      --json                 Emit machine-readable JSON instead of a human TTY view
+      --repo <REPO>          Repo root to install hooks into. Defaults to the current working directory [default: .]
+      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+      --force                Overwrite a hook comemory did not write. A hook comemory DID write is always refreshed to this binary's body, with or without this flag, so one installed by an older release stops labelling every `git worktree` as its own repo. Without this flag the command refuses to clobber a hand-written `post-commit`/`post-merge`/`post-checkout`
+  -h, --help                 Print help
+
+Examples:
+  # Install into the current repo
+  comemory install-hooks
+
+  # Install into a specific repo path
+  comemory install-hooks --repo /path/to/repo
+
+  # Overwrite a hand-written hook (comemory's own is refreshed anyway)
+  comemory install-hooks --force
 ```
 
 ---
@@ -1232,63 +1693,6 @@ Examples:
   comemory install claude
   comemory install codex
   comemory install claude --dry-run --config-dir /tmp/claude-preview
-```
-
----
-
-## comemory install-hooks
-
-```
-Install git hooks that trigger `comemory index-code` on `post-commit`, `post-merge`, and `post-checkout`
-
-Usage: comemory install-hooks [OPTIONS]
-
-Options:
-      --json                 Emit machine-readable JSON instead of a human TTY view
-      --repo <REPO>          Repo root to install hooks into. Defaults to the current working directory [default: .]
-      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
-      --force                Overwrite a hook comemory did not write. A hook comemory DID write is always refreshed to this binary's body, with or without this flag, so one installed by an older release stops labelling every `git worktree` as its own repo. Without this flag the command refuses to clobber a hand-written `post-commit`/`post-merge`/`post-checkout`
-  -h, --help                 Print help
-
-Examples:
-  # Install into the current repo
-  comemory install-hooks
-
-  # Install into a specific repo path
-  comemory install-hooks --repo /path/to/repo
-
-  # Overwrite a hand-written hook (comemory's own is refreshed anyway)
-  comemory install-hooks --force
-```
-
----
-
-## comemory completions
-
-```
-Emit a shell completion script for `bash`, `zsh`, `fish`, `powershell`, or `elvish`
-
-Usage: comemory completions [OPTIONS] <SHELL>
-
-Arguments:
-  <SHELL>  Shell to emit a completion script for [possible values: bash, elvish, fish, powershell, zsh]
-
-Options:
-      --json                 Emit machine-readable JSON instead of a human TTY view
-      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
-  -h, --help                 Print help
-
-Examples:
-  # fish (autoloaded from this path)
-  comemory completions fish > ~/.config/fish/completions/comemory.fish
-
-  # zsh (homebrew site-functions path)
-  comemory completions zsh > "$(brew --prefix)/share/zsh/site-functions/_comemory"
-
-  # bash (homebrew bash-completion.d)
-  comemory completions bash > "$(brew --prefix)/etc/bash_completion.d/comemory"
-
-  # NOTE: scripts/dev-install.sh writes these automatically by default.
 ```
 
 ---
@@ -1403,6 +1807,29 @@ Examples:
   comemory sync daemon stop
   comemory sync daemon uninstall
   comemory sync daemon run
+```
+
+---
+
+## comemory watch
+
+```
+Follow the organization's changes over the workspace channel
+
+Usage: comemory watch [OPTIONS]
+
+Options:
+      --json                 Emit machine-readable JSON instead of a human TTY view
+      --once                 Pull once the channel greets, then exit instead of following
+      --data-dir <DATA_DIR>  Override the data root (defaults to `$HOME/.comemory`). Honors the `COMEMORY_DATA_DIR` environment variable [env: COMEMORY_DATA_DIR=]
+  -h, --help                 Print help
+
+Examples:
+  # Follow the organization's changes until interrupted
+  comemory watch
+
+  # Pull once through the channel and exit (scripts, smoke checks)
+  comemory watch --once
 ```
 
 ---

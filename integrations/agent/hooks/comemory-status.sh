@@ -15,25 +15,22 @@ input="$(cat 2>/dev/null)"   # consume stdin so the hook IPC never stalls
 command -v jq       >/dev/null 2>&1 || exit 0
 command -v comemory >/dev/null 2>&1 || exit 0
 
-# Shared canonical repo-scope key (basename of git-common-dir's parent), one
-# definition for all three comemory entry points. Missing lib → silent no-op,
-# consistent with this hook's non-fatal contract.
-_rs="$(cd "${BASH_SOURCE%/*}/../lib" 2>/dev/null && pwd)/repo-scope.sh"
-[ -r "$_rs" ] || exit 0
-# shellcheck source=../lib/repo-scope.sh
-. "$_rs"
-
-if [ -n "${TOOLU_CONFIG_DIR:-}" ]; then
-  CFG="$TOOLU_CONFIG_DIR"
-elif [ "${TOOLU_HOST_OVERRIDE:-}" = codex ] || { [ -z "${TOOLU_HOST_OVERRIDE:-}" ] && [ -n "${PLUGIN_ROOT:-}" ]; }; then
-  CFG="${CODEX_HOME:-${HOME:+$HOME/.codex}}"
-else
-  CFG="${CLAUDE_CONFIG_DIR:-${HOME:+$HOME/.claude}}"
-fi
-[ -n "$CFG" ] || exit 0
 cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
 [ -n "$cwd" ] || cwd="${PWD:-}"
 [ -n "$cwd" ] || exit 0
+# shellcheck disable=SC2034 # Read by ps_load_cfg from the sourced library.
+PS_CWD="$cwd"
+
+# Shared repo scope and config policy. Missing lib → silent no-op, consistent
+# with this hook's non-fatal contract.
+_lib="$(cd "${BASH_SOURCE%/*}/../lib" 2>/dev/null && pwd)/project-skills.sh"
+[ -r "$_lib" ] || exit 0
+# shellcheck source=../lib/project-skills.sh
+. "$_lib"
+CFG=$(ps_config_root 2>/dev/null) || exit 0
+[ -n "$CFG" ] || exit 0
+memory_enabled=true
+ps_memory_enabled || memory_enabled=false
 
 KEY=$(comemory_repo_key "$cwd")
 [ -n "$KEY" ] || exit 0
@@ -63,7 +60,7 @@ jq -nc --arg repo "$KEY" --argjson count "$count" \
 # Bootstrap nudge: an empty repo gets no benefit from the recall hooks above
 # until something is indexed or saved. Point at the memory-bootstrap skill
 # only when the count is exactly zero; otherwise stay silent as before.
-if [ "$count" -eq 0 ] 2>/dev/null; then
+if [ "$memory_enabled" = true ] && [ "$count" -eq 0 ] 2>/dev/null; then
   ctx="Comemory: $KEY has no memories yet. Load the memory-bootstrap skill to index code, index docs, distill past sessions, and save the decisions this repo cannot derive from itself."
   jq -nc --arg ctx "$ctx" '{hookSpecificOutput:{hookEventName:"SessionStart",additionalContext:$ctx}}'
 fi

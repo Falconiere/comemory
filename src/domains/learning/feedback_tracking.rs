@@ -12,6 +12,7 @@ use time::OffsetDateTime;
 use crate::domains::learning::telemetry::StatsDb;
 use crate::prelude::*;
 use crate::store::Connection;
+use crate::store::connection::write_transaction;
 use crate::store::feedback as store_feedback;
 use crate::store::memory_row;
 use crate::utilities::telemetry::{PROV_IMPLICIT, PROV_MANUAL};
@@ -113,33 +114,52 @@ pub fn record_with_provenance(
     irrelevant: &[String],
     provenance: &str,
 ) -> Result<()> {
-    let now = memory_row::iso_format(OffsetDateTime::now_utc())?;
-    let tx = db.conn_mut().transaction()?;
-    for id in used {
-        store_feedback::insert_event(
-            &tx,
-            query_id,
-            id,
-            "used",
-            &now,
-            crate::utilities::telemetry::target::MEMORY,
-            provenance,
-        )?;
-        store_feedback::upsert_used(&tx, id, &now)?;
-    }
-    for id in irrelevant {
-        store_feedback::insert_event(
-            &tx,
-            query_id,
-            id,
-            "irrelevant",
-            &now,
-            crate::utilities::telemetry::target::MEMORY,
-            provenance,
-        )?;
-        store_feedback::upsert_irrelevant(&tx, id)?;
-    }
+    let tx = write_transaction(db.conn_mut())?;
+    write_with_provenance(&tx, query_id, used, irrelevant, provenance)?;
     tx.commit()?;
+    Ok(())
+}
+
+/// Write memory feedback rows through a transaction owned by the caller.
+/// This is the shared-transaction half used by the mixed memory+code command;
+/// [`record_with_provenance`] retains the standalone public transaction.
+pub(crate) fn write_with_provenance(
+    conn: &Connection,
+    query_id: &str,
+    used: &[String],
+    irrelevant: &[String],
+    provenance: &str,
+) -> Result<()> {
+    let now = memory_row::iso_format(OffsetDateTime::now_utc())?;
+    write_verdict_group(conn, query_id, used, "used", &now, provenance)?;
+    write_verdict_group(conn, query_id, irrelevant, "irrelevant", &now, provenance)
+}
+
+/// Write one verdict group in caller order, sharing the batch timestamp.
+fn write_verdict_group(
+    conn: &Connection,
+    query_id: &str,
+    ids: &[String],
+    verdict: &str,
+    now: &str,
+    provenance: &str,
+) -> Result<()> {
+    for id in ids {
+        store_feedback::insert_event(
+            conn,
+            query_id,
+            id,
+            verdict,
+            now,
+            crate::utilities::telemetry::target::MEMORY,
+            provenance,
+        )?;
+        if verdict == "used" {
+            store_feedback::upsert_used(conn, id, now)?;
+        } else {
+            store_feedback::upsert_irrelevant(conn, id)?;
+        }
+    }
     Ok(())
 }
 

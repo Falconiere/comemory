@@ -39,7 +39,7 @@ One line per file, named after its primary item:
 | `code_row.rs` | `CodeSymbolRow` | `code_symbols` row upserts (insert, refresh, delete-by-file), plus `distinct_paths_for_repo`, `parent_snippets` (the re-embed scan behind `maintenance::reembed`'s code leg), `count_for_repo`/`any_indexed` (the `index_runs` count and the `search-code` empty-index probe), the `rank_score` bulk writer behind `domains::graph::materialize`, `find_by_address` (the `references_symbol` edge resolver behind `retrieval::code_ref_collect`), `parent_identity` (chunk-coalescing lookup behind `retrieval::code_rerank`), and `symbol_row_exists` (the ghost-reference resolve check behind `maintenance::retention::stale_code`) |
 | `code_text.rs` | `CodeText` | Batched `code_symbols` read of the identity triple, the `blob_oid` content version, the line range and the snippet — the fields `code_rerank::CodeReranked` does not carry, read by the offline benchmark |
 | `code_signals.rs` | `Signals` | Per-symbol ranking signals: the `code_symbols` + `code_feedback` join behind `retrieval::code_prior`'s four-prior scorer, re-exported from `code_prior` so its own callers are unaffected |
-| `connection.rs` | `open` | Connection open: PRAGMAs, migrations, `sqlite-vec` auto-extension registration; also `open_read_only` — a plain read-only open with no migration, behind `maintenance::doctor`'s forward-compat fallback |
+| `connection.rs` | `open` | Connection open: serialized PRAGMAs and migrations, `sqlite-vec` auto-extension registration; `write_transaction` reserves SQLite's writer before reading; `open_read_only` is a plain read-only open with no migration, behind `maintenance::doctor`'s forward-compat fallback |
 | `doctor_probes.rs` | `live_memory_hashes` | The remaining `comemory doctor` health-check SQL: `live_memory_hashes` (mirror-parity stored hashes), `repo_roots` (the repo-root inventory), and `live_memory_count` |
 | `document_fts.rs` | `DocumentFtsHit` | `document_fts` insert/delete helpers + the BM25 MATCH query leg |
 | `documents.rs` | `DocumentUpsert` | `documents` + `document_chunks` row CRUD, plus `document_id_in_source` and `document_ids_for_repo_path`, the `(source, path)` / `(repo, path)` document-id lookups behind `domains::graph::doc_link` |
@@ -110,3 +110,8 @@ its `_journal.json` and snapshot) — see `migrations/README.md`.
 When you add a file here, add its row above so the index stays current. No
 `mod.rs` barrel — submodules are declared from `src/store.rs` (`pub mod
 <name>;`) and callers import concrete paths.
+
+Connection setup serializes WAL initialization and migrations with a sibling
+`.open.lock` advisory lock. `connection::write_transaction` reserves the writer
+before mirror reads so concurrent memory saves wait instead of failing a
+deferred transaction upgrade.
