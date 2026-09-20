@@ -53,6 +53,7 @@ the saved tagged memory rather than an architecture HTTP route. Use
 `{ "mermaid": "..." }` when `format` is `mermaid`. Every architecture tool
 requires a repo from its parameter or the session default. `architecture_save`
 is a write and returns `read_only` before checking scope in a read-only session;
-otherwise an unscoped call returns `repo_required`. Its raw model body is capped
-at 32 KiB before it is parsed. No MCP tool exposes `architecture learn` or
-the command execution behind it.
+otherwise an unscoped call returns `repo_required`. The serialized model is capped
+at 32 KiB before domain-schema deserialization; the stdio transport parses the
+JSON-RPC message first, with serde_json's default nesting guard. No MCP tool
+exposes `architecture learn` or the command execution behind it.

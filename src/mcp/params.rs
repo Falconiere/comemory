@@ -50,12 +50,15 @@ pub struct ArchitectureSaveParams {
     /// Repo label, defaulting to the MCP session scope.
     #[serde(default)]
     pub repo: Option<String>,
-    /// Complete schema-1 model to validate and store, bounded before parsing.
+    /// Complete schema-1 model, bounded before domain-schema deserialization.
     pub model: Value,
 }
 
 impl ArchitectureSaveParams {
-    /// Bound the raw body before deserializing it as the domain model.
+    /// Bound the serialized model before domain-schema deserialization.
+    ///
+    /// The MCP transport has already decoded the JSON value using serde_json's
+    /// default nesting guard. This is the model-size limit, not a framing limit.
     pub fn parse_model(self) -> Result<Model> {
         let raw = serde_json::to_vec(&self.model)?;
         if raw.len() > MAX_BYTES {
