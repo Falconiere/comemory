@@ -133,15 +133,15 @@ fn bounded_actor(raw: &str) -> String {
     raw.trim().chars().take(ACTOR_MAX_CHARS).collect()
 }
 
-/// Longest query text a summary carries. A query is the most useful thing
-/// the feed can show about a retrieval run and the most open-ended, so it is
-/// bounded here rather than at each call site.
-const QUERY_MAX_CHARS: usize = 200;
+/// Longest free text a summary carries — a query, a memory title. These are
+/// the most useful things the feed can show and the most open-ended, so the
+/// bound lives here rather than at each call site.
+const TEXT_MAX_CHARS: usize = 200;
 
-/// Bound a query for a summary, on char boundaries.
+/// Bound caller-supplied text for a summary, on char boundaries.
 #[must_use]
-pub fn bounded_query(raw: &str) -> String {
-    raw.chars().take(QUERY_MAX_CHARS).collect()
+pub fn bounded_text(raw: &str) -> String {
+    raw.chars().take(TEXT_MAX_CHARS).collect()
 }
 
 /// What a core finished with: its summary, or the error it failed with.

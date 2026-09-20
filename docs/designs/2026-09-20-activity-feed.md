@@ -35,15 +35,23 @@ who it is.
 7. **No user identity model.** `actor` is a self-declared label a caller
    supplied (MCP `clientInfo`, HTTP `User-Agent`, `COMEMORY_ACTOR`), never an
    authenticated principal.
-8. **No rows for cloud `sync push` / `sync pull`.** They need a live workspace
-   to exercise, and a mocked one would prove nothing. Revisit when a local
-   platform test harness exists.
+8. **No `sync.push` / `sync.pull` commands of their own.** Neither is
+   instrumented as a command: both need a live workspace to exercise, and a
+   mocked one would prove nothing. A `sync pull` still shows up in the feed,
+   because it applies what it fetched through `exchange::import` — so the feed
+   reports what the pull *changed locally* (`sync.import`), which is the
+   signal it exists for, on a path that is testable without a cloud.
 
 ## Architecture
 
 **Record at the command core, not at the delivery surface.** Each instrumented
 core is called exactly once per invocation by whichever surface was used, so
-one call site serves CLI, HTTP and MCP and no row can be double-counted. This
+one call site serves CLI, HTTP and MCP and no row can be double-counted. A core
+that another instrumented core calls internally is reached through an
+uninstrumented inner entry, never through the public `run`: `memories::update`
+re-saves through `save::run_with`, and `sync::exchange::import_rules` restores
+through `restore::restore_one`, so a batch that already reports itself cannot
+also report each entry. This
 is the rule `retrieval::pipeline::log_retrieval` already follows for
 `retrieval_log`, and the decisive trade-off against instrumenting
 `cli.rs::run` + `serve::routes::respond` + `mcp::exec::run`: those three see a
@@ -68,12 +76,13 @@ never open it.
 | `domains::sync::exchange::import` | `sync.import` |
 | `domains::code::index_code` | `index-code` |
 
-`sync.push` / `sync.pull` are **not** instrumented in v1 (Non-Goal 8): they
-talk to `api.comemory.io`, and this repository has no local cloud to run them
+`sync.push` / `sync.pull` get no command of their own (Non-Goal 8): they talk
+to `api.comemory.io`, and this repository has no local cloud to run them
 against, so a row they wrote could only be proven with a mock. `sync.import`
-— the same exchange applied locally through `POST /api/v1/sync/import` — is
-fully testable with real entries and carries the same "what did sync change"
-signal.
+is the same exchange applied locally — by `POST /api/v1/sync/import` and by
+`sync::pull`, which hands every fetched batch to that core — so a pull does
+appear in the feed, describing what it changed on this machine, over a path
+that is fully testable with real entries.
 
 `command` values reuse the `RouteEntry::command` vocabulary so CLI, HTTP and
 MCP cannot drift apart, and are declared as consts in
@@ -202,16 +211,17 @@ pub fn record(
 | `command` | `summary` |
 |---|---|
 | `save` | `{id, title, kind, tags: n, supersedes: n}` |
-| `delete` / `restore` | `{id, title}` |
+| `delete` / `restore` | `{id, derived_stale}` |
 | `update` | `{id, fields: ["body", "tags"]}` |
 | `search` / `context` | `{query, hits, query_id, top: [id, …]}` |
 | `find` | `{query, hits: {memory, code, document}, total, query_id, top: [id, …]}` |
 | `search-code` | `{query, hits, lang}` |
-| `feedback` | `{target, target_kind, verdict, provenance}` |
+| `feedback` | `{query_id, targets, used, irrelevant, used_code, irrelevant_code, provenance, known_query}` (`targets` capped at 5 ids) |
 | `sync.import` | `{entries, applied, skipped, head_seq}` (counts derived from `ImportResponse.results`) |
 | `index-code` | `{repo, files, mode}` |
 
-`query` is truncated to 200 chars; `top` is capped at 5 ids.
+`query` and `title` are bounded to 200 chars (`utilities::activity::bounded_text`);
+`top` is capped at 5 ids.
 
 ### `GET /api/v1/activity`
 

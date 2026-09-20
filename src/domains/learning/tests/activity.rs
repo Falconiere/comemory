@@ -13,6 +13,7 @@ use time::OffsetDateTime;
 
 use comemory::config::{Config, Paths};
 use comemory::domains::learning::feedback;
+use comemory::domains::memories::MemoryStore;
 use comemory::domains::memories::frontmatter::{References, Relations};
 use comemory::domains::memories::id::memory_id;
 use comemory::domains::memories::{self, Kind};
@@ -205,4 +206,81 @@ fn an_oversized_import_batch_records_a_failed_row() {
     assert_eq!(rows.len(), 1);
     assert!(!rows[0].ok);
     assert_eq!(rows[0].error_code.as_deref(), Some("bad_request"));
+}
+
+#[test]
+fn an_import_that_restores_a_trashed_memory_records_only_the_batch() {
+    let home = tempfile::tempdir().unwrap();
+    let paths = Paths::new(home.path());
+    paths.ensure_dirs().unwrap();
+    let mut conn = connection::open(paths.db_path()).unwrap();
+    let cfg = Config::defaults();
+    let body = "a lesson that will be trashed and then restored by an import";
+
+    // Save it, then trash it, so the import below has a restore to apply.
+    let saved = {
+        let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+        memories::save::run(
+            &mut ctx,
+            memories::save::Request {
+                body: body.to_string(),
+                title: None,
+                kind: Kind::Note,
+                repo: "demo".to_string(),
+                tags: Vec::new(),
+                author: String::new(),
+                quality: 3,
+                supersedes: Vec::new(),
+                vector: None,
+                ref_file: Vec::new(),
+                ref_symbol: Vec::new(),
+            },
+            false,
+            None,
+        )
+        .unwrap()
+    };
+    {
+        let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+        memories::delete::run(&mut ctx, &saved.id).unwrap();
+    }
+    let before_restores = rows_for(&conn, "restore").len();
+    // The local delete advanced the log, so the pusher's cursor has to name
+    // that head — otherwise the entry is refused as stale before it restores.
+    let cursor = comemory::store::sync_log::head_seq(&conn).unwrap();
+
+    let mut entry = import_entry(body);
+    entry.op = SyncOp::Restore;
+    let applied = {
+        let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+        import::run(
+            &mut ctx,
+            exchange::ImportRequest {
+                cursor,
+                entries: vec![entry],
+            },
+            None,
+        )
+        .unwrap()
+    };
+    assert_eq!(
+        applied.results[0].status,
+        exchange::ImportStatus::Accepted,
+        "the entry must actually restore: {:?}",
+        applied.results[0]
+    );
+
+    // The memory really came back — the restore ran, it just did not report
+    // itself a second time.
+    assert!(
+        MemoryStore::new(paths.clone()).load(&saved.id).is_ok(),
+        "the import restored the trashed memory"
+    );
+    assert_eq!(
+        rows_for(&conn, "restore").len(),
+        before_restores,
+        "the batch already records itself as one sync.import run; a per-entry \
+         restore row would report the same work twice"
+    );
+    assert_eq!(rows_for(&conn, "sync.import").len(), 1);
 }

@@ -190,3 +190,31 @@ fn a_missing_activity_table_does_not_disturb_the_caller() {
         .unwrap();
     assert_eq!(still_usable, 0, "the connection is still usable afterwards");
 }
+
+#[test]
+fn recording_never_creates_a_database() {
+    use comemory::config::Paths;
+    use comemory::utilities::activity::record_in;
+    use comemory::utilities::context::Ctx;
+    use std::time::Instant;
+
+    let dir = tempdir().unwrap();
+    let paths = Paths::new(dir.path());
+    let cfg = cfg();
+    let mut ctx = Ctx::lazy(&paths, &cfg);
+
+    // A command that failed before it ever opened the store still records —
+    // and must not acquire a database on the way out.
+    record_in(
+        &mut ctx,
+        command::INDEX_CODE,
+        Instant::now(),
+        &Outcome::Ok(&json!({"repo": "demo"})),
+        Some("demo"),
+    );
+
+    assert!(
+        !paths.db_path().exists(),
+        "telemetry must never be the reason comemory.db appears"
+    );
+}

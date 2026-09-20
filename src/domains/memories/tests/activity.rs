@@ -162,3 +162,28 @@ fn a_refused_save_records_a_failed_row_and_writes_no_memory() {
         .unwrap();
     assert_eq!(memories_written, 0, "the refusal wrote no memory");
 }
+
+#[test]
+fn a_long_title_is_bounded_in_the_save_summary() {
+    let home = tempfile::tempdir().unwrap();
+    let paths = Paths::new(home.path());
+    paths.ensure_dirs().unwrap();
+    let mut conn = connection::open(paths.db_path()).unwrap();
+    let cfg = Config::defaults();
+    let long = "pool ".repeat(200);
+
+    {
+        let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+        let mut req = request("a body whose title is far too long to store whole");
+        req.title = Some(long.clone());
+        memories::save::run(&mut ctx, req, false, None).unwrap();
+    }
+
+    let recorded = rows(&conn);
+    let title = summary_of(&recorded[0])["title"]
+        .as_str()
+        .expect("a title")
+        .to_string();
+    assert_eq!(title.chars().count(), 200);
+    assert!(long.starts_with(&title));
+}

@@ -111,7 +111,7 @@ fn domains_of(domain: Option<&str>) -> Result<Domains> {
 /// not two.
 pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<FindResult> {
     let started = Instant::now();
-    let query = activity::bounded_query(&req.query);
+    let query = activity::bounded_text(&req.query);
     let repo = req.repo.clone();
     let result = find(ctx, req, track);
     let summary = result.as_ref().map(|r| {

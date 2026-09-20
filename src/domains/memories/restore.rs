@@ -70,7 +70,14 @@ pub fn run(ctx: &mut Ctx<'_>, id: &str) -> Result<Response> {
 
 /// The restore itself, wrapped by [`run`] so the activity row is written
 /// once, outside the work it describes.
-fn restore_one(ctx: &mut Ctx<'_>, id: &str) -> Result<Response> {
+///
+/// `pub(crate)` for one caller: `sync::exchange::import_rules` restores a
+/// trashed memory as part of applying an import batch, and that batch already
+/// records itself as one `sync.import` run. Going through [`run`] there would
+/// write a second `restore` row per entry for work the batch has already
+/// reported — the same trap `memories::update` avoids by calling
+/// `save::run_with` instead of `save::run`.
+pub(crate) fn restore_one(ctx: &mut Ctx<'_>, id: &str) -> Result<Response> {
     let store = MemoryStore::new(ctx.paths.clone());
     let record = store.restore(id)?;
     let derived_stale = mirror(ctx, &store, &record).map_err(|e| {

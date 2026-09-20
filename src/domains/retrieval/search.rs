@@ -68,7 +68,7 @@ pub struct Request {
 /// "Read-only side-effect degradation").
 pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<SearchResult> {
     let started = Instant::now();
-    let query = activity::bounded_query(&req.query);
+    let query = activity::bounded_text(&req.query);
     let repo = req.repo.clone();
     let result = search(ctx, req, track);
     let summary = result.as_ref().map(|r| {

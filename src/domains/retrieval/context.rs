@@ -65,7 +65,7 @@ pub struct Request {
 /// `retrieval::pipeline::record_access`.
 pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<ContextResult> {
     let started = Instant::now();
-    let query = activity::bounded_query(&req.query);
+    let query = activity::bounded_text(&req.query);
     let repo = req.repo.clone();
     let result = bundle(ctx, req, track);
     let summary = result.as_ref().map(|r| {

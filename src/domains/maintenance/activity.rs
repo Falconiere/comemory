@@ -44,8 +44,11 @@ pub struct Request {
     /// Only runs at or after this RFC3339 UTC timestamp.
     #[serde(default)]
     pub since: Option<String>,
-    /// Page size; clamped to [`MAX_LIMIT`], defaulting to
-    /// [`DEFAULT_LIMIT`]. `0` means "all", also clamped.
+    /// Page size, defaulting to [`DEFAULT_LIMIT`] and clamped to
+    /// [`MAX_LIMIT`] — including `0`, which is the repository's "all"
+    /// sentinel everywhere else. This table grows by one row per command
+    /// run, so "all" here is an unbounded response over a loopback socket;
+    /// the feed serves a page instead and the caller walks it with `offset`.
     #[serde(default)]
     pub limit: Option<usize>,
     /// Rows to skip before the page starts.
@@ -130,7 +133,14 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
     if !ctx.paths.db_path().exists() {
         return Ok(Response::default());
     }
-    let limit = req.limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT);
+    let limit = match req.limit {
+        // `0` would reach the store's "all" sentinel; the feed has no bound
+        // of its own to fall back on, so it is clamped like any other
+        // oversized request (see `Request::limit`).
+        None => DEFAULT_LIMIT,
+        Some(0) => MAX_LIMIT,
+        Some(n) => n.min(MAX_LIMIT),
+    };
     let offset = req.offset.unwrap_or(0);
     let filter = ActivityFilter {
         repo: req.repo.as_deref(),

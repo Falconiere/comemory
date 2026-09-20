@@ -5,6 +5,7 @@
 //! ceiling (Binding Rule 3); nothing else belongs here.
 
 use crate::domains::memories::save::Response;
+use crate::utilities::activity::bounded_text;
 
 /// The request fields the activity summary reports, kept past the move of
 /// `Request` into the save itself.
@@ -27,7 +28,7 @@ pub(crate) struct Asked {
 pub(crate) fn activity_summary(asked: &Asked, res: &Response) -> serde_json::Value {
     serde_json::json!({
         "id": res.id,
-        "title": asked.title,
+        "title": asked.title.as_deref().map(bounded_text),
         "kind": asked.kind,
         "created": res.created,
         "tags": asked.tags,
