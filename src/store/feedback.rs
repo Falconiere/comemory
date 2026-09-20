@@ -154,8 +154,9 @@ pub fn used_events_for_golden(
 /// report. A `LEFT JOIN`: a verdict with no matching `retrieval_log` row
 /// (e.g. a co-activation sentinel query id) still counts when `repo` is
 /// `None`, and is excluded — rather than assumed — once a `repo` filter
-/// asks a question the row cannot answer. Text `>=` and the join are both
-/// unsupported toolu-orm 0.7.0 capabilities, so this stays hand SQL — see
+/// asks a question the row cannot answer. Text `>=` and the join both became
+/// expressible in toolu-orm 0.10.1 (`Scalar::gte`, `SelectBuilder::left_join`);
+/// this is still hand SQL, awaiting conversion — see
 /// `docs/guides/runtime-orm.md`.
 pub fn events_since(conn: &Connection, repo: Option<&str>, since: &str) -> Result<u64> {
     let count: i64 = conn.query_row(

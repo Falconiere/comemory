@@ -276,7 +276,7 @@ pub(crate) fn rehash_simhashes(conn: &mut Connection) -> Result<()> {
 /// Recompute `simhash::of_body` over each `(id, text)` row and persist with
 /// a cached generated update. Preserve each SQLite id value and collect the
 /// scan before any writes begin; memory and code id types differ.
-fn recompute_simhashes<T>(
+fn recompute_simhashes<T: 'static>(
     tx: &rusqlite::Transaction<'_>,
     query: &SelectBuilder,
     id_column: &Column<T>,

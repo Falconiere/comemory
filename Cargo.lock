@@ -3151,9 +3151,9 @@ checksum = "7d56353a2a665ad0f41a421187180aab746c8c325620617ad883a99a1cbe66d2"
 
 [[package]]
 name = "toolu-orm"
-version = "0.7.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0fd903f9125b6652d599f106bff7a7d1adbbb3a55870840eb02258885d7bccd"
+checksum = "f8c35700155444076f04de4fbce63e6067a3da67b144ddc0c0d578dee8fa192a"
 dependencies = [
  "toolu-orm-connection",
  "toolu-orm-core",
@@ -3163,9 +3163,9 @@ dependencies = [
 
 [[package]]
 name = "toolu-orm-cli"
-version = "0.7.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d5be0d8f6b31104e7e2f7fa6e785866467c5b6a5143bfbecb1d51c800d02eb29"
+checksum = "1ae419ff9e0a28049a09d9070d28f04c5c45269351f00f400f6910144d886d5e"
 dependencies = [
  "rusqlite",
  "thiserror",
@@ -3175,9 +3175,9 @@ dependencies = [
 
 [[package]]
 name = "toolu-orm-connection"
-version = "0.7.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c27523a365ffd4282ac478eca33e45a4ddfeaeef4f9484f154b27e8a0fedcef"
+checksum = "3996b1464abafc908030dfedc2f98fbedfc3e7038d71ef7f2a042bfae250f5ce"
 dependencies = [
  "async-trait",
  "rusqlite",
@@ -3189,9 +3189,9 @@ dependencies = [
 
 [[package]]
 name = "toolu-orm-core"
-version = "0.7.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "24444617c645b67957adbac05ce5b8c1399224c84a22e7e81dfc9ac8f48ee5f5"
+checksum = "e4a2045308b0ae922b01204c283fd0ccd3f36c7892c1ce28e97a573163ea079e"
 dependencies = [
  "rusqlite",
  "serde",
@@ -3203,9 +3203,9 @@ dependencies = [
 
 [[package]]
 name = "toolu-orm-macros"
-version = "0.7.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6d537fecd45ad4ed738db84737b71d807ea8b04fc125d8f40d41144a34c3e99"
+checksum = "d9cb05c88ae676ef641fac222f755670fd8b1099726a5938b9fb38ac4a12cd23"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -3216,9 +3216,9 @@ dependencies = [
 
 [[package]]
 name = "toolu-orm-query"
-version = "0.7.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "160e71825a4df0347e06c934a66c49df759f5d33cc9e892c9e399ce19427127d"
+checksum = "4001520d9aab25c43a7c5208f286494056350b287c725c1d85a70fb0e241999c"
 dependencies = [
  "async-trait",
  "rusqlite",

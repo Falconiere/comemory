@@ -24,7 +24,7 @@ applies a hand-written one.
 ## Which tables are declared
 
 All of them. `store::schema::DECLARED_TABLES` is the authoritative list —
-35 tables as of v20 on toolu-orm 0.7.0, one struct per table across
+35 tables as of v20 on toolu-orm 0.10.1, one struct per table across
 `src/store/schema_{core,memory,code,documents,graph,learning,history,sync}.rs`.
 The six gaps filed against toolu-orm while adopting it
 ([#64](https://github.com/Falconiere/toolu-orm/issues/64) … [#70](https://github.com/Falconiere/toolu-orm/issues/70))
