@@ -13,8 +13,17 @@ const BUCKET_COUNT: usize = 256;
 pub fn run(ctx: &mut Ctx<'_>) -> Result<ManifestResponse> {
     let conn = ctx.conn()?;
     let head_seq = sync_log::head_seq(conn)?;
+    Ok(from_hashes(
+        head_seq,
+        sync_manifest::live_content_hashes(conn)?,
+    ))
+}
+
+/// Build the protocol's 256-bucket digest from an already authorized hash set.
+#[must_use]
+pub fn from_hashes(head_seq: i64, hashes: Vec<String>) -> ManifestResponse {
     let mut buckets: Vec<Vec<String>> = vec![Vec::new(); BUCKET_COUNT];
-    for hash in sync_manifest::live_content_hashes(conn)? {
+    for hash in hashes {
         if hash.len() < 2 {
             continue;
         }
@@ -31,10 +40,10 @@ pub fn run(ctx: &mut Ctx<'_>) -> Result<ManifestResponse> {
             hex_encode(&digest)
         })
         .collect();
-    Ok(ManifestResponse {
+    ManifestResponse {
         buckets: digests,
         head_seq,
-    })
+    }
 }
 
 fn bucket_index(prefix: &str) -> Option<usize> {

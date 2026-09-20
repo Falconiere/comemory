@@ -22,7 +22,7 @@ fn save_req(body: &str) -> save::Request {
         body: body.to_string(),
         title: None,
         kind: Kind::Note,
-        repo: "acme/widgets".into(),
+        repo: "falconiere/comemory".into(),
         tags: Vec::new(),
         author: String::new(),
         quality: 3,
@@ -80,6 +80,26 @@ fn open_session_refuses_a_machine_that_is_not_logged_in() {
         !paths.db_path().exists(),
         "refusing a logged-out sync must not create the database"
     );
+}
+
+#[test]
+fn open_session_initializes_an_auth_only_data_directory() {
+    let server = SyncPlatformServer::start(SyncPlatformState::default());
+    let secret = server.snapshot().secret;
+    let home = tempfile::tempdir().expect("tempdir");
+    let paths = Paths::new(home.path().join("receiver"));
+    common::auth_fixture::seed_org_auth(
+        &paths,
+        &server.base,
+        &secret,
+        common::auth_fixture::FIXTURE_WORKSPACE,
+    );
+
+    let _session = manual::open_session(&paths, &Config::defaults()).expect("session");
+
+    assert!(paths.memories_dir().is_dir());
+    assert!(paths.index_dir().is_dir());
+    assert!(paths.db_path().is_file());
 }
 
 #[test]

@@ -5,7 +5,7 @@ use rusqlite::Connection;
 use serde::Serialize;
 
 use super::{
-    orm,
+    code_sync, orm, schema_meta,
     schema_sync::{SyncState, sync_state as col},
 };
 use crate::prelude::*;
@@ -81,6 +81,38 @@ pub fn list(conn: &Connection) -> Result<Vec<SyncStateRow>> {
         select_rows().order_by(col::workspace_id.asc()).to_sql(),
         read_row,
     )
+}
+
+/// Persist a policy fingerprint and reset memory/code reconciliation state
+/// atomically when the server revision or local repository identities change.
+///
+/// A reset zeroes both cursors and clears `last_sync_at` so a stale stamp
+/// cannot outlive the reconciliation.
+///
+/// Returns `true` when a reset was applied.
+pub fn reconcile_policy(
+    conn: &mut Connection,
+    workspace_id: &str,
+    fingerprint: &str,
+) -> Result<bool> {
+    let key = format!("sync_policy:{workspace_id}");
+    if schema_meta::get(conn, &key)?.as_deref() == Some(fingerprint) {
+        return Ok(false);
+    }
+    let tx = conn.transaction()?;
+    orm::execute(
+        &tx,
+        SyncState::update()
+            .set(&col::pulled_seq, 0_i64)
+            .set(&col::pushed_seq, 0_i64)
+            .set_expr(&col::last_sync_at, "NULL")
+            .filter(col::workspace_id.eq(workspace_id))
+            .to_sql(),
+    )?;
+    schema_meta::upsert(&tx, &key, fingerprint)?;
+    code_sync::clear_cursors(&tx)?;
+    tx.commit()?;
+    Ok(true)
 }
 
 /// Build the shared workspace/cursor projection.

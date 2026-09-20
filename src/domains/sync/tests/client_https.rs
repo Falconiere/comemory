@@ -117,7 +117,8 @@ fn https_test_client_changes_roundtrip() {
 #[test]
 fn https_production_pull_fails_tls_verify() {
     let base = start_https_changes_server(1);
-    let err = client::pull_changes(&base, SECRET, 0, 50).expect_err("self-signed must fail verify");
+    let err =
+        client::pull_changes(&base, SECRET, 0, 50, 1).expect_err("self-signed must fail verify");
     let msg = err.to_string();
     assert_map_reqwest_prefix(&msg);
     let lower = msg.to_lowercase();
@@ -138,7 +139,7 @@ fn connection_refused_error_includes_source() {
     let port = listener.local_addr().expect("addr").port();
     drop(listener);
 
-    let err = client::pull_changes(&format!("http://127.0.0.1:{port}"), SECRET, 0, 50)
+    let err = client::pull_changes(&format!("http://127.0.0.1:{port}"), SECRET, 0, 50, 1)
         .expect_err("refused");
     let msg = err.to_string();
     assert_map_reqwest_prefix(&msg);

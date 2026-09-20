@@ -8,10 +8,11 @@
 //! mined `co_changed` pairs. Never a line of source — see
 //! [`project_file`](crate::domains::sync::code::project_file), the one place a file entry is built.
 //!
-//! Every indexed repo (`repo_marker`) is offered unless its label matches
-//! `[sync] skip_repos`, `[sync] code_index` is off, or its recorded root is
-//! not a repository at all — a linked worktree, a root that is no longer on
-//! disk, or a directory git cannot open ([`not_a_repository`]). A `git worktree add` is a second checkout
+//! Every indexed repo (`repo_marker`) is offered only when its current origin
+//! resolves to an approved canonical GitHub identity. Its label can also match
+//! `[sync] skip_repos`, `[sync] code_index` can be off, or its recorded root can
+//! be invalid — a linked worktree, a root that is no longer on disk, or a
+//! directory git cannot open ([`not_a_repository`]). A `git worktree add` is a second checkout
 //! of a repository already synced under its own label; a row minted for one
 //! before that rule existed kept standing a per-worktree "repository" up in
 //! the console on every push. The unit of work is
@@ -29,17 +30,14 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use sha2::{Digest, Sha256};
-use time::OffsetDateTime;
-use time::format_description::well_known::Iso8601;
-
 use crate::config::{Config, Paths};
 use crate::domains::code::git_utils::{self, CheckoutKind};
 use crate::domains::sync::AuthFile;
-use crate::domains::sync::exchange::{CoChangeWire, CodeFileWire, CodeSymbolWire};
-use crate::domains::sync::{client_code, code_plan};
+use crate::domains::sync::code_repo_push;
+use crate::domains::sync::exchange::{CodeFileWire, CodeSymbolWire};
+use crate::domains::sync::repository_policy::RepositoryPolicy;
 use crate::prelude::*;
-use crate::store::code_sync::{self, CodeSyncCursor};
+use crate::store::code_sync;
 use crate::store::{Connection, connection, indexed_files, repo_marker};
 
 /// Counters surfaced by `comemory sync` and the login report.
@@ -57,6 +55,9 @@ pub struct CodePushStats {
     pub unchanged: u32,
     /// Repos withheld by `[sync] skip_repos`.
     pub skipped_config: u32,
+    /// Indexed repos withheld because their `origin` did not resolve to an
+    /// approved canonical GitHub repository.
+    pub blocked_repo: u32,
     /// Rows whose recorded root is a linked worktree — a second checkout of
     /// a repository already offered under its own label, never a repository
     /// of its own.
@@ -129,6 +130,7 @@ fn run(
     if !cfg.sync.code_index {
         return Ok(stats);
     }
+    let policy = RepositoryPolicy::load(conn, auth)?;
     let skip = cfg.sync.skip_matcher()?;
     for repo in repo_marker::all_repos(conn)? {
         if only.is_some_and(|wanted| wanted != repo) {
@@ -160,7 +162,17 @@ fn run(
             }
             None => {}
         }
-        if let Err(e) = push_repo(conn, auth, &repo, force, &mut stats) {
+        let Some(canonical) = policy.code_repository(&repo) else {
+            stats.blocked_repo += 1;
+            continue;
+        };
+        if skip.is_skipped(canonical) {
+            stats.skipped_config += 1;
+            continue;
+        }
+        if let Err(e) =
+            code_repo_push::push_repo(conn, auth, &policy, &repo, canonical, force, &mut stats)
+        {
             tracing::warn!(repo = %repo, error = %e, "code index push failed");
             stats.failed += 1;
             stats.errors.push(format!("{repo}: {e}"));
@@ -204,9 +216,8 @@ impl NotARepository {
 
 /// Classify `repo`'s `repo_marker` row against the working tree it records.
 ///
-/// A row with no recorded root (pre-v7) is offered as before — there is
-/// nothing to check it against, and withholding it would strand a repo that
-/// has been syncing since before the column existed.
+/// A row with no recorded root (pre-v7) has no checkout identity for policy
+/// resolution and is withheld before this classifier is reached.
 ///
 /// # Errors
 /// Store failures reading `repo_marker.root_path`.
@@ -223,110 +234,6 @@ pub fn not_a_repository(conn: &Connection, repo: &str) -> Result<Option<NotARepo
         CheckoutKind::Linked => Some(NotARepository::LinkedWorktree),
         CheckoutKind::None => Some(NotARepository::NoCheckout),
     })
-}
-
-/// The local state a push is keyed on: head, mining cursor, and a digest
-/// over every `(path, blob_oid)` row — so a staged edit that moved a blob
-/// without moving HEAD still counts as movement.
-struct LocalState {
-    head: Option<String>,
-    mined: Option<String>,
-    files: Vec<(String, String)>,
-    digest: String,
-}
-
-fn local_state(conn: &Connection, repo: &str) -> Result<LocalState> {
-    let files = indexed_files::list_for_repo(conn, repo)?;
-    let mut hasher = Sha256::new();
-    for (path, oid) in &files {
-        hasher.update(path.as_bytes());
-        hasher.update(b"\0");
-        hasher.update(oid.as_bytes());
-        hasher.update(b"\n");
-    }
-    let digest = hasher
-        .finalize()
-        .iter()
-        .fold(String::with_capacity(64), |mut out, byte| {
-            use std::fmt::Write as _;
-            let _ = write!(out, "{byte:02x}");
-            out
-        });
-    Ok(LocalState {
-        head: repo_marker::last_head(conn, repo)?,
-        mined: repo_marker::last_mined_commit(conn, repo)?,
-        files,
-        digest,
-    })
-}
-
-fn push_repo(
-    conn: &Connection,
-    auth: &AuthFile,
-    repo: &str,
-    force: bool,
-    stats: &mut CodePushStats,
-) -> Result<()> {
-    let local = local_state(conn, repo)?;
-    if !force && code_sync::cursor(conn, repo)?.is_some_and(|c| c.matches(&local)) {
-        stats.unchanged += 1;
-        return Ok(());
-    }
-    let secret = auth.effective_secret();
-    let manifest = client_code::fetch_code_manifest(&auth.api_url, &secret, repo)?;
-    let plan = code_plan::plan(
-        &local.files,
-        &manifest.files,
-        local.head.as_deref(),
-        manifest.head.as_deref(),
-        local.mined.as_deref(),
-        manifest.mined_commit.as_deref(),
-    );
-    if plan.is_empty() {
-        record_cursor(conn, repo, &local)?;
-        stats.unchanged += 1;
-        return Ok(());
-    }
-    let known: BTreeSet<&str> = local.files.iter().map(|(path, _)| path.as_str()).collect();
-    let files = plan
-        .changed
-        .iter()
-        .map(|path| project_file(conn, repo, path, &known))
-        .collect::<Result<Vec<_>>>()?;
-    let cochange = if plan.send_cochange {
-        Some(
-            code_sync::co_changed_pairs(conn, repo)?
-                .into_iter()
-                .map(|(from, to, weight)| CoChangeWire { from, to, weight })
-                .collect(),
-        )
-    } else {
-        None
-    };
-    let requests = code_plan::batches(
-        repo,
-        local.head.as_deref(),
-        local.mined.as_deref(),
-        files,
-        plan.removed,
-        cochange,
-    )?;
-    for req in &requests {
-        let resp = client_code::push_code_import(&auth.api_url, &secret, req)?;
-        if let Some(first) = resp.rejected.first() {
-            return Err(Error::Other(format!(
-                "workspace rejected the code import ({} entries; first: {} {})",
-                resp.rejected.len(),
-                first.path,
-                first.reason
-            )));
-        }
-        stats.files_pushed = stats.files_pushed.saturating_add(count(resp.applied));
-        stats.files_removed = stats.files_removed.saturating_add(count(resp.removed));
-        stats.batches += 1;
-    }
-    stats.repos += 1;
-    record_cursor(conn, repo, &local)
 }
 
 /// One file's projection: its blob, its top-level symbols, and the imports
@@ -363,34 +270,6 @@ pub fn project_file(
         symbols,
         imports,
     })
-}
-
-impl CodeSyncCursor {
-    fn matches(&self, local: &LocalState) -> bool {
-        self.pushed_head == local.head
-            && self.pushed_mined_commit == local.mined
-            && self.pushed_digest == local.digest
-    }
-}
-
-fn record_cursor(conn: &Connection, repo: &str, local: &LocalState) -> Result<()> {
-    let pushed_at = OffsetDateTime::now_utc()
-        .format(&Iso8601::DEFAULT)
-        .map_err(|e| Error::Other(format!("timestamp: {e}")))?;
-    code_sync::set_cursor(
-        conn,
-        repo,
-        &CodeSyncCursor {
-            pushed_head: local.head.clone(),
-            pushed_mined_commit: local.mined.clone(),
-            pushed_digest: local.digest.clone(),
-            pushed_at,
-        },
-    )
-}
-
-fn count(n: usize) -> u32 {
-    u32::try_from(n).unwrap_or(u32::MAX)
 }
 
 #[cfg(test)]

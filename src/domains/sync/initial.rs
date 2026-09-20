@@ -39,6 +39,8 @@ pub struct InitialSyncStats {
     pub pushed: u32,
     /// Local entries withheld by `[sync] skip_repos`.
     pub skipped_config: u32,
+    /// Local entries withheld because no approved repository identity could be proved.
+    pub blocked_repo: u32,
     /// The code-index push that follows the memory push — every indexed
     /// repo, so the console's graph fills in from this login on.
     pub code: CodePushStats,
@@ -74,6 +76,7 @@ pub fn run_initial_sync(paths: &Paths, cfg: &Config, auth: &AuthFile) -> Result<
         let page = push::run_push(paths, cfg, &mut conn, auth, None, PAGE_LIMIT)?;
         stats.pushed = stats.pushed.saturating_add(page.pushed);
         stats.skipped_config = stats.skipped_config.saturating_add(page.skipped_config);
+        stats.blocked_repo = stats.blocked_repo.saturating_add(page.blocked_repo);
         if page.pushed == 0 {
             // Skips are drained inside `run_push` without counting toward the
             // page cap; a zero-push page means the local log is exhausted.

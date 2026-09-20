@@ -13,12 +13,10 @@ process launch and every rendered line stay in [`cli/`](../../cli/README.md)
 modules); loopback HTTP routing, guards and SSE stay in
 [`serve/`](../../serve/README.md); every SQL string and driver import stays in
 [`store/`](../../store/README.md) (`sync_log`, `sync_state`, `sync_binding`,
-`code_sync`, `schema_sync`). The per-repo GitHub App allowlist is gone
-entirely: organization membership is the platform's gate, and `skip_repos` is
-the only filter left on this side. The rule that an unlabelled memory stayed
-local is gone too — `repo` comes from the cwd's git repository, so it made sync
-eligibility depend on which directory `comemory save` ran in
-(`2026-09-14-sync-everything-realtime-design.md`).
+`code_sync`, `schema_sync`). The platform's repository policy is authoritative.
+The client resolves each local label to an approved canonical GitHub
+`owner/name` through a current checkout remote or an administrator-confirmed
+mapping; ambiguous, unsupported and unlabelled entries remain local.
 
 ## Contents
 
@@ -36,17 +34,22 @@ eligibility depend on which directory `comemory save` ran in
 | --- | --- | --- |
 | `client.rs` | platform HTTP | Enveloped sync I/O over reqwest+rustls; sends no workspace header. `ws_ticket` / `channel_url` are the workspace channel's two client calls |
 | `client_code.rs` | `fetch_code_manifest` | The two calls behind the code push — `GET /v1/sync/code/manifest?repo=` and `POST /v1/sync/code/import` — over `client.rs`'s base URL, credential and envelope |
+| `client_policy.rs` | `fetch` | Fetch and decode the authoritative repository policy from sync status |
+| `client_protocol.rs` | `validate_response` | Managed data-request protocol/revision headers and fail-closed response checks |
+| `repository_identity.rs` | `canonical_github_repository` | Strict HTTPS/SSH/SCP `github.com` remote parsing into lowercase `owner/name` identities |
+| `repository_policy.rs` | `RepositoryPolicy` | Validate the server policy, resolve local checkout identities and mappings, and reconcile persisted fingerprints |
 | `exchange.rs` + [`exchange/`](exchange/README.md) | `import::run` | The *server* side: wire models plus the `changes` / `manifest` / `import` / code-import cores the `serve` routes call |
 
 ### Directions of travel
 
 | File | Primary item | Purpose |
 | --- | --- | --- |
-| `push.rs` / `pull.rs` | `run_push` / `run_pull` | Push filtered by `skip_repos` alone (backfills missing `sync_log` rows first; does not advance `pushed_seq` on all-`repo_not_allowed` batches), and cursored pull. `run_push_with_timeout` is the same walk under the inline push's smaller budget |
+| `push.rs` / `pull.rs` | `run_push` / `run_pull` | Negotiate policy, push only entries with approved canonical identities, and follow the server's raw pull continuation across filtered pages. A server repository rejection stops the push before cursor advancement. `run_push_with_timeout` uses the inline push's smaller budget |
 | `push_on_save.rs` | `after_write_best_effort` | Drain the outbox inline after a local write, bounded by `[sync] push_on_save_timeout`; never fails a write, never throws. Called from the CLI seam only, so an HTTP write starts no outward sync |
-| `code.rs` | `run_code_push` | Push the code index of every indexed repo (minus `skip_repos`, minus every row whose recorded root is not a repository — a linked worktree, a path that is gone, or a directory git cannot open, off with `[sync] code_index = false`): read the workspace manifest, diff by blob OID, post only what differs. `run_code_push_if_moved` (daemon, `index-code` tail) first checks the `code_sync:<repo>` cursor and stays silent when nothing moved; `project_file` is the one place a snippet-free file entry is built |
+| `code.rs` | `run_code_push` | Push only indexed checkouts whose current GitHub origin resolves to an approved canonical identity (minus `skip_repos`, invalid roots and worktrees; off with `[sync] code_index = false`). The wire carries the canonical name while local rows keep their label. `run_code_push_if_moved` first checks the policy-aware cursor |
+| `code_repo_push.rs` | `push_repo` | Diff and upload one local code index under its canonical platform identity, then persist its local-label cursor |
 | `code_plan.rs` | `plan` | The pure diff (changed / removed / send-cochange / head-moved) and the batching (500 files, ~1 MiB) — no store, no network |
-| `verify.rs` | `verify_manifests` | Manifest compare + pull/push repair (AC-9) |
+| `verify.rs` | `verify_manifests` | Compare and repair manifests over the locally authorized subset only |
 | `initial.rs` | `run_initial_sync` | Exhaustive pull-then-push that `auth login` runs before returning, then the code push — so the console's graph fills in from the first login |
 | `manual.rs` | `open_session` / `run_all` | What one `comemory sync` run does: the credential-then-store session it opens, and the three composite action sequences |
 
@@ -56,7 +59,7 @@ eligibility depend on which directory `comemory save` ran in
 | --- | --- | --- |
 | `redact.rs` | `scan` | Curated secret scan (`rules.toml`) before enqueueing a push |
 | `rules.toml` | — | Compile-time rule patterns (AWS, GitHub/GitLab/Slack tokens, JWT, PEM, …), loaded by `redact.rs` through `include_str!` |
-| `skip_repos.rs` | `SkipMatcher` | Normalize a repo label; match it against the `[sync] skip_repos` globs — the one client-side filter left |
+| `skip_repos.rs` | `SkipMatcher` | Normalize a repo label and apply the operator's additional `[sync] skip_repos` withholding globs |
 | `watch.rs` | `follow` | Hold the workspace channel and pull on every nudge, with full-jitter reconnect. Emits `WatchEvent`s to a caller-supplied callback and takes the blocking-I/O escape hatch as an `OffRuntime`, so it renders nothing and names no delivery module |
 | `daemon.rs` | `run_foreground` | Periodic pull+push+verify loop the OS supervisor keeps alive — opt-in (`auth login --daemon`) since a save pushes itself |
 | `daemon_unit.rs` | `install` / `status` | launchd / systemd --user unit lifecycle |

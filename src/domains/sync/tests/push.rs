@@ -6,12 +6,7 @@
     clippy::too_many_lines
 )]
 
-//! Push filtering under organization enforcement.
-//!
-//! One filter survives: a label matching `[sync] skip_repos` is withheld by
-//! the operator's own choice. Everything else is offered to the organization —
-//! including labels no allowlist would ever have carried, and memories with no
-//! label at all, which is the behaviour change this suite pins down.
+//! Push filtering under the server repository policy.
 
 use comemory::config::{Config, Paths};
 use comemory::domains::memories::Kind;
@@ -77,53 +72,39 @@ struct Seeded {
 
 impl Seeded {
     fn push(&mut self) -> push::PushStats {
+        self.push_result().expect("push")
+    }
+
+    fn push_result(&mut self) -> crate::errors::Result<push::PushStats> {
         let auth = AuthFile::load(&self.paths).expect("load").expect("auth");
-        push::run_push(&self.paths, &self.cfg, &mut self.conn, &auth, None, 100).expect("push")
+        push::run_push(&self.paths, &self.cfg, &mut self.conn, &auth, None, 100)
     }
 }
 
 #[test]
-fn an_unlabelled_memory_is_pushed_like_any_other() {
-    // The behaviour change (AC-10): `repo` is set from the cwd's git repo at
-    // save time, so withholding unlabelled memories made sync eligibility a
-    // function of which directory `comemory save` happened to run in.
+fn an_unlabelled_memory_is_withheld() {
     let server = SyncPlatformServer::start(SyncPlatformState::default());
     let secret = server.snapshot().secret;
 
     let body = "a note saved in a directory that is not a git worktree";
-    let id = comemory::domains::memories::id::memory_id(body);
-    let content_hash = comemory::utilities::digest::sha256_hex(body.trim_end().as_bytes());
-    server.update(|st| {
-        st.import_results = serde_json::json!([{
-            "id": id,
-            "content_hash": content_hash,
-            "status": "accepted",
-            "seq": 1
-        }]);
-    });
-
     let mut seeded = seeded(&server.base, &secret, Config::defaults(), &[(body, "")]);
     let stats = seeded.push();
 
-    assert_eq!(stats.pushed, 1);
+    assert_eq!(stats.pushed, 0);
+    assert_eq!(stats.blocked_repo, 1);
     assert_eq!(stats.skipped_config, 0);
-    let sent = server
-        .snapshot()
-        .last_import_body
-        .expect("an import was sent");
-    assert!(
-        sent.contains(&id),
-        "the unlabelled memory must be in the import body: {sent}"
-    );
+    assert!(server.snapshot().last_import_body.is_none());
 }
 
 #[test]
 fn skip_repos_withholds_a_label_the_operator_chose_to_keep_local() {
     let mut cfg = Config::defaults();
     cfg.sync.skip_repos = vec!["acme/secret-*".into()];
+    let server = SyncPlatformServer::start(SyncPlatformState::default());
+    let secret = server.snapshot().secret;
     let mut seeded = seeded(
-        "http://127.0.0.1:9",
-        "cmk_test",
+        &server.base,
+        &secret,
         cfg,
         &[(
             "client work that must not leave this machine",
@@ -133,20 +114,22 @@ fn skip_repos_withholds_a_label_the_operator_chose_to_keep_local() {
     let stats = seeded.push();
     assert_eq!(stats.pushed, 0);
     assert_eq!(stats.skipped_config, 1);
+    assert!(server.snapshot().last_import_body.is_none());
 }
 
 #[test]
-fn a_label_no_allowlist_would_have_carried_is_now_pushed() {
-    // The behaviour change: before organization enforcement this label was
-    // withheld as `skipped_not_in_org`. It is now offered to the org, and the
-    // allowlist route must not be consulted to decide that.
+fn an_admin_mapping_authorizes_a_legacy_label() {
     let server = SyncPlatformServer::start(SyncPlatformState::default());
     let secret = server.snapshot().secret;
 
-    let body = "a memory labelled with a repo no GitHub App allowlist carried";
+    let body = "a memory carrying an administrator-confirmed legacy label";
     let id = comemory::domains::memories::id::memory_id(body);
     let content_hash = comemory::utilities::digest::sha256_hex(body.trim_end().as_bytes());
     server.update(|st| {
+        st.repo_mappings = serde_json::json!([{
+            "label": "acme/legacy",
+            "fullName": "falconiere/comemory"
+        }]);
         st.import_results = serde_json::json!([{
             "id": id,
             "content_hash": content_hash,
@@ -159,56 +142,39 @@ fn a_label_no_allowlist_would_have_carried_is_now_pushed() {
         &server.base,
         &secret,
         Config::defaults(),
-        &[(body, "acme/never-allowlisted")],
+        &[(body, "acme/legacy")],
     );
     let stats = seeded.push();
 
     assert_eq!(stats.pushed, 1);
     assert!(stats.last_pushed_seq >= 1);
     assert!(
-        !server.saw_path("/v1/sync/status"),
-        "org membership is the gate; the allowlist route must not be reached, saw: {:?}",
-        server.paths()
+        server.saw_path("/v1/sync/status"),
+        "repository policy must be loaded before import"
     );
-    for request in server.requests() {
-        assert!(
-            request.workspace_header.is_none(),
-            "{} {} sent a workspace header",
-            request.method,
-            request.path
-        );
-    }
+    let sent: serde_json::Value =
+        serde_json::from_str(&server.snapshot().last_import_body.expect("import"))
+            .expect("import json");
+    assert_eq!(sent["repositories"][id.as_str()], "falconiere/comemory");
 }
 
 #[test]
 fn a_mixed_batch_reports_each_filter_separately() {
-    // One push, two fates now: withheld by config, or offered. The unlabelled
-    // memory rides along with the labelled one.
     let server = SyncPlatformServer::start(SyncPlatformState::default());
     let secret = server.snapshot().secret;
 
     let pushed_body = "the labelled memory in this batch the organization receives";
-    let unlabelled_body = "an unlabelled note that now travels with it";
+    let unlabelled_body = "an unlabelled note that must remain local";
     let id = comemory::domains::memories::id::memory_id(pushed_body);
     let content_hash = comemory::utilities::digest::sha256_hex(pushed_body.trim_end().as_bytes());
     let unlabelled_id = comemory::domains::memories::id::memory_id(unlabelled_body);
-    let unlabelled_hash =
-        comemory::utilities::digest::sha256_hex(unlabelled_body.trim_end().as_bytes());
     server.update(|st| {
-        st.import_results = serde_json::json!([
-            {
-                "id": unlabelled_id,
-                "content_hash": unlabelled_hash,
-                "status": "accepted",
-                "seq": 1
-            },
-            {
+        st.import_results = serde_json::json!([{
                 "id": id,
                 "content_hash": content_hash,
                 "status": "accepted",
-                "seq": 2
-            }
-        ]);
+                "seq": 1
+        }]);
     });
 
     let mut cfg = Config::defaults();
@@ -220,13 +186,14 @@ fn a_mixed_batch_reports_each_filter_separately() {
         &[
             (unlabelled_body, ""),
             ("withheld client work", "acme/secret-thing"),
-            (pushed_body, "acme/public-thing"),
+            (pushed_body, "Falconiere/Comemory"),
         ],
     );
     let stats = seeded.push();
 
-    assert_eq!(stats.pushed, 2);
+    assert_eq!(stats.pushed, 1);
     assert_eq!(stats.skipped_config, 1);
+    assert_eq!(stats.blocked_repo, 1);
 
     let sent = server
         .snapshot()
@@ -238,16 +205,13 @@ fn a_mixed_batch_reports_each_filter_separately() {
         "a skip_repos match must never appear in an import body: {sent}"
     );
     assert!(
-        sent.contains(&unlabelled_id),
-        "the unlabelled memory must be offered too: {sent}"
+        !sent.contains(&unlabelled_id),
+        "the unlabelled memory must be withheld: {sent}"
     );
 }
 
 #[test]
 fn repo_not_allowed_does_not_advance_pushed_seq() {
-    // The cursor bug: advancing past a gate reject left those seqs never
-    // re-offered. An all-`repo_not_allowed` batch must leave `pushed_seq`
-    // at its prior value and surface `rejected_repo`.
     let server = SyncPlatformServer::start(SyncPlatformState::default());
     let secret = server.snapshot().secret;
 
@@ -267,15 +231,13 @@ fn repo_not_allowed_does_not_advance_pushed_seq() {
         &server.base,
         &secret,
         Config::defaults(),
-        &[(body, "acme/never-allowlisted")],
+        &[(body, "falconiere/comemory")],
     );
-    let stats = seeded.push();
-
-    assert_eq!(stats.pushed, 0);
-    assert_eq!(stats.rejected_repo, 1);
-    assert_eq!(stats.skipped_config, 0);
-    assert_eq!(stats.blocked_secrets, 0);
-    assert_eq!(stats.last_pushed_seq, 0);
+    let error = seeded
+        .push_result()
+        .expect_err("server rejection must stop push");
+    assert!(error.to_string().contains("repository policy"), "{error}");
+    assert!(error.to_string().contains(&id), "{error}");
     let sent = server
         .snapshot()
         .last_import_body

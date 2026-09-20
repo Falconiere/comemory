@@ -7,6 +7,7 @@ use crate::config::{Config, Paths};
 use crate::domains::sync::AuthFile;
 use crate::domains::sync::client;
 use crate::domains::sync::exchange::{ImportEntry, ImportRequest};
+use crate::domains::sync::repository_policy::RepositoryPolicy;
 use crate::prelude::*;
 use crate::store::{Connection, sync_state};
 use crate::utilities::context::Ctx;
@@ -31,6 +32,7 @@ pub fn run_pull(
     limit: usize,
 ) -> Result<PullStats> {
     let workspace_id = auth.workspace_id.as_str();
+    let policy = RepositoryPolicy::load(conn, auth)?;
     sync_state::ensure(conn, workspace_id, &auth.api_url)?;
     let row = sync_state::get(conn, workspace_id)?
         .ok_or_else(|| Error::Other("sync_state missing after ensure".into()))?;
@@ -40,11 +42,8 @@ pub fn run_pull(
     let cap = limit.min(MAX_BATCH * 4);
 
     loop {
-        let remote = client::pull_changes(&auth.api_url, &secret, since, MAX_BATCH)?;
-        if remote.entries.is_empty() {
-            stats.last_pulled_seq = remote.head_seq.max(since);
-            break;
-        }
+        let remote =
+            client::pull_changes(&auth.api_url, &secret, since, MAX_BATCH, policy.revision())?;
         let entries: Vec<ImportEntry> = remote
             .entries
             .iter()
@@ -56,25 +55,31 @@ pub fn run_pull(
                 record: e.record.clone(),
             })
             .collect();
-        let high = if let Some(entry) = remote.entries.last() {
-            entry.seq
-        } else {
-            since
+        if !entries.is_empty() {
+            let req = ImportRequest {
+                cursor: since,
+                entries,
+            };
+            let mut ctx = Ctx::borrowed(paths, cfg, conn);
+            let _resp = crate::domains::sync::exchange::import::run(&mut ctx, req, None)?;
+            stats.pulled = stats.pulled.saturating_add(remote.entries.len() as u32);
+        }
+        let Some(next) = remote.next_seq else {
+            stats.last_pulled_seq = since;
+            break;
         };
-        let req = ImportRequest {
-            cursor: since,
-            entries,
-        };
-        let mut ctx = Ctx::borrowed(paths, cfg, conn);
-        let _resp = crate::domains::sync::exchange::import::run(&mut ctx, req, None)?;
-        stats.pulled += remote.entries.len() as u32;
-        since = high;
-        stats.last_pulled_seq = since;
-        sync_state::set_pulled(conn, workspace_id, since, &now_iso()?)?;
+        if next <= since {
+            return Err(Error::Other(format!(
+                "pull changes returned non-advancing next_seq {next} after {since}"
+            )));
+        }
+        since = next;
+        stats.last_pulled_seq = next;
+        sync_state::set_pulled(conn, workspace_id, next, &now_iso()?)?;
         if stats.pulled as usize >= cap {
             break;
         }
-        if remote.entries.len() < MAX_BATCH {
+        if next >= remote.head_seq {
             break;
         }
     }

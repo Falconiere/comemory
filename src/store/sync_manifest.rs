@@ -32,3 +32,22 @@ pub fn live_content_hashes(conn: &Connection) -> Result<Vec<String>> {
         |r| r.get(0),
     )
 }
+
+/// Every live memory's `(content_hash, repository label)` for policy-scoped
+/// local manifest verification.
+pub fn live_repository_hashes(conn: &Connection) -> Result<Vec<(String, String)>> {
+    orm::query_all(
+        conn,
+        Memories::select()
+            .columns_typed(&[&col::content_hash, &col::repo])
+            .filter(col::deleted_at.is_null())
+            .order_by(col::content_hash.asc())
+            .to_sql(),
+        |row| {
+            Ok((
+                row.get(0)?,
+                row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+            ))
+        },
+    )
+}

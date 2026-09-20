@@ -50,6 +50,7 @@ pub struct RunStats {
 pub fn open_session(paths: &Paths, cfg: &Config) -> Result<Session> {
     let auth = AuthFile::load(paths)?
         .ok_or_else(|| Error::Usage("not logged in — run `comemory auth login`".into()))?;
+    paths.ensure_dirs()?;
     let conn = crate::store::connection::open(paths.db_path())?;
     apply_embed_model(&conn, &cfg.embed)?;
     Ok(Session { auth, conn })

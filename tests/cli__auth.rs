@@ -329,7 +329,7 @@ fn a_save_pushes_inline_without_any_daemon() {
         .count();
 
     let body = "a decision that reaches the organization without a daemon";
-    let out = home.run(None, &["save", "--repo", "acme/backend", body]);
+    let out = home.run(None, &["save", "--repo", "falconiere/comemory", body]);
     assert!(
         out.status.success(),
         "save failed: {}",

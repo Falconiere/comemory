@@ -26,7 +26,7 @@ fn save_req(body: &str) -> save::Request {
         body: body.to_string(),
         title: None,
         kind: Kind::Note,
-        // No repo label at all — the case that could never sync before.
+        // No repo label at all, so repository policy must keep it local.
         repo: String::new(),
         tags: Vec::new(),
         author: String::new(),
@@ -47,22 +47,11 @@ fn saved(paths: &Paths, cfg: &Config, body: &str) {
 }
 
 #[test]
-fn an_unlabelled_save_is_pushed_inline() {
+fn an_unlabelled_save_is_kept_local() {
     let server = SyncPlatformServer::start(SyncPlatformState::default());
     let secret = server.snapshot().secret;
 
     let body = "a note saved somewhere that is not a git worktree";
-    let id = comemory::domains::memories::id::memory_id(body);
-    let content_hash = comemory::utilities::digest::sha256_hex(body.trim_end().as_bytes());
-    server.update(|st| {
-        st.import_results = serde_json::json!([{
-            "id": id,
-            "content_hash": content_hash,
-            "status": "accepted",
-            "seq": 1
-        }]);
-    });
-
     let home = tempfile::tempdir().unwrap();
     let paths = Paths::new(home.path());
     let cfg = Config::defaults();
@@ -76,11 +65,8 @@ fn an_unlabelled_save_is_pushed_inline() {
 
     after_write_best_effort(&paths, &cfg);
 
-    let sent = server
-        .snapshot()
-        .last_import_body
-        .expect("the save must have been pushed inline");
-    assert!(sent.contains(&id), "import body must carry the id: {sent}");
+    assert!(server.saw_path("/v1/sync/status"));
+    assert!(server.snapshot().last_import_body.is_none());
 }
 
 #[test]

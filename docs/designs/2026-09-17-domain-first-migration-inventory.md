@@ -690,11 +690,14 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/sync/auth_file.rs | comemory::domains::sync::auth_file; crate-root-alias | src/domains/sync/tests/auth_file.rs | none | domains::sync | src/domains/sync/auth_file.rs | retain |
 | src/domains/sync/client.rs | comemory::domains::sync::client; crate-root-alias | src/domains/sync/tests/client.rs; src/domains/sync/tests/client_https.rs | none | domains::sync | src/domains/sync/client.rs | retain |
 | src/domains/sync/client_code.rs | comemory::domains::sync::client_code; crate-root-alias | none | none | domains::sync | src/domains/sync/client_code.rs | retain |
+| src/domains/sync/client_policy.rs | comemory::domains::sync::client_policy; preserve | none | none | domains::sync | src/domains/sync/client_policy.rs | retain |
+| src/domains/sync/client_protocol.rs | comemory::domains::sync::client_protocol; preserve | none | none | domains::sync | src/domains/sync/client_protocol.rs | retain |
 | src/domains/sync/cloud.rs | comemory::domains::sync::cloud; crate-root-alias | none | none | domains::sync | src/domains/sync/cloud.rs | retain |
 | src/domains/sync/cloud/api_url.rs | comemory::domains::sync::cloud::api_url; crate-root-alias | src/domains/sync/cloud/tests/api_url.rs | none | domains::sync | src/domains/sync/cloud/api_url.rs | retain |
 | src/domains/sync/cloud/device.rs | comemory::domains::sync::cloud::device; crate-root-alias | src/domains/sync/cloud/tests/device.rs | none | domains::sync | src/domains/sync/cloud/device.rs | retain |
 | src/domains/sync/code.rs | comemory::domains::sync::code; crate-root-alias | src/domains/sync/tests/code.rs | none | domains::sync | src/domains/sync/code.rs | retain |
 | src/domains/sync/code_plan.rs | comemory::domains::sync::code_plan; crate-root-alias | src/domains/sync/tests/code_plan.rs | none | domains::sync | src/domains/sync/code_plan.rs | retain |
+| src/domains/sync/code_repo_push.rs | comemory::domains::sync::code_repo_push; preserve | none | none | domains::sync | src/domains/sync/code_repo_push.rs | retain |
 | src/domains/sync/daemon.rs | comemory::domains::sync::daemon; crate-root-alias | src/domains/sync/tests/daemon.rs | none | domains::sync | src/domains/sync/daemon.rs | retain |
 | src/domains/sync/daemon_templates.rs | comemory::domains::sync::daemon_templates; crate-root-alias | none | none | domains::sync | src/domains/sync/daemon_templates.rs | retain |
 | src/domains/sync/daemon_unit.rs | comemory::domains::sync::daemon_unit; crate-root-alias | none | none | domains::sync | src/domains/sync/daemon_unit.rs | retain |
@@ -720,6 +723,8 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/sync/push.rs | comemory::domains::sync::push; crate-root-alias | src/domains/sync/tests/push.rs | none | domains::sync | src/domains/sync/push.rs | retain |
 | src/domains/sync/push_on_save.rs | comemory::domains::sync::push_on_save; crate-root-alias | src/domains/sync/tests/push_on_save.rs | none | domains::sync | src/domains/sync/push_on_save.rs | retain |
 | src/domains/sync/redact.rs | comemory::domains::sync::redact; crate-root-alias | src/domains/sync/tests/redact.rs | src/domains/sync/rules.toml | domains::sync | src/domains/sync/redact.rs | retain |
+| src/domains/sync/repository_identity.rs | comemory::domains::sync::repository_identity; preserve | src/domains/sync/tests/repository_identity.rs | none | domains::sync | src/domains/sync/repository_identity.rs | retain |
+| src/domains/sync/repository_policy.rs | comemory::domains::sync::repository_policy; preserve | src/domains/sync/tests/repository_policy.rs | none | domains::sync | src/domains/sync/repository_policy.rs | retain |
 | src/domains/sync/skip_repos.rs | comemory::domains::sync::skip_repos; crate-root-alias | src/domains/sync/tests/skip_repos.rs | none | domains::sync | src/domains/sync/skip_repos.rs | retain |
 | src/domains/sync/verify.rs | comemory::domains::sync::verify; crate-root-alias | src/domains/sync/tests/verify.rs | none | domains::sync | src/domains/sync/verify.rs | retain |
 | src/domains/sync/watch.rs | comemory::domains::sync::watch; preserve | src/domains/sync/tests/watch.rs | none | domains::sync | src/domains/sync/watch.rs | retain |
@@ -811,6 +816,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/store/memory_list.rs | comemory::store::memory_list; preserve | src/store/tests/memory_list.rs | none | infrastructure::store | src/store/memory_list.rs | retain |
 | src/store/memory_meta.rs | comemory::store::memory_meta; preserve | src/store/tests/memory_meta.rs | none | infrastructure::store | src/store/memory_meta.rs | retain |
 | src/store/memory_purge.rs | comemory::store::memory_purge; preserve | src/store/tests/memory_purge.rs | none | infrastructure::store | src/store/memory_purge.rs | retain |
+| src/store/memory_repository.rs | comemory::store::memory_repository; preserve | none | none | infrastructure::store | src/store/memory_repository.rs | retain |
 | src/store/memory_row.rs | comemory::store::memory_row; preserve | src/store/tests/memory_row.rs | none | infrastructure::store | src/store/memory_row.rs | retain |
 | src/store/memory_signals.rs | private | none | none | infrastructure::store | src/store/memory_signals.rs | retain |
 | src/store/migrate.rs | comemory::store::migrate; preserve | src/store/tests/matrix.rs; src/store/tests/migrate.rs; src/store/tests/migrate_2.rs; src/store/tests/migrate_v14.rs; src/store/tests/migrate_v15.rs; src/store/tests/migrate_v4.rs; src/store/tests/migrate_v8.rs | migrations/0001_schema_meta.sql; migrations/0002_v2_tables.sql; migrations/0003_stats_tables.sql; migrations/0004_v4_rank.sql; migrations/0005_v5_learning.sql; migrations/0006_v6_code_graph.sql; migrations/0007_v7_repo_root.sql; migrations/0008_v8_reinforcement.sql; migrations/0009_v9_code_refs.sql; migrations/0010_v10_bandit.sql; migrations/0011_v11_memory_rank.sql; migrations/0012_v12_edge_fts.sql; migrations/0013_v13_documents.sql; migrations/0014_v14_console.sql; migrations/0015_v15_console_api.sql; migrations/0016_v16_sync.sql; migrations/0017_sync_repush.sql; migrations/0018_scheme_path_refs.sql; migrations/0019_query_performance.sql; migrations/0020_candidate_observations.sql | infrastructure::store | src/store/migrate.rs | retain |

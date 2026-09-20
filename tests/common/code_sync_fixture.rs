@@ -25,6 +25,8 @@ use comemory::utilities::context::Ctx;
 
 /// The repo label every fixture row lands under.
 pub const REPO: &str = "scratch";
+/// Canonical GitHub identity resolved from the fixture checkout's origin.
+pub const CANONICAL_REPO: &str = "falconiere/comemory";
 
 /// A source line that must never appear on the wire — the snippet-free
 /// assertion greps every recorded request body for it.
@@ -34,7 +36,9 @@ pub const SECRET_BODY_LINE: &str = "const onlyInSource = 'never-on-the-wire';";
 /// `src/c.ts` (imports `./a` and `./b`), committed once. Returns the tree.
 pub fn write_ts_repo(root: &Path) -> PathBuf {
     let repo = root.join(REPO);
+    let remote = format!("git@github.com:{CANONICAL_REPO}.git");
     super::git_repo::init_repo(&repo);
+    super::git_repo::run_git(&repo, &["remote", "add", "origin", &remote]);
     super::git_commit::commit_files(
         &repo,
         &[

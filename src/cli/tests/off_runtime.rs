@@ -28,7 +28,7 @@ fn a_blocking_platform_call_survives_a_live_tokio_runtime() {
         .unwrap();
 
     let manifest = runtime
-        .block_on(async { off_runtime(|| client::fetch_manifest(&server.base, &secret)) })
+        .block_on(async { off_runtime(|| client::fetch_manifest(&server.base, &secret, 1)) })
         .expect("a blocking platform call must work from inside the runtime");
 
     assert_eq!(manifest.buckets.len(), 256);
@@ -45,7 +45,7 @@ fn an_error_from_the_call_propagates_rather_than_being_swallowed() {
         .unwrap();
 
     let err = runtime
-        .block_on(async { off_runtime(|| client::fetch_manifest(&server.base, &secret)) })
+        .block_on(async { off_runtime(|| client::fetch_manifest(&server.base, &secret, 1)) })
         .expect_err("a 500 must reach the caller, not be lost with the thread");
     assert!(err.to_string().contains("500"), "got: {err}");
 }

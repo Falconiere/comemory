@@ -102,6 +102,8 @@ pub mod memory_meta;
 /// Hard-delete of one soft-deleted memory's mirror rows (`comemory gc`),
 /// plus the soft-delete mirror write behind `comemory delete`.
 pub mod memory_purge;
+/// Stored memory repository labels, including soft-deleted rows.
+pub mod memory_repository;
 /// `memories` row upserts and their edge materialization.
 pub mod memory_row;
 /// Memory activation counters and materialized graph-rank writes.
