@@ -77,44 +77,6 @@ pub fn save(conn: &Connection, cursor: &Cursor, at: &str) -> Result<()> {
     Ok(())
 }
 
-/// Every stored cursor, ascending by workspace.
-///
-/// # Errors
-/// Propagates SQLite failures.
-pub fn all(conn: &Connection) -> Result<Vec<Cursor>> {
-    let rows = orm::query_all(
-        conn,
-        ReplicaCursor::select()
-            .columns_typed(&[
-                &col::workspace_id,
-                &col::api_url,
-                &col::stream_epoch,
-                &col::applied_sequence,
-            ])
-            .order_by(col::workspace_id.asc())
-            .to_sql(),
-        |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, String>(2)?,
-                r.get::<_, i64>(3)?,
-            ))
-        },
-    )?;
-    Ok(rows
-        .into_iter()
-        .map(
-            |(workspace_id, api_url, stream_epoch, applied_sequence)| Cursor {
-                workspace_id,
-                api_url,
-                stream_epoch,
-                applied_sequence,
-            },
-        )
-        .collect())
-}
-
 #[cfg(test)]
 #[path = "tests/replica_cursor.rs"]
 mod tests;

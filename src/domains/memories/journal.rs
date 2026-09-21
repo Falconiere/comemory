@@ -48,14 +48,7 @@ pub(crate) fn record_write(
 ) -> Result<Positions> {
     let payload = MemoryPayloadV1::new(fm, body)?;
     let (bytes, digest) = payload.canonical()?;
-    let legacy_seq = sync_log::append(
-        tx,
-        legacy_op(op),
-        &fm.id,
-        &fm.content_hash,
-        at,
-        legacy_origin(origin),
-    )?;
+    let legacy_seq = sync_log::append(tx, op, &fm.id, &fm.content_hash, at, origin)?;
     journal(
         legacy_seq,
         tx,
@@ -91,11 +84,11 @@ pub(crate) fn record_tombstone(
 ) -> Result<Positions> {
     let legacy_seq = sync_log::append(
         tx,
-        sync_log::SyncOp::Tombstone,
+        ReplicaOp::Tombstone,
         memory_id,
         content_hash,
         at,
-        legacy_origin(origin),
+        origin,
     )?;
     journal(
         legacy_seq,
@@ -131,26 +124,6 @@ fn journal(legacy_seq: i64, tx: &Connection, new: &NewOperation<'_>) -> Result<P
         legacy_seq,
         sequence,
     })
-}
-
-/// The legacy `sync_log` operation for one replica operation. The two
-/// vocabularies agree today; mapping them explicitly means a future replica
-/// operation with no legacy equivalent fails to compile rather than being
-/// silently logged as an upsert.
-fn legacy_op(op: ReplicaOp) -> sync_log::SyncOp {
-    match op {
-        ReplicaOp::Upsert => sync_log::SyncOp::Upsert,
-        ReplicaOp::Tombstone => sync_log::SyncOp::Tombstone,
-        ReplicaOp::Restore => sync_log::SyncOp::Restore,
-    }
-}
-
-/// The legacy `sync_log` origin for one replica origin.
-fn legacy_origin(origin: ReplicaOrigin) -> sync_log::SyncOrigin {
-    match origin {
-        ReplicaOrigin::Local => sync_log::SyncOrigin::Local,
-        ReplicaOrigin::Sync => sync_log::SyncOrigin::Sync,
-    }
 }
 
 /// A repository label is only replicated when the memory has one.

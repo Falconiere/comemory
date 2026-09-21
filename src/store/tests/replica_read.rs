@@ -58,7 +58,11 @@ fn an_empty_journal_has_head_zero_and_an_empty_page() {
             .expect("page")
             .is_empty()
     );
-    assert!(replica_read::kinds(&conn).expect("kinds").is_empty());
+    assert!(
+        replica_read::kind_digests(&conn)
+            .expect("digests")
+            .is_empty()
+    );
 }
 
 #[test]
@@ -122,10 +126,12 @@ fn a_page_can_be_restricted_to_one_entity_kind() {
 
     let all = replica_read::page(&conn, 0, 10, None).expect("page");
     assert_eq!(all.len(), 2, "no filter returns every kind");
-    assert_eq!(
-        replica_read::kinds(&conn).expect("kinds"),
-        vec!["code".to_string(), "memory".to_string()]
-    );
+    let kinds: Vec<String> = replica_read::kind_digests(&conn)
+        .expect("digests")
+        .into_iter()
+        .map(|(kind, _)| kind)
+        .collect();
+    assert_eq!(kinds, vec!["code".to_string(), "memory".to_string()]);
 }
 
 #[test]
@@ -157,8 +163,8 @@ fn live_digests_exclude_tombstoned_entities() {
     tx.commit().expect("commit");
 
     assert_eq!(
-        replica_read::live_digests(&conn, "memory").expect("digests"),
-        vec![kept],
+        replica_read::kind_digests(&conn).expect("digests"),
+        vec![("memory".to_string(), vec![kept])],
         "a deleted entity holds nothing to compare"
     );
 }

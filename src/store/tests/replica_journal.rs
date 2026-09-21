@@ -104,11 +104,10 @@ fn a_second_payload_with_the_same_digest_does_not_replace_the_stored_bytes() {
     .expect("second");
     tx.commit().expect("commit");
 
-    let stored = replica_read::payload_state(&conn, digest)
-        .expect("payload")
-        .expect("row");
-    assert_eq!(stored.bytes.as_deref(), Some(r#"{"body":"first"}"#));
-    assert!(!stored.erased);
+    let page = replica_read::page(&conn, 0, 10, None).expect("page");
+    assert_eq!(page[0].payload.as_deref(), Some(r#"{"body":"first"}"#));
+    assert!(!page[0].payload_erased);
+    assert!(!replica_read::is_erased(&conn, digest).expect("erased"));
 }
 
 #[test]
@@ -219,11 +218,10 @@ fn redaction_blanks_the_bytes_and_keeps_the_barrier() {
     let redacted = redact_payload(&conn, digest, "2026-09-21T11:00:00Z").expect("redact");
     assert_eq!(redacted, 1);
 
-    let state = replica_read::payload_state(&conn, digest)
-        .expect("payload")
-        .expect("row still exists as the erasure barrier");
-    assert_eq!(state.bytes, None);
-    assert!(state.erased);
+    assert!(
+        replica_read::is_erased(&conn, digest).expect("erased"),
+        "the row stays as the erasure barrier"
+    );
 
     let page = replica_read::page(&conn, 0, 10, None).expect("page");
     assert_eq!(page[0].payload, None);

@@ -135,51 +135,61 @@ pub fn pending_count(conn: &Connection) -> Result<i64> {
     )
 }
 
-/// Record the upstream's answer for one operation.
-///
-/// `sequence` is the position the upstream assigned, when it accepted. A
-/// refusal keeps the row for diagnosis rather than deleting the evidence.
-///
-/// # Errors
-/// Propagates SQLite failures.
-pub fn settle(
-    conn: &Connection,
-    operation_id: &str,
-    accepted: bool,
-    sequence: Option<i64>,
-    disposition: &str,
-    at: &str,
-) -> Result<usize> {
-    orm::execute(
-        conn,
-        ReplicaOperation::update()
-            .set(&col::state, if accepted { "accepted" } else { "rejected" })
-            .set(&col::upstream_sequence, sequence)
-            .set(&col::disposition, disposition)
-            .set(&col::updated_at, at)
-            .filter(col::operation_id.eq(operation_id))
-            .to_sql(),
-    )
+/// What happened to an operation on its way upstream.
+#[derive(Debug, Clone, Copy)]
+pub enum Outcome<'a> {
+    /// The upstream accepted it at `sequence`.
+    Accepted {
+        /// Position the upstream assigned.
+        sequence: Option<i64>,
+        /// Disposition it answered with.
+        disposition: &'a str,
+    },
+    /// The upstream refused it. The row stays as evidence.
+    Rejected {
+        /// Disposition it answered with.
+        disposition: &'a str,
+    },
+    /// The upload itself failed; the operation is still owed.
+    Failed {
+        /// Transport detail, for operator diagnosis.
+        error: &'a str,
+    },
 }
 
-/// Count one failed upload attempt and keep the operation pending.
+/// Record what happened to one operation.
+///
+/// One writer for all three outcomes: an accepted, a refused and a failed
+/// upload differ only in which columns they set, and splitting them into
+/// separate functions made three copies of the same update.
 ///
 /// # Errors
 /// Propagates SQLite failures.
-pub fn record_attempt(
+pub fn record(
     conn: &Connection,
     operation_id: &str,
-    error: &str,
+    outcome: Outcome<'_>,
     at: &str,
 ) -> Result<usize> {
+    let update = ReplicaOperation::update().set(&col::updated_at, at);
+    let update = match outcome {
+        Outcome::Accepted {
+            sequence,
+            disposition,
+        } => update
+            .set(&col::state, "accepted")
+            .set(&col::upstream_sequence, sequence)
+            .set(&col::disposition, disposition),
+        Outcome::Rejected { disposition } => update
+            .set(&col::state, "rejected")
+            .set(&col::disposition, disposition),
+        Outcome::Failed { error } => update
+            .set_expr(&col::attempts, "attempts + 1")
+            .set(&col::last_error, error),
+    };
     orm::execute(
         conn,
-        ReplicaOperation::update()
-            .set_expr(&col::attempts, "attempts + 1")
-            .set(&col::last_error, error)
-            .set(&col::updated_at, at)
-            .filter(col::operation_id.eq(operation_id))
-            .to_sql(),
+        update.filter(col::operation_id.eq(operation_id)).to_sql(),
     )
 }
 

@@ -25,17 +25,15 @@ pub fn run(ctx: &mut Ctx<'_>) -> Result<ManifestResponse> {
     let conn = ctx.conn()?;
     let stream = stream_epoch(conn)?;
     let head_sequence = replica_read::head(conn)?;
-    let mut entity_kinds = Vec::new();
-    for kind in replica_read::kinds(conn)? {
-        let digests = replica_read::live_digests(conn, &kind)?;
-        let count = i64::try_from(digests.len()).unwrap_or(i64::MAX);
-        entity_kinds.push(KindManifest {
+    let entity_kinds: Vec<KindManifest> = replica_read::kind_digests(conn)?
+        .into_iter()
+        .map(|(kind, digests)| KindManifest {
             kind,
             schema_version: MEMORY_PAYLOAD_VERSION,
-            count,
+            count: i64::try_from(digests.len()).unwrap_or(i64::MAX),
             buckets: bucket_digests(digests),
-        });
-    }
+        })
+        .collect();
     let seeded = entity_kinds.iter().map(|k| k.count).sum();
     Ok(ManifestResponse {
         protocol: PROTOCOL.to_string(),

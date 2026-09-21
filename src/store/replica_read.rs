@@ -158,68 +158,61 @@ pub fn revision(conn: &Connection, kind: &str, key: &str) -> Result<Option<Revis
     ))
 }
 
-/// The live payload digests of one entity kind — what the manifest buckets.
+/// The live payload digests of every entity kind the journal knows, grouped
+/// by kind.
 ///
-/// Tombstoned entities are excluded: a manifest compares what both sides
-/// should be holding, and a deleted entity holds nothing.
+/// One ordered scan rather than a kind list plus a query per kind: the
+/// manifest needs both halves together, and asking twice let them disagree
+/// about what was live.
 ///
-/// # Errors
-/// Propagates SQLite failures.
-pub fn live_digests(conn: &Connection, kind: &str) -> Result<Vec<String>> {
-    orm::query_all(
-        conn,
-        ReplicaRevision::select()
-            .columns_typed(&[&revision_col::payload_digest])
-            .filter(revision_col::entity_kind.eq(kind))
-            .filter(revision_col::deleted.eq(0))
-            .filter(revision_col::payload_digest.is_not_null())
-            .to_sql(),
-        |r| r.get(0),
-    )
-}
-
-/// Every entity kind present in the journal, ascending.
+/// A kind whose entities are all tombstoned stays in the result with an EMPTY
+/// digest list. Dropping it would leave a peer unable to tell "I hold nothing
+/// of this kind" from "I have never heard of this kind", and the bucket
+/// comparison that would surface the difference would never run.
 ///
 /// # Errors
 /// Propagates SQLite failures.
-pub fn kinds(conn: &Connection) -> Result<Vec<String>> {
-    orm::query_all(
+pub fn kind_digests(conn: &Connection) -> Result<Vec<(String, Vec<String>)>> {
+    let rows: Vec<(String, Option<String>, i64)> = orm::query_all(
         conn,
         ReplicaRevision::select()
-            .columns_typed(&[&revision_col::entity_kind])
-            .distinct()
+            .columns_typed(&[
+                &revision_col::entity_kind,
+                &revision_col::payload_digest,
+                &revision_col::deleted,
+            ])
             .order_by(revision_col::entity_kind.asc())
             .to_sql(),
-        |r| r.get(0),
-    )
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+    )?;
+    let mut grouped: Vec<(String, Vec<String>)> = Vec::new();
+    for (kind, digest, deleted) in rows {
+        let live = (deleted == 0).then_some(digest).flatten();
+        match grouped.last_mut() {
+            Some((last, digests)) if *last == kind => digests.extend(live),
+            _ => grouped.push((kind, live.into_iter().collect())),
+        }
+    }
+    Ok(grouped)
 }
 
-/// Whether a payload digest is known here, and whether its bytes were erased.
+/// Whether retention has erased the bytes behind `digest`.
+///
+/// A narrow probe rather than a row read: acceptance only needs to know
+/// whether the barrier stands, and a feed page already carries the bytes.
 ///
 /// # Errors
 /// Propagates SQLite failures.
-pub fn payload_state(conn: &Connection, digest: &str) -> Result<Option<PayloadState>> {
-    let row: Option<(Option<String>, Option<String>)> = orm::query_optional(
+pub fn is_erased(conn: &Connection, digest: &str) -> Result<bool> {
+    let erased: i64 = orm::query_one(
         conn,
         schema_replica::ReplicaPayload::select()
-            .columns_typed(&[&payload_col::bytes, &payload_col::redacted_at])
             .filter(payload_col::digest.eq(digest))
-            .to_sql(),
-        |r| Ok((r.get(0)?, r.get(1)?)),
+            .filter(payload_col::redacted_at.is_not_null())
+            .to_count_sql(),
+        |r| r.get(0),
     )?;
-    Ok(row.map(|(bytes, redacted_at)| PayloadState {
-        bytes,
-        erased: redacted_at.is_some(),
-    }))
-}
-
-/// A stored payload's bytes and whether they were erased.
-#[derive(Debug, Clone)]
-pub struct PayloadState {
-    /// Canonical bytes; `None` once erased.
-    pub bytes: Option<String>,
-    /// `true` when retention blanked the bytes.
-    pub erased: bool,
+    Ok(erased > 0)
 }
 
 /// Decode one raw feed tuple.

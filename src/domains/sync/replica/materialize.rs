@@ -15,7 +15,7 @@ use crate::domains::sync::replica::contract::{Disposition, Operation, OperationR
 use crate::prelude::*;
 use crate::store::replica_journal::{ReplicaOp, ReplicaOrigin};
 use crate::store::replica_receipt::{self, Receipt};
-use crate::store::{memory_purge, memory_row};
+use crate::store::{Connection, memory_purge, memory_row};
 use crate::utilities::canonical_json;
 use crate::utilities::context::Ctx;
 
@@ -30,10 +30,49 @@ pub(crate) fn apply(
     operation: &Operation,
 ) -> Result<OperationResult> {
     let at = memory_row::iso_format(time::OffsetDateTime::now_utc())?;
-    let sequence = match operation.op {
-        ReplicaOp::Upsert | ReplicaOp::Restore => write_memory(ctx, epoch, operation, &at)?,
-        ReplicaOp::Tombstone => remove_memory(ctx, epoch, operation, &at)?,
-    };
+    // The markdown tree is the source of truth and cannot join a SQLite
+    // transaction, so it moves first; the database half then commits as one
+    // unit below.
+    let prepared = prepare_markdown(ctx, operation)?;
+    let sequence = commit_acceptance(ctx, epoch, operation, &at, |tx| match &prepared {
+        Prepared::Written(record) => {
+            mirror::insert_row(
+                tx,
+                &record.frontmatter,
+                &record.body,
+                record.slug.as_str(),
+                &record.path.to_string_lossy(),
+                &record.frontmatter.tags,
+            )?;
+            Ok(journal::record_write(
+                tx,
+                operation.op,
+                &record.frontmatter,
+                &record.body,
+                &at,
+                ReplicaOrigin::Sync,
+            )?
+            .sequence)
+        }
+        Prepared::Removed {
+            existed,
+            content_hash,
+            repository,
+        } => {
+            if *existed {
+                memory_purge::soft_delete(tx, &operation.entity_key, &at)?;
+            }
+            Ok(journal::record_tombstone(
+                tx,
+                &operation.entity_key,
+                content_hash,
+                repository.as_deref(),
+                &at,
+                ReplicaOrigin::Sync,
+            )?
+            .sequence)
+        }
+    })?;
     // After the commit: a failed refresh must not roll back an acceptance the
     // peer has already been told about.
     let _stale = crate::domains::graph::derived::refresh_derived_best_effort(ctx.conn()?);
@@ -46,31 +85,75 @@ pub(crate) fn apply(
     })
 }
 
-/// Write (or rewrite) the memory this operation carries, then commit its
-/// mirror row, journal rows and receipt as one unit.
-fn write_memory(ctx: &mut Ctx<'_>, epoch: &str, operation: &Operation, at: &str) -> Result<i64> {
-    let payload = decode(operation)?;
-    let record = write_markdown(&MemoryStore::new(ctx.paths.clone()), &payload)?;
-    let md_path = record.path.to_string_lossy().into_owned();
+/// What the markdown half of an acceptance produced, for the database half to
+/// finish.
+enum Prepared {
+    /// The record now on disk. Boxed: it dwarfs the tombstone arm, and an
+    /// enum sized by its largest variant would make every acceptance carry
+    /// that cost.
+    Written(Box<crate::domains::memories::MemoryRecord>),
+    /// The entity this engine removed, or never held.
+    Removed {
+        /// Whether a markdown file was actually there to remove.
+        existed: bool,
+        /// Content hash the removed record carried; empty when it was absent.
+        content_hash: String,
+        /// Canonical repository, when the removed record had one.
+        repository: Option<String>,
+    },
+}
+
+/// Move the markdown tree to match the operation.
+///
+/// A tombstone for an id this engine never held still prepares: the peer's
+/// deletion is a fact about the shared stream, and recording it is what stops
+/// a later pull from re-creating what was deleted.
+fn prepare_markdown(ctx: &mut Ctx<'_>, operation: &Operation) -> Result<Prepared> {
+    let store = MemoryStore::new(ctx.paths.clone());
+    match operation.op {
+        ReplicaOp::Upsert | ReplicaOp::Restore => Ok(Prepared::Written(Box::new(write_markdown(
+            &store,
+            &decode(operation)?,
+        )?))),
+        ReplicaOp::Tombstone => {
+            let removed = match store.delete(&operation.entity_key) {
+                Ok(record) => Some(record),
+                Err(Error::NotFound(_)) => None,
+                Err(e) => return Err(e),
+            };
+            Ok(Prepared::Removed {
+                existed: removed.is_some(),
+                content_hash: removed
+                    .as_ref()
+                    .map_or_else(String::new, |r| r.frontmatter.content_hash.clone()),
+                repository: removed
+                    .as_ref()
+                    .map(|r| r.frontmatter.repo.clone())
+                    .filter(|repo| !repo.is_empty()),
+            })
+        }
+    }
+}
+
+/// Run `apply` and the receipt it earns in ONE transaction.
+///
+/// Every accepted operation owes the same three writes — materialized state,
+/// journal position, receipt — and the only part that differs is the state.
+/// Keeping the transaction here means no acceptance path can forget the
+/// receipt or commit it separately.
+fn commit_acceptance<F>(
+    ctx: &mut Ctx<'_>,
+    epoch: &str,
+    operation: &Operation,
+    at: &str,
+    apply: F,
+) -> Result<i64>
+where
+    F: FnOnce(&Connection) -> Result<i64>,
+{
     let conn = ctx.conn()?;
     let tx = conn.transaction()?;
-    mirror::insert_row(
-        &tx,
-        &record.frontmatter,
-        &record.body,
-        record.slug.as_str(),
-        &md_path,
-        &record.frontmatter.tags,
-    )?;
-    let sequence = journal::record_write(
-        &tx,
-        operation.op,
-        &record.frontmatter,
-        &record.body,
-        at,
-        ReplicaOrigin::Sync,
-    )?
-    .sequence;
+    let sequence = apply(&tx)?;
     replica_receipt::record(&tx, &accepted(operation, epoch, sequence), at)?;
     tx.commit()?;
     Ok(sequence)
@@ -124,47 +207,6 @@ fn write_markdown(
         }),
         Err(e) => Err(e),
     }
-}
-
-/// Soft-delete the memory this tombstone names, then commit the mirror
-/// delete, journal rows and receipt as one unit.
-///
-/// A tombstone for an id this engine never held still commits its journal
-/// rows: the peer's deletion is a fact about the shared stream, and recording
-/// it is what stops a later pull from re-creating what was deleted.
-fn remove_memory(ctx: &mut Ctx<'_>, epoch: &str, operation: &Operation, at: &str) -> Result<i64> {
-    let paths = ctx.paths.clone();
-    let store = MemoryStore::new(paths);
-    let removed = match store.delete(&operation.entity_key) {
-        Ok(record) => Some(record),
-        Err(Error::NotFound(_)) => None,
-        Err(e) => return Err(e),
-    };
-    let content_hash = removed
-        .as_ref()
-        .map_or_else(String::new, |r| r.frontmatter.content_hash.clone());
-    let repository = removed
-        .as_ref()
-        .map(|r| r.frontmatter.repo.clone())
-        .filter(|repo| !repo.is_empty());
-
-    let conn = ctx.conn()?;
-    let tx = conn.transaction()?;
-    if removed.is_some() {
-        memory_purge::soft_delete(&tx, &operation.entity_key, at)?;
-    }
-    let sequence = journal::record_tombstone(
-        &tx,
-        &operation.entity_key,
-        &content_hash,
-        repository.as_deref(),
-        at,
-        ReplicaOrigin::Sync,
-    )?
-    .sequence;
-    replica_receipt::record(&tx, &accepted(operation, epoch, sequence), at)?;
-    tx.commit()?;
-    Ok(sequence)
 }
 
 /// Decode the payload the decision already validated.

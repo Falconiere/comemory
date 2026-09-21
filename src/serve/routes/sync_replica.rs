@@ -2,11 +2,10 @@
 //! `POST /api/v1/sync/replica/{import,stage,activate}` — the `replica-v1`
 //! surface.
 //!
-//! The legacy routes in [`super::sync`] keep their own wire shape; both write
-//! the same journal. Reads are read-class, the three write routes take the
-//! mutating gate, and nothing here starts a daemon: this is the hosted
-//! engine's request path, not its lifecycle. The cores themselves live in
-//! [`crate::domains::sync::replica`]; this file is extractors and gating only.
+//! Reads are read-class, writes take the mutating gate, and nothing here
+//! starts a daemon. Six routes, two shapes — a cursor read and a JSON write —
+//! each mounted by one generic builder, so adding a route is a line rather
+//! than a copy. The cores live in [`crate::domains::sync::replica`].
 
 use std::time::Instant;
 
@@ -16,6 +15,7 @@ use axum::response::Response;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 
 use crate::domains::sync::replica::contract::ImportRequest;
 use crate::domains::sync::replica::contract_views::{ActivateRequest, StageRequest};
@@ -73,43 +73,79 @@ pub fn table_entries() -> &'static [RouteEntry] {
 }
 
 /// This resource's routes, mounted under `/api/v1`.
-///
-/// One builder per route, grouped into a read half and a write half: the six
-/// differ only in extractor and core, and keeping them apart keeps every
-/// function small enough to read at a glance.
 pub fn router(_state: AppState) -> Router<AppState> {
-    read_routes().merge(write_routes())
-}
-
-/// The three read-class routes.
-fn read_routes() -> Router<AppState> {
-    changes_route()
-        .merge(manifest_route())
-        .merge(events_route())
-}
-
-/// `GET /sync/replica/changes` — the ordered page above a cursor.
-fn changes_route() -> Router<AppState> {
-    Router::new().route(
+    feed_route(
         "/api/v1/sync/replica/changes",
+        "sync.replica.changes",
+        |ctx, q| changes::run(ctx, q.since, q.limit, q.kind.as_deref(), q.epoch.as_deref()),
+    )
+    .merge(manifest_route())
+    .merge(feed_route(
+        "/api/v1/sync/replica/events",
+        "sync.replica.events",
+        |ctx, q| events::frames(ctx, q.since, q.limit, q.epoch.as_deref()),
+    ))
+    .merge(json_route::<ImportRequest, _>(
+        "/api/v1/sync/replica/import",
+        "sync.replica.import",
+        accept::run,
+    ))
+    .merge(json_route::<StageRequest, _>(
+        "/api/v1/sync/replica/stage",
+        "sync.replica.stage",
+        staging::stage,
+    ))
+    .merge(json_route::<ActivateRequest, _>(
+        "/api/v1/sync/replica/activate",
+        "sync.replica.activate",
+        staging::activate,
+    ))
+}
+
+/// A read-class route driven by a cursor query.
+fn feed_route<T>(
+    path: &'static str,
+    command: &'static str,
+    core: fn(&mut Ctx<'_>, FeedQuery) -> Result<T>,
+) -> Router<AppState>
+where
+    T: serde::Serialize + Send + 'static,
+{
+    Router::new().route(
+        path,
         get(
-            |State(state): State<AppState>, headers: HeaderMap, Query(q): Query<FeedQuery>| {
+            move |State(state): State<AppState>, headers: HeaderMap, Query(q): Query<FeedQuery>| {
                 let origin = state.http_origin(&headers);
-                handle(
-                    state,
-                    "sync.replica.changes",
-                    Gate::Read,
-                    origin,
-                    move |ctx| {
-                        changes::run(ctx, q.since, q.limit, q.kind.as_deref(), q.epoch.as_deref())
-                    },
-                )
+                handle(state, command, Gate::Read, origin, move |ctx| core(ctx, q))
             },
         ),
     )
 }
 
-/// `GET /sync/replica/manifest` — holdings, capability and seeding progress.
+/// A mutating route whose body is one JSON envelope.
+fn json_route<B, T>(
+    path: &'static str,
+    command: &'static str,
+    core: fn(&mut Ctx<'_>, B) -> Result<T>,
+) -> Router<AppState>
+where
+    B: DeserializeOwned + Send + 'static,
+    T: serde::Serialize + Send + 'static,
+{
+    Router::new().route(
+        path,
+        post(
+            move |State(state): State<AppState>, headers: HeaderMap, Json(req): Json<B>| {
+                let origin = state.http_origin(&headers);
+                handle(state, command, Gate::Write, origin, move |ctx| {
+                    core(ctx, req)
+                })
+            },
+        ),
+    )
+}
+
+/// `GET /sync/replica/manifest` — the one route with no query of its own.
 fn manifest_route() -> Router<AppState> {
     Router::new().route(
         "/api/v1/sync/replica/manifest",
@@ -123,89 +159,6 @@ fn manifest_route() -> Router<AppState> {
                 manifest::run,
             )
         }),
-    )
-}
-
-/// `GET /sync/replica/events` — notification-only frames.
-fn events_route() -> Router<AppState> {
-    Router::new().route(
-        "/api/v1/sync/replica/events",
-        get(
-            |State(state): State<AppState>, headers: HeaderMap, Query(q): Query<FeedQuery>| {
-                let origin = state.http_origin(&headers);
-                handle(
-                    state,
-                    "sync.replica.events",
-                    Gate::Read,
-                    origin,
-                    move |ctx| events::frames(ctx, q.since, q.limit, q.epoch.as_deref()),
-                )
-            },
-        ),
-    )
-}
-
-/// The three mutating routes: import, stage and activation.
-fn write_routes() -> Router<AppState> {
-    import_route().merge(stage_route()).merge(activate_route())
-}
-
-/// `POST /sync/replica/import` — apply an envelope.
-fn import_route() -> Router<AppState> {
-    Router::new().route(
-        "/api/v1/sync/replica/import",
-        post(
-            |State(state): State<AppState>, headers: HeaderMap, Json(req): Json<ImportRequest>| {
-                let origin = state.http_origin(&headers);
-                handle(
-                    state,
-                    "sync.replica.import",
-                    Gate::Write,
-                    origin,
-                    move |ctx| accept::run(ctx, req),
-                )
-            },
-        ),
-    )
-}
-
-/// `POST /sync/replica/stage` — store one part of an oversized revision.
-fn stage_route() -> Router<AppState> {
-    Router::new().route(
-        "/api/v1/sync/replica/stage",
-        post(
-            |State(state): State<AppState>, headers: HeaderMap, Json(req): Json<StageRequest>| {
-                let origin = state.http_origin(&headers);
-                handle(
-                    state,
-                    "sync.replica.stage",
-                    Gate::Write,
-                    origin,
-                    move |ctx| staging::stage(ctx, req),
-                )
-            },
-        ),
-    )
-}
-
-/// `POST /sync/replica/activate` — assemble a staged upload and accept it.
-fn activate_route() -> Router<AppState> {
-    Router::new().route(
-        "/api/v1/sync/replica/activate",
-        post(
-            |State(state): State<AppState>,
-             headers: HeaderMap,
-             Json(req): Json<ActivateRequest>| {
-                let origin = state.http_origin(&headers);
-                handle(
-                    state,
-                    "sync.replica.activate",
-                    Gate::Write,
-                    origin,
-                    move |ctx| staging::activate(ctx, req),
-                )
-            },
-        ),
     )
 }
 

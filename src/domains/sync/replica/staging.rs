@@ -113,11 +113,14 @@ pub fn activate(ctx: &mut Ctx<'_>, request: ActivateRequest) -> Result<Operation
 /// have received them.
 ///
 /// The bytes are parsed, not trusted: a payload that is not JSON is refused
-/// here rather than reaching acceptance as an opaque blob.
+/// here rather than reaching acceptance as an opaque blob. The digest is taken
+/// over the CANONICAL form of the parsed value, not over the bytes as they
+/// arrived — acceptance recomputes it the same way, so a sender whose parts
+/// were not already canonical would otherwise be refused as invalid.
 fn with_payload(operation: Operation, bytes: &str) -> Result<Operation> {
     let value: serde_json::Value = serde_json::from_str(bytes)
         .map_err(|e| Error::BadRequest(format!("assembled payload is not json: {e}")))?;
-    let digest = canonical_json::digest_of(bytes.as_bytes());
+    let (_, digest) = canonical_json::bytes_and_digest(&value)?;
     Ok(Operation {
         payload: Some(value),
         payload_digest: operation.payload_digest.or(Some(digest)),

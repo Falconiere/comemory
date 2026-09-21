@@ -9,7 +9,7 @@
 //! database — enqueue, drain order, settlement and retry accounting.
 
 use comemory::store::replica_journal::{NewOperation, PayloadRef, ReplicaOp, ReplicaOrigin};
-use comemory::store::replica_outbox;
+use comemory::store::replica_outbox::{self, Outcome};
 use comemory::store::{connection, migrate};
 use rusqlite::Connection;
 use tempfile::TempDir;
@@ -88,15 +88,16 @@ fn settling_an_operation_removes_it_from_what_is_owed_and_keeps_the_answer() {
     .expect("enqueue");
     tx.commit().expect("commit");
 
-    let settled = replica_outbox::settle(
+    let settled = replica_outbox::record(
         &conn,
         "op-1",
-        true,
-        Some(77),
-        "accepted",
+        Outcome::Accepted {
+            sequence: Some(77),
+            disposition: "accepted",
+        },
         "2026-09-21T10:01:00Z",
     )
-    .expect("settle");
+    .expect("record");
     assert_eq!(settled, 1);
     assert_eq!(replica_outbox::pending_count(&conn).expect("count"), 0);
 
@@ -125,15 +126,15 @@ fn a_rejection_keeps_the_row_for_diagnosis() {
     .expect("enqueue");
     tx.commit().expect("commit");
 
-    replica_outbox::settle(
+    replica_outbox::record(
         &conn,
         "op-1",
-        false,
-        None,
-        "rejected_stale",
+        Outcome::Rejected {
+            disposition: "rejected_stale",
+        },
         "2026-09-21T10:02:00Z",
     )
-    .expect("settle");
+    .expect("record");
 
     assert_eq!(replica_outbox::pending_count(&conn).expect("count"), 0);
     let rows: i64 = conn
@@ -155,10 +156,17 @@ fn a_failed_attempt_is_counted_and_the_operation_stays_pending() {
     .expect("enqueue");
     tx.commit().expect("commit");
 
-    replica_outbox::record_attempt(&conn, "op-1", "connection reset", "2026-09-21T10:03:00Z")
-        .expect("attempt");
-    replica_outbox::record_attempt(&conn, "op-1", "connection reset", "2026-09-21T10:04:00Z")
-        .expect("attempt");
+    for at in ["2026-09-21T10:03:00Z", "2026-09-21T10:04:00Z"] {
+        replica_outbox::record(
+            &conn,
+            "op-1",
+            Outcome::Failed {
+                error: "connection reset",
+            },
+            at,
+        )
+        .expect("record");
+    }
 
     let pending = replica_outbox::pending(&conn, 10).expect("pending");
     assert_eq!(

@@ -49,85 +49,79 @@ pub(crate) fn copy_history_tables(conn: &Connection) -> Result<()> {
         )?;
     }
     copy_sync_tables(conn)?;
-    copy_replica_tables(conn)?;
     Ok(())
 }
 
-/// Copy the v22 `replica-v1` journal when the attached DB has it.
+/// Copy the preserved cloud-sync and `replica-v1` tables the attached DB has.
 ///
-/// A rebuild re-derives the database from markdown, but a sequence this
-/// engine already handed to a peer cannot be re-derived: reissuing it would
-/// turn every replayed operation into a second effect, and dropping the
-/// receipts would answer a replay with a fresh acceptance. The stream epoch
-/// is copied for the same reason — a rebuild is not a replaced stream, and a
-/// peer's cursor must stay valid across it. Staged parts are deliberately not
-/// copied: an upload that never activated published nothing.
-fn copy_replica_tables(conn: &Connection) -> Result<()> {
-    if !old_table_exists(conn, "replica_feed")? {
+/// One pass over a list rather than a function per family: each entry is the
+/// table plus the column list to carry over, and a table the source predates
+/// is skipped.
+fn copy_sync_tables(conn: &Connection) -> Result<()> {
+    for (table, columns) in PRESERVED {
+        copy_table(conn, table, columns)?;
+    }
+    Ok(())
+}
+
+/// `(table, columns)` for every row set a rebuild carries over from the old
+/// database. `replica_stream` leads the replica group because the epoch is
+/// what makes the positions after it meaningful.
+const PRESERVED: &[(&str, &str)] = &[
+    ("sync_log", "seq, op, memory_id, content_hash, at, origin"),
+    (
+        "sync_state",
+        "workspace_id, api_url, pulled_seq, pushed_seq, last_sync_at",
+    ),
+    (
+        "sync_binding",
+        "memory_id, workspace_id, secret_override_rule, secret_override_at",
+    ),
+    ("replica_stream", "id, epoch, created_at"),
+    (
+        "replica_payload",
+        "digest, entity_kind, schema_version, bytes, byte_len, created_at, redacted_at",
+    ),
+    (
+        "replica_feed",
+        "sequence, epoch, entity_kind, entity_key, op, payload_digest, schema_version, \
+         operation_id, origin, repository, at",
+    ),
+    (
+        "replica_revision",
+        "entity_kind, entity_key, sequence, payload_digest, deleted, deleted_sequence, \
+         updated_at",
+    ),
+    (
+        "replica_operation",
+        "operation_id, entity_kind, entity_key, op, payload_digest, schema_version, \
+         repository, observed_sequence, state, upstream_sequence, disposition, attempts, \
+         last_error, created_at, updated_at",
+    ),
+    (
+        "replica_receipt",
+        "operation_id, epoch, sequence, disposition, payload_digest, reason, accepted_at",
+    ),
+    (
+        "replica_cursor",
+        "workspace_id, api_url, stream_epoch, applied_sequence, updated_at",
+    ),
+];
+
+/// Copy one table's columns from the attached `old` database, if it has it.
+///
+/// `replica_stream` is replaced rather than merged: the fresh database minted
+/// its own epoch at migration time, and keeping that one would tell every peer
+/// its cursor belongs to a stream that no longer exists.
+fn copy_table(conn: &Connection, table: &str, columns: &str) -> Result<()> {
+    if !old_table_exists(conn, table)? {
         return Ok(());
     }
-    conn.execute_batch(
-        "DELETE FROM main.replica_stream; \
-         INSERT INTO main.replica_stream(id, epoch, created_at) \
-         SELECT id, epoch, created_at FROM old.replica_stream; \
-         INSERT OR IGNORE INTO main.replica_payload(\
-             digest, entity_kind, schema_version, bytes, byte_len, created_at, redacted_at) \
-         SELECT digest, entity_kind, schema_version, bytes, byte_len, created_at, redacted_at \
-         FROM old.replica_payload; \
-         INSERT OR IGNORE INTO main.replica_feed(\
-             sequence, epoch, entity_kind, entity_key, op, payload_digest, schema_version, \
-             operation_id, origin, repository, at) \
-         SELECT sequence, epoch, entity_kind, entity_key, op, payload_digest, schema_version, \
-             operation_id, origin, repository, at FROM old.replica_feed; \
-         INSERT OR IGNORE INTO main.replica_revision(\
-             entity_kind, entity_key, sequence, payload_digest, deleted, deleted_sequence, \
-             updated_at) \
-         SELECT entity_kind, entity_key, sequence, payload_digest, deleted, deleted_sequence, \
-             updated_at FROM old.replica_revision; \
-         INSERT OR IGNORE INTO main.replica_operation(\
-             operation_id, entity_kind, entity_key, op, payload_digest, schema_version, \
-             repository, observed_sequence, state, upstream_sequence, disposition, attempts, \
-             last_error, created_at, updated_at) \
-         SELECT operation_id, entity_kind, entity_key, op, payload_digest, schema_version, \
-             repository, observed_sequence, state, upstream_sequence, disposition, attempts, \
-             last_error, created_at, updated_at FROM old.replica_operation; \
-         INSERT OR IGNORE INTO main.replica_receipt(\
-             operation_id, epoch, sequence, disposition, payload_digest, reason, accepted_at) \
-         SELECT operation_id, epoch, sequence, disposition, payload_digest, reason, accepted_at \
-         FROM old.replica_receipt; \
-         INSERT OR IGNORE INTO main.replica_cursor(\
-             workspace_id, api_url, stream_epoch, applied_sequence, updated_at) \
-         SELECT workspace_id, api_url, stream_epoch, applied_sequence, updated_at \
-         FROM old.replica_cursor;",
-    )?;
-    Ok(())
-}
-
-/// Copy `sync_log` / `sync_state` / `sync_binding` when the attached DB has
-/// them (post-v16). Skipped on older sources.
-fn copy_sync_tables(conn: &Connection) -> Result<()> {
-    if old_table_exists(conn, "sync_log")? {
-        conn.execute_batch(
-            "INSERT OR IGNORE INTO main.sync_log(\
-                 seq, op, memory_id, content_hash, at, origin) \
-             SELECT seq, op, memory_id, content_hash, at, origin FROM old.sync_log;",
-        )?;
+    if table == "replica_stream" {
+        conn.execute_batch("DELETE FROM main.replica_stream;")?;
     }
-    if old_table_exists(conn, "sync_state")? {
-        conn.execute_batch(
-            "INSERT OR IGNORE INTO main.sync_state(\
-                 workspace_id, api_url, pulled_seq, pushed_seq, last_sync_at) \
-             SELECT workspace_id, api_url, pulled_seq, pushed_seq, last_sync_at \
-             FROM old.sync_state;",
-        )?;
-    }
-    if old_table_exists(conn, "sync_binding")? {
-        conn.execute_batch(
-            "INSERT OR IGNORE INTO main.sync_binding(\
-                 memory_id, workspace_id, secret_override_rule, secret_override_at) \
-             SELECT memory_id, workspace_id, secret_override_rule, secret_override_at \
-             FROM old.sync_binding;",
-        )?;
-    }
+    conn.execute_batch(&format!(
+        "INSERT OR IGNORE INTO main.{table}({columns}) SELECT {columns} FROM old.{table};"
+    ))?;
     Ok(())
 }

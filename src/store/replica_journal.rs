@@ -8,7 +8,6 @@
 //! position can never exist without the payload it names.
 
 use rusqlite::Connection;
-use serde::{Deserialize, Serialize};
 use toolu_orm::core::query_column::CommonOps;
 
 use super::schema_replica::{
@@ -18,77 +17,12 @@ use super::schema_replica::{
 use super::{orm, schema_replica};
 use crate::prelude::*;
 
-/// What one journalled mutation does to an entity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ReplicaOp {
-    /// Created, or replaced under a new payload.
-    Upsert,
-    /// Soft-deleted.
-    Tombstone,
-    /// A tombstone explicitly reversed.
-    Restore,
-}
-
-impl ReplicaOp {
-    /// Wire / SQL literal.
-    #[must_use]
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Upsert => "upsert",
-            Self::Tombstone => "tombstone",
-            Self::Restore => "restore",
-        }
-    }
-
-    /// Parse a stored literal.
-    ///
-    /// # Errors
-    /// Returns [`Error::Other`] for a literal the schema's `CHECK` should have
-    /// refused — a database edited outside this code.
-    pub fn parse(raw: &str) -> Result<Self> {
-        match raw {
-            "upsert" => Ok(Self::Upsert),
-            "tombstone" => Ok(Self::Tombstone),
-            "restore" => Ok(Self::Restore),
-            other => Err(Error::Other(format!("unknown replica op: {other}"))),
-        }
-    }
-}
-
-/// Where an accepted mutation came from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ReplicaOrigin {
-    /// Made on this machine — the outbox owes an upload.
-    Local,
-    /// Imported from a peer — must not be pushed back.
-    Sync,
-}
-
-impl ReplicaOrigin {
-    /// Wire / SQL literal.
-    #[must_use]
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Local => "local",
-            Self::Sync => "sync",
-        }
-    }
-
-    /// Parse a stored literal.
-    ///
-    /// # Errors
-    /// Returns [`Error::Other`] for a literal the schema's `CHECK` should have
-    /// refused.
-    pub fn parse(raw: &str) -> Result<Self> {
-        match raw {
-            "local" => Ok(Self::Local),
-            "sync" => Ok(Self::Sync),
-            other => Err(Error::Other(format!("unknown replica origin: {other}"))),
-        }
-    }
-}
+/// What one journalled mutation does to an entity, and where it came from.
+///
+/// The legacy `sync_log` vocabulary, reused rather than restated: both feeds
+/// describe the same events, and a second copy of `upsert | tombstone |
+/// restore` would be a place for them to drift.
+pub use super::sync_log::{SyncOp as ReplicaOp, SyncOrigin as ReplicaOrigin};
 
 /// The immutable bytes a mutation carries, already canonicalized and hashed by
 /// the domain that owns the entity.

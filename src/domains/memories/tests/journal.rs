@@ -217,10 +217,22 @@ fn every_journalled_operation_has_a_distinct_id_and_the_dated_shape() {
     assert_eq!(ids.len(), 2);
     assert_ne!(ids[0], ids[1], "two mutations, two operation ids");
     for operation_id in ids {
+        // `op-<yyyymmdd>-<8 lowercase hex>`, asserted part by part: a length
+        // check alone would accept `op-12345678-xyz-`.
+        let parts: Vec<&str> = operation_id.split('-').collect();
+        assert_eq!(parts.len(), 3, "three segments: {operation_id}");
+        assert_eq!(parts[0], "op");
+        assert_eq!(parts[1].len(), 8, "yyyymmdd: {operation_id}");
         assert!(
-            operation_id.starts_with("op-"),
-            "operation ids carry the op- prefix: {operation_id}"
+            parts[1].chars().all(|c| c.is_ascii_digit()),
+            "the date segment is digits: {operation_id}"
         );
-        assert_eq!(operation_id.len(), 20, "op-<yyyymmdd>-<8hex>");
+        assert_eq!(parts[2].len(), 8, "8 hex chars: {operation_id}");
+        assert!(
+            parts[2]
+                .chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+            "the suffix is lowercase hex: {operation_id}"
+        );
     }
 }

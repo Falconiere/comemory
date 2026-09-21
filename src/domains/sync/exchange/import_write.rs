@@ -2,7 +2,7 @@
 
 use crate::config::Config;
 use crate::domains::memories::frontmatter::Frontmatter;
-use crate::domains::memories::{MemoryStore, SaveParams, journal, mirror};
+use crate::domains::memories::{MemoryRecord, MemoryStore, SaveParams, journal, mirror};
 use crate::domains::sync::exchange::{
     ImportEntry, ImportItemResult, ImportStatus, SyncRecord, SyncVector,
 };
@@ -71,12 +71,15 @@ pub(crate) fn write_new_memory(
 }
 
 /// Rule 8/9 — apply frontmatter from the wire onto a live markdown file.
+///
+/// Returns the patched record so the caller can journal it without reading
+/// the file back.
 pub(crate) fn patch_frontmatter(
     ctx: &mut Ctx<'_>,
     entry: &ImportEntry,
     record: &SyncRecord,
     author_override: Option<&str>,
-) -> Result<()> {
+) -> Result<MemoryRecord> {
     let store = MemoryStore::new(ctx.paths.clone());
     let mut rec = store.load(&entry.id)?;
     let fm = frontmatter_from_wire(record, author_override);
@@ -91,29 +94,7 @@ pub(crate) fn patch_frontmatter(
     }
     store.rewrite(&rec)?;
     crate::domains::memories::update::mirror_record(ctx, &rec)?;
-    Ok(())
-}
-
-/// Journal an imported upsert inside the caller's transaction — the legacy
-/// `sync_log` row and the `replica-v1` position, together, so a legacy push
-/// and a replica push converge on one history.
-///
-/// Returns the legacy `seq`, which is what the legacy wire reports.
-pub(crate) fn log_sync_upsert(
-    tx: &Connection,
-    paths: &crate::config::Paths,
-    entry: &ImportEntry,
-) -> Result<i64> {
-    let record = MemoryStore::new(paths.clone()).load(&entry.id)?;
-    Ok(journal::record_write(
-        tx,
-        ReplicaOp::Upsert,
-        &record.frontmatter,
-        &record.body,
-        &entry.at,
-        ReplicaOrigin::Sync,
-    )?
-    .legacy_seq)
+    Ok(rec)
 }
 
 fn frontmatter_from_wire(record: &SyncRecord, author_override: Option<&str>) -> Frontmatter {

@@ -68,8 +68,7 @@ pub fn decide(ctx: &mut Ctx<'_>, operation: &Operation) -> Result<Disposition> {
     }
     let conn = ctx.conn()?;
     if let Some(digest) = operation.payload_digest.as_deref()
-        && let Some(state) = replica_read::payload_state(conn, digest)?
-        && state.erased
+        && replica_read::is_erased(conn, digest)?
     {
         return Ok(Disposition::PayloadErased);
     }

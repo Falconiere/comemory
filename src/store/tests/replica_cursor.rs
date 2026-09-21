@@ -38,7 +38,6 @@ fn an_unknown_workspace_has_no_cursor() {
             .expect("load")
             .is_none()
     );
-    assert!(replica_cursor::all(&conn).expect("all").is_empty());
 }
 
 #[test]
@@ -53,7 +52,13 @@ fn saving_twice_advances_one_row_rather_than_accumulating() {
         .expect("cursor");
     assert_eq!(loaded.applied_sequence, 42);
     assert_eq!(loaded.stream_epoch, epoch);
-    assert_eq!(replica_cursor::all(&conn).expect("all").len(), 1);
+    let rows: i64 = conn
+        .query_row("SELECT count(*) FROM replica_cursor", [], |r| r.get(0))
+        .expect("count");
+    assert_eq!(
+        rows, 1,
+        "the second save advanced the row, it did not add one"
+    );
 }
 
 #[test]
@@ -72,13 +77,18 @@ fn two_workspaces_keep_independent_positions_and_epochs() {
     )
     .expect("save b");
 
-    let all = replica_cursor::all(&conn).expect("all");
-    assert_eq!(all.len(), 2);
-    assert_eq!(all[0].workspace_id, "ws_a");
-    assert_eq!(all[0].applied_sequence, 10);
-    assert_eq!(all[1].workspace_id, "ws_b");
-    assert_eq!(all[1].applied_sequence, 3);
-    assert_ne!(all[0].stream_epoch, all[1].stream_epoch);
+    let first = replica_cursor::load(&conn, "ws_a")
+        .expect("load a")
+        .expect("cursor a");
+    let second = replica_cursor::load(&conn, "ws_b")
+        .expect("load b")
+        .expect("cursor b");
+    assert_eq!(first.applied_sequence, 10);
+    assert_eq!(second.applied_sequence, 3);
+    assert_ne!(
+        first.stream_epoch, second.stream_epoch,
+        "each workspace keeps its own stream"
+    );
 }
 
 #[test]

@@ -80,9 +80,18 @@ fn the_payload_carries_no_author() {
         .expect("payload")
         .canonical()
         .expect("canonical");
+
+    // Structural, not a substring scan: an author whose name happened to match
+    // a tag would make a `contains` check lie in either direction.
+    let value: serde_json::Value = serde_json::from_str(&bytes).expect("payload json");
+    let fields = value.as_object().expect("payload is an object");
     assert!(
-        !bytes.contains("tester"),
+        !fields.contains_key("author"),
         "the accepting side stamps the author; the payload must not carry it: {bytes}"
+    );
+    assert!(
+        !fields.values().any(|v| v == &serde_json::json!("tester")),
+        "no field carries the author's value either: {bytes}"
     );
 }
 

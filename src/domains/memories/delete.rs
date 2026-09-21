@@ -55,11 +55,10 @@ pub fn run(ctx: &mut Ctx<'_>, id: &str) -> Result<Response> {
 fn delete_one(ctx: &mut Ctx<'_>, id: &str) -> Result<Response> {
     let paths = ctx.paths;
     let conn = ctx.conn()?;
-    let (deleted, _content_hash, derived_stale) =
-        soft_delete(paths, conn, id, Some(ReplicaOrigin::Local))?;
+    let removed = soft_delete(paths, conn, id, Some(ReplicaOrigin::Local), None)?;
     Ok(Response {
-        deleted,
-        derived_stale,
+        deleted: removed.id,
+        derived_stale: removed.derived_stale,
     })
 }
 
@@ -79,7 +78,8 @@ pub(crate) fn soft_delete(
     conn: &mut Connection,
     id: &str,
     journal_as: Option<ReplicaOrigin>,
-) -> Result<(String, String, bool)> {
+    at: Option<&str>,
+) -> Result<SoftDeleted> {
     let removed = MemoryStore::new(paths.clone()).delete(id)?;
     let content_hash = removed.frontmatter.content_hash.clone();
     let repository = removed.frontmatter.repo.clone();
@@ -88,9 +88,28 @@ pub(crate) fn soft_delete(
         content_hash: content_hash.as_str(),
         repository: (!repository.is_empty()).then_some(repository.as_str()),
         origin,
+        at,
     });
-    let derived_stale = mirror_soft_delete(conn, &id, tombstone)?;
-    Ok((id, content_hash, derived_stale))
+    let (derived_stale, journalled) = mirror_soft_delete(conn, &id, tombstone)?;
+    Ok(SoftDeleted {
+        id,
+        derived_stale,
+        journalled,
+    })
+}
+
+/// What one soft-delete did.
+#[derive(Debug, Clone)]
+pub(crate) struct SoftDeleted {
+    /// Canonical id from the removed record's frontmatter.
+    pub id: String,
+    /// Whether the derived-artifact refresh that follows the mirror write
+    /// failed, leaving the relation index stale.
+    pub derived_stale: bool,
+    /// Where the deletion landed in each feed, when it was journalled — in the
+    /// same transaction as the mirror delete, so a caller never has to open a
+    /// second one to record it.
+    pub journalled: Option<journal::Positions>,
 }
 
 /// What a soft-delete journals, for the surfaces that replicate their
@@ -104,6 +123,9 @@ pub(crate) struct Tombstone<'a> {
     pub repository: Option<&'a str>,
     /// Whether the deletion was made here or imported.
     pub origin: ReplicaOrigin,
+    /// Provenance time to record. `None` stamps the delete's own clock, which
+    /// is right for a local deletion; an import passes the time the peer sent.
+    pub at: Option<&'a str>,
 }
 
 /// Mirror a soft-delete into `comemory.db` in one transaction: stamp
@@ -122,26 +144,28 @@ pub(crate) fn mirror_soft_delete(
     conn: &mut Connection,
     id: &str,
     tombstone: Option<Tombstone<'_>>,
-) -> Result<bool> {
+) -> Result<(bool, Option<journal::Positions>)> {
     let now = memory_row::iso_format(OffsetDateTime::now_utc())?;
     let tx = conn.transaction()?;
     memory_purge::soft_delete(&tx, id, &now)?;
+    let mut journalled = None;
     if let Some(tombstone) = tombstone {
         // In the delete's own transaction: a memory whose markdown is gone
         // but whose deletion was never journalled would come back on the next
         // pull.
-        journal::record_tombstone(
+        journalled = Some(journal::record_tombstone(
             &tx,
             id,
             tombstone.content_hash,
             tombstone.repository,
-            &now,
+            tombstone.at.unwrap_or(now.as_str()),
             tombstone.origin,
-        )?;
+        )?);
     }
     tx.commit()?;
     // After the commit, so a failed refresh cannot roll back a delete that
     // succeeded — and reported rather than swallowed, since a stale
     // relation index is something the caller can pass on.
-    Ok(!crate::domains::graph::derived::refresh_derived_best_effort(conn))
+    let derived_stale = !crate::domains::graph::derived::refresh_derived_best_effort(conn);
+    Ok((derived_stale, journalled))
 }
