@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.43.0] - 2026-09-21
+
+### Added
+
+- record every agent-visible command run and serve it as a live feed ([#244](https://github.com/Falconiere/comemory/pull/244))
+
 ## [0.42.1] - 2026-09-20
 
 ### Added
