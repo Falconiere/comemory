@@ -17,6 +17,11 @@ pub const PROTOCOL: &str = "replica-v1";
 pub const MAX_OPERATIONS: usize = 500;
 
 /// Maximum serialized envelope size, in bytes.
+///
+/// The engine enforces this before parsing, through `serve`'s global body
+/// limit — a request above it never reaches a handler. The constant is
+/// restated here because it is part of the contract the platform implements
+/// too; a colocated route test asserts the two agree so they cannot drift.
 pub const MAX_ENVELOPE_BYTES: usize = 5 * 1024 * 1024;
 
 /// A peer's position in a stream.

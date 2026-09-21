@@ -9,6 +9,8 @@
 //! the read-only gate must refuse. The over-the-wire behavior is proven in
 //! `tests/replica_contract.rs` against a real `comemory serve`.
 
+use comemory::domains::sync::replica::contract::MAX_ENVELOPE_BYTES;
+use comemory::serve::router::BODY_LIMIT;
 use comemory::serve::routes::table;
 
 use super::table_entries;
@@ -75,4 +77,15 @@ fn every_replica_command_is_namespaced_under_sync_replica() {
             entry.command
         );
     }
+}
+
+#[test]
+fn the_contract_envelope_cap_is_the_limit_the_server_actually_enforces() {
+    // The cap is refused before parsing, by the global body limit. If someone
+    // raises one number without the other, an envelope the contract calls
+    // legal would be rejected (or an illegal one accepted) — so pin them.
+    assert_eq!(
+        MAX_ENVELOPE_BYTES, BODY_LIMIT,
+        "the replica-v1 envelope cap must equal the body limit `serve` enforces"
+    );
 }

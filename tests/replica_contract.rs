@@ -194,6 +194,37 @@ fn envelope_caps_refuse_an_oversized_batch_without_applying_anything() {
         .query_row("SELECT count(*) FROM replica_feed", [], |r| r.get(0))
         .expect("count");
     assert_eq!(positions, 0, "a refused envelope applies nothing");
+
+    // Above the 5 MiB byte cap: refused before the body is accepted, which a
+    // client sees either as a status or as a closed connection.
+    let mut oversized = payload.clone();
+    oversized["body"] = json!("x".repeat(6 * 1024 * 1024));
+    let status = peer.post_expecting_refusal(
+        "/api/v1/sync/replica/import",
+        &json!({
+            "protocol": "replica-v1",
+            "operations": [{
+                "operation_id": "op-20260921-toolarge",
+                "entity_kind": "memory",
+                "entity_key": id,
+                "op": "upsert",
+                "schema_version": 1,
+                "payload_digest": digest,
+                "payload": oversized,
+            }]
+        }),
+    );
+    if let Some(status) = status {
+        assert!(
+            status == 413 || status == 400,
+            "a >5 MiB envelope must be refused, got {status}"
+        );
+    }
+    let after: i64 = peer
+        .db()
+        .query_row("SELECT count(*) FROM replica_feed", [], |r| r.get(0))
+        .expect("count");
+    assert_eq!(after, 0, "an oversized envelope applies nothing either");
 }
 
 #[test]

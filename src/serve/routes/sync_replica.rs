@@ -77,8 +77,8 @@ pub fn table_entries() -> &'static [RouteEntry] {
 /// One builder per route, grouped into a read half and a write half: the six
 /// differ only in extractor and core, and keeping them apart keeps every
 /// function small enough to read at a glance.
-pub fn router(state: AppState) -> Router<AppState> {
-    read_routes().merge(write_routes(state))
+pub fn router(_state: AppState) -> Router<AppState> {
+    read_routes().merge(write_routes())
 }
 
 /// The three read-class routes.
@@ -146,7 +146,7 @@ fn events_route() -> Router<AppState> {
 }
 
 /// The three mutating routes: import, stage and activation.
-fn write_routes(_state: AppState) -> Router<AppState> {
+fn write_routes() -> Router<AppState> {
     import_route().merge(stage_route()).merge(activate_route())
 }
 

@@ -113,6 +113,25 @@ impl Engine {
         }
     }
 
+    /// A write the server is expected to refuse before it accepts the body.
+    ///
+    /// Returns the status when the response arrives, and `None` when the
+    /// server closed the connection mid-upload — which is what an early body
+    /// rejection looks like to a client that is still writing. Both outcomes
+    /// mean refused; which one a run sees is a race, so a test must accept
+    /// either or it is flaky.
+    pub fn post_expecting_refusal(&self, path: &str, body: &Value) -> Option<u16> {
+        match reqwest::blocking::Client::new()
+            .post(format!("{}{path}", self.base))
+            .bearer_auth(&self.token)
+            .json(body)
+            .send()
+        {
+            Ok(response) => Some(response.status().as_u16()),
+            Err(_) => None,
+        }
+    }
+
     /// Open this engine's database directly, as an operator would.
     pub fn db(&self) -> rusqlite::Connection {
         rusqlite::Connection::open(self.data_dir().join("comemory.db")).expect("open db")
