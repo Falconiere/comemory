@@ -77,7 +77,9 @@ response of one `POST /v1/sync/*` or to flip one body byte. Clients set
 | Platform | `--platform-root . --case <live case>` with `COMEMORY_POLICY_BIN` | Baseline, faults, credentials, propagation |
 
 `scripts/replication/platform.sha` is the platform commit the harness
-requires. A checkout whose history does not contain that commit fails.
+requires. The runner reads that pin, and the engine SHA, from the tree
+that contains the script, not from the caller's git root. A checkout
+whose history does not contain that commit fails.
 The run prints the checkout's HEAD, which may be a descendant.
 `apps/api/replication-engine.sha` in the platform repo is the engine
 commit that CI builds. The harness file is

@@ -7,8 +7,8 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=scripts/lib/common.sh
 source "$HERE/lib/common.sh"
 
-manifest="$PROJECT_ROOT/scripts/replication/coverage.json"
-runner="$PROJECT_ROOT/scripts/test-replication-e2e.sh"
+manifest="$HERE/replication/coverage.json"
+runner="$HERE/test-replication-e2e.sh"
 platform_root=""
 report=""
 

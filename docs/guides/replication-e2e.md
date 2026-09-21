@@ -6,8 +6,8 @@ is [the design](../designs/2026-09-21-replication-e2e-harness.md).
 ## Prerequisites
 
 - This repository, with Rust stable enough to `cargo build`.
-- A checkout of `CodaSignal/comemory.io` that contains
-  `scripts/replication/platform.sha` as an ancestor.
+- A checkout of `CodaSignal/comemory.io` whose history contains this
+  repo's `scripts/replication/platform.sha` as an ancestor.
 - `node` on `PATH`, and `wrangler` installed in that checkout
   (`bun install` at the platform root).
 - `bun` on `PATH` for any live case.

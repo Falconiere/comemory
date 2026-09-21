@@ -4,6 +4,9 @@
 # docs/designs/2026-09-21-replication-e2e-harness.md.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
+# The caller's git root is the platform checkout when CI invokes this script.
+# Pins, the engine SHA, and cargo builds come from the tree that holds it.
+ENGINE_ROOT="$(cd "$HERE/.." && pwd)"
 # shellcheck source=scripts/lib/common.sh
 source "$HERE/lib/common.sh"
 
@@ -103,7 +106,7 @@ run_coverage() {
   bash "$HERE/check-replication-coverage.sh"
   local bad
   bad="$(mktemp)"
-  python3 - "$PROJECT_ROOT/scripts/replication/coverage.json" "$bad" <<'PY'
+  python3 - "$ENGINE_ROOT/scripts/replication/coverage.json" "$bad" <<'PY'
 import json, sys
 src, dst = sys.argv[1:]
 data = json.load(open(src))
@@ -130,7 +133,7 @@ require_ancestor() {
   local pin head
   [[ -d "$platform_root/.git" || -f "$platform_root/.git" ]] \
     || runtime_fail "platform root is not a git checkout: $platform_root"
-  pin="$(tr -d '[:space:]' <"$PROJECT_ROOT/scripts/replication/platform.sha")"
+  pin="$(tr -d '[:space:]' <"$ENGINE_ROOT/scripts/replication/platform.sha")"
   head="$(git -C "$platform_root" rev-parse HEAD)"
   if ! git -C "$platform_root" merge-base --is-ancestor "$pin" HEAD; then
     runtime_fail "platform.sha $pin is not an ancestor of $head"
@@ -143,14 +146,12 @@ run_live() {
   local head bin report_dir
   head="$(require_ancestor)"
   if [[ -z "$engine_bin" ]]; then
-    (cd "$PROJECT_ROOT" && cargo build --quiet)
-    engine_bin="$PROJECT_ROOT/target/debug/comemory"
+    (cd "$ENGINE_ROOT" && cargo build --quiet)
+    engine_bin="$ENGINE_ROOT/target/debug/comemory"
   fi
   [[ -x "$engine_bin" ]] || runtime_fail "engine binary is missing: $engine_bin"
   "$engine_bin" --version >/dev/null 2>&1 || runtime_fail "engine binary failed --version: $engine_bin"
   command -v node >/dev/null 2>&1 || runtime_fail "node is not on PATH (workerd channel)"
-  export PATH
-  PATH="$(dirname "$engine_bin"):$PATH"
   export COMEMORY_BIN="$engine_bin"
   [[ -d "$platform_root/node_modules/wrangler" || -d "$platform_root/apps/api/node_modules/wrangler" ]] \
     || runtime_fail "wrangler is not installed under $platform_root"
@@ -164,7 +165,7 @@ run_live() {
   export REPLICATION_CASE="$case_name"
   export REPLICATION_REPORT="$report_dir/replication-report.json"
   export REPLICATION_ENGINE_SHA
-  REPLICATION_ENGINE_SHA="$(git -C "$PROJECT_ROOT" rev-parse HEAD)"
+  REPLICATION_ENGINE_SHA="$(git -C "$ENGINE_ROOT" rev-parse HEAD)"
   export REPLICATION_PLATFORM_SHA="$head"
   (
     cd "$platform_root/apps/api"
