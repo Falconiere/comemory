@@ -95,22 +95,33 @@ pub fn state(conn: &Connection, staging_id: &str) -> Result<StagingState> {
 /// Returns `None` when a declared part is still missing — the caller must
 /// refuse activation rather than publish a truncated revision.
 ///
+/// Completeness is judged from the SAME read that produces the bytes: asking
+/// first and reading after would let a part that landed in between decide the
+/// two questions differently.
+///
 /// # Errors
 /// Propagates SQLite failures.
 pub fn assemble(conn: &Connection, staging_id: &str) -> Result<Option<String>> {
-    if !state(conn, staging_id)?.complete() {
-        return Ok(None);
-    }
-    let parts: Vec<String> = orm::query_all(
+    let parts: Vec<(String, i64)> = orm::query_all(
         conn,
         ReplicaStagedPart::select()
-            .columns_typed(&[&col::bytes])
+            .columns_typed(&[&col::bytes, &col::part_count])
             .filter(col::staging_id.eq(staging_id))
             .order_by(col::part_index.asc())
             .to_sql(),
-        |r| r.get(0),
+        |r| Ok((r.get(0)?, r.get(1)?)),
     )?;
-    Ok(Some(parts.concat()))
+    let declared = parts.iter().map(|(_, count)| *count).max().unwrap_or(0);
+    let received = i64::try_from(parts.len()).unwrap_or(i64::MAX);
+    if declared < 1 || received != declared {
+        return Ok(None);
+    }
+    Ok(Some(
+        parts
+            .into_iter()
+            .map(|(bytes, _)| bytes)
+            .collect::<String>(),
+    ))
 }
 
 /// Drop every part of one upload — after activation, or when it is abandoned.
