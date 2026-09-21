@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.43.1] - 2026-09-21
+
+### Fixed
+
+- reserve the writer before the index-code walk ([#246](https://github.com/Falconiere/comemory/pull/246))
+
 ## [0.43.0] - 2026-09-21
 
 ### Added
