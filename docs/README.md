@@ -37,6 +37,8 @@ Task-oriented recipes for a specific job:
 - **[Cloud sync](guides/cloud-sync.md)** — `auth` / `sync` against
   comemory.io: log in once and the first sync runs itself; organization
   membership decides what leaves the machine.
+- **[Replication harness](guides/replication-e2e.md)** — real-process
+  convergence cases against a platform checkout, and the coverage gate.
 - **[Session capture](guides/session-capture.md)** — redact a coding-tool
   transcript locally and post a Slice 3 receipt (`capture session` /
   `capture sources` / `capture install-hook`).
@@ -79,6 +81,9 @@ Understanding-oriented background:
   retrieval pipeline, the edge graph, auto-reinforcement, and pagination.
 - **[Sync daemon design](designs/2026-09-14-sync-daemon.md)** — user-level
   OS daemon + exhaustive post-login sync (replaces in-process auto-sync hooks).
+- **[Replication harness](designs/2026-09-21-replication-e2e-harness.md)** —
+  the real-process cases and coverage gate for cross-machine sync. The
+  how-to is [replication-e2e](guides/replication-e2e.md).
 - **[Domain-first migration contract](designs/2026-09-17-domain-first-migration.md)** —
   staged, behavior-preserving migration of the Rust CLI from technical layers
   to business capabilities.
