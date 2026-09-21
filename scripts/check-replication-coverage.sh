@@ -39,7 +39,7 @@ python3 - "$manifest" "$runner" "$platform_root" <<'PY'
 import json, pathlib, re, sys
 manifest_path, runner_path, platform_root = sys.argv[1:]
 text = pathlib.Path(manifest_path).read_text()
-keys = re.findall(r'"(G-\d+)"\s*:', text)
+keys = re.findall(r'"([A-Z]-\d+)"\s*:', text)
 dupes = sorted({key for key in keys if keys.count(key) > 1})
 if dupes:
     sys.exit(f"replication-coverage: duplicate AC keys: {', '.join(dupes)}")
@@ -50,8 +50,14 @@ acs = data.get("acs")
 if not isinstance(acs, dict):
     sys.exit("replication-coverage: manifest acs must be an object")
 required = [f"G-{n}" for n in range(1, 8)]
-if sorted(acs) != sorted(required):
-    sys.exit(f"replication-coverage: AC keys must be {required}, found {sorted(acs)}")
+missing_required = [key for key in required if key not in acs]
+if missing_required:
+    sys.exit(f"replication-coverage: missing harness AC keys: {missing_required}")
+# Feature issues add their own family (F-1…), which must still look like an
+# AC id — a typo'd key would otherwise claim coverage nothing checks.
+bad = [key for key in acs if not re.fullmatch(r"[A-Z]-\d+", key)]
+if bad:
+    sys.exit(f"replication-coverage: malformed AC keys: {sorted(bad)}")
 runner = pathlib.Path(runner_path).read_text()
 match = re.search(r"^CASES=\(([^)]*)\)", runner, re.M)
 if not match:
@@ -74,7 +80,7 @@ if platform_root:
         sys.exit(f"replication-coverage: missing harness: {harness}")
     body = harness.read_text()
     for case in sorted(set(claimed)):
-        if case not in body and case not in {"coverage", "teardown", "missing-runtime"}:
+        if case not in body and case not in {"coverage", "teardown", "missing-runtime", "contract"}:
             sys.exit(f"replication-coverage: harness does not mention {case}")
 PY
 

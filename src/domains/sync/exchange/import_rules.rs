@@ -4,6 +4,7 @@ use crate::config::Config;
 use crate::domains::memories::MemoryStore;
 use crate::domains::memories::delete;
 use crate::domains::memories::id::is_valid_memory_id;
+use crate::domains::memories::journal;
 use crate::domains::sync::exchange::import_state::{
     frontmatter_equal, id_collision, stale_for_cursor, trash_file_exists, trashed_with_hash,
     validate_record,
@@ -14,7 +15,7 @@ use crate::domains::sync::exchange::import_write::{
 use crate::domains::sync::exchange::{ImportEntry, ImportItemResult, ImportStatus, SyncOp};
 use crate::domains::sync::redact;
 use crate::prelude::*;
-use crate::store::sync_log;
+use crate::store::replica_journal::{ReplicaOp, ReplicaOrigin};
 use crate::utilities::context::Ctx;
 
 /// Apply one import entry, returning its disposition.
@@ -55,14 +56,15 @@ fn apply_tombstone(
     if !live && !trashed {
         let conn = ctx.conn()?;
         let tx = conn.transaction()?;
-        let seq = sync_log::append(
+        let seq = journal::record_tombstone(
             &tx,
-            SyncOp::Tombstone,
             &entry.id,
             &entry.content_hash,
+            None,
             &entry.at,
-            sync_log::SyncOrigin::Sync,
-        )?;
+            ReplicaOrigin::Sync,
+        )?
+        .legacy_seq;
         tx.commit()?;
         out.status = ImportStatus::Deleted;
         out.seq = Some(seq);
@@ -74,16 +76,17 @@ fn apply_tombstone(
     }
     let paths = ctx.paths.clone();
     let conn = ctx.conn()?;
-    let (_id, content_hash, _stale) = delete::soft_delete(&paths, conn, &entry.id)?;
+    let (_id, content_hash, _stale) = delete::soft_delete(&paths, conn, &entry.id, None)?;
     let tx = conn.transaction()?;
-    let seq = sync_log::append(
+    let seq = journal::record_tombstone(
         &tx,
-        SyncOp::Tombstone,
         &entry.id,
         &content_hash,
+        None,
         &entry.at,
-        sync_log::SyncOrigin::Sync,
-    )?;
+        ReplicaOrigin::Sync,
+    )?
+    .legacy_seq;
     tx.commit()?;
     out.status = ImportStatus::Accepted;
     out.seq = Some(seq);
@@ -121,16 +124,19 @@ fn apply_restore(
     }
     crate::domains::memories::restore::restore_one(ctx, &entry.id)?;
     patch_frontmatter(ctx, entry, record, author_override)?;
+    let paths = ctx.paths.clone();
+    let restored = MemoryStore::new(paths).load(&entry.id)?;
     let conn = ctx.conn()?;
     let tx = conn.transaction()?;
-    let seq = sync_log::append(
+    let seq = journal::record_write(
         &tx,
-        SyncOp::Restore,
-        &entry.id,
-        &entry.content_hash,
+        ReplicaOp::Restore,
+        &restored.frontmatter,
+        &restored.body,
         &entry.at,
-        sync_log::SyncOrigin::Sync,
-    )?;
+        ReplicaOrigin::Sync,
+    )?
+    .legacy_seq;
     tx.commit()?;
     out.status = ImportStatus::Accepted;
     out.seq = Some(seq);
@@ -174,9 +180,10 @@ fn apply_upsert(
             out.status = ImportStatus::Exists;
         } else {
             patch_frontmatter(ctx, entry, record, author_override)?;
+            let paths = ctx.paths.clone();
             let conn = ctx.conn()?;
             let tx = conn.transaction()?;
-            let seq = log_sync_upsert(&tx, entry)?;
+            let seq = log_sync_upsert(&tx, &paths, entry)?;
             tx.commit()?;
             out.status = ImportStatus::Accepted;
             out.seq = Some(seq);
@@ -188,9 +195,10 @@ fn apply_upsert(
         if in_trash {
             crate::domains::memories::restore::restore_one(ctx, &entry.id)?;
             patch_frontmatter(ctx, entry, record, author_override)?;
+            let paths = ctx.paths.clone();
             let conn = ctx.conn()?;
             let tx = conn.transaction()?;
-            let seq = log_sync_upsert(&tx, entry)?;
+            let seq = log_sync_upsert(&tx, &paths, entry)?;
             tx.commit()?;
             out.status = ImportStatus::Accepted;
             out.seq = Some(seq);

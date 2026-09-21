@@ -132,14 +132,16 @@ fn derive_live_tables() -> BTreeSet<String> {
 /// Every table addition must choose a rebuild policy. History and sync tables
 /// are copied; v19's trigram index is reconstructed by memory-write triggers;
 /// v20's three candidate-observation tables are copied, because a reviewed
-/// judgment and the passage it was made against exist nowhere else.
+/// judgment and the passage it was made against exist nowhere else; v22's
+/// replica journal is copied because a sequence already handed to a peer
+/// cannot be re-derived, while its staged upload parts are not.
 #[test]
-fn migration_integrity_derived_live_set_has_exactly_thirty_six_tables() {
+fn migration_integrity_derived_live_set_has_exactly_forty_four_tables() {
     let live = derive_live_tables();
     assert_eq!(
         live.len(),
-        36,
-        "expected exactly 36 live tables, got {}: {live:?}",
+        44,
+        "expected exactly 44 live tables, got {}: {live:?}",
         live.len()
     );
     // The count alone would still pass if a history table were added to
@@ -155,6 +157,13 @@ fn migration_integrity_derived_live_set_has_exactly_thirty_six_tables() {
         "candidate_query_observations",
         "candidate_observations",
         "candidate_judgments",
+        "replica_stream",
+        "replica_payload",
+        "replica_feed",
+        "replica_revision",
+        "replica_operation",
+        "replica_receipt",
+        "replica_cursor",
     ] {
         assert!(
             COPIED_TABLES.contains(&table),
@@ -171,6 +180,12 @@ fn migration_integrity_derived_live_set_has_exactly_thirty_six_tables() {
         RECONSTRUCTABLE_TABLES
             .iter()
             .any(|(name, _)| *name == "memory_substring")
+    );
+    assert!(
+        RECONSTRUCTABLE_TABLES
+            .iter()
+            .any(|(name, _)| *name == "replica_staged_part"),
+        "a staged upload that never activated published nothing; it is not copied"
     );
     assert!(
         live.contains("edges"),

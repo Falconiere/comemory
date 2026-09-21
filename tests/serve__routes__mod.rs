@@ -244,6 +244,41 @@ fn minimal_request(entry: &RouteEntry) -> (serde_json::Value, Vec<(&'static str,
             serde_json::json!({"repo": "ac4-sweep", "files": []}),
             vec![],
         ),
+        // The replica half: an empty operation list is a valid envelope, so a
+        // normal server accepts it past the gate and a read-only one refuses
+        // before any journal write.
+        "sync.replica.import" => (
+            serde_json::json!({"protocol": "replica-v1", "operations": []}),
+            vec![],
+        ),
+        // One tiny part of a one-part upload: enough to reach the gate, and
+        // harmless on a normal server (staged parts publish nothing).
+        "sync.replica.stage" => (
+            serde_json::json!({
+                "protocol": "replica-v1",
+                "staging_id": "ac4-sweep",
+                "part_index": 0,
+                "part_count": 1,
+                "bytes": "{}"
+            }),
+            vec![],
+        ),
+        // Activation of an upload that was never staged: past the gate on a
+        // normal server, refused as incomplete rather than publishing.
+        "sync.replica.activate" => (
+            serde_json::json!({
+                "protocol": "replica-v1",
+                "staging_id": "ac4-sweep-missing",
+                "operation": {
+                    "operation_id": "op-20260921-ac4sweep",
+                    "entity_kind": "memory",
+                    "entity_key": "ac4a5eep",
+                    "op": "tombstone",
+                    "schema_version": 1
+                }
+            }),
+            vec![],
+        ),
         other => panic!(
             "minimal_request: no minimal body/query wired for mutating command {other:?} — \
              add one so the AC-4 read-only sweep stays exhaustive"

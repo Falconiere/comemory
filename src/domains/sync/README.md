@@ -38,7 +38,8 @@ mapping; ambiguous, unsupported and unlabelled entries remain local.
 | `client_protocol.rs` | `validate_response` | Managed data-request protocol/revision headers and fail-closed response checks |
 | `repository_identity.rs` | `canonical_github_repository` | Strict HTTPS/SSH/SCP `github.com` remote parsing into lowercase `owner/name` identities |
 | `repository_policy.rs` | `RepositoryPolicy` | Validate the server policy, resolve local checkout identities and mappings, and reconcile persisted fingerprints |
-| `exchange.rs` + [`exchange/`](exchange/README.md) | `import::run` | The *server* side: wire models plus the `changes` / `manifest` / `import` / code-import cores the `serve` routes call |
+| `exchange.rs` + [`exchange/`](exchange/README.md) | `import::run` | The *server* side: wire models plus the `changes` / `manifest` / `import` / code-import cores the `serve` routes call. Its import path writes the `replica-v1` journal too, so a legacy push and a replica push converge on one history |
+| `replica.rs` + [`replica/`](replica/README.md) | `accept::run` | The `replica-v1` contract and its engine halves: the versioned envelope, the acceptance decision, the materialize-journal-receipt transaction, the `changes` / `manifest` / `events` reads, staged revisions, and journal seeding |
 
 ### Directions of travel
 

@@ -37,6 +37,7 @@ One line per file, named after its primary item:
 | --- | --- | --- |
 | `activity.rs` | `Origin`, `Outcome`, `record`, `source`, `command` | The activity feed's writer: who ran a command, the command vocabulary shared with `RouteEntry::command`, and the best-effort insert every instrumented core calls when it finishes — warns and returns on any failure, exactly as `retrieval::pipeline::log_retrieval` does |
 | `blocking.rs` | `run_blocking` | Run a closure on the blocking-thread-pool, flattening a task panic into `crate::Error`; the connection-lock bridge `serve` and `mcp` both call so a guard never crosses an `.await` |
+| `canonical_json.rs` | `to_bytes`, `bytes_and_digest`, `digest_of` | Sorted-key JSON encoding and its SHA-256 digest — the one form a replicated payload is hashed and stored under, so two machines that build the same payload in different key orders agree on its digest |
 | `context.rs` | `Ctx` | The execution context every command core runs against: `Paths` + `Config` plus a borrowed or lazily opened connection, so conn-free commands never touch the database and a job worker gets exactly one connection |
 | `dated_id.rs` | `dated_id` | The shared `<prefix>-<yyyymmdd>-<8hex>` id shape, minted and validated in one place, so the `q-` retrieval query id and the `o-` observation id keep one form |
 | `digest.rs` | `sha256_hex` | SHA-256 hex digests and `is_lower_hex`, the shape check the memory-id and query-id contracts share |

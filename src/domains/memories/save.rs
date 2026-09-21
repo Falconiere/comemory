@@ -28,12 +28,14 @@ use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 
+use crate::domains::memories::journal;
 use crate::domains::memories::save_activity::{Asked, activity_summary};
 use crate::domains::memories::{
     Kind, MemoryStore, Prior, References, Relations, SaveParams, id, mirror,
 };
 use crate::prelude::*;
-use crate::store::{Connection, embed, memory_row, sync_log, vector};
+use crate::store::replica_journal::{ReplicaOp, ReplicaOrigin};
+use crate::store::{Connection, embed, memory_row, vector};
 use crate::utilities::activity::{self, Outcome, command};
 use crate::utilities::context::Ctx;
 use crate::utilities::digest;
@@ -443,13 +445,13 @@ fn write_sqlite_mirror(
         vector::replace_memory(&tx, &fm.id, v)?;
     }
     let at = memory_row::iso_format(fm.created)?;
-    sync_log::append(
+    journal::record_write(
         &tx,
-        sync_log::SyncOp::Upsert,
-        &fm.id,
-        &fm.content_hash,
+        ReplicaOp::Upsert,
+        fm,
+        &rec.body,
         &at,
-        sync_log::SyncOrigin::Local,
+        ReplicaOrigin::Local,
     )?;
     tx.commit()?;
     Ok(())

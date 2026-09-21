@@ -15,6 +15,10 @@ use super::schema_learning::{
     CodeFeedback, Feedback, FeedbackEvents, QueryExpansions, RetrievalLog,
 };
 use super::schema_memory::{Memories, MemoryFts, MemorySubstring, MemoryTags, MemoryVec};
+use super::schema_replica::{
+    ReplicaCursor, ReplicaFeed, ReplicaOperation, ReplicaPayload, ReplicaReceipt, ReplicaRevision,
+    ReplicaStagedPart, ReplicaStream,
+};
 use super::schema_sync::{SyncBinding, SyncLog, SyncState};
 
 /// Every table `registry()` declares, by name, sorted. The fidelity test
@@ -49,6 +53,14 @@ pub const DECLARED_TABLES: &[&str] = &[
     "memory_tags",
     "memory_vec",
     "query_expansions",
+    "replica_cursor",
+    "replica_feed",
+    "replica_operation",
+    "replica_payload",
+    "replica_receipt",
+    "replica_revision",
+    "replica_staged_part",
+    "replica_stream",
     "repo_marker",
     "retrieval_log",
     "schema_meta",
@@ -93,6 +105,14 @@ pub fn registry() -> SchemaRegistry {
         MemoryTags::table_def(),
         MemoryVec::table_def(),
         QueryExpansions::table_def(),
+        ReplicaCursor::table_def(),
+        ReplicaFeed::table_def(),
+        ReplicaOperation::table_def(),
+        ReplicaPayload::table_def(),
+        ReplicaReceipt::table_def(),
+        ReplicaRevision::table_def(),
+        ReplicaStagedPart::table_def(),
+        ReplicaStream::table_def(),
         RepoMarker::table_def(),
         RetrievalLog::table_def(),
         SchemaMeta::table_def(),

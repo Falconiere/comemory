@@ -218,7 +218,7 @@ fn v10_creates_bandit_arms_table() {
         .expect("schema version");
     assert_eq!(v, migrate::CURRENT_VERSION);
     // Update this pin alongside the next CURRENT_VERSION change.
-    assert_eq!(migrate::CURRENT_VERSION, "21");
+    assert_eq!(migrate::CURRENT_VERSION, "22");
 }
 
 #[test]
@@ -628,4 +628,41 @@ fn the_scheme_path_migration_drops_junk_refs_and_keeps_real_ones() {
     migrate::run(&mut conn).expect("re-run");
     assert_eq!(dst_ids(&conn, "edges"), kept);
     assert_eq!(dst_ids(&conn, "edge_fts"), kept);
+}
+
+#[test]
+fn v22_mints_one_replica_stream_epoch_and_reuses_it_across_opens() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("comemory.db");
+    let mut conn = connection::open(&path).expect("open");
+    migrate::run(&mut conn).expect("migrate");
+
+    let (id, epoch): (i64, String) = conn
+        .query_row("SELECT id, epoch FROM replica_stream", [], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .expect("one replica_stream row");
+    assert_eq!(id, 1, "one stream per database");
+    assert_eq!(epoch.len(), 32, "16 random bytes, hex-encoded: {epoch}");
+    assert!(
+        epoch
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_uppercase()),
+        "epoch must be lowercase hex: {epoch}"
+    );
+
+    // A second open must not re-mint: a peer's cursor is valid against the
+    // epoch it was taken under, and re-minting on every open would make
+    // every cursor look foreign.
+    drop(conn);
+    let mut reopened = connection::open(&path).expect("reopen");
+    migrate::run(&mut reopened).expect("migrate again");
+    let rows: i64 = reopened
+        .query_row("SELECT count(*) FROM replica_stream", [], |row| row.get(0))
+        .expect("count");
+    let same: String = reopened
+        .query_row("SELECT epoch FROM replica_stream", [], |row| row.get(0))
+        .expect("epoch");
+    assert_eq!(rows, 1);
+    assert_eq!(same, epoch, "the epoch survives reopen");
 }

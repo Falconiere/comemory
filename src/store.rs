@@ -141,6 +141,23 @@ pub mod rebuild_copy_learning;
 /// Rebuild preservation copy: `feedback_events`, `query_expansions`,
 /// `bandit_arms`.
 pub mod rebuild_copy_learning_events;
+/// `replica_cursor` row CRUD — per-workspace upstream position and epoch.
+pub mod replica_cursor;
+/// `replica-v1` journal writes: the payload row, the feed append and the
+/// revision update one accepted mutation owes, in the caller's transaction.
+pub mod replica_journal;
+/// `replica_operation` row CRUD — the durable outbox of local mutations a
+/// peer has not accepted yet.
+pub mod replica_outbox;
+/// `replica-v1` journal reads: the ordered feed page with the payload each
+/// position named, the head, one entity's revision, and the manifest digests.
+pub mod replica_read;
+/// `replica_receipt` row CRUD — the decision written in the accept
+/// transaction and read back on a replay.
+pub mod replica_receipt;
+/// `replica_staged_part` row CRUD — parts of an oversized revision and their
+/// assembly, invisible until activation.
+pub mod replica_staging;
 /// Drop every code-index row and edge for one repo label.
 pub mod repo_drop;
 /// `repo_marker.last_mined_commit` — the co-change mining cursor, plus the
@@ -179,8 +196,14 @@ pub mod schema_memory;
 /// `vector`'s dim guards, plus the generic keyed `get`/`upsert` behind
 /// `cli::lazy_reindex`'s debounce marker.
 pub mod schema_meta;
+/// Declared `replica-v1` journal tables: `replica_stream`, `replica_payload`,
+/// `replica_feed`, `replica_revision`, `replica_operation`, `replica_receipt`,
+/// `replica_cursor`, `replica_staged_part`.
+pub mod schema_replica;
 /// Declared cloud-sync tables: `sync_state`, `sync_binding`.
 pub mod schema_sync;
+/// The ordered live-memory id scan journal seeding resumes from.
+pub mod seed_scan;
 /// Bulk `(id, simhash)` scan over live memories, shared by save + consolidate.
 pub mod simhash_scan;
 /// `source_roots` row CRUD — the SQLite mirror of `sources.toml`.

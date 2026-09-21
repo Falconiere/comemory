@@ -126,6 +126,12 @@
       "name": "0021_activity_log.sql",
       "hash": "sha256:a3219008721287ce9dd3e743400c60fa97a87dafe6c1ab891c6f4953768dd151",
       "created_at": 1789941085
+    },
+    {
+      "idx": 21,
+      "name": "0022_replica_journal.sql",
+      "hash": "sha256:19d6e3dbcddb926a47ef606e9e5b0fff3664ed40887bbf7acc132106d8eda52b",
+      "created_at": 1790008769
     }
   ]
 }

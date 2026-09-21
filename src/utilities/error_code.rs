@@ -71,6 +71,8 @@ pub fn classify(e: &Error) -> (&'static str, Class) {
         Error::BadRequest(_) => ("bad_request", Class::BadRequest),
         Error::ConfirmationRequired(_) => ("confirmation_required", Class::BadRequest),
         Error::Unavailable(_) => ("unavailable", Class::Unavailable),
+        Error::Conflict(_) => ("conflict", Class::Conflict),
+        Error::EpochMismatch(_) => ("epoch_mismatch", Class::Conflict),
         Error::IndexRunning { .. } => ("index_running", Class::Conflict),
         // Only a job body ever produces `Cancelled`, and the worker turns it
         // into `JobStatus::Cancelled` before any envelope is built — listed

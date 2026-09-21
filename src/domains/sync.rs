@@ -52,13 +52,15 @@ pub mod manual;
 pub mod memory_store;
 /// The cursored pull half of `comemory sync`.
 pub mod pull;
-/// The push half of `comemory sync`, filtered by repository policy and local exclusions.
 pub mod push;
 /// The inline outbox drain a local save or delete triggers, time-bounded and
 /// never fatal to the write.
 pub mod push_on_save;
 /// Curated secret scan (`rules.toml`) before a memory is enqueued for push.
 pub mod redact;
+/// The push half of `comemory sync`, filtered by repository policy and local exclusions.
+/// The `replica-v1` journal protocol: contract, acceptance, reads.
+pub mod replica;
 /// Strict `github.com` remote parsing into lowercase `owner/name` identities.
 pub mod repository_identity;
 /// Server policy resolved against local checkout remotes and legacy mappings.

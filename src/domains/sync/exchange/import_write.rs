@@ -2,12 +2,13 @@
 
 use crate::config::Config;
 use crate::domains::memories::frontmatter::Frontmatter;
-use crate::domains::memories::{MemoryStore, SaveParams, mirror};
+use crate::domains::memories::{MemoryStore, SaveParams, journal, mirror};
 use crate::domains::sync::exchange::{
-    ImportEntry, ImportItemResult, ImportStatus, SyncOp, SyncRecord, SyncVector,
+    ImportEntry, ImportItemResult, ImportStatus, SyncRecord, SyncVector,
 };
 use crate::prelude::*;
-use crate::store::{Connection, embed, schema_meta, simhash_scan, sync_log, vector};
+use crate::store::replica_journal::{ReplicaOp, ReplicaOrigin};
+use crate::store::{Connection, embed, schema_meta, simhash_scan, vector};
 use crate::utilities::context::Ctx;
 
 const MEMORY_DIM: usize = 1024;
@@ -52,7 +53,15 @@ pub(crate) fn write_new_memory(
     if let Some(v) = vector.as_deref() {
         vector::replace_memory(&tx, &rec.frontmatter.id, v)?;
     }
-    let seq = log_sync_upsert(&tx, entry)?;
+    let seq = journal::record_write(
+        &tx,
+        ReplicaOp::Upsert,
+        &rec.frontmatter,
+        &rec.body,
+        &entry.at,
+        ReplicaOrigin::Sync,
+    )?
+    .legacy_seq;
     tx.commit()?;
     let _stale = crate::domains::graph::derived::refresh_derived_best_effort(conn);
     out.status = ImportStatus::Accepted;
@@ -85,16 +94,26 @@ pub(crate) fn patch_frontmatter(
     Ok(())
 }
 
-/// Append an upsert row to `sync_log` inside the caller's transaction.
-pub(crate) fn log_sync_upsert(tx: &Connection, entry: &ImportEntry) -> Result<i64> {
-    sync_log::append(
+/// Journal an imported upsert inside the caller's transaction — the legacy
+/// `sync_log` row and the `replica-v1` position, together, so a legacy push
+/// and a replica push converge on one history.
+///
+/// Returns the legacy `seq`, which is what the legacy wire reports.
+pub(crate) fn log_sync_upsert(
+    tx: &Connection,
+    paths: &crate::config::Paths,
+    entry: &ImportEntry,
+) -> Result<i64> {
+    let record = MemoryStore::new(paths.clone()).load(&entry.id)?;
+    Ok(journal::record_write(
         tx,
-        SyncOp::Upsert,
-        &entry.id,
-        &entry.content_hash,
+        ReplicaOp::Upsert,
+        &record.frontmatter,
+        &record.body,
         &entry.at,
-        sync_log::SyncOrigin::Sync,
-    )
+        ReplicaOrigin::Sync,
+    )?
+    .legacy_seq)
 }
 
 fn frontmatter_from_wire(record: &SyncRecord, author_override: Option<&str>) -> Frontmatter {

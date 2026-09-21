@@ -1,10 +1,11 @@
 //! The run-history half of [`super::rebuild_copy`]'s preservation copy —
 //! `eval_runs` (v14, plus v15's `discarded` flag), `gc_runs` (v14),
-//! `index_runs` (v15), and the v16 cloud-sync tables (`sync_log` /
-//! `sync_state` / `sync_binding`). History is exactly what markdown cannot
-//! reconstruct: a rebuild that dropped it would erase every recorded eval,
-//! gc, and index run (and re-offer every discarded knob proposal), and
-//! would reset sync cursors / bindings.
+//! `index_runs` (v15), the v16 cloud-sync tables (`sync_log` / `sync_state` /
+//! `sync_binding`) and the v22 `replica-v1` journal. History is exactly what
+//! markdown cannot reconstruct: a rebuild that dropped it would erase every
+//! recorded eval, gc, and index run (and re-offer every discarded knob
+//! proposal), would reset sync cursors / bindings, and would reissue
+//! replication sequences a peer already holds a receipt for.
 
 use crate::prelude::*;
 use crate::store::Connection;
@@ -48,6 +49,57 @@ pub(crate) fn copy_history_tables(conn: &Connection) -> Result<()> {
         )?;
     }
     copy_sync_tables(conn)?;
+    copy_replica_tables(conn)?;
+    Ok(())
+}
+
+/// Copy the v22 `replica-v1` journal when the attached DB has it.
+///
+/// A rebuild re-derives the database from markdown, but a sequence this
+/// engine already handed to a peer cannot be re-derived: reissuing it would
+/// turn every replayed operation into a second effect, and dropping the
+/// receipts would answer a replay with a fresh acceptance. The stream epoch
+/// is copied for the same reason — a rebuild is not a replaced stream, and a
+/// peer's cursor must stay valid across it. Staged parts are deliberately not
+/// copied: an upload that never activated published nothing.
+fn copy_replica_tables(conn: &Connection) -> Result<()> {
+    if !old_table_exists(conn, "replica_feed")? {
+        return Ok(());
+    }
+    conn.execute_batch(
+        "DELETE FROM main.replica_stream; \
+         INSERT INTO main.replica_stream(id, epoch, created_at) \
+         SELECT id, epoch, created_at FROM old.replica_stream; \
+         INSERT OR IGNORE INTO main.replica_payload(\
+             digest, entity_kind, schema_version, bytes, byte_len, created_at, redacted_at) \
+         SELECT digest, entity_kind, schema_version, bytes, byte_len, created_at, redacted_at \
+         FROM old.replica_payload; \
+         INSERT OR IGNORE INTO main.replica_feed(\
+             sequence, epoch, entity_kind, entity_key, op, payload_digest, schema_version, \
+             operation_id, origin, repository, at) \
+         SELECT sequence, epoch, entity_kind, entity_key, op, payload_digest, schema_version, \
+             operation_id, origin, repository, at FROM old.replica_feed; \
+         INSERT OR IGNORE INTO main.replica_revision(\
+             entity_kind, entity_key, sequence, payload_digest, deleted, deleted_sequence, \
+             updated_at) \
+         SELECT entity_kind, entity_key, sequence, payload_digest, deleted, deleted_sequence, \
+             updated_at FROM old.replica_revision; \
+         INSERT OR IGNORE INTO main.replica_operation(\
+             operation_id, entity_kind, entity_key, op, payload_digest, schema_version, \
+             repository, observed_sequence, state, upstream_sequence, disposition, attempts, \
+             last_error, created_at, updated_at) \
+         SELECT operation_id, entity_kind, entity_key, op, payload_digest, schema_version, \
+             repository, observed_sequence, state, upstream_sequence, disposition, attempts, \
+             last_error, created_at, updated_at FROM old.replica_operation; \
+         INSERT OR IGNORE INTO main.replica_receipt(\
+             operation_id, epoch, sequence, disposition, payload_digest, reason, accepted_at) \
+         SELECT operation_id, epoch, sequence, disposition, payload_digest, reason, accepted_at \
+         FROM old.replica_receipt; \
+         INSERT OR IGNORE INTO main.replica_cursor(\
+             workspace_id, api_url, stream_epoch, applied_sequence, updated_at) \
+         SELECT workspace_id, api_url, stream_epoch, applied_sequence, updated_at \
+         FROM old.replica_cursor;",
+    )?;
     Ok(())
 }
 

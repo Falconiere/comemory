@@ -254,7 +254,7 @@ fn soft_delete_low_value(
 ) -> Result<bool> {
     let mut derived_stale = false;
     for id in low_value_ids {
-        match delete::soft_delete(paths, conn, id) {
+        match delete::soft_delete(paths, conn, id, None) {
             Ok((_id, _hash, stale)) => derived_stale |= stale,
             // Half-deleted state: live DB row, markdown already gone —
             // producible by a crash inside `delete` between its file move
@@ -267,7 +267,7 @@ fn soft_delete_low_value(
                     id = %id,
                     "prune: markdown missing for flagged memory; healing DB mirror"
                 );
-                derived_stale |= delete::mirror_soft_delete(conn, id)?;
+                derived_stale |= delete::mirror_soft_delete(conn, id, None)?;
             }
             Err(e) => return Err(e),
         }

@@ -49,7 +49,9 @@ fn exit_code(err: &Error) -> i32 {
         Error::Io(_) => 74,
         Error::Config(_) => 78,
         Error::Unavailable(_) | Error::Embedder(_) => 69,
-        Error::IndexRunning { .. } => 75,
+        // Retryable like a contended index run: the peer must re-read the
+        // stream it was replaced with, not treat the refusal as fatal.
+        Error::IndexRunning { .. } | Error::EpochMismatch(_) | Error::Conflict(_) => 75,
         Error::NotFound(_) | Error::Usage(_) | Error::Unsupported(_) => 64,
         Error::Yaml(_)
         | Error::Json(_)
