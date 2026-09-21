@@ -87,17 +87,17 @@ pub(crate) fn apply_one(
 /// A replay is answered from its receipt; the same id with different bytes is
 /// a conflict, not a second decision.
 ///
-/// The comparison is against the digest of the bytes that actually arrived,
-/// not the digest the operation claims: a client that resends altered bytes
-/// under the original digest must not be answered "already applied".
+/// Identity is the digest of the bytes that actually ARRIVED, never the digest
+/// the operation claims. Two consequences, both deliberate: a client that
+/// resends altered bytes under the original digest is not answered "already
+/// applied", and a replay of a refused operation reads back the SAME refusal
+/// rather than turning into a conflict because the refusal was about the claim
+/// disagreeing with the bytes in the first place.
 fn replayed(conn: &Connection, operation: &Operation) -> Result<Option<OperationResult>> {
     let Some(receipt) = replica_receipt::lookup(conn, &operation.operation_id)? else {
         return Ok(None);
     };
-    let arrived = arrived_digest(operation);
-    if receipt.payload_digest != arrived
-        || receipt.payload_digest.as_deref() != operation.payload_digest.as_deref()
-    {
+    if receipt.payload_digest != arrived_digest(operation) {
         return Ok(Some(OperationResult {
             operation_id: operation.operation_id.clone(),
             disposition: Disposition::RejectedConflict,
@@ -135,8 +135,11 @@ fn record_refusal(
         operation_id: operation.operation_id.clone(),
         epoch: epoch.to_string(),
         sequence: None,
+        // The digest of what arrived, not of what was claimed: this is the
+        // identity a replay is matched against, and storing the claim would
+        // make the retry of a refused operation look like new bytes.
+        payload_digest: arrived_digest(operation),
         disposition: disposition.as_str().to_string(),
-        payload_digest: operation.payload_digest.clone(),
         reason: reason.clone(),
     };
     let conn = ctx.conn()?;

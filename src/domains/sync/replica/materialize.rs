@@ -221,6 +221,9 @@ fn decode(operation: &Operation) -> Result<MemoryPayloadV1> {
 }
 
 /// The receipt an acceptance writes.
+///
+/// The digest is the one acceptance validated the bytes against, which for an
+/// accepted operation is also what it claimed — a replay is matched on it.
 fn accepted(operation: &Operation, epoch: &str, sequence: i64) -> Receipt {
     Receipt {
         operation_id: operation.operation_id.clone(),

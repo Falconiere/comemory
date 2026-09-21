@@ -85,26 +85,29 @@ fn a_replay_returns_the_original_position_and_applies_nothing_new() {
 }
 
 #[test]
-fn reusing_an_operation_id_with_other_bytes_is_a_conflict_that_changes_nothing() {
+fn a_replay_whose_declared_digest_is_wrong_still_replays_the_original_answer() {
     let (mut peer, operation) = peer_and_operation();
     let mut ctx = peer.ctx();
-    accept::run(&mut ctx, envelope(vec![operation.clone()])).expect("first");
+    let first = accept::run(&mut ctx, envelope(vec![operation.clone()])).expect("first");
 
-    let mut tampered = operation.clone();
-    tampered.payload_digest = Some("f".repeat(64));
+    // Same operation id, same BYTES, a wrong declared digest. The bytes are
+    // the identity, so this is a retry with a bad claim — not new content —
+    // and it must not produce a second effect.
+    let mut misdeclared = operation.clone();
+    misdeclared.payload_digest = Some("f".repeat(64));
 
     let mut ctx = peer.ctx();
-    let response = accept::run(&mut ctx, envelope(vec![tampered])).expect("conflicting");
+    let response = accept::run(&mut ctx, envelope(vec![misdeclared])).expect("replay");
 
+    assert_eq!(response.results[0].disposition, Disposition::Duplicate);
     assert_eq!(
-        response.results[0].disposition,
-        Disposition::RejectedConflict
+        response.results[0].sequence, first.results[0].sequence,
+        "the original position stands"
     );
-    assert_eq!(response.results[0].sequence, None);
     assert_eq!(
         replica_read::head(&peer.conn).expect("head"),
         1,
-        "the conflicting replay wrote no position"
+        "the replay wrote no second position"
     );
     let stored = MemoryStore::new(peer.paths.clone())
         .load(&operation.entity_key)
@@ -220,4 +223,31 @@ fn a_cursor_from_this_stream_is_accepted() {
     let response = accept::run(&mut ctx, request).expect("import");
     assert_eq!(response.results[0].disposition, Disposition::Accepted);
     assert_eq!(response.stream_epoch, epoch);
+}
+
+#[test]
+fn a_refused_operation_replays_as_the_same_refusal() {
+    let (mut peer, operation) = peer_and_operation();
+
+    // A payload whose declared digest does not cover its bytes: refused as
+    // invalid, and the refusal is remembered.
+    let mut lying = operation;
+    lying.payload_digest = Some("a".repeat(64));
+
+    let mut ctx = peer.ctx();
+    let first = accept::run(&mut ctx, envelope(vec![lying.clone()])).expect("first");
+    assert_eq!(
+        first.results[0].disposition,
+        Disposition::RejectedInvalid,
+        "the claim disagrees with the bytes"
+    );
+
+    let mut ctx = peer.ctx();
+    let replay = accept::run(&mut ctx, envelope(vec![lying])).expect("replay");
+    assert_eq!(
+        replay.results[0].disposition,
+        Disposition::RejectedInvalid,
+        "the retry reads back the original answer, not a fresh conflict"
+    );
+    assert_eq!(replica_read::head(&peer.conn).expect("head"), 0);
 }
