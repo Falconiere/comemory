@@ -20,7 +20,10 @@ use time::OffsetDateTime;
 use crate::domains::code::git_utils::{self, map_git_err};
 use crate::domains::graph::{derived, materialize};
 use crate::prelude::*;
-use crate::store::{Connection, code_row, index_runs, memory_row, random_id, repo_marker};
+use crate::store::{
+    Connection, code_row, connection::write_transaction, index_runs, memory_row, random_id,
+    repo_marker,
+};
 use crate::utilities::activity::{self, Outcome, command};
 use crate::utilities::context::Ctx;
 use crate::utilities::progress::ProgressSink;
@@ -250,7 +253,15 @@ fn index_repo(
     sink: Option<&dyn ProgressSink>,
 ) -> Result<Response> {
     let mut imports_by_file: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    let tx = conn.transaction()?;
+    // `BEGIN IMMEDIATE`, not the default deferred begin: this transaction
+    // READS first (`ensure_repo_format`) and only writes symbol rows once
+    // the walk is under way. A deferred begin takes a read snapshot at that
+    // first read, and any other connection that commits before the walk's
+    // first write — the search path's telemetry write is one, and it runs
+    // concurrently with a `POST /api/v1/code/index` job by design — makes
+    // the upgrade fail with `SQLITE_BUSY` *immediately*. `busy_timeout`
+    // cannot wait that case out, so the job died as `store_locked`.
+    let tx = write_transaction(conn)?;
     code_row::ensure_repo_format(&tx, &req.repo)?;
     if req.mode == IndexMode::Full {
         // Forget every blob-OID cursor so `walk::index_file` re-extracts
