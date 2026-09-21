@@ -32,6 +32,8 @@ pub mod refresh_refs;
 pub mod restore;
 /// `comemory save` / `POST /memories`: write a memory and mirror it.
 pub mod save;
+/// The `save` activity summary: the asked-for fields and the JSON they build.
+pub mod save_activity;
 /// `comemory show` / `GET /memories/{id}`: one memory in full.
 pub mod show;
 /// Filesystem-safe slug derivation for memory filenames.

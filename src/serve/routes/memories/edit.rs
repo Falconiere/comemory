@@ -11,6 +11,7 @@
 use std::time::Instant;
 
 use axum::extract::{Path, State};
+use axum::http::HeaderMap;
 use axum::response::Response;
 use axum::routing::{patch, post};
 use axum::{Json, Router};
@@ -61,9 +62,11 @@ pub fn router(_state: AppState) -> Router<AppState> {
 async fn update(
     State(state): State<AppState>,
     Path(id): Path<String>,
+    headers: HeaderMap,
     Json(req): Json<crate::domains::memories::update::Request>,
 ) -> Response {
     let started = Instant::now();
+    let origin = state.http_origin(&headers);
     let permit = match guard_mutating("memories.update", &state) {
         Ok(permit) => permit,
         Err(resp) => return *resp,
@@ -72,7 +75,7 @@ async fn update(
         let _permit = permit;
         let cfg = state.cfg();
         let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
+        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn).with_origin(origin);
         crate::domains::memories::update::run(&mut ctx, &id, req)
     })
     .await;
@@ -82,8 +85,13 @@ async fn update(
 /// `POST /api/v1/memories/{id}/restore` — bring a soft-deleted memory back
 /// (`domains::memories::restore`). `400` when the id names a live memory, `404` when it is
 /// in neither the live tree nor the trash.
-async fn restore(State(state): State<AppState>, Path(id): Path<String>) -> Response {
+async fn restore(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Response {
     let started = Instant::now();
+    let origin = state.http_origin(&headers);
     let permit = match guard_mutating("memories.restore", &state) {
         Ok(permit) => permit,
         Err(resp) => return *resp,
@@ -92,7 +100,7 @@ async fn restore(State(state): State<AppState>, Path(id): Path<String>) -> Respo
         let _permit = permit;
         let cfg = state.cfg();
         let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
+        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn).with_origin(origin);
         crate::domains::memories::restore::run(&mut ctx, &id)
     })
     .await;

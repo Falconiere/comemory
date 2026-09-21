@@ -50,7 +50,7 @@ where
 {
     let _guard = state.lock()?;
     let mut conn = state.conn()?;
-    let mut ctx = Ctx::borrowed(state.paths(), state.cfg(), &mut conn);
+    let mut ctx = Ctx::borrowed(state.paths(), state.cfg(), &mut conn).with_origin(state.origin());
     f(&mut ctx, state)
 }
 

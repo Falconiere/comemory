@@ -73,22 +73,28 @@ fn get_reports_the_newest_recorded_run() {
     let conn = connection::open(paths.db_path()).expect("open db");
     gc_runs::insert(
         &conn,
-        "1111111111111111",
-        "2026-08-01T00:00:00Z",
-        1,
-        2,
-        3,
-        4,
+        &gc_runs::NewGcRun {
+            id: "1111111111111111",
+            at: "2026-08-01T00:00:00Z",
+            removed: 1,
+            log_rows: 2,
+            event_rows: 3,
+            bytes_freed: 4,
+            activity_rows: 0,
+        },
     )
     .expect("insert older run");
     gc_runs::insert(
         &conn,
-        "2222222222222222",
-        "2026-08-30T12:00:00Z",
-        7,
-        70,
-        17,
-        2048,
+        &gc_runs::NewGcRun {
+            id: "2222222222222222",
+            at: "2026-08-30T12:00:00Z",
+            removed: 7,
+            log_rows: 70,
+            event_rows: 17,
+            bytes_freed: 2048,
+            activity_rows: 0,
+        },
     )
     .expect("insert newer run");
     drop(conn);

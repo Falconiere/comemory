@@ -241,6 +241,8 @@ view over the same cores; ◇ = a job-creating route)
 | Method + path | Notes |
 |---|---|
 | ○ `GET /overview`, `GET /overview/eval-series?limit=` | counters, index state, last index run, latest eval metrics, recall series, 4 recent memories |
+| ○ `GET /activity?command=&source=&actor=&repo=&since=&limit=&offset=` | the recorded-command feed: one row per instrumented run (`save`, `delete`, `update`, `restore`, `search`, `find`, `context`, `search-code`, `feedback`, `sync.import`, `index-code`) with its bounded summary, plus per-command `rollups` and the `cursor` its stream starts from. `limit` defaults to 50, caps at 200 |
+| ○ `GET /activity/events?after_id=&command=&source=&actor=&repo=` | the same feed as SSE: one `activity` event per row, the event `id` being the row id. Starts at the newest row unless `after_id` or `Last-Event-ID` says otherwise; `?token=` works here, as an `EventSource` cannot set headers |
 | ○ `GET\|POST /search` | the console view over `find`: `q`, `scope` (`all\|memories\|code`), `kinds[]` (≤ 1), `limit`, `explain`; hits carry `type` and a derived `score_parts[]` explain strip |
 | ○ `GET /search/suggest?q=` | mined expansions matching a query token + recent queries by prefix |
 | ● `POST /search/{query_id}/feedback` | `{hit_id, type?, signal: used\|opened\|ignored, source?}` → the `feedback` core; `source: explicit\|implicit` is stored as the verdict's provenance (`manual` / `implicit`), on `ignored` as much as on `used` |
@@ -359,6 +361,10 @@ Three of them degrade a side effect rather than refusing outright:
 - `sources`: `GET /sources` passes `reconcile: false` on a read-only
   server (list-only; the CLI always reconciles).
 - `edges`: the one-time `edge_fts` self-heal is skipped.
+- `activity`: the server records no rows of its own — read-only means no
+  store write, telemetry included. Both feed routes keep serving what is
+  already stored, and CLI and MCP processes on the same data dir keep
+  recording.
 
 Separately, wherever tracking IS on, a request for a page past the head of the
 ranking (`offset > 0`) still records its `retrieval_log` row — so `POST

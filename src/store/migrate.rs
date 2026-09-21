@@ -38,7 +38,7 @@ pub(crate) mod preflight;
 /// it is what `schema_meta` stores and what several eval modules hash via
 /// `.as_bytes()` — not derived from [`CURRENT_VERSION_NUM`]: on the pinned
 /// stable toolchain `const … = &N.to_string()` fails with `E0015`.
-pub const CURRENT_VERSION: &str = "20";
+pub const CURRENT_VERSION: &str = "21";
 
 /// The same value numerically as [`CURRENT_VERSION`], for callers that need
 /// to compare or count migrations. Agreement between the two is asserted by
@@ -133,6 +133,9 @@ pub const M_V19: &str = include_str!("../../migrations/0019_query_performance.sq
 /// candidates with their bounded text and content versions, and the reviewed
 /// judgments resolved against them (#209).
 pub const M_V20: &str = include_str!("../../migrations/0020_candidate_observations.sql");
+/// v21: the activity feed — `activity_log` (one row per instrumented command
+/// run) and `gc_runs.activity_rows`, the count its sweep evicts.
+pub const M_V21: &str = include_str!("../../migrations/0021_activity_log.sql");
 
 /// Apply all pending migrations. Safe to re-run; each migration is only
 /// applied if its key is absent from `schema_meta`, and each post-apply

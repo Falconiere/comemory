@@ -8,6 +8,8 @@
 //! here — it stays a CLI-only affordance (spec Non-Goal 8: HTTP callers
 //! reindex explicitly via `POST /api/v1/code/index`).
 
+use std::time::Instant;
+
 use serde::Deserialize;
 
 use crate::domains::code::ast::languages::{self, Lang};
@@ -16,6 +18,7 @@ use crate::domains::retrieval::code_search_result::SearchCodeResult;
 use crate::domains::retrieval::{code_search, pipeline};
 use crate::prelude::*;
 use crate::store::{Connection, code_row};
+use crate::utilities::activity::{self, Outcome, command};
 use crate::utilities::context::Ctx;
 use crate::utilities::pagination::{PageWindow, page_meta, page_window};
 
@@ -54,6 +57,36 @@ pub struct Request {
 /// `config::env::access_tracking_enabled()`, a read-only HTTP server passes `false`
 /// unconditionally (§Security "Read-only side-effect degradation").
 pub fn run(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<SearchCodeResult> {
+    let started = Instant::now();
+    let query = activity::bounded_text(&req.query);
+    let repo = req.repo.clone();
+    let lang = req.lang.clone();
+    let result = search(ctx, req, track);
+    let summary = result.as_ref().map(|r| {
+        serde_json::json!({
+            "query": query,
+            "hits": r.hits.len(),
+            "lang": lang,
+            "query_id": r.query_id,
+        })
+    });
+    let outcome = match &summary {
+        Ok(value) => Outcome::Ok(value),
+        Err(e) => Outcome::Failed(e),
+    };
+    activity::record_in(
+        ctx,
+        command::SEARCH_CODE,
+        started,
+        &outcome,
+        repo.as_deref(),
+    );
+    result
+}
+
+/// The code search itself, wrapped by [`run`] so the activity row is written
+/// once, outside the work it describes.
+fn search(ctx: &mut Ctx<'_>, req: Request, track: bool) -> Result<SearchCodeResult> {
     let lang = canonical_lang(req.lang.as_deref())?;
     let cfg = ctx.cfg;
     let window = page_window(cfg, req.k, req.offset);

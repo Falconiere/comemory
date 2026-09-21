@@ -66,6 +66,54 @@ pub struct GcRuns {
     /// Bytes reclaimed.
     #[column(not_null)]
     pub bytes_freed: Integer,
+    /// `activity_log` rows evicted past `prune.learning_retention_days`.
+    /// Defaulted so a sweep recorded before the activity feed shipped reads
+    /// back as "evicted nothing" rather than as a missing column.
+    #[column(not_null, default = "0")]
+    pub activity_rows: Integer,
+}
+
+/// `activity_log`: one row per instrumented command run, whatever surface ran
+/// it (`utilities::activity::record`). The feed behind `GET /api/v1/activity`
+/// and its SSE twin.
+///
+/// The `AUTOINCREMENT` key is the stream's cursor: ids are monotonic and never
+/// reused, so a client that saw `id` can ask for everything above it and a
+/// `gc` sweep in between cannot make an old id reappear. `desc(at)` serves the
+/// newest-first snapshot.
+#[table(name = "activity_log")]
+#[index("idx_activity_log_at", desc(at), id)]
+#[index("idx_activity_log_command_at", command, desc(at), id)]
+pub struct ActivityLog {
+    /// Monotonic id, and the SSE cursor.
+    #[column(primary_key, autoincrement)]
+    pub id: Integer,
+    /// RFC3339 UTC time the run finished (`memory_row::iso_format`).
+    #[column(not_null)]
+    pub at: Text,
+    /// The command that ran, from the `utilities::activity::command`
+    /// vocabulary (`save`, `find`, `sync.import`, …).
+    #[column(not_null)]
+    pub command: Text,
+    /// Which delivery surface ran it.
+    #[column(not_null, check = "source IN ('cli', 'http', 'mcp')")]
+    pub source: Text,
+    /// Caller label the caller declared: MCP `clientInfo`, HTTP `User-Agent`
+    /// or `COMEMORY_ACTOR`. NULL when none was supplied — never inferred.
+    pub actor: Text,
+    /// Repo label the run was scoped to, NULL when unscoped.
+    pub repo: Text,
+    /// Wall-clock duration of the core call.
+    #[column(not_null)]
+    pub duration_ms: Integer,
+    /// `1` when the core returned `Ok`, `0` when it returned an error.
+    #[column(not_null, default = "1")]
+    pub ok: Integer,
+    /// `utilities::error_code::classify` slug when `ok` is `0`.
+    pub error_code: Text,
+    /// Bounded per-command JSON summary; NULL when `activity.summaries` is
+    /// off (the row still records that the command ran).
+    pub summary: Text,
 }
 
 /// `index_failures`: swallowed indexing failures, appended in order.

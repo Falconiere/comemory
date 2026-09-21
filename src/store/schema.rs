@@ -9,7 +9,7 @@ use super::schema_code::{CodeFts, CodeSymbols, CodeVec, IndexedFiles, RepoMarker
 use super::schema_core::{EdgeFts, SchemaMeta};
 use super::schema_documents::{DocumentChunks, DocumentFts, Documents, SourceFiles, SourceRoots};
 use super::schema_graph::{CodeRef, Edges};
-use super::schema_history::{EvalRuns, GcRuns, IndexFailures, IndexRuns};
+use super::schema_history::{ActivityLog, EvalRuns, GcRuns, IndexFailures, IndexRuns};
 use super::schema_learning::{
     BanditArms, CandidateJudgments, CandidateObservations, CandidateQueryObservations,
     CodeFeedback, Feedback, FeedbackEvents, QueryExpansions, RetrievalLog,
@@ -21,6 +21,7 @@ use super::schema_sync::{SyncBinding, SyncLog, SyncState};
 /// asserts the registry equals this list, so adding a struct without
 /// listing it here (or vice versa) fails loudly.
 pub const DECLARED_TABLES: &[&str] = &[
+    "activity_log",
     "bandit_arms",
     "candidate_judgments",
     "candidate_observations",
@@ -64,6 +65,7 @@ pub const DECLARED_TABLES: &[&str] = &[
 #[must_use]
 pub fn registry() -> SchemaRegistry {
     SchemaRegistry::from_tables(vec![
+        ActivityLog::table_def(),
         BanditArms::table_def(),
         CandidateJudgments::table_def(),
         CandidateObservations::table_def(),

@@ -11,6 +11,7 @@ use std::time::Instant;
 
 use axum::Router;
 use axum::extract::{Path, Query, State};
+use axum::http::HeaderMap;
 use axum::response::Response;
 use axum::routing::{get, post};
 
@@ -64,8 +65,13 @@ async fn list(
 /// `POST /api/v1/trash/{id}/restore` — the trash-side address of
 /// `domains::memories::restore::run`, identical in behavior to
 /// `POST /api/v1/memories/{id}/restore`.
-async fn restore(State(state): State<AppState>, Path(id): Path<String>) -> Response {
+async fn restore(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Response {
     let started = Instant::now();
+    let origin = state.http_origin(&headers);
     let permit = match guard_mutating("trash.restore", &state) {
         Ok(permit) => permit,
         Err(resp) => return *resp,
@@ -74,7 +80,7 @@ async fn restore(State(state): State<AppState>, Path(id): Path<String>) -> Respo
         let _permit = permit;
         let cfg = state.cfg();
         let mut conn = state.conn()?;
-        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
+        let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn).with_origin(origin);
         crate::domains::memories::restore::run(&mut ctx, &id)
     })
     .await;

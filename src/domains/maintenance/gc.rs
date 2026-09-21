@@ -26,7 +26,8 @@ use time::OffsetDateTime;
 use crate::domains::memories::trash::trash_entry_id;
 use crate::prelude::*;
 use crate::store::{
-    Connection, candidate_observations, gc_learning, gc_runs, memory_purge, memory_row, random_id,
+    Connection, activity, candidate_observations, gc_learning, gc_runs, memory_purge, memory_row,
+    random_id,
 };
 use crate::utilities::context::Ctx;
 
@@ -50,6 +51,9 @@ pub struct Response {
     /// children go with them). An observation carrying a reviewed judgment is
     /// retained however old it is, so this counts only unjudged ones.
     pub observation_rows: u64,
+    /// `activity_log` rows evicted past the same window: the recorded
+    /// command runs behind `GET /api/v1/activity`.
+    pub activity_rows: u64,
     /// Summed size, in bytes, of the trashed files this run actually
     /// removed (stat'd before the unlink, never estimated after).
     pub bytes_freed: u64,
@@ -98,7 +102,7 @@ pub fn run(ctx: &mut Ctx<'_>, _req: Request) -> Result<Response> {
     let trash_days = ctx.cfg.prune.trash_retention_days;
     let sweep = sweep_trash(&ctx.paths.trash_dir(), trash_days);
 
-    let (counts, observation_rows, purge) = if ctx.paths.db_path().exists() {
+    let (counts, observation_rows, activity_rows, purge) = if ctx.paths.db_path().exists() {
         let retention_days = ctx.cfg.prune.learning_retention_days;
         let conn = ctx.conn()?;
         let now = OffsetDateTime::now_utc();
@@ -113,10 +117,14 @@ pub fn run(ctx: &mut Ctx<'_>, _req: Request) -> Result<Response> {
         let counts = gc_learning::evict_before(conn, &cutoff)?;
         let (observation_rows, _candidate_rows) =
             candidate_observations::evict_unjudged_before(conn, &cutoff)?;
-        record_run(conn, &sweep, counts, now)?;
-        (counts, observation_rows, purge)
+        // The activity feed is telemetry of the same class as `retrieval_log`
+        // and `feedback_events`, so it ages out under the same window rather
+        // than under a second one of its own.
+        let activity_rows = activity::delete_before(conn, &cutoff)?;
+        record_run(conn, &sweep, counts, activity_rows, now)?;
+        (counts, observation_rows, activity_rows, purge)
     } else {
-        ((0, 0), 0, Purge::default())
+        ((0, 0), 0, 0, Purge::default())
     };
     let (log_rows, event_rows) = counts;
 
@@ -126,6 +134,7 @@ pub fn run(ctx: &mut Ctx<'_>, _req: Request) -> Result<Response> {
         event_rows,
         bytes_freed: sweep.bytes_freed,
         observation_rows,
+        activity_rows,
         purged_rows: purge.rows,
         derived_stale: purge.derived_stale,
     })
@@ -220,18 +229,22 @@ fn record_run(
     conn: &Connection,
     sweep: &Sweep,
     counts: (u64, u64),
+    activity_rows: u64,
     now: OffsetDateTime,
 ) -> Result<()> {
     let id = random_id::random_hex(RUN_ID_BYTES)?;
     let at = memory_row::iso_format(now)?;
     gc_runs::insert(
         conn,
-        &id,
-        &at,
-        sweep.removed,
-        counts.0,
-        counts.1,
-        sweep.bytes_freed,
+        &gc_runs::NewGcRun {
+            id: &id,
+            at: &at,
+            removed: sweep.removed,
+            log_rows: counts.0,
+            event_rows: counts.1,
+            bytes_freed: sweep.bytes_freed,
+            activity_rows,
+        },
     )
 }
 /// The retention cutoff both sweeps compare against, rendered in the

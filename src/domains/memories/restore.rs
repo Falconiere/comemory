@@ -18,12 +18,15 @@
 //! only the caller's embedder can produce another (the BYO-vector contract),
 //! so a restored memory is lexical-only until it is re-saved with a vector.
 
+use std::time::Instant;
+
 use serde::Serialize;
 
 use crate::domains::memories::{MemoryRecord, MemoryStore};
 use crate::prelude::*;
 use crate::store::edges::{self, EdgeKey};
 use crate::store::{Connection, memory_row, sync_log};
+use crate::utilities::activity::{self, Outcome, command};
 use crate::utilities::context::Ctx;
 
 /// `POST /api/v1/memories/{id}/restore` / `POST /api/v1/trash/{id}/restore`
@@ -52,6 +55,29 @@ pub struct Response {
 /// still stamped `deleted_at`, so the error names the path and the
 /// `comemory rebuild` recovery, exactly as `memories::save` does.
 pub fn run(ctx: &mut Ctx<'_>, id: &str) -> Result<Response> {
+    let started = Instant::now();
+    let result = restore_one(ctx, id);
+    let summary = result
+        .as_ref()
+        .map(|r| serde_json::json!({"id": r.id, "derived_stale": r.derived_stale}));
+    let outcome = match &summary {
+        Ok(value) => Outcome::Ok(value),
+        Err(e) => Outcome::Failed(e),
+    };
+    activity::record_in(ctx, command::RESTORE, started, &outcome, None);
+    result
+}
+
+/// The restore itself, wrapped by [`run`] so the activity row is written
+/// once, outside the work it describes.
+///
+/// `pub(crate)` for one caller: `sync::exchange::import_rules` restores a
+/// trashed memory as part of applying an import batch, and that batch already
+/// records itself as one `sync.import` run. Going through [`run`] there would
+/// write a second `restore` row per entry for work the batch has already
+/// reported — the same trap `memories::update` avoids by calling
+/// `save::run_with` instead of `save::run`.
+pub(crate) fn restore_one(ctx: &mut Ctx<'_>, id: &str) -> Result<Response> {
     let store = MemoryStore::new(ctx.paths.clone());
     let record = store.restore(id)?;
     let derived_stale = mirror(ctx, &store, &record).map_err(|e| {

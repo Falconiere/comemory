@@ -9,6 +9,7 @@ use std::path::Path;
 use std::time::Instant;
 
 use axum::extract::{DefaultBodyLimit, Query, State};
+use axum::http::HeaderMap;
 use axum::response::Response;
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -22,6 +23,7 @@ use crate::serve::envelope::Envelope;
 use crate::serve::jobs;
 use crate::serve::routes::{RouteEntry, accepted, guard_job, index_runs, respond, track_for};
 use crate::serve::scope::RepoScope;
+use crate::utilities::activity::Origin;
 use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
 use crate::utilities::path_containment;
@@ -87,33 +89,37 @@ pub fn router(_state: AppState) -> Router<AppState> {
 async fn code_search_get(
     State(state): State<AppState>,
     scope: RepoScope,
+    headers: HeaderMap,
     Query(mut req): Query<retrieval::search_code::Request>,
 ) -> Response {
     req.repo = scope.resolve(req.repo);
-    handle(state, req).await
+    let origin = state.http_origin(&headers);
+    handle(state, req, origin).await
 }
 
 async fn code_search_post(
     State(state): State<AppState>,
     scope: RepoScope,
+    headers: HeaderMap,
     Json(mut req): Json<retrieval::search_code::Request>,
 ) -> Response {
     req.repo = scope.resolve(req.repo);
-    handle(state, req).await
+    let origin = state.http_origin(&headers);
+    handle(state, req, origin).await
 }
 
 /// Shared spawn-blocking + envelope wiring for the two handlers above.
-async fn handle(state: AppState, req: retrieval::search_code::Request) -> Response {
+async fn handle(state: AppState, req: retrieval::search_code::Request, origin: Origin) -> Response {
     let started = Instant::now();
-    let result = run_blocking(move || run(state, req)).await;
+    let result = run_blocking(move || run(state, req, origin)).await;
     respond("code.search", result, started)
 }
 
-fn run(state: AppState, req: retrieval::search_code::Request) -> Result<Value> {
+fn run(state: AppState, req: retrieval::search_code::Request, origin: Origin) -> Result<Value> {
     let track = track_for(&state)?;
     let cfg = state.cfg();
     let mut conn = state.conn()?;
-    let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn);
+    let mut ctx = Ctx::borrowed(state.paths(), &cfg, &mut conn).with_origin(origin);
     let result = retrieval::search_code::run(&mut ctx, req, track)?;
     let envelope =
         code_search_result::envelope(&result.hits, result.query_id.as_deref(), result.meta);
@@ -157,9 +163,11 @@ async fn code_ast(
 /// `progress` event alongside the unchanged `status` events (AC-34).
 async fn code_index(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(mut req): Json<crate::domains::code::index_code::Request>,
 ) -> Response {
     let started = Instant::now();
+    let origin = state.http_origin(&headers);
     if let Err(resp) = guard_job("index-code", &state) {
         return *resp;
     }
@@ -182,7 +190,7 @@ async fn code_index(
         Ok(req) => req,
         Err(e) => return Envelope::err("index-code", &e, 0),
     };
-    let job = index_runs::spawn_index_job(&state, req.repo, req.path, req.mode);
+    let job = index_runs::spawn_index_job(&state, req.repo, req.path, req.mode, origin);
     accepted("index-code", job, started)
 }
 

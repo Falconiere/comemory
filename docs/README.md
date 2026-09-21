@@ -94,3 +94,7 @@ Understanding-oriented background:
   `comemory mcp`, the stdio adapter beside `cli` and `serve`, its curated
   eleven-tool catalog, and the recall-injection / Stop-enforcement / SessionEnd
   hooks that close the learning loop.
+- **[Real-time activity feed](designs/2026-09-20-activity-feed.md)** —
+  `activity_log`, one row per agent-visible command run, and the two routes
+  that read it: `GET /api/v1/activity` and its SSE twin. Recording happens at
+  the command core, so `cli`, `serve` and `mcp` each count once.

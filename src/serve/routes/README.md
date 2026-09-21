@@ -40,6 +40,8 @@ One line per file, named after its primary item:
 | `meta.rs` | `table_entries` | `GET /completions` and `GET /commands` — the clap-introspected route/command inventory |
 | `repos.rs` | `table_entries` | `GET /repos` — the indexed code-repository inventory, with the registry's `indexing` overlay and the `archived` status; the mutating repo routes live in `repos_admin.rs` |
 | `sources.rs` | `table_entries` | `GET /sources`, job-backed `POST /sources`, and `DELETE /sources?target=&confirm=` / `DELETE /sources/{target}?confirm=` |
+| `activity.rs` | `table_entries` | `GET /activity` — the recorded-command feed: a filtered page, its rollups, and the cursor its SSE twin streams from |
+| `activity_stream.rs` | `table_entries` | `GET /activity/events` — the same feed as SSE: a cursor polled every `activity.stream_poll_ms`, one `activity` event per row, `Last-Event-ID` resume, and no channel (the table is the buffer) |
 | `stats.rs` | `table_entries` | `GET /stats` — corpus counters and database size |
 | `config.rs` | `table_entries` | `GET\|PUT /config/retrieval` — live ranking knobs; the `PUT` validates first and reloads `AppState.cfg` |
 | `graph_nodes.rs` | `table_entries` | `GET /graph/nodes`, `GET /graph/nodes/{id}`, `GET /graph/nodes/{id}/neighbors`, `GET /graph/nodes/{id}/source` (contained local file read), `GET /graph/snapshot`, job-backed `POST /graph/recompute` |
@@ -49,6 +51,7 @@ One line per file, named after its primary item:
 | `overview.rs` | `table_entries` | `GET /overview` and `GET /overview/eval-series` — the console landing aggregate |
 | `repos_admin.rs` | `table_entries` | `POST /repos` (connect, contained root), `PATCH /repos/{name}` (`root` only), `POST /repos/{name}/archive`, confirm-gated `DELETE /repos/{name}` |
 | `search.rs` | `table_entries` | `GET\|POST /search` (the console view over `find`, with the explain strip), `GET /search/suggest`, `POST /search/{query_id}/feedback` (`source: explicit\|implicit` passes through to the `feedback` core, which stores it as the verdict's provenance) |
+| `search_body.rs` | `body` | The console search response's shape (hits, tier counts, the explain strip), split out of `search.rs` to keep it under the size ceiling |
 | `trash.rs` | `table_entries` | `GET /trash` and `POST /trash/{id}/restore` |
 | `sync.rs` | `table_entries` | `GET /sync/changes`, `GET /sync/manifest`, `POST /sync/import` (author via `X-Comemory-Author`), plus the code-index pair `GET /sync/code/manifest?repo=` and `POST /sync/code/import` (`guard_mutating`) |
 

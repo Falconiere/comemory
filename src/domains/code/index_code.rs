@@ -21,6 +21,7 @@ use crate::domains::code::git_utils::{self, map_git_err};
 use crate::domains::graph::{derived, materialize};
 use crate::prelude::*;
 use crate::store::{Connection, code_row, index_runs, memory_row, random_id, repo_marker};
+use crate::utilities::activity::{self, Outcome, command};
 use crate::utilities::context::Ctx;
 use crate::utilities::progress::ProgressSink;
 
@@ -108,9 +109,32 @@ pub fn run(ctx: &mut Ctx<'_>, req: Request) -> Result<Response> {
 /// recording is best-effort and never turns an indexed repo into a failure.
 pub fn run_with_progress(
     ctx: &mut Ctx<'_>,
-    mut req: Request,
+    req: Request,
     sink: Option<&dyn ProgressSink>,
 ) -> Result<Response> {
+    let activity_started = Instant::now();
+    let repo = req.repo.clone();
+    let result = index(ctx, req, sink);
+    let summary = result.as_ref().map(|r| {
+        serde_json::json!({
+            "repo": r.repo,
+            "files": r.files_indexed,
+            "mode": r.mode.as_str(),
+        })
+    });
+    let outcome = match &summary {
+        Ok(value) => Outcome::Ok(value),
+        Err(e) => Outcome::Failed(e),
+    };
+    let repo = (!repo.is_empty()).then_some(repo.as_str());
+    activity::record_in(ctx, command::INDEX_CODE, activity_started, &outcome, repo);
+    result
+}
+
+/// The walk itself, wrapped by [`run_with_progress`] so the activity row is
+/// written once whichever entry point was used — the CLI's [`run`] and the
+/// server's job both land here.
+fn index(ctx: &mut Ctx<'_>, mut req: Request, sink: Option<&dyn ProgressSink>) -> Result<Response> {
     let started = Instant::now();
     let started_at = memory_row::iso_format(OffsetDateTime::now_utc())?;
     let root = PathBuf::from(&req.path);

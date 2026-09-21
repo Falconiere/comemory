@@ -2,6 +2,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use super::activity::{ActivityConfig, PartialActivityConfig};
 use super::defaults::{
     default_max_file_bytes, default_near_dup_hamming, default_superseded_grace_days,
 };
@@ -10,6 +11,7 @@ use super::learning::{
 };
 use super::observations::{ObservationsConfig, PartialObservationsConfig};
 use super::retrieval::PartialRetrievalConfig;
+use super::sections::{EmbeddingsConfig, GitConfig, OutputConfig};
 use super::sync::{EmbedConfig, PartialEmbedConfig, PartialSyncConfig, SyncConfig};
 use crate::prelude::*;
 
@@ -52,6 +54,7 @@ struct PartialConfig {
     bandit: Option<PartialBanditConfig>,
     /// Candidate-observation capture bounds. Absent keys leave defaults.
     observations: Option<PartialObservationsConfig>,
+    activity: Option<PartialActivityConfig>,
     /// Optional file-overlay for document-source indexing knobs. Absent
     /// keys leave defaults.
     indexing: Option<PartialIndexingConfig>,
@@ -123,26 +126,6 @@ pub enum AutoReindexMode {
     Hook,
     /// Manual only: the index refreshes on an explicit `index-code`.
     Off,
-}
-
-/// Best-effort git auto-sync of the markdown source of truth.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GitConfig {
-    /// Commit + push after a save when enabled. Env: `COMEMORY_GIT_AUTO_SYNC`.
-    pub auto_sync: bool,
-    /// Remote pushed to by the auto-sync; empty means the git default.
-    pub remote: String,
-}
-
-/// Operator-visible record of the embedders that produced the vectors.
-///
-/// Reporting-only: comemory is BYO-vector and never runs an embedder.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EmbeddingsConfig {
-    /// Model name recorded for `memory_vec` vectors.
-    pub memory_model: String,
-    /// Model name recorded for `code_vec` vectors.
-    pub code_model: String,
 }
 
 /// Code-index freshness knobs.
@@ -309,15 +292,6 @@ impl PruneConfig {
     }
 }
 
-/// Emitter defaults shared by every subcommand.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OutputConfig {
-    /// Emit JSON instead of the TTY renderer. Overridden by `--json`.
-    pub json: bool,
-    /// Colour policy for the TTY renderer: `auto`, `always`, or `never`.
-    pub color: String,
-}
-
 /// The fully-layered configuration: defaults → `config.toml` → env.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -345,6 +319,9 @@ pub struct Config {
     /// Opt-in candidate-observation capture — see [`ObservationsConfig`].
     #[serde(default)]
     pub observations: ObservationsConfig,
+    /// The per-command activity feed — see [`ActivityConfig`].
+    #[serde(default)]
+    pub activity: ActivityConfig,
     /// Emitter defaults — see [`OutputConfig`].
     pub output: OutputConfig,
     /// Free-form caller-set hint identifying the embedder that produced the
@@ -397,6 +374,7 @@ impl Config {
             reinforce: ReinforceConfig::default(),
             bandit: BanditConfig::default(),
             observations: ObservationsConfig::default(),
+            activity: ActivityConfig::default(),
             output: OutputConfig {
                 json: false,
                 color: "auto".into(),
@@ -453,6 +431,9 @@ impl Config {
         }
         if let Some(po) = partial.observations {
             self.observations.apply(po);
+        }
+        if let Some(pa) = partial.activity {
+            self.activity.apply(pa);
         }
         if let Some(pi) = partial.indexing {
             self.indexing.apply(pi);

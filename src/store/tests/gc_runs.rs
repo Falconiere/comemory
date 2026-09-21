@@ -16,12 +16,15 @@ fn insert_writes_a_readable_row() {
 
     gc_runs::insert(
         &conn,
-        "abcdef0123456789",
-        "2026-08-31T10:05:00Z",
-        3,
-        40,
-        12,
-        4096,
+        &gc_runs::NewGcRun {
+            id: "abcdef0123456789",
+            at: "2026-08-31T10:05:00Z",
+            removed: 3,
+            log_rows: 40,
+            event_rows: 12,
+            bytes_freed: 4096,
+            activity_rows: 0,
+        },
     )
     .expect("insert gc_runs row");
 
@@ -56,22 +59,28 @@ fn newest_returns_the_most_recent_row() {
     // insertion order or rowid.
     gc_runs::insert(
         &conn,
-        "bbbbbbbbbbbbbbbb",
-        "2026-08-30T12:00:00Z",
-        7,
-        70,
-        17,
-        2048,
+        &gc_runs::NewGcRun {
+            id: "bbbbbbbbbbbbbbbb",
+            at: "2026-08-30T12:00:00Z",
+            removed: 7,
+            log_rows: 70,
+            event_rows: 17,
+            bytes_freed: 2048,
+            activity_rows: 0,
+        },
     )
     .expect("insert newer");
     gc_runs::insert(
         &conn,
-        "aaaaaaaaaaaaaaaa",
-        "2026-08-01T00:00:00Z",
-        1,
-        2,
-        3,
-        4,
+        &gc_runs::NewGcRun {
+            id: "aaaaaaaaaaaaaaaa",
+            at: "2026-08-01T00:00:00Z",
+            removed: 1,
+            log_rows: 2,
+            event_rows: 3,
+            bytes_freed: 4,
+            activity_rows: 0,
+        },
     )
     .expect("insert older");
 

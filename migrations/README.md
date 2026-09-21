@@ -63,6 +63,7 @@ One line per file:
 | `0018_scheme_path_refs.sql` | v18: delete the `references_*` edges, `code_ref` anchors and `edge_fts` triplets minted from `file:/…`, `./…`, `../…` path expressions (#153) |
 | `0019_query_performance.sql` | v19: graph, history, and listing indexes; external-content trigram index with backfill and synchronization triggers |
 | `0020_candidate_observations.sql` | v20: candidate observation capture — `candidate_query_observations` (the per-query envelope), `candidate_observations` (each candidate's bounded text and content version) and `candidate_judgments` (reviewed verdicts resolved against them) |
+| `0021_activity_log.sql` | v21: the activity feed — `activity_log` (one row per instrumented command run, the SSE cursor being its `AUTOINCREMENT` id) and `gc_runs.activity_rows` |
 
 When you add a migration, append the next-numbered file and add its row above
 — never edit an existing one.

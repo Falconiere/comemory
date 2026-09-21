@@ -120,6 +120,7 @@ impl Config {
         // `config::observations`, rather than as a seventh near-identical
         // `apply_*_env` method here.
         self.observations.apply_env()?;
+        self.activity.apply_env()?;
         // The `[tune]` grid lists deliberately have NO env equivalents: a
         // four-list env value ("20,60,100" × 4 vars, or worse, one var with
         // semicolons) is unreadable and easy to misquote. Set them in

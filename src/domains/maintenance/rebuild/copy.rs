@@ -38,6 +38,7 @@ pub(crate) const COPIED_TABLES: &[&str] = &[
     "code_feedback",
     "retrieval_log",
     "feedback_events",
+    "activity_log",
     "query_expansions",
     "bandit_arms",
     "eval_runs",

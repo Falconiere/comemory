@@ -26,6 +26,10 @@ use crate::serve::jobs::JobId;
 use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
 
+/// `GET /activity` — the recorded-command feed.
+pub mod activity;
+/// `GET /activity/events` — the feed as an SSE stream.
+pub mod activity_stream;
 /// `GET|POST /code/search`.
 pub mod code;
 /// `GET|POST /find`.
@@ -70,6 +74,8 @@ pub mod overview;
 pub mod repos_admin;
 /// `GET|POST /search`, `GET /search/suggest`, `POST /search/{query_id}/feedback`.
 pub mod search;
+/// The console search response's shape, split out of `search.rs`.
+pub mod search_body;
 /// `GET /sync/{changes,manifest}`, `POST /sync/import`.
 pub mod sync;
 /// `GET /trash`, `POST /trash/{id}/restore`.
@@ -140,6 +146,8 @@ pub fn table() -> Vec<RouteEntry> {
     entries.extend_from_slice(search::table_entries());
     entries.extend_from_slice(trash::table_entries());
     entries.extend_from_slice(sync::table_entries());
+    entries.extend_from_slice(activity::table_entries());
+    entries.extend_from_slice(activity_stream::table_entries());
     entries
 }
 
@@ -170,6 +178,8 @@ pub fn v1_router(state: AppState) -> Router<AppState> {
         .merge(repos_admin::router(state.clone()))
         .merge(search::router(state.clone()))
         .merge(trash::router(state.clone()))
+        .merge(activity::router(state.clone()))
+        .merge(activity_stream::router(state.clone()))
         .merge(sync::router(state))
 }
 

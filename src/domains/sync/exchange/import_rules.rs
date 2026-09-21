@@ -119,7 +119,7 @@ fn apply_restore(
         out.reason = Some("restore target not in trash".into());
         return Ok(out);
     }
-    crate::domains::memories::restore::run(ctx, &entry.id)?;
+    crate::domains::memories::restore::restore_one(ctx, &entry.id)?;
     patch_frontmatter(ctx, entry, record, author_override)?;
     let conn = ctx.conn()?;
     let tx = conn.transaction()?;
@@ -186,7 +186,7 @@ fn apply_upsert(
     let in_trash = trash_file_exists(&paths, &entry.id);
     if trashed_with_hash(conn, &entry.content_hash)? || in_trash {
         if in_trash {
-            crate::domains::memories::restore::run(ctx, &entry.id)?;
+            crate::domains::memories::restore::restore_one(ctx, &entry.id)?;
             patch_frontmatter(ctx, entry, record, author_override)?;
             let conn = ctx.conn()?;
             let tx = conn.transaction()?;

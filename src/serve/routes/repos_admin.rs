@@ -17,6 +17,7 @@ use std::time::Instant;
 
 use axum::body::Bytes;
 use axum::extract::{Path as UrlPath, Query, State};
+use axum::http::HeaderMap;
 use axum::response::Response;
 use axum::routing::{delete, post};
 use axum::{Json, Router};
@@ -30,6 +31,7 @@ use crate::prelude::*;
 use crate::serve::AppState;
 use crate::serve::routes::{RouteEntry, guard_mutating, index_runs, require_confirm, respond};
 use crate::store::Connection;
+use crate::utilities::activity::Origin;
 use crate::utilities::blocking::run_blocking;
 use crate::utilities::context::Ctx;
 use crate::utilities::path_containment;
@@ -89,8 +91,13 @@ pub fn router(_state: AppState) -> Router<AppState> {
 /// (`crate::domains::code::repo_admin::connect`). With `index_now`, the same `index-code`
 /// job `POST /api/v1/index/runs` starts is spawned afterwards (the write
 /// permit is already released by then) and its id returned as `job_id`.
-async fn connect_repo(State(state): State<AppState>, Json(req): Json<ConnectRequest>) -> Response {
+async fn connect_repo(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<ConnectRequest>,
+) -> Response {
     let started = Instant::now();
+    let origin = state.http_origin(&headers);
     let permit = match guard_mutating(CONNECT, &state) {
         Ok(permit) => permit,
         Err(resp) => return *resp,
@@ -109,7 +116,7 @@ async fn connect_repo(State(state): State<AppState>, Json(req): Json<ConnectRequ
     })
     .await;
     let result = match connected {
-        Ok((resp, true)) => start_initial_index(&state, resp),
+        Ok((resp, true)) => start_initial_index(&state, resp, origin),
         Ok((resp, false)) => Ok(resp),
         Err(e) => Err(e),
     };
@@ -119,13 +126,18 @@ async fn connect_repo(State(state): State<AppState>, Json(req): Json<ConnectRequ
 /// Spawn the post-connect `index_now` job and record its id on `resp`. A
 /// repo that already has a live run is `409 index_running` — the same gate
 /// `POST /api/v1/index/runs` applies.
-fn start_initial_index(state: &AppState, mut resp: ConnectResponse) -> Result<ConnectResponse> {
+fn start_initial_index(
+    state: &AppState,
+    mut resp: ConnectResponse,
+    origin: Origin,
+) -> Result<ConnectResponse> {
     index_runs::refuse_if_running(state, &resp.repo)?;
     let job_id = index_runs::spawn_index_job(
         state,
         resp.repo.clone(),
         resp.root_path.clone(),
         IndexMode::default(),
+        origin,
     )?;
     resp.job_id = Some(job_id);
     Ok(resp)
