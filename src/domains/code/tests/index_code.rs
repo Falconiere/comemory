@@ -429,8 +429,9 @@ fn run_keeps_a_custom_label_for_a_main_checkout() {
 /// `busy_timeout` cannot wait out, which is why a 5000ms timeout never
 /// masked it. Under `BEGIN IMMEDIATE` the walk simply waits for the holder
 /// and then runs, so this test's wall time is the holder's hold, not a
-/// timeout. No sleeping in the assertion path and no racing: the holder
-/// already owns the writer before the walk starts.
+/// timeout. Nothing races: the holder already owns the writer before the
+/// walk starts, and its one bounded sleep is what keeps the writer held
+/// across the walk — no assertion here waits on a deadline.
 #[test]
 fn run_survives_a_writer_held_by_another_connection() {
     let home = tempdir().expect("tempdir");
@@ -485,8 +486,8 @@ fn run_survives_a_writer_held_by_another_connection() {
         )
         .expect("count code_symbols");
     assert!(
-        symbols > 0,
-        "the walk's symbol rows must be durable after the contended commit"
+        symbols >= 2,
+        "main + helper symbols must be durable after the contended commit, got {symbols}"
     );
     let holder_probe: String = conn
         .query_row(
