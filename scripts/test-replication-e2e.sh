@@ -134,6 +134,9 @@ require_ancestor() {
   [[ -d "$platform_root/.git" || -f "$platform_root/.git" ]] \
     || runtime_fail "platform root is not a git checkout: $platform_root"
   pin="$(tr -d '[:space:]' <"$ENGINE_ROOT/scripts/replication/platform.sha")"
+  if [[ ! "$pin" =~ ^[0-9a-f]{40}$ ]]; then
+    runtime_fail "platform.sha is not a 40-hex SHA: ${pin:-empty}"
+  fi
   head="$(git -C "$platform_root" rev-parse HEAD)"
   if ! git -C "$platform_root" merge-base --is-ancestor "$pin" HEAD; then
     runtime_fail "platform.sha $pin is not an ancestor of $head"
