@@ -1,0 +1,183 @@
+#!/usr/bin/env bash
+# Real-process replication harness. Local cases run here. Live cases boot
+# the platform checkout named by --platform-root. See
+# docs/designs/2026-09-21-replication-e2e-harness.md.
+set -euo pipefail
+HERE="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=scripts/lib/common.sh
+source "$HERE/lib/common.sh"
+
+# The coverage checker reads this list. Keep it in sync with coverage.json.
+CASES=(baseline missing-runtime teardown fault-ack corrupt credentials propagation lost-nudge coverage)
+
+case_name=""
+platform_root=""
+engine_bin=""
+
+runtime_fail() {
+  printf 'replication: runtime: %s\n' "$1" >&2
+  exit 2
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --case)
+      case_name="$2"
+      shift 2
+      ;;
+    --platform-root)
+      platform_root="$2"
+      shift 2
+      ;;
+    --engine-bin)
+      engine_bin="$2"
+      shift 2
+      ;;
+    *)
+      die "replication" "unknown argument: $1"
+      ;;
+  esac
+done
+
+[[ -n "$case_name" ]] || die "replication" "--case is required"
+known=0
+for candidate in "${CASES[@]}"; do
+  [[ "$candidate" == "$case_name" ]] && known=1
+done
+[[ "$known" -eq 1 ]] || runtime_fail "unknown case: $case_name"
+
+reap_group() {
+  local pid="$1" kill_at deadline
+  kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+  kill_at=$((SECONDS + 1))
+  deadline=$((SECONDS + 15))
+  while kill -0 "$pid" 2>/dev/null; do
+    if (( SECONDS >= deadline )); then
+      die "replication" "child $pid still running after 15s"
+    fi
+    if (( SECONDS >= kill_at )); then
+      kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+    fi
+    sleep 0.2
+  done
+}
+
+run_missing_runtime() {
+  local bin="${engine_bin:-/bin/false}"
+  if [[ -x "$bin" ]] && "$bin" --version >/dev/null 2>&1; then
+    die "replication" "missing-runtime was given a binary that prints --version: $bin"
+  fi
+  runtime_fail "engine binary cannot run: $bin"
+}
+
+run_teardown() {
+  local pid
+  # A new session that ignores TERM, so the deadline must SIGKILL it.
+  pid="$(python3 -c '
+import os, signal, time
+child = os.fork()
+if child == 0:
+    os.setsid()
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    devnull = os.open(os.devnull, os.O_RDWR)
+    os.dup2(devnull, 0)
+    os.dup2(devnull, 1)
+    os.dup2(devnull, 2)
+    time.sleep(120)
+    os._exit(0)
+print(child, flush=True)
+os._exit(0)
+')"
+  sleep 0.2
+  if ! kill -0 "$pid" 2>/dev/null; then
+    die "replication" "teardown child exited before the deadline"
+  fi
+  reap_group "$pid"
+  if kill -0 "$pid" 2>/dev/null; then
+    die "replication" "teardown child still running after 15s"
+  fi
+  log_ok "replication" "teardown reaped the child"
+}
+
+run_coverage() {
+  bash "$HERE/check-replication-coverage.sh"
+  local bad
+  bad="$(mktemp)"
+  python3 - "$PROJECT_ROOT/scripts/replication/coverage.json" "$bad" <<'PY'
+import json, sys
+src, dst = sys.argv[1:]
+data = json.load(open(src))
+del data["acs"]["G-2"]
+json.dump(data, open(dst, "w"))
+PY
+  if bash "$HERE/check-replication-coverage.sh" --manifest "$bad"; then
+    rm -f "$bad"
+    die "replication" "coverage accepted a manifest missing G-2"
+  fi
+  rm -f "$bad"
+  local empty
+  empty="$(mktemp)"
+  printf '%s\n' '{"tests_ran":0,"skipped":0}' >"$empty"
+  if bash "$HERE/check-replication-coverage.sh" --report "$empty"; then
+    rm -f "$empty"
+    die "replication" "coverage accepted a report with tests_ran 0"
+  fi
+  rm -f "$empty"
+  log_ok "replication" "coverage rejected a dangling AC and an empty report"
+}
+
+require_ancestor() {
+  local pin head
+  [[ -d "$platform_root/.git" || -f "$platform_root/.git" ]] \
+    || runtime_fail "platform root is not a git checkout: $platform_root"
+  pin="$(tr -d '[:space:]' <"$PROJECT_ROOT/scripts/replication/platform.sha")"
+  head="$(git -C "$platform_root" rev-parse HEAD)"
+  if ! git -C "$platform_root" merge-base --is-ancestor "$pin" HEAD; then
+    runtime_fail "platform.sha $pin is not an ancestor of $head"
+  fi
+  printf '%s\n' "$head"
+}
+
+run_live() {
+  [[ -n "$platform_root" ]] || runtime_fail "--platform-root is required for $case_name"
+  local head bin report_dir
+  head="$(require_ancestor)"
+  if [[ -z "$engine_bin" ]]; then
+    (cd "$PROJECT_ROOT" && cargo build --quiet)
+    engine_bin="$PROJECT_ROOT/target/debug/comemory"
+  fi
+  [[ -x "$engine_bin" ]] || runtime_fail "engine binary is missing: $engine_bin"
+  "$engine_bin" --version >/dev/null 2>&1 || runtime_fail "engine binary failed --version: $engine_bin"
+  command -v node >/dev/null 2>&1 || runtime_fail "node is not on PATH (workerd channel)"
+  export PATH
+  PATH="$(dirname "$engine_bin"):$PATH"
+  export COMEMORY_BIN="$engine_bin"
+  [[ -d "$platform_root/node_modules/wrangler" || -d "$platform_root/apps/api/node_modules/wrangler" ]] \
+    || runtime_fail "wrangler is not installed under $platform_root"
+  report_dir="$(mktemp -d)"
+  local home
+  home="$(mktemp -d)"
+  export COMEMORY_POLICY_BIN="$engine_bin"
+  export COMEMORY_API=""
+  export COMEMORY_API_KEY=""
+  export HOME="$home"
+  export REPLICATION_CASE="$case_name"
+  export REPLICATION_REPORT="$report_dir/replication-report.json"
+  export REPLICATION_ENGINE_SHA
+  REPLICATION_ENGINE_SHA="$(git -C "$PROJECT_ROOT" rev-parse HEAD)"
+  export REPLICATION_PLATFORM_SHA="$head"
+  (
+    cd "$platform_root/apps/api"
+    bun test ./src/routes/__tests__/replication-harness.ts
+  )
+  bash "$HERE/check-replication-coverage.sh" --report "$REPLICATION_REPORT" \
+    --platform-root "$platform_root"
+  cat "$REPLICATION_REPORT"
+}
+
+case "$case_name" in
+  missing-runtime) run_missing_runtime ;;
+  teardown) run_teardown ;;
+  coverage) run_coverage ;;
+  baseline | fault-ack | corrupt | credentials | propagation | lost-nudge) run_live ;;
+esac

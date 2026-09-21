@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "acs": {
+    "G-1": ["baseline"],
+    "G-2": ["baseline"],
+    "G-3": ["baseline"],
+    "G-4": ["coverage"],
+    "G-5": ["missing-runtime", "baseline"],
+    "G-6": ["teardown", "fault-ack", "corrupt", "credentials"],
+    "G-7": ["propagation", "lost-nudge"]
+  }
+}

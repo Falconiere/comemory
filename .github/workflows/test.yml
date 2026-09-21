@@ -176,3 +176,16 @@ jobs:
         run: bash scripts/coverage-check.sh
       - name: Run eval gate
         run: bash scripts/eval-check.sh
+      - name: Run replication harness self-checks
+        run: |
+          set -euo pipefail
+          bash scripts/test-replication-e2e.sh --case coverage
+          bash scripts/test-replication-e2e.sh --case teardown
+          set +e
+          bash scripts/test-replication-e2e.sh --case missing-runtime --engine-bin /bin/false
+          code=$?
+          set -e
+          if [[ "$code" -ne 2 ]]; then
+            echo "::error::missing-runtime exited $code, expected 2"
+            exit 1
+          fi

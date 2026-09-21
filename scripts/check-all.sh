@@ -22,6 +22,8 @@
 #   migration-check  every already-released migrations/*.sql file is
 #                    byte-identical to its content at the first release tag
 #                    that shipped it (git-dependent, requires unshallow tags)
+#   replication-coverage-check  scripts/replication/coverage.json pairs every
+#                    harness AC with a case the runner dispatches
 #
 # Retired in the toolu migration (folded into guardrails-check + lint-check):
 #   test-placement-check  no-bypass-check  module-size-check  tests-mirror-check
@@ -53,6 +55,7 @@ GATES=(
   typos-check
   cli-docs-check
   migration-check
+  replication-coverage-check
 )
 
 failed=()
