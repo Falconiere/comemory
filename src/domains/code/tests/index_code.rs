@@ -416,3 +416,89 @@ fn run_keeps_a_custom_label_for_a_main_checkout() {
     .expect("index_code run");
     assert_eq!(resp.repo, "my-own-label");
 }
+
+/// Regression (CI run 35554592090's `store_locked` flake): the walk's
+/// transaction must reserve SQLite's writer at `BEGIN` rather than upgrade
+/// into it after its opening `ensure_repo_format` read.
+///
+/// The holder below is the real shape of the race: a `POST /api/v1/code/index`
+/// job runs while the search path commits its telemetry write on another
+/// connection. With the deferred begin this module used to open, the walk
+/// took a read snapshot, the holder's commit invalidated it, and the walk's
+/// first write failed *instantly* with `SQLITE_BUSY` — the one case
+/// `busy_timeout` cannot wait out, which is why a 5000ms timeout never
+/// masked it. Under `BEGIN IMMEDIATE` the walk simply waits for the holder
+/// and then runs, so this test's wall time is the holder's hold, not a
+/// timeout. Nothing races: the holder already owns the writer before the
+/// walk starts, and its one bounded sleep is what keeps the writer held
+/// across the walk — no assertion here waits on a deadline.
+#[test]
+fn run_survives_a_writer_held_by_another_connection() {
+    let home = tempdir().expect("tempdir");
+    let workspace = tempdir().expect("workspace");
+    let repo = git_sample::build_sample_repo(workspace.path());
+    let (paths, cfg, mut conn) = ctx_over(home.path());
+    let db_path = paths.db_path();
+
+    let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+    let holder = std::thread::spawn(move || {
+        let held = rusqlite::Connection::open(&db_path).expect("open holder connection");
+        held.pragma_update(None, "busy_timeout", 5000_i64)
+            .expect("set busy_timeout on holder");
+        held.execute("BEGIN IMMEDIATE", [])
+            .expect("holder begins immediate");
+        held.execute(
+            "INSERT INTO schema_meta(key, value) VALUES ('holder_probe', '1') \
+             ON CONFLICT(key) DO UPDATE SET value = '1'",
+            [],
+        )
+        .expect("holder write");
+        ready_tx.send(()).expect("signal holder ready");
+        // Long enough that the walk is provably inside its transaction while
+        // this commit lands — the exact interleave that broke the job.
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        held.execute("COMMIT", []).expect("holder commits");
+    });
+    ready_rx.recv().expect("holder ready");
+
+    let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+    let resp = crate::domains::code::index_code::run_with_progress(
+        &mut ctx,
+        crate::domains::code::index_code::Request {
+            repo: "sample".into(),
+            path: repo.to_str().expect("utf8 path").to_string(),
+            mode: IndexMode::Incremental,
+        },
+        None,
+    )
+    .expect("a commit from another connection must not fail the walk");
+    holder.join().expect("holder thread");
+
+    assert_eq!(
+        resp.files_indexed, 1,
+        "the walk must index the fixture file, not roll back on the contended write"
+    );
+    let symbols: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM code_symbols WHERE repo = ?1",
+            ["sample"],
+            |r| r.get(0),
+        )
+        .expect("count code_symbols");
+    assert!(
+        symbols >= 2,
+        "main + helper symbols must be durable after the contended commit, got {symbols}"
+    );
+    let holder_probe: String = conn
+        .query_row(
+            "SELECT value FROM schema_meta WHERE key = 'holder_probe'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("holder probe row");
+    assert_eq!(
+        holder_probe, "1",
+        "the holder's own commit must survive too — the walk waits for the writer, \
+         it does not steal it"
+    );
+}
