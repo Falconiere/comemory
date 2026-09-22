@@ -91,7 +91,9 @@ pub struct MemoryRecord {
 /// clone re-warms on first lookup, so cloning never leaks stale entries.
 #[derive(Debug)]
 pub struct MemoryStore {
-    paths: Paths,
+    /// `pub(super)` for [`super::store_trash`], the other half of this same
+    /// store's markdown tree — not for the domain at large.
+    pub(super) paths: Paths,
     /// Memoised mapping from `frontmatter.id` to the on-disk path. Populated
     /// lazily by `find_by_id` on its first cache miss; entries persist for
     /// the lifetime of this `MemoryStore`. `save` does *not* update the
@@ -99,7 +101,8 @@ pub struct MemoryStore {
     /// little benefit) — the next `load` for that id walks `read_dir`
     /// once and warms the cache. `delete` evicts the id when it moves the
     /// file into `.trash/`.
-    id_to_path: RefCell<HashMap<String, PathBuf>>,
+    /// `pub(super)` for the same reason as [`Self::paths`].
+    pub(super) id_to_path: RefCell<HashMap<String, PathBuf>>,
 }
 
 impl Clone for MemoryStore {
@@ -222,137 +225,6 @@ impl MemoryStore {
         write_atomic(&tmp_path, &record.path, &rendered)
     }
 
-    /// Bring a soft-deleted memory back: move `.trash/{id}-{slug}.md` back
-    /// into `memories/` and return the record parsed from the restored file.
-    /// The exact reverse of [`MemoryStore::delete`]'s file move; the SQLite
-    /// The trashed record for `id`, read where it lies.
-    ///
-    /// Lets a caller record what a restore is about to do — the canonical id
-    /// and the file that will move — BEFORE [`restore`](Self::restore) moves
-    /// it. `path` is the `.trash/` path, not the live one.
-    ///
-    /// # Errors
-    /// Propagates the trash lookup, the read and the frontmatter parse.
-    pub fn trashed_record(&self, id: &str) -> Result<MemoryRecord> {
-        let trash_path = self.find_in_trash(id)?;
-        let raw = fs::read_to_string(&trash_path)?;
-        let (fm, body) = Frontmatter::split(&raw)?;
-        let slug = slug_from_body(&body);
-        Ok(MemoryRecord {
-            frontmatter: fm,
-            body,
-            path: trash_path,
-            slug,
-        })
-    }
-
-    /// mirror is the caller's half (`memories::restore`).
-    ///
-    /// `Error::BadRequest` when `id` names a live memory — checked BEFORE the
-    /// trash is consulted, so a stale trash copy can never be renamed over a
-    /// live file (see [`MemoryStore::find_in_trash`]) — and `Error::NotFound`
-    /// when it is in neither place.
-    pub fn restore(&self, id: &str) -> Result<MemoryRecord> {
-        let trash_path = self.find_in_trash(id)?;
-        let file_name = trash_path
-            .file_name()
-            .ok_or_else(|| {
-                Error::Other(format!(
-                    "trashed memory path has no file name: {}",
-                    trash_path.display()
-                ))
-            })?
-            .to_owned();
-        let live_path = self.paths.memories_dir().join(file_name);
-        fs::rename(&trash_path, &live_path)?;
-        // Warm the cache at the restored path — `delete` evicted it.
-        self.id_to_path
-            .borrow_mut()
-            .insert(id.to_string(), live_path.clone());
-        let raw = fs::read_to_string(&live_path)?;
-        let (fm, body) = Frontmatter::split(&raw)?;
-        let slug = slug_from_body(&body);
-        Ok(MemoryRecord {
-            frontmatter: fm,
-            body,
-            path: live_path,
-            slug,
-        })
-    }
-
-    /// Locate the file [`MemoryStore::restore`] should move back. The LIVE
-    /// tree is checked first, and a live id is `BadRequest` even when a trash
-    /// copy exists: a same-body re-save after a delete recreates
-    /// `{id}-{slug}.md` under the very same name, and `fs::rename` out of
-    /// `.trash/` would silently replace that live file (and its newer
-    /// frontmatter) with the stale pre-delete copy. Only an id absent from
-    /// both trees is `NotFound`.
-    fn find_in_trash(&self, id: &str) -> Result<PathBuf> {
-        if self.find_by_id(id).is_ok_and(|live| live.exists()) {
-            return Err(Error::BadRequest(format!(
-                "memory {id} is live, not in the trash"
-            )));
-        }
-        self.trash_entry(id)
-            .ok_or_else(|| Error::NotFound(id.to_string()))
-    }
-
-    /// `.trash/{id}-*.md` when a trashed copy of `id` exists. Shared by the
-    /// restore lookup, the save-time purge and [`MemoryStore::prior`] (hence
-    /// `pub(crate)`) so all agree on what a trashed copy is.
-    pub(crate) fn trash_entry(&self, id: &str) -> Option<PathBuf> {
-        let prefix = format!("{id}-");
-        fs::read_dir(self.paths.trash_dir())
-            .ok()?
-            .flatten()
-            .find(|entry| matches_prefix(&entry.file_name().to_string_lossy(), &prefix))
-            .map(|entry| entry.path())
-    }
-
-    /// Remove a leftover `.trash/` copy of `id` once the id is live again
-    /// (a re-save of a deleted body). Best-effort: the live file is already
-    /// the source of truth, so a failure is logged rather than propagated.
-    fn purge_trash_copy(&self, id: &str) {
-        let Some(stale) = self.trash_entry(id) else {
-            return;
-        };
-        match fs::remove_file(&stale) {
-            Ok(()) => tracing::debug!(
-                path = %stale.display(),
-                "removed the stale trash copy of a re-saved memory"
-            ),
-            Err(e) => tracing::warn!(
-                path = %stale.display(),
-                error = %e,
-                "could not remove the stale trash copy of a re-saved memory"
-            ),
-        }
-    }
-
-    /// Soft-delete a memory by moving it into `memories/.trash/`. Returns the
-    /// record as it existed before deletion.
-    pub fn delete(&self, id: &str) -> Result<MemoryRecord> {
-        let rec = self.load(id)?;
-        let file_name = rec
-            .path
-            .file_name()
-            .ok_or_else(|| {
-                Error::Other(format!(
-                    "memory path has no file name: {}",
-                    rec.path.display()
-                ))
-            })?
-            .to_owned();
-        let trash_dir = self.paths.trash_dir();
-        fs::create_dir_all(&trash_dir)?;
-        let trash_path = trash_dir.join(&file_name);
-        fs::rename(&rec.path, &trash_path)?;
-        stamp_deleted_now(&trash_path);
-        // Evict the cached entry — the file is no longer at the live path.
-        self.id_to_path.borrow_mut().remove(id);
-        Ok(rec)
-    }
-
     /// Enumerate every saved memory under `memories/`. Skips hidden files
     /// (e.g. `.{id}.tmp`) and the `.trash/` directory. A single unreadable or
     /// malformed `.md` file is logged and skipped rather than aborting the
@@ -434,7 +306,7 @@ impl MemoryStore {
 /// ([`MemoryStore::find_by_id`]) and the trash lookup
 /// ([`MemoryStore::find_in_trash`]) so the two cannot disagree on what counts
 /// as a memory file.
-fn matches_prefix(name: &str, prefix: &str) -> bool {
+pub(super) fn matches_prefix(name: &str, prefix: &str) -> bool {
     let is_md = Path::new(name)
         .extension()
         .is_some_and(|ext| ext.eq_ignore_ascii_case("md"));
@@ -447,7 +319,7 @@ fn matches_prefix(name: &str, prefix: &str) -> bool {
 /// memory last written 45 days ago and deleted today would be reaped by the
 /// next gc under a 30-day window, with no undo window at all. Best-effort:
 /// the move is the delete, so a failed stamp is logged, not fatal.
-fn stamp_deleted_now(path: &Path) {
+pub(super) fn stamp_deleted_now(path: &Path) {
     let stamped = fs::File::options()
         .write(true)
         .open(path)

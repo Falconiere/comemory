@@ -67,7 +67,27 @@ pub struct McpOptions {
 /// task that panicked — carry no crate `Error` of their own, so both are
 /// mapped to [`Error::Other`] with an `mcp:` prefix.
 pub async fn serve(paths: &Paths, opts: McpOptions, cwd: &Path) -> Result<()> {
-    let server = ComemoryServer::new(McpState::new(paths, opts, cwd)?);
+    let state = McpState::new(paths, opts, cwd)?;
+    // Before the transport starts, so no tool call can observe a memory an
+    // interrupted run left on disk but never mirrored. Lives here rather than
+    // in `store::connection::open` because `store/` may not call into a
+    // domain (`scripts/architecture-check.sh`, #177); a read-only session
+    // skips it, leaving the intent for the next writable open.
+    let mut conn = state.conn()?;
+    let report = crate::domains::memories::recover::reconcile_unless_read_only(
+        paths,
+        &mut conn,
+        state.read_only(),
+    )?;
+    if !report.is_empty() {
+        tracing::info!(
+            finished = report.finished,
+            dropped = report.dropped,
+            "recovered memory writes an interrupted run left outstanding"
+        );
+    }
+    drop(conn);
+    let server = ComemoryServer::new(state);
     let running = server
         .serve(rmcp::transport::stdio())
         .await

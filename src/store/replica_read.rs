@@ -114,6 +114,26 @@ pub fn page(
     rows.into_iter().map(decode_feed_row).collect()
 }
 
+/// The feed position an operation was accepted at, if it was.
+///
+/// Reconciliation asks this before journalling a write it is finishing: a
+/// mirror row that landed proves nothing about the operation, because the
+/// edit and restore paths commit the two in separate transactions. Keyed on
+/// `operation_id`, which `uq_replica_feed_operation` makes unique.
+///
+/// # Errors
+/// Propagates SQLite failures.
+pub fn position_of(conn: &Connection, operation_id: &str) -> Result<Option<i64>> {
+    orm::query_optional(
+        conn,
+        ReplicaFeed::select()
+            .columns_typed(&[&feed_col::sequence])
+            .filter(feed_col::operation_id.eq(operation_id))
+            .to_sql(),
+        |r| r.get(0),
+    )
+}
+
 /// Highest accepted position, or `0` when the feed is empty.
 ///
 /// # Errors

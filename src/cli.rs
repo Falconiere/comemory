@@ -257,10 +257,40 @@ pub enum Cmd {
     Capture(capture::Args),
 }
 
+/// Finish any memory write a killed process left half-done, before the
+/// subcommand runs.
+///
+/// This is the CLI's half of `memories::recover` — `store::connection::open`
+/// cannot call it, because `store/` may not reach into a domain
+/// (`scripts/architecture-check.sh`, #177).
+///
+/// Skipped entirely when the database file is not there yet: a fresh install
+/// has nothing to reconcile, and a subcommand that never touches the store
+/// must not be the thing that creates one.
+fn reconcile_pending(data_dir: Option<&std::path::Path>) -> Result<()> {
+    let paths = Paths::new(crate::config::paths::resolve_data_dir(
+        data_dir.map(std::path::Path::to_path_buf),
+    ));
+    if !paths.db_path().exists() {
+        return Ok(());
+    }
+    let mut conn = crate::store::connection::open(paths.db_path())?;
+    let report = crate::domains::memories::recover::reconcile(&paths, &mut conn)?;
+    if !report.is_empty() {
+        tracing::info!(
+            finished = report.finished,
+            dropped = report.dropped,
+            "recovered memory writes an interrupted run left outstanding"
+        );
+    }
+    Ok(())
+}
+
 /// Dispatch the parsed `Cli` to its subcommand. The dispatcher is the single
 /// place that knows about every variant, keeping individual subcommand modules
 /// free of cross-references.
 pub async fn run(cli: Cli) -> Result<()> {
+    reconcile_pending(cli.data_dir.as_deref())?;
     match cli.cmd {
         Cmd::Architecture(a) => architecture::run(a, cli.json, cli.data_dir).await,
         Cmd::Save(a) => save::run(a, cli.json, cli.data_dir).await,

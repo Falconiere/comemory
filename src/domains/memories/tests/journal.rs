@@ -401,7 +401,7 @@ fn a_save_that_cannot_record_its_intent_writes_no_markdown() {
 
 #[test]
 fn an_unfinished_write_is_exactly_an_intent_plus_markdown_the_database_never_saw() {
-    let mut home = home();
+    let home = home();
     // The post-crash state itself, built the way a killed process leaves it:
     // the intent recorded, the markdown renamed into place, and the mirror
     // transaction never reached.
