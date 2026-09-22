@@ -20,6 +20,7 @@ use crate::domains::memories::delete;
 use crate::domains::memories::nav::title_of;
 use crate::domains::retrieval::score;
 use crate::prelude::*;
+use crate::store::replica_journal::ReplicaOrigin;
 use crate::store::{Connection, prune_apply};
 use crate::utilities::context::Ctx;
 use crate::utilities::pagination::Page;
@@ -244,6 +245,13 @@ fn apply(conn: &mut Connection, paths: &Paths, low_value_ids: &[String]) -> Resu
 /// memory's markdown is already gone so prune cannot wedge on a half-deleted
 /// row. Ghost-ref candidates are intentionally NOT deleted here: they are
 /// advisory (spec Non-Goal 5).
+///
+/// A pruned memory is a real deletion, so it journals like one
+/// ([`ReplicaOrigin::Local`], #251): a peer that never heard about it would
+/// re-offer the memory on the next pull and the prune would undo itself every
+/// cycle. The heal branch below stays unjournalled — it repairs a mirror row
+/// for a deletion that already happened, and the write intent that deletion
+/// recorded is what journals it.
 /// Returns whether ANY of the deletes left the derived artifacts stale, so
 /// the caller can report it the way `delete` and `gc` do rather than let a
 /// stale relation index reach only the log.
@@ -254,7 +262,7 @@ fn soft_delete_low_value(
 ) -> Result<bool> {
     let mut derived_stale = false;
     for id in low_value_ids {
-        match delete::soft_delete(paths, conn, id, None, None) {
+        match delete::soft_delete(paths, conn, id, Some(ReplicaOrigin::Local), None) {
             Ok(removed) => derived_stale |= removed.derived_stale,
             // Half-deleted state: live DB row, markdown already gone —
             // producible by a crash inside `delete` between its file move

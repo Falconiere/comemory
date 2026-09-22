@@ -235,3 +235,95 @@ fn unknown_id_is_not_found() {
         .expect_err("unknown id is NotFound");
     assert!(matches!(err, Error::NotFound(_)), "got {err:?}");
 }
+
+// ---------------------------------------------------------------------------
+// #251: refreshing an anchor is materialization, not a mutation. It changes
+// stored state a peer already agrees on, so it must journal nothing.
+// ---------------------------------------------------------------------------
+
+/// Feed positions as `"<op>:<entity_key>"`, oldest first.
+fn feed_ops(conn: &rusqlite::Connection) -> Vec<String> {
+    comemory::store::replica_read::page(conn, 0, 50, None)
+        .expect("page")
+        .into_iter()
+        .map(|row| format!("{}:{}", row.op.as_str(), row.entity_key))
+        .collect()
+}
+
+#[test]
+fn a_refresh_that_moves_the_anchor_adds_no_feed_position_and_no_outbox_row() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let workspace = tempfile::tempdir().expect("workspace");
+    let repo = build_repo(
+        workspace.path(),
+        "pub fn refreshed_symbol() -> u32 {\n    1\n}\n",
+    );
+    let (paths, cfg, mut conn) = open_ctx(home.path());
+    {
+        let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+        index(&mut ctx, &repo);
+    }
+
+    let anchor = format!("sample:{TARGET_PATH}:{SYMBOL}");
+    let saved = {
+        let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+        memories::save::run(
+            &mut ctx,
+            save_request(
+                "the retry budget lives in refreshed_symbol",
+                vec![anchor.clone()],
+            ),
+            false,
+            None,
+        )
+        .expect("save")
+    };
+    {
+        let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+        memories::refresh_refs::run(&mut ctx, &saved.id, &RootOverrides::new())
+            .expect("first refresh pins the anchor");
+    }
+    let after_save = feed_ops(&conn);
+    let outbox_before = comemory::store::replica_outbox::pending_count(&conn).expect("count");
+    assert_eq!(after_save, vec![format!("upsert:{}", saved.id)]);
+
+    // A real commit under the pin, re-indexed, so the second refresh has real
+    // work to do — otherwise the zero-count below would prove nothing.
+    git_commit::commit_files(
+        &repo,
+        &[(
+            TARGET_PATH,
+            "pub fn refreshed_symbol() -> u32 {\n    2\n}\n",
+        )],
+        "v2",
+    );
+    {
+        let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+        index(&mut ctx, &repo);
+    }
+    let refreshed = {
+        let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+        memories::refresh_refs::run(&mut ctx, &saved.id, &RootOverrides::new())
+            .expect("second refresh")
+    };
+
+    assert_eq!(refreshed.refreshed, 1, "the anchor demonstrably moved");
+    assert_eq!(refreshed.code_refs[0].status, "fresh");
+    assert_eq!(
+        feed_ops(&conn),
+        after_save,
+        "re-pinning an anchor is materialization: the memory a peer holds did \
+         not change, so no operation is owed"
+    );
+    assert_eq!(
+        comemory::store::replica_outbox::pending_count(&conn).expect("count"),
+        outbox_before,
+        "and nothing new is queued for upload"
+    );
+    assert!(
+        comemory::store::memory_intent::outstanding(&conn)
+            .expect("outstanding")
+            .is_empty(),
+        "materialization records no write intent either"
+    );
+}

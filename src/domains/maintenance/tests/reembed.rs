@@ -496,3 +496,72 @@ fn an_empty_leg_is_never_named_as_a_width_mismatch() {
     }
     assert_eq!(count(&paths, "code_vec"), 0);
 }
+
+// ---------------------------------------------------------------------------
+// #251: recomputing a vector is materialization, not a mutation. The memory a
+// peer holds is unchanged, so no operation is owed.
+// ---------------------------------------------------------------------------
+
+/// Feed positions as `"<op>:<entity_key>"`, oldest first.
+fn feed_ops(paths: &Paths) -> Vec<String> {
+    let conn = connection::open(paths.db_path()).expect("open db");
+    comemory::store::replica_read::page(&conn, 0, 50, None)
+        .expect("page")
+        .into_iter()
+        .map(|row| format!("{}:{}", row.op.as_str(), row.entity_key))
+        .collect()
+}
+
+#[test]
+fn a_reembed_that_replaces_every_vector_adds_no_feed_position_and_no_outbox_row() {
+    let home = TempDir::new().expect("tempdir");
+    let paths = Paths::new(home.path());
+    paths.ensure_dirs().expect("ensure dirs");
+    seed(&paths, 2);
+    let cfg = Config::defaults();
+    let after_seed = feed_ops(&paths);
+    assert_eq!(after_seed.len(), 2, "two saves, two positions");
+    let outbox_before = {
+        let conn = connection::open(paths.db_path()).expect("open db");
+        comemory::store::replica_outbox::pending_count(&conn).expect("count")
+    };
+
+    // Two different real embedders, so the second run demonstrably REPLACES
+    // the vectors rather than writing the same bytes again — otherwise the
+    // zero-count below would prove nothing.
+    for script in ["embed-a.sh", "embed-b.sh"] {
+        let cmd = embed_script(&home, script, 1024);
+        let mut ctx = Ctx::lazy(&paths, &cfg);
+        let resp = maintenance::reembed::run(
+            &mut ctx,
+            maintenance::reembed::Request {
+                target: maintenance::reembed::Target::Memories,
+                batch: Some(8),
+            },
+            &cmd,
+            None,
+        )
+        .expect("reembed run");
+        assert_eq!(resp.memories, 2, "every live memory was re-embedded");
+    }
+    assert_eq!(count(&paths, "memory_vec"), 2, "replaced, not duplicated");
+
+    assert_eq!(
+        feed_ops(&paths),
+        after_seed,
+        "a recomputed embedding is materialization: the memory a peer holds is \
+         unchanged, so no operation is owed"
+    );
+    let conn = connection::open(paths.db_path()).expect("open db");
+    assert_eq!(
+        comemory::store::replica_outbox::pending_count(&conn).expect("count"),
+        outbox_before,
+        "and nothing new is queued for upload"
+    );
+    assert!(
+        comemory::store::memory_intent::outstanding(&conn)
+            .expect("outstanding")
+            .is_empty(),
+        "materialization records no write intent either"
+    );
+}

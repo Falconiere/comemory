@@ -223,3 +223,107 @@ fn run_apply_rejects_a_malformed_id() {
         .unwrap_or_default();
     assert_eq!(trashed, 0, "a rejected request must delete nothing");
 }
+
+// ---------------------------------------------------------------------------
+// #251: a pruned memory is a real deletion, so it replicates like one.
+// ---------------------------------------------------------------------------
+
+/// Feed positions as `"<op>:<entity_key>"`, oldest first.
+fn feed_ops(conn: &rusqlite::Connection) -> Vec<String> {
+    comemory::store::replica_read::page(conn, 0, 50, None)
+        .expect("page")
+        .into_iter()
+        .map(|row| format!("{}:{}", row.op.as_str(), row.entity_key))
+        .collect()
+}
+
+#[test]
+fn apply_journals_a_tombstone_the_outbox_owes() {
+    let home = TempDir::new().expect("tempdir");
+    let id = save_memory(&home, "a prune candidate that must replicate its deletion");
+    make_prune_eligible(&home, &id);
+
+    let paths = Paths::new(data_dir(&home));
+    let mut conn = connection::open(paths.db_path()).expect("open db");
+    let cfg = Config::defaults();
+    let before = feed_ops(&conn);
+    assert_eq!(
+        before,
+        vec![format!("upsert:{id}")],
+        "the save journalled its upsert"
+    );
+
+    {
+        let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+        let req = maintenance::prune::Request {
+            apply: true,
+            limit: 50,
+            offset: 0,
+            ids: Vec::new(),
+        };
+        maintenance::prune::run(&mut ctx, req).expect("prune apply");
+    }
+
+    assert_eq!(
+        feed_ops(&conn),
+        vec![format!("upsert:{id}"), format!("tombstone:{id}")],
+        "a pruned memory replicates its deletion, or a peer re-offers it forever"
+    );
+    let pending = comemory::store::replica_outbox::pending(&conn, 10).expect("pending");
+    let tombstones: Vec<_> = pending
+        .iter()
+        .filter(|row| row.op == comemory::store::replica_journal::ReplicaOp::Tombstone)
+        .collect();
+    assert_eq!(tombstones.len(), 1, "the tombstone is owed upstream");
+    assert_eq!(tombstones[0].entity_key, id);
+    assert_eq!(
+        tombstones[0].payload_digest, None,
+        "a tombstone names no payload"
+    );
+    assert!(
+        comemory::store::memory_intent::outstanding(&conn)
+            .expect("outstanding")
+            .is_empty(),
+        "the prune's delete finished, so it owes no reconciliation"
+    );
+}
+
+#[test]
+fn healing_a_half_deleted_row_journals_nothing_new() {
+    let home = TempDir::new().expect("tempdir");
+    let id = save_memory(&home, "a prune candidate whose markdown is already gone");
+    make_prune_eligible(&home, &id);
+
+    // The half-deleted state prune heals: the markdown is gone, the mirror row
+    // is still live. Removing the file is exactly what a crash inside `delete`
+    // between its move and its transaction leaves.
+    let memories_dir = data_dir(&home).join("memories");
+    for entry in std::fs::read_dir(&memories_dir).expect("read memories dir") {
+        let path = entry.expect("entry").path();
+        if path.extension().is_some_and(|ext| ext == "md") {
+            std::fs::remove_file(&path).expect("remove markdown");
+        }
+    }
+
+    let paths = Paths::new(data_dir(&home));
+    let mut conn = connection::open(paths.db_path()).expect("open db");
+    let cfg = Config::defaults();
+    let before = feed_ops(&conn);
+
+    {
+        let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+        let req = maintenance::prune::Request {
+            apply: true,
+            limit: 50,
+            offset: 0,
+            ids: Vec::new(),
+        };
+        maintenance::prune::run(&mut ctx, req).expect("prune apply");
+    }
+
+    assert_eq!(
+        feed_ops(&conn),
+        before,
+        "a heal repairs a deletion that already happened; it is not a new one"
+    );
+}
