@@ -23,7 +23,7 @@ fn migrated_db() -> (TempDir, Connection) {
 #[test]
 fn an_incomplete_upload_assembles_to_nothing() {
     let (_dir, conn) = migrated_db();
-    replica_staging::put_part(
+    let state = replica_staging::put_part(
         &conn,
         "stage-1",
         0,
@@ -33,7 +33,6 @@ fn an_incomplete_upload_assembles_to_nothing() {
     )
     .expect("part 0");
 
-    let state = replica_staging::state(&conn, "stage-1").expect("state");
     assert_eq!(state.received, 1);
     assert_eq!(state.declared, 2);
     assert!(!state.complete());
@@ -57,7 +56,7 @@ fn parts_assemble_in_index_order_regardless_of_arrival_order() {
         "2026-09-21T10:01:00Z",
     )
     .expect("part 1");
-    replica_staging::put_part(
+    let state = replica_staging::put_part(
         &conn,
         "stage-1",
         0,
@@ -67,11 +66,7 @@ fn parts_assemble_in_index_order_regardless_of_arrival_order() {
     )
     .expect("part 0");
 
-    assert!(
-        replica_staging::state(&conn, "stage-1")
-            .expect("state")
-            .complete()
-    );
+    assert!(state.complete(), "both declared parts have arrived");
     assert_eq!(
         replica_staging::assemble(&conn, "stage-1").expect("assemble"),
         Some(r#"{"body":"first half"}"#.to_string())
@@ -83,10 +78,9 @@ fn a_resent_part_replaces_its_earlier_copy() {
     let (_dir, conn) = migrated_db();
     replica_staging::put_part(&conn, "stage-1", 0, 1, "stale", "2026-09-21T10:00:00Z")
         .expect("part");
-    replica_staging::put_part(&conn, "stage-1", 0, 1, "fresh", "2026-09-21T10:02:00Z")
+    let state = replica_staging::put_part(&conn, "stage-1", 0, 1, "fresh", "2026-09-21T10:02:00Z")
         .expect("retry");
 
-    let state = replica_staging::state(&conn, "stage-1").expect("state");
     assert_eq!(
         state.received, 1,
         "a retry is the same part, not a second one"
@@ -108,10 +102,9 @@ fn discard_drops_one_upload_and_leaves_the_others() {
         1
     );
     assert_eq!(
-        replica_staging::state(&conn, "stage-1")
-            .expect("state")
-            .received,
-        0
+        replica_staging::assemble(&conn, "stage-1").expect("assemble"),
+        None,
+        "the discarded upload has nothing left to assemble"
     );
     assert_eq!(
         replica_staging::assemble(&conn, "stage-2").expect("assemble"),

@@ -29,9 +29,12 @@ impl StagingState {
     }
 }
 
-/// Store one part, replacing a re-sent part with the same index.
+/// Store one part, replacing a re-sent part with the same index, and report
+/// what the upload now holds.
 ///
 /// A re-sent part is a retry, not a second part: the index is the identity.
+/// The count comes back from the same call that wrote it, so a caller never
+/// has to ask a second question about state it just changed.
 ///
 /// # Errors
 /// Propagates SQLite failures.
@@ -42,7 +45,7 @@ pub fn put_part(
     part_count: i64,
     bytes: &str,
     at: &str,
-) -> Result<()> {
+) -> Result<StagingState> {
     let updated = orm::execute(
         conn,
         ReplicaStagedPart::update()
@@ -53,40 +56,28 @@ pub fn put_part(
             .filter(col::part_index.eq(part_index))
             .to_sql(),
     )?;
-    if updated > 0 {
-        return Ok(());
+    if updated == 0 {
+        orm::execute(
+            conn,
+            ReplicaStagedPart::insert()
+                .set(&col::staging_id, staging_id)
+                .set(&col::part_index, part_index)
+                .set(&col::part_count, part_count)
+                .set(&col::bytes, bytes)
+                .set(&col::created_at, at)
+                .to_sql(),
+        )?;
     }
-    orm::execute(
-        conn,
-        ReplicaStagedPart::insert()
-            .set(&col::staging_id, staging_id)
-            .set(&col::part_index, part_index)
-            .set(&col::part_count, part_count)
-            .set(&col::bytes, bytes)
-            .set(&col::created_at, at)
-            .to_sql(),
-    )?;
-    Ok(())
-}
-
-/// How many parts have arrived for `staging_id`, and how many were declared.
-///
-/// # Errors
-/// Propagates SQLite failures.
-pub fn state(conn: &Connection, staging_id: &str) -> Result<StagingState> {
-    let row: Option<(i64, Option<i64>)> = orm::query_optional(
+    let received: i64 = orm::query_one(
         conn,
         ReplicaStagedPart::select()
-            .column_expr("COUNT(*)", "received")
-            .column_expr("MAX(part_count)", "declared")
             .filter(col::staging_id.eq(staging_id))
-            .to_sql(),
-        |r| Ok((r.get(0)?, r.get(1)?)),
+            .to_count_sql(),
+        |r| r.get(0),
     )?;
-    let (received, declared) = row.unwrap_or((0, None));
     Ok(StagingState {
         received,
-        declared: declared.unwrap_or(0),
+        declared: part_count,
     })
 }
 

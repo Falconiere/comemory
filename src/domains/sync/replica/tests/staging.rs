@@ -126,9 +126,9 @@ fn an_activated_upload_is_discarded_so_a_retry_cannot_replay_its_parts() {
     )
     .expect("activate");
 
-    let state = crate::store::replica_staging::state(&peer.conn, "stage-1").expect("state");
     assert_eq!(
-        state.received, 0,
+        crate::store::replica_staging::assemble(&peer.conn, "stage-1").expect("assemble"),
+        None,
         "the parts are gone once they are history"
     );
 }

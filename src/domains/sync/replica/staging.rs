@@ -47,7 +47,7 @@ pub fn stage(ctx: &mut Ctx<'_>, request: StageRequest) -> Result<StageResponse> 
     }
     let at = memory_row::iso_format(time::OffsetDateTime::now_utc())?;
     let conn = ctx.conn()?;
-    replica_staging::put_part(
+    let state = replica_staging::put_part(
         conn,
         &request.staging_id,
         request.part_index,
@@ -55,7 +55,6 @@ pub fn stage(ctx: &mut Ctx<'_>, request: StageRequest) -> Result<StageResponse> 
         &request.bytes,
         &at,
     )?;
-    let state = replica_staging::state(conn, &request.staging_id)?;
     Ok(StageResponse {
         protocol: PROTOCOL.to_string(),
         staging_id: request.staging_id,
