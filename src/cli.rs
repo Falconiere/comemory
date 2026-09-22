@@ -266,7 +266,8 @@ pub enum Cmd {
 ///
 /// Skipped entirely when the database file is not there yet: a fresh install
 /// has nothing to reconcile, and a subcommand that never touches the store
-/// must not be the thing that creates one.
+/// must not be the thing that creates one. `serve` and `mcp` are skipped by
+/// the caller — see [`run`].
 fn reconcile_pending(data_dir: Option<&std::path::Path>) -> Result<()> {
     let paths = Paths::new(crate::config::paths::resolve_data_dir(
         data_dir.map(std::path::Path::to_path_buf),
@@ -290,7 +291,13 @@ fn reconcile_pending(data_dir: Option<&std::path::Path>) -> Result<()> {
 /// place that knows about every variant, keeping individual subcommand modules
 /// free of cross-references.
 pub async fn run(cli: Cli) -> Result<()> {
-    reconcile_pending(cli.data_dir.as_deref())?;
+    // `serve` and `mcp` reconcile from inside their own startup, where they
+    // know whether the session is read-only; doing it here too would write
+    // through a `--read-only` session, which is exactly what that flag
+    // forbids. Every other subcommand is a writable one by definition.
+    if !matches!(cli.cmd, Cmd::Serve(_) | Cmd::Mcp(_)) {
+        reconcile_pending(cli.data_dir.as_deref())?;
+    }
     match cli.cmd {
         Cmd::Architecture(a) => architecture::run(a, cli.json, cli.data_dir).await,
         Cmd::Save(a) => save::run(a, cli.json, cli.data_dir).await,

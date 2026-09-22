@@ -373,3 +373,53 @@ fn an_operation_with_no_vector_records_the_memory_as_needing_one() {
         "the peer sent no vector, which is a backlog entry rather than a failure"
     );
 }
+
+#[test]
+fn the_digest_an_acceptance_answers_is_the_digest_it_stores() {
+    // Both engines wrote the same body independently, so the receiving one
+    // already holds the memory under its own creation time. Copying every
+    // replicated field EXCEPT `created` left it acknowledging one digest and
+    // storing another, and two such engines could never agree on a manifest
+    // digest however often they imported from one another.
+    let mut author = Home::new();
+    let id = author.save(BODY, &["sync", "drifted"]);
+    let payload = author.payload(&id);
+    let mut peer = Home::new();
+    let peer_id = peer.save(BODY, &["sync"]);
+    assert_eq!(peer_id, id, "same body, same content-derived id");
+    support::mark_pushed(&peer.conn, &id);
+
+    let operation = upsert("op-20260922-identity", &payload);
+    let answered = {
+        let mut ctx = peer.ctx();
+        let response = accept::run(&mut ctx, envelope(vec![operation])).expect("accept");
+        assert_eq!(response.results[0].disposition, Disposition::Accepted);
+        response.results[0]
+            .payload_digest
+            .clone()
+            .expect("the acceptance names a digest")
+    };
+
+    let stored = replica_read::revision(&peer.conn, "memory", &id)
+        .expect("revision")
+        .expect("row")
+        .payload_digest
+        .expect("digest");
+    assert_eq!(
+        stored, answered,
+        "the revision must hold exactly the bytes the peer was told were accepted"
+    );
+    assert_eq!(
+        crate::domains::memories::replica_payload::MemoryPayloadV1::from_record(
+            &MemoryStore::new(peer.paths.clone())
+                .load(&id)
+                .expect("load")
+        )
+        .expect("payload")
+        .canonical()
+        .expect("canonical")
+        .1,
+        answered,
+        "and the markdown on disk must re-derive that same digest"
+    );
+}

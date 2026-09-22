@@ -198,6 +198,13 @@ fn write_markdown(
                 .content_hash
                 .clone_from(&payload.content_hash);
             existing.frontmatter.schema = payload.schema;
+            // `created` is part of the payload, so it is part of the
+            // revision's identity. Keeping the local value here left the
+            // engine acknowledging one digest and storing another: two
+            // engines that had each written the same body independently could
+            // never agree on a manifest digest, however many times they
+            // imported from one another.
+            existing.frontmatter.created = payload.created_at()?;
             existing.body.clone_from(&payload.body);
             store.rewrite(&existing)?;
             Ok(existing)

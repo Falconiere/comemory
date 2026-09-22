@@ -34,17 +34,41 @@ impl Drop for ServerGuard {
 /// One engine: its data directory plus the `serve` process in front of it.
 pub struct Engine {
     home: tempfile::TempDir,
+    /// The directory this session actually serves — its own temp dir for
+    /// [`Engine::spawn`], a caller-supplied one for [`Engine::spawn_at`].
+    dir: std::path::PathBuf,
     pub base: String,
     pub token: String,
     _guard: ServerGuard,
 }
 
 impl Engine {
+    /// Spawn `comemory serve` on an ephemeral port over an EXISTING data
+    /// directory, keeping `home` alive for the session's lifetime.
+    ///
+    /// Lets a case start an engine over a directory it has already put into a
+    /// particular state — a half-written memory, say — instead of a fresh one.
+    pub fn spawn_at(data_dir: &std::path::Path, extra_args: &[&str]) -> Self {
+        let home = tempfile::TempDir::new().expect("tempdir");
+        Self::spawn_with(home, data_dir.to_path_buf(), extra_args)
+    }
+
     /// Spawn `comemory serve` on an ephemeral port over a fresh data dir.
     pub fn spawn(extra_args: &[&str]) -> Self {
         let home = tempfile::TempDir::new().expect("tempdir");
+        let data_dir = home.path().join(".comemory");
+        Self::spawn_with(home, data_dir, extra_args)
+    }
+
+    /// The shared spawn: bind port 0, read the JSON banner, keep the child
+    /// under a guard that kills it on drop.
+    fn spawn_with(
+        home: tempfile::TempDir,
+        data_dir: std::path::PathBuf,
+        extra_args: &[&str],
+    ) -> Self {
         let mut child = Command::new(cargo_bin("comemory"))
-            .env("COMEMORY_DATA_DIR", home.path().join(".comemory"))
+            .env("COMEMORY_DATA_DIR", &data_dir)
             .args(["--json", "serve", "--port", "0"])
             .args(extra_args)
             .stdout(Stdio::piped())
@@ -62,6 +86,7 @@ impl Engine {
         let token = info["token"].as_str().expect("token").to_string();
         Self {
             home,
+            dir: data_dir,
             base: format!("http://127.0.0.1:{port}"),
             token,
             _guard: guard,
@@ -70,7 +95,7 @@ impl Engine {
 
     /// The data directory this engine serves.
     pub fn data_dir(&self) -> std::path::PathBuf {
-        self.home.path().join(".comemory")
+        self.dir.clone()
     }
 
     /// Run a `comemory` subcommand against this engine's data directory.
@@ -97,6 +122,11 @@ impl Engine {
     /// A write against this engine's API.
     pub fn post(&self, path: &str, body: &Value) -> (u16, Value) {
         ureq_post(&format!("{}{path}", self.base), &self.token, body)
+    }
+
+    /// `PATCH` against this session — the frontmatter-patch route's verb.
+    pub fn patch(&self, path: &str, body: &Value) -> (u16, Value) {
+        ureq_patch(&format!("{}{path}", self.base), &self.token, body)
     }
 
     /// Stop the server, keeping the data directory — what an operator does
@@ -151,6 +181,18 @@ fn ureq_get(url: &str, token: &str) -> (u16, Value) {
 }
 
 /// Minimal blocking HTTP POST over the loopback API.
+fn ureq_patch(url: &str, token: &str, body: &Value) -> (u16, Value) {
+    let response = reqwest::blocking::Client::new()
+        .patch(url)
+        .bearer_auth(token)
+        .json(body)
+        .send()
+        .expect("PATCH");
+    let status = response.status().as_u16();
+    let parsed: Value = response.json().unwrap_or(Value::Null);
+    (status, parsed)
+}
+
 fn ureq_post(url: &str, token: &str, body: &Value) -> (u16, Value) {
     let response = reqwest::blocking::Client::new()
         .post(url)
@@ -235,4 +277,165 @@ impl StoppedEngine {
     pub fn db(&self) -> rusqlite::Connection {
         rusqlite::Connection::open(self.data_dir().join("comemory.db")).expect("open db")
     }
+}
+
+// ---------------------------------------------------------------------------
+// #251: the memory-mutation surface — the states a killed write leaves, and
+// the helpers that build them against a real data directory.
+// ---------------------------------------------------------------------------
+
+/// Leave `home` in the state a process killed between the markdown rename and
+/// the mirror commit produces: the write intent recorded, the markdown on
+/// disk, the database blind to both.
+///
+/// The kill window cannot be hit deterministically from outside the process,
+/// so its exact observable state is produced here with the real library API —
+/// the same `MemoryStore::save` the real writer calls, and the same
+/// `memory_intent::record`. That the state is genuinely reachable is proven
+/// separately by `domains::memories::journal`'s own tests; what these cases
+/// prove is that the real CLI recovers from it.
+pub fn interrupted_save(data_dir: &std::path::Path, body: &str) -> (String, std::path::PathBuf) {
+    use comemory::domains::memories::{Kind, MemoryStore, References, Relations, SaveParams, id};
+    use comemory::store::memory_intent::{self, Intent, IntentKind};
+
+    let paths = comemory::config::Paths::new(data_dir);
+    paths.ensure_dirs().expect("ensure_dirs");
+    let conn = comemory::store::connection::open(paths.db_path()).expect("open db");
+    let store = MemoryStore::new(paths);
+    let entity_key = id::memory_id(body);
+    let planned = store.planned_path(body);
+    memory_intent::record(
+        &conn,
+        &Intent {
+            entity_key: entity_key.clone(),
+            kind: IntentKind::Write,
+            md_path: planned.to_string_lossy().into_owned(),
+            operation_id: format!("op-20260922-{}", &entity_key[..8]),
+            started_at: "2026-09-22T10:00:00Z".to_string(),
+        },
+    )
+    .expect("record intent");
+    store
+        .save(SaveParams {
+            body,
+            kind: Kind::Decision,
+            repo: "Falconiere/comemory",
+            tags: &["sync".to_string()],
+            author: "tester",
+            quality: 4,
+            relations: Relations::default(),
+            references: References::default(),
+            created: None,
+        })
+        .expect("markdown lands");
+    (entity_key, planned)
+}
+
+/// Every outstanding write intent in `data_dir`.
+pub fn intents(data_dir: &std::path::Path) -> Vec<comemory::store::memory_intent::Intent> {
+    let paths = comemory::config::Paths::new(data_dir);
+    let conn = comemory::store::connection::open(paths.db_path()).expect("open db");
+    comemory::store::memory_intent::outstanding(&conn).expect("outstanding")
+}
+
+/// Feed positions in `data_dir` as `"<op>:<entity_key>"`, oldest first.
+pub fn feed_ops(data_dir: &std::path::Path) -> Vec<String> {
+    let paths = comemory::config::Paths::new(data_dir);
+    let conn = comemory::store::connection::open(paths.db_path()).expect("open db");
+    comemory::store::replica_read::page(&conn, 0, 100, None)
+        .expect("page")
+        .into_iter()
+        .map(|row| format!("{}:{}", row.op.as_str(), row.entity_key))
+        .collect()
+}
+
+/// Pending outbox entity keys in `data_dir`.
+pub fn owed(data_dir: &std::path::Path) -> Vec<String> {
+    let paths = comemory::config::Paths::new(data_dir);
+    let conn = comemory::store::connection::open(paths.db_path()).expect("open db");
+    comemory::store::replica_outbox::pending(&conn, 100)
+        .expect("pending")
+        .into_iter()
+        .map(|row| row.entity_key)
+        .collect()
+}
+
+/// Answer every outbox row `data_dir` owes, as a successful push would.
+///
+/// An import is refused while a local change to the same entity is still
+/// pending (#251), so a case about the import path drains the outbox first.
+pub fn mark_all_pushed(data_dir: &std::path::Path) {
+    use comemory::store::replica_outbox::{self, Outcome};
+    let paths = comemory::config::Paths::new(data_dir);
+    let conn = comemory::store::connection::open(paths.db_path()).expect("open db");
+    for row in replica_outbox::pending(&conn, 200).expect("pending") {
+        replica_outbox::record(
+            &conn,
+            &row.operation_id,
+            Outcome::Accepted {
+                sequence: Some(1),
+                disposition: "accepted",
+            },
+            "2026-09-22T10:00:00Z",
+        )
+        .expect("record the push");
+    }
+}
+
+/// Run the CLI over `data_dir` and return `(exit code, stdout, stderr)`
+/// without asserting success — for the cases where failing loudly is the
+/// behavior under test.
+pub fn cli_raw(data_dir: &std::path::Path, args: &[&str]) -> (i32, String, String) {
+    let out = Command::new(cargo_bin("comemory"))
+        .env("COMEMORY_DATA_DIR", data_dir)
+        .arg("--json")
+        .args(args)
+        .output()
+        .expect("run comemory");
+    (
+        out.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+/// Run the CLI over `data_dir` with extra environment, asserting success.
+pub fn cli_with_env(
+    data_dir: &std::path::Path,
+    env: &[(&str, &str)],
+    args: &[&str],
+) -> (i32, Value) {
+    let mut cmd = Command::new(cargo_bin("comemory"));
+    cmd.env("COMEMORY_DATA_DIR", data_dir);
+    for (key, value) in env {
+        cmd.env(key, value);
+    }
+    let out = cmd.arg("--json").args(args).output().expect("run comemory");
+    let code = out.status.code().unwrap_or(-1);
+    let body = serde_json::from_slice(&out.stdout).unwrap_or(Value::Null);
+    (code, body)
+}
+
+/// The payload and digest of the NEWEST position `engine` holds for `id`.
+///
+/// [`payload_of`] takes the first matching entry, which is the right thing
+/// for a case with one revision and the wrong thing after an edit — pairing a
+/// stale payload with a fresh digest reads as `rejected_invalid`, which is
+/// true but is not what such a case is about.
+pub fn latest_revision(engine: &Engine, id: &str) -> (Value, String) {
+    let (status, body) = engine.get("/api/v1/sync/replica/changes?since=0&limit=100");
+    assert_eq!(status, 200, "changes: {body}");
+    let entries = body["data"]["entries"].as_array().expect("entries").clone();
+    let entry = entries
+        .iter()
+        .rev()
+        .find(|e| e["entity_key"] == json!(id) && e["payload"].is_object())
+        .unwrap_or_else(|| panic!("no payload entry for {id}: {body}"));
+    (
+        entry["payload"].clone(),
+        entry["payload_digest"]
+            .as_str()
+            .expect("digest")
+            .to_string(),
+    )
 }
