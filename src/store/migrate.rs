@@ -18,6 +18,7 @@ use crate::store::orm;
 use crate::store::schema_code::{CodeSymbols, code_symbols};
 use crate::store::schema_core::{SchemaMeta, schema_meta};
 use crate::store::schema_memory::{Memories, memories};
+use crate::store::schema_replica::{ReplicaStream, replica_stream};
 
 /// Pre-migration / pre-rebuild snapshots (`VACUUM INTO`, prune, stale-`.bak`
 /// validation). `pub(crate)` — an internal implementation detail of
@@ -38,7 +39,7 @@ pub(crate) mod preflight;
 /// it is what `schema_meta` stores and what several eval modules hash via
 /// `.as_bytes()` — not derived from [`CURRENT_VERSION_NUM`]: on the pinned
 /// stable toolchain `const … = &N.to_string()` fails with `E0015`.
-pub const CURRENT_VERSION: &str = "21";
+pub const CURRENT_VERSION: &str = "22";
 
 /// The same value numerically as [`CURRENT_VERSION`], for callers that need
 /// to compare or count migrations. Agreement between the two is asserted by
@@ -136,6 +137,10 @@ pub const M_V20: &str = include_str!("../../migrations/0020_candidate_observatio
 /// v21: the activity feed — `activity_log` (one row per instrumented command
 /// run) and `gc_runs.activity_rows`, the count its sweep evicts.
 pub const M_V21: &str = include_str!("../../migrations/0021_activity_log.sql");
+/// v22: the `replica-v1` journal — the stream epoch, immutable payloads, the
+/// ordered acceptance feed, per-entity revisions, the outgoing operation
+/// outbox, acceptance receipts, per-workspace cursors and staged parts (#250).
+pub const M_V22: &str = include_str!("../../migrations/0022_replica_journal.sql");
 
 /// Apply all pending migrations. Safe to re-run; each migration is only
 /// applied if its key is absent from `schema_meta`, and each post-apply
@@ -244,6 +249,35 @@ pub(crate) fn backfill_memory_simhash(conn: &mut Connection) -> Result<()> {
         &memories::simhash,
     )?;
     insert_marker(&tx, "0004_simhash_backfill")?;
+    tx.commit()?;
+    Ok(())
+}
+
+/// Mint this database's replication stream epoch. Runs exactly once, keyed
+/// `0022_replica_epoch` in `schema_meta`; the marker commits in the same
+/// transaction as the row, so a crash between the v22 apply and this pass
+/// re-mints on the next open rather than leaving an epoch-less stream.
+///
+/// The epoch cannot be a SQL default: it is 16 bytes of `/dev/urandom`, and
+/// a restored or replaced database must be distinguishable from the one a
+/// peer's cursor was taken against.
+pub(crate) fn mint_replica_epoch(conn: &mut Connection) -> Result<()> {
+    if marker_done(conn, "0022_replica_epoch") {
+        return Ok(());
+    }
+    let epoch = crate::store::random_id::random_hex(16)?;
+    let now = crate::store::memory_row::iso_format(time::OffsetDateTime::now_utc())?;
+    let tx = conn.transaction()?;
+    orm::execute(
+        &tx,
+        ReplicaStream::insert()
+            .set(&replica_stream::id, 1_i64)
+            .set(&replica_stream::epoch, epoch.as_str())
+            .set(&replica_stream::created_at, now.as_str())
+            .or_ignore()
+            .to_sql(),
+    )?;
+    insert_marker(&tx, "0022_replica_epoch")?;
     tx.commit()?;
     Ok(())
 }

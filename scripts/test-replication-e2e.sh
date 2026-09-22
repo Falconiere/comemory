@@ -11,7 +11,7 @@ ENGINE_ROOT="$(cd "$HERE/.." && pwd)"
 source "$HERE/lib/common.sh"
 
 # The coverage checker reads this list. Keep it in sync with coverage.json.
-CASES=(baseline missing-runtime teardown fault-ack corrupt credentials propagation lost-nudge coverage)
+CASES=(baseline missing-runtime teardown fault-ack corrupt credentials propagation lost-nudge coverage contract)
 
 case_name=""
 platform_root=""
@@ -102,6 +102,17 @@ os._exit(0)
   log_ok "replication" "teardown reaped the child"
 }
 
+# The engine-local contract suite: the replica-v1 journal, receipts and
+# ordering against real processes and real databases. Needs no platform
+# checkout, so public CI runs it.
+run_contract() {
+  (
+    cd "$ENGINE_ROOT"
+    cargo nextest run --all-features --test replica_contract --test replica_contract_2
+  )
+  log_ok "replication" "contract suite passed"
+}
+
 run_coverage() {
   bash "$HERE/check-replication-coverage.sh"
   local bad
@@ -183,5 +194,6 @@ case "$case_name" in
   missing-runtime) run_missing_runtime ;;
   teardown) run_teardown ;;
   coverage) run_coverage ;;
+  contract) run_contract ;;
   baseline | fault-ack | corrupt | credentials | propagation | lost-nudge) run_live ;;
 esac

@@ -16,6 +16,10 @@ pub mod delete;
 pub mod frontmatter;
 /// Deterministic 8-hex memory id derived from the body content hash.
 pub mod id;
+/// The journal rows a memory mutation owes — the legacy `sync_log` entry and
+/// the `replica-v1` feed position, payload and outbox row — in one
+/// transaction with the mirror write.
+pub mod journal;
 /// `comemory list` / `GET /memories`: page live memories.
 pub mod list;
 /// The one SQLite-mirror path every memory writer goes through: derive the
@@ -28,6 +32,9 @@ pub mod prior;
 pub mod references;
 /// `POST /memories/{id}/references/refresh`: re-pin anchors to HEAD.
 pub mod refresh_refs;
+/// `MemoryPayloadV1` — a memory's replicated metadata and body, and the
+/// canonical bytes a feed position names.
+pub mod replica_payload;
 /// `POST /memories/{id}/restore`, `POST /trash/{id}/restore`.
 pub mod restore;
 /// `comemory save` / `POST /memories`: write a memory and mirror it.

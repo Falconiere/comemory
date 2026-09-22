@@ -35,9 +35,10 @@ bash scripts/test-replication-e2e.sh \
 
 | Case | Where it runs | What it asserts |
 | --- | --- | --- |
-| `coverage` | engine | A manifest missing `G-2`, and a report with `tests_ran: 0`, are rejected |
+| `coverage` | engine | A manifest missing `G-2`, and a report with `tests_ran: 0`, are rejected. Feature issues add their own AC family (`F-1`…) mapped to their case |
 | `teardown` | engine | A child that ignores `SIGTERM` is gone within 15 seconds |
 | `missing-runtime` | engine | A binary that cannot print `--version` exits 2 |
+| `contract` | engine | The `replica-v1` journal against real processes: digests over metadata, replay receipts, conflicting bytes, epoch mismatch, envelope caps, staged activation, tombstone ordering, workspace scope, route classes, rebuild identity, and legacy-wire convergence (`--test replica_contract` / `replica_contract_2`) |
 | `baseline` | platform | A saved document slice reaches a second store; two workspaces are provisioned |
 | `fault-ack` | platform | A dropped sync acknowledgement converges to one file on the next sync |
 | `corrupt` | platform | One flipped request byte leaves the receiver empty |

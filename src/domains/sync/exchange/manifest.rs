@@ -22,6 +22,19 @@ pub fn run(ctx: &mut Ctx<'_>) -> Result<ManifestResponse> {
 /// Build the protocol's 256-bucket digest from an already authorized hash set.
 #[must_use]
 pub fn from_hashes(head_seq: i64, hashes: Vec<String>) -> ManifestResponse {
+    ManifestResponse {
+        buckets: bucket_digests(hashes),
+        head_seq,
+    }
+}
+
+/// Hash a digest set into 256 buckets keyed by its first two hex characters.
+///
+/// Shared with `replica::manifest` so both wire shapes bucket identically —
+/// two manifests that disagreed on bucketing would report a difference that
+/// is not there.
+#[must_use]
+pub fn bucket_digests(hashes: Vec<String>) -> Vec<String> {
     let mut buckets: Vec<Vec<String>> = vec![Vec::new(); BUCKET_COUNT];
     for hash in hashes {
         if hash.len() < 2 {
@@ -31,7 +44,7 @@ pub fn from_hashes(head_seq: i64, hashes: Vec<String>) -> ManifestResponse {
             buckets[idx].push(hash);
         }
     }
-    let digests = buckets
+    buckets
         .into_iter()
         .map(|mut hashes| {
             hashes.sort();
@@ -39,11 +52,7 @@ pub fn from_hashes(head_seq: i64, hashes: Vec<String>) -> ManifestResponse {
             let digest = Sha256::digest(joined.as_bytes());
             hex_encode(&digest)
         })
-        .collect();
-    ManifestResponse {
-        buckets: digests,
-        head_seq,
-    }
+        .collect()
 }
 
 fn bucket_index(prefix: &str) -> Option<usize> {

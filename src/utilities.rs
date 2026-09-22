@@ -23,6 +23,9 @@
 pub mod activity;
 /// The `spawn_blocking` bridge shared by the `serve` and `mcp` adapters.
 pub mod blocking;
+/// Canonical JSON encoding (sorted keys) and its SHA-256 digest — what a
+/// replicated payload is hashed and stored under.
+pub mod canonical_json;
 /// The transport-neutral execution context every command core runs against.
 pub mod context;
 /// The shared `<prefix>-<yyyymmdd>-<8hex>` id shape.

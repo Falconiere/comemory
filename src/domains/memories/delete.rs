@@ -11,8 +11,10 @@ use std::time::Instant;
 
 use crate::config::paths::Paths;
 use crate::domains::memories::MemoryStore;
+use crate::domains::memories::journal;
 use crate::prelude::*;
-use crate::store::{Connection, memory_purge, memory_row, sync_log};
+use crate::store::replica_journal::ReplicaOrigin;
+use crate::store::{Connection, memory_purge, memory_row};
 use crate::utilities::activity::{self, Outcome, command};
 use crate::utilities::context::Ctx;
 
@@ -53,44 +55,11 @@ pub fn run(ctx: &mut Ctx<'_>, id: &str) -> Result<Response> {
 fn delete_one(ctx: &mut Ctx<'_>, id: &str) -> Result<Response> {
     let paths = ctx.paths;
     let conn = ctx.conn()?;
-    let (deleted, content_hash, derived_stale) = soft_delete(paths, conn, id)?;
-    append_local_tombstone(conn, &deleted, &content_hash);
+    let removed = soft_delete(paths, conn, id, Some(ReplicaOrigin::Local), None)?;
     Ok(Response {
-        deleted,
-        derived_stale,
+        deleted: removed.id,
+        derived_stale: removed.derived_stale,
     })
-}
-
-/// Best-effort sync-log row for a local delete — the delete itself already
-/// committed, so a failure here is logged rather than propagated.
-fn append_local_tombstone(conn: &mut Connection, memory_id: &str, content_hash: &str) {
-    let at = match memory_row::iso_format(OffsetDateTime::now_utc()) {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::warn!(error = %e, "sync_log tombstone skipped: timestamp format failed");
-            return;
-        }
-    };
-    let result = (|| -> Result<()> {
-        let tx = conn.transaction()?;
-        sync_log::append(
-            &tx,
-            sync_log::SyncOp::Tombstone,
-            memory_id,
-            content_hash,
-            &at,
-            sync_log::SyncOrigin::Local,
-        )?;
-        tx.commit()?;
-        Ok(())
-    })();
-    if let Err(e) = result {
-        tracing::warn!(
-            memory_id,
-            error = %e,
-            "sync_log tombstone append failed after delete"
-        );
-    }
 }
 
 /// Soft-delete one memory: move the markdown file into `memories/.trash/`
@@ -108,12 +77,55 @@ pub(crate) fn soft_delete(
     paths: &Paths,
     conn: &mut Connection,
     id: &str,
-) -> Result<(String, String, bool)> {
+    journal_as: Option<ReplicaOrigin>,
+    at: Option<&str>,
+) -> Result<SoftDeleted> {
     let removed = MemoryStore::new(paths.clone()).delete(id)?;
     let content_hash = removed.frontmatter.content_hash.clone();
+    let repository = removed.frontmatter.repo.clone();
     let id = removed.frontmatter.id;
-    let derived_stale = mirror_soft_delete(conn, &id)?;
-    Ok((id, content_hash, derived_stale))
+    let tombstone = journal_as.map(|origin| Tombstone {
+        content_hash: content_hash.as_str(),
+        repository: (!repository.is_empty()).then_some(repository.as_str()),
+        origin,
+        at,
+    });
+    let (derived_stale, journalled) = mirror_soft_delete(conn, &id, tombstone)?;
+    Ok(SoftDeleted {
+        id,
+        derived_stale,
+        journalled,
+    })
+}
+
+/// What one soft-delete did.
+#[derive(Debug, Clone)]
+pub(crate) struct SoftDeleted {
+    /// Canonical id from the removed record's frontmatter.
+    pub id: String,
+    /// Whether the derived-artifact refresh that follows the mirror write
+    /// failed, leaving the relation index stale.
+    pub derived_stale: bool,
+    /// Where the deletion landed in each feed, when it was journalled — in the
+    /// same transaction as the mirror delete, so a caller never has to open a
+    /// second one to record it.
+    pub journalled: Option<journal::Positions>,
+}
+
+/// What a soft-delete journals, for the surfaces that replicate their
+/// deletions. `comemory prune`'s heal path passes `None`: it repairs a
+/// half-deleted memory rather than making a new deletion.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Tombstone<'a> {
+    /// Content hash the legacy `sync_log` row carries.
+    pub content_hash: &'a str,
+    /// Canonical repository, when the memory had one.
+    pub repository: Option<&'a str>,
+    /// Whether the deletion was made here or imported.
+    pub origin: ReplicaOrigin,
+    /// Provenance time to record. `None` stamps the delete's own clock, which
+    /// is right for a local deletion; an import passes the time the peer sent.
+    pub at: Option<&'a str>,
 }
 
 /// Mirror a soft-delete into `comemory.db` in one transaction: stamp
@@ -128,13 +140,32 @@ pub(crate) fn soft_delete(
 /// [`crate::domains::graph::derived`] refreshes both derived artifacts best-effort
 /// here, not at the [`soft_delete`] call site: every soft-delete surface
 /// (delete, prune apply, prune heal) then heals rank and triplets alike.
-pub(crate) fn mirror_soft_delete(conn: &mut Connection, id: &str) -> Result<bool> {
+pub(crate) fn mirror_soft_delete(
+    conn: &mut Connection,
+    id: &str,
+    tombstone: Option<Tombstone<'_>>,
+) -> Result<(bool, Option<journal::Positions>)> {
     let now = memory_row::iso_format(OffsetDateTime::now_utc())?;
     let tx = conn.transaction()?;
     memory_purge::soft_delete(&tx, id, &now)?;
+    let mut journalled = None;
+    if let Some(tombstone) = tombstone {
+        // In the delete's own transaction: a memory whose markdown is gone
+        // but whose deletion was never journalled would come back on the next
+        // pull.
+        journalled = Some(journal::record_tombstone(
+            &tx,
+            id,
+            tombstone.content_hash,
+            tombstone.repository,
+            tombstone.at.unwrap_or(now.as_str()),
+            tombstone.origin,
+        )?);
+    }
     tx.commit()?;
     // After the commit, so a failed refresh cannot roll back a delete that
     // succeeded — and reported rather than swallowed, since a stale
     // relation index is something the caller can pass on.
-    Ok(!crate::domains::graph::derived::refresh_derived_best_effort(conn))
+    let derived_stale = !crate::domains::graph::derived::refresh_derived_best_effort(conn);
+    Ok((derived_stale, journalled))
 }

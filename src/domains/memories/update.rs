@@ -19,10 +19,12 @@ use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 
+use crate::domains::memories::journal;
 use crate::domains::memories::save;
 use crate::domains::memories::{Frontmatter, Kind, MemoryRecord, MemoryStore, id, mirror};
 use crate::prelude::*;
-use crate::store::{memory_row, sync_log};
+use crate::store::memory_row;
+use crate::store::replica_journal::{ReplicaOp, ReplicaOrigin};
 use crate::utilities::activity::{self, Outcome, command};
 use crate::utilities::context::Ctx;
 
@@ -321,19 +323,20 @@ fn mirror_row(ctx: &mut Ctx<'_>, record: &MemoryRecord) -> Result<()> {
     Ok(())
 }
 
-/// Record a frontmatter-only patch in the sync log.
+/// Journal an edited record: the legacy `sync_log` row, the replica feed
+/// position and the outbox row it owes, in one transaction.
 fn append_local_upsert(ctx: &mut Ctx<'_>, record: &MemoryRecord) -> Result<()> {
     let conn = ctx.conn()?;
     let fm = &record.frontmatter;
     let at = memory_row::iso_format(fm.created)?;
     let tx = conn.transaction()?;
-    sync_log::append(
+    journal::record_write(
         &tx,
-        sync_log::SyncOp::Upsert,
-        &fm.id,
-        &fm.content_hash,
+        ReplicaOp::Upsert,
+        fm,
+        &record.body,
         &at,
-        sync_log::SyncOrigin::Local,
+        ReplicaOrigin::Local,
     )?;
     tx.commit()?;
     Ok(())

@@ -210,6 +210,12 @@ CLI verbs `auth` / `workspaces` / `link` / `sync` are platform clients
 | ○ `GET /sync/changes?since=&limit=` | *(engine)* | append-only log page; empty → `{entries:[], next_seq:null, head_seq}` through the envelope |
 | ● `POST /sync/import` | *(engine)* | batch apply (import rules 1–10); the managed Worker accepts top-level `repositories: {memoryId: canonicalOwnerName}` and strips it before forwarding. Per-entry `repo_not_allowed` is returned by the Worker policy gate |
 | ○ `GET /sync/manifest` | *(engine)* | 256 bucket hashes over live content hashes + `head_seq` |
+| ○ `GET /sync/replica/changes?since=&limit=&kind=&epoch=` | *(engine)* | `replica-v1` page above a cursor: each entry carries the payload accepted at that position and a `payload_state` (`present`/`absent`/`erased`). A foreign `epoch` is `409 epoch_mismatch` and a `since` past the head is `409 cursor_ahead`, never an empty page |
+| ○ `GET /sync/replica/manifest` | *(engine)* | stream epoch, head, `capabilities` (empty until journal seeding completes), per-kind live count + 256 bucket digests, and `bootstrap {state, seeded}` |
+| ○ `GET /sync/replica/events?since=&epoch=` | *(engine)* | notification-only frames `{sequence, entity_kind}` — resumable from any position, and carrying no content |
+| ● `POST /sync/replica/import` | *(engine)* | apply a `replica-v1` envelope (≤500 operations, ≤5 MiB): per-operation `accepted`/`duplicate`/`rejected_*`/`payload_erased` with the assigned `sequence`. A body carrying `workspace_id` is `400` — scope comes from the credential |
+| ● `POST /sync/replica/stage` | *(engine)* | one part of an oversized revision (`staging_id`, `part_index`, `part_count`, `bytes`); invisible to `changes`/`manifest` until activated |
+| ● `POST /sync/replica/activate` | *(engine)* | assemble a staged upload and accept it as one operation; a missing part is `409 staging_incomplete` |
 | ○ `GET /sync/code/manifest?repo=` | *(engine)* | the code-index half: `{repo, head, mined_commit, files:[{path, blob_oid}]}` — what the workspace holds for one label, empty for an unknown one |
 | ● `POST /sync/code/import` | *(engine)* | one batch of a repo's snippet-free projection (≤500 files): `{repo, head?, mined_commit?, files:[{path, blob_oid, symbols, imports}], removed:[path], cochange?:[{from,to,weight}]}` → `{applied, removed, rejected:[{path, reason}], head}`. Any rejection refuses the whole batch; rank is recomputed at the tail |
 

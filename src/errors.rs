@@ -132,6 +132,19 @@ pub enum Error {
     #[error("unavailable: {0}")]
     Unavailable(String),
 
+    /// A request cannot be served against current state, and retrying it
+    /// unchanged will not help until that state moves — a staged upload
+    /// missing a part, for instance. Maps to HTTP `409 conflict`.
+    #[error("conflict: {0}")]
+    Conflict(String),
+
+    /// A replication cursor was presented under a stream epoch this database
+    /// does not serve — a restored or replaced stream. Maps to HTTP `409
+    /// epoch_mismatch`: answering it with an empty page would let the peer
+    /// read a replaced stream as agreement.
+    #[error("epoch_mismatch: {0}")]
+    EpochMismatch(String),
+
     /// A `comemory serve` index run was requested for a repo that already
     /// has a queued or running `index-code` job. Maps to HTTP `409
     /// index_running` with `details: {repo, job_id}`; on the CLI path it

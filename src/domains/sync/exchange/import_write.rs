@@ -2,12 +2,13 @@
 
 use crate::config::Config;
 use crate::domains::memories::frontmatter::Frontmatter;
-use crate::domains::memories::{MemoryStore, SaveParams, mirror};
+use crate::domains::memories::{MemoryRecord, MemoryStore, SaveParams, journal, mirror};
 use crate::domains::sync::exchange::{
-    ImportEntry, ImportItemResult, ImportStatus, SyncOp, SyncRecord, SyncVector,
+    ImportEntry, ImportItemResult, ImportStatus, SyncRecord, SyncVector,
 };
 use crate::prelude::*;
-use crate::store::{Connection, embed, schema_meta, simhash_scan, sync_log, vector};
+use crate::store::replica_journal::{ReplicaOp, ReplicaOrigin};
+use crate::store::{Connection, embed, schema_meta, simhash_scan, vector};
 use crate::utilities::context::Ctx;
 
 const MEMORY_DIM: usize = 1024;
@@ -52,7 +53,15 @@ pub(crate) fn write_new_memory(
     if let Some(v) = vector.as_deref() {
         vector::replace_memory(&tx, &rec.frontmatter.id, v)?;
     }
-    let seq = log_sync_upsert(&tx, entry)?;
+    let seq = journal::record_write(
+        &tx,
+        ReplicaOp::Upsert,
+        &rec.frontmatter,
+        &rec.body,
+        &entry.at,
+        ReplicaOrigin::Sync,
+    )?
+    .legacy_seq;
     tx.commit()?;
     let _stale = crate::domains::graph::derived::refresh_derived_best_effort(conn);
     out.status = ImportStatus::Accepted;
@@ -62,12 +71,15 @@ pub(crate) fn write_new_memory(
 }
 
 /// Rule 8/9 — apply frontmatter from the wire onto a live markdown file.
+///
+/// Returns the patched record so the caller can journal it without reading
+/// the file back.
 pub(crate) fn patch_frontmatter(
     ctx: &mut Ctx<'_>,
     entry: &ImportEntry,
     record: &SyncRecord,
     author_override: Option<&str>,
-) -> Result<()> {
+) -> Result<MemoryRecord> {
     let store = MemoryStore::new(ctx.paths.clone());
     let mut rec = store.load(&entry.id)?;
     let fm = frontmatter_from_wire(record, author_override);
@@ -82,19 +94,7 @@ pub(crate) fn patch_frontmatter(
     }
     store.rewrite(&rec)?;
     crate::domains::memories::update::mirror_record(ctx, &rec)?;
-    Ok(())
-}
-
-/// Append an upsert row to `sync_log` inside the caller's transaction.
-pub(crate) fn log_sync_upsert(tx: &Connection, entry: &ImportEntry) -> Result<i64> {
-    sync_log::append(
-        tx,
-        SyncOp::Upsert,
-        &entry.id,
-        &entry.content_hash,
-        &entry.at,
-        sync_log::SyncOrigin::Sync,
-    )
+    Ok(rec)
 }
 
 fn frontmatter_from_wire(record: &SyncRecord, author_override: Option<&str>) -> Frontmatter {

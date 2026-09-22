@@ -254,3 +254,79 @@ fn stale_upsert_after_tombstone() {
 
     assert_eq!(resp.results[0].status, exchange::ImportStatus::Stale);
 }
+
+#[test]
+fn an_imported_tombstone_journals_both_feeds_in_the_delete_s_own_transaction() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let paths = Paths::new(home.path());
+    paths.ensure_dirs().expect("ensure_dirs");
+    let mut conn = connection::open(paths.db_path()).expect("open db");
+    let cfg = Config::defaults();
+    let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+
+    let body = "An imported deletion must never outlive the record of it.";
+    save::run(
+        &mut ctx,
+        save::Request {
+            body: body.to_string(),
+            title: None,
+            kind: Kind::Note,
+            repo: "demo".into(),
+            tags: Vec::new(),
+            author: String::new(),
+            quality: 3,
+            supersedes: Vec::new(),
+            vector: None,
+            ref_file: Vec::new(),
+            ref_symbol: Vec::new(),
+        },
+        false,
+        None,
+    )
+    .expect("seed save");
+    let id = memory_id(body);
+
+    let resp = exchange::import::run(
+        &mut ctx,
+        exchange::ImportRequest {
+            cursor: 0,
+            entries: vec![import_entry(body, SyncOp::Tombstone)],
+        },
+        None,
+    )
+    .expect("import");
+    assert_eq!(resp.results[0].status, exchange::ImportStatus::Accepted);
+
+    let conn = ctx.conn().expect("conn");
+    // The markdown is gone, and BOTH feeds recorded why — written inside the
+    // delete's transaction, so no crash window can drop the tombstone and let
+    // the next pull resurrect the memory.
+    assert!(
+        MemoryStore::new(paths.clone()).load(&id).is_err(),
+        "the import deleted the memory"
+    );
+    assert!(
+        sync_log::latest_tombstone_seq(conn, &id)
+            .expect("legacy seq")
+            .is_some(),
+        "the legacy feed carries the tombstone"
+    );
+    let revision = comemory::store::replica_read::revision(conn, "memory", &id)
+        .expect("revision")
+        .expect("the replica feed carries it too");
+    assert!(revision.deleted);
+    assert_eq!(
+        revision.deleted_sequence,
+        Some(revision.sequence),
+        "the tombstone records its own position"
+    );
+
+    let deleted_at: Option<String> = conn
+        .query_row(
+            "SELECT deleted_at FROM memories WHERE id = ?1",
+            [&id],
+            |r| r.get(0),
+        )
+        .expect("mirror row");
+    assert!(deleted_at.is_some(), "the mirror row is soft-deleted");
+}

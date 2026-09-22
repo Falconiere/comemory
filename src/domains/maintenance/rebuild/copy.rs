@@ -22,6 +22,13 @@ use crate::store::Connection;
 /// partial copy is exactly why the live table must not be silently dropped
 /// from either list.
 ///
+/// The `replica-v1` journal (#250) is copied for the same reason as the sync
+/// tables, one step stronger: its sequences and receipts are the answers this
+/// engine already gave peers. Re-deriving them from markdown would hand out
+/// positions that were already issued and would turn every replayed operation
+/// into a second effect. `replica_staged_part` is the exception — an upload
+/// that never activated published nothing, so a peer re-stages it.
+///
 /// The three candidate-observation tables (#209) are copied for the strongest
 /// reason on this list: a reviewed relevance judgment is human work, and the
 /// bounded passage it was made against is a snapshot of content that may
@@ -54,6 +61,13 @@ pub(crate) const COPIED_TABLES: &[&str] = &[
     "candidate_query_observations",
     "candidate_observations",
     "candidate_judgments",
+    "replica_stream",
+    "replica_payload",
+    "replica_feed",
+    "replica_revision",
+    "replica_operation",
+    "replica_receipt",
+    "replica_cursor",
 ];
 
 /// Live tables a rebuild deliberately does not copy, each with its reason.
@@ -82,6 +96,10 @@ pub(crate) const RECONSTRUCTABLE_TABLES: &[(&str, &str)] = &[
         "reconciled from sources.toml by source::mirror",
     ),
     ("schema_meta", "owned by the migration runner"),
+    (
+        "replica_staged_part",
+        "incomplete uploads; a peer re-stages what it never activated",
+    ),
 ];
 
 /// Run the allowlist sanity check, then attach `old_db` and copy every

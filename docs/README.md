@@ -84,6 +84,10 @@ Understanding-oriented background:
 - **[Replication harness](designs/2026-09-21-replication-e2e-harness.md)** —
   the real-process cases and coverage gate for cross-machine sync. The
   how-to is [replication-e2e](guides/replication-e2e.md).
+- **[Replica-v1 journal](designs/2026-09-21-replica-v1-journal.md)** — the
+  versioned replication journal, immutable payloads, acceptance receipts,
+  server-ordered sequences and epoch-bearing cursors behind
+  `/api/v1/sync/replica/*`.
 - **[Domain-first migration contract](designs/2026-09-17-domain-first-migration.md)** —
   staged, behavior-preserving migration of the Rust CLI from technical layers
   to business capabilities.

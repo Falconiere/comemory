@@ -59,6 +59,8 @@ pub mod push;
 pub mod push_on_save;
 /// Curated secret scan (`rules.toml`) before a memory is enqueued for push.
 pub mod redact;
+/// The `replica-v1` journal protocol: contract, acceptance, reads.
+pub mod replica;
 /// Strict `github.com` remote parsing into lowercase `owner/name` identities.
 pub mod repository_identity;
 /// Server policy resolved against local checkout remotes and legacy mappings.

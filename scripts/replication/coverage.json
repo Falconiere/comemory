@@ -1,12 +1,55 @@
 {
   "version": 1,
   "acs": {
-    "G-1": ["baseline"],
-    "G-2": ["baseline"],
-    "G-3": ["baseline"],
-    "G-4": ["coverage"],
-    "G-5": ["missing-runtime", "baseline"],
-    "G-6": ["teardown", "fault-ack", "corrupt", "credentials"],
-    "G-7": ["propagation", "lost-nudge"]
+    "G-1": [
+      "baseline"
+    ],
+    "G-2": [
+      "baseline"
+    ],
+    "G-3": [
+      "baseline"
+    ],
+    "G-4": [
+      "coverage"
+    ],
+    "G-5": [
+      "missing-runtime",
+      "baseline"
+    ],
+    "G-6": [
+      "teardown",
+      "fault-ack",
+      "corrupt",
+      "credentials"
+    ],
+    "G-7": [
+      "propagation",
+      "lost-nudge"
+    ],
+    "F-1": [
+      "contract"
+    ],
+    "F-2": [
+      "contract"
+    ],
+    "F-3": [
+      "contract"
+    ],
+    "F-4": [
+      "contract"
+    ],
+    "F-5": [
+      "contract"
+    ],
+    "F-6": [
+      "contract"
+    ],
+    "F-7": [
+      "contract"
+    ],
+    "F-8": [
+      "contract"
+    ]
   }
 }

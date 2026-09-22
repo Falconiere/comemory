@@ -22,10 +22,12 @@ use std::time::Instant;
 
 use serde::Serialize;
 
+use crate::domains::memories::journal;
 use crate::domains::memories::{MemoryRecord, MemoryStore};
 use crate::prelude::*;
 use crate::store::edges::{self, EdgeKey};
-use crate::store::{Connection, memory_row, sync_log};
+use crate::store::replica_journal::{ReplicaOp, ReplicaOrigin};
+use crate::store::{Connection, memory_row};
 use crate::utilities::activity::{self, Outcome, command};
 use crate::utilities::context::Ctx;
 
@@ -155,18 +157,19 @@ fn relink_incoming(conn: &Connection, live: &[MemoryRecord], id: &str) -> Result
     Ok(emitted)
 }
 
-/// Append a local-origin restore row after the mirror succeeds.
+/// Journal a restore after the mirror succeeds: the legacy `sync_log` row,
+/// the replica feed position and the outbox row it owes, in one transaction.
 fn append_local_restore(conn: &mut Connection, record: &MemoryRecord) -> Result<()> {
     let fm = &record.frontmatter;
     let at = memory_row::iso_format(fm.created)?;
     let tx = conn.transaction()?;
-    sync_log::append(
+    journal::record_write(
         &tx,
-        sync_log::SyncOp::Restore,
-        &fm.id,
-        &fm.content_hash,
+        ReplicaOp::Restore,
+        fm,
+        &record.body,
         &at,
-        sync_log::SyncOrigin::Local,
+        ReplicaOrigin::Local,
     )?;
     tx.commit()?;
     Ok(())

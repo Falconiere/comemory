@@ -30,8 +30,9 @@ jobs:
       # rather than truncated, at unbounded model-call cost; pin
       # MAX_CHUNKS: 20 to restore the old cap. v7 also dropped file-level
       # fallback comments (unanchorable findings now land in the sticky
-      # comment only) and changed that comment's layout.
-      - uses: falconiere/toolu-ghactions/code-review@v7
+      # comment only) and changed that comment's layout. v8 adds the Jev
+      # inputs below.
+      - uses: falconiere/toolu-ghactions/code-review@v8
         with:
           # OpenRouter rather than a vendor's native API: one key and one
           # billing account cover every model, so swapping the reviewer is a
@@ -41,6 +42,13 @@ jobs:
           PROVIDER: openrouter
           MODEL_ID: deepseek/deepseek-v4-pro
           API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          # Jev assesses each finding and routes it by risk, over the same
+          # OpenRouter key and the same review deadline — no second secret and
+          # no second budget. The model id is pinned rather than left to the
+          # action's default so an upstream default change cannot silently
+          # swap the assessor, exactly as MODEL_ID above is pinned.
+          JEV_ENABLED: 'true'
+          JEV_MODEL_ID: typesafe/jev-1.13
           # Advisory, not gating: the review still runs, still posts its
           # findings, and still uploads SARIF — it just does not fail the
           # job on a "changes requested" verdict. The verdict is a model's

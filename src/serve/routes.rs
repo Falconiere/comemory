@@ -78,6 +78,8 @@ pub mod search;
 pub mod search_body;
 /// `GET /sync/{changes,manifest}`, `POST /sync/import`.
 pub mod sync;
+/// `GET|POST /sync/replica/*` — the `replica-v1` journal surface.
+pub mod sync_replica;
 /// `GET /trash`, `POST /trash/{id}/restore`.
 pub mod trash;
 
@@ -146,6 +148,7 @@ pub fn table() -> Vec<RouteEntry> {
     entries.extend_from_slice(search::table_entries());
     entries.extend_from_slice(trash::table_entries());
     entries.extend_from_slice(sync::table_entries());
+    entries.extend_from_slice(sync_replica::table_entries());
     entries.extend_from_slice(activity::table_entries());
     entries.extend_from_slice(activity_stream::table_entries());
     entries
@@ -180,7 +183,8 @@ pub fn v1_router(state: AppState) -> Router<AppState> {
         .merge(trash::router(state.clone()))
         .merge(activity::router(state.clone()))
         .merge(activity_stream::router(state.clone()))
-        .merge(sync::router(state))
+        .merge(sync::router(state.clone()))
+        .merge(sync_replica::router(state))
 }
 
 /// `GET /api/v1/health` — the capability probe: read-only mode, the binary
