@@ -60,6 +60,16 @@ pub struct Operation {
     /// Canonical repository, when the entity has one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repository: Option<String>,
+    /// The peer's embedding for this revision, when it has one.
+    ///
+    /// Deliberately OUTSIDE `payload_digest`: the digest is taken over
+    /// `payload` alone, so re-embedding a memory cannot mint a new revision
+    /// and two engines holding the same text agree on its identity whether or
+    /// not either has a vector. An engine that cannot use the embedding
+    /// stores the text anyway and records the id as needing one
+    /// ([`crate::domains::sync::vector_rule`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vector: Option<crate::domains::sync::exchange::SyncVector>,
 }
 
 /// `POST /sync/replica/import` request body.

@@ -747,6 +747,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/domains/sync/repository_identity.rs | comemory::domains::sync::repository_identity; preserve | src/domains/sync/tests/repository_identity.rs | none | domains::sync | src/domains/sync/repository_identity.rs | retain |
 | src/domains/sync/repository_policy.rs | comemory::domains::sync::repository_policy; preserve | src/domains/sync/tests/repository_policy.rs | none | domains::sync | src/domains/sync/repository_policy.rs | retain |
 | src/domains/sync/skip_repos.rs | comemory::domains::sync::skip_repos; crate-root-alias | src/domains/sync/tests/skip_repos.rs | none | domains::sync | src/domains/sync/skip_repos.rs | retain |
+| src/domains/sync/vector_rule.rs | comemory::domains::sync::vector_rule; preserve | src/domains/sync/tests/vector_rule.rs | none | domains::sync | src/domains/sync/vector_rule.rs | retain |
 | src/domains/sync/verify.rs | comemory::domains::sync::verify; crate-root-alias | src/domains/sync/tests/verify.rs | none | domains::sync | src/domains/sync/verify.rs | retain |
 | src/domains/sync/watch.rs | comemory::domains::sync::watch; preserve | src/domains/sync/tests/watch.rs | none | domains::sync | src/domains/sync/watch.rs | retain |
 | src/errors.rs | comemory::errors; preserve | none | none | shared::root | src/errors.rs | retain |

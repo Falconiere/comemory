@@ -3,15 +3,12 @@
 use crate::config::Config;
 use crate::domains::memories::frontmatter::Frontmatter;
 use crate::domains::memories::{MemoryRecord, MemoryStore, SaveParams, journal, mirror};
-use crate::domains::sync::exchange::{
-    ImportEntry, ImportItemResult, ImportStatus, SyncRecord, SyncVector,
-};
+use crate::domains::sync::exchange::{ImportEntry, ImportItemResult, ImportStatus, SyncRecord};
+use crate::domains::sync::vector_rule;
 use crate::prelude::*;
 use crate::store::replica_journal::{ReplicaOp, ReplicaOrigin};
-use crate::store::{Connection, embed, schema_meta, simhash_scan, vector};
+use crate::store::{Connection, simhash_scan};
 use crate::utilities::context::Ctx;
-
-const MEMORY_DIM: usize = 1024;
 
 /// Rule 10 — write a new memory from the wire record.
 pub(crate) fn write_new_memory(
@@ -25,7 +22,9 @@ pub(crate) fn write_new_memory(
     let paths = ctx.paths.clone();
     let conn = ctx.conn()?;
     let duplicate_of = near_duplicate(conn, &record.body, &entry.id, cfg.rank.near_dup_hamming);
-    let vector = decode_vector(conn, record.vector.as_ref())?;
+    // The same rule the replica wire applies: an unusable vector never
+    // refuses the memory, it lands in the needs-embedding backlog instead.
+    let verdict = vector_rule::decide(conn, record.vector.as_ref())?;
     let fm = frontmatter_from_wire(record, author_override);
     let params = SaveParams {
         body: &record.body,
@@ -50,9 +49,7 @@ pub(crate) fn write_new_memory(
         &md_path,
         &rec.frontmatter.tags,
     )?;
-    if let Some(v) = vector.as_deref() {
-        vector::replace_memory(&tx, &rec.frontmatter.id, v)?;
-    }
+    vector_rule::apply(&tx, &rec.frontmatter.id, &verdict, &entry.at)?;
     let seq = journal::record_write(
         &tx,
         ReplicaOp::Upsert,
@@ -113,21 +110,6 @@ fn frontmatter_from_wire(record: &SyncRecord, author_override: Option<&str>) -> 
         references: wire.references.clone(),
         relations: wire.relations.clone(),
     }
-}
-
-fn decode_vector(conn: &Connection, wire: Option<&SyncVector>) -> Result<Option<Vec<f32>>> {
-    let Some(wire) = wire else {
-        return Ok(None);
-    };
-    let model = schema_meta::memory_vector_model(conn)?;
-    if wire.model != model || wire.dims as usize != MEMORY_DIM {
-        return Ok(None);
-    }
-    let bytes = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &wire.f32)
-        .map_err(|e| Error::BadRequest(format!("vector base64: {e}")))?;
-    let values = embed::from_vec_blob(&bytes, MEMORY_DIM)?;
-    embed::guard_dim(&values, MEMORY_DIM)?;
-    Ok(Some(values))
 }
 
 fn near_duplicate(conn: &Connection, body: &str, self_id: &str, radius: u32) -> Option<String> {

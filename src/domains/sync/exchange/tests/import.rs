@@ -330,3 +330,147 @@ fn an_imported_tombstone_journals_both_feeds_in_the_delete_s_own_transaction() {
         .expect("mirror row");
     assert!(deleted_at.is_some(), "the mirror row is soft-deleted");
 }
+
+// ---------------------------------------------------------------------------
+// #251: the legacy wire and the replica wire reach the SAME verdict on the
+// same vector. Both go through `domains::sync::vector_rule`; these cases pin
+// the legacy half, and `replica::accept`'s tests pin the other.
+// ---------------------------------------------------------------------------
+
+/// A real base64 wire vector of `dims` little-endian `f32`s.
+fn wire_vector(model: &str, dims: u32) -> exchange::SyncVector {
+    let mut values = vec![0.0_f32; dims as usize];
+    if let Some(first) = values.first_mut() {
+        *first = 1.0;
+    }
+    let bytes: Vec<u8> = values.iter().flat_map(|v| v.to_le_bytes()).collect();
+    exchange::SyncVector {
+        model: model.to_string(),
+        dims,
+        f32: base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes),
+    }
+}
+
+/// An upsert entry carrying `vector`.
+fn import_entry_with_vector(body: &str, vector: exchange::SyncVector) -> exchange::ImportEntry {
+    let mut entry = import_entry(body, SyncOp::Upsert);
+    if let Some(record) = entry.record.as_mut() {
+        record.vector = Some(vector);
+    }
+    entry
+}
+
+#[test]
+fn the_legacy_wire_stores_a_compatible_vector_once() {
+    let body = "connection pooling keeps the handshake off the hot path";
+    let home = tempfile::tempdir().expect("tempdir");
+    let paths = Paths::new(home.path());
+    paths.ensure_dirs().expect("ensure_dirs");
+    let mut conn = connection::open(paths.db_path()).expect("open db");
+    let cfg = Config::defaults();
+    let model = comemory::store::schema_meta::memory_vector_model(&conn).expect("model");
+
+    for _ in 0..2 {
+        let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+        exchange::import::run(
+            &mut ctx,
+            exchange::ImportRequest {
+                cursor: 0,
+                entries: vec![import_entry_with_vector(body, wire_vector(&model, 1024))],
+            },
+            Some("device-user"),
+        )
+        .expect("import");
+    }
+
+    let id = memory_id(body);
+    assert!(
+        comemory::store::vector::memory_embedding_blob(&conn, &id)
+            .expect("blob")
+            .is_some()
+    );
+    let rows: i64 = conn
+        .query_row("SELECT count(*) FROM memory_vec", [], |r| r.get(0))
+        .expect("count");
+    assert_eq!(rows, 1, "a replay replaces rather than duplicates");
+    assert_eq!(
+        comemory::store::needs_embedding::pending_count(&conn).expect("count"),
+        0
+    );
+}
+
+#[test]
+fn the_legacy_wire_drops_a_foreign_model_and_records_it_as_needing_an_embedding() {
+    let body = "advisory locks serialize the writer without blocking readers";
+    let home = tempfile::tempdir().expect("tempdir");
+    let paths = Paths::new(home.path());
+    paths.ensure_dirs().expect("ensure_dirs");
+    let mut conn = connection::open(paths.db_path()).expect("open db");
+    let cfg = Config::defaults();
+
+    {
+        let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+        exchange::import::run(
+            &mut ctx,
+            exchange::ImportRequest {
+                cursor: 0,
+                entries: vec![import_entry_with_vector(
+                    body,
+                    wire_vector("text-embedding-3-small", 1024),
+                )],
+            },
+            Some("device-user"),
+        )
+        .expect("import");
+    }
+
+    let id = memory_id(body);
+    assert!(
+        MemoryStore::new(paths.clone()).load(&id).is_ok(),
+        "the memory text lands regardless"
+    );
+    let pending = comemory::store::needs_embedding::pending(&conn).expect("pending");
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].memory_id, id);
+    assert_eq!(
+        pending[0].reason,
+        comemory::store::needs_embedding::Reason::Model
+    );
+    assert_eq!(pending[0].model.as_deref(), Some("text-embedding-3-small"));
+    assert!(
+        comemory::store::vector::memory_embedding_blob(&conn, &id)
+            .expect("blob")
+            .is_none()
+    );
+}
+
+#[test]
+fn the_legacy_wire_records_an_absent_vector_as_a_backlog_entry() {
+    let body = "the writer reservation is taken before the index walk";
+    let home = tempfile::tempdir().expect("tempdir");
+    let paths = Paths::new(home.path());
+    paths.ensure_dirs().expect("ensure_dirs");
+    let mut conn = connection::open(paths.db_path()).expect("open db");
+    let cfg = Config::defaults();
+
+    {
+        let mut ctx = Ctx::borrowed(&paths, &cfg, &mut conn);
+        exchange::import::run(
+            &mut ctx,
+            exchange::ImportRequest {
+                cursor: 0,
+                entries: vec![import_entry(body, SyncOp::Upsert)],
+            },
+            Some("device-user"),
+        )
+        .expect("import");
+    }
+
+    let pending = comemory::store::needs_embedding::pending(&conn).expect("pending");
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].memory_id, memory_id(body));
+    assert_eq!(
+        pending[0].reason,
+        comemory::store::needs_embedding::Reason::Absent
+    );
+}

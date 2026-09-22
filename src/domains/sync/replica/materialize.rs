@@ -12,6 +12,7 @@
 use crate::domains::memories::replica_payload::MemoryPayloadV1;
 use crate::domains::memories::{MemoryStore, SaveParams, journal, mirror};
 use crate::domains::sync::replica::contract::{Disposition, Operation, OperationResult};
+use crate::domains::sync::vector_rule;
 use crate::prelude::*;
 use crate::store::replica_journal::{ReplicaOp, ReplicaOrigin};
 use crate::store::replica_receipt::{self, Receipt};
@@ -34,6 +35,10 @@ pub(crate) fn apply(
     // transaction, so it moves first; the database half then commits as one
     // unit below.
     let prepared = prepare_markdown(ctx, operation)?;
+    // Judged before the transaction opens, because it reads
+    // `schema_meta.memory_vector_model`; carried out inside it, so a memory is
+    // never accepted without its vector decision landing with it.
+    let verdict = vector_rule::decide(ctx.conn()?, operation.vector.as_ref())?;
     let sequence = commit_acceptance(ctx, epoch, operation, &at, |tx| match &prepared {
         Prepared::Written(record) => {
             mirror::insert_row(
@@ -44,6 +49,7 @@ pub(crate) fn apply(
                 &record.path.to_string_lossy(),
                 &record.frontmatter.tags,
             )?;
+            vector_rule::apply(tx, &record.frontmatter.id, &verdict, &at)?;
             Ok(journal::record_write(
                 tx,
                 operation.op,

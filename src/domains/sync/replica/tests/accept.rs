@@ -251,3 +251,125 @@ fn a_refused_operation_replays_as_the_same_refusal() {
     );
     assert_eq!(replica_read::head(&peer.conn).expect("head"), 0);
 }
+
+// ---------------------------------------------------------------------------
+// #251: the peer's embedding rides alongside the payload, never inside it.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn the_same_operation_hashes_identically_with_and_without_its_vector() {
+    let mut author = Home::new();
+    let id = author.save(BODY, &["sync"]);
+    let payload = author.payload(&id);
+
+    let plain = upsert("op-20260922-aaaaaaaa", &payload);
+    let vectored = support::upsert_with_vector(
+        "op-20260922-aaaaaaaa",
+        &payload,
+        support::wire_vector("bge-small-en-v1.5", 1024),
+    );
+
+    assert_eq!(
+        plain.payload, vectored.payload,
+        "the embedding is not part of the payload"
+    );
+    assert_eq!(
+        plain.payload_digest, vectored.payload_digest,
+        "so re-embedding a memory cannot mint a new revision"
+    );
+}
+
+#[test]
+fn an_accepted_operation_carrying_a_usable_vector_stores_it_once() {
+    let mut author = Home::new();
+    let id = author.save(BODY, &["sync"]);
+    let payload = author.payload(&id);
+    let mut peer = Home::new();
+    let model = crate::store::schema_meta::memory_vector_model(&peer.conn).expect("model");
+    let operation = support::upsert_with_vector(
+        "op-20260922-vector01",
+        &payload,
+        support::wire_vector(&model, 1024),
+    );
+
+    let mut ctx = peer.ctx();
+    let first = accept::run(&mut ctx, envelope(vec![operation.clone()])).expect("accept");
+    assert_eq!(first.results[0].disposition, Disposition::Accepted);
+    let mut ctx = peer.ctx();
+    let replay = accept::run(&mut ctx, envelope(vec![operation])).expect("replay");
+    assert_eq!(
+        replay.results[0].disposition,
+        Disposition::Duplicate,
+        "the second delivery reads back its receipt rather than re-applying"
+    );
+
+    assert!(
+        crate::store::vector::memory_embedding_blob(&peer.conn, &id)
+            .expect("blob")
+            .is_some(),
+        "the peer's embedding landed"
+    );
+    let rows: i64 = peer
+        .conn
+        .query_row("SELECT count(*) FROM memory_vec", [], |r| r.get(0))
+        .expect("count");
+    assert_eq!(rows, 1, "a replay stores no second row");
+    assert_eq!(
+        crate::store::needs_embedding::pending_count(&peer.conn).expect("count"),
+        0
+    );
+    assert_eq!(
+        replica_read::head(&peer.conn).expect("head"),
+        1,
+        "and one acceptance, not two"
+    );
+}
+
+#[test]
+fn a_foreign_vector_still_stores_the_memory_and_records_the_backlog() {
+    let mut author = Home::new();
+    let id = author.save(BODY, &["sync"]);
+    let payload = author.payload(&id);
+    let mut peer = Home::new();
+    let operation = support::upsert_with_vector(
+        "op-20260922-foreign1",
+        &payload,
+        support::wire_vector("text-embedding-3-small", 1024),
+    );
+
+    let mut ctx = peer.ctx();
+    let response = accept::run(&mut ctx, envelope(vec![operation])).expect("accept");
+
+    assert_eq!(
+        response.results[0].disposition,
+        Disposition::Accepted,
+        "an unusable vector must never refuse the memory"
+    );
+    assert!(
+        MemoryStore::new(peer.paths.clone()).load(&id).is_ok(),
+        "the text is on disk"
+    );
+    let pending = crate::store::needs_embedding::pending(&peer.conn).expect("pending");
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].memory_id, id);
+    assert_eq!(pending[0].reason, crate::store::needs_embedding::Reason::Model);
+    assert_eq!(pending[0].model.as_deref(), Some("text-embedding-3-small"));
+}
+
+#[test]
+fn an_operation_with_no_vector_records_the_memory_as_needing_one() {
+    let (mut peer, operation) = peer_and_operation();
+    let entity_key = operation.entity_key.clone();
+
+    let mut ctx = peer.ctx();
+    accept::run(&mut ctx, envelope(vec![operation])).expect("accept");
+
+    let pending = crate::store::needs_embedding::pending(&peer.conn).expect("pending");
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].memory_id, entity_key);
+    assert_eq!(
+        pending[0].reason,
+        crate::store::needs_embedding::Reason::Absent,
+        "the peer sent no vector, which is a backlog entry rather than a failure"
+    );
+}
