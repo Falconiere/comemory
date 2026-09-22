@@ -90,9 +90,9 @@ pub(super) fn needs_embedding_check(conn: &Connection) -> Result<Check> {
             "embedding backlog",
             "warn",
             format!(
-                "{pending} memor{} stored without a usable vector; semantic search \
+                "{pending} {noun} stored without a usable vector; semantic search \
                  will not reach them until they are re-embedded",
-                if pending == 1 { "y" } else { "ies" }
+                noun = if pending == 1 { "memory" } else { "memories" }
             ),
         )
         .with_remedy("POST /api/v1/doctor/reembed")
