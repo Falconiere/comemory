@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.44.0] - 2026-09-22
+
+### Added
+
+- add the replica-v1 journal, receipts and server-ordered protocol ([#272](https://github.com/Falconiere/comemory/pull/272))
+
 ## [0.43.2] - 2026-09-21
 
 ### Added
