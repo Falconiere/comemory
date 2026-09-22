@@ -33,7 +33,7 @@ pub(super) fn persist(
     memory_intent::record(
         conn,
         &Intent {
-            entity_key,
+            entity_key: entity_key.clone(),
             kind: IntentKind::Write,
             md_path: store
                 .planned_path(params.body)
@@ -45,19 +45,21 @@ pub(super) fn persist(
     )?;
     let rec = store.save(params)?;
     let md_path = rec.path.clone();
-    write_sqlite_mirror(conn, &rec, &tags, vector_opt, &operation_id).map_err(|e| {
-        if crate::store::busy::is_locked(&e) {
-            // Keep the retryable error class through CLI, HTTP and MCP.
-            // Retrying this content-derived save safely repairs the mirror.
-            return e;
-        }
-        Error::Other(format!(
-            "save: markdown at {} was written but SQLite mirror failed: {}; \
-             run `comemory rebuild` to reconcile",
-            md_path.display(),
-            e
-        ))
-    })?;
+    write_sqlite_mirror(conn, &rec, &tags, vector_opt, &operation_id, &entity_key).map_err(
+        |e| {
+            if crate::store::busy::is_locked(&e) {
+                // Keep the retryable error class through CLI, HTTP and MCP.
+                // Retrying this content-derived save safely repairs the mirror.
+                return e;
+            }
+            Error::Other(format!(
+                "save: markdown at {} was written but SQLite mirror failed: {}; \
+                 run `comemory rebuild` to reconcile",
+                md_path.display(),
+                e
+            ))
+        },
+    )?;
     let _stale = crate::domains::graph::derived::refresh_derived_best_effort(conn);
     Ok(rec)
 }
@@ -72,6 +74,7 @@ fn write_sqlite_mirror(
     tags: &[String],
     vector_opt: Option<&[f32]>,
     operation_id: &str,
+    entity_key: &str,
 ) -> Result<()> {
     let tx = crate::store::connection::write_transaction(conn)?;
     let fm = &rec.frontmatter;
@@ -93,8 +96,11 @@ fn write_sqlite_mirror(
         Some(operation_id),
     )?;
     // Inside this transaction, never after it: clearing in a later one would
-    // reopen the same crash window a statement wide.
-    memory_intent::clear(&tx, &fm.id)?;
+    // reopen the same crash window a statement wide. Cleared by the key the
+    // intent was RECORDED under rather than by `fm.id`: the two are equal by
+    // construction (both are `memory_id` of the same body), but a reader
+    // should not have to prove that to see the pair match.
+    memory_intent::clear(&tx, entity_key)?;
     tx.commit()?;
     Ok(())
 }
