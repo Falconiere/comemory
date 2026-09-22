@@ -819,6 +819,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/store/code_feedback.rs | comemory::store::code_feedback; preserve | src/store/tests/code_feedback.rs | none | infrastructure::store | src/store/code_feedback.rs | retain |
 | src/store/code_graph_edges.rs | comemory::store::code_graph_edges; preserve | src/store/tests/code_graph_edges.rs | none | infrastructure::store | src/store/code_graph_edges.rs | retain |
 | src/store/code_graph_nodes.rs | comemory::store::code_graph_nodes; preserve | src/store/tests/code_graph_nodes.rs | none | infrastructure::store | src/store/code_graph_nodes.rs | retain |
+| src/store/code_generation.rs | comemory::store::code_generation; preserve | src/store/tests/code_generation.rs | none | infrastructure::store | src/store/code_generation.rs | retain |
 | src/store/code_ref.rs | comemory::store::code_ref; preserve | src/store/tests/code_ref.rs | none | infrastructure::store | src/store/code_ref.rs | retain |
 | src/store/code_row.rs | comemory::store::code_row; preserve | src/store/tests/code_row.rs | none | infrastructure::store | src/store/code_row.rs | retain |
 | src/store/code_signals.rs | comemory::store::code_signals; preserve | src/store/tests/code_signals.rs | none | infrastructure::store | src/store/code_signals.rs | retain |
@@ -887,6 +888,7 @@ telemetry vocabulary; SimHash is a shared utility, so neither is a domain callba
 | src/store/replica_read.rs | comemory::store::replica_read; preserve | src/store/tests/replica_read.rs | none | infrastructure::store | src/store/replica_read.rs | retain |
 | src/store/replica_receipt.rs | comemory::store::replica_receipt; preserve | src/store/tests/replica_receipt.rs | none | infrastructure::store | src/store/replica_receipt.rs | retain |
 | src/store/replica_outbox.rs | comemory::store::replica_outbox; preserve | src/store/tests/replica_outbox.rs | none | infrastructure::store | src/store/replica_outbox.rs | retain |
+| src/store/remote_code.rs | comemory::store::remote_code; preserve | src/store/tests/remote_code.rs | none | infrastructure::store | src/store/remote_code.rs | retain |
 | src/store/replica_cursor.rs | comemory::store::replica_cursor; preserve | src/store/tests/replica_cursor.rs | none | infrastructure::store | src/store/replica_cursor.rs | retain |
 | src/store/replica_staging.rs | comemory::store::replica_staging; preserve | src/store/tests/replica_staging.rs | none | infrastructure::store | src/store/replica_staging.rs | retain |
 | src/store/memory_intent.rs | comemory::store::memory_intent; preserve | src/store/tests/memory_intent.rs | none | infrastructure::store | src/store/memory_intent.rs | retain |

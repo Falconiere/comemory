@@ -36,6 +36,7 @@ pub mod candidate_observations;
 /// `code_feedback` row CRUD: per-symbol counter table + code-tagged
 /// `feedback_events` inserts.
 pub mod code_feedback;
+pub mod code_generation;
 /// Dynamic, paginated file→file `edges` window behind `comemory graph`.
 pub mod code_graph_edges;
 /// `code_symbols` node aggregation behind `comemory graph`'s node assembly.
@@ -144,6 +145,7 @@ pub mod rebuild_copy_learning;
 /// `bandit_arms`.
 pub mod rebuild_copy_learning_events;
 /// `replica_cursor` row CRUD — per-workspace upstream position and epoch.
+pub mod remote_code;
 pub mod replica_cursor;
 /// `replica-v1` journal writes: the payload row, the feed append and the
 /// revision update one accepted mutation owes, in the caller's transaction.
