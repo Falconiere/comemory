@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.45.0] - 2026-09-22
+
+### Added
+
+- capture every memory mutation and recover an interrupted write ([#274](https://github.com/Falconiere/comemory/pull/274))
+
 ## [0.44.0] - 2026-09-22
 
 ### Added
