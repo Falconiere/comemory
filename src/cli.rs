@@ -266,8 +266,9 @@ pub enum Cmd {
 ///
 /// Skipped entirely when the database file is not there yet: a fresh install
 /// has nothing to reconcile, and a subcommand that never touches the store
-/// must not be the thing that creates one. `serve` and `mcp` are skipped by
-/// the caller — see [`run`].
+/// must not be the thing that creates one. Skipped too when the database is
+/// ahead of this build, so the forward-compat contract stays the
+/// subcommand's. `serve` and `mcp` are skipped by the caller — see [`run`].
 fn reconcile_pending(data_dir: Option<&std::path::Path>) -> Result<()> {
     let paths = Paths::new(crate::config::paths::resolve_data_dir(
         data_dir.map(std::path::Path::to_path_buf),
@@ -275,7 +276,16 @@ fn reconcile_pending(data_dir: Option<&std::path::Path>) -> Result<()> {
     if !paths.db_path().exists() {
         return Ok(());
     }
-    let mut conn = crate::store::connection::open(paths.db_path())?;
+    let mut conn = match crate::store::connection::open(paths.db_path()) {
+        Ok(conn) => conn,
+        // A database written by a newer build is one this binary must not
+        // touch. Returning here leaves the forward-compat contract to the
+        // subcommand, which is what owns it: `doctor` falls back to a
+        // read-only report, every other command exits 70 naming the unknown
+        // migration key. Any other open failure propagates.
+        Err(Error::SchemaTooNew(_)) => return Ok(()),
+        Err(e) => return Err(e),
+    };
     let report = crate::domains::memories::recover::reconcile(&paths, &mut conn)?;
     if !report.is_empty() {
         tracing::info!(

@@ -109,9 +109,18 @@ pub fn reconcile_unless_read_only(
 fn finish(conn: &mut Connection, intent: &Intent) -> Result<bool> {
     match intent.kind {
         IntentKind::Write => {
-            let Ok(raw) = std::fs::read_to_string(&intent.md_path) else {
-                drop_intent(conn, &intent.entity_key)?;
-                return Ok(false);
+            let raw = match std::fs::read_to_string(&intent.md_path) {
+                Ok(raw) => raw,
+                // Only a genuinely absent file means the rename never landed.
+                // Any other read failure — a permission problem, a transient
+                // I/O error — must propagate and leave the intent standing:
+                // dropping it there would discard a write that is still on
+                // disk and still owed.
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    drop_intent(conn, &intent.entity_key)?;
+                    return Ok(false);
+                }
+                Err(e) => return Err(Error::Io(e)),
             };
             let (fm, body) = Frontmatter::split(&raw)?;
             let slug = crate::domains::memories::slug::slug_from_body(&body);
@@ -139,7 +148,13 @@ fn finish(conn: &mut Connection, intent: &Intent) -> Result<bool> {
             )
         }
         IntentKind::Delete => {
-            if std::path::Path::new(&intent.md_path).exists() {
+            // `try_exists` rather than `exists`: the latter reports a
+            // permission failure as "absent", which here would complete a
+            // deletion whose markdown is in fact still live.
+            if std::path::Path::new(&intent.md_path)
+                .try_exists()
+                .map_err(Error::Io)?
+            {
                 drop_intent(conn, &intent.entity_key)?;
                 return Ok(false);
             }

@@ -386,3 +386,28 @@ fn a_clean_directory_reconciles_to_an_empty_report() {
     home.save(BODY);
     assert_eq!(home.reconcile(), Report::default());
 }
+
+#[test]
+fn a_read_error_that_is_not_a_missing_file_leaves_the_intent_standing() {
+    let mut home = home();
+    let (_, planned) = interrupted_save(&mut home, BODY);
+    // A real read failure that is NOT "absent": the markdown is replaced by a
+    // directory, so `read_to_string` fails with something other than
+    // NotFound. Dropping the intent here would discard a write that is still
+    // owed.
+    std::fs::remove_file(&planned).expect("remove the file");
+    std::fs::create_dir(&planned).expect("put a directory in its place");
+
+    let paths = home.paths.clone();
+    let failed = recover::reconcile(&paths, &mut home.conn);
+
+    assert!(
+        failed.is_err(),
+        "an unreadable markdown file must propagate, not be treated as absent"
+    );
+    assert_eq!(
+        home.intents().len(),
+        1,
+        "and the write stays recorded as owed"
+    );
+}

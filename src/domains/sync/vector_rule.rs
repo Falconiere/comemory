@@ -20,9 +20,6 @@ use crate::prelude::*;
 use crate::store::needs_embedding::{self, Pending, Reason};
 use crate::store::{Connection, embed, schema_meta, vector};
 
-/// The memory vector dimension `memory_vec` was built for.
-const MEMORY_DIM: usize = 1024;
-
 /// What to do with one arriving embedding.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Verdict {
@@ -62,6 +59,10 @@ pub fn decide(conn: &Connection, wire: Option<&SyncVector>) -> Result<Verdict> {
         });
     };
     let model = schema_meta::memory_vector_model(conn)?;
+    // Read from the `vec0` table itself rather than a second copy of the
+    // literal: the width the vtab was built with is the only one this engine
+    // can actually compare against.
+    let dim = vector::dim_memory(conn)?;
     let refusal = |reason| Verdict::Refuse {
         reason,
         model: Some(wire.model.clone()),
@@ -70,13 +71,13 @@ pub fn decide(conn: &Connection, wire: Option<&SyncVector>) -> Result<Verdict> {
     if wire.model != model {
         return Ok(refusal(Reason::Model));
     }
-    if wire.dims as usize != MEMORY_DIM {
+    if wire.dims as usize != dim {
         return Ok(refusal(Reason::Dims));
     }
     let bytes = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &wire.f32)
         .map_err(|e| Error::BadRequest(format!("vector base64: {e}")))?;
-    let values = embed::from_vec_blob(&bytes, MEMORY_DIM)?;
-    embed::guard_dim(&values, MEMORY_DIM)?;
+    let values = embed::from_vec_blob(&bytes, dim)?;
+    embed::guard_dim(&values, dim)?;
     Ok(Verdict::Store(values))
 }
 

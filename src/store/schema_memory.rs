@@ -172,7 +172,8 @@ pub struct MemoryWriteIntent {
     /// `write` for a save/update/restore, `delete` for a soft delete.
     #[column(not_null, check = "kind IN ('write', 'delete')")]
     pub kind: Text,
-    /// Markdown path the write was placing, relative to the data dir.
+    /// Absolute markdown path the write was placing — the path
+    /// `memories::recover` reads directly, not a data-dir-relative one.
     #[column(not_null)]
     pub md_path: Text,
     /// The operation the finished write owes the journal.

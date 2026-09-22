@@ -1,6 +1,6 @@
 //! `memory_write_intent` row CRUD — the marker that says a memory write is in
-//! flight, written before the markdown moves and cleared in the same
-//! transaction as the mirror.
+//! flight, written before the markdown moves and cleared in the transaction
+//! that finishes the write.
 //!
 //! The window it closes is the gap between `MemoryStore::write_atomic`
 //! renaming the file into place and the mirror transaction committing. A
@@ -9,7 +9,7 @@
 //! next open notice and finish it.
 //!
 //! [`clear`] takes the caller's connection rather than opening its own, so a
-//! mirror transaction that rolls back also un-clears the intent — the write is
+//! transaction that rolls back also un-clears the intent — the write is
 //! either finished and forgotten, or unfinished and still recorded.
 
 use rusqlite::Connection;
@@ -58,7 +58,10 @@ pub struct Intent {
     pub entity_key: String,
     /// Whether markdown was being placed or trashed.
     pub kind: IntentKind,
-    /// Markdown path the write was placing, relative to the data dir.
+    /// Absolute markdown path the write was placing.
+    ///
+    /// Absolute, not data-dir-relative: `memories::recover` reads this path
+    /// directly, and every writer stores what `MemoryStore` gave it.
     pub md_path: String,
     /// The operation the finished write owes the journal.
     pub operation_id: String,
@@ -97,8 +100,12 @@ pub fn record(conn: &Connection, intent: &Intent) -> Result<()> {
 
 /// Forget the intent for `entity_key`. A no-op when there is none.
 ///
-/// Call this inside the mirror transaction, never after it: clearing in a
-/// later transaction would open the same crash window one statement wide.
+/// Call this inside the LAST transaction the write owes, never after it:
+/// clearing in a later transaction would open the same crash window one
+/// statement wide. For `save` and `delete` the mirror and the journal commit
+/// together and that is the mirror's transaction; for `update` and `restore`
+/// they are two, and the last one is the journal's — a row that landed
+/// without its operation is still unfinished.
 ///
 /// # Errors
 /// Propagates SQLite failures.
