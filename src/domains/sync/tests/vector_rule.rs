@@ -62,7 +62,7 @@ fn a_matching_model_at_the_right_dimension_is_stored() {
         "the vector is stored"
     );
     assert_eq!(
-        needs_embedding::pending_count(&conn).expect("count"),
+        needs_embedding::pending(&conn).expect("pending").len(),
         0,
         "and nothing is owed"
     );
@@ -154,15 +154,17 @@ fn no_vector_at_all_is_refused_as_absent_with_nothing_to_report() {
 #[test]
 fn a_later_usable_vector_drains_the_backlog_entry_it_replaces() {
     let (_dir, conn) = migrated_db();
-    let refused = vector_rule::decide(&conn, Some(&wire("some-other-model", 1024))).expect("decide");
+    let refused =
+        vector_rule::decide(&conn, Some(&wire("some-other-model", 1024))).expect("decide");
     vector_rule::apply(&conn, MEMORY_ID, &refused, "2026-09-22T10:00:00Z").expect("apply");
-    assert_eq!(needs_embedding::pending_count(&conn).expect("count"), 1);
+    assert_eq!(needs_embedding::pending(&conn).expect("pending").len(), 1);
 
-    let usable = vector_rule::decide(&conn, Some(&wire(&local_model(&conn), 1024))).expect("decide");
+    let usable =
+        vector_rule::decide(&conn, Some(&wire(&local_model(&conn), 1024))).expect("decide");
     vector_rule::apply(&conn, MEMORY_ID, &usable, "2026-09-22T11:00:00Z").expect("apply");
 
     assert_eq!(
-        needs_embedding::pending_count(&conn).expect("count"),
+        needs_embedding::pending(&conn).expect("pending").len(),
         0,
         "the backlog entry is drained when the vector finally arrives"
     );

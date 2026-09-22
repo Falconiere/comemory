@@ -24,7 +24,10 @@ pub(super) fn tokenizer(conn: &Connection) -> (Check, bool) {
 
 /// Check 6: `sqlite-vec` loaded, with the `memory_vec` / `code_vec` dims
 /// read from `schema_meta` rather than hardcoded.
-pub(super) fn vector_dims(conn: &Connection, sqlite_vec_loaded: bool) -> (Check, Option<u32>, Option<u32>) {
+pub(super) fn vector_dims(
+    conn: &Connection,
+    sqlite_vec_loaded: bool,
+) -> (Check, Option<u32>, Option<u32>) {
     let memory_dim = crate::store::vector::dim_memory(conn)
         .ok()
         .and_then(|d| u32::try_from(d).ok());
@@ -75,7 +78,7 @@ pub(super) fn embed_probe(cmd: Option<&str>) -> (Check, Option<u64>) {
 /// That is a `warn`, not a `fail`: everything is present and searchable
 /// lexically, and one `reembed` run fixes it.
 pub(super) fn needs_embedding_check(conn: &Connection) -> Result<Check> {
-    let pending = crate::store::needs_embedding::pending_count(conn)?;
+    let pending = crate::store::needs_embedding::pending(conn)?.len();
     Ok(if pending == 0 {
         check(
             "embedding backlog",

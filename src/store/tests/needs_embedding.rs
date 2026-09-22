@@ -37,7 +37,7 @@ fn a_refused_vector_is_recorded_with_what_arrived() {
         needs_embedding::pending(&conn).expect("pending"),
         vec![refused]
     );
-    assert_eq!(needs_embedding::pending_count(&conn).expect("count"), 1);
+    assert_eq!(needs_embedding::pending(&conn).expect("pending").len(), 1);
 }
 
 #[test]
@@ -89,7 +89,11 @@ fn the_newest_refusal_replaces_the_older_one() {
     .expect("record dims");
 
     let rows = needs_embedding::pending(&conn).expect("pending");
-    assert_eq!(rows.len(), 1, "one row per memory, not a history of refusals");
+    assert_eq!(
+        rows.len(),
+        1,
+        "one row per memory, not a history of refusals"
+    );
     assert_eq!(rows[0].reason, Reason::Dims);
     assert_eq!(rows[0].dims, Some(512));
 }
@@ -97,7 +101,10 @@ fn the_newest_refusal_replaces_the_older_one() {
 #[test]
 fn draining_one_memory_leaves_the_rest_of_the_backlog() {
     let (_dir, conn) = migrated_db();
-    for (id, at) in [("aaaaaaaa", "2026-09-22T10:00:00Z"), ("bbbbbbbb", "2026-09-22T11:00:00Z")] {
+    for (id, at) in [
+        ("aaaaaaaa", "2026-09-22T10:00:00Z"),
+        ("bbbbbbbb", "2026-09-22T11:00:00Z"),
+    ] {
         needs_embedding::record(
             &conn,
             &Pending {
@@ -119,14 +126,14 @@ fn draining_one_memory_leaves_the_rest_of_the_backlog() {
         .map(|row| row.memory_id)
         .collect();
     assert_eq!(ids, ["bbbbbbbb"]);
-    assert_eq!(needs_embedding::pending_count(&conn).expect("count"), 1);
+    assert_eq!(needs_embedding::pending(&conn).expect("pending").len(), 1);
 }
 
 #[test]
 fn an_empty_backlog_counts_zero_rather_than_failing() {
     let (_dir, conn) = migrated_db();
     assert!(needs_embedding::pending(&conn).expect("pending").is_empty());
-    assert_eq!(needs_embedding::pending_count(&conn).expect("count"), 0);
+    assert_eq!(needs_embedding::pending(&conn).expect("pending").len(), 0);
     needs_embedding::clear(&conn, "deadbeef").expect("clear is tolerant");
 }
 

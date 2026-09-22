@@ -14,6 +14,7 @@
 
 use rusqlite::Connection;
 use toolu_orm::core::query_column::CommonOps;
+use toolu_orm::query::insert::OnConflict;
 
 use super::orm;
 use super::schema_memory::{MemoryWriteIntent, memory_write_intent as col};
@@ -74,19 +75,6 @@ pub struct Intent {
 /// # Errors
 /// Propagates SQLite failures.
 pub fn record(conn: &Connection, intent: &Intent) -> Result<()> {
-    let updated = orm::execute(
-        conn,
-        MemoryWriteIntent::update()
-            .set(&col::kind, intent.kind.as_str())
-            .set(&col::md_path, intent.md_path.as_str())
-            .set(&col::operation_id, intent.operation_id.as_str())
-            .set(&col::started_at, intent.started_at.as_str())
-            .filter(col::entity_key.eq(intent.entity_key.as_str()))
-            .to_sql(),
-    )?;
-    if updated > 0 {
-        return Ok(());
-    }
     orm::execute(
         conn,
         MemoryWriteIntent::insert()
@@ -95,6 +83,13 @@ pub fn record(conn: &Connection, intent: &Intent) -> Result<()> {
             .set(&col::md_path, intent.md_path.as_str())
             .set(&col::operation_id, intent.operation_id.as_str())
             .set(&col::started_at, intent.started_at.as_str())
+            .on_conflict(
+                OnConflict::column(&col::entity_key)
+                    .set(&col::kind, intent.kind.as_str())
+                    .set(&col::md_path, intent.md_path.as_str())
+                    .set(&col::operation_id, intent.operation_id.as_str())
+                    .set(&col::started_at, intent.started_at.as_str()),
+            )
             .to_sql(),
     )?;
     Ok(())
@@ -122,31 +117,43 @@ pub fn clear(conn: &Connection, entity_key: &str) -> Result<()> {
 /// # Errors
 /// Propagates SQLite failures and an unrecognized stored `kind`.
 pub fn outstanding(conn: &Connection) -> Result<Vec<Intent>> {
-    let rows: Vec<(String, String, String, String, String)> = orm::query_all(
-        conn,
-        MemoryWriteIntent::select()
-            .columns_typed(&[
-                &col::entity_key,
-                &col::kind,
-                &col::md_path,
-                &col::operation_id,
-                &col::started_at,
-            ])
-            .order_by(col::started_at.asc())
-            .to_sql(),
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
-    )?;
-    rows.into_iter()
-        .map(|(entity_key, kind, md_path, operation_id, started_at)| {
+    orm::query_all(conn, select_all(), row)?
+        .into_iter()
+        .map(|(intent, kind)| {
             Ok(Intent {
-                entity_key,
                 kind: IntentKind::parse(&kind)?,
-                md_path,
-                operation_id,
-                started_at,
+                ..intent
             })
         })
         .collect()
+}
+
+/// Every intent column, oldest first.
+fn select_all() -> (String, Vec<toolu_orm::core::value::Value>) {
+    MemoryWriteIntent::select()
+        .columns_typed(&[
+            &col::entity_key,
+            &col::kind,
+            &col::md_path,
+            &col::operation_id,
+            &col::started_at,
+        ])
+        .order_by(col::started_at.asc())
+        .to_sql()
+}
+
+/// One stored row, with `kind` left as its raw token for the caller to parse.
+fn row(r: &rusqlite::Row<'_>) -> rusqlite::Result<(Intent, String)> {
+    Ok((
+        Intent {
+            entity_key: r.get(0)?,
+            kind: IntentKind::Write,
+            md_path: r.get(2)?,
+            operation_id: r.get(3)?,
+            started_at: r.get(4)?,
+        },
+        r.get(1)?,
+    ))
 }
 
 #[cfg(test)]

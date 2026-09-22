@@ -8,6 +8,7 @@
 
 use rusqlite::Connection;
 use toolu_orm::core::query_column::CommonOps;
+use toolu_orm::query::insert::OnConflict;
 
 use super::orm;
 use super::schema_memory::{MemoryNeedsEmbedding, memory_needs_embedding as col};
@@ -69,19 +70,6 @@ pub struct Pending {
 /// # Errors
 /// Propagates SQLite failures.
 pub fn record(conn: &Connection, pending: &Pending, at: &str) -> Result<()> {
-    let updated = orm::execute(
-        conn,
-        MemoryNeedsEmbedding::update()
-            .set(&col::reason, pending.reason.as_str())
-            .set(&col::model, pending.model.as_deref())
-            .set(&col::dims, pending.dims)
-            .set(&col::recorded_at, at)
-            .filter(col::memory_id.eq(pending.memory_id.as_str()))
-            .to_sql(),
-    )?;
-    if updated > 0 {
-        return Ok(());
-    }
     orm::execute(
         conn,
         MemoryNeedsEmbedding::insert()
@@ -90,6 +78,13 @@ pub fn record(conn: &Connection, pending: &Pending, at: &str) -> Result<()> {
             .set(&col::model, pending.model.as_deref())
             .set(&col::dims, pending.dims)
             .set(&col::recorded_at, at)
+            .on_conflict(
+                OnConflict::column(&col::memory_id)
+                    .set(&col::reason, pending.reason.as_str())
+                    .set(&col::model, pending.model.as_deref())
+                    .set(&col::dims, pending.dims)
+                    .set(&col::recorded_at, at),
+            )
             .to_sql(),
     )?;
     Ok(())
@@ -111,37 +106,44 @@ pub fn clear(conn: &Connection, memory_id: &str) -> Result<()> {
 
 /// Every memory still owing a vector, oldest refusal first.
 ///
+/// There is no separate count: the only callers that want one — the replica
+/// manifest and `comemory doctor` — take `pending(..).len()`, and a second
+/// query shape for a table that holds one 8-hex id per unembedded memory
+/// would earn nothing.
+///
 /// # Errors
 /// Propagates SQLite failures and an unrecognized stored `reason`.
 pub fn pending(conn: &Connection) -> Result<Vec<Pending>> {
-    let rows: Vec<(String, String, Option<String>, Option<i64>)> = orm::query_all(
-        conn,
-        MemoryNeedsEmbedding::select()
-            .columns_typed(&[&col::memory_id, &col::reason, &col::model, &col::dims])
-            .order_by(col::recorded_at.asc())
-            .to_sql(),
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
-    )?;
-    rows.into_iter()
-        .map(|(memory_id, reason, model, dims)| {
+    orm::query_all(conn, select_all(), row)?
+        .into_iter()
+        .map(|(pending, reason)| {
             Ok(Pending {
-                memory_id,
                 reason: Reason::parse(&reason)?,
-                model,
-                dims,
+                ..pending
             })
         })
         .collect()
 }
 
-/// How many memories still owe a vector.
-///
-/// # Errors
-/// Propagates SQLite failures.
-pub fn pending_count(conn: &Connection) -> Result<i64> {
-    orm::query_one(conn, MemoryNeedsEmbedding::select().to_count_sql(), |r| {
-        r.get(0)
-    })
+/// Every backlog column, oldest refusal first.
+fn select_all() -> (String, Vec<toolu_orm::core::value::Value>) {
+    MemoryNeedsEmbedding::select()
+        .columns_typed(&[&col::memory_id, &col::reason, &col::model, &col::dims])
+        .order_by(col::recorded_at.asc())
+        .to_sql()
+}
+
+/// One stored row, with `reason` left as its raw token for the caller to parse.
+fn row(r: &rusqlite::Row<'_>) -> rusqlite::Result<(Pending, String)> {
+    Ok((
+        Pending {
+            memory_id: r.get(0)?,
+            reason: Reason::Absent,
+            model: r.get(2)?,
+            dims: r.get(3)?,
+        },
+        r.get(1)?,
+    ))
 }
 
 #[cfg(test)]

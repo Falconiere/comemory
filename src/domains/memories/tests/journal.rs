@@ -307,7 +307,9 @@ fn a_finished_edit_leaves_no_write_intent_behind() {
     assert_eq!(feed.len(), 2, "the save and the edit");
     assert_eq!(
         home.outbox_operation_ids(),
-        feed.iter().map(|row| row.operation_id.clone()).collect::<Vec<_>>(),
+        feed.iter()
+            .map(|row| row.operation_id.clone())
+            .collect::<Vec<_>>(),
         "each finished mutation owes exactly the operation it journalled"
     );
 }
@@ -320,7 +322,10 @@ fn a_finished_delete_leaves_no_write_intent_behind() {
     memories::delete::run(&mut ctx, &id).expect("delete");
 
     assert!(home.intents().is_empty(), "the delete finished");
-    assert_eq!(home.legacy_ops(), vec!["upsert".to_string(), "tombstone".to_string()]);
+    assert_eq!(
+        home.legacy_ops(),
+        vec!["upsert".to_string(), "tombstone".to_string()]
+    );
 }
 
 #[test]

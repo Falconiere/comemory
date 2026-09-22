@@ -20,10 +20,10 @@ use std::time::Instant;
 use serde::{Deserialize, Serialize};
 
 use crate::domains::memories::journal;
-use crate::store::memory_intent::{self, Intent, IntentKind};
 use crate::domains::memories::save;
 use crate::domains::memories::{Frontmatter, Kind, MemoryRecord, MemoryStore, id, mirror};
 use crate::prelude::*;
+use crate::store::memory_intent::{self, Intent, IntentKind};
 use crate::store::memory_row;
 use crate::store::replica_journal::{ReplicaOp, ReplicaOrigin};
 use crate::utilities::activity::{self, Outcome, command};

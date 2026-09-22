@@ -28,13 +28,16 @@ One line per file, named after its primary item:
 | `mirror.rs` | `insert_row` | The ONE SQLite-mirror path every memory writer goes through (`save`, `update`'s in-place re-mirror and through it `restore` / `refresh_refs` / the sync frontmatter patch, `maintenance::rebuild`, the sync import): derive the body's `<repo>:<path>[:<symbol>]` references through `graph::cross_link` and resolve them against the indexed documents through `graph::doc_link`, then hand the owned result to `store::memory_row::insert` as row data. Deriving before the first write is what keeps a derivation failure from ever leaving a half-written row set, and what keeps `store` from calling back into a domain (#177) |
 | `nav.rs` | `title_of` | The two derived fields every memory listing reports: a memory's title (the first non-empty line of its body — the rule `save`'s title folding compares against) and the absolute path of its markdown file |
 | `prior.rs` | `Prior` | `MemoryStore::prior` — the frontmatter facts (`created`, `content_hash`, `trashed`) the live file or its `.trash/` copy already holds for an id, read before a save so `save` can refuse a same-id different-body collision, carry `created` across a replay, and report `created: bool`; also backs the sync import's collision rule |
+| `recover.rs` | `reconcile` | The startup pass that finishes, or drops, every memory write a killed process left half-done: mirror and journal an interrupted write, complete and journal an interrupted delete, drop an intent whose markdown move never landed. Invoked from `cli::run`, `serve::serve` and `mcp::serve` — `store::connection::open` may not call into a domain (#177) |
 | `references.rs` | `Ref` | Versioned code reference (file/symbol pointer + captured anchor), string-or-struct serde |
 | `refresh_refs.rs` | `Response` | Console-only: `POST /api/v1/memories/{id}/references/refresh` — re-pin every anchored reference to the current HEAD through `utilities::repo_root::resolve_root` (explicit `--root` override before the stored `repo_marker.root_path`), writing through `update::mirror_record` rather than a second write path |
 | `restore.rs` | `Response` | Console-only: `POST /api/v1/memories/{id}/restore` and `POST /api/v1/trash/{id}/restore` — the exact reverse of `soft_delete`, re-deriving the incoming relation edges the restored markdown cannot regenerate |
 | `save.rs` | `Request` | Shared middle of `comemory save` / `POST /api/v1/memories` — the content-addressed replay contract, `supersedes` and `ref_*` validation ahead of every effect, the near-duplicate advisory, and the atomic markdown write plus the SQLite mirror through `mirror::insert_row` |
+| `save_persist.rs` | `persist` | The persistence half of `save`: the write intent, then the markdown, then one transaction carrying the mirror, the vector, both journal feeds and the intent's clearing |
 | `show.rs` | `Request` | Shared middle of `comemory show` / `GET /api/v1/memories/{id}` — body, frontmatter, activation and code-reference freshness in one round trip |
 | `slug.rs` | `slug_from_body` | Filesystem-safe slug derivation for memory filenames |
 | `store.rs` | `SaveParams` | Markdown-backed memory store: atomic save (purges a same-id `.trash/` copy — a re-saved body is live again) / rewrite-in-place / load / list / soft-delete (stamps the trashed file's mtime as the deletion instant, the clock gc reads) / restore-from-trash (checks the live tree FIRST so a stale trash copy is never renamed over a live re-save) |
+| `store_trash.rs` | `MemoryStore::delete` | The trash half of the same store: soft delete, restore, `trashed_record` (read a trashed memory in place, before a restore moves it) and the live-before-trash lookup ordering |
 | `trash.rs` | `Request` | Console-only: `GET /api/v1/trash` — soft-deleted memories with their days until gc, counted off the trashed file's mtime and never creating the database |
 | `update.rs` | `Request` | Console-only: `PATCH /api/v1/memories/{id}` — a frontmatter-only patch in place, or a body patch as a superseding re-save through `save::run_with`; `mirror_record` is the one re-mirror path `refresh_refs` and `restore` share, and it writes through `mirror::insert_row` like every other writer |
 
@@ -48,6 +51,14 @@ names `crate::domains::memories::<name>` directly.
 
 Colocated unit tests live in `tests/` beside their module and are reached through
 each module's `#[path]` bridge.
+
+Every memory write records a `memory_write_intent` row before the markdown
+moves and clears it in the transaction that finishes the write, so a process
+killed in between leaves the write recoverable rather than stored locally and
+owed to nobody; `recover::reconcile` is what finishes it. For `save` and
+`delete` the mirror and the journal commit together and the intent clears
+there; for `update` and `restore` they are two transactions and the intent
+clears in the journal's, the last one those writes owe.
 
 Memory saves hold `memory-save.lock` across prior lookup, markdown staging and
 mirror commit, and reserve SQLite's writer before mirror reads. A lock failure keeps

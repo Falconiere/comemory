@@ -30,9 +30,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::domains::memories::save_activity::{Asked, activity_summary};
 use crate::domains::memories::save_persist;
-use crate::domains::memories::{
-    Kind, MemoryStore, Prior, References, Relations, SaveParams, id,
-};
+use crate::domains::memories::{Kind, MemoryStore, Prior, References, Relations, SaveParams, id};
 use crate::prelude::*;
 use crate::store::{Connection, embed, vector};
 use crate::utilities::activity::{self, Outcome, command};

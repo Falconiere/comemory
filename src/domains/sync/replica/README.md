@@ -35,3 +35,13 @@ real data directory, a real migrated database and real saved memories.
 
 When you add a file here, add its row above so the index stays current. No
 `mod.rs` barrel.
+
+An `Operation` carries an optional `vector` alongside its payload, never
+inside it: the digest is taken over `payload` alone, so re-embedding a memory
+cannot mint a new revision and two engines holding the same text agree on its
+identity whether or not either has a vector. `validate::decide` refuses an
+operation for an entity this machine still owes an unpushed change to
+(`rejected_stale`) — the payload the outbox holds is the only record of that
+edit. The manifest reports `needs_embedding`, the count of memories stored
+without a usable vector. See
+[the design](../../../../docs/designs/2026-09-22-memory-mutation-capture.md).

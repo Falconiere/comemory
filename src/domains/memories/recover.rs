@@ -23,7 +23,9 @@ use crate::domains::memories::{Frontmatter, journal, mirror};
 use crate::prelude::*;
 use crate::store::memory_intent::{Intent, IntentKind};
 use crate::store::replica_journal::{ReplicaOp, ReplicaOrigin};
-use crate::store::{Connection, memory_intent, memory_meta, memory_purge, memory_row, replica_read};
+use crate::store::{
+    Connection, memory_intent, memory_meta, memory_purge, memory_row, replica_read,
+};
 use crate::utilities::digest::sha256_hex;
 use crate::utilities::file_lock::FileLock;
 
@@ -61,19 +63,12 @@ pub fn reconcile(paths: &Paths, conn: &mut Connection) -> Result<Report> {
     if outstanding.is_empty() {
         return Ok(Report::default());
     }
-    let _guard = FileLock::acquire(
-        &paths.data_dir().join("memory-save.lock"),
-        "memory-save",
-    )?;
+    let _guard = FileLock::acquire(&paths.data_dir().join("memory-save.lock"), "memory-save")?;
     let mut report = Report::default();
     // Re-read under the lock: a concurrent writer may have finished some of
     // them between the probe above and the lock being granted.
     for intent in memory_intent::outstanding(conn)? {
-        let finished = match intent.kind {
-            IntentKind::Write => finish_write(conn, &intent)?,
-            IntentKind::Delete => finish_delete(conn, &intent)?,
-        };
-        if finished {
+        if finish(conn, &intent)? {
             report.finished += 1;
         } else {
             report.dropped += 1;
@@ -105,77 +100,105 @@ pub fn reconcile_unless_read_only(
     reconcile(paths, conn)
 }
 
-/// Finish an interrupted save, update or restore.
+/// Finish one outstanding intent, or drop it.
 ///
-/// Returns `false` when the markdown named by the intent is not there: the
-/// rename never landed, so there is no memory to mirror and no operation to
-/// journal. Returns `true` when the write was completed.
-fn finish_write(conn: &mut Connection, intent: &Intent) -> Result<bool> {
-    let Ok(raw) = std::fs::read_to_string(&intent.md_path) else {
-        drop_intent(conn, &intent.entity_key)?;
-        return Ok(false);
-    };
-    let (fm, body) = Frontmatter::split(&raw)?;
-    let slug = crate::domains::memories::slug::slug_from_body(&body);
-    let at = memory_row::iso_format(fm.created)?;
-    let tx = crate::store::connection::write_transaction(conn)?;
-    // An upsert, so a write killed after its mirror commit but before its
-    // journal commit costs one redundant row write rather than a branch that
-    // could get the two cases the wrong way round.
-    mirror::insert_row(&tx, &fm, &body, slug.as_str(), &intent.md_path, &fm.tags)?;
-    if replica_read::position_of(&tx, &intent.operation_id)?.is_none() {
-        journal::record_write(
-            &tx,
-            op_of(&tx, &intent.entity_key)?,
-            &fm,
-            &body,
-            &at,
-            ReplicaOrigin::Local,
-            Some(&intent.operation_id),
-        )?;
+/// Returns `false` when the markdown move the intent describes never landed:
+/// a write whose file is not there has no memory to mirror and no operation
+/// to journal, and a delete whose file is still live never deleted anything.
+/// Both are dropped, leaving no memory, no operation and no orphan row.
+fn finish(conn: &mut Connection, intent: &Intent) -> Result<bool> {
+    match intent.kind {
+        IntentKind::Write => {
+            let Ok(raw) = std::fs::read_to_string(&intent.md_path) else {
+                drop_intent(conn, &intent.entity_key)?;
+                return Ok(false);
+            };
+            let (fm, body) = Frontmatter::split(&raw)?;
+            let slug = crate::domains::memories::slug::slug_from_body(&body);
+            let at = memory_row::iso_format(fm.created)?;
+            commit_finish(
+                conn,
+                intent,
+                // An upsert, so a write killed after its mirror commit but
+                // before its journal commit costs one redundant row write
+                // rather than a branch that could get the two cases the wrong
+                // way round.
+                |tx| mirror::insert_row(tx, &fm, &body, slug.as_str(), &intent.md_path, &fm.tags),
+                |tx| {
+                    journal::record_write(
+                        tx,
+                        op_of(tx, &intent.entity_key)?,
+                        &fm,
+                        &body,
+                        &at,
+                        ReplicaOrigin::Local,
+                        Some(&intent.operation_id),
+                    )
+                    .map(|_| ())
+                },
+            )
+        }
+        IntentKind::Delete => {
+            if std::path::Path::new(&intent.md_path).exists() {
+                drop_intent(conn, &intent.entity_key)?;
+                return Ok(false);
+            }
+            // The mirror row is the state being completed, so its own body is
+            // what the legacy feed's content hash must describe — not the
+            // trashed file, which gc may already have reaped. No row either
+            // means the delete already committed; there is nothing to finish.
+            let Some((_, body)) = memory_meta::kind_and_body(conn, &intent.entity_key)? else {
+                drop_intent(conn, &intent.entity_key)?;
+                return Ok(false);
+            };
+            let content_hash = sha256_hex(body.trim_end().as_bytes());
+            let repository = memory_meta::fetch_meta(conn, &[intent.entity_key.as_str()])?
+                .remove(&intent.entity_key)
+                .and_then(|meta| meta.repo)
+                .filter(|repo| !repo.is_empty());
+            let now = memory_row::iso_format(OffsetDateTime::now_utc())?;
+            commit_finish(
+                conn,
+                intent,
+                |tx| memory_purge::soft_delete(tx, &intent.entity_key, &now),
+                |tx| {
+                    journal::record_tombstone(
+                        tx,
+                        &intent.entity_key,
+                        &content_hash,
+                        repository.as_deref(),
+                        &now,
+                        ReplicaOrigin::Local,
+                        Some(&intent.operation_id),
+                    )
+                    .map(|_| ())
+                },
+            )
+        }
     }
-    memory_intent::clear(&tx, &intent.entity_key)?;
-    tx.commit()?;
-    Ok(true)
 }
 
-/// Finish an interrupted soft delete.
+/// The one transaction every finished write commits: materialize the state,
+/// journal the operation the intent named if it has no position yet, and
+/// clear the intent — together or not at all.
 ///
-/// Returns `false` when the markdown is still at its live path: the move to
-/// `.trash/` never happened, so no deletion occurred and the intent describes
-/// nothing.
-fn finish_delete(conn: &mut Connection, intent: &Intent) -> Result<bool> {
-    if std::path::Path::new(&intent.md_path).exists() {
-        drop_intent(conn, &intent.entity_key)?;
-        return Ok(false);
-    }
-    // The mirror row is the state being completed, so its own body is what the
-    // legacy feed's content hash must describe — not the trashed file, which
-    // gc may already have reaped.
-    let Some((_, body)) = memory_meta::kind_and_body(conn, &intent.entity_key)? else {
-        // No row either: the delete already committed and something cleared
-        // the intent's write. Nothing to complete.
-        drop_intent(conn, &intent.entity_key)?;
-        return Ok(false);
-    };
-    let content_hash = sha256_hex(body.trim_end().as_bytes());
-    let repository = memory_meta::fetch_meta(conn, &[intent.entity_key.as_str()])?
-        .remove(&intent.entity_key)
-        .and_then(|meta| meta.repo)
-        .filter(|repo| !repo.is_empty());
-    let now = memory_row::iso_format(OffsetDateTime::now_utc())?;
+/// `journal_op` runs only when the operation is genuinely missing from the
+/// feed. A mirror row that landed proves nothing on its own, because the edit
+/// and restore paths commit the mirror and the journal separately.
+fn commit_finish<M, J>(
+    conn: &mut Connection,
+    intent: &Intent,
+    materialize: M,
+    journal_op: J,
+) -> Result<bool>
+where
+    M: FnOnce(&Connection) -> Result<()>,
+    J: FnOnce(&Connection) -> Result<()>,
+{
     let tx = crate::store::connection::write_transaction(conn)?;
-    memory_purge::soft_delete(&tx, &intent.entity_key, &now)?;
+    materialize(&tx)?;
     if replica_read::position_of(&tx, &intent.operation_id)?.is_none() {
-        journal::record_tombstone(
-            &tx,
-            &intent.entity_key,
-            &content_hash,
-            repository.as_deref(),
-            &now,
-            ReplicaOrigin::Local,
-            Some(&intent.operation_id),
-        )?;
+        journal_op(&tx)?;
     }
     memory_intent::clear(&tx, &intent.entity_key)?;
     tx.commit()?;

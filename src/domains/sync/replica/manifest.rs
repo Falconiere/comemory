@@ -49,7 +49,7 @@ pub fn run(ctx: &mut Ctx<'_>) -> Result<ManifestResponse> {
             state: progress.state,
             seeded,
         },
-        needs_embedding: needs_embedding::pending_count(conn)?,
+        needs_embedding: i64::try_from(needs_embedding::pending(conn)?.len()).unwrap_or(i64::MAX),
     })
 }
 

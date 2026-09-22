@@ -187,8 +187,8 @@ fn run_reports_the_embedding_backlog_as_ok_when_there_is_none() {
     let cfg = Config::defaults();
     let mut ctx = Ctx::lazy(&paths, &cfg);
 
-    let report = maintenance::doctor::run(&mut ctx, maintenance::doctor::Request {})
-        .expect("doctor run");
+    let report =
+        maintenance::doctor::run(&mut ctx, maintenance::doctor::Request {}).expect("doctor run");
 
     let check = report
         .checks
@@ -222,15 +222,18 @@ fn run_warns_with_a_remedy_when_memories_are_stored_without_a_usable_vector() {
     }
     let mut ctx = Ctx::lazy(&paths, &cfg);
 
-    let report = maintenance::doctor::run(&mut ctx, maintenance::doctor::Request {})
-        .expect("doctor run");
+    let report =
+        maintenance::doctor::run(&mut ctx, maintenance::doctor::Request {}).expect("doctor run");
 
     let check = report
         .checks
         .iter()
         .find(|c| c.name == "embedding backlog")
         .expect("the probe is present");
-    assert_eq!(check.status, "warn", "everything is present, just not vectored");
+    assert_eq!(
+        check.status, "warn",
+        "everything is present, just not vectored"
+    );
     assert!(
         check.detail.contains('1'),
         "the count is named: {}",

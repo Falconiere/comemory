@@ -50,6 +50,7 @@ mapping; ambiguous, unsupported and unlabelled entries remain local.
 | `code.rs` | `run_code_push` | Push only indexed checkouts whose current GitHub origin resolves to an approved canonical identity (minus `skip_repos`, invalid roots and worktrees; off with `[sync] code_index = false`). The wire carries the canonical name while local rows keep their label. `run_code_push_if_moved` first checks the policy-aware cursor |
 | `code_repo_push.rs` | `push_repo` | Diff and upload one local code index under its canonical platform identity, then persist its local-label cursor |
 | `code_plan.rs` | `plan` | The pure diff (changed / removed / send-cochange / head-moved) and the batching (500 files, ~1 MiB) — no store, no network |
+| `vector_rule.rs` | `decide` | The one verdict both import wires apply to an arriving embedding: usable only from this engine's model at its `vec0` dimension, and a refusal stores the memory text anyway and records the id as needing an embedding |
 | `verify.rs` | `verify_manifests` | Compare and repair manifests over the locally authorized subset only |
 | `initial.rs` | `run_initial_sync` | Exhaustive pull-then-push that `auth login` runs before returning, then the code push — so the console's graph fills in from the first login |
 | `manual.rs` | `open_session` / `run_all` | What one `comemory sync` run does: the credential-then-store session it opens, and the three composite action sequences |

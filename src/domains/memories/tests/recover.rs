@@ -17,9 +17,7 @@
 
 use comemory::config::{Config, Paths};
 use comemory::domains::memories::recover::{self, Report};
-use comemory::domains::memories::{
-    self, Kind, MemoryStore, References, Relations, SaveParams, id,
-};
+use comemory::domains::memories::{self, Kind, MemoryStore, References, Relations, SaveParams, id};
 use comemory::store::memory_intent::{self, Intent, IntentKind};
 use comemory::store::{connection, replica_outbox, replica_read};
 use comemory::utilities::context::Ctx;
@@ -140,7 +138,13 @@ fn an_interrupted_save_is_mirrored_and_journalled_by_the_next_pass() {
 
     let report = home.reconcile();
 
-    assert_eq!(report, Report { finished: 1, dropped: 0 });
+    assert_eq!(
+        report,
+        Report {
+            finished: 1,
+            dropped: 0
+        }
+    );
     assert_eq!(home.live_ids(), vec![id.clone()], "the memory is findable");
     assert_eq!(
         home.feed_ops(),
@@ -162,7 +166,13 @@ fn a_second_pass_over_a_reconciled_directory_changes_nothing() {
 
     let second = home.reconcile();
 
-    assert_eq!(first, Report { finished: 1, dropped: 0 });
+    assert_eq!(
+        first,
+        Report {
+            finished: 1,
+            dropped: 0
+        }
+    );
     assert_eq!(second, Report::default(), "idempotent");
     assert_eq!(
         home.feed_ops(),
@@ -210,7 +220,13 @@ fn an_intent_whose_markdown_never_landed_is_dropped_without_a_trace() {
 
     let report = home.reconcile();
 
-    assert_eq!(report, Report { finished: 0, dropped: 1 });
+    assert_eq!(
+        report,
+        Report {
+            finished: 0,
+            dropped: 1
+        }
+    );
     assert!(home.live_ids().is_empty(), "no memory");
     assert!(home.feed_ops().is_empty(), "no operation");
     assert!(home.intents().is_empty(), "no orphan row");
@@ -241,7 +257,13 @@ fn a_mirrored_write_whose_journal_never_committed_is_journalled_once() {
 
     let report = home.reconcile();
 
-    assert_eq!(report, Report { finished: 1, dropped: 0 });
+    assert_eq!(
+        report,
+        Report {
+            finished: 1,
+            dropped: 0
+        }
+    );
     assert_eq!(home.live_ids(), vec![id.clone()], "the row is still there");
     assert_eq!(
         home.feed_ops(),
@@ -276,11 +298,21 @@ fn an_interrupted_delete_is_completed_and_journalled_by_the_next_pass() {
         },
     )
     .expect("record intent");
-    assert_eq!(home.live_ids(), vec![id.clone()], "still live in the mirror");
+    assert_eq!(
+        home.live_ids(),
+        vec![id.clone()],
+        "still live in the mirror"
+    );
 
     let report = home.reconcile();
 
-    assert_eq!(report, Report { finished: 1, dropped: 0 });
+    assert_eq!(
+        report,
+        Report {
+            finished: 1,
+            dropped: 0
+        }
+    );
     assert!(home.live_ids().is_empty(), "the delete completed");
     assert_eq!(
         home.feed_ops(),
@@ -309,9 +341,19 @@ fn a_delete_whose_markdown_never_moved_is_dropped_and_the_memory_stays_live() {
 
     let report = home.reconcile();
 
-    assert_eq!(report, Report { finished: 0, dropped: 1 });
+    assert_eq!(
+        report,
+        Report {
+            finished: 0,
+            dropped: 1
+        }
+    );
     assert!(live_path.exists(), "the markdown is untouched");
-    assert_eq!(home.live_ids(), vec![id.clone()], "the memory is still live");
+    assert_eq!(
+        home.live_ids(),
+        vec![id.clone()],
+        "the memory is still live"
+    );
     assert_eq!(
         home.feed_ops(),
         vec![format!("upsert:{id}")],

@@ -88,6 +88,10 @@ Understanding-oriented background:
   versioned replication journal, immutable payloads, acceptance receipts,
   server-ordered sequences and epoch-bearing cursors behind
   `/api/v1/sync/replica/*`.
+- **[Memory mutation capture](designs/2026-09-22-memory-mutation-capture.md)** —
+  which memory writers owe a replication operation and which deliberately owe
+  none, the write intent that makes an interrupted write recoverable, and the
+  embedding that rides outside the revision digest.
 - **[Domain-first migration contract](designs/2026-09-17-domain-first-migration.md)** —
   staged, behavior-preserving migration of the Rust CLI from technical layers
   to business capabilities.

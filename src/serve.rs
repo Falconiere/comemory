@@ -310,8 +310,9 @@ fn reconcile_pending(paths: &Paths, state: &AppState, read_only: bool) -> Result
     let mut guard = state.conn.lock().map_err(|_| {
         Error::Other("serve: the database mutex was poisoned before startup".to_string())
     })?;
-    let report =
-        crate::domains::memories::recover::reconcile_unless_read_only(paths, &mut guard, read_only)?;
+    let report = crate::domains::memories::recover::reconcile_unless_read_only(
+        paths, &mut guard, read_only,
+    )?;
     if !report.is_empty() {
         tracing::info!(
             finished = report.finished,

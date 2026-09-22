@@ -112,13 +112,9 @@ fn the_higher_accepted_sequence_wins_regardless_of_the_provenance_clock() {
     assert_ne!(early_digest, later_digest, "two distinct revisions");
 
     let peer = Engine::spawn(&[]);
-    let second =
-        import(&peer, &upsert_envelope("op-a", &id, &later_digest, &later));
+    let second = import(&peer, &upsert_envelope("op-a", &id, &later_digest, &later));
     assert_eq!(second["disposition"], "accepted", "{second}");
-    let stale = import(
-        &peer,
-        &upsert_envelope("op-b", &id, &early_digest, &early),
-    );
+    let stale = import(&peer, &upsert_envelope("op-b", &id, &early_digest, &early));
 
     assert_eq!(
         stale["disposition"], "accepted",
@@ -293,12 +289,10 @@ fn two_engines_holding_the_same_body_with_different_tags_disagree_then_agree() {
     peer.cli(&["save", "--kind", "decision", BODY]);
     mark_all_pushed(&peer.data_dir());
 
-    let author_buckets = author.get("/api/v1/sync/replica/manifest").1["data"]["entity_kinds"][0]
-        ["buckets"]
-        .clone();
-    let peer_buckets = peer.get("/api/v1/sync/replica/manifest").1["data"]["entity_kinds"][0]
-        ["buckets"]
-        .clone();
+    let author_buckets =
+        author.get("/api/v1/sync/replica/manifest").1["data"]["entity_kinds"][0]["buckets"].clone();
+    let peer_buckets =
+        peer.get("/api/v1/sync/replica/manifest").1["data"]["entity_kinds"][0]["buckets"].clone();
     assert_ne!(
         author_buckets, peer_buckets,
         "same body, different tags: the digests must differ"
@@ -314,9 +308,8 @@ fn two_engines_holding_the_same_body_with_different_tags_disagree_then_agree() {
         "the newer revision must land: {healed_result}"
     );
 
-    let healed = peer.get("/api/v1/sync/replica/manifest").1["data"]["entity_kinds"][0]
-        ["buckets"]
-        .clone();
+    let healed =
+        peer.get("/api/v1/sync/replica/manifest").1["data"]["entity_kinds"][0]["buckets"].clone();
     assert_eq!(
         healed, author_buckets,
         "importing the newer revision makes the buckets agree"

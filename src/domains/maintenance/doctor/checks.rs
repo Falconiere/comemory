@@ -176,8 +176,7 @@ fn push_embed_and_counts(
     checks: &mut Vec<Check>,
 ) -> Result<(Option<String>, Option<u64>)> {
     let embed_cmd = env_parse::<String>("COMEMORY_EMBED_CMD")?;
-    let (embed_check, embed_probe_ms) =
-        super::checks_vector::embed_probe(embed_cmd.as_deref());
+    let (embed_check, embed_probe_ms) = super::checks_vector::embed_probe(embed_cmd.as_deref());
     checks.push(embed_check);
     checks.push(markdown_db_counts(conn, markdown_files)?);
     checks.push(data_dir_layout(paths));

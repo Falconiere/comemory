@@ -24,10 +24,10 @@ use serde::Serialize;
 use time::OffsetDateTime;
 
 use crate::domains::memories::journal;
-use crate::store::memory_intent::{self, Intent, IntentKind};
 use crate::domains::memories::{MemoryRecord, MemoryStore};
 use crate::prelude::*;
 use crate::store::edges::{self, EdgeKey};
+use crate::store::memory_intent::{self, Intent, IntentKind};
 use crate::store::replica_journal::{ReplicaOp, ReplicaOrigin};
 use crate::store::{Connection, memory_row};
 use crate::utilities::activity::{self, Outcome, command};

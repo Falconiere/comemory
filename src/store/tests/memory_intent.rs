@@ -54,8 +54,11 @@ fn a_recorded_intent_is_outstanding_until_it_is_cleared() {
 #[test]
 fn a_second_intent_for_one_memory_supersedes_the_first() {
     let (_dir, conn) = migrated_db();
-    memory_intent::record(&conn, &intent("a1b2c3d4", IntentKind::Write, "2026-09-22T10:00:00Z"))
-        .expect("record write");
+    memory_intent::record(
+        &conn,
+        &intent("a1b2c3d4", IntentKind::Write, "2026-09-22T10:00:00Z"),
+    )
+    .expect("record write");
     let newer = intent("a1b2c3d4", IntentKind::Delete, "2026-09-22T10:05:00Z");
     memory_intent::record(&conn, &newer).expect("record delete");
 
@@ -70,12 +73,21 @@ fn a_second_intent_for_one_memory_supersedes_the_first() {
 #[test]
 fn outstanding_intents_come_back_oldest_first() {
     let (_dir, conn) = migrated_db();
-    memory_intent::record(&conn, &intent("cccccccc", IntentKind::Write, "2026-09-22T12:00:00Z"))
-        .expect("record third");
-    memory_intent::record(&conn, &intent("aaaaaaaa", IntentKind::Write, "2026-09-22T10:00:00Z"))
-        .expect("record first");
-    memory_intent::record(&conn, &intent("bbbbbbbb", IntentKind::Delete, "2026-09-22T11:00:00Z"))
-        .expect("record second");
+    memory_intent::record(
+        &conn,
+        &intent("cccccccc", IntentKind::Write, "2026-09-22T12:00:00Z"),
+    )
+    .expect("record third");
+    memory_intent::record(
+        &conn,
+        &intent("aaaaaaaa", IntentKind::Write, "2026-09-22T10:00:00Z"),
+    )
+    .expect("record first");
+    memory_intent::record(
+        &conn,
+        &intent("bbbbbbbb", IntentKind::Delete, "2026-09-22T11:00:00Z"),
+    )
+    .expect("record second");
 
     let keys: Vec<String> = memory_intent::outstanding(&conn)
         .expect("outstanding")

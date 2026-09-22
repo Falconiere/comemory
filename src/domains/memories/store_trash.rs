@@ -12,7 +12,9 @@ use std::path::PathBuf;
 
 use crate::domains::memories::frontmatter::Frontmatter;
 use crate::domains::memories::slug::slug_from_body;
-use crate::domains::memories::store::{MemoryRecord, MemoryStore, matches_prefix, stamp_deleted_now};
+use crate::domains::memories::store::{
+    MemoryRecord, MemoryStore, matches_prefix, stamp_deleted_now,
+};
 use crate::prelude::*;
 
 impl MemoryStore {

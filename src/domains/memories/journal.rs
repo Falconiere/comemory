@@ -60,9 +60,7 @@ pub(crate) fn record_write(
         legacy_seq,
         tx,
         &NewOperation {
-            operation_id: operation_id
-                .map_or_else(|| mint_operation_id(&fm.id, op), str::to_string)
-                .as_str(),
+            operation_id: &operation_id_for(operation_id, &fm.id, op),
             entity_kind: MEMORY_ENTITY_KIND,
             entity_key: &fm.id,
             op,
@@ -104,12 +102,7 @@ pub(crate) fn record_tombstone(
         legacy_seq,
         tx,
         &NewOperation {
-            operation_id: operation_id
-                .map_or_else(
-                    || mint_operation_id(memory_id, ReplicaOp::Tombstone),
-                    str::to_string,
-                )
-                .as_str(),
+            operation_id: &operation_id_for(operation_id, memory_id, ReplicaOp::Tombstone),
             entity_kind: MEMORY_ENTITY_KIND,
             entity_key: memory_id,
             op: ReplicaOp::Tombstone,
@@ -144,6 +137,12 @@ fn journal(legacy_seq: i64, tx: &Connection, new: &NewOperation<'_>) -> Result<P
 /// A repository label is only replicated when the memory has one.
 fn repository_of(fm: &Frontmatter) -> Option<&str> {
     (!fm.repo.is_empty()).then_some(fm.repo.as_str())
+}
+
+/// The id this mutation journals under: the one the caller already minted and
+/// recorded in its write intent, or a fresh one.
+fn operation_id_for(supplied: Option<&str>, entity_key: &str, op: ReplicaOp) -> String {
+    supplied.map_or_else(|| mint_operation_id(entity_key, op), str::to_string)
 }
 
 /// Mint `op-<yyyymmdd>-<8hex>` for one mutation.

@@ -394,7 +394,9 @@ fn the_legacy_wire_stores_a_compatible_vector_once() {
         .expect("count");
     assert_eq!(rows, 1, "a replay replaces rather than duplicates");
     assert_eq!(
-        comemory::store::needs_embedding::pending_count(&conn).expect("count"),
+        comemory::store::needs_embedding::pending(&conn)
+            .expect("pending")
+            .len(),
         0
     );
 }

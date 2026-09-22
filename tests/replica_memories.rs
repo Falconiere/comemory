@@ -84,10 +84,7 @@ fn an_edit_through_each_surface_produces_one_operation_apiece() {
         &json!({"tags": ["sync", "journal"]}),
     );
     assert_eq!(status, 200, "tags patch: {body}");
-    let (status, body) = engine.patch(
-        &format!("/api/v1/memories/{id}"),
-        &json!({"quality": 5}),
-    );
+    let (status, body) = engine.patch(&format!("/api/v1/memories/{id}"), &json!({"quality": 5}));
     assert_eq!(status, 200, "quality patch: {body}");
 
     let ops = feed_ops(&dir);
@@ -234,7 +231,11 @@ fn a_save_with_no_credential_and_nothing_listening_still_commits_and_queues() {
         vec![format!("upsert:{id}")],
         "the operation is journalled"
     );
-    assert_eq!(owed(&dir), vec![id], "and queued for whenever the push works");
+    assert_eq!(
+        owed(&dir),
+        vec![id],
+        "and queued for whenever the push works"
+    );
     assert!(intents(&dir).is_empty(), "the write itself finished");
 }
 
@@ -250,7 +251,9 @@ fn a_save_the_disk_refuses_fails_loudly_rather_than_being_queued() {
     // Take away write permission on the markdown directory: a real
     // persistence failure, not a simulated one.
     let memories = dir.join("memories");
-    let original = std::fs::metadata(&memories).expect("metadata").permissions();
+    let original = std::fs::metadata(&memories)
+        .expect("metadata")
+        .permissions();
     let mut locked = original.clone();
     #[cfg(unix)]
     {

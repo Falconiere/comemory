@@ -35,7 +35,10 @@ pub(super) fn persist(
         &Intent {
             entity_key,
             kind: IntentKind::Write,
-            md_path: store.planned_path(params.body).to_string_lossy().into_owned(),
+            md_path: store
+                .planned_path(params.body)
+                .to_string_lossy()
+                .into_owned(),
             operation_id: operation_id.clone(),
             started_at: memory_row::iso_format(time::OffsetDateTime::now_utc())?,
         },
@@ -95,4 +98,3 @@ fn write_sqlite_mirror(
     tx.commit()?;
     Ok(())
 }
-

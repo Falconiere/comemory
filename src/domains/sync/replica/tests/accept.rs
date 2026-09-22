@@ -315,7 +315,9 @@ fn an_accepted_operation_carrying_a_usable_vector_stores_it_once() {
         .expect("count");
     assert_eq!(rows, 1, "a replay stores no second row");
     assert_eq!(
-        crate::store::needs_embedding::pending_count(&peer.conn).expect("count"),
+        crate::store::needs_embedding::pending(&peer.conn)
+            .expect("pending")
+            .len(),
         0
     );
     assert_eq!(
@@ -352,7 +354,10 @@ fn a_foreign_vector_still_stores_the_memory_and_records_the_backlog() {
     let pending = crate::store::needs_embedding::pending(&peer.conn).expect("pending");
     assert_eq!(pending.len(), 1);
     assert_eq!(pending[0].memory_id, id);
-    assert_eq!(pending[0].reason, crate::store::needs_embedding::Reason::Model);
+    assert_eq!(
+        pending[0].reason,
+        crate::store::needs_embedding::Reason::Model
+    );
     assert_eq!(pending[0].model.as_deref(), Some("text-embedding-3-small"));
 }
 
