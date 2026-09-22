@@ -1,11 +1,14 @@
 //! The run-history half of [`super::rebuild_copy`]'s preservation copy —
 //! `eval_runs` (v14, plus v15's `discarded` flag), `gc_runs` (v14),
 //! `index_runs` (v15), the v16 cloud-sync tables (`sync_log` / `sync_state` /
-//! `sync_binding`) and the v22 `replica-v1` journal. History is exactly what
-//! markdown cannot reconstruct: a rebuild that dropped it would erase every
-//! recorded eval, gc, and index run (and re-offer every discarded knob
-//! proposal), would reset sync cursors / bindings, and would reissue
-//! replication sequences a peer already holds a receipt for.
+//! `sync_binding`), the v22 `replica-v1` journal and the v23
+//! `memory_needs_embedding` backlog the journal's import path produces.
+//! History is exactly what markdown cannot reconstruct: a rebuild that
+//! dropped it would erase every recorded eval, gc, and index run (and
+//! re-offer every discarded knob proposal), would reset sync cursors /
+//! bindings, would reissue replication sequences a peer already holds a
+//! receipt for, and would report a clean engine to an operator whose
+//! memories are still missing their vectors.
 
 use crate::prelude::*;
 use crate::store::Connection;
@@ -106,13 +109,28 @@ const PRESERVED: &[(&str, &str)] = &[
         "replica_cursor",
         "workspace_id, api_url, stream_epoch, applied_sequence, updated_at",
     ),
+    (
+        "memory_needs_embedding",
+        "memory_id, reason, model, dims, recorded_at",
+    ),
 ];
+
+/// Tables whose copy is narrowed to memories the replay actually restored.
+///
+/// The markdown replay runs before this copy, so `main.memories` is already
+/// whole here: a row whose memory is absent names a memory whose markdown was
+/// removed, and carrying it over would have `doctor` report a backlog entry
+/// for something the engine no longer holds. A foreign key cannot express
+/// this — SQLite's `OR IGNORE` does not apply to foreign-key violations, so
+/// one orphan would abort the whole rebuild instead of being skipped.
+const MEMORY_SCOPED: &[&str] = &["memory_needs_embedding"];
 
 /// Copy one table's columns from the attached `old` database, if it has it.
 ///
 /// `replica_stream` is replaced rather than merged: the fresh database minted
 /// its own epoch at migration time, and keeping that one would tell every peer
-/// its cursor belongs to a stream that no longer exists.
+/// its cursor belongs to a stream that no longer exists. A [`MEMORY_SCOPED`]
+/// table is narrowed to the memories the replay restored.
 fn copy_table(conn: &Connection, table: &str, columns: &str) -> Result<()> {
     if !old_table_exists(conn, table)? {
         return Ok(());
@@ -120,8 +138,14 @@ fn copy_table(conn: &Connection, table: &str, columns: &str) -> Result<()> {
     if table == "replica_stream" {
         conn.execute_batch("DELETE FROM main.replica_stream;")?;
     }
+    let scope = if MEMORY_SCOPED.contains(&table) {
+        " WHERE memory_id IN (SELECT id FROM main.memories)"
+    } else {
+        ""
+    };
     conn.execute_batch(&format!(
-        "INSERT OR IGNORE INTO main.{table}({columns}) SELECT {columns} FROM old.{table};"
+        "INSERT OR IGNORE INTO main.{table}({columns}) \
+         SELECT {columns} FROM old.{table}{scope};"
     ))?;
     Ok(())
 }

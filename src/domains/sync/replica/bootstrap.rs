@@ -114,6 +114,7 @@ fn seed_one(ctx: &mut Ctx<'_>, id: &str) -> Result<()> {
         &record.body,
         &at,
         ReplicaOrigin::Local,
+        None,
     )?;
     tx.commit()?;
     Ok(())

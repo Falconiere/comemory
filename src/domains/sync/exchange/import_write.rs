@@ -60,6 +60,7 @@ pub(crate) fn write_new_memory(
         &rec.body,
         &entry.at,
         ReplicaOrigin::Sync,
+        None,
     )?
     .legacy_seq;
     tx.commit()?;

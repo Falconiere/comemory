@@ -2,6 +2,13 @@
 //! `memory_tags` side table, and the virtual tables `memory_fts` (FTS5,
 //! `porter identifier` tokenizer since v4), `memory_substring` (trigrams),
 //! and `memory_vec` (`vec0`, 1024 dims, cosine).
+//!
+//! Plus the two write-lifecycle tables added in #251: `memory_write_intent`,
+//! the crash-recovery marker for a write in flight, and
+//! `memory_needs_embedding`, the backlog of memories whose imported vector was
+//! refused. Both belong to the memory leg rather than to
+//! [`super::schema_replica`]: neither is part of the replication journal, and
+//! both outlive any one replication session.
 
 use toolu_orm::core::column::{Integer, Real, Text, Vector};
 use toolu_orm::{fts5_table, table, vec0_table};
@@ -142,4 +149,61 @@ pub struct MemoryVec {
     /// Unit-length embedding; `score = 1.0 - distance` recovers cosine.
     #[column(dim = 1024, distance_metric = "cosine")]
     pub embedding: Vector,
+}
+
+/// `memory_write_intent`: the one outstanding "a memory write is in flight"
+/// row, written before the markdown moves and cleared in the same transaction
+/// as the mirror.
+///
+/// The crash window this closes is the gap between
+/// [`crate::domains::memories::MemoryStore::write_atomic`] renaming the file
+/// into place and the mirror transaction committing. A process killed there
+/// leaves a memory on disk that the database has never seen and that owes no
+/// upload; the intent is what lets the next open notice and finish it.
+///
+/// One row per memory on purpose: a second write to the same id supersedes the
+/// first, and a finished write clears it, so the table holds only work in
+/// flight rather than a history.
+#[table(name = "memory_write_intent")]
+pub struct MemoryWriteIntent {
+    /// The memory id the write is for.
+    #[column(primary_key)]
+    pub entity_key: Text,
+    /// `write` for a save/update/restore, `delete` for a soft delete.
+    #[column(not_null, check = "kind IN ('write', 'delete')")]
+    pub kind: Text,
+    /// Markdown path the write was placing, relative to the data dir.
+    #[column(not_null)]
+    pub md_path: Text,
+    /// The operation the finished write owes the journal.
+    #[column(not_null)]
+    pub operation_id: Text,
+    /// RFC3339 time the intent was recorded.
+    #[column(not_null)]
+    pub started_at: Text,
+}
+
+/// `memory_needs_embedding`: memories whose text is stored but whose vector is
+/// not, with the reason it was refused.
+///
+/// An imported embedding is only usable when it came from the model this
+/// engine queries with, at the dimension its `vec0` table was built for.
+/// Refusing the vector must never refuse the memory, so the text lands and the
+/// id is recorded here for `doctor` to report and `reembed` to drain.
+#[table(name = "memory_needs_embedding")]
+#[index("idx_memory_needs_embedding_reason", reason, recorded_at)]
+pub struct MemoryNeedsEmbedding {
+    /// The memory still owing a vector.
+    #[column(primary_key)]
+    pub memory_id: Text,
+    /// Why: `absent`, `model` or `dims`.
+    #[column(not_null, check = "reason IN ('absent', 'model', 'dims')")]
+    pub reason: Text,
+    /// The model that arrived, when one did.
+    pub model: Text,
+    /// The dimension that arrived, when one did.
+    pub dims: Integer,
+    /// RFC3339 time the refusal was recorded.
+    #[column(not_null)]
+    pub recorded_at: Text,
 }

@@ -134,14 +134,17 @@ fn derive_live_tables() -> BTreeSet<String> {
 /// v20's three candidate-observation tables are copied, because a reviewed
 /// judgment and the passage it was made against exist nowhere else; v22's
 /// replica journal is copied because a sequence already handed to a peer
-/// cannot be re-derived, while its staged upload parts are not.
+/// cannot be re-derived, while its staged upload parts are not; v23's
+/// embedding backlog is copied because markdown carries no vectors, while its
+/// write-intent marker is not, a rebuild being the very reconciliation an
+/// outstanding intent would ask for.
 #[test]
-fn migration_integrity_derived_live_set_has_exactly_forty_four_tables() {
+fn migration_integrity_derived_live_set_has_exactly_forty_six_tables() {
     let live = derive_live_tables();
     assert_eq!(
         live.len(),
-        44,
-        "expected exactly 44 live tables, got {}: {live:?}",
+        46,
+        "expected exactly 46 live tables, got {}: {live:?}",
         live.len()
     );
     // The count alone would still pass if a history table were added to
@@ -164,6 +167,7 @@ fn migration_integrity_derived_live_set_has_exactly_forty_four_tables() {
         "replica_operation",
         "replica_receipt",
         "replica_cursor",
+        "memory_needs_embedding",
     ] {
         assert!(
             COPIED_TABLES.contains(&table),
@@ -186,6 +190,12 @@ fn migration_integrity_derived_live_set_has_exactly_forty_four_tables() {
             .iter()
             .any(|(name, _)| *name == "replica_staged_part"),
         "a staged upload that never activated published nothing; it is not copied"
+    );
+    assert!(
+        RECONSTRUCTABLE_TABLES
+            .iter()
+            .any(|(name, _)| *name == "memory_write_intent"),
+        "a rebuild replays every memory from markdown, so no intent is outstanding after it"
     );
     assert!(
         live.contains("edges"),

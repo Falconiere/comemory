@@ -51,6 +51,7 @@ pub(crate) fn apply(
                 &record.body,
                 &at,
                 ReplicaOrigin::Sync,
+                None,
             )?
             .sequence)
         }
@@ -69,6 +70,7 @@ pub(crate) fn apply(
                 repository.as_deref(),
                 &at,
                 ReplicaOrigin::Sync,
+                None,
             )?
             .sequence)
         }

@@ -34,6 +34,7 @@ use crate::domains::memories::{
     Kind, MemoryStore, Prior, References, Relations, SaveParams, id, mirror,
 };
 use crate::prelude::*;
+use crate::store::memory_intent::{self, Intent, IntentKind};
 use crate::store::replica_journal::{ReplicaOp, ReplicaOrigin};
 use crate::store::{Connection, embed, memory_row, vector};
 use crate::utilities::activity::{self, Outcome, command};
@@ -349,6 +350,11 @@ fn build_params<'a>(
 /// Write the markdown record (source of truth), then mirror it into
 /// `comemory.db` in one transaction. A mirror failure keeps the markdown and
 /// names it plus the `rebuild` recovery path.
+///
+/// The write intent goes down BEFORE the markdown moves, and is cleared
+/// inside the mirror's own transaction. A process killed in that window
+/// leaves a memory on disk the database has never seen; the outstanding
+/// intent is what lets the next open finish it (`memories::recover`).
 fn persist(
     conn: &mut Connection,
     store: &MemoryStore,
@@ -356,9 +362,21 @@ fn persist(
     vector_opt: Option<&[f32]>,
 ) -> Result<crate::domains::memories::MemoryRecord> {
     let tags = params.tags.to_vec();
+    let entity_key = id::memory_id(params.body);
+    let operation_id = journal::mint_operation_id(&entity_key, ReplicaOp::Upsert);
+    memory_intent::record(
+        conn,
+        &Intent {
+            entity_key,
+            kind: IntentKind::Write,
+            md_path: store.planned_path(params.body).to_string_lossy().into_owned(),
+            operation_id: operation_id.clone(),
+            started_at: memory_row::iso_format(time::OffsetDateTime::now_utc())?,
+        },
+    )?;
     let rec = store.save(params)?;
     let md_path = rec.path.clone();
-    write_sqlite_mirror(conn, &rec, &tags, vector_opt).map_err(|e| {
+    write_sqlite_mirror(conn, &rec, &tags, vector_opt, &operation_id).map_err(|e| {
         if crate::store::busy::is_locked(&e) {
             // Keep the retryable error class through CLI, HTTP and MCP.
             // Retrying this content-derived save safely repairs the mirror.
@@ -434,6 +452,7 @@ fn write_sqlite_mirror(
     rec: &crate::domains::memories::MemoryRecord,
     tags: &[String],
     vector_opt: Option<&[f32]>,
+    operation_id: &str,
 ) -> Result<()> {
     let tx = crate::store::connection::write_transaction(conn)?;
     let fm = &rec.frontmatter;
@@ -452,7 +471,11 @@ fn write_sqlite_mirror(
         &rec.body,
         &at,
         ReplicaOrigin::Local,
+        Some(operation_id),
     )?;
+    // Inside this transaction, never after it: clearing in a later one would
+    // reopen the same crash window a statement wide.
+    memory_intent::clear(&tx, &fm.id)?;
     tx.commit()?;
     Ok(())
 }

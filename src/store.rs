@@ -100,6 +100,7 @@ pub mod index_runs;
 /// the repo-wide cursor wipe and the per-`(repo, path)` blob-OID lookup.
 pub mod indexed_files;
 /// Paginated listing of live memories.
+pub mod memory_intent;
 pub mod memory_list;
 /// Batched per-memory metadata (path, repo, kind, tags, references).
 pub mod memory_meta;
@@ -114,6 +115,7 @@ pub mod memory_row;
 pub(crate) mod memory_signals;
 /// Versioned, idempotent schema migrations plus `schema_meta`.
 pub mod migrate;
+pub mod needs_embedding;
 /// Execute schema-generated statements while retaining store error semantics.
 mod orm;
 /// `maintenance::prune`'s own scan (orphan-edge count, stale-code-file list, one

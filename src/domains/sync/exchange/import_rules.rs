@@ -63,6 +63,7 @@ fn apply_tombstone(
             None,
             &entry.at,
             ReplicaOrigin::Sync,
+            None,
         )?
         .legacy_seq;
         tx.commit()?;
@@ -193,6 +194,7 @@ fn accept_patch(
         &patched.body,
         &entry.at,
         ReplicaOrigin::Sync,
+        None,
     )?
     .legacy_seq;
     tx.commit()?;

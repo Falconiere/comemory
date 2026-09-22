@@ -124,6 +124,20 @@ impl MemoryStore {
         }
     }
 
+    /// Where [`save`](Self::save) will place `body`'s markdown.
+    ///
+    /// Derived from the body alone — the content-addressed id and the slug —
+    /// so a caller can record what it is about to write BEFORE the write
+    /// happens. `save` uses this same function, which is the point: a write
+    /// intent that named a different path than the file that landed would
+    /// send recovery looking in the wrong place.
+    #[must_use]
+    pub fn planned_path(&self, body: &str) -> PathBuf {
+        let id = memory_id(body);
+        let slug = slug_from_body(body);
+        self.paths.memories_dir().join(format!("{id}-{slug}.md"))
+    }
+
     /// Save a memory atomically: write to `.{id}.tmp`, then rename to
     /// `{id}-{slug}.md`. On any failure between staging and rename, the tmp
     /// file is removed so no orphaned `.tmp` files are left behind (both
@@ -138,7 +152,7 @@ impl MemoryStore {
         let body = p.body;
         let id = memory_id(body);
         let slug = slug_from_body(body);
-        let final_path = self.paths.memories_dir().join(format!("{id}-{slug}.md"));
+        let final_path = self.planned_path(body);
         let tmp_path = self.paths.memories_dir().join(format!(".{id}.tmp"));
 
         let content_hash = sha256_hex(body.trim_end().as_bytes());
@@ -211,6 +225,27 @@ impl MemoryStore {
     /// Bring a soft-deleted memory back: move `.trash/{id}-{slug}.md` back
     /// into `memories/` and return the record parsed from the restored file.
     /// The exact reverse of [`MemoryStore::delete`]'s file move; the SQLite
+    /// The trashed record for `id`, read where it lies.
+    ///
+    /// Lets a caller record what a restore is about to do — the canonical id
+    /// and the file that will move — BEFORE [`restore`](Self::restore) moves
+    /// it. `path` is the `.trash/` path, not the live one.
+    ///
+    /// # Errors
+    /// Propagates the trash lookup, the read and the frontmatter parse.
+    pub fn trashed_record(&self, id: &str) -> Result<MemoryRecord> {
+        let trash_path = self.find_in_trash(id)?;
+        let raw = fs::read_to_string(&trash_path)?;
+        let (fm, body) = Frontmatter::split(&raw)?;
+        let slug = slug_from_body(&body);
+        Ok(MemoryRecord {
+            frontmatter: fm,
+            body,
+            path: trash_path,
+            slug,
+        })
+    }
+
     /// mirror is the caller's half (`memories::restore`).
     ///
     /// `Error::BadRequest` when `id` names a live memory — checked BEFORE the

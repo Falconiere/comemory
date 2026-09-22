@@ -20,6 +20,7 @@ use std::time::Instant;
 use serde::{Deserialize, Serialize};
 
 use crate::domains::memories::journal;
+use crate::store::memory_intent::{self, Intent, IntentKind};
 use crate::domains::memories::save;
 use crate::domains::memories::{Frontmatter, Kind, MemoryRecord, MemoryStore, id, mirror};
 use crate::prelude::*;
@@ -208,6 +209,10 @@ fn patch_in_place(
         });
     }
     apply(&mut record.frontmatter, req);
+    // Before the markdown is rewritten, so a process killed between the
+    // rewrite and the journal below leaves the edit recoverable rather than
+    // stored locally and owed to nobody.
+    let operation_id = record_write_intent(ctx, &id, &path)?;
     store.rewrite(record)?;
     let derived_stale = if needs_derived_refresh(&changed) {
         mirror_record(ctx, record)?
@@ -217,7 +222,7 @@ fn patch_in_place(
         mirror_row(ctx, record)?;
         false
     };
-    append_local_upsert(ctx, record)?;
+    append_local_upsert(ctx, record, &operation_id)?;
     Ok(Response {
         id,
         path,
@@ -325,7 +330,7 @@ fn mirror_row(ctx: &mut Ctx<'_>, record: &MemoryRecord) -> Result<()> {
 
 /// Journal an edited record: the legacy `sync_log` row, the replica feed
 /// position and the outbox row it owes, in one transaction.
-fn append_local_upsert(ctx: &mut Ctx<'_>, record: &MemoryRecord) -> Result<()> {
+fn append_local_upsert(ctx: &mut Ctx<'_>, record: &MemoryRecord, operation_id: &str) -> Result<()> {
     let conn = ctx.conn()?;
     let fm = &record.frontmatter;
     let at = memory_row::iso_format(fm.created)?;
@@ -337,9 +342,35 @@ fn append_local_upsert(ctx: &mut Ctx<'_>, record: &MemoryRecord) -> Result<()> {
         &record.body,
         &at,
         ReplicaOrigin::Local,
+        Some(operation_id),
     )?;
+    // The intent clears in the LAST transaction the edit owes, not the mirror
+    // one: an edit whose row landed but whose operation did not is still
+    // unfinished, and must still be reconciled.
+    memory_intent::clear(&tx, &fm.id)?;
     tx.commit()?;
     Ok(())
+}
+
+/// Record that an in-place edit of `id` is starting, and return the operation
+/// id the finished edit will journal under.
+///
+/// `md_path` is the record's current path, which an in-place patch keeps: the
+/// slug derives from the body, and a frontmatter-only patch does not touch it.
+fn record_write_intent(ctx: &mut Ctx<'_>, id: &str, md_path: &str) -> Result<String> {
+    let operation_id = journal::mint_operation_id(id, ReplicaOp::Upsert);
+    let started_at = memory_row::iso_format(time::OffsetDateTime::now_utc())?;
+    memory_intent::record(
+        ctx.conn()?,
+        &Intent {
+            entity_key: id.to_string(),
+            kind: IntentKind::Write,
+            md_path: md_path.to_string(),
+            operation_id: operation_id.clone(),
+            started_at,
+        },
+    )?;
+    Ok(operation_id)
 }
 
 #[cfg(test)]
