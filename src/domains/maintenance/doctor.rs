@@ -46,6 +46,7 @@ pub mod backup;
 /// The individual health probes making up [`Report::checks`], plus the
 /// [`checks::run_all`] pass that runs every one of them.
 pub mod checks;
+pub mod checks_vector;
 /// `GET /doctor/system`: the probe-free facts read (versions, paths, file
 /// counts, vector dims) — never runs the embed command.
 pub mod system;

@@ -109,6 +109,12 @@ pub struct ManifestResponse {
     pub entity_kinds: Vec<KindManifest>,
     /// Seeding progress.
     pub bootstrap: BootstrapStatus,
+    /// How many memories hold text but no usable vector.
+    ///
+    /// Reported here so an operator sees the backlog without a second call:
+    /// a peer whose embedder differs replicates every memory correctly and
+    /// still answers semantic search short until these are re-embedded.
+    pub needs_embedding: i64,
 }
 
 /// `POST /sync/replica/stage` request body.

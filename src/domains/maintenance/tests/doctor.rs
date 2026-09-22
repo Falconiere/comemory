@@ -174,3 +174,71 @@ fn run_propagates_a_genuinely_broken_migration_rather_than_falling_back() {
         "expected Error::Migration, got: {err}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// #251: doctor names the embedding backlog, with the route that drains it.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn run_reports_the_embedding_backlog_as_ok_when_there_is_none() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let paths = Paths::new(home.path());
+    paths.ensure_dirs().expect("ensure dirs");
+    let cfg = Config::defaults();
+    let mut ctx = Ctx::lazy(&paths, &cfg);
+
+    let report = maintenance::doctor::run(&mut ctx, maintenance::doctor::Request {})
+        .expect("doctor run");
+
+    let check = report
+        .checks
+        .iter()
+        .find(|c| c.name == "embedding backlog")
+        .expect("the probe is present");
+    assert_eq!(check.status, "ok");
+    assert_eq!(check.remedy, None, "there is nothing to fix");
+}
+
+#[test]
+fn run_warns_with_a_remedy_when_memories_are_stored_without_a_usable_vector() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let paths = Paths::new(home.path());
+    paths.ensure_dirs().expect("ensure dirs");
+    let cfg = Config::defaults();
+    // The state a real import from a peer on another embedder leaves.
+    {
+        let conn = comemory::store::connection::open(paths.db_path()).expect("open db");
+        comemory::store::needs_embedding::record(
+            &conn,
+            &comemory::store::needs_embedding::Pending {
+                memory_id: "a1b2c3d4".to_string(),
+                reason: comemory::store::needs_embedding::Reason::Model,
+                model: Some("text-embedding-3-small".to_string()),
+                dims: Some(1024),
+            },
+            "2026-09-22T10:00:00Z",
+        )
+        .expect("record the refusal");
+    }
+    let mut ctx = Ctx::lazy(&paths, &cfg);
+
+    let report = maintenance::doctor::run(&mut ctx, maintenance::doctor::Request {})
+        .expect("doctor run");
+
+    let check = report
+        .checks
+        .iter()
+        .find(|c| c.name == "embedding backlog")
+        .expect("the probe is present");
+    assert_eq!(check.status, "warn", "everything is present, just not vectored");
+    assert!(
+        check.detail.contains('1'),
+        "the count is named: {}",
+        check.detail
+    );
+    assert_eq!(
+        check.remedy.as_deref(),
+        Some("POST /api/v1/doctor/reembed"),
+        "and the route that drains it is offered"
+    );
+}

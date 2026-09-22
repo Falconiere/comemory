@@ -13,7 +13,7 @@ use super::schema_replica::{ReplicaOperation, replica_operation as col};
 use crate::prelude::*;
 
 /// One mutation still owed to the upstream workspace.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PendingOperation {
     /// Client-unique operation id.
     pub operation_id: String,
@@ -119,6 +119,27 @@ pub fn pending(conn: &Connection, limit: usize) -> Result<Vec<PendingOperation>>
             })
         })
         .collect()
+}
+
+/// Whether this machine still owes an upload for one entity.
+///
+/// The import path asks before overwriting local state: a memory edited here
+/// and not yet pushed must not be silently replaced by a peer's older view of
+/// it, because the payload the outbox holds is the only record of that edit.
+///
+/// # Errors
+/// Propagates SQLite failures.
+pub fn has_pending_for(conn: &Connection, entity_kind: &str, entity_key: &str) -> Result<bool> {
+    let count: i64 = orm::query_one(
+        conn,
+        ReplicaOperation::select()
+            .filter(col::state.eq("pending"))
+            .filter(col::entity_kind.eq(entity_kind))
+            .filter(col::entity_key.eq(entity_key))
+            .to_count_sql(),
+        |r| r.get(0),
+    )?;
+    Ok(count > 0)
 }
 
 /// How many operations are still pending — what a push still owes.

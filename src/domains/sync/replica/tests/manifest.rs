@@ -78,6 +78,11 @@ fn a_deleted_memory_leaves_the_manifest() {
     let before = manifest::run(&mut ctx).expect("manifest");
     assert_eq!(before.entity_kinds[0].count, 1);
 
+    // The save's own operation must be off the outbox first: since #251 an
+    // import is refused while this machine still owes a change to the same
+    // memory, which is the guard that keeps a pull from overwriting an
+    // unpushed local edit.
+    support::mark_pushed(&home.conn, &id);
     let mut ctx = home.ctx();
     accept::run(&mut ctx, envelope(vec![tombstone("op-1", &id)])).expect("tombstone");
     let mut ctx = home.ctx();
@@ -90,5 +95,49 @@ fn a_deleted_memory_leaves_the_manifest() {
     assert_ne!(
         after.entity_kinds[0].buckets, before.entity_kinds[0].buckets,
         "the manifest moved with the deletion"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// #251: the manifest reports the embedding backlog, so an operator sees it
+// without a second call.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_clean_engine_reports_no_embedding_backlog() {
+    let mut home = Home::new();
+    home.save(BODY, &["sync"]);
+    let mut ctx = home.ctx();
+
+    let report = manifest::run(&mut ctx).expect("manifest");
+
+    assert_eq!(
+        report.needs_embedding, 0,
+        "a local save carries whatever vector it was given; nothing is owed"
+    );
+}
+
+#[test]
+fn an_import_whose_vector_was_refused_shows_up_in_the_manifest() {
+    let mut author = Home::new();
+    let id = author.save(BODY, &["sync"]);
+    let payload = author.payload(&id);
+    let mut peer = Home::new();
+    let operation = support::upsert_with_vector(
+        "op-20260922-refused1",
+        &payload,
+        support::wire_vector("text-embedding-3-small", 1024),
+    );
+    {
+        let mut ctx = peer.ctx();
+        accept::run(&mut ctx, envelope(vec![operation])).expect("accept");
+    }
+
+    let mut ctx = peer.ctx();
+    let report = manifest::run(&mut ctx).expect("manifest");
+
+    assert_eq!(
+        report.needs_embedding, 1,
+        "the memory replicated correctly and still cannot be found semantically"
     );
 }

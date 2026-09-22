@@ -56,6 +56,9 @@ fn a_cursor_at_the_head_is_caught_up_and_one_above_it_is_refused() {
 fn a_tombstone_entry_names_no_payload() {
     let mut home = Home::new();
     let id = home.save(BODY, &["sync"]);
+    // Since #251 an import is refused while this machine still owes a change
+    // to the same memory, so the save's own operation has to be pushed first.
+    support::mark_pushed(&home.conn, &id);
     let mut ctx = home.ctx();
     accept::run(&mut ctx, envelope(vec![tombstone("op-1", &id)])).expect("tombstone");
 

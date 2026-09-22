@@ -189,3 +189,27 @@ pub fn wire_vector(model: &str, dims: u32) -> crate::domains::sync::exchange::Sy
         f32: base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes),
     }
 }
+
+/// Answer every outbox row this machine owes for `entity_key`, as a
+/// successful push would.
+///
+/// Since #251 an import is refused while a local change to the same entity is
+/// still pending, so a case about the IMPORT path has to get the local
+/// mutation off the outbox first.
+pub fn mark_pushed(conn: &Connection, entity_key: &str) {
+    use crate::store::replica_outbox::{self, Outcome};
+    for row in replica_outbox::pending(conn, 50).expect("pending") {
+        if row.entity_key == entity_key {
+            replica_outbox::record(
+                conn,
+                &row.operation_id,
+                Outcome::Accepted {
+                    sequence: Some(1),
+                    disposition: "accepted",
+                },
+                "2026-09-22T10:00:00Z",
+            )
+            .expect("record the push");
+        }
+    }
+}
